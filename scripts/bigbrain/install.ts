@@ -200,6 +200,7 @@ export async function probeSupportedHost(): Promise<void> {
       '/usr/sbin/losetup',
       '/usr/sbin/mkfs.ext4',
       '/usr/bin/setpriv',
+      '/usr/bin/nsenter',
       '/usr/bin/flock',
     ])
       await access(tool)

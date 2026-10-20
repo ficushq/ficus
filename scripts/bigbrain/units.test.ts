@@ -25,7 +25,7 @@ test('renders shipped hardened service with private identity, filesystem and bou
   expect(units.service).toContain('SocketBindDeny=any')
   expect(units.service).toContain(`BindsTo=${units.mountUnitName}`)
   expect(units.service).toContain(
-    `ExecStartPre=+/usr/local/bin/bun --no-install --no-env-file /opt/ficus-bigbrain/releases/${'a'.repeat(64)}/ficus-bigbrain-host.js preflight ${id}`
+    `ExecStartPre=+/usr/bin/nsenter --mount=/proc/1/ns/mnt -- /usr/local/bin/bun --no-install --no-env-file /opt/ficus-bigbrain/releases/${'a'.repeat(64)}/ficus-bigbrain-host.js preflight ${id}`
   )
   expect(units.service).not.toContain('libexec')
   // Font assets resolve relative to the immutable release directory, never a writable cwd.
