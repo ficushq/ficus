@@ -277,7 +277,7 @@ function DurableConversation(props: AssistantConversationViewProps) {
     const groups = routineSlots.get(itemId)
     if (!groups?.length) return null
     return (
-      <section aria-label="Task progress" className="min-w-0 space-y-0.5 pb-1 text-sm">
+      <section aria-label="Task progress" className="min-w-0 space-y-1 pb-1 text-sm">
         {groups.map((group) => (
           <AssistantUpdateChip
             key={`${group.taskId}:${group.updates[0]!.messageId}`}

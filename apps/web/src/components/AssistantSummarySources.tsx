@@ -42,7 +42,7 @@ export function AssistantSummarySources({
           Loading updates…
         </p>
       ) : (
-        <ul className="mt-0.5 space-y-0.5">
+        <ul className="mt-1 space-y-1">
           {query.data.map((update) => (
             <li key={update.messageId} className="min-w-0">
               <AssistantUpdateChip updates={[update]} taskLabel={update.taskLabel} />
