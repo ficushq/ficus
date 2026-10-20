@@ -236,6 +236,19 @@ if [[ ${CADDY_ENABLE} == true ]]; then
   [[ -z ${caddy_trusted_proxies} ]] || mapfile -t CADDY_TRUSTED_PROXIES <<<"${caddy_trusted_proxies}"
 fi
 
+# Optional managed BigBrain shared vaults on this host (lib.sh's bigbrain_* section): off by
+# default; the control plane writes the bigbrain: identity before install. Vault ingress is
+# served by this host's Caddy and the runtime ships only in signed artifact releases.
+BIGBRAIN_CONFIG=$(bigbrain_config_json)
+BIGBRAIN_INGRESS=false
+if bigbrain_enabled "${BIGBRAIN_CONFIG}"; then
+  BIGBRAIN_INGRESS=true
+  [[ ${CADDY_ENABLE} == true ]] ||
+    die "config: bigbrain.enabled requires ingress.caddy (vault origins are served by this host's Caddy)"
+  [[ ${SRC_MODE} == artifact ]] ||
+    die "config: bigbrain.enabled requires source.mode: artifact (the runtime is never built on the host)"
+fi
+
 # Optional nightly encrypted backup (pg dump + HOME_DIR → S3-compatible
 # storage) — off by default; a future cloud control plane turns this on so
 # tenant VMs have backups before anything else does. See phase_backup and
@@ -1583,6 +1596,8 @@ phase_env
 phase_migrate
 [[ -n ${ARTIFACTS_DIR} ]] && phase_artifacts
 phase_services
+# Managed BigBrain (opt-in; part of the services stage, no progress slug of its own).
+bigbrain_install "${ARTIFACT_RELEASE_DIR:-${SRC_DEST}}" "${BIGBRAIN_CONFIG}"
 [[ ${CADDY_ENABLE} == true ]] && phase_caddy
 [[ ${BACKUP_ENABLE} == true ]] && phase_backup
 phase_seed

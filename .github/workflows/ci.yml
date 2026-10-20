@@ -200,6 +200,18 @@ jobs:
           }
           if (( status != 0 )); then exit $(( status )); fi
 
+      - name: Run managed BigBrain setup hook suite
+        run: |
+          set -o pipefail
+          status=0
+          out=$(bash scripts/setup/bigbrain-host.test.sh 2>&1) || status=$?
+          printf '%s\n' "${out}"
+          tail -n 1 <<<"${out}" | grep -Eq '^[0-9]+ passed, 0 failed$' || {
+            echo '::error::bigbrain-host.test.sh ended without a clean "N passed, 0 failed" summary.'
+            exit 1
+          }
+          if (( status != 0 )); then exit $(( status )); fi
+
       # The installer's SSH host-key pinning against a real sshd on 127.0.0.1
       # (started by the suite as the runner user; never a remote host).
       - name: Run setup SSH host-key suite

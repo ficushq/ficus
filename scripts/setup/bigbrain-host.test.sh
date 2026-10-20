@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+# bigbrain-host.test.sh — managed BigBrain setup-toolkit hooks (lib.sh), with fake
+# runtime/state paths. Never touches real /etc, /var/lib, systemd, Caddy or accounts.
+# Run: bash scripts/setup/bigbrain-host.test.sh   (needs mikefarah yq v4, jq, flock)
+set -euo pipefail
+
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
+# shellcheck source=lib.sh
+source "${SCRIPT_DIR}/lib.sh"
+
+PASS=0 FAIL=0
+ok() { PASS=$((PASS + 1)); }
+bad() {
+  FAIL=$((FAIL + 1))
+  log_error "FAIL: $*"
+}
+expect_eq() { if [[ $2 == "$3" ]]; then ok; else bad "$1 — expected '$3', got '$2'"; fi; }
+expect_match() { if [[ $2 =~ $3 ]]; then ok; else bad "$1 — '$2' does not match /$3/"; fi; }
+expect_fail() { # DESCRIPTION OUTPUT-REGEX CMD...
+  local description=$1 regex=$2 out status=0
+  shift 2
+  out=$("$@" 2>&1) || status=$?
+  if [[ ${status} -ne 0 && ${out} =~ ${regex} ]]; then ok; else bad "${description} — status ${status}, output '${out}'"; fi
+}
+
+yq_is_mikefarah || {
+  log_error 'mikefarah yq v4 is required'
+  exit 1
+}
+T=$(mktemp -d)
+trap 'rm -rf "${T}"' EXIT
+# Unprivileged test: run "root" commands directly against the temporary tree.
+as_root() { "$@"; }
+BIGBRAIN_ETC="${T}/etc"
+BIGBRAIN_STATE="${T}/state"
+TENANT=11111111-1111-4111-8111-111111111111
+BINDING=33333333-3333-4333-8333-333333333333
+
+config() { # YAML
+  CFG_FILE="${T}/config.yaml"
+  printf '%s\n' "$1" >"${CFG_FILE}"
+}
+
+# --- config section ------------------------------------------------------------
+config 'core: {port: 3000}'
+expect_eq 'absent section is disabled with no identity' "$(bigbrain_config_json)" '{"enabled":false}'
+config 'bigbrain: {enabled: false}'
+expect_eq 'explicit disabled' "$(bigbrain_config_json)" '{"enabled":false}'
+config "bigbrain: {enabled: true, tenant_id: ${TENANT}, physical_host_binding: ${BINDING}, host_epoch: 4, zone: bb.example.com}"
+expect_eq 'enabled maps the agreed snake_case keys to the installer schema' "$(bigbrain_config_json)" \
+  "{\"enabled\":true,\"tenantId\":\"${TENANT}\",\"physicalHostBinding\":\"${BINDING}\",\"hostEpoch\":4,\"zone\":\"bb.example.com\"}"
+config "bigbrain: {enabled: true, tenant_id: ${TENANT}, physical_host_binding: ${BINDING}, host_epoch: 4, zone: bb.example.com, artifact: /tmp/x}"
+expect_fail 'unknown keys (paths, limits, artifacts) are refused' 'bigbrain must contain only' bigbrain_config_json
+config "bigbrain: {tenant_id: ${TENANT}}"
+expect_fail 'identity without enabled: true is refused' 'bigbrain must contain only' bigbrain_config_json
+
+# --- Caddy include survives every normal Core re-render -------------------------
+plain=$(render_caddyfile 'ficus.example.com' 3000 /c.crt /c.key)
+expect_eq 'disabled hosts keep the exact previous Caddyfile' "$(grep -c 'import' <<<"${plain}" || true)" 0
+with=$(BIGBRAIN_INGRESS=true render_caddyfile 'ficus.example.com' 3000 /c.crt /c.key)
+expect_match 'enabled hosts import the controller-owned vault sites' "${with}" "import ${T}/etc/caddy/\\*\\.caddy"
+expect_eq 'the include is the only change' "$(diff <(printf '%s\n' "${plain}") <(printf '%s\n' "${with}") | grep -c '^>' || true)" 2
+config "ingress: {caddy: false}
+bigbrain: {enabled: true, tenant_id: ${TENANT}, physical_host_binding: ${BINDING}, host_epoch: 0, zone: bb.example.com}"
+BIGBRAIN_INGRESS=false
+upgrade_caddy_prepare /nonexistent.env >/dev/null 2>&1
+expect_eq 'upgrade re-render derives the include from the same config' "${BIGBRAIN_INGRESS}" true
+BIGBRAIN_INGRESS=false
+
+# --- installer hook --------------------------------------------------------------
+release="${T}/release"
+mkdir -p "${release}/bigbrain" "${BIGBRAIN_STATE}/control" "${BIGBRAIN_ETC}"
+chmod 0711 "${BIGBRAIN_STATE}"
+chmod 0700 "${BIGBRAIN_STATE}/control"
+enabled_json=$(config "bigbrain: {enabled: true, tenant_id: ${TENANT}, physical_host_binding: ${BINDING}, host_epoch: 0, zone: bb.example.com}" && bigbrain_config_json)
+
+expect_eq 'disabled without an installed host is a no-op' "$(bigbrain_install "${release}" '{"enabled":false}' && echo noop)" noop
+expect_fail 'enabled release without the runtime refuses before any change' 'carries its runtime' \
+  bigbrain_install "${release}" "${enabled_json}"
+[[ ! -e ${BIGBRAIN_STATE}/control/host.lock ]] && ok || bad 'no lock/state created without a runtime'
+
+cat >"${release}/bigbrain/ficus-bigbrain-host" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+[[ \$# -eq 1 && \$1 == install ]] || exit 9
+# The lock is held (fd 9) by our parent while we run; a second locker must fail.
+flock -n -x "${BIGBRAIN_STATE}/control/host.lock" true && exit 8
+cat >"${T}/stdin.json"
+stat -c '%a' "${BIGBRAIN_STATE}/control/host.lock" >"${T}/lock-mode"
+if [[ -n \${FAKE_RESULT:-} ]]; then printf '%s\n' "\${FAKE_RESULT}"; exit 0; fi
+printf '{"ok":true,"created":true,"artifactDigest":"sha256:%s","hostEpoch":0,"hostState":"active"}\n' "$(printf 'a%.0s' {1..64})"
+EOF
+chmod 0755 "${release}/bigbrain/ficus-bigbrain-host"
+out=$(bigbrain_install "${release}" "${enabled_json}" 2>&1)
+expect_match 'installer runs under the held lifecycle lock and reports a safe summary' "${out}" 'runtime installed: .*"created":true'
+expect_eq 'installer receives exactly the validated config on stdin' "$(cat "${T}/stdin.json")" "${enabled_json}"
+expect_eq 'lock file is created private without truncation' "$(cat "${T}/lock-mode")" 600
+
+with_result() { FAKE_RESULT=$1 bigbrain_install "${release}" "${enabled_json}"; }
+expect_fail 'a refusal stops setup with only its safe code' 'install refused \(identity_mismatch\)' \
+  with_result '{"ok":false,"code":"identity_mismatch"}'
+out=$(with_result '{"ok":false,"code":"SECRET VALUE"}' 2>&1) || true
+expect_match 'unsafe runtime codes collapse to a fixed code' "${out}" 'install refused \(operation_failed\)'
+[[ ${out} != *SECRET* ]] && ok || bad 'runtime output is never reflected into setup logs'
+out=$(with_result 'not json SECRET' 2>&1) || true
+[[ ${out} != *SECRET* && ${out} == *operation_failed* ]] && ok || bad 'malformed runtime output is never reflected'
+
+: >"${BIGBRAIN_ETC}/host.json"
+expect_fail 'disabling an installed host refuses instead of orphaning vaults' 'would orphan its vaults' \
+  bigbrain_install "${release}" '{"enabled":false}'
+
+printf '\n%d passed, %d failed\n' "${PASS}" "${FAIL}"
+[[ ${FAIL} -eq 0 ]]
