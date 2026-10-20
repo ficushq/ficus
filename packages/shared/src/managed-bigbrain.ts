@@ -577,10 +577,20 @@ export function managedBigbrainDnsOwner(tenantId: string, vaultId: string): stri
   return `${MANAGED_BIGBRAIN_DNS_OWNER_PREFIX}${tenantId}:${vaultId}`
 }
 const ipv4 = z.string().regex(/^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/)
-/** Core's body for PUT /api/managed-bigbrain/dns/:vaultId: the origin recorded at create. Platform
- * must admit it with managedBigbrainOriginMatchesPolicy for the tenant's zone and label (or match
- * its existing owned record by exact hostname + owner tag); it never derives one itself. */
-export const managedBigbrainDnsRequestSchema = z.object({ origin: originSchema }).strict()
+/** Core's body for PUT /api/managed-bigbrain/dns/:vaultId. `{}` means the vault's bb-<32 hex>
+ * origin (the only form older Platform builds know); a tenant-prefixed vault sends the origin
+ * recorded at create. Platform must admit it with managedBigbrainOriginMatchesPolicy for the
+ * tenant's zone and current label, or match its existing owned record by exact hostname + owner
+ * tag; it never derives a prefixed origin itself. Use managedBigbrainDnsRequestFor to build it. */
+export const managedBigbrainDnsRequestSchema = z
+  .object({ origin: originSchema.optional() })
+  .strict()
+  .refine((v) => v.origin === undefined || parseManagedBigbrainOrigin(v.origin)?.tenantLabel !== null)
+export function managedBigbrainDnsRequestFor(vaultId: string, origin: string): { origin?: string } {
+  const parts = parseManagedBigbrainOrigin(origin)
+  if (!parts || !managedBigbrainOriginHasVault(origin, vaultId)) throw new Error('invalid_request')
+  return parts.tenantLabel === null ? {} : { origin }
+}
 export type ManagedBigbrainDnsRequest = z.infer<typeof managedBigbrainDnsRequestSchema>
 /** Platform's reply to PUT /api/managed-bigbrain/dns/:vaultId. */
 export const managedBigbrainDnsRecordSchema = z

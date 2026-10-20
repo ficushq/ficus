@@ -612,7 +612,14 @@ describe('managed BigBrain vault hostnames', () => {
     ])
       expect(contract.managedBigbrainDnsRecordSchema.safeParse(bad).success).toBe(false)
     expect(contract.managedBigbrainDnsRequestSchema.safeParse({ origin: prefixed }).success).toBe(true)
+    expect(contract.managedBigbrainDnsRequestSchema.safeParse({}).success).toBe(true)
+    // The fallback form is the empty body older Platform builds require; never sent explicitly.
+    expect(contract.managedBigbrainDnsRequestSchema.safeParse({ origin: fallback }).success).toBe(false)
     expect(contract.managedBigbrainDnsRequestSchema.safeParse({ origin: 'https://evil.example' }).success).toBe(false)
+    expect(contract.managedBigbrainDnsRequestSchema.safeParse({ origin: prefixed, x: 1 }).success).toBe(false)
+    expect(contract.managedBigbrainDnsRequestFor(vault, prefixed)).toEqual({ origin: prefixed })
+    expect(contract.managedBigbrainDnsRequestFor(vault, fallback)).toEqual({})
+    expect(() => contract.managedBigbrainDnsRequestFor(id, prefixed)).toThrow('invalid_request')
   })
   test('capabilities and host config carry the tenant label only when installed', () => {
     expect(contract.managedBigbrainCapabilitiesSchema.parse(capabilities).tenantLabel).toBeNull()

@@ -98,7 +98,8 @@ describe('slim managed BigBrain Platform client', () => {
     ])
     expect(seen.every((s) => s.auth === `Bearer ${TOKEN}` && s.redirect === 'error')).toBe(true)
     // Platform never learns names, owners or generations: only the origin recorded at create.
-    expect(seen.map((s) => s.body)).toEqual(['', JSON.stringify({ origin: origin(VAULT) }), ''])
+    // A bb-<32 hex> vault sends the empty body older Platform builds require.
+    expect(seen.map((s) => s.body)).toEqual(['', '{}', ''])
     expect(Object.keys(managedBigbrainPlatform).sort()).toEqual(['deleteDns', 'ensureDns', 'support'])
   })
 

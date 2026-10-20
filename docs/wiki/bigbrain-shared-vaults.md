@@ -92,7 +92,7 @@ other vault of the tenant, including deleted ones, gets a new vault ID before an
 created.
 
 The address is stored with the vault and on the server's receipt, sent to Platform for its DNS
-record, and kept in backups. It is not derived again later, so renaming the tenant changes only
+record (a `bb-<32 hex>` vault sends an empty body, as before), and kept in backups. It is not derived again later, so renaming the tenant changes only
 the addresses of vaults created afterwards. A restore keeps each vault's address form and moves
 it to the restoring server's zone. Every check accepts only these two forms for the vault: when
 a vault is created, the server accepts only the fallback address or the prefixed address with its

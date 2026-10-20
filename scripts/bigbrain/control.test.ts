@@ -147,9 +147,16 @@ test('probe reports content-free availability and names the first unmet prerequi
       reasonCode: null,
       installed: true,
       physicalHostBinding: BINDING,
-      tenantLabel: null,
     },
   })
+  // No tenant label installed: the key is omitted, so Platform builds that predate it still parse.
+  expect('tenantLabel' in (reply as { capabilities: object }).capabilities).toBe(false)
+  const labelled = await host(ok)
+  await writePrivateJson(ok.etc, 'host.json', { ...labelled, tenantLabel: 'acme' }, installedHostSchema, { uid })
+  expect(await dispatchHostRequest(envelope({ action: 'probe' }), ok.deps)).toMatchObject({
+    capabilities: { available: true, tenantLabel: 'acme' },
+  })
+  await writePrivateJson(ok.etc, 'host.json', labelled, installedHostSchema, { uid })
   expect(
     (await dispatchHostRequest(envelope({ action: 'probe' }), (await fixture({ backupTimer: false })).deps)) as object
   ).toMatchObject({ capabilities: { available: false, reasonCode: 'backup_unavailable' } })

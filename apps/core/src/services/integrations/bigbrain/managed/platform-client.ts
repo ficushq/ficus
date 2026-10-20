@@ -11,8 +11,7 @@ import {
   MANAGED_BIGBRAIN_ERROR_CODES,
   managedBigbrainCapabilitiesSchema,
   managedBigbrainDnsRecordSchema,
-  managedBigbrainDnsRequestSchema,
-  managedBigbrainOriginHasVault,
+  managedBigbrainDnsRequestFor,
   type ManagedBigbrainCapabilities,
   type ManagedBigbrainDnsRecord,
   type ManagedBigbrainErrorCode,
@@ -160,12 +159,17 @@ export const managedBigbrainPlatform = {
     return value
   },
   /** Idempotent: Platform creates or returns the exact owned record for this vault's recorded
-   * origin (sent as chosen at create; Platform never re-derives it). A record for another origin
-   * is never accepted. */
+   * origin (a tenant-prefixed one is sent as chosen at create; Platform never derives it). A
+   * record for another origin is never accepted. */
   async ensureDns(vaultId: string, expectedOrigin: string, options?: CallOptions): Promise<ManagedBigbrainDnsRecord> {
-    const body = managedBigbrainDnsRequestSchema.safeParse({ origin: expectedOrigin })
-    if (!body.success || !managedBigbrainOriginHasVault(expectedOrigin, vaultId)) refuse('invalid_request')
-    const record = await call('PUT', dnsPath(vaultId), managedBigbrainDnsRecordSchema, body.data, options)
+    let body: { origin?: string }
+    try {
+      // `{}` for bb-<32 hex> (what older Platform builds accept); the origin only when prefixed.
+      body = managedBigbrainDnsRequestFor(vaultId, expectedOrigin)
+    } catch {
+      refuse('invalid_request')
+    }
+    const record = await call('PUT', dnsPath(vaultId), managedBigbrainDnsRecordSchema, body, options)
     if (record.vaultId !== vaultId || record.origin !== expectedOrigin) refuse('identity_mismatch', undefined, false)
     return record
   },
