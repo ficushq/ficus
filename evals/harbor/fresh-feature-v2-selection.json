@@ -1,0 +1,45 @@
+{
+  "experiment": "fresh-feature-v2",
+  "selection_rule": "SHA256 order of ficus-fresh-v1:<task>; CPU-oriented lv1 repos astropy,seaborn,sympy,sphinx,pandas,xarray in already downloaded pinned snapshot; no ranking by model outcomes",
+  "dataset_commit": "37db108843a49bb31a592e37a75e2c40dc3f9749",
+  "ordered_candidates": [
+    "pandas-dev__pandas.82fa2715.test_concat.ebe5de39.lv1",
+    "sphinx-doc__sphinx.e347e59c.test_domain_c.4068b9e8.lv1",
+    "pydata__xarray.97f3a746.test_backends_chunks.fa55f68a.lv1",
+    "mwaskom__seaborn.7001ebe7.test_regression.ce8c62e2.lv1",
+    "pandas-dev__pandas.82fa2715.test_list_accessor.7ab0b2ea.lv1",
+    "mwaskom__seaborn.7001ebe7.test_algorithms.1f0181c2.lv1",
+    "sympy__sympy.c1097516.test_nullspace.f14fc970.lv1",
+    "mwaskom__seaborn.7001ebe7.test_statistics.0f2ae277.lv1",
+    "astropy__astropy.b0db0daa.test_table.48eef659.lv1",
+    "astropy__astropy.b0db0daa.test_quantity_erfa_ufuncs.3fc54395.lv1"
+  ],
+  "accounting_baseline_usd": 14.995062,
+  "cap_usd": 50,
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "attempts_per_arm": 1,
+  "arm_order": [
+    "pi-planned",
+    "ficus-planned",
+    "pi-engineer",
+    "ficus-engineer"
+  ],
+  "stop_policy": "No steering or prompt tuning; preserve all failed and interrupted attempts. Stop on accounting cap or invalid grading. Incomplete four-arm results are not a matched comparison.",
+  "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+  "prompt_merge_commit": "b0db7060effaad1a64c823514327be68b73a7ce7",
+  "runtime_policy": "Reuse verified scope-overlay runtime to avoid unrelated production drift; experimental local-delivery support remains unchanged.",
+  "prompt_files_sha256": {
+    "config/agent-types/manager.yaml": "0ace835a71ebc2b876f24e0e334147ff3832a4f51fe0d772e2da9e3d22ee5553",
+    "config/agent-types/reviewer.yaml": "75ce385286b9935cfa9b87f0f32b4859b0ba8853df40caa29ed13186aa68dab0",
+    "config/agent-types/shared/squad-rules.md": "448e657bdad3c5ac692bc74b4fb1e4b7a5271aaa4228534f9cdff9c6880d87c2"
+  },
+  "merged_guidance_verified": true,
+  "budget_authorization": "User raised cumulative cap from $20 to $50 before fresh-task inference.",
+  "selected_tasks": [
+    "sphinx-doc__sphinx.e347e59c.test_domain_c.4068b9e8.lv1",
+    "pydata__xarray.97f3a746.test_backends_chunks.fa55f68a.lv1",
+    "mwaskom__seaborn.7001ebe7.test_regression.ce8c62e2.lv1"
+  ],
+  "preflight_policy": "Audit each repository layout; require unchanged-grader negative/positive and collision controls before inference. Preserve infrastructure failures, do not replace failed tasks. If a task cannot be validly graded, report it as blocked and continue preflight on remaining selected tasks. One image at a time; stop image operations below 10 GiB free."
+}
