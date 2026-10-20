@@ -3,6 +3,7 @@ import { BigbrainError } from './errors'
 import { bigbrainDeploymentAvailability } from './managed/availability'
 import { parseBigbrainCredential, type BigbrainConfiguration } from './managed/config'
 import { BigbrainProvider } from './provider'
+import { createSharedBigbrainTools } from './shared-tools'
 import { createBigbrainTools, type BigbrainTool, type BigbrainToolContext } from './tools'
 import type { IntegrationPluginV1 } from '../plugin'
 
@@ -40,7 +41,16 @@ const plugin: IntegrationPluginV1<
   authorization: { kind: 'manual' },
   runtime: {
     provider,
-    agentTools: { createTools: createBigbrainTools },
+    agentTools: {
+      // Ficus Cloud: only the read-only managed shared tools (never personal drop). Elsewhere the
+      // unchanged personal local-binding tools.
+      createTools: (context) =>
+        isPlatformManaged()
+          ? context.assignments
+            ? createSharedBigbrainTools({ ...context, assignments: context.assignments })
+            : []
+          : createBigbrainTools(context),
+    },
   },
   sandbox: {
     packages: [],
