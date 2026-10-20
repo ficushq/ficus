@@ -21,13 +21,15 @@ import { reconcileMaintenance, releaseManagedBackup, stageManagedBackup } from '
 import { deleteVaultResources, type DeleteOptions } from './delete'
 import { readStagedArchive } from './restore'
 import { publishIngress } from './ingress'
+import { executeRestore, type RestoreDeps } from './restore-exec'
 
 export const GATEWAY_UNIT = 'ficus-bigbrain-gateway.service'
 const ingress = (deps: ControlDeps) =>
   (deps.ingress ?? (() => publishIngress({ root: deps.root, etc: deps.etc, uid: deps.uid, run: deps.run })))()
 const RETRYABLE = new Set<ManagedBigbrainErrorCode>(['busy', 'maintenance', 'upstream_unavailable', 'operation_failed'])
 
-export interface ControlDeps extends Omit<DeleteOptions, 'root' | 'uid'> {
+export interface ControlDeps
+  extends Omit<DeleteOptions, 'root' | 'uid' | 'run' | 'mountinfo'>, Omit<RestoreDeps, 'ingress'> {
   root?: string
   etc?: string
   uid?: number
@@ -311,8 +313,20 @@ export async function dispatchHostRequest(input: unknown, deps: ControlDeps = {}
             code: null,
           }
         }
+        case 'restore': {
+          // Authoritative current grants; excluded IDs are never mounted. Vaults arrive read-revoked.
+          await executeRestore(request, { ...deps, ingress: () => ingress(deps) })
+          return {
+            ...success,
+            action: 'restore',
+            hostEpoch: installed.hostEpoch,
+            effectId: request.effectId,
+            completed: true,
+            code: null,
+          }
+        }
         default:
-          // create/rename/owner-invite/read-revoke/read-reconnect/restore: not yet dispatched.
+          // create/rename/owner-invite/read-revoke/read-reconnect: not yet dispatched.
           throw new Error('unsupported_host')
       }
     }
