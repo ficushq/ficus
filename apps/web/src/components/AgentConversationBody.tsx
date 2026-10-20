@@ -103,7 +103,7 @@ export function AgentConversation({
             status={
               agent.status === 'compacting' ? 'compacting' : agent.status === 'resetting' ? 'resetting' : displayStatus
             }
-            context={usage?.context ? { percent: usage.context.percent, tokens: usage.stats.tokens.total } : undefined}
+            context={usage?.context ?? undefined}
             canManageSession={idle && canRunAgent && !compactMutation.isPending && !resetMutation.isPending}
             onCompact={() => compactMutation.mutate()}
             onReset={() => resetMutation.mutate()}

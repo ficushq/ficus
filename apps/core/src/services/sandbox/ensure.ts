@@ -43,6 +43,7 @@ import { ensureSandboxToolchain } from './toolchain/provision'
 import { assertMaintenanceAdmissionOpen } from '../maintenance/admission'
 import type { AdmissionScope, AdmissionWritePhase } from '../maintenance/admission-reservation'
 import { observeSandboxSetupProgress, type SandboxSetupProgressListener } from './setup-progress'
+import { resolvePublicAppUrl } from '../../lib/public-app-url'
 
 const log = createLogger('sandbox-ensure')
 
@@ -922,7 +923,8 @@ function buildDockerEnv(): Record<string, string> {
   if (sandboxCallbackSecret) {
     env.SANDBOX_CALLBACK_SECRET = sandboxCallbackSecret
   }
-  const appUrl = process.env.APP_URL
+  // Built per ensure, so a changed public address reaches the next session.
+  const appUrl = resolvePublicAppUrl()
   if (appUrl) {
     env.APP_URL = appUrl
   }

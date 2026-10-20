@@ -112,10 +112,25 @@ describe('maybeMountWebUi', () => {
   })
 
   describe('origin placeholder', () => {
-    const origOrigin = process.env.FICUS_WEB_ORIGIN
+    // Any configured address (env or launcher default) wins over the request, so start hermetic.
+    const ORIGIN_KEYS = ['FICUS_WEB_ORIGIN', 'WEBAUTHN_ORIGIN', 'APP_URL', 'PUBLIC_URL', 'FICUS_LOCAL_APP_URL'] as const
+    const saved = Object.fromEntries(ORIGIN_KEYS.map((k) => [k, process.env[k]]))
+    beforeEach(() => {
+      for (const k of ORIGIN_KEYS) delete process.env[k]
+    })
     afterEach(() => {
-      if (origOrigin === undefined) delete process.env.FICUS_WEB_ORIGIN
-      else process.env.FICUS_WEB_ORIGIN = origOrigin
+      for (const k of ORIGIN_KEYS) {
+        if (saved[k] === undefined) delete process.env[k]
+        else process.env[k] = saved[k]
+      }
+    })
+
+    it('uses the launcher local address when no other address is configured', async () => {
+      process.env.FICUS_SERVE_WEB = '1'
+      process.env.FICUS_LOCAL_APP_URL = 'http://localhost:61896'
+      const { app } = setupApp()
+      const res = await app.request('http://127.0.0.1:3000/')
+      expect(await res.text()).toContain('content="http://localhost:61896/social-preview.png"')
     })
 
     it('renders index.html with the request origin at / and /index.html', async () => {

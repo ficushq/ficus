@@ -7,6 +7,7 @@ import { PermissionsProvider, type PermissionsResult } from '../../hooks/usePerm
 import { serverConnectionQueryKeys } from '../../queryKeys'
 import type { ServerConnection } from '../../api/serverConnection'
 import { webkitTap } from '../../test/webkitTap'
+import { MemoryRouter } from 'react-router-dom'
 import { RelayConnectionSettings } from './RelayConnectionSettings'
 
 let cleanup: (() => Promise<void>) | undefined
@@ -69,7 +70,9 @@ async function render(data: ServerConnection, write = true, human = true) {
     root.render(
       <QueryClientProvider client={queryClient}>
         <PermissionsProvider usePermissions={() => permissions}>
-          <RelayConnectionSettings />
+          <MemoryRouter>
+            <RelayConnectionSettings />
+          </MemoryRouter>
         </PermissionsProvider>
       </QueryClientProvider>
     )
@@ -280,4 +283,28 @@ test('connected before records existed: no since, account or connected-by noise'
     await cleanup?.()
     cleanup = undefined
   }
+})
+
+test('Mobile & Pro shows the public address read-only and links to Server address', async () => {
+  const { container } = await render(selfHosted)
+  const row = container.querySelector('[data-public-address-summary]')
+  expect(row?.textContent).toContain('Public address')
+  expect(row?.textContent).toContain('https://ficus.example.com')
+  expect(getByRole(container, 'link', { name: 'Change in Server address →' }).getAttribute('href')).toBe(
+    '/settings?section=server-address&setting=server-address'
+  )
+  expect(queryByRole(container, 'button', { name: /public address/i })).toBeNull()
+  expect(queryByRole(container, 'textbox', { name: 'New public address' })).toBeNull()
+})
+
+test('the HTTPS setup error points to Server address', async () => {
+  const { container } = await render({
+    ...selfHosted,
+    origin: 'http://localhost:61896',
+    setupError: 'Set this server’s public address to an HTTPS URL before connecting.',
+  })
+  const status = [...container.querySelectorAll('[role="status"]')].find((el) => el.textContent?.includes('HTTPS URL'))
+  expect(status?.querySelector('a')?.getAttribute('href')).toBe(
+    '/settings?section=server-address&setting=server-address'
+  )
 })

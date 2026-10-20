@@ -1,6 +1,7 @@
 import { getAgentPrivateStatus } from './api/agentPrivate'
-import { productFeedbackQueryKeys, serverConnectionQueryKeys } from './queryKeys'
+import { productFeedbackQueryKeys, publicUrlQueryKeys, serverConnectionQueryKeys } from './queryKeys'
 import { getRelayAvailability, getServerConnection } from './api/serverConnection'
+import { getPublicAppUrl, getPublicAppUrlStatus } from './api/publicUrl'
 import { getProductFeedbackStatus } from './api/productFeedback'
 import { agentSlotWaitQueryKeys, agentSlotHoldQueryKeys } from './queryKeys'
 import { desktopQueryKeys } from './queryKeys'
@@ -1285,6 +1286,12 @@ export const githubIdentityQueries = {
       queryFn: () => getGitHubIdentity(),
       retry: noRetryOnClientError,
     }),
+}
+
+export const publicUrlQueries = {
+  runtime: () => queryOptions({ queryKey: publicUrlQueryKeys.runtime(), queryFn: getPublicAppUrl, staleTime: 60_000 }),
+  status: () =>
+    queryOptions({ queryKey: publicUrlQueryKeys.status(), queryFn: getPublicAppUrlStatus, staleTime: 15_000 }),
 }
 
 export const serverConnectionQueries = {

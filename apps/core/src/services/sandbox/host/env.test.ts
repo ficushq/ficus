@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { withStoredPublicAppUrl } from '../../../test-utils/public-app-url'
 import {
   chmodSync,
   existsSync,
@@ -442,5 +443,13 @@ describe('host env', () => {
     expect(pre).toContain(`export FICUS_API_URL="$${names.url}"`)
     expect(pre).toContain(`FICUS_TOKEN="$${names.tok}"`)
     expect(pre).toContain(`export PATH="$${names.bin}:$PATH"`)
+  })
+})
+
+describe('host env public address', () => {
+  test('buildHostCommandEnv passes the stored public address as APP_URL on the next command', async () => {
+    await withStoredPublicAppUrl('https://settings.example.com', () => {
+      expect(buildHostCommandEnv({ base: { PATH: '/bin' } }).APP_URL).toBe('https://settings.example.com')
+    })
   })
 })

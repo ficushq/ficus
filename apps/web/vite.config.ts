@@ -463,7 +463,6 @@ export default defineConfig(({ mode, command }) => {
     define: {
       __FICUS_SW_CACHE_VERSION__: JSON.stringify(serviceWorkerCacheVersion),
       __FICUS_BUILTIN_CSS_FINGERPRINT__: JSON.stringify(builtinCssFingerprint),
-      __FICUS_APP_URL__: JSON.stringify(env.APP_URL || ''),
       __FICUS_APP_BASE_PATH__: JSON.stringify(env.APP_BASE_PATH || ''),
       __FICUS_DEV_BACKEND_BAR__: JSON.stringify(isViteDev),
     },

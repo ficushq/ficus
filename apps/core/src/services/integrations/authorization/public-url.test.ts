@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { withStoredPublicAppUrl } from '../../../test-utils/public-app-url'
 import { resolveOAuthCallbackUrl } from './public-url'
 
 describe('resolveOAuthCallbackUrl', () => {
@@ -47,4 +48,12 @@ describe('resolveOAuthCallbackUrl', () => {
       expect(() => resolveOAuthCallbackUrl('https://ficus.example', basePath)).toThrow('Invalid application base path')
     }
   )
+})
+
+describe('resolveOAuthCallbackUrl from the public address setting', () => {
+  test('derives the callback from the stored public address when APP_URL is unset', async () => {
+    await withStoredPublicAppUrl('https://settings.example.com', () => {
+      expect(resolveOAuthCallbackUrl()).toBe('https://settings.example.com/settings/integrations/oauth/callback')
+    })
+  })
 })

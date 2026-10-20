@@ -46,6 +46,32 @@ export function startingPostgresLine(container: string): string {
 }
 
 /**
+ * How setup tells Core its address. An explicit `--app-url` is an operator
+ * choice and locks the public address (APP_URL + FICUS_WEB_ORIGIN). Otherwise
+ * setup only declares the local address (FICUS_LOCAL_APP_URL), a default that
+ * leaves the public address editable in Settings → Mobile & Pro. An existing
+ * .env that already carries APP_URL (installs from before the setting existed)
+ * keeps it, still tracking `--port`, so a re-run never strands a stale lock;
+ * delete those lines to make the address editable.
+ */
+const APP_URL_PLACEHOLDER = 'https://your-domain.com'
+
+function appUrlUpdates(opts: SetupOptions, urlExplicit: boolean, existingEnv = ''): EnvUpdate[] {
+  const local: EnvUpdate = { key: 'FICUS_LOCAL_APP_URL', value: opts.apiUrl, explicit: opts.explicit.has('port') }
+  const existingAppUrl = parseEnvFile(existingEnv).APP_URL?.trim() ?? ''
+  const placeholder = existingAppUrl === APP_URL_PLACEHOLDER
+  if (!opts.explicit.has('appUrl') && (!existingAppUrl || placeholder)) {
+    // Blank .env.example's placeholder: left in place, Core would read it as a locked address.
+    return placeholder ? [local, { key: 'APP_URL', value: '', explicit: true }] : [local]
+  }
+  return [
+    local,
+    { key: 'APP_URL', value: opts.appUrl, explicit: urlExplicit },
+    { key: 'FICUS_WEB_ORIGIN', value: opts.appUrl, explicit: urlExplicit },
+  ]
+}
+
+/**
  * The managed .env keys for this install.
  *
  * `existingEnv` is the current .env text — both callers already hold it, so it
@@ -93,8 +119,7 @@ export function computeEnvUpdates(
     { key: 'WORKER_PORT', value: String(workerPort), explicit: ex('port') },
     { key: 'FICUS_WORKER_EVENT_PORT', value: String(eventPort), explicit: ex('port') },
     { key: 'FICUS_API_URL', value: opts.apiUrl, explicit: ex('port') },
-    { key: 'APP_URL', value: opts.appUrl, explicit: urlExplicit },
-    { key: 'FICUS_WEB_ORIGIN', value: opts.appUrl, explicit: urlExplicit },
+    ...appUrlUpdates(opts, urlExplicit, ctx.existingEnv),
     { key: 'DATABASE_URL', value: opts.databaseUrl, explicit: ex('databaseUrl') || ex('dbName') || ex('dbPort') },
     { key: 'FICUS_UPDATE_SUPERVISOR', value: opts.supervisor, explicit: true },
     { key: 'FICUS_SYSTEM_LOG_PROVIDER', value: opts.supervisor === 'pm2' ? 'pm2' : 'file', explicit: true },

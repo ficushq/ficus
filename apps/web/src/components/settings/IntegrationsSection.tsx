@@ -279,6 +279,17 @@ export function IntegrationsSection() {
           </Link>
         </p>
       )}
+      {permissions.identity?.type === 'user' && permissions.can('settings:read') && (
+        <p className="text-sm text-muted">
+          OAuth callback and webhook URLs use this server’s public address.{' '}
+          <Link
+            to="/settings?section=server-address&setting=server-address"
+            className="text-accent-light hover:underline"
+          >
+            Server address →
+          </Link>
+        </p>
+      )}
       <div className="relative">
         <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted">
           <SearchIcon className="h-4 w-4" />

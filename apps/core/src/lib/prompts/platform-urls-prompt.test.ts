@@ -1,4 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
+import { withStoredPublicAppUrl } from '../../test-utils/public-app-url'
 import { buildPlatformUrlsPrompt } from './platform-urls-prompt'
 
 describe('buildPlatformUrlsPrompt', () => {
@@ -83,5 +84,11 @@ describe('buildPlatformUrlsPrompt', () => {
     expect(prompt).toContain('- **Web UI:** https://home.example.com')
     expect(prompt).toContain('- **API:** https://home.example.com/ficus/api')
     expect(prompt).toContain('https://home.example.com/ficus/api/webhooks/github')
+  })
+})
+
+test('uses the admin public address setting when APP_URL is unset', async () => {
+  await withStoredPublicAppUrl('https://settings.example.com', () => {
+    expect(buildPlatformUrlsPrompt()).toContain('- **Web UI:** https://settings.example.com')
   })
 })

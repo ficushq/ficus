@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
+import { eq } from 'drizzle-orm'
+import { db, settingAuditLog, settings } from '../../db'
+import { PUBLIC_APP_URL_SETTING_KEY } from '../../lib/public-app-url'
+import { getSettingsStore } from '../settings/store'
 import { RelayServerConnection } from './server-connection'
 import { relayConnectionSecretKey } from './relay'
 
@@ -349,5 +353,59 @@ describe('self-hosted server connection', () => {
     expect(await f.restart().start('admin', 'Example')).toMatchObject({ id })
     expect(f.calls).toHaveLength(1)
     await expect(f.service.start('other', 'Example')).rejects.toThrow('administrator')
+  })
+})
+
+describe('public address changes', () => {
+  test('a public address change cancels a pending approval immediately', async () => {
+    const f = fixture()
+    await f.service.start('admin', 'Example')
+    expect(f.storage.get('__push-relay-pending')).toBeTruthy()
+    await f.service.handlePublicAddressChange()
+    expect(f.storage.get('__push-relay-pending')).toBe('')
+    expect(f.storage.has(`__push-relay-verifier:${id}`)).toBe(false)
+    f.setReply('connected')
+    await expect(f.service.poll('admin', id)).rejects.toThrow('expired')
+    expect(f.saved).toHaveLength(0)
+    // Nothing pending: a no-op.
+    await f.service.handlePublicAddressChange()
+  })
+
+  test('the stored public address keys the connection and a change selects a different credential', async () => {
+    const store = getSettingsStore()
+    const cleanup = async () => {
+      await db.delete(settings).where(eq(settings.key, PUBLIC_APP_URL_SETTING_KEY))
+      await db.delete(settingAuditLog).where(eq(settingAuditLog.key, PUBLIC_APP_URL_SETTING_KEY))
+      await store.refreshKey(PUBLIC_APP_URL_SETTING_KEY)
+    }
+    await cleanup()
+    try {
+      const f = fixture()
+      delete f.env.PUBLIC_URL
+      const opts = (expectedVersion: string) => ({ expectedVersion, actor: 'user:admin', source: 'admin-api' })
+      const first = await store.writeManaged(
+        PUBLIC_APP_URL_SETTING_KEY,
+        'https://selfhost.example.com:8443',
+        opts('unset')
+      )
+      const before = relayConnectionSecretKey(f.env)
+      await f.service.start('admin', 'Example')
+      await store.writeManaged(PUBLIC_APP_URL_SETTING_KEY, 'https://moved.example.com', opts(first.version))
+      expect(relayConnectionSecretKey(f.env)).not.toBe(before)
+      f.setReply('connected')
+      await expect(f.service.poll('admin', id)).rejects.toThrow('address changed')
+      expect(f.saved).toHaveLength(0)
+      const status = await f.service.status()
+      expect(status.origin).toBe('https://moved.example.com')
+      expect('setupError' in status ? status.setupError : undefined).toBeUndefined()
+    } finally {
+      await cleanup()
+    }
+  })
+
+  test('a non-HTTPS public address explains how to fix it', async () => {
+    const f = fixture()
+    f.env.PUBLIC_URL = 'http://localhost:61896'
+    await expect(f.service.start('admin', 'Example')).rejects.toThrow('public address to an HTTPS URL')
   })
 })

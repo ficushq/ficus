@@ -142,6 +142,13 @@ export const githubFeedbackQueryKeys = {
 /** The signed-in person's own verified GitHub account; refreshed by `githubIdentity.updated`. */
 export const githubIdentityQueryKeys = { all: ['github-identity'] as const }
 
+/** The server's canonical public address (runtime config + admin status). */
+export const publicUrlQueryKeys = {
+  all: ['public-url'] as const,
+  runtime: () => ['public-url', 'runtime'] as const,
+  status: () => ['public-url', 'status'] as const,
+}
+
 export const serverConnectionQueryKeys = {
   status: () => ['push-server-connection'] as const,
   availability: () => ['push-relay-availability'] as const,

@@ -54,9 +54,9 @@ type EventBuilder = (data: EventData) => Promise<NotificationEvent | null>
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
-// Only set URL if APP_URL is configured - don't default to localhost.
+// Only set URL when a public application address is known - don't guess localhost.
 function buildUrl(path: string): string | undefined {
-  const baseUrl = process.env.APP_URL
+  const baseUrl = resolvePublicAppUrl()
   return baseUrl ? `${baseUrl}${path}` : undefined
 }
 

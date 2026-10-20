@@ -86,6 +86,7 @@ import { themePresetsRouter } from './routes/theme-presets'
 import { notificationConfigRouter } from './routes/notification-config'
 import secretsRouter from './routes/secrets'
 import settingsRouter from './routes/settings'
+import { publicUrlRouter } from './routes/public-url'
 import systemRouter from './routes/system'
 import updatesRouter from './routes/updates'
 import providerAuthRouter from './routes/provider-auth'
@@ -352,6 +353,7 @@ app.route('/api/farm', farmRouter)
 app.route('/api/theme-presets', themePresetsRouter)
 app.route('/api/secrets', secretsRouter)
 app.route('/api/settings', settingsRouter)
+app.route('/api/public-url', publicUrlRouter)
 app.route('/api/system', systemRouter)
 app.route('/api/updates', updatesRouter)
 app.route('/api/machines', machinesRouter)
@@ -862,6 +864,11 @@ if (import.meta.main) {
       // invalidation is the fast path; periodic refresh bounds missed events.
       const settingsStore = getSettingsStore()
       await settingsStore.initialize()
+      // One-time upgrade: keep a configured APP_URL/PUBLIC_URL as the stored public address.
+      const { seedPublicAppUrlFromEnvironment } = await import('./services/public-url/migration')
+      await seedPublicAppUrlFromEnvironment().catch((error) =>
+        log.error('Failed to seed the public address setting from the environment:', error)
+      )
       const { initializeChannelIntegrationStates } = await import('./services/integrations/channels/settings')
       await initializeChannelIntegrationStates()
       const { initializeDeploymentIntegrationStates } = await import('./services/integrations/deployment/settings')
@@ -901,7 +908,10 @@ if (import.meta.main) {
         task: () => channelConnections.refresh(),
       }).start()
 
+      const { PUBLIC_APP_URL_SETTING_KEY } = await import('./lib/public-app-url')
+      const { relayServerConnection } = await import('./services/push/server-connection')
       settingsStore.onChange(async (key) => {
+        if (key === PUBLIC_APP_URL_SETTING_KEY) await relayServerConnection.handlePublicAddressChange()
         if (isChannelEnabledSettingKey(key)) await channelConnections.refresh()
         if (key === PROVIDER_HEALTH_STATE_KEY) await providerHealth.hydrateFromPersistence()
       })

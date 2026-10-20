@@ -143,6 +143,7 @@ test('every indexed destination has a stable source anchor', () => {
     join(import.meta.dir, '..', 'SettingsPage.tsx'),
     join(import.meta.dir, 'ThemeControl.tsx'),
     join(import.meta.dir, 'RelayConnectionSettings.tsx'),
+    join(import.meta.dir, 'PublicAddressSettings.tsx'),
     ...readdirSync(import.meta.dir)
       .filter((name) => name.endsWith('Section.tsx'))
       .map((name) => join(import.meta.dir, name)),

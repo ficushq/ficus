@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test'
+import { withStoredPublicAppUrl } from '../../test-utils/public-app-url'
 import { buildNotificationEvent, getAppOrigin } from './event-builders'
 import { pushPreview } from '../push/preview'
 import { WorkStream } from '../../entities/WorkStream'
@@ -595,5 +596,13 @@ describe('getAppOrigin', () => {
     expect(getAppOrigin()).toBeUndefined()
     expect(getAppOrigin('')).toBeUndefined()
     expect(getAppOrigin('not a url')).toBeUndefined()
+  })
+})
+
+describe('getAppOrigin from the public address setting', () => {
+  test('follows the stored public address when APP_URL is unset', async () => {
+    await withStoredPublicAppUrl('https://Settings.Example.com/app/', () => {
+      expect(getAppOrigin()).toBe('https://settings.example.com/app')
+    })
   })
 })

@@ -108,6 +108,7 @@ import {
   type AssetDest,
   type AssetFile,
 } from '../asset-manifest'
+import { resolvePublicAppUrl } from '../../../lib/public-app-url'
 
 const log = createLogger('vm-file-sync')
 
@@ -1183,7 +1184,7 @@ export async function resolveBoxApiTransport(
   machine: Machine,
   deps: ResolveBoxApiUrlDeps = {}
 ): Promise<BoxApiTransportResult> {
-  const getAppUrl = deps.getAppUrl ?? (() => process.env.APP_URL)
+  const getAppUrl = deps.getAppUrl ?? (() => resolvePublicAppUrl())
   const getCorePort = deps.getCorePort ?? defaultCorePort
   const tunnels = deps.tunnels ?? machineTunnels
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))

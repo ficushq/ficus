@@ -10,6 +10,12 @@ Desktop provides `FICUS_ROOT` for immutable resources and `HOME_DIR` for mutable
 
 `FICUS_MACHINE_CONTROL_DIR` optionally supplies an absolute directory for transient machine control sockets. Desktop creates a private, short, per-launch directory because macOS Unix socket limits can be exceeded by a long selected home. API and worker share this directory; Desktop removes it only after both processes stop.
 
+### Application address contract
+
+Desktop declares where this Core is reachable from the local machine with `FICUS_LOCAL_APP_URL=http://localhost:<apiPort>`. It is a **default, not an override**: Core uses it as the application address only when neither `APP_URL`/`PUBLIC_URL` nor the administrator-set public address (Settings → Administration → Server address) exists; it never locks that setting; it is always an allowed browser origin for CORS, CSRF and WebSocket checks; session cookies for requests addressed to its host are `SameSite=Lax` and `Secure` only over HTTPS (so localhost login keeps working after an HTTPS public address is set); and Settings shows it as the **Local address**.
+
+Launchers that want the public address to be editable must **not** set `APP_URL`, `PUBLIC_URL`, `FICUS_WEB_ORIGIN` or `WEBAUTHN_ORIGIN`. Keep `FICUS_API_URL`, `HOST`, `PORT` and the worker/event variables unchanged. Pass `FICUS_LOCAL_APP_URL` only with a bundled Core that supports it; older Cores ignore it. While a launcher still sets `APP_URL`, Settings shows the address as set by the server environment and, with `FICUS_DESKTOP_MANAGED=1`, tells the user to update Ficus Desktop.
+
 Authentication remains Core's normal first-admin bootstrap and passkey flow. Localhost is not an authorization bypass. Desktop may pass its generated first-admin credential through the existing immediately stripped `#setup=` fragment; the setup IPC API never returns that secret. Existing installations retain their configured origins, databases, supervisors, authentication and home paths.
 
 Desktop-managed host agents run as the signed-in OS user and have filesystem access. The UI must explain that boundary. Browser automation still requires a supported locally installed Chromium browser; embedding Electron does not install a Playwright browser.
