@@ -58,7 +58,10 @@ function helper(fields: Record<string, unknown>) {
   }
   const out = sh(['/usr/local/libexec/ficus-bigbrainctl'], JSON.stringify(request))
   try {
-    return JSON.parse(out.stdout.trim().split('\n').at(-1) ?? 'null') as Record<string, any>
+    const reply = JSON.parse(out.stdout.trim().split('\n').at(-1) ?? 'null') as Record<string, any>
+    // Control's own fixed stage tokens (no secrets) explain a refusal.
+    if (reply?.ok === false) reply.stderr = out.stderr.trim().split('\n').slice(-3).join(' | ')
+    return reply
   } catch {
     return { ok: false, code: 'unparseable', raw: out.stdout.slice(0, 200), stderr: out.stderr.slice(0, 400) }
   }
@@ -165,20 +168,33 @@ try {
   check('toolkit install created the host record', host().hostEpoch === 1)
   const launcher = sh(['/usr/bin/stat', '-c', '%U:%G:%a', '/usr/local/libexec/ficus-bigbrainctl']).stdout.trim()
   check('launcher is root-only (root:root 750)', launcher === 'root:root:750', launcher)
-  check('gateway service active', unitProperty('ficus-bigbrain-gateway.service', 'ActiveState') === 'active')
+  const reason = (target: string) => sh(['/bin/cat', `/run/ficus-bigbrain/preflight-${target}.reason`]).stdout.trim()
+  check(
+    'gateway service active',
+    unitProperty('ficus-bigbrain-gateway.service', 'ActiveState') === 'active',
+    reason('gateway')
+  )
 
   const probe = helper({ action: 'probe' })
   check(
     'probe reports available',
     probe.ok === true && probe.capabilities?.available === true,
-    JSON.stringify(probe.capabilities?.reasonCode ?? probe.code)
+    JSON.stringify(probe.capabilities?.reasonCode ?? [probe.code, probe.stderr])
   )
 
   // ---------------------------------------------------------------- two vaults
   const a = create(A, 'Alpha')
-  check('create A ready', a.ok === true && a.receipt?.state === 'ready', JSON.stringify(a.code ?? a.receipt?.state))
+  check(
+    'create A ready',
+    a.ok === true && a.receipt?.state === 'ready',
+    JSON.stringify(a.ok ? a.receipt?.state : [a.code, a.stderr, reason(A)])
+  )
   const b = create(B, 'Beta')
-  check('create B ready', b.ok === true && b.receipt?.state === 'ready', JSON.stringify(b.code ?? b.receipt?.state))
+  check(
+    'create B ready',
+    b.ok === true && b.receipt?.state === 'ready',
+    JSON.stringify(b.ok ? b.receipt?.state : [b.code, b.stderr, reason(B)])
+  )
   const rA = receipt(A)
   const rB = receipt(B)
   check('vaults have distinct non-root UIDs', rA.os.uid !== rB.os.uid && rA.os.uid > 0 && rB.os.uid > 0)

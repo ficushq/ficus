@@ -323,8 +323,16 @@ export async function preflightMain(args: string[]): Promise<void> {
   } catch (error) {
     const reason = error instanceof Error && /^[a-z_]{1,40}$/.test(error.message) ? error.message : 'unexpected'
     console.error(`Managed BigBrain isolation preflight refused at ${stage.name} (${reason})`)
+    // Units discard stdio; leave the fixed stage/reason tokens where only root can read them.
+    await recordPreflightRefusal(args[0] ?? 'unknown', `${stage.name} (${reason})`).catch(() => {})
     process.exitCode = 1
   }
+}
+async function recordPreflightRefusal(target: string, text: string): Promise<void> {
+  if (!/^(gateway|control|[0-9a-f-]{36})$/.test(target)) return
+  const { mkdir, writeFile } = await import('node:fs/promises')
+  await mkdir('/run/ficus-bigbrain', { mode: 0o700, recursive: true })
+  await writeFile(`/run/ficus-bigbrain/preflight-${target}.reason`, `${text}\n`, { mode: 0o600 })
 }
 
 if (import.meta.main) await preflightMain(process.argv.slice(2))
