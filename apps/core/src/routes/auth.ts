@@ -55,6 +55,8 @@ import {
 } from '../services/auth/device-authorization'
 import {
   deviceAuthorizationStartLimiter,
+  passkeyCodeIssueLimiter,
+  passkeyCodeRedeemLimiter,
   webHandoffExchangeLimiter,
   webHandoffMintLimiter,
 } from '../services/auth/device-auth-rate-limit'
@@ -65,7 +67,21 @@ import { MAX_CREDENTIAL_NAME_LENGTH, resolveCredentialName } from '../services/a
 import { createLogger } from '../lib/infra/logger'
 import { getClientAddress } from '../lib/client-address'
 import { demoReviewerAccess } from '../services/demo/access'
-import { primaryWebAppUrl, primaryWebOrigin } from '../services/auth/web-origins'
+import {
+  corsAllowOrigins,
+  normalizeOrigin,
+  primaryWebAppUrl,
+  primaryWebOrigin,
+  rpOriginForRequest,
+  rpOriginForStepUp,
+  webAppUrlForOrigin,
+} from '../services/auth/web-origins'
+import {
+  consumePasskeyEnrollmentCode,
+  issuePasskeyEnrollmentCode,
+  peekPasskeyEnrollmentCode,
+  recordPasskeyEnrollmentFailure,
+} from '../services/auth/passkey-enrollment'
 
 const log = createLogger('auth-routes')
 
@@ -410,6 +426,7 @@ authRouter.post('/register/verify', async (c) => {
   const token = await user.createSession({
     userAgent: c.req.header('User-Agent'),
     ipAddress: c.req.header('X-Forwarded-For') ?? c.req.header('X-Real-IP'),
+    signInOrigin: rpOriginForRequest(c.req.header('Origin')),
   })
   setSessionCookie(c, token)
 
@@ -538,6 +555,7 @@ authRouter.post('/register/token/verify', async (c) => {
   const sessionToken = await user.createSession({
     userAgent: c.req.header('User-Agent'),
     ipAddress: c.req.header('X-Forwarded-For') ?? c.req.header('X-Real-IP'),
+    signInOrigin: rpOriginForRequest(c.req.header('Origin')),
   })
   setSessionCookie(c, sessionToken)
 
@@ -612,6 +630,7 @@ authRouter.post('/login/verify', async (c) => {
   const token = await user.createSession({
     userAgent: c.req.header('User-Agent'),
     ipAddress: c.req.header('X-Forwarded-For') ?? c.req.header('X-Real-IP'),
+    signInOrigin: rpOriginForRequest(c.req.header('Origin')),
   })
   setSessionCookie(c, token)
 
@@ -762,6 +781,7 @@ authRouter.post('/web-handoff/exchange', async (c) => {
   const token = await user.createSession({
     userAgent: c.req.header('User-Agent'),
     ipAddress: c.req.header('X-Forwarded-For') ?? c.req.header('X-Real-IP'),
+    signInOrigin: rpOriginForRequest(c.req.header('Origin')),
     deviceTokenId: consumed.deviceTokenId,
   })
   setSessionCookie(c, token)
@@ -1167,6 +1187,187 @@ authRouter.post('/me/credentials/verify', identityMiddleware, async (c) => {
   })
 
   return c.json({ ok: true })
+})
+
+// ── Adding a passkey for another address of this server ─────────────────────
+//
+// See services/auth/passkey-enrollment.ts. A signed-in person re-confirms with one
+// of their passkeys (step-up) and gets a single-use, 15-minute code; opened at
+// another allowed address of this server, the code registers ONE additional passkey
+// for that person there and signs them in. It never removes passkeys, revokes
+// sessions, renames the account or assigns roles — the destructive counterpart is
+// passkey recovery. Responses are never cached; the code never appears in a log or
+// in a URL the server sees (links carry it in the fragment).
+
+const passkeyCodeHeaders = { 'Cache-Control': 'no-store' }
+const enrollLog = createLogger('passkey-enrollment')
+const INVALID_ENROLLMENT_CODE = { error: 'This code is invalid, expired or already used.' }
+
+/** One link per allowed origin, primary first. The code rides in the fragment, which never reaches a server. */
+function enrollmentLinks(code: string): { origin: string; url: string }[] {
+  const primary = primaryWebOrigin()
+  const origins = [primary, ...corsAllowOrigins().filter((o) => o !== primary)]
+  return origins.map((origin) => ({ origin, url: `${webAppUrlForOrigin(origin)}/add-passkey#code=${code}` }))
+}
+
+// POST /api/auth/me/passkey-codes/options — start the step-up: authentication
+// options for the caller's own passkeys, verified at the step-up origin.
+authRouter.post('/me/passkey-codes/options', identityMiddleware, async (c) => {
+  const identity = c.get('identity')
+  if (identity.type !== 'user') return c.json({ error: 'Not a user' }, 400, passkeyCodeHeaders)
+  const user = await User.findById(identity.userId)
+  if (!user) return c.json({ error: 'User not found' }, 404, passkeyCodeHeaders)
+  const { options, challengeKey } = await generateAuthOptions(user.email, c.req.header('Origin'), {
+    stepUp: { sessionOrigin: c.get('authContext').signInOrigin },
+  })
+  return c.json({ options, challengeKey }, 200, passkeyCodeHeaders)
+})
+
+// POST /api/auth/me/passkey-codes — finish the step-up and issue a code.
+authRouter.post('/me/passkey-codes', identityMiddleware, async (c) => {
+  const identity = c.get('identity')
+  if (identity.type !== 'user') return c.json({ error: 'Not a user' }, 400, passkeyCodeHeaders)
+  // Counts every attempt, failed step-ups included.
+  if (!passkeyCodeIssueLimiter.take(identity.userId, 5, 15 * 60_000)) {
+    enrollLog.warn(`Enrollment code refused for user ${identity.userId}: rate limited`)
+    return c.json({ error: 'rate_limited' }, 429, { ...passkeyCodeHeaders, 'Retry-After': '900' })
+  }
+  const body = await parseOptionalJsonObjectBody(c, {} as { challengeKey?: unknown; response?: unknown })
+  if (typeof body.challengeKey !== 'string' || !body.challengeKey || !body.response) {
+    return c.json({ error: 'challengeKey and response required' }, 400, passkeyCodeHeaders)
+  }
+  const sessionOrigin = c.get('authContext').signInOrigin
+  const stepUp = await verifyAuthResponse(body.challengeKey, body.response, c.req.header('Origin'), {
+    stepUp: { sessionOrigin },
+  }).catch((error) => {
+    if (error instanceof PasskeyAuthenticationError) return null
+    throw error
+  })
+  // The assertion must be THIS person's passkey: someone else's valid assertion never mints a code for this account.
+  if (!stepUp?.verification.verified || stepUp.userId !== identity.userId) {
+    enrollLog.warn(
+      `Enrollment code refused for user ${identity.userId}: step-up ${stepUp?.verification.verified ? 'used another account’s passkey' : 'failed'}`
+    )
+    return c.json({ error: 'Confirm with one of your passkeys to continue.' }, 401, passkeyCodeHeaders)
+  }
+  const issuedOrigin = rpOriginForStepUp(c.req.header('Origin'), sessionOrigin)
+  const { code, expiresAt } = await issuePasskeyEnrollmentCode(identity.userId, { issuedOrigin })
+  enrollLog.info(`Enrollment code issued for user ${identity.userId} (step-up at ${issuedOrigin})`)
+  return c.json({ code, expiresAt: expiresAt.toISOString(), links: enrollmentLinks(code) }, 200, passkeyCodeHeaders)
+})
+
+/**
+ * Gate shared by both public redemption endpoints. Returns the redeeming origin, or
+ * the refusal. The request Origin is only ever used to REJECT: it must be one of the
+ * live allowed origins, and the ceremony still picks its expected origin from the
+ * allowlist (rpOriginForRequest), never from the header.
+ */
+function allowedRedemptionOrigin(c: Context): string | Response {
+  const clientAddress = getClientAddress(c.req.raw)
+  if (!passkeyCodeRedeemLimiter.take(clientAddress, 20, 60_000)) {
+    enrollLog.warn(`Enrollment redemption refused: rate limited (${clientAddress})`)
+    return c.json({ error: 'rate_limited' }, 429, { ...passkeyCodeHeaders, 'Retry-After': '60' })
+  }
+  // Always required, even with no cookie: a cross-site page must not be able to post
+  // a code and sign this browser in (login CSRF).
+  if (!c.req.header(CSRF_HEADER)) return c.json({ error: 'Missing CSRF token' }, 403, passkeyCodeHeaders)
+  const origin = normalizeOrigin(c.req.header('Origin'))
+  if (!origin || !corsAllowOrigins().includes(origin)) {
+    enrollLog.warn(`Enrollment redemption refused: origin not allowed (${origin ?? 'none'}) from ${clientAddress}`)
+    return c.json({ error: 'This address is not an allowed address of this server.' }, 403, passkeyCodeHeaders)
+  }
+  return origin
+}
+
+/** The live code's user, or the refusal. Same answer for unknown, expired, used and retired codes. */
+async function enrollmentSubject(c: Context, code: unknown, origin: string): Promise<User | Response> {
+  const subject = await peekPasskeyEnrollmentCode(code)
+  const user = subject ? await User.findById(subject.userId) : null
+  if (!user) {
+    enrollLog.warn(`Enrollment redemption refused at ${origin}: invalid, expired or used code`)
+    return c.json(INVALID_ENROLLMENT_CODE, 401, passkeyCodeHeaders)
+  }
+  return user
+}
+
+// POST /api/auth/add-passkey/options — open the registration ceremony for a code
+// holder at this origin. Non-consuming.
+authRouter.post('/add-passkey/options', async (c) => {
+  const origin = allowedRedemptionOrigin(c)
+  if (origin instanceof Response) return origin
+  const body = await parseOptionalJsonObjectBody(c, {} as { code?: unknown })
+  const user = await enrollmentSubject(c, body.code, origin)
+  if (user instanceof Response) return user
+  const options = await generateRegOptions(user, c.req.header('Origin'))
+  return c.json({ options, email: user.email, displayName: user.displayName, origin }, 200, passkeyCodeHeaders)
+})
+
+// POST /api/auth/add-passkey/verify — finish the ceremony, spend the code, add the
+// passkey and sign in at this origin.
+authRouter.post('/add-passkey/verify', async (c) => {
+  const origin = allowedRedemptionOrigin(c)
+  if (origin instanceof Response) return origin
+  const body = await parseOptionalJsonObjectBody(
+    c,
+    {} as { code?: unknown; response?: unknown; credentialName?: unknown }
+  )
+  if (!body.response) return c.json({ error: 'Response required' }, 400, passkeyCodeHeaders)
+  const user = await enrollmentSubject(c, body.code, origin)
+  if (user instanceof Response) return user
+
+  // Verify BEFORE spending the code, so a cancelled or failed prompt leaves it usable.
+  let failure: string | null = null
+  const verification = await verifyRegResponse(user, body.response, c.req.header('Origin')).catch((error: Error) => {
+    failure = error.message
+    return null
+  })
+  if (!verification?.verified || !verification.registrationInfo) {
+    await recordPasskeyEnrollmentFailure(body.code)
+    enrollLog.warn(
+      `Enrollment redemption for user ${user.id} at ${origin} failed: ${failure ?? 'response not verified'}`
+    )
+    return c.json(
+      {
+        error:
+          failure && /challenge expired or not found/i.test(failure)
+            ? 'The passkey prompt timed out. Try again.'
+            : 'Verification failed',
+      },
+      401,
+      passkeyCodeHeaders
+    )
+  }
+  const credential = verification.registrationInfo.credential
+
+  // Atomic single-use consume; the user acted on is the one on the row we burned.
+  const consumed = await consumePasskeyEnrollmentCode(body.code, {
+    redeemedOrigin: origin,
+    credentialId: credential.id,
+  })
+  if (!consumed || consumed.userId !== user.id) {
+    enrollLog.warn(`Enrollment redemption refused at ${origin}: code spent concurrently`)
+    return c.json(INVALID_ENROLLMENT_CODE, 401, passkeyCodeHeaders)
+  }
+
+  await user.addCredential({
+    credentialId: credential.id,
+    publicKey: Buffer.from(credential.publicKey).toString('base64url'),
+    counter: credential.counter,
+    transports: credential.transports,
+    displayName: resolveCredentialName(
+      typeof body.credentialName === 'string' ? body.credentialName : undefined,
+      c.req.header('User-Agent')
+    ),
+  })
+  enrollLog.info(`Enrollment code redeemed: user ${user.id} added a passkey at ${origin}`)
+
+  const token = await user.createSession({
+    userAgent: c.req.header('User-Agent'),
+    ipAddress: c.req.header('X-Forwarded-For') ?? c.req.header('X-Real-IP'),
+    signInOrigin: origin,
+  })
+  setSessionCookie(c, token)
+  return c.json({ ok: true, token, user: user.toJSON() }, 200, passkeyCodeHeaders)
 })
 
 // ── Permissions / Introspection ──────────────────────────────────────────────
