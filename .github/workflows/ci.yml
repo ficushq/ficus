@@ -864,6 +864,10 @@ jobs:
           docker logs postgres-test
           exit 1
 
+      # Pure/owned-loopback tests, not the privileged host containment acceptance lane.
+      - name: Run managed BigBrain host unit tests
+        run: bun run test:bigbrain-host
+
       - name: Build pinned shared BigBrain fixture
         run: |
           bun scripts/bigbrain/build-artifact.ts --out-dir "$RUNNER_TEMP/bigbrain-shared"
