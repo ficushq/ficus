@@ -80,6 +80,9 @@ export function validateHostAdmission(input: unknown, manifest: unknown): Manage
 
 /** Incremental stdin cap and deadline; never collect an unbounded stream before parsing. */
 export async function readHostRequest(stream: ReadableStream<Uint8Array>): Promise<ManagedBigbrainHostRequest> {
+  return parseManagedBigbrainHostRequest(await readBoundedControlBytes(stream))
+}
+export async function readBoundedControlBytes(stream: ReadableStream<Uint8Array>): Promise<Buffer> {
   const reader = stream.getReader()
   let timedOut = false
   const timer = setTimeout(() => {
@@ -97,7 +100,7 @@ export async function readHostRequest(stream: ReadableStream<Uint8Array>): Promi
       chunks.push(result.value)
     }
     if (timedOut) throw new Error('invalid_request')
-    return parseManagedBigbrainHostRequest(Buffer.concat(chunks))
+    return Buffer.concat(chunks)
   } catch {
     throw new Error('invalid_request')
   } finally {

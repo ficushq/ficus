@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto'
+import { createReadStream } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { chmod, copyFile, lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { z } from 'zod'
@@ -6,7 +8,15 @@ import { MANAGED_BIGBRAIN_UPSTREAM_COMMIT } from '../../packages/shared/src/mana
 import { computeDigest } from '../artifact/lib/manifest'
 
 const REPOSITORY = 'https://github.com/elsehow/bigbrain.git'
-const fileNames = ['LICENSE', 'bigbrain-shared', 'bigbrain-shared-invite', 'source.tar', 'upstream-bun.lock'] as const
+const fileNames = [
+  'LICENSE',
+  'bigbrain-shared',
+  'bigbrain-shared-invite',
+  'bigbrain-owner-link',
+  'source.tar',
+  'ficus-source.tar',
+  'upstream-bun.lock',
+] as const
 const digestSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/)
 const fileFields = Object.fromEntries(fileNames.map((name) => [name, digestSchema])) as Record<
   (typeof fileNames)[number],
@@ -17,6 +27,8 @@ const provenanceSchema = z
     schema: z.literal(1),
     repository: z.literal(REPOSITORY),
     upstreamCommit: z.literal(MANAGED_BIGBRAIN_UPSTREAM_COMMIT),
+    ficusRepository: z.literal('https://github.com/ficushq/ficus.git'),
+    ficusCommit: z.string().regex(/^[a-f0-9]{40}$/),
     target: z.literal('bun-linux-x64'),
     bunVersion: z.string().regex(/^\d+\.\d+\.\d+$/),
     license: z.literal('AGPL-3.0-only'),
@@ -72,6 +84,12 @@ const runBuild: BuildRunner = async (argv, cwd) => {
   }
 }
 const hash = (bytes: Uint8Array) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`
+
+async function hashFile(path: string): Promise<string> {
+  const digest = createHash('sha256')
+  for await (const chunk of createReadStream(path)) digest.update(chunk)
+  return `sha256:${digest.digest('hex')}`
+}
 
 /** Fixed-pin checkout -> frozen deps -> compiled runtime + corresponding source and integrity metadata.
  * The outer signed Core manifest supplies authenticity; this local manifest supplies component integrity.
@@ -131,9 +149,40 @@ export async function buildBigbrainArtifact(options: {
     await copyFile(join(source, 'bun.lock'), join(staging, 'upstream-bun.lock'))
     if ((await checked(['bun', '--version'], source)) !== options.bunVersion) throw new Error('artifact_build_failed')
     await checked(['bun', 'install', '--frozen-lockfile', '--ignore-scripts'], source)
+    const ficusRoot = fileURLToPath(new URL('../../', import.meta.url))
+    const ficusCommit = await checked(['git', '-C', ficusRoot, 'rev-parse', 'HEAD^{commit}'])
+    if (!/^[a-f0-9]{40}$/.test(ficusCommit)) throw new Error('artifact_build_failed')
+    // Corresponding Ficus source must actually match the policy compiled into this component.
+    await checked([
+      'git',
+      '-C',
+      ficusRoot,
+      'diff',
+      '--quiet',
+      'HEAD',
+      '--',
+      'scripts/bigbrain',
+      'packages/shared/src/managed-bigbrain.ts',
+    ])
+    await checked([
+      'git',
+      '-C',
+      ficusRoot,
+      'archive',
+      '--format=tar',
+      '--output',
+      join(staging, 'ficus-source.tar'),
+      ficusCommit,
+    ])
+    const shimEntry = '.ficus-owner-link-entry.ts'
+    await writeFile(
+      join(source, shimEntry),
+      `import { ownerLinkMain } from ${JSON.stringify(join(ficusRoot, 'scripts/bigbrain/owner-link.ts'))};\nimport { createAppLink } from './lib/sharedInvites.ts';\nawait ownerLinkMain(createAppLink);\n`
+    )
     for (const [entry, binary] of [
       ['bin/shared.ts', 'bigbrain-shared'],
       ['bin/shared-invite.ts', 'bigbrain-shared-invite'],
+      [shimEntry, 'bigbrain-owner-link'],
     ] as const) {
       await checked(
         ['bun', 'build', entry, '--compile', '--target=bun-linux-x64', '--outfile', join(staging, binary)],
@@ -142,12 +191,14 @@ export async function buildBigbrainArtifact(options: {
       await chmod(join(staging, binary), 0o755)
     }
     const files = Object.fromEntries(
-      await Promise.all(fileNames.map(async (name) => [name, hash(await readFile(join(staging, name)))]))
+      await Promise.all(fileNames.map(async (name) => [name, await hashFile(join(staging, name))]))
     ) as BigbrainArtifactProvenance['files']
     const manifest = provenanceSchema.parse({
       schema: 1,
       repository: REPOSITORY,
       upstreamCommit: MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
+      ficusRepository: 'https://github.com/ficushq/ficus.git',
+      ficusCommit,
       target: 'bun-linux-x64',
       bunVersion: options.bunVersion,
       license: 'AGPL-3.0-only',
@@ -182,8 +233,9 @@ export async function verifyBigbrainArtifact(root: string): Promise<BigbrainArti
       const info = await lstat(join(root, name))
       if (!info.isFile() || info.isSymbolicLink() || info.size === 0) throw new Error()
     }
+    if ((await lstat(join(root, 'provenance.json'))).size > 16384) throw new Error()
     const manifest = provenanceSchema.parse(JSON.parse(await readFile(join(root, 'provenance.json'), 'utf8')))
-    for (const name of fileNames) if (hash(await readFile(join(root, name))) !== manifest.files[name]) throw new Error()
+    for (const name of fileNames) if ((await hashFile(join(root, name))) !== manifest.files[name]) throw new Error()
     if (computeDigest(manifest.files) !== manifest.digest) throw new Error()
     return manifest
   } catch {

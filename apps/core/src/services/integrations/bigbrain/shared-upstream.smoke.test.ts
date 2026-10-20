@@ -1,11 +1,16 @@
 import { expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { BigbrainSharedClient } from './shared-client'
 import { nativeFixtures } from '../../../../../../scripts/bigbrain/native-fixtures'
-import { MANAGED_BIGBRAIN_UPSTREAM_COMMIT as pin } from '@ficus/shared/managed-bigbrain'
+import {
+  MANAGED_BIGBRAIN_UPSTREAM_COMMIT as pin,
+  MANAGED_BIGBRAIN_OWNER_INVITE_TTL_MS,
+} from '@ficus/shared/managed-bigbrain'
+import { cachedOwnerAppLink, ownerInviteCacheSchema } from '../../../../../../scripts/bigbrain/invite-cache'
+import { writePrivateJson } from '../../../../../../scripts/bigbrain/secure-files'
 
 const artifact = process.env.FICUS_BIGBRAIN_SHARED_ARTIFACT
 const nativeDeps = process.env.FICUS_BIGBRAIN_SHARED_DEPS
@@ -34,6 +39,76 @@ test.skipIf(!artifact && !required)(
       expect(ownerA.id).not.toBe(ownerB.id)
       expect(joinedA.identity.vault.id).toBe(a.identity.vault.id)
       await expect(fixtures.native.connectInvite(connections, a.invite)).rejects.toBeDefined()
+      // Real shim + root-private durable replay cache; identical retries cannot mint a replacement.
+      const control = join(root, 'root-private-control')
+      await mkdir(control, { mode: 0o700 })
+      await writePrivateJson(control, 'owner-invites.json', { schema: 1, invites: [] }, ownerInviteCacheSchema, {
+        uid: process.getuid!(),
+      })
+      const issuedAt = new Date().toISOString()
+      const window = {
+        issuedAt,
+        expiresAt: new Date(Date.parse(issuedAt) + MANAGED_BIGBRAIN_OWNER_INVITE_TTL_MS).toISOString(),
+      }
+      const inviteRequest = {
+        contractVersion: 1,
+        requestId: randomUUID(),
+        tenantId: randomUUID(),
+        physicalHostBinding: randomUUID(),
+        hostEpoch: 1,
+        action: 'owner-invite',
+        vaultId: randomUUID(),
+        expectedGeneration: 1,
+        actorUserId: randomUUID(),
+        ...window,
+      }
+      let mintedLinks = 0
+      const cachedLink = () =>
+        cachedOwnerAppLink({
+          directory: control,
+          uid: process.getuid!(),
+          input: inviteRequest,
+          authorize: async () => {},
+          issue: async () => {
+            mintedLinks++
+            return a.issueAppLink(window)
+          },
+        })
+      const link = await cachedLink()
+      expect(link.expiresAt).toBe(window.expiresAt)
+      expect(await cachedLink()).toEqual(link)
+      expect(mintedLinks).toBe(1)
+      const inviteUrl = `${a.endpoint}/invite#${link.secret}`
+      const ownerConnections = join(root, 'native-owner-link.json')
+      const linked = await fixtures.native.connectInvite(ownerConnections, inviteUrl)
+      const human = fixtures.native.readConnections(ownerConnections).find((c) => c.id === linked.id)!
+      const humanIdentity = await fixtures.native.sharedRequest<{
+        role: string
+        kind: string
+        handle: string
+        permissions: string[]
+      }>(human, '/v1/whoami')
+      expect(humanIdentity.role).toBe('owner')
+      expect(humanIdentity.kind).toBe('person')
+      expect(humanIdentity.handle).toBe('ada')
+      expect(humanIdentity.permissions).toEqual(['read', 'write'])
+      await expect(fixtures.native.connectInvite(ownerConnections, inviteUrl)).rejects.toBeDefined()
+      expect(await cachedLink()).toEqual(link)
+      expect(mintedLinks).toBe(1)
+      // Already expired authority is refused by the compiled shim; valid near-expiry links
+      // are actually expired by upstream, not merely advertised as expired in a DTO.
+      const soonIssued = new Date(Date.now() - MANAGED_BIGBRAIN_OWNER_INVITE_TTL_MS + 1500).toISOString()
+      const soonWindow = {
+        issuedAt: soonIssued,
+        expiresAt: new Date(Date.parse(soonIssued) + MANAGED_BIGBRAIN_OWNER_INVITE_TTL_MS).toISOString(),
+      }
+      const soon = await a.issueAppLink(soonWindow)
+      expect(soon.expiresAt).toBe(soonWindow.expiresAt)
+      await Bun.sleep(Math.max(0, Date.parse(soon.expiresAt) - Date.now()) + 25)
+      await expect(
+        fixtures.native.connectInvite(ownerConnections, `${a.endpoint}/invite#${soon.secret}`)
+      ).rejects.toBeDefined()
+      await expect(a.issueAppLink(soonWindow)).rejects.toThrow('synthetic_command_failed')
       // Only the actual native human client writes. Ficus credentials are never used to contribute.
       const recordA = await fixtures.native.sharedRequest<{ id: string }>(ownerA, '/v1/evidence', {
         title: 'Amber experiment',

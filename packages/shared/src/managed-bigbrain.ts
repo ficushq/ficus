@@ -11,6 +11,10 @@ export type ManagedBigbrainScope = (typeof MANAGED_BIGBRAIN_SCOPES)[number]
 export const MANAGED_BIGBRAIN_HOST_REQUEST_BYTES = 8192
 export const MANAGED_BIGBRAIN_HOST_REPLY_BYTES = 16384
 export const MANAGED_BIGBRAIN_MAX_VAULTS = 2
+/** Matches the pinned native createAppLink API; never a public request-controlled TTL. */
+export const MANAGED_BIGBRAIN_OWNER_INVITE_TTL_MS = 60 * 60 * 1000
+export const MANAGED_BIGBRAIN_INVITE_CLOCK_SKEW_MS = 30_000
+export const MANAGED_BIGBRAIN_MAX_ACTIVE_INVITES = 64
 
 export const MANAGED_BIGBRAIN_ERROR_CODES = [
   'unsupported_host',
@@ -193,6 +197,25 @@ export const managedBigbrainOwnerInviteSchema = z
   .object({ requestId: uuid, expectedGeneration: positive, actorUserId: uuid })
   .strict()
 export type ManagedBigbrainOwnerInvite = z.infer<typeof managedBigbrainOwnerInviteSchema>
+const inviteWindowFields = { issuedAt: datetime, expiresAt: datetime }
+export const managedBigbrainInviteWindowSchema = z
+  .object(inviteWindowFields)
+  .strict()
+  .refine((v) => Date.parse(v.expiresAt) - Date.parse(v.issuedAt) === MANAGED_BIGBRAIN_OWNER_INVITE_TTL_MS)
+/** A tolerated future ledger timestamp is RETRYABLE, never passed to the native issuer as now.
+ * Expiry has no grace period. Bounded skew does not extend native validity or permit future minting.
+ */
+export function managedBigbrainInviteWindowStatus(
+  window: unknown,
+  now: number
+): 'current' | 'not_yet_valid' | 'expired' | 'invalid' {
+  const parsed = managedBigbrainInviteWindowSchema.safeParse(window)
+  if (!parsed.success || !Number.isFinite(now)) return 'invalid'
+  const issuedAt = Date.parse(parsed.data.issuedAt)
+  if (issuedAt > now) return issuedAt - now <= MANAGED_BIGBRAIN_INVITE_CLOCK_SKEW_MS ? 'not_yet_valid' : 'invalid'
+  return Date.parse(parsed.data.expiresAt) <= now ? 'expired' : 'current'
+}
+
 /** Secret-bearing exception: never pass through generic DTO logging, caching or audit. */
 export const managedBigbrainOwnerInviteResultSchema = z
   .object({
@@ -281,7 +304,12 @@ export const managedBigbrainHostRequestSchema = z
       artifactDigest: digest,
     }),
     hostAction('rename', { ...vaultFenceFields, displayName: label }),
-    hostAction('owner-invite', { vaultId: uuid, expectedGeneration: positive, actorUserId: uuid }),
+    hostAction('owner-invite', {
+      vaultId: uuid,
+      expectedGeneration: positive,
+      actorUserId: uuid,
+      ...inviteWindowFields,
+    }),
     hostAction('read-revoke', vaultFenceFields),
     hostAction('read-reconnect', vaultFenceFields),
     hostAction('delete', { ...vaultFenceFields, confirmedVaultId: uuid, confirmedName: label }),
@@ -305,6 +333,11 @@ export const managedBigbrainHostRequestSchema = z
       ctx.addIssue({ code: 'custom', message: 'generation_conflict' })
     if (v.action === 'create' && !originHasVault(v.origin, v.vaultId))
       ctx.addIssue({ code: 'custom', message: 'identity_mismatch' })
+    if (
+      v.action === 'owner-invite' &&
+      !managedBigbrainInviteWindowSchema.safeParse({ issuedAt: v.issuedAt, expiresAt: v.expiresAt }).success
+    )
+      ctx.addIssue({ code: 'custom', message: 'invalid_request' })
     if (v.action === 'delete' && v.confirmedVaultId !== v.vaultId)
       ctx.addIssue({ code: 'custom', message: 'identity_mismatch' })
     if (v.action === 'restore' && !uniqueVaultIds(v.currentVaults))

@@ -30,20 +30,24 @@ async function fixture() {
   return { root, calls, run, output: join(root, 'artifact') }
 }
 
-test('packages only committed pinned sources, frozen dependencies, two binaries and source/license provenance', async () => {
+test('packages pinned upstream plus minimal native owner-link shim and both corresponding source archives', async () => {
   const f = await fixture()
   const manifest = await buildBigbrainArtifact({ outDir: f.output, bunVersion: '1.4.2', run: f.run })
   expect(manifest.upstreamCommit).toBe(pin)
   expect(Object.keys(manifest.files).sort()).toEqual([
     'LICENSE',
+    'bigbrain-owner-link',
     'bigbrain-shared',
     'bigbrain-shared-invite',
+    'ficus-source.tar',
     'source.tar',
     'upstream-bun.lock',
   ])
   expect(f.calls).toContainEqual(['bun', 'install', '--frozen-lockfile', '--ignore-scripts'])
   const compiles = f.calls.filter((argv) => argv.includes('--compile'))
-  expect(compiles).toHaveLength(2)
+  expect(compiles).toHaveLength(3)
+  expect(manifest.ficusCommit).toMatch(/^[a-f0-9]{40}$/)
+  expect(f.calls.filter((argv) => argv.includes('archive'))).toHaveLength(2)
   expect(compiles.every((argv) => argv.includes('--target=bun-linux-x64'))).toBe(true)
   expect(f.calls.flat().some((arg) => arg.includes('systemctl') || arg.includes('curl'))).toBe(false)
   expect(await verifyBigbrainArtifact(f.output)).toEqual(manifest)
@@ -67,7 +71,7 @@ test('refuses a changed upstream revision before installation/build', async () =
   expect(f.calls.some((argv) => argv.includes('install'))).toBe(false)
 })
 test('refuses tampered binaries and missing corresponding source/license', async () => {
-  for (const target of ['bigbrain-shared', 'source.tar', 'LICENSE']) {
+  for (const target of ['bigbrain-shared', 'bigbrain-owner-link', 'ficus-source.tar', 'source.tar', 'LICENSE']) {
     const f = await fixture()
     await buildBigbrainArtifact({ outDir: f.output, bunVersion: '1.4.2', run: f.run })
     await writeFile(join(f.output, target), 'tampered')

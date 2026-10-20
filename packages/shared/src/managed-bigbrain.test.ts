@@ -100,7 +100,14 @@ const requests = [
     artifactDigest: digest,
   },
   { action: 'rename', ...fence, displayName: 'Renamed' },
-  { action: 'owner-invite', vaultId: id, expectedGeneration: 1, actorUserId: other },
+  {
+    action: 'owner-invite',
+    vaultId: id,
+    expectedGeneration: 1,
+    actorUserId: other,
+    issuedAt: '2026-10-20T00:00:00Z',
+    expiresAt: '2026-10-20T01:00:00Z',
+  },
   ...['read-revoke', 'read-reconnect'].map((action) => ({ action, ...fence })),
   { action: 'delete', ...fence, confirmedVaultId: id, confirmedName: 'Research' },
   ...['suspend-tenant', 'resume-tenant', 'destroy-tenant', 'restore-fence'].map((action) => ({
@@ -156,6 +163,34 @@ describe('managed BigBrain v1 wire contract', () => {
     expect(contract.MANAGED_BIGBRAIN_SCOPES).toEqual(['managed-bigbrain:read', 'managed-bigbrain:manage'])
     for (const scope of contract.MANAGED_BIGBRAIN_SCOPES) expect(INSTANCE_INTEGRATION_SCOPES).toContain(scope)
   })
+  test('private owner-link authority uses immutable native one-hour issuance with bounded clock refusal', () => {
+    const window = { issuedAt: '2026-10-20T00:00:00Z', expiresAt: '2026-10-20T01:00:00Z' }
+    const now = Date.parse(window.issuedAt)
+    expect(contract.MANAGED_BIGBRAIN_OWNER_INVITE_TTL_MS).toBe(3600000)
+    expect(contract.managedBigbrainInviteWindowStatus(window, now)).toBe('current')
+    expect(contract.managedBigbrainInviteWindowStatus(window, now - 1000)).toBe('not_yet_valid')
+    expect(contract.managedBigbrainInviteWindowStatus(window, now - 30001)).toBe('invalid')
+    expect(contract.managedBigbrainInviteWindowStatus(window, now + 3600000)).toBe('expired')
+    for (const bad of [
+      { ...window, expiresAt: window.issuedAt },
+      { ...window, expiresAt: '2026-10-21T01:00:00Z' },
+      { ...window, expiresAt: '2026-10-20T00:05:00Z' },
+    ]) {
+      expect(contract.managedBigbrainInviteWindowSchema.safeParse(bad).success).toBe(false)
+    }
+    const request = requests.find((r) => r.action === 'owner-invite')!
+    const { issuedAt: _issued, expiresAt: _expires, ...missingWindow } = request as Record<string, unknown>
+    expect(contract.managedBigbrainHostRequestSchema.safeParse(missingWindow).success).toBe(false)
+    expect(
+      contract.managedBigbrainOwnerInviteSchema.safeParse({
+        requestId: id,
+        expectedGeneration: 1,
+        actorUserId: other,
+        ...window,
+      }).success
+    ).toBe(false)
+  })
+
   test('management never accepts endpoint, tenant, credentials or command overrides', () => {
     const input = { requestId: id, expectedGeneration: 0, displayName: 'Research', owner }
     expect(contract.createManagedVaultSchema.safeParse(input).success).toBe(true)

@@ -3,6 +3,7 @@ import { mkdir, readFile, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { verifyBigbrainArtifact } from './artifact'
+import { MANAGED_BIGBRAIN_OWNER_INVITE_TTL_MS } from '../../packages/shared/src/managed-bigbrain'
 
 /** Synthetic-only harness: no account/mount/systemd changes, no inherited provider env. */
 export async function nativeFixtures(root: string, artifact: string, dependencyRoot: string) {
@@ -14,8 +15,10 @@ export async function nativeFixtures(root: string, artifact: string, dependencyR
   const env = { PATH: process.env.PATH!, HOME: join(root, 'home'), LANG: 'C.UTF-8' }
   await mkdir(env.HOME, { mode: 0o700 })
   const servers = new Set<{ stop(signal?: 'SIGTERM' | 'SIGKILL'): Promise<void> }>()
-  async function command(argv: string[]): Promise<string> {
-    const child = Bun.spawn(argv, { cwd: root, env, stdout: 'pipe', stderr: 'pipe' })
+  async function command(argv: string[], input?: unknown): Promise<string> {
+    const child = Bun.spawn(argv, { cwd: root, env, stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' })
+    if (input !== undefined) child.stdin.write(JSON.stringify(input))
+    child.stdin.end()
     let failed = false
     const timer = setTimeout(() => {
       failed = true
@@ -180,26 +183,24 @@ export async function nativeFixtures(root: string, artifact: string, dependencyR
     const identity = (await fetch(endpoint + '/v1/whoami', {
       headers: { Authorization: `Bearer ${minted.token}` },
     }).then((r) => r.json())) as { vault: { id: string } }
-    const inviteFile = join(base, 'owner-invite.txt')
-    await command([
-      join(artifact, 'bigbrain-shared-invite'),
-      '--vault',
-      data,
-      '--members',
-      members,
-      '--member',
-      'ada',
-      '--endpoint',
-      endpoint,
-      '--out',
-      inviteFile,
-    ])
-    const invite = (await readFile(inviteFile, 'utf8')).trim()
+    const issueAppLink = async (window: { issuedAt: string; expiresAt: string }) =>
+      JSON.parse(
+        await command([join(artifact, 'bigbrain-owner-link')], { membersPath: members, handle: 'ada', ...window })
+      ) as { secret: string; expiresAt: string }
+    const issuedAt = new Date().toISOString()
+    const window = {
+      issuedAt,
+      expiresAt: new Date(Date.parse(issuedAt) + MANAGED_BIGBRAIN_OWNER_INVITE_TTL_MS).toISOString(),
+    }
+    const link = await issueAppLink(window)
+    if (link.expiresAt !== window.expiresAt) throw new Error('synthetic_invite_expiry_mismatch')
+    const invite = `${endpoint}/invite#${link.secret}`
     return {
       cli,
       identity,
       minted,
       invite,
+      issueAppLink,
       get endpoint() {
         return endpoint
       },
