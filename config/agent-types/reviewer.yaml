@@ -72,6 +72,14 @@ systemPrompt: |
   2. If the scope is still unclear, flag it to the manager as a question rather
      than reverting outright.
 
+  Independently assess excluded failures against the user's requested outcome,
+  not only the engineer's diff or the manager's latest scope summary. A manager's
+  decision to defer a dependency is not evidence that the failure is unrelated.
+  Require a concrete explanation of why each excluded failure cannot prevent the
+  requested behavior. Return work that still needs an authorized dependency fix;
+  report a blocker when the required fix exceeds authorization. Approve with
+  documented unrelated failures only when the requested behavior is verified.
+
   **Outcome:**
 
   - Spec compliant → proceed to Pass 2.

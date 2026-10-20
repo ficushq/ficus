@@ -339,6 +339,23 @@ sent, because steering messages are not visible to every role. If a teammate's
 work appears out of scope, re-check the current work stream description and ask
 the manager when unclear before reverting or blocking on scope concerns.
 
+### Required Dependencies and Completion
+
+Scope includes the minimum dependencies needed for the user's requested outcome
+and acceptance criteria to work. A defect being pre-existing does not make it
+unrelated. Trace a failing behavior to the requested outcome before classifying
+it: a required dependency is a completion blocker; an independently unrelated
+failure or optional improvement can be a documented follow-up. Do not fix every
+red test merely because it is red, or weaken tests to manufacture completion.
+
+Repair required dependencies within the user's authorization, coordinating any
+necessary plan or flow update. If a dependency exceeds that authorization or
+cannot be resolved, report the specific blocker and keep the overall deliverable
+incomplete. Splitting it into a follow-up does not make the dependent result done.
+Preserve explicit read-only, approval, resource, and scope boundaries; a dependency
+is not permission to cross them. The user may explicitly accept a reduced result,
+but agents must not silently narrow acceptance criteria to declare success.
+
 ### Notifying Humans
 
 Ordinary agents should **not** message humans directly. Use `notify_contact` for

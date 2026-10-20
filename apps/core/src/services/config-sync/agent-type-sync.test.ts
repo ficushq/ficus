@@ -173,6 +173,16 @@ describe('AgentTypeSync', () => {
     }
   })
 
+  test('required-dependency guidance reaches every engineering role', async () => {
+    const parsed = await loadComposed()
+    for (const id of ['manager', 'architect', 'engineer', 'reviewer']) {
+      const prompt = parsed.find((p) => p.id === id)!.systemPrompt
+      expect(prompt.split('### Required Dependencies and Completion')).toHaveLength(2)
+      expect(prompt).toContain('agents must not silently narrow acceptance criteria')
+      expect(prompt).toContain('Preserve explicit read-only, approval, resource, and scope boundaries')
+    }
+  })
+
   test('manager prompt asks humans through ask_human and reserves inbox messages for information', async () => {
     const manager = (await loadComposed()).find((item) => item.id === 'manager')!
 
