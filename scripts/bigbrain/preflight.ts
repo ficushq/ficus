@@ -231,7 +231,14 @@ export function verifyLoopBacking(
     })
     .passthrough()
   const parsed = schema.safeParse(value)
-  if (!parsed.success || !/^7:\d+$/.test(expected.device)) refuse('storage_unavailable', 'loop_schema')
+  if (!parsed.success || !/^7:\d+$/.test(expected.device)) {
+    // Fixed tokens only: the schema's own key names and an entry count, never values.
+    const entries = (value as { loopdevices?: unknown })?.loopdevices
+    noteStage(`loop_entries_${Array.isArray(entries) ? Math.min(entries.length, 9) : 'none'}`)
+    const issue = parsed.success ? 'device' : (parsed.error.issues[0]?.path.at(-1) ?? 'root')
+    noteStage(`loop_schema_${String(issue).replace(/[^a-z-]/g, '')}`.replace(/-/g, '_').slice(0, 40))
+    refuse('storage_unavailable', 'loop_schema')
+  }
   const entry = parsed.data.loopdevices[0]!
   if (entry.name !== `/dev/loop${expected.device.slice(2)}`) refuse('storage_unavailable', 'loop_name')
   if (entry['back-file'] !== expected.image) refuse('storage_unavailable', 'loop_file')
