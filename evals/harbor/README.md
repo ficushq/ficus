@@ -5,11 +5,15 @@ tools, execution queue, isolated database, and work-stream state machine. Harbor
 owns task instructions, containers, time limits, verifier, and scores. This is
 not a new benchmark or replacement grader.
 
-The first fresh four-arm FeatureBench comparison is complete: Ficus and Pi each
-passed in engineer-only and full architect → engineer → reviewer configurations
-on the same frozen Pandas task. Pi was faster and cheaper in both configurations.
-See [fresh-task evidence](FRESH_FEATURES.md) for official results, cost, timing,
-role verification and limitations. This is one task, not a harness ranking.
+Three fresh four-arm FeatureBench comparisons are complete (Pandas, Sphinx,
+xarray). Ficus passes all three tasks in both configurations; Pi passes one as a
+squad and two as a single engineer, with lower cost and elapsed time in every
+matched arm. A fourth task, seaborn, is incomplete after a local image loss;
+its completed Pi failure and zero-cost Ficus startup failure are preserved.
+See [first fresh task](FRESH_FEATURES.md) and [three-task continuation](FRESH_BATCH.md)
+for official results, costs, timings, role verification and limitations. This is
+a small sample, not a general harness ranking. Paid inference is stopped at
+$23.973944 of the authorized cumulative $50 cap.
 
 Earlier Terminal-Bench smoke tests, the known Pydantic feature task, and its
 scope-guidance replay remain separate development evidence in
