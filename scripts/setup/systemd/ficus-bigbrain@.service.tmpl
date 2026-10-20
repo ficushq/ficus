@@ -38,6 +38,10 @@ LockPersonality=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 IPAddressDeny=any
 IPAddressAllow=localhost
+# Loopback egress alone is insufficient: a compromised vault must not impersonate
+# a stopped peer or gateway and steal credentials sent to their recorded ports.
+SocketBindDeny=any
+SocketBindAllow=ipv4:tcp:{{PORT}}
 TemporaryFileSystem=/var/lib/ficus-bigbrain:ro
 BindPaths={{MOUNT_PATH}}
 ReadWritePaths={{MOUNT_PATH}}

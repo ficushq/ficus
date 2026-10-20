@@ -35,6 +35,8 @@ LockPersonality=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 IPAddressDeny=any
 IPAddressAllow=localhost
+SocketBindDeny=any
+SocketBindAllow=ipv4:tcp:34792
 TemporaryFileSystem=/etc/ficus:ro
 # Bind the public directory, not the route inode: root publishes with atomic rename.
 BindReadOnlyPaths=/etc/ficus/bigbrain/public

@@ -15,6 +15,8 @@ const input = { reservation, artifactDigest, origin: `https://bb-${id.replaceAll
 test('renders shipped hardened service with private identity, filesystem and bounded restart/egress/logs', async () => {
   const units = await renderVaultUnits(input)
   expect(units.service).toContain(`User=${reservation.username}`)
+  expect(units.service).toContain(`SocketBindAllow=ipv4:tcp:${reservation.port}`)
+  expect(units.service).toContain('SocketBindDeny=any')
   expect(units.service).toContain(`BindsTo=${units.mountUnitName}`)
   expect(units.service).toContain(`ExecStartPre=+/usr/local/libexec/ficus-bigbrain-preflight ${id}`)
   for (const setting of [
@@ -55,6 +57,8 @@ test('aggregate cgroup includes gateway and caps combined CPU/memory; gateway ca
   const gateway = await renderGatewayUnit(artifactDigest)
   expect(gateway).toContain('Slice=ficus-bigbrain.slice')
   expect(gateway).toContain('User=ficus-bb-gateway')
+  expect(gateway).toContain('SocketBindAllow=ipv4:tcp:34792')
+  expect(gateway).toContain('SocketBindDeny=any')
   expect(gateway).toContain('InaccessiblePaths=-/var/lib/ficus-bigbrain')
   // Binding a file pins its old inode: atomic route updates would never be visible.
   expect(gateway).toContain('BindReadOnlyPaths=/etc/ficus/bigbrain/public\n')
@@ -79,6 +83,7 @@ test('fixed root launcher serializes across SSH interruption and bounds every de
     'Slice=ficus-bigbrain.slice',
     'TasksMax=64',
     'NoNewPrivileges=yes',
+    'SocketBindDeny=any',
     '/usr/bin/env -i',
     '/control',
     'head -c 8193',
