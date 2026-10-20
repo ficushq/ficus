@@ -4,7 +4,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import { acquireDomHarness } from '../test/domHarness'
-import { integrationQueryKeys, queryKeys, serverConnectionQueryKeys } from '../queryKeys'
+import {
+  channelLinkQueryKeys,
+  githubIdentityQueryKeys,
+  integrationQueryKeys,
+  queryKeys,
+  serverConnectionQueryKeys,
+} from '../queryKeys'
 import type { IntegrationConnection } from '../api/integrations'
 import { PermissionsProvider } from '../hooks/usePermissions'
 
@@ -60,6 +66,12 @@ type RenderSettingsOptions = {
 }
 
 const defaultSquads: SquadFixture[] = [{ id: 'squad-1', name: 'Research', purpose: 'Research', status: 'active' }]
+const operationsBinding = {
+  id: 'operations',
+  label: 'Operations vault',
+  vaultPath: '/srv/bigbrain/operations',
+  executablePath: '/usr/local/bin/bigbrain',
+}
 
 function seedSettingsQueries(queryClient: QueryClient, permissions: string[], options: RenderSettingsOptions = {}) {
   // Seed the updates-settings query (fetched whenever the viewer holds
@@ -105,6 +117,7 @@ function seedSettingsQueries(queryClient: QueryClient, permissions: string[], op
     ],
   })
   queryClient.setQueryData(integrationQueryKeys.pool('bigbrain'), options.integrationPool ?? [])
+  queryClient.setQueryData(integrationQueryKeys.localBindings(), { state: 'available', bindings: [operationsBinding] })
   if (options.squadPermissions || options.integrations || options.squads) {
     const squads = options.squads ?? defaultSquads
     queryClient.setQueryData(queryKeys.squads.list('active'), squads)
@@ -388,14 +401,20 @@ describe('SettingsPage global integration RBAC', () => {
   const operationsConnection: IntegrationConnection = {
     id: 'conn-ops',
     providerKey: 'bigbrain',
-    adapterVersion: 1,
+    adapterVersion: 2,
     displayName: 'Operations Brain',
-    configuration: { version: 1, apiBase: 'https://ops.bigbrain.example' },
+    configuration: {
+      version: 2,
+      bindingId: operationsBinding.id,
+      bindingFingerprint: 'a'.repeat(64),
+      vaultPath: operationsBinding.vaultPath,
+      executablePath: operationsBinding.executablePath,
+    },
     credentialConfigured: true,
     enabled: true,
     authState: 'authenticated',
     healthState: 'healthy',
-    grantedScopes: [],
+    grantedScopes: ['load_memory', 'search_vault', 'read_note', 'drop'],
     validatedAt: '2026-01-10T00:00:00Z',
     validationExpiresAt: '2026-02-10T00:00:00Z',
     lastErrorCode: null,
@@ -524,10 +543,11 @@ describe('SettingsPage global integration RBAC', () => {
     expect(container.textContent).not.toContain('You do not have permission to view global integrations.')
   })
 
-  test('uses only instance permissions and the global pool on the canonical page', async () => {
+  test.each([true, false])('uses only instance permissions and the global pool (canWrite=%s)', async (canWrite) => {
     const { SettingsPage } = await import('./SettingsPage')
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
-    seedSettingsQueries(queryClient, ['integrations:read:bigbrain', 'integrations:write:bigbrain'], {
+    const permissions = ['integrations:read:bigbrain', ...(canWrite ? ['integrations:write:bigbrain'] : [])]
+    seedSettingsQueries(queryClient, permissions, {
       integrationPool: [operationsConnection],
       squads,
       squadPermissions: { 'squad-1': [], 'squad-2': [] },
@@ -544,15 +564,61 @@ describe('SettingsPage global integration RBAC', () => {
     })
 
     expect(observerCount(integrationQueryKeys.pool('bigbrain'))).toBe(0)
+    expect(observerCount(integrationQueryKeys.localBindings())).toBe(0)
     await dom.act(async () => {
       fireEvent.click(bigbrainCard().querySelector('button[aria-expanded]')!)
     })
     expect(bigbrainCard().textContent).toContain('Operations Brain')
-    expect(bigbrainCard().textContent).toContain('https://ops.bigbrain.example')
-    expect(buttonTexts(bigbrainCard())).toContain('Create and validate')
+    expect(bigbrainCard().textContent).toContain(`Vault: ${operationsBinding.vaultPath}`)
+    expect(bigbrainCard().textContent).toContain(`Executable: ${operationsBinding.executablePath}`)
+    expect(bigbrainCard().textContent).toContain('Core host, not this browser')
+    expect(bigbrainCard().querySelector('input[aria-label="API base"]')).toBeNull()
+    expect(buttonTexts(bigbrainCard()).includes('Create and validate')).toBe(canWrite)
     expect(observerCount(integrationQueryKeys.pool('bigbrain'))).toBe(1)
-    expect(observerCount(queryKeys.auth.permissions('squad-1'))).toBe(0)
-    expect(observerCount(integrationQueryKeys.squad('squad-1', 'bigbrain'))).toBe(0)
+    expect(observerCount(integrationQueryKeys.localBindings())).toBe(1)
+    for (const squad of squads) {
+      expect(observerCount(queryKeys.auth.permissions(squad.id))).toBe(0)
+      expect(observerCount(integrationQueryKeys.squad(squad.id, 'bigbrain'))).toBe(0)
+    }
+    expect(requests).toEqual([])
+  })
+
+  test.each([
+    ['squad-only', []],
+    ['write-without-read', ['integrations:write:bigbrain']],
+    ['other-provider', ['integrations:read:notion']],
+  ] as const)('cached local bindings do not bypass %s instance denial', async (_name, permissions) => {
+    const { SettingsPage } = await import('./SettingsPage')
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+    seedSettingsQueries(queryClient, [...permissions], {
+      integrationPool: [operationsConnection],
+      squads,
+      squadPermissions: ['integrations:read', 'integrations:write'],
+    })
+    // Denied deep links fall back to personal settings; keep those unrelated queries offline too.
+    queryClient.setQueryData(channelLinkQueryKeys.all, { links: [], pending: [] })
+    queryClient.setQueryData(githubIdentityQueryKeys.all, {
+      linked: null,
+      confirmation: null,
+      authorization: { configured: true, authority: 'local', mode: 'browser' },
+    })
+    await dom.act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient!}>
+          <MemoryRouter initialEntries={['/settings?section=integrations&setting=integration-bigbrain']}>
+            <SettingsPage dependencies={dependencies} />
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+    })
+    expect(container.querySelector('#integration-card-bigbrain')).toBeNull()
+    expect(container.textContent).not.toContain(operationsBinding.vaultPath)
+    expect(observerCount(integrationQueryKeys.pool('bigbrain'))).toBe(0)
+    expect(observerCount(integrationQueryKeys.localBindings())).toBe(0)
+    for (const squad of squads) {
+      expect(observerCount(queryKeys.auth.permissions(squad.id))).toBe(0)
+      expect(observerCount(integrationQueryKeys.squad(squad.id, 'bigbrain'))).toBe(0)
+    }
     expect(requests).toEqual([])
   })
 })

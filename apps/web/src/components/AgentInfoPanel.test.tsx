@@ -171,21 +171,27 @@ describe('AgentInfoPanel', () => {
 const bigbrainConnection: IntegrationConnection = {
   id: 'connection-1',
   providerKey: 'bigbrain',
-  adapterVersion: 1,
+  adapterVersion: 2,
   displayName: 'Bigbrain',
-  configuration: { version: 1, apiBase: 'https://brain.example' },
+  configuration: {
+    version: 2,
+    bindingId: 'research',
+    bindingFingerprint: 'a'.repeat(64),
+    vaultPath: '/srv/bigbrain/research',
+    executablePath: '/usr/local/bin/bigbrain',
+  },
   credentialConfigured: true,
   enabled: true,
   authState: 'authenticated',
   healthState: 'healthy',
-  grantedScopes: [],
+  grantedScopes: ['load_memory', 'search_vault', 'read_note', 'drop'],
   validatedAt: '2026-01-01',
   validationExpiresAt: '2026-01-02',
   lastErrorCode: null,
   usage: { squadCount: 1, squads: [{ id: 'squad-1', name: 'Research' }] },
 }
 
-describe('AgentInfoPanel external-export query gating', () => {
+describe('AgentInfoPanel transcript export removal', () => {
   let dom: Awaited<ReturnType<typeof acquireDomHarness>>
   let container: HTMLDivElement
   let root: import('react-dom/client').Root
@@ -207,7 +213,7 @@ describe('AgentInfoPanel external-export query gating', () => {
     globalThis.fetch = (async (input) => {
       const url = String(input)
       requests.push(url)
-      return Response.json(url.includes('/external-export') ? { state: 'disabled' } : null)
+      return Response.json(null)
     }) as typeof globalThis.fetch
   })
 
@@ -219,7 +225,7 @@ describe('AgentInfoPanel external-export query gating', () => {
 
   async function renderLive({
     agent = baseAgent,
-    permissions = ['integrations:read', 'integrations:export'],
+    permissions = ['integrations:read'],
     assignment,
     connections = [],
   }: {
@@ -262,7 +268,7 @@ describe('AgentInfoPanel external-export query gating', () => {
   })
 
   test('does not query integrations or external-export without read permission', async () => {
-    const queryClient = await renderLive({ permissions: ['integrations:export'] })
+    const queryClient = await renderLive({ permissions: [] })
 
     expect(container.textContent).not.toContain('External conversation export')
     expect(requests.some((url) => url.includes('/squads/squad-1/integrations'))).toBe(false)
