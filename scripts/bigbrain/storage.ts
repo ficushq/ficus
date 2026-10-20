@@ -103,3 +103,14 @@ export function verifyVaultMount(
   )
     throw new Error('storage_unavailable')
 }
+
+/** Linux dev_t is not a32-bit major/minor pair. fstat of the held directory must
+ * match the verified loop device BEFORE ownership changes or creating any child.
+ */
+export function linuxDeviceId(value: number): string {
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error('storage_unavailable')
+  const device = BigInt(value)
+  const major = ((device >> 8n) & 0xfffn) | ((device >> 32n) & 0xfffff000n)
+  const minor = (device & 0xffn) | ((device >> 12n) & 0xffffff00n)
+  return `${major}:${minor}`
+}

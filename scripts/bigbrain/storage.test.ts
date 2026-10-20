@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { planVaultStorage, verifyVaultMount } from './storage'
+import { planVaultStorage, verifyVaultMount, linuxDeviceId } from './storage'
 import { managedPaths } from './paths'
 
 const A = '11111111-1111-4111-8111-111111111111'
@@ -59,4 +59,13 @@ test('mount preflight checks actual ext4 device, mountpoint and mandatory option
   ]) {
     expect(() => verifyVaultMount(recorded, mountinfo)).toThrow('storage_unavailable')
   }
+})
+
+test('decodes Linux fstat device identity without32-bit truncation; invalid descriptors refuse', () => {
+  expect(linuxDeviceId(2049)).toBe('8:1')
+  expect(linuxDeviceId(1796)).toBe('7:4')
+  expect(linuxDeviceId(2 ** 48)).toBe('65536:0')
+  expect(linuxDeviceId(2 ** 48 + 2 ** 32)).toBe('65536:1048576')
+  expect(() => linuxDeviceId(-1)).toThrow('storage_unavailable')
+  expect(() => linuxDeviceId(Number.MAX_SAFE_INTEGER + 1)).toThrow('storage_unavailable')
 })

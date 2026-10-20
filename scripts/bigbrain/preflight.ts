@@ -7,7 +7,7 @@ import { readPrivateJson } from './secure-files'
 import { installedHostSchema } from './control-input'
 import { controlReceiptSchema } from './receipts'
 import { managedPaths } from './paths'
-import { verifyVaultMount } from './storage'
+import { verifyVaultMount, linuxDeviceId } from './storage'
 import { runPrivateCommand } from './process'
 
 export interface CgroupFacts {
@@ -136,14 +136,11 @@ export function verifyLoopBacking(
   const parsed = schema.safeParse(value)
   if (!parsed.success || !/^7:\d+$/.test(expected.device)) throw new Error('storage_unavailable')
   const entry = parsed.data.loopdevices[0]!
-  const device = BigInt(expected.imageDevice)
-  const major = ((device >> 8n) & 0xfffn) | ((device >> 32n) & ~0xfffn)
-  const minor = (device & 0xffn) | ((device >> 12n) & ~0xffn)
   if (
     entry.name !== `/dev/loop${expected.device.slice(2)}` ||
     entry['back-file'] !== expected.image ||
     String(entry['back-ino']) !== String(expected.inode) ||
-    entry['back-maj:min'] !== `${major}:${minor}`
+    entry['back-maj:min'] !== linuxDeviceId(expected.imageDevice)
   )
     throw new Error('storage_unavailable')
 }
