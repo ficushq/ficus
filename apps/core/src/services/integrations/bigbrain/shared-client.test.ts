@@ -86,7 +86,7 @@ test('uses only four read methods through the fixed loopback gateway and retains
   await f.client.readRecord({ id: 'ins_abc123', start: 20, chars: 10 })
   await f.client.recent({ before: 40, limit: 5 })
   expect(f.calls).toHaveLength(8)
-  expect(f.calls.every((c) => c.url.startsWith('http://127.0.0.1:34792/') && c.init.redirect === 'error')).toBe(true)
+  expect(f.calls.every((c) => c.url.startsWith('http://localhost/') && c.init.redirect === 'error')).toBe(true)
   const tools = f.calls.filter((c) => c.url.endsWith('/mcp'))
   expect(tools.map((c) => JSON.parse(String(c.init.body)).params.name)).toEqual([
     'overview',

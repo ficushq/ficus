@@ -64,7 +64,7 @@ export interface IntegrationConnection extends IntegrationConnectionSummary {
 export interface IntegrationCatalogItem {
   availability?: { available: boolean; reason?: string }
   setup?: { state: 'configured' | 'needs_setup' | 'needs_attention'; issues: string[] }
-  connectionMode?: 'local' | 'credential' | 'oauth2' | 'channel' | 'deployment' | 'service'
+  connectionMode?: 'local' | 'managed' | 'credential' | 'oauth2' | 'channel' | 'deployment' | 'service'
 
   enabled?: boolean
   key: string

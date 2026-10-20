@@ -207,7 +207,7 @@ describe('managed BigBrain Platform client', () => {
     for (const [status, body, code, retryable] of cases) {
       respond(() => new Response(typeof body === 'string' ? body : JSON.stringify(body), { status }))
       const error = await refusal(managedBigbrainPlatform.putVault(VAULT, put))
-      expect([status, error.code, error.retryable]).toEqual([status, code, retryable])
+      expect([status, String(error.code), error.retryable]).toEqual([status, code, retryable])
       expect(error.message).not.toContain('sv_secret')
     }
   })

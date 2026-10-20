@@ -151,11 +151,12 @@ test('unsupported BigBrain refuses direct enable and masks saved intent across r
     expect(await isIntegrationEnabled('bigbrain')).toBe(false)
     expect((await integrationRoutesService.catalog()).find((entry) => entry.key === 'bigbrain')).toMatchObject({
       enabled: false,
-      availability: { available: false, reason: expect.stringContaining('unavailable on Ficus Cloud') },
+      // Cloud: only a Platform-confirmed managed host makes BigBrain eligible.
+      availability: { available: false, reason: expect.stringContaining('not been confirmed') },
     })
     expect((await repository.get(id))?.enabled).toBe(false)
     expect((await repository.listPoolSummaries('bigbrain')).find((row) => row.id === id)?.enabled).toBe(false)
-    await expect(setIntegrationEnabled('bigbrain', true, 'test')).rejects.toThrow('unavailable on Ficus Cloud')
+    await expect(setIntegrationEnabled('bigbrain', true, 'test')).rejects.toThrow('not been confirmed')
     expect((await db.select().from(settings).where(eq(settings.key, key)))[0].value).toBe('true')
     expect((await repository.list('bigbrain')).find((row) => row.id === id)?.configuration).toEqual({
       bindingId: 'preserve',

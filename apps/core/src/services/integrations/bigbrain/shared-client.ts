@@ -12,7 +12,9 @@ import {
 } from '@ficus/shared/managed-bigbrain'
 import { BigbrainError } from './errors'
 
-export const BIGBRAIN_SHARED_GATEWAY_PORT = 34792
+/** The credential-free gateway listens ONLY on this root-prepared Unix socket (no TCP listener);
+ * the vault is selected by the receipt origin's Host header, never by a caller-supplied URL. */
+export const BIGBRAIN_SHARED_GATEWAY_SOCKET = '/run/ficus-bigbrain/gateway/http.sock'
 export const BIGBRAIN_SHARED_RESPONSE_BYTES = 512 * 1024
 const text = z.string().trim().min(1).max(1000)
 const integer = z.number().int().safe().nonnegative()
@@ -155,7 +157,7 @@ export class BigbrainSharedClient {
     this.receipt = r
     this.material = m
     this.beforeCall = options.beforeCall
-    this.request = options.fetch ?? ((url, init) => fetch(url, init))
+    this.request = options.fetch ?? ((url, init) => fetch(url, { ...init, unix: BIGBRAIN_SHARED_GATEWAY_SOCKET }))
   }
 
   overview(options?: { signal?: AbortSignal }): Promise<string> {
@@ -224,7 +226,7 @@ export class BigbrainSharedClient {
       'MCP-Protocol-Version': MANAGED_BIGBRAIN_MCP_PROTOCOL,
     }
     const send = (path: '/v1/whoami' | '/mcp', init: RequestInit) =>
-      this.request(`http://127.0.0.1:${BIGBRAIN_SHARED_GATEWAY_PORT}${path}`, {
+      this.request(`http://localhost${path}`, {
         ...init,
         headers,
         redirect: 'error',
