@@ -6,7 +6,11 @@ import { randomUUID } from 'node:crypto'
 import { BigbrainSharedClient } from './shared-client'
 import { createSharedBigbrainTools } from './shared-tools'
 import { IntegrationRuntimeGate } from '../runtime-gate'
-import type { ManagedVault } from './managed/store'
+import { inArray } from 'drizzle-orm'
+import { db, managedBigbrainVaults, users } from '../../../db'
+import { ManagedHostError, type ManagedHostCall } from './managed/host-client'
+import { reconcileNext } from './managed/reconciler'
+import { managedVaultStore, type ManagedVault } from './managed/store'
 import { nativeFixtures } from '../../../../../../scripts/bigbrain/native-fixtures'
 import {
   MANAGED_BIGBRAIN_DEFAULT_LIMITS,
@@ -19,7 +23,8 @@ import { writePrivateJson } from '../../../../../../scripts/bigbrain/secure-file
 const artifact = process.env.FICUS_BIGBRAIN_SHARED_ARTIFACT
 const nativeDeps = process.env.FICUS_BIGBRAIN_SHARED_DEPS
 const required = process.env.FICUS_BIGBRAIN_REQUIRE_SHARED_SMOKE === '1'
-/** Wire-level evidence only until the management/helper/gateway/tool path is added.
+/** Core's reconciler creates both vaults (fixture helper), then the read client and shared tools run
+ * against the real native servers. The shipped gateway, launcher and HTTPS are the containment lane.
  * No TLS/UID/mount/cgroup claim: this runs unprivileged owned synthetic processes.
  * CI's required lane fails on missing artifacts rather than accepting a skip.
  */
@@ -29,11 +34,13 @@ test.skipIf(!artifact && !required)(
     if (!artifact || !nativeDeps) throw new Error('Required pinned shared artifact/dependencies are missing')
     const root = await mkdtemp(join(tmpdir(), 'ficus-bigbrain-shared-smoke-'))
     let fixtures: Awaited<ReturnType<typeof nativeFixtures>> | undefined
+    const owners: string[] = []
     try {
       fixtures = await nativeFixtures(root, artifact, nativeDeps)
       expect(fixtures.provenance.upstreamCommit).toBe(pin)
-      const a = await fixtures.vault('a')
-      const b = await fixtures.vault('b')
+      // Both vaults are created through Core's own path: a recorded intent in Core's store, then
+      // the worker reconciler driving the helper (here a fixture that starts the real native server).
+      const { a, b } = await createdThroughReconciler(fixtures, owners)
       expect(a.identity.vault.id).not.toBe(b.identity.vault.id)
       // The shipped bundle serves its font assets from the release directory (unit WorkingDirectory).
       const font = await fetch(a.endpoint + '/assets/hanken-grotesk-latin.woff2')
@@ -261,6 +268,8 @@ test.skipIf(!artifact && !required)(
         body: 'The human native client can still contribute.',
       })
     } finally {
+      await db.delete(managedBigbrainVaults).where(inArray(managedBigbrainVaults.ownerUserId, owners))
+      if (owners.length) await db.delete(users).where(inArray(users.id, owners))
       await fixtures?.dispose()
       await rm(root, { recursive: true, force: true })
     }
@@ -268,6 +277,117 @@ test.skipIf(!artifact && !required)(
   },
   60000
 )
+
+const VAULT_A = '11111111-1111-4111-8111-111111111111'
+const VAULT_B = '22222222-2222-4222-8222-222222222222'
+
+/** Record two create intents in Core's store and let the reconciler apply them through a fixture
+ * helper that starts a real native vault server per create and answers with its receipt. */
+async function createdThroughReconciler(fixtures: Awaited<ReturnType<typeof nativeFixtures>>, owners: string[]) {
+  const host = {
+    contractVersion: 1 as const,
+    tenantId: randomUUID(),
+    physicalHostBinding: randomUUID(),
+    hostEpoch: 1,
+    hostState: 'active' as const,
+    upstreamCommit: pin,
+    artifactDigest: fixtures.provenance.digest,
+    zone: 'example.com',
+    limits: MANAGED_BIGBRAIN_DEFAULT_LIMITS,
+    effect: null,
+  }
+  const origin = (id: string) => `https://bb-${id.replaceAll('-', '')}.example.com`
+  await db.delete(managedBigbrainVaults).where(inArray(managedBigbrainVaults.id, [VAULT_A, VAULT_B]))
+  for (const [vaultId, name] of [
+    [VAULT_A, 'Alpha'],
+    [VAULT_B, 'Beta'],
+  ] as const) {
+    const [user] = await db
+      .insert(users)
+      .values({ email: `${randomUUID()}@example.com` })
+      .returning()
+    owners.push(user!.id)
+    await managedVaultStore.request({
+      vaultId,
+      requestId: randomUUID(),
+      displayName: name,
+      ownerUserId: user!.id,
+      ownerHandle: 'ada',
+      ownerDisplay: 'Ada',
+      actorUserId: user!.id,
+      recipe: {
+        origin: origin(vaultId),
+        limits: host.limits,
+        upstreamCommit: pin,
+        artifactDigest: host.artifactDigest,
+      },
+    })
+  }
+  const started = new Map<string, Awaited<ReturnType<typeof fixtures.vault>>>()
+  const dns: string[] = []
+  const ours = new Set([VAULT_A, VAULT_B])
+  const deps = {
+    host: () => host,
+    // Only this test's rows, whatever else the database holds.
+    store: {
+      ...managedVaultStore,
+      due: async (now: Date, limit = 1) =>
+        (await managedVaultStore.due(now, 100)).filter((row) => ours.has(row.id)).slice(0, limit),
+    },
+    platform: {
+      ensureDns: (async (vaultId: string, expected: string) => {
+        expect(expected).toBe(origin(vaultId))
+        dns.push(vaultId)
+      }) as never,
+      deleteDns: async () => {},
+    },
+    hostClient: {
+      call: (async (_host: unknown, requestId: string, call: ManagedHostCall) => {
+        if (call.action !== 'create') throw new ManagedHostError('invalid_request', false)
+        expect([call.expectedGeneration, call.generation, call.origin]).toEqual([0, 1, origin(call.vaultId)])
+        const vault = await fixtures.vault(call.vaultId === VAULT_A ? 'a' : 'b')
+        started.set(call.vaultId, vault)
+        return {
+          contractVersion: 1,
+          requestId,
+          ok: true,
+          action: 'create',
+          physicalHostBinding: host.physicalHostBinding,
+          receipt: {
+            receiptId: randomUUID(),
+            tenantId: host.tenantId,
+            physicalHostBinding: host.physicalHostBinding,
+            vaultId: call.vaultId,
+            hostEpoch: host.hostEpoch,
+            generation: 1,
+            upstreamVaultId: vault.identity.vault.id,
+            displayName: call.displayName,
+            state: 'ready',
+            upstreamCommit: pin,
+            artifactDigest: host.artifactDigest,
+            localPort: null,
+            origin: call.origin,
+            readAccess: 'active',
+          },
+        }
+      }) as never,
+    },
+  }
+  const later = () => new Date(Date.now() + 60_000)
+  expect(await reconcileNext({ ...deps, now: later })).toBe('applied')
+  expect(await reconcileNext({ ...deps, now: later })).toBe('applied')
+  expect(await reconcileNext({ ...deps, now: later })).toBe('idle')
+  expect(dns.sort()).toEqual([VAULT_A, VAULT_B])
+  for (const vaultId of [VAULT_A, VAULT_B])
+    expect(await managedVaultStore.get(vaultId)).toMatchObject({
+      state: 'ready',
+      readAccess: 'active',
+      appliedGeneration: 1,
+      desiredAction: null,
+      upstreamVaultId: started.get(vaultId)!.identity.vault.id,
+    })
+  return { a: started.get(VAULT_A)!, b: started.get(VAULT_B)! }
+}
 
 /** Core's shared tools over real clients, with an in-memory assignment/store in front of them. */
 function sharedToolsOver(vaults: { vaultId: string; name: string; client: BigbrainSharedClient }[]) {
