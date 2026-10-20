@@ -1,4 +1,4 @@
-import type { IntegrationProvider, ProviderValidation, RuntimeConnection, SanitizedConversationRecord } from './types'
+import type { IntegrationProvider, ProviderValidation } from './types'
 import type { OAuthAuthority } from './authorization/authority'
 import type { OAuthCredentialBundleV1 } from './authorization/credential-bundle'
 
@@ -65,19 +65,6 @@ export interface IntegrationAgentToolFactory<Context = unknown, Tool = unknown> 
   createTools(context: Context): readonly Tool[] | Promise<readonly Tool[]>
 }
 
-export interface IntegrationConversationExportDriver<C = unknown> {
-  encode(records: readonly SanitizedConversationRecord[], connection: RuntimeConnection<C>): Uint8Array
-  send(input: {
-    payload: Uint8Array
-    connection: RuntimeConnection<C>
-    credential: string
-    agentId: string
-    squadId: string
-    streamId: string
-    fromLine: number
-  }): Promise<void>
-}
-
 export interface IntegrationPluginV1<
   C,
   Credential,
@@ -107,7 +94,7 @@ export interface IntegrationPluginV1<
       | 'apple-push'
       | 'web-push'
       | 'openai-services'
-    readonly connectionMode: 'credential' | 'oauth2' | 'channel' | 'deployment' | 'service'
+    readonly connectionMode: 'local' | 'credential' | 'oauth2' | 'channel' | 'deployment' | 'service'
     readonly assignable: boolean
     readonly requiredCapabilities: readonly string[]
   }
@@ -120,7 +107,6 @@ export interface IntegrationPluginV1<
   readonly runtime: {
     readonly provider: IntegrationProvider<C>
     readonly agentTools?: AgentTools
-    readonly conversationExport?: IntegrationConversationExportDriver<C>
   }
   readonly sandbox: IntegrationSandboxProjection
   readonly lifecycle: { readonly refresh: boolean; readonly revoke: boolean }
@@ -157,7 +143,7 @@ export interface SafeIntegrationCatalogEntry {
     | 'apple-push'
     | 'web-push'
     | 'openai-services'
-  connectionMode: 'credential' | 'oauth2' | 'channel' | 'deployment' | 'service'
+  connectionMode: 'local' | 'credential' | 'oauth2' | 'channel' | 'deployment' | 'service'
   assignable: boolean
   requiredCapabilities: readonly string[]
   sandbox: {

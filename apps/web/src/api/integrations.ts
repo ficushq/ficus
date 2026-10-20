@@ -36,8 +36,11 @@ export interface IntegrationConnection extends IntegrationConnectionSummary {
   isGlobalDefault?: boolean
   adapterVersion: number
   configuration: {
-    version: 1
-    apiBase?: string
+    version: 1 | 2
+    bindingId?: string
+    bindingFingerprint?: string
+    vaultPath?: string
+    executablePath?: string
     workspaceId?: string
     workspaceName?: string | null
     workspaceIcon?: string | null
@@ -60,7 +63,7 @@ export interface IntegrationConnection extends IntegrationConnectionSummary {
 
 export interface IntegrationCatalogItem {
   setup?: { state: 'configured' | 'needs_setup' | 'needs_attention'; issues: string[] }
-  connectionMode?: 'credential' | 'oauth2' | 'channel' | 'deployment' | 'service'
+  connectionMode?: 'local' | 'credential' | 'oauth2' | 'channel' | 'deployment' | 'service'
 
   enabled?: boolean
   key: string
@@ -157,18 +160,19 @@ export interface SquadIntegrationSelection {
 export const listIntegrationPool = (provider: string, fetcher: ApiFetcher = apiFetch) =>
   fetcher<IntegrationConnection[]>(`/integrations/connections?provider=${provider}`)
 
-export const createIntegration = (
-  body: { displayName: string; apiBase: string; credential: string },
+export interface BigbrainLocalBindings {
+  state: 'available' | 'setup_required' | 'unsupported_host' | 'invalid_configuration' | 'binding_unavailable'
+  bindings: { id: string; label: string; vaultPath: string; executablePath: string }[]
+}
+export const getBigbrainLocalBindings = (fetcher: ApiFetcher = apiFetch) =>
+  fetcher<BigbrainLocalBindings>('/integrations/providers/bigbrain/local-bindings')
+export const createLocalBigbrainIntegration = (
+  input: { bindingId: string; displayName: string },
   fetcher: ApiFetcher = apiFetch
 ) =>
-  fetcher<IntegrationConnection>('/integrations/connections', {
+  fetcher<IntegrationConnection>('/integrations/providers/bigbrain/local-connections', {
     method: 'POST',
-    body: JSON.stringify({
-      provider: 'bigbrain',
-      displayName: body.displayName,
-      configuration: { version: 1, apiBase: body.apiBase },
-      credential: body.credential,
-    }),
+    body: JSON.stringify(input),
   })
 
 export const integrationAction = (
@@ -237,19 +241,6 @@ export const retryIntegrationProjection = (squadId: string, provider: string, fe
 
 export const unassignIntegration = (squadId: string, provider: string, fetcher: ApiFetcher = apiFetch) =>
   fetcher<void>(`/squads/${squadId}/integrations/${provider}/assignment`, { method: 'DELETE' })
-
-export type ExternalExportStatus =
-  | { state: 'disabled' }
-  | { state: 'enabled'; connectionId: string; consentedAt: string; revokedAt: null; lastDeliveredAt?: string }
-export const getExternalExport = (agentId: string) =>
-  apiFetch<ExternalExportStatus>(`/agents/${agentId}/external-export`)
-export const enableExternalExport = (agentId: string, connectionId: string) =>
-  apiFetch<ExternalExportStatus>(`/agents/${agentId}/external-export`, {
-    method: 'POST',
-    body: JSON.stringify({ connectionId, consent: true, policyVersion: 1, projectionVersion: 1 }),
-  })
-export const disableExternalExport = (agentId: string) =>
-  apiFetch<void>(`/agents/${agentId}/external-export`, { method: 'DELETE' })
 
 export interface GitHubWebhookSettings {
   configured: boolean

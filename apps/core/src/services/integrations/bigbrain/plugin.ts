@@ -1,34 +1,32 @@
 import { BigbrainError } from './errors'
-import { encodeBigbrainSession, sendBigbrainSession } from './export'
-import { BigbrainProvider, type BigbrainConfigV1 } from './provider'
+import { BigbrainProvider, type BigbrainConfigV2 } from './provider'
 import { createBigbrainTools, type BigbrainTool, type BigbrainToolContext } from './tools'
 import type { IntegrationPluginV1 } from '../plugin'
 
 const provider = new BigbrainProvider()
 
 const plugin: IntegrationPluginV1<
-  BigbrainConfigV1,
+  BigbrainConfigV2,
   string,
   { createTools(context: BigbrainToolContext): readonly BigbrainTool[] }
 > = {
   manifestVersion: 1,
   key: 'bigbrain',
-  adapterVersion: 1,
+  adapterVersion: 2,
   presentation: {
     label: 'Bigbrain',
-    description: 'Connect a Bigbrain vault for agent tools and conversation export.',
+    description: 'Connect an approved local BigBrain vault on the Core host.',
     icon: 'bigbrain',
-    connectionMode: 'credential',
+    connectionMode: 'local',
     assignable: true,
-    requiredCapabilities: ['agent_tools', 'conversation_export'],
+    requiredCapabilities: ['agent_tools'],
   },
   connection: {
     parseConfiguration: (input) => provider.parseConfig(input),
-    safeConfiguration: (configuration) => ({ version: configuration.version, apiBase: configuration.apiBase }),
+    safeConfiguration: (configuration) => ({ ...configuration }),
     credential: {
       parse(value) {
-        if (typeof value !== 'string' || value.length < 1 || value.length > 16_384)
-          throw new Error('Invalid credential')
+        if (typeof value !== 'string' || !/^[a-f0-9]{8}$/.test(value)) throw new Error('Invalid credential')
         return value
       },
       serialize(value) {
@@ -40,7 +38,6 @@ const plugin: IntegrationPluginV1<
   runtime: {
     provider,
     agentTools: { createTools: createBigbrainTools },
-    conversationExport: { encode: encodeBigbrainSession, send: sendBigbrainSession },
   },
   sandbox: {
     packages: [],
@@ -56,7 +53,15 @@ const plugin: IntegrationPluginV1<
     if (error instanceof BigbrainError) {
       return {
         code: error.code,
-        retryable: !['invalid_auth', 'missing_scope', 'invalid_configuration'].includes(error.code),
+        retryable: ![
+          'invalid_auth',
+          'missing_scope',
+          'invalid_configuration',
+          'unsupported_host',
+          'binding_changed',
+          'binding_unavailable',
+          'outcome_unknown',
+        ].includes(error.code),
         ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
       }
     }
@@ -65,5 +70,3 @@ const plugin: IntegrationPluginV1<
 }
 
 export const bigbrainPlugin = Object.freeze(plugin)
-
-export { encodeBigbrainSession }

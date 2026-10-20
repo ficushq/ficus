@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "fileCount": 194,
-  "testCount": 1420,
+  "fileCount": 193,
+  "testCount": 1417,
   "skipCount": 0,
   "files": [
     "src/App.gate.test.tsx",
@@ -44,7 +44,6 @@
     "src/components/ChatView.router.test.tsx",
     "src/components/ChatView.test.tsx",
     "src/components/ConfirmButton.test.tsx",
-    "src/components/ExternalExportControl.test.tsx",
     "src/components/FeedPage.test.tsx",
     "src/components/InboxMessageRow.test.tsx",
     "src/components/InboxPage.pull-refresh.test.ts",

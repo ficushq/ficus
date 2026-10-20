@@ -3,12 +3,10 @@ useEnabledIntegrationFixtures('bigbrain', 'github', 'notion')
 import { expect, test } from 'bun:test'
 import { and, eq, inArray } from 'drizzle-orm'
 import {
-  agents,
   db,
   integrationConnectionAssignments,
   integrationAuditEvents,
   integrationConnections,
-  integrationExportConsents,
   squads,
   users,
 } from '../../db'
@@ -112,44 +110,6 @@ test('rejects provider mismatch and disabled selections', async () => {
   }
 })
 
-test('switching assignments revokes active consent for agents in that squad', async () => {
-  const repository = new DbIntegrationConnectionRepository()
-  const [squad] = await db
-    .insert(squads)
-    .values({ name: `Consent ${crypto.randomUUID()}`, purpose: 'test' })
-    .returning()
-  const [user] = await db
-    .insert(users)
-    .values({ email: `${crypto.randomUUID()}@example.com` })
-    .returning()
-  const [agent] = await db.insert(agents).values({ agentTypeId: 'engineer', squadId: squad.id }).returning()
-  const [first, second] = await Promise.all([createEnabled(repository), createEnabled(repository)])
-  try {
-    await repository.assign(squad.id, 'bigbrain', first.id)
-    const [consent] = await db
-      .insert(integrationExportConsents)
-      .values({
-        connectionId: first.id,
-        agentId: agent.id,
-        consentedByUserId: user.id,
-        adoptedEnqueueOrder: 0n,
-      })
-      .returning()
-
-    await repository.assign(squad.id, 'bigbrain', second.id)
-    const [after] = await db
-      .select()
-      .from(integrationExportConsents)
-      .where(eq(integrationExportConsents.id, consent.id))
-    expect(after?.revokedAt).toBeInstanceOf(Date)
-  } finally {
-    await db.delete(squads).where(eq(squads.id, squad.id))
-    await db.delete(integrationExportConsents).where(eq(integrationExportConsents.consentedByUserId, user.id))
-    await db.delete(users).where(eq(users.id, user.id))
-    await db.delete(integrationConnections).where(inArray(integrationConnections.id, [first.id, second.id]))
-  }
-})
-
 test('assignment changes write content-free squad and actor-attributed audits', async () => {
   const repository = new DbIntegrationConnectionRepository()
   const [squad] = await db
@@ -181,7 +141,6 @@ test('assignment changes write content-free squad and actor-attributed audits', 
     ])
   } finally {
     await db.delete(squads).where(eq(squads.id, squad.id))
-    await db.delete(integrationExportConsents).where(eq(integrationExportConsents.consentedByUserId, user.id))
     await db.delete(users).where(eq(users.id, user.id))
     await db.delete(integrationConnections).where(eq(integrationConnections.id, connection.id))
   }

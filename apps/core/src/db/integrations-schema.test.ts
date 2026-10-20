@@ -8,21 +8,15 @@ import {
   integrationConnections,
   integrationAuthorizationFlowReceipts,
   integrationCredentialCleanupJobs,
-  integrationExportBatches,
-  integrationExportConsents,
   integrationOauthStates,
   integrationProjectionStates,
   integrationRevocationJobs,
 } from './schema'
 
-test('integration persistence stores only opaque credential references and encrypted exports', () => {
+test('integration persistence stores only opaque credential references', () => {
   const connectionColumns = getTableConfig(integrationConnections).columns.map((column) => column.name)
   expect(connectionColumns).toContain('credential_ref')
   expect(connectionColumns.some((name) => /token|plaintext|credential_value/.test(name))).toBe(false)
-
-  const batchColumns = getTableConfig(integrationExportBatches).columns.map((column) => column.name)
-  expect(batchColumns).toContain('encrypted_payload')
-  expect(batchColumns).not.toContain('payload')
 })
 
 test('credential cleanup tombstones contain only opaque retry metadata', () => {
@@ -34,18 +28,8 @@ test('credential cleanup tombstones contain only opaque retry metadata', () => {
   )
 })
 
-test('integration policy and prospective consent state are durable', () => {
+test('integration policy remains durable', () => {
   expect(getTableConfig(agentTypes).columns.map((column) => column.name)).toContain('integration_capabilities')
-  expect(getTableConfig(integrationExportConsents).columns.map((column) => column.name)).toEqual(
-    expect.arrayContaining([
-      'consented_by_user_id',
-      'consented_at',
-      'revoked_at',
-      'policy_version',
-      'projection_version',
-      'adopted_enqueue_order',
-    ])
-  )
 })
 
 test('integration assignments are the provider-safe squad binding', () => {

@@ -2,13 +2,11 @@ import { reconcileSquadIntegration, rememberSquadIntegrationChoice } from './sco
 import { effectiveConnectionEnabled, integrationEnabledPredicate, invalidateProjection } from './provider-state'
 import { and, asc, eq, getTableColumns, gt, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm'
 import {
-  agents,
   db,
   integrationAuthorizationFlowReceipts,
   integrationConnectionAssignments,
   integrationConnections,
   integrationCredentialCleanupJobs,
-  integrationExportConsents,
   integrationRevocationJobs,
   squads,
 } from '../../db'
@@ -248,7 +246,6 @@ export class DbIntegrationConnectionRepository
         if (options.retainPrevious) {
           await tx.update(integrationConnectionAssignments).set({ isDefault: false }).where(previousWhere)
         } else {
-          await revokeSquadConsents(tx, squadId, previous.connectionId)
           await tx.delete(integrationConnectionAssignments).where(previousWhere)
         }
       }
@@ -315,7 +312,6 @@ export class DbIntegrationConnectionRepository
         .for('update')
       if (!previous || previous.connectionId !== connection.id) return false
 
-      await revokeSquadConsents(tx, squadId, previous.connectionId)
       await tx.delete(integrationConnectionAssignments).where(assignmentWhere)
       await invalidateProjection(tx, squadId, providerKey)
       await insertIntegrationAuditEvent(tx, {
@@ -1304,22 +1300,6 @@ async function usageInTransaction(tx: Transaction, connectionId: string): Promis
     .where(eq(integrationConnectionAssignments.connectionId, connectionId))
     .orderBy(squads.name, squads.id)
   return { squadCount: rows.length, squads: rows }
-}
-
-async function revokeSquadConsents(tx: Transaction, squadId: string, connectionId: string): Promise<void> {
-  await tx
-    .update(integrationExportConsents)
-    .set({ revokedAt: new Date() })
-    .where(
-      and(
-        eq(integrationExportConsents.connectionId, connectionId),
-        isNull(integrationExportConsents.revokedAt),
-        inArray(
-          integrationExportConsents.agentId,
-          tx.select({ id: agents.id }).from(agents).where(eq(agents.squadId, squadId))
-        )
-      )
-    )
 }
 
 function map(row: typeof integrationConnections.$inferSelect): IntegrationConnectionRecord {

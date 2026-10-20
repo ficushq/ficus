@@ -9,10 +9,10 @@ const policy = {
 } satisfies AgentTypeIntegrationPolicyV1
 
 test('integration tools require both type capability and explicit tool allow', () => {
-  expect(allowsBigbrainIntegrationTools(['bigbrain_search'], policy)).toBe(true)
+  expect(allowsBigbrainIntegrationTools(['bigbrain_search_vault'], policy)).toBe(true)
   expect(allowsBigbrainIntegrationTools([], policy)).toBe(false)
-  expect(allowsBigbrainIntegrationTools(['bigbrain_search'], null)).toBe(false)
-  expect(allowsBigbrainIntegrationTools(['bigbrain_search'], { version: 1, allow: { bigbrain: [] } })).toBe(false)
+  expect(allowsBigbrainIntegrationTools(['bigbrain_search_vault'], null)).toBe(false)
+  expect(allowsBigbrainIntegrationTools(['bigbrain_search_vault'], { version: 1, allow: { bigbrain: [] } })).toBe(false)
   expect(allowsBigbrainIntegrationTools(['other_tool'], policy)).toBe(false)
 })
 
@@ -47,9 +47,9 @@ test('Bigbrain plugin retains the exact four integration tool names', async () =
   })
 
   expect(tools.map((tool) => tool.name)).toEqual([
-    'bigbrain_search',
-    'bigbrain_get_note',
-    'bigbrain_get_memory',
-    'bigbrain_drop_markdown',
+    'bigbrain_load_memory',
+    'bigbrain_search_vault',
+    'bigbrain_read_note',
+    'bigbrain_drop',
   ])
 })

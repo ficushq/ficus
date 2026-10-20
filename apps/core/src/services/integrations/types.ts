@@ -1,7 +1,6 @@
 /** Provider-neutral integration contracts. Provider implementations are injected at composition time. */
 export type IntegrationCapabilityKind =
   | 'agent_tools'
-  | 'conversation_export'
   | 'webhook_ingress'
   | 'event_polling'
   | 'messaging'
@@ -48,18 +47,6 @@ export interface BoundIntegrationTool {
 
 export interface AgentToolCapability<C = unknown> {
   createTools(connection: RuntimeConnection<C>): Promise<readonly BoundIntegrationTool[]>
-}
-
-export interface SanitizedConversationRecord {
-  role: 'user' | 'assistant'
-  text: string
-  sourceMessageId: string
-  createdAt: Date
-}
-
-export interface ConversationExportCapability<C = unknown> {
-  encode(records: readonly SanitizedConversationRecord[], connection: RuntimeConnection<C>): Uint8Array
-  send(payload: Uint8Array, connection: RuntimeConnection<C>, signal?: AbortSignal): Promise<void>
 }
 
 export interface RawIngressRequest {
@@ -132,7 +119,6 @@ export interface NotificationSinkCapability<C = unknown> {
 
 export interface IntegrationCapabilities<C = unknown> {
   agent_tools: AgentToolCapability<C>
-  conversation_export: ConversationExportCapability<C>
   webhook_ingress: WebhookIngressCapability<C>
   event_polling: EventPollingCapability<C>
   messaging: MessagingCapability<C>

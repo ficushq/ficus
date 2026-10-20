@@ -118,3 +118,8 @@ describe('amtp:send matching', () => {
   it('NOT granted by amtp:write', () => expect(permissionMatches('amtp:write', Permissions.AMTP_SEND)).toBe(false))
   it('NOT granted by amtp:read', () => expect(permissionMatches('amtp:read', Permissions.AMTP_SEND)).toBe(false))
 })
+
+test('retired transcript capture is not a supported permission', () => {
+  expect(Object.values(Permissions)).not.toContain('integrations:export')
+  expect(isGrantablePermission('integrations:export')).toBe(false)
+})
