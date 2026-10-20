@@ -28,6 +28,9 @@
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import sharp from 'sharp'
+import { recolorMark, THEME_ICON_TOKENS, themeIconColors, type ThemeIconColors } from '@ficus/shared/theme-icon'
+import { cssBlockDeclarations } from '../../apps/web/scripts/theme-builtin-shared'
+import { BUILT_IN_THEMES } from '../../apps/web/src/theme/registry'
 
 export const REPO_ROOT = join(import.meta.dir, '..', '..')
 export const BRAND_DIR = join(REPO_ROOT, 'brand')
@@ -504,6 +507,76 @@ async function generateFarmIconSet(
 }
 
 // ---------------------------------------------------------------------------
+// Theme icons
+// ---------------------------------------------------------------------------
+
+export interface ThemeIcon {
+  readonly themeId: string
+  /** `constant` for a theme with a single appearance, which gets one icon. */
+  readonly appearance: 'light' | 'dark' | 'constant'
+  /** File name under `desktop/themes/`. */
+  readonly file: string
+  readonly colors: ThemeIconColors
+}
+
+const THEME_CSS = ['apps/web/src/theme/builtins.css', 'apps/web/src/index.css'].map((path) => join(REPO_ROOT, path))
+
+/**
+ * Every built-in theme's icon colors, read from the theme CSS the web app ships: a light and a dark icon for a theme
+ * with both appearances, one icon for a single-appearance theme.
+ */
+export async function builtInThemeIcons(): Promise<ThemeIcon[]> {
+  const sheets = await Promise.all(THEME_CSS.map((path) => readFile(path, 'utf8')))
+  const tokensFor = (selector: string) => {
+    for (const css of sheets) if (css.includes(selector)) return cssBlockDeclarations(css, selector)
+    throw new Error(`no theme block for ${selector}`)
+  }
+  const icons: ThemeIcon[] = []
+  for (const theme of BUILT_IN_THEMES) {
+    const appearances = theme.kind === 'dual' ? (['light', 'dark'] as const) : (['constant'] as const)
+    for (const appearance of appearances) {
+      const scope = `[data-theme-scope][data-theme='${theme.id}']`
+      const block = tokensFor(appearance === 'constant' ? scope : `${scope}[data-appearance='${appearance}']`)
+      const tokens = Object.fromEntries(
+        Object.entries(THEME_ICON_TOKENS).map(([role, token]) => [role, block[token] ?? ''])
+      )
+      const colors = themeIconColors(tokens, { themeId: theme.id, appearance })
+      if (!colors) throw new Error(`theme ${theme.id} (${appearance}) is missing an icon token`)
+      const file = appearance === 'constant' ? `${theme.id}.png` : `${theme.id}-${appearance}.png`
+      icons.push({ themeId: theme.id, appearance, file, colors })
+    }
+  }
+  return icons
+}
+
+/** Placeholders `desktop/themes/template.svg` carries in place of each part's color. */
+export const THEME_ICON_TEMPLATE_COLORS: ThemeIconColors = {
+  tile: '{{tile}}',
+  leaf: '{{leaf}}',
+  pot: '{{pot}}',
+  sideLeaves: '{{sideLeaves}}',
+}
+
+async function generateThemeIcons(outDir: string, markLight: string, markMetrics: BBox): Promise<void> {
+  const dir = join(outDir, 'desktop', 'themes')
+  await mkdir(dir, { recursive: true })
+  const svg = (colors: ThemeIconColors) =>
+    buildCompositeSVG({
+      size: DESKTOP_CANVAS,
+      markup: recolorMark(markLight, colors),
+      bbox: markMetrics,
+      fill: FILL.desktopTile,
+      background: colors.tile,
+      tile: DESKTOP_TILE_SPEC,
+    })
+  const icons = await builtInThemeIcons()
+  await Promise.all(icons.map((icon) => renderPng(svg(icon.colors), join(dir, icon.file))))
+  await writeFile(join(dir, 'manifest.json'), `${JSON.stringify({ icons }, null, 2)}\n`)
+  // Desktop fills this in to draw a custom theme's icon live, the same way these were drawn.
+  await writeFile(join(dir, 'template.svg'), `${svg(THEME_ICON_TEMPLATE_COLORS)}\n`)
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -592,6 +665,7 @@ export async function generate(outDir: string = OUT_DIR): Promise<void> {
     }),
     join(outDir, 'desktop', 'icon-1024-dark.png')
   )
+  await generateThemeIcons(outDir, markLight, markMetrics)
 
   // --- mobile/ ---------------------------------------------------------------
 

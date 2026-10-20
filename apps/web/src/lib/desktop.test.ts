@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { desktopBridge, desktopInstance, type DesktopBridge } from './desktop'
+import { desktopAppIcon, desktopBridge, desktopInstance, type DesktopBridge } from './desktop'
 
 afterEach(() => {
   Reflect.deleteProperty(window, 'tauDesktopApp') // ficus-negative-test
@@ -104,5 +104,25 @@ describe('desktopInstance', () => {
     }
 
     expect(desktopInstance()).toBe(instance)
+  })
+})
+
+describe('desktopAppIcon', () => {
+  test('is absent on a Desktop build that does not draw themed icons', () => {
+    window.ficusDesktopApp = bridge()
+    expect(desktopAppIcon()).toBeUndefined()
+  })
+
+  test('calls the bridge when Desktop provides it', async () => {
+    const icons: unknown[] = []
+    window.ficusDesktopApp = { ...bridge(), setAppIcon: async (icon) => void icons.push(icon) }
+    const icon = {
+      themeId: 'ember',
+      appearance: 'dark' as const,
+      custom: false,
+      colors: { tile: '#1b1412', leaf: '#b04728', pot: '#d67d3a', sideLeaves: '#d9bea9' },
+    }
+    await desktopAppIcon()?.(icon)
+    expect(icons).toEqual([icon])
   })
 })
