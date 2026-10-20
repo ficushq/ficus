@@ -11,8 +11,8 @@ const manifest = {
   hostEpoch: 1,
   hostState: 'active',
   routes: [
-    { vaultId: id, upstreamVaultId: other, origin: `https://${a}`, localPort: 30000, state: 'ready' },
-    { vaultId: other, upstreamVaultId: id, origin: `https://${b}`, localPort: 30001, state: 'ready' },
+    { vaultId: id, upstreamVaultId: other, origin: `https://${a}`, state: 'ready' },
+    { vaultId: other, upstreamVaultId: id, origin: `https://${b}`, state: 'ready' },
   ],
 }
 const request = (host = a, path = '/v1/whoami', init?: RequestInit) =>
@@ -32,12 +32,10 @@ async function retained(promise: Promise<Response>) {
 
 test('credential-free manifest is strict, bounded, identity-preserving and contains no paths', () => {
   expect(gatewayManifestSchema.safeParse(manifest).success).toBe(true)
-  expect(
-    gatewayManifestSchema.safeParse({ ...manifest, routes: [{ ...manifest.routes[0], localPort: 50000 }] }).success
-  ).toBe(true)
-  for (const localPort of [80, 3000, 34792, 65536])
+  // No caller-selectable target of any kind: no ports, hosts or socket paths in a route.
+  for (const extra of [{ localPort: 30000 }, { socket: '/tmp/x.sock' }, { host: '127.0.0.1' }])
     expect(
-      gatewayManifestSchema.safeParse({ ...manifest, routes: [{ ...manifest.routes[0], localPort }] }).success
+      gatewayManifestSchema.safeParse({ ...manifest, routes: [{ ...manifest.routes[0], ...extra }] }).success
     ).toBe(false)
   for (const key of ['token', 'path', 'owner', 'credentials'])
     expect(gatewayManifestSchema.safeParse({ ...manifest, [key]: 'PRIVATE' }).success).toBe(false)
@@ -92,7 +90,9 @@ test('forwards auth only to the exact recorded loopback route and preserves upst
     handle(request(b, '/v1/whoami', { headers: { Authorization: 'Bearer PRIVATE', 'X-Forwarded-Host': 'evil' } }))
   )
   expect(await response.text()).toBe('native response')
-  expect(calls[0]!.url).toBe('http://127.0.0.1:30001/v1/whoami')
+  expect(calls[0]!.url).toBe(`http://${b}/v1/whoami`)
+  // Only the root-prepared socket of exactly the routed vault.
+  expect((calls[0]!.init as { unix?: string }).unix).toBe(`/run/ficus-bigbrain/vaults/${other}/http.sock`)
   expect(calls[0]!.init.redirect).toBe('manual')
   expect(new Headers(calls[0]!.init.headers).get('Authorization')).toBe('Bearer PRIVATE')
   expect(new Headers(calls[0]!.init.headers).get('X-Forwarded-Host')).toBe(null)

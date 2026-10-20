@@ -12,6 +12,7 @@ Slice=ficus-bigbrain.slice
 WorkingDirectory=/
 UMask=0077
 ExecStartPre=+/usr/local/bin/bun --no-install --no-env-file {{ARTIFACT_ROOT}}/ficus-bigbrain-host.js preflight gateway
+ExecStartPre=/usr/bin/env -i HOME=/nonexistent PATH=/usr/bin:/bin LANG=C.UTF-8 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 /usr/local/bin/bun --no-install --no-env-file {{ARTIFACT_ROOT}}/ficus-bigbrain-host.js sandbox gateway
 ExecStart=/usr/bin/env -i HOME=/nonexistent PATH=/usr/bin:/bin LANG=C.UTF-8 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 /usr/local/bin/bun --no-install --no-env-file {{ARTIFACT_ROOT}}/ficus-bigbrain-host.js gateway
 Restart=on-failure
 RestartSec=5
@@ -34,11 +35,12 @@ ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 RestrictRealtime=yes
 LockPersonality=yes
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# Unix sockets only: Caddy reaches the gateway, and the gateway reaches each vault, through
+# root-prepared socket directories; no IP listener exists to be squatted.
+RestrictAddressFamilies=AF_UNIX
 IPAddressDeny=any
-IPAddressAllow=localhost
 SocketBindDeny=any
-SocketBindAllow=ipv4:tcp:34792
+ReadWritePaths=/run/ficus-bigbrain/gateway
 TemporaryFileSystem=/etc/ficus:ro
 # Bind the public directory, not the route inode: root publishes with atomic rename.
 BindReadOnlyPaths=/etc/ficus/bigbrain/public

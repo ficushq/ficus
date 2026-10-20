@@ -150,7 +150,7 @@ async function fixture(options: { loseMint?: boolean } = {}) {
     freeBytes: async () => 100 * 1024 ** 3,
     probeReady: async () => true,
     sleep: async () => {},
-    whoami: async (_port: number, presented: string) => {
+    whoami: async (_socket: string, presented: string) => {
       const credential = credentials.find((c) => token(c.id) === presented && c.revoked === null)
       if (!credential) throw new Error('upstream_unavailable')
       const member = members.find((m) => m.id === credential.member_id)!

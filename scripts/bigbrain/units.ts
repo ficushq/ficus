@@ -41,9 +41,6 @@ export async function renderVaultUnits(input: {
     r.username !== `bbv_${r.vaultId.replaceAll('-', '').slice(0, 24)}` ||
     r.mount !== paths.mount ||
     r.image !== paths.image ||
-    !Number.isInteger(r.port) ||
-    r.port < 30000 ||
-    r.port > 30099 ||
     !managedBigbrainOriginMatchesPolicy(input.origin, r.vaultId, zone)
   )
     throw new Error('invalid_request')
@@ -55,7 +52,6 @@ export async function renderVaultUnits(input: {
     ARTIFACT_ROOT: artifactRoot(input.artifactDigest),
     VAULT_PATH: paths.vault,
     MEMBERS_PATH: paths.memberStore,
-    PORT: String(r.port),
     ORIGIN: input.origin,
     MOUNT_PATH: paths.mount,
   })

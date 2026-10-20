@@ -13,6 +13,7 @@ import { runPrivateCommand, type PrivateCommandRunner } from './process'
 import { prepareVaultImage } from './volume-image'
 import type { ManagedIdentity } from './accounts'
 import { escrowSchema } from './bootstrap'
+import { vaultSocketPath } from './gateway-policy'
 
 export interface ProvisionDeps {
   root?: string
@@ -23,11 +24,11 @@ export interface ProvisionDeps {
   mountinfo?: () => Promise<string>
   prepareLayout?: (path: string, identity: ManagedIdentity, device: string) => Promise<void>
   freeBytes?: (path: string) => Promise<number>
-  /** Loopback readiness of the native server (default: unauthenticated whoami answers 401). */
-  probeReady?: (port: number) => Promise<boolean>
+  /** Readiness of the native server on its socket (default: unauthenticated whoami answers 401). */
+  probeReady?: (socket: string) => Promise<boolean>
   sleep?: (ms: number) => Promise<void>
-  /** Authenticated loopback whoami with the escrowed read credential (default: fetch). */
-  whoami?: (port: number, token: string) => Promise<unknown>
+  /** Authenticated whoami over the vault socket with the escrowed read credential (default: fetch). */
+  whoami?: (socket: string, token: string) => Promise<unknown>
   /** Read the upstream identity file from the mounted store (default: no-follow root read). */
   readUpstreamIdentity?: (record: ControlReceipt) => Promise<string>
 }
@@ -162,13 +163,16 @@ export async function startVaultService(input: ControlReceipt, deps: ProvisionDe
   const paths = managedPaths({ vaultId: record.receipt.vaultId, root: deps.root })
   if (!record.os || !['reader_ready', 'initialized', 'service_started', 'ready'].includes(record.phase))
     throw new Error('generation_conflict')
+  if (!record.receipt.origin) throw new Error('storage_unavailable')
+  const socket = vaultSocketPath(record.receipt.vaultId)
   if ((await run(['/usr/bin/systemctl', 'enable', '--now', paths.unit], { timeoutMs: 45000 })).code !== 0)
     throw new Error('upstream_unavailable')
   const probe =
     deps.probeReady ??
-    (async (port: number) => {
+    (async (socket: string) => {
       try {
-        const response = await fetch(`http://127.0.0.1:${port}/v1/whoami`, {
+        const response = await fetch(`http://${new URL(record.receipt.origin!).host}/v1/whoami`, {
+          unix: socket,
           redirect: 'manual',
           signal: AbortSignal.timeout(2000),
         })
@@ -181,7 +185,7 @@ export async function startVaultService(input: ControlReceipt, deps: ProvisionDe
   const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms))
   let ready = false
   for (let attempt = 0; attempt < 30 && !ready; attempt++) {
-    ready = await probe(record.storage.port)
+    ready = await probe(socket)
     if (!ready) await sleep(500)
   }
   if (!ready) throw new Error('upstream_unavailable')
@@ -193,8 +197,9 @@ export async function startVaultService(input: ControlReceipt, deps: ProvisionDe
     const actor = whoamiSchema.safeParse(
       await (
         deps.whoami ??
-        (async (port: number, token: string) => {
-          const response = await fetch(`http://127.0.0.1:${port}/v1/whoami`, {
+        (async (path: string, token: string) => {
+          const response = await fetch(`http://${new URL(record.receipt.origin!).host}/v1/whoami`, {
+            unix: path,
             headers: { Authorization: `Bearer ${token}` },
             redirect: 'manual',
             signal: AbortSignal.timeout(5000),
@@ -202,7 +207,7 @@ export async function startVaultService(input: ControlReceipt, deps: ProvisionDe
           if (response.status !== 200) throw new Error('upstream_unavailable')
           return response.json()
         })
-      )(record.storage.port, escrow.token)
+      )(socket, escrow.token)
     )
     if (
       !actor.success ||

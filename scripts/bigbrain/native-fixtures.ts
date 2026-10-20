@@ -100,28 +100,28 @@ export async function nativeFixtures(root: string, artifact: string, dependencyR
     let endpoint = ''
     let running: { stop(signal?: 'SIGTERM' | 'SIGKILL'): Promise<void> } | undefined
     async function start() {
+      // The shipped vault server: pinned upstream handler on a Unix socket (no TCP listener).
+      const socket = join(base, 'run', 'http.sock')
+      await mkdir(join(base, 'run'), { recursive: true, mode: 0o750 })
       const child = Bun.spawn(
         [
           ...bun,
-          binary,
-          'serve',
+          join(artifact, 'bigbrain-serve.js'),
           '--vault',
           data,
           '--members',
           members,
-          '--host',
-          '127.0.0.1',
-          '--port',
-          '0',
+          '--socket',
+          socket,
           '--public-url',
           'http://127.0.0.1',
         ],
         // Like the unit's WorkingDirectory: assets resolve inside the immutable release only.
         { cwd: artifact, env, stdout: 'pipe', stderr: 'pipe' }
       )
-      let resolveReady!: (port: number) => void
+      let resolveReady!: (path: string) => void
       let rejectReady!: (error: Error) => void
-      const ready = new Promise<number>((resolve, reject) => {
+      const ready = new Promise<string>((resolve, reject) => {
         resolveReady = resolve
         rejectReady = reject
       })
@@ -147,9 +147,8 @@ export async function nativeFixtures(root: string, artifact: string, dependencyR
                 parsed = true
                 try {
                   const value = JSON.parse(first.split('\n')[0]!)
-                  if (value.shared !== 'listening' || !Number.isInteger(value.port) || value.port <= 0)
-                    throw new Error()
-                  resolveReady(value.port)
+                  if (value.shared !== 'listening' || value.unix !== socket) throw new Error()
+                  resolveReady(value.unix)
                 } catch {
                   rejectReady(new Error('synthetic_server_not_ready'))
                 }
@@ -179,7 +178,29 @@ export async function nativeFixtures(root: string, artifact: string, dependencyR
       running = server
       void child.exited.then(() => rejectReady(new Error('synthetic_server_exited')))
       try {
-        endpoint = `http://127.0.0.1:${await ready}`
+        const path = await ready
+        // Test-only TCP front for the native client (production: Caddy -> gateway -> socket).
+        // It forwards bytes to the vault socket and adds nothing of its own.
+        const front = Bun.serve({
+          hostname: '127.0.0.1',
+          port: 0,
+          fetch: async (request) => {
+            const url = new URL(request.url)
+            return fetch(`http://127.0.0.1${url.pathname}${url.search}`, {
+              unix: path,
+              method: request.method,
+              headers: request.headers,
+              body: request.body,
+              redirect: 'manual',
+            })
+          },
+        })
+        const stopServer = server.stop
+        server.stop = async (signal) => {
+          front.stop(true)
+          await stopServer(signal)
+        }
+        endpoint = `http://127.0.0.1:${front.port}`
       } finally {
         clearTimeout(timeout)
       }

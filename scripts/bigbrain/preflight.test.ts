@@ -1,7 +1,8 @@
 import { expect, test } from 'bun:test'
 import {
   assertCgroupBudget,
-  proveSocketBindPolicy,
+  proveNoInetSockets,
+  verifySocketDirectory,
   verifyLoopBacking,
   verifyRecordedVaultStorage,
   verifyScratchMounts,
@@ -31,42 +32,56 @@ test('preflight reads enforceable cgroup-v2 values, not unit declarations or an 
   ])
     expect(() => assertCgroupBudget('vault', bad)).toThrow(/^(budget_[a-z_]+|unsupported_host)$/)
 })
-test('own port must bind, a denied arbitrary port must return policy denial, never collision; probes close even if unsupported', async () => {
-  const calls: number[] = []
-  let closed = 0
-  const binder = async (port: number) => {
-    calls.push(port)
-    if (port === 0) throw Object.assign(new Error(), { code: 'EACCES' })
-    return {
-      close: async () => {
-        closed++
-      },
-    }
-  }
-  await proveSocketBindPolicy(30000, binder)
-  expect(calls).toEqual([30000, 0])
-  expect(closed).toBe(1)
-  // A collision is never proof of policy; each refusal names what was observed.
+test('the live process must be refused every IPv4/IPv6 TCP and UDP socket; a collision or success is never proof', async () => {
+  const families: string[] = []
+  await proveNoInetSockets(async (family) => {
+    families.push(family)
+    throw Object.assign(new Error(), { code: 'EAFNOSUPPORT' })
+  })
+  expect(families).toEqual(['tcp4', 'tcp6', 'udp4'])
   for (const [code, reason] of [
-    ['EADDRINUSE', 'socket_anyport_eaddrinuse'],
-    ['UNKNOWN', 'socket_anyport_error'],
+    ['EADDRINUSE', 'inet_eaddrinuse'],
+    ['UNKNOWN', 'inet_error'],
   ])
     await expect(
-      proveSocketBindPolicy(null, async () => {
+      proveNoInetSockets(async () => {
         throw Object.assign(new Error(), { code })
       })
     ).rejects.toThrow(reason)
-  await proveSocketBindPolicy(null, async () => {
-    throw Object.assign(new Error(), { code: 'EPERM' })
-  })
+  let closed = 0
   await expect(
-    proveSocketBindPolicy(null, async () => ({
-      close: async () => {
-        closed++
-      },
-    }))
-  ).rejects.toThrow('socket_anyport_bound')
-  expect(closed).toBe(2)
+    proveNoInetSockets(async (family) => {
+      if (family !== 'udp4') throw Object.assign(new Error(), { code: 'EAFNOSUPPORT' })
+      return { close: async () => void closed++ }
+    })
+  ).rejects.toThrow('inet_allowed')
+  expect(closed).toBe(1)
+})
+
+test('this unprivileged test process can open IP sockets, so the real probe refuses here (fails closed)', async () => {
+  await expect(proveNoInetSockets()).rejects.toThrow('inet_allowed')
+})
+
+test('socket directory verification requires exact owner, client group and setgid 2750', async () => {
+  const { mkdtemp, mkdir, chmod, rm } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const root = await mkdtemp(join(tmpdir(), 'bigbrain-sock-'))
+  try {
+    const dir = join(root, 'd')
+    await mkdir(dir)
+    await chmod(dir, 0o2750)
+    await verifySocketDirectory(dir, process.getuid!(), process.getgid!())
+    await expect(verifySocketDirectory(dir, process.getuid!() + 1, process.getgid!())).rejects.toThrow(
+      'socket_directory_unexpected'
+    )
+    await chmod(dir, 0o2770)
+    await expect(verifySocketDirectory(dir, process.getuid!(), process.getgid!())).rejects.toThrow(
+      'socket_directory_unexpected'
+    )
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 })
 test('scratch must be memory-backed, noexec/nodev/nosuid and bounded; PrivateTmp on disk is insufficient', () => {
   const mounts = '/tmp /var/tmp'

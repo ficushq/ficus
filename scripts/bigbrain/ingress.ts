@@ -1,14 +1,13 @@
 import { readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { installedHostSchema } from './control-input'
-import { gatewayManifestSchema, type GatewayManifest } from './gateway-policy'
+import { GATEWAY_SOCKET, gatewayManifestSchema, type GatewayManifest } from './gateway-policy'
 import { BIGBRAIN_ETC } from './install'
 import { BIGBRAIN_STATE_ROOT } from './paths'
 import { controlReceiptSchema, type ControlReceipt } from './receipts'
 import { readPrivateJson, readPublicText, writePublicJson, writePublicText } from './secure-files'
 import { runPrivateCommand, type PrivateCommandRunner } from './process'
 
-export const GATEWAY_PORT = 34792
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'
 const SITE = new RegExp(`^${UUID}\\.caddy$`)
 const VAULT_DIR = new RegExp(`^${UUID}$`)
@@ -41,7 +40,7 @@ export function renderVaultSite(origin: string, cert: string, key: string): stri
     '    request_body {',
     '        max_size 1114112',
     '    }',
-    `    reverse_proxy 127.0.0.1:${GATEWAY_PORT} {`,
+    `    reverse_proxy unix/${GATEWAY_SOCKET} {`,
     '        header_up X-Forwarded-For {client_ip}',
     '        header_up X-Forwarded-Proto {scheme}',
     '    }',
@@ -80,7 +79,6 @@ export async function publishIngress(options: IngressOptions = {}): Promise<Gate
       vaultId: r.receipt.vaultId,
       upstreamVaultId: r.receipt.upstreamVaultId!,
       origin: r.receipt.origin!,
-      localPort: r.storage.port,
       state: host.hostState === 'active' ? 'ready' : 'disabled',
     })),
   })

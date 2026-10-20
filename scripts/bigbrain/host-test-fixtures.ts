@@ -64,7 +64,7 @@ export async function syntheticArtifact(outDir: string): Promise<string> {
           .replace('[ext]', 'js')
         await mkdir(out, { recursive: true })
         await writeFile(join(out, name), 'bundle:' + argv[2])
-        if (argv[2] === 'bin/shared.ts')
+        if (argv[2] === 'bin/shared.ts' || argv[2] === '.ficus-serve-entry.ts')
           for (const font of ['hanken-grotesk-latin.woff2', 'hanken-grotesk-latin-ext.woff2'])
             await writeFile(join(out, font), font)
       }

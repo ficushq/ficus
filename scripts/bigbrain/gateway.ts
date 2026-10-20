@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { isAbsolute, resolve, dirname, basename } from 'node:path'
 import { readPublicJson } from './secure-files'
-import { createGatewayHandler, gatewayManifestSchema, type GatewayManifest } from './gateway-policy'
+import { createGatewayHandler, GATEWAY_SOCKET, gatewayManifestSchema, type GatewayManifest } from './gateway-policy'
 
 const ROUTES_PATH = '/etc/ficus/bigbrain/public/routes.json'
 /** Safe public route manifest, not a secret store. The installed parent is root-owned and
@@ -21,15 +21,17 @@ export async function gatewayMain(args: string[]): Promise<void> {
   try {
     if (process.platform !== 'linux' || process.getuid?.() === 0 || args.length !== 0) throw new Error()
     await readGatewayManifest()
+    // Root prepared the directory (owner gateway, group caddy, 2750) and removed any stale
+    // socket before this start; Caddy reaches us only through this socket.
     const server = Bun.serve({
-      hostname: '127.0.0.1',
-      port: 34792,
+      unix: GATEWAY_SOCKET,
       development: false,
       maxRequestBodySize: 1024 * 1024 + 64 * 1024,
-      idleTimeout: 15,
       fetch: createGatewayHandler({ manifest: readGatewayManifest }),
       error: () => Response.json({ code: 'upstream_unavailable' }, { status: 503 }),
     })
+    const { chmod } = await import('node:fs/promises')
+    await chmod(GATEWAY_SOCKET, 0o660)
     let stopping = false
     const stop = async () => {
       if (stopping) return

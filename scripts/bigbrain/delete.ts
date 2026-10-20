@@ -157,6 +157,9 @@ export async function deleteVaultResources(
     }
   }
 
+  // 5b. The root-prepared socket directory (stopped service; never another vault's).
+  await rm(`/run/ficus-bigbrain/vaults/${record.receipt.vaultId}`, { recursive: true, force: true }).catch(() => {})
+
   // 6. The account, by exact numeric identity and full ownership marker.
   if (journal?.identity)
     await (options.removeIdentity ?? ((k, i) => removeManagedIdentity(k, i, run)))(key, journal.identity)

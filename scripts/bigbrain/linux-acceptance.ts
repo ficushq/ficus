@@ -9,7 +9,7 @@
  * where <release-dir>/bigbrain is the built runtime artifact.
  */
 import { randomUUID } from 'node:crypto'
-import { readFileSync, existsSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { MANAGED_BIGBRAIN_DEFAULT_LIMITS, MANAGED_BIGBRAIN_UPSTREAM_COMMIT } from '@ficus/shared/managed-bigbrain'
 
 const release = process.argv[2]
@@ -101,33 +101,63 @@ async function eventually(read: () => Promise<number>, want: number, attempts = 
   }
   return status
 }
+const GATEWAY_SOCKET = '/run/ficus-bigbrain/gateway/http.sock'
+/** Production path minus Caddy/TLS: the gateway's Unix socket, routed by Host. */
 async function gateway(vaultId: string, path: string, token?: string, init: RequestInit = {}) {
-  return fetch(`http://127.0.0.1:34792${path}`, {
+  return fetch(`http://bb-${hex(vaultId)}.${ZONE}${path}`, {
     ...init,
-    headers: {
-      Host: `bb-${hex(vaultId)}.${ZONE}`,
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init.headers ?? {}),
-    },
+    unix: GATEWAY_SOCKET,
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(init.headers ?? {}) },
     redirect: 'manual',
   })
 }
 
-/** Run a Bun snippet as a compromised vault process: inside that vault service's mount
- * namespace and cgroup (so its BPF socket-bind policy applies), as its UID/GID, no groups/caps. */
-function asVault(vaultId: string, script: string) {
-  const unit = `ficus-bigbrain@${vaultId}.service`
-  const pid = unitProperty(unit, 'MainPID')
-  const cgroup = unitProperty(unit, 'ControlGroup')
-  const r = receipt(vaultId)
-  const wrapper = `echo $$ > /sys/fs/cgroup${cgroup}/cgroup.procs && exec /usr/bin/nsenter --target ${pid} --mount -- /usr/bin/setpriv --reuid=${r.os.uid} --regid=${r.os.gid} --clear-groups --no-new-privs --inh-caps=-all --bounding-set=-all /usr/local/bin/bun --no-install --no-env-file -e "$0"`
-  const result = sh(['/bin/sh', '-c', wrapper, script])
+/** Run a script AS a compromised vault: a transient clone of that vault's real unit file (same
+ * User/Group, seccomp address families, capability set, mount namespace and read/write paths,
+ * same slice) whose only change is ExecStart; output goes to a root-only file. */
+function asVault(vaultId: string, script: string): Record<string, string> {
+  const source = readFileSync(`/etc/systemd/system/ficus-bigbrain@${vaultId}.service`, 'utf8')
+  const name = `ficus-bigbrain-attack-${hex(vaultId).slice(0, 12)}`
+  const scriptPath = `/opt/ficus-bigbrain/${name}.js`
+  const outPath = `/run/${name}.json`
+  writeFileSync(scriptPath, script, { mode: 0o644 })
+  const lines = source
+    .split('\n')
+    .filter(
+      (line) => !line.startsWith('ExecStartPre=') && !line.startsWith('Restart=') && !line.startsWith('StandardOutput=')
+    )
+    .map((line) =>
+      line.startsWith('Type=')
+        ? 'Type=oneshot'
+        : line.startsWith('ExecStart=')
+          ? `ExecStart=/usr/local/bin/bun --no-install --no-env-file ${scriptPath}`
+          : line.startsWith('Description=')
+            ? 'Description=containment attack clone'
+            : line
+    )
+  const unit = lines.join('\n').replace('[Service]', `[Service]\nStandardOutput=file:${outPath}`)
+  writeFileSync(`/etc/systemd/system/${name}.service`, unit, { mode: 0o644 })
+  must(['/usr/bin/systemctl', 'daemon-reload'])
+  sh(['/usr/bin/systemctl', 'start', `${name}.service`])
+  const out = sh(['/bin/cat', outPath]).stdout
+  sh(['/bin/rm', '-f', `/etc/systemd/system/${name}.service`, scriptPath, outPath])
+  must(['/usr/bin/systemctl', 'daemon-reload'])
   try {
-    return JSON.parse(result.stdout.trim().split('\n').at(-1) ?? '{}') as Record<string, string>
+    return JSON.parse(out.trim().split('\n').at(-1) ?? '{}') as Record<string, string>
   } catch {
-    return { error: `${result.code}: ${result.stderr.slice(0, 300)}` }
+    return { error: out.slice(0, 300) }
   }
 }
+const ATTACK_PRELUDE = `
+  const net = require('node:net'); const dgram = require('node:dgram'); const fs = require('node:fs');
+  const listenTcp = (host) => new Promise((resolve) => { try { const s = net.createServer(); s.once('error', (e) => resolve(e.code)); s.listen(0, host, () => { s.close(); resolve('BOUND') }) } catch (e) { resolve(e.code ?? 'THROWN') } });
+  const listenUdp = () => new Promise((resolve) => { try { const s = dgram.createSocket('udp4'); s.once('error', (e) => resolve(e.code)); s.bind(0, '127.0.0.1', () => { s.close(); resolve('BOUND') }) } catch (e) { resolve(e.code ?? 'THROWN') } });
+  const listenUnix = (path) => new Promise((resolve) => { try { const s = net.createServer(); s.once('error', (e) => resolve(e.code)); s.listen(path, () => { s.close(); resolve('BOUND') }) } catch (e) { resolve(e.code ?? 'THROWN') } });
+  const connectUnix = (path) => new Promise((resolve) => { const c = net.connect(path); c.once('error', (e) => resolve(e.code)); c.once('connect', () => { c.destroy(); resolve('CONNECTED') }) });
+  const read = (p) => { try { fs.readFileSync(p); return 'READ' } catch (e) { return e.code } };
+  const list = (p) => { try { fs.readdirSync(p); return 'LISTED' } catch (e) { return e.code } };
+  const write = (p) => { try { fs.writeFileSync(p, 'x'); return 'WROTE' } catch (e) { return e.code } };
+`
 
 try {
   // ---------------------------------------------------------------- prerequisites, named
@@ -198,7 +228,6 @@ try {
   const rA = receipt(A)
   const rB = receipt(B)
   check('vaults have distinct non-root UIDs', rA.os.uid !== rB.os.uid && rA.os.uid > 0 && rB.os.uid > 0)
-  check('vaults have distinct loopback ports', rA.storage.port !== rB.storage.port)
   const mountA = sh(['/usr/bin/findmnt', '-n', '-o', 'FSTYPE,OPTIONS', rA.storage.mount]).stdout.trim()
   check(
     'A is a separate ext4 loop mount with nodev,nosuid,noexec',
@@ -260,48 +289,79 @@ try {
   check('unknown vault host never reaches a vault (404)', unknown.status === 404, `${unknown.status}`)
 
   // ---------------------------------------------------------------- attacks from inside vault A
-  const attack = asVault(
-    A,
-    `
-    const net = require('node:net'); const fs = require('node:fs');
-    const bind = (port) => new Promise((resolve) => { const s = net.createServer(); s.once('error', (e) => resolve(e.code)); s.listen(port, '127.0.0.1', () => { s.close(); resolve('BOUND') }) });
-    const read = (p) => { try { fs.readFileSync(p); return 'READ' } catch (e) { return e.code } };
-    const list = (p) => { try { fs.readdirSync(p); return 'LISTED' } catch (e) { return e.code } };
+  const sockA = `/run/ficus-bigbrain/vaults/${A}`
+  const sockB = `/run/ficus-bigbrain/vaults/${B}`
+  const gatewayGid = Number(must(['/usr/bin/getent', 'group', 'ficus-bb-gateway']).split(':')[2])
+  const dirA = sh(['/usr/bin/stat', '-c', '%u:%g:%a', sockA]).stdout.trim()
+  check('A socket directory is owner A, group gateway, setgid 2750', dirA === `${rA.os.uid}:${gatewayGid}:2750`, dirA)
+  const socketMode = sh(['/usr/bin/stat', '-c', '%a', `${sockA}/http.sock`]).stdout.trim()
+  check('A socket is 0660 (gateway group only)', socketMode === '660', socketMode)
+  const attackScript = (phase: string) => `${ATTACK_PRELUDE}
     (async () => console.log(JSON.stringify({
-      peerPort: await bind(${rB.storage.port}),
-      gatewayPort: await bind(34792),
-      anyPort: await bind(0),
+      phase: '${phase}',
+      tcp4: await listenTcp('127.0.0.1'),
+      tcp6: await listenTcp('::1'),
+      udp4: await listenUdp(),
+      peerSocketDir: write('${sockB}/http.sock'),
+      peerSocketBind: await listenUnix('${sockB}/evil.sock'),
+      peerConnect: await connectUnix('${sockB}/http.sock'),
+      gatewaySocketBind: await listenUnix('/run/ficus-bigbrain/gateway/evil.sock'),
+      gatewayReplace: write('/run/ficus-bigbrain/gateway/http.sock'),
       peerStore: list('${rB.storage.mount}'),
       hostRecord: read('/etc/ficus/bigbrain/host.json'),
       control: list('/var/lib/ficus-bigbrain/control'),
       handoff: read('/var/lib/ficus-bigbrain/read-handoff/${A}.json'),
       escrow: read('/var/lib/ficus-bigbrain/control/${A}/owner.json'),
       launcher: read('/usr/local/libexec/ficus-bigbrainctl'),
-      coreEnv: list('/opt/ficus-core'),
       ownStore: list('${rA.storage.mount}/vault'),
     })))()
   `
-  )
-  console.log(`attack observations: ${JSON.stringify(attack)}`)
-  const denied = (v: string | undefined) => v === 'EACCES' || v === 'EPERM' || v === 'ENOENT'
+  const denied = (v: string | undefined) => !!v && ['EACCES', 'EPERM', 'ENOENT', 'EROFS', 'EAFNOSUPPORT'].includes(v)
+  const verdicts = (attack: Record<string, string>, when: string) => {
+    console.log(`attack observations (${when}): ${JSON.stringify(attack)}`)
+    for (const key of ['tcp4', 'tcp6', 'udp4'])
+      check(
+        `${when}: A cannot open any ${key} socket`,
+        attack[key] === 'EAFNOSUPPORT' || attack[key] === 'EPERM',
+        attack[key]
+      )
+    check(`${when}: A cannot create files in B's socket directory`, denied(attack.peerSocketDir), attack.peerSocketDir)
+    check(
+      `${when}: A cannot bind a socket in B's socket directory`,
+      denied(attack.peerSocketBind),
+      attack.peerSocketBind
+    )
+    check(`${when}: A cannot connect to B's socket`, denied(attack.peerConnect), attack.peerConnect)
+    check(
+      `${when}: A cannot bind in the gateway's socket directory`,
+      denied(attack.gatewaySocketBind),
+      attack.gatewaySocketBind
+    )
+    check(`${when}: A cannot replace the gateway socket`, denied(attack.gatewayReplace), attack.gatewayReplace)
+    check(`${when}: A cannot read B's store`, denied(attack.peerStore), attack.peerStore)
+    check(`${when}: A cannot read the host record`, denied(attack.hostRecord), attack.hostRecord)
+    check(`${when}: A cannot list root control state`, denied(attack.control), attack.control)
+    check(`${when}: A cannot read its own Ficus read handoff`, denied(attack.handoff), attack.handoff)
+    check(`${when}: A cannot read root owner escrow`, denied(attack.escrow), attack.escrow)
+    check(`${when}: A cannot read the root helper launcher`, denied(attack.launcher), attack.launcher)
+    check(`${when}: A can still use its own store`, attack.ownStore === 'LISTED', attack.ownStore)
+  }
+  verdicts(asVault(A, attackScript('B running')), 'B running')
+  // B stopped: its socket path is the prize. A still cannot take it.
+  must(['/usr/bin/systemctl', 'stop', `ficus-bigbrain@${B}.service`])
+  verdicts(asVault(A, attackScript('B stopped')), 'B stopped')
+  must(['/usr/bin/systemctl', 'start', `ficus-bigbrain@${B}.service`])
   check(
-    'A cannot bind B’s port (policy denial, not collision)',
-    attack.peerPort === 'EACCES' || attack.peerPort === 'EPERM',
-    attack.peerPort
+    'B restarts on a root-reprepared socket and serves again',
+    (await eventually(async () => (await gateway(B, '/v1/whoami', handoffB.token)).status, 200)) === 200
   )
+  // After a restart of B and of the gateway, the boundary still holds.
+  must(['/usr/bin/systemctl', 'restart', 'ficus-bigbrain-gateway.service'])
+  verdicts(asVault(A, attackScript('after restarts')), 'after restarts')
   check(
-    'A cannot bind the gateway port',
-    attack.gatewayPort === 'EACCES' || attack.gatewayPort === 'EPERM',
-    attack.gatewayPort
+    'gateway serves after restart',
+    (await eventually(async () => (await gateway(B, '/v1/whoami', handoffB.token)).status, 200)) === 200
   )
-  check('A cannot bind an arbitrary port', attack.anyPort === 'EACCES' || attack.anyPort === 'EPERM', attack.anyPort)
-  check('A cannot read B’s store', denied(attack.peerStore), attack.peerStore)
-  check('A cannot read the host record', denied(attack.hostRecord), attack.hostRecord)
-  check('A cannot list root control state', denied(attack.control), attack.control)
-  check('A cannot read its own Ficus read handoff', denied(attack.handoff), attack.handoff)
-  check('A cannot read root owner escrow', denied(attack.escrow), attack.escrow)
-  check('A cannot read the root helper launcher', denied(attack.launcher), attack.launcher)
-  check('A can still use its own store', attack.ownStore === 'LISTED', attack.ownStore)
 
   // ---------------------------------------------------------------- disk bound
   const fill = asVault(

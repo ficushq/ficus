@@ -19,12 +19,6 @@ const routeSchema = z
       .uuid()
       .regex(/^[0-9a-f-]{36}$/),
     origin: z.string().max(253),
-    localPort: z
-      .number()
-      .int()
-      .min(30000)
-      .max(65535)
-      .refine((port) => port !== 34792),
     state: z.enum(['ready', 'maintenance', 'disabled']),
   })
   .strict()
@@ -36,11 +30,7 @@ export const gatewayManifestSchema = managedBigbrainHostBindingSchema
     routes: z.array(routeSchema).max(2),
   })
   .strict()
-  .refine(
-    (v) =>
-      new Set(v.routes.map((r) => r.vaultId)).size === v.routes.length &&
-      new Set(v.routes.map((r) => r.localPort)).size === v.routes.length
-  )
+  .refine((v) => new Set(v.routes.map((r) => r.vaultId)).size === v.routes.length)
 export type GatewayManifest = z.infer<typeof gatewayManifestSchema>
 
 const GET_PATHS = new Set([
@@ -168,13 +158,20 @@ async function readInput(request: Request, signal: AbortSignal): Promise<ArrayBu
 /** Exact-host, bounded credential-free forwarding. Nothing in a request chooses an IP/port.
  * Upstream retains all auth/member/write enforcement. No content/auth/URL logging exists here.
  */
+/** Root-prepared per-vault socket: owned by that vault's UID, group gateway, never caller-chosen. */
+export const vaultSocketPath = (vaultId: string) => `/run/ficus-bigbrain/vaults/${vaultId}/http.sock`
+export const GATEWAY_SOCKET = '/run/ficus-bigbrain/gateway/http.sock'
+
 export function createGatewayHandler(options: {
   manifest: () => Promise<unknown>
   now?: () => number
-  fetch?: (url: string, init: RequestInit) => Promise<Response>
+  fetch?: (url: string, init: RequestInit & { unix: string }) => Promise<Response>
+  /** Fixture-only override of the fixed socket location. */
+  socketPath?: (vaultId: string) => string
 }): (request: Request) => Promise<Response> {
   const now = options.now ?? Date.now
   const forward = options.fetch ?? ((url, init) => fetch(url, init))
+  const socketFor = options.socketPath ?? vaultSocketPath
   let aggregate = 0
   const globalBucket = new Bucket(2, 20, now())
   const vaults = new Map<string, { active: number; mutations: number; read: Bucket; write: Bucket }>()
@@ -251,7 +248,9 @@ export function createGatewayHandler(options: {
       headers.set('Host', host)
       headers.set('X-Forwarded-Proto', 'https')
       headers.set('Accept-Encoding', 'identity')
-      const response = await forward(`http://127.0.0.1:${route.localPort}${url.pathname}${url.search}`, {
+      // Unix socket only: the vault has no TCP listener anyone could squat.
+      const response = await forward(`http://${host}${url.pathname}${url.search}`, {
+        unix: socketFor(route.vaultId),
         method: request.method,
         headers,
         body,

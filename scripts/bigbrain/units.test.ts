@@ -15,7 +15,13 @@ const input = { reservation, artifactDigest, origin: `https://bb-${id.replaceAll
 test('renders shipped hardened service with private identity, filesystem and bounded restart/egress/logs', async () => {
   const units = await renderVaultUnits(input)
   expect(units.service).toContain(`User=${reservation.username}`)
-  expect(units.service).toContain(`SocketBindAllow=ipv4:tcp:${reservation.port}`)
+  // Unix socket only: no IP families at all, no port, root-prepared socket directory.
+  expect(units.service).toContain('RestrictAddressFamilies=AF_UNIX\n')
+  expect(units.service).not.toContain('SocketBindAllow')
+  expect(units.service).not.toMatch(/--port|--host/)
+  expect(units.service).toContain(`--socket /run/ficus-bigbrain/vaults/${id}/http.sock`)
+  expect(units.service).toContain(`ReadWritePaths=/run/ficus-bigbrain/vaults/${id}\n`)
+  expect(units.service).toMatch(/^ExecStartPre=\/usr\/bin\/env -i .* sandbox [0-9a-f-]{36}$/m)
   expect(units.service).toContain('SocketBindDeny=any')
   expect(units.service).toContain(`BindsTo=${units.mountUnitName}`)
   expect(units.service).toContain(
@@ -25,7 +31,7 @@ test('renders shipped hardened service with private identity, filesystem and bou
   // Font assets resolve relative to the immutable release directory, never a writable cwd.
   expect(units.service).toContain(`WorkingDirectory=/opt/ficus-bigbrain/releases/${'a'.repeat(64)}\n`)
   expect(units.service).toMatch(
-    /^ExecStart=.* \/usr\/local\/bin\/bun --no-install --no-env-file \S+\/bigbrain-shared\.js serve /m
+    /^ExecStart=.* \/usr\/local\/bin\/bun --no-install --no-env-file \S+\/bigbrain-serve\.js --vault /m
   )
   for (const setting of [
     'NoNewPrivileges=yes',
@@ -40,7 +46,6 @@ test('renders shipped hardened service with private identity, filesystem and bou
     'CapabilityBoundingSet=',
     'UMask=0077',
     'IPAddressDeny=any',
-    'IPAddressAllow=localhost',
     'MemoryMax=268435456',
     'TasksMax=64',
     'StandardOutput=null',
@@ -75,7 +80,10 @@ test('aggregate cgroup includes gateway and caps combined CPU/memory; gateway ca
   expect(gateway).toMatch(
     /ExecStart=.*\/usr\/local\/bin\/bun --no-install --no-env-file \S+\/ficus-bigbrain-host\.js gateway$/m
   )
-  expect(gateway).toContain('SocketBindAllow=ipv4:tcp:34792')
+  expect(gateway).toContain('RestrictAddressFamilies=AF_UNIX\n')
+  expect(gateway).not.toContain('SocketBindAllow')
+  expect(gateway).toContain('ReadWritePaths=/run/ficus-bigbrain/gateway\n')
+  expect(gateway).toMatch(/^ExecStartPre=\/usr\/bin\/env -i .* sandbox gateway$/m)
   expect(gateway).toContain('SocketBindDeny=any')
   expect(gateway).toContain('InaccessiblePaths=-/var/lib/ficus-bigbrain')
   // Binding a file pins its old inode: atomic route updates would never be visible.
@@ -127,7 +135,6 @@ test('rejects unit specifier/newline injection, foreign vault origins, tampered 
     { ...input, artifactDigest: 'sha256:' + '%n'.repeat(32) },
     { ...input, reservation: { ...reservation, username: 'root' } },
     { ...input, reservation: { ...reservation, mount: '/etc\nUser=root' } },
-    { ...input, reservation: { ...reservation, port: 80 } },
   ])
     await expect(renderVaultUnits(bad)).rejects.toThrow('invalid_request')
 })

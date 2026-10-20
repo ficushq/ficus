@@ -38,7 +38,7 @@ async function fixture() {
         .replace('[ext]', 'js')
       await mkdir(out, { recursive: true })
       await writeFile(join(out, name), 'bundle:' + argv[2])
-      if (argv[2] === 'bin/shared.ts')
+      if (argv[2] === 'bin/shared.ts' || argv[2] === '.ficus-serve-entry.ts')
         for (const font of ['hanken-grotesk-latin.woff2', 'hanken-grotesk-latin-ext.woff2'])
           await writeFile(join(out, font), font)
     }
@@ -54,6 +54,7 @@ test('packages pinned upstream plus minimal native owner-link shim and both corr
   expect(Object.keys(manifest.files).sort()).toEqual([
     'LICENSE',
     'bigbrain-owner-link.js',
+    'bigbrain-serve.js',
     'bigbrain-shared.js',
     'ficus-bigbrain-host.js',
     'ficus-source.tar',
@@ -65,7 +66,9 @@ test('packages pinned upstream plus minimal native owner-link shim and both corr
   expect(f.calls).toContainEqual(['bun', 'install', '--frozen-lockfile', '--ignore-scripts'])
   const compiles = f.calls.filter((argv) => argv[0] === 'bun' && argv[1] === 'build')
   // Upstream server, the owner-link shim and ONE Ficus host binary (no unused native invite CLI).
-  expect(compiles).toHaveLength(3)
+  expect(compiles).toHaveLength(4)
+  // The vault server is the pinned upstream handler on a Unix socket, via a minimal shim.
+  expect(compiles.some((argv) => argv[2] === '.ficus-serve-entry.ts')).toBe(true)
   expect(compiles.some((argv) => argv[2] === 'scripts/bigbrain/host-main.ts')).toBe(true)
   expect(compiles.some((argv) => argv[2] === 'bin/shared-invite.ts')).toBe(false)
   expect(manifest.ficusCommit).toMatch(/^[a-f0-9]{40}$/)

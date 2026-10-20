@@ -97,13 +97,13 @@ test('publishes only ready vaults as credential-free routes and exact-host Caddy
   expect(manifest).toMatchObject({
     hostEpoch: 4,
     hostState: 'active',
-    routes: [{ vaultId: A, localPort: 30000, state: 'ready' }],
+    routes: [{ vaultId: A, state: 'ready' }],
   })
   expect(JSON.parse(await readFile(join(f.etc, 'public', 'routes.json'), 'utf8')).routes).toHaveLength(1)
   expect(await readdir(join(f.etc, 'caddy'))).toEqual([`${A}.caddy`])
   const site = await readFile(join(f.etc, 'caddy', `${A}.caddy`), 'utf8')
   expect(site).toStartWith(`bb-${hex(A)}.example.com {`)
-  expect(site).toContain('reverse_proxy 127.0.0.1:34792')
+  expect(site).toContain('reverse_proxy unix//run/ficus-bigbrain/gateway/http.sock')
   expect(site).not.toMatch(/token|sv_|30000/)
   expect(f.calls).toEqual(['/usr/bin/caddy validate', '/usr/bin/systemctl reload'])
   f.calls.length = 0

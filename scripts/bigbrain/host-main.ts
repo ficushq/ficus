@@ -5,13 +5,14 @@ import { backupMain } from './backup'
 import { controlMain } from './control'
 import { gatewayMain } from './gateway'
 import { installMain } from './install'
-import { preflightMain } from './preflight'
+import { preflightMain, sandboxMain } from './preflight'
 
 const [role, ...rest] = process.argv.slice(2)
 if (role === 'install') await installMain(rest)
 else if (role === 'control') await controlMain(rest)
 else if (role === 'gateway') await gatewayMain(rest)
 else if (role === 'preflight') await preflightMain(rest)
+else if (role === 'sandbox') await sandboxMain(rest)
 else if (role === 'backup-stage' || role === 'backup-release' || role === 'reconcile-maintenance')
   await backupMain(role, rest)
 else {

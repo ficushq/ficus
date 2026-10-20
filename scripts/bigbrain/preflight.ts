@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { createServer } from 'node:net'
+import { createSocket } from 'node:dgram'
 import { lstat, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
@@ -71,47 +72,89 @@ export function assertCgroupBudget(role: Role, facts: CgroupFacts): void {
     throw new Error('unsupported_host')
 }
 
-type Binder = (port: number) => Promise<{ close: () => Promise<void> }>
-const bindProbe: Binder = (port) =>
+type InetProbe = (family: 'tcp4' | 'tcp6' | 'udp4') => Promise<{ close: () => Promise<void> }>
+const inetProbe: InetProbe = (family) =>
   new Promise((resolve, reject) => {
-    // No HTTP/TLS/data parser runs as root. Immediately close every accepted connection.
-    const server = createServer((socket) => socket.destroy())
+    if (family === 'udp4') {
+      const socket = createSocket('udp4')
+      socket.once('error', reject)
+      socket.bind(0, '127.0.0.1', () =>
+        resolve({ close: () => new Promise<void>((done) => socket.close(() => done())) })
+      )
+      return
+    }
+    // No HTTP/TLS/data parser runs here. Immediately close every accepted connection.
+    const server = createServer((connection) => connection.destroy())
     server.once('error', reject)
-    server.listen(port, '127.0.0.1', () =>
+    server.listen(0, family === 'tcp4' ? '127.0.0.1' : '::1', () =>
       resolve({
         close: () => new Promise<void>((done, fail) => server.close((error) => (error ? fail(error) : done()))),
       })
     )
   })
-/** Run inside the ACTUAL service cgroup (including ExecStartPre), not a declaration check.
- * EADDRINUSE is not a policy proof. Any unexpected successful bind is closed then refused.
+/** Run in the LIVE sandboxed process (RestrictAddressFamilies=AF_UNIX is seccomp, enforced on
+ * every systemd build): any IPv4/IPv6 TCP or UDP socket must be refused by the kernel. A
+ * successful bind is closed and refused; a collision is never accepted as proof.
  */
-export async function proveSocketBindPolicy(ownPort: number | null, bind: Binder = bindProbe): Promise<void> {
-  if (ownPort !== null) {
-    if (!Number.isInteger(ownPort) || ownPort < 30000 || ownPort > 65535) throw new Error('unsupported_host')
-    let own: Awaited<ReturnType<Binder>>
+export async function proveNoInetSockets(probe: InetProbe = inetProbe): Promise<void> {
+  for (const family of ['tcp4', 'tcp6', 'udp4'] as const) {
+    let opened: Awaited<ReturnType<InetProbe>>
     try {
-      own = await bind(ownPort)
-    } catch {
-      throw new Error('socket_own_port_unbindable')
+      opened = await probe(family)
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error ? error.code : null
+      if (code === 'EAFNOSUPPORT' || code === 'EACCES' || code === 'EPERM') continue
+      throw new Error(
+        typeof code === 'string' && /^E[A-Z]{2,15}$/.test(code) ? `inet_${code.toLowerCase()}` : 'inet_error'
+      )
     }
-    await own.close()
+    await opened.close()
+    throw new Error('inet_allowed')
   }
-  let unexpected: Awaited<ReturnType<Binder>>
-  try {
-    unexpected = await bind(0)
-  } catch (error) {
-    const code = error && typeof error === 'object' && 'code' in error ? error.code : null
-    if (code === 'EACCES' || code === 'EPERM') return
-    throw new Error(
-      typeof code === 'string' && /^E[A-Z]{2,15}$/.test(code)
-        ? `socket_anyport_${code.toLowerCase()}`
-        : 'socket_anyport_error'
-    )
+}
+
+const RUN_ROOT = '/run/ficus-bigbrain'
+async function lookupId(database: 'passwd' | 'group', name: string): Promise<number> {
+  const result = await runPrivateCommand(['/usr/bin/getent', database, name])
+  const fields = result.code === 0 ? result.stdout.trim().split(':') : []
+  const id = Number(fields[2])
+  if (fields[0] !== name || !Number.isSafeInteger(id) || id <= 0) throw new Error('socket_identity_missing')
+  return id
+}
+/** ROOT before every start (incl. Restart= and boot): the per-unit socket directory is owned by
+ * the serving identity, group = the only client allowed to connect, setgid 2750; parents are
+ * root-owned 0755. A stale socket is removed; anything else at that path refuses. */
+export async function prepareSocketDirectory(target: 'gateway' | string, owner: number, group: number): Promise<void> {
+  const { chmod, chown, lstat, mkdir, unlink } = await import('node:fs/promises')
+  const parent = target === 'gateway' ? RUN_ROOT : `${RUN_ROOT}/vaults`
+  for (const dir of [RUN_ROOT, parent]) {
+    await mkdir(dir, { mode: 0o755 }).catch((error) => {
+      if (!(error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST')) throw error
+    })
+    const info = await lstat(dir)
+    if (!info.isDirectory() || info.uid !== 0 || (info.mode & 0o022) !== 0) throw new Error('socket_parent_unsafe')
   }
-  await unexpected.close()
-  // Policy not enforced: binding an arbitrary port succeeded.
-  throw new Error('socket_anyport_bound')
+  const leaf = target === 'gateway' ? `${RUN_ROOT}/gateway` : `${parent}/${target}`
+  await mkdir(leaf, { mode: 0o700 }).catch((error) => {
+    if (!(error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST')) throw error
+  })
+  if (!(await lstat(leaf)).isDirectory()) throw new Error('socket_directory_unsafe')
+  await chown(leaf, owner, group)
+  await chmod(leaf, 0o2750)
+  const socket = `${leaf}/http.sock`
+  const existing = await lstat(socket).catch(() => null)
+  if (existing) {
+    if (!existing.isSocket()) throw new Error('socket_path_occupied')
+    await unlink(socket)
+  }
+}
+/** Unprivileged side: the live process sees exactly its own directory with the expected owner,
+ * client group and mode. */
+export async function verifySocketDirectory(path: string, owner: number, group: number): Promise<void> {
+  const { lstat } = await import('node:fs/promises')
+  const info = await lstat(path)
+  if (!info.isDirectory() || info.uid !== owner || info.gid !== group || (info.mode & 0o7777) !== 0o2750)
+    throw new Error('socket_directory_unexpected')
 }
 
 /** Call on the running process mount view; +ExecStartPre deliberately has a privileged
@@ -324,15 +367,55 @@ export async function runIsolationChecks(target: string, stage: { name: string }
         : managedPaths({ vaultId: target }).unit
   stage.name = 'cgroup'
   await verifyCurrentCgroup(role, unit)
-  let port: number | null = role === 'gateway' ? 34792 : null
-  if (role === 'vault') {
-    stage.name = 'storage'
-    await verifyRecordedVaultStorage(target)
-    port = (await readPrivateJson(managedPaths({ vaultId: target }).control, 'receipt.json', controlReceiptSchema))
-      .storage.port
+  if (role === 'control') {
+    // The control worker is the main process of its transient unit: its own seccomp applies.
+    stage.name = 'socket-policy'
+    await proveNoInetSockets()
+    return
   }
-  stage.name = 'socket-policy'
-  await proveSocketBindPolicy(port)
+  stage.name = 'socket-directory'
+  if (role === 'gateway') {
+    await prepareSocketDirectory(
+      'gateway',
+      await lookupId('passwd', 'ficus-bb-gateway'),
+      await lookupId('group', 'caddy')
+    )
+    return
+  }
+  stage.name = 'storage'
+  await verifyRecordedVaultStorage(target)
+  const record = await readPrivateJson(managedPaths({ vaultId: target }).control, 'receipt.json', controlReceiptSchema)
+  stage.name = 'socket-directory'
+  await prepareSocketDirectory(target, record.os!.uid, await lookupId('group', 'ficus-bb-gateway'))
+}
+
+/** `sandbox <gateway|vaultId>`: an UNPRIVILEGED ExecStartPre with every sandboxing directive
+ * applied — the only place the live seccomp/mount view of the service can be observed. */
+export async function sandboxMain(args: string[]): Promise<void> {
+  const stage = { name: 'arguments' }
+  try {
+    const target = args[0]
+    if (args.length !== 1 || !target || process.getuid?.() === 0) throw new Error('unsupported_host')
+    if (target !== 'gateway' && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(target))
+      throw new Error('invalid_request')
+    stage.name = 'interpreter'
+    await verifyRunningInterpreter(dirname(Bun.main))
+    stage.name = 'socket-policy'
+    await proveNoInetSockets()
+    stage.name = 'scratch'
+    verifyScratchMounts(await readFile('/proc/self/mountinfo', 'utf8'))
+    stage.name = 'socket-directory'
+    const group = await lookupId('group', target === 'gateway' ? 'caddy' : 'ficus-bb-gateway')
+    await verifySocketDirectory(
+      target === 'gateway' ? `${RUN_ROOT}/gateway` : `${RUN_ROOT}/vaults/${target}`,
+      process.getuid!(),
+      group
+    )
+  } catch (error) {
+    const reason = error instanceof Error && /^[a-z_]{1,40}$/.test(error.message) ? error.message : 'unexpected'
+    console.error(`Managed BigBrain sandbox self-check refused at ${stage.name} (${reason})`)
+    process.exitCode = 1
+  }
 }
 
 export async function preflightMain(args: string[]): Promise<void> {

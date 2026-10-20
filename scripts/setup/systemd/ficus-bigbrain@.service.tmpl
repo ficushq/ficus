@@ -14,7 +14,9 @@ UMask=0077
 # The server loads its font assets relative to the working directory: the immutable release.
 WorkingDirectory={{ARTIFACT_ROOT}}
 ExecStartPre=+/usr/local/bin/bun --no-install --no-env-file {{ARTIFACT_ROOT}}/ficus-bigbrain-host.js preflight {{VAULT_ID}}
-ExecStart=/usr/bin/env -i HOME=/nonexistent PATH=/usr/bin:/bin LANG=C.UTF-8 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 /usr/local/bin/bun --no-install --no-env-file {{ARTIFACT_ROOT}}/bigbrain-shared.js serve --vault {{VAULT_PATH}} --members {{MEMBERS_PATH}} --host 127.0.0.1 --port {{PORT}} --public-url {{ORIGIN}}
+# Unprivileged, fully sandboxed self-check: no IPv4/IPv6 sockets at all, bounded scratch.
+ExecStartPre=/usr/bin/env -i HOME=/nonexistent PATH=/usr/bin:/bin LANG=C.UTF-8 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 /usr/local/bin/bun --no-install --no-env-file {{ARTIFACT_ROOT}}/ficus-bigbrain-host.js sandbox {{VAULT_ID}}
+ExecStart=/usr/bin/env -i HOME=/nonexistent PATH=/usr/bin:/bin LANG=C.UTF-8 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 /usr/local/bin/bun --no-install --no-env-file {{ARTIFACT_ROOT}}/bigbrain-serve.js --vault {{VAULT_PATH}} --members {{MEMBERS_PATH}} --socket /run/ficus-bigbrain/vaults/{{VAULT_ID}}/http.sock --public-url {{ORIGIN}}
 Restart=on-failure
 RestartSec=5
 TimeoutStartSec=30
@@ -38,16 +40,16 @@ ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 RestrictRealtime=yes
 LockPersonality=yes
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# No IP sockets at all (seccomp, enforced on every systemd build): the vault serves only
+# on its root-prepared Unix socket, so it can never squat a peer's or the gateway's listener.
+RestrictAddressFamilies=AF_UNIX
 IPAddressDeny=any
-IPAddressAllow=localhost
-# Loopback egress alone is insufficient: a compromised vault must not impersonate
-# a stopped peer or gateway and steal credentials sent to their recorded ports.
+# Defense in depth where systemd is built with BPF support; not relied upon.
 SocketBindDeny=any
-SocketBindAllow=ipv4:tcp:{{PORT}}
 TemporaryFileSystem=/var/lib/ficus-bigbrain:ro
 BindPaths={{MOUNT_PATH}}
 ReadWritePaths={{MOUNT_PATH}}
+ReadWritePaths=/run/ficus-bigbrain/vaults/{{VAULT_ID}}
 InaccessiblePaths=-/etc/ficus -/etc/ficus-core -/var/lib/ficus-core -/var/lib/ficus -/opt/ficus-core -/opt/ficus-machine
 MemoryMax=268435456
 MemorySwapMax=0

@@ -27,12 +27,15 @@ export const FICUS_SOURCE_PATHS = [
 export const BUNDLES = {
   'bigbrain-shared': ['bigbrain-shared.js', 'hanken-grotesk-latin-ext.woff2', 'hanken-grotesk-latin.woff2'],
   'bigbrain-owner-link': ['bigbrain-owner-link.js'],
+  // Upstream server on a Unix socket via exported pinned APIs only (serve-shim.ts).
+  'bigbrain-serve': ['bigbrain-serve.js', 'hanken-grotesk-latin-ext.woff2', 'hanken-grotesk-latin.woff2'],
   'ficus-bigbrain-host': ['ficus-bigbrain-host.js'],
 } as const
 const fileNames = [
   'LICENSE',
   ...BUNDLES['bigbrain-shared'],
   ...BUNDLES['bigbrain-owner-link'],
+  'bigbrain-serve.js',
   ...BUNDLES['ficus-bigbrain-host'],
   'source.tar',
   'ficus-source.tar',
@@ -116,6 +119,15 @@ async function hashFile(path: string): Promise<string> {
  * The outer signed Core manifest supplies authenticity; this local manifest supplies component integrity.
  * A supplied source repo is read via git archive at the exact commit, never by copying its working tree.
  */
+async function exists(path: string): Promise<boolean> {
+  try {
+    await lstat(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function buildBigbrainArtifact(options: {
   outDir: string
   bunVersion: string
@@ -192,10 +204,25 @@ export async function buildBigbrainArtifact(options: {
       join(source, shimEntry),
       `import { ownerLinkMain } from ${JSON.stringify(join(ficusRoot, 'scripts/bigbrain/owner-link.ts'))};\nimport { createAppLink } from './lib/sharedInvites.ts';\nawait ownerLinkMain(createAppLink);\n`
     )
+    const serveEntry = '.ficus-serve-entry.ts'
+    await writeFile(
+      join(source, serveEntry),
+      [
+        `import { serveShimMain } from ${JSON.stringify(join(ficusRoot, 'scripts/bigbrain/serve-shim.ts'))};`,
+        `import { holdSharedVault, SharedVault } from './lib/sharedVault.ts';`,
+        `import { makeSharedApiHandler, MAX_SHARED_REQUEST_BYTES } from './lib/sharedVaultApi.ts';`,
+        `import { parsePublicUrl } from './lib/sharedOAuth.ts';`,
+        `import { ensureDir } from './lib/fsx.ts';`,
+        `import { parse as parseYaml } from 'yaml';`,
+        `serveShimMain({ holdSharedVault, SharedVault, makeSharedApiHandler, MAX_SHARED_REQUEST_BYTES, ensureDir, parseYaml, parsePublicUrl });`,
+        '',
+      ].join('\n')
+    )
     // One isolated output directory per bundle: the exact expected file set, nothing else.
     for (const [entry, name, cwd] of [
       ['bin/shared.ts', 'bigbrain-shared', source],
       [shimEntry, 'bigbrain-owner-link', source],
+      [serveEntry, 'bigbrain-serve', source],
       // Ficus host code from the committed tree checked above (clean diff for these paths).
       ['scripts/bigbrain/host-main.ts', 'ficus-bigbrain-host', ficusRoot],
     ] as const) {
@@ -217,6 +244,12 @@ export async function buildBigbrainArtifact(options: {
       if (JSON.stringify(produced) !== JSON.stringify([...BUNDLES[name]].sort()))
         throw new Error('artifact_build_failed')
       for (const file of produced) {
+        // Shared assets (fonts) are emitted by more than one bundle: identical bytes only.
+        if (await exists(join(staging, file))) {
+          if (!(await readFile(join(staging, file))).equals(await readFile(join(out, file))))
+            throw new Error('artifact_build_failed')
+          continue
+        }
         await rename(join(out, file), join(staging, file))
         await chmod(join(staging, file), 0o644)
       }
