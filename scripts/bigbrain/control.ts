@@ -361,16 +361,20 @@ export async function dispatchHostRequest(input: unknown, deps: ControlDeps = {}
  * bounded JSON reply on stdout; never argv, environment or caller-chosen paths.
  */
 export async function controlMain(args: string[]): Promise<void> {
-  const { dirname } = await import('node:path')
   const { readBoundedControlBytes } = await import('./control-input')
-  const { proveSocketBindPolicy, verifyCurrentCgroup, verifyRunningInterpreter } = await import('./preflight')
+  const { runIsolationChecks } = await import('./preflight')
   const { MANAGED_BIGBRAIN_HOST_REPLY_BYTES } = await import('@ficus/shared/managed-bigbrain')
   let reply: ManagedBigbrainHostReply
   try {
     if (process.getuid?.() !== 0 || args.length !== 0) throw new Error('invalid_request')
-    await verifyRunningInterpreter(dirname(Bun.main))
-    await verifyCurrentCgroup('control', 'ficus-bigbrain-control.service')
-    await proveSocketBindPolicy(null)
+    const stage = { name: 'arguments' }
+    try {
+      await runIsolationChecks('control', stage)
+    } catch (error) {
+      const reason = error instanceof Error && /^[a-z_]{1,40}$/.test(error.message) ? error.message : 'unexpected'
+      console.error(`Managed BigBrain control isolation refused at ${stage.name} (${reason})`)
+      throw new Error('unsupported_host')
+    }
     const bytes = await readBoundedControlBytes(Bun.stdin.stream())
     let input: unknown
     try {

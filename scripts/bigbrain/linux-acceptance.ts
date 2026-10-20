@@ -88,6 +88,16 @@ function unitProperty(unit: string, property: string) {
 function receipt(vaultId: string) {
   return JSON.parse(readFileSync(`/var/lib/ficus-bigbrain/control/${vaultId}/receipt.json`, 'utf8'))
 }
+/** After a restart the service needs a moment: poll a gateway status briefly, never assume. */
+async function eventually(read: () => Promise<number>, want: number, attempts = 30): Promise<number> {
+  let status = 0
+  for (let i = 0; i < attempts; i++) {
+    status = await read().catch(() => 0)
+    if (status === want) return status
+    await Bun.sleep(500)
+  }
+  return status
+}
 async function gateway(vaultId: string, path: string, token?: string, init: RequestInit = {}) {
   return fetch(`http://127.0.0.1:34792${path}`, {
     ...init,
@@ -189,13 +199,15 @@ try {
     memA === String(MANAGED_BIGBRAIN_DEFAULT_LIMITS.perVaultMemoryBytes),
     memA
   )
-  const slice = readFileSync('/sys/fs/cgroup/ficus-bigbrain.slice/memory.max', 'utf8').trim()
+  // `ficus-bigbrain.slice` nests under `ficus.slice` (systemd dash hierarchy): use the real parent.
+  const sliceDir = `/sys/fs/cgroup${cgA.slice(0, cgA.lastIndexOf('/'))}`
+  const slice = readFileSync(`${sliceDir}/memory.max`, 'utf8').trim()
   check(
     'aggregate slice memory.max enforced',
     slice === String(MANAGED_BIGBRAIN_DEFAULT_LIMITS.aggregateMemoryBytes),
     slice
   )
-  const cpu = readFileSync('/sys/fs/cgroup/ficus-bigbrain.slice/cpu.max', 'utf8').trim()
+  const cpu = readFileSync(`${sliceDir}/cpu.max`, 'utf8').trim()
   check('aggregate slice CPU quota enforced (50%)', cpu === '50000 100000', cpu)
 
   // scratch inside the RUNNING vault process

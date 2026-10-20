@@ -29,7 +29,7 @@ test('preflight reads enforceable cgroup-v2 values, not unit declarations or an 
     { ...facts, pidsMax: 'max' },
     { ...facts, limits: 'Max open files 512 512 files' },
   ])
-    expect(() => assertCgroupBudget('vault', bad)).toThrow('unsupported_host')
+    expect(() => assertCgroupBudget('vault', bad)).toThrow(/^(budget_[a-z_]+|unsupported_host)$/)
 })
 test('own port must bind, a denied arbitrary port must return policy denial, never collision; probes close even if unsupported', async () => {
   const calls: number[] = []

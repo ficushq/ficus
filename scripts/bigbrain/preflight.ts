@@ -27,6 +27,16 @@ const cap = (text: string, ceiling: number) =>
 export function assertCgroupBudget(role: Role, facts: CgroupFacts): void {
   const cpu = facts.aggregateCpuMax.trim().split(/\s+/)
   const files = /Max open files\s+(\d+)\s+(\d+)/.exec(facts.limits)
+  const checks: [string, boolean][] = [
+    ['unit_memory', cap(facts.memoryMax, role === 'vault' ? 268435456 : 134217728)],
+    ['unit_swap', facts.swapMax.trim() === '0'],
+    ['unit_tasks', cap(facts.pidsMax, 64)],
+    ['slice_memory', cap(facts.aggregateMemoryMax, 671088640) && cap(facts.aggregateMemoryHigh, 536870912)],
+    ['slice_swap', facts.aggregateSwapMax.trim() === '0'],
+    ['slice_tasks', cap(facts.aggregatePidsMax, 192)],
+  ]
+  const failed = checks.find(([, ok]) => !ok)
+  if (failed) throw new Error(`budget_${failed[0]}`)
   if (
     !cap(facts.memoryMax, role === 'vault' ? 268435456 : 134217728) ||
     facts.swapMax.trim() !== '0' ||
@@ -178,7 +188,9 @@ export async function verifyCurrentCgroup(role: Role, unit: string): Promise<voi
     readFile(`${aggregate}/pids.max`, 'utf8'),
     readFile(`${aggregate}/cpu.max`, 'utf8'),
     readFile('/proc/self/limits', 'utf8'),
-  ])
+  ]).catch(() => {
+    throw new Error('cgroup_facts_unreadable')
+  })
   assertCgroupBudget(role, {
     memoryMax,
     swapMax,
@@ -278,26 +290,39 @@ export async function verifyRunningInterpreter(
   }
 }
 
+/** Fixed stage names only (never paths, values or upstream text): operators learn WHICH
+ * isolation prerequisite failed from the journal without any sensitive detail. */
+export async function runIsolationChecks(target: string, stage: { name: string }): Promise<void> {
+  stage.name = 'interpreter'
+  await verifyRunningInterpreter(dirname(Bun.main))
+  const role = target === 'gateway' ? 'gateway' : target === 'control' ? 'control' : 'vault'
+  const unit =
+    role === 'gateway'
+      ? 'ficus-bigbrain-gateway.service'
+      : role === 'control'
+        ? 'ficus-bigbrain-control.service'
+        : managedPaths({ vaultId: target }).unit
+  stage.name = 'cgroup'
+  await verifyCurrentCgroup(role, unit)
+  let port: number | null = role === 'gateway' ? 34792 : null
+  if (role === 'vault') {
+    stage.name = 'storage'
+    await verifyRecordedVaultStorage(target)
+    port = (await readPrivateJson(managedPaths({ vaultId: target }).control, 'receipt.json', controlReceiptSchema))
+      .storage.port
+  }
+  stage.name = 'socket-policy'
+  await proveSocketBindPolicy(port)
+}
+
 export async function preflightMain(args: string[]): Promise<void> {
+  const stage = { name: 'arguments' }
   try {
     if (process.getuid?.() !== 0 || args.length !== 1) throw new Error('unsupported_host')
-    await verifyRunningInterpreter(dirname(Bun.main))
-    const target = args[0]!
-    if (target === 'gateway') {
-      await verifyCurrentCgroup('gateway', 'ficus-bigbrain-gateway.service')
-      await proveSocketBindPolicy(34792)
-    } else if (target === 'control') {
-      await verifyCurrentCgroup('control', 'ficus-bigbrain-control.service')
-      await proveSocketBindPolicy(null)
-    } else {
-      const paths = managedPaths({ vaultId: target })
-      await verifyCurrentCgroup('vault', paths.unit)
-      await verifyRecordedVaultStorage(target)
-      const record = await readPrivateJson(paths.control, 'receipt.json', controlReceiptSchema)
-      await proveSocketBindPolicy(record.storage.port)
-    }
-  } catch {
-    console.error('Managed BigBrain isolation preflight refused')
+    await runIsolationChecks(args[0]!, stage)
+  } catch (error) {
+    const reason = error instanceof Error && /^[a-z_]{1,40}$/.test(error.message) ? error.message : 'unexpected'
+    console.error(`Managed BigBrain isolation preflight refused at ${stage.name} (${reason})`)
     process.exitCode = 1
   }
 }
