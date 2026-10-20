@@ -4,7 +4,7 @@ import { SquadAgentThreads } from './SquadAgentThreads'
 import { Link } from 'react-router-dom'
 import { ChatIcon, ChevronRightIcon } from '../icons'
 import { useSquadSlugs } from '../../hooks/useSquadSlugs'
-import { getAgentName, getAgentPrimaryLabel } from '../../lib/agentDisplay'
+import { getAgentPrimaryLabel } from '../../lib/agentDisplay'
 import type { Agent, AgentStatus, Squad, WorkStream } from '@ficus/shared'
 import { LoadingContent, LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
 import { AgentActivityDot } from '../AgentActivityDot'
@@ -87,19 +87,8 @@ export function SquadHomeTab({
             New chat
           </Link>
         </div>
-      </section>
-      <PendingGitHubEventsSection squadId={resolvedId} className="mx-3 shrink-0" />
-      <section className="squad-home-work-streams shrink-0 border-t border-panel-border pt-4">
-        <WorkStreamListComponent
-          workStreams={workStreams}
-          squadId={resolvedId}
-          squad={squad}
-          activeOnly
-          compact
-          activeCollapsible
-          expandable
-          isLoading={workStreamsLoading}
-        />
+        {/* Held GitHub events stay at the very top, above the first divider. */}
+        <PendingGitHubEventsSection squadId={resolvedId} className="mt-4" />
       </section>
       <section className="shrink-0 border-t border-panel-border pt-4">
         <h2 className="px-3 pl-9 text-sm font-semibold text-secondary">Squad coordinator</h2>
@@ -115,15 +104,25 @@ export function SquadHomeTab({
               {managerAgent && <AgentActivityDot status={managerAgent.status} />}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate">
-                {managerAgent ? `Manager (${getAgentName(managerAgent)})` : 'Manager chat'}
-              </span>
+              <span className="block truncate">Manager</span>
               <span className="mt-1 block text-xs text-muted">Coordinates the squad’s ongoing work.</span>
             </span>
             {managerAgent && <span className="text-xs text-muted">{AGENT_STATUS_LABELS[managerAgent.status]}</span>}
             <ChevronRightIcon className="h-4 w-4 shrink-0" />
           </Link>
         </LoadingContent>
+      </section>
+      <section className="squad-home-work-streams shrink-0 border-t border-panel-border pt-4">
+        <WorkStreamListComponent
+          workStreams={workStreams}
+          squadId={resolvedId}
+          squad={squad}
+          activeOnly
+          compact
+          activeCollapsible
+          expandable
+          isLoading={workStreamsLoading}
+        />
       </section>
       <section className="shrink-0 border-t border-panel-border pt-4 pb-4">
         <div className="mb-2 flex items-center justify-between gap-3 px-3">

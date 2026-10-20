@@ -3,12 +3,14 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
-import type { Agent, Squad, WorkStream } from '@ficus/shared'
+import type { Agent, GitHubFeedbackSummary, Squad, WorkStream } from '@ficus/shared'
 import type { ComponentProps } from 'react'
 
 let domHarness: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
 
 import { SquadHomeTab } from './SquadHomeTab'
+import { GitHubFeedbackReviewProvider } from '../integrations/GitHubFeedbackReviewProvider'
+import { githubFeedbackQueries } from '../../queryOptions'
 import { WorkStreamList } from './WorkStreamList'
 
 const dependencies = {
@@ -134,13 +136,46 @@ describe('SquadHomeTab', () => {
     const html = renderSquadHome([workStream()], managerAgent, [managerAgent])
     expect(html).toContain('href="/squads/squad-1/agents?newConsultant=1"')
     expect(html).toContain('href="/squads/squad-1/agents?agent=manager-1"')
-    expect(html).toContain('Manager (Manager Alpha)')
-    expect(html.indexOf('Start with a conversation')).toBeLessThan(html.indexOf('Clean active work streams card'))
+    // The Home coordinator row is labeled just "Manager"; the agent name is not repeated here.
+    expect(html).toContain('>Manager</span>')
+    expect(html).not.toContain('Manager (Manager Alpha)')
+    // Order: New chat header, then the coordinator, then active work, then recent chats.
+    expect(html.indexOf('Start with a conversation')).toBeLessThan(html.indexOf('Squad coordinator'))
+    expect(html.indexOf('Squad coordinator')).toBeLessThan(html.indexOf('squad-home-work-streams'))
+    expect(html.indexOf('Squad coordinator')).toBeLessThan(html.indexOf('Clean active work streams card'))
+    expect(html.indexOf('Clean active work streams card')).toBeLessThan(html.indexOf('Recent chats'))
     expect(html).not.toContain('data-agent-type-section="manager"')
   })
 
+  test('keeps pending GitHub events in the header, above the coordinator divider', () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(githubFeedbackQueries.summary(squad.id).queryKey, {
+      pending: 2,
+      failing: 0,
+    } as GitHubFeedbackSummary)
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <GitHubFeedbackReviewProvider squadId={squad.id}>
+            <SquadHomeTab squad={squad} workStreams={[workStream()]} dependencies={dependencies} />
+          </GitHubFeedbackReviewProvider>
+        </QueryClientProvider>
+      </MemoryRouter>
+    )
+    const header = html.slice(0, html.indexOf('</section>', html.indexOf('aria-label="Pending GitHub events"')))
+    expect(html).toContain('waiting for review')
+    expect(html.indexOf('Start with a conversation')).toBeLessThan(html.indexOf('aria-label="Pending GitHub events"'))
+    // The notice is nested inside the header section, before the first border-t divider.
+    expect(header).not.toContain('border-t')
+    expect(html.indexOf('waiting for review')).toBeLessThan(html.indexOf('Squad coordinator'))
+  })
+
   test('keeps the manager entry available before its record loads', () => {
-    expect(renderSquadHome([])).toContain('href="/squads/squad-1/manager"')
+    const html = renderSquadHome([])
+    expect(html).toContain('href="/squads/squad-1/manager"')
+    // The row reads "Manager" whether or not the manager record has loaded.
+    expect(html).toContain('>Manager</span>')
+    expect(html).not.toContain('Manager chat')
   })
 
   test('shows five recent consultants by human activity and excludes archived chats and workers', () => {
@@ -176,7 +211,7 @@ describe('SquadHomeTab', () => {
     expect(html).toContain('href="/squads/squad-1/agents?agent=chat-6"')
     expect(html).toContain('href="/squads/squad-1/agents"')
     expect(html).toContain('Browse chats')
-    // The coordinator sits between active work and recent chats, so it stays visible above a long chat list.
+    // The coordinator sits above active work and recent chats, so it stays visible above a long chat list.
     expect(html.indexOf('Squad coordinator')).toBeLessThan(html.indexOf('Recent chats'))
     const recentSection = html.slice(html.indexOf('Recent chats'))
     expect(recentSection).not.toContain('<button')
