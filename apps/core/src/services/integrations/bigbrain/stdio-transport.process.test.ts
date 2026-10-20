@@ -1,9 +1,10 @@
 import { BigbrainClient } from './client'
 import { expect, test } from 'bun:test'
-import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BigbrainStdioTransport, stopAllBigbrainProcesses } from './stdio-transport'
+import { createSyntheticBigbrain, createSyntheticVault } from './synthetic-upstream.fixture'
 
 async function fixture(source: string) {
   const root = await mkdtemp(join(tmpdir(), 'bigbrain-stdio-'))
@@ -155,3 +156,56 @@ test('caller abort during startup cancels and reaps the owned process', async ()
     await f.dispose()
   }
 })
+
+test('a descendant that escaped the process group and holds the pipes cannot wedge cleanup', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'bigbrain-stdio-escaped-')))
+  const bigbrain = await createSyntheticBigbrain(root, join(root, 'home'))
+  const vaultPath = await createSyntheticVault(join(root, 'vault'))
+  const escapedPids = async () =>
+    (await bigbrain.launches()).flatMap((entry) => ('escapedPid' in entry ? [Number(entry.escapedPid)] : []))
+  const launch = async (mode: 'escaped-child' | 'escaped-child-ok') => {
+    await bigbrain.setMode(mode)
+    const before = (await escapedPids()).length
+    const transport = new BigbrainStdioTransport({
+      executablePath: bigbrain.executable,
+      vaultPath,
+      clientId: 'aabb0011',
+    })
+    const failed = new Promise<{ error: Error; at: number }>((resolve) => {
+      transport.onerror = (error) => resolve({ error, at: Date.now() })
+    })
+    const closed = new Promise<number>((resolve) => {
+      transport.onclose = () => resolve(Date.now())
+    })
+    await transport.start()
+    while ((await escapedPids()).length === before) await new Promise((resolve) => setTimeout(resolve, 20))
+    return { transport, failed, closed }
+  }
+  try {
+    // A live session with an escaped pipe holder: close() settles within its bounded grace.
+    const live = await launch('escaped-child')
+    const closing = Date.now()
+    await live.transport.close()
+    expect(Date.now() - closing).toBeLessThan(3000)
+    expect(() => process.kill(live.transport.pid!, 0)).toThrow()
+    // A wrapper that exits on its own while the holder lingers still closes promptly.
+    const exited = await launch('escaped-child-ok')
+    const failure = await exited.failed
+    expect(failure.error).toMatchObject({ code: 'unavailable' })
+    expect((await exited.closed) - failure.at).toBeLessThan(3000)
+    expect(() => process.kill(exited.transport.pid!, 0)).toThrow()
+    // The holders really were still alive: this is what kept 'close' from firing.
+    const holders = await escapedPids()
+    expect(holders).toHaveLength(2)
+    for (const pid of holders) expect(() => process.kill(pid, 0)).not.toThrow()
+  } finally {
+    for (const pid of await escapedPids()) {
+      try {
+        process.kill(pid, 'SIGKILL')
+      } catch {
+        /* already gone */
+      }
+    }
+    await rm(root, { recursive: true, force: true })
+  }
+}, 20000)
