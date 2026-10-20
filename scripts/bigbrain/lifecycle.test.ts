@@ -167,7 +167,7 @@ async function fixture(options: { loseMint?: boolean } = {}) {
     },
     readUpstreamIdentity: async () => UPSTREAM,
     admin,
-    ingress: async () => void ingress++,
+    ingress: (async () => void ingress++) as () => Promise<unknown>,
     issueAppLink: async (_r: unknown, window: { issuedAt: string; expiresAt: string }) => {
       issued.push(window.issuedAt)
       return { secret: 's'.repeat(43), expiresAt: window.expiresAt }
@@ -301,6 +301,55 @@ test('owner links: only the recorded owner, current generation; an exact replay 
     ok: false,
     code: 'generation_conflict',
   })
+})
+
+test('owner links are issued only after the vault route and Caddy site are published and readable', async () => {
+  const f = await fixture()
+  await f.send(createRequest())
+  const invite = (fields: object = {}) => ({
+    requestId: rid(),
+    action: 'owner-invite',
+    vaultId: A,
+    expectedGeneration: 1,
+    actorUserId: OWNER.userId,
+    issuedAt: '2026-10-20T00:05:00.000Z',
+    expiresAt: '2026-10-20T01:05:00.000Z',
+    ...fields,
+  })
+  // Caddy cannot read the vault sites (the production failure): no link is minted at all.
+  const before = f.ingress()
+  f.deps.ingress = async () => {
+    throw new Error('tls_unavailable')
+  }
+  expect(await f.send(invite())).toMatchObject({ ok: false, code: 'tls_unavailable' })
+  // Published, but this vault has no ready route (e.g. a suspended host): refused, retryable.
+  f.deps.ingress = async () => ({
+    contractVersion: 1,
+    tenantId: TENANT,
+    physicalHostBinding: BINDING,
+    hostEpoch: 1,
+    hostState: 'suspended',
+    routes: [
+      {
+        vaultId: A,
+        upstreamVaultId: UPSTREAM,
+        origin: `https://bb-${A.replaceAll('-', '')}.example.com`,
+        state: 'disabled',
+      },
+    ],
+  })
+  expect(await f.send(invite())).toMatchObject({ ok: false, code: 'maintenance', retryable: true })
+  // Anything that is not a valid manifest never fails open.
+  f.deps.ingress = async () => ({ routes: 'nope' })
+  expect(await f.send(invite())).toMatchObject({ ok: false, code: 'operation_failed' })
+  expect(f.issued).toHaveLength(0)
+  // Served: the link is minted once.
+  let republished = 0
+  f.deps.ingress = async () => void republished++
+  expect(await f.send(invite())).toMatchObject({ ok: true })
+  expect(republished).toBe(1)
+  expect(f.issued).toHaveLength(1)
+  expect(f.ingress()).toBe(before)
 })
 
 test('rename changes only Ficus metadata at the next generation', async () => {

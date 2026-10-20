@@ -58,7 +58,11 @@ expect_fail 'identity without enabled: true is refused' 'bigbrain must contain o
 plain=$(render_caddyfile 'ficus.example.com' 3000 /c.crt /c.key)
 expect_eq 'disabled hosts keep the exact previous Caddyfile' "$(grep -c 'import' <<<"${plain}" || true)" 0
 with=$(BIGBRAIN_INGRESS=true render_caddyfile 'ficus.example.com' 3000 /c.crt /c.key)
-expect_match 'enabled hosts import the controller-owned vault sites' "${with}" "import ${T}/etc/caddy/\\*\\.caddy"
+expect_match 'enabled hosts import the controller-owned vault sites' "${with}" "import ${T}/bigbrain-caddy/\\*\\.caddy"
+# Caddy reloads as the caddy user: the include must never sit inside the root-only (0700) etc dir,
+# where its glob silently matches nothing and every vault host gets Caddy's empty 200.
+expect_eq 'production vault sites live beside, not inside, the root-only etc directory' \
+  "$(BIGBRAIN_ETC=/etc/ficus/bigbrain bigbrain_caddy_sites)" /etc/ficus/bigbrain-caddy
 expect_eq 'the include is the only change' "$(diff <(printf '%s\n' "${plain}") <(printf '%s\n' "${with}") | grep -c '^>' || true)" 2
 config "ingress: {caddy: false}
 bigbrain: {enabled: true, tenant_id: ${TENANT}, physical_host_binding: ${BINDING}, host_epoch: 0, zone: bb.example.com}"

@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { managedBigbrainReadHandoffSchema, type ManagedBigbrainHostRequest } from '@ficus/shared/managed-bigbrain'
 import { escrowSchema, initializeVaultOwner, prepareReadCredential } from './bootstrap'
 import type { InstalledHost } from './control-input'
+import { gatewayManifestSchema } from './gateway-policy'
 import { cachedOwnerAppLink, ownerInviteCacheSchema } from './invite-cache'
 import { NativeVaultAdmin } from './native-admin'
 import { BIGBRAIN_STATE_ROOT, managedPaths } from './paths'
@@ -250,8 +251,9 @@ export async function reconnectRead(request: Request<'read-reconnect'>, host: In
   return saveVaultRecord({ ...record, receipt: { ...record.receipt, readAccess: 'active' } }, deps)
 }
 
-/** owner-invite: only the recorded owner, only for the current generation of a ready vault; the
- * durable replay cache returns the same unexpired link and never re-mints. */
+/** owner-invite: only the recorded owner, only for the current generation of a ready vault whose
+ * public route and Caddy site are published and readable; the durable replay cache returns the
+ * same unexpired link and never re-mints. */
 export async function ownerInvite(request: Request<'owner-invite'>, deps: LifecycleDeps) {
   const paths = managedPaths({ vaultId: request.vaultId, root: deps.root })
   const authorize = async () => {
@@ -268,6 +270,17 @@ export async function ownerInvite(request: Request<'owner-invite'>, deps: Lifecy
     return record
   }
   const record = await authorize()
+  // A link is only useful if its origin actually reaches this vault: (re)publish the routes and
+  // Caddy sites first, which fails closed when Caddy cannot serve them. Otherwise the app gets
+  // Caddy's empty 200 for an unknown host and reports "null is not an object".
+  // The real publisher always returns its manifest; only an injected no-op returns nothing.
+  const result = await publish(deps)
+  if (result !== undefined) {
+    const published = gatewayManifestSchema.safeParse(result)
+    if (!published.success) throw new Error('operation_failed')
+    if (!published.data.routes.some((route) => route.vaultId === request.vaultId && route.state === 'ready'))
+      throw new Error('maintenance')
+  }
   const issue =
     deps.issueAppLink ??
     (async (r: ControlReceipt, window: { issuedAt: string; expiresAt: string }) => {

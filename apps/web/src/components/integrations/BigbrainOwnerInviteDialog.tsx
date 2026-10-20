@@ -1,10 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
+import { ApiError } from '../../api/client'
 import { Modal } from '../Modal'
 import {
   createManagedBigbrainOwnerInvite,
   type ManagedBigbrainOwnerInvite,
   type ManagedBigbrainVault,
 } from '../../api/integrations'
+
+/** Why no link was created, and what to do. Never echoes server text (no secret ever lands here). */
+function inviteFailure(error: unknown): string {
+  const code =
+    error instanceof ApiError && error.payload && typeof error.payload === 'object'
+      ? String((error.payload as { code?: unknown }).code ?? '')
+      : ''
+  if (
+    ['tls_unavailable', 'maintenance', 'unavailable', 'host_unreachable', 'busy', 'upstream_unavailable'].includes(code)
+  )
+    return 'This vault is not reachable at its address yet, so no link was created. Try again in a few minutes; if it keeps happening, contact support.'
+  if (code === 'generation_conflict' || code === 'request_conflict')
+    return 'This vault changed meanwhile. Refresh the vault list and try again.'
+  return 'Could not create a device link. Refresh the vault list and try again.'
+}
 
 /**
  * Owner device link for one managed vault. The link is a secret that lets its holder connect a
@@ -59,9 +75,8 @@ export function BigbrainOwnerInviteDialog({
         expectedGeneration: vault.desiredGeneration,
       })
       if (generation.current === request) setInvite(result)
-    } catch {
-      if (generation.current === request)
-        setError('Could not create a device link. Refresh the vault list and try again.')
+    } catch (error) {
+      if (generation.current === request) setError(inviteFailure(error))
     } finally {
       if (generation.current === request) setPending(false)
     }
@@ -111,6 +126,10 @@ export function BigbrainOwnerInviteDialog({
             </label>
             <p className="text-xs text-muted">
               Paste it into the BigBrain app on your device. Expires {new Date(invite.expiresAt).toLocaleTimeString()}.
+            </p>
+            <p className="text-xs text-muted">
+              Each link works once. If the app cannot connect with it (for example it reports an error or says the
+              invitation is expired or already used), close this dialog and create a new link.
             </p>
             <button
               type="button"

@@ -244,7 +244,9 @@ function VaultRow({
       )}
       {(canWrite || vault.isOwner) && vault.state !== 'deleted' && (
         <div className="mt-2 flex flex-wrap gap-2">
-          {vault.isOwner && vault.state === 'ready' && (
+          {/* Only a vault that is fully set up, published at its origin and not mid-change can
+              redeem a device link; anything else would hand out a link that cannot work. */}
+          {vault.isOwner && vault.state === 'ready' && vault.pendingAction === null && vault.origin !== null && (
             <button
               type="button"
               className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5"

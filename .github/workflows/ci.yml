@@ -999,8 +999,11 @@ jobs:
           sudo openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
             -keyout /etc/caddy/tls/origin.key -out /etc/caddy/tls/origin.crt \
             -subj '/CN=*.bigbrain.example.test' -addext 'subjectAltName=DNS:*.bigbrain.example.test' 2>/dev/null
+          # Like setup's install_origin_cert: the key is 0600 and owned by caddy, which loads it.
+          sudo chown caddy:caddy /etc/caddy/tls/origin.key
           sudo chmod 0600 /etc/caddy/tls/origin.key
-          printf 'import /etc/ficus/bigbrain/caddy/*.caddy\n' | sudo tee /etc/caddy/Caddyfile >/dev/null
+          # The same include render_caddyfile writes (lib.sh bigbrain_caddy_sites).
+          printf 'import /etc/ficus/bigbrain-caddy/*.caddy\n' | sudo tee /etc/caddy/Caddyfile >/dev/null
           sudo systemctl restart caddy
           # Core's backup timer stand-in: probe requires the existing encrypted backup to be enabled.
           printf '[Unit]\nDescription=stand-in\n[Service]\nType=oneshot\nExecStart=/bin/true\n' | sudo tee /etc/systemd/system/ficus-backup.service >/dev/null
