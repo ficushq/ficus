@@ -40,16 +40,17 @@ Use the URL from setup consistently when registering and using passkeys. A diffe
 For browser access from another device, use a hostname you control and an HTTPS reverse proxy. This example assumes the proxy and Ficus run on the same machine, with Core listening on port 3000.
 
 1. Point your hostname at the server and arrange an HTTPS certificate with your proxy.
-2. Set these values in the Ficus checkout's `.env`, substituting your own hostname:
-
-   ```dotenv
-   APP_URL=https://ficus.example.com
-   FICUS_WEB_ORIGIN=https://ficus.example.com
-   FICUS_SERVE_WEB=1
-   ```
-
+2. Make sure `FICUS_SERVE_WEB=1` is set in the Ficus checkout's `.env` (setup sets it).
 3. Proxy the whole hostname to `http://127.0.0.1:3000`. Forward ordinary HTTP requests and WebSocket upgrades for both `/ws` and `/ws/*`, including terminal connections, and for `/api/app/*`, where squad local apps open their own WebSockets (for example, dev-server hot reload).
-4. Restart Ficus with `ficus server restart`, then open the HTTPS address and test login, live task updates and a terminal session.
+4. Sign in at the server's current address as an administrator, open **Settings → Administration → Mobile & Pro**, and set the **Public address** to `https://ficus.example.com`. Review the confirmation, which lists the passkey, Ficus account and integration callback changes, and save. It takes effect immediately; no restart is needed.
+5. Open the HTTPS address and test login, live task updates and a terminal session.
+
+If you manage configuration as files instead, set the address in `.env` and restart with `ficus server restart`. An environment value locks the setting, and Settings shows it as **Set by the server environment**:
+
+```dotenv
+APP_URL=https://ficus.example.com
+FICUS_WEB_ORIGIN=https://ficus.example.com
+```
 
 With Caddy, the single-origin proxy portion is:
 
@@ -61,12 +62,35 @@ ficus.example.com {
 
 `FICUS_WEB_ORIGIN` must be a bare origin: scheme, host and optional port, without a path. Passkey registration depends on it. `APP_URL` controls user-facing links; `FICUS_API_URL` serves other API-client/runtime connections and does not need to be changed to the public hostname for this same-machine proxy example.
 
+## Where the public address comes from
+
+Ficus uses one public address for links, sign-in, integration OAuth callbacks, webhooks and the Ficus app. It is resolved in this order:
+
+| Source                                        | Locks the setting | Notes                                                                                                                                                                         |
+| --------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `APP_URL` environment variable                | Yes               | Shown as **Set by the server environment**. Remove it to manage the address in Settings.                                                                                      |
+| `PUBLIC_URL` environment variable             | Yes               | Older name, used only when `APP_URL` is unset.                                                                                                                                |
+| **Public address** in Settings → Mobile & Pro | —                 | Changed by administrators; takes effect without a restart. Every change is recorded with who made it.                                                                         |
+| `FICUS_LOCAL_APP_URL` environment variable    | No                | The local address a launcher (Ficus Desktop, `ficus setup`) provides. It is used only when nothing above is set, and stays allowed for sign-in after a public address is set. |
+
+On the first start after upgrading, a non-local `APP_URL` or `PUBLIC_URL` is also copied into the setting once, so the server keeps its address if you later remove the variable. Ficus Cloud servers are always managed by Ficus Cloud.
+
+Ficus checks the address format only (scheme, host, optional port and path; no credentials, query or fragment). It does not check that the address reaches the server.
+
+After a change:
+
+- **Passkeys** work only on the hostname they were made on. Existing passkeys keep working at the local address and wherever they were made; add one at the new address with **Lost your passkey?** on its sign-in page.
+- **Ficus account (Mobile & Pro):** connect the account again. Pending approvals for the old address are cancelled. Devices and Instance Pro slots stay with the old address in your Ficus account and do not move.
+- **Integrations:** update OAuth redirect URLs and GitHub or Linear webhook URLs with your providers. The confirmation lists the old and new values.
+- Links that were already sent keep the old address. Agents and sandboxes see the new address on their next command or session.
+- The address's path must match `APP_BASE_PATH`, which the web app is built with.
+
 The worker and internal event ports are not browser endpoints. Keep them on the private side of the deployment. If your proxy runs in another container or machine, configure a reachable private API bind address and firewall rules for that topology; `127.0.0.1` in the proxy then refers to the proxy itself.
 
 ## Recognize a partial access problem
 
 - **The app loads but task updates or terminals disconnect:** check WebSocket forwarding, including the bare `/ws` route.
-- **Passkey registration fails:** check the exact HTTPS origin, `FICUS_WEB_ORIGIN`, and whether you switched hostnames after registration.
+- **Passkey registration fails:** check the exact HTTPS origin, the **Public address** (or `APP_URL`/`FICUS_WEB_ORIGIN`), and whether you switched hostnames after registration.
 - **An API responds but the page is missing:** ensure the web build exists and `FICUS_SERVE_WEB` is enabled.
 - **A host-mode agent cannot browse:** install a supported browser or configure `FICUS_BROWSER_EXECUTABLE_PATH`.
 
