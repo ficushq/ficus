@@ -23,6 +23,16 @@ test('Core lanes are disjoint and execute the complete discovered inventory exac
   expect(isolated).toContain(isolatedFile)
 })
 
+test('Desktop BigBrain real MCP sessions run only in the isolated subprocess lane', () => {
+  // Spawning is indirect through BigbrainClient, so the source-regex membership
+  // gate cannot discover these six Bun-backed MCP sessions automatically.
+  const file = './src/services/integrations/bigbrain/desktop-host.test.ts'
+  expect(plan.subprocess).toContain(file)
+  expect(plan.isolated).toContain(file)
+  expect(plan.shared).not.toContain(file)
+  expect(selectCoreTests(plan, [file], coreRoot)).toEqual({ shared: [], isolated: [file] })
+})
+
 test('no arguments keep the full-suite selection and CI options', () => {
   expect(parseCoreTestArgs([])).toEqual({ help: false, paths: [], list: false, reverse: false, subprocessOnly: false })
   expect(parseCoreTestArgs(['--subprocess', '--reverse'])).toMatchObject({ subprocessOnly: true, reverse: true })

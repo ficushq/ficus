@@ -876,6 +876,7 @@ jobs:
           src/services/work-streams/worktree-cleanup-runtime.test.ts
           src/services/work-streams/worktree-cleanup-attachments.test.ts
           src/services/work-streams/worktree-cleanup-reconciler.test.ts
+          src/services/integrations/bigbrain/desktop-host.test.ts
           src/services/integrations/bigbrain/stdio-transport.process.test.ts
           src/services/integrations/bigbrain/upstream.smoke.test.ts
           src/services/integrations/outputs/runtime.test.ts
