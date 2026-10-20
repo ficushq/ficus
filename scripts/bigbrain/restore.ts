@@ -7,7 +7,7 @@ import {
   managedBigbrainRestoreGrantSchema,
   type ManagedBigbrainArchiveInventory,
   type ManagedBigbrainRestoreGrant,
-} from '../../packages/shared/src/managed-bigbrain'
+} from '@ficus/shared/managed-bigbrain'
 import { backupManifestSchema, MANAGED_BACKUP_DIR, type BackupManifest } from './backup'
 import { installedHostSchema } from './control-input'
 import { BIGBRAIN_ETC } from './install'
@@ -158,7 +158,7 @@ function safeName(name: string): boolean {
     name.length > 0 &&
     name.length <= 4096 &&
     !name.startsWith('/') &&
-    !/[\u0000-\u001f\u007f\\]/.test(name) &&
+    !/[\p{Cc}\\]/u.test(name) &&
     ROOTS.has(parts[0]!) &&
     parts.every((p) => p !== '' && p !== '.' && p !== '..')
   )

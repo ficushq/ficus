@@ -5,7 +5,7 @@ import {
   MANAGED_BIGBRAIN_DEFAULT_LIMITS,
   MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
   managedBigbrainHostConfigSchema,
-} from '../../packages/shared/src/managed-bigbrain'
+} from '@ficus/shared/managed-bigbrain'
 import { verifyBigbrainArtifact } from './artifact'
 import { verifyHostBun } from './host-bun'
 import { installHostAssets } from './host-assets'

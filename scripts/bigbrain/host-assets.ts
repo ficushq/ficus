@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { MANAGED_BIGBRAIN_HELPER } from '../../packages/shared/src/managed-bigbrain'
+import { MANAGED_BIGBRAIN_HELPER } from '@ficus/shared/managed-bigbrain'
 import { runPrivateCommand, type PrivateCommandRunner } from './process'
 import {
   ensureOwnedDirectory,

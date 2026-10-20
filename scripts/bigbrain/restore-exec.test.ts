@@ -3,10 +3,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  MANAGED_BIGBRAIN_DEFAULT_LIMITS,
-  MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
-} from '../../packages/shared/src/managed-bigbrain'
+import { MANAGED_BIGBRAIN_DEFAULT_LIMITS, MANAGED_BIGBRAIN_UPSTREAM_COMMIT } from '@ficus/shared/managed-bigbrain'
 import { backupManifestSchema } from './backup'
 import { installedHostSchema } from './control-input'
 import { simulatedHost } from './host-test-fixtures'

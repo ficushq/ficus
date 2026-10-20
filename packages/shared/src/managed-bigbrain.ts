@@ -63,7 +63,7 @@ const label = z
   .string()
   .min(1)
   .max(120)
-  .refine((v) => v === v.trim() && !/[\u0000-\u001f\u007f-\u009f]/u.test(v))
+  .refine((v) => v === v.trim() && !/\p{Cc}/u.test(v))
 const zonePattern = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/
 const zoneSchema = z.string().max(210).regex(zonePattern)
 const originSchema = z

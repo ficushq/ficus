@@ -44,7 +44,7 @@ async function present(path: string): Promise<boolean> {
 }
 export async function vaultRecords(deps: ProvisionDeps): Promise<ControlReceipt[]> {
   const control = join(deps.root ?? BIGBRAIN_STATE_ROOT, 'control')
-  const ids = (await readdir(control)).filter((n) => UUID.test(n))
+  const ids = (await readdir(control)).sort().filter((n) => UUID.test(n))
   return Promise.all(
     ids.map((id) => readPrivateJson(join(control, id), 'receipt.json', controlReceiptSchema, { uid: deps.uid }))
   )

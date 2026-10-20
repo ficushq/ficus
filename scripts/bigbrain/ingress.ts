@@ -25,7 +25,7 @@ export interface IngressOptions {
 
 async function receipts(root: string, uid: number): Promise<ControlReceipt[]> {
   const control = join(root, 'control')
-  const ids = (await readdir(control)).filter((n) => VAULT_DIR.test(n))
+  const ids = (await readdir(control)).sort().filter((n) => VAULT_DIR.test(n))
   return Promise.all(ids.map((id) => readPrivateJson(join(control, id), 'receipt.json', controlReceiptSchema, { uid })))
 }
 

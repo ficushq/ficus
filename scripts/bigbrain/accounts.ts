@@ -1,4 +1,4 @@
-import { managedBigbrainHostBindingSchema } from '../../packages/shared/src/managed-bigbrain'
+import { managedBigbrainHostBindingSchema } from '@ficus/shared/managed-bigbrain'
 import { runPrivateCommand, type PrivateCommandRunner } from './process'
 const keySchema = managedBigbrainHostBindingSchema
   .omit({ hostEpoch: true })

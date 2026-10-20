@@ -1,7 +1,7 @@
 import { lstat } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { z } from 'zod'
-import { managedBigbrainHostBindingSchema } from '../../packages/shared/src/managed-bigbrain'
+import { managedBigbrainHostBindingSchema } from '@ficus/shared/managed-bigbrain'
 import { ensureManagedIdentity, managedIdentityNames, type ManagedIdentity } from './accounts'
 import { managedPaths } from './paths'
 import { controlReceiptSchema, type ControlReceipt } from './receipts'

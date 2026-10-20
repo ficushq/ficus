@@ -4,7 +4,7 @@ import {
   MANAGED_BIGBRAIN_MAX_ACTIVE_INVITES,
   managedBigbrainHostRequestSchema,
   managedBigbrainInviteWindowStatus,
-} from '../../packages/shared/src/managed-bigbrain'
+} from '@ficus/shared/managed-bigbrain'
 import { readPrivateJson, writePrivateJson } from './secure-files'
 const entrySchema = z
   .object({

@@ -4,7 +4,7 @@ import {
   managedBigbrainInviteWindowSchema,
   managedBigbrainInviteWindowStatus,
   managedBigbrainOwnerSchema,
-} from '../../packages/shared/src/managed-bigbrain'
+} from '@ficus/shared/managed-bigbrain'
 import { readBoundedControlBytes } from './control-input'
 
 const inputSchema = z
@@ -13,7 +13,7 @@ const inputSchema = z
       .string()
       .min(1)
       .max(4096)
-      .refine((v) => isAbsolute(v) && resolve(v) === v && !/[\x00-\x1f\x7f]/.test(v)),
+      .refine((v) => isAbsolute(v) && resolve(v) === v && !/\p{Cc}/u.test(v)),
     handle: managedBigbrainOwnerSchema.shape.handle,
     issuedAt: z.string(),
     expiresAt: z.string(),

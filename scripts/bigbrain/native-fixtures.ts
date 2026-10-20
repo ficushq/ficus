@@ -3,7 +3,7 @@ import { mkdir, readFile, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { verifyBigbrainArtifact } from './artifact'
-import { MANAGED_BIGBRAIN_OWNER_INVITE_TTL_MS } from '../../packages/shared/src/managed-bigbrain'
+import { MANAGED_BIGBRAIN_OWNER_INVITE_TTL_MS } from '@ficus/shared/managed-bigbrain'
 
 /** Synthetic-only harness: no account/mount/systemd changes, no inherited provider env. */
 export async function nativeFixtures(root: string, artifact: string, dependencyRoot: string) {

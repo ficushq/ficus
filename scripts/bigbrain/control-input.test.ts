@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { readHostRequest, validateHostAdmission, installedHostSchema } from './control-input'
 import { managedPaths } from './paths'
-import { MANAGED_BIGBRAIN_UPSTREAM_COMMIT as pin } from '../../packages/shared/src/managed-bigbrain'
+import { MANAGED_BIGBRAIN_UPSTREAM_COMMIT as pin } from '@ficus/shared/managed-bigbrain'
 
 const tenantId = '11111111-1111-4111-8111-111111111111'
 const vaultId = '22222222-2222-4222-8222-222222222222'

@@ -1,9 +1,6 @@
 import { lstat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
-import {
-  managedBigbrainReadHandoffSchema,
-  type ManagedBigbrainHostRequest,
-} from '../../packages/shared/src/managed-bigbrain'
+import { managedBigbrainReadHandoffSchema, type ManagedBigbrainHostRequest } from '@ficus/shared/managed-bigbrain'
 import { escrowSchema, initializeVaultOwner, prepareReadCredential } from './bootstrap'
 import type { InstalledHost } from './control-input'
 import { cachedOwnerAppLink, ownerInviteCacheSchema } from './invite-cache'

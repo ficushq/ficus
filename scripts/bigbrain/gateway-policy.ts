@@ -3,7 +3,7 @@ import {
   managedBigbrainHostBindingSchema,
   managedBigbrainHostStateSchema,
   managedBigbrainOriginMatchesPolicy,
-} from '../../packages/shared/src/managed-bigbrain'
+} from '@ficus/shared/managed-bigbrain'
 
 const MAX_INPUT = 1024 * 1024 + 64 * 1024
 const MAX_OUTPUT = 16 * 1024 * 1024

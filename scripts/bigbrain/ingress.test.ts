@@ -2,10 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  MANAGED_BIGBRAIN_DEFAULT_LIMITS,
-  MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
-} from '../../packages/shared/src/managed-bigbrain'
+import { MANAGED_BIGBRAIN_DEFAULT_LIMITS, MANAGED_BIGBRAIN_UPSTREAM_COMMIT } from '@ficus/shared/managed-bigbrain'
 import { installedHostSchema } from './control-input'
 import { reservedVaultFixture } from './host-test-fixtures'
 import { publishIngress, renderVaultSite } from './ingress'

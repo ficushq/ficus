@@ -8,7 +8,7 @@ import {
   managedBigbrainArchiveInventorySchema,
   managedBigbrainOwnerSchema,
   type ManagedBigbrainArchiveInventory,
-} from '../../packages/shared/src/managed-bigbrain'
+} from '@ficus/shared/managed-bigbrain'
 import { installedHostSchema } from './control-input'
 import { managedPaths, BIGBRAIN_STATE_ROOT } from './paths'
 import { controlReceiptSchema, type ControlReceipt } from './receipts'
@@ -87,9 +87,9 @@ async function present(path: string): Promise<boolean> {
 }
 async function vaultRecords(root: string, uid: number): Promise<ControlReceipt[]> {
   const control = join(root, 'control')
-  const names = (await readdir(control)).filter((n) =>
-    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(n)
-  )
+  const names = (await readdir(control))
+    .sort()
+    .filter((n) => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(n))
   const records = await Promise.all(
     names.map((vaultId) => readPrivateJson(join(control, vaultId), 'receipt.json', controlReceiptSchema, { uid }))
   )

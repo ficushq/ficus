@@ -9,7 +9,7 @@ import {
   verifyBigbrainArtifact,
   type BuildRunner,
 } from './artifact'
-import { MANAGED_BIGBRAIN_UPSTREAM_COMMIT as pin } from '../../packages/shared/src/managed-bigbrain'
+import { MANAGED_BIGBRAIN_UPSTREAM_COMMIT as pin } from '@ficus/shared/managed-bigbrain'
 
 const roots: string[] = []
 afterEach(async () => {

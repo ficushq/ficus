@@ -1,7 +1,7 @@
 // Pure, nonsecret test recipes. Never imported by the host executables.
 import { controlReceiptSchema } from './receipts'
 import { planVaultStorage } from './storage'
-import { MANAGED_BIGBRAIN_UPSTREAM_COMMIT } from '../../packages/shared/src/managed-bigbrain'
+import { MANAGED_BIGBRAIN_UPSTREAM_COMMIT } from '@ficus/shared/managed-bigbrain'
 export function reservedVaultFixture(root: string) {
   const tenantId = '11111111-1111-4111-8111-111111111111'
   const vaultId = '22222222-2222-4222-8222-222222222222'

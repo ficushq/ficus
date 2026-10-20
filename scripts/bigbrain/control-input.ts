@@ -9,7 +9,7 @@ import {
   managedBigbrainOriginMatchesPolicy,
   parseManagedBigbrainHostRequest,
   type ManagedBigbrainHostRequest,
-} from '../../packages/shared/src/managed-bigbrain'
+} from '@ficus/shared/managed-bigbrain'
 
 export const installedHostSchema = managedBigbrainHostBindingSchema
   .extend({

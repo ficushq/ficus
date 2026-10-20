@@ -5,7 +5,7 @@ import gatewayTemplate from '../setup/systemd/ficus-bigbrain-gateway.service.tmp
 import controlLauncherTemplate from '../setup/systemd/ficus-bigbrainctl.tmpl' with { type: 'text' }
 import { managedPaths } from './paths'
 import type { StorageReservation } from './storage'
-import { managedBigbrainOriginMatchesPolicy } from '../../packages/shared/src/managed-bigbrain'
+import { managedBigbrainOriginMatchesPolicy } from '@ficus/shared/managed-bigbrain'
 
 const digestSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/)
 const artifactRoot = (digest: string) => {

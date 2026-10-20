@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { chmod, copyFile, lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { z } from 'zod'
-import { MANAGED_BIGBRAIN_UPSTREAM_COMMIT } from '../../packages/shared/src/managed-bigbrain'
+import { MANAGED_BIGBRAIN_UPSTREAM_COMMIT } from '@ficus/shared/managed-bigbrain'
 import { computeDigest } from '../artifact/lib/manifest'
 
 const REPOSITORY = 'https://github.com/elsehow/bigbrain.git'
@@ -18,6 +18,7 @@ export const FICUS_SOURCE_PATHS = [
   'scripts/bigbrain',
   'scripts/setup/systemd',
   'scripts/artifact/lib/manifest.ts',
+  'packages/shared/package.json',
   'packages/shared/src/managed-bigbrain.ts',
 ] as const
 /** JS bundles run by the host's pinned Bun (exact version enforced at install and preflight),

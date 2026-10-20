@@ -102,7 +102,7 @@ test('recorded storage stays verifiable across host epoch advances and upgrades;
   const { installedHostSchema } = await import('./control-input')
   const { controlReceiptSchema } = await import('./receipts')
   const { managedPaths } = await import('./paths')
-  const shared = await import('../../packages/shared/src/managed-bigbrain')
+  const shared = await import('@ficus/shared/managed-bigbrain')
   const outer = await mkdtemp(join(tmpdir(), 'bigbrain-storage-'))
   try {
     const uid = process.getuid!()

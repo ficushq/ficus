@@ -10,7 +10,7 @@ import {
   type ManagedBigbrainErrorCode,
   type ManagedBigbrainHostReply,
   type ManagedBigbrainHostRequest,
-} from '../../packages/shared/src/managed-bigbrain'
+} from '@ficus/shared/managed-bigbrain'
 import { installedHostSchema, validateHostAdmission, type InstalledHost } from './control-input'
 import { BIGBRAIN_ETC } from './install'
 import { BIGBRAIN_STATE_ROOT, managedPaths } from './paths'
@@ -70,9 +70,9 @@ export function failure(requestId: string, error: unknown): ManagedBigbrainHostR
 }
 async function records(root: string, uid: number): Promise<ControlReceipt[]> {
   const control = join(root, 'control')
-  const ids = (await readdir(control)).filter((n) =>
-    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(n)
-  )
+  const ids = (await readdir(control))
+    .sort()
+    .filter((n) => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(n))
   return Promise.all(ids.map((id) => readPrivateJson(join(control, id), 'receipt.json', controlReceiptSchema, { uid })))
 }
 const serving = (r: ControlReceipt) =>
@@ -364,7 +364,7 @@ export async function controlMain(args: string[]): Promise<void> {
   const { dirname } = await import('node:path')
   const { readBoundedControlBytes } = await import('./control-input')
   const { proveSocketBindPolicy, verifyCurrentCgroup, verifyRunningInterpreter } = await import('./preflight')
-  const { MANAGED_BIGBRAIN_HOST_REPLY_BYTES } = await import('../../packages/shared/src/managed-bigbrain')
+  const { MANAGED_BIGBRAIN_HOST_REPLY_BYTES } = await import('@ficus/shared/managed-bigbrain')
   let reply: ManagedBigbrainHostReply
   try {
     if (process.getuid?.() !== 0 || args.length !== 0) throw new Error('invalid_request')

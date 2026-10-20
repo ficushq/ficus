@@ -2,10 +2,7 @@ import { createHash } from 'node:crypto'
 import { lstat, rm, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
-import {
-  managedBigbrainRestoreGrantSchema,
-  type ManagedBigbrainRestoreGrant,
-} from '../../packages/shared/src/managed-bigbrain'
+import { managedBigbrainRestoreGrantSchema, type ManagedBigbrainRestoreGrant } from '@ficus/shared/managed-bigbrain'
 import { MANAGED_BACKUP_DIR } from './backup'
 import { NativeVaultAdmin } from './native-admin'
 import { BIGBRAIN_STATE_ROOT, managedPaths } from './paths'

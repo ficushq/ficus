@@ -10,10 +10,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { readFileSync, existsSync } from 'node:fs'
-import {
-  MANAGED_BIGBRAIN_DEFAULT_LIMITS,
-  MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
-} from '../../packages/shared/src/managed-bigbrain'
+import { MANAGED_BIGBRAIN_DEFAULT_LIMITS, MANAGED_BIGBRAIN_UPSTREAM_COMMIT } from '@ficus/shared/managed-bigbrain'
 
 const release = process.argv[2]
 if (!release || process.getuid?.() !== 0 || process.platform !== 'linux') {
@@ -120,6 +117,32 @@ function asVault(vaultId: string, script: string) {
 }
 
 try {
+  // ---------------------------------------------------------------- prerequisites, named
+  const { probeSupportedHost } = await import('./install')
+  const { verifyHostBun } = await import('./host-bun')
+  const { verifyBigbrainArtifact } = await import('./artifact')
+  const provenance = await verifyBigbrainArtifact(`${release}/bigbrain`).catch((e) => {
+    check('artifact verifies', false, String(e?.message))
+    throw e
+  })
+  check('artifact verifies', true, provenance.digest)
+  await probeSupportedHost().then(
+    () => check('host support probe', true),
+    (e) => check('host support probe', false, String(e?.message))
+  )
+  const chain = ['/usr/local/bin/bun', '/usr/local/bin', '/usr/local', '/usr', '/']
+    .map((p) => sh(['/usr/bin/stat', '-L', '-c', '%U:%G:%a %n', p]).stdout.trim())
+    .join('; ')
+  await verifyHostBun(provenance.bunVersion).then(
+    () => check('host Bun verified', true, chain),
+    (e) =>
+      check(
+        'host Bun verified',
+        false,
+        `${String(e?.message)}; ${chain}; version=${sh(['/usr/local/bin/bun', '--version']).stdout.trim()}`
+      )
+  )
+
   // ---------------------------------------------------------------- install through the toolkit
   must([
     '/bin/bash',

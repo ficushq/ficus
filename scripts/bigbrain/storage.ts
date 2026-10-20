@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { managedPaths } from './paths'
-import { MANAGED_BIGBRAIN_MAX_VAULTS } from '../../packages/shared/src/managed-bigbrain'
+import { MANAGED_BIGBRAIN_MAX_VAULTS } from '@ficus/shared/managed-bigbrain'
 
 const uint = z.number().int().safe().nonnegative()
 const uuid = z

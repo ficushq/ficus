@@ -5,7 +5,7 @@ import {
   managedBigbrainHostRequestSchema,
   managedBigbrainOwnerSchema,
   type ManagedBigbrainHostRequest,
-} from '../../packages/shared/src/managed-bigbrain'
+} from '@ficus/shared/managed-bigbrain'
 import { storageReservationSchema } from './storage'
 
 const uint = z.number().int().safe().nonnegative()
