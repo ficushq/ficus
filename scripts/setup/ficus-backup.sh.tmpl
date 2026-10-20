@@ -99,19 +99,23 @@ BIGBRAIN_ETC=${FICUS_BACKUP_BIGBRAIN_ETC:-/etc/ficus/bigbrain}
 BIGBRAIN_STATE=${FICUS_BACKUP_BIGBRAIN_STATE:-/var/lib/ficus-bigbrain}
 BIGBRAIN_STAGED=0
 bigbrain_host() { # ROLE — prints one JSON line
-  local bin digest lock="${BIGBRAIN_STATE}/control/host.lock"
+  local digest lock="${BIGBRAIN_STATE}/control/host.lock"
+  local -a cmd
   if [[ -n ${FICUS_BACKUP_BIGBRAIN_HOST_CMD:-} ]]; then
-    bin=${FICUS_BACKUP_BIGBRAIN_HOST_CMD}
+    cmd=("${FICUS_BACKUP_BIGBRAIN_HOST_CMD}")
   else
     digest=$(jq -r '.artifactDigest' "${BIGBRAIN_ETC}/host.json") || return 1
     [[ ${digest} =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
-    bin="/opt/ficus-bigbrain/releases/${digest#sha256:}/ficus-bigbrain-host"
+    # The role verifies its interpreter (ownership, exact release Bun version) itself.
+    cmd=(/usr/bin/env -i HOME=/nonexistent PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8
+      BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 /usr/local/bin/bun --no-install --no-env-file
+      "/opt/ficus-bigbrain/releases/${digest#sha256:}/ficus-bigbrain-host.js")
   fi
   [[ -f ${lock} && ! -L ${lock} ]] || return 1
   (
     exec 8<>"${lock}"
     flock -w 180 -x 8
-    "${bin}" "$1"
+    "${cmd[@]}" "$1"
   )
 }
 cleanup() {

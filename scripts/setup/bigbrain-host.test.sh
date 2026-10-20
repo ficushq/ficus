@@ -79,24 +79,35 @@ expect_fail 'enabled release without the runtime refuses before any change' 'car
   bigbrain_install "${release}" "${enabled_json}"
 [[ ! -e ${BIGBRAIN_STATE}/control/host.lock ]] && ok || bad 'no lock/state created without a runtime'
 
-cat >"${release}/bigbrain/ficus-bigbrain-host" <<EOF
+# A stand-in "bun" that runs the stand-in bundle (a shell script) with the hook's exact argv.
+BIGBRAIN_BUN="${T}/fake-bun"
+cat >"${BIGBRAIN_BUN}" <<'EOF'
 #!/usr/bin/env bash
+[[ $1 == --no-install && $2 == --no-env-file && ${BUN_RUNTIME_TRANSPILER_CACHE_PATH:-} == 0 && -z ${FICUS_LEAK_PROBE:-} ]] || exit 7
+shift 2
+exec bash "$@"
+EOF
+chmod 0755 "${BIGBRAIN_BUN}"
+cat >"${release}/bigbrain/ficus-bigbrain-host.js" <<EOF
 set -euo pipefail
 [[ \$# -eq 1 && \$1 == install ]] || exit 9
 # The lock is held (fd 9) by our parent while we run; a second locker must fail.
 flock -n -x "${BIGBRAIN_STATE}/control/host.lock" true && exit 8
 cat >"${T}/stdin.json"
 stat -c '%a' "${BIGBRAIN_STATE}/control/host.lock" >"${T}/lock-mode"
-if [[ -n \${FAKE_RESULT:-} ]]; then printf '%s\n' "\${FAKE_RESULT}"; exit 0; fi
+# The hook clears the environment, so canned refusals come from a file, not a variable.
+if [[ -s "${T}/fake-result" ]]; then cat "${T}/fake-result"; exit 0; fi
 printf '{"ok":true,"created":true,"artifactDigest":"sha256:%s","hostEpoch":0,"hostState":"active"}\n' "$(printf 'a%.0s' {1..64})"
 EOF
-chmod 0755 "${release}/bigbrain/ficus-bigbrain-host"
-out=$(bigbrain_install "${release}" "${enabled_json}" 2>&1)
+out=$(FICUS_LEAK_PROBE=secret bigbrain_install "${release}" "${enabled_json}" 2>&1)
 expect_match 'installer runs under the held lifecycle lock and reports a safe summary' "${out}" 'runtime installed: .*"created":true'
 expect_eq 'installer receives exactly the validated config on stdin' "$(cat "${T}/stdin.json")" "${enabled_json}"
 expect_eq 'lock file is created private without truncation' "$(cat "${T}/lock-mode")" 600
 
-with_result() { FAKE_RESULT=$1 bigbrain_install "${release}" "${enabled_json}"; }
+with_result() {
+  printf '%s\n' "$1" >"${T}/fake-result"
+  bigbrain_install "${release}" "${enabled_json}"
+}
 expect_fail 'a refusal stops setup with only its safe code' 'install refused \(identity_mismatch\)' \
   with_result '{"ok":false,"code":"identity_mismatch"}'
 out=$(with_result '{"ok":false,"code":"SECRET VALUE"}' 2>&1) || true
@@ -105,6 +116,7 @@ expect_match 'unsafe runtime codes collapse to a fixed code' "${out}" 'install r
 out=$(with_result 'not json SECRET' 2>&1) || true
 [[ ${out} != *SECRET* && ${out} == *operation_failed* ]] && ok || bad 'malformed runtime output is never reflected'
 
+: >"${T}/fake-result"
 : >"${BIGBRAIN_ETC}/host.json"
 expect_fail 'disabling an installed host refuses instead of orphaning vaults' 'would orphan its vaults' \
   bigbrain_install "${release}" '{"enabled":false}'

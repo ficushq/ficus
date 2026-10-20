@@ -19,9 +19,14 @@ test('renders shipped hardened service with private identity, filesystem and bou
   expect(units.service).toContain('SocketBindDeny=any')
   expect(units.service).toContain(`BindsTo=${units.mountUnitName}`)
   expect(units.service).toContain(
-    `ExecStartPre=+/opt/ficus-bigbrain/releases/${'a'.repeat(64)}/ficus-bigbrain-host preflight ${id}`
+    `ExecStartPre=+/usr/local/bin/bun --no-install --no-env-file /opt/ficus-bigbrain/releases/${'a'.repeat(64)}/ficus-bigbrain-host.js preflight ${id}`
   )
   expect(units.service).not.toContain('libexec')
+  // Font assets resolve relative to the immutable release directory, never a writable cwd.
+  expect(units.service).toContain(`WorkingDirectory=/opt/ficus-bigbrain/releases/${'a'.repeat(64)}\n`)
+  expect(units.service).toMatch(
+    /^ExecStart=.* \/usr\/local\/bin\/bun --no-install --no-env-file \S+\/bigbrain-shared\.js serve /m
+  )
   for (const setting of [
     'NoNewPrivileges=yes',
     'PrivateMounts=yes',
@@ -65,9 +70,11 @@ test('aggregate cgroup includes gateway and caps combined CPU/memory; gateway ca
   expect(gateway).toContain('TemporaryFileSystem=/var/tmp:rw,nosuid,nodev,noexec,size=16M,mode=1777')
   expect(gateway).toContain('User=ficus-bb-gateway')
   expect(gateway).toContain(
-    `ExecStartPre=+/opt/ficus-bigbrain/releases/${'a'.repeat(64)}/ficus-bigbrain-host preflight gateway`
+    `ExecStartPre=+/usr/local/bin/bun --no-install --no-env-file /opt/ficus-bigbrain/releases/${'a'.repeat(64)}/ficus-bigbrain-host.js preflight gateway`
   )
-  expect(gateway).toMatch(/ExecStart=.*\/ficus-bigbrain-host gateway$/m)
+  expect(gateway).toMatch(
+    /ExecStart=.*\/usr\/local\/bin\/bun --no-install --no-env-file \S+\/ficus-bigbrain-host\.js gateway$/m
+  )
   expect(gateway).toContain('SocketBindAllow=ipv4:tcp:34792')
   expect(gateway).toContain('SocketBindDeny=any')
   expect(gateway).toContain('InaccessiblePaths=-/var/lib/ficus-bigbrain')
@@ -100,7 +107,8 @@ test('fixed root launcher serializes across SSH interruption and bounds every de
     'ProtectSystem=strict',
     'ReadWritePaths=/etc /var/lib/ficus-bigbrain',
     '/usr/bin/env -i',
-    '/ficus-bigbrain-host control',
+    '/usr/local/bin/bun --no-install --no-env-file',
+    '/ficus-bigbrain-host.js control',
     'head -c 8193',
     'code:"busy"',
   ])

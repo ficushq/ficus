@@ -26,6 +26,7 @@ async function fixture() {
   const artifactRoot = join(outer, 'artifact')
   const digest = await syntheticArtifact(artifactRoot)
   let probes = 0
+  const bunChecks: string[] = []
   const options = {
     config,
     artifactRoot,
@@ -36,8 +37,11 @@ async function fixture() {
     probeHost: async () => {
       probes++
     },
+    hostBun: async (version: string) => {
+      bunChecks.push(version)
+    },
   }
-  return { outer, options, digest, probes: () => probes }
+  return { outer, options, digest, probes: () => probes, bunChecks }
 }
 const host = (f: Awaited<ReturnType<typeof fixture>>) =>
   readPrivateJson(f.options.etc, 'host.json', installedHostSchema, { uid })
@@ -71,7 +75,8 @@ test('first install seeds the host record from the persisted binding and install
   })
   const release = join(f.options.opt, 'releases', f.digest.slice(7))
   expect((await stat(release)).mode & 0o777).toBe(0o755)
-  expect((await stat(join(release, 'bigbrain-shared'))).mode & 0o777).toBe(0o755)
+  expect((await stat(join(release, 'bigbrain-shared.js'))).mode & 0o777).toBe(0o644)
+  expect(f.bunChecks).toEqual(['1.4.2'])
   expect((await stat(join(release, 'LICENSE'))).mode & 0o777).toBe(0o644)
   expect((await stat(join(f.options.etc, 'host.json'))).mode & 0o777).toBe(0o600)
   expect((await stat(join(f.options.state, 'control'))).mode & 0o777).toBe(0o700)
@@ -129,6 +134,20 @@ test('destroyed host records are never revived by setup', async () => {
   await expect(installManagedHost(f.options)).rejects.toThrow('forbidden')
 })
 
+test("a host Bun that differs from the artifact's recorded version installs nothing", async () => {
+  const f = await fixture()
+  await expect(
+    installManagedHost({
+      ...f.options,
+      hostBun: async () => {
+        throw new Error('unsupported_host')
+      },
+    })
+  ).rejects.toThrow('unsupported_host')
+  await expect(stat(f.options.opt)).rejects.toThrow()
+  await expect(stat(join(f.options.etc, 'host.json'))).rejects.toThrow()
+})
+
 test('unsupported host or invalid artifact publishes no host record', async () => {
   const f = await fixture()
   await expect(
@@ -139,7 +158,7 @@ test('unsupported host or invalid artifact publishes no host record', async () =
       },
     })
   ).rejects.toThrow('unsupported_host')
-  await writeFile(join(f.options.artifactRoot, 'bigbrain-shared'), 'tampered')
+  await writeFile(join(f.options.artifactRoot, 'bigbrain-shared.js'), 'tampered')
   await expect(installManagedHost(f.options)).rejects.toThrow('artifact_invalid')
   await expect(stat(join(f.options.etc, 'host.json'))).rejects.toThrow()
 })
@@ -151,6 +170,6 @@ test('a tampered or group-writable existing release is never reused', async () =
   await chmod(join(release, 'LICENSE'), 0o664)
   await expect(installManagedHost(f.options)).rejects.toThrow('identity_mismatch')
   await chmod(join(release, 'LICENSE'), 0o644)
-  await writeFile(join(release, 'bigbrain-owner-link'), 'swapped')
+  await writeFile(join(release, 'bigbrain-owner-link.js'), 'swapped')
   await expect(installManagedHost(f.options)).rejects.toThrow('identity_mismatch')
 })

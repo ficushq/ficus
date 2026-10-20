@@ -277,6 +277,9 @@ export async function backupMain(role: 'backup-stage' | 'backup-release' | 'reco
   const { verifyRecordedVaultStorage } = await import('./preflight')
   try {
     if (process.getuid?.() !== 0 || args.length !== 0) throw new Error('invalid_request')
+    const { dirname } = await import('node:path')
+    const { verifyRunningInterpreter } = await import('./preflight')
+    await verifyRunningInterpreter(dirname(Bun.main))
     if (role === 'backup-release') {
       await releaseManagedBackup()
       console.log(JSON.stringify({ ok: true }))

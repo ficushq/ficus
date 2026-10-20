@@ -256,9 +256,32 @@ export async function verifyRecordedVaultStorage(
     throw new Error('storage_unavailable')
 }
 
+/** Every role runs as `/usr/local/bin/bun <release>/ficus-bigbrain-host.js`: the running
+ * interpreter must BE the verified host Bun at exactly the release's recorded version. */
+export async function verifyRunningInterpreter(
+  release: string,
+  options: { uid?: number; hostBun?: string; running?: { version: string; execPath: string } } = {}
+): Promise<void> {
+  const { realpath } = await import('node:fs/promises')
+  const { readPublicJson } = await import('./secure-files')
+  const { bigbrainProvenanceSchema } = await import('./artifact')
+  const { HOST_BUN, verifyHostBun } = await import('./host-bun')
+  try {
+    const provenance = await readPublicJson(release, 'provenance.json', bigbrainProvenanceSchema, { uid: options.uid })
+    const running = options.running ?? { version: Bun.version, execPath: process.execPath }
+    if (running.version !== provenance.bunVersion) throw new Error()
+    const hostBun = options.hostBun ?? HOST_BUN
+    await verifyHostBun(provenance.bunVersion, { path: hostBun, uid: options.uid })
+    if ((await realpath(running.execPath)) !== (await realpath(hostBun))) throw new Error()
+  } catch {
+    throw new Error('unsupported_host')
+  }
+}
+
 export async function preflightMain(args: string[]): Promise<void> {
   try {
     if (process.getuid?.() !== 0 || args.length !== 1) throw new Error('unsupported_host')
+    await verifyRunningInterpreter(dirname(Bun.main))
     const target = args[0]!
     if (target === 'gateway') {
       await verifyCurrentCgroup('gateway', 'ficus-bigbrain-gateway.service')

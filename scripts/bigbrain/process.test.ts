@@ -56,7 +56,7 @@ test('native administration can select a bounded larger stdout budget, never enl
 })
 
 test('vault CLI drops supplementary groups, capabilities and future privilege before the fixed binary', () => {
-  const binary = `/opt/ficus-bigbrain/releases/${'a'.repeat(64)}/bigbrain-shared`
+  const binary = `/opt/ficus-bigbrain/releases/${'a'.repeat(64)}/bigbrain-shared.js`
   const args = vaultCommand({ uid: 1200, gid: 1201 }, binary, ['member', 'list', '--json'])
   expect(args).toEqual([
     '/usr/bin/setpriv',
@@ -73,6 +73,10 @@ test('vault CLI drops supplementary groups, capabilities and future privilege be
     'HOME=/nonexistent',
     'PATH=/usr/bin:/bin',
     'LANG=C.UTF-8',
+    'BUN_RUNTIME_TRANSPILER_CACHE_PATH=0',
+    '/usr/local/bin/bun',
+    '--no-install',
+    '--no-env-file',
     binary,
     'member',
     'list',
@@ -80,4 +84,5 @@ test('vault CLI drops supplementary groups, capabilities and future privilege be
   ])
   expect(() => vaultCommand({ uid: 0, gid: 1201 }, binary, [])).toThrow('invalid_request')
   expect(() => vaultCommand({ uid: 1200, gid: 1201 }, '/usr/bin/bash', [])).toThrow('invalid_request')
+  expect(() => vaultCommand({ uid: 1200, gid: 1201 }, binary.replace('.js', ''), [])).toThrow('invalid_request')
 })

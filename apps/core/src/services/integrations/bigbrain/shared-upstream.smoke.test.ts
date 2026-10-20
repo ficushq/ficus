@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -31,6 +31,12 @@ test.skipIf(!artifact && !required)(
       const a = await fixtures.vault('a')
       const b = await fixtures.vault('b')
       expect(a.identity.vault.id).not.toBe(b.identity.vault.id)
+      // The shipped bundle serves its font assets from the release directory (unit WorkingDirectory).
+      const font = await fetch(a.endpoint + '/assets/hanken-grotesk-latin.woff2')
+      expect(font.status).toBe(200)
+      expect(
+        Buffer.from(await font.arrayBuffer()).equals(await readFile(join(artifact, 'hanken-grotesk-latin.woff2')))
+      ).toBe(true)
       const connections = join(root, 'native-connections.json')
       const joinedA = await fixtures.native.connectInvite(connections, a.invite)
       const joinedB = await fixtures.native.connectInvite(connections, b.invite)

@@ -1956,6 +1956,7 @@ render_caddyfile() { # HOST PORT CERT_PATH KEY_PATH [TRUSTED_PROXY...]
 # different tenant/binding, never rewinds the host epoch and never uninstalls vault data.
 BIGBRAIN_ETC="${BIGBRAIN_ETC:-/etc/ficus/bigbrain}"       # test seams only
 BIGBRAIN_STATE="${BIGBRAIN_STATE:-/var/lib/ficus-bigbrain}"
+BIGBRAIN_BUN="${BIGBRAIN_BUN:-/usr/local/bin/bun}"
 
 bigbrain_config_json() {
   local section
@@ -1985,8 +1986,8 @@ bigbrain_install() { # RELEASE_DIR CONFIG_JSON
     fi
     return 0
   fi
-  runtime="${release}/bigbrain/ficus-bigbrain-host"
-  [[ -f ${runtime} && ! -L ${runtime} && -x ${runtime} ]] ||
+  runtime="${release}/bigbrain/ficus-bigbrain-host.js"
+  [[ -f ${runtime} && ! -L ${runtime} ]] ||
     die "managed BigBrain needs a signed artifact release that carries its runtime (${release}/bigbrain); nothing was changed"
   # The lock file is opened without truncation or replacement (a held flock stays valid);
   # the installer itself verifies every directory/mode it relies on.
@@ -1994,14 +1995,16 @@ bigbrain_install() { # RELEASE_DIR CONFIG_JSON
   out=$(as_root /bin/bash -p -c '
     set -euo pipefail
     umask 077
-    state=$1 runtime=$2
+    state=$1 runtime=$2 bun=$3
     [[ -d $state ]] || install -d -m 0711 -o root -g root "$state"
     [[ -d $state/control ]] || install -d -m 0700 -o root -g root "$state/control"
     [[ ! -L $state/control/host.lock ]]
     exec 9<>"$state/control/host.lock"
     flock -w 180 -x 9
-    exec "$runtime" install
-  ' ficus-bigbrain-install "${BIGBRAIN_STATE}" "${runtime}" <<<"${config}") || true
+    # The installer verifies this interpreter (ownership, exact version) before any write.
+    exec /usr/bin/env -i HOME=/nonexistent PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 \
+      BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 "$bun" --no-install --no-env-file "$runtime" install
+  ' ficus-bigbrain-install "${BIGBRAIN_STATE}" "${runtime}" "${BIGBRAIN_BUN}" <<<"${config}") || true
   if [[ $(jq -r '.ok // false' <<<"${out}" 2>/dev/null) != true ]]; then
     code=$(jq -r '.code // "operation_failed"' <<<"${out}" 2>/dev/null) || code=operation_failed
     [[ ${code} =~ ^[a-z_]{1,40}$ ]] || code=operation_failed

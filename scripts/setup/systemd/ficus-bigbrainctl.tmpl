@@ -54,4 +54,4 @@ exec /usr/bin/systemd-run --quiet --wait --pipe --collect --service-type=exec \
   --property=LockPersonality=yes \
   --property='RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6' \
   --property='CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_SETUID CAP_SETGID CAP_SETPCAP CAP_SYS_ADMIN' \
-  /usr/bin/env -i HOME=/nonexistent PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 {{ARTIFACT_ROOT}}/ficus-bigbrain-host control
+  /usr/bin/env -i HOME=/nonexistent PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 /usr/local/bin/bun --no-install --no-env-file {{ARTIFACT_ROOT}}/ficus-bigbrain-host.js control

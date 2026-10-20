@@ -20,11 +20,19 @@ export const FICUS_SOURCE_PATHS = [
   'scripts/artifact/lib/manifest.ts',
   'packages/shared/src/managed-bigbrain.ts',
 ] as const
+/** JS bundles run by the host's pinned Bun (exact version enforced at install and preflight),
+ * plus the upstream server's two font assets, which it loads relative to its working directory
+ * (units set WorkingDirectory to this immutable release directory). */
+export const BUNDLES = {
+  'bigbrain-shared': ['bigbrain-shared.js', 'hanken-grotesk-latin-ext.woff2', 'hanken-grotesk-latin.woff2'],
+  'bigbrain-owner-link': ['bigbrain-owner-link.js'],
+  'ficus-bigbrain-host': ['ficus-bigbrain-host.js'],
+} as const
 const fileNames = [
   'LICENSE',
-  'bigbrain-shared',
-  'bigbrain-owner-link',
-  'ficus-bigbrain-host',
+  ...BUNDLES['bigbrain-shared'],
+  ...BUNDLES['bigbrain-owner-link'],
+  ...BUNDLES['ficus-bigbrain-host'],
   'source.tar',
   'ficus-source.tar',
   'upstream-bun.lock',
@@ -34,21 +42,21 @@ const fileFields = Object.fromEntries(fileNames.map((name) => [name, digestSchem
   (typeof fileNames)[number],
   typeof digestSchema
 >
-const provenanceSchema = z
+export const bigbrainProvenanceSchema = z
   .object({
     schema: z.literal(1),
     repository: z.literal(REPOSITORY),
     upstreamCommit: z.literal(MANAGED_BIGBRAIN_UPSTREAM_COMMIT),
     ficusRepository: z.literal('https://github.com/ficushq/ficus.git'),
     ficusCommit: z.string().regex(/^[a-f0-9]{40}$/),
-    target: z.literal('bun-linux-x64'),
+    target: z.literal('bun'),
     bunVersion: z.string().regex(/^\d+\.\d+\.\d+$/),
     license: z.literal('AGPL-3.0-only'),
     files: z.object(fileFields).strict(),
     digest: digestSchema,
   })
   .strict()
-export type BigbrainArtifactProvenance = z.infer<typeof provenanceSchema>
+export type BigbrainArtifactProvenance = z.infer<typeof bigbrainProvenanceSchema>
 export type BuildRunner = (argv: string[], cwd: string) => Promise<{ code: number; stdout: string }>
 
 /** Builder-only subprocesses. No tenant install/download path. Output/error content is never propagated. */
@@ -114,7 +122,7 @@ export async function buildBigbrainArtifact(options: {
   sourceRepository?: string
   run?: BuildRunner
 }): Promise<BigbrainArtifactProvenance> {
-  if ((options.target ?? 'bun-linux-x64') !== 'bun-linux-x64') throw new Error('unsupported_host')
+  if ((options.target ?? 'bun') !== 'bun') throw new Error('unsupported_host')
   if (!/^\d+\.\d+\.\d+$/.test(options.bunVersion)) throw new Error('artifact_build_failed')
   const run = options.run ?? runBuild
   await mkdir(dirname(resolve(options.outDir)), { recursive: true })
@@ -183,40 +191,45 @@ export async function buildBigbrainArtifact(options: {
       join(source, shimEntry),
       `import { ownerLinkMain } from ${JSON.stringify(join(ficusRoot, 'scripts/bigbrain/owner-link.ts'))};\nimport { createAppLink } from './lib/sharedInvites.ts';\nawait ownerLinkMain(createAppLink);\n`
     )
-    for (const [entry, binary] of [
-      ['bin/shared.ts', 'bigbrain-shared'],
-      [shimEntry, 'bigbrain-owner-link'],
+    // One isolated output directory per bundle: the exact expected file set, nothing else.
+    for (const [entry, name, cwd] of [
+      ['bin/shared.ts', 'bigbrain-shared', source],
+      [shimEntry, 'bigbrain-owner-link', source],
+      // Ficus host code from the committed tree checked above (clean diff for these paths).
+      ['scripts/bigbrain/host-main.ts', 'ficus-bigbrain-host', ficusRoot],
     ] as const) {
+      const out = join(scratch, `bundle-${name}`)
       await checked(
-        ['bun', 'build', entry, '--compile', '--target=bun-linux-x64', '--outfile', join(staging, binary)],
-        source
+        [
+          'bun',
+          'build',
+          entry,
+          '--target=bun',
+          '--outdir',
+          out,
+          `--entry-naming=${name}.[ext]`,
+          '--asset-naming=[name].[ext]',
+        ],
+        cwd
       )
-      await chmod(join(staging, binary), 0o755)
+      const produced = (await readdir(out)).sort()
+      if (JSON.stringify(produced) !== JSON.stringify([...BUNDLES[name]].sort()))
+        throw new Error('artifact_build_failed')
+      for (const file of produced) {
+        await rename(join(out, file), join(staging, file))
+        await chmod(join(staging, file), 0o644)
+      }
     }
-    // Ficus host entrypoints from the committed tree checked above (clean diff for these paths).
-    await checked(
-      [
-        'bun',
-        'build',
-        'scripts/bigbrain/host-main.ts',
-        '--compile',
-        '--target=bun-linux-x64',
-        '--outfile',
-        join(staging, 'ficus-bigbrain-host'),
-      ],
-      ficusRoot
-    )
-    await chmod(join(staging, 'ficus-bigbrain-host'), 0o755)
     const files = Object.fromEntries(
       await Promise.all(fileNames.map(async (name) => [name, await hashFile(join(staging, name))]))
     ) as BigbrainArtifactProvenance['files']
-    const manifest = provenanceSchema.parse({
+    const manifest = bigbrainProvenanceSchema.parse({
       schema: 1,
       repository: REPOSITORY,
       upstreamCommit: MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
       ficusRepository: 'https://github.com/ficushq/ficus.git',
       ficusCommit,
-      target: 'bun-linux-x64',
+      target: 'bun',
       bunVersion: options.bunVersion,
       license: 'AGPL-3.0-only',
       files,
@@ -251,7 +264,7 @@ export async function verifyBigbrainArtifact(root: string): Promise<BigbrainArti
       if (!info.isFile() || info.isSymbolicLink() || info.size === 0) throw new Error()
     }
     if ((await lstat(join(root, 'provenance.json'))).size > 16384) throw new Error()
-    const manifest = provenanceSchema.parse(JSON.parse(await readFile(join(root, 'provenance.json'), 'utf8')))
+    const manifest = bigbrainProvenanceSchema.parse(JSON.parse(await readFile(join(root, 'provenance.json'), 'utf8')))
     for (const name of fileNames) if ((await hashFile(join(root, name))) !== manifest.files[name]) throw new Error()
     if (computeDigest(manifest.files) !== manifest.digest) throw new Error()
     return manifest

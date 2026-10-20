@@ -74,7 +74,7 @@ export class NativeVaultAdmin {
     this.run = options.run ?? runPrivateCommand
   }
   private async invoke<S extends z.ZodTypeAny>(args: string[], schema: S, maxOutputBytes = 16384): Promise<z.infer<S>> {
-    const binary = `/opt/ficus-bigbrain/releases/${this.record.receipt.artifactDigest.slice(7)}/bigbrain-shared`
+    const binary = `/opt/ficus-bigbrain/releases/${this.record.receipt.artifactDigest.slice(7)}/bigbrain-shared.js`
     const result = await this.run(
       vaultCommand(this.record.os!, binary, [
         ...args,

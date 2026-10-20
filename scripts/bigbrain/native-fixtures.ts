@@ -63,13 +63,16 @@ export async function nativeFixtures(root: string, artifact: string, dependencyR
     readConnections(path: string): Array<{ id: string; name: string; endpoint: string; token: string }>
     sharedRequest<T>(connection: { endpoint: string; token: string }, path: string, body?: unknown): Promise<T>
   }
-  const binary = join(artifact, 'bigbrain-shared')
+  // The shipped bundles under this (pinned, version-checked) Bun, exactly as the units run them.
+  if (Bun.version !== provenance.bunVersion) throw new Error('synthetic_bun_version_mismatch')
+  const bun = [process.execPath, '--no-install', '--no-env-file']
+  const binary = join(artifact, 'bigbrain-shared.js')
   async function vault(name: string) {
     const base = join(root, name)
     await mkdir(base, { mode: 0o700 })
     const data = join(base, 'vault')
     const members = join(base, 'members.json')
-    const cli = (args: string[]) => command([binary, ...args, '--vault', data, '--members', members, '--json'])
+    const cli = (args: string[]) => command([...bun, binary, ...args, '--vault', data, '--members', members, '--json'])
     await cli(['init', '--owner', 'ada', '--display', 'Ada'])
     await cli(['member', 'add', 'ficus-reader', '--permissions', 'read'])
     const minted = JSON.parse(
@@ -99,6 +102,7 @@ export async function nativeFixtures(root: string, artifact: string, dependencyR
     async function start() {
       const child = Bun.spawn(
         [
+          ...bun,
           binary,
           'serve',
           '--vault',
@@ -112,7 +116,8 @@ export async function nativeFixtures(root: string, artifact: string, dependencyR
           '--public-url',
           'http://127.0.0.1',
         ],
-        { cwd: root, env, stdout: 'pipe', stderr: 'pipe' }
+        // Like the unit's WorkingDirectory: assets resolve inside the immutable release only.
+        { cwd: artifact, env, stdout: 'pipe', stderr: 'pipe' }
       )
       let resolveReady!: (port: number) => void
       let rejectReady!: (error: Error) => void
@@ -185,7 +190,11 @@ export async function nativeFixtures(root: string, artifact: string, dependencyR
     }).then((r) => r.json())) as { vault: { id: string } }
     const issueAppLink = async (window: { issuedAt: string; expiresAt: string }) =>
       JSON.parse(
-        await command([join(artifact, 'bigbrain-owner-link')], { membersPath: members, handle: 'ada', ...window })
+        await command([...bun, join(artifact, 'bigbrain-owner-link.js')], {
+          membersPath: members,
+          handle: 'ada',
+          ...window,
+        })
       ) as { secret: string; expiresAt: string }
     const issuedAt = new Date().toISOString()
     const window = {

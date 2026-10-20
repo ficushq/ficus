@@ -56,7 +56,18 @@ export async function syntheticArtifact(outDir: string): Promise<string> {
         await writeFile(join(cwd, 'LICENSE'), 'AGPL-3.0-only synthetic fixture')
         await writeFile(join(cwd, 'bun.lock'), 'locked')
       }
-      if (argv.includes('--compile')) await writeFile(argv[argv.indexOf('--outfile') + 1]!, 'compiled:' + argv[2])
+      if (argv[0] === 'bun' && argv[1] === 'build') {
+        const out = argv[argv.indexOf('--outdir') + 1]!
+        const name = argv
+          .find((a) => a.startsWith('--entry-naming='))!
+          .slice('--entry-naming='.length)
+          .replace('[ext]', 'js')
+        await mkdir(out, { recursive: true })
+        await writeFile(join(out, name), 'bundle:' + argv[2])
+        if (argv[2] === 'bin/shared.ts')
+          for (const font of ['hanken-grotesk-latin.woff2', 'hanken-grotesk-latin-ext.woff2'])
+            await writeFile(join(out, font), font)
+      }
       return { code: 0, stdout: '' }
     },
   })

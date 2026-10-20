@@ -11,8 +11,8 @@ Group=ficus-bb-gateway
 Slice=ficus-bigbrain.slice
 WorkingDirectory=/
 UMask=0077
-ExecStartPre=+{{ARTIFACT_ROOT}}/ficus-bigbrain-host preflight gateway
-ExecStart=/usr/bin/env -i HOME=/nonexistent PATH=/usr/bin:/bin LANG=C.UTF-8 {{ARTIFACT_ROOT}}/ficus-bigbrain-host gateway
+ExecStartPre=+/usr/local/bin/bun --no-install --no-env-file {{ARTIFACT_ROOT}}/ficus-bigbrain-host.js preflight gateway
+ExecStart=/usr/bin/env -i HOME=/nonexistent PATH=/usr/bin:/bin LANG=C.UTF-8 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 /usr/local/bin/bun --no-install --no-env-file {{ARTIFACT_ROOT}}/ficus-bigbrain-host.js gateway
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=20

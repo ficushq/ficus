@@ -11,9 +11,10 @@ User={{VAULT_USER}}
 Group={{VAULT_USER}}
 Slice=ficus-bigbrain.slice
 UMask=0077
-WorkingDirectory=/
-ExecStartPre=+{{ARTIFACT_ROOT}}/ficus-bigbrain-host preflight {{VAULT_ID}}
-ExecStart=/usr/bin/env -i HOME=/nonexistent PATH=/usr/bin:/bin LANG=C.UTF-8 {{ARTIFACT_ROOT}}/bigbrain-shared serve --vault {{VAULT_PATH}} --members {{MEMBERS_PATH}} --host 127.0.0.1 --port {{PORT}} --public-url {{ORIGIN}}
+# The server loads its font assets relative to the working directory: the immutable release.
+WorkingDirectory={{ARTIFACT_ROOT}}
+ExecStartPre=+/usr/local/bin/bun --no-install --no-env-file {{ARTIFACT_ROOT}}/ficus-bigbrain-host.js preflight {{VAULT_ID}}
+ExecStart=/usr/bin/env -i HOME=/nonexistent PATH=/usr/bin:/bin LANG=C.UTF-8 BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 /usr/local/bin/bun --no-install --no-env-file {{ARTIFACT_ROOT}}/bigbrain-shared.js serve --vault {{VAULT_PATH}} --members {{MEMBERS_PATH}} --host 127.0.0.1 --port {{PORT}} --public-url {{ORIGIN}}
 Restart=on-failure
 RestartSec=5
 TimeoutStartSec=30

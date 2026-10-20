@@ -7,13 +7,13 @@ import {
   managedBigbrainHostConfigSchema,
 } from '../../packages/shared/src/managed-bigbrain'
 import { verifyBigbrainArtifact } from './artifact'
+import { verifyHostBun } from './host-bun'
 import { installedHostSchema, type InstalledHost } from './control-input'
 import { ensureOwnedDirectory, readPrivateJson, writePrivateJson } from './secure-files'
 import { initializeStorageNamespace } from './volume-image'
 
 export const BIGBRAIN_ETC = '/etc/ficus/bigbrain'
 export const BIGBRAIN_OPT = '/opt/ficus-bigbrain'
-const EXECUTABLES = new Set(['bigbrain-shared', 'bigbrain-owner-link', 'ficus-bigbrain-host'])
 
 export interface InstallOptions {
   config: unknown
@@ -26,6 +26,8 @@ export interface InstallOptions {
   uid?: number
   /** Linux x64/systemd/cgroup-v2/ext4-loop support. Throws unsupported_host; runs before any write. */
   probeHost: () => Promise<void>
+  /** Interpreter check against the artifact's recorded Bun version (default: verifyHostBun). */
+  hostBun?: (version: string) => Promise<void>
 }
 export type InstallResult =
   | { installed: false }
@@ -53,7 +55,7 @@ async function verifyRelease(path: string, uid: number, digest: string): Promise
   if (!info.isDirectory() || info.uid !== uid || (info.mode & 0o777) !== 0o755) throw new Error('identity_mismatch')
   for (const name of await readdir(path)) {
     const file = await lstat(join(path, name))
-    const mode = EXECUTABLES.has(name) ? 0o755 : 0o644
+    const mode = 0o644 // bundles run under the verified host Bun; nothing here is executable
     if (!file.isFile() || file.uid !== uid || file.nlink !== 1 || (file.mode & 0o777) !== mode)
       throw new Error('identity_mismatch')
   }
@@ -86,7 +88,7 @@ async function installRelease(artifactRoot: string, releases: string, uid: numbe
     await chmod(staging, 0o700)
     for (const name of await readdir(artifactRoot)) {
       await copyFile(join(artifactRoot, name), join(staging, name))
-      await chmod(join(staging, name), EXECUTABLES.has(name) ? 0o755 : 0o644)
+      await chmod(join(staging, name), 0o644)
     }
     await chmod(staging, 0o755)
     await verifyRelease(staging, uid, provenance.digest)
@@ -125,6 +127,14 @@ export async function installManagedHost(options: InstallOptions): Promise<Insta
     if (existing.hostState === 'deleted' || existing.hostState === 'terminated') throw new Error('forbidden')
   }
   await options.probeHost()
+  let provenance
+  try {
+    provenance = await verifyBigbrainArtifact(options.artifactRoot)
+  } catch {
+    throw new Error('artifact_invalid')
+  }
+  // Before any write: the bundles run only under the exact Bun they were built and tested with.
+  await (options.hostBun ?? ((version) => verifyHostBun(version, { uid })))(provenance.bunVersion)
   for (const [path, mode] of [
     [opt, 0o755],
     [join(opt, 'releases'), 0o755],
@@ -178,7 +188,7 @@ export async function probeSupportedHost(): Promise<void> {
   }
 }
 
-/** `ficus-bigbrain-host install`. The binary's directory IS the verified artifact root. No
+/** `ficus-bigbrain-host install`. The bundle's directory IS the verified artifact root. No
  * argv/environment policy: the setup toolkit pipes the validated `bigbrain:` config as JSON.
  */
 export async function installMain(args: string[]): Promise<void> {
@@ -190,7 +200,8 @@ export async function installMain(args: string[]): Promise<void> {
     const config: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
     const result = await installManagedHost({
       config,
-      artifactRoot: dirname(process.execPath),
+      // The bundle's own directory is the verified artifact root (run as `bun <root>/ficus-bigbrain-host.js`).
+      artifactRoot: dirname(Bun.main),
       probeHost: probeSupportedHost,
     })
     console.log(JSON.stringify({ ok: true, ...result }))

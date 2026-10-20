@@ -30,7 +30,18 @@ async function fixture() {
       await writeFile(join(cwd, 'LICENSE'), 'AGPL-3.0-only synthetic fixture')
       await writeFile(join(cwd, 'bun.lock'), 'locked-dependencies')
     }
-    if (argv.includes('--compile')) await writeFile(argv[argv.indexOf('--outfile') + 1]!, 'compiled:' + argv[2])
+    if (argv[0] === 'bun' && argv[1] === 'build') {
+      const out = argv[argv.indexOf('--outdir') + 1]!
+      const name = argv
+        .find((a) => a.startsWith('--entry-naming='))!
+        .slice('--entry-naming='.length)
+        .replace('[ext]', 'js')
+      await mkdir(out, { recursive: true })
+      await writeFile(join(out, name), 'bundle:' + argv[2])
+      if (argv[2] === 'bin/shared.ts')
+        for (const font of ['hanken-grotesk-latin.woff2', 'hanken-grotesk-latin-ext.woff2'])
+          await writeFile(join(out, font), font)
+    }
     return { code: 0, stdout: '' }
   }
   return { root, calls, run, output: join(root, 'artifact') }
@@ -42,15 +53,17 @@ test('packages pinned upstream plus minimal native owner-link shim and both corr
   expect(manifest.upstreamCommit).toBe(pin)
   expect(Object.keys(manifest.files).sort()).toEqual([
     'LICENSE',
-    'bigbrain-owner-link',
-    'bigbrain-shared',
-    'ficus-bigbrain-host',
+    'bigbrain-owner-link.js',
+    'bigbrain-shared.js',
+    'ficus-bigbrain-host.js',
     'ficus-source.tar',
+    'hanken-grotesk-latin-ext.woff2',
+    'hanken-grotesk-latin.woff2',
     'source.tar',
     'upstream-bun.lock',
   ])
   expect(f.calls).toContainEqual(['bun', 'install', '--frozen-lockfile', '--ignore-scripts'])
-  const compiles = f.calls.filter((argv) => argv.includes('--compile'))
+  const compiles = f.calls.filter((argv) => argv[0] === 'bun' && argv[1] === 'build')
   // Upstream server, the owner-link shim and ONE Ficus host binary (no unused native invite CLI).
   expect(compiles).toHaveLength(3)
   expect(compiles.some((argv) => argv[2] === 'scripts/bigbrain/host-main.ts')).toBe(true)
@@ -61,7 +74,8 @@ test('packages pinned upstream plus minimal native owner-link shim and both corr
   // with the license and lockfile, not the whole product repository.
   const ficusArchive = f.calls.find((argv) => argv.some((arg) => arg.endsWith('ficus-source.tar')))!
   expect(ficusArchive.slice(ficusArchive.indexOf('--') + 1)).toEqual([...FICUS_SOURCE_PATHS])
-  expect(compiles.every((argv) => argv.includes('--target=bun-linux-x64'))).toBe(true)
+  // Plain JS bundles for the host's pinned Bun: no compiled runtime copies in the release.
+  expect(compiles.every((argv) => argv.includes('--target=bun') && !argv.includes('--compile'))).toBe(true)
   expect(f.calls.flat().some((arg) => arg.includes('systemctl') || arg.includes('curl'))).toBe(false)
   expect(await verifyBigbrainArtifact(f.output)).toEqual(manifest)
 })
@@ -84,7 +98,14 @@ test('refuses a changed upstream revision before installation/build', async () =
   expect(f.calls.some((argv) => argv.includes('install'))).toBe(false)
 })
 test('refuses tampered binaries and missing corresponding source/license', async () => {
-  for (const target of ['bigbrain-shared', 'bigbrain-owner-link', 'ficus-source.tar', 'source.tar', 'LICENSE']) {
+  for (const target of [
+    'bigbrain-shared.js',
+    'bigbrain-owner-link.js',
+    'hanken-grotesk-latin.woff2',
+    'ficus-source.tar',
+    'source.tar',
+    'LICENSE',
+  ]) {
     const f = await fixture()
     await buildBigbrainArtifact({ outDir: f.output, bunVersion: '1.4.2', run: f.run })
     await writeFile(join(f.output, target), 'tampered')
@@ -112,4 +133,17 @@ test('refuses unsupported target and malformed provenance', async () => {
   manifest.upstreamCommit = 'main'
   await writeFile(join(f.output, 'provenance.json'), JSON.stringify(manifest))
   await expect(verifyBigbrainArtifact(f.output)).rejects.toThrow('artifact_invalid')
+})
+
+test('an upstream change that emits an unexpected bundle asset fails the build instead of shipping it', async () => {
+  const f = await fixture()
+  const run: BuildRunner = async (argv, cwd) => {
+    const result = await f.run(argv, cwd)
+    if (argv[1] === 'build' && argv[2] === 'bin/shared.ts')
+      await writeFile(join(argv[argv.indexOf('--outdir') + 1]!, 'unexpected.png'), 'x')
+    return result
+  }
+  await expect(buildBigbrainArtifact({ outDir: f.output, bunVersion: '1.4.2', run })).rejects.toThrow(
+    'artifact_build_failed'
+  )
 })

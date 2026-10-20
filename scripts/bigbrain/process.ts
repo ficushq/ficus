@@ -1,5 +1,8 @@
 import { isAbsolute } from 'node:path'
 
+/** Kept here (not host-bun.ts) to avoid an import cycle; host-bun re-exports it. */
+export const HOST_BUN = '/usr/local/bin/bun'
+
 export type PrivateCommandResult = {
   code: number
   /** Private, success-only output. Never log or serialize generically. */ stdout: string
@@ -99,10 +102,10 @@ export const runPrivateCommand: PrivateCommandRunner = async (argv, options = {}
 /** Only a verified per-vault identity may execute the immutable native component.
  * Explicit group/capability clearing is required: setuid alone is not a supplementary-group fence.
  */
-export function vaultCommand(identity: { uid: number; gid: number }, binary: string, args: string[]): string[] {
+export function vaultCommand(identity: { uid: number; gid: number }, script: string, args: string[]): string[] {
   if (
     ![identity.uid, identity.gid].every((v) => Number.isSafeInteger(v) && v > 0 && v <= 0xfffffffe) ||
-    !/^\/opt\/ficus-bigbrain\/releases\/[a-f0-9]{64}\/(?:bigbrain-shared|bigbrain-owner-link)$/.test(binary)
+    !/^\/opt\/ficus-bigbrain\/releases\/[a-f0-9]{64}\/(?:bigbrain-shared|bigbrain-owner-link)\.js$/.test(script)
   )
     throw new Error('invalid_request')
   return [
@@ -120,7 +123,12 @@ export function vaultCommand(identity: { uid: number; gid: number }, binary: str
     'HOME=/nonexistent',
     'PATH=/usr/bin:/bin',
     'LANG=C.UTF-8',
-    binary,
+    'BUN_RUNTIME_TRANSPILER_CACHE_PATH=0',
+    // The verified host interpreter; never auto-installs packages or reads a cwd .env.
+    HOST_BUN,
+    '--no-install',
+    '--no-env-file',
+    script,
     ...args,
   ]
 }
