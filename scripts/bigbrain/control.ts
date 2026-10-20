@@ -16,7 +16,7 @@ import { BIGBRAIN_ETC } from './install'
 import { BIGBRAIN_STATE_ROOT, managedPaths } from './paths'
 import { admitVaultRequest, controlReceiptSchema, hashVaultRequest, type ControlReceipt } from './receipts'
 import { readPrivateJson, writePrivateJson } from './secure-files'
-import { runPrivateCommand, type PrivateCommandRunner } from './process'
+import { runPrivateCommand, startServiceDeliberately, type PrivateCommandRunner } from './process'
 import { reconcileMaintenance, releaseManagedBackup, stageManagedBackup } from './backup'
 import { deleteVaultResources, type DeleteOptions } from './delete'
 import { readStagedArchive } from './restore'
@@ -165,11 +165,9 @@ async function hostEffect(
   const vaults = await records(root, uid)
   const unit = (r: ControlReceipt) => managedPaths({ vaultId: r.receipt.vaultId }).unit
   if (request.action === 'resume-tenant') {
-    if ((await run(['/usr/bin/systemctl', 'start', GATEWAY_UNIT], { timeoutMs: 45000 })).code !== 0)
-      throw new Error('operation_failed')
+    if (!(await startServiceDeliberately(run, GATEWAY_UNIT))) throw new Error('operation_failed')
     for (const r of vaults.filter(serving))
-      if ((await run(['/usr/bin/systemctl', 'start', unit(r)], { timeoutMs: 45000 })).code !== 0)
-        throw new Error('operation_failed')
+      if (!(await startServiceDeliberately(run, unit(r)))) throw new Error('operation_failed')
   } else {
     // Close ingress first, then every vault service; storage and identities stay for resume/restore.
     for (const target of [GATEWAY_UNIT, ...vaults.map(unit)]) {

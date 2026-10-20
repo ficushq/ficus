@@ -13,7 +13,7 @@ import { installedHostSchema } from './control-input'
 import { managedPaths, BIGBRAIN_STATE_ROOT } from './paths'
 import { controlReceiptSchema, type ControlReceipt } from './receipts'
 import { readPrivateJson, writePrivateJson } from './secure-files'
-import { runPrivateCommand, type PrivateCommandRunner } from './process'
+import { runPrivateCommand, startServiceDeliberately, type PrivateCommandRunner } from './process'
 import { BIGBRAIN_ETC } from './install'
 
 const uuid = z
@@ -112,8 +112,7 @@ async function restartStopped(stopped: string[], options: BackupOptions): Promis
   for (const vaultId of stopped) {
     const record = current.get(vaultId)
     if (host.hostState !== 'active' || !record || !serving(record)) continue
-    if ((await run(['/usr/bin/systemctl', 'start', serviceUnit(vaultId)], { timeoutMs: 45000 })).code !== 0)
-      failed = true
+    if (!(await startServiceDeliberately(run, serviceUnit(vaultId)))) failed = true
   }
   if (failed) throw new Error('operation_failed')
 }

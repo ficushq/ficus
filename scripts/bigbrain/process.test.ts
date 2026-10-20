@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { runPrivateCommand, vaultCommand } from './process'
+import { runPrivateCommand, startServiceDeliberately, vaultCommand, type PrivateCommandRunner } from './process'
 
 test('bounded private command has no inherited credentials and consumes owned stdin/output', async () => {
   const before = process.env.FICUS_SYNTHETIC_PROCESS_SECRET
@@ -85,4 +85,20 @@ test('vault CLI drops supplementary groups, capabilities and future privilege be
   expect(() => vaultCommand({ uid: 0, gid: 1201 }, binary, [])).toThrow('invalid_request')
   expect(() => vaultCommand({ uid: 1200, gid: 1201 }, '/usr/bin/bash', [])).toThrow('invalid_request')
   expect(() => vaultCommand({ uid: 1200, gid: 1201 }, binary.replace('.js', ''), [])).toThrow('invalid_request')
+})
+
+test('deliberate starts clear a previous start-limit/failed state first; the start result is authoritative', async () => {
+  const calls: string[] = []
+  const run =
+    (startCode: number): PrivateCommandRunner =>
+    async (argv) => {
+      calls.push(argv.slice(1).join(' '))
+      if (argv[1] === 'reset-failed') return { code: 1, stdout: '' } // not failed: harmless
+      return { code: argv[1] === 'start' || argv[1] === 'enable' ? startCode : 0, stdout: '' }
+    }
+  expect(await startServiceDeliberately(run(0), 'ficus-bigbrain-gateway.service')).toBe(true)
+  expect(calls).toEqual(['reset-failed ficus-bigbrain-gateway.service', 'start ficus-bigbrain-gateway.service'])
+  calls.length = 0
+  expect(await startServiceDeliberately(run(1), 'x.service', { enable: true })).toBe(false)
+  expect(calls).toEqual(['reset-failed x.service', 'enable --now x.service'])
 })

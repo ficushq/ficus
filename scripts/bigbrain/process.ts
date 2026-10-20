@@ -102,6 +102,20 @@ export const runPrivateCommand: PrivateCommandRunner = async (argv, options = {}
 /** Only a verified per-vault identity may execute the immutable native component.
  * Explicit group/capability clearing is required: setuid alone is not a supplementary-group fence.
  */
+/** A start Ficus asked for (create, resume, backup release) — not a crash-loop restart. systemd
+ * counts manual starts toward StartLimitBurst too, so a vault that was deliberately stopped and
+ * started a few times would otherwise be refused; `reset-failed` clears only that accounting
+ * (Restart=on-failure crash loops are still limited between deliberate starts). */
+export async function startServiceDeliberately(
+  run: PrivateCommandRunner,
+  unit: string,
+  options: { enable?: boolean } = {}
+): Promise<boolean> {
+  await run(['/usr/bin/systemctl', 'reset-failed', unit])
+  const start = options.enable ? ['enable', '--now', unit] : ['start', unit]
+  return (await run(['/usr/bin/systemctl', ...start], { timeoutMs: 45000 })).code === 0
+}
+
 export function vaultCommand(identity: { uid: number; gid: number }, script: string, args: string[]): string[] {
   if (
     ![identity.uid, identity.gid].every((v) => Number.isSafeInteger(v) && v > 0 && v <= 0xfffffffe) ||

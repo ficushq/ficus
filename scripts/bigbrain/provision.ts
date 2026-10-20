@@ -9,7 +9,7 @@ import { BIGBRAIN_STATE_ROOT, managedPaths } from './paths'
 import { controlReceiptSchema, type ControlReceipt } from './receipts'
 import { ensureOwnedDirectory, readPrivateJson, writePrivateJson } from './secure-files'
 import { linuxDeviceId, planVaultStorage } from './storage'
-import { runPrivateCommand, type PrivateCommandRunner } from './process'
+import { runPrivateCommand, startServiceDeliberately, type PrivateCommandRunner } from './process'
 import { prepareVaultImage } from './volume-image'
 import type { ManagedIdentity } from './accounts'
 import { escrowSchema } from './bootstrap'
@@ -180,8 +180,7 @@ export async function startVaultService(input: ControlReceipt, deps: ProvisionDe
       await prepareSocketDirectory(id, uid, gid)
     })
   )(record.receipt.vaultId, record.os.uid)
-  if ((await run(['/usr/bin/systemctl', 'enable', '--now', paths.unit], { timeoutMs: 45000 })).code !== 0)
-    throw new Error('upstream_unavailable')
+  if (!(await startServiceDeliberately(run, paths.unit, { enable: true }))) throw new Error('upstream_unavailable')
   const probe =
     deps.probeReady ??
     (async (socket: string) => {

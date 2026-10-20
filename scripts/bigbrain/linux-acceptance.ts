@@ -154,7 +154,12 @@ function asVault(vaultId: string, script: string): Record<string, string> {
 }
 const ATTACK_PRELUDE = `
   const net = require('node:net'); const dgram = require('node:dgram'); const fs = require('node:fs');
-  const listenTcp = (host) => new Promise((resolve) => { try { const s = net.createServer(); s.once('error', (e) => resolve(e.code)); s.listen(0, host, () => { s.close(); resolve('BOUND') }) } catch (e) { resolve(e.code ?? 'THROWN') } });
+  const errName = (e) => e?.code ?? ('NOCODE_' + String(e?.errno ?? e?.name ?? 'unknown')).slice(0, 40);
+  const listenTcp = (host) => new Promise((resolve) => { try { const s = net.createServer(); s.once('error', (e) => resolve(errName(e))); s.listen(0, host, () => { s.close(); resolve('BOUND') }) } catch (e) { resolve(errName(e)) } });
+  // Kernel truth independent of the runtime's error mapping: socket(2) itself, errno via libc.
+  const ffi = require('bun:ffi');
+  const libc = ffi.dlopen('libc.so.6', { socket: { args: ['i32', 'i32', 'i32'], returns: 'i32' }, close: { args: ['i32'], returns: 'i32' }, __errno_location: { args: [], returns: 'ptr' } });
+  const rawSocket = (family, type) => { const fd = libc.symbols.socket(family, type, 0); if (fd >= 0) { libc.symbols.close(fd); return 'OPENED' } const errno = ffi.read.i32(libc.symbols.__errno_location(), 0); return errno === 97 ? 'EAFNOSUPPORT' : errno === 1 ? 'EPERM' : 'ERRNO_' + errno };
   const listenUdp = () => new Promise((resolve) => { try { const s = dgram.createSocket('udp4'); s.once('error', (e) => resolve(e.code)); s.bind(0, '127.0.0.1', () => { s.close(); resolve('BOUND') }) } catch (e) { resolve(e.code ?? 'THROWN') } });
   const listenUnix = (path) => new Promise((resolve) => { try { const s = net.createServer(); s.once('error', (e) => resolve(e.code)); s.listen(path, () => { s.close(); resolve('BOUND') }) } catch (e) { resolve(e.code ?? 'THROWN') } });
   const connectUnix = (path) => new Promise((resolve) => { const c = net.connect(path); c.once('error', (e) => resolve(e.code)); c.once('connect', () => { c.destroy(); resolve('CONNECTED') }) });
@@ -319,6 +324,9 @@ try {
       phase: '${phase}',
       tcp4: await listenTcp('127.0.0.1'),
       tcp6: await listenTcp('::1'),
+      tcp4Raw: rawSocket(2, 1),
+      tcp6Raw: rawSocket(10, 1),
+      udp6Raw: rawSocket(10, 2),
       udp4: await listenUdp(),
       peerSocketDir: write('${sockB}/http.sock'),
       peerSocketBind: await listenUnix('${sockB}/evil.sock'),
@@ -337,12 +345,19 @@ try {
   const denied = (v: string | undefined) => !!v && ['EACCES', 'EPERM', 'ENOENT', 'EROFS', 'EAFNOSUPPORT'].includes(v)
   const verdicts = (attack: Record<string, string>, when: string) => {
     console.log(`attack observations (${when}): ${JSON.stringify(attack)}`)
-    for (const key of ['tcp4', 'tcp6', 'udp4'])
+    const refused = (v: string | undefined) => v === 'EAFNOSUPPORT' || v === 'EPERM'
+    check(`${when}: A cannot open any udp4 socket`, refused(attack.udp4), attack.udp4)
+    // socket(2) is the kernel verdict; the runtime listener must also never have bound.
+    for (const [key, raw] of [
+      ['tcp4', 'tcp4Raw'],
+      ['tcp6', 'tcp6Raw'],
+    ] as const)
       check(
         `${when}: A cannot open any ${key} socket`,
-        attack[key] === 'EAFNOSUPPORT' || attack[key] === 'EPERM',
-        attack[key]
+        refused(attack[raw]) && !!attack[key] && attack[key] !== 'BOUND',
+        `${attack[raw]} / ${attack[key]}`
       )
+    check(`${when}: A cannot open any udp6 socket`, refused(attack.udp6Raw), attack.udp6Raw)
     check(`${when}: A cannot create files in B's socket directory`, denied(attack.peerSocketDir), attack.peerSocketDir)
     check(
       `${when}: A cannot bind a socket in B's socket directory`,
