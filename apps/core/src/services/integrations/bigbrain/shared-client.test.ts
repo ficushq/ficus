@@ -138,7 +138,8 @@ test('no writer/foreign/future handoff, other host, or non-ready/revoked vault c
     { material: { ...material, physicalHostBinding: vaultId } },
     { material: { ...material, tenantId: upstreamVaultId } },
     { capabilities: { ...capabilities, available: false, reasonCode: 'maintenance' } },
-    { vault: { ...vault, state: 'degraded' } },
+    { vault: { ...vault, state: 'provisioning' } },
+    { vault: { ...vault, state: 'deleting' } },
     { vault: { ...vault, readAccess: 'revoked' } },
     { vault: { ...vault, upstreamVaultId: physicalHostBinding } },
     { vault: { ...vault, origin: `https://bb-${upstreamVaultId.replaceAll('-', '')}.example.com` } },
@@ -157,6 +158,8 @@ test('no writer/foreign/future handoff, other host, or non-ready/revoked vault c
 
 test('suspend/resume, rename and Core upgrades do not invalidate an unrevoked read credential', () => {
   for (const override of [
+    // Degraded keeps reading (same rule as the synchronizer and the shared tools).
+    { vault: { ...vault, state: 'degraded' } },
     { capabilities: { ...capabilities, hostEpoch: 5 } },
     { capabilities: { ...capabilities, artifactDigest: `sha256:${'c'.repeat(64)}` } },
     { vault: { ...vault, appliedGeneration: 4 } },

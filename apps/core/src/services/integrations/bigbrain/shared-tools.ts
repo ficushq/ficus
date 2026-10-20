@@ -14,6 +14,7 @@ import type { AssignedIntegrationConnectionRecord } from '../connection-reposito
 import { BigbrainError } from './errors'
 import { isManagedSharedConfig } from './managed/config'
 import { resolveManagedReadClient } from './managed/read-target'
+import { MANAGED_VAULT_READABLE_STATES } from './managed/readable'
 import { managedReadMaterialSchema, managedVaultStore, type ManagedVault } from './managed/store'
 import type { BigbrainSharedClient } from './shared-client'
 import type { BigbrainTool, BigbrainToolContext } from './tools'
@@ -71,7 +72,13 @@ export function createSharedBigbrainTools(context: BigbrainSharedToolContext): B
   }
 
   function readable(row: ManagedVault | null): row is ManagedVault & { connectionId: string } {
-    return !!row && row.state === 'ready' && row.readAccess === 'active' && !!row.connectionId && !!row.readMaterial
+    return (
+      !!row &&
+      MANAGED_VAULT_READABLE_STATES.includes(row.state) &&
+      row.readAccess === 'active' &&
+      !!row.connectionId &&
+      !!row.readMaterial
+    )
   }
 
   const inventory: BigbrainTool = {

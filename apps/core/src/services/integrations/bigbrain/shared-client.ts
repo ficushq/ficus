@@ -10,6 +10,7 @@ import {
   type ManagedBigbrainState,
 } from '@ficus/shared/managed-bigbrain'
 import { BigbrainError } from './errors'
+import { MANAGED_VAULT_READABLE_STATES } from './managed/readable'
 
 /** The credential-free gateway listens ONLY on this root-prepared Unix socket (no TCP listener);
  * the vault is selected by the receipt origin's Host header, never by a caller-supplied URL. */
@@ -99,7 +100,7 @@ export function readMaterialMatches(
     material.physicalHostBinding === capabilities.physicalHostBinding &&
     material.hostEpoch <= capabilities.hostEpoch &&
     material.upstreamCommit === capabilities.upstreamCommit &&
-    vault.state === 'ready' &&
+    MANAGED_VAULT_READABLE_STATES.includes(vault.state) &&
     vault.readAccess === 'active' &&
     vault.vaultId === material.vaultId &&
     vault.upstreamVaultId === material.upstreamVaultId &&

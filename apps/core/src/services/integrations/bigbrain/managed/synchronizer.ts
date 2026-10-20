@@ -17,6 +17,7 @@ import { currentManagedBigbrainCapabilities } from './availability'
 import { isManagedSharedConfig, type ManagedSharedConfig } from './config'
 import { readManagedReadHandoff, splitReadHandoff } from './host-material'
 import { managedReadVault } from './read-target'
+import { MANAGED_VAULT_READABLE_STATES } from './readable'
 import { managedReadMaterialSchema, managedVaultStore, type ManagedVault } from './store'
 
 export const MANAGED_BIGBRAIN_SYNC_ACTOR = 'system:managed-bigbrain-sync'
@@ -91,7 +92,7 @@ async function reconcileVault(
   deps: ManagedSyncDeps,
   store: NonNullable<ManagedSyncDeps['store']>
 ): Promise<ManagedSyncOutcome> {
-  if ((row.state !== 'ready' && row.state !== 'degraded') || row.readAccess !== 'active') {
+  if (!MANAGED_VAULT_READABLE_STATES.includes(row.state) || row.readAccess !== 'active') {
     // Fence first: forget material, then disable the connection (an access fence, not deletion).
     if (row.readMaterial) await store.clearReadMaterial(row.id)
     if (row.connectionId && (await deps.getConnection(row.connectionId))?.enabled)
