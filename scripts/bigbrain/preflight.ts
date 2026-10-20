@@ -4,6 +4,7 @@ import { lstat, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
 import { readPrivateJson } from './secure-files'
+import { noteStage } from './diagnostics'
 import { installedHostSchema } from './control-input'
 import { controlReceiptSchema } from './receipts'
 import { managedPaths } from './paths'
@@ -129,6 +130,21 @@ async function lookupId(database: 'passwd' | 'group', name: string): Promise<num
  * the serving identity, group = the only client allowed to connect, setgid 2750; parents are
  * root-owned 0755. A stale socket is removed; anything else at that path refuses. */
 export async function prepareSocketDirectory(target: 'gateway' | string, owner: number, group: number): Promise<void> {
+  try {
+    await prepareSocketDirectoryUnchecked(target, owner, group)
+  } catch (error) {
+    const token =
+      error instanceof Error
+        ? error.message
+            .toLowerCase()
+            .replace(/[^a-z_]+/g, '_')
+            .slice(0, 30)
+        : 'unknown'
+    noteStage(`socket_dir_${token}`)
+    throw error
+  }
+}
+async function prepareSocketDirectoryUnchecked(target: string, owner: number, group: number): Promise<void> {
   const { chmod, chown, lstat, mkdir, unlink } = await import('node:fs/promises')
   const parent = target === 'gateway' ? RUN_ROOT : `${RUN_ROOT}/vaults`
   for (const dir of [RUN_ROOT, parent]) {
@@ -145,6 +161,10 @@ export async function prepareSocketDirectory(target: 'gateway' | string, owner: 
   if (!(await lstat(leaf)).isDirectory()) throw new Error('socket_directory_unsafe')
   await chown(leaf, owner, group)
   await chmod(leaf, 0o2750)
+  // Without CAP_FSETID the kernel silently drops setgid: verify what was actually set.
+  const leafInfo = await lstat(leaf)
+  if (leafInfo.uid !== owner || leafInfo.gid !== group || (leafInfo.mode & 0o7777) !== 0o2750)
+    throw new Error('socket_directory_mode_not_applied')
   const socket = `${leaf}/http.sock`
   const existing = await lstat(socket).catch(() => null)
   if (existing) {
