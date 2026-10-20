@@ -55,10 +55,10 @@ type Reply = (body: unknown) => Response
 
 async function render(
   status: PublicAppUrlStatus,
-  options: { write?: boolean; put?: (body: unknown, reply: Reply) => Response } = {}
+  options: { write?: boolean; put?: (body: unknown, reply: Reply) => Response; url?: string } = {}
 ) {
   const { write = true } = options
-  const dom = await acquireDomHarness({ url: 'http://localhost:61896' })
+  const dom = await acquireDomHarness({ url: options.url ?? 'http://localhost:61896' })
   const requests: { method: string; path: string; body?: unknown }[] = []
   const previousFetch = globalThis.fetch
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -142,7 +142,13 @@ test('change → review → confirm sends the version it reviewed and reports th
 
   const dialog = await waitFor(() => getByRole(document.body, 'dialog', { name: 'Change the public address?' }))
   const text = dialog.textContent ?? ''
-  expect(text).toContain('Passkeys only work on the hostname they were made on')
+  expect(text).toContain('Passkeys don’t carry over to a new hostname')
+  expect(text).toContain('keep working at the local address (http://localhost:61896)')
+  expect(text).toContain('needs email delivery')
+  expect(text).toContain('replaces all of your existing passkeys and signs out every session')
+  expect(text).toContain('set APP_URL in the server environment and restart')
+  expect(text).not.toContain('You may be signed out')
+  expect(getByRole(dialog, 'button', { name: 'Copy new Linear webhook' })).toBeTruthy()
   expect(text).toContain('connect it again')
   expect(text).toContain('don’t move to the new one')
   expect(text).toContain('https://ficus.example.com/settings/integrations/oauth/callback/github')
@@ -202,4 +208,22 @@ test('Clear sends null after confirmation', async () => {
       expectedVersion: '2026-10-20T00:00:00.000Z',
     })
   )
+})
+
+test('warns when the address in use stops being allowed', async () => {
+  const configured: PublicAppUrlStatus = {
+    ...localOnly,
+    url: 'https://old.example.com',
+    storedUrl: 'https://old.example.com',
+    source: 'setting',
+    version: '2026-10-20T00:00:00.000Z',
+  }
+  const { container, dom } = await render(configured, { url: 'https://old.example.com' })
+  await dom.act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Change public address…' })))
+  const field = getByRole(container, 'textbox', { name: 'New public address' })
+  await dom.act(async () => fireEvent.input(field, { target: { value: 'https://ficus.example.com' } }))
+  await dom.act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Review change' })))
+  const dialog = await waitFor(() => getByRole(document.body, 'dialog', { name: 'Change the public address?' }))
+  expect(dialog.textContent).toContain('You’re using https://old.example.com')
+  expect(dialog.textContent).toContain('You may be signed out here')
 })

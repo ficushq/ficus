@@ -47,6 +47,27 @@ function LastChange({ change }: { change: NonNullable<PublicAppUrlStatus['lastCh
   )
 }
 
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      className="ficus-button ficus-button-link shrink-0 text-xs"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(value)
+          setCopied(true)
+        } catch {
+          setCopied(false)
+        }
+      }}
+    >
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  )
+}
+
 function UrlChanges({ title, changes }: { title: string; changes: UrlChange[] }) {
   const changed = changes.filter((change) => change.before !== change.after)
   if (!changed.length) return null
@@ -61,11 +82,14 @@ function UrlChanges({ title, changes }: { title: string; changes: UrlChange[] })
               <span className="sr-only">Before: </span>
               {change.before ?? 'None'}
             </p>
-            <p className="break-all font-mono text-primary">
-              <span aria-hidden="true">→ </span>
-              <span className="sr-only">After: </span>
-              {change.after ?? 'None'}
-            </p>
+            <div className="flex items-start justify-between gap-2">
+              <p className="min-w-0 break-all font-mono text-primary">
+                <span aria-hidden="true">→ </span>
+                <span className="sr-only">After: </span>
+                {change.after ?? 'None'}
+              </p>
+              {change.after && <CopyButton value={change.after} label={`Copy new ${change.label}`} />}
+            </div>
           </li>
         ))}
       </ul>
@@ -136,6 +160,19 @@ export function PublicAddressSettings({ onSaved }: { onSaved?: (message: string)
   const busy = preview.isPending || save.isPending
   const review = (url: string | null) => preview.mutate({ url, version: status.version })
   const impact = pending?.preview.impact
+  const currentOrigin = typeof window === 'undefined' ? undefined : window.location.origin
+  const originOf = (url: string | null | undefined) => {
+    try {
+      return url ? new URL(url).origin : undefined
+    } catch {
+      return undefined
+    }
+  }
+  // Pinned FICUS_WEB_ORIGIN entries also stay allowed, but the UI can't see them; warn conservatively.
+  const leavingCurrentOrigin =
+    !!currentOrigin &&
+    currentOrigin !== originOf(pending?.preview.effectiveUrl) &&
+    currentOrigin !== originOf(status.localUrl)
 
   return (
     <div data-setting-target="mobile-public-url" tabIndex={-1} className="space-y-4">
@@ -277,11 +314,28 @@ export function PublicAddressSettings({ onSaved }: { onSaved?: (message: string)
             <ul className="list-disc space-y-2 pl-5">
               <li>Takes effect right away for links, sign-in, integrations and the Ficus app. No restart needed.</li>
               {impact.originChanged && (
-                <li>
-                  Passkeys only work on the hostname they were made on. Existing passkeys keep working at the local
-                  address and wherever they were made. To sign in at the new address, add a passkey there with “Lost
-                  your passkey?” on its sign-in page.
-                </li>
+                <>
+                  {leavingCurrentOrigin && (
+                    <li className="font-medium text-status-attention-600">
+                      You’re using {currentOrigin}, which won’t be an allowed address after this change. You may be
+                      signed out here and unable to sign in again at this address.
+                    </li>
+                  )}
+                  <li>
+                    Passkeys don’t carry over to a new hostname.{' '}
+                    {status.localUrl
+                      ? `Existing passkeys keep working at the local address (${status.localUrl}), and you can still pair phones from there.`
+                      : 'Existing passkeys keep working only at the hostname they were made on.'}
+                  </li>
+                  <li>
+                    “Lost your passkey?” on the new address’s sign-in page needs email delivery from this server, and it
+                    replaces all of your existing passkeys and signs out every session.
+                  </li>
+                  <li>
+                    If you lose access, set APP_URL in the server environment and restart Ficus. It overrides this
+                    setting.
+                  </li>
+                </>
               )}
               {impact.relayReconnectRequired && (
                 <li>

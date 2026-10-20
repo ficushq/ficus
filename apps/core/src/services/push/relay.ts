@@ -1,4 +1,4 @@
-import { resolvePublicAppUrl } from '../../lib/public-app-url'
+import { normalizePublicAppUrl, resolvePublicAppUrl } from '../../lib/public-app-url'
 import { enrollManagedCloudPro } from './cloud-pro'
 import { getSecretStore } from '../secrets'
 import { createHash, randomUUID } from 'node:crypto'
@@ -72,7 +72,8 @@ export function savedRelayCredential() {
   if (current !== undefined) return current
   // Older connections hashed PUBLIC_URL verbatim. Adopt those only when they
   // describe the same address; APP_URL pointing elsewhere must require reconnect.
-  if (resolvePublicAppUrl({ PUBLIC_URL: process.env.PUBLIC_URL }) !== resolvePublicAppUrl()) return undefined
+  // Env-only on purpose: the legacy key never covered the stored public address setting.
+  if (normalizePublicAppUrl(process.env.PUBLIC_URL) !== resolvePublicAppUrl()) return undefined
   const legacyKey = `__push-relay-connection:${createHash('sha256')
     .update(`${resolvePushRelayBaseUrl()}\n${process.env.PUBLIC_URL?.trim().replace(/\/+$/, '') ?? ''}`)
     .digest('hex')}`

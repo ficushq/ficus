@@ -79,7 +79,9 @@ Ficus checks the address format only (scheme, host, optional port and path; no c
 
 After a change:
 
-- **Passkeys** work only on the hostname they were made on. Existing passkeys keep working at the local address and wherever they were made; add one at the new address with **Lost your passkey?** on its sign-in page.
+- **Passkeys** don't carry over to a new hostname. Existing passkeys keep working at the local address (`FICUS_LOCAL_APP_URL`, for example Ficus Desktop's `http://localhost:<port>`) and at the hostname they were made on while it stays allowed; you can keep signing in and pairing phones from there.
+- **Lost your passkey?** on the new address's sign-in page needs email delivery from the server, and it replaces all of your existing passkeys and signs out every session. Without email it sends nothing.
+- If the address you were using stops being allowed and you can't sign in, set `APP_URL` in the server environment and restart Ficus; the environment value overrides the setting.
 - **Ficus account (Mobile & Pro):** connect the account again. Pending approvals for the old address are cancelled. Devices and Instance Pro slots stay with the old address in your Ficus account and do not move.
 - **Integrations:** update OAuth redirect URLs and GitHub or Linear webhook URLs with your providers. The confirmation lists the old and new values.
 - Links that were already sent keep the old address. Agents and sandboxes see the new address on their next command or session.
