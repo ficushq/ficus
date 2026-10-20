@@ -2,7 +2,7 @@ import { z } from 'zod'
 import {
   MANAGED_BIGBRAIN_HOST_REQUEST_BYTES,
   MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
-  managedBigbrainHostBindingSchema,
+  managedBigbrainInstalledHostSchema,
   managedBigbrainHostRequestSchema,
   managedBigbrainHostStateSchema,
   managedBigbrainLimitsSchema,
@@ -11,37 +11,15 @@ import {
   type ManagedBigbrainHostRequest,
 } from '@ficus/shared/managed-bigbrain'
 
-export const installedHostSchema = managedBigbrainHostBindingSchema
-  .extend({
-    contractVersion: z.literal(1),
-    hostState: managedBigbrainHostStateSchema,
-    upstreamCommit: z.literal(MANAGED_BIGBRAIN_UPSTREAM_COMMIT),
-    artifactDigest: z.string().regex(/^sha256:[0-9a-f]{64}$/),
-    zone: z
-      .string()
-      .max(210)
-      .regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/),
-    limits: managedBigbrainLimitsSchema,
-    effect: z
-      .object({
-        action: z.enum(['suspend-tenant', 'resume-tenant', 'destroy-tenant', 'restore-fence']),
-        effectId: z
-          .string()
-          .uuid()
-          .regex(/^[0-9a-f-]{36}$/),
-        previousHostEpoch: z.number().int().safe().nonnegative(),
-        completed: z.boolean(),
-      })
-      .strict()
-      .nullable()
-      .default(null),
-  })
-  .strict()
+/** The root-owned installed host record (shared so Core can read it for the helper envelope). */
+export const installedHostSchema = managedBigbrainInstalledHostSchema
 export type InstalledHost = z.infer<typeof installedHostSchema>
 
 /** Admission is necessary, not sufficient: caller must also hold the root lifecycle lock,
  * verify receipt generations/replay effects and all filesystem/artifact ownership checks.
- * Only the pinned Platform SSH caller may invoke this helper; Core has no sudo path.
+ * Callers are root processes on this host: hosted Core (per-vault operations, which runs as root
+ * by an accepted documented boundary), the local backup tool, and Platform's pinned SSH for
+ * tenant lifecycle actions.
  */
 export function validateHostAdmission(input: unknown, manifest: unknown): ManagedBigbrainHostRequest {
   const request = managedBigbrainHostRequestSchema.safeParse(input)
@@ -67,12 +45,6 @@ export function validateHostAdmission(input: unknown, manifest: unknown): Manage
     if (!managedBigbrainOriginMatchesPolicy(r.origin, r.vaultId, h.zone)) throw new Error('identity_mismatch')
     for (const key of Object.keys(h.limits) as (keyof typeof h.limits)[]) {
       if (r.limits[key] !== h.limits[key]) throw new Error('resource_limit')
-    }
-  }
-  if (r.action === 'restore') {
-    for (const grant of r.currentVaults) {
-      if (grant.disposition === 'restore' && !managedBigbrainOriginMatchesPolicy(grant.origin, grant.vaultId, h.zone))
-        throw new Error('identity_mismatch')
     }
   }
   return r

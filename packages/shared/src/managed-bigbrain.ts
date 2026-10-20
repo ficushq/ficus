@@ -146,6 +146,33 @@ export const managedBigbrainHostConfigSchema = z.discriminatedUnion('enabled', [
 ])
 export type ManagedBigbrainHostConfig = z.infer<typeof managedBigbrainHostConfigSchema>
 
+/** Root-owned installed host record. Core reads it for the helper envelope; root writes it. */
+export const MANAGED_BIGBRAIN_HOST_RECORD = '/etc/ficus/bigbrain/host.json' as const
+export const managedBigbrainInstalledHostSchema = z
+  .object({
+    tenantId: uuid,
+    physicalHostBinding: uuid,
+    hostEpoch: uint,
+    contractVersion: version,
+    hostState: managedBigbrainHostStateSchema,
+    upstreamCommit: pin,
+    artifactDigest: digest,
+    zone: zoneSchema,
+    limits: managedBigbrainLimitsSchema,
+    effect: z
+      .object({
+        action: z.enum(['suspend-tenant', 'resume-tenant', 'destroy-tenant', 'restore-fence']),
+        effectId: uuid,
+        previousHostEpoch: uint,
+        completed: z.boolean(),
+      })
+      .strict()
+      .nullable()
+      .default(null),
+  })
+  .strict()
+export type ManagedBigbrainInstalledHost = z.infer<typeof managedBigbrainInstalledHostSchema>
+
 export const managedBigbrainCapabilitiesSchema = z
   .object({
     contractVersion: version,
@@ -160,10 +187,13 @@ export const managedBigbrainCapabilitiesSchema = z
     sharedProtocol: z.literal(MANAGED_BIGBRAIN_SHARED_PROTOCOL),
     hostEpoch: uint,
     hostState: managedBigbrainHostStateSchema,
+    /** Installed DNS zone for bb-<vault>.<zone>; non-null exactly when installed. */
+    zone: zoneSchema.nullable(),
     limits: managedBigbrainLimitsSchema,
     observedAt: datetime,
   })
   .strict()
+  .refine((v) => (v.zone !== null) === v.installed)
   .refine((v) =>
     v.available
       ? v.installed &&
@@ -175,55 +205,6 @@ export const managedBigbrainCapabilitiesSchema = z
   )
 export type ManagedBigbrainCapabilities = z.infer<typeof managedBigbrainCapabilitiesSchema>
 
-export const managedBigbrainVaultSummarySchema = z
-  .object({
-    contractVersion: version,
-    vaultId: uuid,
-    displayName: label,
-    ownerUserId: uuid,
-    state: managedBigbrainStateSchema,
-    readAccess,
-    desiredGeneration: positive,
-    appliedGeneration: uint,
-    upstreamVaultId: uuid.nullable(),
-    upstreamCommit: pin,
-    origin: originSchema.nullable(),
-    operationId: uuid.nullable(),
-    lastErrorCode: managedBigbrainErrorCodeSchema.nullable(),
-    retryable: z.boolean(),
-    updatedAt: datetime,
-  })
-  .strict()
-  .refine(
-    (v) => v.appliedGeneration <= v.desiredGeneration && (v.origin === null || originHasVault(v.origin, v.vaultId))
-  )
-export type ManagedBigbrainVaultSummary = z.infer<typeof managedBigbrainVaultSummarySchema>
-export const managedBigbrainVaultListSchema = z
-  .object({ items: z.array(managedBigbrainVaultSummarySchema).max(MANAGED_BIGBRAIN_MAX_VAULTS) })
-  .strict()
-export type ManagedBigbrainVaultList = z.infer<typeof managedBigbrainVaultListSchema>
-export const managedBigbrainOperationSchema = z
-  .object({
-    contractVersion: version,
-    operationId: uuid,
-    vaultId: uuid,
-    generation: positive,
-    state: z.enum(['accepted', 'applied', 'failed']),
-    code: managedBigbrainErrorCodeSchema.nullable(),
-  })
-  .strict()
-export type ManagedBigbrainOperation = z.infer<typeof managedBigbrainOperationSchema>
-export const managedBigbrainPutVaultSchema = z
-  .object({ requestId: uuid, expectedGeneration: uint, displayName: label, owner: managedBigbrainOwnerSchema })
-  .strict()
-export const createManagedVaultSchema = managedBigbrainPutVaultSchema
-export type ManagedBigbrainPutVault = z.infer<typeof managedBigbrainPutVaultSchema>
-export const managedBigbrainRetrySchema = z.object({ requestId: uuid, expectedGeneration: positive }).strict()
-export type ManagedBigbrainRetry = z.infer<typeof managedBigbrainRetrySchema>
-export const managedBigbrainOwnerInviteSchema = z
-  .object({ requestId: uuid, expectedGeneration: positive, actorUserId: uuid })
-  .strict()
-export type ManagedBigbrainOwnerInvite = z.infer<typeof managedBigbrainOwnerInviteSchema>
 const inviteWindowFields = { issuedAt: datetime, expiresAt: datetime }
 export const managedBigbrainInviteWindowSchema = z
   .object(inviteWindowFields)
@@ -262,15 +243,6 @@ export const managedBigbrainOwnerInviteResultSchema = z
   })
   .strict()
 export type ManagedBigbrainOwnerInviteResult = z.infer<typeof managedBigbrainOwnerInviteResultSchema>
-export const managedBigbrainReadAccessSchema = z
-  .object({ requestId: uuid, expectedGeneration: positive, action: z.enum(['revoke', 'reconnect']) })
-  .strict()
-export type ManagedBigbrainReadAccess = z.infer<typeof managedBigbrainReadAccessSchema>
-export const managedBigbrainDeleteVaultSchema = z
-  .object({ requestId: uuid, expectedGeneration: positive, confirmedVaultId: uuid, confirmedName: label })
-  .strict()
-export type ManagedBigbrainDeleteVault = z.infer<typeof managedBigbrainDeleteVaultSchema>
-
 /** A binding is an identity fence, not authentication. Never derive authority from a probe/archive. */
 export const managedBigbrainHostBindingSchema = z
   .object({ tenantId: uuid, physicalHostBinding: uuid, hostEpoch: uint })
@@ -286,25 +258,6 @@ export const managedBigbrainHostVaultFenceSchema = z
   .refine((v) => v.generation > v.expectedGeneration)
 export type ManagedBigbrainHostVaultFence = z.infer<typeof managedBigbrainHostVaultFenceSchema>
 const vaultFenceFields = { vaultId: uuid, expectedGeneration: uint, generation: positive }
-export const managedBigbrainRestoreGrantSchema = z
-  .discriminatedUnion('disposition', [
-    z.object({ vaultId: uuid, disposition: z.literal('exclude'), code: z.enum(['not_found', 'forbidden']) }).strict(),
-    z
-      .object({
-        vaultId: uuid,
-        disposition: z.literal('restore'),
-        upstreamVaultId: uuid,
-        generation: positive,
-        // Platform-authoritative current name; the archive's name is lineage only.
-        displayName: label,
-        owner: managedBigbrainOwnerSchema,
-        origin: originSchema,
-        readAccess: z.literal('revoked'),
-      })
-      .strict(),
-  ])
-  .refine((v) => v.disposition === 'exclude' || originHasVault(v.origin, v.vaultId))
-export type ManagedBigbrainRestoreGrant = z.infer<typeof managedBigbrainRestoreGrantSchema>
 export const managedBigbrainArchiveInventorySchema = z
   .object({
     tenantId: uuid,
@@ -348,11 +301,8 @@ export const managedBigbrainHostRequestSchema = z
     hostAction('restore-fence', { previousHostEpoch: uint, effectId: uuid }),
     hostAction('backup-stage', { effectId: uuid }),
     hostAction('backup-release', { effectId: uuid }),
-    hostAction('restore', {
-      effectId: uuid,
-      archiveManifestDigest: digest,
-      currentVaults: z.array(managedBigbrainRestoreGrantSchema).max(MANAGED_BIGBRAIN_MAX_VAULTS),
-    }),
+    // Restores exactly what the staged archive contains (Core's restored DB is the vault authority).
+    hostAction('restore', { effectId: uuid, archiveManifestDigest: digest }),
     hostAction('reconcile-maintenance', {}),
   ])
   .superRefine((v, ctx) => {
@@ -369,8 +319,6 @@ export const managedBigbrainHostRequestSchema = z
       ctx.addIssue({ code: 'custom', message: 'invalid_request' })
     if (v.action === 'delete' && v.confirmedVaultId !== v.vaultId)
       ctx.addIssue({ code: 'custom', message: 'identity_mismatch' })
-    if (v.action === 'restore' && !uniqueVaultIds(v.currentVaults))
-      ctx.addIssue({ code: 'custom', message: 'identity_mismatch' })
   })
 export type ManagedBigbrainHostRequest = z.infer<typeof managedBigbrainHostRequestSchema>
 
@@ -384,6 +332,8 @@ export const managedBigbrainHostReceiptSchema = z
     hostEpoch: uint,
     generation: positive,
     upstreamVaultId: uuid.nullable(),
+    /** The host's recorded name: fences its own delete. Core's name is authoritative. */
+    displayName: label,
     state: managedBigbrainStateSchema,
     upstreamCommit: pin,
     artifactDigest: digest,
@@ -506,33 +456,32 @@ export function managedBigbrainHostBindingMatches(
 function uniqueVaultIds(vaults: { vaultId: string }[]): boolean {
   return new Set(vaults.map((v) => v.vaultId)).size === vaults.length
 }
-/** Grants come from current Platform state, never restored Core rows. Source host binding is lineage only.
- * Caller must independently compare destination binding/epoch and archive manifest digest before effects.
- */
-export function managedBigbrainRestoreGrantsMatch(
-  archive: ManagedBigbrainArchiveInventory,
-  grants: unknown,
-  destinationTenantId: string
-): boolean {
-  const inventory = managedBigbrainArchiveInventorySchema.safeParse(archive)
-  const parsed = z.array(managedBigbrainRestoreGrantSchema).max(MANAGED_BIGBRAIN_MAX_VAULTS).safeParse(grants)
-  if (
-    !inventory.success ||
-    !parsed.success ||
-    archive.tenantId !== destinationTenantId ||
-    !uniqueVaultIds(parsed.data) ||
-    parsed.data.length !== archive.vaults.length
-  )
-    return false
-  return archive.vaults.every((v) => {
-    const grant = parsed.data.find((g) => g.vaultId === v.vaultId)
-    return (
-      grant !== undefined &&
-      (grant.disposition === 'exclude' ||
-        (grant.upstreamVaultId === v.upstreamVaultId && grant.generation > v.generation))
-    )
-  })
+/** Provider-record ownership tag (DNS comment) for one vault: Platform keeps no vault table and
+ * identifies only records it owns by exact hostname plus this tag; never wildcard deletion. */
+export const MANAGED_BIGBRAIN_DNS_OWNER_PREFIX = 'ficus:managed-bigbrain:' as const
+export function managedBigbrainDnsOwner(tenantId: string, vaultId: string): string {
+  if (!uuid.safeParse(tenantId).success || !uuid.safeParse(vaultId).success) throw new Error('invalid_request')
+  return `${MANAGED_BIGBRAIN_DNS_OWNER_PREFIX}${tenantId}:${vaultId}`
 }
+const ipv4 = z.string().regex(/^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/)
+/** Platform's reply to PUT /api/managed-bigbrain/dns/:vaultId. */
+export const managedBigbrainDnsRecordSchema = z
+  .object({
+    contractVersion: version,
+    tenantId: uuid,
+    vaultId: uuid,
+    zone: zoneSchema,
+    hostname: z.string().max(253),
+    origin: originSchema,
+    serverIp: ipv4,
+  })
+  .strict()
+  .refine(
+    (v) =>
+      managedBigbrainOriginMatchesPolicy(v.origin, v.vaultId, v.zone) &&
+      v.hostname === `bb-${v.vaultId.replaceAll('-', '')}.${v.zone}`
+  )
+export type ManagedBigbrainDnsRecord = z.infer<typeof managedBigbrainDnsRecordSchema>
 
 /** Callers must also cap the stdin/SSH pipe incrementally before collecting it. */
 function parseHostMessage<T>(

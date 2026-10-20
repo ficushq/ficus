@@ -33,6 +33,7 @@ const receipt = {
   hostEpoch: 3,
   generation: 1,
   upstreamVaultId: other,
+  displayName: 'Research',
   state: 'ready',
   upstreamCommit: pin,
   artifactDigest: digest,
@@ -52,6 +53,7 @@ const capabilities = {
   sharedProtocol: 1,
   hostEpoch: 3,
   hostState: 'active',
+  zone: 'example.com',
   limits,
   observedAt: '2026-10-20T00:00:00Z',
 }
@@ -70,16 +72,6 @@ const handoff = {
   scopes: ['read'],
   followsMember: false,
   token: `sv_1234abcd_${'a'.repeat(43)}`,
-}
-const grant = {
-  vaultId: id,
-  disposition: 'restore',
-  upstreamVaultId: other,
-  generation: 2,
-  displayName: 'Research',
-  owner,
-  origin,
-  readAccess: 'revoked',
 }
 const archive = {
   tenantId: id,
@@ -117,7 +109,7 @@ const requests = [
     effectId: other,
   })),
   ...['backup-stage', 'backup-release'].map((action) => ({ action, effectId: other })),
-  { action: 'restore', effectId: other, archiveManifestDigest: digest, currentVaults: [grant] },
+  { action: 'restore', effectId: other, archiveManifestDigest: digest },
   { action: 'reconcile-maintenance' },
 ].map((request) => ({ ...envelope, ...request }))
 const replies = [
@@ -182,32 +174,8 @@ describe('managed BigBrain v1 wire contract', () => {
     const request = requests.find((r) => r.action === 'owner-invite')!
     const { issuedAt: _issued, expiresAt: _expires, ...missingWindow } = request as Record<string, unknown>
     expect(contract.managedBigbrainHostRequestSchema.safeParse(missingWindow).success).toBe(false)
-    expect(
-      contract.managedBigbrainOwnerInviteSchema.safeParse({
-        requestId: id,
-        expectedGeneration: 1,
-        actorUserId: other,
-        ...window,
-      }).success
-    ).toBe(false)
   })
 
-  test('management never accepts endpoint, tenant, credentials or command overrides', () => {
-    const input = { requestId: id, expectedGeneration: 0, displayName: 'Research', owner }
-    expect(contract.createManagedVaultSchema.safeParse(input).success).toBe(true)
-    for (const key of [
-      'endpoint',
-      'token',
-      'tenantId',
-      'physicalHostBinding',
-      'path',
-      'port',
-      'command',
-      'purgeBackups',
-    ]) {
-      expect(contract.createManagedVaultSchema.safeParse({ ...input, [key]: 'override' }).success).toBe(false)
-    }
-  })
   for (const request of requests)
     test(`accepts strict host action ${request.action}`, () => {
       expect(contract.managedBigbrainHostRequestSchema.safeParse(request).success).toBe(true)
@@ -282,17 +250,20 @@ describe('managed BigBrain v1 wire contract', () => {
     }
     expect(contract.managedBigbrainLimitsSchema.safeParse({ ...limits, toolResponseBytes: 524289 }).success).toBe(false)
     const restore = requests.find((r) => r.action === 'restore')!
+    // Restore is archive-driven: no caller-supplied grants or vault lists.
+    expect(contract.managedBigbrainHostRequestSchema.safeParse({ ...restore, currentVaults: [] }).success).toBe(false)
     expect(
-      contract.managedBigbrainHostRequestSchema.safeParse({ ...restore, currentVaults: [grant, grant] }).success
+      contract.managedBigbrainArchiveInventorySchema.safeParse({
+        ...archive,
+        vaults: Array(contract.MANAGED_BIGBRAIN_MAX_VAULTS + 1)
+          .fill(0)
+          .map((_, i) => ({
+            vaultId: `${i}1111111-1111-4111-8111-111111111111`,
+            upstreamVaultId: other,
+            generation: 1,
+          })),
+      }).success
     ).toBe(false)
-    expect(
-      contract.managedBigbrainHostRequestSchema.safeParse({ ...restore, currentVaults: Array(100).fill(grant) }).success
-    ).toBe(false)
-    expect(contract.managedBigbrainRestoreGrantSchema.safeParse({ ...grant, readAccess: 'active' }).success).toBe(false)
-    expect(
-      contract.managedBigbrainRestoreGrantSchema.safeParse({ vaultId: id, disposition: 'exclude', code: 'not_found' })
-        .success
-    ).toBe(true)
   })
   test('admits only canonical per-vault HTTPS origins in the installed zone', () => {
     const create = requests.find((r) => r.action === 'create')!
@@ -360,50 +331,7 @@ describe('managed BigBrain v1 wire contract', () => {
       false
     )
   })
-  test('validates every public management DTO and safe summary separately', () => {
-    const summary = {
-      contractVersion: 1,
-      vaultId: id,
-      displayName: 'Research',
-      ownerUserId: other,
-      state: 'ready',
-      readAccess: 'active',
-      desiredGeneration: 1,
-      appliedGeneration: 1,
-      upstreamVaultId: other,
-      upstreamCommit: pin,
-      origin,
-      operationId: other,
-      lastErrorCode: null,
-      retryable: false,
-      updatedAt: capabilities.observedAt,
-    }
-    const cases = [
-      [contract.managedBigbrainVaultSummarySchema, summary],
-      [contract.managedBigbrainVaultListSchema, { items: [summary] }],
-      [
-        contract.managedBigbrainOperationSchema,
-        { contractVersion: 1, operationId: other, vaultId: id, generation: 1, state: 'accepted', code: null },
-      ],
-      [contract.managedBigbrainRetrySchema, { requestId: id, expectedGeneration: 1 }],
-      [contract.managedBigbrainOwnerInviteSchema, { requestId: id, expectedGeneration: 1, actorUserId: other }],
-      [contract.managedBigbrainReadAccessSchema, { requestId: id, expectedGeneration: 1, action: 'revoke' }],
-      [
-        contract.managedBigbrainDeleteVaultSchema,
-        { requestId: id, expectedGeneration: 1, confirmedVaultId: id, confirmedName: 'Research' },
-      ],
-    ] as const
-    for (const [schema, value] of cases) {
-      expect(schema.safeParse(value).success).toBe(true)
-      for (const key of ['token', 'inviteUrl', 'tenantId', 'endpoint', 'path'])
-        expect(schema.safeParse({ ...value, [key]: 'PRIVATE' }).success).toBe(false)
-    }
-    expect(contract.managedBigbrainVaultSummarySchema.safeParse({ ...summary, appliedGeneration: 2 }).success).toBe(
-      false
-    )
-    expect(
-      contract.managedBigbrainVaultSummarySchema.safeParse({ ...summary, lastErrorCode: 'raw stderr' }).success
-    ).toBe(false)
+  test('the owner-link result is a strict secret-bearing shape', () => {
     for (const inviteUrl of [
       `${origin}/invite?secret=PRIVATE`,
       `${origin}/invite#short`,
@@ -414,26 +342,6 @@ describe('managed BigBrain v1 wire contract', () => {
           .success
       ).toBe(false)
     }
-  })
-  test('restore validates current grants against exact archive identity, not archive authority', () => {
-    expect(contract.managedBigbrainRestoreGrantsMatch(archive, [grant], id)).toBe(true)
-    expect(
-      contract.managedBigbrainRestoreGrantsMatch(
-        archive,
-        [{ vaultId: id, disposition: 'exclude', code: 'forbidden' }],
-        id
-      )
-    ).toBe(true)
-    for (const grants of [
-      [],
-      [grant, grant],
-      [{ ...grant, vaultId: other }],
-      [{ ...grant, upstreamVaultId: id }],
-      [{ ...grant, generation: 1 }],
-    ]) {
-      expect(contract.managedBigbrainRestoreGrantsMatch(archive, grants, id)).toBe(false)
-    }
-    expect(contract.managedBigbrainRestoreGrantsMatch(archive, [grant], other)).toBe(false)
   })
 })
 
@@ -468,13 +376,88 @@ describe('managed BigBrain host installation config', () => {
   })
 })
 
-describe('restore grants carry the Platform-authoritative name', () => {
-  test('a restore grant without the current displayName is refused; the archive name is never authority', () => {
-    const { displayName: _name, ...withoutName } = grant
-    expect(contract.managedBigbrainRestoreGrantSchema.safeParse(withoutName).success).toBe(false)
-    expect(contract.managedBigbrainRestoreGrantSchema.safeParse({ ...grant, displayName: ' padded ' }).success).toBe(
-      false
+describe('slim Platform contract (Core-local vault operations)', () => {
+  const installed = {
+    contractVersion: 1,
+    tenantId: id,
+    physicalHostBinding: binding,
+    hostEpoch: 3,
+    hostState: 'active',
+    upstreamCommit: pin,
+    artifactDigest: digest,
+    zone: 'example.com',
+    limits,
+    effect: null,
+  }
+  test('the installed host record parses its shape and rejects extra keys', () => {
+    expect(contract.MANAGED_BIGBRAIN_HOST_RECORD).toBe('/etc/ficus/bigbrain/host.json')
+    expect(contract.managedBigbrainInstalledHostSchema.parse(installed)).toEqual(installed as never)
+    const { effect: _effect, ...withoutEffect } = installed
+    expect(contract.managedBigbrainInstalledHostSchema.parse(withoutEffect).effect).toBeNull()
+    for (const bad of [
+      { ...installed, token: 'x' },
+      { ...installed, zone: 'Example.com' },
+      { ...installed, physicalHostBinding: 'x' },
+      { ...installed, effect: { action: 'create', effectId: other, previousHostEpoch: 2, completed: true } },
+    ])
+      expect(contract.managedBigbrainInstalledHostSchema.safeParse(bad).success).toBe(false)
+  })
+  test('DNS records name exactly one vault in one zone, with a fixed ownership tag', () => {
+    const record = {
+      contractVersion: 1,
+      tenantId: other,
+      vaultId: id,
+      zone: 'example.com',
+      hostname: `bb-${id.replaceAll('-', '')}.example.com`,
+      origin,
+      serverIp: '203.0.113.7',
+    }
+    expect(contract.managedBigbrainDnsRecordSchema.safeParse(record).success).toBe(true)
+    for (const bad of [
+      { ...record, vaultId: other },
+      { ...record, zone: 'foreign.com' },
+      { ...record, hostname: 'bb-x.example.com' },
+      { ...record, origin: `https://bb-${other.replaceAll('-', '')}.example.com` },
+      { ...record, serverIp: '999.1.1.1' },
+      { ...record, recordId: 'cf-1' },
+    ])
+      expect(contract.managedBigbrainDnsRecordSchema.safeParse(bad).success).toBe(false)
+    expect(contract.managedBigbrainDnsOwner(other, id)).toBe(`ficus:managed-bigbrain:${other}:${id}`)
+    expect(contract.managedBigbrainDnsOwner(other, id).startsWith(contract.MANAGED_BIGBRAIN_DNS_OWNER_PREFIX)).toBe(
+      true
     )
-    expect(contract.managedBigbrainRestoreGrantSchema.safeParse(grant).success).toBe(true)
+    expect(() => contract.managedBigbrainDnsOwner('*', id)).toThrow('invalid_request')
+  })
+  test('receipts carry the host name; capabilities carry the zone exactly when installed', () => {
+    const { displayName: _name, ...unnamed } = receipt
+    expect(contract.managedBigbrainHostReceiptSchema.safeParse(unnamed).success).toBe(false)
+    expect(contract.managedBigbrainCapabilitiesSchema.safeParse({ ...capabilities, zone: null }).success).toBe(false)
+    expect(
+      contract.managedBigbrainCapabilitiesSchema.safeParse({
+        ...capabilities,
+        available: false,
+        installed: false,
+        reasonCode: 'not_installed',
+        physicalHostBinding: null,
+        artifactDigest: null,
+        zone: null,
+      }).success
+    ).toBe(true)
+  })
+  test('Platform per-vault management DTOs and restore grants no longer exist', () => {
+    for (const name of [
+      'managedBigbrainVaultSummarySchema',
+      'managedBigbrainVaultListSchema',
+      'managedBigbrainOperationSchema',
+      'managedBigbrainPutVaultSchema',
+      'createManagedVaultSchema',
+      'managedBigbrainRetrySchema',
+      'managedBigbrainOwnerInviteSchema',
+      'managedBigbrainReadAccessSchema',
+      'managedBigbrainDeleteVaultSchema',
+      'managedBigbrainRestoreGrantSchema',
+      'managedBigbrainRestoreGrantsMatch',
+    ])
+      expect(name in contract).toBe(false)
   })
 })
