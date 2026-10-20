@@ -80,7 +80,8 @@ const popover = usePopover({ kind: 'menu' }) // 'menu' | 'listbox' | 'dialog' | 
   touch, it behaves as before; touch and pen pointers never open it on hover. It takes any open state
   shaped like `usePopover`'s (`open`, `setOpen`, `toggle`, `triggerRef`, `id`): the inbox popup's
   `InboxPopupProvider` drives the top nav's Inbox button and its hand-rolled sheet with it, dropping the
-  sheet's scrim while hover-opened so the trigger keeps the pointer.
+  sheet's scrim while hover-opened so the trigger keeps the pointer. There only a press in the search field
+  calls `pin()`; other presses (Mark all read, a row's Mark read) keep hover mode, so leaving still closes it.
 - **`ComboboxList`**: anchored to a text field (`input`), above it by default. The field keeps focus the
   whole time (option presses `preventDefault` their mousedown) and gets `aria-expanded`,
   `aria-controls` and `aria-activedescendant` while it is open. The caller's key handler owns the arrows,

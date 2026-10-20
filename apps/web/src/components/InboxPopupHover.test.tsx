@@ -20,13 +20,27 @@ afterEach(async () => {
 /** The real header and popup, wired through the provider as in `App`. */
 async function renderInbox() {
   dom = await acquireDomHarness({ url: 'http://localhost/' })
-  globalThis.fetch = mock(
-    async () =>
-      new dom!.window.Response(JSON.stringify({ items: [], hasMore: false, nextCursor: null, totalCount: 0 }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
-  ) as unknown as typeof fetch
+  // One unread message, so the header's Mark all read and the row's Read button render; marking read succeeds.
+  const unread = {
+    id: 'unread-1',
+    senderType: 'system',
+    senderId: null,
+    subject: 'Unread',
+    content: 'Unread body',
+    createdAt: new Date(Date.UTC(2026, 0, 1)).toISOString(),
+    readAt: null,
+    metadata: {},
+  }
+  globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://x')
+    const method = init?.method ?? (input instanceof dom!.window.Request ? input.method : 'GET')
+    const items = method === 'GET' && url.searchParams.get('readState') === 'unread' ? [unread] : []
+    const body = method === 'GET' ? { items, hasMore: false, nextCursor: null, totalCount: items.length } : {}
+    return new dom!.window.Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }) as unknown as typeof fetch
   client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   for (const [key, value] of [
     [queries.voice.status().queryKey, { enabled: false }],
@@ -76,7 +90,16 @@ async function renderInbox() {
         new dom!.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
       )
     })
-  return { doc, trigger, panel, scrim, wait, pointer, press, click, key }
+  /** A real mouse click inside the panel: the press, then the click. */
+  const mouseClick = async (target: HTMLElement) => {
+    await press(target)
+    await click(target)
+  }
+  const button = (text: string) =>
+    [...doc.querySelectorAll<HTMLButtonElement>(`#${INBOX_POPUP_ID} button`)].find(
+      (candidate) => candidate.textContent?.trim() === text
+    )
+  return { doc, trigger, panel, scrim, wait, pointer, press, click, mouseClick, button, key }
 }
 
 describe('inbox nav button hover', () => {
@@ -135,15 +158,68 @@ describe('inbox nav button hover', () => {
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
   })
 
-  test('a press inside a hover-opened panel pins it, so working in it survives the pointer leaving', async () => {
-    const { trigger, panel, wait, pointer, press } = await renderInbox()
+  test('a press in the search field of a hover-opened panel pins it, so a search survives the pointer leaving', async () => {
+    const { trigger, panel, scrim, wait, pointer, press } = await renderInbox()
     await pointer(trigger, 'over')
     await pointer(trigger, 'out')
     await pointer(panel()!, 'over')
-    await press(panel()!.querySelector('input')!)
+    await press(panel()!.querySelector('input[aria-label="Search inbox"]')!)
+    expect(scrim()).not.toBeNull() // pinned: it now behaves as a click-open
     await pointer(panel()!, 'out')
     await wait(200)
     expect(panel()).not.toBeNull()
+  })
+
+  test('Mark all read in a hover-opened panel does not pin it: leaving still closes it, focus not stranded', async () => {
+    const { doc, trigger, panel, scrim, wait, pointer, mouseClick, button } = await renderInbox()
+    const composer = doc.querySelector<HTMLInputElement>('input[aria-label="Composer"]')!
+    await dom!.act(async () => composer.focus())
+    await pointer(trigger, 'over')
+    await wait(30) // the unread page loads
+    const markAll = button('Mark all read')!
+    expect(markAll).toBeDefined()
+    await pointer(trigger, 'out')
+    await pointer(panel()!, 'over')
+    await dom!.act(async () => markAll.focus()) // a real mouse press focuses the button
+    await mouseClick(markAll)
+    expect(scrim()).toBeNull() // still hover mode
+    await pointer(panel()!, 'out')
+    await wait(50)
+    expect(panel()).not.toBeNull() // the usual close delay
+    await wait(150)
+    expect(panel()).toBeNull()
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    // Focus goes back to what had it before the hover, not left on a button in a closed panel.
+    expect(doc.activeElement).toBe(composer)
+  })
+
+  test('other presses in a hover-opened panel (a row, the header, empty space) do not pin it', async () => {
+    const { trigger, panel, scrim, wait, pointer, press, mouseClick, button } = await renderInbox()
+    await pointer(trigger, 'over')
+    await wait(30)
+    await pointer(trigger, 'out')
+    await pointer(panel()!, 'over')
+    await mouseClick(button('Read')!) // the row's compact Mark read
+    await press(panel()!.querySelector('h2')!)
+    await press(panel()!)
+    expect(scrim()).toBeNull()
+    // Re-entering still cancels the close.
+    await pointer(panel()!, 'out')
+    await pointer(panel()!, 'over')
+    await wait(200)
+    expect(panel()).not.toBeNull()
+    await pointer(panel()!, 'out')
+    await wait(200)
+    expect(panel()).toBeNull()
+  })
+
+  test('the close button still closes a hover-opened panel', async () => {
+    const { trigger, panel, pointer, mouseClick } = await renderInbox()
+    await pointer(trigger, 'over')
+    await pointer(trigger, 'out')
+    await pointer(panel()!, 'over')
+    await mouseClick(panel()!.querySelector<HTMLButtonElement>('button[aria-label="Close inbox"]')!)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
   })
 
   test('opened by click it stays open when the pointer leaves, with its scrim', async () => {

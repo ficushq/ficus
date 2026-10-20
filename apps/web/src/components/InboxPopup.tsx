@@ -118,8 +118,6 @@ export function InboxPopup() {
         open={isOpen}
         onPointerEnter={hover.popoverProps.onPointerEnter}
         onPointerLeave={hover.popoverProps.onPointerLeave}
-        // Working in a hover-opened inbox (the search field, a row) keeps it open when the pointer leaves.
-        onPointerDown={hover.pin}
         className="ficus-overlay fixed top-14 right-3 w-96 max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-5rem)] z-50 flex flex-col origin-top-right"
       >
         <div className="flex items-center justify-between px-4 py-3 ">
@@ -150,7 +148,10 @@ export function InboxPopup() {
           </div>
         </div>
         <div className="px-4 pb-2">
-          <InboxSearchInput value={query} onChange={setQuery} />
+          {/* Only a press in the search field pins a hover-opened inbox, so a search being typed survives the
+              pointer drifting off. Other presses (Mark all read, a row's Mark read) leave it in hover mode:
+              moving away still closes it. */}
+          <InboxSearchInput value={query} onChange={setQuery} onPointerDown={hover.pin} />
         </div>
         <div className="overflow-y-auto flex-1 px-2 pb-2">
           {searching ? (
