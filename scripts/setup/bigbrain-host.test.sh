@@ -109,5 +109,55 @@ out=$(with_result 'not json SECRET' 2>&1) || true
 expect_fail 'disabling an installed host refuses instead of orphaning vaults' 'would orphan its vaults' \
   bigbrain_install "${release}" '{"enabled":false}'
 
+# --- restore staging (before any database/file change) -------------------------------
+# Unprivileged: root ownership is not testable here (CI's Linux containment lane covers it).
+as_root() {
+  local -a args=()
+  case $1 in
+    chown) return 0 ;;
+    install)
+      while (($#)); do
+        case $1 in -o | -g) shift 2 ;; *) args+=("$1") && shift ;; esac
+      done
+      "${args[@]}"
+      ;;
+    *) "$@" ;;
+  esac
+}
+VA=22222222-2222-4222-8222-222222222222
+envelope() { # DIR [TENANT]
+  rm -rf "$1"
+  mkdir -p "$1/managed-bigbrain/vaults" "$1/home"
+  printf '{"schema":1,"tenantId":"%s"}\n' "${2:-${TENANT}}" >"$1/managed-bigbrain/manifest.json"
+  printf 'tar\n' >"$1/managed-bigbrain/vaults/${VA}.tar"
+}
+E="${T}/envelope"
+envelope "${E}"
+bigbrain_restore_stage "${E}" "${enabled_json}"
+expect_eq 'restore: managed data is moved out of the envelope (never mistaken for HOME_DIR)' \
+  "$(find "${E}" -mindepth 1 -maxdepth 1 -type d | sed "s#${E}/##")" home
+expect_eq 'restore: staged at the fixed root-private location' \
+  "$(cat "${BIGBRAIN_STATE}/restore/managed-bigbrain/vaults/${VA}.tar")" tar
+expect_eq 'restore: staging is private' "$(stat -c '%a' "${BIGBRAIN_STATE}/restore")" 700
+
+envelope "${E}" 66666666-6666-4666-8666-666666666666
+expect_fail 'restore: a foreign tenant archive with managed vaults is refused before any change' 'different tenant' \
+  bigbrain_restore_stage "${E}" "${enabled_json}"
+[[ -d ${E}/managed-bigbrain ]] && ok || bad 'restore: refused data is left in place, nothing staged'
+envelope "${E}"
+expect_fail 'restore: a host without the feature refuses an archive with vaults' 'not enabled' \
+  bigbrain_restore_stage "${E}" '{"enabled":false}'
+envelope "${E}"
+ln -s /etc/passwd "${E}/managed-bigbrain/vaults/${VA}.tar.link"
+expect_fail 'restore: links in the managed data are refused' 'unexpected entry' bigbrain_restore_stage "${E}" "${enabled_json}"
+envelope "${E}"
+rm "${E}/managed-bigbrain/vaults/${VA}.tar" && ln -s /etc/passwd "${E}/managed-bigbrain/vaults/${VA}.tar"
+expect_fail 'restore: a vault archive that is a symlink is refused' 'unexpected entry' bigbrain_restore_stage "${E}" "${enabled_json}"
+envelope "${E}"
+mkdir "${E}/managed-bigbrain/vaults/nested"
+expect_fail 'restore: unexpected directories are refused' 'unexpected entry' bigbrain_restore_stage "${E}" "${enabled_json}"
+rm -rf "${E}" && mkdir -p "${E}/home"
+expect_eq 'restore: envelopes without managed data are unchanged' "$(bigbrain_restore_stage "${E}" '{"enabled":false}' && echo noop)" noop
+
 printf '\n%d passed, %d failed\n' "${PASS}" "${FAIL}"
 [[ ${FAIL} -eq 0 ]]

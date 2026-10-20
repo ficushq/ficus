@@ -2010,6 +2010,41 @@ bigbrain_install() { # RELEASE_DIR CONFIG_JSON
   log_info "managed BigBrain runtime installed: $(jq -c '{created, artifactDigest, hostEpoch, hostState}' <<<"${out}")"
 }
 
+# Restore: an envelope's managed-bigbrain/ directory never reaches HOME_DIR or the database
+# step. It is checked BEFORE any database/file change (same tenant, enabled host, strict shape:
+# manifest.json + vaults/<uuid>.tar regular files only) and moved to the fixed root-private
+# staging the host's restore-fence reads. Vault identity/authority come later from the control
+# plane's current grants, never from the archive. No-op for envelopes without vaults.
+bigbrain_restore_stage() { # OUT_DIR CONFIG_JSON
+  local src="$1/managed-bigbrain" config=$2 entry tenant dest
+  [[ -e ${src} || -L ${src} ]] || return 0
+  [[ -d ${src} && ! -L ${src} ]] || die "restore: the backup's managed BigBrain entry is not a plain directory — refusing"
+  bigbrain_enabled "${config}" ||
+    die "restore: this backup contains managed BigBrain vaults but this host is not enabled for them — refusing before any database or file change"
+  while IFS= read -r -d '' entry; do
+    entry=${entry#"$1/"}
+    if [[ -L $1/${entry} ]] ||
+      ! [[ (${entry} == managed-bigbrain/manifest.json && -f $1/${entry}) ||
+        (${entry} == managed-bigbrain/vaults && -d $1/${entry}) ||
+        (${entry} =~ ^managed-bigbrain/vaults/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.tar$ && -f $1/${entry}) ]]; then
+      die "restore: unexpected entry in the backup's managed BigBrain data — refusing before any database or file change"
+    fi
+  done < <(find "${src}" -mindepth 1 -print0)
+  tenant=$(jq -er '.tenantId' "${src}/manifest.json" 2>/dev/null) ||
+    die "restore: the backup's managed BigBrain manifest is unreadable — refusing before any database or file change"
+  [[ ${tenant} == "$(jq -r '.tenantId' <<<"${config}")" ]] ||
+    die "restore: the backup's managed BigBrain vaults belong to a different tenant — refusing before any database or file change"
+  dest="${BIGBRAIN_STATE}/restore"
+  as_root test -d "${BIGBRAIN_STATE}" || as_root install -d -m 0711 -o root -g root "${BIGBRAIN_STATE}"
+  as_root test -d "${dest}" || as_root install -d -m 0700 -o root -g root "${dest}"
+  as_root test ! -L "${dest}" || die "restore: ${dest} is a symlink — refusing"
+  as_root rm -rf "${dest}/managed-bigbrain"
+  as_root mv "${src}" "${dest}/managed-bigbrain" || die "restore: could not stage the managed BigBrain data"
+  as_root chown -R --no-dereference root:root "${dest}/managed-bigbrain"
+  as_root chmod -R go-rwx "${dest}/managed-bigbrain"
+  log_info "restore: managed BigBrain vault data staged for the control plane's authoritative restore"
+}
+
 # Overridable via env (default unchanged) for the same reason as
 # CADDY_TLS_DIR above — a test-only seam, not a real config knob.
 CADDYFILE_PATH="${CADDYFILE_PATH:-/etc/caddy/Caddyfile}"
