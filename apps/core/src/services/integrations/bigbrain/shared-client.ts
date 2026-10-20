@@ -191,7 +191,29 @@ export class BigbrainSharedClient {
     const signal = callerSignal ? AbortSignal.any([controller.signal, callerSignal]) : controller.signal
     const check = async () => {
       if (signal.aborted) throw new BigbrainError('cancelled')
-      await this.beforeCall()
+      await new Promise<void>((resolve, reject) => {
+        const abort = () => {
+          signal.removeEventListener('abort', abort)
+          reject(new BigbrainError('cancelled'))
+        }
+        signal.addEventListener('abort', abort, { once: true })
+        Promise.resolve()
+          .then(() => {
+            if (signal.aborted) throw new BigbrainError('cancelled')
+            return this.beforeCall()
+          })
+          .then(
+            () => {
+              signal.removeEventListener('abort', abort)
+              resolve()
+            },
+            (error) => {
+              signal.removeEventListener('abort', abort)
+              reject(error)
+            }
+          )
+        if (signal.aborted) abort()
+      })
       if (signal.aborted) throw new BigbrainError('cancelled')
     }
     const headers = {

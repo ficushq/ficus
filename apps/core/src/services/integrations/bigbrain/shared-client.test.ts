@@ -196,6 +196,42 @@ test('cancels oversized streamed responses instead of truncating or buffering un
   await expect(f.client.overview()).rejects.toMatchObject({ code: 'response_too_large' })
   expect(cancelled).toBe(true)
 })
+test('cancellation settles even while a live authorization callback has not returned', async () => {
+  let entered!: () => void
+  let release!: () => void
+  let callbackReleased = false
+  const started = new Promise<void>((r) => {
+    entered = r
+  })
+  const waiting = new Promise<void>((r) => {
+    release = r
+  })
+  const abort = new AbortController()
+  const f = fixture({
+    beforeCall: async () => {
+      entered()
+      await waiting
+    },
+  })
+  const pending = f.client.overview({ signal: abort.signal })
+  await started
+  // Cleanup fallback makes the old hanging implementation fail by event order, not a timing threshold.
+  const cleanup = setTimeout(() => {
+    callbackReleased = true
+    release()
+  }, 1000)
+  try {
+    abort.abort()
+    await expect(pending).rejects.toMatchObject({ code: 'cancelled' })
+    expect(callbackReleased).toBe(false)
+    expect(f.calls).toHaveLength(0)
+  } finally {
+    clearTimeout(cleanup)
+    release()
+    await pending.catch(() => {})
+  }
+})
+
 test('pre-dispatch and post-response live fences suppress mid-flight revoked content', async () => {
   let checks = 0
   const f = fixture({
