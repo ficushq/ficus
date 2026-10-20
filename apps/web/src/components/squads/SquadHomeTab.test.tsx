@@ -171,7 +171,11 @@ describe('SquadHomeTab', () => {
   })
 
   test('keeps the manager entry available before its record loads', () => {
-    expect(renderSquadHome([])).toContain('href="/squads/squad-1/manager"')
+    const html = renderSquadHome([])
+    expect(html).toContain('href="/squads/squad-1/manager"')
+    // The row reads "Manager" whether or not the manager record has loaded.
+    expect(html).toContain('>Manager</span>')
+    expect(html).not.toContain('Manager chat')
   })
 
   test('shows five recent consultants by human activity and excludes archived chats and workers', () => {

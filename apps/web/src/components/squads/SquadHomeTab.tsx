@@ -104,7 +104,7 @@ export function SquadHomeTab({
               {managerAgent && <AgentActivityDot status={managerAgent.status} />}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate">{managerAgent ? 'Manager' : 'Manager chat'}</span>
+              <span className="block truncate">Manager</span>
               <span className="mt-1 block text-xs text-muted">Coordinates the squad’s ongoing work.</span>
             </span>
             {managerAgent && <span className="text-xs text-muted">{AGENT_STATUS_LABELS[managerAgent.status]}</span>}
