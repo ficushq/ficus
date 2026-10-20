@@ -57,6 +57,7 @@ test('aggregate cgroup includes gateway and caps combined CPU/memory; gateway ca
   const gateway = await renderGatewayUnit(artifactDigest)
   expect(gateway).toContain('Slice=ficus-bigbrain.slice')
   expect(gateway).toContain('User=ficus-bb-gateway')
+  expect(gateway).toContain('ExecStartPre=+/usr/local/libexec/ficus-bigbrain-preflight gateway')
   expect(gateway).toContain('SocketBindAllow=ipv4:tcp:34792')
   expect(gateway).toContain('SocketBindDeny=any')
   expect(gateway).toContain('InaccessiblePaths=-/var/lib/ficus-bigbrain')
