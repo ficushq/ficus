@@ -54,6 +54,7 @@ export const controlReceiptSchema = z
     (v) =>
       v.receipt.vaultId === v.storage.vaultId &&
       v.receipt.localPort === v.storage.port &&
+      v.receipt.displayName === v.displayName &&
       v.operation.expectedGeneration < v.receipt.generation
   )
 export type ControlReceipt = z.infer<typeof controlReceiptSchema>

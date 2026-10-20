@@ -112,6 +112,7 @@ export async function createVault(request: Request<'create'>, host: InstalledHos
           hostEpoch: request.hostEpoch,
           generation: request.generation,
           upstreamVaultId: null,
+          displayName: request.displayName,
           state: 'provisioning',
           upstreamCommit: host.upstreamCommit,
           artifactDigest: host.artifactDigest,
@@ -166,7 +167,12 @@ async function advance(request: Request<'rename' | 'read-revoke' | 'read-reconne
     {
       ...record,
       ...(request.action === 'rename' ? { displayName: request.displayName } : {}),
-      receipt: { ...record.receipt, generation: request.generation, hostEpoch: request.hostEpoch },
+      receipt: {
+        ...record.receipt,
+        generation: request.generation,
+        hostEpoch: request.hostEpoch,
+        ...(request.action === 'rename' ? { displayName: request.displayName } : {}),
+      },
       operation: {
         requestId: request.requestId,
         action: request.action,

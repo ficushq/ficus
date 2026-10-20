@@ -45,9 +45,15 @@ export const backupManifestSchema = z
           .strict()
       )
       .max(MANAGED_BIGBRAIN_MAX_VAULTS),
+    /** Vaults a nightly run could not stage (fixed codes only); never present in `vaults`. */
+    excluded: z
+      .array(z.object({ vaultId: uuid, code: z.string().regex(/^[a-z_]{1,40}$/) }).strict())
+      .max(MANAGED_BIGBRAIN_MAX_VAULTS)
+      .default([]),
   })
   .strict()
   .refine((m) => m.vaults.every((v) => v.archive === `vaults/${v.vaultId}.tar`))
+  .refine((m) => m.excluded.every((e) => !m.vaults.some((v) => v.vaultId === e.vaultId)))
   .refine((m) => new Set(m.vaults.map((v) => v.vaultId)).size === m.vaults.length)
 export type BackupManifest = z.infer<typeof backupManifestSchema>
 const leaseSchema = z
@@ -64,6 +70,8 @@ export interface BackupOptions {
   /** Mounted-storage identity check (image inode, loop backing, ext4 mount) before reading. */
   verifyStorage: (record: ControlReceipt) => Promise<void>
   freeBytes?: (path: string) => Promise<number>
+  /** Termination backups: any vault failure fails the whole stage (nightly runs isolate it). */
+  requireComplete?: boolean
 }
 
 const serviceUnit = (vaultId: string) => managedPaths({ vaultId }).unit
@@ -138,9 +146,11 @@ export async function reconcileMaintenance(
  * returns the bounded inventory. Any copy/verification failure fails the backup (never a
  * "changed while reading" success). Returns null when no managed host is installed.
  */
-export async function stageManagedBackup(
-  options: BackupOptions
-): Promise<{ staging: string; inventory: ManagedBigbrainArchiveInventory } | null> {
+export async function stageManagedBackup(options: BackupOptions): Promise<{
+  staging: string
+  inventory: ManagedBigbrainArchiveInventory
+  excluded: { vaultId: string; code: string }[]
+} | null> {
   const root = options.root ?? BIGBRAIN_STATE_ROOT
   const etc = options.etc ?? BIGBRAIN_ETC
   const uid = options.uid ?? 0
@@ -187,6 +197,7 @@ export async function stageManagedBackup(
   )
   const out = join(staging, MANAGED_BACKUP_DIR)
   const staged: BackupManifest['vaults'] = []
+  const excluded: BackupManifest['excluded'] = []
   try {
     for (const vaultId of stopped) {
       if ((await run(['/usr/bin/systemctl', 'stop', serviceUnit(vaultId)], { timeoutMs: 45000 })).code !== 0)
@@ -195,8 +206,30 @@ export async function stageManagedBackup(
         throw new Error('operation_failed')
     }
     for (const r of records) {
-      await options.verifyStorage(r)
       const archive = `vaults/${r.receipt.vaultId}.tar`
+      try {
+        await stageVault(r, archive)
+      } catch (error) {
+        // Nightly: one unreadable vault must not cost the whole Core backup. It is listed as
+        // excluded (fixed code), its partial archive removed, and the run reports partial.
+        if (options.requireComplete) throw error
+        await rm(join(out, archive), { force: true })
+        excluded.push({ vaultId: r.receipt.vaultId, code: safeCode(error) })
+      }
+    }
+  } catch (error) {
+    await rm(staging, { recursive: true, force: true })
+    try {
+      await restartStopped(stopped, options)
+      await rm(join(root, 'control', 'maintenance.json'))
+    } catch {
+      // The lease stays for reconcileMaintenance; the original failure is what we report.
+    }
+    throw new Error(safeCode(error))
+  }
+  async function stageVault(r: ControlReceipt, archive: string): Promise<void> {
+    {
+      await options.verifyStorage(r)
       const result = await run(
         [
           '/usr/bin/tar',
@@ -227,23 +260,27 @@ export async function stageManagedBackup(
         ...(await hashFile(join(out, archive))),
       })
     }
-  } catch (error) {
-    await rm(staging, { recursive: true, force: true })
-    try {
-      await restartStopped(stopped, options)
-      await rm(join(root, 'control', 'maintenance.json'))
-    } catch {
-      // The lease stays for reconcileMaintenance; the original failure is what we report.
-    }
-    throw error instanceof Error && /^[a-z_]+$/.test(error.message) ? error : new Error('operation_failed')
   }
   const manifest = backupManifestSchema.parse({
     schema: 1,
     tenantId: host.tenantId,
     sourcePhysicalHostBinding: host.physicalHostBinding,
     vaults: staged,
+    excluded,
   })
   await writePrivateJson(out, 'manifest.json', manifest, backupManifestSchema, { uid })
+  // Each receipt records whether the latest staging included it (Core surfaces exclusions).
+  for (const r of records) {
+    const backup = excluded.some((e) => e.vaultId === r.receipt.vaultId) ? 'excluded' : 'included'
+    if (r.receipt.backup !== backup)
+      await writePrivateJson(
+        join(root, 'control', r.receipt.vaultId),
+        'receipt.json',
+        { ...r, receipt: { ...r.receipt, backup } },
+        controlReceiptSchema,
+        { uid }
+      )
+  }
   await restartStopped(stopped, options)
   await rm(join(root, 'control', 'maintenance.json'))
   const manifestDigest = (await hashFile(join(out, 'manifest.json'))).sha256
@@ -255,7 +292,11 @@ export async function stageManagedBackup(
       manifestDigest,
       vaults: staged.map(({ vaultId, upstreamVaultId, generation }) => ({ vaultId, upstreamVaultId, generation })),
     }),
+    excluded,
   }
+}
+function safeCode(error: unknown): string {
+  return error instanceof Error && /^[a-z_]{1,40}$/.test(error.message) ? error.message : 'operation_failed'
 }
 
 /** `backup-release`: discard the staged copy after the envelope was written (or failed). */
@@ -288,8 +329,16 @@ export async function backupMain(role: 'backup-stage' | 'backup-release' | 'reco
       const result = await stageManagedBackup({
         leaseId: randomUUID(),
         verifyStorage: (record) => verifyRecordedVaultStorage(record.receipt.vaultId),
+        // Termination backups (Platform's final backup) stay fail-closed for every vault.
+        requireComplete: process.env.FICUS_BACKUP_REQUIRE_COMPLETE === '1',
       })
-      console.log(JSON.stringify(result ? { ok: true, staged: true, ...result } : { ok: true, staged: false }))
+      console.log(
+        JSON.stringify(
+          result
+            ? { ok: true, staged: true, partial: result.excluded.length > 0, ...result }
+            : { ok: true, staged: false }
+        )
+      )
     }
   } catch (error) {
     const code = error instanceof Error && /^[a-z_]{1,40}$/.test(error.message) ? error.message : 'operation_failed'

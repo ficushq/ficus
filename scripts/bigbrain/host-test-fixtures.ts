@@ -20,6 +20,7 @@ export function reservedVaultFixture(root: string) {
       hostEpoch: 1,
       generation: 1,
       upstreamVaultId: null,
+      displayName: 'Research',
       state: 'provisioning',
       upstreamCommit: MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
       artifactDigest: `sha256:${'b'.repeat(64)}`,
@@ -153,8 +154,9 @@ export function simulatedHost(options: {
       return { code: 0, stdout: '' }
     }
     if (cmd === '/usr/sbin/losetup') {
-      const image =
-        mounted.get([...mounted.keys()].find((m) => argv.at(-1) === `/dev/loop4`) ?? '') ?? [...mounted.values()][0]!
+      // Each mounted image gets its own loop device, /dev/loop4, /dev/loop5, ... in mount order.
+      const index = Math.max(0, Number(argv.at(-1)!.replace('/dev/loop', '')) - 4)
+      const image = [...mounted.values()][index] ?? [...mounted.values()][0]!
       const info = await stat(image)
       const device = BigInt(info.dev)
       const major = ((device >> 8n) & 0xfffn) | ((device >> 32n) & 0xfffff000n)
@@ -163,7 +165,12 @@ export function simulatedHost(options: {
         code: 0,
         stdout: JSON.stringify({
           loopdevices: [
-            { name: '/dev/loop4', 'back-file': image, 'back-ino': info.ino, 'back-maj:min': `${major}:${minor}` },
+            {
+              name: `/dev/loop${index + 4}`,
+              'back-file': image,
+              'back-ino': info.ino,
+              'back-maj:min': `${major}:${minor}`,
+            },
           ],
         }),
       }
@@ -186,7 +193,9 @@ export function simulatedHost(options: {
         vaultId,
       }),
     mountinfo: async () =>
-      [...mounted.keys()].map((m) => `1 0 7:4 / ${m} rw,nodev,nosuid,noexec - ext4 /dev/loop4 rw`).join('\n'),
+      [...mounted.keys()]
+        .map((m, i) => `1 0 7:${i + 4} / ${m} rw,nodev,nosuid,noexec - ext4 /dev/loop${i + 4} rw`)
+        .join('\n'),
     prepareLayout: async (path: string) => {
       const { mkdir } = await import('node:fs/promises')
       for (const dir of ['auth', 'vault']) await mkdir(`${path}/${dir}`, { recursive: true, mode: 0o700 })

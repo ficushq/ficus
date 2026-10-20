@@ -1,8 +1,6 @@
 import { createHash } from 'node:crypto'
 import { lstat, rm, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
-import { z } from 'zod'
-import { managedBigbrainRestoreGrantSchema, type ManagedBigbrainRestoreGrant } from '@ficus/shared/managed-bigbrain'
 import { MANAGED_BACKUP_DIR } from './backup'
 import { NativeVaultAdmin } from './native-admin'
 import { BIGBRAIN_STATE_ROOT, GATEWAY_UNIT, managedPaths } from './paths'
@@ -18,7 +16,14 @@ import {
   type ProvisionDeps,
 } from './provision'
 import { controlReceiptSchema, type ControlReceipt } from './receipts'
-import { inspectVaultArchive, planRestore, readStagedArchive, recordRestorePlan, restorePlanSchema } from './restore'
+import {
+  inspectVaultArchive,
+  planArchiveRestore,
+  readStagedArchive,
+  recordRestorePlan,
+  restorePlanSchema,
+  type RestoreEntry,
+} from './restore'
 import { readPrivateJson } from './secure-files'
 import { runPrivateCommand, startServiceDeliberately } from './process'
 
@@ -31,7 +36,6 @@ export interface RestoreRequest {
   requestId: string
   effectId: string
   archiveManifestDigest: string
-  currentVaults: unknown[]
 }
 
 async function present(path: string): Promise<boolean> {
@@ -54,7 +58,7 @@ const sha = (value: unknown) => `sha256:${createHash('sha256').update(JSON.strin
  */
 async function loadVault(
   record: ControlReceipt,
-  grant: Extract<ManagedBigbrainRestoreGrant, { disposition: 'restore' }>,
+  grant: RestoreEntry,
   archive: string,
   deps: RestoreDeps
 ): Promise<ControlReceipt> {
@@ -97,52 +101,44 @@ async function loadVault(
   return saveVaultRecord({ ...record, phase: 'initialized' }, deps)
 }
 
-/** `restore`: authoritative current grants against the fenced, re-verified staged archive.
- * Excluded IDs are never mounted or routed. Each restored vault gets fresh local storage,
- * account and port on THIS host at the granted (newer) generation, keeps its upstream identity
- * and arrives read-revoked. Idempotent per vault phase; the staged plaintext copy is discarded
- * once every granted vault is ready.
+/** `restore`: every vault in the fenced, re-verified staged archive. Each gets fresh local
+ * storage, account and socket on THIS host at a newer generation, keeps its upstream identity
+ * and arrives read-revoked with every credential and invite revoked. Idempotent per vault
+ * phase; the staged plaintext copy is discarded once every vault is ready. Core reconciles its
+ * restored rows (including later-deleted vaults) against these receipts after boot.
  */
 export async function executeRestore(request: RestoreRequest, deps: RestoreDeps): Promise<ControlReceipt[]> {
   const root = deps.root ?? BIGBRAIN_STATE_ROOT
   const host = await readHost(deps)
   const staging = join(root, 'restore', MANAGED_BACKUP_DIR)
-  let grants: ManagedBigbrainRestoreGrant[]
-  let displayNames = new Map<string, string>()
-  if (await present(staging)) {
+  let plan: RestoreEntry[]
+  const staged = await present(staging)
+  if (staged) {
     const { manifest, inventory } = await readStagedArchive({ root: deps.root, etc: deps.etc, uid: deps.uid })
-    grants = planRestore(inventory, request.archiveManifestDigest, request.currentVaults)
-    await recordRestorePlan(grants, inventory.manifestDigest, { root: deps.root, uid: deps.uid })
-    displayNames = new Map(manifest.vaults.map((v) => [v.vaultId, v.displayName]))
+    plan = planArchiveRestore(manifest, inventory, request.archiveManifestDigest, host.zone)
+    await recordRestorePlan(plan, inventory.manifestDigest, { root: deps.root, uid: deps.uid })
   } else {
     // Staging already discarded: only an exact replay of the completed plan is answerable.
-    const plan = await readPrivateJson(join(root, 'restore'), 'plan.json', restorePlanSchema, { uid: deps.uid }).catch(
-      () => {
-        throw new Error('storage_unavailable')
-      }
-    )
-    const replayed = z.array(managedBigbrainRestoreGrantSchema).max(2).safeParse(request.currentVaults)
-    if (
-      !replayed.success ||
-      plan.manifestDigest !== request.archiveManifestDigest ||
-      sha(plan.grants) !== sha(replayed.data)
-    )
-      throw new Error('request_conflict')
-    grants = plan.grants
+    const recorded = await readPrivateJson(join(root, 'restore'), 'plan.json', restorePlanSchema, {
+      uid: deps.uid,
+    }).catch(() => {
+      throw new Error('storage_unavailable')
+    })
+    if (recorded.manifestDigest !== request.archiveManifestDigest) throw new Error('request_conflict')
+    plan = recorded.vaults
   }
   const restored: ControlReceipt[] = []
-  for (const grant of grants) {
-    if (grant.disposition !== 'restore') continue
+  for (const grant of plan) {
     let record = await readVaultRecord(grant.vaultId, deps)
     if (!record) {
-      if (!displayNames.has(grant.vaultId)) throw new Error('storage_unavailable')
+      if (!staged) throw new Error('storage_unavailable')
       const storage = await reserveStorage(grant.vaultId, host, deps)
       record = await saveVaultRecord(
         controlReceiptSchema.parse({
           schema: 1,
           phase: 'reserved',
-          // Platform's current name; the archived name is lineage only (a rename after the
-          // backup must not resurrect the old one and strand a later name-confirmed delete).
+          // The archived name: Core's restored database holds the same backup point and its
+          // reconciler renames if it later differs.
           displayName: grant.displayName,
           owner: grant.owner,
           operation: {
@@ -159,6 +155,7 @@ export async function executeRestore(request: RestoreRequest, deps: RestoreDeps)
             hostEpoch: host.hostEpoch,
             generation: grant.generation,
             upstreamVaultId: grant.upstreamVaultId,
+            displayName: grant.displayName,
             state: 'provisioning',
             upstreamCommit: host.upstreamCommit,
             artifactDigest: host.artifactDigest,
@@ -181,7 +178,7 @@ export async function executeRestore(request: RestoreRequest, deps: RestoreDeps)
     restored.push(record)
   }
   // The restore fence stopped the gateway with every vault: reopen ingress only now that every
-  // granted vault runs (excluded vaults were never mounted, so they stay unreachable).
+  // archived vault runs.
   if (!(await startServiceDeliberately(deps.run ?? runPrivateCommand, GATEWAY_UNIT)))
     throw new Error('operation_failed')
   await (deps.ingress ?? (async () => {}))()

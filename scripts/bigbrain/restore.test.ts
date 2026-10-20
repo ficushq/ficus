@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { MANAGED_BIGBRAIN_DEFAULT_LIMITS, MANAGED_BIGBRAIN_UPSTREAM_COMMIT } from '@ficus/shared/managed-bigbrain'
 import { backupManifestSchema } from './backup'
 import { installedHostSchema } from './control-input'
-import { inspectVaultArchive, planRestore, readStagedArchive, recordRestorePlan } from './restore'
+import { inspectVaultArchive, planArchiveRestore, readStagedArchive, recordRestorePlan } from './restore'
 import { writePrivateJson } from './secure-files'
 
 const roots: string[] = []
@@ -154,50 +154,31 @@ test('a foreign-tenant or extra-file staging is refused', async () => {
   await expect(readStagedArchive({ root: extra.root, etc: extra.etc, uid })).rejects.toThrow('invalid_request')
 })
 
-test('grants must cover every archived ID once, keep upstream identity, advance generation and match the digest', async () => {
+test('every archived vault is planned from the archive: newer generation, installed-zone origin, read revoked', async () => {
   const s = await staged()
-  const { inventory } = await readStagedArchive({ root: s.root, etc: s.etc, uid })
-  const restore = {
-    vaultId: A,
-    disposition: 'restore',
-    upstreamVaultId: UPSTREAM,
-    generation: 4,
-    displayName: 'Research',
-    owner: { userId: TENANT, handle: 'ada', display: 'Ada' },
-    origin: `https://bb-${A.replaceAll('-', '')}.example.com`,
-    readAccess: 'revoked',
-  }
-  expect(planRestore(inventory, inventory.manifestDigest, [restore])).toHaveLength(1)
-  expect(
-    planRestore(inventory, inventory.manifestDigest, [{ vaultId: A, disposition: 'exclude', code: 'not_found' }])
-  ).toHaveLength(1)
-  for (const [grants, code] of [
-    [[], 'invalid_request'],
-    [[restore, restore], 'invalid_request'],
-    [
-      [
-        {
-          ...restore,
-          vaultId: '77777777-7777-4777-8777-777777777777',
-          origin: 'https://bb-77777777777747778777777777777777.example.com',
-        },
-      ],
-      'invalid_request',
-    ],
-    [[{ ...restore, generation: 3 }], 'generation_conflict'],
-    [[{ ...restore, upstreamVaultId: '88888888-8888-4888-8888-888888888888' }], 'generation_conflict'],
-    [[{ ...restore, readAccess: 'active' }], 'invalid_request'],
-  ] as const)
-    expect(() => planRestore(inventory, inventory.manifestDigest, [...grants])).toThrow(code)
-  expect(() => planRestore(inventory, `sha256:${'0'.repeat(64)}`, [restore])).toThrow('identity_mismatch')
+  const { manifest, inventory } = await readStagedArchive({ root: s.root, etc: s.etc, uid })
+  const plan = planArchiveRestore(manifest, inventory, inventory.manifestDigest, 'example.com')
+  expect(plan).toEqual([
+    {
+      vaultId: A,
+      upstreamVaultId: UPSTREAM,
+      generation: manifest.vaults[0]!.generation + 1,
+      displayName: manifest.vaults[0]!.displayName,
+      owner: manifest.vaults[0]!.owner,
+      origin: `https://bb-${A.replaceAll('-', '')}.example.com`,
+    },
+  ])
+  // The origin follows THIS host's installed zone, never the archive's.
+  expect(planArchiveRestore(manifest, inventory, inventory.manifestDigest, 'other.example.org')[0]!.origin).toBe(
+    `https://bb-${A.replaceAll('-', '')}.other.example.org`
+  )
+  expect(() => planArchiveRestore(manifest, inventory, `sha256:${'0'.repeat(64)}`, 'example.com')).toThrow(
+    'identity_mismatch'
+  )
   // Persisted outside the archive; exact replay is accepted, a different plan conflicts.
-  const plan = planRestore(inventory, inventory.manifestDigest, [restore])
   await recordRestorePlan(plan, inventory.manifestDigest, { root: s.root, uid })
   await recordRestorePlan(plan, inventory.manifestDigest, { root: s.root, uid })
   await expect(
-    recordRestorePlan([{ vaultId: A, disposition: 'exclude', code: 'forbidden' }], inventory.manifestDigest, {
-      root: s.root,
-      uid,
-    })
+    recordRestorePlan([{ ...plan[0]!, generation: 99 }], inventory.manifestDigest, { root: s.root, uid })
   ).rejects.toThrow('request_conflict')
 })

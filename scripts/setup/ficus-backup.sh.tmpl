@@ -98,6 +98,10 @@ KEEP_ARTIFACT=0
 BIGBRAIN_ETC=${FICUS_BACKUP_BIGBRAIN_ETC:-/etc/ficus/bigbrain}
 BIGBRAIN_STATE=${FICUS_BACKUP_BIGBRAIN_STATE:-/var/lib/ficus-bigbrain}
 BIGBRAIN_STAGED=0
+# Nightly runs isolate a failing vault (excluded, run exits 2 after the upload); termination
+# backups set FICUS_BACKUP_REQUIRE_COMPLETE=1 and refuse to write a backup without every vault.
+BIGBRAIN_PARTIAL=0
+BIGBRAIN_INCLUDE=0
 bigbrain_host() { # ROLE — prints one JSON line
   local digest lock="${BIGBRAIN_STATE}/control/host.lock"
   local -a cmd
@@ -108,7 +112,8 @@ bigbrain_host() { # ROLE — prints one JSON line
     [[ ${digest} =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
     # The role verifies its interpreter (ownership, exact release Bun version) itself.
     cmd=(/usr/bin/env -i HOME=/nonexistent PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8
-      BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 /usr/local/bin/bun --no-install --no-env-file
+      BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 "FICUS_BACKUP_REQUIRE_COMPLETE=${FICUS_BACKUP_REQUIRE_COMPLETE:-0}"
+      /usr/local/bin/bun --no-install --no-env-file
       "/opt/ficus-bigbrain/releases/${digest#sha256:}/ficus-bigbrain-host.js")
   fi
   [[ -f ${lock} && ! -L ${lock} ]] || return 1
@@ -142,15 +147,26 @@ if [[ -e ${BIGBRAIN_ETC}/host.json ]]; then
   bb_out=$(bigbrain_host backup-stage) || true
   # Arm the release first: a refusal may still have left a partial staging directory.
   BIGBRAIN_STAGED=1
+  BIGBRAIN_INCLUDE=1
   if [[ $(jq -r '.ok // false' <<<"${bb_out}" 2>/dev/null) != true ]]; then
     bb_code=$(jq -r '.code // "operation_failed"' <<<"${bb_out}" 2>/dev/null) || bb_code=operation_failed
     [[ ${bb_code} =~ ^[a-z_]{1,40}$ ]] || bb_code=operation_failed
-    die "managed BigBrain backup staging failed (${bb_code}) — refusing to write a backup without its vaults"
+    [[ ${FICUS_BACKUP_REQUIRE_COMPLETE:-0} == 1 ]] &&
+      die "managed BigBrain backup staging failed (${bb_code}) — refusing to write a backup without its vaults"
+    log_info "managed BigBrain backup staging failed (${bb_code}); backing up Core without vault data"
+    BIGBRAIN_PARTIAL=1
+    BIGBRAIN_INCLUDE=0
+  elif [[ $(jq -r '.partial // false' <<<"${bb_out}") == true ]]; then
+    log_info "managed BigBrain: $(jq -r '.excluded | length' <<<"${bb_out}") vault(s) excluded from this backup"
+    BIGBRAIN_PARTIAL=1
   fi
-  [[ $(jq -r '.staged' <<<"${bb_out}") == true ]] || BIGBRAIN_STAGED=0
+  if [[ ${BIGBRAIN_INCLUDE} -eq 1 && $(jq -r '.staged // false' <<<"${bb_out}") != true ]]; then
+    BIGBRAIN_STAGED=0
+    BIGBRAIN_INCLUDE=0
+  fi
 fi
 BIGBRAIN_TAR_ARGS=()
-if [[ ${BIGBRAIN_STAGED} -eq 1 ]]; then
+if [[ ${BIGBRAIN_INCLUDE} -eq 1 ]]; then
   [[ -f ${BIGBRAIN_STATE}/backup/managed-bigbrain/manifest.json ]] || die "managed BigBrain staging produced no manifest"
   BIGBRAIN_TAR_ARGS=(-C "${BIGBRAIN_STATE}/backup" managed-bigbrain)
 fi
@@ -202,6 +218,7 @@ rm -f "${TAR_FILE}" "${DUMP_FILE}"
 if [[ ${FICUS_BACKUP_DRY_RUN:-0} == 1 ]]; then
   KEEP_ARTIFACT=1
   log_info "FICUS_BACKUP_DRY_RUN=1 — stopping before upload/retention; encrypted artifact left at ${ENC_FILE}"
+  [[ ${BIGBRAIN_PARTIAL} -eq 1 ]] && { log_info "backup is missing managed BigBrain vault data (see above)"; exit 2; }
   exit 0
 fi
 
@@ -266,3 +283,7 @@ fi
 # The cleanup trap (EXIT) removes WORKDIR — and the encrypted artifact under
 # it — on the way out; nothing to do here.
 log_info "backup complete"
+if [[ ${BIGBRAIN_PARTIAL} -eq 1 ]]; then
+  log_info "backup uploaded WITHOUT some managed BigBrain vault data; failing the run so it is visible"
+  exit 2
+fi

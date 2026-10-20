@@ -340,6 +340,9 @@ export const managedBigbrainHostReceiptSchema = z
     localPort: positive.max(65535).nullable(),
     origin: originSchema.nullable(),
     readAccess,
+    /** Whether this vault's data was in the latest host backup staging (nightly runs isolate a
+     * failing vault instead of losing the whole backup). Absent until the first staging. */
+    backup: z.enum(['included', 'excluded']).optional(),
   })
   .strict()
   .refine((v) => v.origin === null || originHasVault(v.origin, v.vaultId))

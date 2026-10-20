@@ -49,6 +49,7 @@ function receipt() {
       hostEpoch: 1,
       generation: 1,
       upstreamVaultId: null,
+      displayName: create.displayName,
       state: 'provisioning',
       upstreamCommit: pin,
       artifactDigest: create.artifactDigest,

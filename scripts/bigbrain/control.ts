@@ -100,6 +100,7 @@ async function capabilities(host: InstalledHost | null, tenantId: string, deps: 
       artifactDigest: null,
       hostEpoch: 0,
       hostState: 'active' as const,
+      zone: null,
       limits: { ...MANAGED_BIGBRAIN_DEFAULT_LIMITS },
     }
   // Content-free observations; each one that fails names why the feature is unavailable.
@@ -120,6 +121,7 @@ async function capabilities(host: InstalledHost | null, tenantId: string, deps: 
     artifactDigest: host.artifactDigest,
     hostEpoch: host.hostEpoch,
     hostState: host.hostState,
+    zone: host.zone,
     limits: host.limits,
   }
 }

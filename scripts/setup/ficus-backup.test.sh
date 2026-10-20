@@ -394,7 +394,9 @@ case "\$1" in
     mkdir -p "${BB}/state/backup/managed-bigbrain/vaults"
     printf 'vault-tar\n' >"${BB}/state/backup/managed-bigbrain/vaults/a.tar"
     printf '{"schema":1}\n' >"${BB}/state/backup/managed-bigbrain/manifest.json"
+    printf 'require=%s\n' "\${FICUS_BACKUP_REQUIRE_COMPLETE:-unset}" >>"${BB}/calls"
     if [[ -n \${FAKE_BB_FAIL:-} ]]; then echo '{"ok":false,"code":"storage_unavailable"}'; exit 1; fi
+    if [[ -n \${FAKE_BB_PARTIAL:-} ]]; then echo '{"ok":true,"staged":true,"partial":true,"excluded":[{"vaultId":"b","code":"storage_unavailable"}]}'; exit 0; fi
     echo '{"ok":true,"staged":true}' ;;
   backup-release) rm -rf "${BB}/state/backup"; echo '{"ok":true}' ;;
   *) exit 9 ;;
@@ -418,17 +420,38 @@ expect_eq 'managed BigBrain: manifest is inside the encrypted envelope' \
   "$(cat "${SCRATCH}/bb-out/managed-bigbrain/manifest.json" 2>/dev/null || echo MISSING)" '{"schema":1}'
 expect_eq 'managed BigBrain: vault data is inside the encrypted envelope' \
   "$(cat "${SCRATCH}/bb-out/managed-bigbrain/vaults/a.tar" 2>/dev/null || echo MISSING)" 'vault-tar'
-expect_eq 'managed BigBrain: stage then release, each under the lock' "$(tr '\n' ' ' <"${BB}/calls")" 'backup-stage backup-release '
+expect_eq 'managed BigBrain: stage then release, each under the lock' "$(tr '\n' ' ' <"${BB}/calls")" 'backup-stage require=unset backup-release '
 expect_eq 'managed BigBrain: the unencrypted staging copy is released even on a dry run' \
   "$([[ -e ${BB}/state/backup ]] && echo present || echo absent)" absent
 
 rm -f "${BB}/calls"
 bb_rc=0
-bb_backup "${SCRATCH}/bb-fail-work" FAKE_BB_FAIL=1 || bb_rc=$?
-expect_eq 'managed BigBrain: a staging refusal fails the whole backup' "$([[ ${bb_rc} -ne 0 ]] && echo failed || echo ok)" failed
-expect_eq 'managed BigBrain: no envelope is written without the vaults' \
+bb_backup "${SCRATCH}/bb-fail-work" FAKE_BB_FAIL=1 FICUS_BACKUP_REQUIRE_COMPLETE=1 || bb_rc=$?
+expect_eq 'managed BigBrain: a termination backup refuses a staging failure' "$([[ ${bb_rc} -ne 0 ]] && echo failed || echo ok)" failed
+expect_eq 'managed BigBrain: no termination envelope is written without the vaults' \
   "$([[ -e ${SCRATCH}/bb-fail-work/${TODAY}.tar.gz.enc ]] && echo present || echo absent)" absent
-expect_eq 'managed BigBrain: a refused stage is still released' "$(tr '\n' ' ' <"${BB}/calls")" 'backup-stage backup-release '
+expect_eq 'managed BigBrain: a refused stage is still released' "$(tr '\n' ' ' <"${BB}/calls")" 'backup-stage require=1 backup-release '
+
+rm -f "${BB}/calls"
+bb_rc=0
+bb_backup "${SCRATCH}/bb-nightly-fail-work" FAKE_BB_FAIL=1 || bb_rc=$?
+expect_eq 'managed BigBrain: a nightly staging failure still writes the Core backup, then exits 2' "${bb_rc}" 2
+mkdir -p "${SCRATCH}/bb-nightly-fail-out"
+openssl enc -d -aes-256-cbc -pbkdf2 -pass "pass:${PASSPHRASE}" -in "${SCRATCH}/bb-nightly-fail-work/${TODAY}.tar.gz.enc" |
+  tar -xzf - -C "${SCRATCH}/bb-nightly-fail-out"
+expect_eq 'managed BigBrain: the nightly envelope has the database but no vault data' \
+  "$([[ -e ${SCRATCH}/bb-nightly-fail-out/managed-bigbrain ]] && echo vaults || echo none):$([[ -s ${SCRATCH}/bb-nightly-fail-out/db.dump ]] && echo db || echo nodb)" 'none:db'
+expect_eq 'managed BigBrain: a failed nightly stage is still released' "$(tr '\n' ' ' <"${BB}/calls")" 'backup-stage require=unset backup-release '
+
+rm -f "${BB}/calls"
+bb_rc=0
+bb_backup "${SCRATCH}/bb-partial-work" FAKE_BB_PARTIAL=1 || bb_rc=$?
+expect_eq 'managed BigBrain: a partial nightly stage uploads the staged vaults, then exits 2' "${bb_rc}" 2
+mkdir -p "${SCRATCH}/bb-partial-out"
+openssl enc -d -aes-256-cbc -pbkdf2 -pass "pass:${PASSPHRASE}" -in "${SCRATCH}/bb-partial-work/${TODAY}.tar.gz.enc" |
+  tar -xzf - -C "${SCRATCH}/bb-partial-out"
+expect_eq 'managed BigBrain: the partial envelope keeps the staged vault data' \
+  "$(cat "${SCRATCH}/bb-partial-out/managed-bigbrain/vaults/a.tar" 2>/dev/null || echo MISSING)" 'vault-tar'
 
 rm -f "${BB}/calls" "${BB}/etc/host.json"
 bb_rc=0

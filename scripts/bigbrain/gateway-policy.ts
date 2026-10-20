@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import {
+  MANAGED_BIGBRAIN_MAX_VAULTS,
   managedBigbrainHostBindingSchema,
   managedBigbrainHostStateSchema,
   managedBigbrainOriginMatchesPolicy,
@@ -27,7 +28,7 @@ export const gatewayManifestSchema = managedBigbrainHostBindingSchema
   .extend({
     contractVersion: z.literal(1),
     hostState: managedBigbrainHostStateSchema,
-    routes: z.array(routeSchema).max(2),
+    routes: z.array(routeSchema).max(MANAGED_BIGBRAIN_MAX_VAULTS),
   })
   .strict()
   .refine((v) => new Set(v.routes.map((r) => r.vaultId)).size === v.routes.length)

@@ -143,9 +143,9 @@ test('a vault that was already stopped is copied but never started by the backup
   expect(f.trace).toEqual([`stop:${A}`, `copy:${A}:quiet`, `copy:${B}:quiet`, `start:${A}`])
 })
 
-test('copy failure (including tar exit 1) fails the backup, discards staging and still restarts', async () => {
+test('termination backups: copy failure (including tar exit 1) fails the backup, discards staging and still restarts', async () => {
   const f = await fixture({ failTar: B })
-  await expect(stageManagedBackup(f.opts)).rejects.toThrow('operation_failed')
+  await expect(stageManagedBackup({ ...f.opts, requireComplete: true })).rejects.toThrow('operation_failed')
   expect(f.trace.filter((t) => t.startsWith('start:'))).toEqual([`start:${A}`, `start:${B}`])
   await expect(stat(join(f.root, 'backup'))).rejects.toThrow()
   await expect(stat(join(f.root, 'control', 'maintenance.json'))).rejects.toThrow()
@@ -156,8 +156,46 @@ test('storage verification failure never reads an unmounted/foreign directory', 
   f.opts.verifyStorage = async () => {
     throw new Error('storage_unavailable')
   }
-  await expect(stageManagedBackup(f.opts)).rejects.toThrow('storage_unavailable')
+  await expect(stageManagedBackup({ ...f.opts, requireComplete: true })).rejects.toThrow('storage_unavailable')
   expect(f.trace.some((t) => t.startsWith('copy:'))).toBe(false)
+})
+
+test('nightly backups isolate a failing vault: it is excluded and recorded, the other vault is staged', async () => {
+  const f = await fixture()
+  f.opts.verifyStorage = async (r) => {
+    if (r.receipt.vaultId === B) throw new Error('storage_unavailable')
+  }
+  const result = (await stageManagedBackup(f.opts))!
+  expect(result.excluded).toEqual([{ vaultId: B, code: 'storage_unavailable' }])
+  expect(result.inventory.vaults.map((v) => v.vaultId)).toEqual([A])
+  expect(f.trace.some((t) => t.startsWith(`copy:${B}`))).toBe(false)
+  expect(f.trace.filter((t) => t.startsWith('start:'))).toEqual([`start:${A}`, `start:${B}`])
+  const manifest = await readPrivateJson(
+    join(result.staging, 'managed-bigbrain'),
+    'manifest.json',
+    backupManifestSchema,
+    {
+      uid,
+    }
+  )
+  expect(manifest.excluded).toEqual([{ vaultId: B, code: 'storage_unavailable' }])
+  await expect(stat(join(result.staging, 'managed-bigbrain', 'vaults', `${B}.tar`))).rejects.toThrow()
+  const receipt = (id: string) =>
+    readPrivateJson(managedPaths({ root: f.root, vaultId: id }).control, 'receipt.json', controlReceiptSchema, { uid })
+  expect((await receipt(A)).receipt.backup).toBe('included')
+  expect((await receipt(B)).receipt.backup).toBe('excluded')
+  // A later complete run marks it included again.
+  f.opts.verifyStorage = async () => {}
+  await stageManagedBackup(f.opts)
+  expect((await receipt(B)).receipt.backup).toBe('included')
+})
+
+test('a nightly tar failure for one vault removes its partial archive and keeps the rest', async () => {
+  const f = await fixture({ failTar: B })
+  const result = (await stageManagedBackup(f.opts))!
+  expect(result.excluded).toEqual([{ vaultId: B, code: 'operation_failed' }])
+  await expect(stat(join(result.staging, 'managed-bigbrain', 'vaults', `${B}.tar`))).rejects.toThrow()
+  expect(result.inventory.vaults.map((v) => v.vaultId)).toEqual([A])
 })
 
 test('insufficient staging space refuses before stopping anything', async () => {

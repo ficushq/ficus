@@ -158,40 +158,32 @@ async function fixture(options: { storedIdentityForA?: string } = {}) {
     ingress: async () => void ingress++,
   }
   const inventory = (await readStagedArchive({ root, etc, uid })).inventory
-  const grant = (vaultId: string, upstreamVaultId: string) => ({
-    vaultId,
-    disposition: 'restore',
-    upstreamVaultId,
-    generation: 4,
-    displayName: 'Renamed after backup',
-    owner,
-    origin: `https://bb-${hex(vaultId)}.example.com`,
-    readAccess: 'revoked',
-  })
   const request = {
     requestId: '88888888-8888-4888-8888-888888888888',
     effectId: '99999999-9999-4999-8999-999999999999',
     archiveManifestDigest: inventory.manifestDigest,
-    currentVaults: [grant(A, UPSTREAM_A), { vaultId: B, disposition: 'exclude', code: 'not_found' }],
   }
-  return { root, host, deps, request, revoked, ingress: () => ingress, grant }
+  return { root, host, deps, request, revoked, ingress: () => ingress }
 }
 
-test('restores only granted vaults on fresh local storage, keeps upstream identity, revokes every imported credential and invite', async () => {
+test('restores every archived vault on fresh local storage, keeps upstream identity, revokes every imported credential and invite', async () => {
   const f = await fixture()
-  const [restored] = await executeRestore(f.request, f.deps)
-  // The restore fence stopped the gateway; a completed restore reopens it for the granted vaults.
+  const restored = await executeRestore(f.request, f.deps)
+  // The restore fence stopped the gateway; a completed restore reopens it.
   expect(f.host.active.has('ficus-bigbrain-gateway.service')).toBe(true)
-  expect(restored).toMatchObject({
+  expect(restored.map((r) => r.receipt.vaultId)).toEqual([A, B])
+  expect(restored[0]).toMatchObject({
     phase: 'ready',
-    // Platform's current name wins over the archived one (lineage only).
-    displayName: 'Renamed after backup',
+    // The archived name: Core's restored database is the same backup point.
+    displayName: `Vault ${A.slice(0, 2)}`,
     receipt: {
       vaultId: A,
       physicalHostBinding: NEW_BINDING,
       hostEpoch: 7,
       generation: 4,
       upstreamVaultId: UPSTREAM_A,
+      displayName: `Vault ${A.slice(0, 2)}`,
+      origin: `https://bb-${hex(A)}.example.com`,
       state: 'ready',
       readAccess: 'revoked',
     },
@@ -200,7 +192,9 @@ test('restores only granted vaults on fresh local storage, keeps upstream identi
   expect(await readFile(join(paths.vault, 'evidence.md'), 'utf8')).toBe(`human contribution ${UPSTREAM_A}`)
   // Imported invitations are void; every imported credential (owner and Ficus reader) is revoked.
   await expect(stat(`${paths.memberStore}.invites.json`)).rejects.toThrow()
-  expect(f.revoked).toEqual(['aaaaaaaa', 'bbbbbbbb'])
+  expect(f.revoked).toEqual(['aaaaaaaa', 'bbbbbbbb', 'aaaaaaaa', 'bbbbbbbb'])
+  // No read handoff exists for a restored vault until a human reconnects Ficus read access.
+  await expect(stat(join(f.root, 'read-handoff', `${A}.json`))).rejects.toThrow()
   // Ownership goes to the NEW account (archived numeric owners are ignored).
   const account = [...f.host.accounts.values()][0]!
   expect(f.host.calls).toContainEqual([
@@ -212,19 +206,16 @@ test('restores only granted vaults on fresh local storage, keeps upstream identi
     paths.vault,
   ])
   expect(f.host.calls.find((c) => c[0] === '/usr/bin/tar')).toContain('--no-same-owner')
-  // The excluded vault is never mounted, accounted or routed.
-  await expect(stat(managedPaths({ root: f.root, vaultId: B }).control)).rejects.toThrow()
-  expect(f.host.calls.some((c) => c.join(' ').includes(B))).toBe(false)
   // Plaintext staging is discarded once complete; an exact replay still answers from the plan.
   await expect(stat(join(f.root, 'restore', 'managed-bigbrain'))).rejects.toThrow()
-  expect((await executeRestore(f.request, f.deps)).map((r) => r.receipt.vaultId)).toEqual([A])
-  expect(f.revoked).toEqual(['aaaaaaaa', 'bbbbbbbb'])
+  expect((await executeRestore(f.request, f.deps)).map((r) => r.receipt.vaultId)).toEqual([A, B])
+  expect(f.revoked).toHaveLength(4)
   await expect(
-    executeRestore({ ...f.request, currentVaults: [f.grant(A, UPSTREAM_A), f.grant(B, UPSTREAM_B)] }, f.deps)
+    executeRestore({ ...f.request, archiveManifestDigest: `sha256:${'0'.repeat(64)}` }, f.deps)
   ).rejects.toThrow('request_conflict')
 })
 
-test('a store whose identity does not match the grant is never started or routed', async () => {
+test('a store whose identity does not match the archive inventory is never started or routed', async () => {
   const f = await fixture({ storedIdentityForA: UPSTREAM_B })
   await expect(executeRestore(f.request, f.deps)).rejects.toThrow('identity_mismatch')
   expect(f.host.calls.some((c) => c[1] === 'enable' && c.at(-1) === `ficus-bigbrain@${A}.service`)).toBe(false)
@@ -232,10 +223,10 @@ test('a store whose identity does not match the grant is never started or routed
   expect(f.ingress()).toBe(0)
 })
 
-test('a grant for another upstream identity is refused before any storage exists', async () => {
+test('a request for a different staged archive is refused before any storage exists', async () => {
   const f = await fixture()
   await expect(
-    executeRestore({ ...f.request, currentVaults: [f.grant(A, UPSTREAM_B), f.grant(B, UPSTREAM_B)] }, f.deps)
-  ).rejects.toThrow('generation_conflict')
+    executeRestore({ ...f.request, archiveManifestDigest: `sha256:${'0'.repeat(64)}` }, f.deps)
+  ).rejects.toThrow('identity_mismatch')
   await expect(stat(managedPaths({ root: f.root, vaultId: A }).control)).rejects.toThrow()
 })

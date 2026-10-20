@@ -3,10 +3,11 @@ import { open, readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import {
+  MANAGED_BIGBRAIN_MAX_VAULTS,
   managedBigbrainArchiveInventorySchema,
-  managedBigbrainRestoreGrantSchema,
+  managedBigbrainOriginMatchesPolicy,
+  managedBigbrainOwnerSchema,
   type ManagedBigbrainArchiveInventory,
-  type ManagedBigbrainRestoreGrant,
 } from '@ficus/shared/managed-bigbrain'
 import { backupManifestSchema, MANAGED_BACKUP_DIR, type BackupManifest } from './backup'
 import { installedHostSchema } from './control-input'
@@ -77,53 +78,62 @@ export async function readStagedArchive(
   }
 }
 
+/** One archived vault as this host restores it: identity, name and owner from the archive (Core's
+ * restored database is the vault authority), origin re-derived from THIS host's installed zone,
+ * a strictly newer generation, and read access always revoked. */
+export const restoreEntrySchema = z
+  .object({
+    vaultId: z.string().uuid(),
+    upstreamVaultId: z.string().uuid(),
+    generation: z.number().int().safe().positive(),
+    displayName: z.string().min(1).max(120),
+    owner: managedBigbrainOwnerSchema,
+    origin: z.string().max(253),
+  })
+  .strict()
+export type RestoreEntry = z.infer<typeof restoreEntrySchema>
 export const restorePlanSchema = z
   .object({
-    schema: z.literal(1),
+    schema: z.literal(2),
     manifestDigest: z.string().regex(/^sha256:[0-9a-f]{64}$/),
-    grants: z.array(managedBigbrainRestoreGrantSchema).max(2),
+    vaults: z.array(restoreEntrySchema).max(MANAGED_BIGBRAIN_MAX_VAULTS),
   })
   .strict()
 export type RestorePlan = z.infer<typeof restorePlanSchema>
 
-/** Authoritative current grants vs the staged inventory: exactly one grant per archived vault,
- * no unknown IDs, same digest; a restore keeps the upstream identity at a strictly newer
- * generation and always arrives read-revoked. Anything else fails closed.
- */
-export function planRestore(
+/** Every archived vault is restored (whole-instance restore semantics: a vault deleted after the
+ * backup comes back, and Core reconciles it after boot). The digest must be the staged one. */
+export function planArchiveRestore(
+  manifest: BackupManifest,
   inventory: ManagedBigbrainArchiveInventory,
   archiveManifestDigest: string,
-  input: unknown[]
-): ManagedBigbrainRestoreGrant[] {
+  zone: string
+): RestoreEntry[] {
   if (archiveManifestDigest !== inventory.manifestDigest) throw new Error('identity_mismatch')
-  const grants = z.array(managedBigbrainRestoreGrantSchema).max(2).safeParse(input)
-  if (!grants.success) throw new Error('invalid_request')
-  const archived = new Map(inventory.vaults.map((v) => [v.vaultId, v]))
-  const seen = new Set<string>()
-  for (const grant of grants.data) {
-    const source = archived.get(grant.vaultId)
-    if (!source || seen.has(grant.vaultId)) throw new Error('invalid_request')
-    seen.add(grant.vaultId)
-    if (
-      grant.disposition === 'restore' &&
-      (grant.upstreamVaultId !== source.upstreamVaultId || grant.generation <= source.generation)
-    )
-      throw new Error('generation_conflict')
-  }
-  if (seen.size !== archived.size) throw new Error('invalid_request')
-  return grants.data
+  return manifest.vaults.map((v) => {
+    const origin = `https://bb-${v.vaultId.replaceAll('-', '')}.${zone}`
+    if (!managedBigbrainOriginMatchesPolicy(origin, v.vaultId, zone)) throw new Error('identity_mismatch')
+    return restoreEntrySchema.parse({
+      vaultId: v.vaultId,
+      upstreamVaultId: v.upstreamVaultId,
+      generation: v.generation + 1,
+      displayName: v.displayName,
+      owner: v.owner,
+      origin,
+    })
+  })
 }
 
-/** Persist the grants OUTSIDE the extracted archive before any vault is restored. A retry must
- * present the identical plan; a different plan for the same staged archive is a conflict.
+/** Persist the plan OUTSIDE the extracted archive before any vault is restored. A retry for the
+ * same staged archive must derive the identical plan; anything else is a conflict.
  */
 export async function recordRestorePlan(
-  grants: ManagedBigbrainRestoreGrant[],
+  vaults: RestoreEntry[],
   manifestDigest: string,
   options: Options = {}
 ): Promise<RestorePlan> {
   const dir = join(options.root ?? BIGBRAIN_STATE_ROOT, 'restore')
-  const plan = restorePlanSchema.parse({ schema: 1, manifestDigest, grants })
+  const plan = restorePlanSchema.parse({ schema: 2, manifestDigest, vaults })
   let existing: RestorePlan | null = null
   try {
     existing = await readPrivateJson(dir, 'plan.json', restorePlanSchema, { uid: options.uid })

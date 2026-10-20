@@ -134,9 +134,12 @@ test('lost mint response revokes the lost reader credential and refuses rather t
 
 test('stale receipt, foreign escrow fence and out-of-order phases never invoke native administration', async () => {
   const f = await fixture()
-  await expect(initializeVaultOwner({ ...f.record, displayName: 'Other' }, f.options)).rejects.toThrow(
-    'generation_conflict'
-  )
+  await expect(
+    initializeVaultOwner(
+      { ...f.record, displayName: 'Other', receipt: { ...f.record.receipt, displayName: 'Other' } },
+      f.options
+    )
+  ).rejects.toThrow('generation_conflict')
   await expect(prepareReadCredential(f.record, f.options)).rejects.toThrow('generation_conflict')
   await writePrivateJson(
     f.paths.control,
