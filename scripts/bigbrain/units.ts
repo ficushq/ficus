@@ -8,7 +8,8 @@ import type { StorageReservation } from './storage'
 import { managedBigbrainOriginHasVault } from '@ficus/shared/managed-bigbrain'
 
 const digestSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/)
-const artifactRoot = (digest: string) => {
+/** The installed release directory for an artifact digest (what every unit's ExecStart runs from). */
+export const artifactRoot = (digest: string) => {
   if (!digestSchema.safeParse(digest).success) throw new Error('invalid_request')
   return `/opt/ficus-bigbrain/releases/${digest.slice(7)}`
 }

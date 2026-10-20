@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { MANAGED_BIGBRAIN_HELPER } from '@ficus/shared/managed-bigbrain'
 import { runPrivateCommand, startServiceDeliberately, type PrivateCommandRunner } from './process'
 import { GATEWAY_UNIT } from './paths'
+import { gatewayScript, readPublishedManifest, verifyRunningRelease, waitForGatewayServing } from './gateway-probe'
 import {
   ensureOwnedDirectory,
   readPrivateJson,
@@ -31,6 +32,9 @@ export interface HostAssetOptions {
   unitDirectory?: string
   launcher?: string
   tmpfilesDirectory?: string
+  /** Proof the restarted gateway process loaded the published manifest and runs this release
+   * (default: a bounded wait on its socket, then verifyRunningRelease). */
+  gatewayServing?: () => Promise<void>
 }
 /** Root-owned socket parents exist at boot (before any unit starts) and survive Restart=. The
  * per-vault directories are declared next to each vault's units (unit-assets). */
@@ -88,7 +92,10 @@ export async function ensureGatewayAccount(run: PrivateCommandRunner): Promise<v
 /** Fixed root launcher, aggregate slice and gateway unit for the CURRENT release, under the
  * host lifecycle lock. Every target must be absent, already exact, or carry the hash this
  * installer recorded last time: a foreign/edited file is never overwritten. Then the gateway
- * (credential-free; empty routes until a vault is ready) is enabled and started.
+ * (credential-free; empty routes until a vault is ready) is enabled and RESTARTED, and must
+ * answer from the published manifest before install succeeds. A plain start left a gateway that
+ * was already running on the previous release's code: its stricter route schema rejected the
+ * current manifest, so it answered every vault host 503 `not_installed` while the unit was active.
  */
 export async function installHostAssets(artifactDigest: string, options: HostAssetOptions): Promise<void> {
   const uid = options.uid ?? 0
@@ -147,5 +154,14 @@ export async function installHostAssets(artifactDigest: string, options: HostAss
   if ((await run(['/usr/bin/systemd-tmpfiles', '--create', join(tmpfiles, 'ficus-bigbrain.conf')])).code !== 0)
     throw new Error('operation_failed')
   if ((await run(['/usr/bin/systemctl', 'daemon-reload'])).code !== 0) throw new Error('operation_failed')
-  if (!(await startServiceDeliberately(run, GATEWAY_UNIT, { enable: true }))) throw new Error('operation_failed')
+  if (!(await startServiceDeliberately(run, GATEWAY_UNIT, { enable: true, restart: true })))
+    throw new Error('operation_failed')
+  await (
+    options.gatewayServing ??
+    (async () => {
+      // Serving first: until Bun binds its socket, the main PID may not have exec'd yet.
+      await waitForGatewayServing(await readPublishedManifest(options.etc, uid))
+      await verifyRunningRelease(GATEWAY_UNIT, gatewayScript(artifactDigest), { run })
+    })
+  )()
 }

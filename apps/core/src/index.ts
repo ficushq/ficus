@@ -178,6 +178,7 @@ import { maybeMountWebUi } from './lib/web-serve'
 import { corsAllowOrigins, normalizeOrigin, isAllowedWsOrigin } from './services/auth/web-origins'
 import { extractSessionToken, getSessionCookie } from './services/auth/session-cookie'
 import { csrfProtection } from './middleware/csrf'
+import { managedVaultHostGuard } from './middleware/managed-vault-host'
 import { redactHttpLogCredentials } from './lib/infra/http-log'
 import { attachPeerAddress, getClientAddress } from './lib/client-address'
 import { getSandboxProvisionErrorResponse } from './routes/sandbox-provision-error'
@@ -239,6 +240,8 @@ app.use('*', async (c, next) => {
   )
   await next()
 })
+// Managed BigBrain vault hostnames belong to the vault gateway, never to Core.
+app.use('*', managedVaultHostGuard)
 app.use(
   '*',
   // Hono emits both `<--` (request) and `-->` (response). The middleware above

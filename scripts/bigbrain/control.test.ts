@@ -32,7 +32,7 @@ const envelope = (fields: object) => ({
   ...fields,
 })
 
-async function fixture(options: { backupTimer?: boolean; gateway?: boolean; ready?: boolean } = {}) {
+async function fixture(options: { backupTimer?: boolean; gateway?: boolean; ready?: boolean; serving?: boolean } = {}) {
   const outer = await mkdtemp(join(tmpdir(), 'bigbrain-control-'))
   roots.push(outer)
   const root = join(outer, 'state')
@@ -117,6 +117,9 @@ async function fixture(options: { backupTimer?: boolean; gateway?: boolean; read
   }
   const deps = {
     ingress: async () => void trace.push('ingress'),
+    gatewayServes: async () => {
+      if (options.serving === false) throw new Error('upstream_unavailable')
+    },
     probeReady: async (socket: string) => {
       trace.push(`ready:${socket.split('/').at(-2)}`)
       return options.ready !== false
@@ -163,6 +166,11 @@ test('probe reports content-free availability and names the first unmet prerequi
   expect(
     (await dispatchHostRequest(envelope({ action: 'probe' }), (await fixture({ gateway: false })).deps)) as object
   ).toMatchObject({ capabilities: { available: false, reasonCode: 'upstream_unavailable' } })
+  // Regression: an ACTIVE gateway unit whose process cannot serve (stale release, unreadable
+  // manifest, unreachable vault) was reported available while every vault host answered 503.
+  expect(
+    (await dispatchHostRequest(envelope({ action: 'probe' }), (await fixture({ serving: false })).deps)) as object
+  ).toMatchObject({ ok: true, capabilities: { available: false, reasonCode: 'upstream_unavailable' } })
   await rm(join(ok.etc, 'host.json'))
   expect(await dispatchHostRequest(envelope({ action: 'probe' }), ok.deps)).toMatchObject({
     ok: false,

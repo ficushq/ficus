@@ -5,20 +5,25 @@
  * helper launcher, real accounts/loop mounts/systemd units/cgroups, and attacks executed from
  * inside vault A's own mount namespace, cgroup and UID.
  *
- * Usage (CI): sudo /usr/local/bin/bun scripts/bigbrain/linux-acceptance.ts <release-dir>
- * where <release-dir>/bigbrain is the built runtime artifact.
+ * Usage (CI): sudo /usr/local/bin/bun scripts/bigbrain/linux-acceptance.ts <release-dir> <previous-release-dir> <native-deps>
+ * where <release-dir>/bigbrain is the built runtime artifact, <previous-release-dir>/bigbrain an
+ * older released runtime the host is first installed with (the upgrade regression), and
+ * <native-deps> the pinned upstream source with its locked dependencies (prepare-native-smoke).
  */
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import {
   MANAGED_BIGBRAIN_DEFAULT_LIMITS,
+  MANAGED_BIGBRAIN_OWNER_INVITE_TTL_MS,
   MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
   managedBigbrainVaultOrigin,
 } from '@ficus/shared/managed-bigbrain'
 
-const release = process.argv[2]
-if (!release || process.getuid?.() !== 0 || process.platform !== 'linux') {
-  console.error('usage: sudo bun scripts/bigbrain/linux-acceptance.ts <release-dir> (Linux, root, disposable VM only)')
+const [release, previousRelease, nativeDeps] = process.argv.slice(2)
+if (!release || !previousRelease || !nativeDeps || process.getuid?.() !== 0 || process.platform !== 'linux') {
+  console.error(
+    'usage: sudo bun scripts/bigbrain/linux-acceptance.ts <release-dir> <previous-release-dir> <native-deps> (Linux, root, disposable VM only)'
+  )
   process.exit(64)
 }
 const results: { check: string; ok: boolean; detail?: string }[] = []
@@ -247,15 +252,46 @@ try {
   )
 
   // ---------------------------------------------------------------- install through the toolkit
-  must([
-    '/bin/bash',
-    '-c',
-    `set -euo pipefail; source scripts/setup/lib.sh; bigbrain_install "$1" "$2"`,
-    'install',
-    release,
-    JSON.stringify(config),
-  ])
+  // Upgrade regression (the tenant-prefixed outage): the host is first installed with an OLDER
+  // released runtime whose gateway accepts only bb-<32 hex> origins, and that gateway is RUNNING
+  // when the current release is installed over it, exactly like an upgrade of a live host. The
+  // old installer predates tenant labels, so its config has none.
+  const toolkitInstall = (dir: string, input: object) =>
+    must([
+      '/bin/bash',
+      '-c',
+      `set -euo pipefail; source scripts/setup/lib.sh; bigbrain_install "$1" "$2"`,
+      'install',
+      dir,
+      JSON.stringify(input),
+    ])
+  const { tenantLabel: _label, ...previousConfig } = config
+  toolkitInstall(previousRelease, previousConfig)
+  // The old installer verified its own artifact and recorded its digest.
+  const previousDigest = host().artifactDigest
+  const gatewayPid = () => unitProperty('ficus-bigbrain-gateway.service', 'MainPID')
+  const gatewayArgv = () =>
+    sh(['/bin/cat', `/proc/${gatewayPid()}/cmdline`])
+      .stdout.split('\0')
+      .filter((part) => part !== '')
+  const scriptOf = (digest: string) => `/opt/ficus-bigbrain/releases/${digest.slice(7)}/ficus-bigbrain-host.js`
+  const oldPid = gatewayPid()
+  check(
+    'the previous release is installed and its gateway runs',
+    previousDigest !== provenance.digest &&
+      unitProperty('ficus-bigbrain-gateway.service', 'ActiveState') === 'active' &&
+      gatewayArgv().includes(scriptOf(previousDigest)),
+    `${previousDigest.slice(7, 19)} pid=${oldPid}`
+  )
+  toolkitInstall(release, config)
   check('toolkit install created the host record', host().hostEpoch === 1)
+  check(
+    'upgrade replaced the running gateway with the installed release (not just its unit file)',
+    host().artifactDigest === provenance.digest &&
+      gatewayPid() !== oldPid &&
+      gatewayArgv().includes(scriptOf(provenance.digest)),
+    `pid ${oldPid} -> ${gatewayPid()}`
+  )
   const launcher = sh(['/usr/bin/stat', '-c', '%U:%G:%a', '/usr/local/libexec/ficus-bigbrainctl']).stdout.trim()
   check('launcher is root-only (root:root 750)', launcher === 'root:root:750', launcher)
   const reason = (target: string) =>
@@ -407,6 +443,103 @@ try {
       `${edge.status} protocol=${edge.protocol ?? 'none'} bytes=${edge.bytes}`
     )
   }
+
+  // ---------------------------------------------------------------- probe proves the serving path
+  // With ready vaults the probe checks the running gateway/vault releases and every route end to
+  // end on this real host (procfs from the control unit, the real gateway socket).
+  const serving = helper({ action: 'probe' })
+  check(
+    'probe with ready vaults reports available (running releases and every route verified)',
+    serving.ok === true && serving.capabilities?.available === true,
+    JSON.stringify(serving.capabilities?.reasonCode ?? [serving.code, serving.stderr])
+  )
+
+  // ---------------------------------------------------------------- owner device link, real client
+  // A Ficus-created owner link for the tenant-prefixed vault, redeemed by the PINNED native client
+  // (lib/sharedConnections.ts connectInvite) over HTTPS through real Caddy -> gateway -> vault. The
+  // link secret travels only on the child's stdin and is never printed.
+  const issuedAt = new Date(Date.now() - 5000)
+  const ownerInvite = helper({
+    action: 'owner-invite',
+    vaultId: A,
+    expectedGeneration: receipt(A).receipt.generation,
+    actorUserId: OWNER.userId,
+    issuedAt: issuedAt.toISOString(),
+    expiresAt: new Date(issuedAt.getTime() + MANAGED_BIGBRAIN_OWNER_INVITE_TTL_MS).toISOString(),
+  })
+  check(
+    'owner-invite issues a link on the tenant-prefixed origin',
+    ownerInvite.ok === true && String(ownerInvite.invite?.inviteUrl).startsWith(`${ORIGINS[A]}/invite#`),
+    JSON.stringify(ownerInvite.ok ? 'issued' : [ownerInvite.code, ownerInvite.stderr])
+  )
+  // Disposable VM: the vault hostname resolves to this host's Caddy, as Cloudflare would route it.
+  writeFileSync('/etc/hosts', `${readFileSync('/etc/hosts', 'utf8')}\n127.0.0.1 ${new URL(ORIGINS[A]!).hostname}\n`)
+  const clientHome = mkdtempSync('/tmp/bigbrain-native-client-')
+  const redeemScript = `(async () => {
+    try {
+      const { connectInvite } = await import(${JSON.stringify(`${nativeDeps}/lib/sharedConnections.ts`)});
+      const link = (await Bun.stdin.text()).trim();
+      const saved = await connectInvite(${JSON.stringify(`${clientHome}/shared-connections.json`)}, link);
+      console.log(JSON.stringify({ ok: true, vault: saved.identity?.vault?.id ?? null, role: saved.identity?.role ?? null,
+        permissions: saved.identity?.permissions ?? [] }));
+    } catch (e) {
+      console.log(JSON.stringify({ ok: false, status: e?.status ?? null, message: String(e?.message ?? e).slice(0, 120) }));
+    }
+  })()`
+  // TLS is the runner's self-signed stand-in for the origin certificate; routing is what is tested.
+  const redeemed = sh(
+    [
+      '/usr/bin/env',
+      '-i',
+      `HOME=${clientHome}`,
+      'PATH=/usr/bin:/bin',
+      'NODE_TLS_REJECT_UNAUTHORIZED=0',
+      '/usr/local/bin/bun',
+      '--no-install',
+      '--no-env-file',
+      '-e',
+      redeemScript,
+    ],
+    ownerInvite.ok ? String(ownerInvite.invite.inviteUrl) : ''
+  )
+  const redeem = (() => {
+    try {
+      return JSON.parse(redeemed.stdout.trim().split('\n').at(-1) ?? '{}') as Record<string, any>
+    } catch {
+      return { ok: false, message: redeemed.stderr.slice(0, 200) }
+    }
+  })()
+  check(
+    'the owner link redeems in the pinned native client through real Caddy and the gateway',
+    redeem.ok === true &&
+      redeem.vault === receipt(A).receipt.upstreamVaultId &&
+      Array.isArray(redeem.permissions) &&
+      redeem.permissions.includes('read'),
+    JSON.stringify(redeem.ok ? { role: redeem.role, permissions: redeem.permissions } : redeem)
+  )
+  sh(['/bin/rm', '-rf', clientHome])
+
+  // ---------------------------------------------------------------- probe reports a gateway that cannot serve
+  // Same failure class as the outage (an active gateway unit that cannot load its manifest): make
+  // the published manifest unreadable to the gateway's UID only. Root still reads it.
+  must(['/bin/chmod', '0700', '/etc/ficus/bigbrain/public'])
+  const blocked = viaCaddy(A, '/v1/whoami', 'GET')
+  const unserved = helper({ action: 'probe' })
+  must(['/bin/chmod', '0755', '/etc/ficus/bigbrain/public'])
+  check(
+    'a gateway that cannot read its manifest answers 503 and the probe reports it unavailable',
+    blocked.status === 503 &&
+      unserved.ok === true &&
+      unserved.capabilities?.available === false &&
+      unserved.capabilities?.reasonCode === 'upstream_unavailable',
+    JSON.stringify([blocked.status, unserved.capabilities?.reasonCode ?? unserved.code])
+  )
+  const recovered = helper({ action: 'probe' })
+  check(
+    'the probe reports available again once the gateway serves',
+    recovered.ok === true && recovered.capabilities?.available === true,
+    JSON.stringify(recovered.capabilities?.reasonCode ?? recovered.code)
+  )
 
   // ---------------------------------------------------------------- attacks from inside vault A
   const sockA = `/run/ficus-bigbrain/vaults/${A}`

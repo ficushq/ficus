@@ -963,7 +963,7 @@ jobs:
   bigbrain-linux-containment:
     name: Managed BigBrain Linux containment
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1015,11 +1015,27 @@ jobs:
       - name: Build the managed BigBrain runtime release
         run: bun scripts/bigbrain/build-artifact.ts --out-dir "$RUNNER_TEMP/release/bigbrain"
 
+      # Upgrade regression: the host is first installed with this older released runtime (its
+      # gateway accepts only bb-<32 hex> origins) and upgraded while that gateway runs. Fixed to
+      # the release a live host's stale gateway was observed on; built from its own checkout.
+      - name: Build the previous managed BigBrain runtime release
+        env:
+          PREVIOUS_RELEASE_COMMIT: ed8d3333bbe4f5b593dcff35bac32291d4009ed3
+        run: |
+          set -euo pipefail
+          git worktree add --detach "$RUNNER_TEMP/previous-src" "$PREVIOUS_RELEASE_COMMIT"
+          cd "$RUNNER_TEMP/previous-src"
+          bun install --frozen-lockfile
+          bun scripts/bigbrain/build-artifact.ts --out-dir "$RUNNER_TEMP/previous-release/bigbrain"
+
+      - name: Prepare the pinned native BigBrain client
+        run: bun scripts/bigbrain/prepare-native-smoke.ts "$RUNNER_TEMP/release/bigbrain" "$RUNNER_TEMP/bigbrain-native"
+
       - name: Containment acceptance
         run: |
           set -o pipefail
           status=0
-          out=$(sudo /usr/local/bin/bun scripts/bigbrain/linux-acceptance.ts "$RUNNER_TEMP/release" 2>&1) || status=$?
+          out=$(sudo /usr/local/bin/bun scripts/bigbrain/linux-acceptance.ts "$RUNNER_TEMP/release" "$RUNNER_TEMP/previous-release" "$RUNNER_TEMP/bigbrain-native" 2>&1) || status=$?
           printf '%s\n' "${out}"
           tail -n 1 <<<"${out}" | grep -Eq '^[0-9]+ passed, 0 failed$' || {
             echo '::error::containment acceptance did not end with a clean "N passed, 0 failed" summary.'

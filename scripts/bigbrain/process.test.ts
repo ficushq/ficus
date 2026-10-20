@@ -102,3 +102,21 @@ test('deliberate starts clear a previous start-limit/failed state first; the sta
   expect(await startServiceDeliberately(run(1), 'x.service', { enable: true })).toBe(false)
   expect(calls).toEqual(['reset-failed x.service', 'enable --now x.service'])
 })
+
+test('a deliberate restart replaces a running process (enable alone never does) and reports the restart result', async () => {
+  const calls: string[] = []
+  const run =
+    (codes: Record<string, number>): PrivateCommandRunner =>
+    async (argv) => {
+      calls.push(argv.slice(1).join(' '))
+      return { code: codes[argv[1]!] ?? 0, stdout: '' }
+    }
+  expect(await startServiceDeliberately(run({}), 'g.service', { enable: true, restart: true })).toBe(true)
+  expect(calls).toEqual(['reset-failed g.service', 'enable g.service', 'restart g.service'])
+  calls.length = 0
+  expect(await startServiceDeliberately(run({ enable: 1 }), 'g.service', { enable: true, restart: true })).toBe(false)
+  expect(calls).toEqual(['reset-failed g.service', 'enable g.service'])
+  calls.length = 0
+  expect(await startServiceDeliberately(run({ restart: 1 }), 'g.service', { restart: true })).toBe(false)
+  expect(calls).toEqual(['reset-failed g.service', 'restart g.service'])
+})
