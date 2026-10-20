@@ -222,6 +222,12 @@ describe('role-independent delivery guidance', () => {
     expect(procedure).toContain('Do not wait for external GitHub CI or PR approval before enabling')
     expect(procedure).toContain('autoMergeRequest can be null after an immediate merge')
     expect(procedure).toContain('generated delivery instructions remain authoritative')
+    expect(procedure).toContain('By default, do not use `--admin`')
+    expect(procedure).toContain('explicit, direct human instruction in trusted chat')
+    expect(procedure).toContain('The instruction must explicitly authorize the bypass')
+    expect(procedure).toContain('a general request to merge, release, or run a workflow is insufficient')
+    expect(procedure).toContain('"admin merge when CI passes" still requires CI to pass')
+    expect(procedure).toContain('never describe bypassed checks as passed')
     const editor = await readRepoFile('apps/core/src/services/assistant-editors/index.ts')
     expect(editor).not.toContain('pr-auto-merge enables auto-merge after checks')
     expect(editor).toContain(
