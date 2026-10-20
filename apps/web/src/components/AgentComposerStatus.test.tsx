@@ -13,17 +13,33 @@ test('a small ring with the percentage; no cost, and no words for a plain runnin
   const html = renderToStaticMarkup(
     <AgentComposerStatus
       status="running"
-      context={{ percent: 25.4, tokens: 7_000_000 }}
+      context={{ percent: 25.4, tokens: 254_000, contextWindow: 1_000_000 }}
       canManageSession={false}
       onCompact={() => undefined}
       onReset={() => undefined}
     />
   )
-  expect(html).toContain('aria-label="Context 25% used"')
+  expect(html).toContain('aria-label="Context 25.4% used"')
   expect(html).toContain('<circle')
-  expect(html).toContain('>25%<')
+  expect(html).toContain('>25.4%<')
   expect(html).not.toContain('$')
   expect(html).not.toContain('role="status"')
+})
+
+test('one agent step on a 1M-token window changes the label (whole percents hid it)', () => {
+  // Two consecutive persisted messages of a live turn, as captured from a running agent.
+  const label = (percent: number, tokens: number) =>
+    renderToStaticMarkup(
+      <AgentComposerStatus
+        status="running"
+        context={{ percent, tokens, contextWindow: 1_000_000 }}
+        canManageSession={false}
+        onCompact={() => undefined}
+        onReset={() => undefined}
+      />
+    ).match(/aria-label="(Context [^"]+)"/)?.[1]
+  expect(label(7.1679, 71_679)).toBe('Context 7.2% used')
+  expect(label(7.2606, 72_606)).toBe('Context 7.3% used')
 })
 
 test('the ring opens the numbers and the session actions, offered only when the agent is idle', async () => {
@@ -34,7 +50,7 @@ test('the ring opens the numbers and the session actions, offered only when the 
     dom!.act(async () =>
       root.render(
         <AgentComposerStatus
-          context={{ percent: 62, tokens: 1_200_000 }}
+          context={{ percent: 62, tokens: 168_640, contextWindow: 272_000 }}
           canManageSession={canManageSession}
           onCompact={onCompact}
           onReset={() => undefined}
@@ -43,7 +59,7 @@ test('the ring opens the numbers and the session actions, offered only when the 
     )
   const open = async () => {
     await dom!.act(async () =>
-      container.querySelector<HTMLButtonElement>('button[aria-label="Context 62% used"]')!.click()
+      container.querySelector<HTMLButtonElement>('button[aria-label="Context 62.0% used"]')!.click()
     )
     await dom!.act(async () => {
       await new Promise((resolve) => dom!.window.requestAnimationFrame(resolve))
@@ -56,7 +72,8 @@ test('the ring opens the numbers and the session actions, offered only when the 
 
   await render(false)
   await open()
-  expect(dom.window.document.body.textContent).toContain('Context 62% used · 1.2M tokens')
+  // The context's own tokens, consistent with the percentage, out of the window.
+  expect(dom.window.document.body.textContent).toContain('Context 62.0% used · 168.6k of 272.0k tokens')
   expect(item('Compact context')?.getAttribute('aria-disabled') ?? String(item('Compact context')?.disabled)).toMatch(
     /true/
   )
