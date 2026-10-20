@@ -54,4 +54,4 @@ exec /usr/bin/systemd-run --quiet --wait --pipe --collect --service-type=exec \
   --property=LockPersonality=yes \
   --property='RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6' \
   --property='CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_SETUID CAP_SETGID CAP_SETPCAP CAP_SYS_ADMIN' \
-  /usr/bin/env -i HOME=/nonexistent PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 {{ARTIFACT_ROOT}}/control
+  /usr/bin/env -i HOME=/nonexistent PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 {{ARTIFACT_ROOT}}/ficus-bigbrain-host control

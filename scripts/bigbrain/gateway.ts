@@ -17,9 +17,9 @@ export async function readGatewayManifest(path = ROUTES_PATH, ownerUid = 0): Pro
   }
 }
 
-if (import.meta.main) {
+export async function gatewayMain(args: string[]): Promise<void> {
   try {
-    if (process.platform !== 'linux' || process.getuid?.() === 0 || process.argv.length !== 2) throw new Error()
+    if (process.platform !== 'linux' || process.getuid?.() === 0 || args.length !== 0) throw new Error()
     await readGatewayManifest()
     const server = Bun.serve({
       hostname: '127.0.0.1',
@@ -48,3 +48,5 @@ if (import.meta.main) {
     process.exitCode = 1
   }
 }
+
+if (import.meta.main) await gatewayMain(process.argv.slice(2))

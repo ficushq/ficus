@@ -12,7 +12,7 @@ Group={{VAULT_USER}}
 Slice=ficus-bigbrain.slice
 UMask=0077
 WorkingDirectory=/
-ExecStartPre=+/usr/local/libexec/ficus-bigbrain-preflight {{VAULT_ID}}
+ExecStartPre=+{{ARTIFACT_ROOT}}/ficus-bigbrain-host preflight {{VAULT_ID}}
 ExecStart=/usr/bin/env -i HOME=/nonexistent PATH=/usr/bin:/bin LANG=C.UTF-8 {{ARTIFACT_ROOT}}/bigbrain-shared serve --vault {{VAULT_PATH}} --members {{MEMBERS_PATH}} --host 127.0.0.1 --port {{PORT}} --public-url {{ORIGIN}}
 Restart=on-failure
 RestartSec=5

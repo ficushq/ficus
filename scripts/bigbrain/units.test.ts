@@ -18,7 +18,10 @@ test('renders shipped hardened service with private identity, filesystem and bou
   expect(units.service).toContain(`SocketBindAllow=ipv4:tcp:${reservation.port}`)
   expect(units.service).toContain('SocketBindDeny=any')
   expect(units.service).toContain(`BindsTo=${units.mountUnitName}`)
-  expect(units.service).toContain(`ExecStartPre=+/usr/local/libexec/ficus-bigbrain-preflight ${id}`)
+  expect(units.service).toContain(
+    `ExecStartPre=+/opt/ficus-bigbrain/releases/${'a'.repeat(64)}/ficus-bigbrain-host preflight ${id}`
+  )
+  expect(units.service).not.toContain('libexec')
   for (const setting of [
     'NoNewPrivileges=yes',
     'PrivateMounts=yes',
@@ -61,7 +64,10 @@ test('aggregate cgroup includes gateway and caps combined CPU/memory; gateway ca
   expect(gateway).toContain('TemporaryFileSystem=/tmp:rw,nosuid,nodev,noexec,size=16M,mode=1777')
   expect(gateway).toContain('TemporaryFileSystem=/var/tmp:rw,nosuid,nodev,noexec,size=16M,mode=1777')
   expect(gateway).toContain('User=ficus-bb-gateway')
-  expect(gateway).toContain('ExecStartPre=+/usr/local/libexec/ficus-bigbrain-preflight gateway')
+  expect(gateway).toContain(
+    `ExecStartPre=+/opt/ficus-bigbrain/releases/${'a'.repeat(64)}/ficus-bigbrain-host preflight gateway`
+  )
+  expect(gateway).toMatch(/ExecStart=.*\/ficus-bigbrain-host gateway$/m)
   expect(gateway).toContain('SocketBindAllow=ipv4:tcp:34792')
   expect(gateway).toContain('SocketBindDeny=any')
   expect(gateway).toContain('InaccessiblePaths=-/var/lib/ficus-bigbrain')
@@ -94,7 +100,7 @@ test('fixed root launcher serializes across SSH interruption and bounds every de
     'ProtectSystem=strict',
     'ReadWritePaths=/etc /var/lib/ficus-bigbrain',
     '/usr/bin/env -i',
-    '/control',
+    '/ficus-bigbrain-host control',
     'head -c 8193',
     'code:"busy"',
   ])

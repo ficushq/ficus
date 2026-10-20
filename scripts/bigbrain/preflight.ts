@@ -244,10 +244,10 @@ export async function verifyRecordedVaultStorage(vaultId: string): Promise<void>
     throw new Error('storage_unavailable')
 }
 
-if (import.meta.main) {
+export async function preflightMain(args: string[]): Promise<void> {
   try {
-    if (process.getuid?.() !== 0 || process.argv.length !== 3) throw new Error('unsupported_host')
-    const target = process.argv[2]!
+    if (process.getuid?.() !== 0 || args.length !== 1) throw new Error('unsupported_host')
+    const target = args[0]!
     if (target === 'gateway') {
       await verifyCurrentCgroup('gateway', 'ficus-bigbrain-gateway.service')
       await proveSocketBindPolicy(34792)
@@ -266,3 +266,5 @@ if (import.meta.main) {
     process.exitCode = 1
   }
 }
+
+if (import.meta.main) await preflightMain(process.argv.slice(2))

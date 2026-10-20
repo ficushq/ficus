@@ -13,14 +13,7 @@ import { initializeStorageNamespace } from './volume-image'
 
 export const BIGBRAIN_ETC = '/etc/ficus/bigbrain'
 export const BIGBRAIN_OPT = '/opt/ficus-bigbrain'
-const EXECUTABLES = new Set([
-  'bigbrain-shared',
-  'bigbrain-shared-invite',
-  'bigbrain-owner-link',
-  'install',
-  'gateway',
-  'preflight',
-])
+const EXECUTABLES = new Set(['bigbrain-shared', 'bigbrain-owner-link', 'ficus-bigbrain-host'])
 
 export interface InstallOptions {
   config: unknown
@@ -185,13 +178,14 @@ export async function probeSupportedHost(): Promise<void> {
   }
 }
 
-if (import.meta.main) {
-  // Compiled as `install` inside the verified artifact; that directory IS the artifact root.
-  // No argv/environment policy: the setup toolkit pipes the validated `bigbrain:` config as JSON.
+/** `ficus-bigbrain-host install`. The binary's directory IS the verified artifact root. No
+ * argv/environment policy: the setup toolkit pipes the validated `bigbrain:` config as JSON.
+ */
+export async function installMain(args: string[]): Promise<void> {
   const { dirname } = await import('node:path')
   const { readBoundedControlBytes } = await import('./control-input')
   try {
-    if (process.getuid?.() !== 0 || process.argv.length !== 2) throw new Error('invalid_request')
+    if (process.getuid?.() !== 0 || args.length !== 0) throw new Error('invalid_request')
     const bytes = await readBoundedControlBytes(Bun.stdin.stream())
     const config: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
     const result = await installManagedHost({
