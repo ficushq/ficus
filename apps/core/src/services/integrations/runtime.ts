@@ -3,6 +3,7 @@ import { createManagedHostClient } from './bigbrain/managed/host-client'
 import { createManagedVaultService } from './bigbrain/managed/service'
 import { BigbrainBindings } from './bigbrain/local-bindings'
 import { BigbrainLocalConnections } from './bigbrain/local-connections'
+import { BigbrainLocalSetup } from './bigbrain/local-setup'
 import { GitHubIdentityAuthorization } from './github/identity-authorization'
 import { GitHubPersonalOAuthFinalizer } from './github/personal-oauth-finalizer'
 import { notifyDeliverySnapshotChanged } from './github/delivery-presentation-store'
@@ -616,6 +617,11 @@ export const managedVaultService = createManagedVaultService({
 
 export const integrationRoutesService = Object.assign(integrationConnectionService, {
   localBigbrain: new BigbrainLocalConnections(new BigbrainBindings(), integrationConnectionService),
+  localBigbrainSetup: new BigbrainLocalSetup(
+    new BigbrainBindings(),
+    integrationConnectionService,
+    integrationConnectionRepository
+  ),
   catalog: () =>
     Promise.all(
       [

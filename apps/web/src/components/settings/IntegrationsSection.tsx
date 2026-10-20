@@ -21,7 +21,7 @@ import { NotionIntegrationSettings } from '../integrations/NotionIntegrationSett
 const descriptions: Record<string, string> = {
   github: 'Connect repositories, follow issues and pull requests, and bring GitHub events into your workflows.',
   notion: 'Give your squads access to pages, databases, and knowledge in Notion.',
-  bigbrain: 'Connect an approved local BigBrain vault for memory and deliberate contributions.',
+  bigbrain: 'Connect BigBrain on this machine in one click, for memory and deliberate contributions.',
 }
 const managedDescriptions: Record<string, string> = {
   bigbrain: 'Shared BigBrain vaults on this server: people contribute from the BigBrain app, squads read.',

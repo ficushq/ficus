@@ -1,5 +1,6 @@
 import { BigbrainError } from '../services/integrations/bigbrain/errors'
 import type { BigbrainLocalConnections } from '../services/integrations/bigbrain/local-connections'
+import { BigbrainSetupError, type BigbrainLocalSetup } from '../services/integrations/bigbrain/local-setup'
 import { resolveDefaultGitHubIdentity } from '../services/sandbox/github-identity'
 import { isDeploymentIntegration } from '../services/integrations/deployment/settings'
 import { isChannelIntegration, type ChannelSettingsView } from '../services/integrations/channels/settings'
@@ -96,6 +97,7 @@ export interface IntegrationRoutesService extends Pick<
   'create' | 'validate' | 'enable' | 'disable' | 'replaceCredential' | 'remove'
 > {
   localBigbrain?: Pick<BigbrainLocalConnections, 'list' | 'create'>
+  localBigbrainSetup?: Pick<BigbrainLocalSetup, 'state' | 'connect' | 'release'>
   serviceSettings?: {
     get(provider: string): ReturnType<typeof getDeploymentIntegrationSettings>
     configure(
@@ -290,7 +292,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
           if (error instanceof BigbrainError)
             return c.json(
               {
-                error: `Local BigBrain setup failed (${error.code}). Check the Core host binding declaration.`,
+                error: `Local BigBrain setup failed (${error.code}). Use Connect BigBrain in Settings → Integrations to set it up again.`,
                 code: error.code,
               },
               400
@@ -299,6 +301,45 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
         }
       }
     )
+    .get('/providers/bigbrain/local-setup', async (c) => {
+      const denied = await authorize(c, 'integrations:read:bigbrain')
+      if (denied) return denied
+      if (!service.localBigbrainSetup) return c.json({ error: 'Local BigBrain setup is unavailable' }, 404)
+      c.header('Cache-Control', 'no-store')
+      return c.json(await service.localBigbrainSetup.state())
+    })
+    .post('/providers/bigbrain/local-setup', zValidator('json', localSetupSchema), async (c) => {
+      const denied = await authorize(c, 'integrations:write:bigbrain')
+      if (denied) return denied
+      // Runs a host command that creates a BigBrain credential: a signed-in person only.
+      const identity = c.get('identity') as Identity | undefined
+      if (identity?.type !== 'user') return userSessionRequired(c, identity, 'connect BigBrain')
+      if (!service.localBigbrainSetup) return c.json({ error: 'Local BigBrain setup is unavailable' }, 404)
+      const { vaultId, vaultPath, replaceExisting } = c.req.valid('json')
+      try {
+        const result = await service.localBigbrainSetup.connect(
+          {
+            ...(vaultId ? { vaultId } : { vaultPath: vaultPath! }),
+            confirmVaultAccess: true,
+            ...(replaceExisting ? { replaceExisting } : {}),
+          },
+          identityActor(identity)
+        )
+        return c.json(result)
+      } catch (error) {
+        if (error instanceof BigbrainSetupError)
+          return c.json(
+            { error: error.message, code: error.code },
+            error.code === 'unsupported_host'
+              ? 403
+              : error.code === 'confirmation_required' || error.code === 'busy'
+                ? 409
+                : 400
+          )
+        log.warn('Local BigBrain setup failed unexpectedly', { errorName: (error as Error)?.name })
+        return c.json({ error: 'BigBrain setup failed. Try again.', code: 'setup_failed' }, 500)
+      }
+    })
     .get('/outputs', async (c) => {
       if (!c.get('identity')) return c.json({ error: 'Unauthorized' }, 401)
       c.set('authzChecked', true)
@@ -759,14 +800,21 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
     .delete('/connections/:connectionId', async (c) => {
       const denied = await authorizeConnection(c, service, 'write')
       if (denied) return denied
-      if (isManagedBigbrainProvider(await service.providerFor(c.req.param('connectionId'))))
-        return managedLifecycleOnly(c)
+      const provider = await service.providerFor(c.req.param('connectionId'))
+      if (isManagedBigbrainProvider(provider)) return managedLifecycleOnly(c)
+      const bindingId =
+        provider === 'bigbrain' ? localBindingId(await service.get(c.req.param('connectionId'))) : undefined
       try {
         await service.remove(
           c.req.param('connectionId'),
           identityActor(c.get('identity')),
           c.req.query('confirmAssigned') === 'true'
         )
+        // Ficus manages the local bindings file: drop the vault's entry once nothing uses it.
+        if (bindingId)
+          await service.localBigbrainSetup?.release(bindingId).catch(() => {
+            log.warn('Local BigBrain binding cleanup failed after removal')
+          })
         return c.body(null, 204)
       } catch (error) {
         return usageConflict(c, error)
@@ -1060,6 +1108,27 @@ function authorizationFailure(
     return c.json({ error: failure.message, code: failure.code }, failure.status)
   }
   throw error
+}
+
+const localSetupSchema = z
+  .object({
+    vaultId: z
+      .string()
+      .regex(/^[a-f0-9]{16}$/)
+      .optional(),
+    /** A Core-host folder a person typed; Core accepts it only if it is a real private vault. */
+    vaultPath: z.string().min(1).max(4096).optional(),
+    confirmVaultAccess: z.literal(true),
+    replaceExisting: z.boolean().optional(),
+  })
+  .strict()
+  .refine((value) => (value.vaultId === undefined) !== (value.vaultPath === undefined), {
+    message: 'Choose exactly one vault',
+  })
+
+function localBindingId(connection: { configuration: unknown } | null): string | undefined {
+  const configuration = connection?.configuration as { bindingId?: unknown } | null | undefined
+  return typeof configuration?.bindingId === 'string' ? configuration.bindingId : undefined
 }
 
 function identityActor(identity: unknown): string {

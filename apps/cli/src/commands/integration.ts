@@ -132,7 +132,7 @@ export function registerIntegrationCommands(
     .action(run(async (connection) => showConnections(await apiGet(`/api/integrations/connections/${connection}`))))
   integration
     .command('local-bindings <provider>')
-    .description('List operator-approved BigBrain vaults on the Core host (same-host self-hosted only)')
+    .description('List BigBrain vaults set up on the Core host (use Connect BigBrain in Settings to add one)')
     .action(
       run(async (provider) => {
         if (provider !== 'bigbrain') throw new Error('Local bindings are supported only for BigBrain')
@@ -144,7 +144,7 @@ export function registerIntegrationCommands(
     .description(
       'Select a local vault already declared by the Core host operator; paths belong to Core, not this CLI device'
     )
-    .requiredOption('--local-binding <id>', 'Approved Core host binding ID')
+    .requiredOption('--local-binding <id>', 'BigBrain binding ID from local-bindings')
     .option('--display-name <name>', 'Display name')
     .action(
       run(async (provider, options) => {

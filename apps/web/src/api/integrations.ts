@@ -234,6 +234,41 @@ export const createManagedBigbrainOwnerInvite = (
     body: JSON.stringify(input),
   })
 
+/** One-click local BigBrain setup: what Core detected on its own host (never client paths). */
+export interface BigbrainSetupVault {
+  id: string
+  label: string
+  vaultPath: string
+  source: 'bigbrain_default' | 'bigbrain_fallback' | 'existing_binding' | 'chosen_folder'
+}
+export interface BigbrainLocalSetupState {
+  state: 'ready' | 'unsupported_host' | 'executable_missing' | 'executable_untrusted'
+  reason?: string
+  hostPlatform: 'darwin' | 'linux' | 'other'
+  executablePath?: string
+  vaults: BigbrainSetupVault[]
+  bindingsFile: 'none' | 'managed' | 'unmanaged' | 'invalid'
+  connectionName: string
+  access: readonly string[]
+}
+export interface BigbrainLocalSetupResult {
+  connection: IntegrationConnection
+  vault: BigbrainSetupVault
+  bindingsFile: 'created' | 'updated' | 'unchanged'
+  connectionOutcome: 'created' | 'updated' | 'reused'
+  enabled: boolean
+}
+const LOCAL_SETUP = '/integrations/providers/bigbrain/local-setup'
+export const getBigbrainLocalSetup = (fetcher: ApiFetcher = apiFetch) => fetcher<BigbrainLocalSetupState>(LOCAL_SETUP)
+export const connectLocalBigbrain = (
+  input: ({ vaultId: string } | { vaultPath: string }) & { replaceExisting?: boolean },
+  fetcher: ApiFetcher = apiFetch
+) =>
+  fetcher<BigbrainLocalSetupResult>(LOCAL_SETUP, {
+    method: 'POST',
+    body: JSON.stringify({ ...input, confirmVaultAccess: true }),
+  })
+
 export const createLocalBigbrainIntegration = (
   input: { bindingId: string; displayName: string },
   fetcher: ApiFetcher = apiFetch

@@ -3,6 +3,8 @@ import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { agentExtraScopes, agents, db, roleAssignments, roles, squads, users } from '../db'
 import { authzSentinel } from '../middleware/authz-sentinel'
+import { csrfProtection } from '../middleware/csrf'
+import { BigbrainSetupError } from '../services/integrations/bigbrain/local-setup'
 import type { Identity } from '../services/rbac'
 import { createIntegrationsRouter, createSquadIntegrationsRouter } from './integrations'
 import type { SafeOAuthAppSettings } from '../services/integrations/authorization/client-credentials'
@@ -23,7 +25,7 @@ const summary = {
   healthState: 'healthy' as const,
 }
 
-function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
+function createApp(identity?: Identity, loadedProvider = 'bigbrain', options: { csrf?: boolean } = {}) {
   const catalog = mock(() => [
     {
       key: 'bigbrain',
@@ -41,6 +43,14 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
     bindings: [{ id: 'approved', label: 'Approved', vaultPath: '/vault', executablePath: '/bin/bigbrain' }],
   }))
   const localCreate = mock(async () => get())
+  const localSetupState = mock(async () => ({ state: 'ready', vaults: [] }))
+  const localSetupConnect = mock(
+    async (_input: unknown, _actor: string): Promise<unknown> => ({
+      connection: await get(),
+      enabled: true,
+    })
+  )
+  const localSetupRelease = mock(async (_bindingId: string) => {})
   const setEnabled = mock(async (_provider: string, enabled: boolean, _actor: string) => ({ enabled }))
   const list = mock(async () => [{ ...summary, configuration: { apiBase: 'secret' }, credentialRef: 'secret' }])
   const get = mock(async () => ({ ...summary, configuration: { version: 1 }, usage: { squadCount: 0, squads: [] } }))
@@ -93,6 +103,7 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
     })
   )
   const app = new Hono()
+  if (options.csrf) app.use('/api/*', csrfProtection)
   if (identity) {
     app.use('/api/*', async (c, next) => {
       c.set('identity', identity)
@@ -105,6 +116,7 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
     createIntegrationsRouter({
       catalog,
       localBigbrain: { list: localList, create: localCreate },
+      localBigbrainSetup: { state: localSetupState, connect: localSetupConnect, release: localSetupRelease },
       setEnabled,
       list,
       get,
@@ -142,6 +154,9 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
     calls: {
       localList,
       localCreate,
+      localSetupState,
+      localSetupConnect,
+      localSetupRelease,
       catalog,
       setEnabled,
       list,
@@ -1302,6 +1317,146 @@ test('local BigBrain endpoints require instance provider permissions before reso
     { bindingId: 'approved', displayName: 'Memory' },
     expect.any(String)
   )
+})
+
+describe('one-click local BigBrain setup', () => {
+  const SETUP = '/api/integrations/providers/bigbrain/local-setup'
+  const post = (app: Hono, body: unknown, headers: Record<string, string> = {}) =>
+    app.request(SETUP, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+    })
+  const valid = { vaultId: 'a'.repeat(16), confirmVaultAccess: true }
+  async function withUser(permissions: string[], run: (userId: string) => Promise<void>) {
+    const [user] = await db
+      .insert(users)
+      .values({ email: `${crypto.randomUUID()}@example.com` })
+      .returning()
+    const [role] = await db
+      .insert(roles)
+      .values({ name: 'BigBrain setup', slug: `bigbrain-setup-${crypto.randomUUID()}`, permissions })
+      .returning()
+    await db
+      .insert(roleAssignments)
+      .values({ subjectType: 'user', subjectId: user!.id, roleId: role!.id, scope: 'system' })
+    try {
+      await run(user!.id)
+    } finally {
+      await db.delete(roleAssignments).where(eq(roleAssignments.roleId, role!.id))
+      await db.delete(roles).where(eq(roles.id, role!.id))
+      await db.delete(users).where(eq(users.id, user!.id))
+    }
+  }
+
+  test('state needs read permission; setup needs write permission and a signed-in person', async () => {
+    const reader = createApp({ type: 'system', systemTokenId: 't', name: 't', scopes: ['integrations:read:github'] })
+    expect((await reader.app.request(SETUP)).status).toBe(403)
+    expect(reader.calls.localSetupState).not.toHaveBeenCalled()
+    const token = createApp({
+      type: 'system',
+      systemTokenId: 't',
+      name: 't',
+      scopes: ['integrations:read:bigbrain', 'integrations:write:bigbrain'],
+    })
+    expect((await token.app.request(SETUP)).status).toBe(200)
+    // A fully permitted system token is still not a person: it cannot run the host command.
+    const refused = await post(token.app, valid)
+    expect(refused.status).toBe(403)
+    expect((await refused.json()).code).toBe('user_session_required')
+    expect(token.calls.localSetupConnect).not.toHaveBeenCalled()
+    await withUser(['integrations:read:bigbrain'], async (userId) => {
+      const { app, calls } = createApp({ type: 'user', userId })
+      expect((await post(app, valid)).status).toBe(403)
+      expect(calls.localSetupConnect).not.toHaveBeenCalled()
+    })
+    await withUser(['integrations:write:bigbrain'], async (userId) => {
+      const { app, calls } = createApp({ type: 'user', userId })
+      expect((await post(app, valid)).status).toBe(200)
+      expect(calls.localSetupConnect).toHaveBeenCalledWith(valid, `user:${userId}`)
+    })
+  })
+
+  test('accepts only a vault selection and explicit access confirmation, never argv/executable/env', async () => {
+    await withUser(['integrations:write:bigbrain'], async (userId) => {
+      const { app, calls } = createApp({ type: 'user', userId })
+      for (const body of [
+        { ...valid, executablePath: '/tmp/evil' },
+        { ...valid, args: ['mcp', 'config', '--client', 'deadbeef'] },
+        { ...valid, env: { BIGBRAIN_TOKENS: '/tmp/x' } },
+        { ...valid, vaultPath: '/vault' }, // both selections
+        { confirmVaultAccess: true }, // neither
+        { vaultId: 'a'.repeat(16) }, // no confirmation
+        { vaultId: 'a'.repeat(16), confirmVaultAccess: false },
+        { vaultId: '$(touch /tmp/pwned)', confirmVaultAccess: true },
+        { vaultPath: 'x'.repeat(5000), confirmVaultAccess: true },
+      ])
+        expect((await post(app, body)).status).toBe(400)
+      expect(calls.localSetupConnect).not.toHaveBeenCalled()
+      expect(
+        (await post(app, { vaultPath: '/Users/me/My Vault', confirmVaultAccess: true, replaceExisting: true })).status
+      ).toBe(200)
+      expect(calls.localSetupConnect).toHaveBeenCalledWith(
+        { vaultPath: '/Users/me/My Vault', confirmVaultAccess: true, replaceExisting: true },
+        `user:${userId}`
+      )
+    })
+  })
+
+  test('maps setup refusals to fixed codes and statuses', async () => {
+    await withUser(['integrations:write:bigbrain'], async (userId) => {
+      const { app, calls } = createApp({ type: 'user', userId })
+      for (const [code, status] of [
+        ['unsupported_host', 403],
+        ['confirmation_required', 409],
+        ['busy', 409],
+        ['executable_missing', 400],
+        ['upstream_failed', 400],
+      ] as const) {
+        calls.localSetupConnect.mockImplementationOnce(async () => {
+          throw new BigbrainSetupError(code, code === 'unsupported_host' ? 'Unavailable on Ficus Cloud.' : undefined)
+        })
+        const response = await post(app, valid)
+        expect(response.status).toBe(status)
+        expect((await response.json()).code).toBe(code)
+      }
+      calls.localSetupConnect.mockImplementationOnce(async () => {
+        throw new Error('raw upstream detail /private/path')
+      })
+      const unexpected = await post(app, valid)
+      expect(unexpected.status).toBe(500)
+      expect(await unexpected.text()).not.toContain('/private/path')
+    })
+  })
+
+  test('cookie sessions without the CSRF header are refused before setup runs', async () => {
+    await withUser(['integrations:write:bigbrain'], async (userId) => {
+      const { app, calls } = createApp({ type: 'user', userId }, 'bigbrain', { csrf: true })
+      const forged = await post(app, valid, { cookie: 'ficus_session=session' })
+      expect(forged.status).toBe(403)
+      expect(calls.localSetupConnect).not.toHaveBeenCalled()
+      const crossOrigin = await post(app, valid, { authorization: 'Bearer device', origin: 'null' })
+      expect(crossOrigin.status).toBe(403)
+      expect(calls.localSetupConnect).not.toHaveBeenCalled()
+      expect((await post(app, valid, { cookie: 'ficus_session=session', 'x-ficus-csrf': '1' })).status).toBe(200)
+    })
+  })
+
+  test('removing a local connection releases its managed binding', async () => {
+    const { app, calls } = createApp({
+      type: 'system',
+      systemTokenId: 't',
+      name: 't',
+      scopes: ['integrations:write:bigbrain'],
+    })
+    calls.get.mockImplementation(async () => ({
+      ...summary,
+      configuration: { version: 2, bindingId: 'vault-0123456789ab' },
+      usage: { squadCount: 0, squads: [] },
+    }))
+    expect((await app.request(`/api/integrations/connections/${summary.id}`, { method: 'DELETE' })).status).toBe(204)
+    expect(calls.localSetupRelease).toHaveBeenCalledWith('vault-0123456789ab')
+  })
 })
 
 test('unsupported catalog state is public and rejects API enable before persisting, but permits disable', async () => {

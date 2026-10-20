@@ -31,7 +31,7 @@ const plugin: IntegrationPluginV1<
   adapterVersion: 2,
   presentation: {
     label: 'BigBrain',
-    description: 'Connect an approved local BigBrain vault on the Core host.',
+    description: 'Connect BigBrain on the Core host in one click: Ficus finds BigBrain and its vault.',
     icon: 'bigbrain',
     connectionMode: 'local',
     // Ficus Cloud hosts managed shared vaults; elsewhere a local binding on the Core host.

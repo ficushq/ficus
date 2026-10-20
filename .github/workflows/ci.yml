@@ -913,6 +913,8 @@ jobs:
           src/services/work-streams/worktree-cleanup-reconciler.test.ts
           src/services/integrations/bigbrain/desktop-host.test.ts
           src/services/integrations/bigbrain/stdio-transport.process.test.ts
+          src/services/integrations/bigbrain/setup-command.process.test.ts
+          src/services/integrations/bigbrain/local-setup.test.ts
           src/services/integrations/bigbrain/managed/host-client.process.test.ts
           src/services/integrations/bigbrain/upstream.smoke.test.ts
           src/services/integrations/bigbrain/shared-upstream.smoke.test.ts

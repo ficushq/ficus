@@ -117,7 +117,17 @@ function seedSettingsQueries(queryClient: QueryClient, permissions: string[], op
     ],
   })
   queryClient.setQueryData(integrationQueryKeys.pool('bigbrain'), options.integrationPool ?? [])
-  queryClient.setQueryData(integrationQueryKeys.localBindings(), { state: 'available', bindings: [operationsBinding] })
+  queryClient.setQueryData(integrationQueryKeys.localSetup(), {
+    state: 'ready',
+    hostPlatform: 'darwin',
+    executablePath: operationsBinding.executablePath,
+    vaults: [
+      { id: 'a'.repeat(16), label: 'Operations', vaultPath: operationsBinding.vaultPath, source: 'bigbrain_default' },
+    ],
+    bindingsFile: 'managed',
+    connectionName: 'Local MCP configuration',
+    access: ['vault:read', 'inbox:write'],
+  })
   if (options.squadPermissions || options.integrations || options.squads) {
     const squads = options.squads ?? defaultSquads
     queryClient.setQueryData(queryKeys.squads.list('active'), squads)
@@ -283,7 +293,7 @@ describe('SettingsPage RBAC tabs', () => {
     expect(html).toContain('Integrations')
     expect(html).toContain('Search integrations')
     expect(html.match(/<button[^>]*role="switch"[^>]*>/)?.[0]).not.toContain('disabled=')
-    expect(html).not.toContain('Create and validate')
+    expect(html).not.toContain('on this Mac')
     expect(html).not.toContain('Squad')
   })
 
@@ -293,14 +303,14 @@ describe('SettingsPage RBAC tabs', () => {
     expect(html).toContain('Integrations')
     expect(html).toContain('Enable BigBrain globally')
     expect(html.match(/<button[^>]*role="switch"[^>]*>/)?.[0]).toContain('disabled=')
-    expect(html).not.toContain('Create and validate')
+    expect(html).not.toContain('on this Mac')
   })
 
   test('Notion-only instance permission reveals global Integrations without BigBrain access', async () => {
     const html = await renderSettings('/settings?section=integrations', ['integrations:read:notion'])
     expect(html).toContain('Integrations')
     expect(html).toContain('Notion')
-    expect(html).not.toContain('Create and validate')
+    expect(html).not.toContain('on this Mac')
   })
 
   test('squad-only integration permission does not reveal the global tab', async () => {
@@ -599,7 +609,7 @@ describe('SettingsPage global integration RBAC', () => {
     })
 
     expect(observerCount(integrationQueryKeys.pool('bigbrain'))).toBe(0)
-    expect(observerCount(integrationQueryKeys.localBindings())).toBe(0)
+    expect(observerCount(integrationQueryKeys.localSetup())).toBe(0)
     await dom.act(async () => {
       fireEvent.click(bigbrainCard().querySelector('button[aria-expanded]')!)
     })
@@ -608,9 +618,9 @@ describe('SettingsPage global integration RBAC', () => {
     expect(bigbrainCard().textContent).toContain(`Executable: ${operationsBinding.executablePath}`)
     expect(bigbrainCard().textContent).toContain('Core host, not the browser')
     expect(bigbrainCard().querySelector('input[aria-label="API base"]')).toBeNull()
-    expect(buttonTexts(bigbrainCard()).includes('Create and validate')).toBe(canWrite)
+    expect(buttonTexts(bigbrainCard()).includes('Connect another vault on this Mac')).toBe(canWrite)
     expect(observerCount(integrationQueryKeys.pool('bigbrain'))).toBe(1)
-    expect(observerCount(integrationQueryKeys.localBindings())).toBe(1)
+    expect(observerCount(integrationQueryKeys.localSetup())).toBe(canWrite ? 1 : 0)
     for (const squad of squads) {
       expect(observerCount(queryKeys.auth.permissions(squad.id))).toBe(0)
       expect(observerCount(integrationQueryKeys.squad(squad.id, 'bigbrain'))).toBe(0)
@@ -649,7 +659,7 @@ describe('SettingsPage global integration RBAC', () => {
     expect(container.querySelector('#integration-card-bigbrain')).toBeNull()
     expect(container.textContent).not.toContain(operationsBinding.vaultPath)
     expect(observerCount(integrationQueryKeys.pool('bigbrain'))).toBe(0)
-    expect(observerCount(integrationQueryKeys.localBindings())).toBe(0)
+    expect(observerCount(integrationQueryKeys.localSetup())).toBe(0)
     for (const squad of squads) {
       expect(observerCount(queryKeys.auth.permissions(squad.id))).toBe(0)
       expect(observerCount(integrationQueryKeys.squad(squad.id, 'bigbrain'))).toBe(0)
