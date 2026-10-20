@@ -116,7 +116,7 @@ export async function platformRequest<T>(input: {
   }
 }
 
-function buildPlatformUrl(baseUrl: string, path: string): URL {
+export function buildPlatformUrl(baseUrl: string, path: string): URL {
   if (!path.startsWith('/') || path.startsWith('//')) throw new BrokerUnconfiguredError()
   let base: URL
   try {
@@ -130,7 +130,7 @@ function buildPlatformUrl(baseUrl: string, path: string): URL {
   return new URL(`${base.toString().replace(/\/+$/, '')}${path}`)
 }
 
-async function cancelResponseBody(response: Response): Promise<void> {
+export async function cancelResponseBody(response: Response): Promise<void> {
   try {
     await response.body?.cancel()
   } catch {
@@ -138,7 +138,7 @@ async function cancelResponseBody(response: Response): Promise<void> {
   }
 }
 
-async function readBoundedBody(response: Response, maxBytes: number): Promise<Uint8Array> {
+export async function readBoundedBody(response: Response, maxBytes: number): Promise<Uint8Array> {
   const declared = Number(response.headers.get('content-length'))
   if (Number.isFinite(declared) && declared > maxBytes) {
     await cancelResponseBody(response)
@@ -171,7 +171,7 @@ async function readBoundedBody(response: Response, maxBytes: number): Promise<Ui
   return result
 }
 
-function parseSafeCode(bytes: Uint8Array): string | null {
+export function parseSafeCode(bytes: Uint8Array): string | null {
   try {
     const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown
     if (
