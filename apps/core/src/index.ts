@@ -474,11 +474,11 @@ app.get(
       onMessage(event, ws) {
         wsManager.handleMessage(ws.raw as ServerWebSocket, String(event.data))
       },
-      onClose(_, ws) {
-        wsManager.removeByWs(ws.raw as ServerWebSocket)
+      onClose(event, ws) {
+        wsManager.removeByWs(ws.raw as ServerWebSocket, { code: event.code, reason: event.reason })
       },
       onError(event, ws) {
-        wsManager.removeByWs(ws.raw as ServerWebSocket)
+        wsManager.removeByWs(ws.raw as ServerWebSocket, undefined, 'error')
         log.error('WebSocket error:', event, ws)
       },
     })
