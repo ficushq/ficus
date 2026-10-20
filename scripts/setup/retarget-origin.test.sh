@@ -221,6 +221,20 @@ dry_run_out_2=$("${RETARGET}" --config "${CONFIG}" --origin https://acme.ficus.s
 strip_ts() { sed -E 's/^[0-9]{2}:[0-9]{2}:[0-9]{2} //'; }
 expect_eq '--dry-run is idempotent: running it twice prints the same plan' \
   "$(strip_ts <<<"${dry_run_out_2}")" "$(strip_ts <<<"${dry_run_out}")"
+expect_eq '--dry-run without managed BigBrain renders no vault-site include' \
+  "$(grep -c 'import ' <<<"${dry_run_out}" || true)" '0'
+
+# A managed BigBrain host keeps its vault-site include across a retarget; dropping it would leave
+# every vault host answered by Caddy's empty 200.
+BB_CONFIG="${SCRATCH}/tau-setup-bigbrain.yaml"
+{
+  cat "${CONFIG}"
+  printf 'bigbrain: {enabled: true, tenant_id: 11111111-1111-4111-8111-111111111111, physical_host_binding: 33333333-3333-4333-8333-333333333333, host_epoch: 1, zone: ficus.sh}\n'
+} >"${BB_CONFIG}"
+bb_dry_run_out=$("${RETARGET}" --config "${BB_CONFIG}" --origin https://acme.ficus.sh \
+  --tls-cert "${CERT}" --tls-key "${KEY}" --dry-run 2>&1)
+expect_match '--dry-run on a managed BigBrain host keeps the vault-site include' \
+  "${bb_dry_run_out}" 'import /etc/ficus/bigbrain-caddy/\*\.caddy'
 
 # --- validation failures: exit non-zero with a clear message ------------------
 run_rc() { # ...ARGS

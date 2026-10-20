@@ -33,7 +33,10 @@ const vault = (patch: Partial<ManagedBigbrainVault>): ManagedBigbrainVault => ({
   updatedAt: '2026-10-20T00:00:00.000Z',
   ...patch,
 })
-const research = vault({ assignedSquads: [{ id: 'squad-r', name: 'Research squad' }] })
+const research = vault({
+  origin: `https://bb-${'1'.repeat(32)}.vaults.example.com`,
+  assignedSquads: [{ id: 'squad-r', name: 'Research squad' }],
+})
 const design = vault({
   vaultId: '22222222-2222-4222-8222-222222222222',
   displayName: 'Design',
@@ -63,11 +66,11 @@ afterEach(async () => {
   await harness.cleanup()
 })
 
-async function render(canWrite = true) {
+async function render(canWrite = true, vaults: ManagedBigbrainVault[] = [research, design]) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } },
   })
-  client.setQueryData(integrationQueryKeys.managedBigbrainVaults(), [research, design])
+  client.setQueryData(integrationQueryKeys.managedBigbrainVaults(), vaults)
   const { ManagedBigbrainIntegrationSettings } = await import('./ManagedBigbrainIntegrationSettings')
   await harness.act(async () =>
     root.render(
@@ -110,6 +113,21 @@ describe('ManagedBigbrainIntegrationSettings', () => {
     expect(button('Connect a device', row('Design'))).toBeUndefined()
     expect(button('Retry', row('Design'))).toBeTruthy()
     expect(button('Retry', row('Research'))).toBeUndefined()
+  })
+
+  test('device links are offered only once the owner’s vault is fully ready at its address', async () => {
+    const pending = (displayName: string, patch: Partial<ManagedBigbrainVault>) =>
+      vault({ ...research, vaultId: crypto.randomUUID(), displayName, ...patch })
+    await render(true, [
+      research,
+      pending('Settingup', { state: 'provisioning', readAccess: 'pending' }),
+      pending('Renaming', { pendingAction: 'rename' }),
+      pending('Unpublished', { origin: null }),
+      pending('Degraded', { state: 'degraded' }),
+    ])
+    expect(button('Connect a device', row('Research'))).toBeTruthy()
+    for (const name of ['Settingup', 'Renaming', 'Unpublished', 'Degraded'])
+      expect(button('Connect a device', row(name))).toBeUndefined()
   })
 
   test('a failure in one vault row stays in that row and sends that vault’s own generation', async () => {

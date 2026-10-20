@@ -7,6 +7,7 @@ import { installedHostSchema } from './control-input'
 import { readPrivateJson, writePrivateJson } from './secure-files'
 import { syntheticArtifact } from './host-test-fixtures'
 import { installManagedHost } from './install'
+import { caddySitesDirectory } from './ingress'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -60,6 +61,28 @@ test('a missing shared parent of the config directory is created; an unsafe exis
   await expect(installManagedHost({ ...g.options, etc: join(g.outer, 'unsafe', 'bigbrain') })).rejects.toThrow(
     'storage_unavailable'
   )
+})
+
+test('vault Caddy sites get a Caddy-readable directory beside etc; legacy sites inside etc are removed', async () => {
+  const f = await fixture()
+  const { mkdir, readdir } = await import('node:fs/promises')
+  // An upgraded host: earlier releases wrote sites inside the root-only etc directory.
+  await mkdir(join(f.options.etc, 'caddy'), { recursive: true, mode: 0o755 })
+  await writeFile(join(f.options.etc, 'caddy', '22222222-2222-4222-8222-222222222222.caddy'), 'x', { mode: 0o644 })
+  await chmod(f.options.etc, 0o700)
+  expect(await installManagedHost(f.options)).toMatchObject({ installed: true })
+  const sites = caddySitesDirectory(f.options.etc)
+  expect(sites).toBe(join(f.outer, 'bigbrain-caddy'))
+  expect((await stat(sites)).mode & 0o777).toBe(0o755)
+  expect((await stat(f.options.etc)).mode & 0o777).toBe(0o700)
+  expect(await readdir(f.options.etc)).not.toContain('caddy')
+  // Anything foreign in the legacy directory is left for an operator, never deleted blindly.
+  const g = await fixture()
+  await mkdir(join(g.options.etc, 'caddy'), { recursive: true, mode: 0o755 })
+  await writeFile(join(g.options.etc, 'caddy', 'operator-notes.txt'), 'keep', { mode: 0o644 })
+  await chmod(g.options.etc, 0o700)
+  await installManagedHost(g.options)
+  expect(await readdir(join(g.options.etc, 'caddy'))).toEqual(['operator-notes.txt'])
 })
 
 test('disabled is a no-op that writes nothing and never probes', async () => {

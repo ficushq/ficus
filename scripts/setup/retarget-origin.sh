@@ -229,6 +229,10 @@ CORE_PORT=$(envfile_get "${ENV_FILE}" 'PORT') || CORE_PORT=''
 CADDY_TRUSTED_PROXIES=()
 caddy_trusted_proxies=$(ingress_trusted_proxies_from_config) || exit 1
 [[ -z ${caddy_trusted_proxies} ]] || mapfile -t CADDY_TRUSTED_PROXIES <<<"${caddy_trusted_proxies}"
+# Likewise keep the managed BigBrain vault-site include on a host that has it enabled, or a
+# retarget would silently drop every vault host (Caddy answers them with an empty 200).
+BIGBRAIN_INGRESS=false
+if bigbrain_enabled "$(bigbrain_config_json)"; then BIGBRAIN_INGRESS=true; fi
 
 # ============================================================== dry run
 
