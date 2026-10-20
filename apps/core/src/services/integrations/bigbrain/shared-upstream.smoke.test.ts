@@ -20,6 +20,7 @@ import {
 } from '@ficus/shared/managed-bigbrain'
 import { cachedOwnerAppLink, ownerInviteCacheSchema } from '../../../../../../scripts/bigbrain/invite-cache'
 import { writePrivateJson } from '../../../../../../scripts/bigbrain/secure-files'
+import { createGatewayHandler } from '../../../../../../scripts/bigbrain/gateway-policy'
 
 const artifact = process.env.FICUS_BIGBRAIN_SHARED_ARTIFACT
 const nativeDeps = process.env.FICUS_BIGBRAIN_SHARED_DEPS
@@ -287,6 +288,132 @@ test.skipIf(!artifact && !required)(
 
 const VAULT_A = '11111111-1111-4111-8111-111111111111'
 const VAULT_B = '22222222-2222-4222-8222-222222222222'
+
+/** Regression for the owner device link that failed in the BigBrain app with
+ * "null is not an object (evaluating 'result.vault')". The vault's Caddy site was published where
+ * the caddy user could not read it, so Caddy answered the vault host with its empty 200 fallback:
+ * no BigBrain-Protocol header (the client then assumes protocol 1) and a body the native client's
+ * response.json() reads as null. The link created through Ficus's owner-invite path (root-private
+ * replay cache + shipped owner-link bundle) must redeem in the pinned native client through the
+ * shipped gateway policy with Host routing, exactly like Caddy -> gateway -> vault socket. */
+test.skipIf(!artifact && !required)(
+  'owner device link from Ficus redeems in the pinned native client through the shipped gateway',
+  async () => {
+    if (!artifact || !nativeDeps) throw new Error('Required pinned shared artifact/dependencies are missing')
+    const root = await mkdtemp(join(tmpdir(), 'ficus-bigbrain-owner-link-'))
+    let fixtures: Awaited<ReturnType<typeof nativeFixtures>> | undefined
+    const listeners: { stop(force?: boolean): unknown }[] = []
+    try {
+      fixtures = await nativeFixtures(root, artifact, nativeDeps)
+      const vault = await fixtures.vault('gateway-vault')
+      const vaultId = randomUUID()
+      const host = `bb-${vaultId.replaceAll('-', '')}.example.com`
+      const manifest = {
+        contractVersion: 1,
+        tenantId: randomUUID(),
+        physicalHostBinding: randomUUID(),
+        hostEpoch: 1,
+        hostState: 'active',
+        routes: [{ vaultId, upstreamVaultId: vault.identity.vault.id, origin: `https://${host}`, state: 'ready' }],
+      }
+      const gatewaySocket = join(root, 'gateway.sock')
+      listeners.push(
+        Bun.serve({
+          unix: gatewaySocket,
+          fetch: createGatewayHandler({ manifest: async () => manifest, socketPath: () => vault.socket }),
+        })
+      )
+      // Caddy-equivalent ingress minus TLS: a published, readable vault site forwards by Host to the
+      // gateway socket; an unknown host gets Caddy's own fallback, an empty 200.
+      let siteServed = false
+      const ingress = Bun.serve({
+        hostname: '127.0.0.1',
+        port: 0,
+        fetch: async (request) => {
+          if (!siteServed) return new Response(null, { status: 200 })
+          const url = new URL(request.url)
+          const headers = new Headers(request.headers)
+          headers.set('Host', host)
+          headers.set('X-Forwarded-For', '127.0.0.1')
+          headers.set('X-Forwarded-Proto', 'https')
+          return fetch(`http://${host}${url.pathname}${url.search}`, {
+            unix: gatewaySocket,
+            method: request.method,
+            headers,
+            body: request.body,
+            redirect: 'manual',
+          })
+        },
+      })
+      listeners.push(ingress)
+      const endpoint = `http://127.0.0.1:${ingress.port}`
+
+      const control = join(root, 'root-private-control')
+      await mkdir(control, { mode: 0o700 })
+      await writePrivateJson(control, 'owner-invites.json', { schema: 1, invites: [] }, ownerInviteCacheSchema, {
+        uid: process.getuid!(),
+      })
+      const issuedAt = new Date().toISOString()
+      const window = {
+        issuedAt,
+        expiresAt: new Date(Date.parse(issuedAt) + MANAGED_BIGBRAIN_OWNER_INVITE_TTL_MS).toISOString(),
+      }
+      const link = await cachedOwnerAppLink({
+        directory: control,
+        uid: process.getuid!(),
+        input: {
+          contractVersion: 1,
+          requestId: randomUUID(),
+          tenantId: manifest.tenantId,
+          physicalHostBinding: manifest.physicalHostBinding,
+          hostEpoch: 1,
+          action: 'owner-invite',
+          vaultId,
+          expectedGeneration: 1,
+          actorUserId: randomUUID(),
+          ...window,
+        },
+        authorize: async () => {},
+        issue: () => vault.issueAppLink(window),
+      })
+      // The same shape lifecycle.ownerInvite returns: `${origin}/invite#<secret>`.
+      const inviteUrl = `${endpoint}/invite#${link.secret}`
+      const connections = join(root, 'native-owner-gateway.json')
+
+      // The reported failure, reproduced with the real client: the vault host is not served.
+      await expect(fixtures.native.connectInvite(connections, inviteUrl)).rejects.toThrow(
+        "null is not an object (evaluating 'result.vault')"
+      )
+      // It never reached the vault, so the single-use link was not consumed.
+      siteServed = true
+      const linked = await fixtures.native.connectInvite(connections, inviteUrl)
+      expect(linked.identity.vault.id).toBe(vault.identity.vault.id)
+      const device = fixtures.native.readConnections(connections).find((c) => c.id === linked.id)!
+      expect(device.endpoint).toBe(endpoint)
+      const identity = await fixtures.native.sharedRequest<{
+        role: string
+        kind: string
+        handle: string
+        permissions: string[]
+        vault: { id: string }
+      }>(device, '/v1/whoami')
+      expect(identity).toMatchObject({
+        role: 'owner',
+        kind: 'person',
+        handle: 'ada',
+        permissions: ['read', 'write'],
+        vault: { id: vault.identity.vault.id },
+      })
+      // Still single use through the gateway.
+      await expect(fixtures.native.connectInvite(connections, inviteUrl)).rejects.toBeDefined()
+    } finally {
+      for (const listener of listeners) listener.stop(true)
+      await fixtures?.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
+  },
+  60000
+)
 
 /** Record two create intents in Core's store and let the reconciler apply them through a fixture
  * helper that starts a real native vault server per create and answers with its receipt. */

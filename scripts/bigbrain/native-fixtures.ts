@@ -228,6 +228,8 @@ export async function nativeFixtures(root: string, artifact: string, dependencyR
     return {
       cli,
       identity,
+      /** The vault server's Unix socket, for a test-owned gateway in front of it. */
+      socket: join(base, 'run', 'http.sock'),
       minted,
       invite,
       issueAppLink,

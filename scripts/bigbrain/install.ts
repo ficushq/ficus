@@ -1,4 +1,4 @@
-import { chmod, copyFile, lstat, mkdtemp, readdir, rename, rm } from 'node:fs/promises'
+import { chmod, copyFile, lstat, mkdtemp, readdir, rename, rm, rmdir, unlink } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import {
   MANAGED_BIGBRAIN_CONTRACT_VERSION,
@@ -9,7 +9,7 @@ import {
 import { verifyBigbrainArtifact } from './artifact'
 import { verifyHostBun } from './host-bun'
 import { installHostAssets } from './host-assets'
-import { publishIngress } from './ingress'
+import { caddySitesDirectory, publishIngress } from './ingress'
 import { installedHostSchema, type InstalledHost } from './control-input'
 import { ensureOwnedDirectory, readPrivateJson, writePrivateJson } from './secure-files'
 import { initializeStorageNamespace } from './volume-image'
@@ -156,9 +156,10 @@ export async function installManagedHost(options: InstallOptions): Promise<Insta
     [join(opt, 'releases'), 0o755],
     [etc, 0o700],
     [join(etc, 'public'), 0o755],
-    [join(etc, 'caddy'), 0o755],
+    [caddySitesDirectory(etc), 0o755],
   ] as const)
     await ensureOwnedDirectory(path, mode, fs)
+  await removeLegacySites(etc)
   await initializeStorageNamespace({ root: options.state, uid })
   const artifactDigest = await installRelease(options.artifactRoot, join(opt, 'releases'), uid)
   const host: InstalledHost = installedHostSchema.parse(
@@ -191,6 +192,21 @@ export async function installManagedHost(options: InstallOptions): Promise<Insta
   await (options.ingress ?? (() => publishIngress({ root: options.state, etc, uid })))()
   await (options.hostAssets ?? ((digest) => installHostAssets(digest, { etc, uid })))(artifactDigest)
   return { installed: true, created: !existing, artifactDigest, hostEpoch: host.hostEpoch, hostState: host.hostState }
+}
+
+/** Earlier releases wrote vault sites to <etc>/caddy, inside the root-only etc directory where
+ * Caddy (running as `caddy`) could never read them. Their only content is regenerated vault site
+ * files, now published to caddySitesDirectory(etc); anything else there is left for an operator. */
+async function removeLegacySites(etc: string): Promise<void> {
+  const legacy = join(etc, 'caddy')
+  if (!(await present(legacy))) return
+  if (!(await lstat(legacy)).isDirectory()) throw new Error('storage_unavailable')
+  const names = await readdir(legacy)
+  const sites = names.filter((name) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.caddy$/.test(name)
+  )
+  for (const name of sites) await unlink(join(legacy, name))
+  if (sites.length === names.length) await rmdir(legacy)
 }
 
 /** Real support probe: Linux x64, systemd, unified cgroup-v2 with the enforced controllers and

@@ -1931,10 +1931,13 @@ render_caddyfile() { # HOST PORT CERT_PATH KEY_PATH [TRUSTED_PROXY...]
   printf '{\n    servers {\n        trusted_proxies static %s\n        trusted_proxies_strict\n        client_ip_headers CF-Connecting-IP\n    }\n}\n\n' \
     "${CLOUDFLARE_PROXY_RANGES[*]}${*:+ $*}"
   # Managed BigBrain (opt-in): the root controller owns the per-vault site files; every
-  # normal Core re-render (setup AND upgrade) must keep importing them. A glob that matches
+  # normal Core re-render (setup, upgrade AND retarget) must keep importing them. They live
+  # outside the root-only ${BIGBRAIN_ETC}: Caddy reloads as the caddy user, and a glob over a
+  # directory it cannot enter silently matches nothing (every vault host would get Caddy's
+  # empty 200). A glob that matches
   # nothing is valid Caddy config, so an enabled host with no vaults yet still validates.
   if [[ ${BIGBRAIN_INGRESS:-false} == true ]]; then
-    printf 'import %s/caddy/*.caddy\n\n' "${BIGBRAIN_ETC}"
+    printf 'import %s/*.caddy\n\n' "$(bigbrain_caddy_sites)"
   fi
   printf '%s {\n    tls %s %s\n' "${host}" "${cert}" "${key}"
   if (($# > 0)); then
@@ -1957,6 +1960,8 @@ render_caddyfile() { # HOST PORT CERT_PATH KEY_PATH [TRUSTED_PROXY...]
 # downloaded on the host. The installer seeds an ABSENT host record only; it never adopts a
 # different tenant/binding, never rewinds the host epoch and never uninstalls vault data.
 BIGBRAIN_ETC="${BIGBRAIN_ETC:-/etc/ficus/bigbrain}"       # test seams only
+# Must equal caddySitesDirectory() in scripts/bigbrain/ingress.ts: a sibling of BIGBRAIN_ETC.
+bigbrain_caddy_sites() { printf '%s/bigbrain-caddy' "$(dirname "${BIGBRAIN_ETC}")"; }
 BIGBRAIN_STATE="${BIGBRAIN_STATE:-/var/lib/ficus-bigbrain}"
 BIGBRAIN_BUN="${BIGBRAIN_BUN:-/usr/local/bin/bun}"
 

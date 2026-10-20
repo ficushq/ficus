@@ -1,5 +1,5 @@
-import { readdir, unlink } from 'node:fs/promises'
-import { join } from 'node:path'
+import { lstat, readdir, unlink } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { managedBigbrainOriginHasVault, parseManagedBigbrainOrigin } from '@ficus/shared/managed-bigbrain'
 import { installedHostSchema } from './control-input'
 import { GATEWAY_SOCKET, gatewayManifestSchema, type GatewayManifest } from './gateway-policy'
@@ -21,6 +21,35 @@ export interface IngressOptions {
   /** The origin certificate pair Core's own Caddy site already serves (setup-toolkit paths). */
   tlsCert?: string
   tlsKey?: string
+}
+
+/** The per-vault Caddy site directory: a sibling of the root-private etc directory, never inside
+ * it. Caddy runs, validates and reloads as the unprivileged `caddy` user; an `import` glob over a
+ * directory that user cannot traverse silently matches nothing, so Caddy would answer every vault
+ * host with its empty 200 fallback (which the native client reads as a `null` body). */
+export const caddySitesDirectory = (etc: string) => join(dirname(etc), 'bigbrain-caddy')
+
+/** Fail closed unless an unprivileged user (Caddy) can reach and list the site directory and read
+ * every site file: each ancestor must be other-searchable, the directory other-readable/searchable.
+ * `caddy validate` runs as root and cannot detect this, so it is checked here explicitly. */
+export async function assertCaddyCanReadSites(sites: string, names: Iterable<string>): Promise<void> {
+  try {
+    let path = dirname(sites)
+    for (;;) {
+      const info = await lstat(path)
+      if (!info.isDirectory() || (info.mode & 0o001) === 0) throw new Error()
+      if (path === '/') break
+      path = dirname(path)
+    }
+    const dir = await lstat(sites)
+    if (!dir.isDirectory() || (dir.mode & 0o005) !== 0o005) throw new Error()
+    for (const name of names) {
+      const file = await lstat(join(sites, name))
+      if (!file.isFile() || (file.mode & 0o004) === 0) throw new Error()
+    }
+  } catch {
+    throw new Error('tls_unavailable')
+  }
 }
 
 async function receipts(root: string, uid: number): Promise<ControlReceipt[]> {
@@ -93,7 +122,7 @@ export async function publishIngress(options: IngressOptions = {}): Promise<Gate
   await writePublicJson(join(etc, 'public'), 'routes.json', manifest, gatewayManifestSchema, fs)
 
   // Sites follow the same set; a suspended/terminated host serves none.
-  const caddy = join(etc, 'caddy')
+  const caddy = caddySitesDirectory(etc)
   const cert = options.tlsCert ?? '/etc/caddy/tls/origin.crt'
   const key = options.tlsKey ?? '/etc/caddy/tls/origin.key'
   const desired = new Map(
@@ -108,12 +137,22 @@ export async function publishIngress(options: IngressOptions = {}): Promise<Gate
     previous.set(name, await readPublicText(caddy, name, fs))
   }
   const changed = previous.size !== desired.size || [...desired].some(([name, text]) => previous.get(name) !== text)
-  if (!changed) return manifest
+  if (!changed) {
+    // Unchanged files are not proof they are served: re-check what Caddy itself can read.
+    if (desired.size) await assertCaddyCanReadSites(caddy, desired.keys())
+    return manifest
+  }
   const apply = async (files: Map<string, string>) => {
     for (const name of await readdir(caddy)) if (!files.has(name)) await unlink(join(caddy, name))
     for (const [name, text] of files) await writePublicText(caddy, name, text, fs)
   }
   await apply(desired)
+  try {
+    await assertCaddyCanReadSites(caddy, desired.keys())
+  } catch (error) {
+    await apply(previous)
+    throw error
+  }
   const validate = await run(
     ['/usr/bin/caddy', 'validate', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile'],
     {

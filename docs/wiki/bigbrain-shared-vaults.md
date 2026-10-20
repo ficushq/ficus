@@ -244,6 +244,13 @@ the vault's squad attachments return when it does.
   systemd's start-limit counter first; crash loops are still limited.
 - Suspending the tenant closes ingress and stops every vault; resuming waits until each vault
   answers before reopening ingress.
+- Each ready vault has a Caddy site file in `/etc/ficus/bigbrain-caddy/`, which the Caddyfile
+  imports. The directory sits outside the root-only `/etc/ficus/bigbrain` because Caddy runs and
+  reloads as the `caddy` user. An import glob over a directory that user cannot read matches
+  nothing, and Caddy then answers the vault's host name with an empty `200`. The BigBrain app
+  reports that as `null is not an object (evaluating 'result.vault')`. Publishing the sites, and
+  creating an owner device link, fail with `tls_unavailable` instead of leaving a vault
+  unreachable. A request that never reached the vault does not use up its device link.
 
 ## Current limits
 

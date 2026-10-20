@@ -358,7 +358,11 @@ export async function dispatchHostRequest(input: unknown, deps: ControlDeps = {}
           return { ...success, action: request.action, receipt: record.receipt }
         }
         case 'owner-invite':
-          return { ...success, action: 'owner-invite', invite: await ownerInvite(request, deps) }
+          return {
+            ...success,
+            action: 'owner-invite',
+            invite: await ownerInvite(request, { ...deps, ingress: () => ingress(deps) }),
+          }
         default:
           throw new Error('invalid_request')
       }

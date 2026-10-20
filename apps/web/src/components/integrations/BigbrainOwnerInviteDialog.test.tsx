@@ -97,6 +97,33 @@ describe('BigbrainOwnerInviteDialog', () => {
     expect(requests).toHaveLength(1)
   })
 
+  test('tells the owner what to do if the app cannot use the link', async () => {
+    await render(true)
+    await harness.act(async () => {
+      fireEvent.click(createButton())
+      await settle()
+    })
+    expect(document.body.textContent).toContain('Each link works once')
+    expect(document.body.textContent).toContain('create a new link')
+  })
+
+  test('an unreachable vault creates no link and says so, without echoing server text', async () => {
+    globalThis.fetch = (async (input, init) => {
+      requests.push({ url: String(input), body: String(init?.body ?? '') })
+      return Response.json({ code: 'tls_unavailable', retryable: false, detail: SECRET_FRAGMENT }, { status: 502 })
+    }) as typeof fetch
+    await render(true)
+    await harness.act(async () => {
+      fireEvent.click(createButton())
+      await settle()
+    })
+    expect(document.querySelector('input[aria-label="Owner device link"]')).toBeNull()
+    const alert = document.querySelector('[role="alert"]')!
+    expect(alert.textContent).toContain('not reachable at its address yet, so no link was created')
+    expect(document.body.textContent).not.toContain(SECRET_FRAGMENT)
+    expect(createButton()).toBeTruthy()
+  })
+
   test('an expired link is withdrawn', async () => {
     expiresAt = new Date(Date.now() + 20).toISOString()
     await render(true)

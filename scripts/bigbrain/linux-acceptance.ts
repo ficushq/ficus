@@ -138,6 +138,32 @@ async function gateway(vaultId: string, path: string, token?: string, init: Requ
   })
 }
 
+/** Production path WITH Caddy/TLS: HTTPS to 127.0.0.1:443 under the vault's host name, through the
+ * Caddy service and its imported vault site. Never sends a credential. */
+function viaCaddy(vaultId: string, path: string, method: 'GET' | 'POST') {
+  const host = new URL(originOf(vaultId)).host
+  const out = sh([
+    '/usr/bin/curl',
+    '-sk',
+    '--max-time',
+    '10',
+    '--resolve',
+    `${host}:443:127.0.0.1`,
+    '-X',
+    method,
+    '-o',
+    '/dev/null',
+    '-D',
+    '-',
+    '-w',
+    '\n%{http_code} %{size_download}',
+    `https://${host}${path}`,
+  ]).stdout
+  const [status, bytes] = (out.trim().split('\n').pop() ?? '').split(' ').map(Number)
+  const protocol = /^bigbrain-protocol:\s*(\S+)/im.exec(out)?.[1]
+  return { status: status ?? 0, bytes: bytes ?? 0, protocol }
+}
+
 /** Run a script AS a compromised vault: a transient clone of that vault's real unit file (same
  * User/Group, seccomp address families, capability set, mount namespace and read/write paths,
  * same slice) whose only change is ExecStart; output goes to a root-only file. */
@@ -361,6 +387,26 @@ try {
   check("B's credential is rejected by A (401)", cross.status === 401, `${cross.status}`)
   const unknown = await gateway(randomUUID(), '/v1/whoami', handoffA.token)
   check('unknown vault host never reaches a vault (404)', unknown.status === 404, `${unknown.status}`)
+
+  // ---------------------------------------------------------------- the real public path: Caddy
+  // Regression for owner device links failing with "null is not an object (evaluating
+  // 'result.vault')": the sites were published where the caddy user could not read them, so real
+  // Caddy (reloaded as caddy) answered every vault host with its empty 200 fallback. No credential.
+  check(
+    'the caddy user can read the published vault sites',
+    sh(['/usr/sbin/runuser', '-u', 'caddy', '--', '/bin/ls', '/etc/ficus/bigbrain-caddy']).stdout.includes(`${A}.caddy`)
+  )
+  for (const [label, path, method] of [
+    ['whoami', '/v1/whoami', 'GET'],
+    ['invite redeem', '/v1/invites/redeem', 'POST'],
+  ] as const) {
+    const edge = viaCaddy(A, path, method)
+    check(
+      `real Caddy routes the vault host to the vault (${label}: 401 with the BigBrain protocol, not an empty 200)`,
+      edge.status === 401 && edge.protocol === '1' && edge.bytes > 0,
+      `${edge.status} protocol=${edge.protocol ?? 'none'} bytes=${edge.bytes}`
+    )
+  }
 
   // ---------------------------------------------------------------- attacks from inside vault A
   const sockA = `/run/ficus-bigbrain/vaults/${A}`
