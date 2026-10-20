@@ -143,6 +143,7 @@ async function fixture(options: { storedIdentityForA?: string } = {}) {
     prepareLayout: host.prepareLayout,
     freeBytes: async () => 100 * 1024 ** 3,
     probeReady: async () => true,
+    prepareSocket: async () => {},
     sleep: async () => {},
     // The tmp "mount" is not a loop device: read identity through the same no-follow walk on its real device.
     readUpstreamIdentity: async (record: { receipt: { vaultId: string } }) => {

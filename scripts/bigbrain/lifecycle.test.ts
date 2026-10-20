@@ -150,6 +150,7 @@ async function fixture(options: { loseMint?: boolean } = {}) {
     prepareLayout: host.prepareLayout,
     freeBytes: async () => 100 * 1024 ** 3,
     probeReady: async () => true,
+    prepareSocket: async () => {},
     sleep: async () => {},
     whoami: async (_socket: string, presented: string) => {
       const credential = credentials.find((c) => token(c.id) === presented && c.revoked === null)
