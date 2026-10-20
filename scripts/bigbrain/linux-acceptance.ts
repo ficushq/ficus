@@ -59,8 +59,12 @@ function helper(fields: Record<string, unknown>) {
   const out = sh(['/usr/local/libexec/ficus-bigbrainctl'], JSON.stringify(request))
   try {
     const reply = JSON.parse(out.stdout.trim().split('\n').at(-1) ?? 'null') as Record<string, any>
-    // Control's own fixed stage tokens (no secrets) explain a refusal.
-    if (reply?.ok === false) reply.stderr = out.stderr.trim().split('\n').slice(-3).join(' | ')
+    // Control's own fixed stage tokens and command trail (no secrets) explain a refusal.
+    if (reply?.ok === false)
+      reply.stderr = [
+        out.stderr.trim().split('\n').slice(-3).join(' | '),
+        sh(['/bin/cat', '/run/ficus-bigbrain/control-last-failure']).stdout.trim(),
+      ].join(' || ')
     return reply
   } catch {
     return { ok: false, code: 'unparseable', raw: out.stdout.slice(0, 200), stderr: out.stderr.slice(0, 400) }

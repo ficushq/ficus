@@ -382,7 +382,42 @@ export async function controlMain(args: string[]): Promise<void> {
     } catch {
       throw new Error('invalid_request')
     }
-    reply = await dispatchHostRequest(input)
+    // Operator diagnostics (root-only file): the last commands' fixed verbs and exit codes plus
+    // the failing function names. Never argv values, names, paths or any secret.
+    const trail: string[] = []
+    const run: PrivateCommandRunner = async (argv, options) => {
+      const verb = (value: string | undefined) =>
+        (value ?? '')
+          .split('/')
+          .at(-1)!
+          .replace(/[^\w.-]/g, '')
+          .slice(0, 40)
+      const script = argv.find((a) => a.endsWith('.js'))
+      const label = [
+        verb(argv[0]),
+        verb(argv[1]?.startsWith('-') ? '' : argv[1]),
+        script ? verb(script) : '',
+        script ? verb(argv[argv.indexOf(script) + 1]) : '',
+      ]
+        .filter(Boolean)
+        .join(' ')
+      try {
+        const result = await runPrivateCommand(argv, options)
+        trail.push(`${label}=${result.code}`)
+        return result
+      } catch (error) {
+        trail.push(`${label}=${error instanceof Error ? error.message : 'error'}`)
+        throw error
+      }
+    }
+    reply = await dispatchHostRequest(input, { run })
+    if (!reply.ok) {
+      const { mkdir, writeFile } = await import('node:fs/promises')
+      await mkdir('/run/ficus-bigbrain', { mode: 0o755, recursive: true }).catch(() => {})
+      await writeFile('/run/ficus-bigbrain/control-last-failure', `${reply.code}: ${trail.slice(-8).join(' | ')}\n`, {
+        mode: 0o600,
+      }).catch(() => {})
+    }
   } catch (error) {
     reply = failure('00000000-0000-4000-8000-000000000000', error)
   }
