@@ -42,6 +42,23 @@ describe('memory_search renderer', () => {
   })
 })
 
+describe('write renderer', () => {
+  it('renders long content in full inside the scroll box without truncation', () => {
+    const content = `${'a'.repeat(600)}END_OF_CONTENT`
+    const html = renderToStaticMarkup(
+      <ToolArgsView
+        renderers={agentToolRenderers}
+        toolName="write"
+        args={JSON.stringify({ path: '/tmp/long.txt', content })}
+      />
+    )
+    expect(html).toContain(content)
+    expect(html).not.toContain(`${'a'.repeat(500)}...`)
+    expect(html).toContain('max-h-24 overflow-y-auto')
+    expect(html).toContain('data-follow-scroll')
+  })
+})
+
 describe('ask_human renderer', () => {
   it('uses the shared human-wait treatment for question and success states', () => {
     const args = renderToStaticMarkup(

@@ -403,7 +403,7 @@ const writeRenderer: ToolRenderer = {
               as="pre"
               className="bg-code-bg text-code-text rounded p-1 text-[11px] whitespace-pre-wrap break-all max-h-24 overflow-y-auto"
             >
-              {truncate(content, 500)}
+              {content}
             </ArgsScrollBox>
           </LabeledField>
         )}
