@@ -182,6 +182,12 @@ export interface ManagedBigbrainVault {
   connectionId: string | null
   lastErrorCode: string | null
   retryable: boolean
+  /** The host operation still to run, if any (Core records it; the server applies it shortly). */
+  pendingAction: 'create' | 'rename' | 'read-revoke' | 'read-reconnect' | 'delete' | null
+  /** Whether the most recent server backup included this vault. */
+  backup: 'unknown' | 'included' | 'excluded'
+  /** Squads that lose read access if this vault is deleted. */
+  assignedSquads: { id: string; name: string }[]
   updatedAt: string
 }
 /** SECRET: a single-use owner device link. Keep in component state only; never cache or log. */

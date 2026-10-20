@@ -207,6 +207,11 @@ function VaultRow({
           Last error: {vault.lastErrorCode}
         </p>
       )}
+      {vault.backup === 'excluded' && vault.state !== 'deleted' && (
+        <p className="mt-1 text-xs text-status-attention-700 dark:text-status-attention-300">
+          Last backup did not include this vault.
+        </p>
+      )}
       {(canWrite || vault.isOwner) && vault.state !== 'deleted' && (
         <div className="mt-2 flex flex-wrap gap-2">
           {vault.isOwner && vault.state === 'ready' && (
@@ -313,8 +318,21 @@ function VaultRow({
         >
           <p>
             Deleting removes this vault&apos;s server, data and every member&apos;s access now. Copies inside existing
-            Ficus server backups are not removed by this and follow your backup retention.
+            Ficus server backups are not removed by this and follow your backup retention. Restoring this server from a
+            backup taken before now brings this vault back, with Ficus read access off.
           </p>
+          {vault.assignedSquads.length > 0 ? (
+            <div>
+              <p>These squads lose read access:</p>
+              <ul className="ml-4 list-disc">
+                {vault.assignedSquads.map((squad) => (
+                  <li key={squad.id}>{squad.name}</li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p>No squads currently read this vault.</p>
+          )}
           <label className="flex flex-col gap-1 text-xs font-medium text-primary">
             Type the vault name to confirm
             <input

@@ -36,6 +36,12 @@ const vault = (patch: Partial<ManagedBigbrainVault>): ManagedBigbrainVault => ({
   connectionId: `connection-${RESEARCH}`,
   lastErrorCode: null,
   retryable: false,
+  pendingAction: null,
+  backup: 'included',
+  assignedSquads: [
+    { id: 'squad-research', name: 'Research squad' },
+    { id: 'squad-support', name: 'Customer support squad' },
+  ],
   updatedAt: '2026-10-20T12:00:00.000Z',
   ...patch,
 })
@@ -65,6 +71,8 @@ const scenarios: Record<string, ManagedBigbrainVault[]> = {
       lastErrorCode: 'storage_unavailable',
       retryable: true,
       connectionId: null,
+      backup: 'excluded',
+      assignedSquads: [],
     }),
   ],
 }

@@ -27,16 +27,20 @@ const vault = (patch: Partial<ManagedBigbrainVault>): ManagedBigbrainVault => ({
   connectionId: null,
   lastErrorCode: null,
   retryable: false,
+  pendingAction: null,
+  backup: 'included',
+  assignedSquads: [],
   updatedAt: '2026-10-20T00:00:00.000Z',
   ...patch,
 })
-const research = vault({})
+const research = vault({ assignedSquads: [{ id: 'squad-r', name: 'Research squad' }] })
 const design = vault({
   vaultId: '22222222-2222-4222-8222-222222222222',
   displayName: 'Design',
   isOwner: false,
   state: 'failed',
   retryable: true,
+  backup: 'excluded',
   lastErrorCode: 'storage_unavailable',
 })
 
@@ -144,6 +148,10 @@ describe('ManagedBigbrainIntegrationSettings', () => {
     await render()
     await act(() => fireEvent.click(button('Delete', row('Research'))))
     expect(row('Research').textContent).toContain('existing Ficus server backups are not removed')
+    expect(row('Research').textContent).toContain('Research squad')
+    expect(row('Research').textContent).toContain(
+      'Restoring this server from a backup taken before now brings this vault back'
+    )
     const confirm = row('Research').querySelector<HTMLInputElement>('[role=alert] input')!
     await act(() => fireEvent.input(confirm, { target: { value: 'research' } }))
     expect(button('Delete vault', row('Research')).disabled).toBe(true)
@@ -156,6 +164,12 @@ describe('ManagedBigbrainIntegrationSettings', () => {
       confirmedVaultId: research.vaultId,
       confirmedName: 'Research',
     })
+  })
+
+  test('a vault left out of the last backup says so', async () => {
+    await render()
+    expect(row('Design').textContent).toContain('Last backup did not include this vault')
+    expect(row('Research').textContent).not.toContain('Last backup did not include')
   })
 
   test('without write permission only the owner’s device link remains', async () => {

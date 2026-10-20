@@ -174,7 +174,9 @@ export function registerBigbrainVaultCommands(
 
   vault
     .command('delete <vault>')
-    .description('Delete a shared vault and its current data (existing server backups are not changed)')
+    .description(
+      'Delete a shared vault and its current data. Existing server backups are not changed, and restoring a backup taken before now brings the vault back with read access off'
+    )
     .requiredOption('--name <name>', 'The exact vault name, to confirm')
     .requiredOption('--generation <n>', 'Current vault generation (from list)')
     .action(

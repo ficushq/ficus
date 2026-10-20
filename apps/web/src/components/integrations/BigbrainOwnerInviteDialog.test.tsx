@@ -24,6 +24,9 @@ const vault: ManagedBigbrainVault = {
   connectionId: null,
   lastErrorCode: null,
   retryable: false,
+  pendingAction: null,
+  backup: 'unknown',
+  assignedSquads: [],
   updatedAt: '2026-10-20T00:00:00.000Z',
 }
 
