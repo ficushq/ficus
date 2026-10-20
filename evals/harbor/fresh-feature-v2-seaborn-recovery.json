@@ -1,0 +1,75 @@
+{
+  "original_image_id": "sha256:0f5665a6aed58f5cacc97257e8b82ce98e8401f6abbf41b866ad572df8780458",
+  "recovered_original_image_id": "sha256:0f5665a6aed58f5cacc97257e8b82ce98e8401f6abbf41b866ad572df8780458",
+  "old_agent_image_id": "sha256:a93d906dae0a03c4af1056b60c931340e55c17a37bb7440d7b563a6d3d9c4907",
+  "new_agent_image_id": "sha256:12a27dbcc3eccdbf1b1df20778687afe0c8c4ce60edd4a022880f5ee72cd98a9",
+  "new_agent_image_tag": "ficus-featurebench-sanitized:1f4039c7b9de",
+  "same_preparer_and_original_task_hashes": true,
+  "grader_fixture_files_byte_identical": true,
+  "masked_baseline_equivalence": {
+    "original_masked_commit": "7c73e9396b5941266d62123942938c287a9fbab5",
+    "timestamp": 1792517246,
+    "same_tree_identity_and_message": true
+  },
+  "difference": "Sanitized image was recommitted with a new Git baseline timestamp and image metadata. Same original image ID, same masking/sanitization code, same source tree. Original frozen grader fixtures reused byte-for-byte.",
+  "experiment": "fresh-feature-v2-seaborn-recovery",
+  "controls": [
+    {
+      "control": "baseline",
+      "exit_code": 0,
+      "reward": "0",
+      "reason": null,
+      "elapsed_seconds": 13.26,
+      "test_summaries": ["51 failed, 1 passed, 9 skipped in 2.75s"],
+      "official_input_checks": 2,
+      "import_origin": ["GRADE_IMPORT_ORIGIN /testbed/seaborn/__init__.py"],
+      "output_sha256": "02b1ff223ff131774d147a7e915149b3c035fde20fdc937de1ccf98c6d9bf804"
+    },
+    {
+      "control": "oracle",
+      "exit_code": 0,
+      "reward": "1",
+      "reason": null,
+      "elapsed_seconds": 26.54,
+      "test_summaries": ["52 passed, 9 skipped in 7.64s", "218 passed, 2 skipped in 6.89s"],
+      "official_input_checks": 2,
+      "import_origin": ["GRADE_IMPORT_ORIGIN /testbed/seaborn/__init__.py"],
+      "output_sha256": "6682c47ed2d6ed59d46a1e259ebd452aa7e157b341e86809700d40c3814eb4fc"
+    },
+    {
+      "control": "baseline-collision",
+      "exit_code": 0,
+      "reward": "0",
+      "reason": null,
+      "elapsed_seconds": 12.69,
+      "test_summaries": ["51 failed, 1 passed, 9 skipped in 2.55s"],
+      "official_input_checks": 2,
+      "import_origin": ["GRADE_IMPORT_ORIGIN /testbed/seaborn/__init__.py"],
+      "output_sha256": "b273c6c08945ea8957e1faa681636b6c58e3cd4e2bffea74b0edbc5ff92f54d9"
+    },
+    {
+      "control": "oracle-collision",
+      "exit_code": 0,
+      "reward": "1",
+      "reason": null,
+      "elapsed_seconds": 25.05,
+      "test_summaries": ["52 passed, 9 skipped in 7.59s", "218 passed, 2 skipped in 6.75s"],
+      "official_input_checks": 2,
+      "import_origin": ["GRADE_IMPORT_ORIGIN /testbed/seaborn/__init__.py"],
+      "output_sha256": "fa781e30ae15f76005a9915492ede90504edb08bc8a8f75677e3e23c0b83c41c"
+    }
+  ],
+  "original_manifest_sha256": "a319ef92f79b471537c992e2fcfb1d106fb05e0dbffa97ba5fe8891e1e24d4f6",
+  "preserved_partial_results_sha256": "6aa1098aff298505bacbdb72a15f6eef67149b99dab0d6c9dabab42f1142281b",
+  "remaining_arms": ["ficus-planned", "pi-engineer", "ficus-engineer"],
+  "job_prefix": "fresh-v2-seaborn-recovery-",
+  "original_pi_squad_rerun": false,
+  "failed_startup_preserved": true,
+  "cap_usd": 50,
+  "starting_cumulative_exposure_usd": 23.973944,
+  "postgres_recovered_image": [
+    "pgvector/pgvector@sha256:ac08538c6f8b9904c33c8224c5e5706dbe760aca29db1d096972b4052c22a75d"
+  ],
+  "postgres_caveat": "Original sidecar used pgvector:pg17 without a recorded digest; recovery digest recorded here, original digest equality cannot be independently verified.",
+  "image_anchor": "Idle network-disabled container retains sanitized image during remaining runs; removed afterward."
+}

@@ -148,3 +148,23 @@ reconstruction differences, rerun only infrastructure controls, and resume the
 three arms that have not made model calls. Preserve the startup failure and use
 a distinct recovery job ID. Do not rerun the completed Pi squad or feed its
 failures into later prompts. Only then report the full four-task comparison.
+
+## Seaborn infrastructure recovery
+
+After the user-authorized storage cleanup, the pinned base layers were still
+available in Docker's cache. Rebuilding the unchanged official Dockerfile
+produced the exact original image ID. Sanitization was repeated with the frozen
+preparer. The original masked root commit can be reconstructed from the recovered
+source tree and original timestamp, verifying the same tree, author identity and
+message. The new sanitized image and Git commit have new timestamps/metadata;
+they are not claimed to have the old image ID. All frozen grader files are
+byte-for-byte identical. All four controls reproduce their earlier outcomes.
+
+The three configurations that have not made any model calls resume with distinct
+recovery job/accounting IDs. The completed Pi squad is not rerun, and the
+zero-call Ficus startup failure remains recorded. Model, instructions, workflow,
+Ficus runtime, budget, and resource settings are unchanged. The original
+PostgreSQL sidecar tag was not digest-pinned; its recovered digest is now recorded,
+but original digest equality cannot be independently established. An idle,
+network-disabled container retains the sanitized image while runs are active.
+See [recovery manifest](fresh-feature-v2-seaborn-recovery.json).
