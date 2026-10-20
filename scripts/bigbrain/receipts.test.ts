@@ -72,6 +72,9 @@ test('exact generation/request/body replay resumes recorded phases without dupli
   expect(admitVaultRequest(create, current)).toBe('replay')
   // Transport epoch is separately admitted against current installed root state.
   expect(admitVaultRequest({ ...create, hostEpoch: 2 }, current)).toBe('replay')
+  // Every compatible Core build repackages Ficus source and changes component digest.
+  // Current installed digest admission remains mandatory; it is not a changed vault recipe.
+  expect(admitVaultRequest({ ...create, artifactDigest: `sha256:${'b'.repeat(64)}` }, current)).toBe('replay')
   expect(() => admitVaultRequest({ ...create, displayName: 'Changed' }, current)).toThrow('request_conflict')
   expect(() => admitVaultRequest({ ...create, requestId: id }, current)).toThrow('generation_conflict')
 })

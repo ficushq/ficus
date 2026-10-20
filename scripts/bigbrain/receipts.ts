@@ -77,10 +77,18 @@ function canonical(value: unknown): unknown {
 }
 /** Safe recipe hash, not raw input persistence. Transport epoch is independently admitted
  * against the CURRENT installed host; authorized suspend/resume may advance it during retry.
- * Physical binding remains hashed and cannot silently adopt a replacement/restore host.
+ * Compatible Core packaging also changes artifactDigest: it is separately checked against
+ * the CURRENT installed artifact before this function. Never confuse that transport/install
+ * fence with a new creation recipe (which would strand pending creates after upgrades).
+ * Physical binding, upstream pin and resource/owner/origin intent remain hashed.
  */
 export function hashVaultRequest(input: unknown): string {
-  const { hostEpoch: _, ...recipe } = parsedMutation(input)
+  const { hostEpoch: _, ...request } = parsedMutation(input)
+  let recipe: unknown = request
+  if (request.action === 'create') {
+    const { artifactDigest: _digest, ...intent } = request
+    recipe = intent
+  }
   return `sha256:${createHash('sha256')
     .update(JSON.stringify(canonical(recipe)))
     .digest('hex')}`
