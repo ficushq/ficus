@@ -1,5 +1,5 @@
 {
-  "id": "fe045e89-3128-463b-be36-0e418a063a62",
+  "id": "945209b0-4ce1-463e-bddd-0d1ab3b4def0",
   "prevId": "a12edf96-1caa-4a34-9244-f7046cae2c16",
   "version": "7",
   "dialect": "postgresql",
@@ -12149,6 +12149,18 @@
         "owner_user_id": {
           "name": "owner_user_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner_handle": {
+          "name": "owner_handle",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner_display": {
+          "name": "owner_display",
+          "type": "varchar(120)",
           "primaryKey": false,
           "notNull": true
         },

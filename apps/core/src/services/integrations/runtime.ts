@@ -1,4 +1,5 @@
 import { isManagedBigbrainProvider } from './bigbrain/managed/availability'
+import { createManagedVaultService } from './bigbrain/managed/service'
 import { BigbrainBindings } from './bigbrain/local-bindings'
 import { BigbrainLocalConnections } from './bigbrain/local-connections'
 import { GitHubIdentityAuthorization } from './github/identity-authorization'
@@ -600,6 +601,12 @@ export async function initializeIntegrationDefaults() {
     eventEmitter.emit('integration.projection-invalidated', { squadId, providerKey: 'github' })
   }
 }
+
+/** Human lifecycle for managed shared vaults; its access fence disables (never deletes) the
+ * vault's read connection even while squads still have it assigned. */
+export const managedVaultService = createManagedVaultService({
+  disableConnection: (id, actor) => integrationConnectionService.disable(id, actor, true),
+})
 
 export const integrationRoutesService = Object.assign(integrationConnectionService, {
   localBigbrain: new BigbrainLocalConnections(new BigbrainBindings(), integrationConnectionService),

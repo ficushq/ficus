@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto'
 import { and, eq, isNull, ne, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import {
+  managedBigbrainOwnerSchema,
   managedBigbrainReadHandoffSchema,
   managedBigbrainVaultSummarySchema,
   type ManagedBigbrainState,
@@ -39,6 +40,8 @@ const createRequestSchema = z
     requestId: z.string().uuid(),
     displayName: managedBigbrainVaultSummarySchema.innerType().shape.displayName,
     ownerUserId: z.string().uuid(),
+    ownerHandle: managedBigbrainOwnerSchema.shape.handle,
+    ownerDisplay: managedBigbrainOwnerSchema.shape.display,
     actorUserId: z.string().uuid(),
   })
   .strict()
@@ -47,7 +50,7 @@ export type ManagedVaultCreateRequest = z.infer<typeof createRequestSchema>
 /** The fields that define WHAT was requested: a replay must match them exactly. */
 function requestHash(input: ManagedVaultCreateRequest): string {
   return createHash('sha256')
-    .update(JSON.stringify([input.displayName, input.ownerUserId]))
+    .update(JSON.stringify([input.displayName, input.ownerUserId, input.ownerHandle, input.ownerDisplay]))
     .digest('hex')
 }
 
@@ -82,6 +85,8 @@ export const managedVaultStore = {
         .values({
           id: crypto.randomUUID(),
           ownerUserId: request.ownerUserId,
+          ownerHandle: request.ownerHandle,
+          ownerDisplay: request.ownerDisplay,
           displayName: request.displayName,
           createRequestId: request.requestId,
           createRequestHash: hash,

@@ -3968,6 +3968,10 @@ export const managedBigbrainVaults = pgTable(
     ownerUserId: uuid('owner_user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
+    /** The owner's upstream identity as sent at create. Platform requires it unchanged on every
+     * update, so it is recorded once and never re-derived from a mutable profile. */
+    ownerHandle: varchar('owner_handle', { length: 64 }).notNull(),
+    ownerDisplay: varchar('owner_display', { length: 120 }).notNull(),
     displayName: varchar('display_name', { length: 120 }).notNull(),
     connectionId: uuid('connection_id').references(() => integrationConnections.id, { onDelete: 'set null' }),
     upstreamVaultId: uuid('upstream_vault_id'),

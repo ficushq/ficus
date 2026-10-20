@@ -1,6 +1,8 @@
 CREATE TABLE "managed_bigbrain_vaults" (
 	"id" uuid PRIMARY KEY NOT NULL,
 	"owner_user_id" uuid NOT NULL,
+	"owner_handle" varchar(64) NOT NULL,
+	"owner_display" varchar(120) NOT NULL,
 	"display_name" varchar(120) NOT NULL,
 	"connection_id" uuid,
 	"upstream_vault_id" uuid,

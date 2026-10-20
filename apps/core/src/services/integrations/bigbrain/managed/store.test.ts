@@ -21,6 +21,8 @@ const createInput = (displayName: string, requestId: string, ownerUserId: string
   requestId,
   displayName,
   ownerUserId,
+  ownerHandle: 'ada',
+  ownerDisplay: 'Ada',
   actorUserId: ownerUserId,
 })
 async function code(promise: Promise<unknown>): Promise<string> {

@@ -61,6 +61,8 @@ async function vault(name = `Vault ${crypto.randomUUID()}`) {
     requestId: crypto.randomUUID(),
     displayName: name,
     ownerUserId: user!.id,
+    ownerHandle: 'ada',
+    ownerDisplay: 'Ada',
     actorUserId: user!.id,
   })
   const upstreamVaultId = crypto.randomUUID()
