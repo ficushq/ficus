@@ -13,6 +13,9 @@ const fileNames = [
   'bigbrain-shared',
   'bigbrain-shared-invite',
   'bigbrain-owner-link',
+  'install',
+  'gateway',
+  'preflight',
   'source.tar',
   'ficus-source.tar',
   'upstream-bun.lock',
@@ -162,6 +165,7 @@ export async function buildBigbrainArtifact(options: {
       'HEAD',
       '--',
       'scripts/bigbrain',
+      'scripts/artifact/lib/manifest.ts',
       'packages/shared/src/managed-bigbrain.ts',
     ])
     await checked([
@@ -187,6 +191,18 @@ export async function buildBigbrainArtifact(options: {
       await checked(
         ['bun', 'build', entry, '--compile', '--target=bun-linux-x64', '--outfile', join(staging, binary)],
         source
+      )
+      await chmod(join(staging, binary), 0o755)
+    }
+    // Ficus host entrypoints from the committed tree checked above (clean diff for these paths).
+    for (const [entry, binary] of [
+      ['scripts/bigbrain/install.ts', 'install'],
+      ['scripts/bigbrain/gateway.ts', 'gateway'],
+      ['scripts/bigbrain/preflight.ts', 'preflight'],
+    ] as const) {
+      await checked(
+        ['bun', 'build', entry, '--compile', '--target=bun-linux-x64', '--outfile', join(staging, binary)],
+        ficusRoot
       )
       await chmod(join(staging, binary), 0o755)
     }

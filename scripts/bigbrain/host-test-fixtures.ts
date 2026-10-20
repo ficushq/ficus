@@ -37,3 +37,28 @@ export function reservedVaultFixture(root: string) {
     os: null,
   })
 }
+
+/** Synthetic (non-executable) artifact through the real builder/verifier with a fake toolchain. */
+export async function syntheticArtifact(outDir: string): Promise<string> {
+  const { buildBigbrainArtifact } = await import('./artifact')
+  const { mkdir, writeFile } = await import('node:fs/promises')
+  const { join } = await import('node:path')
+  const manifest = await buildBigbrainArtifact({
+    outDir,
+    bunVersion: '1.4.2',
+    run: async (argv, cwd) => {
+      if (argv[0] === 'bun' && argv.includes('--version')) return { code: 0, stdout: '1.4.2' }
+      if (argv[0] === 'git' && argv.includes('rev-parse'))
+        return { code: 0, stdout: MANAGED_BIGBRAIN_UPSTREAM_COMMIT + '\n' }
+      if (argv[0] === 'git' && argv.includes('archive')) await writeFile(argv[argv.indexOf('--output') + 1]!, 'source')
+      if (argv[0] === 'tar') {
+        await mkdir(join(cwd, 'bin'), { recursive: true })
+        await writeFile(join(cwd, 'LICENSE'), 'AGPL-3.0-only synthetic fixture')
+        await writeFile(join(cwd, 'bun.lock'), 'locked')
+      }
+      if (argv.includes('--compile')) await writeFile(argv[argv.indexOf('--outfile') + 1]!, 'compiled:' + argv[2])
+      return { code: 0, stdout: '' }
+    },
+  })
+  return manifest.digest
+}

@@ -118,6 +118,33 @@ export const managedBigbrainLimitsSchema = z
   })
   .strict()
 export type ManagedBigbrainLimits = z.infer<typeof managedBigbrainLimitsSchema>
+/** The one admission policy: the host installer records it and Platform sends it on create. */
+export const MANAGED_BIGBRAIN_DEFAULT_LIMITS: Readonly<ManagedBigbrainLimits> = Object.freeze({
+  maxVaults: MANAGED_BIGBRAIN_MAX_VAULTS,
+  perVaultDiskBytes: 512 * 1024 * 1024,
+  perVaultMemoryBytes: 256 * 1024 * 1024,
+  aggregateMemoryBytes: 640 * 1024 * 1024,
+  aggregateCpuPercent: 50,
+  minCoreFreeDiskBytes: 2 * 1024 * 1024 * 1024,
+  perVaultRequests: 2,
+  aggregateRequests: 4,
+  requestBytes: 1024 * 1024 + 64 * 1024,
+  nativeResponseBytes: 16 * 1024 * 1024,
+  toolResponseBytes: 512 * 1024,
+  requestTimeoutMs: 15000,
+})
+/** Setup-toolkit `bigbrain:` section (YAML snake_case keys enabled/tenant_id/physical_host_binding/
+ * host_epoch/zone, passed to the installer as this camelCase JSON). Default off. Identity is
+ * Platform-generated and persisted before install; hostEpoch only seeds an ABSENT host record.
+ * No paths, limits or artifact choices are configurable.
+ */
+export const managedBigbrainHostConfigSchema = z.discriminatedUnion('enabled', [
+  z.object({ enabled: z.literal(false) }).strict(),
+  z
+    .object({ enabled: z.literal(true), tenantId: uuid, physicalHostBinding: uuid, hostEpoch: uint, zone: zoneSchema })
+    .strict(),
+])
+export type ManagedBigbrainHostConfig = z.infer<typeof managedBigbrainHostConfigSchema>
 
 export const managedBigbrainCapabilitiesSchema = z
   .object({

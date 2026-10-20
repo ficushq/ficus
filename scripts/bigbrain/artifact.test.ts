@@ -40,12 +40,18 @@ test('packages pinned upstream plus minimal native owner-link shim and both corr
     'bigbrain-shared',
     'bigbrain-shared-invite',
     'ficus-source.tar',
+    'gateway',
+    'install',
+    'preflight',
     'source.tar',
     'upstream-bun.lock',
   ])
   expect(f.calls).toContainEqual(['bun', 'install', '--frozen-lockfile', '--ignore-scripts'])
   const compiles = f.calls.filter((argv) => argv.includes('--compile'))
-  expect(compiles).toHaveLength(3)
+  expect(compiles).toHaveLength(6)
+  // Ficus host entrypoints compile from the committed Ficus tree, never the upstream checkout.
+  for (const entry of ['scripts/bigbrain/install.ts', 'scripts/bigbrain/gateway.ts', 'scripts/bigbrain/preflight.ts'])
+    expect(compiles.some((argv) => argv[2] === entry)).toBe(true)
   expect(manifest.ficusCommit).toMatch(/^[a-f0-9]{40}$/)
   expect(f.calls.filter((argv) => argv.includes('archive'))).toHaveLength(2)
   expect(compiles.every((argv) => argv.includes('--target=bun-linux-x64'))).toBe(true)

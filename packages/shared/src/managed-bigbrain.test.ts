@@ -435,3 +435,34 @@ describe('managed BigBrain v1 wire contract', () => {
     expect(contract.managedBigbrainRestoreGrantsMatch(archive, [grant], other)).toBe(false)
   })
 })
+
+describe('managed BigBrain host installation config', () => {
+  const enabled = {
+    enabled: true,
+    tenantId: '11111111-1111-4111-8111-111111111111',
+    physicalHostBinding: '33333333-3333-4333-8333-333333333333',
+    hostEpoch: 0,
+    zone: 'bigbrain.example.com',
+  }
+  test('default limits are the single shared admission policy', () => {
+    expect(contract.managedBigbrainLimitsSchema.parse(contract.MANAGED_BIGBRAIN_DEFAULT_LIMITS)).toEqual(
+      contract.MANAGED_BIGBRAIN_DEFAULT_LIMITS
+    )
+    expect(contract.MANAGED_BIGBRAIN_DEFAULT_LIMITS.maxVaults).toBe(contract.MANAGED_BIGBRAIN_MAX_VAULTS)
+    expect(Object.isFrozen(contract.MANAGED_BIGBRAIN_DEFAULT_LIMITS)).toBe(true)
+  })
+  test('disabled carries no identity; enabled requires the full canonical binding and safe zone', () => {
+    expect(contract.managedBigbrainHostConfigSchema.parse({ enabled: false })).toEqual({ enabled: false })
+    expect(contract.managedBigbrainHostConfigSchema.parse(enabled)).toEqual(enabled)
+    for (const bad of [
+      { enabled: false, tenantId: enabled.tenantId },
+      { ...enabled, physicalHostBinding: undefined },
+      { ...enabled, zone: 'Example.com' },
+      { ...enabled, zone: 'example.com:443' },
+      { ...enabled, hostEpoch: -1 },
+      { ...enabled, limits: contract.MANAGED_BIGBRAIN_DEFAULT_LIMITS },
+      { ...enabled, artifactPath: '/tmp/x' },
+    ])
+      expect(contract.managedBigbrainHostConfigSchema.safeParse(bad).success).toBe(false)
+  })
+})
