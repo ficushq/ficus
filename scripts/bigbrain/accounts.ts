@@ -59,6 +59,18 @@ async function groupFor(username: string, run: PrivateCommandRunner): Promise<nu
   if (JSON.stringify(numeric) !== JSON.stringify(fields)) throw new Error('identity_mismatch')
   return Number(fields[2])
 }
+/** Inspection for recovery/delete: absence never causes resource creation. */
+export async function inspectManagedIdentity(
+  key: ManagedIdentityKey,
+  run: PrivateCommandRunner = runPrivateCommand
+): Promise<ManagedIdentity | null> {
+  const names = managedIdentityNames(key)
+  const user = await userFor(key, run)
+  const group = await groupFor(names.username, run)
+  if (user ? group !== user.gid : group !== null) throw new Error('identity_mismatch')
+  return user
+}
+
 /** Root controller lock required. Full GECOS marker fences collisions/incarnations; an
  * unknown preexisting account/group is never adopted solely because its short name matches.
  * No home/mail spool/lastlog allocation outside the bounded managed filesystems.

@@ -3,7 +3,15 @@ import { chmod, link, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { readPrivateJson, writePrivateJson, readPublicJson, writePublicJson, writePublicText } from './secure-files'
+import {
+  readPrivateJson,
+  writePrivateJson,
+  readPublicJson,
+  writePublicJson,
+  writePublicText,
+  ensureOwnedDirectory,
+  openPrivateFile,
+} from './secure-files'
 const roots: string[] = []
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
@@ -15,6 +23,20 @@ async function fixture() {
   roots.push(root)
   return root
 }
+
+test('creates only a verified direct owned child, never chmods/adopts existing foreign permissions or follows ancestor links', async () => {
+  const root = await fixture()
+  const child = join(root, 'state')
+  await ensureOwnedDirectory(child, 0o711, { uid })
+  await ensureOwnedDirectory(child, 0o711, { uid })
+  expect((await stat(child)).mode & 0o777).toBe(0o711)
+  await expect(ensureOwnedDirectory(child, 0o700, { uid })).rejects.toThrow('storage_unavailable')
+  await symlink(child, join(root, 'alias'))
+  await expect(ensureOwnedDirectory(join(root, 'alias', 'escape'), 0o700, { uid })).rejects.toThrow(
+    'storage_unavailable'
+  )
+  await expect(stat(join(child, 'escape'))).rejects.toThrow()
+})
 
 test('atomically persists private validated JSON with fsynced 0600 files', async () => {
   const root = await fixture()
@@ -66,6 +88,21 @@ test('rejects symlinked ancestors/files, hard links, nonprivate directories and 
   await chmod(root, 0o777)
   await expect(readPrivateJson(root, 'receipt.json', schema, { uid })).rejects.toThrow('storage_unavailable')
 })
+test('pins a raw private image descriptor without JSON/full-file allocation and rejects symlink/hardlink substitution', async () => {
+  const root = await fixture()
+  await writeFile(join(root, 'volume.img'), 'image-marker', { mode: 0o600 })
+  const file = await openPrivateFile(root, 'volume.img', { uid })
+  try {
+    expect((await file.stat()).isFile()).toBe(true)
+  } finally {
+    await file.close()
+  }
+  await link(join(root, 'volume.img'), join(root, 'linked.img'))
+  await expect(openPrivateFile(root, 'volume.img', { uid })).rejects.toThrow('storage_unavailable')
+  await symlink(join(root, 'volume.img'), join(root, 'alias.img'))
+  await expect(openPrivateFile(root, 'alias.img', { uid })).rejects.toThrow('storage_unavailable')
+})
+
 test('bounds file reads and never exposes parsed input through error messages', async () => {
   const root = await fixture()
   for (const data of ['{"phase":"PRIVATE"}', ' '.repeat(16385), 'not JSON PRIVATE']) {

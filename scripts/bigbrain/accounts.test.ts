@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { ensureManagedIdentity, removeManagedIdentity, managedIdentityNames } from './accounts'
+import { ensureManagedIdentity, removeManagedIdentity, managedIdentityNames, inspectManagedIdentity } from './accounts'
 import type { PrivateCommandRunner } from './process'
 const key = {
   tenantId: '11111111-1111-4111-8111-111111111111',
@@ -71,6 +71,14 @@ test('truncated-name collision, foreign binding marker and unowned group never p
   await expect(ensureManagedIdentity(key, partial.run)).rejects.toThrow('identity_mismatch')
   expect(partial.calls.some((c) => c[0] === '/usr/sbin/useradd')).toBe(false)
 })
+test('read-only identity inspection never creates an account during partial-create cleanup', async () => {
+  const f = fixture()
+  expect(await inspectManagedIdentity(key, f.run)).toBeNull()
+  expect(f.calls.some((c) => c[0] === '/usr/sbin/useradd')).toBe(false)
+  await ensureManagedIdentity(key, f.run)
+  expect(await inspectManagedIdentity(key, f.run)).toEqual({ uid: 1200, gid: 1201 })
+})
+
 test('deletion never kills by UID, refuses live/foreign identity, and tolerates repeated exact cleanup', async () => {
   const f = fixture()
   await ensureManagedIdentity(key, f.run)

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { constants as C } from 'node:fs'
-import { lstat, open, rename, unlink, type FileHandle } from 'node:fs/promises'
-import { isAbsolute, resolve } from 'node:path'
+import { lstat, open, rename, unlink, mkdir, type FileHandle } from 'node:fs/promises'
+import { isAbsolute, resolve, dirname, basename } from 'node:path'
 import type { z } from 'zod'
 
 const DIRECTORY_FLAGS = C.O_RDONLY | C.O_DIRECTORY | C.O_NOFOLLOW | C.O_NONBLOCK
@@ -39,6 +39,75 @@ function checkedBudget(value: number): void {
   if (!Number.isSafeInteger(value) || value < 1 || value > 16384) throw new Error()
 }
 
+/** Create one direct child beneath a held, fully checked parent. Existing directories
+ * must already match; never repair/chmod a foreign path or recurse through symlinks.
+ */
+export async function ensureOwnedDirectory(
+  path: string,
+  mode: 0o700 | 0o711 | 0o750 | 0o755,
+  options: Pick<Options, 'uid'> = {}
+): Promise<void> {
+  let parent: FileHandle | undefined
+  let child: FileHandle | undefined
+  try {
+    if (![0o700, 0o711, 0o750, 0o755].includes(mode) || !isAbsolute(path) || resolve(path) !== path) throw new Error()
+    const uid = options.uid ?? 0
+    const name = basename(path)
+    checkedName(name)
+    parent = await openPrivateDirectory(dirname(path), uid, false)
+    const target = `/proc/self/fd/${parent.fd}/${name}`
+    let created = false
+    try {
+      await mkdir(target, { mode: 0o700 })
+      created = true
+    } catch (error) {
+      if (!(error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST')) throw error
+    }
+    child = await open(target, DIRECTORY_FLAGS)
+    const info = await child.stat()
+    if (info.uid !== uid || (!created && (info.mode & 0o777) !== mode)) throw new Error()
+    if (created) {
+      await child.chmod(mode)
+      await child.sync()
+      await parent.sync()
+    }
+  } catch {
+    throw new Error('storage_unavailable')
+  } finally {
+    await child?.close().catch(() => {})
+    await parent?.close().catch(() => {})
+  }
+}
+
+/** Pins a large root-private image without loading it; caller MUST close and bound reads.
+ * All ancestors and final type/owner/mode/link count are checked before returning the FD.
+ */
+export async function openPrivateFile(
+  directory: string,
+  name: string,
+  options: Pick<Options, 'uid'> = {}
+): Promise<FileHandle> {
+  return openOwnedFile(directory, name, options.uid ?? 0, true)
+}
+async function openOwnedFile(directory: string, name: string, uid: number, privateFile: boolean): Promise<FileHandle> {
+  let dir: FileHandle | undefined
+  let file: FileHandle | undefined
+  try {
+    checkedName(name)
+    dir = await openPrivateDirectory(directory, uid, privateFile)
+    file = await open(`/proc/self/fd/${dir.fd}/${name}`, FILE_FLAGS)
+    const info = await file.stat()
+    if (!info.isFile() || info.nlink !== 1 || info.uid !== uid || (info.mode & 0o777) !== (privateFile ? 0o600 : 0o644))
+      throw new Error()
+    return file
+  } catch {
+    await file?.close().catch(() => {})
+    throw new Error('storage_unavailable')
+  } finally {
+    await dir?.close().catch(() => {})
+  }
+}
+
 export async function readPrivateJson<T>(
   directory: string,
   name: string,
@@ -66,24 +135,13 @@ async function readOwnedJson<T>(
   options: Options,
   privateFile: boolean
 ): Promise<T> {
-  let dir: FileHandle | undefined
   let file: FileHandle | undefined
   try {
-    checkedName(name)
-    const uid = options.uid ?? 0
     const maxBytes = options.maxBytes ?? 16384
     checkedBudget(maxBytes)
-    dir = await openPrivateDirectory(directory, uid, privateFile)
-    file = await open(`/proc/self/fd/${dir.fd}/${name}`, FILE_FLAGS)
+    file = await openOwnedFile(directory, name, options.uid ?? 0, privateFile)
     const info = await file.stat()
-    if (
-      !info.isFile() ||
-      info.nlink !== 1 ||
-      info.uid !== uid ||
-      (info.mode & 0o777) !== (privateFile ? 0o600 : 0o644) ||
-      info.size > maxBytes
-    )
-      throw new Error()
+    if (info.size > maxBytes) throw new Error()
     const buffer = Buffer.alloc(maxBytes + 1)
     let offset = 0
     while (offset < buffer.length) {
@@ -98,7 +156,6 @@ async function readOwnedJson<T>(
     throw new Error('storage_unavailable')
   } finally {
     await file?.close().catch(() => {})
-    await dir?.close().catch(() => {})
   }
 }
 
