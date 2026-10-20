@@ -40,7 +40,8 @@ LockPersonality=yes
 RestrictAddressFamilies=AF_UNIX
 IPAddressDeny=any
 SocketBindDeny=any
-ReadWritePaths=/run/ficus-bigbrain/gateway
+# "-": the root preflight creates it in this same start; absent means no socket (fails closed).
+ReadWritePaths=-/run/ficus-bigbrain/gateway
 TemporaryFileSystem=/etc/ficus:ro
 # Bind the public directory, not the route inode: root publishes with atomic rename.
 BindReadOnlyPaths=/etc/ficus/bigbrain/public
