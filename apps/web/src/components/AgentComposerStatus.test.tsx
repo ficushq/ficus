@@ -19,17 +19,18 @@ test('a small ring with the percentage; no cost, and no words for a plain runnin
       onReset={() => undefined}
     />
   )
-  expect(html).toContain('aria-label="Context 25.4% used"')
+  expect(html).toContain('aria-label="Context 25% used"')
   expect(html).toContain('<circle')
-  expect(html).toContain('>25.4%<')
+  expect(html).toContain('>25%<')
+  expect(html).toContain('title="Context 25.4% used · 254.0k of 1.0M tokens"')
   expect(html).not.toContain('$')
   expect(html).not.toContain('role="status"')
 })
 
-test('one agent step on a 1M-token window changes the label (whole percents hid it)', () => {
+test('the label beside the ring is a whole percent; the tooltip keeps the decimal and the tokens', () => {
   // Two consecutive persisted messages of a live turn, as captured from a running agent.
-  const label = (percent: number, tokens: number) =>
-    renderToStaticMarkup(
+  const render = (percent: number, tokens: number) => {
+    const html = renderToStaticMarkup(
       <AgentComposerStatus
         status="running"
         context={{ percent, tokens, contextWindow: 1_000_000 }}
@@ -37,9 +38,25 @@ test('one agent step on a 1M-token window changes the label (whole percents hid 
         onCompact={() => undefined}
         onReset={() => undefined}
       />
-    ).match(/aria-label="(Context [^"]+)"/)?.[1]
-  expect(label(7.1679, 71_679)).toBe('Context 7.2% used')
-  expect(label(7.2606, 72_606)).toBe('Context 7.3% used')
+    )
+    return {
+      label: html.match(/aria-label="(Context [^"]+)"/)?.[1],
+      text: html.match(/<\/svg><span>([^<]*)<\/span>/)?.[1],
+      title: html.match(/title="(Context [^"]+)"/)?.[1],
+    }
+  }
+  expect(render(7.1679, 71_679)).toEqual({
+    label: 'Context 7% used',
+    text: '7%',
+    title: 'Context 7.2% used · 71.7k of 1.0M tokens',
+  })
+  expect(render(7.2606, 72_606)).toEqual({
+    label: 'Context 7% used',
+    text: '7%',
+    title: 'Context 7.3% used · 72.6k of 1.0M tokens',
+  })
+  // Rounds rather than truncates, so the label agrees with the tooltip's decimal.
+  expect(render(7.5, 75_000).text).toBe('8%')
 })
 
 test('the ring opens the numbers and the session actions, offered only when the agent is idle', async () => {
@@ -59,7 +76,7 @@ test('the ring opens the numbers and the session actions, offered only when the 
     )
   const open = async () => {
     await dom!.act(async () =>
-      container.querySelector<HTMLButtonElement>('button[aria-label="Context 62.0% used"]')!.click()
+      container.querySelector<HTMLButtonElement>('button[aria-label="Context 62% used"]')!.click()
     )
     await dom!.act(async () => {
       await new Promise((resolve) => dom!.window.requestAnimationFrame(resolve))

@@ -12,7 +12,7 @@ import { QueryInvalidator } from './QueryInvalidator'
 /**
  * The composer's context ring, end to end in the browser: a running turn's
  * `agent.updated` frame (Core sends one after every persisted message) must
- * refetch the agent and visibly move the ring's label, with no reload.
+ * refetch the agent and visibly move the ring's readout, with no reload.
  *
  * The usage figures are from a live agent mid-turn: one step on its 1M-token
  * window moved the context from 71,679 to 72,606 tokens (7.17% to 7.26%), while
@@ -51,8 +51,9 @@ describe('AgentConversation context ring', () => {
     return () => captured.delete(topic)
   }
   const usePermissions = () => ({ permissions: [], can: () => true, isLoading: false, isError: false })
-  const ringLabel = () =>
-    dom.window.document.querySelector('button[aria-label^="Context "]')?.getAttribute('aria-label') ?? null
+  const ring = () => dom.window.document.querySelector('button[aria-label^="Context "]')
+  // The tooltip carries the decimal, so it is what moves on a single step of a 1M-token window.
+  const ringTitle = () => ring()?.getAttribute('title') ?? null
 
   beforeEach(async () => {
     dom = await acquireDomHarness({ url: 'http://localhost/' })
@@ -89,7 +90,7 @@ describe('AgentConversation context ring', () => {
       )
     })
     await dom.act(async () => {
-      await waitFor(() => expect(ringLabel()).toBe('Context 7.2% used'))
+      await waitFor(() => expect(ringTitle()).toBe('Context 7.2% used · 71.7k of 1.0M tokens'))
     })
     const fetchesBefore = agentFetches
 
@@ -99,13 +100,13 @@ describe('AgentConversation context ring', () => {
       captured.get('agents')!({ event: 'agent.updated', data: { agentId: 'agent-a', squadId: 'squad-a' } })
     })
     await dom.act(async () => {
-      await waitFor(() => expect(ringLabel()).toBe('Context 7.3% used'))
+      // The numbers behind the ring are the context's own, consistent with the percentage,
+      // never the session's cumulative usage (1.2M here, more than the window holds).
+      await waitFor(() => expect(ringTitle()).toBe('Context 7.3% used · 72.6k of 1.0M tokens'))
     })
     expect(agentFetches).toBeGreaterThan(fetchesBefore)
-
-    // The numbers behind the ring are the context's own, consistent with the percentage,
-    // never the session's cumulative usage (1.2M here, more than the window holds).
-    const title = dom.window.document.querySelector('button[aria-label^="Context "]')?.getAttribute('title')
-    expect(title).toBe('Context 7.3% used · 72.6k of 1.0M tokens')
+    // The compact label beside the ring stays a whole percent.
+    expect(ring()?.getAttribute('aria-label')).toBe('Context 7% used')
+    expect(ring()?.textContent).toBe('7%')
   })
 })

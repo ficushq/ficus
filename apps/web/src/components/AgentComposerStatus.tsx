@@ -70,9 +70,11 @@ export function AgentComposerStatus({
 }) {
   const [confirmReset, setConfirmReset] = useState(false)
   const label = status ? STATUS_LABEL[status] : undefined
-  const percent = context ? formatContextPercent(context.percent) : ''
+  // The label beside the ring stays compact (whole percents); the tooltip and the
+  // popup's heading carry the precise figure and the tokens behind it.
+  const percent = context ? `${Math.round(context.percent)}%` : ''
   const summary = context
-    ? `Context ${percent} used · ${formatTokens(context.tokens)} of ${formatTokens(context.contextWindow)} tokens`
+    ? `Context ${formatContextPercent(context.percent)} used · ${formatTokens(context.tokens)} of ${formatTokens(context.contextWindow)} tokens`
     : ''
 
   return (
