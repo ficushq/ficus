@@ -73,7 +73,7 @@ export async function deleteVaultResources(
     const code = (await run(['/usr/bin/systemctl', 'stop', unit], { timeoutMs: 45000 })).code
     if (code !== 0 && code !== 5) throw new Error('operation_failed')
   }
-  const mountinfo = await (options.mountinfo ?? (() => readFile('/proc/self/mountinfo', 'utf8')))()
+  const mountinfo = await (options.mountinfo ?? (() => readFile('/proc/1/mountinfo', 'utf8')))()
   if (mountinfo.split('\n').some((line) => line.split(' ')[4] === paths.mount)) throw new Error('busy')
 
   const journal = (await present(join(paths.control, 'image.json')))

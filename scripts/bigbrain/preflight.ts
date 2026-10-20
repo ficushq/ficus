@@ -315,7 +315,7 @@ export async function verifyRecordedVaultStorage(
     throw new Error('storage_unavailable')
   verifyVaultMount(
     { mount: paths.mount, device: os.mountDevice, filesystem: 'ext4' },
-    await (options.mountinfo ?? (() => readFile('/proc/self/mountinfo', 'utf8')))()
+    await (options.mountinfo ?? (() => readFile('/proc/1/mountinfo', 'utf8')))()
   )
   const loop = await (options.run ?? runPrivateCommand)([
     '/usr/sbin/losetup',

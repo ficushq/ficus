@@ -21,6 +21,7 @@ import { reconcileMaintenance, releaseManagedBackup, stageManagedBackup } from '
 import { deleteVaultResources, type DeleteOptions } from './delete'
 import { readStagedArchive } from './restore'
 import { publishIngress } from './ingress'
+import { drainStages } from './diagnostics'
 import { executeRestore, type RestoreDeps } from './restore-exec'
 import { createVault, ownerInvite, reconnectRead, renameVault, revokeRead, type LifecycleDeps } from './lifecycle'
 
@@ -416,7 +417,7 @@ export async function controlMain(args: string[]): Promise<void> {
       // The control unit's only writable state is /etc and /var/lib/ficus-bigbrain (root-only).
       await writeFile(
         '/var/lib/ficus-bigbrain/control/last-failure',
-        `${reply.code}: ${trail.slice(-8).join(' | ')}\n`,
+        `${reply.code}: ${trail.slice(-8).join(' | ')} :: ${drainStages().join(' > ')}\n`,
         {
           mode: 0o600,
         }

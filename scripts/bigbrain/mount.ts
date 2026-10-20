@@ -2,6 +2,7 @@ import { constants as C } from 'node:fs'
 import { mkdir, open, readFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { managedPaths } from './paths'
+import { noteStage, refuse } from './diagnostics'
 import { type ControlReceipt } from './receipts'
 import { imageJournalSchema } from './volume-image'
 import { installVaultUnitAssets } from './unit-assets'
@@ -80,7 +81,7 @@ export async function mountPreparedVolume(
 ): Promise<NonNullable<ControlReceipt['os']>> {
   const paths = managedPaths({ vaultId: record.receipt.vaultId, root: options.root })
   const journal = await readPrivateJson(paths.control, 'image.json', imageJournalSchema, options)
-  if (!journal.image || !journal.identity || !journal.formatted) throw new Error('storage_unavailable')
+  if (!journal.image || !journal.identity || !journal.formatted) refuse('storage_unavailable', 'mount_image_unprepared')
   // Asset installer verifies persisted current receipt, complete physical binding, storage
   // recipe and old/new unit hashes before any systemd operation can begin.
   const units = await installVaultUnitAssets(record, options)
@@ -93,12 +94,13 @@ export async function mountPreparedVolume(
       info.size !== record.storage.diskBytes ||
       info.blocks * 512 < record.storage.diskBytes
     )
-      throw new Error('storage_unavailable')
+      refuse('storage_unavailable', 'mount_image_changed')
   } finally {
     await raw.close()
   }
   const run = options.run ?? runPrivateCommand
-  const mountinfo = options.mountinfo ?? (() => readFile('/proc/self/mountinfo', 'utf8'))
+  // The HOST mount table (PID 1): the control worker runs in a private mount namespace.
+  const mountinfo = options.mountinfo ?? (() => readFile('/proc/1/mountinfo', 'utf8'))
   let fields = mountFields(paths.mount, await mountinfo())
   if (!fields) {
     await ensureOwnedDirectory(paths.mount, 0o700, options)
@@ -130,8 +132,10 @@ export async function mountPreparedVolume(
     fields = mountFields(paths.mount, await mountinfo())
   }
   const device = fields?.[2]
-  if (!device || !/^7:\d+$/.test(device)) throw new Error('storage_unavailable')
+  if (!device || !/^7:\d+$/.test(device)) refuse('storage_unavailable', device ? 'mount_not_loop' : 'mount_not_visible')
+  noteStage('mount_visible')
   verifyVaultMount({ mount: paths.mount, device, filesystem: 'ext4' }, await mountinfo())
+  noteStage('mount_verified')
   const loop = await run([
     '/usr/sbin/losetup',
     '--list',
@@ -140,7 +144,7 @@ export async function mountPreparedVolume(
     'NAME,BACK-FILE,BACK-INO,BACK-MAJ:MIN',
     `/dev/loop${device.slice(2)}`,
   ])
-  if (loop.code !== 0) throw new Error('storage_unavailable')
+  if (loop.code !== 0) refuse('storage_unavailable', 'loop_list_failed')
   let loopValue: unknown
   try {
     loopValue = JSON.parse(loop.stdout)
@@ -151,6 +155,7 @@ export async function mountPreparedVolume(
     { device, image: paths.image, inode: journal.image.inode, imageDevice: journal.image.device },
     loopValue
   )
+  noteStage('loop_verified')
   await (
     options.prepareLayout ?? ((path, identity, expected) => prepareLayout(path, identity, expected, options.uid ?? 0))
   )(paths.mount, journal.identity, device)
