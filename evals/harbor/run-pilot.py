@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import tomllib
 from pathlib import Path
 
 parser = argparse.ArgumentParser()
@@ -16,8 +17,19 @@ parser.add_argument("--client", help="Proxy client label; defaults to harness-ta
 parser.add_argument("--runtime-archive", type=Path)
 parser.add_argument("--jobs-dir", type=Path, required=True)
 parser.add_argument("--job-name", required=True)
+parser.add_argument(
+    "--restricted-network",
+    action="store_true",
+    help="Keep task network restrictions; allow only the local inference proxy host and use a loopback Ficus DB",
+)
 args = parser.parse_args()
 access = json.loads(args.access.read_text())
+if args.restricted_network:
+    config = tomllib.loads((args.task / "task.toml").read_text())
+    if config.get("agent", {}).get("network_mode") != "no-network":
+        parser.error("Restricted mode requires an explicit no-network agent policy")
+    if config.get("verifier", {}).get("environment_mode") != "separate":
+        parser.error("Restricted mode requires a separate pristine verifier")
 # Start Harbor with a small environment, not unrelated host provider credentials.
 env = {
     key: os.environ[key]
@@ -38,9 +50,12 @@ env.update(
         ],
         "OPENAI_BASE_URL": f"http://host.docker.internal:{access['port']}/v1",
         "PYTHONPATH": str(Path(__file__).resolve().parent),
-        "DOCKER_DEFAULT_PLATFORM": "linux/amd64",
     }
 )
+if not args.restricted_network:
+    env["DOCKER_DEFAULT_PLATFORM"] = "linux/amd64"
+# Restricted tasks use each image's architecture: task amd64, native egress
+# sidecar. Globally forcing amd64 breaks Harbor's native sidecar on Apple Silicon.
 command = [
     "harbor",
     "run",
@@ -57,6 +72,8 @@ command = [
     "--job-name",
     args.job_name,
 ]
+if args.restricted_network:
+    command += ["--allow-agent-host", "host.docker.internal"]
 if args.harness == "ficus":
     if args.runtime_archive is None:
         parser.error("Ficus requires --runtime-archive")
@@ -70,6 +87,8 @@ if args.harness == "ficus":
         "--ak",
         "model_api=" + access.get("model_api", "openai-completions"),
     ]
+    if args.restricted_network:
+        command += ["--ak", "database_network=task"]
 else:
     if args.workflow == "reviewed":
         parser.error("Use engineer or planned for the Pi baseline")

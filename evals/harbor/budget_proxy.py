@@ -38,7 +38,7 @@ class SpendCapReached(ValueError):
 
 
 class Budget:
-    def __init__(self, path, cap_usd=10, model=MODEL):
+    def __init__(self, path, cap_usd=10, model=MODEL, client_caps=None):
         if model not in (MODEL, FULL_MODEL, SOL_MODEL):
             raise ValueError("Unsupported pilot model")
         self.model = model
@@ -52,6 +52,18 @@ class Budget:
         )
         self.path = str(path)
         self.cap = round(cap_usd * 1_000_000)
+        self.client_caps = {}
+        for client, cap in (client_caps or {}).items():
+            if (
+                not isinstance(client, str)
+                or not client
+                or not math.isfinite(cap)
+                or cap <= 0
+            ):
+                raise ValueError(
+                    "Client caps require a nonempty label and positive finite USD limit"
+                )
+            self.client_caps[client] = round(cap * 1_000_000)
         self.lock = threading.Lock()
         with sqlite3.connect(self.path) as db:
             db.execute(
@@ -79,6 +91,13 @@ class Budget:
             total = self.exposure(db)
             if total + self.reservation > self.cap:
                 raise SpendCapReached("Pilot spend cap reached")
+            if client in self.client_caps:
+                client_total = db.execute(
+                    "SELECT coalesce(sum(charge),0) FROM calls WHERE client=?",
+                    (client,),
+                ).fetchone()[0]
+                if client_total + self.reservation > self.client_caps[client]:
+                    raise SpendCapReached("Trial spend cap reached")
             return db.execute(
                 "INSERT INTO calls(client,charge,model) VALUES(?,?,?)",
                 (client, self.reservation, self.model),
@@ -391,13 +410,13 @@ def handler(budget, tokens, api_key):
                         retry_after=delay,
                     )
                 identifier = budget.reserve(client)
-            except SpendCapReached:
+            except SpendCapReached as error:
                 return self.reply(
                     403,
                     {
                         "error": {
                             "code": "pilot_budget_exhausted",
-                            "message": "Cumulative pilot spend cap reached",
+                            "message": str(error),
                         }
                     },
                 )
@@ -512,13 +531,32 @@ def main():
     )
     parser.add_argument("--cap-usd", type=float, default=10)
     parser.add_argument("--client", action="append", required=True)
+    parser.add_argument(
+        "--client-cap-usd",
+        type=float,
+        help="Equal cap for each listed client, including all roles and unknown-usage reservations",
+    )
     args = parser.parse_args()
     if not 0 < args.cap_usd <= 50:
         parser.error("Pilot cap must be between $0 and $50")
+    if args.client_cap_usd is not None and (
+        not math.isfinite(args.client_cap_usd)
+        or not 0 < args.client_cap_usd <= args.cap_usd
+    ):
+        parser.error(
+            "Client cap must be positive and no greater than the cumulative cap"
+        )
     args.state.mkdir(mode=0o700, parents=True, exist_ok=True)
     api_key = os.environ.pop("OPENAI_API_KEY")
     tokens = {secrets.token_urlsafe(32): client for client in args.client}
-    budget = Budget(args.state / "spend.sqlite", args.cap_usd, args.model)
+    budget = Budget(
+        args.state / "spend.sqlite",
+        args.cap_usd,
+        args.model,
+        client_caps={client: args.client_cap_usd for client in args.client}
+        if args.client_cap_usd is not None
+        else None,
+    )
     server = ThreadingHTTPServer(
         ("0.0.0.0", args.port), handler(budget, tokens, api_key)
     )
@@ -528,6 +566,7 @@ def main():
         json.dumps(
             {
                 "port": server.server_port,
+                "client_cap_usd": args.client_cap_usd,
                 "model": args.model,
                 "model_api": "openai-responses"
                 if args.model == SOL_MODEL

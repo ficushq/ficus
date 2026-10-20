@@ -95,6 +95,7 @@ class FicusSquad(BaseAgent):
         runtime_archive=None,
         model_api="openai-completions",
         workflow="reviewed",
+        database_network="private",
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -107,6 +108,9 @@ class FicusSquad(BaseAgent):
         self.model_api = model_api
         if workflow not in {"engineer", "reviewed", "planned"}:
             raise ValueError("Unsupported trial workflow")
+        if database_network not in {"private", "task"}:
+            raise ValueError("database_network must be private or task")
+        self.database_network = database_network
         self.workflow = workflow
         self.archive = Path(runtime_archive).resolve(strict=True)
         self.network = "ficus-harbor-" + uuid.uuid4().hex[:12]
@@ -114,8 +118,30 @@ class FicusSquad(BaseAgent):
         self.container = None
         self.env = {}
         self.snapshot = None
+        self.last_observation = None
         with self.archive.open("rb") as archive:
             self.archive_sha = hashlib.file_digest(archive, "sha256").hexdigest()
+
+    @property
+    def database_host(self):
+        return "127.0.0.1" if self.database_network == "task" else self.database
+
+    def database_network_args(self):
+        # Sharing the task namespace keeps DB traffic on loopback and preserves
+        # Harbor's no-network/allowlist enforcement. Do not attach another
+        # outbound-capable network to a restricted task.
+        if self.database_network == "task":
+            return [
+                "--network",
+                f"container:{self.container}",
+                "--cpus",
+                "0.5",
+                "--memory",
+                "512m",
+                "--memory-swap",
+                "512m",
+            ]
+        return ["--network", self.network]
 
     @staticmethod
     def name():
@@ -198,12 +224,31 @@ class FicusSquad(BaseAgent):
             "FICUS_INTERNAL_EVENT_TOKEN": secrets.token_hex(32),
             "SHELL": "/bin/bash",
             "PATH": ROOT + "/bin:" + task_path,
-            "DATABASE_URL": f"postgres://postgres:{secrets.token_hex(24)}@{self.database}:5432/ficus_harbor",
+            "DATABASE_URL": f"postgres://postgres:{secrets.token_hex(24)}@{self.database_host}:5432/ficus_harbor",
         }
         await environment.download_file(
             RUNTIME + "/evals/harbor/revision.json",
             self.logs_dir / "runtime-revision.json",
         )
+
+    def observe_progress(self):
+        # Record state transitions without task content or extra runtime calls.
+        # This measures observed interruptions, not human time saved.
+        state = {
+            "agents": sorted(
+                (a["id"], a["agentTypeId"], a["status"], bool(a.get("questionData")))
+                for a in self.snapshot["agents"]
+            ),
+            "streams": sorted((s["id"], s["status"]) for s in self.snapshot["streams"]),
+            "pending_messages": len(self.snapshot.get("pendingMessages", [])),
+            "active_executions": sum(
+                e["status"] in ACTIVE for e in self.snapshot["executions"]
+            ),
+        }
+        if state != self.last_observation:
+            with (self.logs_dir / "progress.jsonl").open("a") as output:
+                output.write(json.dumps({"unix_seconds": time.time(), **state}) + "\n")
+            self.last_observation = state
 
     async def bootstrap_command(self, environment, mode, filename):
         return await self.checked(
@@ -250,16 +295,16 @@ class FicusSquad(BaseAgent):
         password = urlsplit(self.env["DATABASE_URL"]).password
         outcome = "interrupted"
         try:
-            await docker("network", "create", "--internal", self.network)
-            await docker("network", "connect", self.network, self.container)
+            if self.database_network == "private":
+                await docker("network", "create", "--internal", self.network)
+                await docker("network", "connect", self.network, self.container)
             # Ephemeral DB, no published ports, no host data mounts or Docker socket in the task.
             await docker(
                 "run",
                 "-d",
                 "--name",
                 self.database,
-                "--network",
-                self.network,
+                *self.database_network_args(),
                 "--label",
                 "ficus.harbor=true",
                 "--tmpfs",
@@ -276,6 +321,8 @@ class FicusSquad(BaseAgent):
                         "exec",
                         self.database,
                         "pg_isready",
+                        "-h",
+                        "127.0.0.1",
                         "-U",
                         "postgres",
                         "-d",
@@ -314,6 +361,7 @@ class FicusSquad(BaseAgent):
                 self.snapshot = json.loads(
                     (self.logs_dir / "snapshot.json").read_text()
                 )
+                self.observe_progress()
                 status = disposition(self.snapshot)
                 # Observe stable quiescence across polls, allowing completion events to enqueue the manager.
                 settled_since = (settled_since or time.monotonic()) if status else None
@@ -329,6 +377,7 @@ class FicusSquad(BaseAgent):
                 "outcome": outcome,
                 "memory": "fresh-disabled",
                 "runtime_sha256": self.version(),
+                "database_network": self.database_network,
             }
             # Always stop the owned worker before the benchmark verifier examines the filesystem.
             for name in ("worker", "api"):
@@ -362,10 +411,11 @@ class FicusSquad(BaseAgent):
                 except (RuntimeError, OSError, TimeoutError) as error:
                     self.logger.warning("Could not collect %s: %s", filename, error)
             await docker("rm", "-f", "-v", self.database, check=False)
-            await docker(
-                "network", "disconnect", self.network, self.container, check=False
-            )
-            await docker("network", "rm", self.network, check=False)
+            if self.database_network == "private":
+                await docker(
+                    "network", "disconnect", self.network, self.container, check=False
+                )
+                await docker("network", "rm", self.network, check=False)
             self.populate_context_post_run(context)
 
     def populate_context_post_run(self, context):

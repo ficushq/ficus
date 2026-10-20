@@ -39,6 +39,66 @@ class HandoffTests(unittest.TestCase):
         self.assertIn("architect planning stage", text)
 
 
+class DatabaseIsolationTests(unittest.TestCase):
+    def test_restricted_task_uses_loopback_without_a_new_network(self):
+        agent = object.__new__(FicusSquad)
+        agent.database_network = "task"
+        agent.container = "owned-container"
+        agent.database = "owned-db"
+        agent.network = "unused-network"
+        args = agent.database_network_args()
+        self.assertEqual(agent.database_host, "127.0.0.1")
+        self.assertEqual(args[:2], ["--network", "container:owned-container"])
+        self.assertNotIn("unused-network", args)
+        self.assertEqual(args[args.index("--cpus") + 1], "0.5")
+        self.assertEqual(args[args.index("--memory") + 1], "512m")
+        self.assertNotIn("--publish", args)
+
+    def test_existing_private_network_mode_is_preserved(self):
+        agent = object.__new__(FicusSquad)
+        agent.database_network = "private"
+        agent.database = "owned-db"
+        agent.network = "owned-internal-network"
+        self.assertEqual(agent.database_host, "owned-db")
+        self.assertEqual(
+            agent.database_network_args(), ["--network", "owned-internal-network"]
+        )
+
+
+class ProgressObservationTests(unittest.TestCase):
+    def test_records_state_changes_without_question_contents(self):
+        with tempfile.TemporaryDirectory() as directory:
+            agent = object.__new__(FicusSquad)
+            agent.logs_dir = Path(directory)
+            agent.last_observation = None
+            agent.snapshot = {
+                "agents": [
+                    {
+                        "id": "a",
+                        "agentTypeId": "engineer",
+                        "status": "running",
+                        "questionData": None,
+                    }
+                ],
+                "streams": [
+                    {"id": "s", "status": "active", "title": "private task title"}
+                ],
+                "executions": [{"status": "running"}],
+                "pendingMessages": [],
+            }
+            agent.observe_progress()
+            agent.observe_progress()
+            agent.snapshot["agents"][0].update(
+                status="waiting-input", questionData={"text": "private question"}
+            )
+            agent.observe_progress()
+            raw = (agent.logs_dir / "progress.jsonl").read_text()
+            rows = [json.loads(line) for line in raw.splitlines()]
+            self.assertEqual(len(rows), 2)
+            self.assertTrue(rows[-1]["agents"][0][-1])
+            self.assertNotIn("private", raw)
+
+
 class CompletionTests(unittest.TestCase):
     def state(self):
         return {
@@ -90,6 +150,32 @@ class BudgetTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 restarted.reserve("baseline")
             self.assertEqual(restarted.summary()["squad"]["usd_upper_bound"], 1)
+
+    def test_trial_cap_counts_all_roles_and_prior_calls_after_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "spend.sqlite"
+            budget = Budget(path, 5, client_caps={"squad": 1})
+            budget.reserve("squad")
+            budget.reserve("squad")
+            with self.assertRaises(ValueError):
+                budget.reserve("squad")
+            budget.reserve("other")
+            resumed = Budget(path, 5, client_caps={"squad": 1})
+            with self.assertRaises(ValueError):
+                resumed.reserve("squad")
+            self.assertEqual(resumed.total(), 1.5)
+
+    def test_trial_receipts_release_hold_but_cumulative_limit_still_applies(self):
+        with tempfile.TemporaryDirectory() as directory:
+            budget = Budget(
+                Path(directory) / "spend.sqlite", 1, client_caps={"a": 1, "b": 1}
+            )
+            call = budget.reserve("a")
+            budget.settle(call, {"prompt_tokens": 100000, "completion_tokens": 0})
+            budget.reserve("a")
+            with self.assertRaises(ValueError):
+                budget.reserve("b")
+            self.assertAlmostEqual(budget.total(), 0.54)
 
     def test_authorized_cap_increase_preserves_old_unknown_reservations(self):
         with tempfile.TemporaryDirectory() as directory:

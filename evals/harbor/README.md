@@ -193,3 +193,9 @@ prompt change, fresh paired decision checkpoints, and a separate known-task
 full-squad replay. The diagnostic uses the same capped native Pi provider and
 ledger. It is not a replacement for external benchmarks; the replay is not
 part of the original four-arm comparison.
+
+## Longer repository features
+
+[LONG_FEATURES.md](LONG_FEATURES.md) defines the separately reported DeepSWE
+v1.1 pilot, restricted-network setup, reference and collision controls,
+per-arm limits, and autonomy-measurement limitations.
