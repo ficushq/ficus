@@ -94,6 +94,22 @@ test('admits matching bound create and refuses foreign origin, pin, digest, iden
     expect(() => validateHostAdmission({ ...create, ...change }, installed)).toThrow()
   }
 })
+test('exact applied/pending host lifecycle effect replay is admitted, not mistaken for a fresh epoch', () => {
+  const request = { ...probe, action: 'suspend-tenant', hostEpoch: 3, previousHostEpoch: 2, effectId: vaultId }
+  const current = {
+    ...installed,
+    hostEpoch: 3,
+    hostState: 'suspended',
+    effect: { action: 'suspend-tenant', effectId: vaultId, previousHostEpoch: 2, completed: true },
+  }
+  expect(() => validateHostAdmission(request, current)).not.toThrow()
+  expect(() =>
+    validateHostAdmission(request, { ...current, effect: { ...current.effect, completed: false } })
+  ).not.toThrow()
+  expect(() => validateHostAdmission({ ...request, action: 'resume-tenant' }, current)).toThrow('generation_conflict')
+  expect(() => validateHostAdmission({ ...request, effectId: tenantId }, current)).toThrow('generation_conflict')
+})
+
 test('epoch changes require explicit previous fence; old host cannot adopt a replacement binding', () => {
   expect(() =>
     validateHostAdmission(
