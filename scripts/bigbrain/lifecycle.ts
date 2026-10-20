@@ -273,12 +273,14 @@ export async function ownerInvite(request: Request<'owner-invite'>, deps: Lifecy
   // A link is only useful if its origin actually reaches this vault: (re)publish the routes and
   // Caddy sites first, which fails closed when Caddy cannot serve them. Otherwise the app gets
   // Caddy's empty 200 for an unknown host and reports "null is not an object".
-  const published = gatewayManifestSchema.safeParse(await publish(deps))
-  if (
-    published.success &&
-    !published.data.routes.some((route) => route.vaultId === request.vaultId && route.state === 'ready')
-  )
-    throw new Error('maintenance')
+  // The real publisher always returns its manifest; only an injected no-op returns nothing.
+  const result = await publish(deps)
+  if (result !== undefined) {
+    const published = gatewayManifestSchema.safeParse(result)
+    if (!published.success) throw new Error('operation_failed')
+    if (!published.data.routes.some((route) => route.vaultId === request.vaultId && route.state === 'ready'))
+      throw new Error('maintenance')
+  }
   const issue =
     deps.issueAppLink ??
     (async (r: ControlReceipt, window: { issuedAt: string; expiresAt: string }) => {

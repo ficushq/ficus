@@ -339,6 +339,9 @@ test('owner links are issued only after the vault route and Caddy site are publi
     ],
   })
   expect(await f.send(invite())).toMatchObject({ ok: false, code: 'maintenance', retryable: true })
+  // Anything that is not a valid manifest never fails open.
+  f.deps.ingress = async () => ({ routes: 'nope' })
+  expect(await f.send(invite())).toMatchObject({ ok: false, code: 'operation_failed' })
   expect(f.issued).toHaveLength(0)
   // Served: the link is minted once.
   let republished = 0
