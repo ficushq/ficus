@@ -6,6 +6,7 @@ import { AgentSession } from '../AgentSession'
 import { Squad } from '../Squad'
 import { SquadManagerRunner } from './squad-manager-runner'
 import * as tools from '../../tools'
+import * as monitorTools from '../../tools/monitor'
 import * as cliHelp from '../../lib/utils/cli-help'
 import * as prompts from '../../lib/prompts'
 import * as memoryPaths from '../../services/memory/paths'
@@ -381,7 +382,9 @@ describe('SquadManagerRunner typeContext injection', () => {
     expect(sessionConfig.sandbox.sandboxId).toBe(lightId)
   })
 
-  it('registers squad_bash bound to the warm squad box', async () => {
+  it.each([false, true])('monitor and squad_bash use the warm box only when permitted (denied=%s)', async (denied) => {
+    const monitorSpy = spyOn(monitorTools, 'createMonitorTool')
+    spies.push(monitorSpy)
     squadFindSpy = spyOn(Squad, 'find').mockResolvedValue({
       id: TEST_SQUAD_ID,
       name: 'S',
@@ -420,13 +423,15 @@ describe('SquadManagerRunner typeContext injection', () => {
     const runner = new TestableSquadManagerRunner(
       { id: 'e1', agentId: 'm1', message: 'go', imageIds: null } as any,
       agent,
-      makeAgentType()
+      makeAgentType({ toolsDeny: denied ? ['squad_*'] : null })
     )
     await runner.exposeCreateSession()
 
     expect((squadBashCalls[0] as any[])[0]).toBe(`squad_${TEST_SQUAD_ID}`)
     expect((squadBashCalls[0] as any[])[2]).toBe(TEST_SQUAD_ID)
     expect(capturedToolNames(sessionSpy)).toEqual(expect.arrayContaining(['squad_bash']))
+    expect(monitorSpy.mock.calls[0][0].squadSandboxId).toBe(denied ? undefined : `squad_${TEST_SQUAD_ID}`)
+    expect(monitorSpy.mock.calls[0][0].sandboxId).toBe('agent_manager_m1')
   })
   it('gives channel consultants reply tools and asks questions in the channel', async () => {
     squadFindSpy = spyOn(Squad, 'find').mockResolvedValue({

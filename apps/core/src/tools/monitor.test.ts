@@ -20,6 +20,7 @@ class FakeSupervisor {
   }
 }
 class FakeSandbox implements ISandboxManager {
+  targets: string[] = []
   async ensureSandbox() {
     return 's'
   }
@@ -31,10 +32,12 @@ class FakeSandbox implements ISandboxManager {
   getSpawnHook(): SpawnHook | null {
     return null
   }
-  async exec() {
+  async exec(sandboxId: string) {
+    this.targets.push(sandboxId)
     return Buffer.from('line1\nline2\n')
   }
-  async execStatus() {
+  async execStatus(sandboxId: string) {
+    this.targets.push(sandboxId)
     return 0
   }
   spawnShell() {
@@ -112,6 +115,66 @@ describe('createMonitorTool', () => {
     expect((res.details as any).monitorId).toBeString()
     expect(supervisor.started).toHaveLength(1)
   })
+
+  it.each([undefined, 'private', 'squad'] as const)('persists the selected sandbox (%s)', async (sandbox) => {
+    const supervisor = new FakeSupervisor()
+    const tool = createMonitorTool({
+      agentId,
+      sandboxId: 'agent_private',
+      squadSandboxId: 'squad_shared',
+      workspacePath: '/tmp',
+      supervisor: supervisor as unknown as MonitorSupervisor,
+    })
+    const res = await tool.execute(
+      'call',
+      {
+        action: 'create',
+        label: 'watch',
+        command: 'echo hi',
+        sandbox,
+        cwd: '/chosen/worktree',
+      },
+      undefined as never,
+      undefined as never,
+      undefined as never
+    )
+    const [row] = await db
+      .select()
+      .from(monitors)
+      .where(eq(monitors.id, (res.details as any).monitorId))
+    expect(row.sandboxId).toBe(sandbox === 'squad' ? 'squad_shared' : 'agent_private')
+    expect(row.cwd).toBe('/chosen/worktree')
+    expect(supervisor.started).toEqual([row.id])
+  })
+
+  it.each(['squad', 'another-agents-box'])(
+    'rejects unavailable or arbitrary sandbox %s before creating a row',
+    async (sandbox) => {
+      const supervisor = new FakeSupervisor()
+      const tool = createMonitorTool({
+        agentId,
+        sandboxId: 'agent_private',
+        workspacePath: '/tmp',
+        supervisor: supervisor as unknown as MonitorSupervisor,
+      })
+      await expect(
+        tool.execute(
+          'call',
+          {
+            action: 'create',
+            label: 'watch',
+            command: 'echo hi',
+            sandbox,
+          },
+          undefined as never,
+          undefined as never,
+          undefined as never
+        )
+      ).rejects.toThrow(sandbox === 'squad' ? 'requires squad_bash access' : 'sandbox must be')
+      expect(supervisor.started).toEqual([])
+      expect(await db.select().from(monitors).where(eq(monitors.agentId, agentId))).toEqual([])
+    }
+  )
 
   it('create defaults to restart "never" and tracks the log from byte 0', async () => {
     const supervisor = new FakeSupervisor()
@@ -313,12 +376,13 @@ describe('createMonitorTool', () => {
         batchDebounceMs: 100,
       })
       .returning()
+    const sandbox = new FakeSandbox()
     const tool = createMonitorTool({
       agentId,
       sandboxId: 'sandbox-1',
       workspacePath: '/tmp',
       supervisor: new FakeSupervisor() as unknown as MonitorSupervisor,
-      sandboxManager: new FakeSandbox(),
+      sandboxManager: sandbox,
     })
     const res = await tool.execute(
       'call',
@@ -328,6 +392,7 @@ describe('createMonitorTool', () => {
       undefined as never
     )
     expect((res.content[0] as any).text).toContain('line1')
+    expect(sandbox.targets).toEqual(['s', 's'])
   })
 
   it('create throws when required fields are missing (flat-schema validation)', async () => {

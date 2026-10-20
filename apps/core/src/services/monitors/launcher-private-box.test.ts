@@ -74,7 +74,7 @@ describe('monitor commands in a private agent box with a stale tmux server of an
     return { exitCode: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() }
   }
 
-  function launch(monitorId: string, command: string) {
+  function launch(monitorId: string, command: string, cwd = root) {
     const dir = dirFor(monitorId)
     return run(
       monitorLaunchCommand({
@@ -83,7 +83,7 @@ describe('monitor commands in a private agent box with a stale tmux server of an
         processId: sessionNameForMonitor(monitorId),
         env: {
           FICUS_MONITOR_ID: monitorId,
-          FICUS_MONITOR_CWD: root,
+          FICUS_MONITOR_CWD: cwd,
           FICUS_MONITOR_DIR: dir,
           FICUS_MONITOR_COMMAND: command,
           FICUS_MONITOR_TIMEOUT_SECONDS: '60',
@@ -111,6 +111,20 @@ describe('monitor commands in a private agent box with a stale tmux server of an
     expect(log).toContain('user tool ran')
     expect(log).toContain(join(root, 'user-bin'))
     expect(probe(NEW_MONITOR)).toBe('3')
+  })
+
+  it.each(['missing', 'file'])('records a %s working-directory error instead of losing the process', (kind) => {
+    setTmuxCandidatesForTesting([systemTmux])
+    const cwd = join(root, 'unusable working directory')
+    if (kind === 'file') writeFileSync(cwd, 'not a directory')
+    expect(launch(NEW_MONITOR, 'echo COMMAND_MUST_NOT_RUN', cwd).exitCode).toBe(0)
+    const log = readFileSync(join(dirFor(NEW_MONITOR), 'logs', 'current.log'), 'utf8')
+    expect(log).toContain(cwd)
+    expect(log).toContain('cd:')
+    expect(log).not.toContain('COMMAND_MUST_NOT_RUN')
+    // A recorded nonzero command exit is terminal even with restart="on-loss".
+    expect(readFileSync(join(dirFor(NEW_MONITOR), 'exitCode'), 'utf8').trim()).toBe('1')
+    expect(probe(NEW_MONITOR)).toBe('1')
   })
 
   it('reports an old monitor on a server no installed tmux can reach as unreachable, not lost', () => {

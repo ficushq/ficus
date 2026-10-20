@@ -31,7 +31,7 @@ import {
   createMonitorTool,
   createSetAgentPurposeTool,
 } from '../../tools'
-import { createSquadBashTool } from '../../tools/squad-bash'
+import { createSquadBashTool, SQUAD_BASH_TOOL_KEY } from '../../tools/squad-bash'
 import {
   AGENT_PURPOSE_DISPLAY_SECTION_TITLE,
   SET_AGENT_PURPOSE_INSTRUCTIONS,
@@ -333,11 +333,6 @@ export class SquadManagerRunner extends AgentRunner {
           )
     const notifyContactTool = createNotifyContactTool({ agentId: this.agent.id })
     const subagentLifecycleTools = createSubagentLifecycleTools({ agentId: this.agent.id })
-    const monitorTool = createMonitorTool({
-      agentId: this.agent.id,
-      sandboxId: lightId,
-      workspacePath: this.workspacePath,
-    })
     const todoTools = createSquadTodoTools(this.squad.id, this.agent.id)
     // The consultant's prompt (consultant.yaml) already tells it to set a purpose, but the
     // tool was never provided — wire it up here. Consultants only; the manager has no purpose.
@@ -365,7 +360,6 @@ export class SquadManagerRunner extends AgentRunner {
             ...(setAgentPurposeTool ? [setAgentPurposeTool] : []),
             notifyContactTool,
             ...subagentLifecycleTools,
-            monitorTool,
             ...(sandboxStatusTool ? [sandboxStatusTool] : []),
             ...todoTools,
             ...shortTermMemoryTools,
@@ -381,6 +375,14 @@ export class SquadManagerRunner extends AgentRunner {
       )
       sessionOptions.tools!.core = [
         ...(sessionOptions.tools?.core ?? []),
+        createMonitorTool({
+          agentId: this.agent.id,
+          sandboxId: lightId,
+          workspacePath: this.workspacePath,
+          squadSandboxId: effectiveEnvironmentTools.some((tool) => tool.name === SQUAD_BASH_TOOL_KEY)
+            ? this.squad.sandboxId
+            : undefined,
+        }),
         createDispatchTool({
           agentId: this.agent.id,
           parentExecutionContext: {

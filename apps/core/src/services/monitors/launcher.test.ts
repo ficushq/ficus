@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync } from 'fs'
+import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { monitorWorkRoot, sessionNameForMonitor } from './launcher'
@@ -27,6 +27,7 @@ describe('monitorWorkRoot', () => {
     if (prevHome === undefined) delete process.env.HOME_DIR
     else process.env.HOME_DIR = prevHome
     clearHostWorkspaceOverrides()
+    rmSync(home, { recursive: true, force: true })
   })
 
   it('container runtimes: the fixed /workspace mounts', () => {
@@ -38,6 +39,13 @@ describe('monitorWorkRoot', () => {
   it("vm runtime: the monitor's OWN box work root, never the squad box workspace", () => {
     process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     expect(monitorWorkRoot({ squadId: SQUAD, sandboxId: 'agent_a1' })).toBe(`${boxHome('agent_a1')}/.private`)
+  })
+
+  it('vm runtime: a selected squad box uses its own workspace even if the agent changes squads', () => {
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
+    expect(monitorWorkRoot({ squadId: 'other-squad', sandboxId: `squad_${SQUAD}` })).toBe(
+      `${boxHome(`squad_${SQUAD}`)}/workspace`
+    )
   })
 
   it('host runtime: the squad workspace on the real filesystem, honouring an override', () => {

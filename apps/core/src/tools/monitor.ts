@@ -26,7 +26,15 @@ const MonitorParams = Type.Object({
   label: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
   description: Type.Optional(Type.String({ maxLength: 1000 })),
   command: Type.Optional(Type.String({ minLength: 1 })),
-  cwd: Type.Optional(Type.String()),
+  sandbox: Type.Optional(
+    Type.Union([Type.Literal('private'), Type.Literal('squad')], {
+      description:
+        'Execution box: private (default) or your shared squad box. Squad requires squad_bash access. Choose squad for squad workspace files; cwd must exist in the selected box.',
+    })
+  ),
+  cwd: Type.Optional(
+    Type.String({ description: 'Working directory inside the selected sandbox; defaults to its work root.' })
+  ),
   monitorId: Type.Optional(Type.String({ format: 'uuid' })),
   timeoutMs: Type.Optional(Type.Integer({ minimum: 1000, maximum: MAX_TIMEOUT_MS })),
   maxBatchLines: Type.Optional(Type.Integer({ minimum: 1, maximum: 200 })),
@@ -53,6 +61,7 @@ type MonitorParamsType = {
   label?: string
   description?: string
   command?: string
+  sandbox?: 'private' | 'squad'
   cwd?: string
   monitorId?: string
   timeoutMs?: number
@@ -67,6 +76,8 @@ export interface MonitorToolContext {
   agentId: string
   sandboxId: string
   workspacePath: string
+  /** Only supplied when the session permits squad_bash. Never accept a model-provided sandbox ID. */
+  squadSandboxId?: string
   supervisor?: MonitorSupervisor
   sandboxManager?: ISandboxManager
 }
@@ -80,7 +91,7 @@ export function createMonitorTool(ctx: MonitorToolContext): ToolDefinition {
     name: 'monitor',
     label: 'Monitor',
     description:
-      'Observe an event-driven background command in your sandbox and receive batched stdout events. Monitors should be event-driven and quiet: prefer commands that emit only actionable events (completion, error, readiness, state transition, failure), e.g. tail -F file.log | grep --line-buffered ERROR. Avoid firehose output and polling loops that print every interval; if polling is needed, loop silently and print only when the job reaches a terminal or actionable state, or filter with grep/awk. Do not use a monitor to detach a one-shot build, generation, migration, or test that must complete; run it as one foreground Bash invocation with timeout up to 3600 seconds. Default timeout 30 min; default batch caps 20 lines / 4 KiB / 750 ms. Monitors survive Core restarts; if the sandbox restarts, the command is not rerun unless you set restart="on-loss" (only for safe-to-rerun watchers). Cancel with action="cancel".',
+      'Observe an event-driven background command and receive batched stdout events. Choose sandbox="private" (default) for your private box or sandbox="squad" for your squad workspace (requires squad_bash access). cwd must exist in that box; private VM boxes cannot access squad worktree paths. The chosen box is retained for restarts, logs and cancellation. Monitors should be event-driven and quiet: prefer commands that emit only actionable events (completion, error, readiness, state transition, failure), e.g. tail -F file.log | grep --line-buffered ERROR. Avoid firehose output and polling loops that print every interval; if polling is needed, loop silently and print only when the job reaches a terminal or actionable state, or filter with grep/awk. Do not use a monitor to detach a one-shot build, generation, migration, or test that must complete; run it as one foreground Bash invocation with timeout up to 3600 seconds. Default timeout 30 min; default batch caps 20 lines / 4 KiB / 750 ms. Monitors survive Core restarts; if the sandbox restarts, the command is not rerun unless you set restart="on-loss" (only for safe-to-rerun watchers). Cancel with action="cancel".',
     parameters: MonitorParams,
     async execute(_toolCallId: string, params: MonitorParamsType): Promise<AgentToolResult<unknown>> {
       const supervisor = ctx.supervisor ?? monitorSupervisor
@@ -91,6 +102,11 @@ export function createMonitorTool(ctx: MonitorToolContext): ToolDefinition {
           if (!params.command) throw new Error('command is required for action=create')
           if (params.timeoutMs && params.timeoutMs > MAX_TIMEOUT_MS)
             throw new Error('timeoutMs must be at most 24 hours')
+          const sandbox = params.sandbox ?? 'private'
+          if (sandbox !== 'private' && sandbox !== 'squad') throw new Error('sandbox must be "private" or "squad"')
+          if (sandbox === 'squad' && !ctx.squadSandboxId)
+            throw new Error('Squad sandbox unavailable: this session requires squad_bash access')
+          const sandboxId = sandbox === 'squad' ? ctx.squadSandboxId! : ctx.sandboxId
           const restartPolicy = params.restart ?? 'never'
           if (restartPolicy !== 'never' && restartPolicy !== 'on-loss')
             throw new Error('restart must be "never" or "on-loss"')
@@ -105,7 +121,7 @@ export function createMonitorTool(ctx: MonitorToolContext): ToolDefinition {
           }
           const monitor = await Monitor.create({
             agentId: ctx.agentId,
-            sandboxId: ctx.sandboxId,
+            sandboxId,
             label: params.label,
             description: params.description,
             command: params.command,
@@ -125,22 +141,25 @@ export function createMonitorTool(ctx: MonitorToolContext): ToolDefinition {
             const reason = error instanceof Error ? error.message : String(error)
             return result(`Failed to start monitor: ${reason}`, { success: false, monitorId: monitor.id })
           }
-          return result(`Monitor created: ${monitor.id} (${describeMonitorRestart(monitor)})`, {
+          return result(`Monitor created: ${monitor.id} (sandbox: ${sandbox}; ${describeMonitorRestart(monitor)})`, {
             success: true,
             monitorId: monitor.id,
             restartPolicy,
+            sandboxId,
           })
         }
         case 'list': {
           const list = await Monitor.listForAgent(ctx.agentId)
           return result(
-            list.map((m) => `${m.id} ${m.status} ${m.label} [${describeMonitorRestart(m)}]`).join('\n') ||
-              'No monitors.',
+            list
+              .map((m) => `${m.id} ${m.status} ${m.label} (sandbox: ${m.sandboxId}) [${describeMonitorRestart(m)}]`)
+              .join('\n') || 'No monitors.',
             {
               monitors: list.map((m) => ({
                 id: m.id,
                 label: m.label,
                 status: m.status,
+                sandboxId: m.sandboxId,
                 createdAt: m.createdAt,
                 restartPolicy: m.restartPolicy,
                 restartCount: m.restartCount,
@@ -172,7 +191,7 @@ export function createMonitorTool(ctx: MonitorToolContext): ToolDefinition {
           }
           const failure = monitor.failureReason ? `\nfailure: ${monitor.failureReason}` : ''
           return result(
-            `Monitor ${monitor.id} (${monitor.status}; ${describeMonitorRestart(monitor)})${failure}\n${recentLines.join('\n')}`,
+            `Monitor ${monitor.id} (${monitor.status}; sandbox: ${monitor.sandboxId}; ${describeMonitorRestart(monitor)})${failure}\n${recentLines.join('\n')}`,
             {
               monitor,
               recentLines,

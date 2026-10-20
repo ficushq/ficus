@@ -30,6 +30,7 @@ const LOG_SIZE_MARKER = '__FICUS_MONITOR_LOG_SIZE__='
 
 class FakeSandbox implements ISandboxManager {
   execs: string[][] = []
+  targets: string[] = []
   streams: FakeStream[] = []
   statuses = new Map<string, number>()
   outputs = new Map<string, Buffer>()
@@ -54,6 +55,7 @@ class FakeSandbox implements ISandboxManager {
     return null
   }
   async exec(_sandboxId: string, args: string[]): Promise<Buffer> {
+    this.targets.push(_sandboxId)
     this.execs.push(args)
     if (this.execError) throw this.execError
     const cmd = args.join(' ')
@@ -76,6 +78,7 @@ class FakeSandbox implements ISandboxManager {
     onStderr?: (chunk: Buffer) => void,
     onEnd?: () => void
   ): { cancel: () => void } {
+    this.targets.push(_sandboxId)
     const s: FakeStream = {
       cmd: args.join(' '),
       onStdout,
@@ -501,9 +504,13 @@ describe('MonitorSupervisor', () => {
 
     await monitor.reload()
     expect(monitor.status).toBe('failed')
-    expect(monitor.failureReason).toBe('sandbox restarted; command was not restarted (restart: never)')
+    expect(monitor.failureReason).toBe(
+      'monitor state directory is missing (cause unknown); command was not restarted (restart: never)'
+    )
     expect(monitor.failureKind).toBe('infrastructure')
-    expect(sent.at(-1)).toContain('failed: sandbox restarted; command was not restarted (restart: never).')
+    expect(sent.at(-1)).toContain(
+      'failed: monitor state directory is missing (cause unknown); command was not restarted (restart: never).'
+    )
     expect(sandbox.launches()).toBe(1)
   })
 
@@ -518,7 +525,7 @@ describe('MonitorSupervisor', () => {
     await monitor.reload()
     expect(monitor.status).toBe('failed')
     expect(monitor.failureReason).toBe(
-      'process ended without recording an exit code (sandbox restart or killed); command was not restarted (restart: never)'
+      'process ended without recording an exit code (cause unknown); command was not restarted (restart: never)'
     )
     expect(sandbox.launches()).toBe(1)
   })
@@ -813,14 +820,14 @@ describe('MonitorSupervisor', () => {
     expect(monitor.deadlineAt!.getTime()).toBe(deadline)
     expect(monitor.launchedAt!.getTime()).toBe(firstLaunch + 60_000)
     expect(monitor.rapidRestartCount).toBe(1)
-    expect(monitor.lastRestartReason).toBe('sandbox restarted')
+    expect(monitor.lastRestartReason).toBe('monitor state directory is missing (cause unknown)')
     expect(monitor.nextRestartAt).toBeNull()
     // The wiped log is read from its start; nothing from before is repeated.
     expect(sandbox.streams.at(-1)!.cmd).toContain('tail -c +1 -F')
-    await waitFor(() => calls.some((c) => c.content.includes('restarted after sandbox loss')))
-    const restarted = calls.find((c) => c.content.includes('restarted after sandbox loss'))!
+    await waitFor(() => calls.some((c) => c.content.includes('restarted:')))
+    const restarted = calls.find((c) => c.content.includes('restarted:'))!
     expect(restarted.content).toBe(
-      `Monitor "watch" (${monitor.id.slice(0, 8)}) restarted after sandbox loss: sandbox restarted (rapid restart 1/5; resets after 5m stable).`
+      `Monitor "watch" (${monitor.id.slice(0, 8)}) restarted: monitor state directory is missing (cause unknown) (rapid restart 1/5; resets after 5m stable).`
     )
     expect(restarted.options.metadata).toMatchObject({
       source: 'monitor',
@@ -868,7 +875,7 @@ describe('MonitorSupervisor', () => {
     })
     await monitor.reload()
     expect(monitor.status).toBe('canceled')
-    expect(sent.some((c) => c.includes('restarted after sandbox loss'))).toBe(false)
+    expect(sent.some((c) => c.includes('restarted:'))).toBe(false)
   })
 
   it('restart: on-loss — rapid losses back off, then fail at the restart limit', async () => {
@@ -898,7 +905,7 @@ describe('MonitorSupervisor', () => {
     await monitor.reload()
     expect(monitor.status).toBe('failed')
     expect(monitor.failureReason).toBe(
-      'restart limit reached: lost 3 times within 5m of launch (limit 2 rapid restarts); last loss: process ended without recording an exit code (sandbox restart or killed)'
+      'restart limit reached: lost 3 times within 5m of launch (limit 2 rapid restarts); last loss: process ended without recording an exit code (cause unknown)'
     )
     expect(sandbox.launches()).toBe(3)
   })
@@ -1129,6 +1136,33 @@ describe('MonitorSupervisor', () => {
     } finally {
       spy.mockRestore()
     }
+  })
+
+  it('keeps a selected squad sandbox through loss, recovery, streaming and cancellation', async () => {
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
+    const target = 'squad_sq1'
+    const monitor = await createMonitor({ sandboxId: target, restartPolicy: 'on-loss' })
+    const first = makeSupervisor(sandbox, async (_agentId, content) => sent.push(content))
+    await first.start(monitor)
+    const root = `/home/${boxUnixUser(target)}/workspace/.ficus/monitors/`
+    expect(sandbox.execs[0].join(' ')).toContain(root)
+    sandbox.probe = PROCESS_GONE
+    await first.pollExit(monitor.id)
+    sandbox.probe = ''
+    await waitFor(async () => (await monitor.reload()).restartCount === 1)
+    await waitFor(() => sent.some((message) => message.includes('restarted:')))
+    expect(sent.find((message) => message.includes('restarted:'))).toContain('cause unknown')
+    expect(sent.find((message) => message.includes('restarted:'))).not.toContain('sandbox loss')
+    first.detachAll()
+    const second = makeSupervisor(sandbox, async () => {})
+    await second.recoverOnStartup()
+    await waitFor(() => sandbox.streams.length >= 3)
+    await second.cancel(monitor.id)
+    expect(sandbox.launches()).toBe(2)
+    expect(sandbox.streams.every((stream) => stream.cmd.includes(root))).toBe(true)
+    expect(sandbox.execs.some((args) => args.join(' ').includes("ficus_tmux_kill '"))).toBe(true)
+    expect(new Set(sandbox.targets)).toEqual(new Set([target]))
+    expect((await monitor.reload()).status).toBe('canceled')
   })
 
   describe('in-sandbox deadline (watchdog)', () => {
