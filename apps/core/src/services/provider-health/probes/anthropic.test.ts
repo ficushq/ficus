@@ -30,7 +30,11 @@ describe('anthropicProbe', () => {
 
     const r = await anthropicProbe.probe({ apiKey: 'k', baseUrl: 'https://api.anthropic.com' })
 
-    expect(r.state).toBe('healthy')
+    expect(r).toEqual({
+      state: 'healthy',
+      status: 200,
+      recoveryKinds: ['invalid-credential', 'expired-oauth'],
+    })
     expect(f).toHaveBeenCalledWith(
       'https://api.anthropic.com/v1/models',
       expect.objectContaining({

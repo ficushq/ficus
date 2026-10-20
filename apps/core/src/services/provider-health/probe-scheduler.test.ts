@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach } from 'bun:test'
+import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test'
 import { runProbeSweepOnce } from './probe-scheduler'
 import { providerHealth, resetProviderHealthForTests } from './registry'
+import { anthropicProbe } from './probes/anthropic'
 import type { HealthProbe, ProbeResult } from './probes'
 
 describe('runProbeSweepOnce', () => {
@@ -163,4 +164,56 @@ describe('runProbeSweepOnce', () => {
     expect(h.retryAt).toBe(retryAt)
     expect(h.lastObservedStatus).toBe(429)
   })
+})
+
+describe('Anthropic auth-only probe recovery', () => {
+  let fetchSpy: ReturnType<typeof spyOn<typeof globalThis, 'fetch'>>
+
+  beforeEach(() => {
+    resetProviderHealthForTests()
+    fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }))
+  })
+
+  afterEach(() => {
+    fetchSpy.mockRestore()
+    resetProviderHealthForTests()
+  })
+
+  for (const kind of ['plan-credit', 'rate-limit', 'capacity', 'error', 'network'] as const) {
+    for (const accountId of [undefined, 'a1']) {
+      it(`does not recover ${kind} for ${accountId ?? 'provider-wide'} on model listing success`, async () => {
+        providerHealth.recordFailure(providerHealth.captureAttempt('anthropic', accountId), { kind })
+        const original = providerHealth.snapshotRecords()
+        const attempt = providerHealth.captureAttempt('anthropic', accountId)
+
+        await runProbeSweepOnce({
+          getAccounts: () =>
+            accountId ? [{ id: accountId, enabled: true, credential: { type: 'api_key', key: 'k' } }] : [],
+          getApiKey: async () => 'k',
+          getProviders: () => ['anthropic'],
+          getProbe: () => anthropicProbe,
+        })
+
+        expect(providerHealth.snapshotRecords()).toEqual(original)
+        expect(providerHealth.captureAttempt('anthropic', accountId)).toEqual(attempt)
+        expect(fetchSpy).toHaveBeenCalledTimes(1)
+      })
+    }
+  }
+
+  for (const kind of ['invalid-credential', 'expired-oauth'] as const) {
+    it(`recovers ${kind} only for the successfully probed account`, async () => {
+      for (const accountId of ['a1', 'a2']) {
+        providerHealth.recordFailure(providerHealth.captureAttempt('anthropic', accountId), { kind })
+      }
+      await runProbeSweepOnce({
+        getAccounts: () => [{ id: 'a1', enabled: true, credential: { type: 'api_key', key: 'k' } }],
+        getApiKey: async () => 'k',
+        getProviders: () => ['anthropic'],
+        getProbe: () => anthropicProbe,
+      })
+      expect(providerHealth.getRecord('anthropic', 'a1')?.lastSuccessAt).toBeDefined()
+      expect(providerHealth.getRecord('anthropic', 'a2')?.lastSuccessAt).toBeUndefined()
+    })
+  }
 })

@@ -85,7 +85,7 @@ function markProbeResult(
   attempt: ReturnType<typeof providerHealth.captureAttempt>,
   result: Awaited<ReturnType<HealthProbe['probe']>>
 ): void {
-  if (result.state === 'healthy') providerHealth.recordSuccess(attempt)
+  if (result.state === 'healthy') providerHealth.recordSuccess(attempt, result.recoveryKinds)
   else if (result.state === 'unhealthy') providerHealth.recordFailure(attempt, result)
 }
 

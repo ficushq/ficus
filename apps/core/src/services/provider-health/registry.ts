@@ -299,10 +299,17 @@ export class ProviderHealthRegistry {
     return true
   }
 
-  recordSuccess(attempt: ProviderHealthAttempt): boolean {
+  /**
+   * Settle recovery only for failures the observation actually verifies. Actual
+   * generation success is unrestricted; endpoint probes may limit recovery to
+   * specific kinds. Check the applicable record here (including provider-wide
+   * fallback) under the same revision guard as settlement.
+   */
+  recordSuccess(attempt: ProviderHealthAttempt, recoveryKinds?: readonly ProviderHealthKind[]): boolean {
     if (!attempt.hadActiveFailure || (this.revisions.get(attempt.applicableKey) ?? 0) !== attempt.revision) return false
     const applicable = this.records.get(attempt.applicableKey)
     if (!applicable || recordRecovered(applicable)) return false
+    if (recoveryKinds != null && !recoveryKinds.includes(applicable.kind)) return false
     const successKey = attempt.writeKey
     this.records.set(successKey, {
       ...applicable,
