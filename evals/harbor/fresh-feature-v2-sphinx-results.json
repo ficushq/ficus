@@ -50,7 +50,8 @@
         "urllib.request": 0,
         "curl https": 0,
         "wget https": 0
-      }
+      },
+      "reference_fetch_scan_interpretation": "requests.get matches are inspected Sphinx intersphinx implementation and mocked test source, not observed commands fetching reference solutions. Other scanned indicators are absent. This is not a complete network audit."
     },
     {
       "arm": "ficus-planned",
@@ -156,7 +157,8 @@
         "urllib.request": 0,
         "curl https": 0,
         "wget https": 0
-      }
+      },
+      "reference_fetch_scan_interpretation": "requests.get matches are inspected Sphinx intersphinx implementation and mocked test source, not observed commands fetching reference solutions. Other scanned indicators are absent. This is not a complete network audit."
     },
     {
       "arm": "pi-engineer",

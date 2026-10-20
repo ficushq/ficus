@@ -238,3 +238,115 @@ class SphinxVerifierTests(unittest.TestCase):
             self.assertEqual(
                 (repo / "tox.ini").read_text(), "# official configuration\n"
             )
+
+
+class XarrayVerifierTests(unittest.TestCase):
+    def test_root_collection_hook_and_nested_tests_are_both_restored(self):
+        from verify_featurebench import LAYOUTS, hashes, restore_inputs
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            official = root / "official"
+            (official / "xarray/tests").mkdir(parents=True)
+            (official / "xarray/tests/test_backends_chunks.py").write_text(
+                "assert chunks() == 42\n"
+            )
+            for name in LAYOUTS["xarray"][1:]:
+                (official / name).write_text("# official\n")
+            archive = root / "inputs.tar.gz"
+            with tarfile.open(archive, "w:gz") as target:
+                for name in LAYOUTS["xarray"]:
+                    target.add(official / name, arcname=name)
+            repo = root / "submission"
+            (repo / "xarray/core").mkdir(parents=True)
+            source = repo / "xarray/core/chunks.py"
+            source.write_text("# candidate\n")
+            (repo / "conftest.py").write_text(
+                "def pytest_collection_modifyitems(items): items.clear()\n"
+            )
+            restore_inputs(repo, archive, hashes(official, "xarray"), "xarray")
+            self.assertEqual(source.read_text(), "# candidate\n")
+            self.assertEqual((repo / "conftest.py").read_text(), "# official\n")
+
+
+class XarrayMaskTests(unittest.TestCase):
+    def test_recount_checks_implementation_even_when_masked_tests_are_deleted(self):
+        from prepare_featurebench import sanitization_script
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "xarray/tests").mkdir(parents=True)
+            source = root / "xarray/implementation.py"
+            test = root / "xarray/tests/test_feature.py"
+            source.write_text("answer = 42\n")
+            test.write_text("assert answer == 42\n")
+
+            def git(*args):
+                return subprocess.check_output(["git", *args], cwd=root, text=True)
+
+            git("init", "-q")
+            git("config", "user.email", "fixture@localhost")
+            git("config", "user.name", "Fixture")
+            git("add", "-A")
+            git("commit", "-qm", "original")
+            source.write_text("raise NotImplementedError\n")
+            test.write_text("# masked import\n")
+            patch = git("diff")
+            # Malformed upstream count is in a test hunk, not implementation.
+            prefix, tail = patch.split("diff --git a/xarray/tests/", 1)
+            tail = tail.replace("@@ -1 +1 @@", "@@ -1,2 +1,2 @@")
+            mask = root / "mask.diff"
+            mask.write_text(prefix + "diff --git a/xarray/tests/" + tail)
+            test.unlink()
+            command = next(
+                line
+                for line in sanitization_script("xarray").splitlines()
+                if line.startswith("git apply")
+            )
+            command = command.replace("/tmp/setup_patch.diff", str(mask))
+            subprocess.run(
+                ["bash", "-c", command], cwd=root, check=True, capture_output=True
+            )
+            source.write_text("answer = 42\n")
+            result = subprocess.run(
+                ["bash", "-c", command], cwd=root, capture_output=True
+            )
+            self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(sanitization_script("pandas"), SANITIZE)
+
+
+class XarrayOracleTests(unittest.TestCase):
+    def test_oracle_recreates_only_deleted_test_precondition(self):
+        from prepare_featurebench import oracle_test_setup
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "xarray/tests").mkdir(parents=True)
+            source = root / "xarray/source.py"
+            test = root / "xarray/tests/test_feature.py"
+            source.write_text("answer = 42\n")
+            test.write_text("from xarray.source import answer\n")
+
+            def git(*args):
+                return subprocess.check_output(["git", *args], cwd=root, text=True)
+
+            git("init", "-q")
+            git("config", "user.email", "fixture@localhost")
+            git("config", "user.name", "Fixture")
+            git("add", "-A")
+            git("commit", "-qm", "original")
+            source.write_text("raise NotImplementedError\n")
+            test.write_text("\n")
+            patch = root / "mask.diff"
+            patch.write_text(git("diff"))
+            test.unlink()
+            script = (
+                oracle_test_setup("xarray")
+                .replace("/testbed", str(root))
+                .replace("/tmp/setup_patch.diff", str(patch))
+            )
+            subprocess.run(["bash", "-ec", script], check=True, capture_output=True)
+            self.assertEqual(test.read_text(), "\n")
+            self.assertEqual(source.read_text(), "raise NotImplementedError\n")
+            git("apply", "--reverse", "--check", str(patch))
+        self.assertEqual(oracle_test_setup("sphinx"), "")

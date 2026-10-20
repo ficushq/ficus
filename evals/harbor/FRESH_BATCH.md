@@ -60,3 +60,23 @@ $5.496856, bringing cumulative exposure to $20.491918. All provider receipts are
 present, and all four pre-grading source archive hashes verified. This one task
 favors Ficus on acceptance, with higher cost in both workflows; it does not
 establish a general performance ranking.
+
+## xarray preflight packaging issues
+
+The first preparation rejected the upstream mask with `corrupt patch at line
+477`. The official image had applied its fallback `patch` command. Inspection
+showed that the malformed final hunk concerned a test file deleted afterward by
+the official Dockerfile. Validation now recounts hunk metadata and excludes the
+already-deleted `xarray/tests` paths, while requiring every implementation hunk
+to reverse exactly without fuzz. A regression confirms that leaving original
+implementation code in place still fails this check. The actual masking patch,
+image commands, and grader are unchanged.
+
+The initial reference controls then failed before grading because the upstream
+oracle tries to reverse the same mask against that deleted test. An oracle-only
+setup step restores the tests from the original Git tree and reapplies only the
+test part of the mask with recounted metadata. The byte-identical upstream
+oracle can then reverse its complete patch. This setup is never uploaded to an
+inference container and does not restore candidate implementation code. The
+initial failed preparation and both failed reference-control logs remain in
+separate private artifact directories. No model inference preceded these checks.

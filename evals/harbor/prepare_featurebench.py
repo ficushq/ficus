@@ -50,6 +50,31 @@ test -z "$(git status --porcelain)"
 """
 
 
+def sanitization_script(layout):
+    if layout != "xarray":
+        return SANITIZE
+    # This pinned xarray mask has a malformed final test-only hunk count.
+    # Upstream applies it with `patch`, then deletes xarray/tests targets.
+    # Recount only for validation and exclude already-deleted test paths;
+    # every implementation hunk must still reverse exactly (no fuzz).
+    return SANITIZE.replace(
+        "git apply --reverse --check /tmp/setup_patch.diff",
+        "git apply --recount --reverse --check --exclude='xarray/tests/*' /tmp/setup_patch.diff",
+    )
+
+
+def oracle_test_setup(layout):
+    if layout != "xarray":
+        return ""
+    # The official reverse-patch oracle expects masked tests to exist even
+    # though the official Dockerfile deletes them. Recreate only that oracle
+    # precondition. This script is never uploaded to inference containers.
+    return (
+        "git -C /testbed restore --source=HEAD --worktree -- xarray/tests\n"
+        "git -C /testbed apply --recount --include='xarray/tests/*' /tmp/setup_patch.diff\n"
+    )
+
+
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -70,6 +95,7 @@ def prepare(task, image, output):
         "pydantic__pydantic.": "pydantic",
         "pandas-dev__pandas.": "pandas",
         "sphinx-doc__sphinx.": "sphinx",
+        "pydata__xarray.": "xarray",
     }
     layout = next((v for k, v in prefixes.items() if task.name.startswith(k)), None)
     if layout is None:
@@ -185,7 +211,7 @@ def prepare(task, image, output):
             (fixtures / "verifier-layout.json").write_text(
                 json.dumps({"layout": layout})
             )
-            docker("exec", container, "bash", "-c", SANITIZE)
+            docker("exec", container, "bash", "-c", sanitization_script(layout))
             audit = docker(
                 "exec",
                 container,
@@ -254,11 +280,16 @@ printf 'working_tree='; git status --porcelain
                 task / "solution/solve.sh", stage / "solution/upstream-solve.sh"
             )
             (stage / "solution/solve.sh").write_text(
-                "#!/bin/bash\nset -euo pipefail\nbash /solution/restore.sh\nexec bash /solution/upstream-solve.sh\n"
+                "#!/bin/bash\nset -euo pipefail\nbash /solution/restore.sh\n"
+                + oracle_test_setup(layout)
+                + "exec bash /solution/upstream-solve.sh\n"
             )
             manifest = {
                 "source_task": task.name,
                 "verifier_layout": layout,
+                "mask_validation": "recount-excluding-deleted-tests"
+                if layout == "xarray"
+                else "strict-reverse-check",
                 "verifier_paths": verifier_paths,
                 "source_files_sha256": provenance,
                 "original_image_id": image_id,

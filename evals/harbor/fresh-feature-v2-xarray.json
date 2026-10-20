@@ -1,0 +1,132 @@
+{
+  "experiment": "fresh-feature-v2",
+  "task": "pydata__xarray.97f3a746.test_backends_chunks.fa55f68a.lv1",
+  "preparation": {
+    "source_task": "pydata__xarray.97f3a746.test_backends_chunks.fa55f68a.lv1",
+    "verifier_layout": "xarray",
+    "mask_validation": "recount-excluding-deleted-tests",
+    "verifier_paths": ["xarray/tests", "conftest.py", "pyproject.toml", "setup.py"],
+    "source_files_sha256": {
+      "task.toml": "ef631c9e1bfb04044903fef3ab357eda8767242e0e5de7199d4d22f7feecdb89",
+      "instruction.md": "69bad6fa956bf2a775ea2dad124bccb2ee4d9a78b4b09133c38e27e70a2472d9",
+      "environment/Dockerfile": "80ae9a98cc185af766624113b6449bdc0263d7f1ad3d8c9399b1c67a63585ea4",
+      "environment/setup_patch.diff": "983872f42e75509c65f731b58795c4dc1f03f0083867adc5c9b1bf91614e3a6c",
+      "environment/test_patch.diff": "395ee82a3760c198c4a3fadc91b25c085335d8c6294d2a50bbe0d6f214e5dc15",
+      "tests/test.sh": "4f9a53d60138a480c684b286b1d172d9049a2a86d044bd99e33b151ea8f73185",
+      "solution/solve.sh": "356a7b65d73d69f18507a9ed0b450631370b9968b2a0df8d98a6e9b6312fc778",
+      "tests/config.json": "ff419e61728c1ac9a06d477756a30d5485e61c8583b1b0e59d19adbbb9b84245"
+    },
+    "original_image_id": "sha256:b9c44b82691e0d765aa5ede61782fb95dc4502f56334fee193bd649513a5b5be",
+    "agent_image_id": "sha256:f622d7bff528d227d0280be12cf0788b8ecafde256fe8b27b51ba74e4763ad7f",
+    "agent_image_tag": "ficus-featurebench-sanitized:89439234dcd7",
+    "preparation_sha256": "9a085a450b696074767eccc94b981ef5b7630e3190b4ee24fe58b9731acaf698",
+    "audit": "root_commits=1\nworking_tree=",
+    "verifier_inputs_sha256": "91eed5a8a73807eeae24f61007776643a40e5e4e7cfafd96155c0a5562ee6df8",
+    "verifier_guard_sha256": "e193bc584048d86ab1c513ae5bba0fcc94cbf0d60dc99c298b1e3d7b6028f9a7",
+    "grader_unchanged": true
+  },
+  "environment_audit": "b1d4be6 Masked task baseline\n/testbed/xarray/__init__.py\n",
+  "official_image_digest": [
+    "libercoders/featurebench-specs_xarray-instance_62de996a@sha256:075803e6495efc4aa64c015effcae52986a62352655127f69a262dfbedfbb7d7"
+  ],
+  "controls": [
+    {
+      "control": "baseline",
+      "exit_code": 0,
+      "reward": "0",
+      "reason": null,
+      "elapsed_seconds": 31.87,
+      "test_summaries": ["1 error in 0.64s"],
+      "official_input_checks": 2,
+      "import_origin": ["GRADE_IMPORT_ORIGIN /testbed/xarray/__init__.py"],
+      "output_sha256": "2b1f342b369e30a0825a9e07e0074380593a7e18adbbb9aeeeac11870e4e6ba4"
+    },
+    {
+      "control": "oracle",
+      "exit_code": 0,
+      "reward": "1",
+      "reason": null,
+      "elapsed_seconds": 28.28,
+      "test_summaries": ["18 passed in 0.63s", "101 passed, 6 skipped, 1 warning in 0.58s"],
+      "official_input_checks": 2,
+      "import_origin": ["GRADE_IMPORT_ORIGIN /testbed/xarray/__init__.py"],
+      "output_sha256": "89351bd4331947462ca98db2656abc3252e96747e0058fac038fbb0c7611e4e5"
+    },
+    {
+      "control": "baseline-collision",
+      "exit_code": 0,
+      "reward": "0",
+      "reason": null,
+      "elapsed_seconds": 19.2,
+      "test_summaries": ["1 error in 0.58s"],
+      "official_input_checks": 2,
+      "import_origin": ["GRADE_IMPORT_ORIGIN /testbed/xarray/__init__.py"],
+      "output_sha256": "af705c9168f297de38e01f3acc724cf9133e2ffafdde273c3b35bf18be5c2e0e"
+    },
+    {
+      "control": "oracle-collision",
+      "exit_code": 0,
+      "reward": "1",
+      "reason": null,
+      "elapsed_seconds": 23.57,
+      "test_summaries": ["18 passed in 0.71s", "101 passed, 6 skipped, 1 warning in 0.58s"],
+      "official_input_checks": 2,
+      "import_origin": ["GRADE_IMPORT_ORIGIN /testbed/xarray/__init__.py"],
+      "output_sha256": "ed00f41e6c7f8aa4eed3393849bb04d3d4267aec392c10aca2d2cd08e9d3b356"
+    }
+  ],
+  "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+  "adapter_sha256": {
+    "ficus_agent.py": "3c10076d9b943be64b7fc154bdb14e8ac9b24977d2c762eb7f5a46ac0841291f",
+    "pi_workflow.py": "00712cabe8eebbd571c7ef438b357c019bb9735492ff8bfb29a870d3ed2c03e3",
+    "budget_proxy.py": "beb2eb62a89eb9686105c4ee96d8d3c02a0be6df2d171a01bc77bdc4dcae304d",
+    "run-pilot.py": "76c63b63f817da336db8907801645f02c6a475b79eb66c27c9e62969765fcc65"
+  },
+  "resources": {
+    "main_cpus": 2,
+    "main_memory_gib": 8,
+    "ficus_postgres_sidecar": "Uncapped, as in v1; total compute not equal",
+    "architecture": "linux/amd64 emulated on arm64 Mac"
+  },
+  "attempts_per_arm": 1,
+  "operator_steering": false,
+  "grader_policy": "Unchanged upstream grader and immutable verifier inputs. Inference source archives saved before grading.",
+  "oracle_wrapper_sha256": "4562f1eaed9b87d56bdfbb9f83504a549460fecbb78c3c7e054f99d5308eadb6",
+  "upstream_oracle_unchanged": true,
+  "preflight_failures": [
+    {
+      "stage": "strict mask validation",
+      "reason": "corrupt test-only hunk count at line 477",
+      "log_sha256": "747881f41eef9ce548759526dfb18094dc0786f57d9c38637f0f0be3369d73fd"
+    },
+    {
+      "stage": "oracle",
+      "summary": {
+        "control": "oracle",
+        "exit_code": 1,
+        "reward": null,
+        "reason": null,
+        "elapsed_seconds": 0.94,
+        "test_summaries": [],
+        "official_input_checks": 0,
+        "import_origin": []
+      },
+      "log_sha256": "a1e96b97ee6507e5765f69b1955862666be786ca00a4edfa882e9faef556578c"
+    },
+    {
+      "stage": "oracle-collision",
+      "summary": {
+        "control": "oracle-collision",
+        "exit_code": 1,
+        "reward": null,
+        "reason": null,
+        "elapsed_seconds": 0.89,
+        "test_summaries": [],
+        "official_input_checks": 0,
+        "import_origin": []
+      },
+      "log_sha256": "a1e96b97ee6507e5765f69b1955862666be786ca00a4edfa882e9faef556578c"
+    }
+  ],
+  "oracle_precondition": "Restore only deleted tests and apply only their mask before unchanged upstream reverse-patch oracle. Never available during inference."
+}
