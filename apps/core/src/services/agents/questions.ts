@@ -7,7 +7,7 @@ import {
   type AgentQuestionStatus,
   type QuestionData,
 } from '@ficus/shared'
-import { db, agentQuestions } from '../../db'
+import { db, agentQuestions, AmbiguousPrefixError, uuidPrefixCondition } from '../../db'
 import {
   agentQuestionRecipients,
   agentQuestionWorkStreamOrigins,
@@ -578,6 +578,35 @@ export async function listAgentQuestions(
 export async function getAgentQuestion(id: string): Promise<AgentQuestion | null> {
   const [row] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, id))
   return row ? toJson(row) : null
+}
+
+const UUID_PREFIX_PATTERN = /^[0-9a-f-]{1,35}$/
+
+/**
+ * Resolves a full question UUID or a unique UUID prefix (as printed by `ficus agent-question list`)
+ * to the canonical full id. Returns null when nothing matches, including for input that cannot be
+ * a UUID or a prefix of one, so malformed ids never reach a uuid cast. Callers still authorize
+ * against the resolved question exactly as they would for a full-UUID lookup.
+ *
+ * @throws AmbiguousPrefixError if the prefix matches more than one question.
+ */
+export async function resolveAgentQuestionId(idOrPrefix: string): Promise<string | null> {
+  const candidate = idOrPrefix.trim().toLowerCase()
+  if (isUuid(candidate)) {
+    const [row] = await db
+      .select({ id: agentQuestions.id })
+      .from(agentQuestions)
+      .where(eq(agentQuestions.id, candidate))
+    return row?.id ?? null
+  }
+  if (!UUID_PREFIX_PATTERN.test(candidate)) return null
+  const rows = await db
+    .select({ id: agentQuestions.id })
+    .from(agentQuestions)
+    .where(uuidPrefixCondition(agentQuestions.id, candidate))
+    .limit(2)
+  if (rows.length > 1) throw new AmbiguousPrefixError('question', idOrPrefix)
+  return rows[0]?.id ?? null
 }
 
 /**

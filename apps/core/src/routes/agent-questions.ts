@@ -1,10 +1,12 @@
 import { resolveActingUser } from '../services/rbac'
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
+import { AmbiguousPrefixError } from '../db/prefix-match'
 import { hasAgentResourcePermission, type Identity } from '../services/rbac'
 import { Agent } from '../entities/Agent'
 import {
   getAgentQuestion,
   answerAgentQuestion,
+  resolveAgentQuestionId,
   dismissAgentQuestion,
   listAgentQuestions,
   RELAYED_ANSWER_SOURCE_MAX_LENGTH,
@@ -17,7 +19,23 @@ import { acknowledgeQuestionDeliveryFailure } from '../services/agents/question-
 import { canReceiveAgentQuestionAttention } from '../services/agents/pending-action-policy'
 import { loadUserAttention } from '../services/attention/resolver'
 import { canAnswerAgentQuestion } from '../services/agents/question-authorization'
-import { isUuid } from '../services/work-streams/execution-provenance'
+
+/**
+ * Resolves the `:id` route parameter (a full UUID or a unique UUID prefix, as printed by
+ * `ficus agent-question list`) to the canonical question id once, at the route boundary, so every
+ * downstream service call and transactional fence sees the full id. Returns an error response for
+ * unknown (404) or ambiguous (400) ids.
+ */
+async function resolveQuestionRouteId(c: Context): Promise<{ id: string } | { response: Response }> {
+  try {
+    const id = await resolveAgentQuestionId(c.req.param('id') ?? '')
+    if (!id) return { response: c.json({ error: 'Question not found' }, 404) }
+    return { id }
+  } catch (error) {
+    if (error instanceof AmbiguousPrefixError) return { response: c.json({ error: error.message }, 400) }
+    throw error
+  }
+}
 
 export const agentQuestionsRouter = new Hono()
   // GET /api/agent-questions/by-agent/:agentId?status=open|answered — for the conversation view.
@@ -55,7 +73,9 @@ export const agentQuestionsRouter = new Hono()
     if (!identity || (identity.type !== 'user' && identity.type !== 'agent')) {
       return c.json({ error: 'Unauthorized' }, 401)
     }
-    const id = c.req.param('id')
+    const resolved = await resolveQuestionRouteId(c)
+    if ('response' in resolved) return resolved.response
+    const id = resolved.id
     const question = await getAgentQuestion(id)
     if (!question) return c.json({ error: 'Question not found' }, 404)
     // Capture the scope before authorization so the transaction can reject any intervening move
@@ -91,7 +111,9 @@ export const agentQuestionsRouter = new Hono()
   .post('/:id/answer', async (c) => {
     const identity = await resolveActingUser(c.get('identity'))
     if (!identity) return c.json({ error: 'Unauthorized' }, 401)
-    const id = c.req.param('id')
+    const resolved = await resolveQuestionRouteId(c)
+    if ('response' in resolved) return resolved.response
+    const id = resolved.id
     const question = await getAgentQuestion(id)
     if (!question) return c.json({ error: 'Question not found' }, 404)
 
@@ -123,8 +145,10 @@ export const agentQuestionsRouter = new Hono()
   .post('/:id/resolve', async (c) => {
     const identity = c.get('identity') as Identity | undefined
     if (!identity) return c.json({ error: 'Unauthorized' }, 401)
-    const id = c.req.param('id')
-    const question = isUuid(id) ? await getAgentQuestion(id) : null
+    const resolved = await resolveQuestionRouteId(c)
+    if ('response' in resolved) return resolved.response
+    const id = resolved.id
+    const question = await getAgentQuestion(id)
     if (!question) return c.json({ error: 'Question not found' }, 404)
     if (identity.type !== 'agent' || identity.agentId !== question.agentId) {
       return c.json({ error: 'Only the agent that asked this question can resolve it' }, 403)
@@ -155,7 +179,9 @@ export const agentQuestionsRouter = new Hono()
   .post('/:id/retry-delivery', async (c) => {
     const identity = await resolveActingUser(c.get('identity'))
     if (!identity) return c.json({ error: 'Unauthorized' }, 401)
-    const id = c.req.param('id')
+    const resolved = await resolveQuestionRouteId(c)
+    if ('response' in resolved) return resolved.response
+    const id = resolved.id
     const question = await getAgentQuestion(id)
     if (!question) return c.json({ error: 'Question not found' }, 404)
     const target = await Agent.find(question.agentId)
@@ -181,7 +207,9 @@ export const agentQuestionsRouter = new Hono()
   .post('/:id/dismiss-delivery-failure', async (c) => {
     const identity = await resolveActingUser(c.get('identity'))
     if (!identity) return c.json({ error: 'Unauthorized' }, 401)
-    const question = await getAgentQuestion(c.req.param('id'))
+    const resolved = await resolveQuestionRouteId(c)
+    if ('response' in resolved) return resolved.response
+    const question = await getAgentQuestion(resolved.id)
     if (!question) return c.json({ error: 'Question not found' }, 404)
     const attention = await loadUserAttention(identity.userId)
     if (!(await canReceiveAgentQuestionAttention(identity, question, { attention }))) {
@@ -207,7 +235,9 @@ export const agentQuestionsRouter = new Hono()
   .post('/:id/blocking', async (c) => {
     const identity = c.get('identity') as Identity | undefined
     if (!identity) return c.json({ error: 'Unauthorized' }, 401)
-    const id = c.req.param('id')
+    const resolved = await resolveQuestionRouteId(c)
+    if ('response' in resolved) return resolved.response
+    const id = resolved.id
     const question = await getAgentQuestion(id)
     if (!question) return c.json({ error: 'Question not found' }, 404)
 
