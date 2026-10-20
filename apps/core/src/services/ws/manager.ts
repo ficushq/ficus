@@ -11,6 +11,7 @@ import {
   type Topic,
 } from '@ficus/shared'
 import type { Identity } from '../rbac'
+import { createLogger, type ScopedLogger } from '../../lib/infra/logger'
 import { getAccessibleSquadIds, hasPermission } from '../rbac'
 import { invalidatePermissionCache } from '../rbac/permissions'
 import { assistantInboxOwner } from '../assistant-inbox'
@@ -37,6 +38,8 @@ interface Client {
   id: string
   ws: ServerWebSocket<unknown>
   identity: Identity
+  /** `now()` when the socket was registered, for the age in its close line. */
+  openedAt: number
   subscriptions: Set<string>
   activityAccessSignatures: Map<string, string>
   activityTopicGenerations: Map<string, symbol>
@@ -70,6 +73,35 @@ const FARM_CHAT_TYPING_ROOMS = 20
 /** Topics only people (never agents or tokens) may subscribe to: the farm's multiplayer. */
 const PEOPLE_TOPICS = new Set<string>(['presence', 'farmChat'])
 
+/**
+ * Why the manager stopped tracking a socket. `closed` and `error` come from the
+ * socket's own events (index.ts); the rest are the manager noticing on its own
+ * that a socket is unusable, which is exactly the half-open case a stalled
+ * client cannot report itself.
+ */
+export type SocketCloseCause = 'closed' | 'error' | 'send-failed' | 'not-open' | 'removed'
+
+export interface WebSocketManagerOptions {
+  /** Where open/close lines go; defaults to the `ws` logger. */
+  log?: Pick<ScopedLogger, 'info' | 'warn' | 'error'>
+  /** Clock for socket ages; defaults to `Date.now`. */
+  now?: () => number
+}
+
+/** Who holds a socket, for its log lines: the identity kind and its id, never a token or name. */
+function describeIdentity(identity: Identity): string {
+  switch (identity.type) {
+    case 'user':
+      return `user ${identity.userId}`
+    case 'agent':
+      return `agent ${identity.agentId}`
+    case 'system':
+      return `system ${identity.systemTokenId}`
+    default:
+      return identity.type
+  }
+}
+
 export class WebSocketManager {
   private clients: Map<string, Client> = new Map()
   private clientIdCounter = 0
@@ -77,7 +109,16 @@ export class WebSocketManager {
   /** Farm actions still being applied (they wait on a permission check), for settled(). */
   private readonly pendingFarm = new Set<Promise<unknown>>()
 
-  constructor(private readonly resolveActivityAccess: typeof resolveSquadActivityAccess = resolveSquadActivityAccess) {}
+  private readonly log: Pick<ScopedLogger, 'info' | 'warn' | 'error'>
+  private readonly now: () => number
+
+  constructor(
+    private readonly resolveActivityAccess: typeof resolveSquadActivityAccess = resolveSquadActivityAccess,
+    options: WebSocketManagerOptions = {}
+  ) {
+    this.log = options.log ?? createLogger('ws')
+    this.now = options.now ?? Date.now
+  }
 
   addClient(ws: ServerWebSocket<unknown>, identity: Identity): string {
     const id = `client-${++this.clientIdCounter}`
@@ -85,27 +126,53 @@ export class WebSocketManager {
       id,
       ws,
       identity,
+      openedAt: this.now(),
       subscriptions: new Set(),
       activityAccessSignatures: new Map(),
       activityTopicGenerations: new Map(),
       activityAccessEpoch: Symbol(),
     })
+    this.log.info('Socket opened', { clientId: id, identity: describeIdentity(identity), open: this.clients.size })
     return id
   }
 
   removeClient(clientId: string): void {
     const client = this.clients.get(clientId)
-    if (client) this.forget(client)
+    if (client) this.forget(client, 'removed')
   }
 
-  removeByWs(ws: ServerWebSocket<unknown>): void {
+  /**
+   * Drops the socket when its own close or error event arrives. `close` carries
+   * the close frame when there was one; `cause` says which event it was.
+   */
+  removeByWs(
+    ws: ServerWebSocket<unknown>,
+    close?: { code: number; reason: string },
+    cause: Extract<SocketCloseCause, 'closed' | 'error'> = 'closed'
+  ): void {
     const client = this.getClientByWs(ws)
-    if (client) this.forget(client)
+    if (client) this.forget(client, cause, close)
   }
 
-  /** Drops a connection, and its person from the farm when it was their last. */
-  private forget(client: Client): void {
-    if (this.clients.get(client.id) === client) this.clients.delete(client.id)
+  /**
+   * Drops a connection, and its person from the farm when it was their last.
+   * The close line is written once, while the socket is still tracked, so a
+   * later duplicate forget (an error followed by a close) stays silent.
+   */
+  private forget(client: Client, cause: SocketCloseCause, close?: { code: number; reason: string }): void {
+    if (this.clients.get(client.id) === client) {
+      this.clients.delete(client.id)
+      this.log.info('Socket closed', {
+        clientId: client.id,
+        identity: describeIdentity(client.identity),
+        cause,
+        code: close?.code ?? null,
+        reason: close?.reason ?? null,
+        ageSeconds: Math.round((this.now() - client.openedAt) / 1000),
+        subscriptions: client.subscriptions.size,
+        open: this.clients.size,
+      })
+    }
     const change = this.presence.withdraw(client.id)
     if (change)
       void this.deliverPresence(change).catch((error) => console.error('[ws] presence delivery failed:', error))
@@ -281,7 +348,7 @@ export class WebSocketManager {
       try {
         client.ws.send(json)
       } catch {
-        this.forget(client)
+        this.forget(client, 'send-failed')
       }
     }
   }
@@ -298,7 +365,7 @@ export class WebSocketManager {
       try {
         client.ws.send(json)
       } catch {
-        this.forget(client)
+        this.forget(client, 'send-failed')
       }
     }
   }
@@ -312,7 +379,7 @@ export class WebSocketManager {
     const clients = [...this.clients.values()]
     const candidates = clients.filter((client) => {
       if (client.ws.readyState !== undefined && client.ws.readyState !== WebSocket.OPEN) {
-        this.forget(client)
+        this.forget(client, 'not-open')
         return false
       }
       return client.subscriptions.has(topic)
@@ -822,7 +889,7 @@ export class WebSocketManager {
       try {
         client.ws.send(json)
       } catch {
-        this.forget(client)
+        this.forget(client, 'send-failed')
       }
     }
   }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { WebSocketContext, type WebSocketContextValue } from '../hooks/useWebSocket'
 import { requestUpdateCheck } from '../lib/serviceWorker'
+import { SocketLivenessTracker, watchSocketLiveness } from '../lib/socketLiveness'
 
 interface WebSocketProviderProps {
   /** Resolve the WS URL per connection (mints a fresh single-use ticket each time). */
@@ -24,17 +25,38 @@ export function WebSocketProvider({ getUrl, children }: WebSocketProviderProps) 
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasConnectedBeforeRef = useRef(false)
   const mountedRef = useRef(true)
+  // Evidence for a stall: when this connection opened and last received a frame.
+  // Reconnection happens only on a close event, so a half-open socket (or a stall
+  // upstream of a healthy one) looks like a quiet connected one; these lines, next
+  // to Core's own socket open/close log, show which it was.
+  const livenessRef = useRef<SocketLivenessTracker | null>(null)
+  livenessRef.current ??= new SocketLivenessTracker()
 
   useEffect(() => {
     mountedRef.current = true
+    const liveness = livenessRef.current!
 
     function scheduleReconnect() {
       const delay = reconnectDelayRef.current
       reconnectDelayRef.current = Math.min(delay * RECONNECT_BACKOFF, MAX_RECONNECT_DELAY)
       reconnectTimeoutRef.current = setTimeout(() => {
+        reconnectTimeoutRef.current = null
         if (mountedRef.current) connect()
       }, delay)
     }
+
+    const stopWatching = watchSocketLiveness(
+      (trigger) => {
+        if (!mountedRef.current) return
+        console.info('[WebSocket] liveness', trigger, {
+          ...liveness.snapshot(wsRef.current?.readyState),
+          visibility: document.visibilityState,
+          online: navigator.onLine,
+          reconnectPending: reconnectTimeoutRef.current !== null,
+        })
+      },
+      { window, document }
+    )
 
     async function connect() {
       if (!mountedRef.current) return
@@ -70,6 +92,7 @@ export function WebSocketProvider({ getUrl, children }: WebSocketProviderProps) 
           ws.close()
           return
         }
+        liveness.opened()
         setIsConnected(true)
         // Reset reconnect delay on successful connection
         reconnectDelayRef.current = INITIAL_RECONNECT_DELAY
@@ -82,16 +105,23 @@ export function WebSocketProvider({ getUrl, children }: WebSocketProviderProps) 
       }
 
       ws.onclose = (event) => {
-        console.log('[WebSocket] Disconnected, code:', event.code, 'reason:', event.reason)
-        if (!mountedRef.current) return
-        setIsConnected(false)
-
+        const { openForMs, sinceLastMessageMs } = liveness.snapshot(ws.readyState)
+        liveness.closed()
         // Auto-reconnect with exponential backoff
         const delay = reconnectDelayRef.current
+        console.log('[WebSocket] Disconnected', {
+          code: event.code,
+          reason: event.reason,
+          openForMs,
+          sinceLastMessageMs,
+          reconnectInMs: delay,
+        })
+        if (!mountedRef.current) return
+        setIsConnected(false)
         reconnectDelayRef.current = Math.min(delay * RECONNECT_BACKOFF, MAX_RECONNECT_DELAY)
-        console.log('[WebSocket] Reconnecting in', delay, 'ms')
 
         reconnectTimeoutRef.current = setTimeout(() => {
+          reconnectTimeoutRef.current = null
           if (mountedRef.current) {
             connect()
           }
@@ -104,6 +134,7 @@ export function WebSocketProvider({ getUrl, children }: WebSocketProviderProps) 
       }
 
       ws.onmessage = (event) => {
+        liveness.message()
         try {
           const message = JSON.parse(event.data)
           if (message.type === 'event') {
@@ -125,8 +156,10 @@ export function WebSocketProvider({ getUrl, children }: WebSocketProviderProps) 
 
     return () => {
       mountedRef.current = false
+      stopWatching()
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = null
       }
       wsRef.current?.close()
     }
