@@ -1,6 +1,4 @@
 #!/usr/bin/env bun
-import { createServer } from 'node:net'
-import { createSocket } from 'node:dgram'
 import { lstat, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
@@ -72,50 +70,49 @@ export function assertCgroupBudget(role: Role, facts: CgroupFacts): void {
     throw new Error('unsupported_host')
 }
 
-type InetProbe = (family: 'tcp4' | 'tcp6' | 'udp4') => Promise<{ close: () => Promise<void> }>
-const inetProbe: InetProbe = (family) =>
-  new Promise((resolve, reject) => {
-    if (family === 'udp4') {
-      const socket = createSocket('udp4')
-      socket.once('error', reject)
-      socket.bind(0, '127.0.0.1', () =>
-        resolve({ close: () => new Promise<void>((done) => socket.close(() => done())) })
-      )
-      return
-    }
-    // No HTTP/TLS/data parser runs here. Immediately close every accepted connection.
-    const server = createServer((connection) => connection.destroy())
-    server.once('error', reject)
-    server.listen(0, family === 'tcp4' ? '127.0.0.1' : '::1', () =>
-      resolve({
-        close: () => new Promise<void>((done, fail) => server.close((error) => (error ? fail(error) : done()))),
-      })
-    )
+/** One raw socket(2) call; a successful descriptor is closed immediately. Using libc directly
+ * reports the kernel's exact errno (the runtime's net layer does not), so a seccomp
+ * RestrictAddressFamilies denial (EAFNOSUPPORT) is told apart from anything else. */
+export type SocketProbe = (domain: number, type: number) => { opened: boolean; errno: number }
+let libc: ReturnType<typeof openLibc> | null = null
+function openLibc() {
+  const { dlopen, FFIType } = require('bun:ffi') as typeof import('bun:ffi')
+  return dlopen('libc.so.6', {
+    socket: { args: [FFIType.i32, FFIType.i32, FFIType.i32], returns: FFIType.i32 },
+    close: { args: [FFIType.i32], returns: FFIType.i32 },
+    __errno_location: { args: [], returns: FFIType.ptr },
   })
+}
+const libcSocketProbe: SocketProbe = (domain, type) => {
+  const { read } = require('bun:ffi') as typeof import('bun:ffi')
+  libc ??= openLibc()
+  const fd = libc.symbols.socket(domain, type, 0)
+  if (fd >= 0) {
+    libc.symbols.close(fd)
+    return { opened: true, errno: 0 }
+  }
+  return { opened: false, errno: read.i32(libc.symbols.__errno_location()!, 0) }
+}
+const ERRNO_NAMES: Record<number, string> = {
+  1: 'eperm',
+  13: 'eacces',
+  22: 'einval',
+  93: 'eprotonosupport',
+  97: 'eafnosupport',
+}
 /** Run in the LIVE sandboxed process (RestrictAddressFamilies=AF_UNIX is seccomp, enforced on
- * every systemd build): any IPv4/IPv6 TCP or UDP socket must be refused by the kernel. A
- * successful bind is closed and refused; a collision is never accepted as proof.
- */
-export async function proveNoInetSockets(probe: InetProbe = inetProbe): Promise<void> {
-  for (const family of ['tcp4', 'tcp6', 'udp4'] as const) {
-    let opened: Awaited<ReturnType<InetProbe>>
-    try {
-      opened = await probe(family)
-    } catch (error) {
-      const code = error && typeof error === 'object' && 'code' in error ? error.code : null
-      if (code === 'EAFNOSUPPORT' || code === 'EACCES' || code === 'EPERM') continue
-      // Fixed-alphabet token of whatever the runtime reported, for operators.
-      const token =
-        typeof code === 'string'
-          ? code
-              .toLowerCase()
-              .replace(/[^a-z]/g, '_')
-              .slice(0, 28)
-          : 'nocode'
-      throw new Error(`inet_${family}_${token}`.replace(/[0-9]/g, ''))
-    }
-    await opened.close()
-    throw new Error('inet_allowed')
+ * every systemd build): creating ANY IPv4/IPv6 stream or datagram socket must be refused. */
+export async function proveNoInetSockets(probe: SocketProbe = libcSocketProbe): Promise<void> {
+  for (const [name, domain, type] of [
+    ['tcp_v', 2, 1],
+    ['tcp_vsix', 10, 1],
+    ['udp_v', 2, 2],
+    ['udp_vsix', 10, 2],
+  ] as const) {
+    const result = probe(domain, type)
+    if (result.opened) throw new Error(`inet_allowed_${name}`)
+    if (result.errno === 97 || result.errno === 1 || result.errno === 13) continue
+    throw new Error(`inet_${name}_${ERRNO_NAMES[result.errno] ?? 'other'}`)
   }
 }
 

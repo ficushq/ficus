@@ -32,34 +32,23 @@ test('preflight reads enforceable cgroup-v2 values, not unit declarations or an 
   ])
     expect(() => assertCgroupBudget('vault', bad)).toThrow(/^(budget_[a-z_]+|unsupported_host)$/)
 })
-test('the live process must be refused every IPv4/IPv6 TCP and UDP socket; a collision or success is never proof', async () => {
-  const families: string[] = []
-  await proveNoInetSockets(async (family) => {
-    families.push(family)
-    throw Object.assign(new Error(), { code: 'EAFNOSUPPORT' })
-  })
-  expect(families).toEqual(['tcp4', 'tcp6', 'udp4'])
-  for (const [code, reason] of [
-    ['EADDRINUSE', 'inet_tcp_eaddrinuse'],
-    ['UNKNOWN', 'inet_tcp_unknown'],
+test('the live process must be refused every IPv4/IPv6 TCP and UDP socket; an open or an unexpected errno is never proof', async () => {
+  const calls: [number, number][] = []
+  await proveNoInetSockets((domain, type) => (calls.push([domain, type]), { opened: false, errno: 97 }))
+  expect(calls).toEqual([
+    [2, 1],
+    [10, 1],
+    [2, 2],
+    [10, 2],
   ])
-    await expect(
-      proveNoInetSockets(async () => {
-        throw Object.assign(new Error(), { code })
-      })
-    ).rejects.toThrow(reason)
-  let closed = 0
+  await expect(proveNoInetSockets(() => ({ opened: false, errno: 22 }))).rejects.toThrow('inet_tcp_v_einval')
   await expect(
-    proveNoInetSockets(async (family) => {
-      if (family !== 'udp4') throw Object.assign(new Error(), { code: 'EAFNOSUPPORT' })
-      return { close: async () => void closed++ }
-    })
-  ).rejects.toThrow('inet_allowed')
-  expect(closed).toBe(1)
+    proveNoInetSockets((domain, type) => ({ opened: domain === 10 && type === 2, errno: 97 }))
+  ).rejects.toThrow('inet_allowed_udp_vsix')
 })
 
-test('this unprivileged test process can open IP sockets, so the real probe refuses here (fails closed)', async () => {
-  await expect(proveNoInetSockets()).rejects.toThrow('inet_allowed')
+test('the real libc probe in this unconfined test process can open IP sockets, so it refuses (fails closed)', async () => {
+  await expect(proveNoInetSockets()).rejects.toThrow('inet_allowed_tcp_v')
 })
 
 test('socket directory verification requires exact owner, client group and setgid 2750', async () => {

@@ -207,6 +207,7 @@ try {
           ? '/run/ficus-bigbrain/gateway/sandbox.reason'
           : `/run/ficus-bigbrain/vaults/${target}/sandbox.reason`,
       ]).stdout.trim(),
+      target === 'gateway' ? sh(['/bin/cat', '/run/ficus-bigbrain/gateway/start.reason']).stdout.trim() : '',
       unitProperty(
         target === 'gateway' ? 'ficus-bigbrain-gateway.service' : `ficus-bigbrain@${target}.service`,
         'Result'

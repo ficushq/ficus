@@ -45,8 +45,18 @@ export async function gatewayMain(args: string[]): Promise<void> {
     process.once('SIGINT', () => {
       void stop()
     })
-  } catch {
+  } catch (error) {
     console.error('Managed BigBrain gateway unavailable')
+    // stdio is discarded by the unit; leave a fixed-alphabet token in our own socket directory.
+    const token =
+      error instanceof Error
+        ? (error.message || error.name)
+            .toLowerCase()
+            .replace(/[^a-z]+/g, '_')
+            .slice(0, 60)
+        : 'unknown'
+    const { writeFile } = await import('node:fs/promises')
+    await writeFile('/run/ficus-bigbrain/gateway/start.reason', `${token}\n`, { mode: 0o600 }).catch(() => {})
     process.exitCode = 1
   }
 }
