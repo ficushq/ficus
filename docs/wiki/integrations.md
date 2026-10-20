@@ -37,7 +37,9 @@ connections](bigbrain.md) for the implementation contract, upstream pin and
 provenance, exact machine boundary, operator setup, CLI selection, tools, failure
 states, and removal/release boundary. Hosted and remote-vault configurations are
 not supported. Ficus does not automatically capture or export transcripts and
-does not replace capture with background summaries or drops.
+does not replace capture with background summaries or drops. On Ficus Cloud, BigBrain
+instead offers [managed shared vaults](bigbrain-shared-vaults.md) that people write in
+the BigBrain app and squads read through explicitly selected, read-only tools.
 
 Pool authorization is instance-scoped and provider-subselected:
 `integrations:read:<providerKey>` and `integrations:write:<providerKey>`. A bare

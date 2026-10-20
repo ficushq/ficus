@@ -71,7 +71,8 @@ export function ManagedBigbrainIntegrationSettings({ canWrite }: { canWrite: boo
     <section>
       <p className="mt-1 text-xs text-muted">
         Shared vaults run on this Ficus server. People contribute from the BigBrain app; Ficus agents in squads you
-        attach can only read. Each vault has its own storage, identity and credentials.
+        attach can only read. Each vault has its own storage, identity and credentials, isolated from the other vaults.
+        Ficus itself can access every shared vault on this server.
       </p>
       <div className="mt-4">
         <LoadingContent

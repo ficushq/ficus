@@ -3,6 +3,8 @@
 > Local connector verified against the pinned upstream on Linux on 2026-10-20.
 > Packaged macOS end-to-end validation is outstanding; no Desktop release is implied.
 > This page describes the local MCP connector, not the removed API/token adapter.
+> On Ficus Cloud, see [managed shared BigBrain vaults](bigbrain-shared-vaults.md) instead. There,
+> Ficus Core is trusted with every shared vault on the tenant's server.
 
 [BigBrain](https://bigbrain.cool) is a self-hosted memory engine, not a BigBrain-hosted cloud service.
 Ficus connects to an explicitly selected local vault using BigBrain's public

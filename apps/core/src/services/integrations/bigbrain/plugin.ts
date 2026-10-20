@@ -1,4 +1,5 @@
 import { isPlatformManaged } from '../../secrets/managed'
+import { requireSandboxRuntime } from '../../sandbox/runtime'
 import { BigbrainError } from './errors'
 import { bigbrainDeploymentAvailability } from './managed/availability'
 import { parseBigbrainCredential, type BigbrainConfiguration } from './managed/config'
@@ -8,6 +9,16 @@ import { createBigbrainTools, type BigbrainTool, type BigbrainToolContext } from
 import type { IntegrationPluginV1 } from '../plugin'
 
 const provider = new BigbrainProvider()
+
+/** Shared vault reads are offered only to agents on an isolated runtime: a `host` agent shell
+ * runs as the Core service account, which can read every vault's private material. */
+function isolatedAgentRuntime(): boolean {
+  try {
+    return requireSandboxRuntime() !== 'host'
+  } catch {
+    return false
+  }
+}
 
 const plugin: IntegrationPluginV1<
   BigbrainConfiguration,
@@ -46,7 +57,7 @@ const plugin: IntegrationPluginV1<
       // unchanged personal local-binding tools.
       createTools: (context) =>
         isPlatformManaged()
-          ? context.assignments
+          ? context.assignments && isolatedAgentRuntime()
             ? createSharedBigbrainTools({ ...context, assignments: context.assignments })
             : []
           : createBigbrainTools(context),

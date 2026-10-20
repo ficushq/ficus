@@ -238,8 +238,15 @@ test('the plugin offers shared read tools on Ficus Cloud and the unchanged perso
     audit: {} as never,
     assignments: { listAssigned: async () => [] },
   }
+  const previousRuntime = process.env.FICUS_SANDBOX_RUNTIME
   process.env.FICUS_MANAGED = '1'
+  process.env.FICUS_SANDBOX_RUNTIME = 'vm'
   expect((await factory.createTools(shared)).map((t) => t.name)).toEqual([...BIGBRAIN_SHARED_TOOL_NAMES])
+  // A host-runtime agent shell runs as the Core account: never offered shared vault reads.
+  process.env.FICUS_SANDBOX_RUNTIME = 'host'
+  expect(await factory.createTools(shared)).toEqual([])
+  if (previousRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+  else process.env.FICUS_SANDBOX_RUNTIME = previousRuntime
   delete process.env.FICUS_MANAGED
   const personal = (await factory.createTools(shared)).map((t) => t.name)
   expect(personal).toContain('bigbrain_drop')
