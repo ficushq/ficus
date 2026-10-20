@@ -167,6 +167,66 @@ export interface BigbrainLocalBindings {
 }
 export const getBigbrainLocalBindings = (fetcher: ApiFetcher = apiFetch) =>
   fetcher<BigbrainLocalBindings>('/integrations/providers/bigbrain/local-bindings')
+/** Management view of one managed shared BigBrain vault (never credentials or host paths). */
+export interface ManagedBigbrainVault {
+  vaultId: string
+  displayName: string
+  ownerUserId: string
+  isOwner: boolean
+  state: 'requested' | 'provisioning' | 'ready' | 'degraded' | 'failed' | 'deleting' | 'deleted'
+  readAccess: 'pending' | 'active' | 'revoked'
+  desiredGeneration: number
+  appliedGeneration: number
+  upstreamVaultId: string | null
+  origin: string | null
+  connectionId: string | null
+  lastErrorCode: string | null
+  retryable: boolean
+  updatedAt: string
+}
+/** SECRET: a single-use owner device link. Keep in component state only; never cache or log. */
+export interface ManagedBigbrainOwnerInvite {
+  inviteUrl: string
+  expiresAt: string
+}
+const MANAGED_VAULTS = '/integrations/providers/bigbrain/shared-vaults'
+const vaultPath = (vaultId: string) => `${MANAGED_VAULTS}/${encodeURIComponent(vaultId)}`
+export const listManagedBigbrainVaults = (fetcher: ApiFetcher = apiFetch) =>
+  fetcher<{ vaults: ManagedBigbrainVault[] }>(MANAGED_VAULTS).then((value) => value.vaults)
+export const createManagedBigbrainVault = (
+  input: { requestId: string; displayName: string; ownerHandle: string },
+  fetcher: ApiFetcher = apiFetch
+) => fetcher<ManagedBigbrainVault>(MANAGED_VAULTS, { method: 'POST', body: JSON.stringify(input) })
+export const renameManagedBigbrainVault = (
+  vaultId: string,
+  input: { requestId: string; expectedGeneration: number; displayName: string },
+  fetcher: ApiFetcher = apiFetch
+) => fetcher<ManagedBigbrainVault>(vaultPath(vaultId), { method: 'PATCH', body: JSON.stringify(input) })
+export const retryManagedBigbrainVault = (
+  vaultId: string,
+  input: { requestId: string; expectedGeneration: number },
+  fetcher: ApiFetcher = apiFetch
+) => fetcher<ManagedBigbrainVault>(`${vaultPath(vaultId)}/retry`, { method: 'POST', body: JSON.stringify(input) })
+export const setManagedBigbrainReadAccess = (
+  vaultId: string,
+  input: { requestId: string; expectedGeneration: number; action: 'revoke' | 'reconnect' },
+  fetcher: ApiFetcher = apiFetch
+) => fetcher<ManagedBigbrainVault>(`${vaultPath(vaultId)}/read-access`, { method: 'POST', body: JSON.stringify(input) })
+export const deleteManagedBigbrainVault = (
+  vaultId: string,
+  input: { requestId: string; expectedGeneration: number; confirmedVaultId: string; confirmedName: string },
+  fetcher: ApiFetcher = apiFetch
+) => fetcher<ManagedBigbrainVault>(vaultPath(vaultId), { method: 'DELETE', body: JSON.stringify(input) })
+export const createManagedBigbrainOwnerInvite = (
+  vaultId: string,
+  input: { requestId: string; expectedGeneration: number },
+  fetcher: ApiFetcher = apiFetch
+) =>
+  fetcher<ManagedBigbrainOwnerInvite>(`${vaultPath(vaultId)}/owner-invite`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+
 export const createLocalBigbrainIntegration = (
   input: { bindingId: string; displayName: string },
   fetcher: ApiFetcher = apiFetch
