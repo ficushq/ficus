@@ -1,5 +1,5 @@
 {
-  "id": "945209b0-4ce1-463e-bddd-0d1ab3b4def0",
+  "id": "42d997c5-9754-46be-b6bc-d9cfd427c8ff",
   "prevId": "a12edf96-1caa-4a34-9244-f7046cae2c16",
   "version": "7",
   "dialect": "postgresql",
@@ -12136,6 +12136,127 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.managed_bigbrain_operations": {
+      "name": "managed_bigbrain_operations",
+      "schema": "",
+      "columns": {
+        "request_id": {
+          "name": "request_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "vault_id": {
+          "name": "vault_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "input_hash": {
+          "name": "input_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expected_generation": {
+          "name": "expected_generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issued_at": {
+          "name": "issued_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'accepted'"
+        },
+        "code": {
+          "name": "code",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_managed_bigbrain_operations_vault": {
+          "name": "idx_managed_bigbrain_operations_vault",
+          "columns": [
+            {
+              "expression": "vault_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "managed_bigbrain_operations_vault_id_managed_bigbrain_vaults_id_fk": {
+          "name": "managed_bigbrain_operations_vault_id_managed_bigbrain_vaults_id_fk",
+          "tableFrom": "managed_bigbrain_operations",
+          "tableTo": "managed_bigbrain_vaults",
+          "columnsFrom": [
+            "vault_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "managed_bigbrain_operations_action_check": {
+          "name": "managed_bigbrain_operations_action_check",
+          "value": "\"managed_bigbrain_operations\".\"action\" in ('create', 'rename', 'retry', 'owner-invite', 'read-revoke', 'read-reconnect', 'delete')"
+        },
+        "managed_bigbrain_operations_status_check": {
+          "name": "managed_bigbrain_operations_status_check",
+          "value": "\"managed_bigbrain_operations\".\"status\" in ('accepted', 'applied', 'failed')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.managed_bigbrain_vaults": {
       "name": "managed_bigbrain_vaults",
       "schema": "",
@@ -12169,6 +12290,12 @@
           "type": "varchar(120)",
           "primaryKey": false,
           "notNull": true
+        },
+        "host_display_name": {
+          "name": "host_display_name",
+          "type": "varchar(120)",
+          "primaryKey": false,
+          "notNull": false
         },
         "connection_id": {
           "name": "connection_id",
@@ -12210,9 +12337,21 @@
           "notNull": true,
           "default": 0
         },
-        "operation_id": {
-          "name": "operation_id",
+        "desired_action": {
+          "name": "desired_action",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "operation_request_id": {
+          "name": "operation_request_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "operation_hash": {
+          "name": "operation_hash",
+          "type": "varchar(64)",
           "primaryKey": false,
           "notNull": false
         },
@@ -12228,6 +12367,44 @@
           "primaryKey": false,
           "notNull": true
         },
+        "create_recipe": {
+          "name": "create_recipe",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "artifact_digest": {
+          "name": "artifact_digest",
+          "type": "varchar(71)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "host_receipt_id": {
+          "name": "host_receipt_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "backup": {
+          "name": "backup",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'unknown'"
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "next_attempt_at": {
+          "name": "next_attempt_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "last_error_code": {
           "name": "last_error_code",
           "type": "varchar(64)",
@@ -12241,17 +12418,11 @@
           "notNull": true,
           "default": false
         },
-        "platform_updated_at": {
-          "name": "platform_updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "origin": {
           "name": "origin",
           "type": "varchar(253)",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "read_material": {
           "name": "read_material",
@@ -12327,6 +12498,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_managed_bigbrain_vaults_due": {
+          "name": "idx_managed_bigbrain_vaults_due",
+          "columns": [
+            {
+              "expression": "next_attempt_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -12381,6 +12567,14 @@
         "managed_bigbrain_vaults_read_access_check": {
           "name": "managed_bigbrain_vaults_read_access_check",
           "value": "\"managed_bigbrain_vaults\".\"read_access\" in ('pending', 'active', 'revoked')"
+        },
+        "managed_bigbrain_vaults_action_check": {
+          "name": "managed_bigbrain_vaults_action_check",
+          "value": "\"managed_bigbrain_vaults\".\"desired_action\" is null or \"managed_bigbrain_vaults\".\"desired_action\" in ('create', 'rename', 'read-revoke', 'read-reconnect', 'delete')"
+        },
+        "managed_bigbrain_vaults_backup_check": {
+          "name": "managed_bigbrain_vaults_backup_check",
+          "value": "\"managed_bigbrain_vaults\".\"backup\" in ('unknown', 'included', 'excluded')"
         },
         "managed_bigbrain_vaults_generation_check": {
           "name": "managed_bigbrain_vaults_generation_check",
