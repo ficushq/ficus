@@ -144,6 +144,9 @@ test('change → review → confirm sends the version it reviewed and reports th
   const text = dialog.textContent ?? ''
   expect(text).toContain('Passkeys don’t carry over to a new hostname')
   expect(text).toContain('keep working at the local address (http://localhost:61896)')
+  expect(text).toContain('Account → Passkeys → Add a passkey for another address')
+  expect(text).toContain('never removes passkeys or signs anyone out')
+  expect(text).toContain('is a last resort')
   expect(text).toContain('needs email delivery')
   expect(text).toContain('replaces all of your existing passkeys and signs out every session')
   expect(text).toContain('set APP_URL in the server environment and restart')

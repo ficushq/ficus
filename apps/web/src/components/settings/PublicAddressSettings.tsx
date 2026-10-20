@@ -328,8 +328,13 @@ export function PublicAddressSettings({ onSaved }: { onSaved?: (message: string)
                       : 'Existing passkeys keep working only at the hostname they were made on.'}
                   </li>
                   <li>
-                    “Lost your passkey?” on the new address’s sign-in page needs email delivery from this server, and it
-                    replaces all of your existing passkeys and signs out every session.
+                    To use a passkey at the new address, open Account → Passkeys → Add a passkey for another address. It
+                    gives you a one-time link (valid 15 minutes) to open at the new address, and it never removes
+                    passkeys or signs anyone out. Do it before saving, or afterwards from this tab or the local address.
+                  </li>
+                  <li>
+                    “Lost your passkey?” on the sign-in page is a last resort: it needs email delivery from this server,
+                    and it replaces all of your existing passkeys and signs out every session.
                   </li>
                   <li>
                     If you lose access, set APP_URL in the server environment and restart Ficus. It overrides this

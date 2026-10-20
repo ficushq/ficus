@@ -96,6 +96,55 @@ export async function verifyTokenRegistration(
   })
 }
 
+// ── Adding a passkey for another address of this server ─────────────────────
+// A signed-in person re-confirms with a passkey and gets a single-use, 15-minute
+// code. Opened at another allowed address, it registers ONE more passkey for that
+// person there. It never removes passkeys or signs anyone out.
+
+export interface PasskeyCodeIssue {
+  /** `XXXX-XXXX-XXXX-XXXX`; shown once, never stored. */
+  code: string
+  expiresAt: string
+  /** One link per allowed address, primary first. The code is in the fragment. */
+  links: { origin: string; url: string }[]
+}
+
+export async function passkeyCodeOptions(): Promise<{
+  options: PublicKeyCredentialRequestOptionsJSON
+  challengeKey: string
+}> {
+  return apiFetch('/auth/me/passkey-codes/options', { method: 'POST' })
+}
+
+export async function issuePasskeyCode(challengeKey: string, response: unknown): Promise<PasskeyCodeIssue> {
+  return apiFetch('/auth/me/passkey-codes', {
+    method: 'POST',
+    body: JSON.stringify({ challengeKey, response }),
+  })
+}
+
+export interface AddPasskeyContext {
+  options: PublicKeyCredentialCreationOptionsJSON
+  email: string
+  displayName: string | null
+  origin: string
+}
+
+export async function getAddPasskeyOptions(code: string): Promise<AddPasskeyContext> {
+  return apiFetch('/auth/add-passkey/options', { method: 'POST', body: JSON.stringify({ code }) })
+}
+
+export async function verifyAddPasskey(
+  code: string,
+  response: unknown,
+  credentialName?: string
+): Promise<{ ok: boolean; token: string; user: AuthUser }> {
+  return apiFetch('/auth/add-passkey/verify', {
+    method: 'POST',
+    body: JSON.stringify({ code, response, credentialName }),
+  })
+}
+
 /**
  * Ask for a passkey-recovery link. Always resolves to { ok: true } — the server
  * answers identically for registered and unregistered addresses on purpose, so
