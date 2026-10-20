@@ -570,7 +570,7 @@ async function generateThemeIcons(outDir: string, markLight: string, markMetrics
       tile: DESKTOP_TILE_SPEC,
     })
   const icons = await builtInThemeIcons()
-  for (const icon of icons) await renderPng(svg(icon.colors), join(dir, icon.file))
+  await Promise.all(icons.map((icon) => renderPng(svg(icon.colors), join(dir, icon.file))))
   await writeFile(join(dir, 'manifest.json'), `${JSON.stringify({ icons }, null, 2)}\n`)
   // Desktop fills this in to draw a custom theme's icon live, the same way these were drawn.
   await writeFile(join(dir, 'template.svg'), `${svg(THEME_ICON_TEMPLATE_COLORS)}\n`)

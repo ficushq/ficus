@@ -65,11 +65,14 @@ async function measureRadialDiameterFraction(
 let tmpRoot: string
 let tmpDir: string
 
+/** A full render (every icon, the theme icons included) takes several seconds on a CI runner. */
+const GENERATE_TIMEOUT = 60_000
+
 beforeAll(async () => {
   tmpRoot = mkdtempSync(join(tmpdir(), 'ficus-brand-generate-'))
   tmpDir = join(tmpRoot, 'first')
   await generate(tmpDir)
-})
+}, GENERATE_TIMEOUT)
 
 afterAll(() => {
   rmSync(tmpRoot, { recursive: true, force: true })
@@ -80,16 +83,20 @@ const MAX_CHANNEL_DELTA = 2
 const MAX_CHANGED_FRACTION = 0.005
 
 describe('brand icon generator', () => {
-  it('is byte-for-byte deterministic across fresh renders', async () => {
-    const secondDir = join(tmpRoot, 'second')
-    await generate(secondDir)
+  it(
+    'is byte-for-byte deterministic across fresh renders',
+    async () => {
+      const secondDir = join(tmpRoot, 'second')
+      await generate(secondDir)
 
-    const firstFiles = listFiles(tmpDir).map((f) => relative(tmpDir, f))
-    expect(listFiles(secondDir).map((f) => relative(secondDir, f))).toEqual(firstFiles)
-    for (const rel of firstFiles) {
-      expect(readFileSync(join(secondDir, rel)).equals(readFileSync(join(tmpDir, rel)))).toBe(true)
-    }
-  })
+      const firstFiles = listFiles(tmpDir).map((f) => relative(tmpDir, f))
+      expect(listFiles(secondDir).map((f) => relative(secondDir, f))).toEqual(firstFiles)
+      for (const rel of firstFiles) {
+        expect(readFileSync(join(secondDir, rel)).equals(readFileSync(join(tmpDir, rel)))).toBe(true)
+      }
+    },
+    GENERATE_TIMEOUT
+  )
 
   it('preserves every committed pixel and SVG without depending on PNG compression versions', async () => {
     // brand/generated/app-store/ is rendered by app-store.ts in Chrome, not by
