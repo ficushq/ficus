@@ -886,9 +886,9 @@ function IntegrationPolicyFields({
   if (!can('integrations:read') || !connections.some((connection) => connection.enabled)) return null
   return (
     <fieldset className="border-t border-panel-border pt-4 space-y-2">
-      <legend className="text-sm">Bigbrain access</legend>
+      <legend className="text-sm">BigBrain access</legend>
       <p className="text-xs text-muted">
-        Choose which Bigbrain capabilities agents of this type may use. Squad connection settings still apply.
+        Choose which BigBrain capabilities agents of this type may use. Squad connection settings still apply.
       </p>
       <label className="block text-sm">
         <input type="checkbox" checked={agentTools} onChange={(event) => onAgentTools(event.target.checked)} /> Agent

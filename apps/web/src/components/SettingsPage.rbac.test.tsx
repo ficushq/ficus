@@ -99,8 +99,8 @@ function seedSettingsQueries(queryClient: QueryClient, permissions: string[], op
       {
         key: 'bigbrain',
         enabled: true,
-        label: 'Bigbrain',
-        description: 'Bigbrain',
+        label: 'BigBrain',
+        description: 'BigBrain',
         capabilities: [],
         assignable: true,
         authorization: { kind: 'manual' },
@@ -239,7 +239,7 @@ describe('SettingsPage RBAC tabs', () => {
 
   beforeEach(() => undefined)
 
-  test('opens global Integrations with an instance Bigbrain read/write grant', async () => {
+  test('opens global Integrations with an instance BigBrain read/write grant', async () => {
     const html = await renderSettings('/settings?section=integrations', [
       'integrations:read:bigbrain',
       'integrations:write:bigbrain',
@@ -256,12 +256,12 @@ describe('SettingsPage RBAC tabs', () => {
     const html = await renderSettings('/settings?section=integrations', ['integrations:read:bigbrain'])
 
     expect(html).toContain('Integrations')
-    expect(html).toContain('Enable Bigbrain globally')
+    expect(html).toContain('Enable BigBrain globally')
     expect(html.match(/<button[^>]*role="switch"[^>]*>/)?.[0]).toContain('disabled=')
     expect(html).not.toContain('Create and validate')
   })
 
-  test('Notion-only instance permission reveals global Integrations without Bigbrain access', async () => {
+  test('Notion-only instance permission reveals global Integrations without BigBrain access', async () => {
     const html = await renderSettings('/settings?section=integrations', ['integrations:read:notion'])
     expect(html).toContain('Integrations')
     expect(html).toContain('Notion')
@@ -273,15 +273,15 @@ describe('SettingsPage RBAC tabs', () => {
       squadPermissions: ['integrations:read', 'integrations:write'],
     })
 
-    expect(html).not.toContain('Bigbrain integrations')
+    expect(html).not.toContain('BigBrain integrations')
     expect(html).not.toContain('Integrations')
     expect(html).toContain('Appearance')
   })
 
-  test('an instance GitHub-specific grant does not expose Bigbrain management', async () => {
+  test('an instance GitHub-specific grant does not expose BigBrain management', async () => {
     const html = await renderSettings('/settings?section=integrations', ['integrations:read:github'])
 
-    expect(html).not.toContain('Bigbrain integrations')
+    expect(html).not.toContain('BigBrain integrations')
     expect(html).not.toContain('Integrations')
   })
 
@@ -446,7 +446,7 @@ describe('SettingsPage global integration RBAC', () => {
 
   const bigbrainCard = () =>
     [...container.querySelectorAll('article')].find(
-      (section) => section.querySelector('h4')?.textContent === 'Bigbrain'
+      (section) => section.querySelector('h4')?.textContent === 'BigBrain'
     )!
   const buttonTexts = (node: Element) => [...node.querySelectorAll('button')].map((button) => button.textContent)
   const observerCount = (queryKey: readonly unknown[]) =>
@@ -571,7 +571,7 @@ describe('SettingsPage global integration RBAC', () => {
     expect(bigbrainCard().textContent).toContain('Operations Brain')
     expect(bigbrainCard().textContent).toContain(`Vault: ${operationsBinding.vaultPath}`)
     expect(bigbrainCard().textContent).toContain(`Executable: ${operationsBinding.executablePath}`)
-    expect(bigbrainCard().textContent).toContain('Core host, not this browser')
+    expect(bigbrainCard().textContent).toContain('Core host, not the browser')
     expect(bigbrainCard().querySelector('input[aria-label="API base"]')).toBeNull()
     expect(buttonTexts(bigbrainCard()).includes('Create and validate')).toBe(canWrite)
     expect(observerCount(integrationQueryKeys.pool('bigbrain'))).toBe(1)

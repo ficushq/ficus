@@ -1,3 +1,4 @@
+import { ExternalLink } from '../settings/SettingsRow'
 import { SelectionPopup } from '../ThemedPopup'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -222,11 +223,11 @@ export function BigbrainIntegrationSettings({
   if (pool.isLoading)
     return (
       <section className={embedded ? undefined : 'mt-6 border-b border-panel-border py-5'}>
-        {!embedded && <h3 className="text-sm font-medium text-primary">Bigbrain</h3>}
+        {!embedded && <h3 className="text-sm font-medium text-primary">BigBrain</h3>}
         <p className="mt-1 text-xs text-muted">
-          Same-host self-hosted Ficus only. Vaults and executables belong to the Core host, not this browser.
+          Desktop local runtime and same-host self-hosted Ficus are supported. Paths belong to the connected Core host.
         </p>
-        <LoadingSurface label="Loading Bigbrain connections" className="mt-4 space-y-3">
+        <LoadingSurface label="Loading BigBrain connections" className="mt-4 space-y-3">
           <SkeletonRows count={2}>
             {(index) => (
               <div key={index} className="border-b border-panel-border py-3">
@@ -247,17 +248,18 @@ export function BigbrainIntegrationSettings({
     return (
       <section className={embedded ? undefined : 'mt-6 border-b border-panel-border py-4'}>
         <p role="alert" className="text-sm text-status-danger-600">
-          {boundedError(pool.error, 'Unable to load Bigbrain connections.')}
+          {boundedError(pool.error, 'Unable to load BigBrain connections.')}
         </p>
       </section>
     )
 
   return (
     <section className={embedded ? undefined : 'mt-6 border-b border-panel-border py-5'}>
-      {!embedded && <h3 className="text-sm font-medium text-primary">Bigbrain</h3>}
+      {!embedded && <h3 className="text-sm font-medium text-primary">BigBrain</h3>}
       <p className="text-xs text-muted mt-1">
-        Same-host self-hosted Ficus only. Vaults and executables belong to the Core host, not this browser. Agents
-        receive tools, not vault files.
+        Desktop local runtime and same-host self-hosted Ficus are supported. Vaults and executables belong to the
+        connected Core host, not the browser. The connector exposes tools, not file mounts; trusted host runtime has no
+        filesystem isolation from agent shells. Desktop attached to Cloud cannot access a vault on your Mac.
       </p>
       <div className="mt-4 space-y-4">
         {connections.map((connection) => {
@@ -353,8 +355,15 @@ export function BigbrainIntegrationSettings({
       {canWrite && bindings.data && bindings.data.state !== 'available' && (
         <p role="alert" className="mt-3 text-sm text-muted">
           {bindings.data.state === 'unsupported_host'
-            ? 'BigBrain requires same-host self-hosted Ficus with an isolated agent runtime. Hosted and browser-local vaults are not supported.'
-            : 'Ask the Core host operator to check bigbrain-bindings.json in the Ficus home directory, vault paths, executable permissions and Connected Clients. Then reload these settings.'}
+            ? 'BigBrain requires a macOS/Linux same-host self-hosted Core with a configured agent runtime. Ficus Cloud and vaults on a remote client are unsupported.'
+            : bindings.data.state === 'setup_required'
+              ? 'Create bigbrain-bindings.json in the connected Ficus HOME_DIR (Desktop local data directory, usually ~/.ficus/desktop). BigBrain credentials belong under OS HOME, not HOME_DIR. Provision a named connection in BigBrain Connected Clients first, then reload.'
+              : bindings.data.state === 'binding_unavailable'
+                ? 'A declared vault, executable or private Connected Clients credential is missing or unreadable. Restore the selected paths on the Core host and check the BigBrain connection under OS HOME, then reload.'
+                : 'Check bigbrain-bindings.json syntax, ownership and permissions, and private credential permissions on the Core host. Keep vault, executable and credential paths outside Ficus agent workspace roots, then reload.'}{' '}
+          <ExternalLink className="underline" href="https://github.com/ficushq/ficus/blob/main/docs/wiki/bigbrain.md">
+            Local setup instructions
+          </ExternalLink>
         </p>
       )}
       {canWrite && bindings.data?.state === 'available' && (
@@ -369,7 +378,7 @@ export function BigbrainIntegrationSettings({
           <label className="flex flex-col gap-1 text-xs font-medium text-primary">
             Display name
             <input
-              aria-label="Bigbrain display name"
+              aria-label="BigBrain display name"
               className="ficus-field rounded-md border border-th-border bg-surface px-3 py-2"
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
@@ -404,7 +413,7 @@ export function BigbrainIntegrationSettings({
         </form>
       )}
       {connections.length === 0 && !canWrite && (
-        <p className="text-xs text-muted mt-2">No Bigbrain connections configured.</p>
+        <p className="text-xs text-muted mt-2">No BigBrain connections configured.</p>
       )}
       {feedback && (
         <p
