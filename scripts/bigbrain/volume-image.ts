@@ -21,6 +21,8 @@ const stampSchema = keySchema
     creationHash: z.string().regex(/^sha256:[0-9a-f]{64}$/),
   })
   .strict()
+/** Root-private birth stamp written AS the image file before allocation (crash adoption proof). */
+export const birthStampSchema = stampSchema
 export const imageJournalSchema = stampSchema
   .extend({
     storage: storageReservationSchema,

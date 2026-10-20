@@ -21,7 +21,7 @@ function render(template: string, values: Record<string, string>): string {
   if (rendered.includes('{{')) throw new Error('invalid_request')
   return rendered
 }
-function mountUnitName(path: string): string {
+export function mountUnitName(path: string): string {
   // systemd-escape --path semantics for these fixed ASCII, UUID-derived paths.
   return path.slice(1).replaceAll('-', '\\x2d').replaceAll('/', '-') + '.mount'
 }
