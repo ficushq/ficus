@@ -3,7 +3,7 @@ import { chmod, link, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { readPrivateJson, writePrivateJson } from './secure-files'
+import { readPrivateJson, writePrivateJson, readPublicJson, writePublicJson, writePublicText } from './secure-files'
 const roots: string[] = []
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
@@ -24,6 +24,28 @@ test('atomically persists private validated JSON with fsynced 0600 files', async
   await writePrivateJson(root, 'receipt.json', { phase: 'ready' }, schema, { uid })
   expect(await readFile(join(root, 'receipt.json'), 'utf8')).toBe('{"phase":"ready"}\n')
 })
+test('public routes and generated unit text are atomically root-owned0644, never replace linked/foreign targets', async () => {
+  const root = await fixture()
+  await chmod(root, 0o755)
+  const mask = process.umask(0o077)
+  try {
+    await writePublicJson(root, 'routes.json', { phase: 'ready' }, schema, { uid })
+  } finally {
+    process.umask(mask)
+  }
+  expect(await readPublicJson(root, 'routes.json', schema, { uid })).toEqual({ phase: 'ready' })
+  const name = 'var-lib-ficus\\\\x2dbigbrain.mount'
+  await writePublicText(root, name, '[Mount]\\n', { uid })
+  const first = await stat(join(root, name))
+  expect(first.mode & 0o777).toBe(0o644)
+  await writePublicText(root, name, '[Unit]\\n', { uid })
+  expect((await stat(join(root, name))).ino).not.toBe(first.ino)
+  await link(join(root, name), join(root, 'linked.mount'))
+  await expect(writePublicText(root, name, 'broken', { uid })).rejects.toThrow('storage_unavailable')
+  await expect(writePublicText(root, '../bad.mount', 'broken', { uid })).rejects.toThrow('storage_unavailable')
+  await expect(writePublicText(root, 'large.mount', 'x'.repeat(16385), { uid })).rejects.toThrow('storage_unavailable')
+})
+
 test('rejects symlinked ancestors/files, hard links, nonprivate directories and unknown JSON fields', async () => {
   const root = await fixture()
   const real = join(root, 'real')

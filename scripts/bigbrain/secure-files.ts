@@ -112,17 +112,62 @@ export async function writePrivateJson<T>(
   schema: z.ZodType<T>,
   options: Options = {}
 ): Promise<void> {
+  try {
+    checkedName(name)
+    await writeOwnedBytes(directory, name, Buffer.from(JSON.stringify(schema.parse(value)) + '\n'), 0o600, options)
+  } catch {
+    throw new Error('storage_unavailable')
+  }
+}
+
+/** Credential-free public manifests. Keep schema validation at this boundary. */
+export async function writePublicJson<T>(
+  directory: string,
+  name: string,
+  value: unknown,
+  schema: z.ZodType<T>,
+  options: Options = {}
+): Promise<void> {
+  try {
+    checkedName(name)
+    await writeOwnedBytes(directory, name, Buffer.from(JSON.stringify(schema.parse(value)) + '\n'), 0o644, options)
+  } catch {
+    throw new Error('storage_unavailable')
+  }
+}
+/** Generated nonsecret systemd/Caddy text only. Linux backslashes are literal filename
+ * bytes (needed for systemd-escaped mount units), never directory separators.
+ */
+export async function writePublicText(
+  directory: string,
+  name: string,
+  text: string,
+  options: Options = {}
+): Promise<void> {
+  try {
+    if (!/^[a-zA-Z0-9_@][a-zA-Z0-9_.@\\-]{0,254}$/.test(name) || name === '.' || name === '..') throw new Error()
+    await writeOwnedBytes(directory, name, Buffer.from(text), 0o644, options)
+  } catch {
+    throw new Error('storage_unavailable')
+  }
+}
+
+async function writeOwnedBytes(
+  directory: string,
+  name: string,
+  bytes: Buffer,
+  mode: 0o600 | 0o644,
+  options: Options
+): Promise<void> {
   let dir: FileHandle | undefined
   let file: FileHandle | undefined
   let temp: string | undefined
   try {
-    checkedName(name)
     const uid = options.uid ?? 0
     const maxBytes = options.maxBytes ?? 16384
     checkedBudget(maxBytes)
-    const bytes = Buffer.from(JSON.stringify(schema.parse(value)) + '\n')
     if (bytes.byteLength > maxBytes) throw new Error()
-    dir = await openPrivateDirectory(directory, uid)
+    dir = await openPrivateDirectory(directory, uid, mode === 0o600)
     const target = `/proc/self/fd/${dir.fd}/${name}`
     const existing = await lstat(target).catch((error) => {
       if (error.code === 'ENOENT') return null
@@ -130,7 +175,7 @@ export async function writePrivateJson<T>(
     })
     if (
       existing &&
-      (!existing.isFile() || existing.nlink !== 1 || existing.uid !== uid || (existing.mode & 0o777) !== 0o600)
+      (!existing.isFile() || existing.nlink !== 1 || existing.uid !== uid || (existing.mode & 0o777) !== mode)
     )
       throw new Error()
     temp = `/proc/self/fd/${dir.fd}/.${randomUUID()}.tmp`
@@ -138,6 +183,9 @@ export async function writePrivateJson<T>(
     const info = await file.stat()
     if (info.uid !== uid) throw new Error()
     await file.writeFile(bytes)
+    // Explicit FD chmod: caller's restrictive0077 umask must not make a public
+    // replacement unreadable after rename; never chmod an existing target inode.
+    await file.chmod(mode)
     await file.sync()
     await file.close()
     file = undefined
