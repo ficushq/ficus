@@ -96,6 +96,7 @@ def prepare(task, image, output):
         "pandas-dev__pandas.": "pandas",
         "sphinx-doc__sphinx.": "sphinx",
         "pydata__xarray.": "xarray",
+        "mwaskom__seaborn.": "seaborn",
     }
     layout = next((v for k, v in prefixes.items() if task.name.startswith(k)), None)
     if layout is None:

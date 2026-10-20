@@ -213,31 +213,35 @@ class PandasVerifierTests(unittest.TestCase):
             self.assertEqual(keep.read_text(), "original")
 
 
-class SphinxVerifierTests(unittest.TestCase):
+class FlatVerifierTests(unittest.TestCase):
     def test_all_test_configuration_is_restored_without_replacing_package(self):
         from verify_featurebench import LAYOUTS, hashes, restore_inputs
 
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            official = root / "official"
-            (official / "tests").mkdir(parents=True)
-            (official / "tests/test_domain_c.py").write_text("assert domain() == 42\n")
-            for name in LAYOUTS["sphinx"][1:]:
-                (official / name).write_text("# official configuration\n")
-            archive = root / "inputs.tar.gz"
-            with tarfile.open(archive, "w:gz") as target:
-                for name in LAYOUTS["sphinx"]:
-                    target.add(official / name, arcname=name)
-            repo = root / "submission"
-            (repo / "sphinx/domains").mkdir(parents=True)
-            source = repo / "sphinx/domains/c.py"
-            source.write_text("# candidate implementation\n")
-            (repo / "tox.ini").write_text("# collect different tests\n")
-            restore_inputs(repo, archive, hashes(official, "sphinx"), "sphinx")
-            self.assertEqual(source.read_text(), "# candidate implementation\n")
-            self.assertEqual(
-                (repo / "tox.ini").read_text(), "# official configuration\n"
-            )
+        for layout in ("sphinx", "seaborn"):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                official = root / "official"
+                (official / "tests").mkdir(parents=True)
+                (official / "tests/test_domain_c.py").write_text(
+                    "assert domain() == 42\n"
+                )
+                for name in LAYOUTS[layout][1:]:
+                    (official / name).write_text("# official configuration\n")
+                archive = root / "inputs.tar.gz"
+                with tarfile.open(archive, "w:gz") as target:
+                    for name in LAYOUTS[layout]:
+                        target.add(official / name, arcname=name)
+                repo = root / "submission"
+                (repo / layout / "domains").mkdir(parents=True)
+                source = repo / layout / "domains/c.py"
+                source.write_text("# candidate implementation\n")
+                (repo / LAYOUTS[layout][-1]).write_text("# collect different tests\n")
+                restore_inputs(repo, archive, hashes(official, layout), layout)
+                self.assertEqual(source.read_text(), "# candidate implementation\n")
+                self.assertEqual(
+                    (repo / LAYOUTS[layout][-1]).read_text(),
+                    "# official configuration\n",
+                )
 
 
 class XarrayVerifierTests(unittest.TestCase):

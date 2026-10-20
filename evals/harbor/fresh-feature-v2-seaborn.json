@@ -1,0 +1,94 @@
+{
+  "experiment": "fresh-feature-v2",
+  "task": "mwaskom__seaborn.7001ebe7.test_regression.ce8c62e2.lv1",
+  "preparation": {
+    "source_task": "mwaskom__seaborn.7001ebe7.test_regression.ce8c62e2.lv1",
+    "verifier_layout": "seaborn",
+    "mask_validation": "strict-reverse-check",
+    "verifier_paths": ["tests", "pyproject.toml", "setup.cfg"],
+    "source_files_sha256": {
+      "task.toml": "ef631c9e1bfb04044903fef3ab357eda8767242e0e5de7199d4d22f7feecdb89",
+      "instruction.md": "d460ea675ee820aa49b9156c76e2d5823172a1ad56067ed385f16861845ac1f0",
+      "environment/Dockerfile": "82c59cee307bed5ef5e6647003367156539afbc284486ff01ed8c42be13f40ee",
+      "environment/setup_patch.diff": "db3b3f7b53ba1cb1bb9833d5df101fd378cb6f45b8432222820de69f7e50d3ab",
+      "environment/test_patch.diff": "d5bc451b903152d6b825d0577885b8c0c1b44e2c231a4021dc4bee340789f8a2",
+      "tests/test.sh": "0f1165501c59a32d6513ce29284650502306ba94509fef5faf75da07dd976414",
+      "solution/solve.sh": "356a7b65d73d69f18507a9ed0b450631370b9968b2a0df8d98a6e9b6312fc778",
+      "tests/config.json": "073dfbfc619c66b6dfc5814f3c9d9f46a9a9948a25972e96071c1c783ee0628b"
+    },
+    "original_image_id": "sha256:0f5665a6aed58f5cacc97257e8b82ce98e8401f6abbf41b866ad572df8780458",
+    "agent_image_id": "sha256:a93d906dae0a03c4af1056b60c931340e55c17a37bb7440d7b563a6d3d9c4907",
+    "agent_image_tag": "ficus-featurebench-sanitized:20c7ead2c9d8",
+    "preparation_sha256": "a111cfdf682c0f1f78df17a663bb419c133d66225f5b6802e313d586f87a0569",
+    "audit": "root_commits=1\nworking_tree=",
+    "verifier_inputs_sha256": "ec3595102d2f4168799d492aaf8915fd2500ad790349c4dff6b859b72776210f",
+    "verifier_guard_sha256": "5d126b510f32a583684c04883d41782ef8f8ae8cd2fa1c58f24835539eebe712",
+    "grader_unchanged": true
+  },
+  "environment_audit": "7c73e93 Masked task baseline\n/testbed/seaborn/__init__.py\n",
+  "official_image_digest": [
+    "libercoders/featurebench-specs_seaborn-instance_52738fbb@sha256:fe27a1a5205fa0939453e79d0f40c74cb402bad8ea1d42fff7de5e2106e77ce1"
+  ],
+  "controls": [
+    {
+      "control": "baseline",
+      "exit_code": 0,
+      "reward": "0",
+      "reason": null,
+      "elapsed_seconds": 12.58,
+      "test_summaries": ["51 failed, 1 passed, 9 skipped in 2.70s"],
+      "official_input_checks": 2,
+      "import_origin": ["GRADE_IMPORT_ORIGIN /testbed/seaborn/__init__.py"],
+      "output_sha256": "f44048d165a0d566244194a0ca58d48696bd507c364ffea2b5a1632d3c169fe4"
+    },
+    {
+      "control": "oracle",
+      "exit_code": 0,
+      "reward": "1",
+      "reason": null,
+      "elapsed_seconds": 24.81,
+      "test_summaries": ["52 passed, 9 skipped in 7.51s", "218 passed, 2 skipped in 6.85s"],
+      "official_input_checks": 2,
+      "import_origin": ["GRADE_IMPORT_ORIGIN /testbed/seaborn/__init__.py"],
+      "output_sha256": "3ec18bec646074686bea3cb3832373d63a65c82b33520f65a51636369aa1662e"
+    },
+    {
+      "control": "baseline-collision",
+      "exit_code": 0,
+      "reward": "0",
+      "reason": null,
+      "elapsed_seconds": 11.69,
+      "test_summaries": ["51 failed, 1 passed, 9 skipped in 2.65s"],
+      "official_input_checks": 2,
+      "import_origin": ["GRADE_IMPORT_ORIGIN /testbed/seaborn/__init__.py"],
+      "output_sha256": "d552334ba6464115d55adec6b69ed7d47752ad025265106b58b18fcb85cc4dbe"
+    },
+    {
+      "control": "oracle-collision",
+      "exit_code": 0,
+      "reward": "1",
+      "reason": null,
+      "elapsed_seconds": 25.51,
+      "test_summaries": ["52 passed, 9 skipped in 7.73s", "218 passed, 2 skipped in 7.18s"],
+      "official_input_checks": 2,
+      "import_origin": ["GRADE_IMPORT_ORIGIN /testbed/seaborn/__init__.py"],
+      "output_sha256": "8a029f1bcfe09aec9ddcd6f9277aa2c4ac68f25240c660fc17af83eb089c4b71"
+    }
+  ],
+  "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+  "adapter_sha256": {
+    "ficus_agent.py": "3c10076d9b943be64b7fc154bdb14e8ac9b24977d2c762eb7f5a46ac0841291f",
+    "pi_workflow.py": "00712cabe8eebbd571c7ef438b357c019bb9735492ff8bfb29a870d3ed2c03e3",
+    "budget_proxy.py": "beb2eb62a89eb9686105c4ee96d8d3c02a0be6df2d171a01bc77bdc4dcae304d",
+    "run-pilot.py": "76c63b63f817da336db8907801645f02c6a475b79eb66c27c9e62969765fcc65"
+  },
+  "resources": {
+    "main_cpus": 2,
+    "main_memory_gib": 8,
+    "ficus_postgres_sidecar": "Uncapped, as in v1; total compute not equal",
+    "architecture": "linux/amd64 emulated on arm64 Mac"
+  },
+  "attempts_per_arm": 1,
+  "operator_steering": false,
+  "grader_policy": "Unchanged upstream grader and immutable verifier inputs. Inference source archives saved before grading."
+}
