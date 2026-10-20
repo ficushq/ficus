@@ -557,7 +557,12 @@ export const THEME_ICON_TEMPLATE_COLORS: ThemeIconColors = {
   sideLeaves: '{{sideLeaves}}',
 }
 
-async function generateThemeIcons(outDir: string, markLight: string, markMetrics: BBox): Promise<void> {
+async function generateThemeIcons(
+  outDir: string,
+  markLight: string,
+  markMetrics: BBox,
+  icons: readonly ThemeIcon[]
+): Promise<void> {
   const dir = join(outDir, 'desktop', 'themes')
   await mkdir(dir, { recursive: true })
   const svg = (colors: ThemeIconColors) =>
@@ -569,11 +574,62 @@ async function generateThemeIcons(outDir: string, markLight: string, markMetrics
       background: colors.tile,
       tile: DESKTOP_TILE_SPEC,
     })
-  const icons = await builtInThemeIcons()
   await Promise.all(icons.map((icon) => renderPng(svg(icon.colors), join(dir, icon.file))))
   await writeFile(join(dir, 'manifest.json'), `${JSON.stringify({ icons }, null, 2)}\n`)
   // Desktop fills this in to draw a custom theme's icon live, the same way these were drawn.
   await writeFile(join(dir, 'template.svg'), `${svg(THEME_ICON_TEMPLATE_COLORS)}\n`)
+}
+
+/** The mark for iOS's tinted app icon: grayscale on black, which iOS recolors with the person's tint. */
+export const TINTED_ICON_COLORS: ThemeIconColors = {
+  tile: '#000000',
+  leaf: '#ffffff',
+  pot: '#7a7a7a',
+  sideLeaves: '#a3a3a3',
+}
+
+/** Size of the picker previews in `mobile/themes/preview/`: 60 pt at 3x. */
+const MOBILE_PREVIEW_SIZE = 180
+
+/**
+ * The Mobile app icon picker's icons, one set per built-in theme icon: `ios/` full-bleed opaque squares (iOS masks
+ * the corners) and the shared `ios/tinted.png`; `android/` adaptive-icon foregrounds, drawn over the tile color the
+ * manifest gives; `preview/` small copies of the iOS icons for the picker itself.
+ */
+async function generateMobileThemeIcons(
+  outDir: string,
+  markLight: string,
+  markMetrics: BBox,
+  icons: readonly ThemeIcon[]
+): Promise<void> {
+  const dir = join(outDir, 'mobile', 'themes')
+  await Promise.all(['ios', 'android', 'preview'].map((sub) => mkdir(join(dir, sub), { recursive: true })))
+  const square = (colors: ThemeIconColors, size: number) =>
+    buildCompositeSVG({
+      size,
+      markup: recolorMark(markLight, colors),
+      bbox: markMetrics,
+      fill: FILL.mobileIcon,
+      background: colors.tile,
+    })
+  const opaque = { removeAlpha: true }
+  await Promise.all([
+    renderPng(square(TINTED_ICON_COLORS, 1024), join(dir, 'ios', 'tinted.png'), opaque),
+    ...icons.flatMap((icon) => [
+      renderPng(square(icon.colors, 1024), join(dir, 'ios', icon.file), opaque),
+      renderPng(square(icon.colors, MOBILE_PREVIEW_SIZE), join(dir, 'preview', icon.file), opaque),
+      renderPng(
+        buildCompositeSVG({
+          size: 1024,
+          markup: recolorMark(markLight, icon.colors),
+          bbox: markMetrics,
+          radial: { maxRadius: markMetrics.maxRadius, diameterFraction: RADIAL_DIAMETER_FRACTION.mobileAdaptive },
+        }),
+        join(dir, 'android', icon.file)
+      ),
+    ]),
+  ])
+  await writeFile(join(dir, 'manifest.json'), `${JSON.stringify({ icons }, null, 2)}\n`)
 }
 
 // ---------------------------------------------------------------------------
@@ -665,7 +721,9 @@ export async function generate(outDir: string = OUT_DIR): Promise<void> {
     }),
     join(outDir, 'desktop', 'icon-1024-dark.png')
   )
-  await generateThemeIcons(outDir, markLight, markMetrics)
+  const themeIcons = await builtInThemeIcons()
+  await generateThemeIcons(outDir, markLight, markMetrics, themeIcons)
+  await generateMobileThemeIcons(outDir, markLight, markMetrics, themeIcons)
 
   // --- mobile/ ---------------------------------------------------------------
 
