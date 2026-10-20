@@ -80,3 +80,26 @@ oracle can then reverse its complete patch. This setup is never uploaded to an
 inference container and does not restore candidate implementation code. The
 initial failed preparation and both failed reference-control logs remain in
 separate private artifact directories. No model inference preceded these checks.
+
+## Completed xarray comparison
+
+All four controls passed after the reference-only precondition repair: baseline
+fails at collection because a masked function is absent; reference passes 18
+feature tests and 101 regression tests, with six upstream skips and one warning.
+Both collision controls produce the same outcomes. All scoring imports xarray
+from `/testbed/xarray/__init__.py`.
+
+| Arm            | Feature tests      | Regression tests      | Total wall time | Inference cost |
+| -------------- | ------------------ | --------------------- | --------------- | -------------- |
+| Pi squad       | 9 passed, 9 failed | Not reached           | 11m18s          | $0.631002      |
+| Ficus squad    | 18 passed          | 101 passed, 6 skipped | 12m58s          | $0.782605      |
+| Pi engineer    | 18 passed          | 101 passed, 6 skipped | 3m59s           | $0.124625      |
+| Ficus engineer | 18 passed          | 101 passed, 6 skipped | 7m47s           | $0.317505      |
+
+Pi squad's failures involve region-size handling and an absent datetime helper.
+Its single engineer passes, so adding roles did not improve this particular
+attempt. Both Ficus workflows pass, with higher cost and elapsed time than the
+corresponding Pi workflows. The Ficus engineer-only audit confirms that only the
+engineer executed. Official input hashes, submitted-source archives, and usage
+receipts all verify. The scanned external-source-fetch indicators are absent.
+Total xarray inference cost is $1.855737; cumulative exposure is $22.347655.
