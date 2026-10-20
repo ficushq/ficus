@@ -3,12 +3,11 @@ import { z } from 'zod'
 import {
   MANAGED_BIGBRAIN_MCP_PROTOCOL,
   MANAGED_BIGBRAIN_SHARED_PROTOCOL,
-  managedBigbrainHostBindingMatches,
-  managedBigbrainHostReceiptSchema,
+  managedBigbrainCapabilitiesSchema,
   managedBigbrainReadHandoffSchema,
-  type ManagedBigbrainHostBinding,
-  type ManagedBigbrainHostReceipt,
+  type ManagedBigbrainCapabilities,
   type ManagedBigbrainReadHandoff,
+  type ManagedBigbrainState,
 } from '@ficus/shared/managed-bigbrain'
 import { BigbrainError } from './errors'
 
@@ -64,14 +63,49 @@ const whoamiSchema = z
   })
   .passthrough()
 type SharedFetch = (url: string, init: RequestInit) => Promise<Response>
+/** Core's synchronized view of one managed vault (from authoritative Platform summaries). */
+export interface ManagedReadVault {
+  vaultId: string
+  upstreamVaultId: string | null
+  origin: string | null
+  appliedGeneration: number
+  state: ManagedBigbrainState
+  readAccess: 'pending' | 'active' | 'revoked'
+}
 export interface BigbrainSharedClientOptions {
-  authority: ManagedBigbrainHostBinding
-  installed: ManagedBigbrainHostBinding
-  receipt: ManagedBigbrainHostReceipt
+  /** Live, available Platform capability report: the current tenant/physical host/epoch. */
+  capabilities: ManagedBigbrainCapabilities
+  vault: ManagedReadVault
+  /** Imported host read handoff. Minted at an earlier or equal host epoch and vault generation:
+   * suspend/resume and rename advance those without re-minting; restore changes the host. */
   material: ManagedBigbrainReadHandoff
   /** Mandatory live assignment/provider/policy/material fence. Called before either dispatch and after read. */
   beforeCall: () => Promise<void>
   fetch?: SharedFetch
+}
+
+/** Read material is usable only for the live tenant/physical host at the pinned revision, for a
+ * ready vault with active read access, and never ahead of what Core has observed (epoch and
+ * generation may lag: suspend/resume and rename do not re-mint; restore changes the host). */
+export function readMaterialMatches(
+  capabilities: ManagedBigbrainCapabilities,
+  vault: ManagedReadVault,
+  material: Omit<ManagedBigbrainReadHandoff, 'token'>
+): boolean {
+  return (
+    capabilities.available &&
+    capabilities.hostState === 'active' &&
+    material.tenantId === capabilities.tenantId &&
+    material.physicalHostBinding === capabilities.physicalHostBinding &&
+    material.hostEpoch <= capabilities.hostEpoch &&
+    material.upstreamCommit === capabilities.upstreamCommit &&
+    vault.state === 'ready' &&
+    vault.readAccess === 'active' &&
+    vault.vaultId === material.vaultId &&
+    vault.upstreamVaultId === material.upstreamVaultId &&
+    material.generation <= vault.appliedGeneration &&
+    !!vault.origin?.startsWith(`https://bb-${material.vaultId.replaceAll('-', '')}.`)
+  )
 }
 
 async function boundedJson(response: Response, signal: AbortSignal): Promise<unknown> {
@@ -130,36 +164,28 @@ async function boundedJson(response: Response, signal: AbortSignal): Promise<unk
  */
 export class BigbrainSharedClient {
   private readonly request: SharedFetch
-  private readonly receipt: ManagedBigbrainHostReceipt
+  private readonly origin: string
   private readonly material: ManagedBigbrainReadHandoff
   private readonly beforeCall: () => Promise<void>
 
   constructor(options: BigbrainSharedClientOptions) {
-    const receipt = managedBigbrainHostReceiptSchema.safeParse(options.receipt)
+    const capabilities = managedBigbrainCapabilitiesSchema.safeParse(options.capabilities)
     const material = managedBigbrainReadHandoffSchema.safeParse(options.material)
-    if (!receipt.success || !material.success || typeof options.beforeCall !== 'function')
+    if (!capabilities.success || !material.success || typeof options.beforeCall !== 'function')
       throw new BigbrainError('invalid_configuration')
-    const r = receipt.data
-    const m = material.data
-    if (
-      !managedBigbrainHostBindingMatches(options.authority, options.installed, r) ||
-      !managedBigbrainHostBindingMatches(options.authority, options.installed, m) ||
-      r.state !== 'ready' ||
-      r.readAccess !== 'active' ||
-      !r.origin ||
-      r.vaultId !== m.vaultId ||
-      r.generation !== m.generation ||
-      r.upstreamVaultId !== m.upstreamVaultId ||
-      r.upstreamCommit !== m.upstreamCommit ||
-      r.artifactDigest !== m.artifactDigest
-    )
+    if (!readMaterialMatches(capabilities.data, options.vault, material.data))
       throw new BigbrainError('binding_changed')
-    this.receipt = r
-    this.material = m
+    this.origin = options.vault.origin!
+    this.material = material.data
     this.beforeCall = options.beforeCall
     this.request = options.fetch ?? ((url, init) => fetch(url, { ...init, unix: BIGBRAIN_SHARED_GATEWAY_SOCKET }))
   }
 
+  /** Identity only: the credential authenticates as exactly the read-only agent reader of THIS
+   * upstream vault (used for validation; no MCP tool is called). */
+  async verify(options?: { signal?: AbortSignal }): Promise<void> {
+    await this.read(null, {}, options?.signal)
+  }
   overview(options?: { signal?: AbortSignal }): Promise<string> {
     return this.read('overview', {}, options?.signal)
   }
@@ -180,7 +206,7 @@ export class BigbrainSharedClient {
   }
 
   private async read(
-    name: 'overview' | 'search_vault' | 'read_record' | 'recent',
+    name: 'overview' | 'search_vault' | 'read_record' | 'recent' | null,
     args: Record<string, unknown>,
     callerSignal?: AbortSignal
   ): Promise<string> {
@@ -220,7 +246,7 @@ export class BigbrainSharedClient {
     }
     const headers = {
       Authorization: `Bearer ${this.material.token}`,
-      Host: new URL(this.receipt.origin!).hostname,
+      Host: new URL(this.origin).hostname,
       Accept: 'application/json, text/event-stream',
       'Content-Type': 'application/json',
       'MCP-Protocol-Version': MANAGED_BIGBRAIN_MCP_PROTOCOL,
@@ -253,6 +279,7 @@ export class BigbrainSharedClient {
       )
         throw new BigbrainError('invalid_auth')
       await check()
+      if (name === null) return ''
       const id = randomUUID()
       const response = await send('/mcp', {
         method: 'POST',

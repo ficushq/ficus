@@ -4,9 +4,10 @@
  * never invents progress, only records requests and monotonically applies authoritative replies.
  */
 import { createHash } from 'node:crypto'
-import { and, eq, ne, sql } from 'drizzle-orm'
+import { and, eq, isNull, ne, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import {
+  managedBigbrainReadHandoffSchema,
   managedBigbrainVaultSummarySchema,
   type ManagedBigbrainState,
   type ManagedBigbrainVaultSummary,
@@ -14,6 +15,10 @@ import {
 import { db, managedBigbrainVaults } from '../../../../db'
 
 export type ManagedVault = typeof managedBigbrainVaults.$inferSelect
+/** The imported host read handoff minus its token: identity/binding facts that are safe to
+ * persist. The token itself is stored only in the credential store. */
+export const managedReadMaterialSchema = managedBigbrainReadHandoffSchema.innerType().omit({ token: true })
+export type ManagedReadMaterial = z.infer<typeof managedReadMaterialSchema>
 export type ManagedVaultStoreCode =
   | 'invalid_request'
   | 'request_conflict'
@@ -150,6 +155,7 @@ export const managedVaultStore = {
             operationId: summary.operationId,
             lastErrorCode: summary.lastErrorCode,
             retryable: summary.retryable,
+            origin: summary.origin,
             platformUpdatedAt: observedAt,
             updatedAt: sql`now()`,
           })
@@ -162,6 +168,60 @@ export const managedVaultStore = {
           throw new ManagedVaultStoreError('name_conflict')
         throw error
       })
+  },
+
+  async getByConnection(connectionId: string): Promise<ManagedVault | null> {
+    if (!z.string().uuid().safeParse(connectionId).success) return null
+    const [row] = await db
+      .select()
+      .from(managedBigbrainVaults)
+      .where(eq(managedBigbrainVaults.connectionId, connectionId))
+    return row ?? null
+  },
+
+  /** Record imported read material (token-free) for a ready, readable vault. Refused unless the
+   * vault is ready with active read access and the material is not from a generation Core has
+   * not observed. */
+  async recordReadMaterial(vaultId: string, value: ManagedReadMaterial): Promise<ManagedVault> {
+    const material = managedReadMaterialSchema.safeParse(value)
+    if (!material.success || material.data.vaultId !== vaultId) throw new ManagedVaultStoreError('invalid_request')
+    const [updated] = await db
+      .update(managedBigbrainVaults)
+      .set({ readMaterial: material.data, updatedAt: sql`now()` })
+      .where(
+        and(
+          eq(managedBigbrainVaults.id, vaultId),
+          eq(managedBigbrainVaults.state, 'ready'),
+          eq(managedBigbrainVaults.readAccess, 'active'),
+          eq(managedBigbrainVaults.upstreamVaultId, material.data.upstreamVaultId),
+          sql`${managedBigbrainVaults.appliedGeneration} >= ${material.data.generation}`
+        )
+      )
+      .returning()
+    if (updated) return updated
+    throw new ManagedVaultStoreError((await this.get(vaultId)) ? 'generation_conflict' : 'not_found')
+  },
+
+  /** Bind the vault's one pool connection, exactly once (compare-and-set on an unbound row). */
+  async bindConnection(vaultId: string, connectionId: string): Promise<ManagedVault> {
+    const [updated] = await db
+      .update(managedBigbrainVaults)
+      .set({ connectionId, updatedAt: sql`now()` })
+      .where(and(eq(managedBigbrainVaults.id, vaultId), isNull(managedBigbrainVaults.connectionId)))
+      .returning()
+    if (updated) return updated
+    const current = await this.get(vaultId)
+    if (current?.connectionId === connectionId) return current
+    throw new ManagedVaultStoreError(current ? 'generation_conflict' : 'not_found')
+  },
+
+  /** Forget imported material (revocation, deletion, restore): reads stop resolving at once. */
+  async clearReadMaterial(vaultId: string): Promise<void> {
+    if (!z.string().uuid().safeParse(vaultId).success) return
+    await db
+      .update(managedBigbrainVaults)
+      .set({ readMaterial: null, updatedAt: sql`now()` })
+      .where(eq(managedBigbrainVaults.id, vaultId))
   },
 
   /** Compare-and-set the desired generation before sending a mutation that requires it. */

@@ -28,6 +28,12 @@ export function recordManagedBigbrainCapabilities(value: unknown, receivedAt = D
 export function clearManagedBigbrainCapabilities(): void {
   snapshot = null
 }
+/** A failed capability probe: a definite (non-retryable) refusal clears eligibility at once; a
+ * transient failure keeps the last report until its TTL expires it. */
+export function noteManagedBigbrainCapabilityFailure(error: unknown): void {
+  const retryable = typeof error === 'object' && error !== null && (error as { retryable?: unknown }).retryable === true
+  if (!retryable) snapshot = null
+}
 /** The current eligible capability report (for fences that need the tenant/host binding), or null. */
 export function currentManagedBigbrainCapabilities(now = Date.now()): ManagedBigbrainCapabilities | null {
   return managedBigbrainAvailability(now).available ? snapshot!.capabilities : null

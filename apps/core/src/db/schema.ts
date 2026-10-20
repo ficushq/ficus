@@ -3983,6 +3983,11 @@ export const managedBigbrainVaults = pgTable(
     retryable: boolean('retryable').notNull().default(false),
     /** `updatedAt` of the last applied Platform summary: the tie-break within one generation. */
     platformUpdatedAt: timestamp('platform_updated_at', { withTimezone: true }),
+    /** Public vault origin from Platform (routing Host only; never a client-supplied endpoint). */
+    origin: varchar('origin', { length: 253 }),
+    /** Imported host read handoff WITHOUT its token (the token lives only in the credential
+     * store under the connection's credentialRef). Null until imported or after revocation. */
+    readMaterial: jsonb('read_material'),
     createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

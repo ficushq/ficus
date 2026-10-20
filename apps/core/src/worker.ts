@@ -446,6 +446,7 @@ const assistantUpdateRunner = createPeriodicRunner({
     await reconcileAssistantSummaries()
   },
 })
+let managedBigbrainSyncRunner: import('./lib/infra/PeriodicRunner').PeriodicRunner | null = null
 const subsystems: Subsystem[] = [
   subsystem('bigbrain-processes', () => {}, stopAllBigbrainProcesses),
   subsystem(
@@ -611,6 +612,18 @@ const subsystems: Subsystem[] = [
     async () => {
       const { integrationRevocationWorker } = await import('./services/integrations/runtime')
       await integrationRevocationWorker.stop()
+    }
+  ),
+  subsystem(
+    'managed-bigbrain-sync',
+    async () => {
+      const { createManagedBigbrainSyncRunner } = await import('./services/integrations/bigbrain/managed/runner')
+      managedBigbrainSyncRunner = createManagedBigbrainSyncRunner()
+      managedBigbrainSyncRunner.start()
+    },
+    async () => {
+      await managedBigbrainSyncRunner?.stop()
+      managedBigbrainSyncRunner = null
     }
   ),
   subsystem(

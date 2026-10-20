@@ -591,8 +591,21 @@ let unregisterSquadActivity: (() => void) | null = null
 let unregisterAgentActivity: (() => void) | null = null
 let liveActivityFanout: LiveActivityFanout | null = null
 
+let managedBigbrainCapabilityRunner: import('./lib/infra/PeriodicRunner').PeriodicRunner | null = null
 const subsystems: Subsystem[] = [
   subsystem('bigbrain-processes', () => {}, stopAllBigbrainProcesses),
+  subsystem(
+    'managed-bigbrain-capabilities',
+    async () => {
+      const { createManagedBigbrainCapabilityRunner } = await import('./services/integrations/bigbrain/managed/runner')
+      managedBigbrainCapabilityRunner = createManagedBigbrainCapabilityRunner()
+      managedBigbrainCapabilityRunner.start()
+    },
+    async () => {
+      await managedBigbrainCapabilityRunner?.stop()
+      managedBigbrainCapabilityRunner = null
+    }
+  ),
   subsystem(
     'squad-activity-materialization',
     () => {

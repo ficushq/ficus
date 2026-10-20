@@ -1,7 +1,10 @@
 import { expect, test } from 'bun:test'
 import { BigbrainSharedClient, sharedSearchInput, sharedReadInput, sharedRecentInput } from './shared-client'
 import { BigbrainError } from './errors'
-import { MANAGED_BIGBRAIN_UPSTREAM_COMMIT as pin } from '@ficus/shared/managed-bigbrain'
+import {
+  MANAGED_BIGBRAIN_DEFAULT_LIMITS,
+  MANAGED_BIGBRAIN_UPSTREAM_COMMIT as pin,
+} from '@ficus/shared/managed-bigbrain'
 const vaultId = '11111111-1111-4111-8111-111111111111'
 const upstreamVaultId = '22222222-2222-4222-8222-222222222222'
 const physicalHostBinding = '33333333-3333-4333-8333-333333333333'
@@ -20,17 +23,25 @@ const material = {
   followsMember: false as const,
   token: `sv_1234abcd_${'a'.repeat(43)}`,
 }
-const receipt = {
+const capabilities = {
   ...binding,
-  receiptId: vaultId,
-  vaultId,
-  generation: 1,
-  upstreamVaultId,
-  state: 'ready' as const,
+  contractVersion: 1 as const,
+  available: true,
+  reasonCode: null,
+  installed: true,
   upstreamCommit: pin,
-  artifactDigest: material.artifactDigest,
-  localPort: 30000,
+  artifactDigest: `sha256:${'b'.repeat(64)}`,
+  sharedProtocol: 1 as const,
+  hostState: 'active' as const,
+  limits: MANAGED_BIGBRAIN_DEFAULT_LIMITS,
+  observedAt: '2026-10-20T00:00:00.000Z',
+}
+const vault = {
+  vaultId,
+  upstreamVaultId,
   origin: `https://bb-${vaultId.replaceAll('-', '')}.example.com`,
+  appliedGeneration: 1,
+  state: 'ready' as const,
   readAccess: 'active' as const,
 }
 const whoami = {
@@ -69,9 +80,8 @@ function fixture(
     )
   }
   const client = new BigbrainSharedClient({
-    authority: binding,
-    installed: binding,
-    receipt,
+    capabilities,
+    vault,
     material,
     fetch: transport,
     beforeCall: options.beforeCall ?? (async () => {}),
@@ -96,7 +106,7 @@ test('uses only four read methods through the fixed loopback gateway and retains
   ])
   for (const call of tools) {
     const headers = new Headers(call.init.headers)
-    expect(headers.get('Host')).toBe(new URL(receipt.origin).hostname)
+    expect(headers.get('Host')).toBe(new URL(vault.origin).hostname)
     expect(headers.get('MCP-Protocol-Version')).toBe('2025-06-18')
     expect(headers.get('Authorization')).toBe(`Bearer ${material.token}`)
   }
@@ -116,26 +126,43 @@ test('whoami identity/protocol/exact read-only scope is checked before every too
     expect(f.calls).toHaveLength(1)
   }
 })
-test('no writer/foreign/stale handoff or mismatched installed physical host can dispatch', () => {
+test('no writer/foreign/future handoff, other host, or non-ready/revoked vault can dispatch', () => {
   for (const override of [
     { material: { ...material, followsMember: true } },
     { material: { ...material, scopes: ['read', 'write'] } },
+    // Minted for a generation or epoch Core has not observed yet.
     { material: { ...material, generation: 2 } },
-    { installed: { ...binding, physicalHostBinding: vaultId } },
-    { receipt: { ...receipt, state: 'degraded' } },
-    { receipt: { ...receipt, readAccess: 'revoked' } },
+    { material: { ...material, hostEpoch: 3 } },
+    // Another physical host (e.g. restored elsewhere) or tenant.
+    { material: { ...material, physicalHostBinding: vaultId } },
+    { material: { ...material, tenantId: upstreamVaultId } },
+    { capabilities: { ...capabilities, available: false, reasonCode: 'maintenance' } },
+    { vault: { ...vault, state: 'degraded' } },
+    { vault: { ...vault, readAccess: 'revoked' } },
+    { vault: { ...vault, upstreamVaultId: physicalHostBinding } },
+    { vault: { ...vault, origin: `https://bb-${upstreamVaultId.replaceAll('-', '')}.example.com` } },
   ])
     expect(
       () =>
         new BigbrainSharedClient({
-          authority: binding,
-          installed: binding,
-          receipt,
+          capabilities,
+          vault,
           material,
           beforeCall: async () => {},
           ...override,
         } as never)
     ).toThrow()
+})
+
+test('suspend/resume, rename and Core upgrades do not invalidate an unrevoked read credential', () => {
+  for (const override of [
+    { capabilities: { ...capabilities, hostEpoch: 5 } },
+    { capabilities: { ...capabilities, artifactDigest: `sha256:${'c'.repeat(64)}` } },
+    { vault: { ...vault, appliedGeneration: 4 } },
+  ])
+    expect(
+      () => new BigbrainSharedClient({ capabilities, vault, material, beforeCall: async () => {}, ...override })
+    ).not.toThrow()
 })
 test('input windows/search/recent are bounded and cannot smuggle a path or another tool', () => {
   expect(sharedSearchInput.safeParse({ queries: ['one'], limit: 50 }).success).toBe(true)
@@ -248,4 +275,12 @@ test('pre-dispatch and post-response live fences suppress mid-flight revoked con
   })
   await expect(denied.client.overview()).rejects.toMatchObject({ code: 'binding_changed' })
   expect(denied.calls).toHaveLength(0)
+})
+
+test('verify checks identity only and never calls an MCP tool', async () => {
+  const f = fixture()
+  await f.client.verify()
+  expect(f.calls.map((c) => new URL(c.url).pathname)).toEqual(['/v1/whoami'])
+  const writer = fixture({ whoami: { ...whoami, permissions: ['read', 'write'] } })
+  await expect(writer.client.verify()).rejects.toMatchObject({ code: 'invalid_auth' })
 })

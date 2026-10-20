@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { BigbrainSharedClient } from './shared-client'
 import { nativeFixtures } from '../../../../../../scripts/bigbrain/native-fixtures'
 import {
+  MANAGED_BIGBRAIN_DEFAULT_LIMITS,
   MANAGED_BIGBRAIN_UPSTREAM_COMMIT as pin,
   MANAGED_BIGBRAIN_OWNER_INVITE_TTL_MS,
 } from '@ficus/shared/managed-bigbrain'
@@ -144,21 +145,27 @@ test.skipIf(!artifact && !required)(
           token: vault.minted.token,
         }
         return new BigbrainSharedClient({
-          authority: binding,
-          installed: binding,
-          material,
-          receipt: {
+          capabilities: {
             ...binding,
-            receiptId: randomUUID(),
-            vaultId,
-            generation: 1,
-            upstreamVaultId: material.upstreamVaultId,
+            contractVersion: 1,
+            available: true,
+            reasonCode: null,
+            installed: true,
             upstreamCommit: pin,
             artifactDigest: material.artifactDigest,
+            sharedProtocol: 1,
+            hostState: 'active',
+            limits: MANAGED_BIGBRAIN_DEFAULT_LIMITS,
+            observedAt: new Date().toISOString(),
+          },
+          material,
+          vault: {
+            vaultId,
+            upstreamVaultId: material.upstreamVaultId,
+            origin: `https://bb-${vaultId.replaceAll('-', '')}.example.com`,
+            appliedGeneration: 1,
             state: 'ready',
             readAccess: 'active',
-            localPort: 30000,
-            origin: `https://bb-${vaultId.replaceAll('-', '')}.example.com`,
           },
           beforeCall: async () => {},
           // Owned ephemeral direct transport for wire proof; shipped gateway/HTTPS is a separate lane.

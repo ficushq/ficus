@@ -14,6 +14,8 @@ CREATE TABLE "managed_bigbrain_vaults" (
 	"last_error_code" varchar(64),
 	"retryable" boolean DEFAULT false NOT NULL,
 	"platform_updated_at" timestamp with time zone,
+	"origin" varchar(253),
+	"read_material" jsonb,
 	"created_by_user_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,

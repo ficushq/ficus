@@ -1,5 +1,5 @@
 {
-  "id": "d15abc58-6d46-498a-afca-6a58b63ed19b",
+  "id": "fe045e89-3128-463b-be36-0e418a063a62",
   "prevId": "a12edf96-1caa-4a34-9244-f7046cae2c16",
   "version": "7",
   "dialect": "postgresql",
@@ -12232,6 +12232,18 @@
         "platform_updated_at": {
           "name": "platform_updated_at",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "origin": {
+          "name": "origin",
+          "type": "varchar(253)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "read_material": {
+          "name": "read_material",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

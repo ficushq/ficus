@@ -4,6 +4,7 @@ import {
   MANAGED_BIGBRAIN_CAPABILITY_TTL_MS,
   bigbrainDeploymentAvailability,
   clearManagedBigbrainCapabilities,
+  noteManagedBigbrainCapabilityFailure,
   currentManagedBigbrainCapabilities,
   managedBigbrainAvailability,
   recordManagedBigbrainCapabilities,
@@ -91,4 +92,16 @@ test('off Cloud the deployment uses the local host rules, never a managed report
   expect(bigbrainDeploymentAvailability(NOW)).toEqual({ available: true })
   delete process.env.FICUS_SANDBOX_RUNTIME
   expect(bigbrainDeploymentAvailability(NOW).available).toBe(false)
+})
+
+test('a transient probe failure keeps the last report until its TTL; a definite refusal clears it', () => {
+  cloud()
+  recordManagedBigbrainCapabilities(capabilities(), NOW)
+  noteManagedBigbrainCapabilityFailure({ code: 'host_unreachable', retryable: true })
+  expect(managedBigbrainAvailability(NOW).available).toBe(true)
+  noteManagedBigbrainCapabilityFailure({ code: 'unauthorized', retryable: false })
+  expect(managedBigbrainAvailability(NOW).available).toBe(false)
+  recordManagedBigbrainCapabilities(capabilities(), NOW)
+  noteManagedBigbrainCapabilityFailure(new Error('unexpected'))
+  expect(managedBigbrainAvailability(NOW).available).toBe(false)
 })
