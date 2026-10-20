@@ -3,7 +3,17 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import sharp from 'sharp'
-import { COLORS, DESKTOP_SHADOW, DESKTOP_TILE, generate, OUT_DIR, squirclePath } from './generate'
+import { BUILT_IN_THEMES } from '../../apps/web/src/theme/registry'
+import {
+  builtInThemeIcons,
+  COLORS,
+  DESKTOP_SHADOW,
+  DESKTOP_TILE,
+  generate,
+  OUT_DIR,
+  squirclePath,
+  THEME_ICON_TEMPLATE_COLORS,
+} from './generate'
 
 function listFiles(dir: string): string[] {
   const out: string[] = []
@@ -55,11 +65,14 @@ async function measureRadialDiameterFraction(
 let tmpRoot: string
 let tmpDir: string
 
+/** A full render (every icon, the theme icons included) takes several seconds on a CI runner. */
+const GENERATE_TIMEOUT = 60_000
+
 beforeAll(async () => {
   tmpRoot = mkdtempSync(join(tmpdir(), 'ficus-brand-generate-'))
   tmpDir = join(tmpRoot, 'first')
   await generate(tmpDir)
-})
+}, GENERATE_TIMEOUT)
 
 afterAll(() => {
   rmSync(tmpRoot, { recursive: true, force: true })
@@ -70,16 +83,20 @@ const MAX_CHANNEL_DELTA = 2
 const MAX_CHANGED_FRACTION = 0.005
 
 describe('brand icon generator', () => {
-  it('is byte-for-byte deterministic across fresh renders', async () => {
-    const secondDir = join(tmpRoot, 'second')
-    await generate(secondDir)
+  it(
+    'is byte-for-byte deterministic across fresh renders',
+    async () => {
+      const secondDir = join(tmpRoot, 'second')
+      await generate(secondDir)
 
-    const firstFiles = listFiles(tmpDir).map((f) => relative(tmpDir, f))
-    expect(listFiles(secondDir).map((f) => relative(secondDir, f))).toEqual(firstFiles)
-    for (const rel of firstFiles) {
-      expect(readFileSync(join(secondDir, rel)).equals(readFileSync(join(tmpDir, rel)))).toBe(true)
-    }
-  })
+      const firstFiles = listFiles(tmpDir).map((f) => relative(tmpDir, f))
+      expect(listFiles(secondDir).map((f) => relative(secondDir, f))).toEqual(firstFiles)
+      for (const rel of firstFiles) {
+        expect(readFileSync(join(secondDir, rel)).equals(readFileSync(join(tmpDir, rel)))).toBe(true)
+      }
+    },
+    GENERATE_TIMEOUT
+  )
 
   it('preserves every committed pixel and SVG without depending on PNG compression versions', async () => {
     // brand/generated/app-store/ is rendered by app-store.ts in Chrome, not by
@@ -219,6 +236,36 @@ describe('brand icon generator', () => {
         expect(below.a).toBeGreaterThan(above.a)
       })
     }
+  })
+
+  describe('theme icons', () => {
+    const themesDir = () => join(tmpDir, 'desktop', 'themes')
+
+    it('draws light and dark icons for two-appearance themes and one icon for the rest', async () => {
+      const files = BUILT_IN_THEMES.flatMap((theme) =>
+        theme.kind === 'dual' ? [`${theme.id}-light.png`, `${theme.id}-dark.png`] : [`${theme.id}.png`]
+      )
+      const icons = await builtInThemeIcons()
+      expect(icons.map((icon) => icon.file)).toEqual(files)
+      expect(JSON.parse(readFileSync(join(themesDir(), 'manifest.json'), 'utf8'))).toEqual({ icons })
+      for (const file of files) {
+        const meta = await sharp(join(themesDir(), file)).metadata()
+        expect([meta.width, meta.height, meta.hasAlpha]).toEqual([1024, 1024, true])
+      }
+    })
+
+    it('Ficus light and dark are the bundled Desktop icons, pixel for pixel', async () => {
+      const pixels = async (rel: string) =>
+        (await sharp(join(tmpDir, rel)).ensureAlpha().raw().toBuffer()).toString('hex')
+      expect(await pixels('desktop/themes/ficus-light.png')).toBe(await pixels('desktop/icon-1024.png'))
+      expect(await pixels('desktop/themes/ficus-dark.png')).toBe(await pixels('desktop/icon-1024-dark.png'))
+    })
+
+    it('the live-drawing template has a placeholder for every part and none of the brand fills', () => {
+      const template = readFileSync(join(themesDir(), 'template.svg'), 'utf8')
+      for (const placeholder of Object.values(THEME_ICON_TEMPLATE_COLORS)) expect(template).toContain(placeholder)
+      expect(template).not.toMatch(/#3f6b4f|#8a9a5b|#b0582f/i)
+    })
   })
 
   it('squirclePath with no smoothing is an ordinary rounded square', () => {

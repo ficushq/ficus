@@ -17,6 +17,8 @@ The two recolors preserve status meanings and all seven used decorative Badge pa
 
 The Settings control has a native labeled theme selector and Light/Dark/System selector. Unified themes disable appearance and explain why; switching back restores the previously selected appearance. Selection, surface snapshot (including `constant`), document background and theme-color meta update together before paint. The existing legacy toggle remains the rollback UI while `THEME_PICKER_ENABLED` is false.
 
+The favicon, and in Ficus Desktop the Dock icon, follow the theme: after each real repaint (never a preview) `apps/web/src/theme/appIcon.ts` reads the page background, primary, text and swatch tokens, colors the mark with `themeIconColors` (`@ficus/shared/theme-icon`), swaps in an SVG favicon and sends the result to Desktop's `setAppIcon`. Desktop ships a generated icon for every built-in theme and appearance (`brand/generated/desktop/themes/`); see `brand/README.md`, Theme icons.
+
 ## Adding a built-in theme
 
 A checklist, verified by actually following it end-to-end to add the first **dual** palette-derived built-in (now Ficus). Every step below is a real edit this repo needed; nothing here is aspirational.
@@ -38,8 +40,9 @@ A checklist, verified by actually following it end-to-end to add the first **dua
    - `apps/web/src/theme/registry.test.ts` — update the theme count and the exact `KNOWN_THEME_IDS` order deliberately; this is an order-sensitive test, not incidental breakage.
    - `apps/web/src/theme/sync.test.ts` and the Core `apps/core/src/routes/user-preferences.test.ts` route test — cross-check `BUILT_IN_THEMES` against `SYNC_THEME_DESCRIPTORS` and the preference-validation route.
    - If a contrast pair fails, fix it via the generator's mapping (a different explicit formula, or let `repairContrastPairs` nudge that one token) — never by weakening or skipping the gate.
-8. **Docs** — add the theme to this file's intent list and a short palette/generation/contrast-repair section (like [Ficus palette](#ficus-palette) or [BigBrain palettes](#bigbrain-palettes) below).
-9. **Real-browser check** — a throwaway local instance (never committed), Settings theme grid showing the new theme in its registry position, and a couple of real app pages (nav/header glass, Feed, Squads with a primary button) under every appearance the theme supports. Look at the screenshots yourself for a coherent look — no mismatched header/sidebar glass, no pale/garish chrome — then tear the instance down.
+8. **Icon** — run `bun run brand:generate` so `brand/generated/desktop/themes/` gains the theme's icon, and look at it: `scripts/brand/generate.test.ts` fails until the icon is committed, but only a person can say it looks right. Ficus Desktop needs a release with the new icon; until then it draws the theme live from its colors.
+9. **Docs** — add the theme to this file's intent list and a short palette/generation/contrast-repair section (like [Ficus palette](#ficus-palette) or [BigBrain palettes](#bigbrain-palettes) below).
+10. **Real-browser check** — a throwaway local instance (never committed), Settings theme grid showing the new theme in its registry position, and a couple of real app pages (nav/header glass, Feed, Squads with a primary button) under every appearance the theme supports. Look at the screenshots yourself for a coherent look — no mismatched header/sidebar glass, no pale/garish chrome — then tear the instance down.
 
 ## Ficus palette
 

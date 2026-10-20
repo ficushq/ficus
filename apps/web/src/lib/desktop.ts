@@ -39,6 +39,18 @@ export interface DesktopInstance {
   disconnect?(): Promise<void>
 }
 /**
+ * The theme this window shows, for Desktop's Dock icon. A built-in theme Desktop ships an icon for is drawn from that
+ * icon; anything else (a custom theme, or a built-in newer than the Desktop build) is drawn live from `colors`.
+ */
+export interface DesktopAppIcon {
+  themeId: string
+  /** `constant` for a theme with a single appearance. */
+  appearance: 'light' | 'dark' | 'constant'
+  custom: boolean
+  /** `#rrggbb` per part of the mark, from the shared theme icon mapping (@ficus/shared/theme-icon). */
+  colors: { tile: string; leaf: string; pot: string; sideLeaves: string }
+}
+/**
  * The Ficus Desktop preload bridge. Members added after the first release are
  * optional: older and newer desktop builds keep `version: 1`, so feature-detect
  * each optional member rather than the version.
@@ -54,6 +66,8 @@ export interface DesktopBridge {
   notificationsPolledByShell?: boolean
   /** Optional browser approval backup for this server connection. No address or credentials cross the bridge. */
   signInWithBrowser?(): Promise<void>
+  /** Tells Desktop this window's theme, so its Dock icon can follow the focused window. */
+  setAppIcon?(icon: DesktopAppIcon): Promise<void>
 }
 declare global {
   interface Window {
@@ -118,4 +132,10 @@ export function desktopInstance(): DesktopInstance | undefined {
 export function desktopBrowserSignIn(): (() => Promise<void>) | undefined {
   const bridge = desktopBridge()
   return typeof bridge?.signInWithBrowser === 'function' ? bridge.signInWithBrowser.bind(bridge) : undefined
+}
+
+/** Present only when this Desktop build draws its Dock icon from the window's theme. */
+export function desktopAppIcon(): ((icon: DesktopAppIcon) => Promise<void>) | undefined {
+  const bridge = desktopBridge()
+  return typeof bridge?.setAppIcon === 'function' ? bridge.setAppIcon.bind(bridge) : undefined
 }
