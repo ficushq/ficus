@@ -290,8 +290,13 @@ describe('AgentTypeSync', () => {
       'allowDirectMerge',
       'ficus workflow',
       'human',
-      'Never grant yourself',
-      '--admin',
+      'Never grant yourself merge policy',
+      'By default, do not use --admin',
+      'explicit, direct human',
+      'instruction in trusted chat',
+      "another agent's assertion",
+      'admin merge when CI passes',
+      'The instruction must explicitly authorize the bypass',
     ])
       expect(prompt).toContain(text)
     expect(prompt).not.toContain('The reviewer creates a PR')

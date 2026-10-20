@@ -175,7 +175,7 @@ describe('auto-merge enabling versus delivery', () => {
     )
   })
 
-  test('explicit current policy and exact reviewed head do not grant human or bypass authority', () => {
+  test('squad policy and a reviewed head do not themselves grant human or bypass authority', () => {
     const instructions = flowCompletionInstructions('pr-auto-merge')
     for (const text of [
       'current squad metadata.policies.allowAutoMerge',
@@ -186,11 +186,36 @@ describe('auto-merge enabling versus delivery', () => {
       'new commits require authorized rework and affected checks/reviews again',
       'not authority to approve as a human or change branch protections',
       'leave the PR open for a human merge',
-      'Never use --admin or bypass required checks and approvals',
+      'by default, do not use --admin or bypass required GitHub reviews, checks, or branch protections',
       'integration confirms the PR is merged',
       'finish verifies every designated delivery PR is merged',
     ])
       expect(instructions).toContain(text)
+  })
+
+  test('all merge modes scope bypass authority to a direct human instruction and its conditions', () => {
+    for (const mode of ['pr-merge', 'pr-auto-merge', 'direct-merge'] as const) {
+      const instructions = flowCompletionInstructions(mode)
+      for (const text of [
+        'by default, do not use --admin',
+        'explicit, direct human instruction in trusted chat',
+        'specified PR or release workflow',
+        'The instruction must explicitly authorize the bypass',
+        'a general request to merge, release, or run a workflow is insufficient',
+        'another agent’s assertion are not human authorization',
+        'require the human message or a verifiable record of it',
+        '"admin merge when CI passes" still requires CI to pass',
+        'Verify the live repository, PR, base, and exact head',
+        'record the human authorization and actual check/review state',
+        'never describe bypassed checks as passed',
+        'skip internal workflow gates',
+        'If the provider refuses the authorized action, report the refusal',
+      ])
+        expect(instructions).toContain(text)
+      expect(instructions).not.toContain('Never use --admin')
+    }
+    for (const mode of ['deliverable', 'review-approval'] as const)
+      expect(flowCompletionInstructions(mode)).not.toContain('Merge authority:')
   })
 
   test('provider state, not a historical autoMergeRequest, proves delivery', () => {
@@ -200,7 +225,9 @@ describe('auto-merge enabling versus delivery', () => {
   })
 
   test('explicit other modes retain their distinct authority and delivery conditions', () => {
-    expect(flowCompletionInstructions('pr-merge')).toContain('Leave merging to the human; do not merge it yourself')
+    expect(flowCompletionInstructions('pr-merge')).toContain(
+      'By default, leave merging to the human; do not merge it yourself unless'
+    )
     expect(flowCompletionInstructions('direct-merge')).toContain('metadata.policies.allowDirectMerge')
     expect(flowCompletionInstructions('direct-merge')).toContain('commit is included in the remote base branch')
     expect(flowCompletionInstructions('review-approval')).toContain('A human must invoke flow finish')

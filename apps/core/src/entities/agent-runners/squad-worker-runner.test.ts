@@ -724,7 +724,8 @@ describe('SquadWorkerRunner typeContext injection', () => {
         }
         if (mode === 'pr-auto-merge') {
           expect(systemPrompt).toContain('leave the PR open for a human merge')
-          expect(systemPrompt).toContain('Never use --admin')
+          expect(systemPrompt).toContain('by default, do not use --admin')
+          expect(systemPrompt).toContain('explicit, direct human instruction in trusted chat')
         }
         if (mode === 'direct-merge') expect(systemPrompt).toContain('authorize a revision to pr-merge')
         if (mode === 'deliverable') expect(systemPrompt).toContain('No PR, repository mutation, or additional reviewer')
