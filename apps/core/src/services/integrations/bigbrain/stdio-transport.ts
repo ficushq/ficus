@@ -39,6 +39,7 @@ export class BigbrainStdioTransport implements Transport {
   onmessage?: (message: JSONRPCMessage) => void
   #child?: ChildProcessWithoutNullStreams
   #cwd?: string
+  #cwdReady?: Promise<string>
   #closing?: Promise<void>
   #exited?: Promise<void>
   #buffer = Buffer.alloc(0)
@@ -50,12 +51,15 @@ export class BigbrainStdioTransport implements Transport {
     return this.#child?.pid
   }
   async start(): Promise<void> {
+    if (this.#closing) throw new BigbrainError('cancelled')
     if (this.#started) throw new BigbrainError('invalid_configuration')
     if (active.size >= 2) throw new BigbrainError('busy')
     this.#started = true
     active.add(this)
     try {
-      this.#cwd = await mkdtemp(join(tmpdir(), 'ficus-bigbrain-cwd-'))
+      this.#cwdReady = mkdtemp(join(tmpdir(), 'ficus-bigbrain-cwd-'))
+      this.#cwd = await this.#cwdReady
+      if (this.#closing) throw new BigbrainError('cancelled')
       // SDK's OS basics deliberately preserve OS HOME, not Ficus HOME_DIR.
       const env = getDefaultEnvironment()
       env.PATH = [
@@ -141,6 +145,7 @@ export class BigbrainStdioTransport implements Transport {
     return this.#closing
   }
   async #close(): Promise<void> {
+    await this.#cwdReady?.catch(() => {})
     const child = this.#child
     const kill = (signal: NodeJS.Signals) => {
       if (child?.pid) {

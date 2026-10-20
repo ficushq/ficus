@@ -53,7 +53,15 @@ const plugin: IntegrationPluginV1<
     if (error instanceof BigbrainError) {
       return {
         code: error.code,
-        retryable: !['invalid_auth', 'missing_scope', 'invalid_configuration'].includes(error.code),
+        retryable: ![
+          'invalid_auth',
+          'missing_scope',
+          'invalid_configuration',
+          'unsupported_host',
+          'binding_changed',
+          'binding_unavailable',
+          'outcome_unknown',
+        ].includes(error.code),
         ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
       }
     }

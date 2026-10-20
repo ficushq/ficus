@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { chmod, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { createHash } from 'node:crypto'
 import { BigbrainBindings } from './local-bindings'
 
 let root: string
@@ -9,10 +10,12 @@ let home: string
 let binding: { id: string; label: string; vaultPath: string; executablePath: string; clientId: string }
 let resolver: BigbrainBindings
 async function save(value: unknown = [binding]) {
-  await writeFile(join(home, 'bigbrain-bindings.json'), JSON.stringify(value), { mode: 0o600 })
+  await writeFile(join(home, 'bigbrain-bindings.json'), JSON.stringify({ version: 1, bindings: value }), {
+    mode: 0o600,
+  })
 }
 beforeEach(async () => {
-  root = await mkdtemp(join(tmpdir(), 'ficus-bigbrain-'))
+  root = await realpath(await mkdtemp(join(tmpdir(), 'ficus-bigbrain-')))
   home = join(root, 'ficus')
   await mkdir(home, { mode: 0o700 })
   const vaultPath = join(root, 'vault')
@@ -21,6 +24,12 @@ beforeEach(async () => {
   const executablePath = join(root, 'bigbrain')
   await writeFile(executablePath, '#!/bin/sh\nexit 0\n', { mode: 0o700 })
   binding = { id: 'personal', label: 'Personal', vaultPath, executablePath, clientId: 'aabb0011' }
+  const tokenStorePath = join(root, 'tokens.json')
+  await writeFile(tokenStorePath, '{}', { mode: 0o600 })
+  await mkdir(`${tokenStorePath}.clients`, { mode: 0o700 })
+  for (const id of ['aabb0011', 'aabb0022'])
+    await writeFile(join(`${tokenStorePath}.clients`, `${id}.json`), '{}', { mode: 0o600 })
+  binding.tokenStorePath = tokenStorePath
   resolver = new BigbrainBindings({ home, supported: () => true })
   await save()
 })
@@ -94,4 +103,31 @@ test('refuses sandbox overlaps in both directions and unsupported hosts', async 
   await expect(new BigbrainBindings({ home, supported: () => false }).list()).rejects.toMatchObject({
     code: 'unsupported_host',
   })
+})
+
+test('requires the documented versioned host inventory', async () => {
+  await writeFile(join(home, 'bigbrain-bindings.json'), JSON.stringify([binding]))
+  await expect(resolver.list()).rejects.toMatchObject({ code: 'invalid_configuration' })
+})
+
+test('default upstream credential state cannot resolve into an exposed workspace', async () => {
+  const exposed = join(home, 'workspaces')
+  await mkdir(exposed, { mode: 0o700 })
+  const osHome = join(root, 'os-home')
+  await mkdir(osHome, { mode: 0o700 })
+  await symlink(exposed, join(osHome, '.config'))
+  const tokens = join(exposed, 'bigbrain', 'tokens')
+  await mkdir(tokens, { recursive: true, mode: 0o700 })
+  await writeFile(
+    join(tokens, createHash('sha256').update(binding.vaultPath).digest('hex').slice(0, 12) + '.json'),
+    '{}',
+    { mode: 0o600 }
+  )
+  const store = join(tokens, createHash('sha256').update(binding.vaultPath).digest('hex').slice(0, 12) + '.json')
+  await mkdir(`${store}.clients`, { mode: 0o700 })
+  await writeFile(join(`${store}.clients`, `${binding.clientId}.json`), '{}', { mode: 0o600 })
+  delete binding.tokenStorePath
+  await save()
+  const defaults = new BigbrainBindings({ home, supported: () => true, osHome })
+  await expect(defaults.resolve('personal')).rejects.toMatchObject({ code: 'invalid_configuration' })
 })

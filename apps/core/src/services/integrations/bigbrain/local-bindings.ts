@@ -1,5 +1,6 @@
+import { getDefaultEnvironment } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { constants } from 'node:fs'
-import { access, open, realpath, stat } from 'node:fs/promises'
+import { access, open, realpath, stat, lstat } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { z } from 'zod'
@@ -56,15 +57,21 @@ function contains(parent: string, child: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
 }
 function supportedHost(): boolean {
-  return process.platform !== 'win32' && !isPlatformManaged() && !isHostRuntime() && !!requireSandboxRuntime()
+  try {
+    return process.platform !== 'win32' && !isPlatformManaged() && !isHostRuntime() && !!requireSandboxRuntime()
+  } catch {
+    return false
+  }
 }
 
 /** Only an OS operator can declare executable/vault authority. API callers select IDs, never paths. */
 export class BigbrainBindings {
   readonly #home: string
   readonly #supported: () => boolean
-  constructor(options: { home?: string; supported?: () => boolean } = {}) {
+  readonly #osHome: string | undefined
+  constructor(options: { home?: string; supported?: () => boolean; osHome?: string } = {}) {
     this.#home = options.home ?? getHomeDir()
+    this.#osHome = options.osHome ?? getDefaultEnvironment().HOME
     this.#supported = options.supported ?? supportedHost
   }
   async list(): Promise<BigbrainBindingSummary[]> {
@@ -104,16 +111,21 @@ export class BigbrainBindings {
       )
       try {
         const meta = await file.stat()
-        if (!meta.isFile() || meta.size > 65536 || (meta.mode & 0o077) !== 0 || meta.uid !== process.getuid?.())
+        if (
+          !meta.isFile() ||
+          meta.size > 65536 ||
+          (meta.mode & 0o077) !== 0 ||
+          ![0, process.getuid?.()].includes(meta.uid)
+        )
           throw new BigbrainError('invalid_configuration')
         // A bounded positional read also covers a declaration growing after stat.
         const buffer = Buffer.alloc(65537)
         const { bytesRead } = await file.read(buffer, 0, buffer.length, 0)
         if (bytesRead > 65536) throw new BigbrainError('invalid_configuration')
         const entries = z
-          .array(declaration)
-          .max(32)
-          .parse(JSON.parse(buffer.subarray(0, bytesRead).toString('utf8')))
+          .object({ version: z.literal(1), bindings: z.array(declaration).max(32) })
+          .strict()
+          .parse(JSON.parse(buffer.subarray(0, bytesRead).toString('utf8'))).bindings
         if (new Set(entries.map((e) => e.id)).size !== entries.length) throw new BigbrainError('invalid_configuration')
         return entries
       } finally {
@@ -126,7 +138,7 @@ export class BigbrainBindings {
     }
   }
   async #trusted(path: string): Promise<void> {
-    let current = resolve(path)
+    let current = await realpath(path)
     while (true) {
       const meta = await stat(current)
       // System ancestors may be root-owned; sticky shared temp parents cannot replace owned children.
@@ -142,9 +154,23 @@ export class BigbrainBindings {
     try {
       const vaultPath = await realpath(entry.vaultPath)
       const executablePath = await realpath(entry.executablePath)
-      const tokenStorePath = entry.tokenStorePath ? await realpath(entry.tokenStorePath) : undefined
-      const roots = ['workspaces', 'memory', 'private', 'nix', 'attachments', 'skills', 'agent'].map((part) =>
-        join(this.#home, part)
+      if (!entry.tokenStorePath && !this.#osHome) throw new BigbrainError('binding_unavailable')
+      const configuredStore =
+        entry.tokenStorePath ??
+        join(
+          this.#osHome!,
+          '.config',
+          'bigbrain',
+          'tokens',
+          createHash('sha256').update(vaultPath).digest('hex').slice(0, 12) + '.json'
+        )
+      if (!(await lstat(configuredStore)).isFile()) throw new BigbrainError('invalid_configuration')
+      const selectedStore = await realpath(configuredStore)
+      const clientDirectory = await realpath(`${selectedStore}.clients`)
+      const clientFile = join(clientDirectory, `${entry.clientId}.json`)
+      const tokenStorePath = entry.tokenStorePath ? selectedStore : undefined
+      const roots = ['workspaces', 'memory', 'private', 'nix', 'attachments', 'skills', 'agent', 'ssh', 'cli'].map(
+        (part) => join(this.#home, part)
       )
       // Resolve existing exposed-root symlinks as well as lexical paths.
       const exposed = await Promise.all(
@@ -156,22 +182,22 @@ export class BigbrainBindings {
           }
         })
       )
-      for (const path of [vaultPath, executablePath, tokenStorePath].filter((p): p is string => !!p)) {
+      for (const path of [vaultPath, executablePath, selectedStore, clientDirectory, clientFile]) {
         if (exposed.some((root) => contains(root, path) || contains(path, root)))
           throw new BigbrainError('invalid_configuration')
         await this.#trusted(path)
       }
       if (
         !(await stat(vaultPath)).isDirectory() ||
-        !(await stat(join(vaultPath, 'vault.yaml'))).isFile() ||
+        !(await lstat(join(vaultPath, 'vault.yaml'))).isFile() ||
         !(await stat(executablePath)).isFile()
       )
         throw new BigbrainError('binding_unavailable')
       await access(executablePath, constants.X_OK)
-      if (tokenStorePath) {
-        const meta = await stat(tokenStorePath)
+      for (const state of [selectedStore, clientFile]) {
+        const meta = await lstat(state)
         if (!meta.isFile() || (meta.mode & 0o077) !== 0) throw new BigbrainError('invalid_configuration')
-        await access(tokenStorePath, constants.R_OK)
+        await access(state, constants.R_OK)
       }
       const bindingFingerprint = createHash('sha256')
         .update(

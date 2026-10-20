@@ -1,3 +1,7 @@
+import { Server } from '@modelcontextprotocol/sdk/server/index.js'
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import { BigbrainClient } from './client'
 import { expect, test } from 'bun:test'
 import { BigbrainError } from './errors'
 import { createBigbrainTools, BIGBRAIN_TOOL_NAMES } from './tools'
@@ -93,3 +97,54 @@ test('disables the exact material revision on runtime authentication failure', a
   await tools[1]!.execute('call', { query: 'test' }, undefined as any, undefined as any, undefined as any)
   expect(disables).toEqual([{ id: 'connection', materialRevision: 'revision-a' }])
 })
+
+test.each(['disable', 'revision'] as const)(
+  'rechecks %s after MCP initialization before sending a tool request',
+  async (change) => {
+    let initialized = false
+    let dispatched = 0
+    const [local, remote] = InMemoryTransport.createLinkedPair()
+    const server = new Server({ name: 'synthetic', version: '1' }, { capabilities: { tools: {} } })
+    server.oninitialized = () => {
+      initialized = true
+    }
+    server.setRequestHandler(CallToolRequestSchema, () => {
+      dispatched++
+      return { content: [{ type: 'text', text: '' }] }
+    })
+    await server.connect(remote)
+    const tools = createBigbrainTools({
+      agent: {
+        id: 'agent',
+        squadId: 'squad',
+        integrationCapabilities: { version: 1, allow: { bigbrain: ['agent_tools'] } },
+      },
+      squadId: 'squad',
+      gate: {
+        check: async () =>
+          initialized && change === 'disable'
+            ? { allowed: false, code: 'connection_disabled' }
+            : {
+                allowed: true,
+                connection: {
+                  id: 'connection',
+                  credentialRef: 'private',
+                  materialRevision: initialized ? 'changed' : 'original',
+                  configuration: { version: 2 },
+                },
+              },
+      } as any,
+      credentials: { get: () => 'aabb0011', set: async () => {}, delete: async () => {} },
+      connections: { disableRuntimeAuthFailure: async () => false },
+      audit: { record: async () => {} },
+      client: (options) => new BigbrainClient({ ...options, transport: async () => local }),
+    })
+    try {
+      const result = await tools[0].execute('call', {}, undefined as any, undefined as any, undefined as any)
+      expect(JSON.stringify(result)).toContain('unavailable')
+      expect(dispatched).toBe(0)
+    } finally {
+      await server.close()
+    }
+  }
+)

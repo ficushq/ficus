@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { BigbrainError } from './errors'
 import { BigbrainBindings, type BigbrainConfigV2 } from './local-bindings'
@@ -190,7 +191,7 @@ export class BigbrainClient {
     if (result.data.isError) {
       // Only recognized authentication responses invalidate material. Never surface provider text.
       if (
-        /^This connection .*(?:expired|idle)|^Authenticate a current client connection|^Client connection was revoked|^Client credential is unavailable/i.test(
+        /^This BigBrain (?:connection|credential) expired|^Authenticate a current client connection|^Client connection was revoked|^Client credential is unavailable/i.test(
           content
         )
       )
@@ -198,7 +199,9 @@ export class BigbrainClient {
       throw new BigbrainError('unavailable')
     }
     try {
-      return schema.parse(name === 'load_memory' ? content : JSON.parse(content))
+      const parsed: unknown = name === 'load_memory' ? content : JSON.parse(content)
+      validateResponsePaths(parsed)
+      return schema.parse(parsed)
     } catch {
       throw new BigbrainError('invalid_response')
     }
@@ -251,6 +254,8 @@ export class BigbrainClient {
       return await run(client, controller.signal)
     } catch (error) {
       if (transportFailure) throw transportFailure
+      if (error instanceof McpError && error.code === ErrorCode.RequestTimeout)
+        throw new BigbrainError(write && dispatched ? 'outcome_unknown' : 'timeout')
       if (timedOut || options.signal?.aborted)
         throw new BigbrainError(write && dispatched ? 'outcome_unknown' : timedOut ? 'timeout' : 'cancelled')
       if (error instanceof BigbrainError) throw error
@@ -267,4 +272,23 @@ function parseInput<T>(schema: z.ZodType<T>, input: unknown): T {
   const result = schema.safeParse(input)
   if (!result.success) throw new BigbrainError('invalid_configuration')
   return result.data
+}
+
+/** Provenance stays data, but any path-shaped references must remain safe opaque vault IDs. */
+function validateResponsePaths(value: unknown, depth = 0): void {
+  if (depth > 64) throw new BigbrainError('invalid_response')
+  if (!value || typeof value !== 'object') return
+  if (Array.isArray(value)) {
+    for (const entry of value) validateResponsePaths(entry, depth + 1)
+    return
+  }
+  for (const [key, entry] of Object.entries(value)) {
+    if (
+      ['path', 'ref_path', 'source_path'].includes(key) &&
+      entry !== null &&
+      !sourceIdentifier.safeParse(entry).success
+    )
+      throw new BigbrainError('invalid_response')
+    validateResponsePaths(entry, depth + 1)
+  }
 }

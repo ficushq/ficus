@@ -4,7 +4,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { BigbrainClient } from './client'
 
-function fixture(reply: (name: string, args: Record<string, unknown>) => unknown) {
+function fixture(reply: (name: string, args: Record<string, unknown>) => unknown, isError = false) {
   const calls: { name: string; arguments?: Record<string, unknown> }[] = []
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   const server = new Server({ name: 'synthetic', version: '1' }, { capabilities: { tools: {} } })
@@ -17,11 +17,12 @@ function fixture(reply: (name: string, args: Record<string, unknown>) => unknown
   server.setRequestHandler(CallToolRequestSchema, (request) => {
     calls.push(request.params)
     return {
+      isError,
       content: [
         {
           type: 'text',
           text:
-            request.params.name === 'load_memory'
+            isError || request.params.name === 'load_memory'
               ? String(reply(request.params.name, request.params.arguments ?? {}))
               : JSON.stringify(reply(request.params.name, request.params.arguments ?? {})),
         },
@@ -135,6 +136,46 @@ test('gate is rechecked after initialization and before dispatch', async () => {
       )
     ).rejects.toMatchObject({ code: 'unavailable' })
     expect(f.calls).toHaveLength(0)
+  } finally {
+    await f.dispose()
+  }
+})
+
+test('expired connections cannot validate just because tools/list succeeds', async () => {
+  const f = fixture(
+    () => 'This BigBrain connection expired after 30 days unused. Renew it in BigBrain → Settings → Connected agents.',
+    true
+  )
+  try {
+    await expect(f.client.validate()).rejects.toMatchObject({ code: 'invalid_auth' })
+    expect(f.calls).toHaveLength(1)
+    expect(f.calls[0].name).toBe('search_vault')
+  } finally {
+    await f.dispose()
+  }
+})
+test('validation authenticates via search without requiring a memory file or writing a drop', async () => {
+  const f = fixture(() => ({ hits: [] }))
+  try {
+    expect(await f.client.validate()).toEqual(['mcp:load_memory', 'mcp:search_vault', 'mcp:read_note', 'mcp:drop'])
+    expect(f.calls).toEqual([{ name: 'search_vault', arguments: { query: '__ficus_connection_validation__', n: 1 } }])
+  } finally {
+    await f.dispose()
+  }
+})
+test('rejects oversized results without exposing content', async () => {
+  const f = fixture(() => 'SENTINEL'.repeat(70000))
+  try {
+    await expect(f.client.loadMemory()).rejects.toMatchObject({ code: 'response_too_large' })
+  } finally {
+    await f.dispose()
+  }
+})
+
+test('does not expose unsafe nested provenance/source identifiers as retrievable paths', async () => {
+  const f = fixture(() => ({ path: 'memory/x', markdown: 'data', sources: [{ path: '../private' }] }))
+  try {
+    await expect(f.client.readNote({ path: 'memory/x' })).rejects.toMatchObject({ code: 'invalid_response' })
   } finally {
     await f.dispose()
   }
