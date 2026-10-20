@@ -180,3 +180,129 @@ test('Desktop host setup and all four tools work with OS HOME separate from Ficu
     await rm(root, { recursive: true, force: true })
   }
 }, 30000) // Six intentionally short-lived processes each include a 1s process-group reap grace.
+
+// One-click setup on the same synthetic Desktop host: Core detects ~/.local/bin/bigbrain and the
+// default vault, runs the (synthetic) upstream `mcp config`, writes the managed bindings file,
+// validates, enables, and all four tools then work. Not a packaged macOS end-to-end test.
+test('one-click Desktop setup creates, enables and reuses the connection; four tools work', async () => {
+  const { BigbrainLocalSetup, vaultSelectionId } = await import('./local-setup')
+  const { createSyntheticBigbrain, createSyntheticVault } = await import('./synthetic-upstream.fixture')
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'bigbrain-desktop-setup-')))
+  const previousEnv = { ...process.env }
+  const key = INTEGRATION_ENABLED_PREFIX + 'bigbrain'
+  const [previousSetting] = await db.select().from(settings).where(eq(settings.key, key))
+  const [squad] = await db.insert(squads).values({ name: 'Synthetic one-click BigBrain', purpose: 'test' }).returning()
+  const connectionIds: string[] = []
+  try {
+    const home = join(root, 'Ficus Home'),
+      osHome = join(root, 'Users', 'Synthetic Mac')
+    await mkdir(home, { recursive: true, mode: 0o700 })
+    const bigbrain = await createSyntheticBigbrain(root, osHome)
+    const vault = await createSyntheticVault(join(osHome, 'vault'))
+    Object.assign(process.env, {
+      HOME: osHome,
+      HOME_DIR: home,
+      FICUS_SANDBOX_RUNTIME: 'host',
+      FICUS_DESKTOP_MANAGED: '1',
+      FICUS_TOKEN: 'must-not-forward',
+      BIGBRAIN_TOKENS: '/must-not-inherit',
+    })
+    delete process.env.FICUS_MANAGED
+    const bindings = new BigbrainBindings()
+    const repository = new DbIntegrationConnectionRepository()
+    const material = new Map<string, string>()
+    const credentials = {
+      get: (ref: string) => material.get(ref),
+      set: async (ref: string, value: string) => {
+        material.set(ref, value)
+      },
+      delete: async (ref: string) => {
+        material.delete(ref)
+      },
+    }
+    const service = new IntegrationConnectionService({
+      repository,
+      assignments: repository,
+      credentials,
+      resolveProvider: () => new BigbrainProvider(),
+    })
+    // Only Ficus's own rows: the shared test DB may hold other suites' connections.
+    const ownRepository = {
+      list: async (provider: string) =>
+        (await repository.list(provider)).filter((record) => connectionIds.includes(record.id)),
+      get: (id: string) => repository.get(id),
+    }
+    const setup = new BigbrainLocalSetup(bindings, service, ownRepository)
+    await setIntegrationEnabled('bigbrain', true, 'test')
+    const state = await setup.state()
+    expect(state).toMatchObject({ state: 'ready', executablePath: bigbrain.executable, bindingsFile: 'none' })
+    expect(state.vaults).toMatchObject([{ vaultPath: vault, source: 'bigbrain_fallback' }])
+
+    const first = await setup.connect({ vaultId: vaultSelectionId(vault), confirmVaultAccess: true }, 'system:test')
+    connectionIds.push(first.connection.id)
+    expect(first).toMatchObject({ bindingsFile: 'created', connectionOutcome: 'created', enabled: true })
+    expect(first.connection).toMatchObject({ enabled: true, authState: 'authenticated', lastErrorCode: null })
+    const file = JSON.parse(await readFile(join(home, 'bigbrain-bindings.json'), 'utf8'))
+    expect(file.managedBy).toBe('ficus')
+    expect(JSON.stringify(file)).not.toContain('synthetic-not-a-secret')
+    expect([...material.values()].join()).not.toContain('synthetic-not-a-secret')
+    expect((await new BigbrainLocalConnections(bindings, service).list()).state).toBe('available')
+
+    const second = await setup.connect({ vaultId: vaultSelectionId(vault), confirmVaultAccess: true }, 'system:test')
+    expect(second).toMatchObject({ bindingsFile: 'unchanged', connectionOutcome: 'reused', enabled: true })
+    expect(second.connection.id).toBe(first.connection.id)
+
+    await repository.assign(squad.id, 'bigbrain', first.connection.id)
+    const gate = new IntegrationRuntimeGate({
+      repository,
+      currentAuthority: () => 'local',
+      supportedAdapterVersion: () => 2,
+      supportedConfigVersion: () => 2,
+    })
+    const tools = createBigbrainTools({
+      agent: {
+        id: 'synthetic-agent',
+        squadId: squad.id,
+        integrationCapabilities: { version: 1, allow: { bigbrain: ['agent_tools'] } },
+      },
+      squadId: squad.id,
+      gate,
+      credentials,
+      connections: repository,
+      audit: { record: async () => {} },
+    })
+    const inputs = [{}, { query: 'synthetic' }, { path: 'memory/MEMORY.md' }, { title: 'Finding', body: 'Synthetic' }]
+    for (const [index, tool] of tools.entries()) {
+      const result = await tool.execute('call', inputs[index], undefined, undefined as never, undefined as never)
+      expect(result.details).toMatchObject({ provider: 'bigbrain', connectionId: first.connection.id })
+    }
+    const launches = await bigbrain.launches()
+    expect(launches.filter((entry) => 'minted' in entry)).toHaveLength(1)
+    const configRuns = launches.filter((entry) => Array.isArray(entry.args) && entry.args[1] === 'config')
+    expect(configRuns).toHaveLength(2)
+    for (const launch of launches.filter((entry) => 'args' in entry)) {
+      expect(launch).toMatchObject({ home: osHome, vault })
+      expect(launch.coreSecret).toBeUndefined()
+      expect(launch.tokens).toBeUndefined()
+      expect(launch.homeDir).toBeUndefined()
+    }
+    const clientId = file.bindings[0].clientId
+    expect(launches.filter((entry) => Array.isArray(entry.args) && entry.args[1] === '--client')).toContainEqual(
+      expect.objectContaining({ args: ['mcp', '--client', clientId] })
+    )
+
+    // Hosted Core refuses setup server-side regardless of a saved enabled flag.
+    process.env.FICUS_MANAGED = '1'
+    await expect(
+      setup.connect({ vaultId: vaultSelectionId(vault), confirmVaultAccess: true }, 'system:test')
+    ).rejects.toMatchObject({ code: 'unsupported_host' })
+    expect((await setup.state()).state).toBe('unsupported_host')
+  } finally {
+    process.env = previousEnv
+    await db.delete(squads).where(eq(squads.id, squad.id))
+    for (const id of connectionIds) await db.delete(integrationConnections).where(eq(integrationConnections.id, id))
+    if (previousSetting) await db.update(settings).set(previousSetting).where(eq(settings.key, key))
+    else await db.delete(settings).where(eq(settings.key, key))
+    await rm(root, { recursive: true, force: true })
+  }
+}, 40000)

@@ -1,20 +1,14 @@
-import { ExternalLink } from '../settings/SettingsRow'
-import { SelectionPopup } from '../ThemedPopup'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import {
-  createLocalBigbrainIntegration,
-  integrationAction,
-  removeIntegration,
-  type IntegrationConnection,
-} from '../../api/integrations'
+import { integrationAction, removeIntegration, type IntegrationConnection } from '../../api/integrations'
 import { ApiError } from '../../api/client'
 import { integrationQueries } from '../../queryOptions'
 import { integrationQueryKeys } from '../../queryKeys'
 import { ConfirmButton } from '../ConfirmButton'
 import { useStableRef } from '../../hooks/useStableRef'
 import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
+import { BigbrainLocalSetupPanel } from './BigbrainLocalSetupPanel'
 
 function boundedError(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message.slice(0, 200) : fallback
@@ -76,10 +70,6 @@ export function BigbrainIntegrationSettings({
   const client = useQueryClient()
   const pool = useQuery({ ...integrationQueries.pool('bigbrain'), enabled: canRead })
   const connections = pool.data ?? []
-  const [displayName, setDisplayName] = useState('')
-  const bindings = useQuery({ ...integrationQueries.localBindings(), enabled: canRead })
-  const [bindingId, setBindingId] = useState('')
-  const selectedBinding = bindings.data?.bindings.find((binding) => binding.id === bindingId)
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
   const [feedback, setFeedback] = useState<OperationFeedback | null>(null)
   const [pendingTargets, setPendingTargets] = useState<Record<string, number>>({})
@@ -113,8 +103,6 @@ export function BigbrainIntegrationSettings({
   }
   const refresh = () => client.invalidateQueries({ queryKey: integrationQueryKeys.all })
   const clearCredentialDrafts = useCallback(() => {
-    setDisplayName('')
-    setBindingId('')
     setConfirmation(null)
   }, [])
   useEffect(() => {
@@ -127,26 +115,6 @@ export function BigbrainIntegrationSettings({
     setConfirmation(null)
   }, [connectionIds])
 
-  const create = useMutation({
-    mutationFn: (variables: { displayName: string; bindingId: string }) => createLocalBigbrainIntegration(variables),
-    onMutate: beginOperation,
-    onSuccess: async (data, _variables, sequence) => {
-      if (isLatest(sequence)) {
-        setDisplayName('')
-        setBindingId('')
-      }
-      showLatestFeedback(
-        sequence,
-        data.lastErrorCode
-          ? { kind: 'error', message: `Connection created but validation failed (${data.lastErrorCode}).` }
-          : { kind: 'success', message: 'Connection created and validated. Enable it when ready.' }
-      )
-      await refresh()
-    },
-    onError: (error, _variables, sequence) =>
-      showLatestFeedback(sequence, { kind: 'error', message: operationError('Creating the connection', error) }),
-  })
-
   const action = useMutation({
     mutationFn: (variables: {
       connectionId: string
@@ -158,7 +126,7 @@ export function BigbrainIntegrationSettings({
       if ('lastErrorCode' in data && data.lastErrorCode) {
         showLatestFeedback(context?.sequence, {
           kind: 'error',
-          message: `Validation failed (${data.lastErrorCode}). Check the Core host binding and Connected Clients.`,
+          message: `Validation failed (${data.lastErrorCode}). Open BigBrain.app, then use Connect BigBrain again to repair it.`,
         })
         await refresh()
         return
@@ -225,7 +193,7 @@ export function BigbrainIntegrationSettings({
       <section className={embedded ? undefined : 'mt-6 border-b border-panel-border py-5'}>
         {!embedded && <h3 className="text-sm font-medium text-primary">BigBrain</h3>}
         <p className="mt-1 text-xs text-muted">
-          Desktop local runtime and same-host self-hosted Ficus are supported. Paths belong to the connected Core host.
+          Desktop local runtime and same-host self-hosted Ficus are supported. Vaults belong to the connected Core host.
         </p>
         <LoadingSurface label="Loading BigBrain connections" className="mt-4 space-y-3">
           <SkeletonRows count={2}>
@@ -257,9 +225,9 @@ export function BigbrainIntegrationSettings({
     <section className={embedded ? undefined : 'mt-6 border-b border-panel-border py-5'}>
       {!embedded && <h3 className="text-sm font-medium text-primary">BigBrain</h3>}
       <p className="text-xs text-muted mt-1">
-        Desktop local runtime and same-host self-hosted Ficus are supported. Vaults and executables belong to the
-        connected Core host, not the browser. The connector exposes tools, not file mounts; trusted host runtime has no
-        filesystem isolation from agent shells. Desktop attached to Cloud cannot access a vault on your Mac.
+        Desktop local runtime and same-host self-hosted Ficus are supported. Vaults belong to the connected Core host,
+        not the browser. The connector exposes tools, not file mounts; trusted host runtime has no filesystem isolation
+        from agent shells. Desktop attached to Cloud cannot access a vault on your Mac.
       </p>
       <div className="mt-4 space-y-4">
         {connections.map((connection) => {
@@ -348,70 +316,7 @@ export function BigbrainIntegrationSettings({
           )
         })}
       </div>
-      {canWrite && bindings.isLoading && <p role="status">Loading approved Core host vaults…</p>}
-      {canWrite && bindings.isError && (
-        <p role="alert">Unable to load approved vaults. Check Core host setup and retry.</p>
-      )}
-      {canWrite && bindings.data && bindings.data.state !== 'available' && (
-        <p role="alert" className="mt-3 text-sm text-muted">
-          {bindings.data.state === 'unsupported_host'
-            ? 'BigBrain requires a macOS/Linux same-host self-hosted Core with a configured agent runtime. Ficus Cloud and vaults on a remote client are unsupported.'
-            : bindings.data.state === 'setup_required'
-              ? 'Create bigbrain-bindings.json in the connected Ficus HOME_DIR (Desktop local data directory, usually ~/.ficus/desktop). BigBrain credentials belong under OS HOME, not HOME_DIR. Provision a named connection in BigBrain Connected Clients first, then reload.'
-              : bindings.data.state === 'binding_unavailable'
-                ? 'A declared vault, executable or private Connected Clients credential is missing or unreadable. Restore the selected paths on the Core host and check the BigBrain connection under OS HOME, then reload.'
-                : 'Check bigbrain-bindings.json syntax, ownership and permissions, and private credential permissions on the Core host. Keep vault, executable and credential paths outside Ficus agent workspace roots, then reload.'}{' '}
-          <ExternalLink className="underline" href="https://github.com/ficushq/ficus/blob/main/docs/wiki/bigbrain.md">
-            Local setup instructions
-          </ExternalLink>
-        </p>
-      )}
-      {canWrite && bindings.data?.state === 'available' && (
-        <form
-          className="mt-5 flex flex-col gap-2 border-t border-th-border pt-4"
-          onSubmit={(event) => {
-            event.preventDefault()
-            if (selectedBinding) create.mutate({ displayName, bindingId })
-          }}
-        >
-          <h4 className="text-sm font-medium text-primary">Add connection</h4>
-          <label className="flex flex-col gap-1 text-xs font-medium text-primary">
-            Display name
-            <input
-              aria-label="BigBrain display name"
-              className="ficus-field rounded-md border border-th-border bg-surface px-3 py-2"
-              value={displayName}
-              onChange={(event) => setDisplayName(event.target.value)}
-              disabled={create.isPending}
-              required
-            />
-          </label>
-          <SelectionPopup
-            value={bindingId}
-            label="Approved local vault"
-            options={(bindings.data?.bindings ?? []).map((binding) => ({ value: binding.id, label: binding.label }))}
-            onChange={setBindingId}
-            disabled={create.isPending}
-            className="ficus-field rounded-md px-3 py-2 text-left text-sm"
-          >
-            {selectedBinding?.label ?? 'Choose an approved vault'}
-          </SelectionPopup>
-          {selectedBinding && (
-            <p className="text-xs text-muted break-all">
-              Core host vault: {selectedBinding.vaultPath}
-              <br />
-              Executable: {selectedBinding.executablePath}
-            </p>
-          )}
-          <button
-            type="submit"
-            className="ficus-button ficus-button-primary rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50"
-            disabled={create.isPending || !selectedBinding || !displayName.trim()}
-          >
-            {create.isPending ? 'Creating and validating…' : 'Create and validate'}
-          </button>
-        </form>
-      )}
+      {canWrite && <BigbrainLocalSetupPanel hasConnections={connections.length > 0} />}
       {connections.length === 0 && !canWrite && (
         <p className="text-xs text-muted mt-2">No BigBrain connections configured.</p>
       )}

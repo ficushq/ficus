@@ -63,6 +63,7 @@ export const onboardingQueryKeys = {
 
 export const integrationQueryKeys = {
   localBindings: () => [...integrationQueryKeys.all, 'local-bindings', 'bigbrain'] as const,
+  localSetup: () => [...integrationQueryKeys.all, 'local-setup', 'bigbrain'] as const,
   outputs: () => ['integrations', 'outputs'] as const,
   all: ['integrations'] as const,
   catalog: () => [...integrationQueryKeys.all, 'catalog'] as const,

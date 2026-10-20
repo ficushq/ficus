@@ -47,7 +47,19 @@ const secondConnection = {
   enabled: false,
 }
 
+const readyState = {
+  state: 'ready',
+  hostPlatform: 'darwin',
+  executablePath: '/Users/me/.local/bin/bigbrain',
+  vaults: [{ id: 'a'.repeat(16), label: 'BigBrain · vault', vaultPath: '/Users/me/vault', source: 'bigbrain_default' }],
+  bindingsFile: 'none',
+  connectionName: 'Local MCP configuration',
+  access: ['vault:read', 'inbox:write'],
+}
+let setupState: Record<string, unknown> = readyState
+
 beforeEach(async () => {
+  setupState = readyState
   harness = await acquireDomHarness({ url: 'http://localhost' })
   ;({ root, container } = harness.createRoot())
   oldFetch = globalThis.fetch
@@ -55,11 +67,7 @@ beforeEach(async () => {
   fetchHandler = async (_input, init) => Response.json((init?.method ?? 'GET') === 'GET' ? [connection] : connection)
   globalThis.fetch = (async (input, init) => {
     requests.push({ url: String(input), method: init?.method ?? 'GET', body: String(init?.body ?? '') })
-    if (String(input).endsWith('/local-bindings'))
-      return Response.json({
-        state: 'available',
-        bindings: [{ id: 'approved', label: 'Approved vault', vaultPath: '/vault', executablePath: '/bin/bigbrain' }],
-      })
+    if ((init?.method ?? 'GET') === 'GET' && String(input).endsWith('/local-setup')) return Response.json(setupState)
     if ((init?.method ?? 'GET') === 'GET') return Response.json([connection])
     return fetchHandler(input, init)
   }) as typeof fetch
@@ -74,10 +82,7 @@ async function render(data: unknown[] | undefined, canRead = true, canWrite = tr
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } },
   })
-  client.setQueryData(integrationQueryKeys.localBindings(), {
-    state: 'available',
-    bindings: [{ id: 'approved', label: 'Approved vault', vaultPath: '/vault', executablePath: '/bin/bigbrain' }],
-  })
+  if (canWrite) client.setQueryData(integrationQueryKeys.localSetup(), setupState)
   if (data !== undefined) client.setQueryData(integrationQueryKeys.pool('bigbrain'), data)
   const { BigbrainIntegrationSettings } = await import('./BigbrainIntegrationSettings')
   await harness.act(async () =>
@@ -115,40 +120,90 @@ describe('BigbrainIntegrationSettings', () => {
     expect(container.textContent).not.toContain('Replace credential')
     expect(container.textContent).not.toContain('consent')
   })
-  test('selects only an approved binding and creates without API or token fields', async () => {
+  test('connects a detected vault after showing whole-vault access, without paths, argv or tokens', async () => {
+    fetchHandler = async () =>
+      Response.json({
+        connection: { ...connection, displayName: 'BigBrain · vault' },
+        vault: readyState.vaults[0],
+        bindingsFile: 'created',
+        connectionOutcome: 'created',
+        enabled: true,
+      })
     await render([])
+    expect(container.textContent).not.toContain('bigbrain-bindings.json')
+    expect(container.textContent).not.toContain('Connected Clients')
     await harness.act(async () => {
-      fireEvent.click(container.querySelector('[role=combobox]')!)
+      fireEvent.click(button('Connect BigBrain on this Mac'))
       await settle()
     })
+    expect(container.textContent).toContain('/Users/me/vault')
+    expect(container.textContent).toContain('read the whole vault')
+    expect(container.textContent).toContain('Local MCP configuration')
+    expect(requests.some((r) => r.method === 'POST')).toBe(false)
     await harness.act(async () => {
-      fireEvent.click(document.querySelector('[role=option]')!)
-      await settle()
-    })
-    const name = container.querySelector<HTMLInputElement>('input[aria-label="BigBrain display name"]')!
-    await harness.act(async () => {
-      fireEvent.input(name, { target: { value: 'Memory' } })
-      name.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      fireEvent.click(button('Confirm and connect'))
       await settle()
     })
     const request = requests.find((r) => r.method === 'POST')!
-    expect(request.url).toContain('/providers/bigbrain/local-connections')
-    expect(JSON.parse(request.body)).toEqual({ bindingId: 'approved', displayName: 'Memory' })
+    expect(request.url).toContain('/providers/bigbrain/local-setup')
+    expect(JSON.parse(request.body)).toEqual({ vaultId: 'a'.repeat(16), confirmVaultAccess: true })
+    expect(container.textContent).toContain('BigBrain connected: BigBrain · vault')
   })
-  test.each(['unsupported_host', 'setup_required', 'invalid_configuration'] as const)(
-    'shows actionable %s setup state',
-    async (state) => {
-      const { client } = await render([])
-      await harness.act(async () => {
-        client.setQueryData(integrationQueryKeys.localBindings(), { state, bindings: [] })
-        await settle()
-      })
-      expect(container.textContent).toContain(
-        state === 'unsupported_host' ? 'same-host self-hosted' : 'bigbrain-bindings.json'
+  test('another folder can be typed; an existing hand-written file needs explicit adoption', async () => {
+    setupState = { ...readyState, vaults: [], bindingsFile: 'unmanaged' }
+    await render([])
+    await harness.act(async () => {
+      fireEvent.click(button('Connect BigBrain on this Mac'))
+      await settle()
+    })
+    expect(container.textContent).toContain('did not find a BigBrain vault')
+    const folder = container.querySelector<HTMLInputElement>('input[aria-label="BigBrain vault folder"]')!
+    await harness.act(async () => {
+      fireEvent.input(folder, { target: { value: '/Users/me/Work Vault' } })
+      await settle()
+    })
+    expect(button('Confirm and connect').disabled).toBe(true)
+    await harness.act(async () => {
+      fireEvent.click(container.querySelector('input[type=checkbox]')!)
+      await settle()
+    })
+    await harness.act(async () => {
+      fireEvent.click(button('Confirm and connect'))
+      await settle()
+    })
+    expect(JSON.parse(requests.find((r) => r.method === 'POST')!.body)).toEqual({
+      vaultPath: '/Users/me/Work Vault',
+      replaceExisting: true,
+      confirmVaultAccess: true,
+    })
+  })
+  test('shows the sanitized server error when setup fails', async () => {
+    fetchHandler = async () =>
+      Response.json(
+        { error: 'BigBrain did not answer in time. Open BigBrain.app, then try again.', code: 'upstream_timeout' },
+        { status: 400 }
       )
-      expect(button('Create and validate')).toBeUndefined()
-    }
-  )
+    await render([])
+    await harness.act(async () => {
+      fireEvent.click(button('Connect BigBrain on this Mac'))
+      await settle()
+    })
+    await harness.act(async () => {
+      fireEvent.click(button('Confirm and connect'))
+      await settle()
+    })
+    expect(container.querySelector('[role=alert]')?.textContent).toContain('BigBrain did not answer in time')
+  })
+  test.each([
+    ['unsupported_host', 'unavailable on Ficus Cloud'],
+    ['executable_missing', 'Install and open BigBrain.app'],
+  ] as const)('shows actionable %s setup state without a connect action', async (state, reason) => {
+    setupState = { ...readyState, state, reason: `Reason: ${reason}`, vaults: [] }
+    await render([])
+    expect(container.textContent).toContain(reason)
+    expect(button('Confirm and connect')).toBeUndefined()
+    expect(button('Connect BigBrain on this Mac')).toBeUndefined()
+  })
   test('reports validation failures instead of claiming success on a safe response', async () => {
     fetchHandler = async () => Response.json({ ...connection, lastErrorCode: 'invalid_auth' })
     await render([connection])
@@ -181,31 +236,11 @@ describe('BigbrainIntegrationSettings', () => {
   })
 })
 
-test('supported Desktop with no binding explains local setup and trusted host limits, not an unsupported deployment', async () => {
-  const { client } = await render([])
-  await harness.act(async () => {
-    client.setQueryData(integrationQueryKeys.localBindings(), { state: 'setup_required', bindings: [] })
-    await settle()
-  })
+test('explains trusted host limits and never asks for hand-written setup', async () => {
+  await render([])
   expect(container.querySelector('h3')?.textContent).toBe('BigBrain')
   expect(container.textContent).toContain('Desktop local runtime')
-  expect(container.textContent).toContain('HOME_DIR')
-  expect(container.textContent).toContain('OS HOME')
   expect(container.textContent).toContain('no filesystem isolation')
-  expect(container.textContent).not.toContain('requires same-host self-hosted Ficus with an isolated')
-})
-
-test('missing executable/credential and invalid permissions give different actionable setup guidance', async () => {
-  const { client } = await render([])
-  for (const [state, text] of [
-    ['binding_unavailable', 'missing or unreadable'],
-    ['invalid_configuration', 'ownership and permissions'],
-  ] as const) {
-    await harness.act(async () => {
-      client.setQueryData(integrationQueryKeys.localBindings(), { state, bindings: [] })
-      await settle()
-    })
-    expect(container.textContent).toContain(text)
-    expect(container.textContent).not.toContain('isolated agent runtime')
-  }
+  expect(container.textContent).not.toContain('HOME_DIR')
+  expect(container.textContent).not.toContain('bigbrain-bindings.json')
 })

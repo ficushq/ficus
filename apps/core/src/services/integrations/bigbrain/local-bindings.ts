@@ -1,7 +1,7 @@
 import { getDefaultEnvironment } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { constants } from 'node:fs'
-import { access, open, realpath, stat, lstat } from 'node:fs/promises'
-import { createHash } from 'node:crypto'
+import { access, open, realpath, rename, stat, lstat, unlink } from 'node:fs/promises'
+import { createHash, randomBytes } from 'node:crypto'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { z } from 'zod'
 import { getHomeDir } from '../../../lib/utils/home'
@@ -13,6 +13,7 @@ const pathSchema = z
   .min(1)
   .max(4096)
   .refine((s) => isAbsolute(s) && [...s].every((c) => c.charCodeAt(0) >= 32 && c.charCodeAt(0) !== 127))
+export const BIGBRAIN_BINDINGS_FILE = 'bigbrain-bindings.json'
 const declaration = z
   .object({
     id: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
@@ -37,6 +38,20 @@ export const BigbrainConfigSchema = z
   })
   .strict()
 export type BigbrainConfigV2 = z.infer<typeof BigbrainConfigSchema>
+export type BigbrainBindingDeclaration = z.infer<typeof declaration>
+const bindingsFileSchema = z
+  .object({
+    version: z.literal(1),
+    /** Present when Ficus wrote the file itself (one-click setup). Absent on hand-written files. */
+    managedBy: z.literal('ficus').optional(),
+    bindings: z.array(declaration).max(32),
+  })
+  .strict()
+/** What is on disk now: nothing, a Ficus-managed file, a hand-written file, or an unusable one. */
+export type BigbrainBindingsFileState =
+  | { status: 'none'; bindings: [] }
+  | { status: 'managed' | 'unmanaged'; bindings: BigbrainBindingDeclaration[] }
+  | { status: 'invalid'; bindings: [] }
 export interface ResolvedBigbrainBinding {
   configuration: BigbrainConfigV2
   label: string
@@ -56,7 +71,43 @@ function contains(parent: string, child: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
 }
 
-/** Only an OS operator can declare executable/vault authority. API callers select IDs, never paths. */
+/** Every ancestor is owned by root or the service account and not group/world writable
+ * (sticky shared temp parents excepted, since they cannot replace owned children). */
+export async function assertTrustedPath(path: string): Promise<void> {
+  let current = await realpath(path)
+  while (true) {
+    const meta = await stat(current)
+    const stickyAncestor = current !== resolve(path) && meta.isDirectory() && (meta.mode & 0o1000) !== 0
+    if (![0, process.getuid?.()].includes(meta.uid) || ((meta.mode & 0o022) !== 0 && !stickyAncestor))
+      throw new BigbrainError('invalid_configuration')
+    const parent = dirname(current)
+    if (parent === current) return
+    current = parent
+  }
+}
+
+/** Ficus HOME_DIR roots that agents can reach; BigBrain state must stay outside all of them. */
+export async function agentExposedRoots(home: string): Promise<string[]> {
+  const roots = ['workspaces', 'memory', 'private', 'nix', 'attachments', 'skills', 'agent', 'ssh', 'cli'].map((part) =>
+    join(home, part)
+  )
+  // Resolve existing exposed-root symlinks as well as lexical paths.
+  return Promise.all(
+    roots.map(async (root) => {
+      try {
+        return await realpath(root)
+      } catch {
+        return resolve(root)
+      }
+    })
+  )
+}
+export function overlapsAny(roots: readonly string[], path: string): boolean {
+  return roots.some((root) => contains(root, path) || contains(path, root))
+}
+
+/** The host declaration of which executable, vault and named BigBrain connection Core may run.
+ * Ficus writes it itself during one-click setup (`write`); API callers otherwise select IDs. */
 export class BigbrainBindings {
   readonly #home: string
   readonly #supported: () => boolean
@@ -93,12 +144,64 @@ export class BigbrainBindings {
       throw new BigbrainError('binding_changed')
     return binding
   }
+  /** Classify the file without throwing, for setup decisions (adopt/replace confirmation). */
+  async inspect(): Promise<BigbrainBindingsFileState> {
+    try {
+      const file = await this.#readFile()
+      if (!file) return { status: 'none', bindings: [] }
+      return { status: file.managedBy === 'ficus' ? 'managed' : 'unmanaged', bindings: file.bindings }
+    } catch (error) {
+      if (error instanceof BigbrainError && error.code === 'unsupported_host') throw error
+      return { status: 'invalid', bindings: [] }
+    }
+  }
+  /** Atomically replace the file as a Ficus-managed declaration (mode 0600, never through a
+   * symlink). An empty list removes the file. Callers serialize writes. */
+  async write(bindings: readonly BigbrainBindingDeclaration[]): Promise<void> {
+    if (!this.#supported()) throw new BigbrainError('unsupported_host')
+    const parsed = bindingsFileSchema.safeParse({ version: 1, managedBy: 'ficus', bindings })
+    if (!parsed.success || new Set(bindings.map((b) => b.id)).size !== bindings.length)
+      throw new BigbrainError('invalid_configuration')
+    await assertTrustedPath(this.#home).catch(() => {
+      throw new BigbrainError('invalid_configuration')
+    })
+    const target = join(this.#home, BIGBRAIN_BINDINGS_FILE)
+    if (bindings.length === 0) {
+      await unlink(target).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw new BigbrainError('invalid_configuration')
+      })
+      return
+    }
+    const temporary = join(this.#home, `.${BIGBRAIN_BINDINGS_FILE}.${randomBytes(8).toString('hex')}.tmp`)
+    try {
+      const file = await open(
+        temporary,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+        0o600
+      )
+      try {
+        await file.writeFile(JSON.stringify(parsed.data, null, 2) + '\n')
+        await file.chmod(0o600)
+        await file.sync()
+      } finally {
+        await file.close()
+      }
+      // rename replaces a symlink entry itself, never its target.
+      await rename(temporary, target)
+    } catch {
+      await unlink(temporary).catch(() => {})
+      throw new BigbrainError('invalid_configuration')
+    }
+  }
   async #read(): Promise<z.infer<typeof declaration>[]> {
+    return (await this.#readFile())?.bindings ?? []
+  }
+  async #readFile(): Promise<z.infer<typeof bindingsFileSchema> | null> {
     try {
       if (!this.#supported()) throw new BigbrainError('unsupported_host')
       await this.#trusted(this.#home)
       const file = await open(
-        join(this.#home, 'bigbrain-bindings.json'),
+        join(this.#home, BIGBRAIN_BINDINGS_FILE),
         constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK
       )
       try {
@@ -114,33 +217,21 @@ export class BigbrainBindings {
         const buffer = Buffer.alloc(65537)
         const { bytesRead } = await file.read(buffer, 0, buffer.length, 0)
         if (bytesRead > 65536) throw new BigbrainError('invalid_configuration')
-        const entries = z
-          .object({ version: z.literal(1), bindings: z.array(declaration).max(32) })
-          .strict()
-          .parse(JSON.parse(buffer.subarray(0, bytesRead).toString('utf8'))).bindings
-        if (new Set(entries.map((e) => e.id)).size !== entries.length) throw new BigbrainError('invalid_configuration')
-        return entries
+        const parsed = bindingsFileSchema.parse(JSON.parse(buffer.subarray(0, bytesRead).toString('utf8')))
+        if (new Set(parsed.bindings.map((e) => e.id)).size !== parsed.bindings.length)
+          throw new BigbrainError('invalid_configuration')
+        return parsed
       } finally {
         await file.close()
       }
     } catch (error) {
       if (error instanceof BigbrainError) throw error
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
       throw new BigbrainError('invalid_configuration')
     }
   }
-  async #trusted(path: string): Promise<void> {
-    let current = await realpath(path)
-    while (true) {
-      const meta = await stat(current)
-      // System ancestors may be root-owned; sticky shared temp parents cannot replace owned children.
-      const stickyAncestor = current !== resolve(path) && meta.isDirectory() && (meta.mode & 0o1000) !== 0
-      if (![0, process.getuid?.()].includes(meta.uid) || ((meta.mode & 0o022) !== 0 && !stickyAncestor))
-        throw new BigbrainError('invalid_configuration')
-      const parent = dirname(current)
-      if (parent === current) return
-      current = parent
-    }
+  #trusted(path: string): Promise<void> {
+    return assertTrustedPath(path)
   }
   async #resolve(entry: z.infer<typeof declaration>): Promise<ResolvedBigbrainBinding> {
     try {
@@ -161,22 +252,9 @@ export class BigbrainBindings {
       const clientDirectory = await realpath(`${selectedStore}.clients`)
       const clientFile = join(clientDirectory, `${entry.clientId}.json`)
       const tokenStorePath = entry.tokenStorePath ? selectedStore : undefined
-      const roots = ['workspaces', 'memory', 'private', 'nix', 'attachments', 'skills', 'agent', 'ssh', 'cli'].map(
-        (part) => join(this.#home, part)
-      )
-      // Resolve existing exposed-root symlinks as well as lexical paths.
-      const exposed = await Promise.all(
-        roots.map(async (root) => {
-          try {
-            return await realpath(root)
-          } catch {
-            return resolve(root)
-          }
-        })
-      )
+      const exposed = await agentExposedRoots(this.#home)
       for (const path of [vaultPath, executablePath, selectedStore, clientDirectory, clientFile]) {
-        if (exposed.some((root) => contains(root, path) || contains(path, root)))
-          throw new BigbrainError('invalid_configuration')
+        if (overlapsAny(exposed, path)) throw new BigbrainError('invalid_configuration')
         await this.#trusted(path)
       }
       if (

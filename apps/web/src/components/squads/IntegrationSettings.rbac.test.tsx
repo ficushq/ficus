@@ -84,7 +84,7 @@ test('global management permissions do not grant squad access or expose global c
   await renderMatrix({ permissions: ['integrations:read:bigbrain', 'integrations:write:bigbrain'] }, {})
   expect(container.textContent).toContain('You do not have permission')
   expect(container.querySelector('article')).toBeNull()
-  expect(container.textContent).not.toContain('Create and validate')
+  expect(container.textContent).not.toContain('on this Mac')
 })
 test('squad readers can expand enabled cards without global management rights', async () => {
   await renderMatrix({}, { permissions: ['integrations:read'] })
@@ -92,7 +92,7 @@ test('squad readers can expand enabled cards without global management rights', 
   expect(container.querySelector<HTMLButtonElement>('[role="switch"]')?.disabled).toBe(true)
   await expand()
   expect(container.textContent).toContain('Connection for this squad')
-  expect(container.textContent).not.toContain('Create and validate')
+  expect(container.textContent).not.toContain('on this Mac')
   expect(container.querySelector('select[aria-label="BigBrain connection for this squad"]')).toBeNull()
 })
 test('squad writers get an editable account selector, never global credential management', async () => {
@@ -101,7 +101,7 @@ test('squad writers get an editable account selector, never global credential ma
   expect(
     container.querySelector<HTMLSelectElement>('select[aria-label="BigBrain connection for this squad"]')?.disabled
   ).toBe(false)
-  expect(container.textContent).not.toContain('Create and validate')
+  expect(container.textContent).not.toContain('on this Mac')
   expect(container.textContent).not.toContain('API base:')
 })
 test('write alone and failed squad permission lookup fail closed', async () => {

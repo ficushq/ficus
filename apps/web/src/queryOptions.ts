@@ -1056,6 +1056,7 @@ export const queries = {
 
 import {
   getBigbrainLocalBindings,
+  getBigbrainLocalSetup,
   listManagedBigbrainVaults,
   getIntegrationOAuthApp,
   getGitHubWebhookSettings,
@@ -1081,6 +1082,8 @@ export const integrationQueries = {
     }),
   localBindings: () =>
     queryOptions({ queryKey: integrationQueryKeys.localBindings(), queryFn: () => getBigbrainLocalBindings() }),
+  localSetup: () =>
+    queryOptions({ queryKey: integrationQueryKeys.localSetup(), queryFn: () => getBigbrainLocalSetup() }),
   githubRepositoryAccess: (connectionId: string) =>
     queryOptions({
       queryKey: integrationQueryKeys.githubRepositoryAccess(connectionId),

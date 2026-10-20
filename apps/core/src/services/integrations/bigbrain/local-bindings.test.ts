@@ -206,3 +206,30 @@ test('Desktop Ficus HOME_DIR is independent of OS HOME and default private BigBr
     process.env = previous
   }
 })
+test('Ficus writes the managed declaration atomically and privately, never through a symlink', async () => {
+  expect(await resolver.inspect()).toMatchObject({ status: 'unmanaged', bindings: [binding] })
+  const decoy = join(root, 'decoy.json')
+  await writeFile(decoy, 'untouched', { mode: 0o600 })
+  await rm(join(home, 'bigbrain-bindings.json'))
+  await symlink(decoy, join(home, 'bigbrain-bindings.json'))
+  expect((await resolver.inspect()).status).toBe('invalid')
+  await resolver.write([binding])
+  expect(await readFile(decoy, 'utf8')).toBe('untouched')
+  const { lstat, stat } = await import('node:fs/promises')
+  expect((await lstat(join(home, 'bigbrain-bindings.json'))).isFile()).toBe(true)
+  expect((await stat(join(home, 'bigbrain-bindings.json'))).mode & 0o777).toBe(0o600)
+  expect(await resolver.inspect()).toMatchObject({ status: 'managed', bindings: [binding] })
+  await expect(resolver.resolve('personal')).resolves.toMatchObject({ clientId: 'aabb0011' })
+  await expect(resolver.write([binding, binding])).rejects.toMatchObject({ code: 'invalid_configuration' })
+  await expect(resolver.write([{ ...binding, vaultPath: 'relative' }])).rejects.toMatchObject({
+    code: 'invalid_configuration',
+  })
+  await resolver.write([])
+  expect((await resolver.inspect()).status).toBe('none')
+  await chmod(home, 0o777)
+  await expect(resolver.write([binding])).rejects.toMatchObject({ code: 'invalid_configuration' })
+  await chmod(home, 0o700)
+  await expect(new BigbrainBindings({ home, supported: () => false }).write([binding])).rejects.toMatchObject({
+    code: 'unsupported_host',
+  })
+})

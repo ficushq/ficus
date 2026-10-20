@@ -11,8 +11,10 @@ trusted single-user VM; pick docker/k8s/vm when you need isolation. See
 [BigBrain local connections](bigbrain.md) support Desktop's local runtime and
 explicitly selected self-hosted host runtime. Both Core processes and BigBrain
 must share the local account/filesystem. Desktop attached to Cloud cannot access
-a vault on the Mac. The connector still enforces declared binding selection,
-private credential metadata, permission gates and bounded MCP processes, but
+a vault on the Mac. Setup is one click (**Connect BigBrain on this Mac**): Core
+detects BigBrain.app's `~/.local/bin/bigbrain` and the vault, runs BigBrain's own
+setup and manages its bindings file. The connector still enforces the pinned
+binding, private credential metadata, permission gates and bounded MCP processes, but
 agent shells have the same OS access as Core: none of those checks creates
 filesystem isolation. Only use this with trusted agents and data. Desktop's
 `HOME_DIR` is its selected local data directory (usually `~/.ficus/desktop`),

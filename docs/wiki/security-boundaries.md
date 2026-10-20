@@ -33,10 +33,22 @@ connector with same-host stdio MCP. The connector documentation records the
 pinned upstream smoke and its limits; protocol inspection alone is not a
 passing implementation/security test result.
 
-Only an OS-operator-owned host declaration may select a vault, executable, and
-named local connection. API/CLI callers can select declared bindings but cannot
-supply shell text, argv, environment maps, a new executable, or a credential-file
-path. Core API and Core worker must share the same local filesystem and service
+The vault, executable and named local connection are pinned in a host
+declaration (`bigbrain-bindings.json` in `HOME_DIR`) that Ficus manages itself
+through one-click setup. Core detects the `bigbrain` command under the service
+account's OS home, never from a request. A request names only a detected vault
+or a Core-host folder, which Core accepts only if it is a real BigBrain vault
+(regular `vault.yaml`) with trusted ownership/modes outside agent roots. Setup
+is limited to a signed-in person with `integrations:write:bigbrain` and CSRF
+protection, and requires explicit confirmation of whole-vault read plus inbox
+contribution. Core then runs upstream `bigbrain mcp config` with fixed argv, no
+shell, the restricted BigBrain environment, a private cwd, its own process
+group, a deadline, output caps and one setup at a time. It schema-parses the
+output, keeps only the client ID, and never reads or stores the upstream
+credential or upstream output. The declaration is written atomically with mode
+`0600` and never through a symlink; a file Ficus did not write is changed only
+after confirmation. No caller can supply shell text, argv, environment maps, an
+executable or a credential-file path. Core API and Core worker must share the same local filesystem and service
 account. Hosted/platform-managed instances are refused, including direct enable
 attempts; their effective catalog/runtime state stays disabled without deleting
 saved settings. Desktop's **local** runtime and explicitly selected self-hosted

@@ -32,6 +32,31 @@ function trustedDirectory(path: string): boolean {
     return false
   }
 }
+/** The restricted child environment for any BigBrain launch: OS basics (preserving OS HOME, not
+ * Ficus HOME_DIR), a private PATH of trusted directories, and an explicit vault. Core's own
+ * secrets and inherited `BIGBRAIN_*` overrides are never forwarded. */
+export function bigbrainChildEnvironment(options: {
+  executablePath: string
+  vaultPath: string
+  tokenStorePath?: string
+}): Record<string, string> {
+  const env = getDefaultEnvironment()
+  env.PATH = [
+    ...new Set([
+      dirname(realpathSync(process.execPath)),
+      dirname(options.executablePath),
+      '/usr/local/bin',
+      '/usr/bin',
+      '/bin',
+    ]),
+  ]
+    .filter(trustedDirectory)
+    .join(':')
+  env.BIGBRAIN_VAULT = options.vaultPath
+  if (options.tokenStorePath) env.BIGBRAIN_TOKENS = options.tokenStorePath
+  return env
+}
+
 /** A per-operation, bounded transport. Never retains stderr or forwards Core's environment. */
 export class BigbrainStdioTransport implements Transport {
   onclose?: () => void
@@ -60,21 +85,7 @@ export class BigbrainStdioTransport implements Transport {
       this.#cwdReady = mkdtemp(join(tmpdir(), 'ficus-bigbrain-cwd-'))
       this.#cwd = await this.#cwdReady
       if (this.#closing) throw new BigbrainError('cancelled')
-      // SDK's OS basics deliberately preserve OS HOME, not Ficus HOME_DIR.
-      const env = getDefaultEnvironment()
-      env.PATH = [
-        ...new Set([
-          dirname(realpathSync(process.execPath)),
-          dirname(this.options.executablePath),
-          '/usr/local/bin',
-          '/usr/bin',
-          '/bin',
-        ]),
-      ]
-        .filter(trustedDirectory)
-        .join(':')
-      env.BIGBRAIN_VAULT = this.options.vaultPath
-      if (this.options.tokenStorePath) env.BIGBRAIN_TOKENS = this.options.tokenStorePath
+      const env = bigbrainChildEnvironment(this.options)
       const child = spawn(this.options.executablePath, ['mcp', '--client', this.options.clientId], {
         cwd: this.#cwd,
         env,

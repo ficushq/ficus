@@ -26,19 +26,19 @@ Supported: **Ficus Desktop's local runtime**, and explicitly configured
   Explicitly selected self-hosted `host` runtime is supported on the same terms;
   the Desktop marker does not grant authority or bypass deployment checks.
 - Core API handles setup/validation. Core worker handles agent tools and periodic
-  connection validation. Both must see the same approved executable, vault,
+  connection validation. Both must see the same BigBrain command, vault,
   credential state and Ficus home under the same service account/filesystem
   namespace. Split API/worker hosts are not supported.
 - A Desktop app **attached to a remote instance**, browser, mobile app or CLI
-  selects bindings on the connected **Core host**, not paths on the client.
+  sets up BigBrain on the connected **Core host**, not on the client.
   Desktop attached to Ficus Cloud cannot reach BigBrain on your Mac. Self-hosted
   remote **agent** execution (`vm`/`k8s`) remains supported when BigBrain is local
   to Core; remote **vault** execution, remote mounts and SSH bridges are not.
 - Hosted/platform-managed Core, Windows, and missing/unknown agent runtimes are
   unsupported. BigBrain stays under **Disabled**, with a visible reason, even
   when an old enabled flag is saved. Enable attempts are refused server-side;
-  saved settings/connections are retained. Missing local declarations or credentials
-  on an eligible host mean **setup required**, not an unsupported deployment.
+  saved settings/connections are retained. A missing BigBrain install or vault
+  on an eligible host means **setup required**, not an unsupported deployment.
 - **Host runtime is trusted single-user execution, not filesystem isolation.**
   Agent shells run as the same OS user and can access/modify the user's vault,
   executable and credentials outside the connector. Connector permission gates,
@@ -88,136 +88,87 @@ Relevant upstream files at the pin: `bin/mcp.ts`, `lib/mcp.ts`,
 Recheck compatibility after an upstream update. If stdio is removed, report an
 unsupported protocol; do not silently switch transport, credential, or vault.
 
-## Operator setup on the Core host
+## Setup
 
-1. Install BigBrain yourself using its reviewed upstream instructions. Select an
-   existing vault and provision a **dedicated named agent connection** for Ficus
-   through BigBrain. Use the same account that runs Core. A named connection is
-   capable of reading the whole served vault and contributing evidence; it is
-   not a per-folder permission.
-2. Request the stdio configuration explicitly, not the desktop's HTTP setup:
+1. Install and open **BigBrain.app** on the machine that runs Ficus (for Ficus
+   Desktop, your Mac), using the same account. Opening it installs the
+   `~/.local/bin/bigbrain` command Ficus uses. Create or choose your vault there.
+2. In **Settings → Integrations → BigBrain**, enable the provider and click
+   **Connect BigBrain on this Mac** (on Linux hosts: **on the Ficus host**).
+3. Confirm the vault. Ficus lists the vault BigBrain itself opens (its
+   `~/.config/bigbrain/vault` pointer, else `~/vault`) and any vault already
+   connected. You can instead type the full path of another vault folder on the
+   Ficus host; it must contain `vault.yaml`. The confirmation states that the
+   connection can **read the whole vault and drop notes into its inbox**.
 
-   ```sh
-   BIGBRAIN_VAULT=/absolute/path/to/vault /absolute/path/to/bigbrain mcp config
-   ```
+Ficus then runs BigBrain's own setup, turns the connection on and lists it.
+Assign it to squads in their integration settings. Running **Connect BigBrain**
+again for the same vault reuses the same BigBrain connection and the same Ficus
+connection: it never mints duplicates. If BigBrain moved or its connection
+changed, running it again repairs the connection in place, so squads keep their
+selection.
 
-   This is an **operator action**, not a Ficus validation command: without
-   `--client`, upstream may create its generic local connection. To inspect an
-   already provisioned named connection without selecting another one:
+### What Connect BigBrain does
 
-   ```sh
-   BIGBRAIN_VAULT=/absolute/path/to/vault /absolute/path/to/bigbrain mcp config --client 1234abcd
-   ```
+- Core finds `~/.local/bin/bigbrain` under the **Core service account's OS
+  home** itself. The browser, CLI or API never supply an executable, argv,
+  environment or token path. The command and its resolved target must be owned
+  by that account or root, not group/world writable, and outside Ficus agent
+  workspace roots.
+- A chosen vault must be an existing directory with a regular `vault.yaml`, with
+  the same ownership/permission checks, outside agent roots. Core never searches
+  disks, runs `init`, or installs BigBrain.
+- Core runs `bigbrain mcp config` with fixed argv, no shell, the vault in
+  `BIGBRAIN_VAULT`, the restricted BigBrain environment (OS `HOME` preserved,
+  Ficus secrets and inherited `BIGBRAIN_*` overrides dropped), a private
+  temporary working directory, its own process group, a 20 s deadline and a
+  64 KiB output cap. One setup runs at a time. At the pinned upstream this calls
+  `ConnectedClients.ensure("Local MCP configuration", "generic", "cli:config")`:
+  it creates or reuses one named generic connection with `vault:read` and
+  `inbox:write`, keeps its credential in BigBrain's private store under OS
+  `HOME`, and prints the stdio launch entry. Ficus parses that output with a
+  schema, requires it to name the selected vault without a token-store override,
+  and keeps only the 8-hex `--client` ID. Ficus never reads or copies the
+  credential. Upstream stdout/stderr is never shown, logged or stored; failures
+  become fixed messages.
+- Ficus writes `bigbrain-bindings.json` in its `HOME_DIR` (Desktop: its local
+  data directory, usually `~/.ficus/desktop`) atomically, mode `0600`, never
+  through a symlink. The file is Ficus-managed: Ficus creates it, updates it
+  when the command or connection changes, and removes a vault's entry when its
+  last Ficus connection is removed. An existing file Ficus did not write is kept
+  as it is until you confirm that Ficus may manage it (its vaults are kept).
+- Ficus then validates and enables the connection through the normal lifecycle.
+- Removing a Ficus connection does not revoke BigBrain's connection. Revoke
+  “Local MCP configuration” in BigBrain.app under Connected Clients when access
+  should end. This is the same connection any other client set up with
+  `bigbrain mcp config` uses for that vault, so revoking it disconnects those
+  clients too.
 
-   Record the `--client` ID and exact vault/executable selection. Do not paste
-   HTTP authorization headers, a bearer token, or an arbitrary MCP command into
-   Ficus. An upstream source-checkout launch can be installed as its supported
-   `bigbrain` command first; Ficus accepts no user-supplied argument list.
+Equivalent CLI inspection (connecting needs a signed-in person in the web UI):
 
-3. As the host operator, create `bigbrain-bindings.json` inside the **connected
-   Core's configured `HOME_DIR`**. Desktop-managed local installs default to
-   `~/.ficus/desktop` (or the local data directory selected in Desktop); CLI
-   self-hosted installs normally use `~/.ficus`. An existing CLI installation
-   opened in Desktop keeps that installation's `HOME_DIR`. Do not put the file
-   in an unrelated installation's home. Protect the directory from other users;
-   the file must be a regular non-symlink file owned by the
-   service account or root, with no group/world permissions. Ficus only reads
-   this file: no web/API/agent endpoint can edit it.
+```sh
+ficus integration local-bindings bigbrain
+ficus integration enable "$CONNECTION_ID"
+ficus integration assign bigbrain --squad "$SQUAD_ID" --connection "$CONNECTION_ID"
+```
 
-   ```json
-   {
-     "version": 1,
-     "bindings": [
-       {
-         "id": "personal",
-         "label": "Personal vault",
-         "vaultPath": "/srv/bigbrain/personal",
-         "executablePath": "/opt/bigbrain/bin/bigbrain",
-         "clientId": "1234abcd"
-       }
-     ]
-   }
-   ```
-
-   Those paths are examples, not discovery defaults. An optional
-   `tokenStorePath` can select an existing upstream `BIGBRAIN_TOKENS` store when
-   the operator's upstream configuration uses it. Otherwise BigBrain resolves
-   its normal credential store under the service account's home. Ficus checks state metadata and permissions, but never
-   parses or copies that store or its sibling `.clients` files. Provisioning
-   and execution must use the same choice.
-
-   Set the declaration's file mode explicitly after saving:
-
-   ```sh
-   # Use the local data directory selected in Desktop, not blindly the CLI home.
-   FICUS_HOME="$HOME/.ficus/desktop"
-   chmod 600 "$FICUS_HOME/bigbrain-bindings.json"
-   ```
-
-   **macOS:** BigBrain.app installs `~/.local/bin/bigbrain` when launched. At the
-   pinned upstream revision this is a `/bin/sh` shim that quotes the bundled
-   Bun and engine paths and forwards `"$@"`; it is not the BigBrain GUI binary.
-   Use its absolute `/Users/you/.local/bin/bigbrain` path as `executablePath`.
-   Spaces in paths are supported. Source installs can use upstream's symlink
-   to `bin/cli.ts`; Core's private launch PATH includes Core's Bun directory,
-   not an arbitrary login-shell PATH. It does not require Homebrew or global Bun
-   for the app shim, which names its own Bun explicitly. Launch BigBrain.app
-   again if it moved so upstream can refresh its shim, and revalidate.
-
-   `HOME_DIR` is **not OS `HOME`**. BigBrain's default private credential files
-   remain under the Core service user's OS home:
-   `~/.config/bigbrain/tokens/<sha256(canonical-vault-path)[0:12]>.json` and
-   `<store>.clients/<clientId>.json`. Both must be regular private files (mode
-   `0600`); their ancestors must not be group/world writable. Do not copy tokens
-   into Desktop's Ficus home or paste them into Ficus. API and worker preserve
-   OS `HOME` for the child process; general inherited `BIGBRAIN_*` variables,
-   including `BIGBRAIN_TOKENS`, are ignored. If upstream provisioning used a
-   nondefault token store, select the **same existing store** explicitly with
-   `tokenStorePath` in the host declaration. Missing state is a setup error;
-   Ficus never mints credentials.
-
-   Use canonical absolute paths (no `~` or environment expansion in JSON).
-   BigBrain's installed executable may itself be
-   a symlink; its resolved target is pinned at connection creation. The vault
-   must contain a regular `vault.yaml`. All declaration and executable locations
-   must be outside agent-writable workspace roots. Validation never recursively
-   searches disks, follows an implicit default-vault pointer, installs software,
-   runs `init`, or creates/renews a BigBrain credential.
-
-4. In **Settings → Integrations → BigBrain**, enable the provider and select the
-   declared local vault. The selection shows its host path and executable for
-   review. **Create and validate** creates a disabled pooled Ficus connection;
-   enable it after validation, then assign it in squad integration settings.
-   Only global integration readers can see local binding/configuration details.
-   Squad selectors retain their existing redacted connection summaries.
-
-   Equivalent CLI selection (no bearer credential or local shell execution):
-
-   ```sh
-   ficus integration local-bindings bigbrain
-   ficus integration create bigbrain --local-binding personal --display-name 'Personal vault'
-   ficus integration enable "$CONNECTION_ID"
-   ficus integration assign bigbrain --squad "$SQUAD_ID" --connection "$CONNECTION_ID"
-   ```
-
-A selected connection pins the resolved declaration. Changing a declaration's
-vault, executable target, credential-store selection, or client ID invalidates
-that binding for existing pooled connections; it never retargets their squads.
-Create a new pooled connection and explicitly select it when changing identity.
-Do not use this mechanism to migrate old API connections: the unused old
-connector has no compatibility or migration path.
+A Ficus connection pins the resolved vault, executable target and client ID.
+Changing them outside Ficus invalidates the pin; it never silently retargets
+squads. Run **Connect BigBrain** again to re-pin.
 
 ## Permissions and connection lifecycle
 
 Global provider enablement, the enabled pooled connection, squad selection,
 agent-type capability, and explicit tool allowance must all permit access.
 Existing instance-scoped `integrations:read:bigbrain` /
-`integrations:write:bigbrain` permissions govern the pool. Squad-scoped grants
-cannot reveal host paths or edit host declarations. In isolated runtimes the
-host declaration is an
-additional OS-operator authorization boundary; in trusted host mode it is an
-operator-selection safeguard, not protection from same-user shells. Integration
-write permission alone cannot make Core run an uploaded executable or choose an undeclared vault.
+`integrations:write:bigbrain` permissions govern the pool. **Connect BigBrain**
+also requires a signed-in person (not an agent, system token or bootstrap
+session) and the CSRF header for cookie sessions. Squad-scoped grants cannot
+reveal host paths or run setup. Integration write permission cannot make Core
+run an uploaded executable or an arbitrary command: Core only runs the
+`bigbrain` command it detected, with fixed argv, against a vault a person
+confirmed. On host runtime this is a selection safeguard, not protection from
+same-user shells.
 
 ```yaml
 integrations:
@@ -307,16 +258,19 @@ may display approved paths only to authorized global readers.
 
 Actionable errors include:
 
-| Condition                                                      | What to do                                                                                                 |
-| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Unsupported hosted/Windows/invalid-runtime or split-host setup | Use macOS/Linux local/self-hosted Core with a configured runtime and co-located BigBrain; no remote bridge |
-| No host declarations                                           | Configure `bigbrain-bindings.json` in the connected Core HOME_DIR (Desktop local data directory)           |
-| Missing/moved vault or executable                              | Restore the exact path or create an explicitly selected new binding; no default-vault fallback             |
-| Binding changed                                                | Review the host declaration and explicitly create/select the new connection                                |
-| Revoked/unavailable local credential                           | Provision a named connection in BigBrain, then select it explicitly                                        |
-| Expired named connection                                       | Renew it in BigBrain, validate, and enable in Ficus                                                        |
-| Missing public tools / incompatible response                   | Check the installed upstream revision; do not enable an HTTP fallback                                      |
-| Timeout, busy, or oversized response                           | Retry reads deliberately or request a smaller read/search; a timed-out drop has uncertain delivery         |
+| Condition                                     | What to do                                                                                                   |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Unsupported hosted/Windows/invalid-runtime    | Use macOS/Linux local/self-hosted Core with a configured runtime and co-located BigBrain; no remote bridge   |
+| “BigBrain is not installed …”                 | Install and open BigBrain.app as the account that runs Ficus, then **Check again**                           |
+| Command writable by others / in an agent root | Reopen BigBrain.app so it reinstalls `~/.local/bin/bigbrain`                                                 |
+| Vault not found / not private                 | Open BigBrain.app to create or choose a vault; pick a private folder with `vault.yaml` outside Ficus folders |
+| Existing settings file Ficus did not create   | Confirm that Ficus may manage it (its vaults are kept)                                                       |
+| Connection revoked in BigBrain                | Reconnect “Local MCP configuration” in BigBrain.app's Connected Clients, then **Connect BigBrain** again     |
+| BigBrain did not answer / unrecognized reply  | Open or update BigBrain.app and try again                                                                    |
+| Binding changed, moved vault or command       | Run **Connect BigBrain** again; it re-pins the same Ficus connection                                         |
+| Expired named connection                      | Renew it in BigBrain, then validate and enable in Ficus                                                      |
+| Missing public tools / incompatible response  | Check the installed upstream revision; do not enable an HTTP fallback                                        |
+| Timeout, busy, or oversized response          | Retry reads deliberately or request a smaller read/search; a timed-out drop has uncertain delivery           |
 
 ## Removal and release boundary
 
@@ -361,11 +315,20 @@ all four tools against a synthetic MCP server. It checks missing executable
 and private-state permissions separately, and hosted denial even with saved
 intent. No real vault is used. This Linux fixture is not packaged macOS success.
 
+One-click setup has its own synthetic Desktop-host regression: the same
+app-style shim with a synthetic engine that mimics upstream `mcp config`
+(create-or-reuse one `cli:config` connection, print the stdio entry). It runs
+detection, the real bounded setup command, the managed bindings file, real
+persistence/validation/enablement, the four tools, a repeat (idempotent, one
+minted connection) and hosted refusal. Shell metacharacters in vault paths,
+fixed-code failures, output caps, deadline and child cleanup are covered
+separately. The pinned upstream's real `mcp config` has not been run by these
+tests; it is covered by source inspection at the pin.
+
 A macOS acceptance check still needs an installation containing this **Core
-source fix** (a merged PR alone does not publish/update Desktop). Confirm the
-selected local data directory and same-account BigBrain shim, provision/select
-a named local connection as described above, then list bindings, create/validate,
-enable and assign it. Exercise working-set/search/read on non-sensitive test
+source change** (a merged PR alone does not publish/update Desktop). Open
+BigBrain.app, click **Connect BigBrain on this Mac**, confirm the vault, then
+assign the connection. Exercise working-set/search/read on non-sensitive test
 data; an explicit drop requires separate permission and a disposable vault.
 For a Desktop remote/Cloud attachment, check that the BigBrain card remains
 Disabled with its reason and cannot be enabled. Do not share token contents,
