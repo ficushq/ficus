@@ -34,7 +34,7 @@ Inside Ficus Desktop, System Updates shows the app's native updater instead of t
 
 ### Account
 
-In passkey mode, Account shows the user profile and controls to add, rename, or remove passkeys; the final passkey cannot be removed. Sign out clears the browser session. Bootstrap/password mode has a limited account view. If authentication is not configured, the page directs the operator to deployment configuration rather than a secret editor.
+In passkey mode, Account shows the user profile and controls to add, rename, or remove passkeys; the final passkey cannot be removed. **Add a passkey for another address** asks for a passkey confirmation, then shows a one-time link and code (15 minutes, single use) that adds a passkey for this account at another allowed address of the server through the `/add-passkey` page; it removes nothing (see core-auth). Sign out clears the browser session. Bootstrap/password mode has a limited account view. If authentication is not configured, the page directs the operator to deployment configuration rather than a secret editor.
 
 ### Paired Devices and Sessions
 
