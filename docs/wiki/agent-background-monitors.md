@@ -29,12 +29,40 @@ done
 
 The `monitor` tool supports:
 
-- `create`: start a command with a label and optional `cwd`, timeout, batch caps, and restart policy (`restart`, `restartLimit`).
+- `create`: start a command with a label and optional `sandbox`, `cwd`, timeout, batch caps, and restart policy (`restart`, `restartLimit`).
 - `list`: show monitors for the current agent.
 - `get`: show status, restart policy/state, and recent sandbox log lines.
 - `cancel`: stop a monitor owned by the current agent.
 
 Monitors are agent-scoped and are currently wired for squad managers and squad workers.
+
+### Choose the execution sandbox
+
+Use `sandbox: "private"` (the default) for the agent's private box or
+`sandbox: "squad"` for the shared squad box. The latter is available only when
+this session permits `squad_bash`; arbitrary sandbox IDs are not accepted.
+Monitors remain owned by the creating agent, with the same per-agent cap.
+
+Choose the squad box to watch files in a squad worktree. Private VM boxes have
+separate filesystems and cannot access squad worktree paths. `cwd` must exist
+and be accessible inside the selected box; omitting it uses that box's work
+root. A failed directory change is logged and ends the monitor with a nonzero
+exit code, rather than triggering loss recovery.
+
+For example, watch a log in the squad workspace:
+
+```json
+{
+  "action": "create",
+  "label": "Application errors",
+  "sandbox": "squad",
+  "command": "tail -F app.log | grep --line-buffered ERROR",
+  "restart": "on-loss"
+}
+```
+
+The target sandbox is saved at creation. Restarts, Core recovery, logs and
+cancellation all use that same target.
 
 ## Defaults and caps
 
@@ -78,7 +106,7 @@ Each poll checks tmux liveness first, then the `timedOut` marker, then the `exit
 
 - **`timedOut` present: timed out** in the sandbox (see [Deadline](#deadline)). This is checked before everything else, so a run the watchdog stopped is never treated as a loss, even when no `exitCode` was written.
 - **`exitCode` present: exited.** The monitor ends with that exit code. Exits never restart, whatever the code.
-- **Work dir gone (box recreated), or no session and no `exitCode`: a loss.** The restart policy decides what happens. Treating a vanished session as still running would leave the monitor silent in `running` until its timeout.
+- **Monitor state directory missing, or no session and no `exitCode`: a loss.** The restart policy decides what happens. Treating a vanished session as still running would leave the monitor silent in `running` until its timeout.
 - **tmux server unreachable** (no installed tmux can talk to it, typically a stale server of another tmux version): liveness is unknown, so this is never a loss and never relaunches. It counts as an unavailable probe, as below. If it lasts 15 minutes, the monitor fails with the specific tmux reason. A new monitor is unaffected by a stale server on the default socket: its session goes to the Ficus socket. A launch that cannot reach the Ficus server fails with the same specific reason.
 - **Exec fails:** after 5 consecutive failures the sandbox counts as unreachable. The supervisor re-ensures the sandbox at most once a minute, the same way the outage recovery watch does, and waits. Unavailability alone is not a loss: the first successful probe decides whether the run survived. If the sandbox stays unreachable for 15 minutes, the monitor fails with `sandbox unavailable for 15m; gave up waiting for it to come back`.
 
@@ -88,8 +116,8 @@ The row is authoritative across Core processes. If another process (the API, or 
 
 `restart` is chosen by the agent when it creates the monitor. There is no per-command default.
 
-- **`never` (default):** a loss fails the monitor with a clear reason, for example `failed: sandbox restarted; command was not restarted (restart: never).` A `never` monitor is never rerun on any path: loss, Core restart, or interrupted start.
-- **`on-loss`:** once the sandbox is reachable, the supervisor relaunches the same command with the same id, label, cwd, session name and batch settings. The agent gets a notice like `Monitor "x" (id) restarted after sandbox loss: sandbox restarted (rapid restart 1/5; resets after 5m stable).` Use it only for idempotent, safe-to-rerun watchers such as `tail -F | grep` or quiet watch loops. Do not use it for one-shot or side-effecting commands.
+- **`never` (default):** a loss fails the monitor with a clear reason, for example `failed: monitor state directory is missing (cause unknown); command was not restarted (restart: never).` A `never` monitor is never rerun on any path: loss, Core restart, or interrupted start.
+- **`on-loss`:** once the sandbox is reachable, the supervisor relaunches the same command with the same id, label, cwd, session name and batch settings. The agent gets a notice like `Monitor "x" (id) restarted: monitor state directory is missing (cause unknown) (rapid restart 1/5; resets after 5m stable).` Use it only for idempotent, safe-to-rerun watchers such as `tail -F | grep` or quiet watch loops. Do not use it for one-shot or side-effecting commands.
 
 A relaunch appends to the existing log. If the box was recreated and the log is now shorter than the delivered offset, reading starts again from byte 0.
 
@@ -102,7 +130,7 @@ Cancel, timeout (from Core or from the sandbox watchdog) and overload are delibe
 - Backoff between relaunches: 5s, 30s, 2m, then 5m, indexed by the rapid count. A non-rapid relaunch waits 5s.
 - If the next rapid loss would exceed `restartLimit` (default 5), the monitor fails with `restart limit reached: lost N times within 5m of launch (limit L rapid restarts); last loss: ...`.
 - A relaunch that cannot reach its sandbox is retried every 15s without counting. After 15 minutes it fails.
-- Losses are not checked against the box's own boot identity (for example `/proc` boot_id). Container runtimes share the host's boot_id, so it is not a reliable signal. The stability-window reset is the mechanism.
+- Loss reports describe the missing state or exit code, not a verified sandbox restart. Losses are not checked against the box's own boot identity (for example `/proc` boot_id). Container runtimes share the host's boot_id, so it is not a reliable signal. The stability-window reset is the mechanism.
 
 All of this state is stored on the monitor row so it survives Core restarts: `restart_policy`, `restart_limit`, `restart_count` (lifetime relaunches), `rapid_restart_count`, `launched_at`, `next_restart_at` (a pending relaunch), `last_restart_at`, `last_restart_reason`, and `deadline_at`.
 

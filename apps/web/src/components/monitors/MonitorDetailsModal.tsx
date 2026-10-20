@@ -128,7 +128,7 @@ export function MonitorDetailsModal({ monitorId, initialMonitor, onClose }: Moni
 
         {detail.restartPolicy === 'on-loss' && (detail.lastRestartReason || detail.nextRestartAt) && (
           <p className="rounded-md border border-th-border bg-surface-secondary p-2 text-sm text-secondary">
-            {detail.nextRestartAt ? `Relaunch pending at ${detail.nextRestartAt}` : 'Last restarted after sandbox loss'}
+            {detail.nextRestartAt ? `Relaunch pending at ${detail.nextRestartAt}` : 'Last restarted after process loss'}
             {detail.lastRestartReason ? `: ${detail.lastRestartReason}` : ''}
           </p>
         )}

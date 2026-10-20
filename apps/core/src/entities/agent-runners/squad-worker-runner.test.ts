@@ -10,6 +10,7 @@ import { ArtifactBuilderRunner } from './artifact-builder-runner'
 import { SquadWorkerRunner } from './squad-worker-runner'
 import { ARTIFACT_BUILDER_AGENT_TYPE_ID } from './constants'
 import * as tools from '../../tools'
+import * as monitorTools from '../../tools/monitor'
 import * as cliHelp from '../../lib/utils/cli-help'
 import * as rbac from '../../services/rbac'
 import * as memoryPaths from '../../services/memory/paths'
@@ -226,6 +227,32 @@ describe('SquadWorkerRunner artifact tool registration', () => {
     squadWorkerResolveSkillPathsSpy?.mockRestore()
     squadWorkerResolveExtensionPathsSpy?.mockRestore()
     await rm(artifactWorkspacePath, { recursive: true, force: true })
+  })
+
+  it.each([
+    { toolsAllow: null, toolsDeny: null, allowed: true },
+    { toolsAllow: ['bash'], toolsDeny: null, allowed: false },
+    { toolsAllow: ['squad_*'], toolsDeny: null, allowed: true },
+    { toolsAllow: ['*'], toolsDeny: ['squad_*'], allowed: false },
+  ])('monitor squad target follows effective Bash policy %j', async ({ allowed, ...policy }) => {
+    const monitorSpy = spyOn(monitorTools, 'createMonitorTool')
+    try {
+      const agent = makeTestAgent({ agentTypeId: 'worker', squadId: TEST_SQUAD_ID })
+      const runner = new TestableSquadWorkerRunner(
+        makeExecution(agent.id),
+        agent,
+        makeAgentType({
+          toolsAllow: policy.toolsAllow ? [...policy.toolsAllow] : null,
+          toolsDeny: policy.toolsDeny ? [...policy.toolsDeny] : null,
+        })
+      )
+      await runner.exposeCreateSession()
+      expect(monitorSpy.mock.calls[0][0].squadSandboxId).toBe(allowed ? `squad_${TEST_SQUAD_ID}` : undefined)
+      expect(monitorSpy.mock.calls[0][0].sandboxId).toBe(await agent.getSandboxId())
+      expect(capturedToolNames(agentSessionCreateSpy).filter((name) => name === 'monitor')).toHaveLength(1)
+    } finally {
+      monitorSpy.mockRestore()
+    }
   })
 
   it('does not classify artifact builders as squad workers', () => {

@@ -18,34 +18,17 @@ export function shellQuote(value: string | number): string {
  * Root directory a monitor's scratch tree ({@link monitorDir}) and default cwd
  * live under, resolved on the active runtime.
  *
- * Monitors exec inside the monitor's OWN sandbox (`monitor.sandboxId` — for a
- * squad member that is its per-agent light sandbox, NOT the squad sandbox):
- *
- * - k8s/docker: the squad workspace is a shared volume mounted into every
- *   member container, so squad monitors keep using `/workspace/<squadId>`
- *   (and solo monitors `/workspace`) — exactly the pre-vm behavior.
- * - vm: the squad workspace lives in the SQUAD box's home, which the member's
- *   box user cannot write — mkdir/launch/tail there would fail. A monitor's
- *   root is therefore always its own box's work root (its `~/.private`,
- *   matching a solo box). Consequence: on the vm runtime monitors observe the
- *   monitor's own box only; monitoring the shared squad workspace is
- *   known-unsupported there (an agent can still watch shared state by polling
- *   through its own tools rather than a filesystem monitor).
- * - host: there are no mounts at all — commands run on the operator's real
- *   filesystem, so the container literals would have the supervisor `mkdir -p
- *   /workspace/<squadId>/...` at the machine root (EACCES, or a stray
- *   `/workspace` tree). The root is the host layout's own work root: the
- *   squad's real workspace directory (honouring `squads.host_workspace_path`)
- *   for a squad monitor, and the agent's `<HOME_DIR>/private/<sandboxId>` for a
- *   solo one — which is exactly `hostWorkspaceLayout`'s `workspaceMount` in
- *   both cases. Unlike vm, every host agent runs as the same unix user, so the
- *   shared squad workspace IS writable and squad monitors keep the pre-vm
- *   "watch the shared workspace" behavior.
+ * The stored sandboxId selects the execution box. VM private boxes use their
+ * own private root; squad boxes use their shared workspace. Derive the squad
+ * root from the stored target so it survives changes to the owning agent.
+ * Container and host layouts retain their existing shared workspace behavior.
  */
 export function monitorWorkRoot(ctx: WorkspaceLayoutContext): string {
-  if (isHostRuntime()) return hostWorkspaceLayout(ctx).workspaceMount
-  if (isVmRuntime()) return vmWorkspaceLayout({ sandboxId: ctx.sandboxId }).workspaceMount
-  return containerWorkspaceLayout(ctx).workspaceMount
+  const targetSquadId = ctx.sandboxId?.startsWith('squad_') ? ctx.sandboxId.slice('squad_'.length) : undefined
+  const target = targetSquadId ? { ...ctx, squadId: targetSquadId } : ctx
+  if (isHostRuntime()) return hostWorkspaceLayout(target).workspaceMount
+  if (isVmRuntime()) return vmWorkspaceLayout({ sandboxId: ctx.sandboxId, squadId: targetSquadId }).workspaceMount
+  return containerWorkspaceLayout(target).workspaceMount
 }
 
 export function monitorDir(workspaceMount: string, monitorId: string): string {
@@ -146,7 +129,6 @@ set -euo pipefail
 mkdir -p "$FICUS_MONITOR_DIR/logs"
 ${TIMESTAMP} > "$FICUS_MONITOR_DIR/startedAt" || true
 ${loadLaunchPathLines('FICUS_MONITOR_DIR')}
-cd "$FICUS_MONITOR_CWD"
 set +e
 job=''
 job_group=0
@@ -179,8 +161,10 @@ stop_job() {
 }
 # tmux kill-session (cancel, Core-side timeout): stop the command, record no exit.
 trap "trap '' HUP INT TERM; stop_watchdog; stop_job; exit 129" HUP INT TERM
+# Run directory setup inside the captured pipeline too: a failed cd is a normal
+# command failure, with diagnostics and exitCode, not unexplained process loss.
 set -m
-( set +m; ${runWithLaunchPath('FICUS_MONITOR_COMMAND')} 2>&1 | tee -a "$FICUS_MONITOR_DIR/logs/current.log"; exit "\${PIPESTATUS[0]}" ) </dev/null &
+( set +m; ( cd "$FICUS_MONITOR_CWD" && ${runWithLaunchPath('FICUS_MONITOR_COMMAND')} ) 2>&1 | tee -a "$FICUS_MONITOR_DIR/logs/current.log"; exit "\${PIPESTATUS[0]}" ) </dev/null &
 job=$!
 kill -0 -- -"$job" 2>/dev/null && job_group=1
 if [ -n "$deadline" ]; then
