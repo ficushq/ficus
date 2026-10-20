@@ -1,11 +1,13 @@
+import { resolvePublicAppUrl } from '../public-app-url'
+
 /**
  * Build a prompt section with the platform URLs (web UI and API) so agents
  * know the current deployment's public endpoints.
  *
- * Returns empty string if APP_URL is not configured.
+ * Returns empty string if no public application address is configured.
  */
 export function buildPlatformUrlsPrompt(): string {
-  const appUrl = process.env.APP_URL
+  const appUrl = resolvePublicAppUrl()
   if (!appUrl) return ''
 
   let apiBaseUrl: string

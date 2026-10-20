@@ -892,7 +892,10 @@ if (import.meta.main) {
         task: () => channelConnections.refresh(),
       }).start()
 
+      const { PUBLIC_APP_URL_SETTING_KEY } = await import('./lib/public-app-url')
+      const { relayServerConnection } = await import('./services/push/server-connection')
       settingsStore.onChange(async (key) => {
+        if (key === PUBLIC_APP_URL_SETTING_KEY) await relayServerConnection.handlePublicAddressChange()
         if (isChannelEnabledSettingKey(key)) await channelConnections.refresh()
         if (key === PROVIDER_HEALTH_STATE_KEY) await providerHealth.hydrateFromPersistence()
       })

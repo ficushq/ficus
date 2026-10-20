@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm'
 import { db, agents, localDeployments } from '../../db'
 import { hasPermission } from '../rbac/permissions'
 import { toLocalDeployment } from './local-deployment-service'
+import { resolvePublicAppUrl } from '../../lib/public-app-url'
 
 const DEPLOYMENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -36,7 +37,7 @@ export async function resolveLocalDeploymentBrowserUrl(agentId: string, deployme
     // Hosted app URLs are already absolute. Path-mode deployments require the
     // operator's browser-reachable origin; never guess localhost or accept one
     // from tool parameters, and never concatenate an absolute hosted URL.
-    const url = issuedUrl.startsWith('/') ? new URL(issuedUrl, process.env.APP_URL) : new URL(issuedUrl)
+    const url = issuedUrl.startsWith('/') ? new URL(issuedUrl, resolvePublicAppUrl()) : new URL(issuedUrl)
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null
     return url.href
   } catch {

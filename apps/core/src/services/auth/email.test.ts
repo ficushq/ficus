@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
+import { withStoredPublicAppUrl } from '../../test-utils/public-app-url'
 import { createHash } from 'crypto'
 
 // '@aws-sdk/client-ses' is mocked process-wide in the test preload
@@ -480,5 +481,13 @@ describe('buildPasskeyRegistrationLink', () => {
       if (saved.base === undefined) delete process.env.APP_BASE_PATH
       else process.env.APP_BASE_PATH = saved.base
     }
+  })
+})
+
+describe('instance identity from the public address setting', () => {
+  it('names the instance by the stored public address when APP_URL is unset', async () => {
+    await withStoredPublicAppUrl('https://settings.example.com/ficus', () => {
+      expect(instanceIdentity()).toEqual({ url: 'https://settings.example.com/ficus', host: 'settings.example.com' })
+    })
   })
 })

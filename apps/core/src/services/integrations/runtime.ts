@@ -140,6 +140,7 @@ import { buildSquadK8sSandboxOptions, resolveLifecycleGenerationForSandbox } fro
 import { Squad } from '../../entities/Squad'
 import { ensureSquadWorkspace } from '../squad/workspace'
 import { buildAgentProjectionTargets, withLazyProjectionManager } from './runtime-gate'
+import { resolvePublicAppUrl } from '../../lib/public-app-url'
 
 const log = createLogger('integration-event-polling')
 const oauthLog = createLogger('integration-oauth')
@@ -187,7 +188,8 @@ export const githubCommitSigning = new GitHubCommitSigning({
   keyTitle() {
     let host: string | undefined
     try {
-      host = process.env.APP_URL ? new URL(process.env.APP_URL).host : undefined
+      const appUrl = resolvePublicAppUrl()
+      host = appUrl ? new URL(appUrl).host : undefined
     } catch {
       host = undefined
     }

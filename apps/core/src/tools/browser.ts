@@ -12,7 +12,7 @@ export type BrowserToolWithKey = ToolDefinition & { key: string }
 
 const NO_SANDBOX_ERROR = 'Sandbox is not running — browser tools need the agent sandbox up.'
 const LOCAL_DEPLOYMENT_ERROR =
-  'Could not open local preview. Check deployment access, current state, APP_URL configuration, and browser connectivity.'
+  'Could not open local preview. Check deployment access, current state, the server's public address, and browser connectivity.'
 
 // --- Helper: screenshot as base64 content block ---
 

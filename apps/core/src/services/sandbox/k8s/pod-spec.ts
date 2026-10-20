@@ -29,6 +29,7 @@ import {
   IS_LOCAL_DEV,
   SANDBOX_AUTH_SECRET_NAME,
 } from './constants'
+import { resolvePublicAppUrl } from '../../../lib/public-app-url'
 
 const log = createLogger('k8s-pod-manager')
 
@@ -322,8 +323,8 @@ async function buildSandboxEnv(input: {
     ...(sharedVolumeGid !== undefined ? [{ name: 'FICUS_SHARED_GID', value: String(sharedVolumeGid) }] : []),
   ]
 
-  // Public APP_URL so agents can reference it in bash commands
-  const appUrl = process.env.APP_URL
+  // Public application address so agents can reference it in bash commands
+  const appUrl = resolvePublicAppUrl()
   if (appUrl) env.push({ name: 'APP_URL', value: appUrl })
 
   // Git credentials and config from squad override/global fallback resolver

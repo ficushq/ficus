@@ -16,6 +16,7 @@ import {
   isWellFormedLocalDeploymentAlias,
   normalizeLocalDeploymentAlias,
 } from './local-deployment-alias'
+import { resolvePublicAppUrl } from '../../lib/public-app-url'
 
 type LocalDeploymentRow = typeof localDeployments.$inferSelect
 type DatabaseTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -55,7 +56,7 @@ export function getHostedAppsDomain(): string | null {
 }
 
 function getHostedTenantLabel(): string {
-  const appUrl = process.env.APP_URL?.trim()
+  const appUrl = resolvePublicAppUrl()
   if (!appUrl) throw new HostedAppsConfigError('APP_URL is required when FICUS_APPS_DOMAIN is configured')
 
   let hostname: string
