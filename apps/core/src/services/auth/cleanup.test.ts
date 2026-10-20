@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { inArray } from 'drizzle-orm'
 import { randomUUID } from 'crypto'
 import { db } from '../../db'
-import { emailVerifications, sessions, users, webauthnChallenges } from '../../db/schema'
+import { emailVerifications, passkeyEnrollmentCodes, sessions, users, webauthnChallenges } from '../../db/schema'
 import { cleanupExpiredAuthData } from './cleanup'
 import { AuthCleanupScheduler, DEFAULT_AUTH_CLEANUP_INTERVAL_MS } from './cleanup-scheduler'
 
@@ -27,6 +27,41 @@ afterEach(async () => {
 })
 
 describe('cleanupExpiredAuthData', () => {
+  test('keeps passkey enrollment codes as audit records for 30 days past expiry', async () => {
+    const now = new Date('2026-06-18T07:00:00.000Z')
+    const day = 24 * 60 * 60 * 1000
+    const [user] = await db
+      .insert(users)
+      .values({ email: `cleanup-${randomUUID()}@test.local`, displayName: 'Cleanup Test User' })
+      .returning({ id: users.id })
+    insertedUserIds.push(user.id)
+    const rows = await db
+      .insert(passkeyEnrollmentCodes)
+      .values([
+        { userId: user.id, codeHash: `old-${randomUUID()}`, expiresAt: new Date(now.getTime() - 31 * day) },
+        {
+          userId: user.id,
+          codeHash: `recent-${randomUUID()}`,
+          expiresAt: new Date(now.getTime() - day),
+          usedAt: new Date(now.getTime() - day - 60_000),
+        },
+      ])
+      .returning({ id: passkeyEnrollmentCodes.id, codeHash: passkeyEnrollmentCodes.codeHash })
+
+    await cleanupExpiredAuthData(now)
+
+    const remaining = await db
+      .select({ codeHash: passkeyEnrollmentCodes.codeHash })
+      .from(passkeyEnrollmentCodes)
+      .where(
+        inArray(
+          passkeyEnrollmentCodes.id,
+          rows.map((row) => row.id)
+        )
+      )
+    expect(remaining.map((row) => row.codeHash)).toEqual([rows[1].codeHash])
+  })
+
   test('deletes expired sessions, WebAuthn challenges, and email verifications only', async () => {
     const now = new Date('2026-06-18T07:00:00.000Z')
     const expiredAt = new Date(now.getTime() - 1)

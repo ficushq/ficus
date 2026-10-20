@@ -31,6 +31,7 @@ describe('websocket handshake auth', () => {
     expect(await authenticateWsRequest(`http://localhost/ws?token=${admin.token}`)).toEqual({
       identity: { type: 'user', userId: admin.id },
       deviceTokenId: null,
+      signInOrigin: null,
     })
   })
 

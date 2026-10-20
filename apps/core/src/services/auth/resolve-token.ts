@@ -16,6 +16,11 @@ function hashToken(token: string): string {
 export interface AuthContext {
   identity: Identity
   deviceTokenId: string | null
+  /**
+   * For browser sessions: the allowlisted origin the session was minted at (null when
+   * unknown). Absent for every other credential. Only step-up ceremonies read it.
+   */
+  signInOrigin?: string | null
 }
 
 /** Resolve a raw token while retaining credential provenance beside its RBAC identity. */
@@ -27,7 +32,11 @@ export async function resolveTokenContext(token: string): Promise<AuthContext | 
   // 1. Check sessions table
   const [session] = token.startsWith(SESSION_TOKEN_PREFIX)
     ? await db
-        .select({ userId: sessions.userId, deviceTokenId: sessions.deviceTokenId })
+        .select({
+          userId: sessions.userId,
+          deviceTokenId: sessions.deviceTokenId,
+          signInOrigin: sessions.signInOrigin,
+        })
         .from(sessions)
         .where(and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, new Date())))
         .limit(1)
@@ -51,7 +60,11 @@ export async function resolveTokenContext(token: string): Promise<AuthContext | 
     ) {
       return null
     }
-    return { identity: { type: 'user', userId: session.userId }, deviceTokenId: session.deviceTokenId }
+    return {
+      identity: { type: 'user', userId: session.userId },
+      deviceTokenId: session.deviceTokenId,
+      signInOrigin: session.signInOrigin,
+    }
   }
 
   // 2. Check agent tokens table

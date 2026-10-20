@@ -9,7 +9,12 @@ import { db } from '../../db'
 import { userCredentials, webauthnChallenges } from '../../db/schema'
 import { eq, and, gt, lt } from 'drizzle-orm'
 import { User } from '../../entities/User'
-import { rpOriginForRequest } from './web-origins'
+import { rpOriginForRequest, rpOriginForStepUp } from './web-origins'
+
+/** Authentication-ceremony options. `stepUp` marks a re-confirmation of an already signed-in person. */
+export interface CeremonyOptions {
+  stepUp?: { sessionOrigin: string | null | undefined }
+}
 
 // AuthenticatorTransport is not exported from @simplewebauthn/server main entry
 type AuthenticatorTransport = 'ble' | 'cable' | 'hybrid' | 'internal' | 'nfc' | 'smart-card' | 'usb'
@@ -21,9 +26,15 @@ type AuthenticatorTransport = 'ble' | 'cable' | 'hybrid' | 'internal' | 'nfc' | 
  * hostname it was registered on and no existing credential is silently re-bound.
  * The RP ID is that origin's host; WEBAUTHN_RP_ID pins a parent domain only when it
  * actually covers the chosen host (otherwise the browser would reject it anyway).
+ *
+ * `stepUp` (authentication ceremonies that re-confirm a signed-in person, never
+ * login or registration) may also fall back to the origin recorded on the caller's
+ * session — see rpOriginForStepUp.
  */
-export function rpConfigFor(requestOrigin?: string | null) {
-  const origin = rpOriginForRequest(requestOrigin)
+export function rpConfigFor(requestOrigin?: string | null, opts?: CeremonyOptions) {
+  const origin = opts?.stepUp
+    ? rpOriginForStepUp(requestOrigin, opts.stepUp.sessionOrigin)
+    : rpOriginForRequest(requestOrigin)
   let originHost = 'localhost'
   try {
     originHost = new URL(origin).hostname
@@ -105,8 +116,8 @@ export async function verifyRegResponse(
   })
 }
 
-export async function generateAuthOptions(email?: string, requestOrigin?: string | null) {
-  const { rpId } = rpConfigFor(requestOrigin)
+export async function generateAuthOptions(email?: string, requestOrigin?: string | null, opts?: CeremonyOptions) {
+  const { rpId } = rpConfigFor(requestOrigin, opts)
   let allowCredentials: { id: string; transports?: AuthenticatorTransport[] }[] | undefined
 
   if (email) {
@@ -138,8 +149,13 @@ export async function generateAuthOptions(email?: string, requestOrigin?: string
 
 export class PasskeyAuthenticationError extends Error {}
 
-export async function verifyAuthResponse(challengeKey: string, response: any, requestOrigin?: string | null) {
-  const { rpId, origin } = rpConfigFor(requestOrigin)
+export async function verifyAuthResponse(
+  challengeKey: string,
+  response: any,
+  requestOrigin?: string | null,
+  opts?: CeremonyOptions
+) {
+  const { rpId, origin } = rpConfigFor(requestOrigin, opts)
   const expectedChallenge = await getAndDeleteChallenge(challengeKey)
   if (!expectedChallenge) throw new PasskeyAuthenticationError('Challenge expired or not found')
 

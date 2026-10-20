@@ -2958,6 +2958,11 @@ export const sessions = pgTable('sessions', {
   // A browser session a paired device handed to its embedded web view (see
   // web_handoffs): it lives only while that device stays paired.
   deviceTokenId: uuid('device_token_id').references(() => deviceTokens.id, { onDelete: 'cascade' }),
+  // The allowlisted origin the session was minted at (rpOriginForRequest at the time),
+  // so a step-up passkey assertion can still be verified from that tab after an
+  // administrator moves the public address and the origin leaves the allowlist. Null
+  // for sessions minted before the column existed or without a browser origin.
+  signInOrigin: text('sign_in_origin'),
 })
 
 /**
@@ -3223,6 +3228,34 @@ export const webHandoffs = pgTable('web_handoffs', {
   usedAt: timestamp('used_at'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 })
+
+// Single-use, 15-minute codes a signed-in person mints (after a fresh passkey
+// assertion) to register an ADDITIONAL passkey at another allowed address of this
+// server — the non-destructive counterpart of passkey recovery
+// (services/auth/passkey-enrollment.ts). The row doubles as the audit record.
+export const passkeyEnrollmentCodes = pgTable(
+  'passkey_enrollment_codes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    codeHash: text('code_hash').notNull().unique(),
+    // Origin the step-up assertion verified against when the code was issued (audit only).
+    issuedOrigin: text('issued_origin'),
+    expiresAt: timestamp('expires_at').notNull(),
+    usedAt: timestamp('used_at'),
+    // Set when a newer code for the same user is issued: only the newest is live.
+    revokedAt: timestamp('revoked_at'),
+    redeemedOrigin: text('redeemed_origin'),
+    // user_credentials.credential_id of the passkey it registered (not an FK: the audit outlives the credential).
+    redeemedCredentialId: text('redeemed_credential_id'),
+    // Failed registration ceremonies against this code (audit only).
+    attempts: integer('attempts').notNull().default(0),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('idx_passkey_enrollment_codes_user').on(t.userId)]
+)
 
 export const wsTickets = pgTable('ws_tickets', {
   id: uuid('id').primaryKey().defaultRandom(),

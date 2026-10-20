@@ -17,6 +17,7 @@ import { AppHeader, MobileBottomNav, DesktopFooter } from './components/AppNav'
 import { LoginPage } from './components/LoginPage'
 import { DemoAccessPage } from './components/auth/DemoAccessPage'
 import { TokenRegisterPage } from './components/auth/TokenRegisterPage'
+import { AddPasskeyPage } from './components/auth/AddPasskeyPage'
 import { FinishAdminSetupPage } from './components/auth/FinishAdminSetupPage'
 import { InboxPopup } from './components/InboxPopup'
 import { InboxPopupProvider } from './components/InboxPopupProvider'
@@ -64,6 +65,12 @@ export default function App() {
   // an invite for a DIFFERENT account still lands on the ceremony.
   if (location.pathname === '/register') {
     return <TokenRegisterPage onSuccess={loginWithToken} />
+  }
+  // A one-time code that adds a passkey at this address (Settings → Account → Passkeys
+  // → Add a passkey for another address). Same reasoning: the visitor usually has no
+  // session at this address yet, which is why they need the code.
+  if (location.pathname === '/add-passkey') {
+    return <AddPasskeyPage onSuccess={loginWithToken} />
   }
   // App-store reviewer access on a designated demo instance: same reasoning, the
   // visitor has no session. The page redirects home unless the server opted in.

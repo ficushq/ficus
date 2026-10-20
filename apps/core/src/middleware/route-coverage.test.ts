@@ -31,6 +31,11 @@ const PUBLIC_ALLOWLIST = new Set([
   // authorises registering a passkey and nothing else; it is not a bearer credential.
   'POST /api/auth/register/token/options',
   'POST /api/auth/register/token/verify',
+  // Adding a passkey for another address: gated by the single-use 80-bit enrollment
+  // code, an allowed request Origin, the CSRF header and the WebAuthn ceremony. The
+  // code authorises one passkey registration for its own user and nothing else.
+  'POST /api/auth/add-passkey/options',
+  'POST /api/auth/add-passkey/verify',
   // Recovery request is intentionally unauthenticated and answers identically for
   // known and unknown addresses, so it can't be used to enumerate accounts.
   'POST /api/auth/recover/passkey',

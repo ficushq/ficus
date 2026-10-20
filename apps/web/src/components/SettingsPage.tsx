@@ -1,6 +1,7 @@
 import { MobileProSection } from './settings/MobileProSection'
 import { ServerAddressSection } from './settings/ServerAddressSection'
 import { MobileSection } from './settings/MobileSection'
+import { AddPasskeyElsewhere } from './settings/AddPasskeyElsewhere'
 import { SETTINGS_SEARCH_ENTRIES } from './settings/settingsSearch'
 import { LinkedChatAccounts } from './settings/LinkedChatAccounts'
 import { LinkedGitHubAccount } from './settings/LinkedGitHubAccount'
@@ -846,6 +847,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
               </p>
             )}
           </div>
+          <AddPasskeyElsewhere />
         </div>
       )}
 

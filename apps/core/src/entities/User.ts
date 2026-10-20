@@ -238,6 +238,8 @@ export class User {
     expiresInMs?: number
     /** A paired device's embedded web view (a web handoff): the session ends with the device. */
     deviceTokenId?: string | null
+    /** The allowlisted origin the person signed in at (rpOriginForRequest), for step-up ceremonies. */
+    signInOrigin?: string | null
   }): Promise<string> {
     const token = `${SESSION_TOKEN_PREFIX}${randomUUID()}`
     const tokenHash = createHash('sha256').update(token).digest('hex')
@@ -250,6 +252,7 @@ export class User {
       ipAddress: opts?.ipAddress ?? null,
       expiresAt,
       deviceTokenId: opts?.deviceTokenId ?? null,
+      signInOrigin: opts?.signInOrigin ?? null,
     })
 
     return token

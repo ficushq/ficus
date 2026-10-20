@@ -11,6 +11,7 @@ import {
   createTestAdmin,
   createTestAgentToken,
   createTestCredential,
+  createTestSession,
   createTestUser,
 } from '../../test-utils/rbac'
 import { resetSecretStore } from '../secrets'
@@ -208,5 +209,25 @@ describe('resolveToken — ficus_ prefixes only (no dual-accept)', () => {
     const bob = await createTestUser({ prefix: PREFIX })
     expect(await resolveToken(alice.token)).toEqual({ type: 'user', userId: alice.id })
     expect(await resolveToken(bob.token)).toEqual({ type: 'user', userId: bob.id })
+  })
+})
+
+describe('resolveTokenContext — session sign-in origin', () => {
+  test('a session carries the origin it was minted at; null when unknown', async () => {
+    const user = await createTestUser({ prefix: PREFIX })
+    const token = await createTestSession(user.id, { signInOrigin: 'https://old.example.com' })
+    expect(await resolveTokenContext(token)).toEqual({
+      identity: { type: 'user', userId: user.id },
+      deviceTokenId: null,
+      signInOrigin: 'https://old.example.com',
+    })
+    expect((await resolveTokenContext(user.token))?.signInOrigin).toBeNull()
+  })
+
+  test('User.createSession records the sign-in origin', async () => {
+    const created = await createTestUser({ prefix: PREFIX })
+    const user = await User.findById(created.id)
+    const token = await user!.createSession({ signInOrigin: 'http://localhost:61896' })
+    expect((await resolveTokenContext(token))?.signInOrigin).toBe('http://localhost:61896')
   })
 })
