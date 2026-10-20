@@ -23,10 +23,29 @@ servers are created.
 | Storage     | Its own fixed-size ext4 image (512 MiB), mounted `nodev,nosuid,noexec`                 |
 | Process     | Its own systemd service: 256 MiB memory, 64 tasks, private `/tmp` (16 MiB), no devices |
 | Network     | No IP sockets at all. It listens only on its own Unix socket                           |
+| Namespaces  | Private network and IPC namespaces; it cannot create new namespaces                    |
+| Syscalls    | Native architecture only; privileged and resource-control system calls are refused     |
 | Credentials | Its own owner, members and one read-only Ficus credential                              |
 
 All vaults together are capped at 640 MiB of memory and 50% of one CPU. A server hosts at most
 two vaults. Ficus keeps at least 2 GiB free for itself before it creates another vault.
+
+## Who decides
+
+**Ficus Core on the tenant's server is the authority for its vaults.** Core records every
+create, rename, retry, read revoke or reconnect, owner device link and delete in its own
+database, and runs each one on the same server through a local root helper
+(`/usr/local/libexec/ficus-bigbrainctl`). No other service keeps a list of the vaults.
+
+Ficus Cloud's Platform does only these things for managed BigBrain:
+
+- install the feature on a server when it is enabled for the tenant;
+- report whether the server is installed and active, and its vault zone;
+- create and remove the exact DNS record for each vault host name, tagged with the tenant and
+  vault. It never deletes by wildcard;
+- run tenant lifecycle: suspend, resume, termination backup and restore.
+
+Platform keeps no vault names, generations, tombstones or credentials.
 
 ## Trust boundary
 
@@ -85,14 +104,18 @@ other vaults' names, owners, usage or state.
 4. **Attach to squads.** In a squad's integration settings, tick each vault the squad may read.
    Vaults are attached independently. There is no default vault, and attaching one never detaches
    another.
-5. **Delete.** **Delete** asks for the exact vault name. It removes the vault's server, data,
-   account and access now, and keeps a tombstone so an old request cannot bring it back. Copies
-   already inside existing Ficus server backups are not removed; they follow your backup
-   retention.
+5. **Delete.** **Delete** asks for the exact vault name and lists the squads that lose read
+   access. Ficus disables the vault's read connection at once. Then it removes the vault's
+   server, data, account, access and DNS record, and keeps a tombstone so an old request cannot
+   bring it back. Copies already inside existing Ficus server backups are not removed; they
+   follow your backup retention. Restoring the server from a backup taken before the delete
+   brings the vault back, with Ficus read access off.
 
 Every change is fenced by the vault's generation. If something changed meanwhile (another
 person renamed it, for example), Ficus refuses with the current generation instead of applying a
-stale request.
+stale request. A change waits until the server has applied the previous one; only a delete can
+replace a change that is still pending. Failed attempts are retried with backoff under the same
+request, so the server never applies a change twice.
 
 ## Agent tools
 
@@ -139,16 +162,27 @@ path and expiry.
 Vault data is included in the server's existing encrypted backup. Ficus stops each vault briefly
 to copy it consistently, then restarts it. No new retention is promised.
 
-Restoring a server restores each vault that Platform still lists for the tenant, under its
-current name. Deleted vaults stay deleted. A restore always rotates every vault credential and
-deletes pending device links. Owners connect their devices again. Ficus read access must be
-reconnected and squads attached again by a person.
+- **Nightly backups** skip a vault that cannot be copied, upload everything else and report the
+  run as incomplete. The settings page shows **Last backup did not include this vault** for the
+  skipped vault.
+- **Termination backups** (before a tenant is removed) are all or nothing: any vault that cannot
+  be copied fails the backup.
+
+Restoring a server reproduces the backup point. Every vault in the backup comes back with its
+name and owner from that time, including vaults deleted after the backup was taken. If Ficus
+Core still remembers a later delete or rename, it re-applies it once the server is back. A
+restore always rotates every vault credential, revokes Ficus read access and deletes pending
+device links. Owners connect their devices again. A person must reconnect Ficus read access;
+the vault's squad attachments return when it does.
 
 ## Operations
 
 - The feature is installed by the server setup toolkit when the server's `bigbrain:` section is
-  enabled. Platform owns the tenant identity and drives every change over its private host
-  channel.
+  enabled. The installed host record (`/etc/ficus/bigbrain/host.json`, root-owned) names the
+  tenant, host binding, epoch and vault zone; Core reads it and must agree with Platform before
+  the feature is available.
+- Core's worker applies pending changes one vault at a time and checks every vault's status on
+  the server every 10 minutes.
 - `systemctl status 'ficus-bigbrain*'` shows the gateway, each vault and the transient root
   control worker. Refusals are recorded as fixed tokens, never values or secrets, in
   `/var/lib/ficus-bigbrain/control/last-failure` and
@@ -160,8 +194,9 @@ reconnected and squads attached again by a person.
 
 ## Current limits
 
-- Ficus Cloud only, and only once Platform confirms the host is installed and active. A stale
-  capability report (older than 10 minutes) makes the feature unavailable until it refreshes.
+- Ficus Cloud only, and only once the local helper and Platform both confirm the host is
+  installed and active, for the same tenant, host and zone. A stale report (older than 10
+  minutes) makes the feature unavailable until it refreshes.
 - Ficus Core is inside every vault's trust boundary (see [Trust boundary](#trust-boundary)).
 - The settings UI has automated coverage only. It has not been reviewed in a browser against a
   live managed server.

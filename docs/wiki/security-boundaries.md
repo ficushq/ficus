@@ -90,7 +90,9 @@ access to vault material or owner escrow.
 Enforced boundaries, each covered by the disposable Linux containment lane
 (`scripts/bigbrain/linux-acceptance.ts`): each vault runs under its own unprivileged account,
 fixed-size ext4 image, systemd memory/task limits and bounded scratch, with no IP sockets
-(seccomp `AF_UNIX` only) and a root-prepared Unix socket only the gateway group can reach. A
+(seccomp `AF_UNIX` only), private network and IPC namespaces, no namespace creation, a native
+`@system-service` syscall filter without privileged or resource-control calls, and a
+root-prepared Unix socket only the gateway group can reach. A
 vault cannot reach another vault's socket or storage, the gateway's socket, the host record,
 control state, its read handoff, owner escrow or the root launcher, before or after restarts.
 The gateway is credential-free and routes by host name.
@@ -102,6 +104,15 @@ tools are created only for agents on an isolated sandbox runtime, never `host`. 
 literal-human only (no agent, delegated assistant or system token), and owner device links are
 owner-only, secret, single-use and never cached, logged or audited. Owner escrow stays inside
 the root control worker and never crosses a Core API, Platform response or log.
+
+Core is the authority for vault operations: it records each change with a generation fence and
+runs it on the same server through the root helper `/usr/local/libexec/ficus-bigbrainctl`,
+using a bounded spawn with a capped reply and no sudoers, setuid binary or socket service.
+Platform keeps no per-vault records. It reports installation and the vault zone, manages only
+the exact DNS record for each vault (host name, tenant/vault owner tag and provider record ID;
+never wildcard deletion), and runs tenant suspend, resume, termination backup and restore.
+Restore reproduces the backup point, including vaults deleted later, with every credential
+rotated and Ficus read access revoked; Core then re-applies its own later deletes and renames.
 
 ## No automated transcript export
 
