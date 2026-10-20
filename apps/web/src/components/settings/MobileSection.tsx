@@ -139,7 +139,7 @@ export function MobileSection() {
 }
 
 /**
- * Prefer the server's configured public address (APP_URL) over this browser's, which may be
+ * Prefer the server's public address (Settings or APP_URL) over this browser's, which may be
  * localhost or a LAN IP a phone can't reach. Admins read it from the connection status they
  * already load; members from the member-safe relay availability, so neither fires the other's request.
  */

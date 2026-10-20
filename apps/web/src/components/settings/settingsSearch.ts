@@ -63,8 +63,9 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   {
     section: 'mobile-pro',
     id: 'mobile-public-url',
-    label: 'Public server URL',
-    keywords: 'https public url origin address hostname ip port base path mobile relay',
+    label: 'Public address',
+    keywords:
+      'https public url origin address hostname ip port base path mobile relay app_url change edit desktop server address',
   },
   {
     section: 'mobile-pro',

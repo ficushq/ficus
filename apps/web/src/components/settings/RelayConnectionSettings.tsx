@@ -15,6 +15,7 @@ import {
 import { Modal } from '../Modal'
 import { OverflowMenu } from '../OverflowMenu'
 import { ExternalLink, SETTINGS_BUTTON_SIZE, SETTINGS_HEADING, SettingsRow } from './SettingsRow'
+import { PublicAddressSettings } from './PublicAddressSettings'
 
 const CONNECT_FORM_ID = 'ficus-account-connect'
 const FIELD = 'ficus-field w-full rounded-lg border border-th-border bg-surface px-3 py-2 text-sm text-primary'
@@ -352,13 +353,7 @@ export function RelayConnectionSettings() {
               </form>
             )
           )}
-          <div data-setting-target="mobile-public-url" tabIndex={-1}>
-            <SettingsRow
-              label="Server address"
-              description="Uses the public address from server setup, including any port or path."
-              value={<span className="break-all font-mono text-xs">{data.origin || 'Not configured'}</span>}
-            />
-          </div>
+          <PublicAddressSettings onSaved={setMessage} />
         </div>
       </section>
 

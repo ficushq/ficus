@@ -4,7 +4,8 @@ import { fireEvent, getByRole, queryByRole, waitFor } from '@testing-library/dom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { acquireDomHarness } from '../../test/domHarness'
 import { PermissionsProvider, type PermissionsResult } from '../../hooks/usePermissions'
-import { serverConnectionQueryKeys } from '../../queryKeys'
+import { publicUrlQueryKeys, serverConnectionQueryKeys } from '../../queryKeys'
+import type { PublicAppUrlStatus } from '../../api/publicUrl'
 import type { ServerConnection } from '../../api/serverConnection'
 import { webkitTap } from '../../test/webkitTap'
 import { RelayConnectionSettings } from './RelayConnectionSettings'
@@ -39,6 +40,18 @@ const connectedStatus = (overrides: Partial<NonNullable<ServerConnection['status
   },
 })
 
+const publicAddress: PublicAppUrlStatus = {
+  url: 'https://ficus.example.com',
+  storedUrl: 'https://ficus.example.com',
+  source: 'setting',
+  locked: false,
+  desktopManaged: false,
+  version: '2026-10-20T00:00:00.000Z',
+  lastChange: null,
+  mobileReady: true,
+  basePath: '',
+}
+
 async function render(data: ServerConnection, write = true, human = true) {
   const dom = await acquireDomHarness({ url: 'https://ficus.example.com' })
   const requests: string[] = []
@@ -48,10 +61,12 @@ async function render(data: ServerConnection, write = true, human = true) {
     requests.push(`${init?.method ?? 'GET'} ${url.pathname}`)
     if (url.pathname === '/api/push/server-connection' && init?.method === 'DELETE')
       return Response.json({ disconnected: true })
+    if (url.pathname === '/api/public-url/status') return Response.json(publicAddress)
     return Response.json(data)
   }) as typeof fetch
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData(serverConnectionQueryKeys.status(), data)
+  queryClient.setQueryData(publicUrlQueryKeys.status(), publicAddress)
   cleanup = async () => {
     await dom.cleanup()
     queryClient.clear()
@@ -280,4 +295,13 @@ test('connected before records existed: no since, account or connected-by noise'
     await cleanup?.()
     cleanup = undefined
   }
+})
+
+test('the editable public address replaces the read-only server address row', async () => {
+  const { container } = await render(selfHosted)
+  const row = container.querySelector('[data-setting-target="mobile-public-url"]')
+  expect(row?.textContent).toContain('Public address')
+  expect(row?.textContent).toContain('Configured here.')
+  expect(getByRole(container, 'button', { name: 'Change public address…' })).toBeTruthy()
+  expect(container.textContent).not.toContain('Uses the public address from server setup')
 })
