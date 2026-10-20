@@ -1,0 +1,105 @@
+{
+  "experiment": "fresh-feature-v2",
+  "task_slug": "seaborn",
+  "frozen_manifest_sha256": "a319ef92f79b471537c992e2fcfb1d106fb05e0dbffa97ba5fe8891e1e24d4f6",
+  "results": [
+    {
+      "arm": "pi-planned",
+      "reward": {
+        "reward": 0.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "planned",
+        "baseline": "Pi packaged subagent example",
+        "executed_roles": ["architect", "engineer", "reviewer"],
+        "required_roles_executed": true
+      },
+      "total_seconds": 1919.01,
+      "timing_seconds": {
+        "environment_setup": 2.07,
+        "agent_setup": 25.27,
+        "agent_execution": 1865.33,
+        "verifier": 13.98
+      },
+      "requests": 87,
+      "confirmed_cost_usd": 1.626289,
+      "unknown_usage_requests": 0,
+      "tokens": {
+        "input": 2956021,
+        "output": 68027,
+        "cache_read": 2684976,
+        "cache_write": 270784,
+        "reasoning": 9121
+      },
+      "official_test_summaries": ["15 failed, 37 passed, 9 skipped in 6.12s"],
+      "official_input_checks": 2,
+      "artifacts_sha256": {
+        "result.json": "7d4356cf19b9e46450c01c216c0848df7451bdf98251d9b8576043e3b1879b92",
+        "verifier/test-stdout.txt": "9b57e236fbc91f2a32b8a8999038465f42399912d25d174cfb5590e3a01ff31c",
+        "agent/pi.txt": "dcdee6306a9266392d4e3f4ed3bf4958911ed69735833fd9729959b0b9c85b6d",
+        "artifacts/logs/artifacts/submission.tar.gz": "3bb18cd2d652447e497ae4dd4e839ebff051912d1a573a843d4119dbe759d8db"
+      },
+      "operator_interventions": 0,
+      "submission_archive_verified": ["artifacts/logs/artifacts/submission.tar.gz"]
+    },
+    {
+      "arm": "ficus-planned",
+      "reward": null,
+      "exception": {
+        "exception_type": "RuntimeError",
+        "stage": "environment_setup",
+        "reason": "Frozen local sanitized Docker image was missing; registry lookup failed before agent setup or inference.",
+        "occurred_at": "2026-10-20T18:02:01.894598Z"
+      },
+      "agent_metadata": null,
+      "total_seconds": 1.53,
+      "timing_seconds": {
+        "environment_setup": 0.76,
+        "agent_setup": null,
+        "agent_execution": null,
+        "verifier": null
+      },
+      "requests": 0,
+      "confirmed_cost_usd": 0.0,
+      "unknown_usage_requests": 0,
+      "tokens": {
+        "input": 0,
+        "output": 0,
+        "cache_read": 0,
+        "cache_write": 0,
+        "reasoning": 0
+      },
+      "official_test_summaries": [],
+      "official_input_checks": 0,
+      "artifacts_sha256": {
+        "result.json": "37ff4b1c0ae7e074f07430c9ef57ca799bf585274a818622dfe26985dfb35543"
+      },
+      "operator_interventions": 0
+    }
+  ],
+  "complete_matched_comparison": false,
+  "cumulative_exposure_usd": 23.973944,
+  "cap_usd": 50,
+  "fresh_confirmed_usd": 1.626289,
+  "unattempted_arms": ["pi-engineer", "ficus-engineer"],
+  "status": "infrastructure_blocked_partial",
+  "no_operator_steering": true,
+  "recovery": {
+    "missing_image_id": "sha256:a93d906dae0a03c4af1056b60c931340e55c17a37bb7440d7b563a6d3d9c4907",
+    "cause": "Unknown; all unused local images were absent. Docker context remained orbstack.",
+    "available_host_gib_approx": 17,
+    "pinned_base_compressed_gib": 9.693387338891625,
+    "minimum_free_space_guard_gib": 10,
+    "paid_inference_stopped": true,
+    "model_retry_performed": false
+  },
+  "limitations": [
+    "Incomplete matched comparison; do not count infrastructure failure as model failure",
+    "Small restricted convenience sample from pinned legacy Harbor FeatureBench snapshot",
+    "Single attempt per arm; no confidence intervals",
+    "Shared arm64 Mac with Linux amd64 emulation",
+    "Ficus has additional uncapped PostgreSQL sidecar",
+    "No causal prompt-fix claim"
+  ]
+}

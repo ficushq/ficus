@@ -104,7 +104,7 @@ engineer executed. Official input hashes, submitted-source archives, and usage
 receipts all verify. The scanned external-source-fetch indicators are absent.
 Total xarray inference cost is $1.855737; cumulative exposure is $22.347655.
 
-## Partial seaborn comparison
+## Initial partial seaborn comparison (preserved)
 
 All four pre-inference controls passed. The masked baseline fails 51 feature
 tests and passes one (nine skipped); the reference passes all 52 and 218
@@ -120,34 +120,18 @@ and both official verifier-input checks pass.
 
 The next Ficus squad attempt stopped during environment construction because
 its frozen local Docker image was missing. It made zero model calls and cost
-$0. This is an infrastructure failure, not a Ficus acceptance failure. Both
-engineer-only arms remain unattempted. All unused local images were absent;
+$0. This is an infrastructure failure, not a Ficus acceptance failure. At that point both
+engineer-only arms remained unattempted. All unused local images were absent;
 the cause is not established. The Docker context was still OrbStack. No broad
 image/volume cleanup was issued by this evaluation. With about 17 GiB free,
-re-pulling the pinned 9.7 GiB compressed image and unpacking it cannot safely
-maintain the 10 GiB storage guard. Paid inference is stopped. The failed startup
-and completed Pi result are preserved, with no retry or replacement task.
+re-pulling the pinned 9.7 GiB compressed image and unpacking it could not safely
+maintain the 10 GiB storage guard. Paid inference was stopped. The failed startup
+and completed Pi result were preserved; no model attempt or replacement task ran
+before the recovery below.
 
-Results: [partial seaborn manifest](fresh-feature-v2-seaborn-results.json).
-This three-task continuation has spent $8.978882, with cumulative accounted
-exposure of $23.973944 against the $50 cap. There are no unsettled usage holds.
-
-## Interpretation so far
-
-Across the three fully matched fresh tasks, including the earlier Pandas task,
-Ficus squad and Ficus engineer each passed 3/3; Pi squad passed 1/3 and Pi
-engineer passed 2/3. Seaborn is excluded from these matched totals because it is
-incomplete. Pi was cheaper in every completed matched comparison and faster in
-every completed matched arm. Ficus's higher acceptance on this small sample is
-encouraging, but it does not establish a general ranking, statistical confidence,
-or savings in human attention. The engineer-only xarray success alongside Pi
-squad's failure also argues against assuming that more agents always help.
-
-Next: restore storage headroom and the pinned seaborn environment, document any
-reconstruction differences, rerun only infrastructure controls, and resume the
-three arms that have not made model calls. Preserve the startup failure and use
-a distinct recovery job ID. Do not rerun the completed Pi squad or feed its
-failures into later prompts. Only then report the full four-task comparison.
+Original results: [preserved partial seaborn manifest](fresh-feature-v2-seaborn-partial-results.json).
+At that checkpoint, the continuation had spent $8.978882, with cumulative
+accounted exposure of $23.973944 against the $50 cap and no unsettled usage holds.
 
 ## Seaborn infrastructure recovery
 
@@ -160,11 +144,90 @@ message. The new sanitized image and Git commit have new timestamps/metadata;
 they are not claimed to have the old image ID. All frozen grader files are
 byte-for-byte identical. All four controls reproduce their earlier outcomes.
 
-The three configurations that have not made any model calls resume with distinct
+The three configurations that had not made any model calls resumed with distinct
 recovery job/accounting IDs. The completed Pi squad is not rerun, and the
 zero-call Ficus startup failure remains recorded. Model, instructions, workflow,
 Ficus runtime, budget, and resource settings are unchanged. The original
 PostgreSQL sidecar tag was not digest-pinned; its recovered digest is now recorded,
 but original digest equality cannot be independently established. An idle,
-network-disabled container retains the sanitized image while runs are active.
+network-disabled container retained the sanitized image while runs were active
+and was removed after completion.
 See [recovery manifest](fresh-feature-v2-seaborn-recovery.json).
+
+## Completed seaborn comparison
+
+| Arm            | Feature tests                   | Regression tests | Total wall time | Inference cost |
+| -------------- | ------------------------------- | ---------------- | --------------- | -------------- |
+| Pi squad       | 37 passed, 15 failed, 9 skipped | Not reached      | 31m59s          | $1.626289      |
+| Ficus squad    | 42 passed, 10 failed, 9 skipped | Not reached      | 17m02s          | $1.166069      |
+| Pi engineer    | 44 passed, 8 failed, 9 skipped  | Not reached      | 8m46s           | $0.345703      |
+| Ficus engineer | 43 passed, 9 failed, 9 skipped  | Not reached      | 8m57s           | $0.507631      |
+
+All four official rewards are zero. Each run has both immutable-input checks,
+a verified submitted-source archive, and complete provider usage receipts.
+The full squads executed architect, engineer and reviewer; Ficus also executed
+its manager. Only the engineer executed in the Ficus engineer-only arm. No human
+answers, operator steering or additional model attempts were introduced. The original Pi
+squad result was not rerun. The zero-call startup failure remains separate.
+
+Eight failures common to all arms require the plotter `.data` attribute. The
+written `establish_variables` interface describes storing variables with
+`setattr` and converting arrays to numpy, but does not explicitly name `.data`.
+This is a task-contract caveat, not a reason to exclude the task or alter the
+unchanged official score. Additional failures include scatter alpha (both
+squads and Ficus engineer), warning category (Ficus squad), and Series handling
+and optional-dependency error messages (Pi squad).
+
+The Ficus squad reviewer reported 276 passing selected tests, seven skips and
+one unrelated failure before approval. Those checks missed the hidden
+compatibility requirements. A delivered work stream and a successful chosen
+test suite are not proof of acceptance. These traces alone do not establish
+that another generic prompt change would fix the problem.
+
+Source-fetch indicator matches were inspected. They come from existing utility
+source/tests and edit context: the `seaborn-data` dataset URL and `urllib.request`
+imports. No reference-implementation fetch was identified in those matches;
+repeated streaming events inflate raw counts. This is a trace audit, not proof
+of network isolation. See the [completed manifest](fresh-feature-v2-seaborn-results.json).
+
+Seaborn cost $3.645692, including the original Pi squad. Recovery added $2.019403
+for the remaining three arms. The three-task continuation cost $10.998285;
+cumulative confirmed exposure, including earlier development, is $25.993347 of
+$50. There are no unknown-usage holds. The paid proxy and trial processes are
+stopped.
+
+## Complete four-task comparison
+
+This includes the earlier fresh Pandas comparison and all three tasks above.
+A task passes only when the unchanged official feature and regression phases
+both pass; failed-feature runs do not reach regression grading.
+
+| Arm            | Tasks passed | Total inference cost | Total wall time | Agent setup | Agent execution |
+| -------------- | ------------ | -------------------- | --------------- | ----------- | --------------- |
+| Pi squad       | 1/4          | $5.044957            | 87m37s          | 85.39s      | 5049.90s        |
+| Ficus squad    | 3/4          | $5.768600            | 82m13s          | 456.53s     | 4349.44s        |
+| Pi engineer    | 2/4          | $1.072002            | 24m12s          | 66.05s      | 1258.19s        |
+| Ficus engineer | 3/4          | $2.254745            | 44m44s          | 325.97s     | 2226.85s        |
+
+These 16 runs cost $14.140304. Wall time includes setup, execution, grading and
+runner overhead; the two phase columns are not intended to sum to wall time.
+Inference prices exclude host compute and the extra PostgreSQL sidecar.
+
+Ficus has higher acceptance in both matched workflows on this sample. Pi's
+engineer is cheaper and faster on every task; Pi squads are cheaper and faster
+on the first three tasks, while seaborn reverses that comparison. Ficus squads
+therefore have slightly lower aggregate wall time, but higher aggregate cost.
+These are observations from four fixed-order, single-attempt tasks, not a
+statistically reliable ranking. Source/task restrictions, reconstructed seaborn
+environment metadata, unequal database compute, shared-host emulation, and
+workflow/session differences limit comparability.
+
+Adding squad roles did not improve acceptance over an engineer alone: Ficus
+remains 3/4, while Pi falls from 2/4 to 1/4. This does not measure parallel
+feature delivery, long-lived product work, or time returned to a human. Before
+spending more on this comparison, choose an existing benchmark with independent
+concurrent tasks or longer repository changes, freeze the task set and resource
+budget, and record human questions/interventions, unattended completion,
+calendar time and accepted changes alongside cost. Keep those measurements
+separate from the official task score. Do not tune prompts against these four
+known tasks and then count reruns as fresh evidence.
