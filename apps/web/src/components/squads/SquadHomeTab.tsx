@@ -87,6 +87,8 @@ export function SquadHomeTab({
             New chat
           </Link>
         </div>
+        {/* Held GitHub events stay at the very top, above the first divider. */}
+        <PendingGitHubEventsSection squadId={resolvedId} className="mt-4" />
       </section>
       <section className="shrink-0 border-t border-panel-border pt-4">
         <h2 className="px-3 pl-9 text-sm font-semibold text-secondary">Squad coordinator</h2>
@@ -110,7 +112,6 @@ export function SquadHomeTab({
           </Link>
         </LoadingContent>
       </section>
-      <PendingGitHubEventsSection squadId={resolvedId} className="mx-3 shrink-0" />
       <section className="squad-home-work-streams shrink-0 border-t border-panel-border pt-4">
         <WorkStreamListComponent
           workStreams={workStreams}

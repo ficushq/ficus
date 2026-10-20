@@ -63,7 +63,7 @@ The primary action sits at the trailing side of its heading/toolbar. Avoid compe
 
 Consultants are the main research, design, and brainstorming entry point. The manager coordinates ongoing squad work and remains available to inspect or talk to.
 
-Home presents, top to bottom, a conversation entry point, a labeled **Squad coordinator** row, active work, and recent chats. The coordinator row reads just "Manager" (no agent name) and its description explains its role. Keep Active and Recent chats headings on the same title gutter. Recent consultant rows retain idle dots so they read as clickable agents, even in the flat presentation.
+Home presents, top to bottom, a conversation entry point (with any held GitHub events notice directly under it, above the first divider), a labeled **Squad coordinator** row, active work, and recent chats. The coordinator row reads just "Manager" (no agent name) and its description explains its role. Keep Active and Recent chats headings on the same title gutter. Recent consultant rows retain idle dots so they read as clickable agents, even in the flat presentation.
 
 The Home active-work explorer is always a list inline; it has no list/kanban/graph toggle. Its header carries one graph icon (“Show work stream graph”) that opens a **Work Stream Graph** dialog showing only the dependency graph, with no view toggle in the dialog header. Selecting a node opens the work-stream detail; Escape closes the detail first, then the dialog, and focus returns to the icon. Only the Work tab persists a chosen view (`ficus.wsView.<squadId>`); Home stores no view preference.
 

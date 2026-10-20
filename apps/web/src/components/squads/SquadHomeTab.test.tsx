@@ -3,12 +3,14 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
-import type { Agent, Squad, WorkStream } from '@ficus/shared'
+import type { Agent, GitHubFeedbackSummary, Squad, WorkStream } from '@ficus/shared'
 import type { ComponentProps } from 'react'
 
 let domHarness: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
 
 import { SquadHomeTab } from './SquadHomeTab'
+import { GitHubFeedbackReviewProvider } from '../integrations/GitHubFeedbackReviewProvider'
+import { githubFeedbackQueries } from '../../queryOptions'
 import { WorkStreamList } from './WorkStreamList'
 
 const dependencies = {
@@ -143,6 +145,29 @@ describe('SquadHomeTab', () => {
     expect(html.indexOf('Squad coordinator')).toBeLessThan(html.indexOf('Clean active work streams card'))
     expect(html.indexOf('Clean active work streams card')).toBeLessThan(html.indexOf('Recent chats'))
     expect(html).not.toContain('data-agent-type-section="manager"')
+  })
+
+  test('keeps pending GitHub events in the header, above the coordinator divider', () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(githubFeedbackQueries.summary(squad.id).queryKey, {
+      pending: 2,
+      failing: 0,
+    } as GitHubFeedbackSummary)
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <GitHubFeedbackReviewProvider squadId={squad.id}>
+            <SquadHomeTab squad={squad} workStreams={[workStream()]} dependencies={dependencies} />
+          </GitHubFeedbackReviewProvider>
+        </QueryClientProvider>
+      </MemoryRouter>
+    )
+    const header = html.slice(0, html.indexOf('</section>', html.indexOf('aria-label="Pending GitHub events"')))
+    expect(html).toContain('waiting for review')
+    expect(html.indexOf('Start with a conversation')).toBeLessThan(html.indexOf('aria-label="Pending GitHub events"'))
+    // The notice is nested inside the header section, before the first border-t divider.
+    expect(header).not.toContain('border-t')
+    expect(html.indexOf('waiting for review')).toBeLessThan(html.indexOf('Squad coordinator'))
   })
 
   test('keeps the manager entry available before its record loads', () => {
