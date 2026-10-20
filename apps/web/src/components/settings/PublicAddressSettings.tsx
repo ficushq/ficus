@@ -116,9 +116,7 @@ export function PublicAddressSettings({ onSaved }: { onSaved?: (message: string)
         client.invalidateQueries({ queryKey: integrationQueryKeys.all }),
       ])
       const saved = input.url === null ? 'Public address cleared.' : 'Public address saved.'
-      onSaved?.(
-        reconnect ? `${saved} If this server was connected to a Ficus account, connect it again.` : saved
-      )
+      onSaved?.(reconnect ? `${saved} If this server was connected to a Ficus account, connect it again.` : saved)
     },
     onError: async (value) => {
       setPending(null)

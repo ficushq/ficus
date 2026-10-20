@@ -69,7 +69,12 @@ test('layers environment over setting over local default', () => {
   })
   expect(
     describePublicAppUrl({ FICUS_LOCAL_APP_URL: 'http://localhost:61896' }, 'https://set.example/ficus/')
-  ).toMatchObject({ url: 'https://set.example/ficus', source: 'setting', locked: false, localUrl: 'http://localhost:61896' })
+  ).toMatchObject({
+    url: 'https://set.example/ficus',
+    source: 'setting',
+    locked: false,
+    localUrl: 'http://localhost:61896',
+  })
   expect(describePublicAppUrl({ FICUS_LOCAL_APP_URL: 'http://localhost:61896' }, undefined)).toMatchObject({
     url: 'http://localhost:61896',
     source: 'local-default',
@@ -98,12 +103,14 @@ test('invalid environment value stays authoritative and FICUS_MANAGED locks', ()
     locked: true,
     lockedBy: 'managed',
   })
-  expect(describePublicAppUrl({ FICUS_DESKTOP_MANAGED: '1', APP_URL: 'http://localhost:1' }, undefined)).toMatchObject(
-    { desktopManaged: true, lockedBy: 'environment' }
-  )
+  expect(describePublicAppUrl({ FICUS_DESKTOP_MANAGED: '1', APP_URL: 'http://localhost:1' }, undefined)).toMatchObject({
+    desktopManaged: true,
+    lockedBy: 'environment',
+  })
 })
 
 test('recognizes loopback hostnames', () => {
-  for (const host of ['localhost', 'app.localhost', '127.0.0.1', '127.1.2.3', '[::1]']) expect(isLoopbackHostname(host)).toBe(true)
+  for (const host of ['localhost', 'app.localhost', '127.0.0.1', '127.1.2.3', '[::1]'])
+    expect(isLoopbackHostname(host)).toBe(true)
   for (const host of ['example.com', '10.0.0.1', 'localhost.example.com']) expect(isLoopbackHostname(host)).toBe(false)
 })

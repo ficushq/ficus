@@ -47,5 +47,7 @@ export function normalizePublicAppUrl(candidate: string | undefined | null): str
 
 export function isLoopbackHostname(hostname: string): boolean {
   const h = hostname.toLowerCase()
-  return h === 'localhost' || h.endsWith('.localhost') || /^127(?:\.\d{1,3}){3}$/.test(h) || h === '[::1]' || h === '::1'
+  return (
+    h === 'localhost' || h.endsWith('.localhost') || /^127(?:\.\d{1,3}){3}$/.test(h) || h === '[::1]' || h === '::1'
+  )
 }

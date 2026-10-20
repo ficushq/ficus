@@ -65,7 +65,12 @@ describe('computeEnvUpdates', () => {
       const before = 'APP_URL=http://localhost:3000\nFICUS_WEB_ORIGIN=http://localhost:3000\n'
       expect(merged(opts(), before).APP_URL).toBe('http://localhost:3000')
       const moved = merged(
-        opts({ port: 4000, apiUrl: 'http://localhost:4000', appUrl: 'http://localhost:4000', explicit: new Set(['port']) }),
+        opts({
+          port: 4000,
+          apiUrl: 'http://localhost:4000',
+          appUrl: 'http://localhost:4000',
+          explicit: new Set(['port']),
+        }),
         before
       )
       expect(moved).toMatchObject({
@@ -82,7 +87,11 @@ describe('computeEnvUpdates', () => {
     expect(byKey.FICUS_SANDBOX_RUNTIME).toEqual({ key: 'FICUS_SANDBOX_RUNTIME', value: 'host', explicit: true })
     expect(byKey.PORT).toEqual({ key: 'PORT', value: '3000', explicit: true })
     expect(byKey.FICUS_API_URL.explicit).toBe(true)
-    expect(byKey.FICUS_LOCAL_APP_URL).toEqual({ key: 'FICUS_LOCAL_APP_URL', value: 'http://localhost:3000', explicit: true })
+    expect(byKey.FICUS_LOCAL_APP_URL).toEqual({
+      key: 'FICUS_LOCAL_APP_URL',
+      value: 'http://localhost:3000',
+      explicit: true,
+    })
     expect(byKey.APP_URL).toBeUndefined()
     expect(byKey.FICUS_WEB_ORIGIN).toBeUndefined()
     expect(byKey.FICUS_ENCRYPTION_KEY).toEqual({ key: 'FICUS_ENCRYPTION_KEY', value: 'aa'.repeat(32), explicit: false })

@@ -383,7 +383,11 @@ describe('public address changes', () => {
       const f = fixture()
       delete f.env.PUBLIC_URL
       const opts = (expectedVersion: string) => ({ expectedVersion, actor: 'user:admin', source: 'admin-api' })
-      const first = await store.writeManaged(PUBLIC_APP_URL_SETTING_KEY, 'https://selfhost.example.com:8443', opts('unset'))
+      const first = await store.writeManaged(
+        PUBLIC_APP_URL_SETTING_KEY,
+        'https://selfhost.example.com:8443',
+        opts('unset')
+      )
       const before = relayConnectionSecretKey(f.env)
       await f.service.start('admin', 'Example')
       await store.writeManaged(PUBLIC_APP_URL_SETTING_KEY, 'https://moved.example.com', opts(first.version))

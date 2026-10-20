@@ -40,7 +40,12 @@ describe('seedPublicAppUrlFromEnvironment', () => {
   })
 
   test('skips loopback, invalid and absent values but still marks', async () => {
-    for (const env of [{ APP_URL: 'http://localhost:3000' }, { APP_URL: 'http://127.0.0.1:61896' }, { APP_URL: 'nope' }, {}]) {
+    for (const env of [
+      { APP_URL: 'http://localhost:3000' },
+      { APP_URL: 'http://127.0.0.1:61896' },
+      { APP_URL: 'nope' },
+      {},
+    ]) {
       await reset()
       expect(await seedPublicAppUrlFromEnvironment(env)).toBe('skipped')
       expect(getSettingsStore().getStoredValue(PUBLIC_APP_URL_SETTING_KEY)).toBeUndefined()

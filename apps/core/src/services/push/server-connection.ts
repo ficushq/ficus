@@ -30,10 +30,7 @@ function publicOrigin(raw: string | undefined) {
     if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw new Error()
     return url.toString().replace(/\/+$/, '')
   } catch {
-    throw new RelayConnectionError(
-      'Set this server’s public address to an HTTPS URL before connecting.',
-      400
-    )
+    throw new RelayConnectionError('Set this server’s public address to an HTTPS URL before connecting.', 400)
   }
 }
 /**

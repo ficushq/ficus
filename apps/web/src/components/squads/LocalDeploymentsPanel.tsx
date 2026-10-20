@@ -150,7 +150,11 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
   }
 
   const openLocalDeployment = (localDeployment: LocalDeployment) => {
-    window.open(getLocalDeploymentBrowserUrl(localDeployment.urlPathOrHost, publicAppUrl), '_blank', 'noopener,noreferrer')
+    window.open(
+      getLocalDeploymentBrowserUrl(localDeployment.urlPathOrHost, publicAppUrl),
+      '_blank',
+      'noopener,noreferrer'
+    )
   }
 
   const showLogs = (localDeployment: LocalDeployment) => setLogsLocalDeploymentId(localDeployment.id)

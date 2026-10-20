@@ -181,7 +181,13 @@ test('Clear sends null after confirmation', async () => {
     storedUrl: 'https://ficus.example.com',
     source: 'setting',
     version: '2026-10-20T00:00:00.000Z',
-    lastChange: { previousValue: null, newValue: 'https://ficus.example.com', actor: 'Noah', source: 'admin-api', at: '2026-10-20T00:00:00.000Z' },
+    lastChange: {
+      previousValue: null,
+      newValue: 'https://ficus.example.com',
+      actor: 'Noah',
+      source: 'admin-api',
+      at: '2026-10-20T00:00:00.000Z',
+    },
   }
   const { container, dom, requests } = await render(configured)
   expect(container.textContent).toContain('Configured here.')

@@ -19,8 +19,17 @@ test('unchanged and cleared addresses', () => {
     relayReconnectRequired: false,
   })
   const cleared = computePublicAppUrlChangeImpact('https://a.example', undefined, '')
-  expect(cleared).toMatchObject({ originChanged: true, relayReconnectRequired: true, mobileReady: false, basePathMismatch: false })
-  expect(cleared.webhooks[0]).toEqual({ label: 'GitHub webhook', before: 'https://a.example/api/webhooks/github', after: null })
+  expect(cleared).toMatchObject({
+    originChanged: true,
+    relayReconnectRequired: true,
+    mobileReady: false,
+    basePathMismatch: false,
+  })
+  expect(cleared.webhooks[0]).toEqual({
+    label: 'GitHub webhook',
+    before: 'https://a.example/api/webhooks/github',
+    after: null,
+  })
 })
 
 test('http addresses are not mobile-ready', () => {
