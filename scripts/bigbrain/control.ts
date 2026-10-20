@@ -412,11 +412,15 @@ export async function controlMain(args: string[]): Promise<void> {
     }
     reply = await dispatchHostRequest(input, { run })
     if (!reply.ok) {
-      const { mkdir, writeFile } = await import('node:fs/promises')
-      await mkdir('/run/ficus-bigbrain', { mode: 0o755, recursive: true }).catch(() => {})
-      await writeFile('/run/ficus-bigbrain/control-last-failure', `${reply.code}: ${trail.slice(-8).join(' | ')}\n`, {
-        mode: 0o600,
-      }).catch(() => {})
+      const { writeFile } = await import('node:fs/promises')
+      // The control unit's only writable state is /etc and /var/lib/ficus-bigbrain (root-only).
+      await writeFile(
+        '/var/lib/ficus-bigbrain/control/last-failure',
+        `${reply.code}: ${trail.slice(-8).join(' | ')}\n`,
+        {
+          mode: 0o600,
+        }
+      ).catch(() => {})
     }
   } catch (error) {
     reply = failure('00000000-0000-4000-8000-000000000000', error)

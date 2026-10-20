@@ -63,7 +63,7 @@ function helper(fields: Record<string, unknown>) {
     if (reply?.ok === false)
       reply.stderr = [
         out.stderr.trim().split('\n').slice(-3).join(' | '),
-        sh(['/bin/cat', '/run/ficus-bigbrain/control-last-failure']).stdout.trim(),
+        sh(['/bin/cat', '/var/lib/ficus-bigbrain/control/last-failure']).stdout.trim(),
       ].join(' || ')
     return reply
   } catch {
