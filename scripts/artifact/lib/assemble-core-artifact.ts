@@ -138,6 +138,9 @@ const LAYOUT: { path: string; kind: 'file' | 'dir' | 'generated'; contents?: str
   { path: 'config', kind: 'dir' },
   // Prebuilt machine-host bundles (build-machine-bundles.ts wrote these).
   { path: 'machine', kind: 'dir' },
+  // Managed BigBrain host runtime (scripts/bigbrain/build-artifact.ts): verified bundles,
+  // provenance and corresponding source. Installed only on hosts that enable the feature.
+  { path: 'bigbrain', kind: 'dir' },
 ]
 
 /** Junk the host filesystem sprinkles in that must never reach the digest. */

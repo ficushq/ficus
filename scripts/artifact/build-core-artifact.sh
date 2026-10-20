@@ -163,6 +163,13 @@ echo "==> machine bundles" >&2
 rm -rf "$REPO_ROOT/machine"
 bun scripts/artifact/build-machine-bundles.ts "$REPO_ROOT/machine"
 
+# --- managed BigBrain host runtime ---
+# Pinned upstream + Ficus host code as JS bundles for the host's pinned Bun, with
+# provenance and corresponding source. Fresh each run; never merged into a prior output.
+echo "==> managed BigBrain runtime" >&2
+rm -rf "$REPO_ROOT/bigbrain"
+bun scripts/bigbrain/build-artifact.ts --out-dir "$REPO_ROOT/bigbrain"
+
 # --- assemble ---
 ASSEMBLE_ARGS=(--checkout "$REPO_ROOT" --commit "$COMMIT" --out-dir "$OUT_DIR")
 # `if` blocks, not `cond && append`: under `set -e` a false one-line `&&`

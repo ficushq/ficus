@@ -47,6 +47,8 @@ apps/web/.test-artifacts/
 
 # artifact-builder output: prebuilt machine-host bundles (never commit)
 /machine/
+# artifact-builder output: managed BigBrain host runtime (never commit)
+/bigbrain/
 
 # editor swap files
 *.swp
