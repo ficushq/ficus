@@ -47,7 +47,7 @@ class DatabaseIsolationTests(unittest.TestCase):
         agent.database = "owned-db"
         agent.network = "unused-network"
         args = agent.database_network_args()
-        self.assertEqual(agent.database_host, "127.0.0.1")
+        self.assertEqual(agent.database_host, "owned-db")
         self.assertEqual(args[:2], ["--network", "container:owned-container"])
         self.assertNotIn("unused-network", args)
         self.assertEqual(args[args.index("--cpus") + 1], "0.5")

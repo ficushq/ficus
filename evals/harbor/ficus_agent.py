@@ -124,7 +124,7 @@ class FicusSquad(BaseAgent):
 
     @property
     def database_host(self):
-        return "127.0.0.1" if self.database_network == "task" else self.database
+        return self.database
 
     def database_network_args(self):
         # Sharing the task namespace keeps DB traffic on loopback and preserves
@@ -208,6 +208,14 @@ class FicusSquad(BaseAgent):
         self.container = (
             await docker("inspect", "--format", "{{.Id}}", hostname)
         ).strip()
+        if self.database_network == "task":
+            # Retain the disposable DB identity required by the frozen native
+            # provider guard; resolve it only on this task's loopback interface.
+            await self.checked(
+                environment,
+                f"printf %s {shlex.quote('127.0.0.1 ' + self.database + chr(10))} >> /etc/hosts",
+                user="root",
+            )
         task_path = (await self.checked(environment, 'printf "%s" "$PATH"')).strip()
         self.env = {
             "FICUS_HARBOR_TRIAL": "1",

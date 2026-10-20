@@ -12,6 +12,11 @@ class FicusNetworkSmoke(FicusSquad):
     async def run(self, instruction, environment, context):
         # Infrastructure only: never seed work or invoke a model.
         result = {}
+        assert self.model_api == "openai-responses", (
+            "Smoke must exercise the frozen native provider"
+        )
+        self.env["FICUS_HARBOR_MODEL_API"] = self.model_api
+        self.env["FICUS_HARBOR_BASE_URL"] = "http://host.docker.internal:18765/v1"
         try:
             password = urlsplit(self.env["DATABASE_URL"]).password
             await docker(
@@ -70,14 +75,19 @@ class FicusNetworkSmoke(FicusSquad):
             await self.start_process(environment, "apps/core/src/index.ts", "api")
             await self.ready(environment, 17300)
             result["ficus_api_ready"] = True
+            await self.start_process(environment, "apps/core/src/worker.ts", "worker")
+            await self.ready(environment, 17302)
+            result["ficus_worker_ready"] = True
+            result["native_provider_preload"] = True
             context.metadata = result
         finally:
             (self.logs_dir / "network-smoke.json").write_text(
                 json.dumps(result, indent=2) + "\n"
             )
-            await environment.exec(
-                f"if test -f {ROOT}/api.pid; then kill -TERM -- -$(cat {ROOT}/api.pid); fi"
-            )
+            for name in ("worker", "api"):
+                await environment.exec(
+                    f"if test -f {ROOT}/{name}.pid; then kill -TERM -- -$(cat {ROOT}/{name}.pid); fi"
+                )
             await docker("rm", "-f", "-v", self.database, check=False)
 
 

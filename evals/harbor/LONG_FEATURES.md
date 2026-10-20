@@ -95,3 +95,16 @@ The budget proxy keeps the existing ledger and accepts `--client-cap-usd 10`
 for the four named clients. Launch each arm through `run-pilot.py` with
 `--restricted-network`, its own client/job name, and the pinned task directory.
 The final run manifest records input and control hashes before the first call.
+
+## Native startup recovery
+
+The original Ficus launch stopped before any model request: the frozen native
+provider guard requires the disposable database hostname, while the first
+restricted-network adapter used a raw loopback hostname. The earlier transport
+smoke did not enable the native preload and therefore missed this mismatch.
+The adapter now resolves its owned disposable DB hostname to loopback inside
+only the task container. The native provider guard and runtime archive stay
+unchanged. The corrected smoke explicitly enables that preload and checks both
+API and worker readiness without seeding any work or making inference calls.
+`long-feature-v1-recovery.json` preserves the original manifest/failure hashes
+and freezes this zero-inference repair before the matched model attempts.
