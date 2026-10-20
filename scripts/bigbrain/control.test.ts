@@ -119,6 +119,7 @@ async function fixture(options: { backupTimer?: boolean; gateway?: boolean } = {
     return { code: 0, stdout: '' }
   }
   const deps = {
+    ingress: async () => void trace.push('ingress'),
     root,
     etc,
     uid,
@@ -178,6 +179,7 @@ test('suspend persists the new epoch/effect before stopping ingress and vaults; 
   const suspend = envelope({ action: 'suspend-tenant', hostEpoch: 2, previousHostEpoch: 1, effectId: EFFECT })
   expect(await dispatchHostRequest(suspend, f.deps)).toMatchObject({ ok: true, hostEpoch: 2, completed: true })
   expect(f.trace).toEqual([
+    'ingress',
     `stop:${GATEWAY_UNIT}`,
     `stop:ficus-bigbrain@${A}.service`,
     `stop:ficus-bigbrain@${B}.service`,
@@ -201,7 +203,7 @@ test('suspend persists the new epoch/effect before stopping ingress and vaults; 
     effectId: '88888888-8888-4888-8888-888888888888',
   })
   expect(await dispatchHostRequest(resume, f.deps)).toMatchObject({ ok: true, hostEpoch: 3 })
-  expect(f.trace).toEqual([`start:${GATEWAY_UNIT}`, `start:ficus-bigbrain@${A}.service`])
+  expect(f.trace).toEqual([`start:${GATEWAY_UNIT}`, `start:ficus-bigbrain@${A}.service`, 'ingress'])
   expect(await host(f)).toMatchObject({ hostEpoch: 3, hostState: 'active' })
 })
 
@@ -249,7 +251,7 @@ test('restore-fence closes ingress, advances the epoch and returns only the veri
   const fence = envelope({ action: 'restore-fence', hostEpoch: 2, previousHostEpoch: 1, effectId: EFFECT })
   // Nothing staged: the fence still closes ingress but cannot invent an inventory.
   expect(await dispatchHostRequest(fence, f.deps)).toMatchObject({ ok: false, code: 'storage_unavailable' })
-  expect(f.trace[0]).toBe(`stop:${GATEWAY_UNIT}`)
+  expect(f.trace.slice(0, 2)).toEqual(['ingress', `stop:${GATEWAY_UNIT}`])
   expect(await host(f)).toMatchObject({ hostEpoch: 2, effect: { action: 'restore-fence', completed: true } })
 })
 

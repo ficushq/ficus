@@ -18,6 +18,8 @@ export interface DeleteOptions {
   run?: PrivateCommandRunner
   mountinfo?: () => Promise<string>
   removeIdentity?: (key: ManagedIdentityKey, identity: ManagedIdentity) => Promise<void>
+  /** Runs after the tombstone intent is durable and before any unit stops (unpublish ingress). */
+  beforeStop?: () => Promise<unknown>
 }
 
 async function present(path: string): Promise<boolean> {

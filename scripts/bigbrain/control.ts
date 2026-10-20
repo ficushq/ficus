@@ -20,8 +20,11 @@ import { runPrivateCommand, type PrivateCommandRunner } from './process'
 import { reconcileMaintenance, releaseManagedBackup, stageManagedBackup } from './backup'
 import { deleteVaultResources, type DeleteOptions } from './delete'
 import { readStagedArchive } from './restore'
+import { publishIngress } from './ingress'
 
 export const GATEWAY_UNIT = 'ficus-bigbrain-gateway.service'
+const ingress = (deps: ControlDeps) =>
+  (deps.ingress ?? (() => publishIngress({ root: deps.root, etc: deps.etc, uid: deps.uid, run: deps.run })))()
 const RETRYABLE = new Set<ManagedBigbrainErrorCode>(['busy', 'maintenance', 'upstream_unavailable', 'operation_failed'])
 
 export interface ControlDeps extends Omit<DeleteOptions, 'root' | 'uid'> {
@@ -31,6 +34,8 @@ export interface ControlDeps extends Omit<DeleteOptions, 'root' | 'uid'> {
   run?: PrivateCommandRunner
   now?: () => number
   verifyStorage?: (record: ControlReceipt) => Promise<void>
+  /** Re-derive routes + Caddy sites from current state (default publishIngress). */
+  ingress?: () => Promise<unknown>
 }
 
 async function present(path: string): Promise<boolean> {
@@ -148,6 +153,8 @@ async function hostEffect(
   })
   if (!replay || !host.effect!.completed)
     await writePrivateJson(etc, 'host.json', pending, installedHostSchema, { uid })
+  // Public sites/routes follow the new host state first: nothing new is admitted while stopping.
+  if (request.action !== 'resume-tenant') await ingress(deps)
   const vaults = await records(root, uid)
   const unit = (r: ControlReceipt) => managedPaths({ vaultId: r.receipt.vaultId }).unit
   if (request.action === 'resume-tenant') {
@@ -163,6 +170,7 @@ async function hostEffect(
       if (c !== 0 && c !== 5) throw new Error('operation_failed')
     }
   }
+  if (request.action === 'resume-tenant') await ingress(deps)
   const done = installedHostSchema.parse({ ...pending, effect: { ...pending.effect!, completed: true } })
   await writePrivateJson(etc, 'host.json', done, installedHostSchema, { uid })
   return done
@@ -196,7 +204,10 @@ async function deleteVault(request: Extract<ManagedBigbrainHostRequest, { action
     const paths = managedPaths({ vaultId: request.vaultId, root: deps.root })
     await writePrivateJson(paths.control, 'receipt.json', record, controlReceiptSchema, { uid: deps.uid })
   } else if (record.operation.action !== 'delete') throw new Error('request_conflict')
-  return deleteVaultResources(record, { ...deps })
+  // Unpublish first (route/site derive from the now-deleting receipt), then remove resources.
+  const tombstone = await deleteVaultResources(record, { ...deps, beforeStop: () => ingress(deps) })
+  await ingress(deps)
+  return tombstone
 }
 
 /** One admitted request -> one bounded reply. The caller (fixed root launcher) holds the host
