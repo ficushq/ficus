@@ -117,3 +117,15 @@ test('rejects unit specifier/newline injection, foreign vault origins, tampered 
   ])
     await expect(renderVaultUnits(bad)).rejects.toThrow('invalid_request')
 })
+
+// Only internal fixture mapping; the external helper request schema has no path field.
+test('fixture namespace is explicit and remains bound to its own recorded reservation', async () => {
+  const root = '/tmp/ficus-bigbrain-fixture'
+  const mapped = { ...reservation, mount: `${root}/vaults/${id}`, image: `${root}/volumes/${id}.img` }
+  await expect(renderVaultUnits({ ...input, reservation: mapped })).rejects.toThrow('invalid_request')
+  const units = await renderVaultUnits({ ...input, reservation: mapped, root })
+  expect(units.mount).toContain(`Where=${mapped.mount}`)
+  await expect(renderVaultUnits({ ...input, reservation: mapped, root: '/tmp/other' })).rejects.toThrow(
+    'invalid_request'
+  )
+})

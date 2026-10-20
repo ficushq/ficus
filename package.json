@@ -111,7 +111,7 @@
     "brand:generate": "bun run scripts/brand/generate.ts",
     "brand:social": "bun run scripts/brand/social-preview.ts",
     "brand:app-store": "bun run scripts/brand/app-store.ts",
-    "test:bigbrain-host": "cd scripts/bigbrain && bun ../../scripts/test-runner.ts artifact.test.ts control-input.test.ts storage.test.ts units.test.ts receipts.test.ts secure-files.test.ts gateway.test.ts gateway.process.test.ts gateway-manifest.test.ts gateway-directory.test.ts owner-link.test.ts invite-cache.test.ts process.test.ts preflight.test.ts accounts.test.ts volume-image.test.ts"
+    "test:bigbrain-host": "cd scripts/bigbrain && bun ../../scripts/test-runner.ts artifact.test.ts control-input.test.ts storage.test.ts units.test.ts receipts.test.ts secure-files.test.ts gateway.test.ts gateway.process.test.ts gateway-manifest.test.ts gateway-directory.test.ts owner-link.test.ts invite-cache.test.ts process.test.ts preflight.test.ts accounts.test.ts volume-image.test.ts unit-assets.test.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9",

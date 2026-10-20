@@ -3,12 +3,11 @@ import { mkdtemp, open, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { managedPaths } from './paths'
-import { controlReceiptSchema, type ControlReceipt } from './receipts'
-import { planVaultStorage } from './storage'
+import { controlReceiptSchema } from './receipts'
 import { managedIdentityNames } from './accounts'
 import { writePrivateJson, ensureOwnedDirectory, readPrivateJson } from './secure-files'
 import { initializeStorageNamespace, prepareVaultImage, imageJournalSchema } from './volume-image'
-import { MANAGED_BIGBRAIN_UPSTREAM_COMMIT } from '../../packages/shared/src/managed-bigbrain'
+import { reservedVaultFixture } from './host-test-fixtures'
 import type { PrivateCommandRunner } from './process'
 const roots: string[] = []
 afterEach(async () => {
@@ -26,36 +25,7 @@ async function fixture() {
   await initializeStorageNamespace(options)
   const paths = managedPaths({ vaultId, root })
   await ensureOwnedDirectory(paths.control, 0o700, { uid })
-  const record = controlReceiptSchema.parse({
-    schema: 1,
-    phase: 'reserved',
-    displayName: 'Research',
-    owner: { userId: tenantId, handle: 'ada', display: 'Ada' },
-    operation: { requestId: binding, action: 'create', inputHash: `sha256:${'a'.repeat(64)}`, expectedGeneration: 0 },
-    receipt: {
-      receiptId: binding,
-      tenantId,
-      physicalHostBinding: binding,
-      vaultId,
-      hostEpoch: 1,
-      generation: 1,
-      upstreamVaultId: null,
-      state: 'provisioning',
-      upstreamCommit: MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
-      artifactDigest: `sha256:${'b'.repeat(64)}`,
-      localPort: 30000,
-      origin: `https://bb-${vaultId.replaceAll('-', '')}.example.com`,
-      readAccess: 'pending',
-    },
-    storage: planVaultStorage({
-      vaultId,
-      root,
-      existing: [],
-      freeDiskBytes: 6 * 1024 ** 3,
-      policy: { maxVaults: 2, perVaultDiskBytes: 16 * 1024 ** 2, minCoreFreeDiskBytes: 2 * 1024 ** 3 },
-    }),
-    os: null,
-  })
+  const record = reservedVaultFixture(root)
   await writePrivateJson(paths.control, 'receipt.json', record, controlReceiptSchema, { uid })
   const names = managedIdentityNames({ tenantId, physicalHostBinding: binding, vaultId })
   let account = false

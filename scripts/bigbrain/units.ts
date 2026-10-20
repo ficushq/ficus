@@ -31,9 +31,11 @@ export async function renderVaultUnits(input: {
   reservation: StorageReservation
   artifactDigest: string
   origin: string
+  /** Fixture/operator-only mapping; never sourced from a helper/API request. */
+  root?: string
 }) {
   const r = input.reservation
-  const paths = managedPaths({ vaultId: r.vaultId })
+  const paths = managedPaths({ vaultId: r.vaultId, root: input.root })
   const zone = input.origin.slice('https://bb-'.length + 33)
   if (
     r.username !== `bbv_${r.vaultId.replaceAll('-', '').slice(0, 24)}` ||

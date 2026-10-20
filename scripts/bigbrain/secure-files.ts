@@ -35,6 +35,9 @@ async function openPrivateDirectory(path: string, uid: number, privateLeaf = tru
 function checkedName(name: string): void {
   if (!fileName.test(name) || name === '.' || name === '..') throw new Error()
 }
+function checkedAssetName(name: string): void {
+  if (!/^[a-zA-Z0-9_@][a-zA-Z0-9_.@\\-]{0,254}$/.test(name) || name === '.' || name === '..') throw new Error()
+}
 function checkedBudget(value: number): void {
   if (!Number.isSafeInteger(value) || value < 1 || value > 16384) throw new Error()
 }
@@ -89,11 +92,18 @@ export async function openPrivateFile(
 ): Promise<FileHandle> {
   return openOwnedFile(directory, name, options.uid ?? 0, true)
 }
-async function openOwnedFile(directory: string, name: string, uid: number, privateFile: boolean): Promise<FileHandle> {
+async function openOwnedFile(
+  directory: string,
+  name: string,
+  uid: number,
+  privateFile: boolean,
+  assetName = false
+): Promise<FileHandle> {
   let dir: FileHandle | undefined
   let file: FileHandle | undefined
   try {
-    checkedName(name)
+    if (assetName) checkedAssetName(name)
+    else checkedName(name)
     dir = await openPrivateDirectory(directory, uid, privateFile)
     file = await open(`/proc/self/fd/${dir.fd}/${name}`, FILE_FLAGS)
     const info = await file.stat()
@@ -140,18 +150,32 @@ async function readOwnedJson<T>(
     const maxBytes = options.maxBytes ?? 16384
     checkedBudget(maxBytes)
     file = await openOwnedFile(directory, name, options.uid ?? 0, privateFile)
-    const info = await file.stat()
-    if (info.size > maxBytes) throw new Error()
-    const buffer = Buffer.alloc(maxBytes + 1)
-    let offset = 0
-    while (offset < buffer.length) {
-      const { bytesRead } = await file.read(buffer, offset, buffer.length - offset, offset)
-      if (bytesRead === 0) break
-      offset += bytesRead
-    }
-    if (offset > maxBytes) throw new Error()
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, offset))
-    return schema.parse(JSON.parse(text))
+    return schema.parse(JSON.parse(await boundedText(file, maxBytes)))
+  } catch {
+    throw new Error('storage_unavailable')
+  } finally {
+    await file?.close().catch(() => {})
+  }
+}
+
+async function boundedText(file: FileHandle, maxBytes: number): Promise<string> {
+  checkedBudget(maxBytes)
+  if ((await file.stat()).size > maxBytes) throw new Error()
+  const buffer = Buffer.alloc(maxBytes + 1)
+  let offset = 0
+  while (offset < buffer.length) {
+    const { bytesRead } = await file.read(buffer, offset, buffer.length - offset, offset)
+    if (bytesRead === 0) break
+    offset += bytesRead
+  }
+  if (offset > maxBytes) throw new Error()
+  return new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, offset))
+}
+export async function readPublicText(directory: string, name: string, options: Options = {}): Promise<string> {
+  let file: FileHandle | undefined
+  try {
+    file = await openOwnedFile(directory, name, options.uid ?? 0, false, true)
+    return await boundedText(file, options.maxBytes ?? 16384)
   } catch {
     throw new Error('storage_unavailable')
   } finally {
@@ -202,7 +226,7 @@ export async function writePublicText(
   options: Options = {}
 ): Promise<void> {
   try {
-    if (!/^[a-zA-Z0-9_@][a-zA-Z0-9_.@\\-]{0,254}$/.test(name) || name === '.' || name === '..') throw new Error()
+    checkedAssetName(name)
     await writeOwnedBytes(directory, name, Buffer.from(text), 0o644, options)
   } catch {
     throw new Error('storage_unavailable')

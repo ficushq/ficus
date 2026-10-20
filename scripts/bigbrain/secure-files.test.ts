@@ -9,6 +9,7 @@ import {
   readPublicJson,
   writePublicJson,
   writePublicText,
+  readPublicText,
   ensureOwnedDirectory,
   openPrivateFile,
 } from './secure-files'
@@ -60,6 +61,7 @@ test('public routes and generated unit text are atomically root-owned0644, never
   await writePublicText(root, name, '[Mount]\\n', { uid })
   const first = await stat(join(root, name))
   expect(first.mode & 0o777).toBe(0o644)
+  expect(await readPublicText(root, name, { uid })).toBe('[Mount]\\n')
   await writePublicText(root, name, '[Unit]\\n', { uid })
   expect((await stat(join(root, name))).ino).not.toBe(first.ino)
   await link(join(root, name), join(root, 'linked.mount'))
