@@ -4,7 +4,7 @@ import { lstat, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
 import { readPrivateJson } from './secure-files'
-import { noteStage } from './diagnostics'
+import { drainStages, noteStage, refuse } from './diagnostics'
 import { installedHostSchema } from './control-input'
 import { controlReceiptSchema } from './receipts'
 import { managedPaths } from './paths'
@@ -308,7 +308,9 @@ export async function verifyRecordedVaultStorage(
 ): Promise<void> {
   const paths = managedPaths({ vaultId, root: options.root })
   const fs = { uid: options.uid }
+  noteStage('storage_read_receipt')
   const record = await readPrivateJson(paths.control, 'receipt.json', controlReceiptSchema, fs)
+  noteStage('storage_read_host')
   const host = await readPrivateJson(options.etc ?? '/etc/ficus/bigbrain', 'host.json', installedHostSchema, fs)
   const os = record.os
   if (
@@ -321,7 +323,7 @@ export async function verifyRecordedVaultStorage(
     ['deleted', 'deleting', 'reserved'].includes(record.phase) ||
     !os
   )
-    throw new Error('storage_unavailable')
+    refuse('storage_unavailable', 'storage_record_mismatch')
   const image = await lstat(paths.image)
   if (
     !image.isFile() ||
@@ -332,7 +334,8 @@ export async function verifyRecordedVaultStorage(
     image.dev !== os.imageDevice ||
     image.ino !== os.imageInode
   )
-    throw new Error('storage_unavailable')
+    refuse('storage_unavailable', 'storage_image_mismatch')
+  noteStage('storage_image_ok')
   verifyVaultMount(
     { mount: paths.mount, device: os.mountDevice, filesystem: 'ext4' },
     await (options.mountinfo ?? (() => readFile('/proc/1/mountinfo', 'utf8')))()
@@ -345,14 +348,16 @@ export async function verifyRecordedVaultStorage(
     'NAME,BACK-FILE,BACK-INO,BACK-MAJ:MIN',
     `/dev/loop${os.mountDevice.slice(2)}`,
   ])
-  if (loop.code !== 0) throw new Error('storage_unavailable')
+  noteStage('storage_mount_ok')
+  if (loop.code !== 0) refuse('storage_unavailable', 'storage_loop_list_failed')
   verifyLoopBacking(
     { device: os.mountDevice, image: paths.image, inode: os.imageInode, imageDevice: os.imageDevice },
     JSON.parse(loop.stdout)
   )
+  noteStage('storage_loop_ok')
   const mounted = await lstat(paths.mount)
   if (!mounted.isDirectory() || mounted.uid !== os.uid || mounted.gid !== os.gid || (mounted.mode & 0o777) !== 0o700)
-    throw new Error('storage_unavailable')
+    refuse('storage_unavailable', 'storage_mount_owner_mismatch')
 }
 
 /** Every role runs as `/usr/local/bin/bun <release>/ficus-bigbrain-host.js`: the running
@@ -465,7 +470,9 @@ export async function preflightMain(args: string[]): Promise<void> {
     const reason = error instanceof Error && /^[a-z_]{1,40}$/.test(error.message) ? error.message : 'unexpected'
     console.error(`Managed BigBrain isolation preflight refused at ${stage.name} (${reason})`)
     // Units discard stdio; leave the fixed stage/reason tokens where only root can read them.
-    await recordPreflightRefusal(args[0] ?? 'unknown', `${stage.name} (${reason})`).catch(() => {})
+    await recordPreflightRefusal(args[0] ?? 'unknown', `${stage.name} (${reason}) ${drainStages().join('>')}`).catch(
+      () => {}
+    )
     process.exitCode = 1
   }
 }
