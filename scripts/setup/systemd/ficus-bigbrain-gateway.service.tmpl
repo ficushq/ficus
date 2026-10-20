@@ -36,7 +36,8 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 IPAddressDeny=any
 IPAddressAllow=localhost
 TemporaryFileSystem=/etc/ficus:ro
-BindReadOnlyPaths=/etc/ficus/bigbrain/routes.json
+# Bind the public directory, not the route inode: root publishes with atomic rename.
+BindReadOnlyPaths=/etc/ficus/bigbrain/public
 InaccessiblePaths=-/var/lib/ficus-bigbrain -/etc/ficus-core -/var/lib/ficus-core -/var/lib/ficus -/opt/ficus-core -/opt/ficus-machine
 MemoryMax=134217728
 MemorySwapMax=0

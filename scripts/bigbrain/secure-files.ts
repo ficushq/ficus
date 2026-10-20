@@ -12,7 +12,7 @@ type Options = { uid?: number; maxBytes?: number }
 /** Descriptor-relative, no-follow walk. Host runtime is Linux-only. Root/ancestors must be
  * operator-owned and not writable by another user (root-owned sticky /tmp supports fixtures).
  */
-async function openPrivateDirectory(path: string, uid: number): Promise<FileHandle> {
+async function openPrivateDirectory(path: string, uid: number, privateLeaf = true): Promise<FileHandle> {
   if (process.platform !== 'linux' || !isAbsolute(path) || resolve(path) !== path || path === '/') throw new Error()
   let directory = await open('/', DIRECTORY_FLAGS)
   try {
@@ -25,7 +25,7 @@ async function openPrivateDirectory(path: string, uid: number): Promise<FileHand
       if ((info.uid !== 0 && info.uid !== uid) || ((info.mode & 0o022) !== 0 && !stickyRoot)) throw new Error()
     }
     const leaf = await directory.stat()
-    if (leaf.uid !== uid || (leaf.mode & 0o077) !== 0) throw new Error()
+    if (leaf.uid !== uid || (leaf.mode & (privateLeaf ? 0o077 : 0o022)) !== 0) throw new Error()
     return directory
   } catch (error) {
     await directory.close().catch(() => {})
@@ -45,6 +45,27 @@ export async function readPrivateJson<T>(
   schema: z.ZodType<T>,
   options: Options = {}
 ): Promise<T> {
+  return readOwnedJson(directory, name, schema, options, true)
+}
+
+/** Nonsecret root-written JSON; shares the full descriptor-relative nofollow walk, but
+ * requires mode0644 and an owner-writable-only directory. No private auth-file fallback.
+ */
+export async function readPublicJson<T>(
+  directory: string,
+  name: string,
+  schema: z.ZodType<T>,
+  options: Options = {}
+): Promise<T> {
+  return readOwnedJson(directory, name, schema, options, false)
+}
+async function readOwnedJson<T>(
+  directory: string,
+  name: string,
+  schema: z.ZodType<T>,
+  options: Options,
+  privateFile: boolean
+): Promise<T> {
   let dir: FileHandle | undefined
   let file: FileHandle | undefined
   try {
@@ -52,10 +73,16 @@ export async function readPrivateJson<T>(
     const uid = options.uid ?? 0
     const maxBytes = options.maxBytes ?? 16384
     checkedBudget(maxBytes)
-    dir = await openPrivateDirectory(directory, uid)
+    dir = await openPrivateDirectory(directory, uid, privateFile)
     file = await open(`/proc/self/fd/${dir.fd}/${name}`, FILE_FLAGS)
     const info = await file.stat()
-    if (!info.isFile() || info.nlink !== 1 || info.uid !== uid || (info.mode & 0o777) !== 0o600 || info.size > maxBytes)
+    if (
+      !info.isFile() ||
+      info.nlink !== 1 ||
+      info.uid !== uid ||
+      (info.mode & 0o777) !== (privateFile ? 0o600 : 0o644) ||
+      info.size > maxBytes
+    )
       throw new Error()
     const buffer = Buffer.alloc(maxBytes + 1)
     let offset = 0

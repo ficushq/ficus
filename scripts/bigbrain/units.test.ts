@@ -56,7 +56,9 @@ test('aggregate cgroup includes gateway and caps combined CPU/memory; gateway ca
   expect(gateway).toContain('Slice=ficus-bigbrain.slice')
   expect(gateway).toContain('User=ficus-bb-gateway')
   expect(gateway).toContain('InaccessiblePaths=-/var/lib/ficus-bigbrain')
-  expect(gateway).toContain('BindReadOnlyPaths=/etc/ficus/bigbrain/routes.json')
+  // Binding a file pins its old inode: atomic route updates would never be visible.
+  expect(gateway).toContain('BindReadOnlyPaths=/etc/ficus/bigbrain/public\n')
+  expect(gateway).not.toContain('BindReadOnlyPaths=/etc/ficus/bigbrain/public/routes.json')
   expect(gateway).not.toContain('{{')
 })
 test('rejects unit specifier/newline injection, foreign vault origins, tampered account/path/port and digest', async () => {
