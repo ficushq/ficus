@@ -295,6 +295,8 @@ export const managedBigbrainRestoreGrantSchema = z
         disposition: z.literal('restore'),
         upstreamVaultId: uuid,
         generation: positive,
+        // Platform-authoritative current name; the archive's name is lineage only.
+        displayName: label,
         owner: managedBigbrainOwnerSchema,
         origin: originSchema,
         readAccess: z.literal('revoked'),

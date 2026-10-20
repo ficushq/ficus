@@ -104,9 +104,15 @@ export async function proveNoInetSockets(probe: InetProbe = inetProbe): Promise<
     } catch (error) {
       const code = error && typeof error === 'object' && 'code' in error ? error.code : null
       if (code === 'EAFNOSUPPORT' || code === 'EACCES' || code === 'EPERM') continue
-      throw new Error(
-        typeof code === 'string' && /^E[A-Z]{2,15}$/.test(code) ? `inet_${code.toLowerCase()}` : 'inet_error'
-      )
+      // Fixed-alphabet token of whatever the runtime reported, for operators.
+      const token =
+        typeof code === 'string'
+          ? code
+              .toLowerCase()
+              .replace(/[^a-z]/g, '_')
+              .slice(0, 28)
+          : 'nocode'
+      throw new Error(`inet_${family}_${token}`.replace(/[0-9]/g, ''))
     }
     await opened.close()
     throw new Error('inet_allowed')
@@ -414,6 +420,18 @@ export async function sandboxMain(args: string[]): Promise<void> {
   } catch (error) {
     const reason = error instanceof Error && /^[a-z_]{1,40}$/.test(error.message) ? error.message : 'unexpected'
     console.error(`Managed BigBrain sandbox self-check refused at ${stage.name} (${reason})`)
+    // stdio is discarded by the unit; leave fixed tokens in the service's own socket directory.
+    const target = args[0] ?? ''
+    const dir =
+      target === 'gateway'
+        ? `${RUN_ROOT}/gateway`
+        : /^[0-9a-f-]{36}$/.test(target)
+          ? `${RUN_ROOT}/vaults/${target}`
+          : null
+    if (dir) {
+      const { writeFile } = await import('node:fs/promises')
+      await writeFile(`${dir}/sandbox.reason`, `${stage.name} (${reason})\n`, { mode: 0o600 }).catch(() => {})
+    }
     process.exitCode = 1
   }
 }

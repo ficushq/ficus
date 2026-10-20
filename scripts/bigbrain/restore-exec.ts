@@ -141,7 +141,9 @@ export async function executeRestore(request: RestoreRequest, deps: RestoreDeps)
         controlReceiptSchema.parse({
           schema: 1,
           phase: 'reserved',
-          displayName: displayNames.get(grant.vaultId),
+          // Platform's current name; the archived name is lineage only (a rename after the
+          // backup must not resurrect the old one and strand a later name-confirmed delete).
+          displayName: grant.displayName,
           owner: grant.owner,
           operation: {
             requestId: request.requestId,

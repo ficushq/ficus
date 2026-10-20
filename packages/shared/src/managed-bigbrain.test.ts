@@ -76,6 +76,7 @@ const grant = {
   disposition: 'restore',
   upstreamVaultId: other,
   generation: 2,
+  displayName: 'Research',
   owner,
   origin,
   readAccess: 'revoked',
@@ -464,5 +465,16 @@ describe('managed BigBrain host installation config', () => {
       { ...enabled, artifactPath: '/tmp/x' },
     ])
       expect(contract.managedBigbrainHostConfigSchema.safeParse(bad).success).toBe(false)
+  })
+})
+
+describe('restore grants carry the Platform-authoritative name', () => {
+  test('a restore grant without the current displayName is refused; the archive name is never authority', () => {
+    const { displayName: _name, ...withoutName } = grant
+    expect(contract.managedBigbrainRestoreGrantSchema.safeParse(withoutName).success).toBe(false)
+    expect(contract.managedBigbrainRestoreGrantSchema.safeParse({ ...grant, displayName: ' padded ' }).success).toBe(
+      false
+    )
+    expect(contract.managedBigbrainRestoreGrantSchema.safeParse(grant).success).toBe(true)
   })
 })

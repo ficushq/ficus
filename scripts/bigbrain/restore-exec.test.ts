@@ -161,6 +161,7 @@ async function fixture(options: { storedIdentityForA?: string } = {}) {
     disposition: 'restore',
     upstreamVaultId,
     generation: 4,
+    displayName: 'Renamed after backup',
     owner,
     origin: `https://bb-${hex(vaultId)}.example.com`,
     readAccess: 'revoked',
@@ -179,6 +180,8 @@ test('restores only granted vaults on fresh local storage, keeps upstream identi
   const [restored] = await executeRestore(f.request, f.deps)
   expect(restored).toMatchObject({
     phase: 'ready',
+    // Platform's current name wins over the archived one (lineage only).
+    displayName: 'Renamed after backup',
     receipt: {
       vaultId: A,
       physicalHostBinding: NEW_BINDING,

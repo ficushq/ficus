@@ -40,8 +40,8 @@ test('the live process must be refused every IPv4/IPv6 TCP and UDP socket; a col
   })
   expect(families).toEqual(['tcp4', 'tcp6', 'udp4'])
   for (const [code, reason] of [
-    ['EADDRINUSE', 'inet_eaddrinuse'],
-    ['UNKNOWN', 'inet_error'],
+    ['EADDRINUSE', 'inet_tcp_eaddrinuse'],
+    ['UNKNOWN', 'inet_tcp_unknown'],
   ])
     await expect(
       proveNoInetSockets(async () => {

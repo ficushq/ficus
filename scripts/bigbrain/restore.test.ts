@@ -162,6 +162,7 @@ test('grants must cover every archived ID once, keep upstream identity, advance 
     disposition: 'restore',
     upstreamVaultId: UPSTREAM,
     generation: 4,
+    displayName: 'Research',
     owner: { userId: TENANT, handle: 'ada', display: 'Ada' },
     origin: `https://bb-${A.replaceAll('-', '')}.example.com`,
     readAccess: 'revoked',

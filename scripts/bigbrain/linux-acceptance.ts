@@ -198,7 +198,20 @@ try {
   check('toolkit install created the host record', host().hostEpoch === 1)
   const launcher = sh(['/usr/bin/stat', '-c', '%U:%G:%a', '/usr/local/libexec/ficus-bigbrainctl']).stdout.trim()
   check('launcher is root-only (root:root 750)', launcher === 'root:root:750', launcher)
-  const reason = (target: string) => sh(['/bin/cat', `/run/ficus-bigbrain/preflight-${target}.reason`]).stdout.trim()
+  const reason = (target: string) =>
+    [
+      sh(['/bin/cat', `/run/ficus-bigbrain/preflight-${target}.reason`]).stdout.trim(),
+      sh([
+        '/bin/cat',
+        target === 'gateway'
+          ? '/run/ficus-bigbrain/gateway/sandbox.reason'
+          : `/run/ficus-bigbrain/vaults/${target}/sandbox.reason`,
+      ]).stdout.trim(),
+      unitProperty(
+        target === 'gateway' ? 'ficus-bigbrain-gateway.service' : `ficus-bigbrain@${target}.service`,
+        'Result'
+      ),
+    ].join(' | ')
   check(
     'gateway service active',
     unitProperty('ficus-bigbrain-gateway.service', 'ActiveState') === 'active',
