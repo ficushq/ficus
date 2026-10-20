@@ -1270,7 +1270,9 @@ phase_restore() {
   restore_unpack_archive "${archive}" "${passfile}" "${workdir}"
   # Before anything else reads the envelope: managed vaults (if any) are checked and moved
   # aside here, so a foreign/unsupported archive is refused with nothing written.
-  bigbrain_restore_stage "${workdir}" "${BIGBRAIN_CONFIG}"
+  local bb_config=${BIGBRAIN_CONFIG:-}
+  [[ -n ${bb_config} ]] || bb_config='{"enabled":false}'
+  bigbrain_restore_stage "${workdir}" "${bb_config}"
   # The encrypted download is no longer needed; shrink the exposure window.
   rm -f "${archive}"
 
