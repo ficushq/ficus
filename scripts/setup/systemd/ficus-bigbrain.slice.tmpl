@@ -1,0 +1,15 @@
+[Unit]
+Description=Aggregate managed BigBrain resource boundary
+
+[Slice]
+MemoryAccounting=yes
+CPUAccounting=yes
+TasksAccounting=yes
+MemoryHigh=536870912
+MemoryMax=671088640
+MemorySwapMax=0
+CPUQuota=50%
+TasksMax=192
+
+[Install]
+WantedBy=slices.target

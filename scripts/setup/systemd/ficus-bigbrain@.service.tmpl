@@ -1,0 +1,53 @@
+[Unit]
+Description=Managed BigBrain vault {{VAULT_ID}}
+BindsTo={{MOUNT_UNIT}}
+After={{MOUNT_UNIT}} network.target
+StartLimitIntervalSec=120
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User={{VAULT_USER}}
+Group={{VAULT_USER}}
+Slice=ficus-bigbrain.slice
+UMask=0077
+WorkingDirectory=/
+ExecStartPre=+/usr/local/libexec/ficus-bigbrain-preflight {{VAULT_ID}}
+ExecStart=/usr/bin/env -i HOME=/nonexistent PATH=/usr/bin:/bin LANG=C.UTF-8 {{ARTIFACT_ROOT}}/bigbrain-shared serve --vault {{VAULT_PATH}} --members {{MEMBERS_PATH}} --host 127.0.0.1 --port {{PORT}} --public-url {{ORIGIN}}
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=30
+KillMode=control-group
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateMounts=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectProc=invisible
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+TemporaryFileSystem=/var/lib/ficus-bigbrain:ro
+BindPaths={{MOUNT_PATH}}
+ReadWritePaths={{MOUNT_PATH}}
+InaccessiblePaths=-/etc/ficus -/etc/ficus-core -/var/lib/ficus-core -/var/lib/ficus -/opt/ficus-core -/opt/ficus-machine
+MemoryMax=268435456
+MemorySwapMax=0
+TasksMax=64
+LimitNOFILE=256
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target
