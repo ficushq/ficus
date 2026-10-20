@@ -46,6 +46,32 @@ const allOutput = () =>
   ])
 
 describe('integration bigbrain vault', () => {
+  test('list shows when the last server backup left a vault out', async () => {
+    ;(apiGet as AnyMock).mockResolvedValue({
+      vaults: [
+        {
+          vaultId: VAULT,
+          displayName: 'Research',
+          state: 'ready',
+          readAccess: 'active',
+          desiredGeneration: 3,
+          backup: 'excluded',
+        },
+      ],
+    })
+    await run(['list'])
+    expect((output as AnyMock).mock.calls.at(-1)![0]).toEqual([
+      {
+        vaultId: VAULT,
+        displayName: 'Research',
+        state: 'ready',
+        readAccess: 'active',
+        generation: 3,
+        backup: 'excluded',
+      },
+    ])
+  })
+
   test('create sends a fresh request ID, the name and the owner handle', async () => {
     await run(['create', '--name', 'Research', '--handle', 'ada'])
     expect(apiPost).toHaveBeenCalledWith('/api/integrations/providers/bigbrain/shared-vaults', {

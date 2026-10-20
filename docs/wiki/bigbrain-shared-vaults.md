@@ -163,8 +163,9 @@ Vault data is included in the server's existing encrypted backup. Ficus stops ea
 to copy it consistently, then restarts it. No new retention is promised.
 
 - **Nightly backups** skip a vault that cannot be copied, upload everything else and report the
-  run as incomplete. The settings page shows **Last backup did not include this vault** for the
-  skipped vault.
+  run as incomplete. Within about 10 minutes the settings page shows **Last backup did not include
+  this vault** for the skipped vault, and `ficus integration bigbrain vault list` shows
+  `backup: excluded`. The next complete backup clears it.
 - **Termination backups** (before a tenant is removed) are all or nothing: any vault that cannot
   be copied fails the backup.
 

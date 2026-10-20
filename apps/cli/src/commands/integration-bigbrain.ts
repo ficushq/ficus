@@ -22,6 +22,7 @@ interface VaultView {
   state: string
   readAccess: string
   desiredGeneration: number
+  backup?: string
 }
 interface OwnerInvite {
   inviteUrl: string
@@ -54,6 +55,8 @@ function summary(vault: VaultView) {
     state: vault.state,
     readAccess: vault.readAccess,
     generation: vault.desiredGeneration,
+    // 'excluded': the most recent server backup did not include this vault.
+    backup: vault.backup ?? 'unknown',
   }
 }
 

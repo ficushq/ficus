@@ -259,6 +259,19 @@ test('the status sweep adopts a restored host: newer generation read-revoked, an
   expect((await store.get(kept.id))?.readAccess).toBe('revoked')
 })
 
+test('a vault left out of a partial nightly backup is surfaced, and cleared by the next complete one', async () => {
+  const f = fakeHost()
+  const row = await requested()
+  await drain(f.deps)
+  expect((await store.get(row.id))?.backup).toBe('unknown')
+  f.receipts.set(row.id, { ...f.receipts.get(row.id)!, backup: 'excluded' })
+  expect((await sweepManagedVaults(f.deps))[row.id]).toBe('ready')
+  expect(await store.get(row.id)).toMatchObject({ backup: 'excluded', state: 'ready', appliedGeneration: 1 })
+  f.receipts.set(row.id, { ...f.receipts.get(row.id)!, backup: 'included' })
+  await sweepManagedVaults(f.deps)
+  expect((await store.get(row.id))?.backup).toBe('included')
+})
+
 test('nothing runs while managed BigBrain is unavailable', async () => {
   const f = fakeHost()
   await requested()
