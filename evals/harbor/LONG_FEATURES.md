@@ -84,7 +84,8 @@ commit a fake passing duration test and an early-success `test.sh`. The separate
 verifier must restore the original tests and retain the baseline/reference grades.
 
 `deepswe_network_smoke.py` contains the no-inference transport probes. It expects
-a local HTTP probe on port 18765 returning 403, allows `host.docker.internal`,
+a local HTTP probe on an OS-assigned port returning 403, supplied through
+`OPENAI_BASE_URL=http://host.docker.internal:<port>/v1`. It allows `host.docker.internal`,
 and uses `--disable-verification`; these probes are infrastructure checks, never
 benchmark results. Ficus uses the frozen runtime and `database_network=task`;
 Pi uses version 0.99.1 and the planned workflow. Do not set a global
@@ -108,3 +109,64 @@ unchanged. The corrected smoke explicitly enables that preload and checks both
 API and worker readiness without seeding any work or making inference calls.
 `long-feature-v1-recovery.json` preserves the original manifest/failure hashes
 and freezes this zero-inference repair before the matched model attempts.
+
+## Completed result — 20 October 2026
+
+All four arms passed the unchanged official grader: **130/130 feature checks and
+2,784/2,784 regression checks**. Each used one model attempt and zero operator
+task messages after launch. These results stay separate from FeatureBench.
+
+| Arm | Official result | Inference USD | Agent execution | Total trial |
+| --- | --- | ---: | ---: | ---: |
+| Ficus squad | Pass | $1.198337 | 16m 46s | 24m 21s |
+| Pi squad | Pass | $1.095428 | 18m 26s | 25m 31s |
+| Ficus engineer | Pass | $0.593376 | 8m 06s | 15m 33s |
+| Pi engineer | Pass | $0.465993 | 7m 06s | 13m 51s |
+
+Agent execution is Harbor's execution phase, including harness lifecycle work;
+total trial also includes setup, official grading and cleanup. Grading took
+roughly six minutes per arm. These are sequential runs on a shared host, not
+latency measurements from dedicated benchmark hardware.
+
+The full Ficus squad used one design, implementation and review attempt. Pi's
+reviewer requested test compatibility with older pandas and formatting changes;
+the coordinator routed these back to the engineer and obtained a second explicit
+reviewer approval. Both Ficus and Pi engineer controls executed only their single
+engineer/session. No observed Ficus human-question state or operator task rescue
+occurred. This records unattended execution, not measured human time saved.
+
+On this one task, extra roles did **not** improve official acceptance. Ficus's
+squad cost about twice its engineer-only run and took about twice the execution
+time. Pi's squad also cost more and took longer than its engineer-only run.
+Ficus's squad had slightly higher cost and slightly lower execution time than
+Pi's squad; the Pi reviewer also performed an extra revision cycle. A single
+stochastic task cannot establish a general harness ranking or isolate the cause
+of those differences.
+
+The committed-patch audit found no grading bypass. The official duration test
+file replaces candidate versions before grading. Ficus squad retained additive
+regression tests and a small fixture helper; inspection found no removed existing
+assertions. Other arms did not change retained test infrastructure. Pi's squad
+attempted downloads of unavailable lint/minimum-dependency tools, which the
+restricted network blocked; its reviewer explicitly disclosed the remaining
+validation limits. This is an environment limitation, not an adjusted score.
+
+The batch used **$3.353134**, with all 248 requests accounted and no unresolved
+new usage holds. Cumulative exposure is **$29.346481 / $50**, leaving
+**$20.653519**. Paid inference is stopped. The original zero-call startup failure
+and control repairs remain recorded separately from the four model attempts.
+
+[The result manifest](long-feature-v1-results.json) contains exact counts, timing,
+all-role spend, role audits, source/trace hashes and host/image observations.
+The scored code remains pinned by [the recovery manifest](long-feature-v1-recovery.json)
+and commit `08db5017`; the subsequent probe-port cleanup changes no scored run.
+49 offline adapter/proxy/accounting tests and changed-file Ruff checks pass;
+repository-wide typecheck passed during preparation. Both post-run OS-assigned-port
+smokes passed (including Ficus native API/worker readiness), with no additional
+model requests.
+
+The next unanswered question is concurrent throughput and longer-lived work
+coordination. Use two **unseen** external tasks (`returns-validated-error-accumulation`
+and then `aiomonitor-task-snapshots-diff` in the frozen selection order) for a
+separate matched concurrency-two experiment after their controls pass. Do not
+reuse this task as fresh evidence or infer hours of focus saved from these timings.

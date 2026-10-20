@@ -8,15 +8,33 @@ from pi_workflow import PiWorkflow
 from ficus_agent import FicusSquad, docker, ROOT
 
 
+def probe_origin(base_url):
+    """Use an OS-assigned probe port supplied through the normal endpoint config."""
+    url = urlsplit(base_url or "")
+    if (
+        url.scheme != "http"
+        or url.hostname != "host.docker.internal"
+        or url.path.rstrip("/") != "/v1"
+        or url.username is not None
+        or url.password is not None
+        or url.query
+        or url.fragment
+        or not url.port
+    ):
+        raise ValueError("Probe requires http://host.docker.internal:<port>/v1")
+    return f"http://host.docker.internal:{url.port}"
+
+
 class FicusNetworkSmoke(FicusSquad):
     async def run(self, instruction, environment, context):
         # Infrastructure only: never seed work or invoke a model.
         result = {}
+        origin = probe_origin(self.model_connection.base_url)
         assert self.model_api == "openai-responses", (
             "Smoke must exercise the frozen native provider"
         )
         self.env["FICUS_HARBOR_MODEL_API"] = self.model_api
-        self.env["FICUS_HARBOR_BASE_URL"] = "http://host.docker.internal:18765/v1"
+        self.env["FICUS_HARBOR_BASE_URL"] = origin + "/v1"
         try:
             password = urlsplit(self.env["DATABASE_URL"]).password
             await docker(
@@ -61,7 +79,8 @@ class FicusNetworkSmoke(FicusSquad):
             result["database_loopback"] = True
             # 403 is expected from an intentionally unauthenticated private probe.
             probe = await environment.exec(
-                "curl --noproxy '*' --max-time 8 -sS -o /tmp/probe.txt -w '%{http_code}' http://host.docker.internal:18765/probe"
+                "curl --noproxy '*' --max-time 8 -sS -o /tmp/probe.txt -w '%{http_code}' "
+                + shlex.quote(origin + "/probe")
             )
             assert probe.return_code == 0 and probe.stdout == "403", str(probe)
             result["scoped_proxy_reachable"] = True
@@ -94,9 +113,11 @@ class FicusNetworkSmoke(FicusSquad):
 class PiNetworkSmoke(PiWorkflow):
     async def run(self, instruction, environment, context):
         result = {}
+        origin = probe_origin(self.model_connection.base_url)
         probe = await self.exec_as_agent(
             environment,
-            command="curl --noproxy '*' --max-time 8 -sS -o /tmp/probe.txt -w '%{http_code}' http://host.docker.internal:18765/probe",
+            command="curl --noproxy '*' --max-time 8 -sS -o /tmp/probe.txt -w '%{http_code}' "
+            + shlex.quote(origin + "/probe"),
         )
         assert probe.return_code == 0 and probe.stdout == "403", str(probe)
         result["scoped_proxy_reachable"] = True
