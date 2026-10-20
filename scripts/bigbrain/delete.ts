@@ -9,12 +9,14 @@ import { openPrivateFile, readPrivateJson, writePrivateJson } from './secure-fil
 import { runPrivateCommand, type PrivateCommandRunner } from './process'
 import { unitOwnershipSchema } from './unit-assets'
 import { mountUnitName } from './units'
+import { vaultTmpfilesName } from './unit-assets'
 import { birthStampSchema, imageJournalSchema } from './volume-image'
 
 export interface DeleteOptions {
   root?: string
   uid?: number
   unitDirectory?: string
+  tmpfilesDirectory?: string
   run?: PrivateCommandRunner
   mountinfo?: () => Promise<string>
   removeIdentity?: (key: ManagedIdentityKey, identity: ManagedIdentity) => Promise<void>
@@ -110,14 +112,16 @@ export async function deleteVaultResources(
     const owned = await readPrivateJson(paths.control, 'units.json', unitOwnershipSchema, fs)
     for (const field of ['tenantId', 'physicalHostBinding', 'vaultId'] as const)
       if (owned[field] !== key[field]) throw new Error('identity_mismatch')
+    const tmpfiles = options.tmpfilesDirectory ?? '/etc/tmpfiles.d'
     const assets = [
-      [paths.unit, owned.serviceHash],
-      [mountUnit, owned.mountHash],
+      [units, paths.unit, owned.serviceHash],
+      [units, mountUnit, owned.mountHash],
+      [tmpfiles, vaultTmpfilesName(record.receipt.vaultId), owned.tmpfilesHash],
     ] as const
-    for (const [name, hash] of assets)
-      if ((await present(join(units, name))) && sha(await readFile(join(units, name))) !== hash)
+    for (const [dir, name, hash] of assets)
+      if ((await present(join(dir, name))) && sha(await readFile(join(dir, name))) !== hash)
         throw new Error('identity_mismatch')
-    for (const [name] of assets) if (await present(join(units, name))) await unlink(join(units, name))
+    for (const [dir, name] of assets) if (await present(join(dir, name))) await unlink(join(dir, name))
     if ((await run(['/usr/bin/systemctl', 'daemon-reload'])).code !== 0) throw new Error('operation_failed')
   }
 

@@ -37,6 +37,7 @@ async function fixture(account: 'absent' | 'ours' | 'foreign' = 'absent') {
     run,
     unitDirectory: join(outer, 'units'),
     launcher: join(outer, 'libexec', 'ficus-bigbrainctl'),
+    tmpfilesDirectory: join(outer, 'tmpfiles.d'),
   }
   return { outer, opts, calls }
 }
@@ -53,6 +54,12 @@ test('installs the release-bound root launcher (0750), slice and gateway unit, c
   expect((await stat(join(f.opts.unitDirectory, 'ficus-bigbrain.slice'))).mode & 0o777).toBe(0o644)
   expect(f.calls.filter((c) => c[0] === '/usr/sbin/useradd')).toHaveLength(1)
   expect(f.calls.at(-1)).toEqual(['/usr/bin/systemctl', 'enable', '--now', 'ficus-bigbrain-gateway.service'])
+  // Socket parents are declared for boot and created before the gateway first starts.
+  expect(await readFile(join(f.opts.tmpfilesDirectory, 'ficus-bigbrain.conf'), 'utf8')).toContain(
+    'd /run/ficus-bigbrain/gateway 2750 ficus-bb-gateway caddy -'
+  )
+  const order = f.calls.map((c) => c.slice(0, 2).join(' '))
+  expect(order.indexOf('/usr/bin/systemd-tmpfiles --create')).toBeLessThan(order.indexOf('/usr/bin/systemctl enable'))
   // Upgrade to a new release replaces exactly the recorded files; the account is not recreated.
   await installHostAssets(D2, f.opts)
   expect(await readFile(f.opts.launcher, 'utf8')).toContain('b'.repeat(64))

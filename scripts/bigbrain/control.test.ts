@@ -125,6 +125,7 @@ async function fixture(options: { backupTimer?: boolean; gateway?: boolean } = {
     mountinfo: async () => '',
     removeIdentity: async () => {},
     unitDirectory: join(outer, 'units'),
+    tmpfilesDirectory: join(outer, 'tmpfiles.d'),
   }
   return { root, etc, deps, trace }
 }

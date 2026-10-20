@@ -14,6 +14,7 @@ import { prepareVaultImage } from './volume-image'
 import type { ManagedIdentity } from './accounts'
 import { escrowSchema } from './bootstrap'
 import { vaultSocketPath } from './gateway-policy'
+import { vaultTmpfilesName } from './unit-assets'
 
 export interface ProvisionDeps {
   root?: string
@@ -21,6 +22,7 @@ export interface ProvisionDeps {
   uid?: number
   run?: PrivateCommandRunner
   unitDirectory?: string
+  tmpfilesDirectory?: string
   mountinfo?: () => Promise<string>
   prepareLayout?: (path: string, identity: ManagedIdentity, device: string) => Promise<void>
   freeBytes?: (path: string) => Promise<number>
@@ -165,6 +167,10 @@ export async function startVaultService(input: ControlReceipt, deps: ProvisionDe
     throw new Error('generation_conflict')
   if (!record.receipt.origin) throw new Error('storage_unavailable')
   const socket = vaultSocketPath(record.receipt.vaultId)
+  // The socket directory exists (owner/group/mode) before the unit's namespace is set up.
+  const declared = `${deps.tmpfilesDirectory ?? '/etc/tmpfiles.d'}/${vaultTmpfilesName(record.receipt.vaultId)}`
+  if ((await run(['/usr/bin/systemd-tmpfiles', '--create', declared])).code !== 0)
+    throw new Error('storage_unavailable')
   if ((await run(['/usr/bin/systemctl', 'enable', '--now', paths.unit], { timeoutMs: 45000 })).code !== 0)
     throw new Error('upstream_unavailable')
   const probe =

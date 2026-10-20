@@ -144,6 +144,7 @@ async function fixture(options: { loseMint?: boolean } = {}) {
     etc,
     uid,
     unitDirectory: join(outer, 'units'),
+    tmpfilesDirectory: join(outer, 'tmpfiles.d'),
     run: host.run,
     mountinfo: host.mountinfo,
     prepareLayout: host.prepareLayout,

@@ -86,6 +86,7 @@ async function fixture() {
     root,
     uid,
     unitDirectory,
+    tmpfilesDirectory: `${unitDirectory}-tmpfiles`,
     run,
     mountinfo: async () => (mounted ? `1 0 7:4 / ${paths.mount} rw,nodev,nosuid,noexec - ext4 /dev/loop4 rw` : ''),
     prepareLayout: async (path: string, identity: { uid: number; gid: number }) => {

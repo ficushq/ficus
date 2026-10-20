@@ -71,7 +71,7 @@ async function vault(root: string, unitDirectory: string, vaultId: string, ident
     imageJournalSchema,
     { uid }
   )
-  await installVaultUnitAssets(withOs, { root, uid, unitDirectory })
+  await installVaultUnitAssets(withOs, { root, uid, unitDirectory, tmpfilesDirectory: `${unitDirectory}-tmpfiles` })
   // Root escrow material that must not survive deletion.
   await writeFile(join(paths.control, 'owner.json'), '{"token":"sv_secret"}', { mode: 0o600 })
   return withOs
@@ -114,6 +114,7 @@ async function fixture(options: { mounted?: boolean } = {}) {
     root,
     uid,
     unitDirectory,
+    tmpfilesDirectory: `${unitDirectory}-tmpfiles`,
     run,
     mountinfo: async () =>
       options.mounted ? `1 0 7:4 / ${managedPaths({ root, vaultId: A }).mount} rw - ext4 /dev/loop7 rw\n` : '',

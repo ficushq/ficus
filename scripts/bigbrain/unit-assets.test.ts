@@ -18,7 +18,7 @@ async function fixture() {
   roots.push(outer)
   const root = join(outer, 'state')
   const unitDirectory = join(outer, 'units')
-  const options = { root, unitDirectory, uid }
+  const options = { root, unitDirectory, uid, tmpfilesDirectory: join(outer, 'tmpfiles.d') }
   await initializeStorageNamespace(options)
   const record = reservedVaultFixture(root)
   const paths = managedPaths({ root, vaultId: record.receipt.vaultId })

@@ -51,7 +51,8 @@ MemorySwapMax=0
 TasksMax=64
 LimitNOFILE=128
 StandardOutput=null
-StandardError=null
+# Only this gateway's own fixed refusal messages reach stderr (no request data is ever logged).
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

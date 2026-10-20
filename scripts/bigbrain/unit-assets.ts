@@ -23,6 +23,7 @@ export const unitOwnershipSchema = managedBigbrainHostBindingSchema
     artifactDigest: digest,
     serviceHash: digest,
     mountHash: digest,
+    tmpfilesHash: digest,
   })
   .strict()
 const hash = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`
@@ -30,6 +31,14 @@ interface Options {
   root?: string
   uid?: number
   unitDirectory?: string
+  tmpfilesDirectory?: string
+}
+/** Boot-time declaration of this vault's root-prepared socket directory (owner = its account,
+ * group = the gateway, setgid 2750); the root preflight re-asserts it on every start. */
+export const vaultTmpfilesName = (vaultId: string) => `ficus-bigbrain-vault-${vaultId}.conf`
+export function renderVaultTmpfiles(vaultId: string, username: string): string {
+  if (!/^[0-9a-f-]{36}$/.test(vaultId) || !/^bbv_[0-9a-f]{24}$/.test(username)) throw new Error('invalid_request')
+  return `d /run/ficus-bigbrain/vaults/${vaultId} 2750 ${username} ficus-bb-gateway -\n`
 }
 async function present(path: string): Promise<boolean> {
   try {
@@ -81,7 +90,10 @@ export async function installVaultUnitAssets(input: ControlReceipt, options: Opt
     root: options.root,
   })
   const directory = options.unitDirectory ?? '/etc/systemd/system'
+  const tmpfiles = options.tmpfilesDirectory ?? '/etc/tmpfiles.d'
   await ensureOwnedDirectory(directory, 0o755, options)
+  await ensureOwnedDirectory(tmpfiles, 0o755, options)
+  const tmpfilesText = renderVaultTmpfiles(record.receipt.vaultId, record.storage.username)
   const previous = (await present(join(paths.control, 'units.json')))
     ? await readPrivateJson(paths.control, 'units.json', unitOwnershipSchema, options)
     : null
@@ -89,16 +101,22 @@ export async function installVaultUnitAssets(input: ControlReceipt, options: Opt
     for (const field of ['tenantId', 'physicalHostBinding', 'vaultId'] as const)
       if (previous[field] !== key[field]) throw new Error('identity_mismatch')
   const assets = [
-    { name: units.serviceUnitName, text: units.service, previousHash: previous?.serviceHash },
-    { name: units.mountUnitName, text: units.mount, previousHash: previous?.mountHash },
+    { dir: directory, name: units.serviceUnitName, text: units.service, previousHash: previous?.serviceHash },
+    { dir: directory, name: units.mountUnitName, text: units.mount, previousHash: previous?.mountHash },
+    {
+      dir: tmpfiles,
+      name: vaultTmpfilesName(record.receipt.vaultId),
+      text: tmpfilesText,
+      previousHash: previous?.tmpfilesHash,
+    },
   ]
   for (const asset of assets) {
-    if (!(await present(join(directory, asset.name)))) continue
-    const actual = await readPublicText(directory, asset.name, options)
+    if (!(await present(join(asset.dir, asset.name)))) continue
+    const actual = await readPublicText(asset.dir, asset.name, options)
     if (actual !== asset.text && (!asset.previousHash || hash(actual) !== asset.previousHash))
       throw new Error('identity_mismatch')
   }
-  for (const asset of assets) await writePublicText(directory, asset.name, asset.text, options)
+  for (const asset of assets) await writePublicText(asset.dir, asset.name, asset.text, options)
   await writePrivateJson(
     paths.control,
     'units.json',
@@ -108,6 +126,7 @@ export async function installVaultUnitAssets(input: ControlReceipt, options: Opt
       artifactDigest: record.receipt.artifactDigest,
       serviceHash: hash(units.service),
       mountHash: hash(units.mount),
+      tmpfilesHash: hash(tmpfilesText),
     },
     unitOwnershipSchema,
     options

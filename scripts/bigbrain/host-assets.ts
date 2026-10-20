@@ -18,7 +18,7 @@ export const GATEWAY_ACCOUNT = 'ficus-bb-gateway'
 const GATEWAY_COMMENT = 'Ficus managed BigBrain gateway'
 const digest = z.string().regex(/^sha256:[0-9a-f]{64}$/)
 export const hostAssetsSchema = z
-  .object({ schema: z.literal(1), launcher: digest, slice: digest, gateway: digest })
+  .object({ schema: z.literal(1), launcher: digest, slice: digest, gateway: digest, tmpfiles: digest })
   .strict()
 const sha = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`
 
@@ -29,7 +29,16 @@ export interface HostAssetOptions {
   /** Fixture-only overrides of the fixed install locations. */
   unitDirectory?: string
   launcher?: string
+  tmpfilesDirectory?: string
 }
+/** Root-owned socket parents exist at boot (before any unit starts) and survive Restart=. The
+ * per-vault directories are declared next to each vault's units (unit-assets). */
+export const SOCKET_TMPFILES = [
+  'd /run/ficus-bigbrain 0755 root root -',
+  'd /run/ficus-bigbrain/vaults 0755 root root -',
+  'd /run/ficus-bigbrain/gateway 2750 ficus-bb-gateway caddy -',
+  '',
+].join('\n')
 
 async function present(path: string): Promise<boolean> {
   try {
@@ -87,6 +96,7 @@ export async function installHostAssets(artifactDigest: string, options: HostAss
   const launcher = options.launcher ?? MANAGED_BIGBRAIN_HELPER
   const launcherDir = launcher.slice(0, launcher.lastIndexOf('/'))
   const launcherName = launcher.slice(launcher.lastIndexOf('/') + 1)
+  const tmpfiles = options.tmpfilesDirectory ?? '/etc/tmpfiles.d'
   const assets = [
     { key: 'launcher', dir: launcherDir, name: launcherName, text: await renderControlLauncher(artifactDigest) },
     { key: 'slice', dir: units, name: 'ficus-bigbrain.slice', text: await renderAggregateUnit() },
@@ -96,12 +106,14 @@ export async function installHostAssets(artifactDigest: string, options: HostAss
       name: 'ficus-bigbrain-gateway.service',
       text: await renderGatewayUnit(artifactDigest),
     },
+    { key: 'tmpfiles', dir: tmpfiles, name: 'ficus-bigbrain.conf', text: SOCKET_TMPFILES },
   ] as const
   const recorded = (await present(join(options.etc, 'host-assets.json')))
     ? await readPrivateJson(options.etc, 'host-assets.json', hostAssetsSchema, { uid })
     : null
   await ensureOwnedDirectory(launcherDir, 0o755, { uid })
   await ensureOwnedDirectory(units, 0o755, { uid })
+  await ensureOwnedDirectory(tmpfiles, 0o755, { uid })
   for (const asset of assets) {
     if (!(await present(join(asset.dir, asset.name)))) continue
     const current = await readPublicText(asset.dir, asset.name, { uid }).catch(async () => {
@@ -121,10 +133,18 @@ export async function installHostAssets(artifactDigest: string, options: HostAss
   await writePrivateJson(
     options.etc,
     'host-assets.json',
-    { schema: 1, launcher: sha(assets[0].text), slice: sha(assets[1].text), gateway: sha(assets[2].text) },
+    {
+      schema: 1,
+      launcher: sha(assets[0].text),
+      slice: sha(assets[1].text),
+      gateway: sha(assets[2].text),
+      tmpfiles: sha(assets[3].text),
+    },
     hostAssetsSchema,
     { uid }
   )
+  if ((await run(['/usr/bin/systemd-tmpfiles', '--create', join(tmpfiles, 'ficus-bigbrain.conf')])).code !== 0)
+    throw new Error('operation_failed')
   if ((await run(['/usr/bin/systemctl', 'daemon-reload'])).code !== 0) throw new Error('operation_failed')
   if (
     (await run(['/usr/bin/systemctl', 'enable', '--now', 'ficus-bigbrain-gateway.service'], { timeoutMs: 45000 }))

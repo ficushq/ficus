@@ -137,6 +137,7 @@ async function fixture(options: { storedIdentityForA?: string } = {}) {
     etc,
     uid,
     unitDirectory,
+    tmpfilesDirectory: `${unitDirectory}-tmpfiles`,
     run: host.run,
     mountinfo: host.mountinfo,
     prepareLayout: host.prepareLayout,
