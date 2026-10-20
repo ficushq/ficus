@@ -1,5 +1,6 @@
 import { lstat, readdir, unlink } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { managedBigbrainOriginHasVault, parseManagedBigbrainOrigin } from '@ficus/shared/managed-bigbrain'
 import { installedHostSchema } from './control-input'
 import { GATEWAY_SOCKET, gatewayManifestSchema, type GatewayManifest } from './gateway-policy'
 import { BIGBRAIN_ETC } from './install'
@@ -59,9 +60,16 @@ async function receipts(root: string, uid: number): Promise<ControlReceipt[]> {
 
 /** One exact-host site per ready vault; Caddy only terminates TLS and forwards to the
  * credential-free gateway, which owns all routing/admission decisions. */
-export function renderVaultSite(origin: string, cert: string, key: string): string {
-  const host = new URL(origin).host
-  if (!/^bb-[0-9a-f]{32}\.[a-z0-9.-]+$/.test(host) || !/^\/[\w./-]+$/.test(cert) || !/^\/[\w./-]+$/.test(key))
+export function renderVaultSite(origin: string, vaultId: string, cert: string, key: string): string {
+  // Either recorded form (bb-<32 hex> or <tenant>-bb-<12 hex>) of THIS vault; the parsed
+  // hostname is [a-z0-9.-] only, so it cannot inject Caddyfile syntax.
+  const host = parseManagedBigbrainOrigin(origin)?.hostname
+  if (
+    !host ||
+    !managedBigbrainOriginHasVault(origin, vaultId) ||
+    !/^\/[\w./-]+$/.test(cert) ||
+    !/^\/[\w./-]+$/.test(key)
+  )
     throw new Error('invalid_request')
   return [
     `${host} {`,
@@ -120,7 +128,7 @@ export async function publishIngress(options: IngressOptions = {}): Promise<Gate
   const desired = new Map(
     (host.hostState === 'active' ? ready : []).map((r) => [
       `${r.receipt.vaultId}.caddy`,
-      renderVaultSite(r.receipt.origin!, cert, key),
+      renderVaultSite(r.receipt.origin!, r.receipt.vaultId, cert, key),
     ])
   )
   const previous = new Map<string, string>()

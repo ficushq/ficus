@@ -166,6 +166,12 @@ test('publishing fails closed when Caddy could not read the sites, and keeps re-
 })
 
 test('site rendering accepts only managed vault hosts and plain certificate paths', () => {
-  expect(() => renderVaultSite('https://example.com', '/c', '/k')).toThrow('invalid_request')
-  expect(() => renderVaultSite(`https://bb-${hex(A)}.example.com`, '/c {\n}', '/k')).toThrow('invalid_request')
+  expect(() => renderVaultSite('https://example.com', A, '/c', '/k')).toThrow('invalid_request')
+  expect(() => renderVaultSite(`https://bb-${hex(A)}.example.com`, A, '/c {\n}', '/k')).toThrow('invalid_request')
+  // Either recorded form of THIS vault renders; another vault's origin never does.
+  const prefixed = `https://noah-bb-${hex(A).slice(0, 12)}.example.com`
+  expect(renderVaultSite(prefixed, A, '/c', '/k')).toStartWith(`noah-bb-${hex(A).slice(0, 12)}.example.com {`)
+  expect(renderVaultSite(`https://bb-${hex(A)}.example.com`, A, '/c', '/k')).toStartWith(`bb-${hex(A)}.example.com {`)
+  expect(() => renderVaultSite(prefixed, B, '/c', '/k')).toThrow('invalid_request')
+  expect(() => renderVaultSite(`https://bb-${hex(B)}.example.com`, A, '/c', '/k')).toThrow('invalid_request')
 })

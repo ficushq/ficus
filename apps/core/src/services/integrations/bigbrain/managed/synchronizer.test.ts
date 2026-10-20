@@ -45,6 +45,7 @@ const capabilities = (patch: Partial<ManagedBigbrainCapabilities> = {}): Managed
   hostEpoch: 2,
   hostState: 'active',
   zone: 'vaults.example.com',
+  tenantLabel: null,
   limits: MANAGED_BIGBRAIN_DEFAULT_LIMITS,
   observedAt: new Date().toISOString(),
   ...patch,

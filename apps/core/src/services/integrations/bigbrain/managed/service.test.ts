@@ -41,11 +41,14 @@ const host: ManagedBigbrainInstalledHost = {
   upstreamCommit: MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
   artifactDigest: `sha256:${'a'.repeat(64)}`,
   zone: 'example.com',
+  tenantLabel: null,
   limits: MANAGED_BIGBRAIN_DEFAULT_LIMITS,
   effect: null,
 }
 
-function service(options: { enabled?: boolean; available?: boolean; maxVaults?: number } = {}) {
+function service(
+  options: { enabled?: boolean; available?: boolean; maxVaults?: number; tenantLabel?: string | null } = {}
+) {
   const calls: { action: string; body: ManagedHostCall; requestId: string }[] = []
   const fences: string[] = []
   const hooks: { invite?: () => Promise<void>; fail?: ManagedHostError } = {}
@@ -70,7 +73,13 @@ function service(options: { enabled?: boolean; available?: boolean; maxVaults?: 
       }) as never,
     },
     host: () =>
-      options.available === false ? null : { ...host, limits: { ...host.limits, maxVaults: options.maxVaults ?? 2 } },
+      options.available === false
+        ? null
+        : {
+            ...host,
+            tenantLabel: options.tenantLabel ?? null,
+            limits: { ...host.limits, maxVaults: options.maxVaults ?? 2 },
+          },
     disableConnection: async (id) => void fences.push(`disable:${id}`),
     usage: async () => ({ squads: [{ id: 'squad-1', name: 'Research squad' }] }),
     isEnabled: async () => options.enabled ?? true,
@@ -158,6 +167,34 @@ test('create records a pending local host create with the installed zone origin;
   expect((await svc.create(owner, input)).vaultId).toBe(created.vaultId)
   expect(await code(svc.create(owner, { ...input, displayName: 'Different' }))).toBe('request_conflict')
   expect(await code(svc.create(owner, create(input.displayName)))).toBe('name_conflict')
+})
+
+test('with a tenant label installed, a new vault gets <tenant>-bb-<12 hex>; a colliding short id mints a new UUID', async () => {
+  const owner = await human(['integrations:write:bigbrain', 'integrations:read:bigbrain'])
+  const { svc } = service({ tenantLabel: 'noah' })
+  const first = await svc.create(owner, create(`Research ${crypto.randomUUID()}`))
+  expect(first.origin).not.toBeNull()
+  expect(first.origin).toBe(`https://noah-bb-${first.vaultId.replaceAll('-', '').slice(0, 12)}.example.com`)
+  expect(((await managedVaultStore.get(first.vaultId))!.createRecipe as { origin: string }).origin).toBe(first.origin!)
+  await db.update(managedBigbrainVaults).set({ state: 'deleted' }).where(eq(managedBigbrainVaults.id, first.vaultId))
+  // The next UUID minted shares the (deleted) first vault's short id: it is discarded.
+  const clash = `${first.vaultId.slice(0, 13)}-4abc-8abc-${'0'.repeat(12)}`
+  const original = crypto.randomUUID.bind(crypto)
+  const queue = [clash]
+  crypto.randomUUID = (() => queue.shift() ?? original()) as typeof crypto.randomUUID
+  try {
+    const second = await svc.create(owner, create(`Design ${original()}`))
+    expect(second.vaultId).not.toBe(clash)
+    expect(second.vaultId.replaceAll('-', '').slice(0, 12)).not.toBe(first.vaultId.replaceAll('-', '').slice(0, 12))
+    expect(second.origin).toBe(`https://noah-bb-${second.vaultId.replaceAll('-', '').slice(0, 12)}.example.com`)
+    expect(await managedVaultStore.get(clash)).toBeNull()
+  } finally {
+    crypto.randomUUID = original
+  }
+  // A label that would not fit one DNS label falls back to bb-<32 hex>.
+  const long = service({ tenantLabel: 'a'.repeat(48) })
+  const third = await long.svc.create(owner, create(`Long ${crypto.randomUUID()}`))
+  expect(third.origin).toBe(`https://bb-${third.vaultId.replaceAll('-', '')}.example.com`)
 })
 
 test('create refuses beyond the vault limit, but still answers a replay', async () => {

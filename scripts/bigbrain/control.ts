@@ -122,8 +122,17 @@ async function capabilities(host: InstalledHost | null, tenantId: string, deps: 
     hostEpoch: host.hostEpoch,
     hostState: host.hostState,
     zone: host.zone,
+    ...(host.tenantLabel === null ? {} : { tenantLabel: host.tenantLabel }),
     limits: host.limits,
   }
+}
+
+/** A probe reports `tenantLabel` only when one is installed: Platform builds that predate it parse
+ * capabilities strictly, and only a Platform that writes `tenant_label` can install one. */
+function withoutUnsetTenantLabel(reply: ManagedBigbrainHostReply): ManagedBigbrainHostReply {
+  if (!reply.ok || reply.action !== 'probe' || reply.capabilities.tenantLabel !== null) return reply
+  const { tenantLabel: _unset, ...capabilities } = reply.capabilities
+  return { ...reply, capabilities: capabilities as typeof reply.capabilities }
 }
 
 /** Host-wide lifecycle effects. Admission already proved the epoch transition (or an exact
@@ -358,7 +367,7 @@ export async function dispatchHostRequest(input: unknown, deps: ControlDeps = {}
           throw new Error('invalid_request')
       }
     }
-    return managedBigbrainHostReplySchema.parse(await reply())
+    return withoutUnsetTenantLabel(managedBigbrainHostReplySchema.parse(await reply()))
   } catch (error) {
     return failure(requestId, error)
   }

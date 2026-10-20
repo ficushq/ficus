@@ -129,9 +129,15 @@ test('fixed root launcher serializes across SSH interruption and bounds every de
   await new Response(child.stderr).text()
 })
 
+test('a recorded tenant-prefixed origin of this vault renders as the unit ORIGIN', async () => {
+  const origin = `https://acme-bb-${id.replaceAll('-', '').slice(0, 12)}.example.com`
+  expect((await renderVaultUnits({ ...input, origin })).service).toContain(origin)
+})
+
 test('rejects unit specifier/newline injection, foreign vault origins, tampered account/path/port and digest', async () => {
   for (const bad of [
     { ...input, origin: 'https://evil.example.com' },
+    { ...input, origin: 'https://acme-bb-000000000000.example.com' },
     { ...input, artifactDigest: 'sha256:' + '%n'.repeat(32) },
     { ...input, reservation: { ...reservation, username: 'root' } },
     { ...input, reservation: { ...reservation, mount: '/etc\nUser=root' } },

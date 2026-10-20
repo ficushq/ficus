@@ -40,7 +40,8 @@ database, and runs each one on the same server through a local root helper
 Ficus Cloud's Platform does only these things for managed BigBrain:
 
 - install the feature on a server when it is enabled for the tenant;
-- report whether the server is installed and active, and its vault zone;
+- report whether the server is installed and active, its vault zone and the tenant label used
+  for new vault addresses;
 - create and remove the exact DNS record for each vault host name, tagged with the tenant and
   vault. It never deletes by wildcard;
 - run tenant lifecycle: suspend, resume, termination backup and restore.
@@ -66,10 +67,41 @@ What is enforced:
 - The owner's device-link escrow never leaves the root control worker: no Core API, Platform
   response or log carries it. The single-use device link is returned only to its owner.
 
-Requests reach a vault only through a small gateway. Caddy terminates TLS for
-`https://bb-<vault>.<zone>` and forwards to the gateway's Unix socket. The gateway selects the vault
+Requests reach a vault only through a small gateway. Caddy terminates TLS for the vault's
+address (see [Vault addresses](#vault-addresses)) and forwards to the gateway's Unix socket. The gateway selects the vault
 by host name and holds no credentials. A vault cannot reach another vault's socket, storage,
 the gateway's socket, the host record, Ficus's control state or its own Ficus read credential.
+
+## Vault addresses
+
+Each vault has one HTTPS address, chosen when it is created and never changed afterwards:
+
+- `https://<tenant>-bb-<short id>.<zone>`, for example `https://noah-bb-7b0a25fe1d6a.ficus.sh`.
+  `<tenant>` is the tenant's Ficus Cloud subdomain and `<short id>` is the first 12 hex
+  characters of the vault ID (dashes removed);
+- `https://bb-<vault id, 32 hex>.<zone>` when there is no tenant label, or when
+  `<tenant>-bb-<short id>` would be longer than one 63-character DNS label (tenant names over
+  47 characters). Vaults created before tenant-prefixed addresses keep this form.
+
+One shared function (`managedBigbrainVaultHostname` in `packages/shared/src/managed-bigbrain.ts`)
+applies this rule; nothing else builds a vault address. Core takes the tenant label only from the
+installed host record (`tenant_label` in the server's `bigbrain:` setup section, written by
+Platform), and only when Core's local probe, Platform's report and the host record all agree on
+it. It never comes from a request or a `Host` header. A new vault whose short ID matches any
+other vault of the tenant, including deleted ones, gets a new vault ID before anything is
+created.
+
+The address is stored with the vault and on the server's receipt, sent to Platform for its DNS
+record (a `bb-<32 hex>` vault sends an empty body, as before), and kept in backups. It is not derived again later, so renaming the tenant changes only
+the addresses of vaults created afterwards. A restore keeps each vault's address form and moves
+it to the restoring server's zone. Every check accepts only these two forms for the vault: when
+a vault is created, the server accepts only the fallback address or the prefixed address with its
+installed tenant label and zone. Later checks (gateway routes, Caddy sites, units, Core's read
+client) check a stored address against its vault only, so an address recorded under an earlier
+tenant label keeps working. The server also refuses a new vault whose address another recorded
+vault already has, and the gateway refuses to load two routes for one address. Tenant subdomains that start with `bb-` or end in `-bb-` plus
+12 hex characters are reserved (`managedBigbrainReservesLabel`) and Platform must refuse them,
+so a tenant name cannot clash with a vault address.
 
 ## Who can do what
 
@@ -200,8 +232,8 @@ the vault's squad attachments return when it does.
 
 - The feature is installed by the server setup toolkit when the server's `bigbrain:` section is
   enabled. The installed host record (`/etc/ficus/bigbrain/host.json`, root-owned) names the
-  tenant, host binding, epoch and vault zone; Core reads it and must agree with Platform before
-  the feature is available.
+  tenant, host binding, epoch, vault zone and optional tenant label; Core reads it and must agree
+  with Platform before the feature is available.
 - Core's worker applies pending changes one vault at a time and checks every vault's status on
   the server every 10 minutes.
 - `systemctl status 'ficus-bigbrain*'` shows the gateway, each vault and the transient root
@@ -223,7 +255,7 @@ the vault's squad attachments return when it does.
 ## Current limits
 
 - Ficus Cloud only, and only once the local helper and Platform both confirm the host is
-  installed and active, for the same tenant, host and zone. A stale report (older than 10
+  installed and active, for the same tenant, host, zone and tenant label. A stale report (older than 10
   minutes) makes the feature unavailable until it refreshes.
 - Ficus Core is inside every vault's trust boundary (see [Trust boundary](#trust-boundary)).
 - The settings UI has automated coverage only. It has not been reviewed in a browser against a

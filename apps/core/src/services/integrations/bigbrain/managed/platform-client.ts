@@ -6,11 +6,12 @@
  * bounded body and deadline, and strict shared response schemas. Errors carry only an
  * allowlisted contract code; raw Platform bodies, URLs and tokens never cross this boundary.
  */
-import { z, type ZodType } from 'zod'
+import { z, type ZodType, type ZodTypeDef } from 'zod'
 import {
   MANAGED_BIGBRAIN_ERROR_CODES,
   managedBigbrainCapabilitiesSchema,
   managedBigbrainDnsRecordSchema,
+  managedBigbrainDnsRequestFor,
   type ManagedBigbrainCapabilities,
   type ManagedBigbrainDnsRecord,
   type ManagedBigbrainErrorCode,
@@ -71,7 +72,7 @@ function statusCode(status: number): ManagedBigbrainErrorCode {
 async function call<T>(
   method: Method,
   path: string,
-  schema: ZodType<T>,
+  schema: ZodType<T, ZodTypeDef, unknown>,
   body: unknown,
   options: CallOptions = {}
 ): Promise<T> {
@@ -157,10 +158,18 @@ export const managedBigbrainPlatform = {
       refuse('identity_mismatch', undefined, false)
     return value
   },
-  /** Idempotent: Platform creates or returns the exact owned record for this vault. A record for
-   * another origin than Core derived is never accepted. */
+  /** Idempotent: Platform creates or returns the exact owned record for this vault's recorded
+   * origin (a tenant-prefixed one is sent as chosen at create; Platform never derives it). A
+   * record for another origin is never accepted. */
   async ensureDns(vaultId: string, expectedOrigin: string, options?: CallOptions): Promise<ManagedBigbrainDnsRecord> {
-    const record = await call('PUT', dnsPath(vaultId), managedBigbrainDnsRecordSchema, {}, options)
+    let body: { origin?: string }
+    try {
+      // `{}` for bb-<32 hex> (what older Platform builds accept); the origin only when prefixed.
+      body = managedBigbrainDnsRequestFor(vaultId, expectedOrigin)
+    } catch {
+      refuse('invalid_request')
+    }
+    const record = await call('PUT', dnsPath(vaultId), managedBigbrainDnsRecordSchema, body, options)
     if (record.vaultId !== vaultId || record.origin !== expectedOrigin) refuse('identity_mismatch', undefined, false)
     return record
   },

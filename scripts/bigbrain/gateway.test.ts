@@ -3,7 +3,8 @@ import { createGatewayHandler, gatewayManifestSchema } from './gateway-policy'
 const id = '11111111-1111-4111-8111-111111111111'
 const other = '22222222-2222-4222-8222-222222222222'
 const a = `bb-${id.replaceAll('-', '')}.example.com`
-const b = `bb-${other.replaceAll('-', '')}.example.com`
+// Both recorded forms route: a bb-<32 hex> vault and a tenant-prefixed <tenant>-bb-<12 hex> vault.
+const b = `acme-bb-${other.replaceAll('-', '').slice(0, 12)}.example.com`
 const manifest = {
   contractVersion: 1,
   tenantId: id,
@@ -41,6 +42,14 @@ test('credential-free manifest is strict, bounded, identity-preserving and conta
     expect(gatewayManifestSchema.safeParse({ ...manifest, [key]: 'PRIVATE' }).success).toBe(false)
   expect(
     gatewayManifestSchema.safeParse({ ...manifest, routes: [manifest.routes[0], manifest.routes[0]] }).success
+  ).toBe(false)
+  // Two vaults behind one tenant-prefixed hostname (same 12-hex short id) fail closed, never misroute.
+  const twin = `${other.slice(0, 13)}-4999-8999-999999999999`
+  expect(
+    gatewayManifestSchema.safeParse({
+      ...manifest,
+      routes: [manifest.routes[1], { ...manifest.routes[1], vaultId: twin, origin: `https://${b}` }],
+    }).success
   ).toBe(false)
   expect(
     gatewayManifestSchema.safeParse({

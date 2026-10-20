@@ -259,3 +259,21 @@ test('invalid input never writes', async () => {
     await db.select().from(managedBigbrainVaults).where(eq(managedBigbrainVaults.ownerUserId, owner))
   ).toHaveLength(0)
 })
+
+test('a new vault whose 12-hex short id is taken by any vault, even a deleted one, is refused before anything is written', async () => {
+  const owner = await human()
+  const existing = await store.request(createInput(`Old ${crypto.randomUUID()}`, crypto.randomUUID(), owner))
+  await db.update(managedBigbrainVaults).set({ state: 'deleted' }).where(eq(managedBigbrainVaults.id, existing.id))
+  // Same first 12 hex characters (8-4 of the UUID), different vault.
+  const clash = `${existing.id.slice(0, 13)}-4abc-8abc-${crypto.randomUUID().slice(-12)}`
+  const requestId = crypto.randomUUID()
+  const input = { ...createInput(`New ${requestId}`, requestId, owner), vaultId: clash, recipe: recipe(clash) }
+  expect((await refusal(store.request(input))).code).toBe('short_id_conflict')
+  expect(await store.get(clash)).toBeNull()
+  expect(
+    await db.select().from(managedBigbrainOperations).where(eq(managedBigbrainOperations.requestId, requestId))
+  ).toHaveLength(0)
+  // A fresh UUID for the same request goes through.
+  const fresh = crypto.randomUUID()
+  expect((await store.request({ ...input, vaultId: fresh, recipe: recipe(fresh) })).id).toBe(fresh)
+})

@@ -66,15 +66,57 @@ const label = z
   .refine((v) => v === v.trim() && !/\p{Cc}/u.test(v))
 const zonePattern = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/
 const zoneSchema = z.string().max(210).regex(zonePattern)
+
+/** Longest tenant label (a Platform tenant subdomain). */
+export const MANAGED_BIGBRAIN_TENANT_LABEL_MAX = 56
+/** Hex characters of the vault UUID in a tenant-prefixed hostname. */
+export const MANAGED_BIGBRAIN_SHORT_ID_LENGTH = 12
+const DNS_LABEL_MAX = 63
+const ORIGIN_MAX = 253
+const FALLBACK_LABEL = /^bb-([0-9a-f]{32})$/
+const PREFIXED_LABEL = /^([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)-bb-([0-9a-f]{12})$/
+/** Tenant subdomains in the vault hostname namespace: Platform must never issue one. A tenant
+ * named like this could shadow (or be shadowed by) a vault hostname in the shared zone. */
+export function managedBigbrainReservesLabel(label: string): boolean {
+  return label.startsWith('bb-') || /-bb-[0-9a-f]{12}$/.test(label)
+}
+/** The tenant's Platform subdomain: a single DNS label outside the reserved vault namespace. */
+export const managedBigbrainTenantLabelSchema = z
+  .string()
+  .max(MANAGED_BIGBRAIN_TENANT_LABEL_MAX)
+  .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/)
+  .refine((v) => !managedBigbrainReservesLabel(v))
+const tenantLabelSchema = managedBigbrainTenantLabelSchema
+
+export interface ManagedBigbrainOriginParts {
+  hostname: string
+  zone: string
+  /** Null for the fallback `bb-<32 hex>` form. */
+  tenantLabel: string | null
+  /** 32 hex characters (fallback) or the 12-hex short id (tenant-prefixed). */
+  vaultKey: string
+}
+/** Syntax only: an exact `https://<host>` serialization in one of the two vault forms. It binds
+ * no vault, tenant or zone; use the policy/vault checks for that. */
+export function parseManagedBigbrainOrigin(origin: string): ManagedBigbrainOriginParts | null {
+  if (typeof origin !== 'string' || origin.length > ORIGIN_MAX || !origin.startsWith('https://')) return null
+  // Exact serialization rejects credentials, ports (including :443), paths, queries and fragments.
+  const hostname = origin.slice('https://'.length)
+  const dot = hostname.indexOf('.')
+  if (dot < 0) return null
+  const first = hostname.slice(0, dot)
+  const zone = hostname.slice(dot + 1)
+  if (first.length > DNS_LABEL_MAX || !zoneSchema.safeParse(zone).success) return null
+  const fallback = FALLBACK_LABEL.exec(first)
+  if (fallback) return { hostname, zone, tenantLabel: null, vaultKey: fallback[1]! }
+  const prefixed = PREFIXED_LABEL.exec(first)
+  if (!prefixed || !tenantLabelSchema.safeParse(prefixed[1]).success) return null
+  return { hostname, zone, tenantLabel: prefixed[1]!, vaultKey: prefixed[2]! }
+}
 const originSchema = z
   .string()
-  .max(253)
-  .refine((value) => {
-    // Exact serialization rejects credentials, ports (including :443), paths, queries and fragments.
-    if (!/^https:\/\/bb-[0-9a-f]{32}\./.test(value)) return false
-    const zone = value.slice('https://bb-'.length + 33)
-    return zoneSchema.safeParse(zone).success
-  })
+  .max(ORIGIN_MAX)
+  .refine((value) => parseManagedBigbrainOrigin(value) !== null)
 const readAccess = z.enum(['pending', 'active', 'revoked'])
 export const managedBigbrainStateSchema = z.enum([
   'requested',
@@ -141,7 +183,15 @@ export const MANAGED_BIGBRAIN_DEFAULT_LIMITS: Readonly<ManagedBigbrainLimits> = 
 export const managedBigbrainHostConfigSchema = z.discriminatedUnion('enabled', [
   z.object({ enabled: z.literal(false) }).strict(),
   z
-    .object({ enabled: z.literal(true), tenantId: uuid, physicalHostBinding: uuid, hostEpoch: uint, zone: zoneSchema })
+    .object({
+      enabled: z.literal(true),
+      tenantId: uuid,
+      physicalHostBinding: uuid,
+      hostEpoch: uint,
+      zone: zoneSchema,
+      /** The tenant's Platform subdomain for new vault hostnames; absent means the fallback form. */
+      tenantLabel: tenantLabelSchema.optional(),
+    })
     .strict(),
 ])
 export type ManagedBigbrainHostConfig = z.infer<typeof managedBigbrainHostConfigSchema>
@@ -158,6 +208,8 @@ export const managedBigbrainInstalledHostSchema = z
     upstreamCommit: pin,
     artifactDigest: digest,
     zone: zoneSchema,
+    /** Platform-written tenant label used for NEW vault hostnames only; null = fallback form. */
+    tenantLabel: tenantLabelSchema.nullable().default(null),
     limits: managedBigbrainLimitsSchema,
     effect: z
       .object({
@@ -187,13 +239,16 @@ export const managedBigbrainCapabilitiesSchema = z
     sharedProtocol: z.literal(MANAGED_BIGBRAIN_SHARED_PROTOCOL),
     hostEpoch: uint,
     hostState: managedBigbrainHostStateSchema,
-    /** Installed DNS zone for bb-<vault>.<zone>; non-null exactly when installed. */
+    /** Installed DNS zone for vault hostnames; non-null exactly when installed. */
     zone: zoneSchema.nullable(),
+    /** Installed tenant label for new vault hostnames; null = fallback form or not installed. */
+    tenantLabel: tenantLabelSchema.nullable().default(null),
     limits: managedBigbrainLimitsSchema,
     observedAt: datetime,
   })
   .strict()
   .refine((v) => (v.zone !== null) === v.installed)
+  .refine((v) => v.installed || v.tenantLabel === null)
   .refine((v) =>
     v.available
       ? v.installed &&
@@ -420,16 +475,71 @@ export const managedBigbrainReadHandoffSchema = z
 export type ManagedBigbrainReadHandoff = z.infer<typeof managedBigbrainReadHandoffSchema>
 
 function originHasVault(origin: string, vaultId: string): boolean {
-  return origin.startsWith(`https://bb-${vaultId.replaceAll('-', '')}.`)
+  return managedBigbrainOriginHasVault(origin, vaultId)
 }
-/** Also required at the host boundary: syntax alone cannot authorize an external zone. */
-export function managedBigbrainOriginMatchesPolicy(origin: string, vaultId: string, installedZone: string): boolean {
-  return (
-    uuid.safeParse(vaultId).success &&
-    zoneSchema.safeParse(installedZone).success &&
-    originSchema.safeParse(origin).success &&
-    origin === `https://bb-${vaultId.replaceAll('-', '')}.${installedZone}`
+/** The 12-hex short id of a vault UUID (first 12 hex characters, dashes removed). */
+export function managedBigbrainVaultShortId(vaultId: string): string {
+  if (!uuid.safeParse(vaultId).success) throw new Error('invalid_request')
+  return vaultId.replaceAll('-', '').slice(0, MANAGED_BIGBRAIN_SHORT_ID_LENGTH)
+}
+/**
+ * THE vault hostname rule (Core, host toolkit and Platform all use this; never build one by hand):
+ * `<tenant>-bb-<short id>.<zone>` when a tenant label is given and that first label fits in 63
+ * characters (and the origin in 253), otherwise `bb-<32 hex>.<zone>`. Call it ONCE, at create:
+ * the result is persisted on the vault and receipt and never re-derived, so tenant renames and
+ * older vaults keep their address.
+ */
+export function managedBigbrainVaultHostname(input: {
+  vaultId: string
+  zone: string
+  tenantLabel: string | null | undefined
+}): string {
+  if (!uuid.safeParse(input.vaultId).success || !zoneSchema.safeParse(input.zone).success)
+    throw new Error('invalid_request')
+  const label = input.tenantLabel ?? null
+  if (label !== null && !tenantLabelSchema.safeParse(label).success) throw new Error('invalid_request')
+  const fallback = `bb-${input.vaultId.replaceAll('-', '')}.${input.zone}`
+  if (label === null) return fallback
+  const first = `${label}-bb-${managedBigbrainVaultShortId(input.vaultId)}`
+  const hostname = `${first}.${input.zone}`
+  return first.length <= DNS_LABEL_MAX && `https://${hostname}`.length <= ORIGIN_MAX ? hostname : fallback
+}
+export function managedBigbrainVaultOrigin(input: {
+  vaultId: string
+  zone: string
+  tenantLabel: string | null | undefined
+}): string {
+  return `https://${managedBigbrainVaultHostname(input)}`
+}
+/** Whether a valid origin names THIS vault (either form, any zone/label). For persisted origins:
+ * a recorded tenant label is kept across renames, so it is not compared with the current one. */
+export function managedBigbrainOriginHasVault(origin: string, vaultId: string): boolean {
+  const parts = parseManagedBigbrainOrigin(origin)
+  if (!parts || !uuid.safeParse(vaultId).success) return false
+  const hex = vaultId.replaceAll('-', '')
+  return parts.tenantLabel === null ? parts.vaultKey === hex : parts.vaultKey === hex.slice(0, parts.vaultKey.length)
+}
+/** Admission of a NEW origin (host create, DNS): exactly the fallback form or the tenant-prefixed
+ * form for this vault, installed zone and installed tenant label; nothing else. Syntax alone
+ * cannot authorize an external zone or another tenant's label. */
+export function managedBigbrainOriginMatchesPolicy(
+  origin: string,
+  vaultId: string,
+  installedZone: string,
+  tenantLabel: string | null = null
+): boolean {
+  if (
+    !uuid.safeParse(vaultId).success ||
+    !zoneSchema.safeParse(installedZone).success ||
+    (tenantLabel !== null && !tenantLabelSchema.safeParse(tenantLabel).success) ||
+    !originSchema.safeParse(origin).success
   )
+    return false
+  const allowed = new Set([
+    managedBigbrainVaultOrigin({ vaultId, zone: installedZone, tenantLabel: null }),
+    managedBigbrainVaultOrigin({ vaultId, zone: installedZone, tenantLabel }),
+  ])
+  return allowed.has(origin)
 }
 /** Compare separately authenticated Platform authority, root-installed state and observed input.
  * SSH pin/server ownership, epoch transitions, generation, pin/digest and permissions need separate checks.
@@ -467,6 +577,21 @@ export function managedBigbrainDnsOwner(tenantId: string, vaultId: string): stri
   return `${MANAGED_BIGBRAIN_DNS_OWNER_PREFIX}${tenantId}:${vaultId}`
 }
 const ipv4 = z.string().regex(/^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/)
+/** Core's body for PUT /api/managed-bigbrain/dns/:vaultId. `{}` means the vault's bb-<32 hex>
+ * origin (the only form older Platform builds know); a tenant-prefixed vault sends the origin
+ * recorded at create. Platform must admit it with managedBigbrainOriginMatchesPolicy for the
+ * tenant's zone and current label, or match its existing owned record by exact hostname + owner
+ * tag; it never derives a prefixed origin itself. Use managedBigbrainDnsRequestFor to build it. */
+export const managedBigbrainDnsRequestSchema = z
+  .object({ origin: originSchema.optional() })
+  .strict()
+  .refine((v) => v.origin === undefined || parseManagedBigbrainOrigin(v.origin)?.tenantLabel !== null)
+export function managedBigbrainDnsRequestFor(vaultId: string, origin: string): { origin?: string } {
+  const parts = parseManagedBigbrainOrigin(origin)
+  if (!parts || !managedBigbrainOriginHasVault(origin, vaultId)) throw new Error('invalid_request')
+  return parts.tenantLabel === null ? {} : { origin }
+}
+export type ManagedBigbrainDnsRequest = z.infer<typeof managedBigbrainDnsRequestSchema>
 /** Platform's reply to PUT /api/managed-bigbrain/dns/:vaultId. */
 export const managedBigbrainDnsRecordSchema = z
   .object({
@@ -479,18 +604,22 @@ export const managedBigbrainDnsRecordSchema = z
     serverIp: ipv4,
   })
   .strict()
-  .refine(
-    (v) =>
-      managedBigbrainOriginMatchesPolicy(v.origin, v.vaultId, v.zone) &&
-      v.hostname === `bb-${v.vaultId.replaceAll('-', '')}.${v.zone}`
-  )
+  .refine((v) => {
+    const parts = parseManagedBigbrainOrigin(v.origin)
+    return (
+      parts !== null &&
+      managedBigbrainOriginHasVault(v.origin, v.vaultId) &&
+      parts.zone === v.zone &&
+      v.hostname === parts.hostname
+    )
+  })
 export type ManagedBigbrainDnsRecord = z.infer<typeof managedBigbrainDnsRecordSchema>
 
 /** Callers must also cap the stdin/SSH pipe incrementally before collecting it. */
 function parseHostMessage<T>(
   body: string | Uint8Array,
   limit: number,
-  schema: z.ZodType<T>,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   code: ManagedBigbrainErrorCode
 ): T {
   try {

@@ -391,12 +391,20 @@ describe('slim Platform contract (Core-local vault operations)', () => {
   }
   test('the installed host record parses its shape and rejects extra keys', () => {
     expect(contract.MANAGED_BIGBRAIN_HOST_RECORD).toBe('/etc/ficus/bigbrain/host.json')
-    expect(contract.managedBigbrainInstalledHostSchema.parse(installed)).toEqual(installed as never)
+    expect(contract.managedBigbrainInstalledHostSchema.parse(installed)).toEqual({
+      ...installed,
+      tenantLabel: null,
+    } as never)
+    expect(contract.managedBigbrainInstalledHostSchema.parse({ ...installed, tenantLabel: 'noah' }).tenantLabel).toBe(
+      'noah'
+    )
     const { effect: _effect, ...withoutEffect } = installed
     expect(contract.managedBigbrainInstalledHostSchema.parse(withoutEffect).effect).toBeNull()
     for (const bad of [
       { ...installed, token: 'x' },
       { ...installed, zone: 'Example.com' },
+      { ...installed, tenantLabel: 'Noah' },
+      { ...installed, tenantLabel: 'bb-noah' },
       { ...installed, physicalHostBinding: 'x' },
       { ...installed, effect: { action: 'create', effectId: other, previousHostEpoch: 2, completed: true } },
     ])
@@ -459,5 +467,168 @@ describe('slim Platform contract (Core-local vault operations)', () => {
       'managedBigbrainRestoreGrantsMatch',
     ])
       expect(name in contract).toBe(false)
+  })
+})
+
+describe('managed BigBrain vault hostnames', () => {
+  const vault = '7b0a25fe-1d6a-4c11-8d22-0123456789ab'
+  const hex = vault.replaceAll('-', '')
+  const zone = 'ficus.sh'
+  const fallback = `https://bb-${hex}.ficus.sh`
+  const prefixed = 'https://noah-bb-7b0a25fe1d6a.ficus.sh'
+  test('a short tenant gets <tenant>-bb-<12 hex>; no tenant label keeps bb-<32 hex>', () => {
+    expect(contract.managedBigbrainVaultShortId(vault)).toBe('7b0a25fe1d6a')
+    expect(contract.managedBigbrainVaultHostname({ vaultId: vault, zone, tenantLabel: 'noah' })).toBe(
+      'noah-bb-7b0a25fe1d6a.ficus.sh'
+    )
+    expect(contract.managedBigbrainVaultOrigin({ vaultId: vault, zone, tenantLabel: 'noah' })).toBe(prefixed)
+    expect(contract.managedBigbrainVaultOrigin({ vaultId: vault, zone, tenantLabel: null })).toBe(fallback)
+    expect(contract.managedBigbrainVaultOrigin({ vaultId: vault, zone, tenantLabel: undefined })).toBe(fallback)
+  })
+  test('falls back exactly when <tenant>-bb-<12 hex> would exceed one 63-character DNS label', () => {
+    const fits = 'a'.repeat(47) // 47 + '-bb-' + 12 = 63
+    const tooLong = 'a'.repeat(48)
+    const max = 'a'.repeat(contract.MANAGED_BIGBRAIN_TENANT_LABEL_MAX)
+    expect(contract.managedBigbrainVaultHostname({ vaultId: vault, zone, tenantLabel: fits })).toBe(
+      `${fits}-bb-7b0a25fe1d6a.ficus.sh`
+    )
+    expect(contract.managedBigbrainVaultOrigin({ vaultId: vault, zone, tenantLabel: tooLong })).toBe(fallback)
+    expect(contract.managedBigbrainVaultOrigin({ vaultId: vault, zone, tenantLabel: max })).toBe(fallback)
+    expect(contract.managedBigbrainTenantLabelSchema.safeParse(max).success).toBe(true)
+    expect(contract.managedBigbrainTenantLabelSchema.safeParse(`${max}a`).success).toBe(false)
+    // A long zone that leaves no room for the prefixed origin also falls back.
+    const longZone = `${'z'.repeat(60)}.${'y'.repeat(60)}.${'x'.repeat(60)}.example.com`
+    expect(contract.managedBigbrainVaultOrigin({ vaultId: vault, zone: longZone, tenantLabel: fits })).toBe(
+      `https://bb-${hex}.${longZone}`
+    )
+  })
+  test('refuses invalid inputs instead of building a hostname', () => {
+    for (const tenantLabel of ['Noah', 'noah.evil', '-noah', 'noah-', '', 'bb-noah', 'x-bb-0123456789ab'])
+      expect(() => contract.managedBigbrainVaultHostname({ vaultId: vault, zone, tenantLabel })).toThrow(
+        'invalid_request'
+      )
+    expect(() => contract.managedBigbrainVaultHostname({ vaultId: 'x', zone, tenantLabel: 'noah' })).toThrow()
+    expect(() =>
+      contract.managedBigbrainVaultHostname({ vaultId: vault, zone: 'Ficus.sh', tenantLabel: null })
+    ).toThrow()
+  })
+  test('reserves the vault namespace for tenant subdomains', () => {
+    for (const label of ['bb-anything', 'bb-', 'noah-bb-7b0a25fe1d6a', 'a-b-bb-000000000000'])
+      expect(contract.managedBigbrainReservesLabel(label)).toBe(true)
+    for (const label of ['noah', 'bb', 'bbq', 'noah-bb', 'noah-bb-7b0a25fe1d6', 'noah-bb-7B0A25FE1D6A', 'abb-x'])
+      expect(contract.managedBigbrainReservesLabel(label)).toBe(false)
+  })
+  test('parses exactly the two forms', () => {
+    expect(contract.parseManagedBigbrainOrigin(prefixed)).toEqual({
+      hostname: 'noah-bb-7b0a25fe1d6a.ficus.sh',
+      zone,
+      tenantLabel: 'noah',
+      vaultKey: '7b0a25fe1d6a',
+    })
+    expect(contract.parseManagedBigbrainOrigin(fallback)).toEqual({
+      hostname: `bb-${hex}.ficus.sh`,
+      zone,
+      tenantLabel: null,
+      vaultKey: hex,
+    })
+    for (const bad of [
+      'https://noah-bb-7b0a25fe1d6.ficus.sh',
+      'https://noah-bb-7b0a25fe1d6ab.ficus.sh',
+      'https://Noah-bb-7b0a25fe1d6a.ficus.sh',
+      'https://noah-bb-7b0a25fe1d6a.ficus.sh/',
+      'https://noah-bb-7b0a25fe1d6a.ficus.sh:443',
+      'https://noah-bb-7b0a25fe1d6a',
+      'https://-bb-7b0a25fe1d6a.ficus.sh',
+      'https://bb-7b0a25fe1d6a.ficus.sh',
+      'https://x-bb-0123456789ab-bb-7b0a25fe1d6a.ficus.sh',
+      `https://${'a'.repeat(48)}-bb-7b0a25fe1d6a.ficus.sh`,
+      'http://noah-bb-7b0a25fe1d6a.ficus.sh',
+      'https://user@noah-bb-7b0a25fe1d6a.ficus.sh',
+    ])
+      expect(contract.parseManagedBigbrainOrigin(bad)).toBeNull()
+  })
+  test('policy admits exactly the fallback and this tenant prefixed origin for this vault and zone', () => {
+    const p = contract.managedBigbrainOriginMatchesPolicy
+    expect(p(prefixed, vault, zone, 'noah')).toBe(true)
+    expect(p(fallback, vault, zone, 'noah')).toBe(true)
+    // Existing bb-<32 hex> vaults stay valid with or without a tenant label installed.
+    expect(p(fallback, vault, zone, null)).toBe(true)
+    expect(p(fallback, vault, zone)).toBe(true)
+    expect(p(prefixed, vault, zone, null)).toBe(false)
+    expect(p(prefixed, vault, zone, 'alice')).toBe(false)
+    expect(p(prefixed, vault, 'other.sh', 'noah')).toBe(false)
+    expect(p(prefixed, '7b0a25fe-1d6a-4c11-8d22-ffffffffffff', zone, 'noah')).toBe(true) // same short id
+    expect(p(prefixed, '7b0a25fe-1d6b-4c11-8d22-0123456789ab', zone, 'noah')).toBe(false)
+    expect(p(prefixed, vault, zone, 'Noah')).toBe(false)
+    const long = 'a'.repeat(48)
+    expect(p(`https://${long}-bb-7b0a25fe1d6a.ficus.sh`, vault, zone, long)).toBe(false)
+  })
+  test('persisted origins bind their vault, not the current tenant label', () => {
+    expect(contract.managedBigbrainOriginHasVault(prefixed, vault)).toBe(true)
+    expect(contract.managedBigbrainOriginHasVault('https://old-name-bb-7b0a25fe1d6a.ficus.sh', vault)).toBe(true)
+    expect(contract.managedBigbrainOriginHasVault(fallback, vault)).toBe(true)
+    expect(contract.managedBigbrainOriginHasVault(prefixed, id)).toBe(false)
+    expect(contract.managedBigbrainOriginHasVault(`https://bb-${hex.slice(0, 31)}0.ficus.sh`, vault)).toBe(false)
+  })
+  test('host create, receipts, invites and DNS accept the tenant-prefixed form', () => {
+    const create = {
+      ...envelope,
+      action: 'create',
+      vaultId: vault,
+      expectedGeneration: 0,
+      generation: 1,
+      displayName: 'Team',
+      owner,
+      origin: prefixed,
+      limits,
+      upstreamCommit: pin,
+      artifactDigest: digest,
+    }
+    expect(contract.managedBigbrainHostRequestSchema.safeParse(create).success).toBe(true)
+    expect(contract.managedBigbrainHostRequestSchema.safeParse({ ...create, vaultId: id }).success).toBe(false)
+    const r = { ...receipt, vaultId: vault, origin: prefixed }
+    expect(contract.managedBigbrainHostReceiptSchema.safeParse(r).success).toBe(true)
+    expect(contract.managedBigbrainHostReceiptSchema.safeParse({ ...r, vaultId: id }).success).toBe(false)
+    expect(
+      contract.managedBigbrainOwnerInviteResultSchema.safeParse({
+        inviteUrl: `${prefixed}/invite#${'b'.repeat(43)}`,
+        expiresAt: '2026-10-20T01:00:00Z',
+      }).success
+    ).toBe(true)
+    const record = {
+      contractVersion: 1,
+      tenantId: other,
+      vaultId: vault,
+      zone,
+      hostname: 'noah-bb-7b0a25fe1d6a.ficus.sh',
+      origin: prefixed,
+      serverIp: '203.0.113.7',
+    }
+    expect(contract.managedBigbrainDnsRecordSchema.safeParse(record).success).toBe(true)
+    for (const bad of [
+      { ...record, hostname: `bb-${hex}.ficus.sh` },
+      { ...record, zone: 'other.sh' },
+      { ...record, vaultId: id },
+    ])
+      expect(contract.managedBigbrainDnsRecordSchema.safeParse(bad).success).toBe(false)
+    expect(contract.managedBigbrainDnsRequestSchema.safeParse({ origin: prefixed }).success).toBe(true)
+    expect(contract.managedBigbrainDnsRequestSchema.safeParse({}).success).toBe(true)
+    // The fallback form is the empty body older Platform builds require; never sent explicitly.
+    expect(contract.managedBigbrainDnsRequestSchema.safeParse({ origin: fallback }).success).toBe(false)
+    expect(contract.managedBigbrainDnsRequestSchema.safeParse({ origin: 'https://evil.example' }).success).toBe(false)
+    expect(contract.managedBigbrainDnsRequestSchema.safeParse({ origin: prefixed, x: 1 }).success).toBe(false)
+    expect(contract.managedBigbrainDnsRequestFor(vault, prefixed)).toEqual({ origin: prefixed })
+    expect(contract.managedBigbrainDnsRequestFor(vault, fallback)).toEqual({})
+    expect(() => contract.managedBigbrainDnsRequestFor(id, prefixed)).toThrow('invalid_request')
+  })
+  test('capabilities and host config carry the tenant label only when installed', () => {
+    expect(contract.managedBigbrainCapabilitiesSchema.parse(capabilities).tenantLabel).toBeNull()
+    expect(contract.managedBigbrainCapabilitiesSchema.parse({ ...capabilities, tenantLabel: 'noah' }).tenantLabel).toBe(
+      'noah'
+    )
+    const config = { enabled: true, tenantId: id, physicalHostBinding: binding, hostEpoch: 0, zone }
+    expect(contract.managedBigbrainHostConfigSchema.safeParse(config).success).toBe(true)
+    expect(contract.managedBigbrainHostConfigSchema.safeParse({ ...config, tenantLabel: 'noah' }).success).toBe(true)
+    expect(contract.managedBigbrainHostConfigSchema.safeParse({ ...config, tenantLabel: 'bb-x' }).success).toBe(false)
   })
 })

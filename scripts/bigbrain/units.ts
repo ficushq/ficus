@@ -5,7 +5,7 @@ import gatewayTemplate from '../setup/systemd/ficus-bigbrain-gateway.service.tmp
 import controlLauncherTemplate from '../setup/systemd/ficus-bigbrainctl.tmpl' with { type: 'text' }
 import { managedPaths } from './paths'
 import type { StorageReservation } from './storage'
-import { managedBigbrainOriginMatchesPolicy } from '@ficus/shared/managed-bigbrain'
+import { managedBigbrainOriginHasVault } from '@ficus/shared/managed-bigbrain'
 
 const digestSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/)
 const artifactRoot = (digest: string) => {
@@ -36,12 +36,11 @@ export async function renderVaultUnits(input: {
 }) {
   const r = input.reservation
   const paths = managedPaths({ vaultId: r.vaultId, root: input.root })
-  const zone = input.origin.slice('https://bb-'.length + 33)
   if (
     r.username !== `bbv_${r.vaultId.replaceAll('-', '').slice(0, 24)}` ||
     r.mount !== paths.mount ||
     r.image !== paths.image ||
-    !managedBigbrainOriginMatchesPolicy(input.origin, r.vaultId, zone)
+    !managedBigbrainOriginHasVault(input.origin, r.vaultId)
   )
     throw new Error('invalid_request')
   const mountName = mountUnitName(paths.mount)

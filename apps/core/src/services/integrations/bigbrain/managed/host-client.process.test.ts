@@ -22,6 +22,7 @@ const installed = {
   upstreamCommit: MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
   artifactDigest: `sha256:${'a'.repeat(64)}`,
   zone: 'example.com',
+  tenantLabel: 'acme',
   limits: MANAGED_BIGBRAIN_DEFAULT_LIMITS,
   effect: null,
 }
@@ -36,7 +37,7 @@ const receipt = {
   upstreamCommit: MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
   artifactDigest: installed.artifactDigest,
   localPort: null,
-  origin: managedVaultOrigin(VAULT, 'example.com'),
+  origin: managedVaultOrigin(VAULT, { zone: 'example.com', tenantLabel: null }),
   readAccess: 'active',
 }
 async function scratch() {
@@ -118,7 +119,11 @@ test('replies about another request, binding, vault, tenant, generation or origi
       ok: true,
       action: 'rename',
       physicalHostBinding: BINDING,
-      receipt: { ...receipt, vaultId: REQUEST, origin: managedVaultOrigin(REQUEST, 'example.com') },
+      receipt: {
+        ...receipt,
+        vaultId: REQUEST,
+        origin: managedVaultOrigin(REQUEST, { zone: 'example.com', tenantLabel: 'acme' }),
+      },
     },
     { ok: true, action: 'rename', physicalHostBinding: BINDING, receipt: { ...receipt, tenantId: VAULT } },
     { ok: true, action: 'rename', physicalHostBinding: BINDING, receipt: { ...receipt, generation: 3 } },

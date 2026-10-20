@@ -3,7 +3,7 @@ import {
   MANAGED_BIGBRAIN_MAX_VAULTS,
   managedBigbrainHostBindingSchema,
   managedBigbrainHostStateSchema,
-  managedBigbrainOriginMatchesPolicy,
+  managedBigbrainOriginHasVault,
 } from '@ficus/shared/managed-bigbrain'
 
 const MAX_INPUT = 1024 * 1024 + 64 * 1024
@@ -23,7 +23,8 @@ const routeSchema = z
     state: z.enum(['ready', 'maintenance', 'disabled']),
   })
   .strict()
-  .refine((v) => managedBigbrainOriginMatchesPolicy(v.origin, v.vaultId, v.origin.slice('https://bb-'.length + 33)))
+  // A recorded origin (either form) for exactly this vault; never re-derived from the current label.
+  .refine((v) => managedBigbrainOriginHasVault(v.origin, v.vaultId))
 export const gatewayManifestSchema = managedBigbrainHostBindingSchema
   .extend({
     contractVersion: z.literal(1),
@@ -32,6 +33,8 @@ export const gatewayManifestSchema = managedBigbrainHostBindingSchema
   })
   .strict()
   .refine((v) => new Set(v.routes.map((r) => r.vaultId)).size === v.routes.length)
+  // Routing is by hostname: a duplicate fails closed instead of reaching the first match.
+  .refine((v) => new Set(v.routes.map((r) => new URL(r.origin).hostname)).size === v.routes.length)
 export type GatewayManifest = z.infer<typeof gatewayManifestSchema>
 
 const GET_PATHS = new Set([

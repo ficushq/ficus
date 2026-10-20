@@ -1953,7 +1953,9 @@ render_caddyfile() { # HOST PORT CERT_PATH KEY_PATH [TRUSTED_PROXY...]
 #
 # Opt-in (default off) shared vaults served on THIS Core host. Config section, written by
 # the control plane before install and validated again by the installer's strict schema:
-#   bigbrain: { enabled, tenant_id, physical_host_binding, host_epoch, zone }
+#   bigbrain: { enabled, tenant_id, physical_host_binding, host_epoch, zone, [tenant_label] }
+# tenant_label (the tenant's Platform subdomain) names NEW vaults <tenant>-bb-<12 hex>.<zone>;
+# without it they are bb-<32 hex>.<zone>. Existing vaults always keep their recorded address.
 # Only signed artifact releases carry the runtime (<release>/bigbrain); nothing is built or
 # downloaded on the host. The installer seeds an ABSENT host record only; it never adopts a
 # different tenant/binding, never rewinds the host epoch and never uninstalls vault data.
@@ -1971,11 +1973,12 @@ bigbrain_config_json() {
     if type != "object" then error("shape") else . end |
     if (.enabled // false) == false then
       if (keys - ["enabled"]) == [] then {enabled: false} else error("identity without enabled") end
-    elif (keys - ["enabled", "tenant_id", "physical_host_binding", "host_epoch", "zone"]) != [] then error("unknown key")
+    elif (keys - ["enabled", "tenant_id", "physical_host_binding", "host_epoch", "zone", "tenant_label"]) != [] then error("unknown key")
     else {enabled: .enabled, tenantId: .tenant_id, physicalHostBinding: .physical_host_binding,
-          hostEpoch: .host_epoch, zone: .zone}
+          hostEpoch: .host_epoch, zone: .zone} +
+         (if has("tenant_label") then {tenantLabel: .tenant_label} else {} end)
     end' <<<"${section}" 2>/dev/null ||
-    die "config: bigbrain must contain only enabled, tenant_id, physical_host_binding, host_epoch and zone (identity only when enabled: true)"
+    die "config: bigbrain must contain only enabled, tenant_id, physical_host_binding, host_epoch, zone and tenant_label (identity only when enabled: true)"
 }
 
 bigbrain_enabled() { # CONFIG_JSON

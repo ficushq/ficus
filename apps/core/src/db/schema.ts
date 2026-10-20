@@ -4047,7 +4047,8 @@ export const managedBigbrainVaults = pgTable(
     nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
     lastErrorCode: varchar('last_error_code', { length: 64 }),
     retryable: boolean('retryable').notNull().default(false),
-    /** Public vault origin (routing Host only; derived from the installed zone, never a client value). */
+    /** Public vault origin (routing Host only), chosen once at create from the installed zone and
+     * tenant label (never a client value) and never re-derived. */
     origin: varchar('origin', { length: 253 }).notNull(),
     /** Imported host read handoff WITHOUT its token (the token lives only in the credential
      * store under the connection's credentialRef). Null until imported or after revocation. */
