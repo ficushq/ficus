@@ -14,7 +14,7 @@ const policySchema = z
     minCoreFreeDiskBytes: uint.min(2 * 1024 ** 3),
   })
   .strict()
-const reservationSchema = z
+export const storageReservationSchema = z
   .object({
     vaultId: uuid,
     username: z.string().regex(/^bbv_[0-9a-f]{24}$/),
@@ -24,7 +24,7 @@ const reservationSchema = z
     image: z.string(),
   })
   .strict()
-export type StorageReservation = z.infer<typeof reservationSchema>
+export type StorageReservation = z.infer<typeof storageReservationSchema>
 
 /** Called under the host lifecycle lock, before allocating anything. Existing reservations
  * include failed/partial creates until their owned resources have actually been removed.
@@ -40,7 +40,7 @@ export function planVaultStorage(input: {
   const parsed = z
     .object({
       vaultId: uuid,
-      existing: z.array(reservationSchema).max(MANAGED_BIGBRAIN_MAX_VAULTS),
+      existing: z.array(storageReservationSchema).max(MANAGED_BIGBRAIN_MAX_VAULTS),
       policy: policySchema,
       freeDiskBytes: uint,
       root: z.string().optional(),
