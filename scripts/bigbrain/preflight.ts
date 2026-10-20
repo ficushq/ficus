@@ -24,6 +24,11 @@ export interface CgroupFacts {
 type Role = 'vault' | 'gateway' | 'control'
 const cap = (text: string, ceiling: number) =>
   /^\d+$/.test(text.trim()) && Number.isSafeInteger(Number(text)) && Number(text) > 0 && Number(text) <= ceiling
+/** Unprivileged view: neither the soft nor the hard descriptor limit exceeds the unit's. */
+export function verifyOpenFileLimit(limits: string, ceiling: number): void {
+  const files = /Max open files\s+(\d+)\s+(\d+)/.exec(limits)
+  if (!files || !cap(files[1]!, ceiling) || !cap(files[2]!, ceiling)) throw new Error('open_files_unbounded')
+}
 export function assertCgroupBudget(role: Role, facts: CgroupFacts): void {
   const cpu = facts.aggregateCpuMax.trim().split(/\s+/)
   const files = /Max open files\s+(\d+)\s+(\d+)/.exec(facts.limits)
@@ -45,10 +50,9 @@ export function assertCgroupBudget(role: Role, facts: CgroupFacts): void {
         cap(cpuParts[1]!, Number.MAX_SAFE_INTEGER) &&
         Number(cpuParts[0]) / Number(cpuParts[1]) <= 0.5,
     ],
-    [
-      'unit_nofile',
-      !!nofile && cap(nofile[1]!, role === 'vault' ? 256 : 128) && cap(nofile[2]!, role === 'vault' ? 256 : 128),
-    ]
+    // Root (+) preflights run Bun with CAP_SYS_RESOURCE and Bun raises its own descriptor limit at
+    // startup, so for vault/gateway the configured limit is verified in the unprivileged sandbox.
+    ['unit_nofile', role !== 'control' || (!!nofile && cap(nofile[1]!, 128) && cap(nofile[2]!, 128))]
   )
   const failed = checks.find(([, ok]) => !ok)
   if (failed) throw new Error(`budget_${failed[0]}`)
@@ -64,9 +68,7 @@ export function assertCgroupBudget(role: Role, facts: CgroupFacts): void {
     !cap(cpu[0]!, Number.MAX_SAFE_INTEGER) ||
     !cap(cpu[1]!, Number.MAX_SAFE_INTEGER) ||
     Number(cpu[0]) / Number(cpu[1]) > 0.5 ||
-    !files ||
-    !cap(files[1]!, role === 'vault' ? 256 : 128) ||
-    !cap(files[2]!, role === 'vault' ? 256 : 128)
+    (role === 'control' && (!files || !cap(files[1]!, 128) || !cap(files[2]!, 128)))
   )
     throw new Error('unsupported_host')
 }
@@ -406,6 +408,8 @@ export async function sandboxMain(args: string[]): Promise<void> {
     await proveNoInetSockets()
     stage.name = 'scratch'
     verifyScratchMounts(await readFile('/proc/self/mountinfo', 'utf8'))
+    stage.name = 'open-files'
+    verifyOpenFileLimit(await readFile('/proc/self/limits', 'utf8'), target === 'gateway' ? 128 : 256)
     stage.name = 'socket-directory'
     const group = await lookupId('group', target === 'gateway' ? 'caddy' : 'ficus-bb-gateway')
     await verifySocketDirectory(

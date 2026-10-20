@@ -28,7 +28,6 @@ test('preflight reads enforceable cgroup-v2 values, not unit declarations or an 
     { ...facts, aggregateCpuMax: 'max 100000' },
     { ...facts, aggregateCpuMax: '60000 100000' },
     { ...facts, pidsMax: 'max' },
-    { ...facts, limits: 'Max open files 512 512 files' },
   ])
     expect(() => assertCgroupBudget('vault', bad)).toThrow(/^(budget_[a-z_]+|unsupported_host)$/)
 })
@@ -71,6 +70,18 @@ test('socket directory verification requires exact owner, client group and setgi
   } finally {
     await rm(root, { recursive: true, force: true })
   }
+})
+test('descriptor limits: control is checked in its own process; vault/gateway in the unprivileged sandbox', async () => {
+  const { verifyOpenFileLimit } = await import('./preflight')
+  const line = (soft: number, hard: number) =>
+    `Max open files            ${soft}                 ${hard}                 files`
+  expect(() => verifyOpenFileLimit(line(256, 256), 256)).not.toThrow()
+  expect(() => verifyOpenFileLimit(line(256, 524288), 256)).toThrow('open_files_unbounded')
+  // A root preflight that raised its own limit is not mistaken for the unit's configuration.
+  expect(() => assertCgroupBudget('gateway', { ...facts, limits: line(1048576, 1048576) })).not.toThrow()
+  expect(() => assertCgroupBudget('control', { ...facts, limits: line(1048576, 1048576) })).toThrow(
+    'budget_unit_nofile'
+  )
 })
 test('scratch must be memory-backed, noexec/nodev/nosuid and bounded; PrivateTmp on disk is insufficient', () => {
   const mounts = '/tmp /var/tmp'
