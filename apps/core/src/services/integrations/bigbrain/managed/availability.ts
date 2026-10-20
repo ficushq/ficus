@@ -55,6 +55,12 @@ export function managedBigbrainAvailability(now = Date.now()): { available: bool
   return { available: true }
 }
 
+/** On Ficus Cloud every BigBrain connection is a managed shared vault: generic integration
+ * endpoints must not bypass the managed lifecycle or disclose unassigned vaults. */
+export function isManagedBigbrainProvider(providerKey: string | null | undefined): boolean {
+  return providerKey === 'bigbrain' && isPlatformManaged()
+}
+
 /** Provider eligibility for this deployment: managed shared vaults on Ficus Cloud, a local
  * binding elsewhere. Local-binding code keeps using `bigbrainHostAvailability` directly. */
 export function bigbrainDeploymentAvailability(now = Date.now()): { available: boolean; reason?: string } {

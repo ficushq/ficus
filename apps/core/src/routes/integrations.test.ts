@@ -1329,3 +1329,148 @@ test('unsupported catalog state is public and rejects API enable before persisti
   expect(calls.setEnabled).not.toHaveBeenCalled()
   expect((await request(false)).status).toBe(200)
 })
+
+describe('managed shared BigBrain on Ficus Cloud', () => {
+  const previousManaged = process.env.FICUS_MANAGED
+  const cleanups: Array<() => Promise<void>> = []
+  beforeAll(() => {
+    process.env.FICUS_MANAGED = '1'
+  })
+  afterAll(() => {
+    if (previousManaged === undefined) delete process.env.FICUS_MANAGED
+    else process.env.FICUS_MANAGED = previousManaged
+  })
+  afterEach(async () => {
+    for (const cleanup of cleanups.splice(0)) await cleanup()
+  })
+  async function human(permissions: string[], squadPermissions: string[] = []) {
+    const [user] = await db
+      .insert(users)
+      .values({ email: `${crypto.randomUUID()}@example.com` })
+      .returning()
+    const [squad] = await db
+      .insert(squads)
+      .values({ name: `Managed BigBrain ${crypto.randomUUID()}`, purpose: 'test' })
+      .returning()
+    const roleIds: string[] = []
+    for (const [scope, granted] of [
+      ['system', permissions],
+      ['squad', squadPermissions],
+    ] as const) {
+      if (!granted.length) continue
+      const [role] = await db
+        .insert(roles)
+        .values({
+          name: `Managed ${crypto.randomUUID()}`,
+          slug: `managed-${crypto.randomUUID()}`,
+          permissions: granted,
+        })
+        .returning()
+      roleIds.push(role.id)
+      await db.insert(roleAssignments).values({
+        subjectType: 'user',
+        subjectId: user.id,
+        roleId: role.id,
+        scope,
+        squadId: scope === 'squad' ? squad.id : null,
+      })
+    }
+    const { invalidatePermissionCache } = await import('../services/rbac/permissions')
+    invalidatePermissionCache()
+    cleanups.push(async () => {
+      for (const roleId of roleIds) {
+        await db.delete(roleAssignments).where(eq(roleAssignments.roleId, roleId))
+        await db.delete(roles).where(eq(roles.id, roleId))
+      }
+      await db.delete(squads).where(eq(squads.id, squad.id))
+      await db.delete(users).where(eq(users.id, user.id))
+      invalidatePermissionCache()
+    })
+    return { identity: { type: 'user' as const, userId: user.id }, squadId: squad.id }
+  }
+  const wildcardAutomation: Identity = { type: 'system', systemTokenId: 'auto', name: 'auto', scopes: ['*'] }
+  const json = (body: unknown, method = 'POST') => ({
+    method,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
+  test('generic lifecycle mutations cannot bypass the managed vault lifecycle, even for admins', async () => {
+    const { identity } = await human(['*'])
+    for (const actor of [identity, wildcardAutomation]) {
+      const { app, calls } = createApp(actor, 'bigbrain')
+      for (const [path, init] of [
+        [`/api/integrations/connections/${summary.id}/enable`, { method: 'POST' }],
+        [`/api/integrations/connections/${summary.id}/validate`, { method: 'POST' }],
+        [`/api/integrations/connections/${summary.id}/refresh`, { method: 'POST' }],
+        [`/api/integrations/connections/${summary.id}`, { method: 'DELETE' }],
+        ['/api/integrations/providers/bigbrain/default', json({ connectionId: summary.id }, 'PUT')],
+      ] as const) {
+        const response = await app.request(path, init)
+        expect([path, response.status]).toEqual([path, 409])
+        expect((await response.json()).code).toBe('managed_lifecycle')
+      }
+      expect(calls.enable).not.toHaveBeenCalled()
+      expect(calls.validate).not.toHaveBeenCalled()
+      expect(calls.remove).not.toHaveBeenCalled()
+      // Disabling is an immediate access fence, never a lifecycle bypass: still allowed.
+      const disable = await app.request(`/api/integrations/connections/${summary.id}/disable`, json({}))
+      expect(disable.status).toBe(200)
+    }
+  })
+
+  test('only enabled humans with BigBrain read authority enumerate or open managed vault connections', async () => {
+    const reader = await human(['integrations:read:bigbrain'])
+    const allowed = createApp(reader.identity, 'bigbrain')
+    expect((await allowed.app.request('/api/integrations/connections?provider=bigbrain')).status).toBe(200)
+    expect((await allowed.app.request(`/api/integrations/connections/${summary.id}`)).status).toBe(200)
+    // Wildcard automation passes the generic permission but is not a human: refused, and an
+    // unassigned vault is indistinguishable from a missing one. Unscoped agents never pass at all.
+    for (const [actor, expected] of [
+      [wildcardAutomation, [403, 404]],
+      [{ type: 'agent', agentId: crypto.randomUUID(), squadId: crypto.randomUUID() } as Identity, [403, 403]],
+    ] as const) {
+      const { app, calls } = createApp(actor, 'bigbrain')
+      const list = await app.request('/api/integrations/connections?provider=bigbrain')
+      const detail = await app.request(`/api/integrations/connections/${summary.id}`)
+      expect([list.status, detail.status]).toEqual([...expected])
+      expect(calls.list).not.toHaveBeenCalled()
+      expect(calls.get).not.toHaveBeenCalled()
+    }
+  })
+
+  test('squad readers see only assigned vaults; managers see the pool', async () => {
+    const reader = await human([], ['integrations:read'])
+    const squadView = createApp(reader.identity, 'bigbrain')
+    await squadView.app.request(`/api/squads/${reader.squadId}/integrations/bigbrain`)
+    expect(squadView.calls.selection).toHaveBeenCalledWith(reader.squadId, 'bigbrain', { audience: 'assigned' })
+    const manager = await human(['integrations:read:bigbrain'], ['integrations:read'])
+    const managerView = createApp(manager.identity, 'bigbrain')
+    await managerView.app.request(`/api/squads/${manager.squadId}/integrations/bigbrain`)
+    expect(managerView.calls.selection).toHaveBeenCalledWith(manager.squadId, 'bigbrain', { audience: 'manager' })
+  })
+
+  test('attaching a vault needs a literal human with instance and squad write; inherit-default is refused', async () => {
+    const squadOnly = await human([], ['integrations:write', 'integrations:read'])
+    const refused = createApp(squadOnly.identity, 'bigbrain')
+    const attempt = await refused.app.request(
+      `/api/squads/${squadOnly.squadId}/integrations/bigbrain/assignment`,
+      json({ connectionId: summary.id }, 'PUT')
+    )
+    expect(attempt.status).toBe(403)
+    expect(refused.calls.assign).not.toHaveBeenCalled()
+    const manager = await human(['integrations:write:bigbrain'], ['integrations:write', 'integrations:read'])
+    const allowed = createApp(manager.identity, 'bigbrain')
+    const attach = await allowed.app.request(
+      `/api/squads/${manager.squadId}/integrations/bigbrain/assignment`,
+      json({ connectionId: summary.id }, 'PUT')
+    )
+    expect(attach.status).toBe(200)
+    expect(allowed.calls.assign).toHaveBeenCalled()
+    const inherit = await allowed.app.request(
+      `/api/squads/${manager.squadId}/integrations/bigbrain/scope`,
+      json({ inheritDefault: true }, 'PUT')
+    )
+    expect(inherit.status).toBe(409)
+  })
+})
