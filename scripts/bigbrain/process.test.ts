@@ -44,6 +44,17 @@ test('deadline kills and awaits the owned child; invalid budgets/input never spa
       'invalid_request'
     )
 })
+test('native administration can select a bounded larger stdout budget, never enlarging stderr or permitting unlimited output', async () => {
+  const args = [process.execPath, '-e', "process.stdout.write('x'.repeat(20000))"]
+  expect((await runPrivateCommand(args, { maxOutputBytes: 32768 })).stdout).toHaveLength(20000)
+  await expect(runPrivateCommand(args)).rejects.toThrow('output_limit')
+  await expect(
+    runPrivateCommand([process.execPath, '-e', "process.stderr.write('x'.repeat(20000))"], { maxOutputBytes: 32768 })
+  ).rejects.toThrow('output_limit')
+  for (const maxOutputBytes of [0, 1048577, NaN])
+    await expect(runPrivateCommand(args, { maxOutputBytes })).rejects.toThrow('invalid_request')
+})
+
 test('vault CLI drops supplementary groups, capabilities and future privilege before the fixed binary', () => {
   const binary = `/opt/ficus-bigbrain/releases/${'a'.repeat(64)}/bigbrain-shared`
   const args = vaultCommand({ uid: 1200, gid: 1201 }, binary, ['member', 'list', '--json'])

@@ -6,7 +6,7 @@ export type PrivateCommandResult = {
 }
 export type PrivateCommandRunner = (
   argv: string[],
-  options?: { input?: string; timeoutMs?: number }
+  options?: { input?: string; timeoutMs?: number; maxOutputBytes?: number }
 ) => Promise<PrivateCommandResult>
 /** Internal root-controller primitive, NOT a helper/HTTP command API. Every caller supplies
  * fixed root-owned executables and validated source-built argv, never a caller command/path.
@@ -14,6 +14,7 @@ export type PrivateCommandRunner = (
  */
 export const runPrivateCommand: PrivateCommandRunner = async (argv, options = {}) => {
   const timeoutMs = options.timeoutMs ?? 15000
+  const maxOutputBytes = options.maxOutputBytes ?? 16384
   if (
     !argv.length ||
     !isAbsolute(argv[0]!) ||
@@ -21,6 +22,9 @@ export const runPrivateCommand: PrivateCommandRunner = async (argv, options = {}
     argv.some((a) => a.includes('\0')) ||
     Buffer.byteLength(argv.join('\0')) > 8192 ||
     (options.input !== undefined && Buffer.byteLength(options.input) > 8192) ||
+    !Number.isSafeInteger(maxOutputBytes) ||
+    maxOutputBytes < 1024 ||
+    maxOutputBytes > 1048576 ||
     !Number.isSafeInteger(timeoutMs) ||
     timeoutMs < 1000 ||
     timeoutMs > 45000
@@ -61,7 +65,7 @@ export const runPrivateCommand: PrivateCommandRunner = async (argv, options = {}
         const next = await reader.read()
         if (next.done) break
         size += next.value.byteLength
-        if (size > 16384) {
+        if (size > (retain ? maxOutputBytes : 16384)) {
           overflow = true
           kill()
         } else if (retain && !overflow) chunks.push(next.value)
