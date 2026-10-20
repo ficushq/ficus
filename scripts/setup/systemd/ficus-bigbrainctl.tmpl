@@ -48,7 +48,7 @@ exec /usr/bin/systemd-run --quiet --wait --pipe --collect --service-type=exec \
   --property=PrivateMounts=yes \
   --property='TemporaryFileSystem=/tmp:rw,nosuid,nodev,noexec,size=16M,mode=1777 /var/tmp:rw,nosuid,nodev,noexec,size=16M,mode=1777' \
   --property=ProtectSystem=strict \
-  --property='ReadWritePaths=/etc /var/lib/ficus-bigbrain' \
+  --property='ReadWritePaths=/etc /var/lib/ficus-bigbrain -/run/ficus-bigbrain' \
   --property=RestrictSUIDSGID=yes \
   --property=RestrictRealtime=yes \
   --property=LockPersonality=yes \

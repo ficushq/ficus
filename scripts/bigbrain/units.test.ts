@@ -113,7 +113,7 @@ test('fixed root launcher serializes across SSH interruption and bounds every de
     'PrivateMounts=yes',
     'TemporaryFileSystem=/tmp:rw,nosuid,nodev,noexec,size=16M,mode=1777 /var/tmp:rw,nosuid,nodev,noexec,size=16M,mode=1777',
     'ProtectSystem=strict',
-    'ReadWritePaths=/etc /var/lib/ficus-bigbrain',
+    'ReadWritePaths=/etc /var/lib/ficus-bigbrain -/run/ficus-bigbrain',
     '/usr/bin/env -i',
     '/usr/local/bin/bun --no-install --no-env-file',
     '/ficus-bigbrain-host.js control',
