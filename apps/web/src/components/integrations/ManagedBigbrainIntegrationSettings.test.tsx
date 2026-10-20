@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent } from '@testing-library/dom'
 import { acquireDomHarness } from '../../test/domHarness'
-import { integrationQueryKeys } from '../../queryKeys'
+import { integrationQueryKeys, queryKeys } from '../../queryKeys'
 import type { ManagedBigbrainVault } from '../../api/integrations'
 
 let harness: Awaited<ReturnType<typeof acquireDomHarness>>
@@ -63,11 +63,12 @@ afterEach(async () => {
   await harness.cleanup()
 })
 
-async function render(canWrite = true) {
+async function render(canWrite = true, list: ManagedBigbrainVault[] = [research, design]) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } },
   })
-  client.setQueryData(integrationQueryKeys.managedBigbrainVaults(), [research, design])
+  client.setQueryData(integrationQueryKeys.managedBigbrainVaults(), list)
+  client.setQueryData(queryKeys.auth.me(), { id: 'owner', email: 'Ada.Lovelace+ficus@example.com', displayName: 'Ada' })
   const { ManagedBigbrainIntegrationSettings } = await import('./ManagedBigbrainIntegrationSettings')
   await harness.act(async () =>
     root.render(
@@ -96,6 +97,7 @@ async function act(run: () => void) {
   })
 }
 const mutations = () => requests.filter((r) => r.method !== 'GET')
+const handleInput = () => container.querySelectorAll<HTMLInputElement>('form input')[1]!
 
 describe('ManagedBigbrainIntegrationSettings', () => {
   test('two named vaults each show their own state and only the applicable controls', async () => {
@@ -144,6 +146,58 @@ describe('ManagedBigbrainIntegrationSettings', () => {
     expect(second.requestId).toBe(first.requestId)
     expect(name!.value).toBe('')
   })
+
+  test('the handle field explains it is a new per-vault name and starts from a suggestion', async () => {
+    await render()
+    const form = container.querySelector('form')!
+    expect(form.textContent).toContain('Your handle in this vault')
+    expect(form.textContent).toContain('not a BigBrain account')
+    expect(form.textContent).toContain('Members see it next to what you write')
+    expect(form.textContent).toContain('cannot be changed later')
+    expect(form.textContent).toContain('1–64 lowercase letters, numbers')
+    expect(handleInput().value).toBe('ada.lovelace')
+    expect(handleInput().placeholder).toBe('e.g. ada')
+    await act(() => fireEvent.input(form.querySelector('input')!, { target: { value: 'Archive' } }))
+    expect(button('Create vault').disabled).toBe(false)
+    await act(() => fireEvent.submit(form))
+    expect(JSON.parse(mutations()[0]!.body)).toMatchObject({ displayName: 'Archive', ownerHandle: 'ada.lovelace' })
+  })
+
+  test('an invalid handle is explained inline and blocks submit until fixed', async () => {
+    await render()
+    await act(() => fireEvent.input(container.querySelector('form input')!, { target: { value: 'Archive' } }))
+    for (const [value, message] of [
+      ['ada lovelace', 'Use only lowercase letters, numbers'],
+      ['-ada', 'Start with a lowercase letter or number.'],
+      ['ficus-reader', '“ficus-reader” is reserved.'],
+    ] as const) {
+      await act(() => fireEvent.input(handleInput(), { target: { value } }))
+      expect(handleInput().getAttribute('aria-invalid')).toBe('true')
+      const describedBy = handleInput().getAttribute('aria-describedby')!.split(' ')
+      expect(describedBy.map((id) => document.getElementById(id)?.textContent).join(' ')).toContain(message)
+      expect(button('Create vault').disabled).toBe(true)
+    }
+    // Clearing the suggestion leaves an empty, required field with no error shown.
+    await act(() => fireEvent.input(handleInput(), { target: { value: '' } }))
+    expect(handleInput().value).toBe('')
+    expect(handleInput().hasAttribute('aria-invalid')).toBe(false)
+    expect(button('Create vault').disabled).toBe(true)
+    await act(() => fireEvent.input(handleInput(), { target: { value: 'Ada_L' } }))
+    expect(handleInput().value).toBe('ada_l')
+    expect(handleInput().hasAttribute('aria-invalid')).toBe(false)
+    expect(button('Create vault').disabled).toBe(false)
+  })
+
+  for (const list of [[], [research], [research, design]]) {
+    test(`exactly one divider separates ${list.length} vault(s) from the new vault form`, async () => {
+      await render(true, list)
+      expect(rows()).toHaveLength(list.length)
+      // Rows are separated by the list; none draws its own edge next to the form's top border.
+      expect(container.querySelector('ul')!.className).toContain('divide-y')
+      for (const li of rows()) expect(li.className).not.toMatch(/\bborder-[bt]\b/)
+      expect(container.querySelector('form')!.className).toContain('border-t')
+    })
+  }
 
   test('deleting requires the exact name and states that existing backups are not removed', async () => {
     await render()

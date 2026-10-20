@@ -74,6 +74,12 @@ export async function createSyntheticBigbrain(root: string, osHome: string): Pro
         process.exit(0);
       }
     } else if (args[0] === 'mcp' && args[1] === '--client') {
+      if (mode === 'escaped-child' || mode === 'escaped-child-ok') {
+        // Same escaped pipe holder for a session; '-ok' then exits the wrapper on its own.
+        const escaped = spawn('setsid', ['sleep', '30'], { stdio: ['ignore', 'inherit', 'inherit'] });
+        appendFileSync(${JSON.stringify(observed)}, JSON.stringify({ escapedPid: escaped.pid })+'\\n');
+        if (mode === 'escaped-child-ok') process.exit(0);
+      }
       let buffer=''; process.stdin.on('data', data => { buffer+=data; while(buffer.includes('\\n')) { const i=buffer.indexOf('\\n'), m=JSON.parse(buffer.slice(0,i)); buffer=buffer.slice(i+1); let result;
       if(m.method==='initialize') result={protocolVersion:m.params.protocolVersion,capabilities:{tools:{}},serverInfo:{name:'synthetic',version:'1'}};
       if(m.method==='tools/list') result={tools:['load_memory','search_vault','read_note','drop'].map(name=>({name,inputSchema:{type:'object'}}))};
