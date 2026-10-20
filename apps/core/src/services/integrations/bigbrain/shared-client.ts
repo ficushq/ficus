@@ -4,6 +4,7 @@ import {
   MANAGED_BIGBRAIN_MCP_PROTOCOL,
   MANAGED_BIGBRAIN_SHARED_PROTOCOL,
   managedBigbrainCapabilitiesSchema,
+  managedBigbrainOriginHasVault,
   managedBigbrainReadHandoffSchema,
   type ManagedBigbrainCapabilities,
   type ManagedBigbrainReadHandoff,
@@ -105,7 +106,8 @@ export function readMaterialMatches(
     vault.vaultId === material.vaultId &&
     vault.upstreamVaultId === material.upstreamVaultId &&
     material.generation <= vault.appliedGeneration &&
-    !!vault.origin?.startsWith(`https://bb-${material.vaultId.replaceAll('-', '')}.`)
+    !!vault.origin &&
+    managedBigbrainOriginHasVault(vault.origin, material.vaultId)
   )
 }
 

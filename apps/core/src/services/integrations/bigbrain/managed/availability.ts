@@ -4,7 +4,7 @@
  * Available only when, within the TTL, three independent observations agree: the local helper
  * probe (this host runs the installed, active, pinned runtime), Platform's support report (its
  * pinned-SSH probe, certificate and zone coverage) and the root-owned installed host record, all
- * naming the same tenant, physical-host binding, epoch and zone. Anything missing, stale or
+ * naming the same tenant, physical-host binding, epoch, zone and tenant label. Anything missing, stale or
  * inconsistent is unavailable. Each process (API and worker) keeps its own snapshot.
  */
 import {
@@ -65,7 +65,8 @@ export function recordManagedBigbrainSupport(
     c.tenantId === h.tenantId &&
     c.physicalHostBinding === h.physicalHostBinding &&
     c.hostEpoch === h.hostEpoch &&
-    c.zone === h.zone
+    c.zone === h.zone &&
+    c.tenantLabel === h.tenantLabel
   if (!same(l) || !same(p) || l.artifactDigest !== h.artifactDigest) {
     refusal = 'identity_mismatch'
     return

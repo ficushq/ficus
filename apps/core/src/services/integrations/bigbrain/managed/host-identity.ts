@@ -9,6 +9,7 @@ import { open } from 'node:fs/promises'
 import {
   MANAGED_BIGBRAIN_HOST_RECORD,
   managedBigbrainInstalledHostSchema,
+  managedBigbrainVaultOrigin,
   type ManagedBigbrainInstalledHost,
 } from '@ficus/shared/managed-bigbrain'
 import { ManagedHostError } from './host-client'
@@ -54,7 +55,11 @@ export async function readInstalledHost(
   }
 }
 
-/** The vault origin Core assigns at create: derived from the installed zone, never a client value. */
-export function managedVaultOrigin(vaultId: string, zone: string): string {
-  return `https://bb-${vaultId.replaceAll('-', '')}.${zone}`
+/** The vault origin Core assigns at create, from the installed zone and Platform-written tenant
+ * label (never a client value or request Host). Persisted with the vault and never re-derived. */
+export function managedVaultOrigin(
+  vaultId: string,
+  host: Pick<ManagedBigbrainInstalledHost, 'zone' | 'tenantLabel'>
+): string {
+  return managedBigbrainVaultOrigin({ vaultId, zone: host.zone, tenantLabel: host.tenantLabel })
 }

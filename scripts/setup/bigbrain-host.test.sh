@@ -49,6 +49,9 @@ expect_eq 'explicit disabled' "$(bigbrain_config_json)" '{"enabled":false}'
 config "bigbrain: {enabled: true, tenant_id: ${TENANT}, physical_host_binding: ${BINDING}, host_epoch: 4, zone: bb.example.com}"
 expect_eq 'enabled maps the agreed snake_case keys to the installer schema' "$(bigbrain_config_json)" \
   "{\"enabled\":true,\"tenantId\":\"${TENANT}\",\"physicalHostBinding\":\"${BINDING}\",\"hostEpoch\":4,\"zone\":\"bb.example.com\"}"
+config "bigbrain: {enabled: true, tenant_id: ${TENANT}, physical_host_binding: ${BINDING}, host_epoch: 4, zone: bb.example.com, tenant_label: noah}"
+expect_eq 'the optional tenant label maps to tenantLabel' "$(bigbrain_config_json)" \
+  "{\"enabled\":true,\"tenantId\":\"${TENANT}\",\"physicalHostBinding\":\"${BINDING}\",\"hostEpoch\":4,\"zone\":\"bb.example.com\",\"tenantLabel\":\"noah\"}"
 config "bigbrain: {enabled: true, tenant_id: ${TENANT}, physical_host_binding: ${BINDING}, host_epoch: 4, zone: bb.example.com, artifact: /tmp/x}"
 expect_fail 'unknown keys (paths, limits, artifacts) are refused' 'bigbrain must contain only' bigbrain_config_json
 config "bigbrain: {tenant_id: ${TENANT}}"

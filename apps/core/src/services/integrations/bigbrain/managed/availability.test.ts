@@ -77,9 +77,31 @@ test('local probe, Platform report and installed host record that agree make it 
   expect(managedBigbrainAvailability(NOW).available).toBe(false)
 })
 
-test('disagreement on binding, epoch, zone, tenant or artifact is unavailable', () => {
+test('a tenant label all three observations agree on is the one Core uses for new vault origins', () => {
+  cloud()
+  recordManagedBigbrainSupport(
+    {
+      local: capabilities({ tenantLabel: 'acme' }),
+      platform: capabilities({ tenantLabel: 'acme' }),
+      host: host({ tenantLabel: 'acme' }),
+    },
+    NOW
+  )
+  expect(currentManagedBigbrainHost(NOW)?.tenantLabel).toBe('acme')
+  recordManagedBigbrainSupport(agreeing(), NOW)
+  expect(currentManagedBigbrainHost(NOW)?.tenantLabel).toBeNull()
+})
+
+test('disagreement on binding, epoch, zone, tenant label, tenant or artifact is unavailable', () => {
   cloud()
   for (const bad of [
+    { ...agreeing(), platform: capabilities({ tenantLabel: 'acme' }) },
+    { ...agreeing(), host: host({ tenantLabel: 'acme' }) },
+    {
+      local: capabilities({ tenantLabel: 'acme' }),
+      platform: capabilities({ tenantLabel: 'other' }),
+      host: host({ tenantLabel: 'acme' }),
+    },
     { ...agreeing(), platform: capabilities({ physicalHostBinding: TENANT }) },
     { ...agreeing(), local: capabilities({ hostEpoch: 2 }) },
     { ...agreeing(), platform: capabilities({ zone: 'other.example.com' }) },

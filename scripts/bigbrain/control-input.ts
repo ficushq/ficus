@@ -42,7 +42,8 @@ export function validateHostAdmission(input: unknown, manifest: unknown): Manage
     throw new Error('forbidden')
   if (r.action === 'create') {
     if (r.upstreamCommit !== h.upstreamCommit || r.artifactDigest !== h.artifactDigest) throw new Error('pin_mismatch')
-    if (!managedBigbrainOriginMatchesPolicy(r.origin, r.vaultId, h.zone)) throw new Error('identity_mismatch')
+    if (!managedBigbrainOriginMatchesPolicy(r.origin, r.vaultId, h.zone, h.tenantLabel))
+      throw new Error('identity_mismatch')
     for (const key of Object.keys(h.limits) as (keyof typeof h.limits)[]) {
       if (r.limits[key] !== h.limits[key]) throw new Error('resource_limit')
     }

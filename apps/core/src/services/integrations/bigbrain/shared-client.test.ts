@@ -34,6 +34,7 @@ const capabilities = {
   sharedProtocol: 1 as const,
   hostState: 'active' as const,
   zone: 'example.com',
+  tenantLabel: null,
   limits: MANAGED_BIGBRAIN_DEFAULT_LIMITS,
   observedAt: '2026-10-20T00:00:00.000Z',
 }
@@ -63,6 +64,7 @@ function fixture(
     protocol?: string
     mcp?: (id: unknown) => Response
     beforeCall?: () => Promise<void>
+    vault?: typeof vault
   } = {}
 ) {
   const calls: { url: string; init: RequestInit }[] = []
@@ -82,7 +84,7 @@ function fixture(
   }
   const client = new BigbrainSharedClient({
     capabilities,
-    vault,
+    vault: options.vault ?? vault,
     material,
     fetch: transport,
     beforeCall: options.beforeCall ?? (async () => {}),
@@ -111,6 +113,13 @@ test('uses only four read methods through the fixed loopback gateway and retains
     expect(headers.get('MCP-Protocol-Version')).toBe('2025-06-18')
     expect(headers.get('Authorization')).toBe(`Bearer ${material.token}`)
   }
+})
+test('a tenant-prefixed vault is routed by its recorded hostname', async () => {
+  const origin = `https://acme-bb-${vaultId.replaceAll('-', '').slice(0, 12)}.example.com`
+  const f = fixture({ vault: { ...vault, origin } })
+  await f.client.overview()
+  const tool = f.calls.find((c) => c.url.endsWith('/mcp'))!
+  expect(new Headers(tool.init.headers).get('Host')).toBe(new URL(origin).hostname)
 })
 test('whoami identity/protocol/exact read-only scope is checked before every tool call', async () => {
   for (const options of [
@@ -143,6 +152,8 @@ test('no writer/foreign/future handoff, other host, or non-ready/revoked vault c
     { vault: { ...vault, readAccess: 'revoked' } },
     { vault: { ...vault, upstreamVaultId: physicalHostBinding } },
     { vault: { ...vault, origin: `https://bb-${upstreamVaultId.replaceAll('-', '')}.example.com` } },
+    { vault: { ...vault, origin: `https://acme-bb-${upstreamVaultId.replaceAll('-', '').slice(0, 12)}.example.com` } },
+    { vault: { ...vault, origin: `https://acme-bb-${vaultId.replaceAll('-', '').slice(0, 12)}.example.com/x` } },
   ])
     expect(
       () =>

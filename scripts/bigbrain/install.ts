@@ -163,7 +163,14 @@ export async function installManagedHost(options: InstallOptions): Promise<Insta
   const artifactDigest = await installRelease(options.artifactRoot, join(opt, 'releases'), uid)
   const host: InstalledHost = installedHostSchema.parse(
     existing
-      ? { ...existing, artifactDigest, zone: config.zone, limits: { ...MANAGED_BIGBRAIN_DEFAULT_LIMITS } }
+      ? {
+          ...existing,
+          artifactDigest,
+          zone: config.zone,
+          // Applies to vaults created from now on; existing vaults keep their recorded origin.
+          tenantLabel: config.tenantLabel ?? null,
+          limits: { ...MANAGED_BIGBRAIN_DEFAULT_LIMITS },
+        }
       : {
           contractVersion: MANAGED_BIGBRAIN_CONTRACT_VERSION,
           tenantId: config.tenantId,
@@ -173,6 +180,7 @@ export async function installManagedHost(options: InstallOptions): Promise<Insta
           upstreamCommit: MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
           artifactDigest,
           zone: config.zone,
+          tenantLabel: config.tenantLabel ?? null,
           limits: { ...MANAGED_BIGBRAIN_DEFAULT_LIMITS },
           effect: null,
         }

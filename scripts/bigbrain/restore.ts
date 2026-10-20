@@ -5,8 +5,10 @@ import { z } from 'zod'
 import {
   MANAGED_BIGBRAIN_MAX_VAULTS,
   managedBigbrainArchiveInventorySchema,
-  managedBigbrainOriginMatchesPolicy,
+  managedBigbrainOriginHasVault,
   managedBigbrainOwnerSchema,
+  managedBigbrainVaultOrigin,
+  parseManagedBigbrainOrigin,
   type ManagedBigbrainArchiveInventory,
 } from '@ficus/shared/managed-bigbrain'
 import { backupManifestSchema, MANAGED_BACKUP_DIR, type BackupManifest } from './backup'
@@ -79,8 +81,9 @@ export async function readStagedArchive(
 }
 
 /** One archived vault as this host restores it: identity, name and owner from the archive (Core's
- * restored database is the vault authority), origin re-derived from THIS host's installed zone,
- * a strictly newer generation, and read access always revoked. */
+ * restored database is the vault authority), the archived hostname label (bb-<32 hex> or
+ * <tenant>-bb-<12 hex>, never re-derived from the current tenant label) in THIS host's installed
+ * zone, a strictly newer generation, and read access always revoked. */
 export const restoreEntrySchema = z
   .object({
     vaultId: z.string().uuid(),
@@ -111,8 +114,11 @@ export function planArchiveRestore(
 ): RestoreEntry[] {
   if (archiveManifestDigest !== inventory.manifestDigest) throw new Error('identity_mismatch')
   return manifest.vaults.map((v) => {
-    const origin = `https://bb-${v.vaultId.replaceAll('-', '')}.${zone}`
-    if (!managedBigbrainOriginMatchesPolicy(origin, v.vaultId, zone)) throw new Error('identity_mismatch')
+    // Archives without an origin predate tenant-prefixed hostnames: those vaults use bb-<32 hex>.
+    const archived = v.origin === undefined ? null : parseManagedBigbrainOrigin(v.origin)
+    if (v.origin !== undefined && (!archived || !managedBigbrainOriginHasVault(v.origin, v.vaultId)))
+      throw new Error('identity_mismatch')
+    const origin = managedBigbrainVaultOrigin({ vaultId: v.vaultId, zone, tenantLabel: archived?.tenantLabel ?? null })
     return restoreEntrySchema.parse({
       vaultId: v.vaultId,
       upstreamVaultId: v.upstreamVaultId,

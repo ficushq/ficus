@@ -82,7 +82,7 @@ test('entry/size limits and truncated or corrupted headers fail closed', async (
   await expect(inspectVaultArchive(join(dir, 'corrupt.tar'), limits)).rejects.toThrow('invalid_request')
 })
 
-async function staged(manifestTenant = TENANT) {
+async function staged(manifestTenant = TENANT, archivedOrigin?: string) {
   const root = await scratch()
   const etc = join(root, 'etc')
   const dir = join(root, 'state', 'restore', 'managed-bigbrain')
@@ -125,6 +125,7 @@ async function staged(manifestTenant = TENANT) {
           archive: `vaults/${A}.tar`,
           sha256: `sha256:${createHash('sha256').update(data).digest('hex')}`,
           bytes: data.length,
+          ...(archivedOrigin === undefined ? {} : { origin: archivedOrigin }),
         },
       ],
     },
@@ -175,6 +176,24 @@ test('every archived vault is planned from the archive: newer generation, instal
   expect(() => planArchiveRestore(manifest, inventory, `sha256:${'0'.repeat(64)}`, 'example.com')).toThrow(
     'identity_mismatch'
   )
+  // An archive that recorded a tenant-prefixed origin keeps its label (never the current one).
+  const short = A.replaceAll('-', '').slice(0, 12)
+  const labelled = await staged(TENANT, `https://acme-bb-${short}.example.com`)
+  const archived = await readStagedArchive({ root: labelled.root, etc: labelled.etc, uid })
+  expect(
+    planArchiveRestore(archived.manifest, archived.inventory, archived.inventory.manifestDigest, 'example.com')[0]!
+      .origin
+  ).toBe(`https://acme-bb-${short}.example.com`)
+  expect(
+    planArchiveRestore(
+      archived.manifest,
+      archived.inventory,
+      archived.inventory.manifestDigest,
+      'other.example.org'
+    )[0]!.origin
+  ).toBe(`https://acme-bb-${short}.other.example.org`)
+  // A recorded origin of another vault is not a valid archive.
+  await expect(staged(TENANT, `https://acme-bb-${'0'.repeat(12)}.example.com`)).rejects.toThrow()
   // Persisted outside the archive; exact replay is accepted, a different plan conflicts.
   await recordRestorePlan(plan, inventory.manifestDigest, { root: s.root, uid })
   await recordRestorePlan(plan, inventory.manifestDigest, { root: s.root, uid })

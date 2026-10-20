@@ -148,6 +148,7 @@ bigbrain:
   # physical_host_binding: <uuid>   # this VM incarnation; replaced hosts get a new one
   # host_epoch: 0
   # zone: <vault DNS zone>          # vault origins are https://bb-<vault hex>.<zone>
+  # tenant_label: <subdomain>       # optional: new vaults are https://<label>-bb-<12 hex>.<zone>
 
 # -----------------------------------------------------------------------------
 # Optional nightly encrypted backup (off by default). When enabled, setup

@@ -101,6 +101,7 @@ async function capabilities(host: InstalledHost | null, tenantId: string, deps: 
       hostEpoch: 0,
       hostState: 'active' as const,
       zone: null,
+      tenantLabel: null,
       limits: { ...MANAGED_BIGBRAIN_DEFAULT_LIMITS },
     }
   // Content-free observations; each one that fails names why the feature is unavailable.
@@ -122,6 +123,7 @@ async function capabilities(host: InstalledHost | null, tenantId: string, deps: 
     hostEpoch: host.hostEpoch,
     hostState: host.hostState,
     zone: host.zone,
+    tenantLabel: host.tenantLabel,
     limits: host.limits,
   }
 }

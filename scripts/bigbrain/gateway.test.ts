@@ -3,7 +3,8 @@ import { createGatewayHandler, gatewayManifestSchema } from './gateway-policy'
 const id = '11111111-1111-4111-8111-111111111111'
 const other = '22222222-2222-4222-8222-222222222222'
 const a = `bb-${id.replaceAll('-', '')}.example.com`
-const b = `bb-${other.replaceAll('-', '')}.example.com`
+// Both recorded forms route: a bb-<32 hex> vault and a tenant-prefixed <tenant>-bb-<12 hex> vault.
+const b = `acme-bb-${other.replaceAll('-', '').slice(0, 12)}.example.com`
 const manifest = {
   contractVersion: 1,
   tenantId: id,

@@ -6,6 +6,7 @@ import { z } from 'zod'
 import {
   MANAGED_BIGBRAIN_MAX_VAULTS,
   managedBigbrainArchiveInventorySchema,
+  managedBigbrainOriginHasVault,
   managedBigbrainOwnerSchema,
   type ManagedBigbrainArchiveInventory,
 } from '@ficus/shared/managed-bigbrain'
@@ -41,6 +42,9 @@ export const backupManifestSchema = z
             archive: z.string().regex(/^vaults\/[0-9a-f-]{36}\.tar$/),
             sha256: digest,
             bytes: z.number().int().safe().positive(),
+            /** The vault's recorded origin (absent in archives that predate tenant-prefixed
+             * hostnames: those vaults all use bb-<32 hex>). Restore keeps its first label. */
+            origin: z.string().max(253).optional(),
           })
           .strict()
       )
@@ -53,6 +57,7 @@ export const backupManifestSchema = z
   })
   .strict()
   .refine((m) => m.vaults.every((v) => v.archive === `vaults/${v.vaultId}.tar`))
+  .refine((m) => m.vaults.every((v) => v.origin === undefined || managedBigbrainOriginHasVault(v.origin, v.vaultId)))
   .refine((m) => m.excluded.every((e) => !m.vaults.some((v) => v.vaultId === e.vaultId)))
   .refine((m) => new Set(m.vaults.map((v) => v.vaultId)).size === m.vaults.length)
 export type BackupManifest = z.infer<typeof backupManifestSchema>
@@ -256,6 +261,7 @@ export async function stageManagedBackup(options: BackupOptions): Promise<{
         generation: r.receipt.generation,
         displayName: r.displayName,
         owner: r.owner,
+        ...(r.receipt.origin ? { origin: r.receipt.origin } : {}),
         archive,
         ...(await hashFile(join(out, archive))),
       })

@@ -113,6 +113,9 @@ export interface ManagedVaultServiceDeps {
   now?: () => Date
 }
 
+/** Fresh vault UUIDs tried when a short id collides (each collision has ~n/2^48 odds). */
+const MAX_SHORT_ID_ATTEMPTS = 8
+
 export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
   const store = deps.store ?? managedVaultStore
   const operations = deps.operations ?? managedVaultOperations
@@ -184,23 +187,36 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
       // A replay of an existing request is answered even at capacity; a new one is counted under
       // a lock with its insert, so concurrent creates cannot exceed the limit.
       const replay = (await store.list()).find((row) => row.createRequestId === body.requestId)
-      const vaultId = replay?.id ?? crypto.randomUUID()
-      const row = await store.request({
+      const request = {
         maxLive: Math.min(MANAGED_BIGBRAIN_MAX_VAULTS, host.limits.maxVaults),
-        vaultId,
         requestId: body.requestId,
         displayName: body.displayName,
         ownerUserId: userId,
         ownerHandle: body.ownerHandle,
         ownerDisplay: await ownerDisplay(userId, body.ownerHandle),
         actorUserId: userId,
-        recipe: {
-          origin: managedVaultOrigin(vaultId, host.zone),
-          limits: host.limits,
-          upstreamCommit: host.upstreamCommit,
-          artifactDigest: host.artifactDigest,
-        },
-      })
+      }
+      // The origin is chosen once here and persisted. A new UUID whose 12-hex short id is taken
+      // by another vault of this tenant is discarded before anything is created.
+      let row: ManagedVault | undefined
+      for (let attempt = 0; !row; attempt++) {
+        const vaultId = (attempt === 0 ? replay?.id : undefined) ?? crypto.randomUUID()
+        try {
+          row = await store.request({
+            ...request,
+            vaultId,
+            recipe: {
+              origin: managedVaultOrigin(vaultId, host),
+              limits: host.limits,
+              upstreamCommit: host.upstreamCommit,
+              artifactDigest: host.artifactDigest,
+            },
+          })
+        } catch (error) {
+          if (!(error instanceof ManagedVaultStoreError && error.code === 'short_id_conflict')) throw error
+          if (attempt >= MAX_SHORT_ID_ATTEMPTS - 1) throw new ManagedVaultServiceError('request_conflict', 409)
+        }
+      }
       return view(row, userId)
     },
 

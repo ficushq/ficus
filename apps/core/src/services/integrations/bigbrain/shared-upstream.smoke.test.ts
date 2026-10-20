@@ -16,6 +16,7 @@ import {
   MANAGED_BIGBRAIN_DEFAULT_LIMITS,
   MANAGED_BIGBRAIN_UPSTREAM_COMMIT as pin,
   MANAGED_BIGBRAIN_OWNER_INVITE_TTL_MS,
+  managedBigbrainVaultOrigin,
 } from '@ficus/shared/managed-bigbrain'
 import { cachedOwnerAppLink, ownerInviteCacheSchema } from '../../../../../../scripts/bigbrain/invite-cache'
 import { writePrivateJson } from '../../../../../../scripts/bigbrain/secure-files'
@@ -166,6 +167,7 @@ test.skipIf(!artifact && !required)(
             sharedProtocol: 1,
             hostState: 'active',
             zone: 'example.com',
+            tenantLabel: 'acme',
             limits: MANAGED_BIGBRAIN_DEFAULT_LIMITS,
             observedAt: new Date().toISOString(),
           },
@@ -173,7 +175,12 @@ test.skipIf(!artifact && !required)(
           vault: {
             vaultId,
             upstreamVaultId: material.upstreamVaultId,
-            origin: `https://bb-${vaultId.replaceAll('-', '')}.example.com`,
+            // Both hostname forms: A tenant-prefixed, B the bb-<32 hex> form of an older vault.
+            origin: managedBigbrainVaultOrigin({
+              vaultId,
+              zone: 'example.com',
+              tenantLabel: vault === a ? 'acme' : null,
+            }),
             appliedGeneration: 1,
             state: 'ready',
             readAccess: 'active',
@@ -293,10 +300,15 @@ async function createdThroughReconciler(fixtures: Awaited<ReturnType<typeof nati
     upstreamCommit: pin,
     artifactDigest: fixtures.provenance.digest,
     zone: 'example.com',
+    tenantLabel: 'acme',
     limits: MANAGED_BIGBRAIN_DEFAULT_LIMITS,
     effect: null,
   }
-  const origin = (id: string) => `https://bb-${id.replaceAll('-', '')}.example.com`
+  // Both hostname forms end to end: A is a new tenant-prefixed vault (acme-bb-<12 hex>), B keeps
+  // the bb-<32 hex> form an existing vault was created with.
+  const origin = (id: string) =>
+    managedBigbrainVaultOrigin({ vaultId: id, zone: host.zone, tenantLabel: id === VAULT_A ? host.tenantLabel : null })
+  expect(origin(VAULT_A)).toBe(`https://acme-bb-${VAULT_A.replaceAll('-', '').slice(0, 12)}.example.com`)
   await db.delete(managedBigbrainVaults).where(inArray(managedBigbrainVaults.id, [VAULT_A, VAULT_B]))
   for (const [vaultId, name] of [
     [VAULT_A, 'Alpha'],
@@ -385,6 +397,7 @@ async function createdThroughReconciler(fixtures: Awaited<ReturnType<typeof nati
       appliedGeneration: 1,
       desiredAction: null,
       upstreamVaultId: started.get(vaultId)!.identity.vault.id,
+      origin: origin(vaultId),
     })
   return { a: started.get(VAULT_A)!, b: started.get(VAULT_B)! }
 }

@@ -142,7 +142,13 @@ test('probe reports content-free availability and names the first unmet prerequi
   expect(reply).toMatchObject({
     ok: true,
     action: 'probe',
-    capabilities: { available: true, reasonCode: null, installed: true, physicalHostBinding: BINDING },
+    capabilities: {
+      available: true,
+      reasonCode: null,
+      installed: true,
+      physicalHostBinding: BINDING,
+      tenantLabel: null,
+    },
   })
   expect(
     (await dispatchHostRequest(envelope({ action: 'probe' }), (await fixture({ backupTimer: false })).deps)) as object

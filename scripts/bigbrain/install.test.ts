@@ -123,6 +123,18 @@ test('re-run/upgrade keeps the authoritative epoch, state and pending effect; co
   expect(await host(f)).toEqual({ ...advanced, zone: 'moved.example.org' })
 })
 
+test('the Platform-written tenant label is recorded and follows config on re-run (new vaults only)', async () => {
+  const f = await fixture()
+  expect((await host(f).catch(() => null))?.tenantLabel).toBeUndefined()
+  await installManagedHost({ ...f.options, config: { ...config, tenantLabel: 'acme' } })
+  expect((await host(f)).tenantLabel).toBe('acme')
+  await installManagedHost({ ...f.options, config: { ...config, tenantLabel: 'acme-renamed' } })
+  expect((await host(f)).tenantLabel).toBe('acme-renamed')
+  await installManagedHost(f.options)
+  expect((await host(f)).tenantLabel).toBeNull()
+  await expect(installManagedHost({ ...f.options, config: { ...config, tenantLabel: 'bb-acme' } })).rejects.toThrow()
+})
+
 test('a different tenant/binding is never adopted and nothing is written; disabling an installed host refuses', async () => {
   const f = await fixture()
   await installManagedHost(f.options)

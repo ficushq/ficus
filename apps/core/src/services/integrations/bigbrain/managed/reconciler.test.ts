@@ -25,6 +25,7 @@ const host: ManagedBigbrainInstalledHost = {
   upstreamCommit: MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
   artifactDigest: `sha256:${'a'.repeat(64)}`,
   zone: 'example.com',
+  tenantLabel: null,
   limits: MANAGED_BIGBRAIN_DEFAULT_LIMITS,
   effect: null,
 }

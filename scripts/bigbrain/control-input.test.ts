@@ -87,12 +87,30 @@ test('admits matching bound create and refuses foreign origin, pin, digest, iden
     { physicalHostBinding: tenantId },
     { hostEpoch: 1 },
     { origin: create.origin.replace('example.com', 'evil.com') },
+    // No tenant label installed: only the bb-<32 hex> form is admissible.
+    { origin: `https://acme-bb-${vaultId.replaceAll('-', '').slice(0, 12)}.example.com` },
     { artifactDigest: `sha256:${'b'.repeat(64)}` },
     { limits: { ...limits, maxVaults: 1 } },
     { upstreamCommit: 'main' },
   ]) {
     expect(() => validateHostAdmission({ ...create, ...change }, installed)).toThrow()
   }
+})
+
+test('with a tenant label installed, create admits exactly the fallback and that tenant prefixed origin', () => {
+  const labelled = { ...installed, tenantLabel: 'acme' }
+  const short = vaultId.replaceAll('-', '').slice(0, 12)
+  expect(() => validateHostAdmission(create, labelled)).not.toThrow()
+  expect(() =>
+    validateHostAdmission({ ...create, origin: `https://acme-bb-${short}.example.com` }, labelled)
+  ).not.toThrow()
+  for (const origin of [
+    `https://other-bb-${short}.example.com`,
+    `https://acme-bb-${short}.evil.com`,
+    `https://acme-bb-${'0'.repeat(12)}.example.com`,
+    `https://acme.example.com`,
+  ])
+    expect(() => validateHostAdmission({ ...create, origin }, labelled)).toThrow()
 })
 test('exact applied/pending host lifecycle effect replay is admitted, not mistaken for a fresh epoch', () => {
   const request = { ...probe, action: 'suspend-tenant', hostEpoch: 3, previousHostEpoch: 2, effectId: vaultId }

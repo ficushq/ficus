@@ -10,7 +10,11 @@
  */
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
-import { MANAGED_BIGBRAIN_DEFAULT_LIMITS, MANAGED_BIGBRAIN_UPSTREAM_COMMIT } from '@ficus/shared/managed-bigbrain'
+import {
+  MANAGED_BIGBRAIN_DEFAULT_LIMITS,
+  MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
+  managedBigbrainVaultOrigin,
+} from '@ficus/shared/managed-bigbrain'
 
 const release = process.argv[2]
 if (!release || process.getuid?.() !== 0 || process.platform !== 'linux') {
@@ -47,7 +51,22 @@ const OWNER = { userId: randomUUID(), handle: 'ada', display: 'Ada' }
 const A = randomUUID()
 const B = randomUUID()
 const hex = (id: string) => id.replaceAll('-', '')
-const config = { enabled: true, tenantId: TENANT, physicalHostBinding: BINDING, hostEpoch: 1, zone: ZONE }
+const TENANT_LABEL = 'acme'
+const config = {
+  enabled: true,
+  tenantId: TENANT,
+  physicalHostBinding: BINDING,
+  hostEpoch: 1,
+  zone: ZONE,
+  tenantLabel: TENANT_LABEL,
+}
+/** Both hostname forms are exercised end to end: A is a new tenant-prefixed vault
+ * (acme-bb-<12 hex>), B keeps the bb-<32 hex> form an existing vault has. */
+const ORIGINS: Record<string, string> = {
+  [A]: managedBigbrainVaultOrigin({ vaultId: A, zone: ZONE, tenantLabel: TENANT_LABEL }),
+  [B]: managedBigbrainVaultOrigin({ vaultId: B, zone: ZONE, tenantLabel: null }),
+}
+const originOf = (vaultId: string) => ORIGINS[vaultId] ?? `https://bb-${hex(vaultId)}.${ZONE}`
 let epoch = 1
 
 function helper(fields: Record<string, unknown>) {
@@ -73,7 +92,7 @@ function helper(fields: Record<string, unknown>) {
     return { ok: false, code: 'unparseable', raw: out.stdout.slice(0, 200), stderr: out.stderr.slice(0, 400) }
   }
 }
-const create = (vaultId: string, name: string) =>
+const create = (vaultId: string, name: string, origin = originOf(vaultId)) =>
   helper({
     action: 'create',
     vaultId,
@@ -81,7 +100,7 @@ const create = (vaultId: string, name: string) =>
     generation: 1,
     displayName: name,
     owner: OWNER,
-    origin: `https://bb-${hex(vaultId)}.${ZONE}`,
+    origin,
     limits: MANAGED_BIGBRAIN_DEFAULT_LIMITS,
     upstreamCommit: MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
     artifactDigest: host().artifactDigest,
@@ -111,7 +130,7 @@ async function eventually(read: () => Promise<number>, want: number, attempts = 
 const GATEWAY_SOCKET = '/run/ficus-bigbrain/gateway/http.sock'
 /** Production path minus Caddy/TLS: the gateway's Unix socket, routed by Host. */
 async function gateway(vaultId: string, path: string, token?: string, init: RequestInit = {}) {
-  return fetch(`http://bb-${hex(vaultId)}.${ZONE}${path}`, {
+  return fetch(`http://${new URL(originOf(vaultId)).host}${path}`, {
     ...init,
     unix: GATEWAY_SOCKET,
     headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(init.headers ?? {}) },
@@ -256,6 +275,22 @@ try {
   )
   const rA = receipt(A)
   const rB = receipt(B)
+  check(
+    'A has the tenant-prefixed origin, B the bb-<32 hex> origin',
+    rA.receipt.origin === `https://${TENANT_LABEL}-bb-${hex(A).slice(0, 12)}.${ZONE}` &&
+      rB.receipt.origin === `https://bb-${hex(B)}.${ZONE}`,
+    JSON.stringify([rA.receipt.origin, rB.receipt.origin])
+  )
+  check('probe reports the installed tenant label', probe.capabilities?.tenantLabel === TENANT_LABEL)
+  const foreign = randomUUID()
+  const spoofed = create(foreign, 'Spoofed', `https://other-bb-${hex(foreign).slice(0, 12)}.${ZONE}`)
+  check(
+    "create with another tenant's label is refused before anything exists",
+    spoofed.ok === false &&
+      spoofed.code === 'identity_mismatch' &&
+      !existsSync(`/var/lib/ficus-bigbrain/control/${foreign}`),
+    JSON.stringify([spoofed.code])
+  )
   check('vaults have distinct non-root UIDs', rA.os.uid !== rB.os.uid && rA.os.uid > 0 && rB.os.uid > 0)
   const mountA = sh(['/usr/bin/findmnt', '-n', '-o', 'FSTYPE,OPTIONS', rA.storage.mount]).stdout.trim()
   check(
@@ -637,6 +672,11 @@ try {
     [A, B].every((v) => receipt(v).receipt.readAccess === 'revoked' && receipt(v).receipt.state === 'ready') &&
       receipt(A).receipt.generation === archivedA.generation + 1 &&
       receipt(B).receipt.generation === archivedB.generation + 1
+  )
+  check(
+    'restored vaults keep their recorded hostname forms',
+    receipt(A).receipt.origin === ORIGINS[A] && receipt(B).receipt.origin === ORIGINS[B],
+    JSON.stringify([receipt(A).receipt.origin, receipt(B).receipt.origin])
   )
   check(
     'restored vaults keep their archived names',

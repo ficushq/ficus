@@ -127,7 +127,12 @@ test('quiesces only serving vaults, copies each verified store while stopped, re
     backupManifestSchema,
     { uid }
   )
-  expect(manifest.vaults[0]).toMatchObject({ archive: `vaults/${A}.tar`, bytes: `tar of ${A}`.length })
+  expect(manifest.vaults[0]).toMatchObject({
+    archive: `vaults/${A}.tar`,
+    bytes: `tar of ${A}`.length,
+    // The recorded origin travels with the archive so restore keeps its hostname form.
+    origin: `https://bb-${A.replaceAll('-', '')}.example.com`,
+  })
   // Secret-free manifest: no tokens, escrow or invite material ever enters the archive staging.
   expect(await readFile(join(result.staging, 'managed-bigbrain', 'manifest.json'), 'utf8')).not.toMatch(
     /sv_|token|secret/

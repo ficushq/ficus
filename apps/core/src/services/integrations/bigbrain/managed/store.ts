@@ -13,6 +13,7 @@ import {
   managedBigbrainLimitsSchema,
   managedBigbrainOwnerSchema,
   managedBigbrainReadHandoffSchema,
+  managedBigbrainVaultShortId,
   type ManagedBigbrainHostReceipt,
 } from '@ficus/shared/managed-bigbrain'
 import { db, managedBigbrainOperations, managedBigbrainVaults, type DbTx } from '../../../../db'
@@ -31,6 +32,9 @@ export type ManagedVaultStoreCode =
   | 'not_found'
   | 'generation_conflict'
   | 'capacity'
+  /** The new vault UUID's 12-hex short id is already used by another vault (any state): the
+   * caller must mint a new UUID (and origin) and retry. Nothing was created. */
+  | 'short_id_conflict'
 
 export class ManagedVaultStoreError extends Error {
   constructor(
@@ -141,9 +145,18 @@ export const managedVaultStore = {
     const id = request.vaultId ?? crypto.randomUUID()
     try {
       const inserted = await db.transaction(async (tx) => {
+        // Serialize creates so two concurrent requests cannot both pass the capacity or short-id checks.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext('managed_bigbrain_vaults:create'))`)
+        // Tenant-prefixed hostnames carry only 12 hex of the UUID: no two vaults of this tenant
+        // (including deleted ones whose DNS record may linger) may share them.
+        const shortId = managedBigbrainVaultShortId(id)
+        const [taken] = await tx
+          .select({ id: managedBigbrainVaults.id })
+          .from(managedBigbrainVaults)
+          .where(sql`left(replace(${managedBigbrainVaults.id}::text, '-', ''), 12) = ${shortId}`)
+          .limit(1)
+        if (taken) throw new ManagedVaultStoreError('short_id_conflict')
         if (request.maxLive !== undefined) {
-          // Serialize creates so two concurrent requests cannot both pass the capacity check.
-          await tx.execute(sql`select pg_advisory_xact_lock(hashtext('managed_bigbrain_vaults:create'))`)
           const [live] = await tx
             .select({ n: sql<number>`count(*)::int` })
             .from(managedBigbrainVaults)

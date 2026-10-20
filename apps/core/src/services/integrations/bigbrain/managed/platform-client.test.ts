@@ -97,9 +97,25 @@ describe('slim managed BigBrain Platform client', () => {
       `DELETE /api/managed-bigbrain/dns/${VAULT}`,
     ])
     expect(seen.every((s) => s.auth === `Bearer ${TOKEN}` && s.redirect === 'error')).toBe(true)
-    // Platform never learns names, owners or generations.
-    expect(seen.map((s) => s.body)).toEqual(['', '{}', ''])
+    // Platform never learns names, owners or generations: only the origin recorded at create.
+    expect(seen.map((s) => s.body)).toEqual(['', JSON.stringify({ origin: origin(VAULT) }), ''])
     expect(Object.keys(managedBigbrainPlatform).sort()).toEqual(['deleteDns', 'ensureDns', 'support'])
+  })
+
+  test('a tenant-prefixed origin is sent as recorded and must come back exactly', async () => {
+    configure()
+    const prefixed = `https://acme-bb-${VAULT.replaceAll('-', '').slice(0, 12)}.vaults.example.com`
+    const record = { ...dns, hostname: new URL(prefixed).hostname, origin: prefixed }
+    const seen = respond(() => Response.json(record))
+    expect((await managedBigbrainPlatform.ensureDns(VAULT, prefixed)).hostname).toBe(record.hostname)
+    expect(JSON.parse(seen[0]!.body)).toEqual({ origin: prefixed })
+    // Platform answering with the fallback record for a prefixed vault is not this vault's record.
+    respond(() => Response.json(dns))
+    expect((await refusal(managedBigbrainPlatform.ensureDns(VAULT, prefixed))).code).toBe('identity_mismatch')
+    // Core never sends an origin that is not this vault's.
+    const none = respond(() => Response.json(record))
+    expect((await refusal(managedBigbrainPlatform.ensureDns(OTHER, prefixed))).code).toBe('invalid_request')
+    expect(none).toEqual([])
   })
 
   test('a DNS record for another vault or origin, a foreign tenant or a malformed reply is refused', async () => {
