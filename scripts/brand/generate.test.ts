@@ -13,6 +13,7 @@ import {
   OUT_DIR,
   squirclePath,
   THEME_ICON_TEMPLATE_COLORS,
+  TINTED_ICON_COLORS,
 } from './generate'
 
 function listFiles(dir: string): string[] {
@@ -78,8 +79,11 @@ afterAll(() => {
   rmSync(tmpRoot, { recursive: true, force: true })
 })
 
-/** Cross-architecture palette rounding noise tolerated against the committed goldens. */
-const MAX_CHANNEL_DELTA = 2
+/**
+ * Cross-architecture palette rounding noise tolerated against the committed goldens. The transparent edge of an
+ * Android adaptive foreground (mobile/themes/android) has rounded up to 4 levels apart on a couple of channels.
+ */
+const MAX_CHANNEL_DELTA = 4
 const MAX_CHANGED_FRACTION = 0.005
 
 describe('brand icon generator', () => {
@@ -109,7 +113,7 @@ describe('brand icon generator', () => {
     // PNG encoders can produce different bytes for identical pixels after a
     // native-library upgrade, and palette quantization rounds a few channels
     // differently across CPU architectures (x86 Linux CI vs arm64 macOS differ by
-    // at most 2 levels on a few hundred channels). Keep the goldens, allow only
+    // a few levels on a few hundred channels). Keep the goldens, allow only
     // that rounding noise across machines, and separately enforce same-runtime
     // byte determinism above.
     for (const rel of committedFiles) {
@@ -259,6 +263,39 @@ describe('brand icon generator', () => {
         (await sharp(join(tmpDir, rel)).ensureAlpha().raw().toBuffer()).toString('hex')
       expect(await pixels('desktop/themes/ficus-light.png')).toBe(await pixels('desktop/icon-1024.png'))
       expect(await pixels('desktop/themes/ficus-dark.png')).toBe(await pixels('desktop/icon-1024-dark.png'))
+    })
+
+    it('Mobile gets an iOS icon, an Android foreground and a picker preview for each theme icon', async () => {
+      const icons = await builtInThemeIcons()
+      const mobile = join(tmpDir, 'mobile', 'themes')
+      expect(JSON.parse(readFileSync(join(mobile, 'manifest.json'), 'utf8'))).toEqual({ icons })
+      for (const { file } of icons) {
+        const [ios, android, preview] = await Promise.all(
+          ['ios', 'android', 'preview'].map((sub) => sharp(join(mobile, sub, file)).metadata())
+        )
+        // iOS icons must be opaque; adaptive foregrounds are transparent around the mark.
+        expect([ios.width, ios.height, ios.hasAlpha]).toEqual([1024, 1024, false])
+        expect([android.width, android.height, android.hasAlpha]).toEqual([1024, 1024, true])
+        expect([preview.width, preview.height, preview.hasAlpha]).toEqual([180, 180, false])
+      }
+    })
+
+    it('Mobile Ficus light is the bundled Mobile icon and adaptive foreground, pixel for pixel', async () => {
+      const pixels = async (rel: string) =>
+        (await sharp(join(tmpDir, rel)).ensureAlpha().raw().toBuffer()).toString('hex')
+      expect(await pixels('mobile/themes/ios/ficus-light.png')).toBe(await pixels('mobile/icon.png'))
+      expect(await pixels('mobile/themes/android/ficus-light.png')).toBe(await pixels('mobile/adaptive-icon.png'))
+    })
+
+    it('the tinted iOS icon is grayscale on black', async () => {
+      const { data, info } = await sharp(join(tmpDir, 'mobile', 'themes', 'ios', 'tinted.png'))
+        .raw()
+        .toBuffer({ resolveWithObject: true })
+      expect(info.channels).toBe(3)
+      let colored = 0
+      for (let i = 0; i < data.length; i += 3) if (data[i] !== data[i + 1] || data[i + 1] !== data[i + 2]) colored++
+      expect(colored).toBe(0)
+      expect([...data.subarray(0, 3)]).toEqual(hex(TINTED_ICON_COLORS.tile))
     })
 
     it('the live-drawing template has a placeholder for every part and none of the brand fills', () => {

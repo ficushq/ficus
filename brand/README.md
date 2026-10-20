@@ -185,7 +185,10 @@ rejected.
 A theme with light and dark appearances gets an icon for each; a
 single-appearance theme gets one. `scripts/brand/generate.test.ts` checks the
 set covers every built-in theme and that Ficus light and dark match the
-bundled Desktop icons pixel for pixel. Mobile does not use these yet.
+bundled Desktop icons pixel for pixel, and that Mobile's Ficus light icons
+match the bundled Mobile icon and adaptive foreground. Mobile offers them as
+alternate app icons the person picks, rather than following the theme: iOS
+asks before every icon change.
 
 ## Type
 
@@ -247,6 +250,13 @@ it must satisfy sharp's patched minimum (8.18.6 for sharp 0.35.4). Check
   `{{tile}}`, `{{leaf}}`, `{{pot}}` and `{{sideLeaves}}` in place of the
   colors, for Desktop to draw a custom theme's icon live. See
   [Theme icons](#theme-icons).
+- `mobile/themes/` — the Mobile app icon picker's icons, from the same
+  theme icons as `desktop/themes/` and named the same way: `ios/<icon>.png`
+  (1024, opaque, full bleed; iOS masks the corners) plus `ios/tinted.png`
+  (the mark in grays on black, for iOS's tinted icons), `android/<icon>.png`
+  (adaptive-icon foregrounds, transparent; the manifest's tile color is the
+  background) and `preview/<icon>.png` (180, for the picker itself).
+  `manifest.json` lists each icon with its colors.
 - `mobile/` — `icon.png` (1024, opaque, iOS), `adaptive-icon.png` (1024,
   transparent, Android foreground), `adaptive-background.png` (1024, solid
   linen), `splash-icon.png` (1024, transparent), `notification-icon.png`
