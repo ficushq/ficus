@@ -4,6 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { BigbrainSharedClient } from './shared-client'
+import { createSharedBigbrainTools } from './shared-tools'
+import { IntegrationRuntimeGate } from '../runtime-gate'
+import type { ManagedVault } from './managed/store'
 import { nativeFixtures } from '../../../../../../scripts/bigbrain/native-fixtures'
 import {
   MANAGED_BIGBRAIN_DEFAULT_LIMITS,
@@ -184,6 +187,48 @@ test.skipIf(!artifact && !required)(
       expect(await readerA.recent({ limit: 5 })).toContain(recordA.id)
       expect(await readerB.recent({ limit: 5 })).toContain(recordB.id)
       expect(await readerA.searchVault({ query: 'Cobalt' })).not.toContain(recordB.id)
+      // Core's actual shared agent tools over both real servers: the same content written by
+      // the native human client to both vaults is never conflated, every result names its vault.
+      const same = { title: 'Shared protocol', body: 'Identical wording written to both vaults.' }
+      const sameA = await fixtures.native.sharedRequest<{ id: string }>(ownerA, '/v1/evidence', same)
+      const sameB = await fixtures.native.sharedRequest<{ id: string }>(ownerB, '/v1/evidence', same)
+      const tools = sharedToolsOver([
+        { vaultId: '11111111-1111-4111-8111-111111111111', name: 'Alpha', client: readerA },
+        { vaultId: '22222222-2222-4222-8222-222222222222', name: 'Beta', client: readerB },
+      ])
+      const listed = (await tools.run('bigbrain_shared_vaults', {})) as { vaults: { vaultId: string }[] }
+      expect(listed.vaults.map((v) => v.vaultId).sort()).toEqual([
+        '11111111-1111-4111-8111-111111111111',
+        '22222222-2222-4222-8222-222222222222',
+      ])
+      const viaA = await tools.run('bigbrain_shared_read_record', {
+        vaultId: '11111111-1111-4111-8111-111111111111',
+        id: sameA.id,
+      })
+      const viaB = await tools.run('bigbrain_shared_read_record', {
+        vaultId: '22222222-2222-4222-8222-222222222222',
+        id: sameB.id,
+      })
+      expect(viaA).toMatchObject({ vaultId: '11111111-1111-4111-8111-111111111111', displayName: 'Alpha' })
+      expect(viaB).toMatchObject({ vaultId: '22222222-2222-4222-8222-222222222222', displayName: 'Beta' })
+      expect(String(viaA.result)).toContain('Identical wording')
+      expect(String(viaB.result)).toContain('Identical wording')
+      expect(
+        String(
+          (
+            await tools.run('bigbrain_shared_search_vault', {
+              vaultId: '22222222-2222-4222-8222-222222222222',
+              query: 'Amber',
+            })
+          ).result
+        )
+      ).not.toContain(recordA.id)
+      expect(
+        String(
+          (await tools.run('bigbrain_shared_recent', { vaultId: '11111111-1111-4111-8111-111111111111', limit: 5 }))
+            .result
+        )
+      ).toContain(sameA.id)
       for (const path of ['/v1/evidence', '/v1/assertions', '/v1/members', '/v1/invites', '/v1/credentials/agent']) {
         const response = await fetch(a.endpoint + path, {
           method: 'POST',
@@ -222,3 +267,108 @@ test.skipIf(!artifact && !required)(
   },
   60000
 )
+
+/** Core's shared tools over real clients, with an in-memory assignment/store in front of them. */
+function sharedToolsOver(vaults: { vaultId: string; name: string; client: BigbrainSharedClient }[]) {
+  const now = new Date()
+  const rows = new Map(
+    vaults.map((v) => {
+      const upstreamVaultId = randomUUID()
+      return [
+        v.vaultId,
+        {
+          id: v.vaultId,
+          displayName: v.name,
+          connectionId: `connection-${v.vaultId}`,
+          upstreamVaultId,
+          state: 'ready',
+          readAccess: 'active',
+          // Token-free imported material (the real client already holds the real token).
+          readMaterial: {
+            contractVersion: 1,
+            tenantId: randomUUID(),
+            physicalHostBinding: randomUUID(),
+            vaultId: v.vaultId,
+            hostEpoch: 1,
+            generation: 1,
+            upstreamVaultId,
+            upstreamCommit: pin,
+            artifactDigest: `sha256:${'0'.repeat(64)}`,
+            credentialId: '00000000',
+            kind: 'agent',
+            scopes: ['read'],
+            followsMember: false,
+          },
+        } as unknown as ManagedVault,
+      ] as const
+    })
+  )
+  const connection = (id: string) => {
+    const row = [...rows.values()].find((r) => r.connectionId === id)
+    return row
+      ? {
+          id,
+          squadId: 'squad',
+          providerKey: 'bigbrain',
+          adapterVersion: 2,
+          clientAuthority: 'local' as const,
+          authorizationFlowId: null,
+          displayName: row.displayName,
+          configuration: {
+            version: 2,
+            mode: 'managed_shared',
+            vaultId: row.id,
+            upstreamVaultId: row.upstreamVaultId,
+            upstreamCommit: pin,
+          },
+          credentialRef: `ref:${id}`,
+          materialRevision: 'r',
+          validatedRevision: 'r',
+          enabled: true,
+          authState: 'authenticated' as const,
+          healthState: 'healthy' as const,
+          grantedScopes: ['read'],
+          validatedAt: now,
+          validationExpiresAt: new Date(now.getTime() + 60_000),
+          lastErrorCode: null,
+          updatedAt: now,
+        }
+      : null
+  }
+  const gate = new IntegrationRuntimeGate({
+    currentAuthority: () => 'local',
+    repository: {
+      getAssigned: async () => null,
+      getAssignedById: async (_squad, _provider, id) => connection(id),
+    },
+    supportedAdapterVersion: () => 2,
+    supportedConfigVersion: () => 2,
+  })
+  const tools = createSharedBigbrainTools({
+    agent: {
+      id: 'agent',
+      squadId: 'squad',
+      integrationCapabilities: { version: 1, allow: { bigbrain: ['agent_tools'] } },
+    },
+    squadId: 'squad',
+    gate,
+    credentials: { get: () => 'token-held-by-the-real-client', set: async () => {}, delete: async () => {} },
+    connections: { disableRuntimeAuthFailure: async () => true } as never,
+    audit: { record: async () => {} } as never,
+    assignments: { listAssigned: async () => [...rows.values()].map((r) => ({ id: r.connectionId! })) },
+    store: {
+      get: async (id) => rows.get(id) ?? null,
+      getByConnection: async (id) => [...rows.values()].find((r) => r.connectionId === id) ?? null,
+    },
+    resolveClient: (async (input: { configuration: { vaultId: string } }) => ({
+      client: vaults.find((v) => v.vaultId === input.configuration.vaultId)!.client,
+      vault: rows.get(input.configuration.vaultId)!,
+    })) as never,
+  })
+  const byName = Object.fromEntries(tools.map((t) => [t.name, t]))
+  return {
+    run: async (name: string, input: unknown) =>
+      (await byName[name]!.execute('call', input as never, undefined as never, undefined as never, undefined as never))
+        .details as Record<string, unknown>,
+  }
+}
