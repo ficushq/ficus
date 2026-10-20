@@ -846,6 +846,11 @@ if (import.meta.main) {
       // invalidation is the fast path; periodic refresh bounds missed events.
       const settingsStore = getSettingsStore()
       await settingsStore.initialize()
+      // One-time upgrade: keep a configured APP_URL/PUBLIC_URL as the stored public address.
+      const { seedPublicAppUrlFromEnvironment } = await import('./services/public-url/migration')
+      await seedPublicAppUrlFromEnvironment().catch((error) =>
+        log.error('Failed to seed the public address setting from the environment:', error)
+      )
       const { initializeChannelIntegrationStates } = await import('./services/integrations/channels/settings')
       await initializeChannelIntegrationStates()
       const { initializeDeploymentIntegrationStates } = await import('./services/integrations/deployment/settings')
