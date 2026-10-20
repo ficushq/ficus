@@ -416,7 +416,11 @@ describe('POST /api/auth/add-passkey/{options,verify}', () => {
   it('the code is not a credential: it authenticates no API call', async () => {
     const user = await userWithPasskey()
     const { code } = await issuePasskeyEnrollmentCode(user.id)
-    for (const headers of [{ Authorization: `Bearer ${code}` }, { Cookie: `ficus_session=${code}` }]) {
+    const attempts: Record<string, string>[] = [
+      { Authorization: `Bearer ${code}` },
+      { Cookie: `ficus_session=${code}` },
+    ]
+    for (const headers of attempts) {
       expect((await app.request('/api/protected', { headers })).status).toBe(401)
     }
   })
