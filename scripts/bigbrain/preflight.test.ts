@@ -4,6 +4,7 @@ import {
   proveNoInetSockets,
   verifySocketDirectory,
   verifyLoopBacking,
+  verifyPrivateNetwork,
   verifyRecordedVaultStorage,
   verifyScratchMounts,
 } from './preflight'
@@ -165,6 +166,20 @@ test('recorded storage stays verifiable across host epoch advances and upgrades;
       backingFile: async (loop: string) => (loop === 'loop4' ? `${paths.image}\n` : ''),
     }
     await verifyRecordedVaultStorage(base.receipt.vaultId, options)
+    // After a reboot/remount the loop number may change: the live device is used, its backing proven.
+    await verifyVaultRecordedStorageAfterRemount()
+    async function verifyVaultRecordedStorageAfterRemount() {
+      const backings: string[] = []
+      await verifyRecordedVaultStorage(base.receipt.vaultId, {
+        ...options,
+        mountinfo: async () => `1 0 7:9 / ${paths.mount} rw,nodev,nosuid,noexec - ext4 /dev/loop9 rw\n`,
+        backingFile: async (loop: string) => (backings.push(loop), `${paths.image}\n`),
+      })
+      expect(backings).toEqual(['loop9'])
+      await expect(
+        verifyRecordedVaultStorage(base.receipt.vaultId, { ...options, mountinfo: async () => '' })
+      ).rejects.toThrow('storage_unavailable')
+    }
     // A loop backed by another path (or the recorded path after unlink) is never the vault.
     for (const backing of [`${paths.image}.other\n`, `${paths.image} (deleted)\n`, ''])
       await expect(
@@ -190,4 +205,24 @@ test('recorded storage stays verifiable across host epoch advances and upgrades;
   } finally {
     await rm(outer, { recursive: true, force: true })
   }
+})
+
+test('the running service must be alone in its network namespace with no visible abstract sockets', () => {
+  const header = 'Inter-|   Receive\n face |bytes\n'
+  const unixHeader = 'Num       RefCount Protocol Flags    Type St Inode Path\n'
+  expect(() => verifyPrivateNetwork(`${header}    lo: 0 0\n`, unixHeader)).not.toThrow()
+  expect(() => verifyPrivateNetwork(`${header}    lo: 0 0\n  eth0: 1 2\n`, unixHeader)).toThrow(
+    'network_namespace_shared'
+  )
+  expect(() => verifyPrivateNetwork(header, unixHeader)).toThrow('network_namespace_shared')
+  // A filesystem socket is fine; a host abstract name means the namespace is shared.
+  expect(() =>
+    verifyPrivateNetwork(
+      `${header}    lo: 0 0\n`,
+      `${unixHeader}0000: 00000002 00000000 00010000 0001 01 1 /run/x.sock\n`
+    )
+  ).not.toThrow()
+  expect(() =>
+    verifyPrivateNetwork(`${header}    lo: 0 0\n`, `${unixHeader}0000: 00000002 00000000 00010000 0001 01 1 @/org/x\n`)
+  ).toThrow('abstract_sockets_visible')
 })

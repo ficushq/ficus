@@ -104,6 +104,18 @@ export function verifyVaultMount(
     throw new Error('storage_unavailable')
 }
 
+/** The device of the one ext4 loop mount at `mount`, or null. Loop numbers are assigned at
+ * mount time (a reboot or remount may pick another), so restart checks derive the live device
+ * and prove its backing file instead of trusting the number recorded at create. */
+export function currentLoopMountDevice(mount: string, mountinfo: string): string | null {
+  const matches = mountinfo
+    .split('\n')
+    .map((line) => line.split(' '))
+    .filter((fields) => fields[4] === mount)
+  const device = matches.length === 1 ? matches[0]![2] : undefined
+  return device && /^7:\d+$/.test(device) ? device : null
+}
+
 /** Linux dev_t is not a32-bit major/minor pair. fstat of the held directory must
  * match the verified loop device BEFORE ownership changes or creating any child.
  */

@@ -35,6 +35,19 @@ ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 RestrictRealtime=yes
 LockPersonality=yes
+# Own network/IPC namespaces: no host abstract Unix sockets, no SysV/POSIX IPC with peers; filesystem
+# sockets (the only listeners) still work. No new namespaces, native syscalls only, a service
+# syscall allow-list (denials return EPERM rather than killing), and no clock/hostname changes.
+PrivateNetwork=yes
+PrivateIPC=yes
+RemoveIPC=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+ProtectClock=yes
+ProtectHostname=yes
 # Unix sockets only: Caddy reaches the gateway, and the gateway reaches each vault, through
 # root-prepared socket directories; no IP listener exists to be squatted.
 RestrictAddressFamilies=AF_UNIX

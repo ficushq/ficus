@@ -150,3 +150,24 @@ test('fixture namespace is explicit and remains bound to its own recorded reserv
     'invalid_request'
   )
 })
+
+const HARDENING = [
+  'PrivateNetwork=yes',
+  'PrivateIPC=yes',
+  'RemoveIPC=yes',
+  'RestrictNamespaces=yes',
+  'SystemCallArchitectures=native',
+  'SystemCallFilter=@system-service',
+  'SystemCallFilter=~@privileged @resources',
+  'SystemCallErrorNumber=EPERM',
+  'ProtectClock=yes',
+  'ProtectHostname=yes',
+]
+test('vault and gateway units get private network/IPC namespaces, a syscall filter and clock/hostname protection', async () => {
+  const units = await renderVaultUnits(input)
+  const gateway = await renderGatewayUnit(artifactDigest)
+  for (const line of HARDENING) {
+    expect(units.service).toContain(`\n${line}\n`)
+    expect(gateway).toContain(`\n${line}\n`)
+  }
+})

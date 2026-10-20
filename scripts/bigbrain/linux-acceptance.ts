@@ -169,7 +169,10 @@ const ATTACK_PRELUDE = `
   const read = (p) => { try { fs.readFileSync(p); return 'READ' } catch (e) { return e.code } };
   const list = (p) => { try { fs.readdirSync(p); return 'LISTED' } catch (e) { return e.code } };
   const write = (p) => { try { fs.writeFileSync(p, 'x'); return 'WROTE' } catch (e) { return e.code } };
+  const unshare = () => { try { const r = require('node:child_process').spawnSync('/usr/bin/unshare', ['-r', '-n', '/bin/true']); return r.status === 0 ? 'UNSHARED' : 'REFUSED_' + String(r.status ?? r.error?.code ?? 'signal') } catch (e) { return 'REFUSED_' + errName(e) } };
+  const interfaces = () => { try { return fs.readFileSync('/proc/self/net/dev', 'utf8').split('\\n').slice(2).map((l) => l.split(':')[0].trim()).filter(Boolean).join(',') } catch (e) { return e.code } };
 `
+const HOST_ABSTRACT = 'ficus-bigbrain-acceptance-host-probe'
 
 try {
   // ---------------------------------------------------------------- prerequisites, named
@@ -343,6 +346,9 @@ try {
       escrow: read('/var/lib/ficus-bigbrain/control/${A}/owner.json'),
       launcher: read('/usr/local/libexec/ficus-bigbrainctl'),
       ownStore: list('${rA.storage.mount}/vault'),
+      hostAbstract: await connectUnix('\\0${HOST_ABSTRACT}'),
+      unshare: unshare(),
+      interfaces: interfaces(),
     })))()
   `
   const denied = (v: string | undefined) => !!v && ['EACCES', 'EPERM', 'ENOENT', 'EROFS', 'EAFNOSUPPORT'].includes(v)
@@ -381,7 +387,34 @@ try {
     check(`${when}: A cannot read root owner escrow`, denied(attack.escrow), attack.escrow)
     check(`${when}: A cannot read the root helper launcher`, denied(attack.launcher), attack.launcher)
     check(`${when}: A can still use its own store`, attack.ownStore === 'LISTED', attack.ownStore)
+    check(
+      `${when}: A cannot reach an abstract socket bound in the host network namespace`,
+      !!attack.hostAbstract && attack.hostAbstract !== 'CONNECTED',
+      attack.hostAbstract
+    )
+    check(
+      `${when}: A cannot create a new namespace (unshare)`,
+      attack.unshare?.startsWith('REFUSED_') === true,
+      attack.unshare
+    )
+    check(`${when}: A sees only its own loopback interface`, attack.interfaces === 'lo', attack.interfaces)
   }
+  // A root listener in the HOST network namespace: proof the vault's namespace is private.
+  const { createServer } = await import('node:net')
+  const hostProbe = createServer((socket) => socket.end())
+  await new Promise<void>((resolve, reject) => {
+    hostProbe.once('error', reject)
+    hostProbe.listen(`\0${HOST_ABSTRACT}`, () => resolve())
+  })
+  const { connect } = await import('node:net')
+  check(
+    'the host abstract probe is reachable from the host namespace',
+    await new Promise<boolean>((resolve) => {
+      const c = connect(`\0${HOST_ABSTRACT}`)
+      c.once('connect', () => (c.destroy(), resolve(true)))
+      c.once('error', () => resolve(false))
+    })
+  )
   verdicts(asVault(A, attackScript('B running')), 'B running')
   // B stopped: its socket path is the prize. A still cannot take it.
   must(['/usr/bin/systemctl', 'stop', `ficus-bigbrain@${B}.service`])
@@ -398,6 +431,7 @@ try {
     'gateway serves after restart',
     (await eventually(async () => (await gateway(B, '/v1/whoami', handoffB.token)).status, 200)) === 200
   )
+  hostProbe.close()
 
   // ---------------------------------------------------------------- crash restart (SIGKILL)
   const killedPid = unitProperty(`ficus-bigbrain@${B}.service`, 'MainPID')
@@ -463,6 +497,46 @@ try {
     'backup-release',
   ])
   check('staging released', !existsSync('/var/lib/ficus-bigbrain/backup'))
+
+  // ---------------------------------------------------------------- nightly partial backup
+  // B's storage is unavailable (mount stopped): a nightly run excludes B, stages A and says so;
+  // a termination run (FICUS_BACKUP_REQUIRE_COMPLETE=1) refuses instead.
+  const bbHost = (role: string, extra: string[] = []) =>
+    sh([
+      '/usr/bin/flock',
+      '-x',
+      lock,
+      '/usr/bin/env',
+      ...extra,
+      '/usr/local/bin/bun',
+      '--no-install',
+      '--no-env-file',
+      `/opt/ficus-bigbrain/releases/${host().artifactDigest.slice(7)}/ficus-bigbrain-host.js`,
+      role,
+    ])
+  const mountB = must(['/usr/bin/systemd-escape', '-p', '--suffix=mount', rB.storage.mount]).trim()
+  must(['/usr/bin/systemctl', 'stop', mountB])
+  const strict = JSON.parse(
+    bbHost('backup-stage', ['FICUS_BACKUP_REQUIRE_COMPLETE=1']).stdout.trim().split('\n').at(-1)!
+  )
+  check('a termination backup refuses when one vault is unavailable', strict.ok === false, JSON.stringify(strict.code))
+  bbHost('backup-release')
+  const partial = JSON.parse(bbHost('backup-stage').stdout.trim().split('\n').at(-1)!)
+  check(
+    'a nightly backup stages A and excludes the unavailable B',
+    partial.ok === true &&
+      partial.partial === true &&
+      partial.inventory?.vaults?.map((v: { vaultId: string }) => v.vaultId).join() === A &&
+      partial.excluded?.[0]?.vaultId === B,
+    JSON.stringify({ code: partial.code, excluded: partial.excluded?.length })
+  )
+  check('the excluded vault is marked in its receipt', receipt(B).receipt.backup === 'excluded')
+  bbHost('backup-release')
+  must(['/usr/bin/systemctl', 'start', `ficus-bigbrain@${B}.service`])
+  check(
+    'B serves again after its storage returns',
+    (await eventually(async () => (await gateway(B, '/v1/whoami', handoffB.token)).status, 200)) === 200
+  )
 
   // ---------------------------------------------------------------- read revoke keeps humans
   const revoke = helper({ action: 'read-revoke', vaultId: A, expectedGeneration: 1, generation: 2 })
@@ -549,32 +623,25 @@ try {
     fenced.ok === true && inventory?.vaults?.length === 2,
     JSON.stringify(fenced.code ?? fenced.stderr ?? null)
   )
+  const archivedA = inventory.vaults.find((v) => v.vaultId === A)!
   const archivedB = inventory.vaults.find((v) => v.vaultId === B)!
+  // No grants: the host restores exactly the archive (Core's restored DB is the vault authority).
   const restored = helper({
     action: 'restore',
     effectId: randomUUID(),
     archiveManifestDigest: inventory.manifestDigest,
-    currentVaults: [
-      { vaultId: A, disposition: 'exclude', code: 'not_found' },
-      {
-        vaultId: B,
-        disposition: 'restore',
-        upstreamVaultId: archivedB.upstreamVaultId,
-        generation: archivedB.generation + 1,
-        displayName: 'Beta renamed',
-        owner: OWNER,
-        origin: `https://bb-${hex(B)}.${ZONE}`,
-        readAccess: 'revoked',
-      },
-    ],
   })
+  check('restore restores the archive', restored.ok === true, JSON.stringify(restored.code ?? restored.stderr ?? null))
   check(
-    'restore applies the authoritative grants',
-    restored.ok === true,
-    JSON.stringify(restored.code ?? restored.stderr ?? null)
+    'both archived vaults come back, read-revoked, at a newer generation',
+    [A, B].every((v) => receipt(v).receipt.readAccess === 'revoked' && receipt(v).receipt.state === 'ready') &&
+      receipt(A).receipt.generation === archivedA.generation + 1 &&
+      receipt(B).receipt.generation === archivedB.generation + 1
   )
-  check('the excluded deleted vault A is not restored', !existsSync(`/var/lib/ficus-bigbrain/control/${A}`))
-  check('restored B uses the current (Platform) name', receipt(B).displayName === 'Beta renamed')
+  check(
+    'restored vaults keep their archived names',
+    receipt(B).displayName === 'Beta' && receipt(A).displayName === 'Alpha'
+  )
   check(
     'restored B rotated every credential: the pre-backup Ficus token is rejected',
     (await eventually(async () => (await gateway(B, '/v1/whoami', handoffB.token)).status, 401)) === 401
@@ -596,7 +663,24 @@ try {
       JSON.stringify(restoredActor.permissions) === '["read"]',
     `${restoredIdentity.status}`
   )
-  check('the deleted vault A is still not routed after restore', (await gateway(A, '/v1/whoami')).status === 404)
+  // Core-style reconciliation: A was deleted in Core after this backup was taken, so Core's
+  // tombstone wins: status, then delete fenced on the host's receipt generation and name.
+  const statusA = helper({ action: 'status', vaultId: A })
+  const redeleted = helper({
+    action: 'delete',
+    vaultId: A,
+    expectedGeneration: statusA.receipt.generation,
+    generation: statusA.receipt.generation + 1,
+    confirmedVaultId: A,
+    confirmedName: statusA.receipt.displayName,
+  })
+  check(
+    'Core reconciliation deletes the restored-but-tombstoned vault A',
+    statusA.ok === true && redeleted.ok === true && redeleted.receipt?.state === 'deleted',
+    JSON.stringify(redeleted.code ?? null)
+  )
+  check('A is not routed after the reconcile delete', (await gateway(A, '/v1/whoami')).status === 404)
+  check('B still serves after A is reconciled away', (await gateway(B, '/v1/whoami', freshB.token)).status === 200)
 } catch (error) {
   check(
     'acceptance run completed without an unexpected error',

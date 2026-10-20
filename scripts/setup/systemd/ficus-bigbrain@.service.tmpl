@@ -43,6 +43,19 @@ ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 RestrictRealtime=yes
 LockPersonality=yes
+# Own network/IPC namespaces: no host abstract Unix sockets, no SysV/POSIX IPC with peers; filesystem
+# sockets (the only listeners) still work. No new namespaces, native syscalls only, a service
+# syscall allow-list (denials return EPERM rather than killing), and no clock/hostname changes.
+PrivateNetwork=yes
+PrivateIPC=yes
+RemoveIPC=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+ProtectClock=yes
+ProtectHostname=yes
 # No IP sockets at all (seccomp, enforced on every systemd build): the vault serves only
 # on its root-prepared Unix socket, so it can never squat a peer's or the gateway's listener.
 RestrictAddressFamilies=AF_UNIX

@@ -8,7 +8,7 @@ import { drainStages, noteStage, refuse } from './diagnostics'
 import { installedHostSchema } from './control-input'
 import { controlReceiptSchema } from './receipts'
 import { managedPaths } from './paths'
-import { verifyVaultMount, linuxDeviceId } from './storage'
+import { currentLoopMountDevice, verifyVaultMount, linuxDeviceId } from './storage'
 import { runPrivateCommand } from './process'
 
 export interface CgroupFacts {
@@ -26,6 +26,23 @@ type Role = 'vault' | 'gateway' | 'control'
 const cap = (text: string, ceiling: number) =>
   /^\d+$/.test(text.trim()) && Number.isSafeInteger(Number(text)) && Number(text) > 0 && Number(text) <= ceiling
 /** Unprivileged view: neither the soft nor the hard descriptor limit exceeds the unit's. */
+/** The running service is in its own network namespace (PrivateNetwork=yes): only a loopback
+ * interface exists and no abstract Unix socket of the host namespace is visible or reachable. */
+export function verifyPrivateNetwork(netDev: string, netUnix: string): void {
+  const interfaces = netDev
+    .split('\n')
+    .slice(2)
+    .map((line) => line.split(':')[0]!.trim())
+    .filter(Boolean)
+  if (interfaces.length !== 1 || interfaces[0] !== 'lo') throw new Error('network_namespace_shared')
+  // /proc/net/unix lists this namespace's sockets; an abstract name (path starting '@') can
+  // only come from another process sharing it.
+  const abstract = netUnix
+    .split('\n')
+    .slice(1)
+    .some((line) => /\s@\S*$/.test(line))
+  if (abstract) throw new Error('abstract_sockets_visible')
+}
 export function verifyOpenFileLimit(limits: string, ceiling: number): void {
   const files = /Max open files\s+(\d+)\s+(\d+)/.exec(limits)
   if (!files || !cap(files[1]!, ceiling) || !cap(files[2]!, ceiling)) throw new Error('open_files_unbounded')
@@ -341,15 +358,17 @@ export async function verifyRecordedVaultStorage(
   )
     refuse('storage_unavailable', 'storage_image_mismatch')
   noteStage('storage_image_ok')
-  verifyVaultMount(
-    { mount: paths.mount, device: os.mountDevice, filesystem: 'ext4' },
-    await (options.mountinfo ?? (() => readFile('/proc/1/mountinfo', 'utf8')))()
-  )
+  const table = await (options.mountinfo ?? (() => readFile('/proc/1/mountinfo', 'utf8')))()
+  // The live loop device (it may differ from create time after a reboot or remount); its
+  // backing file must be this vault's verified image.
+  const device = currentLoopMountDevice(paths.mount, table)
+  if (!device) refuse('storage_unavailable', 'storage_mount_missing')
+  verifyVaultMount({ mount: paths.mount, device, filesystem: 'ext4' }, table)
   noteStage('storage_mount_ok')
   // sysfs, not the LOOP_GET_STATUS ioctl: this runs inside the vault's cgroup, whose
   // PrivateDevices= device policy denies opening /dev/loopN even to root. The inode/device of
   // the image at this exact path was verified above and the full ioctl identity at mount time.
-  const loopName = `loop${os.mountDevice.slice(2)}`
+  const loopName = `loop${device.slice(2)}`
   const backing = await (
     options.backingFile ?? ((loop: string) => readFile(`/sys/block/${loop}/loop/backing_file`, 'utf8'))
   )(loopName).catch(() => '')
@@ -434,6 +453,8 @@ export async function sandboxMain(args: string[]): Promise<void> {
     await verifyRunningInterpreter(dirname(Bun.main))
     stage.name = 'socket-policy'
     await proveNoInetSockets()
+    stage.name = 'network-namespace'
+    verifyPrivateNetwork(await readFile('/proc/self/net/dev', 'utf8'), await readFile('/proc/self/net/unix', 'utf8'))
     stage.name = 'scratch'
     verifyScratchMounts(await readFile('/proc/self/mountinfo', 'utf8'))
     stage.name = 'open-files'
