@@ -7,7 +7,14 @@ import { BigbrainBindings } from './local-bindings'
 
 let root: string
 let home: string
-let binding: { id: string; label: string; vaultPath: string; executablePath: string; clientId: string }
+let binding: {
+  id: string
+  label: string
+  vaultPath: string
+  executablePath: string
+  clientId: string
+  tokenStorePath?: string
+}
 let resolver: BigbrainBindings
 async function save(value: unknown = [binding]) {
   await writeFile(join(home, 'bigbrain-bindings.json'), JSON.stringify({ version: 1, bindings: value }), {

@@ -138,3 +138,20 @@ test('startup deadline reports timeout and reaps an unresponsive MCP process', a
     await f.dispose()
   }
 })
+
+test('caller abort during startup cancels and reaps the owned process', async () => {
+  const f = await fixture('setInterval(()=>{},1000)')
+  const controller = new AbortController()
+  const start = f.transport.start.bind(f.transport)
+  f.transport.start = async () => {
+    await start()
+    controller.abort()
+  }
+  try {
+    const client = new BigbrainClient({ transport: async () => f.transport })
+    await expect(client.loadMemory({ signal: controller.signal })).rejects.toMatchObject({ code: 'cancelled' })
+    expect(() => process.kill(f.transport.pid!, 0)).toThrow()
+  } finally {
+    await f.dispose()
+  }
+})

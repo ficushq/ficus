@@ -4,7 +4,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { BigbrainClient } from './client'
 
-function fixture(reply: (name: string, args: Record<string, unknown>) => unknown, isError = false) {
+function fixture(reply: (name: string, args: Record<string, unknown>) => unknown, isError = false, raw = false) {
   const calls: { name: string; arguments?: Record<string, unknown> }[] = []
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   const server = new Server({ name: 'synthetic', version: '1' }, { capabilities: { tools: {} } })
@@ -16,6 +16,7 @@ function fixture(reply: (name: string, args: Record<string, unknown>) => unknown
   }))
   server.setRequestHandler(CallToolRequestSchema, (request) => {
     calls.push(request.params)
+    if (raw) return reply(request.params.name, request.params.arguments ?? {}) as any
     return {
       isError,
       content: [
@@ -179,4 +180,27 @@ test('does not expose unsafe nested provenance/source identifiers as retrievable
   } finally {
     await f.dispose()
   }
+})
+
+test.each([
+  { content: [{ type: 'image', data: 'AAAA', mimeType: 'image/png' }] },
+  { structuredContent: { markdown: 'not text content' } },
+])('rejects non-text or structured-only results', async (response) => {
+  const f = fixture(() => response, false, true)
+  try {
+    await expect(f.client.loadMemory()).rejects.toMatchObject({ code: 'invalid_response' })
+  } finally {
+    await f.dispose()
+  }
+})
+test('pre-aborted caller does not create a transport', async () => {
+  let starts = 0
+  const client = new BigbrainClient({
+    transport: async () => {
+      starts++
+      throw new Error('unexpected')
+    },
+  })
+  await expect(client.loadMemory({ signal: AbortSignal.abort() })).rejects.toMatchObject({ code: 'cancelled' })
+  expect(starts).toBe(0)
 })

@@ -28,10 +28,10 @@ Expired sessions, passkey challenges, email verifications, and expired or consum
 
 ## BigBrain local process and capability boundaries
 
-The [BigBrain implementation contract](bigbrain.md) replaces the unused
-API/token connector with same-host stdio MCP. The local integration changes
-in this section are the target contract reviewed on 2026-10-19; protocol
-inspection is not a passing implementation/security test result.
+The [BigBrain local connector](bigbrain.md) replaces the unused API/token
+connector with same-host stdio MCP. The connector documentation records the
+pinned upstream smoke and its limits; protocol inspection alone is not a
+passing implementation/security test result.
 
 Only an OS-operator-owned host declaration may select a vault, executable, and
 named local connection. API/CLI callers can select declared bindings but cannot

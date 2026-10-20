@@ -1,8 +1,7 @@
 # BigBrain local vault connections
 
-> Implementation contract, reviewed against upstream on 2026-10-19. The local
-> connector and removal described here must ship together; this page does not
-> describe the older API/token connector.
+> Local connector verified against the pinned upstream on Linux on 2026-10-19.
+> This page describes the local MCP connector, not the removed API/token adapter.
 
 BigBrain is a self-hosted memory engine, not a BigBrain-hosted cloud service.
 Ficus connects to an explicitly selected local vault using BigBrain's public
@@ -124,7 +123,7 @@ unsupported protocol; do not silently switch transport, credential, or vault.
    Those paths are examples, not discovery defaults. An optional
    `tokenStorePath` can select an existing upstream `BIGBRAIN_TOKENS` store when
    the operator's upstream configuration uses it. Otherwise BigBrain resolves
-   its normal credential store under the service account's home. Ficus never
+   its normal credential store under the service account's home. Ficus checks state metadata and permissions, but never
    parses or copies that store or its sibling `.clients` files. Provisioning
    and execution must use the same choice.
 
@@ -282,3 +281,19 @@ left running. Do not roll back to code that expects the removed export tables
 or reintroduces automatic capture. Shared credential cleanup/revalidation,
 OAuth/token projection, workflow outputs, other integrations, and normal Ficus
 conversation persistence remain independent of this removal.
+
+## Compatibility verification
+
+The opt-in `upstream.smoke.test.ts` passed against the pinned revision using a
+separately prepared source checkout on Linux. It exercised authenticated
+validation, working-set loading, paginated reads, search, deliberate contribution,
+reading its server-attributed receipt, and refusal after revocation. All vaults,
+credentials and upstream state were synthetic and removed afterwards; no model
+calls or real user vaults were used. The fixture denies JavaScript fetch and
+Node socket connections in the CLI and its MCP child. It is not an OS network
+namespace. Idle expiry is covered with a synthetic MCP response, not a 30-day
+real-time smoke. The macOS desktop distribution was not exercised.
+
+Normal CI uses synthetic MCP and owned-process fixtures; the upstream test is
+explicitly skipped unless `FICUS_BIGBRAIN_UPSTREAM_CHECKOUT` names a separately
+prepared checkout at the exact pin. It never installs dependencies itself.
