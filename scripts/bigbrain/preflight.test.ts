@@ -78,10 +78,12 @@ test('descriptor limits: control is checked in its own process; vault/gateway in
   expect(() => verifyOpenFileLimit(line(256, 256), 256)).not.toThrow()
   expect(() => verifyOpenFileLimit(line(256, 524288), 256)).toThrow('open_files_unbounded')
   // A root preflight that raised its own limit is not mistaken for the unit's configuration.
-  expect(() => assertCgroupBudget('gateway', { ...facts, limits: line(1048576, 1048576) })).not.toThrow()
-  expect(() => assertCgroupBudget('control', { ...facts, limits: line(1048576, 1048576) })).toThrow(
+  const small = { ...facts, memoryMax: '134217728' }
+  expect(() => assertCgroupBudget('gateway', { ...small, limits: line(1048576, 1048576) })).not.toThrow()
+  expect(() => assertCgroupBudget('control', { ...small, limits: line(1048576, 1048576) })).toThrow(
     'budget_unit_nofile'
   )
+  expect(() => assertCgroupBudget('control', { ...small, limits: line(128, 128) })).not.toThrow()
 })
 test('scratch must be memory-backed, noexec/nodev/nosuid and bounded; PrivateTmp on disk is insufficient', () => {
   const mounts = '/tmp /var/tmp'
