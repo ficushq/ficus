@@ -8,6 +8,18 @@ import { MANAGED_BIGBRAIN_UPSTREAM_COMMIT } from '../../packages/shared/src/mana
 import { computeDigest } from '../artifact/lib/manifest'
 
 const REPOSITORY = 'https://github.com/elsehow/bigbrain.git'
+/** Exactly the committed Ficus inputs of the compiled host/owner-link binaries (plus license and
+ * lockfile for bundled dependencies), not the whole product repository. */
+export const FICUS_SOURCE_PATHS = [
+  'LICENSE',
+  'package.json',
+  'bun.lock',
+  '.bun-version',
+  'scripts/bigbrain',
+  'scripts/setup/systemd',
+  'scripts/artifact/lib/manifest.ts',
+  'packages/shared/src/managed-bigbrain.ts',
+] as const
 const fileNames = [
   'LICENSE',
   'bigbrain-shared',
@@ -153,18 +165,7 @@ export async function buildBigbrainArtifact(options: {
     const ficusCommit = await checked(['git', '-C', ficusRoot, 'rev-parse', 'HEAD^{commit}'])
     if (!/^[a-f0-9]{40}$/.test(ficusCommit)) throw new Error('artifact_build_failed')
     // Corresponding Ficus source must actually match the policy compiled into this component.
-    await checked([
-      'git',
-      '-C',
-      ficusRoot,
-      'diff',
-      '--quiet',
-      'HEAD',
-      '--',
-      'scripts/bigbrain',
-      'scripts/artifact/lib/manifest.ts',
-      'packages/shared/src/managed-bigbrain.ts',
-    ])
+    await checked(['git', '-C', ficusRoot, 'diff', '--quiet', 'HEAD', '--', ...FICUS_SOURCE_PATHS])
     await checked([
       'git',
       '-C',
@@ -174,6 +175,8 @@ export async function buildBigbrainArtifact(options: {
       '--output',
       join(staging, 'ficus-source.tar'),
       ficusCommit,
+      '--',
+      ...FICUS_SOURCE_PATHS,
     ])
     const shimEntry = '.ficus-owner-link-entry.ts'
     await writeFile(

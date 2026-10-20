@@ -2,7 +2,13 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildBigbrainArtifact, prepareBigbrainNativeSmoke, verifyBigbrainArtifact, type BuildRunner } from './artifact'
+import {
+  buildBigbrainArtifact,
+  FICUS_SOURCE_PATHS,
+  prepareBigbrainNativeSmoke,
+  verifyBigbrainArtifact,
+  type BuildRunner,
+} from './artifact'
 import { MANAGED_BIGBRAIN_UPSTREAM_COMMIT as pin } from '../../packages/shared/src/managed-bigbrain'
 
 const roots: string[] = []
@@ -51,6 +57,10 @@ test('packages pinned upstream plus minimal native owner-link shim and both corr
   expect(compiles.some((argv) => argv[2] === 'bin/shared-invite.ts')).toBe(false)
   expect(manifest.ficusCommit).toMatch(/^[a-f0-9]{40}$/)
   expect(f.calls.filter((argv) => argv.includes('archive'))).toHaveLength(2)
+  // Ficus corresponding source is exactly what the compiled host/shim binaries are built from,
+  // with the license and lockfile, not the whole product repository.
+  const ficusArchive = f.calls.find((argv) => argv.some((arg) => arg.endsWith('ficus-source.tar')))!
+  expect(ficusArchive.slice(ficusArchive.indexOf('--') + 1)).toEqual([...FICUS_SOURCE_PATHS])
   expect(compiles.every((argv) => argv.includes('--target=bun-linux-x64'))).toBe(true)
   expect(f.calls.flat().some((arg) => arg.includes('systemctl') || arg.includes('curl'))).toBe(false)
   expect(await verifyBigbrainArtifact(f.output)).toEqual(manifest)
