@@ -19,7 +19,11 @@ function baseUrl(override?: string): string {
  * Those provider-exhaustion signals are captured from response headers in
  * `classifyResponseHeaders` (e.g. `anthropic-ratelimit-*`).
  *
- * 5xx responses intentionally return healthy/no-signal so active probes do not
+ * Successful model listing can recover credential failures only. Even network,
+ * capacity, and generic errors may be specific to the Messages endpoint, so
+ * those (like credits and rate limits) need a successful generation to recover.
+ *
+ * 5xx responses intentionally return inconclusive so active probes do not
  * flap providers during transient outages; the reactive settled-error path
  * handles capacity errors from real agent requests.
  */
@@ -38,6 +42,6 @@ export const anthropicProbe: HealthProbe = {
     if (res.status >= 500) return { state: 'inconclusive', status: res.status }
     if (!res.ok) return { state: 'unhealthy', kind: 'error', status: res.status }
 
-    return { state: 'healthy', status: res.status }
+    return { state: 'healthy', status: res.status, recoveryKinds: ['invalid-credential', 'expired-oauth'] }
   },
 }

@@ -6,6 +6,34 @@ import { getSettingsStore, resetSettingsStore } from '../../services/settings'
 import { createProviderHealthRegistry, providerHealth, resetProviderHealthForTests } from './registry'
 
 describe('revisioned provider health episodes', () => {
+  it('ignores success outside its recovery scope without changing the episode or revision', () => {
+    const registry = createProviderHealthRegistry({ now: () => 1_000 })
+    registry.recordFailure(registry.captureAttempt('anthropic'), { kind: 'plan-credit', retryAt: 90_000 })
+    const attempt = registry.captureAttempt('anthropic', 'a1')
+    const original = registry.snapshotRecords()
+
+    expect(registry.recordSuccess(attempt, ['invalid-credential', 'expired-oauth'])).toBe(false)
+    expect(registry.snapshotRecords()).toEqual(original)
+    expect(registry.captureAttempt('anthropic', 'a1')).toEqual(attempt)
+    expect(registry.getRecord('anthropic', 'a1')).toBeUndefined()
+    // An ignored probe must not invalidate a real generation attempt already in flight.
+    expect(registry.recordSuccess(attempt)).toBe(true)
+    expect(registry.getRecord('anthropic', 'a1')?.lastSuccessAt).toBeDefined()
+    expect(registry.getRecord('anthropic')?.lastSuccessAt).toBeUndefined()
+    expect(registry.getRecord('anthropic', 'a2')).toBeUndefined()
+  })
+
+  it('retains revision guards when success is scoped to credential recovery', () => {
+    const registry = createProviderHealthRegistry({ now: () => 1_000 })
+    registry.recordFailure(registry.captureAttempt('anthropic', 'a1'), { kind: 'invalid-credential' })
+    const stale = registry.captureAttempt('anthropic', 'a1')
+    registry.recordFailure(stale, { kind: 'expired-oauth' })
+
+    expect(registry.recordSuccess(stale, ['invalid-credential', 'expired-oauth'])).toBe(false)
+    expect(registry.getRecord('anthropic', 'a1')?.lastSuccessAt).toBeUndefined()
+    expect(registry.recordSuccess(registry.captureAttempt('anthropic', 'a1'), ['expired-oauth'])).toBe(true)
+  })
+
   it('assigns a finite kind-specific retry time to every transient failure', () => {
     const now = 1_000
     const defaults = {

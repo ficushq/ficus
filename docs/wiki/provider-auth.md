@@ -134,6 +134,16 @@ Resetting asserts nothing about the upstream state — it only removes Ficus's r
 is in fact still exhausted, the very next request re-marks it with a fresh cooldown, so the worst
 case is one wasted call.
 
+### Observed recovery and health probes
+
+Cooldown expiry makes a route eligible for another request; it does not establish recovery or
+resolve its health alert. A successful generation can recover the matching provider/account episode.
+Anthropic's token-free `GET /v1/models` probe only verifies credentials: it can recover invalid or
+expired credential failures, but cannot clear plan-credit, rate-limit, capacity, network, or generic
+Messages API failures. Successful model-list probes leave those records and retry deadlines unchanged,
+including after worker restart. No synthetic paid generation is
+used for probing.
+
 ### OAuth login intent (`POST /:provider/oauth/start`)
 
 The optional body `{ "accountId": "acc_…" }` selects what the flow's completion writes:
