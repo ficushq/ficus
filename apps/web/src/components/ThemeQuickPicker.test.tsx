@@ -3,7 +3,7 @@ import { act } from 'react'
 import { fireEvent, getAllByRole, getByRole, queryByRole } from '@testing-library/dom'
 import type { ThemePreset } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
-import { useHoverTimer } from '../test/hoverTimer'
+import { restPointerOn, useHoverTimer } from '../test/hoverTimer'
 import { webkitTap } from '../test/webkitTap'
 import { ThemeProvider, useTheme, useThemeSyncStore } from '../providers/ThemeProvider'
 import type { ThemeSyncStore } from '../theme/sync'
@@ -576,11 +576,13 @@ test('a palette-only preset circle resolves a real derived color, not an empty/u
 })
 
 describe('hover', () => {
-  /** A pointer arriving on (`over`) or leaving (`out`) an element; React derives enter/leave from these. */
+  /** A pointer arriving on (`over`, resting past the hover-open delay) or leaving (`out`) an element; React derives enter/leave from these. */
   const pointer = (target: Element, type: 'over' | 'out', pointerType = 'mouse') =>
-    act(async () => {
-      target.dispatchEvent(new window.PointerEvent(`pointer${type}`, { bubbles: true, pointerType }))
-    })
+    type === 'over'
+      ? restPointerOn(target, pointerType)
+      : act(async () => {
+          target.dispatchEvent(new window.PointerEvent(`pointer${type}`, { bubbles: true, pointerType }))
+        })
   const wait = (ms: number) => act(() => new Promise((resolve) => setTimeout(resolve, ms)))
   const flyout = (container: HTMLElement) => queryByRole(container, 'dialog', { name: 'Theme' })
 

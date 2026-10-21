@@ -1,9 +1,13 @@
 import { spyOn } from 'bun:test'
 import { act } from 'react'
+import { HOVER_OPEN_DELAY_MS } from '../components/popover/useHoverOpen'
 import { HOVER_PREVIEW_DELAY_MS } from '../hooks/useThemeHoverPreview'
 
-/** Owns just the hover-intent deadline (HOVER_PREVIEW_DELAY_MS); everything else keeps the real clock. */
-export function useHoverTimer() {
+/**
+ * Owns just one hover-intent deadline (`delay`, default HOVER_PREVIEW_DELAY_MS); everything else keeps
+ * the real clock. `advance(ms)` fires the pending deadlines of at most `ms`.
+ */
+export function useHoverTimer(delay: number = HOVER_PREVIEW_DELAY_MS) {
   const deadlines = new Map<number, { callback: () => void; ms: number }>()
   let serial = 10000
   const originalSet = globalThis.setTimeout
@@ -13,7 +17,7 @@ export function useHoverTimer() {
     ms: number,
     ...rest: unknown[]
   ) => {
-    if (ms === HOVER_PREVIEW_DELAY_MS) {
+    if (ms === delay) {
       deadlines.set(++serial, { callback, ms })
       return serial
     }
@@ -23,7 +27,7 @@ export function useHoverTimer() {
     if (!deadlines.delete(Number(id))) originalClear(id)
   }) as typeof clearTimeout)
   return {
-    advance: (ms: number) =>
+    advance: (ms: number = delay) =>
       act(async () => {
         for (const [id, deadline] of [...deadlines])
           if (deadline.ms <= ms) {
@@ -36,5 +40,31 @@ export function useHoverTimer() {
       timer.mockRestore()
       clear.mockRestore()
     },
+  }
+}
+
+/**
+ * Owns the hover-open delay of `useHoverOpen` (HOVER_OPEN_DELAY_MS): `advance()` is the mouse resting on
+ * the trigger long enough, without sleeping; until then a hovered trigger stays closed.
+ */
+export function hoverOpenClock() {
+  return useHoverTimer(HOVER_OPEN_DELAY_MS)
+}
+
+/**
+ * A mouse arriving on `target` and resting there past the hover-open delay (no sleep): what the hover
+ * menus' tests mean by hovering a trigger. Elsewhere (into an open popover) the rest is a no-op.
+ */
+export async function restPointerOn(target: Element, pointerType = 'mouse') {
+  const clock = hoverOpenClock()
+  try {
+    await act(async () => {
+      target.dispatchEvent(
+        new target.ownerDocument.defaultView!.PointerEvent('pointerover', { bubbles: true, pointerType })
+      )
+    })
+    await clock.advance()
+  } finally {
+    clock.restore()
   }
 }
