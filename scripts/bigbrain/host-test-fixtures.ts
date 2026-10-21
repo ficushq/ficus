@@ -2,6 +2,9 @@
 import { controlReceiptSchema } from './receipts'
 import { planVaultStorage } from './storage'
 import { MANAGED_BIGBRAIN_UPSTREAM_COMMIT } from '@ficus/shared/managed-bigbrain'
+import { randomUUID } from 'node:crypto'
+import { memberAdminReply } from './member-admin'
+import { fakeMemberApi, fileIdentityApi } from './member-test-fixtures'
 export function reservedVaultFixture(root: string) {
   const tenantId = '11111111-1111-4111-8111-111111111111'
   const vaultId = '22222222-2222-4222-8222-222222222222'
@@ -84,15 +87,25 @@ export function simulatedHost(options: {
   unitDirectory: string
   tenantId: string
   physicalHostBinding: string
+  /** The id upstream generates for a vault's identity file (default: random, as upstream). */
+  upstreamVaultId?: string
 }) {
+  // The shipped member adapter's vault identity operations on the real (temporary) vault files.
+  const identity = fileIdentityApi(() => options.upstreamVaultId ?? randomUUID())
+  const identityApi = fakeMemberApi(undefined, identity).api
   const accounts = new Map<string, { uid: number; gid: number; comment: string }>()
   const formatted = new Set<string>()
   const mounted = new Map<string, string>() // mount path -> image path
   const active = new Set<string>()
   const calls: string[][] = []
   let nextId = 1200
-  const run = async (argv: string[]): Promise<{ code: number; stdout: string }> => {
+  const run = async (argv: string[], runOptions?: { input?: string }): Promise<{ code: number; stdout: string }> => {
     calls.push(argv)
+    if (argv.some((a) => a.endsWith('/bigbrain-members.js'))) {
+      const input = JSON.parse(runOptions?.input ?? 'null') as { op?: string } | null
+      if (input?.op === 'vault-identity' || input?.op === 'vault-name')
+        return { code: 0, stdout: `${JSON.stringify(memberAdminReply(input, identityApi))}\n` }
+    }
     const { stat, open } = await import('node:fs/promises')
     const { managedIdentityNames } = await import('./accounts')
     const [cmd, ...args] = argv
@@ -184,6 +197,8 @@ export function simulatedHost(options: {
   return {
     run,
     calls,
+    /** Every upstream identity write (path, content, mode) the adapter made. */
+    identityWrites: identity.writes,
     accounts,
     active,
     names: (vaultId: string) => async () =>

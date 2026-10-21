@@ -7,48 +7,20 @@ import {
 } from '@ficus/shared/managed-bigbrain'
 import type { InstalledHost } from './control-input'
 import { ensureVaultServed, type LifecycleDeps } from './lifecycle'
-import { memberAdminReplySchema, memberAdminResultSchemas, type MemberAdminInput } from './member-admin'
+import { memberAdminResultSchemas, type MemberAdminInput } from './member-admin'
+import { memberAdapter } from './member-adapter'
 import { cachedMemberInvite } from './member-invite-cache'
 import { managedPaths } from './paths'
 import { readVaultRecord } from './provision'
-import { runPrivateCommand, vaultCommand } from './process'
 import type { ControlReceipt } from './receipts'
 
 type Request<A extends ManagedBigbrainHostRequest['action']> = Extract<ManagedBigbrainHostRequest, { action: A }>
-type Op = MemberAdminInput['op']
+// Vault identity operations are the lifecycle's (vault-name.ts), never a member request's.
+type Op = Exclude<MemberAdminInput['op'], 'vault-identity' | 'vault-name'>
 type WithoutPath<T> = T extends unknown ? Omit<T, 'membersPath'> : never
 type Results = { [K in Op]: z.infer<(typeof memberAdminResultSchemas)[K]> }
 
-export interface MemberDeps extends LifecycleDeps {
-  /** One member-admin call as the vault UID (default: the installed release's bigbrain-members
-   * bundle). Returns the adapter's `result` or throws its fixed code. */
-  memberAdmin?: (record: ControlReceipt, input: MemberAdminInput) => Promise<unknown>
-}
-
-/** The member adapter of the INSTALLED release: vaults keep the release recorded at create, which
- * may predate it. Every release runs the same pinned upstream, so the member store is the same. */
-export function memberAdminScript(host: Pick<InstalledHost, 'artifactDigest'>): string {
-  return `/opt/ficus-bigbrain/releases/${host.artifactDigest.slice(7)}/bigbrain-members.js`
-}
-
-function defaultMemberAdmin(host: InstalledHost, deps: MemberDeps) {
-  return async (record: ControlReceipt, input: MemberAdminInput) => {
-    if (!record.os) throw new Error('storage_unavailable')
-    const result = await (deps.run ?? runPrivateCommand)(vaultCommand(record.os, memberAdminScript(host), []), {
-      input: JSON.stringify(input),
-      maxOutputBytes: 262144,
-    })
-    if (result.code !== 0) throw new Error('upstream_unavailable')
-    let reply: z.infer<typeof memberAdminReplySchema>
-    try {
-      reply = memberAdminReplySchema.parse(JSON.parse(result.stdout.trim().split('\n').at(-1) ?? ''))
-    } catch {
-      throw new Error('upstream_protocol')
-    }
-    if (!reply.ok) throw new Error(reply.code)
-    return reply.result
-  }
-}
+export type MemberDeps = LifecycleDeps
 
 /** A ready vault of this tenant/host, at the request's generation when it names one. */
 async function liveVault(
@@ -76,7 +48,7 @@ async function call<O extends Op>(
   deps: MemberDeps
 ): Promise<Results[O]> {
   const membersPath = managedPaths({ vaultId: record.receipt.vaultId, root: deps.root }).memberStore
-  const raw = await (deps.memberAdmin ?? defaultMemberAdmin(host, deps))(record, {
+  const raw = await memberAdapter(host, deps)(record, {
     ...fields,
     op,
     membersPath,

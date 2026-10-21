@@ -58,6 +58,9 @@ test.skipIf(!artifact && !required)(
       const ownerB = fixtures.native.readConnections(connections).find((c) => c.id === joinedB.id)!
       expect(ownerA.id).not.toBe(ownerB.id)
       expect(joinedA.identity.vault.id).toBe(a.identity.vault.id)
+      // Each app connection is named after the vault's Ficus name, not upstream's default.
+      expect([joinedA.name, joinedB.name]).toEqual(['Alpha', 'Beta'])
+      expect([ownerA.name, ownerB.name]).toEqual(['Alpha', 'Beta'])
       await expect(fixtures.native.connectInvite(connections, a.invite)).rejects.toBeDefined()
       // Real shim + root-private durable replay cache; identical retries cannot mint a replacement.
       const control = join(root, 'root-private-control')
@@ -599,6 +602,72 @@ function readOnlyClient(
   })
 }
 
+/** The vault's server name through the shipped member adapter and the PINNED native client: a
+ * Ficus-named vault redeems under its name; the host's rename procedure (stop, write, start)
+ * keeps the upstream id, a new device redeems under the new name and an already-connected app
+ * picks it up on its next sync; a vault still on upstream's default ("Shared BigBrain", created
+ * before Ficus wrote names) is repaired the same way. */
+test.skipIf(!artifact && !required)(
+  'Ficus-named and renamed vaults redeem with their names in the pinned client; connected apps follow renames',
+  async () => {
+    if (!artifact || !nativeDeps) throw new Error('Required pinned shared artifact/dependencies are missing')
+    const root = await mkdtemp(join(tmpdir(), 'ficus-bigbrain-names-'))
+    let fixtures: Awaited<ReturnType<typeof nativeFixtures>> | undefined
+    try {
+      fixtures = await nativeFixtures(root, artifact, nativeDeps)
+      const named = await fixtures.vault('named', { serverName: 'Research' })
+      const legacy = await fixtures.vault('legacy')
+      expect(named.identity.vault).toMatchObject({ name: 'Research' })
+      expect(await legacy.serverIdentity()).toEqual({
+        upstreamVaultId: legacy.identity.vault.id,
+        name: 'Shared BigBrain',
+      })
+      const connections = join(root, 'connections.json')
+      const joined = await fixtures.native.connectInvite(connections, named.invite)
+      expect(joined.name).toBe('Research')
+
+      const id = named.identity.vault.id
+      expect(await named.rename('Research notes')).toEqual({
+        upstreamVaultId: id,
+        name: 'Research notes',
+        changed: true,
+      })
+      expect(await named.serverIdentity()).toEqual({ upstreamVaultId: id, name: 'Research notes' })
+      // The connected app's next sync (whoami) renames its connection; nothing to reconnect.
+      const held = fixtures.native.readConnections(connections).find((c) => c.id === joined.id)!
+      const synced = await fixtures.serverStore.followServer(connections, { ...held, endpoint: named.endpoint })
+      expect(synced.error).toBeUndefined()
+      expect(synced.name).toBe('Research notes')
+      expect((await fixtures.native.refreshConnectionNames(connections)).find((c) => c.id === joined.id)?.name).toBe(
+        'Research notes'
+      )
+      // A new device redeems under the new name.
+      const issuedAt = new Date().toISOString()
+      const link = await named.issueAppLink({
+        issuedAt,
+        expiresAt: new Date(Date.parse(issuedAt) + MANAGED_BIGBRAIN_OWNER_INVITE_TTL_MS).toISOString(),
+      })
+      const device = await fixtures.native.connectInvite(
+        join(root, 'device.json'),
+        `${named.endpoint}/invite#${link.secret}`
+      )
+      expect([device.name, device.identity.vault.id]).toEqual(['Research notes', id])
+
+      // Upgrade repair of a vault still on upstream's default: same procedure, same id.
+      expect(await legacy.rename('Beta')).toMatchObject({ upstreamVaultId: legacy.identity.vault.id, changed: true })
+      const repaired = await fixtures.native.connectInvite(
+        join(root, 'legacy.json'),
+        legacy.invite.replace(/^http:\/\/127\.0\.0\.1:\d+/, legacy.endpoint)
+      )
+      expect([repaired.name, repaired.identity.vault.id]).toEqual(['Beta', legacy.identity.vault.id])
+    } finally {
+      await fixtures?.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
+  },
+  120_000
+)
+
 /** Record two create intents in Core's store and let the reconciler apply them through a fixture
  * helper that starts a real native vault server per create and answers with its receipt. */
 async function createdThroughReconciler(fixtures: Awaited<ReturnType<typeof nativeFixtures>>, owners: string[]) {
@@ -668,7 +737,8 @@ async function createdThroughReconciler(fixtures: Awaited<ReturnType<typeof nati
       call: (async (_host: unknown, requestId: string, call: ManagedHostCall) => {
         if (call.action !== 'create') throw new ManagedHostError('invalid_request', false)
         expect([call.expectedGeneration, call.generation, call.origin]).toEqual([0, 1, origin(call.vaultId)])
-        const vault = await fixtures.vault(call.vaultId === VAULT_A ? 'a' : 'b')
+        // The host's create writes the Ficus name before the first serve (vault-name.ts).
+        const vault = await fixtures.vault(call.vaultId === VAULT_A ? 'a' : 'b', { serverName: call.displayName })
         started.set(call.vaultId, vault)
         return {
           contractVersion: 1,

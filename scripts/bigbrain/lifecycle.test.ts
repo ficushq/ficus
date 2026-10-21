@@ -12,6 +12,7 @@ import type { NativeMember } from './native-admin'
 import { managedPaths } from './paths'
 import { readPrivateJson, writePrivateJson } from './secure-files'
 import { initializeStorageNamespace } from './volume-image'
+import { repairVaultNames } from './vault-name'
 import { memberAdminReply } from './member-admin'
 import { FakeBusy, fakeMemberApi } from './member-test-fixtures'
 
@@ -61,6 +62,7 @@ async function fixture(options: { loseMint?: boolean; tenantLabel?: string } = {
     unitDirectory: join(outer, 'units'),
     tenantId: TENANT,
     physicalHostBinding: BINDING,
+    upstreamVaultId: UPSTREAM,
   })
   // In-memory native store: what the pinned CLI would return (wire behavior is the native smoke's job).
   const members: NativeMember[] = []
@@ -182,7 +184,7 @@ async function fixture(options: { loseMint?: boolean; tenantLabel?: string } = {
       { contractVersion: 1, tenantId: TENANT, physicalHostBinding: BINDING, hostEpoch: 1, ...fields },
       deps
     )
-  return { root, deps, send, events, credentials, issued, ingress: () => ingress }
+  return { root, host, deps, send, events, credentials, issued, ingress: () => ingress }
 }
 const createRequest = () => ({
   requestId: rid(),
@@ -402,20 +404,114 @@ test('owner links are issued only after the vault route and Caddy site are publi
   expect(f.ingress()).toBe(before)
 })
 
-test('rename changes only Ficus metadata at the next generation', async () => {
+// ---------------------------------------------------------------- upstream server name
+const UNIT = `ficus-bigbrain@${A}.service`
+const identityFile = (root: string) => join(managedPaths({ root, vaultId: A }).vault, '.shared-identity.json')
+const identityOf = async (root: string) => JSON.parse(await readFile(identityFile(root), 'utf8'))
+/** Index of the first recorded command matching, or -1. */
+const at = (calls: string[][], match: (argv: string[]) => boolean) => calls.findIndex(match)
+const nameWrite = (argv: string[]) => argv.some((a) => a.endsWith('/bigbrain-members.js'))
+const unitStart = (argv: string[]) => argv[0] === '/usr/bin/systemctl' && argv.at(-1) === UNIT && argv[1] === 'enable'
+const unitStop = (argv: string[]) => argv[0] === '/usr/bin/systemctl' && argv[1] === 'stop' && argv.at(-1) === UNIT
+
+test('create writes the Ficus name as the upstream server name before the first serve, as the vault UID', async () => {
+  const f = await fixture()
+  expect(await f.send(createRequest())).toMatchObject({ ok: true, receipt: { state: 'ready' } })
+  // Upstream created the identity (its own id) and only the name is Ficus's.
+  expect(await identityOf(f.root)).toEqual({ id: UPSTREAM, name: 'Research' })
+  expect(f.host.identityWrites.map((w) => w.mode)).toEqual([0o600])
+  const write = at(f.host.calls, nameWrite)
+  expect(write).toBeGreaterThan(-1)
+  expect(write).toBeLessThan(at(f.host.calls, unitStart))
+  // The installed release's member adapter, run as the vault's own UID with no privileges.
+  const argv = f.host.calls[write]!
+  expect(argv.slice(0, 2)).toEqual(['/usr/bin/setpriv', `--reuid=${[...f.host.accounts.values()][0]!.uid}`])
+  expect(argv.at(-1)).toBe(`/opt/ficus-bigbrain/releases/${'a'.repeat(64)}/bigbrain-members.js`)
+})
+
+test('rename sets the upstream name too: stop only this vault, write, start, verify; the id is kept', async () => {
   const f = await fixture()
   await f.send(createRequest())
-  expect(
-    await f.send({
-      requestId: rid(),
-      action: 'rename',
-      vaultId: A,
-      expectedGeneration: 1,
-      generation: 2,
-      displayName: 'Lab',
-    })
-  ).toMatchObject({ ok: true, receipt: { generation: 2 } })
+  const before = f.host.calls.length
+  const rename = {
+    requestId: rid(),
+    action: 'rename',
+    vaultId: A,
+    expectedGeneration: 1,
+    generation: 2,
+    displayName: 'Lab notes',
+  }
+  expect(await f.send(rename)).toMatchObject({
+    ok: true,
+    receipt: { generation: 2, displayName: 'Lab notes', upstreamVaultId: UPSTREAM },
+  })
+  expect(await identityOf(f.root)).toEqual({ id: UPSTREAM, name: 'Lab notes' })
+  const calls = f.host.calls.slice(before)
+  const stop = at(calls, unitStop)
+  const write = calls.findIndex((argv, i) => i > stop && nameWrite(argv))
+  expect(stop).toBeGreaterThan(-1)
+  expect(write).toBeGreaterThan(stop)
+  expect(calls.findIndex((argv, i) => i > write && unitStart(argv))).toBeGreaterThan(write)
+  expect(f.host.active.has(UNIT)).toBe(true)
+  // Only this vault's unit: never the gateway, never a route or credential change.
+  expect(calls.filter((argv) => argv[1] === 'stop').map((argv) => argv.at(-1))).toEqual([UNIT])
   expect(f.events).toEqual(['init', 'mint'])
+  // An exact replay finds the names equal: nothing is stopped again.
+  const replayed = f.host.calls.length
+  expect(await f.send(rename)).toMatchObject({ ok: true, receipt: { generation: 2 } })
+  expect(f.host.calls.slice(replayed).some(unitStop)).toBe(false)
+  expect(f.host.identityWrites).toHaveLength(2)
+})
+
+test('a failed name write still restarts the vault and the rename is retryable', async () => {
+  const f = await fixture()
+  await f.send(createRequest())
+  const run = f.deps.run
+  let fail = true
+  f.deps.run = (async (argv: string[], options?: { input?: string }) => {
+    if (fail && nameWrite(argv) && options?.input?.includes('"vault-name"')) {
+      fail = false
+      return { code: 1, stdout: '' }
+    }
+    return (run as (argv: string[], options?: unknown) => ReturnType<typeof run>)(argv, options)
+  }) as typeof f.deps.run
+  const rename = {
+    requestId: rid(),
+    action: 'rename',
+    vaultId: A,
+    expectedGeneration: 1,
+    generation: 2,
+    displayName: 'Lab',
+  }
+  expect(await f.send(rename)).toMatchObject({ ok: false, code: 'upstream_unavailable', retryable: true })
+  expect(f.host.active.has(UNIT)).toBe(true)
+  expect((await identityOf(f.root)).name).toBe('Research')
+  expect(await f.send(rename)).toMatchObject({ ok: true, receipt: { generation: 2, displayName: 'Lab' } })
+  expect(await identityOf(f.root)).toEqual({ id: UPSTREAM, name: 'Lab' })
+})
+
+test('upgrade repair: a vault still named "Shared BigBrain" gets its Ficus name once; ids are kept', async () => {
+  const f = await fixture()
+  await f.send(createRequest())
+  // A vault created before Ficus wrote the name: upstream's default, plus fields Ficus never touches.
+  await Bun.write(identityFile(f.root), JSON.stringify({ id: UPSTREAM, name: 'Shared BigBrain', extra: [1] }))
+  const host = await readPrivateJson(f.deps.etc, 'host.json', installedHostSchema, { uid })
+  expect(await repairVaultNames(host, f.deps)).toEqual({ repaired: 1, failed: 0 })
+  expect(await identityOf(f.root)).toEqual({ id: UPSTREAM, name: 'Research', extra: [1] })
+  expect(f.host.active.has(UNIT)).toBe(true)
+  // Once: the next upgrade finds nothing to do and restarts nothing.
+  const before = f.host.calls.length
+  expect(await repairVaultNames(host, f.deps)).toEqual({ repaired: 0, failed: 0 })
+  expect(f.host.calls.slice(before).some(unitStop)).toBe(false)
+  // A store whose id is not the recorded one is never rewritten; it counts as failed.
+  await Bun.write(identityFile(f.root), JSON.stringify({ id: TENANT, name: 'Shared BigBrain' }))
+  expect(await repairVaultNames(host, f.deps)).toEqual({ repaired: 0, failed: 1 })
+  expect(await identityOf(f.root)).toEqual({ id: TENANT, name: 'Shared BigBrain' })
+  // A suspended host's vaults stay stopped: nothing is started for a repair.
+  await Bun.write(identityFile(f.root), JSON.stringify({ id: UPSTREAM, name: 'Shared BigBrain' }))
+  const calls = f.host.calls.length
+  expect(await repairVaultNames({ ...host, hostState: 'suspended' }, f.deps)).toEqual({ repaired: 0, failed: 0 })
+  expect(f.host.calls.length).toBe(calls)
 })
 
 // ---------------------------------------------------------------- member management

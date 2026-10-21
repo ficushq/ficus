@@ -17,17 +17,17 @@ import {
   reserveStorage,
   saveVaultRecord,
   startVaultService,
-  type ProvisionDeps,
 } from './provision'
 import { admitVaultRequest, controlReceiptSchema, hashVaultRequest, type ControlReceipt } from './receipts'
 import { ensureOwnedDirectory, readPrivateJson, writePrivateJson } from './secure-files'
 import { runPrivateCommand, vaultCommand } from './process'
+import { syncVaultName, writeVaultName, type VaultNameDeps } from './vault-name'
 
 type Admin = Pick<
   NativeVaultAdmin,
   'initializeOwner' | 'listMembers' | 'listCredentials' | 'revokeCredential' | 'ensureReadMember' | 'mintReadCredential'
 >
-export interface LifecycleDeps extends ProvisionDeps {
+export interface LifecycleDeps extends VaultNameDeps {
   admin?: (record: ControlReceipt) => Admin
   ingress?: () => Promise<unknown>
   /** Owner app-link issuance as the vault UID (default: the release's owner-link bundle). */
@@ -91,8 +91,8 @@ async function removeReadHandoff(vaultId: string, deps: LifecycleDeps): Promise<
 }
 
 /** create: reserve -> storage -> owner bootstrap (root escrow) -> one read-only Ficus credential
- * -> service + identity -> read handoff -> ready + ingress. Every phase is durable and a replay
- * of the same request resumes it; nothing is ever re-initialized or re-minted. */
+ * -> upstream server name -> service + identity -> read handoff -> ready + ingress. Every phase is
+ * durable and a replay of the same request resumes it; nothing is ever re-initialized or re-minted. */
 export async function createVault(request: Request<'create'>, host: InstalledHost, deps: LifecycleDeps) {
   const existing = await readVaultRecord(request.vaultId, deps)
   let record: ControlReceipt
@@ -152,6 +152,9 @@ export async function createVault(request: Request<'create'>, host: InstalledHos
     record = await initializeVaultOwner(record, { root: deps.root, uid: deps.uid, admin: admin(record) })
   if (record.phase === 'initialized')
     record = await prepareReadCredential(record, { root: deps.root, uid: deps.uid, admin: admin(record) })
+  // Before the first serve: upstream creates the identity (its own id) with the Ficus name, so the
+  // first app to connect already shows it. Idempotent on replay.
+  if (record.phase === 'reader_ready') await writeVaultName(record, record.displayName, host, deps)
   record = await startVaultService(record, deps)
   if (record.phase === 'service_started') {
     await writeReadHandoff(record, host, deps)
@@ -194,9 +197,13 @@ async function advance(request: Request<'rename' | 'read-revoke' | 'read-reconne
   return { record: next, replay: false }
 }
 
-/** rename: Ficus display metadata only; the native store keeps its own identity. */
-export async function renameVault(request: Request<'rename'>, deps: LifecycleDeps) {
-  return (await advance(request, deps)).record
+/** rename: the Ficus name at the next generation, then the same name as the upstream server name
+ * (stop this vault, write, start, verify; see syncVaultName). The upstream id, route, gateway and
+ * credentials are unchanged. A replay resumes the name write; equal names restart nothing. */
+export async function renameVault(request: Request<'rename'>, host: InstalledHost, deps: LifecycleDeps) {
+  const { record } = await advance(request, deps)
+  await syncVaultName(record, host, deps)
+  return record
 }
 
 /** read-revoke: Core's handoff is removed first, then every live Ficus reader credential is

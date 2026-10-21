@@ -1,4 +1,4 @@
-import { isAbsolute, resolve } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import {
   MANAGED_BIGBRAIN_INVITE_CLOCK_SKEW_MS,
@@ -6,6 +6,7 @@ import {
   MANAGED_BIGBRAIN_MAX_LISTED_MEMBERS,
   MANAGED_BIGBRAIN_MEMBER_INVITE_TTL_MS,
   MANAGED_BIGBRAIN_READER_HANDLE,
+  managedBigbrainDisplayNameSchema,
   managedBigbrainInviteIdSchema,
   managedBigbrainMemberAccessSchema,
   managedBigbrainMemberHandleSchema,
@@ -21,9 +22,10 @@ import { readBoundedControlBytes } from './control-input'
 /**
  * Member-management adapter, compiled into `bigbrain-members.js` with the pinned upstream source
  * and run ONLY by the root controller, as the vault's own UID, one bounded JSON request on stdin.
- * It calls exactly these upstream exports (lib/sharedInvites.ts, lib/sharedMembers.ts) and no
- * credential, token or network API. The controller authorizes the request, fences it to the
- * vault's generation and keeps the replay cache; this adapter enforces what Ficus may change.
+ * It calls exactly these upstream exports (lib/sharedInvites.ts, lib/sharedMembers.ts, and
+ * lib/fsx.ts for the vault's server name) and no credential, token or network API. The controller
+ * authorizes the request, fences it to the vault's generation and keeps the replay cache; this
+ * adapter enforces what Ficus may change.
  */
 export interface NativeMemberApi {
   listMembers(store: string): unknown[]
@@ -35,13 +37,21 @@ export interface NativeMemberApi {
   revokeMember(store: string, handle: string, now: Date): unknown
   /** Upstream's membership lock contention (lib/sharedMemberLock.ts): answered as `busy`. */
   BusyError: abstract new (...args: never[]) => Error
+  /** The vault's `.shared-identity.json`, created by upstream with its own random id (and the
+   * default name) when absent (lib/sharedInvites.ts). */
+  sharedVaultIdentity(root: string): unknown
+  /** Upstream's atomic replace (lib/fsx.ts): temp file in the same directory, then rename. */
+  writeAtomic(path: string, content: string, mode: number): void
 }
 
-const membersPath = z
+const absolutePath = z
   .string()
   .min(1)
   .max(4096)
   .refine((v) => isAbsolute(v) && resolve(v) === v && !/\p{Cc}/u.test(v))
+const membersPath = absolutePath
+/** The vault directory served by upstream (`--vault`), holding `.shared-identity.json`. */
+const vaultPath = absolutePath
 const displayName = managedBigbrainPendingInviteSchema.shape.displayName
 const handle = managedBigbrainMemberHandleSchema
 const access = managedBigbrainMemberAccessSchema
@@ -53,6 +63,8 @@ export const memberAdminInputSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('cancel'), membersPath, inviteId: managedBigbrainInviteIdSchema }).strict(),
   z.object({ op: z.literal('set-access'), membersPath, handle, access }).strict(),
   z.object({ op: z.literal('remove'), membersPath, handle }).strict(),
+  z.object({ op: z.literal('vault-identity'), vaultPath }).strict(),
+  z.object({ op: z.literal('vault-name'), vaultPath, name: managedBigbrainDisplayNameSchema }).strict(),
 ])
 export type MemberAdminInput = z.infer<typeof memberAdminInputSchema>
 
@@ -61,12 +73,19 @@ const secret = z.string().regex(/^[A-Za-z0-9_-]{43}$/)
 export const memberInviteMintSchema = z
   .object({ inviteId: managedBigbrainInviteIdSchema, secret, expiresAt: z.string().datetime().max(40) })
   .strict()
+/** The vault's upstream identity: its id (never changed by Ficus) and its server name, null when
+ * the file has none. */
+export const vaultIdentityResultSchema = z
+  .object({ upstreamVaultId: z.string().uuid(), name: z.string().max(4096).nullable() })
+  .strict()
 export const memberAdminResultSchemas = {
   list: managedBigbrainMemberRosterSchema,
   invite: memberInviteMintSchema,
   cancel: z.object({ inviteId: managedBigbrainInviteIdSchema }).strict(),
   'set-access': managedBigbrainMemberSchema,
   remove: managedBigbrainMemberSchema,
+  'vault-identity': vaultIdentityResultSchema,
+  'vault-name': vaultIdentityResultSchema.extend({ changed: z.boolean() }).strict(),
 } as const
 /** Codes the adapter may answer with; anything else is the controller's `upstream_protocol`. */
 export const MEMBER_ADMIN_CODES = [
@@ -195,10 +214,37 @@ function changeable(store: string, target: string, api: NativeMemberApi) {
   return member
 }
 
+// What upstream keeps in `.shared-identity.json`; every other field is preserved as it is.
+const upstreamIdentity = z.object({ id: z.string().uuid(), name: z.unknown().optional() }).passthrough()
+function vaultIdentity(root: string, api: NativeMemberApi) {
+  const parsed = upstreamIdentity.safeParse(api.sharedVaultIdentity(root))
+  if (!parsed.success) throw new Error('upstream_protocol')
+  return parsed.data
+}
+const identityView = (identity: z.infer<typeof upstreamIdentity>) => ({
+  upstreamVaultId: identity.id,
+  name: typeof identity.name === 'string' ? identity.name.slice(0, 4096) : null,
+})
+
+/** Set the vault's server name (what the BigBrain app shows) the way upstream's deploy guide
+ * says: edit `name` in `.shared-identity.json` and keep everything else, above all the id.
+ * Upstream creates the file (and its random id) when it is absent, exactly as on first serve.
+ * Idempotent: an equal name is not rewritten. */
+function setVaultName(root: string, name: string, api: NativeMemberApi) {
+  const before = vaultIdentity(root, api)
+  if (before.name === name) return { ...identityView(before), changed: false }
+  api.writeAtomic(join(root, '.shared-identity.json'), JSON.stringify({ ...before, name }), 0o600)
+  const after = vaultIdentity(root, api)
+  if (after.id !== before.id || after.name !== name) throw new Error('upstream_protocol')
+  return { ...identityView(after), changed: true }
+}
+
 export function runMemberAdmin(input: unknown, api: NativeMemberApi, now = Date.now()) {
   const parsed = memberAdminInputSchema.safeParse(input)
   if (!parsed.success) throw new Error('invalid_request')
   const request = parsed.data
+  if (request.op === 'vault-identity') return identityView(vaultIdentity(request.vaultPath, api))
+  if (request.op === 'vault-name') return setVaultName(request.vaultPath, request.name, api)
   const store = request.membersPath
   switch (request.op) {
     case 'list':

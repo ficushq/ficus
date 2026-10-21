@@ -190,6 +190,19 @@ test('restores every archived vault on fresh local storage, keeps upstream ident
   })
   const paths = managedPaths({ root: f.root, vaultId: A })
   expect(await readFile(join(paths.vault, 'evidence.md'), 'utf8')).toBe(`human contribution ${UPSTREAM_A}`)
+  // The upstream server name follows the recorded (Core-authoritative) name, not the archive's
+  // "Shared BigBrain"; the archived id stays. Written before the restored store is first served.
+  for (const [vaultId, upstream] of [
+    [A, UPSTREAM_A],
+    [B, UPSTREAM_B],
+  ] as const)
+    expect(
+      JSON.parse(await readFile(join(managedPaths({ root: f.root, vaultId }).vault, '.shared-identity.json'), 'utf8'))
+    ).toEqual({ id: upstream, name: `Vault ${vaultId.slice(0, 2)}` })
+  const nameWrite = f.host.calls.findIndex((argv) => argv.some((a) => a.endsWith('/bigbrain-members.js')))
+  const startA = f.host.calls.findIndex((argv) => argv[1] === 'enable' && argv.at(-1) === `ficus-bigbrain@${A}.service`)
+  expect(nameWrite).toBeGreaterThan(-1)
+  expect(nameWrite).toBeLessThan(startA)
   // Imported invitations are void; every imported credential (owner and Ficus reader) is revoked.
   await expect(stat(`${paths.memberStore}.invites.json`)).rejects.toThrow()
   expect(f.revoked).toEqual(['aaaaaaaa', 'bbbbbbbb', 'aaaaaaaa', 'bbbbbbbb'])

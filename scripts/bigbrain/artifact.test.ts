@@ -88,7 +88,7 @@ test('packages pinned upstream plus minimal native owner-link and member shims a
   expect(f.calls.flat().some((arg) => arg.includes('systemctl') || arg.includes('curl'))).toBe(false)
   expect(await verifyBigbrainArtifact(f.output)).toEqual(manifest)
 })
-test('the member shim imports only the pinned member/invite exports it is allowed to call', async () => {
+test('the member shim imports only the pinned member/invite/identity exports it is allowed to call', async () => {
   const f = await fixture()
   await buildBigbrainArtifact({ outDir: f.output, bunVersion: '1.4.2', run: f.run })
   const entry = f.entries['.ficus-members-entry.ts']!
@@ -96,9 +96,11 @@ test('the member shim imports only the pinned member/invite exports it is allowe
     ([, names, file]) => `${file}: ${names!.trim()}`
   )
   expect(imported).toEqual([
-    'sharedInvites.ts: createMemberInvite, pendingMemberInvites, cancelMemberInvite',
+    'sharedInvites.ts: createMemberInvite, pendingMemberInvites, cancelMemberInvite, sharedVaultIdentity',
     'sharedMembers.ts: listMembers, ownerOf, setMemberPermissions, revokeMember',
     'sharedMemberLock.ts: SharedMemberBusyError',
+    // The vault's server name is written with upstream's own atomic replace.
+    'fsx.ts: writeAtomic',
   ])
   expect(entry).toContain('scripts/bigbrain/member-admin.ts')
   expect(entry).not.toMatch(/mintCredential|addMember|createAppLink|issueSharedInvite/)
