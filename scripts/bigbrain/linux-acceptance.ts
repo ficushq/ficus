@@ -532,7 +532,26 @@ try {
   // narrowing to read blocks the member's writes; removal revokes the member. Links travel only on
   // a child's stdin and are never printed.
   const memberHome = mkdtempSync('/tmp/bigbrain-native-member-')
-  const memberClient = (body: string, input = '') => {
+  // The shipped gateway refuses bursts per vault (429 'busy', never forwarded): these checks run
+  // back to back, so a refused request waits for its bucket to refill and is sent again.
+  const memberClient = async (body: string, input = '') => {
+    for (let attempt = 0; ; attempt++) {
+      const result = memberClientOnce(body, input)
+      if (result.ok !== false || result.status !== 429 || attempt >= 10) return result
+      await Bun.sleep(2500)
+    }
+  }
+  const readPaced = async (id: string): Promise<string> => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await reader.readRecord({ id })
+      } catch (e) {
+        if (attempt >= 10) return `error ${(e as Error).message}`
+        await Bun.sleep(2500)
+      }
+    }
+  }
+  const memberClientOnce = (body: string, input = '') => {
     const script = `(async () => {
       try {
         const m = await import(${JSON.stringify(`${nativeDeps}/lib/sharedConnections.ts`)});
@@ -615,7 +634,7 @@ try {
     JSON.stringify(pending.ok ? pending.roster.invites.map((i: { access: string }) => i.access) : [pending.code])
   )
   const memberHandle = `invite-${memberInvite.invite?.inviteId}`
-  const joined = redeemMember(memberLink)
+  const joined = await redeemMember(memberLink)
   check(
     'the member link redeems in the pinned native client as a NEW member through real Caddy',
     joined.ok === true &&
@@ -624,7 +643,7 @@ try {
       JSON.stringify(joined.permissions) === '["read","write"]',
     JSON.stringify(joined.ok ? { role: joined.role, permissions: joined.permissions } : joined)
   )
-  const contributed = memberWrite()
+  const contributed = await memberWrite()
   check(
     'the member writes under their own handle',
     contributed.ok === true && contributed.submittedBy === memberHandle,
@@ -664,9 +683,7 @@ try {
     fetch: (url, init) =>
       fetch(`http://${new URL(ORIGINS[A]!).host}${new URL(url).pathname}`, { ...init, unix: GATEWAY_SOCKET }),
   })
-  const shown = contributed.ok
-    ? await reader.readRecord({ id: contributed.id }).catch((e: Error) => `error ${e.message}`)
-    : ''
+  const shown = contributed.ok ? await readPaced(contributed.id) : ''
   check(
     "Ficus's read adapter shows the member as the author",
     shown.includes(`Grace Hopper (@${memberHandle})`),
@@ -692,8 +709,8 @@ try {
     handle: memberHandle,
     access: 'read',
   })
-  const memberBlocked = memberWrite()
-  const stillReads = memberWhoami()
+  const memberBlocked = await memberWrite()
+  const stillReads = await memberWhoami()
   check(
     "changing the member's access to read blocks their next write; reads continue",
     narrowed.ok === true &&
@@ -723,20 +740,18 @@ try {
       protectedReader.code === 'invalid_request' &&
       protectedOwner.ok === false &&
       protectedOwner.code === 'forbidden' &&
-      (await gateway(A, '/v1/whoami', handoffA.token)).status === 200,
+      (await eventually(async () => (await gateway(A, '/v1/whoami', handoffA.token)).status, 200)) === 200,
     JSON.stringify([protectedReader.code, protectedOwner.code])
   )
   const removed = helper({ requestId: randomUUID(), action: 'member-remove', ...fenceA(), handle: memberHandle })
-  const gone = memberWhoami()
+  const gone = await memberWhoami()
   check(
     'removing the member revokes their access; what they wrote stays theirs',
     removed.ok === true &&
       removed.member.status === 'removed' &&
       gone.ok === false &&
       gone.status === 401 &&
-      (contributed.ok
-        ? (await reader.readRecord({ id: contributed.id }).catch(() => '')).includes(`@${memberHandle}`)
-        : false),
+      (contributed.ok ? (await readPaced(contributed.id)).includes(`@${memberHandle}`) : false),
     JSON.stringify([removed.ok ? 'removed' : removed.code, gone.status])
   )
   const second = helper({
@@ -750,7 +765,7 @@ try {
     ? helper({ requestId: randomUUID(), action: 'invite-cancel', ...fenceA(), inviteId: second.invite.inviteId })
     : second
   sh(['/bin/rm', '-f', `${memberHome}/shared-connections.json`])
-  const refused = redeemMember(second.ok ? String(second.invite.inviteUrl) : '')
+  const refused = await redeemMember(second.ok ? String(second.invite.inviteUrl) : '')
   check(
     'a cancelled member invite no longer redeems',
     cancelled.ok === true && refused.ok === false,
