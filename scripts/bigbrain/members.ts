@@ -17,6 +17,7 @@ import type { ControlReceipt } from './receipts'
 type Request<A extends ManagedBigbrainHostRequest['action']> = Extract<ManagedBigbrainHostRequest, { action: A }>
 type Op = MemberAdminInput['op']
 type WithoutPath<T> = T extends unknown ? Omit<T, 'membersPath'> : never
+type Results = { [K in Op]: z.infer<(typeof memberAdminResultSchemas)[K]> }
 
 export interface MemberDeps extends LifecycleDeps {
   /** One member-admin call as the vault UID (default: the installed release's bigbrain-members
@@ -69,18 +70,20 @@ async function liveVault(
 
 async function call<O extends Op>(
   record: ControlReceipt,
-  input: WithoutPath<Extract<MemberAdminInput, { op: O }>>,
+  op: O,
+  fields: Omit<WithoutPath<Extract<MemberAdminInput, { op: O }>>, 'op'>,
   host: InstalledHost,
   deps: MemberDeps
-): Promise<z.infer<(typeof memberAdminResultSchemas)[O]>> {
+): Promise<Results[O]> {
   const membersPath = managedPaths({ vaultId: record.receipt.vaultId, root: deps.root }).memberStore
   const raw = await (deps.memberAdmin ?? defaultMemberAdmin(host, deps))(record, {
-    ...input,
+    ...fields,
+    op,
     membersPath,
   } as MemberAdminInput)
-  const parsed = memberAdminResultSchemas[input.op as O].safeParse(raw)
+  const parsed = memberAdminResultSchemas[op].safeParse(raw)
   if (!parsed.success) throw new Error('upstream_protocol')
-  return parsed.data as z.infer<(typeof memberAdminResultSchemas)[O]>
+  return parsed.data as Results[O]
 }
 
 /** member-list: the vault's live members and pending invites, display fields only. */
@@ -89,7 +92,7 @@ export async function listMembers(
   host: InstalledHost,
   deps: MemberDeps
 ): Promise<ManagedBigbrainMemberRoster> {
-  return call(await liveVault(request, deps), { op: 'list' }, host, deps)
+  return call(await liveVault(request, deps), 'list', {}, host, deps)
 }
 
 /** member-invite: one single-use, 24-hour member invitation per request ID. The vault must be
@@ -111,11 +114,11 @@ export async function inviteMember(
     now: deps.now,
     authorize: async () => void (await liveVault(request, deps)),
     stillPending: async (inviteId) => {
-      const roster = await call(record, { op: 'list' }, host, deps)
+      const roster = await call(record, 'list', {}, host, deps)
       return roster.invitesTruncated || roster.invites.some((invite) => invite.inviteId === inviteId)
     },
     mint: (issuedAt) =>
-      call(record, { op: 'invite', displayName: request.displayName, access: request.access, issuedAt }, host, deps),
+      call(record, 'invite', { displayName: request.displayName, access: request.access, issuedAt }, host, deps),
   })
   return {
     inviteId: minted.inviteId,
@@ -128,7 +131,7 @@ export async function inviteMember(
 
 /** invite-cancel: the invitation can no longer be redeemed. */
 export async function cancelInvite(request: Request<'invite-cancel'>, host: InstalledHost, deps: MemberDeps) {
-  return call(await liveVault(request, deps), { op: 'cancel', inviteId: request.inviteId }, host, deps)
+  return call(await liveVault(request, deps), 'cancel', { inviteId: request.inviteId }, host, deps)
 }
 
 /** member-set-access: read or read and write, effective on the member's next request. */
@@ -138,7 +141,7 @@ export async function setMemberAccess(
   deps: MemberDeps
 ): Promise<ManagedBigbrainMember> {
   const record = await liveVault(request, deps)
-  return call(record, { op: 'set-access', handle: request.handle, access: request.access }, host, deps)
+  return call(record, 'set-access', { handle: request.handle, access: request.access }, host, deps)
 }
 
 /** member-remove: revokes the member and every credential it holds; its handle stays reserved
@@ -148,5 +151,5 @@ export async function removeMember(
   host: InstalledHost,
   deps: MemberDeps
 ): Promise<ManagedBigbrainMember> {
-  return call(await liveVault(request, deps), { op: 'remove', handle: request.handle }, host, deps)
+  return call(await liveVault(request, deps), 'remove', { handle: request.handle }, host, deps)
 }

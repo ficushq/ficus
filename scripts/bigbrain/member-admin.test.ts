@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import type { ManagedBigbrainMemberRoster } from '@ficus/shared/managed-bigbrain'
 import { memberAdminReply, runMemberAdmin } from './member-admin'
 import { FakeBusy, fakeMemberApi as fake } from './member-test-fixtures'
 
@@ -16,7 +17,7 @@ describe('member admin adapter', () => {
       permission: 'read',
       expires: '2026-10-20T12:00:00.000Z',
     })
-    const roster = runMemberAdmin({ op: 'list', membersPath: store }, f.api, now)
+    const roster = runMemberAdmin({ op: 'list', membersPath: store }, f.api, now) as ManagedBigbrainMemberRoster
     expect(roster.members.map((m) => [m.handle, m.role, m.access, m.status])).toEqual([
       ['ficus', 'owner', 'write', 'active'],
       ['ficus-reader', 'member', 'read', 'active'],
@@ -51,7 +52,7 @@ describe('member admin adapter', () => {
         permission: 'write',
         expires: '2026-10-20T12:00:00.000Z',
       })
-    const roster = runMemberAdmin({ op: 'list', membersPath: store }, f.api, now)
+    const roster = runMemberAdmin({ op: 'list', membersPath: store }, f.api, now) as ManagedBigbrainMemberRoster
     expect([roster.members.length, roster.invites.length, roster.membersTruncated, roster.invitesTruncated]).toEqual([
       100,
       50,

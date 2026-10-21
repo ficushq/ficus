@@ -430,7 +430,8 @@ async function memberFixture() {
   // The real controller -> real adapter path; only the pinned upstream store is in memory.
   const run = f.deps.run
   f.deps.run = (async (argv: string[], options?: { input?: string }) => {
-    if (!argv.some((a) => a.endsWith('/bigbrain-members.js'))) return run(argv, options as never)
+    if (!argv.some((a) => a.endsWith('/bigbrain-members.js')))
+      return (run as (argv: string[], options?: unknown) => ReturnType<typeof run>)(argv, options)
     commands.push(argv)
     return { code: 0, stdout: JSON.stringify(memberAdminReply(JSON.parse(options!.input!), native.api, NOW)) + '\n' }
   }) as typeof f.deps.run
@@ -608,7 +609,10 @@ test('access changes and removal reach ordinary members only; ficus and ficus-re
 
 test('an adapter reply outside the contract is refused, never passed through', async () => {
   const f = await memberFixture()
-  f.deps.memberAdmin = async () => ({ members: [{ handle: 'grace', token: 'sv_secret' }], invites: [] })
+  ;(f.deps as { memberAdmin?: unknown }).memberAdmin = async () => ({
+    members: [{ handle: 'grace', token: 'sv_secret' }],
+    invites: [],
+  })
   expect(await f.send({ requestId: rid(), action: 'member-list', vaultId: A })).toMatchObject({
     ok: false,
     code: 'upstream_protocol',
