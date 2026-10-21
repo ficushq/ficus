@@ -132,8 +132,8 @@ def run(args):
     manifest = json.loads(args.frozen.read_text())
     if sha(args.frozen) != args.frozen_sha256:
         raise ValueError("Manifest drift")
-    if len(manifest["tasks"]) != 2 or manifest["concurrency"] != 2:
-        raise ValueError("This runner requires a frozen two-task batch")
+    if len(manifest["tasks"]) != 2 or manifest["concurrency"] not in (1, 2):
+        raise ValueError("This runner requires two tasks and concurrency one or two")
     if (
         not manifest["arms"]
         or len(set(manifest["arms"])) != len(manifest["arms"])
@@ -164,11 +164,11 @@ def run(args):
             ).fetchone()[0]:
                 raise ValueError("Unresolved usage; stop before next batch")
             if (
-                Budget.exposure(db) + 2 * 5_500_000
+                Budget.exposure(db) + manifest["concurrency"] * 5_500_000
                 > manifest["cumulative_cap_usd"] * 1e6
             ):
                 raise ValueError(
-                    "Insufficient global headroom for two request reservations"
+                    "Insufficient global headroom for requested concurrency"
                 )
         batch_file = args.jobs / f"{arm}-batch.json"
         if batch_file.exists() or any((args.jobs / n).exists() for n in names):
@@ -178,7 +178,7 @@ def run(args):
             "started_at": datetime.now(UTC).isoformat(),
             "jobs": names,
             "exit_codes": {},
-            "concurrency": 2,
+            "concurrency": manifest["concurrency"],
         }
         batch_file.write_text(json.dumps(batch, indent=2) + "\n")
         children = []
@@ -215,6 +215,20 @@ def run(args):
                     raise
                 children.append((name, child, out))
                 print("START", name, flush=True)
+                if manifest["concurrency"] == 1:
+                    while child.poll() is None:
+                        check_provider_failures(args.ledger, names)
+                        time.sleep(1)
+                    if child.returncode:
+                        raise ValueError(
+                            f"Sequential trial {name} failed; stop before next"
+                        )
+                    with sqlite3.connect(f"file:{args.ledger}?mode=ro", uri=True) as db:
+                        if db.execute(
+                            "SELECT count(*) FROM calls WHERE client=? AND usage IS NULL",
+                            (name,),
+                        ).fetchone()[0]:
+                            raise ValueError("Unresolved usage; stop before next trial")
             while True:
                 check_provider_failures(args.ledger, names)
                 for name, child, _ in children:

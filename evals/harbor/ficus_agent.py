@@ -65,6 +65,18 @@ def disposition(snapshot):
     streams = snapshot["streams"]
     if streams and all(stream["status"] == "done" for stream in streams):
         return "delivered"
+    active_stream_ids = {
+        stream.get("id")
+        for stream in streams
+        if stream["status"] in {"active", "queued"}
+    }
+    if any(
+        wait.get("actor") == "owner"
+        and wait.get("type") == "manual"
+        and wait.get("workStreamId") in active_stream_ids
+        for wait in snapshot.get("waits", [])
+    ):
+        return "waiting-for-human"
     if any(stream["status"] in {"active", "queued"} for stream in streams):
         return None
     return "canceled" if streams else "settled-without-work-stream"

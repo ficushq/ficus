@@ -127,6 +127,26 @@ class CompletionTests(unittest.TestCase):
         state["streams"][0]["status"] = "active"
         self.assertIsNone(disposition(state))
 
+    def test_manual_owner_wait_is_blocked_only_after_work_quiesces(self):
+        state = self.state()
+        state["streams"] = [{"id": "stream", "status": "active"}]
+        wait = {"workStreamId": "stream", "actor": "owner", "type": "manual"}
+        state["waits"] = [wait]
+        self.assertEqual(disposition(state), "waiting-for-human")
+        state["executions"].append({"status": "running"})
+        self.assertIsNone(disposition(state))
+        state["executions"].pop()
+        state["pendingMessages"] = [{"id": "manager-notification"}]
+        self.assertIsNone(disposition(state))
+        state["pendingMessages"] = []
+        wait["type"] = "monitor"
+        self.assertIsNone(disposition(state))
+        wait["type"] = "manual"
+        wait["workStreamId"] = "other"
+        self.assertIsNone(disposition(state))
+        state["streams"][0]["status"] = "done"
+        self.assertEqual(disposition(state), "delivered")
+
     def test_finished_squad_is_delivered(self):
         self.assertEqual(disposition(self.state()), "delivered")
 

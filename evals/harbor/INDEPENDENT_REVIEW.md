@@ -110,3 +110,34 @@ $12.927011 exposure against the unchanged $30 cap. Available headroom is
 $17.072989. The hold is not reconciled or released. Unknown usage after a new
 batch still blocks the next condition, and all previous attempts remain retained.
 The candidate reviewer still has not been run or adjusted.
+
+## Baseline blocked outcome and observation amendment
+
+Recovery 3's Igel baseline finished: 22/24 feature and 2/2 regression checks,
+$1.233294. Its reviewer found and repaired an empty-input validation bug, but the
+submitted artifact still failed two official feature checks.
+
+PSD Tools' baseline repaired a reviewer-discovered stroke visibility defect, then
+explicitly opened a manual owner wait for unavailable `aggdraw` to validate true
+vector paths. No agents or executions were active. This is a real blocked squad
+outcome, not a provider failure or a successful autonomous delivery. The observer
+missed this wait type and continued polling. The exact committed artifact was
+captured read-only (SHA256
+`1e973f7f1c83ead02a624d9048faea9e6a47f54dc6705ca0b01d177efa0cb5b9`),
+and the blocked process stopped without provisioning dependencies or task hints.
+An independent no-inference replay grades that artifact; label its grade
+separately from the autonomous delivery outcome. Its first replay failed before
+grading due to index/worktree mismatch; the fresh replay now resets to the task's
+recorded base commit before applying the exact hash-checked patch.
+
+The observer now recognizes manual owner waits only for active streams after all
+executions and inbox deliveries quiesce. Monitor waits and unrelated/stale waits
+do not end the trial. A new regression covers these boundaries. All 65 offline
+harness tests pass.
+
+The candidate trials use the original frozen prompt/runtime and unchanged tasks
+and graders, with this explicit observer amendment. They run sequentially to
+preserve reservation headroom: phase confirmed spend is $11.445352 plus the
+unchanged $5.50 hold, leaving $13.054648 under the $30 cap. Do not compare batch
+throughput to the concurrent baseline. Retain scheduling and observer differences
+as limitations, and distinguish artifact acceptance from autonomous delivery.

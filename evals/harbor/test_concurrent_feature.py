@@ -289,6 +289,92 @@ class ConcurrentFeatureTests(unittest.TestCase):
                     run(args)
                 launch.assert_not_called()
 
+    def test_sequential_trials_do_not_overlap_or_continue_after_failure(self):
+        import subprocess
+        import sys
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from run_concurrent_feature import run
+
+        for mode in ("success", "failure", "unknown-usage"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                ledger = root / "ledger"
+                budget = Budget(ledger, 30)
+                manifest = {
+                    "tasks": [{"task": "a", "short": "a"}, {"task": "b", "short": "b"}],
+                    "arms": ["ficus-planned"],
+                    "concurrency": 1,
+                    "prior_last_call_id": 0,
+                    "cumulative_cap_usd": 30,
+                }
+                frozen = root / "frozen.json"
+                frozen.write_text(json.dumps(manifest))
+                args = SimpleNamespace(
+                    frozen=frozen,
+                    frozen_sha256=sha(frozen),
+                    jobs=root / "jobs",
+                    ledger=ledger,
+                    tasks=root,
+                    runtime=root / "runtime",
+                    access=root / "access",
+                )
+                real_popen = subprocess.Popen
+                children = []
+
+                def launch(command, **kwargs):
+                    self.assertTrue(all(child.poll() is not None for child in children))
+                    if mode == "unknown-usage":
+                        budget.reserve("cv1-a-ficus-planned")
+                    child = real_popen(
+                        [
+                            sys.executable,
+                            "-c",
+                            "raise SystemExit("
+                            + ("3" if mode == "failure" else "0")
+                            + ")",
+                        ],
+                        **kwargs,
+                    )
+                    children.append(child)
+                    return child
+
+                rows = [
+                    {
+                        "arm": "ficus-planned",
+                        "reward": {"reward": 1},
+                        "exception": None,
+                        "unknown_usage_requests": 0,
+                    }
+                    for _ in range(2)
+                ]
+                try:
+                    with (
+                        patch("run_concurrent_feature.validate_inputs"),
+                        patch(
+                            "run_concurrent_feature.subprocess.Popen",
+                            side_effect=launch,
+                        ),
+                        patch(
+                            "run_concurrent_feature.summarize_batches",
+                            return_value={
+                                "tasks": [{"results": rows}],
+                                "cumulative_exposure_usd": 0,
+                            },
+                        ),
+                    ):
+                        if mode == "success":
+                            run(args)
+                        else:
+                            with self.assertRaises(ValueError):
+                                run(args)
+                    self.assertEqual(len(children), 2 if mode == "success" else 1)
+                finally:
+                    for child in children:
+                        if child.poll() is None:
+                            child.kill()
+                        child.wait(timeout=5)
+
     def test_invalid_namespace_is_rejected(self):
         from run_concurrent_feature import job_prefix
 
