@@ -59,7 +59,8 @@ const popover = usePopover({ kind: 'menu' }) // 'menu' | 'listbox' | 'dialog' | 
   `initialFocus`: `first` (default), `selected` (the checked/current item) or `none`.
 - **`Picker`** (`role="listbox"`, trigger `role="combobox"`): the selected option gets focus; arrows,
   Home and End move focus only and never change the value; Enter, Space or a click commits, closes and
-  returns focus. Options take `label`, `description`, `ariaLabel`, `icon`, `disabled`.
+  returns focus (`initialFocus` `first` or `none` instead, as for a hover-open). Options take `label`,
+  `description`, `ariaLabel`, `icon`, `disabled`.
 - **`Panel`** (`role="dialog"` by default; `region`/`group` for a disclosure): arbitrary content. Focus
   moves to its first control on open (or per `initialFocus`) and is trapped loosely: Tab on the open
   trigger enters the panel, Tab past its last control continues the page after the trigger, Shift+Tab
@@ -71,7 +72,9 @@ const popover = usePopover({ kind: 'menu' }) // 'menu' | 'listbox' | 'dialog' | 
   the gap. It never takes focus on open; Tab on the anchor enters it; Escape closes it and returns focus
   to the anchor only when focus was inside; it closes when the anchor scrolls out of view.
 - **`useHoverOpen(popover, { enabled, closeDelay: 150, initialFocus })`**: hover-to-open for a click
-  popover (`ActionPopup`'s `openOnHover`; the top nav's squad switcher). Spread its `triggerProps` on the
+  popover (`ActionPopup`'s and `SelectionPopup`'s `openOnHover`: the top nav's squad switcher, the squad
+  tabs' More menu and the composer's delivery-mode chevron; neither opens on hover while disabled; and the
+  top nav's theme flyout, a `Panel`, where only the trigger pins it and choosing a theme keeps hover mode). Spread its `triggerProps` on the
   trigger (its `onClick` replaces `popover.toggle`) and its `popoverProps` on the popover. A mouse
   hovering the trigger opens it without taking focus; leaving both the trigger and the popover closes it
   after `closeDelay`, and re-entering either cancels that. A click on a hover-opened trigger pins it
