@@ -194,6 +194,33 @@ describe('QueryInvalidator', () => {
       ).toHaveLength(2)
   })
 
+  test('a reconnect after a long silence repairs every active query, a short one keeps the narrow repair', async () => {
+    const render = (lastReconnect: { gapMs: number } | null) =>
+      root.render(
+        <QueryInvalidator
+          dependencies={{ queryClient: fakeQueryClient, subscribe, isConnected: true, lastReconnect }}
+        />
+      )
+    const fullRepairs = () =>
+      fakeQueryClient.invalidateQueries.mock.calls.filter(
+        ([options]) => (options as { refetchType?: string }).refetchType === 'active'
+      )
+
+    await dom.act(async () => render({ gapMs: 2_000 }))
+    await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 200)))
+    expect(fullRepairs()).toHaveLength(0)
+
+    // The provider hands out one object per reconnect, so a re-render carries the same one.
+    const longGap = { gapMs: 45_000 }
+    await dom.act(async () => render(longGap))
+    await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 200)))
+    expect(fullRepairs()).toHaveLength(1)
+
+    // The same reconnect rendered again is not repaired twice.
+    await dom.act(async () => render(longGap))
+    expect(fullRepairs()).toHaveLength(1)
+  })
+
   test.each([
     'agent-question.created',
     'agent-question.answered',

@@ -51,6 +51,11 @@ export class SocketLivenessTracker {
     this.lastMessageAt = null
   }
 
+  /** When the page last saw life on the current connection: its last frame, else its open; null without one. */
+  lastSeenAt(): number | null {
+    return this.lastMessageAt ?? this.openedAt
+  }
+
   snapshot(readyState: number | undefined): SocketLivenessSnapshot {
     const now = this.now()
     return {

@@ -31,7 +31,16 @@ type QueryInvalidatorDependencies = {
   queryClient: Pick<ReturnType<typeof useQueryClient>, 'invalidateQueries' | 'getQueryCache'>
   subscribe: ReturnType<typeof useWebSocket>['subscribe']
   isConnected?: boolean
+  lastReconnect?: { gapMs: number } | null
 }
+
+/**
+ * A reconnect after this long without a frame has missed events the narrow
+ * reconnect repair does not cover (an agent's status, its open questions, a
+ * roster), so every active query is refetched instead. Short gaps, the ordinary
+ * server restart, keep the narrow repair and its bounded cost.
+ */
+export const FULL_REPAIR_GAP_MS = 10_000
 
 export function QueryInvalidator({ dependencies }: { dependencies?: QueryInvalidatorDependencies } = {}) {
   return dependencies ? <QueryInvalidatorEffects {...dependencies} /> : <DefaultQueryInvalidator />
@@ -39,8 +48,15 @@ export function QueryInvalidator({ dependencies }: { dependencies?: QueryInvalid
 
 function DefaultQueryInvalidator() {
   const queryClient = useQueryClient()
-  const { subscribe, isConnected } = useWebSocket()
-  return <QueryInvalidatorEffects queryClient={queryClient} subscribe={subscribe} isConnected={isConnected} />
+  const { subscribe, isConnected, lastReconnect } = useWebSocket()
+  return (
+    <QueryInvalidatorEffects
+      queryClient={queryClient}
+      subscribe={subscribe}
+      isConnected={isConnected}
+      lastReconnect={lastReconnect}
+    />
+  )
 }
 
 /**
@@ -155,8 +171,21 @@ function createQueryInvalidationCoalescer(queryClient: QueryInvalidationClient) 
   return coalescer
 }
 
-function QueryInvalidatorEffects({ queryClient, subscribe, isConnected = false }: QueryInvalidatorDependencies) {
+function QueryInvalidatorEffects({
+  queryClient,
+  subscribe,
+  isConnected = false,
+  lastReconnect = null,
+}: QueryInvalidatorDependencies) {
   const coalescerRef = useRef<ReturnType<typeof createInvalidationCoalescer> | null>(null)
+  const repairedReconnectRef = useRef<{ gapMs: number } | null>(null)
+
+  useEffect(() => {
+    if (!isConnected || !lastReconnect || repairedReconnectRef.current === lastReconnect) return
+    repairedReconnectRef.current = lastReconnect
+    if (lastReconnect.gapMs < FULL_REPAIR_GAP_MS) return
+    void queryClient.invalidateQueries({ refetchType: 'active' }, { cancelRefetch: false })
+  }, [isConnected, lastReconnect, queryClient])
   const slotCoalescerRef = useRef<ReturnType<typeof createInvalidationCoalescer> | null>(null)
   const openFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const actionFrameBeforeOpenRef = useRef(false)
