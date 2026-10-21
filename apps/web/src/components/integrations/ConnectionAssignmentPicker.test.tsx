@@ -266,6 +266,26 @@ describe('managed shared vaults', () => {
     expect(box('Beta').getAttribute('aria-describedby')).toBeNull()
   })
 
+  test('rows are the vaults the server lists: an attachment it leaves out (a deleted vault) is never shown', async () => {
+    const retired = {
+      id: 'r',
+      providerKey: 'bigbrain',
+      displayName: 'ficus-shared (retired 8b6f29ae)',
+      enabled: false,
+      healthState: 'unknown',
+      isDefault: false,
+    }
+    await renderManaged(true, { ...managedSelection, attached: [...managedSelection.attached, retired] })
+    expect(container.textContent).not.toContain('retired')
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(3)
+  })
+
+  test('a squad whose only attachment was a deleted vault shows no vaults', async () => {
+    await renderManaged(false, { ...managedSelection, attached: [], connections: [] })
+    expect(container.textContent).toContain('No shared vaults are attached to this squad.')
+    expect(container.querySelector('input')).toBeNull()
+  })
+
   test('a squad reader sees only its attached vaults and cannot change them', async () => {
     await renderManaged(false, { ...managedSelection, connections: managedSelection.attached })
     expect(container.textContent).toContain('Alpha')

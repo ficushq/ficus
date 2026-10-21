@@ -206,6 +206,12 @@ new vault or a rename. Names are labels, never identity. Ficus's read connection
 carries the vault's name, and a deleted vault keeps its disabled connection (so a restore brings
 its squads back) under the label `<name> (retired <id prefix>)` once the name is reused.
 
+Only the connections of live vaults are ever listed: a squad's Settings → Integrations, the
+connection list (`ficus integration list --provider bigbrain`), the agent tools and attaching all
+leave out a deleted vault's connection, and it cannot be attached. A squad that was attached to a
+vault before it was deleted keeps that attachment, hidden: no agent can read through it, and it
+shows again, unchanged, if a restore brings the vault back. Nothing needs detaching.
+
 ## Members
 
 On a ready vault, **Members** lists who is in the vault: the owner, Ficus's read-only member

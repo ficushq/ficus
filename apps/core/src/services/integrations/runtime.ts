@@ -850,18 +850,25 @@ export const squadIntegrationRoutesService = {
     }
   },
   /** `audience: 'assigned'` (managed shared vaults, ordinary squad readers): only this squad's
-   * attached connections, never the global pool's names or state. */
+   * attached connections, never the global pool's names or state. Managed shared vaults list only
+   * connections of live vaults: a deleted vault's attachment is kept (a restore brings it back)
+   * but hidden, since no agent can read through it. */
   async selection(squadId: string, providerKey: string, options: { audience?: 'manager' | 'assigned' } = {}) {
     const scope = await reconcileSquadIntegration(squadId, providerKey)
     const assignedOnly = options.audience === 'assigned'
-    const [assignment, pool, projection, attached] = await Promise.all([
+    const [assignedDefault, pool, projection, assigned, live] = await Promise.all([
       integrationConnectionRepository.getAssigned(squadId, providerKey),
       assignedOnly ? Promise.resolve(null) : integrationConnectionRepository.listPoolSummaries(providerKey),
       integrationProjectionStateRepository.get(squadId, providerKey),
       integrationConnectionRepository.listAssigned(squadId, providerKey),
+      isManagedBigbrainProvider(providerKey) ? managedVaultStore.liveConnectionIds() : Promise.resolve(null),
     ])
+    const isShown = (row: { id: string }) => !live || live.has(row.id)
+    const shown = <T extends { id: string }>(rows: readonly T[]): T[] => rows.filter(isShown)
+    const assignment = assignedDefault && isShown(assignedDefault) ? assignedDefault : null
+    const attached = shown(assigned)
     const connections =
-      pool ??
+      (pool && shown(pool)) ??
       attached.map((row) => ({
         id: row.id,
         providerKey: row.providerKey,
@@ -899,6 +906,9 @@ export const squadIntegrationRoutesService = {
   ) {
     // Managed shared vaults: several per squad, each selected explicitly; never a squad default.
     const shared = isManagedBigbrainProvider(providerKey)
+    // Only a live vault's connection: a deleted vault's (kept for a restore) is never attachable.
+    if (shared && !(await managedVaultStore.liveConnectionIds()).has(connectionId))
+      throw new Error('Assignment requires a live shared vault')
     const assignment = await integrationConnectionRepository.assign(squadId, providerKey, connectionId, actor, {
       retainPrevious: providerKey === 'github' || shared,
       makeDefault: shared ? false : providerKey === 'github' ? makeDefault : true,

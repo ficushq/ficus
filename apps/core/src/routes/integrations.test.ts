@@ -5,6 +5,7 @@ import { agentExtraScopes, agents, db, roleAssignments, roles, squads, users } f
 import { authzSentinel } from '../middleware/authz-sentinel'
 import { csrfProtection } from '../middleware/csrf'
 import { BigbrainSetupError } from '../services/integrations/bigbrain/local-setup'
+import { managedVaultStore } from '../services/integrations/bigbrain/managed/store'
 import type { Identity } from '../services/rbac'
 import { createIntegrationsRouter, createSquadIntegrationsRouter } from './integrations'
 import type { SafeOAuthAppSettings } from '../services/integrations/authorization/client-credentials'
@@ -1591,6 +1592,26 @@ describe('managed shared BigBrain on Ficus Cloud', () => {
       expect([list.status, detail.status]).toEqual([...expected])
       expect(calls.list).not.toHaveBeenCalled()
       expect(calls.get).not.toHaveBeenCalled()
+    }
+  })
+
+  test('the managed connection list holds only live vaults: a deleted vault connection is never listed', async () => {
+    const reader = await human(['integrations:read:bigbrain'])
+    const live = spyOn(managedVaultStore, 'liveConnectionIds')
+    try {
+      live.mockResolvedValueOnce(new Set())
+      const retired = await createApp(reader.identity, 'bigbrain').app.request(
+        '/api/integrations/connections?provider=bigbrain'
+      )
+      expect(retired.status).toBe(200)
+      expect(await retired.json()).toEqual([])
+      live.mockResolvedValueOnce(new Set([summary.id]))
+      const current = await createApp(reader.identity, 'bigbrain').app.request(
+        '/api/integrations/connections?provider=bigbrain'
+      )
+      expect((await current.json()).map((row: { id: string }) => row.id)).toEqual([summary.id])
+    } finally {
+      live.mockRestore()
     }
   })
 

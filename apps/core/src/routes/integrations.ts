@@ -24,6 +24,7 @@ import {
   canEnumerateManagedVaults,
   requireManagedVaultSquadManager,
 } from '../services/integrations/bigbrain/managed/authorization'
+import { managedVaultStore } from '../services/integrations/bigbrain/managed/store'
 import {
   IntegrationConnectionInUseError,
   IntegrationManualCredentialNotAllowedError,
@@ -687,8 +688,15 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       if (!parsed.success) return c.json({ error: 'Valid provider is required' }, 400)
       const denied = await authorize(c, `integrations:read:${parsed.data}`)
       if (denied) return denied
-      if (isManagedBigbrainProvider(parsed.data) && !(await canEnumerateManagedVaults(c.get('identity'))))
-        return c.json({ error: 'Forbidden' }, 403)
+      if (isManagedBigbrainProvider(parsed.data)) {
+        if (!(await canEnumerateManagedVaults(c.get('identity')))) return c.json({ error: 'Forbidden' }, 403)
+        // Only live vaults' connections: a deleted vault's (kept for a restore) is never listed.
+        const [connections, live] = await Promise.all([
+          service.list(parsed.data),
+          managedVaultStore.liveConnectionIds(),
+        ])
+        return c.json(connections.filter((connection) => live.has(connection.id)))
+      }
       return c.json(await service.list(parsed.data))
     })
     .post('/connections', zValidator('json', createSchema), async (c) => {
