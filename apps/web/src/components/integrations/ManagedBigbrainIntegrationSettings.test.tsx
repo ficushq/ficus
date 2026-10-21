@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
 import { fireEvent } from '@testing-library/dom'
 import { acquireDomHarness } from '../../test/domHarness'
 import { integrationQueryKeys, queryKeys } from '../../queryKeys'
@@ -30,13 +31,22 @@ const vault = (patch: Partial<ManagedBigbrainVault>): ManagedBigbrainVault => ({
   pendingAction: null,
   backup: 'included',
   assignedSquads: [],
+  readConnection: null,
+  readSyncError: null,
   updatedAt: '2026-10-20T00:00:00.000Z',
   ...patch,
 })
 const research = vault({
   origin: `https://bb-${'1'.repeat(32)}.vaults.example.com`,
+  connectionId: '33333333-3333-4333-8333-333333333333',
   assignedSquads: [{ id: 'squad-r', name: 'Research squad' }],
+  readConnection: { enabled: true, lastErrorCode: null, disabledByPerson: false },
 })
+/** Squads this viewer may attach vaults to (their own integrations:write squads). */
+const writableSquads = [
+  { id: 'squad-r', name: 'Research squad' },
+  { id: 'squad-o', name: 'Ops squad' },
+]
 const design = vault({
   vaultId: '22222222-2222-4222-8222-222222222222',
   displayName: 'Design',
@@ -66,17 +76,24 @@ afterEach(async () => {
   await harness.cleanup()
 })
 
-async function render(canWrite = true, list: ManagedBigbrainVault[] = [research, design]) {
+async function render(
+  canWrite = true,
+  list: ManagedBigbrainVault[] = [research, design],
+  squads: { id: string; name: string }[] = writableSquads
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } },
   })
   client.setQueryData(integrationQueryKeys.managedBigbrainVaults(), list)
+  client.setQueryData(integrationQueryKeys.managedBigbrainAttachableSquads(), squads)
   client.setQueryData(queryKeys.auth.me(), { id: 'owner', email: 'Ada.Lovelace+ficus@example.com', displayName: 'Ada' })
   const { ManagedBigbrainIntegrationSettings } = await import('./ManagedBigbrainIntegrationSettings')
   await harness.act(async () =>
     root.render(
       <QueryClientProvider client={client}>
-        <ManagedBigbrainIntegrationSettings canWrite={canWrite} />
+        <MemoryRouter>
+          <ManagedBigbrainIntegrationSettings canWrite={canWrite} />
+        </MemoryRouter>
       </QueryClientProvider>
     )
   )
@@ -544,4 +561,115 @@ describe('managed vault members', () => {
         MEMBER_SECRET
       )
     })
+})
+
+describe('Ficus read access and squads on the global card', () => {
+  const offVault = (readConnection: ManagedBigbrainVault['readConnection']) =>
+    vault({ ...research, assignedSquads: [], readConnection })
+  const squadsOf = (name: string) =>
+    [...row(name).querySelectorAll('div')].find((d) => d.firstElementChild?.textContent === 'Squads')!
+  const attachSelect = (name: string) =>
+    row(name).querySelector<HTMLSelectElement>(`select[aria-label="Squad to attach ${name} to"]`)
+
+  test('Ready with host read access is not "Ficus can read" until Ficus reads with it, and says why', async () => {
+    await render(true, [offVault({ enabled: false, lastErrorCode: 'unavailable', disabledByPerson: false })])
+    expect(row('Research').textContent).not.toContain('Ficus can read ·')
+    expect(row('Research').textContent).toContain('Ficus cannot read this vault yet ·')
+    const detail = row('Research').querySelector('[role=status]')!.textContent!
+    expect(detail).toContain('(unavailable)')
+    expect(detail).toContain('tries again automatically')
+    // Attaching waits for read access; the control says so instead of ignoring clicks.
+    expect(attachSelect('Research')!.disabled).toBe(true)
+    expect(squadsOf('Research').textContent).toContain('Squads can be attached once Ficus can read this vault.')
+  })
+
+  test('a read connection a person turned off says how to turn it back on', async () => {
+    await render(true, [offVault({ enabled: false, lastErrorCode: null, disabledByPerson: true })])
+    expect(row('Research').textContent).toContain('Ficus read access is off')
+    expect(row('Research').textContent).toContain('Revoke Ficus read access, then Reconnect Ficus read access')
+  })
+
+  test('host read access not yet imported into Ficus is pending', async () => {
+    await render(true, [offVault(null)])
+    expect(row('Research').textContent).toContain('Ficus read access pending ·')
+  })
+
+  test('a failing import says so with its code instead of looking pending or readable', async () => {
+    await render(true, [
+      vault({ ...research, connectionId: null, readConnection: null, readSyncError: 'connection_conflict' }),
+    ])
+    expect(row('Research').textContent).toContain('Ficus cannot read this vault yet ·')
+    expect(row('Research').querySelector('[role=status]')!.textContent).toContain('(connection_conflict)')
+  })
+
+  test('lists attached squads with links to their integration settings, and points to agent types', async () => {
+    await render(false)
+    const squads = squadsOf('Research')
+    const link = [...squads.querySelectorAll('a')].find((a) => a.textContent === 'Research squad')!
+    expect(link.getAttribute('href')).toBe('/squads/squad-r/settings?section=integrations')
+    // Read-only viewers see attachments but get no controls.
+    expect(attachSelect('Research')).toBeNull()
+    expect(button('Detach', squads)).toBeUndefined()
+    const agentTypes = [...container.querySelectorAll('a')].find((a) => a.textContent === 'Agent types')
+    expect(agentTypes?.getAttribute('href')).toBe('/settings?section=agent-types')
+    expect(container.textContent).toContain("BigBrain card in a squad's Settings → Integrations")
+  })
+
+  test('a vault attached to no squad says agents cannot read it yet', async () => {
+    await render(true, [vault({ ...research, assignedSquads: [] })])
+    expect(squadsOf('Research').textContent).toContain('Not attached to any squad')
+  })
+
+  test('attaches through the squad assignment route, offering only writable, unattached squads', async () => {
+    await render(true, [research], [...writableSquads, { id: 'squad-x', name: 'Extra squad' }])
+    const select = attachSelect('Research')!
+    // Already attached squads are not offered again.
+    expect([...select.options].map((o) => o.value)).toEqual(['', 'squad-o', 'squad-x'])
+    await act(() => fireEvent.change(select, { target: { value: 'squad-o' } }))
+    await act(() => fireEvent.click(button('Attach', row('Research'))))
+    const writes = mutations()
+    expect(writes.map((w) => [w.method, new URL(w.url).pathname])).toEqual([
+      ['PUT', '/api/squads/squad-o/integrations/bigbrain/assignment'],
+    ])
+    expect(JSON.parse(writes[0]!.body)).toEqual({ connectionId: research.connectionId, makeDefault: false })
+  })
+
+  test('detaches only from squads this viewer may write, through the same route', async () => {
+    const shared = vault({
+      ...research,
+      assignedSquads: [
+        { id: 'squad-r', name: 'Research squad' },
+        { id: 'squad-z', name: 'Locked squad' },
+      ],
+    })
+    await render(true, [shared])
+    const squads = squadsOf('Research')
+    expect(squads.querySelector('[aria-label="Detach Research from Locked squad"]')).toBeNull()
+    await act(() =>
+      fireEvent.click(squads.querySelector<HTMLButtonElement>('[aria-label="Detach Research from Research squad"]')!)
+    )
+    expect(mutations().map((w) => [w.method, new URL(w.url).pathname, new URL(w.url).search])).toEqual([
+      ['DELETE', '/api/squads/squad-r/integrations/bigbrain/assignment', `?connectionId=${research.connectionId}`],
+    ])
+  })
+
+  test('a refused attach shows the reason in that vault row', async () => {
+    await render(true, [research])
+    respond = (url, method) =>
+      method === 'GET'
+        ? Response.json({ vaults: [research] })
+        : Response.json({ error: 'Forbidden', code: 'squad_permission_required' }, { status: 403 })
+    await act(() => fireEvent.change(attachSelect('Research')!, { target: { value: 'squad-o' } }))
+    await act(() => fireEvent.click(button('Attach', row('Research'))))
+    expect(row('Research').querySelector('[role=alert]')?.textContent).toBe(
+      'This account cannot change integrations for that squad.'
+    )
+  })
+
+  test('a viewer who manages no squad is told why nothing is offered', async () => {
+    await render(true, [research], [])
+    expect(attachSelect('Research')!.disabled).toBe(true)
+    expect(squadsOf('Research').textContent).toContain('only to squads whose integrations this account manages')
+    expect(container.textContent).not.toMatch(/\byou(r)?\b/i)
+  })
 })

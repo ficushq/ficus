@@ -10,11 +10,17 @@ test('catalog exposes connected Core availability without probing bindings or tr
     process.env.FICUS_SANDBOX_RUNTIME = 'host'
     process.env.FICUS_DESKTOP_MANAGED = '1'
     delete process.env.FICUS_MANAGED
-    expect(registry.catalog()[0]).toMatchObject({ label: 'BigBrain', availability: { available: true } })
+    expect(registry.catalog()[0]).toMatchObject({
+      label: 'BigBrain',
+      availability: { available: true },
+      description: expect.stringContaining('Core host in one click'),
+    })
     process.env.FICUS_MANAGED = '1'
-    // Cloud offers managed shared vaults instead, and only once Platform confirms the host.
+    // Cloud offers managed shared vaults instead, and only once Platform confirms the host; the
+    // description (also shown on each squad's card) describes shared vaults, not a local binding.
     expect(registry.catalog()[0]).toMatchObject({
       connectionMode: 'managed',
+      description: expect.stringContaining('people contribute from the BigBrain app, squads read'),
       availability: { available: false, reason: expect.stringContaining('not been confirmed') },
     })
     expect(bigbrainHostAvailability()).toMatchObject({

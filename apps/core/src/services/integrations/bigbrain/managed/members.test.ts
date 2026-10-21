@@ -123,6 +123,7 @@ function service() {
     host: () => host,
     disableConnection: async () => {},
     usage: async () => ({ squads: [] }),
+    readConnection: async () => null,
     isEnabled: async () => true,
     available: () => ({ available: true }),
   })

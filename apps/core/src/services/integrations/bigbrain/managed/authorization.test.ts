@@ -6,6 +6,7 @@ import type { Identity } from '../../../rbac/permissions'
 import {
   ManagedVaultAuthorizationError,
   canEnumerateManagedVaults,
+  managedVaultAttachableSquads,
   requireManagedVaultManager,
   requireManagedVaultSquadManager,
 } from './authorization'
@@ -91,4 +92,38 @@ test('only enabled humans with BigBrain read authority enumerate the managed poo
     await canEnumerateManagedVaults({ type: 'system', systemTokenId: crypto.randomUUID(), name: 'x', scopes: ['*'] })
   ).toBe(false)
   expect(await canEnumerateManagedVaults({ type: 'agent', agentId: crypto.randomUUID(), squadId: null })).toBe(false)
+})
+
+test('the global card offers exactly the squads where the manager also holds integrations:write', async () => {
+  const squad = async (label: string) => {
+    const [row] = await db
+      .insert(squads)
+      .values({ name: `${PREFIX} ${label}`, purpose: 'test' })
+      .returning()
+    createdSquads.push(row!.id)
+    return row!.id
+  }
+  const [writable, readable, other, archived] = [
+    await squad('writable'),
+    await squad('readable'),
+    await squad('other'),
+    await squad('archived'),
+  ]
+  await db.update(squads).set({ archivedAt: new Date() }).where(eq(squads.id, archived))
+  const manager = await userWith(['integrations:write:bigbrain'])
+  const write = await createTestRole({ prefix: PREFIX, permissions: ['integrations:write'] })
+  const read = await createTestRole({ prefix: PREFIX, permissions: ['integrations:read'] })
+  await assignRole({ userId: manager, roleId: write.id, scope: 'squad', squadId: writable })
+  await assignRole({ userId: manager, roleId: read.id, scope: 'squad', squadId: readable })
+  await assignRole({ userId: manager, roleId: write.id, scope: 'squad', squadId: archived })
+  const offered = (await managedVaultAttachableSquads(human(manager), manager)).map((s) => s.id)
+  expect(offered).toEqual([writable])
+  // Every offered squad passes the same check the squad assignment route applies.
+  for (const id of offered) expect(await requireManagedVaultSquadManager(human(manager), id)).toBe(manager)
+  expect(await refusal(requireManagedVaultSquadManager(human(manager), readable))).toBe('squad_permission_required')
+  // An instance admin is offered every live squad, never an archived one.
+  const admin = await userWith(['*'])
+  const all = (await managedVaultAttachableSquads(human(admin), admin)).map((s) => s.id)
+  expect(all).toEqual(expect.arrayContaining([writable, readable, other]))
+  expect(all).not.toContain(archived)
 })

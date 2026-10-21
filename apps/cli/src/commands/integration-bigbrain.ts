@@ -24,6 +24,11 @@ interface VaultView {
   readAccess: string
   desiredGeneration: number
   backup?: string
+  /** The vault's Ficus read connection: pass it to `ficus integration assign bigbrain --connection`. */
+  connectionId?: string | null
+  readConnection?: { enabled: boolean; lastErrorCode: string | null } | null
+  readSyncError?: string | null
+  assignedSquads?: { id: string; name: string }[]
 }
 interface OwnerInvite {
   inviteUrl: string
@@ -91,6 +96,14 @@ function summary(vault: VaultView) {
     generation: vault.desiredGeneration,
     // 'excluded': the most recent server backup did not include this vault.
     backup: vault.backup ?? 'unknown',
+    // Whether Ficus really reads the vault (host read access alone is not enough), and why not.
+    ficusReads: vault.readAccess === 'active' && vault.readConnection?.enabled === true,
+    readError:
+      (vault.readConnection && !vault.readConnection.enabled ? vault.readConnection.lastErrorCode : null) ??
+      vault.readSyncError ??
+      null,
+    connectionId: vault.connectionId ?? null,
+    squads: (vault.assignedSquads ?? []).map((squad) => squad.name),
   }
 }
 
