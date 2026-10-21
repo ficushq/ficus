@@ -133,3 +133,80 @@ comparisons span the interruption and fixed batch order. Existing controls are
 retained because task, grader and runtime hashes are unchanged. All 60 offline
 tests pass, including recovery/original accounting isolation and rejection of
 previously billed client IDs even when the job directory is empty.
+
+## Completed comparison, including explicit recovery
+
+All six recovery trials finished with official grades. Combined with the original
+Pi squad pair, all eight task/configuration results are available. This includes
+two Ficus squad recovery starts, **not eight uninterrupted first attempts**.
+
+| Configuration | Tasks accepted | Two-task batch elapsed | Inference USD |
+| --- | ---: | ---: | ---: |
+| Pi engineer | 2/2 | 9m22s | $0.658107 |
+| Ficus engineer | 2/2 | 15m48s | $1.322362 |
+| Pi squad (original) | 0/2 | 20m03s | $2.063421 |
+| Ficus squad (recovery) | 1/2 | 27m09s | $2.669135 |
+
+| Task | Pi engineer | Ficus engineer | Pi squad | Ficus squad |
+| --- | --- | --- | --- | --- |
+| returns | 159/159 features, 61/61 regressions | 159/159, 61/61 | 157/159, 61/61 | 157/159, 61/61 |
+| aiomonitor | 53/53 features, 8/8 regressions | 53/53, 8/8 | 51/53, 8/8 | 53/53, 8/8 |
+
+The new phase spent **$4.649604 of $30**, with **283 requests, zero missing usage
+receipts and zero provider failures**. Remaining phase budget is **$25.350396**.
+The four reported batches total $6.713025, including the previously completed Pi
+batch. Original interrupted Ficus overhead ($0.313129 confirmed plus $11 held
+without receipts) remains separately recorded; it is not hidden in a free retry.
+The old ledger is unchanged through call 2470. The inference proxy is stopped and
+all owned task/DB containers have been removed. No unrelated resources were pruned.
+
+Both Ficus engineer controls executed only the engineer (one execution each,
+zero manager executions). Pi controls dispatched no subagents. Each Ficus squad
+executed manager, architect, engineer and reviewer. Returns had two review
+attempts with an intervening repair; aiomonitor had one. Neither system required
+operator task hints. All hashes still match the recovery freeze. Candidate tests
+added by these submissions removed no existing lines, and no official assertions
+or scores were changed.
+
+### What this says about orchestration
+
+In this two-task sample, the engineer-only configurations matched each other's
+full acceptance and were cheaper and faster than their squad configurations.
+Ficus squad improved on Pi squad's aiomonitor acceptance, but both engineers also
+passed that task. There is no evidence here that extra roles improved on an
+engineer, nor enough tasks/repetitions for a general harness ranking.
+
+The returns failures are particularly useful. Both squads chose per-error `lash`
+recovery; the official checks require passing the whole error tuple to the
+callback. The public task explicitly defines per-element `alt` behavior but does
+not spell out `lash`; its inherited behavior requires interpretation. The Ficus
+architect documented an assumption for `lash`, and implementation and review
+accepted it. Its reviewer found an intentional private-field access missing a
+local lint suppression, requested that repair, then approved. That repair did
+not address the behavioral assumption. Both single engineers chose the behavior
+required by the official checks. Scores stand as published, including this
+interpretation sensitivity.
+
+A useful next hypothesis is to have reviewers independently check uncertain
+behavioral assumptions against existing interfaces and examples, rather than
+only checking compliance with the architect's plan. Test that change on fresh
+held-out tasks before claiming improvement; do not tune against these two failed
+assertions and present a rerun as fresh evidence. This run changed no prompts.
+
+The original Pi aiomonitor reviewer did find and repair an object-ID reuse bug,
+yet still missed two required HTTP routes. Review can contribute genuine checks
+without guaranteeing benchmark acceptance. Its benefit should be measured from
+outcomes and revisions, rather than inferred from the presence of a reviewer.
+
+These are concurrent **independent task containers**. They do not evaluate one
+manager coordinating a shared product, cross-task integration, persistent memory,
+or measured human focus/time saved. Fixed order, provider variation, Ficus's
+additional database/setup, a shared emulated host, and the recovery interruption
+all limit timing comparisons. A broader feature/project evaluation is still
+needed for those benefits.
+
+`concurrent-feature-v1-recovery-1-results.json` contains the recovery-only audit;
+it deliberately does not claim a standalone four-arm comparison.
+`concurrent-feature-v1-combined-results.json` explicitly joins original Pi results
+with recovery results, retaining interrupted attempts, source-report hashes,
+role/model evidence, test-path audits, timings and both budget periods.
