@@ -59,15 +59,34 @@ export async function nativeFixtures(root: string, artifact: string, dependencyR
   await symlink(join(dependencyRoot, 'node_modules'), join(source, 'node_modules'))
   // Import the actual pinned native implementation from the corresponding source archive.
   const native = (await import(pathToFileURL(join(source, 'lib/sharedConnections.ts')).href)) as {
-    connectInvite(path: string, invite: string): Promise<{ id: string; identity: { vault: { id: string } } }>
+    connectInvite(
+      path: string,
+      invite: string
+    ): Promise<{ id: string; name: string; identity: { vault: { id: string; name: string } } }>
     readConnections(path: string): Array<{ id: string; name: string; endpoint: string; token: string }>
     sharedRequest<T>(connection: { endpoint: string; token: string }, path: string, body?: unknown): Promise<T>
+    /** The connections, renamed to what each server last told this client (lib/serverStore.ts). */
+    refreshConnectionNames(path: string): Promise<Array<{ id: string; name: string }>>
+  }
+  // The client's sync of one server (whoami, feed, snapshot): how a connected app learns a new name.
+  const serverStore = (await import(pathToFileURL(join(source, 'lib/serverStore.ts')).href)) as {
+    followServer(
+      store: string,
+      connection: { id: string; endpoint: string; token: string }
+    ): Promise<{ name?: string; error?: unknown }>
   }
   // The shipped bundles under this (pinned, version-checked) Bun, exactly as the units run them.
   if (Bun.version !== provenance.bunVersion) throw new Error('synthetic_bun_version_mismatch')
   const bun = [process.execPath, '--no-install', '--no-env-file']
   const binary = join(artifact, 'bigbrain-shared.js')
-  async function vault(name: string) {
+  /** The shipped member adapter's vault identity operations (what the host runs as the vault UID). */
+  const vaultIdentity = async (input: Record<string, unknown>) =>
+    JSON.parse(await command([...bun, join(artifact, 'bigbrain-members.js')], input)) as
+      | { ok: true; result: { upstreamVaultId: string; name: string | null; changed?: boolean } }
+      | { ok: false; code: string }
+  /** `serverName`: written through the shipped adapter before the first serve, as the host's create
+   * does; omitted, the vault keeps upstream's default name. */
+  async function vault(name: string, options: { serverName?: string } = {}) {
     const base = join(root, name)
     await mkdir(base, { mode: 0o700 })
     const data = join(base, 'vault')
@@ -97,6 +116,12 @@ export async function nativeFixtures(root: string, artifact: string, dependencyR
       minted.credential.followsMember === true
     )
       throw new Error('synthetic_scope_mismatch')
+    const setServerName = async (serverName: string) => {
+      const reply = await vaultIdentity({ op: 'vault-name', vaultPath: data, name: serverName })
+      if (!reply.ok || reply.result.name !== serverName) throw new Error('synthetic_vault_name_failed')
+      return reply.result
+    }
+    if (options.serverName !== undefined) await setServerName(options.serverName)
     let endpoint = ''
     let running: { stop(signal?: 'SIGTERM' | 'SIGKILL'): Promise<void> } | undefined
     async function start() {
@@ -246,6 +271,19 @@ export async function nativeFixtures(root: string, artifact: string, dependencyR
         await running!.stop('SIGKILL')
         await start()
       },
+      /** The host's rename procedure: stop the server, write the name as the vault, start again. */
+      async rename(serverName: string) {
+        await running!.stop()
+        const result = await setServerName(serverName)
+        await start()
+        return result
+      },
+      /** The upstream identity as the shipped adapter reads it. */
+      async serverIdentity() {
+        const reply = await vaultIdentity({ op: 'vault-identity', vaultPath: data })
+        if (!reply.ok) throw new Error(reply.code)
+        return reply.result
+      },
       async stop() {
         await running?.stop()
       },
@@ -253,6 +291,7 @@ export async function nativeFixtures(root: string, artifact: string, dependencyR
   }
   return {
     native,
+    serverStore,
     vault,
     provenance,
     async dispose() {

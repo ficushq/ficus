@@ -75,6 +75,9 @@ const label = z
   .min(1)
   .max(120)
   .refine((v) => v === v.trim() && !/\p{Cc}/u.test(v))
+/** Vault and member display names: one trimmed line of 1-120 characters, no control characters.
+ * A vault's name is also written as its upstream server name (what the BigBrain app shows). */
+export const managedBigbrainDisplayNameSchema = label
 const zonePattern = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/
 const zoneSchema = z.string().max(210).regex(zonePattern)
 

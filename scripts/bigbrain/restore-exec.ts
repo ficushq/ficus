@@ -13,7 +13,6 @@ import {
   reserveStorage,
   saveVaultRecord,
   startVaultService,
-  type ProvisionDeps,
 } from './provision'
 import { controlReceiptSchema, type ControlReceipt } from './receipts'
 import {
@@ -26,8 +25,10 @@ import {
 } from './restore'
 import { readPrivateJson } from './secure-files'
 import { runPrivateCommand, startServiceDeliberately } from './process'
+import { writeVaultName, type VaultNameDeps } from './vault-name'
+import type { InstalledHost } from './control-input'
 
-export interface RestoreDeps extends ProvisionDeps {
+export interface RestoreDeps extends VaultNameDeps {
   /** Native administration as the vault's own UID (default NativeVaultAdmin). */
   admin?: (record: ControlReceipt) => Pick<NativeVaultAdmin, 'listMembers' | 'listCredentials' | 'revokeCredential'>
   ingress?: () => Promise<unknown>
@@ -52,7 +53,9 @@ const sha = (value: unknown) => `sha256:${createHash('sha256').update(JSON.strin
 /** storage_ready -> initialized for ONE restored vault. The archive was header-inspected (only
  * regular files/directories under auth/ and vault/), so root extraction cannot escape the
  * verified mount; ownership is then given to the NEW vault account (archived numeric owners are
- * ignored). The store must carry the granted upstream identity and owner. Every imported
+ * ignored). The store must carry the granted upstream identity and owner. Its upstream server name
+ * becomes the vault's recorded Ficus name (Core's, not whatever the archive's identity file says),
+ * written as the new vault UID before the store is first served. Every imported
  * credential and invitation is revoked: the owner reconnects through a fresh owner link and Ficus
  * read access stays revoked until a human reconnects it.
  */
@@ -60,6 +63,7 @@ async function loadVault(
   record: ControlReceipt,
   grant: RestoreEntry,
   archive: string,
+  host: InstalledHost,
   deps: RestoreDeps
 ): Promise<ControlReceipt> {
   const run = deps.run ?? runPrivateCommand
@@ -91,6 +95,7 @@ async function loadVault(
     await checked(['/usr/bin/chown', '-R', '--no-dereference', `${record.os!.uid}:${record.os!.gid}`, '--', dir])
     await checked(['/usr/bin/chmod', '-R', 'go-rwx', '--', dir])
   }
+  await writeVaultName(record, record.displayName, host, deps)
   // Every pending invitation and app link from the archive is void on this host.
   if (await present(`${paths.memberStore}.invites.json`)) await unlink(`${paths.memberStore}.invites.json`)
   const admin = (deps.admin ?? ((r) => new NativeVaultAdmin(r, { root: deps.root, run })))(record)
@@ -172,7 +177,7 @@ export async function executeRestore(request: RestoreRequest, deps: RestoreDeps)
       throw new Error('request_conflict')
     record = await prepareStorage(record, deps)
     if (record.phase === 'storage_ready')
-      record = await loadVault(record, grant, join(staging, `vaults/${grant.vaultId}.tar`), deps)
+      record = await loadVault(record, grant, join(staging, `vaults/${grant.vaultId}.tar`), host, deps)
     record = await startVaultService(record, deps)
     record = await markReady(record, deps)
     restored.push(record)

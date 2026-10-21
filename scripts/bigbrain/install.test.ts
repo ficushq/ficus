@@ -102,6 +102,8 @@ test('first install seeds the host record from the persisted binding and install
     artifactDigest: f.digest,
     hostEpoch: 3,
     hostState: 'active',
+    // A new host has no vaults to repair (the real repair ran over the empty state).
+    vaultNames: { repaired: 0, failed: 0 },
   })
   expect(await host(f)).toMatchObject({
     tenantId: config.tenantId,
@@ -225,4 +227,23 @@ test('a tampered or group-writable existing release is never reused', async () =
   await chmod(join(release, 'LICENSE'), 0o644)
   await writeFile(join(release, 'bigbrain-owner-link.js'), 'swapped')
   await expect(installManagedHost(f.options)).rejects.toThrow('identity_mismatch')
+})
+
+test('an upgrade repairs vault server names after the new release is installed, and reports, not fails, a failed repair', async () => {
+  const f = await fixture()
+  await installManagedHost(f.options)
+  const seen: { artifactDigest: string; hostEpoch: number }[] = []
+  const upgraded = await installManagedHost({
+    ...f.options,
+    vaultNames: async (installed) => {
+      // Runs last: the new release, launcher and gateway are in place and the host record is written.
+      f.steps.push('names')
+      seen.push(installed)
+      expect(await host(f)).toEqual(installed)
+      return { repaired: 1, failed: 1 }
+    },
+  })
+  expect(f.steps.slice(-3)).toEqual(['ingress', `assets:${f.digest}`, 'names'])
+  expect(seen[0]).toMatchObject({ artifactDigest: f.digest, hostEpoch: 3, hostState: 'active' })
+  expect(upgraded).toMatchObject({ installed: true, created: false, vaultNames: { repaired: 1, failed: 1 } })
 })

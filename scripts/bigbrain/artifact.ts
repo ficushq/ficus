@@ -212,10 +212,11 @@ export async function buildBigbrainArtifact(options: {
       join(source, membersEntry),
       [
         `import { memberAdminMain } from ${JSON.stringify(join(ficusRoot, 'scripts/bigbrain/member-admin.ts'))};`,
-        `import { createMemberInvite, pendingMemberInvites, cancelMemberInvite } from './lib/sharedInvites.ts';`,
+        `import { createMemberInvite, pendingMemberInvites, cancelMemberInvite, sharedVaultIdentity } from './lib/sharedInvites.ts';`,
         `import { listMembers, ownerOf, setMemberPermissions, revokeMember } from './lib/sharedMembers.ts';`,
         `import { SharedMemberBusyError } from './lib/sharedMemberLock.ts';`,
-        `await memberAdminMain({ listMembers, ownerOf, pendingMemberInvites, createMemberInvite, cancelMemberInvite, setMemberPermissions, revokeMember, BusyError: SharedMemberBusyError });`,
+        `import { writeAtomic } from './lib/fsx.ts';`,
+        `await memberAdminMain({ listMembers, ownerOf, pendingMemberInvites, createMemberInvite, cancelMemberInvite, setMemberPermissions, revokeMember, BusyError: SharedMemberBusyError, sharedVaultIdentity, writeAtomic });`,
         '',
       ].join('\n')
     )

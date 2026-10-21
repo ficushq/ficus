@@ -2018,7 +2018,7 @@ bigbrain_install() { # RELEASE_DIR CONFIG_JSON
     [[ ${code} =~ ^[a-z_]{1,40}$ ]] || code=operation_failed
     die "managed BigBrain install refused (${code}); the host record was not changed"
   fi
-  log_info "managed BigBrain runtime installed: $(jq -c '{created, artifactDigest, hostEpoch, hostState}' <<<"${out}")"
+  log_info "managed BigBrain runtime installed: $(jq -c '{created, artifactDigest, hostEpoch, hostState, vaultNames}' <<<"${out}")"
 }
 
 # Restore: an envelope's managed-bigbrain/ directory never reaches HOME_DIR or the database

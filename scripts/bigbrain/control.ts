@@ -374,7 +374,7 @@ export async function dispatchHostRequest(input: unknown, deps: ControlDeps = {}
             request.action === 'create'
               ? await createVault(request, installed, lifecycle)
               : request.action === 'rename'
-                ? await renameVault(request, lifecycle)
+                ? await renameVault(request, installed, lifecycle)
                 : request.action === 'read-revoke'
                   ? await revokeRead(request, lifecycle)
                   : await reconnectRead(request, installed, lifecycle)

@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { ManagedBigbrainMemberRoster } from '@ficus/shared/managed-bigbrain'
 import { memberAdminReply, runMemberAdmin } from './member-admin'
-import { FakeBusy, fakeMemberApi as fake } from './member-test-fixtures'
+import { FakeBusy, fakeMemberApi as fake, fileIdentityApi } from './member-test-fixtures'
 
 const store = '/var/lib/ficus-bigbrain/vaults/v/auth/members.json'
 const now = Date.parse('2026-10-20T00:00:00.000Z')
@@ -197,4 +200,92 @@ test('replies carry only fixed codes: upstream text and lock contention never le
     throw new FakeBusy('Membership is being updated. Please retry.')
   }
   expect(memberAdminReply({ op: 'list', membersPath: store }, f.api, now)).toEqual({ ok: false, code: 'busy' })
+})
+
+describe('vault server name (upstream .shared-identity.json)', () => {
+  const ID = '66666666-6666-4666-8666-666666666666'
+  async function vault() {
+    const dir = await mkdtemp(join(tmpdir(), 'bigbrain-vault-name-'))
+    const identity = fileIdentityApi(() => ID)
+    return { dir, file: join(dir, '.shared-identity.json'), f: fake(store, identity), writes: identity.writes }
+  }
+  const read = async (path: string) => JSON.parse(await readFile(path, 'utf8'))
+
+  test('before the first serve, upstream creates the identity (its own id) and the name is the Ficus name', async () => {
+    const v = await vault()
+    try {
+      expect(runMemberAdmin({ op: 'vault-name', vaultPath: v.dir, name: 'Research' }, v.f.api)).toEqual({
+        upstreamVaultId: ID,
+        name: 'Research',
+        changed: true,
+      })
+      // The id is upstream's (sharedVaultIdentity ran first); Ficus never invents one.
+      expect(v.f.calls.slice(0, 2)).toEqual(['sharedVaultIdentity', 'writeAtomic'])
+      expect(await read(v.file)).toEqual({ id: ID, name: 'Research' })
+      expect(v.writes.map((w) => [w.path, w.mode])).toEqual([[v.file, 0o600]])
+      expect(((await stat(v.file)).mode & 0o777).toString(8)).toBe('600')
+      expect(runMemberAdmin({ op: 'vault-identity', vaultPath: v.dir }, v.f.api)).toEqual({
+        upstreamVaultId: ID,
+        name: 'Research',
+      })
+    } finally {
+      await rm(v.dir, { recursive: true, force: true })
+    }
+  })
+
+  test('a rename keeps the id and every other field; an equal name is never rewritten', async () => {
+    const v = await vault()
+    try {
+      const rules = [{ id: 'r1', text: 'Sources that mention @Orchard.', mentions: ['Orchard'] }]
+      await Bun.write(v.file, JSON.stringify({ id: ID, name: 'Shared BigBrain', recommended_rules: rules }))
+      expect(runMemberAdmin({ op: 'vault-identity', vaultPath: v.dir }, v.f.api)).toEqual({
+        upstreamVaultId: ID,
+        name: 'Shared BigBrain',
+      })
+      expect(runMemberAdmin({ op: 'vault-name', vaultPath: v.dir, name: 'ficus-shared' }, v.f.api)).toMatchObject({
+        upstreamVaultId: ID,
+        changed: true,
+      })
+      expect(await read(v.file)).toEqual({ id: ID, name: 'ficus-shared', recommended_rules: rules })
+      expect(runMemberAdmin({ op: 'vault-name', vaultPath: v.dir, name: 'ficus-shared' }, v.f.api)).toMatchObject({
+        changed: false,
+      })
+      expect(v.writes).toHaveLength(1)
+    } finally {
+      await rm(v.dir, { recursive: true, force: true })
+    }
+  })
+
+  test('only a valid vault label is written; a broken identity is upstream_protocol', async () => {
+    const v = await vault()
+    try {
+      for (const name of ['', ' padded', 'two\nlines', 'bell\u0007', 'x'.repeat(121), 42])
+        expect(memberAdminReply({ op: 'vault-name', vaultPath: v.dir, name }, v.f.api)).toEqual({
+          ok: false,
+          code: 'invalid_request',
+        })
+      for (const vaultPath of ['relative/vault', '/a/../b', '/vault\u0000'])
+        expect(memberAdminReply({ op: 'vault-identity', vaultPath }, v.f.api)).toEqual({
+          ok: false,
+          code: 'invalid_request',
+        })
+      expect(
+        memberAdminReply({ op: 'vault-name', vaultPath: v.dir, name: 'Research', membersPath: store }, v.f.api)
+      ).toEqual({ ok: false, code: 'invalid_request' })
+      expect(v.writes).toHaveLength(0)
+      await Bun.write(v.file, JSON.stringify({ id: 'not-a-uuid', name: 'x' }))
+      expect(memberAdminReply({ op: 'vault-name', vaultPath: v.dir, name: 'Research' }, v.f.api)).toEqual({
+        ok: false,
+        code: 'upstream_protocol',
+      })
+      expect(v.writes).toHaveLength(0)
+      // The longest valid label is accepted as is.
+      await Bun.write(v.file, JSON.stringify({ id: ID, name: 'Shared BigBrain' }))
+      expect(memberAdminReply({ op: 'vault-name', vaultPath: v.dir, name: 'é'.repeat(120) }, v.f.api)).toMatchObject({
+        ok: true,
+      })
+    } finally {
+      await rm(v.dir, { recursive: true, force: true })
+    }
+  })
 })

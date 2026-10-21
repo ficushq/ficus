@@ -33,6 +33,8 @@ export interface InstallOptions {
   /** Launcher/slice/gateway installation and initial ingress (defaults: the real installers). */
   hostAssets?: (artifactDigest: string) => Promise<void>
   ingress?: () => Promise<unknown>
+  /** Upgrade repair of every served vault's upstream server name (default: repairVaultNames). */
+  vaultNames?: (host: InstalledHost) => Promise<{ repaired: number; failed: number }>
 }
 export type InstallResult =
   | { installed: false }
@@ -42,6 +44,8 @@ export type InstallResult =
       artifactDigest: string
       hostEpoch: number
       hostState: InstalledHost['hostState']
+      /** Vaults whose upstream server name was set to their Ficus name now / could not be. */
+      vaultNames: { repaired: number; failed: number }
     }
 
 async function present(path: string): Promise<boolean> {
@@ -191,7 +195,24 @@ export async function installManagedHost(options: InstallOptions): Promise<Insta
   // units and gateway. A refusal leaves the recorded host but no new helper/gateway.
   await (options.ingress ?? (() => publishIngress({ root: options.state, etc, uid })))()
   await (options.hostAssets ?? ((digest) => installHostAssets(digest, { etc, uid })))(artifactDigest)
-  return { installed: true, created: !existing, artifactDigest, hostEpoch: host.hostEpoch, hostState: host.hostState }
+  // Vaults from releases that never wrote it still show upstream's default server name: set each
+  // to its Ficus name once (a stop/write/start of that vault only when they differ). Cosmetic, so a
+  // failure is reported and retried by the next upgrade instead of failing this one.
+  const vaultNames = await (
+    options.vaultNames ??
+    (async (installed: InstalledHost) =>
+      (await import('./vault-name'))
+        .repairVaultNames(installed, { root: options.state, etc, uid })
+        .catch(() => ({ repaired: 0, failed: 1 })))
+  )(host)
+  return {
+    installed: true,
+    created: !existing,
+    artifactDigest,
+    hostEpoch: host.hostEpoch,
+    hostState: host.hostState,
+    vaultNames,
+  }
 }
 
 /** Earlier releases wrote vault sites to <etc>/caddy, inside the root-only etc directory where

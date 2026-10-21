@@ -1,12 +1,36 @@
 import { expect } from 'bun:test'
+import { randomUUID } from 'node:crypto'
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { NativeMemberApi } from './member-admin'
+
+/** The pinned upstream's vault identity functions on the real filesystem: sharedVaultIdentity
+ * (lib/sharedInvites.ts: created with a random id and the default name when absent) and
+ * writeAtomic (lib/fsx.ts: same-directory temp file, then rename). */
+export function fileIdentityApi(newId: () => string = randomUUID) {
+  const writes: { path: string; content: string; mode: number }[] = []
+  return {
+    writes,
+    sharedVaultIdentity(root: string): unknown {
+      const path = join(root, '.shared-identity.json')
+      if (!existsSync(path))
+        writeFileSync(path, JSON.stringify({ id: newId(), name: 'Shared BigBrain' }), { mode: 0o600 })
+      return JSON.parse(readFileSync(path, 'utf8'))
+    },
+    writeAtomic(path: string, content: string, mode: number) {
+      writes.push({ path, content, mode })
+      writeFileSync(`${path}.tmp`, content, { mode })
+      renameSync(`${path}.tmp`, path)
+    },
+  }
+}
 
 const DEFAULT_STORE = '/var/lib/ficus-bigbrain/vaults/v/auth/members.json'
 const secret = 's'.repeat(43)
 export class FakeBusy extends Error {}
 
 /** In-memory stand-in with the pinned upstream semantics this adapter relies on. */
-export function fakeMemberApi(store = DEFAULT_STORE) {
+export function fakeMemberApi(store = DEFAULT_STORE, identity = fileIdentityApi()) {
   const members: Record<string, unknown>[] = [
     {
       id: 'mem_00000001',
@@ -117,6 +141,14 @@ export function fakeMemberApi(store = DEFAULT_STORE) {
       return { ...member }
     },
     BusyError: FakeBusy,
+    sharedVaultIdentity: (root) => {
+      calls.push('sharedVaultIdentity')
+      return identity.sharedVaultIdentity(root)
+    },
+    writeAtomic: (path, content, mode) => {
+      calls.push('writeAtomic')
+      identity.writeAtomic(path, content, mode)
+    },
   }
-  return { api, members, invites, calls }
+  return { api, members, invites, calls, identityWrites: identity.writes }
 }
