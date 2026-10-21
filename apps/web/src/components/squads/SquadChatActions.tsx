@@ -53,6 +53,7 @@ export function SquadChatActions({
         <ActionPopup
           label="Chat options"
           items={actions}
+          openOnHover
           className="ficus-button ficus-button-ghost flex h-[26px] w-[26px] items-center justify-center rounded-md"
         >
           <MoreIcon className="h-4 w-4" />
