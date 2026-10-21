@@ -20,7 +20,7 @@ test('catalog exposes connected Core availability without probing bindings or tr
     // description (also shown on each squad's card) describes shared vaults, not a local binding.
     expect(registry.catalog()[0]).toMatchObject({
       connectionMode: 'managed',
-      description: expect.stringContaining('Attach a vault to a squad'),
+      description: expect.stringContaining('people contribute from the BigBrain app, squads read'),
       availability: { available: false, reason: expect.stringContaining('not been confirmed') },
     })
     expect(bigbrainHostAvailability()).toMatchObject({

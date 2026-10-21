@@ -38,7 +38,7 @@ const plugin: IntegrationPluginV1<
     resolveConnectionMode: () => (isPlatformManaged() ? 'managed' : 'local'),
     resolveDescription: () =>
       isPlatformManaged()
-        ? 'Shared BigBrain vaults on this Ficus server. Attach a vault to a squad so its agents can read it.'
+        ? 'Shared BigBrain vaults on this server: people contribute from the BigBrain app, squads read.'
         : 'Connect BigBrain on the Core host in one click: Ficus finds BigBrain and its vault.',
     assignable: true,
     requiredCapabilities: ['agent_tools'],
