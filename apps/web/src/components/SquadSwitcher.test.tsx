@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { acquireDomHarness } from '../test/domHarness'
+import { restPointerOn } from '../test/hoverTimer'
 import { queries } from '../queryOptions'
 import { squadSwitchPath, SquadSwitcher } from './SquadSwitcher'
 
@@ -71,11 +72,13 @@ async function renderSwitcher(path = '/squads/alpha/work?ws=12') {
       await new Promise((resolve) => dom!.window.requestAnimationFrame(resolve))
     })
   const wait = (ms: number) => dom!.act(() => new Promise((resolve) => setTimeout(resolve, ms)))
-  /** A pointer arriving on (`over`) or leaving (`out`) an element; React derives enter/leave from these. */
+  /** A pointer arriving on (`over`, resting past the hover-open delay) or leaving (`out`) an element; React derives enter/leave from these. */
   const pointer = (target: Element, type: 'over' | 'out', pointerType = 'mouse') =>
-    dom!.act(async () => {
-      target.dispatchEvent(new dom!.window.PointerEvent(`pointer${type}`, { bubbles: true, pointerType }))
-    })
+    type === 'over'
+      ? restPointerOn(target, pointerType)
+      : dom!.act(async () => {
+          target.dispatchEvent(new dom!.window.PointerEvent(`pointer${type}`, { bubbles: true, pointerType }))
+        })
   const click = (target: HTMLElement) => dom!.act(async () => target.click())
   const key = (key: string) =>
     dom!.act(async () => {

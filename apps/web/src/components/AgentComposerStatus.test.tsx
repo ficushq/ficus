@@ -2,6 +2,7 @@ import { afterEach, expect, mock, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { acquireDomHarness } from '../test/domHarness'
 import { AgentComposerStatus } from './AgentComposerStatus'
+import { expectHoverMenuContract } from '../test/hoverMenuContract'
 
 let dom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
 afterEach(async () => {
@@ -102,5 +103,77 @@ test('the ring opens the numbers and the session actions, offered only when the 
   await render(true)
   await open()
   await dom.act(async () => item('Compact context')!.click())
+  // Compacting asks first: the menu opens on hover, so one stray click must not run it.
+  expect(onCompact).not.toHaveBeenCalled()
+  expect(dialogButton('Compact this session?', 'Compact context')).toBeDefined()
+  await dom.act(async () => dialogButton('Compact this session?', 'Compact context')!.click())
   expect(onCompact).toHaveBeenCalledTimes(1)
+})
+
+/** A button of the open confirmation dialog titled `title`. */
+function dialogButton(title: string, label: string) {
+  const dialog = [...dom!.window.document.querySelectorAll<HTMLElement>('[role="dialog"]')].find((candidate) =>
+    candidate.textContent?.includes(title)
+  )
+  return [...(dialog?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find(
+    (button) => button.textContent?.trim() === label
+  )
+}
+
+for (const action of [
+  { item: 'Compact context', title: 'Compact this session?', confirm: 'Compact context' },
+  { item: 'Reset session', title: 'Reset this session?', confirm: 'Reset session' },
+] as const)
+  test(`${action.item} confirms first; Cancel runs nothing`, async () => {
+    dom = await acquireDomHarness({ url: 'http://localhost' })
+    const { root, container } = dom.createRoot()
+    const onCompact = mock(() => undefined)
+    const onReset = mock(() => undefined)
+    await dom.act(async () =>
+      root.render(
+        <AgentComposerStatus
+          context={{ percent: 62, tokens: 168_640, contextWindow: 272_000 }}
+          canManageSession
+          onCompact={onCompact}
+          onReset={onReset}
+        />
+      )
+    )
+    const choose = async () => {
+      await dom!.act(async () =>
+        container.querySelector<HTMLButtonElement>('button[aria-label="Context 62% used"]')!.click()
+      )
+      const row = [...dom!.window.document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((candidate) =>
+        candidate.textContent?.includes(action.item)
+      )!
+      await dom!.act(async () => row.click())
+    }
+    await choose()
+    await dom.act(async () => dialogButton(action.title, 'Cancel')!.click())
+    expect(onCompact).not.toHaveBeenCalled()
+    expect(onReset).not.toHaveBeenCalled()
+
+    await choose()
+    await dom.act(async () => dialogButton(action.title, action.confirm)!.click())
+    expect(action.item === 'Reset session' ? onReset : onCompact).toHaveBeenCalledTimes(1)
+    expect(action.item === 'Reset session' ? onCompact : onReset).not.toHaveBeenCalled()
+  })
+
+test('the ring opens on hover, with the shared hover-menu behaviour', async () => {
+  dom = await acquireDomHarness({ url: 'http://localhost' })
+  const { root, container } = dom.createRoot()
+  await dom.act(async () =>
+    root.render(
+      <AgentComposerStatus
+        context={{ percent: 62, tokens: 168_640, contextWindow: 272_000 }}
+        canManageSession
+        onCompact={() => undefined}
+        onReset={() => undefined}
+      />
+    )
+  )
+  const trigger = container.querySelector<HTMLButtonElement>('button[aria-label="Context 62% used"]')!
+  const menu = () => dom!.window.document.querySelector<HTMLElement>('[role="menu"][data-state="open"]')
+  // A press on the menu's padding (or its heading), off the rows, keeps hover mode.
+  await expectHoverMenuContract({ trigger, pressInside: { target: () => menu()!, pins: false } })
 })

@@ -1,6 +1,7 @@
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { acquireDomHarness } from '../test/domHarness'
+import { restPointerOn } from '../test/hoverTimer'
 import { useState } from 'react'
 import { fireEvent } from '@testing-library/dom'
 import type { RenderItem, StreamingContentBlock } from '@ficus/client-react'
@@ -2694,11 +2695,13 @@ describe('agent delivery popup', () => {
       const list = () => doc.querySelector<HTMLElement>('[role="listbox"][data-state="open"]')
       const options = () => [...doc.querySelectorAll<HTMLButtonElement>('[data-state="open"] [role="option"]')]
       const wait = (ms: number) => dom.act(() => new Promise((resolve) => setTimeout(resolve, ms)))
-      /** A pointer arriving on (`over`) or leaving (`out`) an element; React derives enter/leave from these. */
+      /** A pointer arriving on (`over`, resting past the hover-open delay) or leaving (`out`) an element; React derives enter/leave from these. */
       const pointer = (target: Element, type: 'over' | 'out', pointerType = 'mouse') =>
-        dom.act(async () => {
-          target.dispatchEvent(new window.PointerEvent(`pointer${type}`, { bubbles: true, pointerType }))
-        })
+        type === 'over'
+          ? restPointerOn(target, pointerType)
+          : dom.act(async () => {
+              target.dispatchEvent(new window.PointerEvent(`pointer${type}`, { bubbles: true, pointerType }))
+            })
       const click = (target: HTMLElement) => dom.act(async () => target.click())
       return { dom, doc, sends, changes, submit, trigger, composer, list, options, wait, pointer, click }
     }

@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { ThemeProvider } from '../providers/ThemeProvider'
 import { acquireDomHarness } from '../test/domHarness'
+import { restPointerOn } from '../test/hoverTimer'
 import { queries } from '../queryOptions'
 import { AppHeader } from './AppNav'
 import { InboxPopup } from './InboxPopup'
@@ -74,11 +75,13 @@ async function renderInbox() {
   const panel = () => doc.querySelector<HTMLElement>(`#${INBOX_POPUP_ID}[data-state="open"]`)
   const scrim = () => doc.querySelector<HTMLElement>('.fixed.inset-0.z-40')
   const wait = (ms: number) => dom!.act(() => new Promise((resolve) => setTimeout(resolve, ms)))
-  /** A pointer arriving on (`over`) or leaving (`out`) an element; React derives enter/leave from these. */
+  /** A pointer arriving on (`over`, resting past the hover-open delay) or leaving (`out`) an element; React derives enter/leave from these. */
   const pointer = (target: Element, type: 'over' | 'out', pointerType = 'mouse') =>
-    dom!.act(async () => {
-      target.dispatchEvent(new dom!.window.PointerEvent(`pointer${type}`, { bubbles: true, pointerType }))
-    })
+    type === 'over'
+      ? restPointerOn(target, pointerType)
+      : dom!.act(async () => {
+          target.dispatchEvent(new dom!.window.PointerEvent(`pointer${type}`, { bubbles: true, pointerType }))
+        })
   const press = (target: Element) =>
     dom!.act(async () => {
       target.dispatchEvent(new dom!.window.PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }))

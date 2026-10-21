@@ -71,13 +71,17 @@ const popover = usePopover({ kind: 'menu' }) // 'menu' | 'listbox' | 'dialog' | 
   opens at once; leaving both the anchor and the card closes after `closeDelay`, so the pointer can cross
   the gap. It never takes focus on open; Tab on the anchor enters it; Escape closes it and returns focus
   to the anchor only when focus was inside; it closes when the anchor scrolls out of view.
-- **`useHoverOpen(popover, { enabled, closeDelay: 150, initialFocus })`**: hover-to-open for a click
-  popover (`ActionPopup`'s and `SelectionPopup`'s `openOnHover`: the top nav's squad switcher, the squad
-  tabs' More menu and the composer's delivery-mode chevron; neither opens on hover while disabled; and the
-  top nav's theme flyout, a `Panel`, where only the trigger pins it and choosing a theme keeps hover mode). Spread its `triggerProps` on the
-  trigger (its `onClick` replaces `popover.toggle`) and its `popoverProps` on the popover. A mouse
-  hovering the trigger opens it without taking focus; leaving both the trigger and the popover closes it
-  after `closeDelay`, and re-entering either cancels that. A click on a hover-opened trigger pins it
+- **`useHoverOpen(popover, { enabled, openDelay: HOVER_OPEN_DELAY_MS, closeDelay: 150, initialFocus })`**:
+  hover-to-open for a click popover (`ActionPopup`'s and `SelectionPopup`'s `openOnHover`: the top nav's
+  squad switcher, the squad tabs' More menu, the composer's delivery-mode chevron and context ring, the
+  squad Chats "…" menu and the tablet Agent view dropdown; neither opens on hover while disabled; the
+  assistant's Arrange menu; the top nav's theme flyout, a `Panel`, where only the trigger pins it and
+  choosing a theme keeps hover mode; and the work stream Filters panel and the squad notifications bell,
+  where any press inside calls `pin()`). Spread its `triggerProps` on the trigger (its `onClick` replaces
+  `popover.toggle`) and its `popoverProps` on the popover. A mouse resting on the trigger for `openDelay`
+  (one shared `HOVER_OPEN_DELAY_MS`, so a pointer passing over never flashes a menu) opens it without
+  taking focus; a mouse arriving with a button held (a drag) never opens it. Leaving both the trigger and
+  the popover closes it after `closeDelay`, and re-entering either cancels that. A click on a hover-opened trigger pins it
   open, focusing `initialFocus` as a click-open would (`none`: focus stays put); `pin()` does the same
   without moving focus, for a press inside a surface the user then works in. Opened by click, keyboard or
   touch, it behaves as before; touch and pen pointers never open it on hover. It takes any open state

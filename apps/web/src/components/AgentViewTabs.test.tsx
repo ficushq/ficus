@@ -2,6 +2,7 @@ import { acquireDomHarness } from '../test/domHarness'
 import { afterEach, expect, mock, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { AgentViewTabs, type AgentViewTabItem } from './AgentViewTabs'
+import { expectHoverMenuContract } from '../test/hoverMenuContract'
 
 let dom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
 function TestIcon({ className }: { className?: string }) {
@@ -61,3 +62,13 @@ for (const label of ['Agent view', 'Conversation options, Inbox view']) {
     expect(dom.window.document.activeElement).toBe(trigger)
   })
 }
+
+test('the tablet Agent view dropdown opens on hover, with the shared hover-menu behaviour', async () => {
+  dom = await acquireDomHarness({ url: 'http://localhost/chat' })
+  const { container, root } = dom.createRoot()
+  await dom.act(async () => root.render(<AgentViewTabs activeTab="inbox" onChange={mock()} tabs={tabs} />))
+  const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Agent view"]')!
+  const list = () => dom!.window.document.querySelector<HTMLElement>('[role="listbox"][data-state="open"]')
+  // A press on the list's padding, off the options, keeps hover mode.
+  await expectHoverMenuContract({ trigger, pressInside: { target: () => list()!, pins: false } })
+})

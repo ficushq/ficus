@@ -14,6 +14,19 @@ const STATUS_LABEL: Partial<Record<ExecutionStatus | 'compacting' | 'resetting',
   resetting: 'Resetting…',
 }
 
+const CONFIRM = {
+  compact: {
+    title: 'Compact this session?',
+    action: 'Compact context',
+    body: 'The session history is summarized to free up context; the agent keeps the summary, not every message.',
+  },
+  reset: {
+    title: 'Reset this session?',
+    action: 'Reset session',
+    body: 'The agent’s session history is cleared and it starts fresh, without what was said here in its context.',
+  },
+} as const
+
 /** How full the context is, as a ring: the theme's primary color, then amber past half, red past 80%. */
 export function ContextRing({ percent, className }: { percent: number; className?: string }) {
   const clamped = Math.max(0, Math.min(percent, 100))
@@ -68,7 +81,9 @@ export function AgentComposerStatus({
   onCompact: () => void
   onReset: () => void
 }) {
-  const [confirmReset, setConfirmReset] = useState(false)
+  // Both session actions confirm first: the menu opens under a passing mouse, so one stray click must not run either.
+  const [confirming, setConfirming] = useState<'compact' | 'reset' | null>(null)
+  const confirm = confirming ? CONFIRM[confirming] : null
   const label = status ? STATUS_LABEL[status] : undefined
   // The label beside the ring stays compact (whole percents); the tooltip and the
   // popup's heading carry the precise figure and the tokens behind it.
@@ -87,6 +102,7 @@ export function AgentComposerStatus({
       {context && (
         <ActionPopup
           label={`Context ${percent} used`}
+          openOnHover
           title={summary}
           heading={summary}
           width={260}
@@ -99,7 +115,8 @@ export function AgentComposerStatus({
                 ? 'Summarize the session to free up context'
                 : 'Available when the agent is idle',
               disabled: !canManageSession,
-              onSelect: onCompact,
+              opensDialog: true,
+              onSelect: () => setConfirming('compact'),
             },
             {
               id: 'reset',
@@ -109,7 +126,7 @@ export function AgentComposerStatus({
                 : 'Available when the agent is idle',
               disabled: !canManageSession,
               opensDialog: true,
-              onSelect: () => setConfirmReset(true),
+              onSelect: () => setConfirming('reset'),
             },
           ]}
         >
@@ -118,34 +135,36 @@ export function AgentComposerStatus({
         </ActionPopup>
       )}
       <Modal
-        isOpen={confirmReset}
-        onClose={() => setConfirmReset(false)}
-        title="Reset this session?"
+        isOpen={confirm !== null}
+        onClose={() => setConfirming(null)}
+        title={confirm?.title ?? ''}
         footer={
           <div className="flex justify-end gap-2">
             <button
               type="button"
               className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5 text-sm"
-              onClick={() => setConfirmReset(false)}
+              onClick={() => setConfirming(null)}
             >
               Cancel
             </button>
             <button
               type="button"
-              className="ficus-button ficus-button-danger rounded-md px-3 py-1.5 text-sm font-medium"
+              className={clsx(
+                'ficus-button rounded-md px-3 py-1.5 text-sm font-medium',
+                confirming === 'reset' ? 'ficus-button-danger' : 'ficus-button-primary'
+              )}
               onClick={() => {
-                setConfirmReset(false)
-                onReset()
+                setConfirming(null)
+                if (confirming === 'reset') onReset()
+                else onCompact()
               }}
             >
-              Reset session
+              {confirm?.action}
             </button>
           </div>
         }
       >
-        <p className="text-sm text-secondary">
-          The agent&rsquo;s session history is cleared and it starts fresh, without what was said here in its context.
-        </p>
+        <p className="text-sm text-secondary">{confirm?.body}</p>
       </Modal>
     </div>
   )

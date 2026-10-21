@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { acquireDomHarness } from '../../test/domHarness'
 import { Modal } from '../Modal'
 import { SquadChatActions } from './SquadChatActions'
+import { expectHoverMenuContract } from '../../test/hoverMenuContract'
 let dom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
 afterEach(async () => {
   await dom?.cleanup()
@@ -61,4 +62,14 @@ test('Spawn hands focus to its dialog; Manage restores trigger focus', async () 
   expect(dom.window.document.activeElement?.getAttribute('role')).toBe('dialog')
   expect(dom.window.document.activeElement?.getAttribute('aria-label')).toBe('Spawn agent')
   expect(trigger.getAttribute('aria-expanded')).toBe('false')
+})
+
+test('the Chat options menu opens on hover, with the shared hover-menu behaviour', async () => {
+  dom = await acquireDomHarness({ url: 'http://localhost/squad' })
+  const { root, container } = dom.createRoot()
+  await dom.act(async () => root.render(<SquadChatActions {...defaults} />))
+  const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Chat options"]')!
+  const menu = () => dom!.window.document.querySelector<HTMLElement>('[role="menu"][data-state="open"]')
+  // A press on the menu's padding, off the rows, keeps hover mode.
+  await expectHoverMenuContract({ trigger, pressInside: { target: () => menu()!, pins: false } })
 })

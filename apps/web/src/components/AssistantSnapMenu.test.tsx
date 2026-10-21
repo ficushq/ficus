@@ -2,6 +2,7 @@ import { expect, mock, test } from 'bun:test'
 import { acquireDomHarness } from '../test/domHarness'
 import { webkitTap } from '../test/webkitTap'
 import { AssistantSnapMenu } from './AssistantSnapMenu'
+import { expectHoverMenuContract } from '../test/hoverMenuContract'
 
 test('the layout menu offers the default first, then every region with its shortcut, marks the current one, and closes on choice or Escape', async () => {
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
@@ -109,6 +110,28 @@ test('a WebKit tap on a region snaps to it; an outside tap and Escape close the 
     )
     expect(menu()).toBeNull()
     expect(dom.window.document.activeElement).toBe(button)
+  } finally {
+    await dom.cleanup()
+  }
+})
+
+test('the layout menu opens on hover, with the shared hover-menu behaviour (no drag-open, no focus taken)', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const { root, container } = dom.createRoot()
+  try {
+    await dom.act(async () =>
+      root.render(
+        <>
+          <input aria-label="Message" />
+          <AssistantSnapMenu snap="left" onSnap={() => {}} onReset={() => {}} />
+        </>
+      )
+    )
+    await dom.act(async () => container.querySelector<HTMLInputElement>('input')!.focus())
+    const trigger = container.querySelector<HTMLButtonElement>('button[aria-label="Arrange assistant"]')!
+    const menu = () => dom.window.document.querySelector<HTMLElement>('[role="menu"][data-state="open"]')
+    // Focus stays in the composer while hover-opened (the contract checks it); a press on the padding keeps hover mode.
+    await expectHoverMenuContract({ trigger, pressInside: { target: () => menu()!, pins: false } })
   } finally {
     await dom.cleanup()
   }

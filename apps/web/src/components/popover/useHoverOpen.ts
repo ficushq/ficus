@@ -1,12 +1,21 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useStableRef } from '../../hooks/useStableRef'
 import { focusInPopover, initialTarget } from './focus'
 import { listItems } from './listNavigation'
 import { MENU_ITEM_SELECTOR } from './Menu'
 import type { PopoverState } from './usePopover'
 
+/**
+ * How long a mouse rests on a hover-open trigger before it opens, for every hover menu: a pointer just
+ * passing over (on its way to the button beside it, say) never flashes the menu open.
+ */
+export const HOVER_OPEN_DELAY_MS = 180
+
 export interface HoverOpenOptions {
   /** Off: the trigger only opens on click/keyboard, as without this hook. */
   enabled: boolean
+  /** Resting on the trigger waits this long before opening. Default `HOVER_OPEN_DELAY_MS`; tests shorten it. */
+  openDelay?: number
   /** Leaving the trigger and the popover waits this long before closing, so the pointer can cross the gap. Default 150ms. */
   closeDelay?: number
   /**
@@ -50,7 +59,8 @@ export interface HoverOpenState {
 
 /**
  * Hover-to-open for a click popover (`usePopover`), for a mouse only: touch and pen keep tap-to-open.
- * Hovering the trigger opens it without taking focus; leaving both the trigger and the popover closes it
+ * Resting on the trigger for `openDelay` opens it without taking focus (not while a mouse button is held,
+ * so dragging something across the trigger never opens it); leaving both the trigger and the popover closes it
  * after `closeDelay` (re-entering either cancels that), handing focus back to where it was before the
  * hover if the pointer had moved it onto a row. Opened by click or keyboard, it behaves exactly
  * as without this hook; clicking the trigger of a hover-opened popover pins it open (focusing its
@@ -58,20 +68,30 @@ export interface HoverOpenState {
  */
 export function useHoverOpen<T extends HTMLElement>(
   popover: HoverOpenTarget<T>,
-  { enabled, closeDelay = 150, initialFocus = 'first' }: HoverOpenOptions
+  { enabled, openDelay = HOVER_OPEN_DELAY_MS, closeDelay = 150, initialFocus = 'first' }: HoverOpenOptions
 ): HoverOpenState {
   const [byHover, setByHover] = useState(false)
   // Any close (leaving, Escape, an outside press, a choice) ends the hover mode, so a later keyboard open is not one.
   if (byHover && !popover.open) setByHover(false)
   const hoverOpened = byHover && popover.open
   const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const openTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const focusBefore = useRef<Element | null>(null)
+  // The pending open reads these when it fires: a click or a key may have opened it, or the trigger been disabled, meanwhile.
+  const latest = useStableRef({ open: popover.open, enabled })
   const cancelClose = () => clearTimeout(closeTimer.current)
+  const cancelOpen = () => clearTimeout(openTimer.current)
   const pin = () => {
     cancelClose()
     setByHover(false)
   }
-  useEffect(() => () => clearTimeout(closeTimer.current), [])
+  useEffect(
+    () => () => {
+      clearTimeout(closeTimer.current)
+      clearTimeout(openTimer.current)
+    },
+    []
+  )
 
   const isMouse = (event: ReactPointerEvent) => enabled && event.pointerType === 'mouse'
   const enter = (event: ReactPointerEvent) => {
@@ -100,6 +120,7 @@ export function useHoverOpen<T extends HTMLElement>(
     pin,
     triggerProps: {
       onClick: () => {
+        cancelOpen()
         cancelClose()
         if (!hoverOpened) return popover.toggle()
         pin()
@@ -110,12 +131,20 @@ export function useHoverOpen<T extends HTMLElement>(
       },
       onPointerEnter: (event) => {
         enter(event)
-        if (!isMouse(event) || popover.open) return
-        focusBefore.current = popover.triggerRef.current?.ownerDocument.activeElement ?? null
-        setByHover(true)
-        popover.setOpen(true)
+        // A held button is a drag (a window header, a selection) passing over, not a hover.
+        if (!isMouse(event) || popover.open || event.buttons !== 0) return
+        cancelOpen()
+        openTimer.current = setTimeout(() => {
+          if (latest.current.open || !latest.current.enabled) return
+          focusBefore.current = popover.triggerRef.current?.ownerDocument.activeElement ?? null
+          setByHover(true)
+          popover.setOpen(true)
+        }, openDelay)
       },
-      onPointerLeave: leave,
+      onPointerLeave: (event) => {
+        cancelOpen()
+        leave(event)
+      },
     },
     popoverProps: {
       // Opening under a passing pointer never steals focus from what the user is doing (typing, say).

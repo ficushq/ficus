@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from 'bun:test'
 import { acquireDomHarness } from '../test/domHarness'
+import { restPointerOn } from '../test/hoverTimer'
 import { webkitTap } from '../test/webkitTap'
 import { ActionPopup, SelectionPopup } from './ThemedPopup'
 let dom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
@@ -268,9 +269,11 @@ for (const kind of ['selection', 'action'] as const) {
         )
       )
     const hover = (type: 'over' | 'out') =>
-      dom!.act(async () => {
-        trigger.dispatchEvent(new dom!.window.PointerEvent(`pointer${type}`, { bubbles: true, pointerType: 'mouse' }))
-      })
+      type === 'over'
+        ? restPointerOn(trigger)
+        : dom!.act(async () => {
+            trigger.dispatchEvent(new dom!.window.PointerEvent('pointerout', { bubbles: true, pointerType: 'mouse' }))
+          })
     await dom.act(async () => render(true))
     const trigger = container.querySelector<HTMLButtonElement>('[aria-expanded]')!
     await hover('over')

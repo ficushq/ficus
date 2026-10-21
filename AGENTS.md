@@ -282,6 +282,13 @@ Any new floating UI must dismiss through `usePopupDismiss` (`hooks/usePopupDismi
 with the WebKit tap helper (`test/webkitTap.ts`); the `Popover` variants already do both. The guard tests
 `components/popover.guard.test.ts` and `components/popupDismissal.guard.test.ts` enforce it.
 
+A popup that should open on hover uses `useHoverOpen` (`ActionPopup`/`SelectionPopup` take
+`openOnHover`), never its own pointer timers: it owns the shared open delay (`HOVER_OPEN_DELAY_MS`), the
+held-button (drag) guard, mouse-only hover, leave-to-close and click-to-pin. Call its `pin()` on a press
+inside only when the user then works in the popup (a search field, filters); otherwise clicks inside keep
+hover mode. Test it with `expectHoverMenuContract` (`test/hoverMenuContract.ts`) against the real
+component. See `popover/Popover.md`.
+
 #### Buttons
 
 `ficus-button` is only a base (radius, weight, transitions): it has no fill and no border, so a padded

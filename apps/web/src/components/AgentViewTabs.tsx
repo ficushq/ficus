@@ -54,6 +54,7 @@ export function AgentViewTabs<T extends string>({ activeTab, onChange, tabs }: A
           value={activeTab}
           onChange={onChange}
           options={options}
+          openOnHover
           className="ficus-button ficus-button-secondary flex max-w-36 items-center gap-2 rounded-md px-2 py-1 text-xs font-medium"
         >
           <span className="truncate">{options.find((option) => option.value === activeTab)?.label ?? activeTab}</span>

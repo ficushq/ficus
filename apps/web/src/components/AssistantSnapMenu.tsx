@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { DEFAULT_PLACEMENT_KEY, SNAPS, SNAP_INFO, type Snap } from '../lib/assistantWindow'
 import { WindowLayoutIcon } from './icons'
-import { Menu, MenuItem, usePopover } from './popover'
+import { Menu, MenuItem, useHoverOpen, usePopover } from './popover'
 
 const MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const MODIFIERS = MAC ? '⌃⌥' : 'Ctrl+Alt+'
@@ -48,6 +48,9 @@ export function AssistantSnapMenu({
   onReset: () => void
 }) {
   const popover = usePopover({ kind: 'menu' })
+  // Resting the mouse on the button opens it (never focusing a row, so typing carries on); the open delay
+  // and the held-button guard keep it shut while the pointer crosses to Mic/Close or drags the header.
+  const hover = useHoverOpen(popover, { enabled: true, initialFocus: 'selected' })
   // The menu floats over the page (the assistant would clip it), right-aligned below its button; Escape
   // closes the menu, not the assistant (whose Escape is a document listener).
   return (
@@ -61,14 +64,14 @@ export function AssistantSnapMenu({
         )}
         aria-label="Arrange assistant"
         title="Arrange assistant"
-        onClick={popover.toggle}
+        {...hover.triggerProps}
       >
         <WindowLayoutIcon className="h-4 w-4" />
       </button>
       <Menu
         {...popover.popoverProps}
+        {...hover.popoverProps}
         label="Arrange assistant"
-        initialFocus="selected"
         gap={8}
         data-assistant-snap-menu
         className="ficus-overlay w-60 rounded-lg border border-th-border bg-surface p-1 shadow-theme-lg"

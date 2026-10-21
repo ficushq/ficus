@@ -5,6 +5,8 @@ import type { Attention } from '@ficus/shared'
 import { queryKeys } from '../queryKeys'
 import { AttentionMenu } from './AttentionMenu'
 import { acquireDomHarness } from '../test/domHarness'
+import { expectHoverMenuContract } from '../test/hoverMenuContract'
+import { restPointerOn } from '../test/hoverTimer'
 
 function renderSquad(attention: Attention, subscribed = true, inline = false): string {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
@@ -240,5 +242,40 @@ describe('AttentionMenu dismissal', () => {
       dom.window.document.body.dispatchEvent(new dom.window.Event('pointerdown', { bubbles: true, cancelable: true }))
     )
     expect(details.open).toBe(false)
+  })
+})
+
+describe('AttentionMenu hover', () => {
+  test('the squad bell opens on hover; a press inside the panel pins it open', async () => {
+    const { dom, details, summary } = await mountSquadMenu()
+    await expectHoverMenuContract({
+      trigger: summary,
+      isOpen: () => details.open,
+      surface: () => dom.window.document.querySelector<HTMLElement>('[data-popover][data-state="open"]'),
+      // A press on a kind's helper text, as on its levels: the panel stays while the pointer wanders off.
+      pressInside: { target: () => openPanel(dom).querySelector<HTMLElement>('p')!, pins: true },
+    })
+  })
+
+  test('the inline expander (inside the work stream actions menu) keeps its native toggle and never opens on hover', async () => {
+    const dom = (domHarness = await acquireDomHarness({ url: 'http://localhost/' }))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+    const { root } = dom.createRoot()
+    await dom.act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <AttentionMenu target={{ kind: 'workStream', id: 'ws-1' }} inline />
+        </QueryClientProvider>
+      )
+    )
+    const details = dom.window.document.querySelector('details')!
+    await restPointerOn(details.querySelector('summary')!)
+    expect(details.open).toBe(false)
+  })
+
+  test('the compact pill is a block-level flex row, so it lines up with the header pills beside it', () => {
+    const summary = renderSquad({ decisions: 'notify', progress: 'notify' }).match(/<summary[^>]*class="([^"]*)"/)?.[1]
+    expect(summary?.split(' ')).toContain('flex')
+    expect(summary?.split(' ')).not.toContain('inline-flex')
   })
 })
