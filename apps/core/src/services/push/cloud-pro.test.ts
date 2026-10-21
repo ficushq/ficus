@@ -127,3 +127,38 @@ test('Android Cloud push uses authenticated relay delivery and never direct APNs
   expect(path).toBe('/api/cloud-mobile-pro/notifications/send')
   expect(result.ok).toBe(true)
 })
+test('a routing field the relay schema rejects is dropped, not fatal: the alert still goes out with the rest', async () => {
+  // Action Center ids are composite (`agent-question:<uuid>`, `<type>:<workStreamId>:<waitId>`), never
+  // bare UUIDs, so every question and wait alert used to die here with a ZodError before any send.
+  const questionId = '724713e4-4324-4336-a761-5ec650ae8b5e'
+  const f = fixture({
+    accepted: true,
+    notification: { type: 'open', origin: 'https://cloud.ficus.sh', eventType: 'question' },
+  })
+  const result = await sendManagedCloudAlert(
+    {
+      ...input,
+      routing: { eventType: 'question', questionId, actionId: `agent-question:${questionId}` } as never,
+    },
+    f.deps
+  )
+  expect(result).toEqual({ ok: true, status: 200 })
+  expect(f.requests[0]).toMatchObject({ routing: { eventType: 'question', questionId } })
+  expect(JSON.stringify(f.requests[0])).not.toContain('agent-question:')
+  expect(f.calls).toHaveLength(1)
+})
+
+test('Android admission drops a rejected routing field the same way', async () => {
+  const f = fixture({ accepted: true })
+  const result = await sendManagedCloudAlert(
+    {
+      ...input,
+      platform: 'android',
+      routing: { eventType: 'blocked', actionId: 'workstream-blocked:ws:wait' } as never,
+    },
+    f.deps
+  )
+  expect(result).toEqual({ ok: true, status: 0, reason: undefined })
+  expect(f.requests[0]).toMatchObject({ routing: { eventType: 'blocked' } })
+  expect(JSON.stringify(f.requests[0])).not.toContain('workstream-blocked')
+})

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { relayRoutingSchema, pushAlertText, type RelayRouting } from '@ficus/shared/push-relay'
+import { sanitizeRelayRouting } from './routing'
 import { platformRequest } from '../platform/instance-client'
 import { isPlatformManaged } from '../secrets/managed'
 import { sendApnsNotification, type ApnsEnvironment } from './apns'
@@ -74,7 +75,8 @@ export async function sendManagedCloudAlert(
       version: 1,
       bindingToken: input.bindingToken,
       eventId: randomUUID(),
-      routing: relayRoutingSchema.parse(input.routing),
+      // Field by field, like the relay path: one rejected field must not drop the whole alert.
+      routing: sanitizeRelayRouting(input.routing),
     },
     schema: admissionSchema,
   })
