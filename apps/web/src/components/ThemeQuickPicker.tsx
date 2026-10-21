@@ -107,8 +107,9 @@ export function ThemeQuickPicker({
         title="Theme"
         {...hoverOpen.triggerProps}
         className={clsx(
+          'ficus-button ficus-button-ghost',
           'hidden md:flex items-center justify-center p-2 rounded-md',
-          popover.open ? 'bg-selection text-accent-light' : 'text-muted hover:text-primary hover:bg-surface-hover'
+          popover.open && 'text-accent-light hover:text-accent-light'
         )}
       >
         <PaletteIcon className="w-5 h-5" />

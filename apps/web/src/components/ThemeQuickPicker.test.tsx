@@ -157,6 +157,20 @@ test('trigger exposes aria-haspopup/aria-expanded and opens a labelled dialog', 
   expect(dialog).not.toBeNull()
 })
 
+test('trigger uses the shared ghost button (as the Inbox icon), tinted while the flyout is open', async () => {
+  const { container } = await renderPicker()
+  const button = trigger(container)
+  // The shared classes carry the hover/focus background and the colour transition.
+  expect(button.classList.contains('ficus-button')).toBe(true)
+  expect(button.classList.contains('ficus-button-ghost')).toBe(true)
+  expect(button.classList.contains('text-accent-light')).toBe(false)
+  expect(button.classList.contains('bg-selection')).toBe(false)
+  await open(container)
+  expect(button.classList.contains('text-accent-light')).toBe(true)
+  expect(button.classList.contains('hover:text-accent-light')).toBe(true)
+  expect(button.classList.contains('bg-selection')).toBe(false)
+})
+
 test('lists all four built-ins with the stored theme checked, none other', async () => {
   const { container } = await renderPicker({ themeId: 'harbor' })
   await open(container)
@@ -628,6 +642,16 @@ describe('hover', () => {
     await pointer(flyout(container)!, 'out')
     await wait(200)
     expect(flyout(container)).toBeNull()
+  })
+
+  test('a hover-opened flyout tints the trigger as a pinned one does', async () => {
+    const { container } = await renderPicker({ themeId: 'iris' })
+    await pointer(trigger(container), 'over')
+    expect(flyout(container)).not.toBeNull()
+    expect(trigger(container).classList.contains('text-accent-light')).toBe(true)
+    await pointer(trigger(container), 'out')
+    await wait(200)
+    expect(trigger(container).classList.contains('text-accent-light')).toBe(false)
   })
 
   test('a click on the trigger pins a hover-opened flyout and focuses the current theme', async () => {
