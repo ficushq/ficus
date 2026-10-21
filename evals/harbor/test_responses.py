@@ -195,3 +195,93 @@ class ResponsesTests(unittest.TestCase):
         self.assertIsNone(
             stream_failure({"type": "response.incomplete", "response": {"usage": None}})
         )
+
+    def test_role_handoff_waits_for_receipt_without_raising_trial_cap(self):
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+
+        entered = threading.Event()
+        contended = threading.Event()
+        release = threading.Event()
+        real_lock = threading.Lock
+
+        class ObservedLock:
+            def __init__(self):
+                self.lock = real_lock()
+                self.entries = 0
+
+            def __enter__(self):
+                self.entries += 1
+                if self.entries == 2:
+                    contended.set()
+                self.lock.acquire()
+
+            def __exit__(self, *args):
+                self.lock.release()
+
+        with tempfile.TemporaryDirectory() as directory:
+            budget = Budget(
+                Path(directory) / "ledger", 30, SOL_MODEL, client_caps={"trial": 10}
+            )
+            with patch(
+                "budget_proxy.threading.Lock", side_effect=[real_lock(), ObservedLock()]
+            ):
+                cls = handler(budget, {"test-token": "trial"}, "fake-key")
+            requests = [helpers.ProxyTests().request(cls) for _ in range(2)]
+            for request in requests:
+                body = json.dumps(
+                    {"model": SOL_MODEL, "input": "test", "stream": True}
+                ).encode()
+                request.path = "/v1/responses"
+                request.headers["Content-Length"] = str(len(body))
+                request.rfile = io.BytesIO(body)
+            response = helpers.ProxyTests().upstream(200, None)
+
+            def events():
+                entered.set()
+                if not release.wait(5):
+                    raise AssertionError("Test did not release the owned response")
+                yield b'data: {"type":"response.completed","response":{"usage":{"input_tokens":100,"output_tokens":20}}}'
+                yield b""
+
+            response.iter_lines = events
+            with (
+                patch("budget_proxy.requests.post", return_value=response) as post,
+                ThreadPoolExecutor(max_workers=2) as pool,
+            ):
+                try:
+                    first = pool.submit(requests[0].do_POST)
+                    self.assertTrue(entered.wait(5))
+                    second = pool.submit(requests[1].do_POST)
+                    self.assertTrue(contended.wait(5))
+                    self.assertEqual(post.call_count, 1)
+                    self.assertEqual(budget.total(), 5.5)
+                finally:
+                    release.set()
+                first.result(timeout=5)
+                second.result(timeout=5)
+                self.assertEqual(post.call_count, 2)
+            self.assertEqual(budget.summary()["trial"]["unknown_usage"], 0)
+            self.assertLess(budget.total(), 0.01)
+            self.assertEqual(budget.client_caps["trial"], 10_000_000)
+
+    def test_refused_local_reservation_is_recorded_without_provider_call(self):
+        from run_concurrent_feature import check_provider_failures
+
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "ledger"
+            budget = Budget(ledger, 30, SOL_MODEL, client_caps={"trial": 5})
+            cls = handler(budget, {"test-token": "trial"}, "fake-key")
+            request = helpers.ProxyTests().request(cls)
+            body = json.dumps({"model": SOL_MODEL, "input": "test"}).encode()
+            request.path = "/v1/responses"
+            request.headers["Content-Length"] = str(len(body))
+            request.rfile = io.BytesIO(body)
+            with patch("budget_proxy.requests.post") as post:
+                request.do_POST()
+                post.assert_not_called()
+            self.assertEqual(budget.total(), 0)
+            self.assertEqual(budget.summary(), {})
+            check_provider_failures(ledger, ["different-trial"])
+            with self.assertRaisesRegex(ValueError, "Local budget rejection for trial"):
+                check_provider_failures(ledger, ["trial"])

@@ -50,3 +50,30 @@ amd64 emulation, setup overhead, and unrelated host load also limit timing claim
 
 Prompt and task selection frozen. Environment controls are being checked; no
 inference has started for this study.
+
+## Interrupted launch and explicit recovery
+
+The first baseline launch was stopped after a local reservation rejection at
+PSD Tools' architect-to-engineer handoff. The $10 per-trial cap could not fit
+two overlapping $5.50 worst-case reservations, even though the trial had spent
+only $0.312312. The rejection happened before an upstream request and therefore
+was not recorded among provider calls; the runner incorrectly kept waiting.
+Igel was interrupted with it. Neither trial received an official grade, and the
+candidate condition never started. The retained attempt cost is $0.944603, with
+54 receipted calls and no unresolved holds.
+
+The proxy now serializes provider requests within each trial through receipt
+settlement; different trials still execute concurrently. It neither raises caps
+nor releases unknown-usage reservations. Local rejected reservations have a
+separate event table (not fabricated usage receipts), and the runner stops on
+those events as well as upstream failures. A deterministic concurrent-handoff
+regression fails against the original proxy and passes after the fix. All 62
+offline harness tests pass. This is an evaluation transport fix, not a production
+Ficus change.
+
+The explicitly frozen `independent-review-v1-recovery-1-*-run.json` manifests use
+fresh trial/client namespaces and the same two runtime archives, prompt addition,
+tasks, grading controls, and model settings. No task-specific steering is added.
+The phase retains $5.594207 spent and the original $30 cap ($24.405793 remaining).
+These are recovery attempts; do not describe the eventual study as four
+uninterrupted first attempts. Original manifests and logs remain intact.

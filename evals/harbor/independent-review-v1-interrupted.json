@@ -1,0 +1,41 @@
+{
+  "experiment": "independent-review-v1",
+  "condition_started": "baseline",
+  "candidate_started": false,
+  "reason": "Local per-trial reservation rejected overlapping role handoff; original guard failed to surface local rejection. Operator stopped both trials. No official grades.",
+  "trials": [
+    {
+      "job": "irv1-baseline-igel-ficus-planned",
+      "task": "igel",
+      "outcome": "interrupted-infrastructure",
+      "official_grade": null,
+      "exception_type": "CancelledError",
+      "confirmed_usd": 0.632291,
+      "unknown_usage": 0,
+      "requests": 39,
+      "result_sha256": "d7b19899d1f2420849f0ef1039e84fe3e1542f3063b689cb1e1542b21ec1b451",
+      "snapshot_sha256": "58e6ee1c05ff0ccd92dea4760dd75a5c26f56b4134534e64f99f4dcf1b4609fa",
+      "execution_errors": []
+    },
+    {
+      "job": "irv1-baseline-psd-ficus-planned",
+      "task": "psd",
+      "outcome": "interrupted-infrastructure",
+      "official_grade": null,
+      "exception_type": "CancelledError",
+      "confirmed_usd": 0.312312,
+      "unknown_usage": 0,
+      "requests": 15,
+      "result_sha256": "63fc669b8ee6c5b28524edd5c6136d7ecd556b49113d8faad21a8deb0f89d0ba",
+      "snapshot_sha256": "ff85e5166628a77070a333fbfc7e15b93f63e110bffc991cbcd6359cdedafaaa",
+      "execution_errors": [
+        "OpenAI API error (403): {\"code\":\"pilot_budget_exhausted\",\"message\":\"Trial spend cap reached\"}"
+      ]
+    }
+  ],
+  "new_confirmed_usd": 0.944603,
+  "phase_exposure_usd": 5.594207,
+  "last_call_id": 337,
+  "unknown_usage_requests": 0,
+  "retained_for_recovery_accounting": true
+}

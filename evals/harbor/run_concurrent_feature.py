@@ -107,6 +107,14 @@ def summarize_batches(jobs, ledger, frozen, manifest):
 def check_provider_failures(ledger, clients):
     with sqlite3.connect(f"file:{ledger}?mode=ro", uri=True) as db:
         for client in clients:
+            rejected = db.execute(
+                "SELECT id FROM rejections WHERE client=? ORDER BY id LIMIT 1",
+                (client,),
+            ).fetchone()
+            if rejected:
+                raise ValueError(
+                    f"Local budget rejection for {client}, event {rejected[0]}"
+                )
             row = db.execute(
                 "SELECT id,failure,http_status FROM calls WHERE client=? "
                 "AND (failure IS NOT NULL OR http_status>=400) ORDER BY id LIMIT 1",

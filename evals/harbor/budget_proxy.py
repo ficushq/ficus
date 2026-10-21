@@ -72,6 +72,11 @@ class Budget:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS reconciliations(through_call INTEGER PRIMARY KEY, upper_bound INTEGER NOT NULL, confirmed INTEGER NOT NULL, raw_exposure INTEGER NOT NULL, evidence TEXT NOT NULL, recorded_at TEXT NOT NULL)"
             )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS rejections("
+                "id INTEGER PRIMARY KEY, client TEXT NOT NULL, reason TEXT NOT NULL, "
+                "recorded_at TEXT NOT NULL)"
+            )
             columns = {row[1] for row in db.execute("PRAGMA table_info(calls)")}
             for name, kind in (
                 ("http_status", "INTEGER"),
@@ -205,6 +210,14 @@ class Budget:
             db.execute(
                 "UPDATE calls SET http_status=coalesce(?,http_status), failure=coalesce(?,failure), provider_code=coalesce(?,provider_code), request_id=coalesce(?,request_id), retry_after=coalesce(?,retry_after) WHERE id=?",
                 (status, failure, provider_code, request_id, retry_after, identifier),
+            )
+
+    def note_rejection(self, client, reason):
+        # A refused reservation never reaches the provider and is not a usage receipt.
+        with sqlite3.connect(self.path) as db:
+            db.execute(
+                "INSERT INTO rejections(client,reason,recorded_at) VALUES(?,?,?)",
+                (client, reason, datetime.now(UTC).isoformat()),
             )
 
     def summary(self):
@@ -359,6 +372,8 @@ def handler(budget, tokens, api_key):
     cooldown_lock = threading.Lock()
     cooldown_until = 0.0
 
+    client_locks = {client: threading.Lock() for client in set(tokens.values())}
+
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
@@ -384,171 +399,187 @@ def handler(budget, tokens, api_key):
             )
             if self.path != endpoint:
                 return self.reply(404, {"error": {"message": "Endpoint not allowed"}})
-            try:
-                length = int(self.headers.get("Content-Length", "0"))
-                if length < 1 or length > 16_000_000:
-                    raise ValueError("Invalid request size")
-                raw = json.loads(self.rfile.read(length))
-                payload = (
-                    validate_responses(raw)
-                    if budget.model == SOL_MODEL
-                    else validate(raw, budget.model)
-                )
-                if client not in observed_clients:
-                    observed_clients.add(client)
-                    system = "\n".join(
-                        str(m.get("content", ""))
-                        for m in payload.get("messages", [])
-                        if m.get("role") in ("system", "developer")
+            # A flow may dispatch its next role before the previous HTTP stream
+            # drains and settles. Serialize only this trial, including settlement;
+            # do not raise caps, retry provider calls, or release unknown holds.
+            with client_locks[client]:
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                    if length < 1 or length > 16_000_000:
+                        raise ValueError("Invalid request size")
+                    raw = json.loads(self.rfile.read(length))
+                    payload = (
+                        validate_responses(raw)
+                        if budget.model == SOL_MODEL
+                        else validate(raw, budget.model)
                     )
-                    print(
-                        json.dumps(
-                            {
-                                "client": client,
-                                "system_prompt_chars": len(system),
-                                "squad_contract_present": "Run this task through your squad"
-                                in system,
-                            }
-                        ),
-                        flush=True,
-                    )
-                with cooldown_lock:
-                    delay = max(0, math.ceil(cooldown_until - time.monotonic()))
-                if delay:
-                    return self.reply(
-                        429,
-                        {
-                            "error": {
-                                "code": "rate_limit_backoff",
-                                "message": "Provider cooldown is active; retry after the specified delay",
-                            }
-                        },
-                        retry_after=delay,
-                    )
-                identifier = budget.reserve(client)
-            except SpendCapReached as error:
-                return self.reply(
-                    403,
-                    {
-                        "error": {
-                            "code": "pilot_budget_exhausted",
-                            "message": str(error),
-                        }
-                    },
-                )
-            except (ValueError, KeyError, TypeError, AttributeError):
-                return self.reply(
-                    400,
-                    {"error": {"message": "Invalid pilot request"}},
-                )
-            usage = None
-            started = False
-            try:
-                with requests.post(
-                    "https://api.openai.com" + endpoint,
-                    json=payload,
-                    headers={"Authorization": "Bearer " + api_key},
-                    stream=True,
-                    timeout=(15, 180),
-                ) as response:
-                    request_id = response.headers.get("x-request-id", "")[:128]
-                    retry_after = response.headers.get("Retry-After", "")[:128]
-                    budget.note(
-                        identifier,
-                        status=response.status_code,
-                        request_id=request_id,
-                        retry_after=retry_after,
-                    )
-                    if response.status_code != 200:
-                        # No usage receipt: retain the reservation, even for a known rejection.
-                        code = None
-                        try:
-                            error = response.json().get("error", {})
-                            value = (
-                                error.get("code") if isinstance(error, dict) else None
-                            )
-                            if isinstance(value, str) and re.fullmatch(
-                                r"[a-zA-Z0-9_.-]{1,80}", value
-                            ):
-                                code = value
-                        except (ValueError, AttributeError):
-                            pass
-                        budget.note(identifier, provider_code=code)
-                        delay = retry_delay(retry_after)
-                        if response.status_code == 429 and code in {
-                            "rate_limit_exceeded",
-                            "slow_down",
-                        }:
-                            delay = delay or 10
-                        if response.status_code in {429, 503} and delay:
-                            with cooldown_lock:
-                                cooldown_until = max(
-                                    cooldown_until, time.monotonic() + delay
-                                )
+                    if client not in observed_clients:
+                        observed_clients.add(client)
+                        system = "\n".join(
+                            str(m.get("content", ""))
+                            for m in payload.get("messages", [])
+                            if m.get("role") in ("system", "developer")
+                        )
+                        print(
+                            json.dumps(
+                                {
+                                    "client": client,
+                                    "system_prompt_chars": len(system),
+                                    "squad_contract_present": "Run this task through your squad"
+                                    in system,
+                                }
+                            ),
+                            flush=True,
+                        )
+                    with cooldown_lock:
+                        delay = max(0, math.ceil(cooldown_until - time.monotonic()))
+                    if delay:
                         return self.reply(
-                            response.status_code,
+                            429,
                             {
                                 "error": {
-                                    "code": code or "upstream_error",
-                                    "message": "Upstream inference error; see provider account",
+                                    "code": "rate_limit_backoff",
+                                    "message": "Provider cooldown is active; retry after the specified delay",
                                 }
                             },
                             retry_after=delay,
                         )
-                    self.send_response(200)
-                    self.send_header(
-                        "Content-Type",
-                        response.headers.get("Content-Type", "application/json"),
+                    identifier = budget.reserve(client)
+                except SpendCapReached as error:
+                    budget.note_rejection(client, str(error))
+                    return self.reply(
+                        403,
+                        {
+                            "error": {
+                                "code": "pilot_budget_exhausted",
+                                "message": str(error),
+                            }
+                        },
                     )
-                    self.end_headers()
-                    started = True
-                    disconnected = False
-                    if payload.get("stream"):
-                        for line in response.iter_lines():
-                            terminal_failure = None
-                            if line.startswith(b"data: ") and line != b"data: [DONE]":
-                                event = json.loads(line[6:])
-                                usage = (
-                                    response_usage(event)
-                                    if budget.model == SOL_MODEL
-                                    else event.get("usage")
-                                ) or usage
-                                if budget.model == SOL_MODEL:
-                                    terminal_failure = stream_failure(event)
-                                    if terminal_failure:
-                                        budget.note(
-                                            identifier,
-                                            failure="upstream_stream_error",
-                                            provider_code=terminal_failure,
+                except (ValueError, KeyError, TypeError, AttributeError):
+                    return self.reply(
+                        400,
+                        {"error": {"message": "Invalid pilot request"}},
+                    )
+                usage = None
+                started = False
+                try:
+                    with requests.post(
+                        "https://api.openai.com" + endpoint,
+                        json=payload,
+                        headers={"Authorization": "Bearer " + api_key},
+                        stream=True,
+                        timeout=(15, 180),
+                    ) as response:
+                        request_id = response.headers.get("x-request-id", "")[:128]
+                        retry_after = response.headers.get("Retry-After", "")[:128]
+                        budget.note(
+                            identifier,
+                            status=response.status_code,
+                            request_id=request_id,
+                            retry_after=retry_after,
+                        )
+                        if response.status_code != 200:
+                            # No usage receipt: retain the reservation, even for a known rejection.
+                            code = None
+                            try:
+                                error = response.json().get("error", {})
+                                value = (
+                                    error.get("code")
+                                    if isinstance(error, dict)
+                                    else None
+                                )
+                                if isinstance(value, str) and re.fullmatch(
+                                    r"[a-zA-Z0-9_.-]{1,80}", value
+                                ):
+                                    code = value
+                            except (ValueError, AttributeError):
+                                pass
+                            budget.note(identifier, provider_code=code)
+                            delay = retry_delay(retry_after)
+                            if response.status_code == 429 and code in {
+                                "rate_limit_exceeded",
+                                "slow_down",
+                            }:
+                                delay = delay or 10
+                            if response.status_code in {429, 503} and delay:
+                                with cooldown_lock:
+                                    cooldown_until = max(
+                                        cooldown_until, time.monotonic() + delay
+                                    )
+                            return self.reply(
+                                response.status_code,
+                                {
+                                    "error": {
+                                        "code": code or "upstream_error",
+                                        "message": "Upstream inference error; see provider account",
+                                    }
+                                },
+                                retry_after=delay,
+                            )
+                        self.send_response(200)
+                        self.send_header(
+                            "Content-Type",
+                            response.headers.get("Content-Type", "application/json"),
+                        )
+                        self.end_headers()
+                        started = True
+                        disconnected = False
+                        if payload.get("stream"):
+                            for line in response.iter_lines():
+                                terminal_failure = None
+                                if (
+                                    line.startswith(b"data: ")
+                                    and line != b"data: [DONE]"
+                                ):
+                                    event = json.loads(line[6:])
+                                    usage = (
+                                        response_usage(event)
+                                        if budget.model == SOL_MODEL
+                                        else event.get("usage")
+                                    ) or usage
+                                    if budget.model == SOL_MODEL:
+                                        terminal_failure = stream_failure(event)
+                                        if terminal_failure:
+                                            budget.note(
+                                                identifier,
+                                                failure="upstream_stream_error",
+                                                provider_code=terminal_failure,
+                                            )
+                                if not disconnected:
+                                    try:
+                                        self.wfile.write(
+                                            line
+                                            + (b"\n\n" if terminal_failure else b"\n")
                                         )
-                            if not disconnected:
-                                try:
-                                    self.wfile.write(
-                                        line + (b"\n\n" if terminal_failure else b"\n")
-                                    )
-                                    self.wfile.flush()
-                                except OSError:
-                                    # The provider can finish billing after the client leaves.
-                                    # Drain to the final usage chunk rather than losing evidence.
-                                    disconnected = True
-                                    budget.note(
-                                        identifier, failure="client_disconnected"
-                                    )
-                            if terminal_failure:
-                                # Forward the complete SSE event, then close the failed
-                                # response. Without a usage receipt its hold stays intact.
-                                break
-                    else:
-                        data = response.json()
-                        usage = data.get("usage")
-                        self.wfile.write(json.dumps(data).encode())
-            except (requests.RequestException, OSError, ValueError, TypeError) as error:
-                budget.note(identifier, failure=type(error).__name__)
-                if not started:
-                    self.reply(502, {"error": {"message": "Inference unavailable"}})
-            finally:
-                if usage:
-                    budget.settle(identifier, usage)
+                                        self.wfile.flush()
+                                    except OSError:
+                                        # The provider can finish billing after the client leaves.
+                                        # Drain to the final usage chunk rather than losing evidence.
+                                        disconnected = True
+                                        budget.note(
+                                            identifier, failure="client_disconnected"
+                                        )
+                                if terminal_failure:
+                                    # Forward the complete SSE event, then close the failed
+                                    # response. Without a usage receipt its hold stays intact.
+                                    break
+                        else:
+                            data = response.json()
+                            usage = data.get("usage")
+                            self.wfile.write(json.dumps(data).encode())
+                except (
+                    requests.RequestException,
+                    OSError,
+                    ValueError,
+                    TypeError,
+                ) as error:
+                    budget.note(identifier, failure=type(error).__name__)
+                    if not started:
+                        self.reply(502, {"error": {"message": "Inference unavailable"}})
+                finally:
+                    if usage:
+                        budget.settle(identifier, usage)
 
     return Handler
 
