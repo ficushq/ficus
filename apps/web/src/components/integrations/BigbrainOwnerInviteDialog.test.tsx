@@ -75,7 +75,7 @@ describe('BigbrainOwnerInviteDialog', () => {
     expect(text).toContain('reads and writes everything and manages members')
     expect(text).toContain('Anyone holding the link gets that access')
     expect(text).toContain('Everyone who connects this way writes as the same owner')
-    expect(text).toContain('invite them as members from the BigBrain app')
+    expect(text).toContain('invite them as members instead')
     expect(text).toContain('Ficus records who created each link')
     expect(text).not.toMatch(/\byour?\b/i)
     await harness.act(async () => {

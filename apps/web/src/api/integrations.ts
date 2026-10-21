@@ -225,6 +225,75 @@ export const deleteManagedBigbrainVault = (
   input: { requestId: string; expectedGeneration: number; confirmedVaultId: string; confirmedName: string },
   fetcher: ApiFetcher = apiFetch
 ) => fetcher<ManagedBigbrainVault>(vaultPath(vaultId), { method: 'DELETE', body: JSON.stringify(input) })
+/** One member of a managed vault (display fields only). `system` members are never editable. */
+export interface ManagedBigbrainMember {
+  handle: string
+  displayName: string
+  role: 'owner' | 'member'
+  access: 'read' | 'write' | 'none'
+  /** `pending`: added by email in the BigBrain app, not signed in yet. */
+  status: 'active' | 'pending' | 'removed'
+  createdAt: string | null
+  system: 'owner' | 'reader' | null
+  editable: boolean
+}
+export type ManagedBigbrainMemberAccess = 'read' | 'write'
+/** A pending member invitation, without its link. */
+export interface ManagedBigbrainPendingInvite {
+  inviteId: string
+  displayName: string
+  access: ManagedBigbrainMemberAccess
+  expiresAt: string
+}
+export interface ManagedBigbrainMembers {
+  members: ManagedBigbrainMember[]
+  invites: ManagedBigbrainPendingInvite[]
+  membersTruncated: boolean
+  invitesTruncated: boolean
+}
+/** SECRET: a single-use member invite link. Keep in component state only; never cache or log. */
+export interface ManagedBigbrainMemberInvite extends ManagedBigbrainPendingInvite {
+  inviteUrl: string
+}
+type MemberFence = { requestId: string; expectedGeneration: number }
+export const listManagedBigbrainMembers = (vaultId: string, fetcher: ApiFetcher = apiFetch) =>
+  fetcher<ManagedBigbrainMembers>(`${vaultPath(vaultId)}/members`)
+export const createManagedBigbrainMemberInvite = (
+  vaultId: string,
+  input: MemberFence & { displayName: string; access: ManagedBigbrainMemberAccess },
+  fetcher: ApiFetcher = apiFetch
+) =>
+  fetcher<ManagedBigbrainMemberInvite>(`${vaultPath(vaultId)}/invites`, { method: 'POST', body: JSON.stringify(input) })
+export const cancelManagedBigbrainMemberInvite = (
+  vaultId: string,
+  inviteId: string,
+  input: MemberFence,
+  fetcher: ApiFetcher = apiFetch
+) =>
+  fetcher<{ inviteId: string; cancelled: true }>(
+    `${vaultPath(vaultId)}/invites/${encodeURIComponent(inviteId)}/cancel`,
+    { method: 'POST', body: JSON.stringify(input) }
+  )
+export const setManagedBigbrainMemberAccess = (
+  vaultId: string,
+  handle: string,
+  input: MemberFence & { access: ManagedBigbrainMemberAccess },
+  fetcher: ApiFetcher = apiFetch
+) =>
+  fetcher<ManagedBigbrainMember>(`${vaultPath(vaultId)}/members/${encodeURIComponent(handle)}/access`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+export const removeManagedBigbrainMember = (
+  vaultId: string,
+  handle: string,
+  input: MemberFence,
+  fetcher: ApiFetcher = apiFetch
+) =>
+  fetcher<ManagedBigbrainMember>(`${vaultPath(vaultId)}/members/${encodeURIComponent(handle)}/remove`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
 export const createManagedBigbrainOwnerInvite = (
   vaultId: string,
   input: { requestId: string; expectedGeneration: number },

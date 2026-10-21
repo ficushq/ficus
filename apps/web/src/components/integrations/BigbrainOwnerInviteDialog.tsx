@@ -103,8 +103,8 @@ export function BigbrainOwnerInviteDialog({
         </p>
         <p className="text-xs text-muted">
           Everyone who connects this way writes as the same owner. To give people their own name in the vault, invite
-          them as members from the BigBrain app; Ficus cannot add members. Ficus records who created each link and
-          itself only reads this vault.
+          them as members instead (Members, then Invite member). Ficus records who created each link and itself only
+          reads this vault.
         </p>
         {!invite && (
           <button

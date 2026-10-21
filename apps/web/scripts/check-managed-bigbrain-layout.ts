@@ -78,6 +78,18 @@ const scenarios: Record<string, ManagedBigbrainVault[]> = {
     }),
   ],
 }
+const SYNTHETIC_MEMBER_LINK = `https://bb-${'1'.repeat(32)}.vaults.example.test/invite#SYNTHETIC-member-preview-not-a-secret-000`
+const rosterMember = (handle: string, displayName: string, patch: object = {}) => ({
+  handle,
+  displayName,
+  role: 'member',
+  access: 'write',
+  status: 'active',
+  createdAt: '2026-10-20T12:00:00.000Z',
+  system: null,
+  editable: true,
+  ...patch,
+})
 const SYNTHETIC_LINK = `https://bb-${'1'.repeat(32)}.vaults.example.test/invite#SYNTHETIC-preview-link-not-a-secret-000000`
 
 const server = await createServer({
@@ -107,6 +119,26 @@ const measurements: unknown[] = []
 /** Synthetic API with mutable state, per page. */
 async function mockApi(page: Page, initial: ManagedBigbrainVault[]) {
   let vaults = initial.map((v) => ({ ...v }))
+  let members = [
+    rosterMember('ficus', 'Ficus', { role: 'owner', system: 'owner', editable: false, createdAt: null }),
+    rosterMember('ficus-reader', 'Ficus', { access: 'read', system: 'reader', editable: false }),
+    rosterMember('invite-0f3c9a7d2b1e4c5a6f7e8d9c', 'Grace Hopper'),
+    rosterMember('invite-a1b2c3d4e5f60718293a4b5c', 'Katherine Johnson-Okonkwo (Research operations lead)', {
+      access: 'read',
+    }),
+    rosterMember('invite-9e8d7c6b5a4f3e2d1c0b9a8f', 'lin.chen.with.a.very.long.address@example.test', {
+      status: 'pending',
+      access: 'read',
+    }),
+  ]
+  let invites = [
+    {
+      inviteId: 'c'.repeat(24),
+      displayName: 'Ada Lovelace',
+      access: 'write',
+      expiresAt: new Date(Date.now() + 20 * 3_600_000).toISOString(),
+    },
+  ]
   const attached = new Set(vaults.filter((v) => v.connectionId && v.vaultId === RESEARCH).map((v) => v.connectionId!))
   await page.unroute('**/api/**').catch(() => {})
   await page.route('**/api/**', async (route) => {
@@ -129,6 +161,39 @@ async function mockApi(page: Page, initial: ManagedBigbrainVault[]) {
       })
       vaults = [...vaults, created]
       return route.fulfill({ status: 201, json: created })
+    }
+    const memberMatch = url.pathname.match(
+      /^\/api\/integrations\/providers\/bigbrain\/shared-vaults\/[0-9a-f-]{36}\/(members|invites)(?:\/([a-z0-9._-]+)\/(access|remove|cancel))?$/
+    )
+    if (memberMatch) {
+      const [, kind, target, action] = memberMatch
+      if (kind === 'members' && !target && method === 'GET')
+        return route.fulfill({ json: { members, invites, membersTruncated: false, invitesTruncated: false } })
+      if (kind === 'invites' && !target && method === 'POST') {
+        const created = {
+          inviteId: 'd'.repeat(24),
+          displayName: body.displayName,
+          access: body.access,
+          expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+        }
+        invites = [...invites, created]
+        return route.fulfill({ status: 201, json: { ...created, inviteUrl: SYNTHETIC_MEMBER_LINK } })
+      }
+      if (action === 'cancel') {
+        invites = invites.filter((i) => i.inviteId !== target)
+        return route.fulfill({ json: { inviteId: target, cancelled: true } })
+      }
+      if (action === 'access' || action === 'remove') {
+        const updated = {
+          ...members.find((m) => m.handle === target)!,
+          ...(action === 'access' ? { access: body.access } : { status: 'removed', editable: false }),
+        }
+        members =
+          action === 'remove'
+            ? members.filter((m) => m.handle !== target)
+            : members.map((m) => (m.handle === target ? updated : m))
+        return route.fulfill({ json: updated })
+      }
     }
     const match = url.pathname.match(
       /^\/api\/integrations\/providers\/bigbrain\/shared-vaults\/([0-9a-f-]{36})(\/[a-z-]+)?$/
@@ -271,6 +336,35 @@ try {
       await page.getByLabel('Owner device link').waitFor()
       assert.equal(await page.getByLabel('Owner device link').inputValue(), SYNTHETIC_LINK)
       await capture(page, 'owner-link-created', width, appearance)
+
+      // Members: system members, a long name, a pending email member and a pending invite.
+      await mockApi(page, scenarios.one!)
+      await open(page, width, appearance)
+      await row('Research notes').getByRole('button', { name: 'Members' }).first().click()
+      await page.getByText('Katherine Johnson-Okonkwo (Research operations lead)', { exact: true }).waitFor()
+      await capture(page, 'members-open', width, appearance)
+      await page.getByRole('button', { name: 'Remove Grace Hopper' }).click()
+      await capture(page, 'member-remove-confirm', width, appearance)
+      // Armed, the button keeps its row-specific accessible name and shows "Confirm remove".
+      await page.getByRole('button', { name: 'Remove Grace Hopper' }).getByText('Confirm remove').waitFor()
+      await page.getByRole('button', { name: 'Remove Grace Hopper' }).click()
+      await page.getByText('Grace Hopper', { exact: true }).waitFor({ state: 'detached' })
+      await page.getByLabel('Access for Katherine Johnson-Okonkwo (Research operations lead)').selectOption('write')
+
+      // Invite a member with a synthetic link.
+      await page.getByRole('button', { name: 'Invite member' }).click()
+      await page.getByRole('dialog').waitFor()
+      await page.getByRole('dialog').getByLabel('Name', { exact: true }).fill('Mary Jackson')
+      await page.getByRole('dialog').getByLabel('Read and write').check()
+      await capture(page, 'member-invite-before', width, appearance)
+      await page.getByRole('button', { name: 'Create invite link' }).click()
+      await page.getByLabel('Member invite link').waitFor()
+      assert.equal(await page.getByLabel('Member invite link').inputValue(), SYNTHETIC_MEMBER_LINK)
+      await capture(page, 'member-invite-created', width, appearance)
+      await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click()
+      await page.getByRole('dialog').waitFor({ state: 'detached' })
+      await page.getByText('Mary Jackson', { exact: true }).waitFor()
+      await capture(page, 'members-after-invite', width, appearance)
 
       // Squad multi-vault attach: attach the second vault alongside the first.
       await mockApi(

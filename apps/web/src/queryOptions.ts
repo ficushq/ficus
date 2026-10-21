@@ -1068,6 +1068,7 @@ import {
   getSquadIntegrationSelection,
   listIntegrationCatalog,
   listIntegrationPool,
+  listManagedBigbrainMembers,
 } from './api/integrations'
 export const integrationQueries = {
   /** Polls only while a vault is mid-transition; settled vaults do not refetch on a timer. */
@@ -1079,6 +1080,13 @@ export const integrationQueries = {
         query.state.data?.some((vault) => ['requested', 'provisioning', 'deleting'].includes(vault.state))
           ? 5_000
           : false,
+    }),
+  /** Loaded only when a manager opens a vault's members; each load runs the server's helper. */
+  managedBigbrainMembers: (vaultId: string) =>
+    queryOptions({
+      queryKey: integrationQueryKeys.managedBigbrainMembers(vaultId),
+      queryFn: () => listManagedBigbrainMembers(vaultId),
+      staleTime: 30_000,
     }),
   localBindings: () =>
     queryOptions({ queryKey: integrationQueryKeys.localBindings(), queryFn: () => getBigbrainLocalBindings() }),

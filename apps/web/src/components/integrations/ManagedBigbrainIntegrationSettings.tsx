@@ -16,6 +16,7 @@ import { Badge, type BadgeColor } from '../Badge'
 import { ConfirmButton } from '../ConfirmButton'
 import { LoadingContent, LoadingSurface, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
 import { BigbrainOwnerInviteDialog } from './BigbrainOwnerInviteDialog'
+import { ManagedBigbrainMembers } from './ManagedBigbrainMembers'
 
 const STATE_LABEL: Record<ManagedBigbrainVault['state'], [string, BadgeColor]> = {
   requested: ['Requested', 'queue'],
@@ -73,9 +74,9 @@ export function ManagedBigbrainIntegrationSettings({ canWrite }: { canWrite: boo
       <p className="mt-1 text-xs text-muted">
         Shared vaults run on this Ficus server and belong to it, not to one person. In BigBrain each new vault&apos;s
         owner is <span className="font-mono">ficus</span>: people who manage BigBrain here connect devices as a
-        vault&apos;s owner and invite other members from the BigBrain app, where they write. Ficus agents in attached
-        squads can only read. Each vault has its own storage, identity and credentials, isolated from the other vaults.
-        Ficus itself can access every shared vault on this server.
+        vault&apos;s owner and invite members, who write from the BigBrain app under their own names. Ficus agents in
+        attached squads can only read. Each vault has its own storage, identity and credentials, isolated from the other
+        vaults. Ficus itself can access every shared vault on this server.
       </p>
       <div className="mt-4">
         <LoadingContent
@@ -165,6 +166,7 @@ function VaultRow({
   const [renaming, setRenaming] = useState<string | null>(null)
   const [confirmName, setConfirmName] = useState<string | null>(null)
   const [inviteOpen, setInviteOpen] = useState(false)
+  const [membersOpen, setMembersOpen] = useState(false)
   const fence = () => ({ requestId: crypto.randomUUID(), expectedGeneration: vault.desiredGeneration })
   // Each row owns its mutations: a slow response for one vault never touches another row.
   const operation = useMutation({
@@ -206,7 +208,7 @@ function VaultRow({
           {vault.ownerLinksAvailable
             ? 'People who manage BigBrain here can connect a device as this owner.'
             : 'Owner device links are no longer available for this vault; existing owner devices keep working.'}{' '}
-          Other members are invited from the BigBrain app.
+          Members invited here write under their own names.
         </p>
       )}
       {vault.backup === 'excluded' && vault.state !== 'deleted' && (
@@ -230,6 +232,16 @@ function VaultRow({
                 Connect owner device
               </button>
             )}
+          {(vault.state === 'ready' || vault.state === 'degraded') && (
+            <button
+              type="button"
+              aria-expanded={membersOpen}
+              className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5"
+              onClick={() => setMembersOpen((open) => !open)}
+            >
+              {membersOpen ? 'Hide members' : 'Members'}
+            </button>
+          )}
           {canWrite && (vault.state === 'failed' || vault.retryable) && (
             <button
               type="button"
@@ -374,6 +386,9 @@ function VaultRow({
             </button>
           </div>
         </div>
+      )}
+      {canWrite && membersOpen && (vault.state === 'ready' || vault.state === 'degraded') && (
+        <ManagedBigbrainMembers vault={vault} onVaultChanged={onChanged} />
       )}
       {feedback && (
         <p
