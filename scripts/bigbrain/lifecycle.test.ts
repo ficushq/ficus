@@ -361,6 +361,32 @@ test('owner links are issued only after the vault route and Caddy site are publi
     ],
   })
   expect(await f.send(invite())).toMatchObject({ ok: false, code: 'maintenance', retryable: true })
+  // Published and ready, but the RUNNING gateway does not serve it (the stale-release outage):
+  // refused before any link exists, and the check is scoped to this vault.
+  const ready = {
+    contractVersion: 1,
+    tenantId: TENANT,
+    physicalHostBinding: BINDING,
+    hostEpoch: 1,
+    hostState: 'active',
+    routes: [
+      {
+        vaultId: A,
+        upstreamVaultId: UPSTREAM,
+        origin: `https://bb-${A.replaceAll('-', '')}.example.com`,
+        state: 'ready',
+      },
+    ],
+  }
+  const checked: string[] = []
+  f.deps.ingress = async () => ready
+  ;(f.deps as { gatewayServes?: unknown }).gatewayServes = async (_m: unknown, vaultId: string) => {
+    checked.push(vaultId)
+    throw new Error('upstream_unavailable')
+  }
+  expect(await f.send(invite())).toMatchObject({ ok: false, code: 'upstream_unavailable', retryable: true })
+  expect(checked).toEqual([A])
+  delete (f.deps as { gatewayServes?: unknown }).gatewayServes
   // Anything that is not a valid manifest never fails open.
   f.deps.ingress = async () => ({ routes: 'nope' })
   expect(await f.send(invite())).toMatchObject({ ok: false, code: 'operation_failed' })

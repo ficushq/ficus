@@ -251,6 +251,26 @@ the vault's squad attachments return when it does.
   reports that as `null is not an object (evaluating 'result.vault')`. Publishing the sites, and
   creating an owner device link, fail with `tls_unavailable` instead of leaving a vault
   unreachable. A request that never reached the vault does not use up its device link.
+- Installing or upgrading the runtime **restarts** the gateway and succeeds only when the new
+  process answers from the published routes and runs the installed release. `systemctl enable
+--now` and `start` leave a running process alone. An earlier installer used them, so after an
+  upgrade the gateway kept running the previous release. That release accepted only
+  `bb-<32 hex>` addresses, rejected the route list once it held a tenant-prefixed vault, and
+  answered every vault host `503 {"code":"not_installed"}` while its unit was `active`. The
+  BigBrain app reports any failed redeem as "Invitation is expired, already used, or
+  unavailable". Vault services stay on the release recorded when the vault was created, so an
+  upgrade does not restart them.
+- The probe (Core's and Platform's) reports the feature available only when the running
+  processes serve. The gateway's main process must run the installed release, and each ready
+  vault's process must run its recorded release. The gateway must answer an unrouted host with
+  its own `404` (so it has loaded the routes), and a credential-free `/v1/whoami` must return
+  `401` with `BigBrain-Protocol` through the gateway for every ready vault. Otherwise the reason
+  is `upstream_unavailable`. Creating an owner device link runs the same check for its vault
+  first and fails with `upstream_unavailable` instead of issuing a link that cannot be redeemed.
+- Core answers any vault host name with `404 {"code":"not_found"}` before its own session or
+  identity handling. Caddy sends only Core's exact host to Core, so this is a second guard.
+- A host upgraded from an affected release recovers through the normal upgrade. The installer
+  restarts the stale gateway onto the new release. No manual host edits are needed.
 
 ## Current limits
 

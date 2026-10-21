@@ -109,9 +109,15 @@ export const runPrivateCommand: PrivateCommandRunner = async (argv, options = {}
 export async function startServiceDeliberately(
   run: PrivateCommandRunner,
   unit: string,
-  options: { enable?: boolean } = {}
+  options: { enable?: boolean; restart?: boolean } = {}
 ): Promise<boolean> {
   await run(['/usr/bin/systemctl', 'reset-failed', unit])
+  if (options.restart) {
+    // `start`/`enable --now` leave an already-running process alone: after an upgrade it would keep
+    // serving the previous release's code. `restart` also starts a stopped unit.
+    if (options.enable && (await run(['/usr/bin/systemctl', 'enable', unit])).code !== 0) return false
+    return (await run(['/usr/bin/systemctl', 'restart', unit], { timeoutMs: 45000 })).code === 0
+  }
   const start = options.enable ? ['enable', '--now', unit] : ['start', unit]
   return (await run(['/usr/bin/systemctl', ...start], { timeoutMs: 45000 })).code === 0
 }

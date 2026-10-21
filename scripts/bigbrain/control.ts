@@ -21,6 +21,7 @@ import { reconcileMaintenance, releaseManagedBackup, stageManagedBackup } from '
 import { deleteVaultResources, type DeleteOptions } from './delete'
 import { readStagedArchive } from './restore'
 import { publishIngress } from './ingress'
+import { readPublishedManifest, verifyHostServing } from './gateway-probe'
 import { drainStages } from './diagnostics'
 import { executeRestore, type RestoreDeps } from './restore-exec'
 import { createVault, ownerInvite, reconnectRead, renameVault, revokeRead, type LifecycleDeps } from './lifecycle'
@@ -44,6 +45,9 @@ export interface ControlDeps
   verifyStorage?: (record: ControlReceipt) => Promise<void>
   /** Re-derive routes + Caddy sites from current state (default publishIngress). */
   ingress?: () => Promise<unknown>
+  /** Probe-time proof the running gateway and vault processes serve the published routes
+   * (default: verifyHostServing over procfs and the gateway socket). Throws when they do not. */
+  gatewayServes?: () => Promise<void>
 }
 
 async function present(path: string): Promise<boolean> {
@@ -111,6 +115,24 @@ async function capabilities(host: InstalledHost | null, tenantId: string, deps: 
   else if ((await run(['/usr/bin/systemctl', 'is-enabled', '--quiet', 'ficus-backup.timer'])).code !== 0)
     reasonCode = 'backup_unavailable'
   else if ((await run(['/usr/bin/systemctl', 'is-active', '--quiet', GATEWAY_UNIT])).code !== 0)
+    reasonCode = 'upstream_unavailable'
+  // An active unit is not a serving gateway: prove the running processes are the bound releases,
+  // the gateway loaded the manifest, and every ready vault answers through it.
+  else if (
+    !(await (
+      deps.gatewayServes ??
+      (async () =>
+        verifyHostServing({
+          artifactDigest: host.artifactDigest,
+          records: await records(deps.root ?? BIGBRAIN_STATE_ROOT, deps.uid ?? 0),
+          manifest: () => readPublishedManifest(deps.etc ?? BIGBRAIN_ETC, deps.uid ?? 0),
+          run,
+        }))
+    )().then(
+      () => true,
+      () => false
+    ))
+  )
     reasonCode = 'upstream_unavailable'
   return {
     ...base,

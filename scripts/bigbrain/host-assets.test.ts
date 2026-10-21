@@ -19,6 +19,7 @@ async function fixture(account: 'absent' | 'ours' | 'foreign' = 'absent') {
   const etc = join(outer, 'etc')
   await mkdir(etc, { mode: 0o700 })
   const calls: string[][] = []
+  const serving: string[] = []
   let exists = account !== 'absent'
   const run: PrivateCommandRunner = async (argv) => {
     calls.push(argv)
@@ -38,8 +39,9 @@ async function fixture(account: 'absent' | 'ours' | 'foreign' = 'absent') {
     unitDirectory: join(outer, 'units'),
     launcher: join(outer, 'libexec', 'ficus-bigbrainctl'),
     tmpfilesDirectory: join(outer, 'tmpfiles.d'),
+    gatewayServing: async () => void serving.push(String(calls.length)),
   }
-  return { outer, opts, calls }
+  return { outer, opts, calls, serving }
 }
 
 test('installs the release-bound root launcher (0750), slice and gateway unit, creates the gateway account once and starts the gateway', async () => {
@@ -53,7 +55,13 @@ test('installs the release-bound root launcher (0750), slice and gateway unit, c
   expect((await stat(join(f.opts.unitDirectory, 'ficus-bigbrain-gateway.service'))).mode & 0o777).toBe(0o644)
   expect((await stat(join(f.opts.unitDirectory, 'ficus-bigbrain.slice'))).mode & 0o777).toBe(0o644)
   expect(f.calls.filter((c) => c[0] === '/usr/sbin/useradd')).toHaveLength(1)
-  expect(f.calls.at(-1)).toEqual(['/usr/bin/systemctl', 'enable', '--now', 'ficus-bigbrain-gateway.service'])
+  // Restarted, not `enable --now`: a gateway already running the previous release must be replaced.
+  expect(f.calls.slice(-2)).toEqual([
+    ['/usr/bin/systemctl', 'enable', 'ficus-bigbrain-gateway.service'],
+    ['/usr/bin/systemctl', 'restart', 'ficus-bigbrain-gateway.service'],
+  ])
+  // ...and install succeeds only after the restarted process proved it serves (after the restart).
+  expect(f.serving).toEqual([String(f.calls.length)])
   // Socket parents are declared for boot and created before the gateway first starts.
   expect(await readFile(join(f.opts.tmpfilesDirectory, 'ficus-bigbrain.conf'), 'utf8')).toContain(
     'd /run/ficus-bigbrain/gateway 2750 ficus-bb-gateway caddy -'
@@ -61,9 +69,26 @@ test('installs the release-bound root launcher (0750), slice and gateway unit, c
   const order = f.calls.map((c) => c.slice(0, 2).join(' '))
   expect(order.indexOf('/usr/bin/systemd-tmpfiles --create')).toBeLessThan(order.indexOf('/usr/bin/systemctl enable'))
   // Upgrade to a new release replaces exactly the recorded files; the account is not recreated.
+  const before = f.calls.length
   await installHostAssets(D2, f.opts)
   expect(await readFile(f.opts.launcher, 'utf8')).toContain('b'.repeat(64))
   expect(f.calls.filter((c) => c[0] === '/usr/sbin/useradd')).toHaveLength(1)
+  // The upgrade restarts the RUNNING gateway onto release B.
+  expect(f.calls.slice(before).at(-1)).toEqual(['/usr/bin/systemctl', 'restart', 'ficus-bigbrain-gateway.service'])
+  expect(f.serving).toHaveLength(2)
+})
+
+test('install fails closed when the restarted gateway does not serve the published manifest', async () => {
+  const f = await fixture()
+  f.opts.gatewayServing = async () => {
+    throw new Error('upstream_unavailable')
+  }
+  await expect(installHostAssets(D1, f.opts)).rejects.toThrow('upstream_unavailable')
+  const g = await fixture()
+  const run = g.opts.run
+  g.opts.run = async (argv, options) => (argv[1] === 'restart' ? { code: 1, stdout: '' } : run(argv, options))
+  await expect(installHostAssets(D1, g.opts)).rejects.toThrow('operation_failed')
+  expect(g.serving).toHaveLength(0)
 })
 
 test('a foreign or edited launcher/unit is never overwritten', async () => {

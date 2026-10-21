@@ -3,7 +3,8 @@ import { join } from 'node:path'
 import { managedBigbrainReadHandoffSchema, type ManagedBigbrainHostRequest } from '@ficus/shared/managed-bigbrain'
 import { escrowSchema, initializeVaultOwner, prepareReadCredential } from './bootstrap'
 import type { InstalledHost } from './control-input'
-import { gatewayManifestSchema } from './gateway-policy'
+import { gatewayManifestSchema, type GatewayManifest } from './gateway-policy'
+import { verifyGatewayServes } from './gateway-probe'
 import { cachedOwnerAppLink, ownerInviteCacheSchema } from './invite-cache'
 import { NativeVaultAdmin } from './native-admin'
 import { BIGBRAIN_STATE_ROOT, managedPaths } from './paths'
@@ -33,6 +34,8 @@ export interface LifecycleDeps extends ProvisionDeps {
     record: ControlReceipt,
     window: { issuedAt: string; expiresAt: string }
   ) => Promise<{ secret: string; expiresAt: string }>
+  /** Proof the RUNNING gateway serves this vault's published route (default: verifyGatewayServes). */
+  gatewayServes?: (manifest: GatewayManifest, vaultId: string) => Promise<void>
   now?: () => number
 }
 type Request<A extends ManagedBigbrainHostRequest['action']> = Extract<ManagedBigbrainHostRequest, { action: A }>
@@ -283,6 +286,11 @@ export async function ownerInvite(request: Request<'owner-invite'>, deps: Lifecy
     if (!published.success) throw new Error('operation_failed')
     if (!published.data.routes.some((route) => route.vaultId === request.vaultId && route.state === 'ready'))
       throw new Error('maintenance')
+    // Published is not served: a gateway that cannot load this manifest answers 503 for the link.
+    await (deps.gatewayServes ?? ((m, id) => verifyGatewayServes(m, { vaultIds: [id] })))(
+      published.data,
+      request.vaultId
+    )
   }
   const issue =
     deps.issueAppLink ??
