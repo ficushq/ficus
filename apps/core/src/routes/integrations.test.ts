@@ -7,7 +7,11 @@ import { csrfProtection } from '../middleware/csrf'
 import { BigbrainSetupError } from '../services/integrations/bigbrain/local-setup'
 import { managedVaultStore } from '../services/integrations/bigbrain/managed/store'
 import type { Identity } from '../services/rbac'
-import { createIntegrationsRouter, createSquadIntegrationsRouter } from './integrations'
+import {
+  BIGBRAIN_EXECUTE_ENVIRONMENT_GUIDANCE,
+  createIntegrationsRouter,
+  createSquadIntegrationsRouter,
+} from './integrations'
 import type { SafeOAuthAppSettings } from '../services/integrations/authorization/client-credentials'
 import { AuthorizationFlowError } from '../services/integrations/authorization/service'
 import type { OAuthAuthorizationPurpose } from '../services/integrations/authorization/state-repository'
@@ -453,6 +457,47 @@ describe('integration routes', () => {
     })
     expect(response.status).toBe(409)
     expect((await response.json()).error).toContain('No usable GitHub account is configured for this squad')
+  })
+
+  test('missing Linear account keeps the existing configuration guidance', async () => {
+    const { app, calls } = createApp({
+      type: 'system',
+      systemTokenId: 'exec-test-linear',
+      name: 'test',
+      scopes: ['integrations:use'],
+    })
+    calls.executionEnvironment.mockImplementation(async () => null as never)
+    const response = await app.request(`/api/squads/${squadId}/integrations/linear/execute-environment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    expect(response.status).toBe(409)
+    expect((await response.json()).error).toBe(
+      'No usable linear account is configured for this squad. Enable the integration and connect an account in Settings → Integrations, then check this squad’s integration settings.'
+    )
+  })
+
+  test('BigBrain execute-environment points agents at the bigbrain_* tools, never a default account', async () => {
+    const { app, calls } = createApp({
+      type: 'system',
+      systemTokenId: 'exec-test-bigbrain',
+      name: 'test',
+      scopes: ['integrations:use'],
+    })
+    calls.executionEnvironment.mockImplementation(async () => ({ SHOULD_NOT: 'leak' }) as never)
+    const response = await app.request(`/api/squads/${squadId}/integrations/bigbrain/execute-environment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    expect(response.status).toBe(409)
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    const { error } = await response.json()
+    expect(error).toBe(BIGBRAIN_EXECUTE_ENVIRONMENT_GUIDANCE)
+    expect(error).toContain('bigbrain_* tools')
+    expect(error).not.toMatch(/default|connect an account|No usable/i)
+    expect(calls.executionEnvironment).not.toHaveBeenCalled()
   })
 
   test('channel credentials require provider-specific integration access, not legacy secret or channel access', async () => {

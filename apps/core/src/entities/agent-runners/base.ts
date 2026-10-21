@@ -5,7 +5,13 @@ import { readSessionDeliveryReceipts } from '../../services/agent/session-delive
 import { existsSync, readFileSync } from 'fs'
 import { markExecutionStartupFailure } from '../../services/execution/startup-retry'
 import { join, resolve } from 'path'
-import { type SessionUsage, type MessageMetadata, type AgentType, type Message } from '@ficus/shared'
+import {
+  type SessionUsage,
+  type MessageMetadata,
+  type AgentType,
+  type AgentTypeIntegrationPolicyV1,
+  type Message,
+} from '@ficus/shared'
 import { Image, type ImageContent } from '../Image'
 import type { AgentSessionEvent } from '@earendil-works/pi-coding-agent'
 import type { StreamBuffer } from '../../services/streaming/buffer'
@@ -59,8 +65,15 @@ import { Skill } from '../Skill'
 import { createCodingTools, isHostRuntime } from '../../services/sandbox'
 import { createSandboxStatusTool } from '../../tools/sandbox-status'
 import { createShortTermMemoryTools, createAgentShortTermMemoryStorage } from '../../tools/short-term-memory'
-import { BIGBRAIN_TOOL_NAMES, type BigbrainToolContext } from '../../services/integrations/bigbrain/tools'
+import {
+  BIGBRAIN_DROP_TOOL_NAME,
+  BIGBRAIN_READ_TOOL_NAMES,
+  BIGBRAIN_TOOL_NAMES,
+  type BigbrainTool,
+  type BigbrainToolContext,
+} from '../../services/integrations/bigbrain/tools'
 import { BIGBRAIN_SHARED_TOOL_NAMES } from '../../services/integrations/bigbrain/shared-tools'
+import type { BigbrainAgentToolFactory } from '../../services/integrations/bigbrain/plugin'
 import { resolveOAuthAuthority } from '../../services/integrations/authorization/authority'
 import { IntegrationRuntimeGate } from '../../services/integrations/runtime-gate'
 import {
@@ -94,6 +107,37 @@ export function allowsBigbrainIntegrationTools(
     policy?.version === 1 &&
     policy.allow.bigbrain?.includes('agent_tools')
   )
+}
+
+/**
+ * BigBrain tools a runner offers automatically, without an agent-type opt-in: `read` is the
+ * read tools (managed shared vaults or the local connector); `read_and_drop` adds the local
+ * connector's `bigbrain_drop`. Managed shared vaults have no drop, so they stay read-only.
+ */
+export type AutomaticBigbrainTools = 'none' | 'read' | 'read_and_drop'
+
+/** The runtime-gate policy automatic tools run under: the runner grants it, not the agent type. */
+export const AUTOMATIC_BIGBRAIN_POLICY: AgentTypeIntegrationPolicyV1 = {
+  version: 1,
+  allow: { bigbrain: ['agent_tools'] },
+}
+
+/** Short system-prompt line added only when an agent actually receives automatic BigBrain tools. */
+export const AUTOMATIC_BIGBRAIN_PROMPT_HINT =
+  'BigBrain: this squad has BigBrain vault(s) attached. Use the `bigbrain_*` tools to read them, not the Ficus CLI. BigBrain vaults are separate from squad memory.'
+
+/** Names of the automatic BigBrain tools for a runner grant, minus any the agent type's `tools.deny` matches. */
+export function automaticBigbrainToolNames(
+  grant: AutomaticBigbrainTools,
+  toolsDeny: string[] | null | undefined
+): string[] {
+  if (grant === 'none') return []
+  const names: string[] = [
+    ...BIGBRAIN_SHARED_TOOL_NAMES,
+    ...BIGBRAIN_READ_TOOL_NAMES,
+    ...(grant === 'read_and_drop' ? [BIGBRAIN_DROP_TOOL_NAME] : []),
+  ]
+  return names.filter((name) => !toolsDeny || !toolNameMatchesAny(toolsDeny, name))
 }
 import * as rbacPermissions from '../../services/rbac/permissions'
 import type { RunnerTiming } from '../../services/execution/runner-timing'
@@ -609,14 +653,20 @@ export abstract class AgentRunner {
       model: opts.model ?? (await this.agent.getEffectiveModelSpec(this.agentType.model)),
       currentSelectedModel: this.agent.selectedModel ?? undefined,
       storage: { agentId: this.agent.id },
-      systemPrompt: opts.systemPrompt,
+      systemPrompt:
+        integrationTools.automatic.length > 0
+          ? `${opts.systemPrompt}\n\n${AUTOMATIC_BIGBRAIN_PROMPT_HINT}`
+          : opts.systemPrompt,
       skillPaths: opts.skillPaths,
       extensionPaths: opts.extensionPaths,
       earlyMarginTokens: this.agentType.earlyMarginTokens,
       inFlightMarginTokens: this.agentType.inFlightMarginTokens,
       tools: {
         ...opts.tools,
-        available: [...(opts.tools.available ?? []), ...integrationTools],
+        // Automatic BigBrain tools join `core` (bypassing tools.allow, like squad memory tools);
+        // they were already narrowed by tools.deny.
+        core: [...(opts.tools.core ?? []), ...integrationTools.automatic],
+        available: [...(opts.tools.available ?? []), ...integrationTools.available],
         allow: this.agentType.toolsAllow ?? undefined,
         deny: this.agentType.toolsDeny ?? undefined,
       },
@@ -634,22 +684,42 @@ export abstract class AgentRunner {
     }
   }
 
-  /** Resolve dynamic tools fail-closed. Existing static tools remain unchanged. */
-  protected async resolveIntegrationTools() {
-    const allow = this.agentType.toolsAllow
-    const policy = this.agentType.integrationCapabilities
-    if (!this.agent.squadId || !allowsBigbrainIntegrationTools(allow, policy ?? null)) return []
+  /**
+   * BigBrain tools this runner offers automatically. Squad managers, consultants and squad workers
+   * override this; every other runner relies on the explicit agent-type opt-in only.
+   */
+  protected automaticBigbrainTools(): AutomaticBigbrainTools {
+    return 'none'
+  }
+
+  /**
+   * Resolve dynamic integration tools fail-closed. Existing static tools remain unchanged.
+   *
+   * - `available`: the explicit opt-in path (agent type `integrationCapabilities` plus a
+   *   matching `tools.allow`); still narrowed by `tools.allow`/`tools.deny` like any tool.
+   * - `automatic`: the runner's automatic grant, offered only when the squad has an attached
+   *   vault this agent can read now. These bypass `tools.allow` (like squad memory tools) and
+   *   were already narrowed by `tools.deny`.
+   * Every tool still runs the runtime gate, connection checks and audit on each call.
+   */
+  protected async resolveIntegrationTools(): Promise<{ available: BigbrainTool[]; automatic: BigbrainTool[] }> {
+    const squadId = this.agent.squadId
+    if (!squadId) return { available: [], automatic: [] }
+    const policy = this.agentType.integrationCapabilities ?? null
+    const explicit = allowsBigbrainIntegrationTools(this.agentType.toolsAllow, policy)
+    const automaticNames = automaticBigbrainToolNames(this.automaticBigbrainTools(), this.agentType.toolsDeny)
+    if (!explicit && automaticNames.length === 0) return { available: [], automatic: [] }
+    const factory = integrationRegistry.plugin('bigbrain')?.runtime.agentTools as BigbrainAgentToolFactory | undefined
+    if (!factory) return { available: [], automatic: [] }
     const gate = new IntegrationRuntimeGate({
       repository: integrationConnectionRepository,
       currentAuthority: deploymentOAuthAuthorityForProvider,
       supportedAdapterVersion: (provider) => integrationRegistry.get(provider)?.adapterVersion,
       supportedConfigVersion: (provider) => (provider === 'bigbrain' ? 2 : undefined),
     })
-    const factory = integrationRegistry.plugin('bigbrain')?.runtime.agentTools
-    if (!factory) return []
-    const context: BigbrainToolContext = {
-      agent: { id: this.agent.id, squadId: this.agent.squadId, integrationCapabilities: policy ?? null },
-      squadId: this.agent.squadId,
+    const contextFor = (integrationCapabilities: AgentTypeIntegrationPolicyV1 | null): BigbrainToolContext => ({
+      agent: { id: this.agent.id, squadId, integrationCapabilities },
+      squadId,
       gate,
       credentials: {
         get: (key) => getSecretStore().get(key),
@@ -659,8 +729,23 @@ export abstract class AgentRunner {
       audit: integrationAuditRecorder,
       connections: integrationConnectionRepository,
       assignments: integrationConnectionRepository,
+    })
+
+    let automatic: BigbrainTool[] = []
+    if (automaticNames.length > 0) {
+      const context = contextFor(AUTOMATIC_BIGBRAIN_POLICY)
+      const readable = await factory.hasReadableVault(context).catch((error: unknown) => {
+        log.warn(`BigBrain availability check failed for agent ${this.agent.id}; offering no automatic tools`, error)
+        return false
+      })
+      if (readable) automatic = factory.createTools(context).filter((tool) => automaticNames.includes(tool.name))
     }
-    return factory.createTools(context)
+    const automaticSet = new Set(automatic.map((tool) => tool.name))
+    // A tool offered automatically is not offered a second time through the explicit path.
+    const available = explicit
+      ? factory.createTools(contextFor(policy)).filter((tool) => !automaticSet.has(tool.name))
+      : []
+    return { available, automatic }
   }
 
   /** Handle successful settled agent run */

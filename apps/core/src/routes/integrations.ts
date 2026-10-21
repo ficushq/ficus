@@ -62,6 +62,10 @@ import type {
 
 const log = createLogger('integration-routes')
 
+/** `execute-environment` for BigBrain: there is nothing to inject into a shell, so point agents at the tools. */
+export const BIGBRAIN_EXECUTE_ENVIRONMENT_GUIDANCE =
+  'BigBrain has no shell credentials, so it cannot be used through the Ficus CLI. Agents read the BigBrain vaults attached to this squad with the bigbrain_* tools. If those tools are missing, ask the squad manager to check that a BigBrain vault is attached to this squad and enabled.'
+
 const providerKeySchema = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)
 const createSchema = z
   .object({
@@ -865,12 +869,14 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
       async (c) => {
         const providerKey = parseProviderParam(c.req.param('provider'))
         if (!providerKey || !service.executionEnvironment) return c.json({ error: 'Unsupported integration' }, 404)
+        c.header('Cache-Control', 'no-store')
+        // BigBrain has no shell credentials; a default-account hint would send agents the wrong way.
+        if (providerKey === 'bigbrain') return c.json({ error: BIGBRAIN_EXECUTE_ENVIRONMENT_GUIDANCE }, 409)
         const environment = await service.executionEnvironment(
           resolvedSquadId(c),
           providerKey,
           c.req.valid('json').connectionId
         )
-        c.header('Cache-Control', 'no-store')
         if (!environment)
           return c.json(
             {

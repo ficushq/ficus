@@ -41,6 +41,49 @@ const vaultIdSchema = Type.String({
 })
 const short = Type.String({ minLength: 1, maxLength: 1000 })
 
+/** Whether a managed shared vault row may be read: readable state, active read access, material. */
+function readable(row: ManagedVault | null): row is ManagedVault & { connectionId: string } {
+  return (
+    !!row &&
+    MANAGED_VAULT_READABLE_STATES.includes(row.state) &&
+    row.readAccess === 'active' &&
+    !!row.connectionId &&
+    !!row.readMaterial
+  )
+}
+
+/** The vault's connection, admitted only through this squad's explicit assignment. */
+async function admit(
+  context: BigbrainSharedToolContext,
+  connectionId: string
+): Promise<AssignedIntegrationConnectionRecord | null> {
+  const decision = await context.gate.check({
+    agent: context.agent,
+    squadId: context.squadId,
+    provider: 'bigbrain',
+    capability: 'agent_tools',
+    requiredScope: REQUIRED_SCOPE,
+    connectionId,
+  })
+  return decision.allowed && isManagedSharedConfig(decision.connection.configuration) ? decision.connection : null
+}
+
+/**
+ * The shared vaults this squad can read right now: assigned to the squad, readable, and admitted by
+ * the runtime gate for this agent. The inventory tool lists these; the runner checks there is at
+ * least one before it offers the shared tools automatically.
+ */
+export async function listReadableSharedVaults(context: BigbrainSharedToolContext) {
+  const store = context.store ?? managedVaultStore
+  const vaults = []
+  for (const { id } of await context.assignments.listAssigned(context.squadId, 'bigbrain')) {
+    const row = await store.getByConnection(id)
+    if (!readable(row) || !(await admit(context, id))) continue
+    vaults.push({ vaultId: row.id, displayName: row.displayName, upstreamVaultId: row.upstreamVaultId })
+  }
+  return vaults
+}
+
 export function createSharedBigbrainTools(context: BigbrainSharedToolContext): BigbrainTool[] {
   const store = context.store ?? managedVaultStore
   const resolveClient = context.resolveClient ?? resolveManagedReadClient
@@ -58,29 +101,6 @@ export function createSharedBigbrainTools(context: BigbrainSharedToolContext): B
     })
   }
 
-  /** The vault's connection, admitted only through this squad's explicit assignment. */
-  async function admit(connectionId: string): Promise<AssignedIntegrationConnectionRecord | null> {
-    const decision = await context.gate.check({
-      agent: context.agent,
-      squadId: context.squadId,
-      provider: 'bigbrain',
-      capability: 'agent_tools',
-      requiredScope: REQUIRED_SCOPE,
-      connectionId,
-    })
-    return decision.allowed && isManagedSharedConfig(decision.connection.configuration) ? decision.connection : null
-  }
-
-  function readable(row: ManagedVault | null): row is ManagedVault & { connectionId: string } {
-    return (
-      !!row &&
-      MANAGED_VAULT_READABLE_STATES.includes(row.state) &&
-      row.readAccess === 'active' &&
-      !!row.connectionId &&
-      !!row.readMaterial
-    )
-  }
-
   const inventory: BigbrainTool = {
     key: 'bigbrain_shared_vaults',
     name: 'bigbrain_shared_vaults',
@@ -89,12 +109,7 @@ export function createSharedBigbrainTools(context: BigbrainSharedToolContext): B
       'List the shared BigBrain vaults this squad can read. Every other BigBrain tool needs one of these vault IDs; there is no default vault. Lists names only, never content.',
     parameters: Type.Object({}, { additionalProperties: false }),
     async execute(): Promise<AgentToolResult<unknown>> {
-      const vaults = []
-      for (const { id } of await context.assignments.listAssigned(context.squadId, 'bigbrain')) {
-        const row = await store.getByConnection(id)
-        if (!readable(row) || !(await admit(id))) continue
-        vaults.push({ vaultId: row.id, displayName: row.displayName, upstreamVaultId: row.upstreamVaultId })
-      }
+      const vaults = await listReadableSharedVaults(context)
       const safe = { provider: 'bigbrain', mode: 'managed_shared', vaults }
       return { content: [{ type: 'text', text: JSON.stringify(safe) }], details: safe }
     },
@@ -116,7 +131,7 @@ export function createSharedBigbrainTools(context: BigbrainSharedToolContext): B
       async execute(_toolCallId: string, input: T, signal?: AbortSignal): Promise<AgentToolResult<unknown>> {
         const row = await store.get(input.vaultId)
         if (!readable(row)) return failure('integration_unavailable')
-        const connection = await admit(row.connectionId)
+        const connection = await admit(context, row.connectionId)
         if (!connection || !isManagedSharedConfig(connection.configuration)) return failure('integration_unavailable')
         const credentialId = managedReadMaterialSchema.safeParse(row.readMaterial).data?.credentialId
         const token = context.credentials.get(connection.credentialRef)
@@ -124,7 +139,7 @@ export function createSharedBigbrainTools(context: BigbrainSharedToolContext): B
         // Live fence: same assigned connection + material revision + still-readable vault with
         // the same imported credential, both before dispatch and after the response.
         const beforeCall = async () => {
-          const current = await admit(row.connectionId)
+          const current = await admit(context, row.connectionId)
           const now = await store.get(row.id)
           if (
             !current ||

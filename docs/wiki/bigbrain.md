@@ -12,8 +12,8 @@ stdio MCP server. The engine owns the record, indexes, credential checks, and
 contribution attribution. Ficus does not read notes directly or write its logs.
 
 **Ficus does not automatically capture or send conversation transcripts.** There
-is no replacement background summary/drop job. Agents with the separately
-allowed contribution tool can deliberately save useful findings. Ordinary Ficus
+is no replacement background summary/drop job. Agents with the contribution tool
+(`bigbrain_drop`) can deliberately save useful findings. Ordinary Ficus
 conversation history and manual downloads are unaffected.
 
 ## Supported deployment
@@ -158,8 +158,9 @@ squads. Run **Connect BigBrain** again to re-pin.
 
 ## Permissions and connection lifecycle
 
-Global provider enablement, the enabled pooled connection, squad selection,
-agent-type capability, and explicit tool allowance must all permit access.
+Global provider enablement, the enabled pooled connection and squad selection
+must all permit access. Which agents get the tools is described in
+[Agent access](#agent-access).
 Existing instance-scoped `integrations:read:bigbrain` /
 `integrations:write:bigbrain` permissions govern the pool. **Connect BigBrain**
 also requires a signed-in person (not an agent, system token or bootstrap
@@ -169,6 +170,28 @@ run an uploaded executable or an arbitrary command: Core only runs the
 `bigbrain` command it detected, with fixed argv, against a vault a person
 confirmed. On host runtime this is a selection safeguard, not protection from
 same-user shells.
+
+### Agent access
+
+Squad agents get the tools automatically once the squad has a usable vault: the
+provider is enabled and the squad's attached connection is enabled, validated,
+healthy and grants the read scope. Ficus checks this when it starts an agent's
+session, and the tools check it again on every call.
+
+| Agent                                                                                      | Automatic tools                                                                        |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| Squad manager and consultants                                                              | `bigbrain_load_memory`, `bigbrain_search_vault`, `bigbrain_read_note`, `bigbrain_drop` |
+| Squad workers (engineer, reviewer, architect and other squad types)                        | `bigbrain_load_memory`, `bigbrain_search_vault`, `bigbrain_read_note`                  |
+| Everything else (assistant, assistant worker, artifact builder, system manager, subagents) | None: explicit opt-in only                                                             |
+
+Automatic tools do not need `integrationCapabilities` or `tools.allow` entries,
+the same as squad memory tools. To remove one, list it (or a wildcard such as
+`bigbrain_*`) in the agent type's `tools.deny`; for example, deny
+`bigbrain_drop` to keep a manager read-only. Agents with automatic tools get one
+short system-prompt line telling them the squad has vaults attached.
+
+Other agent types, and squad workers that need `bigbrain_drop`, opt in
+explicitly. Allow the capability and list each tool in `tools.allow`:
 
 ```yaml
 integrations:
@@ -184,10 +207,17 @@ tools:
 ```
 
 These are the complete names; there are no aliases for the removed API tools.
-Allow reads without `bigbrain_drop` for a read-only agent. Drop is an outbound
-content capability: an allowed agent can deliberately send material it can
+Opt in to the reads without `bigbrain_drop` for a read-only agent. Drop is an outbound
+content capability: an agent that has it can deliberately send material it can
 access. It is not governed by a transcript-consent switch, nor is every dropped
 item guaranteed to become curated memory.
+
+Subagents never get BigBrain tools that their parent's session did not expose
+through its tool policy. Automatic tools are not passed to subagents.
+
+BigBrain has no shell credentials. `ficus integration exec bigbrain ...` (the
+`execute-environment` route) refuses with a message pointing agents at the
+`bigbrain_*` tools; there is no default account to configure.
 
 The existing material-revision compare-and-set, validation freshness,
 disable/remove impact confirmation, assignment, and audit lifecycle remain.

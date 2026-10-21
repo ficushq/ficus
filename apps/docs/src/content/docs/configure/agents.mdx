@@ -68,7 +68,9 @@ System-only types remain visible in Agent Types administration. The flag describ
 
 Start with a known working type's tool choices and narrow them to the job. An allow list is not an access grant: an agent still needs permission to use the target squad or resource, and external services need an assigned connection. Giving a type a name such as “administrator” does not make it an administrator.
 
-When **BigBrain access** is shown, **Agent tools** also need explicit `bigbrain_*` tool allowances and an enabled local connection assigned to the squad. The read tools are `bigbrain_load_memory`, `bigbrain_search_vault`, and `bigbrain_read_note`; `bigbrain_drop` separately permits deliberate contributions. Ficus does not automatically capture or export conversation transcripts.
+When a squad has a BigBrain vault attached, its manager, consultants and squad workers get the BigBrain read tools automatically. With a local connection these are `bigbrain_load_memory`, `bigbrain_search_vault`, and `bigbrain_read_note`, and the manager and consultants also get `bigbrain_drop` for deliberate contributions. Shared vaults on Ficus Cloud get the read-only `bigbrain_shared_*` tools instead. To remove any of these from a type, list it (or `bigbrain_*`) under **Tools Deny**.
+
+Other types, such as the assistant, use BigBrain only when you turn on **BigBrain access → Agent tools** and list each `bigbrain_*` tool under **Tools Allow**. A squad worker that should contribute uses the same opt-in for `bigbrain_drop`. Ficus does not automatically capture or export conversation transcripts.
 
 ## Check the result on a small task
 

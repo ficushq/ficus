@@ -262,9 +262,18 @@ request, so the server never applies a change twice.
 
 ## Agent tools
 
-Squads with an attached, ready vault can use these read-only tools when the agent type allows
-them. In Settings → Agent types, turn on **BigBrain access → Agent tools** for the type (shown
-once Ficus can read a vault) and list each tool name below in its `tools.allow`:
+When a squad has an attached vault that Ficus can read, its manager, consultants and squad
+workers (engineer, reviewer, architect and other squad agent types) get these read-only tools
+automatically. They need no agent-type setting and no `tools.allow` entries, the same as squad
+memory tools. Ficus checks for a readable vault when it starts the agent's session, and adds one
+short line to the agent's system prompt saying that the squad has BigBrain vaults attached and
+that they are separate from squad memory.
+
+To remove the tools from an agent type, list them (or `bigbrain_*`) in its `tools.deny`. Other
+agent types (assistant, assistant worker, artifact builder, system manager) get them only by
+opting in: in Settings → Agent types, turn on **BigBrain access → Agent tools** for the type
+(shown once Ficus can read a vault) and list each tool name below in its `tools.allow`.
+Subagents never get tools their parent's session did not expose.
 
 | Tool                           | Purpose                                                  |
 | ------------------------------ | -------------------------------------------------------- |
@@ -282,6 +291,11 @@ Before every call, Ficus checks the squad's assignment, the connection's validat
 vault's read access. It checks them again after the response. If a vault is detached, disabled
 or revoked mid-call, the response is withheld. An unknown vault, an unattached vault and an
 unreadable vault all return the same `integration_unavailable` result.
+
+Shared vaults have no write or drop tool, so automatic access stays read-only for every agent.
+Agents cannot use shared vaults through the Ficus CLI: there are no shell credentials and no
+default account, and `ficus integration exec bigbrain ...` says to use the `bigbrain_*` tools
+instead.
 
 ## Command line
 

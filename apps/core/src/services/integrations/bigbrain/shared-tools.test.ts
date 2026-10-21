@@ -4,7 +4,12 @@ import type { AssignedIntegrationConnectionRecord } from '../connection-reposito
 import { IntegrationRuntimeGate } from '../runtime-gate'
 import type { ManagedVault } from './managed/store'
 import { bigbrainPlugin } from './plugin'
-import { BIGBRAIN_SHARED_TOOL_NAMES, createSharedBigbrainTools, type BigbrainSharedToolContext } from './shared-tools'
+import {
+  BIGBRAIN_SHARED_TOOL_NAMES,
+  createSharedBigbrainTools,
+  listReadableSharedVaults,
+  type BigbrainSharedToolContext,
+} from './shared-tools'
 
 const previousManaged = process.env.FICUS_MANAGED
 afterEach(() => {
@@ -138,7 +143,7 @@ function setup(vaults: ReturnType<typeof vault>[], assignedIds = vaults.map((v) 
   const run = async (name: string, input: unknown) =>
     (await tools[name]!.execute('call', input as never, undefined as never, undefined as never, undefined as never))
       .details as Record<string, unknown>
-  return { tools, run, assigned, rows, audits, reads, afterRead }
+  return { tools, run, assigned, rows, audits, reads, afterRead, context }
 }
 
 test('exactly five read-only tools; every data tool requires an explicit vault ID', () => {
@@ -251,4 +256,40 @@ test('the plugin offers shared read tools on Ficus Cloud and the unchanged perso
   const personal = (await factory.createTools(shared)).map((t) => t.name)
   expect(personal).toContain('bigbrain_drop')
   expect(personal.some((n) => n.startsWith('bigbrain_shared_'))).toBe(false)
+})
+
+test('a squad has a readable shared vault only when an attached vault is readable and admitted', async () => {
+  const ready = vault('Ready')
+  expect((await listReadableSharedVaults(setup([ready]).context)).map((v) => v.vaultId)).toEqual([ready.row.id])
+  // Nothing attached, or the vault exists but is not attached to this squad.
+  expect(await listReadableSharedVaults(setup([]).context)).toEqual([])
+  expect(await listReadableSharedVaults(setup([ready], []).context)).toEqual([])
+  // Not readable: revoked read access, a non-readable state, or no read material.
+  for (const patch of [{ readAccess: 'revoked' }, { state: 'deleted' }, { readMaterial: null }] as const)
+    expect(await listReadableSharedVaults(setup([vault('Unreadable', patch as never)]).context)).toEqual([])
+  // Connection disabled (provider or connection), unhealthy, or missing the read scope.
+  for (const patch of [{ enabled: false }, { healthState: 'degraded' }, { grantedScopes: [] }] as const) {
+    const v = vault('Fenced')
+    Object.assign(v.connection, patch)
+    expect(await listReadableSharedVaults(setup([v]).context)).toEqual([])
+  }
+})
+
+test('the plugin reports a readable vault only for managed shared vaults on an isolated runtime', async () => {
+  const factory = bigbrainPlugin.runtime.agentTools!
+  const ready = vault('Ready')
+  const { context } = setup([ready])
+  const previousRuntime = process.env.FICUS_SANDBOX_RUNTIME
+  try {
+    process.env.FICUS_MANAGED = '1'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
+    expect(await factory.hasReadableVault(context)).toBe(true)
+    expect(await factory.hasReadableVault(setup([ready], []).context)).toBe(false)
+    expect(await factory.hasReadableVault({ ...context, assignments: undefined } as never)).toBe(false)
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
+    expect(await factory.hasReadableVault(context)).toBe(false)
+  } finally {
+    if (previousRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = previousRuntime
+  }
 })

@@ -65,21 +65,30 @@ configuration and other-user checks. Use an isolated runtime if agents must not
 have direct OS access. This is never a boundary against the host administrator
 or an already privileged agent runtime.
 
-The runner requires a version-1 integration policy allowing `agent_tools` and
-matching explicit tool allowances. Calls recheck squad identity, provider enable,
-assignment, supported versions, connection state, material/validation revisions,
-validation freshness, and the advertised public-tool capability. Host declaration
-identity is pinned and rechecked; editing it cannot silently retarget an existing
-pooled connection. BigBrain authenticates each call using its own private local
-credential and supplies the contribution's author, not tool input or MCP client
-handshake text. Advertised tools alone are not proof of authorization; validation
-also makes a bounded read-only call, and upstream enforces the drop scope.
+Squad managers, consultants and squad workers get the read tools automatically
+when the squad has a usable attached vault; managers and consultants also get
+`bigbrain_drop`. Automatic tools bypass `tools.allow` like squad memory tools, run
+the runtime gate under a runner-granted `agent_tools` policy, and are removed by
+the agent type's `tools.deny` (names or wildcards). Every other agent type, and a
+squad worker that wants `bigbrain_drop`, still needs a version-1 integration
+policy allowing `agent_tools` and matching explicit tool allowances. Subagents
+never receive BigBrain tools their parent's session did not expose.
+
+Calls recheck squad identity, provider enable, assignment, supported versions,
+connection state, material/validation revisions, validation freshness, and the
+advertised public-tool capability. Host declaration identity is pinned and
+rechecked; editing it cannot silently retarget an existing pooled connection.
+BigBrain authenticates each call using its own private local credential and
+supplies the contribution's author, not tool input or MCP client handshake text.
+Advertised tools alone are not proof of authorization; validation also makes a
+bounded read-only call, and upstream enforces the drop scope.
 
 The public Ficus surface is `bigbrain_load_memory`, `bigbrain_search_vault`,
-`bigbrain_read_note`, and `bigbrain_drop`. Removing the last tool allowance makes
-an agent read-only through this connector. An allowed drop can send arbitrary
-material the agent can access; it is deliberate outbound contribution, not an
-automatic transcript/summary channel. One upstream named credential has one
+`bigbrain_read_note`, and `bigbrain_drop`. Denying `bigbrain_drop` (or, for an
+opted-in type, leaving it out of `tools.allow`) makes an agent read-only through
+this connector. An allowed drop can send arbitrary material the agent can
+access; it is deliberate outbound contribution, not an automatic
+transcript/summary channel. One upstream named credential has one
 upstream attribution even when multiple squads use it; the Ficus audit retains
 the actual caller identity without recording content.
 

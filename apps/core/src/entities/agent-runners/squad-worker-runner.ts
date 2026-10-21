@@ -1,5 +1,5 @@
 import type { SessionUsage, MessageMetadata } from '@ficus/shared'
-import { AgentRunner } from './base'
+import { AgentRunner, type AutomaticBigbrainTools } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
 import { filterCliHelpForPermissions, getSquadWorkerCliHelp } from '../../lib/utils/cli-help'
 import { resolvePermissions } from '../../services/rbac'
@@ -281,6 +281,11 @@ export class SquadWorkerRunner extends AgentRunner {
       ]
       return AgentSession.create(sessionOptions)
     })
+  }
+
+  /** Squad workers automatically get the BigBrain read tools; `bigbrain_drop` stays an explicit opt-in. */
+  protected override automaticBigbrainTools(): AutomaticBigbrainTools {
+    return 'read'
   }
 
   protected override pushAgentEvent(): void {

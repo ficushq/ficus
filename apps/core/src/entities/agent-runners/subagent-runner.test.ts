@@ -65,7 +65,7 @@ class TestSubagentRunner extends SubagentRunner {
   }
 
   protected override async resolveIntegrationTools() {
-    return subagentIntegrationTools
+    return { available: subagentIntegrationTools, automatic: [] }
   }
 
   protected ensureLightSandbox(args: any): Promise<string> {
@@ -686,6 +686,58 @@ describe('SubagentRunner.createSession squad workspace', () => {
       agentId,
       'exec-1',
     ])
+  })
+
+  it('never exposes BigBrain tools the parent session did not expose', async () => {
+    const agentId = 'subagent-bigbrain'
+    const mockAgent = {
+      id: agentId,
+      agentTypeId: 'subagent-type',
+      squadId: TEST_SQUAD_ID,
+      parentAgentId: 'parent-1',
+      metadata: {
+        parentExecutionContext: {
+          version: 1,
+          squadId: TEST_SQUAD_ID,
+          environmentToolNames: ['read', 'bigbrain_search_vault'],
+        },
+      },
+      modelOverride: null,
+      selectedModel: null,
+      getOrCreateToken: async () => undefined,
+      resolveLiveSandboxOwner: async () => ({ id: 'parent-1', squadId: TEST_SQUAD_ID }),
+      getSandboxId: async () => 'agent_parent-bigbrain',
+      getEffectiveModelSpec: async (m: string) => m,
+    } as any
+    const mockAgentType = {
+      id: 'subagent-type',
+      model: 'anthropic:claude-sonnet-4-5',
+      systemPrompt: 'test',
+      earlyMarginTokens: null,
+      inFlightMarginTokens: null,
+      toolsAllow: null,
+      toolsDeny: null,
+    } as any
+    const runner = new TestSubagentRunner(
+      { id: 'exec-bigbrain', agentId, message: 'do work', startedAt: new Date() } as any,
+      mockAgent,
+      mockAgentType
+    )
+    subagentIntegrationTools = [
+      'bigbrain_load_memory',
+      'bigbrain_search_vault',
+      'bigbrain_read_note',
+      'bigbrain_drop',
+    ].map((name) => ({ name }))
+    await runner.exposeCreateSession({
+      assertActive() {},
+      runEffect: (_spec: unknown, operation: (context: unknown) => Promise<unknown>) =>
+        operation({ signal: new AbortController().signal }),
+    } as any)
+
+    const sessionConfig = sessionCreateSpy.mock.calls[0][0]
+    const offered = [...sessionConfig.tools.core, ...sessionConfig.tools.available].map((tool: any) => tool.name)
+    expect(offered.filter((name: string) => name.startsWith('bigbrain_'))).toEqual(['bigbrain_search_vault'])
   })
 
   it('ensures the shared box before the light box for inherited shared file tools without squad_bash', async () => {

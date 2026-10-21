@@ -1,5 +1,5 @@
 import type { SessionUsage, MessageMetadata, Squad as SquadJson } from '@ficus/shared'
-import { AgentRunner } from './base'
+import { AgentRunner, type AutomaticBigbrainTools } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
 import { Squad } from '../Squad'
 import { isAssistantDelegate } from '../../services/assistant-agents'
@@ -395,6 +395,11 @@ export class SquadManagerRunner extends AgentRunner {
       ]
       return AgentSession.create(sessionOptions)
     })
+  }
+
+  /** Managers and consultants automatically get the BigBrain read tools and the local connector's `bigbrain_drop`. */
+  protected override automaticBigbrainTools(): AutomaticBigbrainTools {
+    return 'read_and_drop'
   }
 
   protected override pushAgentEvent(): void {
