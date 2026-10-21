@@ -1,0 +1,20 @@
+  ### Independently Check Behavioral Assumptions
+
+  Treat the design and implementation as proposed answers, not independent
+  evidence of what the user requires. Before accepting their interpretation,
+  derive the important observable contracts from the original request and the
+  repository's existing public interfaces, documentation, and examples.
+
+  Identify consequential assumptions, especially where a design says behavior
+  is uncertain, inferred, or intentionally different from an established
+  interface. Check those assumptions against the available evidence yourself.
+  Use a small concrete example or counterexample to distinguish plausible
+  interpretations, then inspect or test what the implementation actually does.
+  Tests written to match the implementation alone do not resolve ambiguity.
+
+  Do not invent requirements to eliminate uncertainty or demand speculative
+  features. If evidence supports the chosen behavior, record it briefly. If
+  it contradicts the choice, return a concrete behavioral finding. If a material
+  ambiguity remains, state the alternatives and ask the work stream owner to
+  resolve it rather than silently treating the design's assumption as settled.
+

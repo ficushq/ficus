@@ -1,0 +1,24 @@
+{
+  "experiment": "independent-review-v1",
+  "base_runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+  "candidate_runtime_sha256": "b7bc8a6c0e302462bac420c22b2f5a08944945784e10158677870bf47e9b941b",
+  "addition_sha256": "bb49b10b6d9fc31b8ad01f833e24e3d7c5ca8061378658d730493f6e6d8fb683",
+  "reviewer_before_sha256": "75ce385286b9935cfa9b87f0f32b4859b0ba8853df40caa29ed13186aa68dab0",
+  "reviewer_after_sha256": "03755102dc1ee1c51f64ae8fc9afb0d2b17ada72d59771cbc56dd4441d5e21b4",
+  "changed_members": [
+    "ficus-harbor/runtime/config/agent-types/reviewer.yaml",
+    "ficus-harbor/runtime/evals/harbor/revision.json"
+  ],
+  "all_other_members_identical": true,
+  "tasks": ["igel-persist-feature-schema", "psd-tools-blend-range-api"],
+  "selection": "Next two unused tasks in frozen long-feature-v1 SHA256 order",
+  "prompt_frozen_before_reading_holdout_instructions_or_hidden_test_contents": true,
+  "conditions": ["baseline", "independent-review"],
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "attempts_per_condition_task": 1,
+  "workflow": "planned",
+  "phase_budget_cap_usd": 30,
+  "phase_prior_spend_usd": 4.649604,
+  "no_production_prompt_change": true
+}
