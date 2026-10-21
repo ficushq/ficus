@@ -807,6 +807,7 @@ try {
       control: list('/var/lib/ficus-bigbrain/control'),
       handoff: read('/var/lib/ficus-bigbrain/read-handoff/${A}.json'),
       escrow: read('/var/lib/ficus-bigbrain/control/${A}/owner.json'),
+      memberInvites: read('/var/lib/ficus-bigbrain/control/${A}/member-invites.json'),
       launcher: read('/usr/local/libexec/ficus-bigbrainctl'),
       ownStore: list('${rA.storage.mount}/vault'),
       hostAbstract: await connectUnix('\\0${HOST_ABSTRACT}'),
@@ -848,6 +849,11 @@ try {
     check(`${when}: A cannot list root control state`, denied(attack.control), attack.control)
     check(`${when}: A cannot read its own Ficus read handoff`, denied(attack.handoff), attack.handoff)
     check(`${when}: A cannot read root owner escrow`, denied(attack.escrow), attack.escrow)
+    check(
+      `${when}: A cannot read the root member invite replay cache`,
+      denied(attack.memberInvites),
+      attack.memberInvites
+    )
     check(`${when}: A cannot read the root helper launcher`, denied(attack.launcher), attack.launcher)
     check(`${when}: A can still use its own store`, attack.ownStore === 'LISTED', attack.ownStore)
     check(
