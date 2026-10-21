@@ -56,6 +56,10 @@ describe('integration bigbrain vault', () => {
           readAccess: 'active',
           desiredGeneration: 3,
           backup: 'excluded',
+          connectionId: '33333333-3333-4333-8333-333333333333',
+          readConnection: { enabled: false, lastErrorCode: 'unavailable' },
+          readSyncError: null,
+          assignedSquads: [{ id: 'squad-1', name: 'Research squad' }],
         },
       ],
     })
@@ -68,6 +72,11 @@ describe('integration bigbrain vault', () => {
         readAccess: 'active',
         generation: 3,
         backup: 'excluded',
+        // Host read access is active, but Ficus's own read connection is off: say so, and why.
+        ficusReads: false,
+        readError: 'unavailable',
+        connectionId: '33333333-3333-4333-8333-333333333333',
+        squads: ['Research squad'],
       },
     ])
   })

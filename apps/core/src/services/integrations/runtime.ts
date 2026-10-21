@@ -1,6 +1,9 @@
 import { isManagedBigbrainProvider } from './bigbrain/managed/availability'
 import { createManagedHostClient } from './bigbrain/managed/host-client'
 import { createManagedVaultService } from './bigbrain/managed/service'
+import { managedBigbrainSetupStatus } from './bigbrain/managed/setup-status'
+import { managedVaultStore } from './bigbrain/managed/store'
+import { connectionDisabledByPerson } from './bigbrain/managed/synchronizer'
 import { BigbrainBindings } from './bigbrain/local-bindings'
 import { BigbrainLocalConnections } from './bigbrain/local-connections'
 import { BigbrainLocalSetup } from './bigbrain/local-setup'
@@ -613,7 +616,36 @@ export const managedVaultService = createManagedVaultService({
   hostClient: createManagedHostClient(),
   disableConnection: (id, actor) => integrationConnectionService.disable(id, actor, true),
   usage: (id) => integrationConnectionRepository.usage(id),
+  readConnection: async (id) => {
+    const connection = await integrationConnectionRepository.get(id)
+    if (!connection) return null
+    return {
+      enabled: connection.enabled,
+      lastErrorCode: connection.enabled ? null : connection.lastErrorCode,
+      disabledByPerson: !connection.enabled && (await connectionDisabledByPerson(id)),
+    }
+  },
 })
+
+/** Managed shared vaults: setup derives from the vaults, not from the generic connection pool. */
+async function managedBigbrainCatalogSetup() {
+  const vaults = await managedVaultStore.list()
+  return managedBigbrainSetupStatus(
+    await Promise.all(
+      vaults.map(async (vault) => ({
+        state: vault.state,
+        readAccess: vault.readAccess,
+        connectionEnabled: vault.connectionId
+          ? ((await integrationConnectionRepository.get(vault.connectionId))?.enabled ?? null)
+          : null,
+        squadCount: vault.connectionId
+          ? (await integrationConnectionRepository.usage(vault.connectionId)).squadCount
+          : 0,
+        syncFailed: vault.readSyncErrorCode !== null,
+      }))
+    )
+  )
+}
 
 export const integrationRoutesService = Object.assign(integrationConnectionService, {
   localBigbrain: new BigbrainLocalConnections(new BigbrainBindings(), integrationConnectionService),
@@ -639,16 +671,18 @@ export const integrationRoutesService = Object.assign(integrationConnectionServi
             ? credentialSetupStatus(getDeploymentIntegrationSettings(entry.key).fields)
             : isPushIntegration(entry.key)
               ? credentialSetupStatus(getPushIntegrationSettings(entry.key).fields)
-              : entry.key === 'google-cloud'
-                ? credentialSetupStatus(getGoogleCloudIntegrationSettings().fields)
-                : entry.key === 'openai-services'
-                  ? credentialSetupStatus(getOpenAIServicesSettings().fields)
-                  : connectionSetupStatus(
-                      (await integrationConnectionRepository.list(entry.key)).map((connection) => ({
-                        ...connection,
-                        credentialConfigured: !!getSecretStore().get(connection.credentialRef)?.trim(),
-                      }))
-                    ),
+              : isManagedBigbrainProvider(entry.key)
+                ? await managedBigbrainCatalogSetup()
+                : entry.key === 'google-cloud'
+                  ? credentialSetupStatus(getGoogleCloudIntegrationSettings().fields)
+                  : entry.key === 'openai-services'
+                    ? credentialSetupStatus(getOpenAIServicesSettings().fields)
+                    : connectionSetupStatus(
+                        (await integrationConnectionRepository.list(entry.key)).map((connection) => ({
+                          ...connection,
+                          credentialConfigured: !!getSecretStore().get(connection.credentialRef)?.trim(),
+                        }))
+                      ),
       }))
     ),
   async setEnabled(providerKey: string, enabled: boolean, actor: string) {

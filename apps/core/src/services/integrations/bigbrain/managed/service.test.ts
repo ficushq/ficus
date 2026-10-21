@@ -6,7 +6,7 @@ import {
   MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
   type ManagedBigbrainInstalledHost,
 } from '@ficus/shared/managed-bigbrain'
-import { db, managedBigbrainVaults, users } from '../../../../db'
+import { db, integrationConnections, managedBigbrainVaults, users } from '../../../../db'
 import { User } from '../../../../entities/User'
 import { assignRole, cleanupTestRbac, createTestRole, createTestUser } from '../../../../test-utils/rbac'
 import type { Identity } from '../../../rbac/permissions'
@@ -86,6 +86,8 @@ function service(
           },
     disableConnection: async (id) => void fences.push(`disable:${id}`),
     usage: async () => ({ squads: [{ id: 'squad-1', name: 'Research squad' }] }),
+    readConnection: async () => ({ enabled: false, lastErrorCode: 'unavailable', disabledByPerson: false }),
+    writableSquads: async (_identity, userId) => [{ id: 'squad-w', name: `Writable for ${userId.slice(0, 4)}` }],
     isEnabled: async () => options.enabled ?? true,
     available: () => ({ available: options.available ?? true }),
   })
@@ -334,6 +336,7 @@ test('an expired owner-link window is refused rather than minting a new link', a
     host: () => host,
     disableConnection: async () => {},
     usage: async () => ({ squads: [] }),
+    readConnection: async () => null,
     isEnabled: async () => true,
     available: () => ({ available: true }),
     now: () => new Date(Date.now() + 2 * 3_600_000),
@@ -411,4 +414,58 @@ test('managers see affected squads; listing needs BigBrain read authority; refus
   ] as const)
     expect(managedVaultErrorResponse(error)?.status).toBe(status)
   expect(managedVaultErrorResponse(new Error('raw'))).toBeNull()
+})
+
+test('the vault view reports whether Ficus really reads it, and why not', async () => {
+  const reader = await human(['integrations:read:bigbrain'])
+  const owner = await human(['integrations:write:bigbrain'])
+  const { svc } = service()
+  const created = await svc.create(owner, create(`Reads ${crypto.randomUUID()}`))
+  await makeReady(created.vaultId)
+  // Host read access is active, but nothing is imported yet: no connection to report.
+  expect(await svc.get(reader, created.vaultId)).toMatchObject({
+    readAccess: 'active',
+    readConnection: null,
+    readSyncError: null,
+  })
+  const connectionId = crypto.randomUUID()
+  await db.insert(integrationConnections).values({
+    id: connectionId,
+    providerKey: 'bigbrain',
+    adapterVersion: 2,
+    displayName: `Reads ${connectionId}`,
+    configuration: {},
+    credentialRef: `ref:${connectionId}`,
+  })
+  try {
+    await db
+      .update(managedBigbrainVaults)
+      .set({ connectionId, readSyncErrorCode: 'connection_conflict', readSyncAttempts: 2 })
+      .where(eq(managedBigbrainVaults.id, created.vaultId))
+    expect(await svc.get(reader, created.vaultId)).toMatchObject({
+      readAccess: 'active',
+      readConnection: { enabled: false, lastErrorCode: 'unavailable', disabledByPerson: false },
+      readSyncError: 'connection_conflict',
+    })
+  } finally {
+    await db
+      .update(managedBigbrainVaults)
+      .set({ connectionId: null })
+      .where(eq(managedBigbrainVaults.id, created.vaultId))
+    await db.delete(integrationConnections).where(eq(integrationConnections.id, connectionId))
+  }
+})
+
+test('attachable squads are offered only to literal BigBrain managers', async () => {
+  const reader = await human(['integrations:read:bigbrain'])
+  const owner = await human(['integrations:write:bigbrain'])
+  const { svc } = service()
+  expect(await svc.attachableSquads(owner)).toEqual([
+    { id: 'squad-w', name: `Writable for ${owner.userId.slice(0, 4)}` },
+  ])
+  expect(await code(svc.attachableSquads(reader))).toBe('permission_required')
+  expect(await code(svc.attachableSquads({ type: 'agent', agentId: crypto.randomUUID(), squadId: null }))).toBe(
+    'human_required'
+  )
+  expect(await code(svc.attachableSquads(undefined))).toBe('human_required')
 })

@@ -166,19 +166,45 @@ owner device links are no longer available; its existing owner devices keep work
    and recovery, not to give people access.
 3. **Ficus read access.** Each ready vault gets one read-only Ficus credential. It is an upstream
    agent member with exactly `read`, and it does not follow any member. It is stored encrypted in
-   Ficus and never shown. **Revoke Ficus read access** disables the vault's connection in Ficus
-   first, then revokes the credential; members keep using the vault. **Reconnect** mints a new
-   read-only credential. If someone connected as the owner removes or narrows the Ficus reader in
-   the BigBrain app, Ficus shows the access as revoked and never repairs it on its own.
-4. **Attach to squads.** In a squad's integration settings, tick each vault the squad may read.
-   Vaults are attached independently. There is no default vault, and attaching one never detaches
-   another.
+   Ficus and never shown. Core's worker imports it into a Ficus read connection for the vault
+   within about a minute; the vault row says **Ficus can read** only once that connection is on.
+   Until then it says **Ficus read access pending**, or **Ficus cannot read this vault yet** with a
+   short code when the import or its validation failed. Ficus retries on its own (after 1 minute,
+   doubling up to 15 minutes), so most failures clear without anyone acting. If one does not,
+   choose **Revoke Ficus read access**, then **Reconnect Ficus read access** to mint a new
+   credential. **Revoke Ficus read access** disables the vault's connection in Ficus first, then
+   revokes the credential; members keep using the vault. If someone connected as the owner removes
+   or narrows the Ficus reader in the BigBrain app, Ficus shows the access as revoked and never
+   repairs it on its own.
+4. **Attach to squads.** Agents read a vault only in squads it is attached to. Attach it either
+   from the vault row's **Squads** control in Settings → Integrations → BigBrain (it offers only
+   the squads where you may change integrations), or by ticking the vault in the BigBrain card of
+   a squad's Settings → Integrations. Both use the same squad assignment and the same permissions.
+   A vault can be attached only while Ficus can read it; the squad card says so next to a vault it
+   cannot attach yet. Vaults are attached independently. There is no default vault, attaching one
+   never detaches another, and Ficus never attaches a vault on its own. The agent type must also
+   allow the tools (see [Agent tools](#agent-tools)).
 5. **Delete.** **Delete** asks for the exact vault name and lists the squads that lose read
    access. Ficus disables the vault's read connection at once. Then it removes the vault's
    server, data, account, access and DNS record, and keeps a tombstone so an old request cannot
    bring it back. Copies already inside existing Ficus server backups are not removed; they
    follow the server's backup retention. Restoring the server from a backup taken before the
    delete brings the vault back, with Ficus read access off.
+
+### Setup status
+
+The BigBrain card in Settings → Integrations derives its status from the vaults, not from Ficus's
+internal connection list. It asks to **create a shared vault** when there is none, says when a
+vault is still being set up, failed (retry it), has Ficus read access revoked (reconnect it) or
+cannot be read by Ficus yet (its row shows why), and asks to **attach a vault to a squad** when a
+readable vault is attached to none. Otherwise it is configured.
+
+### Names
+
+Vault names are unique among live vaults only: the name of a deleted vault can be used again, by a
+new vault or a rename. Names are labels, never identity. Ficus's read connection for a vault
+carries the vault's name, and a deleted vault keeps its disabled connection (so a restore brings
+its squads back) under the label `<name> (retired <id prefix>)` once the name is reused.
 
 ## Members
 
@@ -224,7 +250,8 @@ request, so the server never applies a change twice.
 ## Agent tools
 
 Squads with an attached, ready vault can use these read-only tools when the agent type allows
-the tool names and the BigBrain `agent_tools` capability:
+them. In Settings → Agent types, turn on **BigBrain access → Agent tools** for the type (shown
+once Ficus can read a vault) and list each tool name below in its `tools.allow`:
 
 | Tool                           | Purpose                                                  |
 | ------------------------------ | -------------------------------------------------------- |
@@ -262,6 +289,10 @@ ficus integration bigbrain vault delete <vault-uuid> --name "Research" --generat
 ficus integration assign bigbrain --squad <squad-uuid> --connection <connection-uuid>
 ```
 
+`vault list` shows, per vault, whether Ficus reads it (`ficusReads`, with `readError` when it
+cannot), its read connection (`connectionId`, for `ficus integration assign`) and the squads it is
+attached to.
+
 `owner-link` and `invite` never print their link, including with `--json`. Each writes the link
 to a **new** file with mode `0600` and refuses an existing path or a symlink. The terminal shows
 only the path and expiry (and, for `invite`, the invite ID). `invite` always creates a member
@@ -296,7 +327,9 @@ the vault's squad attachments return when it does.
   tenant, host binding, epoch, vault zone and optional tenant label; Core reads it and must agree
   with Platform before the feature is available.
 - Core's worker applies pending changes one vault at a time and checks every vault's status on
-  the server every 10 minutes.
+  the server every 10 minutes. It imports each ready vault's read credential every 30 seconds; a
+  failure is logged as `Managed vault <id> read sync failed: <code>`, stored on the vault (shown in
+  settings and `vault list`) and retried with backoff.
 - `systemctl status 'ficus-bigbrain*'` shows the gateway, each vault and the transient root
   control worker. Refusals are recorded as fixed tokens, never values or secrets, in
   `/var/lib/ficus-bigbrain/control/last-failure` and

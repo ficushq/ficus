@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, expect, test } from 'bun:test'
-import { inArray } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import {
   MANAGED_BIGBRAIN_DEFAULT_LIMITS,
   MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
@@ -7,11 +7,17 @@ import {
   type ManagedBigbrainHostReceipt,
   type ManagedBigbrainReadHandoff,
 } from '@ficus/shared/managed-bigbrain'
-import { db, integrationConnections, managedBigbrainVaults, users } from '../../../../db'
+import { db, integrationAuditEvents, integrationConnections, managedBigbrainVaults, users } from '../../../../db'
 import type { IntegrationConnectionRecord } from '../../connection-repository'
 import { clearManagedBigbrainCapabilities } from './availability'
 import { managedVaultStore as store } from './store'
-import { synchronizeManagedBigbrain, type ManagedSyncConnections } from './synchronizer'
+import {
+  connectionDisabledByPerson,
+  MANAGED_BIGBRAIN_SYNC_RETRY_MAX_MS,
+  MANAGED_BIGBRAIN_SYNC_ACTOR,
+  synchronizeManagedBigbrain,
+  type ManagedSyncConnections,
+} from './synchronizer'
 
 const previousManaged = process.env.FICUS_MANAGED
 beforeAll(() => {
@@ -120,22 +126,37 @@ async function vault(name = `Vault ${crypto.randomUUID()}`) {
   return { row, receipt, handoff }
 }
 
+async function withName<T extends { id: string }>(row: T): Promise<T & { displayName: string }> {
+  const [stored] = await db
+    .select({ displayName: integrationConnections.displayName })
+    .from(integrationConnections)
+    .where(eq(integrationConnections.id, row.id))
+  return { ...row, displayName: stored?.displayName ?? '' }
+}
+const connectionName = async (id: string) => (await withName({ id })).displayName
+
 /** In-memory pool standing in for the connection service + repository + credential store. */
 function pool(options: { failCreateAfterInsert?: boolean } = {}) {
   const rows = new Map<string, IntegrationConnectionRecord & { enabled: boolean }>()
   const secrets = new Map<string, string>()
   const calls: string[] = []
+  const personDisabled = new Set<string>()
   let failCreate = options.failCreateAfterInsert ?? false
+  /** Live validation failures for the next enables (the real service validates, then throws). */
+  const enableFailures: string[] = []
+  let clock = new Date()
   const connections: ManagedSyncConnections = {
     async create(input) {
       const id = crypto.randomUUID()
       const credentialRef = `ref:${id}:1`
-      // A real pool row: the vault row's connection_id is a foreign key.
+      calls.push(`create:${(input.configuration as { vaultId: string }).vaultId}`)
+      // A real pool row under the exact display name: the pool's unique (provider, name) index
+      // applies, and a refused insert stores nothing (the service retires the credential).
       await db.insert(integrationConnections).values({
         id,
         providerKey: input.providerKey,
         adapterVersion: input.adapterVersion,
-        displayName: `${input.displayName} ${id}`,
+        displayName: input.displayName,
         configuration: input.configuration,
         credentialRef,
       })
@@ -148,38 +169,59 @@ function pool(options: { failCreateAfterInsert?: boolean } = {}) {
         credentialRef,
         enabled: false,
       } as never)
-      calls.push(`create:${(input.configuration as { vaultId: string }).vaultId}`)
       if (failCreate) {
         failCreate = false
         throw new Error('committed but acknowledgement lost')
       }
       return { id }
     },
-    async replaceCredential(id, credential) {
+    async replaceCredential(id, credential, _actor, _confirm, configuration) {
       const ref = `ref:${id}:${crypto.randomUUID()}`
       secrets.set(ref, credential)
-      rows.set(id, { ...rows.get(id)!, credentialRef: ref })
-      calls.push(`rotate:${id}`)
+      rows.set(id, {
+        ...rows.get(id)!,
+        credentialRef: ref,
+        ...(configuration === undefined ? {} : { configuration }),
+      })
+      calls.push(`rotate:${id}${configuration === undefined ? '' : ':configuration'}`)
     },
-    async enable(id) {
+    async enable(id, actor) {
+      const failure = enableFailures.shift()
+      rows.set(id, { ...rows.get(id)!, validatedAt: clock, lastErrorCode: failure ?? null })
+      if (failure) throw new Error(`Integration authentication failed: ${failure}`)
       rows.set(id, { ...rows.get(id)!, enabled: true })
-      calls.push(`enable:${id}`)
+      personDisabled.delete(id)
+      calls.push(`enable:${id}:${actor}`)
     },
-    async disable(id) {
+    async disable(id, actor) {
       rows.set(id, { ...rows.get(id)!, enabled: false })
+      if (actor?.startsWith('user:') || actor?.startsWith('agent:')) personDisabled.add(id)
       calls.push(`disable:${id}`)
     },
+  }
+  /** Track a connection created outside the synchronizer (an orphan from an earlier attempt). */
+  const adopt = (row: IntegrationConnectionRecord & { enabled: boolean }, credential: string) => {
+    rows.set(row.id, row)
+    secrets.set(row.credentialRef, credential)
   }
   return {
     rows,
     calls,
+    adopt,
+    enableFailures,
+    advance: (ms: number) => {
+      clock = new Date(clock.getTime() + ms)
+    },
     deps: (caps: ManagedBigbrainCapabilities | null, handoffs: Map<string, ManagedBigbrainReadHandoff>) => ({
       capabilities: () => caps,
       readHandoff: async (id: string) => handoffs.get(id) ?? null,
       connections,
-      listConnections: async () => [...rows.values()],
-      getConnection: async (id: string) => rows.get(id) ?? null,
+      // Names live in the database (the synchronizer renames rows there).
+      listConnections: async () => Promise.all([...rows.values()].map(withName)),
+      getConnection: async (id: string) => (rows.has(id) ? withName(rows.get(id)!) : null),
       credential: (ref: string) => secrets.get(ref),
+      disabledByPerson: async (id: string) => personDisabled.has(id),
+      now: () => clock,
     }),
   }
 }
@@ -203,6 +245,7 @@ test('a lost create acknowledgement adopts the orphaned connection instead of cr
   const p = pool({ failCreateAfterInsert: true })
   const deps = p.deps(capabilities(), new Map([[a.row.id, a.handoff()]]))
   expect((await synchronizeManagedBigbrain(deps)).vaults[a.row.id]).toBe('failed')
+  p.advance(MANAGED_BIGBRAIN_SYNC_RETRY_MAX_MS)
   expect((await synchronizeManagedBigbrain(deps)).vaults[a.row.id]).toBe('imported')
   expect(p.calls.filter((c) => c.startsWith('create:'))).toHaveLength(1)
   const bound = await store.get(a.row.id)
@@ -222,6 +265,9 @@ test('a handoff for another host, tenant, future generation or pin is never impo
     const deps = p.deps(capabilities(), new Map([[a.row.id, bad]]))
     expect((await synchronizeManagedBigbrain(deps)).vaults[a.row.id]).toBe('handoff_mismatch')
     expect(p.calls).toEqual([])
+    // Recorded for settings (and backed off); cleared here so the next shape is checked now.
+    expect((await store.get(a.row.id))?.readSyncErrorCode).toBe('handoff_mismatch')
+    await store.clearReadSyncFailure(a.row.id)
   }
   expect((await store.get(a.row.id))?.readMaterial).toBeNull()
 })
@@ -258,7 +304,7 @@ test('a newly minted credential (reconnect) rotates and re-enables; a human disa
   await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))
   const id = (await store.get(a.row.id))!.connectionId!
   // A person disables the connection: same credential, so sync leaves it disabled.
-  await p.deps(capabilities(), handoffs).connections.disable(id)
+  await p.deps(capabilities(), handoffs).connections.disable(id, `user:${crypto.randomUUID()}`)
   expect((await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))).vaults[a.row.id]).toBe('current')
   expect(p.rows.get(id)?.enabled).toBe(false)
   // Explicit reconnect minted a new credential at a later generation.
@@ -286,4 +332,229 @@ test('without an eligible host nothing is imported', async () => {
   const report = await synchronizeManagedBigbrain(p.deps(null, new Map([[a.row.id, a.handoff()]])))
   expect(report.vaults[a.row.id]).toBe('pending_handoff')
   expect(p.calls).toEqual([])
+})
+
+test('an import whose enable failed validation is re-enabled automatically after the backoff', async () => {
+  // The live bug: create + bind committed, then the enable's live validation failed (gateway not
+  // serving yet). Every later run saw the same credential and reported "current" forever.
+  const a = await vault()
+  const p = pool()
+  p.enableFailures.push('unavailable')
+  const handoffs = new Map([[a.row.id, a.handoff()]])
+  expect((await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))).vaults[a.row.id]).toBe('failed')
+  const id = (await store.get(a.row.id))!.connectionId!
+  expect(p.rows.get(id)?.enabled).toBe(false)
+  // The failure is recorded on the vault (shown in settings), and the next run only waits.
+  expect(await store.get(a.row.id)).toMatchObject({ readSyncErrorCode: 'unavailable', readSyncAttempts: 1 })
+  expect((await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))).vaults[a.row.id]).toBe('backoff')
+  p.advance(MANAGED_BIGBRAIN_SYNC_RETRY_MAX_MS)
+  expect((await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))).vaults[a.row.id]).toBe('reenabled')
+  expect(p.rows.get(id)?.enabled).toBe(true)
+  expect(p.calls).toContain(`enable:${id}:${MANAGED_BIGBRAIN_SYNC_ACTOR}`)
+  expect(p.calls.filter((c) => c.startsWith('create:') || c.startsWith('rotate:'))).toHaveLength(1)
+  expect((await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))).vaults[a.row.id]).toBe('current')
+  expect(await store.get(a.row.id)).toMatchObject({
+    readSyncErrorCode: null,
+    readSyncAttempts: 0,
+    readSyncNextAt: null,
+  })
+})
+
+test('a runtime authentication fence is retried, and stays off while validation keeps failing', async () => {
+  const a = await vault()
+  const p = pool()
+  const handoffs = new Map([[a.row.id, a.handoff()]])
+  await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))
+  const id = (await store.get(a.row.id))!.connectionId!
+  // A tool call saw 401: the runtime fence disables with no person behind it.
+  await p.deps(capabilities(), handoffs).connections.disable(id)
+  // The owner really removed the reader upstream: validation fails, nothing is repaired.
+  p.enableFailures.push('invalid_auth')
+  expect((await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))).vaults[a.row.id]).toBe('failed')
+  expect(p.rows.get(id)?.enabled).toBe(false)
+  expect(p.rows.get(id)?.lastErrorCode).toBe('invalid_auth')
+  expect((await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))).vaults[a.row.id]).toBe('backoff')
+  // A transient 401 instead: the next attempt after the backoff validates and re-enables.
+  p.advance(MANAGED_BIGBRAIN_SYNC_RETRY_MAX_MS)
+  expect((await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))).vaults[a.row.id]).toBe('reenabled')
+  expect(p.rows.get(id)?.enabled).toBe(true)
+})
+
+test("only a person's latest disable counts as a deliberate disable", async () => {
+  const [user] = await db
+    .insert(users)
+    .values({ email: `${crypto.randomUUID()}@example.com` })
+    .returning()
+  owners.push(user!.id)
+  const id = crypto.randomUUID()
+  await db.insert(integrationConnections).values({
+    id,
+    providerKey: 'bigbrain',
+    adapterVersion: 2,
+    displayName: `Vault ${id}`,
+    configuration: {},
+    credentialRef: `ref:${id}`,
+  })
+  connectionIds.push(id)
+  const at = (seconds: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, seconds))
+  const event = (action: string, seconds: number, userId?: string) =>
+    db
+      .insert(integrationAuditEvents)
+      .values({ connectionId: id, userId, action, outcome: 'succeeded', createdAt: at(seconds) })
+  try {
+    expect(await connectionDisabledByPerson(id)).toBe(false)
+    await event('connection_enable', 1)
+    await event('connection_disable', 2)
+    expect(await connectionDisabledByPerson(id)).toBe(false)
+    await event('connection_disable', 3, user!.id)
+    // Unrelated later events (tool calls, assignments) do not hide the person's disable.
+    await event('assignment_set', 4, user!.id)
+    expect(await connectionDisabledByPerson(id)).toBe(true)
+    await event('connection_enable', 5)
+    expect(await connectionDisabledByPerson(id)).toBe(false)
+  } finally {
+    await db.delete(integrationAuditEvents).where(inArray(integrationAuditEvents.connectionId, [id]))
+  }
+})
+
+/** Tombstone a vault the way a confirmed delete does (its connection stays, disabled). */
+async function tombstone(v: Awaited<ReturnType<typeof vault>>) {
+  const deleting = await store.requestOperation(v.row.id, {
+    action: 'delete',
+    requestId: crypto.randomUUID(),
+    expectedGeneration: 1,
+  })
+  await v.receipt({ generation: deleting.desiredGeneration, state: 'deleted', readAccess: 'revoked' })
+}
+
+test("a vault re-created under a deleted vault's name imports under that exact name", async () => {
+  // The live bug: the deleted vault keeps its disabled connection named "ficus-shared", the pool
+  // keeps connection names unique, and every import of the new vault failed on it, silently.
+  const name = `ficus-shared ${crypto.randomUUID().slice(0, 8)}`
+  const old = await vault(name)
+  const p = pool()
+  const handoffs = new Map([[old.row.id, old.handoff()]])
+  await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))
+  const oldConnection = (await store.get(old.row.id))!.connectionId!
+  expect(await connectionName(oldConnection)).toBe(name)
+  await tombstone(old)
+  expect((await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))).vaults[old.row.id]).toBe('fenced')
+
+  const fresh = await vault(name)
+  handoffs.set(fresh.row.id, fresh.handoff({ credentialId: '89abcdef' }))
+  expect((await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))).vaults[fresh.row.id]).toBe('imported')
+  const linked = (await store.get(fresh.row.id))!.connectionId!
+  expect(await connectionName(linked)).toBe(name)
+  expect(p.rows.get(linked)?.enabled).toBe(true)
+  // The deleted vault keeps its (disabled) connection and binding, under a retired label.
+  expect(await connectionName(oldConnection)).toBe(`${name} (retired ${oldConnection.slice(0, 8)})`)
+  expect(p.rows.get(oldConnection)?.enabled).toBe(false)
+  expect((await store.get(old.row.id))?.connectionId).toBe(oldConnection)
+})
+
+test('an unlinked same-name connection of no vault does not block linking', async () => {
+  const name = `ficus-shared ${crypto.randomUUID().slice(0, 8)}`
+  const a = await vault(name)
+  const p = pool()
+  const orphanId = crypto.randomUUID()
+  await db.insert(integrationConnections).values({
+    id: orphanId,
+    providerKey: 'bigbrain',
+    adapterVersion: 2,
+    displayName: name,
+    configuration: { mode: 'managed_shared', vaultId: crypto.randomUUID() },
+    credentialRef: `ref:${orphanId}`,
+  })
+  connectionIds.push(orphanId)
+  const handoffs = new Map([[a.row.id, a.handoff()]])
+  expect((await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))).vaults[a.row.id]).toBe('imported')
+  expect(await connectionName((await store.get(a.row.id))!.connectionId!)).toBe(name)
+  expect(await connectionName(orphanId)).toBe(`${name} (retired ${orphanId.slice(0, 8)})`)
+})
+
+test('an unbound connection of this vault with a stale configuration is adopted and repaired', async () => {
+  const a = await vault()
+  const p = pool()
+  const id = crypto.randomUUID()
+  const stale = {
+    version: 2,
+    mode: 'managed_shared',
+    vaultId: a.row.id,
+    upstreamVaultId: crypto.randomUUID(),
+    upstreamCommit: '0'.repeat(40),
+  }
+  await db.insert(integrationConnections).values({
+    id,
+    providerKey: 'bigbrain',
+    adapterVersion: 2,
+    displayName: `Earlier ${id}`,
+    configuration: stale,
+    credentialRef: `ref:${id}`,
+  })
+  connectionIds.push(id)
+  p.adopt(
+    { id, providerKey: 'bigbrain', configuration: stale, credentialRef: `ref:${id}`, enabled: false } as never,
+    token('0123abcd')
+  )
+  const handoffs = new Map([[a.row.id, a.handoff()]])
+  expect((await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))).vaults[a.row.id]).toBe('rotated')
+  expect((await store.get(a.row.id))?.connectionId).toBe(id)
+  expect(p.calls).toContain(`rotate:${id}:configuration`)
+  expect(p.calls.some((c) => c.startsWith('create:'))).toBe(false)
+  expect((p.rows.get(id)?.configuration as { upstreamVaultId: string }).upstreamVaultId).toBe(
+    a.handoff().upstreamVaultId
+  )
+  expect(p.rows.get(id)?.enabled).toBe(true)
+  expect(await connectionName(id)).toBe(a.row.displayName)
+})
+
+test('renaming a vault to a freed name renames its connection too', async () => {
+  const freed = `freed ${crypto.randomUUID().slice(0, 8)}`
+  const old = await vault(freed)
+  const a = await vault()
+  const p = pool()
+  const handoffs = new Map([
+    [old.row.id, old.handoff()],
+    [a.row.id, a.handoff({ credentialId: '89abcdef' })],
+  ])
+  await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))
+  const oldConnection = (await store.get(old.row.id))!.connectionId!
+  await tombstone(old)
+  await store.requestOperation(a.row.id, {
+    action: 'rename',
+    requestId: crypto.randomUUID(),
+    expectedGeneration: 1,
+    displayName: freed,
+  })
+  expect((await store.get(a.row.id))?.displayName).toBe(freed)
+  expect((await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))).vaults[a.row.id]).toBe('current')
+  expect(await connectionName((await store.get(a.row.id))!.connectionId!)).toBe(freed)
+  expect(await connectionName(oldConnection)).toBe(`${freed} (retired ${oldConnection.slice(0, 8)})`)
+})
+
+test('a failing import is recorded with a safe code and retried with backoff, not every run', async () => {
+  const a = await vault()
+  const p = pool()
+  const handoffs = new Map([[a.row.id, a.handoff()]])
+  const working = p.deps(capabilities(), handoffs)
+  const failing = {
+    ...working,
+    connections: {
+      ...working.connections,
+      create: async () => {
+        throw Object.assign(new Error('duplicate key value violates unique constraint "secret detail"'), {
+          code: '23505',
+        })
+      },
+    },
+  }
+  expect((await synchronizeManagedBigbrain(failing)).vaults[a.row.id]).toBe('failed')
+  const failed = (await store.get(a.row.id))!
+  expect(failed).toMatchObject({ readSyncErrorCode: 'connection_conflict', readSyncAttempts: 1, connectionId: null })
+  expect(failed.readSyncNextAt).toBeInstanceOf(Date)
+  // Inside the backoff nothing runs (no credential is written again).
+  expect((await synchronizeManagedBigbrain(failing)).vaults[a.row.id]).toBe('backoff')
+  p.advance(MANAGED_BIGBRAIN_SYNC_RETRY_MAX_MS)
+  expect((await synchronizeManagedBigbrain(p.deps(capabilities(), handoffs))).vaults[a.row.id]).toBe('imported')
+  expect(await store.get(a.row.id)).toMatchObject({ readSyncErrorCode: null, readSyncAttempts: 0 })
 })

@@ -4055,6 +4055,12 @@ export const managedBigbrainVaults = pgTable(
     /** Imported host read handoff WITHOUT its token (the token lives only in the credential
      * store under the connection's credentialRef). Null until imported or after revocation. */
     readMaterial: jsonb('read_material'),
+    /** Safe code of the last failed read-credential synchronization (null once it succeeds), so
+     * a vault that Ficus cannot read says why instead of failing silently. */
+    readSyncErrorCode: varchar('read_sync_error_code', { length: 64 }),
+    /** Consecutive failed synchronizations; drives `readSyncNextAt` backoff. */
+    readSyncAttempts: integer('read_sync_attempts').notNull().default(0),
+    readSyncNextAt: timestamp('read_sync_next_at', { withTimezone: true }),
     createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

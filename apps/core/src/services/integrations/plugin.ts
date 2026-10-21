@@ -107,6 +107,8 @@ export interface IntegrationPluginV1<
     readonly connectionMode: IntegrationConnectionMode
     /** Deployment-dependent mode (e.g. managed on Ficus Cloud); defaults to `connectionMode`. */
     resolveConnectionMode?(): IntegrationConnectionMode
+    /** Deployment-dependent description (matching `resolveConnectionMode`); defaults to `description`. */
+    resolveDescription?(): string
     readonly assignable: boolean
     readonly requiredCapabilities: readonly string[]
   }
@@ -175,7 +177,7 @@ export function toSafeCatalogEntry(plugin: IntegrationPluginV1<unknown, unknown>
     key: plugin.key,
     adapterVersion: plugin.adapterVersion,
     label: plugin.presentation.label,
-    description: plugin.presentation.description,
+    description: plugin.presentation.resolveDescription?.() ?? plugin.presentation.description,
     icon: plugin.presentation.icon,
     connectionMode: plugin.presentation.resolveConnectionMode?.() ?? plugin.presentation.connectionMode,
     assignable: plugin.presentation.assignable,

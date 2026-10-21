@@ -26,7 +26,12 @@ import type { Identity } from '../../../rbac/permissions'
 import type { IntegrationAuditRecorder } from '../../audit'
 import { DbIntegrationAuditRecorder } from '../../db-audit'
 import { isIntegrationEnabled } from '../../provider-state'
-import { canEnumerateManagedVaults, requireManagedVaultManager, ManagedVaultAuthorizationError } from './authorization'
+import {
+  canEnumerateManagedVaults,
+  managedVaultAttachableSquads,
+  requireManagedVaultManager,
+  ManagedVaultAuthorizationError,
+} from './authorization'
 import { currentManagedBigbrainHost, managedBigbrainAvailability } from './availability'
 import { ManagedHostError, type ManagedHostClient } from './host-client'
 import { managedVaultOrigin } from './host-identity'
@@ -100,7 +105,21 @@ export interface ManagedVaultView {
   backup: string
   /** Squads that lose read access if this vault is deleted (management view only). */
   assignedSquads: { id: string; name: string }[]
+  /** Ficus's own read connection for this vault (null until imported). `readAccess` is the host's
+   * view of the credential; this is whether Ficus actually reads with it right now. */
+  readConnection: ManagedVaultReadConnection | null
+  /** Safe code of the last failed read-credential synchronization; null once it succeeds. Ficus
+   * retries on its own with backoff. */
+  readSyncError: string | null
   updatedAt: string
+}
+
+export interface ManagedVaultReadConnection {
+  enabled: boolean
+  /** Sanitized code of the last failed validation (never a provider message). */
+  lastErrorCode: string | null
+  /** A person turned it off (Ficus never turns it back on by itself). */
+  disabledByPerson: boolean
 }
 
 export interface ManagedVaultServiceDeps {
@@ -113,6 +132,10 @@ export interface ManagedVaultServiceDeps {
   disableConnection: (connectionId: string, actor: string) => Promise<void>
   /** Squads attached to a connection. */
   usage: (connectionId: string) => Promise<{ squads: readonly { id: string; name: string }[] }>
+  /** Live state of a vault's read connection (null when the row is gone). */
+  readConnection: (connectionId: string) => Promise<ManagedVaultReadConnection | null>
+  /** Squads this person may attach vaults to (`integrations:write` there), for the global card. */
+  writableSquads?: (identity: Identity, userId: string) => Promise<{ id: string; name: string }[]>
   isEnabled?: () => Promise<boolean>
   available?: () => { available: boolean }
   now?: () => Date
@@ -153,6 +176,8 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
       retryable: row.retryable,
       backup: row.backup,
       assignedSquads: row.connectionId ? [...(await deps.usage(row.connectionId)).squads].slice(0, 100) : [],
+      readConnection: row.connectionId ? await deps.readConnection(row.connectionId) : null,
+      readSyncError: row.readSyncErrorCode,
       updatedAt: row.updatedAt.toISOString(),
     }
   }
@@ -193,6 +218,13 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
     async list(identity: Identity | undefined): Promise<ManagedVaultView[]> {
       if (!(await canEnumerateManagedVaults(identity))) throw new ManagedVaultServiceError('forbidden', 403)
       return Promise.all((await store.list()).map((row) => view(row)))
+    },
+
+    /** Squads this person may attach vaults to from the global card. Attach and detach themselves
+     * use the squad assignment routes (and their authorization), never this list. */
+    async attachableSquads(identity: Identity | undefined): Promise<{ id: string; name: string }[]> {
+      const userId = await requireManagedVaultManager(identity)
+      return (deps.writableSquads ?? managedVaultAttachableSquads)(identity!, userId)
     },
 
     async get(identity: Identity | undefined, vaultId: string): Promise<ManagedVaultView> {
