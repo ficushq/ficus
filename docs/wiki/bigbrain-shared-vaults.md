@@ -202,7 +202,14 @@ readable vault is attached to none. Otherwise it is configured.
 ### Names
 
 Vault names are unique among live vaults only: the name of a deleted vault can be used again, by a
-new vault or a rename. Names are labels, never identity. Ficus's read connection for a vault
+new vault or a rename. Names are labels, never identity.
+
+A vault's Ficus name is also its server name in the BigBrain app: the app names the connection
+after it when an owner device link or member invite is redeemed. Renaming a vault in Ficus renames
+it on the server too. The vault restarts for a moment and its device links, members and Ficus read
+access are unchanged. Apps that are already connected show the new name after their next sync.
+Nothing needs to reconnect. Vaults created before Ficus set this name showed the BigBrain default,
+"Shared BigBrain". The next upgrade of the server gives each of them its Ficus name. Ficus's read connection for a vault
 carries the vault's name, and a deleted vault keeps its disabled connection (so a restore brings
 its squads back) under the label `<name> (retired <id prefix>)` once the name is reused.
 
@@ -311,7 +318,8 @@ to copy it consistently, then restarts it. No new retention is promised.
   be copied fails the backup.
 
 Restoring a server reproduces the backup point. Every vault in the backup comes back with its
-name and owner from that time, including vaults deleted after the backup was taken. If Ficus
+name and owner from that time, including vaults deleted after the backup was taken. The server
+name in the BigBrain app is set from that recorded name, not from the copy inside the archive. If Ficus
 Core still remembers a later delete or rename, it re-applies it once the server is back. A
 restore always rotates every vault credential, revokes Ficus read access and deletes pending
 device links and member invites. Owner devices are connected again. Members keep their names
@@ -339,6 +347,17 @@ the vault's squad attachments return when it does.
   pinned upstream, so the member store is the same. It calls only the upstream member and invite
   functions. A tenant gets it only through a separately authorized upgrade of the server toolkit
   together with Core; until then the helper refuses member actions.
+- The vault's server name is the `name` in its `vault/.shared-identity.json`, upstream's identity
+  file. The member adapter reads and writes it as the vault's own account, through upstream's own
+  functions. When the file is missing, upstream creates it with its own random id, and Ficus
+  never sets or changes that id. Upstream's file mode (`0600`) and every other field are kept.
+  Create writes the name before the vault first serves, and restore writes it before the restored
+  vault serves. A rename stops only that vault's unit, writes the name, starts the unit again and
+  waits until it answers with the recorded id. The installer repairs names the same way, after
+  the new release is in place, but only on an active host, never during a backup's maintenance
+  window, and only for vaults whose name differs. A vault that cannot be repaired does not fail
+  the upgrade: the setup log reports `vaultNames: {repaired, failed}` and the next upgrade tries
+  again.
 - Each vault restarts on failure. A deliberate start (create, resume, backup release) clears
   systemd's start-limit counter first; crash loops are still limited.
 - Suspending the tenant closes ingress and stops every vault; resuming waits until each vault
@@ -358,7 +377,7 @@ the vault's squad attachments return when it does.
   answered every vault host `503 {"code":"not_installed"}` while its unit was `active`. The
   BigBrain app reports any failed redeem as "Invitation is expired, already used, or
   unavailable". Vault services stay on the release recorded when the vault was created, so an
-  upgrade does not restart them.
+  upgrade restarts a vault only to repair its server name (once, see above).
 - The probe (Core's and Platform's) reports the feature available only when the running
   processes serve. The gateway's main process must run the installed release, and each ready
   vault's process must run its recorded release. The gateway must answer an unrouted host with

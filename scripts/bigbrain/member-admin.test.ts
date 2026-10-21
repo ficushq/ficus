@@ -214,7 +214,7 @@ describe('vault server name (upstream .shared-identity.json)', () => {
   test('before the first serve, upstream creates the identity (its own id) and the name is the Ficus name', async () => {
     const v = await vault()
     try {
-      expect(runMemberAdmin({ op: 'vault-name', vaultPath: v.dir, name: 'Research' }, v.f.api)).toEqual({
+      expect(runMemberAdmin({ op: 'vault-name', vaultPath: v.dir, name: 'Research' }, v.f.api) as unknown).toEqual({
         upstreamVaultId: ID,
         name: 'Research',
         changed: true,

@@ -91,8 +91,8 @@ async function removeReadHandoff(vaultId: string, deps: LifecycleDeps): Promise<
 }
 
 /** create: reserve -> storage -> owner bootstrap (root escrow) -> one read-only Ficus credential
- * -> upstream server name -> service + identity -> read handoff -> ready + ingress. Every phase is durable and a replay
- * of the same request resumes it; nothing is ever re-initialized or re-minted. */
+ * -> upstream server name -> service + identity -> read handoff -> ready + ingress. Every phase is
+ * durable and a replay of the same request resumes it; nothing is ever re-initialized or re-minted. */
 export async function createVault(request: Request<'create'>, host: InstalledHost, deps: LifecycleDeps) {
   const existing = await readVaultRecord(request.vaultId, deps)
   let record: ControlReceipt

@@ -487,7 +487,7 @@ try {
       const link = (await Bun.stdin.text()).trim();
       const saved = await connectInvite(${JSON.stringify(`${clientHome}/shared-connections.json`)}, link);
       console.log(JSON.stringify({ ok: true, vault: saved.identity?.vault?.id ?? null, role: saved.identity?.role ?? null,
-        permissions: saved.identity?.permissions ?? [] }));
+        permissions: saved.identity?.permissions ?? [], name: saved.name ?? null }));
     } catch (e) {
       console.log(JSON.stringify({ ok: false, status: e?.status ?? null, message: String(e?.message ?? e).slice(0, 120) }));
     }
@@ -522,6 +522,11 @@ try {
       Array.isArray(redeem.permissions) &&
       redeem.permissions.includes('read'),
     JSON.stringify(redeem.ok ? { role: redeem.role, permissions: redeem.permissions } : redeem)
+  )
+  check(
+    "the app names the connection after the vault's Ficus name (written at create), not upstream's default",
+    redeem.ok === true && redeem.name === 'Alpha',
+    JSON.stringify(redeem.ok ? redeem.name : null)
   )
   sh(['/bin/rm', '-rf', clientHome])
 
@@ -771,7 +776,79 @@ try {
     cancelled.ok === true && refused.ok === false,
     JSON.stringify([cancelled.ok ? 'cancelled' : cancelled.code, refused.status])
   )
+
+  // ---------------------------------------------------------------- the BigBrain app's server name
+  // The upstream name (.shared-identity.json) follows the Ficus name: rename stops only A, writes
+  // the name as A's UID and starts A again; the upgrade repairs a vault still on upstream's default.
+  const identityPath = (vaultId: string) => `${receipt(vaultId).storage.mount}/vault/.shared-identity.json`
+  const identityOf = (vaultId: string) =>
+    JSON.parse(readFileSync(identityPath(vaultId), 'utf8')) as { id: string; name: string }
+  const ownerMode = (vaultId: string) => sh(['/usr/bin/stat', '-c', '%u:%a', identityPath(vaultId)]).stdout.trim()
+  check(
+    'create wrote the Ficus names as upstream server names, keeping upstream ids',
+    identityOf(A).name === 'Alpha' &&
+      identityOf(A).id === rA.receipt.upstreamVaultId &&
+      identityOf(B).name === 'Beta' &&
+      identityOf(B).id === rB.receipt.upstreamVaultId,
+    JSON.stringify([identityOf(A).name, identityOf(B).name])
+  )
+  const pidB = unitProperty(`ficus-bigbrain@${B}.service`, 'MainPID')
+  const renamed = helper({
+    requestId: randomUUID(),
+    action: 'rename',
+    ...fenceA(),
+    generation: receipt(A).receipt.generation + 1,
+    displayName: 'Alpha notes',
+  })
+  check(
+    'rename writes the upstream name as the vault UID (0600), keeps the id and restarts only that vault',
+    renamed.ok === true &&
+      renamed.receipt.displayName === 'Alpha notes' &&
+      identityOf(A).name === 'Alpha notes' &&
+      identityOf(A).id === rA.receipt.upstreamVaultId &&
+      ownerMode(A) === `${rA.os.uid}:600` &&
+      unitProperty(`ficus-bigbrain@${A}.service`, 'ActiveState') === 'active' &&
+      unitProperty(`ficus-bigbrain@${B}.service`, 'MainPID') === pidB,
+    JSON.stringify(renamed.ok ? [identityOf(A).name, ownerMode(A)] : [renamed.code, renamed.stderr])
+  )
+  const third = helper({
+    requestId: randomUUID(),
+    action: 'member-invite',
+    ...fenceA(),
+    displayName: 'Ada',
+    access: 'read',
+  })
+  sh(['/bin/rm', '-f', `${memberHome}/shared-connections.json`])
+  const renamedJoin = await memberClient(
+    `const saved = await m.connectInvite(path, input);
+     console.log(JSON.stringify({ ok: true, name: saved.name, vault: saved.identity.vault.id }));`,
+    third.ok ? String(third.invite.inviteUrl) : ''
+  )
+  check(
+    'after a rename the vault redeems in the pinned native client under its new name',
+    third.ok === true &&
+      renamedJoin.ok === true &&
+      renamedJoin.name === 'Alpha notes' &&
+      renamedJoin.vault === rA.receipt.upstreamVaultId,
+    JSON.stringify(renamedJoin.ok ? renamedJoin.name : [third.code, renamedJoin.status])
+  )
   sh(['/bin/rm', '-rf', memberHome])
+  // A vault created before Ficus wrote names: upstream's default, as the vault UID left it.
+  writeFileSync(identityPath(B), JSON.stringify({ id: rB.receipt.upstreamVaultId, name: 'Shared BigBrain' }), {
+    mode: 0o600,
+  })
+  must(['/usr/bin/chown', `${rB.os.uid}:${rB.os.gid}`, identityPath(B)])
+  const pidBeforeUpgrade = unitProperty(`ficus-bigbrain@${A}.service`, 'MainPID')
+  toolkitInstall(release, config)
+  check(
+    'the upgrade repairs a vault still named "Shared BigBrain" once, keeping its id, and leaves the others running',
+    identityOf(B).name === 'Beta' &&
+      identityOf(B).id === rB.receipt.upstreamVaultId &&
+      ownerMode(B) === `${rB.os.uid}:600` &&
+      unitProperty(`ficus-bigbrain@${A}.service`, 'MainPID') === pidBeforeUpgrade &&
+      (await eventually(async () => (await gateway(B, '/v1/whoami', handoffB.token)).status, 200)) === 200,
+    JSON.stringify([identityOf(B).name, ownerMode(B)])
+  )
 
   // ---------------------------------------------------------------- probe reports a gateway that cannot serve
   // Same failure class as the outage (an active gateway unit that cannot load its manifest): make
@@ -1023,7 +1100,12 @@ try {
   )
 
   // ---------------------------------------------------------------- read revoke keeps humans
-  const revoke = helper({ action: 'read-revoke', vaultId: A, expectedGeneration: 1, generation: 2 })
+  const revoke = helper({
+    action: 'read-revoke',
+    vaultId: A,
+    expectedGeneration: receipt(A).receipt.generation,
+    generation: receipt(A).receipt.generation + 1,
+  })
   check(
     'read-revoke succeeds',
     revoke.ok === true && revoke.receipt?.readAccess === 'revoked',
@@ -1052,10 +1134,10 @@ try {
   const del = helper({
     action: 'delete',
     vaultId: A,
-    expectedGeneration: 2,
-    generation: 3,
+    expectedGeneration: receipt(A).receipt.generation,
+    generation: receipt(A).receipt.generation + 1,
     confirmedVaultId: A,
-    confirmedName: 'Alpha',
+    confirmedName: 'Alpha notes',
   })
   check('delete A', del.ok === true && del.receipt?.state === 'deleted', JSON.stringify(del.code))
   check('A account removed', sh(['/usr/bin/getent', 'passwd', `bbv_${hex(A).slice(0, 24)}`]).code === 2)
@@ -1128,8 +1210,14 @@ try {
     JSON.stringify([receipt(A).receipt.origin, receipt(B).receipt.origin])
   )
   check(
-    'restored vaults keep their archived names',
-    receipt(B).displayName === 'Beta' && receipt(A).displayName === 'Alpha'
+    'restored vaults keep their archived names, also as their upstream server names (ids kept)',
+    receipt(B).displayName === 'Beta' &&
+      receipt(A).displayName === 'Alpha notes' &&
+      identityOf(B).name === 'Beta' &&
+      identityOf(B).id === archivedB.upstreamVaultId &&
+      identityOf(A).name === 'Alpha notes' &&
+      identityOf(A).id === archivedA.upstreamVaultId,
+    JSON.stringify([identityOf(A).name, identityOf(B).name])
   )
   check(
     'restored B rotated every credential: the pre-backup Ficus token is rejected',
