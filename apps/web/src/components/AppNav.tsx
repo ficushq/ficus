@@ -254,8 +254,9 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
               to="/settings"
               className={({ isActive }) =>
                 clsx(
+                  'ficus-button ficus-button-ghost',
                   'hidden md:flex items-center justify-center p-2 rounded-md',
-                  isActive ? 'bg-selection text-accent-light' : 'text-muted hover:text-primary hover:bg-surface-hover'
+                  isActive && 'text-accent-light hover:text-accent-light'
                 )
               }
               title="Settings (S)"

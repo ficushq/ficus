@@ -389,6 +389,47 @@ describe('theme quick picker placement', () => {
   })
 })
 
+describe('desktop right cluster icons', () => {
+  beforeEach(() => {
+    resetTabHistory()
+    permissions = new Set<string>()
+    permissionsLoading = false
+    voiceStatus = { enabled: true }
+  })
+
+  /** The opening tag of the element carrying `title`. */
+  const tagWithTitle = (html: string, title: string) => {
+    const index = html.indexOf(`title="${title}"`)
+    expect(index).toBeGreaterThan(-1)
+    const start = html.lastIndexOf('<', index)
+    return html.slice(start, html.indexOf('>', index) + 1)
+  }
+
+  test('every icon uses the shared ghost button, so hover, focus and open states animate alike', () => {
+    const html = renderWithProviders(<AppHeader usePendingActions={useFixturePendingActions} />)
+    for (const title of ['Assistant (⌘K / Ctrl+K)', 'Farm', 'Theme', 'Inbox (I)', 'Settings (S)']) {
+      const tag = tagWithTitle(html, title)
+      expect(tag).toContain('ficus-button ficus-button-ghost')
+      expect(tag).not.toContain('hover:bg-surface-hover')
+    }
+  })
+
+  test('Settings is tinted on its own route as an open Inbox is, without a selection fill', () => {
+    const elsewhere = tagWithTitle(
+      renderWithProviders(<AppHeader usePendingActions={useFixturePendingActions} />),
+      'Settings (S)'
+    )
+    expect(elsewhere).not.toContain('text-accent-light')
+
+    const onSettings = tagWithTitle(
+      renderWithProviders(<AppHeader usePendingActions={useFixturePendingActions} />, '/settings'),
+      'Settings (S)'
+    )
+    expect(onSettings).toContain('text-accent-light hover:text-accent-light')
+    expect(onSettings).not.toContain('bg-selection')
+  })
+})
+
 describe('navigation keyboard shortcuts', () => {
   test('F, A and Q still navigate, and S still reaches settings', () => {
     expect(resolveNavShortcut('f')).toBe('/')

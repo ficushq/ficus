@@ -9,7 +9,7 @@ import type { PopoverState } from './usePopover'
  * How long a mouse rests on a hover-open trigger before it opens, for every hover menu: a pointer just
  * passing over (on its way to the button beside it, say) never flashes the menu open.
  */
-export const HOVER_OPEN_DELAY_MS = 180
+export const HOVER_OPEN_DELAY_MS = 80
 
 export interface HoverOpenOptions {
   /** Off: the trigger only opens on click/keyboard, as without this hook. */
