@@ -190,7 +190,9 @@ Pending invites are listed with their name, access and expiry, never their link.
   with its own handle, `invite-<invite ID>`, and the name from the invite. Everything that
   member writes is attributed to that handle and name, including in what Ficus agents read.
   Retrying the same request (a lost response, for example) returns the same link; it never
-  creates a second invite. At most 32 invites created through Ficus can be live per vault.
+  creates a second invite. At most 32 invites created through Ficus can be pending per vault.
+  Cancelled and redeemed invites stop counting; an invite whose result was lost keeps counting
+  until it expires, because Ficus cannot tell whether it was created.
 - **Cancel invite.** The link stops working at once. An invite that was already redeemed cannot
   be cancelled; remove the member instead.
 - **Change access.** Read, or read and write. It applies to the member's next request on every

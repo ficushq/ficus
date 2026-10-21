@@ -82,8 +82,10 @@ export function fakeMemberApi(store = DEFAULT_STORE) {
     },
     createMemberInvite: (_path, display, permission, at) => {
       calls.push('createMemberInvite')
+      const minted = calls.filter((c) => c === 'createMemberInvite').length
       const invite = {
-        id: 'b'.repeat(24),
+        // First invite 'bbbb…', later ones unique (as upstream's random IDs are).
+        id: minted === 1 ? 'b'.repeat(24) : minted.toString(16).padStart(24, '0'),
         secret,
         display,
         permission,

@@ -144,6 +144,10 @@ describe('integration bigbrain vault', () => {
     await run(['invite', VAULT, '--name', 'Grace', '--access', 'owner', '--generation', '3', '--out', join(dir, 'y')])
     expect(apiPost).not.toHaveBeenCalled()
     expect(allOutput()).toContain('--access must be read or write')
+    await run(['invite', VAULT, '--name', '   ', '--generation', '3', '--out', join(dir, 'z')])
+    await run(['invite', VAULT, '--name', 'a'.repeat(121), '--generation', '3', '--out', join(dir, 'w')])
+    expect(apiPost).not.toHaveBeenCalled()
+    expect(allOutput()).toContain('at most 120 characters')
   })
 
   test('a member invite link goes only to a new 0600 file; output shows the path, ID and expiry', async () => {
@@ -160,7 +164,7 @@ describe('integration bigbrain vault', () => {
     await run(['invite', VAULT, '--name', 'Grace', '--generation', '3', '--out', existing])
     expect(apiPost).not.toHaveBeenCalled()
     const file = join(dir, 'member.txt')
-    await run(['invite', VAULT, '--name', 'Grace', '--access', 'write', '--generation', '3', '--out', file])
+    await run(['invite', VAULT, '--name', '  Grace ', '--access', 'write', '--generation', '3', '--out', file])
     expect(apiPost).toHaveBeenCalledWith(`/api/integrations/providers/bigbrain/shared-vaults/${VAULT}/invites`, {
       requestId: expect.any(String),
       expectedGeneration: 3,

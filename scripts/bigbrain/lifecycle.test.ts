@@ -549,14 +549,75 @@ test('member-invite needs the vault served at its origin and bounds live invites
   expect(await f.send(invite())).toMatchObject({ ok: false, code: 'tls_unavailable' })
   expect(f.native.calls).not.toContain('createMemberInvite')
   f.deps.ingress = async () => {}
-  const create = f.native.api.createMemberInvite
-  let n = 0
-  f.native.api.createMemberInvite = (...args) => ({
-    ...(create(...args) as object),
-    id: (++n).toString(16).padStart(24, '0'),
-  })
-  for (let i = 0; i < 32; i++) expect(await f.send(invite())).toMatchObject({ ok: true })
+  const sent = []
+  for (let i = 0; i < 32; i++) {
+    sent.push(invite())
+    expect(await f.send(sent[i]!)).toMatchObject({ ok: true })
+  }
+  // All 32 still pending upstream: the cap holds.
   expect(await f.send(invite())).toMatchObject({ ok: false, code: 'capacity' })
+  // Cancelled and redeemed invites stop counting; their requests still never mint again.
+  const minted = () => f.native.invites.map((i) => i.id)
+  const [cancelId, redeemedId] = minted()
+  expect(await f.member({ action: 'invite-cancel', inviteId: cancelId })).toMatchObject({ ok: true })
+  f.native.invites.find((i) => i.id === redeemedId)!.used = true
+  expect(await f.send(invite())).toMatchObject({ ok: true })
+  expect(await f.send(invite())).toMatchObject({ ok: true })
+  expect(await f.send(invite())).toMatchObject({ ok: false, code: 'capacity' })
+  const before = f.native.calls.filter((c) => c === 'createMemberInvite').length
+  for (const spent of [sent[0]!, sent[1]!])
+    expect(await f.send(spent)).toMatchObject({ ok: false, code: 'invite_expired' })
+  expect(f.native.calls.filter((c) => c === 'createMemberInvite')).toHaveLength(before)
+  const cache = await readFile(join(managedPaths({ root: f.root, vaultId: A }).control, 'member-invites.json'), 'utf8')
+  // Spent records are secret-free: only the request ID and expiry.
+  expect(JSON.parse(cache).spent.map((e: object) => Object.keys(e).sort())).toEqual([
+    ['expiresAt', 'requestId'],
+    ['expiresAt', 'requestId'],
+  ])
+})
+
+test('lost-result invites still count toward the cap and fail closed', async () => {
+  const f = await memberFixture()
+  const create = f.native.api.createMemberInvite
+  f.native.api.createMemberInvite = (...args) => {
+    create(...args)
+    throw new Error('lost')
+  }
+  const invite = () => ({
+    requestId: rid(),
+    action: 'member-invite',
+    vaultId: A,
+    expectedGeneration: 1,
+    displayName: 'Lin',
+    access: 'read',
+  })
+  for (let i = 0; i < 32; i++) expect(await f.send(invite())).toMatchObject({ ok: false, code: 'operation_failed' })
+  f.native.api.createMemberInvite = create
+  // Even after upstream forgets them (cancelled), unconfirmed mints are not proven spent.
+  for (const pending of [...f.native.invites]) pending.cancelled = true
+  expect(await f.send(invite())).toMatchObject({ ok: false, code: 'capacity' })
+})
+
+test('the spent-request record keeps the whole replay cache within its private-file budget', async () => {
+  const { memberInviteCacheSchema, MAX_SPENT_MEMBER_INVITES } = await import('./member-invite-cache')
+  const uuid = (i: number) => `${i.toString(16).padStart(8, '0')}-0000-4000-8000-000000000000`
+  const full = {
+    schema: 1,
+    invites: Array.from({ length: 32 }, (_, i) => ({
+      requestId: uuid(i),
+      inputHash: `sha256:${'a'.repeat(64)}`,
+      expiresAt: '2026-10-21T00:10:00.000Z',
+      phase: 'complete',
+      inviteId: 'c'.repeat(24),
+      secret: 's'.repeat(43),
+    })),
+    spent: Array.from({ length: MAX_SPENT_MEMBER_INVITES }, (_, i) => ({
+      requestId: uuid(1000 + i),
+      expiresAt: '2026-10-21T00:10:00.000Z',
+    })),
+  }
+  expect(memberInviteCacheSchema.safeParse(full).success).toBe(true)
+  expect(Buffer.byteLength(JSON.stringify(full))).toBeLessThanOrEqual(16384)
 })
 
 test('a vault created before member management gets its invite cache on first use; a corrupt one fails closed', async () => {

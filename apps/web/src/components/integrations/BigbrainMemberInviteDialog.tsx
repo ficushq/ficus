@@ -9,18 +9,23 @@ import {
   type ManagedBigbrainVault,
 } from '../../api/integrations'
 
+function failureCode(error: unknown): string {
+  return error instanceof ApiError && error.payload && typeof error.payload === 'object'
+    ? String((error.payload as { code?: unknown }).code ?? '')
+    : ''
+}
+/** The server will never return a link for this request ID again: the next try needs a new one. */
+const TERMINAL = new Set(['operation_failed', 'invite_expired', 'request_conflict'])
+
 /** Why no link was created, and what to do. Never echoes server text (no secret ever lands here). */
-function inviteFailure(error: unknown): string {
-  const code =
-    error instanceof ApiError && error.payload && typeof error.payload === 'object'
-      ? String((error.payload as { code?: unknown }).code ?? '')
-      : ''
+function inviteFailure(code: string): string {
+  if (TERMINAL.has(code))
+    return 'No invite link could be confirmed. Check Pending invites and cancel any that are not recognised, then create a new one.'
   if (
     ['tls_unavailable', 'maintenance', 'unavailable', 'host_unreachable', 'busy', 'upstream_unavailable'].includes(code)
   )
     return 'This vault is not reachable at its address yet, so no link was created. Try again in a few minutes.'
-  if (code === 'generation_conflict' || code === 'request_conflict')
-    return 'This vault changed meanwhile. Refresh the vault list and try again.'
+  if (code === 'generation_conflict') return 'This vault changed meanwhile. Refresh the vault list and try again.'
   if (code === 'rate_limited' || code === 'capacity')
     return 'Too many invite links were created recently. Cancel unused invites or try again later.'
   if (code === 'human_required' || code === 'permission_required') return 'You do not have permission to do that.'
@@ -81,7 +86,9 @@ export function BigbrainMemberInviteDialog({
   const edit = (patch: Partial<Omit<ReturnType<typeof draft>, 'requestId'>>) =>
     setForm((current) => ({ ...current, ...patch, requestId: crypto.randomUUID() }))
   const name = form.displayName
-  const valid = name.trim() !== '' && name === name.trim() && name.length <= 120
+  // Surrounding spaces are trimmed on submit, never a reason to refuse.
+  const trimmed = name.trim()
+  const valid = trimmed !== '' && trimmed.length <= 120
 
   async function create() {
     const request = ++generation.current
@@ -91,14 +98,19 @@ export function BigbrainMemberInviteDialog({
       const result = await createManagedBigbrainMemberInvite(vault.vaultId, {
         requestId: form.requestId,
         expectedGeneration: vault.desiredGeneration,
-        displayName: form.displayName,
+        displayName: trimmed,
         access: form.access,
       })
       if (generation.current !== request) return
       setInvite(result)
       onInvited()
     } catch (error) {
-      if (generation.current === request) setError(inviteFailure(error))
+      if (generation.current !== request) return
+      const code = failureCode(error)
+      // Transient failures retry the same request (the server then returns the same link);
+      // a terminal one never will, so the next try is a new request.
+      if (TERMINAL.has(code)) setForm((current) => ({ ...current, requestId: crypto.randomUUID() }))
+      setError(inviteFailure(code))
     } finally {
       if (generation.current === request) setPending(false)
     }
@@ -138,7 +150,7 @@ export function BigbrainMemberInviteDialog({
               <input
                 className="ficus-field rounded-md border border-th-border bg-surface px-3 py-2"
                 value={name}
-                maxLength={120}
+                maxLength={240}
                 disabled={pending}
                 onChange={(event) => edit({ displayName: event.target.value })}
                 required

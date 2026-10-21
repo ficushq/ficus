@@ -237,13 +237,15 @@ export function registerBigbrainVaultCommands(
     .option('--out <file>', 'New file to create with mode 0600 (required)')
     .action(
       run(async (id: string, options: { name?: string; access: string; generation: string; out?: string }) => {
-        if (!options.name)
+        const name = options.name?.trim()
+        if (!name)
           throw new Error('--name is required for a member invite (for an owner device link, use `owner-link`)')
+        if (name.length > 120) throw new Error('--name must be at most 120 characters')
         const level = access(options.access)
         const target = await secretOut(options.out, 'invite link')
         const invite = await apiPost<MemberInvite>(path(id, '/invites'), {
           ...fence(options),
-          displayName: options.name,
+          displayName: name,
           access: level,
         })
         const written = await dependencies.writeSecretFile(target, `${invite.inviteUrl}\n`)

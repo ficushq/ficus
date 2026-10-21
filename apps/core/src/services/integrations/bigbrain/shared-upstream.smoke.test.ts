@@ -458,8 +458,8 @@ test.skipIf(!artifact && !required)(
           uid: process.getuid!(),
           request,
           authorize: async () => {},
-          stillPending: async (id) =>
-            (await admin({ op: 'list' })).invites.some((i: { inviteId: string }) => i.inviteId === id),
+          pendingInvites: async () =>
+            new Set((await admin({ op: 'list' })).invites.map((i: { inviteId: string }) => i.inviteId)),
           mint: async (issuedAt) => {
             minted++
             return (await admin({

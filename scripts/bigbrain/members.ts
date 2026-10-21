@@ -113,9 +113,9 @@ export async function inviteMember(
     request,
     now: deps.now,
     authorize: async () => void (await liveVault(request, deps)),
-    stillPending: async (inviteId) => {
+    pendingInvites: async () => {
       const roster = await call(record, 'list', {}, host, deps)
-      return roster.invitesTruncated || roster.invites.some((invite) => invite.inviteId === inviteId)
+      return roster.invitesTruncated ? 'unknown' : new Set(roster.invites.map((invite) => invite.inviteId))
     },
     mint: (issuedAt) =>
       call(record, 'invite', { displayName: request.displayName, access: request.access, issuedAt }, host, deps),

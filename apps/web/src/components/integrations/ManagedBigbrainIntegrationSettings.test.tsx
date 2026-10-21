@@ -467,4 +467,49 @@ describe('managed vault members', () => {
     expect(ids[1]).toBe(ids[0])
     expect(ids[2]).not.toBe(ids[0])
   })
+
+  async function openInvite() {
+    await render()
+    await act(() => fireEvent.click(button('Members', row('Research'))))
+    await act(() => fireEvent.click(button('Invite member', section())))
+    return [...document.querySelectorAll<HTMLInputElement>('input')].find(
+      (i) => i.type !== 'radio' && !container.contains(i)
+    )!
+  }
+
+  test('surrounding spaces in the name are trimmed, never a reason to refuse', async () => {
+    members()
+    const name = await openInvite()
+    await act(() => fireEvent.input(name, { target: { value: '   ' } }))
+    expect(button('Create invite link', document.body).disabled).toBe(true)
+    await act(() => fireEvent.input(name, { target: { value: `  ${'a'.repeat(121)} ` } }))
+    expect(button('Create invite link', document.body).disabled).toBe(true)
+    await act(() => fireEvent.input(name, { target: { value: '  Ada Lovelace ' } }))
+    expect(button('Create invite link', document.body).disabled).toBe(false)
+    await act(() => fireEvent.click(button('Create invite link', document.body)))
+    expect(JSON.parse(mutations()[0]!.body).displayName).toBe('Ada Lovelace')
+  })
+
+  for (const code of ['operation_failed', 'invite_expired', 'request_conflict'])
+    test(`a terminal ${code} starts a new request and says to check pending invites`, async () => {
+      let fail = true
+      members((path, method) =>
+        method === 'POST' && path.endsWith('/invites') && fail
+          ? Response.json({ code, retryable: false }, { status: 409 })
+          : undefined
+      )
+      const name = await openInvite()
+      await act(() => fireEvent.input(name, { target: { value: 'Ada' } }))
+      await act(() => fireEvent.click(button('Create invite link', document.body)))
+      expect(document.body.textContent).toContain('No invite link could be confirmed')
+      expect(document.body.textContent).toContain('Check Pending invites')
+      fail = false
+      await act(() => fireEvent.click(button('Create invite link', document.body)))
+      const [first, second] = mutations().map((r) => JSON.parse(r.body))
+      expect(second.requestId).not.toBe(first.requestId)
+      expect(second.displayName).toBe('Ada')
+      expect(document.querySelector<HTMLInputElement>('input[aria-label="Member invite link"]')!.value).toBe(
+        MEMBER_SECRET
+      )
+    })
 })
