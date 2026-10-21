@@ -208,7 +208,7 @@ class Budget:
     ):
         with self.lock, sqlite3.connect(self.path) as db:
             db.execute(
-                "UPDATE calls SET http_status=coalesce(?,http_status), failure=coalesce(?,failure), provider_code=coalesce(?,provider_code), request_id=coalesce(?,request_id), retry_after=coalesce(?,retry_after) WHERE id=?",
+                "UPDATE calls SET http_status=coalesce(?,http_status), failure=CASE WHEN failure IS NULL OR failure='client_disconnected' THEN coalesce(?,failure) ELSE failure END, provider_code=coalesce(?,provider_code), request_id=coalesce(?,request_id), retry_after=coalesce(?,retry_after) WHERE id=?",
                 (status, failure, provider_code, request_id, retry_after, identifier),
             )
 

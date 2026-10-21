@@ -105,6 +105,24 @@ class ConcurrentFeatureTests(unittest.TestCase):
                 check_provider_failures(ledger, ["current"])
             self.assertEqual(budget.summary()["current"]["unknown_usage"], 1)
 
+    def test_client_cancellation_is_accounted_but_not_mislabeled_provider_failure(self):
+        from run_concurrent_feature import check_provider_failures
+
+        with tempfile.TemporaryDirectory() as folder:
+            budget = Budget(Path(folder) / "ledger.sqlite")
+            call = budget.reserve("current")
+            budget.note(call, status=200, failure="client_disconnected")
+            check_provider_failures(budget.path, ["current"])
+            self.assertEqual(budget.summary()["current"]["unknown_usage"], 1)
+            self.assertEqual(budget.total(), 0.5)
+            budget.settle(call, {"prompt_tokens": 100, "completion_tokens": 10})
+            check_provider_failures(budget.path, ["current"])
+            self.assertEqual(budget.summary()["current"]["unknown_usage"], 0)
+            budget.note(call, failure="upstream_stream_error")
+            budget.note(call, failure="client_disconnected")
+            with self.assertRaisesRegex(ValueError, "Provider failure"):
+                check_provider_failures(budget.path, ["current"])
+
     def test_provider_failure_terminates_both_owned_processes_and_records_stop(self):
         import subprocess
         import sys

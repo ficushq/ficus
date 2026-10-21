@@ -117,7 +117,8 @@ def check_provider_failures(ledger, clients):
                 )
             row = db.execute(
                 "SELECT id,failure,http_status FROM calls WHERE client=? "
-                "AND (failure IS NOT NULL OR http_status>=400) ORDER BY id LIMIT 1",
+                "AND ((failure IS NOT NULL AND failure!='client_disconnected') "
+                "OR http_status>=400) ORDER BY id LIMIT 1",
                 (client,),
             ).fetchone()
             if row:

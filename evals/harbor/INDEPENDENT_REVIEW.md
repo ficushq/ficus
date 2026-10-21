@@ -93,3 +93,20 @@ with unchanged prompts/tasks/runtimes, fresh clients and environments, and the
 same caps. Its starting phase spend is $6.389843, leaving $23.610157. Both prior
 interrupted batches remain in the reported total. No official outcome is
 available from either, and neither is counted as a model acceptance failure.
+
+Recovery 2 again stopped on an upstream-200 client cancellation. Therefore the
+terminal-stream defect alone did not explain the observed stops. The supervisor
+was also incorrectly treating `client_disconnected` as a provider failure.
+Client aborts may be part of normal agent/session lifecycle; the exact trigger
+in these stopped runs is unproven. They are now retained as transport observations
+without forcing an immediate batch cancellation. Real HTTP/provider/proxy errors
+still stop the batch. A later disconnect cannot overwrite an already-recorded
+upstream failure. All 63 offline tests pass, including this distinction and
+preservation of a cancellation's unresolved charge until its receipt arrives.
+
+Recovery 2 used $1.037168 in confirmed inference and left one $5.50 unknown-usage
+hold at shutdown. Recovery 3 starts from $7.427011 confirmed plus that hold:
+$12.927011 exposure against the unchanged $30 cap. Available headroom is
+$17.072989. The hold is not reconciled or released. Unknown usage after a new
+batch still blocks the next condition, and all previous attempts remain retained.
+The candidate reviewer still has not been run or adjusted.
