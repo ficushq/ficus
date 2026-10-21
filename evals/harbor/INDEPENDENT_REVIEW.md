@@ -19,7 +19,7 @@ The next two unused entries in the original SHA256 selection order are
 the same tasks, native Pi SDK 0.99.1, GPT-6.1 Sol at medium thinking, and full
 manager/architect/engineer/reviewer planned workflow, with fresh disabled memory.
 
-## Protocol
+## Original frozen protocol
 
 Run the unchanged baseline on both tasks concurrently, then the experimental
 reviewer on both tasks concurrently. Reuse the audited concurrent runner with one
@@ -48,8 +48,11 @@ amd64 emulation, setup overhead, and unrelated host load also limit timing claim
 
 ## Status
 
-Prompt and task selection frozen. Environment controls are being checked; no
-inference has started for this study.
+All eight grading controls and four no-inference startup/network checks passed.
+Both conditions have finished. The candidate accepted one of two tasks; the
+baseline accepted neither and blocked on one. Original-test sensitivity checks
+preserved both Igel scores. All paid runners and owned trial/database containers
+are stopped. No production prompt has changed.
 
 ## Interrupted launch and explicit recovery
 
@@ -141,3 +144,88 @@ preserve reservation headroom: phase confirmed spend is $11.445352 plus the
 unchanged $5.50 hold, leaving $13.054648 under the $30 cap. Do not compare batch
 throughput to the concurrent baseline. Retain scheduling and observer differences
 as limitations, and distinguish artifact acceptance from autonomous delivery.
+
+The separate baseline PSD artifact replay completed without inference: **36/45
+feature checks and 979/979 regressions**, reward 0. Its replay metadata and
+shutdown-captured patch match the recorded artifact hash. This score does not
+convert the blocked squad into an autonomous delivery.
+
+## Completed Igel comparison
+
+Both full squads delivered an artifact, returned through one implementation
+revision, and received the same official grade: **22/24 feature checks and 2/2
+regressions, reward 0**. Baseline cost $1.233294 (80 calls); candidate cost
+$1.154768 (75 calls). Both used all four roles and GPT-6.1 Sol. Both reviewers
+independently found the empty HTTP-input path that called the estimator with
+`None`, requested a repair, and subsequently approved. The candidate addition
+produced no observed acceptance or review-coverage improvement on this task.
+
+Both failed the same two official test identities. The saved schema was present,
+but the grader loaded the stored relative filename directly from its working
+directory. Both implementations instead resolved it relative to the model
+artifact directory. The other test requires a clear all-features-removed error:
+the baseline failure is a wording-token assertion, while the candidate instead
+rejects `exclude: null` before reaching feature removal. These details limit what
+can be inferred from binary failure alone; official scores are not changed.
+
+The submission audit also found changes to the two scored legacy smoke tests,
+including test-fixture relocation. The official grader replaces test-patch
+collision paths but does not restore every pre-existing regression test. Both
+Igel artifacts therefore get a separate, no-inference sensitivity check with
+all submission changes under `tests/` excluded and implementation changes kept
+identical. Original artifacts, grades and hashes remain retained. That extra
+check is not a new model attempt or a replacement official submission.
+
+Both original-test sensitivity checks finished successfully with the same
+**22/24 feature and 2/2 regression** counts. Thus the submitted test edits did
+not change these reported scores. The original regression tests are verified
+separately rather than assumed protected by the patch-collision controls. These
+no-inference audits ran while the PSD candidate was active, adding host load;
+no timing or throughput comparison is claimed for this study.
+
+## Final results and interpretation
+
+| Task      | Baseline artifact checks                           | Candidate artifact checks         | Autonomous delivery, baseline / candidate | Inference USD, baseline / candidate |
+| --------- | -------------------------------------------------- | --------------------------------- | ----------------------------------------- | ----------------------------------- |
+| Igel      | 22/24 feature; 2/2 regression                      | 22/24 feature; 2/2 regression     | Yes / Yes                                 | $1.233294 / $1.154768               |
+| PSD Tools | 36/45 feature; 979/979 regression, separate replay | 45/45 feature; 979/979 regression | No, owner wait / Yes                      | $2.785047 / $1.127485               |
+
+Official accepted artifacts: **baseline 0/2; candidate 1/2**. Baseline PSD's
+artifact grade comes from the explicitly labeled no-inference replay, not its
+externally interrupted original Harbor job. Candidate PSD finished on its first
+implementation and first review, with all requested roles executed. It modified
+no existing test assertion lines in the retained test paths; the official
+feature-test collision path was restored by the upstream grader.
+
+The PSD candidate reviewer independently ran the focused tests and reproduced
+the same 25 optional-dependency failures on clean `main`. It approved with those
+environment limits documented. Baseline instead requested an implementation
+repair for a real stroke-visibility defect, then blocked on unavailable `aggdraw`
+for deeper vector validation. The candidate's acceptance and lower cost are
+encouraging observations, but the successful implementation preceded review.
+There is no observed reviewer-requested correction that caused its success.
+Different stochastic engineer outputs, fixed order, scheduling, observer changes,
+and two tasks prevent attributing this result to the prompt addition.
+
+**Decision:** keep this reviewer addition experimental; do not promote it based
+on this pilot alone. A useful next diagnostic would hold completed engineer
+artifacts constant and compare blinded baseline/candidate reviews, measuring
+concrete supported findings and false positives. Such replays must be labeled
+known-artifact diagnostics, not fresh full-squad benchmark acceptance. Future
+fresh squad tasks can then test whether any verified review improvement survives
+end-to-end orchestration. No further paid trial is started in this report.
+
+`independent-review-v1-results.json` records per-condition grades, delivery
+states, model/role provenance, artifact hashes, original-test audits, retained
+interruptions and final ledger totals. Current-study inference was **$9.078001**,
+including **$2.777407** for the three interrupted launches, **$4.018341** for the
+recorded baseline condition and **$2.282253** for the candidate. Adding the
+preceding $4.649604 study yields **$13.727605 confirmed** in the user-authorized
+$30 phase. Call 446 still retains its **$5.50** missing-receipt hold. Exposure is
+**$19.227605**, leaving **$10.772395** conservative headroom through call 829.
+No hold was released, historical ledger reset, or budget increased.
+
+Validation: 65 offline harness tests, changed Python Ruff/format checks and
+repository-wide Bun typecheck passed for the committed harness changes. Final
+report edits are formatted and whitespace-checked. Production prompts and
+provider defaults are unchanged; the evaluation PR remains draft.
