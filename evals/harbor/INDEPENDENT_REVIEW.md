@@ -1,5 +1,10 @@
 # Independent reviewer interpretation pilot
 
+The original temporary raw artifacts are no longer available; the summaries and
+hashes below are preserved historical evidence, not a substitute for those files.
+See [the controlled follow-up](ARTIFACT_REVIEW.md) for the recovery protocol and
+durable storage used for new trials.
+
 ## Question and frozen intervention
 
 The preceding concurrent pilot exposed a shared architectural assumption that

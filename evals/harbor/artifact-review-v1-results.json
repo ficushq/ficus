@@ -1,0 +1,207 @@
+{
+  "experiment": "artifact-review-v1",
+  "kind": "one-artifact controlled reviewer diagnostic; not a full-squad benchmark score",
+  "artifact": {
+    "source_job": "arv1-paid-engineer",
+    "source_result_sha256": "9920e201c650793c50a843926a7ffea4fc576f2530810d041e507363fc89aecf",
+    "base_commit": "061c97f8a01bf9e721835978b039303c5051501c",
+    "sha256": "aafc0cd73b79ad6b211ea93c00627c797ab2d54a601f4914553c47e26b2c5a32",
+    "bytes": 42645,
+    "implementation_metadata": {
+      "configuration": "engineer",
+      "model_api": "openai-responses",
+      "thinking": "medium",
+      "outcome": "delivered",
+      "memory": "fresh-disabled",
+      "runtime_sha256": "f34c6a8a347e25b3179cea46f2283afbdca0f634674a28b46e426f5d78668012",
+      "database_network": "task",
+      "attempted_roles": [
+        "engineer"
+      ],
+      "engineer_only_verified": true,
+      "executed_roles": [
+        "engineer"
+      ]
+    },
+    "official_grade": {
+      "rewards": {
+        "reward": 1,
+        "f2p_total": 103,
+        "f2p_passed": 103,
+        "p2p_total": 10093,
+        "p2p_passed": 10093,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      }
+    },
+    "selection": "Only generated implementation; frozen regardless of grade. No operator edits.",
+    "hidden_grade_excluded_from_review_input": true
+  },
+  "reviews": [
+    {
+      "condition": "baseline",
+      "result_sha256": "d07d0c0f152855f03f625e2dc980e5546b184e7eb39f6931e300abe64688523d",
+      "report_sha256": "68276754b8a2292db4bed0aeacb68dc8053d3699a7d0e1cebbc33a570639c3f2",
+      "messages_sha256": "f3e39dbebf1de1ff0d285e7781b6d4d09b55829418e69aeac0f542312d391026",
+      "audit": {
+        "base_commit": "061c97f8a01bf9e721835978b039303c5051501c",
+        "artifact_sha256": "aafc0cd73b79ad6b211ea93c00627c797ab2d54a601f4914553c47e26b2c5a32",
+        "artifact_commit": "57990ef865b51971af6469bbefc965d72c1330cb",
+        "valid": true,
+        "repository_unchanged": true,
+        "verdict": "approve"
+      },
+      "report": {
+        "verdict": "approve",
+        "findings": [],
+        "observations": [
+          {
+            "title": "Pass 1 \u2014 specification compliance",
+            "details": "Independently read the complete diff from 061c97f8a01bf9e721835978b039303c5051501c to 57990ef865b51971af6469bbefc965d72c1330cb. All four methods are exposed on Expr and Series with the requested keyword-only parameters and defaults. They reuse rolling-window validation, classify expressions as ORDERABLE_WINDOW, and delegate through the existing compliant/backend abstractions. Quantile range and interpolation validation use the required ValueError prefixes. Implementations handle minimum non-null counts and centered windows, including even and oversized windows. DuckDB explicitly rejects rolling_quantile. API-reference updates and tests are within scope. No missing functionality, unrelated scope expansion, or misinterpretation was identified in the inspected code and exercised backends."
+          },
+          {
+            "title": "Pass 2 \u2014 code quality",
+            "details": "After the specification pass, checked backend delegation, existing rolling conventions, naming, boundary validation, type annotations, null handling, test coverage, and documentation. The implementation follows the existing architecture and does not introduce dependencies. Tests exercise real backends rather than mocks, including grouped ordering, nulls, interpolation, invalid arguments, empty inputs, and Arrow chunk boundaries. No blocking quality defects were found."
+          },
+          {
+            "title": "Verification evidence",
+            "details": "Ran python -m pytest tests/expr_and_series/rolling*test.py --constructors='pandas,pandas[nullable],pandas[pyarrow],polars[eager],polars[lazy],pyarrow,duckdb,sqlframe' -q -o addopts='' -o cache_dir=/tmp/nw-review-pytest-cache with PYTHONDONTWRITEBYTECODE=1: 1713 passed, 257 skipped, 76 xfailed. The new rolling_statistics_test.py alone produced 1124 passed, 232 skipped, 48 xfailed. An independent comparison against pandas passed 2448 additional Arrow/Polars Series checks over input lengths 0\u20138, window sizes 1\u20139, centered/trailing windows, minimum counts 1/window_size, nulls, and all four methods. Sixteen additional lazy guard checks confirmed rejection of missing order_by on Polars and DuckDB, with DuckDB quantile raising its explicit unsupported-operation error. Runtime versions: pandas 3.0.3, Polars 1.39.3, PyArrow 24.0.0, DuckDB 1.5.3. Regression log: /tmp/nw-review-regression.log; new-test log: /tmp/nw-review-tests.log. Tracked repository files were not modified; git status remained clean."
+          },
+          {
+            "title": "Suggestion \u2014 benchmark Arrow rolling aggregation on large windows",
+            "location": "narwhals/_arrow/series.py:918-925",
+            "details": "The shared Arrow fallback slices and recounts/reaggregates each window, giving approximately O(number_of_rows * window_size) work for min/max and at least repeated window traversal for median/quantile. This is functionally correct in the exercised cases and is not a specification blocker. As optional follow-up, benchmark realistic large inputs and consider a specialized moving-extrema algorithm or document the fallback's performance characteristics."
+          }
+        ],
+        "limitations": [
+          "Dask is not installed. Installation into /tmp was attempted but package-index TLS connections failed, so Dask received static inspection only; no Dask runtime verification was possible.",
+          "Ibis, PySpark, Modin, and cuDF were not exercised. Grouped ordered-window cases marked xfail and tests skipped by backend capability are not claimed as verified functionality; the corresponding restrictions follow existing backend patterns.",
+          "Verification used installed current backend versions, not the complete supported-version matrix. The entire repository test suite, static type checks, and documentation build were not run.",
+          "The supplied review snapshot is already on main at the implementation commit. Original implementation branch provenance cannot be established from this snapshot; the review-only assignment intentionally made no branch or tracked-file changes."
+        ]
+      }
+    },
+    {
+      "condition": "candidate",
+      "result_sha256": "9b7baecd5d9f8e797d8107404c6e3dd5b58938160da6480c806bc9463ca25d43",
+      "report_sha256": "5219701c83cb632c6caa60429e2f9f4dc0f64c744ff7784242840ff6fd57b7be",
+      "messages_sha256": "cf2a35e862bf8819480d845f166dccda10dc88d942129e9a4cd3aebfb22ea221",
+      "audit": {
+        "base_commit": "061c97f8a01bf9e721835978b039303c5051501c",
+        "artifact_sha256": "aafc0cd73b79ad6b211ea93c00627c797ab2d54a601f4914553c47e26b2c5a32",
+        "artifact_commit": "57990ef865b51971af6469bbefc965d72c1330cb",
+        "valid": true,
+        "repository_unchanged": true,
+        "verdict": "changes-requested"
+      },
+      "report": {
+        "verdict": "changes-requested",
+        "findings": [
+          {
+            "title": "Register all four methods in the pandas grouped-window dispatch",
+            "requirement": "The new Expr rolling methods must follow the backend patterns of rolling_sum, rolling_mean, rolling_std, and rolling_var. The existing public Expr.over(partition_by, order_by=...) interface supports grouped rolling windows on pandas.",
+            "location": "narwhals/expr.py:1928-1935 (and the other new rolling nodes); narwhals/_pandas_like/expr.py:38-41,282-291; tests/expr_and_series/rolling_statistics_test.py:194-195",
+            "evidence": "With df = nw.from_native(pd.DataFrame({'a': [1., 3., 10., 20.], 'g': ['x', 'x', 'y', 'y'], 'i': [0, 1, 2, 3]})), df.select(nw.col('a').rolling_sum(2, min_samples=1).over('g', order_by='i')) returns [1., 4., 10., 30.] and rolling_mean returns [1., 2., 10., 15.]. Replacing rolling_sum with rolling_min, rolling_max, rolling_median, or rolling_quantile (quantile=0.5) raises NotImplementedError: Unsupported function: rolling_<method> in `over` context. The new names are absent from WINDOW_FUNCTIONS_TO_PANDAS_EQUIVALENT, so PandasLikeExpr.over rejects them. The newly added grouped test incorrectly skips pandas with the claim that grouped rolling is unsupported. This is contradicted by the existing implementation and rolling_sum grouped tests, rather than an established backend limitation.",
+            "severity": "Critical",
+            "repair": "Add the four names to the pandas window dispatch and forward quantile/interpolation to the grouped rolling quantile call (the existing generic branch calls rolling methods without arguments). Remove the incorrect pandas skip and cover grouped windows, including non-default quantile and interpolation. Expected results for the reproduction are min [1., 1., 10., 10.], max [1., 3., 10., 20.], and median/quantile(0.5) [1., 2., 10., 15.]."
+          },
+          {
+            "title": "Avoid reconstructing Arrow discrete quantiles as float64 Python values",
+            "requirement": "rolling_quantile must compute valid numeric rolling quantiles with each of the five supported interpolation modes, following the existing quantile/backend conventions. Valid Int64 inputs must not fail solely because the result is an integer not exactly representable as float64.",
+            "location": "narwhals/_arrow/series.py:921-926,968-971",
+            "evidence": "Reproduced with s = nw.from_native(pa.chunked_array([[2**53 + 1, 2**53 + 3]]), series_only=True). For each interpolation in ('lower', 'higher', 'nearest'), s.rolling_quantile(2, quantile=0.5, interpolation=interpolation) raises pyarrow.ArrowInvalid: Integer value ... is outside of the range exactly representable by a IEEE 754 double precision value. The existing s.quantile(0.5, interpolation=...) succeeds, returning respectively 9007199254740993, 9007199254740995, and 9007199254740993. pc.quantile returns an integer scalar for these interpolation modes; _rolling_aggregate converts it to a Python int and then passes it to pa.chunked_array(..., type=pa.float64()), whose conversion rejects these values. The same path also fails for Decimal inputs, e.g. pa.chunked_array([[Decimal('1.00'), Decimal('2.00')]], type=pa.decimal128(10, 2)), with ArrowInvalid: Could not convert Decimal('1.00') ... tried to convert to double. Linear and midpoint interpolation succeed on both examples, so this is specifically the forced reconstruction of discrete quantile results.",
+            "severity": "Critical",
+            "repair": "Preserve the native quantile result type for discrete interpolation, or perform a deliberate Arrow-native conversion to the documented output type rather than implicit Python-value reconstruction. Add Series and Expr regression tests for large signed/unsigned integers and Decimal values across interpolation modes. Do not catch the exception and replace valid results with null."
+          }
+        ],
+        "observations": [
+          "The implementation adds all four requested public methods to Expr and Series, API-reference entries, shared argument validation, ORDERABLE_WINDOW expression classification, and backend delegation. No unrelated feature work was identified in the requested commit diff.",
+          "Pass 1 (spec compliance) fails on the two behavioral defects above. Pass 2 (code quality) was not performed, as required by the sequential review policy.",
+          "The added rolling_statistics_test.py suite passed on pandas, pandas nullable, pandas Arrow-backed, eager/lazy Polars, PyArrow, and DuckDB: 1052 passed, 208 skipped, 48 xfailed. Command: python -m pytest tests/expr_and_series/rolling_statistics_test.py --constructors='pandas,pandas[nullable],pandas[pyarrow],polars[eager],polars[lazy],pyarrow,duckdb' -q -o addopts=''. Output saved in /tmp/rolling-tests.log.",
+          "The new suite also ran with --constructors='sqlframe': 113 passed, 143 skipped. Output saved in /tmp/rolling-sqlframe.log.",
+          "Existing rolling_sum, rolling_mean, rolling_var, and rolling_std suites passed for the seven available constructors: 533 passed, 25 skipped, 28 xfailed. Output saved in /tmp/rolling-regression.log. These tests independently establish existing grouped pandas rolling support and the established centered-even-window alignment.",
+          "The new suite exercises default and explicit min_samples, null exclusion, centered/trailing windows, argument errors and required error-message prefixes, ordered lazy windows, DuckDB quantile rejection, empty/all-null numeric inputs, and Arrow chunk boundaries. Those covered cases passed; the grouped pandas skips and small numeric fixtures leave the reported defects undetected.",
+          "Repository documentation independently confirms that lazy order-dependent expressions require over(order_by=...). The new Expr methods use the same ORDERABLE_WINDOW classification as existing rolling methods. The explicit DuckDB rolling_quantile rejection matches the original request. Existing quantile documentation permits backend interpolation differences, so nearest tie-breaking differences were not treated as a defect.",
+          "Reviewed starting commit 061c97f8a01bf9e721835978b039303c5051501c against implementation commit 57990ef865b51971af6469bbefc965d72c1330cb. git diff --check passed. No tracked repository files were changed."
+        ],
+        "limitations": [
+          "Dask was not installed. Attempts to install it into a temporary /tmp virtual environment failed because the package index was inaccessible (TLS handshake EOF over HTTPS; connection closed over HTTP). Dask execution, including partition-boundary behavior, remains unverified.",
+          "Runtime versions tested: Python 3.12.12, pandas 3.0.3, Polars 1.39.3, PyArrow 24.0.0, DuckDB 1.5.3. Historical supported backend versions, Modin, cuDF, native PySpark, and Ibis were not exercised. SQLFrame was exercised separately.",
+          "Verification was focused on the requested rolling methods and adjacent existing rolling suites, not the entire repository test suite. Existing expected failures and skips are reported above rather than counted as passing behavior."
+        ]
+      }
+    }
+  ],
+  "independent_reproduction": {
+    "script": "artifact-review-v1-reproduce.py",
+    "script_sha256": "f94af36cbed3e90fe3c413ee746c05a421aca4ab66ab3dcae2aa2fce9f725625",
+    "executed_script_sha256": "4e63b03042bcaffb9224ab8540edec965596dc956203911fc8041fd6507f29cb",
+    "output_sha256": "0ee81ba8e61cab074c586a41b2d71e7ee5ca1abc54d6237a3ce7aeb407775b56",
+    "exit_code": 0,
+    "network": "none",
+    "source_changes": "Only the frozen implementation was applied; no repairs",
+    "verified_findings": [
+      {
+        "title": "Missing pandas grouped rolling dispatch",
+        "existing_controls": "rolling_sum and rolling_mean produce correct grouped results",
+        "new_methods": "All four raise NotImplementedError",
+        "assessment": "In scope: shared backend patterns and existing public grouped rolling contract"
+      },
+      {
+        "title": "Arrow discrete rolling quantile rejects valid numeric values",
+        "existing_controls": "Existing quantile accepts large Int64 and Decimal inputs for lower/higher/nearest",
+        "new_methods": "All three discrete interpolation modes raise ArrowInvalid; linear/midpoint succeed",
+        "assessment": "In scope: valid numeric rolling quantile fails at result reconstruction"
+      }
+    ],
+    "severity_note": "Both are functional correctness defects. The candidate called them Critical; that severity label is not established by this audit."
+  },
+  "budget": {
+    "phase_cap_usd": 30,
+    "opening_exposure_usd": 19.227605,
+    "new_confirmed_usd": 1.092012,
+    "new_unknown_usage": 0,
+    "per_client": [
+      {
+        "client": "arv1-baseline",
+        "requests": 16,
+        "confirmed_usd": 0.220501
+      },
+      {
+        "client": "arv1-candidate",
+        "requests": 19,
+        "confirmed_usd": 0.309695
+      },
+      {
+        "client": "arv1-engineer",
+        "requests": 37,
+        "confirmed_usd": 0.561816
+      }
+    ],
+    "phase_confirmed_usd": 14.819617,
+    "retained_prior_hold_usd": 5.5,
+    "phase_exposure_usd": 20.319617,
+    "remaining_headroom_usd": 9.680383
+  },
+  "findings": {
+    "baseline_verdict": "approve",
+    "candidate_verdict": "changes-requested",
+    "candidate_findings_reported": 2,
+    "candidate_findings_independently_reproduced": 2,
+    "baseline_found_these_issues": false,
+    "artifact_passed_all_official_tests": true,
+    "interpretation": "Positive same-artifact evidence for independent contract checking. The baseline accepted a new test skip as an established limitation; the candidate checked existing grouped rolling behavior. Also demonstrates that official test acceptance is not exhaustive correctness.",
+    "decision": "Keep candidate experimental; replicate on additional frozen artifacts before any production recommendation."
+  },
+  "limitations": [
+    "One artifact and one stochastic review per condition; fixed baseline-then-candidate order",
+    "Two defects discovered by candidate and audited post hoc, not a pre-registered complete defect set; no recall estimate",
+    "Same-version Polars compatibility runtime added for amd64 emulation; controls pass but environment differs from upstream image",
+    "Dask and other unavailable backend/runtime versions remain untested",
+    "No engineering repair loop or full-squad delivery measured in this diagnostic",
+    "Prior raw temporary artifacts and historical ledger are unavailable; opening exposure is carried from published report"
+  ],
+  "production_prompt_changed": false,
+  "operator_repairs_or_task_hints": 0
+}

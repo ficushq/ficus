@@ -14,8 +14,15 @@ Adding squad roles did not improve acceptance over engineer-only execution in
 this sample. See [first fresh task](FRESH_FEATURES.md) and
 [three-task continuation](FRESH_BATCH.md) for official results, costs, timings,
 role verification and limitations. This is a small sample, not a general harness
-ranking. Paid inference is stopped at $25.993347 of the authorized cumulative
+ranking. That earlier phase stopped at $25.993347 of its authorized cumulative
 $50 cap, with no unsettled usage holds.
+
+Subsequent long-task work and the [independent-review pilot](INDEPENDENT_REVIEW.md)
+are separate studies. The current [controlled reviewer diagnostic](ARTIFACT_REVIEW.md)
+compares reviewer prompts on one identical implementation. Its accounting carries
+$19.227605 of opening exposure into the user-authorized $30 phase cap. Earlier
+temporary raw artifacts are unavailable; new evidence is stored durably. See the
+individual manifests for costs, retained holds, and limitations.
 
 Earlier Terminal-Bench smoke tests, the known Pydantic feature task, and its
 scope-guidance replay remain separate development evidence in
@@ -39,11 +46,13 @@ required. Start with Linux amd64 Debian-based tasks with a root task user. Other
 runtimes, non-root tasks, task-provided MCP servers, and skills are rejected.
 
 ```sh
-uv venv /tmp/ficus-harbor-venv --python 3.12
-uv pip install --python /tmp/ficus-harbor-venv/bin/python -r evals/harbor/requirements.txt
-source /tmp/ficus-harbor-venv/bin/activate
-python evals/harbor/build-runtime.py --output /tmp/ficus-runtime.tar.gz
-harbor datasets download terminal-bench@2.0 -o /tmp/harbor-datasets
+EVAL_DATA="$HOME/Documents/Codex/ficus-evaluation-data"
+mkdir -p "$EVAL_DATA"
+uv venv "$EVAL_DATA/venv" --python 3.12
+uv pip install --python "$EVAL_DATA/venv/bin/python" -r evals/harbor/requirements.txt
+source "$EVAL_DATA/venv/bin/activate"
+python evals/harbor/build-runtime.py --output "$EVAL_DATA/ficus-runtime.tar.gz"
+harbor datasets download terminal-bench@2.0 -o "$EVAL_DATA/datasets"
 python -m unittest discover -s evals/harbor -v
 ```
 

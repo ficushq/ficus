@@ -70,3 +70,55 @@ old environment. Public manifests and diagnostic conclusions are committed here.
 A correct implementation with no independently verified defects can make this
 comparison uninformative. One trial cannot establish a general prompt improvement
 or justify promoting the experimental prompt to production.
+
+## Completed result
+
+Both reviews inspected artifact commit
+`57990ef865b51971af6469bbefc965d72c1330cb`, from patch SHA256
+`aafc0cd73b79ad6b211ea93c00627c797ab2d54a601f4914553c47e26b2c5a32`.
+The implementation passed all 103 official feature tests and all 10,093 existing
+regression tests. Its engineer-only generation cost $0.561816 across 37 requests.
+Neither reviewer received those results.
+
+| Reviewer condition            | Verdict           | Independently reproduced blocking findings | Requests | Recorded cost |
+| ----------------------------- | ----------------- | ------------------------------------------ | -------- | ------------- |
+| Original prompt               | Approve           | None reported                              | 16       | $0.220501     |
+| Independent-contract addition | Changes requested | 2 of 2 reported                            | 19       | $0.309695     |
+
+Both runs completed with reviewer-only role provenance and an unchanged repository.
+The candidate found two defects that the original reviewer did not flag:
+
+1. **Pandas grouped rolling dispatch was missing.** Existing `rolling_sum` and
+   `rolling_mean` work with `.over('g', order_by='i')`, but all four new methods
+   raise `NotImplementedError`. The implementation's new tests skip pandas grouped
+   rolling as unsupported. The original reviewer accepted that claimed limitation;
+   the candidate checked the existing public behavior and rejected it.
+2. **Arrow discrete rolling quantiles reject valid numeric inputs.** For lower,
+   higher, and nearest interpolation, large Int64 values and Decimal values raise
+   `ArrowInvalid` during result reconstruction. The existing nonrolling quantile
+   handles the same inputs, and the new linear/midpoint cases succeed.
+
+Both findings were reproduced independently in a fresh container, with the exact
+frozen patch, network disabled, and no repairs. The reproduction is in
+`artifact-review-v1-reproduce.py`. These are functional correctness issues; the
+candidate's “Critical” severity labels are not established by this audit.
+
+The original review was not superficial: its tool outputs confirm 1,713 passing
+rolling regression cases and 2,448 additional boundary comparisons. Its approval
+still missed the incorrect grouped-backend assumption and the uncovered numeric
+inputs. The candidate's focused test counts and defect reproductions are also
+supported by its saved tool outputs.
+
+This is positive controlled-artifact evidence for the guidance, not proof of a
+repeatable general improvement. The two issues were discovered by the candidate
+and checked afterward; they are not an exhaustive, predeclared defect set, so no
+recall estimate is claimed. The official benchmark score stays unchanged. The
+result also shows why passing its tests does not establish exhaustive correctness.
+No full-squad repair cycle was measured here, and production prompts remain
+unchanged. Replicate on additional frozen artifacts before recommending promotion.
+
+Total new recorded usage was **$1.092012**, with no new unresolved calls. Phase
+exposure is **$20.319617**, including the retained earlier $5.50 hold, leaving
+**$9.680383** under the $30 cap. See `artifact-review-v1-results.json` for full
+reports, integrity checks, reproduction hashes, and accounting. The private
+ledger has a completed-segment backup in the durable data directory.
