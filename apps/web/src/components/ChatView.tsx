@@ -2471,6 +2471,7 @@ export function ChatView({
                           value={deliveryMode}
                           onChange={onDeliveryModeChange}
                           width={320}
+                          openOnHover
                           disabled={disabled || isUploading || isPreparingImages || isSubmitting}
                           options={[
                             {

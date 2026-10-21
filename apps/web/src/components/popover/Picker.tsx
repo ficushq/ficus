@@ -25,6 +25,8 @@ export interface PickerProps<T extends string> extends Omit<
   value: T
   options: readonly PickerOption<T>[]
   onChange: (value: T) => void
+  /** The `selected` option (default; the first when none is), the `first` one, or `none` (a hover-open). */
+  initialFocus?: 'first' | 'selected' | 'none'
 }
 
 const OPTION = '[role="option"]'
@@ -41,6 +43,7 @@ export function Picker<T extends string>({
   value,
   options,
   onChange,
+  initialFocus = 'selected',
   onDismiss,
   trigger,
   className,
@@ -57,7 +60,9 @@ export function Picker<T extends string>({
       tabOut="close"
       className={clsx('ficus-overlay scroll-py-1.5 p-1.5', className)}
       initialFocus={(surface) => {
+        if (initialFocus === 'none') return null
         const items = listItems(surface, OPTION)
+        if (initialFocus === 'first') return items[0]
         return items.find((item) => item.getAttribute('aria-selected') === 'true') ?? items[0]
       }}
       onKeyDown={(event) => handleListKey(event, OPTION)}

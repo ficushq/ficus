@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import { acquireDomHarness } from '../../test/domHarness'
 import { SquadNavigation } from './SquadNavigation'
 let dom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
@@ -163,4 +163,111 @@ test('tabs and More draw an inset focus ring so the scrolling row cannot clip it
   tab.scrollIntoView = (options?: boolean | ScrollIntoViewOptions) => void scrolls.push(options)
   await dom.act(async () => tab.focus())
   expect(scrolls).toEqual([{ block: 'nearest', inline: 'nearest' }])
+})
+
+describe('More on hover', () => {
+  async function renderMore() {
+    dom = await acquireDomHarness({ url: 'http://localhost/squads/test' })
+    const { container, root } = dom.createRoot()
+    const changes: string[] = []
+    const tabs = ['home', 'memory', 'schedules', 'settings'].map((path) => ({ path, label: path }))
+    await dom.act(async () =>
+      root.render(
+        <>
+          <input aria-label="Composer" />
+          <SquadNavigation tabs={tabs} activeTab="home" onChange={(tab) => changes.push(tab)} />
+        </>
+      )
+    )
+    const doc = dom.window.document
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="More squad tools"]')!
+    const composer = container.querySelector<HTMLInputElement>('input')!
+    const menu = () => doc.querySelector<HTMLElement>('[role="menu"][data-state="open"]')
+    const items = () => [...doc.querySelectorAll<HTMLButtonElement>('[data-state="open"] [role="menuitem"]')]
+    const wait = (ms: number) => dom!.act(() => new Promise((resolve) => setTimeout(resolve, ms)))
+    /** A pointer arriving on (`over`) or leaving (`out`) an element; React derives enter/leave from these. */
+    const pointer = (target: Element, type: 'over' | 'out', pointerType = 'mouse') =>
+      dom!.act(async () => {
+        target.dispatchEvent(new dom!.window.PointerEvent(`pointer${type}`, { bubbles: true, pointerType }))
+      })
+    const click = (target: HTMLElement) => dom!.act(async () => target.click())
+    return { doc, changes, trigger, composer, menu, items, wait, pointer, click }
+  }
+
+  test('a mouse hovering opens it without taking focus; leaving closes it after a short delay', async () => {
+    const { doc, changes, trigger, composer, menu, wait, pointer } = await renderMore()
+    await dom!.act(async () => composer.focus())
+    await pointer(trigger, 'over')
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(menu()?.textContent).toContain('Squad tools')
+    expect(doc.activeElement).toBe(composer)
+
+    await pointer(trigger, 'out')
+    expect(menu()).not.toBeNull() // not yet: the pointer may be crossing the gap
+    await wait(200)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(menu()).toBeNull()
+    expect(doc.activeElement).toBe(composer)
+    expect(changes).toEqual([])
+  })
+
+  test('re-entering the menu or the trigger cancels the close; choosing a tool opens it and closes', async () => {
+    const { changes, trigger, menu, items, wait, pointer, click } = await renderMore()
+    await pointer(trigger, 'over')
+    await pointer(trigger, 'out')
+    await pointer(menu()!, 'over')
+    await wait(200)
+    expect(menu()).not.toBeNull()
+
+    await pointer(menu()!, 'out')
+    await pointer(trigger, 'over')
+    await wait(200)
+    expect(menu()).not.toBeNull()
+
+    await pointer(trigger, 'out')
+    await pointer(menu()!, 'over')
+    await click(items().find((item) => item.textContent === 'schedules')!)
+    expect(changes).toEqual(['schedules'])
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  test('a click on the trigger pins a hover-opened menu and focuses its first tool', async () => {
+    const { doc, trigger, menu, items, wait, pointer, click } = await renderMore()
+    await pointer(trigger, 'over')
+    expect(doc.activeElement).not.toBe(items()[0]!)
+    await click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(doc.activeElement).toBe(items()[0]!)
+    await pointer(trigger, 'out')
+    await wait(200)
+    expect(menu()).not.toBeNull()
+    await click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  test('a click inside a hover-opened menu, off the tools, does not pin it', async () => {
+    const { changes, trigger, menu, wait, pointer, click } = await renderMore()
+    await pointer(trigger, 'over')
+    await pointer(trigger, 'out')
+    await pointer(menu()!, 'over')
+    const heading = [...menu()!.querySelectorAll<HTMLElement>('*')].find((el) => el.textContent === 'Squad tools')!
+    await click(heading)
+    expect(menu()).not.toBeNull()
+    await pointer(menu()!, 'out')
+    await wait(200)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(changes).toEqual([])
+  })
+
+  test('touch and pen never open it on hover; a tap still does and stays open', async () => {
+    const { trigger, menu, wait, pointer, click } = await renderMore()
+    await pointer(trigger, 'over', 'touch')
+    await pointer(trigger, 'over', 'pen')
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    await click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    await pointer(trigger, 'out', 'touch')
+    await wait(200)
+    expect(menu()).not.toBeNull()
+  })
 })

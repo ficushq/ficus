@@ -48,12 +48,16 @@ export function SelectionPopup<T extends string>({
   disabled,
   heading,
   width = 192,
+  openOnHover = false,
 }: PopupTrigger & {
   value: T
   options: readonly PopupOption<T>[]
   onChange: (value: T) => void
+  /** A mouse hovering the trigger opens it, and leaving closes it again unless a click pinned it (`useHoverOpen`). */
+  openOnHover?: boolean
 }) {
   const popover = usePopover({ kind: 'listbox' })
+  const hover = useHoverOpen(popover, { enabled: openOnHover && !disabled, initialFocus: 'selected' })
   useCloseWhenDisabled(popover, disabled)
   return (
     <>
@@ -65,12 +69,13 @@ export function SelectionPopup<T extends string>({
         title={title}
         disabled={disabled}
         className={className}
-        onClick={popover.toggle}
+        {...hover.triggerProps}
       >
         {children}
       </button>
       <Picker
         {...popover.popoverProps}
+        {...hover.popoverProps}
         label={label}
         heading={heading}
         value={value}
@@ -100,7 +105,7 @@ export function ActionPopup({
   openOnHover?: boolean
 }) {
   const popover = usePopover({ kind: 'menu' })
-  const hover = useHoverOpen(popover, { enabled: openOnHover, initialFocus: 'selected' })
+  const hover = useHoverOpen(popover, { enabled: openOnHover && !disabled, initialFocus: 'selected' })
   const id = useId()
   useCloseWhenDisabled(popover, disabled)
   return (
