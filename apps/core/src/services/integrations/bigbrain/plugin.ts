@@ -4,8 +4,8 @@ import { BigbrainError } from './errors'
 import { bigbrainDeploymentAvailability } from './managed/availability'
 import { parseBigbrainCredential, type BigbrainConfiguration } from './managed/config'
 import { BigbrainProvider } from './provider'
-import { createSharedBigbrainTools } from './shared-tools'
-import { createBigbrainTools, type BigbrainTool, type BigbrainToolContext } from './tools'
+import { createSharedBigbrainTools, listReadableSharedVaults } from './shared-tools'
+import { createBigbrainTools, hasReadableLocalVault, type BigbrainTool, type BigbrainToolContext } from './tools'
 import type { IntegrationPluginV1 } from '../plugin'
 
 const provider = new BigbrainProvider()
@@ -20,11 +20,13 @@ function isolatedAgentRuntime(): boolean {
   }
 }
 
-const plugin: IntegrationPluginV1<
-  BigbrainConfiguration,
-  string,
-  { createTools(context: BigbrainToolContext): readonly BigbrainTool[] }
-> = {
+export interface BigbrainAgentToolFactory {
+  createTools(context: BigbrainToolContext): readonly BigbrainTool[]
+  /** Whether this squad has an attached vault this agent can read now (fail-closed). */
+  hasReadableVault(context: BigbrainToolContext): Promise<boolean>
+}
+
+const plugin: IntegrationPluginV1<BigbrainConfiguration, string, BigbrainAgentToolFactory> = {
   availability: () => bigbrainDeploymentAvailability(),
   manifestVersion: 1,
   key: 'bigbrain',
@@ -65,6 +67,12 @@ const plugin: IntegrationPluginV1<
             ? createSharedBigbrainTools({ ...context, assignments: context.assignments })
             : []
           : createBigbrainTools(context),
+      hasReadableVault: async (context) => {
+        if (!isPlatformManaged()) return hasReadableLocalVault(context)
+        const assignments = context.assignments
+        if (!assignments || !isolatedAgentRuntime()) return false
+        return (await listReadableSharedVaults({ ...context, assignments })).length > 0
+      },
     },
   },
   sandbox: {

@@ -13,6 +13,9 @@ export const BIGBRAIN_TOOL_NAMES = [
   'bigbrain_read_note',
   'bigbrain_drop',
 ] as const
+/** The local connector's read tools. `bigbrain_drop` is the one outbound write. */
+export const BIGBRAIN_READ_TOOL_NAMES = ['bigbrain_load_memory', 'bigbrain_search_vault', 'bigbrain_read_note'] as const
+export const BIGBRAIN_DROP_TOOL_NAME = 'bigbrain_drop'
 export type BigbrainTool = ToolDefinition & { key: string }
 
 export interface BigbrainToolContext {
@@ -25,6 +28,22 @@ export interface BigbrainToolContext {
   client?: (options: BigbrainClientOptions) => BigbrainClient
   /** This squad's attached connections (assignment rows only); managed shared tools list these. */
   assignments?: { listAssigned(squadId: string, providerKey: string): Promise<readonly { id: string }[]> }
+}
+
+/**
+ * Whether this squad's local BigBrain connection can be read right now: the runtime gate admits
+ * the attached default connection for this agent with the search scope. Tools still re-check the
+ * gate on every call.
+ */
+export async function hasReadableLocalVault(context: BigbrainToolContext): Promise<boolean> {
+  const decision = await context.gate.check({
+    agent: context.agent,
+    squadId: context.squadId,
+    provider: 'bigbrain',
+    capability: 'agent_tools',
+    requiredScope: 'mcp:search_vault',
+  })
+  return decision.allowed
 }
 
 export function createBigbrainTools(context: BigbrainToolContext): BigbrainTool[] {

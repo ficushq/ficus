@@ -24,6 +24,10 @@ let squadBashCalls: unknown[] = []
 
 class TestableSquadManagerRunner extends SquadManagerRunner {
   assistantDelegate = false
+  // BigBrain tool selection is covered by base.integration-tools.test.ts; keep these sessions offline.
+  protected override async resolveIntegrationTools() {
+    return { available: [], automatic: [] }
+  }
   protected override async isAssistantDelegate() {
     return this.assistantDelegate
   }

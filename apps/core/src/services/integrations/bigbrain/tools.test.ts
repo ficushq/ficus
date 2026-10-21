@@ -4,7 +4,10 @@ import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { BigbrainClient } from './client'
 import { expect, test } from 'bun:test'
 import { BigbrainError } from './errors'
-import { createBigbrainTools, BIGBRAIN_TOOL_NAMES } from './tools'
+import { createBigbrainTools, hasReadableLocalVault, BIGBRAIN_TOOL_NAMES } from './tools'
+import { IntegrationRuntimeGate } from '../runtime-gate'
+import type { AssignedIntegrationConnectionRecord } from '../connection-repository'
+import { bigbrainPlugin } from './plugin'
 
 const secret = 'fixture-bearer'
 test('defines four stable server-bound tools without credential parameters', () => {
@@ -148,3 +151,86 @@ test.each(['disable', 'revision'] as const)(
     }
   }
 )
+
+test('a local vault is readable only when the gate admits the attached connection with the search scope', async () => {
+  const now = new Date()
+  const connection: AssignedIntegrationConnectionRecord = {
+    id: 'connection',
+    squadId: 'squad',
+    providerKey: 'bigbrain',
+    adapterVersion: 2,
+    clientAuthority: 'local',
+    authorizationFlowId: null,
+    displayName: 'Local',
+    configuration: { version: 2 },
+    credentialRef: 'credential',
+    materialRevision: 'revision',
+    validatedRevision: 'revision',
+    enabled: true,
+    authState: 'authenticated',
+    healthState: 'healthy',
+    grantedScopes: ['mcp:load_memory', 'mcp:search_vault', 'mcp:read_note', 'mcp:drop'],
+    validatedAt: now,
+    validationExpiresAt: new Date(now.getTime() + 60_000),
+    lastErrorCode: null,
+    updatedAt: now,
+  }
+  const readable = (assigned: AssignedIntegrationConnectionRecord | null, capabilities: unknown = undefined) =>
+    hasReadableLocalVault({
+      agent: {
+        id: 'agent',
+        squadId: 'squad',
+        integrationCapabilities: (capabilities === undefined
+          ? { version: 1, allow: { bigbrain: ['agent_tools'] } }
+          : capabilities) as never,
+      },
+      squadId: 'squad',
+      gate: new IntegrationRuntimeGate({
+        currentAuthority: () => undefined,
+        repository: { getAssigned: async () => assigned },
+        now: () => now,
+        supportedAdapterVersion: () => 2,
+        supportedConfigVersion: () => 2,
+      }),
+      credentials: { get: () => secret, set: async () => {}, delete: async () => {} },
+      audit: { record: async () => {} },
+      connections: { disableRuntimeAuthFailure: async () => false },
+    })
+
+  expect(await readable(connection)).toBe(true)
+  // Nothing attached; disabled (the provider or the connection); unhealthy; unauthenticated; stale; no read scope.
+  expect(await readable(null)).toBe(false)
+  expect(await readable({ ...connection, enabled: false })).toBe(false)
+  expect(await readable({ ...connection, healthState: 'unreachable' })).toBe(false)
+  expect(await readable({ ...connection, authState: 'invalid' })).toBe(false)
+  expect(await readable({ ...connection, validationExpiresAt: new Date(now.getTime() - 1) })).toBe(false)
+  expect(await readable({ ...connection, grantedScopes: ['mcp:drop'] })).toBe(false)
+  // The gate's capability check still applies to whatever policy the caller runs under.
+  expect(await readable(connection, null)).toBe(false)
+})
+
+test('the plugin uses the local readability check outside Ficus Cloud', async () => {
+  const previousManaged = process.env.FICUS_MANAGED
+  delete process.env.FICUS_MANAGED
+  try {
+    const checks: unknown[] = []
+    const result = await bigbrainPlugin.runtime.agentTools!.hasReadableVault({
+      agent: {
+        id: 'agent',
+        squadId: 'squad',
+        integrationCapabilities: { version: 1, allow: { bigbrain: ['agent_tools'] } },
+      },
+      squadId: 'squad',
+      gate: {
+        check: async (input: unknown) => (checks.push(input), { allowed: false, code: 'connection_unavailable' }),
+      } as any,
+      credentials: { get: () => secret, set: async () => {}, delete: async () => {} },
+      audit: { record: async () => {} },
+      connections: { disableRuntimeAuthFailure: async () => false },
+    })
+    expect(result).toBe(false)
+    expect(checks).toEqual([expect.objectContaining({ provider: 'bigbrain', requiredScope: 'mcp:search_vault' })])
+  } finally {
+    if (previousManaged !== undefined) process.env.FICUS_MANAGED = previousManaged
+  }
+})

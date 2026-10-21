@@ -31,6 +31,7 @@ let lightSandboxCalls: unknown[] = []
 let codingToolCalls: unknown[] = []
 let squadBashCalls: unknown[] = []
 let integrationTools: any[] = []
+let automaticIntegrationTools: any[] = []
 
 class TestableArtifactBuilderRunner extends ArtifactBuilderRunner {
   exposeCreateSession(): Promise<AgentSession> {
@@ -88,7 +89,7 @@ class TestableSquadWorkerRunner extends SquadWorkerRunner {
   }
 
   protected override async resolveIntegrationTools() {
-    return integrationTools
+    return { available: integrationTools, automatic: automaticIntegrationTools }
   }
 }
 
@@ -181,6 +182,7 @@ describe('SquadWorkerRunner artifact tool registration', () => {
     codingToolCalls = []
     squadBashCalls = []
     integrationTools = []
+    automaticIntegrationTools = []
     agentSessionCreateSpy = spyOn(AgentSession, 'create').mockResolvedValue({} as AgentSession)
     getShortTermMemorySpy = spyOn(tools, 'getShortTermMemory').mockResolvedValue('')
     getSquadWorkerCliHelpSpy = spyOn(cliHelp, 'getSquadWorkerCliHelp').mockResolvedValue('cli help')
@@ -507,6 +509,28 @@ describe('SquadWorkerRunner artifact tool registration', () => {
     }
   })
 
+  it('offers automatic BigBrain tools as core tools that subagents do not inherit', async () => {
+    automaticIntegrationTools = [{ name: 'bigbrain_shared_vaults' }, { name: 'bigbrain_shared_search_vault' }]
+    const agent = makeTestAgent({ agentTypeId: 'worker', squadId: TEST_SQUAD_ID })
+    const agentType = makeAgentType({ id: 'worker', toolsAllow: ['*'] }) as AgentType
+    const dispatchSpy = spyOn(Subagent, 'dispatch').mockResolvedValue({ subagents: [] })
+    try {
+      const runner = new TestableSquadWorkerRunner(makeExecution(agent.id), agent, agentType)
+      await runner.exposeCreateSession()
+      const config = agentSessionCreateSpy.mock.calls[0][0]
+      expect(config.tools.core.map((tool: any) => tool.name)).toEqual(
+        expect.arrayContaining(['bigbrain_shared_vaults', 'bigbrain_shared_search_vault'])
+      )
+      expect(config.systemPrompt).toContain('BigBrain vault(s) attached')
+      const dispatchTool = config.tools.core.find((tool: any) => tool.name === 'dispatch')
+      await dispatchTool.execute('call-1', { subagents: [{ instructions: 'inspect' }] })
+      const inherited = dispatchSpy.mock.calls[0]?.[0].parentExecutionContext?.environmentToolNames ?? []
+      expect(inherited.some((name: string) => name.startsWith('bigbrain_'))).toBe(false)
+    } finally {
+      dispatchSpy.mockRestore()
+    }
+  })
+
   it('uses the per-agent light id (getSandboxId) for coding tools and session sandbox, not squad.sandboxId', async () => {
     const agent = makeTestAgent({ agentTypeId: 'worker', squadId: TEST_SQUAD_ID })
     const agentType = makeAgentType({ id: 'worker' }) as AgentType
@@ -552,6 +576,7 @@ describe('SquadWorkerRunner sandbox_status tool gating on runtime', () => {
     codingToolCalls = []
     squadBashCalls = []
     integrationTools = []
+    automaticIntegrationTools = []
     agentSessionCreateSpy = spyOn(AgentSession, 'create').mockResolvedValue({} as AgentSession)
     getShortTermMemorySpy = spyOn(tools, 'getShortTermMemory').mockResolvedValue('')
     getSquadWorkerCliHelpSpy = spyOn(cliHelp, 'getSquadWorkerCliHelp').mockResolvedValue('cli help')

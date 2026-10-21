@@ -888,14 +888,16 @@ function IntegrationPolicyFields({
     <fieldset className="border-t border-panel-border pt-4 space-y-2">
       <legend className="text-sm">BigBrain access</legend>
       <p className="text-xs text-muted">
-        Choose which BigBrain capabilities agents of this type may use. Squad connection settings still apply.
+        Squad managers, consultants and squad workers get the BigBrain read tools automatically when their squad has a
+        vault attached, and managers and consultants also get bigbrain_drop. Remove any of them with Tools Deny.
       </p>
       <label className="block text-sm">
         <input type="checkbox" checked={agentTools} onChange={(event) => onAgentTools(event.target.checked)} /> Agent
         tools
       </label>
       <p className="text-xs text-muted">
-        Agent tools also require explicit tools.allow entries for each bigbrain_* tool.
+        For other types, and for squad workers that need bigbrain_drop: turn on Agent tools and list each bigbrain_*
+        tool in Tools Allow.
       </p>
     </fieldset>
   )
