@@ -24,7 +24,7 @@ ACTIVE = {"queued", "waiting-maintenance", "waiting-sandbox", "running", "stoppi
 
 def squad_handoff(instruction, workflow="reviewed"):
     """Keep task text verbatim while making the requested execution mode explicit."""
-    if workflow == "engineer":
+    if workflow in {"engineer", "reviewer"}:
         return instruction
     workflow_flag = "--workflow builder-reviewer " if workflow == "reviewed" else ""
     planning = (
@@ -118,7 +118,7 @@ class FicusSquad(BaseAgent):
         if model_api not in {"openai-completions", "openai-responses"}:
             raise ValueError("Unsupported model transport")
         self.model_api = model_api
-        if workflow not in {"engineer", "reviewed", "planned"}:
+        if workflow not in {"engineer", "reviewer", "reviewed", "planned"}:
             raise ValueError("Unsupported trial workflow")
         if database_network not in {"private", "task"}:
             raise ValueError("database_network must be private or task")

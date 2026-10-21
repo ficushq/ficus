@@ -10,11 +10,16 @@ parser = argparse.ArgumentParser()
 parser.add_argument("harness", choices=("ficus", "pi"))
 parser.add_argument("task", type=Path)
 parser.add_argument(
-    "--workflow", choices=("engineer", "planned", "reviewed"), default="engineer"
+    "--workflow",
+    choices=("engineer", "reviewer", "planned", "reviewed"),
+    default="engineer",
 )
 parser.add_argument("--access", type=Path, required=True)
 parser.add_argument("--client", help="Proxy client label; defaults to harness-task")
 parser.add_argument("--runtime-archive", type=Path)
+parser.add_argument("--artifact-patch", type=Path)
+parser.add_argument("--artifact-sha256")
+parser.add_argument("--base-commit")
 parser.add_argument("--jobs-dir", type=Path, required=True)
 parser.add_argument("--job-name", required=True)
 parser.add_argument(
@@ -79,7 +84,9 @@ if args.harness == "ficus":
         parser.error("Ficus requires --runtime-archive")
     command += [
         "-a",
-        "ficus_agent:FicusSquad",
+        "artifact_reviewer:FicusArtifactReviewer"
+        if args.workflow == "reviewer"
+        else "ficus_agent:FicusSquad",
         "--ak",
         f"runtime_archive={args.runtime_archive.resolve()}",
         "--ak",
@@ -87,10 +94,22 @@ if args.harness == "ficus":
         "--ak",
         "model_api=" + access.get("model_api", "openai-completions"),
     ]
+    if args.workflow == "reviewer":
+        if not all((args.artifact_patch, args.artifact_sha256, args.base_commit)):
+            parser.error("Reviewer requires a frozen patch, SHA256, and base commit")
+        command += [
+            "--disable-verification",
+            "--ak",
+            f"artifact_patch={args.artifact_patch.resolve()}",
+            "--ak",
+            f"artifact_sha256={args.artifact_sha256}",
+            "--ak",
+            f"base_commit={args.base_commit}",
+        ]
     if args.restricted_network:
         command += ["--ak", "database_network=task"]
 else:
-    if args.workflow == "reviewed":
+    if args.workflow in {"reviewed", "reviewer"}:
         parser.error("Use engineer or planned for the Pi baseline")
     command += [
         "-a",

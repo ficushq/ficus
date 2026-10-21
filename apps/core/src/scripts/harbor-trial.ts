@@ -37,7 +37,7 @@ if (!output?.startsWith(`${root}/`)) throw new Error('Output must be inside the 
 if (command === 'seed') {
   const config = JSON.parse(await readFile(`${root}/trial.json`, 'utf8')) as {
     model: string
-    workflow?: 'engineer' | 'planned' | 'reviewed'
+    workflow?: 'engineer' | 'reviewer' | 'planned' | 'reviewed'
     modelApi?: string
     baseUrl: string
     key: string
@@ -73,9 +73,9 @@ if (command === 'seed') {
   await db.update(modelTiers).set({ chain: model, yamlFieldOverrides: ['chain'] })
   await db.update(agentTypes).set({ model, yamlFieldOverrides: ['model'] })
   const mode = config.workflow ?? 'reviewed'
-  if (!['engineer', 'planned', 'reviewed'].includes(mode)) throw new Error('Unknown trial workflow')
+  if (!['engineer', 'reviewer', 'planned', 'reviewed'].includes(mode)) throw new Error('Unknown trial workflow')
   const workflow: WorkflowSource =
-    mode === 'engineer'
+    mode === 'engineer' || mode === 'reviewer'
       ? {
           kind: 'preset',
           id: 'solo',
@@ -83,7 +83,7 @@ if (command === 'seed') {
             {
               op: 'put-participant',
               id: 'worker',
-              participant: { agentTypeId: 'engineer', session: 'reuse-within-stream' },
+              participant: { agentTypeId: mode, session: 'reuse-within-stream' },
             },
           ],
         }
@@ -99,7 +99,9 @@ if (command === 'seed') {
     purpose:
       mode === 'engineer'
         ? 'Complete the task with one engineer.'
-        : 'Complete the task with planning and independent review.',
+        : mode === 'reviewer'
+          ? 'Review the supplied implementation without modifying it; deliver the requested review report.'
+          : 'Complete the task with planning and independent review.',
     squadPresetId: 'engineering',
     hostWorkspacePath: config.workspace,
     context: `This is an unattended local in-place delivery run in a disposable, single-task workspace, not a shared checkout. The user has authorized completing the supplied task. The task workspace is ${config.workspace}. Inspect it to resolve ambiguity; no human can answer questions. Deliver completed files in that exact workspace, without requiring GitHub, a pull request, a merge approval, or an external deployment.`,
@@ -117,7 +119,7 @@ if (command === 'seed') {
         'Run this task through your squad. Create and start a work stream using the configured workflow, with an engineer producing the deliverable and an independent reviewer checking it. Delegate implementation rather than doing it yourself. Handle rework through that workflow and finish after review. Do not stop at a plan or clarification question: inspect the workspace and make reasonable decisions from the task requirements. Do not use a separate worktree unless the completed changes are put back into the supplied workspace before finishing.',
     },
   })
-  if (mode === 'engineer') {
+  if (mode === 'engineer' || mode === 'reviewer') {
     // Fixture-only: keep the normal solo flow, but no manager receives lifecycle
     // notices or performs task reasoning. Audit every execution after the run.
     await db.update(squads).set({ managerAgentId: null }).where(eq(squads.id, squad.id))
