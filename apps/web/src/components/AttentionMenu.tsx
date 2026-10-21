@@ -237,12 +237,14 @@ export function AttentionMenu({
       <summary
         ref={summaryRef}
         title="Choose what this notifies you about"
-        // A block-level flex row with no disclosure marker in both variants, like the app's other summaries: an
-        // inline-flex summary sits on its `<details>`' line box, and WebKit draws its marker unless hidden, so the
-        // compact pill rode higher and taller than the header pills beside it.
+        // The compact pill is a block-level flex row with no disclosure marker, like the app's other summaries:
+        // an inline-flex summary sits on its `<details>`' line box, and WebKit draws its marker unless hidden, so
+        // it rode higher and taller than the header pills beside it.
         className={clsx(
-          'ficus-button ficus-button-ghost flex cursor-pointer list-none items-center gap-1.5 rounded-md marker:hidden [&::-webkit-details-marker]:hidden',
-          inline ? 'w-full px-3 py-2 text-sm' : 'px-2 py-0.5 text-xs font-medium'
+          'ficus-button ficus-button-ghost flex cursor-pointer list-none items-center gap-1.5 rounded-md',
+          inline
+            ? 'w-full px-3 py-2 text-sm'
+            : 'px-2 py-0.5 text-xs font-medium marker:hidden [&::-webkit-details-marker]:hidden'
         )}
         {...(inline ? {} : hover.triggerProps)}
       >
