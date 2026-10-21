@@ -282,6 +282,10 @@ test('owner links: any BigBrain manager, the vault’s anchor sent to the host, 
   expect(audits).toEqual([
     {
       userId: manager.userId,
+      actorKey: `user:${manager.userId}`,
+      // The vault is named even when no read connection exists (connectionId is then absent).
+      targetKind: 'managed_bigbrain_vault',
+      targetId: created.vaultId,
       connectionId: undefined,
       action: 'managed_vault_owner_invite',
       outcome: 'succeeded',

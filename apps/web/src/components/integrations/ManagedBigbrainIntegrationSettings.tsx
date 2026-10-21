@@ -71,11 +71,11 @@ export function ManagedBigbrainIntegrationSettings({ canWrite }: { canWrite: boo
   return (
     <section>
       <p className="mt-1 text-xs text-muted">
-        Shared vaults run on this Ficus server and belong to it, not to one person. In BigBrain each vault&apos;s owner
-        is <span className="font-mono">ficus</span>: people who manage BigBrain here connect devices as that owner and
-        invite other members from the BigBrain app, where they write. Ficus agents in attached squads can only read.
-        Each vault has its own storage, identity and credentials, isolated from the other vaults. Ficus itself can
-        access every shared vault on this server.
+        Shared vaults run on this Ficus server and belong to it, not to one person. In BigBrain each new vault&apos;s
+        owner is <span className="font-mono">ficus</span>: people who manage BigBrain here connect devices as a
+        vault&apos;s owner and invite other members from the BigBrain app, where they write. Ficus agents in attached
+        squads can only read. Each vault has its own storage, identity and credentials, isolated from the other vaults.
+        Ficus itself can access every shared vault on this server.
       </p>
       <div className="mt-4">
         <LoadingContent

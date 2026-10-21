@@ -293,6 +293,9 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
       // link). Fails closed: a link is only returned once its requester is on record.
       await audit.record({
         userId,
+        actorKey: `user:${userId}`,
+        targetKind: 'managed_bigbrain_vault',
+        targetId: vaultId,
         connectionId: row.connectionId ?? undefined,
         action: 'managed_vault_owner_invite',
         outcome: 'succeeded',

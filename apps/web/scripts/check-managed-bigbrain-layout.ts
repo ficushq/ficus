@@ -25,14 +25,15 @@ const DESIGN = '22222222-2222-4222-8222-222222222222'
 const vault = (patch: Partial<ManagedBigbrainVault>): ManagedBigbrainVault => ({
   vaultId: RESEARCH,
   displayName: 'Research notes',
-  ownerUserId: 'user-ada',
-  isOwner: true,
+  ownerHandle: 'ficus',
+  ownerLinksAvailable: true,
   state: 'ready',
   readAccess: 'active',
   desiredGeneration: 2,
   appliedGeneration: 2,
   upstreamVaultId: null,
-  origin: null,
+  // Owner device links are only offered on a vault published at its address.
+  origin: `https://bb-${'1'.repeat(32)}.vaults.example.test`,
   connectionId: `connection-${RESEARCH}`,
   lastErrorCode: null,
   retryable: false,
@@ -53,7 +54,6 @@ const scenarios: Record<string, ManagedBigbrainVault[]> = {
     vault({
       vaultId: DESIGN,
       displayName: 'Design decisions',
-      isOwner: false,
       state: 'provisioning',
       readAccess: 'pending',
       appliedGeneration: 0,
@@ -65,7 +65,9 @@ const scenarios: Record<string, ManagedBigbrainVault[]> = {
     vault({
       vaultId: DESIGN,
       displayName: 'Design decisions',
-      isOwner: false,
+      // A vault from before instance ownership whose anchor was lost: its old handle, no owner links.
+      ownerHandle: 'ada',
+      ownerLinksAvailable: false,
       state: 'failed',
       readAccess: 'pending',
       lastErrorCode: 'storage_unavailable',
@@ -233,7 +235,6 @@ try {
       await mockApi(page, scenarios.one!)
       await open(page, width, appearance)
       await page.getByLabel('Vault name').fill('Customer interviews')
-      await page.getByLabel('Your BigBrain handle').fill('ada')
       await capture(page, 'create-filled', width, appearance)
       await page.getByRole('button', { name: 'Create vault' }).click()
       await row('Customer interviews').getByText('Setting up').waitFor()
@@ -263,7 +264,7 @@ try {
       // Owner device link dialog with a synthetic link.
       await mockApi(page, scenarios.one!)
       await open(page, width, appearance)
-      await row('Research notes').getByRole('button', { name: 'Connect a device' }).click()
+      await row('Research notes').getByRole('button', { name: 'Connect owner device' }).click()
       await page.getByRole('dialog').waitFor()
       await capture(page, 'owner-link-before', width, appearance)
       await page.getByRole('button', { name: 'Create device link' }).click()

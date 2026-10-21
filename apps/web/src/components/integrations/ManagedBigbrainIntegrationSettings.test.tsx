@@ -129,7 +129,7 @@ describe('ManagedBigbrainIntegrationSettings', () => {
   test('the card never treats the viewer as a vault owner', async () => {
     await render(false)
     expect(container.textContent).toContain('belong to it, not to one person')
-    expect(container.textContent).toContain("In BigBrain each vault's owner is ficus")
+    expect(container.textContent).toContain("In BigBrain each new vault's owner is ficus")
     expect(container.textContent).not.toMatch(/\byou(r)?\b/i)
     await render(true)
     expect(container.textContent).not.toMatch(/\byou(r)?\b/i)

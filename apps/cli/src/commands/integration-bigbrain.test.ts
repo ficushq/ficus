@@ -150,9 +150,9 @@ describe('integration bigbrain vault', () => {
   })
 
   test('a server refusal is reported without echoing any response body', async () => {
-    ;(apiPost as AnyMock).mockRejectedValue(new Error('owner_required'))
+    ;(apiPost as AnyMock).mockRejectedValue(new Error('owner_unavailable'))
     await run(['invite', VAULT, '--generation', '3', '--out', join(dir, 'never')])
-    expect(allOutput()).toContain('owner_required')
+    expect(allOutput()).toContain('owner_unavailable')
     await expect(stat(join(dir, 'never'))).rejects.toThrow()
   })
 })
