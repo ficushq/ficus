@@ -132,7 +132,7 @@ const workLinkClass =
   'pointer-events-auto relative whitespace-nowrap rounded-sm max-md:leading-6 text-secondary hover:text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1'
 
 /**
- * `#742` (plus `+N` for further streams) opening the agent's most relevant work stream.
+ * The work stream number (plus `+N` for further streams) opening the agent's most relevant work stream.
  * The number never shrinks; at narrow widths `+N` gives way first, then the status.
  */
 function AgentWorkStreamLink({ primary, others, href }: { primary: WorkStream; others: WorkStream[]; href: string }) {
