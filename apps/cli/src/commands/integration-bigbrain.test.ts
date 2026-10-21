@@ -106,22 +106,22 @@ describe('integration bigbrain vault', () => {
     expect(apiDelete).not.toHaveBeenCalled()
   })
 
-  test('invite without --out, or onto an existing path, refuses before asking the server', async () => {
-    await run(['invite', VAULT, '--generation', '3'])
+  test('owner-link without --out, or onto an existing path, refuses before asking the server', async () => {
+    await run(['owner-link', VAULT, '--generation', '3'])
     const existing = join(dir, 'existing')
     await writeFile(existing, 'keep me')
-    await run(['invite', VAULT, '--generation', '3', '--out', existing])
+    await run(['owner-link', VAULT, '--generation', '3', '--out', existing])
     expect(apiPost).not.toHaveBeenCalled()
     expect(await readFile(existing, 'utf8')).toBe('keep me')
     expect(allOutput()).toContain('--out')
   })
 
-  test('invite writes the link to a new 0600 file; neither text nor --json output contains it', async () => {
+  test('owner-link writes the link to a new 0600 file; neither text nor --json output contains it', async () => {
     ;(apiPost as AnyMock).mockResolvedValue({ inviteUrl: SECRET, expiresAt: '2026-10-20T01:00:00.000Z' })
     const text = join(dir, 'link.txt')
-    await run(['invite', VAULT, '--generation', '3', '--out', text])
+    await run(['owner-link', VAULT, '--generation', '3', '--out', text])
     const second = join(dir, 'link-2.txt')
-    await run(['invite', VAULT, '--generation', '3', '--out', second])
+    await run(['owner-link', VAULT, '--generation', '3', '--out', second])
     for (const file of [text, second]) {
       expect(await readFile(file, 'utf8')).toBe(`${SECRET}\n`)
       expect((await stat(file)).mode & 0o777).toBe(0o600)
@@ -135,6 +135,74 @@ describe('integration bigbrain vault', () => {
       written: second,
       expiresAt: '2026-10-20T01:00:00.000Z',
     })
+  })
+
+  test('invite needs a name and never falls back to an owner link', async () => {
+    await run(['invite', VAULT, '--generation', '3', '--out', join(dir, 'x')])
+    expect(apiPost).not.toHaveBeenCalled()
+    expect(allOutput()).toContain('owner-link')
+    await run(['invite', VAULT, '--name', 'Grace', '--access', 'owner', '--generation', '3', '--out', join(dir, 'y')])
+    expect(apiPost).not.toHaveBeenCalled()
+    expect(allOutput()).toContain('--access must be read or write')
+  })
+
+  test('a member invite link goes only to a new 0600 file; output shows the path, ID and expiry', async () => {
+    const MEMBER = `https://bb-${'2'.repeat(32)}.vaults.example.com/invite#${'M'.repeat(43)}`
+    ;(apiPost as AnyMock).mockResolvedValue({
+      inviteId: 'c'.repeat(24),
+      inviteUrl: MEMBER,
+      displayName: 'Grace',
+      access: 'write',
+      expiresAt: '2026-10-21T00:00:00.000Z',
+    })
+    const existing = join(dir, 'existing')
+    await writeFile(existing, 'keep me')
+    await run(['invite', VAULT, '--name', 'Grace', '--generation', '3', '--out', existing])
+    expect(apiPost).not.toHaveBeenCalled()
+    const file = join(dir, 'member.txt')
+    await run(['invite', VAULT, '--name', 'Grace', '--access', 'write', '--generation', '3', '--out', file])
+    expect(apiPost).toHaveBeenCalledWith(`/api/integrations/providers/bigbrain/shared-vaults/${VAULT}/invites`, {
+      requestId: expect.any(String),
+      expectedGeneration: 3,
+      displayName: 'Grace',
+      access: 'write',
+    })
+    expect(await readFile(file, 'utf8')).toBe(`${MEMBER}\n`)
+    expect((await stat(file)).mode & 0o777).toBe(0o600)
+    expect(allOutput()).not.toContain('M'.repeat(43))
+    expect((output as AnyMock).mock.calls.at(-1)![0]).toEqual({
+      written: file,
+      inviteId: 'c'.repeat(24),
+      access: 'write',
+      expiresAt: '2026-10-21T00:00:00.000Z',
+    })
+  })
+
+  test('members, cancel-invite, set-access and remove-member route by validated IDs and fence', async () => {
+    ;(apiGet as AnyMock).mockResolvedValue({
+      members: [
+        { handle: 'grace', displayName: 'Grace', access: 'read', status: 'active', system: null, editable: true },
+      ],
+      invites: [],
+      membersTruncated: false,
+      invitesTruncated: false,
+    })
+    await run(['members', VAULT])
+    expect(apiGet).toHaveBeenCalledWith(`/api/integrations/providers/bigbrain/shared-vaults/${VAULT}/members`)
+    await run(['cancel-invite', VAULT, 'c'.repeat(24), '--generation', '3'])
+    await run(['set-access', VAULT, 'grace', '--access', 'write', '--generation', '3'])
+    await run(['remove-member', VAULT, 'grace', '--generation', '3'])
+    const base = `/api/integrations/providers/bigbrain/shared-vaults/${VAULT}`
+    expect((apiPost as AnyMock).mock.calls).toEqual([
+      [`${base}/invites/${'c'.repeat(24)}/cancel`, { requestId: expect.any(String), expectedGeneration: 3 }],
+      [`${base}/members/grace/access`, { requestId: expect.any(String), expectedGeneration: 3, access: 'write' }],
+      [`${base}/members/grace/remove`, { requestId: expect.any(String), expectedGeneration: 3 }],
+    ])
+    ;(apiPost as AnyMock).mockClear()
+    await run(['remove-member', VAULT, '../owner', '--generation', '3'])
+    await run(['set-access', VAULT, 'grace', '--access', 'admin', '--generation', '3'])
+    await run(['cancel-invite', VAULT, 'nope', '--generation', '3'])
+    expect(apiPost).not.toHaveBeenCalled()
   })
 
   test('the secret writer never follows a symlink or replaces a file that appears meanwhile', async () => {
@@ -151,7 +219,7 @@ describe('integration bigbrain vault', () => {
 
   test('a server refusal is reported without echoing any response body', async () => {
     ;(apiPost as AnyMock).mockRejectedValue(new Error('owner_unavailable'))
-    await run(['invite', VAULT, '--generation', '3', '--out', join(dir, 'never')])
+    await run(['owner-link', VAULT, '--generation', '3', '--out', join(dir, 'never')])
     expect(allOutput()).toContain('owner_unavailable')
     await expect(stat(join(dir, 'never'))).rejects.toThrow()
   })
