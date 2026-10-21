@@ -79,6 +79,30 @@ const archive = {
   manifestDigest: digest,
   vaults: [{ vaultId: id, upstreamVaultId: other, generation: 1 }],
 }
+const roster = {
+  members: [
+    { handle: 'ficus', displayName: 'Ficus', role: 'owner', access: 'write', status: 'active', createdAt: null },
+    {
+      handle: 'ficus-reader',
+      displayName: 'Ficus',
+      role: 'member',
+      access: 'read',
+      status: 'active',
+      createdAt: '2026-10-20T00:00:00.000Z',
+    },
+    {
+      handle: 'grace',
+      displayName: 'Grace',
+      role: 'member',
+      access: 'write',
+      status: 'active',
+      createdAt: '2026-10-20T00:00:00.000Z',
+    },
+  ],
+  invites: [{ inviteId: 'c'.repeat(24), displayName: 'Lin', access: 'read', expiresAt: '2026-10-21T00:00:00Z' }],
+  membersTruncated: false,
+  invitesTruncated: false,
+}
 const requests = [
   { action: 'probe' },
   { action: 'status', vaultId: id },
@@ -101,6 +125,17 @@ const requests = [
     issuedAt: '2026-10-20T00:00:00Z',
     expiresAt: '2026-10-20T01:00:00Z',
   },
+  { action: 'member-list', vaultId: id },
+  { action: 'member-invite', vaultId: id, expectedGeneration: 1, displayName: 'Grace Hopper', access: 'write' },
+  { action: 'invite-cancel', vaultId: id, expectedGeneration: 1, inviteId: 'c'.repeat(24) },
+  {
+    action: 'member-set-access',
+    vaultId: id,
+    expectedGeneration: 1,
+    handle: 'invite-' + 'c'.repeat(24),
+    access: 'read',
+  },
+  { action: 'member-remove', vaultId: id, expectedGeneration: 1, handle: 'grace' },
   ...['read-revoke', 'read-reconnect'].map((action) => ({ action, ...fence })),
   { action: 'delete', ...fence, confirmedVaultId: id, confirmedName: 'Research' },
   ...['suspend-tenant', 'resume-tenant', 'destroy-tenant', 'restore-fence'].map((action) => ({
@@ -121,6 +156,28 @@ const replies = [
     physicalHostBinding: binding,
     invite: { inviteUrl: `${origin}/invite#${'b'.repeat(43)}`, expiresAt: '2026-10-20T01:00:00Z' },
   },
+  { ok: true, action: 'member-list', physicalHostBinding: binding, vaultId: id, roster },
+  {
+    ok: true,
+    action: 'member-invite',
+    physicalHostBinding: binding,
+    vaultId: id,
+    invite: {
+      inviteId: 'c'.repeat(24),
+      inviteUrl: `${origin}/invite#${'b'.repeat(43)}`,
+      displayName: 'Grace',
+      access: 'write',
+      expiresAt: '2026-10-21T00:00:00Z',
+    },
+  },
+  { ok: true, action: 'invite-cancel', physicalHostBinding: binding, vaultId: id, inviteId: 'c'.repeat(24) },
+  ...['member-set-access', 'member-remove'].map((action) => ({
+    ok: true,
+    action,
+    physicalHostBinding: binding,
+    vaultId: id,
+    member: roster.members[2],
+  })),
   ...['status', 'create', 'rename', 'read-revoke', 'read-reconnect', 'delete'].map((action) => ({
     ok: true,
     action,
@@ -176,6 +233,78 @@ describe('managed BigBrain v1 wire contract', () => {
     expect(contract.managedBigbrainHostRequestSchema.safeParse(missingWindow).success).toBe(false)
   })
 
+  test('member actions never target the instance owner or the Ficus reader, and carry no secret', () => {
+    for (const action of ['member-set-access', 'member-remove']) {
+      const request = requests.find((r) => r.action === action)!
+      for (const handle of ['ficus', 'ficus-reader'])
+        expect(contract.managedBigbrainHostRequestSchema.safeParse({ ...request, handle }).success).toBe(false)
+      for (const handle of ['Grace', '-x', 'a'.repeat(65), 'a/b'])
+        expect(contract.managedBigbrainHostRequestSchema.safeParse({ ...request, handle }).success).toBe(false)
+    }
+    const invite = requests.find((r) => r.action === 'member-invite')!
+    for (const access of ['owner', 'admin', 'none', ['read', 'write']])
+      expect(contract.managedBigbrainHostRequestSchema.safeParse({ ...invite, access }).success).toBe(false)
+    for (const displayName of ['', ' Grace', 'Grace\n', 'a'.repeat(121)])
+      expect(contract.managedBigbrainHostRequestSchema.safeParse({ ...invite, displayName }).success).toBe(false)
+    expect(contract.managedBigbrainHostRequestSchema.safeParse({ ...invite, expectedGeneration: 0 }).success).toBe(
+      false
+    )
+    const cancel = requests.find((r) => r.action === 'invite-cancel')!
+    for (const inviteId of ['C'.repeat(24), 'c'.repeat(23), `${'c'.repeat(24)}x`])
+      expect(contract.managedBigbrainHostRequestSchema.safeParse({ ...cancel, inviteId }).success).toBe(false)
+    // Roster entries are display fields only; pending invites never carry their secret.
+    for (const key of ['email', 'identity', 'token', 'credentials'])
+      expect(contract.managedBigbrainMemberSchema.safeParse({ ...roster.members[2], [key]: 'x' }).success).toBe(false)
+    expect(
+      contract.managedBigbrainPendingInviteSchema.safeParse({ ...roster.invites[0], secret: 'b'.repeat(43) }).success
+    ).toBe(false)
+    expect(
+      contract.managedBigbrainMemberRosterSchema.safeParse({
+        ...roster,
+        members: [roster.members[2], roster.members[2]],
+      }).success
+    ).toBe(false)
+    expect(
+      contract.managedBigbrainMemberRosterSchema.safeParse({
+        ...roster,
+        members: Array.from({ length: 101 }, (_, i) => ({ ...roster.members[2], handle: `m${i}` })),
+      }).success
+    ).toBe(false)
+    expect(contract.MANAGED_BIGBRAIN_MEMBER_INVITE_TTL_MS).toBe(86400000)
+    expect(contract.managedBigbrainMemberIsProtected('ficus')).toBe(true)
+    expect(contract.managedBigbrainMemberIsProtected('ficus-reader')).toBe(true)
+    expect(contract.managedBigbrainMemberIsProtected('grace')).toBe(false)
+  })
+  test('the largest bounded roster fits one host reply', () => {
+    const wide = 'é'.repeat(120)
+    const reply = {
+      contractVersion: 1,
+      requestId: other,
+      ok: true,
+      action: 'member-list',
+      physicalHostBinding: binding,
+      vaultId: id,
+      roster: {
+        members: Array.from({ length: 100 }, (_, i) => ({
+          handle: `${'m'.repeat(60)}${String(i).padStart(4, '0')}`,
+          displayName: wide,
+          role: 'member',
+          access: 'write',
+          status: 'pending',
+          createdAt: '2026-10-20T00:00:00.000Z',
+        })),
+        invites: Array.from({ length: 50 }, (_, i) => ({
+          inviteId: i.toString(16).padStart(24, '0'),
+          displayName: wide,
+          access: 'write',
+          expiresAt: '2026-10-21T00:00:00.000Z',
+        })),
+        membersTruncated: true,
+        invitesTruncated: true,
+      },
+    }
+    expect(contract.parseManagedBigbrainHostReply(JSON.stringify(reply)).ok).toBe(true)
+  })
   for (const request of requests)
     test(`accepts strict host action ${request.action}`, () => {
       expect(contract.managedBigbrainHostRequestSchema.safeParse(request).success).toBe(true)
