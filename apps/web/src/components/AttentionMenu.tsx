@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { usePopupDismiss } from '../hooks/usePopupDismiss'
-import { Panel } from './popover'
+import { Panel, useHoverOpen } from './popover'
 import {
   ATTENTION_KIND_COPY,
   ATTENTION_LEVELS,
@@ -72,8 +72,9 @@ export function AttentionMenu({
   align?: 'left' | 'right'
 }) {
   const queryClient = useQueryClient()
-  // `<details>` owns its own openness, so the state mirrors the element (via onToggle) rather
-  // than driving it; closing writes the DOM property back, which re-fires onToggle.
+  // Inline, `<details>` owns its own openness, so the state mirrors the element (via onToggle) rather
+  // than driving it; closing writes the DOM property back, which re-fires onToggle. Floating, the
+  // state drives the element (its `open` prop), so hovering the summary can open it.
   const [open, setOpen] = useState(false)
   const [hoveredOption, setHoveredOption] = useState<PreviewOption>(null)
   const [focusedOption, setFocusedOption] = useState<PreviewOption>(null)
@@ -86,6 +87,21 @@ export function AttentionMenu({
   // Inline, it is an expander inside another popup (not a floating surface), which owns keyboard
   // focus-out. Floating, the Panel below owns dismissal.
   usePopupDismiss({ open: inline && open, popup: detailsRef, trigger: summaryRef, onDismiss: close, focusOut: false })
+  // Floating, a mouse resting on the summary opens it; any press inside (choosing a level) pins it open.
+  const panelId = `${useId()}-attention`
+  const hover = useHoverOpen(
+    { open, setOpen, toggle: () => setOpen(!open), triggerRef: summaryRef, id: panelId },
+    { enabled: !inline, initialFocus: 'none' }
+  )
+  // The state drives the floating `<details>`, so the summary's own toggle is cancelled where it starts (a
+  // listener on the summary itself, ahead of anything the details element does with the bubbling click).
+  useEffect(() => {
+    const summary = summaryRef.current
+    if (inline || !summary) return
+    const cancelNativeToggle = (event: Event) => event.preventDefault()
+    summary.addEventListener('click', cancelNativeToggle)
+    return () => summary.removeEventListener('click', cancelNativeToggle)
+  }, [inline])
   const isSquad = target.kind === 'squad'
   // Two typed queries with a constant hook order, rather than one query whose options type would
   // be a union: only the one matching this target is enabled, so only it ever fetches.
@@ -208,6 +224,7 @@ export function AttentionMenu({
   return (
     <details
       ref={detailsRef}
+      open={inline ? undefined : open}
       onToggle={(event) => {
         setOpen(event.currentTarget.open)
         if (!event.currentTarget.open) {
@@ -220,10 +237,14 @@ export function AttentionMenu({
       <summary
         ref={summaryRef}
         title="Choose what this notifies you about"
+        // A block-level flex row with no disclosure marker in both variants, like the app's other summaries: an
+        // inline-flex summary sits on its `<details>`' line box, and WebKit draws its marker unless hidden, so the
+        // compact pill rode higher and taller than the header pills beside it.
         className={clsx(
-          'ficus-button ficus-button-ghost cursor-pointer list-none items-center gap-1.5 rounded-md',
-          inline ? 'flex w-full px-3 py-2 text-sm' : 'inline-flex px-2 py-0.5 text-xs font-medium'
+          'ficus-button ficus-button-ghost flex cursor-pointer list-none items-center gap-1.5 rounded-md marker:hidden [&::-webkit-details-marker]:hidden',
+          inline ? 'w-full px-3 py-2 text-sm' : 'px-2 py-0.5 text-xs font-medium'
         )}
+        {...(inline ? {} : hover.triggerProps)}
       >
         {inline ? <span>Notifications…</span> : <SummaryIcon summary={summary} />}
         {!inline && <span>{SUMMARY_LABEL[summary]}</span>}
@@ -234,13 +255,15 @@ export function AttentionMenu({
         // `ficus-overlay` + `bg-surface` is the repo's popover surface. (`bg-surface-primary` is not a defined
         // token — there is no `surface.primary` in tailwind.config.js — and once left the panel transparent.)
         <Panel
+          {...hover.popoverProps}
+          id={panelId}
           open={open}
           onDismiss={close}
           trigger={summaryRef}
           inside={[detailsRef]}
+          onPointerDown={hover.pin}
           role="group"
           label="Notifications"
-          initialFocus="none"
           gap={4}
           // Most triggers sit at the LEFT of their header, so the panel hangs from their left edge.
           align={align === 'right' ? 'end' : 'start'}

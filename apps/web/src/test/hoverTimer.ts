@@ -8,6 +8,10 @@ import { HOVER_PREVIEW_DELAY_MS } from '../hooks/useThemeHoverPreview'
  * the real clock. `advance(ms)` fires the pending deadlines of at most `ms`.
  */
 export function useHoverTimer(delay: number = HOVER_PREVIEW_DELAY_MS) {
+  return createHoverTimer(delay)
+}
+
+function createHoverTimer(delay: number) {
   const deadlines = new Map<number, { callback: () => void; ms: number }>()
   let serial = 10000
   const originalSet = globalThis.setTimeout
@@ -48,7 +52,7 @@ export function useHoverTimer(delay: number = HOVER_PREVIEW_DELAY_MS) {
  * the trigger long enough, without sleeping; until then a hovered trigger stays closed.
  */
 export function hoverOpenClock() {
-  return useHoverTimer(HOVER_OPEN_DELAY_MS)
+  return createHoverTimer(HOVER_OPEN_DELAY_MS)
 }
 
 /**

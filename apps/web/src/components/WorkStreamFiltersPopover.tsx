@@ -1,10 +1,11 @@
 import clsx from 'clsx'
 import type { ReactNode } from 'react'
 import { ChevronDownIcon } from './icons'
-import { Panel, usePopover } from './popover'
+import { Panel, useHoverOpen, usePopover } from './popover'
 
 export function WorkStreamFiltersPopover({ count, children }: { count: number; children: ReactNode }) {
   const popover = usePopover({ kind: 'disclosure' })
+  const hover = useHoverOpen(popover, { enabled: true })
   return (
     <div className="relative">
       <button
@@ -14,7 +15,7 @@ export function WorkStreamFiltersPopover({ count, children }: { count: number; c
           'ficus-button ficus-button-ghost flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs transition-colors',
           count > 0 && 'bg-selection hover:bg-selection text-accent-light hover:text-accent-light'
         )}
-        onClick={popover.toggle}
+        {...hover.triggerProps}
       >
         Filters
         {count > 0 && <span className="font-medium">{count}</span>}
@@ -22,10 +23,14 @@ export function WorkStreamFiltersPopover({ count, children }: { count: number; c
       </button>
       <Panel
         {...popover.popoverProps}
+        {...hover.popoverProps}
+        // Hover-opened, focus stays put; opened by click or keyboard, it moves to the first filter.
+        initialFocus={hover.hoverOpened ? 'none' : (panel) => panel.querySelector('button')}
+        // Any press inside (toggling a filter) pins it, so it stays while the results update behind it.
+        onPointerDown={hover.pin}
         role="region"
         label="Feed filters"
         gap={8}
-        initialFocus={(panel) => panel.querySelector('button')}
         // At most 32rem, and never more than 70% of the visible viewport.
         maxHeight={(viewport) => Math.min(512, 0.7 * (viewport.bottom - viewport.top))}
         className="ficus-overlay w-80 rounded-xl border border-th-border bg-surface p-3 shadow-theme-lg"
