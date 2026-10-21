@@ -24,8 +24,9 @@ import { publishIngress } from './ingress'
 import { readPublishedManifest, verifyHostServing } from './gateway-probe'
 import { drainStages } from './diagnostics'
 import { executeRestore, type RestoreDeps } from './restore-exec'
-import { createVault, ownerInvite, reconnectRead, renameVault, revokeRead, type LifecycleDeps } from './lifecycle'
+import { createVault, ownerInvite, reconnectRead, renameVault, revokeRead } from './lifecycle'
 import { waitForVaultReady } from './provision'
+import { cancelInvite, inviteMember, listMembers, removeMember, setMemberAccess, type MemberDeps } from './members'
 
 export { GATEWAY_UNIT }
 const ingress = (deps: ControlDeps) =>
@@ -36,7 +37,7 @@ export interface ControlDeps
   extends
     Omit<DeleteOptions, 'root' | 'uid' | 'run' | 'mountinfo'>,
     Omit<RestoreDeps, 'ingress' | 'admin'>,
-    Omit<LifecycleDeps, 'ingress'> {
+    Omit<MemberDeps, 'ingress'> {
   root?: string
   etc?: string
   uid?: number
@@ -384,6 +385,38 @@ export async function dispatchHostRequest(input: unknown, deps: ControlDeps = {}
             ...success,
             action: 'owner-invite',
             invite: await ownerInvite(request, { ...deps, ingress: () => ingress(deps) }),
+          }
+        case 'member-list':
+          return {
+            ...success,
+            action: request.action,
+            vaultId: request.vaultId,
+            roster: await listMembers(request, installed, deps),
+          }
+        case 'member-invite':
+          return {
+            ...success,
+            action: request.action,
+            vaultId: request.vaultId,
+            invite: await inviteMember(request, installed, { ...deps, ingress: () => ingress(deps) }),
+          }
+        case 'invite-cancel':
+          return {
+            ...success,
+            action: request.action,
+            vaultId: request.vaultId,
+            inviteId: (await cancelInvite(request, installed, deps)).inviteId,
+          }
+        case 'member-set-access':
+        case 'member-remove':
+          return {
+            ...success,
+            action: request.action,
+            vaultId: request.vaultId,
+            member:
+              request.action === 'member-set-access'
+                ? await setMemberAccess(request, installed, deps)
+                : await removeMember(request, installed, deps),
           }
         default:
           throw new Error('invalid_request')

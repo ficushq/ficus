@@ -12,6 +12,8 @@ import type { NativeMember } from './native-admin'
 import { managedPaths } from './paths'
 import { readPrivateJson, writePrivateJson } from './secure-files'
 import { initializeStorageNamespace } from './volume-image'
+import { memberAdminReply } from './member-admin'
+import { FakeBusy, fakeMemberApi } from './member-test-fixtures'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -414,4 +416,201 @@ test('rename changes only Ficus metadata at the next generation', async () => {
     })
   ).toMatchObject({ ok: true, receipt: { generation: 2 } })
   expect(f.events).toEqual(['init', 'mint'])
+})
+
+// ---------------------------------------------------------------- member management
+const NOW = Date.parse('2026-10-20T00:10:00.000Z')
+const GRACE_INVITE = 'b'.repeat(24)
+async function memberFixture() {
+  const f = await fixture()
+  await f.send(createRequest())
+  const store = managedPaths({ root: f.root, vaultId: A }).memberStore
+  const native = fakeMemberApi(store)
+  const commands: string[][] = []
+  // The real controller -> real adapter path; only the pinned upstream store is in memory.
+  const run = f.deps.run
+  f.deps.run = (async (argv: string[], options?: { input?: string }) => {
+    if (!argv.some((a) => a.endsWith('/bigbrain-members.js'))) return run(argv, options as never)
+    commands.push(argv)
+    return { code: 0, stdout: JSON.stringify(memberAdminReply(JSON.parse(options!.input!), native.api, NOW)) + '\n' }
+  }) as typeof f.deps.run
+  const member = (fields: object) => f.send({ requestId: rid(), vaultId: A, expectedGeneration: 1, ...fields })
+  return { ...f, native, commands, member, store }
+}
+
+test('member-list returns the roster through the installed release adapter as the vault UID', async () => {
+  const f = await memberFixture()
+  const reply = await f.send({ requestId: rid(), action: 'member-list', vaultId: A })
+  expect(reply).toMatchObject({ ok: true, action: 'member-list', vaultId: A })
+  const roster = (reply as { roster: { members: { handle: string }[] } }).roster
+  expect(roster.members.map((m) => m.handle)).toEqual([
+    'ficus',
+    'ficus-reader',
+    'grace',
+    'invite-aaaaaaaaaaaaaaaaaaaaaaaa',
+  ])
+  const argv = f.commands[0]!
+  expect(argv[0]).toBe('/usr/bin/setpriv')
+  expect(argv.at(-1)).toBe(`/opt/ficus-bigbrain/releases/${digest.slice(7)}/bigbrain-members.js`)
+  expect(await f.send({ requestId: rid(), action: 'member-list', vaultId: TENANT })).toMatchObject({
+    ok: false,
+    code: 'not_found',
+  })
+})
+
+test('member-invite mints once per request ID and replays the same link while it is pending', async () => {
+  const f = await memberFixture()
+  const invite = {
+    requestId: rid(),
+    action: 'member-invite',
+    vaultId: A,
+    expectedGeneration: 1,
+    displayName: 'Grace',
+    access: 'write',
+  }
+  const reply = await f.send(invite)
+  expect(reply).toEqual({
+    contractVersion: 1,
+    requestId: invite.requestId,
+    ok: true,
+    physicalHostBinding: BINDING,
+    action: 'member-invite',
+    vaultId: A,
+    invite: {
+      inviteId: GRACE_INVITE,
+      inviteUrl: `https://bb-${A.replaceAll('-', '')}.example.com/invite#${'s'.repeat(43)}`,
+      displayName: 'Grace',
+      access: 'write',
+      expiresAt: '2026-10-21T00:10:00.000Z',
+    },
+  })
+  expect(await f.send(invite)).toEqual(reply)
+  expect(f.native.calls.filter((c) => c === 'createMemberInvite')).toHaveLength(1)
+  // The cache binds the request; it never stores the name or access.
+  const cache = await readFile(join(managedPaths({ root: f.root, vaultId: A }).control, 'member-invites.json'), 'utf8')
+  expect(cache).not.toContain('Grace')
+  expect(await f.send({ ...invite, access: 'read' })).toMatchObject({ ok: false, code: 'request_conflict' })
+  expect(await f.send({ ...invite, requestId: rid(), expectedGeneration: 2 })).toMatchObject({
+    ok: false,
+    code: 'generation_conflict',
+  })
+  // Once cancelled (or accepted) upstream, a replay never hands the dead link back.
+  expect(await f.member({ action: 'invite-cancel', inviteId: GRACE_INVITE })).toMatchObject({
+    ok: true,
+    inviteId: GRACE_INVITE,
+  })
+  expect(await f.send(invite)).toMatchObject({ ok: false, code: 'invite_expired' })
+  expect(f.native.calls.filter((c) => c === 'createMemberInvite')).toHaveLength(1)
+})
+
+test('a lost member-invite result is never permission to mint again; a busy refusal may retry', async () => {
+  const f = await memberFixture()
+  const invite = {
+    requestId: rid(),
+    action: 'member-invite',
+    vaultId: A,
+    expectedGeneration: 1,
+    displayName: 'Lin',
+    access: 'read',
+  }
+  const create = f.native.api.createMemberInvite
+  f.native.api.createMemberInvite = (...args) => {
+    create(...args)
+    throw new Error('lost')
+  }
+  expect(await f.send(invite)).toMatchObject({ ok: false, code: 'operation_failed' })
+  f.native.api.createMemberInvite = create
+  expect(await f.send(invite)).toMatchObject({ ok: false, code: 'operation_failed' })
+  expect(f.native.calls.filter((c) => c === 'createMemberInvite')).toHaveLength(1)
+  // Lock contention upstream mints nothing, so the same request can succeed later.
+  const busy = { ...invite, requestId: rid() }
+  f.native.api.createMemberInvite = () => {
+    throw new FakeBusy('Membership is being updated. Please retry.')
+  }
+  expect(await f.send(busy)).toMatchObject({ ok: false, code: 'busy', retryable: true })
+  f.native.api.createMemberInvite = create
+  expect(await f.send(busy)).toMatchObject({ ok: true, action: 'member-invite' })
+})
+
+test('member-invite needs the vault served at its origin and bounds live invites', async () => {
+  const f = await memberFixture()
+  f.deps.ingress = async () => {
+    throw new Error('tls_unavailable')
+  }
+  const invite = () => ({
+    requestId: rid(),
+    action: 'member-invite',
+    vaultId: A,
+    expectedGeneration: 1,
+    displayName: 'Lin',
+    access: 'read',
+  })
+  expect(await f.send(invite())).toMatchObject({ ok: false, code: 'tls_unavailable' })
+  expect(f.native.calls).not.toContain('createMemberInvite')
+  f.deps.ingress = async () => {}
+  const create = f.native.api.createMemberInvite
+  let n = 0
+  f.native.api.createMemberInvite = (...args) => ({
+    ...(create(...args) as object),
+    id: (++n).toString(16).padStart(24, '0'),
+  })
+  for (let i = 0; i < 32; i++) expect(await f.send(invite())).toMatchObject({ ok: true })
+  expect(await f.send(invite())).toMatchObject({ ok: false, code: 'capacity' })
+})
+
+test('a vault created before member management gets its invite cache on first use; a corrupt one fails closed', async () => {
+  const f = await memberFixture()
+  const control = managedPaths({ root: f.root, vaultId: A }).control
+  const { unlink, writeFile } = await import('node:fs/promises')
+  await unlink(join(control, 'member-invites.json'))
+  const invite = () => ({
+    requestId: rid(),
+    action: 'member-invite',
+    vaultId: A,
+    expectedGeneration: 1,
+    displayName: 'Lin',
+    access: 'read',
+  })
+  expect(await f.send(invite())).toMatchObject({ ok: true })
+  await writeFile(join(control, 'member-invites.json'), '{"schema":1,"invites":"x"}', { mode: 0o600 })
+  expect(await f.send(invite())).toMatchObject({ ok: false })
+  expect(f.native.calls.filter((c) => c === 'createMemberInvite')).toHaveLength(1)
+})
+
+test('access changes and removal reach ordinary members only; ficus and ficus-reader are never sent', async () => {
+  const f = await memberFixture()
+  expect(await f.member({ action: 'member-set-access', handle: 'grace', access: 'read' })).toMatchObject({
+    ok: true,
+    action: 'member-set-access',
+    member: { handle: 'grace', access: 'read', status: 'active' },
+  })
+  expect(await f.member({ action: 'member-remove', handle: 'grace' })).toMatchObject({
+    ok: true,
+    member: { handle: 'grace', status: 'removed' },
+  })
+  for (const handle of ['ficus', 'ficus-reader']) {
+    expect(await f.member({ action: 'member-remove', handle })).toMatchObject({ ok: false, code: 'invalid_request' })
+    expect(await f.member({ action: 'member-set-access', handle, access: 'write' })).toMatchObject({
+      ok: false,
+      code: 'invalid_request',
+    })
+  }
+  // A legacy vault's owner has a person's handle: the adapter refuses it by role.
+  f.native.members[0]!.handle = 'ada'
+  expect(await f.member({ action: 'member-remove', handle: 'ada' })).toMatchObject({ ok: false, code: 'forbidden' })
+  expect(await f.member({ action: 'member-remove', handle: 'nobody' })).toMatchObject({ ok: false, code: 'not_found' })
+  expect(await f.member({ action: 'member-remove', handle: 'grace', expectedGeneration: 2 })).toMatchObject({
+    ok: false,
+    code: 'generation_conflict',
+  })
+  expect(f.native.calls.filter((c) => c === 'revokeMember')).toHaveLength(1)
+})
+
+test('an adapter reply outside the contract is refused, never passed through', async () => {
+  const f = await memberFixture()
+  f.deps.memberAdmin = async () => ({ members: [{ handle: 'grace', token: 'sv_secret' }], invites: [] })
+  expect(await f.send({ requestId: rid(), action: 'member-list', vaultId: A })).toMatchObject({
+    ok: false,
+    code: 'upstream_protocol',
+  })
 })
