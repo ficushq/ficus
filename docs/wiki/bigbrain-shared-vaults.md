@@ -33,8 +33,8 @@ two vaults. Ficus keeps at least 2 GiB free for itself before it creates another
 ## Who decides
 
 **Ficus Core on the tenant's server is the authority for its vaults.** Core records every
-create, rename, retry, read revoke or reconnect, owner device link and delete in its own
-database, and runs each one on the same server through a local root helper
+create, rename, retry, read revoke or reconnect, owner device link, member change and delete in
+its own database (member changes in its audit log), and runs each one on the same server through a local root helper
 (`/usr/local/libexec/ficus-bigbrainctl`). No other service keeps a list of the vaults.
 
 Ficus Cloud's Platform does only these things for managed BigBrain:
@@ -67,6 +67,11 @@ What is enforced:
 - The owner's device-link escrow never leaves the root control worker: no Core API, Platform
   response or log carries it. The single-use device link is returned only to the person with
   `integrations:write:bigbrain` who requested it, and Core audits who that was.
+- Member invite links are returned the same way, once, to the person who created them. Core never
+  stores, caches or logs them; only the root control worker keeps a copy, so that a retried
+  request returns the same link. Member lists carry display fields only.
+- Ficus never changes or removes a vault's owner or its `ficus-reader` member, and never makes
+  anyone an owner.
 
 Requests reach a vault only through a small gateway. Caddy terminates TLS for the vault's
 address (see [Vault addresses](#vault-addresses)) and forwards to the gateway's Unix socket. The gateway selects the vault
@@ -114,10 +119,17 @@ and API tokens are refused, even with wildcard scopes.
 | List vaults and see their state       | `integrations:read:bigbrain`                                        |
 | Create, rename, retry, revoke, delete | `integrations:write:bigbrain`                                       |
 | Connect a device as the vault owner   | `integrations:write:bigbrain`                                       |
+| List a vault's members and invites    | `integrations:write:bigbrain`                                       |
+| Invite, cancel, change access, remove | `integrations:write:bigbrain`                                       |
 | Attach or detach a vault for a squad  | `integrations:write:bigbrain` and that squad's `integrations:write` |
 
 Squad members without BigBrain authority see only the vaults attached to their squad, never
-other vaults' names, owners, usage or state.
+other vaults' names, owners, usage, state or members.
+
+Listing members needs the write permission, not just `integrations:read:bigbrain`: a member list
+names people and their pending invitations, which only the people who can change it need, and
+every list runs the server's root helper. People with read-only BigBrain authority see each vault
+and its state, but not its members.
 
 ### The owner in BigBrain
 
@@ -129,7 +141,7 @@ know what that grants:
 - The owner has full access in BigBrain: it reads and writes everything and manages members.
   Anyone holding an unused owner device link gets the same access until the link expires.
 - Everyone who connects as the owner writes as the same `ficus` member. To give people their own
-  name in the vault, invite them as members from the BigBrain app.
+  name in the vault, invite them as members (see [Members](#members)).
 - Core records each owner device link request (who asked, for which vault) in the integration
   audit log. The link itself is never recorded.
 
@@ -146,8 +158,8 @@ owner device links are no longer available; its existing owner devices keep work
    chooses **Connect owner device**, then **Create device link**. The link is single-use and
    expires after an hour. It grants full owner access (see
    [The owner in BigBrain](#the-owner-in-bigbrain)), so create it only right before pasting it
-   into the BigBrain app on the device to connect. Invite other people as members from the
-   BigBrain app; Ficus cannot add members.
+   into the BigBrain app on the device to connect. To give people their own name in the vault,
+   invite them as members instead (see [Members](#members)).
 3. **Ficus read access.** Each ready vault gets one read-only Ficus credential. It is an upstream
    agent member with exactly `read`, and it does not follow any member. It is stored encrypted in
    Ficus and never shown. **Revoke Ficus read access** disables the vault's connection in Ficus
@@ -163,6 +175,39 @@ owner device links are no longer available; its existing owner devices keep work
    bring it back. Copies already inside existing Ficus server backups are not removed; they
    follow the server's backup retention. Restoring the server from a backup taken before the
    delete brings the vault back, with Ficus read access off.
+
+## Members
+
+On a ready vault, **Members** lists who is in the vault: the owner, Ficus's read-only member
+`ficus-reader`, and everyone else. The owner and `ficus-reader` are system members: shown, never
+editable. Members added by email from the BigBrain app show as pending until they sign in.
+Pending invites are listed with their name, access and expiry, never their link.
+
+- **Invite member.** Enter the person's name and choose **Read** or **Read and write**. Ficus
+  creates an invite link that works once and expires after 24 hours. It is shown once, in the
+  dialog, and never stored by Core or the browser. Send it only to that person, privately:
+  whoever redeems it first in the BigBrain app becomes the member. Redeeming creates a new member
+  with its own handle, `invite-<invite ID>`, and the name from the invite. Everything that
+  member writes is attributed to that handle and name, including in what Ficus agents read.
+  Retrying the same request (a lost response, for example) returns the same link; it never
+  creates a second invite. At most 32 invites created through Ficus can be live per vault.
+- **Cancel invite.** The link stops working at once. An invite that was already redeemed cannot
+  be cancelled; remove the member instead.
+- **Change access.** Read, or read and write. It applies to the member's next request on every
+  device they connected. The owner's access is fixed.
+- **Remove.** Ends the member's access on every device at once by revoking the member and every
+  credential it holds. What they wrote stays in the vault under their name. Their handle stays
+  reserved and is never reused, so removal cannot be undone; invite the person again to give them
+  access back, as a new member with a new handle.
+
+Core records each invite, cancellation, access change and removal in the integration audit log:
+who did it (`user:<id>`), the vault, and the member handle (for invites, the handle the member
+will get), never the link. Each person can create 20 invites and make 60 other member changes an
+hour, and list members 60 times a minute.
+
+Member changes need the server helper that ships with this release (see
+[Operations](#operations)); a server that has not been upgraded refuses them with
+`invalid_request`.
 
 Every change is fenced by the vault's generation. If something changed meanwhile (another
 person renamed it, for example), Ficus refuses with the current generation instead of applying a
@@ -201,14 +246,20 @@ ficus integration bigbrain vault rename <vault-uuid> --name "Research notes" --g
 ficus integration bigbrain vault retry <vault-uuid> --generation <n>
 ficus integration bigbrain vault revoke-read <vault-uuid> --generation <n>
 ficus integration bigbrain vault reconnect-read <vault-uuid> --generation <n>
-ficus integration bigbrain vault invite <vault-uuid> --generation <n> --out ./owner-link.txt
+ficus integration bigbrain vault owner-link <vault-uuid> --generation <n> --out ./owner-link.txt
+ficus integration bigbrain vault members <vault-uuid>
+ficus integration bigbrain vault invite <vault-uuid> --name "Grace Hopper" --access write --generation <n> --out ./grace-invite.txt
+ficus integration bigbrain vault cancel-invite <vault-uuid> <invite-id> --generation <n>
+ficus integration bigbrain vault set-access <vault-uuid> <member-handle> --access read --generation <n>
+ficus integration bigbrain vault remove-member <vault-uuid> <member-handle> --generation <n>
 ficus integration bigbrain vault delete <vault-uuid> --name "Research" --generation <n>
 ficus integration assign bigbrain --squad <squad-uuid> --connection <connection-uuid>
 ```
 
-`invite` never prints the device link, including with `--json`. It writes the link to a **new**
-file with mode `0600` and refuses an existing path or a symlink. The terminal shows only the
-path and expiry.
+`owner-link` and `invite` never print their link, including with `--json`. Each writes the link
+to a **new** file with mode `0600` and refuses an existing path or a symlink. The terminal shows
+only the path and expiry (and, for `invite`, the invite ID). `invite` always creates a member
+invite and needs `--name`; `--access` defaults to `read`. The owner device link is `owner-link`.
 
 ## Backup and restore
 
@@ -226,7 +277,9 @@ Restoring a server reproduces the backup point. Every vault in the backup comes 
 name and owner from that time, including vaults deleted after the backup was taken. If Ficus
 Core still remembers a later delete or rename, it re-applies it once the server is back. A
 restore always rotates every vault credential, revokes Ficus read access and deletes pending
-device links. Owner devices are connected again. A person must reconnect Ficus read access;
+device links and member invites. Owner devices are connected again. Members keep their names
+and what they wrote, but their devices are disconnected too, and Ficus cannot reconnect an
+existing member's devices: invite them again, as new members with new handles. A person must reconnect Ficus read access;
 the vault's squad attachments return when it does.
 
 ## Operations
@@ -241,6 +294,11 @@ the vault's squad attachments return when it does.
   control worker. Refusals are recorded as fixed tokens, never values or secrets, in
   `/var/lib/ficus-bigbrain/control/last-failure` and
   `/run/ficus-bigbrain/preflight-<target>.reason`.
+- Member management runs the installed release's member adapter (`bigbrain-members.js`) as the
+  vault's own account, even for vaults created on an earlier release: every release runs the same
+  pinned upstream, so the member store is the same. It calls only the upstream member and invite
+  functions. A tenant gets it only through a separately authorized upgrade of the server toolkit
+  together with Core; until then the helper refuses member actions.
 - Each vault restarts on failure. A deliberate start (create, resume, backup release) clears
   systemd's start-limit counter first; crash loops are still limited.
 - Suspending the tenant closes ingress and stops every vault; resuming waits until each vault
