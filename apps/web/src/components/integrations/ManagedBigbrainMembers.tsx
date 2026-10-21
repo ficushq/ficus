@@ -14,7 +14,8 @@ import { integrationQueryKeys } from '../../queryKeys'
 import { Badge } from '../Badge'
 import { ConfirmButton } from '../ConfirmButton'
 import { LoadingContent, LoadingSurface, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
-import { ACCESS_LABEL, BigbrainMemberInviteDialog } from './BigbrainMemberInviteDialog'
+import { BigbrainMemberInviteDialog } from './BigbrainMemberInviteDialog'
+import { ACCESS_LABEL } from './bigbrainMemberAccess'
 
 function memberFailure(error: unknown): string {
   const code =

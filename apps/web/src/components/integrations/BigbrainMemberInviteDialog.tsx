@@ -1,18 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { Modal } from '../Modal'
+import { ACCESS_LABEL } from './bigbrainMemberAccess'
 import {
   createManagedBigbrainMemberInvite,
   type ManagedBigbrainMemberAccess,
   type ManagedBigbrainMemberInvite,
   type ManagedBigbrainVault,
 } from '../../api/integrations'
-
-export const ACCESS_LABEL: Record<ManagedBigbrainMemberAccess | 'none', string> = {
-  read: 'Read',
-  write: 'Read and write',
-  none: 'No access',
-}
 
 /** Why no link was created, and what to do. Never echoes server text (no secret ever lands here). */
 function inviteFailure(error: unknown): string {
