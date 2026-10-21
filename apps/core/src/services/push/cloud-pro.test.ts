@@ -127,9 +127,23 @@ test('Android Cloud push uses authenticated relay delivery and never direct APNs
   expect(path).toBe('/api/cloud-mobile-pro/notifications/send')
   expect(result.ok).toBe(true)
 })
+test('the Action Center id travels with a question alert', async () => {
+  const questionId = '724713e4-4324-4336-a761-5ec650ae8b5e'
+  const actionId = `agent-question:${questionId}`
+  const f = fixture({
+    accepted: true,
+    notification: { type: 'open', origin: 'https://cloud.ficus.sh', eventType: 'question', questionId, actionId },
+  })
+  const result = await sendManagedCloudAlert(
+    { ...input, routing: { eventType: 'question', questionId, actionId } },
+    f.deps
+  )
+  expect(result).toEqual({ ok: true, status: 200 })
+  expect(f.requests[0]).toMatchObject({ routing: { eventType: 'question', questionId, actionId } })
+  expect(f.calls[0][1]).toMatchObject({ data: { questionId, actionId } })
+})
+
 test('a routing field the relay schema rejects is dropped, not fatal: the alert still goes out with the rest', async () => {
-  // Action Center ids are composite (`agent-question:<uuid>`, `<type>:<workStreamId>:<waitId>`), never
-  // bare UUIDs, so every question and wait alert used to die here with a ZodError before any send.
   const questionId = '724713e4-4324-4336-a761-5ec650ae8b5e'
   const f = fixture({
     accepted: true,
@@ -138,13 +152,13 @@ test('a routing field the relay schema rejects is dropped, not fatal: the alert 
   const result = await sendManagedCloudAlert(
     {
       ...input,
-      routing: { eventType: 'question', questionId, actionId: `agent-question:${questionId}` } as never,
+      routing: { eventType: 'question', questionId, actionId: 'agent-question: approve the refund?' } as never,
     },
     f.deps
   )
   expect(result).toEqual({ ok: true, status: 200 })
   expect(f.requests[0]).toMatchObject({ routing: { eventType: 'question', questionId } })
-  expect(JSON.stringify(f.requests[0])).not.toContain('agent-question:')
+  expect(JSON.stringify(f.requests[0])).not.toContain('refund')
   expect(f.calls).toHaveLength(1)
 })
 
@@ -154,11 +168,11 @@ test('Android admission drops a rejected routing field the same way', async () =
     {
       ...input,
       platform: 'android',
-      routing: { eventType: 'blocked', actionId: 'workstream-blocked:ws:wait' } as never,
+      routing: { eventType: 'blocked', waitId: 'not-a-uuid' } as never,
     },
     f.deps
   )
   expect(result).toEqual({ ok: true, status: 0, reason: undefined })
   expect(f.requests[0]).toMatchObject({ routing: { eventType: 'blocked' } })
-  expect(JSON.stringify(f.requests[0])).not.toContain('workstream-blocked')
+  expect(JSON.stringify(f.requests[0])).not.toContain('not-a-uuid')
 })

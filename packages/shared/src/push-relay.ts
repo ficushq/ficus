@@ -50,7 +50,15 @@ export const relayRoutingSchema = z
     waitId: z.string().uuid().optional(),
     questionId: z.string().uuid().optional(),
     messageId: z.string().uuid().optional(),
-    actionId: z.string().uuid().optional(),
+    // The Action Center item's id, which is composite (`agent-question:<id>`,
+    // `workstream-blocked:<workStreamId>:<waitId>`), never a bare UUID. Kept to an
+    // identifier's characters so it can carry no content into the push payload.
+    actionId: z
+      .string()
+      .min(1)
+      .max(200)
+      .regex(/^[A-Za-z0-9_-]+(?::[A-Za-z0-9_-]+)*$/)
+      .optional(),
   })
   .strict()
 export const relaySendSchema = z
