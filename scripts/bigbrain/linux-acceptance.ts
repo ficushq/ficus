@@ -525,6 +525,239 @@ try {
   )
   sh(['/bin/rm', '-rf', clientHome])
 
+  // ---------------------------------------------------------------- members through Ficus, real client
+  // A member invite created through the helper (shipped member adapter as the vault's UID, root
+  // replay cache) is redeemed by the PINNED native client through real Caddy -> gateway -> vault as
+  // a NEW member; the member writes under their own handle; Core's read adapter shows that author;
+  // narrowing to read blocks the member's writes; removal revokes the member. Links travel only on
+  // a child's stdin and are never printed.
+  const memberHome = mkdtempSync('/tmp/bigbrain-native-member-')
+  const memberClient = (body: string, input = '') => {
+    const script = `(async () => {
+      try {
+        const m = await import(${JSON.stringify(`${nativeDeps}/lib/sharedConnections.ts`)});
+        const path = ${JSON.stringify(`${memberHome}/shared-connections.json`)};
+        const input = (await Bun.stdin.text()).trim();
+        ${body}
+      } catch (e) {
+        console.log(JSON.stringify({ ok: false, status: e?.status ?? null, message: String(e?.message ?? e).slice(0, 120) }));
+      }
+    })()`
+    const out = sh(
+      [
+        '/usr/bin/env',
+        '-i',
+        `HOME=${memberHome}`,
+        'PATH=/usr/bin:/bin',
+        'NODE_TLS_REJECT_UNAUTHORIZED=0',
+        '/usr/local/bin/bun',
+        '--no-install',
+        '--no-env-file',
+        '-e',
+        script,
+      ],
+      input
+    )
+    try {
+      return JSON.parse(out.stdout.trim().split('\n').at(-1) ?? '{}') as Record<string, any>
+    } catch {
+      return { ok: false, message: out.stderr.slice(0, 200) }
+    }
+  }
+  const redeemMember = (link: string) =>
+    memberClient(
+      `const saved = await m.connectInvite(path, input);
+       console.log(JSON.stringify({ ok: true, handle: saved.identity.handle, role: saved.identity.role, permissions: saved.identity.permissions }));`,
+      link
+    )
+  const memberWrite = () =>
+    memberClient(
+      `const [c] = m.readConnections(path);
+       const r = await m.sharedRequest(c, '/v1/evidence', { title: 'Lane member note', body: 'Written by an invited member through Caddy.' });
+       console.log(JSON.stringify({ ok: true, id: r.id, submittedBy: r.submitted_by }));`
+    )
+  const memberWhoami = () =>
+    memberClient(
+      `const [c] = m.readConnections(path);
+       const r = await m.sharedRequest(c, '/v1/whoami');
+       console.log(JSON.stringify({ ok: true, handle: r.handle, permissions: r.permissions }));`
+    )
+  const fenceA = () => ({ vaultId: A, expectedGeneration: receipt(A).receipt.generation })
+  const memberInviteRequest = {
+    requestId: randomUUID(),
+    action: 'member-invite',
+    ...fenceA(),
+    displayName: 'Grace Hopper',
+    access: 'write',
+  }
+  const memberInvite = helper(memberInviteRequest)
+  const memberLink = memberInvite.ok ? String(memberInvite.invite.inviteUrl) : ''
+  check(
+    'member-invite issues a single-use link on the vault origin',
+    memberInvite.ok === true &&
+      memberLink.startsWith(`${ORIGINS[A]}/invite#`) &&
+      memberInvite.invite.access === 'write',
+    JSON.stringify(memberInvite.ok ? 'issued' : [memberInvite.code, memberInvite.stderr])
+  )
+  const memberReplay = helper(memberInviteRequest)
+  check(
+    'a retried member-invite returns the same link and mints no second invite',
+    memberReplay.ok === true && memberReplay.invite?.inviteUrl === memberLink,
+    JSON.stringify(memberReplay.ok ? 'replayed' : [memberReplay.code])
+  )
+  const pending = helper({ requestId: randomUUID(), action: 'member-list', vaultId: A })
+  check(
+    'member-list shows exactly one pending invite and never its link',
+    pending.ok === true &&
+      pending.roster.invites.length === 1 &&
+      pending.roster.invites[0].inviteId === memberInvite.invite?.inviteId &&
+      !JSON.stringify(pending).includes(memberLink.split('#')[1] ?? 'unset'),
+    JSON.stringify(pending.ok ? pending.roster.invites.map((i: { access: string }) => i.access) : [pending.code])
+  )
+  const memberHandle = `invite-${memberInvite.invite?.inviteId}`
+  const joined = redeemMember(memberLink)
+  check(
+    'the member link redeems in the pinned native client as a NEW member through real Caddy',
+    joined.ok === true &&
+      joined.handle === memberHandle &&
+      joined.role === 'member' &&
+      JSON.stringify(joined.permissions) === '["read","write"]',
+    JSON.stringify(joined.ok ? { role: joined.role, permissions: joined.permissions } : joined)
+  )
+  const contributed = memberWrite()
+  check(
+    'the member writes under their own handle',
+    contributed.ok === true && contributed.submittedBy === memberHandle,
+    JSON.stringify(contributed.ok ? contributed.submittedBy : contributed)
+  )
+  // Core's own read adapter over Ficus's read-only credential, through the shipped gateway.
+  const { BigbrainSharedClient } = await import('../../apps/core/src/services/integrations/bigbrain/shared-client')
+  const handoff = JSON.parse(readFileSync(`/var/lib/ficus-bigbrain/read-handoff/${A}.json`, 'utf8'))
+  const reader = new BigbrainSharedClient({
+    capabilities: {
+      contractVersion: 1,
+      tenantId: handoff.tenantId,
+      physicalHostBinding: handoff.physicalHostBinding,
+      hostEpoch: handoff.hostEpoch,
+      available: true,
+      reasonCode: null,
+      installed: true,
+      upstreamCommit: MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
+      artifactDigest: handoff.artifactDigest,
+      sharedProtocol: 1,
+      hostState: 'active',
+      zone: ZONE,
+      tenantLabel: TENANT_LABEL,
+      limits: MANAGED_BIGBRAIN_DEFAULT_LIMITS,
+      observedAt: new Date().toISOString(),
+    },
+    material: handoff,
+    vault: {
+      vaultId: A,
+      upstreamVaultId: handoff.upstreamVaultId,
+      origin: ORIGINS[A]!,
+      appliedGeneration: handoff.generation,
+      state: 'ready',
+      readAccess: 'active',
+    },
+    beforeCall: async () => {},
+    fetch: (url, init) =>
+      fetch(`http://${new URL(ORIGINS[A]!).host}${new URL(url).pathname}`, { ...init, unix: GATEWAY_SOCKET }),
+  })
+  const shown = contributed.ok
+    ? await reader.readRecord({ id: contributed.id }).catch((e: Error) => `error ${e.message}`)
+    : ''
+  check(
+    "Ficus's read adapter shows the member as the author",
+    shown.includes(`Grace Hopper (@${memberHandle})`),
+    shown.startsWith('error') ? shown : undefined
+  )
+  const listed = helper({ requestId: randomUUID(), action: 'member-list', vaultId: A })
+  const roleOf = (handle: string) =>
+    listed.ok ? listed.roster.members.find((m: { handle: string }) => m.handle === handle) : undefined
+  check(
+    'member-list shows the owner, the Ficus reader and the new member with write access',
+    roleOf(OWNER.handle)?.role === 'owner' &&
+      roleOf('ficus-reader')?.access === 'read' &&
+      roleOf(memberHandle)?.access === 'write' &&
+      listed.roster.invites.length === 0,
+    JSON.stringify(
+      listed.ok ? listed.roster.members.map((m: { handle: string; access: string }) => m.access) : [listed.code]
+    )
+  )
+  const narrowed = helper({
+    requestId: randomUUID(),
+    action: 'member-set-access',
+    ...fenceA(),
+    handle: memberHandle,
+    access: 'read',
+  })
+  const memberBlocked = memberWrite()
+  const stillReads = memberWhoami()
+  check(
+    "changing the member's access to read blocks their next write; reads continue",
+    narrowed.ok === true &&
+      narrowed.member.access === 'read' &&
+      memberBlocked.ok === false &&
+      memberBlocked.status === 403 &&
+      stillReads.ok === true &&
+      JSON.stringify(stillReads.permissions) === '["read"]',
+    JSON.stringify([narrowed.ok ? 'narrowed' : narrowed.code, memberBlocked.status, stillReads.permissions])
+  )
+  const protectedReader = helper({
+    requestId: randomUUID(),
+    action: 'member-remove',
+    ...fenceA(),
+    handle: 'ficus-reader',
+  })
+  const protectedOwner = helper({
+    requestId: randomUUID(),
+    action: 'member-set-access',
+    ...fenceA(),
+    handle: OWNER.handle,
+    access: 'read',
+  })
+  check(
+    'the Ficus reader and the owner (any handle) are never changed or removed',
+    protectedReader.ok === false &&
+      protectedReader.code === 'invalid_request' &&
+      protectedOwner.ok === false &&
+      protectedOwner.code === 'forbidden' &&
+      (await gateway(A, '/v1/whoami', handoffA.token)).status === 200,
+    JSON.stringify([protectedReader.code, protectedOwner.code])
+  )
+  const removed = helper({ requestId: randomUUID(), action: 'member-remove', ...fenceA(), handle: memberHandle })
+  const gone = memberWhoami()
+  check(
+    'removing the member revokes their access; what they wrote stays theirs',
+    removed.ok === true &&
+      removed.member.status === 'removed' &&
+      gone.ok === false &&
+      gone.status === 401 &&
+      (contributed.ok
+        ? (await reader.readRecord({ id: contributed.id }).catch(() => '')).includes(`@${memberHandle}`)
+        : false),
+    JSON.stringify([removed.ok ? 'removed' : removed.code, gone.status])
+  )
+  const second = helper({
+    requestId: randomUUID(),
+    action: 'member-invite',
+    ...fenceA(),
+    displayName: 'Lin',
+    access: 'read',
+  })
+  const cancelled = second.ok
+    ? helper({ requestId: randomUUID(), action: 'invite-cancel', ...fenceA(), inviteId: second.invite.inviteId })
+    : second
+  sh(['/bin/rm', '-f', `${memberHome}/shared-connections.json`])
+  const refused = redeemMember(second.ok ? String(second.invite.inviteUrl) : '')
+  check(
+    'a cancelled member invite no longer redeems',
+    cancelled.ok === true && refused.ok === false,
+    JSON.stringify([cancelled.ok ? 'cancelled' : cancelled.code, refused.status])
+  )
+  sh(['/bin/rm', '-rf', memberHome])
+
   // ---------------------------------------------------------------- probe reports a gateway that cannot serve
   // Same failure class as the outage (an active gateway unit that cannot load its manifest): make
   // the published manifest unreadable to the gateway's UID only. Root still reads it.

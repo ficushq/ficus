@@ -217,6 +217,11 @@ export async function nativeFixtures(root: string, artifact: string, dependencyR
           ...window,
         })
       ) as { secret: string; expiresAt: string }
+    /** The shipped member adapter (bigbrain-members.js) against this vault's store: its reply line. */
+    const memberAdmin = async (input: Record<string, unknown>) =>
+      JSON.parse(await command([...bun, join(artifact, 'bigbrain-members.js')], { ...input, membersPath: members })) as
+        | { ok: true; result: unknown }
+        | { ok: false; code: string }
     const issuedAt = new Date().toISOString()
     const window = {
       issuedAt,
@@ -233,6 +238,7 @@ export async function nativeFixtures(root: string, artifact: string, dependencyR
       minted,
       invite,
       issueAppLink,
+      memberAdmin,
       get endpoint() {
         return endpoint
       },

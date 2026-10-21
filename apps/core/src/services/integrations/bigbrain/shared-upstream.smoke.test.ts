@@ -19,6 +19,7 @@ import {
   managedBigbrainVaultOrigin,
 } from '@ficus/shared/managed-bigbrain'
 import { cachedOwnerAppLink, ownerInviteCacheSchema } from '../../../../../../scripts/bigbrain/invite-cache'
+import { cachedMemberInvite } from '../../../../../../scripts/bigbrain/member-invite-cache'
 import { writePrivateJson } from '../../../../../../scripts/bigbrain/secure-files'
 import { createGatewayHandler } from '../../../../../../scripts/bigbrain/gateway-policy'
 
@@ -414,6 +415,189 @@ test.skipIf(!artifact && !required)(
   },
   60000
 )
+
+/** Member management through Ficus against the real pinned server: an invite minted by the shipped
+ * member adapter behind the root-private replay cache redeems in the pinned native client as a NEW
+ * member, who writes under their own handle; Ficus's read adapter shows that author; narrowing
+ * access to read blocks the member's writes on the next request; removal revokes the member. */
+test.skipIf(!artifact && !required)(
+  'a Ficus member invite redeems natively; the member writes as themselves until narrowed and removed',
+  async () => {
+    if (!artifact || !nativeDeps) throw new Error('Required pinned shared artifact/dependencies are missing')
+    const root = await mkdtemp(join(tmpdir(), 'ficus-bigbrain-members-'))
+    let fixtures: Awaited<ReturnType<typeof nativeFixtures>> | undefined
+    try {
+      fixtures = await nativeFixtures(root, artifact, nativeDeps)
+      const vault = await fixtures.vault('members-vault')
+      const admin = async (input: Record<string, unknown>) => {
+        const reply = await vault.memberAdmin(input)
+        if (!reply.ok) throw new Error(reply.code)
+        return reply.result as Record<string, any>
+      }
+      // Root-private control state, exactly where the controller keeps it.
+      const state = join(root, 'state')
+      const vaultId = randomUUID()
+      await mkdir(join(state, 'control', vaultId), { recursive: true, mode: 0o700 })
+      const request = {
+        contractVersion: 1 as const,
+        requestId: randomUUID(),
+        tenantId: randomUUID(),
+        physicalHostBinding: randomUUID(),
+        hostEpoch: 1,
+        action: 'member-invite' as const,
+        vaultId,
+        expectedGeneration: 1,
+        displayName: 'Grace Hopper',
+        access: 'write' as const,
+      }
+      let minted = 0
+      const invite = () =>
+        cachedMemberInvite({
+          vaultId,
+          root: state,
+          uid: process.getuid!(),
+          request,
+          authorize: async () => {},
+          stillPending: async (id) =>
+            (await admin({ op: 'list' })).invites.some((i: { inviteId: string }) => i.inviteId === id),
+          mint: async (issuedAt) => {
+            minted++
+            return (await admin({
+              op: 'invite',
+              displayName: request.displayName,
+              access: request.access,
+              issuedAt,
+            })) as never
+          },
+        })
+      const first = await invite()
+      expect(await invite()).toEqual(first)
+      expect(minted).toBe(1)
+      const roster = await admin({ op: 'list' })
+      expect(roster.invites).toEqual([
+        { inviteId: first.inviteId, displayName: 'Grace Hopper', access: 'write', expiresAt: first.expiresAt },
+      ])
+      expect(JSON.stringify(roster)).not.toContain(first.secret)
+      expect(Date.parse(first.expiresAt) - Date.now()).toBeGreaterThan(86_400_000 - 60_000)
+
+      // The pinned native client redeems it as a NEW member with their own handle.
+      const connections = join(root, 'native-member.json')
+      const joined = await fixtures.native.connectInvite(connections, `${vault.endpoint}/invite#${first.secret}`)
+      const device = fixtures.native.readConnections(connections).find((c) => c.id === joined.id)!
+      const handle = `invite-${first.inviteId}`
+      const whoami = () =>
+        fixtures!.native.sharedRequest<{ handle: string; role: string; permissions: string[] }>(device, '/v1/whoami')
+      expect(await whoami()).toMatchObject({ handle, role: 'member', permissions: ['read', 'write'] })
+      await expect(
+        fixtures.native.connectInvite(connections, `${vault.endpoint}/invite#${first.secret}`)
+      ).rejects.toBeDefined()
+      // A replay after redemption never hands the spent link back.
+      await expect(invite()).rejects.toThrow('invite_expired')
+      expect(minted).toBe(1)
+
+      // The member writes under their own handle; Ficus's read adapter shows that author.
+      const written = await fixtures.native.sharedRequest<{ id: string; submitted_by: string }>(
+        device,
+        '/v1/evidence',
+        {
+          title: 'Hopper notes',
+          body: 'Written by an invited member.',
+        }
+      )
+      expect(written.submitted_by).toBe(handle)
+      const reader = readOnlyClient(vault, fixtures)
+      expect(await reader.readRecord({ id: written.id })).toContain(`Grace Hopper (@${handle})`)
+      expect((await admin({ op: 'list' })).members.map((m: { handle: string }) => m.handle)).toEqual([
+        'ada',
+        'ficus-reader',
+        handle,
+      ])
+
+      // Read access: the member's very next write is refused; reads continue.
+      expect(await admin({ op: 'set-access', handle, access: 'read' })).toMatchObject({ handle, access: 'read' })
+      await expect(
+        fixtures.native.sharedRequest(device, '/v1/evidence', { title: 'Blocked', body: 'Should not land.' })
+      ).rejects.toMatchObject({ status: 403 })
+      expect((await whoami()).permissions).toEqual(['read'])
+
+      // The owner and the Ficus reader are never changed through the adapter.
+      for (const target of ['ada', 'ficus-reader'])
+        await expect(admin({ op: 'remove', handle: target })).rejects.toThrow('forbidden')
+
+      // Removal revokes the member and every credential; what they wrote stays attributed.
+      expect(await admin({ op: 'remove', handle })).toMatchObject({ handle, status: 'removed' })
+      await expect(whoami()).rejects.toMatchObject({ status: 401 })
+      expect(await reader.readRecord({ id: written.id })).toContain(`@${handle}`)
+
+      // A cancelled invite can no longer be redeemed.
+      const second = (await admin({
+        op: 'invite',
+        displayName: 'Lin',
+        access: 'read',
+        issuedAt: new Date().toISOString(),
+      })) as { inviteId: string; secret: string }
+      expect(await admin({ op: 'cancel', inviteId: second.inviteId })).toEqual({ inviteId: second.inviteId })
+      await expect(
+        fixtures.native.connectInvite(join(root, 'cancelled.json'), `${vault.endpoint}/invite#${second.secret}`)
+      ).rejects.toBeDefined()
+    } finally {
+      await fixtures?.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
+  },
+  60000
+)
+
+/** Core's read-only client over one fixture vault's real Ficus read credential. */
+function readOnlyClient(
+  vault: Awaited<ReturnType<Awaited<ReturnType<typeof nativeFixtures>>['vault']>>,
+  fixtures: Awaited<ReturnType<typeof nativeFixtures>>
+) {
+  const binding = { tenantId: randomUUID(), physicalHostBinding: randomUUID(), hostEpoch: 1 }
+  const vaultId = randomUUID()
+  const material = {
+    ...binding,
+    contractVersion: 1 as const,
+    vaultId,
+    generation: 1,
+    upstreamVaultId: vault.identity.vault.id,
+    upstreamCommit: pin,
+    artifactDigest: fixtures.provenance.digest,
+    credentialId: vault.minted.credential.id,
+    kind: 'agent' as const,
+    scopes: ['read'] as ['read'],
+    followsMember: false as const,
+    token: vault.minted.token,
+  }
+  return new BigbrainSharedClient({
+    capabilities: {
+      ...binding,
+      contractVersion: 1,
+      available: true,
+      reasonCode: null,
+      installed: true,
+      upstreamCommit: pin,
+      artifactDigest: material.artifactDigest,
+      sharedProtocol: 1,
+      hostState: 'active',
+      zone: 'example.com',
+      tenantLabel: null,
+      limits: MANAGED_BIGBRAIN_DEFAULT_LIMITS,
+      observedAt: new Date().toISOString(),
+    },
+    material,
+    vault: {
+      vaultId,
+      upstreamVaultId: material.upstreamVaultId,
+      origin: managedBigbrainVaultOrigin({ vaultId, zone: 'example.com', tenantLabel: null }),
+      appliedGeneration: 1,
+      state: 'ready',
+      readAccess: 'active',
+    },
+    beforeCall: async () => {},
+    fetch: (url, init) => fetch(vault.endpoint + new URL(url).pathname, init),
+  })
+}
 
 /** Record two create intents in Core's store and let the reconciler apply them through a fixture
  * helper that starts a real native vault server per create and answers with its receipt. */
