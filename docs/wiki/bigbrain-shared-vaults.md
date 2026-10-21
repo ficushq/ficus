@@ -4,9 +4,9 @@
 > disk exhaustion, backup staging, revoke, suspend/resume and delete). Not yet released.
 
 On Ficus Cloud, a team can run several [BigBrain](https://bigbrain.cool) vaults **on its own
-Ficus server**. People read and write a vault from the BigBrain app. Squads you choose can
-**read** it through five read-only agent tools. Ficus agents never write to a shared vault, and
-Ficus never imports conversations into one.
+Ficus server**. The vaults belong to the Ficus server, not to one person. People read and write
+a vault from the BigBrain app. Chosen squads can **read** it through five read-only agent tools.
+Ficus agents never write to a shared vault, and Ficus never imports conversations into one.
 
 This is separate from the personal [local BigBrain connector](bigbrain.md) on Desktop and
 self-hosted Core. On Ficus Cloud the BigBrain integration shows **shared vaults**. The local
@@ -25,7 +25,7 @@ servers are created.
 | Network     | No IP sockets at all. It listens only on its own Unix socket                           |
 | Namespaces  | Private network and IPC namespaces; it cannot create new namespaces                    |
 | Syscalls    | Native architecture only; privileged and resource-control system calls are refused     |
-| Credentials | Its own owner, members and one read-only Ficus credential                              |
+| Credentials | Its own `ficus` owner, members and one read-only Ficus credential                      |
 
 All vaults together are capped at 640 MiB of memory and 50% of one CPU. A server hosts at most
 two vaults. Ficus keeps at least 2 GiB free for itself before it creates another vault.
@@ -65,7 +65,8 @@ What is enforced:
   on an isolated sandbox runtime, never to `host`-runtime agents, whose shells run as the Core
   account.
 - The owner's device-link escrow never leaves the root control worker: no Core API, Platform
-  response or log carries it. The single-use device link is returned only to its owner.
+  response or log carries it. The single-use device link is returned only to the person with
+  `integrations:write:bigbrain` who requested it, and Core audits who that was.
 
 Requests reach a vault only through a small gateway. Caddy terminates TLS for the vault's
 address (see [Vault addresses](#vault-addresses)) and forwards to the gateway's Unix socket. The gateway selects the vault
@@ -108,34 +109,51 @@ so a tenant name cannot clash with a vault address.
 Only a **person signed in to Ficus** manages shared vaults. Agents, delegated assistant agents
 and API tokens are refused, even with wildcard scopes.
 
-| Action                                | Requires                                                                           |
-| ------------------------------------- | ---------------------------------------------------------------------------------- |
-| List vaults and see their state       | `integrations:read:bigbrain`                                                       |
-| Create, rename, retry, revoke, delete | `integrations:write:bigbrain`                                                      |
-| Connect a device as the vault owner   | Being the vault's recorded owner (and still holding `integrations:write:bigbrain`) |
-| Attach or detach a vault for a squad  | `integrations:write:bigbrain` and that squad's `integrations:write`                |
+| Action                                | Requires                                                            |
+| ------------------------------------- | ------------------------------------------------------------------- |
+| List vaults and see their state       | `integrations:read:bigbrain`                                        |
+| Create, rename, retry, revoke, delete | `integrations:write:bigbrain`                                       |
+| Connect a device as the vault owner   | `integrations:write:bigbrain`                                       |
+| Attach or detach a vault for a squad  | `integrations:write:bigbrain` and that squad's `integrations:write` |
 
 Squad members without BigBrain authority see only the vaults attached to their squad, never
 other vaults' names, owners, usage or state.
 
+### The owner in BigBrain
+
+A BigBrain vault always has exactly one owner member. In a shared vault that owner is `ficus`
+(display name "Ficus"), set by Ficus when it creates the vault; nobody chooses it. It is not a
+Ficus user. **Anyone with `integrations:write:bigbrain` can connect a device as this owner**, so
+know what that grants:
+
+- The owner has full access in BigBrain: it reads and writes everything and manages members.
+  Anyone holding an unused owner device link gets the same access until the link expires.
+- Everyone who connects as the owner writes as the same `ficus` member. To give people their own
+  name in the vault, invite them as members from the BigBrain app.
+- Core records each owner device link request (who asked, for which vault) in the integration
+  audit log. The link itself is never recorded.
+
+Vaults created before this rule keep the owner handle chosen then. Their creator's Ficus user ID
+remains only as an internal anchor for the server helper; deleting that user no longer affects
+the vault. A vault whose creator was deleted while that was still a user reference shows that
+owner device links are no longer available; its existing owner devices keep working.
+
 ## Lifecycle
 
-1. **Create.** Settings → Integrations → BigBrain → **New shared vault**. Choose a vault name and
-   your handle in this vault. The handle is a name you pick now, not an existing BigBrain account
-   or login: you become the vault owner under it, and members see it next to what you write. It
-   is 1–64 lowercase letters, numbers, `.`, `_` or `-`, starting with a letter or number
-   (`ficus-reader` is reserved). Each vault has its own handle, and it cannot change later. The
-   form suggests one from your email name. The vault shows **Setting up**, then **Ready**.
-2. **Connect your device.** On a ready vault you own, choose **Connect a device**, then **Create
-   device link**. The link is single-use and expires after an hour. Anyone holding it gets your
-   owner access, so create it only when you are about to paste it into the BigBrain app on your
-   own device. Invite other people from the BigBrain app; Ficus cannot add members.
+1. **Create.** Settings → Integrations → BigBrain → **New shared vault**. Choose a vault name; the
+   owner in BigBrain is always `ficus`. The vault shows **Setting up**, then **Ready**.
+2. **Connect an owner device.** On a ready vault, a person with `integrations:write:bigbrain`
+   chooses **Connect owner device**, then **Create device link**. The link is single-use and
+   expires after an hour. It grants full owner access (see
+   [The owner in BigBrain](#the-owner-in-bigbrain)), so create it only right before pasting it
+   into the BigBrain app on the device to connect. Invite other people as members from the
+   BigBrain app; Ficus cannot add members.
 3. **Ficus read access.** Each ready vault gets one read-only Ficus credential. It is an upstream
    agent member with exactly `read`, and it does not follow any member. It is stored encrypted in
    Ficus and never shown. **Revoke Ficus read access** disables the vault's connection in Ficus
    first, then revokes the credential; members keep using the vault. **Reconnect** mints a new
-   read-only credential. If the owner removes or narrows the Ficus reader in the BigBrain app,
-   Ficus shows the access as revoked and never repairs it on its own.
+   read-only credential. If someone connected as the owner removes or narrows the Ficus reader in
+   the BigBrain app, Ficus shows the access as revoked and never repairs it on its own.
 4. **Attach to squads.** In a squad's integration settings, tick each vault the squad may read.
    Vaults are attached independently. There is no default vault, and attaching one never detaches
    another.
@@ -143,25 +161,8 @@ other vaults' names, owners, usage or state.
    access. Ficus disables the vault's read connection at once. Then it removes the vault's
    server, data, account, access and DNS record, and keeps a tombstone so an old request cannot
    bring it back. Copies already inside existing Ficus server backups are not removed; they
-   follow your backup retention. Restoring the server from a backup taken before the delete
-   brings the vault back, with Ficus read access off.
-
-### When the owner leaves
-
-Ficus never hands a vault's ownership to someone else automatically.
-
-- **Owner disabled in Ficus.** The vault keeps serving, members keep their access, and the
-  owner's devices keep working in BigBrain. Ficus refuses new owner device links until the
-  owner's account is enabled again.
-- **Owner deleted from Ficus.** Deleting the user always succeeds. The vault keeps serving and
-  shows **Owner removed from Ficus**; the owner's BigBrain devices keep working, but nobody can
-  create owner device links for it from Ficus, including administrators. A vault still being set
-  up when its owner is deleted stops with `owner_removed`.
-- **Recovering.** A remaining member with access in the BigBrain app keeps reading and writing
-  there, and the owner (if their device still works) can invite others from the BigBrain app.
-  To put the vault under a new Ficus owner, a person with `integrations:write:bigbrain` creates a
-  new vault owned by the new person, members move their records over in BigBrain, and the old
-  vault is deleted. Ficus does not edit a vault's upstream owner.
+   follow the server's backup retention. Restoring the server from a backup taken before the
+   delete brings the vault back, with Ficus read access off.
 
 Every change is fenced by the vault's generation. If something changed meanwhile (another
 person renamed it, for example), Ficus refuses with the current generation instead of applying a
@@ -195,7 +196,7 @@ unreadable vault all return the same `integration_unavailable` result.
 
 ```bash
 ficus integration bigbrain vault list
-ficus integration bigbrain vault create --name "Research" --handle ada
+ficus integration bigbrain vault create --name "Research"
 ficus integration bigbrain vault rename <vault-uuid> --name "Research notes" --generation <n>
 ficus integration bigbrain vault retry <vault-uuid> --generation <n>
 ficus integration bigbrain vault revoke-read <vault-uuid> --generation <n>
@@ -225,7 +226,7 @@ Restoring a server reproduces the backup point. Every vault in the backup comes 
 name and owner from that time, including vaults deleted after the backup was taken. If Ficus
 Core still remembers a later delete or rename, it re-applies it once the server is back. A
 restore always rotates every vault credential, revokes Ficus read access and deletes pending
-device links. Owners connect their devices again. A person must reconnect Ficus read access;
+device links. Owner devices are connected again. A person must reconnect Ficus read access;
 the vault's squad attachments return when it does.
 
 ## Operations

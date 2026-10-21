@@ -25,7 +25,7 @@ const owners: string[] = []
 const connectionIds: string[] = []
 afterEach(async () => {
   clearManagedBigbrainCapabilities()
-  await db.delete(managedBigbrainVaults).where(inArray(managedBigbrainVaults.ownerUserId, owners))
+  await db.delete(managedBigbrainVaults).where(inArray(managedBigbrainVaults.hostOwnerUserId, owners))
   await db.delete(users).where(inArray(users.id, owners.splice(0)))
   await db.delete(integrationConnections).where(inArray(integrationConnections.id, connectionIds.splice(0)))
 })
@@ -64,7 +64,7 @@ async function vault(name = `Vault ${crypto.randomUUID()}`) {
     vaultId,
     requestId: crypto.randomUUID(),
     displayName: name,
-    ownerUserId: user!.id,
+    hostOwnerUserId: user!.id,
     ownerHandle: 'ada',
     ownerDisplay: 'Ada',
     actorUserId: user!.id,

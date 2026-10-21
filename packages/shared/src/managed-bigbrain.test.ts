@@ -232,6 +232,16 @@ describe('managed BigBrain v1 wire contract', () => {
       expect(contract.managedBigbrainHostRequestSchema.safeParse({ ...create, displayName: bad }).success).toBe(false)
     for (const bad of ['ficus-reader', 'Ada', '../owner'])
       expect(contract.managedBigbrainOwnerSchema.safeParse({ ...owner, handle: bad }).success).toBe(false)
+    // Every vault Core creates is owned upstream by `ficus`, a valid owner the host accepts.
+    expect(contract.managedBigbrainOwnerSchema.parse(contract.MANAGED_BIGBRAIN_FICUS_OWNER)).toEqual({
+      userId: contract.MANAGED_BIGBRAIN_FICUS_OWNER.userId,
+      handle: 'ficus',
+      display: 'Ficus',
+    })
+    expect(
+      contract.managedBigbrainHostRequestSchema.safeParse({ ...create, owner: contract.MANAGED_BIGBRAIN_FICUS_OWNER })
+        .success
+    ).toBe(true)
     expect(
       contract.managedBigbrainHostRequestSchema.safeParse({ ...create, artifactDigest: `sha256:${'A'.repeat(64)}` })
         .success

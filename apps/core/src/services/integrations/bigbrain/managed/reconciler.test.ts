@@ -13,7 +13,7 @@ import { managedVaultStore as store } from './store'
 
 const owners: string[] = []
 afterEach(async () => {
-  await db.delete(managedBigbrainVaults).where(inArray(managedBigbrainVaults.ownerUserId, owners))
+  await db.delete(managedBigbrainVaults).where(inArray(managedBigbrainVaults.hostOwnerUserId, owners))
   await db.delete(users).where(inArray(users.id, owners.splice(0)))
 })
 const host: ManagedBigbrainInstalledHost = {
@@ -128,7 +128,7 @@ async function requested(name = `Vault ${crypto.randomUUID()}`) {
     vaultId,
     requestId: crypto.randomUUID(),
     displayName: name,
-    ownerUserId: user!.id,
+    hostOwnerUserId: user!.id,
     ownerHandle: 'ada',
     ownerDisplay: 'Ada',
     actorUserId: user!.id,
@@ -273,17 +273,21 @@ test('a vault left out of a partial nightly backup is surfaced, and cleared by t
   expect((await store.get(row.id))?.backup).toBe('included')
 })
 
-test('a pending create whose owner was deleted stops without touching DNS or the host', async () => {
+test('deleting the creating user never affects a pending create: the owner anchor is not a user reference', async () => {
   const f = fakeHost()
   const row = await requested()
-  await db.delete(users).where(eq(users.id, row.ownerUserId!))
+  await db.delete(users).where(eq(users.id, row.hostOwnerUserId!))
+  expect(await store.get(row.id)).toMatchObject({ hostOwnerUserId: row.hostOwnerUserId, state: 'provisioning' })
+  expect(await reconcileNext({ ...f.deps, now: () => new Date(Date.now() + 1000) })).toBe('applied')
+  expect(f.calls.map((c) => c.split(':')[0])).toEqual(['create'])
+})
+
+test('a pending create that lost its owner anchor (only possible before instance ownership) stops untouched', async () => {
+  const f = fakeHost()
+  const row = await requested()
+  await db.update(managedBigbrainVaults).set({ hostOwnerUserId: null }).where(eq(managedBigbrainVaults.id, row.id))
   expect(await reconcileNext({ ...f.deps, now: () => new Date(Date.now() + 1000) })).toBe('failed')
-  expect(await store.get(row.id)).toMatchObject({
-    ownerUserId: null,
-    state: 'failed',
-    lastErrorCode: 'owner_removed',
-    retryable: false,
-  })
+  expect(await store.get(row.id)).toMatchObject({ state: 'failed', lastErrorCode: 'owner_removed', retryable: false })
   expect([f.calls, f.dns]).toEqual([[], []])
   await db.delete(managedBigbrainVaults).where(eq(managedBigbrainVaults.id, row.id))
 })

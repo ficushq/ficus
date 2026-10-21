@@ -6,28 +6,27 @@
  * on this host through the local root helper. Access fences (revoke, delete) disable Core's read
  * connection first.
  *
+ * Vaults belong to the instance, not a person: every vault's upstream owner is `ficus`
+ * (`MANAGED_BIGBRAIN_FICUS_OWNER`), and any BigBrain manager may connect a device as that owner.
  * The owner link is the one synchronous host call: a secret transient result, never stored,
- * cached, logged or audited here, and returned only after the owner is re-checked.
+ * cached or logged here (only who requested it, for which vault), and returned only after the
+ * requester's authority is re-checked.
  */
-import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import {
+  MANAGED_BIGBRAIN_FICUS_OWNER,
   MANAGED_BIGBRAIN_MAX_VAULTS,
   managedBigbrainOwnerInviteResultSchema,
-  managedBigbrainOwnerSchema,
   type ManagedBigbrainErrorCode,
   type ManagedBigbrainInstalledHost,
   type ManagedBigbrainOwnerInviteResult,
 } from '@ficus/shared/managed-bigbrain'
-import { db, users } from '../../../../db'
+import { createLogger } from '../../../../lib/infra/logger'
 import type { Identity } from '../../../rbac/permissions'
+import type { IntegrationAuditRecorder } from '../../audit'
+import { DbIntegrationAuditRecorder } from '../../db-audit'
 import { isIntegrationEnabled } from '../../provider-state'
-import {
-  canEnumerateManagedVaults,
-  requireManagedVaultManager,
-  requireManagedVaultOwner,
-  ManagedVaultAuthorizationError,
-} from './authorization'
+import { canEnumerateManagedVaults, requireManagedVaultManager, ManagedVaultAuthorizationError } from './authorization'
 import { currentManagedBigbrainHost, managedBigbrainAvailability } from './availability'
 import { ManagedHostError, type ManagedHostClient } from './host-client'
 import { managedVaultOrigin } from './host-identity'
@@ -41,6 +40,8 @@ export type ManagedVaultServiceCode =
   | 'integration_disabled'
   | 'name_conflict'
   | 'confirmation_mismatch'
+  /** A vault whose host owner anchor was lost (see `hostOwnerUserId`): no owner links. */
+  | 'owner_unavailable'
 
 export class ManagedVaultServiceError extends Error {
   constructor(
@@ -61,9 +62,7 @@ const label = z
   .refine((v) => v === v.trim() && !/\p{Cc}/u.test(v))
 const requestId = z.string().uuid()
 const generation = z.number().int().safe().min(1)
-export const createManagedVaultInputSchema = z
-  .object({ requestId, displayName: label, ownerHandle: managedBigbrainOwnerSchema.shape.handle })
-  .strict()
+export const createManagedVaultInputSchema = z.object({ requestId, displayName: label }).strict()
 export const renameManagedVaultInputSchema = z
   .object({ requestId, expectedGeneration: generation, displayName: label })
   .strict()
@@ -79,9 +78,11 @@ export const deleteManagedVaultInputSchema = managedVaultFenceInputSchema
 export interface ManagedVaultView {
   vaultId: string
   displayName: string
-  /** Null once the owner's Ficus account was deleted (shown as "owner removed"). */
-  ownerUserId: string | null
-  isOwner: boolean
+  /** The vault's owner identity inside BigBrain (`ficus` for vaults created by this rule). Not
+   * a Ficus user: shared vaults belong to the instance. */
+  ownerHandle: string
+  /** Whether owner device links can be created at all (false only for a lost host anchor). */
+  ownerLinksAvailable: boolean
   state: string
   readAccess: string
   desiredGeneration: number
@@ -111,7 +112,11 @@ export interface ManagedVaultServiceDeps {
   isEnabled?: () => Promise<boolean>
   available?: () => { available: boolean }
   now?: () => Date
+  /** Records who requested each owner device link (content-free; never the link). */
+  audit?: IntegrationAuditRecorder
 }
+
+const log = createLogger('managed-bigbrain-vaults')
 
 /** Fresh vault UUIDs tried when a short id collides (each collision has ~n/2^48 odds). */
 const MAX_SHORT_ID_ATTEMPTS = 8
@@ -122,13 +127,14 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
   const isEnabled = deps.isEnabled ?? (() => isIntegrationEnabled('bigbrain'))
   const available = deps.available ?? (() => managedBigbrainAvailability())
   const currentHost = deps.host ?? (() => currentManagedBigbrainHost())
+  const audit = deps.audit ?? new DbIntegrationAuditRecorder()
 
-  async function view(row: ManagedVault, userId: string): Promise<ManagedVaultView> {
+  async function view(row: ManagedVault): Promise<ManagedVaultView> {
     return {
       vaultId: row.id,
       displayName: row.displayName,
-      ownerUserId: row.ownerUserId,
-      isOwner: row.ownerUserId !== null && row.ownerUserId === userId,
+      ownerHandle: row.ownerHandle,
+      ownerLinksAvailable: row.hostOwnerUserId !== null,
       state: row.state,
       readAccess: row.readAccess,
       desiredGeneration: row.desiredGeneration,
@@ -154,14 +160,6 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
     if (!host) throw new ManagedVaultServiceError('unavailable', 503)
     return host
   }
-  async function ownerDisplay(userId: string, handle: string): Promise<string> {
-    const [user] = await db
-      .select({ displayName: users.displayName, email: users.email })
-      .from(users)
-      .where(eq(users.id, userId))
-    const candidate = (user?.displayName ?? user?.email.split('@')[0] ?? handle).replace(/\p{Cc}/gu, ' ').trim()
-    return (candidate || handle).slice(0, 120).trim()
-  }
   async function fence(row: ManagedVault, actor: string): Promise<void> {
     if (row.connectionId) await deps.disableConnection(row.connectionId, actor)
     await store.clearReadMaterial(row.id)
@@ -170,13 +168,12 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
   return {
     async list(identity: Identity | undefined): Promise<ManagedVaultView[]> {
       if (!(await canEnumerateManagedVaults(identity))) throw new ManagedVaultServiceError('forbidden', 403)
-      const userId = (identity as { userId: string }).userId
-      return Promise.all((await store.list()).map((row) => view(row, userId)))
+      return Promise.all((await store.list()).map((row) => view(row)))
     },
 
     async get(identity: Identity | undefined, vaultId: string): Promise<ManagedVaultView> {
       if (!(await canEnumerateManagedVaults(identity))) throw new ManagedVaultServiceError('not_found', 404)
-      return view(await live(vaultId), (identity as { userId: string }).userId)
+      return view(await live(vaultId))
     },
 
     async create(identity: Identity | undefined, input: unknown): Promise<ManagedVaultView> {
@@ -191,9 +188,10 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
         maxLive: Math.min(MANAGED_BIGBRAIN_MAX_VAULTS, host.limits.maxVaults),
         requestId: body.requestId,
         displayName: body.displayName,
-        ownerUserId: userId,
-        ownerHandle: body.ownerHandle,
-        ownerDisplay: await ownerDisplay(userId, body.ownerHandle),
+        // Every new vault is the instance's: its upstream owner is always `ficus`.
+        hostOwnerUserId: MANAGED_BIGBRAIN_FICUS_OWNER.userId,
+        ownerHandle: MANAGED_BIGBRAIN_FICUS_OWNER.handle,
+        ownerDisplay: MANAGED_BIGBRAIN_FICUS_OWNER.display,
         actorUserId: userId,
       }
       // The origin is chosen once here and persisted. A new UUID whose 12-hex short id is taken
@@ -217,22 +215,22 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
           if (attempt >= MAX_SHORT_ID_ATTEMPTS - 1) throw new ManagedVaultServiceError('request_conflict', 409)
         }
       }
-      return view(row, userId)
+      return view(row)
     },
 
     async rename(identity: Identity | undefined, vaultId: string, input: unknown): Promise<ManagedVaultView> {
-      const userId = await requireManagedVaultManager(identity)
+      await requireManagedVaultManager(identity)
       const body = parse(renameManagedVaultInputSchema, input)
       await live(vaultId)
       const row = await store.requestOperation(vaultId, { action: 'rename', ...body })
-      return view(row, userId)
+      return view(row)
     },
 
     async retry(identity: Identity | undefined, vaultId: string, input: unknown): Promise<ManagedVaultView> {
-      const userId = await requireManagedVaultManager(identity)
+      await requireManagedVaultManager(identity)
       const body = parse(managedVaultFenceInputSchema, input)
       await live(vaultId)
-      return view(await store.retry(vaultId, body), userId)
+      return view(await store.retry(vaultId, body))
     },
 
     async setReadAccess(identity: Identity | undefined, vaultId: string, input: unknown): Promise<ManagedVaultView> {
@@ -247,7 +245,7 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
         requestId: body.requestId,
         expectedGeneration: body.expectedGeneration,
       })
-      return view(updated, userId)
+      return view(updated)
     },
 
     /** Returns the SECRET owner device link once; callers must send it with no-store headers. */
@@ -256,9 +254,13 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
       vaultId: string,
       input: unknown
     ): Promise<ManagedBigbrainOwnerInviteResult> {
+      const userId = await requireManagedVaultManager(identity)
       const row = await live(vaultId)
-      const userId = await requireManagedVaultOwner(identity, row)
       const body = parse(managedVaultFenceInputSchema, input)
+      // The host only issues a link for the anchor it recorded at create; a row that lost it
+      // (its creator was deleted while this was a user reference) can never get one.
+      const anchor = row.hostOwnerUserId
+      if (anchor === null) throw new ManagedVaultServiceError('owner_unavailable', 409)
       if (row.desiredGeneration !== body.expectedGeneration || row.desiredAction !== null)
         throw new ManagedVaultServiceError('generation_conflict', 409, row.desiredGeneration)
       if (row.state !== 'ready' && row.state !== 'degraded')
@@ -276,7 +278,8 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
         action: 'owner-invite',
         vaultId,
         expectedGeneration: body.expectedGeneration,
-        actorUserId: userId,
+        // Core has authorized the requester; the host matches the vault's recorded owner anchor.
+        actorUserId: anchor,
         issuedAt: window.issuedAt,
         expiresAt: window.expiresAt,
       })
@@ -284,7 +287,22 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
       if (!invite?.success || !invite.data.inviteUrl.startsWith(`${row.origin}/invite#`))
         throw new ManagedVaultServiceError('invalid_response', 502)
       // Authority may have been lost while the host call was in flight: verify again.
-      await requireManagedVaultOwner(identity, await live(vaultId))
+      await requireManagedVaultManager(identity)
+      await live(vaultId)
+      // Every BigBrain manager can connect as the vault's owner, so record who asked (never the
+      // link). Fails closed: a link is only returned once its requester is on record.
+      await audit.record({
+        userId,
+        actorKey: `user:${userId}`,
+        targetKind: 'managed_bigbrain_vault',
+        targetId: vaultId,
+        connectionId: row.connectionId ?? undefined,
+        action: 'managed_vault_owner_invite',
+        outcome: 'succeeded',
+        requestId: body.requestId,
+        at: (deps.now ?? (() => new Date()))(),
+      })
+      log.info('Managed BigBrain owner device link issued', { vaultId, userId, requestId: body.requestId })
       return invite.data
     },
 
@@ -302,7 +320,7 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
         requestId: body.requestId,
         expectedGeneration: body.expectedGeneration,
       })
-      return view(updated, userId)
+      return view(updated)
     },
   }
 }

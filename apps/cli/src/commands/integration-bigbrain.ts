@@ -105,24 +105,14 @@ export function registerBigbrainVaultCommands(
 
   vault
     .command('create')
-    .description('Create a shared vault owned by you')
-    .requiredOption('--name <name>', 'Vault name')
-    .requiredOption(
-      '--handle <handle>',
-      'Your name in this vault, shown to members next to what you write. Pick a new one; it is not a BigBrain ' +
-        'account. 1-64 of a-z 0-9 . _ -, starting with a letter or number; cannot be changed later'
+    .description(
+      "Create a shared vault for this Ficus server. Its owner in BigBrain is 'ficus'; people who manage " +
+        'BigBrain here connect devices as that owner'
     )
+    .requiredOption('--name <name>', 'Vault name')
     .action(
-      run(async (options: { name: string; handle: string }) =>
-        output(
-          summary(
-            await apiPost<VaultView>(BASE, {
-              requestId: randomUUID(),
-              displayName: options.name,
-              ownerHandle: options.handle,
-            })
-          )
-        )
+      run(async (options: { name: string }) =>
+        output(summary(await apiPost<VaultView>(BASE, { requestId: randomUUID(), displayName: options.name })))
       )
     )
 
@@ -161,7 +151,10 @@ export function registerBigbrainVaultCommands(
 
   vault
     .command('invite <vault>')
-    .description('Write a single-use owner device link to a new private file (never printed)')
+    .description(
+      "Write a single-use link that connects a BigBrain app as the vault's owner to a new private file (never " +
+        'printed). Anyone holding it gets full owner access. Other members are invited from the BigBrain app'
+    )
     .requiredOption('--generation <n>', 'Current vault generation (from list)')
     .option('--out <file>', 'New file to create with mode 0600 (required)')
     .action(
@@ -174,7 +167,7 @@ export function registerBigbrainVaultCommands(
         const written = await dependencies.writeSecretFile(target, `${invite.inviteUrl}\n`)
         output(
           { written, expiresAt: invite.expiresAt },
-          `Owner device link written to ${written} (expires ${invite.expiresAt}). Open it only on your own device.`
+          `Owner device link written to ${written} (expires ${invite.expiresAt}). Open it only on the device to connect.`
         )
       })
     )

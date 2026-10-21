@@ -171,9 +171,10 @@ export const getBigbrainLocalBindings = (fetcher: ApiFetcher = apiFetch) =>
 export interface ManagedBigbrainVault {
   vaultId: string
   displayName: string
-  /** Null once the owner's Ficus account was deleted. */
-  ownerUserId: string | null
-  isOwner: boolean
+  /** The vault's owner identity inside BigBrain (`ficus`). Vaults belong to the instance, not a person. */
+  ownerHandle: string
+  /** Whether owner device links can be created for this vault at all. */
+  ownerLinksAvailable: boolean
   state: 'requested' | 'provisioning' | 'ready' | 'degraded' | 'failed' | 'deleting' | 'deleted'
   readAccess: 'pending' | 'active' | 'revoked'
   desiredGeneration: number
@@ -201,7 +202,7 @@ const vaultPath = (vaultId: string) => `${MANAGED_VAULTS}/${encodeURIComponent(v
 export const listManagedBigbrainVaults = (fetcher: ApiFetcher = apiFetch) =>
   fetcher<{ vaults: ManagedBigbrainVault[] }>(MANAGED_VAULTS).then((value) => value.vaults)
 export const createManagedBigbrainVault = (
-  input: { requestId: string; displayName: string; ownerHandle: string },
+  input: { requestId: string; displayName: string },
   fetcher: ApiFetcher = apiFetch
 ) => fetcher<ManagedBigbrainVault>(MANAGED_VAULTS, { method: 'POST', body: JSON.stringify(input) })
 export const renameManagedBigbrainVault = (

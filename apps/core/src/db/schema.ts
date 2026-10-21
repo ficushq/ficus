@@ -4013,11 +4013,13 @@ export const managedBigbrainVaults = pgTable(
   'managed_bigbrain_vaults',
   {
     id: uuid('id').primaryKey(),
-    /** The vault's Ficus owner. Null once that user is deleted: the vault keeps serving and the
-     * owner's existing devices keep working upstream, but Ficus can no longer mint owner links.
-     * Never reassigned automatically. */
-    ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'set null' }),
-    /** The owner's upstream identity as sent at create; never re-derived from a mutable profile. */
+    /** Opaque owner anchor the host recorded at create and matches on owner-invite. Not a person
+     * and never a permission: shared vaults belong to the instance (`MANAGED_BIGBRAIN_FICUS_OWNER`).
+     * Vaults created before that rule hold their creator's ID here; no foreign key, so deleting
+     * that user changes nothing. Null only on rows whose creator was deleted while it was a
+     * foreign key: those can no longer mint owner device links. */
+    hostOwnerUserId: uuid('owner_user_id'),
+    /** The upstream owner identity as sent at create (`ficus` for new vaults); immutable. */
     ownerHandle: varchar('owner_handle', { length: 64 }).notNull(),
     ownerDisplay: varchar('owner_display', { length: 120 }).notNull(),
     /** Core's name (authoritative). `hostDisplayName` is the host's recorded name. */

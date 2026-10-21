@@ -2,6 +2,7 @@ import { afterAll, afterEach, expect, test } from 'bun:test'
 import { eq, inArray } from 'drizzle-orm'
 import {
   MANAGED_BIGBRAIN_DEFAULT_LIMITS,
+  MANAGED_BIGBRAIN_FICUS_OWNER,
   MANAGED_BIGBRAIN_UPSTREAM_COMMIT,
   type ManagedBigbrainInstalledHost,
 } from '@ficus/shared/managed-bigbrain'
@@ -9,6 +10,7 @@ import { db, managedBigbrainVaults, users } from '../../../../db'
 import { User } from '../../../../entities/User'
 import { assignRole, cleanupTestRbac, createTestRole, createTestUser } from '../../../../test-utils/rbac'
 import type { Identity } from '../../../rbac/permissions'
+import type { IntegrationAuditEvent } from '../../audit'
 import { ManagedHostError, type ManagedHostCall } from './host-client'
 import { createManagedVaultService, managedVaultErrorResponse } from './service'
 import { managedVaultStore } from './store'
@@ -17,10 +19,10 @@ const PREFIX = `mbb-svc-${crypto.randomUUID().slice(0, 8)}`
 const userIds: string[] = []
 // A tenant holds at most MANAGED_BIGBRAIN_MAX_VAULTS live vaults: each test starts empty.
 afterEach(async () => {
-  await db.delete(managedBigbrainVaults).where(inArray(managedBigbrainVaults.ownerUserId, userIds))
+  await db.delete(managedBigbrainVaults).where(inArray(managedBigbrainVaults.createdByUserId, userIds))
 })
 afterAll(async () => {
-  await db.delete(managedBigbrainVaults).where(inArray(managedBigbrainVaults.ownerUserId, userIds))
+  await db.delete(managedBigbrainVaults).where(inArray(managedBigbrainVaults.createdByUserId, userIds))
   await cleanupTestRbac(PREFIX)
 })
 async function human(permissions: string[], displayName = 'Ada Lovelace'): Promise<Identity & { userId: string }> {
@@ -52,7 +54,9 @@ function service(
   const calls: { action: string; body: ManagedHostCall; requestId: string }[] = []
   const fences: string[] = []
   const hooks: { invite?: () => Promise<void>; fail?: ManagedHostError } = {}
+  const audits: IntegrationAuditEvent[] = []
   const svc = createManagedVaultService({
+    audit: { record: async (event) => void audits.push(event) },
     hostClient: {
       call: (async (_host: unknown, requestId: string, body: ManagedHostCall) => {
         calls.push({ action: body.action, body, requestId })
@@ -85,7 +89,7 @@ function service(
     isEnabled: async () => options.enabled ?? true,
     available: () => ({ available: options.available ?? true }),
   })
-  return { svc, calls, fences, hooks }
+  return { svc, calls, fences, hooks, audits }
 }
 async function code(promise: Promise<unknown>): Promise<string> {
   try {
@@ -97,11 +101,7 @@ async function code(promise: Promise<unknown>): Promise<string> {
   }
   throw new Error('expected a refusal')
 }
-const create = (displayName: string, requestId = crypto.randomUUID()) => ({
-  requestId,
-  displayName,
-  ownerHandle: 'ada',
-})
+const create = (displayName: string, requestId = crypto.randomUUID()) => ({ requestId, displayName })
 /** Pretend the reconciler created it on the host. */
 async function makeReady(vaultId: string) {
   const row = (await managedVaultStore.get(vaultId))!
@@ -138,14 +138,15 @@ test('non-humans, missing permission, a disabled integration or unavailable host
   expect(await code(service({ available: false }).svc.create(admin, create(`Down ${crypto.randomUUID()}`)))).toBe(
     'unavailable'
   )
-  expect(await code(svc.create(admin, { ...create('Bad'), ownerHandle: 'ficus-reader' }))).toBe('invalid_request')
+  // The upstream owner is always `ficus`: a client cannot choose a handle.
+  expect(await code(svc.create(admin, { ...create('Bad'), ownerHandle: 'ada' }))).toBe('invalid_request')
   expect(calls).toEqual([])
   expect(
-    await db.select().from(managedBigbrainVaults).where(eq(managedBigbrainVaults.ownerUserId, admin.userId))
+    await db.select().from(managedBigbrainVaults).where(eq(managedBigbrainVaults.createdByUserId, admin.userId))
   ).toHaveLength(0)
 })
 
-test('create records a pending local host create with the installed zone origin; no Platform call; replays', async () => {
+test('create records a pending local host create owned by `ficus`, with the installed zone origin; replays', async () => {
   const owner = await human(['integrations:write:bigbrain', 'integrations:read:bigbrain'], 'Ada Lovelace')
   const { svc, calls } = service()
   const input = create(`Research ${crypto.randomUUID()}`)
@@ -153,14 +154,19 @@ test('create records a pending local host create with the installed zone origin;
   expect(created).toMatchObject({
     state: 'provisioning',
     pendingAction: 'create',
-    isOwner: true,
-    ownerUserId: owner.userId,
+    ownerHandle: 'ficus',
+    ownerLinksAvailable: true,
   })
+  // No person is exposed or recorded as the vault's owner.
+  expect(created).not.toHaveProperty('ownerUserId')
+  expect(created).not.toHaveProperty('isOwner')
   expect(created.origin).toBe(`https://bb-${created.vaultId.replaceAll('-', '')}.example.com`)
   const row = (await managedVaultStore.get(created.vaultId))!
   expect(row).toMatchObject({
-    ownerHandle: 'ada',
-    ownerDisplay: 'Ada Lovelace',
+    hostOwnerUserId: MANAGED_BIGBRAIN_FICUS_OWNER.userId,
+    ownerHandle: 'ficus',
+    ownerDisplay: 'Ficus',
+    createdByUserId: owner.userId,
     createRecipe: { limits: { maxVaults: 2 } },
   })
   expect(calls).toEqual([])
@@ -258,19 +264,37 @@ test('rename, revoke and delete are recorded with generation fences; revoke and 
   void fences
 })
 
-test('owner links: only the recorded owner, an immutable window per request, re-verified after the host call', async () => {
-  const owner = await human(['integrations:write:bigbrain'])
-  const admin = await human(['*'])
-  const { svc, calls, hooks } = service()
-  const created = await svc.create(owner, create(`Invite ${crypto.randomUUID()}`))
+test('owner links: any BigBrain manager, the vault’s anchor sent to the host, audited, re-verified after the call', async () => {
+  const creator = await human(['integrations:write:bigbrain'])
+  const manager = await human(['integrations:write:bigbrain'])
+  const reader = await human(['integrations:read:bigbrain'])
+  const { svc, calls, hooks, audits } = service()
+  const created = await svc.create(creator, create(`Invite ${crypto.randomUUID()}`))
   const fence = { requestId: crypto.randomUUID(), expectedGeneration: 1 }
-  expect(await code(svc.ownerInvite(owner, created.vaultId, fence))).toBe('generation_conflict')
+  expect(await code(svc.ownerInvite(creator, created.vaultId, fence))).toBe('generation_conflict')
   await makeReady(created.vaultId)
-  expect(await code(svc.ownerInvite(admin, created.vaultId, fence))).toBe('owner_required')
+  expect(await code(svc.ownerInvite(reader, created.vaultId, fence))).toBe('permission_required')
   expect(calls).toEqual([])
-  const first = await svc.ownerInvite(owner, created.vaultId, fence)
+  // Not only the creator: any manager connects as the vault's `ficus` owner.
+  const first = await svc.ownerInvite(manager, created.vaultId, fence)
   expect(first.inviteUrl).toContain('/invite#')
-  const replay = await svc.ownerInvite(owner, created.vaultId, fence)
+  expect((calls[0]!.body as { actorUserId: string }).actorUserId).toBe(MANAGED_BIGBRAIN_FICUS_OWNER.userId)
+  expect(audits).toEqual([
+    {
+      userId: manager.userId,
+      actorKey: `user:${manager.userId}`,
+      // The vault is named even when no read connection exists (connectionId is then absent).
+      targetKind: 'managed_bigbrain_vault',
+      targetId: created.vaultId,
+      connectionId: undefined,
+      action: 'managed_vault_owner_invite',
+      outcome: 'succeeded',
+      requestId: fence.requestId,
+      at: expect.any(Date),
+    },
+  ])
+  expect(JSON.stringify(audits)).not.toContain(first.inviteUrl)
+  const replay = await svc.ownerInvite(manager, created.vaultId, fence)
   expect(calls.map((c) => [c.action, c.requestId])).toEqual([
     ['owner-invite', fence.requestId],
     ['owner-invite', fence.requestId],
@@ -283,17 +307,19 @@ test('owner links: only the recorded owner, an immutable window per request, re-
   // Busy helper: retryable 503.
   hooks.fail = new ManagedHostError('busy', true)
   const busy = managedVaultErrorResponse(
-    await svc.ownerInvite(owner, created.vaultId, { ...fence, requestId: crypto.randomUUID() }).catch((e) => e)
+    await svc.ownerInvite(creator, created.vaultId, { ...fence, requestId: crypto.randomUUID() }).catch((e) => e)
   )
   expect(busy).toEqual({ status: 503, body: { code: 'busy', retryable: true } })
   hooks.fail = undefined
-  // Owner disabled while the host minted the link: the result is withheld.
+  // Requester disabled while the host minted the link: the result is withheld and not audited as issued.
   hooks.invite = async () => {
-    await db.update(users).set({ disabledAt: new Date() }).where(eq(users.id, owner.userId))
+    await db.update(users).set({ disabledAt: new Date() }).where(eq(users.id, creator.userId))
   }
-  expect(await code(svc.ownerInvite(owner, created.vaultId, { ...fence, requestId: crypto.randomUUID() }))).toBe(
+  const before = audits.length
+  expect(await code(svc.ownerInvite(creator, created.vaultId, { ...fence, requestId: crypto.randomUUID() }))).toBe(
     'enabled_human_required'
   )
+  expect(audits).toHaveLength(before)
 })
 
 test('an expired owner-link window is refused rather than minting a new link', async () => {
@@ -315,46 +341,38 @@ test('an expired owner-link window is refused rather than minting a new link', a
   expect(await code(later.ownerInvite(owner, created.vaultId, fence))).toBe('invite_expired')
 })
 
-test('deleting an owner never fails: their live vault keeps serving without an owner; tombstones never block', async () => {
-  const owner = await human(['integrations:write:bigbrain'])
-  const formerOwner = await human(['integrations:write:bigbrain'])
+test('deleting the creating user changes nothing; only a vault that lost its anchor refuses owner links', async () => {
+  const creator = await human(['integrations:write:bigbrain'])
   const admin = await human(['*'])
   const { svc, calls } = service()
-  const live = await svc.create(owner, create(`Owned ${crypto.randomUUID()}`))
+  const live = await svc.create(creator, create(`Kept ${crypto.randomUUID()}`))
   await makeReady(live.vaultId)
-  const gone = await svc.create(formerOwner, create(`Gone ${crypto.randomUUID()}`))
-  await makeReady(gone.vaultId)
-  await svc.delete(formerOwner, gone.vaultId, {
-    requestId: crypto.randomUUID(),
-    expectedGeneration: 1,
-    confirmedVaultId: gone.vaultId,
-    confirmedName: gone.displayName,
-  })
-  await managedVaultStore.finalizeTombstone(gone.vaultId)
+  // A vault created before instance ownership, anchored to its (now deleted) creator.
+  await db
+    .update(managedBigbrainVaults)
+    .set({ hostOwnerUserId: creator.userId, ownerHandle: 'ada', ownerDisplay: 'Ada' })
+    .where(eq(managedBigbrainVaults.id, live.vaultId))
+  const lost = await svc.create(admin, create(`Lost ${crypto.randomUUID()}`))
+  await makeReady(lost.vaultId)
+  await db
+    .update(managedBigbrainVaults)
+    .set({ hostOwnerUserId: null })
+    .where(eq(managedBigbrainVaults.id, lost.vaultId))
   try {
     // Exactly the path DELETE /api/users/:id takes.
-    await (await User.findById(formerOwner.userId))!.delete()
-    await (await User.findById(owner.userId))!.delete()
-    expect(await User.findById(owner.userId)).toBeNull()
-    expect(await User.findById(formerOwner.userId)).toBeNull()
-    const orphan = await svc.get(admin, live.vaultId)
-    expect(orphan).toMatchObject({ ownerUserId: null, isOwner: false, state: 'ready' })
-    // Nobody inherits owner authority: not an administrator, not automatically.
+    await (await User.findById(creator.userId))!.delete()
+    expect(await User.findById(creator.userId)).toBeNull()
+    expect(await svc.get(admin, live.vaultId)).toMatchObject({ ownerHandle: 'ada', ownerLinksAvailable: true })
+    expect((await managedVaultStore.get(live.vaultId))!.hostOwnerUserId).toBe(creator.userId)
+    await svc.ownerInvite(admin, live.vaultId, { requestId: crypto.randomUUID(), expectedGeneration: 1 })
+    expect((calls[0]!.body as { actorUserId: string }).actorUserId).toBe(creator.userId)
+    expect(await svc.get(admin, lost.vaultId)).toMatchObject({ ownerLinksAvailable: false })
     expect(
-      await code(svc.ownerInvite(admin, live.vaultId, { requestId: crypto.randomUUID(), expectedGeneration: 1 }))
-    ).toBe('owner_required')
-    expect(calls).toEqual([])
-    // Other management continues, and the vault can still be deleted.
-    expect(
-      await svc.delete(admin, live.vaultId, {
-        requestId: crypto.randomUUID(),
-        expectedGeneration: 1,
-        confirmedVaultId: live.vaultId,
-        confirmedName: live.displayName,
-      })
-    ).toMatchObject({ pendingAction: 'delete' })
+      await code(svc.ownerInvite(admin, lost.vaultId, { requestId: crypto.randomUUID(), expectedGeneration: 1 }))
+    ).toBe('owner_unavailable')
+    expect(calls).toHaveLength(1)
   } finally {
-    await db.delete(managedBigbrainVaults).where(inArray(managedBigbrainVaults.id, [live.vaultId, gone.vaultId]))
+    await db.delete(managedBigbrainVaults).where(inArray(managedBigbrainVaults.id, [live.vaultId, lost.vaultId]))
   }
 })
 

@@ -72,12 +72,11 @@ describe('integration bigbrain vault', () => {
     ])
   })
 
-  test('create sends a fresh request ID, the name and the owner handle', async () => {
-    await run(['create', '--name', 'Research', '--handle', 'ada'])
+  test('create sends only a fresh request ID and the name: the owner in BigBrain is always ficus', async () => {
+    await run(['create', '--name', 'Research'])
     expect(apiPost).toHaveBeenCalledWith('/api/integrations/providers/bigbrain/shared-vaults', {
       requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
       displayName: 'Research',
-      ownerHandle: 'ada',
     })
   })
 
@@ -151,9 +150,9 @@ describe('integration bigbrain vault', () => {
   })
 
   test('a server refusal is reported without echoing any response body', async () => {
-    ;(apiPost as AnyMock).mockRejectedValue(new Error('owner_required'))
+    ;(apiPost as AnyMock).mockRejectedValue(new Error('owner_unavailable'))
     await run(['invite', VAULT, '--generation', '3', '--out', join(dir, 'never')])
-    expect(allOutput()).toContain('owner_required')
+    expect(allOutput()).toContain('owner_unavailable')
     await expect(stat(join(dir, 'never'))).rejects.toThrow()
   })
 })

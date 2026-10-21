@@ -113,9 +113,11 @@ Ficus reads with an upstream agent credential that has exactly `read` and follow
 re-verified on every call. Agents see five read tools that require an explicit vault and resolve
 it only through their squad's assignment; there is no default vault and no write tool. Shared
 tools are created only for agents on an isolated sandbox runtime, never `host`. Management is
-literal-human only (no agent, delegated assistant or system token), and owner device links are
-owner-only, secret, single-use and never cached, logged or audited. Owner escrow stays inside
-the root control worker and never crosses a Core API, Platform response or log.
+literal-human only (no agent, delegated assistant or system token). Vaults belong to the
+instance: their BigBrain owner is `ficus`, and any `integrations:write:bigbrain` holder may
+create an owner device link, which grants full owner access. Links are secret, single-use and
+never cached or logged; Core audits who requested each one (never the link). Owner escrow stays
+inside the root control worker and never crosses a Core API, Platform response or log.
 
 Core is the authority for vault operations: it records each change with a generation fence and
 runs it on the same server through the root helper `/usr/local/libexec/ficus-bigbrainctl`,

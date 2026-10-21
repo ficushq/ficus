@@ -45,3 +45,29 @@ test('persists only bounded content-free audit metadata', async () => {
     await db.delete(squads).where(eq(squads.id, squad.id))
   }
 })
+
+test('persists the literal actor and a content-free target', async () => {
+  const requestId = crypto.randomUUID()
+  const vaultId = crypto.randomUUID()
+  await new DbIntegrationAuditRecorder().record({
+    actorKey: `user:${requestId}`,
+    targetKind: 'managed_bigbrain_vault',
+    targetId: vaultId,
+    action: 'managed_vault_owner_invite',
+    outcome: 'succeeded',
+    requestId,
+    at: new Date(0),
+  })
+  const [row] = await db
+    .select()
+    .from(integrationAuditEvents)
+    .where(eq(integrationAuditEvents.requestId, requestId))
+    .limit(1)
+  expect(row).toMatchObject({
+    actorKey: `user:${requestId}`,
+    targetKind: 'managed_bigbrain_vault',
+    targetId: vaultId,
+    action: 'managed_vault_owner_invite',
+  })
+  await db.delete(integrationAuditEvents).where(eq(integrationAuditEvents.id, row!.id))
+})

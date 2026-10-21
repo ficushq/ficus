@@ -58,7 +58,7 @@ export function BigbrainOwnerInviteDialog({
     const timer = setTimeout(
       () => {
         setInvite(null)
-        setError('That link expired. Create a new one when you are ready to connect a device.')
+        setError('That link expired. Create a new one right before connecting the device.')
       },
       Math.max(0, remaining)
     )
@@ -93,14 +93,18 @@ export function BigbrainOwnerInviteDialog({
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Connect a device to ${vault.displayName}`}>
+    <Modal isOpen={isOpen} onClose={onClose} title={`Connect owner device to ${vault.displayName}`}>
       <div className="space-y-3 text-sm">
         <p className="text-secondary">
-          A device link connects a BigBrain app to this vault as you, its owner. Anyone holding the link gets your
-          access until it is used or expires, so create it only when you are about to connect your own device.
+          A device link connects a BigBrain app to this vault as its owner,{' '}
+          <span className="font-mono">{vault.ownerHandle}</span>. The owner has full access: it reads and writes
+          everything and manages members. Anyone holding the link gets that access until it is used or expires, so
+          create it only right before connecting the device.
         </p>
         <p className="text-xs text-muted">
-          Invite other people from your BigBrain app after connecting. Ficus itself only reads this vault.
+          Everyone who connects this way writes as the same owner. To give people their own name in the vault, invite
+          them as members from the BigBrain app; Ficus cannot add members. Ficus records who created each link and
+          itself only reads this vault.
         </p>
         {!invite && (
           <button
@@ -125,7 +129,8 @@ export function BigbrainOwnerInviteDialog({
               />
             </label>
             <p className="text-xs text-muted">
-              Paste it into the BigBrain app on your device. Expires {new Date(invite.expiresAt).toLocaleTimeString()}.
+              Paste it into the BigBrain app on the device to connect. Expires{' '}
+              {new Date(invite.expiresAt).toLocaleTimeString()}.
             </p>
             <p className="text-xs text-muted">
               Each link works once. If the app cannot connect with it (for example it reports an error or says the
