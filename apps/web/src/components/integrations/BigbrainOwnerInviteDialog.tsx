@@ -98,13 +98,13 @@ export function BigbrainOwnerInviteDialog({
         <p className="text-secondary">
           A device link connects a BigBrain app to this vault as its owner,{' '}
           <span className="font-mono">{vault.ownerHandle}</span>. The owner has full access: it reads and writes
-          everything and manages members. Anyone holding the link gets that access until it is used or expires, so
-          create it only right before connecting the device.
+          everything, manages members and moderates anyone&apos;s contributions. Anyone holding the link gets that
+          access until it is used or expires, so create it only right before connecting the device.
         </p>
         <p className="text-xs text-muted">
           Everyone who connects this way writes as the same owner. To give people their own name in the vault, invite
-          them as members from the BigBrain app; Ficus cannot add members. Ficus records who created each link and
-          itself only reads this vault.
+          them as members instead (Members, then Invite member). Ficus records who created each link and itself only
+          reads this vault.
         </p>
         {!invite && (
           <button

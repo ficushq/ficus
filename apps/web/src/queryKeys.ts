@@ -69,6 +69,9 @@ export const integrationQueryKeys = {
   catalog: () => [...integrationQueryKeys.all, 'catalog'] as const,
   pool: (provider: string) => [...integrationQueryKeys.all, 'pool', provider] as const,
   managedBigbrainVaults: () => [...integrationQueryKeys.all, 'managed-vaults', 'bigbrain'] as const,
+  /** Display fields only (never an invite link). */
+  managedBigbrainMembers: (vaultId: string) =>
+    [...integrationQueryKeys.all, 'managed-vaults', 'bigbrain', vaultId, 'members'] as const,
   serviceSettings: (provider: string) => [...integrationQueryKeys.all, 'service-settings', provider] as const,
   deploymentSettings: (provider: string) => [...integrationQueryKeys.all, 'deployment-settings', provider] as const,
   channelSettings: (provider: string) => [...integrationQueryKeys.all, 'channel-settings', provider] as const,

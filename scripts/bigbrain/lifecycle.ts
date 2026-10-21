@@ -6,6 +6,7 @@ import type { InstalledHost } from './control-input'
 import { gatewayManifestSchema, type GatewayManifest } from './gateway-policy'
 import { verifyGatewayServes } from './gateway-probe'
 import { cachedOwnerAppLink, ownerInviteCacheSchema } from './invite-cache'
+import { initializeMemberInviteCache } from './member-invite-cache'
 import { NativeVaultAdmin } from './native-admin'
 import { BIGBRAIN_STATE_ROOT, managedPaths } from './paths'
 import {
@@ -132,7 +133,7 @@ export async function createVault(request: Request<'create'>, host: InstalledHos
       }),
       deps
     )
-    // The owner-invite replay cache exists from the start: missing/corrupt never means empty.
+    // The invite replay caches exist from the start: missing/corrupt never means empty.
     await writePrivateJson(
       managedPaths({ vaultId: request.vaultId, root: deps.root }).control,
       'owner-invites.json',
@@ -140,6 +141,7 @@ export async function createVault(request: Request<'create'>, host: InstalledHos
       ownerInviteCacheSchema,
       { uid: deps.uid }
     )
+    await initializeMemberInviteCache(request.vaultId, deps)
   } else {
     record = existing!
     if (record.operation.action !== 'create') throw new Error('request_conflict')
@@ -257,6 +259,21 @@ export async function reconnectRead(request: Request<'read-reconnect'>, host: In
   return saveVaultRecord({ ...record, receipt: { ...record.receipt, readAccess: 'active' } }, deps)
 }
 
+/** A link is only useful if its origin actually reaches this vault: (re)publish the routes and
+ * Caddy sites first, which fails closed when Caddy cannot serve them. Otherwise the app gets
+ * Caddy's empty 200 for an unknown host and reports "null is not an object". */
+export async function ensureVaultServed(vaultId: string, deps: LifecycleDeps): Promise<void> {
+  // The real publisher always returns its manifest; only an injected no-op returns nothing.
+  const result = await publish(deps)
+  if (result === undefined) return
+  const published = gatewayManifestSchema.safeParse(result)
+  if (!published.success) throw new Error('operation_failed')
+  if (!published.data.routes.some((route) => route.vaultId === vaultId && route.state === 'ready'))
+    throw new Error('maintenance')
+  // Published is not served: a gateway that cannot load this manifest answers 503 for the link.
+  await (deps.gatewayServes ?? ((m, id) => verifyGatewayServes(m, { vaultIds: [id] })))(published.data, vaultId)
+}
+
 /** owner-invite: only the recorded owner, only for the current generation of a ready vault whose
  * public route and Caddy site are published and readable; the durable replay cache returns the
  * same unexpired link and never re-mints. */
@@ -276,22 +293,7 @@ export async function ownerInvite(request: Request<'owner-invite'>, deps: Lifecy
     return record
   }
   const record = await authorize()
-  // A link is only useful if its origin actually reaches this vault: (re)publish the routes and
-  // Caddy sites first, which fails closed when Caddy cannot serve them. Otherwise the app gets
-  // Caddy's empty 200 for an unknown host and reports "null is not an object".
-  // The real publisher always returns its manifest; only an injected no-op returns nothing.
-  const result = await publish(deps)
-  if (result !== undefined) {
-    const published = gatewayManifestSchema.safeParse(result)
-    if (!published.success) throw new Error('operation_failed')
-    if (!published.data.routes.some((route) => route.vaultId === request.vaultId && route.state === 'ready'))
-      throw new Error('maintenance')
-    // Published is not served: a gateway that cannot load this manifest answers 503 for the link.
-    await (deps.gatewayServes ?? ((m, id) => verifyGatewayServes(m, { vaultIds: [id] })))(
-      published.data,
-      request.vaultId
-    )
-  }
+  await ensureVaultServed(request.vaultId, deps)
   const issue =
     deps.issueAppLink ??
     (async (r: ControlReceipt, window: { issuedAt: string; expiresAt: string }) => {

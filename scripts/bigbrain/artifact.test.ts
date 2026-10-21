@@ -19,8 +19,11 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'ficus-bigbrain-artifact-'))
   roots.push(root)
   const calls: string[][] = []
+  const entries: Record<string, string> = {}
   const run: BuildRunner = async (argv, cwd) => {
     calls.push(argv)
+    if (argv[0] === 'bun' && argv[1] === 'build' && argv[2]!.startsWith('.ficus-'))
+      entries[argv[2]!] = await readFile(join(cwd, argv[2]!), 'utf8')
     if (argv[0] === 'bun' && argv.includes('--version')) return { code: 0, stdout: '1.4.2' }
     if (argv[0] === 'git' && argv.includes('rev-parse')) return { code: 0, stdout: pin + '\n' }
     if (argv[0] === 'git' && argv.includes('archive'))
@@ -44,15 +47,16 @@ async function fixture() {
     }
     return { code: 0, stdout: '' }
   }
-  return { root, calls, run, output: join(root, 'artifact') }
+  return { root, calls, entries, run, output: join(root, 'artifact') }
 }
 
-test('packages pinned upstream plus minimal native owner-link shim and both corresponding source archives', async () => {
+test('packages pinned upstream plus minimal native owner-link and member shims and both corresponding source archives', async () => {
   const f = await fixture()
   const manifest = await buildBigbrainArtifact({ outDir: f.output, bunVersion: '1.4.2', run: f.run })
   expect(manifest.upstreamCommit).toBe(pin)
   expect(Object.keys(manifest.files).sort()).toEqual([
     'LICENSE',
+    'bigbrain-members.js',
     'bigbrain-owner-link.js',
     'bigbrain-serve.js',
     'bigbrain-shared.js',
@@ -65,8 +69,10 @@ test('packages pinned upstream plus minimal native owner-link shim and both corr
   ])
   expect(f.calls).toContainEqual(['bun', 'install', '--frozen-lockfile', '--ignore-scripts'])
   const compiles = f.calls.filter((argv) => argv[0] === 'bun' && argv[1] === 'build')
-  // Upstream server, the owner-link shim and ONE Ficus host binary (no unused native invite CLI).
-  expect(compiles).toHaveLength(4)
+  // Upstream server, the owner-link and member shims and ONE Ficus host binary (no unused native
+  // invite CLI).
+  expect(compiles).toHaveLength(5)
+  expect(compiles.some((argv) => argv[2] === '.ficus-members-entry.ts')).toBe(true)
   // The vault server is the pinned upstream handler on a Unix socket, via a minimal shim.
   expect(compiles.some((argv) => argv[2] === '.ficus-serve-entry.ts')).toBe(true)
   expect(compiles.some((argv) => argv[2] === 'scripts/bigbrain/host-main.ts')).toBe(true)
@@ -81,6 +87,21 @@ test('packages pinned upstream plus minimal native owner-link shim and both corr
   expect(compiles.every((argv) => argv.includes('--target=bun') && !argv.includes('--compile'))).toBe(true)
   expect(f.calls.flat().some((arg) => arg.includes('systemctl') || arg.includes('curl'))).toBe(false)
   expect(await verifyBigbrainArtifact(f.output)).toEqual(manifest)
+})
+test('the member shim imports only the pinned member/invite exports it is allowed to call', async () => {
+  const f = await fixture()
+  await buildBigbrainArtifact({ outDir: f.output, bunVersion: '1.4.2', run: f.run })
+  const entry = f.entries['.ficus-members-entry.ts']!
+  const imported = [...entry.matchAll(/import \{([^}]+)\} from '\.\/lib\/([^']+)'/g)].map(
+    ([, names, file]) => `${file}: ${names!.trim()}`
+  )
+  expect(imported).toEqual([
+    'sharedInvites.ts: createMemberInvite, pendingMemberInvites, cancelMemberInvite',
+    'sharedMembers.ts: listMembers, ownerOf, setMemberPermissions, revokeMember',
+    'sharedMemberLock.ts: SharedMemberBusyError',
+  ])
+  expect(entry).toContain('scripts/bigbrain/member-admin.ts')
+  expect(entry).not.toMatch(/mintCredential|addMember|createAppLink|issueSharedInvite/)
 })
 test('prepares frozen native dependencies from the verified artifact source before tests, never a moving checkout', async () => {
   const f = await fixture()

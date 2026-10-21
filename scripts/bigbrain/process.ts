@@ -125,7 +125,9 @@ export async function startServiceDeliberately(
 export function vaultCommand(identity: { uid: number; gid: number }, script: string, args: string[]): string[] {
   if (
     ![identity.uid, identity.gid].every((v) => Number.isSafeInteger(v) && v > 0 && v <= 0xfffffffe) ||
-    !/^\/opt\/ficus-bigbrain\/releases\/[a-f0-9]{64}\/(?:bigbrain-shared|bigbrain-owner-link)\.js$/.test(script)
+    !/^\/opt\/ficus-bigbrain\/releases\/[a-f0-9]{64}\/(?:bigbrain-shared|bigbrain-owner-link|bigbrain-members)\.js$/.test(
+      script
+    )
   )
     throw new Error('invalid_request')
   return [

@@ -99,6 +99,12 @@ async function act(run: () => void) {
     await settle()
   })
 }
+/** The owner device link lives in each row's collapsed Advanced section. */
+async function openAdvanced(name: string) {
+  const toggle = button('Advanced', row(name))
+  if (toggle) await act(() => fireEvent.click(toggle))
+  return toggle
+}
 const mutations = () => requests.filter((r) => r.method !== 'GET')
 
 describe('ManagedBigbrainIntegrationSettings', () => {
@@ -109,21 +115,42 @@ describe('ManagedBigbrainIntegrationSettings', () => {
     expect(row('Research').textContent).toContain('Ficus can read')
     expect(row('Design').textContent).toContain('Failed')
     expect(row('Design').textContent).toContain('storage_unavailable')
-    // Owner device links only where the vault can issue them; retry only where it applies.
+    // Owner device links only where the vault can issue them, and only inside Advanced; retry only
+    // where it applies. Members is the primary action.
+    expect(button('Connect owner device', row('Research'))).toBeUndefined()
+    expect(button('Members', row('Research')).className).toContain('ficus-button-primary')
+    expect(await openAdvanced('Research')).toBeTruthy()
     expect(button('Connect owner device', row('Research'))).toBeTruthy()
-    expect(button('Connect owner device', row('Design'))).toBeUndefined()
+    expect(button('Advanced', row('Design'))).toBeUndefined()
     expect(button('Retry', row('Design'))).toBeTruthy()
     expect(button('Retry', row('Research'))).toBeUndefined()
   })
 
-  test('each row names the vault’s owner in BigBrain and who may connect as it, before any click', async () => {
+  test('each row names the vault’s owner in BigBrain and points people to member invites', async () => {
     await render()
-    expect(row('Research').textContent).toContain(
-      'Owner in BigBrain: ficus. People who manage BigBrain here can connect a device as this owner.'
-    )
-    expect(row('Design').textContent).toContain('Owner in BigBrain: ada. Owner device links are no longer available')
-    for (const name of ['Research', 'Design'])
-      expect(row(name).textContent).toContain('Other members are invited from the BigBrain app.')
+    for (const [name, handle] of [
+      ['Research', 'ficus'],
+      ['Design', 'ada'],
+    ])
+      expect(row(name).textContent).toContain(
+        `Owner in BigBrain: ${handle}. Invite people as members so they write under their own names.`
+      )
+    expect(row('Design').textContent).toContain('Owner device links are no longer available')
+  })
+
+  test('the Advanced section warns about full owner access and the shared identity before any link', async () => {
+    await render()
+    expect(row('Research').textContent).not.toContain('full owner access')
+    await openAdvanced('Research')
+    const note = row('Research').querySelector('[role=note]')!.textContent!
+    expect(note).toContain('full owner access')
+    expect(note).toContain('manage members, moderate')
+    expect(note).toContain('read and write everything')
+    expect(note).toContain('Everything written from it appears as ficus')
+    expect(note).toContain('invite them as a member instead')
+    expect(mutations()).toHaveLength(0)
+    await act(() => fireEvent.click(button('Hide advanced', row('Research'))))
+    expect(button('Connect owner device', row('Research'))).toBeUndefined()
   })
 
   test('the card never treats the viewer as a vault owner', async () => {
@@ -145,9 +172,10 @@ describe('ManagedBigbrainIntegrationSettings', () => {
       pending('Unpublished', { origin: null }),
       pending('Degraded', { state: 'degraded' }),
     ])
+    await openAdvanced('Research')
     expect(button('Connect owner device', row('Research'))).toBeTruthy()
     for (const name of ['Settingup', 'Renaming', 'Unpublished', 'Degraded'])
-      expect(button('Connect owner device', row(name))).toBeUndefined()
+      expect(button('Advanced', row(name))).toBeUndefined()
   })
 
   test('a failure in one vault row stays in that row and sends that vault’s own generation', async () => {
@@ -187,7 +215,9 @@ describe('ManagedBigbrainIntegrationSettings', () => {
   test('the create form says the new vault is owned by ficus in BigBrain', async () => {
     await render()
     const form = container.querySelector('form')!
-    expect(form.textContent).toContain("In BigBrain, the vault's owner is ficus.")
+    expect(form.textContent).toContain(
+      "In BigBrain, the vault's owner is ficus. Once it is ready, invite people as members."
+    )
     expect(form.textContent).not.toContain('handle')
     await act(() => fireEvent.input(form.querySelector('input')!, { target: { value: 'Archive' } }))
     expect(button('Create vault').disabled).toBe(false)
@@ -230,6 +260,7 @@ describe('ManagedBigbrainIntegrationSettings', () => {
     await render()
     expect(row('Research').textContent).not.toContain('no longer available')
     expect(row('Design').textContent).toContain('Owner device links are no longer available for this vault')
+    expect(button('Advanced', row('Design'))).toBeUndefined()
     expect(button('Connect owner device', row('Design'))).toBeUndefined()
   })
 
@@ -241,7 +272,7 @@ describe('ManagedBigbrainIntegrationSettings', () => {
 
   test('without write permission there are no actions, owner device links included', async () => {
     await render(false)
-    for (const label of ['Rename', 'Delete', 'Connect owner device', 'Revoke Ficus read access'])
+    for (const label of ['Rename', 'Delete', 'Advanced', 'Connect owner device', 'Revoke Ficus read access', 'Members'])
       expect(button(label, row('Research'))).toBeUndefined()
     expect(container.querySelector('form')).toBeNull()
   })
@@ -252,6 +283,7 @@ describe('ManagedBigbrainIntegrationSettings', () => {
       method === 'GET'
         ? Response.json({ vaults: [research, design] })
         : Response.json({ inviteUrl: INVITE_SECRET, expiresAt: new Date(Date.now() + 3_600_000).toISOString() })
+    await openAdvanced('Research')
     await act(() => fireEvent.click(button('Connect owner device', row('Research'))))
     expect(mutations()).toHaveLength(0)
     await act(() => fireEvent.click(button('Create device link', document.body)))
@@ -276,4 +308,240 @@ describe('ManagedBigbrainIntegrationSettings', () => {
     const storages = [globalThis.localStorage, globalThis.sessionStorage].filter(Boolean)
     for (const storage of storages) expect(JSON.stringify({ ...storage })).not.toContain(INVITE_SECRET)
   })
+})
+
+const MEMBER_SECRET = `https://bb-${'1'.repeat(32)}.vaults.example.com/invite#${'M'.repeat(43)}`
+const roster = {
+  members: [
+    {
+      handle: 'ficus',
+      displayName: 'Ficus',
+      role: 'owner',
+      access: 'write',
+      status: 'active',
+      createdAt: null,
+      system: 'owner',
+      editable: false,
+    },
+    {
+      handle: 'ficus-reader',
+      displayName: 'Ficus',
+      role: 'member',
+      access: 'read',
+      status: 'active',
+      createdAt: null,
+      system: 'reader',
+      editable: false,
+    },
+    {
+      handle: 'grace',
+      displayName: 'Grace Hopper',
+      role: 'member',
+      access: 'read',
+      status: 'active',
+      createdAt: null,
+      system: null,
+      editable: true,
+    },
+  ],
+  invites: [{ inviteId: 'c'.repeat(24), displayName: 'Lin', access: 'write', expiresAt: '2026-10-21T00:00:00.000Z' }],
+  membersTruncated: false,
+  invitesTruncated: false,
+}
+describe('managed vault members', () => {
+  function members(response: (path: string, method: string, body: string) => Response | undefined = () => undefined) {
+    respond = (url, method, body) => {
+      const path = new URL(url).pathname
+      const answered = response(path, method, body)
+      if (answered) return answered
+      if (path.endsWith('/members') && method === 'GET') return Response.json(roster)
+      if (method === 'GET') return Response.json({ vaults: [research, design] })
+      if (path.endsWith('/invites'))
+        return Response.json(
+          {
+            inviteId: 'd'.repeat(24),
+            inviteUrl: MEMBER_SECRET,
+            displayName: 'Ada',
+            access: 'write',
+            expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+          },
+          { status: 201 }
+        )
+      return Response.json(roster.members[2])
+    }
+  }
+  const choose = (select: HTMLSelectElement, value: string) => {
+    for (const option of select.options) option.selected = option.value === value
+    fireEvent.change(select)
+  }
+  const section = () => container.querySelector<HTMLElement>('section[aria-label="Members of Research"]')!
+  const base = `/api/integrations/providers/bigbrain/shared-vaults/${'1'.repeat(8)}-1111-4111-8111-111111111111`
+
+  test('members load only when opened; system members are shown but never editable', async () => {
+    members()
+    await render()
+    expect(requests.some((r) => r.url.includes('/members'))).toBe(false)
+    // A vault that is not set up has no members to show.
+    expect(button('Members', row('Design'))).toBeUndefined()
+    await act(() => fireEvent.click(button('Members', row('Research'))))
+    expect(requests.filter((r) => new URL(r.url).pathname === `${base}/members`)).toHaveLength(1)
+    const list = section()
+    expect(list.textContent).toContain('Grace Hopper')
+    expect(list.textContent).toContain('Vault owner.')
+    expect(list.textContent).toContain('Ficus read access for attached squads.')
+    // Exactly one editable member: one access selector and one Remove.
+    expect(list.querySelectorAll('select')).toHaveLength(1)
+    expect([...list.querySelectorAll('button')].filter((b) => b.textContent === 'Remove')).toHaveLength(1)
+    expect(list.textContent).toContain('Pending invites')
+    expect(list.textContent).toContain('Lin')
+    expect(container.textContent).not.toMatch(/\byou(r)?\b/i)
+  })
+
+  test('changing access, removing (after confirmation) and cancelling send the vault generation', async () => {
+    members()
+    await render()
+    await act(() => fireEvent.click(button('Members', row('Research'))))
+    await act(() => choose(section().querySelector('select')!, 'write'))
+    await act(() => fireEvent.click(button('Remove', section())))
+    expect(mutations()).toHaveLength(1)
+    await act(() => fireEvent.click(button('Confirm remove', section())))
+    await act(() => fireEvent.click(button('Cancel invite', section())))
+    await act(() => fireEvent.click(button('Confirm cancel', section())))
+    expect(mutations().map((r) => [new URL(r.url).pathname, JSON.parse(r.body)])).toEqual([
+      [`${base}/members/grace/access`, { requestId: expect.any(String), expectedGeneration: 3, access: 'write' }],
+      [`${base}/members/grace/remove`, { requestId: expect.any(String), expectedGeneration: 3 }],
+      [`${base}/invites/${'c'.repeat(24)}/cancel`, { requestId: expect.any(String), expectedGeneration: 3 }],
+    ])
+  })
+
+  test('a refused change stays in the members section with a code-only message', async () => {
+    members((path, method) =>
+      method === 'POST' ? Response.json({ code: 'forbidden', detail: 'sv_secret' }, { status: 403 }) : undefined
+    )
+    await render()
+    await act(() => fireEvent.click(button('Members', row('Research'))))
+    await act(() => fireEvent.change(section().querySelector('select')!, { target: { value: 'write' } }))
+    expect(section().querySelector('[role=alert]')!.textContent).toContain('does not change the vault owner')
+    expect(container.textContent).not.toContain('sv_secret')
+  })
+
+  test('an invite link is created on explicit submit, shown once, and never cached or stored', async () => {
+    members()
+    const client = await render()
+    await act(() => fireEvent.click(button('Members', row('Research'))))
+    await act(() => fireEvent.click(button('Invite member', section())))
+    const dialog = document.body
+    expect(dialog.textContent).toContain('works once and expires after 24 hours')
+    expect(dialog.textContent).toContain('Send it only to that person, privately')
+    const name =
+      document.querySelector<HTMLInputElement>('[role=dialog] input:not([type=radio])') ??
+      [...document.querySelectorAll<HTMLInputElement>('input')].find(
+        (i) => i.type !== 'radio' && !container.contains(i)
+      )!
+    await act(() => fireEvent.input(name, { target: { value: 'Ada' } }))
+    const write = [...document.querySelectorAll<HTMLInputElement>('input[type=radio]')].find(
+      (i) => i.value === 'write'
+    )!
+    await act(() => fireEvent.click(write))
+    expect(mutations()).toHaveLength(0)
+    await act(() => fireEvent.click(button('Create invite link', document.body)))
+    const [sent] = mutations()
+    expect(new URL(sent!.url).pathname).toBe(`${base}/invites`)
+    expect(JSON.parse(sent!.body)).toEqual({
+      requestId: expect.any(String),
+      expectedGeneration: 3,
+      displayName: 'Ada',
+      access: 'write',
+    })
+    expect(document.querySelector<HTMLInputElement>('input[aria-label="Member invite link"]')!.value).toBe(
+      MEMBER_SECRET
+    )
+    expect(document.querySelector(`a[href*="${'M'.repeat(43)}"]`)).toBeNull()
+    // The member list refreshes (display fields only).
+    expect(requests.filter((r) => new URL(r.url).pathname === `${base}/members`).length).toBeGreaterThan(1)
+    for (const cache of [
+      client
+        .getQueryCache()
+        .getAll()
+        .map((q) => q.state.data),
+      client
+        .getMutationCache()
+        .getAll()
+        .map((m) => m.state.data),
+    ])
+      expect(JSON.stringify(cache)).not.toContain(MEMBER_SECRET)
+    for (const storage of [globalThis.localStorage, globalThis.sessionStorage].filter(Boolean))
+      expect(JSON.stringify({ ...storage })).not.toContain(MEMBER_SECRET)
+  })
+
+  test('a retried invite reuses its request ID; editing the draft starts a new one', async () => {
+    let fail = true
+    members((path, method) =>
+      method === 'POST' && path.endsWith('/invites') && fail
+        ? Response.json({ code: 'busy', retryable: true }, { status: 503 })
+        : undefined
+    )
+    await render()
+    await act(() => fireEvent.click(button('Members', row('Research'))))
+    await act(() => fireEvent.click(button('Invite member', section())))
+    const name = [...document.querySelectorAll<HTMLInputElement>('input')].find(
+      (i) => i.type !== 'radio' && !container.contains(i)
+    )!
+    await act(() => fireEvent.input(name, { target: { value: 'Ada' } }))
+    await act(() => fireEvent.click(button('Create invite link', document.body)))
+    expect(document.body.textContent).toContain('not reachable at its address yet, so no link was created')
+    await act(() => fireEvent.click(button('Create invite link', document.body)))
+    await act(() => fireEvent.input(name, { target: { value: 'Ada L' } }))
+    fail = false
+    await act(() => fireEvent.click(button('Create invite link', document.body)))
+    const ids = mutations().map((r) => JSON.parse(r.body).requestId)
+    expect(ids).toHaveLength(3)
+    expect(ids[1]).toBe(ids[0])
+    expect(ids[2]).not.toBe(ids[0])
+  })
+
+  async function openInvite() {
+    await render()
+    await act(() => fireEvent.click(button('Members', row('Research'))))
+    await act(() => fireEvent.click(button('Invite member', section())))
+    return [...document.querySelectorAll<HTMLInputElement>('input')].find(
+      (i) => i.type !== 'radio' && !container.contains(i)
+    )!
+  }
+
+  test('surrounding spaces in the name are trimmed, never a reason to refuse', async () => {
+    members()
+    const name = await openInvite()
+    await act(() => fireEvent.input(name, { target: { value: '   ' } }))
+    expect(button('Create invite link', document.body).disabled).toBe(true)
+    await act(() => fireEvent.input(name, { target: { value: `  ${'a'.repeat(121)} ` } }))
+    expect(button('Create invite link', document.body).disabled).toBe(true)
+    await act(() => fireEvent.input(name, { target: { value: '  Ada Lovelace ' } }))
+    expect(button('Create invite link', document.body).disabled).toBe(false)
+    await act(() => fireEvent.click(button('Create invite link', document.body)))
+    expect(JSON.parse(mutations()[0]!.body).displayName).toBe('Ada Lovelace')
+  })
+
+  for (const code of ['operation_failed', 'invite_expired', 'request_conflict'])
+    test(`a terminal ${code} starts a new request and says to check pending invites`, async () => {
+      let fail = true
+      members((path, method) =>
+        method === 'POST' && path.endsWith('/invites') && fail
+          ? Response.json({ code, retryable: false }, { status: 409 })
+          : undefined
+      )
+      const name = await openInvite()
+      await act(() => fireEvent.input(name, { target: { value: 'Ada' } }))
+      await act(() => fireEvent.click(button('Create invite link', document.body)))
+      expect(document.body.textContent).toContain('No invite link could be confirmed')
+      expect(document.body.textContent).toContain('Check Pending invites')
+      fail = false
+      await act(() => fireEvent.click(button('Create invite link', document.body)))
+      const [first, second] = mutations().map((r) => JSON.parse(r.body))
+      expect(second.requestId).not.toBe(first.requestId)
+      expect(second.displayName).toBe('Ada')
+      expect(document.querySelector<HTMLInputElement>('input[aria-label="Member invite link"]')!.value).toBe(
+        MEMBER_SECRET
+      )
+    })
 })

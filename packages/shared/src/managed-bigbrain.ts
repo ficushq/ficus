@@ -9,12 +9,23 @@ export const MANAGED_BIGBRAIN_HELPER = '/usr/local/libexec/ficus-bigbrainctl' as
 export const MANAGED_BIGBRAIN_SCOPES = ['managed-bigbrain:read', 'managed-bigbrain:manage'] as const
 export type ManagedBigbrainScope = (typeof MANAGED_BIGBRAIN_SCOPES)[number]
 export const MANAGED_BIGBRAIN_HOST_REQUEST_BYTES = 8192
-export const MANAGED_BIGBRAIN_HOST_REPLY_BYTES = 16384
+/** Sized for the largest reply, a bounded member roster (see MANAGED_BIGBRAIN_MAX_LISTED_*). Older
+ * hosts cap their own replies lower and never send the member actions. */
+export const MANAGED_BIGBRAIN_HOST_REPLY_BYTES = 131072
 export const MANAGED_BIGBRAIN_MAX_VAULTS = 2
 /** Matches the pinned native createAppLink API; never a public request-controlled TTL. */
 export const MANAGED_BIGBRAIN_OWNER_INVITE_TTL_MS = 60 * 60 * 1000
 export const MANAGED_BIGBRAIN_INVITE_CLOCK_SKEW_MS = 30_000
 export const MANAGED_BIGBRAIN_MAX_ACTIVE_INVITES = 64
+/** Matches the pinned native createMemberInvite (single use, 24 hours); never request-controlled. */
+export const MANAGED_BIGBRAIN_MEMBER_INVITE_TTL_MS = 24 * 60 * 60 * 1000
+/** Live member invites Ficus tracks per vault for replay (each one also stays cancellable). */
+export const MANAGED_BIGBRAIN_MAX_MEMBER_INVITES = 32
+/** Roster bounds: a longer roster is truncated (flagged), never an oversized reply. */
+export const MANAGED_BIGBRAIN_MAX_LISTED_MEMBERS = 100
+export const MANAGED_BIGBRAIN_MAX_LISTED_INVITES = 50
+/** The vault's read-only Ficus member: shown, never changed or removed through Ficus. */
+export const MANAGED_BIGBRAIN_READER_HANDLE = 'ficus-reader' as const
 
 export const MANAGED_BIGBRAIN_ERROR_CODES = [
   'unsupported_host',
@@ -310,6 +321,58 @@ export const managedBigbrainOwnerInviteResultSchema = z
   })
   .strict()
 export type ManagedBigbrainOwnerInviteResult = z.infer<typeof managedBigbrainOwnerInviteResultSchema>
+
+/** Upstream member handle (`HANDLE_RE`): immutable, never reused, the author ID in the record. */
+export const managedBigbrainMemberHandleSchema = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/)
+/** Upstream member invitation ID (12 random bytes, hex); its member's handle is `invite-<id>`. */
+export const managedBigbrainInviteIdSchema = z.string().regex(/^[0-9a-f]{24}$/)
+/** What Ficus may set: `read`, or `write` (upstream read + write). Never owner. */
+export const managedBigbrainMemberAccessSchema = z.enum(['read', 'write'])
+export type ManagedBigbrainMemberAccess = z.infer<typeof managedBigbrainMemberAccessSchema>
+/** Handles Ficus never changes or removes, whatever a request says: the instance owner and the
+ * Ficus reader. The host additionally refuses every member whose upstream role is owner. */
+export function managedBigbrainMemberIsProtected(handle: string): boolean {
+  return handle === MANAGED_BIGBRAIN_FICUS_OWNER.handle || handle === MANAGED_BIGBRAIN_READER_HANDLE
+}
+/** One roster entry: display fields only. Never emails, identities, credentials or tokens. */
+export const managedBigbrainMemberSchema = z
+  .object({
+    handle: managedBigbrainMemberHandleSchema,
+    displayName: label,
+    role: z.enum(['owner', 'member']),
+    access: z.enum(['read', 'write', 'none']),
+    /** `pending`: added by email in the BigBrain app and not signed in yet. */
+    status: z.enum(['active', 'pending', 'removed']),
+    createdAt: datetime.nullable(),
+  })
+  .strict()
+export type ManagedBigbrainMember = z.infer<typeof managedBigbrainMemberSchema>
+/** A pending member invitation, without its secret. */
+export const managedBigbrainPendingInviteSchema = z
+  .object({
+    inviteId: managedBigbrainInviteIdSchema,
+    displayName: label,
+    access: managedBigbrainMemberAccessSchema,
+    expiresAt: datetime,
+  })
+  .strict()
+export type ManagedBigbrainPendingInvite = z.infer<typeof managedBigbrainPendingInviteSchema>
+export const managedBigbrainMemberRosterSchema = z
+  .object({
+    members: z.array(managedBigbrainMemberSchema).max(MANAGED_BIGBRAIN_MAX_LISTED_MEMBERS),
+    invites: z.array(managedBigbrainPendingInviteSchema).max(MANAGED_BIGBRAIN_MAX_LISTED_INVITES),
+    membersTruncated: z.boolean(),
+    invitesTruncated: z.boolean(),
+  })
+  .strict()
+  .refine((v) => new Set(v.members.map((m) => m.handle)).size === v.members.length)
+  .refine((v) => new Set(v.invites.map((i) => i.inviteId)).size === v.invites.length)
+export type ManagedBigbrainMemberRoster = z.infer<typeof managedBigbrainMemberRosterSchema>
+/** Secret-bearing exception like the owner link: returned once, never stored, cached or logged. */
+export const managedBigbrainMemberInviteResultSchema = managedBigbrainPendingInviteSchema
+  .extend({ inviteUrl: managedBigbrainOwnerInviteResultSchema.shape.inviteUrl })
+  .strict()
+export type ManagedBigbrainMemberInviteResult = z.infer<typeof managedBigbrainMemberInviteResultSchema>
 /** A binding is an identity fence, not authentication. Never derive authority from a probe/archive. */
 export const managedBigbrainHostBindingSchema = z
   .object({ tenantId: uuid, physicalHostBinding: uuid, hostEpoch: uint })
@@ -325,6 +388,7 @@ export const managedBigbrainHostVaultFenceSchema = z
   .refine((v) => v.generation > v.expectedGeneration)
 export type ManagedBigbrainHostVaultFence = z.infer<typeof managedBigbrainHostVaultFenceSchema>
 const vaultFenceFields = { vaultId: uuid, expectedGeneration: uint, generation: positive }
+const memberFenceFields = { vaultId: uuid, expectedGeneration: positive }
 export const managedBigbrainArchiveInventorySchema = z
   .object({
     tenantId: uuid,
@@ -359,6 +423,21 @@ export const managedBigbrainHostRequestSchema = z
       actorUserId: uuid,
       ...inviteWindowFields,
     }),
+    // Member management: no generation advance (Ficus vault state is unchanged), but each one is
+    // fenced to the vault's current generation like owner-invite.
+    hostAction('member-list', { vaultId: uuid }),
+    hostAction('member-invite', {
+      ...memberFenceFields,
+      displayName: label,
+      access: managedBigbrainMemberAccessSchema,
+    }),
+    hostAction('invite-cancel', { ...memberFenceFields, inviteId: managedBigbrainInviteIdSchema }),
+    hostAction('member-set-access', {
+      ...memberFenceFields,
+      handle: managedBigbrainMemberHandleSchema,
+      access: managedBigbrainMemberAccessSchema,
+    }),
+    hostAction('member-remove', { ...memberFenceFields, handle: managedBigbrainMemberHandleSchema }),
     hostAction('read-revoke', vaultFenceFields),
     hostAction('read-reconnect', vaultFenceFields),
     hostAction('delete', { ...vaultFenceFields, confirmedVaultId: uuid, confirmedName: label }),
@@ -386,6 +465,11 @@ export const managedBigbrainHostRequestSchema = z
       ctx.addIssue({ code: 'custom', message: 'invalid_request' })
     if (v.action === 'delete' && v.confirmedVaultId !== v.vaultId)
       ctx.addIssue({ code: 'custom', message: 'identity_mismatch' })
+    if (
+      (v.action === 'member-set-access' || v.action === 'member-remove') &&
+      managedBigbrainMemberIsProtected(v.handle)
+    )
+      ctx.addIssue({ code: 'custom', message: 'forbidden' })
   })
 export type ManagedBigbrainHostRequest = z.infer<typeof managedBigbrainHostRequestSchema>
 
@@ -424,6 +508,38 @@ export const managedBigbrainHostReplySchema = z
     z.object({ ...success, action: z.literal('probe'), capabilities: managedBigbrainCapabilitiesSchema }).strict(),
     z
       .object({ ...success, action: z.literal('owner-invite'), invite: managedBigbrainOwnerInviteResultSchema })
+      .strict(),
+    z
+      .object({
+        ...success,
+        action: z.literal('member-list'),
+        vaultId: uuid,
+        roster: managedBigbrainMemberRosterSchema,
+      })
+      .strict(),
+    z
+      .object({
+        ...success,
+        action: z.literal('member-invite'),
+        vaultId: uuid,
+        invite: managedBigbrainMemberInviteResultSchema,
+      })
+      .strict(),
+    z
+      .object({
+        ...success,
+        action: z.literal('invite-cancel'),
+        vaultId: uuid,
+        inviteId: managedBigbrainInviteIdSchema,
+      })
+      .strict(),
+    z
+      .object({
+        ...success,
+        action: z.enum(['member-set-access', 'member-remove']),
+        vaultId: uuid,
+        member: managedBigbrainMemberSchema,
+      })
       .strict(),
     z
       .object({

@@ -8,7 +8,7 @@ import { MANAGED_BIGBRAIN_UPSTREAM_COMMIT } from '@ficus/shared/managed-bigbrain
 import { computeDigest } from '../artifact/lib/manifest'
 
 const REPOSITORY = 'https://github.com/elsehow/bigbrain.git'
-/** Exactly the committed Ficus inputs of the compiled host/owner-link binaries (plus license and
+/** Exactly the committed Ficus inputs of the compiled host/owner-link/members binaries (plus license and
  * lockfile for bundled dependencies), not the whole product repository. */
 export const FICUS_SOURCE_PATHS = [
   'LICENSE',
@@ -27,6 +27,8 @@ export const FICUS_SOURCE_PATHS = [
 export const BUNDLES = {
   'bigbrain-shared': ['bigbrain-shared.js', 'hanken-grotesk-latin-ext.woff2', 'hanken-grotesk-latin.woff2'],
   'bigbrain-owner-link': ['bigbrain-owner-link.js'],
+  // Member invites/access/removal via the pinned exports only (member-admin.ts).
+  'bigbrain-members': ['bigbrain-members.js'],
   // Upstream server on a Unix socket via exported pinned APIs only (serve-shim.ts).
   'bigbrain-serve': ['bigbrain-serve.js', 'hanken-grotesk-latin-ext.woff2', 'hanken-grotesk-latin.woff2'],
   'ficus-bigbrain-host': ['ficus-bigbrain-host.js'],
@@ -35,6 +37,7 @@ const fileNames = [
   'LICENSE',
   ...BUNDLES['bigbrain-shared'],
   ...BUNDLES['bigbrain-owner-link'],
+  ...BUNDLES['bigbrain-members'],
   'bigbrain-serve.js',
   ...BUNDLES['ficus-bigbrain-host'],
   'source.tar',
@@ -204,6 +207,18 @@ export async function buildBigbrainArtifact(options: {
       join(source, shimEntry),
       `import { ownerLinkMain } from ${JSON.stringify(join(ficusRoot, 'scripts/bigbrain/owner-link.ts'))};\nimport { createAppLink } from './lib/sharedInvites.ts';\nawait ownerLinkMain(createAppLink);\n`
     )
+    const membersEntry = '.ficus-members-entry.ts'
+    await writeFile(
+      join(source, membersEntry),
+      [
+        `import { memberAdminMain } from ${JSON.stringify(join(ficusRoot, 'scripts/bigbrain/member-admin.ts'))};`,
+        `import { createMemberInvite, pendingMemberInvites, cancelMemberInvite } from './lib/sharedInvites.ts';`,
+        `import { listMembers, ownerOf, setMemberPermissions, revokeMember } from './lib/sharedMembers.ts';`,
+        `import { SharedMemberBusyError } from './lib/sharedMemberLock.ts';`,
+        `await memberAdminMain({ listMembers, ownerOf, pendingMemberInvites, createMemberInvite, cancelMemberInvite, setMemberPermissions, revokeMember, BusyError: SharedMemberBusyError });`,
+        '',
+      ].join('\n')
+    )
     const serveEntry = '.ficus-serve-entry.ts'
     await writeFile(
       join(source, serveEntry),
@@ -222,6 +237,7 @@ export async function buildBigbrainArtifact(options: {
     for (const [entry, name, cwd] of [
       ['bin/shared.ts', 'bigbrain-shared', source],
       [shimEntry, 'bigbrain-owner-link', source],
+      [membersEntry, 'bigbrain-members', source],
       [serveEntry, 'bigbrain-serve', source],
       // Ficus host code from the committed tree checked above (clean diff for these paths).
       ['scripts/bigbrain/host-main.ts', 'ficus-bigbrain-host', ficusRoot],

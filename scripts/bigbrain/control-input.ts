@@ -38,7 +38,21 @@ export function validateHostAdmission(input: unknown, manifest: unknown): Manage
       h.effect.previousHostEpoch === r.previousHostEpoch
     if (!replay && r.previousHostEpoch !== h.hostEpoch) throw new Error('generation_conflict')
   } else if (r.hostEpoch !== h.hostEpoch) throw new Error('generation_conflict')
-  if (h.hostState !== 'active' && ['create', 'rename', 'owner-invite', 'read-reconnect', 'restore'].includes(r.action))
+  if (
+    h.hostState !== 'active' &&
+    [
+      'create',
+      'rename',
+      'owner-invite',
+      'read-reconnect',
+      'restore',
+      'member-list',
+      'member-invite',
+      'invite-cancel',
+      'member-set-access',
+      'member-remove',
+    ].includes(r.action)
+  )
     throw new Error('forbidden')
   if (r.action === 'create') {
     if (r.upstreamCommit !== h.upstreamCommit || r.artifactDigest !== h.artifactDigest) throw new Error('pin_mismatch')

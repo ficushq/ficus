@@ -1,9 +1,10 @@
 /**
  * `ficus integration bigbrain vault …`: human management of managed shared BigBrain vaults.
  *
- * The backend enforces literal human authority for every command. The owner device link is a
- * secret: it is only ever written to a NEW 0600 file chosen with --out (never stdout, never JSON
- * output, never an existing path or symlink); the terminal shows only the path and expiry.
+ * The backend enforces literal human authority for every command. Owner device links and member
+ * invite links are secrets: each is only ever written to a NEW 0600 file chosen with --out (never
+ * stdout, never JSON output, never an existing path or symlink); the terminal shows only the path
+ * and expiry.
  */
 import { randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
@@ -27,6 +28,39 @@ interface VaultView {
 interface OwnerInvite {
   inviteUrl: string
   expiresAt: string
+}
+interface MemberInvite extends OwnerInvite {
+  inviteId: string
+  displayName: string
+  access: string
+}
+interface RosterView {
+  members: { handle: string; displayName: string; access: string; status: string; system: string | null }[]
+  invites: { inviteId: string; displayName: string; access: string; expiresAt: string }[]
+  membersTruncated: boolean
+  invitesTruncated: boolean
+}
+const HANDLE = /^[a-z0-9][a-z0-9._-]{0,63}$/
+const INVITE_ID = /^[0-9a-f]{24}$/
+function access(value: string): 'read' | 'write' {
+  if (value !== 'read' && value !== 'write') throw new Error('--access must be read or write')
+  return value
+}
+function memberHandle(value: string): string {
+  if (!HANDLE.test(value)) throw new Error('Member must be a BigBrain handle (from `members`)')
+  return value
+}
+function inviteId(value: string): string {
+  if (!INVITE_ID.test(value)) throw new Error('Invite ID must be the 24-character ID from `members`')
+  return value
+}
+/** Refuse an existing --out before any request, then write the link to a new 0600 file. */
+async function secretOut(out: string | undefined, what: string): Promise<string> {
+  if (!out) throw new Error(`--out <file> is required: the ${what} is never printed`)
+  const target = resolve(out)
+  if (await lstat(target).catch(() => null))
+    throw new Error('Refusing to overwrite an existing path; choose a new file for --out')
+  return target
 }
 
 export interface BigbrainVaultCommandDependencies {
@@ -150,19 +184,17 @@ export function registerBigbrainVaultCommands(
       )
 
   vault
-    .command('invite <vault>')
+    .command('owner-link <vault>')
     .description(
       "Write a single-use link that connects a BigBrain app as the vault's owner to a new private file (never " +
-        'printed). Anyone holding it gets full owner access. Other members are invited from the BigBrain app'
+        'printed). Anyone holding it gets full owner access and writes as the shared owner; invite people as ' +
+        'members to give them their own name'
     )
     .requiredOption('--generation <n>', 'Current vault generation (from list)')
     .option('--out <file>', 'New file to create with mode 0600 (required)')
     .action(
       run(async (id: string, options: { generation: string; out?: string }) => {
-        if (!options.out) throw new Error('--out <file> is required: the device link is never printed')
-        const target = resolve(options.out)
-        if (await lstat(target).catch(() => null))
-          throw new Error('Refusing to overwrite an existing path; choose a new file for --out')
+        const target = await secretOut(options.out, 'device link')
         const invite = await apiPost<OwnerInvite>(path(id, '/owner-invite'), fence(options))
         const written = await dependencies.writeSecretFile(target, `${invite.inviteUrl}\n`)
         output(
@@ -170,6 +202,101 @@ export function registerBigbrainVaultCommands(
           `Owner device link written to ${written} (expires ${invite.expiresAt}). Open it only on the device to connect.`
         )
       })
+    )
+
+  vault
+    .command('members <vault>')
+    .description('List a vault’s members and pending invites (never invite links)')
+    .action(
+      run(async (id: string) => {
+        const roster = await apiGet<RosterView>(path(id, '/members'))
+        output({
+          members: roster.members.map(({ handle, displayName, access, status, system }) => ({
+            handle,
+            displayName,
+            access,
+            status,
+            system,
+          })),
+          invites: roster.invites,
+          membersTruncated: roster.membersTruncated,
+          invitesTruncated: roster.invitesTruncated,
+        })
+      })
+    )
+
+  vault
+    .command('invite <vault>')
+    .description(
+      'Invite one person as a new member with their own name: writes a single-use, 24-hour invite link to a new ' +
+        'private file (never printed). Send it to that person privately; whoever opens it first becomes the member'
+    )
+    .option('--name <name>', "The member's name (required)")
+    .option('--access <access>', 'read, or write (read and write)', 'read')
+    .requiredOption('--generation <n>', 'Current vault generation (from list)')
+    .option('--out <file>', 'New file to create with mode 0600 (required)')
+    .action(
+      run(async (id: string, options: { name?: string; access: string; generation: string; out?: string }) => {
+        const name = options.name?.trim()
+        if (!name)
+          throw new Error('--name is required for a member invite (for an owner device link, use `owner-link`)')
+        if (name.length > 120) throw new Error('--name must be at most 120 characters')
+        const level = access(options.access)
+        const target = await secretOut(options.out, 'invite link')
+        const invite = await apiPost<MemberInvite>(path(id, '/invites'), {
+          ...fence(options),
+          displayName: name,
+          access: level,
+        })
+        const written = await dependencies.writeSecretFile(target, `${invite.inviteUrl}\n`)
+        output(
+          { written, inviteId: invite.inviteId, access: invite.access, expiresAt: invite.expiresAt },
+          `Member invite for ${invite.displayName} (${invite.access}) written to ${written} (expires ${invite.expiresAt}). Send it to them privately.`
+        )
+      })
+    )
+
+  vault
+    .command('cancel-invite <vault> <invite>')
+    .description('Cancel a pending member invite so its link can no longer be used')
+    .requiredOption('--generation <n>', 'Current vault generation (from list)')
+    .action(
+      run(async (id: string, invite: string, options: { generation: string }) =>
+        output(
+          await apiPost<{ inviteId: string; cancelled: true }>(
+            path(id, `/invites/${inviteId(invite)}/cancel`),
+            fence(options)
+          )
+        )
+      )
+    )
+
+  vault
+    .command('set-access <vault> <member>')
+    .description('Change a member’s access to read, or write (read and write). The owner and Ficus reader are fixed')
+    .requiredOption('--access <access>', 'read or write')
+    .requiredOption('--generation <n>', 'Current vault generation (from list)')
+    .action(
+      run(async (id: string, member: string, options: { access: string; generation: string }) =>
+        output(
+          await apiPost(path(id, `/members/${memberHandle(member)}/access`), {
+            ...fence(options),
+            access: access(options.access),
+          })
+        )
+      )
+    )
+
+  vault
+    .command('remove-member <vault> <member>')
+    .description(
+      'Remove a member: ends their access on every device. What they wrote stays under their name; the handle is never reused'
+    )
+    .requiredOption('--generation <n>', 'Current vault generation (from list)')
+    .action(
+      run(async (id: string, member: string, options: { generation: string }) =>
+        output(await apiPost(path(id, `/members/${memberHandle(member)}/remove`), fence(options)))
+      )
     )
 
   vault

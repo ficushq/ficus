@@ -162,6 +162,13 @@ export function createManagedHostClient(options: ManagedHostClientOptions = {}) 
     }
     if ('capabilities' in reply && reply.capabilities.tenantId !== request.tenantId)
       throw new ManagedHostError('identity_mismatch', false)
+    // Member replies name the vault, invitation and member they acted on: exactly the request's.
+    if (
+      ('vaultId' in reply && (!('vaultId' in request) || reply.vaultId !== request.vaultId)) ||
+      ('inviteId' in reply && (!('inviteId' in request) || reply.inviteId !== request.inviteId)) ||
+      ('member' in reply && (!('handle' in request) || reply.member.handle !== request.handle))
+    )
+      throw new ManagedHostError('identity_mismatch', false)
     return reply
   }
 

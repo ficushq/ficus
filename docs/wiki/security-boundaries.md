@@ -119,6 +119,16 @@ create an owner device link, which grants full owner access. Links are secret, s
 never cached or logged; Core audits who requested each one (never the link). Owner escrow stays
 inside the root control worker and never crosses a Core API, Platform response or log.
 
+The same literal humans manage members through Core (list, invite, cancel an invite, change
+access between read and read-and-write, remove); listing needs the write permission too, because a
+roster names people and pending invitations. The root controller runs a small pinned adapter as
+the vault's own account that calls only the upstream member/invite exports, never a credential or
+token API. It never changes or removes the owner or the `ficus-reader` member and never grants the
+owner role. Member invite links are secret like owner links: returned once, never cached or
+logged, replayed only from a root-only cache so a retry never mints a second invite. Rosters carry
+display fields only (no emails, identities or credentials). Core audits each change by actor,
+vault and member handle, never the link.
+
 Core is the authority for vault operations: it records each change with a generation fence and
 runs it on the same server through the root helper `/usr/local/libexec/ficus-bigbrainctl`,
 using a bounded spawn with a capped reply and no sudoers, setuid binary or socket service.

@@ -138,8 +138,57 @@ test('replies about another request, binding, vault, tenant, generation or origi
   }
 })
 
+test('member replies must name the requested vault, invitation and member', async () => {
+  const member = {
+    handle: 'grace',
+    displayName: 'Grace',
+    role: 'member',
+    access: 'read',
+    status: 'active',
+    createdAt: null,
+  }
+  const ok = { ok: true, physicalHostBinding: BINDING }
+  for (const [request, bad] of [
+    [
+      { action: 'member-set-access', vaultId: VAULT, expectedGeneration: 2, handle: 'grace', access: 'read' },
+      { ...ok, action: 'member-set-access', vaultId: VAULT, member: { ...member, handle: 'mallory' } },
+    ],
+    [
+      { action: 'member-remove', vaultId: VAULT, expectedGeneration: 2, handle: 'grace' },
+      { ...ok, action: 'member-remove', vaultId: REQUEST, member: { ...member, status: 'removed' } },
+    ],
+    [
+      { action: 'invite-cancel', vaultId: VAULT, expectedGeneration: 2, inviteId: 'c'.repeat(24) },
+      { ...ok, action: 'invite-cancel', vaultId: VAULT, inviteId: 'd'.repeat(24) },
+    ],
+    [
+      { action: 'member-list', vaultId: VAULT },
+      {
+        ...ok,
+        action: 'member-list',
+        vaultId: REQUEST,
+        roster: { members: [], invites: [], membersTruncated: false, invitesTruncated: false },
+      },
+    ],
+  ] as const) {
+    const fake = await launcher(reply(bad))
+    expect(
+      await code(createManagedHostClient({ helperPath: fake.path }).call(host, REQUEST, request as never))
+    ).toEqual(['identity_mismatch', false])
+  }
+  const good = await launcher(reply({ ...ok, action: 'member-set-access', vaultId: VAULT, member }))
+  const result = await createManagedHostClient({ helperPath: good.path }).call(host, REQUEST, {
+    action: 'member-set-access',
+    vaultId: VAULT,
+    expectedGeneration: 2,
+    handle: 'grace',
+    access: 'read',
+  })
+  expect('member' in result && result.member.handle).toBe('grace')
+})
+
 test('oversized output and deadlines kill the helper and report retryable codes', async () => {
-  const big = await launcher('head -c 40000 /dev/zero | tr "\\0" "a"')
+  const big = await launcher('head -c 140000 /dev/zero | tr "\\0" "a"')
   expect(await code(createManagedHostClient({ helperPath: big.path }).call(host, REQUEST, rename))).toEqual([
     'output_limit',
     true,

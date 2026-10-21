@@ -8,9 +8,9 @@
  *
  * Vaults belong to the instance, not a person: every vault's upstream owner is `ficus`
  * (`MANAGED_BIGBRAIN_FICUS_OWNER`), and any BigBrain manager may connect a device as that owner.
- * The owner link is the one synchronous host call: a secret transient result, never stored,
- * cached or logged here (only who requested it, for which vault), and returned only after the
- * requester's authority is re-checked.
+ * The owner link is a synchronous host call: a secret transient result, never stored, cached or
+ * logged here (only who requested it, for which vault), and returned only after the requester's
+ * authority is re-checked. Member management (members.ts) is synchronous the same way.
  */
 import { z } from 'zod'
 import {
@@ -32,7 +32,9 @@ import { ManagedHostError, type ManagedHostClient } from './host-client'
 import { managedVaultOrigin } from './host-identity'
 import { managedVaultOperations } from './operations'
 import { ManagedBigbrainPlatformError } from './platform-client'
+import { managedVaultMemberMethods } from './members'
 import { ManagedVaultStoreError, managedVaultStore, type ManagedVault } from './store'
+import type { FixedWindowLimiter } from '../../../auth/device-auth-rate-limit'
 
 export type ManagedVaultServiceCode =
   | ManagedBigbrainErrorCode
@@ -42,6 +44,8 @@ export type ManagedVaultServiceCode =
   | 'confirmation_mismatch'
   /** A vault whose host owner anchor was lost (see `hostOwnerUserId`): no owner links. */
   | 'owner_unavailable'
+  /** Too many member requests from one person in a short window. */
+  | 'rate_limited'
 
 export class ManagedVaultServiceError extends Error {
   constructor(
@@ -112,8 +116,10 @@ export interface ManagedVaultServiceDeps {
   isEnabled?: () => Promise<boolean>
   available?: () => { available: boolean }
   now?: () => Date
-  /** Records who requested each owner device link (content-free; never the link). */
+  /** Records who requested each owner device link and member change (content-free; never a link). */
   audit?: IntegrationAuditRecorder
+  /** Per-user member request budgets (default: the process-wide limiter). */
+  memberLimiter?: FixedWindowLimiter
 }
 
 const log = createLogger('managed-bigbrain-vaults')
@@ -165,7 +171,25 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
     await store.clearReadMaterial(row.id)
   }
 
+  const statusOf = {
+    invalid_request: 400,
+    forbidden: 403,
+    generation_conflict: 409,
+    rate_limited: 429,
+    invalid_response: 502,
+  } as const
+  const members = managedVaultMemberMethods({
+    hostClient: deps.hostClient,
+    audit,
+    now: deps.now ?? (() => new Date()),
+    limiter: deps.memberLimiter,
+    live,
+    requireHost,
+    fail: (code, currentGeneration) => new ManagedVaultServiceError(code, statusOf[code], currentGeneration),
+  })
+
   return {
+    ...members,
     async list(identity: Identity | undefined): Promise<ManagedVaultView[]> {
       if (!(await canEnumerateManagedVaults(identity))) throw new ManagedVaultServiceError('forbidden', 403)
       return Promise.all((await store.list()).map((row) => view(row)))
