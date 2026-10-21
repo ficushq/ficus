@@ -541,6 +541,9 @@ export class WebSocketManager {
             console.error('[ws] farm chat typing failed:', error)
           )
           break
+        case 'ping':
+          this.send(ws, { type: 'pong' })
+          break
         case 'presence.leave': {
           const change = this.presence.withdraw(client.id)
           if (change)

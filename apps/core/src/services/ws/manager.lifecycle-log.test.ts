@@ -130,3 +130,26 @@ describe('WebSocketManager socket lifecycle log', () => {
     expect(lines.filter((line) => line.args[0] === 'Socket closed')).toHaveLength(1)
   })
 })
+
+describe('WebSocketManager heartbeat', () => {
+  test('answers a ping with a pong on the same socket', () => {
+    const sent: string[] = []
+    const manager = new WebSocketManager(undefined, { log: recordingLog().log })
+    const ws = { readyState: WebSocket.OPEN, send: (data: string) => void sent.push(data) } as any
+    manager.addClient(ws, user)
+
+    manager.handleMessage(ws, JSON.stringify({ type: 'ping' }))
+
+    expect(sent.map((frame) => JSON.parse(frame))).toEqual([{ type: 'pong' }])
+  })
+
+  test('a ping from a socket it does not know is ignored', () => {
+    const sent: string[] = []
+    const manager = new WebSocketManager(undefined, { log: recordingLog().log })
+    const ws = { readyState: WebSocket.OPEN, send: (data: string) => void sent.push(data) } as any
+
+    manager.handleMessage(ws, JSON.stringify({ type: 'ping' }))
+
+    expect(sent).toEqual([])
+  })
+})

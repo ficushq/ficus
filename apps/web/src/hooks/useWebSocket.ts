@@ -12,6 +12,12 @@ export interface WebSocketContextValue {
   subscribe<T extends CollectionTopic>(topic: T, callback: TopicCallback<T>): () => void
   subscribe<T extends InstanceTopic>(topic: T, callback: InstanceCallbackFor<T>): () => void
   isConnected: boolean
+  /**
+   * The latest reconnect, or null before one: how long the page had gone without a
+   * frame when the new connection opened. A long gap means missed events, which the
+   * narrow reconnect repair cannot cover.
+   */
+  lastReconnect?: { gapMs: number } | null
 }
 
 export const WebSocketContext = createContext<WebSocketContextValue | null>(null)

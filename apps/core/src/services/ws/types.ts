@@ -14,6 +14,9 @@ export type ClientMessage =
   | { type: 'presence.wave'; toUserId: unknown }
   // Farm chat: this person is typing in a room (passed on to the room's other people, never stored).
   | { type: 'farmChat.typing'; roomId: unknown }
+  // The page's own proof of life: answered with `pong`. Transport pings never reach the page, so a
+  // socket whose frames have stopped arriving looks alive to both ends without this.
+  | { type: 'ping' }
 
 // Server -> Client messages
 export type ServerMessage =
@@ -21,3 +24,4 @@ export type ServerMessage =
   | { type: 'unsubscribed'; topic: Topic }
   | { type: 'event'; topic: Topic; event: string; data: unknown }
   | { type: 'error'; message: string; code?: 'FORBIDDEN_TOPIC'; topic?: Topic }
+  | { type: 'pong' }

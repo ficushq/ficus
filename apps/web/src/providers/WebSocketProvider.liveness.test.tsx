@@ -16,6 +16,8 @@ class FakeWebSocket {
   static CLOSING = 2
   static CLOSED = 3
   readyState = 0
+  sent: string[] = []
+  closed = false
   onopen: (() => void) | null = null
   onmessage: ((event: MessageEvent) => void) | null = null
   onclose: ((event: CloseEvent) => void) | null = null
@@ -24,7 +26,9 @@ class FakeWebSocket {
   constructor(readonly url: string) {
     FakeWebSocket.instances.push(this)
   }
-  send() {}
+  send(frame: string) {
+    this.sent.push(frame)
+  }
   open() {
     this.readyState = FakeWebSocket.OPEN
     this.onopen?.()
@@ -37,6 +41,7 @@ class FakeWebSocket {
     this.onclose?.({ code, reason } as CloseEvent)
   }
   close() {
+    this.closed = true
     this.readyState = FakeWebSocket.CLOSED
   }
 }
@@ -137,5 +142,92 @@ describe('WebSocketProvider liveness trail', () => {
     dom.window.dispatchEvent(new dom.window.Event('focus'))
 
     expect(livenessLines()).toEqual([])
+  })
+
+  function fakeTimers() {
+    let now = 0
+    let nextId = 1
+    const timers = new Map<number, { at: number; cb: () => void }>()
+    return {
+      schedule: (cb: () => void, ms: number) => {
+        const id = nextId++
+        timers.set(id, { at: now + ms, cb })
+        return id as unknown as ReturnType<typeof setTimeout>
+      },
+      cancel: (handle: ReturnType<typeof setTimeout>) => void timers.delete(handle as unknown as number),
+      async advance(ms: number) {
+        const until = now + ms
+        for (;;) {
+          const due = [...timers.entries()].filter(([, t]) => t.at <= until).sort((a, b) => a[1].at - b[1].at)[0]
+          if (!due) break
+          timers.delete(due[0])
+          now = due[1].at
+          await act(async () => due[1].cb())
+        }
+        now = until
+      },
+    }
+  }
+
+  async function mountWithHeartbeat() {
+    const timers = fakeTimers()
+    await act(async () => {
+      root.render(
+        <WebSocketProvider
+          getUrl={async () => 'ws://test/ws'}
+          heartbeat={{ intervalMs: 30_000, timeoutMs: 10_000, schedule: timers.schedule, cancel: timers.cancel }}
+        >
+          <span />
+        </WebSocketProvider>
+      )
+      await Promise.resolve()
+    })
+    const socket = FakeWebSocket.instances[0]!
+    await act(async () => socket.open())
+    return { socket, timers }
+  }
+
+  test('a quiet socket gets a ping after the heartbeat interval and nothing before', async () => {
+    const { socket, timers } = await mountWithHeartbeat()
+    await timers.advance(29_999)
+    expect(socket.sent.map((frame) => JSON.parse(frame))).not.toContainEqual({ type: 'ping' })
+    await timers.advance(1)
+    expect(socket.sent.map((frame) => JSON.parse(frame))).toContainEqual({ type: 'ping' })
+  })
+
+  test('a pong keeps the socket; silence replaces it with a fresh connection and logs why', async () => {
+    const warnCalls: ConsoleCall[] = []
+    const originalWarn = console.warn
+    console.warn = (...args: unknown[]) => void warnCalls.push(args)
+    try {
+      const { socket, timers } = await mountWithHeartbeat()
+      await timers.advance(30_000)
+      socket.serverMessage({ type: 'pong' })
+      await timers.advance(10_000)
+      expect(FakeWebSocket.instances).toHaveLength(1)
+
+      await timers.advance(30_000)
+      await timers.advance(10_000)
+      // The dead socket is abandoned without waiting for its close handshake.
+      expect(socket.closed).toBe(true)
+      expect(FakeWebSocket.instances).toHaveLength(2)
+      expect(warnCalls.filter((call) => call[0] === '[WebSocket] heartbeat timed out')).toHaveLength(1)
+      // A late frame on the abandoned socket changes nothing.
+      socket.serverMessage({ type: 'event', topic: 'agents', event: 'agent.updated', data: {} })
+      expect(FakeWebSocket.instances).toHaveLength(2)
+    } finally {
+      console.warn = originalWarn
+    }
+  })
+
+  test('the new connection reports how long the page went without a frame', async () => {
+    const { socket, timers } = await mountWithHeartbeat()
+    socket.serverMessage({ type: 'event', topic: 'agents', event: 'agent.updated', data: {} })
+    await timers.advance(30_000)
+    await timers.advance(10_000)
+    const replacement = FakeWebSocket.instances[1]!
+    await act(async () => replacement.open())
+    const connected = logCalls.filter((call) => call[0] === '[WebSocket] Connected')
+    expect(connected.at(-1)![1]).toEqual({ reconnect: true, gapMs: expect.any(Number) })
   })
 })

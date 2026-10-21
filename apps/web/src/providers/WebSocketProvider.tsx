@@ -2,10 +2,13 @@ import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { WebSocketContext, type WebSocketContextValue } from '../hooks/useWebSocket'
 import { requestUpdateCheck } from '../lib/serviceWorker'
 import { SocketLivenessTracker, watchSocketLiveness } from '../lib/socketLiveness'
+import { createSocketHeartbeat, type SocketHeartbeatOptions } from '../lib/socketHeartbeat'
 
 interface WebSocketProviderProps {
   /** Resolve the WS URL per connection (mints a fresh single-use ticket each time). */
   getUrl: () => Promise<string>
+  /** Heartbeat timing and timers; a test seam, the defaults are the product. */
+  heartbeat?: Partial<Pick<SocketHeartbeatOptions, 'intervalMs' | 'timeoutMs' | 'schedule' | 'cancel'>>
   children: ReactNode
 }
 
@@ -15,9 +18,22 @@ type AnyCallback = (entry: { event: string; data: unknown }) => void
 const INITIAL_RECONNECT_DELAY = 1000
 const MAX_RECONNECT_DELAY = 30000
 const RECONNECT_BACKOFF = 1.5
+/**
+ * Quiet time before the page pings, and how long it waits for anything back.
+ * Together they bound a silent stall at about 25 seconds, well under the minutes a
+ * stalled connection otherwise sat looking connected. Cloudflare drops a proxied
+ * socket idle for 100 seconds, so the ping also keeps an idle socket alive.
+ */
+const HEARTBEAT_INTERVAL_MS = 15_000
+const HEARTBEAT_TIMEOUT_MS = 10_000
 
-export function WebSocketProvider({ getUrl, children }: WebSocketProviderProps) {
+export function WebSocketProvider({ getUrl, heartbeat: heartbeatOptions, children }: WebSocketProviderProps) {
   const [isConnected, setIsConnected] = useState(false)
+  const [lastReconnect, setLastReconnect] = useState<{ gapMs: number } | null>(null)
+  const heartbeatOptionsRef = useRef(heartbeatOptions)
+  heartbeatOptionsRef.current = heartbeatOptions
+  // When the page last saw life on the previous connection, for the gap a reconnect reports.
+  const lastSeenAtRef = useRef<number | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const subscribersRef = useRef<Map<string, Set<AnyCallback>>>(new Map())
   const pendingSubscriptionsRef = useRef<Set<string>>(new Set())
@@ -86,13 +102,55 @@ export function WebSocketProvider({ getUrl, children }: WebSocketProviderProps) 
 
       wsRef.current = ws
 
+      const heartbeat = createSocketHeartbeat({
+        intervalMs: heartbeatOptionsRef.current?.intervalMs ?? HEARTBEAT_INTERVAL_MS,
+        timeoutMs: heartbeatOptionsRef.current?.timeoutMs ?? HEARTBEAT_TIMEOUT_MS,
+        schedule: heartbeatOptionsRef.current?.schedule,
+        cancel: heartbeatOptionsRef.current?.cancel,
+        send: () => {
+          if (ws.readyState !== WebSocket.OPEN) return false
+          ws.send(JSON.stringify({ type: 'ping' }))
+          return true
+        },
+        onDead: () => abandon(ws),
+      })
+
+      // The socket stopped delivering while both ends still call it open. Do not wait
+      // for a close handshake that may never complete over a stalled path: detach it,
+      // close it, and connect afresh right away.
+      function abandon(dead: WebSocket) {
+        if (wsRef.current !== dead) return
+        console.warn('[WebSocket] heartbeat timed out', liveness.snapshot(dead.readyState))
+        dead.onopen = null
+        dead.onmessage = null
+        dead.onclose = null
+        dead.onerror = null
+        heartbeat.stop()
+        lastSeenAtRef.current = liveness.lastSeenAt()
+        liveness.closed()
+        wsRef.current = null
+        try {
+          dead.close()
+        } catch {
+          // A socket that cannot even close is already gone.
+        }
+        if (!mountedRef.current) return
+        setIsConnected(false)
+        reconnectDelayRef.current = INITIAL_RECONNECT_DELAY
+        void connect()
+      }
+
       ws.onopen = () => {
-        console.log('[WebSocket] Connected')
+        const gapMs =
+          hasConnectedBeforeRef.current && lastSeenAtRef.current !== null ? Date.now() - lastSeenAtRef.current : null
+        console.log('[WebSocket] Connected', { reconnect: hasConnectedBeforeRef.current, gapMs })
         if (!mountedRef.current) {
           ws.close()
           return
         }
         liveness.opened()
+        heartbeat.start()
+        if (gapMs !== null) setLastReconnect({ gapMs })
         setIsConnected(true)
         // Reset reconnect delay on successful connection
         reconnectDelayRef.current = INITIAL_RECONNECT_DELAY
@@ -105,7 +163,9 @@ export function WebSocketProvider({ getUrl, children }: WebSocketProviderProps) 
       }
 
       ws.onclose = (event) => {
+        heartbeat.stop()
         const { openForMs, sinceLastMessageMs } = liveness.snapshot(ws.readyState)
+        lastSeenAtRef.current = liveness.lastSeenAt()
         liveness.closed()
         // Auto-reconnect with exponential backoff
         const delay = reconnectDelayRef.current
@@ -135,6 +195,7 @@ export function WebSocketProvider({ getUrl, children }: WebSocketProviderProps) 
 
       ws.onmessage = (event) => {
         liveness.message()
+        heartbeat.frame()
         try {
           const message = JSON.parse(event.data)
           if (message.type === 'event') {
@@ -196,6 +257,7 @@ export function WebSocketProvider({ getUrl, children }: WebSocketProviderProps) 
   const value: WebSocketContextValue = {
     subscribe: subscribe as WebSocketContextValue['subscribe'],
     isConnected,
+    lastReconnect,
   }
 
   return <WebSocketContext.Provider value={value}>{children}</WebSocketContext.Provider>

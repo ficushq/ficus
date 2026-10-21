@@ -53,6 +53,19 @@ describe('SocketLivenessTracker', () => {
     expect(tracker.snapshot(WebSocket.OPEN)).toEqual({ readyState: 'open', openForMs: 0, sinceLastMessageMs: null })
   })
 
+  test('remembers when the page last saw life: the last frame, else the open, else nothing', () => {
+    let now = 1_000
+    const tracker = new SocketLivenessTracker(() => now)
+    expect(tracker.lastSeenAt()).toBeNull()
+    tracker.opened()
+    expect(tracker.lastSeenAt()).toBe(1_000)
+    now = 1_500
+    tracker.message()
+    expect(tracker.lastSeenAt()).toBe(1_500)
+    tracker.closed()
+    expect(tracker.lastSeenAt()).toBeNull()
+  })
+
   test('names every ready state', () => {
     const tracker = new SocketLivenessTracker(() => 0)
     expect(tracker.snapshot(WebSocket.CONNECTING).readyState).toBe('connecting')
