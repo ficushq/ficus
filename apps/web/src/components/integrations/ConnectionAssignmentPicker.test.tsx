@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
 import { fireEvent } from '@testing-library/dom'
 import { acquireDomHarness } from '../../test/domHarness'
 import { integrationQueryKeys } from '../../queryKeys'
@@ -201,14 +202,16 @@ describe('managed shared vaults', () => {
     await harness.act(async () =>
       root.render(
         <QueryClientProvider client={client}>
-          <ConnectionAssignmentPicker
-            squadId="squad-1"
-            provider="bigbrain"
-            presentation={{ label: 'BigBrain' }}
-            managed
-            canRead
-            canWrite={canWrite}
-          />
+          <MemoryRouter>
+            <ConnectionAssignmentPicker
+              squadId="squad-1"
+              provider="bigbrain"
+              presentation={{ label: 'BigBrain' }}
+              managed
+              canRead
+              canWrite={canWrite}
+            />
+          </MemoryRouter>
         </QueryClientProvider>
       )
     )
@@ -249,9 +252,18 @@ describe('managed shared vaults', () => {
     expect(writes.map((w) => [w.method, new URL(w.url).search])).toEqual([['DELETE', '?connectionId=a']])
   })
 
-  test('a vault without read access cannot be newly attached', async () => {
+  test('a vault without read access cannot be newly attached, and says why', async () => {
     await renderManaged(true)
-    expect(box('Revoked').disabled).toBe(true)
+    const revoked = box('Revoked')
+    expect(revoked.disabled).toBe(true)
+    const reason = container.querySelector(`#${revoked.getAttribute('aria-describedby')}`)!
+    expect(reason.textContent).toContain('Ficus cannot read this vault yet, so it cannot be attached.')
+    expect(reason.querySelector('a')?.getAttribute('href')).toBe('/settings?section=integrations')
+    expect(container.textContent).not.toContain('read access off')
+    // Where the other half of the setup lives: the agent type's BigBrain tools.
+    const agentTypes = [...container.querySelectorAll('a')].find((a) => a.textContent === 'Agent types')
+    expect(agentTypes?.getAttribute('href')).toBe('/settings?section=agent-types')
+    expect(box('Beta').getAttribute('aria-describedby')).toBeNull()
   })
 
   test('a squad reader sees only its attached vaults and cannot change them', async () => {

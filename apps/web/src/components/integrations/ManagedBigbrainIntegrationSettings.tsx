@@ -1,7 +1,10 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
+  attachIntegration,
+  detachIntegration,
   createManagedBigbrainVault,
   deleteManagedBigbrainVault,
   renameManagedBigbrainVault,
@@ -27,11 +30,34 @@ const STATE_LABEL: Record<ManagedBigbrainVault['state'], [string, BadgeColor]> =
   deleting: ['Deleting', 'neutral'],
   deleted: ['Deleted', 'neutral'],
 }
-const READ_LABEL: Record<ManagedBigbrainVault['readAccess'], string> = {
-  pending: 'Ficus read access pending',
-  active: 'Ficus can read',
-  revoked: 'Ficus read access revoked',
+/** Whether Ficus actually reads the vault: the host granting read access is not enough, Ficus's
+ * own read connection must be on too. `detail` says why not and what happens next. */
+function readStatus(vault: ManagedBigbrainVault): { label: string; reading: boolean; detail?: string } {
+  if (vault.readAccess === 'revoked') return { label: 'Ficus read access revoked', reading: false }
+  const connection = vault.readConnection
+  if (connection?.enabled && vault.readAccess === 'active') return { label: 'Ficus can read', reading: true }
+  if (vault.readAccess === 'active' && connection && !connection.enabled && connection.disabledByPerson)
+    return {
+      label: 'Ficus read access is off',
+      reading: false,
+      detail:
+        'Someone turned off Ficus read access for this vault, so squads cannot read it. To turn it back on, choose Revoke Ficus read access, then Reconnect Ficus read access.',
+    }
+  const code = (connection && !connection.enabled ? connection.lastErrorCode : null) ?? vault.readSyncError
+  if (vault.readAccess === 'active' && (code || (connection && !connection.enabled)))
+    return {
+      label: 'Ficus cannot read this vault yet',
+      reading: false,
+      detail: `Ficus could not set up its read access${
+        code ? ` (${code.slice(0, 40)})` : ''
+      }. It tries again automatically within a few minutes. If this does not clear, choose Revoke Ficus read access, then Reconnect Ficus read access.`,
+    }
+  // Granted on the host but not imported into Ficus yet counts as pending too.
+  return { label: 'Ficus read access pending', reading: false }
 }
+
+const squadIntegrationsPath = (squadId: string) =>
+  `/squads/${encodeURIComponent(squadId)}/settings?section=integrations`
 
 function failure(error: unknown): string {
   const code =
@@ -46,6 +72,7 @@ function failure(error: unknown): string {
     return 'Managed BigBrain is temporarily unavailable on this server. Try again shortly.'
   if (code === 'owner_unavailable') return 'Owner device links are not available for this vault.'
   if (code === 'human_required' || code === 'permission_required') return 'You do not have permission to do that.'
+  if (code === 'squad_permission_required') return 'This account cannot change integrations for that squad.'
   return code ? `That did not work (${code.slice(0, 40)}).` : 'That did not work. Try again.'
 }
 
@@ -77,6 +104,15 @@ export function ManagedBigbrainIntegrationSettings({ canWrite }: { canWrite: boo
         from the BigBrain app under their own names. Ficus agents in attached squads can only read. Each vault has its
         own storage, identity and credentials, isolated from the other vaults. Ficus itself can access every shared
         vault on this server.
+      </p>
+      <p className="mt-2 text-xs text-muted">
+        Agents read a vault only once it is attached to their squad: use <span className="font-medium">Squads</span> on
+        a vault below, or the BigBrain card in a squad&apos;s Settings → Integrations. Their agent type must also allow
+        BigBrain agent tools and the <span className="font-mono">bigbrain_shared_*</span> tool names (
+        <Link to="/settings?section=agent-types" className="text-accent-light hover:underline">
+          Agent types
+        </Link>
+        ).
       </p>
       <div className="mt-4">
         <LoadingContent
@@ -162,6 +198,7 @@ function VaultRow({
   onChanged: () => Promise<unknown>
 }) {
   const [label, color] = STATE_LABEL[vault.state]
+  const read = readStatus(vault)
   const [feedback, setFeedback] = useState<{ kind: 'error' | 'success'; message: string } | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [confirmName, setConfirmName] = useState<string | null>(null)
@@ -191,11 +228,16 @@ function VaultRow({
         <div className="min-w-0">
           <div className="font-medium text-primary">{vault.displayName}</div>
           <div className="text-xs text-muted">
-            {READ_LABEL[vault.readAccess]} · <span className="font-mono">{vault.vaultId}</span>
+            {read.label} · <span className="font-mono">{vault.vaultId}</span>
           </div>
         </div>
         <Badge color={color}>{label}</Badge>
       </div>
+      {read.detail && (vault.state === 'ready' || vault.state === 'degraded') && (
+        <p role="status" className="mt-1 text-xs text-status-attention-700 dark:text-status-attention-300">
+          {read.detail}
+        </p>
+      )}
       {vault.lastErrorCode && (
         <p role="alert" className="mt-1 text-xs text-status-danger-600">
           Last error: {vault.lastErrorCode}
@@ -374,6 +416,9 @@ function VaultRow({
           </div>
         </div>
       )}
+      {(vault.state === 'ready' || vault.state === 'degraded') && (
+        <VaultSquads vault={vault} canWrite={canWrite} reading={read.reading} onChanged={onChanged} />
+      )}
       {canWrite && membersOpen && (vault.state === 'ready' || vault.state === 'degraded') && (
         <ManagedBigbrainMembers vault={vault} onVaultChanged={onChanged} />
       )}
@@ -430,5 +475,123 @@ function VaultRow({
       )}
       {canWrite && <BigbrainOwnerInviteDialog vault={vault} isOpen={inviteOpen} onClose={() => setInviteOpen(false)} />}
     </li>
+  )
+}
+
+/**
+ * Squads attached to one vault. People with BigBrain authority attach and detach here for squads
+ * where they also hold `integrations:write`, through the same squad assignment routes (and server
+ * checks) as each squad's own integration settings. Attaching never detaches another vault.
+ */
+function VaultSquads({
+  vault,
+  canWrite,
+  reading,
+  onChanged,
+}: {
+  vault: ManagedBigbrainVault
+  canWrite: boolean
+  reading: boolean
+  onChanged: () => Promise<unknown>
+}) {
+  const client = useQueryClient()
+  const writable = useQuery({ ...integrationQueries.managedBigbrainAttachableSquads(), enabled: canWrite })
+  const [choice, setChoice] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const attached = new Set(vault.assignedSquads.map((squad) => squad.id))
+  const writableIds = new Set((writable.data ?? []).map((squad) => squad.id))
+  const offered = (writable.data ?? []).filter((squad) => !attached.has(squad.id))
+  const change = useMutation({
+    mutationFn: async (input: { squadId: string; attach: boolean }) => {
+      if (!vault.connectionId) throw new Error('not_readable')
+      if (input.attach) await attachIntegration(input.squadId, 'bigbrain', vault.connectionId, false)
+      else await detachIntegration(input.squadId, 'bigbrain', vault.connectionId)
+    },
+    onMutate: () => setError(null),
+    onSuccess: (_data, input) => {
+      if (input.attach) setChoice('')
+    },
+    onError: (failed) => setError(failure(failed)),
+    onSettled: async (_data, _error, input) => {
+      await Promise.all([
+        onChanged(),
+        client.invalidateQueries({ queryKey: integrationQueryKeys.catalog() }),
+        client.invalidateQueries({ queryKey: integrationQueryKeys.squad(input.squadId, 'bigbrain') }),
+      ])
+    },
+  })
+  return (
+    <div className="mt-2 text-xs">
+      <div className="font-medium text-primary">Squads</div>
+      {vault.assignedSquads.length === 0 ? (
+        <p className="text-muted">
+          Not attached to any squad. Agents can read this vault only in squads it is attached to.
+        </p>
+      ) : (
+        <div className="mt-1 flex flex-wrap gap-2">
+          {vault.assignedSquads.map((squad) => (
+            <span
+              key={squad.id}
+              className="inline-flex items-center gap-1 rounded-md border border-panel-border px-2 py-0.5"
+            >
+              <Link to={squadIntegrationsPath(squad.id)} className="text-primary hover:underline">
+                {squad.name}
+              </Link>
+              {canWrite && writableIds.has(squad.id) && (
+                <button
+                  type="button"
+                  aria-label={`Detach ${vault.displayName} from ${squad.name}`}
+                  disabled={change.isPending}
+                  className="ficus-button ficus-button-ghost rounded px-1 text-muted disabled:opacity-50"
+                  onClick={() => change.mutate({ squadId: squad.id, attach: false })}
+                >
+                  Detach
+                </button>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+      {canWrite && (
+        // Not a <form>: the card's only form is the new vault form.
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <select
+            aria-label={`Squad to attach ${vault.displayName} to`}
+            className="ficus-field min-w-0 max-w-full rounded-md border border-th-border bg-surface px-2 py-1"
+            value={choice}
+            disabled={!reading || change.isPending || offered.length === 0}
+            onChange={(event) => setChoice(event.target.value)}
+          >
+            <option value="">
+              {offered.length === 0 && writable.isSuccess ? 'No other squads to attach' : 'Choose a squad'}
+            </option>
+            {offered.map((squad) => (
+              <option key={squad.id} value={squad.id}>
+                {squad.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={!reading || !choice || change.isPending}
+            className="ficus-button ficus-button-secondary rounded-md px-3 py-1 disabled:opacity-50"
+            onClick={() => change.mutate({ squadId: choice, attach: true })}
+          >
+            {change.isPending ? 'Saving…' : 'Attach'}
+          </button>
+          {!reading && <span className="text-muted">Squads can be attached once Ficus can read this vault.</span>}
+          {writable.isSuccess && writable.data.length === 0 && (
+            <span className="text-muted">
+              Vaults can be attached here only to squads whose integrations this account manages.
+            </span>
+          )}
+        </div>
+      )}
+      {error && (
+        <p role="alert" className="mt-1 text-status-danger-600">
+          {error}
+        </p>
+      )}
+    </div>
   )
 }

@@ -23,6 +23,7 @@ const memberInvite = {
 function app(identity: Identity | undefined, overrides: Partial<ManagedVaultRouteService> = {}) {
   const service = {
     list: mock(async () => []),
+    attachableSquads: mock(async () => [{ id: 'squad-w', name: 'Writable' }]),
     get: mock(async () => ({ vaultId: VAULT })),
     create: mock(async () => ({ vaultId: VAULT, state: 'provisioning' })),
     rename: mock(async () => ({ vaultId: VAULT })),
@@ -62,6 +63,7 @@ test('every route requires an identity and is never cacheable', async () => {
   for (const [route, init] of [
     [path, undefined],
     [path, json({})],
+    [`${path}/attachable-squads`, undefined],
     [`${path}/${VAULT}`, undefined],
     [`${path}/${VAULT}`, json({}, 'PATCH')],
     [`${path}/${VAULT}/retry`, json({})],
@@ -147,4 +149,20 @@ test('refusals are code-only with the right status; unexpected errors are not sw
   const failed = await hono.request(path)
   expect(failed.status).toBe(500)
   expect(await failed.text()).not.toContain('sv_secret')
+})
+
+test('attachable squads route to the service (not a vault lookup) and refusals stay code-only', async () => {
+  const { hono, service } = app(user)
+  const response = await hono.request(`${path}/attachable-squads`)
+  expect(await response.json()).toEqual({ squads: [{ id: 'squad-w', name: 'Writable' }] })
+  expect(service.attachableSquads).toHaveBeenCalledWith(user)
+  expect(service.get).not.toHaveBeenCalled()
+  const refused = app(user, {
+    attachableSquads: mock(async () => {
+      throw new ManagedVaultAuthorizationError('permission_required')
+    }),
+  })
+  const denied = await refused.hono.request(`${path}/attachable-squads`)
+  expect(denied.status).toBe(403)
+  expect(await denied.json()).toEqual({ code: 'permission_required' })
 })

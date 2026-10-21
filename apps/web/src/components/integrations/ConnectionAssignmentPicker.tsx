@@ -1,5 +1,6 @@
 import clsx from 'clsx'
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   attachIntegration,
@@ -308,25 +309,57 @@ function ManagedVaultAssignment({
         )}
         {rows.map((connection) => {
           const isAttached = attached.has(connection.id)
+          const reasonId = `vault-reason-${connection.id}`
+          // A vault can be attached only while Ficus can read it; say so instead of ignoring clicks.
+          const reason = !connection.enabled
+            ? isAttached
+              ? 'Ficus cannot read this vault right now, so agents here cannot either.'
+              : 'Ficus cannot read this vault yet, so it cannot be attached.'
+            : null
           return (
-            <label key={connection.id} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={isAttached}
-                disabled={!canWrite || pending[connection.id] || (!isAttached && !connection.enabled)}
-                onChange={() => toggle.mutate({ id: connection.id, attach: !isAttached })}
-              />
-              {connection.displayName}
-              {!connection.enabled && <span className="text-xs text-muted">(read access off)</span>}
-              {failed === connection.id && (
-                <span role="alert" className="text-xs text-status-danger-600">
-                  Could not update
-                </span>
+            <div key={connection.id}>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={isAttached}
+                  aria-describedby={reason ? reasonId : undefined}
+                  disabled={!canWrite || pending[connection.id] || (!isAttached && !connection.enabled)}
+                  onChange={() => toggle.mutate({ id: connection.id, attach: !isAttached })}
+                />
+                {connection.displayName}
+                {!connection.enabled && <span className="text-xs text-muted">(Ficus cannot read it)</span>}
+                {failed === connection.id && (
+                  <span role="alert" className="text-xs text-status-danger-600">
+                    Could not update
+                  </span>
+                )}
+              </label>
+              {reason && (
+                <p id={reasonId} className="ml-6 text-xs text-muted">
+                  {reason} People who manage BigBrain see why, and how to fix it, on the vault in{' '}
+                  <Link to="/settings?section=integrations" className="text-accent-light hover:underline">
+                    Settings → Integrations → BigBrain
+                  </Link>
+                  .
+                </p>
               )}
-            </label>
+            </div>
           )
         })}
       </div>
+      {!canWrite && rows.length > 0 && (
+        <p className="mt-2 text-xs text-muted">
+          Changing this squad&apos;s vaults needs permission to manage its integrations.
+        </p>
+      )}
+      <p className="mt-2 text-xs text-muted">
+        Agents also need an agent type that allows BigBrain agent tools and the{' '}
+        <span className="font-mono">bigbrain_shared_*</span> tool names (
+        <Link to="/settings?section=agent-types" className="text-accent-light hover:underline">
+          Agent types
+        </Link>
+        ).
+      </p>
     </section>
   )
 }

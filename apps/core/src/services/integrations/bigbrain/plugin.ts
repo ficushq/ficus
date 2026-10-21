@@ -36,6 +36,10 @@ const plugin: IntegrationPluginV1<
     connectionMode: 'local',
     // Ficus Cloud hosts managed shared vaults; elsewhere a local binding on the Core host.
     resolveConnectionMode: () => (isPlatformManaged() ? 'managed' : 'local'),
+    resolveDescription: () =>
+      isPlatformManaged()
+        ? 'Shared BigBrain vaults on this Ficus server. Attach a vault to a squad so its agents can read it.'
+        : 'Connect BigBrain on the Core host in one click: Ficus finds BigBrain and its vault.',
     assignable: true,
     requiredCapabilities: ['agent_tools'],
   },

@@ -188,8 +188,12 @@ export interface ManagedBigbrainVault {
   pendingAction: 'create' | 'rename' | 'read-revoke' | 'read-reconnect' | 'delete' | null
   /** Whether the most recent server backup included this vault. */
   backup: 'unknown' | 'included' | 'excluded'
-  /** Squads that lose read access if this vault is deleted. */
+  /** Squads attached to this vault (they lose read access if it is deleted). */
   assignedSquads: { id: string; name: string }[]
+  /** Ficus's own read connection (null until imported): whether Ficus reads with it right now. */
+  readConnection: { enabled: boolean; lastErrorCode: string | null; disabledByPerson: boolean } | null
+  /** Safe code of the last failed read-credential synchronization (Ficus retries on its own). */
+  readSyncError: string | null
   updatedAt: string
 }
 /** SECRET: a single-use owner device link. Keep in component state only; never cache or log. */
@@ -201,6 +205,11 @@ const MANAGED_VAULTS = '/integrations/providers/bigbrain/shared-vaults'
 const vaultPath = (vaultId: string) => `${MANAGED_VAULTS}/${encodeURIComponent(vaultId)}`
 export const listManagedBigbrainVaults = (fetcher: ApiFetcher = apiFetch) =>
   fetcher<{ vaults: ManagedBigbrainVault[] }>(MANAGED_VAULTS).then((value) => value.vaults)
+/** Squads the caller may attach vaults to (BigBrain manager with that squad's integrations:write). */
+export const listManagedBigbrainAttachableSquads = (fetcher: ApiFetcher = apiFetch) =>
+  fetcher<{ squads: { id: string; name: string }[] }>(`${MANAGED_VAULTS}/attachable-squads`).then(
+    (value) => value.squads
+  )
 export const createManagedBigbrainVault = (
   input: { requestId: string; displayName: string },
   fetcher: ApiFetcher = apiFetch

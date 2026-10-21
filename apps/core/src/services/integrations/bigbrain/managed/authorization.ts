@@ -9,9 +9,9 @@
  * vault's upstream `ficus` owner); squad attach/detach additionally requires that squad's
  * `integrations:write`.
  */
-import { eq } from 'drizzle-orm'
-import { db, users } from '../../../../db'
-import { hasUserPermissionWithExecutor, type Identity } from '../../../rbac/permissions'
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm'
+import { db, squads, users } from '../../../../db'
+import { getAccessibleSquadIds, hasUserPermissionWithExecutor, type Identity } from '../../../rbac/permissions'
 
 export type ManagedVaultAuthorizationCode =
   | 'human_required'
@@ -64,6 +64,27 @@ export async function requireManagedVaultSquadManager(
   if (!(await hasUserPermissionWithExecutor(executor, userId, 'integrations:write', squadId)))
     throw new ManagedVaultAuthorizationError('squad_permission_required')
   return userId
+}
+
+/** Squads (not archived) where this BigBrain manager also holds `integrations:write`: exactly the
+ * squads `requireManagedVaultSquadManager` would allow an attach or detach for. Offering is not
+ * authorizing: every attach/detach still goes through the squad assignment route and its checks. */
+export async function managedVaultAttachableSquads(
+  identity: Identity,
+  userId: string,
+  executor: Executor = db
+): Promise<{ id: string; name: string }[]> {
+  const accessible = await getAccessibleSquadIds(identity, executor)
+  if (accessible !== 'all' && accessible.length === 0) return []
+  const candidates = await executor
+    .select({ id: squads.id, name: squads.name })
+    .from(squads)
+    .where(and(isNull(squads.archivedAt), accessible === 'all' ? undefined : inArray(squads.id, accessible)))
+    .orderBy(asc(squads.name))
+  const writable: { id: string; name: string }[] = []
+  for (const squad of candidates)
+    if (await hasUserPermissionWithExecutor(executor, userId, 'integrations:write', squad.id)) writable.push(squad)
+  return writable
 }
 
 /** Whether this identity may enumerate the whole managed pool (names, owner handles, state). Ordinary

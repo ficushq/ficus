@@ -569,6 +569,36 @@ export const managedVaultStore = {
     throw new ManagedVaultStoreError(current ? 'generation_conflict' : 'not_found')
   },
 
+  /** A failed read-credential synchronization: its safe code and when to try again. Not a
+   * lifecycle change, so `updatedAt` is left alone. */
+  async recordReadSyncFailure(vaultId: string, code: string, nextAt: Date): Promise<void> {
+    await db
+      .update(managedBigbrainVaults)
+      .set({
+        readSyncErrorCode: code.slice(0, 64),
+        readSyncAttempts: sql`${managedBigbrainVaults.readSyncAttempts} + 1`,
+        readSyncNextAt: nextAt,
+      })
+      .where(eq(managedBigbrainVaults.id, vaultId))
+  },
+
+  /** The read credential synchronized (or no longer applies): clear any failure and backoff. */
+  async clearReadSyncFailure(vaultId: string): Promise<void> {
+    await db
+      .update(managedBigbrainVaults)
+      .set({ readSyncErrorCode: null, readSyncAttempts: 0, readSyncNextAt: null })
+      .where(
+        and(
+          eq(managedBigbrainVaults.id, vaultId),
+          or(
+            isNotNull(managedBigbrainVaults.readSyncErrorCode),
+            ne(managedBigbrainVaults.readSyncAttempts, 0),
+            isNotNull(managedBigbrainVaults.readSyncNextAt)
+          )
+        )
+      )
+  },
+
   /** Forget imported material (revocation, deletion, restore): reads stop resolving at once. */
   async clearReadMaterial(vaultId: string): Promise<void> {
     if (!uuid.safeParse(vaultId).success) return

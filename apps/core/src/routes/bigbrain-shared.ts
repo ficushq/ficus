@@ -36,6 +36,10 @@ export function createBigbrainSharedRouter(service: ManagedVaultRouteService): H
     new Hono()
       .get('/', (c) => handle(c, async (identity) => ({ vaults: await service.list(identity) })))
       .post('/', (c) => handle(c, async (identity) => service.create(identity, await body(c)), 201))
+      // Squads the caller may attach vaults to (before `/:vaultId`, which would match it).
+      .get('/attachable-squads', (c) =>
+        handle(c, async (identity) => ({ squads: await service.attachableSquads(identity) }))
+      )
       .get('/:vaultId', (c) => handle(c, (identity) => service.get(identity, c.req.param('vaultId'))))
       .patch('/:vaultId', (c) =>
         handle(c, async (identity) => service.rename(identity, c.req.param('vaultId'), await body(c)))
