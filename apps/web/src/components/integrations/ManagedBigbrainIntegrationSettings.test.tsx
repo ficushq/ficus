@@ -99,6 +99,12 @@ async function act(run: () => void) {
     await settle()
   })
 }
+/** The owner device link lives in each row's collapsed Advanced section. */
+async function openAdvanced(name: string) {
+  const toggle = button('Advanced', row(name))
+  if (toggle) await act(() => fireEvent.click(toggle))
+  return toggle
+}
 const mutations = () => requests.filter((r) => r.method !== 'GET')
 
 describe('ManagedBigbrainIntegrationSettings', () => {
@@ -109,21 +115,42 @@ describe('ManagedBigbrainIntegrationSettings', () => {
     expect(row('Research').textContent).toContain('Ficus can read')
     expect(row('Design').textContent).toContain('Failed')
     expect(row('Design').textContent).toContain('storage_unavailable')
-    // Owner device links only where the vault can issue them; retry only where it applies.
+    // Owner device links only where the vault can issue them, and only inside Advanced; retry only
+    // where it applies. Members is the primary action.
+    expect(button('Connect owner device', row('Research'))).toBeUndefined()
+    expect(button('Members', row('Research')).className).toContain('ficus-button-primary')
+    expect(await openAdvanced('Research')).toBeTruthy()
     expect(button('Connect owner device', row('Research'))).toBeTruthy()
-    expect(button('Connect owner device', row('Design'))).toBeUndefined()
+    expect(button('Advanced', row('Design'))).toBeUndefined()
     expect(button('Retry', row('Design'))).toBeTruthy()
     expect(button('Retry', row('Research'))).toBeUndefined()
   })
 
-  test('each row names the vault’s owner in BigBrain and who may connect as it, before any click', async () => {
+  test('each row names the vault’s owner in BigBrain and points people to member invites', async () => {
     await render()
-    expect(row('Research').textContent).toContain(
-      'Owner in BigBrain: ficus. People who manage BigBrain here can connect a device as this owner.'
-    )
-    expect(row('Design').textContent).toContain('Owner in BigBrain: ada. Owner device links are no longer available')
-    for (const name of ['Research', 'Design'])
-      expect(row(name).textContent).toContain('Members invited here write under their own names.')
+    for (const [name, handle] of [
+      ['Research', 'ficus'],
+      ['Design', 'ada'],
+    ])
+      expect(row(name).textContent).toContain(
+        `Owner in BigBrain: ${handle}. Invite people as members so they write under their own names.`
+      )
+    expect(row('Design').textContent).toContain('Owner device links are no longer available')
+  })
+
+  test('the Advanced section warns about full owner access and the shared identity before any link', async () => {
+    await render()
+    expect(row('Research').textContent).not.toContain('full owner access')
+    await openAdvanced('Research')
+    const note = row('Research').querySelector('[role=note]')!.textContent!
+    expect(note).toContain('full owner access')
+    expect(note).toContain('manage members, moderate')
+    expect(note).toContain('read and write everything')
+    expect(note).toContain('Everything written from it appears as ficus')
+    expect(note).toContain('invite them as a member instead')
+    expect(mutations()).toHaveLength(0)
+    await act(() => fireEvent.click(button('Hide advanced', row('Research'))))
+    expect(button('Connect owner device', row('Research'))).toBeUndefined()
   })
 
   test('the card never treats the viewer as a vault owner', async () => {
@@ -145,9 +172,10 @@ describe('ManagedBigbrainIntegrationSettings', () => {
       pending('Unpublished', { origin: null }),
       pending('Degraded', { state: 'degraded' }),
     ])
+    await openAdvanced('Research')
     expect(button('Connect owner device', row('Research'))).toBeTruthy()
     for (const name of ['Settingup', 'Renaming', 'Unpublished', 'Degraded'])
-      expect(button('Connect owner device', row(name))).toBeUndefined()
+      expect(button('Advanced', row(name))).toBeUndefined()
   })
 
   test('a failure in one vault row stays in that row and sends that vault’s own generation', async () => {
@@ -187,7 +215,9 @@ describe('ManagedBigbrainIntegrationSettings', () => {
   test('the create form says the new vault is owned by ficus in BigBrain', async () => {
     await render()
     const form = container.querySelector('form')!
-    expect(form.textContent).toContain("In BigBrain, the vault's owner is ficus.")
+    expect(form.textContent).toContain(
+      "In BigBrain, the vault's owner is ficus. Once it is ready, invite people as members."
+    )
     expect(form.textContent).not.toContain('handle')
     await act(() => fireEvent.input(form.querySelector('input')!, { target: { value: 'Archive' } }))
     expect(button('Create vault').disabled).toBe(false)
@@ -230,6 +260,7 @@ describe('ManagedBigbrainIntegrationSettings', () => {
     await render()
     expect(row('Research').textContent).not.toContain('no longer available')
     expect(row('Design').textContent).toContain('Owner device links are no longer available for this vault')
+    expect(button('Advanced', row('Design'))).toBeUndefined()
     expect(button('Connect owner device', row('Design'))).toBeUndefined()
   })
 
@@ -241,7 +272,7 @@ describe('ManagedBigbrainIntegrationSettings', () => {
 
   test('without write permission there are no actions, owner device links included', async () => {
     await render(false)
-    for (const label of ['Rename', 'Delete', 'Connect owner device', 'Revoke Ficus read access', 'Members'])
+    for (const label of ['Rename', 'Delete', 'Advanced', 'Connect owner device', 'Revoke Ficus read access', 'Members'])
       expect(button(label, row('Research'))).toBeUndefined()
     expect(container.querySelector('form')).toBeNull()
   })
@@ -252,6 +283,7 @@ describe('ManagedBigbrainIntegrationSettings', () => {
       method === 'GET'
         ? Response.json({ vaults: [research, design] })
         : Response.json({ inviteUrl: INVITE_SECRET, expiresAt: new Date(Date.now() + 3_600_000).toISOString() })
+    await openAdvanced('Research')
     await act(() => fireEvent.click(button('Connect owner device', row('Research'))))
     expect(mutations()).toHaveLength(0)
     await act(() => fireEvent.click(button('Create device link', document.body)))

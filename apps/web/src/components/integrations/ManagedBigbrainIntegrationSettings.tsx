@@ -73,10 +73,10 @@ export function ManagedBigbrainIntegrationSettings({ canWrite }: { canWrite: boo
     <section>
       <p className="mt-1 text-xs text-muted">
         Shared vaults run on this Ficus server and belong to it, not to one person. In BigBrain each new vault&apos;s
-        owner is <span className="font-mono">ficus</span>: people who manage BigBrain here connect devices as a
-        vault&apos;s owner and invite members, who write from the BigBrain app under their own names. Ficus agents in
-        attached squads can only read. Each vault has its own storage, identity and credentials, isolated from the other
-        vaults. Ficus itself can access every shared vault on this server.
+        owner is <span className="font-mono">ficus</span>. People who manage BigBrain here invite members, who write
+        from the BigBrain app under their own names. Ficus agents in attached squads can only read. Each vault has its
+        own storage, identity and credentials, isolated from the other vaults. Ficus itself can access every shared
+        vault on this server.
       </p>
       <div className="mt-4">
         <LoadingContent
@@ -120,8 +120,8 @@ export function ManagedBigbrainIntegrationSettings({ canWrite }: { canWrite: boo
         >
           <h4 className="text-sm font-medium text-primary">New shared vault</h4>
           <p className="text-xs text-muted">
-            In BigBrain, the vault&apos;s owner is <span className="font-mono">ficus</span>. People who manage BigBrain
-            here can connect devices as that owner.
+            In BigBrain, the vault&apos;s owner is <span className="font-mono">ficus</span>. Once it is ready, invite
+            people as members.
           </p>
           <label className="flex flex-col gap-1 text-xs font-medium text-primary">
             Vault name
@@ -167,6 +167,7 @@ function VaultRow({
   const [confirmName, setConfirmName] = useState<string | null>(null)
   const [inviteOpen, setInviteOpen] = useState(false)
   const [membersOpen, setMembersOpen] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const fence = () => ({ requestId: crypto.randomUUID(), expectedGeneration: vault.desiredGeneration })
   // Each row owns its mutations: a slow response for one vault never touches another row.
   const operation = useMutation({
@@ -204,11 +205,10 @@ function VaultRow({
           may connect as it, and where other members come from. */}
       {vault.state !== 'deleted' && (
         <p className="mt-1 text-xs text-muted">
-          Owner in BigBrain: <span className="font-mono">{vault.ownerHandle}</span>.{' '}
-          {vault.ownerLinksAvailable
-            ? 'People who manage BigBrain here can connect a device as this owner.'
-            : 'Owner device links are no longer available for this vault; existing owner devices keep working.'}{' '}
-          Members invited here write under their own names.
+          Owner in BigBrain: <span className="font-mono">{vault.ownerHandle}</span>. Invite people as members so they
+          write under their own names.
+          {!vault.ownerLinksAvailable &&
+            ' Owner device links are no longer available for this vault; existing owner devices keep working.'}
         </p>
       )}
       {vault.backup === 'excluded' && vault.state !== 'deleted' && (
@@ -218,25 +218,12 @@ function VaultRow({
       )}
       {canWrite && vault.state !== 'deleted' && (
         <div className="mt-2 flex flex-wrap gap-2">
-          {/* Only a vault that is fully set up, published at its origin and not mid-change can
-              redeem a device link; anything else would hand out a link that cannot work. */}
-          {vault.ownerLinksAvailable &&
-            vault.state === 'ready' &&
-            vault.pendingAction === null &&
-            vault.origin !== null && (
-              <button
-                type="button"
-                className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5"
-                onClick={() => setInviteOpen(true)}
-              >
-                Connect owner device
-              </button>
-            )}
+          {/* Members (and inviting them) is the primary way people get into a vault. */}
           {(vault.state === 'ready' || vault.state === 'degraded') && (
             <button
               type="button"
               aria-expanded={membersOpen}
-              className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5"
+              className="ficus-button ficus-button-primary rounded-md px-3 py-1.5"
               onClick={() => setMembersOpen((open) => !open)}
             >
               {membersOpen ? 'Hide members' : 'Members'}
@@ -390,6 +377,46 @@ function VaultRow({
       {canWrite && membersOpen && (vault.state === 'ready' || vault.state === 'degraded') && (
         <ManagedBigbrainMembers vault={vault} onVaultChanged={onChanged} />
       )}
+      {/* The owner device link is an advanced, collapsed option: it grants full owner access under
+          the shared `ficus` identity. Only a vault that is fully set up, published at its origin
+          and not mid-change can redeem one. */}
+      {canWrite &&
+        vault.ownerLinksAvailable &&
+        vault.state === 'ready' &&
+        vault.pendingAction === null &&
+        vault.origin !== null && (
+          <div className="mt-2">
+            <button
+              type="button"
+              aria-expanded={advancedOpen}
+              className="ficus-button ficus-button-ghost rounded-md px-2 py-1 text-xs"
+              onClick={() => setAdvancedOpen((open) => !open)}
+            >
+              {advancedOpen ? 'Hide advanced' : 'Advanced'}
+            </button>
+            {advancedOpen && (
+              <div
+                role="note"
+                className="mt-2 space-y-2 rounded-md border border-status-attention-500/50 bg-status-attention-500/10 p-3 text-xs"
+              >
+                <p className="font-medium text-primary">Connect a device as the vault owner</p>
+                <p className="text-secondary">
+                  This connects a BigBrain app with full owner access: it can manage members, moderate anyone&apos;s
+                  contributions, and read and write everything. Everything written from it appears as{' '}
+                  <span className="font-mono">{vault.ownerHandle}</span>, not as a person. To give someone access,
+                  invite them as a member instead.
+                </p>
+                <button
+                  type="button"
+                  className="ficus-button ficus-button-secondary rounded-md px-3 py-1.5 text-sm"
+                  onClick={() => setInviteOpen(true)}
+                >
+                  Connect owner device
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       {feedback && (
         <p
           role={feedback.kind === 'error' ? 'alert' : 'status'}

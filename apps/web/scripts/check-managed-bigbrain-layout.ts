@@ -329,6 +329,9 @@ try {
       // Owner device link dialog with a synthetic link.
       await mockApi(page, scenarios.one!)
       await open(page, width, appearance)
+      await row('Research notes').getByRole('button', { name: 'Advanced' }).click()
+      await row('Research notes').getByRole('note').waitFor()
+      await capture(page, 'owner-advanced-open', width, appearance)
       await row('Research notes').getByRole('button', { name: 'Connect owner device' }).click()
       await page.getByRole('dialog').waitFor()
       await capture(page, 'owner-link-before', width, appearance)

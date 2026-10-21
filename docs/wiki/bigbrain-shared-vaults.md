@@ -154,12 +154,16 @@ owner device links are no longer available; its existing owner devices keep work
 
 1. **Create.** Settings → Integrations → BigBrain → **New shared vault**. Choose a vault name; the
    owner in BigBrain is always `ficus`. The vault shows **Setting up**, then **Ready**.
-2. **Connect an owner device.** On a ready vault, a person with `integrations:write:bigbrain`
+2. **Invite members.** On a ready vault, **Members** → **Invite member** gives each person their
+   own name in the vault (see [Members](#members)). This is how people normally get access.
+   **Connect an owner device (advanced).** Each ready vault also has a collapsed **Advanced**
+   section. It warns that an owner device has full owner access (it manages members, moderates
+   anyone's contributions, and reads and writes everything) and that everything written from it
+   appears as `ficus`, not as a person. There, a person with `integrations:write:bigbrain`
    chooses **Connect owner device**, then **Create device link**. The link is single-use and
-   expires after an hour. It grants full owner access (see
-   [The owner in BigBrain](#the-owner-in-bigbrain)), so create it only right before pasting it
-   into the BigBrain app on the device to connect. To give people their own name in the vault,
-   invite them as members instead (see [Members](#members)).
+   expires after an hour (see [The owner in BigBrain](#the-owner-in-bigbrain)), so create it only
+   right before pasting it into the BigBrain app on the device to connect. Use it for moderation
+   and recovery, not to give people access.
 3. **Ficus read access.** Each ready vault gets one read-only Ficus credential. It is an upstream
    agent member with exactly `read`, and it does not follow any member. It is stored encrypted in
    Ficus and never shown. **Revoke Ficus read access** disables the vault's connection in Ficus
@@ -280,8 +284,9 @@ name and owner from that time, including vaults deleted after the backup was tak
 Core still remembers a later delete or rename, it re-applies it once the server is back. A
 restore always rotates every vault credential, revokes Ficus read access and deletes pending
 device links and member invites. Owner devices are connected again. Members keep their names
-and what they wrote, but their devices are disconnected too, and Ficus cannot reconnect an
-existing member's devices: invite them again, as new members with new handles. A person must reconnect Ficus read access;
+and what they wrote, but their devices are disconnected too: invite them again. Each comes back
+as a new member with a new handle; Ficus does not offer links that reconnect an existing member.
+A person must reconnect Ficus read access;
 the vault's squad attachments return when it does.
 
 ## Operations
