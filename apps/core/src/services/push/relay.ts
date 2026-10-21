@@ -3,12 +3,8 @@ import { enrollManagedCloudPro } from './cloud-pro'
 import { getSecretStore } from '../secrets'
 import { createHash, randomUUID } from 'node:crypto'
 import { createLogger } from '../../lib/infra/logger'
-import {
-  PUSH_RELAY_BASE_URL,
-  relayInstanceTokenPattern,
-  relayRoutingSchema,
-  type RelayRouting,
-} from '@ficus/shared/push-relay'
+import { PUSH_RELAY_BASE_URL, relayInstanceTokenPattern } from '@ficus/shared/push-relay'
+import { sanitizeRelayRouting } from './routing'
 
 const log = createLogger('push-relay')
 
@@ -101,27 +97,7 @@ export async function sendRelayAlert(
 ) {
   const config = deps.config === undefined ? pushRelayConfig() : deps.config
   if (!config) return { accepted: false, reason: 'not_configured' }
-  const allowed: RelayRouting = {}
-  for (const key of [
-    'squadId',
-    'agentId',
-    'workStreamId',
-    'waitId',
-    'questionId',
-    'messageId',
-    'actionId',
-    'eventType',
-    'workStreamNumber',
-    'preview',
-    'collapseKey',
-    'threadKey',
-    'interruptionLevel',
-  ] as const) {
-    if (routing[key] !== undefined) {
-      const candidate = relayRoutingSchema.safeParse({ [key]: routing[key] })
-      if (candidate.success) Object.assign(allowed, candidate.data)
-    }
-  }
+  const allowed = sanitizeRelayRouting(routing)
   try {
     const response = await (deps.fetch ?? fetch)(`${config.baseUrl}/api/push-relay/send`, {
       method: 'POST',
