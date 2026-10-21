@@ -528,6 +528,7 @@ def handler(budget, tokens, api_key):
                         if payload.get("stream"):
                             for line in response.iter_lines():
                                 terminal_failure = None
+                                terminal_success = False
                                 if (
                                     line.startswith(b"data: ")
                                     and line != b"data: [DONE]"
@@ -540,6 +541,12 @@ def handler(budget, tokens, api_key):
                                     ) or usage
                                     if budget.model == SOL_MODEL:
                                         terminal_failure = stream_failure(event)
+                                        terminal_success = bool(usage) and event.get(
+                                            "type"
+                                        ) in {
+                                            "response.completed",
+                                            "response.incomplete",
+                                        }
                                         if terminal_failure:
                                             budget.note(
                                                 identifier,
@@ -550,7 +557,11 @@ def handler(budget, tokens, api_key):
                                     try:
                                         self.wfile.write(
                                             line
-                                            + (b"\n\n" if terminal_failure else b"\n")
+                                            + (
+                                                b"\n\n"
+                                                if terminal_failure or terminal_success
+                                                else b"\n"
+                                            )
                                         )
                                         self.wfile.flush()
                                     except OSError:
@@ -560,9 +571,11 @@ def handler(budget, tokens, api_key):
                                         budget.note(
                                             identifier, failure="client_disconnected"
                                         )
-                                if terminal_failure:
-                                    # Forward the complete SSE event, then close the failed
-                                    # response. Without a usage receipt its hold stays intact.
+                                if terminal_failure or terminal_success:
+                                    # The SDK can close as soon as it receives completion.
+                                    # Send a complete terminal event and stop here instead
+                                    # of writing trailing SSE lines to a closed client.
+                                    # Failed responses without receipts retain their hold.
                                     break
                         else:
                             data = response.json()

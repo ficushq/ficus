@@ -77,3 +77,19 @@ tasks, grading controls, and model settings. No task-specific steering is added.
 The phase retains $5.594207 spent and the original $30 cap ($24.405793 remaining).
 These are recovery attempts; do not describe the eventual study as four
 uninterrupted first attempts. Original manifests and logs remain intact.
+
+Recovery 1 was also interrupted before grading or the candidate condition. Its
+first stop was a `client_disconnected` event with HTTP 200 and a usage receipt;
+the proxy was still forwarding after terminal completion. The original wire
+trace is unavailable, so closing after completion is a plausible cause, not a
+proven timing reconstruction. The proxy now writes a complete terminal SSE event
+and stops reading at completed/incomplete Responses events, just as it already
+did for terminal failures. Pre-terminal disconnects still stop the trial, and
+unknown usage holds remain intact. The terminal regression fails against the
+previous implementation and all 62 offline tests pass after the change.
+
+Recovery 1 cost $0.795636 (49 receipted calls). Recovery 2 is explicitly frozen
+with unchanged prompts/tasks/runtimes, fresh clients and environments, and the
+same caps. Its starting phase spend is $6.389843, leaving $23.610157. Both prior
+interrupted batches remain in the reported total. No official outcome is
+available from either, and neither is counted as a model acceptance failure.

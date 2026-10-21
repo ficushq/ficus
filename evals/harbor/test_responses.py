@@ -120,13 +120,13 @@ class ResponsesTests(unittest.TestCase):
                         }
                     },
                 }
-                response.iter_lines = lambda kind=kind, event=event: iter(
-                    [
-                        b"event: " + kind.encode(),
-                        b"data: " + json.dumps(event).encode(),
-                        b"",
-                    ]
-                )
+
+                def events(kind=kind, event=event):
+                    yield b"event: " + kind.encode()
+                    yield b"data: " + json.dumps(event).encode()
+                    raise AssertionError("Do not read/write after a terminal receipt")
+
+                response.iter_lines = events
                 with patch("budget_proxy.requests.post", return_value=response) as post:
                     request.do_POST()
                 self.assertEqual(
