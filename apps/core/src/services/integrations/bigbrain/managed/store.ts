@@ -334,6 +334,17 @@ export const managedVaultStore = {
       .orderBy(managedBigbrainVaults.createdAt, managedBigbrainVaults.id)
   },
 
+  /** Read connections of live (non-tombstoned) vaults: the only managed connections Ficus offers,
+   * lists or shows as attached. A deleted vault's connection (and its squad attachments) is kept
+   * for a restore, but stays out of every list until its vault is live again. */
+  async liveConnectionIds(): Promise<Set<string>> {
+    const rows = await db
+      .select({ connectionId: managedBigbrainVaults.connectionId })
+      .from(managedBigbrainVaults)
+      .where(and(ne(managedBigbrainVaults.state, 'deleted'), isNotNull(managedBigbrainVaults.connectionId)))
+    return new Set(rows.flatMap((row) => (row.connectionId ? [row.connectionId] : [])))
+  },
+
   /** Every row the reconciler may need to sweep, including tombstones (a restored host may still
    * run a vault Core deleted after the backup). */
   all(): Promise<ManagedVault[]> {
