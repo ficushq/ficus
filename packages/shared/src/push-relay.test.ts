@@ -30,6 +30,24 @@ describe('relay routing presentation keys', () => {
     expect(rejects({ ...routing, preview: { ...routing.preview, extra: 1 } })).toBe(true)
   })
 
+  test('actionId is the Action Center id, a composite string, not a UUID', () => {
+    for (const actionId of [
+      'agent-question:724713e4-4324-4336-a761-5ec650ae8b5e',
+      'workstream-blocked:9ba6066b-156c-49ff-a5af-488528e1ba5a:2f1c7c4e-8a7b-4d3e-9f1a-0c2b3d4e5f60',
+      'workstream-delivery:9ba6066b-156c-49ff-a5af-488528e1ba5a:merge',
+      'assistant-needs-input:6f3b8a1e-1c2d-4e5f-8a9b-0c1d2e3f4a5b',
+    ])
+      expect(relayRoutingSchema.parse({ actionId })).toEqual({ actionId })
+  })
+
+  test('actionId stays an identifier: bounded and free of content or markup', () => {
+    expect(rejects({ actionId: '' })).toBe(true)
+    expect(rejects({ actionId: 'a'.repeat(201) })).toBe(true)
+    expect(rejects({ actionId: 'agent-question: please approve the refund' })).toBe(true)
+    expect(rejects({ actionId: 'https://evil.example/x' })).toBe(true)
+    expect(rejects({ actionId: 42 })).toBe(true)
+  })
+
   test('pushAlertText returns the preview subtitle only when a preview is present', () => {
     expect(
       pushAlertText({ eventType: 'done', workStreamNumber: 197, preview: { title: 'T', body: 'B', subtitle: 'S' } })
