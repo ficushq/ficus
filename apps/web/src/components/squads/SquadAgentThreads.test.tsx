@@ -12,7 +12,8 @@ import type { Window } from 'happy-dom'
 import { acquireDomHarness } from '../../test/domHarness'
 import { queryKeys } from '../../queryKeys'
 import { SquadAgentThreadsApiProvider } from './squadAgentThreadsApi'
-import type { Agent } from '@ficus/shared'
+import { groupActiveWorkStreamsByAgent } from './agentWorkStreams'
+import type { Agent, WorkStream } from '@ficus/shared'
 
 // Seeds the initial URL search params for the next mount — lets tests simulate a
 // page load / refresh at a given URL (e.g. ?newConsultant=1). Reset in afterEach.
@@ -658,7 +659,8 @@ describe('SquadAgentThreads recent consultant chats', () => {
     ])
     expect(html).toContain('Check enabled schedules')
     expect(html).toContain('Working · via Assistant')
-    expect(html.match(/via Assistant/g)).toHaveLength(2) // the hint and the row's title, for k1 only
+    // The hint, the row's title and its accessible label, for k1 only.
+    expect(html.match(/via Assistant/g)).toHaveLength(3)
   })
 
   test('remembers, in this browser, when Recent chats is kept closed', async () => {
@@ -2065,4 +2067,136 @@ test('squad composer expansion includes the selected agent identity and view tab
     client.clear()
     await dom.cleanup()
   }
+})
+
+describe('SquadAgentThreads assigned work stream numbers', () => {
+  function workStream(overrides: Partial<WorkStream>): WorkStream {
+    return {
+      id: 'ws-uuid',
+      squadId: 'squad-1',
+      title: 'Work',
+      status: 'active',
+      assigneeAgentId: null,
+      agentIds: null,
+      updatedAt: now,
+      ...overrides,
+    } as WorkStream
+  }
+
+  const rosterAgents = [
+    agent({ id: 'm1', agentTypeId: 'manager', metadata: { name: 'Pearl' } }),
+    agent({ id: 'eng-1', agentTypeId: 'engineer', status: 'active', metadata: { name: 'Build UI' } }),
+    agent({ id: 'eng-2', agentTypeId: 'engineer', status: 'idle', metadata: { name: 'Fix API' } }),
+    agent({ id: 'ops-1', agentTypeId: 'sysops', status: 'idle', metadata: { name: 'Box watch' } }),
+  ]
+  const streams = [
+    workStream({ id: 'ws-742', number: 742, title: 'Chats numbers', assigneeAgentId: 'eng-1' }),
+    // eng-2 is bound to three open streams; it is the assignee of only the active #750.
+    workStream({
+      id: 'ws-748',
+      number: 748,
+      title: 'Older review',
+      agentIds: ['eng-2'],
+      updatedAt: new Date('2025-12-01'),
+    }),
+    workStream({ id: 'ws-749', number: 749, title: 'Queued follow-up', status: 'queued', assigneeAgentId: 'eng-2' }),
+    workStream({
+      id: 'ws-750',
+      number: 750,
+      title: 'API fix',
+      assigneeAgentId: 'eng-2',
+      updatedAt: new Date('2025-11-01'),
+    }),
+    workStream({ id: 'ws-700', number: 700, title: 'Shipped', status: 'done', assigneeAgentId: 'ops-1' }),
+  ]
+
+  function seededClient() {
+    const client = makeQueryClient()
+    client.setQueryData(queryKeys.squads.workStreams('squad-1'), streams)
+    client.setQueryData(queryKeys.squads.list(), [{ id: 'squad-1', name: 'Ficus', createdAt: now }])
+    return client
+  }
+
+  function row(container: ParentNode, agentId: string) {
+    return Array.from(container.querySelectorAll<HTMLElement>('.squad-chat-agent')).find((el) =>
+      el.querySelector('button')?.title.endsWith(` · ${agentId}`)
+    )!
+  }
+
+  test('orders streams with the actively assigned one first, then others, then queued', () => {
+    const byAgent = groupActiveWorkStreamsByAgent(streams, rosterAgents)
+    expect(byAgent.get('eng-1')?.map((ws) => ws.number)).toEqual([742])
+    expect(byAgent.get('eng-2')?.map((ws) => ws.number)).toEqual([750, 748, 749])
+    // Done streams do not count; agentIds may carry ID prefixes.
+    expect(byAgent.has('ops-1')).toBe(false)
+    expect(
+      groupActiveWorkStreamsByAgent([workStream({ number: 9, agentIds: ['ops'] })], rosterAgents).get('ops-1')
+    ).toHaveLength(1)
+  })
+
+  test('shows the number left of the status, links to the stream and lists the rest as +N', async () => {
+    const dom = await installDom()
+    try {
+      const { root } = dom.createRoot()
+      await dom.act(async () => renderThreadsDom(root, seededClient(), rosterAgents))
+      const doc = dom.window.document
+
+      const single = row(doc, 'eng-1')
+      const link = single.querySelector<HTMLAnchorElement>('[data-testid="agent-row-work-stream"]')!
+      expect(link.textContent).toBe('#742')
+      expect(link.getAttribute('href')).toBe('/squads/ficus/work?ws=742')
+      expect(link.getAttribute('aria-label')).toBe('Open work stream #742 · Chats numbers')
+      expect(link.getAttribute('title')).toBe('Open work stream #742 · Chats numbers')
+      // `#742 · Working` on the left, time on the right.
+      const detailLine = link.parentElement!
+      expect(detailLine.textContent).toBe('#742·Working')
+      expect(detailLine.nextElementSibling?.textContent).toMatch(/ago|Just now/)
+
+      const multiple = row(doc, 'eng-2').querySelector<HTMLAnchorElement>('[data-testid="agent-row-work-stream"]')!
+      expect(multiple.textContent).toBe('#750')
+      expect(multiple.getAttribute('href')).toBe('/squads/ficus/work?ws=750')
+      const more = row(doc, 'eng-2').querySelector<HTMLAnchorElement>('[data-testid="agent-row-more-work-streams"]')!
+      expect(more.textContent).toBe('+2')
+      expect(more.getAttribute('href')).toBe('/squads/ficus/work?ws=750')
+      expect(more.getAttribute('title')).toBe(multiple.getAttribute('aria-label'))
+      expect(link.parentElement!.querySelector('[data-testid="agent-row-more-work-streams"]')).toBeNull()
+      expect(multiple.getAttribute('aria-label')).toBe(
+        'Open work stream #750 · API fix. Also assigned: #748 · Older review, #749 · Queued follow-up'
+      )
+
+      // No open assigned stream: the line is unchanged.
+      const plain = row(doc, 'ops-1')
+      expect(plain.querySelector('[data-testid="agent-row-work-stream"]')).toBeNull()
+      expect(plain.textContent).not.toContain('#')
+      expect(plain.textContent).toContain('Idle')
+
+      // The row's chat button keeps a full accessible name.
+      expect(getByRole(doc.body, 'button', { name: /^Build UI, Working, / })).toBeTruthy()
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('clicking the number opens the work stream, not the agent chat', async () => {
+    const dom = await installDom()
+    try {
+      const { root } = dom.createRoot()
+      await dom.act(async () => renderThreadsDom(root, seededClient(), rosterAgents))
+      const doc = dom.window.document
+      const chatButton = () => row(doc, 'eng-1').querySelector('button')!
+      const link = row(doc, 'eng-1').querySelector<HTMLAnchorElement>('[data-testid="agent-row-work-stream"]')!
+      // The link is its own focusable target outside the row's chat button.
+      expect(chatButton().contains(link)).toBe(false)
+
+      expect(chatButton().getAttribute('aria-pressed')).toBe('false')
+      await dom.act(async () => link.click())
+      expect(chatButton().getAttribute('aria-pressed')).toBe('false')
+
+      // The rest of the row still opens the chat.
+      await dom.act(async () => chatButton().click())
+      expect(chatButton().getAttribute('aria-pressed')).toBe('true')
+    } finally {
+      await dom.cleanup()
+    }
+  })
 })

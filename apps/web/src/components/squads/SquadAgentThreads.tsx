@@ -11,7 +11,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { SQUAD_RECENT_CHAT_LIMIT } from '../../lib/recentChats'
 import { queries } from '../../queryOptions'
@@ -24,7 +24,9 @@ import {
 } from '@ficus/shared/browser-keys'
 import { useURLStringState, useURLBooleanState } from '../../hooks/useURLState'
 import { usePermissions } from '../../hooks/usePermissions'
+import { useSquadSlugs } from '../../hooks/useSquadSlugs'
 import { useSquadAgentThreadsApi } from './squadAgentThreadsApi'
+import { groupActiveWorkStreamsByAgent } from './agentWorkStreams'
 import { Chat } from '../Chat'
 import { AgentConversation, SubagentsInlinePanel } from '../AgentConversation'
 import { AgentInboxPanel } from './AgentInboxPanel'
@@ -51,7 +53,14 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
 } from '../icons'
-import { inferredConsultantOrigin, type Agent, type WorkStream } from '@ficus/shared'
+import {
+  inferredConsultantOrigin,
+  workStreamLabel,
+  workStreamRef,
+  workStreamTitle,
+  type Agent,
+  type WorkStream,
+} from '@ficus/shared'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { ChatSkeleton, LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
 import { getAgentName, getAgentPrimaryLabel, agentMatchesQuery } from '../../lib/agentDisplay'
@@ -116,6 +125,52 @@ function formatRelativeTime(date: Date | string): string {
   if (diffHour > 0) return `${diffHour} hour${diffHour === 1 ? '' : 's'} ago`
   if (diffMin > 0) return `${diffMin} minute${diffMin === 1 ? '' : 's'} ago`
   return 'Just now'
+}
+
+// Mobile links get a 1.5rem minimum touch height (index.css); the matching line height keeps the text centred.
+const workLinkClass =
+  'pointer-events-auto relative whitespace-nowrap rounded-sm max-md:leading-6 text-secondary hover:text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1'
+
+/**
+ * The work stream number (plus `+N` for further streams) opening the agent's most relevant work stream.
+ * The number never shrinks; at narrow widths `+N` gives way first, then the status.
+ */
+function AgentWorkStreamLink({ primary, others, href }: { primary: WorkStream; others: WorkStream[]; href: string }) {
+  const description = [
+    `Open work stream ${workStreamTitle(primary)}`,
+    others.length > 0 && `Also assigned: ${others.map(workStreamTitle).join(', ')}`,
+  ]
+    .filter(Boolean)
+    .join('. ')
+  return (
+    <>
+      <Link
+        to={href}
+        aria-label={description}
+        title={description}
+        data-testid="agent-row-work-stream"
+        onClick={(event) => event.stopPropagation()}
+        className={clsx(workLinkClass, 'shrink-0')}
+      >
+        {workStreamLabel(primary)}
+      </Link>
+      {others.length > 0 && (
+        // Same target for the pointer; the labelled link above already lists the others. The huge
+        // shrink weight keeps proportional shrinking from shaving sub-pixels (and an ellipsis) off the status.
+        <Link
+          to={href}
+          aria-hidden="true"
+          tabIndex={-1}
+          title={description}
+          data-testid="agent-row-more-work-streams"
+          onClick={(event) => event.stopPropagation()}
+          className={clsx(workLinkClass, 'min-w-0 shrink-[10000] truncate')}
+        >
+          +{others.length}
+        </Link>
+      )}
+    </>
+  )
 }
 
 const CHAT_SIDEBAR_MIN_WIDTH = 200
@@ -205,20 +260,12 @@ export function SquadAgentThreads({
   // Fetch work streams to check if agents have active ones
   const { data: workStreams = [] } = useQuery(queries.squads.workStreams(squadId))
 
-  // Build a set of agent IDs that have active work streams
-  const agentsWithActiveWorkStreams = useMemo(() => {
-    const activeWs = workStreams.filter((ws: WorkStream) => ws.status !== 'done' && ws.status !== 'canceled')
-    const agentIds = new Set<string>()
-    activeWs.forEach((ws: WorkStream) => {
-      if (ws.assigneeAgentId) agentIds.add(ws.assigneeAgentId)
-      ws.agentIds?.forEach((id: string) => {
-        // Find matching agent (supports prefix)
-        const matchingAgent = agents.find((a) => a.id === id || a.id.startsWith(id))
-        if (matchingAgent) agentIds.add(matchingAgent.id)
-      })
-    })
-    return agentIds
-  }, [workStreams, agents])
+  // Open work streams each agent is assigned to or bound to, most relevant first.
+  const activeWorkStreamsByAgent = useMemo(
+    () => groupActiveWorkStreamsByAgent(workStreams, agents),
+    [workStreams, agents]
+  )
+  const { slugFor } = useSquadSlugs()
 
   // Terminate agent mutation
   const terminateMutation = useMutation({
@@ -263,7 +310,7 @@ export function SquadAgentThreads({
     if (agent.status !== 'idle') {
       return { canTerminate: false, reason: 'Agent must be idle to terminate' }
     }
-    if (agentsWithActiveWorkStreams.has(agent.id)) {
+    if (activeWorkStreamsByAgent.has(agent.id)) {
       return { canTerminate: false, reason: 'Agent has active work streams' }
     }
     return { canTerminate: true }
@@ -607,35 +654,63 @@ export function SquadAgentThreads({
     // Assistant-made consultants carry a generated name and a task purpose; keep where they came from visible.
     const viaAssistant = agent.agentTypeId === 'consultant' && inferredConsultantOrigin(agent) === 'assistant'
     const statusLabel = !quietConsultant ? STATUS_LABELS[agent.status] : undefined
+    const statusText = [statusLabel, viaAssistant ? 'via Assistant' : undefined].filter(Boolean).join(' · ')
     const isConfirmingThis = confirmingTerminate === agent.id
+    const [primaryWork, ...otherWork] = activeWorkStreamsByAgent.get(agent.id) ?? []
+    const rowLabel = (compact ? [agentName] : [agentName, statusText, lastMessageTime]).filter(Boolean).join(', ')
 
+    // The select button is stretched over the whole row so the work stream link can sit
+    // inside the visible content as its own target (a link nested in a button is invalid).
     return (
       <div key={agent.id} className={clsx('squad-chat-agent group relative', isSelected && 'is-selected')}>
         <button
           type="button"
           aria-pressed={isSelected}
+          aria-label={rowLabel}
           onClick={() => handleAgentRowSelect(agent.id)}
           title={`${stableName} · ${agent.agentTypeId}${viaAssistant ? ' via Assistant' : ''} · ${agent.id}`}
+          className="ficus-button ficus-button-ghost absolute inset-0 block w-full rounded-lg text-left"
+        />
+        <div
           className={clsx(
-            'ficus-button ficus-button-ghost',
-            'block w-full rounded-lg px-2 text-left',
+            'pointer-events-none relative px-2',
             compact ? 'py-1.5 md:py-2' : 'py-2',
             mayTerminateAgent && 'pr-10'
           )}
         >
           <span className="flex items-center gap-2">
             <AgentActivityDot status={agent.status} />
-            <span className="truncate text-sm font-medium text-primary">{agentName}</span>
+            <span aria-hidden="true" className="truncate text-sm font-medium text-primary">
+              {agentName}
+            </span>
           </span>
           {!compact && (
             <span className="ml-4 mt-1 flex items-center justify-between gap-2 text-[11px] text-secondary">
-              <span className="truncate">
-                {[statusLabel, viaAssistant ? 'via Assistant' : undefined].filter(Boolean).join(' · ')}
+              <span className="flex min-w-0 items-center gap-1">
+                {primaryWork && (
+                  <AgentWorkStreamLink
+                    primary={primaryWork}
+                    others={otherWork}
+                    href={`/squads/${slugFor(squadId)}/work?ws=${encodeURIComponent(workStreamRef(primaryWork))}`}
+                  />
+                )}
+                {primaryWork && statusText && (
+                  <span aria-hidden="true" className="shrink-0">
+                    ·
+                  </span>
+                )}
+                <span aria-hidden="true" className="min-w-0 truncate">
+                  {statusText}
+                </span>
               </span>
-              {lastMessageTime && <span className="shrink-0">{lastMessageTime}</span>}
+              {lastMessageTime && (
+                <span aria-hidden="true" className="shrink-0">
+                  {lastMessageTime}
+                </span>
+              )}
             </span>
           )}
-        </button>
+        </div>
         {mayTerminateAgent && (
           <button
             type="button"
