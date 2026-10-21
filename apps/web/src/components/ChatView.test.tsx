@@ -2672,6 +2672,123 @@ describe('agent delivery popup', () => {
     )
     expect(window.document.querySelector('[aria-label="Message delivery"]')).toBeNull()
   })
+
+  describe('hover', () => {
+    async function renderDelivery() {
+      const sends = mock(() => {})
+      const changes = mock(() => {})
+      const { dom, window } = await renderChatView(
+        <ChatView
+          items={[]}
+          onSend={sends}
+          executionStatus="running"
+          deliveryMode="steer"
+          onDeliveryModeChange={changes}
+        />
+      )
+      const doc = window.document
+      const group = doc.querySelector<HTMLElement>('.chat-composer-delivery')!
+      const submit = group.querySelector<HTMLButtonElement>('button[type="submit"]')!
+      const trigger = group.querySelector<HTMLButtonElement>('button[aria-label="Message delivery"]')!
+      const composer = doc.querySelector<HTMLTextAreaElement>('textarea')!
+      const list = () => doc.querySelector<HTMLElement>('[role="listbox"][data-state="open"]')
+      const options = () => [...doc.querySelectorAll<HTMLButtonElement>('[data-state="open"] [role="option"]')]
+      const wait = (ms: number) => dom.act(() => new Promise((resolve) => setTimeout(resolve, ms)))
+      /** A pointer arriving on (`over`) or leaving (`out`) an element; React derives enter/leave from these. */
+      const pointer = (target: Element, type: 'over' | 'out', pointerType = 'mouse') =>
+        dom.act(async () => {
+          target.dispatchEvent(new window.PointerEvent(`pointer${type}`, { bubbles: true, pointerType }))
+        })
+      const click = (target: HTMLElement) => dom.act(async () => target.click())
+      return { dom, doc, sends, changes, submit, trigger, composer, list, options, wait, pointer, click }
+    }
+
+    test('hovering the chevron opens it without taking focus; leaving closes it after a short delay', async () => {
+      const { dom, doc, sends, trigger, composer, list, wait, pointer } = await renderDelivery()
+      await dom.act(async () => composer.focus())
+      await pointer(trigger, 'over')
+      expect(trigger.getAttribute('aria-expanded')).toBe('true')
+      expect(list()).not.toBeNull()
+      expect(doc.activeElement).toBe(composer)
+
+      await pointer(trigger, 'out')
+      expect(list()).not.toBeNull() // not yet: the pointer may be crossing the gap
+      await wait(200)
+      expect(trigger.getAttribute('aria-expanded')).toBe('false')
+      expect(list()).toBeNull()
+      expect(doc.activeElement).toBe(composer)
+      expect(sends).not.toHaveBeenCalled()
+    })
+
+    test('hovering the send half never opens it', async () => {
+      const { sends, changes, submit, trigger, wait, pointer } = await renderDelivery()
+      await pointer(submit, 'over')
+      await wait(200)
+      expect(trigger.getAttribute('aria-expanded')).toBe('false')
+      await pointer(submit, 'out')
+      expect(submit.textContent).toBe('Interrupt')
+      expect(sends).not.toHaveBeenCalled()
+      expect(changes).not.toHaveBeenCalled()
+    })
+
+    test('re-entering the list or the chevron cancels the close; picking a mode sets it and closes', async () => {
+      const { sends, changes, trigger, list, options, wait, pointer, click } = await renderDelivery()
+      await pointer(trigger, 'over')
+      await pointer(trigger, 'out')
+      await pointer(list()!, 'over')
+      await wait(200)
+      expect(list()).not.toBeNull()
+
+      await pointer(list()!, 'out')
+      await pointer(trigger, 'over')
+      await wait(200)
+      expect(list()).not.toBeNull()
+
+      await pointer(trigger, 'out')
+      await pointer(list()!, 'over')
+      await click(options().find((option) => option.textContent?.includes('Follow up'))!)
+      expect(changes).toHaveBeenCalledTimes(1)
+      expect(changes).toHaveBeenCalledWith('follow-up')
+      expect(sends).not.toHaveBeenCalled()
+      expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    })
+
+    test('a click on the chevron pins a hover-opened list and focuses the current mode', async () => {
+      const { doc, trigger, list, options, wait, pointer, click } = await renderDelivery()
+      await pointer(trigger, 'over')
+      await click(trigger)
+      expect(trigger.getAttribute('aria-expanded')).toBe('true')
+      expect(doc.activeElement).toBe(options()[0]!)
+      await pointer(trigger, 'out')
+      await wait(200)
+      expect(list()).not.toBeNull()
+    })
+
+    test('a click inside a hover-opened list, off the options, does not pin it', async () => {
+      const { changes, trigger, list, wait, pointer, click } = await renderDelivery()
+      await pointer(trigger, 'over')
+      await pointer(trigger, 'out')
+      await pointer(list()!, 'over')
+      await click(list()!)
+      expect(list()).not.toBeNull()
+      await pointer(list()!, 'out')
+      await wait(200)
+      expect(trigger.getAttribute('aria-expanded')).toBe('false')
+      expect(changes).not.toHaveBeenCalled()
+    })
+
+    test('touch and pen never open it on hover; a tap still does and stays open', async () => {
+      const { trigger, list, wait, pointer, click } = await renderDelivery()
+      await pointer(trigger, 'over', 'touch')
+      await pointer(trigger, 'over', 'pen')
+      expect(trigger.getAttribute('aria-expanded')).toBe('false')
+      await click(trigger)
+      expect(trigger.getAttribute('aria-expanded')).toBe('true')
+      await pointer(trigger, 'out', 'touch')
+      await wait(200)
+      expect(list()).not.toBeNull()
+    })
+  })
 })
 
 for (const embedded of [false, true]) {

@@ -13,7 +13,7 @@ import { hasAppearances, useThemeHoverPreview } from '../hooks/useThemeHoverPrev
 import { PaletteIcon } from './icons'
 import { ThemeSwatch } from './ThemeSwatch'
 import { SegmentedAppearanceControl } from './SegmentedAppearanceControl'
-import { Panel, usePopover } from './popover'
+import { Panel, useHoverOpen, usePopover } from './popover'
 
 type Circle =
   | { kind: 'builtin'; id: string; label: string; theme: WebThemeDefinition }
@@ -35,7 +35,9 @@ const EMPTY: ThemePreset[] = []
  * hovering previews the whole app on intent and always fully restores the
  * stored selection; clicking persists through the existing ThemeProvider
  * paths (setThemeId / applyPreset), so sync and device-override behavior is
- * identical to the Settings ThemeControl.
+ * identical to the Settings ThemeControl. A mouse hovering the trigger opens
+ * the flyout (leaving closes it unless a click on the trigger pinned it);
+ * touch and keyboard open it as usual.
  */
 export function ThemeQuickPicker({
   value,
@@ -50,6 +52,8 @@ export function ThemeQuickPicker({
   const hover = useThemeHoverPreview(value.preferredTheme)
   // However it closes (trigger, outside press, Escape, focus leaving), a hover preview is restored first.
   const popover = usePopover({ kind: 'dialog', onOpenChange: (open) => !open && hover.end() })
+  // Choosing a circle keeps hover mode (only the trigger pins), so the flyout still closes when the pointer leaves.
+  const hoverOpen = useHoverOpen(popover, { enabled: true, initialFocus: 'selected' })
 
   // Phase 2: the currently-active preset (own or a foreign shared one) always
   // gets a circle, even when it isn't in `presets` (the caller's own
@@ -101,7 +105,7 @@ export function ThemeQuickPicker({
         {...popover.triggerProps}
         type="button"
         title="Theme"
-        onClick={popover.toggle}
+        {...hoverOpen.triggerProps}
         className={clsx(
           'hidden md:flex items-center justify-center p-2 rounded-md',
           popover.open ? 'bg-selection text-accent-light' : 'text-muted hover:text-primary hover:bg-surface-hover'
@@ -111,11 +115,15 @@ export function ThemeQuickPicker({
       </button>
       <Panel
         {...popover.popoverProps}
+        {...hoverOpen.popoverProps}
         label="Theme"
         gap={8}
-        initialFocus={(panel) =>
-          panel.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]') ??
-          panel.querySelector<HTMLElement>('[role="radio"]')
+        initialFocus={
+          hoverOpen.hoverOpened
+            ? 'none'
+            : (panel) =>
+                panel.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]') ??
+                panel.querySelector<HTMLElement>('[role="radio"]')
         }
         className="ficus-overlay w-72 rounded-xl border border-th-border bg-surface p-3 shadow-theme-lg"
       >

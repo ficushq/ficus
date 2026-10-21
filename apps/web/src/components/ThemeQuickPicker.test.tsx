@@ -1,4 +1,4 @@
-import { afterEach, expect, spyOn, test } from 'bun:test'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import { act } from 'react'
 import { fireEvent, getAllByRole, getByRole, queryByRole } from '@testing-library/dom'
 import type { ThemePreset } from '@ficus/shared'
@@ -573,4 +573,97 @@ test('a palette-only preset circle resolves a real derived color, not an empty/u
   expect(oklch.h).toBeGreaterThan(200)
   expect(oklch.h).toBeLessThan(260)
   expect(oklch.c).toBeGreaterThan(0.05)
+})
+
+describe('hover', () => {
+  /** A pointer arriving on (`over`) or leaving (`out`) an element; React derives enter/leave from these. */
+  const pointer = (target: Element, type: 'over' | 'out', pointerType = 'mouse') =>
+    act(async () => {
+      target.dispatchEvent(new window.PointerEvent(`pointer${type}`, { bubbles: true, pointerType }))
+    })
+  const wait = (ms: number) => act(() => new Promise((resolve) => setTimeout(resolve, ms)))
+  const flyout = (container: HTMLElement) => queryByRole(container, 'dialog', { name: 'Theme' })
+
+  test('a mouse hovering the trigger opens it without taking focus; leaving closes it after a short delay', async () => {
+    const { container } = await renderPicker({ themeId: 'iris' })
+    const composer = document.body.appendChild(document.createElement('input'))
+    try {
+      await act(async () => composer.focus())
+      await pointer(trigger(container), 'over')
+      expect(trigger(container).getAttribute('aria-expanded')).toBe('true')
+      expect(flyout(container)).not.toBeNull()
+      expect(document.activeElement).toBe(composer)
+
+      await pointer(trigger(container), 'out')
+      expect(flyout(container)).not.toBeNull() // not yet: the pointer may be crossing the gap
+      await wait(200)
+      expect(trigger(container).getAttribute('aria-expanded')).toBe('false')
+      expect(flyout(container)).toBeNull()
+      expect(document.activeElement).toBe(composer)
+    } finally {
+      composer.remove()
+    }
+  })
+
+  test('re-entering the flyout or the trigger cancels the close; choosing a theme works and keeps hover mode', async () => {
+    const { container } = await renderPicker({ themeId: 'iris' })
+    await pointer(trigger(container), 'over')
+    await pointer(trigger(container), 'out')
+    await pointer(flyout(container)!, 'over')
+    await wait(200)
+    expect(flyout(container)).not.toBeNull()
+
+    await pointer(flyout(container)!, 'out')
+    await pointer(trigger(container), 'over')
+    await wait(200)
+    expect(flyout(container)).not.toBeNull()
+
+    await pointer(trigger(container), 'out')
+    await pointer(flyout(container)!, 'over')
+    await act(async () => fireEvent.click(getByRole(container, 'radio', { name: 'Ember' })))
+    expect(localStorage.getItem('ficus-theme-id')).toBe('ember')
+    expect(flyout(container)).not.toBeNull() // as when click-opened, a choice keeps the flyout open
+    await pointer(flyout(container)!, 'out')
+    await wait(200)
+    expect(flyout(container)).toBeNull()
+  })
+
+  test('a click on the trigger pins a hover-opened flyout and focuses the current theme', async () => {
+    const { container } = await renderPicker({ themeId: 'iris' })
+    await pointer(trigger(container), 'over')
+    expect(document.activeElement?.getAttribute('aria-label')).not.toBe('Iris')
+    await open(container)
+    expect(trigger(container).getAttribute('aria-expanded')).toBe('true')
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Iris')
+    await pointer(trigger(container), 'out')
+    await wait(200)
+    expect(flyout(container)).not.toBeNull()
+    await open(container)
+    expect(flyout(container)).toBeNull()
+  })
+
+  test('a click inside a hover-opened flyout, off the circles, does not pin it', async () => {
+    const { container } = await renderPicker({ themeId: 'iris' })
+    await pointer(trigger(container), 'over')
+    await pointer(trigger(container), 'out')
+    await pointer(flyout(container)!, 'over')
+    await act(async () => fireEvent.click(flyout(container)!))
+    expect(flyout(container)).not.toBeNull()
+    await pointer(flyout(container)!, 'out')
+    await wait(200)
+    expect(flyout(container)).toBeNull()
+    expect(localStorage.getItem('ficus-theme-id')).toBe('iris')
+  })
+
+  test('touch and pen never open it on hover; a tap still does and stays open', async () => {
+    const { container } = await renderPicker({ themeId: 'iris' })
+    await pointer(trigger(container), 'over', 'touch')
+    await pointer(trigger(container), 'over', 'pen')
+    expect(trigger(container).getAttribute('aria-expanded')).toBe('false')
+    await open(container)
+    expect(trigger(container).getAttribute('aria-expanded')).toBe('true')
+    await pointer(trigger(container), 'out', 'touch')
+    await wait(200)
+    expect(flyout(container)).not.toBeNull()
+  })
 })

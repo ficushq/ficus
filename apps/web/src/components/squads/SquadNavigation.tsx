@@ -50,6 +50,7 @@ export function SquadNavigation<T extends SquadTab>({
         <ActionPopup
           label="More squad tools"
           heading="Squad tools"
+          openOnHover
           className={clsx(
             'ficus-button ficus-button-ghost flex max-w-20 sm:max-w-36 items-center gap-1 rounded-lg px-2 py-2.5 text-xs focus-visible:outline-offset-[-2px] sm:text-sm',
             selectedSecondary && 'bg-selection hover:bg-selection text-accent-light hover:text-accent-light'

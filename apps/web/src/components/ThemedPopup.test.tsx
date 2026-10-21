@@ -236,3 +236,48 @@ test('the initially focused later row is scrolled into view after the popup gets
   await dom.act(async () => container.querySelector('button')!.click())
   expect(calls.findLast((call) => call.row === 'Tool 10')?.maxHeight).toMatch(/px$/)
 })
+
+for (const kind of ['selection', 'action'] as const) {
+  test(`a disabled ${kind} popup never opens on hover`, async () => {
+    dom = await acquireDomHarness({ url: 'http://localhost' })
+    const { root, container } = dom.createRoot()
+    const render = (disabled: boolean) =>
+      root.render(
+        kind === 'selection' ? (
+          <SelectionPopup
+            label="Mode"
+            className=""
+            value="one"
+            options={[{ value: 'one', label: 'One' }]}
+            onChange={() => {}}
+            disabled={disabled}
+            openOnHover
+          >
+            Mode
+          </SelectionPopup>
+        ) : (
+          <ActionPopup
+            label="Actions"
+            className=""
+            items={[{ id: 'one', label: 'One', onSelect() {} }]}
+            disabled={disabled}
+            openOnHover
+          >
+            Actions
+          </ActionPopup>
+        )
+      )
+    const hover = (type: 'over' | 'out') =>
+      dom!.act(async () => {
+        trigger.dispatchEvent(new dom!.window.PointerEvent(`pointer${type}`, { bubbles: true, pointerType: 'mouse' }))
+      })
+    await dom.act(async () => render(true))
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-expanded]')!
+    await hover('over')
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    await hover('out')
+    await dom.act(async () => render(false))
+    await hover('over')
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+  })
+}
