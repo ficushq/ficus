@@ -4,7 +4,7 @@ import type { EntityReference } from '../lib/entityReference'
 
 const loadReference = () => import('./EntityReferenceModal')
 
-/** The in-place `#123` / agent reference modal, code-split; render it inside a Suspense boundary. */
+/** The in-place work stream / agent reference modal, code-split; render it inside a Suspense boundary. */
 export const LazyEntityReferenceModal = lazy(() =>
   loadReference().then((module) => ({ default: module.EntityReferenceModal }))
 )

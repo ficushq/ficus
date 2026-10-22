@@ -137,7 +137,7 @@ const workLinkClass =
 
 /**
  * The work stream number (plus `+N` for further streams) opening the agent's most relevant work stream
- * in place, in the same modal as inline `#123` references, so the chat behind it is left untouched.
+ * in place, in the same modal as inline work stream references, so the chat behind it is left untouched.
  * Both keep a real href, so modifier and middle clicks still open the Work tab in a new tab.
  * The number never shrinks; at narrow widths `+N` gives way first, then the status.
  */
