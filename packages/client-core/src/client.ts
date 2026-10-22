@@ -18,13 +18,14 @@ import { farmChatResource } from './resources/farmChat'
 import { themePresetsResource } from './resources/themePresets'
 import { notificationConfigResource } from './resources/notificationConfig'
 import { systemResource } from './resources/system'
+import { monitorsResource } from './resources/monitors'
 
 /**
  * Assemble the full Ficus API client over a host-provided transport.
  * Web injects a cookie+CSRF transport; mobile injects a bearer-token transport.
  *
  * Resources cover the surface shared by web and mobile. Web-only modules
- * (terminal, secrets, monitors, deployments, schedules, grants, agent/squad presets,
+ * (terminal, secrets, deployments, schedules, grants, agent/squad presets,
  * etc.) remain in apps/web/src/api for now — see OQ-MIGRATE-REST in the design spec.
  */
 export function createClient(t: Transport) {
@@ -49,6 +50,7 @@ export function createClient(t: Transport) {
     farmChat: farmChatResource(t),
     themePresets: themePresetsResource(t),
     system: systemResource(t),
+    monitors: monitorsResource(t),
   }
 }
 

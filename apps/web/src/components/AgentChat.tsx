@@ -1,3 +1,4 @@
+import { AgentMonitorStatus } from './AgentMonitorStatus'
 import { AgentSlotWaitStatus } from './AgentSlotWaitStatus'
 import { useStableRef } from '../hooks/useStableRef'
 import { useDeliverySuggestion } from '../hooks/useDeliverySuggestion'
@@ -436,16 +437,19 @@ export function AgentChat({
       header={typeof header === 'function' ? header({ waitingForSandbox: conv.waitingForSandbox }) : header}
       headerStatus={
         conv.agentId && agent?.squadId && !isTerminated && !isDormant ? (
-          <AgentSlotWaitStatus
-            key={conv.agentId}
-            agentId={conv.agentId}
-            squadId={agent.squadId}
-            isIdle={
-              agent.status === 'idle' &&
-              (!conv.executionStatus || ['completed', 'stopped', 'failed'].includes(conv.executionStatus)) &&
-              !conv.items.some((item) => item.kind === 'streaming')
-            }
-          />
+          <>
+            <AgentSlotWaitStatus
+              key={conv.agentId}
+              agentId={conv.agentId}
+              squadId={agent.squadId}
+              isIdle={
+                agent.status === 'idle' &&
+                (!conv.executionStatus || ['completed', 'stopped', 'failed'].includes(conv.executionStatus)) &&
+                !conv.items.some((item) => item.kind === 'streaming')
+              }
+            />
+            <AgentMonitorStatus key={`monitors:${conv.agentId}`} agentId={conv.agentId} squadId={agent.squadId} />
+          </>
         ) : undefined
       }
       afterMessages={

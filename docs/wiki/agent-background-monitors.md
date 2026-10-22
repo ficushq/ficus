@@ -79,6 +79,8 @@ A monitor that sustainably overflows the buffer is auto-stopped once more than 5
 
 Monitor output (line batches and lifecycle status) is delivered to the agent as descriptive `Monitor "label" (id) …` messages that always interrupt the current turn (steer delivery), so the agent reacts to events as they land rather than only when it next stops. In the web UI these render as compact, tool-like rows (collapsed line batches that expand to show output, and color-coded terminal-status rows) — distinct from the inbox delivery card.
 
+While an agent has monitors in `starting`, `running` or `canceling`, its web chat shows a compact “Monitoring: label · label” row beneath the header, next to the slot hold/wait rows. Each label opens that monitor's details modal. The row needs `monitors:read` for the agent's squad, is hidden for terminated or dormant agents, hides silently on read errors, and updates live from the `monitors` event topic without polling. The same list/get/logs/cancel calls are available to other clients as `client.monitors` in `@ficus/client-core`.
+
 ## Lifecycle
 
 The worker supervisor starts a tmux session inside the monitor's own sandbox (a private agent box or the squad box). It uses the pinned tmux on Ficus's own socket (`tmux -L ficus`), whatever the box's `PATH` or devbox profile; see [Which tmux Ficus runs](deployments.md#which-tmux-ficus-runs). The launcher appends the command's output to `<work root>/.ficus/monitors/<id>/logs/current.log` and writes `exitCode` when the command ends. The supervisor keeps a live foreground stream of that log and polls the session's liveness. Output batches are delivered through the existing DB-backed steering-message path.

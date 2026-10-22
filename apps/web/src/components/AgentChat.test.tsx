@@ -292,14 +292,19 @@ afterEach(async () => {
 })
 
 describe('AgentChat', () => {
-  test('owns the slot status beneath the header for all agent chat wrappers', async () => {
+  test('owns the slot and monitor status beneath the header for all agent chat wrappers', async () => {
     const dom = await installDom()
     const mc = makeMockClient()
     const { Providers } = makeProviders(mc.client)
     _agentStore['slot-agent'] = { id: 'slot-agent', status: 'idle', squadId: 'sq', terminatedAt: null }
-    globalThis.fetch = (async () =>
+    globalThis.fetch = (async (input: RequestInfo | URL) =>
       new Response(
-        JSON.stringify([{ waiterId: 'w', poolKey: 'shared-box-intensive', queuedAt: '2026-10-01T00:00:00Z' }])
+        JSON.stringify(
+          new URL(String(input)).pathname === '/api/monitors'
+            ? [{ id: 'm1', label: 'deploy logs', status: 'running' }]
+            : [{ waiterId: 'w', poolKey: 'shared-box-intensive', queuedAt: '2026-10-01T00:00:00Z' }]
+        ),
+        { headers: { 'Content-Type': 'application/json' } }
       )) as typeof fetch
     const { root } = dom.createRoot()
     await dom.act(async () => {
@@ -313,11 +318,11 @@ describe('AgentChat', () => {
         </Providers>
       )
     })
-    await waitFor(() =>
-      expect(dom.window.document.querySelector('[data-testid="header-status"]')?.textContent).toContain(
-        'Waiting for slot'
-      )
-    )
+    await waitFor(() => {
+      const status = dom.window.document.querySelector('[data-testid="header-status"]')?.textContent
+      expect(status).toContain('Waiting for slot')
+      expect(status).toContain('Monitoring: deploy logs')
+    })
   })
 
   test('existing-agent: renders history items and streams', async () => {

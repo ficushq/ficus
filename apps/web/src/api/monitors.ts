@@ -1,22 +1,12 @@
-import { apiFetch } from './client'
-import type { Monitor, MonitorLogs, MonitorStatus } from '@ficus/shared'
+// Thin shim over @ficus/client-core (see ./clientInstance).
+import { client } from './clientInstance'
+import type { ListMonitorsParams } from '@ficus/client-core'
 
-export interface ListMonitorsParams {
-  agentId?: string
-  squadId?: string
-  status?: MonitorStatus[]
-}
+export type { ListMonitorsParams }
 
 export const monitorsApi = {
-  list: (params?: ListMonitorsParams): Promise<Monitor[]> => {
-    const search = new URLSearchParams()
-    if (params?.agentId) search.set('agentId', params.agentId)
-    if (params?.squadId) search.set('squadId', params.squadId)
-    if (params?.status?.length) search.set('status', params.status.join(','))
-    const query = search.toString()
-    return apiFetch(`/monitors${query ? `?${query}` : ''}`)
-  },
-  get: (id: string): Promise<Monitor> => apiFetch(`/monitors/${id}`),
-  logs: (id: string, tail = 100): Promise<MonitorLogs> => apiFetch(`/monitors/${id}/logs?tail=${tail}`),
-  cancel: (id: string): Promise<Monitor> => apiFetch(`/monitors/${id}/cancel`, { method: 'POST' }),
+  list: (params?: ListMonitorsParams) => client.monitors.list(params),
+  get: (id: string) => client.monitors.get(id),
+  logs: (id: string, tail = 100) => client.monitors.logs(id, tail),
+  cancel: (id: string) => client.monitors.cancel(id),
 }
