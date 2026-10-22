@@ -1,0 +1,489 @@
+{
+  "experiment": "concurrent-feature-v1",
+  "frozen_manifest_sha256": "75c6f8c7998a8ac8db7e01cef4f374254a4c44a2ef1ae9cf5e51bc2cf0ac90b3",
+  "tasks": [
+    {
+      "experiment": "long-feature-v1",
+      "frozen_manifest_sha256": "75c6f8c7998a8ac8db7e01cef4f374254a4c44a2ef1ae9cf5e51bc2cf0ac90b3",
+      "results": [
+        {
+          "arm": "ficus-planned",
+          "job_name": "cv1-returns-ficus-planned",
+          "reward": null,
+          "exception": {
+            "exception_type": "CancelledError",
+            "exception_message": "",
+            "exception_traceback": "Traceback (most recent call last):\n  File \"/private/tmp/ficus-harbor-evaluation/evals/harbor/ficus_agent.py\", line 379, in run\n    await asyncio.sleep(2)\n  File \"/Users/noah/anaconda3/lib/python3.12/asyncio/tasks.py\", line 665, in sleep\n    return await future\n           ^^^^^^^^^^^^\nasyncio.exceptions.CancelledError\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/trial/trial.py\", line 500, in run\n    await self._run()\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/trial/single_step.py\", line 40, in _run\n    await self._run_agent()\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/trial/single_step.py\", line 76, in _run_agent\n    await self._run_agent_phase(\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/trial/trial.py\", line 651, in _run_agent_phase\n    await asyncio.wait_for(\n  File \"/Users/noah/anaconda3/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/private/tmp/ficus-harbor-evaluation/evals/harbor/ficus_agent.py\", line 393, in run\n    await self.checked(\n  File \"/private/tmp/ficus-harbor-evaluation/evals/harbor/ficus_agent.py\", line 155, in checked\n    result = await environment.exec(command, **kwargs)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/environments/docker/docker.py\", line 1359, in exec\n    return await self._compose_exec(\n           ^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/environments/docker/docker.py\", line 1436, in _compose_exec\n    return await self._run_docker_compose_command(\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/environments/docker/docker.py\", line 749, in _run_docker_compose_command\n    result = await self._collect_buffered_output(\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/environments/docker/docker.py\", line 775, in _collect_buffered_output\n    stdout_bytes, stderr_bytes = await asyncio.wait_for(\n                                 ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/noah/anaconda3/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/Users/noah/anaconda3/lib/python3.12/asyncio/subprocess.py\", line 201, in communicate\n    stdin, stdout, stderr = await tasks.gather(stdin, stdout, stderr)\n                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/noah/anaconda3/lib/python3.12/asyncio/subprocess.py\", line 181, in _read_stream\n    output = await stream.read()\n             ^^^^^^^^^^^^^^^^^^^\n  File \"/Users/noah/anaconda3/lib/python3.12/asyncio/streams.py\", line 706, in read\n    block = await self.read(self._limit)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/noah/anaconda3/lib/python3.12/asyncio/streams.py\", line 713, in read\n    await self._wait_for_data('read')\n  File \"/Users/noah/anaconda3/lib/python3.12/asyncio/streams.py\", line 545, in _wait_for_data\n    await self._waiter\nasyncio.exceptions.CancelledError\n",
+            "occurred_at": "2026-10-20T22:46:29.102495Z"
+          },
+          "agent_metadata": {
+            "configuration": "planned",
+            "model_api": "openai-responses",
+            "thinking": "medium",
+            "outcome": "interrupted",
+            "memory": "fresh-disabled",
+            "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+            "database_network": "task"
+          },
+          "total_seconds": 579.79,
+          "timing_seconds": {
+            "environment_setup": 2.58,
+            "agent_setup": 68.85,
+            "agent_execution": 485.0,
+            "verifier": null
+          },
+          "requests": 12,
+          "confirmed_cost_usd": 0.154746,
+          "unknown_usage_requests": 1,
+          "submitted_patch_bytes": 0,
+          "artifacts_sha256": {
+            "result.json": "ab9e2ca22559e1645422641af0b526256b288c76a78db4195cd6194b3d4b708e",
+            "agent/snapshot.json": "d63bf96327576404c731f57dbedefd50d01ef60bab96ccdd5f5a21bd4407a379",
+            "agent/progress.jsonl": "55fa14a8cf12d418f9417f476595a0a29f102e57416ec194cc39f2f81a6bb0ba",
+            "artifacts/logs/artifacts/model.patch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "operator_task_interventions": 0,
+          "human_attention_minutes": null,
+          "observed_human_question_agents": [],
+          "state_transition_count": 3,
+          "review_attempts": 0,
+          "stream_statuses": [
+            "active"
+          ],
+          "submission_captured": true,
+          "submission_audit": {
+            "changed_paths": [],
+            "test_paths_restored_by_official_verifier": [],
+            "candidate_test_paths_retained": [],
+            "retained_test_removed_line_counts": {}
+          },
+          "operator_supplied_task_messages_after_launch": 0,
+          "role_dispatches": [],
+          "verified_session_or_child_models": [],
+          "review_conclusions": [],
+          "completion_class": "provider_blocked_operator_cancelled",
+          "official_score_available": false
+        },
+        {
+          "arm": "pi-planned",
+          "job_name": "cv1-returns-pi-planned",
+          "reward": {
+            "reward": 0,
+            "f2p_total": 159,
+            "f2p_passed": 157,
+            "p2p_total": 61,
+            "p2p_passed": 61,
+            "f2p": 0.9874213836477987,
+            "p2p": 1.0,
+            "partial": 0.990909090909091
+          },
+          "exception": null,
+          "agent_metadata": {
+            "configuration": "planned",
+            "baseline": "Pi packaged subagent example",
+            "executed_roles": [
+              "architect",
+              "engineer",
+              "reviewer"
+            ],
+            "required_roles_executed": true
+          },
+          "total_seconds": 1201.14,
+          "timing_seconds": {
+            "environment_setup": 2.62,
+            "agent_setup": 19.38,
+            "agent_execution": 1144.71,
+            "verifier": 22.62
+          },
+          "requests": 88,
+          "confirmed_cost_usd": 0.99658,
+          "unknown_usage_requests": 0,
+          "submitted_patch_bytes": 50325,
+          "artifacts_sha256": {
+            "result.json": "208e7d14b2a74c669b8b9810d2ecf223b15a1cb8f386a0353e835c3099283524",
+            "verifier/reward.json": "ce53bd987b756eaa43f58e31a756f8686456cef22c3fc3ff55c77825bb32db2b",
+            "verifier/ctrf.json": "4ae70fdacc40ce4948d23a574f74a98dc733dae33ce1f6b619e6647da1ba4175",
+            "verifier/test-stdout.txt": "ec198cee0a293543188a0910f3530c5d424db37fddffa7f46e32a7d85453484c",
+            "agent/pi.txt": "2fbef009820b753dcd4535de2ae654b1bf1e539246c52b8a505aaa4a3f8517b1",
+            "artifacts/logs/artifacts/model.patch": "2bfd190015f193a806bc13894da0b33cf36220d8cb1e00cce0553d61bf09e499",
+            "agent/pi/sessions/2026-10-20T22-17-31-667Z_01a15b64-2311-7367-8fad-7252c80f36d1.jsonl": "c7bea465b209c60aaa60c1c0a0cef03739b8dfc9a3fafd2cd90014425be0cb93"
+          },
+          "operator_task_interventions": 0,
+          "human_attention_minutes": null,
+          "submission_captured": true,
+          "submission_audit": {
+            "changed_paths": [
+              "CHANGELOG.md",
+              "docs/index.rst",
+              "docs/pages/validated.rst",
+              "returns/contrib/hypothesis/_entrypoint.py",
+              "returns/contrib/hypothesis/containers.py",
+              "returns/contrib/mypy/_consts.py",
+              "returns/converters.py",
+              "returns/interfaces/specific/validated.py",
+              "returns/methods/cond.py",
+              "returns/pointfree/__init__.py",
+              "returns/pointfree/bind_validated.py",
+              "returns/pointfree/cond.py",
+              "returns/validated.py",
+              "tests/test_laws.py",
+              "tests/test_validated.py",
+              "typesafety/test_validated.yml"
+            ],
+            "test_paths_restored_by_official_verifier": [],
+            "candidate_test_paths_retained": [
+              "tests/test_laws.py",
+              "tests/test_validated.py"
+            ],
+            "retained_test_removed_line_counts": {
+              "tests/test_laws.py": 0,
+              "tests/test_validated.py": 0
+            }
+          },
+          "operator_supplied_task_messages_after_launch": 0,
+          "role_dispatches": [
+            {
+              "at": "2026-10-20T22:17:40.810Z",
+              "role": "architect"
+            },
+            {
+              "at": "2026-10-20T22:19:51.880Z",
+              "role": "engineer"
+            },
+            {
+              "at": "2026-10-20T22:32:47.412Z",
+              "role": "reviewer"
+            }
+          ],
+          "verified_session_or_child_models": [
+            "gpt-6.1-sol",
+            "harbor-endpoint/gpt-6.1-sol"
+          ],
+          "review_conclusions": [
+            {
+              "exit_code": 0,
+              "explicit_approved": true
+            }
+          ],
+          "completion_class": "officially_graded",
+          "official_score_available": true
+        }
+      ],
+      "complete_matched_comparison": false,
+      "cumulative_exposure_usd": 42.723031,
+      "cap_usd": 50,
+      "new_confirmed_usd": 1.151326,
+      "limitations": [
+        "Single restricted task, one attempt per arm",
+        "Shared Apple Silicon host with amd64 task emulation",
+        "Ficus adds capped database compute",
+        "Host-wide inference proxy allowlist",
+        "No measured human time saved; infrastructure effort not timed",
+        "Stop on cumulative or per-arm reservation cap; preserve incomplete comparisons"
+      ],
+      "task": "returns-validated-error-accumulation"
+    },
+    {
+      "experiment": "long-feature-v1",
+      "frozen_manifest_sha256": "75c6f8c7998a8ac8db7e01cef4f374254a4c44a2ef1ae9cf5e51bc2cf0ac90b3",
+      "results": [
+        {
+          "arm": "ficus-planned",
+          "job_name": "cv1-aiomonitor-ficus-planned",
+          "reward": null,
+          "exception": {
+            "exception_type": "CancelledError",
+            "exception_message": "",
+            "exception_traceback": "Traceback (most recent call last):\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/trial/trial.py\", line 500, in run\n    await self._run()\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/trial/single_step.py\", line 40, in _run\n    await self._run_agent()\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/trial/single_step.py\", line 76, in _run_agent\n    await self._run_agent_phase(\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/trial/trial.py\", line 651, in _run_agent_phase\n    await asyncio.wait_for(\n  File \"/Users/noah/anaconda3/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/private/tmp/ficus-harbor-evaluation/evals/harbor/ficus_agent.py\", line 379, in run\n    await asyncio.sleep(2)\n  File \"/Users/noah/anaconda3/lib/python3.12/asyncio/tasks.py\", line 665, in sleep\n    return await future\n           ^^^^^^^^^^^^\nasyncio.exceptions.CancelledError\n",
+            "occurred_at": "2026-10-20T22:46:40.998053Z"
+          },
+          "agent_metadata": {
+            "configuration": "planned",
+            "model_api": "openai-responses",
+            "thinking": "medium",
+            "outcome": "interrupted",
+            "memory": "fresh-disabled",
+            "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+            "database_network": "task",
+            "attempted_roles": [
+              "architect",
+              "manager"
+            ],
+            "engineer_only_verified": null,
+            "executed_roles": [
+              "architect",
+              "manager"
+            ]
+          },
+          "total_seconds": 582.01,
+          "timing_seconds": {
+            "environment_setup": 3.05,
+            "agent_setup": 68.38,
+            "agent_execution": 496.54,
+            "verifier": null
+          },
+          "requests": 8,
+          "confirmed_cost_usd": 0.158383,
+          "unknown_usage_requests": 1,
+          "submitted_patch_bytes": 0,
+          "artifacts_sha256": {
+            "result.json": "b9a9da7fc1f4cc57fca200cd4fee9c8c44ee9d1a14bdda24df23eab395594465",
+            "agent/snapshot.json": "c7079bc79fe9261cdf6f6781efbf659f7f41100bcedf2c831f116973d7dca2ea",
+            "agent/messages.json": "4ec5b9b92797cd96199272ebdb8034d7497c919477329298db46e4051991afbd",
+            "agent/progress.jsonl": "c9fa4868cfb6ac82109656a5371d45f43cc4f758916a7839c8d8a273551e28fb",
+            "artifacts/logs/artifacts/model.patch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "operator_task_interventions": 0,
+          "human_attention_minutes": null,
+          "observed_human_question_agents": [],
+          "state_transition_count": 5,
+          "review_attempts": 0,
+          "stream_statuses": [
+            "active"
+          ],
+          "submission_captured": true,
+          "submission_audit": {
+            "changed_paths": [],
+            "test_paths_restored_by_official_verifier": [],
+            "candidate_test_paths_retained": [],
+            "retained_test_removed_line_counts": {}
+          },
+          "operator_supplied_task_messages_after_launch": 0,
+          "role_dispatches": [],
+          "verified_session_or_child_models": [],
+          "review_conclusions": [],
+          "completion_class": "provider_blocked_operator_cancelled",
+          "official_score_available": false
+        },
+        {
+          "arm": "pi-planned",
+          "job_name": "cv1-aiomonitor-pi-planned",
+          "reward": {
+            "reward": 0,
+            "f2p_total": 53,
+            "f2p_passed": 51,
+            "p2p_total": 8,
+            "p2p_passed": 8,
+            "f2p": 0.9622641509433962,
+            "p2p": 1.0,
+            "partial": 0.9672131147540983
+          },
+          "exception": null,
+          "agent_metadata": {
+            "configuration": "planned",
+            "baseline": "Pi packaged subagent example",
+            "executed_roles": [
+              "architect",
+              "engineer",
+              "reviewer"
+            ],
+            "required_roles_executed": true
+          },
+          "total_seconds": 1001.19,
+          "timing_seconds": {
+            "environment_setup": 2.61,
+            "agent_setup": 19.46,
+            "agent_execution": 942.7,
+            "verifier": 24.54
+          },
+          "requests": 102,
+          "confirmed_cost_usd": 1.066841,
+          "unknown_usage_requests": 0,
+          "submitted_patch_bytes": 64832,
+          "artifacts_sha256": {
+            "result.json": "c3b9f1bd048d7640359b3c708ef9ae739955c3da96e421aad1e1014843b56d22",
+            "verifier/reward.json": "688b60d7adf97cb862b6ac17a81d547faebd55e72c33cded6037e38ce6b81727",
+            "verifier/ctrf.json": "b642cdc9cea5e0efde3ae0b1be3951633b00b47a54ff15b4220126e23d6db509",
+            "verifier/test-stdout.txt": "f2ba7fe7174e61b2388f67d9202e70bee65d8dfb65206e35b669ae86033d9d32",
+            "agent/pi.txt": "2ac430b45098ed6298576454e6617f7f5f42a280754777349507e6a657499649",
+            "artifacts/logs/artifacts/model.patch": "7fe22be3d01248e3e57001bf3ecc58cb2e84817f71e144d06fb71f91c71b0b69",
+            "agent/pi/sessions/2026-10-20T22-17-31-715Z_01a15b64-2341-7677-ba11-cbff99b257fb.jsonl": "c66d0d8d82d69bd5e864e8634d7b1e9727971809403d2b329ee84bb57464fd94"
+          },
+          "operator_task_interventions": 0,
+          "human_attention_minutes": null,
+          "submission_captured": true,
+          "submission_audit": {
+            "changed_paths": [
+              "aiomonitor/monitor.py",
+              "aiomonitor/task.py",
+              "aiomonitor/termui/commands.py",
+              "aiomonitor/termui/completion.py",
+              "aiomonitor/types.py",
+              "aiomonitor/webui/app.py",
+              "aiomonitor/webui/static/snapshots.js",
+              "aiomonitor/webui/templates/snapshots.html",
+              "aiomonitor/webui/utils.py",
+              "changes/+task-snapshot-id-reuse.bugfix",
+              "changes/+task-snapshots.enhancement",
+              "docs/reference/monitor.rst",
+              "docs/reference/termui.rst",
+              "docs/reference/webui.rst",
+              "docs/tutorial.rst",
+              "tests/test_snapshots.py"
+            ],
+            "test_paths_restored_by_official_verifier": [],
+            "candidate_test_paths_retained": [
+              "tests/test_snapshots.py"
+            ],
+            "retained_test_removed_line_counts": {
+              "tests/test_snapshots.py": 0
+            }
+          },
+          "operator_supplied_task_messages_after_launch": 0,
+          "role_dispatches": [
+            {
+              "at": "2026-10-20T22:17:44.062Z",
+              "role": "architect"
+            },
+            {
+              "at": "2026-10-20T22:20:08.967Z",
+              "role": "engineer"
+            },
+            {
+              "at": "2026-10-20T22:27:20.817Z",
+              "role": "reviewer"
+            },
+            {
+              "at": "2026-10-20T22:29:17.429Z",
+              "role": "engineer"
+            },
+            {
+              "at": "2026-10-20T22:32:23.382Z",
+              "role": "reviewer"
+            }
+          ],
+          "verified_session_or_child_models": [
+            "gpt-6.1-sol",
+            "harbor-endpoint/gpt-6.1-sol"
+          ],
+          "review_conclusions": [
+            {
+              "exit_code": 0,
+              "explicit_approved": false
+            },
+            {
+              "exit_code": 0,
+              "explicit_approved": true
+            }
+          ],
+          "completion_class": "officially_graded",
+          "official_score_available": true
+        }
+      ],
+      "complete_matched_comparison": false,
+      "cumulative_exposure_usd": 42.723031,
+      "cap_usd": 50,
+      "new_confirmed_usd": 1.225224,
+      "limitations": [
+        "Single restricted task, one attempt per arm",
+        "Shared Apple Silicon host with amd64 task emulation",
+        "Ficus adds capped database compute",
+        "Host-wide inference proxy allowlist",
+        "No measured human time saved; infrastructure effort not timed",
+        "Stop on cumulative or per-arm reservation cap; preserve incomplete comparisons"
+      ],
+      "task": "aiomonitor-task-snapshots-diff"
+    }
+  ],
+  "batches": [
+    {
+      "arm": "pi-planned",
+      "started_at": "2026-10-20T22:17:05.013269+00:00",
+      "jobs": [
+        "cv1-returns-pi-planned",
+        "cv1-aiomonitor-pi-planned"
+      ],
+      "exit_codes": {
+        "cv1-returns-pi-planned": 0,
+        "cv1-aiomonitor-pi-planned": 0
+      },
+      "concurrency": 2,
+      "finished_at": "2026-10-20T22:37:08.384245+00:00",
+      "elapsed_seconds": 1203.3,
+      "complete": true,
+      "accepted_tasks": 0,
+      "completed_tasks": 2,
+      "accepted_tasks_per_hour": 0.0,
+      "inference_usd": 2.063421,
+      "agent_execution_overlap_seconds": 942.7,
+      "finished_attempts": 2
+    },
+    {
+      "arm": "ficus-planned",
+      "started_at": "2026-10-20T22:37:08.946917+00:00",
+      "jobs": [
+        "cv1-returns-ficus-planned",
+        "cv1-aiomonitor-ficus-planned"
+      ],
+      "exit_codes": {},
+      "concurrency": 2,
+      "finished_at": "2026-10-20T22:46:54.766680+00:00",
+      "elapsed_seconds": 585.82,
+      "complete": false,
+      "accepted_tasks": 0,
+      "completed_tasks": 0,
+      "accepted_tasks_per_hour": null,
+      "inference_usd": 0.313129,
+      "agent_execution_overlap_seconds": 485.0,
+      "finished_attempts": 2,
+      "stop_reason": "Operator stop after provider credit errors; see preserved failure evidence."
+    }
+  ],
+  "complete_matched_comparison": false,
+  "cumulative_exposure_usd": 42.723031,
+  "new_confirmed_usd": 2.37655,
+  "human_attention_minutes": null,
+  "host_observation": {
+    "Architecture": "aarch64",
+    "NCPU": 14,
+    "MemTotal": 33670914048,
+    "ServerVersion": "29.8.2",
+    "OperatingSystem": "OrbStack",
+    "unrelated_running_containers": 19
+  },
+  "limitations": [
+    "Independent containers, not a shared squad manager across tasks or shared product workspace",
+    "No serial baseline for these unseen tasks; no causal concurrency speedup",
+    "No measured human minutes saved",
+    "Shared arm64 host with amd64 emulation and unrelated services",
+    "Ficus extra DB compute and setup",
+    "Fixed batch order",
+    "Conservative simultaneous reservations can truncate comparisons"
+  ],
+  "frozen_source_commit": "2d1b1230",
+  "input_hashes_still_match": true,
+  "stop_reason": "Provider streaming responses reported no API credits remaining; operator cancelled both Ficus attempts and stopped proxy. Engineer-only batches not launched.",
+  "stopped_at": "2026-10-20T22:49:45.339360+00:00",
+  "paid_proxy_stopped": true,
+  "cumulative_confirmed_plus_prior_accounting_usd": 31.723031,
+  "new_unresolved_reservations_usd": 11,
+  "unknown_call_ids": [
+    2469,
+    2470
+  ],
+  "max_call_id": 2470,
+  "provider_failure_evidence": [
+    {
+      "task_container": "returns-validated-error-accumula__r8wc3fd__env-main-1",
+      "worker_log_sha256": "7eed3d4f7dcc491ba9a071f26cc83fb9304fcc66cd5526912bd2c984dea609b8",
+      "observed_error": "You have no credits remaining. Add credits to continue using the API.",
+      "first_error_timestamp": "2026-10-20T22:40:00.467Z"
+    },
+    {
+      "task_container": "aiomonitor-task-snapshots-diff__itkuwde__env-main-1",
+      "worker_log_sha256": "0a59e678c866ae982f6a6159d5b9a09a43cd6e49d9ba942911bdcd29dbc8581c",
+      "observed_error": "You have no credits remaining. Add credits to continue using the API.",
+      "first_error_timestamp": "2026-10-20T22:40:00.620Z"
+    }
+  ],
+  "audit_notes": [
+    "Source/task/runtime hashes matched after all attempts stopped, before subsequent error-detection fixes.",
+    "Both Pi squads executed architect, engineer and reviewer; aiomonitor required a second engineer/reviewer cycle.",
+    "Pi aiomonitor reviewer caught task-ID reuse and approved its revision; official save/list HTTP route checks still failed.",
+    "Pi returns failed two official lash error-tuple handling checks after reviewer approval.",
+    "Both Pi submissions only added retained test coverage; no existing assertion lines removed.",
+    "Ficus attempts are unscored provider failures, not task failures. No engineer-only attempts were launched.",
+    "Operator task steering was zero; operator cancelled provider-blocked runs and collected diagnostics.",
+    "Two missing receipts retain the full $5.50 reservation each; HTTP 200 alone did not establish inference success."
+  ]
+}

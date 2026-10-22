@@ -1,0 +1,334 @@
+{
+  "experiment": "independent-review-v1-recovery-2",
+  "upstream_commit": "0b9fabbb63b9104d678fe965e1632f2dd9eaa2ea",
+  "selection_rule": "Python feature_request tasks sorted by SHA256(ficus-long-v1:<task-id>), no model outcomes used",
+  "previous_task_excluded": "skrub-duration-encoding",
+  "tasks": [
+    {
+      "task": "igel-persist-feature-schema",
+      "image_tag": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh7brwh7cv23ggeshkz85ac5fx831x5k-v1.1",
+      "image_digest": "public.ecr.aws/d3j8x8q7/swe-bench-202605@sha256:434ed4187abdb6948dec6434ab4a354d11a19955ebcc706a605ebc6e2470c140",
+      "image_id": "sha256:101639dde98c1b250116d94876cf186cbab102f844bbb3a78e38815cee78b389",
+      "base_commit": "bf4544d6c86ab4ace21254cb38a011ce3e845700",
+      "feature_count": 24,
+      "regression_count": 2,
+      "upstream_file_sha256": {
+        "environment/Dockerfile": "e6108b2307831a5e498c1c5b2d640c125a4fb4a35b0a85a198647c1e04542cb4",
+        "instruction.md": "af7e38939072f50ed4d0fa9743dce1d963140700d4623289fa7ecfbcae301c49",
+        "solution/solution.patch": "bafbf19f0c48b22e5f17400b8dc8163db3a0b125c93fd76748641949981a2fe4",
+        "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+        "task.toml": "f6bfad291ade307db9897cc4f27e00b01604eca70a4bd8037359c7bb58070740",
+        "tests/Dockerfile": "41bc7debc27a03883e2c14b6d910a4862db3aefb7078b9eb6a5bdc88d52f4f6c",
+        "tests/config.json": "9e556f511b64cd3a8e26ecb03743d9664f86096036dfd8c41a6ec5f3bbefcca7",
+        "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+        "tests/test.patch": "39cf81de193669537a82544b9ec939aa0c0ce7431f11b1d9cb0a3dcae89b4f61",
+        "tests/test.sh": "5f7eff61b7fb6815fae9456383d3a2529b85b825109bbdaf0a0644b52c85f06a"
+      },
+      "prepared_file_sha256": {
+        "environment/Dockerfile": "e6108b2307831a5e498c1c5b2d640c125a4fb4a35b0a85a198647c1e04542cb4",
+        "instruction.md": "af7e38939072f50ed4d0fa9743dce1d963140700d4623289fa7ecfbcae301c49",
+        "solution/solution.patch": "bafbf19f0c48b22e5f17400b8dc8163db3a0b125c93fd76748641949981a2fe4",
+        "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+        "task.toml": "7e670c4bfaad22c56112e422231a1f56215c0591b6b43a0720f77ce7e849c6e1",
+        "tests/Dockerfile": "097c5be5eab046351efb5a94efaaea6e45b08e140e7d9cebf0fe31392244ee9c",
+        "tests/config.json": "9e556f511b64cd3a8e26ecb03743d9664f86096036dfd8c41a6ec5f3bbefcca7",
+        "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+        "tests/test.patch": "39cf81de193669537a82544b9ec939aa0c0ce7431f11b1d9cb0a3dcae89b4f61",
+        "tests/test.sh": "5f7eff61b7fb6815fae9456383d3a2529b85b825109bbdaf0a0644b52c85f06a"
+      },
+      "short": "igel"
+    },
+    {
+      "task": "psd-tools-blend-range-api",
+      "image_tag": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh72dq33t9djm894gqagmgpkhd82yvjv-v1.1",
+      "image_digest": "public.ecr.aws/d3j8x8q7/swe-bench-202605@sha256:05d7f88b07f2420a6a5b0c2f0a3218047c2ffa07fe856358df2083958841f524",
+      "image_id": "sha256:d0955c3858a7e9e6230cc2fc6c0d790967cbaa5e560fa70cbc123a4429a89990",
+      "base_commit": "c5e03189188daa3c5589326a9d74506d7dc48bc9",
+      "feature_count": 45,
+      "regression_count": 979,
+      "upstream_file_sha256": {
+        "environment/Dockerfile": "89d178e5d7e7138e8ad63f8a5d294ebe2b1246ce9bae3d4995b97f350a434c2c",
+        "instruction.md": "be619e943671da3bb1e9855c0ce939d54491c5cce4a45553403cf026d33255ce",
+        "solution/solution.patch": "7823a1812505d67d61c8f8197e7385afff836f2754e34fb1415612569ca612c9",
+        "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+        "task.toml": "e929855b9ee6d1874df3f9a628a8ba60243c06bb7c97d40a2f60286ef5c289e9",
+        "tests/Dockerfile": "453af07d6f03d33595befb56b8f592159103d6b34ac190a25bb80a1f90ea9312",
+        "tests/config.json": "80ee7decc21f15c78887a4d59ff14208d4dd2c17718ed43253a11c5d0da0f720",
+        "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+        "tests/test.patch": "4816d794589fa15547ba819f591d8211b0a1d1f7f9fd6902d985ab74565ede9c",
+        "tests/test.sh": "69d2132262265cdac82af21251827871226645b0fe2f431df5e5956663e395e9"
+      },
+      "prepared_file_sha256": {
+        "environment/Dockerfile": "89d178e5d7e7138e8ad63f8a5d294ebe2b1246ce9bae3d4995b97f350a434c2c",
+        "instruction.md": "be619e943671da3bb1e9855c0ce939d54491c5cce4a45553403cf026d33255ce",
+        "solution/solution.patch": "7823a1812505d67d61c8f8197e7385afff836f2754e34fb1415612569ca612c9",
+        "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+        "task.toml": "53a80bb6d92fb47406f0675624b2f3da18a077f4b8c9d9e8b268288420530d9e",
+        "tests/Dockerfile": "1d88c26968ecc753ef23d960440c692b24428ec6d834d041f0533bac063f1ef5",
+        "tests/config.json": "80ee7decc21f15c78887a4d59ff14208d4dd2c17718ed43253a11c5d0da0f720",
+        "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+        "tests/test.patch": "4816d794589fa15547ba819f591d8211b0a1d1f7f9fd6902d985ab74565ede9c",
+        "tests/test.sh": "69d2132262265cdac82af21251827871226645b0fe2f431df5e5956663e395e9"
+      },
+      "short": "psd"
+    }
+  ],
+  "prior_exposure_usd": 6.389843,
+  "prior_last_call_id": 386,
+  "cumulative_cap_usd": 30,
+  "inference_started": false,
+  "original_interrupted_report_sha256": "a854dd326c2320ec55e599aaa365c673ad077f23e7be9bddd0b5ef1279829842",
+  "recovery_reason": "Close completed streams at terminal receipt; prior reservation fix retained; fresh attempts, unchanged prompts and grading",
+  "condition": "baseline",
+  "frozen_at": "2026-10-21T03:23:33.791425+00:00",
+  "job_prefix": "irv1r2-baseline",
+  "selection_manifest_sha256": "c69ed080fe26712847d7b8996f4d40a0da739b78a822bffacef867081911862a",
+  "design_manifest_sha256": "ee0e7f8427bda3e1058408c1148bd001149bbcb7569c2cbafb265d746fde54a2",
+  "prompt_addition_sha256": "bb49b10b6d9fc31b8ad01f833e24e3d7c5ca8061378658d730493f6e6d8fb683",
+  "source_files_sha256": {
+    "evals/harbor/budget_proxy.py": "b2496aeccfa9577f94e41ca2ed6dd40c7a259f500ccbe585cf3fcd03a3374796",
+    "evals/harbor/ficus_agent.py": "f79c9cbb68a99f5a521c9e10f233cab816df455bab5a8b1f5eaa41a02062379b",
+    "evals/harbor/pi_workflow.py": "00712cabe8eebbd571c7ef438b357c019bb9735492ff8bfb29a870d3ed2c03e3",
+    "evals/harbor/run-pilot.py": "a3dd6d86c84291d0f2b9b4c46ce16d75038d83ee949e52349ff00f4cdcdff31a",
+    "evals/harbor/deepswe_controls.py": "579d515e71f60e181d014b9a539463ac4bcd40223c9c4c9134c1e46c2454c261",
+    "evals/harbor/deepswe_network_smoke.py": "3c7e174a38a98ed8655512b9bf734d3e8294e0e81557f74e18d27552f1b3220c",
+    "evals/harbor/summarize_long_feature.py": "91a5518ee5376cf3236de750cba2a12c43da803ef6984704d4cf709db21a144c",
+    "evals/harbor/run_concurrent_feature.py": "517a6b03e74aedf23845e74f342330107c39997e9f7473093342ffc73c34d99c"
+  },
+  "runtime_archive_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+  "controls": [
+    [
+      {
+        "job": "irv1-igel-baseline",
+        "result_sha256": "c695a66e26c82ed2ce00d0d1062104557df966419ef04a97561337dff62d3d0d",
+        "rewards": {
+          "reward": 0,
+          "f2p_total": 24,
+          "f2p_passed": 0,
+          "p2p_total": 2,
+          "p2p_passed": 2,
+          "f2p": 0.0,
+          "p2p": 1.0,
+          "partial": 0.07692307692307693
+        },
+        "exception": null,
+        "exit_code": 0
+      },
+      {
+        "job": "irv1-igel-oracle",
+        "result_sha256": "aed02651f2be70056c1abe3f9b1210f51645d148f25aabeb9e0699da6de56f5f",
+        "rewards": {
+          "reward": 1,
+          "f2p_total": 24,
+          "f2p_passed": 24,
+          "p2p_total": 2,
+          "p2p_passed": 2,
+          "f2p": 1.0,
+          "p2p": 1.0,
+          "partial": 1.0
+        },
+        "exception": null,
+        "exit_code": 0
+      },
+      {
+        "job": "irv1-igel-baseline-collision",
+        "result_sha256": "054f62ebf5b8383afa073eb1a3b4d4a3713cf581abf27ffc106fa73272d3d476",
+        "rewards": {
+          "reward": 0,
+          "f2p_total": 24,
+          "f2p_passed": 0,
+          "p2p_total": 2,
+          "p2p_passed": 2,
+          "f2p": 0.0,
+          "p2p": 1.0,
+          "partial": 0.07692307692307693
+        },
+        "exception": null,
+        "exit_code": 0
+      },
+      {
+        "job": "irv1-igel-oracle-collision",
+        "result_sha256": "9badfcd5819e9e8a75d9930c9fe825f87386b0094068f8bbafdcb90819d3b1dc",
+        "rewards": {
+          "reward": 1,
+          "f2p_total": 24,
+          "f2p_passed": 24,
+          "p2p_total": 2,
+          "p2p_passed": 2,
+          "f2p": 1.0,
+          "p2p": 1.0,
+          "partial": 1.0
+        },
+        "exception": null,
+        "exit_code": 0
+      }
+    ],
+    [
+      {
+        "job": "irv1-psd-baseline",
+        "result_sha256": "bdfa2484a14d9f7f7de0b90170e3fdd9eefe5b6b47a60a00ae3ac3942ea9ae2e",
+        "rewards": {
+          "reward": 0,
+          "f2p_total": 45,
+          "f2p_passed": 0,
+          "p2p_total": 979,
+          "p2p_passed": 979,
+          "f2p": 0.0,
+          "p2p": 1.0,
+          "partial": 0.9560546875
+        },
+        "exception": null,
+        "exit_code": 0
+      },
+      {
+        "job": "irv1-psd-oracle",
+        "result_sha256": "4a11f58cb9c88a517e87b1a1541726b5187f4205d021f5f054031b2b68dca4f7",
+        "rewards": {
+          "reward": 1,
+          "f2p_total": 45,
+          "f2p_passed": 45,
+          "p2p_total": 979,
+          "p2p_passed": 979,
+          "f2p": 1.0,
+          "p2p": 1.0,
+          "partial": 1.0
+        },
+        "exception": null,
+        "exit_code": 0
+      },
+      {
+        "job": "irv1-psd-baseline-collision",
+        "result_sha256": "4373c4ca15509238ab0e20394c6d66663d730a99ce19ecc94055d2f1421b2eda",
+        "rewards": {
+          "reward": 0,
+          "f2p_total": 45,
+          "f2p_passed": 0,
+          "p2p_total": 979,
+          "p2p_passed": 979,
+          "f2p": 0.0,
+          "p2p": 1.0,
+          "partial": 0.9560546875
+        },
+        "exception": null,
+        "exit_code": 0
+      },
+      {
+        "job": "irv1-psd-oracle-collision",
+        "result_sha256": "492f827bd55b99f0882d86ef9283251ffc8fc58b11993a3e47261e97aec3959a",
+        "rewards": {
+          "reward": 1,
+          "f2p_total": 45,
+          "f2p_passed": 45,
+          "p2p_total": 979,
+          "p2p_passed": 979,
+          "f2p": 1.0,
+          "p2p": 1.0,
+          "partial": 1.0
+        },
+        "exception": null,
+        "exit_code": 0
+      }
+    ]
+  ],
+  "network_smokes": [
+    {
+      "job": "irv1-igel-baseline-probe-72fdd134",
+      "condition": "baseline",
+      "runtime_archive_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+      "checks": {
+        "database_loopback": true,
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "ficus_api_ready": true,
+        "ficus_worker_ready": true,
+        "native_provider_preload": true
+      },
+      "result_sha256": "10ab02e3bbcbed1f6ee1050e34f66a3f273025c901a0512b2ed35e2c3cf3d0df",
+      "checks_sha256": "075792f0f74241df9bd668a2a04b5dc740e08d3290ac51438e866b866df34f38",
+      "inference": false,
+      "verifier_disabled": true
+    },
+    {
+      "job": "irv1-igel-candidate-probe-2a17a9b1",
+      "condition": "candidate",
+      "runtime_archive_sha256": "b7bc8a6c0e302462bac420c22b2f5a08944945784e10158677870bf47e9b941b",
+      "checks": {
+        "database_loopback": true,
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "ficus_api_ready": true,
+        "ficus_worker_ready": true,
+        "native_provider_preload": true
+      },
+      "result_sha256": "0dc87882cc144ceeaf5e9caae677e29f226ede3c15b7c0aef3bce3221df14574",
+      "checks_sha256": "075792f0f74241df9bd668a2a04b5dc740e08d3290ac51438e866b866df34f38",
+      "inference": false,
+      "verifier_disabled": true
+    },
+    {
+      "job": "irv1-psd-baseline-probe-34cf3cd3",
+      "condition": "baseline",
+      "runtime_archive_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+      "checks": {
+        "database_loopback": true,
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "ficus_api_ready": true,
+        "ficus_worker_ready": true,
+        "native_provider_preload": true
+      },
+      "result_sha256": "ff5706acdff8c09e4f2d7c42659ede1611fde4696a8c0bb3844f856e8e9c502a",
+      "checks_sha256": "075792f0f74241df9bd668a2a04b5dc740e08d3290ac51438e866b866df34f38",
+      "inference": false,
+      "verifier_disabled": true
+    },
+    {
+      "job": "irv1-psd-candidate-probe-11ea147e",
+      "condition": "candidate",
+      "runtime_archive_sha256": "b7bc8a6c0e302462bac420c22b2f5a08944945784e10158677870bf47e9b941b",
+      "checks": {
+        "database_loopback": true,
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "ficus_api_ready": true,
+        "ficus_worker_ready": true,
+        "native_provider_preload": true
+      },
+      "result_sha256": "f5af86072feabeef44a64dcc0b21fa797a7c9afb8f74a200c76a3eab5a803073",
+      "checks_sha256": "075792f0f74241df9bd668a2a04b5dc740e08d3290ac51438e866b866df34f38",
+      "inference": false,
+      "verifier_disabled": true
+    }
+  ],
+  "arms": ["ficus-planned"],
+  "concurrency": 2,
+  "attempts_per_task_arm": 1,
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "pi_version": "0.99.1",
+  "memory": "fresh-disabled",
+  "task_cpus": 2,
+  "task_memory_mib": 8192,
+  "extra_ficus_db_cpus": 0.5,
+  "extra_ficus_db_memory_mib": 512,
+  "agent_timeout_seconds": 10800,
+  "verifier_timeout_seconds": 1800,
+  "per_task_arm_cap_usd": 10,
+  "per_request_reservation_usd": 5.5,
+  "operator_task_interventions": "none; no rescues",
+  "network": "public setup; host.docker.internal only during execution; separate verifier no-network",
+  "resume_or_retry_paid_attempts": false,
+  "stop_conditions": [
+    "input drift",
+    "unknown usage after batch",
+    "provider failure",
+    "infrastructure failure",
+    "insufficient headroom for two reservations"
+  ],
+  "limitations": [
+    "Two tasks, one stochastic attempt each; no statistical improvement claim",
+    "Fixed baseline then candidate order",
+    "Shared arm64 host with amd64 emulation and unrelated services",
+    "No measured human minutes saved"
+  ]
+}

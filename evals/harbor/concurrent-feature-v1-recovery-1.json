@@ -1,0 +1,356 @@
+{
+  "experiment": "concurrent-feature-v1-recovery-1",
+  "upstream_commit": "0b9fabbb63b9104d678fe965e1632f2dd9eaa2ea",
+  "selection_rule": "Python feature_request tasks sorted by SHA256(ficus-long-v1:<task-id>), no model outcomes used",
+  "previous_task_excluded": "skrub-duration-encoding",
+  "tasks": [
+    {
+      "task": "returns-validated-error-accumulation",
+      "image_tag": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh754n098chwgtm24jakheqsw5833ec6-v1.1",
+      "image_digest": "public.ecr.aws/d3j8x8q7/swe-bench-202605@sha256:f1a88a58920be20192034003a6711a2dfd952bad72207b98e16f5f47f2377287",
+      "image_id": "sha256:886e64cad852b7f75bee491f4550fff253e1c9414e678bda0d233764454af51f",
+      "base_commit": "41607fae1289de2787523c452d75212206b9c7c0",
+      "feature_count": 159,
+      "regression_count": 61,
+      "upstream_file_sha256": {
+        "environment/Dockerfile": "472d7d07a6ccdcd19351cae32fb0eacfcca9d21b33d43734b0be9131ff7a577f",
+        "instruction.md": "77d27406cd485339c36030cde62de2a50233a0e3253536ac0468b4f1c46cc208",
+        "solution/solution.patch": "e3dc80a04199cce09395838bf40ec74494012d44bb196473776291f3f7fcc451",
+        "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+        "task.toml": "b61c04c7661b4011859a4889081daa0329958ad5dd73155f33ed07281c6e4a81",
+        "tests/Dockerfile": "26dd2766c4eb5c1f5b3ebcbd82ee073c8221b886e526c3bedaa8e7abb9fc9e5c",
+        "tests/config.json": "060f07ca8a5c74c88f3e253a4b72eb44fadd9f82f28884fc786f37eaa8b6d471",
+        "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+        "tests/test.patch": "d4f92adfa57f16c3a05b6990022f4e9cd75979ef63e8f9ee10eb63fe313847d3",
+        "tests/test.sh": "f89501a3d1145d80c7d5bb79aea3638296f1c379f8e305801e90500bc33dceab"
+      },
+      "prepared_file_sha256": {
+        "environment/Dockerfile": "472d7d07a6ccdcd19351cae32fb0eacfcca9d21b33d43734b0be9131ff7a577f",
+        "instruction.md": "77d27406cd485339c36030cde62de2a50233a0e3253536ac0468b4f1c46cc208",
+        "solution/solution.patch": "e3dc80a04199cce09395838bf40ec74494012d44bb196473776291f3f7fcc451",
+        "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+        "task.toml": "c3374a3796804e539a33585e6f7e147656e38319357e773a0ad4dc3eff1187b8",
+        "tests/Dockerfile": "00e2fec5d0e00945524e49ba1e015488c82704b8736f75c99f8c0f85a35962d4",
+        "tests/config.json": "060f07ca8a5c74c88f3e253a4b72eb44fadd9f82f28884fc786f37eaa8b6d471",
+        "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+        "tests/test.patch": "d4f92adfa57f16c3a05b6990022f4e9cd75979ef63e8f9ee10eb63fe313847d3",
+        "tests/test.sh": "f89501a3d1145d80c7d5bb79aea3638296f1c379f8e305801e90500bc33dceab"
+      },
+      "short": "returns"
+    },
+    {
+      "task": "aiomonitor-task-snapshots-diff",
+      "image_tag": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh75rc2q0zhmsqwk7wewfwwtrx830v2n-v1.1",
+      "image_digest": "public.ecr.aws/d3j8x8q7/swe-bench-202605@sha256:e0c8b4e4044d5831693b4f6a6da483b255a889b71376574fba9e3c93d36ceb7c",
+      "image_id": "sha256:ff01634858b933ede36a2a772380b8aee962d1cbf5792de84037df9bbf8c43ea",
+      "base_commit": "b73fea2e0682803bda7531c93cd1dfb360839175",
+      "feature_count": 53,
+      "regression_count": 8,
+      "upstream_file_sha256": {
+        "environment/Dockerfile": "4b0486135417a99cd60a6f7ef408eb844e37ec6fd84c1e031a9db706101e1c02",
+        "instruction.md": "40f3eeea527d09aba7e54b35aadc1bb5f70743d41a9f09094e5968ebdf8b79d7",
+        "solution/solution.patch": "d36d125646e79908df8328c9c6ce8d36192d20f1b0c8159e6bc87a07d446742f",
+        "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+        "task.toml": "4920836b0039b6c022f3200714a6d8107a7126a3a1354a19c66374e3aab445de",
+        "tests/Dockerfile": "9c095a7da92b46cc6cbdca1edfb399793d81a69137e0a599f222cff70e4519a8",
+        "tests/config.json": "69d3cbeb7cea0c75fb42351eec658f2721fe30de419436bec0ef02bec5e80ce7",
+        "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+        "tests/test.patch": "bfc1b309c7ce5b2557b9ba8c0b3f11888a08571c8baabdf8ff6a145db5e09a63",
+        "tests/test.sh": "c55a19ff001be08d5ddb5bbe7b34cea03b6019cee1a680a79338f12a18811d21"
+      },
+      "prepared_file_sha256": {
+        "environment/Dockerfile": "4b0486135417a99cd60a6f7ef408eb844e37ec6fd84c1e031a9db706101e1c02",
+        "instruction.md": "40f3eeea527d09aba7e54b35aadc1bb5f70743d41a9f09094e5968ebdf8b79d7",
+        "solution/solution.patch": "d36d125646e79908df8328c9c6ce8d36192d20f1b0c8159e6bc87a07d446742f",
+        "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+        "task.toml": "2077898f45b8c21986db5064779f6134c5f7a1fa451a7c7844f106d0488a8111",
+        "tests/Dockerfile": "24d5a16d35537f916c7a8fa2c87a458752b52c8b30de3289ecff870e85023618",
+        "tests/config.json": "69d3cbeb7cea0c75fb42351eec658f2721fe30de419436bec0ef02bec5e80ce7",
+        "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+        "tests/test.patch": "bfc1b309c7ce5b2557b9ba8c0b3f11888a08571c8baabdf8ff6a145db5e09a63",
+        "tests/test.sh": "c55a19ff001be08d5ddb5bbe7b34cea03b6019cee1a680a79338f12a18811d21"
+      },
+      "short": "aiomonitor"
+    }
+  ],
+  "prior_exposure_usd": 0,
+  "prior_last_call_id": 0,
+  "cumulative_cap_usd": 30,
+  "inference_started": false,
+  "frozen_at": "2026-10-20T23:35:36.218254+00:00",
+  "selection_manifest_sha256": "965c85cd7aa22d1b582b063d9ed10dc38ba6feb4829d9c699c3d5aa72890cf21",
+  "source_files_sha256": {
+    "evals/harbor/budget_proxy.py": "824f258dc44d7930733d9c813a894e43dbd4222def0c1f299fb03f16fd4f01a4",
+    "evals/harbor/ficus_agent.py": "f79c9cbb68a99f5a521c9e10f233cab816df455bab5a8b1f5eaa41a02062379b",
+    "evals/harbor/pi_workflow.py": "00712cabe8eebbd571c7ef438b357c019bb9735492ff8bfb29a870d3ed2c03e3",
+    "evals/harbor/run-pilot.py": "a3dd6d86c84291d0f2b9b4c46ce16d75038d83ee949e52349ff00f4cdcdff31a",
+    "evals/harbor/deepswe_controls.py": "579d515e71f60e181d014b9a539463ac4bcd40223c9c4c9134c1e46c2454c261",
+    "evals/harbor/deepswe_network_smoke.py": "3c7e174a38a98ed8655512b9bf734d3e8294e0e81557f74e18d27552f1b3220c",
+    "evals/harbor/summarize_long_feature.py": "91a5518ee5376cf3236de750cba2a12c43da803ef6984704d4cf709db21a144c",
+    "evals/harbor/run_concurrent_feature.py": "7e28e28888ab2b452fc1dfe0d484ddda24760d3aeaef03fd1986d0a7c5315d6f"
+  },
+  "runtime_archive_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+  "controls": [
+    [
+      {
+        "job": "cv1-aiomonitor-baseline",
+        "result_sha256": "67475ba9e36716b145ac2476ba3e831f67690e08c58c704df80ba4904bf4c0d9",
+        "rewards": {
+          "reward": 0,
+          "f2p_total": 53,
+          "f2p_passed": 0,
+          "p2p_total": 8,
+          "p2p_passed": 8,
+          "f2p": 0.0,
+          "p2p": 1.0,
+          "partial": 0.13114754098360656
+        },
+        "exception": null,
+        "exit_code": 0
+      },
+      {
+        "job": "cv1-aiomonitor-oracle",
+        "result_sha256": "f3ea43a117dadb8276b7e91b84a23a4c3b2546b854ab93d92381eb73b6e0c74c",
+        "rewards": {
+          "reward": 1,
+          "f2p_total": 53,
+          "f2p_passed": 53,
+          "p2p_total": 8,
+          "p2p_passed": 8,
+          "f2p": 1.0,
+          "p2p": 1.0,
+          "partial": 1.0
+        },
+        "exception": null,
+        "exit_code": 0
+      },
+      {
+        "job": "cv1-aiomonitor-baseline-collision",
+        "result_sha256": "c6e8b9c1454984974b1eb07e846dffe495ab6600ba73349efe8db8349a57adc1",
+        "rewards": {
+          "reward": 0,
+          "f2p_total": 53,
+          "f2p_passed": 0,
+          "p2p_total": 8,
+          "p2p_passed": 8,
+          "f2p": 0.0,
+          "p2p": 1.0,
+          "partial": 0.13114754098360656
+        },
+        "exception": null,
+        "exit_code": 0
+      },
+      {
+        "job": "cv1-aiomonitor-oracle-collision",
+        "result_sha256": "f6cdef9cb1674aaa4690d16389b143e06086a265f668dddf7e135f9f0719329e",
+        "rewards": {
+          "reward": 1,
+          "f2p_total": 53,
+          "f2p_passed": 53,
+          "p2p_total": 8,
+          "p2p_passed": 8,
+          "f2p": 1.0,
+          "p2p": 1.0,
+          "partial": 1.0
+        },
+        "exception": null,
+        "exit_code": 0
+      }
+    ],
+    [
+      {
+        "job": "cv1-returns-baseline",
+        "result_sha256": "05f379d29e4c4c4e9b376334d0ed3b1b76e6f0fd7f6a00c957d4dbfe7c59a107",
+        "rewards": {
+          "reward": 0,
+          "f2p_total": 159,
+          "f2p_passed": 0,
+          "p2p_total": 61,
+          "p2p_passed": 61,
+          "f2p": 0.0,
+          "p2p": 1.0,
+          "partial": 0.2772727272727273
+        },
+        "exception": null,
+        "exit_code": 0
+      },
+      {
+        "job": "cv1-returns-oracle",
+        "result_sha256": "0c8de145cc135b92b1e6fdcd88149b862c04babfc6ab393320071b6c96d5ec83",
+        "rewards": {
+          "reward": 1,
+          "f2p_total": 159,
+          "f2p_passed": 159,
+          "p2p_total": 61,
+          "p2p_passed": 61,
+          "f2p": 1.0,
+          "p2p": 1.0,
+          "partial": 1.0
+        },
+        "exception": null,
+        "exit_code": 0
+      },
+      {
+        "job": "cv1-returns-baseline-collision",
+        "result_sha256": "060dab34d59977313c6e72c515b791d7c9e9a600c56bc3c6318f328770f6f58a",
+        "rewards": {
+          "reward": 0,
+          "f2p_total": 159,
+          "f2p_passed": 0,
+          "p2p_total": 61,
+          "p2p_passed": 61,
+          "f2p": 0.0,
+          "p2p": 1.0,
+          "partial": 0.2772727272727273
+        },
+        "exception": null,
+        "exit_code": 0
+      },
+      {
+        "job": "cv1-returns-oracle-collision",
+        "result_sha256": "172d073e81bd3004ef98049bfc186441fe2326b54095dc781b2bb8ccae237bcf",
+        "rewards": {
+          "reward": 1,
+          "f2p_total": 159,
+          "f2p_passed": 159,
+          "p2p_total": 61,
+          "p2p_passed": 61,
+          "f2p": 1.0,
+          "p2p": 1.0,
+          "partial": 1.0
+        },
+        "exception": null,
+        "exit_code": 0
+      }
+    ]
+  ],
+  "network_smokes": [
+    {
+      "job": "cv1-returns-ficus-probe-6d3c11fe",
+      "checks": {
+        "database_loopback": true,
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "ficus_api_ready": true,
+        "ficus_worker_ready": true,
+        "native_provider_preload": true
+      },
+      "result_sha256": "e4547dffaed5f31b8507ed645e60aa48f22d90a1eaeb71d755ea61532c99c5c5",
+      "checks_sha256": "075792f0f74241df9bd668a2a04b5dc740e08d3290ac51438e866b866df34f38",
+      "inference": false,
+      "verifier_disabled": true
+    },
+    {
+      "job": "cv1-returns-pi-probe-515cf309",
+      "checks": {
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "pinned_pi_and_subagent_extension": true
+      },
+      "result_sha256": "e0fb31d8e89e73cab86b9c0c22f265aa28d7a66c22bb2618ff28f63c4de6e054",
+      "checks_sha256": "a51bd185e985cd4e7c25f253c6d4990f923a2779cb5ead954129ee938e56207b",
+      "inference": false,
+      "verifier_disabled": true
+    },
+    {
+      "job": "cv1-aiomonitor-ficus-probe-d422ab95",
+      "checks": {
+        "database_loopback": true,
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "ficus_api_ready": true,
+        "ficus_worker_ready": true,
+        "native_provider_preload": true
+      },
+      "result_sha256": "b8dc03e092c8a7770761d194de91eff0a6f1f4583ef80f3a7c94bcec0517ee0e",
+      "checks_sha256": "075792f0f74241df9bd668a2a04b5dc740e08d3290ac51438e866b866df34f38",
+      "inference": false,
+      "verifier_disabled": true
+    },
+    {
+      "job": "cv1-aiomonitor-pi-probe-b1160e4c",
+      "checks": {
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "pinned_pi_and_subagent_extension": true
+      },
+      "result_sha256": "fdc960ab36997f28f0fa49c991286e8712236f64d9067ea531ae84b7dfcdfa8a",
+      "checks_sha256": "a51bd185e985cd4e7c25f253c6d4990f923a2779cb5ead954129ee938e56207b",
+      "inference": false,
+      "verifier_disabled": true
+    }
+  ],
+  "arms": [
+    "ficus-planned",
+    "pi-engineer",
+    "ficus-engineer"
+  ],
+  "concurrency": 2,
+  "attempts_per_task_arm": 1,
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "pi_version": "0.99.1",
+  "memory": "fresh-disabled",
+  "task_cpus": 2,
+  "task_memory_mib": 8192,
+  "extra_ficus_db_cpus": 0.5,
+  "extra_ficus_db_memory_mib": 512,
+  "agent_timeout_seconds": 10800,
+  "verifier_timeout_seconds": 1800,
+  "per_task_arm_cap_usd": 10,
+  "per_request_reservation_usd": 5.5,
+  "operator_task_interventions": "none; no rescues",
+  "network": "public setup; host.docker.internal only during execution; separate verifier no-network",
+  "resume_or_retry_paid_attempts": false,
+  "stop_conditions": [
+    "input drift",
+    "unknown usage after batch",
+    "infrastructure failure",
+    "insufficient headroom for two reservations"
+  ],
+  "throughput_definition": "accepted tasks / elapsed hours from first process launch to both processes exiting after official grading",
+  "limitations": [
+    "Independent containers, not a shared squad manager across tasks or shared product workspace",
+    "No serial baseline for these unseen tasks; no causal concurrency speedup",
+    "No measured human minutes saved",
+    "Shared arm64 host with amd64 emulation and unrelated services",
+    "Ficus extra DB compute and setup",
+    "Fixed batch order",
+    "Conservative simultaneous reservations can truncate comparisons",
+    "Recovery phase omits completed Pi squad batch; combine reports explicitly rather than claiming this phase alone is a four-arm comparison.",
+    "Original interrupted Ficus costs and missing receipts remain separate historical overhead."
+  ],
+  "host_observation": {
+    "Architecture": "aarch64",
+    "NCPU": 14,
+    "MemTotal": 33670914048,
+    "ServerVersion": "29.8.2",
+    "OperatingSystem": "OrbStack",
+    "unrelated_running_containers": 19
+  },
+  "job_prefix": "cv1r1",
+  "recovery": {
+    "authorization": "User: reset the tracked usage, your new budget from here on out is $30",
+    "budget_scope": "New phase only. Historical ledger retained unchanged; no old holds released or billed calls erased.",
+    "historical_exposure_usd": 42.723031,
+    "historical_last_call_id": 2470,
+    "original_manifest_sha256": "75c6f8c7998a8ac8db7e01cef4f374254a4c44a2ef1ae9cf5e51bc2cf0ac90b3",
+    "original_results_sha256": "9c858b74f280f84e75a7a23a39eb5bc695c82355176f75c597d377ae08977fbf",
+    "preserved_pi_squad_jobs": [
+      "cv1-returns-pi-planned",
+      "cv1-aiomonitor-pi-planned"
+    ],
+    "interrupted_ficus_jobs": [
+      "cv1-returns-ficus-planned",
+      "cv1-aiomonitor-ficus-planned"
+    ],
+    "reason": "Provider credit exhaustion; original Ficus attempts cancelled without official grades.",
+    "attempt_policy": "One explicitly authorized fresh Ficus squad recovery per task; first attempts for both engineer-only arms. No additional automatic retries.",
+    "changed_sources": [
+      "evals/harbor/budget_proxy.py",
+      "evals/harbor/run_concurrent_feature.py"
+    ],
+    "unchanged": "Model, thinking, Pi version, Ficus runtime/prompts, tasks, graders, limits and controls.",
+    "comparability": "Recovered Ficus squad attempts are second starts on pristine environments. Prior Pi outcomes were observed by operator but not passed to agents. Fixed batch order and elapsed calendar/provider differences limit timing comparison."
+  }
+}

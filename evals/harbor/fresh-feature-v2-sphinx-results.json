@@ -1,0 +1,293 @@
+{
+  "experiment": "fresh-feature-v2",
+  "task_slug": "sphinx",
+  "frozen_manifest_sha256": "f5550db39177429fac364f11a76d38f67a1940327667a41634500b49b7226038",
+  "results": [
+    {
+      "arm": "pi-planned",
+      "reward": {
+        "reward": 0.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "planned",
+        "baseline": "Pi packaged subagent example",
+        "executed_roles": ["architect", "engineer", "reviewer"],
+        "required_roles_executed": true
+      },
+      "total_seconds": 1801.37,
+      "timing_seconds": {
+        "environment_setup": 2.06,
+        "agent_setup": 26.17,
+        "agent_execution": 1748.64,
+        "verifier": 11.43
+      },
+      "requests": 146,
+      "confirmed_cost_usd": 2.021502,
+      "unknown_usage_requests": 0,
+      "tokens": {
+        "input": 6214678,
+        "output": 63958,
+        "cache_read": 5897757,
+        "cache_write": 316483,
+        "reasoning": 15592
+      },
+      "official_test_summaries": ["6 failed, 29 passed in 2.34s"],
+      "official_input_checks": 2,
+      "artifacts_sha256": {
+        "result.json": "629f238c693fb6424b8b1c61e8de5a6e1f30d5dc19dc0466fdc3900e19d14105",
+        "verifier/test-stdout.txt": "962a2e9309c671c1d381f2630500a426f1c225ccac030019c89458bc39ce5a70",
+        "agent/pi.txt": "2fa680009ee0cc3347a560f62e79c61aed2f4806bda71034e1b97c1742e88adb",
+        "artifacts/logs/artifacts/submission.tar.gz": "7c59bc1a11688fa4143cfdd844483ce40a925918c6db464b40fadcaa66b47aec"
+      },
+      "operator_interventions": 0,
+      "submission_archive_verified": ["artifacts/logs/artifacts/submission.tar.gz"],
+      "reference_fetch_indicator_counts": {
+        "raw.githubusercontent.com": 0,
+        "git clone": 0,
+        "pip install sphinx": 0,
+        "requests.get": 471,
+        "urllib.request": 0,
+        "curl https": 0,
+        "wget https": 0
+      },
+      "reference_fetch_scan_interpretation": "requests.get matches are inspected Sphinx intersphinx implementation and mocked test source, not observed commands fetching reference solutions. Other scanned indicators are absent. This is not a complete network audit."
+    },
+    {
+      "arm": "ficus-planned",
+      "reward": {
+        "reward": 1.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "planned",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+        "attempted_roles": ["architect", "engineer", "manager", "reviewer"],
+        "engineer_only_verified": null,
+        "executed_roles": ["architect", "engineer", "manager", "reviewer"]
+      },
+      "total_seconds": 1819.97,
+      "timing_seconds": {
+        "environment_setup": 2.34,
+        "agent_setup": 155.64,
+        "agent_execution": 1636.24,
+        "verifier": 12.26
+      },
+      "requests": 142,
+      "confirmed_cost_usd": 2.523095,
+      "unknown_usage_requests": 0,
+      "tokens": {
+        "input": 10543475,
+        "output": 60820,
+        "cache_read": 10184853,
+        "cache_write": 358196,
+        "reasoning": 12915
+      },
+      "official_test_summaries": ["35 passed in 1.67s", "81 passed in 1.05s"],
+      "official_input_checks": 2,
+      "artifacts_sha256": {
+        "result.json": "8cec8c785abc51c93c2d229ca821a259c5bc64eec4c7335fcfcc713b63dd76fe",
+        "verifier/test-stdout.txt": "7e3a1e4e4ff8fe6521ffb6ad14bab0b8cdd98ce70433645720ad6b36df4a7cf7",
+        "agent/snapshot.json": "dc29666753fa03421cfe11add5fa0376d97b0aa5a723988ac50362ac3bb07da2",
+        "agent/messages.json": "716e953856a65ab27775956dddfaabe77cd412249b117d562d3c0ee27cbfb473",
+        "artifacts/logs/artifacts/submission.tar.gz": "7c2a7d0bc48bdef2ab29d1739d8ac1936e5e5644e5d79547bd51edeeb8328a81"
+      },
+      "operator_interventions": 0,
+      "flows": [
+        {
+          "status": "completion-ready",
+          "steps": [
+            {
+              "step": "design",
+              "status": "completed"
+            },
+            {
+              "step": "implement",
+              "status": "completed"
+            },
+            {
+              "step": "review",
+              "status": "returned"
+            },
+            {
+              "step": "implement",
+              "status": "completed"
+            },
+            {
+              "step": "review",
+              "status": "returned"
+            },
+            {
+              "step": "implement",
+              "status": "completed"
+            },
+            {
+              "step": "review",
+              "status": "completed"
+            }
+          ]
+        }
+      ],
+      "streams": ["done"],
+      "human_question_present": false,
+      "execution_statuses": [
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+        "completed",
+        "completed"
+      ],
+      "submission_archive_verified": ["artifacts/logs/artifacts/submission.tar.gz"],
+      "reference_fetch_indicator_counts": {
+        "raw.githubusercontent.com": 0,
+        "git clone": 0,
+        "pip install sphinx": 0,
+        "requests.get": 10,
+        "urllib.request": 0,
+        "curl https": 0,
+        "wget https": 0
+      },
+      "reference_fetch_scan_interpretation": "requests.get matches are inspected Sphinx intersphinx implementation and mocked test source, not observed commands fetching reference solutions. Other scanned indicators are absent. This is not a complete network audit."
+    },
+    {
+      "arm": "pi-engineer",
+      "reward": {
+        "reward": 0.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "engineer",
+        "baseline": "Pi single session"
+      },
+      "total_seconds": 350.18,
+      "timing_seconds": {
+        "environment_setup": 3.03,
+        "agent_setup": 16.37,
+        "agent_execution": 307.07,
+        "verifier": 10.86
+      },
+      "requests": 33,
+      "confirmed_cost_usd": 0.310846,
+      "unknown_usage_requests": 0,
+      "tokens": {
+        "input": 1005668,
+        "output": 10551,
+        "cache_read": 962000,
+        "cache_write": 43569,
+        "reasoning": 2875
+      },
+      "official_test_summaries": ["6 failed, 29 passed in 2.29s"],
+      "official_input_checks": 2,
+      "artifacts_sha256": {
+        "result.json": "b643b372e3fd5ec1422eb221cfc82015959edebee729ef899694681818356fa2",
+        "verifier/test-stdout.txt": "ccd333ed4b358532db4e924347a18b922654f7cfe01a9a07727b2fbd41bdd272",
+        "agent/pi.txt": "9bd491d4c2f16068a2c4297edf1ac0a3435e2f48cc5a6e744b05121ec903b22a",
+        "artifacts/logs/artifacts/submission.tar.gz": "4f494b18b79fa775f5df4cd9c804c10d4f7b507d294d8a11f93f999cd6e08995"
+      },
+      "operator_interventions": 0,
+      "submission_archive_verified": ["artifacts/logs/artifacts/submission.tar.gz"],
+      "reference_fetch_indicator_counts": {
+        "raw.githubusercontent.com": 0,
+        "git clone": 0,
+        "pip install sphinx": 0,
+        "requests.get": 0,
+        "urllib.request": 0,
+        "curl https": 0,
+        "wget https": 0
+      }
+    },
+    {
+      "arm": "ficus-engineer",
+      "reward": {
+        "reward": 1.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "engineer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+        "attempted_roles": ["engineer"],
+        "engineer_only_verified": true,
+        "executed_roles": ["engineer"]
+      },
+      "total_seconds": 802.07,
+      "timing_seconds": {
+        "environment_setup": 1.58,
+        "agent_setup": 67.38,
+        "agent_execution": 706.4,
+        "verifier": 13.25
+      },
+      "requests": 46,
+      "confirmed_cost_usd": 0.641413,
+      "unknown_usage_requests": 0,
+      "tokens": {
+        "input": 2822781,
+        "output": 13571,
+        "cache_read": 2729666,
+        "cache_write": 92977,
+        "reasoning": 1453
+      },
+      "official_test_summaries": ["35 passed in 1.79s", "81 passed in 1.09s"],
+      "official_input_checks": 2,
+      "artifacts_sha256": {
+        "result.json": "8e43074b068ce33ab747ee1915688992da41f107bce9383c4ae8167834fd3c58",
+        "verifier/test-stdout.txt": "9a1aa8e152e9fa8020faa72eccb78828bc6646fee3980d8f02cd7496888d1af9",
+        "agent/snapshot.json": "f549c8785b5f769a4bedb1dab8e63369d3f48e13ff2aa38b1617cbc7000da510",
+        "agent/messages.json": "0c2d5aa6bfb65149677104c5cbccb0e3f65e20c823c6c1cbe629e6bf56f01cb9",
+        "artifacts/logs/artifacts/submission.tar.gz": "83cd737bae886ccd955dfbd5867babb19396d5194242ffe23f9085f4166b8ec0"
+      },
+      "operator_interventions": 0,
+      "flows": [
+        {
+          "status": "completion-ready",
+          "steps": [
+            {
+              "step": "execute",
+              "status": "completed"
+            }
+          ]
+        }
+      ],
+      "streams": ["done"],
+      "human_question_present": false,
+      "execution_statuses": ["completed"],
+      "submission_archive_verified": ["artifacts/logs/artifacts/submission.tar.gz"],
+      "reference_fetch_indicator_counts": {
+        "raw.githubusercontent.com": 0,
+        "git clone": 0,
+        "pip install sphinx": 0,
+        "requests.get": 0,
+        "urllib.request": 0,
+        "curl https": 0,
+        "wget https": 0
+      }
+    }
+  ],
+  "complete_matched_comparison": true,
+  "cumulative_exposure_usd": 20.491918,
+  "cap_usd": 50,
+  "fresh_confirmed_usd": 5.496856,
+  "no_operator_steering": true,
+  "limitations": [
+    "Small restricted convenience sample from pinned legacy Harbor FeatureBench snapshot",
+    "Single attempt per arm; no confidence intervals",
+    "Shared arm64 Mac with Linux amd64 emulation",
+    "Ficus has additional uncapped PostgreSQL sidecar",
+    "Trace indicator scan is not proof of network isolation",
+    "No old-prompt comparison; no causal prompt-fix claim"
+  ]
+}

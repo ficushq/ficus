@@ -1,0 +1,65 @@
+{
+  "original_controls": [
+    {
+      "job": "arv1-control-oracle",
+      "result_sha256": "9fde79147e46a98d1ab20d7012c73cc306072df24c4f203d9baed6b8c14b2827",
+      "rewards": {
+        "reward": 0,
+        "f2p_total": 103,
+        "f2p_passed": 0,
+        "p2p_total": 10093,
+        "p2p_passed": 0,
+        "f2p": 0.0,
+        "p2p": 0.0,
+        "partial": 0.0
+      },
+      "classification": "invalid infrastructure: Polars AVX/AVX2 import failure"
+    },
+    {
+      "job": "arv1-control-nop",
+      "result_sha256": "66c531ece34215f5cbdfc78f9ec39c73d6851234d72d4968cd9b46a0f3936594",
+      "rewards": {
+        "reward": 0,
+        "f2p_total": 103,
+        "f2p_passed": 0,
+        "p2p_total": 10093,
+        "p2p_passed": 0,
+        "f2p": 0.0,
+        "p2p": 0.0,
+        "partial": 0.0
+      },
+      "classification": "invalid infrastructure: Polars AVX/AVX2 import failure"
+    }
+  ],
+  "repair": "Only add polars-runtime-compat==1.39.3 alongside unchanged polars==1.39.3. Same repaired image used for agents and verifier; no task, source, test, or grader changes.",
+  "source": "https://docs.pola.rs/user-guide/installation/#legacy-cpu",
+  "image": "ficus-eval-narwhals-compat:ea3c0e757e7f",
+  "image_id": "sha256:ea3c0e757e7f814bf13382d02dc388aa62e0b8c220f80356e4c841aa8fe81d54",
+  "wheel": "1e54d6acda9db5653ffd7fc5923a56082be65de20e41e4d33b6068efd67ecb85  /opt/ficus-eval-compat/polars_runtime_compat-1.39.3-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+  "prepared_file_sha256": {
+    "environment/Dockerfile": "2a855e27920ce6f4098619b22e4f95142ddd2c709a9912aec1b58101b36aa151",
+    "instruction.md": "d25036c0761a9e6a2194f40bda5ae29b12487ee4f4c2045e4326ece0a80679a2",
+    "solution/solution.patch": "13a3c82366454efa3680955e4c7f7be4cc46676ddb635d9fe14892de38d447cb",
+    "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+    "task.toml": "217884039f74cedb5052d25cdd1e51e07856998842bcd34e95cb4b27e0a84ba3",
+    "tests/Dockerfile": "0742b19e83f87327acccec662184e70835610aad0f95dbbced10ef31f93e20aa",
+    "tests/config.json": "8137378ce50c0b4ba10c51b41fbfeee36be20b80de8237ecdeba0e41c2747b9b",
+    "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+    "tests/test.patch": "4a63f38ce6e17c87c27db085c4e4146601be990e17141a1c0fdea25a607fc0cc",
+    "tests/test.sh": "04e46fc9e42527bb5e72c971da3ebc71d49c6ae73c249d2290d8bbed59b4e66e"
+  },
+  "verifier_build_platform": "linux/amd64 explicitly in FROM; default host platform cannot resolve local amd64 image",
+  "python_environment_sha256": "465b6f35bfdeed8b105e27d31d59b5d3c6583455de8f90749953353a65bd724a",
+  "infra_failed_retries": [
+    {
+      "job": "arv1-compat-control-oracle",
+      "result_sha256": "fa8a72e4e91b2390b2b4edc5db1920377934774b46b66ca66b46eac1234346ef",
+      "reason": "verifier build defaulted to arm64 and could not resolve local amd64-only base image"
+    },
+    {
+      "job": "arv1-compat-control-nop",
+      "result_sha256": "c8c9c45ad502a4608a1b2947c71d9421492e9dbab08aeb01d76b5ab24be60c0f",
+      "reason": "verifier build defaulted to arm64 and could not resolve local amd64-only base image"
+    }
+  ]
+}

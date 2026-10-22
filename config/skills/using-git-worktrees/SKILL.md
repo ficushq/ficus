@@ -9,6 +9,12 @@ description: Use when starting feature work that needs isolation from current wo
 
 When work is assigned through a Ficus work stream, first run `ficus workstream get <id> --json` with `squad_bash`. If `git.worktree` and `git.branch` are present, use that recorded worktree and branch; **do not create a second worktree**. Only use this skill's creation flow when no work stream controls the worktree. Run all git, setup, and verification commands with `squad_bash` from the project/shared worktree, and follow the repository's package-manager policy instead of the generic examples below. If `squad_bash` is unavailable, use another shell only when the Workspace & Sandbox prompt says it can reach the recorded worktree; otherwise delegate the repository operation to an agent with shared-runtime access.
 
+For an explicit local in-place deliverable in a disposable, single-task workspace,
+check that the work stream records the exact isolated path and authorized mutation
+scope. That workspace already provides isolation: use it without creating another
+worktree. This exception does not apply to shared checkouts, and it does not remove
+required review or authorize remote delivery.
+
 ## Overview
 
 Git worktrees create isolated workspaces sharing the same repository, allowing work on multiple branches simultaneously without switching.

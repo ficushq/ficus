@@ -1,0 +1,210 @@
+{
+  "baseline": "38efa36c",
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "maxTokens": 2048,
+  "repeats": 2,
+  "scope": "Synthetic decision checkpoints with static role + includes; no tools, skills or dynamic runtime context. Not a held-out coding benchmark.",
+  "casesSha256": "c2829ec1a202dc70dea37de82db820fccad538ddb1fd6cc43832624489a164d8",
+  "contractSha256": "5fd42d3a6b5bc467df0c67b167f4f7a76cc4e4f9cada62428337581c23192272",
+  "promptSha256": {
+    "baseline-manager": "b13284fe8979e8d0960d0f61ccb27f744c6356bb447503cd64890ee74e470a94",
+    "candidate-manager": "9c4b3fdd9992f5041678eb527532280194cee3681aa708b9bd5090529be3942f",
+    "baseline-reviewer": "8d1e60158e34df93fc8b9a6089d2b31c7b6de7411c8c0c368490f727469060ad",
+    "candidate-reviewer": "bec94b7b2002e6a9db413dfd4b032bb773c2a5d8a1925b0a5c38846de293f5c8"
+  },
+  "calls": [
+    {
+      "caseId": "manager-export-prerequisite",
+      "role": "manager",
+      "variant": "baseline",
+      "repeat": 0
+    },
+    {
+      "caseId": "manager-export-prerequisite",
+      "role": "manager",
+      "variant": "candidate",
+      "repeat": 0
+    },
+    {
+      "caseId": "reviewer-retry-scope-steering",
+      "role": "reviewer",
+      "variant": "candidate",
+      "repeat": 0
+    },
+    {
+      "caseId": "reviewer-retry-scope-steering",
+      "role": "reviewer",
+      "variant": "baseline",
+      "repeat": 0
+    },
+    {
+      "caseId": "manager-unrelated-report-test",
+      "role": "manager",
+      "variant": "baseline",
+      "repeat": 0
+    },
+    {
+      "caseId": "manager-unrelated-report-test",
+      "role": "manager",
+      "variant": "candidate",
+      "repeat": 0
+    },
+    {
+      "caseId": "reviewer-explicit-file-boundary",
+      "role": "reviewer",
+      "variant": "candidate",
+      "repeat": 0
+    },
+    {
+      "caseId": "reviewer-explicit-file-boundary",
+      "role": "reviewer",
+      "variant": "baseline",
+      "repeat": 0
+    },
+    {
+      "caseId": "manager-accepted-reduction",
+      "role": "manager",
+      "variant": "baseline",
+      "repeat": 0
+    },
+    {
+      "caseId": "manager-accepted-reduction",
+      "role": "manager",
+      "variant": "candidate",
+      "repeat": 0
+    },
+    {
+      "caseId": "reviewer-unproven-unrelated",
+      "role": "reviewer",
+      "variant": "candidate",
+      "repeat": 0
+    },
+    {
+      "caseId": "reviewer-unproven-unrelated",
+      "role": "reviewer",
+      "variant": "baseline",
+      "repeat": 0
+    },
+    {
+      "caseId": "reviewer-unrelated-ci-gate",
+      "role": "reviewer",
+      "variant": "baseline",
+      "repeat": 0
+    },
+    {
+      "caseId": "reviewer-unrelated-ci-gate",
+      "role": "reviewer",
+      "variant": "candidate",
+      "repeat": 0
+    },
+    {
+      "caseId": "manager-research-not-code",
+      "role": "manager",
+      "variant": "candidate",
+      "repeat": 0
+    },
+    {
+      "caseId": "manager-research-not-code",
+      "role": "manager",
+      "variant": "baseline",
+      "repeat": 0
+    },
+    {
+      "caseId": "manager-export-prerequisite",
+      "role": "manager",
+      "variant": "candidate",
+      "repeat": 1
+    },
+    {
+      "caseId": "manager-export-prerequisite",
+      "role": "manager",
+      "variant": "baseline",
+      "repeat": 1
+    },
+    {
+      "caseId": "reviewer-retry-scope-steering",
+      "role": "reviewer",
+      "variant": "baseline",
+      "repeat": 1
+    },
+    {
+      "caseId": "reviewer-retry-scope-steering",
+      "role": "reviewer",
+      "variant": "candidate",
+      "repeat": 1
+    },
+    {
+      "caseId": "manager-unrelated-report-test",
+      "role": "manager",
+      "variant": "candidate",
+      "repeat": 1
+    },
+    {
+      "caseId": "manager-unrelated-report-test",
+      "role": "manager",
+      "variant": "baseline",
+      "repeat": 1
+    },
+    {
+      "caseId": "reviewer-explicit-file-boundary",
+      "role": "reviewer",
+      "variant": "baseline",
+      "repeat": 1
+    },
+    {
+      "caseId": "reviewer-explicit-file-boundary",
+      "role": "reviewer",
+      "variant": "candidate",
+      "repeat": 1
+    },
+    {
+      "caseId": "manager-accepted-reduction",
+      "role": "manager",
+      "variant": "candidate",
+      "repeat": 1
+    },
+    {
+      "caseId": "manager-accepted-reduction",
+      "role": "manager",
+      "variant": "baseline",
+      "repeat": 1
+    },
+    {
+      "caseId": "reviewer-unproven-unrelated",
+      "role": "reviewer",
+      "variant": "baseline",
+      "repeat": 1
+    },
+    {
+      "caseId": "reviewer-unproven-unrelated",
+      "role": "reviewer",
+      "variant": "candidate",
+      "repeat": 1
+    },
+    {
+      "caseId": "reviewer-unrelated-ci-gate",
+      "role": "reviewer",
+      "variant": "candidate",
+      "repeat": 1
+    },
+    {
+      "caseId": "reviewer-unrelated-ci-gate",
+      "role": "reviewer",
+      "variant": "baseline",
+      "repeat": 1
+    },
+    {
+      "caseId": "manager-research-not-code",
+      "role": "manager",
+      "variant": "baseline",
+      "repeat": 1
+    },
+    {
+      "caseId": "manager-research-not-code",
+      "role": "manager",
+      "variant": "candidate",
+      "repeat": 1
+    }
+  ]
+}

@@ -1,0 +1,193 @@
+[
+  {
+    "arm": "ficus-planned",
+    "job": "feature-v2-ficus-planned-1",
+    "reward": {
+      "rewards": {
+        "reward": 0.0
+      }
+    },
+    "exception": null,
+    "wall_seconds": 1096.82,
+    "setup_seconds": 64.73,
+    "agent_seconds": 999.89,
+    "metadata": {
+      "configuration": "planned",
+      "model_api": "openai-responses",
+      "thinking": "medium",
+      "outcome": "delivered",
+      "memory": "fresh-disabled",
+      "runtime_sha256": "903ff3d33a08776c4005c3430ef13152101d25b72435fc27b242320573efec18",
+      "attempted_roles": [
+        "architect",
+        "engineer",
+        "manager",
+        "reviewer"
+      ],
+      "engineer_only_verified": null,
+      "executed_roles": [
+        "architect",
+        "engineer",
+        "manager",
+        "reviewer"
+      ]
+    },
+    "task_checksum": "4c3c1ac1f67aeb353ed802f5133ccd96b49e071c4b19932fd2ff634fa039140c",
+    "calls": 99,
+    "metered_usd": 1.417055,
+    "unknown_usage_calls": 0,
+    "errors": 0,
+    "streams": [
+      "done"
+    ],
+    "flow_attempts": [
+      [
+        {
+          "step": "design",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "review",
+          "status": "completed",
+          "outcome": "approved"
+        }
+      ]
+    ],
+    "open_waits": 0,
+    "pending_messages": 0,
+    "official_inputs_verified_before_and_after": true,
+    "test_counts": [
+      "12"
+    ],
+    "submission_sha256": "c7befb569da78252ed01fedff9fbd62216a8ef1f07c0f5f8e7a6e5831b2be52a",
+    "submission_archive_verified": true,
+    "validity": "verified-official-grader"
+  },
+  {
+    "arm": "pi-planned",
+    "job": "feature-v2-pi-planned-1",
+    "reward": {
+      "rewards": {
+        "reward": 1.0
+      }
+    },
+    "exception": null,
+    "wall_seconds": 806.69,
+    "setup_seconds": 16.5,
+    "agent_seconds": 757.27,
+    "metadata": {
+      "configuration": "planned",
+      "baseline": "Pi packaged subagent example",
+      "executed_roles": [
+        "architect",
+        "engineer",
+        "reviewer"
+      ],
+      "required_roles_executed": true
+    },
+    "task_checksum": "4c3c1ac1f67aeb353ed802f5133ccd96b49e071c4b19932fd2ff634fa039140c",
+    "calls": 104,
+    "metered_usd": 1.046489,
+    "unknown_usage_calls": 0,
+    "errors": 0,
+    "official_inputs_verified_before_and_after": true,
+    "test_counts": [
+      "12",
+      "52"
+    ],
+    "submission_sha256": "9dad245d046d73b41c312c04aafd6af2fe8896a7ca6415f15d5bfcee7e701025",
+    "submission_archive_verified": true,
+    "validity": "verified-official-grader"
+  },
+  {
+    "arm": "ficus-engineer",
+    "job": "feature-v2-ficus-engineer-1",
+    "reward": {
+      "rewards": {
+        "reward": 1.0
+      }
+    },
+    "exception": null,
+    "wall_seconds": 580.0,
+    "setup_seconds": 60.09,
+    "agent_seconds": 487.1,
+    "metadata": {
+      "configuration": "engineer",
+      "model_api": "openai-responses",
+      "thinking": "medium",
+      "outcome": "delivered",
+      "memory": "fresh-disabled",
+      "runtime_sha256": "903ff3d33a08776c4005c3430ef13152101d25b72435fc27b242320573efec18",
+      "attempted_roles": [
+        "engineer"
+      ],
+      "engineer_only_verified": true,
+      "executed_roles": [
+        "engineer"
+      ]
+    },
+    "task_checksum": "4c3c1ac1f67aeb353ed802f5133ccd96b49e071c4b19932fd2ff634fa039140c",
+    "calls": 53,
+    "metered_usd": 0.754351,
+    "unknown_usage_calls": 0,
+    "errors": 0,
+    "streams": [
+      "done"
+    ],
+    "flow_attempts": [
+      [
+        {
+          "step": "execute",
+          "status": "completed",
+          "outcome": "completed"
+        }
+      ]
+    ],
+    "open_waits": 0,
+    "pending_messages": 0,
+    "official_inputs_verified_before_and_after": true,
+    "test_counts": [
+      "12",
+      "52"
+    ],
+    "submission_sha256": "d87443cefc4f50bc7486fca301b89eb22cccf7917a1bab0b395f6a9554064241",
+    "submission_archive_verified": true,
+    "validity": "verified-official-grader"
+  },
+  {
+    "arm": "pi-engineer",
+    "job": "feature-v2-pi-engineer-1",
+    "reward": {
+      "rewards": {
+        "reward": 1.0
+      }
+    },
+    "exception": null,
+    "wall_seconds": 271.68,
+    "setup_seconds": 15.09,
+    "agent_seconds": 224.19,
+    "metadata": {
+      "configuration": "engineer",
+      "baseline": "Pi single session"
+    },
+    "task_checksum": "4c3c1ac1f67aeb353ed802f5133ccd96b49e071c4b19932fd2ff634fa039140c",
+    "calls": 48,
+    "metered_usd": 0.396861,
+    "unknown_usage_calls": 0,
+    "errors": 0,
+    "official_inputs_verified_before_and_after": true,
+    "test_counts": [
+      "12",
+      "52"
+    ],
+    "submission_sha256": "fcb862f7e397c8e678b378f2b584ad0a1715f65c1ca18fb85ce2e98a1267e3d5",
+    "submission_archive_verified": true,
+    "validity": "verified-official-grader"
+  }
+]

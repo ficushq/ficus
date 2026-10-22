@@ -1,0 +1,13 @@
+{
+  "only_changed_members": [
+    "ficus-harbor/runtime/config/agent-types/reviewer.yaml",
+    "ficus-harbor/runtime/evals/harbor/revision.json"
+  ],
+  "member_count": 127011,
+  "archive_sha256": {
+    "runtime-baseline.tar.gz": "f34c6a8a347e25b3179cea46f2283afbdca0f634674a28b46e426f5d78668012",
+    "runtime-candidate.tar.gz": "05a9f0a912b2df168f73a4c1fc42888d06c6e0a52e69644add7aa651da4d3a3a"
+  },
+  "reviewer_before_sha256": "75ce385286b9935cfa9b87f0f32b4859b0ba8853df40caa29ed13186aa68dab0",
+  "reviewer_after_sha256": "03755102dc1ee1c51f64ae8fc9afb0d2b17ada72d59771cbc56dd4441d5e21b4"
+}

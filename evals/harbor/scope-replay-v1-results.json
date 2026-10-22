@@ -1,0 +1,58 @@
+[
+  {
+    "arm": "ficus-planned",
+    "job": "scope-completion-planned-1",
+    "reward": {
+      "rewards": {
+        "reward": 1.0
+      }
+    },
+    "exception": null,
+    "wall_seconds": 917.62,
+    "setup_seconds": 85.87,
+    "agent_seconds": 795.09,
+    "metadata": {
+      "configuration": "planned",
+      "model_api": "openai-responses",
+      "thinking": "medium",
+      "outcome": "delivered",
+      "memory": "fresh-disabled",
+      "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+      "attempted_roles": ["architect", "engineer", "manager", "reviewer"],
+      "engineer_only_verified": null,
+      "executed_roles": ["architect", "engineer", "manager", "reviewer"]
+    },
+    "task_checksum": "4c3c1ac1f67aeb353ed802f5133ccd96b49e071c4b19932fd2ff634fa039140c",
+    "calls": 66,
+    "metered_usd": 1.07487,
+    "unknown_usage_calls": 0,
+    "errors": 0,
+    "streams": ["done"],
+    "flow_attempts": [
+      [
+        {
+          "step": "design",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "review",
+          "status": "completed",
+          "outcome": "approved"
+        }
+      ]
+    ],
+    "open_waits": 0,
+    "pending_messages": 0,
+    "official_inputs_verified_before_and_after": true,
+    "test_counts": ["12", "52"],
+    "submission_sha256": "5a6ec6d936aacfed57e16fa072154de2669fdf6cadc727b9f662aa5ae0882db5",
+    "submission_archive_verified": true,
+    "validity": "verified-official-grader"
+  }
+]

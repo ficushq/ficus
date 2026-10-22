@@ -1,0 +1,498 @@
+{
+  "experiment": "independent-review-v1",
+  "scope": "Full Ficus squads; original versus frozen independent-review prompt addition",
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "provider_runtime": "native Pi SDK 0.99.1",
+  "memory": "fresh-disabled",
+  "conditions": [
+    {
+      "condition": "baseline",
+      "frozen_source_commit": "db7a3a65",
+      "frozen_manifest_sha256": "04ceea1c7392dc4277562c9c1fb50fcadd3f686f0acee1a4bb8a9bba55d77cf2",
+      "input_hashes_still_match": true,
+      "confirmed_cost_usd": 4.018341,
+      "concurrency": 2,
+      "results": [
+        {
+          "task": "igel-persist-feature-schema",
+          "job_name": "irv1r3-baseline-igel-ficus-planned",
+          "reward": {
+            "reward": 0,
+            "f2p_total": 24,
+            "f2p_passed": 22,
+            "p2p_total": 2,
+            "p2p_passed": 2,
+            "f2p": 0.9166666666666666,
+            "p2p": 1.0,
+            "partial": 0.9230769230769231
+          },
+          "confirmed_cost_usd": 1.233294,
+          "requests": 80,
+          "unknown_usage_requests": 0,
+          "agent_metadata": {
+            "configuration": "planned",
+            "model_api": "openai-responses",
+            "thinking": "medium",
+            "outcome": "delivered",
+            "memory": "fresh-disabled",
+            "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+            "database_network": "task",
+            "attempted_roles": ["architect", "engineer", "manager", "reviewer"],
+            "engineer_only_verified": null,
+            "executed_roles": ["architect", "engineer", "manager", "reviewer"]
+          },
+          "review_attempts": 2,
+          "stream_statuses": ["done"],
+          "autonomous_delivery": true,
+          "executions_by_role": {
+            "architect": 1,
+            "engineer": 2,
+            "manager": 3,
+            "reviewer": 2
+          },
+          "completed_executions_by_role": {
+            "architect": 1,
+            "engineer": 2,
+            "manager": 3,
+            "reviewer": 2
+          },
+          "verified_session_or_child_models": ["gpt-6.1-sol"],
+          "submission_audit": {
+            "changed_paths": [
+              "docs/README.rst",
+              "docs/usage.rst",
+              "igel/features.py",
+              "igel/igel.py",
+              "igel/servers/fastapi_server.py",
+              "tests/test_igel/conftest.py",
+              "tests/test_igel/test_feature_schema_api.py",
+              "tests/test_igel/test_feature_schema_export.py",
+              "tests/test_igel/test_feature_schema_integration.py",
+              "tests/test_igel/test_features.py",
+              "tests/test_igel/test_igel.py"
+            ],
+            "test_paths_restored_by_official_verifier": [],
+            "candidate_test_paths_retained": [
+              "tests/test_igel/conftest.py",
+              "tests/test_igel/test_feature_schema_api.py",
+              "tests/test_igel/test_feature_schema_export.py",
+              "tests/test_igel/test_feature_schema_integration.py",
+              "tests/test_igel/test_features.py",
+              "tests/test_igel/test_igel.py"
+            ],
+            "retained_test_removed_line_counts": {
+              "tests/test_igel/conftest.py": 0,
+              "tests/test_igel/test_feature_schema_api.py": 0,
+              "tests/test_igel/test_feature_schema_export.py": 0,
+              "tests/test_igel/test_feature_schema_integration.py": 0,
+              "tests/test_igel/test_features.py": 0,
+              "tests/test_igel/test_igel.py": 35
+            }
+          },
+          "artifacts_sha256": {
+            "result.json": "d8c89ab65fd16cecab90cb44b5cfac015886d0bfb84e4ece4623dac38232bfe7",
+            "verifier/reward.json": "87ad77e2fe2dc548c2bf6bbe49654e70bdadec43a360514d8df49bd5918a8d17",
+            "verifier/ctrf.json": "80e473f287c6bd5e6f35498fb075f1dde1f18b3d6824d0d1d97f8035fee272f7",
+            "verifier/test-stdout.txt": "fb95761feacf3dccf962c8a7a0b63f4c689bc3898e5023b59b109ee306c20390",
+            "agent/snapshot.json": "b2ef6e235f7ade0b06cde6e278729e639d2df69316f7485b93c80f02f54b69d8",
+            "agent/messages.json": "85c9ccf64d5fd17b5f406e181f0357a8b997236416bd388c96f0da83315f0be8",
+            "agent/progress.jsonl": "bd5b3ad274ea571ca2a84b993128e817d083683a708ef79ea7c009284480e726",
+            "artifacts/logs/artifacts/model.patch": "0db4c3381f00233239cbe8c06efd7930e1740cb93311985e81c510b595591f7b"
+          },
+          "original_harness_exception_type": null
+        },
+        {
+          "task": "psd-tools-blend-range-api",
+          "job_name": "irv1r3-baseline-psd-ficus-planned",
+          "reward": null,
+          "confirmed_cost_usd": 2.785047,
+          "requests": 157,
+          "unknown_usage_requests": 0,
+          "agent_metadata": {
+            "configuration": "planned",
+            "model_api": "openai-responses",
+            "thinking": "medium",
+            "outcome": "interrupted",
+            "memory": "fresh-disabled",
+            "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+            "database_network": "task"
+          },
+          "review_attempts": 2,
+          "stream_statuses": ["active"],
+          "autonomous_delivery": false,
+          "executions_by_role": {
+            "architect": 1,
+            "engineer": 2,
+            "manager": 5,
+            "reviewer": 2
+          },
+          "completed_executions_by_role": {
+            "architect": 1,
+            "engineer": 2,
+            "manager": 5,
+            "reviewer": 2
+          },
+          "verified_session_or_child_models": ["gpt-6.1-sol"],
+          "submission_audit": {
+            "changed_paths": [
+              "docs/index.rst",
+              "docs/reference/psd_tools.api.blend_range.rst",
+              "docs/reference/psd_tools.api.rst",
+              "src/psd_tools/api/blend_range.py",
+              "src/psd_tools/api/layers.py",
+              "src/psd_tools/composite/composite.py",
+              "src/psd_tools/psd/layer_and_mask.py",
+              "tests/psd_tools/api/test_blend_range.py",
+              "tests/psd_tools/api/test_layers.py",
+              "tests/psd_tools/composite/test_blend_ranges.py",
+              "tests/psd_tools/psd/test_layer_and_mask.py"
+            ],
+            "test_paths_restored_by_official_verifier": ["tests/psd_tools/api/test_blend_range.py"],
+            "candidate_test_paths_retained": [
+              "tests/psd_tools/api/test_layers.py",
+              "tests/psd_tools/composite/test_blend_ranges.py",
+              "tests/psd_tools/psd/test_layer_and_mask.py"
+            ],
+            "retained_test_removed_line_counts": {
+              "tests/psd_tools/api/test_layers.py": 0,
+              "tests/psd_tools/composite/test_blend_ranges.py": 0,
+              "tests/psd_tools/psd/test_layer_and_mask.py": 0
+            }
+          },
+          "artifacts_sha256": {
+            "result.json": "33c0a2175e9e503db3843de324d7dee8ba6f7ec7e79634e9c63d6014e6529606",
+            "agent/snapshot.json": "53125c9e9fd66a7b654d11d09d27fc8f7ea3601cc109b930f012cfefbfdc16a6",
+            "agent/progress.jsonl": "9d2f55ac83fbe23650b9e644ebe752b0136a076d26590bd556aa837d4fb1a0bc",
+            "artifacts/logs/artifacts/model.patch": "1e973f7f1c83ead02a624d9048faea9e6a47f54dc6705ca0b01d177efa0cb5b9"
+          },
+          "blocked_outcome": "manual owner wait for missing validation dependency; observer externally stopped",
+          "separate_artifact_grade": {
+            "reward": 0,
+            "f2p_total": 45,
+            "f2p_passed": 36,
+            "p2p_total": 979,
+            "p2p_passed": 979,
+            "f2p": 0.8,
+            "p2p": 1.0,
+            "partial": 0.9912109375
+          },
+          "separate_artifact_grade_result_sha256": "fa4b793fb7a7fbb6a3e6e62941f4a8eed19e3f3e66f8593e18e399ed305ad2ed",
+          "captured_blocked_patch_sha256": "1e973f7f1c83ead02a624d9048faea9e6a47f54dc6705ca0b01d177efa0cb5b9",
+          "original_harness_exception_type": "CancelledError"
+        }
+      ]
+    },
+    {
+      "condition": "candidate",
+      "frozen_source_commit": "d8b02549",
+      "frozen_manifest_sha256": "337e4c2a27f93b4a4a29b1cdc0f0f8df7a06b233606e9424da34178d981d9a99",
+      "input_hashes_still_match": true,
+      "confirmed_cost_usd": 2.282253,
+      "concurrency": 1,
+      "results": [
+        {
+          "task": "igel-persist-feature-schema",
+          "job_name": "irv1r3-candidate-igel-ficus-planned",
+          "reward": {
+            "reward": 0,
+            "f2p_total": 24,
+            "f2p_passed": 22,
+            "p2p_total": 2,
+            "p2p_passed": 2,
+            "f2p": 0.9166666666666666,
+            "p2p": 1.0,
+            "partial": 0.9230769230769231
+          },
+          "confirmed_cost_usd": 1.154768,
+          "requests": 75,
+          "unknown_usage_requests": 0,
+          "agent_metadata": {
+            "configuration": "planned",
+            "model_api": "openai-responses",
+            "thinking": "medium",
+            "outcome": "delivered",
+            "memory": "fresh-disabled",
+            "runtime_sha256": "b7bc8a6c0e302462bac420c22b2f5a08944945784e10158677870bf47e9b941b",
+            "database_network": "task",
+            "attempted_roles": ["architect", "engineer", "manager", "reviewer"],
+            "engineer_only_verified": null,
+            "executed_roles": ["architect", "engineer", "manager", "reviewer"]
+          },
+          "review_attempts": 2,
+          "stream_statuses": ["done"],
+          "autonomous_delivery": true,
+          "executions_by_role": {
+            "architect": 1,
+            "engineer": 2,
+            "manager": 3,
+            "reviewer": 2
+          },
+          "completed_executions_by_role": {
+            "architect": 1,
+            "engineer": 2,
+            "manager": 3,
+            "reviewer": 2
+          },
+          "verified_session_or_child_models": ["gpt-6.1-sol"],
+          "submission_audit": {
+            "changed_paths": [
+              "docs/README.rst",
+              "docs/usage.rst",
+              "igel/feature_schema.py",
+              "igel/igel.py",
+              "igel/servers/fastapi_server.py",
+              "tests/test_igel/conftest.py",
+              "tests/test_igel/test_feature_schema.py",
+              "tests/test_igel/test_feature_schema_export.py",
+              "tests/test_igel/test_feature_schema_integration.py",
+              "tests/test_igel/test_feature_schema_server.py",
+              "tests/test_igel/test_igel.py"
+            ],
+            "test_paths_restored_by_official_verifier": [],
+            "candidate_test_paths_retained": [
+              "tests/test_igel/conftest.py",
+              "tests/test_igel/test_feature_schema.py",
+              "tests/test_igel/test_feature_schema_export.py",
+              "tests/test_igel/test_feature_schema_integration.py",
+              "tests/test_igel/test_feature_schema_server.py",
+              "tests/test_igel/test_igel.py"
+            ],
+            "retained_test_removed_line_counts": {
+              "tests/test_igel/conftest.py": 0,
+              "tests/test_igel/test_feature_schema.py": 0,
+              "tests/test_igel/test_feature_schema_export.py": 0,
+              "tests/test_igel/test_feature_schema_integration.py": 0,
+              "tests/test_igel/test_feature_schema_server.py": 0,
+              "tests/test_igel/test_igel.py": 9
+            }
+          },
+          "artifacts_sha256": {
+            "result.json": "2c93c2a6ae6c8630b4a19cadb8ea405a2b92fa37c44c8a678e7f495ac61fc051",
+            "verifier/reward.json": "87ad77e2fe2dc548c2bf6bbe49654e70bdadec43a360514d8df49bd5918a8d17",
+            "verifier/ctrf.json": "a3d1614d26412b11593c3ff14b2aa0e34b7f43dc3b8ee4e58fae3835f71c71c4",
+            "verifier/test-stdout.txt": "b2fc2406699709da8440ee723c43e3d1278dd23c624daab4d0778d9fd853ea9f",
+            "agent/snapshot.json": "2bd26dfcdb966a7694af05f99e9bfbb4d58d18be2d161ed2ea7a8a5513679f5a",
+            "agent/messages.json": "4b0ae1cead8f5ae12061a8e579bf0a72095e04240609b1d112f3519085960a28",
+            "agent/progress.jsonl": "a8050c7c2b3c675ad893c7cf6b83e83d1d13468793585583d7b716c09405769f",
+            "artifacts/logs/artifacts/model.patch": "74e668dbab733d8bdb1945a222a7b777cce529e69459997b68a19e535c41672c"
+          },
+          "original_harness_exception_type": null
+        },
+        {
+          "task": "psd-tools-blend-range-api",
+          "job_name": "irv1r3-candidate-psd-ficus-planned",
+          "reward": {
+            "reward": 1,
+            "f2p_total": 45,
+            "f2p_passed": 45,
+            "p2p_total": 979,
+            "p2p_passed": 979,
+            "f2p": 1.0,
+            "p2p": 1.0,
+            "partial": 1.0
+          },
+          "confirmed_cost_usd": 1.127485,
+          "requests": 71,
+          "unknown_usage_requests": 0,
+          "agent_metadata": {
+            "configuration": "planned",
+            "model_api": "openai-responses",
+            "thinking": "medium",
+            "outcome": "delivered",
+            "memory": "fresh-disabled",
+            "runtime_sha256": "b7bc8a6c0e302462bac420c22b2f5a08944945784e10158677870bf47e9b941b",
+            "database_network": "task",
+            "attempted_roles": ["architect", "engineer", "manager", "reviewer"],
+            "engineer_only_verified": null,
+            "executed_roles": ["architect", "engineer", "manager", "reviewer"]
+          },
+          "review_attempts": 1,
+          "stream_statuses": ["done"],
+          "autonomous_delivery": true,
+          "executions_by_role": {
+            "architect": 1,
+            "engineer": 1,
+            "manager": 2,
+            "reviewer": 1
+          },
+          "completed_executions_by_role": {
+            "architect": 1,
+            "engineer": 1,
+            "manager": 2,
+            "reviewer": 1
+          },
+          "verified_session_or_child_models": ["gpt-6.1-sol"],
+          "submission_audit": {
+            "changed_paths": [
+              "docs/index.rst",
+              "docs/reference/psd_tools.api.blend_range.rst",
+              "docs/reference/psd_tools.api.rst",
+              "docs/usage.rst",
+              "src/psd_tools/api/blend_range.py",
+              "src/psd_tools/api/layers.py",
+              "src/psd_tools/composite/composite.py",
+              "src/psd_tools/psd/layer_and_mask.py",
+              "tests/psd_tools/api/test_blend_range.py",
+              "tests/psd_tools/api/test_layers.py",
+              "tests/psd_tools/composite/test_blend_range.py",
+              "tests/psd_tools/psd/test_layer_and_mask.py"
+            ],
+            "test_paths_restored_by_official_verifier": ["tests/psd_tools/api/test_blend_range.py"],
+            "candidate_test_paths_retained": [
+              "tests/psd_tools/api/test_layers.py",
+              "tests/psd_tools/composite/test_blend_range.py",
+              "tests/psd_tools/psd/test_layer_and_mask.py"
+            ],
+            "retained_test_removed_line_counts": {
+              "tests/psd_tools/api/test_layers.py": 0,
+              "tests/psd_tools/composite/test_blend_range.py": 0,
+              "tests/psd_tools/psd/test_layer_and_mask.py": 0
+            }
+          },
+          "artifacts_sha256": {
+            "result.json": "e6ba97ccde391ed07f5aa9b37ea69f87fe32e71ea7837b94645dc8adb4b505e2",
+            "verifier/reward.json": "d78f76ee9c980bd4d91627c4573dfe9aeb2eb24645fc939c9ed6d48bd76feed3",
+            "verifier/ctrf.json": "1a0a74a38611acfa12165f086a50c218a61b67c60ad099b8e464610481f32f6b",
+            "verifier/test-stdout.txt": "075dea889bc4f2d3aefe98d429a6c70c3e4d141d05b6668d353f5240cc54e195",
+            "agent/snapshot.json": "9c91b9232caac6113a7584f961740fe503dfca7053babcdd3c497adaa0f4d422",
+            "agent/messages.json": "9628ab9b9911e1be1242dd18604e9a526b0287e52eea2ca0be31c1e268c485d3",
+            "agent/progress.jsonl": "b41924c9380dff157c73f7d56dc9a6478a2ef9fb5d4911c6ae15df6b5b520ed9",
+            "artifacts/logs/artifacts/model.patch": "66d5e8be5190c977da6d883660c9db3050abc7f634a78ea336f9b4dae9f689c6"
+          },
+          "original_harness_exception_type": null
+        }
+      ]
+    }
+  ],
+  "interrupted_attempts": [
+    {
+      "report": "independent-review-v1-interrupted.json",
+      "sha256": "bd980d6cf835d991ab093377364476d44405a1bdd006a34d9d9355dd482fb044",
+      "confirmed_cost_usd": 0.944603,
+      "candidate_started": false
+    },
+    {
+      "report": "independent-review-v1-recovery-1-interrupted.json",
+      "sha256": "a854dd326c2320ec55e599aaa365c673ad077f23e7be9bddd0b5ef1279829842",
+      "confirmed_cost_usd": 0.795636,
+      "candidate_started": false
+    },
+    {
+      "report": "independent-review-v1-recovery-2-interrupted.json",
+      "sha256": "38a481b7bafc749be2a9688de42bf7cd9d3de027d1b6ad3b86eb1d279a37ec58",
+      "confirmed_cost_usd": 1.037168,
+      "candidate_started": false
+    }
+  ],
+  "posthoc_original_test_audits": [
+    {
+      "condition": "baseline",
+      "task": "igel-persist-feature-schema",
+      "reward": {
+        "reward": 0,
+        "f2p_total": 24,
+        "f2p_passed": 22,
+        "p2p_total": 2,
+        "p2p_passed": 2,
+        "f2p": 0.9166666666666666,
+        "p2p": 1.0,
+        "partial": 0.9230769230769231
+      },
+      "exception_type": null,
+      "result_sha256": "5b57dafeea02e19385961461b85bd45bdc66a81ec6fdbee8c599ed7e90b70299",
+      "provenance": {
+        "source_artifact_sha256": "0db4c3381f00233239cbe8c06efd7930e1740cb93311985e81c510b595591f7b",
+        "audit_patch_sha256": "0a8a37b2dfd5d34d042514c3fe1247adaf41571fdc40e2b3cb1c1f460ec59058",
+        "excluded_test_paths": [
+          "tests/test_igel/conftest.py",
+          "tests/test_igel/test_feature_schema_api.py",
+          "tests/test_igel/test_feature_schema_export.py",
+          "tests/test_igel/test_feature_schema_integration.py",
+          "tests/test_igel/test_features.py",
+          "tests/test_igel/test_igel.py"
+        ],
+        "source_code_changes": "identical to captured artifact",
+        "posthoc_sensitivity_audit": true,
+        "inference": false,
+        "original_result_unchanged": true
+      },
+      "provenance_sha256": "bd90bcb67edf0c9de0b2b22378e0917ee16438144f654433755b658dad43582e"
+    },
+    {
+      "condition": "candidate",
+      "task": "igel-persist-feature-schema",
+      "reward": {
+        "reward": 0,
+        "f2p_total": 24,
+        "f2p_passed": 22,
+        "p2p_total": 2,
+        "p2p_passed": 2,
+        "f2p": 0.9166666666666666,
+        "p2p": 1.0,
+        "partial": 0.9230769230769231
+      },
+      "exception_type": null,
+      "result_sha256": "a73509556b1da64caebb24aabcbaf6fa8a0676c89b0f570945c14929e4499528",
+      "provenance": {
+        "source_artifact_sha256": "74e668dbab733d8bdb1945a222a7b777cce529e69459997b68a19e535c41672c",
+        "audit_patch_sha256": "6b771e4762580bf5f4a3551c5c33614f52698f40da85eae6c74d3eb660c964b4",
+        "excluded_test_paths": [
+          "tests/test_igel/conftest.py",
+          "tests/test_igel/test_feature_schema.py",
+          "tests/test_igel/test_feature_schema_export.py",
+          "tests/test_igel/test_feature_schema_integration.py",
+          "tests/test_igel/test_feature_schema_server.py",
+          "tests/test_igel/test_igel.py"
+        ],
+        "source_code_changes": "identical to captured artifact",
+        "posthoc_sensitivity_audit": true,
+        "inference": false,
+        "original_result_unchanged": true
+      },
+      "provenance_sha256": "5ed7388c5a940ce5d3f379c57c8b5eb2a7248cd7571b2ff1eba09a1482cb8eae"
+    }
+  ],
+  "budget": {
+    "phase_cap_usd": 30,
+    "confirmed_usd": 13.727605,
+    "retained_holds": [
+      {
+        "call_id": 446,
+        "reserved_usd": 5.5
+      }
+    ],
+    "exposure_usd": 19.227605,
+    "remaining_headroom_usd": 10.772395,
+    "last_call_id": 829,
+    "prior_study_confirmed_usd": 4.649604,
+    "this_study_confirmed_usd": 9.078001
+  },
+  "operator_task_hints_or_repairs": 0,
+  "human_attention_minutes": null,
+  "production_prompt_changed": false,
+  "limitations": [
+    "Two tasks, one completed attempt per condition after explicitly retained infrastructure recoveries; no statistical improvement claim",
+    "Fixed baseline then candidate order; not randomized",
+    "Baseline concurrent, candidate sequential; no comparable throughput claim",
+    "Manual-owner-wait observer amended for candidate; baseline PSD stop externally observed and artifact separately graded",
+    "Original grader permits some submitted test edits; Igel original-test checks reported separately",
+    "Shared arm64 host with amd64 emulation and extra capped Ficus DB resources",
+    "Unknown-usage hold retained; costs are confirmed receipts plus conservative exposure, not reconciled dashboard billing",
+    "No-inference Igel sensitivity audits overlapped PSD candidate execution; no timing comparison claimed"
+  ],
+  "findings": {
+    "accepted_tasks": {
+      "baseline": 0,
+      "candidate": 1
+    },
+    "autonomous_deliveries": {
+      "baseline": 1,
+      "candidate": 2
+    },
+    "igel": "Same two official failures; both reviewers requested the same empty-HTTP-input repair; original-test audits preserve scores.",
+    "psd": "Candidate first implementation passes; reviewer reproduced existing dependency failures on clean main and approved. Baseline repaired a stroke bug then blocked for missing aggdraw; saved artifact separately graded.",
+    "causal_conclusion": "No demonstrated causal attribution to prompt: successful candidate PSD implementation preceded review; one stochastic attempt per task/condition with documented infrastructure and scheduling changes.",
+    "decision": "Keep prompt experimental; no production promotion."
+  }
+}

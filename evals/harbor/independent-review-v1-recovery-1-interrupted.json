@@ -1,0 +1,35 @@
+{
+  "experiment": "independent-review-v1-recovery-1",
+  "candidate_started": false,
+  "first_stop_event": {
+    "call": 375,
+    "failure": "client_disconnected",
+    "http_status": 200,
+    "usage_receipt_present": true
+  },
+  "diagnosis": "Proxy continued forwarding after terminal completion; consistent with SDK closing completed stream, but original wire trace was not retained so exact disconnect timing is unproven. Fix closes after a complete terminal SSE event; real pre-terminal disconnects still fail.",
+  "trials": [
+    {
+      "job": "irv1r1-baseline-igel-ficus-planned",
+      "outcome": "interrupted-transport",
+      "official_grade": null,
+      "confirmed_usd": 0.389777,
+      "requests": 21,
+      "unknown_usage": 0,
+      "result_sha256": "5307bf587410e7f799e23feaeddfa6581412dd3ff2e39a858720cc4e9ec1c755"
+    },
+    {
+      "job": "irv1r1-baseline-psd-ficus-planned",
+      "outcome": "interrupted-transport",
+      "official_grade": null,
+      "confirmed_usd": 0.405859,
+      "requests": 28,
+      "unknown_usage": 0,
+      "result_sha256": "754fcf5f68222e9acc4f5fe4a581ad869c9e1d7baa1514df780bb1f2dfeb4d6a"
+    }
+  ],
+  "new_confirmed_usd": 0.795636,
+  "phase_exposure_usd": 6.389843,
+  "last_call_id": 386,
+  "unknown_usage_requests": 0
+}
