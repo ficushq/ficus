@@ -2,7 +2,10 @@ import clsx from 'clsx'
 import {
   type ComponentProps,
   type ComponentType,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
+  Suspense,
   useCallback,
   useEffect,
   useId,
@@ -40,6 +43,7 @@ import { SquadChatActions } from './SquadChatActions'
 import './SquadAgentThreads.css'
 import { Modal } from '../Modal'
 import { ExpandableChatPanel } from '../ExpandableChatPanel'
+import { LazyEntityReferenceModal, preloadEntityReferenceModal } from '../lazyEntityReferenceModal'
 import { AgentActivityDot } from '../AgentActivityDot'
 import {
   ChatIcon,
@@ -132,24 +136,49 @@ const workLinkClass =
   'pointer-events-auto relative whitespace-nowrap rounded-sm max-md:leading-6 text-secondary hover:text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1'
 
 /**
- * The work stream number (plus `+N` for further streams) opening the agent's most relevant work stream.
+ * The work stream number (plus `+N` for further streams) opening the agent's most relevant work stream
+ * in place, in the same modal as inline work stream references, so the chat behind it is left untouched.
+ * Both keep a real href, so modifier and middle clicks still open the Work tab in a new tab.
  * The number never shrinks; at narrow widths `+N` gives way first, then the status.
  */
 function AgentWorkStreamLink({ primary, others, href }: { primary: WorkStream; others: WorkStream[]; href: string }) {
+  const client = useQueryClient()
+  const link = useRef<HTMLAnchorElement>(null)
+  const [open, setOpen] = useState(false)
+  const reference = useMemo(() => ({ kind: 'ws' as const, id: primary.id }), [primary.id])
   const description = [
     `Open work stream ${workStreamTitle(primary)}`,
     others.length > 0 && `Also assigned: ${others.map(workStreamTitle).join(', ')}`,
   ]
     .filter(Boolean)
     .join('. ')
+  const preload = () => preloadEntityReferenceModal(client, reference)
+  const openInPlace = (event: ReactMouseEvent | ReactKeyboardEvent) => {
+    // Never activate the agent row this link sits on.
+    event.stopPropagation()
+    if ('button' in event && (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey))
+      return
+    event.preventDefault()
+    setOpen(true)
+  }
+  const linkProps = {
+    to: href,
+    title: description,
+    'aria-haspopup': 'dialog' as const,
+    onClick: openInPlace,
+    onMouseEnter: preload,
+    onFocus: preload,
+    onTouchStart: preload,
+  }
   return (
     <>
       <Link
-        to={href}
+        {...linkProps}
+        ref={link}
         aria-label={description}
-        title={description}
         data-testid="agent-row-work-stream"
-        onClick={(event) => event.stopPropagation()}
+        // Links activate on Enter only; the modal is a button-like action, so Space opens it too.
+        onKeyDown={(event) => event.key === ' ' && openInPlace(event)}
         className={clsx(workLinkClass, 'shrink-0')}
       >
         {workStreamLabel(primary)}
@@ -158,16 +187,26 @@ function AgentWorkStreamLink({ primary, others, href }: { primary: WorkStream; o
         // Same target for the pointer; the labelled link above already lists the others. The huge
         // shrink weight keeps proportional shrinking from shaving sub-pixels (and an ellipsis) off the status.
         <Link
-          to={href}
+          {...linkProps}
           aria-hidden="true"
           tabIndex={-1}
-          title={description}
           data-testid="agent-row-more-work-streams"
-          onClick={(event) => event.stopPropagation()}
           className={clsx(workLinkClass, 'min-w-0 shrink-[10000] truncate')}
         >
           +{others.length}
         </Link>
+      )}
+      {open && (
+        <Suspense fallback={null}>
+          <LazyEntityReferenceModal
+            reference={reference}
+            onClose={() => {
+              setOpen(false)
+              // The dialog takes focus on open; hand it back to the number (the `+N` twin is not focusable).
+              link.current?.focus({ preventScroll: true })
+            }}
+          />
+        </Suspense>
       )}
     </>
   )

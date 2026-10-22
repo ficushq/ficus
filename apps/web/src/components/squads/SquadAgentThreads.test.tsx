@@ -7,10 +7,11 @@ import { flushSync } from 'react-dom'
 import { ChatFullscreenContext } from '../ChatFullscreenContext'
 import type { Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import type { Window } from 'happy-dom'
 import { acquireDomHarness } from '../../test/domHarness'
 import { queryKeys } from '../../queryKeys'
+import { queries } from '../../queryOptions'
 import { SquadAgentThreadsApiProvider } from './squadAgentThreadsApi'
 import { groupActiveWorkStreamsByAgent } from './agentWorkStreams'
 import type { Agent, WorkStream } from '@ficus/shared'
@@ -66,6 +67,8 @@ afterEach(() => {
   singleArchiveCalls.length = 0
 })
 
+// Load the lazy in-place reference modal before installing the DOM's constructor globals.
+await import('../EntityReferenceModal')
 const { SquadAgentThreads } = await import('./SquadAgentThreads')
 const { getAgentHeaderTitleParts } = await import('./AgentViewModal')
 
@@ -2172,6 +2175,132 @@ describe('SquadAgentThreads assigned work stream numbers', () => {
 
       // The row's chat button keeps a full accessible name.
       expect(getByRole(doc.body, 'button', { name: /^Build UI, Working, / })).toBeTruthy()
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  function LocationProbe() {
+    const location = useLocation()
+    return <output data-testid="location">{`${location.pathname}${location.search}`}</output>
+  }
+
+  /** Renders the chats list with the work stream detail cached, so the in-place modal resolves at once. */
+  async function renderWithModalData(dom: Awaited<ReturnType<typeof installDom>>) {
+    const client = seededClient()
+    for (const ws of streams)
+      client.setQueryData(queries.squads.workStreamDetail(ws.id).queryKey, { ...ws, dependsOn: [] })
+    client.setQueryData(queries.squads.basic('squad-1').queryKey, { id: 'squad-1', name: 'Ficus' })
+    client.setQueryData(queries.squads.agents('squad-1').queryKey, rosterAgents)
+    const { root } = dom.createRoot()
+    await dom.act(async () =>
+      root.render(
+        <MemoryRouter initialEntries={[fixtureLocation()]}>
+          <SquadAgentThreadsApiProvider api={threadsApi}>
+            <PermissionsProvider usePermissions={usePermissionsMock}>
+              <QueryClientProvider client={client}>
+                <SquadAgentThreads agents={rosterAgents} squadId="squad-1" dependencies={threadsDependencies} />
+                <LocationProbe />
+              </QueryClientProvider>
+            </PermissionsProvider>
+          </SquadAgentThreadsApiProvider>
+        </MemoryRouter>
+      )
+    )
+    const doc = dom.window.document
+    return {
+      doc,
+      location: () => doc.querySelector('[data-testid="location"]')!.textContent,
+      dialog: () => doc.querySelector<HTMLElement>('.ficus-modal-backdrop[data-state="open"]'),
+      close: () => dom.act(async () => doc.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.click()),
+    }
+  }
+
+  test('the number opens the work stream modal in place and hands focus back on close', async () => {
+    const dom = await installDom()
+    try {
+      const view = await renderWithModalData(dom)
+      const start = view.location()
+      const chatButton = () => row(view.doc, 'eng-1').querySelector('button')!
+      const link = row(view.doc, 'eng-1').querySelector<HTMLAnchorElement>('[data-testid="agent-row-work-stream"]')!
+      expect(link.getAttribute('aria-haspopup')).toBe('dialog')
+
+      await dom.act(async () => link.click())
+      expect(view.dialog()?.textContent).toContain('Chats numbers')
+      // No route change: the agent chat stays where it was, and the row was not activated.
+      expect(view.location()).toBe(start)
+      expect(chatButton().getAttribute('aria-pressed')).toBe('false')
+
+      await view.close()
+      expect(view.dialog()).toBeNull()
+      expect(dom.window.document.activeElement).toBe(link)
+      expect(view.location()).toBe(start)
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('the +N link opens the primary work stream in place too', async () => {
+    const dom = await installDom()
+    try {
+      const view = await renderWithModalData(dom)
+      const start = view.location()
+      const agentRow = row(view.doc, 'eng-2')
+      const more = agentRow.querySelector<HTMLAnchorElement>('[data-testid="agent-row-more-work-streams"]')!
+      await dom.act(async () => more.click())
+      expect(view.dialog()?.textContent).toContain('API fix')
+      expect(view.location()).toBe(start)
+      expect(agentRow.querySelector('button')!.getAttribute('aria-pressed')).toBe('false')
+
+      await view.close()
+      // `+N` is not focusable; focus lands on the labelled number beside it.
+      expect(dom.window.document.activeElement).toBe(agentRow.querySelector('[data-testid="agent-row-work-stream"]'))
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('Enter and Space open the modal from the keyboard', async () => {
+    const dom = await installDom()
+    try {
+      const view = await renderWithModalData(dom)
+      const link = row(view.doc, 'eng-1').querySelector<HTMLAnchorElement>('[data-testid="agent-row-work-stream"]')!
+      for (const key of ['Enter', ' ']) {
+        await dom.act(async () => link.focus())
+        // Browsers turn Enter on a link into a click; Space is handled by the link itself.
+        await dom.act(async () => {
+          const keydown = new dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+          link.dispatchEvent(keydown)
+          if (key === 'Enter') link.click()
+          else expect(keydown.defaultPrevented).toBe(true)
+        })
+        expect(view.dialog()?.textContent).toContain('Chats numbers')
+        await view.close()
+        expect(dom.window.document.activeElement).toBe(link)
+      }
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('modifier and middle clicks keep the real link for opening the Work tab in a new tab', async () => {
+    const dom = await installDom()
+    try {
+      const view = await renderWithModalData(dom)
+      const link = row(view.doc, 'eng-1').querySelector<HTMLAnchorElement>('[data-testid="agent-row-work-stream"]')!
+      // The test DOM follows unhandled link clicks through window.open; record instead of navigating.
+      const followed: string[] = []
+      Object.assign(dom.window, {
+        open: (url: string) => void followed.push(new URL(url).pathname + new URL(url).search),
+      })
+      for (const init of [{ metaKey: true }, { ctrlKey: true }, { shiftKey: true }, { button: 1 }]) {
+        followed.length = 0
+        const click = new dom.window.MouseEvent('click', { bubbles: true, cancelable: true, ...init })
+        await dom.act(async () => link.dispatchEvent(click))
+        expect(click.defaultPrevented).toBe(false)
+        expect(followed).toEqual(['/squads/ficus/work?ws=742'])
+        expect(view.dialog()).toBeNull()
+      }
     } finally {
       await dom.cleanup()
     }

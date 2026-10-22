@@ -5,9 +5,10 @@ import { lazy, Suspense, useCallback, useContext, useEffect, useId, useRef, useS
 import type { EntityReference } from '../lib/entityReference'
 import { REFERENCE_PREVIEW_OPEN_EVENT } from '@ficus/shared/browser-keys'
 import { useHoverCard } from './popover/useHoverCard'
-
-const loadReference = () => import('./EntityReferenceModal')
-const EntityReferenceModal = lazy(() => loadReference().then((module) => ({ default: module.EntityReferenceModal })))
+import {
+  LazyEntityReferenceModal as EntityReferenceModal,
+  preloadEntityReferenceModal,
+} from './lazyEntityReferenceModal'
 
 const EntityReferencePreview = lazy(() =>
   import('./EntityReferencePreview').then((module) => ({ default: module.EntityReferencePreview }))
@@ -46,12 +47,7 @@ export function EntityReferenceLink({
     window.addEventListener(REFERENCE_PREVIEW_OPEN_EVENT, dismiss)
     return () => window.removeEventListener(REFERENCE_PREVIEW_OPEN_EVENT, dismiss)
   }, [preview, dismiss])
-  const preload = useCallback(() => {
-    void loadReference()
-      .then((module) => client && module.preloadEntityReference(client, { kind, id }))
-      // Preloading is speculative; clicking still provides the normal retry/error UI.
-      .catch(() => {})
-  }, [client, kind, id])
+  const preload = useCallback(() => preloadEntityReferenceModal(client, { kind, id }), [client, kind, id])
 
   useEffect(() => {
     if (!preloadOnVisible || !button.current || typeof IntersectionObserver === 'undefined') return
