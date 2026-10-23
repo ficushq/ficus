@@ -2,12 +2,13 @@ import { Command } from 'commander'
 import { readFileSync } from 'fs'
 import { expandTilde } from '@ficus/shared/node'
 import { apiGet, apiPost, apiPatch, apiPut, apiDelete, apiGetRaw } from '../client'
-import { output, outputTable, outputError, isJsonMode } from '../output'
+import { output, outputTable, outputError, isJsonMode, isQuietMode } from '../output'
 import { WorkStream } from './workstream'
 import { registerSquadGrantCommands } from './squad-grant'
 import { describeAttention, performAttentionSubscribe, type SubscriptionResponse } from './attention'
 import { buildMetadataDelta, getMetadataValue, parseMetadataPath, parseMetadataValue } from '../metadata'
 import { registerSandboxProcessCommands } from './sandbox-processes'
+import { describeDownload, downloadSquadFile, type SquadDownloadOptions } from './squad-download'
 
 interface Squad {
   id: string
@@ -491,6 +492,27 @@ export function registerSquadCommands(program: Command) {
         const response = await apiGetRaw(`/api/squads/${id}/workspace/file?path=${encodeURIComponent(path)}`)
         const content = await response.text()
         console.log(content)
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+
+  // ficus squad download <squadId> <path>
+  squad
+    .command('download <squadId> <path>')
+    .description(
+      'Download a squad workspace file to disk (streamed; any size). Use --archive for a directory (tar.gz).'
+    )
+    .option('-o, --output <file|dir>', 'Local file or existing directory (default: the remote basename in cwd)')
+    .option('--archive', 'Download a directory as a tar.gz archive')
+    .option('--resume', 'Continue a partial local file (sends Range: bytes=<local size>-) and append')
+    .action(async (squadId: string, remotePath: string, opts: SquadDownloadOptions) => {
+      try {
+        const result = await downloadSquadFile(squadId, remotePath, opts, {
+          // No progress line in JSON/quiet mode; downloadSquadFile also skips it on a non-TTY.
+          progress: isJsonMode() || isQuietMode() ? { isTTY: false, write: () => true } : process.stderr,
+        })
+        output(result, describeDownload(result))
       } catch (error) {
         outputError(error as Error)
       }

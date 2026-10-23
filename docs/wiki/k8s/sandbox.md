@@ -209,6 +209,38 @@ Check file/directory existence and metadata.
 }
 ```
 
+### `GET /download`
+
+Raw streaming download, the large-file mirror of `POST /upload`. `POST /read` base64-encodes its window into JSON after allocating it, so it cannot serve big files (256 MiB files failed with `Out of memory`). `/download` streams bytes from disk without materializing them.
+
+```
+GET /download?path=<abs path>[&archive=tar.gz]
+Range: bytes=<start>-[<end>]      (optional, one range)
+```
+
+Same auth gate and `resolvePath` policy as `/read` and `/stat`. The route takes no request body, so it is classified before any body parsing.
+
+| Target                                          | Response                                                                                                                                                                                                                                                                                                                             |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Regular file                                    | `200` `application/octet-stream` with `Content-Length`, `Accept-Ranges: bytes`, `Last-Modified`. The body is a native file body (sendfile), never buffered                                                                                                                                                                           |
+| Regular file + `Range`                          | `206` with `Content-Range: bytes <start>-<end>/<size>`. Suffix ranges (`bytes=-N`) are accepted                                                                                                                                                                                                                                      |
+| Unsatisfiable, malformed or multi-range `Range` | `416` with `Content-Range: bytes */<size>`                                                                                                                                                                                                                                                                                           |
+| Directory, no `archive`                         | `400` `{ "code": "is-directory" }`                                                                                                                                                                                                                                                                                                   |
+| Directory + `archive=tar.gz`                    | `200` `application/gzip`, chunked: stdout of `tar -czf - -C <parent> -- <basename>`, rooted at the directory name. If tar exits non-zero after the headers went out, the stream is errored (the client sees a truncated chunked body, never a silent partial success) and the failure is logged. A client that disconnects kills tar |
+| Missing path                                    | `404` `{ "code": "not-found" }`                                                                                                                                                                                                                                                                                                      |
+| Rejected by path policy                         | `400` `{ "code": "path-rejected" }`                                                                                                                                                                                                                                                                                                  |
+| Other failures                                  | `500` `{ "code": "download-failed" }`                                                                                                                                                                                                                                                                                                |
+
+Every error body is JSON `{ error, code }`. Core relies on the `code` to tell the route's own `404` apart from an old bundle, which answers this unknown `GET` with plain-text `405 Method not allowed` (or `404 Not found`).
+
+A download is a single request whose body can stream for minutes. The TCP listener's idle timeout is disabled for it (like `/bash`), and the socket-activated idle self-exit waits until no HTTP response is still being written (`server.pendingRequests`), so a long transfer is never cut off by an idle exit.
+
+#### Core and outdated sandbox bundles
+
+Core's workspace download (`GET /api/squads/:id/workspace/download`) streams this route's body straight to the HTTP client, forwarding `Range` and returning the box's `206`/`Content-Range`; directories download as `<name>.tar.gz`. Bun currently re-frames every streamed response body as chunked and drops `Content-Length` ([oven-sh/bun#10507](https://github.com/oven-sh/bun/issues/10507)), so Core also sends the exact body length as `X-Ficus-Content-Length`. Directory archives carry `X-Ficus-Archive: tar.gz`.
+
+When a sandbox still runs a bundle older than `/download`, Core falls back to the base64 `/read` path only for files of **64 MiB or less** (served whole, ignoring `Range`). Larger files and all directories answer `503` with code `SANDBOX_BUNDLE_OUTDATED`. Fix it by restarting the agent's sandbox from the agent page, or recreating the squad sandbox, which picks up the current bundle.
+
 ### `GET /shell` (WebSocket)
 
 Interactive PTY shell via WebSocket upgrade.

@@ -2,7 +2,10 @@ import { describe, expect, it, mock } from 'bun:test'
 import {
   classifySandboxTransportError,
   SandboxClient,
+  SandboxDownloadRouteMissingError,
   SandboxHttpError,
+  SandboxTransportError,
+  type SandboxFetch,
   type SandboxTransportKind,
 } from './http-client'
 
@@ -493,6 +496,127 @@ describe('SandboxClient.upload (raw-body transport)', () => {
       })
     } finally {
       globalThis.fetch = previousFetch
+    }
+  })
+})
+
+describe('SandboxClient.download (raw streaming transport)', () => {
+  /** A body that records whether anyone pulled from it. */
+  function trackedBody(chunks: Uint8Array[]) {
+    const state = { pulls: 0 }
+    let index = 0
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        state.pulls += 1
+        if (index < chunks.length) controller.enqueue(chunks[index++])
+        else controller.close()
+      },
+    })
+    return { body, state }
+  }
+
+  it('GETs /download with auth + Range and returns the unread body stream', async () => {
+    const seen: Array<{ url: string; method?: string; headers: Headers }> = []
+    const { body, state } = trackedBody([new Uint8Array([1, 2]), new Uint8Array([3])])
+    const fetchImpl: SandboxFetch = async (url, init) => {
+      seen.push({ url: String(url), method: init?.method, headers: new Headers(init?.headers) })
+      return new Response(body, {
+        status: 206,
+        headers: { 'content-length': '3', 'content-range': 'bytes 7-9/10' },
+      })
+    }
+    const client = new SandboxClient('127.0.0.1:1234', 'tok-down', { fetch: fetchImpl })
+    const result = await client.download({ path: '/workspace/a b.bin', range: 'bytes=7-' })
+
+    const url = new URL(seen[0].url)
+    expect(url.pathname).toBe('/download')
+    expect(url.searchParams.get('path')).toBe('/workspace/a b.bin')
+    expect(url.searchParams.get('archive')).toBeNull()
+    expect(seen[0].method).toBe('GET')
+    expect(seen[0].headers.get('authorization')).toBe('Bearer tok-down')
+    expect(seen[0].headers.get('range')).toBe('bytes=7-')
+    expect(result.status).toBe(206)
+    expect(result.headers.get('content-range')).toBe('bytes 7-9/10')
+    // Returned without being read: the caller owns the stream (the same one).
+    expect(result.body).toBe(body)
+    expect(state.pulls).toBeLessThanOrEqual(1)
+    expect(Array.from(new Uint8Array(await new Response(result.body).arrayBuffer()))).toEqual([1, 2, 3])
+  })
+
+  it('downloadArchive requests archive=tar.gz', async () => {
+    let seenUrl = ''
+    const client = new SandboxClient('127.0.0.1:1234', undefined, {
+      fetch: async (url) => {
+        seenUrl = String(url)
+        return new Response('gz', { headers: { 'content-type': 'application/gzip' } })
+      },
+    })
+    const result = await client.downloadArchive({ path: '/workspace/dir' })
+    expect(new URL(seenUrl).searchParams.get('archive')).toBe('tar.gz')
+    expect(await new Response(result.body).text()).toBe('gz')
+  })
+
+  it('bounds only the headers by the unary timeout, never the body', async () => {
+    const client = new SandboxClient('127.0.0.1:1234', undefined, {
+      unaryTimeoutMs: 50,
+      fetch: async (_url, init) =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            async pull(controller) {
+              // Outlive the header timeout mid-body; the signal must not fire.
+              await new Promise((resolve) => setTimeout(resolve, 150))
+              if (init?.signal?.aborted) controller.error(new Error('aborted'))
+              else {
+                controller.enqueue(new Uint8Array([9]))
+                controller.close()
+              }
+            },
+          })
+        ),
+    })
+    const result = await client.download({ path: '/workspace/slow.bin' })
+    expect(Array.from(new Uint8Array(await new Response(result.body).arrayBuffer()))).toEqual([9])
+  })
+
+  it('times out a box that never sends headers', async () => {
+    const client = new SandboxClient('127.0.0.1:1234', undefined, {
+      unaryTimeoutMs: 30,
+      fetch: (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason))
+        }),
+    })
+    const error = await client.download({ path: '/workspace/x' }).catch((e) => e)
+    expect(error).toBeInstanceOf(SandboxTransportError)
+    expect((error as SandboxTransportError).kind).toBe('timeout')
+  })
+
+  it('classifies an old bundle (plain-text 405/404) as route-missing, not file-missing', async () => {
+    for (const [status, text] of [
+      [405, 'Method not allowed'],
+      [404, 'Not found'],
+    ] as const) {
+      const client = new SandboxClient('127.0.0.1:1234', undefined, {
+        fetch: async () => new Response(text, { status }),
+      })
+      const error = await client.download({ path: '/workspace/x' }).catch((e) => e)
+      expect(error).toBeInstanceOf(SandboxDownloadRouteMissingError)
+      expect((error as SandboxDownloadRouteMissingError).status).toBe(status)
+    }
+  })
+
+  it("propagates the route's coded 404/416/400 as SandboxHttpError", async () => {
+    for (const [status, code] of [
+      [404, 'not-found'],
+      [416, 'range-not-satisfiable'],
+      [400, 'is-directory'],
+    ] as const) {
+      const client = new SandboxClient('127.0.0.1:1234', undefined, {
+        fetch: async () => Response.json({ error: `box says ${code}`, code }, { status }),
+      })
+      const error = await client.download({ path: '/workspace/x' }).catch((e) => e)
+      expect(error).toBeInstanceOf(SandboxHttpError)
+      expect(error).toMatchObject({ status, code, message: `box says ${code}` })
     }
   })
 })

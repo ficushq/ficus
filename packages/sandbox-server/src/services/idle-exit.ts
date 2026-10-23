@@ -29,6 +29,12 @@ export interface IdleExitInput {
   openShells: number
   /** Whether the workspace watcher is running. */
   watcherActive: boolean
+  /**
+   * HTTP responses still being written (Bun's `server.pendingRequests`). A
+   * `/download` of a multi-GiB file is a single request whose body outlives
+   * its `fetch` handler — and the request reservation — by minutes.
+   */
+  openResponses: number
 }
 
 /** The default idle window: 10 minutes. */
@@ -39,6 +45,7 @@ export interface IdleExitGates {
   activeInvocations: boolean
   openShells: number
   watcherActive: boolean
+  openResponses: number
   reconciliationSettled: boolean
 }
 
@@ -111,6 +118,7 @@ export class IdleExitCoordinator {
         activeInvocations: gates.activeInvocations,
         openShells: gates.openShells,
         watcherActive: gates.watcherActive,
+        openResponses: gates.openResponses,
       })
     )
       return undefined
@@ -129,11 +137,11 @@ export class IdleExitCoordinator {
 /**
  * Whether a socket-activated server should exit(0) now. TRUE requires ALL of:
  * self-exit enabled, at least one full window since boot, a full window since
- * the last request/message, no live bash invocation, no open shell, and no
- * active watcher.
+ * the last request/message, no live bash invocation, no open shell, no
+ * active watcher, and no HTTP response still streaming.
  */
 export function shouldIdleExit(input: IdleExitInput): boolean {
-  const { now, bootedAt, lastActivityAt, windowMs, activeInvocations, openShells, watcherActive } = input
+  const { now, bootedAt, lastActivityAt, windowMs, activeInvocations, openShells, watcherActive, openResponses } = input
   if (windowMs <= 0) return false
   // Never within the first window after boot: a box that was just activated for
   // a request whose work has not reached the server yet (the proxy is still
@@ -144,6 +152,7 @@ export function shouldIdleExit(input: IdleExitInput): boolean {
   if (activeInvocations) return false
   if (openShells > 0) return false
   if (watcherActive) return false
+  if (openResponses > 0) return false
   return true
 }
 

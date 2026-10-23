@@ -536,7 +536,7 @@ export const squadsRouter = new Hono()
     try {
       const stat = fs.statSync(targetPath)
       if (!stat.isFile()) return c.json({ error: 'Path is not a file' }, 400)
-      return createDownloadResponse(targetPath, 'memory')
+      return createDownloadResponse(targetPath, 'memory', { range: c.req.header('range') })
     } catch (error: any) {
       if (error.code === 'ENOENT') return c.json({ error: 'Path not found' }, 404)
       log.error('Error downloading memory file:', error)
@@ -761,14 +761,23 @@ export const squadsRouter = new Hono()
       relativePath = '.'
     }
 
-    // K8s runtime: proxy through sandbox
+    // Directory archive format: sandbox runtimes stream tar.gz; the local
+    // runtime keeps zip unless tar.gz is requested (`ficus squad download --archive`).
+    const archive = c.req.query('archive')
+    if (archive !== undefined && archive !== 'tar.gz' && archive !== 'zip') {
+      return c.json({ error: 'archive must be tar.gz or zip' }, 400)
+    }
+    const range = c.req.header('range')
+
+    // Remote runtimes: stream through the sandbox's raw /download route
     const client = await getSquadClient(squad.id)
     if (client) {
       const filePath = resolveSandboxWorkspacePath(workspaceMount, relativePath)
       if (!filePath) return c.json({ error: 'Invalid path' }, 400)
+      if (archive === 'zip') return c.json({ error: 'Sandbox directory downloads are tar.gz archives' }, 400)
       try {
         const filename = path.basename(filePath)
-        return await createSandboxFileResponse(client, filePath, filename)
+        return await createSandboxFileResponse(client, filePath, filename, { range, signal: c.req.raw.signal })
       } catch (err: any) {
         if (err.message?.includes('404') || err.message?.includes('not found')) {
           return c.json({ error: 'File not found' }, 404)
@@ -786,7 +795,7 @@ export const squadsRouter = new Hono()
     }
 
     try {
-      return createDownloadResponse(targetPath, 'workspace')
+      return createDownloadResponse(targetPath, 'workspace', { range, archive })
     } catch (error: any) {
       if (error.code === 'ENOENT') {
         return c.json({ error: 'Path not found' }, 404)

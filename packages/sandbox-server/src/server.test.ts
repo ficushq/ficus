@@ -470,6 +470,45 @@ describe('verified atomic write transport', () => {
   }, 30_000)
 })
 
+describe('GET /download raw streaming route (subprocess)', () => {
+  it('streams through the auth gate with Range support and JSON errors', async () => {
+    const token = 'download-route-token'
+    const server = await startServer({ EXECUTOR_AUTH_TOKEN: token, EXECUTOR_BIND: '127.0.0.1' })
+    const bytes = Buffer.alloc(256 * 1024)
+    for (let i = 0; i < bytes.length; i += 1) bytes[i] = (i * 13) % 251
+    const filePath = join(server.workspace, 'blob.bin')
+    writeFileSync(filePath, bytes)
+    const url = `${server.base}/download?path=${encodeURIComponent(filePath)}`
+    const auth = { authorization: `Bearer ${token}` }
+
+    expect((await fetch(url)).status).toBe(401)
+
+    const full = await fetch(url, { headers: auth })
+    expect(full.status).toBe(200)
+    expect(full.headers.get('content-length')).toBe(String(bytes.length))
+    expect(full.headers.get('accept-ranges')).toBe('bytes')
+    expect(Buffer.from(await full.arrayBuffer())).toEqual(bytes)
+
+    const partial = await fetch(url, { headers: { ...auth, range: 'bytes=1000-' } })
+    expect(partial.status).toBe(206)
+    expect(partial.headers.get('content-range')).toBe(`bytes 1000-${bytes.length - 1}/${bytes.length}`)
+    expect(Buffer.from(await partial.arrayBuffer())).toEqual(bytes.subarray(1000))
+
+    const unsatisfiable = await fetch(url, { headers: { ...auth, range: `bytes=${bytes.length}-` } })
+    expect(unsatisfiable.status).toBe(416)
+
+    const missing = await fetch(`${server.base}/download?path=${encodeURIComponent(join(server.workspace, 'x'))}`, {
+      headers: auth,
+    })
+    expect(missing.status).toBe(404)
+    expect(await missing.json()).toMatchObject({ code: 'not-found' })
+
+    // Only GET is routed; the POST dispatcher keeps answering a plain 404.
+    const post = await fetch(url, { method: 'POST', headers: auth })
+    expect(post.status).toBe(404)
+  }, 30_000)
+})
+
 describe('/browser/* pass-through to the machine ficus-browser socket', () => {
   interface CapturedRequest {
     pathname: string
@@ -742,6 +781,42 @@ describe('unix-socket listen + idle self-exit (subprocess)', () => {
       ])
     ).toBe('alive')
     expect(await response.text()).toContain('exitCode')
+    expect(
+      await Promise.race([
+        server.proc.exited,
+        new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 5_000)),
+      ])
+    ).toBe(0)
+  }, 30_000)
+
+  it('keeps the box alive (no idle self-exit) for the whole /download stream', async () => {
+    const token = 'download-idle-token'
+    const server = await startUnixServer({ EXECUTOR_AUTH_TOKEN: token, EXECUTOR_IDLE_EXIT_MS: '800' })
+    const filePath = join(server.workspace, 'slow.bin')
+    writeFileSync(filePath, Buffer.alloc(8 * 1024 * 1024, 7))
+    const response = await fetch(`http://localhost/download?path=${encodeURIComponent(filePath)}`, {
+      unix: server.sock,
+      headers: { authorization: `Bearer ${token}` },
+    })
+    expect(response.status).toBe(200)
+    const reader = response.body!.getReader()
+    await reader.read()
+    // A paused consumer well past the idle window (and the first-window grace).
+    await new Promise((resolve) => setTimeout(resolve, 2_500))
+    expect(
+      await Promise.race([
+        server.proc.exited,
+        new Promise<'alive'>((resolve) => setTimeout(() => resolve('alive'), 50)),
+      ])
+    ).toBe('alive')
+    let received = 0
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      received += value.byteLength
+    }
+    expect(received).toBeGreaterThan(0)
+    // Once the stream settled, the quiet box may exit again.
     expect(
       await Promise.race([
         server.proc.exited,

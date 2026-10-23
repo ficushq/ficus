@@ -29,6 +29,7 @@ mock.module('./client', () => ({
   apiPut: mock(() => Promise.resolve({})),
   apiDelete: mock(() => Promise.resolve({})),
   apiGetRaw: mock(() => Promise.resolve(new Response(''))),
+  apiFetch: mock(() => Promise.resolve(new Response(''))),
   apiPostForm: mock(() => Promise.resolve({})),
   apiPostSSE: mock(() => Promise.resolve()),
 }))

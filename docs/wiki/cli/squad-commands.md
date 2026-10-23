@@ -220,6 +220,48 @@ ficus squad cat abc123 README.md
 
 ---
 
+### download
+
+Download a file from a squad's workspace to disk, or a directory as a `tar.gz` archive. The response is streamed straight to the file, so any size works with flat memory on the CLI, Core and the sandbox.
+
+```bash
+ficus squad download <squadId> <path> [-o <file|dir>] [--archive] [--resume]
+```
+
+**Arguments:**
+| Argument | Description |
+|----------|-------------|
+| `squadId` | Squad ID |
+| `path` | File or directory path within the workspace (workspace-relative, or under the sandbox workspace mount) |
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `-o, --output <file\|dir>` | Local file to write, or an existing directory to write into. Default: the remote basename in the current directory (`<name>.tar.gz` with `--archive`) |
+| `--archive` | Download a directory as a gzip-compressed tar rooted at the directory name. Required for directories |
+| `--resume` | Continue a partial local file: sends `Range: bytes=<local size>-` and appends. A file that is already complete is reported as such. Cannot be combined with `--archive` |
+
+A progress line is drawn on stderr when it is a TTY; nothing is printed to a pipe. `--json` prints `{ "path", "bytes", "status" }` (`bytes` is the local file size afterwards, `status` the HTTP status: `200`, `206` for a resumed transfer, `416` when a resume found nothing left).
+
+The CLI checks the received byte count against the announced length. On a mismatch or a broken connection it exits non-zero and deletes the partial file, unless `--resume` was given, in which case the partial file is kept so the same command can continue it.
+
+Squads whose sandbox still runs a server bundle older than streaming downloads can serve files up to 64 MiB. Larger files and directories fail with HTTP 503 (`SANDBOX_BUNDLE_OUTDATED`) until the sandbox is restarted (restart the agent's sandbox from the agent page, or recreate the squad sandbox). See [Sandbox: GET /download](../k8s/sandbox.md#get-download).
+
+**Examples:**
+
+```bash
+# Download a large file into the current directory
+ficus squad download abc123 exports/dataset.tar
+
+# Continue an interrupted transfer
+ficus squad download abc123 exports/dataset.tar --resume
+
+# Download a directory as reports.tar.gz into ./backups/
+ficus squad download abc123 reports --archive -o backups/
+```
+
+---
+
 ### link
 
 Create a relationship between two squads.

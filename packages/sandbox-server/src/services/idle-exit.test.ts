@@ -22,6 +22,7 @@ const BASE: IdleExitInput = {
   activeInvocations: false,
   openShells: 0,
   watcherActive: false,
+  openResponses: 0,
 }
 
 describe('shouldIdleExit', () => {
@@ -55,6 +56,10 @@ describe('shouldIdleExit', () => {
     expect(shouldIdleExit({ ...BASE, watcherActive: true })).toBe(false)
   })
 
+  it('never exits while an HTTP response (e.g. a long /download) is still streaming', () => {
+    expect(shouldIdleExit({ ...BASE, openResponses: 1 })).toBe(false)
+  })
+
   it('is disabled by a zero or negative window', () => {
     expect(shouldIdleExit({ ...BASE, windowMs: 0 })).toBe(false)
     expect(shouldIdleExit({ ...BASE, windowMs: -1 })).toBe(false)
@@ -67,6 +72,7 @@ describe('IdleExitCoordinator', () => {
     activeInvocations: false,
     openShells: 0,
     watcherActive: false,
+    openResponses: 0,
     reconciliationSettled: true,
   }
 

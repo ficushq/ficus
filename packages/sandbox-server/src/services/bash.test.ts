@@ -579,6 +579,7 @@ describe('handleBash', () => {
         activeInvocations: false,
         openShells: 0,
         watcherActive: false,
+        openResponses: 0,
         reconciliationSettled: true,
       })
     ).toBeDefined()
