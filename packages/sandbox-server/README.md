@@ -6,15 +6,16 @@ HTTP service that runs inside each sandbox (Kubernetes pods, Docker containers a
 
 ## Quick Reference
 
-| Endpoint       | Method    | Description                       |
-| -------------- | --------- | --------------------------------- |
-| `GET /healthz` | GET       | Health check (K8s probes)         |
-| `POST /bash`   | POST      | Command execution (SSE streaming) |
-| `POST /read`   | POST      | Read file contents                |
-| `POST /write`  | POST      | Write file contents               |
-| `POST /list`   | POST      | List directory                    |
-| `POST /stat`   | POST      | File/directory metadata           |
-| `GET /shell`   | WebSocket | Interactive PTY shell             |
+| Endpoint        | Method    | Description                                                                                                                        |
+| --------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /healthz`  | GET       | Health check (K8s probes)                                                                                                          |
+| `POST /bash`    | POST      | Command execution (SSE streaming)                                                                                                  |
+| `POST /read`    | POST      | Read file contents                                                                                                                 |
+| `POST /write`   | POST      | Write file contents                                                                                                                |
+| `POST /list`    | POST      | List directory                                                                                                                     |
+| `POST /stat`    | POST      | File/directory metadata                                                                                                            |
+| `GET /download` | GET       | Raw streaming download (Range, `archive=tar.gz` for directories); see [GET /download](../../docs/wiki/k8s/sandbox.md#get-download) |
+| `GET /shell`    | WebSocket | Interactive PTY shell                                                                                                              |
 
 ## Build
 

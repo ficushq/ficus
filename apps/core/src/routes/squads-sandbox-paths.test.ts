@@ -4,6 +4,10 @@ import { Hono } from 'hono'
 // Every sandbox-backed squad (VM, Kubernetes) proxies workspace reads and writes through this
 // client. Record each path it is asked to touch so the test can prove none escape the mount.
 const touched: string[] = []
+const downloads: Array<{ path: string; range?: string; archive?: boolean }> = []
+// Per-test overrides for the streaming download transport.
+let statOverride: { exists: boolean; size: number; isDirectory: boolean } | undefined
+let downloadImpl: ((request: { path: string; range?: string }) => Promise<unknown>) | undefined
 const fakeClient = {
   list: async ({ path }: { path: string }) => {
     touched.push(path)
@@ -15,7 +19,22 @@ const fakeClient = {
   },
   stat: async ({ path }: { path: string }) => {
     touched.push(path)
-    return { exists: true, size: 6, isDirectory: false }
+    return statOverride ?? { exists: true, size: 6, isDirectory: false }
+  },
+  download: async (request: { path: string; range?: string }) => {
+    touched.push(request.path)
+    downloads.push({ path: request.path, range: request.range })
+    if (downloadImpl) return downloadImpl(request)
+    return { status: 200, headers: new Headers({ 'content-length': '6' }), body: new Response('inside').body! }
+  },
+  downloadArchive: async ({ path }: { path: string }) => {
+    touched.push(path)
+    downloads.push({ path, archive: true })
+    return {
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/gzip' }),
+      body: new Response('tgz').body!,
+    }
   },
   upload: async ({ path }: { path: string }) => {
     touched.push(path)
@@ -31,6 +50,7 @@ const { Squad } = await import('../entities/Squad')
 const { identityMiddleware } = await import('../middleware/identity')
 const { resolveWorkspaceLayout } = await import('../services/sandbox/workspace-layout')
 const { createTestAdmin, cleanupTestRbac, authHeaders } = await import('../test-utils')
+const { SandboxDownloadRouteMissingError } = await import('../services/sandbox/client/http-client')
 
 const app = new Hono()
 app.use('*', identityMiddleware)
@@ -117,5 +137,71 @@ describe('sandbox-backed workspace routes stay inside the workspace mount', () =
     expect((await res.json()).uploaded).toBe(1)
     expect(touched).toContain(`${mount}/docs/notes/payload.txt`)
     expect(insideMount()).toBe(true)
+  })
+})
+
+describe('sandbox-backed workspace download streams through /download', () => {
+  function reset() {
+    touched.length = 0
+    downloads.length = 0
+    statOverride = undefined
+    downloadImpl = undefined
+  }
+
+  it('forwards the client Range header and returns the box 206', async () => {
+    reset()
+    downloadImpl = async () => ({
+      status: 206,
+      headers: new Headers({ 'content-length': '3', 'content-range': 'bytes 3-5/6' }),
+      body: new Response('ide').body!,
+    })
+    const res = await app.request(`/api/squads/${squadId}/workspace/download?path=docs/a.bin`, {
+      headers: { ...authHeaders(token), range: 'bytes=3-' },
+    })
+    expect(res.status).toBe(206)
+    expect(res.headers.get('content-range')).toBe('bytes 3-5/6')
+    expect(res.headers.get('content-disposition')).toContain('filename="a.bin"')
+    expect(await res.text()).toBe('ide')
+    expect(downloads).toEqual([{ path: `${mount}/docs/a.bin`, range: 'bytes=3-' }])
+  })
+
+  it('streams a directory as tar.gz and rejects zip on sandbox runtimes', async () => {
+    reset()
+    statOverride = { exists: true, size: 4096, isDirectory: true }
+    const res = await app.request(`/api/squads/${squadId}/workspace/download?path=docs`, {
+      headers: authHeaders(token),
+    })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-disposition')).toContain('filename="docs.tar.gz"')
+    expect(res.headers.get('x-ficus-archive')).toBe('tar.gz')
+    expect(await res.text()).toBe('tgz')
+
+    const zip = await app.request(`/api/squads/${squadId}/workspace/download?path=docs&archive=zip`, {
+      headers: authHeaders(token),
+    })
+    expect(zip.status).toBe(400)
+    const bogus = await app.request(`/api/squads/${squadId}/workspace/download?path=docs&archive=rar`, {
+      headers: authHeaders(token),
+    })
+    expect(bogus.status).toBe(400)
+  })
+
+  it('falls back to /read under 64 MiB and answers 503 above it on an outdated bundle', async () => {
+    reset()
+    downloadImpl = async () => {
+      throw new SandboxDownloadRouteMissingError(405)
+    }
+    const small = await app.request(`/api/squads/${squadId}/workspace/download?path=docs/small.txt`, {
+      headers: authHeaders(token),
+    })
+    expect(small.status).toBe(200)
+    expect(await small.text()).toBe('inside')
+
+    statOverride = { exists: true, size: 64 * 1024 * 1024 + 1, isDirectory: false }
+    const large = await app.request(`/api/squads/${squadId}/workspace/download?path=docs/large.bin`, {
+      headers: authHeaders(token),
+    })
+    expect(large.status).toBe(503)
+    expect(((await large.json()) as { code: string }).code).toBe('SANDBOX_BUNDLE_OUTDATED')
   })
 })

@@ -968,7 +968,9 @@ describe('squads routes', () => {
         { headers: authHeaders(admin.token) }
       )
       expect(res.status).toBe(200)
-      expect(res.headers.get('content-disposition')).toBe('attachment; filename="context.md"')
+      expect(res.headers.get('content-disposition')).toBe(
+        `attachment; filename="context.md"; filename*=UTF-8''context.md`
+      )
       expect(await res.text()).toContain('# Squad Context')
     })
 

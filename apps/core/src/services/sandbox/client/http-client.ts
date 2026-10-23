@@ -96,6 +96,31 @@ export class SandboxHttpError extends Error {
   }
 }
 
+/**
+ * The box server predates `GET /download` (an old bundle mid-rollout). It
+ * answers the route with a plain-text `Not found` / `Method not allowed`,
+ * never the route's own JSON `{ error, code }`, so this is distinguishable
+ * from a missing FILE (a coded 404). Callers fall back to the base64 `/read`
+ * path only for files small enough to survive it.
+ */
+export class SandboxDownloadRouteMissingError extends Error {
+  readonly code = 'SANDBOX_DOWNLOAD_ROUTE_MISSING'
+
+  constructor(readonly status: number) {
+    super('Sandbox server does not support streaming downloads (outdated sandbox bundle)')
+    this.name = 'SandboxDownloadRouteMissingError'
+  }
+}
+
+/** A streaming `GET /download` answer: status, headers and the unread body. */
+export interface SandboxDownloadResponse {
+  /** 200, or 206 for a satisfied range. */
+  status: number
+  headers: Headers
+  /** Unread, unbuffered body; the caller must consume or cancel it. */
+  body: ReadableStream<Uint8Array>
+}
+
 function boundUtf8(value: string, maxBytes = 512): string {
   let result = ''
   let bytes = 0
@@ -383,6 +408,9 @@ export interface ClientDuplexStream<TWrite, TRead> extends EventEmitter {
  *  legitimately outlive the default 30s unary timeout. */
 const UPLOAD_TIMEOUT_MS = 5 * 60 * 1000
 
+/** Error bodies of `/download` are small JSON; never read more than this. */
+const DOWNLOAD_ERROR_BODY_MAX_BYTES = 16 * 1024
+
 export class SandboxClient {
   private readonly baseUrl: string
   /** Auth headers sent on every request; empty when no token is configured. */
@@ -613,6 +641,32 @@ export class SandboxClient {
       // default 30s unary budget.
       UPLOAD_TIMEOUT_MS
     )
+  }
+
+  /**
+   * Raw streaming download of a regular file — the large-file mirror of
+   * {@link upload}. `GET /download` streams the bytes from disk; nothing is
+   * base64-encoded, JSON-parsed or buffered here, and only the response
+   * HEADERS are bounded by the unary timeout: the body streams until EOF
+   * (or until the caller cancels it / aborts `signal`).
+   *
+   * `range` is forwarded verbatim (`bytes=start-[end]`); the box answers 206
+   * with `Content-Range`. A box 400/404/416/500 surfaces as
+   * {@link SandboxHttpError} carrying the status and the route's `code`.
+   *
+   * Mid-rollout: a box bundle that predates the route throws
+   * {@link SandboxDownloadRouteMissingError}; callers fall back to `read()`
+   * only for files small enough for the base64 envelope.
+   */
+  async download(request: { path: string; range?: string; signal?: AbortSignal }): Promise<SandboxDownloadResponse> {
+    const params = new URLSearchParams({ path: request.path })
+    return this.streamDownload(params, request.range, request.signal)
+  }
+
+  /** Stream a directory as a gzip-compressed tar (`archive=tar.gz`); see {@link download}. */
+  async downloadArchive(request: { path: string; signal?: AbortSignal }): Promise<SandboxDownloadResponse> {
+    const params = new URLSearchParams({ path: request.path, archive: 'tar.gz' })
+    return this.streamDownload(params, undefined, request.signal)
   }
 
   async writeVerified(request: VerifiedWriteRequest): Promise<VerifiedWriteResponse> {
@@ -976,6 +1030,89 @@ export class SandboxClient {
     } finally {
       this.requestControllers.delete(controller)
     }
+  }
+
+  /**
+   * Issue `GET /download` and hand back the unread body. The request is
+   * aborted by `close()` or the header timeout only until headers arrive;
+   * after that its lifetime belongs to the body consumer (cancelling the body
+   * closes the connection). The body is returned as the native fetch stream —
+   * never wrapped — so it can be forwarded without being re-buffered.
+   */
+  private async streamDownload(
+    params: URLSearchParams,
+    range: string | undefined,
+    signal: AbortSignal | undefined
+  ): Promise<SandboxDownloadResponse> {
+    this.assertOpen()
+    const controller = new AbortController()
+    this.requestControllers.add(controller)
+    const headerTimer = setTimeout(
+      () => controller.abort(new DOMException('Sandbox download headers timed out', 'TimeoutError')),
+      this.unaryTimeoutMs
+    )
+    let response: Response
+    try {
+      response = await this.requestFetch(`${this.baseUrl}/download?${params.toString()}`, {
+        method: 'GET',
+        headers: { ...this.authHeaders, ...(range ? { range } : {}) },
+        signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
+      })
+    } catch (error) {
+      if (this.closed) throw new SandboxClientClosedError()
+      if (controller.signal.aborted && !signal?.aborted) {
+        throw new SandboxTransportError('timeout', 'connect', controller.signal.reason)
+      }
+      throw classifySandboxTransportError(error, 'connect') ?? error
+    } finally {
+      clearTimeout(headerTimer)
+      this.requestControllers.delete(controller)
+    }
+
+    if (response.ok && response.body) {
+      return { status: response.status, headers: response.headers, body: response.body }
+    }
+    if (response.ok) {
+      // A bodiless 2xx (an empty file through some proxies): an empty stream.
+      return { status: response.status, headers: response.headers, body: new Response(new Uint8Array(0)).body! }
+    }
+    throw await this.downloadError(response)
+  }
+
+  /** Classify a non-2xx `/download` answer (route missing vs a coded route error). */
+  private async downloadError(resp: Response): Promise<Error> {
+    let text = ''
+    try {
+      const reader = resp.body?.getReader()
+      const decoder = new TextDecoder()
+      let bytes = 0
+      while (reader && bytes < DOWNLOAD_ERROR_BODY_MAX_BYTES) {
+        const { done, value } = await reader.read()
+        if (done) break
+        bytes += value.byteLength
+        text += decoder.decode(value, { stream: true })
+      }
+      await reader?.cancel().catch(() => {})
+    } catch {
+      // Unreadable error body — classify on status alone.
+    }
+    let json: { error?: unknown; code?: unknown } | undefined
+    try {
+      json = JSON.parse(text) as { error?: unknown; code?: unknown }
+    } catch {
+      json = undefined
+    }
+    const code = typeof json?.code === 'string' ? boundUtf8(sanitizeHttpErrorBody(json.code), 128) : undefined
+    // The route always answers JSON with a `code`; an old bundle answers the
+    // unknown GET with plain text (405 `Method not allowed`, or 404).
+    if (!code && (resp.status === 404 || resp.status === 405)) {
+      return new SandboxDownloadRouteMissingError(resp.status)
+    }
+    const message =
+      typeof json?.error === 'string' && json.error
+        ? boundUtf8(sanitizeHttpErrorBody(json.error))
+        : `Request failed: ${resp.status}`
+    return new SandboxHttpError(message, resp.status, code)
   }
 
   private async post<T>(path: string, body: unknown): Promise<T> {

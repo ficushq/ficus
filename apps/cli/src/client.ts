@@ -74,6 +74,17 @@ export async function apiGetRaw(path: string): Promise<Response> {
   return response
 }
 
+/**
+ * Authenticated request that resolves with ANY status and leaves the body
+ * unread — for streaming downloads, whose 206/416 answers are not errors.
+ */
+export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(`${config.apiUrl}${path}`, {
+    ...init,
+    headers: { ...getAuthHeaders(), ...(init.headers as Record<string, string> | undefined) },
+  })
+}
+
 export async function apiDelete<T = void>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(`${config.apiUrl}${path}`, {
     method: 'DELETE',

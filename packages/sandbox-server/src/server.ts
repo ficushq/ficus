@@ -8,6 +8,7 @@
  * - POST /mkdir    — Create directory (recursive)
  * - POST /list     — List directory
  * - POST /stat     — File/directory stat
+ * - GET  /download — Raw streaming file download (Range, tar.gz directories)
  * - GET  /shell    — Interactive PTY via WebSocket upgrade
  * - GET  /healthz  — Health check for K8s probes
  *
@@ -52,6 +53,7 @@ import {
   handleMaterializeAttachment,
   handleDeleteMaterializedAttachment,
 } from './services/filesystem'
+import { handleDownload } from './services/download'
 import { handleConfinedList, handleConfinedRead, handleConfinedUpload } from './services/confined'
 import {
   BoxProcessError,
@@ -289,6 +291,14 @@ async function main(): Promise<void> {
           return Response.json({ ok: true })
         }
 
+        // GET /download — raw streaming download (no request body, so it is
+        // classified before any body parsing). Its body outlives this handler;
+        // the idle self-exit waits on `openResponses` until it is written, and
+        // the listener idle timeout is exempted above. See services/download.ts.
+        if (req.method === 'GET' && pathname === '/download') {
+          return handleDownload(url, req, { log })
+        }
+
         // All other routes are POST with JSON body
         if (req.method !== 'POST') {
           return new Response('Method not allowed', { status: 405 })
@@ -497,6 +507,7 @@ async function main(): Promise<void> {
         activeInvocations: hasActiveBashInvocations(),
         openShells,
         watcherActive: watcher.getStatus().active,
+        openResponses: server.pendingRequests,
         reconciliationSettled: bashReconciliationSettled,
       })
       if (!claim) return
