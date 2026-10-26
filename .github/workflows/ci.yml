@@ -738,6 +738,7 @@ jobs:
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5433/ficus_test
           TEST_POOLED_DATABASE_URL: postgres://postgres:postgres@localhost:6433/ficus_test
+          TEST_PGBOUNCER_CONTAINER: pgbouncer-test
           FICUS_TEST_SKIP_SUBPROCESS: '1'
 
       - name: Create isolated sterile secret-boundary database

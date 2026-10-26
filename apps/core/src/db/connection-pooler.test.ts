@@ -22,13 +22,17 @@ const repoRoot = join(import.meta.dir, '../../../..')
 const composeFile = join(repoRoot, 'docker-compose.test.yml')
 const projectName = testDbProjectName(repoRoot)
 
-function compose(...args: string[]): void {
-  const r = Bun.spawnSync(['docker', 'compose', '-p', projectName, '-f', composeFile, ...args], {
-    stdout: 'ignore',
-    stderr: 'pipe',
-    env: { ...process.env, TEST_REPO_ROOT: repoRoot },
-  })
-  if (r.exitCode !== 0) throw new Error(`docker compose ${args.join(' ')} failed: ${r.stderr.toString()}`)
+// Locally the pooler is the compose `pgbouncer` service; on CI it is a plain
+// `docker run` container named by TEST_PGBOUNCER_CONTAINER (the CI postgres
+// is not a compose service either). Either way stop/start keeps the host port.
+const CONTAINER = process.env.TEST_PGBOUNCER_CONTAINER
+
+function pooler(action: 'stop' | 'start'): void {
+  const argv = CONTAINER
+    ? ['docker', action, CONTAINER]
+    : ['docker', 'compose', '-p', projectName, '-f', composeFile, action, 'pgbouncer']
+  const r = Bun.spawnSync(argv, { stdout: 'ignore', stderr: 'pipe', env: { ...process.env, TEST_REPO_ROOT: repoRoot } })
+  if (r.exitCode !== 0) throw new Error(`${argv.join(' ')} failed: ${r.stderr.toString()}`)
 }
 
 async function eventually<T>(fn: () => Promise<T>, timeoutMs: number): Promise<T> {
@@ -57,17 +61,17 @@ describe.skipIf(!POOLED)('the main pool survives a PgBouncer restart', () => {
     try {
       expect((await sql<{ one: number }[]>`select 1 as one`)[0].one).toBe(1)
 
-      compose('stop', 'pgbouncer')
+      pooler('stop')
       await expect(eventually(() => sql`select 1`, 3_000)).rejects.toThrow()
 
-      compose('start', 'pgbouncer')
+      pooler('start')
       const [row] = await eventually(() => sql<{ one: number }[]>`select 1 as one`, 20_000)
       expect(row.one).toBe(1)
     } finally {
       ;(sql as unknown as { __stopHealthWatchdog?: () => void }).__stopHealthWatchdog?.()
       await sql.end({ timeout: 5 }).catch(() => {})
       // Leave the service up for whatever runs next.
-      compose('start', 'pgbouncer')
+      pooler('start')
     }
   }, 40_000)
 })
