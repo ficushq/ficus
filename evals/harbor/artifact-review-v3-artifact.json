@@ -12,13 +12,9 @@
     "memory": "fresh-disabled",
     "runtime_sha256": "f34c6a8a347e25b3179cea46f2283afbdca0f634674a28b46e426f5d78668012",
     "database_network": "task",
-    "attempted_roles": [
-      "engineer"
-    ],
+    "attempted_roles": ["engineer"],
     "engineer_only_verified": true,
-    "executed_roles": [
-      "engineer"
-    ]
+    "executed_roles": ["engineer"]
   },
   "official_grade": {
     "rewards": {

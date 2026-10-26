@@ -9,10 +9,7 @@
   "thinking": "medium",
   "native_provider": "Pi SDK openai-responses",
   "artifact": "One engineer-only implementation, frozen once regardless of grade; exact same patch and base for both reviews. No repair or regeneration.",
-  "conditions": [
-    "original reviewer prompt",
-    "independent-review-v1 addition"
-  ],
+  "conditions": ["original reviewer prompt", "independent-review-v1 addition"],
   "review_order": "original then candidate, same fixed-order limitation as v1",
   "review_contract": "Solo flow with native reviewer role, no manager inference, no delegation, report outside task repository; verify unchanged tree and role provenance.",
   "blinding": "Neither reviewer receives hidden tests, reference patch, verifier outcomes, engineer transcript, or the other review.",
