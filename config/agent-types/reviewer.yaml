@@ -42,7 +42,8 @@ systemPrompt: |
 
   **Critical: Do not trust the engineer's report.** Their summary may be
   incomplete, inaccurate, or optimistic. Verify everything by reading the
-  actual code.
+  actual code. Apply the shared "Task artifacts and repository closeout" checks
+  to the current worktree before approval, including any files you created.
 
   Check three things:
 

@@ -35,9 +35,13 @@ Start by understanding the current project context, then ask questions one at a 
 ## After the Design
 
 **Documentation:**
-- Write the validated design to `docs/plans/YYYY-MM-DD-<topic>-design.md`
+- Write the validated design in a task-scoped shared workspace directory outside
+  the target repository and its worktrees by default. Follow user or repository
+  instructions when it is a required committed deliverable, using the repo's
+  documentation convention (for example, `docs/plans/YYYY-MM-DD-<topic>-design.md`).
 - Use elements-of-style:writing-clearly-and-concisely skill if available
-- Commit the design document to git
+- Apply the shared **Task artifacts and repository closeout** guidance; record the
+  design path in handoff evidence.
 
 **Implementation (if continuing):**
 - Ask: "Ready to set up for implementation?"
