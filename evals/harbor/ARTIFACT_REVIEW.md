@@ -122,3 +122,62 @@ exposure is **$20.319617**, including the retained earlier $5.50 hold, leaving
 **$9.680383** under the $30 cap. See `artifact-review-v1-results.json` for full
 reports, integrity checks, reproduction hashes, and accounting. The private
 ledger has a completed-segment backup in the durable data directory.
+
+## Replication: Bandit structured directives
+
+The next unused frozen-order task, `bandit-structured-nosec-directives`, repeats
+this protocol with the exact same model, runtime archives, reviewer addition,
+and baseline-first order. Four official grading controls and both native runtime /
+network probes passed before inference. The upstream image required no dependency
+changes; its digest and explicit verifier architecture were pinned.
+
+One engineer-only implementation was generated and frozen without operator repairs.
+It passed **67/69 official feature checks and 280/282 regression checks**. Neither
+reviewer received those results. Both reviewed commit
+`8850b4486b42850e26a8e83266d87f148c4dae7d` from patch SHA256
+`fc27071def1014074bf1a7d2531644616ae67e74ffef2a8c9ae9a9916e2f2fcd`.
+
+| Reviewer condition | Verdict | Independently reproduced findings | Requests | Recorded cost |
+| --- | --- | --- | --- | --- |
+| Original prompt | Changes requested | 2 of 2 reported | 17 | $0.222182 |
+| Independent-contract addition | Changes requested | 2 of 2 reported | 12 | $0.183341 |
+
+Both passed role and repository-integrity checks. Their findings overlap partly:
+
+- **Both:** a next-statement directive inside a multiline statement suppresses
+  that already-started statement and leaves the intended next statement unsuppressed.
+- **Original only:** a later structured directive in a comment causes an existing
+  inline suppression on that line to be discarded.
+- **Candidate only:** region suppressions do not reach comment-only lines reported
+  by the existing `trojansource` File plugin. Assignment-line controls work.
+
+All three defects were independently reproduced with actual plugins in a fresh
+network-disabled container. No implementation repairs were made. The exact
+published script is `artifact-review-v2-reproduce.py`. Both reviewers also ran the
+visible repository tests successfully; the counts are corroborated by tool output.
+Their “Critical” labels are not severity judgments established by this audit.
+
+The four official failed assertions are kept separate from these findings. Three
+assert that a named selector remains specific even when it covers every enabled
+test; the implementation treats that resolved set as blanket. The fourth expects a
+region begun inside a multiline statement to suppress it despite a following
+physical dedent. The public request's resolved-set classification and dedent rules
+leave interpretation questions at these boundaries. The operator inspected these
+failed cases after freezing the artifact; neither reviewer received this analysis.
+The official grade remains unchanged, and this is not a claim that the grader is
+wrong or that its four failures prove four separate defects.
+
+**Neither reviewer dominates this replication.** Each found one issue the other
+missed. The candidate cost less here, but one stochastic run does not establish an
+efficiency advantage. Across the two controlled artifacts, the candidate found
+useful additional issues, yet also missed a baseline-only issue. These discovered
+and subsequently audited issues are not an exhaustive defect inventory, so they
+cannot support a recall estimate. Keep the prompt experimental; use more independent
+samples before recommending promotion. No production prompt changed.
+
+Generation cost **$0.500047**; the complete replication cost **$0.905570** across
+64 requests, with no new unresolved usage. Both replications share the same durable
+ledger segment. Current phase confirmed spend is **$15.725187** plus the unchanged
+**$5.50** prior hold: **$21.225187 exposure**, leaving **$8.774813** under the $30 cap.
+See the v2 plan, input, readiness, artifact, and results manifests. Private artifacts
+remain in the durable sibling `ficus-evaluation-data/artifact-review-v2` directory.

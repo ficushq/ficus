@@ -1,0 +1,37 @@
+{
+  "source_job": "arv2-paid-engineer",
+  "source_result_sha256": "89fe23732b5da412feb4f4356ecbc888f4488b1602d0680ed6b76491ad79b69b",
+  "base_commit": "b46fa3a2723635aa29cc012538df4867ac2ac006",
+  "sha256": "fc27071def1014074bf1a7d2531644616ae67e74ffef2a8c9ae9a9916e2f2fcd",
+  "bytes": 28400,
+  "implementation_metadata": {
+    "configuration": "engineer",
+    "model_api": "openai-responses",
+    "thinking": "medium",
+    "outcome": "delivered",
+    "memory": "fresh-disabled",
+    "runtime_sha256": "f34c6a8a347e25b3179cea46f2283afbdca0f634674a28b46e426f5d78668012",
+    "database_network": "task",
+    "attempted_roles": [
+      "engineer"
+    ],
+    "engineer_only_verified": true,
+    "executed_roles": [
+      "engineer"
+    ]
+  },
+  "official_grade": {
+    "rewards": {
+      "reward": 0,
+      "f2p_total": 69,
+      "f2p_passed": 67,
+      "p2p_total": 282,
+      "p2p_passed": 280,
+      "f2p": 0.9710144927536232,
+      "p2p": 0.9929078014184397,
+      "partial": 0.9886039886039886
+    }
+  },
+  "selection": "Only generated implementation; frozen regardless of grade. No operator edits.",
+  "hidden_grade_excluded_from_review_input": true
+}

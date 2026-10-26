@@ -19,7 +19,10 @@ $50 cap, with no unsettled usage holds.
 
 Subsequent long-task work and the [independent-review pilot](INDEPENDENT_REVIEW.md)
 are separate studies. The current [controlled reviewer diagnostic](ARTIFACT_REVIEW.md)
-compares reviewer prompts on one identical implementation. Its accounting carries
+compares reviewer prompts on identical implementations across two tasks. The
+first favored the experimental prompt; the second found overlapping issues with
+one unique verified finding per reviewer. Neither establishes general superiority.
+Its accounting carries
 $19.227605 of opening exposure into the user-authorized $30 phase cap. Earlier
 temporary raw artifacts are unavailable; new evidence is stored durably. See the
 individual manifests for costs, retained holds, and limitations.

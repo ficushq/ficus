@@ -1,0 +1,446 @@
+{
+  "experiment": "artifact-review-v2",
+  "kind": "one-artifact controlled reviewer replication, not a full-squad benchmark score",
+  "artifact": {
+    "source_job": "arv2-paid-engineer",
+    "source_result_sha256": "89fe23732b5da412feb4f4356ecbc888f4488b1602d0680ed6b76491ad79b69b",
+    "base_commit": "b46fa3a2723635aa29cc012538df4867ac2ac006",
+    "sha256": "fc27071def1014074bf1a7d2531644616ae67e74ffef2a8c9ae9a9916e2f2fcd",
+    "bytes": 28400,
+    "implementation_metadata": {
+      "configuration": "engineer",
+      "model_api": "openai-responses",
+      "thinking": "medium",
+      "outcome": "delivered",
+      "memory": "fresh-disabled",
+      "runtime_sha256": "f34c6a8a347e25b3179cea46f2283afbdca0f634674a28b46e426f5d78668012",
+      "database_network": "task",
+      "attempted_roles": [
+        "engineer"
+      ],
+      "engineer_only_verified": true,
+      "executed_roles": [
+        "engineer"
+      ]
+    },
+    "official_grade": {
+      "rewards": {
+        "reward": 0,
+        "f2p_total": 69,
+        "f2p_passed": 67,
+        "p2p_total": 282,
+        "p2p_passed": 280,
+        "f2p": 0.9710144927536232,
+        "p2p": 0.9929078014184397,
+        "partial": 0.9886039886039886
+      }
+    },
+    "selection": "Only generated implementation; frozen regardless of grade. No operator edits.",
+    "hidden_grade_excluded_from_review_input": true
+  },
+  "reviews": [
+    {
+      "condition": "baseline",
+      "result_sha256": "ef7214bcaa9d5a1a822d235c731f5767567344278fef7c71d2c7ea15d9212aa6",
+      "report_sha256": "56eecd8f7d1970acce148ade7146c73b83d732540adf6009c364d89599ca4aec",
+      "messages_sha256": "52450cc2b177b043ec36e6ffc01d4dc8435b2427e37260436ecea735f1a1f542",
+      "audit": {
+        "base_commit": "b46fa3a2723635aa29cc012538df4867ac2ac006",
+        "artifact_sha256": "fc27071def1014074bf1a7d2531644616ae67e74ffef2a8c9ae9a9916e2f2fcd",
+        "artifact_commit": "8850b4486b42850e26a8e83266d87f148c4dae7d",
+        "valid": true,
+        "repository_unchanged": true,
+        "verdict": "changes-requested"
+      },
+      "report": {
+        "verdict": "changes-requested",
+        "findings": [
+          {
+            "title": "Next-statement suppression is consumed by an already-started multiline statement",
+            "requirement": "nosec-next-line must suppress the next statement after the directive, not the statement that already contains it.",
+            "location": "bandit/core/nosec.py:211-214",
+            "evidence": "With enabled tests B101 and B307, scan: value = (eval('1') +  # nosec-next-line B307\n         eval('2'))\neval('3')\n. Actual findings are [(3, B307)]: both calls in the existing assignment are suppressed, while the next statement is not. Expected findings are [(1, B307), (2, B307)], with the call on line 3 suppressed. The pending-directive condition accepts any meaningful token later than the directive line, even when the statement began before the directive. Repair target selection to distinguish a continuation of an existing statement from the next statement; preserve the required skipping of grouping-only lines. Add regression coverage for directives inside multiline statements, including trailing comments after a meaningful token. Reproduced using the real BanditManager and plugins in /tmp/bandit-review-focused.py.",
+            "severity": "Critical"
+          },
+          {
+            "title": "Structured directive detection discards an applicable inline suppression",
+            "requirement": "All applicable suppressions for a finding must be combined; existing inline nosec suppression must continue to apply alongside region and next-statement directives.",
+            "location": "bandit/core/nosec.py:178-194",
+            "evidence": "With enabled tests B101 and B307, scan: assert eval('1') # nosec B101 # nosec-begin B307\nassert eval('2')\n. Expected findings are [(1, B307), (2, B101)]: inline B101 suppresses the first assert, and the region suppresses only B307 starting on line 2. Actual findings are [(1, B101), (1, B307), (2, B101)]. The inline parser independently returns {B101} for this comment, but DIRECTIVE.search finds the later region directive and the elif token branch prevents inline parsing entirely. A trailing nosec-next-line directive produces the same lost inline suppression. Repair by collecting and combining the independently applicable inline marker and structured directive instead of making them mutually exclusive; continue ignoring text after nosec-end as required. Add functional regression tests for the combinations. Reproduced using the real BanditManager and plugins in /tmp/bandit-review-focused.py.",
+            "severity": "Critical"
+          }
+        ],
+        "observations": [
+          "Reviewed the complete eight-file diff from b46fa3a2723635aa29cc012538df4867ac2ac006 to 8850b4486b42850e26a8e83266d87f148c4dae7d; the checked-out HEAD is the implementation commit. The changes are focused on suppression parsing, integration, tests, and documentation.",
+          "The implementation provides selector algebra with malformed-expression fallback, enabled-test-relative negation, case-insensitive directive matching, nested regions, dedent handling, statement-wide propagation, ignore-nosec behavior, suppression combination, and resolved-set metric normalization. The added documentation explains these features.",
+          "Independent verification: python -m unittest tests.unit.core.test_nosec tests.functional.test_suppression_directives passed all 28 tests. python -m unittest discover -s tests -q and python -m stestr run each passed all 301 discovered tests. Logs are in /tmp/bandit-review-tests.log and /tmp/bandit-review-stestr.log.",
+          "The focused real-plugin reproductions confirm both blocking defects despite the passing suite. Reproduction source and output are /tmp/bandit-review-focused.py and /tmp/bandit-review-focused.log.",
+          "No tracked files were edited, no repository source or test files were created, and git diff --exit-code plus git status --short confirmed a clean checkout after verification. No repair or commit was made, as required by this review-only assignment."
+        ],
+        "limitations": [
+          "Pass 1 (spec compliance) failed on the listed defects. Pass 2 (code quality) was intentionally not performed, following the required sequential review process. A repaired implementation needs spec re-verification before code-quality approval."
+        ]
+      },
+      "metadata": {
+        "configuration": "reviewer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "f34c6a8a347e25b3179cea46f2283afbdca0f634674a28b46e426f5d78668012",
+        "database_network": "task",
+        "attempted_roles": [
+          "reviewer"
+        ],
+        "engineer_only_verified": null,
+        "executed_roles": [
+          "reviewer"
+        ],
+        "artifact_review": {
+          "base_commit": "b46fa3a2723635aa29cc012538df4867ac2ac006",
+          "artifact_sha256": "fc27071def1014074bf1a7d2531644616ae67e74ffef2a8c9ae9a9916e2f2fcd",
+          "artifact_commit": "8850b4486b42850e26a8e83266d87f148c4dae7d",
+          "valid": true,
+          "repository_unchanged": true,
+          "verdict": "changes-requested"
+        }
+      }
+    },
+    {
+      "condition": "candidate",
+      "result_sha256": "94a44901702074f32fc14e84d342a446cdcc07b2635dbadc7c6aa8f1d39a768c",
+      "report_sha256": "eb62c78ad4fe62ecd009d685bc9e568ebcc1d77e731bcd63ed6bbb9bea6aa889",
+      "messages_sha256": "32df449339df59fe8facbd5dec41097d2ca11491ddaed10e7176837ab3972b9b",
+      "audit": {
+        "base_commit": "b46fa3a2723635aa29cc012538df4867ac2ac006",
+        "artifact_sha256": "fc27071def1014074bf1a7d2531644616ae67e74ffef2a8c9ae9a9916e2f2fcd",
+        "artifact_commit": "8850b4486b42850e26a8e83266d87f148c4dae7d",
+        "valid": true,
+        "repository_unchanged": true,
+        "verdict": "changes-requested"
+      },
+      "report": {
+        "verdict": "changes-requested",
+        "findings": [
+          {
+            "title": "Preserve physical region suppressions for findings outside statement token ranges",
+            "requirement": "nosec-begin suppresses subsequent physical lines until the region ends; all applicable suppressions must be combined, with corresponding suppression metrics.",
+            "location": "bandit/core/nosec.py:141-149 (also 182 and 205-222)",
+            "evidence": "With enabled tests B613 and B101, scan '# nosec-begin B613\\n# bidi \\u202e\\n# nosec-end\\npass\\n' using BanditManager._parse_file and actual plugins (the escape denotes a literal U+202E in the source). Actual result: [(2, 'B613')], skipped_tests=0. Expected: no findings and skipped_tests=1. A blanket begin likewise leaves the B613 finding visible and nosec=0. The existing trojansource File plugin legitimately reports findings on comments. build_suppressions computes physical[2] correctly but only transfers region selections into token-backed statements; for_result consults only those statements, so this comment has no applicable entry. A control with the same character in an assignment inside the region is correctly suppressed. Retain the physical-line suppression map and combine it when resolving result locations, including locations with no statement, without losing the statement-wide expansion or begin/end boundaries. Add real File-plugin coverage on comment-only lines.",
+            "severity": "Critical"
+          },
+          {
+            "title": "Do not consume next-statement directives with an already-started statement",
+            "requirement": "nosec-next-line suppresses the next statement after the directive, skipping blank/comment/grouping-only lines, rather than a statement that has already started before the directive.",
+            "location": "bandit/core/nosec.py:210-216",
+            "evidence": "With B307 and B101 enabled, scan 'value = (\\n    eval(\"1\")  # nosec-next-line B307\\n    + eval(\"2\")\\n)\\neval(\"3\")\\n'. Actual findings: only [(5, 'B307')]; skipped_tests=2. Expected: findings on lines 2 and 3, with the next statement at line 5 suppressed. The assignment began on line 1; the expression on line 3 is not a new statement. The pending-directive condition accepts any later meaningful token in the current logical statement, consumes the directive there, and expands its suppression retroactively across that whole statement. Locate the target using the beginning of the next meaningful statement, retaining the explicitly requested grouping-only-line skipping, rather than any token after the directive. Add coverage for directives inside already-started multiline statements and check both target selection and metrics.",
+            "severity": "Critical"
+          }
+        ],
+        "observations": [
+          "Reviewed the complete eight-file diff between b46fa3a2723635aa29cc012538df4867ac2ac006 and 8850b4486b42850e26a8e83266d87f148c4dae7d. The implementation includes useful real-plugin tests and documentation for selector algebra, nested regions, boundaries, blanket dominance, case-insensitive keywords, and ignore-nosec.",
+          "Pass 1 (spec compliance) failed on the two reproduced behavioral defects. Pass 2 (code quality) was not performed, as required by the sequential review policy.",
+          "Verification succeeded: python -m unittest tests.unit.core.test_nosec tests.functional.test_suppression_directives -q (28 tests); python -m unittest discover -s tests/unit -q (183 tests); python -m unittest discover -s tests/functional -q (118 tests). All passed. The new edge-case reproductions use the repository's real BanditManager and enabled plugins, not mocks.",
+          "Independently checked the File-plugin interface and trojansource implementation: results may identify comment-only physical lines independently of an AST node. Also checked the multiline next-statement counterexample against Python statement boundaries: both eval calls before the closing parenthesis belong to the assignment, whereas the following eval is the next statement.",
+          "No tracked repository files were changed. Scratch reproductions and test logs were written under /tmp. The review report is the deliverable; no repairs were attempted."
+        ],
+        "limitations": [
+          "pytest is not installed in the provided environment; verification used the repository's unittest-compatible test suites successfully instead.",
+          "This report does not claim a completed code-quality review or exhaustive verification beyond the inspected diff, unit/functional suites, and targeted real-plugin reproductions."
+        ]
+      },
+      "metadata": {
+        "configuration": "reviewer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "05a9f0a912b2df168f73a4c1fc42888d06c6e0a52e69644add7aa651da4d3a3a",
+        "database_network": "task",
+        "attempted_roles": [
+          "reviewer"
+        ],
+        "engineer_only_verified": null,
+        "executed_roles": [
+          "reviewer"
+        ],
+        "artifact_review": {
+          "base_commit": "b46fa3a2723635aa29cc012538df4867ac2ac006",
+          "artifact_sha256": "fc27071def1014074bf1a7d2531644616ae67e74ffef2a8c9ae9a9916e2f2fcd",
+          "artifact_commit": "8850b4486b42850e26a8e83266d87f148c4dae7d",
+          "valid": true,
+          "repository_unchanged": true,
+          "verdict": "changes-requested"
+        }
+      }
+    }
+  ],
+  "budget": {
+    "phase_cap_usd": 30,
+    "opening_phase_exposure_usd": 20.319617,
+    "new_confirmed_usd": 0.90557,
+    "new_unknown_usage": 0,
+    "per_client": [
+      {
+        "client": "arv2-baseline",
+        "requests": 17,
+        "confirmed_usd": 0.222182
+      },
+      {
+        "client": "arv2-candidate",
+        "requests": 12,
+        "confirmed_usd": 0.183341
+      },
+      {
+        "client": "arv2-engineer",
+        "requests": 35,
+        "confirmed_usd": 0.500047
+      }
+    ],
+    "phase_confirmed_usd": 15.725187,
+    "retained_prior_hold_usd": 5.5,
+    "phase_exposure_usd": 21.225187,
+    "remaining_headroom_usd": 8.774813,
+    "segment_shared_with_v1": true
+  },
+  "production_prompt_changed": false,
+  "operator_repairs_or_task_hints": 0,
+  "independent_reproduction": {
+    "script": "artifact-review-v2-reproduce.py",
+    "script_sha256": "4e550ed207809ba461f2bce081413f32f18fc488d5c3239688e7333992a0a6b6",
+    "output_sha256": "4da667691bc6b20cd208e5177bed6310d9748d1aef15135c9f37f28610a272fe",
+    "exit_code": 0,
+    "network": "none",
+    "source_changes": "Only the frozen implementation applied, no repairs",
+    "observations": {
+      "next_statement_control": {
+        "findings": [
+          [
+            1,
+            "B307"
+          ],
+          [
+            2,
+            "B307"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 1
+      },
+      "next_statement_inside_existing": {
+        "findings": [
+          [
+            3,
+            "B307"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 2
+      },
+      "inline_control": {
+        "findings": [
+          [
+            1,
+            "B307"
+          ],
+          [
+            2,
+            "B101"
+          ],
+          [
+            2,
+            "B307"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 1
+      },
+      "inline_plus_begin": {
+        "findings": [
+          [
+            1,
+            "B101"
+          ],
+          [
+            1,
+            "B307"
+          ],
+          [
+            2,
+            "B101"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 1
+      },
+      "inline_plus_next-line": {
+        "findings": [
+          [
+            1,
+            "B101"
+          ],
+          [
+            1,
+            "B307"
+          ],
+          [
+            2,
+            "B101"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 1
+      },
+      "metrics_('B307',)_B307": {
+        "findings": [],
+        "nosec": 1,
+        "skipped_tests": 0
+      },
+      "metrics_('B307',)_all": {
+        "findings": [],
+        "nosec": 1,
+        "skipped_tests": 0
+      },
+      "metrics_('B307',)_": {
+        "findings": [],
+        "nosec": 1,
+        "skipped_tests": 0
+      },
+      "metrics_('B101', 'B307')_B307": {
+        "findings": [],
+        "nosec": 0,
+        "skipped_tests": 1
+      },
+      "metrics_('B101', 'B307')_all": {
+        "findings": [],
+        "nosec": 1,
+        "skipped_tests": 0
+      },
+      "metrics_('B101', 'B307')_": {
+        "findings": [],
+        "nosec": 1,
+        "skipped_tests": 0
+      },
+      "region_closing_indent_0": {
+        "findings": [
+          [
+            2,
+            "B307"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 0
+      },
+      "region_closing_indent_4": {
+        "findings": [],
+        "nosec": 0,
+        "skipped_tests": 1
+      },
+      "file_comment_control": {
+        "findings": [
+          [
+            1,
+            "B613"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 0
+      },
+      "file_comment_region_B613": {
+        "findings": [
+          [
+            2,
+            "B613"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 0
+      },
+      "file_assignment_region_B613": {
+        "findings": [],
+        "nosec": 0,
+        "skipped_tests": 1
+      },
+      "file_comment_region_": {
+        "findings": [
+          [
+            2,
+            "B613"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 0
+      },
+      "file_assignment_region_": {
+        "findings": [],
+        "nosec": 1,
+        "skipped_tests": 0
+      }
+    },
+    "verified_findings": [
+      {
+        "id": "next-statement-target",
+        "reported_by": [
+          "baseline",
+          "candidate"
+        ],
+        "assessment": "A directive inside an existing multiline statement suppresses earlier calls in that statement and leaves the following statement unsuppressed; the control suppresses the correct following statement."
+      },
+      {
+        "id": "inline-directive-combination",
+        "reported_by": [
+          "baseline"
+        ],
+        "assessment": "Existing inline B101 suppression is lost when a later begin or next-line directive exists in the same comment. Both variants reproduced with real plugins."
+      },
+      {
+        "id": "physical-comment-region",
+        "reported_by": [
+          "candidate"
+        ],
+        "assessment": "A real File plugin reports B613 on a comment-only line inside a region. Both specific and blanket regions fail to suppress it; the same character in a token-backed assignment is suppressed correctly."
+      }
+    ],
+    "severity_note": "Functional defects verified; neither report's Critical severity labels are established by this audit."
+  },
+  "official_failure_audit": {
+    "failed_assertions": 4,
+    "categories": {
+      "specific_selector_metrics": 3,
+      "region_across_multiline_statement": 1
+    },
+    "assessment": "Keep official score unchanged. Do not equate these four assertions with four independently established defects. Three expect an explicit selector matching all enabled IDs to remain specific; implementation normalizes to blanket, citing resolved-set classification. One expects suppression after an indented begin despite a dedented closing delimiter; implementation expires the region at the physical dedent. The public request allows competing interpretations at these interactions. Record disagreements separately; neither reviewer received verifier outputs.",
+    "audit_visibility": "Operator inspected failing official test cases after freezing the artifact and starting the baseline review; no observations were sent to reviewers."
+  },
+  "findings": {
+    "baseline_verdict": "changes-requested",
+    "candidate_verdict": "changes-requested",
+    "baseline_reported": 2,
+    "baseline_independently_reproduced": 2,
+    "candidate_reported": 2,
+    "candidate_independently_reproduced": 2,
+    "shared_findings": 1,
+    "baseline_only_findings": 1,
+    "candidate_only_findings": 1,
+    "interpretation": "No reviewer dominates on this artifact: each found two verified issues, with one unique issue each. Candidate review used fewer requests and lower cost in this run; one sample is not an efficiency estimate.",
+    "decision": "Keep addition experimental. Across two controlled artifacts, candidate adds useful coverage but misses a baseline-only issue. More independent samples are needed before production promotion; no winner or recall claim."
+  },
+  "validation": {
+    "offline_adapter_tests": 69,
+    "format": "passed",
+    "repository_typecheck": "passed",
+    "grading_controls": 4,
+    "runtime_network_probes": 2,
+    "baseline_tool_evidence": "28 added tests and 301 total tests passed; second stestr run also 301 passed",
+    "candidate_tool_evidence": "28 added tests, 183 unit and 118 functional tests passed",
+    "review_integrity": "Same artifact commit, both reviewer-only, repositories unchanged",
+    "published_reproduction": "Fresh offline container, all assertions passed"
+  },
+  "limitations": [
+    "One fresh artifact and one stochastic review per condition; fixed baseline-first order",
+    "Three defects found by the reviewers and audited post hoc; not an exhaustive predeclared defect set, no recall estimate",
+    "Official failure interpretations reported separately; official score unchanged",
+    "No engineering repair loop or full-squad delivery measured",
+    "Prior raw artifacts and historical ledger unavailable; retained opening exposure unchanged"
+  ]
+}
