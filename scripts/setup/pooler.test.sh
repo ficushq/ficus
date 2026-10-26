@@ -86,6 +86,15 @@ unit=$(render_pooler_unit "${SCRIPT_DIR}/systemd/ficus-pgbouncer.service.tmpl" /
 expect_contains 'unit runs pgbouncer on the rendered ini' "${unit}" 'ExecStart=/usr/sbin/pgbouncer /etc/ficus/pgbouncer/pgbouncer.ini'
 expect_contains 'unit runs as the service user' "${unit}" 'User=ficus'
 expect_not_contains 'unit has no unrendered placeholder' "${unit}" '@'
+# PgBouncer refuses to start as root ("PgBouncer should not run as root"), and
+# the hosted layout runs Core as root (core.run_user empty): the pooler then
+# gets its own unprivileged system user instead of inheriting RUN_USER.
+expect_eq 'pooler user is the service user when that is not root' "$(RUN_USER=ficus pooler_user)" 'ficus'
+expect_eq 'pooler user is a dedicated system account when the service user is root' "$(RUN_USER=root pooler_user)" 'ficus-pgbouncer'
+unit=$(RUN_USER=root render_pooler_unit "${SCRIPT_DIR}/systemd/ficus-pgbouncer.service.tmpl" /etc/ficus/pgbouncer/pgbouncer.ini)
+expect_contains 'root service user: unit runs as the dedicated account' "${unit}" 'User=ficus-pgbouncer'
+expect_not_contains 'root service user: unit never runs pgbouncer as root' "${unit}" 'User=root'
+expect_contains 'install_pooler creates the pooler account before installing its files' "$(declare -f install_pooler)" 'ensure_pooler_user'
 
 # --- core units' ordering ---------------------------------------------------
 HL_UNIT_POOLER=ficus-pgbouncer

@@ -1447,8 +1447,28 @@ render_pgbouncer_userlist() { # DIRECT_DSN
   printf '"%s" "%s"\n' "${DSN_USER}" "$(url_decode "${DSN_PASS_ENC}")"
 }
 
+# The account the pooler runs as. PgBouncer refuses to start as root
+# ("PgBouncer should not run as root"), and the hosted layout runs Core as
+# root (core.run_user empty, the setup invoked as root), so in that case the
+# pooler gets a dedicated unprivileged system account named after its unit
+# (ficus-pgbouncer). A non-root service user keeps the pooler alongside the
+# services, as before: one owner for the ini, the userlist and the unit.
+pooler_user() {
+  if [[ ${RUN_USER:-root} == root ]]; then printf '%s' "${HL_UNIT_POOLER:-ficus-pgbouncer}"; else printf '%s' "${RUN_USER}"; fi
+}
+
+# Create the dedicated pooler account when the pooler user is not an
+# existing account (the hosted root case): a system user with no home and no
+# shell, in a group of its own. An existing account (the service user, or a
+# previous run's) is left alone.
+ensure_pooler_user() { # USER
+  id -u "$1" >/dev/null 2>&1 && return 0
+  log_info "creating system user $1 for ${HL_UNIT_POOLER:-ficus-pgbouncer}"
+  as_root useradd --system --no-create-home --shell /usr/sbin/nologin --user-group "$1"
+}
+
 render_pooler_unit() { # TEMPLATE_FILE INI_PATH
-  sed -e "s|@RUN_USER@|${RUN_USER}|g" \
+  sed -e "s|@RUN_USER@|$(pooler_user)|g" \
     -e "s|@INI@|$2|g" \
     -e "s|@UNIT_POOLER@|${HL_UNIT_POOLER:-ficus-pgbouncer}|g" \
     "$1"
@@ -1537,8 +1557,9 @@ pooler_env_disable() { # ENV_FILE
 # Install (or re-render + restart) the per-host pooler: pgbouncer from apt,
 # ini + userlist under FICUS_PGBOUNCER_DIR (service user; the userlist is
 # 0600), the HL_UNIT_POOLER unit, enabled and listening. Shared by
-# setup-host.sh's phase_pooler and enable-pooler.sh. Needs RUN_USER and the
-# layout globals (resolve_layout_globals / require_host_layout_ready).
+# setup-host.sh's phase_pooler and enable-pooler.sh. Needs RUN_USER (see
+# pooler_user for the root case) and the layout globals
+# (resolve_layout_globals / require_host_layout_ready).
 install_pooler() { # DIRECT_DSN POOL_SIZE RESERVE TEMPLATE_DIR
   local dsn=$1 size=$2 reserve=$3 template_dir=$4
   if ! command -v pgbouncer >/dev/null 2>&1; then
@@ -1548,10 +1569,13 @@ install_pooler() { # DIRECT_DSN POOL_SIZE RESERVE TEMPLATE_DIR
   # The distro unit (pgbouncer.service, /etc/pgbouncer) is not ours: keep it
   # off so two poolers never contend for the port.
   as_root systemctl disable --now pgbouncer.service >/dev/null 2>&1 || true
-  as_root install -d -m 0750 -o "${RUN_USER}" -g "${RUN_USER}" "${FICUS_PGBOUNCER_DIR}"
-  install_rendered 0640 "${RUN_USER}" "${RUN_USER}" "${FICUS_PGBOUNCER_INI}" \
+  local user
+  user=$(pooler_user)
+  ensure_pooler_user "${user}"
+  as_root install -d -m 0750 -o "${user}" -g "${user}" "${FICUS_PGBOUNCER_DIR}"
+  install_rendered 0640 "${user}" "${user}" "${FICUS_PGBOUNCER_INI}" \
     render_pgbouncer_ini "${dsn}" "${size}" "${reserve}" "${FICUS_DB_CA_PATH}" "${FICUS_PGBOUNCER_PORT}" "${FICUS_PGBOUNCER_USERLIST}"
-  install_rendered 0600 "${RUN_USER}" "${RUN_USER}" "${FICUS_PGBOUNCER_USERLIST}" \
+  install_rendered 0600 "${user}" "${user}" "${FICUS_PGBOUNCER_USERLIST}" \
     render_pgbouncer_userlist "${dsn}"
   install_rendered --check-placeholders 0644 root root \
     "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_POOLER}.service" \
