@@ -179,9 +179,16 @@ elif [[ ${DB_MODE} == container ]]; then
   docker exec "${DB_CONTAINER}" pg_dump -U postgres -Fc @DB_NAME@ >"${DUMP_FILE}" ||
     die "pg_dump via 'docker exec ${DB_CONTAINER}' failed"
 else
-  dsn_line=$(grep -E '^DATABASE_URL=' "${DEST}/.env" | tail -n 1) ||
-    die "DATABASE_URL not found in ${DEST}/.env (database.mode=external)"
-  dsn=${dsn_line#DATABASE_URL=}
+  # A pooled host (database.pool.enabled) also carries DATABASE_DIRECT_URL;
+  # pg_dump must reach the cluster directly, never through the loopback
+  # transaction pooler. Unpooled hosts have only DATABASE_URL, as before.
+  if dsn_line=$(grep -E '^DATABASE_DIRECT_URL=' "${DEST}/.env" | tail -n 1) && [[ -n ${dsn_line#DATABASE_DIRECT_URL=} ]]; then
+    dsn=${dsn_line#DATABASE_DIRECT_URL=}
+  else
+    dsn_line=$(grep -E '^DATABASE_URL=' "${DEST}/.env" | tail -n 1) ||
+      die "DATABASE_URL not found in ${DEST}/.env (database.mode=external)"
+    dsn=${dsn_line#DATABASE_URL=}
+  fi
   [[ -n ${dsn} ]] || die "DATABASE_URL in ${DEST}/.env is empty"
   pg_dump -Fc "${dsn}" >"${DUMP_FILE}" || die "pg_dump against the external DSN failed"
 fi
