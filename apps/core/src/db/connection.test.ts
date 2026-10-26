@@ -67,9 +67,34 @@ describe('createPostgresConnection health watchdog opt-in', () => {
 describe('createPostgresConnection pool sizing', () => {
   test('defaults to 4 rather than postgres.js’s default of 10', async () => {
     delete process.env.DATABASE_POOL_MAX
+    delete process.env.DATABASE_POOL_MODE
     const sql = createPostgresConnection(DSN)
     expect(sql.options.max).toBe(4)
     await sql.end()
+  })
+
+  test('behind a transaction pooler the client pool defaults to 10: client connections are pooler slots, not backends', async () => {
+    delete process.env.DATABASE_POOL_MAX
+    process.env.DATABASE_POOL_MODE = 'transaction'
+    try {
+      const sql = createPostgresConnection(DSN)
+      expect(sql.options.max).toBe(10)
+      await sql.end()
+    } finally {
+      delete process.env.DATABASE_POOL_MODE
+    }
+  })
+
+  test('an explicit DATABASE_POOL_MAX still wins when pooled', async () => {
+    process.env.DATABASE_POOL_MAX = '3'
+    process.env.DATABASE_POOL_MODE = 'transaction'
+    try {
+      const sql = createPostgresConnection(DSN)
+      expect(sql.options.max).toBe(3)
+      await sql.end()
+    } finally {
+      delete process.env.DATABASE_POOL_MODE
+    }
   })
 
   test('DATABASE_POOL_MAX overrides the default', async () => {
@@ -853,5 +878,37 @@ describe('drizzle type handlers on the watchdog pool (survive a swap)', () => {
     expect(handlersOf(sql).serializers['3802']!(value)).not.toBe(value)
     expect(handlersOf(sql).serializers['3802']!(value)).toBe(JSON.stringify(value))
     await sql.end()
+  })
+})
+
+
+describe('direct connection string', () => {
+  const priorUrl = process.env.DATABASE_URL
+  const priorDirect = process.env.DATABASE_DIRECT_URL
+  afterEach(() => {
+    if (priorUrl === undefined) delete process.env.DATABASE_URL
+    else process.env.DATABASE_URL = priorUrl
+    if (priorDirect === undefined) delete process.env.DATABASE_DIRECT_URL
+    else process.env.DATABASE_DIRECT_URL = priorDirect
+  })
+
+  test('is DATABASE_DIRECT_URL when set (a pooled host: the cluster, not the loopback pooler)', async () => {
+    const { getDirectConnectionString, isTransactionPooled } = await import('./connection')
+    process.env.DATABASE_URL = 'postgres://u:p@127.0.0.1:6432/x'
+    process.env.DATABASE_DIRECT_URL = 'postgres://u:p@db.example.com:25060/x?sslmode=verify-full'
+    expect(getDirectConnectionString()).toBe('postgres://u:p@db.example.com:25060/x?sslmode=verify-full')
+    process.env.DATABASE_POOL_MODE = 'transaction'
+    expect(isTransactionPooled()).toBe(true)
+    delete process.env.DATABASE_POOL_MODE
+    expect(isTransactionPooled()).toBe(false)
+  })
+
+  test('falls back to DATABASE_URL on an unpooled host, and throws when neither is set', async () => {
+    const { getDirectConnectionString } = await import('./connection')
+    delete process.env.DATABASE_DIRECT_URL
+    process.env.DATABASE_URL = 'postgres://u:p@127.0.0.1:5432/x'
+    expect(getDirectConnectionString()).toBe('postgres://u:p@127.0.0.1:5432/x')
+    delete process.env.DATABASE_URL
+    expect(() => getDirectConnectionString()).toThrow(/DATABASE_URL/)
   })
 })
