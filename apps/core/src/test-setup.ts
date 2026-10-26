@@ -636,8 +636,59 @@ if (useExternalDb) {
     // Persist port for reuse and for test:db:down
     writeFileSync(portFile, String(port))
     console.log(`Test postgres ready on port ${port} (project: ${projectName})`)
+
+    // The transaction-mode PgBouncer in front of that database (the pooled
+    // path a host with database.pool.enabled takes). Best-effort: when it
+    // cannot start, the pooled-path tests skip with a notice rather than the
+    // whole suite failing on an optional service.
+    const pooled = startTestPooler({ projectName, composeFile, repoRoot, port })
+    if (pooled) {
+      process.env.TEST_POOLED_DATABASE_URL = pooled
+      console.log(`Test pgbouncer ready (${pooled.replace(/:[^:@/]+@/, ':***@')})`)
+    }
     return url
   })
+}
+
+/**
+ * `docker compose up -d pgbouncer` for the current test project and the
+ * pooled DSN on its Docker-assigned host port, or undefined when the service
+ * could not be started or its port read. Never throws.
+ */
+function startTestPooler(opts: {
+  projectName: string
+  composeFile: string
+  repoRoot: string
+  port: number
+}): string | undefined {
+  try {
+    // A STABLE host port, cached per worktree like .test-db-port: a
+    // Docker-assigned (`0:`) port changes on every `docker compose start`,
+    // which is exactly what connection-pooler.test.ts does to the service.
+    const poolerPortFile = join(opts.repoRoot, '.test-pgbouncer-port')
+    let poolerPort = existsSync(poolerPortFile) ? parseInt(readFileSync(poolerPortFile, 'utf-8').trim(), 10) : NaN
+    if (!Number.isInteger(poolerPort) || poolerPort <= 0) poolerPort = findFreeTestDbPort()
+    const env = {
+      ...process.env,
+      TEST_DB_PORT: String(opts.port),
+      TEST_PGBOUNCER_PORT: String(poolerPort),
+      TEST_REPO_ROOT: opts.repoRoot,
+    }
+    const up = Bun.spawnSync(
+      ['docker', 'compose', '-p', opts.projectName, '-f', opts.composeFile, 'up', '-d', 'pgbouncer'],
+      { stdout: 'ignore', stderr: 'pipe', env }
+    )
+    if (up.exitCode !== 0) {
+      console.log(
+        `[core] pgbouncer test service did not start (pooled-path tests will skip): ${up.stderr.toString().trim().split('\n').pop()}`
+      )
+      return undefined
+    }
+    writeFileSync(poolerPortFile, String(poolerPort))
+    return `postgres://postgres:postgres@localhost:${poolerPort}/ficus_test`
+  } catch {
+    return undefined
+  }
 }
 
 if (testDbUnavailableReason !== undefined) {

@@ -209,6 +209,16 @@ database:
   # trust store, so their CA has to be supplied here. Leave empty for a
   # plaintext/local database.
   ca_path: ''
+  # Per-host PgBouncer in TRANSACTION mode in front of an external database
+  # (mode=external only). The app reaches the database through 127.0.0.1:6432
+  # (DATABASE_URL) and session-scoped work (migrations, advisory locks) goes
+  # direct (DATABASE_DIRECT_URL). Cuts a host's idle server connections from
+  # ~5 to ~1 on a shared cluster. `size` is the server pool (concurrent
+  # transactions), `reserve` extra backends opened after a 1 s wait.
+  pool:
+    enabled: false
+    size: 4
+    reserve: 2
 
 # -----------------------------------------------------------------------------
 # Agent sandbox runtime.

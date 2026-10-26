@@ -1,0 +1,26 @@
+# Rendered by scripts/setup/setup-host.sh — do not edit the installed copy by
+# hand; re-run setup-host.sh (or edit this template) instead.
+#
+# Per-host PgBouncer in transaction mode, in front of the EXTERNAL database
+# (database.pool.enabled). Listens on loopback only; the api and worker units
+# order After= this one and reach the cluster through it (DATABASE_URL), while
+# session-scoped work goes direct (DATABASE_DIRECT_URL).
+[Unit]
+Description=Ficus PgBouncer (transaction pooling to the external database)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=@RUN_USER@
+ExecStart=/usr/sbin/pgbouncer @INI@
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=2
+LimitNOFILE=65536
+# Logs: journalctl -u @UNIT_POOLER@ -f
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

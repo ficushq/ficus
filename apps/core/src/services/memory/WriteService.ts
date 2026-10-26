@@ -20,7 +20,7 @@ import { db } from '../../db'
 import {
   createPostgresConnection,
   DEDICATED_CONNECTION_SESSION,
-  getConnectionString,
+  getDirectConnectionString,
   withDedicatedConnectionSlot,
 } from '../../db/connection'
 import { and, eq, or } from 'drizzle-orm'
@@ -81,7 +81,8 @@ function getLockKeys(squadId: string, path: string): [number, number] {
 async function withAdvisoryLock<T>(squadId: string, path: string, fn: () => Promise<T>): Promise<T> {
   const [key1, key2] = getLockKeys(squadId, path)
   return withDedicatedConnectionSlot(async () => {
-    const connection = createPostgresConnection(getConnectionString(), {
+    // Direct (never through a transaction pooler): the session lock lives on this connection.
+    const connection = createPostgresConnection(getDirectConnectionString(), {
       max: 1,
       idle_timeout: 0,
       connection: DEDICATED_CONNECTION_SESSION,

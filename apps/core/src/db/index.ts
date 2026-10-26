@@ -4,6 +4,7 @@ import * as schema from './schema'
 import { validateDatabaseConnection } from './validate-connection'
 import {
   createPostgresConnection,
+  getDirectConnectionString,
   DEDICATED_CONNECTION_SESSION,
   getConnectionString,
   withDedicatedConnectionSlot,
@@ -68,7 +69,9 @@ export async function withDedicatedDbTransaction<T>(
   createConnection: typeof createPostgresConnection = createPostgresConnection
 ): Promise<T> {
   return withDedicatedConnectionSlot(async () => {
-    const connection = createConnection(connectionString, {
+    // Direct, never through a transaction pooler: the transaction's lock must
+    // stay on one backend for the whole callback.
+    const connection = createConnection(getDirectConnectionString(), {
       max: 1,
       idle_timeout: 0,
       onnotice: () => {},
@@ -91,29 +94,38 @@ export async function waitForDbAndMigrate(): Promise<void> {
   await waitForDb(() => client`SELECT 1`)
 
   // PostgreSQL advisory locks are session-scoped, so locking, migration, and
-  // unlocking must all use the same reserved connection.
-  const connection = await client.reserve()
-  try {
-    await connection`SELECT pg_advisory_lock(42)`
-    let migrationError: unknown
-    let unlockError: unknown
+  // unlocking must all use the same connection — a DIRECT one (never the
+  // main pool, which may sit behind a transaction pooler), under a dedicated
+  // slot while it runs.
+  await withDedicatedConnectionSlot(async () => {
+    const direct = createPostgresConnection(getDirectConnectionString(), { max: 1, onnotice: () => {} })
     try {
-      await migrateDatabase(connection, { migrationsFolder })
-    } catch (error) {
-      migrationError = error
-      throw error
-    } finally {
+      const connection = await direct.reserve()
       try {
-        await connection`SELECT pg_advisory_unlock(42)`
-      } catch (error) {
-        if (!migrationError) unlockError = error
+        await connection`SELECT pg_advisory_lock(42)`
+        let migrationError: unknown
+        let unlockError: unknown
+        try {
+          await migrateDatabase(connection, { migrationsFolder })
+        } catch (error) {
+          migrationError = error
+          throw error
+        } finally {
+          try {
+            await connection`SELECT pg_advisory_unlock(42)`
+          } catch (error) {
+            if (!migrationError) unlockError = error
+          }
+        }
+        if (unlockError) throw unlockError
+        log.info('Database migrations applied')
+      } finally {
+        connection.release()
       }
+    } finally {
+      await direct.end({ timeout: 5 })
     }
-    if (unlockError) throw unlockError
-    log.info('Database migrations applied')
-  } finally {
-    connection.release()
-  }
+  })
 }
 
 export * from './schema'

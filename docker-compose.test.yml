@@ -22,3 +22,34 @@ services:
       - ./docker/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
     tmpfs:
       - /var/lib/postgresql
+  # Transaction-mode PgBouncer in front of the test database: the pooled path
+  # Core takes on a host with database.pool.enabled (apps/core/src/db/
+  # pooled-queries.test.ts, connection-pooler.test.ts). Same settings as
+  # setup-host renders: transaction mode, prepared-statement tracking, the
+  # startup parameters postgres.js may send. Host port is Docker-assigned;
+  # test-setup.ts reads it back and exports TEST_POOLED_DATABASE_URL. The
+  # image listens on 5432 inside the container.
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.23.1-p3
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      dev.ficus.test-db: 'true'
+      dev.ficus.test-db.repo-root: '${TEST_REPO_ROOT:-}'
+    environment:
+      DB_HOST: postgres
+      DB_PORT: '5432'
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: ficus_test
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      DEFAULT_POOL_SIZE: '4'
+      RESERVE_POOL_SIZE: '2'
+      RESERVE_POOL_TIMEOUT: '1'
+      MAX_CLIENT_CONN: '100'
+      MAX_PREPARED_STATEMENTS: '200'
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits,options
+    ports:
+      - '${TEST_PGBOUNCER_PORT:-0}:5432'

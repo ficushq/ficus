@@ -1,7 +1,11 @@
 import { createHash } from 'crypto'
 import { and, asc, eq, inArray, isNull, lte, ne, or } from 'drizzle-orm'
 import { db } from '../../../db'
-import { createPostgresConnection, getConnectionString, withDedicatedConnectionSlot } from '../../../db/connection'
+import {
+  createPostgresConnection,
+  getDirectConnectionString,
+  withDedicatedConnectionSlot,
+} from '../../../db/connection'
 import { fleetIncidents, machineBoxes, vmBoxSetupStates } from '../../../db/schema'
 import { eventEmitter } from '../../../lib/infra/event-emitter'
 import { observeSandboxDegradation, type SandboxDegradationObservation } from '../../fleet-alerts/store'
@@ -412,7 +416,7 @@ export async function withVmSetupLease<T>(
     const attempt = await withDedicatedConnectionSlot(async () => {
       // The global slot queue can itself be busy; never start stale work after it drains.
       checkWaiting()
-      const connection = createPostgresConnection(getConnectionString(), { max: 1, idle_timeout: 0 })
+      const connection = createPostgresConnection(getDirectConnectionString(), { max: 1, idle_timeout: 0 })
       try {
         const session = await connection.reserve()
         try {

@@ -1,7 +1,11 @@
 import { and, eq } from 'drizzle-orm'
 import type { SandboxToolchainConfig, SandboxToolchainStatus } from '@ficus/shared'
 import { db } from '../../../db'
-import { createPostgresConnection, getConnectionString, withDedicatedConnectionSlot } from '../../../db/connection'
+import {
+  createPostgresConnection,
+  getDirectConnectionString,
+  withDedicatedConnectionSlot,
+} from '../../../db/connection'
 import { sandboxToolchainActivations, sandboxToolchainProvisions, squads } from '../../../db/schema'
 import { eventEmitter } from '../../../lib/infra/event-emitter'
 import { loadEffectiveToolchain } from '../../integrations/projection/load-effective-toolchain'
@@ -97,7 +101,7 @@ export async function withPinnedProvisionLease<T>(
 /** Serialize physical toolchain reconciliation across Core processes. */
 export async function withProvisionLease<T>(sandboxId: string, reconcile: () => Promise<T>): Promise<T> {
   return withDedicatedConnectionSlot(async () => {
-    const connection = createPostgresConnection(getConnectionString(), { max: 1, idle_timeout: 0 })
+    const connection = createPostgresConnection(getDirectConnectionString(), { max: 1, idle_timeout: 0 })
     return withPinnedProvisionLease(sandboxId, reconcile, {
       reserve: async () => {
         const session = await connection.reserve()

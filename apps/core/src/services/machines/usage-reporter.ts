@@ -16,6 +16,7 @@ import { MAX_INGEST_MACHINES, type IngestMachine } from '@ficus/shared/platform-
  */
 
 import { inArray, sql } from 'drizzle-orm'
+import { createPostgresConnection, getConnectionString, isTransactionPooled } from '../../db/connection'
 import { createLogger } from '../../lib/infra/logger'
 import { User } from '../../entities/User'
 import { Agent } from '../../entities/Agent'
@@ -141,6 +142,61 @@ export interface UsageMetricsBlock extends MachineMetricsAggregate {
   squadsTotal?: number
   /** Executions currently `queued` or `running`. */
   executionsActive?: number
+  /**
+   * Per-host PgBouncer pressure (core_vm host only, pooled installs only —
+   * setup-host's database.pool.enabled; see {@link samplePoolerPressure}):
+   * clients queued for a server connection, the longest such wait, and the
+   * server connections currently busy. A climbing wait is the signal to
+   * raise database.pool.size for this host.
+   */
+  pgbouncerWaitingClients?: number
+  pgbouncerMaxWaitMs?: number
+  pgbouncerActiveServers?: number
+}
+
+/** One reading of the loopback pooler's pool for the app database (`SHOW POOLS`). */
+export interface PoolerSample {
+  waitingClients: number
+  maxWaitMs: number
+  activeServers: number
+}
+
+/** The `SHOW POOLS` row for `database`, reduced to the three numbers we report; null when the pool is absent. */
+export function poolerSampleFromShowPools(
+  rows: ReadonlyArray<Record<string, unknown>>,
+  database: string
+): PoolerSample | null {
+  const row = rows.find((r) => r.database === database)
+  if (!row) return null
+  const n = (v: unknown) => (typeof v === 'number' ? v : Number(v) || 0)
+  return {
+    waitingClients: n(row.cl_waiting),
+    maxWaitMs: Math.round(n(row.maxwait) * 1000 + n(row.maxwait_us) / 1000),
+    activeServers: n(row.sv_active),
+  }
+}
+
+/**
+ * Read the loopback PgBouncer's admin console for the app database's pool.
+ * Null on an unpooled install (no pooler to ask). The console speaks only the
+ * simple query protocol, hence `prepare: false` + `unsafe`; the DSN is the
+ * pooled DATABASE_URL with the virtual `pgbouncer` database, same role (the
+ * ini lists it under admin_users).
+ */
+export async function samplePoolerPressure(): Promise<PoolerSample | null> {
+  if (!isTransactionPooled()) return null
+  const app = new URL(getConnectionString())
+  const database = app.pathname.replace(/^\//, '')
+  const admin = new URL(app.toString())
+  admin.pathname = '/pgbouncer'
+  admin.search = ''
+  const sql = createPostgresConnection(admin.toString(), { max: 1, prepare: false, onnotice: () => {} })
+  try {
+    const rows = (await sql.unsafe('SHOW POOLS')) as unknown as Record<string, unknown>[]
+    return poolerSampleFromShowPools(rows, database)
+  } finally {
+    await sql.end({ timeout: 5 }).catch(() => {})
+  }
 }
 
 export interface BuildVersion {
@@ -536,6 +592,8 @@ export interface ReportUsageSampleDeps {
   countActivity: () => Promise<
     Pick<UsageMetricsBlock, 'agentsAlive' | 'boxesTotal' | 'squadsTotal' | 'executionsActive'>
   >
+  /** The loopback pooler's pressure for the core host; null when this install is not pooled. Own try/catch in the tick. */
+  samplePooler: () => Promise<PoolerSample | null>
 }
 
 function defaultDeps(): ReportUsageSampleDeps {
@@ -557,6 +615,7 @@ function defaultDeps(): ReportUsageSampleDeps {
     drainMachineMetrics: () => getMachineMetricsSampler().drain(),
     drainCoreMetrics: () => getCoreMetricsSampler().drain(),
     countActivity: () => countInstanceActivity(),
+    samplePooler: samplePoolerPressure,
   }
 }
 
@@ -617,6 +676,21 @@ export async function reportUsageSampleOnce(overrides: Partial<ReportUsageSample
       coreMetrics = deps.drainCoreMetrics()
     } catch (err) {
       log.warn('Platform core-metrics sub-sample drain failed (reporting the rest of the sample without it):', err)
+    }
+    // The pooler runs on the core host, so its pressure rides the core_vm
+    // block. Same isolation: an unreachable admin console omits the keys.
+    try {
+      const pooler = await deps.samplePooler()
+      if (pooler) {
+        coreMetrics = {
+          ...coreMetrics,
+          pgbouncerWaitingClients: pooler.waitingClients,
+          pgbouncerMaxWaitMs: pooler.maxWaitMs,
+          pgbouncerActiveServers: pooler.activeServers,
+        }
+      }
+    } catch (err) {
+      log.warn('Platform pooler sample failed (reporting the rest of the sample without it):', err)
     }
     const payload = buildUsagePayload(machines, userCount, deps.now(), version, disk, metrics, coreMetrics)
     const token = deps.getToken()

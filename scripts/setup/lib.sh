@@ -37,7 +37,7 @@ log_step() { printf '\n%s %s==>%s %s\n' "$(_ts)" "$_C_STEP" "$_C_OFF" "$*" >&2 |
 # Total number of phase_step call sites in setup-host.sh. Pinned by a test in
 # lib.test.sh so adding a phase without a marker fails CI rather than silently
 # freezing a customer's progress display.
-FICUS_PHASE_TOTAL=13
+FICUS_PHASE_TOTAL=14
 _ficus_phase_n=0
 
 # Announce a phase on two channels at once:
@@ -373,6 +373,7 @@ host_layout_resolve() { # 1|2|fresh
   HL_UNIT_API="${!prefix}-api"
   HL_UNIT_WORKER="${!prefix}-worker"
   HL_UNIT_BACKUP="${!prefix}-backup"
+  HL_UNIT_POOLER="${!prefix}-pgbouncer"
   HL_BACKUP_SCRIPT="${root}${!backup_script}"
   HL_HOME_NAME=${!home_name}
   HL_DB_CONTAINER=${!container}
@@ -384,6 +385,12 @@ host_layout_resolve() { # 1|2|fresh
   # the backup script and its secrets: see their sections below.
   FICUS_DB_CA_DIR=${_HL_SEAM_FICUS_DB_CA_DIR:-${HL_ETC}}
   FICUS_DB_CA_PATH=${_HL_SEAM_FICUS_DB_CA_PATH:-${FICUS_DB_CA_DIR}/database-ca.crt}
+  # Per-host PgBouncer (database.pool.enabled): its ini + userlist live under
+  # the layout's etc dir, owned by the service user (the userlist holds the
+  # role password, 0600).
+  FICUS_PGBOUNCER_DIR=${_HL_SEAM_FICUS_PGBOUNCER_DIR:-${HL_ETC}/pgbouncer}
+  FICUS_PGBOUNCER_INI="${FICUS_PGBOUNCER_DIR}/pgbouncer.ini"
+  FICUS_PGBOUNCER_USERLIST="${FICUS_PGBOUNCER_DIR}/userlist.txt"
   FICUS_ARTIFACTS_DIR=${_HL_SEAM_FICUS_ARTIFACTS_DIR:-${HL_ETC}/artifacts}
   FICUS_MANAGED_ENV_PATH=${_HL_SEAM_FICUS_MANAGED_ENV_PATH:-${HL_ETC}/managed.env}
   BACKUP_SCRIPT_PATH=${_HL_SEAM_BACKUP_SCRIPT_PATH:-${HL_BACKUP_SCRIPT}}
@@ -1368,6 +1375,196 @@ require_canonical_database_ca() { # DSN (never log the credential)
     die 'database sslrootcert still names the legacy host path — update it through the ficus-host-layout-bridge procedure before finalizing this upgrade'
 }
 
+# ------------------------------------------------------ per-host pooler
+#
+# PgBouncer in TRANSACTION mode on the core host, in front of the external
+# database (database.pool.enabled). Why on the host and not the cluster: a
+# transaction pooler attaches a server backend only while a transaction runs,
+# so a tenant's idle connections stop costing the shared cluster a backend
+# each; a per-host pooler has no per-cluster pool-count limit and works the
+# same on a self-hosted install. The app's DATABASE_URL points at loopback;
+# session-scoped work (advisory locks, migrations, dedicated transactions)
+# uses DATABASE_DIRECT_URL — a transaction pooler cannot carry a session lock.
+#
+# The userlist holds the role password in plain text (0600, service user);
+# the ini never does. pgbouncer authenticates to the cluster over TLS
+# verify-full against the same CA the direct DSN pins.
+FICUS_PGBOUNCER_PORT=6432
+
+# Parse a postgres DSN into DSN_USER DSN_PASS_ENC DSN_HOST DSN_PORT DSN_DB
+# (globals; the password stays URL-ENCODED). Dies on a DSN without all five.
+dsn_parse() { # DSN
+  local re='^postgres(ql)?://([^:/@]+):([^@]*)@([^:/@]+):([0-9]+)/([^?#]+)'
+  [[ $1 =~ ${re} ]] || die 'database DSN must be postgresql://user:password@host:port/database'
+  DSN_USER=${BASH_REMATCH[2]} DSN_PASS_ENC=${BASH_REMATCH[3]} DSN_HOST=${BASH_REMATCH[4]}
+  DSN_PORT=${BASH_REMATCH[5]} DSN_DB=${BASH_REMATCH[6]}
+}
+
+url_decode() { printf '%b' "${1//%/\\x}"; }
+
+# The DSN the app uses when pooled: same role, password and database, on the
+# loopback pooler. No sslmode — it never leaves the host; the pooler holds the
+# TLS session to the cluster.
+db_pooled_dsn() { # DIRECT_DSN PORT
+  dsn_parse "$1"
+  printf 'postgresql://%s:%s@127.0.0.1:%s/%s' "${DSN_USER}" "${DSN_PASS_ENC}" "$2" "${DSN_DB}"
+}
+
+render_pgbouncer_ini() { # DIRECT_DSN POOL_SIZE RESERVE CA_PATH LISTEN_PORT USERLIST_PATH
+  dsn_parse "$1"
+  cat <<INI
+; Rendered by scripts/setup/setup-host.sh — re-run it instead of editing.
+[databases]
+${DSN_DB} = host=${DSN_HOST} port=${DSN_PORT} dbname=${DSN_DB}
+
+[pgbouncer]
+listen_addr = 127.0.0.1
+listen_port = $5
+unix_socket_dir =
+auth_type = scram-sha-256
+auth_file = $6
+admin_users = ${DSN_USER}
+stats_users = ${DSN_USER}
+pool_mode = transaction
+default_pool_size = $2
+reserve_pool_size = $3
+reserve_pool_timeout = 1
+server_idle_timeout = 60
+max_client_conn = 100
+max_prepared_statements = 200
+server_tls_sslmode = verify-full
+server_tls_ca_file = $4
+ignore_startup_parameters = extra_float_digits,options
+log_connections = 0
+log_disconnections = 0
+INI
+}
+
+# One line: the role and its DECODED password (pgbouncer compares the client's
+# SCRAM proof against it and uses it upstream).
+render_pgbouncer_userlist() { # DIRECT_DSN
+  dsn_parse "$1"
+  printf '"%s" "%s"\n' "${DSN_USER}" "$(url_decode "${DSN_PASS_ENC}")"
+}
+
+render_pooler_unit() { # TEMPLATE_FILE INI_PATH
+  sed -e "s|@RUN_USER@|${RUN_USER}|g" \
+    -e "s|@INI@|$2|g" \
+    -e "s|@UNIT_POOLER@|${HL_UNIT_POOLER:-ficus-pgbouncer}|g" \
+    "$1"
+}
+
+# The database lines of the rendered .env. Unpooled: exactly the one line it
+# has always been. Pooled: the app's loopback DSN, the direct DSN for
+# session-scoped work, and the mode flag core reads (pool-size default,
+# metrics). MODE redact is the dry run.
+render_database_env_lines() { # real|redact DIRECT_DSN POOL_ENABLED PORT
+  local mode=$1 dsn=$2 pooled=$3 port=$4
+  if [[ ${pooled} != true ]]; then
+    printf 'DATABASE_URL=%s\n' "${dsn}"
+    return
+  fi
+  if [[ ${mode} == redact ]]; then
+    printf 'DATABASE_URL=<pooled dsn, redacted>\nDATABASE_DIRECT_URL=<external dsn, redacted>\nDATABASE_POOL_MODE=transaction\n'
+  else
+    printf 'DATABASE_URL=%s\nDATABASE_DIRECT_URL=%s\nDATABASE_POOL_MODE=transaction\n' "$(db_pooled_dsn "${dsn}" "${port}")" "${dsn}"
+  fi
+}
+
+# The DSN that reaches the cluster directly from a rendered .env: the direct
+# one when the host is pooled, else DATABASE_URL. For pg_dump, the CA check
+# and anything else that must not go through the pooler.
+envfile_direct_dsn() { # ENV_FILE
+  local direct
+  direct=$(envfile_get "$1" DATABASE_DIRECT_URL 2>/dev/null || true)
+  if [[ -n ${direct} ]]; then printf '%s' "${direct}"; else envfile_get "$1" DATABASE_URL; fi
+}
+
+# Remove every KEY= line from FILE, preserving everything else byte for byte
+# (the delete-side counterpart to envfile_set; same mode/owner preservation).
+# A missing key is a no-op.
+envfile_unset() { # FILE KEY
+  local file=$1 key=$2 dir tmp mog mode owner_group content='' raw rest line
+  [[ -f ${file} ]] || die "envfile_unset: file not found: ${file}"
+  dir=$(dirname -- "${file}")
+  mog=$(_file_mode_owner_group "${file}") || die "envfile_unset: could not stat ${file}"
+  mode=${mog%% *}
+  owner_group=${mog#* }
+  raw=$(cat -- "${file}" && printf x) || die "envfile_unset: failed to read ${file}"
+  raw=${raw%x}
+  rest=${raw}
+  while [[ -n ${rest} ]]; do
+    line=${rest%%$'\n'*}
+    if [[ ${line} == "${rest}" ]]; then rest=''; else rest=${rest#*$'\n'}; fi
+    [[ ${line} =~ ^"${key}"= ]] || content+="${line}"$'\n'
+  done
+  tmp=$(mktemp "${dir}/.$(basename -- "${file}").XXXXXX") || die "envfile_unset: failed to create a staging file next to ${file}"
+  # Same posture as envfile_set: the write and the mv are checked, chmod/chown
+  # only warn (mktemp's 0600 caller-owned file is never less restrictive).
+  if ! printf '%s' "${content}" >"${tmp}"; then
+    rm -f "${tmp}"
+    die "envfile_unset: failed to write the staged replacement for ${file}"
+  fi
+  chmod "${mode}" "${tmp}" 2>/dev/null || log_warn "envfile_unset: could not chmod the staged replacement for ${file}"
+  chown "${owner_group}" "${tmp}" 2>/dev/null || log_warn "envfile_unset: could not chown the staged replacement for ${file} (needs root)"
+  if ! mv -f "${tmp}" "${file}"; then
+    rm -f "${tmp}"
+    die "envfile_unset: failed to atomically replace ${file}"
+  fi
+}
+
+# Switch a rendered .env to the pooled layout in place: DATABASE_URL becomes
+# the loopback pooler DSN, the direct DSN moves to DATABASE_DIRECT_URL, and
+# DATABASE_POOL_MODE=transaction is set. Idempotent — the direct DSN is read
+# through envfile_direct_dsn, so a second run never pools the pooled URL.
+pooler_env_enable() { # ENV_FILE PORT
+  local env_file=$1 port=$2 direct
+  direct=$(envfile_direct_dsn "${env_file}") || die "pooler_env_enable: no DATABASE_URL in ${env_file}"
+  envfile_set "${env_file}" DATABASE_DIRECT_URL "${direct}"
+  envfile_set "${env_file}" DATABASE_URL "$(db_pooled_dsn "${direct}" "${port}")"
+  envfile_set "${env_file}" DATABASE_POOL_MODE transaction
+}
+
+# The reverse: DATABASE_URL back to the direct DSN, the two pooling keys gone.
+pooler_env_disable() { # ENV_FILE
+  local env_file=$1 direct
+  direct=$(envfile_direct_dsn "${env_file}") || die "pooler_env_disable: no DATABASE_URL in ${env_file}"
+  envfile_set "${env_file}" DATABASE_URL "${direct}"
+  envfile_unset "${env_file}" DATABASE_DIRECT_URL
+  envfile_unset "${env_file}" DATABASE_POOL_MODE
+}
+
+# Install (or re-render + restart) the per-host pooler: pgbouncer from apt,
+# ini + userlist under FICUS_PGBOUNCER_DIR (service user; the userlist is
+# 0600), the HL_UNIT_POOLER unit, enabled and listening. Shared by
+# setup-host.sh's phase_pooler and enable-pooler.sh. Needs RUN_USER and the
+# layout globals (resolve_layout_globals / require_host_layout_ready).
+install_pooler() { # DIRECT_DSN POOL_SIZE RESERVE TEMPLATE_DIR
+  local dsn=$1 size=$2 reserve=$3 template_dir=$4
+  if ! command -v pgbouncer >/dev/null 2>&1; then
+    log_info "installing pgbouncer"
+    as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq pgbouncer
+  fi
+  # The distro unit (pgbouncer.service, /etc/pgbouncer) is not ours: keep it
+  # off so two poolers never contend for the port.
+  as_root systemctl disable --now pgbouncer.service >/dev/null 2>&1 || true
+  as_root install -d -m 0750 -o "${RUN_USER}" -g "${RUN_USER}" "${FICUS_PGBOUNCER_DIR}"
+  install_rendered 0640 "${RUN_USER}" "${RUN_USER}" "${FICUS_PGBOUNCER_INI}" \
+    render_pgbouncer_ini "${dsn}" "${size}" "${reserve}" "${FICUS_DB_CA_PATH}" "${FICUS_PGBOUNCER_PORT}" "${FICUS_PGBOUNCER_USERLIST}"
+  install_rendered 0600 "${RUN_USER}" "${RUN_USER}" "${FICUS_PGBOUNCER_USERLIST}" \
+    render_pgbouncer_userlist "${dsn}"
+  install_rendered --check-placeholders 0644 root root \
+    "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_POOLER}.service" \
+    render_pooler_unit "${template_dir}/ficus-pgbouncer.service.tmpl" "${FICUS_PGBOUNCER_INI}"
+  as_root systemctl daemon-reload
+  as_root systemctl enable "${HL_UNIT_POOLER}" >/dev/null 2>&1
+  as_root systemctl restart "${HL_UNIT_POOLER}"
+  retry_until 30 1 "pgbouncer listening on 127.0.0.1:${FICUS_PGBOUNCER_PORT}" \
+    bash -c "exec 3<>/dev/tcp/127.0.0.1/${FICUS_PGBOUNCER_PORT}" ||
+    die "${HL_UNIT_POOLER} did not come up (journalctl -u ${HL_UNIT_POOLER})"
+  log_info "pooler ready on 127.0.0.1:${FICUS_PGBOUNCER_PORT}"
+}
+
 # ------------------------------------------------------ managed artifacts
 #
 # Fleet-wide platform-managed credentials, delivered as a STAGING DIRECTORY
@@ -1574,10 +1771,21 @@ core_run_root() { # DEST
 
 # shellcheck disable=SC2153 # SRC_DEST/RUN_USER/BUN_BIN/DB_MODE are CALLER
 # globals (setup-host.sh, upgrade-host.sh), not typos of the locals below.
+# The extra unit(s) the api and worker order After=: docker for a container
+# database, the per-host pooler when the external database is pooled (the app
+# dials loopback:6432, so the pooler must be listening first). Empty for a
+# plain external database — byte-identical to before pooling existed.
+core_unit_db_after() {
+  local after=''
+  [[ ${DB_MODE:-} == container ]] && after=' docker.service'
+  [[ ${DB_MODE:-} == external && ${POOL_ENABLED:-false} == true ]] && after=" ${HL_UNIT_POOLER}.service"
+  printf '%s' "${after}"
+}
+
 render_core_unit() { # TEMPLATE_FILE
-  local bun_dir db_after='' run_root
+  local bun_dir db_after run_root
   bun_dir=$(dirname "${BUN_BIN}")
-  [[ ${DB_MODE:-} == container ]] && db_after=' docker.service'
+  db_after=$(core_unit_db_after)
   run_root=$(core_run_root "${SRC_DEST}")
   sed -e "s|@DEST@|${SRC_DEST}|g" \
     -e "s|@RUN_ROOT@|${run_root}|g" \
@@ -5372,7 +5580,7 @@ host_layout_sudoers_content() { # RUN_USER
 require_host_layout_ready() { # [RELEASE_DIR] [DECLARED_LAYOUT]
   require_box_reprovision_settled
   if [[ -n ${SRC_DEST:-} && -f ${SRC_DEST}/.env ]]; then
-    require_canonical_database_ca "$(envfile_get "${SRC_DEST}/.env" DATABASE_URL)"
+    require_canonical_database_ca "$(envfile_direct_dsn "${SRC_DEST}/.env")"
     local current
     current=$(active_release_tree 2>/dev/null) || current=${SRC_DEST}
     [[ $(core_release_host_layout "${current}") == 2 ]] ||

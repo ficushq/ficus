@@ -26,6 +26,7 @@ google-cloud-tts-service-account.json
 .worktrees/
 .tmp/
 .test-db-port
+.test-pgbouncer-port
 .tau/
 .ficus/
 .tau-build-stamp

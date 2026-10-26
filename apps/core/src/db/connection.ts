@@ -43,13 +43,29 @@ const log = createLogger('db')
  */
 const DEFAULT_POOL_MAX = 4
 
+/**
+ * Behind a transaction-mode pooler (setup-host's per-host PgBouncer,
+ * DATABASE_POOL_MODE=transaction) a client connection is a pooler slot, not a
+ * server backend: the server pool is sized on the pooler. So the client pool
+ * goes back to postgres.js's own default of 10 — more in-flight work per
+ * process, and the hold-and-wait self-deadlock (see DEFAULT_POOL_MAX) needs
+ * ten wedged connections instead of four.
+ */
+const POOLED_DEFAULT_POOL_MAX = 10
+
+/** True when DATABASE_URL points at a transaction-mode pooler (set by setup-host when database.pool.enabled). */
+export function isTransactionPooled(): boolean {
+  return process.env.DATABASE_POOL_MODE === 'transaction'
+}
+
 export function getPoolMax(): number {
+  const fallback = isTransactionPooled() ? POOLED_DEFAULT_POOL_MAX : DEFAULT_POOL_MAX
   const raw = process.env.DATABASE_POOL_MAX
-  if (!raw) return DEFAULT_POOL_MAX
+  if (!raw) return fallback
   const parsed = Number.parseInt(raw, 10)
   if (!Number.isFinite(parsed) || parsed < 1) {
-    log.warn(`DATABASE_POOL_MAX='${raw}' is not a positive integer; using ${DEFAULT_POOL_MAX}`)
-    return DEFAULT_POOL_MAX
+    log.warn(`DATABASE_POOL_MAX='${raw}' is not a positive integer; using ${fallback}`)
+    return fallback
   }
   return parsed
 }
@@ -649,21 +665,41 @@ const DEDICATED_CONNECTION_LIMIT = 2
 let dedicatedConnectionsInUse = 0
 const dedicatedConnectionWaiters: Array<() => void> = []
 
-export async function withDedicatedConnectionSlot<T>(fn: () => Promise<T>): Promise<T> {
+/**
+ * Take a dedicated-connection slot and hand back its release. For the one
+ * site whose connection outlives a callback (the update run-lock returns a
+ * handle that is released minutes later); everything else uses
+ * withDedicatedConnectionSlot. Release exactly once.
+ */
+export async function acquireDedicatedConnectionSlot(): Promise<() => void> {
   if (dedicatedConnectionsInUse >= DEDICATED_CONNECTION_LIMIT) {
     await new Promise<void>((resolve) => dedicatedConnectionWaiters.push(resolve))
   } else {
     dedicatedConnectionsInUse++
   }
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    releaseDedicatedConnectionSlot()
+  }
+}
+
+export async function withDedicatedConnectionSlot<T>(fn: () => Promise<T>): Promise<T> {
+  const release = await acquireDedicatedConnectionSlot()
   try {
     return await fn()
   } finally {
-    // Transfer ownership directly. Decrementing before waking a waiter lets a
-    // new caller steal the slot before the queued continuation resumes.
-    const next = dedicatedConnectionWaiters.shift()
-    if (next) next()
-    else dedicatedConnectionsInUse--
+    release()
   }
+}
+
+function releaseDedicatedConnectionSlot(): void {
+  // Transfer ownership directly. Decrementing before waking a waiter lets a
+  // new caller steal the slot before the queued continuation resumes.
+  const next = dedicatedConnectionWaiters.shift()
+  if (next) next()
+  else dedicatedConnectionsInUse--
 }
 
 /**
@@ -733,4 +769,18 @@ export function getConnectionString(): string {
     throw new Error('DATABASE_URL environment variable is required')
   }
   return connectionString
+}
+
+/**
+ * The DSN that reaches Postgres DIRECTLY, bypassing any transaction pooler.
+ * Everything session-scoped must use it: session advisory locks (migrations,
+ * the update run-lock, memory writes, provisioning leases, the worker's
+ * process-liveness session) and the dedicated-connection transactions — a
+ * transaction pooler hands a backend to a client only for one transaction,
+ * so a session lock taken through it is released (or lands on another
+ * backend) the moment the statement ends. On an unpooled host it is simply
+ * DATABASE_URL.
+ */
+export function getDirectConnectionString(): string {
+  return process.env.DATABASE_DIRECT_URL || getConnectionString()
 }
