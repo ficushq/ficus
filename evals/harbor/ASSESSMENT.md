@@ -167,6 +167,40 @@ use repeated independent artifacts and counterbalance order. Do not count this
 known Bandit continuation as another unseen task. Shared-product coordination
 and human attention still need the separate longitudinal study described above.
 
+## Fresh matched Koota task
+
+The next unused external task tests entity snapshot, rollback, and diff APIs in
+Koota. Its upstream metadata calls it Python, but it is TypeScript; frozen task
+order was retained. Native setup/network probes and baseline/reference/test-file
+collision controls passed before inference. The experimental reviewer addition
+was excluded; Ficus used the closeout-guidance runtime.
+
+Three first attempts completed, each with 83/84 feature checks and 47/47
+regressions (none accepted). Pi engineer cost $0.375447 in 5m39s; Ficus engineer
+cost $0.622898 in 9m38s; Pi squad cost $1.504200 in 22m09s. All retained a
+same-world rollback restriction absent from the supplied contract. Pi's
+architect explicitly recommended it and its reviewer approved the final result.
+
+Pi's reviewer nevertheless found two allocator defects, routed them through an
+engineer repair, and approved a second review. Independent post-hoc reproductions
+confirm both repairs, with basic controls passing before and after. No-inference
+grading of the pre-review patch confirms the official score stayed unchanged.
+This illustrates why supported review improvements and official acceptance should
+be reported separately.
+
+Ficus's original squad attempt was budget-interrupted during implementation.
+Its saved patch grades at the same 83/84 and 47/47 in a separate no-inference
+replay, but it was never reviewed or delivered. The user authorized a $40 phase
+cap; a fresh repeat with identical inputs then hit a provider streaming failure
+without a usage receipt. Both attempts and costs are retained. There is no
+completed Ficus-squad result in this batch, and no four-way acceptance ranking is
+valid. See [the complete report](FRESH_MATCHED.md).
+
+Before more paid recovery, reconcile the missing receipt and add durable private
+runtime/workspace checkpoints with offline resume validation. Keep the repeated
+contract-narrowing behavior as a diagnostic for held-out prompt comparisons;
+this one task does not justify another production prompt rewrite.
+
 ## Evidence and accounting limits
 
 Earlier temporary raw artifacts and the original detailed ledger are no longer
@@ -175,8 +209,8 @@ not a claim that the original raw evidence can be re-audited today. Controlled
 review artifacts, runtime archives, receipts, and reproductions now live in the
 durable sibling `ficus-evaluation-data` directory.
 
-The current user-authorized phase cap is $35 (explicitly increased from $30 for
-the closeout-guidance validation). Its opening historical exposure and
+The current user-authorized phase cap is $40 (increased from $30 to $35 for
+the closeout-guidance validation, then to $40 for the Koota squad recovery). Its opening historical exposure and
 unresolved $5.50 hold remain carried forward; the durable ledger segment is shared
 across the controlled studies rather than reset between tasks. Latest completed
 result manifests are authoritative for current spend. Historical dollar totals in
@@ -184,9 +218,10 @@ the tables above belong to their documented phases and are not added again to th
 current cap. No missing provider receipt is treated as zero cost.
 
 The two reviewer replications and v1 repair cost $3.279914. The additional v2
-closeout validation cost $1.215893 across 88 settled requests. Latest phase
-accounting after the additional $0.454876 fresh-review pair is $20.675870
-confirmed plus the retained $5.50 historical hold: $26.175870 exposure, leaving
-$8.824130 under the $35 cap. All new receipts are settled and the owned test
-processes are stopped. The same durable ledger remains in use. Do not reconcile
-a hold from a partial, stale, or unrelated billing total.
+closeout validation cost $1.215893 across 88 settled requests. The fresh-review
+pair added $0.454876, leaving $20.675870 confirmed before the Koota batch.
+The Koota batch adds $4.029520 in receipted inference plus one unresolved
+streaming-error call. Current phase accounting is $24.705390 confirmed plus
+$11 of holds ($5.50 historical and $5.50 new): $35.705390 exposure under $40.
+The next $5.50 reservation does not fit. All owned trial processes are stopped;
+no hold was released without provider reconciliation.

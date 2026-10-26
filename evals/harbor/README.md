@@ -33,9 +33,15 @@ documentation closeout. Its captured artifact was graded separately without
 inference; it is not counted as autonomous delivery.
 
 The current phase carries $19.227605 of opening exposure into the user-authorized
-$30 cap, including an unresolved $5.50 hold. Each result manifest records its
+$40 cap (raised from $30, then $35), including an unresolved $5.50 hold. Each result manifest records its
 completion-time accounting; use the latest result for current totals. Earlier
 temporary raw artifacts are unavailable; new evidence is stored durably.
+
+The [fresh matched Koota study](FRESH_MATCHED.md) returns to an unused external
+task with engineer-only and full-squad conditions. Its budget-interrupted Ficus
+attempt and authorized recovery are reported separately from completed first
+attempts. Review findings are independently checked without changing the
+official grader.
 
 Earlier Terminal-Bench smoke tests, the known Pydantic feature task, and its
 scope-guidance replay remain separate development evidence in
