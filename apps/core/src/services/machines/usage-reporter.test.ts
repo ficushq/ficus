@@ -692,6 +692,59 @@ describe('reportUsageSampleOnce', () => {
     ])
   })
 
+  it('reports PgBouncer pool pressure on the core host when pooled, and nothing when not', async () => {
+    const capture = () => {
+      let init: RequestInit | undefined
+      const fetchImpl = (async (_url: string, i?: RequestInit) => {
+        init = i
+        return new Response(null, { status: 204 })
+      }) as typeof fetch
+      return { fetchImpl, body: () => JSON.parse(init?.body as string) }
+    }
+    const base = {
+      ingestUrl: 'https://platform.example.com',
+      listMachines: async () => [],
+      countUsers: async () => 1,
+      now: () => new Date('2026-03-01T12:00:00.000Z'),
+      getVersion: async () => null,
+      sampleDisk: async () => null,
+      pinMetricsMachine: () => {},
+      drainMachineMetrics: () => ({ load1: 0.5 }),
+      drainCoreMetrics: () => ({ load1: 1.5 }),
+      countActivity: async () => ({}),
+    }
+
+    const pooled = capture()
+    await reportUsageSampleOnce({
+      ...base,
+      fetch: pooled.fetchImpl,
+      samplePooler: async () => ({ waitingClients: 3, maxWaitMs: 2500, activeServers: 4 }),
+    })
+    expect(pooled.body().hostMetrics).toEqual([
+      { hostKind: 'machine_host', hostId: 'primary', metrics: { load1: 0.5 } },
+      {
+        hostKind: 'core_vm',
+        hostId: 'self',
+        metrics: { load1: 1.5, pgbouncerWaitingClients: 3, pgbouncerMaxWaitMs: 2500, pgbouncerActiveServers: 4 },
+      },
+    ])
+
+    const unpooled = capture()
+    await reportUsageSampleOnce({ ...base, fetch: unpooled.fetchImpl, samplePooler: async () => null })
+    expect(unpooled.body().hostMetrics[1].metrics).toEqual({ load1: 1.5 })
+
+    // A failing SHOW POOLS omits the keys and never fails the report.
+    const failing = capture()
+    await reportUsageSampleOnce({
+      ...base,
+      fetch: failing.fetchImpl,
+      samplePooler: async () => {
+        throw new Error('pgbouncer admin console unreachable')
+      },
+    })
+    expect(failing.body().hostMetrics[1].metrics).toEqual({ load1: 1.5 })
+  })
+
   it('omits `metrics` entirely when the drain is empty and every activity count is unavailable', async () => {
     let capturedInit: RequestInit | undefined
     const fetchSpy = mock(async (_url: string, init?: RequestInit) => {
@@ -908,5 +961,28 @@ describe('startUsageReporter / stopUsageReporter', () => {
       await stopUsageReporter()
       globalThis.fetch = originalFetch
     }
+  })
+})
+
+describe('poolerSampleFromShowPools', () => {
+  it('reads the app database row: waiting clients, max wait in ms (seconds + microseconds), active servers', async () => {
+    const { poolerSampleFromShowPools } = await import('./usage-reporter')
+    const rows = [
+      { database: 'pgbouncer', user: 'pgbouncer', cl_waiting: 0, maxwait: 0, maxwait_us: 0, sv_active: 0 },
+      {
+        database: 'ficus_ab_acme',
+        user: 'tenant_ab_acme',
+        cl_waiting: 3,
+        maxwait: 2,
+        maxwait_us: 500000,
+        sv_active: 4,
+      },
+    ]
+    expect(poolerSampleFromShowPools(rows, 'ficus_ab_acme')).toEqual({
+      waitingClients: 3,
+      maxWaitMs: 2500,
+      activeServers: 4,
+    })
+    expect(poolerSampleFromShowPools(rows, 'other')).toBeNull()
   })
 })
