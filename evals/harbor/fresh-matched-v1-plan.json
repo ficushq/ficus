@@ -1,0 +1,47 @@
+{
+  "experiment": "fresh-matched-v1",
+  "kind": "One unused external task with four matched harness/workflow arms",
+  "source_commit": "0b9fabbb63b9104d678fe965e1632f2dd9eaa2ea",
+  "task": "koota-entity-snapshot-rollback",
+  "selection": "Next unused task in frozen long-feature-v1-selection.json order, after HTTPX streaming JSON. Upstream labels it Python; actual repository is TypeScript. Retain frozen ordering and report mismatch.",
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "conditions": [
+    "ficus-engineer",
+    "pi-engineer",
+    "pi-planned",
+    "ficus-planned"
+  ],
+  "order_rule": "Sort SHA256(ficus-fresh-matched-v1:<task-id>:<harness>-<workflow>), fixed before inference",
+  "concurrency": 1,
+  "runtime": "Exact repair-v2 closeout-guidance archive, no experimental reviewer addition; Pi 0.99.1 packaged subagent extension for planned workflow",
+  "controls": "Unchanged official baseline/oracle and malicious test-collision checks; native no-inference network probes for Ficus and Pi before any paid trial",
+  "resources": {
+    "task_cpus": 2,
+    "task_memory_mb": 8192,
+    "task_storage_mb": 20480,
+    "official_agent_timeout_sec": 10800,
+    "official_verifier_timeout_sec": 1800,
+    "extra_ficus_resources": "Disposable loopback PostgreSQL, disclosed as unmatched harness overhead"
+  },
+  "policy": "One attempt each, no automatic retries, operator hints, hidden feedback or code edits; fresh isolated state and disabled Ficus memory; sequential to fit conservative request reservation; if cap blocks, retain incomplete arms and report separately",
+  "budget": {
+    "phase_cap_usd": 35,
+    "opening_phase_exposure_usd": 26.17587,
+    "remaining_headroom_usd": 8.82413,
+    "segment_cap_usd": 15.772395,
+    "reservation_per_call_usd": 5.5,
+    "historical_hold_usd": 5.5,
+    "ledger": "artifact-review-v1/budget/spend.sqlite",
+    "no_reset": true
+  },
+  "metrics": [
+    "Official accepted task and feature/regression counts",
+    "Delivered versus interrupted or blocked",
+    "Total inference cost including coordinator and subagents",
+    "Elapsed time with startup/verification included, not human attention saved",
+    "Native role provenance, review/rework transitions, owner waits and task interventions"
+  ],
+  "comparison_limit": "One task and one stochastic attempt per arm; new runtime closeout delta and current Harbor environment mean a separate batch from historical scores",
+  "inference_started": false
+}

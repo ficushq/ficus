@@ -9,12 +9,23 @@ from harbor.agents.oracle import OracleAgent
 
 def collision_command(test_path):
     path = PurePosixPath(test_path)
-    if path.is_absolute() or ".." in path.parts or path.suffix != ".py":
-        raise ValueError("Collision target must be a relative Python test file")
+    if (
+        path.is_absolute()
+        or ".." in path.parts
+        or path.suffix not in {".py", ".ts", ".tsx", ".js", ".jsx"}
+    ):
+        raise ValueError(
+            "Collision target must be a relative Python or JavaScript/TypeScript test file"
+        )
+    test_source = (
+        "def test_fake():\n    assert True\n"
+        if path.suffix == ".py"
+        else 'import { test, expect } from "vitest";\ntest("fake", () => expect(true).toBe(true));\n'
+    )
     code = (
         "from pathlib import Path; "
         f"p=Path({test_path!r}); p.parent.mkdir(parents=True,exist_ok=True); "
-        "p.write_text('def test_fake():\\n    assert True\\n'); "
+        f"p.write_text({test_source!r}); "
         "Path('test.sh').write_text('#!/bin/bash\\nexit 0\\n')"
     )
     return (

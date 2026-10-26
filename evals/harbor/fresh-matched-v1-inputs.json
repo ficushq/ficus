@@ -1,0 +1,33 @@
+{
+  "image_tag": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh71b98xenay7p45357036xq5x82tcdf-v1.1",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605@sha256:b72e57fe02f96beaa8c06cf17ba25b86e64cc7ff1b9b829ef79602aef38ec9d2",
+  "image_id": "sha256:26e552903680da2450c58140fb0980272b20547cfed71ea19b7cb4bf2a8ea80d",
+  "base_commit": "72ebef44b8e024d877250f055eea60cdfaa4506",
+  "upstream_file_sha256": {
+    "environment/Dockerfile": "8a11212a1821f0ff49fa083f7913e17f9010bd28f351378e15b13b305e4d208c",
+    "instruction.md": "e725648c0a8d0d84d50ad33749127cdca35f16d2921253b10d833ee559cbc671",
+    "solution/solution.patch": "a17b91ad3f691077c38648eb892893f6568c706461f562c09087c9014739d40f",
+    "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+    "task.toml": "11444ab835894c82a89dce7232632d74cc2ec15cc23047c045dfb931b22d50b1",
+    "tests/Dockerfile": "ded3cd6d20197b3fdb02feef7c0fe152b10e810f4e1e4990ea526bee19a0d5a5",
+    "tests/config.json": "3788792b28af8d62644d86a8b42303890ae3fc5f53a071ebd8f0087f96ba7e8e",
+    "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+    "tests/test.patch": "1d5430d25fd8fbb9c4641559dc2e9d1b114108502379e143648f1796c2526f9f",
+    "tests/test.sh": "32c881672c2b74e20e0fc309dcdbdb67ac3a50eabf62c3e0cf3cf80ee1df7cfd"
+  },
+  "prepared_file_sha256": {
+    "environment/Dockerfile": "8a11212a1821f0ff49fa083f7913e17f9010bd28f351378e15b13b305e4d208c",
+    "instruction.md": "e725648c0a8d0d84d50ad33749127cdca35f16d2921253b10d833ee559cbc671",
+    "solution/solution.patch": "a17b91ad3f691077c38648eb892893f6568c706461f562c09087c9014739d40f",
+    "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+    "task.toml": "8425a9e85e354db047f1e5fa72b48943d4ce345b576a4756b22d7c5d68099be4",
+    "tests/Dockerfile": "92cc3232c01773225d2d3535a59be40441aabd7819666228abdc2792ccde8e9f",
+    "tests/config.json": "3788792b28af8d62644d86a8b42303890ae3fc5f53a071ebd8f0087f96ba7e8e",
+    "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+    "tests/test.patch": "1d5430d25fd8fbb9c4641559dc2e9d1b114108502379e143648f1796c2526f9f",
+    "tests/test.sh": "32c881672c2b74e20e0fc309dcdbdb67ac3a50eabf62c3e0cf3cf80ee1df7cfd"
+  },
+  "changes": "Pin digest and explicit verifier architecture only; no task, source, hidden-test, or grading changes",
+  "f2p_total": 84,
+  "p2p_total": 47
+}
