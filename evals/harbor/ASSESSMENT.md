@@ -102,10 +102,10 @@ or a comparison with a fresh single-engineer attempt.
   counterbalance review order and use repeated independent artifacts; the
   baseline-first single samples here cannot isolate order or sampling effects. No production prompt changes are included
   in these evaluation commits.
-- Avoid a broad reviewer-prompt rewrite based on these results. A narrower
-  follow-up is completion hygiene: preserve task evidence without leaving
-  untracked files that cause a complete workflow restart after code approval.
-  Verify any proposed change separately before claiming it improves delivery.
+- Avoid a broad reviewer-prompt rewrite based on these results. The narrower
+  completion-hygiene fix in PR #677 preserves required task evidence before
+  approval. Its separate one-run validation below completed without reopening;
+  broader delivery-reliability claims still need replication.
 - Investigate the specific observed failure modes: behavioral assumptions copied
   from design into review, approvals despite uncovered public-interface cases,
   and inability to complete when a dependency is unavailable. Do not add broad
@@ -120,6 +120,22 @@ or a comparison with a fresh single-engineer attempt.
   labeled longitudinal study; these independent-container scores cannot
   establish those benefits.
 
+## Closeout-guidance validation
+
+A targeted follow-up applies only PR #677's six prompt/skill changes to the same
+frozen runtime and repeats the known Bandit repair from its original starting
+artifact. The squad committed its plan and other required deliverables, completed
+a substantive reviewer-requested Unicode-line repair, and delivered without a
+second design pass or documentation-only reopen. The manager relocated its own
+runtime monitor artifacts and verified an empty final Git status.
+
+The original frozen checks remain 7/9 and the official grade remains 67/69 feature
+checks and 280/282 regressions, with the same failures. Six additional post-hoc
+Unicode-line reproductions improved from 0/6 to 6/6. They corroborate the new
+review finding, not a pre-registered score improvement. This one stochastic run
+cost $1.215893; it supports the closeout fix as a candidate but cannot establish
+causality or generalized savings. See [the complete audit](ARTIFACT_REPAIR.md#closeout-guidance-validation-v2).
+
 ## Evidence and accounting limits
 
 Earlier temporary raw artifacts and the original detailed ledger are no longer
@@ -128,16 +144,17 @@ not a claim that the original raw evidence can be re-audited today. Controlled
 review artifacts, runtime archives, receipts, and reproductions now live in the
 durable sibling `ficus-evaluation-data` directory.
 
-The current user-authorized phase cap is $30. Its opening historical exposure and
+The current user-authorized phase cap is $35 (explicitly increased from $30 for
+the closeout-guidance validation). Its opening historical exposure and
 unresolved $5.50 hold remain carried forward; the durable ledger segment is shared
 across the controlled studies rather than reset between tasks. Latest completed
 result manifests are authoritative for current spend. Historical dollar totals in
 the tables above belong to their documented phases and are not added again to the
 current cap. No missing provider receipt is treated as zero cost.
 
-At the end of these two replications and the repair continuation, new spend is
-$3.279914. The phase has $19.005101 confirmed plus the retained $5.50 hold:
-$24.505101 exposure, leaving $5.494899. All new receipts are settled. The next
-$5.50 request reservation does not fit, so paid runs are stopped; the remaining
-headroom is not represented as spent. Continuing paid work requires resolving
-the historical hold with evidence or explicit additional budget authorization.
+The two reviewer replications and v1 repair cost $3.279914. The additional v2
+closeout validation cost $1.215893 across 88 settled requests. Latest phase
+accounting is $20.220994 confirmed plus the retained $5.50 historical hold:
+$25.720994 exposure, leaving $9.279006 under the $35 cap. All new receipts are
+settled and the run's processes are stopped. The same durable ledger remains in
+use. Do not reconcile a hold from a partial, stale, or unrelated billing total.

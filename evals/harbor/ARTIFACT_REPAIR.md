@@ -87,3 +87,72 @@ The two new reviewer comparisons plus this continuation cost **$3.279914**.
 See `artifact-repair-v1-results.json` for role/flow provenance, before/after checks,
 hashes, stop calculation, and replay classification. Durable raw evidence remains
 in the sibling `ficus-evaluation-data/artifact-repair-v1` directory.
+
+## Closeout-guidance validation (v2)
+
+[PR #677](https://github.com/ficushq/ficus/pull/677) removes conflicting instructions
+that prohibited committing plans regardless of the task. It places scratch notes
+outside repositories by default and requires ownership/delivery checks before
+handoff and approval. Commit requirements remain conditional on the task, and
+review gates are unchanged.
+
+A single new run started from the **same original artifact and original review**,
+not the partially repaired v1 output. The original runtime archive was patched
+with only six prompt/skill changes from commit `bb35f05b`; an independent full
+archive comparison verified all other members, modes, and symlinks were unchanged.
+Task, instruction, verifier hashes, image ID, model, reasoning, native workflow,
+network restrictions, and fresh-disabled memory were retained. Startup/isolation
+checks passed without inference. The new plan, runtime provenance, and readiness
+manifest were committed before inference. No hidden test result or operator hint
+was provided to the squad.
+
+The native run delivered autonomously. Its trace was:
+
+1. Architect committed the required design record before implementation.
+2. Engineer committed code, regression tests, and documentation.
+3. Reviewer verified the original repairs, then found a separate physical-line
+   reconstruction bug involving Unicode separators inside valid Python strings.
+4. Engineer made the targeted repair; reviewer independently rechecked it and
+   completed the code-quality pass, then approved.
+5. Manager moved its own monitoring artifacts outside the repo and verified an
+   empty `git status --short --untracked-files=all`. Required deliverables remained
+   committed. No work-stream reopen or second design pass occurred.
+
+The monitoring files were runtime artifacts, not discarded requested evidence.
+Reviewers explicitly reported them; the manager handled its own files rather
+than deleting another participant's work. All six role executions completed, no
+open waits remained, and there was no operator task steering. The official
+verifier ran as part of this completed trial, unlike v1's separate captured replay.
+
+| Measure                       | Original artifact | v1 captured repair | v2 delivered repair |
+| ----------------------------- | ----------------- | ------------------ | ------------------- |
+| Supplied review defects fixed | 0/2               | 2/2                | 2/2                 |
+| Frozen behavioral checks      | 4/9               | 7/9                | 7/9                 |
+| Official feature checks       | 67/69             | 67/69              | 67/69               |
+| Official regression checks    | 280/282           | 280/282            | 280/282             |
+| Documentation-only reopen     | Not applicable    | Yes                | No                  |
+| Native completion             | Not applicable    | Budget-interrupted | Delivered           |
+
+The same four official test identifiers fail. The withheld File-plugin issue
+remains; autonomous delivery does **not** mean benchmark acceptance.
+
+The new review finding was independently corroborated after completion in fresh
+network-disabled containers: six Unicode physical-line cases failed on the original
+artifact and passed on the final patch. These are **post-hoc** cases derived from
+the reviewer finding, not additions to the frozen nine-case score. See
+`artifact-repair-v2-posthoc-check.py` and `artifact-repair-v2-results.json`.
+
+The final patch SHA256 is
+`40e3a24a0a714b2a5a8f6d4e6748766140b75eb81bce50962b9c826085f82332`.
+The run cost **$1.215893 across 88 settled requests**. The user explicitly raised
+the phase cap to $35; no ledger reset or historical-hold release occurred.
+Phase accounting is **$20.220994 confirmed + $5.50 historical hold = $25.720994
+exposure**, leaving **$9.279006**. The owned proxy, native services, task containers,
+and disposable database were stopped.
+
+This is evidence that the candidate guidance can complete this closeout without
+restarting design. One stochastic rerun against an interrupted historical baseline
+cannot establish a causal improvement, general reliability, or cost savings. The
+newly discovered code defect also changes the substantive review work. Keep these
+results separate from unseen-task comparisons and from the experimental reviewer
+addition that was not used here.

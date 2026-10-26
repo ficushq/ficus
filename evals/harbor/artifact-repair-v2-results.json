@@ -1,0 +1,542 @@
+{
+  "experiment": "artifact-repair-v2",
+  "kind": "Known-artifact closeout-guidance validation; one stochastic rerun against historical interrupted baseline",
+  "result_sha256": "b900a2dc08d9c5c528e6f42b9f59f920492af218667dc8dffe993c7262034048",
+  "snapshot_sha256": "21c5234f91a24d57f7b4090b9f7bcde85530f22164b7ab597b82fb76ec40c0db",
+  "messages_sha256": "a2e1ae45437959d1e1973d5e9150460139af9fe1d26412998cdb17b70329459e",
+  "initial_patch_sha256": "fc27071def1014074bf1a7d2531644616ae67e74ffef2a8c9ae9a9916e2f2fcd",
+  "prior_review_sha256": "56eecd8f7d1970acce148ade7146c73b83d732540adf6009c364d89599ca4aec",
+  "final_patch_sha256": "40e3a24a0a714b2a5a8f6d4e6748766140b75eb81bce50962b9c826085f82332",
+  "metadata": {
+    "configuration": "planned",
+    "model_api": "openai-responses",
+    "thinking": "medium",
+    "outcome": "delivered",
+    "memory": "fresh-disabled",
+    "runtime_sha256": "68c8a5e3263b54639562f259aaa149ae18c61770442a85b4da1d599fb2476ba0",
+    "database_network": "task",
+    "attempted_roles": ["architect", "engineer", "manager", "reviewer"],
+    "engineer_only_verified": null,
+    "executed_roles": ["architect", "engineer", "manager", "reviewer"]
+  },
+  "exception_info": null,
+  "official_grade": {
+    "rewards": {
+      "reward": 0,
+      "f2p_total": 69,
+      "f2p_passed": 67,
+      "p2p_total": 282,
+      "p2p_passed": 280,
+      "f2p": 0.9710144927536232,
+      "p2p": 0.9929078014184397,
+      "partial": 0.9886039886039886
+    }
+  },
+  "executions": [
+    {
+      "role": "engineer",
+      "status": "completed",
+      "error": null
+    },
+    {
+      "role": "architect",
+      "status": "completed",
+      "error": null
+    },
+    {
+      "role": "reviewer",
+      "status": "completed",
+      "error": null
+    },
+    {
+      "role": "engineer",
+      "status": "completed",
+      "error": null
+    },
+    {
+      "role": "manager",
+      "status": "completed",
+      "error": null
+    },
+    {
+      "role": "reviewer",
+      "status": "completed",
+      "error": null
+    }
+  ],
+  "flows": [
+    {
+      "status": "completion-ready",
+      "steps": [
+        {
+          "step": "design",
+          "role": "architect",
+          "status": "completed",
+          "outcome": "completed",
+          "sourceAttemptIds": []
+        },
+        {
+          "step": "implement",
+          "role": "engineer",
+          "status": "completed",
+          "outcome": "completed",
+          "sourceAttemptIds": [1]
+        },
+        {
+          "step": "review",
+          "role": "reviewer",
+          "status": "returned",
+          "outcome": "changes-requested",
+          "sourceAttemptIds": [2]
+        },
+        {
+          "step": "implement",
+          "role": "engineer",
+          "status": "completed",
+          "outcome": "completed",
+          "sourceAttemptIds": [3]
+        },
+        {
+          "step": "review",
+          "role": "reviewer",
+          "status": "completed",
+          "outcome": "approved",
+          "sourceAttemptIds": [4]
+        }
+      ]
+    }
+  ],
+  "streams": [
+    {
+      "title": "Repair Bandit region and next-statement suppression",
+      "status": "done"
+    }
+  ],
+  "waits": [],
+  "independent_check": {
+    "script": "artifact-repair-v1-check.py",
+    "sha256": "649cca0f7d64e0ec43e2c3ca02a749d87071b8358fe1cd8ff62ec831393741e2",
+    "frozen_before_paid_run": true,
+    "before": [
+      {
+        "name": "next_statement_control",
+        "provenance": "control",
+        "expected_findings": [
+          [1, "B307"],
+          [2, "B307"]
+        ],
+        "actual": {
+          "findings": [
+            [1, "B307"],
+            [2, "B307"]
+          ],
+          "nosec": 0,
+          "skipped_tests": 1
+        },
+        "passed": true
+      },
+      {
+        "name": "next_statement_inside_existing",
+        "provenance": "supplied_review_finding",
+        "expected_findings": [
+          [1, "B307"],
+          [2, "B307"]
+        ],
+        "actual": {
+          "findings": [[3, "B307"]],
+          "nosec": 0,
+          "skipped_tests": 2
+        },
+        "passed": false
+      },
+      {
+        "name": "inline_control",
+        "provenance": "control",
+        "expected_findings": [
+          [1, "B307"],
+          [2, "B101"],
+          [2, "B307"]
+        ],
+        "actual": {
+          "findings": [
+            [1, "B307"],
+            [2, "B101"],
+            [2, "B307"]
+          ],
+          "nosec": 0,
+          "skipped_tests": 1
+        },
+        "passed": true
+      },
+      {
+        "name": "inline_plus_begin",
+        "provenance": "supplied_review_finding",
+        "expected_findings": [
+          [1, "B307"],
+          [2, "B101"]
+        ],
+        "actual": {
+          "findings": [
+            [1, "B101"],
+            [1, "B307"],
+            [2, "B101"]
+          ],
+          "nosec": 0,
+          "skipped_tests": 1
+        },
+        "passed": false
+      },
+      {
+        "name": "inline_plus_next-line",
+        "provenance": "supplied_review_finding",
+        "expected_findings": [
+          [1, "B307"],
+          [2, "B101"]
+        ],
+        "actual": {
+          "findings": [
+            [1, "B101"],
+            [1, "B307"],
+            [2, "B101"]
+          ],
+          "nosec": 0,
+          "skipped_tests": 1
+        },
+        "passed": false
+      },
+      {
+        "name": "file_comment_region_B613",
+        "provenance": "candidate_only_finding_not_supplied",
+        "expected_findings": [],
+        "actual": {
+          "findings": [[2, "B613"]],
+          "nosec": 0,
+          "skipped_tests": 0
+        },
+        "passed": false
+      },
+      {
+        "name": "file_assignment_control_B613",
+        "provenance": "control",
+        "expected_findings": [],
+        "actual": {
+          "findings": [],
+          "nosec": 0,
+          "skipped_tests": 1
+        },
+        "passed": true
+      },
+      {
+        "name": "file_comment_region_",
+        "provenance": "candidate_only_finding_not_supplied",
+        "expected_findings": [],
+        "actual": {
+          "findings": [[2, "B613"]],
+          "nosec": 0,
+          "skipped_tests": 0
+        },
+        "passed": false
+      },
+      {
+        "name": "file_assignment_control_",
+        "provenance": "control",
+        "expected_findings": [],
+        "actual": {
+          "findings": [],
+          "nosec": 1,
+          "skipped_tests": 0
+        },
+        "passed": true
+      }
+    ],
+    "after": [
+      {
+        "name": "next_statement_control",
+        "provenance": "control",
+        "expected_findings": [
+          [1, "B307"],
+          [2, "B307"]
+        ],
+        "actual": {
+          "findings": [
+            [1, "B307"],
+            [2, "B307"]
+          ],
+          "nosec": 0,
+          "skipped_tests": 1
+        },
+        "passed": true
+      },
+      {
+        "name": "next_statement_inside_existing",
+        "provenance": "supplied_review_finding",
+        "expected_findings": [
+          [1, "B307"],
+          [2, "B307"]
+        ],
+        "actual": {
+          "findings": [
+            [1, "B307"],
+            [2, "B307"]
+          ],
+          "nosec": 0,
+          "skipped_tests": 1
+        },
+        "passed": true
+      },
+      {
+        "name": "inline_control",
+        "provenance": "control",
+        "expected_findings": [
+          [1, "B307"],
+          [2, "B101"],
+          [2, "B307"]
+        ],
+        "actual": {
+          "findings": [
+            [1, "B307"],
+            [2, "B101"],
+            [2, "B307"]
+          ],
+          "nosec": 0,
+          "skipped_tests": 1
+        },
+        "passed": true
+      },
+      {
+        "name": "inline_plus_begin",
+        "provenance": "supplied_review_finding",
+        "expected_findings": [
+          [1, "B307"],
+          [2, "B101"]
+        ],
+        "actual": {
+          "findings": [
+            [1, "B307"],
+            [2, "B101"]
+          ],
+          "nosec": 0,
+          "skipped_tests": 2
+        },
+        "passed": true
+      },
+      {
+        "name": "inline_plus_next-line",
+        "provenance": "supplied_review_finding",
+        "expected_findings": [
+          [1, "B307"],
+          [2, "B101"]
+        ],
+        "actual": {
+          "findings": [
+            [1, "B307"],
+            [2, "B101"]
+          ],
+          "nosec": 0,
+          "skipped_tests": 2
+        },
+        "passed": true
+      },
+      {
+        "name": "file_comment_region_B613",
+        "provenance": "candidate_only_finding_not_supplied",
+        "expected_findings": [],
+        "actual": {
+          "findings": [[2, "B613"]],
+          "nosec": 0,
+          "skipped_tests": 0
+        },
+        "passed": false
+      },
+      {
+        "name": "file_assignment_control_B613",
+        "provenance": "control",
+        "expected_findings": [],
+        "actual": {
+          "findings": [],
+          "nosec": 0,
+          "skipped_tests": 1
+        },
+        "passed": true
+      },
+      {
+        "name": "file_comment_region_",
+        "provenance": "candidate_only_finding_not_supplied",
+        "expected_findings": [],
+        "actual": {
+          "findings": [[2, "B613"]],
+          "nosec": 0,
+          "skipped_tests": 0
+        },
+        "passed": false
+      },
+      {
+        "name": "file_assignment_control_",
+        "provenance": "control",
+        "expected_findings": [],
+        "actual": {
+          "findings": [],
+          "nosec": 1,
+          "skipped_tests": 0
+        },
+        "passed": true
+      }
+    ],
+    "output_sha256": "a3aa4bd0675d112a45b7fc7eb14c2ea65e93814f60643c8e92f41c46839572ed",
+    "network": "none",
+    "repairs_by_operator": 0
+  },
+  "budget": {
+    "new_confirmed_usd": 1.215893,
+    "requests": 88,
+    "new_unknown_usage": 0,
+    "phase_confirmed_usd": 20.220994,
+    "retained_prior_hold_usd": 5.5,
+    "phase_exposure_usd": 25.720994,
+    "phase_cap_usd": 35,
+    "remaining_headroom_usd": 9.279006
+  },
+  "production_prompt_changed": "Candidate PR 677; runtime six-file guidance delta only",
+  "closeout_audit": {
+    "reopen_commands": 0,
+    "reopen_revisions": 0,
+    "design_attempts": 1,
+    "documentation_only_restart": false,
+    "required_plan_committed_before_implementation": true,
+    "manager_owned_monitor_files_relocated_outside_repository": true,
+    "final_status_empty": true,
+    "cleanup_tool_result_sha256": "05188ea18c012e51f45f8e6c8a046baf2a79711c3941f9ddab9d2311a3086b34",
+    "operator_task_steering": 0,
+    "open_waits_at_completion": 0
+  },
+  "posthoc_reviewer_finding": {
+    "script": "artifact-repair-v2-posthoc-check.py",
+    "script_sha256": "a23d6644e6f1d8c4d4f67dabaf1d8710de5d9f21ff5082ef0541e84ebe4802a9",
+    "pre_registered": false,
+    "exposed_by_operator_to_squad": false,
+    "starting": {
+      "kind": "post-hoc reviewer finding corroboration, not frozen benchmark cases",
+      "cases": [
+        {
+          "separator": "0x2028",
+          "case": "region",
+          "expected": [],
+          "actual": [[4, "B101"]],
+          "passed": false
+        },
+        {
+          "separator": "0x2028",
+          "case": "next_statement",
+          "expected": [],
+          "actual": [[2, "B307"]],
+          "passed": false
+        },
+        {
+          "separator": "0x85",
+          "case": "region",
+          "expected": [],
+          "actual": [[4, "B101"]],
+          "passed": false
+        },
+        {
+          "separator": "0x85",
+          "case": "next_statement",
+          "expected": [],
+          "actual": [[2, "B307"]],
+          "passed": false
+        },
+        {
+          "separator": "0xb",
+          "case": "region",
+          "expected": [],
+          "actual": [[4, "B101"]],
+          "passed": false
+        },
+        {
+          "separator": "0xb",
+          "case": "next_statement",
+          "expected": [],
+          "actual": [[2, "B307"]],
+          "passed": false
+        }
+      ]
+    },
+    "final": {
+      "kind": "post-hoc reviewer finding corroboration, not frozen benchmark cases",
+      "cases": [
+        {
+          "separator": "0x2028",
+          "case": "region",
+          "expected": [],
+          "actual": [],
+          "passed": true
+        },
+        {
+          "separator": "0x2028",
+          "case": "next_statement",
+          "expected": [],
+          "actual": [],
+          "passed": true
+        },
+        {
+          "separator": "0x85",
+          "case": "region",
+          "expected": [],
+          "actual": [],
+          "passed": true
+        },
+        {
+          "separator": "0x85",
+          "case": "next_statement",
+          "expected": [],
+          "actual": [],
+          "passed": true
+        },
+        {
+          "separator": "0xb",
+          "case": "region",
+          "expected": [],
+          "actual": [],
+          "passed": true
+        },
+        {
+          "separator": "0xb",
+          "case": "next_statement",
+          "expected": [],
+          "actual": [],
+          "passed": true
+        }
+      ]
+    }
+  },
+  "official_failed_tests": [
+    {
+      "suite": "new.xml",
+      "class": "tests.unit.core.test_nosec_directives.NosecDirectiveTests",
+      "name": "test_058_region_unioned_across_statement_lines",
+      "message": null
+    },
+    {
+      "suite": "new.xml",
+      "class": "tests.unit.core.test_nosec_directives.NosecDirectiveTests",
+      "name": "test_069_metrics_specific_region_counts_as_skipped_test",
+      "message": null
+    },
+    {
+      "suite": "new.xml",
+      "class": "tests.unit.core.test_nosec_directives.NosecDirectiveTests",
+      "name": "test_071_metrics_specific_next_line_counts_as_skipped_test",
+      "message": null
+    },
+    {
+      "suite": "new.xml",
+      "class": "tests.unit.core.test_nosec_directives.NosecDirectiveTests",
+      "name": "test_073_metrics_specific_union_specific_counts_as_skipped_test",
+      "message": null
+    }
+  ],
+  "same_official_failures_as_v1": true,
+  "comparison_limit": "One stochastic rerun and an interrupted historical baseline; not a causal effect estimate or unseen task score.",
+  "guidance_pr": "https://github.com/ficushq/ficus/pull/677",
+  "runtime_provenance": "artifact-repair-v2-runtime.json"
+}
