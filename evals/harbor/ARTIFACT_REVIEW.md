@@ -280,3 +280,68 @@ Total replication cost was **$1.173113**, across 79 requests, all settled. Phase
 exposure at completion was **$23.457373**, including the retained $5.50 hold,
 leaving **$6.542627**. See `artifact-review-v4-results.json` for hashes, complete
 reports, audited observations and accounting.
+
+## Fresh reviews of the delivered Bandit repair (v5)
+
+This is a **known-artifact diagnostic**, selected because the completed native
+repair still missed a previously reproduced File-plugin defect. It is not a new
+unseen task, a full-squad comparison, or an exhaustive defect-recall measurement.
+
+Two fresh native reviewers inspected the exact delivered v2 patch
+`40e3a24a0a714b2a5a8f6d4e6748766140b75eb81bce50962b9c826085f82332`,
+committed by the review fixture at `52c4eb667bcff6a32b53fea61f0a529018390bfc`.
+Both received the original request and repository, including committed task
+plans/tests, but no prior conversations, external review reports, defect hints,
+or grading feedback. The grader was disabled during review. The baseline used
+the same closeout-guidance runtime as repair v2; the candidate added the unchanged
+`independent-review-v1` text. A complete archive comparison confirmed the reviewer
+YAML was the only changed member. Both startup/isolation probes passed, and inputs
+were committed before inference.
+
+| Fresh reviewer | Verdict | Supported findings | Known comment-only issue detected | Requests | Cost |
+| --- | --- | --- | --- | --- | --- |
+| Baseline | Changes requested | 2 | No | 15 | $0.228845 |
+| Experimental addition | Changes requested | 2 | Yes | 16 | $0.226031 |
+
+The findings did not overlap:
+
+- **Baseline:** `else:` and `finally:` clause headers consume a pending
+  next-statement directive without suppressing either following finding.
+  Clause headers are not independent statements. The exact target policy around
+  compound statements can be clarified, but silently losing the directive at
+  such a header is observable under either following-statement interpretation.
+- **Baseline:** a one-line `if` suite suppresses the header and its first body
+  statement, leaving its second body statement visible; formatting the suite on
+  the next line suppresses only the header. The first-child inclusion is
+  inconsistent with both a header-only and a whole-compound policy. This audit
+  identifies that inconsistency rather than prescribing all compound boundaries.
+- **Candidate:** region coverage is lost for File-plugin findings on comment-only
+  lines. A legacy inline suppression on the same kind of comment works. This is
+  the known failure that motivated the diagnostic.
+- **Candidate:** a directive targeting a harmless first assignment also hides a
+  B613 finding in a second assignment after a semicolon. The result-line lookup
+  unions every statement on that line without using the finding's column.
+
+All four behaviors were independently reproduced with real plugins in a fresh,
+network-disabled container using the exact saved patch. Fourteen source cases
+include no-directive, formatting, legacy-inline, and positive-target controls.
+See `artifact-review-v5-reproduce.py` and `artifact-review-v5-results.json`.
+The reported Critical labels are not independently endorsed severity assessments.
+Both reviewers' saved tool outputs corroborate 47 focused and 320 broader passing
+unittest tests. The baseline also reported a supplementary stestr discovery error;
+that runner is not counted as an unqualified pass.
+
+Both native runs completed with reviewer-only provenance and unchanged
+repositories. Neither performed repairs. The earlier official grade and frozen
+nine-case result therefore remain unchanged. These reviews show that fresh passes
+can find additional defects after an earlier approval, and that the existing
+experimental addition again caught this particular physical-line gap. They do
+not distinguish context anchoring from stochastic variation, establish a general
+prompt winner, or justify making every delivery pay for another reviewer. The
+candidate had already found this issue on the earlier Bandit artifact, so this is
+especially unsuitable as an unbiased new-task win.
+
+The pair cost **$0.454876 across 31 settled requests**. Phase accounting is now
+**$20.675870 confirmed + $5.50 historical hold = $26.175870 exposure**, leaving
+**$8.824130** under the unchanged $35 cap. No new unknown usage remains. The owned
+proxies, native services, task containers, and disposable databases are stopped.

@@ -136,6 +136,37 @@ review finding, not a pre-registered score improvement. This one stochastic run
 cost $1.215893; it supports the closeout fix as a candidate but cannot establish
 causality or generalized savings. See [the complete audit](ARTIFACT_REPAIR.md#closeout-guidance-validation-v2).
 
+## Fresh review diagnostic and next experiment
+
+Two fresh reviewers examined the delivered Bandit repair with the original
+request and no prior conversation or defect hints. Each found two independently
+reproduced problems, with no overlap. The baseline found clause-header and
+single-line-suite boundary failures. The existing experimental addition found
+the known comment-only File-plugin failure and a second semicolon-targeting
+failure. Both completed without changing the repository. The original nine-case
+score and official grade remain unchanged because no agent repair occurred.
+
+The separate offline diagnosis confirmed physical region coverage was computed
+but discarded for findings outside statements. Retaining that coverage in a
+**disposable operator-only mutation** changed the frozen checks from 7/9 to 9/9.
+This is causal evidence about the code path, not a benchmark score or a delivered
+fix. See [the diagnosis](ARTIFACT_REPAIR.md#remaining-file-plugin-defect-offline-diagnosis)
+and [the fresh-review audit](ARTIFACT_REVIEW.md#fresh-reviews-of-the-delivered-bandit-repair-v5).
+
+The experimental addition has twice caught this particular gap, but the baseline
+continues to find different supported defects. Fresh passes can add coverage;
+one selected artifact does not justify a universal second-review stage or prove
+context anchoring caused the original approval. Keep the addition experimental.
+
+The next paid study should return to unused external tasks from the frozen
+selection, with matched engineer-only and full-squad workflows and no
+per-task prompt tuning. Predeclare task order, model, resources, retry policy,
+and budget; report official acceptance separately from audited review findings,
+closeout behavior, cost, and operator interventions. If testing review variants,
+use repeated independent artifacts and counterbalance order. Do not count this
+known Bandit continuation as another unseen task. Shared-product coordination
+and human attention still need the separate longitudinal study described above.
+
 ## Evidence and accounting limits
 
 Earlier temporary raw artifacts and the original detailed ledger are no longer
@@ -154,7 +185,8 @@ current cap. No missing provider receipt is treated as zero cost.
 
 The two reviewer replications and v1 repair cost $3.279914. The additional v2
 closeout validation cost $1.215893 across 88 settled requests. Latest phase
-accounting is $20.220994 confirmed plus the retained $5.50 historical hold:
-$25.720994 exposure, leaving $9.279006 under the $35 cap. All new receipts are
-settled and the run's processes are stopped. The same durable ledger remains in
-use. Do not reconcile a hold from a partial, stale, or unrelated billing total.
+accounting after the additional $0.454876 fresh-review pair is $20.675870
+confirmed plus the retained $5.50 historical hold: $26.175870 exposure, leaving
+$8.824130 under the $35 cap. All new receipts are settled and the owned test
+processes are stopped. The same durable ledger remains in use. Do not reconcile
+a hold from a partial, stale, or unrelated billing total.

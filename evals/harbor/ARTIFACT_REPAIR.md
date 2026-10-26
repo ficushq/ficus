@@ -156,3 +156,34 @@ cannot establish a causal improvement, general reliability, or cost savings. The
 newly discovered code defect also changes the substantive review work. Keep these
 results separate from unseen-task comparisons and from the experimental reviewer
 addition that was not used here.
+
+## Remaining File-plugin defect: offline diagnosis
+
+The delivered v2 artifact still reports B613 for a comment-only line inside a
+region that should suppress it. The original request explicitly applies regions
+to subsequent **physical lines**, and the existing TrojanSource File plugin
+reports characters in both comments and strings. This issue is independent of
+the four official assertion failures and their interpretation caveats.
+
+`build_suppressions()` computes region coverage in a local `physical` map, then
+copies that coverage into entries for actual statements. `SuppressionMap.for_result()`
+only looks up those statement entries. A comment outside a statement therefore
+has no retained region coverage when a File plugin reports its line. Assignment
+controls pass because those lines do have statement entries.
+
+The squad's committed coverage table cites
+`test_file_plugin_uses_reported_statement_location` as coverage of File-plugin
+locations. That test uses a finding inside a statement. It does not establish
+coverage of every physical line. The independent reviewer approved after 47
+focused tests and 320 broader tests, without identifying the comment-only gap.
+This supports a specific missing-case diagnosis; it does not establish the
+reviewer's internal reasoning or prove that its context caused the miss.
+
+A separate disposable, network-disabled container replayed the exact final patch
+and the unchanged nine-case check: **7/9 passed**. An operator-only diagnostic then
+retained the physical map and combined it into result-line lookups: **9/9 passed**.
+The three small substitutions are recorded in
+`artifact-repair-v2-file-line-diagnostic.py`; before/after outputs and hashes are
+frozen in `artifact-review-v5-ready.json`. This is a causal probe, **not** a reviewed
+Bandit repair, an agent-delivered patch, or a change to the official score. Neither
+this mutation nor its results are supplied to the subsequent reviewers.
