@@ -18,14 +18,24 @@ ranking. That earlier phase stopped at $25.993347 of its authorized cumulative
 $50 cap, with no unsettled usage holds.
 
 Subsequent long-task work and the [independent-review pilot](INDEPENDENT_REVIEW.md)
-are separate studies. The current [controlled reviewer diagnostic](ARTIFACT_REVIEW.md)
-compares reviewer prompts on identical implementations across two tasks. The
-first favored the experimental prompt; the second found overlapping issues with
-one unique verified finding per reviewer. Neither establishes general superiority.
-Its accounting carries
-$19.227605 of opening exposure into the user-authorized $30 phase cap. Earlier
-temporary raw artifacts are unavailable; new evidence is stored durably. See the
-individual manifests for costs, retained holds, and limitations.
+are separate studies. The [controlled reviewer diagnostic](ARTIFACT_REVIEW.md)
+compares prompts on identical implementations across four artifacts. Findings
+favor the addition on Narwhals, overlap partly on Bandit, favor the original's
+coverage of new APIs on Kombu, and match on HTTPX. An inherited SQS issue is
+separated from new regressions. This mixed evidence does not justify production
+prompt promotion. See the [consolidated assessment](ASSESSMENT.md) for results,
+remaining hypotheses, and what these experiments do not measure.
+
+The [native repair continuation](ARTIFACT_REPAIR.md) repaired both supplied Bandit
+review findings through all four roles. It left the withheld defect and official
+grade unchanged, then hit the conservative budget guard during a second cycle for
+documentation closeout. Its captured artifact was graded separately without
+inference; it is not counted as autonomous delivery.
+
+The current phase carries $19.227605 of opening exposure into the user-authorized
+$30 cap, including an unresolved $5.50 hold. Each result manifest records its
+completion-time accounting; use the latest result for current totals. Earlier
+temporary raw artifacts are unavailable; new evidence is stored durably.
 
 Earlier Terminal-Bench smoke tests, the known Pydantic feature task, and its
 scope-guidance replay remain separate development evidence in
