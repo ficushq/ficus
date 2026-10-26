@@ -575,6 +575,22 @@ export async function listAgentQuestions(
   return rows.map(toJson)
 }
 
+/**
+ * Open-question counts per asking agent for every agent currently in `squadId`, keyed by agent id.
+ * Agents without an open question are omitted. Membership follows the agent's CURRENT squad (the
+ * same scope the by-agent route authorizes against), not the squad stored on the question row, so
+ * a moved agent's questions follow it.
+ */
+export async function countOpenAgentQuestionsBySquad(squadId: string): Promise<Record<string, number>> {
+  const rows = await db
+    .select({ agentId: agentQuestions.agentId, openCount: sql<number>`count(*)::int` })
+    .from(agentQuestions)
+    .innerJoin(agents, eq(agents.id, agentQuestions.agentId))
+    .where(and(eq(agents.squadId, squadId), eq(agentQuestions.status, 'open')))
+    .groupBy(agentQuestions.agentId)
+  return Object.fromEntries(rows.map((row) => [row.agentId, Number(row.openCount)]))
+}
+
 export async function getAgentQuestion(id: string): Promise<AgentQuestion | null> {
   const [row] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, id))
   return row ? toJson(row) : null

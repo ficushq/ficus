@@ -2,6 +2,7 @@
 import { client } from './clientInstance'
 
 export const getAgentQuestions = client.agentQuestions.getAgentQuestions
+export const getSquadOpenAgentQuestionCounts = client.agentQuestions.getSquadOpenAgentQuestionCounts
 export const answerAgentQuestion = client.agentQuestions.answerAgentQuestion
 export const dismissAgentQuestion = client.agentQuestions.dismissAgentQuestion
 

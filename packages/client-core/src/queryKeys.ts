@@ -228,6 +228,8 @@ export const queryKeys = {
   agentQuestions: {
     all: ['agentQuestions'] as const,
     byAgent: (agentId: string, status?: 'open' | 'answered') => ['agentQuestions', agentId, status ?? 'all'] as const,
+    // Under `all`, so agent-question.* invalidation refreshes the squad chat list's indicators too.
+    squadOpenCounts: (squadId: string) => ['agentQuestions', 'squad-open-counts', squadId] as const,
   },
   systemTokens: {
     all: ['systemTokens'] as const,

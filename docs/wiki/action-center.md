@@ -12,6 +12,11 @@ agent conversation/context
   -> GET /api/agent-questions/by-agent/:agentId
   -> all requested-lifecycle questions for that agent
 
+squad chat list (pending-question markers)
+  -> agents:read on the squad
+  -> GET /api/agent-questions/by-squad/:squadId/open-counts
+  -> { [agentId]: openCount } for agents currently in the squad (one request, no per-agent fan-out)
+
 agent-question lifecycle event
   -> durable direct attention recipients + compatible owner + authorized readers
   |

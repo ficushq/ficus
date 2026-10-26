@@ -51,4 +51,10 @@ describe('agentQuestionsResource', () => {
       options: { method: 'POST' },
     })
   })
+
+  test('reads squad open-question counts from the squad route', async () => {
+    const { transport, calls } = mockTransport()
+    await agentQuestionsResource(transport).getSquadOpenAgentQuestionCounts('squad-1')
+    expect(calls[0]).toEqual({ path: '/agent-questions/by-squad/squad-1/open-counts', options: undefined })
+  })
 })

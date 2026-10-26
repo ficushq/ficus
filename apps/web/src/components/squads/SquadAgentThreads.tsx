@@ -56,6 +56,7 @@ import {
   TrashIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  QuestionIcon,
 } from '../icons'
 import {
   inferredConsultantOrigin,
@@ -212,6 +213,24 @@ function AgentWorkStreamLink({ primary, others, href }: { primary: WorkStream; o
   )
 }
 
+/**
+ * Attention-colored marker after an agent's name while it waits on open questions; the count shows
+ * only above one. Decorative: the row's aria-label and tooltip carry the count. It never shrinks,
+ * so the name truncates first.
+ */
+function OpenQuestionIndicator({ count }: { count: number }) {
+  return (
+    <span
+      aria-hidden="true"
+      data-testid="agent-row-open-questions"
+      className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-status-attention-badge-surface px-1 py-px text-[11px] font-semibold leading-none text-status-attention-badge-fg"
+    >
+      <QuestionIcon className="h-3.5 w-3.5" />
+      {count > 1 && <span className="pr-0.5 tabular-nums">{count}</span>}
+    </span>
+  )
+}
+
 const CHAT_SIDEBAR_MIN_WIDTH = 200
 const CHAT_SIDEBAR_MAX_WIDTH = 520
 /** Tailwind md:w-64: the chat list's width until the user resizes it. */
@@ -305,6 +324,10 @@ export function SquadAgentThreads({
     [workStreams, agents]
   )
   const { slugFor } = useSquadSlugs()
+
+  // One squad-wide request (not one per row) flags agents waiting on an answer. Its key sits under
+  // agentQuestions.all, so agent-question.* events refresh it live.
+  const { data: openQuestionCounts } = useQuery(queries.agentQuestions.squadOpenCounts(squadId))
 
   // Terminate agent mutation
   const terminateMutation = useMutation({
@@ -696,7 +719,14 @@ export function SquadAgentThreads({
     const statusText = [statusLabel, viaAssistant ? 'via Assistant' : undefined].filter(Boolean).join(' · ')
     const isConfirmingThis = confirmingTerminate === agent.id
     const [primaryWork, ...otherWork] = activeWorkStreamsByAgent.get(agent.id) ?? []
-    const rowLabel = (compact ? [agentName] : [agentName, statusText, lastMessageTime]).filter(Boolean).join(', ')
+    const openQuestionCount = openQuestionCounts?.[agent.id] ?? 0
+    const openQuestionLabel =
+      openQuestionCount > 0 ? `${openQuestionCount} pending question${openQuestionCount === 1 ? '' : 's'}` : undefined
+    const rowLabel = (
+      compact ? [agentName, openQuestionLabel] : [agentName, openQuestionLabel, statusText, lastMessageTime]
+    )
+      .filter(Boolean)
+      .join(', ')
 
     // The select button is stretched over the whole row so the work stream link can sit
     // inside the visible content as its own target (a link nested in a button is invalid).
@@ -707,7 +737,7 @@ export function SquadAgentThreads({
           aria-pressed={isSelected}
           aria-label={rowLabel}
           onClick={() => handleAgentRowSelect(agent.id)}
-          title={`${stableName} · ${agent.agentTypeId}${viaAssistant ? ' via Assistant' : ''} · ${agent.id}`}
+          title={`${stableName} · ${agent.agentTypeId}${viaAssistant ? ' via Assistant' : ''} · ${agent.id}${openQuestionLabel ? ` · ${openQuestionLabel}` : ''}`}
           className="ficus-button ficus-button-ghost absolute inset-0 block w-full rounded-lg text-left"
         />
         <div
@@ -722,6 +752,7 @@ export function SquadAgentThreads({
             <span aria-hidden="true" className="truncate text-sm font-medium text-primary">
               {agentName}
             </span>
+            {openQuestionLabel && <OpenQuestionIndicator count={openQuestionCount} />}
           </span>
           {!compact && (
             <span className="ml-4 mt-1 flex items-center justify-between gap-2 text-[11px] text-secondary">
