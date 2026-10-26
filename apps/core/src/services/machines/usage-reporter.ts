@@ -179,18 +179,32 @@ export function poolerSampleFromShowPools(
 /**
  * Read the loopback PgBouncer's admin console for the app database's pool.
  * Null on an unpooled install (no pooler to ask). The console speaks only the
- * simple query protocol, hence `prepare: false` + `unsafe`; the DSN is the
- * pooled DATABASE_URL with the virtual `pgbouncer` database, same role (the
- * ini lists it under admin_users).
+ * simple query protocol: `unsafe` without arguments sends one, `prepare:
+ * false` keeps it that way, and `fetch_types: false` stops postgres.js's own
+ * connect-time type lookup — an extended-protocol query whose rejection is
+ * nobody's await, which crashed every pooled worker on start (2026-10-26,
+ * "extended query protocol not supported by admin console", 08P01). The DSN
+ * is the pooled DATABASE_URL with the virtual `pgbouncer` database, same role
+ * (the ini lists it under admin_users).
  */
 export async function samplePoolerPressure(): Promise<PoolerSample | null> {
   if (!isTransactionPooled()) return null
-  const app = new URL(getConnectionString())
+  return readPoolerSample(getConnectionString())
+}
+
+/** `SHOW POOLS` on the admin console behind `pooledDsn` (the app's pooled DATABASE_URL), for its database. */
+export async function readPoolerSample(pooledDsn: string): Promise<PoolerSample | null> {
+  const app = new URL(pooledDsn)
   const database = app.pathname.replace(/^\//, '')
   const admin = new URL(app.toString())
   admin.pathname = '/pgbouncer'
   admin.search = ''
-  const sql = createPostgresConnection(admin.toString(), { max: 1, prepare: false, onnotice: () => {} })
+  const sql = createPostgresConnection(admin.toString(), {
+    max: 1,
+    prepare: false,
+    fetch_types: false,
+    onnotice: () => {},
+  })
   try {
     const rows = (await sql.unsafe('SHOW POOLS')) as unknown as Record<string, unknown>[]
     return poolerSampleFromShowPools(rows, database)

@@ -49,6 +49,35 @@ async function eventually<T>(fn: () => Promise<T>, timeoutMs: number): Promise<T
   throw last instanceof Error ? last : new Error(String(last))
 }
 
+describe.skipIf(!POOLED)('the usage reporter reads SHOW POOLS from the admin console', () => {
+  test('returns the pool numbers and raises no unhandled rejection', async () => {
+    // The admin console speaks only the simple protocol. postgres.js's own
+    // connect-time type fetch (fetch_types) uses the extended protocol, and
+    // its rejection is nobody's await: on 2026-10-26 it crashed every pooled
+    // worker on start ("extended query protocol not supported by admin
+    // console", 08P01) through the db unhandled-rejection handler.
+    const { readPoolerSample } = await import('../services/machines/usage-reporter')
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason)
+    }
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      const sample = await readPoolerSample(POOLED!)
+      await Bun.sleep(200)
+      expect(unhandled).toEqual([])
+      expect(sample).not.toBeNull()
+      expect(sample).toEqual({
+        waitingClients: expect.any(Number),
+        maxWaitMs: expect.any(Number),
+        activeServers: expect.any(Number),
+      })
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+  })
+})
+
 describe.skipIf(!POOLED)('the main pool survives a PgBouncer restart', () => {
   test('queries fail while the pooler is down and succeed again once it is back, without a process restart', async () => {
     const sql = createResilientClient({
