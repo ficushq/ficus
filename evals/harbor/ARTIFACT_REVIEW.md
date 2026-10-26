@@ -137,10 +137,10 @@ reviewer received those results. Both reviewed commit
 `8850b4486b42850e26a8e83266d87f148c4dae7d` from patch SHA256
 `fc27071def1014074bf1a7d2531644616ae67e74ffef2a8c9ae9a9916e2f2fcd`.
 
-| Reviewer condition | Verdict | Independently reproduced findings | Requests | Recorded cost |
-| --- | --- | --- | --- | --- |
-| Original prompt | Changes requested | 2 of 2 reported | 17 | $0.222182 |
-| Independent-contract addition | Changes requested | 2 of 2 reported | 12 | $0.183341 |
+| Reviewer condition            | Verdict           | Independently reproduced findings | Requests | Recorded cost |
+| ----------------------------- | ----------------- | --------------------------------- | -------- | ------------- |
+| Original prompt               | Changes requested | 2 of 2 reported                   | 17       | $0.222182     |
+| Independent-contract addition | Changes requested | 2 of 2 reported                   | 12       | $0.183341     |
 
 Both passed role and repository-integrity checks. Their findings overlap partly:
 
@@ -181,3 +181,56 @@ ledger segment. Current phase confirmed spend is **$15.725187** plus the unchang
 **$5.50** prior hold: **$21.225187 exposure**, leaving **$8.774813** under the $30 cap.
 See the v2 plan, input, readiness, artifact, and results manifests. Private artifacts
 remain in the durable sibling `ficus-evaluation-data/artifact-review-v2` directory.
+
+## Replication: Kombu consumer lifecycle
+
+The next frozen-order task, `kombu-single-active-consumer-priority`, used the
+same runtime archives, model, reasoning, and baseline-first review order. All
+four official controls and both native startup/network probes passed. One
+engineer produced the frozen artifact, which passed **85/85 feature tests and
+1,421/1,421 regression tests**, at a cost of **$0.572532**. Neither reviewer
+received that score or the engineering transcript.
+
+Both inspected artifact commit `0421e62d4a11a39fcf7fdcbd0afdd0f76f6e39c4`, patch
+SHA256 `109e72dc1a04050e7599a659bf5f208c4dd05189bf8c56a0b52b1db27843a9f3`.
+Both completed with reviewer-only provenance and unchanged repositories.
+
+| Reviewer condition            | Verdict           | Reported findings | Requests | Recorded cost |
+| ----------------------------- | ----------------- | ----------------: | -------: | ------------: |
+| Original prompt               | Changes requested |                 2 |       16 |     $0.224491 |
+| Independent-contract addition | Changes requested |                 2 |       17 |     $0.262050 |
+
+Independent offline reproduction qualified the reports as follows:
+
+- **Both:** the new SAC-membership query remains true after direct channel
+  cancellation, despite an empty broker registry. The original report also
+  identified failed reconsumption and exceptions from all three new Consumer
+  inspection helpers after channel close; those reproduced too.
+- **Original only:** a demoted Consumer reports itself active when a different
+  channel registers the same tag. The channel-level record and actual delivery
+  correctly identify the other registration. Failover restores real ownership.
+- **Candidate only, inherited integration gap:** an SQS no-ack registration can
+  cause backend deletion before the selected manual-ack consumer acknowledges.
+  Receipt metadata is lost. Real conversion, dispatch and acknowledgement code
+  reproduces this with only external AWS calls substituted; manual/manual
+  controls work. Crucially, the same mixed-ack failure occurs on untouched
+  upstream code (which ignores SAC). It is an existing backend assumption left
+  unresolved by the new consumer selection semantics, **not an established new
+  regression**. No live AWS behavior was tested.
+
+The original reviewer found more distinct defects in the newly added Consumer
+APIs on this artifact. Both reports' behavioral observations are reproducible,
+but counting them as two equivalent new bugs each would obscure the inherited
+SQS issue and the original report's broader lifecycle coverage. Neither report's
+Critical labels are independently established severity ratings.
+
+Saved tool output supports both reviewers' 25 focused, 251 broader targeted, and
+1,452 available unit-test passes (175 skips). Both explicitly excluded two modules
+with unavailable Azure/Google dependencies; these are environment limitations.
+The official grade is unchanged. No exhaustive defect inventory or recall estimate
+is claimed. Keep the experimental prompt out of production.
+
+The complete replication cost **$1.059073** across 67 requests, all settled.
+At completion, phase exposure was **$22.284260**, including the retained $5.50
+hold; **$7.715740** remained. See `artifact-review-v3-results.json` and
+`artifact-review-v3-reproduce.py`, including the untouched-upstream control.
