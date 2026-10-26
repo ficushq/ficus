@@ -1,4 +1,8 @@
-import { createPostgresConnection, getConnectionString, withDedicatedConnectionSlot } from '../../../db/connection'
+import {
+  createPostgresConnection,
+  getDirectConnectionString,
+  withDedicatedConnectionSlot,
+} from '../../../db/connection'
 
 const LEASE_PREFIX = 'integration-authorization:'
 
@@ -52,7 +56,7 @@ export class ConnectionAuthorizationLease {
     )
     if (keys.length === 0) throw new Error('At least one integration authorization lease resource is required')
     return withDedicatedConnectionSlot(async () => {
-      const connection = createPostgresConnection(getConnectionString(), { max: 1, idle_timeout: 0 })
+      const connection = createPostgresConnection(getDirectConnectionString(), { max: 1, idle_timeout: 0 })
       try {
         const session = await connection.reserve()
         const acquired: string[] = []

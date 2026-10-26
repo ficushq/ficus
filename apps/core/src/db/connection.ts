@@ -665,21 +665,41 @@ const DEDICATED_CONNECTION_LIMIT = 2
 let dedicatedConnectionsInUse = 0
 const dedicatedConnectionWaiters: Array<() => void> = []
 
-export async function withDedicatedConnectionSlot<T>(fn: () => Promise<T>): Promise<T> {
+/**
+ * Take a dedicated-connection slot and hand back its release. For the one
+ * site whose connection outlives a callback (the update run-lock returns a
+ * handle that is released minutes later); everything else uses
+ * withDedicatedConnectionSlot. Release exactly once.
+ */
+export async function acquireDedicatedConnectionSlot(): Promise<() => void> {
   if (dedicatedConnectionsInUse >= DEDICATED_CONNECTION_LIMIT) {
     await new Promise<void>((resolve) => dedicatedConnectionWaiters.push(resolve))
   } else {
     dedicatedConnectionsInUse++
   }
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    releaseDedicatedConnectionSlot()
+  }
+}
+
+export async function withDedicatedConnectionSlot<T>(fn: () => Promise<T>): Promise<T> {
+  const release = await acquireDedicatedConnectionSlot()
   try {
     return await fn()
   } finally {
-    // Transfer ownership directly. Decrementing before waking a waiter lets a
-    // new caller steal the slot before the queued continuation resumes.
-    const next = dedicatedConnectionWaiters.shift()
-    if (next) next()
-    else dedicatedConnectionsInUse--
+    release()
   }
+}
+
+function releaseDedicatedConnectionSlot(): void {
+  // Transfer ownership directly. Decrementing before waking a waiter lets a
+  // new caller steal the slot before the queued continuation resumes.
+  const next = dedicatedConnectionWaiters.shift()
+  if (next) next()
+  else dedicatedConnectionsInUse--
 }
 
 /**

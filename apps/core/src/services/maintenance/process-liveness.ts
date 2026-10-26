@@ -1,4 +1,4 @@
-import { createPostgresConnection, getConnectionString } from '../../db/connection'
+import { createPostgresConnection, getDirectConnectionString } from '../../db/connection'
 
 export const ADMISSION_LIVENESS_LOCK_VERSION = 'ficus:admission-owner:v1:'
 export const ADMISSION_LIVENESS_HASH_SEED = 7_401_983_522
@@ -21,7 +21,11 @@ export async function startAdmissionProcessLiveness(
   if (releaseLiveness) return
   stopping = false
   fatalTriggered = false
-  const client = createPostgresConnection(getConnectionString(), {
+  // Direct, never through a transaction pooler: the liveness lock is a session
+  // lock that must stay on one backend for the life of the process. The one
+  // permanent direct connection, deliberately outside the dedicated slot gate
+  // (it never releases, so it would hold a slot forever).
+  const client = createPostgresConnection(getDirectConnectionString(), {
     max: 1,
     idle_timeout: 0,
     max_lifetime: 0,

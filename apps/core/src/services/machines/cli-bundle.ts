@@ -3,7 +3,7 @@ import { existsSync } from 'fs'
 import { mkdtemp, rename, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { createPostgresConnection, getConnectionString } from '../../db/connection'
+import { createPostgresConnection, getDirectConnectionString, withDedicatedConnectionSlot } from '../../db/connection'
 import type { MachineArtifact } from './machine-artifacts'
 import { CLI_BUNDLE_FILE, SANDBOX_CLI_PATH } from '../sandbox/cli-path'
 import { readPrebuiltMachineFile } from './machine-prebuilt'
@@ -155,19 +155,24 @@ export const CLI_BUILD_LOCK_KEY = 421_001
  * deploy: `memoizeBuild` caches the result per process.
  */
 async function withCliBuildAdvisoryLock<T>(section: () => Promise<T>): Promise<T> {
-  const sql = createPostgresConnection(getConnectionString(), { max: 1, onnotice: () => {} })
-  try {
-    await sql`SELECT pg_advisory_lock(${CLI_BUILD_LOCK_KEY})`
+  // A session lock: the DIRECT connection (never a transaction pooler), and
+  // a dedicated-connection slot for the build's duration so a host's direct
+  // backends stay bounded.
+  return withDedicatedConnectionSlot(async () => {
+    const sql = createPostgresConnection(getDirectConnectionString(), { max: 1, onnotice: () => {} })
     try {
-      return await section()
+      await sql`SELECT pg_advisory_lock(${CLI_BUILD_LOCK_KEY})`
+      try {
+        return await section()
+      } finally {
+        // Best-effort: if the connection died the server already released the
+        // session lock, and the end() below closes it regardless.
+        await sql`SELECT pg_advisory_unlock(${CLI_BUILD_LOCK_KEY})`.catch(() => {})
+      }
     } finally {
-      // Best-effort: if the connection died the server already released the
-      // session lock, and the end() below closes it regardless.
-      await sql`SELECT pg_advisory_unlock(${CLI_BUILD_LOCK_KEY})`.catch(() => {})
+      await sql.end({ timeout: 5 }).catch(() => {})
     }
-  } finally {
-    await sql.end({ timeout: 5 }).catch(() => {})
-  }
+  })
 }
 
 /**

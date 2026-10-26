@@ -1,4 +1,8 @@
-import { createPostgresConnection, getConnectionString } from '../../db/connection'
+import {
+  acquireDedicatedConnectionSlot,
+  createPostgresConnection,
+  getDirectConnectionString,
+} from '../../db/connection'
 
 /**
  * Advisory-lock key for the cross-process update-run mutex. Stable constant,
@@ -35,15 +39,21 @@ export type UpdateRunLock = { release(): Promise<void> }
  * Returns null when another process holds the lock.
  */
 export async function acquireUpdateRunLock(key: number = UPDATE_RUN_LOCK_KEY): Promise<UpdateRunLock | null> {
-  const sql = createPostgresConnection(getConnectionString(), { max: 1, onnotice: () => {} })
+  // A session lock, so: the DIRECT connection (never a transaction pooler),
+  // and a dedicated-connection slot held for as long as the lock is — the
+  // handle's release() gives both back.
+  const releaseSlot = await acquireDedicatedConnectionSlot()
+  const sql = createPostgresConnection(getDirectConnectionString(), { max: 1, onnotice: () => {} })
   try {
     const [row] = await sql`SELECT pg_try_advisory_lock(${key}) AS locked`
     if (!row?.locked) {
       await sql.end({ timeout: 5 }).catch(() => {})
+      releaseSlot()
       return null
     }
   } catch (error) {
     await sql.end({ timeout: 5 }).catch(() => {})
+    releaseSlot()
     throw error
   }
   return {
@@ -52,6 +62,7 @@ export async function acquireUpdateRunLock(key: number = UPDATE_RUN_LOCK_KEY): P
       // session lock, and the end() below closes it regardless.
       await sql`SELECT pg_advisory_unlock(${key})`.catch(() => {})
       await sql.end({ timeout: 5 }).catch(() => {})
+      releaseSlot()
     },
   }
 }
