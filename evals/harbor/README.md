@@ -50,6 +50,10 @@ attempt and authorized recovery are reported separately from completed first
 attempts. Review findings are independently checked without changing the
 official grader.
 
+Opt-in [private recovery checkpoints](CHECKPOINTS.md) preserve the disposable
+database and task filesystem before cleanup. Their offline restore probe makes
+no model calls; automatic inference continuation is not yet implemented.
+
 Earlier Terminal-Bench smoke tests, the known Pydantic feature task, and its
 scope-guidance replay remain separate development evidence in
 [pilot evidence](PILOT.md) and [scope guidance](SCOPE_GUIDANCE.md).

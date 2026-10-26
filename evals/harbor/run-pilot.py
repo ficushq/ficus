@@ -17,6 +17,7 @@ parser.add_argument(
 parser.add_argument("--access", type=Path, required=True)
 parser.add_argument("--client", help="Proxy client label; defaults to harness-task")
 parser.add_argument("--runtime-archive", type=Path)
+parser.add_argument("--checkpoint-dir", type=Path)
 parser.add_argument("--artifact-patch", type=Path)
 parser.add_argument("--artifact-sha256")
 parser.add_argument("--base-commit")
@@ -94,6 +95,8 @@ if args.harness == "ficus":
         "--ak",
         "model_api=" + access.get("model_api", "openai-completions"),
     ]
+    if args.checkpoint_dir:
+        command += ["--ak", f"checkpoint_dir={args.checkpoint_dir.resolve()}"]
     if args.workflow == "reviewer":
         if not all((args.artifact_patch, args.artifact_sha256, args.base_commit)):
             parser.error("Reviewer requires a frozen patch, SHA256, and base commit")

@@ -97,6 +97,20 @@ async def docker(*args, check=True):
     return stdout.decode().strip()
 
 
+async def main_container_id(environment):
+    result = await environment._run_docker_compose_command(
+        ["ps", "-q", "main"], timeout_sec=30
+    )
+    identifiers = [
+        line.strip()
+        for line in (result.stdout or "").splitlines()
+        if re.fullmatch(r"[0-9a-f]{12,64}", line.strip())
+    ]
+    if result.return_code or len(identifiers) != 1:
+        raise ValueError("Expected exactly one Harbor main service container")
+    return identifiers[0]
+
+
 class FicusSquad(BaseAgent):
     MODEL_CONNECTION = ModelConnectionSpec(passthrough=True)
     DEFAULT_SETUP_TIMEOUT_SEC = 900.0
@@ -108,6 +122,7 @@ class FicusSquad(BaseAgent):
         model_api="openai-completions",
         workflow="reviewed",
         database_network="private",
+        checkpoint_dir=None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -123,6 +138,11 @@ class FicusSquad(BaseAgent):
         if database_network not in {"private", "task"}:
             raise ValueError("database_network must be private or task")
         self.database_network = database_network
+        self.checkpoint_dir = Path(checkpoint_dir).resolve() if checkpoint_dir else None
+        if self.checkpoint_dir and self.checkpoint_dir.exists():
+            raise ValueError(
+                "Checkpoint directory must be new; never overwrite evidence"
+            )
         self.workflow = workflow
         self.archive = Path(runtime_archive).resolve(strict=True)
         self.network = "ficus-harbor-" + uuid.uuid4().hex[:12]
@@ -213,13 +233,9 @@ class FicusSquad(BaseAgent):
             user="root",
         )
         self.workspace = (await self.checked(environment, "pwd")).strip()
-        # Use the container's own ID, not a global Docker name or an existing Ficus instance.
-        hostname = (await self.checked(environment, "cat /etc/hostname")).strip()
-        if not re.fullmatch(r"[0-9a-f]{12,64}", hostname):
-            raise ValueError("Expected the task container ID as its hostname")
-        self.container = (
-            await docker("inspect", "--format", "{{.Id}}", hostname)
-        ).strip()
+        # Restricted tasks share the egress sidecar's hostname; resolve the main
+        # service through Harbor's pinned compose helper instead of /etc/hostname.
+        self.container = await main_container_id(environment)
         if self.database_network == "task":
             # Retain the disposable DB identity required by the frozen native
             # provider guard; resolve it only on this task's loopback interface.
@@ -430,6 +446,23 @@ class FicusSquad(BaseAgent):
                     )
                 except (RuntimeError, OSError, TimeoutError) as error:
                     self.logger.warning("Could not collect %s: %s", filename, error)
+            if self.checkpoint_dir:
+                from checkpoint import capture
+
+                try:
+                    await capture(
+                        self.checkpoint_dir,
+                        self.container,
+                        self.database,
+                        self.env,
+                        {**context.metadata, "workspace": self.workspace},
+                    )
+                    context.metadata["checkpoint_complete"] = True
+                except (RuntimeError, OSError, TimeoutError, ValueError) as error:
+                    context.metadata["checkpoint_complete"] = False
+                    self.logger.error(
+                        "Could not preserve recovery checkpoint: %s", error
+                    )
             await docker("rm", "-f", "-v", self.database, check=False)
             if self.database_network == "private":
                 await docker(
