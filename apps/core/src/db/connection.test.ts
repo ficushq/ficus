@@ -881,7 +881,6 @@ describe('drizzle type handlers on the watchdog pool (survive a swap)', () => {
   })
 })
 
-
 describe('direct connection string', () => {
   const priorUrl = process.env.DATABASE_URL
   const priorDirect = process.env.DATABASE_DIRECT_URL

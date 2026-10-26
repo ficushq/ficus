@@ -664,6 +664,31 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # Transaction-mode PgBouncer in front of postgres-test, so the pooled
+      # path (apps/core/src/db/pooled-queries.test.ts, connection-pooler
+      # tests) runs on CI too. Same settings setup-host renders on a host with
+      # database.pool.enabled. The compose service does the same job locally.
+      - name: Start PgBouncer (transaction mode) in front of PostgreSQL
+        run: |
+          docker run -d \
+            --name pgbouncer-test \
+            --link postgres-test:postgres-test \
+            -e DB_HOST=postgres-test -e DB_PORT=5432 \
+            -e DB_USER=postgres -e DB_PASSWORD=postgres -e DB_NAME=ficus_test \
+            -e AUTH_TYPE=scram-sha-256 -e POOL_MODE=transaction \
+            -e DEFAULT_POOL_SIZE=4 -e RESERVE_POOL_SIZE=2 -e RESERVE_POOL_TIMEOUT=1 \
+            -e MAX_CLIENT_CONN=100 -e MAX_PREPARED_STATEMENTS=200 \
+            -e IGNORE_STARTUP_PARAMETERS=extra_float_digits,options \
+            -p 6433:5432 \
+            edoburu/pgbouncer:v1.23.1-p3
+          for i in $(seq 1 30); do
+            if PGPASSWORD=postgres psql -h localhost -p 6433 -U postgres -d ficus_test -c "SELECT 1;" >/dev/null 2>&1; then
+              echo "pgbouncer ready"; break
+            fi
+            if [ "$i" = 30 ]; then docker logs pgbouncer-test; echo "::error::pgbouncer did not come up"; exit 1; fi
+            sleep 1
+          done
+
       - name: Create database extensions
         run: |
           for i in {1..10}; do
@@ -712,6 +737,7 @@ jobs:
         working-directory: apps/core
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5433/ficus_test
+          TEST_POOLED_DATABASE_URL: postgres://postgres:postgres@localhost:6433/ficus_test
           FICUS_TEST_SKIP_SUBPROCESS: '1'
 
       - name: Create isolated sterile secret-boundary database
