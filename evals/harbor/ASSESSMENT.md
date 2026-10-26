@@ -209,19 +209,26 @@ not a claim that the original raw evidence can be re-audited today. Controlled
 review artifacts, runtime archives, receipts, and reproductions now live in the
 durable sibling `ficus-evaluation-data` directory.
 
-The current user-authorized phase cap is $40 (increased from $30 to $35 for
+The now-closed phase cap was $40 (increased from $30 to $35 for
 the closeout-guidance validation, then to $40 for the Koota squad recovery). Its opening historical exposure and
 unresolved $5.50 hold remain carried forward; the durable ledger segment is shared
-across the controlled studies rather than reset between tasks. Latest completed
-result manifests are authoritative for current spend. Historical dollar totals in
+across the controlled studies rather than reset between tasks. Completed
+result manifests preserve that phase’s spend. Historical dollar totals in
 the tables above belong to their documented phases and are not added again to the
-current cap. No missing provider receipt is treated as zero cost.
+closed cap. No missing provider receipt is treated as zero cost.
 
 The two reviewer replications and v1 repair cost $3.279914. The additional v2
 closeout validation cost $1.215893 across 88 settled requests. The fresh-review
 pair added $0.454876, leaving $20.675870 confirmed before the Koota batch.
 The Koota batch adds $4.029520 in receipted inference plus one unresolved
-streaming-error call. Current phase accounting is $24.705390 confirmed plus
+streaming-error call. Closing phase accounting is $24.705390 confirmed plus
 $11 of holds ($5.50 historical and $5.50 new): $35.705390 exposure under $40.
-The next $5.50 reservation does not fit. All owned trial processes are stopped;
+The next $5.50 reservation did not fit. All owned trial processes are stopped;
 no hold was released without provider reconciliation.
+
+On October 26, 2026, the user explicitly authorized a fresh **$20 cap from zero**.
+The [reset record](budget-phase-2026-10-26-reset.json) closes the previous phase
+without reconciling its unresolved charges. A new empty private ledger and active
+budget pointer now separate future requests from historical accounting. The
+$5.50 per-request reservation remains in force. No inference has started in the
+new phase at the time of this reset; future launches must use its ledger explicitly.

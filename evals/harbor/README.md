@@ -32,10 +32,17 @@ grade unchanged, then hit the conservative budget guard during a second cycle fo
 documentation closeout. Its captured artifact was graded separately without
 inference; it is not counted as autonomous delivery.
 
-The current phase carries $19.227605 of opening exposure into the user-authorized
-$40 cap (raised from $30, then $35), including an unresolved $5.50 hold. Each result manifest records its
-completion-time accounting; use the latest result for current totals. Earlier
-temporary raw artifacts are unavailable; new evidence is stored durably.
+The active phase starts at **$0 tracked usage with a $20 cap**, explicitly
+reset by the user on October 26, 2026. See the
+[authorization record](budget-phase-2026-10-26-reset.json). Future launches must
+use the new private ledger identified by `ficus-evaluation-data/active-budget.json`,
+with the existing $5.50 per-request reservation. Historical launchers still
+reference the closed phase and must not be reused unchanged.
+
+The previous $40 phase is closed with $24.705390 confirmed and $11 in unresolved
+holds. Its ledger and a snapshot are preserved; the reset does not reconcile
+missing receipts. Historical result manifests retain their original accounting.
+Earlier temporary raw artifacts are unavailable; new evidence is stored durably.
 
 The [fresh matched Koota study](FRESH_MATCHED.md) returns to an unused external
 task with engineer-only and full-squad conditions. Its budget-interrupted Ficus

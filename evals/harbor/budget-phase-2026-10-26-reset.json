@@ -1,0 +1,25 @@
+{
+  "phase": "budget-phase-2026-10-26-reset",
+  "authorized_at_utc": "2026-10-26T22:50:44.112049+00:00",
+  "authorization": "just reset the ledger and set the cap to $20 from here",
+  "cap_usd": 20,
+  "opening_tracked_usage_usd": 0,
+  "opening_unresolved_holds_usd": 0,
+  "model": "gpt-6.1-sol",
+  "reservation_per_request_usd": 5.5,
+  "ledger_relative_to_private_data": "budget-phase-2026-10-26-reset/spend.sqlite",
+  "previous_phase": {
+    "status": "closed-by-explicit-budget-reset",
+    "cap_usd": 40,
+    "confirmed_usd": 24.70539,
+    "historical_hold_usd": 5.5,
+    "streaming_error_hold_usd": 5.5,
+    "exposure_usd": 35.70539,
+    "ledger_relative_to_private_data": "artifact-review-v1/budget/spend.sqlite",
+    "ledger_sha256": "e336702c33b030e117921305486f853b443ad2636d49b3ced74b84fcc4be3111",
+    "snapshot_sha256": "5be0caad3e9622d102efd03e87bcd8d6e29cac4f95f7ba8fa8dc069419bcf7c5",
+    "unresolved_charges_reconciled": false
+  },
+  "policy": "New allowance applies only to subsequent requests. Preserve previous receipts and unresolved holds as historical evidence, not zero-cost or reconciled charges. Use the new ledger explicitly for future launches; old experiment launchers are historical and must not be reused unchanged.",
+  "inference_started": false
+}
