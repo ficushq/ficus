@@ -151,12 +151,13 @@ interface ChatViewProps {
   renderMessageFooter?: (item: Extract<RenderItem, { kind: 'persisted' }>) => React.ReactNode
   afterMessages?: React.ReactNode
   /**
-   * Floating content that ends the message flow (after afterMessages): right below the latest
-   * response at the bottom, and pinned over the bottom of the messages while scrolled up.
+   * Floating controls that end the message flow (after afterMessages): right below the latest
+   * response at the bottom, and pinned over the bottom of the messages while scrolled up, with the
+   * transcript visible around them. Each control brings its own opaque surface (the slot has none)
+   * and opts in to clicks with `pointer-events-auto`: the slot passes them to the messages beneath.
+   * Stacked controls get a small gap between them.
    */
   stickyAfterMessages?: React.ReactNode
-  /** Persistent content in normal flow directly above the composer. */
-  beforeComposer?: React.ReactNode
   className?: string
   autoFocus?: boolean
   sendLabel?: string
@@ -474,7 +475,6 @@ export function ChatView({
   afterMessages,
   renderMessageFooter,
   stickyAfterMessages,
-  beforeComposer,
   className,
   autoFocus = true,
   sendLabel = 'Send',
@@ -1900,27 +1900,17 @@ export function ChatView({
             ref={stickyAfterMessagesRef}
             data-testid="chat-sticky-after-messages"
             // Sticky insets count from inside the container's bottom padding, so bottom-0 pins it exactly
-            // where the transcript ends at the bottom, above the plant's room while it peeks.
-            className="sticky bottom-0 z-10 empty:hidden"
+            // where the transcript ends at the bottom, above the plant's room while it peeks. In the flow at
+            // the bottom, it never covers the latest message; scrolled up, messages show around it. Clicks
+            // pass through to the messages, so each control opts back in with pointer-events-auto. As a
+            // flow-root, a control's negative bottom margin overhangs the padding instead of collapsing
+            // through, so it sits at the same height at the bottom and while pinned.
+            className="pointer-events-none sticky bottom-0 z-10 flow-root space-y-2 empty:hidden"
           >
             {stickyAfterMessages}
           </div>
         )}
       </div>
-
-      {beforeComposer && (
-        <div
-          data-testid="chat-before-composer"
-          className={clsx(
-            'shrink-0 px-3 md:px-4 empty:hidden transition-[padding] duration-300 ease-out motion-reduce:transition-none',
-            // While the plant peeks up from behind the composer, the banners slide up to make room for it;
-            // they settle back only once its jump out of sight (PLANT_HIDE_MS) is over.
-            peekingWorkItem ? 'pb-9' : 'pb-2 delay-[600ms]'
-          )}
-        >
-          {beforeComposer}
-        </div>
-      )}
 
       {/* Input */}
       {!shouldHideComposer && (

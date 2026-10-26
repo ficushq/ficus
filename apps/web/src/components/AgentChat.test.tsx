@@ -27,7 +27,6 @@ import { acquireDomHarness } from '../test/domHarness'
 let _capturedOnSend: ((message: string, imageIds?: string[]) => void | Promise<void>) | null = null
 let _capturedItems: RenderItem[] = []
 let _capturedAfterMessages: React.ReactNode = null
-let _capturedBeforeComposer: React.ReactNode = null
 let _capturedHideComposer: boolean = false
 let _capturedDeliveryMode: string | null = null
 let _capturedOnDeliveryModeChange: ((m: string) => void) | null = null
@@ -50,7 +49,6 @@ const TestChatView = ({
   afterMessages,
   stickyAfterMessages,
   headerStatus,
-  beforeComposer,
   deliveryMode,
   onDeliveryModeChange,
   sendLabel,
@@ -66,7 +64,6 @@ const TestChatView = ({
   headerStatus?: React.ReactNode
   afterMessages?: React.ReactNode
   stickyAfterMessages?: React.ReactNode
-  beforeComposer?: React.ReactNode
   deliveryMode?: string
   onDeliveryModeChange?: (m: string) => void
   sendLabel?: string
@@ -83,7 +80,6 @@ const TestChatView = ({
   _capturedOnSend = onSend
   _capturedItems = items
   _capturedAfterMessages = afterMessages ?? null
-  _capturedBeforeComposer = beforeComposer ?? null
   _capturedHideComposer = hideComposer ?? false
   _capturedDeliveryMode = deliveryMode ?? null
   _capturedOnDeliveryModeChange = onDeliveryModeChange ?? null
@@ -111,7 +107,6 @@ const TestChatView = ({
       ))}
       <div data-testid="after-messages">{afterMessages}</div>
       <div data-testid="sticky-after-messages">{stickyAfterMessages}</div>
-      <div data-testid="before-composer">{beforeComposer}</div>
     </div>
   )
 }
@@ -797,10 +792,12 @@ describe('AgentChat', () => {
       // Only a one-line preview floats in the pending-questions row; the question form stays out of the transcript.
       const after = window.document.querySelector('[data-testid="after-messages"]')
       expect(after?.textContent).not.toContain('Pick a color?')
-      expect(window.document.querySelector('[data-testid="before-composer"]')?.textContent).toBe('')
+      expect(window.document.querySelector('[aria-label="Suggested replies"]')).toBeNull()
       expect(window.document.querySelector('textarea')).toBeNull()
 
       const bannerButton = window.document.querySelector('[data-testid="sticky-after-messages"] button')
+      // ChatView's floating slot passes clicks through to the messages; the banner takes them back.
+      expect(bannerButton?.classList.contains('pointer-events-auto')).toBe(true)
       await dom.act(async () => {
         bannerButton?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
       })
@@ -1470,10 +1467,11 @@ describe('reply suggestions', () => {
       await waitFor(() => expect(_agentQuestionFetchCount).toBeGreaterThan(0))
       await flush(60)
     }
-    const beforeComposer = () => dom.window.document.querySelector('[data-testid="before-composer"]')!
+    // The replies float with the question banner at the end of the transcript.
+    const floating = () => dom.window.document.querySelector('[data-testid="sticky-after-messages"]')!
     const chip = (label: string) =>
-      [...beforeComposer().querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === label)
-    return { dom, mc, chip, beforeComposer, settled }
+      [...floating().querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === label)
+    return { dom, mc, chip, floating, settled }
   }
 
   afterEach(() => {
@@ -1482,7 +1480,7 @@ describe('reply suggestions', () => {
     delete _agentStore['rs-1']
   })
 
-  test('the latest agent message’s replies sit above the composer; a tap sends one and they go', async () => {
+  test('the latest agent message’s replies float at the end of the transcript; a tap sends one and they go', async () => {
     const { dom, mc, chip } = await renderSuggestionChat()
     await waitFor(() => expect(chip('Yes, start it')).toBeDefined())
     expect(chip('Not now')).toBeDefined()
@@ -1512,23 +1510,23 @@ describe('reply suggestions', () => {
 
   test('hidden while the agent has open questions', async () => {
     _openQuestions = [{ id: 'q', agentId: 'rs-1', status: 'open', questionData: { questions: [] } }]
-    const { beforeComposer, settled } = await renderSuggestionChat()
+    const { floating, settled } = await renderSuggestionChat()
     await settled()
-    expect(beforeComposer().querySelector('[aria-label="Suggested replies"]')).toBeNull()
+    expect(floating().querySelector('[aria-label="Suggested replies"]')).toBeNull()
   })
 
   test('hidden beside a question card', async () => {
-    const { beforeComposer, settled } = await renderSuggestionChat({
+    const { floating, settled } = await renderSuggestionChat({
       status: 'waiting-input',
       questionData: { questions: [{ id: 'q1', question: 'Which region?', type: 'text' }] },
     })
     await settled()
-    expect(beforeComposer().querySelector('[aria-label="Suggested replies"]')).toBeNull()
+    expect(floating().querySelector('[aria-label="Suggested replies"]')).toBeNull()
   })
 
   test('nothing for a message without suggestions', async () => {
-    const { beforeComposer, settled } = await renderSuggestionChat({ metadata: {} })
+    const { floating, settled } = await renderSuggestionChat({ metadata: {} })
     await settled()
-    expect(beforeComposer().querySelector('[aria-label="Suggested replies"]')).toBeNull()
+    expect(floating().querySelector('[aria-label="Suggested replies"]')).toBeNull()
   })
 })

@@ -11,9 +11,11 @@ const scheduleTimeout: Schedule = (fire, ms) => {
 }
 
 /**
- * One-tap replies to the agent's latest question, just above the composer. A tap (or Enter/Space)
- * sends the reply as the user's message; Shift+click on desktop, or a long press on touch, puts it
- * in the composer to edit first. The replies are model-written suggestions shown as plain text.
+ * One-tap replies to the agent's latest question, floating over the end of the transcript just above
+ * the composer: each chip is its own raised pill, and the messages stay visible (and clickable)
+ * around them. A tap (or Enter/Space) sends the reply as the user's message; Shift+click on desktop,
+ * or a long press on touch, puts it in the composer to edit first. The replies are model-written
+ * suggestions shown as plain text.
  */
 export function ReplySuggestions({
   replies,
@@ -42,15 +44,27 @@ export function ReplySuggestions({
     // Right-aligned, yet every chip stays reachable: the scroll container holds a max-content row
     // pushed right by ml-auto. When the row is wider than the composer the auto margin collapses
     // to zero, so it overflows to the right and scrolls from its first chip (justify-end on the
-    // scrolling row itself would clip the leftmost chips out of reach).
-    <div role="group" aria-label="Suggested replies" className="overflow-x-auto pb-0.5">
-      <div data-reply-suggestions-row className="ml-auto flex w-max items-center gap-2">
+    // scrolling row itself would clip the leftmost chips out of reach). Only the chips row takes
+    // pointer events: the empty space beside it belongs to the messages it floats over (ChatView's
+    // floating slot passes clicks through too). The padding keeps the chips' shadows unclipped, and
+    // -mx-1 keeps the last chip flush with the messages' right edge. The negative bottom margin lets
+    // the chips overhang ChatView's transcript padding (p-3 md:p-4) plus that shadow padding, so they
+    // sit 8px above the composer as they did in the old strip, both at the bottom and pinned while
+    // scrolled up (the floating slot is a flow-root).
+    <div
+      role="group"
+      aria-label="Suggested replies"
+      className="pointer-events-none -mx-1 -mb-2.5 overflow-x-auto px-1 pb-1.5 pt-0.5 md:-mb-3.5"
+    >
+      <div data-reply-suggestions-row className="pointer-events-auto ml-auto flex w-max items-center gap-2">
         {replies.map((reply) => (
           <button
             key={reply}
             type="button"
             title="Send this reply. Shift+click or long-press to edit it first."
-            className="ficus-button ficus-button-secondary flex shrink-0 items-center whitespace-nowrap rounded-full px-3 py-1.5 text-xs select-none hover:bg-selection hover:text-accent-light [-webkit-touch-callout:none]"
+            // Raised like the pending-question pill: an opaque surface, a border and a shadow keep each chip
+            // readable over the messages scrolling underneath, in both themes.
+            className="ficus-button ficus-button-secondary flex shrink-0 items-center whitespace-nowrap rounded-full border border-th-border bg-surface px-3 py-1.5 text-xs shadow-md select-none hover:bg-selection hover:text-accent-light [-webkit-touch-callout:none]"
             onPointerDown={(event) => {
               press.current.handled = false
               cancelPress()

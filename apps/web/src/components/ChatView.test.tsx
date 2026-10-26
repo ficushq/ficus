@@ -268,51 +268,54 @@ async function attachImageAndSend(
   })
 }
 
-test('a mounted composer banner that renders nothing leaves no padding gap', async () => {
-  function Banner() {
+test('mounted floating content that renders nothing leaves no gap in the transcript', async () => {
+  function Chips() {
     const [visible, setVisible] = useState(true)
     return visible ? (
-      <button data-testid="banner" onClick={() => setVisible(false)}>
-        Hide banner
+      <button data-testid="chips" onClick={() => setVisible(false)}>
+        Hide chips
       </button>
     ) : null
   }
-  const { dom, window } = await renderChatView(<ChatView items={[]} onSend={() => {}} beforeComposer={<Banner />} />)
-  const banner = window.document.querySelector('[data-testid="banner"]')!
-  const slot = banner.parentElement!
-  await dom.act(async () => banner.dispatchEvent(new window.MouseEvent('click', { bubbles: true })))
+  const { dom, window } = await renderChatView(
+    <ChatView items={[]} onSend={() => {}} stickyAfterMessages={<Chips />} />
+  )
+  const chips = window.document.querySelector('[data-testid="chips"]')!
+  const slot = chips.parentElement!
+  expect(slot.getAttribute('data-testid')).toBe('chat-sticky-after-messages')
+  await dom.act(async () => chips.dispatchEvent(new window.MouseEvent('click', { bubbles: true })))
   expect(slot.matches(':empty')).toBe(true)
   expect(slot.classList.contains('empty:hidden')).toBe(true)
 })
 
-test('composer banners slide up to make room for the plant peeking from behind the composer', async () => {
-  const banner = <div data-testid="banner">1 pending question</div>
-  const { dom, root, window } = await renderChatView(
-    <ChatView items={[{ kind: 'working', id: '__working__' }]} onSend={() => {}} beforeComposer={banner} />
+test('the floating slot is see-through: no strip above the composer, and only its controls take clicks', async () => {
+  const { window } = await renderChatView(
+    <ChatView
+      items={[]}
+      onSend={() => {}}
+      stickyAfterMessages={
+        <>
+          <button data-testid="banner">1 pending question</button>
+          <div data-testid="chips">Yes</div>
+        </>
+      }
+    />
   )
-  const slot = () => window.document.querySelector('[data-testid="chat-before-composer"]')!
-  // The plant still peeks up from behind the composer, not from above the banners...
-  const plantAnchor = window.document.querySelector('.ficus-plant-peek')!.parentElement!
-  expect(plantAnchor.parentElement!.contains(window.document.querySelector('textarea'))).toBe(true)
-  expect(plantAnchor.parentElement!.contains(slot())).toBe(false)
-  // ...so while the agent works the banners leave room for it below them, sliding rather than jumping.
-  expect(slot().classList.contains('pb-9')).toBe(true)
-  expect(slot().classList.contains('transition-[padding]')).toBe(true)
-  expect(slot().classList.contains('motion-reduce:transition-none')).toBe(true)
-
-  // Once work ends they settle back, after the plant has dropped out of sight.
-  await dom.act(async () =>
-    root.render(
-      <MemoryRouter initialEntries={['/chat/agent-1?scope=all']}>
-        <PermissionsProvider usePermissions={usePermissionsMock}>
-          <ChatView items={[]} onSend={() => {}} beforeComposer={banner} dependencies={chatViewDependencies} />
-        </PermissionsProvider>
-      </MemoryRouter>
-    )
-  )
-  expect(slot().classList.contains('pb-9')).toBe(false)
-  expect(slot().classList.contains('pb-2')).toBe(true)
-  expect(slot().classList.contains('delay-[600ms]')).toBe(true)
+  const messages = window.document.querySelector('[data-testid="chat-messages"]')!
+  const slot = window.document.querySelector<HTMLElement>('[data-testid="chat-sticky-after-messages"]')!
+  // Inside the scrolling transcript, not a strip of its own between the transcript and the composer.
+  expect(messages.contains(slot)).toBe(true)
+  expect(window.document.querySelector('[data-testid="chat-before-composer"]')).toBeNull()
+  expect(messages.nextElementSibling!.contains(window.document.querySelector('textarea'))).toBe(true)
+  const classes = slot.className.split(/\s+/)
+  expect(classes.some((name) => name.startsWith('bg-'))).toBe(false)
+  // The slot passes clicks to the messages underneath (each control opts back in), not overriding
+  // a control's own pass-through gaps.
+  expect(classes).toContain('pointer-events-none')
+  expect(classes.some((name) => name.includes('pointer-events-auto'))).toBe(false)
+  // Stacked controls keep apart, and a control's negative bottom margin overhangs the padding (same
+  // height at the bottom and pinned) instead of collapsing through the slot.
+  expect(classes).toEqual(expect.arrayContaining(['space-y-2', 'flow-root']))
 })
 
 test('sticky content ends the message flow and floats above the plant while it peeks', async () => {

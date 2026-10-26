@@ -404,7 +404,8 @@ export function AgentChat({
           ? openQuestions
           : undefined
       }
-      className="mx-auto max-w-[95%] md:max-w-[90%]"
+      // Floats over the transcript, whose slot passes clicks through to the messages beneath.
+      className="pointer-events-auto mx-auto max-w-[95%] md:max-w-[90%]"
     />
   ) : undefined
 
@@ -471,8 +472,15 @@ export function AgentChat({
           {afterConversation}
         </>
       }
-      stickyAfterMessages={pendingQuestionsBanner}
-      beforeComposer={replySuggestions ?? undefined}
+      // Both float over the end of the transcript; the replies hide while questions are open.
+      stickyAfterMessages={
+        pendingQuestionsBanner || replySuggestions ? (
+          <>
+            {pendingQuestionsBanner}
+            {replySuggestions}
+          </>
+        ) : undefined
+      }
       placeholder={placeholder}
       thinkingLabel={thinkingLabel}
       inputStorageKey={inputStorageKey}
