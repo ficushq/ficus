@@ -5915,8 +5915,8 @@ ps_out=$(
     phase_step preflight "phase 0/8: preflight"
     phase_step build "phase 2/8: dependencies + build"' 2>/dev/null
 )
-expect_eq 'phase_step marker 1 is on stdout' "$(printf '%s' "${ps_out}" | sed -n 1p)" 'FICUS_PHASE=1/13 preflight'
-expect_eq 'phase_step ordinal increments' "$(printf '%s' "${ps_out}" | sed -n 2p)" 'FICUS_PHASE=2/13 build'
+expect_eq 'phase_step marker 1 is on stdout' "$(printf '%s' "${ps_out}" | sed -n 1p)" 'FICUS_PHASE=1/14 preflight'
+expect_eq 'phase_step ordinal increments' "$(printf '%s' "${ps_out}" | sed -n 2p)" 'FICUS_PHASE=2/14 build'
 
 ps_err=$(
   bash -c '
