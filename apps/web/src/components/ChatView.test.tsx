@@ -313,8 +313,9 @@ test('the floating slot is see-through: no strip above the composer, and only it
   // a control's own pass-through gaps.
   expect(classes).toContain('pointer-events-none')
   expect(classes.some((name) => name.includes('pointer-events-auto'))).toBe(false)
-  // Stacked controls keep apart.
-  expect(classes).toContain('space-y-2')
+  // Stacked controls keep apart, and a control's negative bottom margin overhangs the padding (same
+  // height at the bottom and pinned) instead of collapsing through the slot.
+  expect(classes).toEqual(expect.arrayContaining(['space-y-2', 'flow-root']))
 })
 
 test('sticky content ends the message flow and floats above the plant while it peeks', async () => {

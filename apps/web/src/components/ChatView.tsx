@@ -1902,8 +1902,10 @@ export function ChatView({
             // Sticky insets count from inside the container's bottom padding, so bottom-0 pins it exactly
             // where the transcript ends at the bottom, above the plant's room while it peeks. In the flow at
             // the bottom, it never covers the latest message; scrolled up, messages show around it. Clicks
-            // pass through to the messages, so each control opts back in with pointer-events-auto.
-            className="pointer-events-none sticky bottom-0 z-10 space-y-2 empty:hidden"
+            // pass through to the messages, so each control opts back in with pointer-events-auto. As a
+            // flow-root, a control's negative bottom margin overhangs the padding instead of collapsing
+            // through, so it sits at the same height at the bottom and while pinned.
+            className="pointer-events-none sticky bottom-0 z-10 flow-root space-y-2 empty:hidden"
           >
             {stickyAfterMessages}
           </div>

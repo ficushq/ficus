@@ -76,7 +76,7 @@ composer to edit first.
 The chips float at the end of the transcript, in the same floating slot as the pending-question
 banner (`stickyAfterMessages` in `ChatView`), right-aligned and scrolling sideways when they overflow.
 At the bottom they sit below the latest message, so nothing is hidden behind them. Scrolled up, they stay
-pinned just above the composer while the messages scroll underneath, visible and clickable around
+pinned 8px above the composer, the same height as at the bottom, while the messages scroll underneath, visible and clickable around
 them. There is no strip behind them; each chip is its own raised pill. The focused, DB-free browser check
 `CHROMIUM_PATH=/path/to/chromium bun scripts/check-reply-suggestions-layout.ts` (from `apps/web`, with
 optional `SCREENSHOT_DIR`) verifies this with made-up messages.

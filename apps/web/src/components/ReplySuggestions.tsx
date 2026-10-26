@@ -46,8 +46,16 @@ export function ReplySuggestions({
     // to zero, so it overflows to the right and scrolls from its first chip (justify-end on the
     // scrolling row itself would clip the leftmost chips out of reach). Only the chips row takes
     // pointer events: the empty space beside it belongs to the messages it floats over (ChatView's
-    // floating slot passes clicks through too). The padding keeps the chips' shadows unclipped.
-    <div role="group" aria-label="Suggested replies" className="pointer-events-none overflow-x-auto px-1 pb-1.5 pt-0.5">
+    // floating slot passes clicks through too). The padding keeps the chips' shadows unclipped, and
+    // -mx-1 keeps the last chip flush with the messages' right edge. The negative bottom margin lets
+    // the chips overhang ChatView's transcript padding (p-3 md:p-4) plus that shadow padding, so they
+    // sit 8px above the composer as they did in the old strip, both at the bottom and pinned while
+    // scrolled up (the floating slot is a flow-root).
+    <div
+      role="group"
+      aria-label="Suggested replies"
+      className="pointer-events-none -mx-1 -mb-2.5 overflow-x-auto px-1 pb-1.5 pt-0.5 md:-mb-3.5"
+    >
       <div data-reply-suggestions-row className="pointer-events-auto ml-auto flex w-max items-center gap-2">
         {replies.map((reply) => (
           <button

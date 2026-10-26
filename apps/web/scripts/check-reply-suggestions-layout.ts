@@ -115,11 +115,12 @@ try {
       const firstChip = bottom.chips[0]!
       assert.ok(bottom.lastMessage.bottom <= firstChip.top, `${label}: the latest message runs under the replies`)
       const lastChip = bottom.chips.at(-1)!
-      assert.ok(bottom.transcript.right - lastChip.right < 32, `${label}: the replies are not right-aligned`)
-      assert.ok(
-        bottom.composer.top - lastChip.bottom >= 8,
-        `${label}: the replies touch the composer (${bottom.composer.top - lastChip.bottom}px)`
-      )
+      // Flush with the messages' right edge, inside the transcript's padding (12px, 16px from md).
+      const inset = bottom.transcript.right - lastChip.right
+      assert.ok(inset === (width >= 768 ? 16 : 12), `${label}: the replies are ${inset}px from the right edge`)
+      // About 8px above the composer, as in the old strip: not touching it, not floating high above it.
+      const gap = bottom.composer.top - lastChip.bottom
+      assert.ok(gap >= 6 && gap <= 10, `${label}: the replies are ${gap}px above the composer, not about 8px`)
       if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `replies-${width}-${appearance}.png`) })
 
       // Scrolled up: the chips stay pinned over the messages, which show (and take clicks) around them.

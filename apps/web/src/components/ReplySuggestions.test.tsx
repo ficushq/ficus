@@ -144,6 +144,8 @@ test('floats over the transcript: no strip of its own, only the chips are raised
   // No background of its own, and clicks beside the chips reach the messages underneath.
   expect(groupClasses.some((name) => name.startsWith('bg-'))).toBe(false)
   expect(groupClasses).toContain('pointer-events-none')
+  // It overhangs the transcript's bottom padding so the chips sit 8px above the composer.
+  expect(groupClasses).toEqual(expect.arrayContaining(['-mb-2.5', 'md:-mb-3.5']))
   const row = group.querySelector<HTMLElement>('[data-reply-suggestions-row]')!
   expect(row.className.split(/\s+/)).toContain('pointer-events-auto')
   // Each chip is an opaque, bordered, shadowed pill so it reads over scrolling text.
