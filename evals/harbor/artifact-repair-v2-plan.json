@@ -1,0 +1,34 @@
+{
+  "experiment": "artifact-repair-v2",
+  "kind": "Known-artifact closeout-guidance regression validation; not an unseen benchmark",
+  "selection": "Earliest durable artifact where the original reviewer requested changes (Bandit v2)",
+  "task": "bandit-structured-nosec-directives",
+  "artifact_sha256": "fc27071def1014074bf1a7d2531644616ae67e74ffef2a8c9ae9a9916e2f2fcd",
+  "base_commit": "b46fa3a2723635aa29cc012538df4867ac2ac006",
+  "review_sha256": "56eecd8f7d1970acce148ade7146c73b83d732540adf6009c364d89599ca4aec",
+  "review_source": "arv2-paid-baseline; verbatim two findings and review observations",
+  "condition": "Same original runtime with only the six prompt/skill changes from PR 677 applied; native planned workflow unchanged",
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "repair_input": "Original request, frozen implementation, and original reviewer report only. No hidden tests, official score, operator reproduction, or candidate-only finding.",
+  "verification": "Unchanged separate official verifier plus independent reproduction of both supplied findings and candidate-only physical-line case after delivery. Report role executions, review/rework transitions and any stalls.",
+  "controls": "Original task grading controls already passed; derived image nop must reproduce frozen artifact grade before inference; native isolation/startup probe must pass.",
+  "inference_policy": "One new run after no-inference preflight; same shared ledger, no retries or manual task steering",
+  "budget": {
+    "phase_cap_usd": 35,
+    "segment_cap_usd": 15.772395,
+    "shared_ledger": "artifact-review-v1/budget/spend.sqlite",
+    "retained_old_hold_usd": 5.5,
+    "opening_phase_exposure_usd": 24.505101
+  },
+  "production_prompt_changed": "Candidate PR 677, not yet merged",
+  "comparison": "Historical interrupted artifact-repair-v1; one new stochastic run cannot establish causal performance improvement",
+  "success_criteria": [
+    "Native delivery completes without manual steering or budget interruption",
+    "Required task-created files committed before review approval and finish",
+    "No documentation-only reopen or redundant full design cycle",
+    "Both supplied defects remain fixed; unchanged verifier and frozen independent cases reported separately"
+  ],
+  "runtime_provenance": "artifact-repair-v2-runtime.json",
+  "previous_results": "artifact-repair-v1-results.json"
+}

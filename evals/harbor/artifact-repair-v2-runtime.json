@@ -1,0 +1,42 @@
+{
+  "baseline_archive_sha256": "f34c6a8a347e25b3179cea46f2283afbdca0f634674a28b46e426f5d78668012",
+  "candidate_archive_sha256": "68c8a5e3263b54639562f259aaa149ae18c61770442a85b4da1d599fb2476ba0",
+  "guidance_patch_sha256": "b96cd78484629f05c19d08ee5ef2f930a47406676cdce742f3bdc28beb7db0d5",
+  "guidance_commit": "bb35f05b",
+  "member_count": 127011,
+  "only_changed_members": [
+    "ficus-harbor/runtime/config/agent-types/architect.yaml",
+    "ficus-harbor/runtime/config/agent-types/engineer.yaml",
+    "ficus-harbor/runtime/config/agent-types/reviewer.yaml",
+    "ficus-harbor/runtime/config/agent-types/shared/squad-rules.md",
+    "ficus-harbor/runtime/config/skills/brainstorming/SKILL.md",
+    "ficus-harbor/runtime/config/skills/writing-plans/SKILL.md"
+  ],
+  "members": {
+    "ficus-harbor/runtime/config/agent-types/architect.yaml": {
+      "before": "f2072d0bde306f29d9dd59b1fcfc1399d44d1fbc30fc924f6f45f1053f642159",
+      "after": "db9ebf6388fb8fc09c71f42228ae41ecd58dca0790b9b059d92ff1cb1c30f8db"
+    },
+    "ficus-harbor/runtime/config/agent-types/engineer.yaml": {
+      "before": "ccc0fa2d21ecfe421d90a2b5eb5e167b3b70c6c9c72f5c90edeec597dd3b96c1",
+      "after": "22e8368bbbbbd74a104ea9d2720f08c498bd3e99dff3c3efda35ed3ed92411eb"
+    },
+    "ficus-harbor/runtime/config/agent-types/reviewer.yaml": {
+      "before": "75ce385286b9935cfa9b87f0f32b4859b0ba8853df40caa29ed13186aa68dab0",
+      "after": "8d4e05a5fcf20f2ae73cc1a47faad2d3b735da6fd663def6952081076dcdaad4"
+    },
+    "ficus-harbor/runtime/config/agent-types/shared/squad-rules.md": {
+      "before": "448e657bdad3c5ac692bc74b4fb1e4b7a5271aaa4228534f9cdff9c6880d87c2",
+      "after": "f78c86519525e1cde0542cc357edd0c96d8f80feba02d6673a783c8b45f543f9"
+    },
+    "ficus-harbor/runtime/config/skills/brainstorming/SKILL.md": {
+      "before": "206c63e80d38c57e6afc657296332b1d0ff75572435d75c079e7407b26762ecd",
+      "after": "84159be6e8177dfae017553e4753cf8eeb5d03a13c68663092121a4a02e43892"
+    },
+    "ficus-harbor/runtime/config/skills/writing-plans/SKILL.md": {
+      "before": "bf2f0bb44fe8decf8f01b79a0a6630a7ffc5124ab9e8e587ec0d7dcdfe3a5a69",
+      "after": "52b5be47a7ce28fb286be72c72af07f070c0ac7854c852b9ab5ae6fd5974de10"
+    }
+  },
+  "inference_started": false
+}
