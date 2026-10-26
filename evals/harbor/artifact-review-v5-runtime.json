@@ -1,0 +1,15 @@
+{
+  "baseline_source": "artifact-repair-v2 closeout-guidance runtime",
+  "addition": "Unchanged independent-review-v1-addition.txt",
+  "addition_sha256": "bb49b10b6d9fc31b8ad01f833e24e3d7c5ca8061378658d730493f6e6d8fb683",
+  "archive_sha256": {
+    "runtime-baseline.tar.gz": "68c8a5e3263b54639562f259aaa149ae18c61770442a85b4da1d599fb2476ba0",
+    "runtime-candidate.tar.gz": "92877bea48db5bc2f2879531e2cb6558e265b0a890e5841a4b4ca7fbb2e726e8"
+  },
+  "only_changed_members": [
+    "ficus-harbor/runtime/config/agent-types/reviewer.yaml"
+  ],
+  "member_count": 127011,
+  "reviewer_before_sha256": "8d4e05a5fcf20f2ae73cc1a47faad2d3b735da6fd663def6952081076dcdaad4",
+  "reviewer_after_sha256": "b1a5d60e458686368cfb967972c26e05f5d8a9c0d55bad6b29dcb364c8ce4f7c"
+}
