@@ -1,0 +1,17 @@
+{
+  "experiment": "fresh-matched-v1",
+  "amendment": "budget-recovery-1",
+  "phase_cap_usd": 40,
+  "segment_cap_usd": 20.772395,
+  "authorization": "User explicitly approved raising the phase cap to $40 after the original guard interrupted implementation.",
+  "original_attempt": "fmv1-ficus-planned",
+  "recovery_attempt": "fmv1-ficus-planned-recovery-1",
+  "recovery_policy": "Fresh repeat of this condition from the original task base. Runtime database was disposed; do not claim exact resume. No original attempt patch, transcript, score, audit finding or operator hint supplied. Same frozen model, prompts, runtime, task, resources and isolation. Retain original interruption and both costs; exclude from uninterrupted first-attempt comparison. No automatic retry.",
+  "opening_phase_confirmed_usd": 24.019302,
+  "historical_hold_usd": 5.5,
+  "opening_exposure_usd": 29.519302,
+  "request_reservation_usd": 5.5,
+  "prior_readiness_sha256": "91d758b7f66b903d985b1a6d7610c28761446b023c1983e7f5dd51c66d8a5620",
+  "recovery_launcher_sha256": "a968cb5cce33d41a463987452d5977a0ec460b948236ce480f3c6cc979efe054",
+  "inference_started": false
+}
