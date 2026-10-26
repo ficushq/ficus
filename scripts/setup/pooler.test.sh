@@ -107,6 +107,30 @@ expect_eq 'pooled dry run redacts both DSNs' "${lines}" \
 DATABASE_DIRECT_URL=<external dsn, redacted>
 DATABASE_POOL_MODE=transaction'
 
+# --- .env rewrite for enable-pooler.sh / --disable ----------------------------
+ENVF="${SCRATCH}/.env"
+printf '# header\nFICUS_ENCRYPTION_KEY=k\nDATABASE_URL=%s\nHOST=127.0.0.1\n' "${DSN}" >"${ENVF}"
+pooler_env_enable "${ENVF}" 6432
+expect_eq 'enable: DATABASE_URL becomes the pooled DSN' "$(envfile_get "${ENVF}" DATABASE_URL)" "${pooled}"
+expect_eq 'enable: DATABASE_DIRECT_URL is the old direct DSN' "$(envfile_get "${ENVF}" DATABASE_DIRECT_URL)" "${DSN}"
+expect_eq 'enable: DATABASE_POOL_MODE=transaction' "$(envfile_get "${ENVF}" DATABASE_POOL_MODE)" 'transaction'
+expect_eq 'enable: other lines untouched' "$(envfile_get "${ENVF}" FICUS_ENCRYPTION_KEY)" 'k'
+pooler_env_enable "${ENVF}" 6432
+expect_eq 'enable is idempotent: direct DSN not replaced by the pooled one' "$(envfile_get "${ENVF}" DATABASE_DIRECT_URL)" "${DSN}"
+pooler_env_disable "${ENVF}"
+expect_eq 'disable: DATABASE_URL is the direct DSN again' "$(envfile_get "${ENVF}" DATABASE_URL)" "${DSN}"
+expect_eq 'disable: DATABASE_DIRECT_URL removed' "$(envfile_get "${ENVF}" DATABASE_DIRECT_URL 2>/dev/null || echo absent)" 'absent'
+expect_eq 'disable: DATABASE_POOL_MODE removed' "$(envfile_get "${ENVF}" DATABASE_POOL_MODE 2>/dev/null || echo absent)" 'absent'
+expect_eq 'disable: header kept' "$(sed -n 1p "${ENVF}")" '# header'
+pooler_env_disable "${ENVF}"
+expect_eq 'disable is idempotent' "$(envfile_get "${ENVF}" DATABASE_URL)" "${DSN}"
+
+# --- enable-pooler.sh parses ---------------------------------------------------
+if bash -n "${SCRIPT_DIR}/enable-pooler.sh"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: enable-pooler.sh does not parse' >&2; fi
+expect_contains 'enable-pooler.sh installs through the shared installer' "$(cat "${SCRIPT_DIR}/enable-pooler.sh")" 'install_pooler "$(envfile_direct_dsn'
+expect_contains 'enable-pooler.sh rewrites .env through the shared helper' "$(cat "${SCRIPT_DIR}/enable-pooler.sh")" 'pooler_env_enable "${ENV_FILE}"'
+expect_contains 'enable-pooler.sh re-renders the core units after the switch' "$(cat "${SCRIPT_DIR}/enable-pooler.sh")" 'install_core_units "${SCRIPT_DIR}/systemd"'
+
 # --- the backup script prefers the direct DSN ------------------------------
 expect_contains 'backup template reads DATABASE_DIRECT_URL before DATABASE_URL' \
   "$(cat "${SCRIPT_DIR}/ficus-backup.sh.tmpl")" 'DATABASE_DIRECT_URL'

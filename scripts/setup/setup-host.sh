@@ -1383,28 +1383,7 @@ restore_rebase_stored_home() { # RELEASE
 phase_pooler() {
   [[ ${DB_MODE} == external && ${POOL_ENABLED} == true ]] || return 0
   phase_step pooler "phase 3.7/8: PgBouncer (${HL_UNIT_POOLER}, pool ${POOL_SIZE} + reserve ${POOL_RESERVE})"
-  if ! command -v pgbouncer >/dev/null 2>&1; then
-    log_info "installing pgbouncer"
-    as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq pgbouncer
-  fi
-  # The distro unit (pgbouncer.service, /etc/pgbouncer) is not ours: keep it
-  # off so two poolers never contend for the port.
-  as_root systemctl disable --now pgbouncer.service >/dev/null 2>&1 || true
-  as_root install -d -m 0750 -o "${RUN_USER}" -g "${RUN_USER}" "${FICUS_PGBOUNCER_DIR}"
-  install_rendered 0640 "${RUN_USER}" "${RUN_USER}" "${FICUS_PGBOUNCER_INI}" \
-    render_pgbouncer_ini "${DB_DSN_CFG}" "${POOL_SIZE}" "${POOL_RESERVE}" "${FICUS_DB_CA_PATH}" "${FICUS_PGBOUNCER_PORT}" "${FICUS_PGBOUNCER_USERLIST}"
-  install_rendered 0600 "${RUN_USER}" "${RUN_USER}" "${FICUS_PGBOUNCER_USERLIST}" \
-    render_pgbouncer_userlist "${DB_DSN_CFG}"
-  install_rendered --check-placeholders 0644 root root \
-    "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_POOLER}.service" \
-    render_pooler_unit "${SCRIPT_DIR}/systemd/ficus-pgbouncer.service.tmpl" "${FICUS_PGBOUNCER_INI}"
-  as_root systemctl daemon-reload
-  as_root systemctl enable "${HL_UNIT_POOLER}" >/dev/null 2>&1
-  as_root systemctl restart "${HL_UNIT_POOLER}"
-  retry_until 30 1 "pgbouncer listening on 127.0.0.1:${FICUS_PGBOUNCER_PORT}" \
-    bash -c "exec 3<>/dev/tcp/127.0.0.1/${FICUS_PGBOUNCER_PORT}" ||
-    die "${HL_UNIT_POOLER} did not come up (journalctl -u ${HL_UNIT_POOLER})"
-  log_info "pooler ready on 127.0.0.1:${FICUS_PGBOUNCER_PORT}"
+  install_pooler "${DB_DSN_CFG}" "${POOL_SIZE}" "${POOL_RESERVE}" "${SCRIPT_DIR}/systemd"
 }
 
 phase_env() {

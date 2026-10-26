@@ -1480,6 +1480,91 @@ envfile_direct_dsn() { # ENV_FILE
   if [[ -n ${direct} ]]; then printf '%s' "${direct}"; else envfile_get "$1" DATABASE_URL; fi
 }
 
+# Remove every KEY= line from FILE, preserving everything else byte for byte
+# (the delete-side counterpart to envfile_set; same mode/owner preservation).
+# A missing key is a no-op.
+envfile_unset() { # FILE KEY
+  local file=$1 key=$2 dir tmp mog mode owner_group content='' raw rest line
+  [[ -f ${file} ]] || die "envfile_unset: file not found: ${file}"
+  dir=$(dirname -- "${file}")
+  mog=$(_file_mode_owner_group "${file}") || die "envfile_unset: could not stat ${file}"
+  mode=${mog%% *}
+  owner_group=${mog#* }
+  raw=$(cat -- "${file}" && printf x) || die "envfile_unset: failed to read ${file}"
+  raw=${raw%x}
+  rest=${raw}
+  while [[ -n ${rest} ]]; do
+    line=${rest%%$'\n'*}
+    if [[ ${line} == "${rest}" ]]; then rest=''; else rest=${rest#*$'\n'}; fi
+    [[ ${line} =~ ^"${key}"= ]] || content+="${line}"$'\n'
+  done
+  tmp=$(mktemp "${dir}/.$(basename -- "${file}").XXXXXX") || die "envfile_unset: failed to create a staging file next to ${file}"
+  # Same posture as envfile_set: the write and the mv are checked, chmod/chown
+  # only warn (mktemp's 0600 caller-owned file is never less restrictive).
+  if ! printf '%s' "${content}" >"${tmp}"; then
+    rm -f "${tmp}"
+    die "envfile_unset: failed to write the staged replacement for ${file}"
+  fi
+  chmod "${mode}" "${tmp}" 2>/dev/null || log_warn "envfile_unset: could not chmod the staged replacement for ${file}"
+  chown "${owner_group}" "${tmp}" 2>/dev/null || log_warn "envfile_unset: could not chown the staged replacement for ${file} (needs root)"
+  if ! mv -f "${tmp}" "${file}"; then
+    rm -f "${tmp}"
+    die "envfile_unset: failed to atomically replace ${file}"
+  fi
+}
+
+# Switch a rendered .env to the pooled layout in place: DATABASE_URL becomes
+# the loopback pooler DSN, the direct DSN moves to DATABASE_DIRECT_URL, and
+# DATABASE_POOL_MODE=transaction is set. Idempotent — the direct DSN is read
+# through envfile_direct_dsn, so a second run never pools the pooled URL.
+pooler_env_enable() { # ENV_FILE PORT
+  local env_file=$1 port=$2 direct
+  direct=$(envfile_direct_dsn "${env_file}") || die "pooler_env_enable: no DATABASE_URL in ${env_file}"
+  envfile_set "${env_file}" DATABASE_DIRECT_URL "${direct}"
+  envfile_set "${env_file}" DATABASE_URL "$(db_pooled_dsn "${direct}" "${port}")"
+  envfile_set "${env_file}" DATABASE_POOL_MODE transaction
+}
+
+# The reverse: DATABASE_URL back to the direct DSN, the two pooling keys gone.
+pooler_env_disable() { # ENV_FILE
+  local env_file=$1 direct
+  direct=$(envfile_direct_dsn "${env_file}") || die "pooler_env_disable: no DATABASE_URL in ${env_file}"
+  envfile_set "${env_file}" DATABASE_URL "${direct}"
+  envfile_unset "${env_file}" DATABASE_DIRECT_URL
+  envfile_unset "${env_file}" DATABASE_POOL_MODE
+}
+
+# Install (or re-render + restart) the per-host pooler: pgbouncer from apt,
+# ini + userlist under FICUS_PGBOUNCER_DIR (service user; the userlist is
+# 0600), the HL_UNIT_POOLER unit, enabled and listening. Shared by
+# setup-host.sh's phase_pooler and enable-pooler.sh. Needs RUN_USER and the
+# layout globals (resolve_layout_globals / require_host_layout_ready).
+install_pooler() { # DIRECT_DSN POOL_SIZE RESERVE TEMPLATE_DIR
+  local dsn=$1 size=$2 reserve=$3 template_dir=$4
+  if ! command -v pgbouncer >/dev/null 2>&1; then
+    log_info "installing pgbouncer"
+    as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq pgbouncer
+  fi
+  # The distro unit (pgbouncer.service, /etc/pgbouncer) is not ours: keep it
+  # off so two poolers never contend for the port.
+  as_root systemctl disable --now pgbouncer.service >/dev/null 2>&1 || true
+  as_root install -d -m 0750 -o "${RUN_USER}" -g "${RUN_USER}" "${FICUS_PGBOUNCER_DIR}"
+  install_rendered 0640 "${RUN_USER}" "${RUN_USER}" "${FICUS_PGBOUNCER_INI}" \
+    render_pgbouncer_ini "${dsn}" "${size}" "${reserve}" "${FICUS_DB_CA_PATH}" "${FICUS_PGBOUNCER_PORT}" "${FICUS_PGBOUNCER_USERLIST}"
+  install_rendered 0600 "${RUN_USER}" "${RUN_USER}" "${FICUS_PGBOUNCER_USERLIST}" \
+    render_pgbouncer_userlist "${dsn}"
+  install_rendered --check-placeholders 0644 root root \
+    "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_POOLER}.service" \
+    render_pooler_unit "${template_dir}/ficus-pgbouncer.service.tmpl" "${FICUS_PGBOUNCER_INI}"
+  as_root systemctl daemon-reload
+  as_root systemctl enable "${HL_UNIT_POOLER}" >/dev/null 2>&1
+  as_root systemctl restart "${HL_UNIT_POOLER}"
+  retry_until 30 1 "pgbouncer listening on 127.0.0.1:${FICUS_PGBOUNCER_PORT}" \
+    bash -c "exec 3<>/dev/tcp/127.0.0.1/${FICUS_PGBOUNCER_PORT}" ||
+    die "${HL_UNIT_POOLER} did not come up (journalctl -u ${HL_UNIT_POOLER})"
+  log_info "pooler ready on 127.0.0.1:${FICUS_PGBOUNCER_PORT}"
+}
+
 # ------------------------------------------------------ managed artifacts
 #
 # Fleet-wide platform-managed credentials, delivered as a STAGING DIRECTORY
