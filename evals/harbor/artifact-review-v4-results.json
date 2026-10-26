@@ -1,0 +1,295 @@
+{
+  "experiment": "artifact-review-v4",
+  "kind": "one-artifact controlled reviewer replication, not a full-squad benchmark score",
+  "artifact": {
+    "source_job": "arv4-paid-engineer",
+    "source_result_sha256": "e1e52bb6c21746fed0bb27926b4f2402f55b0fac7f931a354b1bc059e0b9750c",
+    "base_commit": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+    "sha256": "965e719a4294fe4e7407ebe28e690b3ab1341d6e57e853e9cec603c296ff29bd",
+    "bytes": 28916,
+    "implementation_metadata": {
+      "configuration": "engineer",
+      "model_api": "openai-responses",
+      "thinking": "medium",
+      "outcome": "delivered",
+      "memory": "fresh-disabled",
+      "runtime_sha256": "f34c6a8a347e25b3179cea46f2283afbdca0f634674a28b46e426f5d78668012",
+      "database_network": "task",
+      "attempted_roles": ["engineer"],
+      "engineer_only_verified": true,
+      "executed_roles": ["engineer"]
+    },
+    "official_grade": {
+      "rewards": {
+        "reward": 1,
+        "f2p_total": 108,
+        "f2p_passed": 108,
+        "p2p_total": 1404,
+        "p2p_passed": 1404,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      }
+    },
+    "selection": "Only generated implementation; frozen regardless of grade. No operator edits.",
+    "hidden_grade_excluded_from_review_input": true
+  },
+  "reviews": [
+    {
+      "condition": "baseline",
+      "result_sha256": "ec7aa7bf4d11bf084ea57cdf5419ea5f34099c11385efee13505f57a01b7ca5c",
+      "report_sha256": "2f14c79150914fe29d357ab05d2521097dda91fe78b8b34260aa09b887c1f415",
+      "messages_sha256": "149a7e7030c0532dab5d9cef6090fd7c5ffb093aefc03c5588cef6ab18867af7",
+      "audit": {
+        "base_commit": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+        "artifact_sha256": "965e719a4294fe4e7407ebe28e690b3ab1341d6e57e853e9cec603c296ff29bd",
+        "artifact_commit": "9e9d1cefb1813fc7918d48cc418896576f65488e",
+        "valid": true,
+        "repository_unchanged": true,
+        "verdict": "changes-requested"
+      },
+      "report": {
+        "verdict": "changes-requested",
+        "findings": [
+          {
+            "title": "Ensure response closure even when async iterator cleanup raises",
+            "requirement": "For streaming responses, JSON iteration must consume the stream and close the response.",
+            "location": "httpx/_models.py:869-874",
+            "evidence": "The finally block awaits byte_iterator.aclose() before reaching response.aclose(), without a nested finally protecting response closure. A supported AsyncByteStream whose __aiter__ yields b'[] trailing' and then another chunk, and raises httpx.ReadError('iterator cleanup failed') in its generator finally, reproduces the defect: parsing detects trailing data, iterator cleanup raises ReadError, and response.is_closed remains False while the stream's aclose() call count remains zero. Thus an error during iterator cleanup can leak the response/connection despite entering the JSON iterator's cleanup path. Independent tests reproduce this under both asyncio and Trio. Repair by guaranteeing response closure with a nested try/finally even if byte-iterator cleanup fails, and add regression coverage for this error path. Reproduction: PYTHONPATH=/app python -m pytest -q /tmp/test_review_json_regressions.py -k iterator_cleanup.",
+            "severity": "Critical"
+          },
+          {
+            "title": "Normalize invalid codec-name ValueError to DecodingError",
+            "requirement": "If a charset parameter is present, it must name a valid codec; otherwise both JSON iterators must raise httpx.DecodingError.",
+            "location": "httpx/_json.py:43-52",
+            "evidence": "The codec initialization handler catches LookupError and TypeError, but codecs.lookup() also raises ValueError for a codec name containing a NUL character. For example, create httpx.Response(200, content=b'[]', headers={'Content-Type': 'application/json; charset=\"utf-8\\x00\"'}), where \\x00 represents an actual NUL in the header string, and exhaust iter_json() or aiter_json(). Both leak ValueError('embedded null character') instead of the required httpx.DecodingError. Response/Headers accepts this input, so this is reproducible through the public API even though an HTTP transport may reject such a header earlier. The decode() exception wrapper does not help because JSONStreamDecoder construction fails first. Include ValueError in codec-initialization error normalization and cover both APIs. Reproduction: PYTHONPATH=/app python -m pytest -q /tmp/test_review_json_regressions.py -k invalid_charset.",
+            "severity": "Important"
+          }
+        ],
+        "observations": [
+          "Reviewed the actual six-file diff from b5addb64f0161ff6bfe94c124ef76f6a1fba5254 to 9e9d1cefb1813fc7918d48cc418896576f65488e. The implementation adds both public APIs, a shared incremental decoder, focused tests, and API/usage documentation. The ordinary media-type, framing, encoding, repeatability, and consumption paths are well covered. No unrelated feature additions were identified; changes to async byte/raw iterators support JSON iterator cleanup.",
+          "Pass 1 (spec compliance) fails on the two findings above. Pass 2 (code quality) was not performed, as required by the sequential review process.",
+          "python -m pytest tests/models/test_response_json.py -q: 562 passed. python -m pytest tests/models tests/test_content.py -q: 1436 passed. An independent scratch probe completed 5000 JSON document roundtrips across randomized chunk sizes and UTF-8/16/32 encodings, including BOM variants.",
+          "Independent regression tests in /tmp/test_review_json_regressions.py produce six failures: charset exception mismatch for sync and async APIs under asyncio and Trio, plus response-closure failure under each backend. Output is saved in /tmp/review-json-regressions-results.txt. Standalone probes are /tmp/review_json_cleanup.py and /tmp/review_json_probe.py.",
+          "The full existing suite produced 1975 passed, 4 failed, and 1 skipped. The same four failures reproduce against the starting commit exported to /tmp/httpx-review-base: the three network proxy-close cases fail before response iteration because example.com disconnects, and test_write_timeout[trio] reports an unclosed request-body ByteStream async generator. These paths do not invoke the new JSON APIs; the write-timeout failure concerns request transmission rather than JSON response decoding. Baseline verification output is /tmp/httpx-review-base-results.txt. They are not counted as implementation regressions or used to dismiss the independently reproduced JSON cleanup defect.",
+          "No tracked repository files were changed. Scratch reproductions and the baseline export are outside the repository. A TLS key-log header file generated by the existing suite was removed; the final git status is clean."
+        ],
+        "limitations": [
+          "External-network proxy tests could not pass in this environment, so those integration paths are not verified end to end. Their failures were independently reproduced on the starting commit.",
+          "Verification ran on the available Python 3.12 runtime with asyncio and Trio; other supported Python versions were not exercised.",
+          "The frozen implementation commit is present, but historical use of a new branch from main cannot be established from the supplied checkout, which is on master. No branch changes or commits were made for this review-only assignment."
+        ]
+      },
+      "metadata": {
+        "configuration": "reviewer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "f34c6a8a347e25b3179cea46f2283afbdca0f634674a28b46e426f5d78668012",
+        "database_network": "task",
+        "attempted_roles": ["reviewer"],
+        "engineer_only_verified": null,
+        "executed_roles": ["reviewer"],
+        "artifact_review": {
+          "base_commit": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+          "artifact_sha256": "965e719a4294fe4e7407ebe28e690b3ab1341d6e57e853e9cec603c296ff29bd",
+          "artifact_commit": "9e9d1cefb1813fc7918d48cc418896576f65488e",
+          "valid": true,
+          "repository_unchanged": true,
+          "verdict": "changes-requested"
+        }
+      }
+    },
+    {
+      "condition": "candidate",
+      "result_sha256": "cabc48d8faab34f0106a03ef4226723940afc9f0dd291303be34f6ab0b27a11e",
+      "report_sha256": "98fc569724cb34ef9e51772dafab2ba347618c66c0f1f231983ed996738dbead",
+      "messages_sha256": "314d4b74f88480f4beb47c2b6582bd7f63b3b8fc808b60711347f1b868bc33c6",
+      "audit": {
+        "base_commit": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+        "artifact_sha256": "965e719a4294fe4e7407ebe28e690b3ab1341d6e57e853e9cec603c296ff29bd",
+        "artifact_commit": "9e9d1cefb1813fc7918d48cc418896576f65488e",
+        "valid": true,
+        "repository_unchanged": true,
+        "verdict": "changes-requested"
+      },
+      "report": {
+        "verdict": "changes-requested",
+        "findings": [
+          {
+            "title": "Always close the response when upstream async iterator cleanup fails",
+            "requirement": "JSON iteration over a streaming response must close the response, including failure paths.",
+            "location": "httpx/_models.py:869-874",
+            "evidence": "Reproduced with an AsyncByteStream whose __aiter__ yields b'[] false' inside try/finally, whose finally raises httpx.ReadError('iterator cleanup failed'), and whose aclose sets a closed flag. Exhausting Response(200, stream=stream, headers={'Content-Type': 'application/json'}).aiter_json() raises ReadError, but both stream.closed and response.is_closed remain False. The trailing-data parse error enters aiter_json's finally; await byte_iterator.aclose() propagates the upstream generator's cleanup error through the newly added aiter_bytes/aiter_raw cleanup chain, skipping await self.aclose(). This can leave the response's underlying resource open. Repair by putting response consumption bookkeeping and await self.aclose() in a nested finally that runs even when byte_iterator.aclose() raises. Add a regression covering an upstream iterator finalizer that raises during a JSON error or explicit JSON iterator close.",
+            "severity": "Critical"
+          },
+          {
+            "title": "Normalize codec lookup ValueError to DecodingError for invalid charsets",
+            "requirement": "If a charset parameter is present and does not name a valid codec, both JSON iteration APIs must raise httpx.DecodingError.",
+            "location": "httpx/_json.py:43-52",
+            "evidence": "Response(200, content=b'[]', headers={'Content-Type': 'application/json; charset=\"utf-8\\x00\"'}) with an actual NUL character in the quoted charset raises ValueError('embedded null character') from codecs.lookup rather than httpx.DecodingError. Independently reproduced in both iter_json and aiter_json, with buffered and streaming responses. The constructor only catches LookupError and TypeError; the decode method's broader exception translation cannot help because construction fails before decode is entered. Repair by also translating ValueError from charset lookup/decoder construction into DecodingError and adding invalid-charset tests for both APIs and response modes.",
+            "severity": "Important"
+          }
+        ],
+        "observations": [
+          "Reviewed the actual diff from b5addb64f0161ff6bfe94c124ef76f6a1fba5254 to 9e9d1cefb1813fc7918d48cc418896576f65488e, including the shared JSON decoder, both Response APIs, async byte-stream cleanup changes, tests, and documentation. The shared parser and sync/async test parametrization cover the main requested behaviors well; the documentation explains partial yields and repeatable buffered iteration.",
+          "Pass 1: spec compliance fails on the two blocking findings above. Pass 2: code-quality assessment was not performed, as required by the sequential review policy.",
+          "Verification on Python 3.12.12: PYTHONDONTWRITEBYTECODE=1 pytest -q -p no:cacheprovider tests/models/test_response_json.py passed all 562 tests. The same command targeting tests/models passed all 1393 tests; these counts overlap rather than representing disjoint suites.",
+          "Independently checked document parsing against the existing Response.json()/Python json decoding contract using 30000 seeded generated inputs, each tested buffered and split into one- and three-byte decoder chunks. Found no acceptance or value mismatches. This supplements, rather than replaces, the explicit media-type, encoding, NDJSON, sequence, and lifecycle tests.",
+          "Retained Python's existing JSON decoder semantics rather than inventing stricter numeric parsing requirements: Response.json() already delegates to json.loads. Reviewed the application-only +json check and the added BOM, UTF-16/32, line-ending, sequence-empty-record, stream-reuse, and incremental-yield tests against the original request.",
+          "Review only: no tracked files were changed and no source or tests were added to the repository. Reproductions were run inline or from /tmp. The findings above include the required follow-up repair guidance."
+        ],
+        "limitations": [
+          "Did not run the full repository, network, lint, or static-type suites, or test other Python versions; verification focused on the requested feature and the complete model test suite.",
+          "The invalid-charset reproduction uses a malformed header value accepted by the public Response constructor; a particular HTTP transport may reject NUL-containing headers earlier. The public JSON APIs nevertheless do not satisfy the requested exception contract for this input.",
+          "The async resource-closure reproduction uses a custom AsyncByteStream with a failing iterator finalizer, not a live network transport. It demonstrates that response-level aclose is skipped when delegated cleanup raises."
+        ]
+      },
+      "metadata": {
+        "configuration": "reviewer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "05a9f0a912b2df168f73a4c1fc42888d06c6e0a52e69644add7aa651da4d3a3a",
+        "database_network": "task",
+        "attempted_roles": ["reviewer"],
+        "engineer_only_verified": null,
+        "executed_roles": ["reviewer"],
+        "artifact_review": {
+          "base_commit": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+          "artifact_sha256": "965e719a4294fe4e7407ebe28e690b3ab1341d6e57e853e9cec603c296ff29bd",
+          "artifact_commit": "9e9d1cefb1813fc7918d48cc418896576f65488e",
+          "valid": true,
+          "repository_unchanged": true,
+          "verdict": "changes-requested"
+        }
+      }
+    }
+  ],
+  "budget": {
+    "phase_cap_usd": 30,
+    "batch_opening_phase_exposure_usd": 21.225187,
+    "new_confirmed_usd": 1.173113,
+    "new_unknown_usage": 0,
+    "per_client": [
+      {
+        "client": "arv4-baseline",
+        "requests": 17,
+        "confirmed_usd": 0.25644
+      },
+      {
+        "client": "arv4-candidate",
+        "requests": 16,
+        "confirmed_usd": 0.239949
+      },
+      {
+        "client": "arv4-engineer",
+        "requests": 46,
+        "confirmed_usd": 0.676724
+      }
+    ],
+    "phase_confirmed_usd": 17.957373,
+    "retained_prior_hold_usd": 5.5,
+    "phase_exposure_usd": 23.457373,
+    "remaining_headroom_usd": 6.542627,
+    "segment_shared_with_v1": true
+  },
+  "production_prompt_changed": false,
+  "operator_repairs_or_task_hints": 0,
+  "independent_reproduction": {
+    "script": "artifact-review-v4-reproduce.py",
+    "script_sha256": "b8f756da12ed93dbea4740d5f48ccf8d74edfd5176749a3c8e8540afe9bef717",
+    "output_sha256": "7e2912ce93a86f3f4423067c5101cf65b32d33eeb930bb749517c5b7c16cb579",
+    "network": "none",
+    "exit_code": 0,
+    "source_changes": "Frozen implementation only; no repairs",
+    "observations": {
+      "invalid_charset_sync": {
+        "error": "ValueError",
+        "message": "embedded null character"
+      },
+      "asyncio": {
+        "cleanup_raises=False": {
+          "error": "DecodingError",
+          "response_closed": true,
+          "stream_close_calls": 1,
+          "iterator_cleaned": true
+        },
+        "cleanup_raises=True": {
+          "error": "ReadError",
+          "response_closed": false,
+          "stream_close_calls": 0,
+          "iterator_cleaned": true
+        },
+        "invalid_charset": {
+          "error": "ValueError",
+          "message": "embedded null character"
+        }
+      },
+      "trio": {
+        "cleanup_raises=False": {
+          "error": "DecodingError",
+          "response_closed": true,
+          "stream_close_calls": 1,
+          "iterator_cleaned": true
+        },
+        "cleanup_raises=True": {
+          "error": "ReadError",
+          "response_closed": false,
+          "stream_close_calls": 0,
+          "iterator_cleaned": true
+        },
+        "invalid_charset": {
+          "error": "ValueError",
+          "message": "embedded null character"
+        }
+      }
+    },
+    "verified_findings": [
+      {
+        "id": "async-cleanup-failure",
+        "reported_by": ["baseline", "candidate"],
+        "assessment": "Under both asyncio and Trio, a failing upstream iterator finalizer skips response.aclose, leaves response.is_closed false and calls stream.aclose zero times. The nonthrowing cleanup control closes normally. Custom supported AsyncByteStream, not a live connection-leak measurement."
+      },
+      {
+        "id": "invalid-codec-exception",
+        "reported_by": ["baseline", "candidate"],
+        "assessment": "An embedded NUL in a charset accepted by public Response construction leaks ValueError through sync and async JSON iteration, contrary to the required DecodingError. A transport may reject such a malformed header first."
+      }
+    ],
+    "severity_note": "Functional error-path failures reproduced; Critical severity is not independently established."
+  },
+  "findings": {
+    "baseline_verdict": "changes-requested",
+    "candidate_verdict": "changes-requested",
+    "baseline_reported": 2,
+    "candidate_reported": 2,
+    "shared_verified_findings": 2,
+    "baseline_only_findings": 0,
+    "candidate_only_findings": 0,
+    "interpretation": "Both prompts found the same two defects. No incremental finding from the addition on this artifact. One stochastic review pair does not establish an efficiency difference.",
+    "decision": "Keep production prompts unchanged; four controlled artifacts do not establish a consistent advantage."
+  },
+  "validation": {
+    "grading_controls": 4,
+    "runtime_network_probes": 2,
+    "review_integrity": "Identical artifact commit; reviewer-only execution; both repositories unchanged",
+    "test_claims_correlated_with_tool_outputs": {
+      "baseline": {
+        "562 passed": true,
+        "1436 passed": true,
+        "5000 roundtrips passed": true,
+        "1975 passed": true,
+        "4 failed, 9 passed": true
+      },
+      "candidate": {
+        "562 passed": true,
+        "1393 passed": true,
+        "30000 mismatches: 0": true
+      }
+    },
+    "limitations": "Baseline full-suite failures were reproduced on original source by reviewer; operator independently reran reported error-path reproductions, not the entire reviewer test matrix. Candidate test suites overlap and were not added together."
+  }
+}

@@ -234,3 +234,49 @@ The complete replication cost **$1.059073** across 67 requests, all settled.
 At completion, phase exposure was **$22.284260**, including the retained $5.50
 hold; **$7.715740** remained. See `artifact-review-v3-results.json` and
 `artifact-review-v3-reproduce.py`, including the untouched-upstream control.
+
+## Replication: HTTPX streaming JSON
+
+The fourth frozen-order artifact, `httpx-streaming-json-iteration`, passed all
+**108 official feature checks and 1,404 regression checks**. Generation cost
+**$0.676724** across 46 requests. The same controls, runtime archives, medium
+reasoning, baseline-first order, and hidden-feedback exclusions apply.
+
+Both reviewers inspected commit `9e9d1cefb1813fc7918d48cc418896576f65488e` and
+passed the unchanged-repository and reviewer-only checks.
+
+| Reviewer condition            | Verdict           | Independently reproduced findings | Requests | Recorded cost |
+| ----------------------------- | ----------------- | --------------------------------: | -------: | ------------: |
+| Original prompt               | Changes requested |                                 2 |       17 |     $0.256440 |
+| Independent-contract addition | Changes requested |                                 2 |       16 |     $0.239949 |
+
+They found the **same two defects**:
+
+1. An exception from an upstream async iterator's finalizer bypasses the new
+   JSON iterator's response-level cleanup. Under both asyncio and Trio, the
+   response remains open and the stream's `aclose` is never called. The same
+   malformed JSON with a nonthrowing finalizer closes correctly. This uses a
+   custom supported `AsyncByteStream`; it is not a live-network leak measurement.
+2. An embedded NUL in a charset name leaks `ValueError` instead of the required
+   `DecodingError` through both APIs. The public Response constructor accepts
+   this input, but an HTTP transport may reject such a malformed header earlier.
+
+The independent script `artifact-review-v4-reproduce.py` reproduces both and
+runs the cleanup controls in a fresh offline container. Severity labels are not
+independently endorsed. Both reviewers' reported test counts are supported by
+saved tool output, including 562 feature tests each, the original's 5,000
+roundtrips, and the candidate's 30,000 generated-input comparisons. Their suites
+overlap and are not summed. The original also reproduced four full-suite failures
+on unmodified source; the candidate explicitly limited its test scope. No finding
+from those baseline failures was credited as a new implementation defect.
+
+The prompt addition provided no incremental finding here. Alongside Narwhals,
+Bandit, and Kombu, this is mixed evidence: useful added coverage on some artifacts,
+missed original-only findings on others, and identical findings here. It does not
+establish a consistent prompt advantage, recall rate, or cost improvement. Keep
+production guidance unchanged. Official benchmark grades remain unchanged too.
+
+Total replication cost was **$1.173113**, across 79 requests, all settled. Phase
+exposure at completion was **$23.457373**, including the retained $5.50 hold,
+leaving **$6.542627**. See `artifact-review-v4-results.json` for hashes, complete
+reports, audited observations and accounting.
