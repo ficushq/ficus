@@ -1,0 +1,32 @@
+{
+  "image_tag": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh757d8ggvnfaszv8zcav3msy982ma7f-v1.1",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605@sha256:2f6978cf88228baa0d3323e4f139ee222f5886218d86ca1d327bcae3711f4b6a",
+  "image_digest": "public.ecr.aws/d3j8x8q7/swe-bench-202605@sha256:2f6978cf88228baa0d3323e4f139ee222f5886218d86ca1d327bcae3711f4b6a",
+  "image_id": "sha256:689dae3a6b548d05658ebbe5921c77898fdb638915b963357d7ae8e2a04176e3",
+  "base_commit": "b46fa3a2723635aa29cc012538df4867ac2ac006",
+  "upstream_file_sha256": {
+    "environment/Dockerfile": "62b268ffaa054727799a7c46df61ab8d9834a37ad435606c4eb9420c56f2b6d3",
+    "instruction.md": "310eeb36b46c3aece39ab187817b87764f0a428affe5e8a1688e0c92f7b92f9d",
+    "solution/solution.patch": "b35e9ce831b69e3443ceda1a955d8d6d934e0915e15f20c754cbb2e7b8ed4514",
+    "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+    "task.toml": "f912cafd5cc5a526e16147d9151a4dd9fc6eea151ad7967adfd37ce05709c22d",
+    "tests/Dockerfile": "89a85e13a98f496c3a509ad43eaf62b20b5e6dc95a67422ac2fe5cd6c3e41e78",
+    "tests/config.json": "0b614af60ffde18e0a7e91fe3c81af8a62eca7e05646b1044ab91b45f0913961",
+    "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+    "tests/test.patch": "433d6b981ac0c768176e1d326daa1848c6cb8f4431d1bd6bdc78485b7d0ac30f",
+    "tests/test.sh": "de0e216c64b696e7e70a1c4d28b5cb47543586d265b582f622252a383879dbae"
+  },
+  "prepared_file_sha256": {
+    "environment/Dockerfile": "62b268ffaa054727799a7c46df61ab8d9834a37ad435606c4eb9420c56f2b6d3",
+    "instruction.md": "310eeb36b46c3aece39ab187817b87764f0a428affe5e8a1688e0c92f7b92f9d",
+    "solution/solution.patch": "b35e9ce831b69e3443ceda1a955d8d6d934e0915e15f20c754cbb2e7b8ed4514",
+    "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+    "task.toml": "b60a6447f3da9c03267f8e63b7d8b938f7b111a9f536aabad2ee6a6a0041e077",
+    "tests/Dockerfile": "d1640c34e6aafebbb604029ebea5124c7afff35fa6727d87407f4f2b27d69e3a",
+    "tests/config.json": "0b614af60ffde18e0a7e91fe3c81af8a62eca7e05646b1044ab91b45f0913961",
+    "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+    "tests/test.patch": "433d6b981ac0c768176e1d326daa1848c6cb8f4431d1bd6bdc78485b7d0ac30f",
+    "tests/test.sh": "de0e216c64b696e7e70a1c4d28b5cb47543586d265b582f622252a383879dbae"
+  },
+  "changes": "Image digest pinned; verifier platform explicit linux/amd64. No source/tests/grade changes."
+}
