@@ -19,7 +19,9 @@ The worker also owns one long-lived admission-liveness connection. The default r
 budget is therefore 13 connections across API and worker, leaving three under the
 hosted role limit of 16 for builds, updates, and operator work. Custom pool sizes,
 extra API/worker processes, and rolling process overlap need a corresponding database
-connection budget.
+connection budget. Migrations, the update run-lock and the CLI build lock also take
+a gate slot while they run. A pooled host (next section) changes the budget to ~11
+peak and ~1–2 steady.
 
 ### `createPostgresConnection(url, options)`
 
@@ -33,6 +35,66 @@ Every postgres connection in the codebase goes through this function. It wraps t
 ### `getConnectionString()`
 
 Reads the `DATABASE_URL` environment variable. Throws if not set.
+
+### `getDirectConnectionString()`
+
+`DATABASE_DIRECT_URL` when set, else `DATABASE_URL`. Every session-scoped
+connection uses it (see below); on an unpooled host the two are the same.
+
+## Per-host transaction pooling
+
+A host whose database is external (`database.mode: external`) can run a
+PgBouncer in transaction mode on loopback, installed by `setup-host.sh` when
+`database.pool.enabled: true` (`scripts/setup/ficus-setup.example.yaml`). The
+point: a transaction pooler attaches a server backend only while a transaction
+runs, so the host's idle connections stop costing the database a backend each.
+On a shared cluster that takes a host from ~5 idle backends to ~1 and from a
+peak of 16 to 11.
+
+The rendered `.env` then carries three variables:
+
+| Variable              | Value                                                       | Who uses it                                                              |
+| --------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `DATABASE_URL`        | `postgresql://<role>:<pw>@127.0.0.1:6432/<db>` (the pooler) | the API and worker query pools (drizzle `db`)                            |
+| `DATABASE_DIRECT_URL` | the cluster DSN, `sslmode=verify-full`                      | everything session-scoped                                                |
+| `DATABASE_POOL_MODE`  | `transaction`                                               | `getPoolMax()` (client pool default 10 instead of 4), the usage reporter |
+
+**Session-scoped work cannot go through a transaction pooler** — a session
+advisory lock taken through it is released (or lands on another backend) the
+moment the statement ends. So these open against `getDirectConnectionString()`,
+under the two-per-process dedicated-connection gate: `db/execute-migrations.ts`
+and `waitForDbAndMigrate` (lock 42), `withDedicatedDbTransaction`, memory
+`WriteService`, `updates/run-lock.ts` (which holds its slot for the life of the
+lock via `acquireDedicatedConnectionSlot`), integration `connection-lease.ts`,
+`machines/cli-bundle.ts`, sandbox `toolchain/state.ts` and `vm/setup-state.ts`.
+The worker's process-liveness session is the one permanent direct connection
+and stays outside the gate. `db/direct-connection-sites.test.ts` guards the
+list. Transaction-scoped locks (`pg_try_advisory_xact_lock`) stay on the pool.
+
+Core keeps prepared statements on behind the pooler: `setup-host` renders
+`max_prepared_statements = 200`, which PgBouncer ≥ 1.21 needs to track named
+statements across server connections (`db/pooled-queries.test.ts` pins this
+against a real pooler).
+
+Pooler settings rendered by `setup-host` (`lib.sh`'s `render_pgbouncer_ini`):
+`default_pool_size` 4 and `reserve_pool_size` 2 / `reserve_pool_timeout` 1 s
+(`database.pool.size` / `.reserve`), `server_idle_timeout` 60 s,
+`max_client_conn` 100, upstream `server_tls_sslmode = verify-full` against the
+installed database CA. The unit is `<prefix>-pgbouncer`; the API and worker
+units order `After=` it.
+
+Pool pressure is reported with the usage sample: `SHOW POOLS` over the admin
+console (`postgresql://<role>:<pw>@127.0.0.1:6432/pgbouncer`) gives
+`pgbouncerWaitingClients`, `pgbouncerMaxWaitMs` and `pgbouncerActiveServers`
+on the core-host metrics block. A climbing wait is the signal to raise
+`database.pool.size` for that host. To look by hand:
+
+```bash
+psql "$(sed -n 's/^DATABASE_URL=//p' /opt/ficus-core/.env | sed 's#/[^/]*$#/pgbouncer#')" -c 'SHOW POOLS'
+```
+
+Budget on a pooled host: pool 4 + reserve 2 + liveness 1 + up to 4 gated direct
+connections = 11 peak, ~1–2 steady, under the hosted role limit of 16.
 
 ## Query errors
 
