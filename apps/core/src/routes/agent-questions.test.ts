@@ -751,3 +751,56 @@ describe('agent question chat visibility, attention, and response authority', ()
     await db.delete(agents).where(inArray(agents.id, [personalAgent.id, orphanAgent.id, managerAgent.id]))
   })
 })
+
+describe('squad open-question counts', () => {
+  function openCounts(token: string | undefined, squadId: string) {
+    return app.request(`/api/agent-questions/by-squad/${squadId}/open-counts`, {
+      headers: token ? authHeaders(token) : {},
+    })
+  }
+
+  test('requires agents:read on the squad', async () => {
+    expect((await openCounts(undefined, squad.id)).status).toBe(401)
+    expect((await openCounts(outsider.token, squad.id)).status).toBe(403)
+    // A direct attention recipient without agents:read still cannot read chat-side counts.
+    expect((await openCounts(direct.token, squad.id)).status).toBe(403)
+    expect((await openCounts(agentReader.token, crypto.randomUUID())).status).toBe(404)
+
+    const response = await openCounts(agentReader.token, squad.id)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ [agent.id]: 1 })
+  })
+
+  test('counts only open questions of agents currently in that squad', async () => {
+    const otherSquad = await Squad.create({ name: `${prefix}-other-${crypto.randomUUID()}`, purpose: 'other' })
+    const quiet = await Agent.create({ agentTypeId: `${prefix}-type`, squadId: squad.id })
+    const elsewhere = await Agent.create({ agentTypeId: `${prefix}-type`, squadId: otherSquad.id })
+    const moved = await Agent.create({ agentTypeId: `${prefix}-type`, squadId: otherSquad.id })
+    const questionData = { questions: [{ id: 'q', type: 'text' as const, question: 'Proceed?' }] }
+    try {
+      await db.insert(agentQuestions).values([
+        { agentId: agent.id, squadId: squad.id, questionData },
+        { agentId: agent.id, squadId: squad.id, questionData, status: 'answered', answer: 'yes' },
+        { agentId: quiet.id, squadId: squad.id, questionData, status: 'dismissed' },
+        { agentId: elsewhere.id, squadId: otherSquad.id, questionData },
+        // Asked while in this squad, but the agent has since moved: it follows the agent.
+        { agentId: moved.id, squadId: squad.id, questionData },
+      ])
+
+      const response = await openCounts(agentReader.token, squad.id)
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({ [agent.id]: 2 })
+
+      await db
+        .update(agentQuestions)
+        .set({ status: 'dismissed', dismissedAt: new Date() })
+        .where(and(eq(agentQuestions.agentId, agent.id), eq(agentQuestions.status, 'open')))
+      expect(await (await openCounts(agentReader.token, squad.id)).json()).toEqual({})
+    } finally {
+      const ids = [quiet.id, elsewhere.id, moved.id]
+      await db.delete(agentQuestions).where(inArray(agentQuestions.agentId, ids))
+      await db.delete(agents).where(inArray(agents.id, ids))
+      await db.delete(squads).where(eq(squads.id, otherSquad.id))
+    }
+  })
+})

@@ -72,6 +72,30 @@ describe('PendingQuestionsBanner', () => {
     expect(affordance.classList.contains('shrink-0')).toBe(true)
   })
 
+  test('stands out in the attention color while staying an opaque floating card', async () => {
+    const dom = await installDom()
+    root = dom.createRoot().root
+    await dom.act(async () => root?.render(<PendingQuestionsBanner questions={[questions[0]]} />))
+
+    const button = dom.window.document.querySelector('button')!
+    // Opaque base surface with the attention tint layered over it (the tint alone is translucent in dark themes).
+    for (const name of [
+      'bg-surface',
+      'bg-gradient-to-r',
+      'from-status-attention-surface',
+      'to-status-attention-surface',
+      'border-status-attention-border',
+      'hover:bg-gradient-to-r',
+    ]) {
+      expect(button.classList.contains(name)).toBe(true)
+    }
+    expect(button.classList.contains('border-th-border')).toBe(false)
+    const [icon, count, , affordance] = [...button.children]
+    expect(icon.classList.contains('text-status-attention-fg')).toBe(true)
+    expect(count.classList.contains('text-status-attention-fg')).toBe(true)
+    expect(affordance.classList.contains('text-status-attention-fg')).toBe(true)
+  })
+
   test('several questions: just the count, no preview', async () => {
     const dom = await installDom()
     root = dom.createRoot().root

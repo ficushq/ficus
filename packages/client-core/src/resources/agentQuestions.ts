@@ -7,6 +7,9 @@ export function agentQuestionsResource(t: Transport) {
       const params = status ? `?status=${status}` : ''
       return t.request(`/agent-questions/by-agent/${agentId}${params}`)
     },
+    /** `{ [agentId]: openCount }` for agents currently in the squad; agents with none are omitted. */
+    getSquadOpenAgentQuestionCounts: (squadId: string): Promise<Record<string, number>> =>
+      t.request(`/agent-questions/by-squad/${squadId}/open-counts`),
     answerAgentQuestion: (id: string, answer: string): Promise<AgentQuestion> =>
       t.request(`/agent-questions/${id}/answer`, {
         method: 'POST',

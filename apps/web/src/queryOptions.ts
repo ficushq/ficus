@@ -141,7 +141,7 @@ import {
   getMemorySyncStatus,
   listSshKeys,
 } from './api/squads'
-import { getAgentQuestions } from './api/agentQuestions'
+import { getAgentQuestions, getSquadOpenAgentQuestionCounts } from './api/agentQuestions'
 import { getSystemTokens } from './api/systemTokens'
 import { getInstanceIdentity, listPeers, getAgentFederationStatus, listAgentAllowRules } from './api/amtp'
 import { getOnboardingStatus } from './api/onboarding'
@@ -726,6 +726,11 @@ export const queries = {
       queryOptions({
         queryKey: queryKeys.agentQuestions.byAgent(agentId, status),
         queryFn: () => getAgentQuestions(agentId, status),
+      }),
+    squadOpenCounts: (squadId: string) =>
+      queryOptions({
+        queryKey: queryKeys.agentQuestions.squadOpenCounts(squadId),
+        queryFn: () => getSquadOpenAgentQuestionCounts(squadId),
       }),
   },
 

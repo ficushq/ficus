@@ -636,6 +636,68 @@ describe('SquadAgentThreads mobile agent picker modal', () => {
   })
 })
 
+describe('SquadAgentThreads pending question indicator', () => {
+  const countsKey = queryKeys.agentQuestions.squadOpenCounts('squad-1')
+  const rowFor = (window: Window, name: string) =>
+    window.document.querySelector<HTMLButtonElement>(`.squad-chat-agent > button[aria-label^="${name}"]`)!
+  const indicatorFor = (window: Window, name: string) =>
+    rowFor(window, name).parentElement!.querySelector('[data-testid="agent-row-open-questions"]')
+
+  test('flags manager, role and consultant rows with open questions, and clears when they close', async () => {
+    const dom = await installDom()
+    const { window } = dom
+    try {
+      const { root } = dom.createRoot()
+      const queryClient = makeQueryClient()
+      // The key lives under agentQuestions.all, so agent-question.* invalidation refreshes it.
+      expect(countsKey.slice(0, queryKeys.agentQuestions.all.length)).toEqual([...queryKeys.agentQuestions.all])
+      // Seeded counts stand in for the server; keep the mount from refetching over them.
+      queryClient.setQueryDefaults(countsKey, { staleTime: Infinity })
+      queryClient.setQueryData(countsKey, { m1: 1, e1: 3, k1: 1 })
+      const agents = [
+        agent({ id: 'm1', agentTypeId: 'manager', metadata: { name: 'Pearl' } }),
+        agent({ id: 'e1', agentTypeId: 'engineer', metadata: { name: 'Edda' } }),
+        agent({ id: 'e2', agentTypeId: 'engineer', metadata: { name: 'Quinn' } }),
+        agent({ id: 'k1', agentTypeId: 'consultant', metadata: { name: 'Cassius' } }),
+      ]
+      await dom.act(async () => renderThreadsDom(root, queryClient, agents))
+
+      // Compact manager row: the count joins its accessible label and tooltip.
+      expect(rowFor(window, 'Manager (Pearl)').getAttribute('aria-label')).toBe('Manager (Pearl), 1 pending question')
+      expect(rowFor(window, 'Manager (Pearl)').title).toEndWith(' · 1 pending question')
+      const managerIndicator = indicatorFor(window, 'Manager (Pearl)')!
+      expect(managerIndicator.getAttribute('aria-hidden')).toBe('true')
+      expect(managerIndicator.className).toContain('text-status-attention-badge-fg')
+      expect(managerIndicator.className).toContain('bg-status-attention-badge-surface')
+      expect(managerIndicator.className).toContain('shrink-0')
+      // A single question shows just the icon; more show the count.
+      expect(managerIndicator.textContent).toBe('')
+      expect(indicatorFor(window, 'Edda')!.textContent).toBe('3')
+      expect(rowFor(window, 'Edda').getAttribute('aria-label')).toStartWith('Edda, 3 pending questions, ')
+      expect(indicatorFor(window, 'Cassius')).not.toBeNull()
+      expect(rowFor(window, 'Cassius').getAttribute('aria-label')).toContain('1 pending question')
+
+      expect(indicatorFor(window, 'Quinn')).toBeNull()
+      expect(rowFor(window, 'Quinn').getAttribute('aria-label')).not.toContain('pending question')
+      expect(rowFor(window, 'Quinn').title).not.toContain('pending question')
+
+      // Answered or dismissed: the refreshed counts omit the agent and its marker goes away.
+      await dom.act(async () => {
+        queryClient.setQueryData(countsKey, { e1: 1 })
+        // Query observers notify on a scheduled tick; let it render.
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      })
+      expect(indicatorFor(window, 'Manager (Pearl)')).toBeNull()
+      expect(indicatorFor(window, 'Cassius')).toBeNull()
+      expect(rowFor(window, 'Manager (Pearl)').getAttribute('aria-label')).toBe('Manager (Pearl)')
+      expect(indicatorFor(window, 'Edda')!.textContent).toBe('')
+      await dom.act(async () => root.unmount())
+    } finally {
+      await dom.cleanup()
+    }
+  })
+})
+
 describe('SquadAgentThreads recent consultant chats', () => {
   test('shows recent consultant chats expanded by default', () => {
     const html = renderThreads([

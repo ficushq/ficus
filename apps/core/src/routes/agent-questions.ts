@@ -1,13 +1,15 @@
 import { resolveActingUser } from '../services/rbac'
 import { Hono, type Context } from 'hono'
 import { AmbiguousPrefixError } from '../db/prefix-match'
-import { hasAgentResourcePermission, type Identity } from '../services/rbac'
+import { hasAgentResourcePermission, hasPermission, type Identity } from '../services/rbac'
 import { Agent } from '../entities/Agent'
+import { Squad } from '../entities/Squad'
 import {
   getAgentQuestion,
   answerAgentQuestion,
   resolveAgentQuestionId,
   dismissAgentQuestion,
+  countOpenAgentQuestionsBySquad,
   listAgentQuestions,
   RELAYED_ANSWER_SOURCE_MAX_LENGTH,
   resolveAgentQuestionWithRelayedAnswer,
@@ -64,6 +66,28 @@ export const agentQuestionsRouter = new Hono()
           ? await listAgentQuestions(agent.id, { status: 'open' })
           : await listAgentQuestions(agent.id)
     return c.json(questions)
+  })
+
+  // GET /api/agent-questions/by-squad/:squadId/open-counts — `{ [agentId]: openCount }` for the
+  // agents currently in the squad, so the squad chat list can flag waiting questions with one
+  // request instead of one by-agent request per row. Agents with no open question are omitted.
+  // Authorization matches by-agent for squad agents: agents:read on that squad.
+  .get('/by-squad/:squadId/open-counts', async (c) => {
+    const identity = c.get('identity') as Identity | undefined
+    if (!identity) return c.json({ error: 'Unauthorized' }, 401)
+    let squad: Squad | null
+    try {
+      squad = await Squad.find(c.req.param('squadId'))
+    } catch (error) {
+      if (error instanceof AmbiguousPrefixError) return c.json({ error: error.message }, 400)
+      throw error
+    }
+    if (!squad) return c.json({ error: 'Squad not found' }, 404)
+    c.set('authzChecked', true)
+    if (!(await hasPermission(identity, 'agents:read', squad.id))) {
+      return c.json({ error: 'Forbidden' }, 403)
+    }
+    return c.json(await countOpenAgentQuestionsBySquad(squad.id))
   })
 
   // DELETE /api/agent-questions/:id { reason? } — dismiss an open question without answering it.

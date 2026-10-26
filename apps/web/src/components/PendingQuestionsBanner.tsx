@@ -76,15 +76,19 @@ export function PendingQuestionsBanner({ questions, className, dependencies }: P
         type="button"
         onClick={() => setIsOpen(true)}
         className={clsx(
-          // An opaque floating card, so chat text scrolling behind it never looks clipped.
-          'ficus-button ficus-button-ghost flex w-full min-w-0 items-center gap-1.5 rounded-xl border border-th-border bg-surface px-3 py-2 text-left text-sm shadow-md hover:bg-surface-hover',
+          // An opaque floating card, so chat text scrolling behind it never looks clipped: the
+          // attention tint (translucent in dark themes) is a gradient layer over the opaque surface.
+          // The ghost hover rule resets `background`, so the hover tint is restated as a hover utility.
+          'ficus-button ficus-button-ghost flex w-full min-w-0 items-center gap-1.5 rounded-xl border border-status-attention-border px-3 py-2 text-left text-sm shadow-md',
+          'bg-surface bg-gradient-to-r from-status-attention-surface to-status-attention-surface',
+          'hover:bg-surface-hover hover:bg-gradient-to-r hover:from-status-attention-badge-surface hover:to-status-attention-badge-surface',
           className
         )}
         aria-label={label}
         title={label}
       >
-        <QuestionIcon className="h-4 w-4 shrink-0" />
-        <span className="shrink-0 whitespace-nowrap font-medium">{countLabel}</span>
+        <QuestionIcon className="h-4 w-4 shrink-0 text-status-attention-fg" />
+        <span className="shrink-0 whitespace-nowrap font-semibold text-status-attention-fg">{countLabel}</span>
         {/* One line: only the preview shrinks, ending in an ellipsis; the full text stays in the title. */}
         <span className="min-w-0 flex-1 truncate text-muted">
           {preview && (
@@ -94,7 +98,7 @@ export function PendingQuestionsBanner({ questions, className, dependencies }: P
             </>
           )}
         </span>
-        <span className="flex shrink-0 items-center gap-0.5 text-xs text-muted">
+        <span className="flex shrink-0 items-center gap-0.5 text-xs font-medium text-status-attention-fg">
           <span className="hidden sm:inline">Answer</span>
           <ChevronRightIcon className="h-4 w-4" />
         </span>
