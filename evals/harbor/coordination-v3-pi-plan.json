@@ -1,0 +1,30 @@
+{
+  "experiment": "coordination-v3-requirement-fidelity",
+  "arm": "pi",
+  "declared_at_utc": "2026-10-27T21:08:23.903148+00:00",
+  "client": "coordv3-paid-pi",
+  "authorization": "User approved raising phase cap to $35 to run Pi with the same updated handoff guidance.",
+  "frozen_inputs": "All task, runner, runtime, image, verifier and control hashes in coordination-v3-ready.json remain unchanged.",
+  "budget": {
+    "at_utc": "2026-10-27T21:08:23.903148+00:00",
+    "from_usd": 30,
+    "to_usd": 35,
+    "authorization": "User: Raise the phase cap to $35",
+    "opening_confirmed_usd": 18.73909,
+    "ledger_reset": false,
+    "reservation_usd": 5.5,
+    "historical_holds_reconciled": false
+  },
+  "fresh_repository_and_sessions": true,
+  "candidate_feedback_from_ficus": false,
+  "automatic_retry": false,
+  "private_launcher_sha256": "0e6892684c0f87d7fdef55b6726475a832257c493f41cd31f53185bc568e66f6",
+  "preserved_predecessor_sha256": {
+    "coordv3-paid-ficus-execution.json": "6cf982b74635b97ebeeb22949db76ed9da8bd9784279979a1863b30a2b7ba347",
+    "jobs/coordv3-paid-ficus/task__HcxQQu2/result.json": "7f8f96cbf9c40272d8dd397837a78268dd76cea634c5bde2452654aba8e87183",
+    "jobs/coordv3-paid-ficus/task__HcxQQu2/agent/snapshot.json": "50a1bb214e327a1416cc2b01c8731075f8092b08e31f3fe87e161bb919643376",
+    "jobs/coordv3-paid-ficus/task__HcxQQu2/verifier/counts.json": "0373a5c704c3587da56663e7f8f179deb8d1132697133a2a303dcdbe482319cd",
+    "jobs/coordv3-paid-ficus/task__HcxQQu2/artifacts/logs/artifacts/model.patch": "a5f8a2d61e972f68a94f03ab12fd41e34716335932841107a3c59e6fb76892e6"
+  },
+  "comparison_caveat": "Diagnostic replay on an inspected task; not unseen generalization. Ficus and Pi share the original-preservation wrapper but retain native role prompts/workflow differences."
+}
