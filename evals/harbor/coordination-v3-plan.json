@@ -1,0 +1,56 @@
+{
+  "experiment": "coordination-v3-requirement-fidelity",
+  "type": "Diagnostic replay on an inspected task; not an unseen benchmark or causal prompt-effect estimate",
+  "source_repository": "https://github.com/gabeorlanski/scb-problems",
+  "source_revision": "9cd9ca3a51c3d3e2a99d2488a25baf73a2204451",
+  "task": "code_search",
+  "requests": [1, 2, 3],
+  "selection": "Retain the already-inspected code_search case to verify original-source propagation and compare observed contract compliance. No task-specific fixes or acceptance feedback supplied to agents.",
+  "protocol_delta": "Supply all three requests upfront, require >=3 implementation packages plus final integration/review, keep one shared repository and team state. Let coordinators choose dependencies and boundaries. Official tests unchanged; no grade feedback during work.",
+  "conditions": ["ficus", "pi"],
+  "order_rule": "Retain the original predeclared order, Ficus then Pi; no outcome-based reordering.",
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "worker_limit": 2,
+  "inference_limit": "Existing proxy serializes each client including settlement; no parallel speed or human-time-saved claims.",
+  "budget": {
+    "phase_cap_usd": 30,
+    "opening_exposure_usd": 10.046284,
+    "remaining_usd": 19.953716,
+    "reservation_usd": 5.5,
+    "no_reset": true
+  },
+  "resources": {
+    "cpus": 2,
+    "memory_mb": 8192,
+    "storage_mb": 10240,
+    "agent_timeout_sec": 7200,
+    "verifier_timeout_sec": 300,
+    "ficus_overhead": "Additional disposable PostgreSQL: 0.5CPU/512MiB"
+  },
+  "acceptance": "47 unchanged upstream tests passing; report correctness separately from native coordination compliance.",
+  "coordination_checks": [
+    ">=3 distinct implementation packages, not one renamed task",
+    "architect/engineer/independent reviewer role provenance",
+    "dependency and shared-file/branch handoffs",
+    "all required work integrated in /app HEAD",
+    "final integrated independent approval",
+    "waits, unintegrated branches, rework, interventions, cost and elapsed time"
+  ],
+  "stop_policy": "One attempt per arm; no automatic retry or operator code/task hints. Stop on provider/accounting failure, budget rejection, or invalid controls. Preserve incomplete arms.",
+  "runtime": "Original frozen coordination-v2 runtime plus only the three prompt files from production fix 79ec0616; Pi unchanged. Both wrappers receive identical source-preservation contract.",
+  "supersedes": "No replacement: retain v1/v2 results and expose the wrapper asymmetry found in v2.",
+  "change": "Preserve exact original requests and distinguish assigned scope; all roles read source and prioritize it over plans. Remove Pi-only preservation instruction in favor of shared contract.",
+  "diagnostic_checks": [
+    "Every created stream/package points to original source rather than a summary",
+    "Compare preserved source to supplied request text",
+    "Confirm architect/engineer/reviewer read source before acting",
+    "Audit original schema fidelity separately from external score",
+    "No extra coordinator or operator correction"
+  ],
+  "limitations": [
+    "Known task and inspected failures; no unseen-generalization claim",
+    "Prompt change and wrapper parity both change; cannot isolate either causal effect",
+    "Only run next arm if unchanged budget guard allows; report interrupted arms honestly"
+  ]
+}

@@ -32,6 +32,13 @@ independent review of the final integrated tree. Leave the final executable and
 all required files committed in /app, not only in worker branches. Preserve earlier
 requirements except where a later requirement explicitly supersedes them. No human
 can provide clarifications; delegate investigation and document reasonable choices.
+Preserve the original request text in a durable shared source accessible to every
+role. Include its exact path/reference in every work package alongside that
+package's assigned scope, dependencies, and acceptance criteria. Summaries and
+plans supplement this source; they do not replace it. Every architect, engineer,
+and reviewer must read the original requirements relevant to their assignment.
+Original requirements take precedence over derived plans. Pass relevant handoff
+outputs as well, and validate the integrated product against the original source.
 """
 
 
@@ -44,8 +51,7 @@ def handoff(instruction, harness):
         else "Use the packaged subagent tool with architect, engineer, and reviewer "
         "roles. A work package is a distinct documented subagent assignment. Use "
         "parallel dispatch for ready independent packages; never more than two "
-        "concurrent children. Pass the original requirements and relevant handoff "
-        "outputs to each role.\n"
+        "concurrent children.\n"
     )
     return CONTRACT + mechanics + "\nBEGIN REQUESTS\n" + instruction + "\nEND REQUESTS"
 

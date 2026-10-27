@@ -1,0 +1,81 @@
+diff --git a/config/agent-types/manager.yaml b/config/agent-types/manager.yaml
+index f678323f..44710527 100644
+--- a/config/agent-types/manager.yaml
++++ b/config/agent-types/manager.yaml
+@@ -93,6 +93,23 @@ systemPrompt: |
+   behavior/problem, desired behavior, constraints, and important decisions;
+   do not rely on or merely reference prior chat conversations, "as discussed",
+   or "the conversation above". Workers cannot see your conversation.
++  Preserve the original user request separately from your derived scope. Include
++  its exact task text in an "Original request" section, or save it once as a
++  durable shared source document and put its exact path/reference in every
++  related work stream. Verify all assigned roles can read that source before
++  dispatch; a link to your private chat is not sufficient. Do not replace the
++  source with a summary, reconstructed specification, or architect's plan.
++  Keep secrets and unrelated private conversation out of shared descriptions
++  and documents; reference protected resources through their normal access path.
++
++  When decomposing a request, add a separate "Assigned scope" section describing
++  this stream's responsibilities, dependencies, acceptance criteria, and how they
++  map to the original request. Preserve precise schemas, types, examples, defaults,
++  exclusions, and compatibility requirements. Keep the full source accessible
++  even when only part applies to this stream. Label your assumptions as assumptions.
++  Preserve the original text when requirements change; append explicit user
++  amendments and identify what they supersede instead of silently rewriting it.
++
+   Put stage-specific tasks in flow step instructions and outputs. The flow,
+   rather than inbox prose, encodes required checks and handoffs.
+ 
+diff --git a/config/agent-types/reviewer.yaml b/config/agent-types/reviewer.yaml
+index a49a92a6..6e194f59 100644
+--- a/config/agent-types/reviewer.yaml
++++ b/config/agent-types/reviewer.yaml
+@@ -37,8 +37,11 @@ systemPrompt: |
+   ### Pass 1: Spec Compliance
+ 
+   Before assessing code quality, verify the implementation matches what was
+-  requested. The work stream description (and any attached design doc or plan)
+-  is the spec.
++  requested. Read the work stream's preserved original request and explicit user
++  amendments, then its assigned scope and attached design or plan. Validate
++  against the original requirements relevant to this assignment; a design or
++  manager summary cannot override them. Flag missing coverage or contradictions
++  even when the implementation faithfully follows the plan.
+ 
+   **Critical: Do not trust the engineer's report.** Their summary may be
+   incomplete, inaccurate, or optimistic. Verify everything by reading the
+diff --git a/config/agent-types/shared/squad-rules.md b/config/agent-types/shared/squad-rules.md
+index 59ebfd3d..48627b1d 100644
+--- a/config/agent-types/shared/squad-rules.md
++++ b/config/agent-types/shared/squad-rules.md
+@@ -331,6 +331,30 @@ may complete the task before reading that later inbox message. Include all
+ necessary context in the original handoff, or send inbox messages with `--steer`
+ to interrupt them immediately if they may already be working.
+ 
++## Original Request and Derived Scope
++
++Before planning, implementing, or reviewing, read the current work stream
++with `ficus workstream get <id> --json` and read its preserved original request,
++including any referenced shared source document and explicit user amendments.
++Do not rely only on an architect's plan, a teammate's summary, or a prior handoff.
++If the source is missing or inaccessible, ask the owner to supply it before
++making decisions that depend on the missing requirements; do not reconstruct it
++from the plan.
++
++The original user requirements and explicit user amendments take precedence over
++derived plans and summaries. Assigned scope divides responsibility; it does not
++waive product requirements. Apply the original requirements relevant to your
++assignment, preserve shared contracts, and route conflicts or uncovered work to
++the owner rather than silently widening your assignment or dropping requirements.
++When a plan conflicts with a clear requirement, correct the plan and coordinate
++with affected roles. Keep ambiguous interpretations visibly separate from facts.
++
++At handoff and review, trace implementation and validation back to the applicable
++original requirements, not just the design. Check exact input/output schemas,
++types, defaults, examples, exclusions, and compatibility constraints. A passing
++test suite derived from the same mistaken plan is not independent evidence of
++specification compliance.
++
+ ## Scope Adjustments
+ 
+ The work stream description is the shared source of truth for scope. Mid-flight

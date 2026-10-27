@@ -356,3 +356,40 @@ reliability or unrestricted parallel throughput: calls were serialized, no human
 attention clock was collected, and the sample is one adapted case. Ficus and Pi
 have different native prompts, session reuse and review granularity. The external
 scores and costs therefore describe these captured attempts, not a harness ranking.
+
+## Requirements provenance correction and diagnostic replay (v3)
+
+Trace inspection found an important distinction in v2: Ficus's architect,
+engineer, and reviewer each fetched the core work-stream description. The
+manager had already summarized away the `regex_flags` array type before creating
+that description. The architect selected string and downstream roles followed
+it. Pi also wrote a summary, not a verbatim original; its architect made the
+same error, but the coordinator corrected it before engineering.
+
+The v2 wrapper explicitly told only Pi to pass original requirements to every
+role. Ficus relied on its native work-stream guidance. This asymmetry limits
+attributing the observed score difference to orchestration quality.
+
+Production prompt fix `79ec0616` ([PR #690](https://github.com/ficushq/ficus/pull/690))
+requires managers to preserve original requests separately from assigned scope,
+keep an accessible exact source reference in each stream, and retain explicit
+user amendments. All engineering roles must read that source; original
+requirements take precedence over derived plans. Review must verify original
+requirements even when implementation follows its plan. This is guidance, not
+an automatic immutable-storage mechanism or an additional coordinator.
+
+`coordination-v3-plan.json` declares a diagnostic replay of the inspected case.
+Both wrappers now get the same source-preservation instruction. The runtime
+patch changes only manager, reviewer, and shared squad guidance; a member-by-member
+archive audit rejects any other change. The workload, verifier, model, resource
+limits, and conservative budget guard stay unchanged. Prior controls are reused
+only for hash-identical image/task/verifier inputs; new native setup/network
+controls run for both arms. No acceptance feedback or task-specific solution hint
+is supplied to agents.
+
+This is **not an unseen benchmark result or an isolated causal estimate**: the
+case and failures are known, and both native guidance and wrapper parity change.
+Audit exact source preservation and role reads separately from correctness.
+The existing $30 phase cap remains, with $10.046284 already charged at declaration;
+no reset or release of historical holds. Run Ficus then Pi only while guards allow,
+without automatic retries or operator repairs.
