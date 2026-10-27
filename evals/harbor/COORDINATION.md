@@ -182,3 +182,19 @@ The added standard-library-only constraint forced considerable handwritten
 JavaScript/C++ parsing. This makes the case unusually parser-heavy and limits
 its representativeness for ordinary dependency-equipped product work. Preserve
 this run, but use a more representative workload for later coordination studies.
+
+## Pi continuation authorization
+
+The user subsequently raised the phase cap from $20 to $30, with no reset and
+no release of holds. Opening confirmed usage is $14.511960. The original frozen
+plan and launcher remain intact; `coordination-v2-pi-budget-amendment.json`
+records the new cap, replacement private launcher hash, and hashes of the
+preserved Ficus interruption and offline grade. It explicitly permits Pi to
+follow that budget-interrupted arm after all four native work streams and final
+review completed. Eligibility does not depend on the external grade passing.
+
+Pi starts once, in a fresh repository and session, with the original task,
+model, role instructions, resources, worker cap, verifier, network restrictions,
+and $5.50 request reservation unchanged. It receives no Ficus artifacts, failure
+analysis, grade, or post-hoc reproduction cases. This amendment does not resume
+or repair Ficus, and does not erase its interrupted completion status.

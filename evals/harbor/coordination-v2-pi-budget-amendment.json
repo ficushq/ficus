@@ -1,0 +1,38 @@
+{
+  "experiment": "coordination-v2",
+  "amendment": "Authorized phase cap increase and explicit Pi continuation after preserved Ficus budget interruption",
+  "authorized_at_utc": "2026-10-27T14:50:56.993495+00:00",
+  "user_authorization": "Raise the phase cap to $30",
+  "phase_cap_usd": 30,
+  "previous_phase_cap_usd": 20,
+  "opening_confirmed_phase_usd": 14.51196,
+  "reservation_usd": 5.5,
+  "ledger_reset": false,
+  "holds_released": false,
+  "arm": "pi",
+  "client": "coordv2-paid-pi",
+  "predecessor_policy": "Allow the preserved Ficus budget cancellation after all four native streams and reviews completed. Keep original exception, receipt ledger, patch and offline external failure result unchanged. No retry or candidate repair. Pi receives only the original frozen instructions and no Ficus result or diagnostics.",
+  "unchanged": [
+    "task",
+    "model",
+    "thinking",
+    "tools",
+    "runtime",
+    "role prompts",
+    "worker limit",
+    "egress allowlist and timeout",
+    "verifier",
+    "arm order",
+    "budget reservation",
+    "stop policy"
+  ],
+  "private_launcher_sha256": "7cca34a073d24ce7fb6e711157e685617e9622f3cb9862904c08b2edc8d60ae1",
+  "preserved_predecessor_sha256": {
+    "coordv2-paid-ficus-execution.json": "3786a4bde73a20343405e0fa0dba0faa45b7a3dadc61d277755c47b8233db27b",
+    "jobs/coordv2-paid-ficus/task__seishTt/result.json": "3ec5891512b341b11dc4b8d63a61c21d31b959c43a898974ef90c1a373d45463",
+    "jobs/coordv2-paid-ficus/task__seishTt/agent/snapshot.json": "fb3efeda92c4874953b3fd5ccda168534766f132a6d85c869df1b12ca2be94a1",
+    "jobs/coordv2-paid-ficus/task__seishTt/artifacts/logs/artifacts/model.patch": "ab97b7022651d4ed1c5a4fdf82b827b24f47d73924992cf2d3dd9724f7582495",
+    "post-stop-grade-v2/manifest.json": "e89067408df8ff7c166b37a43fca12ad4d98707059e297e87225dce89c5ec085",
+    "post-stop-grade-v2/counts.json": "7d75f70f7e0f92863f8a1fe81043d076e671c62787a2c379c0e223b2c706b53b"
+  }
+}
