@@ -3709,6 +3709,65 @@ expect_eq 'require_box_reprovision_settled: a loose journal file refuses' "$(br_
 rm -rf "${BR_TMP}"
 unset -f br_check
 
+# --- ensure_fail2ban (hosted sshd brute-force protection) --------------------
+F2B_TMP=$(mktemp -d)
+f2b_run() { # INSTALLED(1|0) ACTIVE(1|0) — prints the as_root calls; rc in the last line
+  local rc=0
+  : >"${F2B_TMP}/log"
+  (
+    F2B_INSTALLED=$1 F2B_ACTIVE=$2 FAIL2BAN_JAIL="${F2B_TMP}/jail.d/ficus-sshd.local"
+    have() { [[ $1 == fail2ban-client ]] && [[ ${F2B_INSTALLED} == 1 ]] && return 0; command -v "$1" >/dev/null 2>&1; }
+    as_root() {
+      printf '%s\n' "$*" >>"${F2B_TMP}/log"
+      case "$1 $2" in
+        'install -d') mkdir -p "${@: -1}" ;;
+        'install -m') cp "${@: -2:1}" "${@: -1}" ;;
+        'systemctl is-active') [[ ${F2B_ACTIVE} == 1 ]] ;;
+        *) return 0 ;;
+      esac
+    }
+    log_info() { :; }
+    ensure_fail2ban
+  ) || rc=$?
+  grep -v '^install ' "${F2B_TMP}/log" || true
+  echo "rc=${rc}"
+}
+expect_eq 'ensure_fail2ban: a fresh host gets the package, the jail, the service enabled and (re)started, then the jail is checked' \
+  "$(f2b_run 0 0)" 'env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fail2ban
+systemctl enable fail2ban
+systemctl restart fail2ban
+fail2ban-client status sshd
+rc=0'
+expect_eq 'ensure_fail2ban: the jail enables sshd on the journal backend' \
+  "$(grep -E '^(\[sshd\]|enabled|backend|mode|maxretry|findtime|bantime)' "${F2B_TMP}/jail.d/ficus-sshd.local" | tr '\n' ' ')" \
+  '[sshd] enabled = true backend = systemd mode = normal maxretry = 5 findtime = 10m bantime = 1h '
+expect_eq 'ensure_fail2ban: idempotent — installed, jail unchanged, running: no install, no restart' \
+  "$(f2b_run 1 1)" 'systemctl enable fail2ban
+systemctl is-active --quiet fail2ban
+fail2ban-client status sshd
+rc=0'
+expect_eq 'ensure_fail2ban: a stopped service is restarted even with the jail unchanged' \
+  "$(f2b_run 1 0 | grep -c 'systemctl restart fail2ban')" 1
+printf '[sshd]\nenabled = false\n' >"${F2B_TMP}/jail.d/ficus-sshd.local"
+expect_match 'ensure_fail2ban: an edited jail is put back and the service restarted' "$(f2b_run 1 1)" 'systemctl restart fail2ban'
+expect_eq 'ensure_fail2ban: ...with the managed content' "$(grep -c '^enabled = true$' "${F2B_TMP}/jail.d/ficus-sshd.local")" 1
+f2b_enabled() { # SOURCE_MODE YAML
+  printf '%s\n' "$2" >"${F2B_TMP}/cfg.yaml"
+  (cfg_load "${F2B_TMP}/cfg.yaml" && fail2ban_enabled "$1") && echo on || echo off
+}
+if yq_is_mikefarah; then
+  expect_eq 'fail2ban_enabled: on for artifact (hosted) installs by default' "$(f2b_enabled artifact 'core: {}')" on
+  expect_eq 'fail2ban_enabled: off for git installs by default' "$(f2b_enabled git-ssh 'core: {}')" off
+  expect_eq 'fail2ban_enabled: host.fail2ban opts a git install in' "$(f2b_enabled git-ssh 'host: {fail2ban: true}')" on
+  expect_eq 'fail2ban_enabled: host.fail2ban opts an artifact install out' "$(f2b_enabled artifact 'host: {fail2ban: false}')" off
+fi
+expect_match 'setup-host.sh preflight sets fail2ban up when enabled' \
+  "$(sed -n '/^phase_preflight() {/,/^}/p' "${SCRIPT_DIR}/setup-host.sh")" 'fail2ban_enabled "\$\{SRC_MODE\}"'
+expect_match 'upgrade-host.sh brings it to existing hosts without failing an upgrade over it' \
+  "$(sed -n '/^prepare_upgrade_host() {/,/^}/p' "${SCRIPT_DIR}/upgrade-host.sh")" 'ensure_fail2ban \|\| log_warn'
+rm -rf "${F2B_TMP}"
+unset -f f2b_run f2b_enabled
+
 # --- managed_env_would_change ----------------------------------------------
 # The sync restart driver: semantic change detection for managed.env.
 AR_STAGE5="${AR_TMP}/stage5"

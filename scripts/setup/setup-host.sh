@@ -758,6 +758,9 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
   plan "assert: Linux + systemd (PID 1) + Ubuntu 24.04 (override: FICUS_SETUP_SKIP_OS_CHECK=1)"
   run_user_line=$(run_user_plan "${RUN_USER}" "${RT_SANDBOX}" "$(bigbrain_enabled "${BIGBRAIN_CONFIG}" && echo true || echo false)")
   [[ -n ${run_user_line} ]] && plan "${run_user_line}"
+  if fail2ban_enabled "${SRC_MODE}"; then
+    plan "ensure: fail2ban (apt) with the sshd jail (${FAIL2BAN_JAIL}: journal backend, 5 failures in 10m -> 1h ban)"
+  fi
   if [[ ${SRC_MODE} == artifact ]]; then
     plan "ensure: curl jq openssl ca-certificates (apt; git dropped — artifact mode never clones), mikefarah yq v4, bun (official installer)"
   else
@@ -990,6 +993,9 @@ phase_preflight() {
   # and adds the groups it needs; nothing for root.
   ensure_run_user "${RUN_USER}" "${RT_SANDBOX}" "$(bigbrain_enabled "${BIGBRAIN_CONFIG}" && echo true || echo false)"
   ensure_system_bun_node "${RUN_USER}" "$(command -v bun)"
+  if fail2ban_enabled "${SRC_MODE}"; then
+    ensure_fail2ban || die 'fail2ban could not be set up for sshd (see above)'
+  fi
 
   if [[ ${DB_MODE} == container ]] && ! have docker; then
     log_info "installing docker (docker.io) for the local database container"

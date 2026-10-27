@@ -269,6 +269,10 @@ require_host_env_ready
 prepare_upgrade_host() {
   ensure_swapfile
   ensure_system_bun_node "${RUN_USER}" "$(command -v bun)"
+  # Hardening reaches existing hosts on their next upgrade; it never fails one.
+  if fail2ban_enabled "${SRC_MODE}"; then
+    ensure_fail2ban || log_warn 'fail2ban could not be set up for sshd — continuing the upgrade without it'
+  fi
   log_step 'caddy ingress: re-render the Caddyfile'
   upgrade_caddy_prepare "${SRC_DEST}/.env"
   upgrade_caddy_apply

@@ -745,6 +745,52 @@ describe('reportUsageSampleOnce', () => {
     expect(failing.body().hostMetrics[1].metrics).toEqual({ load1: 1.5 })
   })
 
+  it('reports failed SSH logins since the previous sample, and omits the key when the journal is unreadable', async () => {
+    const capture = () => {
+      let init: RequestInit | undefined
+      const fetchImpl = (async (_url: string, i?: RequestInit) => {
+        init = i
+        return new Response(null, { status: 204 })
+      }) as typeof fetch
+      return { fetchImpl, body: () => JSON.parse(init?.body as string) }
+    }
+    const base = {
+      ingestUrl: 'https://platform.example.com',
+      listMachines: async () => [],
+      countUsers: async () => 1,
+      now: () => new Date('2026-03-01T12:00:00.000Z'),
+      getVersion: async () => null,
+      sampleDisk: async () => null,
+      pinMetricsMachine: () => {},
+      drainMachineMetrics: () => ({}),
+      drainCoreMetrics: () => ({}),
+      countActivity: async () => ({}),
+      samplePooler: async () => null,
+    }
+    const counted = capture()
+    await reportUsageSampleOnce({ ...base, fetch: counted.fetchImpl, sampleSshAuthFailures: async () => 42 })
+    expect(counted.body().sshAuthFailures).toBe(42)
+
+    const none = capture()
+    await reportUsageSampleOnce({ ...base, fetch: none.fetchImpl, sampleSshAuthFailures: async () => 0 })
+    expect(none.body().sshAuthFailures).toBe(0)
+
+    const unreadable = capture()
+    await reportUsageSampleOnce({ ...base, fetch: unreadable.fetchImpl, sampleSshAuthFailures: async () => null })
+    expect('sshAuthFailures' in unreadable.body()).toBe(false)
+
+    const throwing = capture()
+    await reportUsageSampleOnce({
+      ...base,
+      fetch: throwing.fetchImpl,
+      sampleSshAuthFailures: async () => {
+        throw new Error('journalctl missing')
+      },
+    })
+    expect('sshAuthFailures' in throwing.body()).toBe(false)
+    expect(throwing.body().userCount).toBe(1)
+  })
+
   it('omits `metrics` entirely when the drain is empty and every activity count is unavailable', async () => {
     let capturedInit: RequestInit | undefined
     const fetchSpy = mock(async (_url: string, init?: RequestInit) => {

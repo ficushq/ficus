@@ -1467,6 +1467,65 @@ ensure_pooler_user() { # USER
   as_root useradd --system --no-create-home --shell /usr/sbin/nologin --user-group "$1"
 }
 
+# ------------------------------------------------ fail2ban (sshd brute force)
+#
+# On a hosted host (source.mode artifact; host.fail2ban overrides either way)
+# fail2ban bans an address after repeated failed sshd logins. The jail reads
+# sshd from the systemd journal (backend = systemd: Ubuntu 24.04 does not
+# promise /var/log/auth.log) in the filter's default `normal` mode, where a
+# public key the server merely declines is not a failure, so a client that
+# offers several keys before the right one is never banned. Core reports the
+# same failures to the platform (usage sample sshAuthFailures).
+FAIL2BAN_JAIL="${FAIL2BAN_JAIL:-/etc/fail2ban/jail.d/ficus-sshd.local}" # test seam only
+
+# Is fail2ban on for this host config? (yaml host.fail2ban, else on for artifact mode.)
+fail2ban_enabled() { # SOURCE_MODE
+  local default=false
+  [[ $1 == artifact ]] && default=true
+  [[ $(cfg_bool '.host.fail2ban' "${default}") == true ]]
+}
+
+fail2ban_jail_content() {
+  cat <<'EOF'
+# Managed by the Ficus setup toolkit (lib.sh ensure_fail2ban); edits are replaced.
+[sshd]
+enabled = true
+backend = systemd
+mode = normal
+maxretry = 5
+findtime = 10m
+bantime = 1h
+ignoreip = 127.0.0.1/8 ::1
+EOF
+}
+
+# Install fail2ban and the sshd jail, idempotently: the package only when it is
+# missing, the jail only when its content differs, and a restart only then (or
+# when the service is not running). Proves the jail is loaded. Returns 1 (with
+# the reason logged) instead of dying, so an upgrade can carry on without it.
+ensure_fail2ban() {
+  local changed=0
+  if ! have fail2ban-client; then
+    log_info 'installing fail2ban (sshd brute-force protection)'
+    as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fail2ban ||
+      { log_error 'fail2ban: apt-get install failed'; return 1; }
+  fi
+  if [[ ! -f ${FAIL2BAN_JAIL} || $(cat "${FAIL2BAN_JAIL}") != "$(fail2ban_jail_content)" ]]; then
+    as_root install -d -m 0755 -o root -g root "$(dirname -- "${FAIL2BAN_JAIL}")" ||
+      { log_error "fail2ban: could not create $(dirname -- "${FAIL2BAN_JAIL}")"; return 1; }
+    (install_rendered 0644 root root "${FAIL2BAN_JAIL}" fail2ban_jail_content) ||
+      { log_error "fail2ban: could not install ${FAIL2BAN_JAIL}"; return 1; }
+    changed=1
+  fi
+  as_root systemctl enable fail2ban >/dev/null 2>&1 || { log_error 'fail2ban: could not enable the service'; return 1; }
+  if ((changed)) || ! as_root systemctl is-active --quiet fail2ban; then
+    as_root systemctl restart fail2ban || { log_error 'fail2ban: the service did not restart'; return 1; }
+  fi
+  retry_until 30 1 'fail2ban sshd jail loaded' as_root fail2ban-client status sshd ||
+    { log_error 'fail2ban: the sshd jail is not loaded (fail2ban-client status sshd)'; return 1; }
+  log_info "fail2ban: sshd jail active (${FAIL2BAN_JAIL})"
+}
+
 # ------------------------------------------------ the Core service user
 #
 # Core (ficus-api, ficus-worker) runs as core.run_user. The self-hosted default
