@@ -4,6 +4,15 @@ import { createBashToolDefinition, DEFAULT_MAX_BYTES } from '@earendil-works/pi-
 import { ContentSafety } from './content-safety'
 import { wrapToolWithOutputRedaction, wrapToolsWithOutputRedaction } from './tool-output-redaction'
 
+/**
+ * Fragment checks search the ENTIRE serialized result (including schema keys,
+ * counters and error stacks). UUID hex windows can collide with safe output:
+ * `5220` in totalBytes:52208, `ceed` in firstLineExceedsLimit. Use a fixed
+ * ASCII canary whose windows do not occur in the fixture's safe output. Keep
+ * the 4-character oracle and all its surfaces; do not exclude metadata instead.
+ */
+const CANARY_ID = 'GHJKLMNP-QRST-VWXY-ZGHJ-KLMNPQRSTVWX'
+
 function tool(name: string, result: unknown) {
   return {
     name,
@@ -211,7 +220,7 @@ type Executable = {
   execute: (id: string, params?: unknown, signal?: AbortSignal, onUpdate?: (partial: Partial) => void) => Promise<any>
 }
 
-/** Every non-empty prefix of `value` at least `min` long, i.e. every recognisable piece of it. */
+/** True when `text` contains any window of `value` at least `min` characters long. */
 function containsFragment(text: string, value: string, min = 4): boolean {
   for (let start = 0; start + min <= value.length; start++) {
     if (text.includes(value.slice(start, start + min))) return true
@@ -307,7 +316,7 @@ describe('details, structured content and errors', () => {
     '[Showing last 50.0KB of line 3 (line is 80.0KB).]',
     '[Showing lines 2-3 of 3. Full output: /tmp/pi-bash-x.log]',
   ])('drops the end of a value cut off at the start of a truncated error message: %s', async (footer) => {
-    const value = `S3CR3T-${randomUUID()}`
+    const value = `S3CR3T-${CANARY_ID}`
     const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
     const message = `${value.slice(9)}\nlast line\n\n${footer}\n\nCommand aborted`
     const wrapped = wrapToolWithOutputRedaction(
@@ -370,7 +379,7 @@ describe('streamed partial updates', () => {
   })
 
   test('never shows any part of a value split across cumulative snapshots', async () => {
-    const value = `S3CR3T-${randomUUID()}`
+    const value = `S3CR3T-${CANARY_ID}`
     const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
     const output = `before\nprinting ${value}\nafter\n`
     const partials: Partial[] = []
@@ -399,7 +408,7 @@ describe('streamed partial updates', () => {
   })
 
   test('passes ordinary partials through unchanged', async () => {
-    const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value: `S3CR3T-${randomUUID()}` }])
+    const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value: `S3CR3T-${CANARY_ID}` }])
     const sent: Partial[] = [
       { content: [], details: undefined },
       { content: [{ type: 'text', text: 'building...\n' }], details: { truncation: undefined } },
@@ -440,8 +449,38 @@ function streamingBash(chunks: string[], pauseMs = 0) {
 }
 
 describe("pi's bash tool behind the redaction wrapper", () => {
+  test('the old UUID oracle matches metadata even when no secret was ever printed', async () => {
+    const values = [
+      'S3CR3T-82a30432-b398-4d18-8bd9-7cb1b25220e2', // 5220 in totalBytes
+      'S3CR3T-0d37b60d-0854-471f-b77c-ceedca2044ae', // ceed in firstLineExceedsLimit
+    ]
+    for (const value of values) {
+      const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
+      // Same byte counts as the original repro, but NEVER print any of the value.
+      const chunks = ['x'.repeat(DEFAULT_MAX_BYTES + 1008), `${'z'.repeat(35)}\ndone\n`]
+      expect(containsFragment(chunks.join(''), value)).toBe(false)
+      const partials: Partial[] = []
+      await (wrapToolWithOutputRedaction(streamingBash(chunks, 120) as never, safety) as never as Executable).execute(
+        'collision',
+        { command: 'x' },
+        undefined,
+        (partial) => partials.push(partial)
+      )
+      const snapshot = partials.find((partial) => {
+        const details = partial.details as { truncation?: { totalBytes: number } } | undefined
+        return details?.truncation?.totalBytes === 52208
+      })!
+      expect(snapshot).toBeDefined()
+      expect(snapshot.content![0]!.text).toBe('x'.repeat(DEFAULT_MAX_BYTES))
+      expect(containsFragment(JSON.stringify(snapshot), value)).toBe(true)
+      expect(containsFragment(JSON.stringify(snapshot.details), value)).toBe(true)
+      expect(containsFragment(JSON.stringify(snapshot.content), value)).toBe(false)
+      expect(containsFragment(JSON.stringify(snapshot), `S3CR3T-${CANARY_ID}`)).toBe(false)
+    }
+  })
+
   test('a value split across streamed chunks never appears in a live update or the result', async () => {
-    const value = `S3CR3T-${randomUUID()}`
+    const value = `S3CR3T-${CANARY_ID}`
     const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
     const chunks = ['starting\nvalue: ', value.slice(0, 5), value.slice(5, 20), `${value.slice(20)}\nfinished\n`]
     // Longer than pi's 100 ms update throttle, so each chunk produces its own snapshot.
@@ -463,7 +502,7 @@ describe("pi's bash tool behind the redaction wrapper", () => {
   })
 
   test('ordinary streamed output is unchanged', async () => {
-    const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value: `S3CR3T-${randomUUID()}` }])
+    const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value: `S3CR3T-${CANARY_ID}` }])
     const chunks = ['compiling 1/2\n', 'compiling 2/2\n', 'ok\n']
 
     const raw: Partial[] = []
@@ -485,7 +524,7 @@ describe("pi's bash tool behind the redaction wrapper", () => {
   })
 
   test('a value cut by output truncation leaves no piece in the result or structured output', async () => {
-    const value = `S3CR3T-${randomUUID()}`
+    const value = `S3CR3T-${CANARY_ID}`
     const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
     // One line longer than the display limit, so pi keeps only its last bytes:
     // the cut falls 10 characters into the value.
@@ -505,7 +544,7 @@ describe("pi's bash tool behind the redaction wrapper", () => {
   })
 
   test('a value split across chunks of head-truncated streamed output never appears', async () => {
-    const value = `S3CR3T-${randomUUID()}`
+    const value = `S3CR3T-${CANARY_ID}`
     const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
     const chunks = [`${'x'.repeat(DEFAULT_MAX_BYTES + 1000)}${value.slice(0, 8)}`, `${value.slice(8)}\ndone\n`]
     const bash = streamingBash(chunks, 120)
@@ -527,13 +566,57 @@ describe("pi's bash tool behind the redaction wrapper", () => {
     expect(result.structuredContent.output).toContain('[REDACTED_SECRET_ENV:SYNTHETIC_KEY]\ndone\n')
     expect(containsFragment(JSON.stringify(result), value)).toBe(false)
   })
+
+  test('every split stays clean before, at and beyond byte and line truncation', async () => {
+    const value = `S3CR3T-${CANARY_ID}`
+    const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
+    const prefixes = [
+      '',
+      'x'.repeat(DEFAULT_MAX_BYTES - 8),
+      'x'.repeat(DEFAULT_MAX_BYTES),
+      'x'.repeat(DEFAULT_MAX_BYTES + 1000),
+      'x\n'.repeat(2001),
+    ]
+    // Sequential and bounded: no process-global fake clocks or timer replacement.
+    for (const prefix of prefixes) {
+      for (let at = 1; at < value.length; at++) {
+        const chunks = [`${prefix}${value.slice(0, at)}`, `${value.slice(at)}\ndone\n`]
+        const partials: Partial[] = []
+        const result = await (
+          wrapToolWithOutputRedaction(streamingBash(chunks) as never, safety) as never as Executable
+        ).execute('split', { command: 'x' }, undefined, (partial) => partials.push(partial))
+        expect(partials.length).toBeGreaterThanOrEqual(2)
+        for (const partial of partials) expect(containsFragment(JSON.stringify(partial), value)).toBe(false)
+        expect(containsFragment(JSON.stringify(result), value)).toBe(false)
+        expect(result.structuredContent.output).toContain('[REDACTED_SECRET_ENV:SYNTHETIC_KEY]\ndone\n')
+      }
+    }
+  })
+  test('every leading truncation cut stays clean in partials, details and the result', async () => {
+    const value = `S3CR3T-${CANARY_ID}`
+    const safety = ContentSafety.fromSecretEntries([{ key: 'SYNTHETIC_KEY', value }])
+    for (let cut = 1; cut < value.length; cut++) {
+      // A single line: the tail window starts exactly `cut` characters into the value.
+      const tail = 'y'.repeat(DEFAULT_MAX_BYTES - (value.length - cut))
+      const chunks = ['x'.repeat(4096), value.slice(0, cut), `${value.slice(cut)}${tail}`]
+      const raw = await (streamingBash(chunks) as never as Executable).execute('raw', { command: 'x' })
+      expect(raw.content[0].text.startsWith(value.slice(cut))).toBe(true)
+      const partials: Partial[] = []
+      const result = await (
+        wrapToolWithOutputRedaction(streamingBash(chunks) as never, safety) as never as Executable
+      ).execute('cut', { command: 'x' }, undefined, (partial) => partials.push(partial))
+      for (const partial of partials) expect(containsFragment(JSON.stringify(partial), value)).toBe(false)
+      expect(containsFragment(JSON.stringify(result), value)).toBe(false)
+      expect(result.content[0].text.startsWith('y')).toBe(true)
+    }
+  })
 })
 
 describe('nested and overlapping stored values', () => {
   /** Synthetic stored URL that contains a separately stored username. */
   function nestedValues() {
-    const user = `synthuser${randomUUID().slice(0, 8)}`
-    const password = `Zq9Pw${randomUUID().replaceAll('-', '')}`
+    const user = `synthuser${CANARY_ID.slice(0, 8)}`
+    const password = `Zq9Pw${CANARY_ID.replaceAll('-', '')}`
     const url = `https://${user}:${password}@db-qx7.zz/x`
     const safety = ContentSafety.fromSecretEntries([
       { key: 'SYNTH_DB_USER', value: user },
@@ -623,9 +706,9 @@ describe('nested and overlapping stored values', () => {
   })
 
   test('two values where one ends with the start of the other leave no piece of either', async () => {
-    const shared = `OVL${randomUUID().slice(0, 8)}`
-    const first = `AAAA${randomUUID().replaceAll('-', '')}${shared}`
-    const second = `${shared}${randomUUID().replaceAll('-', '')}BBBB`
+    const shared = `OVL${CANARY_ID.slice(0, 8)}`
+    const first = `AAAA${CANARY_ID.replaceAll('-', '')}${shared}`
+    const second = `${shared}${CANARY_ID.split('').reverse().join('').replaceAll('-', '')}BBBB`
     const safety = ContentSafety.fromSecretEntries([
       { key: 'SYNTH_FIRST', value: first },
       { key: 'SYNTH_SECOND', value: second },
@@ -652,9 +735,9 @@ describe('nested and overlapping stored values', () => {
   })
 
   test('the leading edge of truncated output that overlaps two values leaves no piece of either', async () => {
-    const shared = `OVL${randomUUID().slice(0, 8)}`
-    const first = `AAAA${randomUUID().replaceAll('-', '')}${shared}`
-    const second = `${shared}${randomUUID().replaceAll('-', '')}BBBB`
+    const shared = `OVL${CANARY_ID.slice(0, 8)}`
+    const first = `AAAA${CANARY_ID.replaceAll('-', '')}${shared}`
+    const second = `${shared}${CANARY_ID.split('').reverse().join('').replaceAll('-', '')}BBBB`
     const safety = ContentSafety.fromSecretEntries([
       { key: 'SYNTH_FIRST', value: first },
       { key: 'SYNTH_SECOND', value: second },
