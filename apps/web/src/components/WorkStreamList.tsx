@@ -59,9 +59,8 @@ const WS_WAITING_DERIVED_STATES: WorkStreamPresentationState[] = [
 ]
 
 // Keep metadata links above the feed row's stretched work-stream button.
-// inline-flex + items-center keep the link text on the row's centerline: the mobile touch-target
-// rule (`a { min-height: 1.5rem }` under 768px) makes each link box taller than the 16px text row,
-// and a plain block would pin its text to the top of that box, above the separators.
+// inline-flex + items-center keep the link text on the row's centerline, beside the separators and
+// elapsed time, even if the link box ends up taller than the 16px text row.
 const FEED_METADATA_LINK_CLASS =
   'relative z-10 inline-flex items-center rounded-sm text-muted hover:text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
 

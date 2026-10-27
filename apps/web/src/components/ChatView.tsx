@@ -2917,7 +2917,7 @@ function StreamingBlockGroupSection({
     <div className="text-xs">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="font-medium w-full flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors"
+        className="font-medium w-full flex items-center gap-1.5 py-0.5 max-md:min-h-6 text-secondary hover:text-primary transition-colors"
       >
         <ChevronRightIcon
           className={clsx('w-3 h-3 shrink-0 text-muted transition-transform', expanded && 'rotate-90')}
@@ -3008,7 +3008,7 @@ function StreamingToolCallItem({
       <div data-tool-call-row={toolCall.toolCallId} className="flex items-center">
         <button
           onClick={() => setExpanded(!expanded)}
-          className="font-medium flex-1 flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors text-left min-w-0"
+          className="font-medium flex-1 flex items-center gap-1.5 py-0.5 max-md:min-h-6 text-secondary hover:text-primary transition-colors text-left min-w-0"
         >
           {inProgress ? (
             <span className="inline-block w-3 h-3 border-2 border-th-border border-t-secondary rounded-full animate-spin shrink-0" />

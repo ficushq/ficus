@@ -119,7 +119,7 @@ The app shell is a fixed, scroll-locked 100% box, so the layout viewport does no
 
 Workspace panes share the available height; a default terminal size must not consume the entire file browser. Dense tables can scroll inside their region rather than causing page overflow.
 
-Below 768px a base rule gives every `a` and `button` a 24px minimum height for touch targets. A link inside a text-sized metadata row (feed work cards, inbox rows) therefore gets a taller box than its neighbors; make such links `inline-flex items-center` so their text stays on the row's centerline next to separators and timestamps instead of pinning to the top of the box.
+Below 768px a base rule gives standalone design-system buttons (`.ficus-button` with the primary, secondary, ghost or danger variant) a 24px minimum height for touch targets. Links, `.ficus-button-link` and unstyled text buttons are exempt: they usually sit in a line of text, where WCAG's inline exception applies, and a minimum height there made the line taller than its text and pushed first-line icons (`items-start` + `mt-0.5`) out of alignment. A standalone control built without `.ficus-button` sizes its own target: give it padding, an explicit height or `max-md:min-h-6` (the chat tool and thinking rows do this). Fixed-size custom controls such as toggle switches keep their designed size.
 
 ## Motion and accessibility
 

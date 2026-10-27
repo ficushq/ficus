@@ -713,7 +713,7 @@ export function SingleToolCallSection({
       <button
         data-tool-call-row={toolCall.toolCallId}
         onClick={() => setExpanded(!expanded)}
-        className="font-medium w-full flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors text-left min-w-0"
+        className="font-medium w-full flex items-center gap-1.5 py-0.5 max-md:min-h-6 text-secondary hover:text-primary transition-colors text-left min-w-0"
       >
         {isError ? (
           <span className="text-status-danger-500 dark:text-status-danger-400 shrink-0 inline-block w-3 text-center">
@@ -810,7 +810,7 @@ export function ThinkingSection({
     <div className="text-xs">
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="font-medium w-full flex items-center gap-1.5 py-0.5 text-status-human-wait-600 dark:text-status-human-wait-400 hover:text-status-human-wait-800 dark:hover:text-status-human-wait-300 transition-colors"
+        className="font-medium w-full flex items-center gap-1.5 py-0.5 max-md:min-h-6 text-status-human-wait-600 dark:text-status-human-wait-400 hover:text-status-human-wait-800 dark:hover:text-status-human-wait-300 transition-colors"
       >
         {isStreaming ? (
           <span className="inline-block w-3 h-3 border-2 border-status-human-wait-300 dark:border-status-human-wait-700 border-t-status-human-wait-600 dark:border-t-status-human-wait-300 rounded-full animate-spin shrink-0" />
@@ -864,7 +864,7 @@ function BlockGroupSection({
     <div className="text-xs">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="font-medium w-full flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors"
+        className="font-medium w-full flex items-center gap-1.5 py-0.5 max-md:min-h-6 text-secondary hover:text-primary transition-colors"
       >
         <ChevronRightIcon
           className={clsx('w-3 h-3 shrink-0 text-muted transition-transform', expanded && 'rotate-90')}

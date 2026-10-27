@@ -184,8 +184,8 @@ describe('WorkStreamList', () => {
       expect(link.closest('button')).toBeNull()
       // The row's pseudo-element covers its surface; links must sit above it.
       expect(link.className).toContain('relative z-10')
-      // Mobile widens every anchor to a 24px touch target; the text must stay centered in that box
-      // so it lines up with the separators and elapsed time beside it.
+      // The text must stay centered in the link box so it lines up with the separators and
+      // elapsed time beside it.
       expect(link.className).toContain('inline-flex items-center')
       expect(link.className).toContain('hover:underline')
       expect(link.className).toContain('focus-visible:ring-2')
