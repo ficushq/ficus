@@ -235,17 +235,15 @@ async function snapshotWhoamiCustody(): Promise<WhoamiCustodySnapshot> {
   let readSet: WhoamiReadSet
   try {
     const identity = sqlite
-      .query<
-        { instance_id: string; public_key_pem: string },
-        []
-      >('SELECT instance_id, public_key_pem FROM identity WHERE id = 1')
+      .query<{ instance_id: string; public_key_pem: string }, []>(
+        'SELECT instance_id, public_key_pem FROM identity WHERE id = 1'
+      )
       .get()
     if (!identity) throw new Error('whoami-custody:identity-missing')
     const registrations = sqlite
-      .query<
-        { handle: string; inbound_open: 0 | 1; agent_public_key_pem: string; card_json: string | null },
-        []
-      >('SELECT handle, inbound_open, agent_public_key_pem, card_json FROM registrations ORDER BY handle')
+      .query<{ handle: string; inbound_open: 0 | 1; agent_public_key_pem: string; card_json: string | null }, []>(
+        'SELECT handle, inbound_open, agent_public_key_pem, card_json FROM registrations ORDER BY handle'
+      )
       .all()
     readSet = {
       identity: { instanceId: identity.instance_id, publicKeyPem: identity.public_key_pem },
@@ -1481,8 +1479,7 @@ async function exerciseCardlessFetch(
     options?.scopeCustodyToCasePrefix ? { registrationScope: (handle) => handle.startsWith(casePrefix) } : undefined
   )
   const registration = whoami.registrations.find((candidate) => candidate.handle === nodeHandle) as
-    | { handle: string; card?: unknown }
-    | undefined
+    { handle: string; card?: unknown } | undefined
   expect(registration).toBeTruthy()
   expect(registration?.card).toBeUndefined()
   const result = await amtpEngine.fetchPeerAgentCard({ peerInstanceId: nodeInstanceId, handle: nodeHandle })

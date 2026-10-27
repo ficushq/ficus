@@ -35,10 +35,9 @@ function rowsForFilename(home: string, filename: string): AttachmentRow[] {
   const sqlite = openNodeConformanceDb(home, { readonly: true })
   try {
     return sqlite
-      .query<
-        AttachmentRow,
-        [string]
-      >(`SELECT id, filename, content_type, byte_size, sha256, storage_path FROM attachments WHERE direction = 'out' AND filename = ?`)
+      .query<AttachmentRow, [string]>(
+        `SELECT id, filename, content_type, byte_size, sha256, storage_path FROM attachments WHERE direction = 'out' AND filename = ?`
+      )
       .all(filename)
   } finally {
     sqlite.close()
@@ -74,10 +73,9 @@ async function cleanupUploadIdentity(home: string, attachmentId: string): Promis
   let storagePath: string | undefined
   try {
     const row = sqlite
-      .query<
-        { storage_path: string },
-        [string]
-      >(`SELECT storage_path FROM attachments WHERE id = ? AND direction = 'out'`)
+      .query<{ storage_path: string }, [string]>(
+        `SELECT storage_path FROM attachments WHERE id = ? AND direction = 'out'`
+      )
       .get(attachmentId)
     storagePath = row?.storage_path
     sqlite.run(`DELETE FROM attachments WHERE id = ? AND direction = 'out'`, [attachmentId])

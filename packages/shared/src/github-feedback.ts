@@ -35,11 +35,7 @@ export type ModerateGitHubFeedback = z.infer<typeof moderateGitHubFeedbackSchema
  * trusts nobody; unlike it, no person decided.
  */
 export type GitHubFeedbackDecision =
-  | ModerateGitHubFeedback['action']
-  | 'pending'
-  | 'automatic'
-  | 'historical'
-  | 'screened'
+  ModerateGitHubFeedback['action'] | 'pending' | 'automatic' | 'historical' | 'screened'
 export type GitHubFeedbackReleaseState = 'held' | 'ready' | 'retry' | 'retained' | 'delivered' | 'obsolete'
 export type GitHubTrustOrigin = { kind: 'manual'; addedByUserId: string } | { kind: 'linked_user'; userId: string }
 
@@ -196,14 +192,7 @@ export const githubUntrustedHandlingUpdateSchema = z.object({ handling: z.enum(G
  *   released (the same rule as a human allow).
  */
 export type GitHubFeedbackScreenOutcome =
-  | 'safe'
-  | 'unsafe'
-  | 'uncertain'
-  | 'unavailable'
-  | 'unconfigured'
-  | 'too_long'
-  | 'skipped'
-  | 'source_unavailable'
+  'safe' | 'unsafe' | 'uncertain' | 'unavailable' | 'unconfigured' | 'too_long' | 'skipped' | 'source_unavailable'
 
 /** A decision model's verdict on one held revision, as stored and shown to moderators. */
 export interface GitHubFeedbackScreening {

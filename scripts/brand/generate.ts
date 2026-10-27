@@ -317,8 +317,7 @@ async function measureContent(svg: string): Promise<ContentMetrics> {
 }
 
 type FillSpec =
-  | { fill: number; radial?: undefined }
-  | { fill?: undefined; radial: { maxRadius: number; diameterFraction: number } }
+  { fill: number; radial?: undefined } | { fill?: undefined; radial: { maxRadius: number; diameterFraction: number } }
 
 /**
  * Builds a self-contained composite SVG: an optional background (full-canvas

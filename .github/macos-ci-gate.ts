@@ -35,8 +35,7 @@ export const MACOS_RELEVANT_PATTERNS = [
 ] as const
 
 type EventDecision =
-  | { mode: 'always'; reason: string }
-  | { mode: 'diff'; base: string; head: string; separator: '..' | '...' }
+  { mode: 'always'; reason: string } | { mode: 'diff'; base: string; head: string; separator: '..' | '...' }
 
 type Outcome = { ok: true } | { ok: false; reason: string }
 

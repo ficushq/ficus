@@ -10,10 +10,7 @@ export interface GitHubCommitSigningStatus {
 
 /** Why turning signing on failed; the card turns each into a fix-it message. */
 export type GitHubCommitSigningErrorCode =
-  | 'permission_missing'
-  | 'connection_unusable'
-  | 'key_rejected'
-  | 'github_unavailable'
+  'permission_missing' | 'connection_unusable' | 'key_rejected' | 'github_unavailable'
 
 /**
  * Whether a GitHub account signs commits right now:

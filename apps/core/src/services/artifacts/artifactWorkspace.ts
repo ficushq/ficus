@@ -295,19 +295,17 @@ export async function appendArtifactQuestions(
     const now = new Date().toISOString()
     const existingQuestions = await readArtifactQuestions({ agentWorkspacePath, artifactId })
     const nextQuestionNumber = getNextArtifactQuestionNumber(existingQuestions)
-    const nextQuestions = params.questions.map(
-      (question, index): ArtifactQuestion => ({
-        id: `q_${nextQuestionNumber + index}`,
-        at: now,
-        ...(question.title ? { title: question.title } : {}),
-        question: question.question,
-        ...(question.context ? { context: question.context } : {}),
-        responseMode: question.responseMode,
-        ...(question.choices ? { choices: question.choices } : {}),
-        ...(question.priority ? { priority: question.priority } : {}),
-        status: 'open',
-      })
-    )
+    const nextQuestions = params.questions.map((question, index): ArtifactQuestion => ({
+      id: `q_${nextQuestionNumber + index}`,
+      at: now,
+      ...(question.title ? { title: question.title } : {}),
+      question: question.question,
+      ...(question.context ? { context: question.context } : {}),
+      responseMode: question.responseMode,
+      ...(question.choices ? { choices: question.choices } : {}),
+      ...(question.priority ? { priority: question.priority } : {}),
+      status: 'open',
+    }))
     const updated = copyManifestWithUpdates(manifest, artifactId, {
       updatedAt: now,
     })

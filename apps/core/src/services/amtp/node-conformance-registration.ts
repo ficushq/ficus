@@ -71,10 +71,9 @@ export function inspectNodeRegistration(home: string, handle: string): RawNodeRe
   const sqlite = openNodeConformanceDb(home, { readonly: true })
   try {
     return sqlite
-      .query<
-        RawNodeRegistration,
-        [string]
-      >('SELECT handle, inbound_open, agent_public_key_pem FROM registrations WHERE handle = ?')
+      .query<RawNodeRegistration, [string]>(
+        'SELECT handle, inbound_open, agent_public_key_pem FROM registrations WHERE handle = ?'
+      )
       .get(handle)
   } finally {
     sqlite.close()

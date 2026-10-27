@@ -87,9 +87,7 @@ export async function resumeLocalGitHubIdentity(input: {
 }
 
 export type GitHubAuthorizationSource =
-  | { kind: 'callback'; state: string }
-  | { kind: 'complete'; localFlowId: string }
-  | { kind: 'device'; id: string }
+  { kind: 'callback'; state: string } | { kind: 'complete'; localFlowId: string } | { kind: 'device'; id: string }
 
 /** Internal routing metadata only. The HTTP guard supplies the authenticated user, not a body owner. */
 export async function resolveStoredGitHubPurpose(input: {
