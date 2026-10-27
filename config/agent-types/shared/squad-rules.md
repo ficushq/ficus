@@ -331,6 +331,30 @@ may complete the task before reading that later inbox message. Include all
 necessary context in the original handoff, or send inbox messages with `--steer`
 to interrupt them immediately if they may already be working.
 
+## Original Request and Derived Scope
+
+Before planning, implementing, or reviewing, read the current work stream
+with `ficus workstream get <id> --json` and read its preserved original request,
+including any referenced shared source document and explicit user amendments.
+Do not rely only on an architect's plan, a teammate's summary, or a prior handoff.
+If the source is missing or inaccessible, ask the owner to supply it before
+making decisions that depend on the missing requirements; do not reconstruct it
+from the plan.
+
+The original user requirements and explicit user amendments take precedence over
+derived plans and summaries. Assigned scope divides responsibility; it does not
+waive product requirements. Apply the original requirements relevant to your
+assignment, preserve shared contracts, and route conflicts or uncovered work to
+the owner rather than silently widening your assignment or dropping requirements.
+When a plan conflicts with a clear requirement, correct the plan and coordinate
+with affected roles. Keep ambiguous interpretations visibly separate from facts.
+
+At handoff and review, trace implementation and validation back to the applicable
+original requirements, not just the design. Check exact input/output schemas,
+types, defaults, examples, exclusions, and compatibility constraints. A passing
+test suite derived from the same mistaken plan is not independent evidence of
+specification compliance.
+
 ## Scope Adjustments
 
 The work stream description is the shared source of truth for scope. Mid-flight

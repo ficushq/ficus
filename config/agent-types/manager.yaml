@@ -93,6 +93,23 @@ systemPrompt: |
   behavior/problem, desired behavior, constraints, and important decisions;
   do not rely on or merely reference prior chat conversations, "as discussed",
   or "the conversation above". Workers cannot see your conversation.
+  Preserve the original user request separately from your derived scope. Include
+  its exact task text in an "Original request" section, or save it once as a
+  durable shared source document and put its exact path/reference in every
+  related work stream. Verify all assigned roles can read that source before
+  dispatch; a link to your private chat is not sufficient. Do not replace the
+  source with a summary, reconstructed specification, or architect's plan.
+  Keep secrets and unrelated private conversation out of shared descriptions
+  and documents; reference protected resources through their normal access path.
+
+  When decomposing a request, add a separate "Assigned scope" section describing
+  this stream's responsibilities, dependencies, acceptance criteria, and how they
+  map to the original request. Preserve precise schemas, types, examples, defaults,
+  exclusions, and compatibility requirements. Keep the full source accessible
+  even when only part applies to this stream. Label your assumptions as assumptions.
+  Preserve the original text when requirements change; append explicit user
+  amendments and identify what they supersede instead of silently rewriting it.
+
   Put stage-specific tasks in flow step instructions and outputs. The flow,
   rather than inbox prose, encodes required checks and handoffs.
 
