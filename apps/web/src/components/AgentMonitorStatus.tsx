@@ -64,8 +64,7 @@ export function AgentMonitorStatus({
             // Opaque and above the plant, so the plant's pot hides behind it.
             className="relative z-10 min-w-0 border-b border-th-border bg-surface px-3 py-2 text-xs text-secondary [overflow-wrap:anywhere]"
           >
-            {/* Inline with the text, so it stays centered on the first line even when the
-                labels' mobile touch-target min-height makes that line taller. */}
+            {/* Inline with the text, so it stays centered on the first line whatever its height. */}
             <MonitorIcon className="mr-2 inline-block h-3 w-3 align-[-0.15em] text-accent-light" />
             <span className="font-medium text-accent-light">Monitoring:</span>{' '}
             {shownMonitors.map((monitor, index) => (

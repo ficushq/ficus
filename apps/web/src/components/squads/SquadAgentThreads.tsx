@@ -132,7 +132,7 @@ function formatRelativeTime(date: Date | string): string {
   return 'Just now'
 }
 
-// Mobile links get a 1.5rem minimum touch height (index.css); the matching line height keeps the text centred.
+// On phones a 24px line height gives these compact links a touch-sized target, with the text centred in it.
 const workLinkClass =
   'pointer-events-auto relative whitespace-nowrap rounded-sm max-md:leading-6 text-secondary hover:text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1'
 

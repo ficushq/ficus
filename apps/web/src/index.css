@@ -1109,11 +1109,15 @@
   }
 }
 
-/* Improve touch targets on mobile */
+/* Touch targets on phones: standalone design-system buttons get WCAG 2.5.8's 24px minimum.
+   Links, link-style buttons (.ficus-button-link) and unstyled text buttons usually sit in a
+   line of text and keep its line height, which the criterion's inline exception allows. A
+   minimum height on those made the line taller than its text, so an icon pinned to the first
+   line sat above it. Fixed-size custom controls (toggle switches, graph handles) keep their
+   size. :where() keeps the specificity at zero, so size utilities (min-h-0, min-h-[44px]) win. */
 @layer base {
   @media (max-width: 767px) {
-    button,
-    a {
+    :where(.ficus-button:not(.ficus-button-link)) {
       min-height: 1.5rem;
     }
   }
