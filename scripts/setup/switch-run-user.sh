@@ -4,17 +4,6 @@
 #
 #   switch-run-user.sh --config /root/ficus-setup/ficus-setup.yaml [--user ficus]
 #   switch-run-user.sh --config /root/ficus-setup/ficus-setup.yaml --revert
-#   (either form also takes --force-rebase, anywhere on the line)
-#
-# --force-rebase relaxes one check: precondition P6, which refuses when the
-# database already holds paths under the new HOME (rebase-home.js reports
-# REBASE_HOME_TARGET rows). Rows that only mention that path (a message or a
-# log that names it) are not files stored under it; with the flag the switch
-# lists them, goes ahead, and runs rebase-home.js with --force (P6's dry run
-# and step 5). Every other check, the steps, the rollback and the success
-# checks are unchanged. The flag is journaled, and a rollback of a forced run
-# (now, or settled by a later run) runs its inverse rebase with --force as
-# well: the rows that only named the new HOME then name the old one.
 #
 # The plan is docs/plans/2026-10-26-hosted-non-root-audit.md, 2.2. A switch:
 #   * creates the service user (ensure_run_user: system account, home
@@ -51,24 +40,20 @@ source "${SCRIPT_DIR}/lib.sh"
 
 usage() {
   cat <<'EOF'
-Usage: switch-run-user.sh --config ficus-setup.yaml [--user NAME] [--revert] [--force-rebase]
+Usage: switch-run-user.sh --config ficus-setup.yaml [--user NAME] [--revert]
 Options:
   --config FILE   the config this host was set up with (core.run_user is recorded in it)
   --user NAME     the service user to switch to (default: ficus)
   --revert        switch back to root
-  --force-rebase  go ahead when the database already holds rows naming the new HOME
-                  (precondition P6), e.g. messages or logs that only mention the path;
-                  the stored paths are then rebased with rebase-home.js --force
 EOF
 }
 
-CONFIG='' TARGET_USER=ficus REVERT=0 FORCE_REBASE=0
+CONFIG='' TARGET_USER=ficus REVERT=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config) CONFIG=${2:?--config needs a value}; shift 2 ;;
     --user) TARGET_USER=${2:?--user needs a value}; shift 2 ;;
     --revert) REVERT=1; shift ;;
-    --force-rebase) FORCE_REBASE=1; shift ;;
     -h | --help) usage; exit 0 ;;
     *) die "unknown argument: $1 (see --help)" ;;
   esac
@@ -103,17 +88,12 @@ done
 BACKUP_TEMPLATE="${SCRIPT_DIR}/ficus-backup.sh.tmpl"
 
 if [[ ${REVERT} -eq 1 ]]; then GOAL=root; else GOAL=${TARGET_USER}; fi
-# The extra rebase-home.js argument for P6's dry run and step 5 (empty without --force-rebase).
-REBASE_FORCE_ARG=''
-if [[ ${FORCE_REBASE} -eq 1 ]]; then REBASE_FORCE_ARG=--force; fi
 
 # --------------------------------------------------------------- the journal
 #
 # $(host_migrate_backup_root)/RUN_USER_SWITCH, root 0600:
-#   line 1  <set dir>\t<goal user>\t<from user>\t<old HOME>\t<new HOME>\t<release>[\tforce-rebase]
+#   line 1  <set dir>\t<goal user>\t<from user>\t<old HOME>\t<new HOME>\t<release>
 #   then    one line per step, written (and flushed) before the step runs.
-# The seventh field is written only by a --force-rebase run (the header of any
-# other run is unchanged).
 # The set dir (under run-user-switch/, root 0700) holds a copy of every file
 # the run rewrites (MANIFEST: <idx>\t<sha256>\t<path>) and ABSENT, the files
 # it may create (the sudoers rules), which a rollback removes again.
@@ -335,9 +315,9 @@ switch_checks() { # GOAL OLD NEW RELEASE
 # is attempted whatever the previous one did; a failure is logged and makes
 # the rollback report failure, but never stops it.
 switch_rollback() {
-  local journal setdir goal from old new release forced header rc=0
+  local journal setdir goal from old new release header rc=0
   journal=$(run_user_switch_journal)
-  IFS=$'\t' read -r setdir goal from old new release forced <"${journal}" || die "unreadable run-user switch journal ${journal}"
+  IFS=$'\t' read -r setdir goal from old new release <"${journal}" || die "unreadable run-user switch journal ${journal}"
   SWITCH_SET=${setdir}
   RESULT_USER=${from}
   if ! switch_step_ran 3; then
@@ -350,11 +330,7 @@ switch_rollback() {
   as_root systemctl stop "${HL_UNIT_API}" "${HL_UNIT_WORKER}" || { log_error 'could not stop the core units'; rc=1; }
   if [[ ${POOL_ENABLED} == true ]]; then as_root systemctl stop "${HL_UNIT_POOLER}" || true; fi
   if switch_step_ran 5; then
-    # A forced run forces the inverse too: when its step 5 never committed,
-    # the rows that only name the new HOME are still there, and the inverse
-    # would refuse on them (and S4 would then find them under the new HOME).
-    switch_rebase "${setdir}" "${release}" "${new}" "${old}" ${forced:+--force} >&2 ||
-      { log_error "could not rebase the stored paths back to ${old}"; rc=1; }
+    switch_rebase "${setdir}" "${release}" "${new}" "${old}" >&2 || { log_error "could not rebase the stored paths back to ${old}"; rc=1; }
   fi
   if switch_step_ran 4 && [[ -d ${new} && ! -e ${old} ]]; then
     rename_only "${new}" "${old}" || { log_error "could not move ${new} back to ${old}"; rc=1; }
@@ -407,13 +383,12 @@ switch_artifact_groups() { # USER
 # --------------------------------------------------------- the switch itself
 
 switch_run() { # GOAL FROM OLD NEW RELEASE
-  local goal=$1 from=$2 old=$3 new=$4 release=$5 journal tmp forced=''
+  local goal=$1 from=$2 old=$3 new=$4 release=$5 journal tmp
   journal=$(run_user_switch_journal)
-  if [[ -n ${REBASE_FORCE_ARG} ]]; then forced=$'\tforce-rebase'; fi
   log_step "switch 1/17: back up every file this run rewrites"
   SWITCH_SET=$(switch_backup_create)
   tmp="${journal}.tmp.$$"
-  (umask 077 && printf '%s\t%s\t%s\t%s\t%s\t%s%s\n' "${SWITCH_SET}" "${goal}" "${from}" "${old}" "${new}" "${release}" "${forced}" >"${tmp}") &&
+  (umask 077 && printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${SWITCH_SET}" "${goal}" "${from}" "${old}" "${new}" "${release}" >"${tmp}") &&
     _hm_sync "${tmp}" && mv -f -- "${tmp}" "${journal}" && _hm_sync "${journal}" ||
     { rm -f -- "${tmp}"; rm -rf -- "${SWITCH_SET}"; die 'could not write the run-user switch journal — nothing was changed'; }
   trap 'switch_on_exit $?' EXIT
@@ -439,8 +414,7 @@ switch_run() { # GOAL FROM OLD NEW RELEASE
 
   switch_journal_step 5
   log_step "switch 5/17: rebase the stored HOME paths"
-  switch_rebase "${SWITCH_SET}" "${release}" "${old}" "${new}" ${REBASE_FORCE_ARG:+"${REBASE_FORCE_ARG}"} >&2 ||
-    die "rebasing the stored paths from ${old} to ${new} failed"
+  switch_rebase "${SWITCH_SET}" "${release}" "${old}" "${new}" >&2 || die "rebasing the stored paths from ${old} to ${new} failed"
 
   switch_journal_step 6
   log_step "switch 6/17: HOME_DIR=${new} in ${ENV_FILE}"
@@ -622,19 +596,13 @@ LINKS=$(find "${OLD}" -type l -lname "${OLD}/*" -print 2>/dev/null | head -n 20)
 [[ -z ${LINKS} ]] || die "refusing: symlinks inside ${OLD} point into it by absolute path and would dangle after the move:
 ${LINKS}
 nothing was changed"
-# P6: nothing is stored under the new HOME yet (--force-rebase: rows that
-# name it are listed, and rebased over).
-REBASE_OUT=$(switch_rebase "${SWITCH_SET}" "${RELEASE}" "${OLD}" "${NEW}" --dry-run ${REBASE_FORCE_ARG:+"${REBASE_FORCE_ARG}"}) ||
+# P6: nothing is stored under the new HOME yet.
+REBASE_OUT=$(switch_rebase "${SWITCH_SET}" "${RELEASE}" "${OLD}" "${NEW}" --dry-run) ||
   die "rebase-home.js --dry-run from ${OLD} to ${NEW} failed — nothing was changed"
-if grep -Eq '^REBASE_HOME_TARGET [^=]+=[1-9]' <<<"${REBASE_OUT}"; then
-  [[ ${FORCE_REBASE} -eq 1 ]] ||
-    die "refusing: the database already stores paths under ${NEW}:
+! grep -Eq '^REBASE_HOME_TARGET [^=]+=[1-9]' <<<"${REBASE_OUT}" ||
+  die "refusing: the database already stores paths under ${NEW}:
 $(grep -E '^REBASE_HOME_TARGET [^=]+=[1-9]' <<<"${REBASE_OUT}")
-if these rows only mention the path (messages, logs) rather than store a file under it, re-run with --force-rebase
 nothing was changed"
-  log_warn "the database already holds rows naming ${NEW}; --force-rebase: rebasing anyway:
-$(grep -E '^REBASE_HOME_TARGET [^=]+=[1-9]' <<<"${REBASE_OUT}")"
-fi
 # P7: no backup is running.
 ! as_root systemctl is-active --quiet "${HL_UNIT_BACKUP}.service" ||
   die "${HL_UNIT_BACKUP}.service is running — wait for it to finish; nothing was changed"
