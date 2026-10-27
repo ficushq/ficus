@@ -318,6 +318,22 @@ rolled-back failure).
 | P6  | `rebase-home.js --dry-run --from "$OLD" --to "$NEW"` reports no `REBASE_HOME_TARGET` rows (nothing already stored under the new HOME)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | P7  | `ficus-backup.service` is not running                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
+**`--force-rebase`.** P6 cannot tell a file stored under the new HOME from a
+row whose text merely names it: a message or a log that mentions
+`/home/ficus/.ficus` counts as a `REBASE_HOME_TARGET` row too. Its refusal
+lists those rows and says to re-run with `--force-rebase` when they only
+mention the path. With that flag (accepted anywhere after `--config`, with
+`--revert` too) the switch logs the rows and goes ahead: P6's dry run and the
+step 5 rebase run `rebase-home.js --force`, so the rows that already named the
+new HOME are left as they are and every path under the old one is moved. The
+flag changes nothing else: every other precondition, step, success check and
+the rollback run as without it. It is recorded in the journal's first line (a
+seventh field, `force-rebase`, written only by a forced run), and a rollback of
+a forced run, immediate or settled by a later run, runs its inverse rebase with
+`--force` as well: the rows that named the new HOME then name the old one. The
+hosted platform's switch job passes the flag when the operator chooses to
+rewrite anyway.
+
 **Steps.** Each step is recorded in a step journal in the root 0700 host backup
 root before it runs. An interrupted run is settled from that journal, forward
 or back, and never guessed from directory state (the `host_migrate` doctrine).

@@ -285,6 +285,7 @@ the `systemd/` templates, like `enable-pooler.sh`), run as root:
 ```bash
 bash switch-run-user.sh --config /root/ficus-setup/ficus-setup.yaml [--user ficus]
 bash switch-run-user.sh --config /root/ficus-setup/ficus-setup.yaml --revert
+bash switch-run-user.sh --config /root/ficus-setup/ficus-setup.yaml --force-rebase
 ```
 
 It refuses with nothing changed unless the host is on the artifact layout, no
@@ -301,6 +302,16 @@ failure after the services stop rolls everything back. A run killed midway
 leaves its journal: every other toolkit script refuses until the next
 `switch-run-user.sh` run settles it. The last line is
 `FICUS_RUN_USER=<user>` (`root` after `--revert` or a rolled-back failure).
+
+The "database stores nothing under the new HOME" check counts every row that
+names that path, including messages or logs that only mention it. When its
+refusal lists rows like that, re-run with `--force-rebase` (anywhere after
+`--config`, with or without `--revert`): the switch lists the rows and goes
+ahead, rebasing with `rebase-home.js --force`, so the mentions stay as they
+are and every path under the old HOME moves. Nothing else changes; a rollback
+of a forced run forces its inverse rebase too (the mentions then name the old
+HOME).
+
 The plan, with every check, is
 `docs/plans/2026-10-26-hosted-non-root-audit.md`.
 

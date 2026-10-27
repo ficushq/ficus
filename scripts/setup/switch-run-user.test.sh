@@ -31,6 +31,11 @@
 #   * a run killed mid-switch leaves its journal; every other toolkit entry
 #     refuses while it exists, and the next run settles it;
 #   * --revert goes back to root;
+#   * --force-rebase (anywhere after --config, with --revert too) lets P6 pass
+#     over rows that only name the new HOME and runs rebase-home.js --force
+#     for P6 and step 5, and nothing else; without it P6 names the flag; the
+#     flag is journaled, so a rollback (immediate or settled later) forces the
+#     inverse rebase too; an unknown flag is still rejected;
 #   * run-core-operator.sh runs an entrypoint as the account Core runs as, with
 #     the env files parsed (never sourced), the caller's variables winning.
 #
@@ -198,19 +203,23 @@ cat "${SRU_SUDOERS_DIR}"/* 2>/dev/null | while IFS= read -r line; do
   printf '    %s\n' "${line#"${me} ALL="}"
 done
 EOF
-# rebase-home.js over $SRU_STATE/db (one stored path per line).
+# rebase-home.js over $SRU_STATE/db (one stored path per line). Every call's
+# arguments are logged to $SRU_STATE/rebase.log; rebase-fails-real fails the
+# next writing run only, once (a rolled-back transaction: nothing written).
 cat >"${SHIMS}/bun" <<'EOF'
 #!/usr/bin/env bash
 [[ $1 == dist/rebase-home.js ]] || exit 99
 shift
 [[ -n ${DATABASE_URL:-} ]] || exit 2
-from='' to='' dry=0
+printf '%s\n' "$*" >>"${SRU_STATE}/rebase.log"
+from='' to='' dry=0 force=0
 while [[ $# -gt 0 ]]; do
   case $1 in
     --from) from=$2; shift 2 ;;
     --to) to=$2; shift 2 ;;
     --dry-run) dry=1; shift ;;
-    *) shift ;;
+    --force) force=1; shift ;;
+    *) exit 2 ;;
   esac
 done
 db=${SRU_STATE}/db
@@ -222,7 +231,8 @@ if [[ ${dry} -eq 1 ]]; then
   echo "REBASE_HOME_TARGET sessions.path=${target}"
   exit 0
 fi
-if ((moving > 0 && target > 0)); then echo "REBASE_HOME_TARGET sessions.path=${target}"; exit 3; fi
+if ((moving > 0 && target > 0 && force == 0)); then echo "REBASE_HOME_TARGET sessions.path=${target}"; exit 3; fi
+[[ -e ${SRU_STATE}/rebase-fails-real ]] && { rm -f "${SRU_STATE}/rebase-fails-real"; exit 1; }
 sed -i "s|^${from}/|${to}/|" "${db}"
 echo "REBASE_HOME sessions.path=${moving}"
 EOF
@@ -347,6 +357,7 @@ expect_eq 'switch: the journal and the backup set are gone' \
 expect_match 'switch: the backup timer was stopped before the services and started after' \
   "$(tr '\n' ' ' <"${STATE}/systemctl.log")" 'stop ficus-backup.timer .*stop ficus-api ficus-worker .*restart ficus-api ficus-worker .*start ficus-backup.timer'
 expect_eq 'switch: .env was rewritten (HOME_DIR only)' "$([[ $(sha256sum <"${DEST}/.env") != "${env_before}" ]] && echo changed)" changed
+expect_eq 'switch: without --force-rebase, rebase-home.js never runs with --force' "$(grep -c -e '--force' "${STATE}/rebase.log")" 0
 
 out=$(run_switch)
 expect_match 'switch again: only the checks run, then the trailer' "${out}" 'already running as ficus-srut: running the success checks only'
@@ -385,9 +396,66 @@ precondition 'an absolute symlink into the old HOME' 'would dangle after the mov
 fresh_host
 printf '%s\n' "${NEW}/sessions/other" >>"${STATE}/db"
 precondition 'stored paths already under the new HOME' 'already stores paths under'
+out=$(run_switch)
+expect_match 'P: stored paths already under the new HOME — the rows are listed, then the flag is named' "${out}" \
+  "already stores paths under ${NEW}:"$'\n''REBASE_HOME_TARGET sessions.path=1'$'\n''if these rows only mention the path \(messages, logs\) rather than store a file under it, re-run with --force-rebase'$'\n''nothing was changed'
+expect_eq 'P: stored paths already under the new HOME — the dry run is not forced' "$(grep -c -e '--force' "${STATE}/rebase.log")" 0
 fresh_host
 : >"${STATE}/ficus-backup.service.active"
 precondition 'a running backup' 'ficus-backup.service is running'
+
+# ------------------- 3b. --force-rebase: rows that only name the new HOME
+run_switch_raw() { # ARGS... — the script with exactly ARGS; prints the output, then rc=N
+  local rc=0 out
+  out=$(bash "${SCRIPT_DIR}/switch-run-user.sh" "$@" 2>&1) || rc=$?
+  [[ -z ${SRU_VERBOSE:-} ]] || printf '%s\n' "${out}" >&2
+  printf '%s\nrc=%s' "${out}" "${rc}"
+}
+fresh_host
+printf '%s\n' "${NEW}/mentioned-in-a-message" >>"${STATE}/db"
+out=$(run_switch_raw --config "${CFG}" --force-rebase --user "${SVC}")
+expect_eq 'force-rebase: P6 passes, the switch succeeds' "$(last_line "${out}")$(grep -o 'rc=[0-9]*$' <<<"${out}")" "FICUS_RUN_USER=${SVC}rc=0"
+expect_match 'force-rebase: the rows naming the new HOME are listed in a warning' "${out}" \
+  "rebasing anyway:"$'\n''REBASE_HOME_TARGET sessions.path=1'
+expect_eq 'force-rebase: P6'"'"'s dry run and the real rebase run with --force, the success check does not' \
+  "$(cat "${STATE}/rebase.log")" "--from ${OLD} --to ${NEW} --dry-run --force
+--from ${OLD} --to ${NEW} --force
+--from ${OLD} --to ${NEW} --dry-run"
+expect_eq 'force-rebase: the stored paths are rebased, the mention is left as it was' "$(cat "${STATE}/db")" "${NEW}/sessions/s1/log
+${NEW}/workspaces/w/file
+/elsewhere/x
+${NEW}/mentioned-in-a-message"
+expect_eq 'force-rebase: no journal is left' "$([[ -e ${HOST_MIGRATE_BACKUP_ROOT}/RUN_USER_SWITCH ]] && echo journal || echo none)" none
+: >"${STATE}/rebase.log"
+out=$(run_switch --revert --force-rebase)
+expect_eq 'force-rebase: --revert --force-rebase is accepted and goes back to root' \
+  "$(last_line "${out}")$(grep -o 'rc=[0-9]*$' <<<"${out}")" 'FICUS_RUN_USER=rootrc=0'
+expect_eq 'force-rebase: the revert'"'"'s P6 dry run and rebase run with --force too' \
+  "$(grep -e '--force' "${STATE}/rebase.log")" "--from ${NEW} --to ${OLD} --dry-run --force
+--from ${NEW} --to ${OLD} --force"
+
+# A forced step 5 that never commits: the rollback reads the flag from the
+# journal and forces the inverse, which would otherwise refuse on the row that
+# names the new HOME (and S4 would find it there).
+fresh_host
+printf '%s\n' "${NEW}/mentioned-in-a-message" >>"${STATE}/db"
+: >"${STATE}/rebase-fails-real"
+out=$(run_switch --force-rebase)
+expect_match 'force-rebase rollback: the run fails' "${out}" $'\nrc=[1-9][0-9]*$'
+expect_match 'force-rebase rollback: the rolled-back host passes the success checks' "${out}" 'rolled back: the services run as root again'
+expect_eq 'force-rebase rollback: the trailer says root, HOME is back' \
+  "$(last_line "${out}"):$([[ -e ${NEW} ]] && echo new || echo gone):$(cat "${OLD}/sessions/s1/log")" 'FICUS_RUN_USER=root:gone:x'
+expect_eq 'force-rebase rollback: the inverse rebase is forced too' "$(grep -c -x -e "--from ${NEW} --to ${OLD} --force" "${STATE}/rebase.log")" 1
+expect_eq 'force-rebase rollback: every stored path is under the old HOME' "$(cat "${STATE}/db")" "${OLD}/sessions/s1/log
+${OLD}/workspaces/w/file
+/elsewhere/x
+${OLD}/mentioned-in-a-message"
+expect_eq 'force-rebase rollback: no journal is left' "$([[ -e ${HOST_MIGRATE_BACKUP_ROOT}/RUN_USER_SWITCH ]] && echo journal || echo none)" none
+
+out=$(run_switch --force)
+expect_match 'an unknown flag is still rejected' "${out}" 'unknown argument: --force \(see --help\)'$'\n''rc=[1-9][0-9]*$'
+out=$(run_switch --help)
+expect_match '--help documents --force-rebase' "${out}" '--force-rebase  go ahead when the database already holds rows naming the new HOME'
 
 # ------------------------------------------- 4. a failed restart rolls back
 fresh_host
@@ -519,5 +587,27 @@ expect_match 'operator: refuses to run unless root' "${out}" 'run it as root'
 run_switch --revert >/dev/null
 out=$(operator box-control)
 expect_match 'operator: on a root host the entrypoint runs as root' "${out}" "(^|"$'\n'")user=root"$'\n'
+
+# ------- 7. a forced run killed in step 5 is settled from its journal later
+fresh_host
+printf '%s\n' "${NEW}/mentioned-in-a-message" >>"${STATE}/db"
+: >"${STATE}/hang"
+rc=0
+(
+  export SRU_KILL_PID=${BASHPID}
+  exec bash "${SCRIPT_DIR}/switch-run-user.sh" --config "${CFG}" --user "${SVC}" --force-rebase
+) >/dev/null 2>&1 || rc=$?
+rm -f "${STATE}/hang"
+expect_eq 'killed (forced): the run died with its journal, which records the flag' \
+  "${rc}:$(head -n 1 "${HOST_MIGRATE_BACKUP_ROOT}/RUN_USER_SWITCH" | cut -f 7)" '137:force-rebase'
+: >"${STATE}/rebase.log"
+# The next run, without the flag: it settles the forced run as forced (from
+# the journal), then switches; P6 passes, the mention now names the old HOME.
+out=$(run_switch)
+expect_match 'killed (forced): the next run rolls it back first, with the passing checks' "${out}" \
+  'rolling it back first.*rolled back: the services run as root again'
+expect_eq 'killed (forced): ...forcing the settled run'"'"'s inverse rebase only' \
+  "$(grep -e '--force' "${STATE}/rebase.log")" "--from ${NEW} --to ${OLD} --force"
+expect_eq 'killed (forced): ...then switches, and succeeds' "$(last_line "${out}")$(grep -o 'rc=[0-9]*$' <<<"${out}")" "FICUS_RUN_USER=${SVC}rc=0"
 
 summary
