@@ -1,0 +1,177 @@
+{
+  "experiment": "long-feature-v1",
+  "frozen_at": "2026-10-20T20:24:45.340278+00:00",
+  "selection_manifest_sha256": "2651b589c4e202eb558f6546f49366a85aeaf389b2fa4017e6b7e8c5b7868a0b",
+  "source_files_sha256": {
+    "evals/harbor/budget_proxy.py": "f30b9c6dab5f9e4c86c636ce7fdb56185d2d93f0467caa2bb4558a160cf1f57e",
+    "evals/harbor/ficus_agent.py": "f79c9cbb68a99f5a521c9e10f233cab816df455bab5a8b1f5eaa41a02062379b",
+    "evals/harbor/pi_workflow.py": "00712cabe8eebbd571c7ef438b357c019bb9735492ff8bfb29a870d3ed2c03e3",
+    "evals/harbor/run-pilot.py": "a3dd6d86c84291d0f2b9b4c46ce16d75038d83ee949e52349ff00f4cdcdff31a",
+    "evals/harbor/deepswe_controls.py": "aa43bea5af20c7afeb1b02156b63522dddbd04fa3e07687fbcbccf6470c3585a",
+    "evals/harbor/deepswe_network_smoke.py": "80addc05083ea6dc7386552504717d5fbcabc6a4e0579145702ba6cde9cae353",
+    "evals/harbor/summarize_long_feature.py": "91a5518ee5376cf3236de750cba2a12c43da803ef6984704d4cf709db21a144c"
+  },
+  "task_files_sha256": {
+    "environment/Dockerfile": "99ed12d708eda5f6c6d991772f373929193a5baf41fea5a9e022bd410fd9af18",
+    "instruction.md": "aecc575c2253564382af8fcb9afb0af11b47b8fda94c7625100a18148919e95d",
+    "solution/solution.patch": "02b3e1aecaebed22fb0e85edf5fc25807c3b1f61e7a06b18c53536aff1258616",
+    "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+    "task.toml": "f086837ae0b9a4bff1a0ca41e8bcd300eac3c34e1d77011ddf4572904c2ab5dc",
+    "tests/Dockerfile": "1d556e2a6ab1cc90d9d6480f1d4ee8e86ea3823a4797796ea6d015483b545bb4",
+    "tests/config.json": "1047edcb6c6af650cafbba6d015b0db12e33a0ebcedb1f3c720b95b2b8fc7469",
+    "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+    "tests/test.patch": "e59bf620b171ab8ead1f288c5cb24e85df61d5ba254028290a4ea3a0dbcdab8f",
+    "tests/test.sh": "c46dfa388313f5ef8f95310906ef30ed68d53a255d381eaf9ba7a79c073b87bc"
+  },
+  "runtime_archive_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+  "controls": [
+    {
+      "job": "skrub-baseline-native-sidecar",
+      "rewards": {
+        "reward": 0,
+        "f2p_total": 130,
+        "f2p_passed": 0,
+        "p2p_total": 2784,
+        "p2p_passed": 2784,
+        "f2p": 0.0,
+        "p2p": 1.0,
+        "partial": 0.9553877831159918
+      },
+      "hashes": {
+        "result.json": "1548bdf220298c6acd353bf0103354da49ecff0390bc80171eb8292a5ccfc169",
+        "verifier/reward.json": "b30182cbb2e353413b7dc5dd697c445cd4d53c2acd263bc81025fe9607562420",
+        "artifacts/logs/artifacts/model.patch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "job": "skrub-oracle-native-sidecar",
+      "rewards": {
+        "reward": 1,
+        "f2p_total": 130,
+        "f2p_passed": 130,
+        "p2p_total": 2784,
+        "p2p_passed": 2784,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      },
+      "hashes": {
+        "result.json": "2ad9eabedd7ed276d7a51b91cfc2e3634c60d5956ca23fd82175d010eb4a6c53",
+        "verifier/reward.json": "8117e32265b7e6f4ac379398eeb55a092c68734cb4cf67cad2921a620ac80aaf",
+        "artifacts/logs/artifacts/model.patch": "02b3e1aecaebed22fb0e85edf5fc25807c3b1f61e7a06b18c53536aff1258616"
+      }
+    },
+    {
+      "job": "skrub-baseline-collision-v2",
+      "rewards": {
+        "reward": 0,
+        "f2p_total": 130,
+        "f2p_passed": 0,
+        "p2p_total": 2784,
+        "p2p_passed": 2784,
+        "f2p": 0.0,
+        "p2p": 1.0,
+        "partial": 0.9553877831159918
+      },
+      "hashes": {
+        "result.json": "baf19b41ebcc4cad106caa03029ab6d03cfa6fd4b1aa19a2c1cb53aa4e9ccf56",
+        "verifier/reward.json": "b30182cbb2e353413b7dc5dd697c445cd4d53c2acd263bc81025fe9607562420",
+        "artifacts/logs/artifacts/model.patch": "1035fa524221b1fc442b34fc0d32d4e730f21e7dce72d9ff47a2f4fafb6f85fd"
+      }
+    },
+    {
+      "job": "skrub-oracle-collision-v3",
+      "rewards": {
+        "reward": 1,
+        "f2p_total": 130,
+        "f2p_passed": 130,
+        "p2p_total": 2784,
+        "p2p_passed": 2784,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      },
+      "hashes": {
+        "result.json": "5fc9c41582fb775ae23c6a6bfd00f96c396baabbf30787240f9b5294781518c0",
+        "verifier/reward.json": "8117e32265b7e6f4ac379398eeb55a092c68734cb4cf67cad2921a620ac80aaf",
+        "artifacts/logs/artifacts/model.patch": "e26ed2ed8136b572fc6613129ebe9d6a6a8f8f31f84ecdf8199cad69a8399dbb"
+      }
+    },
+    {
+      "job": "skrub-pi-network-smoke-v2",
+      "inference": false,
+      "verification_disabled": true,
+      "checks": {
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "pinned_pi_and_subagent_extension": true
+      },
+      "hashes": {
+        "result.json": "8a5b3540b5d80118a488b9f9fff019f52e21f37b07562d1d15078b8b3f919e85",
+        "agent/network-smoke.json": "a51bd185e985cd4e7c25f253c6d4990f923a2779cb5ead954129ee938e56207b"
+      }
+    },
+    {
+      "job": "skrub-ficus-native-network-smoke",
+      "inference": false,
+      "verification_disabled": true,
+      "checks": {
+        "database_loopback": true,
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "ficus_api_ready": true,
+        "ficus_worker_ready": true,
+        "native_provider_preload": true
+      },
+      "hashes": {
+        "result.json": "d8de5e6f9698b6a9a67b89eae78630202e30a0308e270f8b59a2f20cd5cee16d",
+        "agent/network-smoke.json": "075792f0f74241df9bd668a2a04b5dc740e08d3290ac51438e866b866df34f38"
+      }
+    }
+  ],
+  "failed_infrastructure_attempts": [
+    "skrub-baseline (global amd64 override conflicted with native egress sidecar)",
+    "skrub-ficus-network-smoke (temporary Postgres socket ready before TCP)",
+    "skrub-pi-network-smoke (expected denied fetch raised wrapper exception)",
+    "skrub-baseline-collision (fixture quoting)",
+    "skrub-oracle-collision (fixture quoting/constructor)",
+    "skrub-oracle-collision-v2 (custom Oracle constructor missing task/trial paths)",
+    "long-v1-skrub-ficus-planned (native provider rejected raw loopback hostname; zero calls)"
+  ],
+  "failed_attempt_inference_cost_usd": 0,
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "pi_version": "0.99.1",
+  "arms": [
+    "ficus-planned",
+    "pi-planned",
+    "ficus-engineer",
+    "pi-engineer"
+  ],
+  "job_prefix": "long-v1-native-skrub",
+  "attempts_per_arm": 1,
+  "agent_timeout_seconds": 10800,
+  "verifier_timeout_seconds": 1800,
+  "task_cpus": 2,
+  "task_memory_mib": 8192,
+  "ficus_extra_database_cpus": 0.5,
+  "ficus_extra_database_memory_mib": 512,
+  "network": "public setup; execution allows host.docker.internal only; separate verifier no network",
+  "memory": "fresh-disabled",
+  "human_task_interventions": "none; stop and record if human input required",
+  "prior_exposure_usd": 25.993347,
+  "prior_last_call_id": 2012,
+  "per_arm_cap_usd": 10,
+  "per_request_reservation_usd": 5.5,
+  "cumulative_cap_usd": 50,
+  "resume_or_retry_paid_attempts": false,
+  "stop_conditions": [
+    "unknown usage remains after a finished trial",
+    "global cap cannot reserve another request",
+    "input hash drift",
+    "infrastructure failure"
+  ],
+  "original_manifest_sha256": "7195373e718b16830d85f84074f727648cde1ab3cb0ffa5898daaa96d7296664",
+  "recovery_reason": "Original first launch failed before inference: exact native provider preload requires disposable DB hostname. Keep frozen runtime/guard, resolve owned disposable DB alias to task loopback. Repeat API+worker smoke with exact native preload; no inference retries.",
+  "failed_startup_result_sha256": "f718b9f4ff1b6f746bc9df2f4f448c082467f91c62752af2bc386f6ce74070f5"
+}

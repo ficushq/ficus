@@ -1,0 +1,337 @@
+{
+  "experiment": "artifact-review-v3",
+  "kind": "one-artifact controlled reviewer replication, not a full-squad benchmark score",
+  "artifact": {
+    "source_job": "arv3-paid-engineer",
+    "source_result_sha256": "f72639276c21a66179532b717368e260ba97934e551803007024349774685d0e",
+    "base_commit": "3c5c1bd86376ee73d52a4cc770bdaeab15bbc2f3",
+    "sha256": "109e72dc1a04050e7599a659bf5f208c4dd05189bf8c56a0b52b1db27843a9f3",
+    "bytes": 42683,
+    "implementation_metadata": {
+      "configuration": "engineer",
+      "model_api": "openai-responses",
+      "thinking": "medium",
+      "outcome": "delivered",
+      "memory": "fresh-disabled",
+      "runtime_sha256": "f34c6a8a347e25b3179cea46f2283afbdca0f634674a28b46e426f5d78668012",
+      "database_network": "task",
+      "attempted_roles": ["engineer"],
+      "engineer_only_verified": true,
+      "executed_roles": ["engineer"]
+    },
+    "official_grade": {
+      "rewards": {
+        "reward": 1,
+        "f2p_total": 85,
+        "f2p_passed": 85,
+        "p2p_total": 1421,
+        "p2p_passed": 1421,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      }
+    },
+    "selection": "Only generated implementation; frozen regardless of grade. No operator edits.",
+    "hidden_grade_excluded_from_review_input": true
+  },
+  "reviews": [
+    {
+      "condition": "baseline",
+      "result_sha256": "137e9976ce57cdcc8a55d00953d59416571285fed9f56333e11bc8e781241fe6",
+      "report_sha256": "fc37f9248a45d5a64f5a86e5eff9e66ee1ffb461e733444cee33d689d85372d8",
+      "messages_sha256": "4a38993d905f33c1c860222a118bfa4974264276cfb67f064494d7c2f7ddc41a",
+      "audit": {
+        "base_commit": "3c5c1bd86376ee73d52a4cc770bdaeab15bbc2f3",
+        "artifact_sha256": "109e72dc1a04050e7599a659bf5f208c4dd05189bf8c56a0b52b1db27843a9f3",
+        "artifact_commit": "0421e62d4a11a39fcf7fdcbd0afdd0f76f6e39c4",
+        "valid": true,
+        "repository_unchanged": true,
+        "verdict": "changes-requested"
+      },
+      "report": {
+        "verdict": "changes-requested",
+        "findings": [
+          {
+            "title": "Consumer SAC inspection retains cancelled registrations and crashes after channel close",
+            "requirement": "Consumer.consuming_from_sac(queue) must report whether the Consumer is consuming from a SAC queue; Consumer.is_active_on(queue) and active_consumer_tags must reflect actual active ownership across the requested cancellation and channel-close lifecycle.",
+            "location": "kombu/messaging.py:559-583",
+            "evidence": "Reproduced with a real memory transport in /tmp/kombu-consumer-review-repro.py. Create a Consumer on a SAC Queue, consume, then call channel.basic_cancel(tag). channel.consumer_info(queue) becomes [], but consumer.consuming_from_sac(queue) still returns True. _on_cancel only invokes user callbacks and never reconciles _active_tags, while consuming_from_sac trusts that stale mapping. Calling consumer.consume() again also leaves the registry empty because _basic_consume sees the stale tag. In a separate run, channel.close() cancels the registration, but each of consuming_from_sac(queue), is_active_on(queue), and active_consumer_tags raises AttributeError: 'NoneType' object has no attribute 'state', because these helpers access broker state through the closed channel. Repair the new inspection methods to verify actual current registration and handle a closed channel, and reconcile true cancellations without treating SAC demotion (which uses the same notification callback) as deregistration. Add coverage for direct Channel.basic_cancel and Channel.close, not only Consumer.cancel.",
+            "severity": "Critical"
+          },
+          {
+            "title": "Active Consumer queries confuse identical tags on different channels",
+            "requirement": "Consumer.is_active_on(queue) and Consumer.active_consumer_tags must identify this Consumer's active registration; broker-wide consumer state must correctly distinguish registrations across channels.",
+            "location": "kombu/messaging.py:573-583",
+            "evidence": "Reproduced with a real memory transport in /tmp/kombu-consumer-review-repro.py. Start a Consumer on channel A on a SAC queue; obtain its generated tag. Register a higher-priority consumer on channel B with that same tag using basic_consume. consumer_info correctly shows channel B's registration active and channel A's registration inactive, and publishing delivers only to B. However, channel A's Consumer.is_active_on(queue) returns True and active_consumer_tags includes the demoted tag. The helper compares only the tag string returned by get_active_consumer, discarding registration/channel identity. Duplicate tags across channels are explicitly supported by the added test test_duplicate_tags_on_different_channels_have_one_active_record. Repair the Consumer helpers to check both channel ownership and active registration (for example, channel-local consumer records), and add a Consumer-level duplicate-tag test verifying inactive status after demotion and active status after failover.",
+            "severity": "Critical"
+          }
+        ],
+        "observations": [
+          "Pass 1: Independently read the entire diff from 3c5c1bd86376ee73d52a4cc770bdaeab15bbc2f3 to 0421e62d4a11a39fcf7fdcbd0afdd0f76f6e39c4. The implementation substantially covers the requested scope: BrokerState-backed registration and event storage, stable priority ordering, delivery-time dispatch, SAC demotion/promotion, protected cancellation notifications, inspection APIs, Queue helpers, Consumer callback registration, global-state reset, documentation, and focused tests. No material extra feature work was identified. Spec compliance fails on the Consumer inspection defects above.",
+          "The newly added lifecycle test module passes independently: 25 passed. A focused suite covering virtual transport, messaging, entity, memory and filesystem passes: 251 passed. These tests verify actual in-memory dispatch, prefetch fallback, SAC failover, notification handling and inspection behavior, but miss the reproduced lifecycle and identity cases.",
+          "The available unit suite, excluding the two modules that cannot collect due to missing optional dependencies, passes: 1452 passed, 175 skipped in 25.70 seconds. Command: python -m pytest -q t/unit --ignore=t/unit/transport/test_azurestoragequeues.py --ignore=t/unit/transport/test_gcpubsub.py --disable-warnings --maxfail=10. Output saved at /tmp/kombu-review-tests-available.log.",
+          "No tracked files were changed. Scratch reproduction is /tmp/kombu-consumer-review-repro.py; it confirms stale SAC membership after cancellation, all three helper failures after close, and incorrect active ownership despite delivery to another channel."
+        ],
+        "limitations": [
+          "Pass 2 (code quality) was not performed because Pass 1 found blocking spec-compliance defects, following the required sequential review process.",
+          "Unfiltered unit-suite collection fails because azure.identity and google.api_core are unavailable, in t/unit/transport/test_azurestoragequeues.py and t/unit/transport/test_gcpubsub.py. Output saved at /tmp/kombu-review-tests.log. Those transport paths remain unverified; passing the available suite is not evidence that they work.",
+          "No external brokers or service-backed integration tests were exercised. Real-delivery reproductions used the memory transport.",
+          "The provided implementation is a frozen commit checked out on main. Its original development-branch workflow cannot be established from this checkout; this review does not attest compliance with the original branch-creation instruction."
+        ]
+      },
+      "metadata": {
+        "configuration": "reviewer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "f34c6a8a347e25b3179cea46f2283afbdca0f634674a28b46e426f5d78668012",
+        "database_network": "task",
+        "attempted_roles": ["reviewer"],
+        "engineer_only_verified": null,
+        "executed_roles": ["reviewer"],
+        "artifact_review": {
+          "base_commit": "3c5c1bd86376ee73d52a4cc770bdaeab15bbc2f3",
+          "artifact_sha256": "109e72dc1a04050e7599a659bf5f208c4dd05189bf8c56a0b52b1db27843a9f3",
+          "artifact_commit": "0421e62d4a11a39fcf7fdcbd0afdd0f76f6e39c4",
+          "valid": true,
+          "repository_unchanged": true,
+          "verdict": "changes-requested"
+        }
+      }
+    },
+    {
+      "condition": "candidate",
+      "result_sha256": "a3187a6cc0153a45d04791ff387be641e89d2b5a6adde788c196cefc33032e7e",
+      "report_sha256": "49e0207da5d1f773a90df5c94ec10eb4e6d9790a202f477131cfd7192b96d159",
+      "messages_sha256": "81d5d28bbcbb0d7df05fc0172af896ddc67a55112aeafc52be641017a72671fe",
+      "audit": {
+        "base_commit": "3c5c1bd86376ee73d52a4cc770bdaeab15bbc2f3",
+        "artifact_sha256": "109e72dc1a04050e7599a659bf5f208c4dd05189bf8c56a0b52b1db27843a9f3",
+        "artifact_commit": "0421e62d4a11a39fcf7fdcbd0afdd0f76f6e39c4",
+        "valid": true,
+        "repository_unchanged": true,
+        "verdict": "changes-requested"
+      },
+      "report": {
+        "verdict": "changes-requested",
+        "findings": [
+          {
+            "title": "Selected SQS consumers inherit another registration's acknowledgement mode",
+            "requirement": "Priority/SAC delivery in the virtual transport layer must dispatch to the correct consumer, while preserving the existing Queue.consume(no_ack=False) manual-acknowledgement contract. Standby registrations must not change how the active consumer's messages are acknowledged.",
+            "location": "kombu/transport/virtual/base.py:1219-1224; kombu/transport/SQS/__init__.py:586-598",
+            "evidence": "Reproduced using the actual SQS Channel conversion, bulk receive, virtual dispatcher, and acknowledgement methods, substituting only the external AWS client. Declare SAC queue jobs; register priority-0 low with no_ack=True, then priority-10 high with no_ack=False. Fetch one valid Kombu payload through low._get_bulk('jobs'). Delivery correctly selects high, but the backend delete_message has already been called once BEFORE high acknowledges. The delivered message also lacks sqs_message/sqs_queue metadata; acknowledging it performs no additional backend deletion. SQS._message_to_python checks the queue-level _noack_queues and deletes/returns the payload before the new dispatcher chooses the receiving registration. Thus a no-ack standby makes the active manual-ack consumer's delivery unrecoverable if processing fails. Reproduction script: /tmp/review_consumer_repro.py. Existing documentation explicitly assigns acknowledgement responsibility to the user for manual acknowledgements (docs/userguide/consumers.rst:46-47).",
+            "severity": "Critical",
+            "recommended_change": "Integrate consumer selection with SQS acknowledgement handling: retain receipt metadata until dispatch and apply the selected registration's no_ack mode rather than a queue-level flag contributed by another consumer. Cover mixed-ack registrations on SAC and non-SAC queues, including a full active consumer and standby fetches. Do not treat this backend dependency as unrelated to the requested virtual-layer delivery semantics."
+          },
+          {
+            "title": "SAC consumption query remains true after transport-side cancellation",
+            "requirement": "Consumer.consuming_from_sac(queue) must return True only when this Consumer is consuming from a SAC queue, including correct lifecycle state after Channel.basic_cancel.",
+            "location": "kombu/messaging.py:559-571",
+            "evidence": "Reproduced on memory:// without mocking: create Consumer(channel, [Queue('sac-query', queue_arguments={'x-single-active-consumer': True})]); call consume(); obtain its registered tag and call channel.basic_cancel(tag). channel.get_consumer_count('sac-query') is then 0, but consumer.consuming_from_sac('sac-query') returns True. The method relies on consuming_from(), which only checks the Consumer's cached _active_tags. Transport-side cancellation invokes _on_cancel, but that method only calls notification callbacks and never reconciles the cache. The new helper therefore contradicts the authoritative BrokerState registration immediately after the requested cancellation operation. Reproduction script: /tmp/review_consumer_repro.py.",
+            "severity": "Important",
+            "recommended_change": "Make the new query consult live registrations owned by this Consumer's channel/tag, or otherwise reconcile definitive cancellation with Consumer bookkeeping. Preserve cached registration/standby state on SAC demotion, since demotion also invokes on_cancel but does not remove the registration. Add a test that distinguishes definitive cancellation from demotion."
+          }
+        ],
+        "observations": [
+          "Pass 1: inspected all eight changed files between 3c5c1bd86376ee73d52a4cc770bdaeab15bbc2f3 and 0421e62d4a11a39fcf7fdcbd0afdd0f76f6e39c4. The implementation covers the requested API surface, stores registrations in BrokerState, uses stable descending-priority ordering, preserves SAC on redeclaration, and supplies lifecycle notifications, event queries, queue factories, and documentation. No unrelated feature expansion was identified.",
+          "Independently checked the consequential delivery interpretation: priority is reconsidered at delivery time, non-SAC consumers fall back according to the receiving channel's QoS, and a full SAC active consumer does not permit standby delivery. The focused tests exercise those distinctions and pass. Manual acknowledgement is an existing public contract, not an additional proposed feature; the SQS reproduction checks that contract against the new cross-consumer dispatcher.",
+          "Verification: python -m pytest t/unit/transport/virtual/test_consumer_lifecycle.py -q: 25 passed. Broader targeted virtual/entity/messaging/memory/filesystem run: 251 passed. Unit suite excluding the two modules with unavailable dependencies: 1452 passed, 175 skipped. git diff --check 3c5c1bd 0421e62 passed. Repository tracked files were not modified.",
+          "Pass 1 did not pass because of the blocking behavioral findings. Per the required sequential review process, Pass 2 code-quality assessment is deferred until spec compliance is repaired and reverified."
+        ],
+        "limitations": [
+          "The unfiltered unit suite could not collect t/unit/transport/test_azurestoragequeues.py and t/unit/transport/test_gcpubsub.py because azure and google.api_core are not installed. Those collection failures are environment limitations, not classified implementation defects.",
+          "No live external brokers/cloud services were used. The SQS reproduction executes repository channel/dispatch/acknowledgement code with a substituted AWS client; it verifies premature deletion calls and missing receipt metadata, not an end-to-end AWS deployment.",
+          "This was review-only: no repairs, tracked-file changes, source/test additions, branch changes, or commits were made. The supplied snapshot is on main, so the original implementation's requested branch-creation history cannot be established from this frozen snapshot."
+        ]
+      },
+      "metadata": {
+        "configuration": "reviewer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "05a9f0a912b2df168f73a4c1fc42888d06c6e0a52e69644add7aa651da4d3a3a",
+        "database_network": "task",
+        "attempted_roles": ["reviewer"],
+        "engineer_only_verified": null,
+        "executed_roles": ["reviewer"],
+        "artifact_review": {
+          "base_commit": "3c5c1bd86376ee73d52a4cc770bdaeab15bbc2f3",
+          "artifact_sha256": "109e72dc1a04050e7599a659bf5f208c4dd05189bf8c56a0b52b1db27843a9f3",
+          "artifact_commit": "0421e62d4a11a39fcf7fdcbd0afdd0f76f6e39c4",
+          "valid": true,
+          "repository_unchanged": true,
+          "verdict": "changes-requested"
+        }
+      }
+    }
+  ],
+  "budget": {
+    "phase_cap_usd": 30,
+    "batch_opening_phase_exposure_usd": 21.225187,
+    "new_confirmed_usd": 1.059073,
+    "new_unknown_usage": 0,
+    "per_client": [
+      {
+        "client": "arv3-baseline",
+        "requests": 16,
+        "confirmed_usd": 0.224491
+      },
+      {
+        "client": "arv3-candidate",
+        "requests": 17,
+        "confirmed_usd": 0.26205
+      },
+      {
+        "client": "arv3-engineer",
+        "requests": 34,
+        "confirmed_usd": 0.572532
+      }
+    ],
+    "phase_confirmed_usd": 16.78426,
+    "retained_prior_hold_usd": 5.5,
+    "phase_exposure_usd": 22.28426,
+    "remaining_headroom_usd": 7.71574,
+    "segment_shared_with_v1": true
+  },
+  "production_prompt_changed": false,
+  "operator_repairs_or_task_hints": 0,
+  "independent_reproduction": {
+    "script": "artifact-review-v3-reproduce.py",
+    "script_sha256": "3d32a28cf07494e7af17b16cc9178171ff0e6ee83a0a5e46bdc0c58e6d03eea6",
+    "output_sha256": "a81e0bb73e680bda62bffa48db034df57d0ec021128ae06d7eeab410f74737f9",
+    "base_sqs_control_sha256": "a272b5abbd36b10f8d3e69ca79510febc1a0f35fb44c2c0ab2f238898d4666f6",
+    "network": "none",
+    "exit_code": 0,
+    "source_changes": "Only frozen implementation applied; no repairs",
+    "observations": {
+      "cancel": {
+        "registered_before": true,
+        "registry_count": 0,
+        "consumer_reports_registered": true,
+        "registry_count_after_reconsume": 0
+      },
+      "close": {
+        "consuming_from_sac": {
+          "error": "AttributeError",
+          "message": "'NoneType' object has no attribute 'state'"
+        },
+        "is_active_on": {
+          "error": "AttributeError",
+          "message": "'NoneType' object has no attribute 'state'"
+        },
+        "active_consumer_tags": {
+          "error": "AttributeError",
+          "message": "'NoneType' object has no attribute 'state'"
+        }
+      },
+      "duplicate_tag": {
+        "first_channel_record_active": false,
+        "consumer_reports_active": true,
+        "consumer_active_tags_count": 1,
+        "second_received": 1,
+        "first_active_after_failover": true
+      },
+      "sqs_sac=True_standby_no_ack=False": {
+        "selected": "high",
+        "deleted_before_ack": 0,
+        "receipt_preserved": true,
+        "deleted_after_ack": 1
+      },
+      "sqs_sac=True_standby_no_ack=True": {
+        "selected": "high",
+        "deleted_before_ack": 1,
+        "receipt_preserved": false,
+        "deleted_after_ack": 1
+      },
+      "sqs_sac=False_standby_no_ack=False": {
+        "selected": "high",
+        "deleted_before_ack": 0,
+        "receipt_preserved": true,
+        "deleted_after_ack": 1
+      },
+      "sqs_sac=False_standby_no_ack=True": {
+        "selected": "high",
+        "deleted_before_ack": 1,
+        "receipt_preserved": false,
+        "deleted_after_ack": 1
+      }
+    },
+    "untouched_upstream_sqs_control": {
+      "sqs_sac=True_standby_no_ack=False": {
+        "selected": "high",
+        "deleted_before_ack": 0,
+        "receipt_preserved": true,
+        "deleted_after_ack": 1
+      },
+      "sqs_sac=True_standby_no_ack=True": {
+        "selected": "high",
+        "deleted_before_ack": 1,
+        "receipt_preserved": false,
+        "deleted_after_ack": 1
+      },
+      "sqs_sac=False_standby_no_ack=False": {
+        "selected": "high",
+        "deleted_before_ack": 0,
+        "receipt_preserved": true,
+        "deleted_after_ack": 1
+      },
+      "sqs_sac=False_standby_no_ack=True": {
+        "selected": "high",
+        "deleted_before_ack": 1,
+        "receipt_preserved": false,
+        "deleted_after_ack": 1
+      }
+    },
+    "verified_findings": [
+      {
+        "id": "consumer-lifecycle",
+        "reported_by": ["baseline", "candidate"],
+        "assessment": "Both identify stale SAC membership after direct cancellation. Baseline additionally identifies reconsume failure and exceptions from the new helpers after channel close. All reproduced."
+      },
+      {
+        "id": "consumer-channel-identity",
+        "reported_by": ["baseline"],
+        "assessment": "A demoted Consumer incorrectly reports active ownership when a different channel registers the same tag; real memory delivery selects the other channel correctly. Failover control works."
+      },
+      {
+        "id": "sqs-mixed-ack-integration",
+        "reported_by": ["candidate"],
+        "assessment": "Real SQS conversion/dispatch/ack code with mocked external AWS client deletes before the selected manual-ack consumer acknowledges, losing receipt metadata. Manual/manual controls work. The same mixed-ack failure reproduces on untouched upstream code; old code ignores SAC. This is an inherited backend integration gap left unresolved by the new semantics, not demonstrated as an introduced regression."
+      }
+    ],
+    "severity_note": "Behavioral failures reproduced; no blanket endorsement of Critical labels; no live AWS test."
+  },
+  "findings": {
+    "baseline_verdict": "changes-requested",
+    "candidate_verdict": "changes-requested",
+    "baseline_reported": 2,
+    "baseline_reproduced": 2,
+    "candidate_reported": 2,
+    "candidate_reproduced": 2,
+    "candidate_inherited_issue_count": 1,
+    "interpretation": "Original reviewer found more distinct defects in the newly added Consumer APIs on this artifact. Candidate found an additional real but pre-existing SQS integration gap. No general prompt winner or exhaustive recall estimate.",
+    "decision": "Keep prompt experimental and production unchanged."
+  },
+  "validation": {
+    "grading_controls": 4,
+    "runtime_network_probes": 2,
+    "review_integrity": "Same artifact commit; both reviewer-only; repositories unchanged",
+    "test_claims_correlated_with_tool_outputs": {
+      "baseline": {
+        "25 passed": true,
+        "251 passed": true,
+        "1452 passed": true,
+        "175 skipped": true
+      },
+      "candidate": {
+        "25 passed": true,
+        "251 passed": true,
+        "1452 passed": true,
+        "175 skipped": true
+      }
+    },
+    "optional_dependencies": "Both reported unavailable Azure/Google test collection dependencies; not scored as implementation defects."
+  }
+}

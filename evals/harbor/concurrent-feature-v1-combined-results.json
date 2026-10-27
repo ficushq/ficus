@@ -1,0 +1,1080 @@
+{
+  "experiment": "concurrent-feature-v1-with-explicit-recovery-1",
+  "source_reports_sha256": {
+    "original": "9c858b74f280f84e75a7a23a39eb5bc695c82355176f75c597d377ae08977fbf",
+    "recovery": "4c7f87e83dcd66a2a6c45fb7c48b8f9191f7a0b0d354ffc56859edd63506b129"
+  },
+  "complete_matched_comparison": true,
+  "results": [
+    {
+      "task": "returns-validated-error-accumulation",
+      "attempt": "original-first-attempt",
+      "arm": "pi-planned",
+      "job_name": "cv1-returns-pi-planned",
+      "reward": {
+        "reward": 0,
+        "f2p_total": 159,
+        "f2p_passed": 157,
+        "p2p_total": 61,
+        "p2p_passed": 61,
+        "f2p": 0.9874213836477987,
+        "p2p": 1.0,
+        "partial": 0.990909090909091
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "planned",
+        "baseline": "Pi packaged subagent example",
+        "executed_roles": [
+          "architect",
+          "engineer",
+          "reviewer"
+        ],
+        "required_roles_executed": true
+      },
+      "total_seconds": 1201.14,
+      "timing_seconds": {
+        "environment_setup": 2.62,
+        "agent_setup": 19.38,
+        "agent_execution": 1144.71,
+        "verifier": 22.62
+      },
+      "requests": 88,
+      "confirmed_cost_usd": 0.99658,
+      "unknown_usage_requests": 0,
+      "submitted_patch_bytes": 50325,
+      "artifacts_sha256": {
+        "result.json": "208e7d14b2a74c669b8b9810d2ecf223b15a1cb8f386a0353e835c3099283524",
+        "verifier/reward.json": "ce53bd987b756eaa43f58e31a756f8686456cef22c3fc3ff55c77825bb32db2b",
+        "verifier/ctrf.json": "4ae70fdacc40ce4948d23a574f74a98dc733dae33ce1f6b619e6647da1ba4175",
+        "verifier/test-stdout.txt": "ec198cee0a293543188a0910f3530c5d424db37fddffa7f46e32a7d85453484c",
+        "agent/pi.txt": "2fbef009820b753dcd4535de2ae654b1bf1e539246c52b8a505aaa4a3f8517b1",
+        "artifacts/logs/artifacts/model.patch": "2bfd190015f193a806bc13894da0b33cf36220d8cb1e00cce0553d61bf09e499",
+        "agent/pi/sessions/2026-10-20T22-17-31-667Z_01a15b64-2311-7367-8fad-7252c80f36d1.jsonl": "c7bea465b209c60aaa60c1c0a0cef03739b8dfc9a3fafd2cd90014425be0cb93"
+      },
+      "operator_task_interventions": 0,
+      "human_attention_minutes": null,
+      "submission_captured": true,
+      "submission_audit": {
+        "changed_paths": [
+          "CHANGELOG.md",
+          "docs/index.rst",
+          "docs/pages/validated.rst",
+          "returns/contrib/hypothesis/_entrypoint.py",
+          "returns/contrib/hypothesis/containers.py",
+          "returns/contrib/mypy/_consts.py",
+          "returns/converters.py",
+          "returns/interfaces/specific/validated.py",
+          "returns/methods/cond.py",
+          "returns/pointfree/__init__.py",
+          "returns/pointfree/bind_validated.py",
+          "returns/pointfree/cond.py",
+          "returns/validated.py",
+          "tests/test_laws.py",
+          "tests/test_validated.py",
+          "typesafety/test_validated.yml"
+        ],
+        "test_paths_restored_by_official_verifier": [],
+        "candidate_test_paths_retained": [
+          "tests/test_laws.py",
+          "tests/test_validated.py"
+        ],
+        "retained_test_removed_line_counts": {
+          "tests/test_laws.py": 0,
+          "tests/test_validated.py": 0
+        }
+      },
+      "operator_supplied_task_messages_after_launch": 0,
+      "role_dispatches": [
+        {
+          "at": "2026-10-20T22:17:40.810Z",
+          "role": "architect"
+        },
+        {
+          "at": "2026-10-20T22:19:51.880Z",
+          "role": "engineer"
+        },
+        {
+          "at": "2026-10-20T22:32:47.412Z",
+          "role": "reviewer"
+        }
+      ],
+      "verified_session_or_child_models": [
+        "gpt-6.1-sol",
+        "harbor-endpoint/gpt-6.1-sol"
+      ],
+      "review_conclusions": [
+        {
+          "exit_code": 0,
+          "explicit_approved": true
+        }
+      ],
+      "completion_class": "officially_graded",
+      "official_score_available": true
+    },
+    {
+      "task": "returns-validated-error-accumulation",
+      "attempt": "explicit-recovery-second-start",
+      "arm": "ficus-planned",
+      "job_name": "cv1r1-returns-ficus-planned",
+      "reward": {
+        "reward": 0,
+        "f2p_total": 159,
+        "f2p_passed": 157,
+        "p2p_total": 61,
+        "p2p_passed": 61,
+        "f2p": 0.9874213836477987,
+        "p2p": 1.0,
+        "partial": 0.990909090909091
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "planned",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+        "database_network": "task",
+        "attempted_roles": [
+          "architect",
+          "engineer",
+          "manager",
+          "reviewer"
+        ],
+        "engineer_only_verified": null,
+        "executed_roles": [
+          "architect",
+          "engineer",
+          "manager",
+          "reviewer"
+        ]
+      },
+      "total_seconds": 1624.93,
+      "timing_seconds": {
+        "environment_setup": 4.11,
+        "agent_setup": 62.5,
+        "agent_execution": 1516.7,
+        "verifier": 27.86
+      },
+      "requests": 72,
+      "confirmed_cost_usd": 1.335215,
+      "unknown_usage_requests": 0,
+      "submitted_patch_bytes": 52843,
+      "artifacts_sha256": {
+        "result.json": "74fc366ae82ef402fa46f48a86d0d03241b350cae4a08a5c10c9c61a19bf9fd0",
+        "verifier/reward.json": "ce53bd987b756eaa43f58e31a756f8686456cef22c3fc3ff55c77825bb32db2b",
+        "verifier/ctrf.json": "3027026cb48465bc93ef5fed600ff820aac8a486a51de050897512027e993993",
+        "verifier/test-stdout.txt": "a81053b29f3b0ecb59883b34d3c69d34c9fca74d4c76f724f72211988bcc8cbd",
+        "agent/snapshot.json": "9a5364c502cde6cc437ee7a8bdd40507748f99a43b699820a5fa14aab5703fcc",
+        "agent/messages.json": "ae7ffdf8269c0d59386f2ed3b064e75b8410598a65c00d6948dfb65967ab55ae",
+        "agent/progress.jsonl": "19c6dc725db3e057e4d2b4267e4d1f1c5b8e8e9107cb2b26cbfa8346f86d0e5b",
+        "artifacts/logs/artifacts/model.patch": "5c589781627d739a8abe389be0986deaa95194fca5c5415102a19dbe82fae162"
+      },
+      "operator_task_interventions": 0,
+      "human_attention_minutes": null,
+      "observed_human_question_agents": [],
+      "state_transition_count": 16,
+      "review_attempts": 2,
+      "stream_statuses": [
+        "done"
+      ],
+      "submission_captured": true,
+      "submission_audit": {
+        "changed_paths": [
+          "CHANGELOG.md",
+          "docs/index.rst",
+          "docs/pages/converters.rst",
+          "docs/pages/validated.rst",
+          "returns/contrib/hypothesis/_entrypoint.py",
+          "returns/contrib/hypothesis/containers.py",
+          "returns/contrib/mypy/_consts.py",
+          "returns/converters.py",
+          "returns/interfaces/specific/validated.py",
+          "returns/methods/cond.py",
+          "returns/pointfree/__init__.py",
+          "returns/pointfree/bind_validated.py",
+          "returns/validated.py",
+          "tests/test_contrib/test_hypothesis/test_type_resolution.py",
+          "tests/test_validated/test_validated_composition.py",
+          "tests/test_validated/test_validated_core.py",
+          "tests/test_validated/test_validated_hypothesis.py",
+          "tests/test_validated/test_validated_operations.py",
+          "typesafety/test_validated/test_validated.yml"
+        ],
+        "test_paths_restored_by_official_verifier": [],
+        "candidate_test_paths_retained": [
+          "tests/test_contrib/test_hypothesis/test_type_resolution.py",
+          "tests/test_validated/test_validated_composition.py",
+          "tests/test_validated/test_validated_core.py",
+          "tests/test_validated/test_validated_hypothesis.py",
+          "tests/test_validated/test_validated_operations.py"
+        ],
+        "retained_test_removed_line_counts": {
+          "tests/test_contrib/test_hypothesis/test_type_resolution.py": 0,
+          "tests/test_validated/test_validated_composition.py": 0,
+          "tests/test_validated/test_validated_core.py": 0,
+          "tests/test_validated/test_validated_hypothesis.py": 0,
+          "tests/test_validated/test_validated_operations.py": 0
+        }
+      },
+      "operator_supplied_task_messages_after_launch": 0,
+      "executions_by_role": {
+        "architect": 2,
+        "engineer": 4,
+        "manager": 3,
+        "reviewer": 4
+      },
+      "completed_executions_by_role": {
+        "architect": 2,
+        "engineer": 4,
+        "manager": 3,
+        "reviewer": 4
+      },
+      "role_dispatches": [],
+      "verified_session_or_child_models": [
+        "gpt-6.1-sol"
+      ],
+      "review_conclusions": []
+    },
+    {
+      "task": "returns-validated-error-accumulation",
+      "attempt": "first-attempt-after-recovery",
+      "arm": "ficus-engineer",
+      "job_name": "cv1r1-returns-ficus-engineer",
+      "reward": {
+        "reward": 1,
+        "f2p_total": 159,
+        "f2p_passed": 159,
+        "p2p_total": 61,
+        "p2p_passed": 61,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "engineer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+        "database_network": "task",
+        "attempted_roles": [
+          "engineer"
+        ],
+        "engineer_only_verified": true,
+        "executed_roles": [
+          "engineer"
+        ]
+      },
+      "total_seconds": 944.62,
+      "timing_seconds": {
+        "environment_setup": 2.58,
+        "agent_setup": 60.18,
+        "agent_execution": 845.18,
+        "verifier": 23.17
+      },
+      "requests": 33,
+      "confirmed_cost_usd": 0.624382,
+      "unknown_usage_requests": 0,
+      "submitted_patch_bytes": 47430,
+      "artifacts_sha256": {
+        "result.json": "6028f5c5143c05bee3fd35da818bba70040e322146a874615bfc325fc14553b8",
+        "verifier/reward.json": "cc4f5dbd6fdbef93c8754d60c3faeb3f18e522353c7bc46f27f259202e087c0b",
+        "verifier/ctrf.json": "9fcd12d9bf4d9aa5e808b1f7ba9d2078274ed82ac5d14ce899bce27d0969103d",
+        "verifier/test-stdout.txt": "b57be64bfcab2f2684a4dab715c5b247ccbfc048cb679d6d8e200308c35751e6",
+        "agent/snapshot.json": "e715cb3c479feaa6cef2b9beb7244f7f44cbc5a30723951ae9d10299c181852d",
+        "agent/messages.json": "6dfa86ec28dd3aae15724d8c723f7e2f36359efec5072d4234d983e957c017d5",
+        "agent/progress.jsonl": "b9dbfb950ec94875584d5b203dc0bdf49d677c49859efb4065ee22fa8700aa63",
+        "artifacts/logs/artifacts/model.patch": "d03c506991576515cf30973befc5133e3c634b72c9dbdf368d5c9019a86a104d"
+      },
+      "operator_task_interventions": 0,
+      "human_attention_minutes": null,
+      "observed_human_question_agents": [],
+      "state_transition_count": 3,
+      "review_attempts": 0,
+      "stream_statuses": [
+        "done"
+      ],
+      "submission_captured": true,
+      "submission_audit": {
+        "changed_paths": [
+          "docs/index.rst",
+          "docs/pages/converters.rst",
+          "docs/pages/pointfree.rst",
+          "docs/pages/validated.rst",
+          "returns/contrib/hypothesis/_entrypoint.py",
+          "returns/contrib/hypothesis/containers.py",
+          "returns/contrib/mypy/_consts.py",
+          "returns/converters.py",
+          "returns/interfaces/specific/validated.py",
+          "returns/methods/cond.py",
+          "returns/pointfree/__init__.py",
+          "returns/pointfree/bind_validated.py",
+          "returns/pointfree/cond.py",
+          "returns/validated.py",
+          "tests/test_validated/test_validated.py",
+          "tests/test_validated/test_validated_laws.py",
+          "typesafety/test_validated/test_validated.yml"
+        ],
+        "test_paths_restored_by_official_verifier": [
+          "tests/test_validated/test_validated_laws.py"
+        ],
+        "candidate_test_paths_retained": [
+          "tests/test_validated/test_validated.py"
+        ],
+        "retained_test_removed_line_counts": {
+          "tests/test_validated/test_validated.py": 0
+        }
+      },
+      "operator_supplied_task_messages_after_launch": 0,
+      "executions_by_role": {
+        "engineer": 1,
+        "manager": 0
+      },
+      "completed_executions_by_role": {
+        "engineer": 1,
+        "manager": 0
+      },
+      "role_dispatches": [],
+      "verified_session_or_child_models": [
+        "gpt-6.1-sol"
+      ],
+      "review_conclusions": []
+    },
+    {
+      "task": "returns-validated-error-accumulation",
+      "attempt": "first-attempt-after-recovery",
+      "arm": "pi-engineer",
+      "job_name": "cv1r1-returns-pi-engineer",
+      "reward": {
+        "reward": 1,
+        "f2p_total": 159,
+        "f2p_passed": 159,
+        "p2p_total": 61,
+        "p2p_passed": 61,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "engineer",
+        "baseline": "Pi single session"
+      },
+      "total_seconds": 557.95,
+      "timing_seconds": {
+        "environment_setup": 2.56,
+        "agent_setup": 17.66,
+        "agent_execution": 503.66,
+        "verifier": 22.59
+      },
+      "requests": 37,
+      "confirmed_cost_usd": 0.394807,
+      "unknown_usage_requests": 0,
+      "submitted_patch_bytes": 43513,
+      "artifacts_sha256": {
+        "result.json": "6f74933ad2e934e8d580336cda568738a8012ff91b2264e07b4ec0e50f5d67de",
+        "verifier/reward.json": "cc4f5dbd6fdbef93c8754d60c3faeb3f18e522353c7bc46f27f259202e087c0b",
+        "verifier/ctrf.json": "9fcd12d9bf4d9aa5e808b1f7ba9d2078274ed82ac5d14ce899bce27d0969103d",
+        "verifier/test-stdout.txt": "4d7b80b02bb6225e445c2d970c52c88fa19ebd1f5e7df34c5746c52ecd9d9af9",
+        "agent/pi.txt": "6f66d4d2e4aee4c7a17610d75f8920569828e1211069fac4b74792d165de1624",
+        "artifacts/logs/artifacts/model.patch": "834e70a7643a1c26a9340daa76c38b85da65d958a4ca4af75f5d4b4169386f71",
+        "agent/pi/sessions/2026-10-21T00-04-49-470Z_01a15bc6-5ebc-707e-b813-9eac28cb9cf6.jsonl": "734d916d2ec3e7a80892d7dcaafbb24c66fb40fc028a40619d8a95f2c1eade9c"
+      },
+      "operator_task_interventions": 0,
+      "human_attention_minutes": null,
+      "submission_captured": true,
+      "submission_audit": {
+        "changed_paths": [
+          "docs/index.rst",
+          "docs/pages/validated.rst",
+          "returns/contrib/hypothesis/_entrypoint.py",
+          "returns/contrib/hypothesis/containers.py",
+          "returns/contrib/mypy/_consts.py",
+          "returns/converters.py",
+          "returns/interfaces/specific/validated.py",
+          "returns/methods/cond.py",
+          "returns/pointfree/__init__.py",
+          "returns/pointfree/bind_validated.py",
+          "returns/validated.py",
+          "tests/test_contrib/test_hypothesis/test_type_resolution.py",
+          "tests/test_laws.py",
+          "tests/test_validated/test_validated.py",
+          "typesafety/test_validated/test_validated.yml"
+        ],
+        "test_paths_restored_by_official_verifier": [],
+        "candidate_test_paths_retained": [
+          "tests/test_contrib/test_hypothesis/test_type_resolution.py",
+          "tests/test_laws.py",
+          "tests/test_validated/test_validated.py"
+        ],
+        "retained_test_removed_line_counts": {
+          "tests/test_contrib/test_hypothesis/test_type_resolution.py": 0,
+          "tests/test_laws.py": 0,
+          "tests/test_validated/test_validated.py": 0
+        }
+      },
+      "operator_supplied_task_messages_after_launch": 0,
+      "role_dispatches": [],
+      "verified_session_or_child_models": [
+        "gpt-6.1-sol"
+      ],
+      "review_conclusions": []
+    },
+    {
+      "task": "aiomonitor-task-snapshots-diff",
+      "attempt": "original-first-attempt",
+      "arm": "pi-planned",
+      "job_name": "cv1-aiomonitor-pi-planned",
+      "reward": {
+        "reward": 0,
+        "f2p_total": 53,
+        "f2p_passed": 51,
+        "p2p_total": 8,
+        "p2p_passed": 8,
+        "f2p": 0.9622641509433962,
+        "p2p": 1.0,
+        "partial": 0.9672131147540983
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "planned",
+        "baseline": "Pi packaged subagent example",
+        "executed_roles": [
+          "architect",
+          "engineer",
+          "reviewer"
+        ],
+        "required_roles_executed": true
+      },
+      "total_seconds": 1001.19,
+      "timing_seconds": {
+        "environment_setup": 2.61,
+        "agent_setup": 19.46,
+        "agent_execution": 942.7,
+        "verifier": 24.54
+      },
+      "requests": 102,
+      "confirmed_cost_usd": 1.066841,
+      "unknown_usage_requests": 0,
+      "submitted_patch_bytes": 64832,
+      "artifacts_sha256": {
+        "result.json": "c3b9f1bd048d7640359b3c708ef9ae739955c3da96e421aad1e1014843b56d22",
+        "verifier/reward.json": "688b60d7adf97cb862b6ac17a81d547faebd55e72c33cded6037e38ce6b81727",
+        "verifier/ctrf.json": "b642cdc9cea5e0efde3ae0b1be3951633b00b47a54ff15b4220126e23d6db509",
+        "verifier/test-stdout.txt": "f2ba7fe7174e61b2388f67d9202e70bee65d8dfb65206e35b669ae86033d9d32",
+        "agent/pi.txt": "2ac430b45098ed6298576454e6617f7f5f42a280754777349507e6a657499649",
+        "artifacts/logs/artifacts/model.patch": "7fe22be3d01248e3e57001bf3ecc58cb2e84817f71e144d06fb71f91c71b0b69",
+        "agent/pi/sessions/2026-10-20T22-17-31-715Z_01a15b64-2341-7677-ba11-cbff99b257fb.jsonl": "c66d0d8d82d69bd5e864e8634d7b1e9727971809403d2b329ee84bb57464fd94"
+      },
+      "operator_task_interventions": 0,
+      "human_attention_minutes": null,
+      "submission_captured": true,
+      "submission_audit": {
+        "changed_paths": [
+          "aiomonitor/monitor.py",
+          "aiomonitor/task.py",
+          "aiomonitor/termui/commands.py",
+          "aiomonitor/termui/completion.py",
+          "aiomonitor/types.py",
+          "aiomonitor/webui/app.py",
+          "aiomonitor/webui/static/snapshots.js",
+          "aiomonitor/webui/templates/snapshots.html",
+          "aiomonitor/webui/utils.py",
+          "changes/+task-snapshot-id-reuse.bugfix",
+          "changes/+task-snapshots.enhancement",
+          "docs/reference/monitor.rst",
+          "docs/reference/termui.rst",
+          "docs/reference/webui.rst",
+          "docs/tutorial.rst",
+          "tests/test_snapshots.py"
+        ],
+        "test_paths_restored_by_official_verifier": [],
+        "candidate_test_paths_retained": [
+          "tests/test_snapshots.py"
+        ],
+        "retained_test_removed_line_counts": {
+          "tests/test_snapshots.py": 0
+        }
+      },
+      "operator_supplied_task_messages_after_launch": 0,
+      "role_dispatches": [
+        {
+          "at": "2026-10-20T22:17:44.062Z",
+          "role": "architect"
+        },
+        {
+          "at": "2026-10-20T22:20:08.967Z",
+          "role": "engineer"
+        },
+        {
+          "at": "2026-10-20T22:27:20.817Z",
+          "role": "reviewer"
+        },
+        {
+          "at": "2026-10-20T22:29:17.429Z",
+          "role": "engineer"
+        },
+        {
+          "at": "2026-10-20T22:32:23.382Z",
+          "role": "reviewer"
+        }
+      ],
+      "verified_session_or_child_models": [
+        "gpt-6.1-sol",
+        "harbor-endpoint/gpt-6.1-sol"
+      ],
+      "review_conclusions": [
+        {
+          "exit_code": 0,
+          "explicit_approved": false
+        },
+        {
+          "exit_code": 0,
+          "explicit_approved": true
+        }
+      ],
+      "completion_class": "officially_graded",
+      "official_score_available": true
+    },
+    {
+      "task": "aiomonitor-task-snapshots-diff",
+      "attempt": "explicit-recovery-second-start",
+      "arm": "ficus-planned",
+      "job_name": "cv1r1-aiomonitor-ficus-planned",
+      "reward": {
+        "reward": 1,
+        "f2p_total": 53,
+        "f2p_passed": 53,
+        "p2p_total": 8,
+        "p2p_passed": 8,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "planned",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+        "database_network": "task",
+        "attempted_roles": [
+          "architect",
+          "engineer",
+          "manager",
+          "reviewer"
+        ],
+        "engineer_only_verified": null,
+        "executed_roles": [
+          "architect",
+          "engineer",
+          "manager",
+          "reviewer"
+        ]
+      },
+      "total_seconds": 1152.95,
+      "timing_seconds": {
+        "environment_setup": 4.11,
+        "agent_setup": 60.73,
+        "agent_execution": 1048.64,
+        "verifier": 24.06
+      },
+      "requests": 73,
+      "confirmed_cost_usd": 1.33392,
+      "unknown_usage_requests": 0,
+      "submitted_patch_bytes": 62641,
+      "artifacts_sha256": {
+        "result.json": "627c408c70d7293566dc066222ef264ed9276568c73e8f1d764fea6de438d4c5",
+        "verifier/reward.json": "0f41b2c84527ef1a11a9e14bd4cf051de2301a3e38cd76df3a2697931d062fbe",
+        "verifier/ctrf.json": "9fa04e6e08ec43d3a3336367e17064cf506d38d9d791f52e9b49b7a9ff21e5c0",
+        "verifier/test-stdout.txt": "bdb06017b7739e8859f49928f64f171b9225a9a7d8036175ec68b86657a9c080",
+        "agent/snapshot.json": "f4d7e6a317c5d05ab3cc84eb2e4272d0f5b7cf0bdebbd989141a029b5c9b7ada",
+        "agent/messages.json": "7f432a80d0d81708a19bbf7a8a6426a1965fd3bd6a60d07d3c1b4965231bddf4",
+        "agent/progress.jsonl": "8f851aca702309095e06befb7d711776486707615e4e248264b68f60c448a047",
+        "artifacts/logs/artifacts/model.patch": "67828ff8b7271cbb69ef8071736406f9ec55a0172e52e5663b718e2d43ea6a3e"
+      },
+      "operator_task_interventions": 0,
+      "human_attention_minutes": null,
+      "observed_human_question_agents": [],
+      "state_transition_count": 12,
+      "review_attempts": 1,
+      "stream_statuses": [
+        "done"
+      ],
+      "submission_captured": true,
+      "submission_audit": {
+        "changed_paths": [
+          "aiomonitor/monitor.py",
+          "aiomonitor/termui/commands.py",
+          "aiomonitor/termui/completion.py",
+          "aiomonitor/types.py",
+          "aiomonitor/webui/app.py",
+          "aiomonitor/webui/templates/snapshots.html",
+          "aiomonitor/webui/utils.py",
+          "changes/+task-snapshots.feature",
+          "docs/reference/monitor.rst",
+          "docs/reference/termui.rst",
+          "docs/reference/webui.rst",
+          "tests/test_monitor.py",
+          "tests/test_snapshot_webui.py",
+          "tests/test_snapshots.py"
+        ],
+        "test_paths_restored_by_official_verifier": [],
+        "candidate_test_paths_retained": [
+          "tests/test_monitor.py",
+          "tests/test_snapshot_webui.py",
+          "tests/test_snapshots.py"
+        ],
+        "retained_test_removed_line_counts": {
+          "tests/test_monitor.py": 0,
+          "tests/test_snapshot_webui.py": 0,
+          "tests/test_snapshots.py": 0
+        }
+      },
+      "operator_supplied_task_messages_after_launch": 0,
+      "executions_by_role": {
+        "architect": 2,
+        "engineer": 2,
+        "manager": 2,
+        "reviewer": 2
+      },
+      "completed_executions_by_role": {
+        "architect": 2,
+        "engineer": 2,
+        "manager": 2,
+        "reviewer": 2
+      },
+      "role_dispatches": [],
+      "verified_session_or_child_models": [
+        "gpt-6.1-sol"
+      ],
+      "review_conclusions": []
+    },
+    {
+      "task": "aiomonitor-task-snapshots-diff",
+      "attempt": "first-attempt-after-recovery",
+      "arm": "ficus-engineer",
+      "job_name": "cv1r1-aiomonitor-ficus-engineer",
+      "reward": {
+        "reward": 1,
+        "f2p_total": 53,
+        "f2p_passed": 53,
+        "p2p_total": 8,
+        "p2p_passed": 8,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "engineer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+        "database_network": "task",
+        "attempted_roles": [
+          "engineer"
+        ],
+        "engineer_only_verified": true,
+        "executed_roles": [
+          "engineer"
+        ]
+      },
+      "total_seconds": 653.19,
+      "timing_seconds": {
+        "environment_setup": 3.07,
+        "agent_setup": 59.12,
+        "agent_execution": 554.39,
+        "verifier": 24.21
+      },
+      "requests": 42,
+      "confirmed_cost_usd": 0.69798,
+      "unknown_usage_requests": 0,
+      "submitted_patch_bytes": 51814,
+      "artifacts_sha256": {
+        "result.json": "48b1f0ab4fd48b1dbd73d381a1df923b76b26cec6d03639dd2a46e8d2c14a2ae",
+        "verifier/reward.json": "0f41b2c84527ef1a11a9e14bd4cf051de2301a3e38cd76df3a2697931d062fbe",
+        "verifier/ctrf.json": "9fa04e6e08ec43d3a3336367e17064cf506d38d9d791f52e9b49b7a9ff21e5c0",
+        "verifier/test-stdout.txt": "46b183da6aa5b161baa955b65e077a1cb2374083210d02933d54c13438349723",
+        "agent/snapshot.json": "e19191a2efb6baf9cd0d05ac3307fb5c91b3977d5e5df9cf9091ba302598ba07",
+        "agent/messages.json": "37dd43e5d3be814a3b0ef4be0c2bed22f96d9f7ee45f3bcaf411e19932c72e77",
+        "agent/progress.jsonl": "7f80b87107d21788c9741e7a22fc7bfbaf9abb2d27566cf02500b60c5125743e",
+        "artifacts/logs/artifacts/model.patch": "7c903ce813a0de66c4250a08a3388c2f7cd0cd62bae5b721d8dabaa232e0b410"
+      },
+      "operator_task_interventions": 0,
+      "human_attention_minutes": null,
+      "observed_human_question_agents": [],
+      "state_transition_count": 3,
+      "review_attempts": 0,
+      "stream_statuses": [
+        "done"
+      ],
+      "submission_captured": true,
+      "submission_audit": {
+        "changed_paths": [
+          "aiomonitor/monitor.py",
+          "aiomonitor/termui/commands.py",
+          "aiomonitor/types.py",
+          "aiomonitor/webui/app.py",
+          "aiomonitor/webui/static/snapshots.js",
+          "aiomonitor/webui/templates/snapshots.html",
+          "aiomonitor/webui/utils.py",
+          "changes/snapshots.feature.rst",
+          "docs/reference/monitor.rst",
+          "docs/tutorial.rst",
+          "tests/test_monitor.py",
+          "tests/test_snapshot_web.py",
+          "tests/test_snapshots.py"
+        ],
+        "test_paths_restored_by_official_verifier": [],
+        "candidate_test_paths_retained": [
+          "tests/test_monitor.py",
+          "tests/test_snapshot_web.py",
+          "tests/test_snapshots.py"
+        ],
+        "retained_test_removed_line_counts": {
+          "tests/test_monitor.py": 0,
+          "tests/test_snapshot_web.py": 0,
+          "tests/test_snapshots.py": 0
+        }
+      },
+      "operator_supplied_task_messages_after_launch": 0,
+      "executions_by_role": {
+        "engineer": 1,
+        "manager": 0
+      },
+      "completed_executions_by_role": {
+        "engineer": 1,
+        "manager": 0
+      },
+      "role_dispatches": [],
+      "verified_session_or_child_models": [
+        "gpt-6.1-sol"
+      ],
+      "review_conclusions": []
+    },
+    {
+      "task": "aiomonitor-task-snapshots-diff",
+      "attempt": "first-attempt-after-recovery",
+      "arm": "pi-engineer",
+      "job_name": "cv1r1-aiomonitor-pi-engineer",
+      "reward": {
+        "reward": 1,
+        "f2p_total": 53,
+        "f2p_passed": 53,
+        "p2p_total": 8,
+        "p2p_passed": 8,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "engineer",
+        "baseline": "Pi single session"
+      },
+      "total_seconds": 302.4,
+      "timing_seconds": {
+        "environment_setup": 3.06,
+        "agent_setup": 17.56,
+        "agent_execution": 246.38,
+        "verifier": 23.85
+      },
+      "requests": 26,
+      "confirmed_cost_usd": 0.2633,
+      "unknown_usage_requests": 0,
+      "submitted_patch_bytes": 38234,
+      "artifacts_sha256": {
+        "result.json": "6f083f279ec2437a129e39505b19fd89737998686e5ffbcec66f9e7d1d733a91",
+        "verifier/reward.json": "0f41b2c84527ef1a11a9e14bd4cf051de2301a3e38cd76df3a2697931d062fbe",
+        "verifier/ctrf.json": "9fa04e6e08ec43d3a3336367e17064cf506d38d9d791f52e9b49b7a9ff21e5c0",
+        "verifier/test-stdout.txt": "2c816efdd2c45c9d4d95d1af314c491ebff5bfdbcdb82a0dde8ce837eaa69a39",
+        "agent/pi.txt": "558d433fb272f877cff766b3f73b695e4d7647f1bb7c00fcd0b9869f75973949",
+        "artifacts/logs/artifacts/model.patch": "4e52ed08b80247603a955b9f81930fc28e792e1bc8f69368330c11c5a357910f",
+        "agent/pi/sessions/2026-10-21T00-04-49-813Z_01a15bc6-6013-77da-b005-396a14fc9007.jsonl": "8c531e429741ac4acf0a9573bbc362f31d44d12e7d155ae179edee981d94835e"
+      },
+      "operator_task_interventions": 0,
+      "human_attention_minutes": null,
+      "submission_captured": true,
+      "submission_audit": {
+        "changed_paths": [
+          "aiomonitor/monitor.py",
+          "aiomonitor/task.py",
+          "aiomonitor/termui/commands.py",
+          "aiomonitor/types.py",
+          "aiomonitor/webui/app.py",
+          "aiomonitor/webui/templates/snapshots.html",
+          "aiomonitor/webui/utils.py",
+          "changes/+snapshots.feature.rst",
+          "docs/index.rst",
+          "docs/snapshots.rst",
+          "tests/test_snapshots.py"
+        ],
+        "test_paths_restored_by_official_verifier": [],
+        "candidate_test_paths_retained": [
+          "tests/test_snapshots.py"
+        ],
+        "retained_test_removed_line_counts": {
+          "tests/test_snapshots.py": 0
+        }
+      },
+      "operator_supplied_task_messages_after_launch": 0,
+      "role_dispatches": [],
+      "verified_session_or_child_models": [
+        "gpt-6.1-sol"
+      ],
+      "review_conclusions": []
+    }
+  ],
+  "batches": [
+    {
+      "arm": "pi-planned",
+      "started_at": "2026-10-20T22:17:05.013269+00:00",
+      "jobs": [
+        "cv1-returns-pi-planned",
+        "cv1-aiomonitor-pi-planned"
+      ],
+      "exit_codes": {
+        "cv1-returns-pi-planned": 0,
+        "cv1-aiomonitor-pi-planned": 0
+      },
+      "concurrency": 2,
+      "finished_at": "2026-10-20T22:37:08.384245+00:00",
+      "elapsed_seconds": 1203.3,
+      "complete": true,
+      "accepted_tasks": 0,
+      "completed_tasks": 2,
+      "accepted_tasks_per_hour": 0.0,
+      "inference_usd": 2.063421,
+      "agent_execution_overlap_seconds": 942.7,
+      "finished_attempts": 2
+    },
+    {
+      "arm": "ficus-planned",
+      "started_at": "2026-10-20T23:37:14.383486+00:00",
+      "jobs": [
+        "cv1r1-returns-ficus-planned",
+        "cv1r1-aiomonitor-ficus-planned"
+      ],
+      "exit_codes": {
+        "cv1r1-aiomonitor-ficus-planned": 0,
+        "cv1r1-returns-ficus-planned": 0
+      },
+      "concurrency": 2,
+      "finished_at": "2026-10-21T00:04:23.301485+00:00",
+      "elapsed_seconds": 1628.93,
+      "complete": true,
+      "accepted_tasks": 1,
+      "finished_attempts": 2,
+      "completed_tasks": 2,
+      "accepted_tasks_per_hour": 2.21,
+      "inference_usd": 2.669135,
+      "agent_execution_overlap_seconds": 1046.87
+    },
+    {
+      "arm": "pi-engineer",
+      "started_at": "2026-10-21T00:04:23.792553+00:00",
+      "jobs": [
+        "cv1r1-returns-pi-engineer",
+        "cv1r1-aiomonitor-pi-engineer"
+      ],
+      "exit_codes": {
+        "cv1r1-aiomonitor-pi-engineer": 0,
+        "cv1r1-returns-pi-engineer": 0
+      },
+      "concurrency": 2,
+      "finished_at": "2026-10-21T00:13:45.528559+00:00",
+      "elapsed_seconds": 561.74,
+      "complete": true,
+      "accepted_tasks": 2,
+      "finished_attempts": 2,
+      "completed_tasks": 2,
+      "accepted_tasks_per_hour": 12.8173,
+      "inference_usd": 0.658107,
+      "agent_execution_overlap_seconds": 246.38
+    },
+    {
+      "arm": "ficus-engineer",
+      "started_at": "2026-10-21T00:13:46.023159+00:00",
+      "jobs": [
+        "cv1r1-returns-ficus-engineer",
+        "cv1r1-aiomonitor-ficus-engineer"
+      ],
+      "exit_codes": {
+        "cv1r1-aiomonitor-ficus-engineer": 0,
+        "cv1r1-returns-ficus-engineer": 0
+      },
+      "concurrency": 2,
+      "finished_at": "2026-10-21T00:29:34.022266+00:00",
+      "elapsed_seconds": 948.0,
+      "complete": true,
+      "accepted_tasks": 2,
+      "finished_attempts": 2,
+      "completed_tasks": 2,
+      "accepted_tasks_per_hour": 7.5949,
+      "inference_usd": 1.322362,
+      "agent_execution_overlap_seconds": 553.83
+    }
+  ],
+  "interrupted_attempts": [
+    {
+      "task": "returns-validated-error-accumulation",
+      "attempt": "original-provider-blocked",
+      "arm": "ficus-planned",
+      "job_name": "cv1-returns-ficus-planned",
+      "reward": null,
+      "exception": {
+        "exception_type": "CancelledError",
+        "exception_message": "",
+        "exception_traceback": "Traceback (most recent call last):\n  File \"/private/tmp/ficus-harbor-evaluation/evals/harbor/ficus_agent.py\", line 379, in run\n    await asyncio.sleep(2)\n  File \"/Users/noah/anaconda3/lib/python3.12/asyncio/tasks.py\", line 665, in sleep\n    return await future\n           ^^^^^^^^^^^^\nasyncio.exceptions.CancelledError\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/trial/trial.py\", line 500, in run\n    await self._run()\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/trial/single_step.py\", line 40, in _run\n    await self._run_agent()\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/trial/single_step.py\", line 76, in _run_agent\n    await self._run_agent_phase(\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/trial/trial.py\", line 651, in _run_agent_phase\n    await asyncio.wait_for(\n  File \"/Users/noah/anaconda3/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/private/tmp/ficus-harbor-evaluation/evals/harbor/ficus_agent.py\", line 393, in run\n    await self.checked(\n  File \"/private/tmp/ficus-harbor-evaluation/evals/harbor/ficus_agent.py\", line 155, in checked\n    result = await environment.exec(command, **kwargs)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/environments/docker/docker.py\", line 1359, in exec\n    return await self._compose_exec(\n           ^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/environments/docker/docker.py\", line 1436, in _compose_exec\n    return await self._run_docker_compose_command(\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/environments/docker/docker.py\", line 749, in _run_docker_compose_command\n    result = await self._collect_buffered_output(\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/environments/docker/docker.py\", line 775, in _collect_buffered_output\n    stdout_bytes, stderr_bytes = await asyncio.wait_for(\n                                 ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/noah/anaconda3/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/Users/noah/anaconda3/lib/python3.12/asyncio/subprocess.py\", line 201, in communicate\n    stdin, stdout, stderr = await tasks.gather(stdin, stdout, stderr)\n                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/noah/anaconda3/lib/python3.12/asyncio/subprocess.py\", line 181, in _read_stream\n    output = await stream.read()\n             ^^^^^^^^^^^^^^^^^^^\n  File \"/Users/noah/anaconda3/lib/python3.12/asyncio/streams.py\", line 706, in read\n    block = await self.read(self._limit)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/noah/anaconda3/lib/python3.12/asyncio/streams.py\", line 713, in read\n    await self._wait_for_data('read')\n  File \"/Users/noah/anaconda3/lib/python3.12/asyncio/streams.py\", line 545, in _wait_for_data\n    await self._waiter\nasyncio.exceptions.CancelledError\n",
+        "occurred_at": "2026-10-20T22:46:29.102495Z"
+      },
+      "agent_metadata": {
+        "configuration": "planned",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "interrupted",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+        "database_network": "task"
+      },
+      "total_seconds": 579.79,
+      "timing_seconds": {
+        "environment_setup": 2.58,
+        "agent_setup": 68.85,
+        "agent_execution": 485.0,
+        "verifier": null
+      },
+      "requests": 12,
+      "confirmed_cost_usd": 0.154746,
+      "unknown_usage_requests": 1,
+      "submitted_patch_bytes": 0,
+      "artifacts_sha256": {
+        "result.json": "ab9e2ca22559e1645422641af0b526256b288c76a78db4195cd6194b3d4b708e",
+        "agent/snapshot.json": "d63bf96327576404c731f57dbedefd50d01ef60bab96ccdd5f5a21bd4407a379",
+        "agent/progress.jsonl": "55fa14a8cf12d418f9417f476595a0a29f102e57416ec194cc39f2f81a6bb0ba",
+        "artifacts/logs/artifacts/model.patch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "operator_task_interventions": 0,
+      "human_attention_minutes": null,
+      "observed_human_question_agents": [],
+      "state_transition_count": 3,
+      "review_attempts": 0,
+      "stream_statuses": [
+        "active"
+      ],
+      "submission_captured": true,
+      "submission_audit": {
+        "changed_paths": [],
+        "test_paths_restored_by_official_verifier": [],
+        "candidate_test_paths_retained": [],
+        "retained_test_removed_line_counts": {}
+      },
+      "operator_supplied_task_messages_after_launch": 0,
+      "role_dispatches": [],
+      "verified_session_or_child_models": [],
+      "review_conclusions": [],
+      "completion_class": "provider_blocked_operator_cancelled",
+      "official_score_available": false
+    },
+    {
+      "task": "aiomonitor-task-snapshots-diff",
+      "attempt": "original-provider-blocked",
+      "arm": "ficus-planned",
+      "job_name": "cv1-aiomonitor-ficus-planned",
+      "reward": null,
+      "exception": {
+        "exception_type": "CancelledError",
+        "exception_message": "",
+        "exception_traceback": "Traceback (most recent call last):\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/trial/trial.py\", line 500, in run\n    await self._run()\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/trial/single_step.py\", line 40, in _run\n    await self._run_agent()\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/trial/single_step.py\", line 76, in _run_agent\n    await self._run_agent_phase(\n  File \"/private/tmp/ficus-harbor-venv/lib/python3.12/site-packages/harbor/trial/trial.py\", line 651, in _run_agent_phase\n    await asyncio.wait_for(\n  File \"/Users/noah/anaconda3/lib/python3.12/asyncio/tasks.py\", line 520, in wait_for\n    return await fut\n           ^^^^^^^^^\n  File \"/private/tmp/ficus-harbor-evaluation/evals/harbor/ficus_agent.py\", line 379, in run\n    await asyncio.sleep(2)\n  File \"/Users/noah/anaconda3/lib/python3.12/asyncio/tasks.py\", line 665, in sleep\n    return await future\n           ^^^^^^^^^^^^\nasyncio.exceptions.CancelledError\n",
+        "occurred_at": "2026-10-20T22:46:40.998053Z"
+      },
+      "agent_metadata": {
+        "configuration": "planned",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "interrupted",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+        "database_network": "task",
+        "attempted_roles": [
+          "architect",
+          "manager"
+        ],
+        "engineer_only_verified": null,
+        "executed_roles": [
+          "architect",
+          "manager"
+        ]
+      },
+      "total_seconds": 582.01,
+      "timing_seconds": {
+        "environment_setup": 3.05,
+        "agent_setup": 68.38,
+        "agent_execution": 496.54,
+        "verifier": null
+      },
+      "requests": 8,
+      "confirmed_cost_usd": 0.158383,
+      "unknown_usage_requests": 1,
+      "submitted_patch_bytes": 0,
+      "artifacts_sha256": {
+        "result.json": "b9a9da7fc1f4cc57fca200cd4fee9c8c44ee9d1a14bdda24df23eab395594465",
+        "agent/snapshot.json": "c7079bc79fe9261cdf6f6781efbf659f7f41100bcedf2c831f116973d7dca2ea",
+        "agent/messages.json": "4ec5b9b92797cd96199272ebdb8034d7497c919477329298db46e4051991afbd",
+        "agent/progress.jsonl": "c9fa4868cfb6ac82109656a5371d45f43cc4f758916a7839c8d8a273551e28fb",
+        "artifacts/logs/artifacts/model.patch": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "operator_task_interventions": 0,
+      "human_attention_minutes": null,
+      "observed_human_question_agents": [],
+      "state_transition_count": 5,
+      "review_attempts": 0,
+      "stream_statuses": [
+        "active"
+      ],
+      "submission_captured": true,
+      "submission_audit": {
+        "changed_paths": [],
+        "test_paths_restored_by_official_verifier": [],
+        "candidate_test_paths_retained": [],
+        "retained_test_removed_line_counts": {}
+      },
+      "operator_supplied_task_messages_after_launch": 0,
+      "role_dispatches": [],
+      "verified_session_or_child_models": [],
+      "review_conclusions": [],
+      "completion_class": "provider_blocked_operator_cancelled",
+      "official_score_available": false
+    }
+  ],
+  "budget": {
+    "original_exposure_usd": 42.723031,
+    "original_unresolved_reservations_usd": 11,
+    "recovery_cap_usd": 30,
+    "recovery_exposure_usd": 4.649604,
+    "recovery_confirmed_usd": 4.649604
+  },
+  "limitations": [
+    "Independent containers, not a shared squad manager across tasks or shared product workspace",
+    "No serial baseline for these unseen tasks; no causal concurrency speedup",
+    "No measured human minutes saved",
+    "Shared arm64 host with amd64 emulation and unrelated services",
+    "Ficus extra DB compute and setup",
+    "Fixed batch order",
+    "Conservative simultaneous reservations can truncate comparisons",
+    "Recovery phase omits completed Pi squad batch; combine reports explicitly rather than claiming this phase alone is a four-arm comparison.",
+    "Original interrupted Ficus costs and missing receipts remain separate historical overhead.",
+    "Original Pi first attempts compared with explicitly recovered Ficus squad starts; not eight uninterrupted first attempts.",
+    "Historical interrupted costs retained separately; no hidden retry or human task hints."
+  ],
+  "human_attention_minutes": null
+}

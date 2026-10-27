@@ -1,0 +1,38 @@
+{
+  "purpose": "Known-task full-squad regression replay after generic scope/completion guidance. Not an unseen benchmark result or causal estimate.",
+  "baseline_job": "feature-v2-ficus-planned-1",
+  "candidate_job": "scope-completion-planned-1",
+  "prompt_commit": "8739f497bc8da7711a433d40186840290a3861a3",
+  "base_runtime_sha256": "903ff3d33a08776c4005c3430ef13152101d25b72435fc27b242320573efec18",
+  "candidate_runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+  "changed_archive_members": [
+    "config/agent-types/manager.yaml",
+    "config/agent-types/reviewer.yaml",
+    "config/agent-types/shared/squad-rules.md",
+    "evals/harbor/revision.json"
+  ],
+  "unchanged_members_verified": true,
+  "prompt_files": {
+    "config/agent-types/manager.yaml": {
+      "baseline_sha256": "261b7546f2bb6fa5315ac386d72fccfe97d95c9bcaf25cc1b62a9ebfb1a38f24",
+      "candidate_sha256": "0ace835a71ebc2b876f24e0e334147ff3832a4f51fe0d772e2da9e3d22ee5553"
+    },
+    "config/agent-types/reviewer.yaml": {
+      "baseline_sha256": "4d2174622afb475e7de3592ada9a2c300ceb80a0e0fc96a9d72299f4d4e045d0",
+      "candidate_sha256": "75ce385286b9935cfa9b87f0f32b4859b0ba8853df40caa29ed13186aa68dab0"
+    },
+    "config/agent-types/shared/squad-rules.md": {
+      "baseline_sha256": "82634eaeb3c47f5a411732c160bbfcde95b6b9c7371e05c5daaea8028d60db88",
+      "candidate_sha256": "448e657bdad3c5ac692bc74b4fb1e4b7a5271aaa4228534f9cdff9c6880d87c2"
+    }
+  },
+  "task_checksum": "4c3c1ac1f67aeb353ed802f5133ccd96b49e071c4b19932fd2ff634fa039140c",
+  "task": "pydantic__pydantic.e1dcaf9e.test_deprecated_fields.40a2ec54.lv1",
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "workflow": "planned",
+  "attempts": 1,
+  "accounting_baseline_usd": 10.778173,
+  "cumulative_cap_usd": 20,
+  "stop_policy": "One attempt; no steering, prompt adjustment, or retry. Retain failures and stop on proxy cap."
+}

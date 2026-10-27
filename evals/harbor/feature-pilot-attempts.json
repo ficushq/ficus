@@ -1,0 +1,147 @@
+[
+  {
+    "arm": "ficus-planned",
+    "job": "feature-ficus-planned-1",
+    "reward": {
+      "rewards": {
+        "reward": 0.0
+      }
+    },
+    "exception": null,
+    "wall_seconds": 1632.78,
+    "setup_seconds": 71.19,
+    "agent_seconds": 1531.02,
+    "metadata": {
+      "configuration": "planned",
+      "model_api": "openai-responses",
+      "thinking": "medium",
+      "outcome": "delivered",
+      "memory": "fresh-disabled",
+      "runtime_sha256": "903ff3d33a08776c4005c3430ef13152101d25b72435fc27b242320573efec18",
+      "attempted_roles": [
+        "architect",
+        "engineer",
+        "manager",
+        "reviewer"
+      ],
+      "engineer_only_verified": null,
+      "executed_roles": [
+        "architect",
+        "engineer",
+        "manager",
+        "reviewer"
+      ]
+    },
+    "task_checksum": "b7c1858663d3db4d86a09b23ebf268652c2e08af99752a8669bf5afaad572de7",
+    "calls": 108,
+    "metered_usd": 1.604015,
+    "unknown_usage_calls": 0,
+    "errors": 0,
+    "streams": [
+      "done"
+    ],
+    "flow_attempts": [
+      [
+        {
+          "step": "design",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "review",
+          "status": "returned",
+          "outcome": "changes-requested"
+        },
+        {
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "review",
+          "status": "completed",
+          "outcome": "approved"
+        }
+      ]
+    ],
+    "open_waits": 0,
+    "pending_messages": 0,
+    "validity": "official-tests-failed"
+  },
+  {
+    "arm": "pi-planned",
+    "job": "feature-pi-planned-1",
+    "reward": {
+      "rewards": {
+        "reward": 1.0
+      }
+    },
+    "exception": null,
+    "wall_seconds": 1038.21,
+    "setup_seconds": 16.87,
+    "agent_seconds": 988.06,
+    "metadata": {
+      "configuration": "planned",
+      "baseline": "Pi packaged subagent example",
+      "executed_roles": [
+        "architect",
+        "engineer",
+        "reviewer"
+      ],
+      "required_roles_executed": true
+    },
+    "task_checksum": "b7c1858663d3db4d86a09b23ebf268652c2e08af99752a8669bf5afaad572de7",
+    "calls": 128,
+    "metered_usd": 1.301571,
+    "unknown_usage_calls": 0,
+    "errors": 0,
+    "validity": "invalid-verifier-test-collision"
+  },
+  {
+    "arm": "ficus-engineer",
+    "job": "feature-ficus-engineer-1",
+    "reward": null,
+    "exception": "CancelledError",
+    "wall_seconds": 128.66,
+    "setup_seconds": 65.57,
+    "agent_seconds": 49.14,
+    "metadata": {
+      "configuration": "engineer",
+      "model_api": "openai-responses",
+      "thinking": "medium",
+      "outcome": "interrupted",
+      "memory": "fresh-disabled",
+      "runtime_sha256": "903ff3d33a08776c4005c3430ef13152101d25b72435fc27b242320573efec18",
+      "attempted_roles": [
+        "engineer"
+      ],
+      "engineer_only_verified": true,
+      "executed_roles": []
+    },
+    "task_checksum": "b7c1858663d3db4d86a09b23ebf268652c2e08af99752a8669bf5afaad572de7",
+    "calls": 4,
+    "metered_usd": 0.072859,
+    "unknown_usage_calls": 0,
+    "errors": 1,
+    "streams": [
+      "active"
+    ],
+    "flow_attempts": [
+      [
+        {
+          "step": "execute",
+          "status": "running",
+          "outcome": null
+        }
+      ]
+    ],
+    "open_waits": 0,
+    "pending_messages": 0,
+    "validity": "interrupted-no-grade"
+  }
+]

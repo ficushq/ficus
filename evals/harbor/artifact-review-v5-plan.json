@@ -1,0 +1,39 @@
+{
+  "experiment": "artifact-review-v5",
+  "kind": "Known-artifact fresh-review diagnostic, not unseen benchmark or full-squad comparison",
+  "selection": "Delivered Bandit artifact still misses the frozen comment-only File-plugin finding",
+  "artifact": {
+    "sha256": "40e3a24a0a714b2a5a8f6d4e6748766140b75eb81bce50962b9c826085f82332",
+    "base_commit": "b46fa3a2723635aa29cc012538df4867ac2ac006",
+    "source": "artifact-repair-v2 final delivered patch; includes task-authored tests and design/validation document",
+    "production_fix": false
+  },
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "conditions": [
+    "repair-v2 guidance with fresh native reviewer",
+    "same plus unchanged independent-review-v1 addition"
+  ],
+  "order": "baseline then candidate, single sample each; no retry",
+  "blinding": "Original request and exact delivered repository only; no previous conversations, external reviews, known defect hints, hidden tests, or official score. Task-authored design/test evidence stays in repository.",
+  "outcomes": [
+    "Reviewer-only provenance and unchanged repository",
+    "Whether each independently detects the already-known File-plugin issue",
+    "Independently validate any other claimed defects; classify ambiguity separately"
+  ],
+  "limitations": [
+    "One fresh reviewer sample cannot isolate context anchoring from stochastic variation",
+    "Known case selected after observing failure; cannot estimate unseen-task accuracy or justify broad prompt promotion",
+    "Experimental addition previously detected this issue on an earlier artifact; no new prompt tuned to it"
+  ],
+  "verification": "Reuse validated original task/image; no inference preflight for both changed runtimes; grader disabled during reviews; freeze independent check before inference",
+  "budget": {
+    "phase_cap_usd": 35,
+    "phase_opening_exposure_usd": 25.720994,
+    "historical_hold_usd": 5.5,
+    "segment_cap_usd": 15.772395,
+    "ledger": "artifact-review-v1/budget/spend.sqlite",
+    "no_reset": true
+  },
+  "production_prompts_changed": false
+}

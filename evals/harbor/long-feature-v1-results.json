@@ -1,0 +1,435 @@
+{
+  "experiment": "long-feature-v1",
+  "frozen_manifest_sha256": "8a6b093ed19b42810a9d915dcdbfec9315d21fc9fa4dc49610bda3764738c0d0",
+  "results": [
+    {
+      "arm": "ficus-planned",
+      "job_name": "long-v1-native-skrub-ficus-planned",
+      "reward": {
+        "reward": 1,
+        "f2p_total": 130,
+        "f2p_passed": 130,
+        "p2p_total": 2784,
+        "p2p_passed": 2784,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "planned",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+        "database_network": "task",
+        "attempted_roles": [
+          "architect",
+          "engineer",
+          "manager",
+          "reviewer"
+        ],
+        "engineer_only_verified": null,
+        "executed_roles": [
+          "architect",
+          "engineer",
+          "manager",
+          "reviewer"
+        ]
+      },
+      "total_seconds": 1460.78,
+      "timing_seconds": {
+        "environment_setup": 2.55,
+        "agent_setup": 53.36,
+        "agent_execution": 1005.89,
+        "verifier": 386.47
+      },
+      "requests": 63,
+      "confirmed_cost_usd": 1.198337,
+      "unknown_usage_requests": 0,
+      "submitted_patch_bytes": 45579,
+      "artifacts_sha256": {
+        "result.json": "99b03c6efa26e44fdb43a89eb2337a552cfd39bb1a98ac59aa72def87859284d",
+        "verifier/reward.json": "8117e32265b7e6f4ac379398eeb55a092c68734cb4cf67cad2921a620ac80aaf",
+        "verifier/ctrf.json": "7c92ca17d6e4f46b0aa0b43ea8b06917ec2ede70f21cab903d3c69b957da2787",
+        "verifier/test-stdout.txt": "b0cc9d876687f590c639b774038b0dfdac43a807226b80befa4c6592866d86de",
+        "agent/snapshot.json": "d96bd988e5677213f1657971ebe834b6933982e4216764bb19f26d97b4f5b19b",
+        "agent/messages.json": "ad92b0970b163b950a811f3401df2d29d911d5d54867da8f2caa1a0eed6ce8eb",
+        "agent/progress.jsonl": "d30f35bb98cd0c7f0901f9752c4003dcb3ac0fad683d4ab93dc18163dd6b2b59",
+        "artifacts/logs/artifacts/model.patch": "adbfd6d11b47fadcb7e159124d48bdca3571f1beafde8b4b0e20080911d6aa60"
+      },
+      "operator_task_interventions": 0,
+      "human_attention_minutes": null,
+      "observed_human_question_agents": [],
+      "state_transition_count": 12,
+      "review_attempts": 1,
+      "stream_statuses": [
+        "done"
+      ],
+      "submission_audit": {
+        "changed_paths": [
+          "CHANGES.rst",
+          "doc/api_reference.py",
+          "doc/modules/column_level_featurizing/feature_engineering_datetimes.rst",
+          "doc/modules/multi_column_operations/type_of_selectors.rst",
+          "skrub/__init__.py",
+          "skrub/_duration_encoder.py",
+          "skrub/_table_vectorizer.py",
+          "skrub/_to_float.py",
+          "skrub/_to_str.py",
+          "skrub/selectors/_selectors.py",
+          "skrub/selectors/tests/test_selectors.py",
+          "skrub/tests/test_duration_encoder.py",
+          "skrub/tests/test_table_vectorizer.py",
+          "skrub/tests/test_to_float.py",
+          "skrub/tests/test_to_str.py",
+          "skrub/tests/utils.py"
+        ],
+        "test_paths_restored_by_official_verifier": [
+          "skrub/tests/test_duration_encoder.py"
+        ],
+        "candidate_test_paths_retained": [
+          "skrub/selectors/tests/test_selectors.py",
+          "skrub/tests/test_table_vectorizer.py",
+          "skrub/tests/test_to_float.py",
+          "skrub/tests/test_to_str.py",
+          "skrub/tests/utils.py"
+        ],
+        "retained_test_removed_line_counts": {
+          "skrub/selectors/tests/test_selectors.py": 0,
+          "skrub/tests/test_table_vectorizer.py": 0,
+          "skrub/tests/test_to_float.py": 0,
+          "skrub/tests/test_to_str.py": 0,
+          "skrub/tests/utils.py": 0
+        }
+      },
+      "operator_supplied_task_messages_after_launch": 0,
+      "observed_active_role_seconds": {
+        "architect": 177.32,
+        "engineer": 528.07,
+        "manager": 41.92,
+        "reviewer": 119.19
+      }
+    },
+    {
+      "arm": "pi-planned",
+      "job_name": "long-v1-native-skrub-pi-planned",
+      "reward": {
+        "reward": 1,
+        "f2p_total": 130,
+        "f2p_passed": 130,
+        "p2p_total": 2784,
+        "p2p_passed": 2784,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "planned",
+        "baseline": "Pi packaged subagent example",
+        "executed_roles": [
+          "architect",
+          "engineer",
+          "reviewer"
+        ],
+        "required_roles_executed": true
+      },
+      "total_seconds": 1530.95,
+      "timing_seconds": {
+        "environment_setup": 2.56,
+        "agent_setup": 22.96,
+        "agent_execution": 1106.14,
+        "verifier": 387.45
+      },
+      "requests": 104,
+      "confirmed_cost_usd": 1.095428,
+      "unknown_usage_requests": 0,
+      "submitted_patch_bytes": 45716,
+      "artifacts_sha256": {
+        "result.json": "998552effe26414f014ff15499a90eb7538e6b0653e457bc4f6687a6c5fdf958",
+        "verifier/reward.json": "8117e32265b7e6f4ac379398eeb55a092c68734cb4cf67cad2921a620ac80aaf",
+        "verifier/ctrf.json": "7c92ca17d6e4f46b0aa0b43ea8b06917ec2ede70f21cab903d3c69b957da2787",
+        "verifier/test-stdout.txt": "b93beceaf8c62fdba926bc9e9d22e19c1052e25a89233a872ef2cfac0a49874e",
+        "agent/pi.txt": "efe72299f27f070c1257be73d5e9a2b0124a421d684cbe13c6b9a7d1fd6cf48a",
+        "artifacts/logs/artifacts/model.patch": "a99589b5bb1c851789abdef72eaebde686b72efb7733320d1de9de158aca0c21",
+        "agent/pi/sessions/2026-10-20T20-50-14-664Z_01a15b14-3a06-723a-a4c5-dd2372dd9464.jsonl": "2107218a3023ef755c72a2079603679badd38505be848f82d30b3d885c5e3ee3"
+      },
+      "operator_task_interventions": 0,
+      "human_attention_minutes": null,
+      "submission_audit": {
+        "changed_paths": [
+          "CHANGES.rst",
+          "doc/api_reference.py",
+          "doc/column_level_featurizing.rst",
+          "doc/modules/column_level_featurizing/feature_engineering_datetimes.rst",
+          "doc/modules/default_wrangling/table_vectorizer.rst",
+          "skrub/__init__.py",
+          "skrub/_duration_encoder.py",
+          "skrub/_table_vectorizer.py",
+          "skrub/_to_float.py",
+          "skrub/_to_str.py",
+          "skrub/selectors/_selectors.py",
+          "skrub/tests/test_duration_encoder.py"
+        ],
+        "test_paths_restored_by_official_verifier": [
+          "skrub/tests/test_duration_encoder.py"
+        ],
+        "candidate_test_paths_retained": [],
+        "retained_test_removed_line_counts": {}
+      },
+      "operator_supplied_task_messages_after_launch": 0,
+      "role_dispatches": [
+        {
+          "at": "2026-10-20T20:50:25.405Z",
+          "role": "architect"
+        },
+        {
+          "at": "2026-10-20T20:52:35.815Z",
+          "role": "engineer"
+        },
+        {
+          "at": "2026-10-20T21:00:24.797Z",
+          "role": "reviewer"
+        },
+        {
+          "at": "2026-10-20T21:02:42.525Z",
+          "role": "engineer"
+        },
+        {
+          "at": "2026-10-20T21:07:19.451Z",
+          "role": "reviewer"
+        }
+      ],
+      "verified_child_models": [
+        "harbor-endpoint/gpt-6.1-sol"
+      ],
+      "review_conclusions": [
+        {
+          "exit_code": 0,
+          "explicit_approved": false
+        },
+        {
+          "exit_code": 0,
+          "explicit_approved": true
+        }
+      ]
+    },
+    {
+      "arm": "ficus-engineer",
+      "job_name": "long-v1-native-skrub-ficus-engineer",
+      "reward": {
+        "reward": 1,
+        "f2p_total": 130,
+        "f2p_passed": 130,
+        "p2p_total": 2784,
+        "p2p_passed": 2784,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "engineer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+        "database_network": "task",
+        "attempted_roles": [
+          "engineer"
+        ],
+        "engineer_only_verified": true,
+        "executed_roles": [
+          "engineer"
+        ]
+      },
+      "total_seconds": 933.18,
+      "timing_seconds": {
+        "environment_setup": 2.62,
+        "agent_setup": 56.24,
+        "agent_execution": 486.42,
+        "verifier": 375.51
+      },
+      "requests": 35,
+      "confirmed_cost_usd": 0.593376,
+      "unknown_usage_requests": 0,
+      "submitted_patch_bytes": 37960,
+      "artifacts_sha256": {
+        "result.json": "c9c5fd48bb373481b18851a073713dea12c47bea98261f8ffc3cc21ae388700c",
+        "verifier/reward.json": "8117e32265b7e6f4ac379398eeb55a092c68734cb4cf67cad2921a620ac80aaf",
+        "verifier/ctrf.json": "7c92ca17d6e4f46b0aa0b43ea8b06917ec2ede70f21cab903d3c69b957da2787",
+        "verifier/test-stdout.txt": "449e1bb249e4c30a86700e3684cc831bcd5010ed2145495bf44feea30208773e",
+        "agent/snapshot.json": "129e42d16117f4e37c65c24e54439caea39bb3ece17a46e65fe0c32ad9ec6ce3",
+        "agent/messages.json": "c8eb46380882b01e09101d82b33ebbcb60ec1974aebba0132fb0cccd1b5e990a",
+        "agent/progress.jsonl": "bc9f4a6491b516c4bfe5082279c5950002b547305f5c4e90af7c0c2f658eb5ee",
+        "artifacts/logs/artifacts/model.patch": "3aa218695002d64d7a40f7c53cabe45eacc9f9a169114bae149109a1eb34cded"
+      },
+      "operator_task_interventions": 0,
+      "human_attention_minutes": null,
+      "observed_human_question_agents": [],
+      "state_transition_count": 3,
+      "review_attempts": 0,
+      "stream_statuses": [
+        "done"
+      ],
+      "submission_audit": {
+        "changed_paths": [
+          "CHANGES.rst",
+          "doc/api_reference.py",
+          "doc/modules/column_level_featurizing/feature_engineering_datetimes.rst",
+          "skrub/__init__.py",
+          "skrub/_duration_encoder.py",
+          "skrub/_table_vectorizer.py",
+          "skrub/_to_float.py",
+          "skrub/_to_str.py",
+          "skrub/selectors/_selectors.py",
+          "skrub/tests/test_duration_encoder.py"
+        ],
+        "test_paths_restored_by_official_verifier": [
+          "skrub/tests/test_duration_encoder.py"
+        ],
+        "candidate_test_paths_retained": [],
+        "retained_test_removed_line_counts": {}
+      },
+      "operator_supplied_task_messages_after_launch": 0,
+      "observed_active_role_seconds": {
+        "engineer": 441.4
+      }
+    },
+    {
+      "arm": "pi-engineer",
+      "job_name": "long-v1-native-skrub-pi-engineer",
+      "reward": {
+        "reward": 1,
+        "f2p_total": 130,
+        "f2p_passed": 130,
+        "p2p_total": 2784,
+        "p2p_passed": 2784,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "engineer",
+        "baseline": "Pi single session"
+      },
+      "total_seconds": 831.03,
+      "timing_seconds": {
+        "environment_setup": 2.6,
+        "agent_setup": 17.32,
+        "agent_execution": 426.29,
+        "verifier": 373.06
+      },
+      "requests": 46,
+      "confirmed_cost_usd": 0.465993,
+      "unknown_usage_requests": 0,
+      "submitted_patch_bytes": 33725,
+      "artifacts_sha256": {
+        "result.json": "a33d46d54712a59e87a009fbdfc45f480e625e75f77d6a7cd48984ff2e57d4a1",
+        "verifier/reward.json": "8117e32265b7e6f4ac379398eeb55a092c68734cb4cf67cad2921a620ac80aaf",
+        "verifier/ctrf.json": "7c92ca17d6e4f46b0aa0b43ea8b06917ec2ede70f21cab903d3c69b957da2787",
+        "verifier/test-stdout.txt": "c6914ccc7e57cfc883bd385cd89de638fe7b27c4b54d5eaeba601b3e0b7e5ee6",
+        "agent/pi.txt": "6d85dd6847b289c488b16d4dab61553c3f396e474c081eaa191be9c94469af36",
+        "artifacts/logs/artifacts/model.patch": "a245c220bcdff6be5236a5219d2d0e453d37c7606bd0e8fda0a3c1d0cf1b0cce",
+        "agent/pi/sessions/2026-10-20T21-31-18-958Z_01a15b39-d42d-72b8-bbaf-30485103b803.jsonl": "a7c38217762afa2f3652e194483a08f91f9ed1287d058c827541f99916453281"
+      },
+      "operator_task_interventions": 0,
+      "human_attention_minutes": null,
+      "submission_audit": {
+        "changed_paths": [
+          "CHANGES.rst",
+          "doc/api_reference.py",
+          "skrub/__init__.py",
+          "skrub/_duration_encoder.py",
+          "skrub/_table_vectorizer.py",
+          "skrub/_to_float.py",
+          "skrub/_to_str.py",
+          "skrub/selectors/_selectors.py",
+          "skrub/tests/test_duration_encoder.py"
+        ],
+        "test_paths_restored_by_official_verifier": [
+          "skrub/tests/test_duration_encoder.py"
+        ],
+        "candidate_test_paths_retained": [],
+        "retained_test_removed_line_counts": {}
+      },
+      "operator_supplied_task_messages_after_launch": 0
+    }
+  ],
+  "complete_matched_comparison": true,
+  "cumulative_exposure_usd": 29.346481,
+  "cap_usd": 50,
+  "new_confirmed_usd": 3.353134,
+  "limitations": [
+    "Single restricted task, one attempt per arm",
+    "Shared Apple Silicon host with amd64 task emulation",
+    "Ficus adds capped database compute",
+    "Host-wide inference proxy allowlist",
+    "No measured human time saved; infrastructure effort not timed",
+    "Stop on cumulative or per-arm reservation cap; preserve incomplete comparisons"
+  ],
+  "host_runtime_observation": {
+    "Architecture": "aarch64",
+    "NCPU": 14,
+    "MemTotal": 33670914048,
+    "OperatingSystem": "OrbStack",
+    "ServerVersion": "29.8.2",
+    "database_image_id": "sha256:151aa1c2e849e7828ed8aef2183ae15f692cbe887d2f28921d8b44b26e154d7e",
+    "database_repo_digests": [
+      "pgvector/pgvector@sha256:ac08538c6f8b9904c33c8224c5e5706dbe760aca29db1d096972b4052c22a75d"
+    ]
+  },
+  "audit_notes": [
+    "Official grader and original assertions unchanged; task hashes checked before each launch.",
+    "Candidate-added duration test file is restored by official test.patch before grading.",
+    "Ficus squad retains additive regression tests and a new test fixture helper, manually inspected: no existing assertions removed or grading bypass identified.",
+    "Pi squad completed one reviewer-requested test-compatibility/formatting revision and a second independent approval.",
+    "Pi squad attempted missing lint/minimum-dependency tooling downloads; restricted network blocked them. Its reviewer explicitly reported these validation limits.",
+    "No human-time-saved measurement: setup/control repair and monitoring are operator effort.",
+    "Original Ficus startup failed before any model request; immutable recovery manifest preserves failure and corrected exact-native smoke.",
+    "After inference and frozen-input verification, the no-inference smoke helper was changed to use an OS-assigned host port. This does not change any scored attempt; source hashes in the recovery manifest refer to the frozen run commit."
+  ],
+  "post_inference_integrity": {
+    "frozen_sources_match": true,
+    "task_inputs_match": true,
+    "new_calls": 248,
+    "new_micro_usd": 3353134,
+    "unknown_usage": 0,
+    "last_call_id": 2260,
+    "paid_proxy_stopped": true
+  },
+  "frozen_source_commit": "08db5017",
+  "post_run_smoke_validation": [
+    {
+      "job": "skrub-ficus-dynamic-probe-bde888b3",
+      "checks": {
+        "database_loopback": true,
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "ficus_api_ready": true,
+        "ficus_worker_ready": true,
+        "native_provider_preload": true
+      },
+      "result_sha256": "91a143d9a1b5846bebdcc33dc4eca86e6e817f64c44f1c86a231dbe150df2ac8",
+      "checks_sha256": "075792f0f74241df9bd668a2a04b5dc740e08d3290ac51438e866b866df34f38",
+      "inference": false,
+      "verifier_disabled": true
+    },
+    {
+      "job": "skrub-pi-dynamic-probe-77971761",
+      "checks": {
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "pinned_pi_and_subagent_extension": true
+      },
+      "result_sha256": "53197eea211150a8e8beabe8a5f4965cd6efe201ae979cabcf6c5f14273e8388",
+      "checks_sha256": "a51bd185e985cd4e7c25f253c6d4990f923a2779cb5ead954129ee938e56207b",
+      "inference": false,
+      "verifier_disabled": true
+    }
+  ]
+}

@@ -1,0 +1,480 @@
+{
+  "experiment": "fresh-matched-v2",
+  "task": "mnamer-daemon-watch-lifecycle",
+  "arms": [
+    {
+      "arm": "pi-engineer",
+      "state": "completed",
+      "cost": {
+        "usd_upper_bound": 0.221011,
+        "requests": 23,
+        "unknown_usage": 0,
+        "confirmed_usd": 0.221011,
+        "unresolved_hold_usd": 0.0
+      },
+      "trial": "task__VpYydvq",
+      "result_sha256": "4be5ed295efa24aec69a616fd55a2aad1677614dc7ce33f117689a47d99ff961",
+      "grade": {
+        "rewards": {
+          "reward": 1,
+          "f2p_total": 51,
+          "f2p_passed": 51,
+          "p2p_total": 319,
+          "p2p_passed": 319,
+          "f2p": 1.0,
+          "p2p": 1.0,
+          "partial": 1.0
+        }
+      },
+      "exception": null,
+      "metadata": {
+        "configuration": "engineer",
+        "baseline": "Pi single session"
+      },
+      "elapsed_seconds": 375.389,
+      "timing": {
+        "environment_setup": 2.685,
+        "agent_setup": 17.404,
+        "agent_execution": 275.679,
+        "verifier": 68.084
+      },
+      "patch_sha256": "3091c6a7162dcaa0ca64d3203d16f18a118f16ca621d0b737614e7b3dd34eca2",
+      "failed_tests": [],
+      "launcher": {
+        "arm": "pi-engineer",
+        "elapsed_seconds": 378.5084749170346,
+        "stop": null,
+        "exit_code": 0,
+        "usage": {
+          "usd_upper_bound": 0.221011,
+          "requests": 23,
+          "unknown_usage": 0
+        },
+        "phase_exposure_usd": 2.678827,
+        "phase_cap_usd": 20,
+        "historical_phase_excluded": true
+      },
+      "task_hints_from_operator": 0
+    },
+    {
+      "arm": "pi-planned",
+      "state": "completed",
+      "cost": {
+        "usd_upper_bound": 0.783735,
+        "requests": 84,
+        "unknown_usage": 0,
+        "confirmed_usd": 0.783735,
+        "unresolved_hold_usd": 0.0
+      },
+      "trial": "task__YRaCjKr",
+      "result_sha256": "baff77fd89a541690326f263c400ae5fd083cff9df418f1e159194735af2ae6a",
+      "grade": {
+        "rewards": {
+          "reward": 1,
+          "f2p_total": 51,
+          "f2p_passed": 51,
+          "p2p_total": 319,
+          "p2p_passed": 319,
+          "f2p": 1.0,
+          "p2p": 1.0,
+          "partial": 1.0
+        }
+      },
+      "exception": null,
+      "metadata": {
+        "configuration": "planned",
+        "baseline": "Pi packaged subagent example",
+        "executed_roles": ["architect", "engineer", "reviewer"],
+        "required_roles_executed": true
+      },
+      "elapsed_seconds": 1327.656,
+      "timing": {
+        "environment_setup": 2.6,
+        "agent_setup": 21.886,
+        "agent_execution": 1189.224,
+        "verifier": 102.179
+      },
+      "patch_sha256": "72810b73b1c944d342efc60c4d6c1678951d7f6a720c4fb901655bdf38d9b35d",
+      "failed_tests": [],
+      "launcher": {
+        "arm": "pi-planned",
+        "elapsed_seconds": 1330.4571224999963,
+        "stop": null,
+        "exit_code": 0,
+        "usage": {
+          "usd_upper_bound": 0.783735,
+          "requests": 84,
+          "unknown_usage": 0
+        },
+        "phase_exposure_usd": 3.462562,
+        "phase_cap_usd": 20,
+        "historical_phase_excluded": true
+      },
+      "task_hints_from_operator": 0,
+      "native_subagent_returns": [
+        {
+          "role": "architect",
+          "exit_code": 0,
+          "turns": 10
+        },
+        {
+          "role": "engineer",
+          "exit_code": 0,
+          "turns": 35
+        },
+        {
+          "role": "reviewer",
+          "exit_code": 0,
+          "turns": 7
+        },
+        {
+          "role": "engineer",
+          "exit_code": 0,
+          "turns": 17
+        },
+        {
+          "role": "reviewer",
+          "exit_code": 0,
+          "turns": 9
+        }
+      ]
+    },
+    {
+      "arm": "ficus-planned",
+      "state": "completed",
+      "cost": {
+        "usd_upper_bound": 1.052676,
+        "requests": 56,
+        "unknown_usage": 0,
+        "confirmed_usd": 1.052676,
+        "unresolved_hold_usd": 0.0
+      },
+      "trial": "task__dLYFycE",
+      "result_sha256": "826cd8089e399c5f230789ceb15c9675eac2220e952440dd222b3bea4dc63413",
+      "grade": {
+        "rewards": {
+          "reward": 1,
+          "f2p_total": 51,
+          "f2p_passed": 51,
+          "p2p_total": 319,
+          "p2p_passed": 319,
+          "f2p": 1.0,
+          "p2p": 1.0,
+          "partial": 1.0
+        }
+      },
+      "exception": null,
+      "metadata": {
+        "configuration": "planned",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "68c8a5e3263b54639562f259aaa149ae18c61770442a85b4da1d599fb2476ba0",
+        "database_network": "task",
+        "checkpoint_complete": true,
+        "attempted_roles": ["architect", "engineer", "manager", "reviewer"],
+        "engineer_only_verified": null,
+        "executed_roles": ["architect", "engineer", "manager", "reviewer"]
+      },
+      "elapsed_seconds": 1195.813,
+      "timing": {
+        "environment_setup": 2.64,
+        "agent_setup": 55.466,
+        "agent_execution": 1044.114,
+        "verifier": 80.579
+      },
+      "patch_sha256": "20642a34bec34e1c2ff98c1e98be57761407a0cd2bf5b3d9e106978b3c853049",
+      "failed_tests": [],
+      "native_execution": [
+        {
+          "role": "manager",
+          "status": "completed"
+        },
+        {
+          "role": "architect",
+          "status": "completed"
+        },
+        {
+          "role": "engineer",
+          "status": "completed"
+        },
+        {
+          "role": "reviewer",
+          "status": "completed"
+        },
+        {
+          "role": "manager",
+          "status": "completed"
+        }
+      ],
+      "flow_attempts": [
+        {
+          "step": "design",
+          "status": "completed",
+          "outcome": "completed",
+          "revision": 0
+        },
+        {
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed",
+          "revision": 0
+        },
+        {
+          "step": "review",
+          "status": "completed",
+          "outcome": "approved",
+          "revision": 0
+        }
+      ],
+      "wait_count": 0,
+      "pending_message_count": 0,
+      "launcher": {
+        "arm": "ficus-planned",
+        "elapsed_seconds": 1199.4412282920093,
+        "stop": null,
+        "exit_code": 0,
+        "usage": {
+          "usd_upper_bound": 1.052676,
+          "requests": 56,
+          "unknown_usage": 0
+        },
+        "phase_exposure_usd": 4.515238,
+        "phase_cap_usd": 20,
+        "historical_phase_excluded": true
+      },
+      "task_hints_from_operator": 0,
+      "checkpoint_manifest_sha256": "37322c99e8419fb32974a66c5911fa26e3127f5e1b4441c1dc845cde63499396"
+    },
+    {
+      "arm": "ficus-engineer",
+      "state": "completed",
+      "cost": {
+        "usd_upper_bound": 0.640893,
+        "requests": 36,
+        "unknown_usage": 0,
+        "confirmed_usd": 0.640893,
+        "unresolved_hold_usd": 0.0
+      },
+      "trial": "task__JYXGPv6",
+      "result_sha256": "fefd7932e4596abddc91f01656f946a9cca42847e31b3b73facaff237b944cb5",
+      "grade": {
+        "rewards": {
+          "reward": 1,
+          "f2p_total": 51,
+          "f2p_passed": 51,
+          "p2p_total": 319,
+          "p2p_passed": 319,
+          "f2p": 1.0,
+          "p2p": 1.0,
+          "partial": 1.0
+        }
+      },
+      "exception": null,
+      "metadata": {
+        "configuration": "engineer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "68c8a5e3263b54639562f259aaa149ae18c61770442a85b4da1d599fb2476ba0",
+        "database_network": "task",
+        "checkpoint_complete": true,
+        "attempted_roles": ["engineer"],
+        "engineer_only_verified": true,
+        "executed_roles": ["engineer"]
+      },
+      "elapsed_seconds": 823.273,
+      "timing": {
+        "environment_setup": 2.655,
+        "agent_setup": 53.379,
+        "agent_execution": 671.558,
+        "verifier": 82.901
+      },
+      "patch_sha256": "3f824eb2688c21fc721f96e5a016de001b56da2f8aab74e72ce90240df7c79e4",
+      "failed_tests": [],
+      "native_execution": [
+        {
+          "role": "engineer",
+          "status": "completed"
+        }
+      ],
+      "flow_attempts": [
+        {
+          "step": "execute",
+          "status": "completed",
+          "outcome": "completed",
+          "revision": 0
+        }
+      ],
+      "wait_count": 0,
+      "pending_message_count": 0,
+      "launcher": {
+        "arm": "ficus-engineer",
+        "elapsed_seconds": 826.3214160409989,
+        "stop": null,
+        "exit_code": 0,
+        "usage": {
+          "usd_upper_bound": 0.640893,
+          "requests": 36,
+          "unknown_usage": 0
+        },
+        "phase_exposure_usd": 5.156131,
+        "phase_cap_usd": 20,
+        "historical_phase_excluded": true
+      },
+      "task_hints_from_operator": 0,
+      "checkpoint_manifest_sha256": "4c5aa18e45fca927575d80affe6c9353818533c94788d5b21d47a7a8ca504dab"
+    }
+  ],
+  "budget": {
+    "cap_usd": 20,
+    "confirmed_usd": 5.156131,
+    "unresolved_requests": 0,
+    "exposure_usd": 5.156131,
+    "remaining_usd": 14.843869,
+    "historical_phase_excluded": true,
+    "rejections": [],
+    "unresolved_calls": []
+  },
+  "frozen_readiness_sha256": "93186d3797ee2060031689dbae6c6ee16d0bea1dcdcd57041b104a0b9bda81ad",
+  "batch_confirmed_inference_usd": 2.698315,
+  "comparison_limit": "One fresh task, one first attempt per arm; official acceptance is separate from role provenance and review effects. Ficus checkpoint overhead is included in elapsed time. No human attention savings measured.",
+  "private_evidence": "Durable sibling ficus-evaluation-data/fresh-matched-v2; no credentials or full conversations published",
+  "review_audit": {
+    "operator_only": true,
+    "inference": false,
+    "official_grader_modified": false,
+    "probe_sha256": "40b6addd70a9aeef5c5793c3a09f17c2f390c45a5e2edb4a8109c46cbd2c6bee",
+    "network_disabled": true,
+    "versions": {
+      "before": {
+        "patch_sha256": "507cb1ca4bc5a2e5de76f3d1280234ca261657f766a010c96aae11c42bc4bbcf",
+        "passed": 2,
+        "total": 4,
+        "results": [
+          {
+            "case": "publication-control",
+            "passed": true
+          },
+          {
+            "case": "publication-replacement",
+            "passed": false,
+            "error": "Unobserved replacement was removed"
+          },
+          {
+            "case": "dry-run-control",
+            "passed": true
+          },
+          {
+            "case": "dry-run-collision",
+            "passed": false,
+            "error": "Predicted ['/tmp/mnamer-review-audit-c0dr0m53/left/alpha.mkv', '/tmp/mnamer-review-audit-c0dr0m53/right/alpha.mkv'], moved ['/tmp/mnamer-review-audit-c0dr0m53/left/alpha.mkv', '/tmp/mnamer-review-audit-c0dr0m53/right/zeta.mkv']"
+          }
+        ]
+      },
+      "final": {
+        "patch_sha256": "72810b73b1c944d342efc60c4d6c1678951d7f6a720c4fb901655bdf38d9b35d",
+        "passed": 4,
+        "total": 4,
+        "results": [
+          {
+            "case": "publication-control",
+            "passed": true
+          },
+          {
+            "case": "publication-replacement",
+            "passed": true
+          },
+          {
+            "case": "dry-run-control",
+            "passed": true
+          },
+          {
+            "case": "dry-run-collision",
+            "passed": true
+          }
+        ]
+      }
+    }
+  },
+  "pre_review_replay": {
+    "arm": "pi-planned",
+    "result_sha256": "a4de638347aab34e78b8cbea45b29e5706e4f3104356eb0064ea3e9ed8b45a09",
+    "grade": {
+      "rewards": {
+        "reward": 1,
+        "f2p_total": 51,
+        "f2p_passed": 51,
+        "p2p_total": 319,
+        "p2p_passed": 319,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      }
+    },
+    "inference": false,
+    "metadata": {
+      "inference": false,
+      "captured_artifact_sha256": "507cb1ca4bc5a2e5de76f3d1280234ca261657f766a010c96aae11c42bc4bbcf",
+      "delivery_claim": false
+    },
+    "exception": null
+  },
+  "checkpoint_verification": {
+    "fmv2-ficus-planned": {
+      "verified": true,
+      "manifest_sha256": "37322c99e8419fb32974a66c5911fa26e3127f5e1b4441c1dc845cde63499396"
+    },
+    "fmv2-ficus-engineer": {
+      "verified": true,
+      "manifest_sha256": "4c5aa18e45fca927575d80affe6c9353818533c94788d5b21d47a7a8ca504dab"
+    }
+  },
+  "ficus_review": {
+    "verdict": "approved on first review",
+    "before": {
+      "commit": "dcc54fede95b2b2a5558f2e883ea664d43d510f3",
+      "base": "73f5b537c8cad998e8e6d6bc40ad60e2e23bf268",
+      "patch_sha256": "20642a34bec34e1c2ff98c1e98be57761407a0cd2bf5b3d9e106978b3c853049",
+      "read_only_capture": true,
+      "stage": "native review running; first implementation complete"
+    },
+    "final_patch_identical": true,
+    "additional_official_replay": "Not run; identical patch already has official final grade."
+  },
+  "pi_review": {
+    "verdicts": ["changes requested", "approved"],
+    "engineer_executions": 2,
+    "reviewer_executions": 2,
+    "reported_findings": [
+      "Source replacement at destination publication could delete unobserved replacement data.",
+      "Dry-run failed to reserve colliding destinations, diverging from actual batch selection.",
+      "Start could wait behind an ongoing run-once cycle lock."
+    ],
+    "independently_reproduced": ["source replacement", "dry-run destination collision"],
+    "not_independently_reproduced": ["start versus cycle lock"],
+    "before": {
+      "commit": "b3e2f600646aa774c58a42481bcc4762e8b4e725",
+      "base": "73f5b537c8cad998e8e6d6bc40ad60e2e23bf268",
+      "patch_sha256": "507cb1ca4bc5a2e5de76f3d1280234ca261657f766a010c96aae11c42bc4bbcf",
+      "read_only_capture": true,
+      "stage": "reviewer dispatched; no reviewer return yet"
+    },
+    "after": {
+      "commit": "c8345d8c88cad23fc623a81f59ba2daa79a36710",
+      "base": "73f5b537c8cad998e8e6d6bc40ad60e2e23bf268",
+      "patch_sha256": "72810b73b1c944d342efc60c4d6c1678951d7f6a720c4fb901655bdf38d9b35d",
+      "read_only_capture": true,
+      "stage": "second reviewer dispatched"
+    }
+  },
+  "interpretation": [
+    "All four conditions accepted the same fresh task on first attempts without operator task hints or retries.",
+    "Pi engineer had the lowest cost and elapsed time on this task; official acceptance did not distinguish workflows.",
+    "Pi review repaired two independently reproduced defects without changing official acceptance. This is not an exhaustive cross-harness defect audit.",
+    "Ficus review approved the unchanged implementation; no causal review improvement is claimed.",
+    "Only one task; fixed task-specific arm order, emulated CPU, extra Ficus database and checkpoint overhead limit generalization."
+  ]
+}

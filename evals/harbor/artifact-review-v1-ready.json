@@ -1,0 +1,170 @@
+{
+  "original_controls": [
+    {
+      "job": "arv1-control-oracle",
+      "result_sha256": "9fde79147e46a98d1ab20d7012c73cc306072df24c4f203d9baed6b8c14b2827",
+      "rewards": {
+        "reward": 0,
+        "f2p_total": 103,
+        "f2p_passed": 0,
+        "p2p_total": 10093,
+        "p2p_passed": 0,
+        "f2p": 0.0,
+        "p2p": 0.0,
+        "partial": 0.0
+      },
+      "classification": "invalid infrastructure: Polars AVX/AVX2 import failure"
+    },
+    {
+      "job": "arv1-control-nop",
+      "result_sha256": "66c531ece34215f5cbdfc78f9ec39c73d6851234d72d4968cd9b46a0f3936594",
+      "rewards": {
+        "reward": 0,
+        "f2p_total": 103,
+        "f2p_passed": 0,
+        "p2p_total": 10093,
+        "p2p_passed": 0,
+        "f2p": 0.0,
+        "p2p": 0.0,
+        "partial": 0.0
+      },
+      "classification": "invalid infrastructure: Polars AVX/AVX2 import failure"
+    }
+  ],
+  "repair": "Only add polars-runtime-compat==1.39.3 alongside unchanged polars==1.39.3. Same repaired image used for agents and verifier; no task, source, test, or grader changes.",
+  "source": "https://docs.pola.rs/user-guide/installation/#legacy-cpu",
+  "image": "ficus-eval-narwhals-compat:ea3c0e757e7f",
+  "image_id": "sha256:ea3c0e757e7f814bf13382d02dc388aa62e0b8c220f80356e4c841aa8fe81d54",
+  "wheel": "1e54d6acda9db5653ffd7fc5923a56082be65de20e41e4d33b6068efd67ecb85  /opt/ficus-eval-compat/polars_runtime_compat-1.39.3-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+  "prepared_file_sha256": {
+    "environment/Dockerfile": "2a855e27920ce6f4098619b22e4f95142ddd2c709a9912aec1b58101b36aa151",
+    "instruction.md": "d25036c0761a9e6a2194f40bda5ae29b12487ee4f4c2045e4326ece0a80679a2",
+    "solution/solution.patch": "13a3c82366454efa3680955e4c7f7be4cc46676ddb635d9fe14892de38d447cb",
+    "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+    "task.toml": "217884039f74cedb5052d25cdd1e51e07856998842bcd34e95cb4b27e0a84ba3",
+    "tests/Dockerfile": "0742b19e83f87327acccec662184e70835610aad0f95dbbced10ef31f93e20aa",
+    "tests/config.json": "8137378ce50c0b4ba10c51b41fbfeee36be20b80de8237ecdeba0e41c2747b9b",
+    "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+    "tests/test.patch": "4a63f38ce6e17c87c27db085c4e4146601be990e17141a1c0fdea25a607fc0cc",
+    "tests/test.sh": "04e46fc9e42527bb5e72c971da3ebc71d49c6ae73c249d2290d8bbed59b4e66e"
+  },
+  "verifier_build_platform": "linux/amd64 explicitly in FROM; default host platform cannot resolve local amd64 image",
+  "python_environment_sha256": "465b6f35bfdeed8b105e27d31d59b5d3c6583455de8f90749953353a65bd724a",
+  "infra_failed_retries": [
+    {
+      "job": "arv1-compat-control-oracle",
+      "result_sha256": "fa8a72e4e91b2390b2b4edc5db1920377934774b46b66ca66b46eac1234346ef",
+      "reason": "verifier build defaulted to arm64 and could not resolve local amd64-only base image"
+    },
+    {
+      "job": "arv1-compat-control-nop",
+      "result_sha256": "c8c9c45ad502a4608a1b2947c71d9421492e9dbab08aeb01d76b5ab24be60c0f",
+      "reason": "verifier build defaulted to arm64 and could not resolve local amd64-only base image"
+    }
+  ],
+  "only_changed_members": [
+    "ficus-harbor/runtime/config/agent-types/reviewer.yaml",
+    "ficus-harbor/runtime/evals/harbor/revision.json"
+  ],
+  "member_count": 127011,
+  "archive_sha256": {
+    "runtime-baseline.tar.gz": "f34c6a8a347e25b3179cea46f2283afbdca0f634674a28b46e426f5d78668012",
+    "runtime-candidate.tar.gz": "05a9f0a912b2df168f73a4c1fc42888d06c6e0a52e69644add7aa651da4d3a3a"
+  },
+  "reviewer_before_sha256": "75ce385286b9935cfa9b87f0f32b4859b0ba8853df40caa29ed13186aa68dab0",
+  "reviewer_after_sha256": "03755102dc1ee1c51f64ae8fc9afb0d2b17ada72d59771cbc56dd4441d5e21b4",
+  "controls": [
+    {
+      "job": "arv1-compat2-control-nop",
+      "result_sha256": "6d78dcc8c6d39dcc29e8dac0528ba433e66be6dc95186a4e190f1206e9a62c2c",
+      "rewards": {
+        "reward": 0,
+        "f2p_total": 103,
+        "f2p_passed": 0,
+        "p2p_total": 10093,
+        "p2p_passed": 10093,
+        "f2p": 0.0,
+        "p2p": 1.0,
+        "partial": 0.9898979992153786
+      }
+    },
+    {
+      "job": "arv1-compat2-control-oracle",
+      "result_sha256": "e6782fec049b9d5f1084c6cdc41ea5a6896bbf61c72251bd1e7ecba189205161",
+      "rewards": {
+        "reward": 1,
+        "f2p_total": 103,
+        "f2p_passed": 103,
+        "p2p_total": 10093,
+        "p2p_passed": 10093,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      }
+    },
+    {
+      "job": "arv1-compat2-collision-nop",
+      "result_sha256": "67cd412a299179f4ec35bc1778b3d7ee25003d0f777acf819910857c64d5d96a",
+      "rewards": {
+        "reward": 0,
+        "f2p_total": 103,
+        "f2p_passed": 0,
+        "p2p_total": 10093,
+        "p2p_passed": 10093,
+        "f2p": 0.0,
+        "p2p": 1.0,
+        "partial": 0.9898979992153786
+      }
+    },
+    {
+      "job": "arv1-compat2-collision-oracle",
+      "result_sha256": "85d1493f1353c094968303591075731744ada7b0621d44d5f975f54bd8df04b2",
+      "rewards": {
+        "reward": 1,
+        "f2p_total": 103,
+        "f2p_passed": 103,
+        "p2p_total": 10093,
+        "p2p_passed": 10093,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      }
+    }
+  ],
+  "probes": [
+    {
+      "job": "arv1-probe-baseline",
+      "result_sha256": "52ccab4002268053e547081517a7c0ace6072a7ec3dffe28582c085b988a0896",
+      "checks": {
+        "database_loopback": true,
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "ficus_api_ready": true,
+        "ficus_worker_ready": true,
+        "native_provider_preload": true
+      }
+    },
+    {
+      "job": "arv1-probe-candidate",
+      "result_sha256": "01bf1b01638fa6cc49237b94a965392ecc2c2daee1eede17caa1f1848c0472cf",
+      "checks": {
+        "database_loopback": true,
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "ficus_api_ready": true,
+        "ficus_worker_ready": true,
+        "native_provider_preload": true
+      }
+    }
+  ],
+  "all_gates_passed": true,
+  "inference_started": false,
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "service_tier": "default Standard enforced by proxy",
+  "pricing_verified_url": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+  "fixture_commit": "6f4a21dbc619130df0fa12cbf1cb6ab15a49f847",
+  "segment_cap_usd": 10.772395,
+  "phase_opening_exposure_usd": 19.227605,
+  "phase_cap_usd": 30
+}

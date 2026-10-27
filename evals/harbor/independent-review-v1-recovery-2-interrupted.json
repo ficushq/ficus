@@ -1,0 +1,34 @@
+{
+  "experiment": "independent-review-v1-recovery-2",
+  "candidate_started": false,
+  "reason": "Supervisor classified an upstream-200 client cancellation as a provider failure. Terminal-stream change did not prevent recurrence. Exact cause of client cancellation unproven; client aborts are not provider errors and normal workflow cancellation must remain available.",
+  "first_stop_call": 442,
+  "trials": [
+    {
+      "job": "irv1r2-baseline-igel-ficus-planned",
+      "outcome": "interrupted-supervisor",
+      "official_grade": null,
+      "confirmed_usd": 0.536462,
+      "unknown_usage_hold_usd": 0.0,
+      "requests": 26,
+      "unknown_usage": 0,
+      "result_sha256": "9f100144e398498c743337d9935849891b0d39271d5ebdd0517b16ba38d60243"
+    },
+    {
+      "job": "irv1r2-baseline-psd-ficus-planned",
+      "outcome": "interrupted-supervisor",
+      "official_grade": null,
+      "confirmed_usd": 0.500706,
+      "unknown_usage_hold_usd": 5.5,
+      "requests": 34,
+      "unknown_usage": 1,
+      "result_sha256": "411d6500d40d6f1a5d56b44823087f868668fe03aa5437eff2059800a97072b8"
+    }
+  ],
+  "new_confirmed_usd": 1.037168,
+  "phase_confirmed_usd": 7.427011,
+  "phase_exposure_usd": 12.927011,
+  "last_call_id": 446,
+  "unknown_usage_requests": 1,
+  "retained_hold_usd": 5.5
+}

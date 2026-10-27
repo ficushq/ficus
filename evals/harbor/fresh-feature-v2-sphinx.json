@@ -1,0 +1,93 @@
+{
+  "experiment": "fresh-feature-v2",
+  "task": "sphinx-doc__sphinx.e347e59c.test_domain_c.4068b9e8.lv1",
+  "preparation": {
+    "source_task": "sphinx-doc__sphinx.e347e59c.test_domain_c.4068b9e8.lv1",
+    "verifier_layout": "sphinx",
+    "verifier_paths": ["tests", "pyproject.toml", "tox.ini"],
+    "source_files_sha256": {
+      "task.toml": "ef631c9e1bfb04044903fef3ab357eda8767242e0e5de7199d4d22f7feecdb89",
+      "instruction.md": "e56dd0eb2b200f5abb088940774d1ee1ca8fe4c2add396ecf25e12440704c509",
+      "environment/Dockerfile": "b984a6185532812472e363fe8f8af002130772300e55bfb2827c0f797eabb34e",
+      "environment/setup_patch.diff": "751c578f6e5906230dc72b9087738d2a7c482d6b88a9dc834272a677c42296da",
+      "environment/test_patch.diff": "2b6fd3f56bea231443ad07bebba84f32058459b730c616ce3918f9be9fe6827d",
+      "tests/test.sh": "738fb5af3e44fb3a623136e8fe45fefdfcca96f1a4bdce06dc4bac61ac52f519",
+      "solution/solve.sh": "356a7b65d73d69f18507a9ed0b450631370b9968b2a0df8d98a6e9b6312fc778",
+      "tests/config.json": "5cf1f75dc5981ee55b86390cc9a37d517273744c648b4a8e9425acf05494ed7d"
+    },
+    "original_image_id": "sha256:4a60c907a78c94fb8fe5f8cc95611f4867c3ca6d5bab57b3840c176e786d9ebb",
+    "agent_image_id": "sha256:56b4afdc4a66dcb7346f42cb2a76e05ff3297d5c9784f377c8ddf2a7ba006cdc",
+    "agent_image_tag": "ficus-featurebench-sanitized:2a8fd63222fd",
+    "preparation_sha256": "c807e321ec0bd90394c4fc00f80c1dca58a264fabdbd61d1c31daea744afbbdd",
+    "audit": "root_commits=1\nworking_tree=",
+    "verifier_inputs_sha256": "675d9a9a2c83c1393314403bdb8eb1436ef668c473863752690a5068ae63c4eb",
+    "verifier_guard_sha256": "bc30ae499e67b073dc61b0b8acb7dc3ec0726c34327699560b6e03bd218f66de",
+    "grader_unchanged": true
+  },
+  "environment_audit": "3385ccb Masked task baseline\n/testbed/sphinx/__init__.py\n",
+  "official_image_digest": [
+    "libercoders/featurebench-specs_sphinx-instance_6191afb1@sha256:15b434473e16386e33c864d8b7f4a3bddb9c5585961758c0ed0f06b51b3f0268"
+  ],
+  "controls": [
+    {
+      "control": "baseline",
+      "exit_code": 0,
+      "reward": "0",
+      "reason": null,
+      "elapsed_seconds": 19.22,
+      "test_summaries": ["35 failed in 4.10s"],
+      "official_input_checks": 2,
+      "import_origin": ["GRADE_IMPORT_ORIGIN /testbed/sphinx/__init__.py"],
+      "output_sha256": "bea1b5ce5e4373c9223fc81a45e416c60e32f2414d1d187ab3d26c706bb455ae"
+    },
+    {
+      "control": "oracle",
+      "exit_code": 0,
+      "reward": "1",
+      "reason": null,
+      "elapsed_seconds": 16.4,
+      "test_summaries": ["35 passed in 1.98s", "81 passed in 1.15s"],
+      "official_input_checks": 2,
+      "import_origin": ["GRADE_IMPORT_ORIGIN /testbed/sphinx/__init__.py"],
+      "output_sha256": "c0e8d446eaf98203d2ab072121fe085d1985926edec424b0cd54a05babf92491"
+    },
+    {
+      "control": "baseline-collision",
+      "exit_code": 0,
+      "reward": "0",
+      "reason": null,
+      "elapsed_seconds": 13.89,
+      "test_summaries": ["35 failed in 4.10s"],
+      "official_input_checks": 2,
+      "import_origin": ["GRADE_IMPORT_ORIGIN /testbed/sphinx/__init__.py"],
+      "output_sha256": "327e6d1aef1e5309e2d7fdc763636c7d02699fb1bbc9b5a8bb9b6cef24bf9c75"
+    },
+    {
+      "control": "oracle-collision",
+      "exit_code": 0,
+      "reward": "1",
+      "reason": null,
+      "elapsed_seconds": 16.96,
+      "test_summaries": ["35 passed in 1.98s", "81 passed in 1.16s"],
+      "official_input_checks": 2,
+      "import_origin": ["GRADE_IMPORT_ORIGIN /testbed/sphinx/__init__.py"],
+      "output_sha256": "09dc188e066885c8b887b76ae95f176ff3f91994585acbaadcf839ce15410497"
+    }
+  ],
+  "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+  "adapter_sha256": {
+    "ficus_agent.py": "3c10076d9b943be64b7fc154bdb14e8ac9b24977d2c762eb7f5a46ac0841291f",
+    "pi_workflow.py": "00712cabe8eebbd571c7ef438b357c019bb9735492ff8bfb29a870d3ed2c03e3",
+    "budget_proxy.py": "beb2eb62a89eb9686105c4ee96d8d3c02a0be6df2d171a01bc77bdc4dcae304d",
+    "run-pilot.py": "76c63b63f817da336db8907801645f02c6a475b79eb66c27c9e62969765fcc65"
+  },
+  "resources": {
+    "main_cpus": 2,
+    "main_memory_gib": 8,
+    "ficus_postgres_sidecar": "Uncapped, as in v1; total compute not equal",
+    "architecture": "linux/amd64 emulated on arm64 Mac"
+  },
+  "attempts_per_arm": 1,
+  "operator_steering": false,
+  "grader_policy": "Unchanged upstream grader and immutable verifier inputs. Inference source archives saved before grading."
+}

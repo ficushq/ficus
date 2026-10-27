@@ -1,0 +1,24 @@
+{
+  "experiment": "artifact-repair-v1",
+  "kind": "Full native squad repair continuation on a known artifact; not an unseen benchmark comparison",
+  "selection": "Earliest durable artifact where the original reviewer requested changes (Bandit v2)",
+  "task": "bandit-structured-nosec-directives",
+  "artifact_sha256": "fc27071def1014074bf1a7d2531644616ae67e74ffef2a8c9ae9a9916e2f2fcd",
+  "base_commit": "b46fa3a2723635aa29cc012538df4867ac2ac006",
+  "review_sha256": "56eecd8f7d1970acce148ade7146c73b83d732540adf6009c364d89599ca4aec",
+  "review_source": "arv2-paid-baseline; verbatim two findings and review observations",
+  "condition": "Original baseline runtime and reviewer prompt; native planned engineering workflow, manager/architect/engineer/reviewer",
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "repair_input": "Original request, frozen implementation, and original reviewer report only. No hidden tests, official score, operator reproduction, or candidate-only finding.",
+  "verification": "Unchanged separate official verifier plus independent reproduction of both supplied findings and candidate-only physical-line case after delivery. Report role executions, review/rework transitions and any stalls.",
+  "controls": "Original task grading controls already passed; derived image nop must reproduce frozen artifact grade before inference; native isolation/startup probe must pass.",
+  "inference_policy": "Start only after v3 and v4 finish and existing shared budget can reserve another $5.50 call; no retries or manual task steering.",
+  "budget": {
+    "phase_cap_usd": 30,
+    "segment_cap_usd": 10.772395,
+    "shared_ledger": "artifact-review-v1/budget/spend.sqlite",
+    "retained_old_hold_usd": 5.5
+  },
+  "production_prompt_changed": false
+}

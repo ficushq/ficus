@@ -1,0 +1,262 @@
+{
+  "experiment": "fresh-feature-v2",
+  "task_slug": "xarray",
+  "frozen_manifest_sha256": "f47dc03160a1e6609da3110ee1385bee05ff2964652b60c9ec829b5d34b383fe",
+  "results": [
+    {
+      "arm": "pi-planned",
+      "reward": {
+        "reward": 0.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "planned",
+        "baseline": "Pi packaged subagent example",
+        "executed_roles": ["architect", "engineer", "reviewer"],
+        "required_roles_executed": true
+      },
+      "total_seconds": 678.46,
+      "timing_seconds": {
+        "environment_setup": 2.29,
+        "agent_setup": 17.42,
+        "agent_execution": 630.18,
+        "verifier": 16.05
+      },
+      "requests": 79,
+      "confirmed_cost_usd": 0.631002,
+      "unknown_usage_requests": 0,
+      "tokens": {
+        "input": 1106368,
+        "output": 22696,
+        "cache_read": 984080,
+        "cache_write": 122051,
+        "reasoning": 3683
+      },
+      "official_test_summaries": ["9 failed, 9 passed in 0.22s"],
+      "official_input_checks": 2,
+      "artifacts_sha256": {
+        "result.json": "933becfb1c4c03ba746a1f7999480147121cd3032657b0c2d34b6dc921841345",
+        "verifier/test-stdout.txt": "9e7a8699343b440eeb8c36a00756d5b8edb07c21c3dc61031a3a3423b9b913e2",
+        "agent/pi.txt": "a97a52a05c534ef9268c53c258a3481a76a47ad1e65cd9d4ba4a894abcc4b98e",
+        "artifacts/logs/artifacts/submission.tar.gz": "fdf072ef44bc24c0d3192c6adcfb2656f7c05835077f8ffcf915e638e4cbc0d8"
+      },
+      "operator_interventions": 0,
+      "submission_archive_verified": ["artifacts/logs/artifacts/submission.tar.gz"],
+      "reference_fetch_indicator_counts": {
+        "raw.githubusercontent.com": 0,
+        "git clone": 0,
+        "pip install xarray": 0,
+        "requests.get": 0,
+        "urllib.request": 0,
+        "curl https": 0,
+        "wget https": 0
+      }
+    },
+    {
+      "arm": "ficus-planned",
+      "reward": {
+        "reward": 1.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "planned",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+        "attempted_roles": ["architect", "engineer", "manager", "reviewer"],
+        "engineer_only_verified": null,
+        "executed_roles": ["architect", "engineer", "manager", "reviewer"]
+      },
+      "total_seconds": 777.83,
+      "timing_seconds": {
+        "environment_setup": 1.54,
+        "agent_setup": 88.92,
+        "agent_execution": 653.88,
+        "verifier": 20.62
+      },
+      "requests": 52,
+      "confirmed_cost_usd": 0.782605,
+      "unknown_usage_requests": 0,
+      "tokens": {
+        "input": 1712480,
+        "output": 20163,
+        "cache_read": 1541738,
+        "cache_write": 170586,
+        "reasoning": 3589
+      },
+      "official_test_summaries": ["18 passed in 0.31s", "101 passed, 6 skipped, 1 warning in 0.60s"],
+      "official_input_checks": 2,
+      "artifacts_sha256": {
+        "result.json": "3b71b5e172cfe34b7c13922400028bbda036a6b854378a9f359a0c383362ed6c",
+        "verifier/test-stdout.txt": "2687afaa78be35654aa719ad68ab581950940fd92ac970c33db0ffa8ac766a44",
+        "agent/snapshot.json": "bece4eb5f6e0c60dd198f1dddcc7003e27ce07200d4788f2298dcd570b96c7f3",
+        "agent/messages.json": "3976f0ab4e539b68f76d204867850cfab3ce1eaa1162107ef8e881c8d5554a97",
+        "artifacts/logs/artifacts/submission.tar.gz": "547c13a89772c747a1ae56f39682960220e1a8f94eb638f4c24de53bd2469a9a"
+      },
+      "operator_interventions": 0,
+      "flows": [
+        {
+          "status": "completion-ready",
+          "steps": [
+            {
+              "step": "design",
+              "status": "completed"
+            },
+            {
+              "step": "implement",
+              "status": "completed"
+            },
+            {
+              "step": "review",
+              "status": "completed"
+            }
+          ]
+        }
+      ],
+      "streams": ["done"],
+      "human_question_present": false,
+      "execution_statuses": ["completed", "completed", "completed", "completed", "completed", "completed"],
+      "submission_archive_verified": ["artifacts/logs/artifacts/submission.tar.gz"],
+      "reference_fetch_indicator_counts": {
+        "raw.githubusercontent.com": 0,
+        "git clone": 0,
+        "pip install xarray": 0,
+        "requests.get": 0,
+        "urllib.request": 0,
+        "curl https": 0,
+        "wget https": 0
+      }
+    },
+    {
+      "arm": "pi-engineer",
+      "reward": {
+        "reward": 1.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "engineer",
+        "baseline": "Pi single session"
+      },
+      "total_seconds": 239.43,
+      "timing_seconds": {
+        "environment_setup": 3.92,
+        "agent_setup": 16.7,
+        "agent_execution": 186.25,
+        "verifier": 20.21
+      },
+      "requests": 23,
+      "confirmed_cost_usd": 0.124625,
+      "unknown_usage_requests": 0,
+      "tokens": {
+        "input": 246416,
+        "output": 6177,
+        "cache_read": 230483,
+        "cache_write": 15864,
+        "reasoning": 1585
+      },
+      "official_test_summaries": ["18 passed in 0.30s", "101 passed, 6 skipped, 1 warning in 0.56s"],
+      "official_input_checks": 2,
+      "artifacts_sha256": {
+        "result.json": "c6f15fce2f25970021d19a53d01e07ac437c70ae69d1258195a625f0bedf32bc",
+        "verifier/test-stdout.txt": "c88ead945e0ab6da35aecaa9bf9ffd5f85b9064a622650c225ba4ff3b910dcf6",
+        "agent/pi.txt": "932f8b7eb0f5f99100708def9de1a58e7a92579e9496aae2fdc37905341898e3",
+        "artifacts/logs/artifacts/submission.tar.gz": "3f6ef45b8671b70a16ccff3903197391de6b8e685188ddd825bba453a926a7e8"
+      },
+      "operator_interventions": 0,
+      "submission_archive_verified": ["artifacts/logs/artifacts/submission.tar.gz"],
+      "reference_fetch_indicator_counts": {
+        "raw.githubusercontent.com": 0,
+        "git clone": 0,
+        "pip install xarray": 0,
+        "requests.get": 0,
+        "urllib.request": 0,
+        "curl https": 0,
+        "wget https": 0
+      }
+    },
+    {
+      "arm": "ficus-engineer",
+      "reward": {
+        "reward": 1.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "engineer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+        "attempted_roles": ["engineer"],
+        "engineer_only_verified": true,
+        "executed_roles": ["engineer"]
+      },
+      "total_seconds": 467.39,
+      "timing_seconds": {
+        "environment_setup": 2.31,
+        "agent_setup": 57.49,
+        "agent_execution": 374.09,
+        "verifier": 20.57
+      },
+      "requests": 24,
+      "confirmed_cost_usd": 0.317505,
+      "unknown_usage_requests": 0,
+      "tokens": {
+        "input": 1003407,
+        "output": 7486,
+        "cache_read": 944103,
+        "cache_write": 59232,
+        "reasoning": 1521
+      },
+      "official_test_summaries": ["18 passed in 0.33s", "101 passed, 6 skipped, 1 warning in 0.59s"],
+      "official_input_checks": 2,
+      "artifacts_sha256": {
+        "result.json": "f83ebcfbd8615d2f8a58c40d3f662d29d47488de4d3c10d8e3bd0893f7e4c06e",
+        "verifier/test-stdout.txt": "7c8163973f60c81246d1db3d3342c0ac2118e305044e4ec95c5e1b9d6f311b4e",
+        "agent/snapshot.json": "65740f3f856349d186257087c0b886b3f003558809d648479a7f30b3d757325b",
+        "agent/messages.json": "4e487ffd2b10090ce6e9a5e79378d2612277213e14a9424bee5aa234700ec00c",
+        "artifacts/logs/artifacts/submission.tar.gz": "a9c2da3bc90257e377beb5d94af4fe7e638e810d60f1ded45db4dc0ce529a1cb"
+      },
+      "operator_interventions": 0,
+      "flows": [
+        {
+          "status": "completion-ready",
+          "steps": [
+            {
+              "step": "execute",
+              "status": "completed"
+            }
+          ]
+        }
+      ],
+      "streams": ["done"],
+      "human_question_present": false,
+      "execution_statuses": ["completed"],
+      "submission_archive_verified": ["artifacts/logs/artifacts/submission.tar.gz"],
+      "reference_fetch_indicator_counts": {
+        "raw.githubusercontent.com": 0,
+        "git clone": 0,
+        "pip install xarray": 0,
+        "requests.get": 0,
+        "urllib.request": 0,
+        "curl https": 0,
+        "wget https": 0
+      }
+    }
+  ],
+  "complete_matched_comparison": true,
+  "cumulative_exposure_usd": 22.347655,
+  "cap_usd": 50,
+  "fresh_confirmed_usd": 1.855737,
+  "no_operator_steering": true,
+  "limitations": [
+    "Small restricted convenience sample from pinned legacy Harbor FeatureBench snapshot",
+    "Single attempt per arm; no confidence intervals",
+    "Shared arm64 Mac with Linux amd64 emulation",
+    "Ficus has additional uncapped PostgreSQL sidecar",
+    "Trace indicator scan is not proof of network isolation",
+    "No old-prompt comparison; no causal prompt-fix claim"
+  ]
+}

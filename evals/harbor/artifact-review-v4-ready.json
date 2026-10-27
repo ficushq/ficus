@@ -1,0 +1,138 @@
+{
+  "image_tag": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh73snc7v9x3psk69rg4eqvjgs836v5a-v1.1",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605@sha256:47d0af14d988caa7d22b14312be2c3ee4e9ac799a5679bd83d19f298d346749d",
+  "image_digest": "public.ecr.aws/d3j8x8q7/swe-bench-202605@sha256:47d0af14d988caa7d22b14312be2c3ee4e9ac799a5679bd83d19f298d346749d",
+  "image_id": "sha256:6a1a4c89b26c0be7e26b760ce8b310b7cc68f930cce462efaaa3b2633a254955",
+  "base_commit": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+  "upstream_file_sha256": {
+    "environment/Dockerfile": "aa71466fa6f71fab7fc6df1278377549c57a1d6b74bfd270a70005ce0fede297",
+    "instruction.md": "8b9cf46588b87c532be947e1ab102f1bf3241ad01133f5ca6c461dc7f7ecd9e6",
+    "solution/solution.patch": "e5c0c8b05b58adee89e56860a44324f9e8d325171927e56fc7ef0029f64f2438",
+    "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+    "task.toml": "4539d7eb6bc6e38c202b7b7afdf808c3f7aaa06283b58cc91f1d3aa437334e63",
+    "tests/Dockerfile": "f7c81ed884c26eadc54f108ca7950a8a1a1f60683f5db3e86c41dae7ec11195b",
+    "tests/config.json": "c3c1d983f347e37c7b131039dc97590f5160303acb26ee541b9499f906c751a1",
+    "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+    "tests/test.patch": "bd31b5332a542e94b8ebb1fe9e749512a942db9c7649e74533030e669900e849",
+    "tests/test.sh": "fb21502b6357332d46af6c1e78e2999960e8953ccbb37bf699f62fb1dda47277"
+  },
+  "prepared_file_sha256": {
+    "environment/Dockerfile": "aa71466fa6f71fab7fc6df1278377549c57a1d6b74bfd270a70005ce0fede297",
+    "instruction.md": "8b9cf46588b87c532be947e1ab102f1bf3241ad01133f5ca6c461dc7f7ecd9e6",
+    "solution/solution.patch": "e5c0c8b05b58adee89e56860a44324f9e8d325171927e56fc7ef0029f64f2438",
+    "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+    "task.toml": "78c4edff70ed91d2fa15aeda86d52d18d56ef292e5e75be4b954eb2a5f171e90",
+    "tests/Dockerfile": "3a579caff296c08e795fbc6da4ac5a5fb32fb14b100a7edb5581599af0ff3b2f",
+    "tests/config.json": "c3c1d983f347e37c7b131039dc97590f5160303acb26ee541b9499f906c751a1",
+    "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+    "tests/test.patch": "bd31b5332a542e94b8ebb1fe9e749512a942db9c7649e74533030e669900e849",
+    "tests/test.sh": "fb21502b6357332d46af6c1e78e2999960e8953ccbb37bf699f62fb1dda47277"
+  },
+  "changes": "Pin image digest and explicit verifier architecture only; no task/source/test changes.",
+  "only_changed_members": [
+    "ficus-harbor/runtime/config/agent-types/reviewer.yaml",
+    "ficus-harbor/runtime/evals/harbor/revision.json"
+  ],
+  "member_count": 127011,
+  "archive_sha256": {
+    "runtime-baseline.tar.gz": "f34c6a8a347e25b3179cea46f2283afbdca0f634674a28b46e426f5d78668012",
+    "runtime-candidate.tar.gz": "05a9f0a912b2df168f73a4c1fc42888d06c6e0a52e69644add7aa651da4d3a3a"
+  },
+  "reviewer_before_sha256": "75ce385286b9935cfa9b87f0f32b4859b0ba8853df40caa29ed13186aa68dab0",
+  "reviewer_after_sha256": "03755102dc1ee1c51f64ae8fc9afb0d2b17ada72d59771cbc56dd4441d5e21b4",
+  "runtime_reused_from": "artifact-review-v1",
+  "controls": [
+    {
+      "job": "arv4-control-nop",
+      "result_sha256": "f85e3fddc1a4c0f6912d9ecc1631e18bcb630568d7a5fc66a0d299b929844b50",
+      "rewards": {
+        "reward": 0,
+        "f2p_total": 108,
+        "f2p_passed": 0,
+        "p2p_total": 1404,
+        "p2p_passed": 1404,
+        "f2p": 0.0,
+        "p2p": 1.0,
+        "partial": 0.9285714285714286
+      }
+    },
+    {
+      "job": "arv4-control-oracle",
+      "result_sha256": "bf2233307f7752c9f17764faf618ccb67f5117b37caffe83b538ec3c872fe5a8",
+      "rewards": {
+        "reward": 1,
+        "f2p_total": 108,
+        "f2p_passed": 108,
+        "p2p_total": 1404,
+        "p2p_passed": 1404,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      }
+    },
+    {
+      "job": "arv4-collision-nop",
+      "result_sha256": "fbb73950c628488815a105a4d4b81b9f7f8419518d458d47995e5f6969e94489",
+      "rewards": {
+        "reward": 0,
+        "f2p_total": 108,
+        "f2p_passed": 0,
+        "p2p_total": 1404,
+        "p2p_passed": 1404,
+        "f2p": 0.0,
+        "p2p": 1.0,
+        "partial": 0.9285714285714286
+      }
+    },
+    {
+      "job": "arv4-collision-oracle",
+      "result_sha256": "91ecee9a9d39a50c340b1158c2b70ceffef470baf5acea6f7cd484f265bd1248",
+      "rewards": {
+        "reward": 1,
+        "f2p_total": 108,
+        "f2p_passed": 108,
+        "p2p_total": 1404,
+        "p2p_passed": 1404,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      }
+    }
+  ],
+  "probes": [
+    {
+      "job": "arv4-probe-baseline",
+      "result_sha256": "d3cb8eb03c87f2c7483998c1972d978184f3cecb1e93fb2b65a3c6fd76fe226d",
+      "checks": {
+        "database_loopback": true,
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "ficus_api_ready": true,
+        "ficus_worker_ready": true,
+        "native_provider_preload": true
+      }
+    },
+    {
+      "job": "arv4-probe-candidate",
+      "result_sha256": "d0cd00738582461b4d037b35f293eddf63c040d90825ee506c826c3124ccedfe",
+      "checks": {
+        "database_loopback": true,
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "ficus_api_ready": true,
+        "ficus_worker_ready": true,
+        "native_provider_preload": true
+      }
+    }
+  ],
+  "all_gates_passed": true,
+  "inference_started": false,
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "service_tier": "default Standard enforced by proxy",
+  "pricing_verified_url": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+  "fixture_commit": "9551c5a481a87d0a3980466da6b6ceec61c708e6",
+  "segment_cap_usd": 10.772395,
+  "phase_opening_exposure_usd": 19.227605,
+  "phase_cap_usd": 30
+}

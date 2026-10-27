@@ -20,6 +20,11 @@ test('handoffs retain requirements, show actual workspace, and provide a schema-
   expect(prompt).toContain(stream.description)
   expect(prompt).toContain('Original work brief (initial context; use incoming results for progress)')
   expect(prompt).toContain('Worktree: /workspace/fix\nBranch: fix\nBase: main\nRepository: example/repo')
+  expect(prompt).toContain('Before ending a completed step, execute the advance command below')
+  expect(prompt).toContain(
+    'A written verdict, notify_contact message, inbox read, or memory note does not advance the workflow.'
+  )
+  expect(prompt).toContain('If your attempt is paused or blocked, respect that state instead of advancing.')
   expect(prompt).toContain('--content')
   expect(prompt).not.toContain('--file')
   expect(prompt).toContain("ficus workstream advance stream-1 --stdin <<'FICUS_COMMAND'")

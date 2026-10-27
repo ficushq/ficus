@@ -1,0 +1,118 @@
+{
+  "frozen_at": "2026-10-20T04:14:04.079169+00:00",
+  "selection": {
+    "experiment": "fresh-feature-v1",
+    "selection_rule": "SHA256 order of ficus-fresh-v1:<task>; CPU-oriented lv1 repos astropy,seaborn,sympy,sphinx,pandas,xarray in already downloaded pinned snapshot; no ranking by model outcomes",
+    "dataset_commit": "37db108843a49bb31a592e37a75e2c40dc3f9749",
+    "ordered_candidates": [
+      "pandas-dev__pandas.82fa2715.test_concat.ebe5de39.lv1",
+      "sphinx-doc__sphinx.e347e59c.test_domain_c.4068b9e8.lv1",
+      "pydata__xarray.97f3a746.test_backends_chunks.fa55f68a.lv1",
+      "mwaskom__seaborn.7001ebe7.test_regression.ce8c62e2.lv1",
+      "pandas-dev__pandas.82fa2715.test_list_accessor.7ab0b2ea.lv1",
+      "mwaskom__seaborn.7001ebe7.test_algorithms.1f0181c2.lv1",
+      "sympy__sympy.c1097516.test_nullspace.f14fc970.lv1",
+      "mwaskom__seaborn.7001ebe7.test_statistics.0f2ae277.lv1",
+      "astropy__astropy.b0db0daa.test_table.48eef659.lv1",
+      "astropy__astropy.b0db0daa.test_quantity_erfa_ufuncs.3fc54395.lv1"
+    ],
+    "accounting_baseline_usd": 11.853043,
+    "cap_usd": 50,
+    "model": "gpt-6.1-sol",
+    "thinking": "medium",
+    "attempts_per_arm": 1,
+    "arm_order": ["pi-planned", "ficus-planned", "pi-engineer", "ficus-engineer"],
+    "stop_policy": "No steering or prompt tuning; preserve all failed and interrupted attempts. Stop on accounting cap or invalid grading. Incomplete four-arm results are not a matched comparison.",
+    "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+    "prompt_merge_commit": "b0db7060effaad1a64c823514327be68b73a7ce7",
+    "runtime_policy": "Reuse verified scope-overlay runtime to avoid unrelated production drift; experimental local-delivery support remains unchanged.",
+    "prompt_files_sha256": {
+      "config/agent-types/manager.yaml": "0ace835a71ebc2b876f24e0e334147ff3832a4f51fe0d772e2da9e3d22ee5553",
+      "config/agent-types/reviewer.yaml": "75ce385286b9935cfa9b87f0f32b4859b0ba8853df40caa29ed13186aa68dab0",
+      "config/agent-types/shared/squad-rules.md": "448e657bdad3c5ac692bc74b4fb1e4b7a5271aaa4228534f9cdff9c6880d87c2"
+    },
+    "merged_guidance_verified": true,
+    "budget_authorization": "User raised cumulative cap from $20 to $50 before fresh-task inference."
+  },
+  "preparation": {
+    "source_task": "pandas-dev__pandas.82fa2715.test_concat.ebe5de39.lv1",
+    "verifier_layout": "pandas",
+    "verifier_paths": ["pandas/tests", "pandas/conftest.py", "pyproject.toml", "requirements-dev.txt"],
+    "source_files_sha256": {
+      "task.toml": "ef631c9e1bfb04044903fef3ab357eda8767242e0e5de7199d4d22f7feecdb89",
+      "instruction.md": "80457db336cba3a8bc442d55c31e172706e9a287aecfa2df63d99fe7fb5bb98a",
+      "environment/Dockerfile": "d768f936282466d3a2dd59f7dd7361835813259f58b8cb1632e61c5e42d9f827",
+      "environment/setup_patch.diff": "dab5469daa281f395a241276bca2a6448054f964bf871b9dd6abfc08f880edf4",
+      "environment/test_patch.diff": "e5da1dfe0236c6d5a7f7b83309b59da71a3b0046dba4613b911b012bbd4c61d6",
+      "tests/test.sh": "778a955ce00542561cf35dac2e64332bd8db72406a2bd12d95f4c2c3b105103d",
+      "solution/solve.sh": "356a7b65d73d69f18507a9ed0b450631370b9968b2a0df8d98a6e9b6312fc778",
+      "tests/config.json": "84749383328511dc2172c37a4ad9fe73ab9823a25bfca018317ca082786c2193"
+    },
+    "original_image_id": "sha256:f132ed523138a58d7b58c15f9c9e395d3ac75c6cc4a943cf80b864e4aa89a73c",
+    "agent_image_id": "sha256:c2bda1d11a51c66316806e73e25f1b03c61ef1255cf21601fadf4cf7d6b2a5c4",
+    "agent_image_tag": "ficus-featurebench-sanitized:a2d6979d21aa",
+    "preparation_sha256": "5a73eab93032a85e2315301c0a7007a71bc96aae2649a48adbb13783c551ab1b",
+    "audit": "root_commits=1\nworking_tree=",
+    "verifier_inputs_sha256": "39bbdb716d0aa9e74b74b2b51a392567a0cccc7cbc16b5f7348852cb1a454b52",
+    "verifier_guard_sha256": "a311938af6e7add3e1c3c2a88a41296bf2c0eb3f929188405f7b43388308636e",
+    "grader_unchanged": true
+  },
+  "official_base_repo_digest": "libercoders/featurebench-specs_pandas-instance_15f634a6@sha256:e484ae407255b4c2c481a842e476c3c3285d2032738adf0abd410fb5f776dab7",
+  "environment_audit": "/testbed/build/cp311/_version_meson.py\n/testbed/build/cp311/meson-private/pycompile.py\n/testbed/build/cp311/pandas/__init__.py\n1\n",
+  "controls": {
+    "baseline": {
+      "control": "baseline",
+      "exit_code": 0,
+      "reward": "0",
+      "reason": null,
+      "elapsed_seconds": 13.54,
+      "output_sha256": "7307ca4500537bf0d0d73b32670d2c5f443955d9ddcaad91b175ff9d1c7458cf",
+      "feature_summary": "========================= 10 failed, 4 passed in 0.06s ========================="
+    },
+    "oracle": {
+      "control": "oracle",
+      "exit_code": 0,
+      "reward": "1",
+      "reason": null,
+      "elapsed_seconds": 19.04,
+      "output_sha256": "667c80f4282d9c2e38e09478dfa33f417f35cb6a3bc88216e31dc37ed259d0e6",
+      "feature_summary": "============================== 14 passed in 0.04s ==============================",
+      "regression_summary": "======================== 146 passed, 8 xfailed in 1.74s ========================"
+    },
+    "baseline-collision": {
+      "control": "baseline-collision",
+      "exit_code": 0,
+      "reward": "0",
+      "reason": null,
+      "elapsed_seconds": 12.92,
+      "output_sha256": "7307ca4500537bf0d0d73b32670d2c5f443955d9ddcaad91b175ff9d1c7458cf",
+      "feature_summary": "========================= 10 failed, 4 passed in 0.06s ========================="
+    },
+    "oracle-collision": {
+      "control": "oracle-collision",
+      "exit_code": 0,
+      "reward": "1",
+      "reason": null,
+      "elapsed_seconds": 19.04,
+      "output_sha256": "288d3555ea862890c9a7383cd16bc6d312f458ea357a17dce2a738eefff5b229",
+      "feature_summary": "============================== 14 passed in 0.04s ==============================",
+      "regression_summary": "======================== 146 passed, 8 xfailed in 1.80s ========================"
+    }
+  },
+  "agent_limits": {
+    "cpus": 2,
+    "memory_gib": 8,
+    "timeout_sec": 3600,
+    "ficus_postgres_sidecar": "separate container; report as additional orchestration overhead"
+  },
+  "host_architecture": "arm64",
+  "task_architecture": "linux/amd64",
+  "adapter_files_sha256": {
+    "ficus_agent.py": "3c10076d9b943be64b7fc154bdb14e8ac9b24977d2c762eb7f5a46ac0841291f",
+    "pi_workflow.py": "00712cabe8eebbd571c7ef438b357c019bb9735492ff8bfb29a870d3ed2c03e3",
+    "run-pilot.py": "76c63b63f817da336db8907801645f02c6a475b79eb66c27c9e62969765fcc65",
+    "prepare_featurebench.py": "5a73eab93032a85e2315301c0a7007a71bc96aae2649a48adbb13783c551ab1b",
+    "verify_featurebench.py": "a311938af6e7add3e1c3c2a88a41296bf2c0eb3f929188405f7b43388308636e",
+    "budget_proxy.py": "beb2eb62a89eb9686105c4ee96d8d3c02a0be6df2d171a01bc77bdc4dcae304d"
+  }
+}

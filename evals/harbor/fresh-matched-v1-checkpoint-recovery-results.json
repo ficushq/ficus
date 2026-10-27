@@ -1,0 +1,388 @@
+{
+  "experiment": "fresh-matched-v1",
+  "task": "koota-entity-snapshot-rollback",
+  "attempt": "ficus-planned-recovery-2",
+  "attempt_kind": "fresh repeat; not a first-attempt result",
+  "trial": "task__sUun2kR",
+  "result_sha256": "c5d4d3aee8f5e068ecd4878b2200e8d7013206f390aa311ef17fb4494d5a9872",
+  "grade": {
+    "rewards": {
+      "reward": 1,
+      "f2p_total": 84,
+      "f2p_passed": 84,
+      "p2p_total": 47,
+      "p2p_passed": 47,
+      "f2p": 1.0,
+      "p2p": 1.0,
+      "partial": 1.0
+    }
+  },
+  "exception": null,
+  "metadata": {
+    "configuration": "planned",
+    "model_api": "openai-responses",
+    "thinking": "medium",
+    "outcome": "delivered",
+    "memory": "fresh-disabled",
+    "runtime_sha256": "68c8a5e3263b54639562f259aaa149ae18c61770442a85b4da1d599fb2476ba0",
+    "database_network": "task",
+    "checkpoint_complete": true,
+    "attempted_roles": ["architect", "engineer", "manager", "reviewer"],
+    "engineer_only_verified": null,
+    "executed_roles": ["architect", "engineer", "manager", "reviewer"]
+  },
+  "elapsed_seconds": 2340.912,
+  "timing": {
+    "environment_setup": 2.662,
+    "agent_setup": 54.903,
+    "agent_execution": 2243.539,
+    "verifier": 27.282
+  },
+  "timing_caveat": "Unadjusted elapsed time includes private checkpoint capture; do not compare as pure agent execution time.",
+  "cost": {
+    "usd_upper_bound": 2.457816,
+    "requests": 135,
+    "unknown_usage": 0
+  },
+  "task_hints_from_operator": 0,
+  "automatic_retries": 0,
+  "launcher": {
+    "arm": "ficus-planned",
+    "elapsed_seconds": 2346.636081207951,
+    "stop": null,
+    "exit_code": 0,
+    "usage": {
+      "usd_upper_bound": 2.457816,
+      "requests": 135,
+      "unknown_usage": 0
+    },
+    "phase_exposure_usd": 2.457816,
+    "phase_cap_usd": 20,
+    "historical_phase_excluded": true
+  },
+  "patch_sha256": "6b2d09e6692da8d61d421370c3443623f6a2a847a6464dfcab70b061c6d6c223",
+  "failed_tests": [],
+  "native_execution": [
+    {
+      "role": "engineer",
+      "status": "completed"
+    },
+    {
+      "role": "manager",
+      "status": "completed"
+    },
+    {
+      "role": "architect",
+      "status": "completed"
+    },
+    {
+      "role": "engineer",
+      "status": "completed"
+    },
+    {
+      "role": "reviewer",
+      "status": "completed"
+    },
+    {
+      "role": "manager",
+      "status": "completed"
+    },
+    {
+      "role": "manager",
+      "status": "completed"
+    },
+    {
+      "role": "manager",
+      "status": "completed"
+    },
+    {
+      "role": "reviewer",
+      "status": "completed"
+    },
+    {
+      "role": "reviewer",
+      "status": "completed"
+    },
+    {
+      "role": "manager",
+      "status": "completed"
+    },
+    {
+      "role": "engineer",
+      "status": "completed"
+    },
+    {
+      "role": "manager",
+      "status": "completed"
+    }
+  ],
+  "flow_attempts": [
+    {
+      "step": "design",
+      "status": "completed",
+      "outcome": "completed",
+      "revision": 0
+    },
+    {
+      "step": "implement",
+      "status": "completed",
+      "outcome": "completed",
+      "revision": 0
+    },
+    {
+      "step": "review",
+      "status": "returned",
+      "outcome": "changes-requested",
+      "revision": 0
+    },
+    {
+      "step": "implement",
+      "status": "completed",
+      "outcome": "completed",
+      "revision": 0
+    },
+    {
+      "step": "review",
+      "status": "returned",
+      "outcome": "changes-requested",
+      "revision": 0
+    },
+    {
+      "step": "implement",
+      "status": "completed",
+      "outcome": "completed",
+      "revision": 0
+    },
+    {
+      "step": "review",
+      "status": "completed",
+      "outcome": "approved",
+      "revision": 0
+    }
+  ],
+  "wait_count": 0,
+  "pending_message_count": 0,
+  "checkpoint": {
+    "complete": true,
+    "manifest_sha256": "5c227ae5cee2ca060bc8890f4abc89a4e6396e500bcfca48de6451e093e92afa",
+    "image_bytes": 5132311040,
+    "runtime_sha256": "68c8a5e3263b54639562f259aaa149ae18c61770442a85b4da1d599fb2476ba0"
+  },
+  "budget": {
+    "phase": "budget-phase-2026-10-26-reset",
+    "cap_usd": 20,
+    "confirmed_usd": 2.457816,
+    "unresolved_requests": 0,
+    "exposure_usd": 2.457816,
+    "remaining_usd": 17.542184,
+    "previous_phase_accounting": "Preserved separately; excluded by explicit user reset."
+  },
+  "protocol_amendment": "fresh-matched-v1-checkpoint-recovery.json",
+  "checkpoint_restore_audit": {
+    "worker_started": false,
+    "restored_trial": "task__sUun2kR",
+    "snapshot_exact": true,
+    "export_exact": true,
+    "review_commits": {
+      "before": "14481e3fe90e98b2d1c24058114a4ba0f4987d60",
+      "first-repair": "a804cc683864556f2cbe5ffd7e681a14ef12ea1e",
+      "final": "14bc685f740c72e2b7fbe002404405bf0007f05d"
+    },
+    "network_disabled": true,
+    "new_inference_requests": 0,
+    "checkpoint_manifest_sha256": "5c227ae5cee2ca060bc8890f4abc89a4e6396e500bcfca48de6451e093e92afa"
+  },
+  "pre_review_official_replay": {
+    "inference": false,
+    "official_grader_modified": false,
+    "trial": "task__Amjfhga",
+    "result_sha256": "8efcd5df5b888eae6483036695119512831e210ecf032493179727f10a51a9e8",
+    "patch_sha256": "23034b97482bd1efc7f94cf402d75b3808061ef8ad591b2c1e497bed206d7c5a",
+    "grade": {
+      "rewards": {
+        "reward": 1,
+        "f2p_total": 84,
+        "f2p_passed": 84,
+        "p2p_total": 47,
+        "p2p_passed": 47,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      }
+    },
+    "exception": null
+  },
+  "posthoc_relation_audit": {
+    "operator_only": true,
+    "inference": false,
+    "official_grader_modified": false,
+    "cases": "exact relation restore, subscriber values and ordinary-add control, in both exclusive modes",
+    "versions": {
+      "before": {
+        "commit": "14481e3fe90e98b2d1c24058114a4ba0f4987d60",
+        "passed": 2,
+        "total": 8,
+        "results": [
+          {
+            "exclusive": false,
+            "scenario": "exact-record",
+            "passed": false,
+            "error": "Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n+   count: 0,\n    fresh: 7\n  }\n"
+          },
+          {
+            "exclusive": false,
+            "scenario": "record-callback",
+            "passed": false,
+            "error": "Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n+   count: 0,\n    fresh: 7\n  }\n"
+          },
+          {
+            "exclusive": false,
+            "scenario": "date-callback",
+            "passed": false,
+            "error": "value.getTime is not a function. (In 'value.getTime()', 'value.getTime' is undefined)"
+          },
+          {
+            "exclusive": false,
+            "scenario": "ordinary-add-control",
+            "passed": true
+          },
+          {
+            "exclusive": true,
+            "scenario": "exact-record",
+            "passed": false,
+            "error": "Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n+   count: 0,\n    fresh: 7\n  }\n"
+          },
+          {
+            "exclusive": true,
+            "scenario": "record-callback",
+            "passed": false,
+            "error": "Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n+   count: 0,\n    fresh: 7\n  }\n"
+          },
+          {
+            "exclusive": true,
+            "scenario": "date-callback",
+            "passed": false,
+            "error": "value.getTime is not a function. (In 'value.getTime()', 'value.getTime' is undefined)"
+          },
+          {
+            "exclusive": true,
+            "scenario": "ordinary-add-control",
+            "passed": true
+          }
+        ]
+      },
+      "first-repair": {
+        "commit": "a804cc683864556f2cbe5ffd7e681a14ef12ea1e",
+        "passed": 4,
+        "total": 8,
+        "results": [
+          {
+            "exclusive": false,
+            "scenario": "exact-record",
+            "passed": true
+          },
+          {
+            "exclusive": false,
+            "scenario": "record-callback",
+            "passed": false,
+            "error": "Expected values to be strictly deep-equal:\n+ actual - expected\n\n  [\n    {\n+     count: 0,\n      fresh: 7\n    }\n  ]\n"
+          },
+          {
+            "exclusive": false,
+            "scenario": "date-callback",
+            "passed": false,
+            "error": "value.getTime is not a function. (In 'value.getTime()', 'value.getTime' is undefined)"
+          },
+          {
+            "exclusive": false,
+            "scenario": "ordinary-add-control",
+            "passed": true
+          },
+          {
+            "exclusive": true,
+            "scenario": "exact-record",
+            "passed": true
+          },
+          {
+            "exclusive": true,
+            "scenario": "record-callback",
+            "passed": false,
+            "error": "Expected values to be strictly deep-equal:\n+ actual - expected\n\n  [\n    {\n+     count: 0,\n      fresh: 7\n    }\n  ]\n"
+          },
+          {
+            "exclusive": true,
+            "scenario": "date-callback",
+            "passed": false,
+            "error": "value.getTime is not a function. (In 'value.getTime()', 'value.getTime' is undefined)"
+          },
+          {
+            "exclusive": true,
+            "scenario": "ordinary-add-control",
+            "passed": true
+          }
+        ]
+      },
+      "final": {
+        "commit": "14bc685f740c72e2b7fbe002404405bf0007f05d",
+        "passed": 8,
+        "total": 8,
+        "results": [
+          {
+            "exclusive": false,
+            "scenario": "exact-record",
+            "passed": true
+          },
+          {
+            "exclusive": false,
+            "scenario": "record-callback",
+            "passed": true
+          },
+          {
+            "exclusive": false,
+            "scenario": "date-callback",
+            "passed": true
+          },
+          {
+            "exclusive": false,
+            "scenario": "ordinary-add-control",
+            "passed": true
+          },
+          {
+            "exclusive": true,
+            "scenario": "exact-record",
+            "passed": true
+          },
+          {
+            "exclusive": true,
+            "scenario": "record-callback",
+            "passed": true
+          },
+          {
+            "exclusive": true,
+            "scenario": "date-callback",
+            "passed": true
+          },
+          {
+            "exclusive": true,
+            "scenario": "ordinary-add-control",
+            "passed": true
+          }
+        ]
+      }
+    },
+    "probe_sha256": "6a25d5722b019784e271b50305f1a930a3508608ae351d5470c18a66d4338069",
+    "bun_version": "1.4.2"
+  },
+  "study_accounting": {
+    "all_ficus_squad_attempts_settled_usd": 3.984791,
+    "all_koota_arms_and_attempts_settled_usd": 6.487336,
+    "prior_unresolved_reservation_usd": 5.5,
+    "prior_reservation_in_new_phase": false
+  },
+  "interpretation": [
+    "Fresh repeat after two interrupted attempts; excluded from first-attempt acceptance rates.",
+    "Pre-review and final artifacts both pass the official grader; review did not change the official score.",
+    "Post-hoc checks demonstrate specific repair effects, not a shared cross-harness benchmark.",
+    "Automatic inference continuation from checkpoints remains unimplemented."
+  ]
+}

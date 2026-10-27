@@ -1,0 +1,2 @@
+harbor==0.24.0
+requests==2.34.2

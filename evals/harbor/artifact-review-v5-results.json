@@ -1,0 +1,462 @@
+{
+  "experiment": "artifact-review-v5",
+  "kind": "known delivered-artifact fresh-review diagnostic, not unseen benchmark or full-squad comparison",
+  "artifact": {
+    "sha256": "40e3a24a0a714b2a5a8f6d4e6748766140b75eb81bce50962b9c826085f82332",
+    "base_commit": "b46fa3a2723635aa29cc012538df4867ac2ac006",
+    "source": "artifact-repair-v2 final delivered patch; includes task-authored tests and design/validation document",
+    "production_fix": false
+  },
+  "reviews": [
+    {
+      "condition": "baseline",
+      "result_sha256": "1313b2e16c73748337dac48d29f3942f8e4a70d677344403fc7edb11adcac7b3",
+      "report_sha256": "1d692fb8385aec329030c629433406f1123e03baa137ee8060133f0ea568e11b",
+      "messages_sha256": "71a5725605b044f1011fc01289f280af0bf0646f2fa966028b539e76ab737c86",
+      "audit": {
+        "base_commit": "b46fa3a2723635aa29cc012538df4867ac2ac006",
+        "artifact_sha256": "40e3a24a0a714b2a5a8f6d4e6748766140b75eb81bce50962b9c826085f82332",
+        "artifact_commit": "52c4eb667bcff6a32b53fea61f0a529018390bfc",
+        "valid": true,
+        "repository_unchanged": true,
+        "verdict": "changes-requested"
+      },
+      "report": {
+        "verdict": "changes-requested",
+        "findings": [
+          {
+            "title": "Clause headers consume next-statement directives without suppressing any statement",
+            "requirement": "nosec-next-line must suppress the next statement after the directive, rather than a continuation clause of a statement that already started.",
+            "location": "bandit/core/nosec.py:220-228, 237-248",
+            "evidence": "Reproduced with real enabled B101/B307 plugins: if True:\n    pass\n# nosec-next-line B307\nelse:\n    eval(\"1\")\neval(\"2\")\n. Both B307 findings remain at lines 5 and 6, and skipped_tests is 0. The same failure occurs with a directive immediately before finally:. The token collector finishes an entry for else: or finally: at NEWLINE; finish() treats that clause header as a new statement and removes the pending directive. Neither header is an independent statement, so the suppression is lost before it reaches an actual target statement. Repair statement classification so continuation-only clause headers do not consume pending next-statement directives; add real-plugin tests for else/finally and related clause boundaries.",
+            "severity": "Critical"
+          },
+          {
+            "title": "Single-line compound suites arbitrarily suppress only their first child statement",
+            "requirement": "Next-statement suppression must have consistent statement boundaries and suppress only its target, rather than changing scope according to whether a compound suite shares a physical line with its header.",
+            "location": "bandit/core/nosec.py:215-234, 237-248",
+            "evidence": "Reproduced: # nosec-next-line B307\nif eval(\"0\"): eval(\"1\"); eval(\"2\")\neval(\"3\")\n. The implementation suppresses eval(\"0\") and eval(\"1\"), but reports eval(\"2\") and eval(\"3\"); skipped_tests is 2. Putting the same suite on the next indented line suppresses only eval(\"0\") and reports both body calls; skipped_tests becomes 1. The collector splits on semicolons/NEWLINE but never separates a compound header from its same-line suite, so the first body statement is accidentally merged with the header. This contradicts the implementation's explicit header-only behavior tested by test_next_line_does_not_suppress_whole_suite, and even a whole-compound-statement interpretation would require suppressing both body calls, not just one. Repair header/simple-suite boundaries while preserving legitimate colons in expressions, and cover one-line if/def/other suites and semicolon-separated children with regression tests.",
+            "severity": "Critical"
+          }
+        ],
+        "observations": [
+          "Pass 1 reviewed the complete nine-file diff from b46fa3a2723635aa29cc012538df4867ac2ac006 to 52c4eb667bcff6a32b53fea61f0a529018390bfc. The implementation provides selector algebra, region collection, statement-scoped suppression lookup, enabled-test normalization, ignore-nosec handling, documentation, and substantial regression coverage.",
+          "Independent focused verification passed: python -m unittest tests.unit.core.test_nosec tests.functional.test_suppression_directives -q ran 47 tests successfully.",
+          "Independent full discovery passed: python -m unittest discover -s tests -q ran 320 tests successfully. Raw output is in /tmp/bandit-review-tests.log. Existing tests do not exercise the blocking clause-header and single-line-suite cases.",
+          "Reproductions are saved outside the repository at /tmp/bandit-review-repro.py, with results at /tmp/bandit-review-repro.log. Run from the repository with PYTHONPATH=/app python /tmp/bandit-review-repro.py. Scans completed without skipped-file errors.",
+          "Pass 1 fails on next-statement targeting, so Pass 2 code-quality assessment was not performed. The findings require boundary repairs and re-verification before a quality approval.",
+          "Repository closeout checked git status --short --untracked-files=all plus staged and unstaged diffs: clean, with no tracked changes made during review. The implementation and its task plan are committed at the supplied implementation commit; all review reports and reproduction files are outside the repository. The ignored .stestr directory generated by the supplementary runner was removed."
+        ],
+        "limitations": [
+          "The supplied repository is a frozen implementation snapshot checked out on main; historical creation of the requested feature branch cannot be independently established from this snapshot. This read-only review did not create or change branches.",
+          "A supplementary stestr run reported 320 passing tests but also printed a worker discovery error; the successful foreground unittest discovery run is the authoritative full-suite evidence. Supplementary output is retained in /tmp/bandit-review-stestr.log.",
+          "No tracked files were repaired, as required by the review-only assignment. Approval remains blocked on the two reproduced statement-boundary defects."
+        ]
+      },
+      "metadata": {
+        "configuration": "reviewer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "68c8a5e3263b54639562f259aaa149ae18c61770442a85b4da1d599fb2476ba0",
+        "database_network": "task",
+        "attempted_roles": [
+          "reviewer"
+        ],
+        "engineer_only_verified": null,
+        "executed_roles": [
+          "reviewer"
+        ],
+        "artifact_review": {
+          "base_commit": "b46fa3a2723635aa29cc012538df4867ac2ac006",
+          "artifact_sha256": "40e3a24a0a714b2a5a8f6d4e6748766140b75eb81bce50962b9c826085f82332",
+          "artifact_commit": "52c4eb667bcff6a32b53fea61f0a529018390bfc",
+          "valid": true,
+          "repository_unchanged": true,
+          "verdict": "changes-requested"
+        }
+      }
+    },
+    {
+      "condition": "candidate",
+      "result_sha256": "6a636b6fe5d2f09c2d1975774534bba430ce221c37c62cf4478758ee9681863e",
+      "report_sha256": "3a6cad26f829bc69726f332e33cf9e944ccab344099da1b744ac0fff711c28ed",
+      "messages_sha256": "762626da7a3bce89e0ea74d003a6d8a43994c33c6fc8c423dc04dd9cc1f50522",
+      "audit": {
+        "base_commit": "b46fa3a2723635aa29cc012538df4867ac2ac006",
+        "artifact_sha256": "40e3a24a0a714b2a5a8f6d4e6748766140b75eb81bce50962b9c826085f82332",
+        "artifact_commit": "52c4eb667bcff6a32b53fea61f0a529018390bfc",
+        "valid": true,
+        "repository_unchanged": true,
+        "verdict": "changes-requested"
+      },
+      "report": {
+        "verdict": "changes-requested",
+        "findings": [
+          {
+            "title": "Preserve physical-region suppression for findings on comment-only lines",
+            "requirement": "A nosec-begin region suppresses findings on subsequent physical lines until nosec-end; selector resolution and metrics must apply to all enabled tests, including file-level tests.",
+            "location": "bandit/core/nosec.py:141-149,187,232-234",
+            "evidence": "Reproduced with real BanditManager and enabled tests B101,B613: source '# nosec-begin B613\\n# \\u202e\\n# nosec-end\\nassert True\\n' still reports B613 at line 2, with skipped_tests=0. Expected only B101 at line 4 and skipped_tests=1. An equivalent legacy inline comment '# \\u202e # nosec B613' correctly suppresses B613, confirming the existing public interface supports this finding location. build_suppressions computes physical[2], but discards physical coverage after constructing entries for tokenized statements. A comment-only line outside a statement has no entry, so for_result returns no suppression. Retain physical-region coverage in SuppressionMap and combine it at a finding's reported line, including when no statement contains that line. Add real-plugin tests for comment-only coverage and begin/end boundaries.",
+            "severity": "Critical"
+          },
+          {
+            "title": "Do not apply next-statement suppression to other statements sharing the reported line",
+            "requirement": "nosec-next-line suppresses only the next statement, and applicable suppressions must be determined for the finding rather than unrelated statements.",
+            "location": "bandit/core/nosec.py:141-149",
+            "evidence": "With enabled tests B101,B613, source '# nosec-next-line B613\\nx = 1; y = \"\\u202e\"\\nassert True\\n' incorrectly suppresses the B613 finding in the second assignment and increments skipped_tests to 1. Without the directive, B613 is reported at the second assignment's line/column. The first assignment is the directive's target and contains no bidi character, so B613 in the second assignment must remain. for_result unions suppressions from every statement on result.lineno, ignoring the stored start/end columns and result.col_offset. This lets a directive on a harmless statement hide a security finding in an unrelated statement. Resolve the reported finding to its containing statement using the reported position, taking account of the plugin's column convention, rather than unioning every statement on the line. Add a regression paired with a bidi character in the first assignment to verify both positive and negative targeting.",
+            "severity": "Critical"
+          }
+        ],
+        "observations": [
+          "The implementation provides a dedicated selector evaluator, enabled-test-relative set algebra, nested regions, statement maps, ignore-nosec integration, documentation, and substantial real-plugin regression coverage. These are good foundations, and the existing tests pass.",
+          "Pass 1 compared all nine changed files between b46fa3a2723635aa29cc012538df4867ac2ac006 and 52c4eb667bcff6a32b53fea61f0a529018390bfc against the original request. The two independently reproduced file-plugin cases fail specification compliance. Pass 2 code-quality assessment was not started because Pass 1 failed.",
+          "Verification: python -m unittest tests.unit.core.test_nosec tests.functional.test_suppression_directives -q passed 47 tests; python -m unittest discover -s tests -q passed 320 tests on Python 3.12.12. The full-suite log is /tmp/bandit-review-tests.log. Independent real-plugin reproductions are in /tmp/bandit-review-repro.py and can be run with PYTHONPATH=/app python /tmp/bandit-review-repro.py.",
+          "Behavioral assumptions were checked against the existing B613 file plugin, its issue line/column interface, legacy inline suppression on comment-only lines, and the implementation's existing semicolon-targeting test. The failures are observable through existing supported plugins, not hypothetical extension behavior.",
+          "Closeout: git diff --check b46fa3a 52c4eb6 passed. Initial and final git status --short --untracked-files=all were empty; staged and unstaged diffs were empty. No tracked files or source/tests were changed. The review report is outside the repository at /opt/ficus-harbor/review-result.json. Repairs and regression tests for both findings are required before approval."
+        ],
+        "limitations": [
+          "Review and tests used the provided frozen implementation on the existing main checkout. Historical compliance with the original instruction to use a new branch cannot be established from this snapshot; no branch or commit changes were made during this read-only review.",
+          "Validation was performed on the available Python 3.12.12 environment, not a cross-version matrix. No environment limitation prevented the independent reproductions or test execution."
+        ]
+      },
+      "metadata": {
+        "configuration": "reviewer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "92877bea48db5bc2f2879531e2cb6558e265b0a890e5841a4b4ca7fbb2e726e8",
+        "database_network": "task",
+        "attempted_roles": [
+          "reviewer"
+        ],
+        "engineer_only_verified": null,
+        "executed_roles": [
+          "reviewer"
+        ],
+        "artifact_review": {
+          "base_commit": "b46fa3a2723635aa29cc012538df4867ac2ac006",
+          "artifact_sha256": "40e3a24a0a714b2a5a8f6d4e6748766140b75eb81bce50962b9c826085f82332",
+          "artifact_commit": "52c4eb667bcff6a32b53fea61f0a529018390bfc",
+          "valid": true,
+          "repository_unchanged": true,
+          "verdict": "changes-requested"
+        }
+      }
+    }
+  ],
+  "budget": {
+    "phase_cap_usd": 35,
+    "batch_opening_phase_exposure_usd": 25.720994,
+    "new_confirmed_usd": 0.454876,
+    "new_unknown_usage": 0,
+    "per_client": [
+      {
+        "client": "arv5-baseline",
+        "requests": 15,
+        "confirmed_usd": 0.228845
+      },
+      {
+        "client": "arv5-candidate",
+        "requests": 16,
+        "confirmed_usd": 0.226031
+      }
+    ],
+    "phase_confirmed_usd": 20.67587,
+    "retained_prior_hold_usd": 5.5,
+    "phase_exposure_usd": 26.17587,
+    "remaining_headroom_usd": 8.82413,
+    "segment_shared_with_v1": true
+  },
+  "production_prompt_changed": false,
+  "operator_repairs_or_task_hints": 0,
+  "independent_audit": {
+    "script": "artifact-review-v5-reproduce.py",
+    "script_sha256": "dd29de8e419caed2e5d7458b934e9b856d09a0c027b4ef4b320181b65303f058",
+    "output_sha256": "6352d0eebb003dfe10b3238e22a75ff30c9eaea074dd4c69b40485565205c5d5",
+    "network": "none",
+    "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605@sha256:2f6978cf88228baa0d3323e4f139ee222f5886218d86ca1d327bcae3711f4b6a",
+    "results": {
+      "else_control": {
+        "findings": [
+          [
+            5,
+            4,
+            "B307"
+          ],
+          [
+            6,
+            0,
+            "B307"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 0
+      },
+      "else_directive": {
+        "findings": [
+          [
+            5,
+            4,
+            "B307"
+          ],
+          [
+            6,
+            0,
+            "B307"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 0
+      },
+      "finally_control": {
+        "findings": [
+          [
+            5,
+            4,
+            "B307"
+          ],
+          [
+            6,
+            0,
+            "B307"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 0
+      },
+      "finally_directive": {
+        "findings": [
+          [
+            5,
+            4,
+            "B307"
+          ],
+          [
+            6,
+            0,
+            "B307"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 0
+      },
+      "same_line_suite_control": {
+        "findings": [
+          [
+            2,
+            3,
+            "B307"
+          ],
+          [
+            2,
+            14,
+            "B307"
+          ],
+          [
+            2,
+            25,
+            "B307"
+          ],
+          [
+            3,
+            0,
+            "B307"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 0
+      },
+      "same_line_suite_directive": {
+        "findings": [
+          [
+            2,
+            25,
+            "B307"
+          ],
+          [
+            3,
+            0,
+            "B307"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 2
+      },
+      "multiline_suite_control": {
+        "findings": [
+          [
+            2,
+            3,
+            "B307"
+          ],
+          [
+            3,
+            4,
+            "B307"
+          ],
+          [
+            3,
+            15,
+            "B307"
+          ],
+          [
+            4,
+            0,
+            "B307"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 0
+      },
+      "multiline_suite_directive": {
+        "findings": [
+          [
+            3,
+            4,
+            "B307"
+          ],
+          [
+            3,
+            15,
+            "B307"
+          ],
+          [
+            4,
+            0,
+            "B307"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 1
+      },
+      "file_comment_control": {
+        "findings": [
+          [
+            2,
+            3,
+            "B613"
+          ],
+          [
+            4,
+            0,
+            "B101"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 0
+      },
+      "file_comment_region": {
+        "findings": [
+          [
+            2,
+            3,
+            "B613"
+          ],
+          [
+            4,
+            0,
+            "B101"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 0
+      },
+      "file_comment_legacy": {
+        "findings": [
+          [
+            3,
+            0,
+            "B101"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 1
+      },
+      "semicolon_second_control": {
+        "findings": [
+          [
+            2,
+            13,
+            "B613"
+          ],
+          [
+            3,
+            0,
+            "B101"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 0
+      },
+      "semicolon_second_directive": {
+        "findings": [
+          [
+            3,
+            0,
+            "B101"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 1
+      },
+      "semicolon_first_directive": {
+        "findings": [
+          [
+            3,
+            0,
+            "B101"
+          ]
+        ],
+        "nosec": 0,
+        "skipped_tests": 1
+      }
+    },
+    "assessments": [
+      {
+        "finding": "baseline: continuation clause consumes directive",
+        "supported": true,
+        "caveat": "The exact desired target around compound statements can be clarified; consuming the directive at a header with no independent statement or plugin context loses suppression under either following-statement interpretation."
+      },
+      {
+        "finding": "baseline: first same-line suite child gets suppression",
+        "supported": true,
+        "caveat": "A whole-compound versus header-only policy needs consistency. Arbitrarily including only the first child matches neither policy; this audit does not prescribe a new language-wide boundary policy."
+      },
+      {
+        "finding": "candidate: physical comment-only File finding",
+        "supported": true,
+        "known_before_review": true
+      },
+      {
+        "finding": "candidate: suppression leaks to second semicolon statement",
+        "supported": true,
+        "known_before_review": false
+      }
+    ],
+    "reported_critical_severities_independently_endorsed": false,
+    "suite_evidence": "Both saved tool outputs confirm 47 focused and 320 unittest-discovery tests passed; baseline supplementary stestr discovery error remains a reported limitation, not a clean runner pass."
+  },
+  "interpretation": {
+    "known_file_comment_issue_detected": {
+      "baseline": false,
+      "candidate": true
+    },
+    "distinct_supported_findings": {
+      "baseline": 2,
+      "candidate": 2
+    },
+    "overlap": 0,
+    "limits": [
+      "Known artifact selected for an observed miss, not unseen benchmark",
+      "One sample each in fixed order",
+      "Fresh review versus earlier in-workflow review changes context and stochastic sample together; no causal attribution",
+      "Existing experimental addition unchanged; findings are not exhaustive ground truth",
+      "No repair performed and official grade unchanged"
+    ],
+    "recommendation": "Keep existing addition experimental; do not add a universal second-review stage or broad prompt rewrite from this sample. Next broader evaluation should return to predeclared unused external tasks with matched engineer and squad configurations."
+  },
+  "all_owned_services_stopped": true
+}

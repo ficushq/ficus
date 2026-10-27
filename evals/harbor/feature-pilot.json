@@ -1,0 +1,52 @@
+{
+  "source_task": "pydantic__pydantic.e1dcaf9e.test_deprecated_fields.40a2ec54.lv1",
+  "source_files_sha256": {
+    "task.toml": "ef631c9e1bfb04044903fef3ab357eda8767242e0e5de7199d4d22f7feecdb89",
+    "instruction.md": "605e6ecc644101a5b5e06fa4da2e59a3da5a5c6dcba4bfcadfafe00646db738d",
+    "environment/Dockerfile": "f519aab3f31fd36011a9cbb9fc89fd2f3dc9ab5c62f3964926df57600d99e196",
+    "environment/setup_patch.diff": "bd5779565c96bc943bd521097eda353150de8a60f29f0bf5ed6f2d1a733c8cb3",
+    "environment/test_patch.diff": "ca1f745f525d59dc31b7856a218b90a36fcd77e5db8d396d6b7b91bd79d8ee10",
+    "tests/test.sh": "76adf39c183b4f0e85acc72259eb271d600aabfbd27fef304841bf1f9c63b2fb",
+    "solution/solve.sh": "356a7b65d73d69f18507a9ed0b450631370b9968b2a0df8d98a6e9b6312fc778",
+    "tests/config.json": "2e38b9c51453768db7983a5dd40c7538f64c0bda3dc3e174b5ea4dd013bcf81c"
+  },
+  "original_image_id": "sha256:fdedcf27ecb40b5934b4aa4e37470c50da1754fff8298828db550ed3e9de70ab",
+  "agent_image_id": "sha256:ac0ca4f8cb75f561b72cc6e5dc67b7fe70e7307d655b31e648c15edcc5ea710f",
+  "agent_image_tag": "ficus-featurebench-sanitized:2f63e7718c99",
+  "preparation_sha256": "d376e8b8a0f96676a48903049eccda5c8f9216e01a47647728393352ea382907",
+  "audit": "root_commits=1\nworking_tree=",
+  "grader_unchanged": true,
+  "dataset_repository": "https://github.com/laude-institute/harbor-datasets",
+  "dataset_commit": "37db108843a49bb31a592e37a75e2c40dc3f9749",
+  "registry_entry": "featurebench-lite@1.0",
+  "version_note": "Pinned Harbor task snapshot; not claimed to be upstream V1.1 fast split",
+  "base_image_digest": "libercoders/featurebench-specs_pydantic-instance_78693714@sha256:755c424c73170faf66d88006022ed2733f8e269446f330f301d762b0d0ab7d6b",
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "max_output_tokens": 8192,
+  "attempts_per_arm": 1,
+  "agent_timeout_seconds": 3600,
+  "verifier_timeout_seconds": 3600,
+  "cpus": 2,
+  "memory_gib": 8,
+  "concurrency": 1,
+  "runtime_sha256": "903ff3d33a08776c4005c3430ef13152101d25b72435fc27b242320573efec18",
+  "arms_in_order": [
+    "ficus-planned",
+    "pi-planned",
+    "ficus-engineer",
+    "pi-engineer"
+  ],
+  "accounting_baseline_usd": 4.013912,
+  "cumulative_cap_usd": 20,
+  "stop_policy": "Stop on cap; retain interrupted/unexecuted arms. No retries, model/prompt changes, operator messages, or fabricated approvals.",
+  "scope": "Single-task exploratory feature pilot, not leaderboard, latency study, or statistical comparison",
+  "workflow_difference": "Pi creates fresh child sessions on dispatch; Ficus may reuse role sessions for rework. Preserve each harness mechanics and disclose this difference.",
+  "selection": "CPU task chosen before model trials for local setup validation; no selection based on model outcomes.",
+  "adapter_files_sha256": {
+    "ficus_agent.py": "3c10076d9b943be64b7fc154bdb14e8ac9b24977d2c762eb7f5a46ac0841291f",
+    "pi_workflow.py": "00712cabe8eebbd571c7ef438b357c019bb9735492ff8bfb29a870d3ed2c03e3",
+    "run-pilot.py": "76c63b63f817da336db8907801645f02c6a475b79eb66c27c9e62969765fcc65",
+    "budget_proxy.py": "609dfa326f8c7dee88ecdf218bd7a73023a349890a8e22a30ab7b0ec6980121b"
+  }
+}

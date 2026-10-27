@@ -1,0 +1,44 @@
+{
+  "experiment": "coordination-v2",
+  "type": "benchmark-derived coordination case study; not official SlopCodeBench protocol or score",
+  "source_repository": "https://github.com/gabeorlanski/scb-problems",
+  "source_revision": "9cd9ca3a51c3d3e2a99d2488a25baf73a2204451",
+  "task": "code_search",
+  "requests": [1, 2, 3],
+  "selection": "Purposive feasibility pilot: CLI product, standard-library reference, three intersecting capabilities, small CPU/disk requirements. Chosen before paid attempts; no outcome-based substitutions.",
+  "protocol_delta": "Supply all three requests upfront, require >=3 implementation packages plus final integration/review, keep one shared repository and team state. Let coordinators choose dependencies and boundaries. Official tests unchanged; no grade feedback during work.",
+  "conditions": ["ficus", "pi"],
+  "order_rule": "Retain the original predeclared order, Ficus then Pi; no outcome-based reordering.",
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "worker_limit": 2,
+  "inference_limit": "Existing proxy serializes each client including settlement; no parallel speed or human-time-saved claims.",
+  "budget": {
+    "phase_cap_usd": 20,
+    "opening_exposure_usd": 6.813798,
+    "remaining_usd": 13.186202,
+    "reservation_usd": 5.5,
+    "no_reset": true
+  },
+  "resources": {
+    "cpus": 2,
+    "memory_mb": 8192,
+    "storage_mb": 10240,
+    "agent_timeout_sec": 7200,
+    "verifier_timeout_sec": 300,
+    "ficus_overhead": "Additional disposable PostgreSQL: 0.5CPU/512MiB"
+  },
+  "acceptance": "47 unchanged upstream tests passing; report correctness separately from native coordination compliance.",
+  "coordination_checks": [
+    ">=3 distinct implementation packages, not one renamed task",
+    "architect/engineer/independent reviewer role provenance",
+    "dependency and shared-file/branch handoffs",
+    "all required work integrated in /app HEAD",
+    "final integrated independent approval",
+    "waits, unintegrated branches, rework, interventions, cost and elapsed time"
+  ],
+  "stop_policy": "One attempt per arm; no automatic retry or operator code/task hints. Stop on provider/accounting failure, budget rejection, or invalid controls. Preserve incomplete arms.",
+  "runtime": "Existing frozen native runtime with explicit evaluation bootstrap overlay; no production prompt changes; Pi 0.99.1 packaged subagent extension with concurrency constant 4\u21922 only.",
+  "supersedes": "coordination-v1 was interrupted after an egress header timeout; preserve that attempt and its cost. No acceptance-test feedback was observed.",
+  "change": "Only an explicit 600-second response-header deadline in a copied Harbor egress context. Same model, task, role instructions, runtime, allowlist, verifier and spending guard. Fresh repository and sessions for both arms."
+}

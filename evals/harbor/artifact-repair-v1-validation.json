@@ -1,0 +1,140 @@
+{
+  "check_script": "artifact-repair-v1-check.py",
+  "script_sha256": "649cca0f7d64e0ec43e2c3ca02a749d87071b8358fe1cd8ff62ec831393741e2",
+  "frozen_before_repair": true,
+  "not_exposed_to_squad": true,
+  "baseline": [
+    {
+      "name": "next_statement_control",
+      "provenance": "control",
+      "expected_findings": [
+        [1, "B307"],
+        [2, "B307"]
+      ],
+      "actual": {
+        "findings": [
+          [1, "B307"],
+          [2, "B307"]
+        ],
+        "nosec": 0,
+        "skipped_tests": 1
+      },
+      "passed": true
+    },
+    {
+      "name": "next_statement_inside_existing",
+      "provenance": "supplied_review_finding",
+      "expected_findings": [
+        [1, "B307"],
+        [2, "B307"]
+      ],
+      "actual": {
+        "findings": [[3, "B307"]],
+        "nosec": 0,
+        "skipped_tests": 2
+      },
+      "passed": false
+    },
+    {
+      "name": "inline_control",
+      "provenance": "control",
+      "expected_findings": [
+        [1, "B307"],
+        [2, "B101"],
+        [2, "B307"]
+      ],
+      "actual": {
+        "findings": [
+          [1, "B307"],
+          [2, "B101"],
+          [2, "B307"]
+        ],
+        "nosec": 0,
+        "skipped_tests": 1
+      },
+      "passed": true
+    },
+    {
+      "name": "inline_plus_begin",
+      "provenance": "supplied_review_finding",
+      "expected_findings": [
+        [1, "B307"],
+        [2, "B101"]
+      ],
+      "actual": {
+        "findings": [
+          [1, "B101"],
+          [1, "B307"],
+          [2, "B101"]
+        ],
+        "nosec": 0,
+        "skipped_tests": 1
+      },
+      "passed": false
+    },
+    {
+      "name": "inline_plus_next-line",
+      "provenance": "supplied_review_finding",
+      "expected_findings": [
+        [1, "B307"],
+        [2, "B101"]
+      ],
+      "actual": {
+        "findings": [
+          [1, "B101"],
+          [1, "B307"],
+          [2, "B101"]
+        ],
+        "nosec": 0,
+        "skipped_tests": 1
+      },
+      "passed": false
+    },
+    {
+      "name": "file_comment_region_B613",
+      "provenance": "candidate_only_finding_not_supplied",
+      "expected_findings": [],
+      "actual": {
+        "findings": [[2, "B613"]],
+        "nosec": 0,
+        "skipped_tests": 0
+      },
+      "passed": false
+    },
+    {
+      "name": "file_assignment_control_B613",
+      "provenance": "control",
+      "expected_findings": [],
+      "actual": {
+        "findings": [],
+        "nosec": 0,
+        "skipped_tests": 1
+      },
+      "passed": true
+    },
+    {
+      "name": "file_comment_region_",
+      "provenance": "candidate_only_finding_not_supplied",
+      "expected_findings": [],
+      "actual": {
+        "findings": [[2, "B613"]],
+        "nosec": 0,
+        "skipped_tests": 0
+      },
+      "passed": false
+    },
+    {
+      "name": "file_assignment_control_",
+      "provenance": "control",
+      "expected_findings": [],
+      "actual": {
+        "findings": [],
+        "nosec": 1,
+        "skipped_tests": 0
+      },
+      "passed": true
+    }
+  ],
+  "baseline_output_sha256": "7e349ec5f61879b67c2f700f8f574186cbe2382908d17fc1dac2373a7ffa46e6",
+  "limitations": "Independent cases based on previously reproduced findings; not an unseen acceptance benchmark. Candidate-only physical-line defect is withheld from squad input."
+}

@@ -1,0 +1,223 @@
+{
+  "experiment": "coordination-v2",
+  "all_gates_passed": true,
+  "inference_started": false,
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "image": "ficus-coordination-v1:preflight",
+  "image_id": "sha256:a23a761eb0d277cf4bfc136c8146cf300ca9f54f92e1cf063356d56717b1a07c",
+  "controls": [
+    {
+      "job": "coordv1-frozen-control-nop",
+      "result_sha256": "535ca47f09249ea97ba07d5216a82a90fbdc9a90350141d4f47b9740125aac8d",
+      "rewards": {
+        "reward": 0.0
+      },
+      "counts": null
+    },
+    {
+      "job": "coordv1-frozen-control-oracle",
+      "result_sha256": "42e7d829bf0f065e188483e873d8fd1b4d2d5696759e02d5feb5af6fe3ce7139",
+      "rewards": {
+        "reward": 1.0
+      },
+      "counts": {
+        "total": 47,
+        "passed": 47,
+        "failures": 0,
+        "skipped": 0,
+        "accepted": true
+      }
+    },
+    {
+      "job": "coordv1-frozen-collision-nop",
+      "result_sha256": "7b742a1dbc70045f9295c5a952b36e0ee2f87fdfc072b1cc4169b4ae1bf7cd1e",
+      "rewards": {
+        "reward": 0.0
+      },
+      "counts": {
+        "total": 47,
+        "passed": 0,
+        "failures": 47,
+        "skipped": 0,
+        "accepted": false
+      }
+    },
+    {
+      "job": "coordv1-frozen-collision-oracle",
+      "result_sha256": "3c83403ecc0e23a87c4d5e5ea2ab604dd2e175f7c846ddc28a7a7e7a733c1af0",
+      "rewards": {
+        "reward": 1.0
+      },
+      "counts": {
+        "total": 47,
+        "passed": 47,
+        "failures": 0,
+        "skipped": 0,
+        "accepted": true
+      }
+    }
+  ],
+  "probes": [
+    {
+      "job": "coordv2-probe-ficus",
+      "result_sha256": "c20019d6bf6fed128fd22c06e04efadc2ef99eae7f1ef72049a87ea2df9df6a6",
+      "checks": {
+        "database_loopback": true,
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "ficus_api_ready": true,
+        "ficus_worker_ready": true,
+        "native_provider_preload": true
+      },
+      "egress": {
+        "response_header_timeout_seconds": 600,
+        "original_config_sha256": "78c18e58efbc7c8e226cb311e2a4cf3863d5a2f3e54b3bf15a0ea4b885345290",
+        "context_sha256": {
+          "Dockerfile": "a2385dd6b3eee6e04c49b467df84ed2a273fd402a9cdd404a64fb535e9b26ff7",
+          "allowlist.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bin/network-policy": "ff1cacfb95e17cda3668f389176ae54e5e4139cff12ee54b4d745722ad0ff0b2",
+          "entrypoint.sh": "2e225ed745eb5976f93afd52d91c844b954b5f6f45373fb70c4c509e36d1e069",
+          "gost.yaml": "9293a0f45fbd16d3e59c06aa559a9544193ead48575b9ca7163c5e8e7bad8ed1"
+        },
+        "network_policy_unchanged": true
+      }
+    },
+    {
+      "job": "coordv2-probe-pi",
+      "result_sha256": "946b506203848ba76207da1b419d63c5f88fe69f2e3b761968f35f0876c9a4ea",
+      "checks": {
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "pinned_pi_and_subagent_extension": true
+      },
+      "egress": {
+        "response_header_timeout_seconds": 600,
+        "original_config_sha256": "78c18e58efbc7c8e226cb311e2a4cf3863d5a2f3e54b3bf15a0ea4b885345290",
+        "context_sha256": {
+          "Dockerfile": "a2385dd6b3eee6e04c49b467df84ed2a273fd402a9cdd404a64fb535e9b26ff7",
+          "allowlist.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bin/network-policy": "ff1cacfb95e17cda3668f389176ae54e5e4139cff12ee54b4d745722ad0ff0b2",
+          "entrypoint.sh": "2e225ed745eb5976f93afd52d91c844b954b5f6f45373fb70c4c509e36d1e069",
+          "gost.yaml": "9293a0f45fbd16d3e59c06aa559a9544193ead48575b9ca7163c5e8e7bad8ed1"
+        },
+        "network_policy_unchanged": true
+      }
+    }
+  ],
+  "runtime_archive_sha256": "68c8a5e3263b54639562f259aaa149ae18c61770442a85b4da1d599fb2476ba0",
+  "runner_source_sha256": {
+    "evals/harbor/coordination.py": "bf52bbda1004f0f38065409933cf266fcd978572285109110a63fdb336a7d0dd",
+    "evals/harbor/ficus_agent.py": "8fbda2d9ff16c6f0479f89fd34d8a61607cd2e215d7782473f578f90f675b1d5",
+    "evals/harbor/pi_workflow.py": "00712cabe8eebbd571c7ef438b357c019bb9735492ff8bfb29a870d3ed2c03e3",
+    "evals/harbor/run-pilot.py": "5cc985dfb9f0cf6b3bc7bea359901a9b219685eeaa33b15d210ba5c37173edc7",
+    "evals/harbor/budget_proxy.py": "e3d3deb1342d8963949fe9ac3a2ec2a271b18cbdaca83901df126efd00c36648",
+    "evals/harbor/checkpoint.py": "8c80cae256f7ef5d856e5ee101af9ce9edf3f1a9bccae4bf1cf376c25ec52523",
+    "evals/harbor/run_concurrent_feature.py": "48af6ab7e74bb0b3556dc41ba287d2e38d3b882ebe3f1ca9d7f94e63021b869e",
+    "apps/core/src/scripts/harbor-trial.ts": "b4fe48c5fb3214864a6ed704cb8db1b1fd9f202a578b4a47ea0236f628e58acb",
+    "evals/harbor/coordination-v2-plan.json": "9df3e2e33003032f091a9f191ea3d686ee47e2259a70e00c89c15e8a5336188b",
+    "evals/harbor/coordination_egress.py": "026ca5ccb04571521ecf6de2cc5ea563afbdec19668b3394f64b0909c08b538e"
+  },
+  "private_launcher_sha256": "e5f9dbd731728b44df3b88dc59ace70453c4aa7bc86e86eddd281990548481d7",
+  "source_file_sha256": {
+    "LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "code_search/checkpoint_1.md": "661df04fb80b918afe6f02a4ee7157f4a64a079ed3ce2989601332d29137bf4b",
+    "code_search/checkpoint_2.md": "07f2cd414876c179ae06d0b1e80588e18bea85fdb94446fc7e7cfe62f36530f3",
+    "code_search/checkpoint_3.md": "522d7944beb095533a0c0a15c8ec8b38ad45f7a7b8ce93eff351dce37b8d4240",
+    "code_search/config.yaml": "6ae8d68a514bf6e64fd276598a8bc7b55f74cdac7aec4eac39fa7b0fa1da35ac",
+    "code_search/solutions/checkpoint_3/code_search.py": "ac153690b186f848d5a45fd0246119e6e53a943ecc24f2a611963c48cac96c23",
+    "code_search/solutions/checkpoint_3/code_searcher/__init__.py": "46a0b2109a3fec71c9712e5b0d9c4c6890bf110508c76ab925ceaac3884780f7",
+    "code_search/solutions/checkpoint_3/code_searcher/exceptions.py": "4c0b8184808b927ca185f51684579921d5976515072ec397523ecd9378d99044",
+    "code_search/solutions/checkpoint_3/code_searcher/languages.py": "6336114aeeebc5cdcafe4c81f973aa5473f4cae07191303e4aa113caa6378393",
+    "code_search/solutions/checkpoint_3/code_searcher/matcher.py": "bfc55fd017a293962da118a5648c90b66840ee9e9e869ebf566a69fe5aa564f6",
+    "code_search/solutions/checkpoint_3/code_searcher/patterns.py": "6a17e89547f05010340c3ada1e187ccbb386e7d394202223ed0f27fa353e2979",
+    "code_search/solutions/checkpoint_3/code_searcher/rules.py": "bbbc3ca208161bf5cee1624f50fcc78bda82cfcf55cd6bc8cdf636ab3afec687",
+    "code_search/solutions/checkpoint_3/code_searcher/tokenizer.py": "ce8c1ab1283f9422d2cde27aeae7734fb9c3847c562dce20a0b8e043f853496d",
+    "code_search/solutions/checkpoint_3/requirements.txt": "c2b272516920686e36d00f8f0555c89b69f8b6ed127ad5e6502242296b5418fe",
+    "code_search/solutions/checkpoint_3/tests/data/sample_repo/README.md": "8b5576253c668f1a12abcc6393bd930fce39d159a9645b7ac93ecad4a044f39f",
+    "code_search/solutions/checkpoint_3/tests/data/sample_repo/pkg/__init__.py": "adb6ec08ce7530dde93df15f2f5a03a5ae79a415c6d07baf26db3d279a8ac846",
+    "code_search/solutions/checkpoint_3/tests/data/sample_repo/pkg/module.py": "456e4222a5c2010a259186feab61ff7da29f0188aeb5743ac10e3f0aea846161",
+    "code_search/solutions/checkpoint_3/tests/data/sample_repo/scripts/run.py": "72ce82fd46c86006fcc25d4f2ddc4490ce9c4cbd2a84c0298f12ae777c2ee07c",
+    "code_search/solutions/checkpoint_3/tests/data/sample_repo/src/engine.cpp": "c42582e6769ea17d4d31889bd6074caab983eade38a0c09e491bd7345155b6a8",
+    "code_search/solutions/checkpoint_3/tests/data/sample_repo/web/app.js": "fdaac1145eb3d1e759793f47ecc583025755dcf3555f8ff16f136c47304754a0",
+    "code_search/solutions/checkpoint_3/tests/data/sample_rules.json": "cdf72c03fda48af4cc6498c6b22fbaeb646bc2aac0af7917f6687a23e308627d",
+    "code_search/solutions/checkpoint_3/tests/test_cli.py": "1ed09bab12ed11a135c478672a92319da16c78782799949d0d933bc3b52bc7f5",
+    "code_search/solutions/checkpoint_3/tests/test_integration.py": "e178bc51e5bd19cd311934fafa3dc6491b2772bf33b02ecee2bc52e08e3422ba",
+    "code_search/solutions/checkpoint_3/tests/test_matcher.py": "ddacd4236b37277ed7ea9a97e4acbc28b300ad6d94695cd22c890df91554dcb7",
+    "code_search/solutions/checkpoint_3/tests/test_rules.py": "98d335e81461570a74bef92f5a8a5f1834c6b6599aaa24d147e7bd18cd668778",
+    "code_search/tests/code_search_test_helpers.py": "729c3ae55f8fb4c540160f6f591e20e613487a5f960a36f55183692248f8bfda",
+    "code_search/tests/conftest.py": "b673abcb3cf38e52c0ccdf6ddc3890d4fd8678193f74c18b9dc3521f5fc009b3",
+    "code_search/tests/data/checkpoint_1/proj/A/I.py": "fab96b61f4670c6c72ed04b36c927a818f3bbb9ef26f397de360dc4513d100fc",
+    "code_search/tests/data/checkpoint_1/proj/M.py": "7d583d69cba5e6dd86f2ec5c8693b3ad92ebe82f68107c677adb31946b64206b",
+    "code_search/tests/data/checkpoint_1/proj/N.py": "b2428a76603c2a66f37cd36c3ace5cbaaa74c926ea26cd11a2908edb560d62e9",
+    "code_search/tests/data/checkpoint_2/proj/app.js": "9e55ee5e6fd917670c109b2d99c204d2039157d2998badd92b3c276abd10121e",
+    "code_search/tests/data/checkpoint_2/proj/main.py": "fe7bb5c24cf752bd79682728ae453f1e07fa272fa878f7d0f9d125c7c762c47e",
+    "code_search/tests/data/checkpoint_2/proj/src/engine.cpp": "71ed5b4f871c94d5b3e20ae38382d2c7e6b3e4241192c9d4b622dd2b5a10769b",
+    "code_search/tests/test_checkpoint_1.py": "daf687f68788b3b19f8ede6a56e2ff26c63a38cd4a537d0e14bcda099e2b4625",
+    "code_search/tests/test_checkpoint_2.py": "d8f8ee055ca0d69d4b641d50042c1ac726ccf83dd32a39322ff59a1f1d52659f",
+    "code_search/tests/test_checkpoint_3.py": "4fe6b38664580197600979fd8f74dec1b7196853afc6fa28470f5e4b454d6202",
+    "code_search/tests/test_checkpoint_4.py": "dab3c1202ee8057edaef27db134846b8d407f90fd95665ad9cba8a5e6bee1678",
+    "code_search/tests/test_checkpoint_5.py": "9395e1a7c4c2be31586a5f7f8c382eb8b26957b68a74598ab645f63b27e5c0bf"
+  },
+  "prepared_file_sha256": {
+    "instruction.md": "f22615efb77c17908b3a4a0c1ce7358faba69dabb5877c8612f5d7ebda4ab951",
+    "task.toml": "d85106c89fff28a3ada0ff43b2958d7a6ffc43fed6896075b1e97fdf8e348958",
+    "tests/test.sh": "39762cd3b1ed574ee2098d3ae626bf6dc6d489ca5a3bbc2b39b2da208d9affe5",
+    "tests/score.py": "ec4a9325af5b6d78c8b90945d70ae6dc5b97a8d3e91398c5759ca6740a038396",
+    "solution/solve.sh": "3901d2427f6a24e510eefbcbb5c413746bd53546f737d0c5cb9bca5ea8ce15c5",
+    "environment/Dockerfile": "40a22bfeed7c0cdf3da96cb45df0db09b28d02c77b30a2c3d6058d6045a38b7f",
+    "tests/official/conftest.py": "b673abcb3cf38e52c0ccdf6ddc3890d4fd8678193f74c18b9dc3521f5fc009b3",
+    "tests/official/test_checkpoint_2.py": "d8f8ee055ca0d69d4b641d50042c1ac726ccf83dd32a39322ff59a1f1d52659f",
+    "tests/official/code_search_test_helpers.py": "729c3ae55f8fb4c540160f6f591e20e613487a5f960a36f55183692248f8bfda",
+    "tests/official/test_checkpoint_3.py": "4fe6b38664580197600979fd8f74dec1b7196853afc6fa28470f5e4b454d6202",
+    "tests/official/test_checkpoint_1.py": "daf687f68788b3b19f8ede6a56e2ff26c63a38cd4a537d0e14bcda099e2b4625",
+    "tests/official/data/checkpoint_1/proj/N.py": "b2428a76603c2a66f37cd36c3ace5cbaaa74c926ea26cd11a2908edb560d62e9",
+    "tests/official/data/checkpoint_1/proj/M.py": "7d583d69cba5e6dd86f2ec5c8693b3ad92ebe82f68107c677adb31946b64206b",
+    "tests/official/data/checkpoint_1/proj/A/I.py": "fab96b61f4670c6c72ed04b36c927a818f3bbb9ef26f397de360dc4513d100fc",
+    "tests/official/data/checkpoint_2/proj/main.py": "fe7bb5c24cf752bd79682728ae453f1e07fa272fa878f7d0f9d125c7c762c47e",
+    "tests/official/data/checkpoint_2/proj/app.js": "9e55ee5e6fd917670c109b2d99c204d2039157d2998badd92b3c276abd10121e",
+    "tests/official/data/checkpoint_2/proj/src/engine.cpp": "71ed5b4f871c94d5b3e20ae38382d2c7e6b3e4241192c9d4b622dd2b5a10769b",
+    "solution/reference/requirements.txt": "c2b272516920686e36d00f8f0555c89b69f8b6ed127ad5e6502242296b5418fe",
+    "solution/reference/code_search.py": "ac153690b186f848d5a45fd0246119e6e53a943ecc24f2a611963c48cac96c23",
+    "solution/reference/code_searcher/patterns.py": "6a17e89547f05010340c3ada1e187ccbb386e7d394202223ed0f27fa353e2979",
+    "solution/reference/code_searcher/matcher.py": "bfc55fd017a293962da118a5648c90b66840ee9e9e869ebf566a69fe5aa564f6",
+    "solution/reference/code_searcher/__init__.py": "46a0b2109a3fec71c9712e5b0d9c4c6890bf110508c76ab925ceaac3884780f7",
+    "solution/reference/code_searcher/rules.py": "bbbc3ca208161bf5cee1624f50fcc78bda82cfcf55cd6bc8cdf636ab3afec687",
+    "solution/reference/code_searcher/tokenizer.py": "ce8c1ab1283f9422d2cde27aeae7734fb9c3847c562dce20a0b8e043f853496d",
+    "solution/reference/code_searcher/exceptions.py": "4c0b8184808b927ca185f51684579921d5976515072ec397523ecd9378d99044",
+    "solution/reference/code_searcher/languages.py": "6336114aeeebc5cdcafe4c81f973aa5473f4cae07191303e4aa113caa6378393",
+    "solution/reference/tests/test_matcher.py": "ddacd4236b37277ed7ea9a97e4acbc28b300ad6d94695cd22c890df91554dcb7",
+    "solution/reference/tests/test_integration.py": "e178bc51e5bd19cd311934fafa3dc6491b2772bf33b02ecee2bc52e08e3422ba",
+    "solution/reference/tests/test_cli.py": "1ed09bab12ed11a135c478672a92319da16c78782799949d0d933bc3b52bc7f5",
+    "solution/reference/tests/test_rules.py": "98d335e81461570a74bef92f5a8a5f1834c6b6599aaa24d147e7bd18cd668778",
+    "solution/reference/tests/data/sample_rules.json": "cdf72c03fda48af4cc6498c6b22fbaeb646bc2aac0af7917f6687a23e308627d",
+    "solution/reference/tests/data/sample_repo/README.md": "8b5576253c668f1a12abcc6393bd930fce39d159a9645b7ac93ecad4a044f39f",
+    "solution/reference/tests/data/sample_repo/web/app.js": "fdaac1145eb3d1e759793f47ecc583025755dcf3555f8ff16f136c47304754a0",
+    "solution/reference/tests/data/sample_repo/scripts/run.py": "72ce82fd46c86006fcc25d4f2ddc4490ce9c4cbd2a84c0298f12ae777c2ee07c",
+    "solution/reference/tests/data/sample_repo/pkg/__init__.py": "adb6ec08ce7530dde93df15f2f5a03a5ae79a415c6d07baf26db3d279a8ac846",
+    "solution/reference/tests/data/sample_repo/pkg/module.py": "456e4222a5c2010a259186feab61ff7da29f0188aeb5743ac10e3f0aea846161",
+    "solution/reference/tests/data/sample_repo/src/engine.cpp": "c42582e6769ea17d4d31889bd6074caab983eade38a0c09e491bd7345155b6a8"
+  },
+  "phase_cap_usd": 20,
+  "opening_phase_exposure_usd": 6.813798,
+  "previous_attempt": "coordination-v1-interrupted.json",
+  "egress_header_timeout_seconds": 600,
+  "transport_regression": {
+    "job": "coordv2-transport-egress",
+    "result_sha256": "0bbc2d5433dac280530c7cffd0ae4b11e3dca30cc120de51a75acde430238f3d",
+    "requests": [
+      {
+        "i": 1,
+        "ok": true,
+        "ms": 22113
+      },
+      {
+        "i": 0,
+        "ok": true,
+        "ms": 44099
+      }
+    ],
+    "public_source_blocked": true,
+    "private_probe_sha256": "f55fb40bc9a7bfdea035e61fb15e32c5d5503d637ed89e14b6de080b20e6ed7c"
+  }
+}

@@ -1,0 +1,483 @@
+{
+  "experiment": "artifact-repair-v1",
+  "kind": "Known-artifact native squad repair continuation; not an unseen benchmark or prompt comparison",
+  "result_sha256": "9d1119b8a38a6332b2b87835002b44ddbd8fa5aec44c3d36ee9f8e6b7d32b5e6",
+  "snapshot_sha256": "36eae591840cb4788cbfe13c4e463f49fcb254b3ff8838545cfc1154171c777a",
+  "messages_sha256": "ab734feac451947243d8a7baa49b052b9d7fcfe309297ac5f06f6f113e782547",
+  "initial_patch_sha256": "fc27071def1014074bf1a7d2531644616ae67e74ffef2a8c9ae9a9916e2f2fcd",
+  "prior_review_sha256": "56eecd8f7d1970acce148ade7146c73b83d732540adf6009c364d89599ca4aec",
+  "final_patch_sha256": "c0e66b1aad3b6cd203bbae4ece648027d2d842531d0da88ab213119976cc8865",
+  "metadata": {
+    "configuration": "planned",
+    "model_api": "openai-responses",
+    "thinking": "medium",
+    "outcome": "interrupted",
+    "memory": "fresh-disabled",
+    "runtime_sha256": "f34c6a8a347e25b3179cea46f2283afbdca0f634674a28b46e426f5d78668012",
+    "database_network": "task",
+    "attempted_roles": ["architect", "engineer", "manager", "reviewer"],
+    "engineer_only_verified": null,
+    "executed_roles": ["architect", "engineer", "manager", "reviewer"]
+  },
+  "exception_info": {
+    "exception_type": "CancelledError",
+    "reason": "Operator budget stop"
+  },
+  "official_grade": null,
+  "executions": [
+    {
+      "role": "manager",
+      "status": "completed",
+      "error": null
+    },
+    {
+      "role": "architect",
+      "status": "completed",
+      "error": null
+    },
+    {
+      "role": "engineer",
+      "status": "completed",
+      "error": null
+    },
+    {
+      "role": "reviewer",
+      "status": "completed",
+      "error": null
+    },
+    {
+      "role": "engineer",
+      "status": "completed",
+      "error": null
+    },
+    {
+      "role": "architect",
+      "status": "completed",
+      "error": null
+    },
+    {
+      "role": "manager",
+      "status": "completed",
+      "error": null
+    },
+    {
+      "role": "engineer",
+      "status": "completed",
+      "error": null
+    }
+  ],
+  "flows": [
+    {
+      "status": "running",
+      "steps": [
+        {
+          "step": "design",
+          "role": "architect",
+          "status": "completed",
+          "outcome": "completed",
+          "sourceAttemptIds": []
+        },
+        {
+          "step": "implement",
+          "role": "engineer",
+          "status": "completed",
+          "outcome": "completed",
+          "sourceAttemptIds": [1]
+        },
+        {
+          "step": "review",
+          "role": "reviewer",
+          "status": "completed",
+          "outcome": "approved",
+          "sourceAttemptIds": [2]
+        },
+        {
+          "step": "design",
+          "role": "architect",
+          "status": "completed",
+          "outcome": "completed",
+          "sourceAttemptIds": []
+        },
+        {
+          "step": "implement",
+          "role": "engineer",
+          "status": "running",
+          "outcome": null,
+          "sourceAttemptIds": [4]
+        }
+      ]
+    }
+  ],
+  "streams": [
+    {
+      "id": "91be01c5-6f68-4402-82fc-6920a8cb810f",
+      "title": "Repair Bandit suppression directives after prior review",
+      "status": "active"
+    }
+  ],
+  "waits": [],
+  "independent_check": {
+    "script": "artifact-repair-v1-check.py",
+    "sha256": "649cca0f7d64e0ec43e2c3ca02a749d87071b8358fe1cd8ff62ec831393741e2",
+    "frozen_before_paid_run": true,
+    "before": [
+      {
+        "name": "next_statement_control",
+        "provenance": "control",
+        "expected_findings": [
+          [1, "B307"],
+          [2, "B307"]
+        ],
+        "actual": {
+          "findings": [
+            [1, "B307"],
+            [2, "B307"]
+          ],
+          "nosec": 0,
+          "skipped_tests": 1
+        },
+        "passed": true
+      },
+      {
+        "name": "next_statement_inside_existing",
+        "provenance": "supplied_review_finding",
+        "expected_findings": [
+          [1, "B307"],
+          [2, "B307"]
+        ],
+        "actual": {
+          "findings": [[3, "B307"]],
+          "nosec": 0,
+          "skipped_tests": 2
+        },
+        "passed": false
+      },
+      {
+        "name": "inline_control",
+        "provenance": "control",
+        "expected_findings": [
+          [1, "B307"],
+          [2, "B101"],
+          [2, "B307"]
+        ],
+        "actual": {
+          "findings": [
+            [1, "B307"],
+            [2, "B101"],
+            [2, "B307"]
+          ],
+          "nosec": 0,
+          "skipped_tests": 1
+        },
+        "passed": true
+      },
+      {
+        "name": "inline_plus_begin",
+        "provenance": "supplied_review_finding",
+        "expected_findings": [
+          [1, "B307"],
+          [2, "B101"]
+        ],
+        "actual": {
+          "findings": [
+            [1, "B101"],
+            [1, "B307"],
+            [2, "B101"]
+          ],
+          "nosec": 0,
+          "skipped_tests": 1
+        },
+        "passed": false
+      },
+      {
+        "name": "inline_plus_next-line",
+        "provenance": "supplied_review_finding",
+        "expected_findings": [
+          [1, "B307"],
+          [2, "B101"]
+        ],
+        "actual": {
+          "findings": [
+            [1, "B101"],
+            [1, "B307"],
+            [2, "B101"]
+          ],
+          "nosec": 0,
+          "skipped_tests": 1
+        },
+        "passed": false
+      },
+      {
+        "name": "file_comment_region_B613",
+        "provenance": "candidate_only_finding_not_supplied",
+        "expected_findings": [],
+        "actual": {
+          "findings": [[2, "B613"]],
+          "nosec": 0,
+          "skipped_tests": 0
+        },
+        "passed": false
+      },
+      {
+        "name": "file_assignment_control_B613",
+        "provenance": "control",
+        "expected_findings": [],
+        "actual": {
+          "findings": [],
+          "nosec": 0,
+          "skipped_tests": 1
+        },
+        "passed": true
+      },
+      {
+        "name": "file_comment_region_",
+        "provenance": "candidate_only_finding_not_supplied",
+        "expected_findings": [],
+        "actual": {
+          "findings": [[2, "B613"]],
+          "nosec": 0,
+          "skipped_tests": 0
+        },
+        "passed": false
+      },
+      {
+        "name": "file_assignment_control_",
+        "provenance": "control",
+        "expected_findings": [],
+        "actual": {
+          "findings": [],
+          "nosec": 1,
+          "skipped_tests": 0
+        },
+        "passed": true
+      }
+    ],
+    "after": [
+      {
+        "name": "next_statement_control",
+        "provenance": "control",
+        "expected_findings": [
+          [1, "B307"],
+          [2, "B307"]
+        ],
+        "actual": {
+          "findings": [
+            [1, "B307"],
+            [2, "B307"]
+          ],
+          "nosec": 0,
+          "skipped_tests": 1
+        },
+        "passed": true
+      },
+      {
+        "name": "next_statement_inside_existing",
+        "provenance": "supplied_review_finding",
+        "expected_findings": [
+          [1, "B307"],
+          [2, "B307"]
+        ],
+        "actual": {
+          "findings": [
+            [1, "B307"],
+            [2, "B307"]
+          ],
+          "nosec": 0,
+          "skipped_tests": 1
+        },
+        "passed": true
+      },
+      {
+        "name": "inline_control",
+        "provenance": "control",
+        "expected_findings": [
+          [1, "B307"],
+          [2, "B101"],
+          [2, "B307"]
+        ],
+        "actual": {
+          "findings": [
+            [1, "B307"],
+            [2, "B101"],
+            [2, "B307"]
+          ],
+          "nosec": 0,
+          "skipped_tests": 1
+        },
+        "passed": true
+      },
+      {
+        "name": "inline_plus_begin",
+        "provenance": "supplied_review_finding",
+        "expected_findings": [
+          [1, "B307"],
+          [2, "B101"]
+        ],
+        "actual": {
+          "findings": [
+            [1, "B307"],
+            [2, "B101"]
+          ],
+          "nosec": 0,
+          "skipped_tests": 2
+        },
+        "passed": true
+      },
+      {
+        "name": "inline_plus_next-line",
+        "provenance": "supplied_review_finding",
+        "expected_findings": [
+          [1, "B307"],
+          [2, "B101"]
+        ],
+        "actual": {
+          "findings": [
+            [1, "B307"],
+            [2, "B101"]
+          ],
+          "nosec": 0,
+          "skipped_tests": 2
+        },
+        "passed": true
+      },
+      {
+        "name": "file_comment_region_B613",
+        "provenance": "candidate_only_finding_not_supplied",
+        "expected_findings": [],
+        "actual": {
+          "findings": [[2, "B613"]],
+          "nosec": 0,
+          "skipped_tests": 0
+        },
+        "passed": false
+      },
+      {
+        "name": "file_assignment_control_B613",
+        "provenance": "control",
+        "expected_findings": [],
+        "actual": {
+          "findings": [],
+          "nosec": 0,
+          "skipped_tests": 1
+        },
+        "passed": true
+      },
+      {
+        "name": "file_comment_region_",
+        "provenance": "candidate_only_finding_not_supplied",
+        "expected_findings": [],
+        "actual": {
+          "findings": [[2, "B613"]],
+          "nosec": 0,
+          "skipped_tests": 0
+        },
+        "passed": false
+      },
+      {
+        "name": "file_assignment_control_",
+        "provenance": "control",
+        "expected_findings": [],
+        "actual": {
+          "findings": [],
+          "nosec": 1,
+          "skipped_tests": 0
+        },
+        "passed": true
+      }
+    ],
+    "output_sha256": "a3aa4bd0675d112a45b7fc7eb14c2ea65e93814f60643c8e92f41c46839572ed",
+    "network": "none",
+    "repairs_by_operator": 0
+  },
+  "budget": {
+    "new_confirmed_usd": 1.047728,
+    "requests": 66,
+    "new_unknown_usage": 0,
+    "phase_confirmed_usd": 19.005101,
+    "retained_prior_hold_usd": 5.5,
+    "phase_exposure_usd": 24.505101,
+    "phase_cap_usd": 30,
+    "remaining_headroom_usd": 5.494899
+  },
+  "production_prompt_changed": false,
+  "classification": "budget-limited continuation; initial code repair independently approved, second documentation-closeout cycle unfinished; not autonomous delivered success",
+  "stop": {
+    "reason": "Budget guard cannot reserve another request even with every new receipt settled. Stop paid run; preserve exact artifact and classify as budget-limited, not autonomous completion.",
+    "new_run_confirmed_usd": 1.047728,
+    "phase_exposure_usd": 24.505101,
+    "headroom_usd": 5.494899,
+    "required_next_reservation_usd": 5.5,
+    "unknown_new_calls": 0,
+    "operator_action": "SIGINT to the owned Harbor process after capturing committed and working-tree diffs; normal adapter cleanup/export completed.",
+    "actual_provider_rejection_not_required_for_stop": "Stop is established by settled ledger and reserve calculation; no undocumented missing receipt is inferred."
+  },
+  "captured_artifact_grading": {
+    "kind": "separate no-inference replay, not autonomous delivery",
+    "result_sha256": "5cafe0673afe85f2316b17b946fa54ee65d2d0602ed98e15ee123e02b3a8e559",
+    "metadata": {
+      "inference": false,
+      "captured_artifact_sha256": "c0e66b1aad3b6cd203bbae4ece648027d2d842531d0da88ab213119976cc8865",
+      "delivery_claim": false
+    },
+    "grade": {
+      "rewards": {
+        "reward": 0,
+        "f2p_total": 69,
+        "f2p_passed": 67,
+        "p2p_total": 282,
+        "p2p_passed": 280,
+        "f2p": 0.9710144927536232,
+        "p2p": 0.9929078014184397,
+        "partial": 0.9886039886039886
+      }
+    },
+    "starting_grade": {
+      "reward": 0,
+      "f2p_total": 69,
+      "f2p_passed": 67,
+      "p2p_total": 282,
+      "p2p_passed": 280,
+      "f2p": 0.9710144927536232,
+      "p2p": 0.9929078014184397,
+      "partial": 0.9886039886039886
+    },
+    "same_four_failed_check_identifiers": true,
+    "failed_check_comparison_sha256": "cded81783936a045e1594b293bc93f3261d3e589e4d08884a423447550c3ea9e"
+  },
+  "workflow_observations": {
+    "code_cycle": ["design completed", "implementation completed", "review approved"],
+    "manager_reopened_reason": "Explicit commit-everything requirement was not met: three task-created design/validation/review reports remained untracked. Manager requested narrowly scoped documentation closeout through normal flow, without redesigning approved code.",
+    "closeout_cycle": [
+      "design completed",
+      "documentation commit saved",
+      "implement flow step still running at budget stop",
+      "second review not reached"
+    ],
+    "revisions": [
+      {
+        "version": 0,
+        "reason": "Initial flow"
+      },
+      {
+        "version": 4,
+        "reason": "Work stream reopened"
+      }
+    ],
+    "committed_head": "fbbabe9",
+    "initial_code_approval_head": "569ea51",
+    "working_tree_clean_at_stop": true,
+    "task_guidance_from_operator_after_launch": 0,
+    "operator_code_repairs": 0,
+    "operator_termination_for_budget": 1,
+    "owner_waits": 0
+  },
+  "conclusion": {
+    "supplied_findings_fixed": 2,
+    "withheld_finding_fixed": false,
+    "independent_checks_before": "4/9",
+    "independent_checks_after": "7/9",
+    "official_score_improved": false,
+    "production_prompt_changed": false,
+    "interpretation": "Native squad repaired both given findings and independently approved the code. It missed the withheld physical-line plugin defect and did not improve the unchanged official grade. Documentation closeout reopened the full workflow and consumed remaining conservative headroom; final autonomous delivery was not reached. This known-artifact continuation is not a prompt comparison or a fresh benchmark success."
+  }
+}

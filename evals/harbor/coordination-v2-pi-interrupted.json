@@ -1,0 +1,60 @@
+{
+  "experiment": "coordination-v2",
+  "arm": "pi",
+  "status": "provider-overload interruption before implementation; not a correctness result",
+  "execution": {
+    "arm": "pi",
+    "elapsed_seconds": 731.0491415000288,
+    "stop": "Provider failure for coordv2-paid-pi, call 840; stop batch without retry",
+    "exit_code": 130,
+    "usage": {
+      "usd_upper_bound": 11.395131,
+      "requests": 22,
+      "unknown_usage": 2
+    },
+    "phase_exposure_usd": 25.907091,
+    "phase_cap_usd": 30,
+    "historical_phase_excluded": true
+  },
+  "confirmed_arm_usage_usd": 0.395131,
+  "reserved_unreceipted_usd": 11,
+  "confirmed_phase_usage_usd": 14.907091,
+  "phase_reserved_exposure_usd": 25.907091,
+  "failure_evidence": {
+    "native_error": "Our servers are currently overloaded. Please try again later.",
+    "requests": [
+      {
+        "id": 840,
+        "http_status": 200,
+        "failure": "upstream_stream_error",
+        "provider_code": "upstream_stream_error",
+        "reserved_usd": 5.5
+      },
+      {
+        "id": 842,
+        "http_status": 200,
+        "failure": "upstream_stream_error",
+        "provider_code": "upstream_stream_error",
+        "reserved_usd": 5.5
+      }
+    ],
+    "source": "Native Pi stream errors plus proxy ledger. Provider returned HTTP 200 then terminal error events; no usage receipts.",
+    "pi_output_sha256": "f4ee2652ef87af3eec5115b8e58996cdbc4e8e32610c23edacdb80cf76ff0654"
+  },
+  "delivered_commit": "3ebf57a9f6f5f3ab932667aff507e9a77f088a69",
+  "delivered_files": ["ARCHITECTURE.md", "COORDINATION.md", "REQUIREMENTS.md"],
+  "implementation_delivered": false,
+  "external_tests_run": false,
+  "roles_observed": "Architect completed its tool result; two engineer assignments dispatched before provider errors. No reviewer result.",
+  "task_hints_or_operator_candidate_edits": false,
+  "retry_started": false,
+  "artifacts_sha256": {
+    "model.patch": "bad1c157631f0e0ca4fc2592473913340f0e79449d1b55ec052218f7a10071f1",
+    "worktrees.txt": "dc14cbcfac406b09f30a68690d324ad5983107d13f22ce16feb00565eea28e55",
+    "repository.bundle": "65ede68194aec327c424952fb2fa80dcc54f478583f1aadcfdb3c8d7223bb803",
+    "status.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "git-history.txt": "fded453d49793b0a99823402eb3345644b6487049b2d8023e7e890990a1c289b"
+  },
+  "comparison": "No completed matched Pi outcome; do not score this interruption as agent failure or compare correctness/cost against completed Ficus work.",
+  "next_gate": "Reconcile missing usage receipts within authorized $30 cap, then explicitly declare any retry with original attempt retained and no result feedback to candidate."
+}

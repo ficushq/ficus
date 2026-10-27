@@ -1,0 +1,320 @@
+{
+  "experiment": "fresh-feature-v2",
+  "task_slug": "seaborn",
+  "frozen_manifest_sha256": "a319ef92f79b471537c992e2fcfb1d106fb05e0dbffa97ba5fe8891e1e24d4f6",
+  "results": [
+    {
+      "arm": "pi-planned",
+      "reward": {
+        "reward": 0.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "planned",
+        "baseline": "Pi packaged subagent example",
+        "executed_roles": ["architect", "engineer", "reviewer"],
+        "required_roles_executed": true
+      },
+      "total_seconds": 1919.01,
+      "timing_seconds": {
+        "environment_setup": 2.07,
+        "agent_setup": 25.27,
+        "agent_execution": 1865.33,
+        "verifier": 13.98
+      },
+      "requests": 87,
+      "confirmed_cost_usd": 1.626289,
+      "unknown_usage_requests": 0,
+      "tokens": {
+        "input": 2956021,
+        "output": 68027,
+        "cache_read": 2684976,
+        "cache_write": 270784,
+        "reasoning": 9121
+      },
+      "official_test_summaries": ["15 failed, 37 passed, 9 skipped in 6.12s"],
+      "official_input_checks": 2,
+      "artifacts_sha256": {
+        "result.json": "7d4356cf19b9e46450c01c216c0848df7451bdf98251d9b8576043e3b1879b92",
+        "verifier/test-stdout.txt": "9b57e236fbc91f2a32b8a8999038465f42399912d25d174cfb5590e3a01ff31c",
+        "agent/pi.txt": "dcdee6306a9266392d4e3f4ed3bf4958911ed69735833fd9729959b0b9c85b6d",
+        "artifacts/logs/artifacts/submission.tar.gz": "3bb18cd2d652447e497ae4dd4e839ebff051912d1a573a843d4119dbe759d8db"
+      },
+      "operator_interventions": 0,
+      "job_name": "fresh-v2-seaborn-pi-planned",
+      "submission_archive_verified": ["artifacts/logs/artifacts/submission.tar.gz"],
+      "reference_fetch_indicator_counts": {
+        "raw.githubusercontent.com": 380,
+        "git clone": 0,
+        "pip install seaborn": 0,
+        "requests.get": 0,
+        "urllib.request": 186,
+        "curl https": 0,
+        "wget https": 0
+      },
+      "reference_fetch_indicator_interpretation": "All matching contexts inspected: raw.githubusercontent.com occurrences are the existing seaborn-data dataset constant in source reads/edit diffs; urllib.request occurrences are imports in existing utility source/tests. No reference-implementation fetch was identified in these matches. Repeated streaming events inflate counts; this audit does not prove network isolation."
+    },
+    {
+      "arm": "ficus-planned",
+      "reward": {
+        "reward": 0.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "planned",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+        "attempted_roles": ["architect", "engineer", "manager", "reviewer"],
+        "engineer_only_verified": null,
+        "executed_roles": ["architect", "engineer", "manager", "reviewer"]
+      },
+      "total_seconds": 1022.15,
+      "timing_seconds": {
+        "environment_setup": 1.7,
+        "agent_setup": 89.45,
+        "agent_execution": 904.78,
+        "verifier": 13.57
+      },
+      "requests": 75,
+      "confirmed_cost_usd": 1.166069,
+      "unknown_usage_requests": 0,
+      "tokens": {
+        "input": 3260899,
+        "output": 31834,
+        "cache_read": 3043516,
+        "cache_write": 217158,
+        "reasoning": 2897
+      },
+      "official_test_summaries": ["10 failed, 42 passed, 9 skipped, 1 warning in 5.57s"],
+      "official_input_checks": 2,
+      "artifacts_sha256": {
+        "result.json": "846a46094d90848ae6a0620525c626967b0f903210adc90c932a10c4b77b18e0",
+        "verifier/test-stdout.txt": "c569c4d795ed3c1d50941cd5856efa16e5158a76653824e5f69c6245fc45958c",
+        "agent/snapshot.json": "5dd46f36eddc42edf0b3c3fa0b8a0ba97ec5c5a9beec1d56a3554ffd57bbce8c",
+        "agent/messages.json": "70c67e6167f4260a4494848fd9f8f90b7ed8c917332fa800a2118012b349dbaf",
+        "artifacts/logs/artifacts/submission.tar.gz": "5f5cfab2821927a25f51211f067623fc3d77b9d8779724b708a5e36fe7505f7c"
+      },
+      "operator_interventions": 0,
+      "job_name": "fresh-v2-seaborn-recovery-ficus-planned",
+      "flows": [
+        {
+          "status": "completion-ready",
+          "steps": [
+            {
+              "step": "design",
+              "status": "completed"
+            },
+            {
+              "step": "implement",
+              "status": "completed"
+            },
+            {
+              "step": "review",
+              "status": "completed"
+            }
+          ]
+        }
+      ],
+      "streams": ["done"],
+      "human_question_present": false,
+      "execution_statuses": ["completed", "completed", "completed", "completed", "completed", "completed", "completed"],
+      "submission_archive_verified": ["artifacts/logs/artifacts/submission.tar.gz"],
+      "reference_fetch_indicator_counts": {
+        "raw.githubusercontent.com": 0,
+        "git clone": 0,
+        "pip install seaborn": 0,
+        "requests.get": 0,
+        "urllib.request": 4,
+        "curl https": 0,
+        "wget https": 0
+      },
+      "reference_fetch_indicator_interpretation": "All matching contexts inspected: raw.githubusercontent.com occurrences are the existing seaborn-data dataset constant in source reads/edit diffs; urllib.request occurrences are imports in existing utility source/tests. No reference-implementation fetch was identified in these matches. Repeated streaming events inflate counts; this audit does not prove network isolation."
+    },
+    {
+      "arm": "pi-engineer",
+      "reward": {
+        "reward": 0.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "engineer",
+        "baseline": "Pi single session"
+      },
+      "total_seconds": 525.83,
+      "timing_seconds": {
+        "environment_setup": 3.12,
+        "agent_setup": 15.74,
+        "agent_execution": 479.94,
+        "verifier": 14.99
+      },
+      "requests": 40,
+      "confirmed_cost_usd": 0.345703,
+      "unknown_usage_requests": 0,
+      "tokens": {
+        "input": 985372,
+        "output": 15380,
+        "cache_read": 946453,
+        "cache_write": 38799,
+        "reasoning": 3696
+      },
+      "official_test_summaries": ["8 failed, 44 passed, 9 skipped in 5.83s"],
+      "official_input_checks": 2,
+      "artifacts_sha256": {
+        "result.json": "a40e0742cab0c095b6c96dcdabfca5bdcf2605ec3b201f4893d9cd7126a8f05d",
+        "verifier/test-stdout.txt": "1bfaa8ccfff985fa6d4fe8718bdd586dec8b033b996e97f9f0ca9dd93ed79a84",
+        "agent/pi.txt": "368ab4eb3d2f6d7dfc7bdc816ce904053bc55edc350c53cfa012e16fcb87cf28",
+        "artifacts/logs/artifacts/submission.tar.gz": "14af0eda0091f710d992d0beb6449b7b66b8b3de815c87a6c30ea2034e7c5080"
+      },
+      "operator_interventions": 0,
+      "job_name": "fresh-v2-seaborn-recovery-pi-engineer",
+      "submission_archive_verified": ["artifacts/logs/artifacts/submission.tar.gz"],
+      "reference_fetch_indicator_counts": {
+        "raw.githubusercontent.com": 20,
+        "git clone": 0,
+        "pip install seaborn": 0,
+        "requests.get": 0,
+        "urllib.request": 0,
+        "curl https": 0,
+        "wget https": 0
+      },
+      "reference_fetch_indicator_interpretation": "All matching contexts inspected: raw.githubusercontent.com occurrences are the existing seaborn-data dataset constant in source reads/edit diffs; urllib.request occurrences are imports in existing utility source/tests. No reference-implementation fetch was identified in these matches. Repeated streaming events inflate counts; this audit does not prove network isolation."
+    },
+    {
+      "arm": "ficus-engineer",
+      "reward": {
+        "reward": 0.0
+      },
+      "exception": null,
+      "agent_metadata": {
+        "configuration": "engineer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "0320df3cb5012c0b4e178ca0b5212fe7b28df41796d58d78527ebd0fe7efaea2",
+        "attempted_roles": ["engineer"],
+        "engineer_only_verified": true,
+        "executed_roles": ["engineer"]
+      },
+      "total_seconds": 537.03,
+      "timing_seconds": {
+        "environment_setup": 1.84,
+        "agent_setup": 59.74,
+        "agent_execution": 446.74,
+        "verifier": 15.92
+      },
+      "requests": 34,
+      "confirmed_cost_usd": 0.507631,
+      "unknown_usage_requests": 0,
+      "tokens": {
+        "input": 1848014,
+        "output": 14377,
+        "cache_read": 1773391,
+        "cache_write": 74521,
+        "reasoning": 1693
+      },
+      "official_test_summaries": ["9 failed, 43 passed, 9 skipped in 5.62s"],
+      "official_input_checks": 2,
+      "artifacts_sha256": {
+        "result.json": "540402d8374313b44b5576cfe5dd39c1a495241920c282cc49da2b3ceebf8377",
+        "verifier/test-stdout.txt": "bd9a244dae9edb74efe827113e6cb8a3397536c323e09510cfb38dc43fa38b7b",
+        "agent/snapshot.json": "726ea7ce1c8c993371187dc83343321fbfbdbc8f9dc509d8ba3c686c7b51a162",
+        "agent/messages.json": "b25166b5aeb22e249cd5020b92e8e859a0ebc33c50feeccd868bc6d1ac170daa",
+        "artifacts/logs/artifacts/submission.tar.gz": "6245dbc5253af490f5d84bfdd0b94be9dc44f49f0a3f427dcc4fbdf4977cdfe9"
+      },
+      "operator_interventions": 0,
+      "job_name": "fresh-v2-seaborn-recovery-ficus-engineer",
+      "flows": [
+        {
+          "status": "completion-ready",
+          "steps": [
+            {
+              "step": "execute",
+              "status": "completed"
+            }
+          ]
+        }
+      ],
+      "streams": ["done"],
+      "human_question_present": false,
+      "execution_statuses": ["completed"],
+      "submission_archive_verified": ["artifacts/logs/artifacts/submission.tar.gz"],
+      "reference_fetch_indicator_counts": {
+        "raw.githubusercontent.com": 4,
+        "git clone": 0,
+        "pip install seaborn": 0,
+        "requests.get": 0,
+        "urllib.request": 2,
+        "curl https": 0,
+        "wget https": 0
+      },
+      "reference_fetch_indicator_interpretation": "All matching contexts inspected: raw.githubusercontent.com occurrences are the existing seaborn-data dataset constant in source reads/edit diffs; urllib.request occurrences are imports in existing utility source/tests. No reference-implementation fetch was identified in these matches. Repeated streaming events inflate counts; this audit does not prove network isolation."
+    }
+  ],
+  "complete_matched_comparison": true,
+  "cumulative_exposure_usd": 25.993347,
+  "cap_usd": 50,
+  "fresh_confirmed_usd": 3.645692,
+  "preserved_partial_snapshot_sha256": "6aa1098aff298505bacbdb72a15f6eef67149b99dab0d6c9dabab42f1142281b",
+  "recovery_manifest_sha256": "3ddd11694317abfc339e639d59ba6e864e1614dac5afe86638d351332df8268e",
+  "infrastructure_attempts": [
+    {
+      "arm": "ficus-planned",
+      "reward": null,
+      "exception": {
+        "exception_type": "RuntimeError",
+        "stage": "environment_setup",
+        "reason": "Frozen local sanitized Docker image was missing; registry lookup failed before agent setup or inference.",
+        "occurred_at": "2026-10-20T18:02:01.894598Z"
+      },
+      "agent_metadata": null,
+      "total_seconds": 1.53,
+      "timing_seconds": {
+        "environment_setup": 0.76,
+        "agent_setup": null,
+        "agent_execution": null,
+        "verifier": null
+      },
+      "requests": 0,
+      "confirmed_cost_usd": 0.0,
+      "unknown_usage_requests": 0,
+      "tokens": {
+        "input": 0,
+        "output": 0,
+        "cache_read": 0,
+        "cache_write": 0,
+        "reasoning": 0
+      },
+      "official_test_summaries": [],
+      "official_input_checks": 0,
+      "artifacts_sha256": {
+        "result.json": "37ff4b1c0ae7e074f07430c9ef57ca799bf585274a818622dfe26985dfb35543"
+      },
+      "operator_interventions": 0
+    }
+  ],
+  "no_operator_steering": true,
+  "completed_pi_squad_rerun": false,
+  "limitations": [
+    "Small restricted convenience sample from pinned legacy Harbor FeatureBench snapshot",
+    "One model attempt per arm; no confidence intervals",
+    "Shared arm64 Mac with Linux amd64 emulation",
+    "Ficus has an additional uncapped PostgreSQL sidecar",
+    "Sanitized environment reconstructed between Pi squad and remaining arms; original task image and masked source tree verified, frozen grader fixtures byte-identical",
+    "Original PostgreSQL sidecar tag was not digest-pinned; recovery digest recorded separately",
+    "Trace indicator scan is not proof of network isolation",
+    "No causal prompt-fix claim"
+  ],
+  "failure_interpretation": {
+    "common": "All four arms fail eight tests requiring the plotter .data attribute.",
+    "pi-planned": "Additional failures concern retaining pandas Series, missing optional-dependency messages, and scatter alpha.",
+    "ficus-planned": "Additional failures concern scatter alpha and warning category in lmplot sharey.",
+    "pi-engineer": "Only the eight .data compatibility failures.",
+    "ficus-engineer": "The eight .data failures plus scatter alpha.",
+    "task_contract_caveat": "The written establish_variables interface describes setattr storage and conversion to numpy, but does not explicitly specify .data. Official failures and rewards remain unchanged; no task exclusion or regrading.",
+    "review_caveat": "Ficus squad reviewer reported 276 passing selected tests, seven skips and one unrelated failure, then approved. That validation did not establish hidden compatibility. Workflow delivery is not benchmark acceptance."
+  }
+}

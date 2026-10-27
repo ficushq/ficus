@@ -1,0 +1,161 @@
+{
+  "image_tag": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh71b98xenay7p45357036xq5x82tcdf-v1.1",
+  "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605@sha256:b72e57fe02f96beaa8c06cf17ba25b86e64cc7ff1b9b829ef79602aef38ec9d2",
+  "image_id": "sha256:26e552903680da2450c58140fb0980272b20547cfed71ea19b7cb4bf2a8ea80d",
+  "base_commit": "72ebef44b8e024d877250f055eea60cdfaa4506",
+  "upstream_file_sha256": {
+    "environment/Dockerfile": "8a11212a1821f0ff49fa083f7913e17f9010bd28f351378e15b13b305e4d208c",
+    "instruction.md": "e725648c0a8d0d84d50ad33749127cdca35f16d2921253b10d833ee559cbc671",
+    "solution/solution.patch": "a17b91ad3f691077c38648eb892893f6568c706461f562c09087c9014739d40f",
+    "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+    "task.toml": "11444ab835894c82a89dce7232632d74cc2ec15cc23047c045dfb931b22d50b1",
+    "tests/Dockerfile": "ded3cd6d20197b3fdb02feef7c0fe152b10e810f4e1e4990ea526bee19a0d5a5",
+    "tests/config.json": "3788792b28af8d62644d86a8b42303890ae3fc5f53a071ebd8f0087f96ba7e8e",
+    "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+    "tests/test.patch": "1d5430d25fd8fbb9c4641559dc2e9d1b114108502379e143648f1796c2526f9f",
+    "tests/test.sh": "32c881672c2b74e20e0fc309dcdbdb67ac3a50eabf62c3e0cf3cf80ee1df7cfd"
+  },
+  "prepared_file_sha256": {
+    "environment/Dockerfile": "8a11212a1821f0ff49fa083f7913e17f9010bd28f351378e15b13b305e4d208c",
+    "instruction.md": "e725648c0a8d0d84d50ad33749127cdca35f16d2921253b10d833ee559cbc671",
+    "solution/solution.patch": "a17b91ad3f691077c38648eb892893f6568c706461f562c09087c9014739d40f",
+    "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+    "task.toml": "8425a9e85e354db047f1e5fa72b48943d4ce345b576a4756b22d7c5d68099be4",
+    "tests/Dockerfile": "92cc3232c01773225d2d3535a59be40441aabd7819666228abdc2792ccde8e9f",
+    "tests/config.json": "3788792b28af8d62644d86a8b42303890ae3fc5f53a071ebd8f0087f96ba7e8e",
+    "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+    "tests/test.patch": "1d5430d25fd8fbb9c4641559dc2e9d1b114108502379e143648f1796c2526f9f",
+    "tests/test.sh": "32c881672c2b74e20e0fc309dcdbdb67ac3a50eabf62c3e0cf3cf80ee1df7cfd"
+  },
+  "changes": "Pin digest and explicit verifier architecture only; no task, source, hidden-test, or grading changes",
+  "f2p_total": 84,
+  "p2p_total": 47,
+  "experiment": "fresh-matched-v1",
+  "controls": [
+    {
+      "job": "fmv1-control-nop",
+      "result_sha256": "206290951d3d3320f61b3c993505513dd411be451c34a1105a2d19228fb00a8b",
+      "rewards": {
+        "reward": 0,
+        "f2p_total": 84,
+        "f2p_passed": 0,
+        "p2p_total": 47,
+        "p2p_passed": 47,
+        "f2p": 0.0,
+        "p2p": 1.0,
+        "partial": 0.35877862595419846
+      }
+    },
+    {
+      "job": "fmv1-control-oracle",
+      "result_sha256": "d158300fa1d3579e2bbe1e09878330d72dc4756b9b424a16a0bb0a448aed10c2",
+      "rewards": {
+        "reward": 1,
+        "f2p_total": 84,
+        "f2p_passed": 84,
+        "p2p_total": 47,
+        "p2p_passed": 47,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      }
+    },
+    {
+      "job": "fmv1-collision-nop",
+      "result_sha256": "d4d8f923d7c3189e82302daa01facca703a0f25727b3fd228113a8de0483a1a3",
+      "rewards": {
+        "reward": 0,
+        "f2p_total": 84,
+        "f2p_passed": 0,
+        "p2p_total": 47,
+        "p2p_passed": 47,
+        "f2p": 0.0,
+        "p2p": 1.0,
+        "partial": 0.35877862595419846
+      }
+    },
+    {
+      "job": "fmv1-collision-oracle",
+      "result_sha256": "88445808c50147c6b9d57f2998385b14461c79d66c23bc06b0a2a31430abc40e",
+      "rewards": {
+        "reward": 1,
+        "f2p_total": 84,
+        "f2p_passed": 84,
+        "p2p_total": 47,
+        "p2p_passed": 47,
+        "f2p": 1.0,
+        "p2p": 1.0,
+        "partial": 1.0
+      }
+    }
+  ],
+  "probes": [
+    {
+      "harness": "ficus",
+      "result_sha256": "cc521144e1ddafdacb8519ce9f1c75e8db0c0f2ad9d0ab1afc2b5751bbd18818",
+      "checks": {
+        "database_loopback": true,
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "ficus_api_ready": true,
+        "ficus_worker_ready": true,
+        "native_provider_preload": true
+      }
+    },
+    {
+      "harness": "pi",
+      "result_sha256": "1209d5af57beb5a54e13581df20ac936d883398043ffba5b4633671f0c045623",
+      "checks": {
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "pinned_pi_and_subagent_extension": true
+      }
+    }
+  ],
+  "runtime_archive_sha256": "68c8a5e3263b54639562f259aaa149ae18c61770442a85b4da1d599fb2476ba0",
+  "runtime_provenance": "artifact-repair-v2-runtime.json",
+  "runner_source_sha256": {
+    "evals/harbor/artifact-repair-v1-check.py": "649cca0f7d64e0ec43e2c3ca02a749d87071b8358fe1cd8ff62ec831393741e2",
+    "evals/harbor/artifact-repair-v2-file-line-diagnostic.py": "179ef751a3730f43a5d7ec7d11337711f360bb001f264fab255582c3ea529431",
+    "evals/harbor/artifact-repair-v2-posthoc-check.py": "a23d6644e6f1d8c4d4f67dabaf1d8710de5d9f21ff5082ef0541e84ebe4802a9",
+    "evals/harbor/artifact-review-v1-reproduce.py": "f94af36cbed3e90fe3c413ee746c05a421aca4ab66ab3dcae2aa2fce9f725625",
+    "evals/harbor/artifact-review-v2-reproduce.py": "4e550ed207809ba461f2bce081413f32f18fc488d5c3239688e7333992a0a6b6",
+    "evals/harbor/artifact-review-v3-reproduce.py": "3d32a28cf07494e7af17b16cc9178171ff0e6ee83a0a5e46bdc0c58e6d03eea6",
+    "evals/harbor/artifact-review-v4-reproduce.py": "b8f756da12ed93dbea4740d5f48ccf8d74edfd5176749a3c8e8540afe9bef717",
+    "evals/harbor/artifact-review-v5-reproduce.py": "dd29de8e419caed2e5d7458b934e9b856d09a0c027b4ef4b320181b65303f058",
+    "evals/harbor/artifact_reviewer.py": "5ac34ea3d9d876f43c64bff824e6e0d60b305de0c358cca28c952955ed4f1146",
+    "evals/harbor/budget_proxy.py": "e3d3deb1342d8963949fe9ac3a2ec2a271b18cbdaca83901df126efd00c36648",
+    "evals/harbor/build-runtime.py": "b57d4b106c69035d89744a16eaf28ab02d71356a72333a75679cb43bc795f4b5",
+    "evals/harbor/deepswe_controls.py": "ace9563bfca88dbe4db3ed5281e6b49fc1a41aa176c0c0458f056a5f4c432c53",
+    "evals/harbor/deepswe_network_smoke.py": "3c7e174a38a98ed8655512b9bf734d3e8294e0e81557f74e18d27552f1b3220c",
+    "evals/harbor/ficus_agent.py": "f67327611df981199a540714e81bae9c9c15e6cb3d8fd09fa738da6c2999ece7",
+    "evals/harbor/pi_workflow.py": "00712cabe8eebbd571c7ef438b357c019bb9735492ff8bfb29a870d3ed2c03e3",
+    "evals/harbor/prepare_artifact_repair_v2.py": "2654b0dbb530c34825a6786715a03c3b0655202a17defb4007447ce3a6fd473f",
+    "evals/harbor/prepare_featurebench.py": "a111cfdf682c0f1f78df17a663bb419c133d66225f5b6802e313d586f87a0569",
+    "evals/harbor/replay_artifact.py": "14d9f8ad5a4e61902974ace3e61eb5e5eb13928c71119ef27943d0a6d1ece6ee",
+    "evals/harbor/run-pilot.py": "8b5628b265eaef5a14becb72fe63d6f723d717d2d4d91cf1dac07c48fe9477a7",
+    "evals/harbor/run_concurrent_feature.py": "48af6ab7e74bb0b3556dc41ba287d2e38d3b882ebe3f1ca9d7f94e63021b869e",
+    "evals/harbor/summarize_long_feature.py": "91a5518ee5376cf3236de750cba2a12c43da803ef6984704d4cf709db21a144c",
+    "evals/harbor/test_adapter.py": "65e7c44b0293794c60fd65a3582d36708abe52f40290e18de589d3a7e1dfb27c",
+    "evals/harbor/test_artifact_reviewer.py": "1d7491c138fcd39590d77a177c002fa1901cdd213f2c14b1c8b4141fe4b17aa0",
+    "evals/harbor/test_concurrent_feature.py": "e6a5adcdd78ec6d7b01f5656d2b151d893320d6f0e585adbc853af7879a5e064",
+    "evals/harbor/test_deepswe_controls.py": "03de3d691d521ece8e30ed99d3b32a6454a6d0551e4d43cc3f0e3c2620118af7",
+    "evals/harbor/test_deepswe_smoke.py": "f58954026829315d3e469cd8aac1258cfb105f731109d9e276642594d94f40cd",
+    "evals/harbor/test_featurebench.py": "e1fd8a720cdb88f3f45cbbfbb47c650aa6a735bac6e04e1d73a2249200c4bd15",
+    "evals/harbor/test_long_feature.py": "96631c7f1c3777c05e4058ab03d2930761f7de8f4caeb0e69d61da621bc404b6",
+    "evals/harbor/test_pi_workflow.py": "2fb3fe0cdc72993fd9c578d70f57dca55e2e6eac6bda409d7bde97b2bc87d822",
+    "evals/harbor/test_responses.py": "4986f40db3f8c61da65c709d8411149e46c352e1cdd5f1fd49eb017f44aeef93",
+    "evals/harbor/verify_featurebench.py": "5d126b510f32a583684c04883d41782ef8f8ae8cd2fa1c58f24835539eebe712"
+  },
+  "private_launcher_sha256": "d3fb995ccf7f246830d6ff13677f40aa854d76612d71e21207974d639066a70e",
+  "plan_sha256": "1ab9a6f7f349d41b24342fb67dcddf39529408b89136fbfee7a7f5dbbb1bf970",
+  "all_gates_passed": true,
+  "inference_started": false,
+  "budget": {
+    "phase_cap_usd": 35,
+    "opening_exposure_usd": 26.17587,
+    "shared_segment_cap_usd": 15.772395,
+    "historical_hold_usd": 5.5
+  },
+  "offline_validation": "70 Python adapter checks passed; format, Ruff and repository typecheck passed"
+}

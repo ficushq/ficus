@@ -1,0 +1,578 @@
+{
+  "experiment": "fresh-matched-v1",
+  "task": "koota-entity-snapshot-rollback",
+  "arms": [
+    {
+      "arm": "ficus-engineer",
+      "state": "completed",
+      "cost": {
+        "usd_upper_bound": 0.622898,
+        "requests": 36,
+        "unknown_usage": 0,
+        "confirmed_usd": 0.622898,
+        "unresolved_hold_usd": 0.0
+      },
+      "trial": "task__KmRe8hF",
+      "result_sha256": "937a4c5d1789edde1ac62a27ec3f863f4c151a25bc9d6bf8a5ec7ba9c02ea06a",
+      "grade": {
+        "rewards": {
+          "reward": 0,
+          "f2p_total": 84,
+          "f2p_passed": 83,
+          "p2p_total": 47,
+          "p2p_passed": 47,
+          "f2p": 0.9880952380952381,
+          "p2p": 1.0,
+          "partial": 0.9923664122137404
+        }
+      },
+      "exception": null,
+      "metadata": {
+        "configuration": "engineer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "68c8a5e3263b54639562f259aaa149ae18c61770442a85b4da1d599fb2476ba0",
+        "database_network": "task",
+        "attempted_roles": ["engineer"],
+        "engineer_only_verified": true,
+        "executed_roles": ["engineer"]
+      },
+      "elapsed_seconds": 578.388,
+      "timing": {
+        "environment_setup": 2.607,
+        "agent_setup": 54.282,
+        "agent_execution": 483.135,
+        "verifier": 26.181
+      },
+      "patch_sha256": "cef1ffee260db801eb94416cedbaa7c4fd62c1df4de3b27d2eb1c9678a8d68e2",
+      "failed_tests": [
+        {
+          "category": "feature",
+          "name": "tests/snapshot.test.ts: Entity Snapshot & Rollback > roundtrip and integration > snapshot-rollback-snapshot roundtrip produces identical world diff",
+          "message": "Koota: Invalid or duplicate checkpoint entity ID 1."
+        }
+      ],
+      "native_execution": [
+        {
+          "role": "engineer",
+          "status": "completed"
+        }
+      ],
+      "flow_attempts": [
+        {
+          "step": "execute",
+          "status": "completed",
+          "outcome": "completed",
+          "revision": 0
+        }
+      ],
+      "wait_count": 0,
+      "pending_message_count": 0,
+      "launcher": {
+        "arm": "ficus-engineer",
+        "elapsed_seconds": 581.6202461250359,
+        "stop": null,
+        "exit_code": 0,
+        "usage": {
+          "usd_upper_bound": 0.622898,
+          "requests": 36,
+          "unknown_usage": 0
+        },
+        "phase_exposure_usd": 26.798768
+      },
+      "task_hints_from_operator": 0
+    },
+    {
+      "arm": "pi-engineer",
+      "state": "completed",
+      "cost": {
+        "usd_upper_bound": 0.375447,
+        "requests": 31,
+        "unknown_usage": 0,
+        "confirmed_usd": 0.375447,
+        "unresolved_hold_usd": 0.0
+      },
+      "trial": "task__NdDrWnU",
+      "result_sha256": "ed4abab428fcca37ed99c206ce9e4c083761efb3f000aea2dc1866ac57e71403",
+      "grade": {
+        "rewards": {
+          "reward": 0,
+          "f2p_total": 84,
+          "f2p_passed": 83,
+          "p2p_total": 47,
+          "p2p_passed": 47,
+          "f2p": 0.9880952380952381,
+          "p2p": 1.0,
+          "partial": 0.9923664122137404
+        }
+      },
+      "exception": null,
+      "metadata": {
+        "configuration": "engineer",
+        "baseline": "Pi single session"
+      },
+      "elapsed_seconds": 339.162,
+      "timing": {
+        "environment_setup": 2.635,
+        "agent_setup": 18.135,
+        "agent_execution": 280.774,
+        "verifier": 26.115
+      },
+      "patch_sha256": "e277da85e194863a72594edba9cf4066d95eceacb224d9659f2f662a5667937c",
+      "failed_tests": [
+        {
+          "category": "feature",
+          "name": "tests/snapshot.test.ts: Entity Snapshot & Rollback > roundtrip and integration > snapshot-rollback-snapshot roundtrip produces identical world diff",
+          "message": "Koota: Invalid or duplicate snapshot entity ID 1."
+        }
+      ],
+      "launcher": {
+        "arm": "pi-engineer",
+        "elapsed_seconds": 341.6044907079777,
+        "stop": null,
+        "exit_code": 0,
+        "usage": {
+          "usd_upper_bound": 0.375447,
+          "requests": 31,
+          "unknown_usage": 0
+        },
+        "phase_exposure_usd": 27.174215
+      },
+      "task_hints_from_operator": 0
+    },
+    {
+      "arm": "pi-planned",
+      "state": "completed",
+      "cost": {
+        "usd_upper_bound": 1.5042,
+        "requests": 140,
+        "unknown_usage": 0,
+        "confirmed_usd": 1.5042,
+        "unresolved_hold_usd": 0.0
+      },
+      "trial": "task__ikKhMxH",
+      "result_sha256": "333f25021358f85c2a1e1cbd66ac820cd4c9747549351f0d58066bb05da53c24",
+      "grade": {
+        "rewards": {
+          "reward": 0,
+          "f2p_total": 84,
+          "f2p_passed": 83,
+          "p2p_total": 47,
+          "p2p_passed": 47,
+          "f2p": 0.9880952380952381,
+          "p2p": 1.0,
+          "partial": 0.9923664122137404
+        }
+      },
+      "exception": null,
+      "metadata": {
+        "configuration": "planned",
+        "baseline": "Pi packaged subagent example",
+        "executed_roles": ["architect", "engineer", "reviewer"],
+        "required_roles_executed": true
+      },
+      "elapsed_seconds": 1328.528,
+      "timing": {
+        "environment_setup": 2.632,
+        "agent_setup": 18.734,
+        "agent_execution": 1268.803,
+        "verifier": 26.55
+      },
+      "patch_sha256": "cb061d6c184d019a87a59a6f57490a02283e823ac1c6b776e35d8c0631e1dc4e",
+      "failed_tests": [
+        {
+          "category": "feature",
+          "name": "tests/snapshot.test.ts: Entity Snapshot & Rollback > roundtrip and integration > snapshot-rollback-snapshot roundtrip produces identical world diff",
+          "message": "Koota: Snapshot entity belongs to a different world."
+        }
+      ],
+      "launcher": {
+        "arm": "pi-planned",
+        "elapsed_seconds": 1331.7056273749913,
+        "stop": null,
+        "exit_code": 0,
+        "usage": {
+          "usd_upper_bound": 1.5042,
+          "requests": 140,
+          "unknown_usage": 0
+        },
+        "phase_exposure_usd": 28.678415
+      },
+      "task_hints_from_operator": 0,
+      "native_subagent_returns": [
+        {
+          "role": "architect",
+          "exit_code": 0,
+          "turns": 10
+        },
+        {
+          "role": "engineer",
+          "exit_code": 0,
+          "turns": 56
+        },
+        {
+          "role": "reviewer",
+          "exit_code": 0,
+          "turns": 20
+        },
+        {
+          "role": "engineer",
+          "exit_code": 0,
+          "turns": 35
+        },
+        {
+          "role": "reviewer",
+          "exit_code": 0,
+          "turns": 13
+        }
+      ],
+      "review_cycle": "changes requested, engineer repair, re-review approved"
+    },
+    {
+      "arm": "ficus-planned",
+      "state": "budget-interrupted",
+      "cost": {
+        "usd_upper_bound": 0.840887,
+        "requests": 43,
+        "unknown_usage": 0,
+        "confirmed_usd": 0.840887,
+        "unresolved_hold_usd": 0.0
+      },
+      "trial": "task__43V2XEM",
+      "result_sha256": "1e60a3e26974de1bf7459e6742fc33a163e14377e7de183f5e77b599abc6815a",
+      "grade": null,
+      "exception": {
+        "exception_type": "CancelledError",
+        "exception_message": "",
+        "occurred_at": "2026-10-26T22:19:23.675817Z"
+      },
+      "metadata": {
+        "configuration": "planned",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "interrupted",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "68c8a5e3263b54639562f259aaa149ae18c61770442a85b4da1d599fb2476ba0",
+        "database_network": "task",
+        "attempted_roles": ["architect", "engineer", "manager"],
+        "engineer_only_verified": null,
+        "executed_roles": ["architect", "manager"]
+      },
+      "elapsed_seconds": 690.35,
+      "timing": {
+        "environment_setup": 2.67,
+        "agent_setup": 55.343,
+        "agent_execution": 619.982,
+        "verifier": null
+      },
+      "patch_sha256": "cf80acdb41ff44fa4134b43344d7fe1a0c9cdf80f99cbe63449c01702d8101b7",
+      "failed_tests": [],
+      "native_execution": [
+        {
+          "role": "manager",
+          "status": "completed"
+        },
+        {
+          "role": "architect",
+          "status": "completed"
+        },
+        {
+          "role": "engineer",
+          "status": "failed"
+        }
+      ],
+      "flow_attempts": [
+        {
+          "step": "design",
+          "status": "completed",
+          "outcome": "completed",
+          "revision": 0
+        },
+        {
+          "step": "implement",
+          "status": "running",
+          "outcome": null,
+          "revision": 0
+        }
+      ],
+      "wait_count": 0,
+      "pending_message_count": 0,
+      "launcher": {
+        "arm": "ficus-planned",
+        "elapsed_seconds": 693.5336909170146,
+        "stop": "Local budget rejection for fmv1-ficus-planned, event 3",
+        "exit_code": 130,
+        "usage": {
+          "usd_upper_bound": 0.840887,
+          "requests": 43,
+          "unknown_usage": 0
+        },
+        "phase_exposure_usd": 29.519302
+      },
+      "task_hints_from_operator": 0
+    },
+    {
+      "arm": "ficus-planned-recovery-1",
+      "state": "provider-interrupted",
+      "cost": {
+        "usd_upper_bound": 6.186088,
+        "requests": 38,
+        "unknown_usage": 1,
+        "confirmed_usd": 0.686088,
+        "unresolved_hold_usd": 5.5
+      },
+      "trial": "task__Sy8KigJ",
+      "result_sha256": "abae0820573444e667b5084807e027fc28088551614df0dbca428c945ec13e41",
+      "grade": null,
+      "exception": {
+        "exception_type": "CancelledError",
+        "exception_message": "",
+        "occurred_at": "2026-10-26T22:34:46.503384Z"
+      },
+      "metadata": {
+        "configuration": "planned",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "interrupted",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "68c8a5e3263b54639562f259aaa149ae18c61770442a85b4da1d599fb2476ba0",
+        "database_network": "task",
+        "attempted_roles": ["architect", "engineer", "manager"],
+        "engineer_only_verified": null,
+        "executed_roles": ["architect", "manager"]
+      },
+      "elapsed_seconds": 513.403,
+      "timing": {
+        "environment_setup": 2.705,
+        "agent_setup": 56.117,
+        "agent_execution": 442.112,
+        "verifier": null
+      },
+      "patch_sha256": "cc786b341edb0574bf31bcf8cec606bda2fcb082597896e6cc5cd49bc37d1202",
+      "failed_tests": [],
+      "native_execution": [
+        {
+          "role": "manager",
+          "status": "completed"
+        },
+        {
+          "role": "architect",
+          "status": "completed"
+        },
+        {
+          "role": "engineer",
+          "status": "queued"
+        }
+      ],
+      "flow_attempts": [
+        {
+          "step": "design",
+          "status": "completed",
+          "outcome": "completed",
+          "revision": 0
+        },
+        {
+          "step": "implement",
+          "status": "running",
+          "outcome": null,
+          "revision": 0
+        }
+      ],
+      "wait_count": 0,
+      "pending_message_count": 0,
+      "launcher": {
+        "arm": "ficus-planned",
+        "elapsed_seconds": 537.9790378750185,
+        "stop": "Provider failure for fmv1-ficus-planned-recovery-1, call 755; stop batch without retry",
+        "exit_code": 130,
+        "usage": {
+          "usd_upper_bound": 6.186088,
+          "requests": 38,
+          "unknown_usage": 1
+        },
+        "phase_exposure_usd": 35.70539
+      },
+      "task_hints_from_operator": 0
+    }
+  ],
+  "budget": {
+    "cap_usd": 40,
+    "confirmed_usd": 24.70539,
+    "historical_hold_usd": 5.5,
+    "new_unresolved_requests": 1,
+    "exposure_usd": 35.70539,
+    "remaining_usd": 4.29461,
+    "rejections": [
+      {
+        "client": "fmv1-ficus-planned",
+        "reason": "Pilot spend cap reached",
+        "time": "2026-10-26T22:19:16.241501+00:00"
+      }
+    ],
+    "unresolved_calls": [
+      {
+        "id": 755,
+        "client": "fmv1-ficus-planned-recovery-1",
+        "http_status": 200,
+        "failure": "upstream_stream_error",
+        "provider_code": "upstream_stream_error",
+        "hold_usd": 5.5
+      }
+    ]
+  },
+  "frozen_readiness_sha256": "91d758b7f66b903d985b1a6d7610c28761446b023c1983e7f5dd51c66d8a5620",
+  "budget_amendment_sha256": "85d95fd159b935e21ed6167a245a81be91bba79f320052b9cdb0ba285f46e9ab",
+  "comparison_limit": "Three completed first attempts; original Ficus squad budget-interrupted and repeated only after explicit cap increase. Retain both attempts and their costs; no claim of four uninterrupted first attempts.",
+  "replays": [
+    {
+      "job": "fmv1-ficus-planned-saved-replay",
+      "result_sha256": "c561c17fb4bfa937592f9e05d0f26ba2ea68812f48fa1bd01a701d75804b672c",
+      "grade": {
+        "rewards": {
+          "reward": 0,
+          "f2p_total": 84,
+          "f2p_passed": 83,
+          "p2p_total": 47,
+          "p2p_passed": 47,
+          "f2p": 0.9880952380952381,
+          "p2p": 1.0,
+          "partial": 0.9923664122137404
+        }
+      },
+      "metadata": {
+        "inference": false,
+        "captured_artifact_sha256": "cf80acdb41ff44fa4134b43344d7fe1a0c9cdf80f99cbe63449c01702d8101b7",
+        "delivery_claim": false
+      },
+      "failed_tests": [
+        {
+          "category": "feature",
+          "name": "tests/snapshot.test.ts: Entity Snapshot & Rollback > roundtrip and integration > snapshot-rollback-snapshot roundtrip produces identical world diff",
+          "message": "Invalid checkpoint entity ID: 1"
+        }
+      ],
+      "inference_usd": 0,
+      "delivery_claim": false
+    },
+    {
+      "job": "fmv1-pi-planned-before-review-replay",
+      "result_sha256": "e6599b4abe96c64722b71c61393406ad0cc095cbc9235a65d9edde7eff214eb5",
+      "grade": {
+        "rewards": {
+          "reward": 0,
+          "f2p_total": 84,
+          "f2p_passed": 83,
+          "p2p_total": 47,
+          "p2p_passed": 47,
+          "f2p": 0.9880952380952381,
+          "p2p": 1.0,
+          "partial": 0.9923664122137404
+        }
+      },
+      "metadata": {
+        "inference": false,
+        "captured_artifact_sha256": "f84053f83f288a9ee00a6136beb16af87c7072729a2a405db2f3d67c18b8fd05",
+        "delivery_claim": false
+      },
+      "failed_tests": [
+        {
+          "category": "feature",
+          "name": "tests/snapshot.test.ts: Entity Snapshot & Rollback > roundtrip and integration > snapshot-rollback-snapshot roundtrip produces identical world diff",
+          "message": "Koota: Snapshot entity belongs to a different world."
+        }
+      ],
+      "inference_usd": 0,
+      "delivery_claim": false
+    }
+  ],
+  "allocator_audit": {
+    "kind": "Operator-only post-hoc reproduction; not official scoring or agent input",
+    "inputs": {
+      "kind": "Post-hoc operator-only review verification, never an agent input or official score",
+      "image": "public.ecr.aws/d3j8x8q7/swe-bench-202605@sha256:b72e57fe02f96beaa8c06cf17ba25b86e64cc7ff1b9b829ef79602aef38ec9d2",
+      "sha256": {
+        "after.patch": "cb061d6c184d019a87a59a6f57490a02283e823ac1c6b776e35d8c0631e1dc4e",
+        "before.patch": "f84053f83f288a9ee00a6136beb16af87c7072729a2a405db2f3d67c18b8fd05",
+        "check.cjs": "46c26d4223516dcdf6f4966382c126733e0ddb0204b8c700756e3b2b9b563ee2",
+        "run-audit.sh": "48e54886bbb4ae40da1ea405fe152ebca414d70e7cf8ef1610918154ddcca96c"
+      }
+    },
+    "results": {
+      "before": {
+        "runtime": "NODE_VERSION=v24.12.0",
+        "output_sha256": "90c5bfc8213475abaad90c46ba6fe3ed908d386697ea05279508945108f98e84",
+        "checks": {
+          "cases": [
+            {
+              "name": "ordinary_spawn_control",
+              "pass": true,
+              "a": 1,
+              "b": 2
+            },
+            {
+              "name": "checkpoint_handle_restore_control",
+              "pass": true,
+              "a": 1
+            },
+            {
+              "name": "discarded_handle_stays_dead_after_spawn",
+              "pass": false,
+              "discarded": 2,
+              "fresh": 2,
+              "deadBeforeSpawn": true,
+              "deadAfterSpawn": false
+            },
+            {
+              "name": "sparse_max_id_keeps_free_slots_allocatable",
+              "pass": false,
+              "error": "Error: Koota: Entity ID capacity exceeded."
+            }
+          ],
+          "passed": 2,
+          "total": 4
+        }
+      },
+      "after": {
+        "runtime": "NODE_VERSION=v24.12.0",
+        "output_sha256": "52f1adb98dcb9bb020fd44f8749168f700a79c20bd659b8c9cc6dd06c5c2805f",
+        "checks": {
+          "cases": [
+            {
+              "name": "ordinary_spawn_control",
+              "pass": true,
+              "a": 1,
+              "b": 2
+            },
+            {
+              "name": "checkpoint_handle_restore_control",
+              "pass": true,
+              "a": 1
+            },
+            {
+              "name": "discarded_handle_stays_dead_after_spawn",
+              "pass": true,
+              "discarded": 2,
+              "fresh": 1048578,
+              "deadBeforeSpawn": true,
+              "deadAfterSpawn": true
+            },
+            {
+              "name": "sparse_max_id_keeps_free_slots_allocatable",
+              "pass": true,
+              "id": 1048575,
+              "a": 1,
+              "b": 2
+            }
+          ],
+          "passed": 4,
+          "total": 4
+        }
+      }
+    }
+  },
+  "batch_confirmed_inference_usd": 4.02952,
+  "ficus_squad_confirmed_total_usd": 1.526975,
+  "private_evidence": "Durable sibling ficus-evaluation-data/fresh-matched-v1; no raw credentials or full conversations published"
+}

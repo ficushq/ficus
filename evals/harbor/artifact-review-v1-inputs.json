@@ -1,0 +1,29 @@
+{
+  "image_tag": "public.ecr.aws/d3j8x8q7/swe-bench-202605:kh7987m8hz4g19ngkk2zfe3v4n82y0e2-v1.1",
+  "image_digest": "public.ecr.aws/d3j8x8q7/swe-bench-202605@sha256:a94da0d6a13d23612acec72b399ae93baf72b875a354f05d3613ed6b552be2c1",
+  "base_commit": "061c97f8a01bf9e721835978b039303c5051501c",
+  "upstream_file_sha256": {
+    "environment/Dockerfile": "2a855e27920ce6f4098619b22e4f95142ddd2c709a9912aec1b58101b36aa151",
+    "instruction.md": "d25036c0761a9e6a2194f40bda5ae29b12487ee4f4c2045e4326ece0a80679a2",
+    "solution/solution.patch": "13a3c82366454efa3680955e4c7f7be4cc46676ddb635d9fe14892de38d447cb",
+    "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+    "task.toml": "d2b133d6a3a2d5d8d2f9474d34fcd3c5cd2f892dfc05326a6f4f7ceb169bd8b7",
+    "tests/Dockerfile": "d6af76a6b1661fb4c6992bdfb87c239a62b0c3a9407dd1cd77a583d7fe530b14",
+    "tests/config.json": "8137378ce50c0b4ba10c51b41fbfeee36be20b80de8237ecdeba0e41c2747b9b",
+    "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+    "tests/test.patch": "4a63f38ce6e17c87c27db085c4e4146601be990e17141a1c0fdea25a607fc0cc",
+    "tests/test.sh": "04e46fc9e42527bb5e72c971da3ebc71d49c6ae73c249d2290d8bbed59b4e66e"
+  },
+  "prepared_file_sha256": {
+    "environment/Dockerfile": "2a855e27920ce6f4098619b22e4f95142ddd2c709a9912aec1b58101b36aa151",
+    "instruction.md": "d25036c0761a9e6a2194f40bda5ae29b12487ee4f4c2045e4326ece0a80679a2",
+    "solution/solution.patch": "13a3c82366454efa3680955e4c7f7be4cc46676ddb635d9fe14892de38d447cb",
+    "solution/solve.sh": "2f111d19625d9685d00029c2c3efb7719ee2311c6ab4f0ab0ebcc37f09c35198",
+    "task.toml": "2cb80215e43ec1de4f6f078238e99f6d702e34de89a387eb616e97ccdc144f4b",
+    "tests/Dockerfile": "58a1076c4f58a580d9d2626a30a482b6deb6fe2051a19d1d870eccbf66b84843",
+    "tests/config.json": "8137378ce50c0b4ba10c51b41fbfeee36be20b80de8237ecdeba0e41c2747b9b",
+    "tests/grader.py": "47cc9eaadf21e636323c360ec4fa786f0733ec9fd1d21ea5a5717ff9f8c4077c",
+    "tests/test.patch": "4a63f38ce6e17c87c27db085c4e4146601be990e17141a1c0fdea25a607fc0cc",
+    "tests/test.sh": "04e46fc9e42527bb5e72c971da3ebc71d49c6ae73c249d2290d8bbed59b4e66e"
+  }
+}

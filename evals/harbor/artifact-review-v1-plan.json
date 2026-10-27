@@ -1,0 +1,31 @@
+{
+  "experiment": "artifact-review-v1",
+  "kind": "reviewer-only diagnostic, not full-squad benchmark",
+  "recovery": "Prior temporary raw artifacts and ledger are unavailable. Published summaries remain; exact old-artifact replay is impossible.",
+  "task": "narwhals-rolling-window-suite",
+  "selection": "Next unused task in long-feature-v1-selection.json frozen order",
+  "source_commit": "0b9fabbb63b9104d678fe965e1632f2dd9eaa2ea",
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "native_provider": "Pi SDK openai-responses",
+  "artifact": "One engineer-only implementation, frozen once regardless of grade; exact same patch and base for both reviews. No repair or regeneration.",
+  "conditions": [
+    "original reviewer prompt",
+    "independent-review-v1 addition"
+  ],
+  "review_order": "original then candidate; fixed-order limitation",
+  "review_contract": "Solo flow with native reviewer role, no manager inference, no delegation, report outside task repository; verify unchanged tree and role provenance.",
+  "blinding": "Neither reviewer receives hidden tests, reference patch, verifier outcomes, engineer transcript, or the other review.",
+  "judgment": "Verify findings against requirements and reproductions; separate supported defects, unsupported findings, and environment limits. A correct artifact may make this diagnostic uninformative.",
+  "budget": {
+    "phase_cap_usd": 30,
+    "prior_confirmed_usd": 13.727605,
+    "prior_unresolved_hold_usd": 5.5,
+    "opening_exposure_usd": 19.227605,
+    "new_segment_cap_usd": 10.772395,
+    "prior_report_sha256": "8cf65474dc9b6db773b4454ed9dbf70f14a20dcc5b59119a000413ef8f8504a7",
+    "no_historic_receipts_reconstructed": true
+  },
+  "storage": "Durable ficus-evaluation-data directory; private tokens and raw logs excluded from Git",
+  "production_prompt_changed": false
+}
