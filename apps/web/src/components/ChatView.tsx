@@ -58,6 +58,7 @@ import { useFileMention, FileMentionAutocomplete } from './FileMentionAutocomple
 import { useImageSrcs } from '../hooks/useImageSrcs'
 import { usePermissions } from '../hooks/usePermissions'
 import { useStableRef } from '../hooks/useStableRef'
+import { usePlantPresence } from '../hooks/usePlantPresence'
 import {
   dayLabel,
   earliestMessageDate,
@@ -3076,9 +3077,6 @@ function StreamingToolCallItem({
   )
 }
 
-/** How long the plant's jump out of sight takes (index.css .ficus-plant-peek), the fallback if animationend never fires. */
-const PLANT_HIDE_MS = 600
-
 /**
  * While the agent works, the Ficus plant peeks up from behind the composer,
  * pot half hidden: it jumps up into place when work starts, and jumps then
@@ -3086,31 +3084,18 @@ const PLANT_HIDE_MS = 600
  * jump it does when clicked. Reduced motion shows and hides it without them.
  */
 function PeekingPlant({ working, label }: { working: boolean; label?: string }) {
-  const [shown, setShown] = useState(working)
+  const plant = usePlantPresence(working)
   const [shownLabel, setShownLabel] = useState(label)
-  if (working && !shown) setShown(true)
   if (working && label !== shownLabel) setShownLabel(label)
 
-  useEffect(() => {
-    if (working || !shown) return
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-      setShown(false)
-      return
-    }
-    const timeout = window.setTimeout(() => setShown(false), PLANT_HIDE_MS + 80)
-    return () => window.clearTimeout(timeout)
-  }, [working, shown])
-
-  if (!shown) return null
+  if (!plant.shown) return null
   return (
     <div className="pointer-events-none absolute bottom-full left-3 z-0 translate-y-[26%] md:left-4">
       <div
         className="ficus-plant-peek"
-        data-state={working ? 'in' : 'out'}
+        data-state={plant.state}
         aria-hidden={working ? undefined : true}
-        onAnimationEnd={(event) => {
-          if (!working && event.target === event.currentTarget) setShown(false)
-        }}
+        onAnimationEnd={plant.onAnimationEnd}
       >
         <TypingIndicator label={shownLabel} />
       </div>

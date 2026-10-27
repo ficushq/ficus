@@ -7,6 +7,7 @@ import { PermissionsProvider } from '../hooks/usePermissions'
 import { AgentMonitorStatus } from './AgentMonitorStatus'
 import { QueryInvalidator } from './QueryInvalidator'
 import { queryKeys } from '../queryKeys'
+import { PLANT_HIDE_MS } from '../hooks/usePlantPresence'
 
 type Callback = (entry: { event: string; data: unknown }) => void
 
@@ -119,12 +120,12 @@ describe('AgentMonitorStatus', () => {
     client.clear()
   })
 
-  async function render(agentId = 'agent-a', isConnected = false) {
+  async function render(agentId = 'agent-a', isConnected = false, agentIdle = false) {
     await dom.act(async () => {
       root.render(
         <QueryClientProvider client={client}>
           <PermissionsProvider usePermissions={usePermissions}>
-            <AgentMonitorStatus key={agentId} agentId={agentId} squadId="squad-a" />
+            <AgentMonitorStatus key={agentId} agentId={agentId} squadId="squad-a" agentIdle={agentIdle} />
             <QueryInvalidator dependencies={{ queryClient: client, subscribe, isConnected }} />
           </PermissionsProvider>
         </QueryClientProvider>
@@ -140,6 +141,14 @@ describe('AgentMonitorStatus', () => {
   const text = () => doc().body.textContent ?? ''
   const buttons = () => [...doc().querySelectorAll<HTMLButtonElement>('[role="status"] button')]
   const dialog = () => doc().querySelector('[role="dialog"]')
+  const plant = () => doc().querySelector<HTMLElement>('[data-testid="monitor-hanging-plant"]')
+  // Past the plant's retreat (PLANT_HIDE_MS and its fallback margin); the test DOM fires no animationend.
+  async function afterRetreat() {
+    await dom.act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, PLANT_HIDE_MS + 120))
+    })
+  }
+  const plantState = () => plant()?.querySelector('.ficus-plant-peek')?.getAttribute('data-state')
   async function emit(event: string, agentId = 'agent-a') {
     await dom.act(async () => {
       captured.get('monitors')!({ event, data: { agentId } })
@@ -262,5 +271,60 @@ describe('AgentMonitorStatus', () => {
     expect(text()).not.toContain('deploy logs')
     await eventually(() => expect(listRequests).toHaveLength(2))
     expect(text()).toBe('')
+  })
+
+  test('accents the icon and the Monitoring label, keeping the labels as dotted links', async () => {
+    await render()
+    await eventually(() => expect(buttons()).toHaveLength(2))
+    const status = doc().querySelector('[role="status"]')!
+    expect(status.querySelector('svg')!.getAttribute('class')).toContain('text-accent-light')
+    const label = [...status.querySelectorAll('span')].find((span) => span.textContent === 'Monitoring:')!
+    expect(label.className).toContain('text-accent-light')
+    for (const button of buttons()) {
+      expect(button.className).toContain('decoration-dotted')
+      expect(button.className).not.toContain('text-accent')
+    }
+  })
+
+  test('hangs the plant from the row only while the agent is idle with an active monitor', async () => {
+    await render('agent-a', false, true)
+    await eventually(() => expect(plantState()).toBe('in'))
+    // Decorative and outside the status row, which keeps its live semantics.
+    expect(plant()!.getAttribute('aria-hidden')).toBe('true')
+    expect(plant()!.closest('[role="status"]')).toBeNull()
+    expect(plant()!.querySelector('.ficus-plant-hang button.ficus-plant-jump')).not.toBeNull()
+    expect(doc().querySelectorAll('[role="status"]')).toHaveLength(1)
+
+    await render('agent-b', false, true)
+    await eventually(() => expect(listRequests).toHaveLength(2))
+    expect(plant()).toBeNull()
+  })
+
+  test('shows no plant while the agent works, and retreats when it starts working', async () => {
+    await render('agent-a', false, false)
+    await eventually(() => expect(buttons()).toHaveLength(2))
+    expect(plant()).toBeNull()
+
+    await render('agent-a', false, true)
+    await eventually(() => expect(plantState()).toBe('in'))
+    await render('agent-a', false, false)
+    expect(plantState()).toBe('out')
+    await afterRetreat()
+    expect(plant()).toBeNull()
+    expect(text()).toContain('Monitoring: deploy logs · ci watcher')
+  })
+
+  test('retreats behind the row when the last monitor ends, then the row goes', async () => {
+    monitors.set('agent-a', [monitor('m1', 'deploy logs')])
+    await render('agent-a', false, true)
+    await eventually(() => expect(plantState()).toBe('in'))
+    monitors.set('agent-a', [])
+    await emit('monitor.ended')
+    // The row stays, naming the monitor, while the plant jumps back up behind it.
+    await eventually(() => expect(plantState()).toBe('out'))
+    expect(text()).toContain('Monitoring: deploy logs')
+    await afterRetreat()
+    expect(doc().querySelector('[role="status"]')).toBeNull()
+    expect(plant()).toBeNull()
   })
 })
