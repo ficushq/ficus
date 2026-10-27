@@ -8,6 +8,7 @@ import { getSessionDir } from '../lib/infra/session-files'
 import * as workspaceLayoutModule from '../services/sandbox/workspace-layout'
 import * as toolOutputRedaction from '../services/security/tool-output-redaction'
 import * as toolFirewall from '../services/decisions/tool-firewall'
+import * as shellCreatedLinks from '../tools/shell-created-links'
 
 describe('AgentSession', () => {
   it('configures Pi to drain queued steers together and follow-ups one at a time', async () => {
@@ -174,6 +175,7 @@ describe('AgentSession', () => {
     })
     const redactSpy = spyOn(toolOutputRedaction, 'wrapToolsWithOutputRedaction')
     const firewallSpy = spyOn(toolFirewall, 'wrapToolsWithFirewall')
+    const createdLinksSpy = spyOn(shellCreatedLinks, 'wrapShellToolsWithCreatedLinks')
     const tool = (name: string) =>
       ({
         name,
@@ -190,9 +192,12 @@ describe('AgentSession', () => {
         tools: { core: [tool('webfetch'), tool('bash'), tool('read')] },
       })
 
-      // The decision model must only ever see content with stored secrets already redacted.
+      // The decision model must only ever see content with stored secrets already redacted. Created links are
+      // recognized in between, from the redacted output, before the firewall rewrites it.
       expect(firewallSpy).toHaveBeenCalledTimes(1)
-      expect(firewallSpy.mock.calls[0]![0]).toBe(redactSpy.mock.results[0]!.value as never)
+      expect(createdLinksSpy).toHaveBeenCalledTimes(1)
+      expect(createdLinksSpy.mock.calls[0]![0]).toBe(redactSpy.mock.results[0]!.value as never)
+      expect(firewallSpy.mock.calls[0]![0]).toBe(createdLinksSpy.mock.results[0]!.value as never)
       expect(firewallSpy.mock.calls[0]![1]).toEqual({ agentId: undefined })
       // Web tools and the shell (for commands that fetch) are screened; other tools are left as they are.
       const redacted = redactSpy.mock.results[0]!.value as Array<{ name: string }>
@@ -204,6 +209,7 @@ describe('AgentSession', () => {
       session.dispose()
     } finally {
       firewallSpy.mockRestore()
+      createdLinksSpy.mockRestore()
       redactSpy.mockRestore()
       selSpy.mockRestore()
     }

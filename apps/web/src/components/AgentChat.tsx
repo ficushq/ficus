@@ -395,6 +395,12 @@ export function AgentChat({
       </>
     ) : undefined
 
+  // Idle between turns: nothing running or streaming (the header status rows' cue).
+  const agentIdle =
+    agent?.status === 'idle' &&
+    (!conv.executionStatus || ['completed', 'stopped', 'failed'].includes(conv.executionStatus)) &&
+    !conv.items.some((item) => item.kind === 'streaming')
+
   const pendingQuestionsBanner = questionAgentId ? (
     // Stay mounted through empty/loading results, but reset all local UI/history on navigation.
     <PendingQuestionsBanner
@@ -439,17 +445,14 @@ export function AgentChat({
       headerStatus={
         conv.agentId && agent?.squadId && !isTerminated && !isDormant ? (
           <>
-            <AgentSlotWaitStatus
-              key={conv.agentId}
+            <AgentSlotWaitStatus key={conv.agentId} agentId={conv.agentId} squadId={agent.squadId} isIdle={agentIdle} />
+            <AgentMonitorStatus
+              key={`monitors:${conv.agentId}`}
               agentId={conv.agentId}
               squadId={agent.squadId}
-              isIdle={
-                agent.status === 'idle' &&
-                (!conv.executionStatus || ['completed', 'stopped', 'failed'].includes(conv.executionStatus)) &&
-                !conv.items.some((item) => item.kind === 'streaming')
-              }
+              // Its hanging plant only while no working plant shows (composer peek or TypingIndicator).
+              agentIdle={agentIdle && !conv.items.some((item) => item.kind === 'working')}
             />
-            <AgentMonitorStatus key={`monitors:${conv.agentId}`} agentId={conv.agentId} squadId={agent.squadId} />
           </>
         ) : undefined
       }

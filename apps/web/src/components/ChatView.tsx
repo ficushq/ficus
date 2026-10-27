@@ -41,9 +41,10 @@ import { useFullscreen } from '../hooks/useFullscreen'
 import { Modal } from './Modal'
 import { ChatFullscreenContext } from './ChatFullscreenContext'
 import { MobileChatOptionsSheet } from './MobileChatOptionsSheet'
-import { InlineActionRow, ToolInlineActions } from './ToolInlineActions'
+import { InlineActionRow, ToolInlineActionScopeProvider, ToolInlineActions } from './ToolInlineActions'
 import { ToolInlineActionModal, type ToolInlineActionModalProps } from './ToolInlineActionModal'
 import { getBlocksInlineActions, getToolFirewallFlag, type ToolInlineAction } from '../lib/tool-inline-actions'
+import { openExternalUrl, openLocalApp } from '../lib/openToolInlineTarget'
 import { ToolFirewallBadge } from './ToolFirewallBadge'
 import type { RenderItem, StreamingContentBlock } from '@ficus/client-react'
 import { lastBlocksSegmentIndex, segmentAtNotices, type RenderedContentBlock } from '@ficus/client-core'
@@ -58,6 +59,7 @@ import { useFileMention, FileMentionAutocomplete } from './FileMentionAutocomple
 import { useImageSrcs } from '../hooks/useImageSrcs'
 import { usePermissions } from '../hooks/usePermissions'
 import { useStableRef } from '../hooks/useStableRef'
+import { usePlantPresence } from '../hooks/usePlantPresence'
 import {
   dayLabel,
   earliestMessageDate,
@@ -98,6 +100,8 @@ interface ChatViewDependencies {
   deleteAgentFile?: typeof import('../api/agentFiles').deleteAgentFile
   uploadImages?: typeof uploadImages
   ToolInlineActionModalComponent?: React.ComponentType<ToolInlineActionModalProps>
+  openExternalUrl?: (url: string) => void
+  openLocalApp?: (localDeploymentId: string) => Promise<void>
 }
 
 interface ChatViewProps {
@@ -499,6 +503,19 @@ export function ChatView({
   const uploadImagesDependency = dependencies?.uploadImages ?? uploadImages
   const ActionModal = dependencies?.ToolInlineActionModalComponent ?? ToolInlineActionModal
   const [selectedToolAction, setSelectedToolAction] = useState<ToolInlineAction | null>(null)
+  const openExternal = dependencies?.openExternalUrl ?? openExternalUrl
+  const openApp = dependencies?.openLocalApp ?? openLocalApp
+  // Pull requests and local apps open in a new tab during the click (later, the browser would block it);
+  // every other target opens in place.
+  const openToolInlineAction = useCallback(
+    (action: ToolInlineAction) => {
+      if (action.kind === 'pull_request') openExternal(action.url)
+      else if (action.kind === 'local_app') void openApp(action.localDeploymentId)
+      else setSelectedToolAction(action)
+    },
+    [openApp, openExternal]
+  )
+  const toolActionScope = useMemo(() => ({ agentId, squadId }), [agentId, squadId])
   // Derived streaming state
   const isStreaming = isStreamingProp ?? items.some((i) => i.kind === 'streaming')
 
@@ -1790,7 +1807,7 @@ export function ChatView({
                   showRaw={showRawText}
                   tts={tts}
                   agentId={agentId}
-                  onToolInlineAction={setSelectedToolAction}
+                  onToolInlineAction={openToolInlineAction}
                   time={groupHeadTime({ kind: 'agent', senderKey: null, at })}
                 />
               )
@@ -1850,7 +1867,7 @@ export function ChatView({
                         onAbortTool={onAbortTool}
                         showRaw={showRawText}
                         agentId={agentId}
-                        onToolInlineAction={setSelectedToolAction}
+                        onToolInlineAction={openToolInlineAction}
                       />
                     )
                   )}
@@ -2640,25 +2657,26 @@ export function ChatView({
 
   // Wrap in fullscreen overlay when active
   const actionModal = selectedToolAction ? (
-    <ActionModal action={selectedToolAction} onClose={() => setSelectedToolAction(null)} />
+    <ActionModal action={selectedToolAction} scope={toolActionScope} onClose={() => setSelectedToolAction(null)} />
   ) : null
 
+  // Inline actions show only when the viewer can open them in this chat (see ToolInlineActionScopeProvider).
   if (isFullscreen) {
     return (
-      <>
+      <ToolInlineActionScopeProvider value={toolActionScope}>
         <Modal isOpen={isFullscreen} onClose={toggleFullscreen} mobileFullscreen maxWidth="chat" noChildPadding>
           <div className="flex flex-col grow min-h-0 overflow-hidden">{chatContent}</div>
         </Modal>
         {actionModal}
-      </>
+      </ToolInlineActionScopeProvider>
     )
   }
 
   return (
-    <>
+    <ToolInlineActionScopeProvider value={toolActionScope}>
       {chatContent}
       {actionModal}
-    </>
+    </ToolInlineActionScopeProvider>
   )
 }
 
@@ -3079,9 +3097,6 @@ function StreamingToolCallItem({
   )
 }
 
-/** How long the plant's jump out of sight takes (index.css .ficus-plant-peek), the fallback if animationend never fires. */
-const PLANT_HIDE_MS = 600
-
 /**
  * While the agent works, the Ficus plant peeks up from behind the composer,
  * pot half hidden: it jumps up into place when work starts, and jumps then
@@ -3089,31 +3104,18 @@ const PLANT_HIDE_MS = 600
  * jump it does when clicked. Reduced motion shows and hides it without them.
  */
 function PeekingPlant({ working, label }: { working: boolean; label?: string }) {
-  const [shown, setShown] = useState(working)
+  const plant = usePlantPresence(working)
   const [shownLabel, setShownLabel] = useState(label)
-  if (working && !shown) setShown(true)
   if (working && label !== shownLabel) setShownLabel(label)
 
-  useEffect(() => {
-    if (working || !shown) return
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-      setShown(false)
-      return
-    }
-    const timeout = window.setTimeout(() => setShown(false), PLANT_HIDE_MS + 80)
-    return () => window.clearTimeout(timeout)
-  }, [working, shown])
-
-  if (!shown) return null
+  if (!plant.shown) return null
   return (
     <div className="pointer-events-none absolute bottom-full left-3 z-0 translate-y-[26%] md:left-4">
       <div
         className="ficus-plant-peek"
-        data-state={working ? 'in' : 'out'}
+        data-state={plant.state}
         aria-hidden={working ? undefined : true}
-        onAnimationEnd={(event) => {
-          if (!working && event.target === event.currentTarget) setShown(false)
-        }}
+        onAnimationEnd={plant.onAnimationEnd}
       >
         <TypingIndicator label={shownLabel} />
       </div>

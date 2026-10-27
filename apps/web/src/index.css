@@ -1448,6 +1448,19 @@
   animation: ficus-plant-pop-out 600ms ease-in-out forwards;
 }
 
+/* While the agent idles on a monitor, the plant hangs upside down from the chat's
+   Monitoring banner, pot half hidden behind it (AgentMonitorStatus HangingPlant): the
+   same plant, pop and jump mirrored vertically, so it drops down into view and
+   retreats up behind the banner. Its drop waits out the composer plant's jump out of
+   sight (PLANT_HIDE_MS), so only one plant is ever up. */
+.ficus-plant-hang {
+  transform: translateY(-26%) scaleY(-1);
+}
+
+.ficus-plant-hang .ficus-plant-peek[data-state='in'] {
+  animation-delay: 600ms;
+}
+
 .ficus-plant-jump {
   display: block;
   transform-origin: 50% 100%;

@@ -1,7 +1,7 @@
 /**
  * Focused, DB-free Chromium check of the phone touch-target rule with the real stylesheet, the real chat
  * header status rows and made-up data. At 375px and 1280px:
- * - in a text row with an icon pinned to the first line (items-start + mt-0.5), the icon stays centred on
+ * - in a text row with an icon on the first line (pinned with items-start + mt-0.5, or inline), the icon stays centred on
  *   that line even when the line holds a link or a link-style button;
  * - those inline text controls keep the line's height;
  * - standalone design-system buttons are at least 24px tall on phones, and the chat thinking/tool rows keep
@@ -119,22 +119,24 @@ try {
         const round = (value: number) => Math.round(value * 10) / 10
         const header = document.querySelector('[data-fixture="chat-header"]')!
         // Rows whose icon is pinned to the first text line: the icon's centre against that line's centre.
-        const rows = [...header.querySelectorAll<HTMLElement>('.items-start')].map((row) => {
-          const icon = row.querySelector('svg')!.getBoundingClientRect()
-          const text = row.querySelector<HTMLElement>('span')!
-          // The row's leading text ("Monitoring: ") is on the first line, whatever else wraps.
-          const walker = document.createTreeWalker(text, NodeFilter.SHOW_TEXT)
-          const range = document.createRange()
-          range.selectNodeContents(walker.nextNode()!)
-          const glyphs = range.getClientRects()[0]!
-          return {
-            text: text.textContent!.slice(0, 40),
-            offset: round(icon.top + icon.height / 2 - (glyphs.top + glyphs.height / 2)),
+        const rows = [...header.querySelectorAll<HTMLElement>('[role="status"], [data-fixture="link-row"]')].map(
+          (row) => {
+            const icon = row.querySelector('svg')!.getBoundingClientRect()
+            const text = row.querySelector<HTMLElement>('span')!
+            // The row's leading text ("Monitoring: ") is on the first line, whatever else wraps.
+            const walker = document.createTreeWalker(text, NodeFilter.SHOW_TEXT)
+            const range = document.createRange()
+            range.selectNodeContents(walker.nextNode()!)
+            const glyphs = range.getClientRects()[0]!
+            return {
+              text: text.textContent!.slice(0, 40),
+              offset: round(icon.top + icon.height / 2 - (glyphs.top + glyphs.height / 2)),
+            }
           }
-        })
-        const inline = [...header.querySelectorAll<HTMLElement>('.items-start span button, .items-start span a')].map(
-          (el) => ({ text: el.textContent!, height: round(el.getBoundingClientRect().height) })
         )
+        const inline = [
+          ...header.querySelectorAll<HTMLElement>('[role="status"] button, [data-fixture="link-row"] :is(button, a)'),
+        ].map((el) => ({ text: el.textContent!, height: round(el.getBoundingClientRect().height) }))
         const standalone = document.querySelector('[data-fixture="standalone"]')!
         const controls = [...standalone.querySelectorAll<HTMLElement>('button')].map((el) => ({
           name: el.getAttribute('aria-label') ?? el.textContent!.trim().slice(0, 30),

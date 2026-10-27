@@ -13,7 +13,14 @@ import { MemoryRouter } from 'react-router-dom'
 
 const useImageSrcsFixture = () => ({})
 
-const usePermissionsMock = () => ({ can: () => true, isLoading: false, isError: false, permissions: ['agents:write'] })
+// Permissions the viewer lacks; everything else is granted.
+let deniedPermissions = new Set<string>()
+const usePermissionsMock = () => ({
+  can: (permission: string) => !deniedPermissions.has(permission),
+  isLoading: false,
+  isError: false,
+  permissions: ['agents:write'],
+})
 
 const uploadImagesMock = mock(async () => [] as string[])
 const uploadAgentFileMock = mock(() => new Promise(() => {}))
@@ -153,6 +160,7 @@ async function renderChatView(
 
 beforeEach(() => {
   openedToolAction = null
+  deniedPermissions = new Set()
   voiceEnabled = true
   recorderSupported = true
   URL.createObjectURL = mock(() => 'blob:test-image')
@@ -2163,7 +2171,9 @@ describe('ChatView inline tool actions', () => {
     await dom.act(async () =>
       root.render(
         <MemoryRouter>
-          <ChatView dependencies={chatViewDependencies} items={streaming(true)} onSend={() => {}} hideComposer />
+          <PermissionsProvider usePermissions={usePermissionsMock}>
+            <ChatView dependencies={chatViewDependencies} items={streaming(true)} onSend={() => {}} hideComposer />
+          </PermissionsProvider>
         </MemoryRouter>
       )
     )
@@ -2182,6 +2192,114 @@ describe('ChatView inline tool actions', () => {
       'tc-monitor',
       'tc-dispatch',
     ])
+  })
+})
+
+describe('ChatView event inline actions', () => {
+  const result = (details: Record<string, unknown>) => JSON.stringify({ details })
+  const eventCalls = [
+    {
+      toolCallId: 'tc-ask',
+      toolName: 'ask_human',
+      args: '{"questions":[]}',
+      isError: false,
+      result: result({ questionId: 'question-1', async: true }),
+    },
+    {
+      toolCallId: 'tc-note',
+      toolName: 'memory_write',
+      args: JSON.stringify({ path: 'decisions/inline-actions.md', content: '# Inline actions' }),
+      isError: false,
+      result: result({ path: '/home/box/memory/decisions/inline-actions.md', success: true }),
+    },
+    {
+      toolCallId: 'tc-pr',
+      toolName: 'squad_bash',
+      args: JSON.stringify({ command: 'gh pr create --fill' }),
+      isError: false,
+      result: result({
+        createdLinks: [{ kind: 'pull_request', url: 'https://github.com/ficushq/ficus/pull/684', number: 684 }],
+      }),
+    },
+    {
+      toolCallId: 'tc-app',
+      toolName: 'browser_open',
+      args: JSON.stringify({ localDeploymentId: 'ld-1' }),
+      isError: false,
+      result: JSON.stringify({
+        content: [{ type: 'text', text: 'Local preview opened. (screenshot unavailable)' }],
+        details: {},
+      }),
+    },
+    {
+      toolCallId: 'tc-notify',
+      toolName: 'notify_contact',
+      args: '{"title":"PR ready"}',
+      isError: false,
+      result: result({ success: true, routedTo: 'owner', workStreamId: 'ws-1' }),
+    },
+  ]
+  const items = (): RenderItem[] => {
+    const message = assistantMsg('a-events', 'Done.', {
+      content: eventCalls.map((toolCall) => ({ type: 'tool_use' as const, id: toolCall.toolCallId, toolCall })),
+    })
+    return [{ kind: 'persisted', id: message.id, message, blocks: message.metadata!.content! }]
+  }
+  const labels = (document: Document) =>
+    [...document.querySelectorAll('[data-tool-inline-actions] button')].map((button) =>
+      button.getAttribute('aria-label')
+    )
+  const click = (window: Window, label: string) =>
+    window.document
+      .querySelector(`button[aria-label="${label}"]`)!
+      .dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+
+  test('a collapsed group shows every event action, and each opens its target', async () => {
+    const openExternalUrl = mock((_url: string) => undefined)
+    const openLocalApp = mock(async (_id: string) => undefined)
+    const { dom, window } = await renderChatView(
+      <ChatView
+        items={items()}
+        agentId="agent-1"
+        squadId="squad-1"
+        onSend={() => {}}
+        hideComposer
+        dependencies={{ openExternalUrl, openLocalApp }}
+      />
+    )
+    expect(window.document.querySelector('[data-tool-call-row]')).toBeNull()
+    expect(labels(window.document)).toEqual([
+      'View question',
+      'Open note',
+      'Open PR #684',
+      'Open app',
+      'Open work stream',
+    ])
+
+    await dom.act(async () => click(window, 'Open PR #684'))
+    expect(openExternalUrl).toHaveBeenCalledWith('https://github.com/ficushq/ficus/pull/684')
+    await dom.act(async () => click(window, 'Open app'))
+    expect(openLocalApp).toHaveBeenCalledWith('ld-1')
+    // New-tab targets don't open the in-place modal.
+    expect(openedToolAction).toBeNull()
+
+    await dom.act(async () => click(window, 'View question'))
+    expect(openedToolAction).toEqual(expect.objectContaining({ kind: 'question', questionId: 'question-1' }))
+    await dom.act(async () => click(window, 'Open note'))
+    expect(openedToolAction).toEqual(
+      expect.objectContaining({ kind: 'memory_note', path: '/memory/decisions/inline-actions.md' })
+    )
+    await dom.act(async () => click(window, 'Open work stream'))
+    expect(openedToolAction).toEqual(expect.objectContaining({ kind: 'work_stream', workStreamRef: 'ws-1' }))
+  })
+
+  test('hides actions the viewer cannot open', async () => {
+    deniedPermissions = new Set(['memory:read', 'deployments:read'])
+    const { window } = await renderChatView(
+      <ChatView items={items()} squadId="squad-1" onSend={() => {}} hideComposer />
+    )
+    // No memory or deployment access, and no agent for the question to open through.
+    expect(labels(window.document)).toEqual(['Open PR #684', 'Open work stream'])
   })
 })
 

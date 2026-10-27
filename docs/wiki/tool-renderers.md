@@ -16,11 +16,12 @@ Registry lookup by toolName
 
 ## Key Files
 
-| File                                         | Purpose                                                    |
-| -------------------------------------------- | ---------------------------------------------------------- |
-| `apps/web/src/lib/tool-renderers.tsx`        | Registry, renderer definitions, exported components        |
-| `apps/web/src/components/ChatView.tsx`       | Uses renderers in `StreamingToolCallItem` (live streaming) |
-| `apps/web/src/components/MessageContent.tsx` | Uses renderers in `ToolCallItem` (persisted messages)      |
+| File                                         | Purpose                                                                   |
+| -------------------------------------------- | ------------------------------------------------------------------------- |
+| `apps/web/src/lib/tool-renderers.tsx`        | Registry, renderer definitions, exported components                       |
+| `apps/web/src/components/ChatView.tsx`       | Uses renderers in `StreamingToolCallItem` (live streaming)                |
+| `apps/web/src/components/MessageContent.tsx` | Uses renderers in `ToolCallItem` (persisted messages)                     |
+| `apps/web/src/lib/tool-inline-actions.ts`    | Inline action extractors per tool (see [Inline actions](#inline-actions)) |
 
 ## Registry
 
@@ -133,6 +134,29 @@ const renderers: Record<string, ToolRenderer> = {
 ```
 
 No changes needed in `ChatView.tsx` or `MessageContent.tsx` — they look up renderers by `toolName` automatically.
+
+## Inline actions
+
+A completed tool call can offer small links under its row that open what it created. A collapsed tool/thinking group shows the actions of all its completed calls under its header, in call order and once per target (by `key`); once expanded, they show on the individual rows. Actions appear only for successful, completed calls: not while running, not when the call errored, and not when its result details report `success: false` or an `error`.
+
+| Tool                                              | Action                                 | Source                                                                     | Opens                                                                  | Needs                               |
+| ------------------------------------------------- | -------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------- |
+| `monitor` (`create`)                              | Open monitor                           | `details.monitorId`                                                        | Monitor details modal                                                  |                                     |
+| `dispatch`                                        | Open `<label>` chat (one per subagent) | `details.subagents[]`                                                      | Subagent conversation modal                                            |                                     |
+| `ask_human`                                       | View question                          | `details.questionId`                                                       | Question modal: answerable while open, read-only once answered         | the chat's agent                    |
+| `notify_contact`                                  | Open work stream                       | `details.workStreamId`                                                     | The work stream's page in its squad                                    | `workstreams:read`                  |
+| `artifact_publish`                                | Open artifact                          | `details.artifactId` (or `details.manifest.id`)                            | Artifact viewer modal                                                  | `artifacts:read`, the chat's agent  |
+| `browser_open` with `localDeploymentId`           | Open app                               | `args.localDeploymentId`                                                   | The local app in a new tab, as from the Apps tab                       | `deployments:read`                  |
+| `memory_write` / `memory_patch` / `memory_append` | Open note                              | `args.path` (else `details.path`); `targetSquadId` / `squad` for the squad | Memory viewer modal; nothing for a delete (`memory_write` with `null`) | `memory:read` in the note's squad   |
+| `bash` / `squad_bash`                             | Open PR #N, Open work stream #N        | `details.createdLinks[]`, set by Core                                      | PR in a new tab; work stream page in-app                               | `workstreams:read` for work streams |
+
+Memory paths are normalized to the memory viewer's `/memory/<rel>` form from a bare squad-relative path or either agent memory root (`/memory/<squadId>/…` or a box's `…/memory/…`); paths outside memory or with `..` segments get no action.
+
+The web client never scans shell output for links. Core adds `details.createdLinks` to a shell result (`apps/core/src/tools/shell-created-links.ts`, wrapped in `AgentSession` between output redaction and the tool firewall) only when the command exited 0, the command text runs `gh pr create` or `ficus workstream|ws create`, and the output has that command's own success line: a PR URL alone on a line, or `Created work stream #N: …`. A command that merely prints a PR URL (`gh pr view`, `cat`) gets nothing.
+
+Inside a chat, `ChatView` provides the agent and squad through `ToolInlineActionScopeProvider`, and each action shows only when the viewer can open it: its `access.permission` in its squad (the note's squad for cross-squad memory writes, else the chat's), plus the chat's agent or squad when the target opens through them. Pull requests and local apps open in a new tab during the click; the other targets open through `ToolInlineActionModal`.
+
+To add an action kind: add it to the `ToolInlineAction` union with its own `label`, `key` and `access`, add an extractor for the tool in `apps/web/src/lib/tool-inline-actions.ts`, and open it in `ToolInlineActionModal` (or in `ChatView`'s click handler when it must open a new tab). The row and group rendering need no changes.
 
 ## Streaming arguments
 

@@ -34,6 +34,7 @@ import {
   type OnStoredToolResult,
 } from '../services/security/tool-output-redaction'
 import { wrapToolsWithFirewall } from '../services/decisions/tool-firewall'
+import { wrapShellToolsWithCreatedLinks } from '../tools/shell-created-links'
 import { PrecompactionController, type PrecompactionDeps } from '../services/agent/precompaction/controller'
 import {
   createFitCompactionFallback,
@@ -171,11 +172,15 @@ export class AgentSession {
     // Then screen outside content (web pages, search results, browser text) for instructions aimed at
     // the agent, and warn it when there are. After redaction, so the decision model never sees stored
     // secrets; it fails open, so a tool never fails because of it.
+    // Between the two, a shell command that created a PR or work stream gets `details.createdLinks` from its
+    // redacted output, ahead of the firewall rewriting that output for the model.
     const customTools = wrapToolsWithFirewall(
-      wrapToolsWithOutputRedaction(
-        [...(tools?.core ?? []), ...filterToolsByPolicy(tools?.available ?? [], tools?.allow, tools?.deny)],
-        getContentSafetyRegistry(),
-        onStoredToolResult
+      wrapShellToolsWithCreatedLinks(
+        wrapToolsWithOutputRedaction(
+          [...(tools?.core ?? []), ...filterToolsByPolicy(tools?.available ?? [], tools?.allow, tools?.deny)],
+          getContentSafetyRegistry(),
+          onStoredToolResult
+        )
       ),
       { agentId: storage?.agentId }
     )
