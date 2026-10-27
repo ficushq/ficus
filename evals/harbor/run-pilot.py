@@ -19,6 +19,7 @@ parser.add_argument("--client", help="Proxy client label; defaults to harness-ta
 parser.add_argument("--runtime-archive", type=Path)
 parser.add_argument("--checkpoint-dir", type=Path)
 parser.add_argument("--coordination", action="store_true")
+parser.add_argument("--coordination-egress-header-timeout", type=int, choices=(600,))
 parser.add_argument("--artifact-patch", type=Path)
 parser.add_argument("--artifact-sha256")
 parser.add_argument("--base-commit")
@@ -32,6 +33,10 @@ parser.add_argument(
 args = parser.parse_args()
 if args.coordination and args.workflow != "planned":
     parser.error("Coordination requires planned workflow")
+if args.coordination_egress_header_timeout and not (
+    args.coordination and args.restricted_network
+):
+    parser.error("Egress timeout override requires restricted coordination mode")
 access = json.loads(args.access.read_text())
 if args.restricted_network:
     config = tomllib.loads((args.task / "task.toml").read_text())
@@ -132,5 +137,10 @@ else:
         "model_api=" + access.get("model_api", "openai-completions"),
         "--ak",
         "thinking=" + access.get("thinking", "off"),
+    ]
+if args.coordination_egress_header_timeout:
+    command += [
+        "--ak",
+        f"egress_header_timeout={args.coordination_egress_header_timeout}",
     ]
 os.execvpe("harbor", command, env)

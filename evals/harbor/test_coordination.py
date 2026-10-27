@@ -4,10 +4,33 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from coordination_egress import patch_config, configure_timeout
 from coordination import FicusCoordination, PiCoordination, handoff, ROOT
 
 
 class CoordinationTests(unittest.IsolatedAsyncioTestCase):
+    def test_pi_schema_accepts_only_declared_timeout(self):
+        self.assertEqual(
+            PiCoordination.options_model(
+                egress_header_timeout=600
+            ).egress_header_timeout,
+            600,
+        )
+        with self.assertRaises(ValueError):
+            PiCoordination.options_model(egress_header_timeout=0)
+
+    def test_timeout_override_changes_only_response_deadline(self):
+        original = "handler:\n      metadata:\n        sniffing: true\n        sniffing.timeout: 5s\n        sniffing.fallback: true\nbypasses:\n  whitelist: true\n"
+        patched = patch_config(original)
+        self.assertEqual(patched.replace("        readTimeout: 600s\n", ""), original)
+        with self.assertRaises(ValueError):
+            patch_config(patched)
+        with self.assertRaises(ValueError):
+            patch_config("unknown config")
+        with self.assertRaises(ValueError):
+            configure_timeout(0)
+        self.assertIsNone(configure_timeout(None))
+
     def test_same_task_and_contract_for_both_harnesses(self):
         task = "original requirements\n  "
         for harness in ("ficus", "pi"):

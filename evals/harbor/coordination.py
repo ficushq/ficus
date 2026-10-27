@@ -1,11 +1,14 @@
 """Benchmark-derived shared-repository coordination, using the existing harnesses."""
 
 import hashlib
+import json
 from pathlib import Path
+from typing import Literal
 
+from coordination_egress import configure_timeout
 from deepswe_network_smoke import FicusNetworkSmoke, PiNetworkSmoke
 from ficus_agent import FicusSquad, ROOT, RUNTIME
-from pi_workflow import PiWorkflow
+from pi_workflow import PiWorkflow, PiWorkflowOptions
 from harbor.agents.installed.pi import Pi
 
 BOOTSTRAP = (
@@ -48,10 +51,15 @@ def handoff(instruction, harness):
 
 
 class FicusCoordination(FicusSquad):
-    def __init__(self, *args, workflow="planned", **kwargs):
+    def __init__(self, *args, workflow="planned", egress_header_timeout=None, **kwargs):
         if workflow != "planned":
             raise ValueError("Coordination requires the planned workflow")
+        self.egress_evidence = configure_timeout(egress_header_timeout)
         super().__init__(*args, workflow=workflow, **kwargs)
+        if self.egress_evidence is not None:
+            (self.logs_dir / "coordination-egress.json").write_text(
+                json.dumps(self.egress_evidence, indent=2) + "\n"
+            )
 
     async def setup(self, environment):
         await super().setup(environment)
@@ -83,11 +91,22 @@ class FicusCoordination(FicusSquad):
         }
 
 
+class PiCoordinationOptions(PiWorkflowOptions):
+    egress_header_timeout: Literal[600] | None = None
+
+
 class PiCoordination(PiWorkflow):
-    def __init__(self, *args, workflow="planned", **kwargs):
+    options_model = PiCoordinationOptions
+
+    def __init__(self, *args, workflow="planned", egress_header_timeout=None, **kwargs):
         if workflow != "planned":
             raise ValueError("Coordination requires the planned workflow")
+        self.egress_evidence = configure_timeout(egress_header_timeout)
         super().__init__(*args, workflow=workflow, **kwargs)
+        if self.egress_evidence is not None:
+            (self.logs_dir / "coordination-egress.json").write_text(
+                json.dumps(self.egress_evidence, indent=2) + "\n"
+            )
 
     async def install(self, environment):
         await super().install(environment)
@@ -95,6 +114,7 @@ class PiCoordination(PiWorkflow):
             environment,
             command="""python3 - <<'PATCH'
 from pathlib import Path
+from typing import Literal
 p = Path('/tmp/harbor-pi-subagent/index.ts')
 s = p.read_text()
 assert s.count('const MAX_CONCURRENCY = 4;') == 1, 'Unexpected packaged extension'

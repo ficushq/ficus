@@ -89,3 +89,35 @@ launcher additionally checks the built image ID and all frozen source hashes.
 Both arms retain Git history, worktree listings, and a repository bundle for
 post-run integration auditing. Ficus additionally retains a private database and
 filesystem checkpoint. Do not publish raw transcripts or checkpoints by default.
+
+## First attempt and transport diagnostic
+
+The first Ficus attempt was stopped after an architect exhausted native retries
+with `Connection error` while two dependent streams were active. It cost
+$1.657667 across 93 receipted requests. There are no unresolved usage holds.
+The checkpoint and all three payload hashes were verified. Pi did not run;
+there is no accepted final delivery or paired comparison from this attempt.
+See `coordination-v1-interrupted.json`.
+
+Native traces show four packages: a core CLI foundation, Python structural
+matching, JavaScript/C++ structural matching, and final integration. The foundation
+went through independent review, repair and approval before both dependents
+started. Integration remained queued. Reviewer-reported defects have not been
+independently reproduced by the operator; do not count them as verified catches.
+
+A no-inference reproduction uses the frozen Bun/OpenAI SDK and two concurrent
+1 MB requests to a fake server that serializes responses with a 22-second delay.
+Ordinary Docker networking completes at 22/44 seconds. Harbor's original
+restricted egress closes both at about 15 seconds with the same SDK connection
+error. Adding `readTimeout: 600s` to the sidecar handler completes at 22/44 seconds.
+The handler's response-header deadline is described in the
+[GOST source](https://github.com/go-gost/x/blob/master/handler/redirect/tcp/metadata.go);
+the measured behavior comes from Harbor's pinned image, not an assumption that
+current upstream documentation exactly matches it.
+
+`coordination_egress.py` provides this explicit opt-in using a copied build context.
+It does not edit installed Harbor, disable sniffing, change allowed hosts, alter
+budget reservations, or change production Ficus. The original freeze remains
+intact. `coordination-v2-plan.json` declares a fresh corrected pair with the same
+inputs and order, under the remaining phase budget. Any new attempt must pass the
+fixed-path network checks and freeze its changed source/context hashes first.
