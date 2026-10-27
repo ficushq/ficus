@@ -495,7 +495,10 @@ expect_match 'operator: FICUS_ROOT is the active release, as the units set it' "
 expect_match 'operator: exits with the entrypoint' "${out}" $'\nrc=0$'
 out=$(operator nonsense)
 expect_match 'operator: an unknown entrypoint is a usage error' "${out}" $'\nrc=2$'
-out=$(runuser -u "${SVC}" -- bash "${SCRIPT_DIR}/run-core-operator.sh" --dest "${DEST}" box-control 2>&1 || true)
+# A copy in the 0755 scratch dir: the checkout (CI: under /home/runner) may not be
+# traversable by the throwaway account, and the wrapper's own refusal is under test.
+install -m 0755 "${SCRIPT_DIR}/run-core-operator.sh" "${S}/run-core-operator.sh"
+out=$(runuser -u "${SVC}" -- bash "${S}/run-core-operator.sh" --dest "${DEST}" box-control 2>&1 || true)
 expect_match 'operator: refuses to run unless root' "${out}" 'run it as root'
 run_switch --revert >/dev/null
 out=$(operator box-control)
