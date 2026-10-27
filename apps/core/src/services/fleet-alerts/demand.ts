@@ -7,7 +7,7 @@ import {
 import { sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { isInboxMessageWakeEligible } from '../../entities/InboxMessage'
-import { MONITOR_LIVENESS_WINDOW_MS } from '../monitors/liveness'
+import { liveMonitorCondition } from '../monitors/live-monitors'
 import { awaitsCodeHostDelivery } from '../workflows/delivery-state'
 
 export interface SquadDemandSnapshot {
@@ -98,7 +98,6 @@ interface DemandRow extends Record<string, unknown> {
  */
 export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map<string, SquadDemandSnapshot>> {
   const now = input.now.toISOString()
-  const monitorCutoff = new Date(input.now.getTime() - MONITOR_LIVENESS_WINDOW_MS).toISOString()
   const activityCutoff = new Date(input.now.getTime() - SUPERVISED_ACTIVITY_WINDOW_MS).toISOString()
   const rows = await db.execute<DemandRow>(sql`
     WITH active_squads AS (
@@ -238,15 +237,10 @@ export async function getSquadDemandSnapshots(input: { now: Date }): Promise<Map
             AND (owner.id = stream.assignee_agent_id OR owner.id = ANY(COALESCE(stream.agent_ids, '{}'::uuid[]))
               OR owner.id::text IN (SELECT value FROM jsonb_each_text(COALESCE(flow.attempt_agents, '{}'::jsonb))))
             AND (
-              EXISTS (SELECT 1 FROM monitors AS monitor
-                WHERE monitor.agent_id = owner.id AND monitor.status = 'running'
-                  AND monitor.next_restart_at IS NULL
-                  -- Event-only monitors can be silent for hours while healthy.
-                  -- Require recent process confirmation, not stdout or a stale status row.
-                  AND monitor.last_confirmed_alive_at >= ${monitorCutoff}::timestamptz
-                  AND COALESCE(monitor.deadline_at,
-                    COALESCE(monitor.started_at, monitor.created_at) + monitor.timeout_ms * interval '1 millisecond')
-                    > ${now}::timestamptz)
+              -- Shared with the work-stream idle nudge: recent process
+              -- confirmation, not stdout or a stale status row.
+              EXISTS (SELECT 1 FROM monitors
+                WHERE monitors.agent_id = owner.id AND ${liveMonitorCondition(input.now)})
               OR EXISTS (SELECT 1 FROM local_deployments AS app
                 WHERE app.created_by_agent_id = owner.id AND app.squad_id = stream.squad_id
                   AND app.archived_at IS NULL AND app.mode = 'managed' AND app.status = 'running'

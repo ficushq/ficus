@@ -1,5 +1,6 @@
 import { maintenanceStore } from '../maintenance/store'
 import { listActiveSlotWaits } from '../slots/active-waits'
+import { listAgentsWithLiveMonitors } from '../monitors/live-monitors'
 import { acquireAgentQueueLock } from '../execution/agent-admission'
 import { externalDeliveryStreamIds } from '../workflows/delivery-state'
 import { activeWorkflowAttempts } from '@ficus/shared'
@@ -175,6 +176,9 @@ export async function blockCurrentContinuation(
     // a concurrent start rather than trusting the earlier idle snapshot.
     await acquireAgentQueueLock(tx, assigneeAgentId)
     if ((await listActiveSlotWaits(tx, [assigneeAgentId])).length) return null
+    // No live-monitor check here: this only escalates transport-retry and
+    // delivery-failure exhaustion, never idleness, and a monitor defers normal
+    // nudges before any delivery attempt can fail.
     await tx.execute(sql`select id from agents where id = ${assigneeAgentId} for update`)
     const [activeExecution] = await tx
       .select({ id: executions.id, status: executions.status })
@@ -552,6 +556,7 @@ export async function reportPersistentIdleIfCurrent(input: {
 
     await acquireAgentQueueLock(tx, input.assigneeAgentId)
     if ((await listActiveSlotWaits(tx, [input.assigneeAgentId])).length) return false
+    if ((await listAgentsWithLiveMonitors(tx, [input.assigneeAgentId], input.now)).size) return false
     await tx.execute(sql`select id from agents where id = ${input.assigneeAgentId} for update`)
     const [agent] = await tx.select().from(agents).where(eq(agents.id, input.assigneeAgentId)).limit(1)
     const [normalTrigger] = await tx
@@ -801,6 +806,11 @@ export async function reconcileWorkStreamContinuationsOnce(
   const slotWaitingAgentIds = new Set((await listActiveSlotWaits(db, idleAgentIds)).map((wait) => wait.agentId))
   const readyAgentIds = new Set(idleAgentIds.filter((id) => !busyAgentIds.has(id) && !slotWaitingAgentIds.has(id)))
   const candidates = streams.filter((s) => readyAgentIds.has(s.assigneeAgentId!))
+  // An assignee waiting on a live monitor is intentionally idle: suppress the
+  // normal idle nudge and persistent-idle notice, like a slot wait. Unlike a
+  // slot wait it stays a candidate, because transport retries recover failed
+  // runs rather than nudge idle ones and must keep their budget and settles.
+  const monitoringAgentIds = await listAgentsWithLiveMonitors(db, [...readyAgentIds], now)
 
   const cycleByStreamId = new Map<string, typeof workStreamContinuations.$inferSelect>()
   if (candidates.length) {
@@ -1095,6 +1105,7 @@ export async function reconcileWorkStreamContinuationsOnce(
     const observedTransportAttemptCount = substantiveCompletion ? 0 : cycle.transportAttemptCount
     if (kind === 'normal' && cycle.normalAttemptCount >= NORMAL_CONTINUATION_MAX_ATTEMPTS) {
       if (
+        !monitoringAgentIds.has(agentId) &&
         !substantiveCompletion &&
         cycle.status === 'delivered' &&
         cycle.clientId &&
@@ -1143,6 +1154,10 @@ export async function reconcileWorkStreamContinuationsOnce(
       continue
     }
 
+    // Nothing is written: once the monitor ends, the next sweep schedules this
+    // same nudge unless the monitor's terminal message already woke the agent.
+    if (kind === 'normal' && monitoringAgentIds.has(agentId)) continue
+
     const ordinal = kind === 'normal' ? 1 : observedTransportAttemptCount + 1
     const latestEndedAt = latest.endedAt
     const clientId = ['work-stream-continuation', workStream.id, cycle.generation, kind, ordinal, latest.id].join(':')
@@ -1161,6 +1176,7 @@ export async function reconcileWorkStreamContinuationsOnce(
       }
       await acquireAgentQueueLock(tx, agentId)
       if ((await listActiveSlotWaits(tx, [agentId])).length) return false
+      if (kind === 'normal' && (await listAgentsWithLiveMonitors(tx, [agentId], now)).size) return false
       const [updated] = await tx
         .update(workStreamContinuations)
         .set({
@@ -1390,6 +1406,12 @@ export async function reconcileWorkStreamContinuationsOnce(
         // human steering, real grants and other inbox notifications still wake.
         await acquireAgentQueueLock(tx, assigneeAgentId)
         if ((await listActiveSlotWaits(tx, [assigneeAgentId])).length) {
+          await deferClaim()
+          return
+        }
+        // A nudge scheduled before the monitor went live waits (pending) for it
+        // to end; transport retries are not idle nudges and proceed.
+        if (!transportTrigger && (await listAgentsWithLiveMonitors(tx, [assigneeAgentId], now)).size) {
           await deferClaim()
           return
         }
