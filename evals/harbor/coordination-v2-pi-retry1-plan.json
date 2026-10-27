@@ -1,0 +1,35 @@
+{
+  "experiment": "coordination-v2",
+  "arm": "pi",
+  "attempt": "retry1 after preserved provider overload interruption",
+  "declared_at_utc": "2026-10-27T16:47:02.842222+00:00",
+  "authorization": "User rotated the key, explicitly reset spending, then said great, continue.",
+  "fresh_repository_and_sessions": true,
+  "candidate_feedback_from_prior_attempts": false,
+  "task_runner_runtime_image_and_verifier": "Retain every frozen hash and preflight gate in coordination-v2-ready.json. No prompt or task amendments.",
+  "original_failed_attempt_retained": true,
+  "budget": {
+    "phase": "budget-phase-2026-10-27-164327-key-rotation",
+    "cap_usd": 30,
+    "opening_confirmed_usd": 7.2e-5,
+    "reservation_usd": 5.5,
+    "historical_ledger_preserved": true,
+    "historical_holds_reconciled": false,
+    "reset_authorized": true
+  },
+  "client": "coordv2-paid-pi-retry1",
+  "stop_policy": "One explicitly declared retry. Stop and preserve on provider/accounting error, budget rejection, or control failure; no automatic retry.",
+  "private_launcher_sha256": "fff8923dae98f4e0b9bb2b19836eb6c5e269a26a4b60eb536c294fc0a16ae1cb",
+  "preserved_predecessor_sha256": {
+    "coordv2-paid-ficus-execution.json": "3786a4bde73a20343405e0fa0dba0faa45b7a3dadc61d277755c47b8233db27b",
+    "jobs/coordv2-paid-ficus/task__seishTt/result.json": "3ec5891512b341b11dc4b8d63a61c21d31b959c43a898974ef90c1a373d45463",
+    "jobs/coordv2-paid-ficus/task__seishTt/agent/snapshot.json": "fb3efeda92c4874953b3fd5ccda168534766f132a6d85c869df1b12ca2be94a1",
+    "jobs/coordv2-paid-ficus/task__seishTt/artifacts/logs/artifacts/model.patch": "ab97b7022651d4ed1c5a4fdf82b827b24f47d73924992cf2d3dd9724f7582495",
+    "post-stop-grade-v2/manifest.json": "e89067408df8ff7c166b37a43fca12ad4d98707059e297e87225dce89c5ec085",
+    "post-stop-grade-v2/counts.json": "7d75f70f7e0f92863f8a1fe81043d076e671c62787a2c379c0e223b2c706b53b",
+    "coordv2-paid-pi-execution.json": "8665b9aaf40ea690c78e78fffc202189fe1cf9c131dbb01c9eab8afcb70a8cb9",
+    "jobs/coordv2-paid-pi/task__nBaWpoY/result.json": "8915e2cd7f0d4381f5d7fe51d84af5f35f59cac0d149b71967714fd0d349cf66",
+    "jobs/coordv2-paid-pi/task__nBaWpoY/artifacts/logs/artifacts/model.patch": "bad1c157631f0e0ca4fc2592473913340f0e79449d1b55ec052218f7a10071f1"
+  },
+  "comparison_caveat": "Ficus first corrected attempt versus Pi retry after provider interruption; disclose prior costs and stopped outcomes. No uninterrupted paired-run claim."
+}
