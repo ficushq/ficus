@@ -3,7 +3,7 @@ import { chmod, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MANAGED_BIGBRAIN_DEFAULT_LIMITS, MANAGED_BIGBRAIN_UPSTREAM_COMMIT } from '@ficus/shared/managed-bigbrain'
-import { ManagedHostError, createManagedHostClient } from './host-client'
+import { ManagedHostError, createManagedHostClient, managedHelperArgv } from './host-client'
 import { managedVaultOrigin, readInstalledHost } from './host-identity'
 
 const roots: string[] = []
@@ -40,6 +40,9 @@ const receipt = {
   origin: managedVaultOrigin(VAULT, { zone: 'example.com', tenantLabel: null }),
   readAccess: 'active',
 }
+/** A client for a Core running as root: the helper is spawned directly. */
+const rootClient = (options: Parameters<typeof createManagedHostClient>[0]) =>
+  createManagedHostClient({ euid: () => 0, ...options })
 async function scratch() {
   const dir = await mkdtemp(join(tmpdir(), 'bigbrain-host-client-'))
   roots.push(dir)
@@ -75,7 +78,7 @@ const rename = {
 
 test('sends one validated envelope from the installed host and returns the verified receipt', async () => {
   const fake = await launcher(reply({ ok: true, action: 'rename', physicalHostBinding: BINDING, receipt }))
-  const client = createManagedHostClient({ helperPath: fake.path })
+  const client = rootClient({ helperPath: fake.path })
   const result = await client.call(host, REQUEST, rename)
   expect('receipt' in result && result.receipt.vaultId).toBe(VAULT)
   expect(JSON.parse(await fake.stdin())).toEqual({ contractVersion: 1, requestId: REQUEST, ...host, ...rename })
@@ -83,7 +86,7 @@ test('sends one validated envelope from the installed host and returns the verif
 
 test('an invalid request never starts the helper', async () => {
   const fake = await launcher('touch "$(dirname "$0")/started"')
-  const client = createManagedHostClient({ helperPath: fake.path })
+  const client = rootClient({ helperPath: fake.path })
   expect(await code(client.call(host, REQUEST, { ...rename, displayName: ' bad ' }))).toEqual([
     'invalid_request',
     false,
@@ -101,13 +104,12 @@ test('helper refusals keep only contract codes; busy is retryable; exit 78 is no
     ['echo "{not json"', ['invalid_response', false]],
   ] as const) {
     const fake = await launcher(body)
-    expect(await code(createManagedHostClient({ helperPath: fake.path }).call(host, REQUEST, rename))).toEqual([
-      ...expected,
-    ])
+    expect(await code(rootClient({ helperPath: fake.path }).call(host, REQUEST, rename))).toEqual([...expected])
   }
-  expect(
-    await code(createManagedHostClient({ helperPath: '/nonexistent/ficus-bigbrainctl' }).call(host, REQUEST, rename))
-  ).toEqual(['not_installed', false])
+  expect(await code(rootClient({ helperPath: '/nonexistent/ficus-bigbrainctl' }).call(host, REQUEST, rename))).toEqual([
+    'not_installed',
+    false,
+  ])
 })
 
 test('replies about another request, binding, vault, tenant, generation or origin are refused', async () => {
@@ -132,7 +134,7 @@ test('replies about another request, binding, vault, tenant, generation or origi
     const fake = await launcher(
       `printf '%s\\n' '${JSON.stringify({ contractVersion: 1, requestId: REQUEST, ...bad })}'`
     )
-    expect((await code(createManagedHostClient({ helperPath: fake.path }).call(host, REQUEST, rename)))[0]).toMatch(
+    expect((await code(rootClient({ helperPath: fake.path }).call(host, REQUEST, rename)))[0]).toMatch(
       /identity_mismatch|invalid_response/
     )
   }
@@ -172,12 +174,13 @@ test('member replies must name the requested vault, invitation and member', asyn
     ],
   ] as const) {
     const fake = await launcher(reply(bad))
-    expect(
-      await code(createManagedHostClient({ helperPath: fake.path }).call(host, REQUEST, request as never))
-    ).toEqual(['identity_mismatch', false])
+    expect(await code(rootClient({ helperPath: fake.path }).call(host, REQUEST, request as never))).toEqual([
+      'identity_mismatch',
+      false,
+    ])
   }
   const good = await launcher(reply({ ...ok, action: 'member-set-access', vaultId: VAULT, member }))
-  const result = await createManagedHostClient({ helperPath: good.path }).call(host, REQUEST, {
+  const result = await rootClient({ helperPath: good.path }).call(host, REQUEST, {
     action: 'member-set-access',
     vaultId: VAULT,
     expectedGeneration: 2,
@@ -189,15 +192,13 @@ test('member replies must name the requested vault, invitation and member', asyn
 
 test('oversized output and deadlines kill the helper and report retryable codes', async () => {
   const big = await launcher('head -c 140000 /dev/zero | tr "\\0" "a"')
-  expect(await code(createManagedHostClient({ helperPath: big.path }).call(host, REQUEST, rename))).toEqual([
-    'output_limit',
-    true,
-  ])
+  expect(await code(rootClient({ helperPath: big.path }).call(host, REQUEST, rename))).toEqual(['output_limit', true])
   const slow = await launcher('sleep 5')
   const started = Date.now()
-  expect(
-    await code(createManagedHostClient({ helperPath: slow.path, timeoutMs: () => 200 }).call(host, REQUEST, rename))
-  ).toEqual(['host_unreachable', true])
+  expect(await code(rootClient({ helperPath: slow.path, timeoutMs: () => 200 }).call(host, REQUEST, rename))).toEqual([
+    'host_unreachable',
+    true,
+  ])
   expect(Date.now() - started).toBeLessThan(3000)
 })
 
@@ -219,4 +220,60 @@ test('the installed host record is read only from a root-style owned, non-writab
   expect(await code(readInstalledHost({ path, owner }))).toEqual(['not_installed', false])
   await writeFile(path, JSON.stringify({ ...installed, pad: 'x'.repeat(17000) }), { mode: 0o600 })
   expect(await code(readInstalledHost({ path, owner }))).toEqual(['storage_unavailable', false])
+})
+
+test('a non-root Core reaches the helper through sudo -n; root spawns it directly', async () => {
+  expect(managedHelperArgv('/usr/local/libexec/ficus-bigbrainctl', 0)).toEqual(['/usr/local/libexec/ficus-bigbrainctl'])
+  expect(managedHelperArgv('/usr/local/libexec/ficus-bigbrainctl', 998)).toEqual([
+    '/usr/bin/sudo',
+    '-n',
+    '/usr/local/libexec/ficus-bigbrainctl',
+  ])
+  for (const [euid, expected] of [
+    [0, ['/usr/local/libexec/ficus-bigbrainctl']],
+    [998, ['/usr/bin/sudo', '-n', '/usr/local/libexec/ficus-bigbrainctl']],
+  ] as const) {
+    const seen: string[][] = []
+    const spawn = ((argv: string[]) => {
+      seen.push(argv)
+      throw Object.assign(new Error('stub'), { code: 'ENOENT' })
+    }) as unknown as typeof Bun.spawn
+    const client = createManagedHostClient({ euid: () => euid, spawn })
+    expect(await code(client.call(host, REQUEST, rename))).toEqual(['not_installed', false])
+    expect(seen).toEqual([[...expected]])
+  }
+})
+
+test('through sudo: the reply passes through, and a sudo refusal is not installed (not retryable)', async () => {
+  const fake = await launcher(reply({ ok: true, action: 'rename', physicalHostBinding: BINDING, receipt }))
+  const dir = await scratch()
+  const sudoPath = join(dir, 'sudo')
+  // Like sudo -n with a matching NOPASSWD rule: requires -n, then runs the helper with no arguments.
+  await writeFile(sudoPath, `#!/bin/bash\n[ "$1" = -n ] && [ $# -eq 2 ] || exit 2\nexec "$2"\n`)
+  await chmod(sudoPath, 0o755)
+  const viaSudo = createManagedHostClient({ helperPath: fake.path, euid: () => 998, sudoPath })
+  const result = await viaSudo.call(host, REQUEST, rename)
+  expect('receipt' in result && result.receipt.vaultId).toBe(VAULT)
+  expect(JSON.parse(await fake.stdin()).requestId).toBe(REQUEST)
+
+  const refusing = join(dir, 'sudo-refusing')
+  await writeFile(refusing, '#!/bin/bash\necho "sudo: a password is required" >&2\nexit 1\n')
+  await chmod(refusing, 0o755)
+  expect(
+    await code(
+      createManagedHostClient({ helperPath: fake.path, euid: () => 998, sudoPath: refusing }).call(
+        host,
+        REQUEST,
+        rename
+      )
+    )
+  ).toEqual(['not_installed', false])
+
+  // A helper failure that does print through sudo keeps its own classification.
+  const failing = await launcher('echo "sv_secret"; exit 1')
+  expect(
+    await code(
+      createManagedHostClient({ helperPath: failing.path, euid: () => 998, sudoPath }).call(host, REQUEST, rename)
+    )
+  ).toEqual(['operation_failed', true])
 })

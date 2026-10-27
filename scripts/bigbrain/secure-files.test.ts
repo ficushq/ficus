@@ -11,7 +11,9 @@ import {
   writePublicText,
   readPublicText,
   ensureOwnedDirectory,
+  ensurePrivateDirectory,
   openPrivateFile,
+  sharePrivateDirectory,
 } from './secure-files'
 const roots: string[] = []
 afterEach(async () => {
@@ -113,4 +115,46 @@ test('bounds file reads and never exposes parsed input through error messages', 
   }
   await expect(readPrivateJson(root, '../receipt.json', schema, { uid })).rejects.toThrow('storage_unavailable')
   await expect(readPrivateJson(root, 'receipt.json', schema, { uid: uid + 1 })).rejects.toThrow('storage_unavailable')
+})
+
+test('a private directory shared with one group: 0750 owner:group, its private files 0640 to that group only', async () => {
+  const root = await fixture()
+  const gid = process.getgid!()
+  const dir = join(root, 'shared')
+  await ensurePrivateDirectory(dir, { uid })
+  expect((await stat(dir)).mode & 0o7777).toBe(0o700)
+  await writePrivateJson(dir, 'host.json', { phase: 'ready' }, schema, { uid })
+  await writeFile(join(dir, 'foreign.json'), '{}', { mode: 0o644 })
+  await symlink(join(dir, 'host.json'), join(dir, 'alias.json'))
+  await sharePrivateDirectory(dir, gid, { uid })
+  const shared = await stat(dir)
+  expect([shared.mode & 0o7777, shared.gid]).toEqual([0o750, gid])
+  const file = await stat(join(dir, 'host.json'))
+  expect([file.mode & 0o777, file.gid]).toEqual([0o640, gid])
+  // Only files this module wrote are shared: a public-mode file is left as it is.
+  expect((await stat(join(dir, 'foreign.json'))).mode & 0o777).toBe(0o644)
+  // Root-side readers and writers keep working; a new private file lands shared too.
+  expect(await readPrivateJson(dir, 'host.json', schema, { uid })).toEqual({ phase: 'ready' })
+  await writePrivateJson(dir, 'next.json', { phase: 'ready' }, schema, { uid })
+  const next = await stat(join(dir, 'next.json'))
+  expect([next.mode & 0o777, next.gid]).toEqual([0o640, gid])
+  // Idempotent, and an existing shared directory is accepted as private.
+  await sharePrivateDirectory(dir, gid, { uid })
+  await ensurePrivateDirectory(dir, { uid })
+  // A 0640 file outside a shared directory is still refused, and other modes in a shared one too.
+  const plain = join(root, 'plain')
+  await ensurePrivateDirectory(plain, { uid })
+  await writeFile(join(plain, 'x.json'), '{"phase":"ready"}', { mode: 0o640 })
+  await chmod(join(plain, 'x.json'), 0o640)
+  await expect(readPrivateJson(plain, 'x.json', schema, { uid })).rejects.toThrow('storage_unavailable')
+  await writeFile(join(dir, 'world.json'), '{"phase":"ready"}', { mode: 0o644 })
+  await chmod(join(dir, 'world.json'), 0o644)
+  await expect(readPrivateJson(dir, 'world.json', schema, { uid })).rejects.toThrow('storage_unavailable')
+  // A group-writable or world-readable directory is never accepted as shared.
+  await chmod(dir, 0o770)
+  await expect(readPrivateJson(dir, 'host.json', schema, { uid })).rejects.toThrow('storage_unavailable')
+  await expect(ensurePrivateDirectory(dir, { uid })).rejects.toThrow('storage_unavailable')
+  await chmod(dir, 0o755)
+  await expect(readPrivateJson(dir, 'host.json', schema, { uid })).rejects.toThrow('storage_unavailable')
+  await expect(sharePrivateDirectory(dir, -1, { uid })).rejects.toThrow('storage_unavailable')
 })

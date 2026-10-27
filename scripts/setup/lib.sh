@@ -1495,20 +1495,25 @@ run_user_predicted_home() { # USER
 }
 
 # The supplementary groups the service user needs on this host, comma-separated.
-run_user_groups() { # SANDBOX_RUNTIME
+#   ficus-bigbrain-client  only with managed BigBrain: the gateway socket (R6). Joined here,
+#                    before the services start, because a running process never gains a group;
+#                    the BigBrain installer adds it again (and Caddy) when it installs the host.
+run_user_groups() { # SANDBOX_RUNTIME [BIGBRAIN_ENABLED]
+  local groups=systemd-journal
   case "$1" in
-    docker-sysbox | docker-socket) printf 'systemd-journal,docker' ;;
-    *) printf 'systemd-journal' ;;
+    docker-sysbox | docker-socket) groups+=,docker ;;
   esac
+  [[ ${2:-false} == true ]] && groups+=,ficus-bigbrain-client
+  printf '%s' "${groups}"
 }
 
 # The --dry-run line for ensure_run_user: what it would do, or nothing when the
 # account is root or already exists (group additions are not worth a line).
-run_user_plan() { # USER SANDBOX_RUNTIME
+run_user_plan() { # USER SANDBOX_RUNTIME [BIGBRAIN_ENABLED]
   [[ $1 == root ]] && return 0
   id -u "$1" >/dev/null 2>&1 && return 0
   printf 'create system user %s (home /home/%s, shell /usr/sbin/nologin, groups %s)' \
-    "$1" "$1" "$(run_user_groups "$2")"
+    "$1" "$1" "$(run_user_groups "$2" "${3:-false}")"
 }
 
 # Create the service user when it is missing, then add the groups it needs.
@@ -1518,16 +1523,16 @@ run_user_plan() { # USER SANDBOX_RUNTIME
 # toolkit did not add could break an operator's own setup). The home mode is
 # set explicitly: useradd takes it from HOME_MODE in /etc/login.defs, and a
 # world-traversable home would expose HOME_DIR the way opening /root would.
-ensure_run_user() { # USER SANDBOX_RUNTIME
-  local user=$1 runtime=$2 group groups
+ensure_run_user() { # USER SANDBOX_RUNTIME [BIGBRAIN_ENABLED]
+  local user=$1 runtime=$2 bigbrain=${3:-false} group groups
   [[ ${user} == root ]] && return 0
   if ! id -u "${user}" >/dev/null 2>&1; then
-    log_info "$(run_user_plan "${user}" "${runtime}")"
+    log_info "$(run_user_plan "${user}" "${runtime}" "${bigbrain}")"
     as_root useradd --system --create-home --home-dir "/home/${user}" \
       --shell /usr/sbin/nologin --user-group "${user}"
     as_root install -d -m 0750 -o "${user}" -g "${user}" "/home/${user}"
   fi
-  groups=$(run_user_groups "${runtime}")
+  groups=$(run_user_groups "${runtime}" "${bigbrain}")
   for group in ${groups//,/ }; do
     # docker's group comes with docker.io; on a docker runtime the daemon may
     # be installed later. Its postinst reuses an existing system group.
@@ -2314,6 +2319,28 @@ BIGBRAIN_ETC="${BIGBRAIN_ETC:-/etc/ficus/bigbrain}"       # test seams only
 bigbrain_caddy_sites() { printf '%s/bigbrain-caddy' "$(dirname "${BIGBRAIN_ETC}")"; }
 BIGBRAIN_STATE="${BIGBRAIN_STATE:-/var/lib/ficus-bigbrain}"
 BIGBRAIN_BUN="${BIGBRAIN_BUN:-/usr/local/bin/bun}"
+# The root helper a non-root Core reaches through sudo -n (MANAGED_BIGBRAIN_HELPER), and the one
+# sudoers rule that allows it: the helper, with no arguments ("" — it refuses any).
+BIGBRAIN_HELPER=/usr/local/libexec/ficus-bigbrainctl
+BIGBRAIN_SUDOERS="${BIGBRAIN_SUDOERS:-/etc/sudoers.d/ficus-bigbrain}" # test seam only
+bigbrain_sudoers_content() { # RUN_USER
+  printf '%s ALL=(root) NOPASSWD: %s ""\n' "$1" "${BIGBRAIN_HELPER}"
+}
+# 0440 root, visudo-validated before it is installed (as install_update_sudoers).
+install_bigbrain_sudoers() { # RUN_USER
+  local tmp
+  tmp=$(mktemp)
+  bigbrain_sudoers_content "$1" >"${tmp}"
+  if as_root sh -c 'command -v visudo >/dev/null 2>&1'; then
+    as_root visudo -cf "${tmp}" >/dev/null || {
+      rm -f "${tmp}"
+      die "generated BigBrain sudoers rule failed visudo validation — refusing to install ${BIGBRAIN_SUDOERS}"
+    }
+  fi
+  as_root install -m 0440 -o root -g root "${tmp}" "${BIGBRAIN_SUDOERS}"
+  rm -f "${tmp}"
+  log_info "installed ${BIGBRAIN_SUDOERS} (NOPASSWD ${BIGBRAIN_HELPER} for $1)"
+}
 
 bigbrain_config_json() {
   local section
@@ -2336,8 +2363,11 @@ bigbrain_enabled() { # CONFIG_JSON
 }
 
 # Install/upgrade under the host lifecycle lock shared with the root helper launcher.
+# A non-root Core (core.run_user, RUN_USER) gets what it needs from the installer: read access to
+# the host record and the read handoffs, the gateway client group, and its sudoers rule.
 bigbrain_install() { # RELEASE_DIR CONFIG_JSON
-  local release=$1 config=$2 runtime out code
+  local release=$1 config=$2 runtime out code core=()
+  [[ ${RUN_USER:-root} == root ]] || core=(--core-account "${RUN_USER}")
   if ! bigbrain_enabled "${config}"; then
     if as_root test -e "${BIGBRAIN_ETC}/host.json"; then
       die "managed BigBrain is installed on this host: bigbrain.enabled: false would orphan its vaults — remove them through the control plane first; nothing was changed"
@@ -2354,6 +2384,7 @@ bigbrain_install() { # RELEASE_DIR CONFIG_JSON
     set -euo pipefail
     umask 077
     state=$1 runtime=$2 bun=$3
+    shift 3
     [[ -d $state ]] || install -d -m 0711 -o root -g root "$state"
     [[ -d $state/control ]] || install -d -m 0700 -o root -g root "$state/control"
     [[ ! -L $state/control/host.lock ]]
@@ -2361,14 +2392,15 @@ bigbrain_install() { # RELEASE_DIR CONFIG_JSON
     flock -w 180 -x 9
     # The installer verifies this interpreter (ownership, exact version) before any write.
     exec /usr/bin/env -i HOME=/nonexistent PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 \
-      BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 "$bun" --no-install --no-env-file "$runtime" install
-  ' ficus-bigbrain-install "${BIGBRAIN_STATE}" "${runtime}" "${BIGBRAIN_BUN}" <<<"${config}") || true
+      BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 "$bun" --no-install --no-env-file "$runtime" install "$@"
+  ' ficus-bigbrain-install "${BIGBRAIN_STATE}" "${runtime}" "${BIGBRAIN_BUN}" "${core[@]}" <<<"${config}") || true
   if [[ $(jq -r '.ok // false' <<<"${out}" 2>/dev/null) != true ]]; then
     code=$(jq -r '.code // "operation_failed"' <<<"${out}" 2>/dev/null) || code=operation_failed
     [[ ${code} =~ ^[a-z_]{1,40}$ ]] || code=operation_failed
     die "managed BigBrain install refused (${code}); the host record was not changed"
   fi
   log_info "managed BigBrain runtime installed: $(jq -c '{created, artifactDigest, hostEpoch, hostState, vaultNames}' <<<"${out}")"
+  if [[ ${RUN_USER:-root} != root ]]; then install_bigbrain_sudoers "${RUN_USER}"; fi
 }
 
 # Restore: an envelope's managed-bigbrain/ directory never reaches HOME_DIR or the database

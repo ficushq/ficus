@@ -1,6 +1,7 @@
 /**
- * The root-owned installed host record (`/etc/ficus/bigbrain/host.json`). Hosted Core runs as
- * root (an accepted, documented boundary) and reads it to build the helper envelope: tenant,
+ * The root-owned installed host record (`/etc/ficus/bigbrain/host.json`). Hosted Core reads it
+ * (as root, or as its service account through the group the installer shares it with: directory
+ * 0750, record 0640) to build the helper envelope: tenant,
  * physical-host binding, epoch, zone, limits, pin and artifact digest. It is read with a
  * no-follow open and owner/mode/size checks on the opened descriptor; it is never written here.
  */

@@ -10,7 +10,7 @@ import { dispatchHostRequest } from './control'
 import { simulatedHost } from './host-test-fixtures'
 import type { NativeMember } from './native-admin'
 import { managedPaths } from './paths'
-import { readPrivateJson, writePrivateJson } from './secure-files'
+import { readPrivateJson, sharePrivateDirectory, writePrivateJson } from './secure-files'
 import { initializeStorageNamespace } from './volume-image'
 import { repairVaultNames } from './vault-name'
 import { memberAdminReply } from './member-admin'
@@ -224,6 +224,18 @@ test('create runs every phase once: owner escrow, ONE read-only agent credential
   expect(handoff.token).not.toBe(token('00000001'))
   expect((await stat(managedPaths({ root: f.root, vaultId: A }).handoff)).mode & 0o777).toBe(0o600)
   expect(f.ingress()).toBeGreaterThan(0)
+})
+
+test('a read-handoff directory shared with the Core group gets 0640 handoffs in that group; root-only stays 0600', async () => {
+  const f = await fixture()
+  const handoffs = join(f.root, 'read-handoff')
+  const gid = process.getgid!()
+  await mkdir(handoffs, { mode: 0o700 })
+  await sharePrivateDirectory(handoffs, gid, { uid })
+  expect(await f.send(createRequest())).toMatchObject({ ok: true, receipt: { state: 'ready' } })
+  const info = await stat(managedPaths({ root: f.root, vaultId: A }).handoff)
+  expect([info.mode & 0o777, info.gid]).toEqual([0o640, gid])
+  expect((await stat(handoffs)).mode & 0o7777).toBe(0o750)
 })
 
 test('the host refuses a new vault whose hostname another recorded vault already has, before anything exists', async () => {

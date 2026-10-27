@@ -97,7 +97,8 @@ EOF
 chmod 0755 "${BIGBRAIN_BUN}"
 cat >"${release}/bigbrain/ficus-bigbrain-host.js" <<EOF
 set -euo pipefail
-[[ \$# -eq 1 && \$1 == install ]] || exit 9
+[[ \$1 == install && ( \$# -eq 1 || ( \$# -eq 3 && \$2 == --core-account ) ) ]] || exit 9
+printf '%s\n' "\$*" >"${T}/argv"
 # The lock is held (fd 9) by our parent while we run; a second locker must fail.
 flock -n -x "${BIGBRAIN_STATE}/control/host.lock" true && exit 8
 cat >"${T}/stdin.json"
@@ -110,6 +111,28 @@ out=$(FICUS_LEAK_PROBE=secret bigbrain_install "${release}" "${enabled_json}" 2>
 expect_match 'installer runs under the held lifecycle lock and reports a safe summary' "${out}" 'runtime installed: .*"created":true'
 expect_eq 'installer receives exactly the validated config on stdin' "$(cat "${T}/stdin.json")" "${enabled_json}"
 expect_eq 'lock file is created private without truncation' "$(cat "${T}/lock-mode")" 600
+expect_eq 'a root Core: the installer gets no argument' "$(cat "${T}/argv")" 'install'
+
+# A non-root Core (core.run_user): the installer is told the account (it shares the host record
+# and read handoffs with its group and adds it to the gateway client group), then the one sudoers
+# rule for the root helper is installed, visudo-checked, 0440 root.
+out=$(
+  RUN_USER=svc BIGBRAIN_SUDOERS="${T}/sudoers-bigbrain"
+  as_root() {
+    case $1 in
+      visudo) printf 'visudo %s\n' "$*" >>"${T}/sudo-calls" ;;
+      install) printf '%s\n' "$*" >>"${T}/sudo-calls"; cp "${@: -2:1}" "${@: -1}" ;;
+      *) "$@" ;;
+    esac
+  }
+  bigbrain_install "${release}" "${enabled_json}" 2>&1
+)
+expect_eq 'a non-root Core: the installer is told the Core account' "$(cat "${T}/argv")" 'install --core-account svc'
+expect_eq 'a non-root Core: the sudoers rule allows exactly the helper, with no arguments' \
+  "$(cat "${T}/sudoers-bigbrain")" 'svc ALL=(root) NOPASSWD: /usr/local/libexec/ficus-bigbrainctl ""'
+expect_match 'a non-root Core: the rule is visudo-validated before it is installed 0440 root' \
+  "$(cat "${T}/sudo-calls")" "^visudo visudo -cf .*"$'\n'"install -m 0440 -o root -g root .* ${T}/sudoers-bigbrain$"
+rm -f "${T}/sudo-calls"
 
 with_result() {
   printf '%s\n' "$1" >"${T}/fake-result"

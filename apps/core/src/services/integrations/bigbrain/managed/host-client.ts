@@ -1,6 +1,9 @@
 /**
  * Local bounded invocation of the fixed root helper `/usr/local/libexec/ficus-bigbrainctl`.
- * Only hosted Core (root, by an accepted documented boundary) on a managed deployment calls it.
+ * Only hosted Core on a managed deployment calls it. The helper refuses any caller that is not
+ * euid 0, so a Core running as its unprivileged service user goes through `sudo -n` and the
+ * single NOPASSWD rule the installer writes (`<user> ALL=(root) NOPASSWD: <helper> ""`: the
+ * helper, with no arguments). A sudo refusal (exit 1, no reply) means that rule is missing.
  * One strict JSON request goes in on stdin; one strict reply comes back on stdout, capped and
  * validated against the request (ID, action, binding, receipt identity). stderr is drained and
  * discarded, never logged. Errors carry only fixed contract codes. The launcher runs the work in
@@ -40,6 +43,7 @@ export type ManagedHostCall = Request extends infer R
   : never
 
 const SLOW = new Set<Action>(['create', 'delete'])
+const SUDO = '/usr/bin/sudo'
 const STDERR_BYTES = 4096
 
 export interface ManagedHostClientOptions {
@@ -47,6 +51,14 @@ export interface ManagedHostClientOptions {
   /** Deadline per call; defaults to 200 s for create/delete (launcher RuntimeMaxSec=180) and 30 s otherwise. */
   timeoutMs?: (action: Action) => number
   spawn?: typeof Bun.spawn
+  /** The calling process's effective uid; defaults to `process.geteuid()`. */
+  euid?: () => number
+  sudoPath?: string
+}
+
+/** The argv that reaches the root helper: directly as root, through `sudo -n` otherwise. */
+export function managedHelperArgv(helper: string, euid: number, sudo = SUDO): string[] {
+  return euid === 0 ? [helper] : [sudo, '-n', helper]
 }
 
 async function readCapped(
@@ -78,15 +90,19 @@ async function readCapped(
 export function createManagedHostClient(options: ManagedHostClientOptions = {}) {
   const helper = options.helperPath ?? MANAGED_BIGBRAIN_HELPER
   const spawn = options.spawn ?? Bun.spawn
+  const euid = options.euid ?? (() => process.geteuid?.() ?? 0)
+  const sudo = options.sudoPath ?? SUDO
   const deadline = options.timeoutMs ?? ((action: Action) => (SLOW.has(action) ? 200_000 : 30_000))
   // One call at a time from this process; across processes the launcher's flock answers `busy`.
   let queue: Promise<unknown> = Promise.resolve()
 
   async function invoke(request: Request): Promise<ManagedBigbrainHostReply> {
     const body = new TextEncoder().encode(JSON.stringify(request))
+    const argv = managedHelperArgv(helper, euid(), sudo)
+    const viaSudo = argv.length > 1
     let child: ReturnType<typeof Bun.spawn>
     try {
-      child = spawn([helper], {
+      child = spawn(argv, {
         cwd: '/',
         env: { PATH: '/usr/sbin:/usr/bin:/sbin:/bin', LANG: 'C.UTF-8' },
         stdin: 'pipe',
@@ -128,6 +144,8 @@ export function createManagedHostClient(options: ManagedHostClientOptions = {}) 
       }
       if (exitCode === 78) throw new ManagedHostError('not_installed', false)
       const text = new TextDecoder().decode(stdout.bytes).trim()
+      // sudo refused (no NOPASSWD rule for this account): nothing to retry until it is installed.
+      if (viaSudo && exitCode === 1 && text === '') throw new ManagedHostError('not_installed', false)
       const line = text.split('\n').at(-1) ?? ''
       try {
         return parseManagedBigbrainHostReply(line)

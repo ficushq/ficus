@@ -2,7 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { installHostAssets, GATEWAY_ACCOUNT } from './host-assets'
+import { CADDY_CLIENT_DROPIN, coreAccountGid, installHostAssets, GATEWAY_ACCOUNT } from './host-assets'
 import type { PrivateCommandRunner } from './process'
 
 const roots: string[] = []
@@ -64,7 +64,7 @@ test('installs the release-bound root launcher (0750), slice and gateway unit, c
   expect(f.serving).toEqual([String(f.calls.length)])
   // Socket parents are declared for boot and created before the gateway first starts.
   expect(await readFile(join(f.opts.tmpfilesDirectory, 'ficus-bigbrain.conf'), 'utf8')).toContain(
-    'd /run/ficus-bigbrain/gateway 2750 ficus-bb-gateway caddy -'
+    'd /run/ficus-bigbrain/gateway 2750 ficus-bb-gateway ficus-bigbrain-client -'
   )
   const order = f.calls.map((c) => c.slice(0, 2).join(' '))
   expect(order.indexOf('/usr/bin/systemd-tmpfiles --create')).toBeLessThan(order.indexOf('/usr/bin/systemctl enable'))
@@ -110,4 +110,40 @@ test('an existing account without the gateway marker is never adopted', async ()
   const ours = await fixture('ours')
   await installHostAssets(D1, ours.opts)
   expect(ours.calls.some((c) => c[0] === '/usr/sbin/useradd')).toBe(false)
+})
+
+test('the gateway client group: created once, the Core account joins it, Caddy joins through a drop-in and restarts once', async () => {
+  const f = await fixture()
+  await installHostAssets(D1, { ...f.opts, coreAccount: 'ficus' })
+  expect(f.calls).toContainEqual(['/usr/sbin/groupadd', '--system', 'ficus-bigbrain-client'])
+  expect(f.calls).toContainEqual(['/usr/sbin/usermod', '-aG', 'ficus-bigbrain-client', 'ficus'])
+  const dropIn = join(f.opts.unitDirectory, 'caddy.service.d', 'ficus-bigbrain-client.conf')
+  expect(await readFile(dropIn, 'utf8')).toBe(CADDY_CLIENT_DROPIN)
+  expect(CADDY_CLIENT_DROPIN).toContain('SupplementaryGroups=ficus-bigbrain-client')
+  // A running Caddy picks the group up only by restarting: after the daemon-reload, before the gateway.
+  const order = f.calls.map((c) => c.slice(0, 3).join(' '))
+  const restart = order.indexOf('/usr/bin/systemctl try-restart caddy.service')
+  expect(restart).toBeGreaterThan(order.indexOf('/usr/bin/systemctl daemon-reload'))
+  expect(restart).toBeLessThan(order.indexOf('/usr/bin/systemctl restart ficus-bigbrain-gateway.service'))
+  // The next install finds the drop-in in place: Caddy is not restarted again.
+  const before = f.calls.length
+  await installHostAssets(D2, f.opts)
+  expect(f.calls.slice(before).some((c) => c[1] === 'try-restart')).toBe(false)
+  // A root Core is never added; an invalid account name is refused before any change.
+  expect(f.calls.slice(before).some((c) => c[0] === '/usr/sbin/usermod')).toBe(false)
+  const g = await fixture()
+  await expect(installHostAssets(D1, { ...g.opts, coreAccount: '../x' })).rejects.toThrow('invalid_request')
+})
+
+test('the Core account resolves to its primary gid; root, unknown or odd records are refused', async () => {
+  const passwd =
+    (line: string, code = 0) =>
+    async () => ({ code, stdout: `${line}\n` })
+  expect(await coreAccountGid(passwd('ficus:x:998:997::/home/ficus:/usr/sbin/nologin'), 'ficus')).toBe(997)
+  await expect(coreAccountGid(passwd('', 2), 'ficus')).rejects.toThrow('invalid_request')
+  await expect(coreAccountGid(passwd('root:x:0:0::/root:/bin/bash'), 'root')).rejects.toThrow('invalid_request')
+  await expect(coreAccountGid(passwd('ficus:x:998:0::/home/ficus:/bin/sh'), 'ficus')).rejects.toThrow(
+    'identity_mismatch'
+  )
+  await expect(coreAccountGid(passwd('other:x:998:997::/home/o:/bin/sh'), 'ficus')).rejects.toThrow('identity_mismatch')
 })

@@ -4,6 +4,11 @@ import { z } from 'zod'
 export const BIGBRAIN_STATE_ROOT = '/var/lib/ficus-bigbrain'
 /** The credential-free gateway's unit: the only ingress to every vault socket. */
 export const GATEWAY_UNIT = 'ficus-bigbrain-gateway.service'
+/** The only clients of the gateway socket: Caddy (ingress) and the hosted Core account (shared-vault
+ * tools). Owns the socket directory (setgid 2750) so the socket is 0660 to this group. */
+export const GATEWAY_CLIENT_GROUP = 'ficus-bigbrain-client'
+/** A login name the installer accepts for the hosted Core account (useradd's portable set). */
+export const CORE_ACCOUNT_NAME = /^[a-z_][a-z0-9_-]{0,31}$/
 const pathInput = z
   .object({
     vaultId: z

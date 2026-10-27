@@ -3550,10 +3550,10 @@ expect_match 'install_artifacts: unsafe-target message names the offense' "${ar_
 # at /home/<user> 0750, and gets systemd-journal always and docker only on the
 # docker runtimes. Every host command goes through a recording as_root.
 RU_TMP=$(mktemp -d)
-ru_run() { # EXISTS(1|0) USER RUNTIME [MISSING_GROUP] — prints the as_root calls
+ru_run() { # EXISTS(1|0) USER RUNTIME [BIGBRAIN] [MISSING_GROUP] — prints the as_root calls
   : >"${RU_TMP}/log"
   (
-    RU_EXISTS=$1 RU_MISSING_GROUP=${4:-}
+    RU_EXISTS=$1 RU_MISSING_GROUP=${5:-}
     id() {
       if [[ $1 == -u ]]; then
         [[ ${RU_EXISTS} == 1 ]] && { echo 999; return 0; }
@@ -3564,7 +3564,7 @@ ru_run() { # EXISTS(1|0) USER RUNTIME [MISSING_GROUP] — prints the as_root cal
     getent() { [[ $1 == group && $2 != "${RU_MISSING_GROUP}" ]]; }
     as_root() { printf '%s\n' "$*" >>"${RU_TMP}/log"; }
     log_info() { :; }
-    ensure_run_user "$2" "$3"
+    ensure_run_user "$2" "$3" "${4:-false}"
   )
   cat "${RU_TMP}/log"
 }
@@ -3582,8 +3582,12 @@ done
 expect_eq 'ensure_run_user: an existing account only gains groups (no useradd, no chmod of its home)' \
   "$(ru_run 1 ficus docker-socket)" 'usermod -aG systemd-journal,docker ficus'
 expect_eq 'ensure_run_user: root is left alone' "$(ru_run 1 root docker-socket)" ''
+expect_eq 'ensure_run_user: managed BigBrain adds the gateway client group (before the services start)' \
+  "$(ru_run 1 ficus vm true)" 'usermod -aG systemd-journal,ficus-bigbrain-client ficus'
+expect_eq 'run_user_groups: docker runtime with managed BigBrain' "$(run_user_groups docker-socket true)" \
+  'systemd-journal,docker,ficus-bigbrain-client'
 expect_eq 'ensure_run_user: a group that does not exist yet is created first (docker before docker.io)' \
-  "$(ru_run 1 ficus docker-sysbox docker)" 'groupadd --system docker
+  "$(ru_run 1 ficus docker-sysbox false docker)" 'groupadd --system docker
 usermod -aG systemd-journal,docker ficus'
 expect_not_match 'ensure_run_user: never replaces the group list (usermod -G without -a)' \
   "$(ru_run 1 ficus docker-sysbox)" 'usermod -G'

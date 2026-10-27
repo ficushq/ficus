@@ -766,7 +766,7 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
   log_step "DRY RUN — printing the plan; nothing will be executed or modified"
   printf '\nPhase 0 — preflight\n'
   plan "assert: Linux + systemd (PID 1) + Ubuntu 24.04 (override: FICUS_SETUP_SKIP_OS_CHECK=1)"
-  run_user_line=$(run_user_plan "${RUN_USER}" "${RT_SANDBOX}")
+  run_user_line=$(run_user_plan "${RUN_USER}" "${RT_SANDBOX}" "$(bigbrain_enabled "${BIGBRAIN_CONFIG}" && echo true || echo false)")
   [[ -n ${run_user_line} ]] && plan "${run_user_line}"
   if [[ ${SRC_MODE} == artifact ]]; then
     plan "ensure: curl jq openssl ca-certificates (apt; git dropped — artifact mode never clones), mikefarah yq v4, bun (official installer)"
@@ -998,7 +998,7 @@ phase_preflight() {
   ensure_swapfile
   # Creates a missing core.run_user (a system account, home /home/<user> 0750)
   # and adds the groups it needs; nothing for root.
-  ensure_run_user "${RUN_USER}" "${RT_SANDBOX}"
+  ensure_run_user "${RUN_USER}" "${RT_SANDBOX}" "$(bigbrain_enabled "${BIGBRAIN_CONFIG}" && echo true || echo false)"
   ensure_system_bun_node "${RUN_USER}" "$(command -v bun)"
 
   if [[ ${DB_MODE} == container ]] && ! have docker; then
