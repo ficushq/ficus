@@ -198,3 +198,25 @@ model, role instructions, resources, worker cap, verifier, network restrictions,
 and $5.50 request reservation unchanged. It receives no Ficus artifacts, failure
 analysis, grade, or post-hoc reproduction cases. This amendment does not resume
 or repair Ficus, and does not erase its interrupted completion status.
+
+## Pi outcome: provider interruption
+
+Pi's continuation stopped after approximately 12m11s when the upstream streaming
+API returned two terminal overload errors under HTTP 200. Native Pi output says
+"Our servers are currently overloaded. Please try again later." The guard
+cancelled the trial; no automatic retry was launched. Architecture, requirements,
+and ownership were committed at `3ebf57a9f6f5f3ab932667aff507e9a77f088a69`;
+two engineering assignments had started, but no implementation was delivered.
+There is no external correctness score or completed matched comparison.
+
+Confirmed Pi usage is **$0.395131** across the receipted calls. Two unreceipted
+calls retain **$11 in reservations**, not confirmed spending. Phase confirmed
+usage is **$14.907091**, reserved exposure **$25.907091**, and the authorized cap
+remains **$30**. Reconcile actual usage before another $5.50 reservation can fit;
+do not reset the ledger or assume overload errors were unbilled. Any retry must
+be declared separately and retain this interrupted attempt and cost. See
+`coordination-v2-pi-interrupted.json` for evidence and artifact hashes.
+
+Pi's architecture retained the regex-flags array contract. That is an intermediate
+observation only, not evidence of final correctness or superiority. Its provider
+interruption must not be counted as a failed engineering solution.
