@@ -173,15 +173,18 @@ describe('work-stream verbs end-to-end integration probes', () => {
     const blocked = await (await apiFetch(`/api/workstreams/${created.id}`)).json()
     expect((blocked.openWaits ?? []).map((w: { type: string }) => w.type)).toContain('manual')
 
+    // A multi-line response (e.g. a pasted log) must reach the assignee with
+    // its line breaks intact.
+    const note = 'key is ficus-staging-123, rotate after use\n\n$ deploy --dry-run\n  step 1 ok\n  step 2 ok'
     const resolveRes = await postJson(`/api/workstreams/${created.id}/waits/${wait.id}/resolve`, {
       resolution: 'cleared',
-      note: 'key is ficus-staging-123, rotate after use',
+      note,
     })
     expect(resolveRes.status).toBe(200)
     const resolved = await resolveRes.json()
     expect(resolved.status).toBe('active')
     expect(resolved.wait.resolution).toBe('cleared')
-    expect(resolved.wait.resolutionNote).toBe('key is ficus-staging-123, rotate after use')
+    expect(resolved.wait.resolutionNote).toBe(note)
 
     // Back to normal: no open waits in the stream detail.
     const detail = await (await apiFetch(`/api/workstreams/${created.id}`)).json()
@@ -190,7 +193,7 @@ describe('work-stream verbs end-to-end integration probes', () => {
     // The note reached the assignee's inbox.
     const notices = await assigneeInbox(created.id, 'unblocked')
     expect(notices).toHaveLength(1)
-    expect(notices[0]).toContain('key is ficus-staging-123, rotate after use')
+    expect(notices[0]).toContain(note)
   })
 
   it('probe 3: reopen under a full cap queues; freeing the cap promotes it', async () => {

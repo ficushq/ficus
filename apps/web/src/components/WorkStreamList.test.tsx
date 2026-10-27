@@ -7,7 +7,7 @@ import type { Agent, Squad, WorkStream, WorkStreamMetrics, WorkStreamWait } from
 import { acquireDomHarness, withDomOwnership } from '../test/domHarness'
 
 const { WorkStreamList } = await import('./WorkStreamList')
-const { WorkStreamDetailModal, WORKSTREAM_RESPONSE_CONTROL_CLASS } = await import('./WorkStreamDetailModal')
+const { WorkStreamDetailModal } = await import('./WorkStreamDetailModal')
 const { WorkStreamList: SquadWorkStreamList } = await import('./squads/WorkStreamList')
 
 const now = new Date('2026-01-01T00:00:00Z')
@@ -1475,16 +1475,6 @@ describe('WorkStreamDetailModal', async () => {
     expect(html).toContain('cache read: 364.1K')
   })
 
-  test('response controls use theme-aware readable input styles', async () => {
-    expect(WORKSTREAM_RESPONSE_CONTROL_CLASS).toContain('text-primary')
-    expect(WORKSTREAM_RESPONSE_CONTROL_CLASS).toContain('placeholder:text-placeholder')
-    expect(WORKSTREAM_RESPONSE_CONTROL_CLASS).toContain('caret-accent')
-    expect(WORKSTREAM_RESPONSE_CONTROL_CLASS).toContain('bg-surface')
-    expect(WORKSTREAM_RESPONSE_CONTROL_CLASS).toContain('border-th-border')
-    expect(WORKSTREAM_RESPONSE_CONTROL_CLASS).toContain('focus:ring-accent')
-    expect(WORKSTREAM_RESPONSE_CONTROL_CLASS).toContain('focus:border-accent')
-  })
-
   test('renders open waits with opened timestamps and a review round, plus closed review history', async () => {
     const openedAt = new Date('2026-01-05T09:30:00Z')
     const closedAt = new Date('2026-01-03T09:30:00Z')
@@ -1773,9 +1763,10 @@ describe('WorkStreamDetailModal respond flows', () => {
       )
       expect(respondButton).toBeDefined()
       await dom.act(async () => respondButton!.dispatchEvent(new window.MouseEvent('click', { bubbles: true })))
-      const input = document.body.querySelector<HTMLInputElement>('input[type="text"]')
+      const input = document.body.querySelector<HTMLTextAreaElement>('textarea[placeholder="Your response..."]')
       expect(input).not.toBeNull()
-      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+      expect(document.activeElement).toBe(input)
+      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
       expect(nativeSetter).toBeDefined()
       await dom.act(async () => {
         nativeSetter!.call(input, 'Ship it')

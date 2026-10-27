@@ -10,6 +10,7 @@ import { RejectionModal } from './RejectionModal'
 import { ChevronDownIcon, ChevronRightIcon } from './icons'
 import { useActionCenter } from './ActionCenterContext'
 import { MarkdownContent } from './MarkdownContent'
+import { MultilineResponseField } from './MultilineResponseField'
 import { WorkStreamFileList } from './WorkStreamFileCard'
 import { WorkStreamViewModal } from './WorkStreamViewModal'
 import { WorkflowReviewLauncher } from './WorkflowReviewModal'
@@ -812,27 +813,21 @@ function WorkStreamBlockedActionContent({
         </p>
       )}
       {!flowControlled && data.prompt.type === 'text' && (
-        <div className="flex items-start gap-2">
-          <input
-            type="text"
-            value={response}
-            onChange={(e) => setResponse(e.target.value)}
-            placeholder="Your response..."
-            className="ficus-field min-w-0 flex-1 px-3 py-2 text-base sm:text-sm"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && response.trim()) {
-                respondMutation.mutate(response)
-              }
-            }}
-          />
-          <button
-            onClick={() => respondMutation.mutate(response)}
-            disabled={respondMutation.isPending || !response.trim()}
-            className="ficus-button ficus-button-primary min-h-10 px-3 py-2 text-sm disabled:opacity-50"
-          >
-            {respondMutation.isPending ? 'Sending…' : 'Send'}
-          </button>
-        </div>
+        <MultilineResponseField
+          value={response}
+          onChange={setResponse}
+          onSubmit={() => respondMutation.mutate(response)}
+          canSubmit={!respondMutation.isPending}
+          actions={
+            <button
+              onClick={() => respondMutation.mutate(response)}
+              disabled={respondMutation.isPending || !response.trim()}
+              className="ficus-button ficus-button-primary min-h-10 px-3 py-2 text-sm disabled:opacity-50"
+            >
+              {respondMutation.isPending ? 'Sending…' : 'Send'}
+            </button>
+          }
+        />
       )}
 
       {!flowControlled && data.prompt.type === 'select' && data.prompt.options && (

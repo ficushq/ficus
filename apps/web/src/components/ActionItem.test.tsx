@@ -451,9 +451,9 @@ describe('ActionItem exact mutation behavior', () => {
       await dom.act(async () => headers[1]?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })))
       expect(dom.window.document.body.textContent).toContain('needs input')
       expect(dom.window.document.body.textContent).toContain('Use option B')
-      const input = dom.window.document.querySelector('input[placeholder="Your response..."]') as HTMLInputElement
+      const input = dom.window.document.querySelector('textarea[placeholder="Your response..."]') as HTMLTextAreaElement
       await dom.act(async () => {
-        Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!.call(input, 'Choose B')
+        Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, 'value')!.set!.call(input, 'Choose B')
         input.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
       })
       const send = [...dom.window.document.querySelectorAll('button')].find((button) => button.textContent === 'Send')
@@ -462,6 +462,57 @@ describe('ActionItem exact mutation behavior', () => {
       expect(call).toBeDefined()
       expect(JSON.parse(call!.body!)).toEqual({ resolution: 'cleared', note: 'Choose B' })
       expect(calls.some((candidate) => candidate.url.includes('manual-full-1'))).toBe(false)
+    } finally {
+      globalThis.fetch = originalFetch
+      await dom.cleanup()
+    }
+  })
+
+  test('sends a multi-line work stream input response on Cmd/Ctrl+Enter, never on plain Enter', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const rendered = dom.createRoot()
+    const originalFetch = globalThis.fetch
+    const calls: Array<{ url: string; body?: string }> = []
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), body: init?.body as string | undefined })
+      return new dom.window.Response('{}', { status: 200 }) as unknown as Response
+    }) as unknown as typeof fetch
+    try {
+      await dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={new QueryClient()}>
+              <ActionItem action={manualAction('manual-logs', 'Paste the deploy log')} />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      await dom.act(async () =>
+        dom.window.document
+          .querySelector('div.cursor-pointer')
+          ?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+      )
+      const textarea = dom.window.document.querySelector(
+        'textarea[placeholder="Your response..."]'
+      ) as HTMLTextAreaElement
+      const log = 'step 1 ok\nstep 2 failed:\n  exit code 1'
+      await dom.act(async () => {
+        Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, log)
+        textarea.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+      })
+      const press = (init: KeyboardEventInit) =>
+        dom.act(async () => {
+          textarea.dispatchEvent(
+            new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...init })
+          )
+        })
+      await press({})
+      await press({ shiftKey: true })
+      expect(calls.some((candidate) => candidate.url.includes('/resolve'))).toBe(false)
+      await press({ ctrlKey: true })
+      const call = calls.find((candidate) => candidate.url.includes('/waits/manual-logs/resolve'))
+      expect(call).toBeDefined()
+      expect(JSON.parse(call!.body!)).toEqual({ resolution: 'cleared', note: log })
     } finally {
       globalThis.fetch = originalFetch
       await dom.cleanup()
@@ -741,7 +792,7 @@ test('a flow-owned wait opens its decision controls instead of exposing generic 
     )
     // The gate's one action sits on the header; the body keeps the gate message and offers no generic unblock.
     expect(dom.window.document.body.textContent).toContain('Approve the design')
-    expect(dom.window.document.querySelector('input[placeholder="Your response..."]')).toBeNull()
+    expect(dom.window.document.querySelector('textarea[placeholder="Your response..."]')).toBeNull()
 
     // Review and decide opens the gate's review surface directly, not the work stream detail.
     const definition = createBlankWorkflow()
@@ -1122,7 +1173,7 @@ describe('ActionItem inline primary actions', () => {
         const labels = [...document.querySelectorAll('button')].map((button) => button.textContent)
         expect(labels).not.toContain('View')
         if (subject === action) expect(labels).toContain('Send checkpoint back')
-        else expect(document.querySelector('input[placeholder="Your response..."]')).not.toBeNull()
+        else expect(document.querySelector('textarea[placeholder="Your response..."]')).not.toBeNull()
       } finally {
         await dom.cleanup()
       }
