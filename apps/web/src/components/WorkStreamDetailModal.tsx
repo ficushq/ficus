@@ -17,6 +17,7 @@ import { queries } from '../queryOptions'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { resolveWorkStreamWait } from '../api/squads'
 import { MarkdownContent } from './MarkdownContent'
+import { MultilineResponseField } from './MultilineResponseField'
 import { Modal } from './Modal'
 import { Badge, type BadgeColor } from './Badge'
 import { WorkStreamFileList } from './WorkStreamFileCard'
@@ -130,9 +131,6 @@ export const WS_COMPLETION_MODE_LABELS: Record<WorkStream['completionMode'], str
 }
 
 // --- Modal component ---
-
-export const WORKSTREAM_RESPONSE_CONTROL_CLASS =
-  'w-full px-2 py-1 text-xs border border-th-border bg-surface text-primary placeholder:text-placeholder caret-accent rounded  focus:ring-1 focus:ring-accent focus:border-accent'
 
 export function WorkStreamDetailModal({
   workStream: selectedWorkStream,
@@ -352,31 +350,35 @@ export function WorkStreamDetailModal({
             )}
             {isResponding ? (
               <div className="mt-2">
-                <input
-                  type="text"
+                <MultilineResponseField
                   value={response}
-                  onChange={(e) => setResponse(e.target.value)}
-                  placeholder="Your response..."
-                  className={clsx('ficus-field', WORKSTREAM_RESPONSE_CONTROL_CLASS)}
+                  onChange={setResponse}
+                  onSubmit={handleSubmit}
+                  canSubmit={!respondMutation.isPending && canRespondToWait}
+                  autoFocus
+                  actions={
+                    <div className="flex gap-1">
+                      <button
+                        onClick={handleSubmit}
+                        disabled={respondMutation.isPending || !canRespondToWait || !response.trim()}
+                        className="ficus-button ficus-button-primary px-2 py-1 text-xs font-medium rounded disabled:opacity-50"
+                        title={
+                          canRespondToWait
+                            ? 'Submit response'
+                            : 'You do not have permission to respond to this work stream'
+                        }
+                      >
+                        {respondMutation.isPending ? 'Submitting...' : 'Submit'}
+                      </button>
+                      <button
+                        onClick={() => setIsResponding(false)}
+                        className="ficus-button ficus-button-secondary px-2 py-1 text-xs font-medium rounded"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  }
                 />
-                <div className="flex gap-1 mt-2">
-                  <button
-                    onClick={handleSubmit}
-                    disabled={respondMutation.isPending || !canRespondToWait || !response.trim()}
-                    className="ficus-button ficus-button-primary px-2 py-1 text-xs font-medium rounded disabled:opacity-50"
-                    title={
-                      canRespondToWait ? 'Submit response' : 'You do not have permission to respond to this work stream'
-                    }
-                  >
-                    {respondMutation.isPending ? 'Submitting...' : 'Submit'}
-                  </button>
-                  <button
-                    onClick={() => setIsResponding(false)}
-                    className="ficus-button ficus-button-secondary px-2 py-1 text-xs font-medium rounded"
-                  >
-                    Cancel
-                  </button>
-                </div>
               </div>
             ) : reviewWait ? (
               <div className="flex gap-1 mt-2">

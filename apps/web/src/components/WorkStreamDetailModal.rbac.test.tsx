@@ -174,9 +174,14 @@ describe('WorkStreamDetailModal exact action authority', () => {
           (item) => item.textContent === 'Respond'
         )
         await dom.act(async () => respond?.click())
-        const input = dom.window.document.querySelector('input[placeholder="Your response..."]') as HTMLInputElement
+        const input = dom.window.document.querySelector(
+          'textarea[placeholder="Your response..."]'
+        ) as HTMLTextAreaElement
         await dom.act(async () => {
-          Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!.call(input, 'Choose B')
+          Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, 'value')!.set!.call(
+            input,
+            'Choose B'
+          )
           input.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
         })
         const submit = [...dom.window.document.querySelectorAll('button')].find((item) => item.textContent === 'Submit')
@@ -194,7 +199,7 @@ describe('WorkStreamDetailModal exact action authority', () => {
             ['Respond', 'Approve checkpoint'].includes(item.textContent ?? '')
           )
         ).toBe(false)
-        expect(dom.window.document.querySelector('input[placeholder="Your response..."]')).toBeNull()
+        expect(dom.window.document.querySelector('textarea[placeholder="Your response..."]')).toBeNull()
       })
     } finally {
       globalThis.fetch = originalFetch
