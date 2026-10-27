@@ -1,2 +1,14 @@
-# Default reviewers for every change. Add path-specific lines above this one.
-* @NoahSaso
+# Review requests. GitHub asks the listed owners to review any pull request
+# that changes a matching path; the LAST matching line wins, so the
+# path-specific lines sit below the default and name both owners rather
+# than replace it. Dependabot's bumps touch exactly those paths, which is how
+# they get an automatic reviewer (Dependabot's own `reviewers` key in
+# dependabot.yml is deprecated in favour of this file). An owner needs write
+# access to the repository for the request to be made.
+*                           @NoahSaso
+/bun.lock                   @ficusagent @NoahSaso
+/package.json               @ficusagent @NoahSaso
+/apps/*/package.json        @ficusagent @NoahSaso
+/packages/*/package.json    @ficusagent @NoahSaso
+/.github/workflows/         @ficusagent @NoahSaso
+/.github/dependabot.yml     @ficusagent @NoahSaso
