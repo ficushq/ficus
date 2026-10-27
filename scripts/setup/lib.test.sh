@@ -2628,6 +2628,32 @@ EOF
     "${sh_artifact_dry_out}" 'FICUS_ARTIFACT_TARBALL_URL'
   expect_eq 'setup-host dry-run (artifact mode): the secret URL VALUE never reaches the plan' \
     "$(grep -c 'ZZZ-SECRET-VALUE-ZZZ' <<<"${sh_artifact_dry_out}" || true)" '0'
+
+  # core.run_user naming an account that does not exist yet: the dry run
+  # plans creating it (the home predicted at parse time, mutation-free)
+  # instead of dying.
+  cat >"${PROV_TMP}/sh-run-user.yaml" <<EOF
+core:
+  origin: https://acme.example:3000
+  run_user: ficus-dry-run-svc
+source:
+  mode: artifact
+  repo: https://github.com/example/ficus.git
+runtime:
+  sandbox: docker-sysbox
+ai:
+  provider: openai-codex
+  model: gpt-5
+EOF
+  sh_run_user_out=$(FICUS_ARTIFACT_TARBALL_URL='https://example.test/t' FICUS_ARTIFACT_MANIFEST_URL='https://example.test/m' \
+    FICUS_ARTIFACT_SIG_URL='https://example.test/s' FICUS_ARTIFACT_PUBKEY_B64='k' \
+    bash "${SCRIPT_DIR}/setup-host.sh" --config "${PROV_TMP}/sh-run-user.yaml" --dry-run 2>&1) || true
+  expect_match 'setup-host dry-run: a missing core.run_user is planned for creation, with its groups' \
+    "${sh_run_user_out}" 'create system user ficus-dry-run-svc \(home /home/ficus-dry-run-svc, shell /usr/sbin/nologin, groups systemd-journal,docker\)'
+  expect_not_match 'setup-host dry-run: a missing core.run_user no longer stops the plan' \
+    "${sh_run_user_out}" 'does not exist|could not resolve core.run_user'
+  expect_eq 'setup-host dry-run: the missing user is never created by a dry run' \
+    "$(id -u ficus-dry-run-svc >/dev/null 2>&1 && echo created || echo absent)" 'absent'
   expect_match 'setup-host dry-run (artifact mode): the build phase is a no-op' \
     "${sh_artifact_dry_out}" 'nothing to build'
   expect_match 'setup-host dry-run (artifact mode): the migrate phase defers to activation' \
@@ -3517,6 +3543,146 @@ ar_rc=0
 ar_err=$( (install_artifacts "${AR_STAGE4}") 2>&1 >/dev/null ) || ar_rc=$?
 expect_eq 'install_artifacts: unsafe (traversal) target dies' "${ar_rc}" '1'
 expect_match 'install_artifacts: unsafe-target message names the offense' "${ar_err}" 'unsafe artifact target'
+
+# --- the Core service user (ensure_run_user and friends) ---------------------
+# The hosted non-root plan (docs/plans/2026-10-26-hosted-non-root-audit.md,
+# 2.1): a missing core.run_user is created as a system account with its home
+# at /home/<user> 0750, and gets systemd-journal always and docker only on the
+# docker runtimes. Every host command goes through a recording as_root.
+RU_TMP=$(mktemp -d)
+ru_run() { # EXISTS(1|0) USER RUNTIME [MISSING_GROUP] — prints the as_root calls
+  : >"${RU_TMP}/log"
+  (
+    RU_EXISTS=$1 RU_MISSING_GROUP=${4:-}
+    id() {
+      if [[ $1 == -u ]]; then
+        [[ ${RU_EXISTS} == 1 ]] && { echo 999; return 0; }
+        return 1
+      fi
+      command id "$@"
+    }
+    getent() { [[ $1 == group && $2 != "${RU_MISSING_GROUP}" ]]; }
+    as_root() { printf '%s\n' "$*" >>"${RU_TMP}/log"; }
+    log_info() { :; }
+    ensure_run_user "$2" "$3"
+  )
+  cat "${RU_TMP}/log"
+}
+ru_out=$(ru_run 0 ficus vm)
+expect_eq 'ensure_run_user: a missing user is created as a nologin system account, home /home/<user> 0750, then joins systemd-journal' \
+  "${ru_out}" 'useradd --system --create-home --home-dir /home/ficus --shell /usr/sbin/nologin --user-group ficus
+install -d -m 0750 -o ficus -g ficus /home/ficus
+usermod -aG systemd-journal ficus'
+for ru_rt in docker-sysbox docker-socket; do
+  expect_match "ensure_run_user: ${ru_rt} adds docker" "$(ru_run 0 ficus "${ru_rt}")" $'\nusermod -aG systemd-journal,docker ficus$'
+done
+for ru_rt in vm k8s host; do
+  expect_not_match "ensure_run_user: ${ru_rt} never adds docker (root-equivalent)" "$(ru_run 0 ficus "${ru_rt}")" 'docker'
+done
+expect_eq 'ensure_run_user: an existing account only gains groups (no useradd, no chmod of its home)' \
+  "$(ru_run 1 ficus docker-socket)" 'usermod -aG systemd-journal,docker ficus'
+expect_eq 'ensure_run_user: root is left alone' "$(ru_run 1 root docker-socket)" ''
+expect_eq 'ensure_run_user: a group that does not exist yet is created first (docker before docker.io)' \
+  "$(ru_run 1 ficus docker-sysbox docker)" 'groupadd --system docker
+usermod -aG systemd-journal,docker ficus'
+expect_not_match 'ensure_run_user: never replaces the group list (usermod -G without -a)' \
+  "$(ru_run 1 ficus docker-sysbox)" 'usermod -G'
+
+ru_home() { # EXISTS USER — run_user_predicted_home with getent/id stubbed
+  (
+    RU_EXISTS=$1
+    getent() { [[ ${RU_EXISTS} == 1 && $1 == passwd ]] && printf '%s:x:999:999::/srv/%s:/bin/sh\n' "$2" "$2"; }
+    id() { [[ ${RU_EXISTS} == 1 ]]; }
+    run_user_predicted_home "$2"
+  )
+}
+expect_eq 'run_user_predicted_home: a missing user is predicted at /home/<user>' "$(ru_home 0 ficus)" '/home/ficus'
+expect_eq 'run_user_predicted_home: an existing user keeps its passwd home' "$(ru_home 1 ficus)" '/srv/ficus'
+expect_eq 'run_user_predicted_home: root is never predicted under /home' "$(ru_home 0 root)" ''
+expect_eq 'run_user_plan: the dry-run line for a missing user (docker runtime)' \
+  "$( (id() { return 1; }; run_user_plan ficus docker-socket))" \
+  'create system user ficus (home /home/ficus, shell /usr/sbin/nologin, groups systemd-journal,docker)'
+expect_eq 'run_user_plan: the dry-run line for a missing user (vm runtime)' \
+  "$( (id() { return 1; }; run_user_plan ficus vm))" \
+  'create system user ficus (home /home/ficus, shell /usr/sbin/nologin, groups systemd-journal)'
+expect_eq 'run_user_plan: nothing for an existing user' "$( (id() { echo 1; }; run_user_plan ficus vm))" ''
+expect_eq 'run_user_plan: nothing for root' "$(run_user_plan root vm)" ''
+
+# --- group-readable artifacts for a non-root Core (R7) ----------------------
+expect_eq 'group_readable_mode: 0600 -> 0640' "$(group_readable_mode 0600)" '0640'
+expect_eq 'group_readable_mode: 0400 -> 0440' "$(group_readable_mode 0400)" '0440'
+expect_eq 'group_readable_mode: 0644 unchanged' "$(group_readable_mode 0644)" '0644'
+expect_eq 'group_readable_mode: no owner read, no group read' "$(group_readable_mode 0200)" '0200'
+ga_run() { # RUN_USER — install_artifacts of a 0600 manifest entry; prints "<mode> <owner>:<group>"
+  local stage="${RU_TMP}/ga-stage"
+  rm -rf "${stage}" "${RU_TMP}/ga-dest"
+  mkdir -p "${stage}/files"
+  printf 'KEY' >"${stage}/files/apns.p8"
+  printf '0600 apns.p8\n' >"${stage}/manifest"
+  (
+    RUN_USER=$1 FICUS_ARTIFACTS_DIR="${RU_TMP}/ga-dest"
+    id() { [[ $1 == -gn ]] && { printf '%s' "$2"; return 0; }; command id "$@"; }
+    log_info() { :; }
+    as_root() { # install: record -o/-g, run without them
+      [[ $1 == install ]] || { "$@"; return; }
+      shift
+      local args=() o='' g=''
+      while (($#)); do
+        case "$1" in
+          -o) o=$2; shift 2 ;;
+          -g) g=$2; shift 2 ;;
+          *) args+=("$1"); shift ;;
+        esac
+      done
+      install "${args[@]}"
+      [[ ${args[0]} == -d ]] || printf '%s:%s\n' "${o}" "${g}" >"${RU_TMP}/ga-owner"
+    }
+    install_artifacts "${stage}"
+  )
+  printf '%s %s' "$(file_mode "${RU_TMP}/ga-dest/apns.p8")" "$(cat "${RU_TMP}/ga-owner")"
+}
+expect_eq 'install_artifacts: a non-root Core reads a 0600 artifact through its group (root:<group> 0640)' \
+  "$(ga_run svc)" '640 root:svc'
+expect_eq 'install_artifacts: a root Core keeps the manifest mode and root:root' \
+  "$(ga_run root)" '600 root:root'
+expect_eq 'apply-artifacts.sh passes core.run_user to install_artifacts' \
+  "$(grep -c "RUN_USER=\$(cfg_get '.core.run_user'" "${SCRIPT_DIR}/apply-artifacts.sh")" '1'
+
+# --- restore_lay_down_home (T12) ---------------------------------------------
+mkdir -p "${RU_TMP}/rh-src/sessions"
+printf 's' >"${RU_TMP}/rh-src/sessions/a"
+rh_log=$( (
+  as_root() { printf '%s\n' "$*"; }
+  restore_lay_down_home "${RU_TMP}/rh-src" "${RU_TMP}/rh-dst" svc
+))
+expect_eq 'restore_lay_down_home: copies the tree contents' "$(cat "${RU_TMP}/rh-dst/sessions/a")" 's'
+expect_eq 'restore_lay_down_home: then gives the whole tree to the service user, never following a symlink' \
+  "${rh_log}" "chown -R --no-dereference svc: ${RU_TMP}/rh-dst"
+expect_match 'setup-host.sh phase_restore lays the HOME down through restore_lay_down_home' \
+  "$(sed -n '/^phase_restore() {/,/^}/p' "${SCRIPT_DIR}/setup-host.sh")" 'restore_lay_down_home "\$\{home_src\}" "\$\{target_home\}" "\$\{RUN_USER\}"'
+
+# --- assert_core_units_user (phase_report) -----------------------------------
+cu_user() { # API_USER WORKER_USER EXPECTED — prints rc
+  local rc=0
+  (
+    CU_API=$1 CU_WORKER=$2
+    as_root() { [[ ${*: -1} == "${HL_UNIT_API}" ]] && printf '%s' "${CU_API}" || printf '%s' "${CU_WORKER}"; }
+    log_info() { :; }
+    assert_core_units_user "$3"
+  ) >/dev/null 2>&1 || rc=$?
+  printf '%s' "${rc}"
+}
+expect_eq 'assert_core_units_user: both units run as the service user' "$(cu_user ficus ficus ficus)" '0'
+expect_eq 'assert_core_units_user: a worker still rendered for root fails the run' "$(cu_user ficus root ficus)" '1'
+expect_eq 'assert_core_units_user: an api still rendered for root fails the run' "$(cu_user root ficus ficus)" '1'
+expect_match 'setup-host.sh phase_report asserts the units'"'"' User=' \
+  "$(sed -n '/^phase_report() {/,/^}/p' "${SCRIPT_DIR}/setup-host.sh")" 'assert_core_units_user "\$\{RUN_USER\}"'
+expect_match 'setup-host.sh phase_preflight creates the service user' \
+  "$(sed -n '/^phase_preflight() {/,/^}/p' "${SCRIPT_DIR}/setup-host.sh")" 'ensure_run_user "\$\{RUN_USER\}" "\$\{RT_SANDBOX\}"'
+expect_not_match 'setup-host.sh no longer dies on a missing core.run_user' \
+  "$(cat "${SCRIPT_DIR}/setup-host.sh")" 'does not exist on this host — create it first'
+unset -f ru_run ru_home ga_run cu_user
+rm -rf "${RU_TMP}"
 
 # --- managed_env_would_change ----------------------------------------------
 # The sync restart driver: semantic change detection for managed.env.

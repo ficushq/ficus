@@ -1467,6 +1467,120 @@ ensure_pooler_user() { # USER
   as_root useradd --system --no-create-home --shell /usr/sbin/nologin --user-group "$1"
 }
 
+# ------------------------------------------------ the Core service user
+#
+# Core (ficus-api, ficus-worker) runs as core.run_user. The self-hosted default
+# is the invoking user; the hosted layout names an unprivileged system account
+# (`ficus`). The toolkit creates that account when it is missing, with its home
+# at /home/<user> 0750 and only the groups the runtime needs
+# (docs/plans/2026-10-26-hosted-non-root-audit.md, 1.6):
+#   systemd-journal  always: Settings > System logs runs journalctl (R1)
+#   docker           only on the docker sandbox runtimes (R8); docker
+#                    membership is root-equivalent, so no other runtime gets it
+
+# The home a service user has, or will have once ensure_run_user creates it.
+# Mutation-free, so the config parse and --dry-run can use it before any
+# phase runs. Root and existing accounts: their passwd home. Missing
+# accounts: /home/<user>, which is where ensure_run_user puts it.
+run_user_predicted_home() { # USER
+  local home=''
+  if have getent; then
+    home=$(getent passwd "$1" 2>/dev/null | cut -d: -f6) || home=''
+  fi
+  if [[ -n ${home} ]]; then
+    printf '%s' "${home}"
+  elif [[ $1 != root ]] && ! id -u "$1" >/dev/null 2>&1; then
+    printf '/home/%s' "$1"
+  fi
+}
+
+# The supplementary groups the service user needs on this host, comma-separated.
+run_user_groups() { # SANDBOX_RUNTIME
+  case "$1" in
+    docker-sysbox | docker-socket) printf 'systemd-journal,docker' ;;
+    *) printf 'systemd-journal' ;;
+  esac
+}
+
+# The --dry-run line for ensure_run_user: what it would do, or nothing when the
+# account is root or already exists (group additions are not worth a line).
+run_user_plan() { # USER SANDBOX_RUNTIME
+  [[ $1 == root ]] && return 0
+  id -u "$1" >/dev/null 2>&1 && return 0
+  printf 'create system user %s (home /home/%s, shell /usr/sbin/nologin, groups %s)' \
+    "$1" "$1" "$(run_user_groups "$2")"
+}
+
+# Create the service user when it is missing, then add the groups it needs.
+# Root is left alone. An existing account only ever GAINS groups: usermod -aG
+# never removes one, so a host that leaves a docker runtime keeps `docker`
+# until an operator runs `gpasswd -d <user> docker` (removing groups the
+# toolkit did not add could break an operator's own setup). The home mode is
+# set explicitly: useradd takes it from HOME_MODE in /etc/login.defs, and a
+# world-traversable home would expose HOME_DIR the way opening /root would.
+ensure_run_user() { # USER SANDBOX_RUNTIME
+  local user=$1 runtime=$2 group groups
+  [[ ${user} == root ]] && return 0
+  if ! id -u "${user}" >/dev/null 2>&1; then
+    log_info "$(run_user_plan "${user}" "${runtime}")"
+    as_root useradd --system --create-home --home-dir "/home/${user}" \
+      --shell /usr/sbin/nologin --user-group "${user}"
+    as_root install -d -m 0750 -o "${user}" -g "${user}" "/home/${user}"
+  fi
+  groups=$(run_user_groups "${runtime}")
+  for group in ${groups//,/ }; do
+    # docker's group comes with docker.io; on a docker runtime the daemon may
+    # be installed later. Its postinst reuses an existing system group.
+    getent group "${group}" >/dev/null 2>&1 || as_root groupadd --system "${group}"
+  done
+  as_root usermod -aG "${groups}" "${user}"
+  log_info "service user ${user}: groups ${groups}"
+}
+
+# The group that may read a file Core needs but root owns: the service user's
+# primary group, or root's when Core runs as root.
+run_user_group() { # USER
+  if [[ ${1:-root} == root ]]; then
+    printf 'root'
+  else
+    id -gn "$1" 2>/dev/null || die "core.run_user '$1' does not exist — cannot grant it read access"
+  fi
+}
+
+# A manifest mode with group read added wherever the owner may read: 0600 ->
+# 0640, 0400 -> 0440. A mode without owner read is left as it is.
+group_readable_mode() { # MODE
+  local mode=$((8#${1#0}))
+  if ((mode & 8#400)); then mode=$((mode | 8#040)); fi
+  printf '0%03o' "${mode}"
+}
+
+# Assert that both core units run as USER (systemd's view, after daemon-reload).
+assert_core_units_user() { # USER
+  local unit actual
+  for unit in "${HL_UNIT_API}" "${HL_UNIT_WORKER}"; do
+    actual=$(as_root systemctl show -p User --value "${unit}")
+    [[ ${actual} == "$1" ]] ||
+      die "${unit} runs as '${actual:-<unset>}', expected core.run_user '$1'"
+  done
+  log_info "${HL_UNIT_API} and ${HL_UNIT_WORKER} run as $1"
+}
+
+# Lay a restored HOME tree down at TARGET and give it to the service user. As
+# root, cp -a keeps the archive's owners (the backed-up host's uids), so the
+# tree is chowned afterwards. A non-root setup run as the service user itself
+# already owns what it copied. --no-dereference changes symlinks themselves
+# and never follows one out of the tree.
+restore_lay_down_home() { # HOME_SRC TARGET RUN_USER
+  local src=$1 target=$2 user=$3
+  mkdir -p "${target}"
+  cp -a "${src}/." "${target}/" || die "restore: failed to lay down the workspace tree into ${target}"
+  if [[ ${EUID} -eq 0 || $(id -un) != "${user}" ]]; then
+    as_root chown -R --no-dereference "${user}:" "${target}" ||
+      die "restore: failed to give ${target} to ${user}"
+  fi
+}
+
 render_pooler_unit() { # TEMPLATE_FILE INI_PATH
   sed -e "s|@RUN_USER@|$(pooler_user)|g" \
     -e "s|@INI@|$2|g" \
@@ -1646,7 +1760,8 @@ install_artifacts() { # STAGE_DIR
   local manifest="${stage}/manifest"
   [[ -f ${manifest} ]] || return 0
   as_root install -d -m 0755 -o root -g root "${FICUS_ARTIFACTS_DIR}"
-  local mode target src
+  local mode target src group
+  group=$(run_user_group "${RUN_USER:-root}")
   while read -r mode target; do
     [[ -n ${mode} && -n ${target} ]] || continue
     # Defense in depth over the registry's own validation: an artifact may
@@ -1657,8 +1772,11 @@ install_artifacts() { # STAGE_DIR
     [[ ${mode} =~ ^0[0-7]{3}$ ]] || die "install_artifacts: invalid mode '${mode}' for '${target}'"
     src="${stage}/files/${target}"
     [[ -f ${src} ]] || die "install_artifacts: staged file missing for '${target}': ${src}"
-    install_rendered "${mode}" root root "${FICUS_ARTIFACTS_DIR}/${target}" cat "${src}"
-    log_info "installed ${FICUS_ARTIFACTS_DIR}/${target} (${mode})"
+    # A non-root Core reads these through its group (the APNs key is 0600 in
+    # the manifest): root:<service group>, group read where the owner reads.
+    if [[ ${group} != root ]]; then mode=$(group_readable_mode "${mode}"); fi
+    install_rendered "${mode}" root "${group}" "${FICUS_ARTIFACTS_DIR}/${target}" cat "${src}"
+    log_info "installed ${FICUS_ARTIFACTS_DIR}/${target} (${mode} root:${group})"
   done <"${manifest}"
 }
 
