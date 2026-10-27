@@ -137,6 +137,13 @@ Use matched task groups and vary which system is used first to reduce learning
 and order effects. Keep human help and approvals in the audit trail. These runs
 are assisted evaluations and must not be mixed with unattended benchmark scores.
 
+## Current focus
+
+The user explicitly moved to [shared-repository coordination](COORDINATION.md)
+on 2026-10-27. The remaining isolated tasks stay unused; exhausting their frozen
+order is not a prerequisite. The first coordination pilot uses existing external
+requirements and tests, with the protocol differences declared before inference.
+
 ## Next execution gates
 
 1. Native Pi GPT-6.1 tool use and all-role accounting are validated under the

@@ -43,6 +43,7 @@ if (command === 'seed') {
     key: string
     workspace: string
     instruction: string
+    coordination?: boolean
   }
   if ((await db.select({ id: agents.id }).from(agents).limit(1)).length) throw new Error('Trial database is not empty')
   await getSecretStore().initialize()
@@ -94,6 +95,7 @@ if (command === 'seed') {
             customizations: [{ op: 'set-completion', completion: { mode: 'deliverable' } }],
           }
         : { kind: 'preset', id: 'builder-reviewer', customizations: [] }
+  const coordination = config.coordination === true
   const squad = await Squad.create({
     name: 'Harbor trial',
     purpose:
@@ -104,19 +106,23 @@ if (command === 'seed') {
           : 'Complete the task with planning and independent review.',
     squadPresetId: 'engineering',
     hostWorkspacePath: config.workspace,
-    context: `This is an unattended local in-place delivery run in a disposable, single-task workspace, not a shared checkout. The user has authorized completing the supplied task. The task workspace is ${config.workspace}. Inspect it to resolve ambiguity; no human can answer questions. Deliver completed files in that exact workspace, without requiring GitHub, a pull request, a merge approval, or an external deployment.`,
+    context: coordination
+      ? `This is an unattended shared-repository coordination study. The integration repository is ${config.workspace}. Several related work streams share this product. The user authorizes local Git branches, local worktrees, and integration into this repository. Assign disjoint ownership or isolated worktrees before concurrent edits. Record dependencies and integrate all completed branches before final independent review. No human, GitHub, pull request, remote repository, or deployment is available. Each stream must respect its assigned branch and path; it must not reset or overwrite another stream's work.`
+      : `This is an unattended local in-place delivery run in a disposable, single-task workspace, not a shared checkout. The user has authorized completing the supplied task. The task workspace is ${config.workspace}. Inspect it to resolve ambiguity; no human can answer questions. Deliver completed files in that exact workspace, without requiring GitHub, a pull request, a merge approval, or an external deployment.`,
     metadata: {
       memory: { enabled: false },
       workflow,
       workflowSetup: {
-        guidance:
-          'Use the saved workflow and local in-place delivery in this disposable, single-task workspace. Inherit the saved default; do not select a PR-based coding flow. No other stream shares this workspace.',
+        guidance: coordination
+          ? 'Use the saved planning/engineering/review workflow for each work stream. This is a shared product: coordinate dependencies and local branches/worktrees. Only the integration stream delivers the combined final files to the integration repository.'
+          : 'Use the saved workflow and local in-place delivery in this disposable, single-task workspace. Inherit the saved default; do not select a PR-based coding flow. No other stream shares this workspace.',
         choices: [{ when: 'All tasks in this isolated run.', source: workflow }],
       },
     },
     typeContext: {
-      manager:
-        'Run this task through your squad. Create and start a work stream using the configured workflow, with an engineer producing the deliverable and an independent reviewer checking it. Delegate implementation rather than doing it yourself. Handle rework through that workflow and finish after review. Do not stop at a plan or clarification question: inspect the workspace and make reasonable decisions from the task requirements. Do not use a separate worktree unless the completed changes are put back into the supplied workspace before finishing.',
+      manager: coordination
+        ? 'Coordinate multiple related work streams through the saved workflow. Delegate technical planning, implementation, integration, and independent review. Own scheduling, dependencies, branch assignments, and routing rework. You may inspect status and perform administrative Git/worktree setup, but must not implement or integrate code yourself. The final integration stream must validate the whole product and preserve earlier requirements. Do not finish while required work remains queued or unintegrated.'
+        : 'Run this task through your squad. Create and start a work stream using the configured workflow, with an engineer producing the deliverable and an independent reviewer checking it. Delegate implementation rather than doing it yourself. Handle rework through that workflow and finish after review. Do not stop at a plan or clarification question: inspect the workspace and make reasonable decisions from the task requirements. Do not use a separate worktree unless the completed changes are put back into the supplied workspace before finishing.',
     },
   })
   if (mode === 'engineer' || mode === 'reviewer') {

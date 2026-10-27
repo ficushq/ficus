@@ -18,6 +18,7 @@ parser.add_argument("--access", type=Path, required=True)
 parser.add_argument("--client", help="Proxy client label; defaults to harness-task")
 parser.add_argument("--runtime-archive", type=Path)
 parser.add_argument("--checkpoint-dir", type=Path)
+parser.add_argument("--coordination", action="store_true")
 parser.add_argument("--artifact-patch", type=Path)
 parser.add_argument("--artifact-sha256")
 parser.add_argument("--base-commit")
@@ -29,6 +30,8 @@ parser.add_argument(
     help="Keep task network restrictions; allow only the local inference proxy host and use a loopback Ficus DB",
 )
 args = parser.parse_args()
+if args.coordination and args.workflow != "planned":
+    parser.error("Coordination requires planned workflow")
 access = json.loads(args.access.read_text())
 if args.restricted_network:
     config = tomllib.loads((args.task / "task.toml").read_text())
@@ -85,7 +88,9 @@ if args.harness == "ficus":
         parser.error("Ficus requires --runtime-archive")
     command += [
         "-a",
-        "artifact_reviewer:FicusArtifactReviewer"
+        "coordination:FicusCoordination"
+        if args.coordination
+        else "artifact_reviewer:FicusArtifactReviewer"
         if args.workflow == "reviewer"
         else "ficus_agent:FicusSquad",
         "--ak",
@@ -116,7 +121,9 @@ else:
         parser.error("Use engineer or planned for the Pi baseline")
     command += [
         "-a",
-        "pi_workflow:PiWorkflow",
+        "coordination:PiCoordination"
+        if args.coordination
+        else "pi_workflow:PiWorkflow",
         "--ak",
         f"workflow={args.workflow}",
         "--ak",
