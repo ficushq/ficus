@@ -741,17 +741,7 @@ update_sudoers_content() {
 }
 
 install_update_sudoers() {
-  local tmp
-  tmp=$(mktemp)
-  update_sudoers_content >"${tmp}"
-  if as_root sh -c 'command -v visudo >/dev/null 2>&1'; then
-    as_root visudo -cf "${tmp}" >/dev/null || {
-      rm -f "${tmp}"
-      die "generated sudoers rule failed visudo validation — refusing to install ${UPDATE_SUDOERS_FILE}"
-    }
-  fi
-  as_root install -m 0440 -o root -g root "${tmp}" "${UPDATE_SUDOERS_FILE}"
-  rm -f "${tmp}"
+  install_sudoers_rule "${UPDATE_SUDOERS_FILE}" "$(update_sudoers_content)"
   log_info "installed ${UPDATE_SUDOERS_FILE} (NOPASSWD systemctl restart ${HL_UNIT_API}/${HL_UNIT_WORKER} for ${RUN_USER})"
 }
 

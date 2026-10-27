@@ -2326,19 +2326,8 @@ BIGBRAIN_SUDOERS="${BIGBRAIN_SUDOERS:-/etc/sudoers.d/ficus-bigbrain}" # test sea
 bigbrain_sudoers_content() { # RUN_USER
   printf '%s ALL=(root) NOPASSWD: %s ""\n' "$1" "${BIGBRAIN_HELPER}"
 }
-# 0440 root, visudo-validated before it is installed (as install_update_sudoers).
 install_bigbrain_sudoers() { # RUN_USER
-  local tmp
-  tmp=$(mktemp)
-  bigbrain_sudoers_content "$1" >"${tmp}"
-  if as_root sh -c 'command -v visudo >/dev/null 2>&1'; then
-    as_root visudo -cf "${tmp}" >/dev/null || {
-      rm -f "${tmp}"
-      die "generated BigBrain sudoers rule failed visudo validation — refusing to install ${BIGBRAIN_SUDOERS}"
-    }
-  fi
-  as_root install -m 0440 -o root -g root "${tmp}" "${BIGBRAIN_SUDOERS}"
-  rm -f "${tmp}"
+  install_sudoers_rule "${BIGBRAIN_SUDOERS}" "$(bigbrain_sudoers_content "$1")"
   log_info "installed ${BIGBRAIN_SUDOERS} (NOPASSWD ${BIGBRAIN_HELPER} for $1)"
 }
 
@@ -5747,12 +5736,39 @@ host_layout_adopt() {
   ARTIFACT_RELOCATED_FROM='' ARTIFACT_RELOCATED_TO=''
 }
 
+# Install one sudoers drop-in: 0440 root, validated with visudo -cf before it
+# replaces anything (a broken drop-in would lock every sudo use out).
+install_sudoers_rule() { # DEST CONTENT
+  local tmp
+  tmp=$(mktemp)
+  printf '%s\n' "$2" >"${tmp}"
+  if as_root sh -c 'command -v visudo >/dev/null 2>&1'; then
+    as_root visudo -cf "${tmp}" >/dev/null || {
+      rm -f "${tmp}"
+      die "generated sudoers rule failed visudo validation — refusing to install $1"
+    }
+  fi
+  as_root install -m 0440 -o root -g root "${tmp}" "$1"
+  rm -f "${tmp}"
+}
+
+# A run-user switch (switch-run-user.sh) in progress or interrupted: its
+# journal, next to the host-migration journal. Every toolkit run but the
+# switch itself refuses while it exists — its rollback restores this host's
+# config files and moves HOME_DIR back, which would undo what they write.
+run_user_switch_journal() { printf '%s/RUN_USER_SWITCH' "$(host_migrate_backup_root)"; }
+require_run_user_switch_settled() {
+  [[ ! -e $(run_user_switch_journal) ]] ||
+    die "a run-user switch is journaled in $(run_user_switch_journal) — re-run switch-run-user.sh (it settles the switch) before anything else changes this host"
+}
+
 host_layout_sudoers_content() { # RUN_USER
   printf '%s ALL=(root) NOPASSWD: /usr/bin/systemctl restart %s, /usr/bin/systemctl restart %s\n' "$1" "${HL_NEW_UNIT_PREFIX}-api" "${HL_NEW_UNIT_PREFIX}-worker"
 }
 
 require_host_layout_ready() { # [RELEASE_DIR] [DECLARED_LAYOUT]
   require_box_reprovision_settled
+  require_run_user_switch_settled
   if [[ -n ${SRC_DEST:-} && -f ${SRC_DEST}/.env ]]; then
     require_canonical_database_ca "$(envfile_direct_dsn "${SRC_DEST}/.env")"
     local current
