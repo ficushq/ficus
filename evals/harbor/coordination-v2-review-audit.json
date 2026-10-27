@@ -1,0 +1,464 @@
+{
+  "experiment": "coordination-v2",
+  "type": "operator-only post-hoc reviewer-finding reproduction; not official benchmark score",
+  "no_feedback_to_agents": true,
+  "network": "none",
+  "reference_solution_used": false,
+  "limitation": "Review-derived selected examples, not an unbiased comparison battery. These results do not establish general correctness. Revisions are intermediate repairs, not necessarily final delivery.",
+  "audits": [
+    {
+      "component": "python",
+      "scope": "Dictionary entry pairing: two controls and two reviewer-reported false positives. Repair rejects unsupported optional dictionary slots.",
+      "before": {
+        "commit": "a4b72f9bca85eab798bb2a83933ff6fec6b9e685",
+        "sha256": "6f1c878e424d09deec0b97be895afd730ad26a00666e376410a74652a159d738",
+        "revision": "before",
+        "results": [
+          {
+            "case": "literal-control",
+            "passed": true,
+            "matches": [
+              {
+                "start": 0,
+                "end": 8,
+                "captures": {}
+              }
+            ]
+          },
+          {
+            "case": "capture-control",
+            "passed": true,
+            "matches": [
+              {
+                "start": 0,
+                "end": 16,
+                "captures": {
+                  "$B": {
+                    "text": "3",
+                    "ranges": [[14, 15]]
+                  },
+                  "$K": {
+                    "text": "\"a\"",
+                    "ranges": [[1, 4]]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "case": "optional-entry-splice",
+            "passed": false,
+            "matches": [
+              {
+                "start": 0,
+                "end": 8,
+                "captures": {}
+              }
+            ]
+          },
+          {
+            "case": "optional-capture-splice",
+            "passed": false,
+            "matches": [
+              {
+                "start": 0,
+                "end": 8,
+                "captures": {
+                  "$V": {
+                    "text": "2",
+                    "ranges": [[6, 7]]
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "passed": 2,
+        "total": 4
+      },
+      "after": {
+        "commit": "14b130561cdcc61c55e15f825abacf4ac8d56532",
+        "sha256": "6dcf2c31beae232464d9faf15a26dc7aa49558d872d0056a3e164cc656f55654",
+        "revision": "after",
+        "results": [
+          {
+            "case": "literal-control",
+            "passed": true,
+            "matches": [
+              {
+                "start": 0,
+                "end": 8,
+                "captures": {}
+              }
+            ]
+          },
+          {
+            "case": "capture-control",
+            "passed": true,
+            "matches": [
+              {
+                "start": 0,
+                "end": 16,
+                "captures": {
+                  "$B": {
+                    "text": "3",
+                    "ranges": [[14, 15]]
+                  },
+                  "$K": {
+                    "text": "\"a\"",
+                    "ranges": [[1, 4]]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "case": "optional-entry-splice",
+            "passed": true,
+            "rejected": "Optional $K requires an independently omittable list element or nullable field"
+          },
+          {
+            "case": "optional-capture-splice",
+            "passed": true,
+            "rejected": "Optional $K requires an independently omittable list element or nullable field"
+          }
+        ],
+        "passed": 4,
+        "total": 4
+      },
+      "executed_probe_sha256": "14d39fefe0caaa9b4b8cfdbb79fd284c34c27a371381b151c470dac67e228f99",
+      "public_probe_file": "coordination-v2-python-review-audit.py",
+      "public_probe_note": "Formatted copy of the executed private probe; formatting changes its file hash."
+    },
+    {
+      "component": "cstyle",
+      "scope": "First JavaScript/C++ review round only: two controls and eleven reproductions covering control/function patterns, arrow bodies, loop bodies, and template-id callees. Later review rounds are not reproduced by this probe.",
+      "before": {
+        "commit": "ff9484423efdf7fda31d5ea3c97863361b37c282",
+        "sha256": "af7613498eae4839b772421c0a7719e3ae04d071e9ea59c47a2280ca5b0471fc",
+        "revision": "before",
+        "results": [
+          {
+            "case": "js-call-control",
+            "passed": true,
+            "matches": [
+              {
+                "start": 0,
+                "end": 4,
+                "captures": {
+                  "$X": {
+                    "text": "x",
+                    "ranges": [[2, 3]]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "case": "cpp-call-control",
+            "passed": true,
+            "matches": [
+              {
+                "start": 0,
+                "end": 4,
+                "captures": {
+                  "$X": {
+                    "text": "x",
+                    "ranges": [[2, 3]]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "case": "js-control-pattern",
+            "passed": false,
+            "error": "javascript pattern at offset 0: control patterns are not supported; match their expressions or blocks"
+          },
+          {
+            "case": "cpp-control-pattern",
+            "passed": false,
+            "error": "cpp pattern at offset 0: control patterns are not supported; match their expressions or blocks"
+          },
+          {
+            "case": "js-function-pattern",
+            "passed": false,
+            "error": "javascript pattern at offset 9: expected expression"
+          },
+          {
+            "case": "cpp-function-pattern",
+            "passed": false,
+            "error": "cpp pattern at offset 12: expected ')', got 'x'"
+          },
+          {
+            "case": "js-arrow-parenthesized",
+            "passed": false,
+            "matches": []
+          },
+          {
+            "case": "js-arrow-unparenthesized",
+            "passed": false,
+            "matches": []
+          },
+          {
+            "case": "js-empty-for",
+            "passed": false,
+            "matches": []
+          },
+          {
+            "case": "cpp-empty-for",
+            "passed": false,
+            "matches": []
+          },
+          {
+            "case": "cpp-range-for",
+            "passed": false,
+            "matches": []
+          },
+          {
+            "case": "cpp-template-member",
+            "passed": false,
+            "matches": []
+          },
+          {
+            "case": "cpp-template-qualified",
+            "passed": false,
+            "matches": []
+          }
+        ],
+        "passed": 2,
+        "total": 13
+      },
+      "after": {
+        "commit": "02f3f77d07c439ed00cd90e1992b4870f67476e2",
+        "sha256": "b635aa1cea01791367e853d47b149fece73615cd73e757a54c47f52db84be2cf",
+        "revision": "after",
+        "results": [
+          {
+            "case": "js-call-control",
+            "passed": true,
+            "matches": [
+              {
+                "start": 0,
+                "end": 4,
+                "captures": {
+                  "$X": {
+                    "text": "x",
+                    "ranges": [[2, 3]]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "case": "cpp-call-control",
+            "passed": true,
+            "matches": [
+              {
+                "start": 0,
+                "end": 4,
+                "captures": {
+                  "$X": {
+                    "text": "x",
+                    "ranges": [[2, 3]]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "case": "js-control-pattern",
+            "passed": true,
+            "matches": [
+              {
+                "start": 0,
+                "end": 16,
+                "captures": {
+                  "$C": {
+                    "text": "ready",
+                    "ranges": [[4, 9]]
+                  },
+                  "$X": {
+                    "text": "x",
+                    "ranges": [[13, 14]]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "case": "cpp-control-pattern",
+            "passed": true,
+            "matches": [
+              {
+                "start": 0,
+                "end": 16,
+                "captures": {
+                  "$C": {
+                    "text": "ready",
+                    "ranges": [[4, 9]]
+                  },
+                  "$X": {
+                    "text": "x",
+                    "ranges": [[13, 14]]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "case": "js-function-pattern",
+            "passed": true,
+            "matches": [
+              {
+                "start": 0,
+                "end": 32,
+                "captures": {}
+              }
+            ]
+          },
+          {
+            "case": "cpp-function-pattern",
+            "passed": true,
+            "matches": [
+              {
+                "start": 0,
+                "end": 31,
+                "captures": {}
+              }
+            ]
+          },
+          {
+            "case": "js-arrow-parenthesized",
+            "passed": true,
+            "matches": [
+              {
+                "start": 18,
+                "end": 22,
+                "captures": {
+                  "$X": {
+                    "text": "x",
+                    "ranges": [[20, 21]]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "case": "js-arrow-unparenthesized",
+            "passed": true,
+            "matches": [
+              {
+                "start": 16,
+                "end": 20,
+                "captures": {
+                  "$X": {
+                    "text": "x",
+                    "ranges": [[18, 19]]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "case": "js-empty-for",
+            "passed": true,
+            "matches": [
+              {
+                "start": 9,
+                "end": 13,
+                "captures": {
+                  "$X": {
+                    "text": "x",
+                    "ranges": [[11, 12]]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "case": "cpp-empty-for",
+            "passed": true,
+            "matches": [
+              {
+                "start": 9,
+                "end": 13,
+                "captures": {
+                  "$X": {
+                    "text": "x",
+                    "ranges": [[11, 12]]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "case": "cpp-range-for",
+            "passed": true,
+            "matches": [
+              {
+                "start": 21,
+                "end": 25,
+                "captures": {
+                  "$X": {
+                    "text": "x",
+                    "ranges": [[23, 24]]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "case": "cpp-template-member",
+            "passed": true,
+            "matches": [
+              {
+                "start": 0,
+                "end": 15,
+                "captures": {
+                  "$F": {
+                    "text": "obj.run<int>",
+                    "ranges": [[0, 12]]
+                  },
+                  "$X": {
+                    "text": "a",
+                    "ranges": [[13, 14]]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "case": "cpp-template-qualified",
+            "passed": true,
+            "matches": [
+              {
+                "start": 0,
+                "end": 26,
+                "captures": {
+                  "$A": {
+                    "text": "first",
+                    "ranges": [[15, 20]]
+                  },
+                  "$B": {
+                    "text": "last",
+                    "ranges": [[21, 25]]
+                  },
+                  "$F": {
+                    "text": "std::sort<int>",
+                    "ranges": [[0, 14]]
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "passed": 13,
+        "total": 13
+      },
+      "executed_probe_sha256": "75b8705b2227cddb1bf85343b1ea86f2d42f41e262b14c3302c640e3829318e9",
+      "public_probe_file": "coordination-v2-cstyle-review-audit.py",
+      "public_probe_note": "Formatted copy of the executed private probe; formatting changes its file hash."
+    }
+  ]
+}

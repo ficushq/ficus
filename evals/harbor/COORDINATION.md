@@ -121,3 +121,64 @@ budget reservations, or change production Ficus. The original freeze remains
 intact. `coordination-v2-plan.json` declares a fresh corrected pair with the same
 inputs and order, under the remaining phase budget. Any new attempt must pass the
 fixed-path network checks and freeze its changed source/context hashes first.
+
+## Corrected Ficus outcome: coordination v2
+
+The corrected run lasted **94m45s**, with **$7.698162** in confirmed model usage
+across 393 receipted requests and no unknown-usage holds. All three implementation
+streams and final integration reached native approval; their tips were integrated
+into main at `32d80bfee556b986f22ed1ce14e333f25048d24e`. The final reviewer reports
+121 project test methods passing on that actual delivered revision. No operator
+code edits, task hints, manual merges, or external-test feedback were supplied.
+
+The budget guard rejected the manager's closing request after approval. The
+phase total was $14.511960 against its $20 cap: remaining $5.488040 was below the
+unchanged $5.50 reservation. Preserve the trial as interrupted, not a normally
+completed unattended delivery. All checkpoint payload hashes were verified.
+The earlier transport-failed attempt remains separately accounted at $1.657667.
+Pi has not run; budget authorization and an explicit protocol amendment to the
+interrupted-predecessor gate are required before continuation. Do not silently
+turn the offline result into a successful Harbor trial.
+
+A no-inference, no-network post-stop grade applied the exact preserved patch to
+the pristine frozen image and ran the unchanged upstream suite: **37/47 passed,
+10 failed, no skips; not accepted**. This result is separate from the original
+Harbor result, whose verifier was cancelled. See
+`coordination-v2-ficus-result.json` for provenance, counts, accounting, and native
+attempt history.
+
+### What coordination did and missed
+
+- The manager created three implementation packages plus integration; native
+  worktrees and commits show real division of work and merging of all approved
+  inputs. Core/Python implementation overlapped. Model calls remained serialized.
+- Review requested eight repair cycles: one Python, five JavaScript/C++, and two
+  integration. Four eventual approvals do not establish external correctness.
+- Operator-only probes independently reproduced selected native findings before
+  repair and confirmed their repairs: Python dictionary pairing 2/4 to 4/4;
+  first-round JavaScript/C++ cases 2/13 to 13/13. These are selected review-derived
+  examples on intermediate revisions, not an unbiased score or proof that every
+  reviewer finding was valid. See `coordination-v2-review-audit.json` and its
+  companion probe scripts. No results were sent back to the squad.
+- Seven external failures share an unambiguous contract drift: the original
+  `regex_flags` JSON array became a string. The manager handoff omitted the type;
+  the architect explicitly specified a string, and implementation, unit tests,
+  and review agreed with that altered contract. The first explicit string claim
+  is preserved in architect message `8c207cb0-f649-4c04-838d-6b2b08af71b0`.
+- The remaining failures are an empty capture-map serialization difference,
+  literal-dollar matching in Python, and a missing semicolon in Python match
+  text/end coordinates. The first two have prose/test ambiguity: the prose shows
+  a captures mapping without requiring omission when empty, and requires valid
+  target-language patterns while the literal-dollar test uses `$price` in Python.
+  Keep the strict 37/47 result; disclose these tensions rather than rewriting tests.
+
+This suggests testing preservation of original requirements through delegation
+and a final check against original examples, rather than simply adding more
+review rounds. It does not yet justify a production prompt change or a claim
+that Ficus performs better or worse than Pi. Finish the matched baseline before
+making that comparison; subsequent improvement runs must remain separate.
+
+The added standard-library-only constraint forced considerable handwritten
+JavaScript/C++ parsing. This makes the case unusually parser-heavy and limits
+its representativeness for ordinary dependency-equipped product work. Preserve
+this run, but use a more representative workload for later coordination studies.

@@ -1,0 +1,272 @@
+{
+  "experiment": "coordination-v2",
+  "arm": "ficus",
+  "status": "budget-interrupted after native final approval; offline external grading failed",
+  "native_delivery_commit": "32d80bfee556b986f22ed1ce14e333f25048d24e",
+  "native_streams": [
+    {
+      "title": "Python structure-aware pattern engine",
+      "status": "done",
+      "attempts": [
+        {
+          "step": "design",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "review",
+          "status": "returned",
+          "outcome": "changes-requested"
+        },
+        {
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "review",
+          "status": "completed",
+          "outcome": "approved"
+        }
+      ]
+    },
+    {
+      "title": "Core CLI, rules, multilingual exact/regex search",
+      "status": "done",
+      "attempts": [
+        {
+          "step": "design",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "review",
+          "status": "completed",
+          "outcome": "approved"
+        }
+      ]
+    },
+    {
+      "title": "Final integration and independent product validation",
+      "status": "done",
+      "attempts": [
+        {
+          "step": "design",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "review",
+          "status": "returned",
+          "outcome": "changes-requested"
+        },
+        {
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "review",
+          "status": "returned",
+          "outcome": "changes-requested"
+        },
+        {
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "review",
+          "status": "completed",
+          "outcome": "approved"
+        }
+      ]
+    },
+    {
+      "title": "JavaScript and C++ structure-aware patterns",
+      "status": "done",
+      "attempts": [
+        {
+          "step": "design",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "review",
+          "status": "returned",
+          "outcome": "changes-requested"
+        },
+        {
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "review",
+          "status": "returned",
+          "outcome": "changes-requested"
+        },
+        {
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "review",
+          "status": "returned",
+          "outcome": "changes-requested"
+        },
+        {
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "review",
+          "status": "returned",
+          "outcome": "changes-requested"
+        },
+        {
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "review",
+          "status": "returned",
+          "outcome": "changes-requested"
+        },
+        {
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "step": "review",
+          "status": "completed",
+          "outcome": "approved"
+        }
+      ]
+    }
+  ],
+  "native_execution_status_counts": {
+    "completed": 44,
+    "queued": 1
+  },
+  "native_reported_final_project_test_methods": 121,
+  "native_project_tests_source": "Final reviewer evidence: independently reran actual main before and after final docs-only approval commit. Not operator-reexecuted.",
+  "operator_task_hints_or_candidate_edits": false,
+  "manager_closing_request_completed": false,
+  "execution": {
+    "arm": "ficus",
+    "elapsed_seconds": 5684.655133041961,
+    "stop": "Local budget rejection for coordv2-paid-ficus, event 1",
+    "exit_code": 130,
+    "usage": {
+      "usd_upper_bound": 7.698162,
+      "requests": 393,
+      "unknown_usage": 0
+    },
+    "phase_exposure_usd": 14.51196,
+    "phase_cap_usd": 20,
+    "historical_phase_excluded": true
+  },
+  "checkpoint_payload_hashes_verified": true,
+  "offline_external_grade": {
+    "total": 47,
+    "passed": 37,
+    "failures": 10,
+    "skipped": 0,
+    "accepted": false,
+    "manifest": {
+      "kind": "post-stop offline grading of preserved committed patch; not a resumed agent trial",
+      "candidate_patch_sha256": "ab97b7022651d4ed1c5a4fdf82b827b24f47d73924992cf2d3dd9724f7582495",
+      "image_id": "sha256:a23a761eb0d277cf4bfc136c8146cf300ca9f54f92e1cf063356d56717b1a07c",
+      "test_file_sha256": {
+        "official/code_search_test_helpers.py": "729c3ae55f8fb4c540160f6f591e20e613487a5f960a36f55183692248f8bfda",
+        "official/conftest.py": "b673abcb3cf38e52c0ccdf6ddc3890d4fd8678193f74c18b9dc3521f5fc009b3",
+        "official/data/checkpoint_1/proj/A/I.py": "fab96b61f4670c6c72ed04b36c927a818f3bbb9ef26f397de360dc4513d100fc",
+        "official/data/checkpoint_1/proj/M.py": "7d583d69cba5e6dd86f2ec5c8693b3ad92ebe82f68107c677adb31946b64206b",
+        "official/data/checkpoint_1/proj/N.py": "b2428a76603c2a66f37cd36c3ace5cbaaa74c926ea26cd11a2908edb560d62e9",
+        "official/data/checkpoint_2/proj/app.js": "9e55ee5e6fd917670c109b2d99c204d2039157d2998badd92b3c276abd10121e",
+        "official/data/checkpoint_2/proj/main.py": "fe7bb5c24cf752bd79682728ae453f1e07fa272fa878f7d0f9d125c7c762c47e",
+        "official/data/checkpoint_2/proj/src/engine.cpp": "71ed5b4f871c94d5b3e20ae38382d2c7e6b3e4241192c9d4b622dd2b5a10769b",
+        "official/test_checkpoint_1.py": "daf687f68788b3b19f8ede6a56e2ff26c63a38cd4a537d0e14bcda099e2b4625",
+        "official/test_checkpoint_2.py": "d8f8ee055ca0d69d4b641d50042c1ac726ccf83dd32a39322ff59a1f1d52659f",
+        "official/test_checkpoint_3.py": "4fe6b38664580197600979fd8f74dec1b7196853afc6fa28470f5e4b454d6202",
+        "score.py": "ec4a9325af5b6d78c8b90945d70ae6dc5b97a8d3e91398c5759ca6740a038396",
+        "test.sh": "39762cd3b1ed574ee2098d3ae626bf6dc6d489ca5a3bbc2b39b2da208d9affe5"
+      },
+      "inference": false,
+      "feedback_to_candidate": false,
+      "network": "none",
+      "exit_code": 0,
+      "elapsed_seconds": 6.771404542028904
+    },
+    "failed_tests": [
+      "official.test_checkpoint_1::test_basic",
+      "official.test_checkpoint_1::test_single_match",
+      "official.test_checkpoint_1::test_spec_example",
+      "official.test_checkpoint_1::test_case_insensitive_and_language",
+      "official.test_checkpoint_1::test_regex_flag_variations",
+      "official.test_checkpoint_2::test_python_regex",
+      "official.test_checkpoint_3::test_optional_metavar",
+      "official.test_checkpoint_3::test_mixed_rules",
+      "official.test_checkpoint_3::test_literal_dollar_sign",
+      "official.test_checkpoint_3::test_default_languages_include_cpp"
+    ]
+  },
+  "failure_categories": [
+    {
+      "count": 7,
+      "cause": "regex_flags array rejected; candidate implements string contract",
+      "spec_status": "Unambiguous original array schema/example; native handoff omitted type; architect explicitly selected string.",
+      "first_explicit_string_contract_message": "8c207cb0-f649-4c04-838d-6b2b08af71b0",
+      "first_explicit_string_contract_time": "2026-10-27T06:00:29.124Z"
+    },
+    {
+      "count": 1,
+      "cause": "Emits captures:{} for unbound optional match; upstream test expects field omitted",
+      "spec_status": "Potential prose/test ambiguity: prose shows captures mapping on pattern records without explicitly saying to omit empty maps."
+    },
+    {
+      "count": 1,
+      "cause": "Rejects $$price pattern in Python, which becomes syntactically invalid $price",
+      "spec_status": "Potential prose/test tension: prose requires valid target-language code but separately promises literal-dollar escaping; test expects dollar-prefixed Python identifiers."
+    },
+    {
+      "count": 1,
+      "cause": "Python assignment match omits requested trailing semicolon from text/end span; JS/C++ spans include it",
+      "spec_status": "Exact source span expected by upstream test."
+    }
+  ],
+  "pi_status": "not started; pending budget authorization and explicit continuation amendment because original predecessor gate requires un-interrupted completion",
+  "comparative_claim": null,
+  "limitations": [
+    "Single adapted case; not an official SlopCodeBench score.",
+    "All three requests supplied together, not sequential upstream protocol.",
+    "Added Python-standard-library-only constraint creates atypical handwritten-parser workload.",
+    "Model calls serialized per arm; tool work can overlap, but no unrestricted parallel speed or human-time-saved claim.",
+    "Offline grade preserved separately; original Harbor CancelledError and absent verifier_result remain unchanged."
+  ]
+}
