@@ -188,18 +188,23 @@ grading of the pre-review patch confirms the official score stayed unchanged.
 This illustrates why supported review improvements and official acceptance should
 be reported separately.
 
-Ficus's original squad attempt was budget-interrupted during implementation.
-Its saved patch grades at the same 83/84 and 47/47 in a separate no-inference
-replay, but it was never reviewed or delivered. The user authorized a $40 phase
-cap; a fresh repeat with identical inputs then hit a provider streaming failure
-without a usage receipt. Both attempts and costs are retained. There is no
-completed Ficus-squad result in this batch, and no four-way acceptance ranking is
-valid. See [the complete report](FRESH_MATCHED.md).
+Ficus's original squad attempt was budget-interrupted during implementation. Its saved patch grades at the same 83/84
+and 47/47 in a separate no-inference replay, but it was never reviewed or delivered. The user authorized a $40 phase
+cap; a fresh repeat with identical inputs then hit a provider streaming failure without a usage receipt. Both attempts
+and costs are retained. At that phase boundary there was no completed Ficus-squad result, so no four-way first-attempt
+acceptance ranking is valid. See [the complete report](FRESH_MATCHED.md).
 
-Before more paid recovery, reconcile the missing receipt and add durable private
-runtime/workspace checkpoints with offline resume validation. Keep the repeated
-contract-narrowing behavior as a diagnostic for held-out prompt comparisons;
-this one task does not justify another production prompt rewrite.
+The next phase preserved the missing receipt as unresolved under the old cap and added durable private runtime/workspace
+checkpoints with offline restoration validation. Keep the repeated contract-narrowing behavior as a diagnostic for
+held-out prompt comparisons; this one task does not justify another production prompt rewrite.
+
+The later checkpoint-enabled repeat completed the full Ficus squad, including two review/repair cycles and final
+approval: **84/84 features + 47/47 regressions**, $2.457816 across 135 receipted requests, and 39m01s including
+checkpoint overhead. A no-inference replay shows its pre-review patch already passed the official grader. Review fixed
+additional relation-state and callback defects, independently reproduced as 2/8 → 4/8 → 8/8 post-hoc checks with
+ordinary-add controls passing. This is a separately reported repeat after two interruptions, not a first-attempt win or
+evidence that review caused the official score improvement. Keep prompts fixed and expand the fresh sample before making
+production prompt changes.
 
 ## Evidence and accounting limits
 
@@ -226,9 +231,9 @@ $11 of holds ($5.50 historical and $5.50 new): $35.705390 exposure under $40.
 The next $5.50 reservation did not fit. All owned trial processes are stopped;
 no hold was released without provider reconciliation.
 
-On October 26, 2026, the user explicitly authorized a fresh **$20 cap from zero**.
-The [reset record](budget-phase-2026-10-26-reset.json) closes the previous phase
-without reconciling its unresolved charges. A new empty private ledger and active
-budget pointer now separate future requests from historical accounting. The
-$5.50 per-request reservation remains in force. No inference has started in the
-new phase at the time of this reset; future launches must use its ledger explicitly.
+On October 26, 2026, the user explicitly authorized a fresh **$20 cap from zero**. The
+[reset record](budget-phase-2026-10-26-reset.json) closes the previous phase without reconciling its unresolved charges.
+A new private ledger opened at zero, with an active budget pointer separating future requests from historical
+accounting. The $5.50 per-request reservation remains in force. At the reset, no inference had started in the new phase.
+The completed Koota repeat subsequently spent $2.457816, leaving $17.542184 with no unresolved new-phase usage. Future
+launches must use that ledger explicitly.

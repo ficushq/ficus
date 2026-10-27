@@ -44,11 +44,11 @@ holds. Its ledger and a snapshot are preserved; the reset does not reconcile
 missing receipts. Historical result manifests retain their original accounting.
 Earlier temporary raw artifacts are unavailable; new evidence is stored durably.
 
-The [fresh matched Koota study](FRESH_MATCHED.md) returns to an unused external
-task with engineer-only and full-squad conditions. Its budget-interrupted Ficus
-attempt and authorized recovery are reported separately from completed first
-attempts. Review findings are independently checked without changing the
-official grader.
+The [fresh matched Koota study](FRESH_MATCHED.md) returns to an unused external task with engineer-only and full-squad
+conditions. Its budget-interrupted Ficus attempt and two authorized recoveries are reported separately from completed
+first attempts. The checkpoint-enabled repeat completed with 84/84 feature checks and 47/47 regressions for $2.457816;
+its pre-review patch already passed that grader. Independent post-hoc checks verified additional review repairs. The new
+$20 phase now has $17.542184 remaining, with no unresolved usage.
 
 Opt-in [private recovery checkpoints](CHECKPOINTS.md) preserve the disposable
 database and task filesystem before cleanup. Their offline restore probe makes
