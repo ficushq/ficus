@@ -284,6 +284,10 @@ export async function listLocalDeployments(squadId: string): Promise<LocalDeploy
   return apiFetch<LocalDeployment[]>(`/squads/${squadId}/local-deployments?includeArchived=true`)
 }
 
+export async function getLocalDeployment(localDeploymentId: string): Promise<LocalDeployment> {
+  return apiFetch<LocalDeployment>(`/local-deployments/${encodeURIComponent(localDeploymentId)}`)
+}
+
 export async function stopLocalDeployment(localDeploymentId: string): Promise<void> {
   await apiFetch(`/local-deployments/${localDeploymentId}/stop`, { method: 'POST' })
 }
