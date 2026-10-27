@@ -62,26 +62,26 @@ export function AgentMonitorStatus({
             aria-live="polite"
             aria-atomic="true"
             // Opaque and above the plant, so the plant's pot hides behind it.
-            className="relative z-10 flex min-w-0 items-start gap-2 border-b border-th-border bg-surface px-3 py-2 text-xs text-secondary"
+            className="relative z-10 min-w-0 border-b border-th-border bg-surface px-3 py-2 text-xs text-secondary [overflow-wrap:anywhere]"
           >
-            <MonitorIcon className="mt-0.5 h-3 w-3 shrink-0 text-accent-light" />
-            <span className="min-w-0 [overflow-wrap:anywhere]">
-              <span className="font-medium text-accent-light">Monitoring:</span>{' '}
-              {shownMonitors.map((monitor, index) => (
-                <Fragment key={monitor.id}>
-                  {index > 0 && ' · '}
-                  <button
-                    type="button"
-                    className="text-left [overflow-wrap:anywhere] underline decoration-dotted underline-offset-2 hover:text-primary hover:decoration-solid focus-visible:decoration-solid"
-                    title={monitor.description ?? undefined}
-                    aria-haspopup="dialog"
-                    onClick={() => setSelected(monitor)}
-                  >
-                    {monitor.label || 'Untitled monitor'}
-                  </button>
-                </Fragment>
-              ))}
-            </span>
+            {/* Inline with the text, so it stays centered on the first line even when the
+                labels' mobile touch-target min-height makes that line taller. */}
+            <MonitorIcon className="mr-2 inline-block h-3 w-3 align-[-0.15em] text-accent-light" />
+            <span className="font-medium text-accent-light">Monitoring:</span>{' '}
+            {shownMonitors.map((monitor, index) => (
+              <Fragment key={monitor.id}>
+                {index > 0 && ' · '}
+                <button
+                  type="button"
+                  className="text-left [overflow-wrap:anywhere] underline decoration-dotted underline-offset-2 hover:text-primary hover:decoration-solid focus-visible:decoration-solid"
+                  title={monitor.description ?? undefined}
+                  aria-haspopup="dialog"
+                  onClick={() => setSelected(monitor)}
+                >
+                  {monitor.label || 'Untitled monitor'}
+                </button>
+              </Fragment>
+            ))}
           </div>
           {plant.shown && (
             // Clipped at the row's top edge, so the retreating plant never shows above the row.
