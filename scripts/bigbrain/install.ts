@@ -8,10 +8,17 @@ import {
 } from '@ficus/shared/managed-bigbrain'
 import { verifyBigbrainArtifact } from './artifact'
 import { verifyHostBun } from './host-bun'
-import { installHostAssets } from './host-assets'
+import { coreAccountGid, installHostAssets } from './host-assets'
 import { caddySitesDirectory, publishIngress } from './ingress'
 import { installedHostSchema, type InstalledHost } from './control-input'
-import { ensureOwnedDirectory, readPrivateJson, writePrivateJson } from './secure-files'
+import {
+  ensureOwnedDirectory,
+  ensurePrivateDirectory,
+  readPrivateJson,
+  sharePrivateDirectory,
+  writePrivateJson,
+} from './secure-files'
+import { BIGBRAIN_STATE_ROOT, CORE_ACCOUNT_NAME } from './paths'
 import { initializeStorageNamespace } from './volume-image'
 
 export const BIGBRAIN_ETC = '/etc/ficus/bigbrain'
@@ -26,6 +33,12 @@ export interface InstallOptions {
   opt?: string
   state?: string
   uid?: number
+  /** The primary group of the account hosted Core runs as, when that is not root. Core reads the
+   * host record and its vaults' read handoffs through it: both directories are shared read-only
+   * with this group (0750, files 0640). Absent (root Core): sharing already in place is kept. */
+  coreGid?: number
+  /** That account's name: it joins the gateway client group (default host assets only). */
+  coreAccount?: string
   /** Linux x64/systemd/cgroup-v2/ext4-loop support. Throws unsupported_host; runs before any write. */
   probeHost: () => Promise<void>
   /** Interpreter check against the artifact's recorded Bun version (default: verifyHostBun). */
@@ -155,16 +168,23 @@ export async function installManagedHost(options: InstallOptions): Promise<Insta
   await (options.hostBun ?? ((version) => verifyHostBun(version, { uid })))(provenance.bunVersion)
   // Shared parents (/etc/ficus) may already exist with any safe mode; create only if absent.
   await ensureParentDirectory(dirname(etc), uid)
+  await ensurePrivateDirectory(etc, fs)
   for (const [path, mode] of [
     [opt, 0o755],
     [join(opt, 'releases'), 0o755],
-    [etc, 0o700],
     [join(etc, 'public'), 0o755],
     [caddySitesDirectory(etc), 0o755],
   ] as const)
     await ensureOwnedDirectory(path, mode, fs)
   await removeLegacySites(etc)
   await initializeStorageNamespace({ root: options.state, uid })
+  if (options.coreGid !== undefined) {
+    // Before the host record is written, so it lands group-readable; existing handoffs follow.
+    const handoffs = join(options.state ?? BIGBRAIN_STATE_ROOT, 'read-handoff')
+    await ensurePrivateDirectory(handoffs, fs)
+    await sharePrivateDirectory(etc, options.coreGid, fs)
+    await sharePrivateDirectory(handoffs, options.coreGid, fs)
+  }
   const artifactDigest = await installRelease(options.artifactRoot, join(opt, 'releases'), uid)
   const host: InstalledHost = installedHostSchema.parse(
     existing
@@ -194,7 +214,9 @@ export async function installManagedHost(options: InstallOptions): Promise<Insta
   // Credential-free routes/sites first (empty for a new host), then the release-bound launcher,
   // units and gateway. A refusal leaves the recorded host but no new helper/gateway.
   await (options.ingress ?? (() => publishIngress({ root: options.state, etc, uid })))()
-  await (options.hostAssets ?? ((digest) => installHostAssets(digest, { etc, uid })))(artifactDigest)
+  await (options.hostAssets ?? ((digest) => installHostAssets(digest, { etc, uid, coreAccount: options.coreAccount })))(
+    artifactDigest
+  )
   // Vaults from releases that never wrote it still show upstream's default server name: set each
   // to its Ficus name once (a stop/write/start of that vault only when they differ). Cosmetic, so a
   // failure is reported and retried by the next upgrade instead of failing this one.
@@ -254,14 +276,27 @@ export async function probeSupportedHost(): Promise<void> {
   }
 }
 
-/** `ficus-bigbrain-host install`. The bundle's directory IS the verified artifact root. No
- * argv/environment policy: the setup toolkit pipes the validated `bigbrain:` config as JSON.
+/** The installer's only arguments: none (root Core), or `--core-account <name>` when hosted Core
+ * runs as that unprivileged account. */
+export function parseInstallArgs(args: string[]): { coreAccount?: string } {
+  if (args.length === 0) return {}
+  if (args.length === 2 && args[0] === '--core-account' && CORE_ACCOUNT_NAME.test(args[1]!) && args[1] !== 'root')
+    return { coreAccount: args[1] }
+  throw new Error('invalid_request')
+}
+
+/** `ficus-bigbrain-host install [--core-account <name>]`. The bundle's directory IS the verified
+ * artifact root. No environment policy: the setup toolkit pipes the validated `bigbrain:` config
+ * as JSON; the only argument names the Core account the toolkit already created.
  */
 export async function installMain(args: string[]): Promise<void> {
   const { dirname } = await import('node:path')
   const { readBoundedControlBytes } = await import('./control-input')
   try {
-    if (process.getuid?.() !== 0 || args.length !== 0) throw new Error('invalid_request')
+    if (process.getuid?.() !== 0) throw new Error('invalid_request')
+    const { coreAccount } = parseInstallArgs(args)
+    const { runPrivateCommand } = await import('./process')
+    const coreGid = coreAccount ? await coreAccountGid(runPrivateCommand, coreAccount) : undefined
     const bytes = await readBoundedControlBytes(Bun.stdin.stream())
     const config: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
     const result = await installManagedHost({
@@ -269,6 +304,8 @@ export async function installMain(args: string[]): Promise<void> {
       // The bundle's own directory is the verified artifact root (run as `bun <root>/ficus-bigbrain-host.js`).
       artifactRoot: dirname(Bun.main),
       probeHost: probeSupportedHost,
+      coreAccount,
+      coreGid,
     })
     console.log(JSON.stringify({ ok: true, ...result }))
   } catch (error) {

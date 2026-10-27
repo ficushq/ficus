@@ -15,7 +15,9 @@ export type PrivateCommandRunner = (
  * fixed root-owned executables and validated source-built argv, never a caller command/path.
  * The enclosing bounded control unit owns/kills ALL descendants, including after SSH loss.
  */
-export const runPrivateCommand: PrivateCommandRunner = async (argv, options = {}) => {
+/** The argument policy every runPrivateCommand call must satisfy (throws invalid_request). Exported so
+ * tests that inject a runner can hold their callers to the same limits as the real one. */
+export function validatePrivateCommand(argv: string[], options: Parameters<PrivateCommandRunner>[1] = {}): void {
   const timeoutMs = options.timeoutMs ?? 15000
   const maxOutputBytes = options.maxOutputBytes ?? 16384
   if (
@@ -33,6 +35,12 @@ export const runPrivateCommand: PrivateCommandRunner = async (argv, options = {}
     timeoutMs > 45000
   )
     throw new Error('invalid_request')
+}
+
+export const runPrivateCommand: PrivateCommandRunner = async (argv, options = {}) => {
+  const timeoutMs = options.timeoutMs ?? 15000
+  validatePrivateCommand(argv, options)
+  const maxOutputBytes = options.maxOutputBytes ?? 16384
   const child = (() => {
     try {
       return Bun.spawn(argv, {

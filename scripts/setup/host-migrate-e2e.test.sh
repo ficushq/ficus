@@ -483,6 +483,10 @@ runtime:
   sandbox: host
 backup:
   enabled: false
+# fail2ban is opt-in and lib.test.sh's to test. Off here explicitly, so no
+# entrypoint run installs packages or touches /etc/fail2ban.
+host:
+  fail2ban: false
 YAMLEOF
   CONFIG="${H}/setup/ficus-setup.yaml"
   : >"${CALLS}"

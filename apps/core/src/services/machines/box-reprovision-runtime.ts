@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, rename, lstat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { getHomeDir } from '../../lib/utils/home'
 import { boxUnitControl, boxHomeForUser } from './box-paths'
 import type { Machine, MachineBox } from './queries'
 import type { SshRunner } from './ssh'
@@ -174,8 +175,14 @@ export function createRemoteReprovisionRuntime(runner: SshRunner) {
   }
 }
 
-/** Root-owned local journal: atomic replacement plus file and parent-directory fsync. */
-export function createReprovisionJournal(root = '/var/backups/ficus-box-reprovision') {
+/** Where the journal lives: under Core's HOME, owned (like everything there) by the account Core
+ * runs as. Releases before the service-user switch kept it in /var/backups/ficus-box-reprovision;
+ * the setup toolkit still refuses to upgrade over an unfinished journal in either place. */
+export const reprovisionJournalRoot = (homeDir: string) => join(homeDir, 'box-reprovision')
+
+/** Operator-owned local journal (the running account's, 0700/0600): atomic replacement plus file and
+ * parent-directory fsync. */
+export function createReprovisionJournal(root = reprovisionJournalRoot(getHomeDir())) {
   const path = (id: string) => join(root, `${createHash('sha256').update(id).digest('hex')}.json`)
   async function checkRoot(create: boolean) {
     if (create) await mkdir(root, { mode: 0o700, recursive: true })
@@ -267,7 +274,9 @@ export function validateMaintenanceEvidence(props: string, conditions: unknown, 
     throw new ReprovisionError('maintenance-condition-not-effective')
 }
 export async function assertLocalReprovisionMaintenance(run: LocalRun = runLocal): Promise<void> {
-  if (process.platform !== 'linux' || process.getuid?.() !== 0) throw new ReprovisionError('requires-linux-root')
+  // Who runs it is the entrypoint's operator-identity check: root on a root host, the service user
+  // otherwise. Everything below only reads (guard files, unit state over D-Bus).
+  if (process.platform !== 'linux') throw new ReprovisionError('requires-linux')
   try {
     await lstat(REPROVISION_ALLOW_START)
     throw new ReprovisionError('maintenance-allow-file-exists')

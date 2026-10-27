@@ -1,17 +1,25 @@
 #!/usr/bin/env bun
 /**
  * Operator box control, bundled as `dist/box-control.js` so it exists on an
- * artifact install. Run on the tenant Core VM from `/opt/ficus-core`, where Bun
- * loads Core's `.env` (database and secret store):
+ * artifact install. Run on the tenant Core VM as root through the operator
+ * wrapper, which loads Core's `.env` (database and secret store) and runs this as
+ * the account Core runs as (lib/infra/operator-identity):
  *
  *   FICUS_BC_SANDBOX_ID=<sandboxId> FICUS_BC_ACTION=<status|stop|start|restart|processes|kill> \
- *     [FICUS_BC_PID=<pid> FICUS_BC_SIGNAL=<TERM|INT|KILL>] bun current/apps/core/dist/box-control.js
+ *     [FICUS_BC_PID=<pid> FICUS_BC_SIGNAL=<TERM|INT|KILL>] bash run-core-operator.sh box-control
  *
  * The platform's `scripts/box-control.ts` is the usual caller.
  */
+import { operatorIdentityRefusal } from './lib/infra/operator-identity'
+import { getHomeDir } from './lib/utils/home'
 import { parseBoxControlRequest, runBoxControl } from './services/machines/box-control'
 
 async function main(): Promise<number> {
+  const refusal = operatorIdentityRefusal('box-control', import.meta.path, getHomeDir(), process.geteuid?.())
+  if (refusal) {
+    console.error(refusal)
+    return 1
+  }
   let request
   try {
     request = parseBoxControlRequest(process.env)

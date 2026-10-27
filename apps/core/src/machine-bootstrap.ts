@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
 /**
  * Operator machine re-bootstrap, bundled as `dist/machine-bootstrap.js` so it
- * exists on an artifact install. Run on the tenant Core VM from
- * `/opt/ficus-core`, where Bun loads Core's `.env` (database and secret store):
+ * exists on an artifact install. Run on the tenant Core VM as root through the
+ * operator wrapper, which loads Core's `.env` (database and secret store) and runs
+ * this as the account Core runs as (lib/infra/operator-identity):
  *
- *   FICUS_MB_MACHINE=<machineId>|all-stale bun current/apps/core/dist/machine-bootstrap.js
+ *   FICUS_MB_MACHINE=<machineId>|all-stale bash run-core-operator.sh machine-bootstrap
  *
  * It runs the same `bootstrapMachine` that `POST /api/machines/:id/bootstrap`
  * runs, claiming the machine first exactly as that route does, for one machine
@@ -104,6 +105,13 @@ export async function runMachineBootstrap(target: string, deps: MachineBootstrap
 }
 
 async function main(): Promise<number> {
+  const { operatorIdentityRefusal } = await import('./lib/infra/operator-identity')
+  const { getHomeDir } = await import('./lib/utils/home')
+  const refusal = operatorIdentityRefusal('machine-bootstrap', import.meta.path, getHomeDir(), process.geteuid?.())
+  if (refusal) {
+    console.error(refusal)
+    return 1
+  }
   let target: string
   try {
     target = parseMachineBootstrapTarget(process.env)

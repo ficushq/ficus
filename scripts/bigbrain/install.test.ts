@@ -6,7 +6,7 @@ import { MANAGED_BIGBRAIN_DEFAULT_LIMITS } from '@ficus/shared/managed-bigbrain'
 import { installedHostSchema } from './control-input'
 import { readPrivateJson, writePrivateJson } from './secure-files'
 import { syntheticArtifact } from './host-test-fixtures'
-import { installManagedHost } from './install'
+import { installManagedHost, parseInstallArgs } from './install'
 import { caddySitesDirectory } from './ingress'
 
 const roots: string[] = []
@@ -246,4 +246,51 @@ test('an upgrade repairs vault server names after the new release is installed, 
   expect(f.steps.slice(-3)).toEqual(['ingress', `assets:${f.digest}`, 'names'])
   expect(seen[0]).toMatchObject({ artifactDigest: f.digest, hostEpoch: 3, hostState: 'active' })
   expect(upgraded).toMatchObject({ installed: true, created: false, vaultNames: { repaired: 1, failed: 1 } })
+})
+
+test('with a Core account: the host record and the read handoffs are shared read-only with its group', async () => {
+  const f = await fixture()
+  const gid = process.getgid!()
+  // A host installed for a root Core, with a handoff written then (root-only): it becomes readable too.
+  await installManagedHost(f.options)
+  const { mkdir } = await import('node:fs/promises')
+  await mkdir(join(f.options.state, 'read-handoff'), { mode: 0o700 })
+  await writeFile(join(f.options.state, 'read-handoff', '22222222-2222-4222-8222-222222222222.json'), '{}', {
+    mode: 0o600,
+  })
+  await installManagedHost({ ...f.options, coreGid: gid })
+  const etc = await stat(f.options.etc)
+  expect([etc.mode & 0o7777, etc.gid]).toEqual([0o750, gid])
+  const record = await stat(join(f.options.etc, 'host.json'))
+  expect([record.mode & 0o777, record.gid]).toEqual([0o640, gid])
+  const handoffs = await stat(join(f.options.state, 'read-handoff'))
+  expect([handoffs.mode & 0o7777, handoffs.gid]).toEqual([0o750, gid])
+  const old = await stat(join(f.options.state, 'read-handoff', '22222222-2222-4222-8222-222222222222.json'))
+  expect([old.mode & 0o777, old.gid]).toEqual([0o640, gid])
+  // Root-side readers accept the shared record; a later install without the account keeps it.
+  expect((await host(f)).tenantId).toBe(config.tenantId)
+  expect(await installManagedHost(f.options)).toMatchObject({ installed: true, created: false })
+  expect((await stat(f.options.etc)).mode & 0o7777).toBe(0o750)
+  expect((await stat(join(f.options.etc, 'host.json'))).mode & 0o777).toBe(0o640)
+})
+
+test('without a Core account the host record stays root-only (0700 / 0600)', async () => {
+  const f = await fixture()
+  await installManagedHost(f.options)
+  expect((await stat(f.options.etc)).mode & 0o7777).toBe(0o700)
+  expect((await stat(join(f.options.etc, 'host.json'))).mode & 0o777).toBe(0o600)
+})
+
+test('the installer takes no argument, or exactly --core-account <a non-root login name>', () => {
+  expect(parseInstallArgs([])).toEqual({})
+  expect(parseInstallArgs(['--core-account', 'ficus'])).toEqual({ coreAccount: 'ficus' })
+  for (const bad of [
+    ['--core-account'],
+    ['--core-account', 'root'],
+    ['--core-account', 'Ficus'],
+    ['--core-account', '../x'],
+    ['--core-account', 'ficus', 'extra'],
+    ['--other', 'ficus'],
+  ])
+    expect(() => parseInstallArgs(bad)).toThrow('invalid_request')
 })

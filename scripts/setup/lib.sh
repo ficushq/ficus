@@ -1467,6 +1467,197 @@ ensure_pooler_user() { # USER
   as_root useradd --system --no-create-home --shell /usr/sbin/nologin --user-group "$1"
 }
 
+# ------------------------------------------------ fail2ban (sshd brute force)
+#
+# Opt-in (host.fail2ban: true), for a self-hosted core whose sshd is open to
+# the internet: fail2ban bans an address after repeated failed sshd logins.
+# Off by default on every install, hosted ones included: a hosted core's sshd
+# is reachable only from the control plane, so any ban there would lock the
+# platform out of the tenant. The jail reads
+# sshd from the systemd journal (backend = systemd: Ubuntu 24.04 does not
+# promise /var/log/auth.log) in the filter's default `normal` mode, where a
+# public key the server merely declines is not a failure, so a client that
+# offers several keys before the right one is never banned. Core reports the
+# same failures to the platform (usage sample sshAuthFailures).
+FAIL2BAN_JAIL="${FAIL2BAN_JAIL:-${FICUS_HOST_ROOT:-}/etc/fail2ban/jail.d/ficus-sshd.local}" # test seam only
+
+# fail2ban on (true) or off (false) for this host config: yaml host.fail2ban,
+# off when unset, whatever source.mode is. Dies on a value that is not a
+# boolean — call it in an assignment at config-parse time, so a typo stops the
+# run before it changes anything.
+fail2ban_setting() {
+  cfg_bool '.host.fail2ban' false
+}
+
+# The upgrade's form: after the new release is serving, never before the
+# migration (it restarts a unit and can wait up to 30 s), and never a reason
+# for the upgrade to fail. All output goes to stderr (stdout carries the
+# upgrade's trailer).
+ensure_fail2ban_best_effort() {
+  ensure_fail2ban >&2 || log_warn 'fail2ban could not be set up for sshd — the upgrade succeeded without it; the next upgrade retries'
+  return 0
+}
+
+fail2ban_jail_content() {
+  cat <<'EOF'
+# Managed by the Ficus setup toolkit (lib.sh ensure_fail2ban); edits are replaced.
+[sshd]
+enabled = true
+backend = systemd
+mode = normal
+maxretry = 5
+findtime = 10m
+bantime = 1h
+ignoreip = 127.0.0.1/8 ::1
+EOF
+}
+
+# Install fail2ban and the sshd jail, idempotently: the package only when it is
+# missing, the jail only when its content differs, and a restart only then (or
+# when the service is not running). Proves the jail is loaded. Returns 1 (with
+# the reason logged) instead of dying, so an upgrade can carry on without it.
+ensure_fail2ban() {
+  local changed=0
+  if ! have fail2ban-client; then
+    log_info 'installing fail2ban (sshd brute-force protection)'
+    as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fail2ban ||
+      { log_error 'fail2ban: apt-get install failed'; return 1; }
+  fi
+  if [[ ! -f ${FAIL2BAN_JAIL} || $(cat "${FAIL2BAN_JAIL}") != "$(fail2ban_jail_content)" ]]; then
+    as_root install -d -m 0755 -o root -g root "$(dirname -- "${FAIL2BAN_JAIL}")" ||
+      { log_error "fail2ban: could not create $(dirname -- "${FAIL2BAN_JAIL}")"; return 1; }
+    (install_rendered 0644 root root "${FAIL2BAN_JAIL}" fail2ban_jail_content) ||
+      { log_error "fail2ban: could not install ${FAIL2BAN_JAIL}"; return 1; }
+    changed=1
+  fi
+  as_root systemctl enable fail2ban >/dev/null 2>&1 || { log_error 'fail2ban: could not enable the service'; return 1; }
+  if ((changed)) || ! as_root systemctl is-active --quiet fail2ban; then
+    as_root systemctl restart fail2ban || { log_error 'fail2ban: the service did not restart'; return 1; }
+  fi
+  retry_until 30 1 'fail2ban sshd jail loaded' as_root fail2ban-client status sshd ||
+    { log_error 'fail2ban: the sshd jail is not loaded (fail2ban-client status sshd)'; return 1; }
+  log_info "fail2ban: sshd jail active (${FAIL2BAN_JAIL})"
+}
+
+# ------------------------------------------------ the Core service user
+#
+# Core (ficus-api, ficus-worker) runs as core.run_user. The self-hosted default
+# is the invoking user; the hosted layout names an unprivileged system account
+# (`ficus`). The toolkit creates that account when it is missing, with its home
+# at /home/<user> 0750 and only the groups the runtime needs
+# (docs/plans/2026-10-26-hosted-non-root-audit.md, 1.6):
+#   systemd-journal  always: Settings > System logs runs journalctl (R1)
+#   docker           only on the docker sandbox runtimes (R8); docker
+#                    membership is root-equivalent, so no other runtime gets it
+
+# The home a service user has, or will have once ensure_run_user creates it.
+# Mutation-free, so the config parse and --dry-run can use it before any
+# phase runs. Root and existing accounts: their passwd home. Missing
+# accounts: /home/<user>, which is where ensure_run_user puts it.
+run_user_predicted_home() { # USER
+  local home=''
+  if have getent; then
+    home=$(getent passwd "$1" 2>/dev/null | cut -d: -f6) || home=''
+  fi
+  if [[ -n ${home} ]]; then
+    printf '%s' "${home}"
+  elif [[ $1 != root ]] && ! id -u "$1" >/dev/null 2>&1; then
+    printf '/home/%s' "$1"
+  fi
+}
+
+# The supplementary groups the service user needs on this host, comma-separated.
+#   ficus-bigbrain-client  only with managed BigBrain: the gateway socket (R6). Joined here,
+#                    before the services start, because a running process never gains a group;
+#                    the BigBrain installer adds it again (and Caddy) when it installs the host.
+run_user_groups() { # SANDBOX_RUNTIME [BIGBRAIN_ENABLED]
+  local groups=systemd-journal
+  case "$1" in
+    docker-sysbox | docker-socket) groups+=,docker ;;
+  esac
+  [[ ${2:-false} == true ]] && groups+=,ficus-bigbrain-client
+  printf '%s' "${groups}"
+}
+
+# The --dry-run line for ensure_run_user: what it would do, or nothing when the
+# account is root or already exists (group additions are not worth a line).
+run_user_plan() { # USER SANDBOX_RUNTIME [BIGBRAIN_ENABLED]
+  [[ $1 == root ]] && return 0
+  id -u "$1" >/dev/null 2>&1 && return 0
+  printf 'create system user %s (home /home/%s, shell /usr/sbin/nologin, groups %s)' \
+    "$1" "$1" "$(run_user_groups "$2" "${3:-false}")"
+}
+
+# Create the service user when it is missing, then add the groups it needs.
+# Root is left alone. An existing account only ever GAINS groups: usermod -aG
+# never removes one, so a host that leaves a docker runtime keeps `docker`
+# until an operator runs `gpasswd -d <user> docker` (removing groups the
+# toolkit did not add could break an operator's own setup). The home mode is
+# set explicitly: useradd takes it from HOME_MODE in /etc/login.defs, and a
+# world-traversable home would expose HOME_DIR the way opening /root would.
+ensure_run_user() { # USER SANDBOX_RUNTIME [BIGBRAIN_ENABLED]
+  local user=$1 runtime=$2 bigbrain=${3:-false} group groups
+  [[ ${user} == root ]] && return 0
+  if ! id -u "${user}" >/dev/null 2>&1; then
+    log_info "$(run_user_plan "${user}" "${runtime}" "${bigbrain}")"
+    as_root useradd --system --create-home --home-dir "/home/${user}" \
+      --shell /usr/sbin/nologin --user-group "${user}"
+    as_root install -d -m 0750 -o "${user}" -g "${user}" "/home/${user}"
+  fi
+  groups=$(run_user_groups "${runtime}" "${bigbrain}")
+  for group in ${groups//,/ }; do
+    # docker's group comes with docker.io; on a docker runtime the daemon may
+    # be installed later. Its postinst reuses an existing system group.
+    getent group "${group}" >/dev/null 2>&1 || as_root groupadd --system "${group}"
+  done
+  as_root usermod -aG "${groups}" "${user}"
+  log_info "service user ${user}: groups ${groups}"
+}
+
+# The group that may read a file Core needs but root owns: the service user's
+# primary group, or root's when Core runs as root.
+run_user_group() { # USER
+  if [[ ${1:-root} == root ]]; then
+    printf 'root'
+  else
+    id -gn "$1" 2>/dev/null || die "core.run_user '$1' does not exist — cannot grant it read access"
+  fi
+}
+
+# A manifest mode with group read added wherever the owner may read: 0600 ->
+# 0640, 0400 -> 0440. A mode without owner read is left as it is.
+group_readable_mode() { # MODE
+  local mode=$((8#${1#0}))
+  if ((mode & 8#400)); then mode=$((mode | 8#040)); fi
+  printf '0%03o' "${mode}"
+}
+
+# Assert that both core units run as USER (systemd's view, after daemon-reload).
+assert_core_units_user() { # USER
+  local unit actual
+  for unit in "${HL_UNIT_API}" "${HL_UNIT_WORKER}"; do
+    actual=$(as_root systemctl show -p User --value "${unit}")
+    [[ ${actual} == "$1" ]] ||
+      die "${unit} runs as '${actual:-<unset>}', expected core.run_user '$1'"
+  done
+  log_info "${HL_UNIT_API} and ${HL_UNIT_WORKER} run as $1"
+}
+
+# Lay a restored HOME tree down at TARGET and give it to the service user. As
+# root, cp -a keeps the archive's owners (the backed-up host's uids), so the
+# tree is chowned afterwards. A non-root setup run as the service user itself
+# already owns what it copied. --no-dereference changes symlinks themselves
+# and never follows one out of the tree.
+restore_lay_down_home() { # HOME_SRC TARGET RUN_USER
+  local src=$1 target=$2 user=$3
+  mkdir -p "${target}"
+  cp -a "${src}/." "${target}/" || die "restore: failed to lay down the workspace tree into ${target}"
+  if [[ ${EUID} -eq 0 || $(id -un) != "${user}" ]]; then
+    as_root chown -R --no-dereference "${user}:" "${target}" ||
+      die "restore: failed to give ${target} to ${user}"
+  fi
+}
+
 render_pooler_unit() { # TEMPLATE_FILE INI_PATH
   sed -e "s|@RUN_USER@|$(pooler_user)|g" \
     -e "s|@INI@|$2|g" \
@@ -1646,7 +1837,8 @@ install_artifacts() { # STAGE_DIR
   local manifest="${stage}/manifest"
   [[ -f ${manifest} ]] || return 0
   as_root install -d -m 0755 -o root -g root "${FICUS_ARTIFACTS_DIR}"
-  local mode target src
+  local mode target src group
+  group=$(run_user_group "${RUN_USER:-root}")
   while read -r mode target; do
     [[ -n ${mode} && -n ${target} ]] || continue
     # Defense in depth over the registry's own validation: an artifact may
@@ -1657,8 +1849,11 @@ install_artifacts() { # STAGE_DIR
     [[ ${mode} =~ ^0[0-7]{3}$ ]] || die "install_artifacts: invalid mode '${mode}' for '${target}'"
     src="${stage}/files/${target}"
     [[ -f ${src} ]] || die "install_artifacts: staged file missing for '${target}': ${src}"
-    install_rendered "${mode}" root root "${FICUS_ARTIFACTS_DIR}/${target}" cat "${src}"
-    log_info "installed ${FICUS_ARTIFACTS_DIR}/${target} (${mode})"
+    # A non-root Core reads these through its group (the APNs key is 0600 in
+    # the manifest): root:<service group>, group read where the owner reads.
+    if [[ ${group} != root ]]; then mode=$(group_readable_mode "${mode}"); fi
+    install_rendered "${mode}" root "${group}" "${FICUS_ARTIFACTS_DIR}/${target}" cat "${src}"
+    log_info "installed ${FICUS_ARTIFACTS_DIR}/${target} (${mode} root:${group})"
   done <"${manifest}"
 }
 
@@ -2196,6 +2391,17 @@ BIGBRAIN_ETC="${BIGBRAIN_ETC:-/etc/ficus/bigbrain}"       # test seams only
 bigbrain_caddy_sites() { printf '%s/bigbrain-caddy' "$(dirname "${BIGBRAIN_ETC}")"; }
 BIGBRAIN_STATE="${BIGBRAIN_STATE:-/var/lib/ficus-bigbrain}"
 BIGBRAIN_BUN="${BIGBRAIN_BUN:-/usr/local/bin/bun}"
+# The root helper a non-root Core reaches through sudo -n (MANAGED_BIGBRAIN_HELPER), and the one
+# sudoers rule that allows it: the helper, with no arguments ("" — it refuses any).
+BIGBRAIN_HELPER=/usr/local/libexec/ficus-bigbrainctl
+BIGBRAIN_SUDOERS="${BIGBRAIN_SUDOERS:-/etc/sudoers.d/ficus-bigbrain}" # test seam only
+bigbrain_sudoers_content() { # RUN_USER
+  printf '%s ALL=(root) NOPASSWD: %s ""\n' "$1" "${BIGBRAIN_HELPER}"
+}
+install_bigbrain_sudoers() { # RUN_USER
+  install_sudoers_rule "${BIGBRAIN_SUDOERS}" "$(bigbrain_sudoers_content "$1")"
+  log_info "installed ${BIGBRAIN_SUDOERS} (NOPASSWD ${BIGBRAIN_HELPER} for $1)"
+}
 
 bigbrain_config_json() {
   local section
@@ -2218,8 +2424,11 @@ bigbrain_enabled() { # CONFIG_JSON
 }
 
 # Install/upgrade under the host lifecycle lock shared with the root helper launcher.
+# A non-root Core (core.run_user, RUN_USER) gets what it needs from the installer: read access to
+# the host record and the read handoffs, the gateway client group, and its sudoers rule.
 bigbrain_install() { # RELEASE_DIR CONFIG_JSON
-  local release=$1 config=$2 runtime out code
+  local release=$1 config=$2 runtime out code core=()
+  [[ ${RUN_USER:-root} == root ]] || core=(--core-account "${RUN_USER}")
   if ! bigbrain_enabled "${config}"; then
     if as_root test -e "${BIGBRAIN_ETC}/host.json"; then
       die "managed BigBrain is installed on this host: bigbrain.enabled: false would orphan its vaults — remove them through the control plane first; nothing was changed"
@@ -2236,6 +2445,7 @@ bigbrain_install() { # RELEASE_DIR CONFIG_JSON
     set -euo pipefail
     umask 077
     state=$1 runtime=$2 bun=$3
+    shift 3
     [[ -d $state ]] || install -d -m 0711 -o root -g root "$state"
     [[ -d $state/control ]] || install -d -m 0700 -o root -g root "$state/control"
     [[ ! -L $state/control/host.lock ]]
@@ -2243,14 +2453,15 @@ bigbrain_install() { # RELEASE_DIR CONFIG_JSON
     flock -w 180 -x 9
     # The installer verifies this interpreter (ownership, exact version) before any write.
     exec /usr/bin/env -i HOME=/nonexistent PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8 \
-      BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 "$bun" --no-install --no-env-file "$runtime" install
-  ' ficus-bigbrain-install "${BIGBRAIN_STATE}" "${runtime}" "${BIGBRAIN_BUN}" <<<"${config}") || true
+      BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 "$bun" --no-install --no-env-file "$runtime" install "$@"
+  ' ficus-bigbrain-install "${BIGBRAIN_STATE}" "${runtime}" "${BIGBRAIN_BUN}" "${core[@]}" <<<"${config}") || true
   if [[ $(jq -r '.ok // false' <<<"${out}" 2>/dev/null) != true ]]; then
     code=$(jq -r '.code // "operation_failed"' <<<"${out}" 2>/dev/null) || code=operation_failed
     [[ ${code} =~ ^[a-z_]{1,40}$ ]] || code=operation_failed
     die "managed BigBrain install refused (${code}); the host record was not changed"
   fi
   log_info "managed BigBrain runtime installed: $(jq -c '{created, artifactDigest, hostEpoch, hostState, vaultNames}' <<<"${out}")"
+  if [[ ${RUN_USER:-root} != root ]]; then install_bigbrain_sudoers "${RUN_USER}"; fi
 }
 
 # Restore: an envelope's managed-bigbrain/ directory never reaches HOME_DIR or the database
@@ -5572,16 +5783,28 @@ host_layout_rollback_hook() {
   host_migrate_restore_pending
 }
 
+# Refuse while a box reprovision (dist/box-reprovision.js) left an unfinished
+# journal: in Core's HOME (box-reprovision/, owned like the rest of HOME by the
+# account Core runs as), or where releases before the service-user switch kept
+# it (/var/backups/ficus-box-reprovision, root's).
 require_box_reprovision_settled() {
-  local root="${FICUS_HOST_ROOT:-}/var/backups/ficus-box-reprovision" entries file
+  local home=''
+  _require_box_reprovision_journals_settled "${FICUS_HOST_ROOT:-}/var/backups/ficus-box-reprovision" 0
+  if [[ -n ${SRC_DEST:-} && -r ${SRC_DEST}/.env ]]; then home=$(envfile_get "${SRC_DEST}/.env" HOME_DIR 2>/dev/null || true); fi
+  if [[ -n ${home} && -d ${home} ]]; then
+    _require_box_reprovision_journals_settled "${home}/box-reprovision" "$(stat -c %u -- "${home}")"
+  fi
+}
+_require_box_reprovision_journals_settled() { # ROOT OWNER_UID
+  local root=$1 uid=$2 entries file
   [[ -e ${root} || -L ${root} ]] || return 0
-  [[ -d ${root} && ! -L ${root} && -r ${root} && -x ${root} && $(readlink -f -- "${root}") == "${root}" && $(stat -c %u:%a -- "${root}") == 0:700 ]] ||
-    die 'unfinished or unreadable box reprovision journal — finish the guarded operator recovery before finalizing this upgrade'
+  [[ -d ${root} && ! -L ${root} && -r ${root} && -x ${root} && $(readlink -f -- "${root}") == "${root}" && $(stat -c %u:%a -- "${root}") == "${uid}:700" ]] ||
+    die "unfinished or unreadable box reprovision journal in ${root} — finish the guarded operator recovery before finalizing this upgrade"
   entries=$(find "${root}" -mindepth 1 -maxdepth 1 -print) ||
     die 'could not inventory box reprovision journals — finish the guarded operator recovery before finalizing this upgrade'
   while IFS= read -r file; do
     [[ -n ${file} ]] || continue
-    [[ ${file##*/} =~ ^[0-9a-f]{64}\.json$ && -f ${file} && ! -L ${file} && $(stat -c %u:%a -- "${file}") == 0:600 ]] &&
+    [[ ${file##*/} =~ ^[0-9a-f]{64}\.json$ && -f ${file} && ! -L ${file} && $(stat -c %u:%a -- "${file}") == "${uid}:600" ]] &&
       jq -se 'length == 1 and (.[0] | type == "object" and .version == 1 and .done == true and (.identity | type == "string" and length > 0) and (.runtime | type == "object" and ([.server, .socket, .proxy, .docker, .manager, .linger, .serverEnabled, .socketEnabled, .dockerEnabled] | all(type == "boolean"))))' "${file}" >/dev/null 2>&1 ||
       die 'unfinished or invalid box reprovision journal — finish the guarded operator recovery before finalizing this upgrade'
   done <<<"${entries}"
@@ -5597,12 +5820,39 @@ host_layout_adopt() {
   ARTIFACT_RELOCATED_FROM='' ARTIFACT_RELOCATED_TO=''
 }
 
+# Install one sudoers drop-in: 0440 root, validated with visudo -cf before it
+# replaces anything (a broken drop-in would lock every sudo use out).
+install_sudoers_rule() { # DEST CONTENT
+  local tmp
+  tmp=$(mktemp)
+  printf '%s\n' "$2" >"${tmp}"
+  if as_root sh -c 'command -v visudo >/dev/null 2>&1'; then
+    as_root visudo -cf "${tmp}" >/dev/null || {
+      rm -f "${tmp}"
+      die "generated sudoers rule failed visudo validation — refusing to install $1"
+    }
+  fi
+  as_root install -m 0440 -o root -g root "${tmp}" "$1"
+  rm -f "${tmp}"
+}
+
+# A run-user switch (switch-run-user.sh) in progress or interrupted: its
+# journal, next to the host-migration journal. Every toolkit run but the
+# switch itself refuses while it exists — its rollback restores this host's
+# config files and moves HOME_DIR back, which would undo what they write.
+run_user_switch_journal() { printf '%s/RUN_USER_SWITCH' "$(host_migrate_backup_root)"; }
+require_run_user_switch_settled() {
+  [[ ! -e $(run_user_switch_journal) ]] ||
+    die "a run-user switch is journaled in $(run_user_switch_journal) — re-run switch-run-user.sh (it settles the switch) before anything else changes this host"
+}
+
 host_layout_sudoers_content() { # RUN_USER
   printf '%s ALL=(root) NOPASSWD: /usr/bin/systemctl restart %s, /usr/bin/systemctl restart %s\n' "$1" "${HL_NEW_UNIT_PREFIX}-api" "${HL_NEW_UNIT_PREFIX}-worker"
 }
 
 require_host_layout_ready() { # [RELEASE_DIR] [DECLARED_LAYOUT]
   require_box_reprovision_settled
+  require_run_user_switch_settled
   if [[ -n ${SRC_DEST:-} && -f ${SRC_DEST}/.env ]]; then
     require_canonical_database_ca "$(envfile_direct_dsn "${SRC_DEST}/.env")"
     local current

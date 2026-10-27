@@ -148,7 +148,8 @@ manages root-owned `/usr/local/bin/bun` plus
 `core.run_user`; hosted tenants omit that key and therefore preserve their
 root SSH/setup/upgrade identity. For a supported BYO non-root upgrade, the
 invoking operator must either be root or have non-interactive sudo, the
-configured `core.run_user` account must already exist, and Bun source discovery
+configured `core.run_user` account must already exist (`setup-host.sh` creates
+it; see "Running Core as a service user"), and Bun source discovery
 must succeed from the invoking operator's `PATH` or `HOME/.bun/bin`; setup then
 copies that executable into the managed system path before switching identity.
 Host migrations (below) are root-only: a non-root run takes no migration
@@ -262,6 +263,67 @@ old path links or unit aliases. A restored backup from another `HOME_DIR`
 rebases registered database paths before services start, while a legacy
 backup whose unregistered paths require an old home link is refused before
 restore.
+
+### Running Core as a service user
+
+`core.run_user` names the account `ficus-api` and `ficus-worker` run as. On a
+new host, `setup-host.sh` creates a missing one as a system account
+(`useradd --system`, home `/home/<user>` 0750, shell `/usr/sbin/nologin`) and
+adds the groups the runtime needs: `systemd-journal` (Settings > System logs),
+`docker` only for the `docker-sysbox` / `docker-socket` runtimes, and
+`ficus-bigbrain-client` with managed BigBrain. Group membership only ever
+grows: after moving a host off a docker runtime, remove it by hand
+(`gpasswd -d <user> docker`). The service user owns its HOME and the pooler
+files; root keeps `.env` (0600), the release trees, units, sudoers rules,
+`/usr/local/bin/bun` and the database CA. File artifacts are installed
+`root:<user group>` with group read.
+
+An existing root host switches in place, one host per maintenance window,
+with `switch-run-user.sh` (shipped with `lib.sh`, `ficus-backup.sh.tmpl` and
+the `systemd/` templates, like `enable-pooler.sh`), run as root:
+
+```bash
+bash switch-run-user.sh --config /root/ficus-setup/ficus-setup.yaml [--user ficus]
+bash switch-run-user.sh --config /root/ficus-setup/ficus-setup.yaml --revert
+```
+
+It refuses with nothing changed unless the host is on the artifact layout, no
+host migration is journaled, the new HOME (`/home/<user>/.ficus`) is absent or
+empty and on the same filesystem as the old one (HOME moves with one rename
+and is never copied), no symlink inside the old HOME points into it by
+absolute path, the database stores nothing under the new HOME yet, and no
+backup is running. It then journals every step, backs up every file it
+rewrites, moves and re-owns HOME, rebases the stored paths, records
+`core.run_user` in the config, and re-renders the artifacts' group, the
+sudoers rules, the pooler, managed BigBrain's grants, the backup script and
+the units, restarts with the health wait and runs its success checks. Any
+failure after the services stop rolls everything back. A run killed midway
+leaves its journal: every other toolkit script refuses until the next
+`switch-run-user.sh` run settles it. The last line is
+`FICUS_RUN_USER=<user>` (`root` after `--revert` or a rolled-back failure).
+The plan, with every check, is
+`docs/plans/2026-10-26-hosted-non-root-audit.md`.
+
+Core's operator entrypoints (`box-control`, `machine-bootstrap`,
+`box-reprovision`, `system-token-control`, bundled in the release's
+`apps/core/dist/`) run as the account Core runs as, never as root on a
+service-user host: each refuses any account but the owner of Core's HOME, so
+nothing under that HOME is ever root-owned. Run them as root through
+`run-core-operator.sh`, which reads `<dest>/.env` and `/etc/ficus/managed.env`
+(parsed, never shell-sourced: the hosted `DATABASE_URL` holds `&`), sets
+`FICUS_ROOT`, and runs the entrypoint as `ficus-api`'s `User=` from the
+release's `apps/core`. The caller's request variables pass through and win:
+
+```bash
+FICUS_BC_SANDBOX_ID=<id> FICUS_BC_ACTION=status bash run-core-operator.sh box-control
+FICUS_MB_MACHINE=all-stale bash run-core-operator.sh machine-bootstrap
+FICUS_BR_BOX=all bash run-core-operator.sh box-reprovision
+FICUS_STC_ACTION=reissue-platform-orchestrator bash run-core-operator.sh system-token-control
+```
+
+`box-reprovision` keeps its journal under `<HOME_DIR>/box-reprovision`; the
+toolkit refuses to upgrade over an unfinished one there or in the root-era
+`/var/backups/ficus-box-reprovision`.
 
 ### What you end up with (the contract)
 

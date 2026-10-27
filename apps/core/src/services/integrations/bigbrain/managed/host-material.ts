@@ -52,7 +52,7 @@ export async function readManagedReadHandoff(
   }
   try {
     const info = await file.stat()
-    // Owner-written only; group read is tolerated for a future dedicated Core group, never other.
+    // Owner-written only; group read is the hosted Core account's (the installer shares it), never other.
     if (
       !info.isFile() ||
       info.nlink !== 1 ||

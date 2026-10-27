@@ -19,7 +19,7 @@ import {
   startVaultService,
 } from './provision'
 import { admitVaultRequest, controlReceiptSchema, hashVaultRequest, type ControlReceipt } from './receipts'
-import { ensureOwnedDirectory, readPrivateJson, writePrivateJson } from './secure-files'
+import { ensurePrivateDirectory, readPrivateJson, writePrivateJson } from './secure-files'
 import { runPrivateCommand, vaultCommand } from './process'
 import { syncVaultName, writeVaultName, type VaultNameDeps } from './vault-name'
 
@@ -54,14 +54,15 @@ const adminFor = (deps: LifecycleDeps) => (record: ControlReceipt) =>
   (deps.admin ?? ((r) => new NativeVaultAdmin(r, { root: deps.root, run: deps.run })))(record)
 const publish = (deps: LifecycleDeps) => (deps.ingress ?? (async () => {}))()
 
-/** Root-written read material for Core (never in a Platform reply). Kept root-private until the
- * hosted Core service identity is decided; Core access to this directory is part of that work. */
+/** Root-written read material for Core (never in a Platform reply). Root-private, or shared
+ * read-only with the hosted Core account's group when the installer was given one (the directory
+ * is then 0750 and every handoff 0640 to that group; see sharePrivateDirectory). */
 async function writeReadHandoff(record: ControlReceipt, host: InstalledHost, deps: LifecycleDeps): Promise<void> {
   const paths = managedPaths({ vaultId: record.receipt.vaultId, root: deps.root })
   const escrow = await readPrivateJson(paths.control, 'reader.json', escrowSchema, { uid: deps.uid })
   if (escrow.phase !== 'complete' || !escrow.token || !escrow.credentialId || record.receipt.upstreamVaultId === null)
     throw new Error('storage_unavailable')
-  await ensureOwnedDirectory(join(deps.root ?? BIGBRAIN_STATE_ROOT, 'read-handoff'), 0o700, { uid: deps.uid })
+  await ensurePrivateDirectory(join(deps.root ?? BIGBRAIN_STATE_ROOT, 'read-handoff'), { uid: deps.uid })
   await writePrivateJson(
     join(deps.root ?? BIGBRAIN_STATE_ROOT, 'read-handoff'),
     `${record.receipt.vaultId}.json`,

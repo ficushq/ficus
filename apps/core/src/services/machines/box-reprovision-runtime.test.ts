@@ -6,6 +6,7 @@ import type { MachineBox } from './queries'
 import { boxUnixUser } from './box-paths'
 import {
   createReprovisionJournal,
+  reprovisionJournalRoot,
   validateMaintenanceEvidence,
   REPROVISION_ALLOW_START,
   REPROVISION_GUARD_NAME,
@@ -74,6 +75,13 @@ describe('durable reprovision journal', () => {
     } finally {
       await rm(temp, { recursive: true, force: true })
     }
+  })
+})
+
+describe('reprovision journal location', () => {
+  it('lives under Core HOME (owned by the account Core runs as), not in a root-only system directory', () => {
+    expect(reprovisionJournalRoot('/home/ficus/.ficus')).toBe('/home/ficus/.ficus/box-reprovision')
+    expect(createReprovisionJournal.toString()).toContain('reprovisionJournalRoot(getHomeDir())')
   })
 })
 

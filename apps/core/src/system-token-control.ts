@@ -1,18 +1,18 @@
 #!/usr/bin/env bun
 /**
- * Root-only system-token control, bundled as `dist/system-token-control.js` so
- * it exists on an artifact install. The control plane runs it over SSH as root,
- * without sudo, from the Core install directory, where Bun loads Core's
- * root-only `.env` (the database URL):
+ * System-token control, bundled as `dist/system-token-control.js` so it exists
+ * on an artifact install. The control plane runs it over SSH as root through the
+ * operator wrapper, which loads Core's root-only `.env` (the database URL) and
+ * runs the entrypoint as the account Core runs as (lib/infra/operator-identity):
  *
- *   FICUS_STC_ACTION=reissue-platform-orchestrator bun current/apps/core/dist/system-token-control.js
+ *   FICUS_STC_ACTION=reissue-platform-orchestrator bash run-core-operator.sh system-token-control
  *
  * Contract (the control plane's `reissue_system_token` job parses it):
  * - stdout is exactly `FICUS_SYSTEM_TOKEN=<raw>\nFICUS_SYSTEM_TOKEN_REVOKED=<n>\n`
  *   and nothing else; every log line goes to stderr, and the raw token is never
  *   logged, passed in argv or placed in the environment
  * - exit 0 ok, 2 usage (unknown or missing action, any argument), 1 failure
- *   (including a non-root caller of the shipped bundle)
+ *   (including a caller of the shipped bundle that is not the account Core runs as)
  * - every run is a full re-issue: it mints one new `platform-orchestrator` token
  *   and revokes every other live one, so a retry after a lost reply supersedes
  *   the earlier run and leaves exactly one live token (the last one printed)
@@ -21,6 +21,8 @@
  * bridge): only the control plane calls it, and only on migrated hosts.
  */
 import { SYSTEM_TOKEN_PREFIX } from './services/auth/token-prefixes'
+import { operatorIdentityRefusal } from './lib/infra/operator-identity'
+import { getHomeDir } from './lib/utils/home'
 
 export const EXIT_OK = 0
 export const EXIT_FAILURE = 1
@@ -46,16 +48,21 @@ export function parseSystemTokenControlRequest(
 }
 
 /**
- * Why this process must not run, or null. The shipped bundle (`.js`) runs only
- * for root. This is defence in depth, not the security boundary: the boundary is
- * the database credential, which only root can read on a tenant host (anyone who
- * has it could insert a token row directly). The TypeScript source is ungated so
- * tests and dev checkouts can run it; artifacts ship no `src/`.
+ * Why this process must not run, or null. The shipped bundle (`.js`) runs only as
+ * the account Core runs as (the owner of its HOME: root, or the service user).
+ * This is defence in depth, not the security boundary: the boundary is the
+ * database credential, which only root can read from `.env` on a tenant host and
+ * hands to that account's processes (anyone who has it could insert a token row
+ * directly). The TypeScript source is ungated so tests and dev checkouts can run
+ * it; artifacts ship no `src/`.
  */
-export function rootRefusal(entryPath: string, euid: number | undefined): string | null {
-  if (entryPath.endsWith('.ts')) return null
-  if (euid === 0) return null
-  return `system-token-control must run as root (effective uid ${euid ?? 'unknown'})`
+export function operatorRefusal(
+  entryPath: string,
+  homeDir: string,
+  euid: number | undefined,
+  ownerOf?: (path: string) => number
+): string | null {
+  return operatorIdentityRefusal('system-token-control', entryPath, homeDir, euid, { ownerOf })
 }
 
 const TOKEN_PATTERN = new RegExp(`^${SYSTEM_TOKEN_PREFIX}[A-Za-z0-9_-]+$`)
@@ -81,7 +88,7 @@ function routeLogsToStderr(): void {
 
 async function main(): Promise<number> {
   routeLogsToStderr()
-  const refusal = rootRefusal(import.meta.path, process.geteuid?.())
+  const refusal = operatorRefusal(import.meta.path, getHomeDir(), process.geteuid?.())
   if (refusal) {
     console.error(refusal)
     return EXIT_FAILURE

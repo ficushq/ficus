@@ -9,6 +9,60 @@ group.
 Audited at `main` c155f243 (2026-10-26), with ficushq/ficus#678 (open) read
 for the pooler account.
 
+## Implementation status (2026-10-27)
+
+F2, F3 and F4 are implemented, with two revisions agreed on 2026-10-27 that
+replace F5 and F6, and host hardening in the same change:
+
+- **Operator entrypoints (replaces F5).** The four entrypoints in 1.4 no
+  longer run as root on a service-user host: each refuses any account but the
+  owner of Core's HOME (`apps/core/src/lib/infra/operator-identity.ts`), and
+  the platform runs them through `scripts/setup/run-core-operator.sh`, which
+  reads `<dest>/.env` and `/etc/ficus/managed.env` as root and runs the
+  entrypoint as `ficus-api`'s `User=`. The env files are parsed, not
+  shell-sourced (`set -a; . .env` would run the hosted DSN's
+  `&sslrootcert=…`). The box-reprovision journal moves to
+  `<HOME_DIR>/box-reprovision`. Nothing is chowned after creation.
+- **VAPID (replaces F6).** The `config/vapid.json` compatibility write is
+  gone everywhere; the read stays for old self-hosted installs.
+- **Hardening.** `sshAuthFailures` in each usage sample, so the platform can
+  alert. fail2ban with an sshd jail is opt-in only (`host.fail2ban: true`, for
+  a self-hosted core on an open port) and off by default everywhere, hosted
+  cores included: their sshd is reachable only from the control plane, so a
+  ban could only lock the platform out, and the hosted machine hosts are
+  firewalled to the core and the control plane. When enabled, `setup-host.sh`
+  sets it up in its preflight and fails on an error; `upgrade-host.sh` sets it
+  up only after the new release is serving and only warns on an error.
+
+Where the implementation departs from the plan below:
+
+- A revert, and a rollback after step 7, give HOME back to the user the run
+  started from (2.2 rollback step 3 said leave it): the entrypoints run only
+  as HOME's owner, so a root host with a `ficus`-owned HOME could not run them.
+- Caddy joins `ficus-bigbrain-client` through a unit drop-in
+  (`SupplementaryGroups=`), so the membership exists whenever Caddy starts,
+  including when its package is installed after BigBrain. The installer
+  restarts a running Caddy whenever its process lacks the group (read from
+  `/proc/<MainPID>/status`), then checks the new process has it. Normally that
+  is once per host; an install whose restart failed is retried by the next.
+- The BigBrain installer learns the Core account from one argument,
+  `install --core-account <user>`, which the toolkit passes when
+  `core.run_user` is not root.
+- The switch's backup set (step 1) holds the sudoers rules whenever they
+  exist, and a rollback runs the success checks for the user it went back
+  to; a rollback that fails them keeps its journal. HOME moves with
+  `rename(2)` only (never `mv`, which copies on `EXDEV`), and P4 compares
+  mount points as well as devices.
+- `sshAuthFailures` reads consecutive whole-second journal windows, counts
+  lines as they stream and stops at 1 MiB or 10 s, reporting the count so
+  far as a lower bound; a failed read never leaves a backlog for the next.
+- After a revert, the inert service account keeps its groups (`docker`,
+  `ficus-bigbrain-client`, `systemd-journal`), and managed BigBrain's
+  `/etc/ficus/bigbrain` and read-handoff directory stay readable by its group
+  until the BigBrain installer runs again; remove them by hand if the host
+  stays on root (`gpasswd -d ficus <group>`, `chmod 0700` the two
+  directories, `chmod 0600` their files).
+
 ## Why
 
 The hosted layout leaves `core.run_user` empty and runs `setup-host.sh` as

@@ -117,6 +117,32 @@ describe('setup helper CI gate', () => {
   })
 })
 
+describe('run-user switch suite CI gate', () => {
+  test('runs switch-run-user.test.sh AS ROOT, gated on its summary line and marker', () => {
+    const start = workflow.indexOf('- name: Run run-user switch suite (root)')
+    expect(start).toBeGreaterThan(-1)
+    const nextStep = workflow.indexOf('\n      - name:', start + 1)
+    const step = workflow.slice(start, nextStep === -1 ? undefined : nextStep)
+    expect(step).toContain('sudo env "PATH=$PATH" bash scripts/setup/switch-run-user.test.sh')
+    expect(step).toContain("grep -Eq '^[0-9]+ passed, 0 failed$'")
+    expect(step).toContain('FICUS run-user switch section: ENABLED')
+    expect(step).not.toContain('continue-on-error')
+    expect(step).not.toContain('if:')
+  })
+
+  test('the suite emits its marker exactly once, only after every self-skip check', () => {
+    const suite = readFileSync(join(import.meta.dir, '../scripts/setup/switch-run-user.test.sh'), 'utf8')
+    const marker = "echo 'FICUS run-user switch section: ENABLED'"
+    expect(suite.split(marker).length - 1).toBe(1)
+    const skipExit = suite.indexOf('if [[ -n ${skip_reason} ]]; then')
+    const markerAt = suite.indexOf(marker)
+    expect(skipExit).toBeGreaterThan(-1)
+    expect(markerAt).toBeGreaterThan(skipExit)
+    expect(suite.lastIndexOf('skip_reason=', markerAt)).toBeLessThan(skipExit)
+    expect(suite.lastIndexOf('\nsummary\n')).toBeGreaterThan(markerAt)
+  })
+})
+
 describe('lib.test.sh root-install marker', () => {
   const libTest = readFileSync(join(import.meta.dir, '../scripts/setup/lib.test.sh'), 'utf8')
 

@@ -31,6 +31,7 @@ import { listMachines as listMachinesQuery, type Machine } from './queries'
 import { sshExec } from './ssh'
 import { createMachineMetricsSampler, type MachineMetricsSampler } from './machine-metrics-sampler'
 import { buildCombinedSampleCommand, type MachineMetricsAggregate } from './machine-metrics-sample'
+import { createSshAuthFailureSampler, type SshAuthFailureSampler } from './ssh-auth-failures'
 
 const log = createLogger('platform-usage-reporter')
 
@@ -117,6 +118,14 @@ export interface UsageReportPayload {
    */
   metrics?: UsageMetricsBlock
   hostMetrics?: HostMetricsReport[]
+  /**
+   * Failed sshd logins on this Core host since the previous sample (journal lines matching
+   * `Failed password|Invalid user|authentication failure`; see ssh-auth-failures.ts), so the
+   * platform can alert on brute force. OMITTED ENTIRELY when the journal could not be read —
+   * never a zero standing in for a failed read. NEW field: unknown keys are ignored by the
+   * platform's ingest validator, so it is forward-compatible.
+   */
+  sshAuthFailures?: number
 }
 
 export interface HostMetricsReport {
@@ -335,7 +344,8 @@ export function buildUsagePayload(
   version?: BuildVersion | null,
   disk?: { usedGb: number; totalGb: number } | null,
   metrics?: UsageMetricsBlock | null,
-  coreMetrics?: UsageMetricsBlock | null
+  coreMetrics?: UsageMetricsBlock | null,
+  sshAuthFailures?: number | null
 ): UsageReportPayload {
   let mapped = machines.map(toIngestMachine)
   if (mapped.length > MAX_MACHINES) {
@@ -369,6 +379,7 @@ export function buildUsagePayload(
     hostMetrics.push({ hostKind: 'core_vm', hostId: 'self', metrics: coreMetrics })
   }
   if (hostMetrics.length > 0) payload.hostMetrics = hostMetrics
+  if (typeof sshAuthFailures === 'number') payload.sshAuthFailures = sshAuthFailures
   return payload
 }
 
@@ -441,6 +452,12 @@ async function execOnPinnedPrimaryMachine(command: string): Promise<string> {
  */
 let machineMetricsSampler: MachineMetricsSampler | null = null
 let coreMetricsSampler: MachineMetricsSampler | null = null
+/** Process-wide, so each sample's journal window starts where the previous one ended. */
+let sshAuthFailureSampler: SshAuthFailureSampler | null = null
+function getSshAuthFailureSampler(): SshAuthFailureSampler {
+  sshAuthFailureSampler ??= createSshAuthFailureSampler({ firstWindowSeconds: REPORT_INTERVAL_MS / 1000 })
+  return sshAuthFailureSampler
+}
 
 function getMachineMetricsSampler(): MachineMetricsSampler {
   if (!machineMetricsSampler) {
@@ -608,6 +625,8 @@ export interface ReportUsageSampleDeps {
   >
   /** The loopback pooler's pressure for the core host; null when this install is not pooled. Own try/catch in the tick. */
   samplePooler: () => Promise<PoolerSample | null>
+  /** Failed sshd logins on this host since the previous sample; null when the journal could not be read. */
+  sampleSshAuthFailures: () => Promise<number | null>
 }
 
 function defaultDeps(): ReportUsageSampleDeps {
@@ -630,6 +649,7 @@ function defaultDeps(): ReportUsageSampleDeps {
     drainCoreMetrics: () => getCoreMetricsSampler().drain(),
     countActivity: () => countInstanceActivity(),
     samplePooler: samplePoolerPressure,
+    sampleSshAuthFailures: () => getSshAuthFailureSampler().sample(),
   }
 }
 
@@ -706,7 +726,23 @@ export async function reportUsageSampleOnce(overrides: Partial<ReportUsageSample
     } catch (err) {
       log.warn('Platform pooler sample failed (reporting the rest of the sample without it):', err)
     }
-    const payload = buildUsagePayload(machines, userCount, deps.now(), version, disk, metrics, coreMetrics)
+    // Same isolation: an unreadable journal omits the key.
+    let sshAuthFailures: number | null = null
+    try {
+      sshAuthFailures = await deps.sampleSshAuthFailures()
+    } catch (err) {
+      log.warn('Platform SSH auth-failure sample failed (reporting the rest of the sample without it):', err)
+    }
+    const payload = buildUsagePayload(
+      machines,
+      userCount,
+      deps.now(),
+      version,
+      disk,
+      metrics,
+      coreMetrics,
+      sshAuthFailures
+    )
     const token = deps.getToken()
     const res = await deps.fetch(buildIngestEndpoint(deps.ingestUrl), {
       method: 'POST',

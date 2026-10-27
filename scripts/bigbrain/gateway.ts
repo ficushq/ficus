@@ -21,7 +21,7 @@ export async function gatewayMain(args: string[]): Promise<void> {
   try {
     if (process.platform !== 'linux' || process.getuid?.() === 0 || args.length !== 0) throw new Error()
     await readGatewayManifest()
-    // Root prepared the directory (owner gateway, group caddy, 2750) and removed any stale
+    // Root prepared the directory (owner gateway, group ficus-bigbrain-client, 2750) and removed any stale
     // socket before this start; Caddy reaches us only through this socket.
     const server = Bun.serve({
       unix: GATEWAY_SOCKET,

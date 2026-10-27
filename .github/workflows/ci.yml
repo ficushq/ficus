@@ -392,6 +392,28 @@ jobs:
           }
           if (( status != 0 )); then exit $(( status )); fi
 
+      # switch-run-user.sh run for real against a fake host: the HOME move,
+      # chown, rebase, unit/config/backup-script/sudoers/artifact rewrites, the
+      # success checks, the rollback of a failed restart, a killed run settled
+      # by the next one, and --revert. It creates a throwaway account and needs
+      # real root, so it self-skips otherwise — the same summary and marker
+      # gating as the other root suites.
+      - name: Run run-user switch suite (root)
+        run: |
+          set -o pipefail
+          status=0
+          out=$(sudo env "PATH=$PATH" bash scripts/setup/switch-run-user.test.sh 2>&1) || status=$?
+          printf '%s\n' "${out}"
+          tail -n 1 <<<"${out}" | grep -Eq '^[0-9]+ passed, 0 failed$' || {
+            echo '::error::switch-run-user.test.sh (root) ended without a clean "N passed, 0 failed" summary.'
+            exit 1
+          }
+          grep -Fq 'FICUS run-user switch section: ENABLED' <<<"${out}" || {
+            echo '::error::switch-run-user.test.sh (root) skipped its cases (no "FICUS run-user switch section: ENABLED" marker) — this step exists to execute them.'
+            exit 1
+          }
+          if (( status != 0 )); then exit $(( status )); fi
+
       - name: Run box provisioning shell suite
         run: |
           set -o pipefail

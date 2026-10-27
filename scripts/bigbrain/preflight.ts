@@ -7,7 +7,7 @@ import { readPrivateJson } from './secure-files'
 import { drainStages, noteStage, refuse } from './diagnostics'
 import { installedHostSchema } from './control-input'
 import { controlReceiptSchema } from './receipts'
-import { managedPaths } from './paths'
+import { GATEWAY_CLIENT_GROUP, managedPaths } from './paths'
 import { currentLoopMountDevice, verifyVaultMount, linuxDeviceId } from './storage'
 import { runPrivateCommand } from './process'
 
@@ -426,7 +426,7 @@ export async function runIsolationChecks(target: string, stage: { name: string }
     await prepareSocketDirectory(
       'gateway',
       await lookupId('passwd', 'ficus-bb-gateway'),
-      await lookupId('group', 'caddy')
+      await lookupId('group', GATEWAY_CLIENT_GROUP)
     )
     return
   }
@@ -460,7 +460,7 @@ export async function sandboxMain(args: string[]): Promise<void> {
     stage.name = 'open-files'
     verifyOpenFileLimit(await readFile('/proc/self/limits', 'utf8'), target === 'gateway' ? 128 : 256)
     stage.name = 'socket-directory'
-    const group = await lookupId('group', target === 'gateway' ? 'caddy' : 'ficus-bb-gateway')
+    const group = await lookupId('group', target === 'gateway' ? GATEWAY_CLIENT_GROUP : 'ficus-bb-gateway')
     await verifySocketDirectory(
       target === 'gateway' ? `${RUN_ROOT}/gateway` : `${RUN_ROOT}/vaults/${target}`,
       process.getuid!(),

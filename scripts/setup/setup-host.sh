@@ -98,6 +98,8 @@ cfg_load "${CONFIG}"
 # ============================================================== configuration
 
 SRC_MODE=$(cfg_get '.source.mode' 'git-ssh')
+# sshd brute-force protection (lib.sh ensure_fail2ban; opt-in, host.fail2ban; phase_preflight).
+FAIL2BAN_ON=$(fail2ban_setting)
 SRC_REPO=$(cfg_require '.source.repo' 'git repository')
 SRC_REF=$(cfg_get '.source.ref' 'main')
 # Default dest is the host layout's install root (cfg_source_dest: HL_DEST,
@@ -281,9 +283,11 @@ while IFS= read -r _core_env_line; do
 done <<<"${CORE_ENV_PAIRS}"
 unset _core_env_line
 if [[ -z ${CORE_ENV_HOME_DIR} ]]; then
-  if have getent; then
-    RUN_USER_HOME=$(getent passwd "${RUN_USER}" 2>/dev/null | cut -d: -f6)
-  fi
+  # A core.run_user that does not exist yet is created by phase_preflight
+  # (ensure_run_user) with its home at /home/<user>: predict that here, without
+  # touching the host, so the backup check, the layout globals and --dry-run
+  # already see the HOME the services will use.
+  RUN_USER_HOME=$(run_user_predicted_home "${RUN_USER}")
   if [[ -z ${RUN_USER_HOME} && ${RUN_USER} == "$(id -un)" ]]; then
     RUN_USER_HOME=${HOME}
   fi
@@ -739,17 +743,7 @@ update_sudoers_content() {
 }
 
 install_update_sudoers() {
-  local tmp
-  tmp=$(mktemp)
-  update_sudoers_content >"${tmp}"
-  if as_root sh -c 'command -v visudo >/dev/null 2>&1'; then
-    as_root visudo -cf "${tmp}" >/dev/null || {
-      rm -f "${tmp}"
-      die "generated sudoers rule failed visudo validation — refusing to install ${UPDATE_SUDOERS_FILE}"
-    }
-  fi
-  as_root install -m 0440 -o root -g root "${tmp}" "${UPDATE_SUDOERS_FILE}"
-  rm -f "${tmp}"
+  install_sudoers_rule "${UPDATE_SUDOERS_FILE}" "$(update_sudoers_content)"
   log_info "installed ${UPDATE_SUDOERS_FILE} (NOPASSWD systemctl restart ${HL_UNIT_API}/${HL_UNIT_WORKER} for ${RUN_USER})"
 }
 
@@ -764,6 +758,11 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
   log_step "DRY RUN — printing the plan; nothing will be executed or modified"
   printf '\nPhase 0 — preflight\n'
   plan "assert: Linux + systemd (PID 1) + Ubuntu 24.04 (override: FICUS_SETUP_SKIP_OS_CHECK=1)"
+  run_user_line=$(run_user_plan "${RUN_USER}" "${RT_SANDBOX}" "$(bigbrain_enabled "${BIGBRAIN_CONFIG}" && echo true || echo false)")
+  [[ -n ${run_user_line} ]] && plan "${run_user_line}"
+  if [[ ${FAIL2BAN_ON} == true ]]; then
+    plan "ensure: fail2ban (apt) with the sshd jail (${FAIL2BAN_JAIL}: journal backend, 5 failures in 10m -> 1h ban)"
+  fi
   if [[ ${SRC_MODE} == artifact ]]; then
     plan "ensure: curl jq openssl ca-certificates (apt; git dropped — artifact mode never clones), mikefarah yq v4, bun (official installer)"
   else
@@ -992,9 +991,13 @@ prepare_source_tools() {
 phase_preflight() {
   phase_step preflight "phase 0/8: preflight"
   ensure_swapfile
-  id -u "${RUN_USER}" >/dev/null 2>&1 ||
-    die "core.run_user '${RUN_USER}' does not exist on this host — create it first (useradd) or leave core.run_user empty"
+  # Creates a missing core.run_user (a system account, home /home/<user> 0750)
+  # and adds the groups it needs; nothing for root.
+  ensure_run_user "${RUN_USER}" "${RT_SANDBOX}" "$(bigbrain_enabled "${BIGBRAIN_CONFIG}" && echo true || echo false)"
   ensure_system_bun_node "${RUN_USER}" "$(command -v bun)"
+  if [[ ${FAIL2BAN_ON} == true ]]; then
+    ensure_fail2ban || die 'fail2ban could not be set up for sshd (see above)'
+  fi
 
   if [[ ${DB_MODE} == container ]] && ! have docker; then
     log_info "installing docker (docker.io) for the local database container"
@@ -1319,8 +1322,9 @@ phase_restore() {
   home_src=$(restore_home_subdir "${workdir}")
   if [[ -n ${home_src} ]]; then
     log_info "restoring workspace tree into ${target_home}"
-    mkdir -p "${target_home}"
-    cp -a "${home_src}/." "${target_home}/" || die "restore: failed to lay down the workspace tree into ${target_home}"
+    # Copied as root, then given to the service user (its HOME, which Core
+    # writes from its first start).
+    restore_lay_down_home "${home_src}" "${target_home}" "${RUN_USER}"
   else
     log_warn "restore: archive carried no workspace directory — skipping HOME_DIR restore"
   fi
@@ -1523,6 +1527,10 @@ phase_seed() {
 phase_report() {
   phase_step verify "phase 8/8: verify + handoff"
   local status mode has_admin email_cfg
+  # The units run as the configured service user: a stale unit rendered for
+  # another user would otherwise go unnoticed until something fails on
+  # ownership.
+  assert_core_units_user "${RUN_USER}"
   status=$(curl -sS --max-time 10 "http://127.0.0.1:${CORE_PORT}/api/auth/status")
   mode=$(jq -r '.mode' <<<"${status}")
   has_admin=$(jq -r '.hasAdminUser' <<<"${status}")
