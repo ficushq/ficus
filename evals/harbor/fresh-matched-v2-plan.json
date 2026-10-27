@@ -1,0 +1,42 @@
+{
+  "experiment": "fresh-matched-v2",
+  "kind": "One unused external task with four matched harness/workflow arms",
+  "source_commit": "0b9fabbb63b9104d678fe965e1632f2dd9eaa2ea",
+  "task": "mnamer-daemon-watch-lifecycle",
+  "selection": "Next unused task in frozen long-feature-v1-selection.json order, immediately after Koota; no outcome-based task selection.",
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "conditions": ["pi-engineer", "pi-planned", "ficus-planned", "ficus-engineer"],
+  "order_rule": "Sort SHA256(ficus-fresh-matched-v2:<task-id>:<harness>-<workflow>), fixed before inference",
+  "concurrency": 1,
+  "runtime": "Exact repair-v2 closeout-guidance archive, no experimental reviewer addition; Pi 0.99.1 packaged subagent extension for planned workflow",
+  "controls": "Unchanged official baseline/oracle and malicious test-collision checks; native no-inference network probes for Ficus and Pi before any paid trial",
+  "resources": {
+    "task_cpus": 2,
+    "task_memory_mb": 8192,
+    "task_storage_mb": 20480,
+    "official_agent_timeout_sec": 10800,
+    "official_verifier_timeout_sec": 1800,
+    "extra_ficus_resources": "Disposable loopback PostgreSQL, disclosed as unmatched harness overhead"
+  },
+  "policy": "One attempt per arm, no automatic retries, operator task hints, hidden feedback or code edits; fresh isolated state and disabled Ficus memory. Sequential. Stop on invalid controls, provider/accounting failure, or budget guard; preserve incomplete arms separately.",
+  "budget": {
+    "phase": "budget-phase-2026-10-26-reset",
+    "phase_cap_usd": 20,
+    "opening_phase_exposure_usd": 2.457816,
+    "remaining_headroom_usd": 17.542184,
+    "reservation_per_call_usd": 5.5,
+    "ledger": "budget-phase-2026-10-26-reset/spend.sqlite",
+    "no_reset": true
+  },
+  "metrics": [
+    "Official accepted task and feature/regression counts",
+    "Delivered versus interrupted or blocked",
+    "Total inference cost including coordinator and subagents",
+    "Elapsed time with startup/verification included, not human attention saved",
+    "Native role provenance, review/rework transitions, owner waits and task interventions"
+  ],
+  "comparison_limit": "One task and one stochastic attempt per arm; new runtime closeout delta and current Harbor environment mean a separate batch from historical scores",
+  "inference_started": false,
+  "checkpoint_policy": "Capture private Ficus filesystem and database after every Ficus attempt; no automatic inference continuation or paid retry. Preserve failures and checkpoint overhead in timings."
+}
