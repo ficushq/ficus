@@ -31,6 +31,8 @@
 #   * a run killed mid-switch leaves its journal; every other toolkit entry
 #     refuses while it exists, and the next run settles it;
 #   * --revert goes back to root;
+#   * P6 refuses on a structured target hit (REBASE_HOME_TARGET) and passes
+#     over free-text mentions of the new HOME (REBASE_HOME_TARGET_TEXT);
 #   * run-core-operator.sh runs an entrypoint as the account Core runs as, with
 #     the env files parsed (never sourced), the caller's variables winning.
 #
@@ -198,7 +200,9 @@ cat "${SRU_SUDOERS_DIR}"/* 2>/dev/null | while IFS= read -r line; do
   printf '    %s\n' "${line#"${me} ALL="}"
 done
 EOF
-# rebase-home.js over $SRU_STATE/db (one stored path per line).
+# rebase-home.js over $SRU_STATE/db (one stored path per line; a line that
+# starts with ~ is a free-text mention, messages.metadata, which is rewritten
+# but, like the real program, never counts toward the target refusal).
 cat >"${SHIMS}/bun" <<'EOF'
 #!/usr/bin/env bash
 [[ $1 == dist/rebase-home.js ]] || exit 99
@@ -217,14 +221,23 @@ db=${SRU_STATE}/db
 [[ -e ${SRU_STATE}/rebase-fails ]] && exit 1
 moving=$(grep -c "^${from}/" "${db}" || true)
 target=$(grep -c "^${to}/" "${db}" || true)
+moving_text=$(grep -c "^~${from}/" "${db}" || true)
+target_text=$(grep -c "^~${to}/" "${db}" || true)
 if [[ ${dry} -eq 1 ]]; then
   echo "REBASE_HOME sessions.path=${moving}"
+  echo "REBASE_HOME messages.metadata=${moving_text}"
   echo "REBASE_HOME_TARGET sessions.path=${target}"
+  echo "REBASE_HOME_TARGET_TEXT messages.metadata=${target_text}"
   exit 0
 fi
-if ((moving > 0 && target > 0)); then echo "REBASE_HOME_TARGET sessions.path=${target}"; exit 3; fi
-sed -i "s|^${from}/|${to}/|" "${db}"
+if ((moving > 0 && target > 0)); then
+  echo "REBASE_HOME_TARGET sessions.path=${target}"
+  echo "REBASE_HOME_TARGET_TEXT messages.metadata=${target_text}"
+  exit 3
+fi
+sed -i -e "s|^${from}/|${to}/|" -e "s|^~${from}/|~${to}/|" "${db}"
 echo "REBASE_HOME sessions.path=${moving}"
+echo "REBASE_HOME messages.metadata=${moving_text}"
 EOF
 # runuser keeps the shims first on PATH for the probes it runs as the user.
 cat >"${SHIMS}/runuser" <<EOF
@@ -385,6 +398,32 @@ precondition 'an absolute symlink into the old HOME' 'would dangle after the mov
 fresh_host
 printf '%s\n' "${NEW}/sessions/other" >>"${STATE}/db"
 precondition 'stored paths already under the new HOME' 'already stores paths under'
+out=$(run_switch)
+expect_match 'P: stored paths already under the new HOME — the rows are listed, free-text mentions said not to count' "${out}" \
+  "already stores paths under ${NEW}:"$'\n''REBASE_HOME_TARGET sessions.path=1'$'\n''\(free-text mentions of that path, such as message text, are reported as REBASE_HOME_TARGET_TEXT and do not count\)'$'\n''nothing was changed'
+
+# P6 passes over free-text mentions of the new HOME (REBASE_HOME_TARGET_TEXT).
+fresh_host
+printf '%s\n' "~${NEW}/discussed-in-a-message" "~${OLD}/sessions/s1/log" >>"${STATE}/db"
+out=$(run_switch)
+expect_eq 'P6: a free-text mention of the new HOME does not refuse, the switch succeeds' \
+  "$(last_line "${out}")$(grep -o 'rc=[0-9]*$' <<<"${out}")" "FICUS_RUN_USER=${SVC}rc=0"
+expect_eq 'P6: every path and mention under the old HOME moved, the mention of the new one kept' "$(cat "${STATE}/db")" "${NEW}/sessions/s1/log
+${NEW}/workspaces/w/file
+/elsewhere/x
+~${NEW}/discussed-in-a-message
+~${NEW}/sessions/s1/log"
+# ...and a failed restart after it still rolls back cleanly (the inverse
+# rebase does not refuse on the mentions either).
+fresh_host
+printf '%s\n' "~${NEW}/discussed-in-a-message" >>"${STATE}/db"
+: >"${STATE}/unhealthy-as-${SVC}"
+out=$(run_switch)
+rm -f "${STATE}/unhealthy-as-${SVC}"
+expect_match 'P6: with a free-text mention, a failed restart rolls back and passes the checks' "${out}" \
+  "rolled back: the services run as root again"$'\n''FICUS_RUN_USER=root'$'\n''rc=[1-9]'
+expect_eq 'P6: ...every stored path is under the old HOME again' "$(head -n 2 "${STATE}/db")" "${OLD}/sessions/s1/log
+${OLD}/workspaces/w/file"
 fresh_host
 : >"${STATE}/ficus-backup.service.active"
 precondition 'a running backup' 'ficus-backup.service is running'

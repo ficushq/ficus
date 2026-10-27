@@ -602,6 +602,7 @@ REBASE_OUT=$(switch_rebase "${SWITCH_SET}" "${RELEASE}" "${OLD}" "${NEW}" --dry-
 ! grep -Eq '^REBASE_HOME_TARGET [^=]+=[1-9]' <<<"${REBASE_OUT}" ||
   die "refusing: the database already stores paths under ${NEW}:
 $(grep -E '^REBASE_HOME_TARGET [^=]+=[1-9]' <<<"${REBASE_OUT}")
+(free-text mentions of that path, such as message text, are reported as REBASE_HOME_TARGET_TEXT and do not count)
 nothing was changed"
 # P7: no backup is running.
 ! as_root systemctl is-active --quiet "${HL_UNIT_BACKUP}.service" ||

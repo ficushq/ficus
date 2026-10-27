@@ -16,15 +16,23 @@
  * - it is idempotent: a second run matches nothing and reports 0 for every column;
  * - it prints `REBASE_HOME <table>.<column>[.<json key>…]=<rows changed>` for every column, and
  *   exits 0 even when every count is 0;
- * - it refuses (exit 3, nothing written) when the data already holds paths under `--to` while
- *   there is something to move from `--from`: rewriting would merge the two, and the reverse run
- *   could no longer tell them apart (a free-text mention of both names, or a JSON object keyed by
- *   both, would lose one). `--force` rewrites anyway;
+ * - it refuses (exit 3, nothing written) when a STRUCTURED column (kind `text` or `jsonb-string`:
+ *   the value is a path) already holds a path under `--to` while a structured column still holds
+ *   one under `--from`: rewriting would merge the two, and the reverse run could no longer tell
+ *   them apart. `--force` rewrites anyway. Free-text columns (kind `jsonb-text`: message content, a
+ *   work stream's file list) never refuse, on either side: every standalone occurrence of a path in
+ *   them is rewritten by design, so a mention of `--to` (agents discussing the new HOME) is the same
+ *   thing as a stored path there and proves no earlier move. Since the rewrite is one transaction,
+ *   only a structured hit on both sides means the data already holds both HOMEs;
  * - it reports its progress on stderr as it goes, and bounds every statement with a
  *   `statement_timeout` (default 10 minutes).
  *
- * `--dry-run` counts the rows it would change in a read-only transaction and writes nothing; it also
- * prints `REBASE_HOME_TARGET <column key>=<rows already under --to>` for every column.
+ * `--dry-run` counts the rows it would change in a read-only transaction and writes nothing. It also
+ * prints the rows already under `--to`, per column: `REBASE_HOME_TARGET <column key>=<n>` for every
+ * structured column (the counts the refusal uses; a refusal prints them too), then
+ * `REBASE_HOME_TARGET_TEXT <column key>=<n>` for every free-text column (reported, never refused
+ * on). Callers that refuse on `^REBASE_HOME_TARGET [^=]+=[1-9]` (switch-run-user.sh P6) therefore
+ * ignore free-text mentions.
  */
 import type postgres from 'postgres'
 import { is } from 'drizzle-orm'
@@ -37,7 +45,10 @@ export class RebaseHomeUsageError extends Error {}
 /** The data already holds paths under `to` while there is something to move from `from`. */
 export class RebaseHomeTargetPresentError extends Error {
   constructor(
+    /** Structured columns only: the counts that refused. */
     readonly targetCounts: Record<string, number>,
+    /** Free-text columns: reported, never refused on. */
+    readonly textTargetCounts: Record<string, number>,
     readonly from: string,
     readonly to: string
   ) {
@@ -68,8 +79,15 @@ export interface RebaseHomeOptions {
 export interface RebaseHomeResult {
   /** Rows changed (or, dry run, that would change) per column key. */
   counts: Record<string, number>
-  /** Rows already holding a path under `to`, per column key, before anything moved. */
+  /** Rows already holding a path under `to`, per structured column key, before anything moved. */
   targetCounts: Record<string, number>
+  /** The same for the free-text (`jsonb-text`) columns, which never refuse. */
+  textTargetCounts: Record<string, number>
+}
+
+/** A free-text column: a mention of a path and a stored path are the same thing there. */
+export function isFreeTextHomePathColumn(entry: HomePathColumn): boolean {
+  return entry.kind === 'jsonb-text'
 }
 
 const DEFAULT_BATCH_SIZE = 500
@@ -242,7 +260,8 @@ async function rebaseColumn(
  * Rewrites every stored absolute path under `from` to the same path under `to`, in one transaction.
  * Returns the rows changed (or, with `dryRun`, that would change) per column key, and the rows that
  * already held a path under `to`. Throws RebaseHomeTargetPresentError — having written nothing —
- * when both kinds exist, unless `force` (a dry run only reports them).
+ * when structured columns hold both, unless `force` (a dry run only reports them; free-text columns
+ * never refuse).
  */
 export async function rebaseHomePaths(
   sql: postgres.Sql,
@@ -264,22 +283,36 @@ export async function rebaseHomePaths(
     await tx.unsafe(`SELECT pg_advisory_xact_lock(hashtext('ficus:rebase-home'))`)
     await tx.unsafe(`SET LOCAL statement_timeout = ${timeout}`)
     const targetCounts: Record<string, number> = {}
+    const textTargetCounts: Record<string, number> = {}
     let targets = 0
     let sources = 0
+    let textTargets = 0
+    let textSources = 0
     for (const entry of HOME_PATH_COLUMNS) {
       const key = homePathColumnKey(entry)
-      targetCounts[key] = await countUnder(tx, entry, to)
-      targets += targetCounts[key]
-      sources += await countUnder(tx, entry, from)
+      const target = await countUnder(tx, entry, to)
+      const source = await countUnder(tx, entry, from)
+      if (isFreeTextHomePathColumn(entry)) {
+        textTargetCounts[key] = target
+        textTargets += target
+        textSources += source
+      } else {
+        targetCounts[key] = target
+        targets += target
+        sources += source
+      }
     }
-    onProgress(`${sources} row(s) hold paths under ${from}, ${targets} under ${to}`)
+    onProgress(
+      `${sources} structured row(s) hold paths under ${from}, ${targets} under ${to}; ` +
+        `free text: ${textSources} row(s) mention ${from}, ${textTargets} mention ${to}`
+    )
     if (!dryRun && !opts.force && targets > 0 && sources > 0)
-      throw new RebaseHomeTargetPresentError(targetCounts, from, to)
+      throw new RebaseHomeTargetPresentError(targetCounts, textTargetCounts, from, to)
     const counts: Record<string, number> = {}
     for (const entry of HOME_PATH_COLUMNS) {
       counts[homePathColumnKey(entry)] = await rebaseColumn(tx, entry, from, to, dryRun, batchSize, onProgress)
     }
-    return { counts, targetCounts }
+    return { counts, targetCounts, textTargetCounts }
   }
   return (await (dryRun ? sql.begin('read only', run) : sql.begin(run))) as RebaseHomeResult
 }
@@ -307,6 +340,12 @@ export function parseRebaseHomeArgs(argv: string[]): { from: string; to: string;
   }
   validateRebasePaths(from, to)
   return { from, to, dryRun, force }
+}
+
+/** `REBASE_HOME_TARGET` lines for the structured columns, then `REBASE_HOME_TARGET_TEXT` for free text. */
+function printTargetCounts(targetCounts: Record<string, number>, textTargetCounts: Record<string, number>): void {
+  for (const [key, count] of Object.entries(targetCounts)) console.log(`REBASE_HOME_TARGET ${key}=${count}`)
+  for (const [key, count] of Object.entries(textTargetCounts)) console.log(`REBASE_HOME_TARGET_TEXT ${key}=${count}`)
 }
 
 const USAGE = 'usage: bun dist/rebase-home.js --from <old HOME_DIR> --to <new HOME_DIR> [--dry-run] [--force]'
@@ -339,16 +378,15 @@ export async function main(argv: string[], env: Record<string, string | undefine
       })
     } catch (error) {
       if (error instanceof RebaseHomeTargetPresentError) {
-        for (const [key, count] of Object.entries(error.targetCounts)) console.log(`REBASE_HOME_TARGET ${key}=${count}`)
+        printTargetCounts(error.targetCounts, error.textTargetCounts)
         console.error(`rebase-home: ${error.message}`)
         return 3
       }
       throw error
     }
-    const { counts, targetCounts } = result
+    const { counts, targetCounts, textTargetCounts } = result
     for (const [key, count] of Object.entries(counts)) console.log(`REBASE_HOME ${key}=${count}`)
-    if (args.dryRun)
-      for (const [key, count] of Object.entries(targetCounts)) console.log(`REBASE_HOME_TARGET ${key}=${count}`)
+    if (args.dryRun) printTargetCounts(targetCounts, textTargetCounts)
     const total = Object.values(counts).reduce((sum, count) => sum + count, 0)
     console.error(
       args.dryRun
