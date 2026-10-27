@@ -5711,16 +5711,28 @@ host_layout_rollback_hook() {
   host_migrate_restore_pending
 }
 
+# Refuse while a box reprovision (dist/box-reprovision.js) left an unfinished
+# journal: in Core's HOME (box-reprovision/, owned like the rest of HOME by the
+# account Core runs as), or where releases before the service-user switch kept
+# it (/var/backups/ficus-box-reprovision, root's).
 require_box_reprovision_settled() {
-  local root="${FICUS_HOST_ROOT:-}/var/backups/ficus-box-reprovision" entries file
+  local home=''
+  _require_box_reprovision_journals_settled "${FICUS_HOST_ROOT:-}/var/backups/ficus-box-reprovision" 0
+  if [[ -n ${SRC_DEST:-} && -r ${SRC_DEST}/.env ]]; then home=$(envfile_get "${SRC_DEST}/.env" HOME_DIR 2>/dev/null || true); fi
+  if [[ -n ${home} && -d ${home} ]]; then
+    _require_box_reprovision_journals_settled "${home}/box-reprovision" "$(stat -c %u -- "${home}")"
+  fi
+}
+_require_box_reprovision_journals_settled() { # ROOT OWNER_UID
+  local root=$1 uid=$2 entries file
   [[ -e ${root} || -L ${root} ]] || return 0
-  [[ -d ${root} && ! -L ${root} && -r ${root} && -x ${root} && $(readlink -f -- "${root}") == "${root}" && $(stat -c %u:%a -- "${root}") == 0:700 ]] ||
-    die 'unfinished or unreadable box reprovision journal — finish the guarded operator recovery before finalizing this upgrade'
+  [[ -d ${root} && ! -L ${root} && -r ${root} && -x ${root} && $(readlink -f -- "${root}") == "${root}" && $(stat -c %u:%a -- "${root}") == "${uid}:700" ]] ||
+    die "unfinished or unreadable box reprovision journal in ${root} — finish the guarded operator recovery before finalizing this upgrade"
   entries=$(find "${root}" -mindepth 1 -maxdepth 1 -print) ||
     die 'could not inventory box reprovision journals — finish the guarded operator recovery before finalizing this upgrade'
   while IFS= read -r file; do
     [[ -n ${file} ]] || continue
-    [[ ${file##*/} =~ ^[0-9a-f]{64}\.json$ && -f ${file} && ! -L ${file} && $(stat -c %u:%a -- "${file}") == 0:600 ]] &&
+    [[ ${file##*/} =~ ^[0-9a-f]{64}\.json$ && -f ${file} && ! -L ${file} && $(stat -c %u:%a -- "${file}") == "${uid}:600" ]] &&
       jq -se 'length == 1 and (.[0] | type == "object" and .version == 1 and .done == true and (.identity | type == "string" and length > 0) and (.runtime | type == "object" and ([.server, .socket, .proxy, .docker, .manager, .linger, .serverEnabled, .socketEnabled, .dockerEnabled] | all(type == "boolean"))))' "${file}" >/dev/null 2>&1 ||
       die 'unfinished or invalid box reprovision journal — finish the guarded operator recovery before finalizing this upgrade'
   done <<<"${entries}"

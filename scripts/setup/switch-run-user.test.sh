@@ -28,7 +28,9 @@
 #     prints FICUS_RUN_USER=root, exit non-zero;
 #   * a run killed mid-switch leaves its journal; every other toolkit entry
 #     refuses while it exists, and the next run settles it;
-#   * --revert goes back to root.
+#   * --revert goes back to root;
+#   * run-core-operator.sh runs an entrypoint as the account Core runs as, with
+#     the env files parsed (never sourced), the caller's variables winning.
 #
 # Needs real root, GNU coreutils, util-linux (runuser, setpriv, flock), the
 # shadow tools, jq and mikefarah yq. It creates (and deletes) the account
@@ -343,6 +345,8 @@ expect_eq 'revert: both services run as root' "$(proc_user ficus-api) $(proc_use
 expect_eq 'revert: the sudoers rule is gone, the artifact group is root again' \
   "$([[ -e ${H}/etc/sudoers.d/ficus-update ]] && echo rule || echo none) $(stat -c %G "${H}/etc/ficus/artifacts/apns.p8")" 'none root'
 expect_eq 'revert: the account is kept (a retry is cheap)' "$(id -un "${SVC}")" "${SVC}"
+expect_eq 'revert: HOME belongs to root again (the operator entrypoints run as its owner)' \
+  "$(find "${OLD}" -xdev ! -user root | wc -l)" 0
 
 # ------------------------------------------ 3. preconditions change nothing
 precondition() { # DESCRIPTION REGEX — on a fresh host prepared by the caller
@@ -385,6 +389,8 @@ expect_eq 'rollback: .env is root 0600 again' "$(stat -c '%U %a' "${DEST}/.env")
 expect_eq 'rollback: the sudoers rule this run added is removed' "$([[ -e ${H}/etc/sudoers.d/ficus-update ]] && echo rule || echo none)" none
 expect_eq 'rollback: the artifact group is root again' "$(stat -c %G "${H}/etc/ficus/artifacts/apns.p8")" root
 expect_eq 'rollback: the services run as root' "$(proc_user ficus-api) $(proc_user ficus-worker)" 'root root'
+expect_eq 'rollback: HOME belongs to root again' \
+  "$(find "${OLD}" -xdev ! -user root | wc -l)" 0
 expect_eq 'rollback: no journal is left' "$([[ -e ${HOST_MIGRATE_BACKUP_ROOT}/RUN_USER_SWITCH ]] && echo journal || echo none)" none
 rm -f "${STATE}/unhealthy-as-${SVC}"
 
@@ -419,5 +425,44 @@ expect_match 'killed: the next run rolls the interrupted switch back first' "${o
 expect_eq 'killed: ...then switches, and succeeds' "$(last_line "${out}")$(grep -o 'rc=[0-9]*$' <<<"${out}")" "FICUS_RUN_USER=${SVC}rc=0"
 expect_eq 'killed: ...with every stored path rebased exactly once' "$(head -n 2 "${STATE}/db")" "${NEW}/sessions/s1/log
 ${NEW}/workspaces/w/file"
+
+# ------------------- 6. the operator wrapper runs entrypoints as the Core account
+cat >"${SHIMS}/fake-bun" <<'EOF'
+#!/usr/bin/env bash
+echo "user=$(id -un)"
+echo "cwd=${PWD}"
+echo "args=$*"
+for k in DATABASE_URL FICUS_BC_ACTION FICUS_ROOT SHARED QUOTED CALLER_WINS; do echo "${k}=${!k-<unset>}"; done
+EOF
+chmod 0755 "${SHIMS}/fake-bun"
+: >"${REL}/apps/core/dist/box-control.js"
+chmod 0644 "${REL}/apps/core/dist/box-control.js"
+printf 'SHARED=from-env\nQUOTED="a b"\nCALLER_WINS=from-env\n# a comment\nnot a pair\n' >>"${DEST}/.env"
+MANAGED="${H}/etc/ficus/managed.env"
+printf 'SHARED=from-managed\n' >"${MANAGED}"
+chmod 0600 "${MANAGED}"
+operator() { # prints the output, then rc=N
+  local rc=0 out
+  out=$(FICUS_BC_ACTION=status CALLER_WINS=caller BUN_BIN="${SHIMS}/fake-bun" FICUS_MANAGED_ENV_PATH="${MANAGED}" \
+    bash "${SCRIPT_DIR}/run-core-operator.sh" --dest "${DEST}" "$@" 2>&1) || rc=$?
+  printf '%s\nrc=%s' "${out}" "${rc}"
+}
+out=$(operator box-control)
+expect_match 'operator: on a switched host the entrypoint runs as the service user' "${out}" "(^|"$'\n'")user=${SVC}"$'\n'
+expect_match 'operator: from the release'"'"'s apps/core, Bun'"'"'s .env loading off' "${out}" \
+  "cwd=${REL}/apps/core"$'\n'"args=--no-env-file dist/box-control.js"
+expect_match 'operator: .env is parsed, never sourced (a DSN with & survives)' "${out}" \
+  'DATABASE_URL=postgresql://u:p@db.invalid:25060/ficus\?sslmode=verify-full&sslrootcert=/etc/ficus/database-ca.crt'
+expect_match 'operator: the caller'"'"'s request and its own variables win' "${out}" 'FICUS_BC_ACTION=status.*CALLER_WINS=caller'
+expect_match 'operator: managed.env is loaded after .env (it wins), quotes are removed' "${out}" 'SHARED=from-managed'$'\n''QUOTED=a b'
+expect_match 'operator: FICUS_ROOT is the active release, as the units set it' "${out}" "FICUS_ROOT=${DEST}/current"
+expect_match 'operator: exits with the entrypoint' "${out}" $'\nrc=0$'
+out=$(operator nonsense)
+expect_match 'operator: an unknown entrypoint is a usage error' "${out}" $'\nrc=2$'
+out=$(runuser -u "${SVC}" -- bash "${SCRIPT_DIR}/run-core-operator.sh" --dest "${DEST}" box-control 2>&1 || true)
+expect_match 'operator: refuses to run unless root' "${out}" 'run it as root'
+run_switch --revert >/dev/null
+out=$(operator box-control)
+expect_match 'operator: on a root host the entrypoint runs as root' "${out}" "(^|"$'\n'")user=root"$'\n'
 
 summary

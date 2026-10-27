@@ -1,10 +1,9 @@
 #!/usr/bin/env bun
 /** Maintenance-only operator; API and worker must have the documented runtime
- * start guards and be stopped. Secrets come from the units' actual EnvironmentFile.
- * export FICUS_ROOT=/opt/ficus-core/current
- * cd "$FICUS_ROOT/apps/core"
- * FICUS_BR_BOX=all bun --env-file /opt/ficus-core/.env \
- *   --env-file /etc/ficus/managed.env dist/box-reprovision.js
+ * start guards and be stopped. Secrets come from the units' actual EnvironmentFiles,
+ * which the operator wrapper loads as root before it runs this as the account Core
+ * runs as (lib/infra/operator-identity); the journal lives under Core's HOME:
+ * FICUS_BR_BOX=all bash run-core-operator.sh box-reprovision
  */
 import { runBoxReprovision, ReprovisionError } from './services/machines/box-reprovision'
 import {
@@ -20,6 +19,13 @@ export function parseBoxReprovisionTarget(env: Record<string, string | undefined
   return value
 }
 async function main(): Promise<number> {
+  const { operatorIdentityRefusal } = await import('./lib/infra/operator-identity')
+  const { getHomeDir } = await import('./lib/utils/home')
+  const refusal = operatorIdentityRefusal('box-reprovision', import.meta.path, getHomeDir(), process.geteuid?.())
+  if (refusal) {
+    console.error(refusal)
+    throw new ReprovisionError('wrong-operator-account')
+  }
   const target = parseBoxReprovisionTarget(process.env)
   await assertLocalReprovisionMaintenance()
   const { getSecretStore } = await import('./services/secrets/store')

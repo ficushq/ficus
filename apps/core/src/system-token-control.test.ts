@@ -13,7 +13,7 @@ import {
   REISSUE_PLATFORM_ORCHESTRATOR,
   formatReissueOutput,
   parseSystemTokenControlRequest,
-  rootRefusal,
+  operatorRefusal,
 } from './system-token-control'
 
 const CORE_DIR = join(import.meta.dir, '..')
@@ -40,19 +40,29 @@ describe('system-token-control request parsing', () => {
   })
 })
 
-describe('system-token-control root gate', () => {
+describe('system-token-control operator gate', () => {
   const bundle = '/opt/ficus-core/current/apps/core/dist/system-token-control.js'
+  const home = '/home/ficus/.ficus'
+  const ownedBy = (uid: number) => () => uid
 
-  test('the shipped bundle runs for root', () => {
-    expect(rootRefusal(bundle, 0)).toBeNull()
+  test("the shipped bundle runs as the account that owns Core's HOME: root on a root host", () => {
+    expect(operatorRefusal(bundle, home, 0, ownedBy(0))).toBeNull()
   })
 
-  test('the shipped bundle refuses every other user, and an unknown uid', () => {
-    for (const euid of [1, 501, 65534, undefined]) expect(rootRefusal(bundle, euid)).toMatch(/must run as root/)
+  test('...and the service user on a host where Core runs as one', () => {
+    expect(operatorRefusal(bundle, home, 998, ownedBy(998))).toBeNull()
+  })
+
+  test('it refuses every other account, root included on a switched host, and an unknown uid', () => {
+    for (const euid of [0, 1, 501, 65534, undefined])
+      expect(operatorRefusal(bundle, home, euid, ownedBy(998))).not.toBeNull()
+    expect(operatorRefusal(bundle, home, 0, ownedBy(998))).toMatch(
+      /must run as the account that owns .*run-core-operator\.sh/
+    )
   })
 
   test('the TypeScript source (dev and tests only; artifacts ship no src/) is not gated', () => {
-    expect(rootRefusal('/repo/apps/core/src/system-token-control.ts', 501)).toBeNull()
+    expect(operatorRefusal('/repo/apps/core/src/system-token-control.ts', home, 501, ownedBy(0))).toBeNull()
   })
 })
 
@@ -233,8 +243,8 @@ describeSubprocess('system-token-control entry (subprocess)', () => {
     expect(result.stdout).toBe('')
   }, 60_000)
 
-  test('the shipped bundle refuses a non-root caller before touching the database', async () => {
-    if (process.geteuid?.() === 0) return // The gate cannot be observed as root.
+  test('the shipped bundle refuses a caller that does not own Core HOME before touching the database', async () => {
+    if (process.geteuid?.() === 0) return // The gate cannot be observed as root (it owns /).
     const buildScript = (
       JSON.parse(readFileSync(join(CORE_DIR, 'package.json'), 'utf8')) as { scripts: { build: string } }
     ).scripts.build
@@ -254,13 +264,15 @@ describeSubprocess('system-token-control entry (subprocess)', () => {
       const buildExit = await build.exited
       expect(buildExit, await new Response(build.stderr).text()).toBe(0)
 
+      // A HOME this (non-root) test user does not own: root's, as on a host before the switch.
       const result = await run(join(outDir, 'system-token-control.js'), {
         FICUS_STC_ACTION: 'reissue-platform-orchestrator',
+        HOME_DIR: '/',
       })
 
       expect(result.exitCode).toBe(1)
       expect(result.stdout).toBe('')
-      expect(result.stderr).toMatch(/must run as root/)
+      expect(result.stderr).toMatch(/must run as the account that owns \/ \(uid 0\)/)
       expect(await orchestratorRows()).toHaveLength(0)
     } finally {
       rmSync(outDir, { recursive: true, force: true })

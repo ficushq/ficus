@@ -10,7 +10,8 @@
 #     /home/<user> 0750, groups systemd-journal [, docker] [, ficus-bigbrain-client]);
 #   * moves HOME_DIR to /home/<user>/.ficus with ONE rename(2) (never a copy),
 #     rebases the stored paths in the database, points .env's HOME_DIR at it
-#     and gives the tree to the user (chown -R --no-dereference);
+#     and gives the tree to the user (chown -R --no-dereference; a revert gives
+#     it back to root, since the operator entrypoints run only as HOME's owner);
 #   * records core.run_user in the host config, so every later upgrade, pooler
 #     toggle or artifact sync renders the same User=;
 #   * gives the user group read on the file artifacts, its sudoers rules, the
@@ -253,10 +254,8 @@ switch_checks() { # GOAL OLD NEW RELEASE
     [[ ${pid} =~ ^[1-9][0-9]*$ && ${owner} == "${goal}" ]] || { log_error "S1: ${unit} main process ${pid:-?} runs as '${owner}', not ${goal}"; rc=1; }
   done
   [[ ! -e ${old} && ! -L ${old} ]] || { log_error "S3: the old HOME ${old} still exists"; rc=1; }
-  if [[ ${goal} != root ]]; then
-    out=$(find "${new}" -xdev ! -user "${goal}" -print 2>&1 | head -n 5) || true
-    [[ -d ${new} && -z ${out} ]] || { log_error "S3: not everything under ${new} belongs to ${goal}: ${out:-<missing>}"; rc=1; }
-  fi
+  out=$(find "${new}" -xdev ! -user "${goal}" -print 2>&1 | head -n 5) || true
+  [[ -d ${new} && -z ${out} ]] || { log_error "S3: not everything under ${new} belongs to ${goal}: ${out:-<missing>}"; rc=1; }
   out=$(switch_rebase "${SWITCH_SET}" "${release}" "${old}" "${new}" --dry-run 2>/dev/null) || { log_error 'S4: rebase-home.js --dry-run failed'; rc=1; }
   if grep -Eq '^REBASE_HOME [^=]+=[1-9]' <<<"${out}" || ! grep -q '^REBASE_HOME ' <<<"${out}"; then
     log_error "S4: stored paths still name ${old}"
@@ -294,7 +293,7 @@ switch_checks() { # GOAL OLD NEW RELEASE
 # ------------------------------------------------------------ the rollback
 
 # Undo a journaled run, as far as its journal says it went: stop, rebase
-# back, move HOME back, restore every file, put the artifact groups back,
+# back, move HOME back (and give it back), restore every file, put the artifact groups back,
 # re-render the pooler for the user the run started from, restart. Each step
 # is attempted whatever the previous one did; a failure is logged and makes
 # the rollback report failure, but never stops it.
@@ -318,6 +317,10 @@ switch_rollback() {
   fi
   if switch_step_ran 4 && [[ -d ${new} && ! -e ${old} ]]; then
     mv -T -- "${new}" "${old}" || { log_error "could not move ${new} back to ${old}"; rc=1; }
+  fi
+  if switch_step_ran 7 && [[ -d ${old} ]]; then
+    as_root chown -R --no-dereference "${from}:$(run_user_group "${from}")" "${old}" ||
+      { log_error "could not give ${old} back to ${from}"; rc=1; }
   fi
   switch_backup_restore "${setdir}" || rc=1
   # The config is the backup's again: re-read who the services run as.
@@ -395,17 +398,14 @@ switch_run() { # GOAL FROM OLD NEW RELEASE
   envfile_set "${ENV_FILE}" HOME_DIR "${new}"
 
   switch_journal_step 7
-  if [[ ${goal} != root ]]; then
-    log_step "switch 7/17: give ${new} to ${goal}"
-    as_root chown -R --no-dereference "${goal}:$(run_user_group "${goal}")" "${new}"
-    local d
-    for d in "${new}/machines" "${new}/machines/keys" "${new}/machines/ctl"; do
-      [[ -d ${d} ]] || as_root install -d -m 0700 -o "${goal}" -g "$(run_user_group "${goal}")" "${d}"
-    done
-  else
-    # Root reads any owner: a chown back would only add a second recursive rewrite.
-    log_step "switch 7/17: ${new} keeps its owner (root reads it)"
-  fi
+  # The whole tree belongs to the account Core runs as: the operator
+  # entrypoints run only as HOME's owner, so a revert gives it back to root too.
+  log_step "switch 7/17: give ${new} to ${goal}"
+  as_root chown -R --no-dereference "${goal}:$(run_user_group "${goal}")" "${new}"
+  local d
+  for d in "${new}/machines" "${new}/machines/keys" "${new}/machines/ctl"; do
+    [[ -d ${d} ]] || as_root install -d -m 0700 -o "${goal}" -g "$(run_user_group "${goal}")" "${d}"
+  done
 
   switch_journal_step 8
   log_step "switch 8/17: record core.run_user in ${CONFIG}"

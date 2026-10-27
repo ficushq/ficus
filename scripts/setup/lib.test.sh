@@ -3688,6 +3688,27 @@ expect_not_match 'setup-host.sh no longer dies on a missing core.run_user' \
 unset -f ru_run ru_home ga_run cu_user
 rm -rf "${RU_TMP}"
 
+# --- require_box_reprovision_settled: the journal under Core's HOME ----------
+# box-reprovision.js runs as the account Core runs as and journals under its
+# HOME (box-reprovision/, that account's 0700/0600). The toolkit refuses over an
+# unfinished journal there, as it does in the root-era /var/backups location.
+BR_TMP=$(mktemp -d)
+mkdir -p "${BR_TMP}/dest" "${BR_TMP}/home"
+printf 'HOME_DIR=%s\n' "${BR_TMP}/home" >"${BR_TMP}/dest/.env"
+br_check() { (SRC_DEST="${BR_TMP}/dest" FICUS_HOST_ROOT="${BR_TMP}/hostroot" require_box_reprovision_settled) >/dev/null 2>&1 && echo settled || echo refused; }
+expect_eq 'require_box_reprovision_settled: no journal anywhere' "$(br_check)" settled
+br_journal="${BR_TMP}/home/box-reprovision/$(printf 'a%.0s' {1..64}).json"
+mkdir -m 0700 "${BR_TMP}/home/box-reprovision"
+printf '{"version":1,"done":false,"identity":"x","runtime":{}}' >"${br_journal}"
+chmod 0600 "${br_journal}"
+expect_eq 'require_box_reprovision_settled: an unfinished journal under HOME refuses' "$(br_check)" refused
+printf '{"version":1,"done":true,"identity":"x","runtime":{"server":true,"socket":true,"proxy":true,"docker":false,"manager":true,"linger":true,"serverEnabled":true,"socketEnabled":true,"dockerEnabled":false}}' >"${br_journal}"
+expect_eq 'require_box_reprovision_settled: a finished journal owned by HOME'"'"'s owner is settled' "$(br_check)" settled
+chmod 0644 "${br_journal}"
+expect_eq 'require_box_reprovision_settled: a loose journal file refuses' "$(br_check)" refused
+rm -rf "${BR_TMP}"
+unset -f br_check
+
 # --- managed_env_would_change ----------------------------------------------
 # The sync restart driver: semantic change detection for managed.env.
 AR_STAGE5="${AR_TMP}/stage5"

@@ -304,6 +304,27 @@ leaves its journal: every other toolkit script refuses until the next
 The plan, with every check, is
 `docs/plans/2026-10-26-hosted-non-root-audit.md`.
 
+Core's operator entrypoints (`box-control`, `machine-bootstrap`,
+`box-reprovision`, `system-token-control`, bundled in the release's
+`apps/core/dist/`) run as the account Core runs as, never as root on a
+service-user host: each refuses any account but the owner of Core's HOME, so
+nothing under that HOME is ever root-owned. Run them as root through
+`run-core-operator.sh`, which reads `<dest>/.env` and `/etc/ficus/managed.env`
+(parsed, never shell-sourced: the hosted `DATABASE_URL` holds `&`), sets
+`FICUS_ROOT`, and runs the entrypoint as `ficus-api`'s `User=` from the
+release's `apps/core`. The caller's request variables pass through and win:
+
+```bash
+FICUS_BC_SANDBOX_ID=<id> FICUS_BC_ACTION=status bash run-core-operator.sh box-control
+FICUS_MB_MACHINE=all-stale bash run-core-operator.sh machine-bootstrap
+FICUS_BR_BOX=all bash run-core-operator.sh box-reprovision
+FICUS_STC_ACTION=reissue-platform-orchestrator bash run-core-operator.sh system-token-control
+```
+
+`box-reprovision` keeps its journal under `<HOME_DIR>/box-reprovision`; the
+toolkit refuses to upgrade over an unfinished one there or in the root-era
+`/var/backups/ficus-box-reprovision`.
+
 ### What you end up with (the contract)
 
 1. Core API healthy (`GET /health` → **401 means up**: healthy + auth-gated),

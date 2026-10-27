@@ -267,11 +267,13 @@ machine identity change. Once machines migrate, do not roll Core back to a
 release predating that layout.
 
 An operator re-bootstraps machines from the tenant Core VM, without an admin
-token, with the bundled entrypoint (run from the Core install root, where Bun
-loads Core's `.env`):
+token, with the bundled entrypoint. Run it as root through the operator wrapper
+from the setup toolkit, which loads Core's `.env` and runs the entrypoint as the
+account Core runs as (the entrypoint refuses any other account, so nothing it
+writes under Core's HOME is ever root-owned on a service-user host):
 
 ```bash
-FICUS_MB_MACHINE=<machineId>|all-stale bun current/apps/core/dist/machine-bootstrap.js
+FICUS_MB_MACHINE=<machineId>|all-stale bash run-core-operator.sh machine-bootstrap
 ```
 
 It claims and bootstraps each machine exactly as `POST /api/machines/:id/bootstrap`
@@ -1718,7 +1720,8 @@ or relocates its data. `FICUS_BR_BOX=<sandboxId>` selects one registered box;
 refuses any row that is not settled (`ready` or `stopped`). Resolve exceptions
 before claiming the inventory is complete; do not delete orphan rows as a shortcut.
 
-Run only as root on the Linux/systemd tenant Core host, after successful release
+Run it as root, through the operator wrapper (`scripts/setup/run-core-operator.sh`),
+on the Linux/systemd tenant Core host, after successful release
 activation and explicit machine bootstrap. The API and worker must remain stopped
 behind the following temporary start guards throughout the operation. Runtime
 masks alone do not work when the installed unit is a regular `/etc` file. The
@@ -1727,18 +1730,16 @@ the allow-start path, inactive units and absence of active executions. A global
 advisory lease serializes operator invocations. It rechecks maintenance and the
 fixed inventory before each box.
 
-Load the same EnvironmentFiles as the installed Core units using Bun's env parser;
-do not shell-source them (valid dotenv values can contain shell metacharacters).
-Also set `FICUS_ROOT` to the active release and use its Core working directory,
-matching the installed units. `FICUS_ROOT` is supplied by the units' `Environment=`,
-not their EnvironmentFiles; omitting it can make artifact lookup fall back to a
-source build outside the release. For the standard hosted artifact paths:
+The wrapper loads the same EnvironmentFiles as the installed Core units
+(`<dest>/.env`, then `/etc/ficus/managed.env`), parsing them and never
+shell-sourcing them (valid values can contain shell metacharacters), sets
+`FICUS_ROOT` to the active release as the units' `Environment=` does, and runs
+the entrypoint from that release's Core working directory as the units' `User=`.
+For the standard hosted artifact paths:
 
 ```bash
 (
 set -eu
-export FICUS_ROOT=/opt/ficus-core/current
-cd "$FICUS_ROOT/apps/core"
 # Require the allow-start path to be absent, including a dangling symlink.
 test ! -e /run/ficus-box-reprovision.allow-start
 test ! -L /run/ficus-box-reprovision.allow-start
@@ -1764,8 +1765,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 systemctl daemon-reload
 systemctl stop ficus-api.service ficus-worker.service
-FICUS_BR_BOX=all bun --env-file /opt/ficus-core/.env \
-  --env-file /etc/ficus/managed.env dist/box-reprovision.js
+FICUS_BR_BOX=all bash run-core-operator.sh box-reprovision
 completed=1
 )
 ```
@@ -1779,9 +1779,10 @@ resuming. A preflight-only refusal with no pending recovery may be explicitly
 ended by removing only these two guard files, reloading systemd and starting the
 API/worker; do not resume automatically after an unverified restoration.
 
-The operator records original runtime intent in root-only, atomically written
-journals under `/var/backups/ficus-box-reprovision` before it changes artifacts or
-units. If the process dies, retain those journals and rerun with maintenance guards
+The operator records original runtime intent in owner-only, atomically written
+journals under `<HOME_DIR>/box-reprovision` (owned by the account Core runs as;
+releases before the service-user switch used `/var/backups/ficus-box-reprovision`,
+which the setup toolkit still checks) before it changes artifacts or units. If the process dies, retain those journals and rerun with maintenance guards
 in place: pending journals restore the original intent rather than treating a
 socket started by an interrupted provision as its original state. The script
 may temporarily start rootless Docker during maintenance; final server, socket,
