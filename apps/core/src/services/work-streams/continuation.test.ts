@@ -13,6 +13,7 @@ import {
   executions,
   inbox,
   messages,
+  monitors,
   squads,
   slotPools,
   slotClaims,
@@ -36,6 +37,7 @@ import { createPostgresConnection, getConnectionString } from '../../db/connecti
 import {
   blockCurrentContinuation,
   continuationDelay,
+  NORMAL_IDLE_NOTICE_DELAY_MS,
   reconcileWorkStreamContinuationsOnce as reconcileContinuations,
   recordContinuationDeliveryFailure,
   reportPersistentIdleIfCurrent,
@@ -58,6 +60,8 @@ import { listTrustedContinuationExecutionIds } from './execution-provenance'
 import { MockAgentSession, TestAgentRunner, makeAgentType } from '../execution/test-helpers'
 import { isSessionActive, removeSession } from '../execution/session-state'
 import * as workStreamNotifications from '../squad/work-stream-notifications'
+import { Monitor } from '../../entities/Monitor'
+import { MONITOR_LIVENESS_WINDOW_MS } from '../monitors/liveness'
 
 describe('work stream continuation', () => {
   let agentTypeId: string
@@ -420,6 +424,191 @@ describe('work stream continuation', () => {
       },
     })
     expect(await persistentIdleNotices()).toHaveLength(0)
+  })
+
+  describe('live monitors', () => {
+    // A row as the monitor tool leaves it: `markRunning` stamps the first
+    // process confirmation before the tool returns to the agent.
+    async function liveMonitor(confirmedAt: Date, ownerAgentId = agent.id) {
+      const monitor = await Monitor.create({
+        agentId: ownerAgentId,
+        sandboxId: 'fixture-sandbox',
+        label: 'cluster online',
+        command: 'until doctl status | grep -q online; do sleep 30; done; echo online',
+        processId: `fixture-${crypto.randomUUID()}`,
+        timeoutMs: 30 * 60_000,
+        maxBatchLines: 20,
+        maxBatchBytes: 4096,
+        batchDebounceMs: 750,
+        createdAt: confirmedAt,
+      })
+      if (!(await monitor.markRunning(confirmedAt))) throw new Error('Fixture monitor must reach running')
+      return monitor
+    }
+
+    async function continuationNudges() {
+      return db
+        .select()
+        .from(inbox)
+        .where(and(eq(inbox.recipientId, agent.id), sql`${inbox.metadata}->>'source' = 'work-stream-continuation'`))
+    }
+
+    async function queuedExecutions() {
+      return db
+        .select()
+        .from(executions)
+        .where(and(eq(executions.agentId, agent.id), eq(executions.status, 'queued')))
+    }
+
+    it('sends no idle nudge while a confirmed monitor runs and resumes once it ends', async () => {
+      const now = await idleSlotCandidate()
+      const monitor = await liveMonitor(new Date(now.getTime() - 30_000))
+      await reconcileWorkStreamContinuationsOnce({ now })
+      await reconcileWorkStreamContinuationsOnce({ now: new Date(now.getTime() + 30_000) })
+      expect((await readCycle()).status).toBe('idle')
+      expect((await readCycle()).normalAttemptCount).toBe(0)
+      expect(await continuationNudges()).toHaveLength(0)
+      expect(await queuedExecutions()).toHaveLength(0)
+
+      await monitor.markEnded('exited', 0)
+      await reconcileWorkStreamContinuationsOnce({ now: new Date(now.getTime() + 60_000) })
+      expect((await readCycle()).normalAttemptCount).toBe(1)
+      expect(await continuationNudges()).toHaveLength(1)
+    })
+
+    it('suppresses the first nudge for a monitor created just before the turn ended', async () => {
+      await workStream.update({ status: 'active', assigneeAgentId: agent.id, ownerAgentId: agent.id })
+      const endedAt = new Date(Date.now() + 1_000)
+      await liveMonitor(new Date(endedAt.getTime() - 1_000))
+      await settleAgentExecutions(agent, 'completed', endedAt)
+      // Every sweep the 30s runner can make before and at the 60s nudge window.
+      for (const offset of [0, 30_000, NORMAL_IDLE_NOTICE_DELAY_MS, 90_000]) {
+        await reconcileWorkStreamContinuationsOnce({ now: new Date(endedAt.getTime() + offset) })
+      }
+      expect((await readCycle()).normalAttemptCount).toBe(0)
+      expect(await continuationNudges()).toHaveLength(0)
+    })
+
+    it("counts a direct subagent's live monitor but not another squad agent's", async () => {
+      const now = await idleSlotCandidate()
+      const subagent = await createExtraAgent()
+      await db.update(agents).set({ parentAgentId: agent.id }).where(eq(agents.id, subagent.id))
+      const subagentMonitor = await liveMonitor(now, subagent.id)
+      await reconcileWorkStreamContinuationsOnce({ now })
+      expect((await readCycle()).normalAttemptCount).toBe(0)
+
+      await db.update(agents).set({ parentAgentId: null }).where(eq(agents.id, subagent.id))
+      await reconcileWorkStreamContinuationsOnce({ now })
+      expect((await readCycle()).normalAttemptCount).toBe(1)
+      await subagentMonitor.markEnded('canceled', null)
+    })
+
+    const notLive = {
+      'a stale confirmation': (now: Date) => ({
+        lastConfirmedAliveAt: new Date(now.getTime() - MONITOR_LIVENESS_WINDOW_MS - 1_000),
+      }),
+      'no confirmation': () => ({ lastConfirmedAliveAt: null }),
+      'a pending restart': (now: Date) => ({ nextRestartAt: new Date(now.getTime() + 5_000) }),
+      'an expired deadline': (now: Date) => ({ deadlineAt: now }),
+      // `starting` only lasts while the creating tool call (an active execution) runs.
+      'a starting row': () => ({ status: 'starting' as const }),
+      'a canceling row': () => ({ status: 'canceling' as const }),
+      ...Object.fromEntries(
+        (['exited', 'failed', 'canceled', 'timed-out', 'overload'] as const).map((status) => [
+          `a terminal ${status} monitor`,
+          () => ({ status, endedAt: new Date() }),
+        ])
+      ),
+    } satisfies Record<string, (now: Date) => Partial<typeof monitors.$inferInsert>>
+
+    for (const [state, patch] of Object.entries(notLive)) {
+      it(`still nudges with ${state}`, async () => {
+        const now = await idleSlotCandidate()
+        const monitor = await liveMonitor(new Date(now.getTime() - 10_000))
+        await db.update(monitors).set(patch(now)).where(eq(monitors.id, monitor.id))
+        await reconcileWorkStreamContinuationsOnce({ now })
+        expect((await readCycle()).normalAttemptCount).toBe(1)
+        expect(await continuationNudges()).toHaveLength(1)
+      })
+    }
+
+    for (const boundary of ['after scan', 'before dispatch'] as const) {
+      it(`rechecks a monitor that went live ${boundary}`, async () => {
+        const now = await idleSlotCandidate()
+        const hook = async () => {
+          await liveMonitor(now)
+        }
+        await reconcileWorkStreamContinuationsOnce({
+          now,
+          testHooks: boundary === 'after scan' ? { beforeCandidateSchedule: hook } : { beforeDispatchQueue: hook },
+        })
+        // The schedule write refuses outright; a nudge already scheduled is deferred.
+        expect((await readCycle()).status).toBe(boundary === 'after scan' ? 'idle' : 'pending')
+        expect((await readCycle()).normalAttemptCount).toBe(0)
+        expect(await continuationNudges()).toHaveLength(0)
+        expect(await queuedExecutions()).toHaveLength(0)
+      })
+    }
+
+    it('holds a previously scheduled nudge pending while the monitor runs', async () => {
+      const now = await idleSlotCandidate()
+      await reconcileWorkStreamContinuationsOnce({ now: new Date(now.getTime() - 60_000) })
+      expect((await readCycle()).status).toBe('pending')
+      const monitor = await liveMonitor(now)
+      await reconcileWorkStreamContinuationsOnce({ now })
+      expect((await readCycle()).status).toBe('pending')
+      expect((await readCycle()).normalAttemptCount).toBe(0)
+      await monitor.markEnded('timed-out', null)
+      await reconcileWorkStreamContinuationsOnce({ now: new Date(now.getTime() + 30_000) })
+      expect((await readCycle()).status).toBe('delivered')
+      expect((await readCycle()).normalAttemptCount).toBe(1)
+    })
+
+    it('records no persistent idle notice while a monitor is live, including one that goes live at the check', async () => {
+      const { endedAt } = await finishNormalContinuationForNotice()
+      const noticeAt = new Date(endedAt.getTime() + NORMAL_IDLE_NOTICE_DELAY_MS)
+      const monitor = await liveMonitor(endedAt)
+      await reconcileWorkStreamContinuationsOnce({ now: noticeAt })
+      expect(await persistentIdleNotices()).toHaveLength(0)
+      await monitor.markEnded('exited', 0)
+
+      await reconcileWorkStreamContinuationsOnce({
+        now: noticeAt,
+        testHooks: {
+          beforeIdleNoticeCheck: async () => {
+            await liveMonitor(noticeAt)
+          },
+        },
+      })
+      expect(await persistentIdleNotices()).toHaveLength(0)
+    })
+
+    it('resumes the persistent idle notice after the monitor ends', async () => {
+      const { endedAt } = await finishNormalContinuationForNotice()
+      const noticeAt = new Date(endedAt.getTime() + NORMAL_IDLE_NOTICE_DELAY_MS)
+      const monitor = await liveMonitor(endedAt)
+      await reconcileWorkStreamContinuationsOnce({ now: noticeAt })
+      expect(await persistentIdleNotices()).toHaveLength(0)
+      await monitor.markEnded('failed', null, 'lost')
+      await reconcileWorkStreamContinuationsOnce({ now: new Date(noticeAt.getTime() + 30_000) })
+      expect(await persistentIdleNotices()).toHaveLength(1)
+    })
+
+    it('leaves trusted transport continuations unchanged', async () => {
+      const now = await idleSlotCandidate()
+      const [trigger] = await db
+        .update(executions)
+        .set({ status: 'failed', failureClass: 'provider_transport' })
+        .where(eq(executions.agentId, agent.id))
+        .returning()
+      await attachTrustedWorkStreamMessage(trigger.id)
+      await liveMonitor(now)
+      await reconcileWorkStreamContinuationsOnce({ now })
+      const cycle = await readCycle()
+      expect(cycle.transportAttemptCount).toBe(1)
+      expect(cycle.status).toBe('delivered')
+      expect(cycle.normalAttemptCount).toBe(0)
+    })
   })
 
   it('a scoped sweep neither schedules nor dispatches another squad', async () => {
