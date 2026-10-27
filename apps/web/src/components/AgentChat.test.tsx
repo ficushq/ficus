@@ -287,9 +287,10 @@ afterEach(async () => {
 })
 
 describe('AgentChat', () => {
-  test('owns the slot and monitor status beneath the header for all agent chat wrappers', async () => {
+  async function renderMonitoredAgent(execution: { active: boolean; status?: string }) {
     const dom = await installDom()
     const mc = makeMockClient()
+    mc.client.agents.getActiveExecution = async () => execution as never
     const { Providers } = makeProviders(mc.client)
     _agentStore['slot-agent'] = { id: 'slot-agent', status: 'idle', squadId: 'sq', terminatedAt: null }
     globalThis.fetch = (async (input: RequestInfo | URL) =>
@@ -313,11 +314,25 @@ describe('AgentChat', () => {
         </Providers>
       )
     })
-    await waitFor(() => {
-      const status = dom.window.document.querySelector('[data-testid="header-status"]')?.textContent
-      expect(status).toContain('Waiting for slot')
-      expect(status).toContain('Monitoring: deploy logs')
-    })
+    await waitFor(() => expect(headerStatus(dom)).toContain('Monitoring: deploy logs'))
+    return dom
+  }
+  const headerStatus = (dom: Awaited<ReturnType<typeof installDom>>) =>
+    dom.window.document.querySelector('[data-testid="header-status"]')?.textContent
+  const hangingPlant = (dom: Awaited<ReturnType<typeof installDom>>) =>
+    dom.window.document.querySelector('[data-testid="header-status"] [data-testid="monitor-hanging-plant"]')
+
+  test('owns the slot and monitor status beneath the header for all agent chat wrappers', async () => {
+    const dom = await renderMonitoredAgent({ active: false })
+    await waitFor(() => expect(headerStatus(dom)).toContain('Waiting for slot'))
+    // Idle on a monitor: the plant hangs from the Monitoring row.
+    await waitFor(() => expect(hangingPlant(dom)).not.toBeNull())
+  })
+
+  test('keeps the monitor plant down while the working plant shows', async () => {
+    const dom = await renderMonitoredAgent({ active: true, status: 'running' })
+    await waitFor(() => expect(_capturedItems.some((item) => item.kind === 'working')).toBe(true))
+    expect(hangingPlant(dom)).toBeNull()
   })
 
   test('existing-agent: renders history items and streams', async () => {
