@@ -94,7 +94,7 @@ describe('Pi patch no-drift CI gate', () => {
         .map((line) => line.trim())
         .filter((line) => line.includes('scripts/regenerate-pi-coding-agent-patch.sh'))
     ).toEqual(['PI_MONO_DIR="$RUNNER_TEMP/pi-mono" bash scripts/regenerate-pi-coding-agent-patch.sh'])
-    expect(workflow).toContain('uses: actions/setup-node@v4')
+    expect(workflow).toContain('uses: actions/setup-node@v7')
     expect(workflow).toContain('node-version: 24')
     expect(workflow).toContain('bun test ./ci-pi-patch-gate.test.ts')
     for (const file of expectedSources) expect(script).toContain(file)
