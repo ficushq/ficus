@@ -254,15 +254,19 @@ switch_checks() { # GOAL OLD NEW RELEASE
     [[ ${pid} =~ ^[1-9][0-9]*$ && ${owner} == "${goal}" ]] || { log_error "S1: ${unit} main process ${pid:-?} runs as '${owner}', not ${goal}"; rc=1; }
   done
   [[ ! -e ${old} && ! -L ${old} ]] || { log_error "S3: the old HOME ${old} still exists"; rc=1; }
-  out=$(find "${new}" -xdev ! -user "${goal}" -print 2>&1 | head -n 5) || true
-  [[ -d ${new} && -z ${out} ]] || { log_error "S3: not everything under ${new} belongs to ${goal}: ${out:-<missing>}"; rc=1; }
+  [[ -d ${new} ]] || { log_error "S3: the new HOME ${new} does not exist"; rc=1; }
+  if [[ ${goal} != root ]]; then
+    out=$(find "${new}" -xdev ! -user "${goal}" -print 2>&1 | head -n 5) || true
+    [[ -z ${out} ]] || { log_error "S3: not everything under ${new} belongs to ${goal}: ${out}"; rc=1; }
+  fi
   out=$(switch_rebase "${SWITCH_SET}" "${release}" "${old}" "${new}" --dry-run 2>/dev/null) || { log_error 'S4: rebase-home.js --dry-run failed'; rc=1; }
   if grep -Eq '^REBASE_HOME [^=]+=[1-9]' <<<"${out}" || ! grep -q '^REBASE_HOME ' <<<"${out}"; then
     log_error "S4: stored paths still name ${old}"
     rc=1
   fi
   if [[ ${goal} != root ]]; then
-    out=$(as_root runuser -u "${goal}" -- journalctl -u "${HL_UNIT_API}" -n 1 --no-pager 2>/dev/null || true)
+    # -q: no "-- No entries --" or permission hint, so only a real line counts.
+    out=$(as_root runuser -u "${goal}" -- journalctl -q -u "${HL_UNIT_API}" -n 1 --no-pager 2>/dev/null || true)
     [[ -n ${out//[[:space:]]/} && ${out} != *'No journal files'* ]] || { log_error "S5: ${goal} cannot read the ${HL_UNIT_API} journal"; rc=1; }
     out=$(as_root runuser -u "${goal}" -- sudo -n -l 2>/dev/null || true)
     expected=$(expected_sudo_commands "${goal}" | sort)

@@ -9,6 +9,38 @@ group.
 Audited at `main` c155f243 (2026-10-26), with ficushq/ficus#678 (open) read
 for the pooler account.
 
+## Implementation status (2026-10-27)
+
+F2, F3 and F4 are implemented, with two revisions agreed on 2026-10-27 that
+replace F5 and F6, and host hardening in the same change:
+
+- **Operator entrypoints (replaces F5).** The four entrypoints in 1.4 no
+  longer run as root on a service-user host: each refuses any account but the
+  owner of Core's HOME (`apps/core/src/lib/infra/operator-identity.ts`), and
+  the platform runs them through `scripts/setup/run-core-operator.sh`, which
+  reads `<dest>/.env` and `/etc/ficus/managed.env` as root and runs the
+  entrypoint as `ficus-api`'s `User=`. The env files are parsed, not
+  shell-sourced (`set -a; . .env` would run the hosted DSN's
+  `&sslrootcert=…`). The box-reprovision journal moves to
+  `<HOME_DIR>/box-reprovision`. Nothing is chowned after creation.
+- **VAPID (replaces F6).** The `config/vapid.json` compatibility write is
+  gone everywhere; the read stays for old self-hosted installs.
+- **Hardening.** fail2ban with an sshd jail on artifact installs
+  (`host.fail2ban` overrides), and `sshAuthFailures` in each usage sample.
+
+Where the implementation departs from the plan below:
+
+- A revert, and a rollback after step 7, give HOME back to the user the run
+  started from (2.2 rollback step 3 said leave it): the entrypoints run only
+  as HOME's owner, so a root host with a `ficus`-owned HOME could not run them.
+- Caddy joins `ficus-bigbrain-client` through a unit drop-in
+  (`SupplementaryGroups=`), so the membership exists whenever Caddy starts,
+  including when its package is installed after BigBrain; the installer
+  restarts a running Caddy once, when the drop-in first appears.
+- The BigBrain installer learns the Core account from one argument,
+  `install --core-account <user>`, which the toolkit passes when
+  `core.run_user` is not root.
+
 ## Why
 
 The hosted layout leaves `core.run_user` empty and runs `setup-host.sh` as
