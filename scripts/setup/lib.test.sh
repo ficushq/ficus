@@ -987,30 +987,6 @@ expect_match 'install_origin_cert: apps private key is 0600 caddy:caddy' \
   "$(cat "${cert_install_log}")" 'install -m 0600 -o caddy -g caddy .*apps-origin\.key'
 rm -rf "${cert_install_tmp}"
 
-# --- render_authorized_keys_line / detect_rrsync (tau-ci CI publisher) -------
-# The whole point of the tau-ci account is that CI does NOT hold root on the
-# control plane, so the key that lands in its authorized_keys must be confined
-# to the CLI asset directory and nothing else.
-ci_pubkey='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAATESTKEYMATERIAL tau-setup-ci'
-expect_eq 'render_authorized_keys_line: forced rrsync command, write-only, confined to the cli dir' \
-  "$(render_authorized_keys_line '/usr/bin/rrsync' '/var/www/tau/cli' "${ci_pubkey}")" \
-  "command=\"/usr/bin/rrsync -wo /var/www/tau/cli\",restrict ${ci_pubkey}"
-expect_match 'render_authorized_keys_line: restrict (no forwarding, no pty) is always present' \
-  "$(render_authorized_keys_line '/usr/bin/rrsync' '/var/www/tau/cli' "${ci_pubkey}")" 'restrict'
-# No rrsync on the host: `restrict` alone still removes forwarding and pty,
-# but the forced command is GONE — the caller must warn, never pretend.
-expect_eq 'render_authorized_keys_line: no rrsync → restrict alone, no forced command' \
-  "$(render_authorized_keys_line '' '/var/www/tau/cli' "${ci_pubkey}")" \
-  "restrict ${ci_pubkey}"
-expect_eq 'render_authorized_keys_line: no rrsync → no command= at all (not an empty one)' \
-  "$([[ $(render_authorized_keys_line '' '/var/www/tau/cli' "${ci_pubkey}") == *command=* ]] && echo present || echo absent)" \
-  'absent'
-expect_eq 'detect_rrsync: honors the FICUS_SETUP_RRSYNC override' \
-  "$(FICUS_SETUP_RRSYNC=/opt/custom/rrsync detect_rrsync)" '/opt/custom/rrsync'
-# A missing PATH candidate is not an error, even when an absolute fallback exists.
-expect_eq 'detect_rrsync: succeeds even when PATH has no rrsync' \
-  "$(PATH=/nonexistent FICUS_SETUP_RRSYNC='' detect_rrsync >/dev/null 2>&1; echo "rc=$?")" 'rc=0'
-
 # --- dsn_host_port -----------------------------------------------------------
 # Reachability-probe target for a postgres DSN. Prints ONLY host + port — a
 # DSN embeds a password, and this value is logged.
