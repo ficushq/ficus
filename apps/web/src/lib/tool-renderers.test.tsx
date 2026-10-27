@@ -8,7 +8,7 @@ import {
   ToolResultView,
   ToolSummary,
 } from './tool-renderers'
-import { getBlocksInlineActions, getToolInlineActions } from './tool-inline-actions'
+import { getBlocksInlineActions, getToolInlineActions, normalizeMemoryNotePath } from './tool-inline-actions'
 
 function renderToolResult(toolName: string, result: string, isError = false, entry = '/') {
   return renderToStaticMarkup(
@@ -316,6 +316,236 @@ describe('tool inline actions', () => {
         completed: true,
       })
     ).toEqual([])
+  })
+})
+
+describe('new tool inline action kinds', () => {
+  const SQUAD = '4ea8b934-a90a-42d1-b6fe-483a2ab9a18b'
+  const OTHER_SQUAD = '0b6f1a52-3e2d-4f6a-9c1b-2a7d8e9f0a1b'
+  const call = (toolName: string, args: unknown, details: unknown, overrides: Record<string, unknown> = {}) => ({
+    toolCallId: `tc-${toolName}`,
+    toolName,
+    args: JSON.stringify(args),
+    result: JSON.stringify(details === undefined ? { content: [] } : { details }),
+    isError: false,
+    ...overrides,
+  })
+  const actions = (toolCall: ReturnType<typeof call>, completed = true) => getToolInlineActions({ toolCall, completed })
+  const failureCases = (toolCall: ReturnType<typeof call>) => [
+    actions(toolCall, false),
+    actions({ ...toolCall, isError: true }),
+    actions({ ...toolCall, result: undefined }),
+    actions({ ...toolCall, result: 'not json' }),
+  ]
+
+  it('ask_human offers its question, needing the chat’s agent', () => {
+    const toolCall = call('ask_human', { questions: [] }, { questionId: 'q-1', async: true, blocking: true })
+    expect(actions(toolCall)).toEqual([
+      { kind: 'question', key: 'question:q-1', label: 'View question', questionId: 'q-1', access: { needs: 'agent' } },
+    ])
+    for (const result of failureCases(toolCall)) expect(result).toEqual([])
+    expect(actions(call('ask_human', {}, { error: 'No recipients' }))).toEqual([])
+    expect(actions(call('ask_human', {}, { questionId: ' ' }))).toEqual([])
+  })
+
+  it('notify_contact offers the work stream it routed to', () => {
+    const toolCall = call('notify_contact', { title: 't' }, { success: true, routedTo: 'owner', workStreamId: 'ws-1' })
+    expect(actions(toolCall)).toEqual([
+      {
+        kind: 'work_stream',
+        key: 'work_stream:ws-1',
+        label: 'Open work stream',
+        workStreamRef: 'ws-1',
+        access: { permission: 'workstreams:read' },
+      },
+    ])
+    for (const result of failureCases(toolCall)) expect(result).toEqual([])
+    expect(actions(call('notify_contact', {}, { success: true, routedTo: 'manager' }))).toEqual([])
+    expect(actions(call('notify_contact', {}, { success: false, workStreamId: 'ws-1' }))).toEqual([])
+  })
+
+  it('artifact_publish offers the artifact, by its id or its manifest’s', () => {
+    const toolCall = call(
+      'artifact_publish',
+      { artifactId: 'deck' },
+      { success: true, artifactId: 'deck', manifest: { id: 'deck', title: 'Q3 deck' } }
+    )
+    const access = { permission: 'artifacts:read', needs: 'agent' }
+    expect(actions(toolCall)).toEqual([
+      { kind: 'artifact', key: 'artifact:deck', label: 'Open artifact', artifactId: 'deck', title: 'Q3 deck', access },
+    ])
+    expect(actions(call('artifact_publish', {}, { success: true, manifest: { id: 'notes' } }))).toEqual([
+      { kind: 'artifact', key: 'artifact:notes', label: 'Open artifact', artifactId: 'notes', access },
+    ])
+    for (const result of failureCases(toolCall)) expect(result).toEqual([])
+    expect(actions(call('artifact_publish', {}, { success: false, artifactId: 'deck', errors: ['x'] }))).toEqual([])
+    expect(actions(call('artifact_publish', {}, { success: true }))).toEqual([])
+  })
+
+  it('browser_open offers a local app it opened, not a plain URL', () => {
+    const toolCall = call('browser_open', { localDeploymentId: 'ld-1' }, undefined)
+    const expected = [
+      {
+        kind: 'local_app',
+        key: 'local_app:ld-1',
+        label: 'Open app',
+        localDeploymentId: 'ld-1',
+        access: { permission: 'deployments:read' },
+      },
+    ]
+    expect(actions(toolCall)).toEqual(expected)
+    expect(actions(call('browser_open', { localDeploymentId: 'ld-1' }, {}))).toEqual(expected)
+    for (const result of failureCases(toolCall)) expect(result).toEqual([])
+    expect(
+      actions(call('browser_open', { localDeploymentId: 'ld-1' }, { error: 'Local deployment unavailable' }))
+    ).toEqual([])
+    expect(actions(call('browser_open', { url: 'https://example.com' }, {}))).toEqual([])
+  })
+
+  it('memory writes offer the note in the memory viewer’s form, with the target squad for cross-squad writes', () => {
+    const note = (path: string, squadId?: string) => ({
+      kind: 'memory_note',
+      key: `memory_note:${squadId ?? ''}:${path}`,
+      label: 'Open note',
+      path,
+      ...(squadId ? { squadId } : {}),
+      access: { permission: 'memory:read', needs: 'squad', ...(squadId ? { squadId } : {}) },
+    })
+    expect(actions(call('memory_write', { path: 'decisions/auth.md', content: 'x' }, { success: true }))).toEqual([
+      note('/memory/decisions/auth.md'),
+    ])
+    expect(
+      actions(
+        call(
+          'memory_patch',
+          { path: '/home/box_1/memory/patterns/a.md', match: 'a', replacement: 'b' },
+          { success: true }
+        )
+      )
+    ).toEqual([note('/memory/patterns/a.md')])
+    expect(
+      actions(
+        call(
+          'memory_append',
+          { path: `/memory/${SQUAD}/work-log/x.md`, content: 'x', targetSquadId: OTHER_SQUAD },
+          { success: true, targetSquadId: OTHER_SQUAD }
+        )
+      )
+    ).toEqual([note('/memory/work-log/x.md', OTHER_SQUAD)])
+    expect(actions(call('memory_write', { path: 'a.md', content: 'x', squad: SQUAD }, { success: true }))).toEqual([
+      note('/memory/a.md', SQUAD),
+    ])
+    // Core's resolved path stands in when the args lack one.
+    expect(actions(call('memory_write', { content: 'x' }, { success: true, path: '/home/box_1/memory/b.md' }))).toEqual(
+      [note('/memory/b.md')]
+    )
+  })
+
+  it('memory writes offer nothing for deletes, failures, or unusable paths', () => {
+    const write = call('memory_write', { path: 'a.md', content: 'x' }, { success: true })
+    for (const result of failureCases(write)) expect(result).toEqual([])
+    expect(actions(call('memory_write', { path: 'a.md', content: null }, { success: true, deleted: true }))).toEqual([])
+    expect(actions(call('memory_write', { path: 'a.md', content: null }, { success: true }))).toEqual([])
+    expect(
+      actions(call('memory_write', { path: 'a.md', content: 'x' }, { error: { code: 'E', message: 'm' } }))
+    ).toEqual([])
+    expect(actions(call('memory_write', { path: '/etc/passwd', content: 'x' }, { success: true }))).toEqual([])
+    expect(actions(call('memory_write', { path: '../a.md', content: 'x' }, { success: true }))).toEqual([])
+  })
+
+  it('normalizes memory paths from either root and rejects escapes', () => {
+    expect(normalizeMemoryNotePath('decisions/auth.md')).toBe('/memory/decisions/auth.md')
+    expect(normalizeMemoryNotePath('./decisions//auth.md')).toBe('/memory/decisions/auth.md')
+    expect(normalizeMemoryNotePath(`/memory/${SQUAD}/decisions/auth.md`)).toBe('/memory/decisions/auth.md')
+    expect(normalizeMemoryNotePath('/home/box_e49af02f8b45/memory/decisions/auth.md')).toBe('/memory/decisions/auth.md')
+    expect(normalizeMemoryNotePath('/memory/decisions/auth.md')).toBe('/memory/decisions/auth.md')
+    expect(normalizeMemoryNotePath('/home/box/memory/')).toBeNull()
+    expect(normalizeMemoryNotePath('/workspace/docs/a.md')).toBeNull()
+    expect(normalizeMemoryNotePath('notes/../../secret')).toBeNull()
+    expect(normalizeMemoryNotePath('  ')).toBeNull()
+  })
+
+  it('shell calls offer the PRs and work streams Core recognized, each once', () => {
+    const toolCall = call(
+      'squad_bash',
+      { command: 'ficus ws create -t x && gh pr create --fill' },
+      {
+        createdLinks: [
+          { kind: 'work_stream', number: 829 },
+          { kind: 'pull_request', url: 'https://github.com/ficushq/ficus/pull/684', number: 684 },
+          { kind: 'pull_request', url: 'https://github.com/ficushq/ficus/pull/684', number: 684 },
+          { kind: 'work_stream', id: 'ws-uuid' },
+          { kind: 'pull_request', url: 'javascript:alert(1)//pull/1', number: 1 },
+          { kind: 'pull_request', url: 'https://github.com/ficushq/ficus/pull/9' },
+          { kind: 'work_stream' },
+          { kind: 'issue', url: 'https://github.com/ficushq/ficus/issues/3', number: 3 },
+          null,
+        ],
+      }
+    )
+    const workStreamAccess = { permission: 'workstreams:read' }
+    expect(actions(toolCall)).toEqual([
+      {
+        kind: 'work_stream',
+        key: 'work_stream:829',
+        label: 'Open work stream #829',
+        workStreamRef: '829',
+        access: workStreamAccess,
+      },
+      {
+        kind: 'pull_request',
+        key: 'pull_request:https://github.com/ficushq/ficus/pull/684',
+        label: 'Open PR #684',
+        url: 'https://github.com/ficushq/ficus/pull/684',
+        number: 684,
+      },
+      {
+        kind: 'work_stream',
+        key: 'work_stream:ws-uuid',
+        label: 'Open work stream',
+        workStreamRef: 'ws-uuid',
+        access: workStreamAccess,
+      },
+    ])
+    expect(actions({ ...toolCall, toolName: 'bash' })).toHaveLength(3)
+    for (const result of failureCases(toolCall)) expect(result).toEqual([])
+    // Without Core's structured links, a PR URL in the output is not an action.
+    expect(
+      actions(
+        call(
+          'bash',
+          { command: 'gh pr view 684' },
+          {},
+          {
+            result: JSON.stringify({ content: [{ type: 'text', text: 'https://github.com/ficushq/ficus/pull/684' }] }),
+          }
+        )
+      )
+    ).toEqual([])
+  })
+
+  it('a collapsed group lists every new kind once each, in call order', () => {
+    const tool = (toolCall: ReturnType<typeof call>) => ({ type: 'tool_use', id: toolCall.toolCallId, toolCall })
+    const memory = call('memory_write', { path: 'a.md', content: 'x' }, { success: true })
+    const blocks = [
+      tool(call('ask_human', {}, { questionId: 'q-1' })),
+      tool(memory),
+      tool({ ...memory, toolCallId: 'tc-memory-again', toolName: 'memory_append' }),
+      tool(call('notify_contact', {}, { success: true, workStreamId: 'ws-1' })),
+      tool(
+        call(
+          'squad_bash',
+          {},
+          { createdLinks: [{ kind: 'pull_request', url: 'https://github.com/o/r/pull/5', number: 5 }] }
+        )
+      ),
+    ]
+    expect(getBlocksInlineActions(blocks).map((action) => action.label)).toEqual([
+      'View question',
+      'Open note',
+      'Open work stream',
+      'Open PR #5',
+    ])
   })
 })
 
