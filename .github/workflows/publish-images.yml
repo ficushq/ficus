@@ -46,7 +46,7 @@ jobs:
           images: ghcr.io/ficushq/ficus-machine
           tags: "type=raw,value=latest,enable={{is_default_branch}}\ntype=ref,event=tag\ntype=sha,prefix=sha-,format=short\n"
       - name: Build and push ficus-machine
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with: 
           context: "."
           file: packages/machine-image/Dockerfile
