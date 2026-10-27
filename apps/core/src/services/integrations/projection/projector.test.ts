@@ -26,7 +26,7 @@ describe('projectIntegrationAssignments', () => {
       packages: ['nodejs@24.12.0'],
       setupSteps: notionPlugin.sandbox.setupSteps,
       initHooks: ['export PATH="$DEVBOX_PROJECT_ROOT/npm/bin:$PATH"'],
-      readiness: [{ id: 'notion-cli', command: 'ntn --version', expectedSubstring: '0.22.10' }],
+      readiness: [{ id: 'notion-cli', command: 'ntn --version', expectedSubstring: '0.23.25' }],
       skills: ['notion'],
       extensions: [],
       protectedBindingNames: ['NOTION_API_TOKEN', 'NOTION_WORKSPACE_ID'],
@@ -60,7 +60,7 @@ describe('projectIntegrationAssignments', () => {
       key: 'conflict',
       sandbox: {
         ...notionPlugin.sandbox,
-        setupSteps: [{ id: 'notion-cli@0.22.10', script: 'different-script' }],
+        setupSteps: [{ id: 'notion-cli@0.23.25', script: 'different-script' }],
         protectedBindings: [
           { name: 'NOTION_API_TOKEN', source: { kind: 'configuration' as const, field: 'workspaceId' } },
         ],

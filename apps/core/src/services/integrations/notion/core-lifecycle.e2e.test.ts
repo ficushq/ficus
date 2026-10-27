@@ -311,13 +311,13 @@ for(const [m,k] of [[net,'connect'],[net,'createConnection'],[tls,'connect']]){c
         }
         readinessCount += 1
         expect(desired.config.packages).toContain('nodejs@24.12.0')
-        expect(desired.config.setupScript).toContain('npm pack --silent ntn@0.22.10')
+        expect(desired.config.setupScript).toContain('npm pack --silent ntn@0.23.25')
         expect(desired.readiness).toContainEqual({
           id: 'notion-cli',
           command: 'ntn --version',
-          expectedSubstring: '0.22.10',
+          expectedSubstring: '0.23.25',
         })
-        expect(Bun.spawnSync([binary, '--version'], { stdout: 'pipe' }).stdout.toString()).toContain('0.22.10')
+        expect(Bun.spawnSync([binary, '--version'], { stdout: 'pipe' }).stdout.toString()).toContain('0.23.25')
       },
     } as any,
     targets: async () => [{ sandboxId: 'squad-box', options: { workspacePath: root } }],

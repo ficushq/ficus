@@ -13,7 +13,7 @@ Start with `ntn api ls --json`. Inspect an endpoint with `ntn api <endpoint> --h
 
 ## Safe reads and writes
 
-Prefer JSON and stdin. Build structured requests with `jq ... | ntn api ...`. Use `ntn pages create` or `ntn pages edit` for scoped page changes. Diagnose HTTP 429 with backoff; distinguish authentication failures, unsupported capabilities, and resources that were not shared with the integration.
+Prefer JSON and explicit stdin, for example `jq -n '{query:"Project"}' | ntn api v1/search --data @-`. In ntn 0.23, `--data` and inline body inputs cannot be combined. Implicit stdin is ignored when either is provided; use `--data @-` when the piped JSON is the intended body. Use `ntn pages create` or `ntn pages edit` for scoped page changes. Diagnose HTTP 429 with backoff; distinguish authentication failures, unsupported capabilities, and resources that were not shared with the integration.
 
 Get explicit confirmation immediately before trashing or archiving content, using `pages edit --allow-deleting-content`, attaching/detaching workers or databases, or any broad mutation.
 

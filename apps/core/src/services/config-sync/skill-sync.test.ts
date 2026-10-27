@@ -128,6 +128,8 @@ describe('SkillSync', () => {
     const md = await readFile(join(SKILLS_DIR, 'notion', 'SKILL.md'), 'utf8')
     for (const term of [
       'ntn api ls --json',
+      'ntn api v1/search --data @-',
+      'Implicit stdin is ignored',
       'v1/search',
       'ntn pages get',
       'ntn datasources query',

@@ -61,7 +61,7 @@ test('connect assign reconcile invoke rotate without reinstall and unassign', as
   })
   expect(assigned.publicDeclaration.packages).toEqual(['nodejs@24.12.0'])
   expect(assigned.publicDeclaration.readiness).toEqual([
-    { id: 'notion-cli', command: 'ntn --version', expectedSubstring: '0.22.10' },
+    { id: 'notion-cli', command: 'ntn --version', expectedSubstring: '0.23.25' },
   ])
   const firstEnv = Object.fromEntries(await resolveProtectedBindings(assigned))
   const fakeCli = (args: string[]) => {
