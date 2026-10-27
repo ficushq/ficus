@@ -1,7 +1,7 @@
 import { useToolRenderers } from '../lib/ToolRenderersContext'
 import clsx from 'clsx'
-import { ToolInlineActions } from './ToolInlineActions'
-import { getToolFirewallFlag, type ToolInlineAction } from '../lib/tool-inline-actions'
+import { InlineActionRow, ToolInlineActions } from './ToolInlineActions'
+import { getBlocksInlineActions, getToolFirewallFlag, type ToolInlineAction } from '../lib/tool-inline-actions'
 import { ToolFirewallBadge } from './ToolFirewallBadge'
 import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react'
 import { MarkdownContent } from './MarkdownContent'
@@ -856,7 +856,8 @@ function BlockGroupSection({
   const [expanded, setExpanded] = useState(defaultExpanded)
   const summary = getGroupSummary(blocks)
   const firewall = useMemo(() => mostSevereFirewallFlag(blocks), [blocks])
-  // A collapsed group still shows the images its tool calls read.
+  // A collapsed group still shows the actions its tool calls offer, then the images they read.
+  const actions = useMemo(() => getBlocksInlineActions(blocks), [blocks])
   const images = useMemo(() => blocksImages(blocks), [blocks])
 
   return (
@@ -871,6 +872,7 @@ function BlockGroupSection({
         <span className="font-medium">{summary}</span>
         {firewall && <ToolFirewallBadge flag={firewall} />}
       </button>
+      {!expanded && <InlineActionRow actions={actions} onOpen={onToolInlineAction} />}
       {!expanded && images.length > 0 && <ToolImageStrip images={images} underRow />}
       {expanded && (
         <div className="mt-1 ml-1.5 border-l-2 border-th-border pl-3 py-0.5 space-y-2">
