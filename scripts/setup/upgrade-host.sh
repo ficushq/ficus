@@ -196,9 +196,9 @@ fi
 # no credential, which is what makes it runnable long after provisioning
 # without re-supplying anything.
 SRC_MODE=$(cfg_get '.source.mode' 'git-ssh')
-# sshd brute-force protection (lib.sh ensure_fail2ban), set up after the new
-# release is serving. Read here so an invalid host.fail2ban fails before any change.
-FAIL2BAN_ON=$(fail2ban_setting "${SRC_MODE}")
+# sshd brute-force protection (lib.sh ensure_fail2ban; opt-in, host.fail2ban),
+# set up after the new release is serving. Read here so an invalid host.fail2ban fails before any change.
+FAIL2BAN_ON=$(fail2ban_setting)
 # The layout's install root when the config names none (read again once the
 # host layout is adopted, below).
 SRC_DEST=$(cfg_source_dest)

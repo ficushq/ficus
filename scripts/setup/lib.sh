@@ -1469,8 +1469,11 @@ ensure_pooler_user() { # USER
 
 # ------------------------------------------------ fail2ban (sshd brute force)
 #
-# On a hosted host (source.mode artifact; host.fail2ban overrides either way)
-# fail2ban bans an address after repeated failed sshd logins. The jail reads
+# Opt-in (host.fail2ban: true), for a self-hosted core whose sshd is open to
+# the internet: fail2ban bans an address after repeated failed sshd logins.
+# Off by default on every install, hosted ones included: a hosted core's sshd
+# is reachable only from the control plane, so any ban there would lock the
+# platform out of the tenant. The jail reads
 # sshd from the systemd journal (backend = systemd: Ubuntu 24.04 does not
 # promise /var/log/auth.log) in the filter's default `normal` mode, where a
 # public key the server merely declines is not a failure, so a client that
@@ -1479,16 +1482,11 @@ ensure_pooler_user() { # USER
 FAIL2BAN_JAIL="${FAIL2BAN_JAIL:-${FICUS_HOST_ROOT:-}/etc/fail2ban/jail.d/ficus-sshd.local}" # test seam only
 
 # fail2ban on (true) or off (false) for this host config: yaml host.fail2ban,
-# else on for artifact mode. Dies on a value that is not a boolean — call it in
-# an assignment at config-parse time, so a typo stops the run before it changes
-# anything instead of silently turning protection off.
-fail2ban_setting() { # SOURCE_MODE
-  local default=false
-  [[ $1 == artifact ]] && default=true
-  cfg_bool '.host.fail2ban' "${default}"
-}
-fail2ban_enabled() { # SOURCE_MODE
-  [[ $(fail2ban_setting "$1") == true ]]
+# off when unset, whatever source.mode is. Dies on a value that is not a
+# boolean — call it in an assignment at config-parse time, so a typo stops the
+# run before it changes anything.
+fail2ban_setting() {
+  cfg_bool '.host.fail2ban' false
 }
 
 # The upgrade's form: after the new release is serving, never before the

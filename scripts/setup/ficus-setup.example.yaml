@@ -134,9 +134,11 @@ ingress:
 
 host:
   # fail2ban with the sshd jail (journal backend; 5 failed logins in 10 minutes
-  # ban the address for an hour; a declined public key is not a failure). Left
-  # unset it follows source.mode: on for artifact installs (hosted), off
-  # otherwise. Set true or false to choose.
+  # ban the address for an hour; a declined public key is not a failure). Off
+  # unless set to true: turn it on for a self-hosted core whose sshd is open to
+  # the internet. Leave it off where sshd is reachable only from trusted
+  # addresses (the hosted platform's cores): a ban there locks out the one
+  # client that manages the host.
   # fail2ban: true
 
 # -----------------------------------------------------------------------------

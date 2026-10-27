@@ -2654,6 +2654,15 @@ EOF
     "${sh_run_user_out}" 'does not exist|could not resolve core.run_user'
   expect_eq 'setup-host dry-run: the missing user is never created by a dry run' \
     "$(id -u ficus-dry-run-svc >/dev/null 2>&1 && echo created || echo absent)" 'absent'
+  # fail2ban is opt-in: an artifact (hosted) config without host.fail2ban plans none.
+  expect_not_match 'setup-host dry-run: an artifact config plans no fail2ban by default' \
+    "${sh_run_user_out}" 'fail2ban'
+  printf 'host:\n  fail2ban: true\n' >>"${PROV_TMP}/sh-run-user.yaml"
+  sh_f2b_out=$(FICUS_ARTIFACT_TARBALL_URL='https://example.test/t' FICUS_ARTIFACT_MANIFEST_URL='https://example.test/m' \
+    FICUS_ARTIFACT_SIG_URL='https://example.test/s' FICUS_ARTIFACT_PUBKEY_B64='k' \
+    bash "${SCRIPT_DIR}/setup-host.sh" --config "${PROV_TMP}/sh-run-user.yaml" --dry-run 2>&1) || true
+  expect_match 'setup-host dry-run: host.fail2ban: true plans the sshd jail' \
+    "${sh_f2b_out}" 'ensure: fail2ban \(apt\) with the sshd jail'
   expect_match 'setup-host dry-run (artifact mode): the build phase is a no-op' \
     "${sh_artifact_dry_out}" 'nothing to build'
   expect_match 'setup-host dry-run (artifact mode): the migrate phase defers to activation' \
@@ -3709,7 +3718,7 @@ expect_eq 'require_box_reprovision_settled: a loose journal file refuses' "$(br_
 rm -rf "${BR_TMP}"
 unset -f br_check
 
-# --- ensure_fail2ban (hosted sshd brute-force protection) --------------------
+# --- ensure_fail2ban (opt-in sshd brute-force protection) --------------------
 F2B_TMP=$(mktemp -d)
 f2b_run() { # INSTALLED(1|0) ACTIVE(1|0) — prints the as_root calls; rc in the last line
   local rc=0
@@ -3751,15 +3760,21 @@ expect_eq 'ensure_fail2ban: a stopped service is restarted even with the jail un
 printf '[sshd]\nenabled = false\n' >"${F2B_TMP}/jail.d/ficus-sshd.local"
 expect_match 'ensure_fail2ban: an edited jail is put back and the service restarted' "$(f2b_run 1 1)" 'systemctl restart fail2ban'
 expect_eq 'ensure_fail2ban: ...with the managed content' "$(grep -c '^enabled = true$' "${F2B_TMP}/jail.d/ficus-sshd.local")" 1
-f2b_enabled() { # SOURCE_MODE YAML
-  printf '%s\n' "$2" >"${F2B_TMP}/cfg.yaml"
-  (cfg_load "${F2B_TMP}/cfg.yaml" && fail2ban_enabled "$1") && echo on || echo off
+f2b_setting() { # YAML — prints the setting, or "dies" when it is refused
+  printf '%s\n' "$1" >"${F2B_TMP}/cfg.yaml"
+  (cfg_load "${F2B_TMP}/cfg.yaml" && fail2ban_setting) 2>/dev/null || echo dies
 }
 if yq_is_mikefarah; then
-  expect_eq 'fail2ban_enabled: on for artifact (hosted) installs by default' "$(f2b_enabled artifact 'core: {}')" on
-  expect_eq 'fail2ban_enabled: off for git installs by default' "$(f2b_enabled git-ssh 'core: {}')" off
-  expect_eq 'fail2ban_enabled: host.fail2ban opts a git install in' "$(f2b_enabled git-ssh 'host: {fail2ban: true}')" on
-  expect_eq 'fail2ban_enabled: host.fail2ban opts an artifact install out' "$(f2b_enabled artifact 'host: {fail2ban: false}')" off
+  # Off unless opted in, on every install mode: on a hosted (artifact) core sshd
+  # is reachable only from the control plane, so a ban would lock it out.
+  for f2b_mode in artifact git-ssh git-https; do
+    expect_eq "fail2ban_setting: off by default (source.mode ${f2b_mode})" \
+      "$(f2b_setting "source: {mode: ${f2b_mode}}")" false
+  done
+  expect_eq 'fail2ban_setting: host.fail2ban: true opts in' "$(f2b_setting 'source: {mode: artifact}
+host: {fail2ban: true}')" true
+  expect_eq 'fail2ban_setting: host.fail2ban: false stays off' "$(f2b_setting 'host: {fail2ban: false}')" false
+  expect_eq 'fail2ban_setting: a non-boolean is refused (never silently off or on)' "$(f2b_setting 'host: {fail2ban: maybe}')" dies
 fi
 expect_match 'setup-host.sh preflight sets fail2ban up when enabled' \
   "$(sed -n '/^phase_preflight() {/,/^}/p' "${SCRIPT_DIR}/setup-host.sh")" 'FAIL2BAN_ON\} == true \]\]; then'$'\n''    ensure_fail2ban \|\| die'
@@ -3786,7 +3801,7 @@ expect_eq 'ensure_fail2ban_best_effort: nothing on stdout (the upgrade trailer)'
   "$( (ensure_fail2ban() { echo noise; return 1; }; log_warn() { :; }; ensure_fail2ban_best_effort) 2>/dev/null)" ''
 unset f2b_up f2b_best
 rm -rf "${F2B_TMP}"
-unset -f f2b_run f2b_enabled
+unset -f f2b_run f2b_setting
 
 # --- managed_env_would_change ----------------------------------------------
 # The sync restart driver: semantic change detection for managed.env.

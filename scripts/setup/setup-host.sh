@@ -98,8 +98,8 @@ cfg_load "${CONFIG}"
 # ============================================================== configuration
 
 SRC_MODE=$(cfg_get '.source.mode' 'git-ssh')
-# sshd brute-force protection (lib.sh ensure_fail2ban; phase_preflight).
-FAIL2BAN_ON=$(fail2ban_setting "${SRC_MODE}")
+# sshd brute-force protection (lib.sh ensure_fail2ban; opt-in, host.fail2ban; phase_preflight).
+FAIL2BAN_ON=$(fail2ban_setting)
 SRC_REPO=$(cfg_require '.source.repo' 'git repository')
 SRC_REF=$(cfg_get '.source.ref' 'main')
 # Default dest is the host layout's install root (cfg_source_dest: HL_DEST,

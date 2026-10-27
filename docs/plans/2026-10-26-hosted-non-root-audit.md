@@ -25,11 +25,14 @@ replace F5 and F6, and host hardening in the same change:
   `<HOME_DIR>/box-reprovision`. Nothing is chowned after creation.
 - **VAPID (replaces F6).** The `config/vapid.json` compatibility write is
   gone everywhere; the read stays for old self-hosted installs.
-- **Hardening.** fail2ban with an sshd jail on artifact installs
-  (`host.fail2ban` overrides), and `sshAuthFailures` in each usage sample.
-  `setup-host.sh` sets fail2ban up in its preflight and fails on an error;
-  `upgrade-host.sh` sets it up only after the new release is serving and only
-  warns on an error, so it never delays a migration or fails an upgrade.
+- **Hardening.** `sshAuthFailures` in each usage sample, so the platform can
+  alert. fail2ban with an sshd jail is opt-in only (`host.fail2ban: true`, for
+  a self-hosted core on an open port) and off by default everywhere, hosted
+  cores included: their sshd is reachable only from the control plane, so a
+  ban could only lock the platform out, and the hosted machine hosts are
+  firewalled to the core and the control plane. When enabled, `setup-host.sh`
+  sets it up in its preflight and fails on an error; `upgrade-host.sh` sets it
+  up only after the new release is serving and only warns on an error.
 
 Where the implementation departs from the plan below:
 
