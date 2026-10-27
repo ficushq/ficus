@@ -32,7 +32,7 @@ jobs:
           ref: 8d334b53875b8eeef6e65611d60aad8f8a7802d4 # v0.0.10
           path: .cla-action
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
