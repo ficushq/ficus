@@ -53,7 +53,7 @@
     "cron-parser": "^5.10.2",
     "drizzle-orm": "0.45.4",
     "entities": "7.0.1",
-    "hono": "^4.13.13",
+    "hono": "^4.7.0",
     "js-yaml": "^4.1.1",
     "jsdom": "^27.0.1",
     "marked": "18.1.1",
