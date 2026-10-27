@@ -2118,6 +2118,71 @@ describe('ChatView inline tool actions', () => {
     )
     expect(window.document.querySelector('button[aria-label="Open Research chat"]')).toBeNull()
   })
+
+  test('shows finished calls’ actions under a collapsed live group, and only on the rows once expanded', async () => {
+    const monitor = {
+      toolCallId: 'tc-monitor',
+      toolName: 'monitor',
+      args: '{"action":"create"}',
+      isError: false,
+      result: JSON.stringify({ details: { success: true, monitorId: 'monitor-1' } }),
+    }
+    const dispatch = {
+      toolCallId: 'tc-dispatch',
+      toolName: 'dispatch',
+      args: '{}',
+      isError: false,
+      result: JSON.stringify({ details: { subagents: [{ subagentId: 'child-1', label: 'Research' }] } }),
+    }
+    // Text after the group makes it no longer the active group, so it stays collapsed.
+    const streaming = (dispatchDone: boolean): RenderItem[] => [
+      {
+        kind: 'streaming',
+        id: 'S',
+        agentId: 'a',
+        status: 'streaming',
+        blocks: [
+          { type: 'thinking', id: 'th', content: 'plan' },
+          { type: 'tool_use', id: 'tc-monitor', _done: true, toolCall: monitor },
+          { type: 'tool_use', id: 'tc-dispatch', _done: dispatchDone, toolCall: dispatch },
+          { type: 'text', id: 'txt', content: 'Watching.' },
+        ],
+      },
+    ]
+    const { dom, root, window } = await renderChatView(
+      <ChatView items={streaming(false)} onSend={() => {}} hideComposer />
+    )
+    const labels = () =>
+      [...window.document.querySelectorAll('[data-tool-inline-actions] button')].map((button) =>
+        button.getAttribute('aria-label')
+      )
+    expect(window.document.body.textContent).toContain('2 tools • 1 thinking')
+    expect(window.document.querySelector('[data-tool-call-row]')).toBeNull()
+    expect(labels()).toEqual(['Open monitor'])
+
+    await dom.act(async () =>
+      root.render(
+        <MemoryRouter>
+          <ChatView dependencies={chatViewDependencies} items={streaming(true)} onSend={() => {}} hideComposer />
+        </MemoryRouter>
+      )
+    )
+    expect(labels()).toEqual(['Open monitor', 'Open Research chat'])
+    const action = window.document.querySelector('button[aria-label="Open Research chat"]')!
+    await dom.act(async () => action.dispatchEvent(new window.MouseEvent('click', { bubbles: true })))
+    expect(openedToolAction).toEqual(expect.objectContaining({ kind: 'subagent', subagentId: 'child-1' }))
+    expect(window.document.querySelector('[data-tool-call-row]')).toBeNull()
+
+    const header = [...window.document.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('2 tools • 1 thinking')
+    )!
+    await dom.act(async () => header.dispatchEvent(new window.MouseEvent('click', { bubbles: true })))
+    const rows = [...window.document.querySelectorAll('[data-tool-inline-actions]')]
+    expect(rows.map((row) => row.previousElementSibling?.getAttribute('data-tool-call-row'))).toEqual([
+      'tc-monitor',
+      'tc-dispatch',
+    ])
+  })
 })
 
 describe('ChatView streaming tool images', () => {

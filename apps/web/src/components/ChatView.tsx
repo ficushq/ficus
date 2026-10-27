@@ -41,9 +41,9 @@ import { useFullscreen } from '../hooks/useFullscreen'
 import { Modal } from './Modal'
 import { ChatFullscreenContext } from './ChatFullscreenContext'
 import { MobileChatOptionsSheet } from './MobileChatOptionsSheet'
-import { ToolInlineActions } from './ToolInlineActions'
+import { InlineActionRow, ToolInlineActions } from './ToolInlineActions'
 import { ToolInlineActionModal, type ToolInlineActionModalProps } from './ToolInlineActionModal'
-import { getToolFirewallFlag, type ToolInlineAction } from '../lib/tool-inline-actions'
+import { getBlocksInlineActions, getToolFirewallFlag, type ToolInlineAction } from '../lib/tool-inline-actions'
 import { ToolFirewallBadge } from './ToolFirewallBadge'
 import type { RenderItem, StreamingContentBlock } from '@ficus/client-react'
 import { lastBlocksSegmentIndex, segmentAtNotices, type RenderedContentBlock } from '@ficus/client-core'
@@ -2906,7 +2906,9 @@ function StreamingBlockGroupSection({
   }, [defaultExpanded, blocks.length])
 
   const summary = getStreamingGroupSummary(blocks)
-  // A collapsed group still shows the images its tool calls read, as soon as each result arrives.
+  // A collapsed group still shows the actions its finished tool calls offer, then the images they read,
+  // as soon as each result arrives.
+  const actions = useMemo(() => getBlocksInlineActions(blocks, { live: true }), [blocks])
   const images = useMemo(() => blocksImages(blocks), [blocks])
   // Check if any tool in this group is still running
   const hasRunningTool = blocks.some((b) => b.type === 'tool_use' && !('_done' in b && b._done))
@@ -2925,6 +2927,7 @@ function StreamingBlockGroupSection({
         )}
         <span className="font-medium">{summary}</span>
       </button>
+      {!expanded && <InlineActionRow actions={actions} onOpen={onToolInlineAction} />}
       {!expanded && images.length > 0 && <ToolImageStrip images={images} underRow />}
       {expanded && (
         <div className="mt-1 ml-1.5 border-l-2 border-th-border pl-3 py-0.5 space-y-2">

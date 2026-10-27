@@ -8,7 +8,7 @@ import {
   ToolResultView,
   ToolSummary,
 } from './tool-renderers'
-import { getToolInlineActions } from './tool-inline-actions'
+import { getBlocksInlineActions, getToolInlineActions } from './tool-inline-actions'
 
 function renderToolResult(toolName: string, result: string, isError = false, entry = '/') {
   return renderToStaticMarkup(
@@ -260,7 +260,7 @@ describe('tool inline actions', () => {
 
   it('extracts a completed monitor create action', () => {
     expect(getToolInlineActions({ toolCall: call(), completed: true })).toEqual([
-      { kind: 'monitor', key: 'monitor:monitor-1', monitorId: 'monitor-1', label: 'Open monitor' },
+      { kind: 'monitor', key: 'monitor:monitor-1', label: 'Open monitor', monitorId: 'monitor-1' },
     ])
   })
 
@@ -281,8 +281,20 @@ describe('tool inline actions', () => {
       }),
     })
     expect(getToolInlineActions({ toolCall, completed: true })).toEqual([
-      { kind: 'subagent', key: 'subagent:child-1', subagentId: 'child-1', label: 'Research' },
-      { kind: 'subagent', key: 'subagent:child-2', subagentId: 'child-2', label: 'child-2' },
+      {
+        kind: 'subagent',
+        key: 'subagent:child-1',
+        label: 'Open Research chat',
+        subagentId: 'child-1',
+        subagentLabel: 'Research',
+      },
+      {
+        kind: 'subagent',
+        key: 'subagent:child-2',
+        label: 'Open child-2 chat',
+        subagentId: 'child-2',
+        subagentLabel: 'child-2',
+      },
     ])
   })
 
@@ -304,6 +316,80 @@ describe('tool inline actions', () => {
         completed: true,
       })
     ).toEqual([])
+  })
+})
+
+describe('group inline actions', () => {
+  const monitor = (id: string, monitorId: string, overrides: Record<string, unknown> = {}) => ({
+    toolCallId: id,
+    toolName: 'monitor',
+    args: '{"action":"create"}',
+    result: JSON.stringify({ details: { success: true, monitorId } }),
+    isError: false,
+    ...overrides,
+  })
+  const dispatch = (id: string, children: Array<{ subagentId: string; label: string }>) => ({
+    toolCallId: id,
+    toolName: 'dispatch',
+    args: '{}',
+    result: JSON.stringify({ details: { subagents: children } }),
+    isError: false,
+  })
+  const tool = (toolCall: ReturnType<typeof monitor>, extra: { _done?: boolean } = {}) => ({
+    type: 'tool_use',
+    id: toolCall.toolCallId,
+    toolCall,
+    ...extra,
+  })
+  const keys = (actions: Array<{ key: string }>) => actions.map((action) => action.key)
+
+  it('collects every completed call’s actions in call order, each target once', () => {
+    const blocks = [
+      { type: 'thinking', id: 'th', content: 'plan' },
+      tool(monitor('m1', 'monitor-1')),
+      tool(
+        dispatch('d1', [
+          { subagentId: 'child-1', label: 'Research' },
+          { subagentId: 'child-2', label: 'Build' },
+        ])
+      ),
+      tool(monitor('m1-again', 'monitor-1')),
+      tool(
+        dispatch('d2', [
+          { subagentId: 'child-2', label: 'Build again' },
+          { subagentId: 'child-3', label: 'Review' },
+        ])
+      ),
+      { type: 'tool_use', id: 'read', toolCall: { ...monitor('r', 'x'), toolName: 'read' } },
+    ]
+    const actions = getBlocksInlineActions(blocks)
+    expect(keys(actions)).toEqual(['monitor:monitor-1', 'subagent:child-1', 'subagent:child-2', 'subagent:child-3'])
+    // The first call to offer a target wins, so its label is the one shown.
+    expect(actions.map((action) => action.label)).toEqual([
+      'Open monitor',
+      'Open Research chat',
+      'Open Build chat',
+      'Open Review chat',
+    ])
+  })
+
+  it('leaves out errored and unfinished calls', () => {
+    const saved = [
+      tool(monitor('err', 'monitor-err', { isError: true })),
+      tool(monitor('running', 'monitor-running', { result: undefined })),
+      tool(monitor('ok', 'monitor-ok')),
+    ]
+    expect(keys(getBlocksInlineActions(saved))).toEqual(['monitor:monitor-ok'])
+    expect(getBlocksInlineActions([])).toEqual([])
+  })
+
+  it('counts a live call as completed only once it is marked done', () => {
+    const blocks = [
+      tool(monitor('done', 'monitor-done'), { _done: true }),
+      tool(monitor('streaming', 'monitor-streaming'), { _done: false }),
+      tool(monitor('unmarked', 'monitor-unmarked')),
+    ]
+    expect(keys(getBlocksInlineActions(blocks, { live: true }))).toEqual(['monitor:monitor-done'])
   })
 })
 

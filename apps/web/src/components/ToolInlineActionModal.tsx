@@ -25,7 +25,7 @@ export function ToolInlineActionModal({ action, onClose, dependencies }: ToolInl
   }
   const Conversation = dependencies?.AgentConversationComponent ?? LazyAgentConversation
   return (
-    <Modal isOpen onClose={onClose} title={`${action.label} chat`} size="viewport" noChildPadding>
+    <Modal isOpen onClose={onClose} title={`${action.subagentLabel} chat`} size="viewport" noChildPadding>
       <Suspense fallback={<ChatSkeleton label="Loading conversation" />}>
         <Conversation agentId={action.subagentId} embedded enableFullscreen={false} />
       </Suspense>
