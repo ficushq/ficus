@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { readFile, writeFile, mkdir } from 'fs/promises'
-import { dirname, join } from 'path'
+import { readFile } from 'fs/promises'
+import { join } from 'path'
 import { expandTilde } from '@ficus/shared/node'
 import webpush from 'web-push'
 import { CONFIG_DIR } from '../../lib/paths'
@@ -21,12 +21,15 @@ export function getVapidKeysPath(): string {
 }
 
 /**
- * Load VAPID keys from SecretStore, falling back to file, then auto-generating.
+ * Load VAPID keys from SecretStore, falling back to a legacy file, then auto-generating.
  *
  * Priority:
- * 1. SecretStore (VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY)
- * 2. File (config/vapid.json) — migrates to SecretStore on read
+ * 1. SecretStore (VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY) — the only store
+ * 2. File (config/vapid.json) — read only, for old self-hosted installs; migrates to SecretStore
  * 3. Auto-generate new keys → store in SecretStore
+ *
+ * No key file is ever written: the release tree is read-only to a non-root Core, and a private
+ * key has no business in it.
  */
 export async function loadOrGenerateVapidKeys(path: string = getVapidKeysPath()): Promise<VapidKeys> {
   const store = getSecretStore()
@@ -64,21 +67,16 @@ export async function loadOrGenerateVapidKeys(path: string = getVapidKeysPath())
     privateKey: vapidKeys.privateKey,
   }
 
-  // Store in SecretStore (best-effort)
+  // Store in SecretStore (best-effort: without it the keys last only for this process)
   try {
     await store.set('VAPID_PUBLIC_KEY', keys.publicKey, 'system')
     await store.set('VAPID_PRIVATE_KEY', keys.privateKey, 'system')
     log.info('Auto-generated VAPID keys and stored in SecretStore')
-  } catch {
-    // Non-fatal — will fall through to file storage
-  }
-
-  // Also write to file for backwards compatibility
-  try {
-    await mkdir(dirname(path), { recursive: true })
-    await writeFile(path, JSON.stringify(keys, null, 2))
-  } catch {
-    // Non-fatal — SecretStore is the primary store now
+  } catch (err) {
+    log.warn(
+      `Generated VAPID keys could not be stored in SecretStore (${(err as Error).message}); ` +
+        'browsers will need to re-subscribe after the next restart'
+    )
   }
 
   return keys

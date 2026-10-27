@@ -23,17 +23,15 @@ describe('vapid', () => {
     await rm(testDir, { recursive: true, force: true })
   })
 
-  it('should generate keys if file does not exist', async () => {
+  it('should generate keys if file does not exist, and never write a key file', async () => {
     const keys = await loadOrGenerateVapidKeys(testPath)
 
     expect(keys.publicKey).toBeDefined()
     expect(keys.privateKey).toBeDefined()
     expect(keys.publicKey.length).toBeGreaterThan(50)
 
-    // Verify file was created for backwards compat
-    const saved = JSON.parse(await readFile(testPath, 'utf-8'))
-    expect(saved.publicKey).toBe(keys.publicKey)
-    expect(saved.privateKey).toBe(keys.privateKey)
+    // SecretStore is the only store: no compatibility copy lands on disk.
+    await expect(readFile(testPath, 'utf-8')).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('should load existing keys from file', async () => {
@@ -49,14 +47,21 @@ describe('vapid', () => {
     expect(keys.privateKey).toBe('test-private-key')
   })
 
-  it('should create parent directories if needed', async () => {
+  it('never creates the key file directory', async () => {
     const nestedPath = join(testDir, 'nested', 'deep', 'vapid.json')
 
     const keys = await loadOrGenerateVapidKeys(nestedPath)
 
     expect(keys.publicKey).toBeDefined()
-    const saved = JSON.parse(await readFile(nestedPath, 'utf-8'))
-    expect(saved.publicKey).toBe(keys.publicKey)
+    await expect(readFile(nestedPath, 'utf-8')).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('an unreadable legacy file does not stop startup: it is skipped and keys are generated', async () => {
+    // A directory where the file should be: EISDIR, like the EACCES a non-root Core gets on a
+    // root-owned copy.
+    await mkdir(testPath, { recursive: true })
+    const keys = await loadOrGenerateVapidKeys(testPath)
+    expect(keys.publicKey.length).toBeGreaterThan(50)
   })
 })
 
