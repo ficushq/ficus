@@ -3762,9 +3762,29 @@ if yq_is_mikefarah; then
   expect_eq 'fail2ban_enabled: host.fail2ban opts an artifact install out' "$(f2b_enabled artifact 'host: {fail2ban: false}')" off
 fi
 expect_match 'setup-host.sh preflight sets fail2ban up when enabled' \
-  "$(sed -n '/^phase_preflight() {/,/^}/p' "${SCRIPT_DIR}/setup-host.sh")" 'fail2ban_enabled "\$\{SRC_MODE\}"'
-expect_match 'upgrade-host.sh brings it to existing hosts without failing an upgrade over it' \
-  "$(sed -n '/^prepare_upgrade_host() {/,/^}/p' "${SCRIPT_DIR}/upgrade-host.sh")" 'ensure_fail2ban \|\| log_warn'
+  "$(sed -n '/^phase_preflight() {/,/^}/p' "${SCRIPT_DIR}/setup-host.sh")" 'FAIL2BAN_ON\} == true \]\]; then'$'\n''    ensure_fail2ban \|\| die'
+expect_eq 'FAIL2BAN_JAIL lives under FICUS_HOST_ROOT (no test ever writes the real /etc/fail2ban)' \
+  "$(FICUS_HOST_ROOT=/scratch-root FAIL2BAN_JAIL='' bash -c 'source "$1/lib.sh" >/dev/null 2>&1; printf %s "${FAIL2BAN_JAIL}"' _ "${SCRIPT_DIR}")" \
+  '/scratch-root/etc/fail2ban/jail.d/ficus-sshd.local'
+# The upgrade: never before the migration (E1: nothing restarts before it), and
+# never a reason for an upgrade to fail.
+f2b_up=$(cat "${SCRIPT_DIR}/upgrade-host.sh")
+expect_not_match 'upgrade-host.sh: fail2ban is not set up before the migration (prepare_upgrade_host)' \
+  "$(sed -n '/^prepare_upgrade_host() {/,/^}/p' "${SCRIPT_DIR}/upgrade-host.sh")" 'fail2ban'
+expect_eq 'upgrade-host.sh: artifact mode sets fail2ban up after the activation committed' \
+  "$(awk '/artifact_activate "\$\{SRC_DEST\}"/{a=NR} /host_migrate_commit/ && a && !c{c=NR} /ensure_fail2ban_best_effort/ && c && !f{f=NR} END{print (a && c && f > c) ? "after" : "before-or-missing"}' <<<"${f2b_up}")" after
+expect_eq 'upgrade-host.sh: git mode sets fail2ban up after the restart' \
+  "$(awk '/^restart_core_services "\$\{CORE_PORT\}"/{r=NR} /ensure_fail2ban_best_effort/{f=NR} END{print (r && f > r) ? "after" : "before-or-missing"}' <<<"${f2b_up}")" after
+expect_match 'upgrade-host.sh: an invalid host.fail2ban is read at config-parse time' "${f2b_up}" 'FAIL2BAN_ON=\$\(fail2ban_setting'
+f2b_best=$( (
+  ensure_fail2ban() { return 1; }
+  log_warn() { printf 'warn: %s\n' "$*" >&2; }
+  ensure_fail2ban_best_effort && echo rc=0
+) 2>&1)
+expect_match 'ensure_fail2ban_best_effort: a failure warns and returns 0' "${f2b_best}" 'warn: fail2ban could not be set up.*'$'\n''rc=0'
+expect_eq 'ensure_fail2ban_best_effort: nothing on stdout (the upgrade trailer)' \
+  "$( (ensure_fail2ban() { echo noise; return 1; }; log_warn() { :; }; ensure_fail2ban_best_effort) 2>/dev/null)" ''
+unset f2b_up f2b_best
 rm -rf "${F2B_TMP}"
 unset -f f2b_run f2b_enabled
 

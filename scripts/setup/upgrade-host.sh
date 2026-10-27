@@ -196,6 +196,9 @@ fi
 # no credential, which is what makes it runnable long after provisioning
 # without re-supplying anything.
 SRC_MODE=$(cfg_get '.source.mode' 'git-ssh')
+# sshd brute-force protection (lib.sh ensure_fail2ban), set up after the new
+# release is serving. Read here so an invalid host.fail2ban fails before any change.
+FAIL2BAN_ON=$(fail2ban_setting "${SRC_MODE}")
 # The layout's install root when the config names none (read again once the
 # host layout is adopted, below).
 SRC_DEST=$(cfg_source_dest)
@@ -269,10 +272,6 @@ require_host_env_ready
 prepare_upgrade_host() {
   ensure_swapfile
   ensure_system_bun_node "${RUN_USER}" "$(command -v bun)"
-  # Hardening reaches existing hosts on their next upgrade; it never fails one.
-  if fail2ban_enabled "${SRC_MODE}"; then
-    ensure_fail2ban || log_warn 'fail2ban could not be set up for sshd — continuing the upgrade without it'
-  fi
   log_step 'caddy ingress: re-render the Caddyfile'
   upgrade_caddy_prepare "${SRC_DEST}/.env"
   upgrade_caddy_apply
@@ -421,6 +420,9 @@ artifact_upgrade() {
   # install root the activation ended on (a host layout move relocated it).
   host_migrate_commit
   artifact_retention "${SRC_DEST}"
+  # Hardening reaches existing hosts on their next upgrade, once the release is
+  # serving; it never fails one.
+  if [[ ${FAIL2BAN_ON} == true ]]; then ensure_fail2ban_best_effort; fi
 
   log_info "activated release ${sha:0:12}-${digest12} (was ${before})"
 
@@ -508,6 +510,7 @@ host_migrate "${SRC_DEST}"
 log_step "phase 4/4: restart ${HL_UNIT_API} + ${HL_UNIT_WORKER}"
 restart_core_services "${CORE_PORT}"
 host_migrate_commit
+if [[ ${FAIL2BAN_ON} == true ]]; then ensure_fail2ban_best_effort; fi
 
 AFTER_SHA=$(git -C "${SRC_DEST}" rev-parse HEAD)
 AFTER_REF=$(git -C "${SRC_DEST}" rev-parse --abbrev-ref HEAD)

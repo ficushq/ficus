@@ -27,6 +27,9 @@ replace F5 and F6, and host hardening in the same change:
   gone everywhere; the read stays for old self-hosted installs.
 - **Hardening.** fail2ban with an sshd jail on artifact installs
   (`host.fail2ban` overrides), and `sshAuthFailures` in each usage sample.
+  `setup-host.sh` sets fail2ban up in its preflight and fails on an error;
+  `upgrade-host.sh` sets it up only after the new release is serving and only
+  warns on an error, so it never delays a migration or fails an upgrade.
 
 Where the implementation departs from the plan below:
 
@@ -35,8 +38,10 @@ Where the implementation departs from the plan below:
   as HOME's owner, so a root host with a `ficus`-owned HOME could not run them.
 - Caddy joins `ficus-bigbrain-client` through a unit drop-in
   (`SupplementaryGroups=`), so the membership exists whenever Caddy starts,
-  including when its package is installed after BigBrain; the installer
-  restarts a running Caddy once, when the drop-in first appears.
+  including when its package is installed after BigBrain. The installer
+  restarts a running Caddy whenever its process lacks the group (read from
+  `/proc/<MainPID>/status`), then checks the new process has it. Normally that
+  is once per host; an install whose restart failed is retried by the next.
 - The BigBrain installer learns the Core account from one argument,
   `install --core-account <user>`, which the toolkit passes when
   `core.run_user` is not root.

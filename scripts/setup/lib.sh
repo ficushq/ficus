@@ -1476,13 +1476,28 @@ ensure_pooler_user() { # USER
 # public key the server merely declines is not a failure, so a client that
 # offers several keys before the right one is never banned. Core reports the
 # same failures to the platform (usage sample sshAuthFailures).
-FAIL2BAN_JAIL="${FAIL2BAN_JAIL:-/etc/fail2ban/jail.d/ficus-sshd.local}" # test seam only
+FAIL2BAN_JAIL="${FAIL2BAN_JAIL:-${FICUS_HOST_ROOT:-}/etc/fail2ban/jail.d/ficus-sshd.local}" # test seam only
 
-# Is fail2ban on for this host config? (yaml host.fail2ban, else on for artifact mode.)
-fail2ban_enabled() { # SOURCE_MODE
+# fail2ban on (true) or off (false) for this host config: yaml host.fail2ban,
+# else on for artifact mode. Dies on a value that is not a boolean — call it in
+# an assignment at config-parse time, so a typo stops the run before it changes
+# anything instead of silently turning protection off.
+fail2ban_setting() { # SOURCE_MODE
   local default=false
   [[ $1 == artifact ]] && default=true
-  [[ $(cfg_bool '.host.fail2ban' "${default}") == true ]]
+  cfg_bool '.host.fail2ban' "${default}"
+}
+fail2ban_enabled() { # SOURCE_MODE
+  [[ $(fail2ban_setting "$1") == true ]]
+}
+
+# The upgrade's form: after the new release is serving, never before the
+# migration (it restarts a unit and can wait up to 30 s), and never a reason
+# for the upgrade to fail. All output goes to stderr (stdout carries the
+# upgrade's trailer).
+ensure_fail2ban_best_effort() {
+  ensure_fail2ban >&2 || log_warn 'fail2ban could not be set up for sshd — the upgrade succeeded without it; the next upgrade retries'
+  return 0
 }
 
 fail2ban_jail_content() {

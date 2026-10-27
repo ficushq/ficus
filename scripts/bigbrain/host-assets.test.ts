@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CADDY_CLIENT_DROPIN, coreAccountGid, installHostAssets, GATEWAY_ACCOUNT } from './host-assets'
-import type { PrivateCommandRunner } from './process'
+import { validatePrivateCommand, type PrivateCommandRunner } from './process'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -13,23 +13,50 @@ const uid = process.getuid!()
 const D1 = `sha256:${'a'.repeat(64)}`
 const D2 = `sha256:${'b'.repeat(64)}`
 
-async function fixture(account: 'absent' | 'ours' | 'foreign' = 'absent') {
+const CLIENT_GID = '991'
+
+async function fixture(account: 'absent' | 'ours' | 'foreign' = 'absent', caddy: 'running' | 'stopped' = 'stopped') {
   const outer = await mkdtemp(join(tmpdir(), 'bigbrain-assets-'))
   roots.push(outer)
   const etc = join(outer, 'etc')
   await mkdir(etc, { mode: 0o700 })
+  const proc = join(outer, 'proc')
   const calls: string[][] = []
   const serving: string[] = []
   let exists = account !== 'absent'
-  const run: PrivateCommandRunner = async (argv) => {
+  let clientGroup = false
+  // A simulated Caddy: its MainPID and the supplementary groups /proc reports for it.
+  const state = { pid: caddy === 'running' ? 4100 : 0, restartFails: false, restartKeepsGroups: false }
+  const writeStatus = async (groups: string) => {
+    await mkdir(join(proc, String(state.pid)), { recursive: true })
+    await writeFile(join(proc, String(state.pid), 'status'), `Name:\tcaddy\nGroups:\t${groups}\n`)
+  }
+  if (state.pid) await writeStatus('998')
+  const run: PrivateCommandRunner = async (argv, options) => {
+    // The real runner's argument policy, so no caller can pass something it would refuse.
+    validatePrivateCommand(argv, options)
     calls.push(argv)
     if (argv[0] === '/usr/bin/getent' && argv[1] === 'passwd') {
       if (!exists) return { code: 2, stdout: '' }
       const comment = account === 'foreign' ? 'Someone else' : 'Ficus managed BigBrain gateway'
       return { code: 0, stdout: `${GATEWAY_ACCOUNT}:x:990:990:${comment}:/nonexistent:/usr/sbin/nologin\n` }
     }
-    if (argv[0] === '/usr/bin/getent' && argv[1] === 'group') return { code: 2, stdout: '' }
+    if (argv[0] === '/usr/bin/getent' && argv[1] === 'group') {
+      if (argv[2] === 'ficus-bigbrain-client' && clientGroup)
+        return { code: 0, stdout: `ficus-bigbrain-client:x:${CLIENT_GID}:\n` }
+      return { code: 2, stdout: '' }
+    }
+    if (argv[0] === '/usr/sbin/groupadd') clientGroup = true
     if (argv[0] === '/usr/sbin/useradd') exists = true
+    if (argv.join(' ') === '/usr/bin/systemctl show -p MainPID --value caddy.service')
+      return { code: 0, stdout: `${state.pid}\n` }
+    if (argv.join(' ') === '/usr/bin/systemctl try-restart caddy.service') {
+      if (state.restartFails) return { code: 1, stdout: '' }
+      if (state.pid) {
+        state.pid++
+        await writeStatus(state.restartKeepsGroups ? '998' : `998 ${CLIENT_GID}`)
+      }
+    }
     return { code: 0, stdout: '' }
   }
   const opts = {
@@ -39,9 +66,10 @@ async function fixture(account: 'absent' | 'ours' | 'foreign' = 'absent') {
     unitDirectory: join(outer, 'units'),
     launcher: join(outer, 'libexec', 'ficus-bigbrainctl'),
     tmpfilesDirectory: join(outer, 'tmpfiles.d'),
+    procDirectory: proc,
     gatewayServing: async () => void serving.push(String(calls.length)),
   }
-  return { outer, opts, calls, serving }
+  return { outer, opts, calls, serving, state }
 }
 
 test('installs the release-bound root launcher (0750), slice and gateway unit, creates the gateway account once and starts the gateway', async () => {
@@ -112,8 +140,8 @@ test('an existing account without the gateway marker is never adopted', async ()
   expect(ours.calls.some((c) => c[0] === '/usr/sbin/useradd')).toBe(false)
 })
 
-test('the gateway client group: created once, the Core account joins it, Caddy joins through a drop-in and restarts once', async () => {
-  const f = await fixture()
+test('the gateway client group: created once, the Core account joins it, a running Caddy without it restarts once', async () => {
+  const f = await fixture('absent', 'running')
   await installHostAssets(D1, { ...f.opts, coreAccount: 'ficus' })
   expect(f.calls).toContainEqual(['/usr/sbin/groupadd', '--system', 'ficus-bigbrain-client'])
   expect(f.calls).toContainEqual(['/usr/sbin/usermod', '-aG', 'ficus-bigbrain-client', 'ficus'])
@@ -125,7 +153,7 @@ test('the gateway client group: created once, the Core account joins it, Caddy j
   const restart = order.indexOf('/usr/bin/systemctl try-restart caddy.service')
   expect(restart).toBeGreaterThan(order.indexOf('/usr/bin/systemctl daemon-reload'))
   expect(restart).toBeLessThan(order.indexOf('/usr/bin/systemctl restart ficus-bigbrain-gateway.service'))
-  // The next install finds the drop-in in place: Caddy is not restarted again.
+  // The next install finds Caddy already in the group: it is not restarted again.
   const before = f.calls.length
   await installHostAssets(D2, f.opts)
   expect(f.calls.slice(before).some((c) => c[1] === 'try-restart')).toBe(false)
@@ -133,6 +161,39 @@ test('the gateway client group: created once, the Core account joins it, Caddy j
   expect(f.calls.slice(before).some((c) => c[0] === '/usr/sbin/usermod')).toBe(false)
   const g = await fixture()
   await expect(installHostAssets(D1, { ...g.opts, coreAccount: '../x' })).rejects.toThrow('invalid_request')
+})
+
+test('a stopped or absent Caddy is never restarted: the drop-in applies when it starts', async () => {
+  const f = await fixture('absent', 'stopped')
+  await installHostAssets(D1, f.opts)
+  expect(f.calls.some((c) => c[1] === 'try-restart')).toBe(false)
+})
+
+test('a failed Caddy restart fails the install, and the next install restarts it (the drop-in is already there)', async () => {
+  const f = await fixture('absent', 'running')
+  f.state.restartFails = true
+  await expect(installHostAssets(D1, f.opts)).rejects.toThrow('operation_failed')
+  expect(f.serving).toHaveLength(0)
+  f.state.restartFails = false
+  const before = f.calls.length
+  await installHostAssets(D1, f.opts)
+  expect(f.calls.slice(before)).toContainEqual(['/usr/bin/systemctl', 'try-restart', 'caddy.service'])
+  expect(f.serving).toHaveLength(1)
+})
+
+test('a restarted Caddy that still lacks the group fails the install', async () => {
+  const f = await fixture('absent', 'running')
+  f.state.restartKeepsGroups = true
+  await expect(installHostAssets(D1, f.opts)).rejects.toThrow('operation_failed')
+})
+
+test('every command the installer runs passes the real runner policy (a 60 s timeout would be refused)', async () => {
+  expect(() =>
+    validatePrivateCommand(['/usr/bin/systemctl', 'try-restart', 'caddy.service'], { timeoutMs: 60000 })
+  ).toThrow('invalid_request')
+  const f = await fixture('absent', 'running')
+  await installHostAssets(D1, { ...f.opts, coreAccount: 'ficus' })
+  expect(f.calls.length).toBeGreaterThan(5) // each went through validatePrivateCommand in the fixture runner
 })
 
 test('the Core account resolves to its primary gid; root, unknown or odd records are refused', async () => {

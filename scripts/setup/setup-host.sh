@@ -98,6 +98,8 @@ cfg_load "${CONFIG}"
 # ============================================================== configuration
 
 SRC_MODE=$(cfg_get '.source.mode' 'git-ssh')
+# sshd brute-force protection (lib.sh ensure_fail2ban; phase_preflight).
+FAIL2BAN_ON=$(fail2ban_setting "${SRC_MODE}")
 SRC_REPO=$(cfg_require '.source.repo' 'git repository')
 SRC_REF=$(cfg_get '.source.ref' 'main')
 # Default dest is the host layout's install root (cfg_source_dest: HL_DEST,
@@ -758,7 +760,7 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
   plan "assert: Linux + systemd (PID 1) + Ubuntu 24.04 (override: FICUS_SETUP_SKIP_OS_CHECK=1)"
   run_user_line=$(run_user_plan "${RUN_USER}" "${RT_SANDBOX}" "$(bigbrain_enabled "${BIGBRAIN_CONFIG}" && echo true || echo false)")
   [[ -n ${run_user_line} ]] && plan "${run_user_line}"
-  if fail2ban_enabled "${SRC_MODE}"; then
+  if [[ ${FAIL2BAN_ON} == true ]]; then
     plan "ensure: fail2ban (apt) with the sshd jail (${FAIL2BAN_JAIL}: journal backend, 5 failures in 10m -> 1h ban)"
   fi
   if [[ ${SRC_MODE} == artifact ]]; then
@@ -993,7 +995,7 @@ phase_preflight() {
   # and adds the groups it needs; nothing for root.
   ensure_run_user "${RUN_USER}" "${RT_SANDBOX}" "$(bigbrain_enabled "${BIGBRAIN_CONFIG}" && echo true || echo false)"
   ensure_system_bun_node "${RUN_USER}" "$(command -v bun)"
-  if fail2ban_enabled "${SRC_MODE}"; then
+  if [[ ${FAIL2BAN_ON} == true ]]; then
     ensure_fail2ban || die 'fail2ban could not be set up for sshd (see above)'
   fi
 
