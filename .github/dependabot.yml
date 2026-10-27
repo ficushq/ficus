@@ -5,8 +5,39 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
-    open-pull-requests-limit: 10
+    # 10 was saturated: further updates queued silently behind the open PRs.
+    # The groups below also fold packages that must move together into one PR.
+    open-pull-requests-limit: 15
+    # A dependency joins the first group that matches it, so the narrow groups
+    # come before the catch-all minor-and-patch group. Groups only shape version
+    # updates; security updates still arrive as their own PRs.
     groups:
+      # The Pi packages pin each other at one exact version, and pi-ai and
+      # pi-coding-agent carry patches keyed to that version (patchedDependencies),
+      # so every Pi bump is one migration: all four move together, in every
+      # update type, and stay out of the catch-all group.
+      pi:
+        patterns: ["@earendil-works/pi-*"]
+      # drizzle-orm and drizzle-kit are 0.x: a "minor" bump can change behaviour.
+      # Kept apart so it can't hold back the rest of the minor-and-patch group,
+      # and kept together because the ORM and its migration kit must match.
+      drizzle:
+        patterns: ["drizzle-orm", "drizzle-kit"]
+        update-types: ["minor", "patch"]
+      # ESLint majors land as one migration: eslint and @eslint/js must match,
+      # and the plugins/config follow ESLint's major.
+      lint-tooling-majors:
+        patterns:
+          - "eslint"
+          - "@eslint/*"
+          - "eslint-*"
+          - "typescript-eslint"
+          - "prettier"
+        update-types: ["major"]
+      # Vite majors need the React plugin and the PWA plugin at matching majors.
+      vite-majors:
+        patterns: ["vite", "@vitejs/*", "vite-plugin-*"]
+        update-types: ["major"]
       minor-and-patch:
         update-types: ["minor", "patch"]
     labels: ["dependencies"]
