@@ -220,3 +220,139 @@ be declared separately and retain this interrupted attempt and cost. See
 Pi's architecture retained the regex-flags array contract. That is an intermediate
 observation only, not evidence of final correctness or superiority. Its provider
 interruption must not be counted as a failed engineering solution.
+
+## Pi retry after authorized key and budget reset
+
+The user rotated the API key, explicitly asked to reset tracked spending, and
+then authorized continuation. A minimal verification of the new key succeeded
+for $0.000072. The fresh phase retains a $30 cap and $5.50 request reservation.
+The former ledger remains intact with $14.907091 confirmed and $11 unresolved;
+these historical holds were not reconciled or declared free. The active private
+ledger pointer is the authority for subsequent launches.
+
+`coordination-v2-pi-retry1-plan.json` declares exactly one fresh Pi retry. The
+runtime, task, prompts, model, image, resources, network restrictions, and verifier
+remain frozen. It receives no prior candidate output, operator findings, or
+external-test feedback. The launcher verifies the rotated credential privately
+and checks hashes of both preserved predecessor trials before starting. Provider,
+accounting, and budget failures still stop the run without automatic retry.
+
+Report this as a retry following a preserved provider interruption, alongside
+its prior cost. It is not an uninterrupted paired-run experiment or evidence
+that the original Pi interruption was an engineering failure.
+
+## Captured comparison: Pi retry1 and Ficus v2
+
+The Pi retry reached its unchanged **7,200-second agent limit during the fourth
+independent review**, with no returned final approval. The full launcher took
+**121m02s**, including setup, artifact capture and verification. It used
+**$10.046212 across 518 receipted requests**, with no unresolved usage. The fresh
+phase total is $10.046284 including the key check, leaving **$19.953716** of its
+$30 cap. No further paid run is launched by this report.
+
+| Captured outcome                       | Ficus v2                             | Pi retry1                                 |
+| -------------------------------------- | ------------------------------------ | ----------------------------------------- |
+| Unchanged external tests               | 37/47                                | 44/47                                     |
+| Full external acceptance               | No                                   | No                                        |
+| Native final approval                  | All four streams approved            | Three reviews rejected; fourth unfinished |
+| Stop                                   | Budget guard during manager closeout | Two-hour agent timeout during review      |
+| Confirmed model cost, this attempt     | $7.698162                            | $10.046212                                |
+| Launcher elapsed                       | 94m45s                               | 121m02s                                   |
+| Operator candidate edits or task hints | None                                 | None                                      |
+
+Ficus's score is an offline grade of its preserved patch after cancellation;
+Pi's score is Harbor's normal separate verifier after agent timeout. Both use
+the same unchanged 47-test suite and pristine image. Neither is a completed,
+accepted autonomous delivery. Do not interpret a zero launcher child exit or
+native approval as external correctness. The differing interruptions and budget
+history prevent calling this an uninterrupted, budget-matched pair.
+
+### Actual Pi coordination
+
+Native transcripts and Git history show three implementation packages: core
+CLI/contracts, language adapters, and structural matching. The coordinator
+waited for frozen interfaces before running adapters and matching concurrently.
+Integration and preliminary review also overlapped with separate ownership.
+All engineering handoffs were committed to shared main; no worktrees were used.
+The final working tree is clean at
+`ae8195507274172026c37eddc73515d39f7a06b4`, whose last product commit is `ffee47c`.
+
+There were **one architect, twelve engineer, and four reviewer assignments**;
+all except the fourth reviewer returned. Engineer assignments include integration
+and rework, not twelve independent initial packages. The coordinator edited only
+`REQUIREMENTS.md` and `COORDINATION.md`, handled dependencies and handoffs, and
+committed coordination notes. It did not quietly become the implementation agent.
+Completed reviews requested repairs three times. The last engineer reported 265
+project tests passing; this count is not an external score or operator rerun.
+
+The Pi coordinator's `REQUIREMENTS.md` is a **27-line summary**, despite its
+“Original product requirements” title. Like the Ficus handoff, it initially omits
+the `regex_flags` type; the architect specified a string. Pi's coordinator caught
+that mismatch against the incoming task and explicitly required the original
+array before engineering (message `3a6dd695`, 16:51:13 UTC). The resulting seven
+external cases that fail from this drift in Ficus pass in Pi. This supports a
+requirement-preservation hypothesis, not a claim that summaries are reliably
+safe or that one harness generally has better reasoning.
+
+### External failures and verified review value
+
+Pi's three external failures are:
+
+- Absent optional capture: emits `captures: {}` where the test omits the field.
+- JavaScript declaration boundary: includes the source semicolon when the
+  pattern does not; the test excludes it. Language filtering itself works.
+- Literal-dollar Python: rejects `$$price` / `$price` as invalid Python where
+  the test expects a match.
+
+The first and third share the previously documented prose/test tensions in the
+Ficus result. Keep **44/47**, with no waived tests or post-hoc fixes. Pi fixes the
+seven array-contract failures relative to Ficus and passes Ficus's Python
+semicolon case, but fails a different JavaScript span case; the net difference
+is seven tests. These output mismatches are separate from remaining deeper
+parser defects found by native review.
+
+After the agents stopped, the operator replayed exact native review probes in
+no-network containers at their reviewed and final committed revisions:
+
+| Selected native probe    | Before repair       | Final artifact |
+| ------------------------ | ------------------- | -------------- |
+| Preliminary review       | 48/70               | 70/70          |
+| First final review       | 74/112              | 112/112        |
+| Re-review                | 132/162             | 162/162        |
+| Unfinished fourth review | No earlier baseline | 99/107         |
+
+The final eight failures involve JavaScript optional `catch` blocks, regex
+contents incorrectly exposed as code, and template shielding. They reproduce
+independently even though all earlier review probes pass. These are selected,
+overlapping cases, not unique-defect counts, a second benchmark score, or a fair
+count comparison with the different Ficus audit probes. Raw reports and executable
+probes remain private; hashes, revision provenance and audit counts are in
+`coordination-v2-pi-review-audit.json`. No audit results reached either candidate.
+See `coordination-v2-pi-retry1-result.json` for test, role, timing, cost and artifact
+evidence. Frozen runner and prepared-task hashes still match.
+
+### What this changes about the next experiment
+
+The useful next Ficus hypothesis is **preserving the original request through
+handoffs**, including schemas and examples, and reviewing against that source
+rather than only an architect's restatement. Pi demonstrates one successful
+catch, but both coordinators supplied summaries and both implementations retain
+failures. Any prompt change should be evaluated as a new condition; this case
+must remain frozen and must not become training feedback for another nominally
+independent baseline.
+
+For the next coordination study, select an existing multi-step product workload
+with its normal dependencies and upstream progression intact. Remove the added
+standard-library-only restriction for that new study; it made this case largely
+an exercise in implementing language parsers. Keep the same model, resource and
+review intent across harnesses, while recording actual decomposition and role
+invocations. Align budget headroom from the start and freeze the selection before
+inference. Do not resume this Pi run or launch another parser repair cycle by
+default.
+
+This case verifies delegation, integration, rework and some real review value.
+It does **not** measure uninterrupted human focus, attention saved, production
+reliability or unrestricted parallel throughput: calls were serialized, no human
+attention clock was collected, and the sample is one adapted case. Ficus and Pi
+have different native prompts, session reuse and review granularity. The external
+scores and costs therefore describe these captured attempts, not a harness ranking.

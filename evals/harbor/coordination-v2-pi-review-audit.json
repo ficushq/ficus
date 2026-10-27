@@ -1,0 +1,78 @@
+{
+  "experiment": "coordination-v2",
+  "arm": "pi retry1",
+  "type": "operator-only post-run reproduction of native review probes; not an external score",
+  "network": "none",
+  "model_calls": 0,
+  "feedback_to_agents": false,
+  "image_id": "sha256:a23a761eb0d277cf4bfc136c8146cf300ca9f54f92e1cf063356d56717b1a07c",
+  "final_commit": "ae8195507274172026c37eddc73515d39f7a06b4",
+  "probe_sources": "Exact code blocks from preserved native review reports; unfinished fourth probe captured before timeout. Private originals, logs and archives retained under coordination-v1/pi-retry1-review-audit.",
+  "limitations": "Selected overlapping review cases. Before/after counts are not counts of unique defects and must not be compared as a second score against the different Ficus probes.",
+  "results": [
+    {
+      "name": "preliminary-before",
+      "archive_sha256": "9c90c780c6cd2732c698e07529f12bc7ee606083eeabcee97329f99556847937",
+      "probe_sha256": "834a4d89cac5d4c2d2d26e35c77ce5135c3ff23248287da80d8c742ee3befd98",
+      "exit_code": 1,
+      "elapsed_seconds": 9.521,
+      "passed": 48,
+      "failed": 22
+    },
+    {
+      "name": "preliminary-after",
+      "archive_sha256": "0ac57f034d0ed8d6da4376b8ca70ebcef9fa6e0b02ef418a8cdd3a5c4ca6b59f",
+      "probe_sha256": "834a4d89cac5d4c2d2d26e35c77ce5135c3ff23248287da80d8c742ee3befd98",
+      "exit_code": 0,
+      "elapsed_seconds": 9.529,
+      "passed": 70,
+      "failed": 0
+    },
+    {
+      "name": "second-before",
+      "archive_sha256": "3d66b0b39da6256a498f99f21dfc6f57a67e7d7adc96bec3db8d4dca0ee1b9e6",
+      "probe_sha256": "634bc262ace238e9dc2f9a2cca9222a60700218617b9e0472f09d25afd33a0a6",
+      "exit_code": 1,
+      "elapsed_seconds": 15.08,
+      "passed": 74,
+      "failed": 38
+    },
+    {
+      "name": "second-after",
+      "archive_sha256": "0ac57f034d0ed8d6da4376b8ca70ebcef9fa6e0b02ef418a8cdd3a5c4ca6b59f",
+      "probe_sha256": "634bc262ace238e9dc2f9a2cca9222a60700218617b9e0472f09d25afd33a0a6",
+      "exit_code": 0,
+      "elapsed_seconds": 15.061,
+      "passed": 112,
+      "failed": 0
+    },
+    {
+      "name": "third-before",
+      "archive_sha256": "1818a0284c618e6cad32107e07fc689c4d02df2858441875e6a3b7a11dc473e8",
+      "probe_sha256": "5b48b29217bfc7c1f63b6ca7351908ae308f046d347dd7c3af393b2931e616c2",
+      "exit_code": 1,
+      "elapsed_seconds": 21.827,
+      "passed": 132,
+      "failed": 30
+    },
+    {
+      "name": "third-after",
+      "archive_sha256": "0ac57f034d0ed8d6da4376b8ca70ebcef9fa6e0b02ef418a8cdd3a5c4ca6b59f",
+      "probe_sha256": "5b48b29217bfc7c1f63b6ca7351908ae308f046d347dd7c3af393b2931e616c2",
+      "exit_code": 0,
+      "elapsed_seconds": 21.794,
+      "passed": 162,
+      "failed": 0
+    },
+    {
+      "name": "unfinished-fourth",
+      "archive_sha256": "0ac57f034d0ed8d6da4376b8ca70ebcef9fa6e0b02ef418a8cdd3a5c4ca6b59f",
+      "probe_sha256": "762263979e6399c69578ec87539ac73b5680b0d96cdb586f27c815727a6a705e",
+      "exit_code": 1,
+      "elapsed_seconds": 14.576,
+      "passed": 99,
+      "failed": 8
+    }
+  ],
+  "remaining_fourth_review_failures": "Eight JavaScript optional-catch/regex-context and template-shielding checks still fail on final committed artifact. No returned fourth-review result or final approval."
+}

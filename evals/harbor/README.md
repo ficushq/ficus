@@ -32,12 +32,15 @@ grade unchanged, then hit the conservative budget guard during a second cycle fo
 documentation closeout. Its captured artifact was graded separately without
 inference; it is not counted as autonomous delivery.
 
-The active phase starts at **$0 tracked usage with a $20 cap**, explicitly
-reset by the user on October 26, 2026. See the
-[authorization record](budget-phase-2026-10-26-reset.json). Future launches must
-use the new private ledger identified by `ficus-evaluation-data/active-budget.json`,
-with the existing $5.50 per-request reservation. Historical launchers still
-reference the closed phase and must not be reused unchanged.
+The active phase was explicitly reset by the user on October 27, 2026 after
+rotating the API key, retaining a **$30 cap** and the existing **$5.50 per-request
+reservation**. The minimal key check cost $0.000072. See the
+[declared Pi retry](coordination-v2-pi-retry1-plan.json) for authorization and
+controls. Future launches must use the private ledger identified by
+`ficus-evaluation-data/active-budget.json`; historical launchers must not be
+reused unchanged. The preceding October 26 phase remains preserved with
+$14.907091 confirmed and $11 in unresolved holds. The reset did not reconcile
+those missing receipts.
 
 The previous $40 phase is closed with $24.705390 confirmed and $11 in unresolved
 holds. Its ledger and a snapshot are preserved; the reset does not reconcile
@@ -53,7 +56,18 @@ $20 phase closed that repeat at $17.542184 remaining, with no unresolved usage.
 The next [fresh matched mnamer study](FRESH_MATCHED_V2.md) completed all four
 first attempts at 51/51 features and 319/319 regressions, costing $2.698315 in total.
 Pi engineer was cheapest and fastest on this task. Offline checks confirm two Pi
-review repairs beyond the official score. The active phase has $14.843869 left.
+review repairs beyond the official score. That study left $14.843869 in its then-active phase.
+
+The [shared-repository coordination case study](COORDINATION.md) then moved to
+three cumulative SCBench requests, with each coordinator choosing implementation
+packages and integration. This adapted parser-heavy case is reported separately
+from official benchmark scores and the preceding isolated-task studies.
+Ficus's captured artifact passes 37/47 tests and Pi's retry passes 44/47; neither
+is fully accepted. Ficus was budget-interrupted after native approval; Pi timed
+out during its fourth review. The report separates these outcomes, confirmed
+costs, verified review repairs, and the remaining requirement-preservation
+hypothesis. The current phase ends this comparison at $10.046284 confirmed,
+with $19.953716 remaining and no unresolved new-phase receipts.
 
 Opt-in [private recovery checkpoints](CHECKPOINTS.md) preserve the disposable
 database and task filesystem before cleanup. Their offline restore probe makes

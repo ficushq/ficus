@@ -1,0 +1,183 @@
+{
+  "experiment": "coordination-v2",
+  "arm": "pi",
+  "attempt": "retry1 after preserved provider-overload interruption",
+  "trial": "task__uLFp7fF",
+  "status": "AgentTimeoutError at 7200 seconds during fourth review; captured committed artifact fails external acceptance",
+  "delivered_commit": "ae8195507274172026c37eddc73515d39f7a06b4",
+  "last_product_commit": "ffee47c792cb18e8018e7d94a9c8f1b54efaeb60",
+  "working_tree_clean": true,
+  "execution": {
+    "elapsed_seconds_including_setup_and_verification": 7262.208977499977,
+    "agent_limit_seconds": 7200,
+    "exception_type": "AgentTimeoutError",
+    "confirmed_usd": 10.046212,
+    "requests": 518,
+    "unknown_usage": 0,
+    "phase_confirmed_usd": 10.046284,
+    "phase_cap_usd": 30,
+    "phase_remaining_usd": 19.953716,
+    "minimal_key_verification_usd": 7.2e-5,
+    "operator_candidate_edits_or_task_hints": false,
+    "automatic_retry": false
+  },
+  "external_grade": {
+    "mode": "normal Harbor verifier after agent timeout, separate pristine environment with committed patch",
+    "counts": {
+      "total": 47,
+      "passed": 44,
+      "failures": 3,
+      "skipped": 0,
+      "accepted": false
+    },
+    "failed_tests": ["test_optional_metavar", "test_language_filtering", "test_literal_dollar_sign"]
+  },
+  "failure_categories": [
+    {
+      "test": "test_optional_metavar",
+      "cause": "Emits captures:{} for an absent optional binding; test expects captures omitted.",
+      "spec_caveat": "Same prose/test ambiguity as Ficus: prose shows a capture mapping without explicitly requiring omission when empty."
+    },
+    {
+      "test": "test_language_filtering",
+      "cause": "JavaScript const declaration span includes the source semicolon even when the pattern has none; expected span excludes it. Language filtering itself succeeds.",
+      "spec_caveat": "Output-boundary mismatch against the unchanged test, not a filtering failure."
+    },
+    {
+      "test": "test_literal_dollar_sign",
+      "cause": "Rejects $$price in a Python pattern; test expects matching $price source.",
+      "spec_caveat": "Same prose/test tension as Ficus: valid target-language pattern requirement versus literal-dollar example containing an invalid Python identifier."
+    }
+  ],
+  "native_coordination": {
+    "initial_packages": [
+      {
+        "name": "WP1 core CLI and shared contracts",
+        "commit": "5bc1a0137a7092b6dce3518b0630a43aad24aaab"
+      },
+      {
+        "name": "WP2 language adapters",
+        "commit": "a871445c4682a1494e352f95189b79e3fde82100"
+      },
+      {
+        "name": "WP3 structural matcher",
+        "commit": "0adc4f92144b5fbd95e5e71f59efe5b9ff1aae18"
+      }
+    ],
+    "integration_and_repairs": "All engineering assignments returned committed handoffs on shared main; disjoint file ownership, no worktrees. Core freezes interfaces before parallel syntax/matcher work. Integration and review expose defects, then coordinator routes repairs and refreshes integration.",
+    "roles_dispatched": {
+      "architect": 1,
+      "engineer": 12,
+      "reviewer": 4
+    },
+    "roles_returned": {
+      "architect": 1,
+      "engineer": 12,
+      "reviewer": 3
+    },
+    "dispatches": [
+      {
+        "timestamp": "2026-10-27T16:48:15.002Z",
+        "mode": "single",
+        "roles": ["architect"]
+      },
+      {
+        "timestamp": "2026-10-27T16:51:22.293Z",
+        "mode": "single",
+        "roles": ["engineer"]
+      },
+      {
+        "timestamp": "2026-10-27T16:58:46.230Z",
+        "mode": "parallel",
+        "roles": ["engineer", "engineer"]
+      },
+      {
+        "timestamp": "2026-10-27T17:17:10.923Z",
+        "mode": "parallel",
+        "roles": ["engineer", "reviewer"]
+      },
+      {
+        "timestamp": "2026-10-27T17:25:58.430Z",
+        "mode": "parallel",
+        "roles": ["engineer", "engineer"]
+      },
+      {
+        "timestamp": "2026-10-27T17:37:49.279Z",
+        "mode": "parallel",
+        "roles": ["engineer", "engineer"]
+      },
+      {
+        "timestamp": "2026-10-27T17:47:58.258Z",
+        "mode": "single",
+        "roles": ["reviewer"]
+      },
+      {
+        "timestamp": "2026-10-27T17:54:02.408Z",
+        "mode": "parallel",
+        "roles": ["engineer", "engineer"]
+      },
+      {
+        "timestamp": "2026-10-27T18:16:58.271Z",
+        "mode": "single",
+        "roles": ["engineer"]
+      },
+      {
+        "timestamp": "2026-10-27T18:21:37.047Z",
+        "mode": "single",
+        "roles": ["reviewer"]
+      },
+      {
+        "timestamp": "2026-10-27T18:30:00.519Z",
+        "mode": "single",
+        "roles": ["engineer"]
+      },
+      {
+        "timestamp": "2026-10-27T18:41:40.086Z",
+        "mode": "single",
+        "roles": ["reviewer"]
+      }
+    ],
+    "coordinator_direct_edit_paths": ["REQUIREMENTS.md", "COORDINATION.md"],
+    "coordinator_product_code_edits": false,
+    "completed_review_decisions": ["changes requested", "changes requested", "changes requested"],
+    "fourth_review": "No returned reviewer result or approval before timeout. Preserved unfinished native probe independently reproduces 99 passing and 8 failing checks.",
+    "approved_final_delivery": false,
+    "last_engineer_reported_project_tests": 265,
+    "project_test_count_source": "Last engineer handoff; not an operator rerun of the complete project suite.",
+    "requirements_handoff": "Coordinator-authored 27-line summary, despite being titled Original product requirements; not a verbatim immutable copy. Its regex_flags type was omitted; architect chose string; coordinator explicitly corrected to original array before engineering.",
+    "schema_correction_evidence": {
+      "message_id": "3a6dd695",
+      "timestamp": "2026-10-27T16:51:13.288Z",
+      "followup_assignment_message_id": "30cb57f3",
+      "followup_assignment_timestamp": "2026-10-27T16:51:22.293Z"
+    }
+  },
+  "review_audit": "coordination-v2-pi-review-audit.json",
+  "integrity": {
+    "all_frozen_runner_and_prepared_task_hashes_match": true,
+    "runtime_archive_sha256": "68c8a5e3263b54639562f259aaa149ae18c61770442a85b4da1d599fb2476ba0",
+    "image_id": "sha256:a23a761eb0d277cf4bfc136c8146cf300ca9f54f92e1cf063356d56717b1a07c"
+  },
+  "artifacts_sha256": {
+    "result.json": "67e5311e087c374531f206a838d6f973ccffa738a4beffa2766b50b688c5c10b",
+    "verifier/counts.json": "0373a5c704c3587da56663e7f8f179deb8d1132697133a2a303dcdbe482319cd",
+    "verifier/results.xml": "37b376f79cd2be866cc307a7e5ba61c5a8167696129b6fcd069209b6945e99b9",
+    "verifier/tests.log": "b6840221a911a0722679351f2aa4253c4f0899c1858692f502fe1d935ad37bd7",
+    "artifacts/logs/artifacts/model.patch": "ce7dba2ce499a0cc53fd7aaf87b495ac85e0114c9f2719f7544d8f416a6f5725",
+    "artifacts/logs/artifacts/repository.bundle": "65cc96098bb228b21bb32f9ed8cde3807e7028c3483c1fe71687e3891c14686c",
+    "artifacts/logs/artifacts/status.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "artifacts/logs/artifacts/worktrees.txt": "bdc18b4f9e28f757390910e2386271f097b026f9c4ac4d12c563476885571346",
+    "artifacts/logs/artifacts/git-history.txt": "61ed67b99c0c7a0714c30dba04c63d6a5641f265f2f17ad719be12baecbad8ae",
+    "agent/pi/sessions/2026-10-27T16-47-44-804Z_01a17e42-baa2-720f-a189-68fa6a981de5.jsonl": "244af72674a34f67fe15c573f361ab86bce99499cd946a6c7620039f6083f1a2"
+  },
+  "prior_attempts": "Provider-interrupted Pi attempt remains separate: $0.395131 confirmed plus $11 unresolved historical holds. Authorized key/ledger reset does not reconcile or erase it.",
+  "limitations": [
+    "Single adapted case, not official SCBench protocol or leaderboard score.",
+    "Added standard-library-only constraint makes this atypically parser-heavy.",
+    "Role intent and model/resources match, but prompts, decomposition, session reuse and review counts do not.",
+    "Model requests serialized per arm; cannot infer unrestricted parallel speed or human attention saved.",
+    "Pi retry has fresh $30 phase; Ficus stopped during closeout under earlier shared phase budget. Do not present an uninterrupted budget-matched pair.",
+    "Reviewer probes are selected and overlapping, not comparable counts of unique defects or another benchmark.",
+    "Strict external scores retained; no post-hoc fixes, waived tests, or feedback to candidate."
+  ]
+}
