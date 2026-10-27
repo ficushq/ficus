@@ -13,7 +13,11 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 
 **Announce at start:** "I'm using the writing-plans skill to create the implementation plan."
 
-**Save plans to:** `docs/plans/YYYY-MM-DD-<feature-name>.md`
+**Save plans to:** a task-scoped shared workspace directory outside the target
+repository and its worktrees by default. Follow user or repository instructions
+when the plan is a required repository deliverable (for example, a committed
+`docs/plans/YYYY-MM-DD-<feature-name>.md`). Apply the shared **Task artifacts and
+repository closeout** guidance and include the chosen path in handoff evidence.
 
 ## Bite-Sized Task Granularity
 

@@ -46,7 +46,8 @@ systemPrompt: |
   3. Write tests and code (TDD when appropriate)
   4. Verify implementation works
   5. Update documentation if needed
-  6. Commit your work to the branch
+  6. Reconcile task-created files and commit required changes under the shared
+     "Task artifacts and repository closeout" guidance
   7. Self-review (see below)
   8. Submit the requested result and evidence through the active flow outcome.
 
@@ -99,4 +100,4 @@ systemPrompt: |
   - Write clean, tested, well-documented code
   - Follow existing patterns in the codebase
   - DRY, YAGNI, frequent commits
-  - Keep plans and decision docs in the workspace — do not commit them to repos
+  - Follow the shared artifact rules for plans and decision records

@@ -236,3 +236,57 @@ describe('role-independent delivery guidance', () => {
     expect(editor).toContain('external CI/PR approval gates may remain pending until the provider merges')
   })
 })
+
+describe('task evidence closeout guidance', () => {
+  test('all coding roles receive the same artifact ownership and pre-approval checks', async () => {
+    const shared = (await readRepoFile('config/agent-types/shared/squad-rules.md')).replace(/\s+/g, ' ')
+    for (const role of ['architect', 'engineer', 'reviewer', 'manager']) {
+      const config = Bun.YAML.parse(await readRepoFile(`config/agent-types/${role}.yaml`)) as {
+        includes: string[]
+        systemPrompt: string
+      }
+      expect(config.includes).toContain('squad-rules')
+      expect(config.systemPrompt).not.toMatch(
+        /do (?:NOT|not) commit (?:them|plans and decision docs) to (?:the target repo|repos)/
+      )
+    }
+    expect(shared).toContain('outside the target repository and its worktrees')
+    expect(shared).toContain('explicit requirement to commit all task-created files takes precedence')
+    expect(shared).toContain('git status --short --untracked-files=all')
+    expect(shared).toContain('Before implementation handoff, review approval, or delivery')
+    expect(shared).toContain('Do not delete, stage, or rewrite unrelated user or teammate files')
+    expect(shared).toContain('Do not move or ignore required files merely to make status look clean')
+    expect(shared).toContain('Never commit secrets or private operational details')
+  })
+
+  test('planning skills and roles defer artifact placement to the task instead of conflicting defaults', async () => {
+    const architect = await readRepoFile('config/agent-types/architect.yaml')
+    const engineer = await readRepoFile('config/agent-types/engineer.yaml')
+    for (const role of [architect, engineer]) {
+      expect(role).toContain('Task artifacts and repository closeout')
+      expect(role).not.toContain('Keep plans and decision docs in the workspace — do not commit them to repos')
+    }
+    for (const skill of ['writing-plans', 'brainstorming']) {
+      const guidance = (await readRepoFile(`config/skills/${skill}/SKILL.md`)).replace(/\s+/g, ' ')
+      expect(guidance).toContain('outside the target repository and its worktrees')
+      expect(guidance).toContain('user or repository instructions')
+      expect(guidance).toContain('Task artifacts and repository closeout')
+      expect(guidance).not.toContain('Commit the design document to git')
+    }
+  })
+
+  test('documentation closeout preserves review gates and does not require a new design', async () => {
+    const shared = (await readRepoFile('config/agent-types/shared/squad-rules.md')).replace(/\s+/g, ' ')
+    const reviewer = (await readRepoFile('config/agent-types/reviewer.yaml')).replace(/\s+/g, ' ')
+    expect(reviewer).toContain('Task artifacts and repository closeout')
+    expect(shared).toContain(
+      'When committed delivery is required, do not approve while required task files remain uncommitted'
+    )
+    expect(shared).toContain('without inventing a commit requirement')
+    expect(shared).toContain('documentation-only closeout')
+    expect(shared).toContain('preserve prior code-review evidence')
+    expect(shared).toContain('still verify the changed documentation and final repository state')
+    expect(shared).toContain('Reopening a done stream starts a new pass at the flow entry')
+    expect(shared).toContain('never skip a declared review gate')
+  })
+})

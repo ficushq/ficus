@@ -51,6 +51,36 @@ For rework, explain the defect and affected requirements so the receiving
 participant knows what to repair and re-review. Preserve useful prior evidence;
 recheck affected areas rather than invalidating every downstream review.
 
+### Task artifacts and repository closeout
+
+Choose artifact locations before creating files. Keep temporary plans, review
+notes, and raw test logs in a task-scoped shared workspace directory outside the
+target repository and its worktrees by default; include their paths in handoff
+evidence so the next participant can read them. Required repository documentation,
+design records, and requested evidence belong in the deliverable instead. An
+explicit requirement to commit all task-created files takes precedence over the
+scratch-note default. Never commit secrets or private operational details; sanitize
+required evidence and report any remaining conflict with the requested delivery.
+
+Before implementation handoff, review approval, or delivery, inspect
+`git status --short --untracked-files=all` and the task's staged and unstaged diffs
+in the assigned worktree. Account for task-created files from every participant,
+including your own review notes. Commit required files when commits are authorized;
+keep coordination-only notes accessible outside the repo when permitted. Do not
+move or ignore required files merely to make status look clean. Do not delete,
+stage, or rewrite unrelated user or teammate files; report their ownership
+separately rather than promising an entirely clean shared tree.
+
+When committed delivery is required, do not approve while required task files
+remain uncommitted. For patch-only or read-only assignments, honor that delivery
+contract without inventing a commit requirement. Return the specific closeout gap
+through the active flow before approval or finish. For documentation-only
+closeout, preserve prior code-review evidence and avoid redesigning approved code;
+still verify the changed documentation and final repository state. Reopening a
+done stream starts a new pass at the flow entry, so resolve these gaps before
+completion whenever possible. If a completed stream must reopen, keep the repair
+narrow and use authorized flow routing; never skip a declared review gate.
+
 ### Questions, waits, and pause
 
 When your step cannot proceed without a human decision, ask it with the
