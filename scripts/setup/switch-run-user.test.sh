@@ -121,12 +121,25 @@ start() {
     ficus-api | ficus-worker)
       user=$(unit_user "${u}")
       [[ -n ${user} ]] || return 1
-      if [[ ${user} == root ]]; then
-        setsid /bin/sleep 600 </dev/null >/dev/null 2>&1 9>&- &
-      else
-        setsid setpriv --reuid "${user}" --regid "$(id -g "${user}")" --init-groups /bin/sleep 600 </dev/null >/dev/null 2>&1 9>&- &
-      fi
-      echo $! >"${st}/pids/${u}"
+      # SRU_START_DELAY holds the child as root before it drops to User=, the
+      # window a slow runner opens: $! names the process from the fork on, but
+      # it belongs to the unit's user only once setpriv has run. Like systemd,
+      # which reports a MainPID only after the credential change, the shim
+      # returns once /proc/<pid> belongs to that user (bounded: 10 s).
+      local -a cmd=(/bin/sleep 600)
+      [[ ${user} == root ]] || cmd=(setpriv --reuid "${user}" --regid "$(id -g "${user}")" --init-groups "${cmd[@]}")
+      setsid bash -c '/bin/sleep "${SRU_START_DELAY:-0}"; exec "$@"' _ "${cmd[@]}" </dev/null >/dev/null 2>&1 9>&- &
+      local pid=$! waited=0
+      until [[ $(stat -c %U "/proc/${pid}" 2>/dev/null) == "${user}" ]]; do
+        if ((waited >= 200)) || ! kill -0 "${pid}" 2>/dev/null; then
+          echo "systemctl shim: ${u} (pid ${pid}) never ran as ${user}" >&2
+          kill -KILL "${pid}" 2>/dev/null || true
+          return 1
+        fi
+        /bin/sleep 0.05
+        waited=$((waited + 1))
+      done
+      echo "${pid}" >"${st}/pids/${u}"
       ;;
   esac
   : >"${st}/${u}.active"
@@ -148,7 +161,7 @@ case ${cmd} in
     esac
     ;;
   is-active) [[ $1 == --quiet ]] && shift; [[ -e ${st}/$1.active || -e ${st}/$1.service.active ]] ;;
-  restart | start) for u in "$@"; do start "${u}"; done ;;
+  restart | start) for u in "$@"; do start "${u}" || exit 1; done ;;
   stop) for u in "$@"; do stop "${u}"; done ;;
   *) exit 0 ;;
 esac
@@ -223,6 +236,9 @@ EOF
 chmod 0755 "${SHIMS}"/*
 
 export PATH="${SHIMS}:${PATH}"
+# Every fake service start stays root for this long before it drops to its
+# User= (see the systemctl shim), so the suite always runs the slow-runner race.
+export SRU_START_DELAY=${SRU_START_DELAY:-0.3}
 export SRU_STATE="${STATE}" SRU_SUDOERS_DIR="${H}/etc/sudoers.d"
 export FICUS_HOST_ROOT="${H}" FICUS_SYSTEMD_UNIT_DIR="${UNITS}"
 export HOST_MIGRATE_BACKUP_ROOT="${H}/var/backups/ficus-host-migrate"
