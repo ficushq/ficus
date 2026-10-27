@@ -393,3 +393,43 @@ Audit exact source preservation and role reads separately from correctness.
 The existing $30 phase cap remains, with $10.046284 already charged at declaration;
 no reset or release of historical holds. Run Ficus then Pi only while guards allow,
 without automatic retries or operator repairs.
+
+### V3 Ficus outcome and remaining work
+
+The diagnostic completed normally in **83m58s** including setup and verification,
+using **$8.692806** over 396 requests, with every usage receipt settled. All five
+native streams completed: three implementation packages, integration, and a
+separate publication-evidence documentation closeout. Final main is
+`c7888719a052cc3100aa17b0b31fbc105a71428a`, with a clean working tree.
+The last stream changed only two coordination documents; product code remains
+identical to independently approved `fceeee554c8122e40d711a12a00f32f8a8a925ee`.
+This frozen runtime did not contain subsequently merged #677, so the extra
+closeout is not evidence about that fix.
+
+The committed original-source document is byte-identical to the complete
+13,247-character manager input. Successful explicit full-source reads are visible
+for architect, engineer, and reviewer roles. The manager's four original streams
+all referenced this source. The array contract remained intact throughout.
+
+The normal external verifier reports **44/47**, up from 37/47 in the prior Ficus
+run: the seven schema failures are gone. The remaining failures are an empty
+`captures` object where omission is expected, literal-dollar syntax rejected as
+invalid Python, and a Python match omitting its trailing semicolon. The last test
+is named `test_default_languages_include_cpp`, but its JavaScript/C++ records are
+correct; it is a Python span mismatch. No failures were waived or repaired after
+grading. The two earlier prose/test tensions remain disclosed.
+
+An operator-only pristine-container rerun of the 114 project tests yields **108
+passes and six errors**: six tests assume an external `/tmp/harbor-code-search`
+directory exists. Recreating only that original temporary directory, without
+changing candidate files, reproduces **114/114**. Preserve both observations;
+passing in the development environment did not establish test portability.
+This does not change the separate 44/47 external result.
+
+See `coordination-v3-ficus-result.json` for provenance and audit details. Pi's
+same-guidance replay is separately authorized in `coordination-v3-pi-plan.json`.
+The user raised the phase cap to **$35** at $18.739090 confirmed exposure; no ledger
+reset, hold release, or change to the $5.50 reservation. No Pi result is available
+at this record's publication. After this pair, prefer a fresh externally authored
+product-coordination workload with normal dependency access rather than further
+tuning against this inspected parser task.

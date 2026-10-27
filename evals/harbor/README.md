@@ -257,3 +257,13 @@ part of the original four-arm comparison.
 [LONG_FEATURES.md](LONG_FEATURES.md) defines the separately reported DeepSWE
 v1.1 pilot, restricted-network setup, reference and collision controls,
 per-arm limits, and autonomy-measurement limitations.
+
+## Original-request preservation diagnostic
+
+[COORDINATION.md](COORDINATION.md#requirements-provenance-correction-and-diagnostic-replay-v3)
+records the v2 prompt asymmetry, the production preservation fix, and the v3
+same-guidance replay. Ficus completed normal delivery at 44/47 external tests;
+`coordination-v3-ficus-result.json` separates source-read evidence, native review,
+external correctness, project-test portability, and cost. Pi's declared replay
+uses the explicitly amended $35 phase cap with spending retained. This is an
+inspected-task diagnostic, not an unseen benchmark or isolated causal estimate.

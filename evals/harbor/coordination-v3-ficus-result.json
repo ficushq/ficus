@@ -1,0 +1,324 @@
+{
+  "experiment": "coordination-v3-requirement-fidelity",
+  "arm": "ficus",
+  "trial": "task__HcxQQu2",
+  "status": "Native unattended delivery completed; external acceptance failed",
+  "final_commit": "c7888719a052cc3100aa17b0b31fbc105a71428a",
+  "approved_product_commit": "fceeee554c8122e40d711a12a00f32f8a8a925ee",
+  "working_tree_clean": true,
+  "execution": {
+    "arm": "ficus",
+    "elapsed_seconds": 5037.502483792021,
+    "stop": null,
+    "exit_code": 0,
+    "usage": {
+      "usd_upper_bound": 8.692806,
+      "requests": 396,
+      "unknown_usage": 0
+    },
+    "phase_exposure_usd": 18.73909,
+    "phase_cap_usd": 30,
+    "historical_phase_excluded": true
+  },
+  "external_grade": {
+    "mode": "Normal Harbor verifier after successful agent completion, unchanged upstream tests",
+    "counts": {
+      "total": 47,
+      "passed": 44,
+      "failures": 3,
+      "skipped": 0,
+      "accepted": false
+    },
+    "failed_tests": ["test_optional_metavar", "test_literal_dollar_sign", "test_default_languages_include_cpp"]
+  },
+  "failure_categories": [
+    {
+      "test": "test_optional_metavar",
+      "cause": "Empty optional match emits captures:{}; expected omission of captures.",
+      "qualification": "Prose/test ambiguity retained; no waiver."
+    },
+    {
+      "test": "test_literal_dollar_sign",
+      "cause": "Rejects $$price pattern / $price source as invalid Python, exit 2.",
+      "qualification": "Valid-target-language requirement versus literal-dollar example tension retained; no waiver."
+    },
+    {
+      "test": "test_default_languages_include_cpp",
+      "cause": "Python match omits explicit trailing semicolon, x = 1 instead of x = 1;. JavaScript and C++ records are correct.",
+      "qualification": "Span mismatch, not a language-default or C++-support failure."
+    }
+  ],
+  "requirements_audit": {
+    "original_manager_input_characters": 13247,
+    "preserved_source_characters": 13247,
+    "exact_original_in_final_document": true,
+    "identical_ignoring_outer_whitespace": true,
+    "source_sha256": "d250f5916eb60a1ee9e2093c16b1ab5196f7ce3afc56709b521724d8d4f8f0c5",
+    "successful_cat_reads_by_role": {
+      "architect": 7,
+      "engineer": 11,
+      "reviewer": 11
+    },
+    "final_commit": "c7888719a052cc3100aa17b0b31fbc105a71428a",
+    "closeout_changed_paths": ["COORDINATION.md", "docs/coordination/integration.md"],
+    "closeout_product_tree_unchanged": true
+  },
+  "native_coordination": {
+    "streams": [
+      {
+        "title": "JavaScript and C++ structure-aware pattern backends",
+        "status": "done"
+      },
+      {
+        "title": "Core multilingual CLI and exact/regex engine",
+        "status": "done"
+      },
+      {
+        "title": "Python structure-aware pattern backend",
+        "status": "done"
+      },
+      {
+        "title": "Final integration, coordination record and independent product validation",
+        "status": "done"
+      },
+      {
+        "title": "Publication evidence documentation closeout",
+        "status": "done"
+      }
+    ],
+    "flow_attempts": [
+      {
+        "title": "Core multilingual CLI and exact/regex engine",
+        "attempts": [
+          {
+            "step": "design",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "implement",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "review",
+            "status": "completed",
+            "outcome": "approved"
+          }
+        ]
+      },
+      {
+        "title": "Python structure-aware pattern backend",
+        "attempts": [
+          {
+            "step": "design",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "implement",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "review",
+            "status": "returned",
+            "outcome": "changes-requested"
+          },
+          {
+            "step": "implement",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "review",
+            "status": "completed",
+            "outcome": "approved"
+          }
+        ]
+      },
+      {
+        "title": "Final integration, coordination record and independent product validation",
+        "attempts": [
+          {
+            "step": "design",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "implement",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "review",
+            "status": "returned",
+            "outcome": "changes-requested"
+          },
+          {
+            "step": "implement",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "review",
+            "status": "returned",
+            "outcome": "changes-requested"
+          },
+          {
+            "step": "implement",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "review",
+            "status": "returned",
+            "outcome": "changes-requested"
+          },
+          {
+            "step": "implement",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "review",
+            "status": "completed",
+            "outcome": "approved"
+          },
+          {
+            "step": "publish",
+            "status": "completed",
+            "outcome": "completed"
+          }
+        ]
+      },
+      {
+        "title": "Publication evidence documentation closeout",
+        "attempts": [
+          {
+            "step": "design",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "implement",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "review",
+            "status": "completed",
+            "outcome": "approved"
+          },
+          {
+            "step": "publish",
+            "status": "completed",
+            "outcome": "completed"
+          }
+        ]
+      },
+      {
+        "title": "JavaScript and C++ structure-aware pattern backends",
+        "attempts": [
+          {
+            "step": "design",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "implement",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "review",
+            "status": "returned",
+            "outcome": "changes-requested"
+          },
+          {
+            "step": "implement",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "review",
+            "status": "returned",
+            "outcome": "changes-requested"
+          },
+          {
+            "step": "implement",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "review",
+            "status": "completed",
+            "outcome": "approved"
+          }
+        ]
+      }
+    ],
+    "initial_all_four_streams_reference_source": true,
+    "additional_documentation_closeout": "Separate design/implementation/review/publication stream changed only COORDINATION.md and docs/coordination/integration.md. Product tree unchanged. Frozen runtime excludes subsequently merged PR #677; not a test of that fix.",
+    "review_findings": "Native reviewers requested Python, cross-language and integration repairs. Do not count un-reproduced reviewer findings as independently verified defect catches."
+  },
+  "project_test_audit": {
+    "native_reported_passed": 114,
+    "pristine_container": {
+      "ran": 114,
+      "passed": 108,
+      "errors": 6,
+      "cause": "Six tests assume /tmp/harbor-code-search exists outside the delivered repository."
+    },
+    "original_temp_directory_recreated": {
+      "ran": 114,
+      "passed": 114,
+      "errors": 0,
+      "candidate_files_changed": false
+    },
+    "qualification": "Portability defect separate from unchanged external grade; both results retained."
+  },
+  "historical_comparison": {
+    "ficus_v2_external_passed": 37,
+    "ficus_v3_external_passed": 44,
+    "seven_prior_schema_failures_eliminated": true,
+    "pi_v2_retry1_external_passed": 44,
+    "pi_v3": "Matched-guidance run underway; no result yet",
+    "qualification": "Inspected-task diagnostic; both native guidance and wrapper parity changed. Earlier Ficus v2 stopped during closeout and Pi v2 timed out."
+  },
+  "integrity": {
+    "frozen_runner_and_task_hashes_match": true,
+    "runtime_archive_sha256": "25c45f893b53625c1cba4c3233506ac76627c066681fb0253fe168b85254d9f4",
+    "runtime_only_three_prompt_files_changed": true,
+    "image_id": "sha256:a23a761eb0d277cf4bfc136c8146cf300ca9f54f92e1cf063356d56717b1a07c",
+    "checkpoint_three_payload_hashes_verified": true,
+    "operator_candidate_edits_or_task_hints": false,
+    "automatic_retry": false
+  },
+  "artifacts_sha256": {
+    "result.json": "7f8f96cbf9c40272d8dd397837a78268dd76cea634c5bde2452654aba8e87183",
+    "agent/snapshot.json": "50a1bb214e327a1416cc2b01c8731075f8092b08e31f3fe87e161bb919643376",
+    "agent/messages.json": "6f976876164f44f89442b97eac78b8da3dd8f9dcda28e157a821f77bf527a79e",
+    "verifier/counts.json": "0373a5c704c3587da56663e7f8f179deb8d1132697133a2a303dcdbe482319cd",
+    "verifier/results.xml": "1b07ada0d51cfd77bd7676d8bce695d75f2b951cd96396bf737029a9aca2e461",
+    "artifacts/logs/artifacts/model.patch": "a5f8a2d61e972f68a94f03ab12fd41e34716335932841107a3c59e6fb76892e6",
+    "artifacts/logs/artifacts/repository.bundle": "ef9d4b805319b47c541211012bd5013ac8055d451f7aeaa45239a165fdd767aa",
+    "artifacts/logs/artifacts/status.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "artifacts/logs/artifacts/git-history.txt": "2e799cdc9228ccde6f8c16ca148b7e68e549e51b9b9238a2d229ae027e45685d"
+  },
+  "private_post_run_audit_sha256": {
+    "native-audit.json": "7a30416f08786603799160af03e87139df3e78cf6e9b91517deb1c529983c523",
+    "failure-results.json": "05004bf63c376dd9b25ca3e009ff7c721b77691f4a1707384ac29005cd79da76",
+    "failures.py": "2404d67405f6ec8825ea09179b226915dfd2a59a5df7de3d8ae7dc1d0d35aa44",
+    "project-tests.log": "04b7b8fc55d4ccdd08fa46b37b6e5b4767ef79f148d7465cf58c6dee3547ad70",
+    "project-tests-original-temp-dir.log": "b40ca87e3cd518d09cc098dccccdd19057ebd201662c76aea53fdb1e92af0739"
+  },
+  "limitations": [
+    "Single inspected adapted case; not official SCBench protocol, leaderboard or unseen generalization.",
+    "Both native prompts and wrapper guidance changed; no isolated causal estimate.",
+    "Standard-library-only parser-heavy task limits generalization to normal product work.",
+    "Native role prompts, decomposition and session reuse differ between harnesses.",
+    "Model requests serialized per arm; no unrestricted throughput or human-time-saved claim.",
+    "Passing project tests or native approval does not imply external acceptance."
+  ]
+}
