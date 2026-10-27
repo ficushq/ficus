@@ -119,11 +119,15 @@ switch_step_ran() { # N — was step N (or a later one) journaled?
   return 1
 }
 
-# The files this run may rewrite, and those it may create.
+# The files this run may rewrite (or remove), and those it may create. The
+# sudoers rules are in the set whenever they exist: a revert removes them, and
+# a revert that then fails must put them back byte for byte (cp -p keeps 0440
+# root); a forward switch over a rule already there restores that rule.
 switch_files() {
   host_config_files
   local f
-  for f in "${FICUS_PGBOUNCER_INI}" "${FICUS_PGBOUNCER_USERLIST}" "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_POOLER}.service"; do
+  for f in "${FICUS_PGBOUNCER_INI}" "${FICUS_PGBOUNCER_USERLIST}" "${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_POOLER}.service" \
+    "${UPDATE_SUDOERS_FILE}" "${BIGBRAIN_SUDOERS}"; do
     [[ -f ${f} ]] && readlink -f -- "${f}"
   done
   true
@@ -163,6 +167,7 @@ switch_backup_restore() { # SETDIR
   local setdir=$1 idx sha path got rc=0 tmp
   while IFS=$'\t' read -r idx sha path; do
     [[ -n ${idx} ]] || continue
+    # The temporary name has a dot: sudo never reads it from /etc/sudoers.d.
     tmp="${path}.ficus-restore.$$"
     if cp -p -- "${setdir}/${idx}" "${tmp}" && mv -f -- "${tmp}" "${path}"; then
       got=$(_hm_sha256 "${path}") || got=''
@@ -181,6 +186,14 @@ switch_backup_restore() { # SETDIR
 }
 
 # ------------------------------------------------------------------- helpers
+
+# Move SRC to DST with one rename(2), never a copy: mv falls back to copying
+# on EXDEV (a bind-mounted /home on the same device passes P4's st_dev test
+# and still fails rename), which this switch must never do. perl is in
+# perl-base, which Ubuntu and Debian always install.
+rename_only() { # SRC DST
+  perl -e 'rename($ARGV[0], $ARGV[1]) or die "rename $ARGV[0] -> $ARGV[1]: $!\n"' -- "$1" "$2"
+}
 
 # Run rebase-home.js from RELEASE with the direct DSN (the pooler may be
 # stopped), printing its stdout. The env file it reads is a 0600 copy of .env
@@ -320,7 +333,7 @@ switch_rollback() {
     switch_rebase "${setdir}" "${release}" "${new}" "${old}" >&2 || { log_error "could not rebase the stored paths back to ${old}"; rc=1; }
   fi
   if switch_step_ran 4 && [[ -d ${new} && ! -e ${old} ]]; then
-    mv -T -- "${new}" "${old}" || { log_error "could not move ${new} back to ${old}"; rc=1; }
+    rename_only "${new}" "${old}" || { log_error "could not move ${new} back to ${old}"; rc=1; }
   fi
   if switch_step_ran 7 && [[ -d ${old} ]]; then
     as_root chown -R --no-dereference "${from}:$(run_user_group "${from}")" "${old}" ||
@@ -340,6 +353,12 @@ switch_rollback() {
   as_root systemctl daemon-reload || rc=1
   (restart_core_services "${CORE_PORT}") || { log_error 'the core services did not come back up after the rollback'; rc=1; }
   if [[ -f ${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_BACKUP}.timer ]]; then as_root systemctl start "${HL_UNIT_BACKUP}.timer" || rc=1; fi
+  # The host must pass the same checks for the user it went back to (S1-S10;
+  # for a service user that includes its sudoers rules and journal access).
+  if ((rc == 0)); then
+    switch_checks "${from}" "${new}" "${old}" "${release}" ||
+      { log_error "the host does not pass the success checks for ${from} after the rollback"; rc=1; }
+  fi
   if ((rc != 0)); then
     log_error "the rollback did not complete — the journal ${journal} and the backup set ${setdir} are kept; fix the cause and re-run this script to settle it"
     return 1
@@ -391,7 +410,7 @@ switch_run() { # GOAL FROM OLD NEW RELEASE
   log_step "switch 4/17: move ${old} to ${new} (one rename)"
   if [[ -d ${new} && ! -L ${new} ]]; then rmdir -- "${new}" || die "${new} is not empty"; fi
   [[ -d $(dirname -- "${new}") ]] || die "$(dirname -- "${new}") does not exist"
-  mv -T -- "${old}" "${new}" || die "could not move ${old} to ${new}"
+  rename_only "${old}" "${new}" || die "could not move ${old} to ${new}"
 
   switch_journal_step 5
   log_step "switch 5/17: rebase the stored HOME paths"
@@ -566,8 +585,11 @@ fi
 NEW_PARENT=$(dirname -- "${NEW}")
 PARENT_PROBE=${NEW_PARENT}
 [[ -d ${PARENT_PROBE} ]] || PARENT_PROBE=$(dirname -- "${PARENT_PROBE}")
-if [[ $(stat -c %d -- "$(dirname -- "${OLD}")") != "$(stat -c %d -- "${PARENT_PROBE}")" ]]; then
-  die "refusing: ${OLD} and ${NEW_PARENT} are on different filesystems — this switch moves HOME with a single rename and never copies it; nothing was changed"
+# Same device AND same mount: a bind mount shares the device but rename(2)
+# across it fails (EXDEV).
+if [[ $(stat -c %d -- "$(dirname -- "${OLD}")") != "$(stat -c %d -- "${PARENT_PROBE}")" ||
+  $(stat -c %m -- "$(dirname -- "${OLD}")") != "$(stat -c %m -- "${PARENT_PROBE}")" ]]; then
+  die "refusing: ${OLD} and ${NEW_PARENT} are on different filesystems or mounts — this switch moves HOME with a single rename and never copies it; nothing was changed"
 fi
 # P5: no absolute symlink inside the old HOME that points into it.
 LINKS=$(find "${OLD}" -type l -lname "${OLD}/*" -print 2>/dev/null | head -n 20)

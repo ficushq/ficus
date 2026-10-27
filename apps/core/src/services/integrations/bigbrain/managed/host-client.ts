@@ -145,6 +145,8 @@ export function createManagedHostClient(options: ManagedHostClientOptions = {}) 
       if (exitCode === 78) throw new ManagedHostError('not_installed', false)
       const text = new TextDecoder().decode(stdout.bytes).trim()
       // sudo refused (no NOPASSWD rule for this account): nothing to retry until it is installed.
+      // A helper that itself exits 1 without a reply line looks the same through sudo; it is
+      // reported as not_installed too (non-retryable), which only loses an automatic retry.
       if (viaSudo && exitCode === 1 && text === '') throw new ManagedHostError('not_installed', false)
       const line = text.split('\n').at(-1) ?? ''
       try {

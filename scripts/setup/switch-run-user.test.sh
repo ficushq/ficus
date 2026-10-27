@@ -24,8 +24,10 @@
 #     running backup;
 #   * re-running on a switched host only runs the checks;
 #   * a failed health check after the restart rolls everything back (HOME,
-#     stored paths, every file byte for byte, the sudoers rule removed) and
-#     prints FICUS_RUN_USER=root, exit non-zero;
+#     stored paths, every file byte for byte, the sudoers rule removed, or put
+#     back when it was there before) and prints FICUS_RUN_USER=root, exit
+#     non-zero; a failed --revert rolls back to the service user, its sudoers
+#     rule included, and passes the success checks for it;
 #   * a run killed mid-switch leaves its journal; every other toolkit entry
 #     refuses while it exists, and the next run settles it;
 #   * --revert goes back to root;
@@ -393,6 +395,40 @@ expect_eq 'rollback: HOME belongs to root again' \
   "$(find "${OLD}" -xdev ! -user root | wc -l)" 0
 expect_eq 'rollback: no journal is left' "$([[ -e ${HOST_MIGRATE_BACKUP_ROOT}/RUN_USER_SWITCH ]] && echo journal || echo none)" none
 rm -f "${STATE}/unhealthy-as-${SVC}"
+
+# ---- 4b. a forward rollback restores sudoers rules that were already there
+fresh_host
+printf 'operator-rule-update\n' >"${H}/etc/sudoers.d/ficus-update"
+printf 'operator-rule-bigbrain\n' >"${BIGBRAIN_SUDOERS}"
+chmod 0440 "${H}/etc/sudoers.d/ficus-update" "${BIGBRAIN_SUDOERS}"
+cp -p "${H}/etc/sudoers.d/ficus-update" "${S}/update-before"
+cp -p "${BIGBRAIN_SUDOERS}" "${S}/bigbrain-before"
+: >"${STATE}/unhealthy-as-${SVC}"
+out=$(run_switch)
+rm -f "${STATE}/unhealthy-as-${SVC}"
+expect_eq 'rollback (pre-existing rules): the trailer says root' "$(last_line "${out}")" 'FICUS_RUN_USER=root'
+expect_eq 'rollback (pre-existing rules): both sudoers files are back byte for byte, 0440 root' \
+  "$(cmp -s "${S}/update-before" "${H}/etc/sudoers.d/ficus-update" && cmp -s "${S}/bigbrain-before" "${BIGBRAIN_SUDOERS}" && echo same) $(stat -c '%U %a' "${H}/etc/sudoers.d/ficus-update" "${BIGBRAIN_SUDOERS}" | sort -u)" \
+  'same root 440'
+
+# ---- 4c. a failed --revert rolls back to the service user, sudoers rule included
+fresh_host
+out=$(run_switch)
+expect_eq 'revert rollback: the switch itself succeeds' "$(last_line "${out}")" "FICUS_RUN_USER=${SVC}"
+cp -p "${H}/etc/sudoers.d/ficus-update" "${S}/update-switched"
+: >"${STATE}/unhealthy-as-root"
+out=$(run_switch --revert)
+rm -f "${STATE}/unhealthy-as-root"
+expect_match 'revert rollback: the revert fails' "${out}" $'\nrc=[1-9][0-9]*$'
+expect_eq 'revert rollback: the trailer says the services run as the service user again' "$(last_line "${out}")" "FICUS_RUN_USER=${SVC}"
+expect_match 'revert rollback: the rolled-back host passed the success checks for the service user' "${out}" "rolled back: the services run as ${SVC} again"
+expect_eq 'revert rollback: the self-updater sudoers rule is back byte for byte, 0440 root' \
+  "$(cmp -s "${S}/update-switched" "${H}/etc/sudoers.d/ficus-update" && echo same) $(stat -c '%U %a' "${H}/etc/sudoers.d/ficus-update")" \
+  'same root 440'
+expect_eq 'revert rollback: HOME, config, units and processes are the service user'"'"'s again' \
+  "$([[ -d ${NEW} && ! -e ${OLD} ]] && echo home) $(yq '.core.run_user' "${CFG}") $(grep -h '^User=' "${UNITS}/ficus-api.service") $(proc_user ficus-api) $(find "${NEW}" -xdev ! -user "${SVC}" | wc -l)" \
+  "home ${SVC} User=${SVC} ${SVC} 0"
+expect_eq 'revert rollback: no journal is left' "$([[ -e ${HOST_MIGRATE_BACKUP_ROOT}/RUN_USER_SWITCH ]] && echo journal || echo none)" none
 
 # --------------------------- 5. an interrupted run is settled by the next one
 fresh_host

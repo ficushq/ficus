@@ -4,84 +4,138 @@
  * sample. The platform alerts on it (brute force against a hosted Core VM); this side only counts.
  *
  * Read with `journalctl --unit=ssh` (Ubuntu's sshd unit), which a non-root Core can do through
- * the `systemd-journal` group the setup toolkit gives it. Successive samples are joined by the
- * journal cursor, so no line is counted twice and none is missed between two samples; until the
- * journal has returned a cursor, a read starts where the previous one did (the first one of a
- * process covers the last report interval). Every line matching the pattern counts
- * (one rejected attempt can log both `Invalid user` and `Failed password for invalid user`), so
- * this is an alerting signal, not an exact attempt count. A failed read is `null`: the sample
+ * the `systemd-journal` group the setup toolkit gives it. Every read is bounded, because it runs
+ * inside the api/worker and is needed most during a burst:
+ *
+ * - Samples cover consecutive, non-overlapping time windows (`--since=@a --until=@b`, whole
+ *   seconds, both inclusive; the next window starts at b+1). The window advances before the read,
+ *   whatever the read does, so a failed, capped or timed-out read never leaves a backlog for the
+ *   next one. The first window of a process covers the last report interval.
+ * - Lines are counted as they stream in, never held. (journald's own `--grep` is not used: it
+ *   exits 1 both for "no match" and for "built without pattern support", so a quiet window and a
+ *   broken filter would look the same.)
+ * - At most {@link SSH_AUTH_JOURNAL_MAX_BYTES} are read and at most 10 s spent: past either, the
+ *   process is killed and the count so far is reported as a lower bound (a burst big enough to
+ *   hit the cap is one the platform should alert on anyway).
+ *
+ * Every matching line counts (one rejected attempt can log both `Invalid user` and `Failed
+ * password for invalid user`), so this is an alerting signal, not an exact attempt count. A read
+ * that observed nothing (journalctl failed, or timed out before any match) is `null`: the sample
  * omits the key rather than report a zero it did not observe.
  */
 
 export const SSH_AUTH_FAILURE_PATTERN = /Failed password|Invalid user|authentication failure/
+export const SSH_AUTH_JOURNAL_MAX_BYTES = 1024 * 1024
+const READ_TIMEOUT_MS = 10_000
 
-const CURSOR_PREFIX = '-- cursor: '
-
-export interface JournalRead {
-  exitCode: number
-  stdout: string
+export interface JournalProcess {
+  stdout: ReadableStream<Uint8Array>
+  exited: Promise<number>
+  kill(): void
 }
+export type JournalSpawn = (argv: string[]) => JournalProcess
 
-export type JournalRunner = (argv: string[]) => Promise<JournalRead>
-
-/** Count the matching lines of `journalctl --output=cat --show-cursor` output, and its cursor. */
-export function parseSshAuthJournal(output: string): { count: number; cursor?: string } {
-  let count = 0
-  let cursor: string | undefined
-  for (const line of output.split('\n')) {
-    if (line.startsWith(CURSOR_PREFIX)) cursor = line.slice(CURSOR_PREFIX.length).trim() || undefined
-    else if (SSH_AUTH_FAILURE_PATTERN.test(line)) count++
-  }
-  return { count, cursor }
-}
-
-async function runJournalctl(argv: string[]): Promise<JournalRead> {
+const spawnJournalctl: JournalSpawn = (argv) => {
   const proc = Bun.spawn(argv, { stdout: 'pipe', stderr: 'ignore', stdin: 'ignore' })
-  const timeout = setTimeout(() => proc.kill(), 10_000)
-  try {
-    const [stdout, exitCode] = await Promise.all([new Response(proc.stdout).text(), proc.exited])
-    return { exitCode, stdout }
-  } finally {
-    clearTimeout(timeout)
+  return {
+    stdout: proc.stdout as ReadableStream<Uint8Array>,
+    exited: proc.exited,
+    kill: () => proc.kill('SIGKILL'),
   }
+}
+
+/** Count the matching lines of PROC's stdout as they arrive, within the byte and time bounds. */
+export async function countMatchingLines(
+  proc: JournalProcess,
+  limits: { maxBytes: number; timeoutMs: number }
+): Promise<{ count: number; exitCode: number; cut: boolean }> {
+  const reader = proc.stdout.getReader()
+  const decoder = new TextDecoder()
+  let cut = false
+  let pending = ''
+  let bytes = 0
+  let count = 0
+  const stop = () => {
+    cut = true
+    proc.kill()
+    reader.cancel().catch(() => {})
+  }
+  const timer = setTimeout(stop, limits.timeoutMs)
+  try {
+    for (;;) {
+      const next = await reader.read()
+      if (next.done) break
+      // Never past the cap, even within one (pipe-sized) chunk.
+      const chunk = next.value.subarray(0, limits.maxBytes - bytes)
+      bytes += chunk.byteLength
+      pending += decoder.decode(chunk, { stream: true })
+      const lines = pending.split('\n')
+      pending = lines.pop() ?? ''
+      for (const line of lines) if (SSH_AUTH_FAILURE_PATTERN.test(line)) count++
+      if (bytes >= limits.maxBytes) {
+        stop()
+        break
+      }
+    }
+  } catch {
+    // The stream errored (the process was killed mid-read): what was counted stands.
+  } finally {
+    clearTimeout(timer)
+  }
+  // A final line without a newline counts only when the read was complete.
+  if (!cut && SSH_AUTH_FAILURE_PATTERN.test(pending)) count++
+  const exitCode = await proc.exited
+  return { count, exitCode, cut }
 }
 
 export interface SshAuthFailureSampler {
-  /** Matching lines since the previous successful sample; null when the journal could not be read. */
+  /** Matching lines since the previous sample; null when nothing could be observed. */
   sample(): Promise<number | null>
 }
 
 export function createSshAuthFailureSampler(
-  options: { run?: JournalRunner; firstWindowSeconds?: number; now?: () => number } = {}
+  options: {
+    spawn?: JournalSpawn
+    firstWindowSeconds?: number
+    now?: () => number
+    maxBytes?: number
+    timeoutMs?: number
+  } = {}
 ): SshAuthFailureSampler {
-  const run = options.run ?? runJournalctl
+  const spawn = options.spawn ?? spawnJournalctl
   const now = options.now ?? Date.now
-  let cursor: string | undefined
-  // Until the journal has given a cursor: where the next read starts (epoch seconds).
+  const limits = {
+    maxBytes: options.maxBytes ?? SSH_AUTH_JOURNAL_MAX_BYTES,
+    timeoutMs: options.timeoutMs ?? READ_TIMEOUT_MS,
+  }
   let since = Math.floor(now() / 1000) - (options.firstWindowSeconds ?? 300)
+
   return {
     async sample() {
-      const startedAt = Math.floor(now() / 1000)
+      // Whole seconds, both ends inclusive: [since, until], then the next window starts at until+1.
+      const until = Math.floor(now() / 1000) - 1
+      if (until < since) return 0
       const argv = [
         'journalctl',
         '--unit=ssh',
         '--output=cat',
         '--no-pager',
         '--quiet',
-        '--show-cursor',
-        cursor ? `--after-cursor=${cursor}` : `--since=@${since}`,
+        `--since=@${since}`,
+        `--until=@${until}`,
       ]
-      let read: JournalRead
+      // Advance first: whatever this read does, the next one never re-reads this window.
+      since = until + 1
+      let proc: JournalProcess
       try {
-        read = await run(argv)
+        proc = spawn(argv)
       } catch {
         return null
       }
-      if (read.exitCode !== 0) return null
-      const parsed = parseSshAuthJournal(read.stdout)
-      if (parsed.cursor) cursor = parsed.cursor
-      else if (!cursor) since = startedAt // nothing logged yet: continue from this read
-      return parsed.count
+      const { count, exitCode, cut } = await countMatchingLines(proc, limits)
+      // Cut short (byte cap or timeout): the count so far is a lower bound, if it saw anything.
+      if (cut) return count > 0 ? count : null
+      return exitCode === 0 ? count : null
     },
   }
 }

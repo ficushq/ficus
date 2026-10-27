@@ -452,7 +452,7 @@ async function execOnPinnedPrimaryMachine(command: string): Promise<string> {
  */
 let machineMetricsSampler: MachineMetricsSampler | null = null
 let coreMetricsSampler: MachineMetricsSampler | null = null
-/** Process-wide, so its journal cursor joins one sample to the next. */
+/** Process-wide, so each sample's journal window starts where the previous one ended. */
 let sshAuthFailureSampler: SshAuthFailureSampler | null = null
 function getSshAuthFailureSampler(): SshAuthFailureSampler {
   sshAuthFailureSampler ??= createSshAuthFailureSampler({ firstWindowSeconds: REPORT_INTERVAL_MS / 1000 })

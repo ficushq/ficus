@@ -40,6 +40,20 @@ Where the implementation departs from the plan below:
 - The BigBrain installer learns the Core account from one argument,
   `install --core-account <user>`, which the toolkit passes when
   `core.run_user` is not root.
+- The switch's backup set (step 1) holds the sudoers rules whenever they
+  exist, and a rollback runs the success checks for the user it went back
+  to; a rollback that fails them keeps its journal. HOME moves with
+  `rename(2)` only (never `mv`, which copies on `EXDEV`), and P4 compares
+  mount points as well as devices.
+- `sshAuthFailures` reads consecutive whole-second journal windows, counts
+  lines as they stream and stops at 1 MiB or 10 s, reporting the count so
+  far as a lower bound; a failed read never leaves a backlog for the next.
+- After a revert, the inert service account keeps its groups (`docker`,
+  `ficus-bigbrain-client`, `systemd-journal`), and managed BigBrain's
+  `/etc/ficus/bigbrain` and read-handoff directory stay readable by its group
+  until the BigBrain installer runs again; remove them by hand if the host
+  stays on root (`gpasswd -d ficus <group>`, `chmod 0700` the two
+  directories, `chmod 0600` their files).
 
 ## Why
 
