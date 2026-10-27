@@ -291,7 +291,8 @@ It refuses with nothing changed unless the host is on the artifact layout, no
 host migration is journaled, the new HOME (`/home/<user>/.ficus`) is absent or
 empty and on the same filesystem as the old one (HOME moves with one rename
 and is never copied), no symlink inside the old HOME points into it by
-absolute path, the database stores nothing under the new HOME yet, and no
+absolute path, the database stores nothing under the new HOME yet (a mention
+of it in message text does not count), and no
 backup is running. It then journals every step, backs up every file it
 rewrites, moves and re-owns HOME, rebases the stored paths, records
 `core.run_user` in the config, and re-renders the artifacts' group, the

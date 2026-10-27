@@ -326,7 +326,49 @@ describe('rebaseHomePaths when the data already holds paths under the target', (
     ids.messages.push(row!.id)
   }
 
-  it('refuses before writing anything, naming the columns, unless forced', async () => {
+  /** One more attachment already stored under the TARGET: a structured hit (kind `text`). */
+  async function addStoredTarget(): Promise<void> {
+    const [row] = await sql`
+      INSERT INTO inbox_attachments (message_id, filename, content_type, byte_size, sha256, storage_path)
+      VALUES (${ids.inbox}, 'b.txt', 'text/plain', 1, ${'1'.repeat(64)}, ${`${NEW}/inbox-attachments/m1/b1`}) RETURNING id`
+    ids.attachments.push(row!.id)
+  }
+
+  const structuredKeys = HOME_PATH_COLUMNS.filter((entry) => entry.kind !== 'jsonb-text').map(homePathColumnKey)
+  const freeTextKeys = HOME_PATH_COLUMNS.filter((entry) => entry.kind === 'jsonb-text').map(homePathColumnKey)
+
+  it('never refuses on a free-text mention of the target, and reports it apart from the structured counts', async () => {
+    await addTargetMention()
+    const before = await snapshot()
+
+    // --dry-run: the mention is a free-text target hit; every structured column has none
+    const dry = await rebaseWithTargets(sql, OLD, NEW, { dryRun: true })
+    expect(Object.keys(dry.targetCounts).sort()).toEqual([...structuredKeys].sort())
+    expect(Object.values(dry.targetCounts).every((count) => count === 0)).toBe(true)
+    expect(Object.keys(dry.textTargetCounts).sort()).toEqual([...freeTextKeys].sort())
+    expect(dry.textTargetCounts['messages.metadata']).toBe(1)
+    expect(dry.counts).toEqual({ ...expectedCounts(), 'messages.metadata': 4 })
+    expect(await snapshot()).toEqual(before)
+
+    // The real run, with structured paths under the old HOME to move, goes ahead without --force
+    const moved = await rebaseWithTargets(sql, OLD, NEW)
+    expect(moved.counts).toEqual({ ...expectedCounts(), 'messages.metadata': 4 })
+    expect(moved.textTargetCounts['messages.metadata']).toBe(1)
+    const [attachment] = await sql`SELECT storage_path FROM inbox_attachments WHERE id = ${ids.attachments[0]!}`
+    expect(attachment!.storage_path).toBe(`${NEW}/inbox-attachments/m1/a1`)
+  })
+
+  it('the inverse of a forward that never committed does not refuse on free-text mentions alone', async () => {
+    // Everything structured is still under OLD (this direction's target); only a mention names NEW.
+    await addTargetMention()
+    const result = await rebaseWithTargets(sql, NEW, OLD)
+    expect(result.targetCounts['inbox_attachments.storage_path']).toBeGreaterThan(0)
+    expect(result.counts['messages.metadata']).toBe(1)
+    expect(Object.entries(result.counts).every(([key, count]) => key === 'messages.metadata' || count === 0)).toBe(true)
+  })
+
+  it('refuses on a structured target hit before writing anything, naming the column, unless forced', async () => {
+    await addStoredTarget()
     await addTargetMention()
     const before = await snapshot()
     const error = await rebaseWithTargets(sql, OLD, NEW).then(
@@ -334,18 +376,22 @@ describe('rebaseHomePaths when the data already holds paths under the target', (
       (caught: unknown) => caught
     )
     expect(error).toBeInstanceOf(RebaseHomeTargetPresentError)
-    expect((error as RebaseHomeTargetPresentError).targetCounts['messages.metadata']).toBe(1)
-    expect((error as Error).message).toContain('messages.metadata=1')
+    const refused = error as RebaseHomeTargetPresentError
+    expect(refused.targetCounts['inbox_attachments.storage_path']).toBe(1)
+    expect(refused.targetCounts['messages.metadata']).toBeUndefined()
+    expect(refused.textTargetCounts['messages.metadata']).toBe(1)
+    expect(refused.message).toContain('inbox_attachments.storage_path=1')
+    expect(refused.message).not.toContain('messages.metadata')
     expect(await snapshot()).toEqual(before)
 
     // --dry-run reports the collision count and does not refuse
     const dry = await rebaseWithTargets(sql, OLD, NEW, { dryRun: true })
-    expect(dry.targetCounts['messages.metadata']).toBe(1)
-    expect(dry.counts).toEqual({ ...expectedCounts(), 'messages.metadata': 4 })
+    expect(dry.targetCounts['inbox_attachments.storage_path']).toBe(1)
     expect(await snapshot()).toEqual(before)
 
     // --force rewrites anyway (the two names merge: the reason it refuses by default)
     const forced = await rebaseWithTargets(sql, OLD, NEW, { force: true })
+    expect(forced.counts['inbox_attachments.storage_path']).toBe(expectedCounts()['inbox_attachments.storage_path']!)
     expect(forced.counts['messages.metadata']).toBe(4)
   })
 

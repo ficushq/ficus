@@ -111,14 +111,18 @@ describeSubprocess('dist/rebase-home.js', () => {
 
   test('prints a count for every column, rebases, and exits 0 on a second run that finds nothing', async () => {
     const keys = HOME_PATH_COLUMNS.map(homePathColumnKey)
+    const freeText = new Set(HOME_PATH_COLUMNS.filter((entry) => entry.kind === 'jsonb-text').map(homePathColumnKey))
     const line = (key: string, n: number) => `REBASE_HOME ${key}=${n}`
 
     const dry = await run(['--from', OLD, '--to', NEW, '--dry-run'], getConnectionString())
     expect(dry.exitCode, dry.stderr).toBe(0)
     expect(dry.stdout.trim().split('\n')).toEqual([
       ...keys.map((key) => line(key, key === 'inbox_attachments.storage_path' ? 1 : 0)),
-      ...keys.map((key) => `REBASE_HOME_TARGET ${key}=0`),
+      // Structured columns under REBASE_HOME_TARGET (what refuses), free text under REBASE_HOME_TARGET_TEXT.
+      ...keys.filter((key) => !freeText.has(key)).map((key) => `REBASE_HOME_TARGET ${key}=0`),
+      ...keys.filter((key) => freeText.has(key)).map((key) => `REBASE_HOME_TARGET_TEXT ${key}=0`),
     ])
+    expect(freeText).toEqual(new Set(['work_streams.files', 'messages.metadata']))
     expect(dry.stderr).toContain('nothing was written')
     const [unchanged] = await sql`SELECT storage_path FROM inbox_attachments WHERE message_id = ${messageId}`
     expect(unchanged!.storage_path).toBe(`${OLD}/inbox-attachments/m1/a1`)
@@ -146,6 +150,8 @@ describeSubprocess('dist/rebase-home.js', () => {
     const refused = await run(['--from', OLD, '--to', NEW], getConnectionString())
     expect(refused.exitCode, refused.stderr).toBe(3)
     expect(refused.stdout).toContain('REBASE_HOME_TARGET inbox_attachments.storage_path=1')
+    expect(refused.stdout).toContain('REBASE_HOME_TARGET_TEXT messages.metadata=0')
+    expect(refused.stdout).not.toContain('REBASE_HOME_TARGET messages.metadata')
     expect(refused.stderr).toContain('--force')
     const rows = await sql`SELECT storage_path FROM inbox_attachments WHERE message_id = ${messageId} ORDER BY filename`
     expect(rows.map((row) => row.storage_path)).toEqual([
