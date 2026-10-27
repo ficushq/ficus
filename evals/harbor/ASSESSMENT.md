@@ -206,6 +206,22 @@ ordinary-add controls passing. This is a separately reported repeat after two in
 evidence that review caused the official score improvement. Keep prompts fixed and expand the fresh sample before making
 production prompt changes.
 
+## Fresh matched mnamer task
+
+The [next unused task](FRESH_MATCHED_V2.md) completed all four first attempts at
+51/51 features and 319/319 regressions, with no provider interruption or operator
+task hint. Pi engineer cost $0.221011 in 6m15s; Pi squad $0.783735 in 22m08s;
+Ficus squad $1.052676 in 19m56s; Ficus engineer $0.640893 in 13m43s. Ficus timings
+include checkpoint capture, and both harnesses include setup and verification.
+
+Official acceptance did not distinguish these workflows; Pi engineer was cheapest
+and fastest on this task. Pi squad performed one review/repair/re-review cycle.
+Independent offline checks confirm two specific repairs (2/4 → 4/4 including
+passing controls), but its pre-review patch already passed the official grader.
+Ficus squad approved its unchanged first implementation. This does not establish
+a general quality ranking or justify changing production prompts. Broader fixed-
+prompt sampling and the separate longitudinal product-work study remain useful.
+
 ## Evidence and accounting limits
 
 Earlier temporary raw artifacts and the original detailed ledger are no longer
@@ -235,5 +251,7 @@ On October 26, 2026, the user explicitly authorized a fresh **$20 cap from zero*
 [reset record](budget-phase-2026-10-26-reset.json) closes the previous phase without reconciling its unresolved charges.
 A new private ledger opened at zero, with an active budget pointer separating future requests from historical
 accounting. The $5.50 per-request reservation remains in force. At the reset, no inference had started in the new phase.
-The completed Koota repeat subsequently spent $2.457816, leaving $17.542184 with no unresolved new-phase usage. Future
-launches must use that ledger explicitly.
+The completed Koota repeat spent $2.457816. The subsequent mnamer study added
+$2.698315 across 199 receipted calls, bringing this phase to $5.156131 with
+$14.843869 remaining and no unresolved usage. Future launches must use that ledger
+explicitly.

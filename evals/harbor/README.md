@@ -48,7 +48,12 @@ The [fresh matched Koota study](FRESH_MATCHED.md) returns to an unused external 
 conditions. Its budget-interrupted Ficus attempt and two authorized recoveries are reported separately from completed
 first attempts. The checkpoint-enabled repeat completed with 84/84 feature checks and 47/47 regressions for $2.457816;
 its pre-review patch already passed that grader. Independent post-hoc checks verified additional review repairs. The new
-$20 phase now has $17.542184 remaining, with no unresolved usage.
+$20 phase closed that repeat at $17.542184 remaining, with no unresolved usage.
+
+The next [fresh matched mnamer study](FRESH_MATCHED_V2.md) completed all four
+first attempts at 51/51 features and 319/319 regressions, costing $2.698315 in total.
+Pi engineer was cheapest and fastest on this task. Offline checks confirm two Pi
+review repairs beyond the official score. The active phase has $14.843869 left.
 
 Opt-in [private recovery checkpoints](CHECKPOINTS.md) preserve the disposable
 database and task filesystem before cleanup. Their offline restore probe makes
