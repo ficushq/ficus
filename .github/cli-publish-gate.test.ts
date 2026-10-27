@@ -87,8 +87,8 @@ describe('CLI publish gate', () => {
   // The sharper check, and the one that survives a rename: whatever a future
   // step is called and however it reaches the host, it needs credentials, and
   // these five are the only ones that ever pointed at the droplet or the
-  // Cloudflare cache. They still exist in GitHub; nothing here may consume
-  // them.
+  // Cloudflare cache. They were deleted from the repository on 2026-10-27;
+  // the check stays so that nothing reintroduces them.
   test('the publish job references none of the retired host/Cloudflare secrets', () => {
     const job = JSON.stringify(workflow.jobs?.['publish-cli-release'] ?? {})
     for (const secretName of [

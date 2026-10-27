@@ -5616,47 +5616,6 @@ require_host_layout_ready() { # [RELEASE_DIR] [DECLARED_LAYOUT]
     die 'this release predates the Ficus host layout — upgrade through the ficus-host-layout-bridge Core release first'
 }
 
-# ---------------------------------------------------------- restricted upload
-detect_rrsync() {
-  if [[ -n ${FICUS_SETUP_RRSYNC:-} ]]; then
-    printf '%s' "${FICUS_SETUP_RRSYNC}"
-    return 0
-  fi
-  local c
-  for c in /usr/bin/rrsync /usr/share/rsync/scripts/rrsync /usr/local/bin/rrsync; do
-    if [[ -x ${c} ]]; then
-      printf '%s' "${c}"
-      return 0
-    fi
-  done
-  command -v rrsync 2>/dev/null || true
-}
-
-# One authorized_keys line for the CI publisher key, restricted as tightly as
-# rsync-over-ssh allows.
-#
-#   command="<rrsync> -wo <dir>"  a FORCED command: whatever the client asks
-#                                 for is discarded and rrsync runs instead,
-#                                 confined to <dir>. -wo is write-only into
-#                                 that directory, so the key cannot read
-#                                 anything back out or touch any other path.
-#   restrict                      no port/agent/X11 forwarding, no pty, no
-#                                 user-rc. It does NOT block command
-#                                 execution, which is why rsync still works.
-#
-# With no rrsync available the forced command is omitted and `restrict` alone
-# remains — still no forwarding and no interactive shell, but the key can then
-# run any command, so the caller MUST warn loudly rather than pretend the
-# confinement is in place.
-render_authorized_keys_line() { # RRSYNC_PATH CLI_DIR PUBLIC_KEY
-  local rrsync=$1 cli_dir=$2 pubkey=$3
-  if [[ -n ${rrsync} ]]; then
-    printf 'command="%s -wo %s",restrict %s\n' "${rrsync}" "${cli_dir}" "${pubkey}"
-  else
-    printf 'restrict %s\n' "${pubkey}"
-  fi
-}
-
 # ------------------------------------------------------------------ wizard
 
 # Interactive generator for a setup config (ficus-setup.yaml). Prompts for the essentials, writes
