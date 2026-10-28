@@ -1372,7 +1372,7 @@ restore_stream() {
   # non-zero, and `set -e` propagates that to the caller (which aborts the
   # migration with the SOURCE box still fully intact). Nothing below this line
   # runs on a failed extraction.
-  "${SUDO[@]}" tar -x "$(tar_codec_flag)" --no-same-owner --no-overwrite-dir -f - -C "${staging}"
+  "${SUDO[@]}" tar -x "$(tar_codec_flag)" --exclude='*/.ficus/agent-secrets.env' --exclude='workspace/.ficus/.env' --no-same-owner --no-overwrite-dir -f - -C "${staging}"
 
   # Unquoted on purpose: STATE_DIRS is a space-separated list, and arg
   # validation has already proved it non-empty and made every entry a plain path
@@ -1423,7 +1423,7 @@ restore_box() {
   # boxes, and `workspace` alongside `.private` for a SQUAD box (its
   # authoritative working tree). They extract straight into the HOME;
   # overwrite-in-place keeps this idempotent.
-  "${SUDO[@]}" tar xzf "${RESTORE_TAR}" -C "${home}"
+  "${SUDO[@]}" tar xzf "${RESTORE_TAR}" --exclude='*/.ficus/agent-secrets.env' --exclude='workspace/.ficus/.env' -C "${home}"
 
   # Re-own EVERY top-level member the archive carried (see reown_members). Read
   # the members from the tar itself rather than assuming `.private`, so a squad

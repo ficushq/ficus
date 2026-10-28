@@ -141,51 +141,6 @@ export async function revokeAgentScope(agentId: string, permission: string): Pro
   await apiFetch(`/agents/${agentId}/scopes/${encodeURIComponent(permission)}`, { method: 'DELETE' })
 }
 
-/** A Secret Store key as listed for per-agent exposure (never a value). */
-export interface AgentSecretKeyStatus {
-  key: string
-  isSet: boolean
-  exposed: boolean
-  /** Whether the caller may expose this key (needs read access to it in the Secret Store). */
-  canExpose: boolean
-  updatedAt: string | null
-}
-
-export interface AgentSecretsStatus {
-  agentId: string
-  exposedSecretKeys: string[]
-  /** Why this agent cannot hold per-agent secrets, or null when it can. */
-  unsupportedReason: string | null
-  /** Sandbox-side path of the agent's secrets file (a path, not content). */
-  secretsFilePath: string | null
-  secrets: AgentSecretKeyStatus[]
-}
-
-export interface AgentSecretsChangeResult {
-  success: boolean
-  exposedSecretKeys: string[]
-}
-
-export async function getAgentSecrets(agentId: string): Promise<AgentSecretsStatus> {
-  return apiFetch<AgentSecretsStatus>(`/agents/${agentId}/secrets`)
-}
-
-/** Replace the keys exposed to this agent. */
-export async function setAgentSecrets(agentId: string, keys: string[]): Promise<AgentSecretsChangeResult> {
-  return apiFetch<AgentSecretsChangeResult>(`/agents/${agentId}/secrets`, {
-    method: 'POST',
-    body: JSON.stringify({ keys }),
-  })
-}
-
-/** Add keys to the ones exposed to this agent. */
-export async function exposeAgentSecrets(agentId: string, keys: string[]): Promise<AgentSecretsChangeResult> {
-  return apiFetch<AgentSecretsChangeResult>(`/agents/${agentId}/secrets`, {
-    method: 'PUT',
-    body: JSON.stringify({ keys }),
-  })
-}
-
 /** Stop this agent's individual sandbox. */
 export async function stopAgentSandbox(agentId: string): Promise<void> {
   await apiFetch(`/agents/${agentId}/sandbox/stop`, { method: 'POST' })

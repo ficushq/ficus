@@ -1,3 +1,4 @@
+import type { CleanupStatus } from './exposure-cleanup'
 import type { SandboxToolchainConfig } from '@ficus/shared'
 import type { Squad } from '../../entities/Squad'
 import { fingerprintToolchain, isEmptyToolchain, type ManagedToolchainConfig } from './toolchain/config'
@@ -42,12 +43,18 @@ export async function resolveToolchainStatus(
 
 export function mergeSandboxStatus<T extends { devboxReady?: boolean }>(
   physical: T,
+  toolchain?: ToolchainStatusPayload,
+  exposureCleanup?: CleanupStatus
+): Omit<T, 'devboxReady'> & {
   toolchain?: ToolchainStatusPayload
-): Omit<T, 'devboxReady'> & { toolchain?: ToolchainStatusPayload; devboxReady?: boolean } {
-  if (!toolchain) return physical
+  devboxReady?: boolean
+  exposureCleanup?: CleanupStatus
+} {
+  if (!toolchain) return exposureCleanup ? { ...physical, exposureCleanup } : physical
   return {
     ...physical,
     toolchain,
+    ...(exposureCleanup ? { exposureCleanup } : {}),
     devboxReady: physical.devboxReady !== false && toolchain.status === 'ready',
   }
 }

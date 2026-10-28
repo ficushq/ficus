@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import { apiGet, apiPatch, apiPost, apiPut, apiDelete } from '../client'
+import { apiGet, apiPatch, apiPost, apiDelete } from '../client'
 import { explainDormantRecipient, WAKE_OPTION_DESCRIPTION } from '../dormant-agent'
 import { output, outputTable, outputError, isJsonMode } from '../output'
 import { readLine, StdinClosedError } from '../local-server/prompt'
@@ -577,72 +577,6 @@ export function registerAgentCommands(program: Command) {
       try {
         await apiDelete(`/api/agents/${id}/scopes/${encodeURIComponent(permission)}`)
         output({ revoked: permission, from: id }, `Revoked ${permission} from agent ${id}`)
-      } catch (error) {
-        outputError(error as Error)
-      }
-    })
-
-  // Per-agent secrets: Secret Store keys exposed to ONE agent's own sandbox (names only, never values).
-  type AgentSecretsChangeResponse = {
-    success: boolean
-    exposedSecretKeys: string[]
-    sandboxSync?: { pushed: boolean; reason?: string }
-  }
-
-  function describeSecretsChange(id: string, result: AgentSecretsChangeResponse): string {
-    const keys = result.exposedSecretKeys.length ? result.exposedSecretKeys.join(', ') : '(none)'
-    return `Agent ${id.slice(0, 8)} now holds ${result.exposedSecretKeys.length} per-agent secret(s): ${keys}`
-  }
-
-  // ficus agent secrets <agentId>
-  agent
-    .command('secrets <agentId>')
-    .description('List Secret Store keys exposed to this agent only (names, never values)')
-    .action(async (agentId) => {
-      try {
-        const result = await apiGet<{
-          exposedSecretKeys: string[]
-          unsupportedReason: string | null
-          secretsFilePath: string | null
-        }>(`/api/agents/${agentId}/secrets`)
-        if (isJsonMode()) {
-          output(result)
-          return
-        }
-        if (result.unsupportedReason) console.log(`Not available for this agent: ${result.unsupportedReason}`)
-        outputTable(
-          result.exposedSecretKeys.map((key) => ({ key })),
-          ['key']
-        )
-        if (result.secretsFilePath) console.log(`File in the agent's sandbox: ${result.secretsFilePath}`)
-      } catch (error) {
-        outputError(error as Error)
-      }
-    })
-
-  // ficus agent expose-secrets <agentId> <keys...>
-  agent
-    .command('expose-secrets <agentId> <keys...>')
-    .description(
-      "Admin/operator: expose Secret Store keys to this agent's own sandbox only, as env vars in its bash (no values)"
-    )
-    .action(async (agentId, keys: string[]) => {
-      try {
-        const result = await apiPut<AgentSecretsChangeResponse>(`/api/agents/${agentId}/secrets`, { keys })
-        output(result, describeSecretsChange(agentId, result))
-      } catch (error) {
-        outputError(error as Error)
-      }
-    })
-
-  // ficus agent unexpose-secrets <agentId> <keys...>
-  agent
-    .command('unexpose-secrets <agentId> <keys...>')
-    .description("Admin/operator: remove Secret Store keys from this agent's sandbox (no values)")
-    .action(async (agentId, keys: string[]) => {
-      try {
-        const result = await apiDelete<AgentSecretsChangeResponse>(`/api/agents/${agentId}/secrets`, { keys })
-        output(result, describeSecretsChange(agentId, result))
       } catch (error) {
         outputError(error as Error)
       }

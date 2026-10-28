@@ -1,4 +1,3 @@
-import { getSecretStore } from '../services/secrets'
 import { getSquadWorkspacePath } from '../services/squad/workspace'
 import { WORKSPACE_DOT_DIR } from '../services/workspace/dot-dir'
 import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
@@ -18,7 +17,7 @@ import {
   createTestUser,
   type TestUser,
 } from '../test-utils'
-import { db, squads, secrets } from '../db'
+import { db, squads } from '../db'
 import { RESERVED_SQUAD_ENV_KEYS } from '../services/squad/env'
 
 const app = new Hono()
@@ -30,7 +29,6 @@ const rbacPrefix = `squad-env-rbac-${Date.now()}-${Math.random().toString(36).sl
 let admin: TestUser
 
 beforeAll(async () => {
-  await getSecretStore().initialize()
   admin = await createTestAdmin({ prefix: rbacPrefix, canonicalAdmin: true })
 })
 
@@ -100,32 +98,12 @@ describe('squad-env routes', () => {
       const allowed = await app.request(`/api/squads/workspace/${other.id}/env`, { headers: authHeaders(user.token) })
       expect(allowed.status).toBe(200)
     })
-
-    it('allows system settings readers to view global exposed secret keys', async () => {
-      const user = await createTestUser({ prefix: rbacPrefix })
-      const role = await createTestRole({ prefix: rbacPrefix, permissions: ['settings:read'] })
-      await assignRole({ userId: user.id, roleId: role.id, scope: 'system' })
-
-      const res = await app.request('/api/squads/workspace/env/global-secrets', {
-        headers: authHeaders(user.token),
-      })
-      expect(res.status).toBe(200)
-    })
   })
   let testPrefix: string
   let squadId: string
 
   beforeEach(async () => {
     testPrefix = `env-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-
-    // Generic exposure fixtures, not the six retired deployment credential names.
-    for (const key of [
-      'DEPLOY_TEST_VERCEL_TOKEN',
-      'DEPLOY_TEST_NETLIFY_TOKEN',
-      'DEPLOY_TEST_RAILWAY_TOKEN',
-      'DEPLOY_TEST_DIGITALOCEAN_TOKEN',
-    ])
-      await getSecretStore().set(key, '', 'test')
 
     // Create a test squad
     const [squad] = await db
@@ -141,16 +119,6 @@ describe('squad-env routes', () => {
   })
 
   afterEach(async () => {
-    await getSecretStore().delete('DEPLOY_TEST_VERCEL_TOKEN')
-    await getSecretStore().delete('DEPLOY_TEST_NETLIFY_TOKEN')
-    await getSecretStore().delete('DEPLOY_TEST_RAILWAY_TOKEN')
-    await getSecretStore().delete('DEPLOY_TEST_DIGITALOCEAN_TOKEN')
-    await app.request('/api/squads/workspace/env/global-secrets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-      body: JSON.stringify({ keys: [] }),
-    })
-    await db.delete(secrets).where(like(secrets.key, `DEPLOY_${testPrefix}%`))
     await db.delete(squads).where(like(squads.name, `${testPrefix}%`))
   })
 
@@ -161,7 +129,7 @@ describe('squad-env routes', () => {
       expect(res.status).toBe(200)
       const data = await res.json()
       expect(data.content).toBe('')
-      expect(data.exposedSecretKeys).toEqual([])
+      expect(Object.keys(data)).toEqual(['content'])
     })
 
     it('resolves squad UUID prefixes to the full squad UUID', async () => {
@@ -349,337 +317,16 @@ describe('squad-env routes', () => {
     })
   })
 
-  describe('squad secret exposure allowlist', () => {
-    async function getListedSecret(key: string): Promise<any> {
-      const res = await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
-        headers: authHeaders(admin.token),
-      })
-      expect(res.status).toBe(200)
-      const data = await res.json()
-      return data.secrets.find((secret: any) => secret.key === key)
-    }
-
-    it('lists selectable secret names without plaintext values', async () => {
-      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'vercel-secret', 'test')
-
-      const res = await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
-        headers: authHeaders(admin.token),
-      })
-
-      expect(res.status).toBe(200)
-      const data = await res.json()
-      expect(JSON.stringify(data)).toContain('DEPLOY_TEST_VERCEL_TOKEN')
-      expect(JSON.stringify(data)).not.toContain('vercel-secret')
-    })
-
-    it('returns selected secret names without plaintext values', async () => {
-      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'vercel-secret', 'test')
-
-      const res = await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_TEST_VERCEL_TOKEN'] }),
-      })
-
-      expect(res.status).toBe(200)
-      const data = await res.json()
-      expect(data.exposedSecretKeys).toEqual(['DEPLOY_TEST_VERCEL_TOKEN'])
-      expect(JSON.stringify(data)).not.toContain('vercel-secret')
-
-      const getRes = await app.request(`/api/squads/workspace/${squadId}/env`, { headers: authHeaders(admin.token) })
-      const getData = await getRes.json()
-      expect(getData.content).not.toContain('vercel-secret')
-      expect(getData.exposedSecretKeys).toEqual(['DEPLOY_TEST_VERCEL_TOKEN'])
-    })
-
-    it('resolves squad UUID prefixes when exposing secrets', async () => {
-      await getSecretStore().set('DEPLOY_TEST_NETLIFY_TOKEN', 'netlify-secret', 'test')
-      const prefix = squadId.slice(0, 8)
-
-      const res = await app.request(`/api/squads/workspace/${prefix}/env/secrets`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_TEST_NETLIFY_TOKEN'] }),
-      })
-
-      expect(res.status).toBe(200)
-      const data = await res.json()
-      expect(data.exposedSecretKeys).toEqual(['DEPLOY_TEST_NETLIFY_TOKEN'])
-
-      const getRes = await app.request(`/api/squads/workspace/${squadId}/env`, { headers: authHeaders(admin.token) })
-      const getData = await getRes.json()
-      expect(getData.exposedSecretKeys).toEqual(['DEPLOY_TEST_NETLIFY_TOKEN'])
-    })
-
-    it('overrides exposed secrets on POST so the UI can unexpose unchecked secrets', async () => {
-      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'vercel-secret', 'test')
-      await getSecretStore().set('DEPLOY_TEST_NETLIFY_TOKEN', 'netlify-secret', 'test')
-
-      await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_TEST_VERCEL_TOKEN', 'DEPLOY_TEST_NETLIFY_TOKEN'] }),
-      })
-
-      const res = await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_TEST_NETLIFY_TOKEN'] }),
-      })
-
-      expect(res.status).toBe(200)
-      const data = await res.json()
-      expect(data.exposedSecretKeys).toEqual(['DEPLOY_TEST_NETLIFY_TOKEN'])
-    })
-
-    it('appends exposed secrets on PUT instead of replacing existing exposed secrets', async () => {
-      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'vercel-secret', 'test')
-      await getSecretStore().set('DEPLOY_TEST_NETLIFY_TOKEN', 'netlify-secret', 'test')
-
-      await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_TEST_VERCEL_TOKEN'] }),
-      })
-
-      const res = await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_TEST_NETLIFY_TOKEN'] }),
-      })
-
-      expect(res.status).toBe(200)
-      const data = await res.json()
-      expect(data.exposedSecretKeys).toEqual(['DEPLOY_TEST_VERCEL_TOKEN', 'DEPLOY_TEST_NETLIFY_TOKEN'])
-    })
-
-    it('removes exposed secrets on DELETE', async () => {
-      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'vercel-secret', 'test')
-      await getSecretStore().set('DEPLOY_TEST_NETLIFY_TOKEN', 'netlify-secret', 'test')
-
-      await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_TEST_VERCEL_TOKEN', 'DEPLOY_TEST_NETLIFY_TOKEN'] }),
-      })
-
-      const res = await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_TEST_VERCEL_TOKEN'] }),
-      })
-
-      expect(res.status).toBe(200)
-      const data = await res.json()
-      expect(data.exposedSecretKeys).toEqual(['DEPLOY_TEST_NETLIFY_TOKEN'])
-    })
-
-    it('reports effective exposure for global-only, squad-only, both, and neither exposure states', async () => {
-      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'global-vercel-secret', 'test')
-      await getSecretStore().set('DEPLOY_TEST_NETLIFY_TOKEN', 'squad-netlify-secret', 'test')
-
-      const globalRes = await app.request('/api/squads/workspace/env/global-secrets', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_TEST_VERCEL_TOKEN', 'DEPLOY_TEST_RAILWAY_TOKEN'] }),
-      })
-      expect(globalRes.status).toBe(200)
-      const globalData = await globalRes.json()
-      expect(globalData.globallyExposedSecretKeys).toEqual(['DEPLOY_TEST_RAILWAY_TOKEN', 'DEPLOY_TEST_VERCEL_TOKEN'])
-      expect(JSON.stringify(globalData)).not.toContain('global-vercel-secret')
-
-      await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_TEST_NETLIFY_TOKEN', 'DEPLOY_TEST_RAILWAY_TOKEN'] }),
-      })
-
-      const globalOnly = await getListedSecret('DEPLOY_TEST_VERCEL_TOKEN')
-      expect(globalOnly.exposed).toBe(true)
-      expect(globalOnly.squadExposed).toBe(false)
-      expect(globalOnly.globallyExposed).toBe(true)
-
-      const squadOnly = await getListedSecret('DEPLOY_TEST_NETLIFY_TOKEN')
-      expect(squadOnly.exposed).toBe(true)
-      expect(squadOnly.squadExposed).toBe(true)
-      expect(squadOnly.globallyExposed).toBe(false)
-
-      const both = await getListedSecret('DEPLOY_TEST_RAILWAY_TOKEN')
-      expect(both.exposed).toBe(true)
-      expect(both.squadExposed).toBe(true)
-      expect(both.globallyExposed).toBe(true)
-
-      const neither = await getListedSecret('DEPLOY_TEST_DIGITALOCEAN_TOKEN')
-      expect(neither.exposed).toBe(false)
-      expect(neither.squadExposed).toBe(false)
-      expect(neither.globallyExposed).toBe(false)
-    })
-
-    it('rejects secret keys that are not valid environment variable names', async () => {
-      const res = await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_TEST_VERCEL_TOKEN; echo leaked'] }),
-      })
-
-      expect(res.status).toBe(400)
-    })
-  })
-
-  /**
-   * Adding a key to an exposure needs read access to that key in the Secret Store, on top of
-   * env:write / settings:write. Synthetic key names only: exposure stores names, never values, and
-   * these keys are never set in the store. `DEPLOY_*` is in the `integration` group and `OPENAI_*`
-   * in `provider` (config/secrets/groups.yaml).
-   */
-  describe('exposing a key requires Secret Store read access to it', () => {
-    const INTEGRATION_KEY = 'DEPLOY_SYNTH_EXPOSE_TEST_TOKEN'
-    const PROVIDER_KEY = 'OPENAI_SYNTH_EXPOSE_TEST_KEY'
-    const UNKNOWN_PROVIDER_KEY = 'OPENAI_SYNTH_NEVER_STORED_KEY'
-
-    async function userWith(permissions: string[]): Promise<TestUser> {
-      const user = await createTestUser({ prefix: rbacPrefix })
-      const role = await createTestRole({ prefix: rbacPrefix, permissions })
-      await assignRole({ userId: user.id, roleId: role.id, scope: 'system' })
-      return user
-    }
-
-    function send(user: TestUser, method: string, path: string, keys: string[]) {
-      return app.request(`/api/squads/workspace${path}`, {
-        method,
-        headers: { 'Content-Type': 'application/json', ...authHeaders(user.token) },
-        body: JSON.stringify({ keys }),
-      })
-    }
-
-    async function squadExposure(): Promise<string[]> {
-      const res = await app.request(`/api/squads/workspace/${squadId}/env`, { headers: authHeaders(admin.token) })
-      return (await res.json()).exposedSecretKeys
-    }
-
-    async function globalExposure(): Promise<string[]> {
-      const res = await app.request('/api/squads/workspace/env/global-secrets', { headers: authHeaders(admin.token) })
-      return (await res.json()).globallyExposedSecretKeys
-    }
-
-    it('refuses env:write without read access on both squad add paths, storing nothing', async () => {
-      const writer = await userWith(['env:read', 'env:write'])
-      for (const method of ['PUT', 'POST']) {
-        const res = await send(writer, method, `/${squadId}/env/secrets`, [INTEGRATION_KEY])
-        expect(res.status).toBe(403)
-        expect((await res.json()).error).toContain(INTEGRATION_KEY)
-      }
-      expect(await squadExposure()).toEqual([])
-    })
-
-    it('answers an unreadable key the same whether or not it exists in the store', async () => {
-      const operator = await userWith(['env:read', 'env:write', 'secrets:read:integration'])
-      const listed = await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
-        headers: authHeaders(admin.token),
-      })
-      const existing = (await listed.json()).secrets.find((secret: any) => secret.key.startsWith('OPENAI_'))
-      expect(existing).toBeDefined()
-
-      const known = await send(operator, 'PUT', `/${squadId}/env/secrets`, [existing.key])
-      const unknown = await send(operator, 'PUT', `/${squadId}/env/secrets`, [UNKNOWN_PROVIDER_KEY])
-      expect(known.status).toBe(403)
-      expect(unknown.status).toBe(403)
-      const knownBody = JSON.stringify(await known.json()).replace(existing.key, 'KEY')
-      const unknownBody = JSON.stringify(await unknown.json()).replace(UNKNOWN_PROVIDER_KEY, 'KEY')
-      expect(knownBody).toBe(unknownBody)
-    })
-
-    it("lets a group reader add only its group's keys, and refuses a mixed change whole", async () => {
-      const operator = await userWith(['env:read', 'env:write', 'secrets:read:integration'])
-
-      expect((await send(operator, 'PUT', `/${squadId}/env/secrets`, [PROVIDER_KEY])).status).toBe(403)
-      expect((await send(operator, 'POST', `/${squadId}/env/secrets`, [INTEGRATION_KEY, PROVIDER_KEY])).status).toBe(
-        403
-      )
-      expect(await squadExposure()).toEqual([])
-
-      const res = await send(operator, 'PUT', `/${squadId}/env/secrets`, [INTEGRATION_KEY])
-      expect(res.status).toBe(200)
-      expect((await res.json()).exposedSecretKeys).toEqual([INTEGRATION_KEY])
-    })
-
-    it('always allows removal, and does not re-check keys that are already exposed', async () => {
-      expect((await send(admin, 'POST', `/${squadId}/env/secrets`, [PROVIDER_KEY])).status).toBe(200)
-      const operator = await userWith(['env:read', 'env:write', 'secrets:read:integration'])
-
-      // The unreadable key stays exposed while the operator adds a readable one, by append or replace.
-      expect((await send(operator, 'PUT', `/${squadId}/env/secrets`, [INTEGRATION_KEY])).status).toBe(200)
-      expect((await squadExposure()).sort()).toEqual([INTEGRATION_KEY, PROVIDER_KEY].sort())
-      expect((await send(operator, 'POST', `/${squadId}/env/secrets`, [PROVIDER_KEY, INTEGRATION_KEY])).status).toBe(
-        200
-      )
-
-      // A writer with no Secret Store read access at all can still remove, by DELETE or by replace.
-      const writer = await userWith(['env:read', 'env:write'])
-      expect((await send(writer, 'POST', `/${squadId}/env/secrets`, [PROVIDER_KEY])).status).toBe(200)
-      expect(await squadExposure()).toEqual([PROVIDER_KEY])
-      expect((await send(writer, 'DELETE', `/${squadId}/env/secrets`, [PROVIDER_KEY])).status).toBe(200)
-      expect(await squadExposure()).toEqual([])
-    })
-
-    it('lists only keys the caller may read, plus keys already exposed to the squad, marking which it may add', async () => {
-      const operator = await userWith(['env:read', 'env:write', 'secrets:read:integration'])
-      const list = async (user: TestUser): Promise<any[]> => {
-        const res = await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
-          headers: authHeaders(user.token),
+  it('retires squad/global exposure routes even for an operator', async () => {
+    for (const path of [`${squadId}/env/secrets`, 'env/global-secrets']) {
+      for (const method of ['GET', 'POST', 'PUT', 'DELETE']) {
+        const res = await app.request(`/api/squads/workspace/${path}`, {
+          method,
+          headers: { ...authHeaders(admin.token), 'Content-Type': 'application/json' },
+          ...(method === 'GET' ? {} : { body: JSON.stringify({ keys: ['SYNTH_TOKEN'] }) }),
         })
-        expect(res.status).toBe(200)
-        return (await res.json()).secrets
+        expect(res.status).toBe(404)
       }
-
-      const all = await list(admin)
-      const provider = all.find((secret) => secret.key.startsWith('OPENAI_'))
-      const otherProvider = all.find((secret) => secret.key === 'APNS_KEY_ID')
-      expect(provider).toBeDefined()
-      expect(otherProvider).toBeDefined()
-
-      let listed = await list(operator)
-      const integration = listed.find((secret) => secret.key.startsWith('DEPLOY_'))
-      expect(integration.canExpose).toBe(true)
-      // No unreadable (non-integration) key name is listed while none is exposed.
-      expect(listed.every((secret) => secret.canExpose)).toBe(true)
-      expect(listed.some((secret) => secret.key === provider.key)).toBe(false)
-
-      // Exposed unreadable keys stay listed (squad: so they can be removed; global: already in the env).
-      expect((await send(admin, 'PUT', `/${squadId}/env/secrets`, [provider.key])).status).toBe(200)
-      expect((await send(admin, 'PUT', '/env/global-secrets', [otherProvider.key])).status).toBe(200)
-      listed = await list(operator)
-      const squadExposed = listed.find((secret) => secret.key === provider.key)
-      expect(squadExposed).toMatchObject({ squadExposed: true, canExpose: false })
-      const globallyExposed = listed.find((secret) => secret.key === otherProvider.key)
-      expect(globallyExposed).toMatchObject({ globallyExposed: true, canExpose: false })
-      expect(
-        listed
-          .filter((secret) => !secret.canExpose)
-          .map((secret) => secret.key)
-          .sort()
-      ).toEqual([provider.key, otherProvider.key].sort())
-    })
-
-    it('applies the same rule to global exposure', async () => {
-      const settingsWriter = await userWith(['settings:read', 'settings:write'])
-      for (const method of ['PUT', 'POST']) {
-        expect((await send(settingsWriter, method, '/env/global-secrets', [INTEGRATION_KEY])).status).toBe(403)
-      }
-      expect(await globalExposure()).toEqual([])
-
-      const operator = await userWith(['settings:read', 'settings:write', 'secrets:read:integration'])
-      expect((await send(operator, 'PUT', '/env/global-secrets', [PROVIDER_KEY])).status).toBe(403)
-      expect((await send(operator, 'POST', '/env/global-secrets', [INTEGRATION_KEY, PROVIDER_KEY])).status).toBe(403)
-      expect(await globalExposure()).toEqual([])
-      expect((await send(operator, 'PUT', '/env/global-secrets', [INTEGRATION_KEY])).status).toBe(200)
-
-      // Already-exposed keys are not re-checked, and removal needs no read access.
-      expect((await send(admin, 'PUT', '/env/global-secrets', [PROVIDER_KEY])).status).toBe(200)
-      expect((await send(operator, 'POST', '/env/global-secrets', [PROVIDER_KEY, INTEGRATION_KEY])).status).toBe(200)
-      expect((await send(settingsWriter, 'DELETE', '/env/global-secrets', [PROVIDER_KEY])).status).toBe(200)
-      expect((await send(settingsWriter, 'POST', '/env/global-secrets', [])).status).toBe(200)
-      expect(await globalExposure()).toEqual([])
-    })
+    }
   })
 })

@@ -13,7 +13,7 @@ import {
 import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integrations'
 import { createTestGitHubConnection } from '../../../test-utils/github-connection'
 import { getSecretStore } from '../../secrets'
-import { regenerateEnvFileForSquad, setExposedSecretKeys } from '../../squad/env'
+import { regenerateEnvFileForSquad } from '../../squad/env'
 import { getSquadWorkspacePath } from '../../squad/workspace'
 import { integrationConnectionService, integrationRoutesService, squadIntegrationRoutesService } from '../runtime'
 import { serializeOAuthCredential } from '../authorization/credential-bundle'
@@ -158,10 +158,6 @@ test('every integration assigned: generated env/files stay credential-free, depl
       await getSecretStore().set(legacy, `synthetic-legacy-${key}`, 'test')
       sentinels.push(`synthetic-legacy-${key}`)
     }
-    await setExposedSecretKeys(
-      squadId,
-      Object.keys(providers).map((key) => `DEPLOY_${key.toUpperCase()}_TOKEN`)
-    )
     await regenerateEnvFileForSquad(squadId)
     const dot = join(getSquadWorkspacePath(squadId), '.ficus')
     const files = readdirSync(dot, { recursive: true, withFileTypes: true })

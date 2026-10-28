@@ -267,14 +267,15 @@ export async function runBash(
   command: string,
   kind = 'file_sync',
   invocationId = stableSetupInvocationId(kind, command),
-  fence?: SetupBashFence
+  fence?: SetupBashFence,
+  timeoutSeconds?: number
 ): Promise<void> {
   await fence?.before(invocationId, kind)
   try {
     await new Promise<void>((resolve, reject) => {
       let exitCode: number | undefined
       let errText = ''
-      const stream = client.bash({ command, invocationId })
+      const stream = client.bash({ command, invocationId, ...(timeoutSeconds ? { timeoutSeconds } : {}) })
       stream.on('data', (r: BashResponse) => {
         if (r.error) errText = r.error
         if (r.stderr) errText += Buffer.from(r.stderr, 'base64').toString()
@@ -323,14 +324,20 @@ export function boxWorkspaceDotDirCommand(roots: string[]): string {
   ].join('\n')
 }
 
-async function prepareBoxWorkspaceDotDirs(client: SandboxClient, home: string, fence?: SetupBashFence): Promise<void> {
+async function prepareBoxWorkspaceDotDirs(
+  client: SandboxClient,
+  home: string,
+  fence?: SetupBashFence,
+  timeoutSeconds?: number
+): Promise<void> {
   // No files or manifests may change when canonical workspace preparation fails or its outcome is unknown.
   await runBash(
     client,
     boxWorkspaceDotDirCommand([`${home}/workspace`, `${home}/.private`]),
     'file_sync',
     undefined,
-    fence
+    fence,
+    timeoutSeconds
   )
 }
 
@@ -1033,69 +1040,6 @@ export async function pushSquadSshToBox(
 }
 
 // ---------------------------------------------------------------------------
-// pushAgentSecretsToBox — on-demand per-agent secrets refresh (no re-ensure)
-// ---------------------------------------------------------------------------
-
-/** Injectable seams for {@link pushAgentSecretsToBox}; each defaults to production. */
-export type PushAgentSecretsToBoxDeps = Pick<
-  PushSquadSshToBoxDeps,
-  'getMachineBox' | 'getClient' | 'boxHome' | 'bashFence' | 'stampBoxSyncedHash'
->
-
-/**
- * Re-sync ONE agent box's `agent-secrets` asset right away, so exposing,
- * rotating or REVOKING a per-agent secret reaches a running vm box without
- * waiting for the next ensure. Same contract as the asset's step in
- * {@link syncBoxFiles}: the same dest root, file list and hash (so the next
- * ensure sees a matching stamp), a 0600 create-mode write when the core-host
- * file exists, and removal of the previously pushed file when it does not.
- *
- * Like {@link pushSquadSshToBox}, a sandbox with no `machine_boxes` row is a
- * live mount (docker/k8s: the core-host file IS the sandbox file) and a box
- * this process cannot reach reports `box-unreachable` — its next ensure
- * re-syncs before any command runs there.
- */
-export async function pushAgentSecretsToBox(
-  sandboxId: string,
-  deps: PushAgentSecretsToBoxDeps = {}
-): Promise<{ pushed: boolean; reason?: string }> {
-  const asset = SANDBOX_ASSETS.find((candidate) => candidate.name === 'agent-secrets')
-  if (!asset) throw new Error('agent-secrets asset is not declared')
-  const source = await asset.source({ sandboxId, role: 'agent' })
-  if (!source) return { pushed: false, reason: 'not-an-agent-box' }
-
-  const box = await (deps.getMachineBox ?? getMachineBoxReal)(sandboxId)
-  if (!box) return { pushed: false, reason: 'live-mount' }
-  const client = await (deps.getClient ?? defaultGetClient)(sandboxId)
-  if (!client) return { pushed: false, reason: 'box-unreachable' }
-
-  const home = (deps.boxHome ?? defaultBoxHome)(sandboxId)
-  const root = resolveBoxDest(home, asset.dest.base)
-  const files: PushableFile[] = sortByRelPath(await source.files()).map((f) => ({
-    relPath: [asset.dest.relPath, f.relPath].filter((seg) => seg.length > 0).join('/'),
-    bytes: f.bytes,
-    mode: f.mode,
-  }))
-  const previous = parseSyncedAssetState(box.syncedHashes?.[asset.name])
-  const currentFiles = files.map((file) => file.relPath).sort()
-  currentFiles.forEach((relPath) => validatedManagedPath(root, relPath))
-  // Same guard as a full sync: never write through a symlinked settings dir.
-  await runBash(client, boxWorkspaceDotDirCommand([root]), 'file_sync', undefined, deps.bashFence)
-  if (files.length) await pushAssetFiles(client, root, files, deps.bashFence)
-  const current = new Set(currentFiles)
-  // A box stamped before per-file manifests (or never stamped) still gets the
-  // fixed file path removed: revocation must not depend on stamp history.
-  const stale = previous?.files ?? [asset.dest.relPath]
-  await removeManagedFiles(
-    client,
-    root,
-    stale.filter((path) => !current.has(path)),
-    deps.bashFence
-  )
-  const stamp = deps.stampBoxSyncedHash ?? stampBoxSyncedHashReal
-  await stamp(box.machineId, sandboxId, asset.name, computeAssetHash(root, files), currentFiles)
-  return { pushed: true }
-}
 
 // ---------------------------------------------------------------------------
 // resolveBoxApiUrl — the box's callback URL (BoxEnv.FICUS_API_URL)
@@ -1219,4 +1163,62 @@ export async function resolveBoxApiTransport(
 
 export async function resolveBoxApiUrl(machine: Machine, deps: ResolveBoxApiUrlDeps = {}): Promise<string> {
   return (await resolveBoxApiTransport(machine, deps)).url
+}
+
+/** Rollout-only forced refresh: deliberately independent of ensure and old asset hashes. */
+export async function cleanExposureFilesOnBox(
+  sandboxId: string,
+  squadId: string | null,
+  deps: {
+    getClient?: (id: string) => Promise<SandboxClient | null>
+    readEnv?: (squadId: string) => Promise<Uint8Array>
+  } = {}
+): Promise<boolean> {
+  let client: SandboxClient | null
+  try {
+    client = await (deps.getClient ?? defaultGetClient)(sandboxId)
+  } catch {
+    return false
+  }
+  if (!client) return false
+  const home = defaultBoxHome(sandboxId)
+  await prepareBoxWorkspaceDotDirs(client, home, undefined, 30)
+  if (squadId) {
+    const content = await (
+      deps.readEnv ??
+      (async (id) => {
+        const { getSquadWorkspacePath } = await import('../../squad/workspace')
+        return readFileSync(join(getSquadWorkspacePath(id), '.ficus', '.env'))
+      })
+    )(squadId)
+    await pushFile(client, `${home}/workspace/.ficus/.env`, content, '0600')
+  } else {
+    // A detached former member must not retain its previously pushed squad env.
+    await runBash(
+      client,
+      `rm -f -- ${shellQuote(`${home}/workspace/.ficus/.env`)}`,
+      'exposure_cleanup',
+      undefined,
+      undefined,
+      30
+    )
+  }
+  // Exact managed legacy filename only. find does not follow symlink directories;
+  // staging from a previously interrupted restore must not reintroduce this file.
+  await runBash(
+    client,
+    [
+      'set -eu',
+      `for root in ${shellQuote(`${home}/.private`)} ${shellQuote(`${home}/.ficus-migrate`)}; do`,
+      '  [ ! -L "$root" ] || { echo "private root must not be a symlink" >&2; exit 1; }',
+      '  [ ! -d "$root" ] || find "$root" -path "*/.ficus/agent-secrets.env" -delete',
+      'done',
+      `[ ! -d ${shellQuote(`${home}/.ficus-migrate`)} ] || find ${shellQuote(`${home}/.ficus-migrate`)} -path '*/workspace/.ficus/.env' -delete`,
+    ].join('\n'),
+    'exposure_cleanup',
+    undefined,
+    undefined,
+    30
+  )
+  return true
 }

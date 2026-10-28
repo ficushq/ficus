@@ -132,7 +132,7 @@ export const CLI_COMMAND_PERMISSIONS: Readonly<Record<string, readonly string[]>
   'provider-auth': ['provider-auth:read', 'provider-auth:write'], // routes/provider-auth.ts
   role: ['roles:read', 'roles:create', 'roles:update', 'roles:delete'], // routes/roles.ts
   'shared-prompt': ['agent-types:read', 'agent-types:update'], // routes/shared-prompts.ts
-  'squad-env': ['env:read', 'env:write', 'settings:read', 'settings:write'], // routes/squad-env.ts
+  'squad-env': ['env:read', 'env:write'], // routes/squad-env.ts
   'squad-preset': ['squad-presets:read', 'squad-presets:create', 'squad-presets:update', 'squad-presets:delete'], // routes/squad-presets.ts
   user: ['users:read', 'users:create', 'users:update', 'users:delete'], // routes/users.ts
   webhook: ['webhooks:read'], // routes/webhooks.ts
@@ -158,10 +158,6 @@ export const CLI_COMMAND_PERMISSIONS: Readonly<Record<string, readonly string[]>
   'agent delete': ['agents:delete'],
   'agent prune': ['agents:delete'],
   'agent scope': ['agents:scopes:read', 'agents:scopes:manage'],
-  'agent secrets': ['env:read'], // routes/agent-secrets.ts GET /:id/secrets
-  // routes/agent-secrets.ts also refuses every agent identity: only a person changes these.
-  'agent expose-secrets': ['env:write'],
-  'agent unexpose-secrets': ['env:write'],
 
   // ficus inbox — routes/inbox.ts
   'inbox send-system': ['inbox:system'],

@@ -1013,59 +1013,20 @@ export const sandboxToolchainActivations = pgTable(
   })
 )
 
-export const squadSecretExposures = pgTable(
-  'squad_secret_exposures',
+/** Durable rollout acknowledgements; deliberately independent of owner-row deletion. */
+export const sandboxExposureCleanup = pgTable(
+  'sandbox_exposure_cleanup',
   {
-    squadId: uuid('squad_id')
-      .notNull()
-      .references(() => squads.id, { onDelete: 'cascade' }),
-    secretKey: varchar('secret_key', { length: 255 }).notNull(),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
+    targetId: text('target_id').primaryKey(),
+    kind: text('kind').$type<'squad' | 'private' | 'archive' | 'vm'>().notNull(),
+    sourceId: text('source_id').notNull(),
+    squadId: uuid('squad_id'),
+    status: text('status').$type<'pending' | 'done' | 'failed'>().notNull().default('pending'),
+    reason: text('reason'),
+    nextAttemptAt: timestamp('next_attempt_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
-  (table) => ({
-    pk: unique().on(table.squadId, table.secretKey),
-    squadIdx: index('squad_secret_exposures_squad_idx').on(table.squadId),
-    secretKeyIdx: index('squad_secret_exposures_secret_key_idx').on(table.secretKey),
-  })
-)
-
-export const globalSecretExposures = pgTable(
-  'global_secret_exposures',
-  {
-    secretKey: varchar('secret_key', { length: 255 }).notNull(),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  },
-  (table) => ({
-    pk: unique().on(table.secretKey),
-    secretKeyIdx: index('global_secret_exposures_secret_key_idx').on(table.secretKey),
-  })
-)
-
-/**
- * Secret Store keys exposed to ONE agent's own sandbox (names only; values stay
- * in the Secret Store). Keyed by agent id, so an exposure never follows a reused
- * name or a respawned agent, and deleted with the agent. `squadId` records the
- * squad the agent belonged to when the key was exposed: a row whose squad no
- * longer matches the agent's is inert (see services/agent/secrets.ts).
- */
-export const agentSecretExposures = pgTable(
-  'agent_secret_exposures',
-  {
-    agentId: uuid('agent_id')
-      .notNull()
-      .references(() => agents.id, { onDelete: 'cascade' }),
-    squadId: uuid('squad_id').references(() => squads.id, { onDelete: 'cascade' }),
-    secretKey: varchar('secret_key', { length: 255 }).notNull(),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  },
-  (table) => ({
-    pk: unique().on(table.agentId, table.secretKey),
-    agentIdx: index('agent_secret_exposures_agent_idx').on(table.agentId),
-    secretKeyIdx: index('agent_secret_exposures_secret_key_idx').on(table.secretKey),
-  })
+  (t) => [index('sandbox_exposure_cleanup_retry_idx').on(t.status, t.nextAttemptAt)]
 )
 
 export const localDeployments = pgTable(

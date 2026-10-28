@@ -39,7 +39,6 @@ function render({
   const qc = new QueryClient()
   qc.setQueryData(integrationQueryKeys.gitAuthorDefaults(), { github })
   qc.setQueryData(queryKeys.secrets.list(), { secrets, managedKeys, managed, exeBacked })
-  qc.setQueryData(['workspace-env', 'global-secrets'], { globallyExposedSecretKeys: [] })
   qc.setQueryData(queryKeys.auth.permissions(undefined), { permissions })
   return renderToStaticMarkup(
     <QueryClientProvider client={qc}>

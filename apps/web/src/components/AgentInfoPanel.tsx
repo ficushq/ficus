@@ -2,7 +2,6 @@ import { providerLabel, type ModelCatalogEntry, type Agent } from '@ficus/shared
 import type { AgentTypeConfig } from '../api/config'
 import { AgentSandboxControls } from './AgentSandboxControls'
 import { AgentScopesPanel } from './AgentScopesPanel'
-import { AgentSecretsPanel } from './AgentSecretsPanel'
 import { SquadSandboxStatusCard } from './sandbox/SquadSandboxStatusCard'
 import { AmtpMailboxSection } from './AmtpMailboxSection'
 import { usePermissions } from '../hooks/usePermissions'
@@ -181,7 +180,6 @@ export function AgentInfoPanel({ agent, agentType }: AgentInfoPanelProps) {
           )}
         </div>
         <AmtpMailboxSection agentId={agent.id} squadId={agent.squadId ?? undefined} />
-        <AgentSecretsPanel agentId={agent.id} squadId={agent.squadId ?? undefined} />
         <AgentScopesPanel agentId={agent.id} />
       </div>
     </div>

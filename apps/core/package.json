@@ -64,7 +64,8 @@
     "turndown": "^7.2.2",
     "turndown-plugin-gfm": "^1.0.2",
     "web-push": "^3.6.7",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "tar-stream": "3.1.7"
   },
   "devDependencies": {
     "@types/archiver": "^8.0.0",
@@ -79,7 +80,8 @@
     "dotenv": "^17.3.1",
     "drizzle-kit": "0.31.11",
     "ntn": "0.23.25",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "@types/tar-stream": "^3.1.4"
   },
   "trustedDependencies": [
     "ntn"

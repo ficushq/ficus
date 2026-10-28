@@ -1,3 +1,4 @@
+import { getExposureCleanupStatus } from '../services/sandbox/exposure-cleanup'
 import { getPostgresError, publicErrorMessage } from '../db/errors'
 import { sentAssistantRouting } from '../services/routing/assistant-routing-preview'
 import { captureRoutingCorrection } from '../services/routing/routing-eval-capture'
@@ -1080,6 +1081,7 @@ export const agentsRouter = new Hono()
     // Host has no devbox, so a declared toolchain has nowhere to be applied:
     // resolving it would decorate the payload with the status of a thing that
     // cannot exist (and flip devboxReady off) for a wasted DB round-trip.
+    const exposureCleanup = await getExposureCleanupStatus(sandboxId, squad?.id)
     const toolchain = isHostRuntime() ? undefined : await resolveToolchainStatus(sandboxId, squad)
 
     // Docker sandboxes have no live status surface — they're "running" if tracked.
@@ -1096,7 +1098,8 @@ export const agentsRouter = new Hono()
             runtime: isHostRuntime() ? ('host' as const) : ('docker' as const),
             logStreaming: typeof manager.streamLogs === 'function',
           },
-          toolchain
+          toolchain,
+          exposureCleanup
         )
       )
     }
@@ -1127,7 +1130,8 @@ export const agentsRouter = new Hono()
           logStreaming: typeof manager.streamLogs === 'function',
           ...(provisioning ? { provisioning } : {}),
         },
-        toolchain
+        toolchain,
+        exposureCleanup
       )
     )
   })
