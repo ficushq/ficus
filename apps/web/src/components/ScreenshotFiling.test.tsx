@@ -164,8 +164,7 @@ const picker = (name: string) => card()!.querySelector(`button[aria-label^="${na
 const shown = (name: string) => picker(name)?.textContent ?? null
 const button = (label: string) =>
   Array.from(card()!.querySelectorAll('button')).find((candidate) => candidate.textContent === label) as
-    | HTMLButtonElement
-    | undefined
+    HTMLButtonElement | undefined
 const options = () =>
   Array.from(document.querySelectorAll('[role="listbox"]:not([data-state="closed"]) [role="option"]'))
 /** The fields marked "not sure", by their row name. */

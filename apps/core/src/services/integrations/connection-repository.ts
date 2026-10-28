@@ -94,9 +94,7 @@ export interface IntegrationAssignmentRepository extends AssignedConnectionResol
 }
 
 export type GuardedConnectionMutation<T = undefined> =
-  | { status: 'updated'; value: T }
-  | { status: 'not_found' }
-  | { status: 'in_use'; usage: IntegrationConnectionUsage }
+  { status: 'updated'; value: T } | { status: 'not_found' } | { status: 'in_use'; usage: IntegrationConnectionUsage }
 
 export interface IntegrationConnectionRepository {
   createPending<C>(input: CreatePendingConnection<C>): Promise<IntegrationConnectionRecord<C>>

@@ -2,14 +2,7 @@ import { createHash } from 'node:crypto'
 import type { SquadActivityItem, SquadActivityLane, SquadActivityRef } from '@ficus/shared'
 
 export type SquadActivitySourceFamily =
-  | 'chat'
-  | 'inbox'
-  | 'execution'
-  | 'workstream'
-  | 'wait'
-  | 'github-pr'
-  | 'github-issue'
-  | 'linear-issue'
+  'chat' | 'inbox' | 'execution' | 'workstream' | 'wait' | 'github-pr' | 'github-issue' | 'linear-issue'
 export type SquadActivityAccessScope = 'agents' | 'workstreams' | 'inbox' | 'workstreams_inbox'
 
 export interface ExtractedSquadActivity extends SquadActivityItem {

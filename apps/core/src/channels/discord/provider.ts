@@ -13,11 +13,9 @@ import { getChannelIntegrationValue } from '../../services/integrations/channels
 
 const log = createLogger('discord-provider')
 
-// Configure sha512 for @noble/ed25519 v3.x
-// @ts-expect-error - configuration property
-ed.etc.sha512Sync = (...m: Uint8Array[]) => sha512(ed.etc.concatBytes(...m))
-// @ts-expect-error - configuration property
-ed.etc.sha512Async = (...m: Uint8Array[]) => Promise.resolve(sha512(ed.etc.concatBytes(...m)))
+// @noble/ed25519 v3 reads SHA-512 from `ed.hashes` (`ed.etc` is frozen).
+// verifyAsync uses WebCrypto by default; this also enables the sync API.
+ed.hashes.sha512 = sha512
 
 // =============================================================================
 // Types

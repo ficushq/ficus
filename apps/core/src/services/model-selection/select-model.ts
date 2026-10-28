@@ -5,12 +5,7 @@ import { parseModelSpec, splitModelPriorityList } from '../../lib/utils/model-sp
  * Why a candidate was rejected during model selection.
  */
 export type CandidateReason =
-  | 'parse-error'
-  | 'unknown-provider'
-  | 'unknown-model'
-  | 'provider-disabled'
-  | 'auth-missing'
-  | 'provider-exhausted'
+  'parse-error' | 'unknown-provider' | 'unknown-model' | 'provider-disabled' | 'auth-missing' | 'provider-exhausted'
 
 export interface CandidateDiagnostic {
   spec: string

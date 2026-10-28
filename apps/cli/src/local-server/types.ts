@@ -33,15 +33,7 @@ export const RUNTIME_DESCRIPTIONS: Record<LocalRuntime, string> = {
 }
 
 export type ExplicitKey =
-  | 'supervisor'
-  | 'runtime'
-  | 'port'
-  | 'appUrl'
-  | 'homeDir'
-  | 'databaseUrl'
-  | 'dbName'
-  | 'instance'
-  | 'dbPort'
+  'supervisor' | 'runtime' | 'port' | 'appUrl' | 'homeDir' | 'databaseUrl' | 'dbName' | 'instance' | 'dbPort'
 
 export interface SetupOptions {
   root: string

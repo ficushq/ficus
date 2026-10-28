@@ -1,12 +1,5 @@
 export type MonitorStatus =
-  | 'starting'
-  | 'running'
-  | 'canceling'
-  | 'exited'
-  | 'canceled'
-  | 'timed-out'
-  | 'failed'
-  | 'overload'
+  'starting' | 'running' | 'canceling' | 'exited' | 'canceled' | 'timed-out' | 'failed' | 'overload'
 /**
  * What the supervisor does when a monitor's process is LOST (sandbox restart
  * or unavailability, or the process vanished without recording an exit code).

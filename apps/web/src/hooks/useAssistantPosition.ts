@@ -3,13 +3,7 @@ import type { CSSProperties, PointerEvent, RefObject } from 'react'
 import { ASSISTANT_POSITION_STORAGE_KEY } from '@ficus/shared/browser-keys'
 
 export type AssistantCorner =
-  | 'center'
-  | 'top-left'
-  | 'top-center'
-  | 'top-right'
-  | 'bottom-left'
-  | 'bottom-center'
-  | 'bottom-right'
+  'center' | 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right'
 
 const corners: readonly AssistantCorner[] = [
   'center',
