@@ -42,8 +42,7 @@ export class GitHubSignRefused extends Error {
  * to the squad with commit signing off, so the object is created without a signature.
  */
 export type GitHubSignResult =
-  | { signed: true; signature: string }
-  | { signed: false; reason: 'signing_off'; login: string; message: string }
+  { signed: true; signature: string } | { signed: false; reason: 'signing_off'; login: string; message: string }
 
 export interface GitHubAccount {
   accessToken: string

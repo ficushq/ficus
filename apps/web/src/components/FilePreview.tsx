@@ -48,9 +48,7 @@ type FilePreviewProps = {
   /** Let the preview grow and scroll inside its parent (a modal body); off where the parent already scrolls. */
   scroll?: boolean
 } & (
-  | { kind: 'text'; content: string }
-  | { kind: 'image'; image: ReactNode }
-  | { kind: 'unavailable'; children: ReactNode }
+  { kind: 'text'; content: string } | { kind: 'image'; image: ReactNode } | { kind: 'unavailable'; children: ReactNode }
 )
 
 /**

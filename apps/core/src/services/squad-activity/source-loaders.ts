@@ -83,8 +83,7 @@ export type GitHubActivityBase =
 export type ReceiptActivityFamily = GitHubActivityFamily | 'linear-issue'
 export type ReceiptDispatchFact = GitHubDispatchFact | LinearIssueDispatchFact
 export type ReceiptActivityBase =
-  | GitHubActivityBase
-  | { sourceId: string; activityId: string; family: 'linear-issue'; fact: LinearIssueDispatchFact }
+  GitHubActivityBase | { sourceId: string; activityId: string; family: 'linear-issue'; fact: LinearIssueDispatchFact }
 
 /** The number the fact is about, in its family's vocabulary. */
 const githubFactNumber = (fact: GitHubDispatchFact): number => ('prNumber' in fact ? fact.prNumber : fact.issueNumber)

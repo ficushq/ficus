@@ -14,10 +14,7 @@ import { db, squads, users } from '../../../../db'
 import { getAccessibleSquadIds, hasUserPermissionWithExecutor, type Identity } from '../../../rbac/permissions'
 
 export type ManagedVaultAuthorizationCode =
-  | 'human_required'
-  | 'enabled_human_required'
-  | 'permission_required'
-  | 'squad_permission_required'
+  'human_required' | 'enabled_human_required' | 'permission_required' | 'squad_permission_required'
 
 export class ManagedVaultAuthorizationError extends Error {
   readonly status = 403

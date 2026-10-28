@@ -2196,11 +2196,10 @@ test('concurrent consultant commands share a client but retain distinct tokens, 
     podManager: { namespace: 'tau-sandboxes' },
   } as unknown as K8sSandboxManager
   const sandboxId = 'consultants_squad-one'
-  const tools = ['one', 'two'].map(
-    (id) =>
-      createK8sSandboxedCodingTools('/ignored', sandboxId, manager, `token-${id}`, 'squad-one', `exec-${id}`, id).find(
-        (tool) => tool.key === 'bash'
-      )!
+  const tools = ['one', 'two'].map((id) =>
+    createK8sSandboxedCodingTools('/ignored', sandboxId, manager, `token-${id}`, 'squad-one', `exec-${id}`, id).find(
+      (tool) => tool.key === 'bash'
+    )!
   )
   await Promise.all(tools.map((tool) => tool.execute('call', { command: 'pwd' })))
   expect(requests.map((request) => request.env.FICUS_TOKEN).sort()).toEqual(['token-one', 'token-two'])

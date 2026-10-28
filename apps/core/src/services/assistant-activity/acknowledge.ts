@@ -4,8 +4,7 @@ import { assistantConversations, assistantEntries, assistantUpdates, db, inbox }
 import { ownedConversation } from './read'
 
 export type MarkProcessedResult =
-  | { ok: true }
-  | { ok: false; reason: 'lease' | 'updates' | 'response'; message: string }
+  { ok: true } | { ok: false; reason: 'lease' | 'updates' | 'response'; message: string }
 
 /**
  * Record that Realtime presented (or deliberately interrupted) these updates. Requires the current

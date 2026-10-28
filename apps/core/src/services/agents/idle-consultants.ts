@@ -93,9 +93,7 @@ function stillIdleGuard(cutoff: Date) {
 }
 
 export type IdleDormancyOutcome =
-  | { outcome: 'dormant' }
-  | { outcome: 'deferred' }
-  | { outcome: 'skipped'; reason: string }
+  { outcome: 'dormant' } | { outcome: 'deferred' } | { outcome: 'skipped'; reason: string }
 
 /**
  * Make one consultant dormant only if it is still idle. Unlike the user's

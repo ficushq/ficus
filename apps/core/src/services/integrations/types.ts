@@ -1,11 +1,6 @@
 /** Provider-neutral integration contracts. Provider implementations are injected at composition time. */
 export type IntegrationCapabilityKind =
-  | 'agent_tools'
-  | 'webhook_ingress'
-  | 'event_polling'
-  | 'messaging'
-  | 'memory_source'
-  | 'notification_sink'
+  'agent_tools' | 'webhook_ingress' | 'event_polling' | 'messaging' | 'memory_source' | 'notification_sink'
 
 export interface RuntimeConnection<C = unknown> {
   id: string
