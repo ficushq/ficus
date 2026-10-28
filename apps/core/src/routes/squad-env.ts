@@ -30,7 +30,7 @@ const envNameSchema = z
   .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'Secret key must be a valid environment variable name')
 
 const setEnvSecretsSchema = z.object({
-  keys: z.array(envNameSchema),
+  keys: z.array(envNameSchema).max(100),
 })
 
 /**

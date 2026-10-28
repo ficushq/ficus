@@ -1,3 +1,4 @@
+import { requestBodyLimits } from './middleware/request-body-limits'
 import { stopAllBigbrainProcesses } from './services/integrations/bigbrain/stdio-transport'
 import { RuntimeReadiness } from './lib/infra/readiness'
 import { mountCoreDocs } from './lib/docs-serve'
@@ -281,6 +282,9 @@ app.post(INTERNAL_EVENTS_PATH, (c) => handleInternalEventPost(c.req.raw))
 // CSRF protection for cookie-authenticated browser requests (also covers /api/auth).
 app.use('/api/*', csrfProtection)
 
+app.use('/api/auth/*', requestBodyLimits)
+app.use('/api/webhooks/*', requestBodyLimits)
+
 // Unprotected routes (before auth middleware)
 app.route('/api/auth', authRouter)
 app.route('/api/webhooks', webhooksRouter)
@@ -289,6 +293,7 @@ app.route('/api/webhooks', webhooksRouter)
 app.use('/api/*', identityMiddleware)
 // Runtime RBAC fail-closed backstop for matched API routes.
 app.use('/api/*', authzSentinel)
+app.use('/api/*', requestBodyLimits)
 
 // RBAC routers (identity required)
 app.route('/api/webhooks', webhooksStatusRouter)
@@ -1133,6 +1138,8 @@ if (import.meta.main) {
   server = Bun.serve({
     hostname: host,
     port,
+    // Bun caps streamed uploads too; finite per-route readers protect API bodies.
+    maxRequestBodySize: Infinity,
     fetch(request, server) {
       attachPeerAddress(request, server.requestIP(request)?.address)
       // Bun calls this with (request, server); Hono's bun adapter reads the server

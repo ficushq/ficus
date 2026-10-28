@@ -512,6 +512,21 @@ describe('POST /api/agents/:id/message target validation', () => {
     await db.delete(squads).where(eq(squads.id, squadId))
   })
 
+  it('image collection refuses count before send or image lookup', async () => {
+    const agent = await Agent.create({ agentTypeId: 'manager', persist: true, squadId })
+    try {
+      const response = await app.request(`/api/agents/${agent.id}/message`, {
+        method: 'POST',
+        headers: { ...authHeaders(admin.token), 'content-type': 'application/json' },
+        body: JSON.stringify({ content: 'hello', imageIds: Array(101).fill(null) }),
+      })
+      expect(response.status).toBe(400)
+      expect(await response.json()).toEqual({ error: 'Invalid image IDs (max 100)' })
+    } finally {
+      await db.delete(agents).where(eq(agents.id, agent.id))
+    }
+  })
+
   it('rejects artifact builder agents not in waiting-input', async () => {
     const existingType = await AgentType.find(ARTIFACT_BUILDER_AGENT_TYPE_ID)
     if (!existingType) {

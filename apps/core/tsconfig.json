@@ -10,6 +10,10 @@
     "../../scripts/test-db.ts",
     "../../scripts/artifact/**/*.ts",
     "../../scripts/bigbrain/**/*.ts",
+    "../../packages/sandbox-server/src/services/atomic-write.ts",
+    "../../packages/sandbox-server/src/services/filesystem.ts",
+    "../../packages/sandbox-server/src/services/download.ts",
+    "../../packages/sandbox-server/src/paths.ts",
     "package.json"
   ]
 }

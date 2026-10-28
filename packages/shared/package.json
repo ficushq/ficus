@@ -24,6 +24,7 @@
     "./color-oklch": "./src/color-oklch.ts",
     "./bigbrain-palettes": "./src/bigbrain-palettes.ts",
     "./crypto": "./src/crypto.ts",
+    "./read-bounded-body": "./src/node/read-bounded-body.ts",
     "./node": "./src/node/index.ts",
     "./confined-fs": "./src/node/confined-fs.ts",
     "./provider-health": "./src/provider-health.ts",

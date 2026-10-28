@@ -1,3 +1,4 @@
+import { assertRecordLimit } from '../../lib/validation/request-collections'
 import { readdir, readFile } from 'fs/promises'
 import { join, relative, sep } from 'path'
 import yaml from 'js-yaml'
@@ -19,6 +20,7 @@ export interface SkillMarkdown {
 }
 
 export function validateSkillSupportFiles(value: unknown): SkillSupportFiles {
+  assertRecordLimit(value, 256, 'support files')
   if (value == null) return {}
   if (typeof value !== 'object' || Array.isArray(value)) throw new Error('supportFiles must be an object')
   const result: SkillSupportFiles = {}

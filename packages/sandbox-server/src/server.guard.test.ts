@@ -245,3 +245,11 @@ JSON.parse(fileContents)
     expect(parsers).toEqual(JSON_PARSE_ALLOWLIST.map(({ file, function: name }) => ({ file, function: name })))
   })
 })
+
+test('listener leaves uploads unlimited and bounds JSON and confined input after auth', () => {
+  const source = readFileSync(join(import.meta.dir, 'server.ts'), 'utf8')
+  expect(source).toContain('maxRequestBodySize: Infinity')
+  expect(source).toContain('await readBoundedBody(req, MAX_BODY)')
+  expect(source.indexOf('!isAuthorized(req.headers')).toBeLessThan(source.indexOf("pathname === '/upload'"))
+  expect(source).toContain('error instanceof RequestBodyTooLargeError')
+})

@@ -1002,6 +1002,7 @@ jobs:
           src/lib/paths.test.ts
           src/lib/utils/cli-help.test.ts
           src/lib/utils/file-download.integration.test.ts
+          src/lib/utils/file-transfer-limits.integration.test.ts
           src/routes/deployments.integration.test.ts
           src/services/amtp/node-conformance-registration.test.ts
           src/services/amtp/node-conformance-attachment-upload.test.ts

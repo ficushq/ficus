@@ -698,3 +698,17 @@ describe('internal event token resolution', () => {
     expect(a.token).not.toBe(b.token)
   })
 })
+
+test('internal events reject bytes before parsing and dispatch, only after token auth', async () => {
+  const transport = new LocalEventTransport({ token: TOKEN })
+  const make = (token: string) =>
+    new Request('http://localhost' + INTERNAL_EVENTS_PATH, {
+      method: 'POST',
+      headers: { [INTERNAL_EVENT_TOKEN_HEADER]: token, 'content-length': String(4 * 1024 ** 2 + 1) },
+      body: '{}',
+    })
+  expect((await transport.handleRequest(make('wrong'))).status).toBe(401)
+  const response = await transport.handleRequest(make(TOKEN))
+  expect(response.status).toBe(413)
+  expect(await response.json()).toMatchObject({ code: 'REQUEST_BODY_TOO_LARGE', maxBytes: 4 * 1024 ** 2 })
+})

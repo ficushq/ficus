@@ -595,6 +595,7 @@ app.post('/:provider/accounts', requirePermission('provider-auth:write'), async 
 app.put('/:provider/accounts/order', requirePermission('provider-auth:write'), async (c) => {
   const provider = c.req.param('provider')
   const body = await c.req.json<{ order?: unknown }>()
+  if (Array.isArray(body.order) && body.order.length > 100) return c.json({ error: 'Use at most 100 accounts' }, 400)
   if (!Array.isArray(body.order) || !body.order.every((id) => typeof id === 'string')) {
     return c.json({ error: 'Missing "order" array of account ids in request body' }, 400)
   }

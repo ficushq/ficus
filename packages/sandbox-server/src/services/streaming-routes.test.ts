@@ -68,3 +68,17 @@ for (const unix of [false, true]) {
     }
   }, 15_000) // Two idle ticks plus listener startup/cleanup; unchanged command budgets.
 }
+
+test('upload and download disable only their per-request timeout', () => {
+  const calls: number[] = []
+  const server = {
+    timeout(_request: Request, seconds: number) {
+      calls.push(seconds)
+    },
+  }
+  const req = new Request('http://localhost/')
+  expect(exemptLongLivedStreamFromIdleTimeout(server, req, '/upload')).toBe(true)
+  expect(exemptLongLivedStreamFromIdleTimeout(server, req, '/download')).toBe(true)
+  expect(exemptLongLivedStreamFromIdleTimeout(server, req, '/write')).toBe(false)
+  expect(calls).toEqual([0, 0])
+})

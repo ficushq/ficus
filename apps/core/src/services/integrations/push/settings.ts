@@ -1,3 +1,4 @@
+import { boundedRecord } from '@ficus/shared'
 import { savedRelayCredential } from '../../push/relay'
 import { relayInstanceTokenPattern } from '@ficus/shared/push-relay'
 import { existsSync } from 'node:fs'
@@ -89,7 +90,7 @@ export function getPushIntegrationSettings(provider: string) {
 }
 export async function configurePushIntegration(provider: string, input: unknown, actor: string) {
   if (!isPushIntegration(provider)) throw new Error('Unknown push integration')
-  const values = z.record(z.string(), z.string().max(16384).nullable()).parse(input)
+  const values = boundedRecord(z.record(z.string(), z.string().max(16384).nullable()), 256).parse(input)
   if (
     Object.keys(values).some((key) => getPushIntegrationSettings(provider).fields.find((f) => f.key === key)?.managed)
   )

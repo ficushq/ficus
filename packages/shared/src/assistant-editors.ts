@@ -42,8 +42,11 @@ const TOOL_SCHEMA_OPTIONS: Parameters<typeof z.toJSONSchema>[1] = {
     if (target) {
       // Document the schema the preprocess step feeds rather than the transform (`{}`).
       const { $schema: _schema, ...inner } = z.toJSONSchema(target, TOOL_SCHEMA_OPTIONS) as JsonSchema
+      const { maxProperties, description } = z.globalRegistry.get(zodSchema) ?? {}
       for (const key of Object.keys(jsonSchema)) delete (jsonSchema as JsonSchema)[key]
       Object.assign(jsonSchema, inner)
+      if (typeof maxProperties === 'number') jsonSchema.maxProperties = maxProperties
+      if (description !== undefined) jsonSchema.description = description
       return
     }
     if (zodSchema._zod.def.type !== 'object') return
@@ -139,7 +142,10 @@ export type AssistantEditorState = AssistantEditorSync & {
   expiresAt?: string
 }
 export const assistantEditorReadSchema = z.strictObject({
-  include: z.array(z.enum(['contract', 'agentTypes', 'integrationOutputs'])).optional(),
+  include: z
+    .array(z.enum(['contract', 'agentTypes', 'integrationOutputs']))
+    .max(3)
+    .optional(),
   integration: z.string().min(1).max(100).optional(),
 })
 export const assistantEditorReadParameters = toolParameters(assistantEditorReadSchema)

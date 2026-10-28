@@ -1,3 +1,4 @@
+import { readBoundedMultipart } from '../services/attachments/http'
 import { Hono } from 'hono'
 import OpenAI from 'openai'
 import { createLogger } from '../lib/infra/logger'
@@ -27,7 +28,14 @@ export function createTranscribeRouter(
   return new Hono().post('/', requirePermission('ai:transcribe'), async (c) => {
     if (!getSettingsStore().getTyped('TRANSCRIPTION_ENABLED'))
       return c.json({ error: 'Voice dictation is disabled in Settings → Assistant & Memory.' }, 503)
-    const formData = await c.req.formData()
+    let formData: FormData
+    try {
+      formData = await readBoundedMultipart(c.req.raw, MAX_FILE_SIZE + 64 * 1024)
+    } catch (error) {
+      if (error instanceof Error && error.message === 'ATTACHMENT_TOO_LARGE')
+        return c.json({ error: 'File too large (max 10MB)' }, 413)
+      return c.json({ error: 'Invalid multipart body' }, 400)
+    }
     const audio = formData.get('audio')
 
     if (!audio || !(audio instanceof File)) {

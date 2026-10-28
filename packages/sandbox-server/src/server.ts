@@ -19,6 +19,7 @@
  * Agent intelligence stays in Ficus Core — this service only executes tools.
  */
 
+import { readBoundedBody, RequestBodyTooLargeError } from '@ficus/shared/read-bounded-body'
 import { chmod, mkdir, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { isAuthorized, loadExecutorAuthToken } from './services/auth'
@@ -167,6 +168,12 @@ class MalformedJsonBodyError extends Error {
 
 async function parseJsonRequestBody(req: Request): Promise<any> {
   try {
+    req = new Request(req.url, {
+      method: req.method,
+      headers: req.headers,
+      body: await readBoundedBody(req, MAX_BODY),
+      signal: req.signal,
+    })
     return await req.json()
   } catch (error) {
     if (error instanceof SyntaxError) throw new MalformedJsonBodyError(error)
@@ -230,7 +237,8 @@ async function main(): Promise<void> {
 
   const server = Bun.serve({
     ...listen,
-    maxRequestBodySize: MAX_BODY,
+    // Bun caps streamed bodies too; JSON/confined readers enforce their own 100 MiB budget.
+    maxRequestBodySize: Infinity,
     // Unix listeners ignore server.timeout(req, 0), so their listener timeout
     // must be disabled. TCP retains its timeout with per-request exemptions.
     // Bash deadlines and the idle self-exit coordinator still bound commands
@@ -315,14 +323,17 @@ async function main(): Promise<void> {
             return Response.json({ ok: true, ...result })
           }
           // Raw-body upload (application/octet-stream, params in the query
-          // string) — the large-file transport; see handleUpload's doc. Bounded
-          // by maxRequestBodySize like everything else, but with no base64/JSON
-          // envelope inflating the payload by a third.
+          // string) — the uncapped streaming file transport; JSON readers below
+          // retain their separate budget.
           if (pathname === '/upload') {
             return handleUpload(url, req)
           }
           if (pathname === '/confined/upload') {
-            return handleConfinedUpload(url, req)
+            const bytes = await readBoundedBody(req, MAX_BODY)
+            return handleConfinedUpload(
+              url,
+              new Request(req.url, { method: req.method, headers: req.headers, body: bytes, signal: req.signal })
+            )
           }
           if (!JSON_BODY_PATHS.has(pathname)) {
             return new Response('Not found', { status: 404 })
@@ -332,6 +343,11 @@ async function main(): Promise<void> {
           try {
             body = await parseJsonRequestBody(req)
           } catch (error) {
+            if (error instanceof RequestBodyTooLargeError)
+              return Response.json(
+                { error: error.message, code: 'REQUEST_BODY_TOO_LARGE', maxBytes: error.maxBytes },
+                { status: 413 }
+              )
             if (error instanceof MalformedJsonBodyError) {
               return Response.json({ error: INVALID_JSON_BODY_MESSAGE }, { status: 400 })
             }
@@ -419,13 +435,18 @@ async function main(): Promise<void> {
             case '/watch': {
               log(`Watch start requested: include=${JSON.stringify(body.include)}, squadId=${body.squadId}`)
               const result = await watcher.start(body)
-              log(`Watch started: ${result.fileCount} files, ${result.skipped.length} skipped`)
+              log(`Watch started: ${result.fileCount} files, ${result.skipped.length} skip diagnostics`)
               return Response.json({ ok: true, ...result })
             }
             default:
               return new Response('Not found', { status: 404 })
           }
         } catch (err: unknown) {
+          if (err instanceof RequestBodyTooLargeError)
+            return Response.json(
+              { error: err.message, code: 'REQUEST_BODY_TOO_LARGE', maxBytes: err.maxBytes },
+              { status: 413 }
+            )
           const message = err instanceof Error ? err.message : `Unknown error: ${String(err)}`
           return new Response(message, { status: 400 })
         }

@@ -1,3 +1,4 @@
+import { assertArrayLimit, assertRecordLimit } from '../../lib/validation/request-collections'
 import { eq } from 'drizzle-orm'
 import { db, modelTiers } from '../../db'
 import { AgentType } from '../../entities/AgentType'
@@ -36,6 +37,12 @@ function validateInFlightMarginTokens(value: unknown): void {
 }
 
 export async function validateAgentTypeConfig(input: any): Promise<void> {
+  for (const key of ['skills', 'includes', 'extensions', 'toolsAllow', 'toolsDeny'])
+    assertArrayLimit(input[key], 100, key)
+  const allow = input.integrationCapabilities?.allow
+  assertRecordLimit(allow, 256, 'integration providers')
+  if (allow && typeof allow === 'object')
+    for (const capabilities of Object.values(allow)) assertArrayLimit(capabilities, 100, 'integration capabilities')
   assertConfigId(input.id, 'agent type id')
   if (input.systemOnly !== undefined && typeof input.systemOnly !== 'boolean')
     throw new Error('systemOnly must be a boolean')
@@ -99,6 +106,8 @@ export async function validateAgentTypeConfig(input: any): Promise<void> {
 }
 
 export async function validateSquadPresetConfig(input: any): Promise<void> {
+  assertArrayLimit(input.defaultAgents, 100, 'default agents')
+  assertArrayLimit(input.scheduleTemplates, 100, 'schedule templates')
   assertConfigId(input.id, 'squad preset id')
   assertNonEmptyString(input.name, 'name')
   if (input.workflows != null) {

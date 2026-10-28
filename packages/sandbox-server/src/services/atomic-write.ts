@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'crypto'
 import * as fs from 'fs/promises'
+import { createReadStream } from 'fs'
 import type { FileHandle } from 'fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
 
@@ -7,7 +8,8 @@ export type FileIdentity = { bytes: number; sha256: string }
 export type AtomicWriteRequest = {
   path: string
   allowedRoots: string[]
-  content: Uint8Array
+  content: Uint8Array | AsyncIterable<Uint8Array>
+  signal?: AbortSignal
   mode?: number
   expectedOriginal?: FileIdentity
   expectedResult?: FileIdentity
@@ -29,7 +31,7 @@ export type AtomicWriteOperations = {
   readDestination(path: string): Promise<DestinationState | undefined>
   openStage(path: string, flags: 'wx+', mode: 0o600): Promise<StageHandle>
   statPath(path: string): Promise<{ dev: number | bigint; ino: number | bigint; mode: number }>
-  readPath(path: string): Promise<Buffer>
+  readPathIdentity(path: string): Promise<FileIdentity>
   rename(from: string, to: string): Promise<void>
   removeOwnedStage(path: string): Promise<void>
   capturedUmask: number
@@ -39,8 +41,22 @@ const queues = new Map<string, Promise<void>>()
 const PAGE_BYTES = 1024 * 1024
 const MAX_ERROR_BYTES = 512
 
-const sha256 = (value: Uint8Array) => createHash('sha256').update(value).digest('hex')
-const identity = (value: Uint8Array): FileIdentity => ({ bytes: value.byteLength, sha256: sha256(value) })
+/** Never coerce streamed file positions to 32-bit integers. */
+export function checkedByteOffset(offset: number, bytes: number): number {
+  const next = offset + bytes
+  if (!Number.isSafeInteger(next) || next < 0) throw new Error('Atomic write byte count overflow')
+  return next
+}
+
+async function pathIdentity(path: string): Promise<FileIdentity> {
+  const hash = createHash('sha256')
+  let bytes = 0
+  for await (const chunk of createReadStream(path, { highWaterMark: PAGE_BYTES })) {
+    bytes = checkedByteOffset(bytes, chunk.byteLength)
+    hash.update(chunk)
+  }
+  return { bytes, sha256: hash.digest('hex') }
+}
 const sameIdentity = (left: FileIdentity, right: FileIdentity) =>
   left.bytes === right.bytes && left.sha256 === right.sha256
 
@@ -207,8 +223,17 @@ export async function withPathMutationQueue<T>(key: string, work: () => Promise<
 }
 
 function nodeStageHandle(file: FileHandle): StageHandle {
+  let offset = 0
   return {
-    writeAll: (bytes) => file.writeFile(bytes),
+    writeAll: async (bytes) => {
+      let written = 0
+      while (written < bytes.byteLength) {
+        const result = await file.write(bytes, written, bytes.byteLength - written, offset)
+        if (result.bytesWritten <= 0) throw prePublicationError('Atomic write made no progress')
+        written += result.bytesWritten
+        offset = checkedByteOffset(offset, result.bytesWritten)
+      }
+    },
     readAt: async (offset, length) => {
       const buffer = Buffer.alloc(length)
       const { bytesRead } = await file.read(buffer, 0, length, offset)
@@ -232,8 +257,7 @@ export function createNodeAtomicWriteOperations(): AtomicWriteOperations {
       try {
         const stats = await fs.stat(path)
         if (!stats.isFile()) throw prePublicationError('Atomic write rejected non-regular destination')
-        const bytes = await fs.readFile(path)
-        return { identity: identity(bytes), mode: stats.mode & 0o777 }
+        return { identity: await pathIdentity(path), mode: stats.mode & 0o777 }
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
         throw error
@@ -244,7 +268,7 @@ export function createNodeAtomicWriteOperations(): AtomicWriteOperations {
       const value = await fs.stat(path)
       return { dev: value.dev, ino: value.ino, mode: value.mode & 0o777 }
     },
-    readPath: async (path) => Buffer.from(await fs.readFile(path)),
+    readPathIdentity: pathIdentity,
     rename: (from, to) => fs.rename(from, to),
     removeOwnedStage: (path) => fs.rm(path, { force: true }),
     capturedUmask: process.umask(),
@@ -256,7 +280,7 @@ async function readHandleIdentity(
   expectedBytes: number,
   published: boolean
 ): Promise<FileIdentity> {
-  const chunks: Buffer[] = []
+  const hash = createHash('sha256')
   let offset = 0
   while (offset < expectedBytes) {
     const chunk = await handle.readAt(offset, Math.min(PAGE_BYTES, expectedBytes - offset))
@@ -264,14 +288,14 @@ async function readHandleIdentity(
       const category = 'Atomic write handle readback made no progress'
       throw published ? publishedError(category) : prePublicationError(category)
     }
-    chunks.push(chunk)
-    offset += chunk.byteLength
+    hash.update(chunk)
+    offset = checkedByteOffset(offset, chunk.byteLength)
   }
   if ((await handle.readAt(offset, 1)).byteLength !== 0) {
     const category = 'Atomic write handle readback exceeded expected bytes'
     throw published ? publishedError(category) : prePublicationError(category)
   }
-  return identity(Buffer.concat(chunks, offset))
+  return { bytes: offset, sha256: hash.digest('hex') }
 }
 
 export async function atomicVerifiedWrite(
@@ -285,12 +309,6 @@ export async function atomicVerifiedWrite(
     throw sanitizeError(error, prePublicationError('Atomic write destination resolution failed'))
   }
   return operations.withPathMutationQueue(destination, async () => {
-    const content = Buffer.from(request.content)
-    const resultIdentity = identity(content)
-    if (request.expectedResult && !sameIdentity(resultIdentity, request.expectedResult)) {
-      throw prePublicationError('Atomic write request identity mismatch')
-    }
-
     let initial: DestinationState | undefined
     try {
       initial = await operations.readDestination(destination)
@@ -311,7 +329,21 @@ export async function atomicVerifiedWrite(
     try {
       handle = await operations.openStage(stagePath, 'wx+', 0o600)
       ownsStage = true
-      await handle.writeAll(content)
+      request.signal?.throwIfAborted()
+      const hash = createHash('sha256')
+      let bytes = 0
+      const source = request.content instanceof Uint8Array ? [request.content] : request.content
+      for await (const chunk of source) {
+        request.signal?.throwIfAborted()
+        bytes = checkedByteOffset(bytes, chunk.byteLength)
+        hash.update(chunk)
+        await handle.writeAll(chunk)
+      }
+      request.signal?.throwIfAborted()
+      const resultIdentity = { bytes, sha256: hash.digest('hex') }
+      if (request.expectedResult && !sameIdentity(resultIdentity, request.expectedResult)) {
+        throw prePublicationError('Atomic write request identity mismatch')
+      }
       if (!sameIdentity(await readHandleIdentity(handle, resultIdentity.bytes, false), resultIdentity)) {
         throw prePublicationError('Atomic write staged byte identity mismatch')
       }
@@ -325,6 +357,7 @@ export async function atomicVerifiedWrite(
         }
       }
 
+      request.signal?.throwIfAborted()
       try {
         await operations.rename(stagePath, destination)
         published = true
@@ -341,7 +374,7 @@ export async function atomicVerifiedWrite(
         throw publishedError('Atomic write published inode verification failed')
       }
       if ((finalMode & 0o444) !== 0) {
-        if (!sameIdentity(identity(await operations.readPath(destination)), resultIdentity)) {
+        if (!sameIdentity(await operations.readPathIdentity(destination), resultIdentity)) {
           throw publishedError('Atomic write published pathname readback failed')
         }
       }

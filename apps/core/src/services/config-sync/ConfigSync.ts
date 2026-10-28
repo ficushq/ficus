@@ -1,3 +1,4 @@
+import { assertArrayLimit } from '../../lib/validation/request-collections'
 import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { eq, getTableColumns } from 'drizzle-orm'
@@ -321,6 +322,7 @@ export abstract class ConfigSync<TYaml> {
    * Revert selected top-level fields to their YAML template values.
    */
   async revertTemplateFields(id: string, fields: string[]): Promise<void> {
+    assertArrayLimit(fields, 100, 'template fields')
     const rows = await db.select().from(this.table).where(eq(this.idColumn, id))
     const row = rows[0] as Record<string, unknown> | undefined
     if (!row) throw new Error(`${this.name} '${id}' not found`)

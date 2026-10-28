@@ -22,11 +22,12 @@ function ScanStatusDisplay({ scanStatus }: { scanStatus: NonNullable<MemoryConfi
   const [showSkipped, setShowSkipped] = useState(false)
   const skippedByReason = scanStatus.skipped.reduce(
     (acc, s) => {
-      acc[s.reason] = (acc[s.reason] || 0) + 1
+      acc[s.reason] = (acc[s.reason] || 0) + (s.count ?? 1)
       return acc
     },
     {} as Record<string, number>
   )
+  const skippedCount = Object.values(skippedByReason).reduce((total, count) => total + count, 0)
 
   return (
     <div className="border-t border-th-border pt-2 mt-2">
@@ -34,21 +35,21 @@ function ScanStatusDisplay({ scanStatus }: { scanStatus: NonNullable<MemoryConfi
         <span>
           {scanStatus.filesIndexed} file{scanStatus.filesIndexed !== 1 ? 's' : ''} indexed
         </span>
-        {scanStatus.skipped.length > 0 && (
+        {skippedCount > 0 && (
           <>
             <span>·</span>
             <button
               onClick={() => setShowSkipped(!showSkipped)}
               className="ficus-button ficus-button-link text-status-attention-600 dark:text-status-attention-400"
             >
-              {scanStatus.skipped.length} skipped
+              {skippedCount} skipped
             </button>
           </>
         )}
         <span>·</span>
         <span>{new Date(scanStatus.lastScan).toLocaleString()}</span>
       </div>
-      {showSkipped && scanStatus.skipped.length > 0 && (
+      {showSkipped && skippedCount > 0 && (
         <div className="mt-2 space-y-1.5">
           {Object.entries(skippedByReason).map(([reason, count]) => (
             <div key={reason} className="text-xs">
