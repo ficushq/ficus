@@ -414,7 +414,7 @@ at 180 seconds. This leaves connection, execution and cleanup headroom:
 | Caller | SSH/stream bound | Maximum lock wait |
 | --- | --- | --- |
 | Default remove/remnant sweep, restart/park, non-migration restore/stream | 30s | 7s |
-| Offline runtime capture/restore | 120s | 30s |
+| Offline runtime capture/restore, operator unit control | 120s | 30s |
 | Nix cache publication | 180s | 45s |
 | Physical install | 300s | 75s |
 | Migration restore/remove with a 30-minute override | 1800s | 180s |
@@ -424,8 +424,8 @@ exits on the machine before its caller's deadline; it cannot remain queued and
 later remove/restart a box after reporting a lock failure. This does not promise
 to cancel an already-acquired remote operation after SSH transport loss.
 
-Standalone Core restart/park, migration quiesce/rollback and offline runtime
-restore/capture also hold **the same inode and FD 200** across their systemctl
+Standalone Core restart/park, migration quiesce/rollback, operator unit
+start/stop/restart and offline runtime restore/capture also hold **the same inode and FD 200** across their systemctl
 mutations and readbacks. A manual provision's daemon-reload therefore cannot
 interleave with their enable/restart/show sequence. Every production writer of
 `vm_box_provision_attempts`, including per-box retention cleanup, holds that
