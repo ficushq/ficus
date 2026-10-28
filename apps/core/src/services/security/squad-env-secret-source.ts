@@ -82,7 +82,7 @@ const NOTICES = {
     'This environment was edited outside Settings; its changed values are not registered for output redaction. Save it in Settings to register them.',
 } as const
 
-type CachedFile = { signature: string; hash: string; entries: readonly SecretEntry[] }
+type CachedFile = { signature: string; hash: string; matchesTrusted: boolean; entries: readonly SecretEntry[] }
 
 /** DB-authoritative output-only source; the mutable workspace never grants authority after bootstrap. */
 export class SquadEnvSecretSource {
@@ -152,7 +152,21 @@ export class SquadEnvSecretSource {
 
   async recordWrite(squadId: string, content: string, write?: () => void): Promise<void> {
     assertSquadEnvSize(content)
-    const trusted = snapshot(Buffer.from(content, 'utf8'))
+    await this.persistWrite(squadId, snapshot(Buffer.from(content, 'utf8')), write)
+  }
+
+  /** Preserve full legacy runtime content without registering oversized values.
+   * Only missing-env.user promotion uses this exception; ordinary writes stay capped.
+   */
+  async recordLegacyPromotion(squadId: string, content: string, write: () => void): Promise<void> {
+    if (Buffer.byteLength(content, 'utf8') <= MAX_SQUAD_ENV_BYTES) {
+      await this.recordWrite(squadId, content, write)
+      return
+    }
+    await this.persistWrite(squadId, { contentHash: null, entries: [], reason: 'oversized' }, write)
+  }
+
+  private async persistWrite(squadId: string, trusted: SquadEnvSnapshot, write?: () => void): Promise<void> {
     await this.#repository.save(squadId, trusted, write)
     this.accept({ squadId, snapshot: trusted })
   }
@@ -221,20 +235,26 @@ export class SquadEnvSecretSource {
         }
         const signature = `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`
         const cached = this.#files.get(id)
-        if (trusted.contentHash && cached?.signature === signature && cached.hash === trusted.contentHash) {
+        // Cache observations, not just accepted matches. An unchanged mismatch
+        // or null-hash record must not re-read file bytes on each sanitizer tick.
+        const hash =
+          cached && cached.signature === signature
+            ? cached.hash
+            : createHash('sha256').update(readBounded(path)).digest('hex')
+        const matchesTrusted = hash === trusted.contentHash
+        if (cached && cached.signature === signature && cached.matchesTrusted === matchesTrusted) {
           next.set(id, cached)
-          continue
+        } else {
+          next.set(id, {
+            signature,
+            hash,
+            matchesTrusted,
+            entries: matchesTrusted
+              ? trusted.entries.map(({ key, value }) => ({ key: `squad-env.${key}`, value, outputOnly: true }))
+              : [],
+          })
         }
-        const hash = createHash('sha256').update(readBounded(path)).digest('hex')
-        if (hash !== trusted.contentHash) {
-          this.warn(id, 'mismatch')
-          continue
-        }
-        next.set(id, {
-          signature,
-          hash,
-          entries: trusted.entries.map(({ key, value }) => ({ key: `squad-env.${key}`, value, outputOnly: true })),
-        })
+        if (!matchesTrusted) this.warn(id, 'mismatch')
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.warn(id, 'unreadable')
       }

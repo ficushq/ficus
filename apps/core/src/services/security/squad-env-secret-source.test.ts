@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import * as fs from 'node:fs'
+import { afterEach, describe, expect, test, spyOn } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 import { ContentSafetyRegistry } from './content-safety-registry'
 import { SquadEnvSecretSource, isSecretLikeSquadEnvValue } from './squad-env-secret-source'
 import type { SquadEnvDetectionRepository, SquadEnvSnapshot } from './squad-env-detection-repository'
@@ -400,11 +401,12 @@ test('throttles disk checks, warns once per squad and never refreshes authority 
   f.registry.dispose()
 })
 
-test('a new disk-only environment after upgrade cannot create a trusted record', async () => {
+test('a direct disk-only creation without an authorized service write cannot create a trusted record', async () => {
   const f = fixture()
   await f.source.initialize()
   const id = randomUUID()
   f.file(id, 'APP_TOKEN=synthetic-new-disk-env-token')
+  // Simulate an untrusted disk write, NOT the authorized regeneration service.
   // New real squads are marked already bootstrapped by Squad.create.
   f.repository.marked.add(id)
   await f.source.refresh()
@@ -474,3 +476,63 @@ test('an in-flight peer refresh cannot overwrite a concurrent same-process API u
   expect(f.source.entries().map(({ value }) => value)).toContain('synthetic-new-api-race-token')
   f.registry.dispose()
 })
+
+for (const nullHash of [false, true]) {
+  test(`unchanged negative observations reuse file hashes and react to signature/authority changes (nullHash=${nullHash})`, async () => {
+    const f = fixture()
+    const read = spyOn(fs, 'readSync')
+    const id = randomUUID()
+    const path = f.file(id, 'APP_TOKEN=synthetic-original-cache-token')
+    if (nullHash) {
+      f.repository.marked.add(id)
+      f.repository.snapshots.set(id, { contentHash: null, entries: [], reason: null })
+    }
+    try {
+      await f.source.initialize()
+      writeFileSync(path, 'APP_TOKEN=synthetic-negative-cache-token')
+      f.tick()
+      expect(f.source.entries()).toEqual([])
+      const initialReads = read.mock.calls.length
+      expect(initialReads).toBeGreaterThan(0)
+      for (let i = 0; i < 5; i++) {
+        f.tick()
+        expect(f.source.entries()).toEqual([])
+      }
+      expect(read.mock.calls.length).toBe(initialReads)
+      expect(f.source.notice(id)).toContain('outside Settings')
+      const content = 'APP_TOKEN=synthetic-changed-negative-cache-token\n# signature changed'
+      writeFileSync(path, content)
+      f.tick()
+      expect(f.source.entries()).toEqual([])
+      const changedReads = read.mock.calls.length
+      expect(changedReads).toBeGreaterThan(initialReads)
+      f.tick()
+      expect(f.source.entries()).toEqual([])
+      expect(read.mock.calls.length).toBe(changedReads)
+      // A peer-authorized record may match a previously negative observation;
+      // populate trusted entries without re-reading unchanged file bytes.
+      await f.repository.save(id, {
+        contentHash: createHash('sha256').update(content).digest('hex'),
+        entries: [{ key: 'APP_TOKEN', value: 'synthetic-changed-negative-cache-token' }],
+        reason: null,
+      })
+      await f.source.refresh()
+      f.tick()
+      expect(f.registry.redactWithStoredKeys('synthetic-changed-negative-cache-token')).toEqual({
+        value: expect.not.stringContaining('synthetic-changed-negative-cache-token'),
+        storedKeys: [],
+      })
+      expect(f.source.notice(id)).toBeUndefined()
+      expect(read.mock.calls.length).toBe(changedReads)
+      // A changed authority must also revoke old positive entries without IO.
+      await f.source.recordWrite(id, 'APP_TOKEN=synthetic-different-authority-token')
+      expect(f.source.entries()).toEqual([])
+      expect(f.source.notice(id)).toContain('outside Settings')
+      expect(read.mock.calls.length).toBe(changedReads)
+      expect(f.warnings).toHaveLength(1)
+    } finally {
+      read.mockRestore()
+      f.registry.dispose()
+    }
+  })
+}
