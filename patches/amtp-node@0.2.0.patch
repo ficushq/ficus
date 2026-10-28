@@ -158,11 +158,11 @@ index c9d5f2f47fa2743d2944dad832281b5f61246817..27a93c078be834c2e7ba26969d7b5a34
        } catch (error) {
          outputError(error as Error)
 diff --git a/src/index.ts b/src/index.ts
-index 73224e6ad94f884dd2746b265b63949d0c1fca6b..57f66620a0556f08e213353e55e08cad27ad4724 100755
+index 33698da7b2fb4c43d5f31367533f2dbe94f2902b..3c60b11b410f3407cc6afe2a0ee19146d990f8ee 100755
 --- a/src/index.ts
 +++ b/src/index.ts
-@@ -19,8 +19,11 @@ import { registerSendCommand } from './commands/send'
- import { registerServeCommand } from './commands/serve-cli'
+@@ -20,8 +20,11 @@ import { registerServeCommand } from './commands/serve-cli'
+ import { registerServiceCommands } from './commands/service'
  import { setCliHome } from './context'
  import { resolveAmtpHome } from './home'
 +import { traceLifecyclePhase } from './lifecycle-trace'
@@ -173,13 +173,13 @@ index 73224e6ad94f884dd2746b265b63949d0c1fca6b..57f66620a0556f08e213353e55e08cad
  const program = new Command()
 
  program
-@@ -53,4 +56,4 @@ registerDrainCommand(program)
- registerServeCommand(program)
+@@ -55,4 +58,4 @@ registerServeCommand(program)
+ registerServiceCommands(program)
  registerMcpCommand(program)
 
 -program.parse()
 +await program.parseAsync()
-diff --git a/node_modules/amtp-node/src/lifecycle-trace.ts b/src/lifecycle-trace.ts
+diff --git a/src/lifecycle-trace.ts b/src/lifecycle-trace.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..2d1f514c811e97b134ff78134a108fc79200e068
 --- /dev/null
@@ -320,7 +320,7 @@ index 2a5b5a4b4e92e60f7546e291cb57750ba1afc9aa..3370fe6e9059cbac7c4e15b2008782bf
 
    return {
      handle: args.handle,
-diff --git a/node_modules/amtp-node/src/register-trace.ts b/src/register-trace.ts
+diff --git a/src/register-trace.ts b/src/register-trace.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..3e2ac8d87f2a39ef34cbf8e59e973424021391f2
 --- /dev/null
@@ -348,7 +348,7 @@ index 0000000000000000000000000000000000000000..3e2ac8d87f2a39ef34cbf8e59e973424
 +    `${JSON.stringify({ kind: 'amtp-conformance-phase', operationId, operation: 'register', phase })}\n`
 +  )
 +}
-diff --git a/node_modules/amtp-node/src/upload-trace.ts b/src/upload-trace.ts
+diff --git a/src/upload-trace.ts b/src/upload-trace.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..0bde83f6be4e40289c4853e400c6bd83e2236a87
 --- /dev/null
