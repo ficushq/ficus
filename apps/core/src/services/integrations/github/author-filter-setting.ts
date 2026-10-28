@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, sql } from 'drizzle-orm'
+import { and, eq, isNotNull, ne, sql } from 'drizzle-orm'
 import { db, githubFeedbackDecisions, githubFeedbackRevisions, integrationAuditEvents, squads } from '../../../db'
 import { GITHUB_UNTRUSTED_HANDLING, type GitHubUntrustedHandling } from '@ficus/shared'
 import type { Identity } from '../../rbac/permissions'
@@ -59,6 +59,7 @@ export async function setGitHubAuthorFilter(identity: Identity | undefined, squa
               and(
                 eq(githubFeedbackRevisions.squadId, squadId),
                 eq(githubFeedbackRevisions.decision, 'pending'),
+                ne(githubFeedbackRevisions.releaseState, 'obsolete'),
                 isNotNull(githubFeedbackRevisions.envelope),
                 sql`${githubFeedbackRevisions.reason} IS DISTINCT FROM 'content_unavailable'`
               )

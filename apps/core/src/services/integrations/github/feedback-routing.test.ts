@@ -3667,3 +3667,48 @@ describe('run read uses stored GitHub proof only', () => {
     }
   })
 })
+
+test('automatic newer capture refreshes Pending counts and obsolete raw replay settles without materialization', async () => {
+  const { eventEmitter } = await import('../../../lib/infra/event-emitter')
+  const { prepareGitHubOutputOutcome } = await import('./feedback-routing')
+  const h = await fixture()
+  let changed = 0
+  const unsubscribe = eventEmitter.on('githubFeedback.updated', ({ squadId }) => {
+    if (squadId === h.squadId) changed++
+  })
+  try {
+    const oldId = await publishIntegrationOutput('github', h.fact(), h.authority)
+    changed = 0
+    await h.trust()
+    h.native.body = 'Newest content'
+    h.native.updated_at = '2026-10-02T10:01:00Z'
+    await publishIntegrationOutput('github', h.fact(), h.authority)
+    expect(changed).toBeGreaterThan(0)
+    const [oldSource] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, oldId))
+    expect(await prepareGitHubOutputOutcome(oldSource!)).toEqual({ kind: 'settle', reason: 'github_feedback_obsolete' })
+  } finally {
+    unsubscribe()
+    await h.close()
+  }
+})
+
+test('turning the author filter OFF never revives obsolete pending audit revisions', async () => {
+  const h = await fixture()
+  const revoke = await grantSquadUpdate(h.squadId, h.userId)
+  try {
+    await publishIntegrationOutput('github', h.fact(), h.authority)
+    h.native.body = 'Newest held content'
+    h.native.updated_at = '2026-10-02T10:01:00Z'
+    await publishIntegrationOutput('github', h.fact(), h.authority)
+    expect(await setGitHubAuthorFilter({ type: 'user', userId: h.userId }, h.squadId, false)).toEqual({
+      enabled: false,
+      released: 1,
+    })
+    const rows = await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.squadId, h.squadId))
+    expect(rows.filter((row) => row.releaseState === 'obsolete')).toHaveLength(1)
+    expect(rows.filter((row) => row.decision === 'allow_once')).toHaveLength(1)
+  } finally {
+    await revoke()
+    await h.close()
+  }
+})

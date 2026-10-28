@@ -368,3 +368,24 @@ test('allow and trust changes only selected history and uses stored numeric auth
     await h.close()
   }
 })
+
+test('obsolete pending snapshots cannot be allowed or denied again', async () => {
+  const h = await fixture()
+  try {
+    const selection = await h.revision()
+    await db
+      .update(githubFeedbackRevisions)
+      .set({ releaseState: 'obsolete' })
+      .where(eq(githubFeedbackRevisions.id, selection.revisionId))
+    for (const action of ['allow_once', 'allow_trust', 'deny'] as const)
+      await expect(
+        service.moderateGitHubFeedback(h.human, h.squadId, {
+          requestId: crypto.randomUUID(),
+          action,
+          selections: [selection],
+        })
+      ).rejects.toMatchObject({ code: 'moderation_selection_conflict' })
+  } finally {
+    await h.close()
+  }
+})

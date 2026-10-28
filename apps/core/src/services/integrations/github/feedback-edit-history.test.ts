@@ -48,6 +48,31 @@ describe('decideGitHubEditors', () => {
     expect(decideGitHubEditors(review, node())).toEqual({ attribution: 'creation', editor: null, editors: [] })
   })
 
+  test.each(['webhook', 'poll'] as const)(
+    'authentic stale %s text uses the complete conservative editor set',
+    (capturedSource) => {
+      const result = decideGitHubEditors(
+        { ...review, capturedSource, body: 'Old captured text', editedBy: agent },
+        node(edited(actor(noah)))
+      )
+      expect(result).toEqual({ attribution: 'verified_edit', editor: agent, editors: [noah, agent] })
+    }
+  )
+
+  test('authentic stale text still refuses incomplete history and unidentified editors', () => {
+    const target = { ...review, capturedSource: 'webhook' as const, body: 'Old' }
+    for (const overrides of [
+      { databaseId: 901 },
+      { repository: { databaseId: 11 } },
+      { author: actor(agent) },
+      { __typename: 'IssueComment' },
+      edited(null),
+      edited({ __typename: 'Mannequin', login: 'm' }),
+      { userContentEdits: { totalCount: 2, nodes: [{ editor: actor(noah) }] } },
+    ])
+      expect(decideGitHubEditors(target, node(overrides))).toBeNull()
+  })
+
   test('self-edit and edits by others list every distinct editor, sorted by numeric ID', () => {
     expect(decideGitHubEditors(review, node(edited(actor(noah), actor(noah))))).toEqual({
       attribution: 'verified_edit',

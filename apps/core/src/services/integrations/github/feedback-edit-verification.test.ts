@@ -143,6 +143,7 @@ test('a polled review by a trusted author is verified as never edited and delive
     // One bounded history read, bound to the exact captured object and text.
     expect(h.calls).toEqual([
       {
+        capturedSource: 'poll',
         nodeId: 'PRR_node',
         objectKind: 'review',
         nativeId: '900',

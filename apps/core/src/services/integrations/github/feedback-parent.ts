@@ -53,6 +53,7 @@ export async function isGitHubParentTextAdmissible(
   const [match] = await executor
     .select({
       decision: githubFeedbackRevisions.decision,
+      releaseState: githubFeedbackRevisions.releaseState,
       attribution: githubFeedbackRevisions.attribution,
       author: githubFeedbackRevisions.author,
       editors: sql<unknown>`${githubFeedbackRevisions.envelope} #> '{data,editors}'`,
@@ -74,6 +75,7 @@ export async function isGitHubParentTextAdmissible(
   // Historical rows carry no decision about this text; they fall through to the payload clock.
   if (match && match.decision !== 'historical')
     return (
+      match.releaseState !== 'obsolete' &&
       ['automatic', 'allow_once', 'allow_trust'].includes(match.decision) &&
       match.author?.accountId === parent.author.accountId &&
       (match.attribution === 'creation' ||

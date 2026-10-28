@@ -74,7 +74,7 @@ export async function moderateGitHubFeedback(
         .orderBy(githubFeedbackRevisions.id)
         .for('update')
       const decidable = (row: (typeof rows)[number]) =>
-        row.decision === 'pending' ||
+        (row.decision === 'pending' && row.releaseState !== 'obsolete') ||
         (request.action === 'deny' && ALLOWED.includes(row.decision) && RELEASING.includes(row.releaseState))
       if (
         rows.length !== selections.length ||

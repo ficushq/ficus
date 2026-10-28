@@ -376,3 +376,108 @@ test('a GitHub outage during the current-version witness defers the capture inst
     await h.close()
   }
 })
+
+test('newer captures obsolete every older pending hold and replay cannot resurrect it', async () => {
+  const h = await fixture()
+  try {
+    const a = await h.capture(event('Untrusted old author'))
+    expect(a.revision.reason).toBe('untrusted_author')
+    const b = await h.capture(event('Final', '2026-10-02T10:01:00Z'))
+    const [old] = await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.id, a.revision.id))
+    expect(old!.releaseState).toBe('obsolete')
+    expect(old!.decision).toBe('pending') // preserve audit, not a fabricated human decision
+    expect(old!.envelope).toEqual(a.revision.envelope)
+    const replay = await h.capture(event('Untrusted old author'))
+    expect(replay.revision.releaseState).toBe('obsolete')
+    expect(b.revision.releaseState).toBe('held')
+  } finally {
+    await h.close()
+  }
+})
+
+test('identical-text newer replay advances freshness without replacing immutable revision or decision', async () => {
+  const h = await fixture()
+  try {
+    const a = await h.capture(event('A', time))
+    const noOp = await h.capture(event('A', '2026-10-02T10:03:00Z'))
+    expect(noOp.revision.id).toBe(a.revision.id)
+    expect(noOp.revision.providerVersion).toBe(a.revision.providerVersion)
+    expect(noOp.revision.decision).toBe('pending')
+    const b = await h.capture(event('B', '2026-10-02T10:02:00Z'))
+    expect(b.revision.releaseState).toBe('obsolete')
+    const [current] = await db
+      .select()
+      .from(githubFeedbackRevisions)
+      .where(eq(githubFeedbackRevisions.id, a.revision.id))
+    expect(current!.releaseState).toBe('held')
+    const [object] = await db
+      .select()
+      .from(githubFeedbackObjects)
+      .where(eq(githubFeedbackObjects.id, a.revision.objectId))
+    expect(object!.providerVersion).toBe('2026-10-02T10:03:00.000Z')
+    expect(object!.currentRevisionId).toBe(a.revision.id)
+  } finally {
+    await h.close()
+  }
+})
+
+test.each(['equal', 'both missing', 'old missing', 'new missing'])(
+  '%s provider clocks use sequence for obsolescence, even when the newer capture is ambiguous',
+  async (clocks) => {
+    const h = await fixture()
+    try {
+      const aInput = event('A', time, clocks === 'both missing')
+      const bInput = event('B', time, clocks === 'both missing')
+      if (clocks === 'old missing') delete (aInput.payload.comment as Record<string, unknown>).updated_at
+      if (clocks === 'new missing') delete (bInput.payload.comment as Record<string, unknown>).updated_at
+      const a = await h.capture(aInput)
+      const b = await h.capture(bInput)
+      expect(b.revision.objectId).toBe(a.revision.objectId)
+      expect(b.revision.sequence).toBeGreaterThan(a.revision.sequence)
+      expect(
+        (await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.id, a.revision.id)))[0]!
+          .releaseState
+      ).toBe('obsolete')
+      expect(b.revision.releaseState).toBe('held')
+    } finally {
+      await h.close()
+    }
+  }
+)
+
+test('obsolescence identity is squad, repository, kind and native ID, never just native ID', async () => {
+  const h = await fixture()
+  try {
+    const original = await h.capture(event('Original'))
+    const differentRepo = event('Other repo', '2026-10-02T10:01:00Z')
+    differentRepo.payload.repository = { id: 11, full_name: 'acme/other' }
+    const differentNative = event('Other native', '2026-10-02T10:01:00Z')
+    ;(differentNative.payload.comment as Record<string, unknown>).id = 99
+    await h.capture(differentRepo)
+    await h.capture(differentNative)
+    await h.capture(event('Other kind', '2026-10-02T10:01:00Z', true))
+    await h.capture(event('Other squad', '2026-10-02T10:01:00Z'), { squadId: h.squadIds[1] })
+    const [stored] = await db
+      .select()
+      .from(githubFeedbackRevisions)
+      .where(eq(githubFeedbackRevisions.id, original.revision.id))
+    expect(stored!.releaseState).toBe('held')
+  } finally {
+    await h.close()
+  }
+})
+
+test('replaying the same captured poll source after a newer version retains its obsolete audit identity', async () => {
+  const h = await fixture()
+  try {
+    const input = { ...event('Old'), githubObservation: { kind: 'poll' as const } }
+    const id = await h.source(input)
+    const first = await store.captureGitHubFeedback(id, { authorizeSource: async () => true })
+    await h.capture(event('New', '2026-10-02T10:01:00Z'))
+    const replay = await store.captureGitHubFeedback(id, { authorizeSource: async () => true })
+    expect(replay.revision.id).toBe(first.revision.id)
+    expect(replay.revision.releaseState).toBe('obsolete')
+  } finally {
+    await h.close()
+  }
+})

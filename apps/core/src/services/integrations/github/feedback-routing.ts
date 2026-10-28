@@ -240,13 +240,14 @@ async function prepareGitHubOutputInPass(
   if (!plan.relevant && !prior && !input.fact.github?.revisionId) return settle('github_irrelevant')
   if (!factual && !input.fact.github?.revisionId) {
     const [known] = await db
-      .select({ decision: githubFeedbackRevisions.decision })
+      .select({ decision: githubFeedbackRevisions.decision, releaseState: githubFeedbackRevisions.releaseState })
       .from(githubFeedbackSources)
       .innerJoin(githubFeedbackRevisions, eq(githubFeedbackRevisions.id, githubFeedbackSources.revisionId))
       .where(eq(githubFeedbackSources.eventId, source.id))
       .limit(1)
     // Explicit history is released only by the reviewed-source release adapter, never a raw
     // retry or a trust-list change. In particular, pending replays cost no provider requests.
+    if (known?.releaseState === 'obsolete') return settle('github_feedback_obsolete')
     if (known && known.decision !== 'automatic') return DEFER
   }
   const access = await readGitHubResource(source)
@@ -290,8 +291,9 @@ async function prepareGitHubOutputInPass(
         throw error
       }
       // Content-free, after the capture transaction committed: the human queue count changed.
-      if (captured.revision.decision === 'pending' && captured.disposition !== 'replay')
+      if (captured.obsoleteCount || (captured.revision.decision === 'pending' && captured.disposition !== 'replay'))
         eventEmitter.emit('githubFeedback.updated', { squadId: captured.revision.squadId })
+      if (captured.revision.releaseState === 'obsolete') return settle('github_feedback_obsolete')
       // Squads that screen untrusted feedback: the capture transaction queued a decision-model
       // screen for a new held revision. Run it off this path; the revision stays held meanwhile.
       if (native && captured.disposition !== 'replay' && (await isGitHubFeedbackScreenWaiting(captured.revision.id)))

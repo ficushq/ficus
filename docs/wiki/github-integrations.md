@@ -343,15 +343,19 @@ a polled comment changed since creation, any `edited` event) and the author is
 trusted, capture reads GitHub's edit history (GraphQL `userContentEdits`,
 `editor`, and title renames) with one bounded query through the squad's
 authorized connection, before any lock. The answer must match the captured
-object, repository, author and exact text:
+object, repository and author. For a signed webhook or Ficus poll read, the
+current text may differ: the complete **current** editor history conservatively
+covers the captured older text too. Other sources still require exact text.
+History verification establishes authorship, never freshness or permission to
+deliver an obsolete revision:
 
-| Edit history                                                                                         | Result                                                       |
-| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Never edited                                                                                         | `creation` by the author; delivered if the author is trusted |
-| Edited; the author and every editor (plus the signed sender of an `edited` webhook) trusted          | `verified_edit`; delivered automatically                     |
-| Any editor not trusted                                                                               | held (`untrusted_editor`)                                    |
-| Deleted or unidentifiable editor, history over 50 entries, different text or object, a refused query | held (`unknown_editor`)                                      |
-| GitHub unavailable or the pass's provider budget spent                                               | capture retried later, nothing written                       |
+| Edit history                                                                                                             | Result                                                       |
+| ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| Never edited                                                                                                             | `creation` by the author; delivered if the author is trusted |
+| Edited; the author and every editor (plus the signed sender of an `edited` webhook) trusted                              | `verified_edit`; delivered automatically                     |
+| Any editor not trusted                                                                                                   | held (`untrusted_editor`)                                    |
+| Deleted or unidentifiable editor, history over 50 entries, different object, unauthenticated stale text, a refused query | held (`unknown_editor`)                                      |
+| GitHub unavailable or the pass's provider budget spent                                                                   | capture retried later, nothing written                       |
 
 The editors are bound into the reviewed hash (`data.editors`), so a decision
 applies to exactly that text and that set of editors; a later edit is a new
@@ -361,7 +365,22 @@ Content from untrusted authors is held without any history read.
 
 A later observation of text already captured (same object, author, text and
 review state), such as a poll racing a webhook, replays that revision. It never
-creates a new held copy of feedback already delivered or held.
+creates a new held copy of feedback already delivered or held. A newer provider
+timestamp on identical text advances the object's freshness watermark without
+changing the immutable revision or upgrading its decision. Delayed intermediate
+text cannot outrank that watermark.
+
+Capturing a newer version of the same squad/repository/kind/native object closes
+older pending versions as `obsolete`, regardless of hold reason, including an
+untrusted author or unknown editor. Undelivered older releases are also fenced;
+uncompleted canonical flow deliveries become `superseded`. Provider timestamps
+order versions when both exist and differ; equal or missing timestamps use capture
+sequence. Existing ambiguity holds still apply to the new capture. Out-of-order
+captures behind a known newer version are immediately obsolete, even if that newer
+version was already delivered. Obsolete rows retain their snapshots and decisions
+for audit, leave Pending, and cannot be revived by moderation, screening, replay,
+or turning the author filter off. Capture and final acceptance share the authority
+lock; removed leases prevent stale release workers from undoing obsolescence.
 
 An agent that posts to GitHub with a squad connection posts as the person who
 connected that account. If that person is trusted (linked, or added manually),
