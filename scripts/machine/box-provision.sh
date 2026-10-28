@@ -96,6 +96,9 @@
 #            (useradd auto-allocates on Ubuntu 24.04; allocated here if missing).
 #            The daemon listens on unix:///run/user/<uid>/docker.sock. NO shared
 #            rootful daemon is ever started — bootstrap.sh masks the system one.
+#            Requires cgroup v2 CPU/memory controllers and verified root-owned
+#            user-<uid>.slice caps above the user manager, daemon and containers.
+#            Failed containment/startup is fatal, including on existing boxes.
 #
 # On provisioning, the box user's useradd-assigned UID (NOT deterministic) is
 # printed as the sole stdout line `FICUS_BOX_UID=<uid>` so the caller (box-manager)
@@ -464,16 +467,14 @@ install_slice_limits() {
   local limits
   limits="$(slice_limits)" || return 1
   local dir
-  dir="$(slice_dropin_dir)"
-  "${SUDO[@]}" install -d -m 0755 "${dir}"
+  dir="$(slice_dropin_dir)" || return 1
+  "${SUDO[@]}" install -d -m 0755 "${dir}" || return 1
   printf '[Slice]\n%s\n' "${limits}" \
-    | "${SUDO[@]}" install -o root -g root -m 0644 /dev/stdin "${dir}/50-ficus-box.conf"
+    | "${SUDO[@]}" install -o root -g root -m 0644 /dev/stdin "${dir}/50-ficus-box.conf" || return 1
   # The port guard lives in the same slice and reaches systemd with the same
   # daemon-reload below.
-  install_port_guard
-  # A user-mode box keeps its user-<uid>.slice across the rename; drop the
-  # drop-in it carried under the old name so the limits are set once.
-  "${SUDO[@]}" systemctl daemon-reload
+  install_port_guard || return 1
+  "${SUDO[@]}" timeout --kill-after=5s 20s systemctl daemon-reload
 }
 
 # Removal drops BOTH modes' drop-ins: the box is going away entirely, and a box
@@ -531,8 +532,8 @@ socket_bind_enforced() {
 }
 
 install_port_guard() {
-  "${SUDO[@]}" install -d -m 0755 "$(slice_dropin_dir)"
-  render_port_guard | "${SUDO[@]}" install -o root -g root -m 0644 /dev/stdin "$(port_guard_path)"
+  "${SUDO[@]}" install -d -m 0755 "$(slice_dropin_dir)" || return 1
+  render_port_guard | "${SUDO[@]}" install -o root -g root -m 0644 /dev/stdin "$(port_guard_path)" || return 1
   if ! socket_bind_enforced; then
     echo "box-provision.sh: NOTE systemd here lacks BPF_FRAMEWORK, so the box port guard (SocketBindDeny) is not enforced" >&2
   fi
@@ -876,8 +877,10 @@ proxy_wait_command() {
 #   Source: Red Hat KB "How to execute systemctl --user as a different user"
 #           https://access.redhat.com/solutions/4661741
 #           and systemd's own "consider using --machine=@.host --user" hint.
+# Bound client calls too: a wedged user manager must not hang provisioning or
+# containment-failure cleanup indefinitely. This does not kill unrelated work.
 sysu() {
-  "${SUDO[@]}" systemctl --machine="${UNIX_USER}@.host" --user "$@"
+  "${SUDO[@]}" timeout --kill-after=5s 20s systemctl --machine="${UNIX_USER}@.host" --user "$@"
 }
 
 # systemctl for THIS box's server unit, whichever manager owns it. Everything
@@ -910,7 +913,10 @@ box_uid() {
 # does not reliably reset it — the setuptool writes ~/.config/systemd/user +
 # ~/.docker, so a wrong HOME would land them under the invoking user. PATH is
 # pinned so the box user's (possibly empty) environment still finds the system
-# dockerd-rootless scripts.
+# dockerd-rootless scripts. HOME alone is insufficient: the Docker setuptool
+# resolves its unit through XDG_CONFIG_HOME, and Docker CLI contexts through
+# DOCKER_CONFIG. Pin all writable config roots and the endpoint to this box;
+# never inherit the provisioning caller's paths, context or TLS configuration.
 #
 # The drop-to-box-user command cannot be `"${SUDO[@]}" -u` — when box-provision
 # itself runs AS ROOT (a root SSH admin user), SUDO is the empty array, so that
@@ -929,7 +935,13 @@ run_as_box() {
     as_box=(sudo -u "${UNIX_USER}")
   fi
   "${as_box[@]}" \
-    env "HOME=${home}" \
+    env -u DOCKER_CONTEXT -u DOCKER_TLS -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH \
+      "HOME=${home}" \
+      "XDG_CONFIG_HOME=${home}/.config" \
+      "XDG_DATA_HOME=${home}/.local/share" \
+      "XDG_CACHE_HOME=${home}/.cache" \
+      "DOCKER_CONFIG=${home}/.docker" \
+      "DOCKER_HOST=unix://${runtime_dir}/docker.sock" \
       "XDG_RUNTIME_DIR=${runtime_dir}" \
       "DBUS_SESSION_BUS_ADDRESS=unix:path=${runtime_dir}/bus" \
       "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
@@ -988,12 +1000,102 @@ docker_running_with_stale_flags() {
   "${SUDO[@]}" pgrep -u "${UNIX_USER}" -f -- 'dockerd.*--iptables=false' >/dev/null 2>&1
 }
 
+# Root-owned user-<uid>.slice is the security/accounting boundary, NOT
+# docker.service: Docker's systemd driver creates payload scopes as siblings of
+# the daemon. A user manager can move work within its delegated subtree, but
+# cannot move it above this root-owned ancestor. Never fix a failed check by
+# granting host privileges or removing the port/security guards.
+docker_containment_failure() {
+  echo "box-provision.sh: Docker containment failed for ${UNIX_USER}: $1" >&2
+  # Includes existing boxes: don't leave an unverified daemon running or enabled.
+  sysu stop docker.service >/dev/null 2>&1 \
+    || echo "box-provision.sh: WARNING ${UNIX_USER} Docker may still be running; bounded stop failed" >&2
+  sysu disable docker.service >/dev/null 2>&1 \
+    || echo "box-provision.sh: WARNING ${UNIX_USER} Docker disable failed" >&2
+  return 1
+}
+
+# install_slice_limits reloads the root-owned drop-in before linger/startup.
+# Verify its effect on the kernel (including ALREADY ACTIVE slices), not just
+# systemd configuration. No additional system.control overrides that could
+# outlive this box account are created.
+verify_box_cgroup() {
+  local uid parent manager cg limits line key expected actual quota period extra
+  uid="$(box_uid)" || return 1
+  parent="/user.slice/user-${uid}.slice"
+  cg="${FICUS_HOST_ROOT}/sys/fs/cgroup${parent}"
+  for key in cpu memory; do
+    grep -qw "${key}" "${FICUS_HOST_ROOT}/sys/fs/cgroup/cgroup.controllers" || return 1
+  done
+  limits="$(slice_limits)" || return 1
+  actual="$("${SUDO[@]}" timeout --kill-after=5s 20s systemctl show -p ControlGroup --value "user-${uid}.slice")" || return 1
+  [ "${actual}" = "${parent}" ] || return 1
+  manager="$("${SUDO[@]}" timeout --kill-after=5s 20s systemctl show -p ControlGroup --value "user@${uid}.service")" || return 1
+  [ "${manager}" = "${parent}/user@${uid}.service" ] || return 1
+
+  for key in MemoryHigh MemoryMax; do
+    expected="$(sed -n "s/^${key}=//p" <<<"${limits}")"
+    case "${key}" in MemoryHigh) line=memory.high ;; MemoryMax) line=memory.max ;; esac
+    actual="$(cat "${cg}/${line}")" || return 1
+    [[ "${actual}" =~ ^[0-9]+$ ]] && [ "${actual}" -gt 0 ] && [ "${actual}" -le "${expected}" ] || return 1
+  done
+  read -r quota period extra <"${cg}/cpu.max" || return 1
+  [[ "${quota}" =~ ^[0-9]+$ && "${period}" =~ ^[0-9]+$ ]] || return 1
+  [ -z "${extra}" ] && [ "${quota}" -gt 0 ] && [ "${period}" -gt 0 ] || return 1
+  expected="$(sed -n 's/^CPUQuota=\([0-9]*\)%$/\1/p' <<<"${limits}")"
+  [ "$((quota * 100))" -le "$((expected * period))" ]
+}
+
+# Verify both daemon and scope parent after starting/recreating. The daemon's
+# children (containerd/shims) inherit its cgroup; systemd-created payload scopes
+# live in the same slice. Even an explicit container --cgroup-parent can only
+# select another descendant of this user's manager, still under the box cap.
+verify_docker_cgroup() {
+  local uid manager slice daemon info
+  uid="$(box_uid)" || return 1
+  manager="/user.slice/user-${uid}.slice/user@${uid}.service"
+  slice="$(sysu show -p ControlGroup --value ficus-docker.slice)" || return 1
+  [ "${slice}" = "${manager}/ficus.slice/ficus-docker.slice" ] || return 1
+  daemon="$(sysu show -p ControlGroup --value docker.service)" || return 1
+  [ "${daemon}" = "${slice}/docker.service" ] || return 1
+  info="$(run_as_box timeout --kill-after=5s 15s docker \
+    --host="unix:///run/user/${uid}/docker.sock" info --format '{{.CgroupDriver}} {{.CgroupVersion}}')" || return 1
+  [ "${info}" = 'systemd 2' ]
+}
+
+# The daemon is launched by systemd, NOT by run_as_box: the user manager may
+# carry stale caller paths (observed XDG_RUNTIME_DIR=/run/user/<other-uid>).
+# Pin that second environment boundary too, without changing the manager or
+# another service. Explicit paths do not rely on inherited XDG specifiers.
+render_docker_override() {
+  local launcher="$1" home="$2" uid="$3"
+  printf '%s\n' \
+    '[Service]' \
+    'ExecStart=' \
+    "ExecStart=${launcher} --exec-opt native.cgroupdriver=systemd --cgroup-parent=ficus-docker.slice" \
+    'Slice=ficus-docker.slice' \
+    'Delegate=yes' \
+    'UnsetEnvironment=DOCKER_CONTEXT DOCKER_TLS DOCKER_TLS_VERIFY DOCKER_CERT_PATH' \
+    "Environment=HOME=${home}" \
+    "Environment=XDG_RUNTIME_DIR=/run/user/${uid}" \
+    "Environment=XDG_CONFIG_HOME=${home}/.config" \
+    "Environment=XDG_DATA_HOME=${home}/.local/share" \
+    "Environment=XDG_CACHE_HOME=${home}/.cache" \
+    "Environment=DOCKER_CONFIG=${home}/.docker" \
+    "Environment=DOCKER_HOST=unix:///run/user/${uid}/docker.sock" \
+    "Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus"
+}
+
 # Provision the box user's OWN rootless dockerd (a systemd --user service). NEVER
 # starts a shared rootful daemon (bootstrap.sh masks the system one) — closing
 # the multi-box root hole (spec §5). Idempotent: setuptool tolerates an existing
-# install; enable/start are best-effort. A re-provision with an unchanged config
-# leaves a running daemon (and its containers) alone.
+# install; failed containment or startup is fatal. A re-provision with unchanged
+# config leaves a running daemon (and its containers) alone.
 provision_docker() {
+  if ! verify_box_cgroup; then
+    docker_containment_failure 'owning user slice/controller limits or user-manager ancestry could not be verified'
+    return 1
+  fi
   ensure_subid_range
 
   local config_before
@@ -1010,7 +1112,7 @@ provision_docker() {
   # FATALs ("Module nf_tables not found"). Without the flag that false-negative
   # check aborts install ("Missing system requirements"), no unit is written,
   # and the box's docker.service never exists (observed live on exe 2026-07-14).
-  run_as_box dockerd-rootless-setuptool.sh install --skip-iptables >&2 \
+  run_as_box timeout --kill-after=5s 60s dockerd-rootless-setuptool.sh install --skip-iptables >&2 \
     || echo "box-provision.sh: dockerd-rootless-setuptool.sh returned non-zero (may already be installed)" >&2
 
   # The flag's catch: when (and only when) that pre-flight check tripped, the
@@ -1026,14 +1128,22 @@ provision_docker() {
   local home exec_line launcher_cmd override_dir
   home="$(user_home)"
   exec_line="$(run_as_box sed -n 's/^ExecStart=//p' \
-    "${home}/.config/systemd/user/docker.service" 2>/dev/null | head -n1)"
+    "${home}/.config/systemd/user/docker.service" 2>/dev/null | head -n1)" || exec_line=""
   launcher_cmd="${exec_line// --iptables=false/}"
-  if [ -n "${launcher_cmd}" ]; then
-    override_dir="${home}/.config/systemd/user/docker.service.d"
-    run_as_box mkdir -p "${override_dir}"
-    printf '[Service]\nExecStart=\nExecStart=%s\n' "${launcher_cmd}" \
-      | run_as_box tee "${override_dir}/override.conf" >/dev/null
-    sysu daemon-reload >/dev/null 2>&1 || true
+  if [ -z "${launcher_cmd}" ]; then
+    docker_containment_failure 'rootless Docker unit has no ExecStart'
+    return 1
+  fi
+  override_dir="${home}/.config/systemd/user/docker.service.d"
+  # Pin both daemon and systemd payload scopes below the owning user manager.
+  # Flags intentionally fail startup on conflicting daemon.json settings rather
+  # than silently accepting an unverified cgroup driver or parent.
+  if ! run_as_box mkdir -p "${override_dir}" \
+    || ! render_docker_override "${launcher_cmd}" "${home}" "$(box_uid)" \
+      | run_as_box tee "${override_dir}/override.conf" >/dev/null \
+    || ! sysu daemon-reload; then
+    docker_containment_failure 'could not install/reload Docker containment drop-in'
+    return 1
   fi
 
   # Enable the user docker daemon and make sure unix:///run/user/<uid>/docker.sock
@@ -1049,9 +1159,10 @@ provision_docker() {
   if [ "$(docker_unit_fingerprint)" != "${config_before}" ] || docker_running_with_stale_flags; then
     verb=restart
   fi
-  sysu enable docker.service >/dev/null 2>&1 || true
-  sysu "${verb}" docker.service >/dev/null 2>&1 \
-    || echo "box-provision.sh: rootless docker.service ${verb} deferred" >&2
+  if ! sysu enable docker.service || ! sysu "${verb}" docker.service || ! verify_docker_cgroup; then
+    docker_containment_failure 'rootless Docker startup/driver/scope ancestry could not be verified'
+    return 1
+  fi
 }
 
 remove_box() {
@@ -1824,6 +1935,18 @@ provision_box() {
   # before any effects.
   reconcile_unit_mode "${home}"
 
+  # Preserve the canonical home data.
+  prepare_box_home "${home}"
+  ensure_dirs "${home}"
+  init_shared_nix_cache
+  if ! install_slice_limits; then
+    if [ "${WITH_DOCKER}" = true ]; then
+      docker_containment_failure 'could not install/reload the root-owned box limits'
+    fi
+    return 1
+  fi
+  # Install/reload the root-owned boundary BEFORE linger can auto-start an
+  # already-enabled Docker unit (including re-created/restored users).
   if [ "${UNIT_MODE}" = "user" ]; then
     # Linger keeps the user's systemd manager running with no login session, which
     # is what lets `--machine=<user>@.host --user` reach it and the service persist.
@@ -1832,11 +1955,6 @@ provision_box() {
     "${SUDO[@]}" loginctl enable-linger "${UNIX_USER}"
   fi
 
-  # Preserve the canonical home data.
-  prepare_box_home "${home}"
-  ensure_dirs "${home}"
-  init_shared_nix_cache
-  install_slice_limits
   # Converge hosts bootstrapped before the reservation existed: every
   # provision checks it and fixes it before the socket binds. Never fatal; a
   # host where it cannot be set still provisions, with a loud warning.
