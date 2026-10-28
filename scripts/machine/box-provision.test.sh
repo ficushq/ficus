@@ -20,6 +20,28 @@ expect_eq() { # DESCRIPTION ACTUAL EXPECTED
   fi
 }
 
+# The normal provisioner's pure dry run must reserve working-set headroom for
+# database-capable squads without raising their hard memory/CPU/task caps.
+for mem_kb in 1048576 8131584 16375616 67108864; do
+  for role in squad_test agent_test system_manager_test legacy; do
+    for docker in false true; do
+      args=(--print-slice-limits --memtotal-kb "$mem_kb" --nproc 8 --sandbox-id "$role" --unit-mode user)
+      high_pct=35
+      if [ "$docker" = true ]; then
+        args+=(--with-docker)
+        [ "$role" != squad_test ] || high_pct=45
+      fi
+      expect_eq "slice limits: ${mem_kb} kB ${role} docker=${docker}" \
+        "$(bash "$TARGET" "${args[@]}")" \
+        "$(printf 'MemoryHigh=%s\nMemoryMax=%s\nTasksMax=8192\nCPUQuota=400%%' \
+          "$((mem_kb * high_pct / 100 * 1024))" "$((mem_kb * 50 / 100 * 1024))")"
+    done
+  done
+done
+expect_eq 'slice limits: missing role keeps conservative default even with Docker' \
+  "$(bash "$TARGET" --print-slice-limits --memtotal-kb 1048576 --nproc 1 --with-docker)" \
+  $'MemoryHigh=375809024\nMemoryMax=536870912\nTasksMax=8192\nCPUQuota=100%'
+
 # Pull prune_box_archives out of the script, with SUDO stubbed to nothing.
 extract_prune() {
   awk '/^prune_box_archives\(\) \{/,/^}/' "${TARGET}"
@@ -694,6 +716,18 @@ printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$
     'systemctl daemon-reload'
   expect_eq 'docker containment: kernel CPU cap matches the owning box' \
     "$(cat "${R}/sys/fs/cgroup/user.slice/user-1001.slice/cpu.max")" '400000 100000'
+  expect_eq 'database squad: normal provision writes raised soft cap, unchanged hard cap' \
+    "$(cat "${R}/etc/systemd/system/user-1001.slice.d/50-ficus-box.conf")" \
+    "$(printf '[Slice]\nMemoryHigh=%s\nMemoryMax=%s\nTasksMax=8192\nCPUQuota=400%%' \
+      "$((8131584 * 45 / 100 * 1024))" "$((8131584 * 50 / 100 * 1024))")"
+  # Model an already-provisioned slice still using the previous soft cap.
+  sed -i "s/^MemoryHigh=.*/MemoryHigh=$((8131584 * 35 / 100 * 1024))/" \
+    "${R}/etc/systemd/system/user-1001.slice.d/50-ficus-box.conf"
+  echo "$((8131584 * 35 / 100 * 1024))" >"${R}/sys/fs/cgroup/user.slice/user-1001.slice/memory.high"
+  docker_provision
+  expect_eq 'database squad: reprovision converges the existing slice soft cap' \
+    "$(cat "${R}/sys/fs/cgroup/user.slice/user-1001.slice/memory.high")" "$((8131584 * 45 / 100 * 1024))"
+  expect_eq 'database squad: changing only the memory cap does not restart Docker' "$(docker_verbs restart)" 0
   expect_eq 'docker containment: no global or peer service mutation' \
     "$(grep -c -E '^systemctl (stop|restart|set-property).*user@(1000|1002)|^systemctl (stop|restart) docker.service' "${R}/calls.log" || true)" 0
   # A transient "Transport endpoint is not connected" from the user manager's

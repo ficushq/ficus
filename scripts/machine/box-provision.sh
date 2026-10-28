@@ -375,6 +375,12 @@ SUBID_BASE=100000
 # TasksMax bounds fork bombs the same way. Written as root under
 # /etc/systemd/system so a box user cannot raise its own limits.
 SLICE_MEMORY_HIGH_PCT=35
+# Database-capable squads keep test databases and their clients in the same
+# slice. Give that combined working set 90% of the unchanged hard cap before
+# reclaim throttling, leaving 10% for reclaim before a slice-local OOM. Use the
+# provisioned role/capability, not transient container inventory, so the limit
+# stays stable across test DB starts/stops. Other box roles remain conservative.
+SLICE_DATABASE_SQUAD_MEMORY_HIGH_PCT=45
 SLICE_MEMORY_MAX_PCT=50
 SLICE_TASKS_MAX=8192
 # CPU: one box may use at most half the host's cores (never below one full
@@ -434,7 +440,11 @@ slice_limits() {
       return 1
       ;;
   esac
-  high_kb=$(( total_kb * SLICE_MEMORY_HIGH_PCT / 100 ))
+  local high_pct="${SLICE_MEMORY_HIGH_PCT}"
+  if [[ "${SANDBOX_ID}" == squad_* ]] && [ "${WITH_DOCKER}" = true ]; then
+    high_pct="${SLICE_DATABASE_SQUAD_MEMORY_HIGH_PCT}"
+  fi
+  high_kb=$(( total_kb * high_pct / 100 ))
   max_kb=$(( total_kb * SLICE_MEMORY_MAX_PCT / 100 ))
   local n quota
   n="$(host_nproc)"
