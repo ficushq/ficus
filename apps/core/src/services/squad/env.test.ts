@@ -186,19 +186,15 @@ line2"`
     it('renders protected integration values last so user and selected-secret overrides cannot win', async () => {
       const { renderEnvForSecrets } = await getModule()
       const rendered = renderEnvForSecrets(
-        'NOTION_API_TOKEN=user-value',
-        ['NOTION_API_TOKEN'],
+        'NOTION_WORKSPACE_ID=user-value',
+        ['NOTION_WORKSPACE_ID'],
         () => 'selected-secret-value',
-        [
-          ['NOTION_WORKSPACE_ID', 'workspace-id'],
-          ['NOTION_API_TOKEN', "oauth-'value"],
-        ]
+        [['NOTION_WORKSPACE_ID', "workspace-'value"]]
       )
-      expect(rendered.lastIndexOf('export NOTION_API_TOKEN=')).toBeGreaterThan(
-        rendered.indexOf("export NOTION_API_TOKEN='selected-secret-value'")
+      expect(rendered.lastIndexOf('export NOTION_WORKSPACE_ID=')).toBeGreaterThan(
+        rendered.indexOf("export NOTION_WORKSPACE_ID='selected-secret-value'")
       )
-      expect(rendered).toEndWith("export NOTION_WORKSPACE_ID='workspace-id'")
-      expect(rendered).toContain("export NOTION_API_TOKEN='oauth-'\"'\"'value'")
+      expect(rendered).toEndWith("export NOTION_WORKSPACE_ID='workspace-'\"'\"'value'")
     })
 
     it('keeps internal secret names out of squad environments on self-hosted servers', async () => {

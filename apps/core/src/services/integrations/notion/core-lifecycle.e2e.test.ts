@@ -1,3 +1,5 @@
+import { writeIntegrationExecCli } from '../../../test-utils/integration-exec-cli'
+import { squadIntegrationRoutesService } from '../runtime'
 import { writeExecutionWrappers } from '../execution-wrappers'
 import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integrations'
 useEnabledIntegrationFixtures('notion')
@@ -131,6 +133,8 @@ test('Core connect assign reconcile real CLI rotate without reinstall and unassi
   process.env.FICUS_ENCRYPTION_KEY = priorEncryptionKey ?? '0'.repeat(64)
   const root = mkdtempSync(join(tmpdir(), 'ficus-notion-core-e2e-'))
   const envFile = join(root, '.env')
+  const cliDir = writeIntegrationExecCli(root, binary)
+  let wrapperDir = ''
   const egressLog = join(root, 'egress.log')
   const egressGuard = join(root, 'egress-guard.cjs')
   writeFileSync(
@@ -151,6 +155,16 @@ for(const [m,k] of [[net,'connect'],[net,'createConnection'],[tls,'connect']]){c
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname
+      if (path === `/api/squads/${squad.id}/integrations/notion/execute-environment`) {
+        const environment = await squadIntegrationRoutesService.executionEnvironment(squad.id, 'notion')
+        return environment
+          ? Response.json({
+              environment,
+              scrubVariables: squadIntegrationRoutesService.executionVariableNames(),
+              selection: null,
+            })
+          : Response.json({ error: 'Integration unavailable' }, { status: 403 })
+      }
       if (path === '/v1/oauth/token') {
         tokenExchange += 1
         return Response.json({
@@ -302,7 +316,9 @@ for(const [m,k] of [[net,'connect'],[net,'createConnection'],[tls,'connect']]){c
     connections: repository,
     regenerateEnv: async (squadId) => {
       await regenerateEnvFileForSquad(squadId)
-      const generated = join(ensureSquadWorkspace(squadId), '.ficus', '.env')
+      const dot = join(ensureSquadWorkspace(squadId), '.ficus')
+      if (squadId === squad.id) wrapperDir = join(dot, 'integration-bin')
+      const generated = join(dot, '.env')
       observedEnv = await Bun.file(generated).text()
       observedSkills = (await resolveAssignedIntegrationRefs(squadId)).skills
       writeFileSync(envFile, observedEnv, { mode: 0o600 })
@@ -340,12 +356,14 @@ for(const [m,k] of [[net,'connect'],[net,'createConnection'],[tls,'connect']]){c
   // Captured, not discarded: `ntn` exits 101 on a Rust panic, and the bare
   // status alone made that indistinguishable from an ordinary rejection.
   const runCli = () =>
-    runCapturedProcess(['sh', '-c', 'set -a; . "$ENV_FILE"; set +a; exec "$NTN" api v1/search --data "{}"'], {
+    runCapturedProcess(['sh', '-c', 'set -a; . "$ENV_FILE"; set +a; exec ntn api v1/search --data "{}"'], {
       cwd: root,
       env: {
-        PATH: process.env.PATH ?? '/usr/bin:/bin',
+        PATH: `${wrapperDir}:${cliDir}:${process.env.PATH ?? '/usr/bin:/bin'}`,
         ENV_FILE: envFile,
-        NTN: binary,
+        FICUS_TOKEN: 'synthetic-agent-identity',
+        FICUS_AGENT_CONTEXT: '1',
+        FICUS_API_URL: origin,
         NOTION_API_BASE_URL: origin,
         NOTION_API_DOCS_BASE_URL: origin,
         NOTION_API_VERSION: '2026-03-11',
@@ -404,7 +422,15 @@ for(const [m,k] of [[net,'connect'],[net,'createConnection'],[tls,'connect']]){c
     await repository.assign(squad.id, 'notion', connection!.id)
     expect(await drainUntilOwnProjectionReady()).toMatchObject({ status: 'ready' })
     expect(installCount).toBe(1)
-    expect(observedEnv).toContain('NOTION_API_TOKEN')
+    expect(observedEnv).not.toContain('NOTION_API_TOKEN')
+    expect(observedEnv).toContain(workspaceId)
+    const firstEnv = observedEnv
+    const firstWrapper = await Bun.file(join(wrapperDir, 'ntn')).text()
+    expect(firstWrapper).toContain('integration exec')
+    for (const token of ['access-one', 'refresh-one']) {
+      expect(firstEnv).not.toContain(token)
+      expect(firstWrapper).not.toContain(token)
+    }
     expect(observedSkills).toEqual(['notion'])
     expectCleanExit(await runCli())
 
@@ -426,21 +452,32 @@ for(const [m,k] of [[net,'connect'],[net,'createConnection'],[tls,'connect']]){c
       },
     })
     expect((await refresh.refresh(connection!.id, 'explicit')).status).toBe('refreshed')
+    // Fresh token is delivered immediately, before the worker rewrites any metadata.
+    expectCleanExit(await runCli())
+    expect(await Bun.file(envFile).text()).toBe(firstEnv)
     expect(await drainUntilOwnProjectionReady()).toMatchObject({
       status: 'ready',
       appliedCredentialRevision: 2n,
     })
+    expect(observedEnv).toBe(firstEnv)
+    expect(await Bun.file(join(wrapperDir, 'ntn')).text()).toBe(firstWrapper)
     expect(installCount).toBe(1)
     expect(readinessCount).toBe(2)
     expectCleanExit(await runCli())
 
+    await db
+      .update(integrationConnections)
+      .set({ authState: 'invalid' })
+      .where(eq(integrationConnections.id, connection!.id))
+    expectFailedExit(await runCli())
     await repository.unassign(squad.id, 'notion')
+    expectFailedExit(await runCli())
     expect(await drainUntilOwnProjectionReady()).toMatchObject({ status: 'ready' })
     expect(observedSkills).toEqual([])
     expect(installedFingerprint).toBeNull()
     expect(installCount).toBe(1)
     expectFailedExit(await runCli())
-    expect(accepted).toEqual(['access-one', 'access-two'])
+    expect(accepted).toEqual(['access-one', 'access-two', 'access-two'])
     expect(existsSync(egressLog)).toBe(false)
   } finally {
     server.stop(true)

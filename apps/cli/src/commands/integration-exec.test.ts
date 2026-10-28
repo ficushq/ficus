@@ -52,12 +52,13 @@ test('exec scrubs every declared provider, including selected-provider stale val
     GITHUB_USER: 'old-user',
     LINEAR_API_KEY: 'synthetic-inherited-linear',
     EXAMPLE_TOKEN: 'synthetic-other',
+    NOTION_API_TOKEN: 'synthetic-notion-inherited',
     PATH: '/bin',
     ORDINARY: 'production',
   }
   const environment = commandExecutionEnvironment(inherited, {
     environment: { LINEAR_API_KEY: 'synthetic-selected' },
-    scrubVariables: ['GH_TOKEN', 'GITHUB_TOKEN', 'GITHUB_USER', 'LINEAR_API_KEY', 'EXAMPLE_TOKEN'],
+    scrubVariables: ['GH_TOKEN', 'GITHUB_TOKEN', 'GITHUB_USER', 'LINEAR_API_KEY', 'EXAMPLE_TOKEN', 'NOTION_API_TOKEN'],
   })
   expect(environment).toEqual({ LINEAR_API_KEY: 'synthetic-selected', PATH: '/bin', ORDINARY: 'production' })
   expect(inherited.GH_TOKEN).toBe('synthetic-inherited-gh')

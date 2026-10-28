@@ -29,7 +29,7 @@ describe('projectIntegrationAssignments', () => {
       readiness: [{ id: 'notion-cli', command: 'ntn --version', expectedSubstring: '0.23.25' }],
       skills: ['notion'],
       extensions: [],
-      protectedBindingNames: ['NOTION_API_TOKEN', 'NOTION_WORKSPACE_ID'],
+      protectedBindingNames: ['NOTION_WORKSPACE_ID'],
     })
     expect(first.fingerprint).toBe(second.fingerprint)
     expect(JSON.stringify({ declaration: first.publicDeclaration, fingerprint: first.fingerprint })).not.toContain(
@@ -37,18 +37,9 @@ describe('projectIntegrationAssignments', () => {
     )
   })
 
-  test('keeps credential and configuration value resolution private and out of the fingerprint', async () => {
-    const projection = projectIntegrationAssignments([{ plugin: notionPlugin, connection }], {
-      resolveCredential: async () =>
-        JSON.stringify({
-          version: 1,
-          accessToken: 'access-TOKEN-SENTINEL',
-          refreshToken: 'refresh-TOKEN-SENTINEL',
-          expiresAt: null,
-          tokenRevision: 7,
-        }),
-    })
-    expect(await projection.privateMaterial.bindings.get('NOTION_API_TOKEN')?.()).toBe('access-TOKEN-SENTINEL')
+  test('configuration projection needs no credential and has no token resolver', async () => {
+    const projection = projectIntegrationAssignments([{ plugin: notionPlugin, connection }])
+    expect([...projection.privateMaterial.bindings.keys()]).toEqual(['NOTION_WORKSPACE_ID'])
     expect(await projection.privateMaterial.bindings.get('NOTION_WORKSPACE_ID')?.()).toBe('workspace-TOKEN-SENTINEL')
     expect(JSON.stringify(projection.publicDeclaration)).not.toContain('TOKEN-SENTINEL')
     expect(projection.fingerprint).not.toContain('TOKEN-SENTINEL')
@@ -62,7 +53,7 @@ describe('projectIntegrationAssignments', () => {
         ...notionPlugin.sandbox,
         setupSteps: [{ id: 'notion-cli@0.23.25', script: 'different-script' }],
         protectedBindings: [
-          { name: 'NOTION_API_TOKEN', source: { kind: 'configuration' as const, field: 'workspaceId' } },
+          { name: 'NOTION_WORKSPACE_ID', source: { kind: 'configuration' as const, field: 'workspaceId' } },
         ],
       },
     }

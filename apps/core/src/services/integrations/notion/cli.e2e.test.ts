@@ -1,5 +1,8 @@
+import { IntegrationExecutionService } from '../execution'
+import { writeExecutionWrappers } from '../execution-wrappers'
+import { writeIntegrationExecCli } from '../../../test-utils/integration-exec-cli'
 import { expect, test } from 'bun:test'
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { chmodSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
 import { renderEnvForSecrets } from '../../squad/env'
@@ -68,10 +71,13 @@ test('pinned Notion CLI preserves explicit stdin and prefers explicit bodies ove
   }
 })
 
-/** Always-run, zero-external-call smoke over the locked real CLI and generated protected env. */
-test('pinned Notion CLI uses rotated generated credentials and loses access on unassignment', async () => {
+/** Always-run, zero-external-call smoke over the locked real CLI and per-command exec environment. */
+test('pinned Notion CLI uses fresh exec credentials without rewriting generated files and loses access on unassignment', async () => {
   const root = mkdtempSync(join(tmpdir(), 'ficus-notion-cli-'))
   const envFile = join(root, '.env')
+  const cliDir = writeIntegrationExecCli(root, binary)
+  const wrapperDir = join(root, 'wrappers')
+  let execution: IntegrationExecutionService
   const acceptedTokens: string[] = []
   let tokenExchange = 0
   const server = Bun.serve({
@@ -79,6 +85,12 @@ test('pinned Notion CLI uses rotated generated credentials and loses access on u
     port: 0,
     async fetch(request) {
       const url = new URL(request.url)
+      if (url.pathname === '/api/squads/squad-id/integrations/notion/execute-environment') {
+        const environment = await execution.environment('squad-id', 'notion')
+        return environment
+          ? Response.json({ environment, scrubVariables: ['NOTION_API_TOKEN'], selection: null })
+          : Response.json({ error: 'Integration unavailable' }, { status: 403 })
+      }
       if (url.pathname === '/v1/oauth/token') {
         tokenExchange += 1
         return Response.json({
@@ -149,12 +161,14 @@ test('pinned Notion CLI uses rotated generated credentials and loses access on u
 
   // Captured, not discarded — see core-lifecycle.e2e.test.ts.
   const runCli = () =>
-    runCapturedProcess(['sh', '-c', 'set -a; . "$ENV_FILE"; set +a; exec "$NTN_BIN" api v1/search --data "{}"'], {
+    runCapturedProcess(['sh', '-c', 'set -a; . "$ENV_FILE"; set +a; exec ntn api v1/search --data "{}"'], {
       cwd: root,
       env: {
-        PATH: processEnvPath(),
+        PATH: `${wrapperDir}:${cliDir}:${processEnvPath()}`,
         ENV_FILE: envFile,
-        NTN_BIN: binary,
+        FICUS_TOKEN: 'synthetic-agent-identity',
+        FICUS_AGENT_CONTEXT: '1',
+        FICUS_API_URL: origin,
         NOTION_API_BASE_URL: origin,
         NOTION_API_DOCS_BASE_URL: origin,
         NOTION_API_VERSION: '2026-03-11',
@@ -189,15 +203,34 @@ test('pinned Notion CLI uses rotated generated credentials and loses access on u
       materialRevision: 'material-revision',
     }
     const credentials = new Map([['credential-ref', plugin.connection.credential.serialize(grant.credential)]])
-    const project = () =>
-      projectIntegrationAssignments([{ plugin, connection }], {
-        resolveCredential: async (reference) => credentials.get(reference),
-      })
+    let attached = true
+    execution = new IntegrationExecutionService({
+      plugins: [plugin],
+      authority: () => 'local',
+      assignments: {
+        getAssigned: async () =>
+          attached
+            ? ({
+                ...connection,
+                squadId: 'squad-id',
+                clientAuthority: 'local',
+                enabled: true,
+                authState: 'authenticated',
+                healthState: 'healthy',
+                validatedRevision: connection.materialRevision,
+                validationExpiresAt: new Date(Date.now() + 60_000),
+              } as any)
+            : null,
+      },
+      readCredential: async (ref) => credentials.get(ref),
+    })
+    const project = () => projectIntegrationAssignments([{ plugin, connection }])
     const assigned = project()
     let currentProjection = assigned
     let installedFingerprint: string | null = null
     let installCount = 0
     const writeEnv = async () => {
+      writeExecutionWrappers(wrapperDir, attached ? [{ binary: 'ntn', providerKey: 'notion' }] : [], 'squad-id')
       const bindings = await resolveProtectedBindings(currentProjection)
       writeFileSync(
         envFile,
@@ -228,6 +261,12 @@ test('pinned Notion CLI uses rotated generated credentials and loses access on u
     await reconcile()
     expect(installCount).toBe(1)
     expectCleanExit(await runCli())
+    const firstEnv = readFileSync(envFile, 'utf8')
+    const firstWrapper = readFileSync(join(wrapperDir, 'ntn'), 'utf8')
+    for (const token of ['access-one', 'refresh-one']) {
+      expect(firstEnv).not.toContain(token)
+      expect(firstWrapper).not.toContain(token)
+    }
 
     const rotated = await transport.refresh({
       providerKey: 'notion',
@@ -248,18 +287,25 @@ test('pinned Notion CLI uses rotated generated credentials and loses access on u
     )
     const rotatedProjection = project()
     expect(rotatedProjection.fingerprint).toBe(assigned.fingerprint)
+    // New credentials work before any projection reconciliation or file rewrite.
+    expectCleanExit(await runCli())
     currentProjection = rotatedProjection
     await reconcile()
+    expect(readFileSync(envFile, 'utf8')).toBe(firstEnv)
+    expect(readFileSync(join(wrapperDir, 'ntn'), 'utf8')).toBe(firstWrapper)
     expect(installCount).toBe(1)
     expectCleanExit(await runCli())
-    expect(acceptedTokens).toEqual(['access-one', 'access-two'])
+    expect(acceptedTokens).toEqual(['access-one', 'access-two', 'access-two'])
 
+    attached = false
+    // A stale wrapper refuses immediately, even before its removal.
+    expectFailedExit(await runCli())
     const unassigned = projectIntegrationAssignments([])
     expect(unassigned.publicDeclaration.packages).toEqual([])
     currentProjection = unassigned
     await reconcile()
     expectFailedExit(await runCli())
-    expect(acceptedTokens).toEqual(['access-one', 'access-two'])
+    expect(acceptedTokens).toEqual(['access-one', 'access-two', 'access-two'])
     expect(await Bun.file(envFile).text()).not.toContain('NOTION_API_TOKEN')
   } finally {
     restoreAdapter()

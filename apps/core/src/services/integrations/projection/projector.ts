@@ -1,14 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { IntegrationProjection, IntegrationProjectionInput, PublicIntegrationDeclaration } from './types'
 
-export interface IntegrationProjectorDependencies {
-  resolveCredential?(credentialRef: string): Promise<string | undefined>
-}
-
-export function projectIntegrationAssignments(
-  inputs: readonly IntegrationProjectionInput[],
-  dependencies: IntegrationProjectorDependencies = {}
-): IntegrationProjection {
+export function projectIntegrationAssignments(inputs: readonly IntegrationProjectionInput[]): IntegrationProjection {
   const sorted = [...inputs].sort(
     (left, right) =>
       left.plugin.key.localeCompare(right.plugin.key) || left.connection.id.localeCompare(right.connection.id)
@@ -42,7 +35,7 @@ export function projectIntegrationAssignments(
       const existing = bindingSources.get(binding.name)
       if (existing !== undefined) throw new Error('protected_binding_conflict')
       bindingSources.set(binding.name, sourceIdentity)
-      bindings.set(binding.name, createBindingResolver(binding.source, plugin, connection, dependencies))
+      bindings.set(binding.name, createBindingResolver(binding.source, plugin, connection))
     }
   }
 
@@ -69,25 +62,15 @@ export function projectIntegrationAssignments(
 }
 
 function createBindingResolver(
-  source: { kind: 'oauth_access_token' } | { kind: 'configuration'; field: string },
+  source: { kind: 'configuration'; field: string },
   plugin: IntegrationProjectionInput['plugin'],
-  connection: IntegrationProjectionInput['connection'],
-  dependencies: IntegrationProjectorDependencies
+  connection: IntegrationProjectionInput['connection']
 ): () => Promise<string> {
-  if (source.kind === 'configuration') {
-    return async () => {
-      const configuration = plugin.connection.parseConfiguration(connection.configuration) as Record<string, unknown>
-      const value = configuration[source.field]
-      if (typeof value !== 'string') throw new Error('protected_binding_unavailable')
-      return value
-    }
-  }
   return async () => {
-    const raw = await dependencies.resolveCredential?.(connection.credentialRef)
-    if (!raw) throw new Error('protected_binding_unavailable')
-    const credential = plugin.connection.credential.parse(raw) as { accessToken?: unknown }
-    if (typeof credential.accessToken !== 'string') throw new Error('protected_binding_unavailable')
-    return credential.accessToken
+    const configuration = plugin.connection.parseConfiguration(connection.configuration) as Record<string, unknown>
+    const value = configuration[source.field]
+    if (typeof value !== 'string') throw new Error('protected_binding_unavailable')
+    return value
   }
 }
 

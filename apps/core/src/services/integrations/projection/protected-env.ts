@@ -1,7 +1,6 @@
 import { integrationEnabledPredicate } from '../provider-state'
 import { and, eq, gt } from 'drizzle-orm'
 import { db, integrationConnectionAssignments, integrationConnections } from '../../../db'
-import { getSecretStore } from '../../secrets'
 import { resolveOAuthAuthority } from '../authorization/authority'
 import { firstPartyIntegrationPlugin } from '../first-party-plugins'
 import { projectIntegrationAssignments } from './projector'
@@ -44,11 +43,6 @@ export async function loadProtectedIntegrationBindings(
     if (plugin.authorization.kind === 'oauth2' && connection.clientAuthority !== resolveOAuthAuthority()) continue
     inputs.push({ plugin, connection })
   }
-  const projection = projectIntegrationAssignments(inputs, {
-    resolveCredential: async (reference) => {
-      await getSecretStore().refreshKey(reference)
-      return getSecretStore().get(reference)
-    },
-  })
+  const projection = projectIntegrationAssignments(inputs)
   return resolveProtectedBindings(projection)
 }
