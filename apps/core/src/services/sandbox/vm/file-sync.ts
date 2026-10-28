@@ -1193,28 +1193,21 @@ export async function cleanExposureFilesOnBox(
       })
     )(squadId)
     await pushFile(client, `${home}/workspace/.ficus/.env`, content, '0600')
-  } else {
-    // A detached former member must not retain its previously pushed squad env.
-    await runBash(
-      client,
-      `rm -f -- ${shellQuote(`${home}/workspace/.ficus/.env`)}`,
-      'exposure_cleanup',
-      undefined,
-      undefined,
-      30
-    )
   }
+  // With no resolvable squad, workspace/.ficus/.env may be a solo agent's own
+  // file. Normal asset-manifest revocation handles known former squad copies.
   // Exact managed legacy filename only. find does not follow symlink directories;
   // staging from a previously interrupted restore must not reintroduce this file.
   await runBash(
     client,
     [
       'set -eu',
-      `for root in ${shellQuote(`${home}/.private`)} ${shellQuote(`${home}/.ficus-migrate`)}; do`,
-      '  [ ! -L "$root" ] || { echo "private root must not be a symlink" >&2; exit 1; }',
-      '  [ ! -d "$root" ] || find "$root" -path "*/.ficus/agent-secrets.env" -delete',
-      'done',
-      `[ ! -d ${shellQuote(`${home}/.ficus-migrate`)} ] || find ${shellQuote(`${home}/.ficus-migrate`)} -path '*/workspace/.ficus/.env' -delete`,
+      `rm -f -- ${shellQuote(`${home}/.private/.ficus/agent-secrets.env`)}`,
+      `staging=${shellQuote(`${home}/.ficus-migrate`)}`,
+      '[ ! -L "$staging" ] || { echo "restore staging must not be a symlink" >&2; exit 1; }',
+      // Old interrupted staging is not authoritative. Ignore inaccessible
+      // staging subtrees; never recursively traverse the user's private tree.
+      '[ ! -d "$staging" ] || find "$staging" \\( -path "*/.ficus/agent-secrets.env" -o -path "*/workspace/.ficus/.env" \\) -delete 2>/dev/null || true',
     ].join('\n'),
     'exposure_cleanup',
     undefined,

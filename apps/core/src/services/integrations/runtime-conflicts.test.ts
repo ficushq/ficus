@@ -23,7 +23,7 @@ async function fixture() {
   process.env.HOME_DIR = home
   const bad = crypto.randomUUID(),
     good = crypto.randomUUID(),
-    ids = [bad, good]
+    ids: string[] = [bad, good]
   await db.insert(squads).values([
     { id: bad, name: 'A conflicting fixture', purpose: 'test' },
     { id: good, name: 'Z healthy fixture', purpose: 'test' },

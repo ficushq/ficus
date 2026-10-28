@@ -1881,3 +1881,32 @@ test('VM rollout cleanup executes against existing pushed copies and interrupted
     rmSync(home, { recursive: true, force: true })
   }
 })
+
+test('solo VM cleanup preserves user env and nested private files without traversing private trees', async () => {
+  const { cleanExposureFilesOnBox } = await import('./file-sync')
+  const home = mkdtempSync(join(tmpdir(), 'solo-rollout-retirement-'))
+  try {
+    for (const path of ['.private/.ficus', '.private/project/.ficus', 'workspace/.ficus'])
+      mkdirSync(join(home, path), { recursive: true })
+    writeFileSync(join(home, '.private/.ficus/agent-secrets.env'), 'synthetic-retired')
+    writeFileSync(join(home, '.private/project/.ficus/agent-secrets.env'), 'user-owned nested file')
+    writeFileSync(join(home, 'workspace/.ficus/.env'), 'CUSTOM_SOLO=keep')
+    const client = {
+      bash(req: { command: string }) {
+        expect(req.command).not.toContain(`find '${home}/.private'`)
+        const result = Bun.spawnSync(['bash', '-c', req.command], { timeout: 3000, env: { PATH: process.env.PATH } })
+        return makeBashStream(result.exitCode)
+      },
+    }
+    expect(
+      await cleanExposureFilesOnBox('agent_fixture', null, {
+        getClient: async () => client as any,
+        boxHome: () => home,
+      })
+    ).toBe(true)
+    expect(readFileSync(join(home, 'workspace/.ficus/.env'), 'utf8')).toBe('CUSTOM_SOLO=keep')
+    expect(readFileSync(join(home, '.private/project/.ficus/agent-secrets.env'), 'utf8')).toBe('user-owned nested file')
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})

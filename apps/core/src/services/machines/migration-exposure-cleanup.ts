@@ -37,13 +37,14 @@ home="$1"; user="$2"; refresh="$3"
 for root in "$home/workspace" "$home/.private"; do
   [ ! -L "$root" ] || exit 40
   if [ -e "$root" ]; then
-    [ -d "$root" ] || exit 40
+    [ -d "$root" ] || exit 41
     dot="$root/.ficus"
-    [ ! -L "$dot" ] && { [ ! -e "$dot" ] || [ -d "$dot" ]; } || exit 40
+    [ ! -L "$dot" ] || exit 42
+    [ ! -e "$dot" ] || [ -d "$dot" ] || exit 43
   fi
 done
 if [ "$refresh" = 1 ]; then
-  [ -d "$home/workspace" ] || exit 40
+  [ -d "$home/workspace" ] || exit 41
   dot="$home/workspace/.ficus"
   if [ ! -e "$dot" ]; then install -d -m 0755 -o "$user" -g "$user" -- "$dot"; fi
   temporary="$(mktemp "$dot/.env.migrate-XXXXXX")"
@@ -60,6 +61,18 @@ fi
 ' -- '${home}' '${user}' '${squadId ? '1' : '0'}'`
   const result = await runner.run(machine, command, { stdin: content, timeoutMs: 30_000 })
   // Never include remote output or generated content in an error/status payload.
-  if (result.exitCode !== 0)
-    throw new Error('Migration source exposure sanitation failed; check managed settings paths and permissions')
+  if (result.exitCode !== 0) {
+    const kind =
+      (
+        {
+          40: 'root-symlink',
+          41: 'root-not-directory',
+          42: 'settings-symlink',
+          43: 'settings-not-directory',
+        } as Record<number, string>
+      )[result.exitCode] ?? 'io-or-permissions'
+    throw new Error(
+      `Migration source exposure sanitation failed (${kind}); check managed settings paths and permissions`
+    )
+  }
 }

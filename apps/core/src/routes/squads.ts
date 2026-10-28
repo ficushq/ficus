@@ -1,4 +1,4 @@
-import { getExposureCleanupStatus } from '../services/sandbox/exposure-cleanup'
+import { getExposureCleanupStatusForDisplay } from '../services/sandbox/exposure-cleanup'
 import { WORKSPACE_MULTIPART_METADATA_BYTES } from '../services/attachments/workspace-multipart-reader'
 import { getBunServer } from 'hono/bun'
 import { stageWorkspaceMultipart, InvalidWorkspaceMultipartError } from '../services/attachments/workspace-multipart'
@@ -1082,7 +1082,7 @@ export const squadsRouter = new Hono()
       return c.json({ error: 'Squad not found' }, 404)
     }
 
-    const exposureCleanup = await getExposureCleanupStatus(squad.sandboxId, squad.id)
+    const exposureCleanup = await getExposureCleanupStatusForDisplay(squad.sandboxId, squad.id)
 
     if (!isRemoteSandboxRuntime()) {
       // Docker mode — sandbox is always "running" if it exists

@@ -1,11 +1,11 @@
 /** Retirement-only cleanup. Never reads the operator Secret Store or copies exposure values. */
-import { lstatSync, readdirSync, rmSync, renameSync, createReadStream, createWriteStream } from 'node:fs'
+import { lstatSync, realpathSync, readdirSync, rmSync, renameSync, createReadStream, createWriteStream } from 'node:fs'
 import { pipeline } from 'node:stream/promises'
 import { createGunzip, createGzip } from 'node:zlib'
 import { extract, pack } from 'tar-stream'
 import { join } from 'node:path'
 import { and, eq, lte, ne, or, sql } from 'drizzle-orm'
-import { db, agents, machineBoxes, sandboxExposureCleanup, squads } from '../../db'
+import { db, agents, machines, machineBoxes, sandboxExposureCleanup, squads } from '../../db'
 import { getHomeDir } from '../../lib/utils/home'
 import { createLogger } from '../../lib/infra/logger'
 import { createPeriodicRunner, type PeriodicRunner } from '../../lib/infra/PeriodicRunner'
@@ -16,6 +16,8 @@ import { isCanonicalSquadId } from '../squad/workspace'
 
 const log = createLogger('exposure-cleanup')
 const RETRY_MS = 60_000
+const MAX_RETRY_MS = 3_600_000
+type CleanupRecord = typeof sandboxExposureCleanup.$inferSelect
 export type CleanupTarget = Pick<
   typeof sandboxExposureCleanup.$inferSelect,
   'targetId' | 'kind' | 'sourceId' | 'squadId'
@@ -25,12 +27,12 @@ export type CleanupStatus = Pick<typeof sandboxExposureCleanup.$inferSelect, 'st
 }
 type CleanupPatch = CleanupStatus & { nextAttemptAt: Date }
 
-/** Do not follow an agent-controlled settings directory (or private-root symlink). */
+/** Resolve supported private-root aliases once; never follow a settings-directory symlink. */
 export async function cleanLegacyPrivateDirectory(root: string): Promise<void> {
   try {
+    root = realpathSync(root)
     const stat = lstatSync(root)
-    if (stat.isSymbolicLink() || !stat.isDirectory())
-      throw new WorkspaceDotDirConflictError(root, 'ficus-not-a-directory')
+    if (!stat.isDirectory()) throw new WorkspaceDotDirConflictError(root, 'ficus-not-a-directory')
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
     throw error
@@ -44,16 +46,15 @@ export async function cleanLegacyArchive(path: string): Promise<void> {
   const temporary = `${path}.cleanup-${crypto.randomUUID()}`
   const reader = extract()
   const writer = pack()
-  const signal = AbortSignal.timeout(120_000)
   reader.on('entry', (header, entry, next) => {
     const name = header.name.replace(/^\.\//, '')
-    if (/(^|\/)\.ficus\/agent-secrets\.env$/.test(name) || /(^|\/)workspace\/\.ficus\/\.env$/.test(name)) {
+    if (/(^|\/)\.ficus\/agent-secrets\.env$/.test(name) || name === 'workspace/.ficus/.env') {
       entry.on('end', next)
       entry.resume()
     } else {
       // Metadata and user files pass through unchanged. Never resolve archive paths on the host.
       const output = writer.entry(header)
-      pipeline(entry, output, { signal }).then(
+      pipeline(entry, output).then(
         () => next(),
         (error) => reader.destroy(error)
       )
@@ -62,8 +63,8 @@ export async function cleanLegacyArchive(path: string): Promise<void> {
   reader.on('finish', () => writer.finalize())
   try {
     await Promise.all([
-      pipeline(createReadStream(path), createGunzip(), reader, { signal }),
-      pipeline(writer, createGzip(), createWriteStream(temporary, { flags: 'wx', mode: 0o600 }), { signal }),
+      pipeline(createReadStream(path), createGunzip(), reader),
+      pipeline(writer, createGzip(), createWriteStream(temporary, { flags: 'wx', mode: 0o600 })),
     ])
     renameSync(temporary, path)
   } finally {
@@ -79,6 +80,7 @@ export async function runCleanupTarget(
   deps: {
     clean(): Promise<boolean>
     save(patch: CleanupPatch): Promise<void>
+    previous?: Pick<CleanupRecord, 'status' | 'reason' | 'updatedAt' | 'nextAttemptAt'>
     now?: () => Date
     log?: (message: string) => void
   }
@@ -99,9 +101,14 @@ export async function runCleanupTarget(
         : 'Managed file cleanup failed; automatic cleanup will retry. Check settings directory permissions and runtime availability.'
   }
   const now = deps.now?.() ?? new Date()
-  await deps.save({ status, reason, updatedAt: now, nextAttemptAt: new Date(now.getTime() + RETRY_MS) })
+  // The previous persisted interval is the backoff state, so restart needs no
+  // process-local counters or extra migration. Assignment changes reset it.
+  const previousDelay = deps.previous ? deps.previous.nextAttemptAt.getTime() - deps.previous.updatedAt.getTime() : 0
+  const delay = status === 'done' ? RETRY_MS : Math.min(MAX_RETRY_MS, Math.max(RETRY_MS, previousDelay * 2))
+  await deps.save({ status, reason, updatedAt: now, nextAttemptAt: new Date(now.getTime() + delay) })
   const report = deps.log ?? ((message: string) => log.info(message))
-  report(`Exposure cleanup ${target.targetId}: ${status}${reason ? ` — ${reason}` : ''}`)
+  if (deps.previous?.status !== status || deps.previous.reason !== reason)
+    report(`Exposure cleanup ${target.targetId}: ${status}${reason ? ` — ${reason}` : ''}`)
 }
 
 function directories(root: string): string[] {
@@ -144,7 +151,7 @@ async function vmTarget(sandboxId: string): Promise<CleanupTarget> {
 }
 
 async function cleanTarget(
-  target: CleanupTarget,
+  target: CleanupRecord,
   client?: import('./client/http-client').SandboxClient
 ): Promise<boolean> {
   switch (target.kind) {
@@ -168,6 +175,16 @@ async function cleanTarget(
       return true
     }
     case 'vm': {
+      // Removed boxes (including machine cascade deletion) have no remaining
+      // managed target to contact. Do not retain an unreachable retry forever.
+      if (!client) {
+        const [box] = await db
+          .select({ id: machineBoxes.sandboxId })
+          .from(machineBoxes)
+          .innerJoin(machines, eq(machines.id, machineBoxes.machineId))
+          .where(eq(machineBoxes.sandboxId, target.sourceId))
+        if (!box) return true
+      }
       const { cleanExposureFilesOnBox } = await import('./vm/file-sync')
       // Re-render for this attempt too; never push a stale host-side snapshot.
       if (target.squadId) await regenerateEnvFileForSquadStrict(target.squadId)
@@ -176,10 +193,17 @@ async function cleanTarget(
   }
 }
 
-async function rememberTarget(target: CleanupTarget): Promise<void> {
-  await db
+async function rememberTarget(target: CleanupTarget): Promise<CleanupRecord> {
+  const [existing] = await db
+    .select()
+    .from(sandboxExposureCleanup)
+    .where(eq(sandboxExposureCleanup.targetId, target.targetId))
+  // Most sweeps and contacts are reads only. A changed squad assignment is a
+  // genuinely new managed env and must reset the acknowledgement/backoff.
+  if (existing?.squadId === target.squadId) return existing
+  const [row] = await db
     .insert(sandboxExposureCleanup)
-    .values(target)
+    .values({ ...target, nextAttemptAt: new Date(0) })
     .onConflictDoUpdate({
       target: sandboxExposureCleanup.targetId,
       set: {
@@ -189,16 +213,18 @@ async function rememberTarget(target: CleanupTarget): Promise<void> {
         nextAttemptAt: new Date(),
         updatedAt: new Date(),
       },
-      setWhere: sql`${sandboxExposureCleanup.squadId} IS DISTINCT FROM ${target.squadId}`,
     })
+    .returning()
+  return row
 }
 async function processTarget(
-  target: CleanupTarget,
+  target: CleanupRecord,
   client?: import('./client/http-client').SandboxClient,
   clean = () => cleanTarget(target, client)
 ): Promise<void> {
   await runCleanupTarget(target, {
     clean,
+    previous: target,
     save: async (patch) => {
       await db.update(sandboxExposureCleanup).set(patch).where(eq(sandboxExposureCleanup.targetId, target.targetId))
     },
@@ -236,15 +262,16 @@ export async function cleanupExposureOnContact(
           sourceId: sandboxId,
           squadId: null,
         }
-    await rememberTarget(target)
-    // Always repair on contact: old archives may have been restored since an earlier acknowledgement.
-    await processTarget(target, client)
+    const stored = await rememberTarget(target)
+    // Historical restores are filtered at extraction. A durable acknowledgement
+    // therefore needs no repeated filesystem walk on ensure/keepalive recovery.
+    if (stored.status !== 'done') await processTarget(stored, client)
     if (!client) {
       const { squadId } = await vmTarget(sandboxId)
       if (squadId) {
         const squadTarget: CleanupTarget = { targetId: `squad:${squadId}`, sourceId: squadId, kind: 'squad', squadId }
-        await rememberTarget(squadTarget)
-        await processTarget(squadTarget)
+        const storedSquad = await rememberTarget(squadTarget)
+        if (storedSquad.status !== 'done') await processTarget(storedSquad)
       }
     }
   } catch {
@@ -289,6 +316,20 @@ export async function getExposureCleanupStatus(sandboxId: string, squadId?: stri
       targets: rows,
     }
   return { status: 'done', reason: null, updatedAt: rows[0].updatedAt, targets: rows }
+}
+
+/** Informational decoration must not make a working sandbox status endpoint fail. */
+export async function getExposureCleanupStatusForDisplay(
+  sandboxId: string,
+  squadId?: string | null,
+  read = getExposureCleanupStatus
+): Promise<CleanupStatus | undefined> {
+  try {
+    return await read(sandboxId, squadId)
+  } catch {
+    log.warn(`Could not read exposure cleanup status for ${sandboxId}`)
+    return undefined
+  }
 }
 
 let runner: PeriodicRunner | undefined

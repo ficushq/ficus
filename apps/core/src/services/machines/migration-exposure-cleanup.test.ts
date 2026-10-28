@@ -147,7 +147,7 @@ test('source settings conflicts abort sanitation without following links or chan
     symlinkSync(external, join(f.source, 'workspace/.ficus'))
     await expect(
       prepareMigrationSource(f.runner, f.machine, f.sandboxId, { generatedEnv: async () => Buffer.from(cleanEnv) })
-    ).rejects.toThrow('sanitation failed')
+    ).rejects.toThrow('sanitation failed (settings-symlink)')
     expect(readFileSync(join(external, '.env'), 'utf8')).toBe('CUSTOM=untouched')
   } finally {
     rmSync(f.root, { recursive: true, force: true })
