@@ -347,6 +347,80 @@ machine. It exits 1 if any failed and 2 for an unknown machine id.
 `ensureSandbox` is idempotent and deduped in-flight; re-ensuring a healthy box
 is a no-op past step 4 (plus the file re-sync in step 6).
 
+### Provision serialization and cross-process single flight
+
+Provisioning has two independent fences:
+
+- **On the machine**, `box-provision.sh` takes an exclusive `flock` on
+  `/run/ficus-box-locks/ficus-box-<unix_user>.lock` before dispatching any
+  provisioning, removal, restore or cache-publication effects. The directory
+  is root-owned under `/run` (not the shared writable `/run/lock` directory).
+  Root invocations and passwordless-sudo invocations use the same inode; the
+  latter re-exec as root after validation. Different box users have different
+  locks. The descriptor stays open through the whole run, including failure
+  containment, rather than only around restore extraction. Existing extraction
+  and shared-cache locks remain separate.
+- **In Core**, API and worker VM managers share physical-ensure results through
+  `vm_box_provision_attempts` (migration `0236_vm_box_provision_attempts`). Each
+  caller snapshots the current generation **before** waiting for the existing
+  `vm-box-setup:<sandboxId>` advisory lease. A waiter consumes that generation's
+  immutable success/failure instead of executing a second `ensureBox`. Completed
+  generations are retained for at least one hour, beyond the 15-minute acquisition
+  budget; indexed opportunistic cleanup also prunes old results for removed boxes.
+  A later independent ensure still performs the usual health/spec reconciliation.
+
+The advisory lease uses one reserved **direct** PostgreSQL session, never a
+transaction-pooled connection. Result queries are short main-pool operations;
+no database transaction stays open across SSH, and no second dedicated slot is
+acquired inside the lease. Contended callers return the dedicated slot between
+bounded acquisition attempts, so another box can progress. Idle/session-lifetime
+client retirement is disabled for the owned session, queries retain the dedicated
+statement budget, and a detected session loss fences late result publication.
+Recursive provisioning is rejected before taking another lease/slot.
+
+A successful follower reads the authoritative ready box/machine and creates its
+**own local SSH forward**; no process-local endpoint, environment, executor token
+or remote stderr is persisted in the flight-result table. Each process still
+performs its required file/setup checks. First-contact exposure retirement uses
+that already-established client, not another ensure, and retains its durable
+all-or-nothing cleanup acknowledgement. Read-only cleanup sweeps attach to an
+existing ready box and do not provision one.
+
+Ordinary failures back off for 30 seconds, doubling to a maximum of 15 minutes;
+success resets the failure count. Followers/backoff callers receive a sanitized
+error identifying the failed attempt and retry time, while the original caller
+retains its diagnostic error. A lost owner leaves a `running` generation: the next
+lease owner marks it abandoned and backs off for 15 minutes rather than replaying
+unknown work. An old owner cannot overwrite that terminal result. The existing
+bind/reaper race remains a safe immediate re-placement exception: it happens
+before host provisioning begins.
+
+The host-lock wait defaults to **180 seconds** (`FICUS_BOX_LOCK_WAIT_SECONDS`
+can override it with a nonnegative number of seconds). Timeout exits **73** with
+`FICUS_BOX_LOCK_TIMEOUT`, the box user, `holder_pid`, wait and lock path. The PID
+is published only by the lock owner; at the timeout boundary it may identify a
+just-exited owner. A waiting/timed-out invocation has not entered provisioning and
+**must not stop or disable the holder's Docker**. Do not unlink a lock file to
+"fix" contention: that can create two independently locked inodes. Investigate
+the named holder instead. Locks release with the last owning descriptor, including
+on process death. Side-effect-free print modes and unprivileged
+`--prepare-nix-cache` do not acquire this lock: service startup can invoke cache
+preparation while provisioning owns it. Cache publication remains root-only.
+
+Cancellation/deadlines while acquiring the Core lease never cancel the holder.
+After acquisition, work and cleanup must settle before releasing ownership;
+there is no timeout race that leaves a mutating callback running after unlock.
+Existing bounded SSH provisioning (five minutes) and health polling (four minutes
+by default) remain in effect. If a Core DB session dies while remote work is still
+unwinding, the host lock remains the final script-level fence.
+
+Regression coverage is synthetic: `scripts/machine/box-provision.test.sh` records
+fake-systemctl interleavings, timeout/holder PID and Docker ownership;
+`provision-flight*.test.ts` exercises real PostgreSQL/PgBouncer, separate API/worker
+VM-manager processes, shared success/failure/backoff, different-box progress,
+cancellation, lost sessions and generation fencing. These checks do not provision
+or repair a live host or establish that a deployed incident is resolved.
+
 ### Executor auth + loopback bind (cross-box hardening)
 
 Boxes are co-located unix users on a shared machine, so the sandbox-server

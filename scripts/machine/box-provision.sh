@@ -1167,16 +1167,23 @@ provision_docker() {
   fi
 }
 
+# Pure guard, also checked before lock acquisition/privilege elevation. Each
+# destructive helper reasserts it independently of its dispatch caller.
+validate_box_target() {
+  local action="$1"
+  if [[ ! "${UNIX_USER}" =~ ^box_[0-9a-f]{12}$ ]]; then
+    echo "box-provision.sh: refusing to ${action} non-box user '${UNIX_USER}' (must match box_<12hex>)" >&2
+    return 2
+  fi
+}
+
 remove_box() {
   # SAFETY: removal ARCHIVES the home and `userdel -r`s the account — it must
   # ONLY ever touch users this tooling created, which always follow the
   # `box_<12 hex>` convention. Refuse anything else outright (this catches
   # `root`, `ubuntu`, and any other host account that passes the general
-  # provisioning charset). Checked before existence, before any privileged call.
-  if [[ ! "${UNIX_USER}" =~ ^box_[0-9a-f]{12}$ ]]; then
-    echo "box-provision.sh: refusing to remove non-box user '${UNIX_USER}' (must match box_<12hex>)" >&2
-    exit 2
-  fi
+  # provisioning charset). Checked before existence, before any destructive effect.
+  validate_box_target remove || return $?
 
   if ! id -u "${UNIX_USER}" >/dev/null 2>&1; then
     echo "box-provision.sh: user ${UNIX_USER} does not exist; nothing to remove" >&2
@@ -1343,10 +1350,7 @@ reown_members() {
 restore_stream() {
   # SAFETY: this extracts + `chown -R`s inside a user's HOME as root — the same
   # guard --restore carries, for the same reason.
-  if [[ ! "${UNIX_USER}" =~ ^box_[0-9a-f]{12}$ ]]; then
-    echo "box-provision.sh: refusing to restore into non-box user '${UNIX_USER}' (must match box_<12hex>)" >&2
-    exit 2
-  fi
+  validate_box_target 'restore into' || return $?
 
   if ! id -u "${UNIX_USER}" >/dev/null 2>&1; then
     echo "box-provision.sh: user ${UNIX_USER} does not exist; cannot restore" >&2
@@ -1392,11 +1396,8 @@ restore_box() {
   # SAFETY: restore extracts + `chown -R`s inside a user's HOME as root. Like
   # removal, only ever act on `box_<12 hex>` users this tooling created (this
   # refuses `root`, `ubuntu`, and any other host account that passes the
-  # general provisioning charset). Checked before any privileged call.
-  if [[ ! "${UNIX_USER}" =~ ^box_[0-9a-f]{12}$ ]]; then
-    echo "box-provision.sh: refusing to restore into non-box user '${UNIX_USER}' (must match box_<12hex>)" >&2
-    exit 2
-  fi
+  # general provisioning charset). Checked before any destructive effect.
+  validate_box_target 'restore into' || return $?
 
   if [ -z "${RESTORE_TAR}" ]; then
     echo "box-provision.sh: --restore requires a tar path" >&2
@@ -2067,15 +2068,19 @@ fi
 # Keep this FD through the entire dispatch, including failure containment. The
 # restore extraction/cache locks below are separate and must not replace it.
 acquire_box_lock() {
-  local dir="${FICUS_HOST_ROOT}/run/lock" path holder_pid wait_seconds
+  local dir="${FICUS_HOST_ROOT}/run/ficus-box-locks" path holder_pid wait_seconds
   path="${dir}/ficus-box-${UNIX_USER}.lock"
   wait_seconds="${FICUS_BOX_LOCK_WAIT_SECONDS:-180}"
   if [[ ! "${wait_seconds}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
     echo 'box-provision.sh: invalid FICUS_BOX_LOCK_WAIT_SECONDS' >&2
     return 2
   fi
+  if [ -L "${dir}" ]; then
+    echo "box-provision.sh: refusing symlink lock directory ${dir}" >&2
+    return 2
+  fi
   install -d -m 0755 "${dir}"
-  # /run/lock is root-owned; never follow an operator-created symlink.
+  # /run/ficus-box-locks is root-owned; never follow an operator-created symlink.
   if [ -L "${path}" ]; then
     echo "box-provision.sh: refusing symlink lock ${path}" >&2
     return 2
@@ -2090,6 +2095,7 @@ acquire_box_lock() {
   # flock(1) exits after locking our inherited FD; its kernel PID is not the
   # script holder. Publish the script PID ONLY after acquisition, never truncate
   # from a waiter. Diagnostics may name a just-exited owner at the timeout edge.
+  : >"${path}"
   printf '%s\n' "$$" >&200
 }
 
@@ -2097,6 +2103,11 @@ acquire_box_lock() {
 # must not wait for provisioning, which may itself start a service invoking it.
 # Publication retains its existing root-only guard (never elevate a box user).
 if [ "${PREPARE_NIX_CACHE}" != true ]; then
+  if [ "${REMOVE}" = true ]; then
+    validate_box_target remove || exit $?
+  elif [ "${RESTORE}" = true ] || [ "${RESTORE_STREAM}" = true ]; then
+    validate_box_target 'restore into' || exit $?
+  fi
   if [ "${PUBLISH_NIX_CACHE}" = true ] && [ "$(id -u)" -ne 0 ]; then
     echo 'box-provision.sh: Nix cache publication requires root' >&2
     exit 2

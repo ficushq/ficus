@@ -141,7 +141,8 @@ else
     shim runuser "shift 3; ${keep_shims}"
     shim getent 'grep -m1 "^$2:" "$STUB_R/fakedb/$1" || exit 2'
     shim id '
-if [ "$1" = -u ] && [ $# -eq 1 ]; then echo 0; exit 0; fi
+if [ "$1" = -u ] && [ $# -eq 1 ]; then echo "${STUB_CALLER_UID:-0}"; exit 0; fi
+if [ "$1" = -un ] && [ -n "${STUB_CALLER_NAME:-}" ]; then echo "$STUB_CALLER_NAME"; exit 0; fi
 if [ "$1" = -nG ]; then
   printf "%s" "$2"
   while IFS=: read -r group _ _ members; do
@@ -306,8 +307,8 @@ printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$
   }
 
   host_snapshot() {
-    (cd "${R}" && find . \( -path ./run/lock -o -path ./interleave.log -o -path ./calls.log -o -path ./stderr.log -o -path ./stdout.log -o -path ./.shims \) -prune -o -printf '%p %y %l %m\n' | sort
-      find . \( -path ./run/lock -o -path ./interleave.log -o -path ./calls.log -o -path ./stderr.log -o -path ./stdout.log -o -path ./.shims \) -prune -o -type f -exec sha256sum {} + | sort -k2)
+    (cd "${R}" && find . \( -path ./run/ficus-box-locks -o -path ./interleave.log -o -path ./calls.log -o -path ./stderr.log -o -path ./stdout.log -o -path ./.shims \) -prune -o -printf '%p %y %l %m\n' | sort
+      find . \( -path ./run/ficus-box-locks -o -path ./interleave.log -o -path ./calls.log -o -path ./stderr.log -o -path ./stdout.log -o -path ./.shims \) -prune -o -type f -exec sha256sum {} + | sort -k2)
   }
 
   is_link_to() { [[ -L $1 && $(readlink "$1") == "$2" ]] && echo yes || echo no; }
@@ -335,6 +336,7 @@ printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$
   docker_shims
   provision --sandbox-id squad_lock --with-docker --subuid-file "${R}/subuid" --subgid-file "${R}/subgid" --memtotal-kb 8131584 --nproc 8
   : >"${R}/interleave.log"
+  echo 9999999999999999999 >"${R}/run/ficus-box-locks/ficus-box-${BOX}.lock"
   touch "${R}/hold"
   start_locked_provision holder
   holder=$CHILD
@@ -357,6 +359,7 @@ printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$
   docker_shims
   provision --sandbox-id squad_lock --with-docker --subuid-file "${R}/subuid" --subgid-file "${R}/subgid" --memtotal-kb 8131584 --nproc 8
   : >"${R}/interleave.log"
+  echo 9999999999999999999 >"${R}/run/ficus-box-locks/ficus-box-${BOX}.lock"
   touch "${R}/hold"
   start_locked_provision holder
   holder=$CHILD
@@ -366,7 +369,7 @@ printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$
   waiter_rc=0; wait "$waiter" || waiter_rc=$?
   expect_eq 'lock timeout: distinct temporary failure exit' "$waiter_rc" 73
   expect_eq 'lock timeout: names box and actual holder PID' \
-    "$(grep -c "FICUS_BOX_LOCK_TIMEOUT.*${BOX}.*holder_pid=${holder}" "${R}/timeout.err" || true)" 1
+    "$(grep -c "FICUS_BOX_LOCK_TIMEOUT.*${BOX}.*holder_pid=${holder} wait_seconds=" "${R}/timeout.err" || true)" 1
   expect_eq 'lock timeout: never calls systemctl or containment on holder' \
     "$(grep -c '^timeout$' "${R}/interleave.log" || true)" 0
   rm "${R}/hold"
@@ -379,13 +382,55 @@ printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$
   # A held lock for another account must not block this box. Acquire the actual
   # lock inode directly, with no fake systemd shared state between different UIDs.
   make_host
-  mkdir -p "${R}/run/lock"
-  exec 7>"${R}/run/lock/ficus-box-box_bbbbbbbbbbbb.lock"
+  mkdir -p "${R}/run/ficus-box-locks"
+  exec 7>"${R}/run/ficus-box-locks/ficus-box-box_bbbbbbbbbbbb.lock"
   flock -x 7
   provision --sandbox-id agent_x --unit-mode system
   expect_eq 'different box lock: provisioning is independent' "$PROV_RC" 0
   exec 7>&-
   rm -rf "${R}"
+
+  # Service ExecStartPre must not recursively wait for the owning provision.
+  make_host
+  provision --sandbox-id agent_x --unit-mode system
+  exec 7>"${R}/run/ficus-box-locks/ficus-box-${BOX}.lock"
+  flock -x 7
+  prepare_rc=0
+  PATH="${R}/.shims:${PATH}" STUB_R="${R}" FICUS_HOST_ROOT="${R}" \
+    STUB_CALLER_UID=1001 STUB_CALLER_NAME="${BOX}" FICUS_BOX_LOCK_WAIT_SECONDS=0.1 \
+    bash "${TARGET}" --unix-user "${BOX}" --prepare-nix-cache \
+    >"${R}/stdout.log" 2>"${R}/stderr.log" || prepare_rc=$?
+  expect_eq 'cache preparation: unprivileged startup does not reacquire provision lock' "$prepare_rc" 0
+  exec 7>&-
+  rm -rf "${R}"
+
+  make_host
+  publish_rc=0
+  PATH="${R}/.shims:${PATH}" STUB_R="${R}" FICUS_HOST_ROOT="${R}" STUB_CALLER_UID=1001 \
+    bash "${TARGET}" --sandbox-id devbox-prewarm-agent-synthetic --unix-user "${BOX}" --publish-nix-cache \
+    >"${R}/stdout.log" 2>"${R}/stderr.log" || publish_rc=$?
+  expect_eq 'cache publication: remains root-only without sudo elevation' "$publish_rc" 2
+  expect_eq 'cache publication: non-root refusal creates no lock directory' \
+    "$([[ -e ${R}/run/ficus-box-locks ]] && echo yes || echo no)" no
+  expect_eq 'cache publication: non-root refusal touches no services' "$(cat "${R}/calls.log")" ''
+  rm -rf "${R}"
+
+  for operation in remove restore restore-stream; do
+    make_host
+    guard_args=(--unix-user root)
+    case "$operation" in
+      remove) guard_args+=(--remove) ;;
+      restore) guard_args+=(--restore "${R}/absent.tar.gz") ;;
+      restore-stream) guard_args+=(--restore-stream --codec gzip --state-dirs workspace --staging-id 00000000-0000-4000-8000-000000000000) ;;
+    esac
+    guard_rc=0
+    PATH="${R}/.shims:${PATH}" STUB_R="${R}" FICUS_HOST_ROOT="${R}" STUB_CALLER_UID=1001 \
+      bash "${TARGET}" "${guard_args[@]}" >"${R}/stdout.log" 2>"${R}/stderr.log" || guard_rc=$?
+    expect_eq "$operation guard: unsafe user refused without elevation" "$guard_rc" 2
+    expect_eq "$operation guard: explicit refusal preserved" "$(grep -c 'refusing to.*non-box user' "${R}/stderr.log" || true)" 1
+    expect_eq "$operation guard: no privileged lock mutation" "$([[ -e ${R}/run/ficus-box-locks ]] && echo yes || echo no)" no
+    rm -rf "${R}"
+  done
 
   # -- a fresh system-mode box ------------------------------------------------
   make_host

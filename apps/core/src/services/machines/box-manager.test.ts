@@ -2908,15 +2908,26 @@ describe('buildStreamRestoreCommand', () => {
     // Execute that actual production argv through the checked-in parser. The
     // absent fixture user proves --restore-stream reached its branch.
     expect(Bun.spawnSync(['id', '-u', unixUser]).exitCode).not.toBe(0)
-    const proc = Bun.spawn(['bash', scriptUrl.pathname, ...argv], {
-      stdin: 'ignore',
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited])
-    expect(exitCode).toBe(1)
-    expect(stderr).toContain('cannot restore')
-    expect(stderr).not.toContain('--port')
+    // Dispatch now owns a root host lock. Model that identity only inside an
+    // owned host root; never sudo or create a lock in the real host's /run.
+    const root = mkdtempSync(join(tmpdir(), 'box-restore-parser-'))
+    try {
+      const realId = Bun.which('id')!
+      writeFileSync(join(root, 'id'), `#!/bin/sh\nif [ "$*" = -u ]; then echo 0; else exec '${realId}' "$@"; fi\n`)
+      chmodSync(join(root, 'id'), 0o755)
+      const proc = Bun.spawn(['bash', scriptUrl.pathname, ...argv], {
+        env: { ...process.env, PATH: `${root}:${process.env.PATH}`, FICUS_HOST_ROOT: root },
+        stdin: 'ignore',
+        stdout: 'pipe',
+        stderr: 'pipe',
+      })
+      const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited])
+      expect(exitCode).toBe(1)
+      expect(stderr).toContain('cannot restore')
+      expect(stderr).not.toContain('--port')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
 
     expect(cmd).toBe(
       `sudo bash /opt/ficus/bin/box-provision.sh --unix-user 'box_ffffeeee2222' ` +

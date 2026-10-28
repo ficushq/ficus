@@ -3380,6 +3380,27 @@ export const machines = pgTable('machines', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+/** Immutable per-generation physical ensure outcomes; never stores env, tokens,
+ * stderr, or process-local tunnel endpoints. Retained beyond the lease wait
+ * budget so a delayed API/worker waiter can consume its exact generation. */
+export const vmBoxProvisionAttempts = pgTable(
+  'vm_box_provision_attempts',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    sandboxId: text('sandbox_id').notNull(),
+    status: text('status').notNull().default('running'),
+    failureClass: text('failure_class'), // provision | abandoned | placement[:startup code] | retry:<startup code>
+    failureCount: integer('failure_count').notNull().default(0),
+    retryAt: timestamp('retry_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('vm_box_provision_attempts_sandbox_idx').on(table.sandboxId, table.id),
+    index('vm_box_provision_attempts_completed_idx').on(table.completedAt),
+  ]
+)
+
 export const machineBoxes = pgTable(
   'machine_boxes',
   {
