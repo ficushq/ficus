@@ -537,3 +537,20 @@ runner, image, runtime and control hashes are recorded before model calls.
 `coordination-v5-plan.json` retains the same model and coordination prompts; it
 adds no grader-derived hints to either arm. This remains an adapted case study,
 not an official sequential SCBench score or a measurement of human focus saved.
+
+### V5 completed comparison
+
+Both arms completed autonomous native delivery and independent external grading:
+Ficus 190 passed / 66 failed / 0 skipped; Pi 191 / 65 / 0. Neither accepted. Both
+preserved original requests byte-for-byte and delivered clean committed trees.
+Ficus used $5.855335 in 44m34s; Pi $3.092984 in 26m28s. The phase settled at
+$20.081830 of $50 with no unresolved receipts; $29.918170 remains.
+
+The shared failures include 54 whole-second timestamp assertions stricter than
+explicit source wording, ten assistant-position conflicts/prerequisites, and one
+explicit-null branch ambiguity. The only differing failure uses undocumented raw
+`offset=0`; Pi ignores it, while Ficus rejects it. Original scores remain intact.
+Reference/mutation/coverage controls did not establish full specification/test
+agreement. See [the comparison](coordination-v5-results.md) and its JSON evidence
+for qualifications, native repairs, Ficus's extra documentation cycle, and next
+steps. No additional paid run or candidate repair was started.

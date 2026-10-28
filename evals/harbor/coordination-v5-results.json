@@ -1,0 +1,333 @@
+{
+  "experiment": "coordination-v5-trajectory-api",
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "upstream_revision": "9cd9ca3a51c3d3e2a99d2488a25baf73a2204451",
+  "requests": [1, 2, 3],
+  "arms": {
+    "ficus": {
+      "trial": "task__KCbEsxE",
+      "counts": {
+        "total": 256,
+        "passed": 190,
+        "failures": 66,
+        "skipped": 0,
+        "accepted": false
+      },
+      "external_reward": 0.0,
+      "execution": {
+        "arm": "ficus",
+        "elapsed_seconds": 2773.821161500062,
+        "stop": null,
+        "exit_code": 0,
+        "usage": {
+          "usd_upper_bound": 5.855335,
+          "requests": 253,
+          "unknown_usage": 0
+        },
+        "phase_exposure_usd": 16.988846,
+        "phase_cap_usd": 50,
+        "historical_phase_excluded": true
+      },
+      "committed_revision": "a31296afe5f2dfd98900985c209f82666fff5d55",
+      "working_tree_clean": true,
+      "original_source_byte_exact": true,
+      "original_source_sha256": "c84d6e910a6998655376bcc7ce315e48c9f35683bfc2694c61e86a072ed52b0f",
+      "agent_execution": {
+        "started_at": "2026-10-28T03:11:35.563371Z",
+        "finished_at": "2026-10-28T03:56:09.824726Z"
+      },
+      "agent_seconds": 2674.261355,
+      "verifier_seconds": 63.398682,
+      "usage_tokens": {
+        "input_tokens": 15148895,
+        "output_tokens": 148547,
+        "cached_input_tokens": 13959210
+      },
+      "first_failure_buckets": {
+        "fractional_timestamp_vs_whole_seconds_regex": 54,
+        "assistant_position_validation_or_prerequisite": 10,
+        "explicit_null_branch": 1,
+        "raw_offset_query": 1
+      },
+      "artifact_sha256": {
+        "result.json": "84d66138a25c83a567107f3a82340d279757ce8eddd9bf9d77a1866f20206cd3",
+        "verifier/counts.json": "f397760c56e13988655905097173eca8d1adee0666e64f94798e116244bf1867",
+        "verifier/results.xml": "1e8ba508fe1e14d4fc2fe45f7e4cd6523b7d98431b7d8fc54a1882bfc16a4069",
+        "verifier/tests.log": "ce776ea2f9f19efbb25c4acfc7a2f3843abf01b35d09aa48c683a64c28cdb815",
+        "artifacts/logs/artifacts/repository.bundle": "f1f5fce28a20bceccff0b25865ecc8e2cf3ad881e7e07178ce0389a4ece28718",
+        "artifacts/logs/artifacts/status.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "artifacts/logs/artifacts/git-history.txt": "3338369f5914580a37fff266381d1c5a80e0d80492f3cc1fd3770ba3c54e60c9",
+        "artifacts/logs/artifacts/worktrees.txt": "ccc0fd9e882e07830b32d577822ad3a36c97d89b91bd9a9c0e83ecf62ce27cf0",
+        "artifacts/logs/artifacts/model.patch": "1de35ec0b13126bb7d408956fbdc3ad90406ebab336265e63050a1b4010e6f5b"
+      },
+      "execution_sha256": "43768b7091d227735c8da939840d341736b6fc2308fec15b6f09dbc465206461",
+      "native_coordination": {
+        "streams": [
+          {
+            "id": "b21cd3d3-4075-4914-81f5-cf85f1c1c1e8",
+            "title": "C \u2014 Mutable trajectories and forks",
+            "status": "done"
+          },
+          {
+            "id": "6c0ce474-9d1e-4309-a850-a2fdc668169b",
+            "title": "A \u2014 API foundation, strict validation and storage",
+            "status": "done"
+          },
+          {
+            "id": "1c289c43-7a1c-4cd2-b07d-96066cd25077",
+            "title": "B \u2014 Search, pagination and aggregate reports",
+            "status": "done"
+          },
+          {
+            "id": "de413175-b373-487f-96ec-cf0b5b595e6a",
+            "title": "D \u2014 Final integration, end-to-end validation and delivery",
+            "status": "done"
+          }
+        ],
+        "flows": [
+          {
+            "work_stream": "1c289c43-7a1c-4cd2-b07d-96066cd25077",
+            "status": "completion-ready",
+            "attempts": [
+              {
+                "step": "design",
+                "participant": "architect",
+                "status": "completed",
+                "outcome": "completed"
+              },
+              {
+                "step": "implement",
+                "participant": "engineer",
+                "status": "completed",
+                "outcome": "completed"
+              },
+              {
+                "step": "review",
+                "participant": "reviewer",
+                "status": "returned",
+                "outcome": "changes-requested"
+              },
+              {
+                "step": "implement",
+                "participant": "engineer",
+                "status": "completed",
+                "outcome": "completed"
+              },
+              {
+                "step": "review",
+                "participant": "reviewer",
+                "status": "completed",
+                "outcome": "approved"
+              }
+            ]
+          },
+          {
+            "work_stream": "6c0ce474-9d1e-4309-a850-a2fdc668169b",
+            "status": "completion-ready",
+            "attempts": [
+              {
+                "step": "design",
+                "participant": "architect",
+                "status": "completed",
+                "outcome": "completed"
+              },
+              {
+                "step": "implement",
+                "participant": "engineer",
+                "status": "completed",
+                "outcome": "completed"
+              },
+              {
+                "step": "review",
+                "participant": "reviewer",
+                "status": "completed",
+                "outcome": "approved"
+              }
+            ]
+          },
+          {
+            "work_stream": "b21cd3d3-4075-4914-81f5-cf85f1c1c1e8",
+            "status": "completion-ready",
+            "attempts": [
+              {
+                "step": "design",
+                "participant": "architect",
+                "status": "completed",
+                "outcome": "completed"
+              },
+              {
+                "step": "implement",
+                "participant": "engineer",
+                "status": "completed",
+                "outcome": "completed"
+              },
+              {
+                "step": "review",
+                "participant": "reviewer",
+                "status": "completed",
+                "outcome": "approved"
+              }
+            ]
+          },
+          {
+            "work_stream": "de413175-b373-487f-96ec-cf0b5b595e6a",
+            "status": "completion-ready",
+            "attempts": [
+              {
+                "step": "design",
+                "participant": "architect",
+                "status": "completed",
+                "outcome": "completed"
+              },
+              {
+                "step": "implement",
+                "participant": "engineer",
+                "status": "completed",
+                "outcome": "completed"
+              },
+              {
+                "step": "review",
+                "participant": "reviewer",
+                "status": "completed",
+                "outcome": "approved"
+              },
+              {
+                "step": "design",
+                "participant": "architect",
+                "status": "completed",
+                "outcome": "completed"
+              },
+              {
+                "step": "implement",
+                "participant": "engineer",
+                "status": "completed",
+                "outcome": "completed"
+              },
+              {
+                "step": "review",
+                "participant": "reviewer",
+                "status": "completed",
+                "outcome": "approved"
+              }
+            ]
+          }
+        ],
+        "reviewer_reported_project_tests": 482,
+        "project_tests_operator_rerun": false,
+        "final_documentation_reentered_full_workflow": true
+      }
+    },
+    "pi": {
+      "trial": "task__RtN7YG5",
+      "counts": {
+        "total": 256,
+        "passed": 191,
+        "failures": 65,
+        "skipped": 0,
+        "accepted": false
+      },
+      "external_reward": 0.0,
+      "execution": {
+        "arm": "pi",
+        "elapsed_seconds": 1684.8418062499259,
+        "stop": null,
+        "exit_code": 0,
+        "usage": {
+          "usd_upper_bound": 3.092984,
+          "requests": 186,
+          "unknown_usage": 0
+        },
+        "phase_exposure_usd": 20.08183,
+        "phase_cap_usd": 50,
+        "historical_phase_excluded": true
+      },
+      "committed_revision": "9b2d9530f7236897aba6f612d5941a68fbd853ae",
+      "working_tree_clean": true,
+      "original_source_byte_exact": true,
+      "original_source_sha256": "3d1c6386fafa57aff13ab86246393f427a0f6304a7ff45b9770755d28ebb2e36",
+      "agent_execution": {
+        "started_at": "2026-10-28T03:57:48.282401Z",
+        "finished_at": "2026-10-28T04:24:16.722212Z"
+      },
+      "agent_seconds": 1588.439811,
+      "verifier_seconds": 62.652869,
+      "usage_tokens": {
+        "input_tokens": 5343275,
+        "output_tokens": 121955,
+        "cached_input_tokens": 4785231
+      },
+      "first_failure_buckets": {
+        "fractional_timestamp_vs_whole_seconds_regex": 54,
+        "assistant_position_validation_or_prerequisite": 10,
+        "explicit_null_branch": 1
+      },
+      "artifact_sha256": {
+        "result.json": "f110490512dfe49650168285804d72a38952045feb78eb2cd760d97bfcead0a1",
+        "verifier/counts.json": "dbe7780c3ab7961c2b3f52fc6a9201f67d2cc3cc21df98da394f0676f98bfa39",
+        "verifier/results.xml": "d17241c98ef33539575ff584ef95244b18ef7b48a3055c4233d5d3a97ca3f12d",
+        "verifier/tests.log": "e700791b9cadc21fd5456a8400c3530bd37099d95d43f9404f92220ac02888ef",
+        "artifacts/logs/artifacts/repository.bundle": "8df065091437271ee87cf9a2354308346b47382fb616762b0b3c43031c03cd62",
+        "artifacts/logs/artifacts/status.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "artifacts/logs/artifacts/git-history.txt": "856e8b234374aa11fba8f5f31210b23f862cadd39046c49945b7ae09fd43e557",
+        "artifacts/logs/artifacts/worktrees.txt": "651d0e570dad85af4ab037bfdb266aaf12da2904887b3f3483c63a6a65f02b89",
+        "artifacts/logs/artifacts/model.patch": "3961a55506c537ab63fc4a2d185475684bad640adc54ee2e24bbc2a1199d25eb"
+      },
+      "execution_sha256": "4e7e8bdae0fa98c913ff31c2d1f4ed1a630849c04d9b2b9c779e5526a44e854a",
+      "native_coordination": {
+        "subagent_calls": 8,
+        "assignments": 13,
+        "roles": {
+          "architect": 2,
+          "engineer": 8,
+          "reviewer": 3
+        },
+        "max_assignments_per_call": 2,
+        "assignments_referencing_original_source": 13,
+        "early_review_requested_repairs": true,
+        "scoped_re_review_and_final_review_approved": true,
+        "reviewer_reported_project_tests": 728,
+        "reviewer_reported_live_assertions": 2442,
+        "project_tests_operator_rerun": false,
+        "last_product_revision": "742b2ddec99bf53316be0c326fb2e150bae995c6"
+      }
+    }
+  },
+  "integrity": {
+    "frozen_task_runner_launcher_runtime_control_hashes_verified": true,
+    "candidate_repairs_or_operator_hints": false,
+    "paid_retries": 0,
+    "original_verifier_results_preserved": true
+  },
+  "ready_sha256": "4fe8b899dca4a70a36fab0eb9dc361a761ea4993f9fab700958503f648a6ab13",
+  "failure_comparison": {
+    "shared_failed_tests": 65,
+    "ficus_only_failed_tests": ["test_checkpoint_3_hidden_cases[regression_search_fork_with_pagination]"],
+    "pi_only_failed_tests": [],
+    "buckets_are_first_observed_assertions_not_independent_defects": true,
+    "adjusted_scores_computed": false
+  },
+  "budget": {
+    "phase": "budget-phase-2026-10-28-000028-reset50",
+    "cap_usd": 50,
+    "confirmed_usd": 20.08183,
+    "pair_usd": 8.948319,
+    "remaining_usd": 29.91817,
+    "unresolved_receipts": 0,
+    "provider_failures": 0,
+    "reservation_per_request_usd": 5.5,
+    "historical_ledgers_preserved": true
+  },
+  "qualifications": [
+    "Neither candidate accepted; all 256 tests ran with zero skips.",
+    "54 shared first failures require whole-second timestamp formatting not explicitly required by ISO-8601 UTC Z source wording.",
+    "10 shared first failures concern assistant-before-end validation, including a finalized user/assistant example expected to succeed despite the positional constraint.",
+    "Both reject explicit null branch; input says if provided a nonempty string, while output/normalization permits null.",
+    "Only differing failed test uses raw offset=0; specification describes cursor containing an offset. Pi ignores unknown raw offset; this does not demonstrate offset pagination support.",
+    "Preflight controls proved reference behavior, coverage and mutation sensitivity but did not catch these specification/test tensions.",
+    "No failure waived or masked downstream assertion treated as correct.",
+    "One adapted case/attempt per harness; three requests upfront differs from official sequential SCBench; no general ranking or causal prompt-improvement claim.",
+    "Model requests serialized; production parallel throughput and human time/focus saved not measured.",
+    "Native project tests are reviewer reports, not operator reruns or comparable acceptance counts."
+  ]
+}
