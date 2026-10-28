@@ -79,7 +79,7 @@ describe('remote managed toolchain adapter', () => {
         config: { packages: ['nodejs@24.12.0'] },
         fingerprint: 'fingerprint',
         devboxJson: '{}',
-        readiness: [{ id: 'notion-cli', command: 'ntn --version', expectedSubstring: '0.22.10' }],
+        readiness: [{ id: 'notion-cli', command: 'ntn --version', expectedSubstring: '0.23.25' }],
         reportStage: async () => {},
       })
     ).toBe('unchanged')

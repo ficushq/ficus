@@ -97,7 +97,7 @@
         "concurrently": "^9.2.1",
         "dotenv": "^17.3.1",
         "drizzle-kit": "0.31.10",
-        "ntn": "0.22.10",
+        "ntn": "0.23.25",
         "typescript": "^5.7.0",
       },
     },
@@ -2634,7 +2634,7 @@
 
     "nth-check": ["nth-check@2.1.1", "", { "dependencies": { "boolbase": "^1.0.0" } }, "sha512-lqjrjmaOoAnWfMmBPL+XNnynZh2+swxiX3WUE0s4yEHI6m+AwrK2UZOimIRl3X/4QctVqS8AiZjFqyOGrMXb/w=="],
 
-    "ntn": ["ntn@0.22.10", "", { "os": [ "linux", "win32", "darwin", ], "cpu": [ "x64", "arm64", ], "bin": { "ntn": "bin/ntn" } }, "sha512-f7HzeXdh9MPn67Bwlryh28v7ljy9i5yoibA67wFYqh7vezlh4aXCiEonVPuyrkSsv05i6PDITh5UiL/Xk+4i5w=="],
+    "ntn": ["ntn@0.23.25", "", { "os": [ "linux", "win32", "darwin", ], "cpu": [ "x64", "arm64", ], "bin": { "ntn": "bin/ntn" } }, "sha512-eUgMS0qEvLuXcAfrmi+YDXsTO+m9R27r/C0wJeyxYdBnFJWjqbVjuXP9rMgEhIFu6gAQL5f9JfqyelwzhNeh/g=="],
 
     "oauth4webapi": ["oauth4webapi@3.8.5", "", {}, "sha512-A8jmyUckVhRJj5lspguklcl90Ydqk61H3dcU0oLhH3Yv13KpAliKTt5hknpGGPZSSfOwGyraNEFmofDYH+1kSg=="],
 

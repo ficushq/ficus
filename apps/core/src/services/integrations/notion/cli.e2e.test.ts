@@ -16,6 +16,58 @@ import { expectCleanExit, expectFailedExit, runCapturedProcess } from '../../../
 
 const binary = join(dirname(Bun.resolveSync('ntn/package.json', import.meta.dir)), 'bin', 'ntn')
 
+/** Exercise the 0.23 body-source precedence change without contacting Notion. */
+test('pinned Notion CLI preserves explicit stdin and prefers explicit bodies over implicit stdin', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'ficus-notion-body-'))
+  const requests: { method: string; body: unknown }[] = []
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    async fetch(request) {
+      expect(new URL(request.url).pathname).toBe('/v1/search')
+      expect(request.headers.get('authorization')).toBe('Bearer fixture-token')
+      requests.push({ method: request.method, body: await request.json() })
+      return Response.json({ object: 'list', results: [], next_cursor: null, has_more: false })
+    },
+  })
+  const origin = `http://127.0.0.1:${server.port}`
+  const invoke = (args: string[]) =>
+    runCapturedProcess(
+      ['sh', '-c', 'printf \'%s\' \'{"query":"piped"}\' | "$NTN_BIN" api v1/search "$@"', 'ntn-body', ...args],
+      {
+        cwd: root,
+        env: {
+          PATH: processEnvPath(),
+          NTN_BIN: binary,
+          NOTION_API_TOKEN: 'fixture-token',
+          NOTION_API_BASE_URL: origin,
+          NOTION_API_DOCS_BASE_URL: origin,
+          NOTION_API_VERSION: '2026-03-11',
+          NOTION_HOME: root,
+          CI: '1',
+          NO_PROXY: '127.0.0.1,localhost',
+        },
+      }
+    )
+  try {
+    expectCleanExit(await invoke(['--data', '@-']))
+    expectCleanExit(await invoke([]))
+    expectCleanExit(await invoke(['--data', '{"query":"explicit"}']))
+    expectCleanExit(await invoke(['query=inline']))
+    expect(requests).toEqual([
+      { method: 'POST', body: { query: 'piped' } },
+      { method: 'POST', body: { query: 'piped' } },
+      { method: 'POST', body: { query: 'explicit' } },
+      { method: 'POST', body: { query: 'inline' } },
+    ])
+    expectFailedExit(await invoke(['--data', '{}', 'query=conflicting']))
+    expect(requests).toHaveLength(4)
+  } finally {
+    server.stop(true)
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 /** Always-run, zero-external-call smoke over the locked real CLI and generated protected env. */
 test('pinned Notion CLI uses rotated generated credentials and loses access on unassignment', async () => {
   const root = mkdtempSync(join(tmpdir(), 'ficus-notion-cli-'))
@@ -116,7 +168,7 @@ test('pinned Notion CLI uses rotated generated credentials and loses access on u
   try {
     const version = Bun.spawnSync([binary, '--version'], { stdout: 'pipe', stderr: 'pipe' })
     expect(version.exitCode).toBe(0)
-    expect(version.stdout.toString()).toContain('0.22.10')
+    expect(version.stdout.toString()).toContain('0.23.25')
 
     const exchanged = await transport.completeAuthorization({
       providerKey: 'notion',
@@ -171,7 +223,7 @@ test('pinned Notion CLI uses rotated generated credentials and loses access on u
     expect(assigned.publicDeclaration.readiness).toContainEqual({
       id: 'notion-cli',
       command: 'ntn --version',
-      expectedSubstring: '0.22.10',
+      expectedSubstring: '0.23.25',
     })
     await reconcile()
     expect(installCount).toBe(1)
