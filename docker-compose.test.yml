@@ -1,11 +1,11 @@
 services:
   postgres:
     image: paradedb/paradedb:latest
-    # Sweep metadata: apps/core/src/test-db-sweep.ts reaps projects whose
-    # repo-root no longer exists (deleted worktrees). TEST_REPO_ROOT is set by
-    # test-setup.ts / test-db.ts at `up` time.
+    # Ownership metadata: only the recorded session may reap this project.
+    # The lifecycle harness sets both the root and per-run owner token.
     labels:
       dev.ficus.test-db: 'true'
+      dev.ficus.test-db.owner: '${FICUS_TEST_DB_OWNER:-}'
       dev.ficus.test-db.repo-root: '${TEST_REPO_ROOT:-}'
     environment:
       POSTGRES_USER: postgres
@@ -36,6 +36,7 @@ services:
         condition: service_healthy
     labels:
       dev.ficus.test-db: 'true'
+      dev.ficus.test-db.owner: '${FICUS_TEST_DB_OWNER:-}'
       dev.ficus.test-db.repo-root: '${TEST_REPO_ROOT:-}'
     environment:
       DB_HOST: postgres

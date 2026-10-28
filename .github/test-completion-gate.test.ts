@@ -28,9 +28,9 @@ function validate(candidate: Workflow): string[] {
 }
 
 test('every split suite uses completion-checked execution', () => {
-  // Platform consumes Core's worktree container. Start and verify it before
-  // Bun launches package scripts concurrently, including after a teardown.
-  expect(JSON.parse(read('package.json')).scripts.test).toBe("bun run test:db:up && bun run --filter '*' test")
+  // Each suite owns its test resources. A foreground manual DB session must
+  // never block the root command before package assertions can run.
+  expect(JSON.parse(read('package.json')).scripts.test).toBe("bun run --filter '*' test")
   expect(validate(workflow)).toEqual([])
   for (const name of ['cli']) {
     const manifest = JSON.parse(read(`apps/${name}/package.json`))
