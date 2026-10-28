@@ -785,6 +785,13 @@ jobs:
           DATABASE_URL: postgres://postgres:postgres@localhost:5433/ficus_secret_boundary_test
           SECRET_BOUNDARY_REQUIRE_ISOLATED_DB: '1'
 
+      - name: Validate persistent restart provisioning
+        run: bun test ./fifo-restart-provisioning.test.ts
+        working-directory: .github
+
+      - name: Pull Core persistent restart image
+        run: bash .github/pull-fifo-restart.sh
+
       - name: Run Core persistent restart test
         run: bun run test:core:fifo-restart
 

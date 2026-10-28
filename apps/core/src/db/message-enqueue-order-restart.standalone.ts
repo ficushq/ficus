@@ -1,3 +1,9 @@
+/**
+ * Provision first: bash .github/pull-fifo-restart.sh (also a separate CI step).
+ * Cold image downloads can exceed the short Compose operation deadline. Pulls
+ * alone get bounded retries and a generous timeout; up --pull never and all
+ * restart/sequence assertions retain their original deadlines and run once.
+ */
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -17,7 +23,13 @@ function run(args: string[], env: Record<string, string>, input?: string): strin
     timeout: 10000,
     killSignal: 'SIGKILL',
   })
-  if (result.exitCode !== 0) throw new Error(`${args.join(' ')} failed:\n${result.stderr.toString()}`)
+  if (result.exitCode !== 0) {
+    const failure = `${args.join(' ')} failed (exit=${result.exitCode}, signal=${result.signalCode ?? 'none'}, timeout=10000ms)`
+    // Print the complete captured stderr separately from the exception so the
+    // test reporter cannot abbreviate away the diagnostic after pull progress.
+    console.error(`${failure}\ncompose stderr (tail):\n${result.stderr.toString()}`)
+    throw new Error(failure)
+  }
   return result.stdout.toString().trim()
 }
 
@@ -90,7 +102,7 @@ test('message enqueue sequence and rows survive a persistent-volume restart', as
   process.once('SIGINT', onInt)
   process.once('SIGTERM', onTerm)
   try {
-    compose(project, env, ['up', '-d'])
+    compose(project, env, ['up', '-d', '--pull', 'never'])
     await waitReady(project, env)
     psql(
       project,
@@ -119,7 +131,7 @@ test('message enqueue sequence and rows survive a persistent-volume restart', as
 
     cleanup()
     expect(run(['docker', 'volume', 'ls', '-q', '--filter', `name=^${volume}$`], env)).toBe('')
-    compose(project, env, ['up', '-d'])
+    compose(project, env, ['up', '-d', '--pull', 'never'])
     await waitReady(project, env)
     expect(psql(project, env, `SELECT to_regclass('message_enqueue_order_seq') IS NULL;`)).toBe('t')
   } finally {
