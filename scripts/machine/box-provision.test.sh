@@ -190,7 +190,34 @@ for a in "$@"; do
 done
 installs() { sed -n "s/^$1=//p" "$dir/$2" 2>/dev/null; }
 case "$verb" in
+  daemon-reload)
+    if [ -z "${manager_args[*]}" ] && [ -d "$STUB_R/sys/fs/cgroup/user.slice/user-1001.slice" ]; then
+      [ ! -f "$STUB_R/fakedb/fail-limits" ] || exit 91
+      cg="$STUB_R/sys/fs/cgroup/user.slice/user-1001.slice"
+      while IFS= read -r a; do
+        case "$a" in
+          MemoryHigh=*) echo "${a#*=}" >"$cg/memory.high" ;;
+          MemoryMax=*) echo "${a#*=}" >"$cg/memory.max" ;;
+          CPUQuota=*) n=${a#*=}; echo "$(( ${n%%%} * 1000 )) 100000" >"$cg/cpu.max" ;;
+        esac
+      done <"$STUB_R/etc/systemd/system/user-1001.slice.d/50-ficus-box.conf"
+      for name in memory.max memory.high cpu.max; do
+        if [ -f "$STUB_R/fakedb/$name" ]; then cat "$STUB_R/fakedb/$name" >"$cg/$name"; fi
+      done
+    fi
+    if [ -n "${manager_args[*]}" ] && [ -f "$STUB_R/fakedb/fail-docker-reload" ]; then exit 92; fi ;;
   show)
+    case " $* " in
+      *" ControlGroup "*)
+        unit="${!#}"
+        case "$unit" in
+          user-1001.slice) echo /user.slice/user-1001.slice ;;
+          user@1001.service) cat "$STUB_R/fakedb/manager-cgroup" ;;
+          ficus-docker.slice) cat "$STUB_R/fakedb/docker-slice-cgroup" ;;
+          docker.service) cat "$STUB_R/fakedb/docker-cgroup" ;;
+        esac
+        exit 0 ;;
+    esac
     [ ! -f "$STUB_R/fakedb/fail-readback" ] || exit 90
     [ ! -f "$STUB_R/fakedb/empty-readback" ] || exit 0
     u="${!#}"
@@ -203,11 +230,14 @@ case "$verb" in
   is-active)
     case "$units" in *" user@1001.service"*) [ -f "$STUB_R/fakedb/manager-groups" ]; exit $? ;; esac ;;
   stop)
+    case "$units" in *" docker.service"*) [ ! -f "$STUB_R/fakedb/fail-docker-stop" ] || exit 94 ;; esac
+    case "$units" in *" docker.service"*) rm -f "$STUB_R/fakedb/active-docker.service" ;; esac
     case "$units" in *" user@1001.service"*)
       [ ! -f "$STUB_R/fakedb/fail-manager-stop" ] || exit 89
       rm -f "$STUB_R/fakedb/manager-groups" ;;
     esac ;;
   start|restart)
+    case "$units" in *" docker.service"*) [ ! -f "$STUB_R/fakedb/fail-docker-start" ] || exit 93 ;; esac
     [ ! -f "$STUB_R/fakedb/fail-start" ] || exit 86
     for u in $units; do
       [ -e "$dir/$u" ] || exit 1
@@ -243,6 +273,17 @@ echo "setuptool $*" >>"$STUB_R/calls.log"
 d="$HOME/.config/systemd/user"; mkdir -p "$d"
 printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$STUB_R/fakedb/docker-exec")" >"$d/docker.service"'
     shim pgrep 'echo "pgrep $*" >>"$STUB_R/calls.log"; [ -f "$STUB_R/fakedb/stale-dockerd" ]'
+    local cg=/user.slice/user-1001.slice manager=/user.slice/user-1001.slice/user@1001.service
+    mkdir -p "${R}/sys/fs/cgroup${cg}"
+    echo 'cpu memory pids' >"${R}/sys/fs/cgroup/cgroup.controllers"
+    echo max >"${R}/sys/fs/cgroup${cg}/memory.max"
+    echo max >"${R}/sys/fs/cgroup${cg}/memory.high"
+    echo 'max 100000' >"${R}/sys/fs/cgroup${cg}/cpu.max"
+    echo "$manager" >"${R}/fakedb/manager-cgroup"
+    echo "$manager/ficus.slice/ficus-docker.slice" >"${R}/fakedb/docker-slice-cgroup"
+    echo "$manager/ficus.slice/ficus-docker.slice/docker.service" >"${R}/fakedb/docker-cgroup"
+    echo 'systemd 2' >"${R}/fakedb/docker-info"
+    shim docker 'echo "docker $*" >>"$STUB_R/calls.log"; cat "$STUB_R/fakedb/docker-info"'
     : >"${R}/subuid"
     : >"${R}/subgid"
   }
@@ -380,7 +421,7 @@ printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$
   docker_provision() {
     : >"${R}/calls.log"
     provision --sandbox-id squad_x --unit-mode user --with-docker \
-      --subuid-file "${R}/subuid" --subgid-file "${R}/subgid"
+      --subuid-file "${R}/subuid" --subgid-file "${R}/subgid" --memtotal-kb 8131584 --nproc 8
   }
   docker_verbs() { # VERB → how many times provisioning ran it on docker.service
     grep -c "^systemctl --machine=${BOX}@.host --user $1 docker.service$" "${R}/calls.log" || true
@@ -392,7 +433,7 @@ printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$
   expect_eq 'docker first create: provision succeeds' "$PROV_RC" 0
   expect_eq 'docker first create: the setuptool ran' "$(grep -c '^setuptool install --skip-iptables$' "${R}/calls.log")" 1
   expect_eq 'docker first create: the drop-in strips --iptables=false' \
-    "$(cat "${DU}/docker.service.d/override.conf")" "$(printf '[Service]\nExecStart=\nExecStart=/usr/bin/dockerd-rootless.sh')"
+    "$(cat "${DU}/docker.service.d/override.conf")" "$(printf '[Service]\nExecStart=\nExecStart=/usr/bin/dockerd-rootless.sh --exec-opt native.cgroupdriver=systemd --cgroup-parent=ficus-docker.slice\nSlice=ficus-docker.slice\nDelegate=yes')"
   expect_eq 'docker first create: docker.service is enabled' \
     "$(is_link_to "${DU}/default.target.wants/docker.service" "${DU}/docker.service")" yes
   expect_eq 'docker first create: the auto-started daemon is restarted onto the drop-in' "$(docker_verbs restart)" 1
@@ -420,7 +461,7 @@ printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$
   expect_eq 'docker unit changed: provision succeeds' "$PROV_RC" 0
   expect_eq 'docker unit changed: restarted' "$(docker_verbs restart)" 1
   expect_eq 'docker unit changed: drop-in follows the new unit' \
-    "$(sed -n 3p "${DU}/docker.service.d/override.conf")" 'ExecStart=/usr/bin/dockerd-rootless.sh --experimental'
+    "$(sed -n 3p "${DU}/docker.service.d/override.conf")" 'ExecStart=/usr/bin/dockerd-rootless.sh --experimental --exec-opt native.cgroupdriver=systemd --cgroup-parent=ficus-docker.slice'
 
   docker_provision
   expect_eq 'docker after a change: the next unchanged run does not restart' "$(docker_verbs restart)" 0
@@ -428,7 +469,63 @@ printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$
   rm "${DU}/docker.service.d/override.conf"
   docker_provision
   expect_eq 'docker drop-in lost: rewritten and restarted' "$(docker_verbs restart)" 1
+  # Existing boxes with the old launcher converge once, without touching peers.
+  printf '[Service]\nExecStart=\nExecStart=/usr/bin/dockerd-rootless.sh --experimental\n' >"${DU}/docker.service.d/override.conf"
+  docker_provision
+  expect_eq 'docker legacy drop-in: converges and restarts once' "$(docker_verbs restart)" 1
+  expect_eq 'docker containment: persistent cap reload precedes linger/autostart' \
+    "$(grep -E '^systemctl daemon-reload$|^loginctl enable-linger|^setuptool' "${R}/calls.log" | head -n1)" \
+    'systemctl daemon-reload'
+  expect_eq 'docker containment: kernel CPU cap matches the owning box' \
+    "$(cat "${R}/sys/fs/cgroup/user.slice/user-1001.slice/cpu.max")" '400000 100000'
+  expect_eq 'docker containment: no global or peer service mutation' \
+    "$(grep -c -E '^systemctl (stop|restart|set-property).*user@(1000|1002)|^systemctl (stop|restart) docker.service' "${R}/calls.log" || true)" 0
   rm -rf "${R}"
+
+  # Negative cases exercise the real provision path against fake readbacks.
+  # These do NOT prove kernel enforcement: no systemd, Docker or cgroup writes
+  # outside this temporary host tree are allowed by the harness.
+  for defect in manager-escape peer-prefix daemon-escape slice-escape no-v2 missing-cpu fail-limits unbounded-memory unbounded-cpu excess-memory excess-cpu wrong-driver wrong-version empty-manager docker-start-failure docker-reload-failure cleanup-failure missing-unit; do
+    make_host
+    docker_shims
+    case "$defect" in
+      manager-escape) echo /user.slice/user@1001.service >"${R}/fakedb/manager-cgroup" ;;
+      peer-prefix) echo /user.slice/user-1001.slice-other/user@1001.service >"${R}/fakedb/manager-cgroup" ;;
+      daemon-escape) echo /system.slice/docker.service >"${R}/fakedb/docker-cgroup" ;;
+      slice-escape) echo /user.slice/user-1002.slice/user@1002.service/ficus.slice/ficus-docker.slice >"${R}/fakedb/docker-slice-cgroup" ;;
+      no-v2) rm "${R}/sys/fs/cgroup/cgroup.controllers" ;;
+      missing-cpu) echo memory >"${R}/sys/fs/cgroup/cgroup.controllers" ;;
+      fail-limits) touch "${R}/fakedb/fail-limits" ;;
+      unbounded-memory) echo max >"${R}/fakedb/memory.max" ;;
+      unbounded-cpu) echo 'max 100000' >"${R}/fakedb/cpu.max" ;;
+      excess-memory) echo 9999999999999 >"${R}/fakedb/memory.max" ;;
+      excess-cpu) echo '500000 100000' >"${R}/fakedb/cpu.max" ;;
+      wrong-version) echo 'systemd 1' >"${R}/fakedb/docker-info" ;;
+      empty-manager) : >"${R}/fakedb/manager-cgroup" ;;
+      cleanup-failure) echo 'none 2' >"${R}/fakedb/docker-info"; touch "${R}/fakedb/fail-docker-stop" ;;
+      wrong-driver) echo 'none 2' >"${R}/fakedb/docker-info" ;;
+      docker-start-failure) touch "${R}/fakedb/fail-docker-start" ;;
+      docker-reload-failure) touch "${R}/fakedb/fail-docker-reload" ;;
+      missing-unit) shim dockerd-rootless-setuptool.sh 'exit 1' ;;
+    esac
+    touch "${R}/fakedb/active-docker.service"
+    docker_provision
+    expect_eq "docker $defect: provisioning fails closed" "$([[ $PROV_RC != 0 ]] && echo yes || echo no)" yes
+    expect_eq "docker $defect: no success UID marker" "$(cat "${R}/stdout.log")" ''
+    # All containment failures stop only the owning user daemon, including an
+    # already running daemon when installing the root-owned boundary failed.
+    expect_eq "docker $defect: owning daemon stop attempted" "$(docker_verbs stop)" 1
+    if [ "$defect" = cleanup-failure ]; then
+      expect_eq 'docker cleanup failure: warns that containment remains unverified' \
+        "$(grep -c 'WARNING.*Docker may still be running' "${R}/stderr.log" || true)" 1
+    else
+      expect_eq "docker $defect: existing daemon is no longer running" \
+        "$([[ -f ${R}/fakedb/active-docker.service ]] && echo yes || echo no)" no
+    fi
+    expect_eq "docker $defect: actionable containment error" \
+      "$(grep -c 'Docker containment failed' "${R}/stderr.log" || true)" 1
+    rm -rf "${R}"
+  done
 
   # -- reserved box ports ---------------------------------------------------------
   # The kernel's ephemeral range contains the box range, so an outgoing loopback
