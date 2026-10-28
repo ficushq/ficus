@@ -33,6 +33,55 @@ Run `bun typecheck` and the relevant package test entrypoints before opening a
 pull request. See [development](development.md) for local commands and isolated
 test databases.
 
+## Real-subprocess lane
+
+`subprocess-tests` remains the required, fail-closed aggregate check. It depends
+on both `subprocess-shards` matrix jobs (`1` and `2`); failure, cancellation or a
+skipped matrix blocks it. Matrix fail-fast is disabled so one shard cannot hide
+the other's diagnostics. No branch-protection check rename is needed.
+
+The file list in the workflow's **Run real-subprocess tests** step remains the
+canonical subprocess inventory. `scripts/run-core-tests.ts` adds every Core
+`mock.module` test to the isolated inventory, then partitions that entire list
+into two disjoint file lists. The four long-running files are paired across
+shards; all other files are assigned alternately in sorted order, including new
+files. Membership, completion and plan gates prove that no file is omitted or
+duplicated. Every file still runs in a fresh Bun process, sequentially within
+its shard, with the existing schema cache and completion assertions.
+
+The target is **under 10 minutes per shard**, measured from job start through
+setup, checkout, dependency installation, tests and reporting/post actions, not
+summed test-body durations. Provider queue time is excluded. The first step
+starts a lane clock; an absolute **540-second** deadline stops test execution,
+allows the existing **20-second** TERM-to-KILL cleanup grace, and leaves time
+for reports before the target. The 20-minute job timeout is only a hang
+backstop, not a performance allowance: the final wall-time check still fails at
+600 seconds. Setup steps are individually bounded (at most 16 minutes combined),
+with 3 minutes for full-history checkout and 4 minutes for dependency installation
+to tolerate cold caches. The outer backstop leaves room for diagnostics even
+if setup consumes all those hang limits; an already-expired deadline starts no
+tests and fails with inventory diagnostics rather than waiting for cancellation.
+
+On success and failure, logs and the Actions job summary contain all selected
+files sorted by measured wall duration, with `PASSED`, `FAILED`, `INCOMPLETE`
+(interrupted), or `UNSTARTED` status. Deadline expiry is always a failure, even
+if a child handles TERM and exits cleanly. A setup failure reports unstarted
+inventory when checkout and Bun are available. The final reporting step checks
+the 600-second target; use the Actions job start/completion timestamps for the
+full duration including post actions. A passing test runner alone is not proof
+that the end-to-end target was met.
+
+For inventory inspection without starting a database:
+
+```sh
+bun scripts/run-core-tests.ts --subprocess --subprocess-shard 1/2 --list
+bun scripts/run-core-tests.ts --subprocess --subprocess-shard 2/2 --list
+```
+
+Omitting `--subprocess-shard` keeps the full local isolated lane. Sharding is
+accepted only with `--subprocess`, and explicit paths must still match the
+entire canonical subprocess inventory before partitioning.
+
 ## CLI binaries
 
 [CLI Binaries](../../.github/workflows/cli-binaries.yml) builds archives for Linux
