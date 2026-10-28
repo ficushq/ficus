@@ -2,7 +2,7 @@ import { PermissionsProvider } from '../hooks/usePermissions'
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { acquireDomHarness } from '../test/domHarness'
 import { restPointerOn } from '../test/hoverTimer'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { fireEvent } from '@testing-library/dom'
 import type { RenderItem, StreamingContentBlock } from '@ficus/client-react'
 import type { Message, MessageMetadata } from '@ficus/shared'
@@ -2256,7 +2256,7 @@ describe('ChatView event inline actions', () => {
 
   test('a collapsed group shows every event action, and each opens its target', async () => {
     const openExternalUrl = mock((_url: string) => undefined)
-    const openLocalApp = mock(async (_id: string) => undefined)
+    const openLocalApp = mock(async (_id: string) => true)
     const { dom, window } = await renderChatView(
       <ChatView
         items={items()}
@@ -2291,6 +2291,68 @@ describe('ChatView event inline actions', () => {
     )
     await dom.act(async () => click(window, 'Open work stream'))
     expect(openedToolAction).toEqual(expect.objectContaining({ kind: 'work_stream', workStreamRef: 'ws-1' }))
+  })
+
+  test('a local app that cannot be opened says so, and the notice can be dismissed', async () => {
+    const openLocalApp = mock(async (_id: string) => false)
+    const { dom, window } = await renderChatView(
+      <ChatView
+        items={items()}
+        agentId="agent-1"
+        squadId="squad-1"
+        onSend={() => {}}
+        hideComposer
+        dependencies={{ openLocalApp }}
+      />
+    )
+    expect(window.document.querySelector('[data-inline-action-notice]')).toBeNull()
+    await dom.act(async () => click(window, 'Open app'))
+    expect(openLocalApp).toHaveBeenCalledWith('ld-1')
+    const notice = window.document.querySelector('[data-inline-action-notice]')!
+    expect(notice.getAttribute('role')).toBe('status')
+    expect(notice.textContent).toContain('That local app is no longer available.')
+    expect(openedToolAction).toBeNull()
+    await dom.act(async () => click(window, 'Dismiss'))
+    expect(window.document.querySelector('[data-inline-action-notice]')).toBeNull()
+  })
+
+  test('a local app that opens shows no notice', async () => {
+    const { dom, window } = await renderChatView(
+      <ChatView
+        items={items()}
+        agentId="agent-1"
+        squadId="squad-1"
+        onSend={() => {}}
+        hideComposer
+        dependencies={{ openLocalApp: async () => true }}
+      />
+    )
+    await dom.act(async () => click(window, 'Open app'))
+    expect(window.document.querySelector('[data-inline-action-notice]')).toBeNull()
+  })
+
+  test('a target the modal reports unavailable shows its notice', async () => {
+    function UnavailableModal({ onClose, onUnavailable }: ToolInlineActionModalProps) {
+      useEffect(() => {
+        onUnavailable?.()
+        onClose()
+      }, [onClose, onUnavailable])
+      return null
+    }
+    const { dom, window } = await renderChatView(
+      <ChatView
+        items={items()}
+        agentId="agent-1"
+        squadId="squad-1"
+        onSend={() => {}}
+        hideComposer
+        dependencies={{ ToolInlineActionModalComponent: UnavailableModal }}
+      />
+    )
+    await dom.act(async () => click(window, 'Open work stream'))
+    expect(window.document.querySelector('[data-inline-action-notice]')!.textContent).toContain(
+      'That work stream could not be found.'
+    )
   })
 
   test('hides actions the viewer cannot open', async () => {
