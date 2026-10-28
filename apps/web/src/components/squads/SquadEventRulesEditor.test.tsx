@@ -2,7 +2,7 @@ import { fireEvent } from '@testing-library/dom'
 import { expect, test, spyOn } from 'bun:test'
 import { useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { squadEventRuleSchema, createBlankWorkflow, type SquadEventRule } from '@ficus/shared'
+import { squadEventRuleSchema, createBlankWorkflow, effectiveSquadEventRules, type SquadEventRule } from '@ficus/shared'
 import { acquireDomHarness } from '../../test/domHarness'
 import { integrationQueries, queries } from '../../queryOptions'
 import { SquadEventRulesEditor } from './SquadEventRulesEditor'
@@ -413,6 +413,103 @@ test('decision conditions edit a yes/no or choice question, its matching answer 
   } finally {
     fetch.mockRestore()
     client.clear()
+    await dom.cleanup()
+  }
+})
+
+test('adding a rule scrolls the new rule into view and focuses its event', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings' })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  client.setQueryData(integrationQueries.outputs().queryKey, [
+    { integration: 'github', output: 'issue.assigned', version: 1, title: 'Issue assigned', fields: {} },
+    { integration: 'github', output: 'issue.comment', version: 1, title: 'Issue comment', fields: {} },
+  ])
+  client.setQueryData(integrationQueries.squad('test', 'github').queryKey, { connections: [], attached: [] })
+  function Editor() {
+    const [rules, setRules] = useState([
+      squadEventRuleSchema.parse({
+        id: 'existing',
+        source: { integration: 'github', output: 'issue.comment', version: 1 },
+        filters: {},
+        action: { type: 'notify-manager' },
+      }),
+    ])
+    return <SquadEventRulesEditor squadId="test" provider="github" value={rules} onChange={setRules} disabled={false} />
+  }
+  const root = dom.createRoot()
+  // A new rule that lands off screen looks like nothing happened, and repeat clicks silently
+  // add more "Issue assigned" rules.
+  const scrolled: { element: Element; options: unknown }[] = []
+  const original = HTMLElement.prototype.scrollIntoView
+  HTMLElement.prototype.scrollIntoView = function (this: Element, options?: ScrollIntoViewOptions | boolean) {
+    scrolled.push({ element: this, options })
+  }
+  try {
+    await dom.act(async () =>
+      root.root.render(
+        <QueryClientProvider client={client}>
+          <Editor />
+        </QueryClientProvider>
+      )
+    )
+    await dom.act(async () =>
+      Array.from(document.querySelectorAll('button'))
+        .find((button) => button.textContent === 'Add event rule')!
+        .click()
+    )
+    const [added, existing] = Array.from(document.querySelectorAll('fieldset'))
+    expect(existing!.querySelector('select')!.value).toBe('issue.comment')
+    // Compare identities as booleans: a failing diff of DOM nodes would serialize the whole tree.
+    expect(scrolled.map(({ element, options }) => ({ isAdded: element === added, options }))).toEqual([
+      { isAdded: true, options: { behavior: 'smooth', block: 'nearest' } },
+    ])
+    expect(document.activeElement === added!.querySelector('select')).toBe(true)
+  } finally {
+    HTMLElement.prototype.scrollIntoView = original
+    await dom.cleanup()
+  }
+})
+
+test('reset to defaults replaces the rules with the built-in set only after a confirming click', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings' })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  client.setQueryData(integrationQueries.outputs().queryKey, [
+    { integration: 'github', output: 'issue.assigned', version: 1, title: 'Issue assigned', fields: {} },
+  ])
+  client.setQueryData(integrationQueries.squad('test', 'github').queryKey, { connections: [], attached: [] })
+  let value: SquadEventRule[] = []
+  function Editor() {
+    const [rules, setRules] = useState([
+      squadEventRuleSchema.parse({
+        id: 'custom',
+        source: { integration: 'github', output: 'issue.assigned', version: 1 },
+        filters: {},
+        action: { type: 'ignore' },
+      }),
+    ])
+    value = rules
+    return <SquadEventRulesEditor squadId="test" provider="github" value={rules} onChange={setRules} disabled={false} />
+  }
+  const root = dom.createRoot()
+  const click = async (text: string) =>
+    dom.act(async () =>
+      Array.from(document.querySelectorAll('button'))
+        .find((button) => button.textContent === text)!
+        .click()
+    )
+  try {
+    await dom.act(async () =>
+      root.root.render(
+        <QueryClientProvider client={client}>
+          <Editor />
+        </QueryClientProvider>
+      )
+    )
+    await click('Reset to default rules')
+    expect(value.map((rule) => rule.id)).toEqual(['custom'])
+    await click('Replace all rules with defaults?')
+    expect(value).toEqual(effectiveSquadEventRules({}, 'github'))
+  } finally {
     await dom.cleanup()
   }
 })
