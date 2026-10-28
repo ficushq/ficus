@@ -1,0 +1,163 @@
+{
+  "experiment": "coordination-v8",
+  "status": "ficus_completed_pi_blocked_before_inference",
+  "observed_at": "2026-10-28T17:54:59.009111+00:00",
+  "ficus": {
+    "counts": {
+      "total": 205,
+      "passed": 205,
+      "failures": 0,
+      "skipped": 0,
+      "accepted": true
+    },
+    "trial_seconds": 2490.76777,
+    "launcher_seconds": 2514.3740147500066,
+    "commit": "01a73fbc5add57699298b9e137869ded4d262ec9",
+    "reviewed_product_commit": "47ab1b150eeb887b303453e2f3da17576f070aaa",
+    "post_review_changed_files": ["COORDINATION.md"],
+    "clean": true,
+    "original_handoff_preserved_exactly": true,
+    "original_handoff_sha256": "e5d98c86c58bd14976d5cf99f251806e7796da3f7e05697d1de3cc3858972d57",
+    "streams": [
+      {
+        "id": "a8452929-010e-4e5f-bcf3-4183d1373eaf",
+        "title": "Circuit core parser and validation",
+        "status": "done"
+      },
+      {
+        "id": "afe92095-0c43-4cb0-b17f-d77cd726a957",
+        "title": "CLI and check executable",
+        "status": "done"
+      },
+      {
+        "id": "ee5277f7-a4ec-46c4-a09f-2a88753b3b6e",
+        "title": "Evaluation engine and runtime values",
+        "status": "done"
+      },
+      {
+        "id": "b3cc62bf-23f5-4af3-87e6-39dcd63dbb7c",
+        "title": "Final integration and independent acceptance",
+        "status": "done"
+      }
+    ],
+    "attempts": {
+      "b3cc62bf-23f5-4af3-87e6-39dcd63dbb7c": [
+        {
+          "id": 1,
+          "step": "design",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "id": 2,
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "id": 3,
+          "step": "review",
+          "status": "completed",
+          "outcome": "approved"
+        }
+      ],
+      "a8452929-010e-4e5f-bcf3-4183d1373eaf": [
+        {
+          "id": 1,
+          "step": "design",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "id": 2,
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "id": 3,
+          "step": "review",
+          "status": "completed",
+          "outcome": "approved"
+        }
+      ],
+      "afe92095-0c43-4cb0-b17f-d77cd726a957": [
+        {
+          "id": 1,
+          "step": "design",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "id": 2,
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "id": 3,
+          "step": "review",
+          "status": "completed",
+          "outcome": "approved"
+        }
+      ],
+      "ee5277f7-a4ec-46c4-a09f-2a88753b3b6e": [
+        {
+          "id": 1,
+          "step": "design",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "id": 2,
+          "step": "implement",
+          "status": "completed",
+          "outcome": "completed"
+        },
+        {
+          "id": 3,
+          "step": "review",
+          "status": "completed",
+          "outcome": "approved"
+        }
+      ]
+    },
+    "confirmed_usd": 4.507401,
+    "settled_requests": 219,
+    "unresolved_hold_usd": 5.5,
+    "unresolved_call_id": 1193,
+    "native_role_usd": {
+      "architect": 1.0525272,
+      "engineer": 1.7296139,
+      "reviewer": 1.0453483,
+      "manager": 0.6798129
+    },
+    "proxy_minus_native_usd": 9.87e-5
+  },
+  "pi": {
+    "started_inference": false,
+    "model_calls": 0,
+    "score": null,
+    "blocker": "Unresolved usage preflight assertion"
+  },
+  "budget": {
+    "cap_usd": 50,
+    "confirmed_usd": 24.589231,
+    "unresolved_usd": 5.5,
+    "exposure_usd": 30.089231,
+    "conservative_remaining_usd": 19.910769
+  },
+  "evidence_sha256": {
+    "jobs/coordv8-paid-ficus/task__9uvq38e/result.json": "1a5942e0f8de0bcb52f88951bcc347eb96349106a93c59b38507e79c8766be9e",
+    "jobs/coordv8-paid-ficus/task__9uvq38e/verifier/counts.json": "2b9d75d0b24e128539e6b62edba8d49a6b3fbb092c351677c11a4aa58e86e2f8",
+    "jobs/coordv8-paid-ficus/task__9uvq38e/verifier/results.xml": "dc39ebbffa9ef31af9efbe86dcd7a867cc213632c87f5800b197a2fbc59a1530",
+    "jobs/coordv8-paid-ficus/task__9uvq38e/agent/snapshot.json": "a782c45352a748fdd866a083b04c21ddc78ba8f18b4cd52f7edf6d093502987f",
+    "jobs/coordv8-paid-ficus/task__9uvq38e/agent/messages.json": "2b39f003b0f582cfe27e98cee19f2b948db39be54ee51953965466373b25400c",
+    "jobs/coordv8-paid-ficus/task__9uvq38e/agent/progress.jsonl": "9f884da688395ce4848dee4113524214b3787ab57def282e44c04815250e0aa3",
+    "jobs/coordv8-paid-ficus/task__9uvq38e/artifacts/logs/artifacts/repository.bundle": "8d4a1e2011e6e6268f43db624ff6e4028db4c1085728f5628990ecd812b69881",
+    "jobs/coordv8-paid-ficus/task__9uvq38e/artifacts/logs/artifacts/status.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "coordv8-paid-ficus-execution.json": "941f7924f5610a7d7d04de1dccf5aeb749a8ac4a2cdce984e057d61a5d9caa14",
+    "paid-pi.log": "f4c79335ff32defcaa6dd089834605c253e680b8155bd8201cfff2c0f191a2c3",
+    "pair-state.json": "ceb840d082681a37f33ffc67e34eb21697f38ff7481b042c6711925b373fc243"
+  }
+}
