@@ -209,13 +209,40 @@ describe('AgentTypeSync', () => {
     expect(manager.systemPrompt).toContain(
       'goes through\n`ask_human` exactly once, not as a question in your chat text'
     )
-    expect(manager.systemPrompt).toContain('they never re-ask or recap an open question')
-    expect(manager.systemPrompt).toContain('casual, non-blocking conversation')
+    expect(manager.systemPrompt).toContain('apply the test\nin "Questions, waits, and pause"')
+    expect(manager.systemPrompt).toContain('they never end with an offer, and never re-ask or\nrecap an open question')
+    // The chat-question test lives once, in the shared squad rules, not duplicated in the manager body.
+    expect(manager.systemPrompt.split('you MUST call\n`ask_human` instead')).toHaveLength(2)
+    expect(manager.systemPrompt).not.toContain('casual, non-blocking conversation')
     expect(manager.systemPrompt).toContain('check `requestingUserId`')
     expect(manager.systemPrompt).toContain('--recipient-type user')
     expect(manager.systemPrompt).toContain('ficus inbox send system')
     expect(manager.systemPrompt).not.toContain('Decisions that need human input')
     expect(manager.systemPrompt).not.toContain('Blockers that require human intervention')
+  })
+
+  test('squad rules route every human decision, offer, and chat question through ask_human', async () => {
+    const parsed = await loadComposed()
+    for (const id of ['manager', 'consultant', 'engineer', 'general']) {
+      const prompt = parsed.find((item) => item.id === id)?.systemPrompt ?? ''
+      expect(prompt).toContain('Humans see Action Center items, not your chat')
+      expect(prompt).toContain(
+        '("Do you want…?", "Should I…?", "Want me to…?", "Which…?"), you MUST call\n`ask_human` instead'
+      )
+      expect(prompt).toContain('never end a turn with an offer')
+      expect(prompt).toContain('it never\nrepeats or re-asks it')
+      expect(prompt).toContain('never for a\ndecision, an approval, or anything work depends on')
+    }
+  })
+
+  test('human-facing assistant prompts outside squad rules ask decisions with ask_human, not chat', async () => {
+    const parsed = await loadComposed()
+    const promptFor = (id: string) => parsed.find((item) => item.id === id)!.systemPrompt
+    expect(promptFor('assistant')).toContain('including the go-ahead before a change, goes through ask_human')
+    expect(promptFor('assistant')).toContain('never end a reply with\na question or offer')
+    expect(promptFor('assistant-worker')).toContain('never as a question or offer ("Want me to…?")')
+    expect(promptFor('system-manager')).toContain('Every decision or answer you need goes through `ask_human`')
+    expect(promptFor('system-manager')).not.toContain('offer a\nconcrete next step')
   })
 
   test('squad rules send workers to a blocking ask_human for human decisions, not manual waits', async () => {
