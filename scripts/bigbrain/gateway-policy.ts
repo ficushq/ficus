@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import {
   MANAGED_BIGBRAIN_MAX_VAULTS,
@@ -9,6 +10,14 @@ import {
 const MAX_INPUT = 1024 * 1024 + 64 * 1024
 const MAX_OUTPUT = 16 * 1024 * 1024
 const REQUEST_MS = 15000
+/** A join (upstream connectInvite) is a redeem that spends the single-use link, then a whoami with the
+ * credential it returned. That whoami is reserved when the redeem succeeds: one use, this vault only,
+ * keyed by a hash of the new credential (never the credential), bounded in count and lifetime. */
+export const JOIN_GRACE_MS = 30_000
+export const JOIN_GRACE_MAX = 16
+const MEMBER_CREDENTIAL = /^sv_[A-Za-z0-9_-]{1,512}$/
+const credentialKey = (vaultId: string, credential: string) =>
+  `${vaultId}:${createHash('sha256').update(credential).digest('hex')}`
 const routeSchema = z
   .object({
     vaultId: z
@@ -159,6 +168,31 @@ async function readInput(request: Request, signal: AbortSignal): Promise<ArrayBu
   }
 }
 
+async function readOutput(body: ReadableStream<Uint8Array>, signal: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
+  const reader = body.getReader()
+  const abort = () => {
+    void reader.cancel().catch(() => {})
+  }
+  signal.addEventListener('abort', abort, { once: true })
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    for (;;) {
+      const next = await reader.read()
+      if (signal.aborted) throw new Error('deadline')
+      if (next.done) break
+      size += next.value.byteLength
+      if (size > MAX_OUTPUT) throw new Error('output_limit')
+      chunks.push(next.value)
+    }
+    return new Uint8Array(Buffer.concat(chunks))
+  } finally {
+    signal.removeEventListener('abort', abort)
+    await reader.cancel().catch(() => {})
+    reader.releaseLock()
+  }
+}
+
 /** Exact-host, bounded credential-free forwarding. Nothing in a request chooses an IP/port.
  * Upstream retains all auth/member/write enforcement. No content/auth/URL logging exists here.
  */
@@ -179,6 +213,35 @@ export function createGatewayHandler(options: {
   let aggregate = 0
   const globalBucket = new Bucket(2, 20, now())
   const vaults = new Map<string, { active: number; mutations: number; read: Bucket; write: Bucket }>()
+  // Insertion-ordered: the oldest reservation is dropped first when full.
+  const joinGrace = new Map<string, number>()
+  const pruneGrace = (at: number) => {
+    for (const [key, expires] of joinGrace) if (expires <= at) joinGrace.delete(key)
+  }
+  const reserveJoin = (vaultId: string, redeemed: Uint8Array) => {
+    let credential: unknown
+    try {
+      credential = (JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(redeemed)) as { token?: unknown })
+        ?.token
+    } catch {
+      return
+    }
+    if (typeof credential !== 'string' || !MEMBER_CREDENTIAL.test(credential)) return
+    const at = now()
+    pruneGrace(at)
+    const key = credentialKey(vaultId, credential)
+    joinGrace.delete(key)
+    while (joinGrace.size >= JOIN_GRACE_MAX) joinGrace.delete(joinGrace.keys().next().value!)
+    joinGrace.set(key, at + JOIN_GRACE_MS)
+  }
+  /** Consumes the reservation for exactly this vault and credential, if one is live. */
+  const claimJoin = (vaultId: string, authorization: string | null): boolean => {
+    if (joinGrace.size === 0 || !authorization?.startsWith('Bearer ')) return false
+    const credential = authorization.slice(7)
+    if (!MEMBER_CREDENTIAL.test(credential)) return false
+    pruneGrace(now())
+    return joinGrace.delete(credentialKey(vaultId, credential))
+  }
   return async (request) => {
     let manifest: GatewayManifest
     try {
@@ -201,8 +264,17 @@ export function createGatewayHandler(options: {
     }
     // MCP POSTs are reads; all other POSTs are serialized mutations (including native auth).
     const mutation = request.method === 'POST' && url.pathname !== '/mcp'
-    if (aggregate >= 4 || vault.active >= 2 || (mutation && vault.mutations >= 1)) return refusal(429, 'busy')
-    if (!(mutation ? vault.write : vault.read).take(now()) || !globalBucket.take(now())) return refusal(429, 'busy')
+    const redeem = request.method === 'POST' && url.pathname === '/v1/invites/redeem'
+    // The reserved whoami after a join is admitted past the buckets and in-flight caps (it is still
+    // counted while in flight); every other request, including a second whoami, is limited as usual.
+    const reserved =
+      request.method === 'GET' &&
+      url.pathname === '/v1/whoami' &&
+      claimJoin(route.vaultId, request.headers.get('Authorization'))
+    if (!reserved) {
+      if (aggregate >= 4 || vault.active >= 2 || (mutation && vault.mutations >= 1)) return refusal(429, 'busy')
+      if (!(mutation ? vault.write : vault.read).take(now()) || !globalBucket.take(now())) return refusal(429, 'busy')
+    }
     aggregate++
     vault.active++
     if (mutation) vault.mutations++
@@ -291,6 +363,13 @@ export function createGatewayHandler(options: {
         return refusal(502, 'output_limit')
       }
       if (!response.body) return new Response(null, { status: response.status, headers: outgoing })
+      if (redeem && response.ok) {
+        // Buffered (bounded, under the same deadline) so the reservation exists before the client
+        // can send its whoami. The body is relayed unchanged and never logged or kept.
+        const redeemed = await readOutput(response.body, controller.signal)
+        reserveJoin(route.vaultId, redeemed)
+        return new Response(redeemed, { status: response.status, headers: outgoing })
+      }
       const reader = response.body.getReader()
       let bytes = 0
       let stopped = false
@@ -357,13 +436,11 @@ export function createGatewayHandler(options: {
       return new Response(stream, { status: response.status, headers: outgoing })
     } catch (error) {
       controller.abort()
+      const code = error instanceof Error ? error.message : ''
+      if (!timedOut && code === 'output_limit') return refusal(502, 'output_limit')
       return refusal(
-        timedOut ? 504 : error instanceof Error && error.message === 'input_limit' ? 413 : 503,
-        timedOut
-          ? 'upstream_unavailable'
-          : error instanceof Error && error.message === 'input_limit'
-            ? 'resource_limit'
-            : 'upstream_unavailable'
+        timedOut ? 504 : code === 'input_limit' ? 413 : 503,
+        timedOut ? 'upstream_unavailable' : code === 'input_limit' ? 'resource_limit' : 'upstream_unavailable'
       )
     } finally {
       if (!deferred) finish()
