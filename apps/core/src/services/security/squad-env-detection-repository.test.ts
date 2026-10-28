@@ -198,3 +198,11 @@ test('a squad deleted during bootstrap does not abort startup or recreate its st
   await expect(repository.bootstrap(id, { contentHash: null, entries: [], reason: null })).resolves.toBeUndefined()
   expect(await db.select().from(squadEnvDetections).where(eq(squadEnvDetections.squadId, id))).toEqual([])
 })
+
+test('Squad hydration includes the protected bootstrap marker without exposing it in public JSON', async () => {
+  await repository.save(id, { contentHash: null, entries: [], reason: null })
+  const squad = await Squad.mustFind(id)
+  expect(squad.envDetectionBootstrapped).toBe(true)
+  expect((await Squad.findManyByIds([id])).get(id)?.envDetectionBootstrapped).toBe(true)
+  expect(Object.hasOwn(squad.toJson(), 'envDetectionBootstrapped')).toBe(false)
+})

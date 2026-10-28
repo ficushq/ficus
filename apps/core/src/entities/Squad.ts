@@ -242,6 +242,7 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
       typeContext: squads.typeContext,
       isAnonymous: squads.isAnonymous,
       globalCollaborationEnabled: squads.globalCollaborationEnabled,
+      envDetectionBootstrapped: squads.envDetectionBootstrapped,
       order: squads.order,
       metadata: squads.metadata,
       maxConcurrentWorkStreams: squads.maxConcurrentWorkStreams,

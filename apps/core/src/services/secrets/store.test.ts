@@ -1278,7 +1278,9 @@ describe('integration credential leaf detection', () => {
     await restarted.initialize()
     const registry = new ContentSafetyRegistry(restarted)
     try {
-      expect(['synthetic-concurrent-first-token', 'synthetic-concurrent-second-token']).toContain(restarted.get(ref))
+      const current = restarted.get(ref)
+      expect(current).toBeDefined()
+      expect(['synthetic-concurrent-first-token', 'synthetic-concurrent-second-token']).toContain(current!)
       expect(registry.redactWithStoredKeys('synthetic-concurrent-first-token').storedKeys).not.toHaveLength(0)
       expect(registry.redactWithStoredKeys('synthetic-concurrent-second-token').storedKeys).not.toHaveLength(0)
       expect(
