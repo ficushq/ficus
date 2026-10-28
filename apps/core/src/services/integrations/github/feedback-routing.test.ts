@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test, setSystemTime } from 'bun:test'
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import { createBlankWorkflow, createWorkflowRun } from '@ficus/shared'
 import {
   db,
@@ -3959,6 +3959,7 @@ test.each([false, true])(
   'OFF stale parent preserves immutable facts only for the unaccepted recipient (ack=%s)',
   async (ack) => {
     const h = await fixture()
+    const byInboxId = (a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id)
     const trust = spyOn(await import('./feedback-trust'), 'resolveGitHubAuthorTrust').mockImplementation(() => {
       throw new Error('OFF must not resolve author trust')
     })
@@ -4009,19 +4010,28 @@ test.each([false, true])(
           }))
         )
         .returning()
+      expect(notices).toHaveLength(2)
+      const managerNotice = notices.find((row) => row.recipientId === h.managerId)!
+      const otherNotice = notices.find((row) => row.recipientId === other!.id)!
+      expect(managerNotice).toBeDefined()
+      expect(otherNotice).toBeDefined()
       h.useRealSend()
-      await deliverInboxMessagesToAgent(h.managerId, [notices[0]!.id])
+      await deliverInboxMessagesToAgent(h.managerId, [managerNotice.id])
       expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, h.managerId))).toHaveLength(1)
-      if (!ack) await db.update(inbox).set({ deliveredAt: null }).where(eq(inbox.id, notices[0]!.id))
-      const originalRows = await db
-        .select()
-        .from(inbox)
-        .where(
-          inArray(
-            inbox.id,
-            notices.map((n) => n.id)
+      if (!ack) await db.update(inbox).set({ deliveredAt: null }).where(eq(inbox.id, managerNotice.id))
+      // Force opposite raw SELECT orders so whole-row immutability never relies on scan order.
+      const originalRows = (
+        await db
+          .select()
+          .from(inbox)
+          .where(
+            inArray(
+              inbox.id,
+              notices.map((n) => n.id)
+            )
           )
-        )
+          .orderBy(inbox.id)
+      ).sort(byInboxId)
       const originalReceipts = await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, h.managerId))
       await publishIntegrationOutput(
         'github',
@@ -4056,7 +4066,7 @@ test.each([false, true])(
         .where(sql`${inbox.metadata}->>'integrationEventId' = ${variant!.id}`)
       expect(replacements.map((row) => row.recipientId)).toEqual([other!.id])
       expect(replacements[0]!.content).toContain('review requested')
-      expect(await InboxMessage.isWithheldGitHubNotification(notices[1]!.id)).toBe(true)
+      expect(await InboxMessage.isWithheldGitHubNotification(otherNotice.id)).toBe(true)
       expect(await isCurrentIntegrationNotification(db, other!.id, replacements[0]!.id)).toBe(true)
       await deliverInboxMessagesToAgent(other!.id)
       await reconcileUnmatchedOutputs()
@@ -4078,15 +4088,18 @@ test.each([false, true])(
         originalReceipts
       )
       expect(
-        await db
-          .select()
-          .from(inbox)
-          .where(
-            inArray(
-              inbox.id,
-              notices.map((n) => n.id)
+        (
+          await db
+            .select()
+            .from(inbox)
+            .where(
+              inArray(
+                inbox.id,
+                notices.map((n) => n.id)
+              )
             )
-          )
+            .orderBy(desc(inbox.id))
+        ).sort(byInboxId)
       ).toEqual(originalRows)
       const [savedSource] = await db
         .select()
