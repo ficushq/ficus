@@ -9,7 +9,7 @@
  *
  * - Every dot-prefixed path component. That covers the platform settings dir
  *   `.ficus/` (where docker/host keep `identity.pem`, the toolchain state and
- *   any per-agent secrets file the platform writes), shell history and
+ *   retired per-agent credential files pending cleanup), shell history and
  *   config, `.ssh`, the confined writer's own `.ficus-upload-*` temp files,
  *   and any future platform file that follows the dot-dir convention.
  * - `identity.pem` at the private root, where the vm runtime pushes the

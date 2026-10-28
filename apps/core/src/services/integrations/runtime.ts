@@ -589,7 +589,7 @@ export const integrationConnectionService = new IntegrationConnectionService({
   audit: integrationAuditRecorder,
 })
 
-export async function initializeIntegrationDefaults() {
+async function initializeProviderDefaults() {
   await importLegacyLinearCredential(getSecretStore())
   await initializeChannelIntegrationStates()
   await importLegacyDeploymentCredentials(getSecretStore())
@@ -597,7 +597,17 @@ export async function initializeIntegrationDefaults() {
   await initializeOpenAIServicesState()
   await initializePushIntegrationStates()
   await initializeGitHubDefault()
-  for (const squadId of await reconcileIntegrationSquads('github')) {
+}
+
+/** Initialization seams isolate provider bootstrap from per-squad filesystem reconciliation. */
+export async function initializeIntegrationDefaults(
+  dependencies: {
+    initializeProviders?: () => Promise<void>
+    reconcileSquads?: () => Promise<string[]>
+  } = {}
+) {
+  await (dependencies.initializeProviders ?? initializeProviderDefaults)()
+  for (const squadId of await (dependencies.reconcileSquads ?? (() => reconcileIntegrationSquads('github')))()) {
     await regenerateEnvFileForSquad(squadId)
     eventEmitter.emit('integration.projection-invalidated', { squadId, providerKey: 'github' })
   }

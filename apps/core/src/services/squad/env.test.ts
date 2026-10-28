@@ -1,5 +1,4 @@
-import { getSecretStore } from '../secrets'
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'bun:test'
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { mkdtemp, rm } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
@@ -10,35 +9,18 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs
 const originalEnv = process.env.HOME_DIR
 let tempDir: string
 
-beforeAll(async () => {
-  await getSecretStore().initialize()
-})
-
 beforeEach(async () => {
   tempDir = await mkdtemp(join(tmpdir(), 'squad-env-test-'))
   process.env.HOME_DIR = tempDir
 })
 
 afterEach(async () => {
-  await getSecretStore().delete('DEPLOY_TEST_VERCEL_TOKEN')
-  await getSecretStore().delete('DEPLOY_TEST_NETLIFY_TOKEN')
-  try {
-    const { setGloballyExposedSecretKeys } = await getModule()
-    await setGloballyExposedSecretKeys([])
-  } catch {
-    // Some tests intentionally run before the module has all helpers available.
-  }
   if (originalEnv === undefined) delete process.env.HOME_DIR
   else process.env.HOME_DIR = originalEnv
   if (tempDir) {
     await rm(tempDir, { recursive: true, force: true })
   }
 })
-
-async function createTestSquad(squadId: string) {
-  const { db, squads } = await import('../../db')
-  await db.insert(squads).values({ id: squadId, name: `Squad ${squadId}`, purpose: 'test' })
-}
 
 // Re-import after setting env
 async function getModule() {
@@ -79,8 +61,8 @@ describe('squad-env', () => {
       expect(result).toBeNull()
     })
 
-    it('fails closed with a clear error when canonical settings is a file, and a regeneration skips it', async () => {
-      const { getEnvFile, regenerateEnvFileForSquad } = await getModule()
+    it('fails closed with a clear error when canonical settings is a file, and regeneration reports failure', async () => {
+      const { getEnvFile, regenerateEnvFileForSquadStrict } = await getModule()
       const { getSquadWorkspacePath } = await import('./workspace')
       const { WORKSPACE_DOT_DIR, WorkspaceDotDirConflictError } = await import('../workspace/dot-dir')
       const squadId = randomUUID()
@@ -89,8 +71,8 @@ describe('squad-env', () => {
       writeFileSync(join(root, WORKSPACE_DOT_DIR), 'preserved invalid settings')
 
       expect(() => getEnvFile(squadId)).toThrow(WorkspaceDotDirConflictError)
-      // A fleet-wide regeneration must not stop on this squad, and writes nothing into it.
-      await regenerateEnvFileForSquad(squadId)
+      // Strict acknowledgements must fail, without writing into the conflicting path.
+      await expect(regenerateEnvFileForSquadStrict(squadId)).rejects.toBeInstanceOf(WorkspaceDotDirConflictError)
       expect(existsSync(join(root, WORKSPACE_DOT_DIR, '.env'))).toBe(false)
       expect(readFileSync(join(root, WORKSPACE_DOT_DIR), 'utf-8')).toBe('preserved invalid settings')
     })
@@ -172,273 +154,49 @@ line2"`
     })
   })
 
-  describe('Secret Store exposure allowlist', () => {
-    it('renders only selected secrets into generated sandbox env', async () => {
-      const { renderEnvForSecrets } = await getModule()
-
-      const rendered = renderEnvForSecrets('APP_ENV=localDeployment', ['DEPLOY_TEST_VERCEL_TOKEN'], (key: string) => {
-        const values: Record<string, string> = {
-          DEPLOY_TEST_VERCEL_TOKEN: 'vercel-secret',
-          DEPLOY_TEST_NETLIFY_TOKEN: 'netlify-secret',
-        }
-        return values[key]
-      })
-
-      expect(rendered).toContain('APP_ENV=localDeployment')
-      expect(rendered).toContain("export DEPLOY_TEST_VERCEL_TOKEN='vercel-secret'")
-      expect(rendered).not.toContain('DEPLOY_TEST_NETLIFY_TOKEN')
-      expect(rendered).not.toContain('netlify-secret')
-    })
-
-    it('renders protected integration values last so user and selected-secret overrides cannot win', async () => {
-      const { renderEnvForSecrets } = await getModule()
-      const rendered = renderEnvForSecrets(
-        'NOTION_WORKSPACE_ID=user-value',
-        ['NOTION_WORKSPACE_ID'],
-        () => 'selected-secret-value',
-        [['NOTION_WORKSPACE_ID', "workspace-'value"]]
-      )
-      expect(rendered.lastIndexOf('export NOTION_WORKSPACE_ID=')).toBeGreaterThan(
-        rendered.indexOf("export NOTION_WORKSPACE_ID='selected-secret-value'")
-      )
-      expect(rendered).toEndWith("export NOTION_WORKSPACE_ID='workspace-'\"'\"'value'")
-    })
-
-    it('keeps internal secret names out of squad environments on self-hosted servers', async () => {
-      const { renderEnvForSecrets } = await getModule()
-      const rendered = renderEnvForSecrets(
-        'APP_ENV=x',
-        ['__internal_token', 'DEPLOY_TEST_VERCEL_TOKEN'],
-        (key: string) =>
-          ({
-            __internal_token: 'self-hosted-client-secret',
-            DEPLOY_TEST_VERCEL_TOKEN: 'vercel-secret',
-          })[key]
-      )
-      expect(rendered).not.toContain('self-hosted-client-secret')
-      expect(rendered).toContain("export DEPLOY_TEST_VERCEL_TOKEN='vercel-secret'")
-    })
-
-    it('NEVER renders a reserved identity key into a squad env, even when exposed', async () => {
-      const { renderEnvForSecrets } = await getModule()
-      // A Secret Store key literally named FICUS_API_URL would otherwise be
-      // rendered into .ficus/.env and sourced into every agent shell — the exact
-      // thing the write-time check on user content refuses.
-      const rendered = renderEnvForSecrets(
-        'APP_ENV=x',
-        ['FICUS_API_URL', 'FICUS_TOKEN', 'DEPLOY_TEST_VERCEL_TOKEN'],
-        (key: string) =>
-          ({
-            FICUS_API_URL: 'https://cloud.example.com',
-            FICUS_TOKEN: 'operator-token',
-            DEPLOY_TEST_VERCEL_TOKEN: 'vercel-secret',
-          })[key]
-      )
-      expect(rendered).not.toContain('FICUS_API_URL')
-      expect(rendered).not.toContain('operator-token')
-      expect(rendered).toContain("export DEPLOY_TEST_VERCEL_TOKEN='vercel-secret'")
-    })
-
-    it('excludes the self-hosted relay credential from explicit squad exposure', async () => {
-      const prior = process.env.FICUS_MANAGED_SECRET_KEYS
-      delete process.env.FICUS_MANAGED_SECRET_KEYS
-      try {
-        const { renderEnvForSecrets } = await getModule()
-        const lookedUp: string[] = []
-        const rendered = renderEnvForSecrets(
-          '',
-          ['FICUS_PUSH_RELAY_TOKEN', 'DEPLOY_TEST_VERCEL_TOKEN'],
-          (key: string) => {
-            lookedUp.push(key)
-            return key === 'FICUS_PUSH_RELAY_TOKEN' ? 'relay-canary' : 'allowed-value'
-          }
-        )
-        expect(lookedUp).toEqual(['DEPLOY_TEST_VERCEL_TOKEN'])
-        expect(rendered).not.toContain('FICUS_PUSH_RELAY_TOKEN')
-        expect(rendered).not.toContain('relay-canary')
-        expect(rendered).toContain('allowed-value')
-      } finally {
-        if (prior === undefined) delete process.env.FICUS_MANAGED_SECRET_KEYS
-        else process.env.FICUS_MANAGED_SECRET_KEYS = prior
-      }
-    })
-
-    it('NEVER renders a platform-managed key into a squad env, even when named explicitly', async () => {
-      const privateKeys = [
-        'APNS_KEY_ID',
-        'FICUS_PLATFORM_INSTANCE_TOKEN',
-        'FICUS_PLATFORM_USAGE_TOKEN',
-        'NOTION_OAUTH_CLIENT_ID',
-        'NOTION_OAUTH_CLIENT_SECRET',
-      ]
-      process.env.FICUS_MANAGED_SECRET_KEYS = privateKeys.join(',')
-      try {
-        const { renderEnvForSecrets } = await getModule()
-        // A tenant names the managed keys explicitly in the exposure allowlist…
-        const rendered = renderEnvForSecrets(
-          'APP_ENV=x',
-          [...privateKeys, 'DEPLOY_TEST_VERCEL_TOKEN'],
-          (key: string) => (key === 'DEPLOY_TEST_VERCEL_TOKEN' ? 'vercel-secret' : `${key}-platform-secret`)
-        )
-        // …but they are filtered out at the single chokepoint (normalizeSecretKeys),
-        // so neither their names nor values reach the sandbox env.
-        for (const key of privateKeys) {
-          expect(rendered).not.toContain(key)
-          expect(rendered).not.toContain(`${key}-platform-secret`)
-        }
-        // Non-managed keys still render normally.
-        expect(rendered).toContain("export DEPLOY_TEST_VERCEL_TOKEN='vercel-secret'")
-      } finally {
-        delete process.env.FICUS_MANAGED_SECRET_KEYS
-      }
-    })
-
-    it('renders globally exposed secrets into existing squad env files immediately', async () => {
-      const { setEnvFile, setGloballyExposedSecretKeys } = await getModule()
-      const { getSquadWorkspacePath } = await import('./workspace')
-      const firstSquadId = randomUUID()
-      const secondSquadId = randomUUID()
-      await createTestSquad(firstSquadId)
-      await createTestSquad(secondSquadId)
-      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'global-vercel-secret', 'test')
-
-      await setEnvFile(firstSquadId, 'APP_ENV=first')
-      await setEnvFile(secondSquadId, 'APP_ENV=second')
-      await setGloballyExposedSecretKeys(['DEPLOY_TEST_VERCEL_TOKEN'])
-
-      const firstEnv = readFileSync(join(getSquadWorkspacePath(firstSquadId), '.ficus', '.env'), 'utf-8')
-      const secondEnv = readFileSync(join(getSquadWorkspacePath(secondSquadId), '.ficus', '.env'), 'utf-8')
-      expect(firstEnv).toContain('APP_ENV=first')
-      expect(firstEnv).toContain("export DEPLOY_TEST_VERCEL_TOKEN='global-vercel-secret'")
-      expect(secondEnv).toContain('APP_ENV=second')
-      expect(secondEnv).toContain("export DEPLOY_TEST_VERCEL_TOKEN='global-vercel-secret'")
-
-      await getSecretStore().delete('DEPLOY_TEST_VERCEL_TOKEN')
-    })
-
-    it('renders globally exposed secrets when a future squad env file is generated', async () => {
-      const { setGloballyExposedSecretKeys, regenerateEnvFileForSquad } = await getModule()
-      const { getSquadWorkspacePath } = await import('./workspace')
-      const squadId = randomUUID()
-      await createTestSquad(squadId)
-      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'future-global-secret', 'test')
-
-      await setGloballyExposedSecretKeys(['DEPLOY_TEST_VERCEL_TOKEN'])
-      await regenerateEnvFileForSquad(squadId)
-
-      const generatedEnv = readFileSync(join(getSquadWorkspacePath(squadId), '.ficus', '.env'), 'utf-8')
-      expect(generatedEnv).toContain("export DEPLOY_TEST_VERCEL_TOKEN='future-global-secret'")
-
-      await getSecretStore().delete('DEPLOY_TEST_VERCEL_TOKEN')
-    })
-
-    it('does not expose secret values through getEnvFile', async () => {
-      const { setEnvFile, getEnvFile, setExposedSecretKeys } = await getModule()
-      const { getSquadWorkspacePath } = await import('./workspace')
-      const squadId = randomUUID()
-      await createTestSquad(squadId)
-      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'vercel-secret', 'test')
-
-      await setEnvFile(squadId, 'APP_ENV=localDeployment')
-      await setExposedSecretKeys(squadId, ['DEPLOY_TEST_VERCEL_TOKEN'])
-
-      expect(getEnvFile(squadId)).toBe('APP_ENV=localDeployment')
-      const generatedEnv = readFileSync(join(getSquadWorkspacePath(squadId), '.ficus', '.env'), 'utf-8')
-      expect(generatedEnv).toContain("export DEPLOY_TEST_VERCEL_TOKEN='vercel-secret'")
-
-      await getSecretStore().delete('DEPLOY_TEST_VERCEL_TOKEN')
-    })
-
-    it('preserves pre-env.user .ficus/.env content on first secret exposure', async () => {
-      const { getEnvFile, setExposedSecretKeys } = await getModule()
-      const { getSquadWorkspacePath } = await import('./workspace')
-      const squadId = randomUUID()
-      await createTestSquad(squadId)
-      const ficusDir = join(getSquadWorkspacePath(squadId), '.ficus')
-      const envPath = join(ficusDir, '.env')
-      mkdirSync(ficusDir, { recursive: true })
-      writeFileSync(envPath, 'APP_ENV=localDeployment')
-      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'vercel-secret', 'test')
-
-      await setExposedSecretKeys(squadId, ['DEPLOY_TEST_VERCEL_TOKEN'])
-
-      const generatedEnv = readFileSync(envPath, 'utf-8')
-      expect(generatedEnv).toContain('APP_ENV=localDeployment')
-      expect(generatedEnv).toContain("export DEPLOY_TEST_VERCEL_TOKEN='vercel-secret'")
-      expect(getEnvFile(squadId)).toBe('APP_ENV=localDeployment')
-      expect(readFileSync(join(ficusDir, 'env.user'), 'utf-8')).toBe('APP_ENV=localDeployment')
-
-      await getSecretStore().delete('DEPLOY_TEST_VERCEL_TOKEN')
-    })
-
-    it('ignores forged workspace secret allowlist files when generating sandbox env', async () => {
-      const { setEnvFile, setExposedSecretKeys, regenerateEnvFilesForSecretKey } = await getModule()
-      const { getSquadWorkspacePath } = await import('./workspace')
-      const squadId = randomUUID()
-      await createTestSquad(squadId)
-      const ficusDir = join(getSquadWorkspacePath(squadId), '.ficus')
-      const envPath = join(ficusDir, '.env')
-
-      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'approved-secret', 'test')
-      await getSecretStore().set('DEPLOY_TEST_NETLIFY_TOKEN', 'forged-secret', 'test')
-      await setEnvFile(squadId, 'APP_ENV=localDeployment')
-      await setExposedSecretKeys(squadId, ['DEPLOY_TEST_VERCEL_TOKEN'])
-      writeFileSync(
-        join(ficusDir, 'forged-secret-allowlist.json'),
-        JSON.stringify({ keys: ['DEPLOY_TEST_NETLIFY_TOKEN'] })
-      )
-
-      await regenerateEnvFilesForSecretKey('DEPLOY_TEST_VERCEL_TOKEN')
-
-      const generatedEnv = readFileSync(envPath, 'utf-8')
-      expect(generatedEnv).toContain("export DEPLOY_TEST_VERCEL_TOKEN='approved-secret'")
-      expect(generatedEnv).not.toContain('DEPLOY_TEST_NETLIFY_TOKEN')
-      expect(generatedEnv).not.toContain('forged-secret')
-
-      await getSecretStore().delete('DEPLOY_TEST_VERCEL_TOKEN')
-      await getSecretStore().delete('DEPLOY_TEST_NETLIFY_TOKEN')
-    })
-
-    it('regenerates exposed secret values after rotation', async () => {
-      const { setEnvFile, setExposedSecretKeys, regenerateEnvFilesForSecretKey } = await getModule()
-      const { getSquadWorkspacePath } = await import('./workspace')
-      const squadId = randomUUID()
-      await createTestSquad(squadId)
-      const envPath = join(getSquadWorkspacePath(squadId), '.ficus', '.env')
-
-      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'old-secret', 'test')
-      await setEnvFile(squadId, 'APP_ENV=localDeployment')
-      await setExposedSecretKeys(squadId, ['DEPLOY_TEST_VERCEL_TOKEN'])
-      expect(readFileSync(envPath, 'utf-8')).toContain("export DEPLOY_TEST_VERCEL_TOKEN='old-secret'")
-
-      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'new-secret', 'test')
-      await regenerateEnvFilesForSecretKey('DEPLOY_TEST_VERCEL_TOKEN')
-
-      const generatedEnv = readFileSync(envPath, 'utf-8')
-      expect(generatedEnv).toContain("export DEPLOY_TEST_VERCEL_TOKEN='new-secret'")
-      expect(generatedEnv).not.toContain('old-secret')
-      await getSecretStore().delete('DEPLOY_TEST_VERCEL_TOKEN')
-    })
-
-    it('removes exposed secret values after deletion', async () => {
-      const { setEnvFile, setExposedSecretKeys, regenerateEnvFilesForSecretKey } = await getModule()
-      const { getSquadWorkspacePath } = await import('./workspace')
-      const squadId = randomUUID()
-      await createTestSquad(squadId)
-      const envPath = join(getSquadWorkspacePath(squadId), '.ficus', '.env')
-
-      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'deleted-secret', 'test')
-      await setEnvFile(squadId, 'APP_ENV=localDeployment')
-      await setExposedSecretKeys(squadId, ['DEPLOY_TEST_VERCEL_TOKEN'])
-      expect(readFileSync(envPath, 'utf-8')).toContain('deleted-secret')
-
-      await getSecretStore().delete('DEPLOY_TEST_VERCEL_TOKEN')
-      await regenerateEnvFilesForSecretKey('DEPLOY_TEST_VERCEL_TOKEN')
-
-      const generatedEnv = readFileSync(envPath, 'utf-8')
-      expect(generatedEnv).toContain('APP_ENV=localDeployment')
-      expect(generatedEnv).toContain('unset GH_TOKEN GITHUB_TOKEN GITHUB_USER')
-      expect(generatedEnv).not.toContain('deleted-secret')
-    })
+  it('replaces legacy generated plaintext without promoting it into env.user', async () => {
+    const { regenerateEnvFileForSquad, getEnvFile } = await getModule()
+    const { getSquadWorkspacePath } = await import('./workspace')
+    const id = randomUUID()
+    const dir = join(getSquadWorkspacePath(id), '.ficus')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(
+      join(dir, '.env'),
+      "# Generated from Ficus Secret Store allowlist. Do not edit values here.\nexport OLD_TOKEN='synthetic-exposure'\n"
+    )
+    await regenerateEnvFileForSquad(id)
+    expect(readFileSync(join(dir, '.env'), 'utf8')).not.toContain('synthetic-exposure')
+    expect(readFileSync(join(dir, 'env.user'), 'utf8')).toBe('')
+    expect(getEnvFile(id)).toBe('')
   })
+
+  it('preserves env.user and custom files while removing stale exports', async () => {
+    const { regenerateEnvFileForSquad } = await getModule()
+    const { getSquadWorkspacePath } = await import('./workspace')
+    const id = randomUUID()
+    const dir = join(getSquadWorkspacePath(id), '.ficus')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'env.user'), 'CUSTOM_SECRET=synthetic-custom\n')
+    writeFileSync(join(dir, 'custom.conf'), 'unchanged')
+    writeFileSync(join(dir, '.env'), "export OLD_TOKEN='synthetic-exposure'\n")
+    await regenerateEnvFileForSquad(id)
+    expect(readFileSync(join(dir, '.env'), 'utf8')).toContain('CUSTOM_SECRET=synthetic-custom')
+    expect(readFileSync(join(dir, '.env'), 'utf8')).not.toContain('synthetic-exposure')
+    expect(readFileSync(join(dir, 'env.user'), 'utf8')).toBe('CUSTOM_SECRET=synthetic-custom\n')
+    expect(readFileSync(join(dir, 'custom.conf'), 'utf8')).toBe('unchanged')
+  })
+})
+
+it('preserves legacy custom env comments that are not the exact retired generation marker', async () => {
+  const { getEnvFile, regenerateEnvFileForSquad } = await getModule()
+  const { getSquadWorkspacePath } = await import('./workspace')
+  const id = randomUUID(),
+    dot = join(getSquadWorkspacePath(id), '.ficus')
+  const content = '# Generated from Ficus application template, not managed credentials\nAPP_MODE=production\n'
+  mkdirSync(dot, { recursive: true })
+  writeFileSync(join(dot, '.env'), content)
+  expect(getEnvFile(id)).toBe(content)
+  await regenerateEnvFileForSquad(id)
+  expect(readFileSync(join(dot, 'env.user'), 'utf8')).toBe(content)
+  expect(readFileSync(join(dot, '.env'), 'utf8')).toContain('APP_MODE=production')
 })

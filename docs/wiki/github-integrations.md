@@ -393,7 +393,7 @@ New observations have `decision: historical`, `releaseState: retained`, and
 `reason: filter_disabled`: freshness bookkeeping, **not** approval, a delivered
 claim, a human hold or an entry in Pending/Releasing. Existing immutable decisions
 are preserved on replay. `github_feedback_sources.unfiltered` is server-owned
-provenance for the raw path (migration `0233_github_raw_feedback_freshness`, default
+provenance for the raw path (migration `0234_github_raw_feedback_freshness`, default
 false for existing sources), never a transported trust flag. Former filtered
 sources and projected status events cannot replay raw, and human denies remain
 final. Raw action parent snapshots are normalized independently of actor trust,

@@ -5,7 +5,7 @@ import { expect, test } from 'bun:test'
 import { chmodSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
-import { renderEnvForSecrets } from '../../squad/env'
+import { renderGeneratedEnvContent } from '../../squad/env'
 import { projectIntegrationAssignments } from '../projection/projector'
 import { resolveProtectedBindings } from '../projection/protected-env'
 import { IntegrationProjectionReconciler } from '../projection/reconciler'
@@ -232,11 +232,7 @@ test('pinned Notion CLI uses fresh exec credentials without rewriting generated 
     const writeEnv = async () => {
       writeExecutionWrappers(wrapperDir, attached ? [{ binary: 'ntn', providerKey: 'notion' }] : [], 'squad-id')
       const bindings = await resolveProtectedBindings(currentProjection)
-      writeFileSync(
-        envFile,
-        renderEnvForSecrets('', [], () => undefined, bindings),
-        { mode: 0o600 }
-      )
+      writeFileSync(envFile, renderGeneratedEnvContent('', bindings), { mode: 0o600 })
       chmodSync(envFile, 0o600)
     }
     const reconciler = new IntegrationProjectionReconciler({

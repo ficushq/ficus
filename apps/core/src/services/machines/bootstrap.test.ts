@@ -222,7 +222,10 @@ describe('machine script docker contract', () => {
     // the chown the box user could not read (or, for ~/workspace, write) its own
     // restored tree. Modes mirror ensure_dirs: ~/workspace 0755, private 0700.
     expect(boxProvisionSh).toContain('--restore')
-    expect(boxProvisionSh).toContain('tar xzf "${RESTORE_TAR}" -C "${home}"')
+    const restore = boxProvisionSh.split('\n').find((line) => line.includes('tar xzf'))!
+    expect(restore).toContain('tar xzf "${RESTORE_TAR}"')
+    expect(restore).toContain('--exclude=')
+    expect(restore).toContain('-C "${home}"')
     // Members are read from the tar itself (not hardcoded to .private) and
     // re-owned in a loop, so a squad ~/workspace is never left root-owned.
     expect(boxProvisionSh).toContain('tar tzf "${RESTORE_TAR}"')

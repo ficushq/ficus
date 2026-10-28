@@ -1,5 +1,5 @@
 {
-  "id": "e00315f4-b639-4935-8d74-81d0335d7b6a",
+  "id": "aef6216c-4fe3-43ef-af3a-ec5b761ee831",
   "prevId": "818bee59-e5a4-458b-987d-7a492c76e6b1",
   "version": "7",
   "dialect": "postgresql",
@@ -888,118 +888,6 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.agent_secret_exposures": {
-      "name": "agent_secret_exposures",
-      "schema": "",
-      "columns": {
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "squad_id": {
-          "name": "squad_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "secret_key": {
-          "name": "secret_key",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "agent_secret_exposures_agent_idx": {
-          "name": "agent_secret_exposures_agent_idx",
-          "columns": [
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "agent_secret_exposures_secret_key_idx": {
-          "name": "agent_secret_exposures_secret_key_idx",
-          "columns": [
-            {
-              "expression": "secret_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "agent_secret_exposures_agent_id_agents_id_fk": {
-          "name": "agent_secret_exposures_agent_id_agents_id_fk",
-          "tableFrom": "agent_secret_exposures",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_secret_exposures_squad_id_squads_id_fk": {
-          "name": "agent_secret_exposures_squad_id_squads_id_fk",
-          "tableFrom": "agent_secret_exposures",
-          "tableTo": "squads",
-          "columnsFrom": [
-            "squad_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "agent_secret_exposures_agent_id_secret_key_unique": {
-          "name": "agent_secret_exposures_agent_id_secret_key_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "agent_id",
-            "secret_key"
-          ]
-        }
-      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -6483,13 +6371,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "unfiltered": {
-          "name": "unfiltered",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "transport_key": {
           "name": "transport_key",
           "type": "text",
@@ -7088,63 +6969,6 @@
           "value": "\"github_trusted_authors\".\"account_type\" in ('User', 'Bot')"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.global_secret_exposures": {
-      "name": "global_secret_exposures",
-      "schema": "",
-      "columns": {
-        "secret_key": {
-          "name": "secret_key",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "global_secret_exposures_secret_key_idx": {
-          "name": "global_secret_exposures_secret_key_idx",
-          "columns": [
-            {
-              "expression": "secret_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "global_secret_exposures_secret_key_unique": {
-          "name": "global_secret_exposures_secret_key_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "secret_key"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.images": {
@@ -15726,6 +15550,92 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.sandbox_exposure_cleanup": {
+      "name": "sandbox_exposure_cleanup",
+      "schema": "",
+      "columns": {
+        "target_id": {
+          "name": "target_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_id": {
+          "name": "source_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "squad_id": {
+          "name": "squad_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_attempt_at": {
+          "name": "next_attempt_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "sandbox_exposure_cleanup_retry_idx": {
+          "name": "sandbox_exposure_cleanup_retry_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "next_attempt_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.sandbox_provision_recoveries": {
       "name": "sandbox_provision_recoveries",
       "schema": "",
@@ -18987,99 +18897,6 @@
             "source_squad_id",
             "target_squad_id",
             "relationship_type"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.squad_secret_exposures": {
-      "name": "squad_secret_exposures",
-      "schema": "",
-      "columns": {
-        "squad_id": {
-          "name": "squad_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "secret_key": {
-          "name": "secret_key",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "squad_secret_exposures_squad_idx": {
-          "name": "squad_secret_exposures_squad_idx",
-          "columns": [
-            {
-              "expression": "squad_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "squad_secret_exposures_secret_key_idx": {
-          "name": "squad_secret_exposures_secret_key_idx",
-          "columns": [
-            {
-              "expression": "secret_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "squad_secret_exposures_squad_id_squads_id_fk": {
-          "name": "squad_secret_exposures_squad_id_squads_id_fk",
-          "tableFrom": "squad_secret_exposures",
-          "tableTo": "squads",
-          "columnsFrom": [
-            "squad_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "squad_secret_exposures_squad_id_secret_key_unique": {
-          "name": "squad_secret_exposures_squad_id_secret_key_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "squad_id",
-            "secret_key"
           ]
         }
       },

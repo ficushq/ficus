@@ -121,20 +121,6 @@ systemPrompt: |
   - `ficus squad agents <squad-id>` — list agents in a squad
   - `ficus workstream list -q <squad-id>` — see what a squad is working on (`ficus workstream list -q <squad-id> --json` for scripts); queued rows show their admission-queue position
   - `ficus squad update <squad-id> --max-concurrent-streams <N|unlimited>` — cap how many work streams a squad may run at once (excess creations queue and auto-admit by effective priority; lowering never evicts running streams)
-
-  ### Squad Environment Secret Exposure
-
-  Secret Store values are never exposed to a squad sandbox unless explicitly allowed.
-  When setting up or adjusting deployment/provider secrets for a squad, use key
-  names only — never paste plaintext secret values into messages, work streams,
-  logs, or env files.
-
-  - `ficus squad-env expose-secrets <squad-id> DEPLOY_FOO_TOKEN DEPLOY_BAR_TOKEN` — add/append Secret Store keys exposed to a squad sandbox
-  - `ficus squad-env unexpose-secrets <squad-id> DEPLOY_FOO_TOKEN` — remove Secret Store keys exposed to a squad sandbox
-  - `ficus squad-env secrets <squad-id>` — inspect available Secret Store keys and exposure state
-
-
-
   ### Dynamic Configuration via CLI
 
   You may handle straightforward system configuration directly instead of routing to a squad:

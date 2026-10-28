@@ -331,6 +331,8 @@ export interface VmSandboxManagerDeps {
    *  as a bearer header on every request; undefined for legacy boxes whose row
    *  predates the token (their server does not enforce yet). */
   createClient(endpoint: string, authToken?: string): SandboxClient
+  /** Best-effort durable retirement repair on first contact, never a readiness gate. */
+  cleanupExposure?(sandboxId: string, client: SandboxClient): Promise<void>
   resolveGitHubIdentity(squadId?: string | null): Promise<{
     gitUserName?: string
     gitUserEmail?: string
@@ -505,6 +507,7 @@ function productionDeps(): VmSandboxManagerDeps {
     resolveBoxApiUrl: (machine) => resolveBoxApiUrlReal(machine),
     resolveBoxApiTransport: (machine) => resolveBoxApiTransportReal(machine),
     resolveMachine: (req) => resolvePlacement(req),
+    cleanupExposure: async (id, client) => (await import('../exposure-cleanup')).cleanupExposureOnContact(id, client),
     syncBoxFiles: (client, sandboxId, opts, box, bashFence, trackSetupWork) =>
       syncBoxFilesReal(client, sandboxId, opts, {
         box: { machineId: box.machineId, syncedHashes: box.syncedHashes },
@@ -929,6 +932,7 @@ export class VmSandboxManager implements ISandboxManager {
           },
         }
         try {
+          await this.deps.cleanupExposure?.(sandboxId, client)
           await timer.time('assets', () =>
             this.deps.syncBoxFiles(client, sandboxId, opts, box, bashFence, (operation) =>
               trackSandboxSetupWork(this, sandboxId, 'asset_reconcile', operation)
@@ -1771,6 +1775,7 @@ export class VmSandboxManager implements ISandboxManager {
     void this.deps.persistBoxActivity(sandboxId, this.deps.now()).catch((err) => {
       log.warn(`Failed to persist attach activity heartbeat for ${sandboxId}:`, err)
     })
+    await this.deps.cleanupExposure?.(sandboxId, client)
     return client
   }
 
@@ -1843,6 +1848,7 @@ export class VmSandboxManager implements ISandboxManager {
           ...diagnostic,
         })}`
       )
+      await this.deps.cleanupExposure?.(sandboxId, current)
       return current
     } catch {
       // Repair below; never replay the failed caller operation.
@@ -1944,11 +1950,13 @@ export class VmSandboxManager implements ISandboxManager {
       tracked.machineId = machine.id
       tracked.endpoint = `http://127.0.0.1:${localPort}`
       tracked.apiUrl = apiUrl
+      await this.deps.cleanupExposure?.(sandboxId, candidate)
       log.info(completionLine)
       return candidate
     }
     if (this.attachedClients.get(sandboxId) === failedClient) {
       this.attachedClients.set(sandboxId, candidate)
+      await this.deps.cleanupExposure?.(sandboxId, candidate)
       log.info(completionLine)
       return candidate
     }

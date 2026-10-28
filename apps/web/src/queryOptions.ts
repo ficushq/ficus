@@ -42,7 +42,6 @@ import {
   getAgentSandboxStatus,
   getAgentSandboxProcesses,
   listAgentScopes,
-  getAgentSecrets,
   getDeliverySuggestion,
 } from './api/agents'
 import { listAgentTypes } from './api/agentTypes'
@@ -239,11 +238,6 @@ export const queries = {
       queryOptions({
         queryKey: queryKeys.agents.scopes(agentId),
         queryFn: () => listAgentScopes(agentId),
-      }),
-    secrets: (agentId: string) =>
-      queryOptions({
-        queryKey: queryKeys.agents.secrets(agentId),
-        queryFn: () => getAgentSecrets(agentId),
       }),
     sandboxProcesses: (agentId: string) =>
       queryOptions({

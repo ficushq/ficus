@@ -5,7 +5,6 @@ import { AgentSession } from '../AgentSession'
 import { buildSlotPoolsPrompt, prompt } from '../../lib/prompts'
 import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
 import { buildWorkspacePrompt } from '../../lib/prompts/workspace-prompt'
-import { agentSecretsPromptForSandbox } from '../../lib/prompts/agent-secrets-prompt'
 import { createWebTools } from '../../tools/web-search'
 import { createBrowserTools } from '../../tools/browser'
 import { createSquadTodoTools } from '../../tools/squad-todo'
@@ -218,10 +217,6 @@ export class SubagentRunner extends AgentRunner {
         toolNames: inheritedToolNames,
       })
     )
-    // Subagents share the root's agent_<rootId> sandbox and inherit its per-agent secrets.
-    if (inheritedToolNames.includes('bash')) {
-      p.text(await agentSecretsPromptForSandbox(sandboxId, { sharesParentBox: Boolean(this.agent.parentAgentId) }))
-    }
     // Subagents get no squad context, but the shared rules tell them to claim
     // the squad's pools before protected work, so list them.
     if (squad) p.text(await buildSlotPoolsPrompt(squad.id))

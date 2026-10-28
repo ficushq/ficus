@@ -6,7 +6,7 @@ export const SQUAD_SETTINGS_KEYWORDS: Record<string, string> = {
   context:
     'instructions system prompt Squad Context per agent type instructions Type-Specific Context slot pools capacity claim queue usage guidance Slot Pools',
   workspace:
-    'git commit identity author name email Git Author Name Git Author Email host directory checkout path repository local folder runtime container restart pause Sandbox Lifecycle sleep dormant timeout Idle Timeout disk space size Ephemeral Storage Limit environment credentials secrets Exposed Secret Store Keys consultant idle dormant inactive cleanup Idle consultants',
+    'git commit identity author name email Git Author Name Git Author Email host directory checkout path repository local folder runtime container restart pause Sandbox Lifecycle sleep dormant timeout Idle Timeout disk space size Ephemeral Storage Limit environment credentials secrets consultant idle dormant inactive cleanup Idle consultants',
   memory:
     'semantic vector model Embedding Model code semantic file search Workspace Indexing glob indexed files Include Patterns glob ignore files Exclude Patterns git sync remote repo providers Memory Sync',
   work: 'workflows flow preset workflow default custom parallel Work capacity concurrency Max concurrent work streams blocked wait timeout idle auto park grace pull request direct merge approval Merge Policies',
@@ -141,12 +141,7 @@ export const SQUAD_SETTINGS_SEARCH: readonly SettingsSearchEntry[] = [
     label: 'Idle consultants',
     keywords: 'consultant idle dormant inactive cleanup',
   },
-  {
-    section: 'workspace',
-    id: 'exposed-secret-store-keys',
-    label: 'Exposed Secret Store Keys',
-    keywords: 'environment credentials secrets',
-  },
+
   {
     section: 'integrations',
     id: 'github-routing',

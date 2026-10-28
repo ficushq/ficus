@@ -1636,8 +1636,15 @@
     {
       "idx": 233,
       "version": "7",
-      "when": 1793169816687,
-      "tag": "0233_github_raw_feedback_freshness",
+      "when": 1793182771734,
+      "tag": "0233_retire_secret_exposure",
+      "breakpoints": true
+    },
+    {
+      "idx": 234,
+      "version": "7",
+      "when": 1793190662411,
+      "tag": "0234_github_raw_feedback_freshness",
       "breakpoints": true
     }
   ]

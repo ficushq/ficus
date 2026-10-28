@@ -104,3 +104,18 @@ describe('resolveToolchainStatus', () => {
     expect(await resolveToolchainStatus('squad_squad-1', null, deps(undefined))).toBeUndefined()
   })
 })
+
+describe('retired exposure cleanup status', () => {
+  it('shows pending/failed cleanup without gating execution readiness', () => {
+    for (const status of ['pending', 'failed', 'done'] as const) {
+      const cleanup = {
+        status,
+        reason: status === 'failed' ? 'Settings dir needs repair' : null,
+        updatedAt: new Date(0),
+      }
+      const payload = mergeSandboxStatus({ status: 'running', devboxReady: true }, undefined, cleanup)
+      expect(payload.exposureCleanup).toEqual(cleanup)
+      expect(payload.devboxReady).toBe(true)
+    }
+  })
+})

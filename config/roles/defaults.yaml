@@ -205,8 +205,8 @@ roles:
       - recommendations:update
       - squad-relationships:read
       - workspace:read # ficus squad workspace / ficus squad file
-      - env:read # ficus squad-env secrets
-      - env:write # ficus squad-env expose-secrets / unexpose-secrets
+      - env:read # ficus squad-env get
+      - env:write # ficus squad-env set / set-file
       - schedules:read
       - schedules:create
       - schedules:update
