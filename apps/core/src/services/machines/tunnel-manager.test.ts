@@ -1016,7 +1016,8 @@ describe('MachineTunnelManager', () => {
 
   it('invalidates cached endpoints and reports restart when the live socket master generation changes', async () => {
     const fake = new FakeSsh()
-    const mgr = manager(fake)
+    let nextPort = 62001
+    const mgr = manager(fake, { allocateLocalPort: async () => nextPort++ })
     const first = await mgr.addForward(makeMachine(), 50100)
     fake.masterPid++ // sibling replaced the master at the same continuously-live socket path
     const repaired = await mgr.refreshForwardDetailed(makeMachine(), 50100)
@@ -1109,7 +1110,8 @@ describe('MachineTunnelManager', () => {
 
   it('detects same reported PID with a replaced control socket inode as a new master', async () => {
     const fake = new FakeSsh()
-    const mgr = manager(fake)
+    let nextPort = 62001
+    const mgr = manager(fake, { allocateLocalPort: async () => nextPort++ })
     const first = await mgr.addForward(makeMachine(), 50100)
     fake.replaceSocketGeneration(join(controlDir, SOCKET_NAME))
     const repaired = await mgr.refreshForwardDetailed(makeMachine(), 50100)
@@ -1120,7 +1122,8 @@ describe('MachineTunnelManager', () => {
 
   it('rejects a hybrid PID/inode sample when the master changes after check', async () => {
     const fake = new FakeSsh()
-    const mgr = manager(fake)
+    let nextPort = 62001
+    const mgr = manager(fake, { allocateLocalPort: async () => nextPort++ })
     const first = await mgr.addForward(makeMachine(), 50100)
     let replaceAfterCheck = true
     const spawn = ((args: string[]) => {
