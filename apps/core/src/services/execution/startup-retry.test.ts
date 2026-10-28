@@ -1,3 +1,4 @@
+import { coalesceVmProvision } from '../sandbox/vm/provision-flight'
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
@@ -11,6 +12,7 @@ import {
   MACHINE_STARTUP_RETRY_DELAYS_MS,
   STARTUP_RETRY_DELAYS_MS,
   startupRetryCode,
+  startupRetryDelays,
   startupRetryNotice,
 } from './startup-retry'
 import { installBoxOnMachine, boxUnixUser } from '../machines/box-manager'
@@ -335,6 +337,62 @@ describe('durable startup retry', () => {
       expect(failed.startupRetryCount).toBe(BOX_PORT_BUSY_RETRY_DELAYS_MS.length)
       expect(failed.error).toContain(diagnostic)
       expect(runner).toHaveBeenCalledTimes(BOX_PORT_BUSY_RETRY_DELAYS_MS.length + 1)
+    } finally {
+      runner.mockRestore()
+    }
+  })
+
+  it.each([
+    ['BoxPortBusyError', 'box_port_busy'],
+    ['BoxLockTimeoutError', 'box_lock_timeout'],
+    ['BoxStopUnverifiedError', 'box_stop_unverified'],
+    ['MachineUnavailableError', 'machine_unreachable'],
+    ['MachineNotReadyError', 'machine_bootstrapping'],
+    ['MachineNotReadyError', 'machine_registered'],
+    ['BoxBashBusyError', 'box_bash_busy'],
+    ['SandboxReadinessPendingError', 'sandbox_readiness_pending'],
+  ])('requeues a shared %s failure with owner parity through the bounded execution budget', async (name, code) => {
+    const sandboxId = `shared-startup-${crypto.randomUUID()}`
+    const original = Object.assign(new Error('owner diagnostic'), {
+      name,
+      ...(code.startsWith('machine_') ? { machineStatus: code.slice(8) } : {}),
+    })
+    await expect(
+      coalesceVmProvision(
+        sandboxId,
+        async () => {
+          throw original
+        },
+        async () => ''
+      )
+    ).rejects.toBe(original)
+    const shared = await coalesceVmProvision(
+      sandboxId,
+      async () => 'unexpected provision',
+      async () => ''
+    ).catch((error) => error)
+    expect(startupRetryCode(shared)).toBe(startupRetryCode(original))
+    const runner = spyOn(runners, 'createRunner').mockRejectedValue(shared)
+    try {
+      let execution = await agent.queueExecution({ message: 'Keep follower request' })
+      for (const [index] of startupRetryDelays(code).entries()) {
+        expect(await execution.start()).toBe(true)
+        await execution.run()
+        execution = await Execution.mustFind(execution.id)
+        expect(execution.status).toBe('queued')
+        expect(execution.startupRetryCount).toBe(index + 1)
+        expect(execution.failureClass).toBeNull()
+        expect(execution.endedAt).toBeNull()
+        await db
+          .update(executions)
+          .set({ startupRetryAt: new Date(0) })
+          .where(eq(executions.id, execution.id))
+      }
+      expect(await execution.start()).toBe(true)
+      await execution.run()
+      await execution.reload()
+      expect(execution.status).toBe('failed')
+      expect(execution.startupRetryCount).toBe(startupRetryDelays(code).length)
     } finally {
       runner.mockRestore()
     }
