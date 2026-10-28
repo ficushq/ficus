@@ -489,7 +489,9 @@ for (const nullHash of [false, true]) {
     }
     try {
       await f.source.initialize()
-      writeFileSync(path, 'APP_TOKEN=synthetic-negative-cache-token')
+      // The scan clock is synthetic, not the filesystem clock. Force a size
+      // change so even coarse-timestamp filesystems expose a new signature.
+      writeFileSync(path, 'APP_TOKEN=synthetic-negative-cache-token\n# direct edit')
       f.tick()
       expect(f.source.entries()).toEqual([])
       const initialReads = read.mock.calls.length
