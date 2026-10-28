@@ -60,10 +60,14 @@ test('8MiB multipart -> Core staging -> sandbox atomic upload -> streaming downl
   const chunk = new Uint8Array(64 * 1024).fill(90)
   const expected = createHash('sha256')
   for (let i = 0; i < 128; i++) expected.update(chunk)
+  const closingPrefixes = Buffer.from('\r\n--fixture--Xstill-file\r\n--fixture--\rXstill-file')
+  expected.update(closingPrefixes)
+  const expectedBytes = 8 * 1024 ** 2 + closingPrefixes.byteLength
   const text = new TextEncoder()
   async function* multipart() {
     yield text.encode('--fixture\r\nContent-Disposition: form-data; name="file"; filename="large.bin"\r\n\r\n')
     for (let i = 0; i < 128; i++) yield chunk
+    yield closingPrefixes
     yield text.encode(
       '\r\n--fixture\r\nX-Padding: ' +
         'x'.repeat(82 * 1024) +
@@ -97,13 +101,13 @@ test('8MiB multipart -> Core staging -> sandbox atomic upload -> streaming downl
       bytes += part.byteLength
       actual.update(part)
     }
-    expect(bytes).toBe(8 * 1024 ** 2)
+    expect(bytes).toBe(expectedBytes)
     expect(actual.digest('hex')).toBe(expected.digest('hex'))
     const range = await fetch(`http://127.0.0.1:${core.port}/api/squads/fixture/workspace/download`, {
       headers: { range: 'bytes=1048576-1048639' },
     })
     expect(range.status).toBe(206)
-    expect(range.headers.get('content-range')).toBe(`bytes 1048576-1048639/${8 * 1024 ** 2}`)
+    expect(range.headers.get('content-range')).toBe(`bytes 1048576-1048639/${expectedBytes}`)
     expect(new Uint8Array(await range.arrayBuffer())).toEqual(chunk.subarray(0, 64))
     await mkdir(join(root, 'archive'))
     await writeFile(join(root, 'archive/note.txt'), 'archive contents')

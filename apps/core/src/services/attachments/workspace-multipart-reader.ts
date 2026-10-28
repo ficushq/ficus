@@ -76,21 +76,30 @@ class MultipartInput {
     this.pending = this.pending.subarray(size)
     return value
   }
+  /** A close is -- followed by EOF or CRLF, not just a -- prefix inside file bytes. */
+  private delimiterState(offset: number): 'more' | 'valid' | 'invalid' {
+    const remaining = this.pending.length - offset
+    if (remaining < 2) return this.ended ? 'invalid' : 'more'
+    if (this.pending[offset] === 13 && this.pending[offset + 1] === 10) return 'valid'
+    if (this.pending[offset] !== 45 || this.pending[offset + 1] !== 45) return 'invalid'
+    if (remaining === 2 && this.ended) return 'valid'
+    if (remaining < 4) return this.ended ? 'invalid' : 'more'
+    return this.pending[offset + 2] === 13 && this.pending[offset + 3] === 10 ? 'valid' : 'invalid'
+  }
   async until(marker: Buffer, emit: (bytes: Buffer) => void | Promise<void>, boundary = false): Promise<void> {
     for (;;) {
       const index = this.pending.indexOf(marker)
       if (index >= 0) {
-        if (boundary && this.pending.length < index + marker.length + 2 && !this.ended) {
+        const state = boundary ? this.delimiterState(index + marker.length) : 'valid'
+        if (state === 'more') {
           if (index) await emit(this.consume(index))
           await this.fill()
           continue
         }
-        if (boundary) {
-          const suffix = this.pending.subarray(index + marker.length, index + marker.length + 2)
-          if (!suffix.equals(Buffer.from('--')) && !suffix.equals(Buffer.from('\r\n'))) {
-            await emit(this.consume(index + marker.length))
-            continue
-          }
+        if (state === 'invalid') {
+          // Preserve the candidate verbatim while continuing to seek a genuine delimiter.
+          await emit(this.consume(index + marker.length))
+          continue
         }
         if (index) await emit(this.consume(index))
         this.consume(marker.length)

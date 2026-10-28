@@ -299,3 +299,105 @@ for (const count of [1000, 1001])
       await staged.cleanup()
     }
   })
+
+// Each case serially creates/reads/removes stages for every delimiter split, not just one parse.
+// Keep its file-backed differential matrix in one test with an explicit 15-second budget.
+for (const tail of ['--X', '--\rX', '--\n', '---', '-- ', '--\0'])
+  test(`false closing prefix remains file bytes: ${JSON.stringify(tail)}`, async () => {
+    const expected = Buffer.from('hello\r\n--test' + tail + 'still-file')
+    const before = Buffer.from('--test\r\nContent-Disposition: form-data; name="first"; filename="first.bin"\r\n\r\n')
+    const after = Buffer.from(
+      '\r\n--test\r\nContent-Disposition: form-data; name="later"; filename="later.txt"\r\n\r\nlater contents\r\n--test--\r\n'
+    )
+    const raw = Buffer.concat([before, expected, after])
+    const native = await new Response(raw, {
+      headers: { 'content-type': 'multipart/form-data; boundary=test' },
+    }).formData()
+    const previous = native.get('first') as unknown as File
+    expect(Buffer.from(await previous.arrayBuffer())).toEqual(expected)
+    expect([...native.keys()]).toEqual(['first', 'later'])
+    const candidateStart = before.length + 'hello'.length
+    const splits = [
+      -1,
+      0,
+      ...Array.from({ length: Buffer.byteLength('\r\n--test' + tail) + 2 }, (_, i) => candidateStart + i),
+    ]
+    for (const split of splits) {
+      let offset = 0
+      const request = new Request('http://localhost/', {
+        method: 'POST',
+        headers: { 'content-type': 'multipart/form-data; boundary=test' },
+        body:
+          split === -1
+            ? raw
+            : new ReadableStream({
+                pull(c) {
+                  if (offset === raw.length) {
+                    c.close()
+                    return
+                  }
+                  const end = split === 0 ? offset + 1 : offset === 0 ? split : raw.length
+                  c.enqueue(raw.subarray(offset, end))
+                  offset = end
+                },
+              }),
+      })
+      const staged = await stageWorkspaceMultipart(request)
+      try {
+        expect(staged.files.map((f) => f.filename)).toEqual(['first.bin', 'later.txt'])
+        expect(await readFile(staged.files[0]!.tempPath)).toEqual(expected)
+        expect(staged.files[0]!.bytes).toBe(expected.length)
+        expect(staged.files[0]!.sha256).toBe(createHash('sha256').update(expected).digest('hex'))
+        expect(await readFile(staged.files[1]!.tempPath, 'utf8')).toBe('later contents')
+      } finally {
+        await staged.cleanup()
+      }
+    }
+  }, 15000)
+
+for (const ending of ['', '\r\n', '\r\nepilogue'])
+  test(`valid closing delimiter ${JSON.stringify(ending)} survives one-byte reads`, async () => {
+    const raw = Buffer.from(
+      '--test\r\nContent-Disposition: form-data; name="file"; filename="f"\r\n\r\ncontent\r\n--test--' + ending
+    )
+    const previous = (
+      await new Response(raw, { headers: { 'content-type': 'multipart/form-data; boundary=test' } }).formData()
+    ).get('file') as unknown as File
+    let i = 0
+    const staged = await stageWorkspaceMultipart(
+      new Request('http://localhost/', {
+        method: 'POST',
+        headers: { 'content-type': 'multipart/form-data; boundary=test' },
+        body: new ReadableStream({
+          pull(c) {
+            if (i === raw.length) c.close()
+            else c.enqueue(raw.subarray(i, ++i))
+          },
+        }),
+      })
+    )
+    try {
+      expect(await readFile(staged.files[0]!.tempPath)).toEqual(Buffer.from(await previous.arrayBuffer()))
+    } finally {
+      await staged.cleanup()
+    }
+  })
+
+for (const ending of ['\r\n--test-', '\r\n--test--\r', '\r\n--test--X'])
+  test(`incomplete closing framing fails closed ${JSON.stringify(ending)}`, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'closing-cleanup-'))
+    const previous = process.env.TMPDIR
+    process.env.TMPDIR = root
+    try {
+      await expect(
+        stageWorkspaceMultipart(
+          multipart('--test\r\nContent-Disposition: form-data; name="file"; filename="f"\r\n\r\ncontent' + ending)
+        )
+      ).rejects.toMatchObject({ status: 400 })
+      expect(await readdir(root)).toEqual([])
+    } finally {
+      if (previous === undefined) delete process.env.TMPDIR
+      else process.env.TMPDIR = previous
+      await rm(root, { recursive: true, force: true })
+    }
+  })
