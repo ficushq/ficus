@@ -171,6 +171,6 @@ Other renderers keep the raw fallback until their args are complete. Before opti
 
 Tool call data comes from the Pi SDK via SSE streaming:
 
-- **`args`**: JSON-stringified tool parameters, truncated to 2000 chars
-- **`result`**: JSON-stringified Pi SDK result object, truncated to 2000 chars. Format: `{"content":[{"type":"text","text":"..."}],"details":{...}}` or a plain string
+- **`args`**: JSON-stringified tool parameters, complete (streamed as `tool_args_delta` chunks while the call runs; see above)
+- **`result`**: JSON-stringified Pi SDK result object, in full. Format: `{"content":[{"type":"text","text":"..."}],"details":{...}}` or a plain string. Core doesn't truncate it; stored secret values are redacted, and some tools cap their own output (the shell tools' output limit, `web_search`, browser page text), saying so in the text
 - **`isError`**: Boolean indicating whether the tool call errored

@@ -27,6 +27,11 @@ export interface ToolInlineActionModalProps {
   /** The chat the action came from; question and artifact targets open through its agent, memory notes its squad. */
   scope?: ToolInlineActionScope
   onClose: () => void
+  /**
+   * Called (just before `onClose`) when the target turns out to be out of reach and nothing would open,
+   * so the chat can say so instead of the click doing nothing.
+   */
+  onUnavailable?: () => void
   dependencies?: {
     AgentConversationComponent?: typeof AgentConversation
     MonitorDetailsModalComponent?: typeof MonitorDetailsModal
@@ -37,7 +42,14 @@ export interface ToolInlineActionModalProps {
  * Opens an inline action's target in place. Pull requests and local apps open in a new tab from the click
  * itself (see ChatView), so they never reach here.
  */
-export function ToolInlineActionModal({ action, scope, onClose, dependencies }: ToolInlineActionModalProps) {
+export function ToolInlineActionModal({
+  action,
+  scope,
+  onClose,
+  onUnavailable,
+  dependencies,
+}: ToolInlineActionModalProps) {
+  const unavailable = <Unavailable onUnavailable={onUnavailable} onClose={onClose} />
   switch (action.kind) {
     case 'monitor': {
       const MonitorModal = dependencies?.MonitorDetailsModalComponent ?? MonitorDetailsModal
@@ -56,20 +68,43 @@ export function ToolInlineActionModal({ action, scope, onClose, dependencies }: 
     case 'question':
       return scope?.agentId ? (
         <QuestionModal agentId={scope.agentId} questionId={action.questionId} onClose={onClose} />
-      ) : null
+      ) : (
+        unavailable
+      )
     case 'artifact':
       return scope?.agentId ? (
         <ArtifactModal agentId={scope.agentId} artifactId={action.artifactId} title={action.title} onClose={onClose} />
-      ) : null
+      ) : (
+        unavailable
+      )
     case 'memory_note': {
       const squadId = action.squadId ?? scope?.squadId
-      return squadId ? <MemoryNoteModal squadId={squadId} path={action.path} onClose={onClose} /> : null
+      return squadId ? <MemoryNoteModal squadId={squadId} path={action.path} onClose={onClose} /> : unavailable
     }
     case 'work_stream':
-      return <OpenWorkStream reference={action.workStreamRef} fallbackSquadId={scope?.squadId} onClose={onClose} />
+      return (
+        <OpenWorkStream
+          reference={action.workStreamRef}
+          fallbackSquadId={scope?.squadId}
+          onClose={onClose}
+          onUnavailable={onUnavailable}
+        />
+      )
     default:
       return null
   }
+}
+
+/** A target this chat can't open: reports it and closes, rendering nothing. */
+function Unavailable({ onUnavailable, onClose }: { onUnavailable?: () => void; onClose: () => void }) {
+  const done = useRef(false)
+  useEffect(() => {
+    if (done.current) return
+    done.current = true
+    onUnavailable?.()
+    onClose()
+  }, [onClose, onUnavailable])
+  return null
 }
 
 /** The question an agent asked, answerable in place while open and read-only once answered or dismissed. */
@@ -137,16 +172,19 @@ function MemoryNoteModal({ squadId, path, onClose }: { squadId: string; path: st
 
 /**
  * Navigates to a work stream's page in its own squad, resolved from its id or number. When it can't be
- * resolved, the chat's squad's work page shows the stream (or its own not-found state).
+ * resolved, the chat's squad's work page shows the stream (or its own not-found state); without a squad to
+ * fall back on, it reports the stream as unavailable.
  */
 function OpenWorkStream({
   reference,
   fallbackSquadId,
   onClose,
+  onUnavailable,
 }: {
   reference: string
   fallbackSquadId?: string
   onClose: () => void
+  onUnavailable?: () => void
 }) {
   const navigate = useNavigate()
   const { slugFor } = useSquadSlugs()
@@ -160,8 +198,19 @@ function OpenWorkStream({
     if (squadId) {
       const ref = workStream ? workStreamRef(workStream) : reference
       navigate(`/squads/${slugFor(squadId)}/work?ws=${encodeURIComponent(ref)}`)
+    } else {
+      onUnavailable?.()
     }
     onClose()
-  }, [fallbackSquadId, navigate, onClose, reference, slugFor, workStreamQuery.data, workStreamQuery.isPending])
+  }, [
+    fallbackSquadId,
+    navigate,
+    onClose,
+    onUnavailable,
+    reference,
+    slugFor,
+    workStreamQuery.data,
+    workStreamQuery.isPending,
+  ])
   return null
 }

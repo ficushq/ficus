@@ -41,9 +41,19 @@ import { useFullscreen } from '../hooks/useFullscreen'
 import { Modal } from './Modal'
 import { ChatFullscreenContext } from './ChatFullscreenContext'
 import { MobileChatOptionsSheet } from './MobileChatOptionsSheet'
-import { InlineActionRow, ToolInlineActionScopeProvider, ToolInlineActions } from './ToolInlineActions'
+import {
+  InlineActionNotice,
+  InlineActionRow,
+  ToolInlineActionScopeProvider,
+  ToolInlineActions,
+} from './ToolInlineActions'
 import { ToolInlineActionModal, type ToolInlineActionModalProps } from './ToolInlineActionModal'
-import { getBlocksInlineActions, getToolFirewallFlag, type ToolInlineAction } from '../lib/tool-inline-actions'
+import {
+  getBlocksInlineActions,
+  getToolFirewallFlag,
+  getToolInlineActionUnavailableMessage,
+  type ToolInlineAction,
+} from '../lib/tool-inline-actions'
 import { openExternalUrl, openLocalApp } from '../lib/openToolInlineTarget'
 import { ToolFirewallBadge } from './ToolFirewallBadge'
 import type { RenderItem, StreamingContentBlock } from '@ficus/client-react'
@@ -101,7 +111,8 @@ interface ChatViewDependencies {
   uploadImages?: typeof uploadImages
   ToolInlineActionModalComponent?: React.ComponentType<ToolInlineActionModalProps>
   openExternalUrl?: (url: string) => void
-  openLocalApp?: (localDeploymentId: string) => Promise<void>
+  /** Resolves to whether the app opened. */
+  openLocalApp?: (localDeploymentId: string) => Promise<boolean>
 }
 
 interface ChatViewProps {
@@ -512,15 +523,28 @@ export function ChatView({
   const [selectedToolAction, setSelectedToolAction] = useState<ToolInlineAction | null>(null)
   const openExternal = dependencies?.openExternalUrl ?? openExternalUrl
   const openApp = dependencies?.openLocalApp ?? openLocalApp
+  // A short notice for an action whose target is gone, so the click doesn't silently do nothing.
+  const [toolActionNotice, setToolActionNotice] = useState<{ id: number; message: string } | null>(null)
+  const showToolActionUnavailable = useCallback((kind: ToolInlineAction['kind']) => {
+    setToolActionNotice((current) => ({
+      id: (current?.id ?? 0) + 1,
+      message: getToolInlineActionUnavailableMessage(kind),
+    }))
+  }, [])
+  const dismissToolActionNotice = useCallback(() => setToolActionNotice(null), [])
   // Pull requests and local apps open in a new tab during the click (later, the browser would block it);
   // every other target opens in place.
   const openToolInlineAction = useCallback(
     (action: ToolInlineAction) => {
+      setToolActionNotice(null)
       if (action.kind === 'pull_request') openExternal(action.url)
-      else if (action.kind === 'local_app') void openApp(action.localDeploymentId)
-      else setSelectedToolAction(action)
+      else if (action.kind === 'local_app') {
+        void openApp(action.localDeploymentId).then((opened) => {
+          if (!opened) showToolActionUnavailable(action.kind)
+        })
+      } else setSelectedToolAction(action)
     },
-    [openApp, openExternal]
+    [openApp, openExternal, showToolActionUnavailable]
   )
   const toolActionScope = useMemo(() => ({ agentId, squadId }), [agentId, squadId])
   // Derived streaming state
@@ -2702,9 +2726,25 @@ export function ChatView({
   )
 
   // Wrap in fullscreen overlay when active
-  const actionModal = selectedToolAction ? (
-    <ActionModal action={selectedToolAction} scope={toolActionScope} onClose={() => setSelectedToolAction(null)} />
-  ) : null
+  const actionModal = (
+    <>
+      {selectedToolAction ? (
+        <ActionModal
+          action={selectedToolAction}
+          scope={toolActionScope}
+          onClose={() => setSelectedToolAction(null)}
+          onUnavailable={() => showToolActionUnavailable(selectedToolAction.kind)}
+        />
+      ) : null}
+      {toolActionNotice ? (
+        <InlineActionNotice
+          id={toolActionNotice.id}
+          message={toolActionNotice.message}
+          onDismiss={dismissToolActionNotice}
+        />
+      ) : null}
+    </>
+  )
 
   // Inline actions show only when the viewer can open them in this chat (see ToolInlineActionScopeProvider).
   if (isFullscreen) {

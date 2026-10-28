@@ -27,7 +27,9 @@ describe('openLocalApp', () => {
     const tab = fakeTab()
     const open = mock(() => tab as unknown as Window)
     const getLocalDeployment = mock(async () => deployment())
-    await openLocalApp('ld-1', { open, getLocalDeployment, getPublicAppUrl: async () => ({ url: null }) })
+    expect(await openLocalApp('ld-1', { open, getLocalDeployment, getPublicAppUrl: async () => ({ url: null }) })).toBe(
+      true
+    )
     expect(open).toHaveBeenCalledTimes(1)
     expect(open).toHaveBeenCalledWith('', '_blank')
     expect(tab.opener).toBeNull()
@@ -44,11 +46,12 @@ describe('openLocalApp', () => {
       },
     ]) {
       const tab = fakeTab()
-      await openLocalApp('ld-1', {
+      const opened = await openLocalApp('ld-1', {
         open: () => tab as unknown as Window,
         getLocalDeployment,
         getPublicAppUrl: async () => ({ url: null }),
       })
+      expect(opened).toBe(false)
       expect(tab.close).toHaveBeenCalledTimes(1)
       expect(tab.location.href).toBe('')
     }
