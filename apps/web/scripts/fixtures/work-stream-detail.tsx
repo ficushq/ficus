@@ -8,6 +8,13 @@ import { WorkStreamDetailModal } from '../../src/components/WorkStreamDetailModa
 import { WorkStreamGraph } from '../../src/components/WorkStreamGraph'
 import { queryKeys } from '../../src/queryKeys'
 import '../../src/index.css'
+import { applyResolvedTheme } from '../../src/theme/apply'
+import { FICUS_THEME } from '../../src/theme/registry'
+applyResolvedTheme(
+  document.documentElement,
+  FICUS_THEME,
+  new URLSearchParams(location.search).has('dark') ? 'dark' : 'light'
+)
 const token = 'unbrokentoken'.repeat(35)
 const path = 'apps/mobile/src/components/ConversationListPopup.tsx'
 const stream = {
@@ -67,7 +74,10 @@ const neighbor = (id: string, number: number, title: string, extra: Record<strin
 })
 const dependencyStreams = [
   neighbor('dep-ready', 438, 'Shared parser for import files'),
-  neighbor('dep-waiting', 440, 'Rate limit settings page', { status: 'active' }),
+  neighbor('dep-waiting', 881, 'Deploy provider plugins and unassigned credential migration', {
+    status: 'active',
+    derivedState: 'waiting_on_dependency',
+  }),
   neighbor('dep-done', 431, 'Importer error codes', { status: 'done' }),
 ]
 const dependencyEdges = [
@@ -94,8 +104,10 @@ if (new URLSearchParams(location.search).has('dependencies')) {
         workStreamId: stream.id,
         type: 'dependency',
         referenceId: 'dep-waiting',
-        message: null,
-        openedAt: new Date(Date.now() - 12 * 60_000).toISOString(),
+        message: new URLSearchParams(location.search).has('message')
+          ? 'Waiting for **review** of `work/' + 'providermigration'.repeat(12) + '`.'
+          : null,
+        openedAt: new Date(Date.now() - 16 * 60_000).toISOString(),
         closedAt: null,
       },
     ],
@@ -106,6 +118,7 @@ if (new URLSearchParams(location.search).has('dependencies')) {
 cache.setQueryData(queryKeys.squads.workStreamDetail(stream.id), stream)
 cache.setQueryData(queryKeys.workflows.run(stream.id), run)
 cache.setQueryData(queryKeys.squads.list(), [])
+cache.setQueryData(queryKeys.squads.basic(stream.squadId), { id: stream.squadId, name: 'Fixture squad' })
 cache.setQueryData(queryKeys.workStreamSubscription.detail(stream.id), {
   inherited: true,
   attention: { decisions: 'notify', progress: 'mute' },
