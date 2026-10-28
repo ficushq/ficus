@@ -11,6 +11,7 @@ export interface StatusStyle {
 }
 
 const SANDBOX_LABEL: Record<SandboxPresentationState, string> = {
+  idle: 'Idle',
   not_found: 'Not running',
   pending: 'Initializing',
   starting: 'Starting',
@@ -78,6 +79,7 @@ export function resolveSandboxStyle(status: SandboxStatus): { config: StatusStyl
   const isRunning = status.status === 'running'
   const presentationState = selectSandboxPresentationState(status)
   const config = styleForState(presentationState)
+  if (presentationState === 'idle') return { config, reason: ' — assets refresh on next start' }
   if (isRunning) {
     const safeReason = sandboxReasonDetail(toolchain?.status === 'failed' ? toolchain.reason : status.reason)
     return { config, reason: safeReason ? ` (${safeReason})` : '' }

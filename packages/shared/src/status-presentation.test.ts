@@ -132,6 +132,7 @@ describe('status role mappings', () => {
 
   test('maps every sandbox presentation state', () => {
     const cases: Array<[SandboxPresentationState, StatusRole]> = [
+      ['idle', 'neutral'],
       ['not_found', 'neutral'],
       ['pending', 'attention'],
       ['starting', 'attention'],
@@ -426,3 +427,31 @@ for (const row of CODE_HOST_DELIVERY_PRESENTATION_CASES)
       ).toBe(row.label)
     }
   })
+
+describe('deferred sandbox assets presentation', () => {
+  test('explicit deferred refresh is idle but old and active payloads retain their states', () => {
+    expect(selectSandboxPresentationState({ status: 'starting', assetsRefreshPending: true })).toBe('idle')
+    expect(selectSandboxPresentationState({ status: 'starting', readiness: 'pending' })).toBe('starting')
+    expect(selectSandboxPresentationState({ status: 'starting', readiness: 'reconciling' })).toBe('starting')
+    expect(selectSandboxPresentationState({ status: 'running', readiness: 'ready_degraded' })).toBe('degraded')
+    expect(selectSandboxPresentationState({ status: 'running', devboxReady: true })).toBe('running')
+    // Terminal status still wins over a stale decoration.
+    expect(selectSandboxPresentationState({ status: 'failed', assetsRefreshPending: true })).toBe('failed')
+  })
+})
+
+describe('deferred refresh with managed toolchain work', () => {
+  test.each([
+    ['installing', 'installing_packages'],
+    ['running_setup', 'running_setup'],
+    ['failed', 'failed'],
+  ] as const)('keeps explicit %s toolchain work visible', (toolchain, expected) => {
+    expect(
+      selectSandboxPresentationState({
+        status: 'starting',
+        assetsRefreshPending: true,
+        toolchain: { status: toolchain },
+      })
+    ).toBe(expected)
+  })
+})

@@ -63,7 +63,7 @@ export function SandboxStatusIndicator({ squadId }: SandboxStatusIndicatorProps)
     const label = provisioning ? toolchainStyle.config.label : chain.label
     const detail = provisioning ? toolchainStyle.reason.replace(/^ \(|\)$/g, '') : chain.detail
     const healthy = !provisioning && chain.healthy
-    const semanticTreatment = webStatus(healthy ? 'success' : 'attention')
+    const semanticTreatment = webStatus(chain.role ?? (healthy ? 'success' : 'attention'))
     const treatmentColor = provisioning ? toolchainStyle.config.color : semanticTreatment.textClass
     const treatmentDot = provisioning ? toolchainStyle.config.dotColor : semanticTreatment.markerClass
     const canRetryToolchain = status.toolchain?.status === 'failed' || status.toolchain?.status === 'pending'

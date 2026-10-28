@@ -161,6 +161,8 @@ export interface SandboxStatus {
   startedAt?: string
   devboxReady?: boolean
   readiness?: 'pending' | 'reconciling' | 'ready' | 'ready_degraded'
+  /** VM display-only idle refresh marker; does not grant execution readiness. */
+  assetsRefreshPending?: boolean
   degradation?: {
     reasons: Array<
       | 'devbox_unavailable'
