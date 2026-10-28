@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto'
+import { createLogger } from '../../../lib/infra/logger'
 import { eq } from 'drizzle-orm'
 import { db, integrationConnections, secrets, settings, type DbTx } from '../../../db'
 import { decrypt, encrypt, getEncryptionKey } from '../../secrets/crypto'
 import type { SecretStore } from '../../secrets/store'
 import { retiredDeploymentKeys } from '../../secrets/retired-deployment'
 import { deploymentProviders, type DeploymentProvider } from './plugins'
+
+const log = createLogger('deploy-credential-import')
 
 const markerFor = (provider: string) => `__integration-migration:deploy:${provider}`
 /**
@@ -56,24 +59,39 @@ export async function importLegacyDeploymentCredentials(
   store: Pick<SecretStore, 'refreshKey'>,
   environment: Readonly<Record<string, string | undefined>> = process.env
 ): Promise<void> {
+  if (!process.env.FICUS_ENCRYPTION_KEY) {
+    log.warn(
+      'Skipped legacy deployment credential import: no encryption key is configured; retry after configuring it.'
+    )
+    return
+  }
   const encryptionKey = getEncryptionKey()
   for (const provider of Object.keys(retiredDeploymentKeys) as DeploymentProvider[]) {
-    await db.transaction((tx) =>
-      migrateLegacyDeploymentProvider(tx, provider, () => environment[retiredDeploymentKeys[provider]], encryptionKey)
-    )
-    // Reconcile even on marker skips: the prior commit may have succeeded before
-    // acknowledgement/cache publication failed. Never rewrite an imported credential.
-    const [marker] = await db
-      .select()
-      .from(settings)
-      .where(eq(settings.key, markerFor(provider)))
-    if (marker && marker.value !== 'none') {
-      const [connection] = await db
+    try {
+      await db.transaction((tx) =>
+        migrateLegacyDeploymentProvider(tx, provider, () => environment[retiredDeploymentKeys[provider]], encryptionKey)
+      )
+      // Reconcile even on marker skips: the prior commit may have succeeded before
+      // acknowledgement/cache publication failed. Never rewrite an imported credential.
+      const [marker] = await db
         .select()
-        .from(integrationConnections)
-        .where(eq(integrationConnections.id, marker.value))
-      if (connection) await store.refreshKey(connection.credentialRef)
+        .from(settings)
+        .where(eq(settings.key, markerFor(provider)))
+      if (marker && marker.value !== 'none') {
+        const [connection] = await db
+          .select()
+          .from(integrationConnections)
+          .where(eq(integrationConnections.id, marker.value))
+        if (connection) await store.refreshKey(connection.credentialRef)
+      }
+      await store.refreshKey(retiredDeploymentKeys[provider])
+    } catch {
+      // Rollback preserves an undecryptable source and removes the pending marker.
+      // A post-commit failure instead retries reconciliation using its durable marker.
+      // Never log the error: driver/decryption exceptions may contain sensitive data.
+      log.warn(
+        `Legacy deployment credential import incomplete for ${provider}; retained migration state will be retried on startup. Check the encryption key and database.`
+      )
     }
-    await store.refreshKey(retiredDeploymentKeys[provider])
   }
 }

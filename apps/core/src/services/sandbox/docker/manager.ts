@@ -1505,9 +1505,13 @@ export class DockerSandboxManager implements ISandboxManager {
       // Re-inject the live Core URL so the CLI reaches the current Core even if the
       // container baked a now-stale dynamic port at creation (matches k8s behavior).
       const identityArgs: string[] = []
+      // Context is a selector, never authority. Light sandboxes carry their owner
+      // in state; shared squad sandbox IDs also support the legacy fallback.
+      const squadId = sandbox.squadId ?? getSquadIdFromSandbox(sandboxId)
       pushEnvArgs(identityArgs, {
         ...(ficusToken ? { FICUS_TOKEN: ficusToken } : {}),
         FICUS_API_URL: resolveDockerApiUrl(),
+        ...(squadId ? { FICUS_SQUAD_ID: squadId } : {}),
       })
       const execArgs = [
         'docker',

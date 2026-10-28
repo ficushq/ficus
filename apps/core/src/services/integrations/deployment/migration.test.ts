@@ -126,7 +126,7 @@ test('concurrent imports produce one connection and marker; post-commit refresh 
     throw new Error('synthetic-refresh-failure')
   }
   try {
-    await expect(importAll()).rejects.toThrow('synthetic-refresh-failure')
+    await expect(importAll()).resolves.toBeUndefined()
   } finally {
     store.refreshKey = refresh
   }
@@ -168,4 +168,64 @@ test('an empty stored tombstone wins over a host credential and is marked once w
   ).toMatchObject([{ value: 'none' }])
   expect(await db.select().from(secrets).where(eq(secrets.key, 'DEPLOY_NETLIFY_TOKEN'))).toEqual([])
   expect((await store.list()).some((entry) => providers.map(legacyKey).includes(entry.key))).toBe(false)
+})
+
+test('without an encryption key upgrade skips with a sanitized warning and no markers, then recovers', async () => {
+  const originalKey = process.env.FICUS_ENCRYPTION_KEY
+  const warnings: string[] = []
+  const warn = console.warn
+  console.warn = (...args) => {
+    warnings.push(args.join(' '))
+  }
+  try {
+    delete process.env.FICUS_ENCRYPTION_KEY
+    await expect(importAll({ DEPLOY_VERCEL_TOKEN: 'synthetic-no-key-source' })).resolves.toBeUndefined()
+    expect(
+      await db
+        .select()
+        .from(settings)
+        .where(inArray(settings.key, providers.map(marker)))
+    ).toEqual([])
+    expect(warnings.join(' ')).toContain('encryption key')
+    expect(warnings.join(' ')).not.toContain('synthetic-no-key-source')
+  } finally {
+    if (originalKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = originalKey
+    console.warn = warn
+  }
+  await importAll({ DEPLOY_VERCEL_TOKEN: 'synthetic-no-key-source' })
+  expect(store.get((await imported('vercel')).credentialRef)).toBe('synthetic-no-key-source')
+})
+
+test('undecryptable provider remains retryable without aborting startup or other providers', async () => {
+  const wrongKey = Buffer.from(getEncryptionKey())
+  wrongKey[0] = wrongKey[0]! ^ 255
+  const { encrypted, iv } = encrypt('synthetic-undecryptable', wrongKey)
+  await db.insert(secrets).values({ key: 'DEPLOY_CLOUDFLARE_TOKEN', encryptedValue: encrypted, iv })
+  const warnings: string[] = [],
+    warn = console.warn
+  console.warn = (...args) => {
+    warnings.push(args.join(' '))
+  }
+  try {
+    for (let attempt = 0; attempt < 2; attempt++)
+      await expect(importAll({ DEPLOY_NETLIFY_TOKEN: 'synthetic-healthy-provider' })).resolves.toBeUndefined()
+    expect(warnings.join(' ')).toContain('cloudflare')
+    expect(warnings.join(' ')).not.toContain('synthetic-undecryptable')
+    expect(
+      await db
+        .select()
+        .from(settings)
+        .where(eq(settings.key, marker('cloudflare')))
+    ).toEqual([])
+    expect((await db.select().from(secrets).where(eq(secrets.key, 'DEPLOY_CLOUDFLARE_TOKEN')))[0]?.encryptedValue).toBe(
+      encrypted
+    )
+    expect(store.get((await imported('netlify')).credentialRef)).toBe('synthetic-healthy-provider')
+  } finally {
+    console.warn = warn
+  }
+  await seed('DEPLOY_CLOUDFLARE_TOKEN', 'synthetic-recovered-provider')
+  await importAll()
+  expect(store.get((await imported('cloudflare')).credentialRef)).toBe('synthetic-recovered-provider')
 })
