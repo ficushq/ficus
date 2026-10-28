@@ -97,7 +97,7 @@ export const MEMBER_ADMIN_CODES = [
   'operation_failed',
 ] as const
 export const memberAdminReplySchema = z.union([
-  z.object({ ok: z.literal(true), result: z.unknown() }).strict(),
+  z.object({ ok: z.literal(true), result: z.unknown().optional() }).strict(),
   z.object({ ok: z.literal(false), code: z.enum(MEMBER_ADMIN_CODES) }).strict(),
 ])
 

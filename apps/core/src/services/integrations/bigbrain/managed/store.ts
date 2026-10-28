@@ -12,7 +12,7 @@ import {
   managedBigbrainHostReceiptSchema,
   managedBigbrainLimitsSchema,
   managedBigbrainOwnerSchema,
-  managedBigbrainReadHandoffSchema,
+  managedBigbrainReadHandoffObjectSchema,
   managedBigbrainVaultShortId,
   type ManagedBigbrainHostReceipt,
 } from '@ficus/shared/managed-bigbrain'
@@ -22,7 +22,7 @@ export type ManagedVault = typeof managedBigbrainVaults.$inferSelect
 export type ManagedVaultAction = 'create' | 'rename' | 'read-revoke' | 'read-reconnect' | 'delete'
 /** The imported host read handoff minus its token: identity/binding facts that are safe to
  * persist. The token itself is stored only in the credential store. */
-export const managedReadMaterialSchema = managedBigbrainReadHandoffSchema.innerType().omit({ token: true })
+export const managedReadMaterialSchema = managedBigbrainReadHandoffObjectSchema.omit({ token: true })
 export type ManagedReadMaterial = z.infer<typeof managedReadMaterialSchema>
 export type ManagedVaultStoreCode =
   | 'invalid_request'

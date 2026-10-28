@@ -71,7 +71,7 @@ const createSchema = z
   .object({
     provider: providerKeySchema,
     displayName: z.string().trim().min(1).max(200),
-    configuration: z.unknown(),
+    configuration: z.unknown().optional(),
     credential: z.string().min(1).max(16_384),
   })
   .strict()

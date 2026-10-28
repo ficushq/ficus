@@ -135,7 +135,7 @@ export function hasReservedGitHubAuthorityMetadata(value: unknown): boolean {
   )
 }
 
-export const squadMetadataSchema = z.record(z.unknown()).superRefine((metadata, ctx) => {
+export const squadMetadataSchema = z.record(z.string(), z.unknown()).superRefine((metadata, ctx) => {
   if (hasReservedGitHubAuthorityMetadata(metadata))
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Reserved GitHub authority metadata' })
   if (metadata.integrationRules !== undefined) {
@@ -237,7 +237,7 @@ export const createSquadRelationshipSchema = z.object({
   sourceSquadId: z.string().uuid(),
   targetSquadId: z.string().uuid(),
   relationshipType: squadRelationshipTypeSchema,
-  metadata: z.record(z.unknown()).optional().default({}),
+  metadata: z.record(z.string(), z.unknown()).optional().default({}),
 })
 
 // Work Stream schemas
@@ -278,9 +278,7 @@ export const workStreamWaitResolutionSchema = z.enum(['satisfied', 'answered', '
 export const workStreamPrioritySchema = z.enum(WORK_STREAM_PRIORITIES)
 
 const workStreamDependencyConditionSchema = z.enum(WORK_STREAM_DEPENDENCY_CONDITIONS, {
-  errorMap: () => ({
-    message: `Unknown dependency condition. Use one of: ${WORK_STREAM_DEPENDENCY_CONDITIONS.join(', ')}`,
-  }),
+  error: `Unknown dependency condition. Use one of: ${WORK_STREAM_DEPENDENCY_CONDITIONS.join(', ')}`,
 })
 /** A bare ID waits for `done`; the object form names the unlock condition. */
 export const workStreamDependencyInputSchema = z.union([
@@ -339,7 +337,7 @@ export const createWorkStreamSchema = z
     requestingUserId: z.string().uuid().nullable().optional(),
     dependsOn: z.array(workStreamDependencyInputSchema).optional().default([]),
     priority: workStreamPrioritySchema.optional(),
-    metadata: z.record(z.unknown()).optional().default({}),
+    metadata: z.record(z.string(), z.unknown()).optional().default({}),
     /** Create from an observed integration event: tracks its resource and reuses the stream that already handles it. */
     integrationEventId: z.string().uuid().optional(),
     completionMode: workStreamCompletionModeSchema.optional(),
@@ -368,7 +366,7 @@ export const updateWorkStreamSchema = z.object({
   dependsOn: z.array(workStreamDependencyInputSchema).optional(),
   handoffMessage: z.string().nullable().optional(),
   files: z.array(z.string()).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   nextSteps: z.string().min(1).optional(),
   completionMode: workStreamCompletionModeSchema.optional(),
   repository: z.string().min(1).optional(),
@@ -587,7 +585,7 @@ export const sendInboxMessageSchema = z.object({
   asSystem: z.boolean().optional(),
   subject: z.string().optional(),
   content: z.string().min(1),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   deliveryMode: z.enum(['steer', 'follow-up']).optional().default('steer'),
   // A dormant agent recipient is refused (409 AGENT_DORMANT) unless the sender explicitly asks to
   // wake it. System-authored sends (asSystem) keep their own wake policy and ignore this.

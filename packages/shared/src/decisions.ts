@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { keyedRecord } from './zod-helpers'
 
 /*
  * Decision models: fast models that answer typed questions about some input
@@ -20,11 +21,12 @@ export const decisionQuestionSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('choice'),
     instructions,
-    options: z
-      .record(decisionName, z.string().trim().max(1000))
-      .refine((options) => Object.keys(options).length >= 2 && Object.keys(options).length <= 64, {
+    options: keyedRecord(decisionName, z.string().trim().max(1000)).refine(
+      (options) => Object.keys(options).length >= 2 && Object.keys(options).length <= 64,
+      {
         message: 'A choice needs 2 to 64 options.',
-      }),
+      }
+    ),
   }),
   /** How much? Answers with a level, lowest first. */
   z.object({
@@ -40,11 +42,12 @@ export const decisionQuestionSchema = z.discriminatedUnion('type', [
 ])
 export type DecisionQuestion = z.infer<typeof decisionQuestionSchema>
 
-export const decisionQuestionsSchema = z
-  .record(decisionName, decisionQuestionSchema)
-  .refine((questions) => Object.keys(questions).length >= 1 && Object.keys(questions).length <= 64, {
+export const decisionQuestionsSchema = keyedRecord(decisionName, decisionQuestionSchema).refine(
+  (questions) => Object.keys(questions).length >= 1 && Object.keys(questions).length <= 64,
+  {
     message: 'Ask 1 to 64 questions.',
-  })
+  }
+)
 export type DecisionQuestions = z.infer<typeof decisionQuestionsSchema>
 
 /** Image types every image-reading decision model accepts (Clef takes no GIFs). */
@@ -75,7 +78,7 @@ export type DecisionImage = z.infer<typeof decisionImageSchema>
 
 export const decisionRequestSchema = z.object({
   /** What the questions are about: text, or JSON for structured input. Treated as data, never instructions. */
-  state: z.union([z.string(), z.record(z.unknown()), z.array(z.unknown())]),
+  state: z.union([z.string(), z.record(z.string(), z.unknown()), z.array(z.unknown())]),
   questions: decisionQuestionsSchema,
   /**
    * Images the questions are also about, treated as data like `state`. Only providers whose model
@@ -339,7 +342,10 @@ export const DECISION_PURPOSE_INFO: Record<
 /** An instance feature's switch: `auto` is on exactly when a decision model is set up for it. */
 export const DECISION_FEATURE_SWITCH_VALUES = ['auto', 'on', 'off'] as const
 export type DecisionFeatureSwitch = (typeof DECISION_FEATURE_SWITCH_VALUES)[number]
-export const decisionFeatureSwitchesSchema = z.record(z.enum(DECISION_PURPOSES), z.enum(DECISION_FEATURE_SWITCH_VALUES))
+export const decisionFeatureSwitchesSchema = z.partialRecord(
+  z.enum(DECISION_PURPOSES),
+  z.enum(DECISION_FEATURE_SWITCH_VALUES)
+)
 export type DecisionFeatureSwitches = z.infer<typeof decisionFeatureSwitchesSchema>
 
 /** A feature as Settings shows it. */
@@ -365,7 +371,7 @@ export const DECISION_TIMEOUT_MAX_MS = 30_000
 export const decisionRoutingSchema = z.object({
   /** For purposes without their own order. */
   default: z.array(z.string()).max(8).default([]),
-  purposes: z.record(z.enum(DECISION_PURPOSES), z.array(z.string()).max(8)).default({}),
+  purposes: z.partialRecord(z.enum(DECISION_PURPOSES), z.array(z.string()).max(8)).default({}),
   timeoutMs: z.number().int().min(250).max(DECISION_TIMEOUT_MAX_MS).default(DECISION_TIMEOUT_DEFAULT_MS),
 })
 export type DecisionRouting = z.infer<typeof decisionRoutingSchema>

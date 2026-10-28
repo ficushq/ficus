@@ -131,7 +131,7 @@ export const themeInsightsVariantSchema = z
   .object({
     resolvedAppearance: z.enum(['light', 'dark', 'constant']),
     keyColors: z
-      .record(z.enum(KEY_COLOR_NAMES), z.string().max(40))
+      .partialRecord(z.enum(KEY_COLOR_NAMES), z.string().max(40))
       .refine((colors) => Object.keys(colors).length <= KEY_COLOR_NAMES.length),
     contrastWarnings: z.array(z.string().max(200)).max(20),
   })

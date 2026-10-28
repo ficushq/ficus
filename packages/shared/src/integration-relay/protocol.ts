@@ -65,7 +65,7 @@ function relayDeliveryEnvelope<
       resourceId,
       resourceKey,
       eventType,
-      payload: z.record(z.unknown()),
+      payload: z.record(z.string(), z.unknown()),
     })
     .strict()
 }
