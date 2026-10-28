@@ -5,6 +5,7 @@ import { Squad } from '../entities/Squad'
 import { SquadMemoryGrant } from '../entities/SquadMemoryGrant'
 import { requireEntityPermission } from '../middleware/require-entity-permission'
 import { requireSquadPermission } from '../middleware/require-permission'
+import { routeParam } from '../lib/route-param'
 
 const sensitivitySchema = z.enum(['public', 'internal', 'restricted', 'confidential'])
 
@@ -82,7 +83,7 @@ export const grantsRouter = new Hono()
   .delete(
     '/grants/:id',
     requireEntityPermission('grants:write', async (c) => {
-      const grant = await SquadMemoryGrant.find(c.req.param('id'))
+      const grant = await SquadMemoryGrant.find(routeParam(c, 'id'))
       return grant?.sourceSquadId ?? null
     }),
     async (c) => {

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, mock } from 'bun:test'
+import { Window } from 'happy-dom'
 import { act } from 'react'
 import { appToFarmMessage, parseFarmToAppMessage } from '@ficus/shared/farm-embed'
 import { resetEmbedForTests } from '../embed/embed'
@@ -49,18 +50,25 @@ describe('AppSignIn', () => {
       exchanges++
       return new Response('{}', { status: 200 })
     }) as unknown as typeof fetch
-    const frame = document.createElement('iframe')
-    document.body.appendChild(frame)
-    await act(async () => {
-      window.dispatchEvent(
-        new window.MessageEvent('message', {
-          data: appToFarmMessage({ type: 'handoff', code: 'ficus_wh_theirs' }),
-          source: frame.contentWindow as never,
-        }) as unknown as Event
-      )
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
-    frame.remove()
+    // happy-dom 21 disables iframe loading by default. Opt in only for this
+    // isolated about:blank fixture; a null source would impersonate the app.
+    const frameHost = new Window({ settings: { enableIframePageLoading: true } })
+    try {
+      const frame = frameHost.document.createElement('iframe')
+      frameHost.document.body.appendChild(frame)
+      expect(frame.contentWindow).not.toBeNull()
+      await act(async () => {
+        window.dispatchEvent(
+          new window.MessageEvent('message', {
+            data: appToFarmMessage({ type: 'handoff', code: 'ficus_wh_theirs' }),
+            source: frame.contentWindow as never,
+          }) as unknown as Event
+        )
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+    } finally {
+      frameHost.close()
+    }
     expect(exchanges).toBe(0)
     expect(onSignedIn).not.toHaveBeenCalled()
   })

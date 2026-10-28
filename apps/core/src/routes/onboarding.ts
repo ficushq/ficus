@@ -16,6 +16,7 @@ import {
   setItemSkipped,
 } from '../services/onboarding/status'
 import { notifyOnboardingChanged } from '../services/onboarding/events'
+import { routeParam } from '../lib/route-param'
 
 const app = new Hono()
 
@@ -25,7 +26,7 @@ app.get('/status', requirePermission('settings:read'), async (c) => {
 })
 
 async function handleSkip(c: Context, skipped: boolean) {
-  const id = c.req.param('id')
+  const id = routeParam(c, 'id')
   if (!isOnboardingItemId(id)) {
     return c.json({ error: `Unknown onboarding item '${id}'` }, 400)
   }

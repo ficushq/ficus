@@ -2,7 +2,7 @@
 /**
  * Rebase the absolute HOME_DIR paths Core stored in its database, bundled as `dist/rebase-home.js`:
  *
- *   bun dist/rebase-home.js --from <old HOME> --to <new HOME> [--dry-run]
+ *   bun dist/rebase-home.js --from <old HOME> --to <new HOME> [--dry-run [--structured-only]] [--force]
  *
  * The host layout migration (scripts/setup/lib.sh, `host_layout` S7b) runs it from the TARGET
  * release while the services are stopped, right after it moved HOME, the way artifact_activate runs
@@ -14,8 +14,12 @@
  * - it rewrites every column in HOME_PATH_COLUMNS (db/home-path-columns.ts) in ONE transaction, in
  *   batches, and touches only the rows whose value changes (no `updated_at` is set);
  * - it is idempotent: a second run matches nothing and reports 0 for every column;
- * - it prints `REBASE_HOME <table>.<column>[.<json key>…]=<rows changed>` for every column, and
- *   exits 0 even when every count is 0;
+ * - it prints `REBASE_HOME <table>.<column>[.<json key>…]=<rows changed>` for every STRUCTURED
+ *   column (kind `text` or `jsonb-string`), then `REBASE_HOME_TEXT <column key>=<rows changed>` for
+ *   every free-text column (kind `jsonb-text`), and exits 0 even when every count is 0. A caller
+ *   that must prove no stored path is left under `--from` (switch-run-user.sh S4) fails on
+ *   `^REBASE_HOME [^=]+=[1-9]` and so ignores free-text mentions, which a live instance keeps
+ *   writing (an agent quoting the old HOME in a message) and which never name a file Core opens;
  * - it refuses (exit 3, nothing written) when a STRUCTURED column (kind `text` or `jsonb-string`:
  *   the value is a path) already holds a path under `--to` while a structured column still holds
  *   one under `--from`: rewriting would merge the two, and the reverse run could no longer tell
@@ -33,6 +37,12 @@
  * `REBASE_HOME_TARGET_TEXT <column key>=<n>` for every free-text column (reported, never refused
  * on). Callers that refuse on `^REBASE_HOME_TARGET [^=]+=[1-9]` (switch-run-user.sh P6) therefore
  * ignore free-text mentions.
+ *
+ * `--structured-only` (with `--dry-run` only: a real rebase always rewrites every column in its one
+ * transaction) skips the free-text columns altogether and prints only `REBASE_HOME` and
+ * `REBASE_HOME_TARGET` lines. Counting free text scans every row of `messages.metadata` (the
+ * largest table, detoasted and cast to text) three times, which is the cost of a full dry run; a
+ * check that cannot fail on free text has no reason to pay it.
  */
 import type postgres from 'postgres'
 import { is } from 'drizzle-orm'
@@ -66,6 +76,8 @@ export class RebaseHomeTargetPresentError extends Error {
 
 export interface RebaseHomeOptions {
   dryRun?: boolean
+  /** Dry run only: leave the free-text (`jsonb-text`) columns out — neither counted nor reported. */
+  structuredOnly?: boolean
   /** Rewrite even when the data already holds paths under `to` (see RebaseHomeTargetPresentError). */
   force?: boolean
   /** Rows examined per statement (default 500). */
@@ -77,7 +89,7 @@ export interface RebaseHomeOptions {
 }
 
 export interface RebaseHomeResult {
-  /** Rows changed (or, dry run, that would change) per column key. */
+  /** Rows changed (or, dry run, that would change) per column key (no free-text key when `structuredOnly`). */
   counts: Record<string, number>
   /** Rows already holding a path under `to`, per structured column key, before anything moved. */
   targetCounts: Record<string, number>
@@ -271,6 +283,12 @@ export async function rebaseHomePaths(
 ): Promise<RebaseHomeResult> {
   validateRebasePaths(from, to)
   const dryRun = opts.dryRun ?? false
+  const structuredOnly = opts.structuredOnly ?? false
+  if (structuredOnly && !dryRun)
+    throw new RebaseHomeUsageError('structuredOnly needs dryRun: a rebase rewrites every column in one transaction')
+  const columns = structuredOnly
+    ? HOME_PATH_COLUMNS.filter((entry) => !isFreeTextHomePathColumn(entry))
+    : HOME_PATH_COLUMNS
   const batchSize = opts.batchSize ?? DEFAULT_BATCH_SIZE
   if (!Number.isInteger(batchSize) || batchSize < 1)
     throw new RebaseHomeUsageError('batchSize must be a positive integer')
@@ -288,7 +306,7 @@ export async function rebaseHomePaths(
     let sources = 0
     let textTargets = 0
     let textSources = 0
-    for (const entry of HOME_PATH_COLUMNS) {
+    for (const entry of columns) {
       const key = homePathColumnKey(entry)
       const target = await countUnder(tx, entry, to)
       const source = await countUnder(tx, entry, from)
@@ -304,12 +322,14 @@ export async function rebaseHomePaths(
     }
     onProgress(
       `${sources} structured row(s) hold paths under ${from}, ${targets} under ${to}; ` +
-        `free text: ${textSources} row(s) mention ${from}, ${textTargets} mention ${to}`
+        (structuredOnly
+          ? 'free text not counted (structured only)'
+          : `free text: ${textSources} row(s) mention ${from}, ${textTargets} mention ${to}`)
     )
     if (!dryRun && !opts.force && targets > 0 && sources > 0)
       throw new RebaseHomeTargetPresentError(targetCounts, textTargetCounts, from, to)
     const counts: Record<string, number> = {}
-    for (const entry of HOME_PATH_COLUMNS) {
+    for (const entry of columns) {
       counts[homePathColumnKey(entry)] = await rebaseColumn(tx, entry, from, to, dryRun, batchSize, onProgress)
     }
     return { counts, targetCounts, textTargetCounts }
@@ -318,10 +338,17 @@ export async function rebaseHomePaths(
 }
 
 /** Parses the command line; throws RebaseHomeUsageError. */
-export function parseRebaseHomeArgs(argv: string[]): { from: string; to: string; dryRun: boolean; force: boolean } {
+export function parseRebaseHomeArgs(argv: string[]): {
+  from: string
+  to: string
+  dryRun: boolean
+  structuredOnly: boolean
+  force: boolean
+} {
   let from = ''
   let to = ''
   let dryRun = false
+  let structuredOnly = false
   let force = false
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!
@@ -330,6 +357,7 @@ export function parseRebaseHomeArgs(argv: string[]): { from: string; to: string;
         ? [arg.slice(0, arg.indexOf('=')), arg.slice(arg.indexOf('=') + 1)]
         : [arg, undefined]
     if (flag === '--dry-run' && inline === undefined) dryRun = true
+    else if (flag === '--structured-only' && inline === undefined) structuredOnly = true
     else if (flag === '--force' && inline === undefined) force = true
     else if (flag === '--from' || flag === '--to') {
       const value = inline ?? argv[++i]
@@ -339,7 +367,17 @@ export function parseRebaseHomeArgs(argv: string[]): { from: string; to: string;
     } else throw new RebaseHomeUsageError(`unknown argument: ${arg}`)
   }
   validateRebasePaths(from, to)
-  return { from, to, dryRun, force }
+  if (structuredOnly && !dryRun) throw new RebaseHomeUsageError('--structured-only needs --dry-run')
+  return { from, to, dryRun, structuredOnly, force }
+}
+
+const FREE_TEXT_KEYS = new Set(HOME_PATH_COLUMNS.filter(isFreeTextHomePathColumn).map(homePathColumnKey))
+
+/** `REBASE_HOME` lines for the structured columns, then `REBASE_HOME_TEXT` for free text. */
+function printCounts(counts: Record<string, number>): void {
+  const entries = Object.entries(counts)
+  for (const [key, count] of entries) if (!FREE_TEXT_KEYS.has(key)) console.log(`REBASE_HOME ${key}=${count}`)
+  for (const [key, count] of entries) if (FREE_TEXT_KEYS.has(key)) console.log(`REBASE_HOME_TEXT ${key}=${count}`)
 }
 
 /** `REBASE_HOME_TARGET` lines for the structured columns, then `REBASE_HOME_TARGET_TEXT` for free text. */
@@ -348,7 +386,8 @@ function printTargetCounts(targetCounts: Record<string, number>, textTargetCount
   for (const [key, count] of Object.entries(textTargetCounts)) console.log(`REBASE_HOME_TARGET_TEXT ${key}=${count}`)
 }
 
-const USAGE = 'usage: bun dist/rebase-home.js --from <old HOME_DIR> --to <new HOME_DIR> [--dry-run] [--force]'
+const USAGE =
+  'usage: bun dist/rebase-home.js --from <old HOME_DIR> --to <new HOME_DIR> [--dry-run [--structured-only]] [--force]'
 
 export async function main(argv: string[], env: Record<string, string | undefined> = process.env): Promise<number> {
   let args
@@ -373,6 +412,7 @@ export async function main(argv: string[], env: Record<string, string | undefine
     try {
       result = await rebaseHomePaths(sql, args.from, args.to, {
         dryRun: args.dryRun,
+        structuredOnly: args.structuredOnly,
         force: args.force,
         onProgress: (message) => console.error(`rebase-home: ${message}`),
       })
@@ -385,7 +425,7 @@ export async function main(argv: string[], env: Record<string, string | undefine
       throw error
     }
     const { counts, targetCounts, textTargetCounts } = result
-    for (const [key, count] of Object.entries(counts)) console.log(`REBASE_HOME ${key}=${count}`)
+    printCounts(counts)
     if (args.dryRun) printTargetCounts(targetCounts, textTargetCounts)
     const total = Object.values(counts).reduce((sum, count) => sum + count, 0)
     console.error(

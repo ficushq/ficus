@@ -297,11 +297,24 @@ backup is running. It then journals every step, backs up every file it
 rewrites, moves and re-owns HOME, rebases the stored paths, records
 `core.run_user` in the config, and re-renders the artifacts' group, the
 sudoers rules, the pooler, managed BigBrain's grants, the backup script and
-the units, restarts with the health wait and runs its success checks. Any
-failure after the services stop rolls everything back. A run killed midway
-leaves its journal: every other toolkit script refuses until the next
-`switch-run-user.sh` run settles it. The last line is
+the units, checks that no structured column still stores a path under the
+old HOME while the services are still stopped (free-text mentions, reported
+as `REBASE_HOME_TEXT`, do not count), restarts with the health wait and runs
+its other success checks. Any failure after the services stop rolls
+everything back, the pooler and every service it stopped included. A run
+killed midway leaves its journal: every other toolkit script refuses until
+the next `switch-run-user.sh` run settles it. The last line is
 `FICUS_RUN_USER=<user>` (`root` after `--revert` or a rolled-back failure).
+
+The run does not depend on the session that started it: it works in a
+session of its own and writes its progress and result under
+`/var/backups/ficus-host-migrate/run-user-switch-runs/` (root 0700), while the
+invocation you started streams the progress and exits with its code. If the
+ssh session drops, the switch (or its rollback) still finishes and releases
+the host lock; the run's `<run>.out` then ends with its trailer and
+`FICUS_RUN_USER_SWITCH_EXIT=<code>`. A second run started meanwhile waits for
+the lock. Ctrl-C (INT/TERM) on the attached invocation still aborts and rolls
+back; a rollback, once started, ignores HUP, INT and TERM.
 The plan, with every check, is
 `docs/plans/2026-10-26-hosted-non-root-audit.md`.
 

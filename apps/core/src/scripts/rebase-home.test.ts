@@ -265,6 +265,39 @@ describe('rebaseHomePaths', () => {
     expect(await snapshot()).toEqual(before)
   })
 
+  it('--dry-run --structured-only counts the structured columns only, never touching the free text', async () => {
+    const before = await snapshot()
+    const statements: string[] = []
+    const recording = {
+      begin: (mode: string, callback: (tx: postgres.TransactionSql) => Promise<unknown>) =>
+        sql.begin(mode, (tx) =>
+          callback(
+            new Proxy(tx, {
+              get(target, property) {
+                if (property !== 'unsafe') return Reflect.get(target, property)
+                return (...args: Parameters<postgres.TransactionSql['unsafe']>) => {
+                  statements.push(String(args[0]))
+                  return target.unsafe(...args)
+                }
+              },
+            })
+          )
+        ),
+    } as unknown as postgres.Sql
+    const result = await rebaseWithTargets(recording, OLD, NEW, { dryRun: true, structuredOnly: true })
+    const structured = Object.fromEntries(
+      Object.entries(expectedCounts()).filter(([key]) => key !== 'messages.metadata' && key !== 'work_streams.files')
+    )
+    expect(result.counts).toEqual(structured)
+    expect(result.textTargetCounts).toEqual({})
+    // No statement reads a free-text column: the cost of a full dry run is not paid.
+    expect(statements.some((statement) => /"messages"|"files"/.test(statement))).toBe(false)
+    expect(await snapshot()).toEqual(before)
+    // Only a dry run may leave columns out: a rebase rewrites every column in its one transaction.
+    await expect(rebaseWithTargets(sql, OLD, NEW, { structuredOnly: true })).rejects.toThrow(RebaseHomeUsageError)
+    expect(await snapshot()).toEqual(before)
+  })
+
   it('walks the rows in batches with the same result', async () => {
     const counts = await rebaseHomePaths(sql, OLD, NEW, { batchSize: 1 })
     expect(counts).toEqual(expectedCounts())
@@ -437,14 +470,19 @@ describe('rebase-home arguments', () => {
       from: OLD,
       to: NEW,
       dryRun: false,
+      structuredOnly: false,
       force: false,
     })
     expect(parseRebaseHomeArgs([`--from=${OLD}`, `--to=${NEW}`, '--dry-run'])).toEqual({
       from: OLD,
       to: NEW,
       dryRun: true,
+      structuredOnly: false,
       force: false,
     })
+    expect(parseRebaseHomeArgs(['--from', OLD, '--to', NEW, '--dry-run', '--structured-only']).structuredOnly).toBe(
+      true
+    )
     expect(parseRebaseHomeArgs(['--from', OLD, '--to', NEW, '--force']).force).toBe(true)
   })
 
@@ -464,6 +502,8 @@ describe('rebase-home arguments', () => {
     refused(['--from', `${ROOT}/h/"q`, '--to', NEW])
     refused(['--from', `${ROOT}/h/back\\slash`, '--to', NEW])
     refused(['--from', OLD, '--to', NEW, '--force=yes'])
+    refused(['--from', OLD, '--to', NEW, '--structured-only']) // a rebase never leaves columns out
+    refused(['--from', OLD, '--to', NEW, '--dry-run', '--structured-only=yes'])
     expect(() => validateRebasePaths(OLD, `${ROOT}/h/.new\n`)).toThrow(RebaseHomeUsageError)
   })
 })

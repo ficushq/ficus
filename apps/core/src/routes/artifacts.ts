@@ -14,6 +14,7 @@ import { requirePermission, requireEntityPermission } from '../middleware'
 import { getAccessibleSquadIds, hasPermission } from '../services/rbac'
 import type { Identity } from '../services/rbac'
 import type { Context } from 'hono'
+import { routeParam } from '../lib/route-param'
 
 type ArtifactVoiceRequestService = typeof artifactVoiceRequestService
 
@@ -84,7 +85,7 @@ const requestArtifactSchema = z
  * - The agent has no squad (system-level/artifact-builder agent with no squad).
  */
 async function artifactAgentSquadId(c: Context): Promise<string | null> {
-  const agentId = c.req.param('agentId')
+  const agentId = routeParam(c, 'agentId')
   const agent = await Agent.find(agentId)
   return agent?.squadId ?? null
 }

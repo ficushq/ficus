@@ -71,6 +71,7 @@ import { ChatIdempotencyConflictError } from '../services/chat/consultant-idempo
 
 import { isGrantablePermission } from '../services/rbac/grantable'
 import { wsManager } from '../services/ws/manager'
+import { routeParam } from '../lib/route-param'
 
 const log = createLogger('routes:agents')
 const IMAGE_UNSUPPORTED_ERROR = 'This model does not support image input. Use a vision-capable model.'
@@ -101,7 +102,7 @@ async function agentOwnerUserId(agentId: string): Promise<string | null> {
  * shares the squad box, whose processes are managed through the squad.
  */
 async function ownAgentSandbox(c: Context, run: (sandboxId: string) => Promise<unknown>): Promise<Response> {
-  const agent = await Agent.find(c.req.param('id'))
+  const agent = await Agent.find(routeParam(c, 'id'))
   if (!agent) return c.json({ error: 'Agent not found' }, 404)
   const sandboxId = await agent.getSandboxId()
   if (sandboxId !== agent.getAgentWorkspaceSandboxId()) {
@@ -144,8 +145,8 @@ async function filterVisibleAgents(identity: Identity, agentList: Agent[]): Prom
 
 const requireAgentReadPermission = requireEntityPermission(
   'agents:read',
-  async (c) => agentSquadId(c.req.param('id')),
-  { loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')) }
+  async (c) => agentSquadId(routeParam(c, 'id')),
+  { loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')) }
 )
 
 const grantScopeSchema = z.object({
@@ -404,8 +405,8 @@ export const agentsRouter = new Hono()
   // PATCH /api/agents/:id — update agent
   .patch(
     '/:id',
-    requireEntityPermission('agents:update', async (c) => agentSquadId(c.req.param('id')), {
-      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    requireEntityPermission('agents:update', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) => {
       const agent = await Agent.find(c.req.param('id'))
@@ -502,7 +503,7 @@ export const agentsRouter = new Hono()
   // DELETE /api/agents/:id — delete agent (with safety checks)
   .delete(
     '/:id',
-    requireAgentResourcePermission('agents:delete', (c) => Agent.find(c.req.param('id'))),
+    requireAgentResourcePermission('agents:delete', (c) => Agent.find(routeParam(c, 'id'))),
     async (c) => {
       const agentId = c.req.param('id')
       const agent = await Agent.find(agentId)
@@ -648,8 +649,8 @@ export const agentsRouter = new Hono()
   // POST /api/agents/:id/message — send message to agent
   .post(
     '/:id/message',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(c.req.param('id')), {
-      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) => {
       const agent = await Agent.find(c.req.param('id'))
@@ -746,8 +747,8 @@ export const agentsRouter = new Hono()
   // POST /api/agents/:id/continue — resume a single agent halted by a provider/rate-limit error.
   .post(
     '/:id/continue',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(c.req.param('id')), {
-      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) => {
       const agent = await Agent.find(c.req.param('id'))
@@ -766,24 +767,24 @@ export const agentsRouter = new Hono()
   // POST /api/agents/:id/pause — removed; compatibility shim for one release (still guarded)
   .post(
     '/:id/pause',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(c.req.param('id')), {
-      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     (c) => c.json({ error: 'pause is no longer supported; use stop and follow up with a normal message' }, 410)
   )
   // POST /api/agents/:id/resume — removed; compatibility shim for one release (still guarded)
   .post(
     '/:id/resume',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(c.req.param('id')), {
-      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     (c) => c.json({ error: 'resume is no longer supported; send a normal message to continue' }, 410)
   )
   // POST /api/agents/:id/stop — stop active execution
   .post(
     '/:id/stop',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(c.req.param('id')), {
-      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) => {
       const agent = await Agent.find(c.req.param('id'))
@@ -801,8 +802,8 @@ export const agentsRouter = new Hono()
   // POST /api/agents/:id/force-stop — forcibly terminate stuck execution
   .post(
     '/:id/force-stop',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(c.req.param('id')), {
-      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) => {
       const agent = await Agent.find(c.req.param('id'))
@@ -874,8 +875,8 @@ export const agentsRouter = new Hono()
   // POST /api/agents/:id/clear-queue — clear all pending steer/follow-up messages
   .post(
     '/:id/clear-queue',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(c.req.param('id')), {
-      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) => {
       const agent = await Agent.find(c.req.param('id'))
@@ -908,8 +909,8 @@ export const agentsRouter = new Hono()
   // POST /api/agents/:id/compact — trigger manual compaction (idle agents only)
   .post(
     '/:id/compact',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(c.req.param('id')), {
-      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) => {
       const agent = await Agent.find(c.req.param('id'))
@@ -928,8 +929,8 @@ export const agentsRouter = new Hono()
   // POST /api/agents/:id/reset — reset session history (idle agents only)
   .post(
     '/:id/reset',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(c.req.param('id')), {
-      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) => {
       const agent = await Agent.find(c.req.param('id'))
@@ -946,8 +947,8 @@ export const agentsRouter = new Hono()
   // POST /api/agents/:id/abort-tool — abort currently running bash command
   .post(
     '/:id/abort-tool',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(c.req.param('id')), {
-      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) => {
       const agent = await Agent.find(c.req.param('id'))
@@ -965,8 +966,8 @@ export const agentsRouter = new Hono()
   /** @deprecated POST /api/agents/:id/steer — use /message with deliveryMode: 'steer'. */
   .post(
     '/:id/steer',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(c.req.param('id')), {
-      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) => {
       const agent = await Agent.find(c.req.param('id'))
@@ -1003,8 +1004,8 @@ export const agentsRouter = new Hono()
   /** @deprecated POST /api/agents/:id/follow-up — use /message with deliveryMode: 'follow-up'. */
   .post(
     '/:id/follow-up',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(c.req.param('id')), {
-      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) => {
       const agent = await Agent.find(c.req.param('id'))
@@ -1131,8 +1132,8 @@ export const agentsRouter = new Hono()
   // POST /api/agents/:id/sandbox/stop - Stop this agent's individual sandbox
   .post(
     '/:id/sandbox/stop',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(c.req.param('id')), {
-      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) => {
       const agent = await Agent.find(c.req.param('id'))
@@ -1162,15 +1163,15 @@ export const agentsRouter = new Hono()
   // processes are managed through the squad.
   .get(
     '/:id/sandbox/processes',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(c.req.param('id')), {
-      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) => ownAgentSandbox(c, (sandboxId) => listSandboxProcesses(sandboxId))
   )
   .post(
     '/:id/sandbox/processes/:pid/signal',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(c.req.param('id')), {
-      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) =>
       ownAgentSandbox(c, async (sandboxId) => {
@@ -1181,8 +1182,8 @@ export const agentsRouter = new Hono()
   )
   .post(
     '/:id/sandbox/containers/:containerId/stop',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(c.req.param('id')), {
-      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) =>
       ownAgentSandbox(c, (sandboxId) =>
@@ -1192,8 +1193,8 @@ export const agentsRouter = new Hono()
   // POST /api/agents/:id/sandbox/restart - Stop and re-provision this agent's sandbox
   .post(
     '/:id/sandbox/restart',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(c.req.param('id')), {
-      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) => {
       const agent = await Agent.find(c.req.param('id'))

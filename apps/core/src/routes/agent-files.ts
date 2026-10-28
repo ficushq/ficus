@@ -13,6 +13,7 @@ import { getAgentPrivateStoragePath } from '../services/sandbox/ensure'
 import { ensureAgentSandbox } from '../services/sandbox/agent-warmup'
 import { getSandboxManager, isVmRuntime } from '../services/sandbox'
 import type { VmSandboxManager } from '../services/sandbox/vm/manager'
+import { routeParam } from '../lib/route-param'
 
 async function agentSquadId(id: string) {
   return (await Agent.find(id))?.squadId ?? null
@@ -20,11 +21,11 @@ async function agentSquadId(id: string) {
 async function agentOwnerUserId(id: string) {
   return (await Agent.find(id))?.ownerUserId ?? null
 }
-const sendPermission = requireEntityPermission('chat:send', (c) => agentSquadId(c.req.param('agentId')), {
-  loadOwnerUserId: (c) => agentOwnerUserId(c.req.param('agentId')),
+const sendPermission = requireEntityPermission('chat:send', (c) => agentSquadId(routeParam(c, 'agentId')), {
+  loadOwnerUserId: (c) => agentOwnerUserId(routeParam(c, 'agentId')),
 })
-const readPermission = requireEntityPermission('agents:read', (c) => agentSquadId(c.req.param('agentId')), {
-  loadOwnerUserId: (c) => agentOwnerUserId(c.req.param('agentId')),
+const readPermission = requireEntityPermission('agents:read', (c) => agentSquadId(routeParam(c, 'agentId')), {
+  loadOwnerUserId: (c) => agentOwnerUserId(routeParam(c, 'agentId')),
 })
 
 async function deleteMaterializedForTarget(target: Agent, attachment: AgentFileAttachment): Promise<void> {

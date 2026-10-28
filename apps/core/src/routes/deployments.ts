@@ -42,6 +42,7 @@ import {
   LocalDeploymentPortReservedError,
   LocalDeploymentPortUnavailableError,
 } from '../services/deploy/local-deployment-ports'
+import { routeParam } from '../lib/route-param'
 
 const AMBIGUOUS_LOCAL_DEPLOYMENT_LINK_ERROR = 'This app link is no longer unique — get a fresh URL.'
 
@@ -183,7 +184,7 @@ export const deploymentsRouter = new Hono()
 
   .get(
     '/deployments/:deploymentId',
-    requireEntityPermission('deployments:read', (c) => appDeploymentSquadId(c.req.param('deploymentId'))),
+    requireEntityPermission('deployments:read', (c) => appDeploymentSquadId(routeParam(c, 'deploymentId'))),
     async (c) => {
       const deployment = await findAppDeployment(c.req.param('deploymentId'))
       if (!deployment) return c.json({ error: 'Deployment not found' }, 404)
@@ -231,7 +232,7 @@ export const deploymentsRouter = new Hono()
   )
   .delete(
     '/deployments/:deploymentId',
-    requireEntityPermission('deployments:delete', (c) => appDeploymentSquadId(c.req.param('deploymentId'))),
+    requireEntityPermission('deployments:delete', (c) => appDeploymentSquadId(routeParam(c, 'deploymentId'))),
     async (c) => {
       const deploymentId = await findAppDeploymentId(c.req.param('deploymentId'))
       if (!deploymentId) return c.json({ error: 'Deployment not found' }, 404)
@@ -246,7 +247,7 @@ export const deploymentsRouter = new Hono()
   )
   .patch(
     '/deployments/:deploymentId',
-    requireEntityPermission('deployments:write', (c) => appDeploymentSquadId(c.req.param('deploymentId'))),
+    requireEntityPermission('deployments:write', (c) => appDeploymentSquadId(routeParam(c, 'deploymentId'))),
     zValidator('json', updateDeploymentSchema),
     async (c) => {
       const deploymentId = await findAppDeploymentId(c.req.param('deploymentId'))
@@ -363,7 +364,7 @@ export const deploymentsRouter = new Hono()
   })
   .get(
     '/local-deployments/:localDeploymentId',
-    requireEntityPermission('deployments:read', (c) => localDeploymentSquadId(c.req.param('localDeploymentId'))),
+    requireEntityPermission('deployments:read', (c) => localDeploymentSquadId(routeParam(c, 'localDeploymentId'))),
     async (c) => {
       const localDeployment = await getLocalDeployment(c.req.param('localDeploymentId'))
       if (!localDeployment) return c.json({ error: 'Local deployment not found' }, 404)
@@ -372,7 +373,7 @@ export const deploymentsRouter = new Hono()
   )
   .patch(
     '/local-deployments/:localDeploymentId',
-    requireEntityPermission('deployments:write', (c) => localDeploymentSquadId(c.req.param('localDeploymentId'))),
+    requireEntityPermission('deployments:write', (c) => localDeploymentSquadId(routeParam(c, 'localDeploymentId'))),
     zValidator('json', updateLocalDeploymentSchema),
     async (c) => {
       const localDeployment = await getLocalDeployment(c.req.param('localDeploymentId'))
@@ -392,7 +393,7 @@ export const deploymentsRouter = new Hono()
   )
   .get(
     '/local-deployments/:localDeploymentId/logs',
-    requireEntityPermission('deployments:read', (c) => localDeploymentSquadId(c.req.param('localDeploymentId'))),
+    requireEntityPermission('deployments:read', (c) => localDeploymentSquadId(routeParam(c, 'localDeploymentId'))),
     async (c) => {
       const localDeployment = await getLocalDeployment(c.req.param('localDeploymentId'))
       if (!localDeployment) return c.json({ error: 'Local deployment not found' }, 404)
@@ -425,7 +426,7 @@ export const deploymentsRouter = new Hono()
   )
   .get(
     '/local-deployments/:localDeploymentId/logs/stream',
-    requireEntityPermission('deployments:read', (c) => localDeploymentSquadId(c.req.param('localDeploymentId'))),
+    requireEntityPermission('deployments:read', (c) => localDeploymentSquadId(routeParam(c, 'localDeploymentId'))),
     async (c) => {
       const localDeployment = await getLocalDeployment(c.req.param('localDeploymentId'))
       if (!localDeployment) return c.json({ error: 'Local deployment not found' }, 404)
@@ -494,7 +495,7 @@ export const deploymentsRouter = new Hono()
   )
   .post(
     '/local-deployments/:localDeploymentId/restart',
-    requireEntityPermission('deployments:write', (c) => localDeploymentSquadId(c.req.param('localDeploymentId'))),
+    requireEntityPermission('deployments:write', (c) => localDeploymentSquadId(routeParam(c, 'localDeploymentId'))),
     async (c) => {
       const localDeployment = await getLocalDeployment(c.req.param('localDeploymentId'))
       if (!localDeployment) return c.json({ error: 'Local deployment not found' }, 404)
@@ -513,7 +514,7 @@ export const deploymentsRouter = new Hono()
   )
   .delete(
     '/local-deployments/:localDeploymentId',
-    requireEntityPermission('deployments:delete', (c) => localDeploymentSquadId(c.req.param('localDeploymentId'))),
+    requireEntityPermission('deployments:delete', (c) => localDeploymentSquadId(routeParam(c, 'localDeploymentId'))),
     async (c) => {
       const localDeployment = await getLocalDeployment(c.req.param('localDeploymentId'))
       if (!localDeployment) return c.json({ error: 'Local deployment not found' }, 404)
@@ -542,7 +543,7 @@ export const deploymentsRouter = new Hono()
   )
   .post(
     '/local-deployments/:localDeploymentId/stop',
-    requireEntityPermission('deployments:write', (c) => localDeploymentSquadId(c.req.param('localDeploymentId'))),
+    requireEntityPermission('deployments:write', (c) => localDeploymentSquadId(routeParam(c, 'localDeploymentId'))),
     async (c) => {
       const localDeployment = await getLocalDeployment(c.req.param('localDeploymentId'))
       if (!localDeployment) return c.json({ error: 'Local deployment not found' }, 404)

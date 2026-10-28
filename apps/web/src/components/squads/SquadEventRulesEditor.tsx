@@ -1,10 +1,11 @@
 import { EventRulePredicates } from './EventRulePredicates'
 import { EventRulePreview } from './EventRulePreview'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { SquadEventRule } from '@ficus/shared'
+import { effectiveSquadEventRules, type SquadEventRule } from '@ficus/shared'
 import { integrationQueries } from '../../queryOptions'
 import { WorkflowPicker } from './WorkflowPicker'
+import { ConfirmButton } from '../ConfirmButton'
 
 export function SquadEventRulesEditor({
   squadId,
@@ -22,6 +23,9 @@ export function SquadEventRulesEditor({
   metadata?: unknown
 }) {
   const [labelsText, setLabelsText] = useState<Record<string, string>>({})
+  // New rules go first so they take priority over the broader defaults. Reveal and focus the
+  // new rule once it mounts, so the addition is obvious even when the list is scrolled.
+  const revealRuleId = useRef<string | null>(null)
   const catalog = useQuery(integrationQueries.outputs())
   const selection = useQuery(integrationQueries.squad(squadId, provider))
   const accounts = selection.data?.attached ?? (selection.data?.assignment ? [selection.data.assignment] : [])
@@ -40,11 +44,33 @@ export function SquadEventRulesEditor({
       <div>
         <h4 className="font-medium text-primary">Event rules</h4>
         <p className="mt-1 text-xs text-muted">
-          Rules run from top to bottom; only the first matching enabled rule acts. All filters within a rule must match.
-          Manager and consultant notifications are fallbacks for unlinked events. Events linked to an active or queued
-          work stream use only that stream’s subscriptions, including its pause and wait settings.
+          Rules run from top to bottom; only the first matching enabled rule acts, so new rules are added at the top.
+          All filters within a rule must match. Manager and consultant notifications are fallbacks for unlinked events.
+          Events linked to an active or queued work stream use only that stream’s subscriptions, including its pause and
+          wait settings.
         </p>
       </div>
+      <button
+        type="button"
+        disabled={disabled || !events.length || value.length >= 32}
+        className="ficus-button ficus-button-secondary rounded-md px-3 py-2 text-sm disabled:opacity-40"
+        onClick={() => {
+          const id = `event-${crypto.randomUUID()}`
+          revealRuleId.current = id
+          onChange([
+            {
+              id,
+              enabled: true,
+              source: { integration: provider, output: events[0]!.output, version: events[0]!.version },
+              filters: { squadRouting: true, audience: 'connected-account' },
+              action: { type: 'notify-manager' },
+            },
+            ...value,
+          ])
+        }}
+      >
+        Add event rule
+      </button>
       {catalog.isError && (
         <p role="alert" className="text-sm text-status-danger-500">
           Unable to load events.
@@ -53,6 +79,12 @@ export function SquadEventRulesEditor({
       {value.map((rule, index) => (
         <fieldset
           key={rule.id}
+          ref={(node) => {
+            if (!node || revealRuleId.current !== rule.id) return
+            revealRuleId.current = null
+            node.querySelector('select')?.focus({ preventScroll: true })
+            node.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
+          }}
           disabled={disabled}
           className="min-w-0 rounded-lg border border-panel-border p-3 space-y-3"
         >
@@ -337,25 +369,13 @@ export function SquadEventRulesEditor({
           No squad actions. Existing work streams still receive their subscribed events.
         </p>
       )}
-      <button
-        type="button"
-        disabled={disabled || !events.length || value.length >= 32}
-        className="ficus-button ficus-button-secondary rounded-md px-3 py-2 text-sm disabled:opacity-40"
-        onClick={() =>
-          onChange([
-            {
-              id: `event-${crypto.randomUUID()}`,
-              enabled: true,
-              source: { integration: provider, output: events[0]!.output, version: events[0]!.version },
-              filters: { squadRouting: true, audience: 'connected-account' },
-              action: { type: 'notify-manager' },
-            },
-            ...value,
-          ])
-        }
-      >
-        Add event rule
-      </button>
+      <ConfirmButton
+        label="Reset to default rules"
+        confirmLabel="Replace all rules with defaults?"
+        className="rounded-md px-3 py-2 text-sm"
+        disabled={disabled}
+        onConfirm={() => onChange(effectiveSquadEventRules({}, provider))}
+      />
       <EventRulePreview provider={provider} rules={value} metadata={metadata} events={events} accounts={accounts} />
     </section>
   )
