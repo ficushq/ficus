@@ -159,6 +159,7 @@ describe('work-stream derived state', () => {
       expect(derived.derivedState).not.toBe('monitoring')
       const json = JSON.parse(JSON.stringify({ ...input, ...derived }))
       expect(json.delivery).toEqual(row.facts.delivery)
+      if (row.state === 'in_progress') expect(json.derivedState).toBe('in_progress')
       expect(selectWorkStreamPresentationState(json)).toBe(row.state)
       expect(workStreamNeedsHumanAttention(json)).toBe(row.attention)
       const snapshot = buildWorkInterestSnapshot([json])

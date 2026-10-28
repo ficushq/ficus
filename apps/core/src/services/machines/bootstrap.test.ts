@@ -1801,7 +1801,13 @@ case "$*" in *UnitFileState*) echo enabled;; *ActiveState*) echo active;; esac
     ).catch((error) => error as Error)
     const deps: BoxManagerDeps = {
       runner: { run: async (_machine, command) => runHostFixture([bash, '-c', command], env) },
-      tunnels: { ensureMaster: async () => {}, addForward: async () => 50100 } as BoxManagerDeps['tunnels'],
+      tunnels: {
+        ensureMaster: async () => {},
+        addForward: async () => 50100,
+        removeForward: async () => {},
+        endpointFor: () => 'http://127.0.0.1:50100',
+        checkHealth: async () => true,
+      },
       fetch: async () => new Response('{}', { status: 200 }),
     }
     const restart = (unixUser: string) =>

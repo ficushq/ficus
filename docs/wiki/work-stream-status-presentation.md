@@ -15,7 +15,11 @@ Status is a read-only projection, not permission to advance, resume, approve, or
 | `setup`       | Delivery Setup Required   | attention     | no              | blocked       |
 | `failure`     | Delivery Changes Required | danger        | no              | blocked       |
 
-Precedence: terminal stored status, explicit pause, explicit waits (review > question > dependency > manual), execution failure, recognized delivery fact, then ordinary execution/queue/idle derivation. The exact workflow-owned manual delivery-approval wait is identified by `approvalWaitId` and presented as approval; unrelated manual waits remain blockers. No wait is changed or synthesized by presentation.
+Precedence: terminal stored status, explicit pause, explicit waits (review > question > dependency > manual), execution failure, proven active execution (`in_progress` on an active stream), recognized delivery fact, then ordinary queue/idle derivation. The exact workflow-owned manual delivery-approval wait is identified by `approvalWaitId` and presented as approval; unrelated manual waits remain blockers. No wait is changed or synthesized by presentation. That identified approval wait still wins over a stale running signal; when waits are omitted, its identifier conservatively retains approval precedence. An explicit empty list disproves the wait even if its identifier is stale.
+
+While an agent is actually working, all nonblocking delivery kinds (including PR review/merge requests) remain secondary to **In Progress** in the badge, canonical sort tier and native `running` bucket. Assignment alone never proves execution. Once idle, delivery problems, external waits, finalization and setup regain their primary label; queue and failed-execution semantics are unchanged. `workStreamSecondaryDeliveryLabel` supplies the same secondary label for web/mobile rows, including generic fallbacks for older payloads. Web displays it as wrapping, neutral text beside the primary badge rather than recoloring the whole row as failed. Delivery facts remain serialized unchanged.
+
+Human actions are independent of that primary status: `workStreamNeedsHumanAttention` still includes active delivery approval/review/merge facts, and the Action Center and PR detail actions remain available. Exclusive native `bucketCounts` describe primary states, so active work counts as `running`; Live Activity `needsYouCount` counts human actions independently and may overlap `activeCount`.
 
 An explicit `openWaits: []` still clears stale wait-derived states. Delivery is an independent positive fact, so it survives `[]`. Omitted waits retain older-server compatibility. Unknown future delivery kinds are ignored. Older clients may retain their historical rendering; the stored status and existing derived-state vocabulary remain unchanged.
 
@@ -23,13 +27,13 @@ Core loads flow, binding, policy and routed integration evidence in batch, witho
 
 ### Delivery explanation
 
-`WorkStreamDeliveryPresentation.explanation` is optional, additive and server-owned. It is published only for `setup` and `external`, and carries facts the classifier already used. Omitted fields mean unknown: clients fail soft to the generic label and must not infer them from metadata.
+`WorkStreamDeliveryPresentation.explanation` is optional, additive and server-owned. It carries facts the classifier already used, including the canonical `codeHostReason` for failure and external labels. Omitted fields mean unknown: clients fail soft to the generic label and must not infer them from metadata.
 
 - `setupReason`: `unbound` (no bound delivery PR), `not-following-changes` (bound, but the flow does not follow code-host changes), `branch-mismatch` (with `branchMismatch` stream/PR branch pairs), or `direct-merge-facts` (missing binding, full commit SHA or base branch).
 - `pullRequests`: every designated delivery PR, primary first, with its observed state. It is open unless a merge or close was positively observed; states are matched by repository and number.
 - `gates`: merge state, checks rollup, review decision, draft and pending human review for the deciding PR. Live pending check events outrank an older rollup. A stale snapshot contributes only draft to the explanation, and a merged PR contributes none.
 
-Web derives the `external` pill from these facts in order: all PRs merged → “PR merged — finalizing delivery”; draft → generic; pending checks → “Awaiting CI”; required or pending human review → “Awaiting review”; blocked merge → “Blocked by branch protection”; open PRs → “Awaiting merge of #N” (at most three numbers, then “+N more”); otherwise “Awaiting Code Host”. The detail modal's setup callout explains the setup reason, names its next step (for example the exact `ficus workstream set-meta` bind command), and adds a branch-protection note only as supporting evidence.
+`codeHostDeliveryLabel` refines external/failure labels only from the compatible, server-owned `codeHostReason`: Awaiting CI, PR is draft, Awaiting merge, PR/PRs merged — finalizing delivery, CI failed, Resolve merge conflicts, Changes requested, or PR closed without merging. Missing, unknown or incompatible reasons retain the generic delivery label. Raw gate facts and PR existence alone never establish a label. The same rule applies to primary idle labels and secondary running context. The detail modal's setup callout explains the setup reason, names its next step (for example the exact `ficus workstream set-meta` bind command), and adds a branch-protection note only as supporting evidence.
 
 ### Asynchronous provider evidence
 
@@ -41,7 +45,7 @@ Current-head evidence is reduced by provider observation order, not by event nam
 
 A human review requirement is a standing fact of the current head rather than a readiness proof, so it does not expire with its observation. The latest same-head evidence that carries a review decision decides: `required` presents `review` ("Review Pull Request", Needs you) until a newer same-head approval, a newer aggregate without the requirement (approved, or GitHub's explicit no-decision `unknown`), a merge, a close, or a new head supersedes it. Likewise the latest same-head event carrying reviewer facts decides whether an explicit human (user or team) reviewer request is pending; sparse events such as comments and CI runs carry none and cannot clear it. Ficus cannot know which users may approve, and does not need to: a required human review is human attention. Pending CI, a merge queue, or auto-merge with review satisfied remain `external`; drafts stay generic; failures, conflicts and changes-requested stay alarming.
 
-Because `review` and `merge` are not `external`, the `automatedReviewGate` annotation never applies to them, and the shared canonical order keeps human delivery gates in the human-actionable tier (0) even if an older or inconsistent payload sets the annotation. `pr-auto-merge` therefore counts as automated only when no human review is pending.
+Because `review` and `merge` are not `external`, the `automatedReviewGate` annotation never applies to them, and the shared canonical order keeps idle human delivery gates in the human-actionable tier (0) even if an older or inconsistent payload sets the annotation. `pr-auto-merge` therefore counts as automated only when no human review is pending.
 
 ### Pending actions
 
@@ -101,6 +105,8 @@ Widget summaries add an authoritative optional `bucket`, boolean `pause` (never 
 Native clients should decode `bucket` as extensible text, ignore additive summary/count fields, and show an unknown value neutrally rather than rejecting the whole update. Older widgets that compute their own buckets may retain their previous labels until updated; server totals remain authoritative.
 
 ### Mobile adoption
+
+Active-primary delivery requires repacking the shared selector, attention helper, native bucket projection and `workStreamSecondaryDeliveryLabel` together. Mobile rows must keep the secondary label visible (and human PR actions reachable) while grouping active work as running. Use the paired active/idle shared fixtures, including omitted waits, to verify adapters. Older installed clients may keep their previous delivery-first labels until updated; server-derived `in_progress`, additive delivery facts and authoritative native buckets are already correct. The Core/web change alone is not completion of cross-client adoption.
 
 Actor-aware manual waits need the same adoption: map the `waiting_on_owner` label in JS adapters, and let native decoders tolerate the optional wait `actor`. Until then, older mobile builds render owner waits as Needs you in their own rows, while server-owned widget buckets and counts already exclude them.
 

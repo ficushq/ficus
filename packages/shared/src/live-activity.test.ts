@@ -270,3 +270,21 @@ test('delivery label reasons survive widget JSON while aggregate vocabulary and 
     expect(snapshot.liveActivity).toEqual(coarse.liveActivity)
   }
 })
+
+test('running delivery human actions remain counted without replacing the running bucket', () => {
+  for (const kind of ['approval', 'review', 'merge'] as const) {
+    const snapshot = buildWorkInterestSnapshot([
+      stream({
+        derivedState: 'in_progress',
+        openWaits: [],
+        delivery: { kind },
+      }),
+    ])
+    expect(snapshot.top[0]?.bucket).toBe('running')
+    expect(snapshot.top[0]?.delivery).toEqual({ kind })
+    expect(snapshot.liveActivity.activeCount).toBe(1)
+    expect(snapshot.liveActivity.needsYouCount).toBe(1)
+    expect(snapshot.bucketCounts.running).toBe(1)
+    expect(snapshot.bucketCounts.needsYou).toBe(0)
+  }
+})

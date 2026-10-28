@@ -1791,7 +1791,7 @@ describe('WorkStreamDetailModal respond flows', () => {
   })
 })
 
-test('list rows share the authoritative delivery label matrix', async () => {
+test.each([false, true])('list rows share primary and secondary delivery labels (feed=%s)', async (feedLayout) => {
   const { CODE_HOST_DELIVERY_PRESENTATION_CASES } = await import('@ficus/shared/test-fixtures/work-stream-presentation')
   const queryClient = createTestQueryClient()
   try {
@@ -1800,6 +1800,7 @@ test('list rows share the authoritative delivery label matrix', async () => {
         <QueryClientProvider client={queryClient}>
           <MemoryRouter>
             <WorkStreamList
+              feedLayout={feedLayout}
               workStreams={[workStream(row.facts)]}
               squadMap={new Map([[squad.id, squad]])}
               agentMap={new Map()}
@@ -1808,6 +1809,10 @@ test('list rows share the authoritative delivery label matrix', async () => {
         </QueryClientProvider>
       )
       expect(html).toContain(row.label)
+      if (row.secondaryLabel) {
+        expect(html).toContain(`Delivery: ${row.secondaryLabel}`)
+        if (feedLayout) expect(html).toContain('max-w-[50%] sm:max-w-none')
+      }
     }
   } finally {
     queryClient.clear()

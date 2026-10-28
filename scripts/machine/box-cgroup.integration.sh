@@ -22,10 +22,12 @@ fi
 . /etc/os-release
 [ "$ID" = ubuntu ] && [ "$VERSION_ID" = 24.04 ]
 [ -e /sys/fs/cgroup/cgroup.controllers ]
-for tool in dockerd-rootless-setuptool.sh docker rootlesskit newuidmap slirp4netns; do command -v "$tool"; done
+for tool in dockerd-rootless-setuptool.sh docker rootlesskit newuidmap slirp4netns python3; do command -v "$tool"; done
 [ -x /usr/lib/systemd/systemd-socket-proxyd ]
 
 TARGET="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/box-provision.sh"
+TRACE="${TARGET%/*}/box-provision-ci-trace.sh"
+CAPTURE="${TARGET%/*}/box-provision-ci-capture.sh"
 BOX="box_$(printf '%s' "${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}-${RANDOM}" | sha256sum | cut -c1-12)"
 if id -u "$BOX" >/dev/null 2>&1; then exit 2; fi
 reserved="$(cat /proc/sys/net/ipv4/ip_local_reserved_ports)"
@@ -81,7 +83,10 @@ export DOCKER_CONFIG="$caller/docker" DOCKER_HOST="unix://$caller/docker.sock" D
 
 provision() {
   # Small bounded fixture: 1 CPU and 512 MiB for the entire box, no load test.
-  timeout --kill-after=5s 150s bash "$TARGET" --sandbox-id squad_cgroup_ci --unix-user "$BOX" \
+  # Own a bounded full stdout+stderr record and publish it with the original
+  # exit code before teardown can obscure it. The unprivileged workflow also
+  # publishes failed output to its step summary; no summary path reaches root.
+  bash "$CAPTURE" 150s bash "$TRACE" "$TARGET" --sandbox-id squad_cgroup_ci --unix-user "$BOX" \
     --unit-mode user --with-docker --port 50123 --nproc 2 --memtotal-kb 1048576
   uid="$(id -u "$BOX")"
 }
