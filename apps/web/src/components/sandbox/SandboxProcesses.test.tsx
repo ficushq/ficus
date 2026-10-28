@@ -31,6 +31,17 @@ const listing: SandboxProcessesData = {
       command: '/opt/ficus/bin/bun /opt/ficus/server/server.js',
       protected: true,
     },
+    ...(['Docker runtime', 'Box listener', 'Session bus'] as const).map((protectionReason, index) => ({
+      pid: 4500 + index,
+      ppid: 1,
+      cpuPercent: 0,
+      memRssMb: 5,
+      ageSeconds: 900,
+      state: 'S',
+      command: 'protected runtime fixture',
+      protected: true,
+      protectionReason,
+    })),
   ],
   containers: {
     available: true,
@@ -86,12 +97,18 @@ test('loads on request, flags overload, protects the sandbox server, and stops w
     expect(list).toHaveBeenCalledWith('squad-1')
 
     const text = dom.window.document.body.textContent ?? ''
-    expect(text).toContain('Overloaded:')
+    expect(text).toContain('Host overloaded:')
+    expect(text).toContain('CPU unavailable')
     expect(text).toContain('Load 22.7 on 4 CPUs')
     expect(text).toContain('bun node_modules/.bin/tsc -p apps/core --noEmit')
     expect(text).toContain('187%')
     expect(text).toContain('Runs the sandbox')
     expect(button('Stop process 4202')).toBeUndefined()
+    for (const [i, label] of ['Docker runtime', 'Box listener', 'Session bus'].entries()) {
+      expect(text).toContain(label)
+      expect(button(`Stop process ${4500 + i}`)).toBeUndefined()
+      expect(button(`Kill process ${4500 + i}`)).toBeUndefined()
+    }
 
     // Stopping needs a confirming second click, then sends TERM.
     await dom.act(async () => button('Stop process 4201').click())

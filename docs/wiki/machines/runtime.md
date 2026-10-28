@@ -1807,6 +1807,58 @@ not change durable asset setup state or executor liveness, trigger setup repair,
 or authorize killing active work. Older servers may omit `runtimeHealth`, and
 idle status checks still do not wake boxes just to probe execution health.
 
+## Host versus sandbox pressure and protected processes
+
+The Processes panel retains the host load/memory line. `/healthz`, squad/agent
+`sandbox-status`, the squad header warning and `sandbox-ps` carry the same additive
+`pressure.box` fields:
+
+- `cpuPercent`: delta of `user-<uid>.slice/cpu.stat` **usage_usec** (user + system
+  CPU time), divided by the actual monotonic sampling window. **100% = one CPU**,
+  not percent of the quota. The slice includes short-lived tasks and containers
+  missed by the process list. Processes samples this alongside its per-PID ticks.
+- `sampleMs`: actual window duration (normally about one second).
+- `cpuPressureSome` and `memoryPressureSome`: `{ avg10, avg60, avg300 }` from the
+  slice's `cpu.pressure` / `memory.pressure` **some** line. These percentages are
+  wall time with at least one task stalled, not CPU utilization or memory use.
+
+The slice is read directly under `/sys/fs/cgroup/user.slice/user-<uid>.slice`;
+there is no fallback to host PSI or another user's slice. Missing/malformed
+metrics, counter resets and sampling windows over 30 seconds report `null`, not
+zero. Older executors omit `box`. Off Linux the existing pressure result is null.
+Health sampling is demand-driven and single-flight: health never waits on it,
+reuses completed samples for five seconds, and stops exposing sampled CPU after
+30 seconds. Until the first sample finishes it can report PSI but CPU is unknown.
+No loop wakes an idle box. Runtime-health degradation, admission, containment,
+restart behavior, quotas and fleet-alert hysteresis are unchanged.
+
+The UI/CLI says **This sandbox overloaded** when either local PSI `some.avg10`
+is at least 10%. Otherwise host load of at least twice the CPU count is labeled
+**Host overloaded**. When both local PSI measurements are known and below that
+threshold and this box uses less than half the host CPUs, the summary explains
+that the host is busy with other boxes. Missing metrics never support that
+inference. Host load can also include host services and uninterruptible I/O;
+these are diagnostic thresholds, not proof of a particular offending process.
+
+Process rows and every signal request use the same fresh `/proc/<pid>/cgroup`
+classification. Descendants of `docker.service` and `dbus.service` are protected
+as **Docker runtime** and **Session bus**. Box socket/proxy units are **Box
+listener**. Server identity/ancestors and the proven user manager remain
+protected. Rootless Docker helpers (`rootlesskit`, `slirp4netns`, `docker-proxy`,
+`containerd` and shims) outside the Docker unit require both a helper executable
+role and same-owner ancestry reaching that unit. Names alone do not protect a
+process; arbitrary helper children are not protected by ancestry alone.
+
+Membership in the server **service** cgroup does not protect agent command
+shells, tests or builds: they inherit that cgroup and must remain stoppable.
+Protected rows have a short role label instead of controls. Direct signal calls,
+including CLI `sandbox-kill`, receive HTTP 403 with the role and `cannot be
+signalled`; enforcement does not depend on a prior listing. Ownership and PID
+start time are rechecked before signalling. This is not an atomic kernel pidfd
+operation, and does not claim to eliminate the final kernel scheduling race.
+Container workloads remain stoppable via `sandbox-stop-container` / the existing
+container Stop action, without killing the daemon, its shims or networking.
+
 ## VM sandbox setup readiness and transport recovery
 
 VM box liveness and best-effort setup readiness are independent. A usable box remains

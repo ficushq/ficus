@@ -1,5 +1,10 @@
 import type { Command } from 'commander'
-import { isSandboxOverloaded, SANDBOX_PROCESS_SIGNALS, type SandboxProcesses } from '@ficus/shared'
+import {
+  sandboxPressureLabel,
+  sandboxPressureDetail,
+  SANDBOX_PROCESS_SIGNALS,
+  type SandboxProcesses,
+} from '@ficus/shared'
 import { apiGet, apiPost } from '../client'
 import { isJsonMode, output, outputError, outputTable } from '../output'
 
@@ -19,11 +24,13 @@ function formatMemory(mb: number): string {
 export function renderSandboxProcesses(result: SandboxProcesses, limit: number): void {
   if (result.pressure) {
     const { cpus, load, memAvailableMb, memTotalMb } = result.pressure
-    const prefix = isSandboxOverloaded(result.pressure) ? 'OVERLOADED  ' : ''
+    const label = sandboxPressureLabel(result.pressure)
+    const prefix = label ? `${label}: ` : ''
     console.log(
       `${prefix}load ${load.map((value) => value.toFixed(2)).join(' ')} on ${cpus} CPUs · ` +
         `${formatMemory(memAvailableMb)} free of ${formatMemory(memTotalMb)}`
     )
+    console.log(sandboxPressureDetail(result.pressure))
     console.log('')
   }
   outputTable(
@@ -32,11 +39,13 @@ export function renderSandboxProcesses(result: SandboxProcesses, limit: number):
       CPU: `${process.cpuPercent.toFixed(0)}%`,
       MEM: formatMemory(process.memRssMb),
       AGE: formatAge(process.ageSeconds),
+      PROTECTION: process.protected ? (process.protectionReason ?? 'Runs the sandbox') : '',
       COMMAND: process.command.length > 100 ? `${process.command.slice(0, 99)}…` : process.command,
     })),
-    ['PID', 'CPU', 'MEM', 'AGE', 'COMMAND']
+    ['PID', 'CPU', 'MEM', 'AGE', 'PROTECTION', 'COMMAND']
   )
-  if (result.processes.some((process) => process.protected)) console.log('* runs the sandbox; cannot be signalled')
+  if (result.processes.some((process) => process.protected))
+    console.log('* protected infrastructure; cannot be signalled')
   console.log('')
   if (!result.containers.available) {
     console.log(`Containers: ${result.containers.reason}`)
