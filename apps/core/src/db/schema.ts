@@ -3419,6 +3419,41 @@ export const vmBoxProvisionAttempts = pgTable(
   ]
 )
 
+/** Durable host quota reservations. Lifetimes follow their owning stream,
+ * execution or coalesced provision generation, never a timeout that can expire
+ * while physical work still runs. Shared sandbox keys are charged only once. */
+export const machineCapacityClaims = pgTable(
+  'machine_capacity_claims',
+  {
+    ownerKey: text('owner_key').notNull(),
+    kind: text('kind').$type<'stream' | 'execution' | 'provision'>().notNull(),
+    machineId: uuid('machine_id')
+      .notNull()
+      .references(() => machines.id, { onDelete: 'cascade' }),
+    sandboxId: text('sandbox_id').notNull(),
+    streamId: uuid('stream_id').references(() => workStreams.id, { onDelete: 'cascade' }),
+    // Association only: deleting a stream must not release a still-running execution.
+    workStreamId: uuid('work_stream_id').references(() => workStreams.id, { onDelete: 'set null' }),
+    executionId: uuid('execution_id').references(() => executions.id, { onDelete: 'cascade' }),
+    provisionAttemptId: bigint('provision_attempt_id', { mode: 'number' }).references(() => vmBoxProvisionAttempts.id, {
+      onDelete: 'cascade',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.ownerKey, table.machineId, table.sandboxId] }),
+    index('machine_capacity_claims_machine_idx').on(table.machineId),
+    check(
+      'machine_capacity_claims_owner_check',
+      sql`
+      (${table.kind} = 'stream' AND ${table.streamId} IS NOT NULL AND ${table.executionId} IS NULL AND ${table.provisionAttemptId} IS NULL)
+      OR (${table.kind} = 'execution' AND ${table.streamId} IS NULL AND ${table.executionId} IS NOT NULL AND ${table.provisionAttemptId} IS NULL)
+      OR (${table.kind} = 'provision' AND ${table.streamId} IS NULL AND ${table.provisionAttemptId} IS NOT NULL AND ${table.executionId} IS NULL)
+    `
+    ),
+  ]
+)
+
 export const machineBoxes = pgTable(
   'machine_boxes',
   {

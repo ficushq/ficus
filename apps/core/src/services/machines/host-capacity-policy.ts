@@ -1,0 +1,55 @@
+/** Admission target, not a change to kernel quotas or permission to evict work. */
+export const HOST_CPU_OVERSUBSCRIPTION = 1.5
+
+/** Mirrors box-provision.sh's unchanged CPUQuota=max(100%, nproc*50%). */
+export function boxCpuQuota(cpus: number): number {
+  return Math.max(1, cpus / 2)
+}
+
+export interface HostCapacityDecision {
+  allowed: boolean
+  reason: 'unknown' | 'quota' | 'available' | 'already-accounted'
+  cpus?: number
+  budgetCpus?: number
+  activeQuotaCpus?: number
+  projectedQuotaCpus?: number
+}
+
+/**
+ * Charge unique box identities, never agent counts or sampled CPU utilization.
+ * A shared squad box is charged once even when several agents can use it.
+ * Existing activity is grandfathered if the host is already above the target:
+ * admission limits growth; it must not block reconnects or terminate work.
+ */
+export function evaluateHostCapacity(
+  cpus: number | undefined,
+  active: readonly string[],
+  incoming: readonly string[]
+): HostCapacityDecision {
+  return evaluateHostQuotaCounts(cpus, new Set(active).size, new Set([...active, ...incoming]).size)
+}
+
+/** Also supports atomic replacement of planned demand with actual resources. */
+export function evaluateHostQuotaCounts(
+  cpus: number | undefined,
+  currentCount: number,
+  projectedCount: number
+): HostCapacityDecision {
+  if (cpus === undefined || !Number.isSafeInteger(cpus) || cpus <= 0) {
+    return { allowed: false, reason: 'unknown' }
+  }
+  const quota = boxCpuQuota(cpus)
+  const budgetCpus = cpus * HOST_CPU_OVERSUBSCRIPTION
+  const activeQuotaCpus = currentCount * quota
+  const projectedQuotaCpus = projectedCount * quota
+  const unchanged = projectedCount <= currentCount
+  const allowed = unchanged || projectedQuotaCpus <= budgetCpus
+  return {
+    allowed,
+    reason: unchanged ? 'already-accounted' : allowed ? 'available' : 'quota',
+    cpus,
+    budgetCpus,
+    activeQuotaCpus,
+    projectedQuotaCpus,
+  }
+}
