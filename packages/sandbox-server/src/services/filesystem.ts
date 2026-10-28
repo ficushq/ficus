@@ -237,16 +237,6 @@ export async function handleUpload(url: URL, req: Request): Promise<Response> {
     return invalidWriteRequest()
   }
 
-  let content: Buffer
-  try {
-    content = Buffer.from(await req.arrayBuffer())
-  } catch {
-    return Response.json(
-      { error: 'Failed to read upload body; candidate was not published', phase: 'pre-publication' },
-      { status: 400 }
-    )
-  }
-
   if (url.searchParams.get('createDirs') === 'true') {
     try {
       await fs.mkdir(path.dirname(policy.path), { recursive: true })
@@ -262,9 +252,9 @@ export async function handleUpload(url: URL, req: Request): Promise<Response> {
     const result = await atomicVerifiedWrite({
       path: policy.path,
       allowedRoots: [policy.allowedRoot],
-      content,
+      content: req.body ?? new Uint8Array(),
+      signal: req.signal,
       mode,
-      expectedResult: contentIdentity(content),
     })
     return Response.json(result)
   } catch (error) {

@@ -6,7 +6,7 @@ export class RequestBodyTooLargeError extends Error {
 }
 
 /** Read at most maxBytes, counting actual wire bytes even when Content-Length is dishonest. */
-export async function readBoundedBody(request: Request, maxBytes: number): Promise<Uint8Array> {
+export async function readBoundedBody(request: Request, maxBytes: number): Promise<Uint8Array<ArrayBuffer>> {
   const reader = request.body?.getReader()
   const abort = () => {
     void reader?.cancel().catch(() => {})
