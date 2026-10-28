@@ -61,10 +61,11 @@ Tests use an isolated Postgres instance running in Docker (separate from the dev
 - Starts a uniquely-named Docker container per worktree
 - Pushes the current schema before tests run
 
-When Docker cannot start the test DB, a direct local `bun test` still runs
+When Docker is not installed, a direct local `bun test` still runs
 database-free files; every database use fails with `Core test database
 unavailable (...)`. CI and `bun run --filter core test` (via
-`FICUS_TEST_REQUIRE_DB=1`) keep exiting instead.
+`FICUS_TEST_REQUIRE_DB=1`) keep exiting instead. Failed or timed-out Docker
+inventory fails closed without claiming or starting a project.
 
 For the full Core suite (including its isolated subprocess files), run:
 
@@ -97,9 +98,9 @@ bun run test:db:down && bun run --filter core test
 
 ### Writing tests without flakes, contention, or hidden timeouts
 
-- The root `bun run test` waits for this worktree's database before launching
-  package scripts concurrently. Preserve that readiness dependency so suites
-  cannot race container startup.
+- The root `bun run test` launches package scripts concurrently; each suite
+  owns its readiness and resource lifetime. Core's runner shares its owned DB
+  across sequential batches and tears it down after the final borrower exits.
 - Run package suites with `bun run --filter <package> test` from the root (for
   example, `core`, `cli`, or `@ficus/sandbox-server`). These
   entrypoints own isolation and completion checks. For a focused Core run,
@@ -136,8 +137,9 @@ bun run test:db:down && bun run --filter core test
   children, and await cleanup even on assertion failure. Never use broad
   process-name kills, fixed shared output paths, or another worktree's database.
   Reset only this worktree's disposable test DB after an interrupted DB suite;
-  orphan sweeping is explicit maintenance (`FICUS_TEST_SWEEP_ORPHANS=1`), not a
-  normal test side effect.
+  startup and maintenance sweep only recorded two-hour-old projects from this
+  clone/host with provably dead owners and borrowers and matching token labels.
+  Live or unknown users and unrecorded projects are never swept by age alone.
 - Stress/load generators are owned fixtures too. Bound their worker count and
   runtime, retain every PID, and terminate/reap them in `finally` or a shell
   trap on success, failure, and interruption. Never leave untracked background

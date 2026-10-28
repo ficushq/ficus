@@ -27,6 +27,7 @@ export function canExecuteQuery(port: number, dbName: string, opts?: { timeoutMs
       stdout: 'ignore',
       stderr: 'ignore',
       timeout: opts?.timeoutMs ?? DEFAULT_READY_TIMEOUT_MS,
+      killSignal: 'SIGKILL',
       env: { ...process.env, URL: url },
       cwd: opts?.cwd,
     })
@@ -70,7 +71,7 @@ export function getComposeBoundPort(opts: ComposeBoundPortOptions): number | nul
   try {
     const result = Bun.spawnSync(
       ['docker', 'compose', '-p', opts.projectName, '-f', opts.composeFile, 'port', 'postgres', '5432'],
-      { stdout: 'pipe', stderr: 'ignore', timeout: timeoutMs }
+      { stdout: 'pipe', stderr: 'ignore', timeout: timeoutMs, killSignal: 'SIGKILL' }
     )
     if (result.exitCode !== 0) return null
     // Expected stdout e.g. "0.0.0.0:49298\n" — take the numeric suffix after
@@ -112,7 +113,12 @@ export function getComposeBoundPort(opts: ComposeBoundPortOptions): number | nul
  */
 export function isComposePostgresReady(port: number, opts: ComposePostgresReadyOptions): boolean {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_READY_TIMEOUT_MS
-  const spawnOpts = { stdout: 'ignore' as const, stderr: 'ignore' as const, timeout: timeoutMs }
+  const spawnOpts = {
+    stdout: 'ignore' as const,
+    stderr: 'ignore' as const,
+    timeout: timeoutMs,
+    killSignal: 'SIGKILL' as const,
+  }
 
   try {
     const dockerCheck = Bun.spawnSync(

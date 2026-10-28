@@ -183,6 +183,9 @@ jobs:
       - name: Prove cross-user Node shim immunity
         run: sudo env "PATH=$PATH" bash scripts/setup/bun-node-cross-user.test.sh
 
+      - name: Verify bounded ShellCheck lifecycle (small fake subprocesses)
+        run: python3 scripts/setup/shellcheck.test.py
+
       - name: Run setup helper suite
         run: |
           sudo env "PATH=$PATH" bash -c 'source scripts/setup/lib.sh; ensure_yq'

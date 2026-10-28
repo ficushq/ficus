@@ -14,6 +14,8 @@ function run(args: string[], env: Record<string, string>, input?: string): strin
     stdin: input ? Buffer.from(input) : undefined,
     stdout: 'pipe',
     stderr: 'pipe',
+    timeout: 10000,
+    killSignal: 'SIGKILL',
   })
   if (result.exitCode !== 0) throw new Error(`${args.join(' ')} failed:\n${result.stderr.toString()}`)
   return result.stdout.toString().trim()
@@ -73,7 +75,20 @@ test('message enqueue sequence and rows survive a persistent-volume restart', as
   const project = `ficus-fifo-restart-${suffix}`
   const volume = `${project}-data`
   const env = { FIFO_RESTART_PORT: String(await findFreeTestDbPort()), FIFO_RESTART_VOLUME: volume }
-  const cleanup = () => compose(project, env, ['down', '-v', '--remove-orphans'])
+  const cleanup = () => compose(project, env, ['down', '-v', '--remove-orphans', '--timeout', '2'])
+  const onExit = () => {
+    try {
+      cleanup()
+    } catch (error) {
+      console.error(`Persistent restart fixture cleanup failed: ${String(error).slice(-2000)}`)
+      process.exitCode ||= 1
+    }
+  }
+  const onInt = () => process.exit(130)
+  const onTerm = () => process.exit(143)
+  process.once('exit', onExit)
+  process.once('SIGINT', onInt)
+  process.once('SIGTERM', onTerm)
   try {
     compose(project, env, ['up', '-d'])
     await waitReady(project, env)
@@ -94,7 +109,7 @@ test('message enqueue sequence and rows survive a persistent-volume restart', as
     const before = BigInt(psql(project, env, 'SELECT last_value FROM message_enqueue_order_seq;'))
     expect(psql(project, env, 'SELECT count(*) FROM messages;')).toBe('1')
 
-    compose(project, env, ['restart', 'postgres'])
+    compose(project, env, ['restart', '--timeout', '2', 'postgres'])
     await waitReady(project, env)
     if (mutation === 'reset-sequence') psql(project, env, 'ALTER SEQUENCE message_enqueue_order_seq RESTART WITH 1;')
     psql(project, env, 'INSERT INTO messages(id, agent_id) VALUES(gen_random_uuid(), gen_random_uuid());')
@@ -108,6 +123,7 @@ test('message enqueue sequence and rows survive a persistent-volume restart', as
     await waitReady(project, env)
     expect(psql(project, env, `SELECT to_regclass('message_enqueue_order_seq') IS NULL;`)).toBe('t')
   } finally {
+    // Keep EXIT armed until normal cleanup and leak assertions have finished.
     try {
       cleanup()
     } catch {
@@ -116,5 +132,8 @@ test('message enqueue sequence and rows survive a persistent-volume restart', as
     expect(run(['docker', 'ps', '-a', '-q', '--filter', `name=${project}`], env)).toBe('')
     expect(run(['docker', 'volume', 'ls', '-q', '--filter', `name=^${volume}$`], env)).toBe('')
     expect(run(['docker', 'network', 'ls', '-q', '--filter', `name=^${project}_default$`], env)).toBe('')
+    process.removeListener('exit', onExit)
+    process.removeListener('SIGINT', onInt)
+    process.removeListener('SIGTERM', onTerm)
   }
 }, 120_000)
