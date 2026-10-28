@@ -1,3 +1,6 @@
+import { getBunServer } from 'hono/bun'
+import { stageWorkspaceMultipart, InvalidWorkspaceMultipartError } from '../services/attachments/workspace-multipart'
+import { publishWorkspaceUpload } from '../services/squad/workspace-upload'
 import { publicErrorMessage } from '../db/errors'
 import { getSquadClient } from '../services/squad/client'
 import { WorkflowError } from '../services/workflows/catalog'
@@ -58,7 +61,7 @@ import {
   type PreparedHostWorkspacePath,
 } from '../services/sandbox/host/workspace-path'
 import { HOST_NO_TOOLCHAIN_ERROR, hostRuntimeGuard } from './host-runtime-guard'
-import { SandboxHttpError, type K8sSandboxManager } from '../services/sandbox/k8s'
+import { type K8sSandboxManager } from '../services/sandbox/k8s'
 import * as fs from 'fs'
 import * as path from 'path'
 import { createDownloadResponse, createSandboxFileResponse } from '../lib/utils'
@@ -768,6 +771,8 @@ export const squadsRouter = new Hono()
       return c.json({ error: 'archive must be tar.gz or zip' }, 400)
     }
     const range = c.req.header('range')
+    const server = c.env ? getBunServer<{ timeout(request: Request, seconds: number): void }>(c) : undefined
+    server?.timeout(c.req.raw, 0)
 
     // Remote runtimes: stream through the sandbox's raw /download route
     const client = await getSquadClient(squad.id)
@@ -813,129 +818,31 @@ export const squadsRouter = new Hono()
     const archived = archivedGuard(c, squad)
     if (archived) return archived
 
+    const server = c.env ? getBunServer<{ timeout(request: Request, seconds: number): void }>(c) : undefined
+    server?.timeout(c.req.raw, 0)
+    let staged: Awaited<ReturnType<typeof stageWorkspaceMultipart>> | undefined
     try {
-      const formData = await c.req.formData()
-      const files: { file: File; relativePath: string }[] = []
-
-      // Collect all files with their relative paths
-      for (const [key, value] of formData.entries()) {
-        if (value && typeof value === 'object' && 'arrayBuffer' in value) {
-          const file = value as File
-          const relativePath = formData.get(`path_${key}`) as string | null
-          files.push({
-            file,
-            relativePath: relativePath || file.name,
-          })
-        }
-      }
-
-      if (files.length === 0) {
-        return c.json({ error: 'No files provided' }, 400)
-      }
-
-      const targetDir = (c.req.query('dir') || '').replace(/^\/+/, '')
-      const overwrite = c.req.query('overwrite') === 'true'
-      const results: { path: string; status: 'created' | 'overwritten' | 'skipped' | 'error'; error?: string }[] = []
-
-      // K8s runtime: proxy through sandbox
+      staged = await stageWorkspaceMultipart(c.req.raw)
+      if (staged.files.length === 0) return c.json({ error: 'No files provided' }, 400)
       const client = await getSquadClient(squad.id)
-      if (client) {
-        const { workspaceMount } = resolveWorkspaceLayout({ squadId: squad.id })
-        for (const { file, relativePath } of files) {
-          const fullRelativePath = targetDir ? `${targetDir}/${relativePath}` : relativePath
-          const targetPath = resolveSandboxWorkspacePath(workspaceMount, fullRelativePath)
-          if (!targetPath) {
-            results.push({ path: fullRelativePath, status: 'error', error: 'Invalid path' })
-            continue
-          }
-          try {
-            if (!overwrite) {
-              try {
-                const stat = await client.stat({ path: targetPath })
-                if (stat.exists) {
-                  results.push({ path: fullRelativePath, status: 'skipped' })
-                  continue
-                }
-              } catch {
-                // File doesn't exist, proceed
-              }
-            }
-            const buffer = Buffer.from(await file.arrayBuffer())
-            try {
-              // Raw-body transport: no base64 (+33%) and no multi-megabyte JSON
-              // string on either side — large uploads broke both.
-              await client.upload({
-                path: targetPath,
-                content: buffer,
-                createDirs: true,
-              })
-            } catch (err) {
-              // A box bundle that predates /upload answers 404 — fall back to
-              // the JSON write path so uploads keep working mid-rollout.
-              if (!(err instanceof SandboxHttpError && err.status === 404)) throw err
-              await client.write({
-                path: targetPath,
-                content: buffer.toString('base64'),
-                createDirs: true,
-              })
-            }
-            results.push({ path: fullRelativePath, status: 'created' })
-          } catch (err) {
-            results.push({
-              path: fullRelativePath,
-              status: 'error',
-              error: publicErrorMessage(err),
-            })
-          }
-        }
-        return c.json({ uploaded: results.filter((r) => r.status !== 'error').length, results })
-      }
-
-      // Local runtime: write to filesystem
-      const workspacePath = resolveSquadWorkspaceHostPath(squad.id)
-      const writtenFiles: string[] = []
-
-      try {
-        for (const { file, relativePath } of files) {
-          const fullRelativePath = targetDir ? `${targetDir}/${relativePath}` : relativePath
-          const targetPath = path.resolve(workspacePath, fullRelativePath)
-
-          if (!isInsideWorkspaceRoot(workspacePath, targetPath)) {
-            results.push({ path: fullRelativePath, status: 'error', error: 'Invalid path' })
-            continue
-          }
-
-          const exists = fs.existsSync(targetPath)
-          if (exists && !overwrite) {
-            results.push({ path: fullRelativePath, status: 'skipped' })
-            continue
-          }
-
-          const parentDir = path.dirname(targetPath)
-          if (!fs.existsSync(parentDir)) {
-            fs.mkdirSync(parentDir, { recursive: true })
-          }
-
-          const buffer = Buffer.from(await file.arrayBuffer())
-          fs.writeFileSync(targetPath, buffer)
-          writtenFiles.push(targetPath)
-          results.push({ path: fullRelativePath, status: exists ? 'overwritten' : 'created' })
-        }
-      } catch (err) {
-        for (const filePath of writtenFiles) {
-          try {
-            fs.unlinkSync(filePath)
-          } catch {
-            // Ignore cleanup errors
-          }
-        }
-        throw err
-      }
-
+      const workspacePath = client
+        ? resolveWorkspaceLayout({ squadId: squad.id }).workspaceMount
+        : resolveSquadWorkspaceHostPath(squad.id)
+      const results = await publishWorkspaceUpload({
+        staged,
+        client,
+        workspacePath,
+        targetDir: (c.req.query('dir') || '').replace(/^\/+/, ''),
+        overwrite: c.req.query('overwrite') === 'true',
+        signal: c.req.raw.signal,
+      })
       return c.json({ uploaded: results.filter((r) => r.status !== 'error').length, results })
     } catch (error) {
+      if (error instanceof InvalidWorkspaceMultipartError) return c.json({ error: error.message }, 400)
       log.error('Error uploading files:', error)
       return c.json({ error: `Failed to upload: ${publicErrorMessage(error)}` }, 500)
+    } finally {
+      await staged?.cleanup()
     }
   })
   .get('/:id/workspace/sessions', requireSquadPermission('terminal:read'), async (c) => {

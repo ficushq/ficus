@@ -650,3 +650,28 @@ describe('SandboxClient per-command env overrides', () => {
     }
   })
 })
+
+it('upload forwards a stream unchanged and propagates caller cancellation', async () => {
+  const previous = globalThis.fetch
+  const controller = new AbortController()
+  const source = new ReadableStream<Uint8Array>({
+    start(c) {
+      c.enqueue(new Uint8Array([1]))
+      c.close()
+    },
+  })
+  let observed: AbortSignal | undefined
+  globalThis.fetch = mock(async (_url, init) => {
+    expect(init?.body).toBe(source)
+    observed = init?.signal as AbortSignal
+    return Response.json({ bytesWritten: 1 })
+  }) as unknown as typeof fetch
+  try {
+    const client = new SandboxClient('127.0.0.1:1234')
+    await client.upload({ path: '/workspace/file', content: source, signal: controller.signal })
+    controller.abort()
+    expect(observed?.aborted).toBe(true)
+  } finally {
+    globalThis.fetch = previous
+  }
+})

@@ -1,8 +1,10 @@
+import { requestBodyLimits } from '../middleware/request-body-limits'
 import { describe, it, expect, beforeAll, afterAll, mock } from 'bun:test'
 import { Hono } from 'hono'
 
 // Every sandbox-backed squad (VM, Kubernetes) proxies workspace reads and writes through this
 // client. Record each path it is asked to touch so the test can prove none escape the mount.
+let uploadWasStream = false
 const touched: string[] = []
 const downloads: Array<{ path: string; range?: string; archive?: boolean }> = []
 // Per-test overrides for the streaming download transport.
@@ -36,8 +38,11 @@ const fakeClient = {
       body: new Response('tgz').body!,
     }
   },
-  upload: async ({ path }: { path: string }) => {
+  upload: async ({ path, content }: { path: string; content: unknown }) => {
     touched.push(path)
+    uploadWasStream = content instanceof ReadableStream
+    const bytes = await new Response(content as BodyInit).arrayBuffer()
+    return { bytesWritten: bytes.byteLength }
   },
   write: async ({ path }: { path: string }) => {
     touched.push(path)
@@ -54,6 +59,7 @@ const { SandboxDownloadRouteMissingError } = await import('../services/sandbox/c
 
 const app = new Hono()
 app.use('*', identityMiddleware)
+app.use('*', requestBodyLimits)
 app.route('/api/squads', squadsRouter)
 
 const prefix = `sq-sbx-paths-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -204,4 +210,30 @@ describe('sandbox-backed workspace download streams through /download', () => {
     expect(large.status).toBe(503)
     expect(((await large.json()) as { code: string }).code).toBe('SANDBOX_BUNDLE_OUTDATED')
   })
+})
+
+it('workspace upload sends a staged file stream instead of a buffer', async () => {
+  const response = await upload('', 'streamed.txt')
+  expect(response.status).toBe(200)
+  const body = await response.json()
+  expect(body.results).toEqual([{ path: 'streamed.txt', status: 'created' }])
+  expect(uploadWasStream).toBe(true)
+})
+
+it('workspace transfers disable their per-request idle timeout after authorization', async () => {
+  const calls: number[] = []
+  const server = {
+    timeout(_request: Request, seconds: number) {
+      calls.push(seconds)
+    },
+  }
+  const form = new FormData()
+  form.append('file', new File(['payload'], 'file'))
+  await app.request(
+    `/api/squads/${squadId}/workspace/upload?overwrite=true`,
+    { method: 'POST', headers: authHeaders(token), body: form },
+    server
+  )
+  await app.request(`/api/squads/${squadId}/workspace/download?path=file`, { headers: authHeaders(token) }, server)
+  expect(calls).toEqual([0, 0])
 })
