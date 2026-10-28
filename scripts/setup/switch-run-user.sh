@@ -75,7 +75,7 @@ Usage: switch-run-user.sh --config ficus-setup.yaml [--user NAME] [--revert]
 Options:
   --config FILE   the config this host was set up with (core.run_user is recorded in it)
   --user NAME     the service user to switch to (default: ficus)
-  --revert        switch back to root
+  --revert        switch back to root (self-hosted source.mode git-ssh/git-https only)
 EOF
 }
 
@@ -160,6 +160,9 @@ host_migrate_lock
 
 ensure_yq
 cfg_load "${CONFIG}"
+if [[ ${REVERT} -eq 1 && $(cfg_get '.source.mode' 'git-ssh') == artifact ]]; then
+  refuse_hosted_core_root '--revert is only supported for self-hosted checkouts'
+fi
 CFG_FILE=$(readlink -f -- "${CONFIG}")
 # shellcheck disable=SC2034 # read by lib.sh's render_core_unit / core_unit_db_after
 DB_MODE=$(cfg_get '.database.mode' 'container')

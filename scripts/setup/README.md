@@ -145,9 +145,10 @@ tag or commit sha and defaults to the config's `source.ref`.
 Before either tenant setup or upgrade builds, the toolkit reconciles swap and
 manages root-owned `/usr/local/bin/bun` plus
 `/usr/local/bin/node -> /usr/local/bin/bun`. It verifies a real Node shebang as
-`core.run_user`; hosted tenants omit that key and therefore preserve their
-root SSH/setup/upgrade identity. For a supported BYO non-root upgrade, the
-invoking operator must either be root or have non-interactive sudo, the
+`core.run_user`. Hosted tenants set `core.run_user: ficus`: root may run the
+SSH/setup/upgrade toolkit, but never the hosted Core services. For a supported
+BYO non-root upgrade, the invoking operator must either be root or have
+non-interactive sudo, the
 configured `core.run_user` account must already exist (`setup-host.sh` creates
 it; see "Running Core as a service user"), and Bun source discovery
 must succeed from the invoking operator's `PATH` or `HOME/.bun/bin`; setup then
@@ -266,8 +267,22 @@ restore.
 
 ### Running Core as a service user
 
-`core.run_user` names the account `ficus-api` and `ficus-worker` run as. On a
-new host, `setup-host.sh` creates a missing one as a system account
+`core.run_user` names the account `ficus-api` and `ficus-worker` run as.
+**Hosted Core (`source.mode: artifact`) must run as an unprivileged service
+user**, normally `core.run_user: ficus`; root is no longer supported. Setup
+and upgrade reject root (including UID 0) at config-parse time. An omitted,
+null or empty key still defaults to the invoking user, but is rejected when
+that default is root. Self-hosted `git-ssh` / `git-https` checkouts retain the
+invoking-user default, including root. Artifact upgrade inputs in the
+environment alone do not change that source-mode distinction.
+
+Before any upgrade mutation (including host-migration reconciliation), an
+artifact host also checks systemd's effective `User` for **both** `ficus-api`
+and `ficus-worker`. Root or an empty/unset `User` (systemd's root default)
+refuses even with a non-root config; a failed query also stops the upgrade.
+Repair such a half-switched host with `switch-run-user.sh` before upgrading.
+
+On a new host, `setup-host.sh` creates a missing one as a system account
 (`useradd --system`, home `/home/<user>` 0750, shell `/usr/sbin/nologin`) and
 adds the groups the runtime needs: `systemd-journal` (Settings > System logs),
 `docker` only for the `docker-sysbox` / `docker-socket` runtimes, and
@@ -284,8 +299,16 @@ the `systemd/` templates, like `enable-pooler.sh`), run as root:
 
 ```bash
 bash switch-run-user.sh --config /root/ficus-setup/ficus-setup.yaml [--user ficus]
+# Self-hosted git-ssh/git-https configs only (even on the artifact layout):
 bash switch-run-user.sh --config /root/ficus-setup/ficus-setup.yaml --revert
 ```
+
+The forward switch remains available to repair legacy root artifact hosts.
+`--revert` is refused for `source.mode: artifact` with the same hosted
+unprivileged-service-user guidance; it is only supported for self-hosted
+configs. Automatic failure rollback and interrupted-switch recovery remain
+unchanged; a failed repair can restore its starting state, which must be
+repaired before another hosted upgrade.
 
 It refuses with nothing changed unless the host is on the artifact layout, no
 host migration is journaled, the new HOME (`/home/<user>/.ficus`) is absent or
