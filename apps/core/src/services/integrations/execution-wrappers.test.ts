@@ -132,3 +132,92 @@ test('human pass-through does not overwrite ordinary inherited shell variables',
   })
   expect(result).toMatchObject({ kind: 'exited', code: 0 })
 })
+
+test('ntn nested invocations select Notion and human login passes through without credentials', async () => {
+  const f = fixture()
+  writeFileSync(join(f.real, 'ntn'), '#!/bin/sh\nprintf "<%s>\\n" "$@"\n', { mode: 0o755 })
+  writeExecutionWrappers(f.wrappers, [{ binary: 'ntn', providerKey: 'notion' }], 'squad')
+  const child = await runCapturedProcess(
+    [
+      process.execPath,
+      '-e',
+      'const c=Bun.spawn(["ntn", "search"], {stdout:"inherit",stderr:"inherit"}); process.exit(await c.exited)',
+    ],
+    { env: f.env, timeoutMs: 3000 }
+  )
+  expect(child).toMatchObject({ kind: 'exited', code: 0, stdout: '<search>\n' })
+  expect(child.stderr).toContain(`integration exec notion --squad squad -- ${f.real}/ntn search`)
+  const human = await runCapturedProcess(['ntn', 'login'], {
+    env: { ...f.env, FICUS_TOKEN: undefined },
+    timeoutMs: 3000,
+  })
+  expect(human).toMatchObject({
+    kind: 'exited',
+    code: 0,
+    stdout: '<login>\n',
+    stderr: 'Ficus integration credentials are only available to agents; running ntn without Ficus credentials.\n',
+  })
+})
+
+test('Docker, k8s, VM and host command preambles reach ntn wrappers from nested children', async () => {
+  const { DockerSandboxManager } = await import('../sandbox/docker/manager')
+  const { buildHostPreamble, hostBinDir } = await import('../sandbox/host/env')
+  const { buildPreamble } = await import('../../../../../packages/sandbox-server/src/services/bash')
+  const previous = {
+    HOME_DIR: process.env.HOME_DIR,
+    WORKSPACE_PATH: process.env.WORKSPACE_PATH,
+    FICUS_BOX_HOME: process.env.FICUS_BOX_HOME,
+  }
+  const squad = '11111111-2222-4333-8444-555555555555'
+  const f = fixture()
+  process.env.HOME_DIR = f.root
+  const nested = `${JSON.stringify(process.execPath)} -e 'const c=Bun.spawn(["ntn", "search"], {stdout:"inherit",stderr:"inherit"}); process.exit(await c.exited)'`
+  try {
+    writeFileSync(join(f.real, 'ntn'), '#!/bin/sh\nprintf "notion-child\\n"\n', { mode: 0o755 })
+    mkdirSync(hostBinDir(), { recursive: true })
+    writeFileSync(join(hostBinDir(), 'ficus'), readFileSync(join(f.real, 'ficus')), { mode: 0o755 })
+    for (const runtime of ['docker', 'k8s', 'vm', 'host']) {
+      const workspace =
+        runtime === 'host' ? join(f.root, 'workspaces', 'squads', squad) : join(f.root, runtime, 'workspace')
+      const wrappers = join(workspace, '.ficus', 'integration-bin')
+      writeExecutionWrappers(wrappers, [{ binary: 'ntn', providerKey: 'notion' }], squad)
+      let preamble: string
+      if (runtime === 'docker') {
+        // Generate the actual spawn-hook script with its mount mapped to the test directory.
+        const manager = {
+          sandboxes: new Map([
+            ['fixture', { workspacePath: workspace, workspaceMount: workspace, containerId: 'fixture' }],
+          ]),
+          getSandboxUserArgs: () => [],
+        }
+        const hook = DockerSandboxManager.prototype.getSpawnHook.call(manager as any, 'fixture', workspace)!
+        hook({ command: nested, cwd: workspace, env: {} })
+        const scripts = (await import('node:fs')).readdirSync(join(workspace, '.tmp'))
+        preamble = readFileSync(join(workspace, '.tmp', scripts[0]!), 'utf8')
+      } else if (runtime === 'host') {
+        preamble = buildHostPreamble({ squadId: squad, ficusToken: 'synthetic-agent-identity' }) + nested
+      } else {
+        process.env.WORKSPACE_PATH = runtime === 'vm' ? join(f.root, runtime, '.private') : workspace
+        if (runtime === 'vm') process.env.FICUS_BOX_HOME = join(f.root, runtime)
+        else delete process.env.FICUS_BOX_HOME
+        preamble = buildPreamble({ sourceEnv: true, activateDevbox: true }) + nested
+      }
+      const result = await runCapturedProcess(['/bin/sh', '-c', preamble], {
+        env: {
+          ...f.env,
+          PATH: `${f.real}:/usr/bin:/bin`,
+          ...(runtime === 'host' ? { FICUS_IDENTITY_TOKEN: f.env.FICUS_TOKEN } : {}),
+        },
+        timeoutMs: 3000,
+      })
+      expect(result).toMatchObject({ kind: 'exited', code: 0, stdout: 'notion-child\n' })
+      expect(result.stderr).toContain(`integration exec notion --squad ${squad} -- ${f.real}/ntn search`)
+      expect(preamble).not.toContain('NOTION_API_TOKEN')
+    }
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+})

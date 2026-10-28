@@ -54,7 +54,8 @@ export interface IntegrationSandboxProjection {
   readonly extensions: readonly string[]
   readonly protectedBindings: readonly {
     name: string
-    source: { kind: 'oauth_access_token' } | { kind: 'configuration'; field: string }
+    /** Nonsecret configuration only. Credentials must use execution.environment. */
+    source: { kind: 'configuration'; field: string }
   }[]
 }
 

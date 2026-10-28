@@ -1,6 +1,6 @@
 # Integration command execution
 
-Integration execution is an unrestricted, per-command credential path. This foundation migrates GitHub and Linear; Notion's protected token binding, deployment credential cards, and legacy exposure exports remain until their separate migrations. It does **not** claim that every integration is already token-free in sandbox files.
+Integration execution is an unrestricted, per-command credential path. GitHub, Linear and Notion use this path; deployment credential cards and legacy exposure exports remain until their separate migrations. It does **not** claim that every integration is already token-free in sandbox files.
 
 ## Plugin contract
 
@@ -19,6 +19,7 @@ execution: {
 - `environment` declares static, valid environment-variable names and synchronous resolvers using the plugin's parsed configuration and credential. Both secret and non-secret command configuration may be mapped. Never use this declaration as a persistent sandbox binding.
 - `binaries` names globally installed executables, not paths. Names must be unique across assigned providers; conflicts fail projection clearly. Do not wrap package managers or `ficus` itself. CLI installation remains the plugin's existing sandbox projection responsibility.
 - GitHub declares `gh` and `GH_TOKEN`, `GITHUB_TOKEN`, `GITHUB_USER`. Linear declares `LINEAR_API_KEY` and no binary: Ficus does not provision a Linear CLI. It can still authenticate arbitrary scripts through exec. Channel plugins have no execution declaration.
+- Notion declares `ntn` and `NOTION_API_TOKEN`, resolved from the current OAuth access token on every invocation, including nested commands. `NOTION_WORKSPACE_ID` remains a **nonsecret configuration** binding in `.ficus/.env` for compatibility with workspace-aware CLI usage. Protected bindings accept configuration fields only; the unused OAuth-token source and projection credential reader have been removed.
 - The declaration is not serialized into the public catalog. Credentials never enter public declarations or wrapper files.
 
 Execution callbacks keep their precise configuration/credential types. OAuth-only
@@ -135,4 +136,6 @@ executable PATH wrapper, including from child processes.
 
 Project-local CLIs are an accepted gap: npm/bun/pnpm scripts may put `node_modules/.bin` before the managed directory, and `npx`/`bunx` may bypass it. Package managers are not wrapped. Run such scripts explicitly through `ficus integration exec <provider> --squad <squad-id> -- npm run deploy` (or the bun/pnpm equivalent).
 
-No arbitrary exposed values are migrated by this foundation. Later migrations remove Notion/deployment token projection, legacy exposure delivery, and stale files; detection and agent-facing guidance are separate changes.
+Notion refresh, revocation, credential-drift detection and projection invalidation remain active. Rotated credentials work immediately without rewriting `.env` or wrappers or reinstalling the CLI. Reconciliation may still regenerate token-free metadata and verify installation readiness; rotation does not change generated file contents. Invalid/revoked or detached connections refuse even through a stale wrapper.
+
+No arbitrary exposed values are migrated. Later migrations remove deployment token projection, legacy exposure delivery, and stale files; automatic rollout cleanup, detection and broader agent-facing guidance are separate changes.

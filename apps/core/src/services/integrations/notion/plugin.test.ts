@@ -44,9 +44,10 @@ describe('notionPlugin', () => {
     expect(plugin.sandbox.setupSteps[0].id).toBe('notion-cli@0.23.25')
     expect(plugin.sandbox.setupSteps[0].script).toContain('npm pack --silent ntn@0.23.25')
     expect(plugin.sandbox.protectedBindings).toEqual([
-      { name: 'NOTION_API_TOKEN', source: { kind: 'oauth_access_token' } },
       { name: 'NOTION_WORKSPACE_ID', source: { kind: 'configuration', field: 'workspaceId' } },
     ])
+    expect(plugin.execution?.binaries).toEqual(['ntn'])
+    expect(Object.keys(plugin.execution?.environment ?? {})).toEqual(['NOTION_API_TOKEN'])
     expect(plugin.runtime.provider.capabilities).toEqual({})
   })
 

@@ -1820,7 +1820,15 @@ test('VM pushes executable token-free wrappers to both squad and member boxes an
   const { getSquadWorkspacePath } = await import('../../squad/workspace')
   const squadId = crypto.randomUUID(),
     wrapperDir = join(getSquadWorkspacePath(squadId), '.ficus', 'integration-bin')
-  writeExecutionWrappers(wrapperDir, [{ binary: 'gh', providerKey: 'github' }], squadId, 'git() { :; }\n')
+  writeExecutionWrappers(
+    wrapperDir,
+    [
+      { binary: 'gh', providerKey: 'github' },
+      { binary: 'ntn', providerKey: 'notion' },
+    ],
+    squadId,
+    'git() { :; }\n'
+  )
   try {
     for (const sandboxId of [`squad_${squadId}`, `agent_${crypto.randomUUID()}`]) {
       const client = new FakeClient(),
@@ -1835,6 +1843,11 @@ test('VM pushes executable token-free wrappers to both squad and member boxes an
       await syncBoxFiles(client as any, sandboxId, { ...squadAgentOpts, squadId }, deps)
       const target = `${HOME(sandboxId)}/workspace/.ficus/integration-bin/gh`
       expect(client.modeAt(target)).toBe('0755')
+      const notionTarget = `${HOME(sandboxId)}/workspace/.ficus/integration-bin/ntn`
+      expect(client.modeAt(notionTarget)).toBe('0755')
+      expect(Buffer.from(client.writes().find((w) => w.path === notionTarget)!.content, 'base64').toString()).toContain(
+        "integration exec 'notion'"
+      )
       expect(client.modeAt(`${HOME(sandboxId)}/workspace/.ficus/integration-bin/.git-config`)).toBe('0755')
       expect(Buffer.from(client.writes().find((w) => w.path === target)!.content, 'base64').toString()).toContain(
         `--squad '${squadId}'`
@@ -1847,10 +1860,19 @@ test('VM pushes executable token-free wrappers to both squad and member boxes an
           .bashes()
           .some(
             (b) =>
-              b.command === `rm -f -- '${HOME(sandboxId)}/workspace/.ficus/integration-bin/.git-config' '${target}'`
+              b.command ===
+              `rm -f -- '${HOME(sandboxId)}/workspace/.ficus/integration-bin/.git-config' '${target}' '${notionTarget}'`
           )
       ).toBe(true)
-      writeExecutionWrappers(wrapperDir, [{ binary: 'gh', providerKey: 'github' }], squadId, 'git() { :; }\n')
+      writeExecutionWrappers(
+        wrapperDir,
+        [
+          { binary: 'gh', providerKey: 'github' },
+          { binary: 'ntn', providerKey: 'notion' },
+        ],
+        squadId,
+        'git() { :; }\n'
+      )
     }
   } finally {
     rmSync(getSquadWorkspacePath(squadId), { recursive: true, force: true })
