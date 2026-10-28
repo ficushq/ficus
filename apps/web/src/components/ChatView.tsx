@@ -153,6 +153,12 @@ interface ChatViewProps {
   /** Squad ID for permissions, file mentions, and staging images before an agent exists. */
   squadId?: string
   renderMessageFooter?: (item: Extract<RenderItem, { kind: 'persisted' }>) => React.ReactNode
+  /**
+   * Content that starts the transcript, before the first message (e.g. an expandable archive of an
+   * earlier conversation). It scrolls with the messages and shows once no older pages remain, so it
+   * stays in chronological order. Growing it (expanding) keeps the reading position.
+   */
+  beforeMessages?: React.ReactNode
   afterMessages?: React.ReactNode
   /**
    * Floating controls that end the message flow (after afterMessages): right below the latest
@@ -476,6 +482,7 @@ export function ChatView({
   inputPrefix,
   inputStorageKey,
   squadId,
+  beforeMessages,
   afterMessages,
   renderMessageFooter,
   stickyAfterMessages,
@@ -1110,8 +1117,9 @@ export function ChatView({
   }, [hasStickyAfterMessages, pinTranscriptToBottom])
 
   // Preserve scroll position when older messages are prepended.
-  // Track item count and scroll height to detect when new messages were added at the top.
+  // Track the first item and scroll height to detect when new messages were added at the top.
   const prevItemCountRef = useRef(0)
+  const prevFirstItemIdRef = useRef<string | undefined>(undefined)
   const prevScrollHeightRef = useRef(0)
 
   useEffect(() => {
@@ -1120,10 +1128,17 @@ export function ChatView({
 
     const currentCount = items.length
     const prevCount = prevItemCountRef.current
+    const firstItemId = items[0]?.id
 
-    // If items were added and we're NOT at auto-scroll (user viewing history)
-    // and the scroll height increased, preserve position
-    if (currentCount > prevCount && !autoScrollRef.current && prevScrollHeightRef.current > 0) {
+    // If items were added at the top and we're NOT at auto-scroll (user viewing history)
+    // and the scroll height increased, preserve position. Messages arriving at the end
+    // grow the transcript below the reader and need no correction.
+    if (
+      currentCount > prevCount &&
+      firstItemId !== prevFirstItemIdRef.current &&
+      !autoScrollRef.current &&
+      prevScrollHeightRef.current > 0
+    ) {
       const heightDiff = el.scrollHeight - prevScrollHeightRef.current
       if (heightDiff > 0) {
         el.scrollTop += heightDiff
@@ -1131,8 +1146,33 @@ export function ChatView({
     }
 
     prevItemCountRef.current = currentCount
+    prevFirstItemIdRef.current = firstItemId
     prevScrollHeightRef.current = el.scrollHeight
   }, [items])
+
+  // Content starting the transcript grows under the reader's eyes (they expanded it): keep the
+  // prepend baseline current, and stop following the bottom once the growth pushed the end out of
+  // view, so the next message doesn't scroll away from what they opened.
+  const beforeMessagesRef = useRef<HTMLDivElement>(null)
+  const showBeforeMessages = Boolean(beforeMessages) && !hasOlderMessages && !isLoadingOlder
+  useEffect(() => {
+    const slotEl = beforeMessagesRef.current
+    if (!slotEl) return
+    let previousHeight: number | undefined
+    const observer = new ResizeObserver(() => {
+      const height = slotEl.offsetHeight
+      const grew = previousHeight !== undefined && height > previousHeight
+      const changed = previousHeight !== undefined && height !== previousHeight
+      previousHeight = height
+      const scrollEl = scrollContainerRef.current
+      if (!changed || !scrollEl) return
+      prevScrollHeightRef.current = scrollEl.scrollHeight
+      const distance = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight
+      if (grew && autoScrollRef.current && distance > 30) updateAutoScroll(false)
+    })
+    observer.observe(slotEl)
+    return () => observer.disconnect()
+  }, [showBeforeMessages, updateAutoScroll])
 
   // Convert file to base64
   const fileToBase64 = useCallback((file: File): Promise<string> => {
@@ -1687,6 +1727,12 @@ export function ChatView({
             : 'transition-[padding] delay-[600ms] duration-300 ease-out motion-reduce:transition-none'
         )}
       >
+        {showBeforeMessages && (
+          <div ref={beforeMessagesRef} className="min-w-0">
+            {beforeMessages}
+          </div>
+        )}
+
         {/* Loading indicator for older messages */}
         {isLoadingOlder && (
           <div className="flex items-center justify-center py-3 text-muted">

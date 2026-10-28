@@ -2535,6 +2535,7 @@ type ScrollMetrics = {
 async function renderChatViewWithControlledLayout(element: React.ReactElement) {
   let resizeCallback: ResizeObserverCallback | undefined
   const observedElements: Element[] = []
+  const resizeObservers: { callback: ResizeObserverCallback; elements: Element[] }[] = []
   let nextFrameId = 1
   const frames = new Map<number, FrameRequestCallback>()
   const dom = await acquireDomHarness({
@@ -2548,13 +2549,19 @@ async function renderChatViewWithControlledLayout(element: React.ReactElement) {
       }
       window.cancelAnimationFrame = (id: number) => frames.delete(id)
       window.ResizeObserver = class ResizeObserver {
+        private readonly record: { callback: ResizeObserverCallback; elements: Element[] }
         constructor(callback: ResizeObserverCallback) {
           resizeCallback = callback
+          this.record = { callback, elements: [] }
+          resizeObservers.push(this.record)
         }
         observe(element: Element) {
           observedElements.push(element)
+          this.record.elements.push(element)
         }
-        disconnect() {}
+        disconnect() {
+          this.record.elements = []
+        }
       }
     },
   })
@@ -2642,6 +2649,13 @@ async function renderChatViewWithControlledLayout(element: React.ReactElement) {
     render,
     flushFrames,
     fireComposerResize: () => resizeCallback?.([], {} as ResizeObserver),
+    /** Delivers a resize to every live observer of `element`. */
+    fireResize: async (element: Element) => {
+      await dom.act(async () => {
+        for (const observer of resizeObservers)
+          if (observer.elements.includes(element)) observer.callback([], {} as ResizeObserver)
+      })
+    },
     pendingFrames: () => frames.size,
     observedComposerCount: () => observedElements.length,
     installTextareaMetrics,
@@ -2809,6 +2823,145 @@ describe('ChatView composer bottom anchoring', () => {
 
     await harness.flushFrames()
     expect(metrics.scrollTop).toBe(500)
+  })
+})
+
+describe('ChatView beforeMessages', () => {
+  const row = (message: Message): RenderItem => ({
+    kind: 'persisted',
+    id: message.id,
+    message,
+    mergedFrom: [message],
+    blocks: [],
+  })
+  const archive = (
+    <details data-testid="archive">
+      <summary>Earlier conversation</summary>
+      <p>Archived reply</p>
+    </details>
+  )
+
+  test('starts the scrolling transcript, before the first message, once no older pages remain', async () => {
+    const first = humanMsg('first', 'First live message')
+    const { dom, root, window } = await renderChatView(
+      <ChatView items={[row(first)]} onSend={() => undefined} beforeMessages={archive} />
+    )
+    const transcript = window.document.querySelector('[data-testid="chat-messages"]')!
+    const details = transcript.querySelector('[data-testid="archive"]')
+    expect(details).not.toBeNull()
+    const message = transcript.querySelector('[data-message-id~="first"]')!
+    expect(details!.compareDocumentPosition(message) & window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    // Older live pages come first chronologically: the archive waits until they have loaded.
+    await dom.act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/chat/agent-1?scope=all']}>
+          <PermissionsProvider usePermissions={usePermissionsMock}>
+            <ChatView
+              items={[row(first)]}
+              onSend={() => undefined}
+              beforeMessages={archive}
+              hasOlderMessages
+              dependencies={chatViewDependencies}
+            />
+          </PermissionsProvider>
+        </MemoryRouter>
+      )
+    })
+    expect(window.document.querySelector('[data-testid="archive"]')).toBeNull()
+    expect(window.document.body.textContent).toContain('Scroll up for older messages')
+  })
+
+  test('expanding it holds the reading position while messages arrive', async () => {
+    const first = humanMsg('first', 'first')
+    const reply = assistantMsg('reply', 'reply')
+    const harness = await renderChatViewWithControlledLayout(
+      <ChatView items={[row(first)]} onSend={() => undefined} beforeMessages={archive} />
+    )
+    const { window, metrics } = harness
+    await harness.flushFrames()
+    expect(metrics.scrollTop).toBe(800)
+    const slot = window.document.querySelector('[data-testid="archive"]')!.parentElement!
+    let slotHeight = 40
+    Object.defineProperty(slot, 'offsetHeight', { configurable: true, get: () => slotHeight })
+    await harness.fireResize(slot)
+    expect(window.document.querySelector('button[title="Auto-scroll enabled"]')).not.toBeNull()
+
+    // The reader opens the archive at the top: it grows downwards, pushing the latest message out of view.
+    slotHeight = 400
+    metrics.scrollHeight = 1360
+    await harness.fireResize(slot)
+    expect(metrics.scrollTop).toBe(800)
+    expect(window.document.querySelector('button[title="Auto-scroll disabled"]')).not.toBeNull()
+
+    // A reply arriving at the end neither follows nor shifts what they are reading.
+    metrics.scrollHeight = 1460
+    await harness.render(
+      <ChatView items={[row(first), row(reply)]} onSend={() => undefined} beforeMessages={archive} />
+    )
+    await harness.flushFrames()
+    expect(metrics.scrollTop).toBe(800)
+  })
+
+  test('a resize that keeps the end in view keeps following', async () => {
+    const first = humanMsg('first', 'first')
+    const harness = await renderChatViewWithControlledLayout(
+      <ChatView items={[row(first)]} onSend={() => undefined} beforeMessages={archive} />
+    )
+    const { window, metrics } = harness
+    await harness.flushFrames()
+    const slot = window.document.querySelector('[data-testid="archive"]')!.parentElement!
+    let slotHeight = 40
+    Object.defineProperty(slot, 'offsetHeight', { configurable: true, get: () => slotHeight })
+    await harness.fireResize(slot)
+    slotHeight = 20
+    metrics.scrollHeight = 980
+    metrics.scrollTop = 780
+    await harness.fireResize(slot)
+    expect(window.document.querySelector('button[title="Auto-scroll enabled"]')).not.toBeNull()
+  })
+})
+
+describe('ChatView scrolled-up position', () => {
+  const row = (message: Message): RenderItem => ({
+    kind: 'persisted',
+    id: message.id,
+    message,
+    mergedFrom: [message],
+    blocks: [],
+  })
+
+  async function scrolledUp(items: RenderItem[]) {
+    const harness = await renderChatViewWithControlledLayout(<ChatView items={items} onSend={() => undefined} />)
+    await harness.flushFrames()
+    await harness.dom.act(async () =>
+      harness.window.document
+        .querySelector('button[title="Auto-scroll enabled"]')
+        ?.dispatchEvent(new harness.window.MouseEvent('click', { bubbles: true }))
+    )
+    // Record the measured layout as the baseline for the next change.
+    await harness.render(<ChatView items={[...items]} onSend={() => undefined} />)
+    harness.metrics.scrollTop = 300
+    return harness
+  }
+
+  test('keeps the reading position when older messages are prepended', async () => {
+    const first = humanMsg('first', 'first')
+    const older = assistantMsg('older', 'older')
+    const harness = await scrolledUp([row(first)])
+    harness.metrics.scrollHeight = 1200
+    await harness.render(<ChatView items={[row(older), row(first)]} onSend={() => undefined} />)
+    expect(harness.metrics.scrollTop).toBe(500)
+  })
+
+  test('does not move when a message arrives at the end', async () => {
+    const first = humanMsg('first', 'first')
+    const reply = assistantMsg('reply', 'reply')
+    const harness = await scrolledUp([row(first)])
+    harness.metrics.scrollHeight = 1200
+    await harness.render(<ChatView items={[row(first), row(reply)]} onSend={() => undefined} />)
+    await harness.flushFrames()
+    expect(harness.metrics.scrollTop).toBe(300)
   })
 })
 

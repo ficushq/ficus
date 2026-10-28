@@ -56,6 +56,7 @@ async function fixture(realtime = false) {
     }, [onConversation])
     return (
       <div data-shared-chat>
+        <div data-transcript>{input.beforeConversation}</div>
         {input.initialMessage?.content}
         {input.afterConversation}
       </div>
@@ -243,6 +244,39 @@ test('legacy histories remain readable without being replayed into a new model s
     expect(f.container.textContent).toContain('Earlier result')
     expect(f.sendAccepted).not.toHaveBeenCalled()
     expect(f.api.append).not.toHaveBeenCalled()
+  } finally {
+    await f.cleanup()
+  }
+})
+test('the earlier conversation starts the transcript as a collapsed disclosure that loads older pages', async () => {
+  const f = await fixture()
+  f.api.history.mockImplementation(async (_id: string, before?: number) =>
+    before
+      ? ({ entries: [{ id: 'oldest', role: 'user', text: 'Oldest question', final: true }], hasMore: false } as any)
+      : ({
+          entries: [{ id: 'legacy', role: 'assistant', text: 'Earlier result', final: true }],
+          hasMore: true,
+          before: 7,
+        } as any)
+  )
+  try {
+    await f.dom.act(async () => f.render())
+    // It scrolls with the messages: rendered by the chat's transcript, not as a strip above it.
+    const details = f.container.querySelector(
+      '[data-transcript] details[data-earlier-conversation]'
+    ) as HTMLDetailsElement
+    expect(details).not.toBeNull()
+    expect(f.container.querySelectorAll('details[data-earlier-conversation]')).toHaveLength(1)
+    expect(details.className).not.toContain('max-h')
+    expect(details.open).toBe(false)
+    expect(details.querySelector('summary')?.textContent).toBe('Earlier conversation')
+
+    const load = [...details.querySelectorAll('button')].find((b) => b.textContent === 'Load earlier messages')!
+    await f.dom.act(async () => load.click())
+    await waitFor(() => expect(details.textContent).toContain('Oldest question'))
+    expect(f.api.history).toHaveBeenLastCalledWith('conversation', 7)
+    expect(details.textContent!.indexOf('Oldest question')).toBeLessThan(details.textContent!.indexOf('Earlier result'))
+    expect([...details.querySelectorAll('button')].some((b) => b.textContent === 'Load earlier messages')).toBe(false)
   } finally {
     await f.cleanup()
   }
