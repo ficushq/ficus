@@ -4,6 +4,7 @@
  * API functions for the task workspace file browser and terminal sessions.
  */
 
+import { sandboxControlRequest } from './sandboxControl'
 import type { LocalDeployment, SandboxPressure, SandboxProcesses, SandboxProcessSignal } from '@ficus/shared'
 import { apiFetch, apiUrl, authFetch } from './client'
 import { CSRF_HEADER } from '@ficus/shared/http-headers'
@@ -260,15 +261,28 @@ export async function getSandboxProcesses(squadId: string): Promise<SandboxProce
   return apiFetch<SandboxProcesses>(`/squads/${squadId}/sandbox/processes`)
 }
 
-export async function signalSandboxProcess(squadId: string, pid: number, signal: SandboxProcessSignal): Promise<void> {
-  await apiFetch(`/squads/${squadId}/sandbox/processes/${pid}/signal`, {
+export async function signalSandboxProcess(
+  squadId: string,
+  pid: number,
+  signal: SandboxProcessSignal,
+  abortSignal?: AbortSignal
+): Promise<void> {
+  await sandboxControlRequest(`/squads/${squadId}/sandbox/processes/${pid}/signal`, {
     method: 'POST',
     body: JSON.stringify({ signal }),
+    signal: abortSignal,
   })
 }
 
-export async function stopSandboxContainer(squadId: string, containerId: string): Promise<void> {
-  await apiFetch(`/squads/${squadId}/sandbox/containers/${encodeURIComponent(containerId)}/stop`, { method: 'POST' })
+export async function stopSandboxContainer(
+  squadId: string,
+  containerId: string,
+  abortSignal?: AbortSignal
+): Promise<void> {
+  await sandboxControlRequest(`/squads/${squadId}/sandbox/containers/${encodeURIComponent(containerId)}/stop`, {
+    method: 'POST',
+    signal: abortSignal,
+  })
 }
 
 export async function applySquadToolchain(squadId: string): Promise<void> {
