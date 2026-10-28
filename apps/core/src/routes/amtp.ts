@@ -1,3 +1,5 @@
+import { z } from 'zod'
+import { cardStructureWithinLimit, envelopeAttachmentsWithinLimit } from '../services/amtp/request-limits'
 import { getPostgresError, publicErrorMessage } from '../db/errors'
 import { Hono } from 'hono'
 import { zValidator } from '../lib/zod-validator'
@@ -298,49 +300,62 @@ export const amtpRouter = new Hono()
   // Validation order (all early-return): registered? (409) -> handle binding (400) ->
   // instanceId binding vs this instance's own identity (400) -> identity key present? (409)
   // -> size (413) -> signature verify (400). Persists the signed card verbatim (never re-signed).
-  .put('/agents/:id/card', zValidator('json', amtpSignedAgentCardSchema), async (c) => {
-    const loaded = await loadAgentForFed(c)
-    if (loaded instanceof Response) return loaded
-    const { agent, identity } = loaded
-    const squadId = agent.squadId ?? undefined
-    const isSelf = identity.type === 'agent' && identity.agentId === agent.id
-    const allowed =
-      (isSelf && (await hasPermission(identity, 'amtp:register', squadId))) ||
-      (await hasPermission(identity, 'amtp:write', squadId))
-    if (!allowed) return c.json({ error: 'Forbidden' }, 403)
-    c.set('authzChecked', true)
+  .put(
+    '/agents/:id/card',
+    zValidator(
+      'json',
+      z.preprocess((value, ctx) => {
+        if (!cardStructureWithinLimit(value)) {
+          ctx.addIssue({ code: 'custom', message: 'Card structure exceeds request limits' })
+          return z.NEVER
+        }
+        return value
+      }, amtpSignedAgentCardSchema)
+    ),
+    async (c) => {
+      const loaded = await loadAgentForFed(c)
+      if (loaded instanceof Response) return loaded
+      const { agent, identity } = loaded
+      const squadId = agent.squadId ?? undefined
+      const isSelf = identity.type === 'agent' && identity.agentId === agent.id
+      const allowed =
+        (isSelf && (await hasPermission(identity, 'amtp:register', squadId))) ||
+        (await hasPermission(identity, 'amtp:write', squadId))
+      if (!allowed) return c.json({ error: 'Forbidden' }, 403)
+      c.set('authzChecked', true)
 
-    const signed = c.req.valid('json')
-    if (!agent.amtpHandle) return c.json({ error: 'Agent is not registered' }, 409)
-    if (signed.handle !== agent.amtpHandle) {
-      return c.json({ error: 'card handle does not match the registered handle' }, 400)
-    }
-    const { instanceId } = await InstanceIdentity.getPublic()
-    if (signed.instanceId !== instanceId) {
-      return c.json({ error: 'card instanceId does not match this instance' }, 400)
-    }
-    const signingIdentity = await inspectAgentSigningIdentity(agent)
-    if (signingIdentity.status !== 'ready') {
-      return c.json(
-        {
-          error: signingIdentity.message!,
-          code:
-            signingIdentity.status === 'unsupported'
-              ? 'AMTP_SIGNING_IDENTITY_UNSUPPORTED'
-              : 'AMTP_SIGNING_IDENTITY_UNAVAILABLE',
-          signingIdentity,
-        },
-        409
-      )
-    }
-    if (signedCardByteSize(signed) > SIGNED_CARD_MAX_BYTES) return c.json({ error: 'card too large' }, 413)
-    if (!verifyAgentCard(signingIdentity.identityPublicKey!, signed)) {
-      return c.json({ error: 'card signature verification failed' }, 400)
-    }
+      const signed = c.req.valid('json')
+      if (!agent.amtpHandle) return c.json({ error: 'Agent is not registered' }, 409)
+      if (signed.handle !== agent.amtpHandle) {
+        return c.json({ error: 'card handle does not match the registered handle' }, 400)
+      }
+      const { instanceId } = await InstanceIdentity.getPublic()
+      if (signed.instanceId !== instanceId) {
+        return c.json({ error: 'card instanceId does not match this instance' }, 400)
+      }
+      const signingIdentity = await inspectAgentSigningIdentity(agent)
+      if (signingIdentity.status !== 'ready') {
+        return c.json(
+          {
+            error: signingIdentity.message!,
+            code:
+              signingIdentity.status === 'unsupported'
+                ? 'AMTP_SIGNING_IDENTITY_UNSUPPORTED'
+                : 'AMTP_SIGNING_IDENTITY_UNAVAILABLE',
+            signingIdentity,
+          },
+          409
+        )
+      }
+      if (signedCardByteSize(signed) > SIGNED_CARD_MAX_BYTES) return c.json({ error: 'card too large' }, 413)
+      if (!verifyAgentCard(signingIdentity.identityPublicKey!, signed)) {
+        return c.json({ error: 'card signature verification failed' }, 400)
+      }
 
-    await agent.update({ cardJson: signed })
-    return c.json({ ok: true, card: signed.card })
-  })
+      await agent.update({ cardJson: signed })
+      return c.json({ ok: true, card: signed.card })
+    }
+  )
 
   // Unpublish the signed card only (leaves the handle registered): same authz as PUT.
   .delete('/agents/:id/card', async (c) => {
@@ -467,6 +482,8 @@ export const amtpRouter = new Hono()
   .post('/inbox', requirePeerSignature, async (c) => {
     const rawBody = c.get('amtpRawBody') ?? ''
     const peerInstanceId = c.get('peerInstanceId') ?? ''
+    if (!envelopeAttachmentsWithinLimit(rawBody))
+      return c.json({ error: 'invalid_envelope', message: 'Use at most 100 attachments' }, 400)
     const result = await amtpEngine.receiveEnvelope({ peerInstanceId, rawBody })
     return c.json(result.body, result.httpStatus)
   })
