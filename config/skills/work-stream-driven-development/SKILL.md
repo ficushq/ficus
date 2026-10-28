@@ -28,6 +28,17 @@ workers cannot see the conversation that led to it. Use step instructions for
 stage-specific objectives. Separate work streams only for independently useful
 deliverables or genuine dependencies; parallel checks can join within one flow.
 
+For same-repository code phases of one design, prefer `--depends-on <parent-id>:ready`
+and platform-owned branch stacking so downstream implementation can use ready
+parent work without waiting for each human merge. Human-only PR merges gate
+delivery, not downstream implementation; preserve selected review/merge policies.
+Use `:done` (the bare-ID default) for an explicit wait-before-next-phase user gate,
+a genuine need for a merged/deployed artifact or runtime state unavailable on an
+open branch, or non-PR deliverables where ready behaves like done. Independent
+work needs no artificial dependency; cross-repository work does not get branch
+stacking. Follow `roadmap-phase-loop` for readiness criteria, branch strategy,
+upstream changes, and delivery holds; an open PR alone is not readiness.
+
 Before repository mutations, create an isolated worktree using the configured
 base branch. Use `squad_bash` for repository inspection, git, tests, builds, and
 local deployments. Do not reset another checkout or create duplicate worktrees.
