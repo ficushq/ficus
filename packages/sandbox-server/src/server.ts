@@ -435,7 +435,7 @@ async function main(): Promise<void> {
             case '/watch': {
               log(`Watch start requested: include=${JSON.stringify(body.include)}, squadId=${body.squadId}`)
               const result = await watcher.start(body)
-              log(`Watch started: ${result.fileCount} files, ${result.skipped.length} skipped`)
+              log(`Watch started: ${result.fileCount} files, ${result.skipped.length} skip diagnostics`)
               return Response.json({ ok: true, ...result })
             }
             default:

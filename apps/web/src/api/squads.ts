@@ -508,6 +508,7 @@ export interface MemoryConfig {
       path: string
       reason: 'file_too_large' | 'binary' | 'max_files_exceeded' | 'unreadable'
       detail?: string
+      count?: number
     }>
   }
   sync?: {

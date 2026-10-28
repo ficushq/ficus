@@ -217,7 +217,7 @@ export interface ISandboxManager {
   ): Promise<{
     owned: boolean
     fileCount: number
-    skipped: Array<{ path: string; reason: string; detail?: string }>
+    skipped: Array<{ path: string; reason: string; detail?: string; count?: number }>
   }>
   /** Host runtime only: stop this process's watch for a squad and release its lock. */
   stopWatch?(squadId: string): Promise<void>

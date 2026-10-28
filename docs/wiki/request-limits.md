@@ -38,6 +38,12 @@ Workspace **file-content bytes remain unlimited**, but the multipart envelope ha
 
 All parts must be parsed successfully before any file is published. Malformed or incomplete framing, count overflow and invalid headers return **400**; aggregate metadata-byte overflow returns **413** with `REQUEST_BODY_TOO_LARGE` and `maxBytes: 4194304`. Rejection cancels the input and removes every temporary stage rather than publishing or reporting success for a subset. Staging is sequential with at most one open staging-file descriptor. Only bounded part headers/non-file values use native multipart decoding; file contents stream directly to disk.
 
+### Publication results are per file, not batch rollback
+
+Multipart parsing/staging must finish before publication starts. Once it succeeds, local and remote publication both return a result for **every file** (`created`, `overwritten`, `skipped` or `error`). HTTP **200** means the batch was processed, not that every file succeeded: callers must inspect each result. A write failure does not roll back earlier published files, and later files are still attempted. This deliberately replaces the previous local-only rollback/HTTP 500 behavior with the remote route's explicit per-file result contract.
+
+Each file still uses verified atomic publication: a failed write before rename cannot expose partial destination bytes or remove an existing destination. Post-rename verification failures are reported as errors, not as successful rollback. A parse/envelope failure still rejects the entire request before any publication; it is not converted into a partial-success response.
+
 Bun's listener limit applies even to streamed request bodies. Core and the sandbox therefore explicitly use `maxRequestBodySize: Infinity`, **together with** bounded ordinary readers and exact transfer exceptions. The sandbox retains a 100 MiB ceiling for JSON and confined upload requests. Do not deploy the listener setting without these readers, or revert the readers while leaving the listener uncapped. Workspace upload/download requests disable only their listener's shorter per-request idle timer; cancellation, client budgets and sandbox idle-lifecycle accounting remain in effect.
 
 ## Collection budgets
@@ -54,7 +60,7 @@ Other explicit, stricter product bounds remain unchanged. Oversized control/conf
 
 ### Indexing compatibility boundary
 
-The workspace watcher can combine multiple patterns into one `reconcile: true` snapshot. A snapshot exceeding 1,000 files/skipped entries is now explicitly rejected as oversized metadata. This does **not** cap the bytes transferred by workspace upload/download. Do not truncate the snapshot or split it into independently reconciled requests: that could delete indexed paths omitted from each partial batch. Large snapshot support requires a separate complete-snapshot batching protocol.
+The workspace watcher can combine multiple patterns into one `reconcile: true` snapshot. A snapshot exceeding **1,000 actual files** is explicitly rejected as oversized metadata. Informational skip diagnostics do not reduce that file allowance: the watcher retains up to 1,000 per-path diagnostics, then aggregates them into at most four reason summaries with exact file counts and an example path. For example, a pattern matching 2,100 files still indexes its first 1,000 and reports the other 1,100 as skipped. The callback keeps a separate 1,000-row diagnostic bound; older sandbox bundles sending larger per-path diagnostic arrays receive HTTP 400, so refresh those bundles before relying on large initial scans. This does **not** cap the bytes transferred by workspace upload/download. Do not truncate the snapshot or split it into independently reconciled requests: that could delete indexed paths omitted from each partial batch. Large snapshot support requires a separate complete-snapshot batching protocol.
 
 ## Errors
 

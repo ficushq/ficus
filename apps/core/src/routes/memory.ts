@@ -117,6 +117,7 @@ const workspaceFileSchema = z.object({
         path: z.string(),
         reason: z.enum(['file_too_large', 'binary', 'max_files_exceeded', 'unreadable']),
         detail: z.string().optional(),
+        count: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
       })
     )
     .max(1000)

@@ -142,6 +142,8 @@ export interface ScanSkip {
   path: string
   reason: 'file_too_large' | 'binary' | 'max_files_exceeded' | 'unreadable'
   detail?: string
+  /** Number of files represented by an aggregate; absent means one path. */
+  count?: number
 }
 
 export interface ScanResult {
@@ -151,6 +153,43 @@ export interface ScanResult {
 
 const MAX_FILES_PER_PATTERN = 1000
 const MAX_FILE_SIZE = 100 * 1024 // 100KB
+const MAX_SKIP_DETAILS = 1000
+
+/** Retain bounded diagnostic detail, then summarize by the four skip reasons. */
+function createScanSkipCollector() {
+  const details: ScanSkip[] = []
+  let summaries: Map<ScanSkip['reason'], ScanSkip> | undefined
+  const aggregate = (target: Map<ScanSkip['reason'], ScanSkip>, skip: ScanSkip) => {
+    const existing = target.get(skip.reason)
+    if (existing) existing.count = (existing.count ?? 1) + (skip.count ?? 1)
+    else
+      target.set(skip.reason, {
+        path: skip.path,
+        reason: skip.reason,
+        count: skip.count ?? 1,
+        detail: 'Paths aggregated; this path is one example',
+      })
+  }
+  return {
+    add(skip: ScanSkip) {
+      if (!summaries && details.length < MAX_SKIP_DETAILS) {
+        details.push(skip)
+        return
+      }
+      if (!summaries) {
+        summaries = new Map()
+        for (const detail of details) aggregate(summaries, detail)
+        details.length = 0
+      }
+      aggregate(summaries, skip)
+    },
+    values: () => (summaries ? [...summaries.values()] : details),
+  }
+}
+
+function countSkippedFiles(skipped: ScanSkip[], reason?: ScanSkip['reason']): number {
+  return skipped.reduce((total, skip) => total + (reason && skip.reason !== reason ? 0 : (skip.count ?? 1)), 0)
+}
 
 const log = (msg: string) => {
   const line = `[watcher] ${msg}\n`
@@ -376,7 +415,7 @@ export class WorkspaceWatcher {
       throw error
     }
 
-    log(`Initial scan found ${files.length} files, ${skipped.length} skipped`)
+    log(`Initial scan found ${files.length} files, ${countSkippedFiles(skipped)} skipped`)
     this.lastResult = { fileCount: files.length, skipped }
     return this.lastResult
   }
@@ -411,7 +450,7 @@ export class WorkspaceWatcher {
       skipped
     )
 
-    log(`Rescan found ${files.length} files, ${skipped.length} skipped`)
+    log(`Rescan found ${files.length} files, ${countSkippedFiles(skipped)} skipped`)
     return { fileCount: files.length, skipped }
   }
 
@@ -531,7 +570,7 @@ export class WorkspaceWatcher {
 
     // Match per include pattern to enforce per-pattern file limits
     const matchedSet = new Set<string>()
-    const skipped: ScanSkip[] = []
+    const skipCollector = createScanSkipCollector()
 
     for (const pattern of opts.include) {
       const patternMatches = micromatch(allPaths, [pattern], { ignore: allExcludes })
@@ -543,7 +582,7 @@ export class WorkspaceWatcher {
         }
         // Record the skipped ones
         for (let i = MAX_FILES_PER_PATTERN; i < patternMatches.length; i++) {
-          skipped.push({
+          skipCollector.add({
             path: patternMatches[i],
             reason: 'max_files_exceeded',
             detail: `Pattern "${pattern}" exceeded ${MAX_FILES_PER_PATTERN} file limit (${patternMatches.length} matched)`,
@@ -563,7 +602,7 @@ export class WorkspaceWatcher {
         const fileStat = await stat(absPath)
 
         if (fileStat.size > MAX_FILE_SIZE) {
-          skipped.push({
+          skipCollector.add({
             path: relPath,
             reason: 'file_too_large',
             detail: `${Math.round(fileStat.size / 1024)}KB exceeds ${MAX_FILE_SIZE / 1024}KB limit`,
@@ -573,19 +612,20 @@ export class WorkspaceWatcher {
 
         const buffer = await readFile(absPath)
         if (isBinary(buffer)) {
-          skipped.push({ path: relPath, reason: 'binary' })
+          skipCollector.add({ path: relPath, reason: 'binary' })
           continue
         }
 
         files.push({ path: relPath, content: buffer.toString('utf-8') })
       } catch {
-        skipped.push({ path: relPath, reason: 'unreadable' })
+        skipCollector.add({ path: relPath, reason: 'unreadable' })
       }
     }
 
+    const skipped = skipCollector.values()
     if (skipped.length > 0) {
       log(
-        `Skipped ${skipped.length} files: ${skipped.filter((s) => s.reason === 'file_too_large').length} too large, ${skipped.filter((s) => s.reason === 'binary').length} binary, ${skipped.filter((s) => s.reason === 'max_files_exceeded').length} over limit, ${skipped.filter((s) => s.reason === 'unreadable').length} unreadable`
+        `Skipped ${countSkippedFiles(skipped)} files: ${countSkippedFiles(skipped, 'file_too_large')} too large, ${countSkippedFiles(skipped, 'binary')} binary, ${countSkippedFiles(skipped, 'max_files_exceeded')} over limit, ${countSkippedFiles(skipped, 'unreadable')} unreadable`
       )
     }
 
