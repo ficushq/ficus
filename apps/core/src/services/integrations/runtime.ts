@@ -1,3 +1,4 @@
+import { isDeploymentIntegrationKey } from '@ficus/shared'
 import { IntegrationExecutionService, executionVariableNames } from './execution'
 import { isManagedBigbrainProvider } from './bigbrain/managed/availability'
 import { createManagedHostClient } from './bigbrain/managed/host-client'
@@ -34,14 +35,7 @@ import {
   getGoogleCloudIntegrationSettings,
   configureGoogleCloudIntegration,
 } from './google-cloud/settings'
-import {
-  deploymentIntegrationCatalog,
-  isDeploymentIntegration,
-  initializeDeploymentIntegrationStates,
-  setDeploymentIntegrationEnabled,
-  getDeploymentIntegrationSettings,
-  configureDeploymentIntegration,
-} from './deployment/settings'
+import { importLegacyDeploymentCredentials } from './deployment/legacy-import'
 import { importLegacyLinearCredential } from './linear/legacy-import'
 import {
   isChannelIntegration,
@@ -598,7 +592,7 @@ export const integrationConnectionService = new IntegrationConnectionService({
 export async function initializeIntegrationDefaults() {
   await importLegacyLinearCredential(getSecretStore())
   await initializeChannelIntegrationStates()
-  await initializeDeploymentIntegrationStates()
+  await importLegacyDeploymentCredentials(getSecretStore())
   await initializeGoogleCloudIntegrationState()
   await initializeOpenAIServicesState()
   await initializePushIntegrationStates()
@@ -658,7 +652,6 @@ export const integrationRoutesService = Object.assign(integrationConnectionServi
     Promise.all(
       [
         ...integrationRegistry.catalog(),
-        ...deploymentIntegrationCatalog,
         googleCloudIntegrationCatalog,
         ...pushIntegrationCatalog,
         openAIServicesIntegrationCatalog,
@@ -667,29 +660,26 @@ export const integrationRoutesService = Object.assign(integrationConnectionServi
         enabled: await isIntegrationEnabled(entry.key),
         setup: isChannelIntegration(entry.key)
           ? (await getChannelIntegrationSettings(entry.key)).setup
-          : isDeploymentIntegration(entry.key)
-            ? credentialSetupStatus(getDeploymentIntegrationSettings(entry.key).fields)
-            : isPushIntegration(entry.key)
-              ? credentialSetupStatus(getPushIntegrationSettings(entry.key).fields)
-              : isManagedBigbrainProvider(entry.key)
-                ? await managedBigbrainCatalogSetup()
-                : entry.key === 'google-cloud'
-                  ? credentialSetupStatus(getGoogleCloudIntegrationSettings().fields)
-                  : entry.key === 'openai-services'
-                    ? credentialSetupStatus(getOpenAIServicesSettings().fields)
-                    : connectionSetupStatus(
-                        (await integrationConnectionRepository.list(entry.key)).map((connection) => ({
-                          ...connection,
-                          credentialConfigured: !!getSecretStore().get(connection.credentialRef)?.trim(),
-                        }))
-                      ),
+          : isPushIntegration(entry.key)
+            ? credentialSetupStatus(getPushIntegrationSettings(entry.key).fields)
+            : isManagedBigbrainProvider(entry.key)
+              ? await managedBigbrainCatalogSetup()
+              : entry.key === 'google-cloud'
+                ? credentialSetupStatus(getGoogleCloudIntegrationSettings().fields)
+                : entry.key === 'openai-services'
+                  ? credentialSetupStatus(getOpenAIServicesSettings().fields)
+                  : connectionSetupStatus(
+                      (await integrationConnectionRepository.list(entry.key)).map((connection) => ({
+                        ...connection,
+                        credentialConfigured: !!getSecretStore().get(connection.credentialRef)?.trim(),
+                      }))
+                    ),
       }))
     ),
   async setEnabled(providerKey: string, enabled: boolean, actor: string) {
     if (isPushIntegration(providerKey)) return setPushIntegrationEnabled(providerKey, enabled, actor)
     if (providerKey === 'openai-services') return setOpenAIServicesEnabled(enabled, actor)
     if (providerKey === 'google-cloud') return setGoogleCloudIntegrationEnabled(enabled, actor)
-    if (isDeploymentIntegration(providerKey)) return setDeploymentIntegrationEnabled(providerKey, enabled, actor)
     if (isChannelIntegration(providerKey)) {
       await getSettingsStore().set(`__integration-enabled:${providerKey}`, String(enabled), actor)
       return { enabled }
@@ -750,7 +740,6 @@ export const integrationRoutesService = Object.assign(integrationConnectionServi
           ? configureOpenAIServices(input, actor)
           : configureGoogleCloudIntegration(input, actor),
   },
-  deploymentSettings: { get: getDeploymentIntegrationSettings, configure: configureDeploymentIntegration },
   channelSettings: {
     get: getChannelIntegrationSettings,
     configure: configureChannelIntegration,
@@ -907,8 +896,12 @@ export const squadIntegrationRoutesService = {
     if (shared && !(await managedVaultStore.liveConnectionIds()).has(connectionId))
       throw new Error('Assignment requires a live shared vault')
     const assignment = await integrationConnectionRepository.assign(squadId, providerKey, connectionId, actor, {
-      retainPrevious: providerKey === 'github' || shared,
-      makeDefault: shared ? false : providerKey === 'github' ? makeDefault : true,
+      retainPrevious: providerKey === 'github' || isDeploymentIntegrationKey(providerKey) || shared,
+      makeDefault: shared
+        ? false
+        : providerKey === 'github' || isDeploymentIntegrationKey(providerKey)
+          ? makeDefault
+          : true,
     })
     await regenerateEnvFileForSquad(squadId)
     eventEmitter.emit('integration.projection-invalidated', { squadId, providerKey })

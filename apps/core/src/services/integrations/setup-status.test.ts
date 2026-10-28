@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { credentialSetupStatus, connectionSetupStatus } from './setup-status'
 import { channelPlugins } from './channels/plugins'
-import { getDeploymentIntegrationSettings, deploymentCredentialProviders } from './deployment/settings'
+import { deploymentPlugins } from './deployment/plugins'
 
 const account = {
   credentialConfigured: true,
@@ -36,11 +36,13 @@ test('only missing required fields affect setup and messages contain labels rath
     'configured'
   )
 })
-test('every channel and deployment provider declares its required credential', () => {
+test('every channel declares required fields and deploy providers require a manual account token', () => {
   for (const plugin of Object.values(channelPlugins))
     expect(
       credentialSetupStatus(plugin.channel.credentialFields.map((field) => ({ ...field, configured: false }))).state
     ).toBe('needs_setup')
-  for (const provider of Object.keys(deploymentCredentialProviders))
-    expect(getDeploymentIntegrationSettings(provider).fields[0].required).toBe(true)
+  for (const plugin of deploymentPlugins) {
+    expect(plugin.authorization.kind).toBe('manual')
+    expect(() => plugin.connection.credential.parse('')).toThrow()
+  }
 })

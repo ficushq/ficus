@@ -993,6 +993,7 @@ jobs:
           src/services/integrations/bigbrain/upstream.smoke.test.ts
           src/services/integrations/bigbrain/shared-upstream.smoke.test.ts
           src/services/integrations/outputs/runtime.test.ts
+          src/services/integrations/deployment/cli-install.test.ts
           src/services/integrations/github/feedback-routing.test.ts
           src/services/execution/pickup.test.ts
           src/services/machines/cli-bundle.test.ts

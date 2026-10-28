@@ -8,7 +8,7 @@ import type {
   IntegrationAuthorizationStart,
   IntegrationDeviceAuthorizationStatus,
 } from '@ficus/shared'
-import { Command } from 'commander'
+import { Command, Option } from 'commander'
 import { apiDelete, apiGet, apiPost, apiPut } from '../client'
 import { isJsonMode, output, outputError } from '../output'
 import { registerBigbrainVaultCommands, type BigbrainVaultCommandDependencies } from './integration-bigbrain'
@@ -72,7 +72,7 @@ export function registerIntegrationCommands(
   integration
     .command('exec <provider> <command...>')
     .description('Run a command with the current credential from an assigned connection')
-    .requiredOption('--squad <uuid>')
+    .addOption(new Option('--squad <uuid>', 'Squad to use').env('FICUS_SQUAD_ID').makeOptionMandatory())
     .option('--connection <uuid>', 'Use a specific attached account instead of the squad default')
     .allowUnknownOption(false)
     .action(

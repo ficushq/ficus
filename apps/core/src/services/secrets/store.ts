@@ -7,6 +7,7 @@ import { createLogger } from '../../lib/infra/logger'
 import { createPeriodicRunner, type PeriodicRunner } from '../../lib/infra/PeriodicRunner'
 import { notify, listen } from '../../lib/infra/local-events'
 import { isManagedSecretKey, readManagedSecretValue } from './managed'
+import { isRetiredDeploymentKey } from './retired-deployment'
 import { isForeignEncryptionKeyName, RENAME_BRIDGE_TAG } from '@ficus/shared/env-naming'
 
 const log = createLogger('secret-store')
@@ -83,14 +84,6 @@ const KNOWN_KEYS = [
 
   // Google Cloud (JSON service account key for TTS, etc.)
   'GOOGLE_SERVICE_ACCOUNT_JSON',
-
-  // Deployment provider tokens (selectively exposed to squads via squad env secret refs)
-  'DEPLOY_VERCEL_TOKEN',
-  'DEPLOY_NETLIFY_TOKEN',
-  'DEPLOY_CLOUDFLARE_TOKEN',
-  'DEPLOY_RAILWAY_TOKEN',
-  'DEPLOY_SUPABASE_TOKEN',
-  'DEPLOY_DIGITALOCEAN_TOKEN',
 
   // Provider auth (JSON blob — managed via Provider Auth API, not directly)
   'PROVIDER_AUTH_DATA',
@@ -555,6 +548,7 @@ export class SecretStore {
   }
 
   get(key: string): string | undefined {
+    if (isRetiredDeploymentKey(key)) return undefined
     // Platform-managed keys live ONLY in process.env (delivered via
     // managed.env). They are deliberately never ingested into the store, so
     // core services read them straight from env — and a stale DB row (e.g. a
@@ -809,7 +803,13 @@ export class SecretStore {
     const dynamic = rows
       // `__`-prefixed keys are internal (e.g. the auto-provisioned webhook system token) — not listed.
       // Managed keys are excluded even if a stale row exists (see above).
-      .filter((row) => !knownSet.has(row.key) && !row.key.startsWith('__') && !isManagedSecretKey(row.key))
+      .filter(
+        (row) =>
+          !knownSet.has(row.key) &&
+          !row.key.startsWith('__') &&
+          !isManagedSecretKey(row.key) &&
+          !isRetiredDeploymentKey(row.key)
+      )
       .map((row) => ({
         key: row.key,
         isSet: true,

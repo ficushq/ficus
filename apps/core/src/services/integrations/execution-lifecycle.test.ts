@@ -82,13 +82,13 @@ test('all migrated providers stay out of generated files and generic exec follow
     await db
       .insert(integrationConnectionAssignments)
       .values({ squadId, providerKey: 'linear', connectionId: linearId, isDefault: true })
-    // Extend this fixture as later phases migrate more providers onto execution.
+    // The exhaustive all-assigned fixture (including deploy and nonexec providers) lives in deployment/execution.test.ts.
     expect(
       firstPartyIntegrationPlugins
         .filter((plugin) => plugin.execution)
         .map((plugin) => plugin.key)
         .sort()
-    ).toEqual(['github', 'linear', 'notion'])
+    ).toEqual(['cloudflare', 'digitalocean', 'github', 'linear', 'netlify', 'notion', 'railway', 'supabase', 'vercel'])
     expect(await squadIntegrationRoutesService.executionEnvironment(squadId, 'linear')).toEqual({
       LINEAR_API_KEY: 'synthetic-linear-command-only',
     })

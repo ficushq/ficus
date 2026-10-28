@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
+import { getSecretStore } from '../secrets'
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'bun:test'
 import { mkdtemp, rm } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
@@ -9,12 +10,18 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs
 const originalEnv = process.env.HOME_DIR
 let tempDir: string
 
+beforeAll(async () => {
+  await getSecretStore().initialize()
+})
+
 beforeEach(async () => {
   tempDir = await mkdtemp(join(tmpdir(), 'squad-env-test-'))
   process.env.HOME_DIR = tempDir
 })
 
 afterEach(async () => {
+  await getSecretStore().delete('DEPLOY_TEST_VERCEL_TOKEN')
+  await getSecretStore().delete('DEPLOY_TEST_NETLIFY_TOKEN')
   try {
     const { setGloballyExposedSecretKeys } = await getModule()
     await setGloballyExposedSecretKeys([])
@@ -169,17 +176,17 @@ line2"`
     it('renders only selected secrets into generated sandbox env', async () => {
       const { renderEnvForSecrets } = await getModule()
 
-      const rendered = renderEnvForSecrets('APP_ENV=localDeployment', ['DEPLOY_VERCEL_TOKEN'], (key: string) => {
+      const rendered = renderEnvForSecrets('APP_ENV=localDeployment', ['DEPLOY_TEST_VERCEL_TOKEN'], (key: string) => {
         const values: Record<string, string> = {
-          DEPLOY_VERCEL_TOKEN: 'vercel-secret',
-          DEPLOY_NETLIFY_TOKEN: 'netlify-secret',
+          DEPLOY_TEST_VERCEL_TOKEN: 'vercel-secret',
+          DEPLOY_TEST_NETLIFY_TOKEN: 'netlify-secret',
         }
         return values[key]
       })
 
       expect(rendered).toContain('APP_ENV=localDeployment')
-      expect(rendered).toContain("export DEPLOY_VERCEL_TOKEN='vercel-secret'")
-      expect(rendered).not.toContain('DEPLOY_NETLIFY_TOKEN')
+      expect(rendered).toContain("export DEPLOY_TEST_VERCEL_TOKEN='vercel-secret'")
+      expect(rendered).not.toContain('DEPLOY_TEST_NETLIFY_TOKEN')
       expect(rendered).not.toContain('netlify-secret')
     })
 
@@ -201,15 +208,15 @@ line2"`
       const { renderEnvForSecrets } = await getModule()
       const rendered = renderEnvForSecrets(
         'APP_ENV=x',
-        ['__internal_token', 'DEPLOY_VERCEL_TOKEN'],
+        ['__internal_token', 'DEPLOY_TEST_VERCEL_TOKEN'],
         (key: string) =>
           ({
             __internal_token: 'self-hosted-client-secret',
-            DEPLOY_VERCEL_TOKEN: 'vercel-secret',
+            DEPLOY_TEST_VERCEL_TOKEN: 'vercel-secret',
           })[key]
       )
       expect(rendered).not.toContain('self-hosted-client-secret')
-      expect(rendered).toContain("export DEPLOY_VERCEL_TOKEN='vercel-secret'")
+      expect(rendered).toContain("export DEPLOY_TEST_VERCEL_TOKEN='vercel-secret'")
     })
 
     it('NEVER renders a reserved identity key into a squad env, even when exposed', async () => {
@@ -219,17 +226,17 @@ line2"`
       // thing the write-time check on user content refuses.
       const rendered = renderEnvForSecrets(
         'APP_ENV=x',
-        ['FICUS_API_URL', 'FICUS_TOKEN', 'DEPLOY_VERCEL_TOKEN'],
+        ['FICUS_API_URL', 'FICUS_TOKEN', 'DEPLOY_TEST_VERCEL_TOKEN'],
         (key: string) =>
           ({
             FICUS_API_URL: 'https://cloud.example.com',
             FICUS_TOKEN: 'operator-token',
-            DEPLOY_VERCEL_TOKEN: 'vercel-secret',
+            DEPLOY_TEST_VERCEL_TOKEN: 'vercel-secret',
           })[key]
       )
       expect(rendered).not.toContain('FICUS_API_URL')
       expect(rendered).not.toContain('operator-token')
-      expect(rendered).toContain("export DEPLOY_VERCEL_TOKEN='vercel-secret'")
+      expect(rendered).toContain("export DEPLOY_TEST_VERCEL_TOKEN='vercel-secret'")
     })
 
     it('excludes the self-hosted relay credential from explicit squad exposure', async () => {
@@ -238,11 +245,15 @@ line2"`
       try {
         const { renderEnvForSecrets } = await getModule()
         const lookedUp: string[] = []
-        const rendered = renderEnvForSecrets('', ['FICUS_PUSH_RELAY_TOKEN', 'DEPLOY_VERCEL_TOKEN'], (key: string) => {
-          lookedUp.push(key)
-          return key === 'FICUS_PUSH_RELAY_TOKEN' ? 'relay-canary' : 'allowed-value'
-        })
-        expect(lookedUp).toEqual(['DEPLOY_VERCEL_TOKEN'])
+        const rendered = renderEnvForSecrets(
+          '',
+          ['FICUS_PUSH_RELAY_TOKEN', 'DEPLOY_TEST_VERCEL_TOKEN'],
+          (key: string) => {
+            lookedUp.push(key)
+            return key === 'FICUS_PUSH_RELAY_TOKEN' ? 'relay-canary' : 'allowed-value'
+          }
+        )
+        expect(lookedUp).toEqual(['DEPLOY_TEST_VERCEL_TOKEN'])
         expect(rendered).not.toContain('FICUS_PUSH_RELAY_TOKEN')
         expect(rendered).not.toContain('relay-canary')
         expect(rendered).toContain('allowed-value')
@@ -264,8 +275,10 @@ line2"`
       try {
         const { renderEnvForSecrets } = await getModule()
         // A tenant names the managed keys explicitly in the exposure allowlist…
-        const rendered = renderEnvForSecrets('APP_ENV=x', [...privateKeys, 'DEPLOY_VERCEL_TOKEN'], (key: string) =>
-          key === 'DEPLOY_VERCEL_TOKEN' ? 'vercel-secret' : `${key}-platform-secret`
+        const rendered = renderEnvForSecrets(
+          'APP_ENV=x',
+          [...privateKeys, 'DEPLOY_TEST_VERCEL_TOKEN'],
+          (key: string) => (key === 'DEPLOY_TEST_VERCEL_TOKEN' ? 'vercel-secret' : `${key}-platform-secret`)
         )
         // …but they are filtered out at the single chokepoint (normalizeSecretKeys),
         // so neither their names nor values reach the sandbox env.
@@ -274,7 +287,7 @@ line2"`
           expect(rendered).not.toContain(`${key}-platform-secret`)
         }
         // Non-managed keys still render normally.
-        expect(rendered).toContain("export DEPLOY_VERCEL_TOKEN='vercel-secret'")
+        expect(rendered).toContain("export DEPLOY_TEST_VERCEL_TOKEN='vercel-secret'")
       } finally {
         delete process.env.FICUS_MANAGED_SECRET_KEYS
       }
@@ -287,20 +300,20 @@ line2"`
       const secondSquadId = randomUUID()
       await createTestSquad(firstSquadId)
       await createTestSquad(secondSquadId)
-      process.env.DEPLOY_VERCEL_TOKEN = 'global-vercel-secret'
+      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'global-vercel-secret', 'test')
 
       await setEnvFile(firstSquadId, 'APP_ENV=first')
       await setEnvFile(secondSquadId, 'APP_ENV=second')
-      await setGloballyExposedSecretKeys(['DEPLOY_VERCEL_TOKEN'])
+      await setGloballyExposedSecretKeys(['DEPLOY_TEST_VERCEL_TOKEN'])
 
       const firstEnv = readFileSync(join(getSquadWorkspacePath(firstSquadId), '.ficus', '.env'), 'utf-8')
       const secondEnv = readFileSync(join(getSquadWorkspacePath(secondSquadId), '.ficus', '.env'), 'utf-8')
       expect(firstEnv).toContain('APP_ENV=first')
-      expect(firstEnv).toContain("export DEPLOY_VERCEL_TOKEN='global-vercel-secret'")
+      expect(firstEnv).toContain("export DEPLOY_TEST_VERCEL_TOKEN='global-vercel-secret'")
       expect(secondEnv).toContain('APP_ENV=second')
-      expect(secondEnv).toContain("export DEPLOY_VERCEL_TOKEN='global-vercel-secret'")
+      expect(secondEnv).toContain("export DEPLOY_TEST_VERCEL_TOKEN='global-vercel-secret'")
 
-      delete process.env.DEPLOY_VERCEL_TOKEN
+      await getSecretStore().delete('DEPLOY_TEST_VERCEL_TOKEN')
     })
 
     it('renders globally exposed secrets when a future squad env file is generated', async () => {
@@ -308,15 +321,15 @@ line2"`
       const { getSquadWorkspacePath } = await import('./workspace')
       const squadId = randomUUID()
       await createTestSquad(squadId)
-      process.env.DEPLOY_VERCEL_TOKEN = 'future-global-secret'
+      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'future-global-secret', 'test')
 
-      await setGloballyExposedSecretKeys(['DEPLOY_VERCEL_TOKEN'])
+      await setGloballyExposedSecretKeys(['DEPLOY_TEST_VERCEL_TOKEN'])
       await regenerateEnvFileForSquad(squadId)
 
       const generatedEnv = readFileSync(join(getSquadWorkspacePath(squadId), '.ficus', '.env'), 'utf-8')
-      expect(generatedEnv).toContain("export DEPLOY_VERCEL_TOKEN='future-global-secret'")
+      expect(generatedEnv).toContain("export DEPLOY_TEST_VERCEL_TOKEN='future-global-secret'")
 
-      delete process.env.DEPLOY_VERCEL_TOKEN
+      await getSecretStore().delete('DEPLOY_TEST_VERCEL_TOKEN')
     })
 
     it('does not expose secret values through getEnvFile', async () => {
@@ -324,16 +337,16 @@ line2"`
       const { getSquadWorkspacePath } = await import('./workspace')
       const squadId = randomUUID()
       await createTestSquad(squadId)
-      process.env.DEPLOY_VERCEL_TOKEN = 'vercel-secret'
+      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'vercel-secret', 'test')
 
       await setEnvFile(squadId, 'APP_ENV=localDeployment')
-      await setExposedSecretKeys(squadId, ['DEPLOY_VERCEL_TOKEN'])
+      await setExposedSecretKeys(squadId, ['DEPLOY_TEST_VERCEL_TOKEN'])
 
       expect(getEnvFile(squadId)).toBe('APP_ENV=localDeployment')
       const generatedEnv = readFileSync(join(getSquadWorkspacePath(squadId), '.ficus', '.env'), 'utf-8')
-      expect(generatedEnv).toContain("export DEPLOY_VERCEL_TOKEN='vercel-secret'")
+      expect(generatedEnv).toContain("export DEPLOY_TEST_VERCEL_TOKEN='vercel-secret'")
 
-      delete process.env.DEPLOY_VERCEL_TOKEN
+      await getSecretStore().delete('DEPLOY_TEST_VERCEL_TOKEN')
     })
 
     it('preserves pre-env.user .ficus/.env content on first secret exposure', async () => {
@@ -345,17 +358,17 @@ line2"`
       const envPath = join(ficusDir, '.env')
       mkdirSync(ficusDir, { recursive: true })
       writeFileSync(envPath, 'APP_ENV=localDeployment')
-      process.env.DEPLOY_VERCEL_TOKEN = 'vercel-secret'
+      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'vercel-secret', 'test')
 
-      await setExposedSecretKeys(squadId, ['DEPLOY_VERCEL_TOKEN'])
+      await setExposedSecretKeys(squadId, ['DEPLOY_TEST_VERCEL_TOKEN'])
 
       const generatedEnv = readFileSync(envPath, 'utf-8')
       expect(generatedEnv).toContain('APP_ENV=localDeployment')
-      expect(generatedEnv).toContain("export DEPLOY_VERCEL_TOKEN='vercel-secret'")
+      expect(generatedEnv).toContain("export DEPLOY_TEST_VERCEL_TOKEN='vercel-secret'")
       expect(getEnvFile(squadId)).toBe('APP_ENV=localDeployment')
       expect(readFileSync(join(ficusDir, 'env.user'), 'utf-8')).toBe('APP_ENV=localDeployment')
 
-      delete process.env.DEPLOY_VERCEL_TOKEN
+      await getSecretStore().delete('DEPLOY_TEST_VERCEL_TOKEN')
     })
 
     it('ignores forged workspace secret allowlist files when generating sandbox env', async () => {
@@ -366,21 +379,24 @@ line2"`
       const ficusDir = join(getSquadWorkspacePath(squadId), '.ficus')
       const envPath = join(ficusDir, '.env')
 
-      process.env.DEPLOY_VERCEL_TOKEN = 'approved-secret'
-      process.env.DEPLOY_NETLIFY_TOKEN = 'forged-secret'
+      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'approved-secret', 'test')
+      await getSecretStore().set('DEPLOY_TEST_NETLIFY_TOKEN', 'forged-secret', 'test')
       await setEnvFile(squadId, 'APP_ENV=localDeployment')
-      await setExposedSecretKeys(squadId, ['DEPLOY_VERCEL_TOKEN'])
-      writeFileSync(join(ficusDir, 'forged-secret-allowlist.json'), JSON.stringify({ keys: ['DEPLOY_NETLIFY_TOKEN'] }))
+      await setExposedSecretKeys(squadId, ['DEPLOY_TEST_VERCEL_TOKEN'])
+      writeFileSync(
+        join(ficusDir, 'forged-secret-allowlist.json'),
+        JSON.stringify({ keys: ['DEPLOY_TEST_NETLIFY_TOKEN'] })
+      )
 
-      await regenerateEnvFilesForSecretKey('DEPLOY_VERCEL_TOKEN')
+      await regenerateEnvFilesForSecretKey('DEPLOY_TEST_VERCEL_TOKEN')
 
       const generatedEnv = readFileSync(envPath, 'utf-8')
-      expect(generatedEnv).toContain("export DEPLOY_VERCEL_TOKEN='approved-secret'")
-      expect(generatedEnv).not.toContain('DEPLOY_NETLIFY_TOKEN')
+      expect(generatedEnv).toContain("export DEPLOY_TEST_VERCEL_TOKEN='approved-secret'")
+      expect(generatedEnv).not.toContain('DEPLOY_TEST_NETLIFY_TOKEN')
       expect(generatedEnv).not.toContain('forged-secret')
 
-      delete process.env.DEPLOY_VERCEL_TOKEN
-      delete process.env.DEPLOY_NETLIFY_TOKEN
+      await getSecretStore().delete('DEPLOY_TEST_VERCEL_TOKEN')
+      await getSecretStore().delete('DEPLOY_TEST_NETLIFY_TOKEN')
     })
 
     it('regenerates exposed secret values after rotation', async () => {
@@ -390,18 +406,18 @@ line2"`
       await createTestSquad(squadId)
       const envPath = join(getSquadWorkspacePath(squadId), '.ficus', '.env')
 
-      process.env.DEPLOY_VERCEL_TOKEN = 'old-secret'
+      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'old-secret', 'test')
       await setEnvFile(squadId, 'APP_ENV=localDeployment')
-      await setExposedSecretKeys(squadId, ['DEPLOY_VERCEL_TOKEN'])
-      expect(readFileSync(envPath, 'utf-8')).toContain("export DEPLOY_VERCEL_TOKEN='old-secret'")
+      await setExposedSecretKeys(squadId, ['DEPLOY_TEST_VERCEL_TOKEN'])
+      expect(readFileSync(envPath, 'utf-8')).toContain("export DEPLOY_TEST_VERCEL_TOKEN='old-secret'")
 
-      process.env.DEPLOY_VERCEL_TOKEN = 'new-secret'
-      await regenerateEnvFilesForSecretKey('DEPLOY_VERCEL_TOKEN')
+      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'new-secret', 'test')
+      await regenerateEnvFilesForSecretKey('DEPLOY_TEST_VERCEL_TOKEN')
 
       const generatedEnv = readFileSync(envPath, 'utf-8')
-      expect(generatedEnv).toContain("export DEPLOY_VERCEL_TOKEN='new-secret'")
+      expect(generatedEnv).toContain("export DEPLOY_TEST_VERCEL_TOKEN='new-secret'")
       expect(generatedEnv).not.toContain('old-secret')
-      delete process.env.DEPLOY_VERCEL_TOKEN
+      await getSecretStore().delete('DEPLOY_TEST_VERCEL_TOKEN')
     })
 
     it('removes exposed secret values after deletion', async () => {
@@ -411,13 +427,13 @@ line2"`
       await createTestSquad(squadId)
       const envPath = join(getSquadWorkspacePath(squadId), '.ficus', '.env')
 
-      process.env.DEPLOY_VERCEL_TOKEN = 'deleted-secret'
+      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'deleted-secret', 'test')
       await setEnvFile(squadId, 'APP_ENV=localDeployment')
-      await setExposedSecretKeys(squadId, ['DEPLOY_VERCEL_TOKEN'])
+      await setExposedSecretKeys(squadId, ['DEPLOY_TEST_VERCEL_TOKEN'])
       expect(readFileSync(envPath, 'utf-8')).toContain('deleted-secret')
 
-      delete process.env.DEPLOY_VERCEL_TOKEN
-      await regenerateEnvFilesForSecretKey('DEPLOY_VERCEL_TOKEN')
+      await getSecretStore().delete('DEPLOY_TEST_VERCEL_TOKEN')
+      await regenerateEnvFilesForSecretKey('DEPLOY_TEST_VERCEL_TOKEN')
 
       const generatedEnv = readFileSync(envPath, 'utf-8')
       expect(generatedEnv).toContain('APP_ENV=localDeployment')

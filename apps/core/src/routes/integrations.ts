@@ -3,9 +3,8 @@ import { BigbrainError } from '../services/integrations/bigbrain/errors'
 import type { BigbrainLocalConnections } from '../services/integrations/bigbrain/local-connections'
 import { BigbrainSetupError, type BigbrainLocalSetup } from '../services/integrations/bigbrain/local-setup'
 import { resolveDefaultGitHubIdentity } from '../services/sandbox/github-identity'
-import { isDeploymentIntegration } from '../services/integrations/deployment/settings'
 import { isChannelIntegration, type ChannelSettingsView } from '../services/integrations/channels/settings'
-import type { getDeploymentIntegrationSettings } from '../services/integrations/deployment/settings'
+import type { readIntegrationCredentialFields } from '../services/integrations/credential-settings'
 import type { GitHubWebhookSettings } from '../services/integrations/github/webhook-settings'
 import { integrationOutputRegistry } from '../services/integrations/outputs/registry'
 import { Hono, type Context } from 'hono'
@@ -101,20 +100,12 @@ export interface IntegrationRoutesService extends Pick<
   localBigbrain?: Pick<BigbrainLocalConnections, 'list' | 'create'>
   localBigbrainSetup?: Pick<BigbrainLocalSetup, 'state' | 'connect' | 'release'>
   serviceSettings?: {
-    get(provider: string): ReturnType<typeof getDeploymentIntegrationSettings>
+    get(provider: string): ReturnType<typeof readIntegrationCredentialFields>
     configure(
       provider: string,
       input: unknown,
       actor: string
-    ): Promise<ReturnType<typeof getDeploymentIntegrationSettings>>
-  }
-  deploymentSettings?: {
-    get(provider: string): ReturnType<typeof getDeploymentIntegrationSettings>
-    configure(
-      provider: string,
-      input: unknown,
-      actor: string
-    ): Promise<ReturnType<typeof getDeploymentIntegrationSettings>>
+    ): Promise<ReturnType<typeof readIntegrationCredentialFields>>
   }
   channelSettings?: {
     get(provider: string): Promise<ChannelSettingsView>
@@ -401,37 +392,6 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
           )
         } catch {
           return c.json({ error: 'Could not save service credentials. Check the fields and try again.' }, 400)
-        }
-      }
-    )
-    .get('/providers/:provider/deployment-settings', async (c) => {
-      const provider = c.req.param('provider')
-      const denied = await authorize(c, `integrations:read:${provider}`)
-      if (denied) return denied
-      if (!isDeploymentIntegration(provider) || !service.deploymentSettings)
-        return c.json({ error: 'Unknown integration' }, 404)
-      c.header('Cache-Control', 'no-store')
-      return c.json(service.deploymentSettings.get(provider))
-    })
-    .put(
-      '/providers/:provider/deployment-settings',
-      zValidator('json', boundedRecord(z.record(z.string(), z.string().max(16384).nullable()), 256)),
-      async (c) => {
-        const provider = c.req.param('provider')
-        const denied = await authorize(c, `integrations:write:${provider}`)
-        if (denied) return denied
-        if (!isDeploymentIntegration(provider) || !service.deploymentSettings)
-          return c.json({ error: 'Unknown integration' }, 404)
-        try {
-          return c.json(
-            await service.deploymentSettings.configure(
-              provider,
-              c.req.valid('json'),
-              auditActor(c.get('identity') as Identity)
-            )
-          )
-        } catch {
-          return c.json({ error: 'Could not save deployment credentials. Check the fields and try again.' }, 400)
         }
       }
     )

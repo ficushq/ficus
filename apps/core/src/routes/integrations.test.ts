@@ -132,7 +132,6 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain', options: { 
       githubCommitSigning,
       setGitHubCommitSigning,
       channelSettings: { get: channelGet, configure: channelConfigure },
-      deploymentSettings: { get: channelGet, configure: channelConfigure },
       serviceSettings: { get: channelGet, configure: channelConfigure },
       githubWebhook: { get: webhookGet, configure: webhookConfigure },
       oauthApp: { get: oauthAppGet, configure: oauthAppConfigure },
@@ -605,27 +604,17 @@ describe('integration routes', () => {
     }
   })
 
-  test('deployment credentials require provider-specific integration access, not legacy secret or channel access', async () => {
-    for (const scopes of [
-      ['integrations:read:vercel'],
-      ['channels:read', 'secrets:read'],
-      ['integrations:read:railway'],
-    ]) {
-      const { app, calls } = createApp({ type: 'system', systemTokenId: 'channel-read', name: 'test', scopes })
-      const response = await app.request('/api/integrations/providers/vercel/deployment-settings')
-      expect(response.status).toBe(scopes.includes('integrations:read:vercel') ? 200 : 403)
-      if (response.ok) {
-        expect(response.headers.get('cache-control')).toBe('no-store')
-        expect(calls.channelGet).toHaveBeenCalledWith('vercel')
-      } else expect(calls.channelGet).not.toHaveBeenCalled()
-      const write = await app.request('/api/integrations/providers/vercel/deployment-settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
+  test('legacy deployment-settings endpoints no longer exist, even for an operator', async () => {
+    const { app, calls } = createApp({ type: 'system', systemTokenId: 'operator', name: 'test', scopes: ['*'] })
+    for (const method of ['GET', 'PUT']) {
+      const response = await app.request('/api/integrations/providers/vercel/deployment-settings', {
+        method,
+        ...(method === 'PUT' ? { headers: { 'Content-Type': 'application/json' }, body: '{}' } : {}),
       })
-      expect(write.status).toBe(403)
-      expect(calls.channelConfigure).not.toHaveBeenCalled()
+      expect(response.status).toBe(404)
     }
+    expect(calls.channelGet).not.toHaveBeenCalled()
+    expect(calls.channelConfigure).not.toHaveBeenCalled()
   })
 
   test('service credentials require provider-specific integration access, not legacy secret or channel access', async () => {
