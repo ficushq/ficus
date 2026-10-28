@@ -186,3 +186,61 @@ describe('VM setup lease contention', () => {
     expect(secondEntered).toBe(true)
   })
 })
+
+test('recovery lease refuses contention immediately, never starts a delayed restart', async () => {
+  const key = randomUUID()
+  const entered = deferred()
+  const release = deferred()
+  let called = false
+  const first = withVmSetupLease(key, async () => {
+    entered.resolve()
+    await release.promise
+  })
+  try {
+    await bounded(entered.promise)
+    await expect(
+      bounded(
+        withVmSetupLease(
+          key,
+          async () => {
+            called = true
+          },
+          { ifAvailable: true }
+        )
+      )
+    ).rejects.toThrow('busy')
+    expect(called).toBe(false)
+  } finally {
+    release.resolve()
+    await first
+  }
+  expect(called).toBe(false)
+})
+
+test('recovery lease refuses a saturated connection gate instead of queueing', async () => {
+  const release = deferred()
+  const entered = [deferred(), deferred()]
+  const owners = entered.map((entry) =>
+    withVmSetupLease(randomUUID(), async () => {
+      entry.resolve()
+      await release.promise
+    })
+  )
+  try {
+    await bounded(Promise.all(entered.map((entry) => entry.promise)))
+    await expect(
+      bounded(
+        withVmSetupLease(
+          randomUUID(),
+          async () => {
+            throw new Error('must not enter')
+          },
+          { ifAvailable: true }
+        )
+      )
+    ).rejects.toThrow('busy')
+  } finally {
+    release.resolve()
+    await Promise.all(owners)
+  }
+})
