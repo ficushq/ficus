@@ -1,8 +1,7 @@
 // --- Token types ---
 
 export type MagicStringToken =
-  | { type: 'rewind'; step: string; message: string }
-  | { type: 'step_complete'; message: string | null }
+  { type: 'rewind'; step: string; message: string } | { type: 'step_complete'; message: string | null }
 
 export interface RewindDirective {
   step: string

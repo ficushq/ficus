@@ -3,13 +3,7 @@ import type { OAuthAuthority } from './authorization/authority'
 import type { OAuthCredentialBundleV1 } from './authorization/credential-bundle'
 
 export type IntegrationConnectionMode =
-  | 'local'
-  | 'managed'
-  | 'credential'
-  | 'oauth2'
-  | 'channel'
-  | 'deployment'
-  | 'service'
+  'local' | 'managed' | 'credential' | 'oauth2' | 'channel' | 'deployment' | 'service'
 
 export interface CredentialCodec<Credential> {
   parse(value: unknown): Credential

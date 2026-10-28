@@ -65,8 +65,7 @@ interface CustomThemeDocumentV1 {
 }
 
 export type CustomThemeValidation =
-  | { ok: true; document: CustomThemeDocument; warnings: string[] }
-  | { ok: false; error: string }
+  { ok: true; document: CustomThemeDocument; warnings: string[] } | { ok: false; error: string }
 
 type VariantResult = { ok: true; overrides: Record<string, string>; warnings: string[] } | { ok: false; error: string }
 

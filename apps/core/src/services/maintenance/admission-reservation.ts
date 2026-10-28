@@ -151,11 +151,7 @@ export type AdmissionHeartbeatOutcome =
       ok: false
       retryable: false
       reason:
-        | 'fence-revoked'
-        | 'reservation-missing'
-        | 'identity-mismatch'
-        | 'phase-superseded'
-        | 'reservation-not-live'
+        'fence-revoked' | 'reservation-missing' | 'identity-mismatch' | 'phase-superseded' | 'reservation-not-live'
     }
 
 /**

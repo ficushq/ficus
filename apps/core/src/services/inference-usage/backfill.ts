@@ -145,9 +145,11 @@ async function agentRows(
   }
   const planned = new Map(
     planAgentUsageBackfill(
-      settled.map(
-        (row): UsageBackfillRow => ({ id: row.id, usage: row.usage as SessionUsage, startedAt: row.startedAt })
-      )
+      settled.map((row): UsageBackfillRow => ({
+        id: row.id,
+        usage: row.usage as SessionUsage,
+        startedAt: row.startedAt,
+      }))
     ).map((update) => [update.id, update.usage.delta])
   )
 

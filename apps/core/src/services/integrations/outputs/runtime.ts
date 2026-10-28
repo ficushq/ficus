@@ -1420,8 +1420,7 @@ async function applyOutputTriggers(event: Event) {
             .where(and(eq(workStreams.squadId, id), inArray(workStreams.status, ['active', 'queued'])))
           const bound = existing.find((stream) => {
             const source = integrationValueAt(stream.metadata, 'integrationSource') as
-              | Record<string, unknown>
-              | undefined
+              Record<string, unknown> | undefined
             if (
               source?.integration === event.integration &&
               source.connectionId ===

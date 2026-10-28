@@ -347,8 +347,7 @@ describe('work-stream notifications', () => {
     const watcherRows = await db.select().from(inbox).where(eq(inbox.recipientId, streamWatcher.id))
     const metadataOf = (event: string) =>
       watcherRows.find((row) => (row.metadata as Record<string, unknown>).event === event)?.metadata as
-        | Record<string, unknown>
-        | undefined
+        Record<string, unknown> | undefined
     // No subtitle: the squad already groups the stack via threadKey, and a third text line
     // makes the lock-screen card cramped.
     expect(metadataOf('review')?.push).toEqual({

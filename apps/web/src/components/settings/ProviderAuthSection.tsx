@@ -181,13 +181,11 @@ export function ProviderAuthSection({ onboarding = false }: { onboarding?: boole
   )
   const directoryCards = [
     ...providerCards,
-    ...additionalProviderOptions.map(
-      (item): ProviderCard => ({
-        provider: { id: item.id, name: item.label, description: `${item.modelCount} models available via API key.` },
-        oauthAvailable: false,
-        rank: 2,
-      })
-    ),
+    ...additionalProviderOptions.map((item): ProviderCard => ({
+      provider: { id: item.id, name: item.label, description: `${item.modelCount} models available via API key.` },
+      oauthAvailable: false,
+      rank: 2,
+    })),
   ]
   const matches = (text: string) => text.toLowerCase().includes(search.trim().toLowerCase())
   const directory = directoryCards.map((card) => ({

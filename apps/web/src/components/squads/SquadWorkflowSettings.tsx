@@ -20,8 +20,7 @@ export function SquadWorkflowSettings({ squadId, canEdit }: { squadId: string; c
   const queryClient = useQueryClient()
   const saved = (squad?.metadata?.workflow as WorkflowSource | undefined) ?? squad?.defaultWorkflow
   const setup = squad?.metadata?.workflowSetup as
-    | { guidance: string; choices: Array<{ when: string; source: WorkflowSource }>; completedAt?: string }
-    | undefined
+    { guidance: string; choices: Array<{ when: string; source: WorkflowSource }>; completedAt?: string } | undefined
   const save = useMutation({
     mutationFn: async () => {
       if (!source) throw new Error('Choose a default workflow.')

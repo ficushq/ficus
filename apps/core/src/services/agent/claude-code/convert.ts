@@ -237,8 +237,7 @@ export class TurnTranslator {
 }
 
 type AnthropicContentBlock =
-  | { type: 'text'; text: string }
-  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
+  { type: 'text'; text: string } | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
 
 function anthropicContent(content: UserMessage['content'] | ToolResultMessage['content']): AnthropicContentBlock[] {
   if (typeof content === 'string') return [{ type: 'text', text: content }]

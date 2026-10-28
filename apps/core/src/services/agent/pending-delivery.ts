@@ -117,8 +117,7 @@ export interface PersistedDeliveryEntry {
 }
 
 export type SessionDeliveryReceipts =
-  | readonly PersistedDeliveryEntry[]
-  | ((deliveryIds: ReadonlySet<string>) => Promise<readonly PersistedDeliveryEntry[]>)
+  readonly PersistedDeliveryEntry[] | ((deliveryIds: ReadonlySet<string>) => Promise<readonly PersistedDeliveryEntry[]>)
 
 /** Call only after obtaining exclusive runner ownership, or settling this exact session.
  * Supply verified disk receipts or a lazy reader, never the live getEntries()

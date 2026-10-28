@@ -167,9 +167,7 @@ export function eventDecisionCondition(predicate: EventDecisionPredicate): Decis
  * `onUnavailable` applies. `assumed`: no model was asked (the match preview's stated assumption).
  */
 export type EventDecisionOutcome =
-  | { answer: DecisionAnswer }
-  | { unavailable: 'unconfigured' | 'unavailable' }
-  | { assumed: boolean }
+  { answer: DecisionAnswer } | { unavailable: 'unconfigured' | 'unavailable' } | { assumed: boolean }
 
 export function eventDecisionPredicateMatches(predicate: EventDecisionPredicate, outcome: EventDecisionOutcome) {
   if ('assumed' in outcome) return outcome.assumed
