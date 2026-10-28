@@ -1,0 +1,52 @@
+{
+  "study": "review-contract-v1",
+  "status": "pre-inference",
+  "kind": "Known-artifact matched reviewer diagnostic; not unseen benchmark or full squad comparison",
+  "artifact_source": "longitudinal-v1 Ficus increment-2 delivered patch; untouched implementation, tests, plans and notes",
+  "artifact_sha256": "7e8d52b0d88e007fae02c66e30d38cc59245dc5bd01c2267a1e1921d6c9c8fcc",
+  "base_commit": "da50b01d043431fdc0c0340ab0b047c00f205ef9",
+  "production_prompt_commit": "990b2230",
+  "production_pr": 753,
+  "baseline_prompt_revision": "990b2230^",
+  "common_runtime": "longitudinal-v1 frozen runtime; both conditions overlay the exact production reviewer YAML, with no other runtime change",
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "max_output_tokens": 8192,
+  "fresh_native_reviewer_per_run": true,
+  "order": [
+    "original-baseline",
+    "original-candidate",
+    "amended-candidate",
+    "amended-baseline"
+  ],
+  "samples_per_cell": 1,
+  "candidate_access": "Original requests and saved repository only, plus explicit user amendment in the control. No scores, hidden tests, prior session transcripts, case labels, expected findings or repairs.",
+  "cases": {
+    "original": "Unchanged original requests 1 and 2. Expected first data-row rowid 2 for ordinary single-line CSV with header; delivered value is 1.",
+    "amended": "Same requests and exact artifact, followed by an explicit user amendment allowing header-excluding data-record ordinals. The target rowid finding must not be treated as a blocking defect."
+  },
+  "scoring": {
+    "target_detection": "A blocking finding must cite the original source-file row-number requirement and identify first data row 1 versus expected 2, with a runnable reproduction or precise code reasoning. A nonblocking ambiguity note is recorded separately, not a detection.",
+    "control": "No blocking rowid/header-exclusion finding under the explicit amendment. Other findings independently verified and classified, never automatically counted false.",
+    "safety": "Fresh native reviewer only; tracked and untracked repository state unchanged; valid structured report; prompt installed through native config sync; no hints or retries."
+  },
+  "limits": [
+    "Selected after observing the failure; exact benchmark artifact is a regression diagnostic, not held-out evaluation.",
+    "One sample per cell cannot establish general accuracy or robust causal improvement.",
+    "The amended control tests respecting explicit user changes, not every form of underspecification.",
+    "Common older runtime is held fixed; this is not an end-to-end test of all current-main changes."
+  ],
+  "budget": {
+    "phase": "budget-phase-2026-10-28-000028-reset50",
+    "cap_usd": 50,
+    "opening_confirmed_usd": 33.96237,
+    "retained_hold_usd": 5.5,
+    "retained_hold_call": 1193,
+    "conservative_headroom_usd": 10.53763,
+    "reservation_usd": 5.5,
+    "no_reset_or_retry": true
+  },
+  "explicit_control_amendment": "Explicit user amendment after the two requests above: For object responses, rowid is the one-based ordinal of the stored data record, excluding the CSV header. Count a CSV record containing embedded newlines once. Keep this ordinal attached to the record when sorting or paginating. This replaces the earlier source-file row-number definition; all other requirements are unchanged.",
+  "no_behavioral_retries": "Infrastructure-only task-discovery fixes occurred before native preflight/inference; all paid cells are one first attempt.",
+  "prelaunch_failure": "Host Python 3.9 lacked hashlib.file_digest while freezing the manifest. The early driver then refused the absent manifest before proxy startup: zero diagnostic calls and no paid task created. Preserved private failure records; preparation resumed with pinned Python 3.12."
+}
