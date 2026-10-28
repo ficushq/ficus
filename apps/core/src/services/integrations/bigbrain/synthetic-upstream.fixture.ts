@@ -6,7 +6,6 @@
  * <id>` serves the four public tools. It is not upstream code and holds no real credential.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { watch } from 'node:fs'
 import { join } from 'node:path'
 
 export type SyntheticMode =
@@ -108,15 +107,15 @@ export async function createSyntheticBigbrain(root: string, osHome: string): Pro
     waitForLaunch(predicate) {
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => finish(new Error('Synthetic child never became ready')), 10_000)
-        const watcher = watch(root, () => {
-          void check()
-        })
+        // Poll the append log: filesystem notifications can coalesce the parent's
+        // initial write and child-PID write on Linux, leaving a partial read stranded.
+        const readinessPoll = setInterval(() => void check(), 25)
         let finished = false
         function finish(error?: Error) {
           if (finished) return
           finished = true
           clearTimeout(timer)
-          watcher.close()
+          clearInterval(readinessPoll)
           if (error) reject(error)
           else resolve()
         }
