@@ -7,6 +7,8 @@ import { getSquadWorkspacePath } from './workspace'
 import { ensureWorkspaceDotDir, prepareWorkspaceDotDir, workspaceDotPath } from '../workspace/dot-dir'
 const USER_ENV_FILE = 'env.user'
 const GENERATED_ENV_FILE = '.env'
+// Recognize old platform output only; do not discard unrelated user-authored comments.
+const LEGACY_EXPOSURE_MARKER = '# Generated from Ficus Secret Store allowlist. Do not edit values here.'
 const GENERATED_INTEGRATION_MARKER = '# Generated protected integration bindings. Do not edit values here.'
 
 /**
@@ -172,7 +174,7 @@ export function getEnvFile(squadId: string): string | null {
   const generatedEnvPath = getGeneratedEnvPath(squadId)
   if (!existsSync(generatedEnvPath)) return null
   const content = readFileSync(generatedEnvPath, 'utf-8')
-  if (content.includes('# Generated from Ficus ') || content.includes(GENERATED_INTEGRATION_MARKER)) return ''
+  if (content.includes(LEGACY_EXPOSURE_MARKER) || content.includes(GENERATED_INTEGRATION_MARKER)) return ''
   return content
 }
 

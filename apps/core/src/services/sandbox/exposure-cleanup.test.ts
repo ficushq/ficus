@@ -172,7 +172,7 @@ test('startup sweep cleans existing shared-mount directories and records setting
     writeFileSync(join(home, 'private', names[0], '.ficus/agent-secrets.env'), 'SYNTH_TOKEN=retired')
     mkdirSync(join(home, 'private', names[1]), { recursive: true })
     writeFileSync(join(home, 'private', names[1], '.ficus'), 'custom-conflict')
-    await runExposureCleanupSweep({ discover: async () => targets })
+    await runExposureCleanupSweep()
     expect(existsSync(join(home, 'private', names[0], '.ficus/agent-secrets.env'))).toBe(false)
     const rows = await db
       .select()

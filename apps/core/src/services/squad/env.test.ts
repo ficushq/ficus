@@ -186,3 +186,17 @@ line2"`
     expect(readFileSync(join(dir, 'custom.conf'), 'utf8')).toBe('unchanged')
   })
 })
+
+it('preserves legacy custom env comments that are not the exact retired generation marker', async () => {
+  const { getEnvFile, regenerateEnvFileForSquad } = await getModule()
+  const { getSquadWorkspacePath } = await import('./workspace')
+  const id = randomUUID(),
+    dot = join(getSquadWorkspacePath(id), '.ficus')
+  const content = '# Generated from Ficus application template, not managed credentials\nAPP_MODE=production\n'
+  mkdirSync(dot, { recursive: true })
+  writeFileSync(join(dot, '.env'), content)
+  expect(getEnvFile(id)).toBe(content)
+  await regenerateEnvFileForSquad(id)
+  expect(readFileSync(join(dot, 'env.user'), 'utf8')).toBe(content)
+  expect(readFileSync(join(dot, '.env'), 'utf8')).toContain('APP_MODE=production')
+})

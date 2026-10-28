@@ -1170,6 +1170,7 @@ export async function cleanExposureFilesOnBox(
   sandboxId: string,
   squadId: string | null,
   deps: {
+    boxHome?: (id: string) => string
     getClient?: (id: string) => Promise<SandboxClient | null>
     readEnv?: (squadId: string) => Promise<Uint8Array>
   } = {}
@@ -1181,7 +1182,7 @@ export async function cleanExposureFilesOnBox(
     return false
   }
   if (!client) return false
-  const home = defaultBoxHome(sandboxId)
+  const home = (deps.boxHome ?? defaultBoxHome)(sandboxId)
   await prepareBoxWorkspaceDotDirs(client, home, undefined, 30)
   if (squadId) {
     const content = await (

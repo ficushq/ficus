@@ -1833,3 +1833,51 @@ describe('rollout exposure cleanup without ensure', () => {
     ).rejects.toThrow()
   })
 })
+
+test('VM rollout cleanup executes against existing pushed copies and interrupted restore staging', async () => {
+  const { cleanExposureFilesOnBox } = await import('./file-sync')
+  const { dirname } = await import('node:path')
+  const { existsSync } = await import('node:fs')
+  const home = mkdtempSync(join(tmpdir(), 'box-rollout-retirement-'))
+  try {
+    for (const path of [
+      '.private/.ficus',
+      'workspace/.ficus',
+      '.ficus-migrate/old/.private/.ficus',
+      '.ficus-migrate/old/workspace/.ficus',
+    ])
+      mkdirSync(join(home, path), { recursive: true })
+    for (const path of ['.private/.ficus/agent-secrets.env', '.ficus-migrate/old/.private/.ficus/agent-secrets.env'])
+      writeFileSync(join(home, path), 'SYNTH_TOKEN=retired')
+    writeFileSync(join(home, 'workspace/.ficus/.env'), 'OLD_TOKEN=retired')
+    writeFileSync(join(home, '.ficus-migrate/old/workspace/.ficus/.env'), 'OLD_TOKEN=retired')
+    writeFileSync(join(home, 'workspace/.ficus/env.user'), 'CUSTOM=keep')
+    const client = {
+      async write(req: { path: string; content: string }) {
+        expect(req.path.startsWith(`${home}/`)).toBe(true)
+        mkdirSync(dirname(req.path), { recursive: true })
+        writeFileSync(req.path, Buffer.from(req.content, 'base64'))
+      },
+      bash(req: { command: string; timeoutSeconds?: number }) {
+        expect(req.timeoutSeconds).toBe(30)
+        expect(req.command).toContain(home)
+        const result = Bun.spawnSync(['bash', '-c', req.command], { timeout: 3000, env: { PATH: process.env.PATH } })
+        return makeBashStream(result.exitCode)
+      },
+    }
+    const deps = {
+      getClient: async () => client as any,
+      boxHome: () => home,
+      readEnv: async () => Buffer.from('CUSTOM=keep\n'),
+    }
+    expect(await cleanExposureFilesOnBox('agent_fixture', 's1', deps)).toBe(true)
+    expect(await cleanExposureFilesOnBox('agent_fixture', 's1', deps)).toBe(true)
+    expect(existsSync(join(home, '.private/.ficus/agent-secrets.env'))).toBe(false)
+    expect(existsSync(join(home, '.ficus-migrate/old/.private/.ficus/agent-secrets.env'))).toBe(false)
+    expect(existsSync(join(home, '.ficus-migrate/old/workspace/.ficus/.env'))).toBe(false)
+    expect(readFileSync(join(home, 'workspace/.ficus/.env'), 'utf8')).toBe('CUSTOM=keep\n')
+    expect(readFileSync(join(home, 'workspace/.ficus/env.user'), 'utf8')).toBe('CUSTOM=keep')
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
