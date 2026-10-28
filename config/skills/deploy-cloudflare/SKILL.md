@@ -18,12 +18,12 @@ For squad project work, invoke the following project-directory commands through 
 ## Guardrails
 
 - Ask before Pages/Workers project creation, production deploy, routes/domains/DNS, public egress, KV/R2/D1, or paid features.
-- Required Ficus secret: `DEPLOY_CLOUDFLARE_TOKEN`. Do not paste tokens in chat.
-- Ask a human admin/operator to expose only this secret in squad Environment settings or with `ficus squad-env expose-secrets <squad-id> DEPLOY_CLOUDFLARE_TOKEN` before running provider CLI commands.
+- Requires a healthy Cloudflare integration account assigned to this squad. If unauthenticated, ask a person to connect or assign it in Settings → Integrations.
+- Never read, print, log, commit, or write integration credentials to files; use the assigned CLI or integration exec.
 
-## If `DEPLOY_CLOUDFLARE_TOKEN` is not set
+## Connect and assign
 
-Walk the human through account/token setup before attempting CLI commands:
+If no healthy account is assigned, walk the human through account setup before attempting CLI commands:
 
 1. Ask them to sign in or create a Cloudflare account at https://dash.cloudflare.com/sign-up.
 2. Ask them to choose the Cloudflare account that should own the Pages project or Worker. Mention that routes, custom domains, KV/R2/D1, and Workers usage may affect billing.
@@ -32,15 +32,12 @@ Walk the human through account/token setup before attempting CLI commands:
    - Cloudflare Pages: Account → Cloudflare Pages: Edit, Account → Account Settings: Read.
    - Workers: Account → Workers Scripts: Edit, Account → Account Settings: Read.
    - Add Zone permissions only if they explicitly approve routes/domains/DNS.
-5. Do **not** ask them to paste the token in chat. Open Ficus **Settings → Integrations → Cloudflare**, enable the integration, and have them save the token in its credential field. Saved tokens remain hidden; enter a replacement there to rotate it.
+5. Do **not** ask them to paste the token in chat. Open Ficus **Settings → Integrations → Cloudflare**, enable the integration, and have them create a named account with the token, then validate and enable it. Saved tokens remain hidden; replace the token on that account to rotate it.
 
-6. Ask an admin/operator to expose only `DEPLOY_CLOUDFLARE_TOKEN` to this squad from the Squad Settings tab → Environment section. CLI fallback:
+Set the optional, nonsecret Cloudflare account ID on the connection when needed; it is delivered only to each command.
 
-```bash
-ficus squad-env expose-secrets <squad-id> DEPLOY_CLOUDFLARE_TOKEN
-```
-
-7. Verify non-secret access with `ficus squad-env secrets <squad-id>` and then `CLOUDFLARE_API_TOKEN="$DEPLOY_CLOUDFLARE_TOKEN" wrangler whoami`.
+6. Ask an admin/operator to assign the account in this squad’s **Integrations** tab and choose its default account. Existing imported accounts start unassigned.
+7. Verify access without inspecting credentials: `wrangler whoami`.
 
 ## Project directory and upload hygiene
 
@@ -48,10 +45,15 @@ Deploy from the app project directory, not the shared workspace root. For Pages,
 
 ## CLI setup
 
+The assigned integration provisions the pinned `wrangler` CLI and its PATH wrapper. Check readiness with `wrangler --version`; if unavailable, ask a person to check assignment/provisioning rather than installing an unwrapped global CLI.
+
+For project-local CLIs (including npm/bun/pnpm scripts and npx/bunx), wrap the entire command explicitly:
+
 ```bash
-devbox add nodejs wrangler
-wrangler --version
+ficus integration exec cloudflare -- npm run deploy
 ```
+
+For an alternate assigned account use `ficus integration exec cloudflare --connection <connection-id> -- <command>`. Exec is unrestricted, but never use it to inspect or persist credentials. Human terminals receive no Ficus integration credentials; they may use their own CLI login.
 
 ## Safe flow
 
@@ -60,15 +62,15 @@ bun install
 bun run build
 
 # Inspect account/project state.
-CLOUDFLARE_API_TOKEN="$DEPLOY_CLOUDFLARE_TOKEN" wrangler whoami
+wrangler whoami
 
 # Pages preview/project deploy, after project consent; adjust dist path.
-CLOUDFLARE_API_TOKEN="$DEPLOY_CLOUDFLARE_TOKEN" wrangler pages project list
-CLOUDFLARE_API_TOKEN="$DEPLOY_CLOUDFLARE_TOKEN" wrangler pages deploy dist --project-name <name> --branch preview
+wrangler pages project list
+wrangler pages deploy dist --project-name <name> --branch preview
 
 # Worker dry run/local checks where applicable.
-CLOUDFLARE_API_TOKEN="$DEPLOY_CLOUDFLARE_TOKEN" wrangler deploy --dry-run
-CLOUDFLARE_API_TOKEN="$DEPLOY_CLOUDFLARE_TOKEN" wrangler tail <worker-name>
+wrangler deploy --dry-run
+wrangler tail <worker-name>
 ```
 
 ## Production, rollback, cleanup

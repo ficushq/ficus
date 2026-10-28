@@ -1,10 +1,6 @@
 import { useId, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  configureChannelIntegration,
-  configureDeploymentIntegration,
-  configureServiceIntegration,
-} from '../../api/integrations'
+import { configureChannelIntegration, configureServiceIntegration } from '../../api/integrations'
 import { integrationQueries } from '../../queryOptions'
 import { integrationQueryKeys, queryKeys } from '../../queryKeys'
 
@@ -19,7 +15,7 @@ export function IntegrationCredentialSettings({
 }: {
   provider: string
   canWrite: boolean
-  kind?: 'channel' | 'deployment' | 'service'
+  kind?: 'channel' | 'service'
   onSaved?: () => Promise<void>
   saveLabel?: string
   compact?: boolean
@@ -31,13 +27,7 @@ export function IntegrationCredentialSettings({
   const [draft, setDraft] = useState<Record<string, string | null>>({})
   const save = useMutation({
     mutationFn: async () => {
-      await (
-        kind === 'service'
-          ? configureServiceIntegration
-          : kind === 'deployment'
-            ? configureDeploymentIntegration
-            : configureChannelIntegration
-      )(provider, draft)
+      await (kind === 'service' ? configureServiceIntegration : configureChannelIntegration)(provider, draft)
       await onSaved?.()
     },
     onSuccess: async () => {

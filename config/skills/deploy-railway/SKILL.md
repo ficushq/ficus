@@ -18,50 +18,39 @@ For squad project work, invoke the following project-directory commands through 
 ## Guardrails
 
 - Ask before creating projects/services/databases, provisioning always-on resources, setting public domains, or production deploys.
-- Required Ficus secret: `DEPLOY_RAILWAY_TOKEN`. Do not paste tokens in chat.
-- Ask a human admin/operator to expose only this secret in the Squad Settings tab → Environment section before running provider CLI commands.
+- Requires a healthy Railway integration account assigned to this squad. If unauthenticated, ask a person to connect or assign it in Settings → Integrations.
+- Never read, print, log, commit, or write integration credentials to files; use the assigned CLI or integration exec.
 - Ask before running migrations against Railway databases.
 - Railway public services may incur usage/egress charges. Include cleanup notes in handoff.
 
-## If `DEPLOY_RAILWAY_TOKEN` is not set
+## Connect and assign
 
-Walk the human through account/token setup before attempting CLI commands:
+If no healthy account is assigned, walk the human through account setup before attempting CLI commands:
 
 1. Ask them to sign in or create a Railway account at https://railway.com/login.
 2. Ask them to choose or create the Railway workspace/project owner. Mention that services, databases, and always-on usage may affect billing.
 3. Direct them to Railway Account Tokens: https://railway.com/account/tokens.
-4. Ask them to create a token named `ficus-deploy`. In the workspace selector, specifically choose **No workspace** so Railway creates an **Account**-scoped token. Railway distinguishes project tokens (`RAILWAY_TOKEN`, project-level) from account/workspace tokens (`RAILWAY_API_TOKEN`, account-level). For Ficus project creation/listing/linking/deploy flows, use the account-scoped API token and store it as `DEPLOY_RAILWAY_TOKEN`.
-5. Do **not** ask them to paste the token in chat. Open Ficus **Settings → Integrations → Railway**, enable the integration, and have them save the token in its credential field. Saved tokens remain hidden; enter a replacement there to rotate it.
+4. Ask them to create a token named `ficus-deploy`. In the workspace selector, specifically choose **No workspace** so Railway creates an **Account**-scoped token. Railway distinguishes project tokens (`RAILWAY_TOKEN`, project-level) from account/workspace tokens (`RAILWAY_API_TOKEN`, account-level). For Ficus project creation/listing/linking/deploy flows, use the account-scoped API token.
+5. Do **not** ask them to paste the token in chat. Open Ficus **Settings → Integrations → Railway**, enable the integration, and have them create a named account with the token, then validate and enable it. Saved tokens remain hidden; replace the token on that account to rotate it.
 
-6. Ask an admin/operator to expose only `DEPLOY_RAILWAY_TOKEN` to this squad from the Squad Settings tab → Environment section. CLI fallback:
+6. Ask an admin/operator to assign the account in this squad’s **Integrations** tab and choose its default account. Existing imported accounts start unassigned.
+7. Verify access without inspecting credentials: `railway list`.
 
-```bash
-ficus squad-env expose-secrets <squad-id> DEPLOY_RAILWAY_TOKEN
-```
+## Authentication troubleshooting
 
-7. Verify non-secret exposure with `ficus squad-env secrets <squad-id>`. Then verify Railway auth with `RAILWAY_API_TOKEN="$DEPLOY_RAILWAY_TOKEN" railway whoami`.
-
-## Token and environment troubleshooting
-
-- Prefer `RAILWAY_API_TOKEN="$DEPLOY_RAILWAY_TOKEN"` for Railway CLI account/workspace/project creation flows. `RAILWAY_TOKEN` may be insufficient for project creation/listing and is more appropriate for project-level contexts.
-- `ficus squad-env secrets <squad-id>` showing `isSet=true exposed=true` only proves Ficus has a secret and exposes it to the squad. It does **not** prove the current running process has the latest value or that Railway accepts the token.
-- If Railway returns Unauthorized after a token was recently added/replaced, ask the human/admin to refresh/restart the agent/sandbox process so it receives the updated environment. Also verify the token is account-scoped, valid, and not revoked.
-- Never put command strings containing `$DEPLOY_RAILWAY_TOKEN` inside double-quoted `ficus inbox` or `ficus workstream request-input` messages; Bash can expand and leak the secret. Use single quotes or heredocs when mentioning env-var syntax literally.
-
-```bash
-# Bad: may expand the secret before sending the message.
-ficus workstream request-input <id> -m "Run RAILWAY_API_TOKEN=$DEPLOY_RAILWAY_TOKEN railway whoami"
-
-# Good: keeps the env-var syntax literal.
-ficus workstream request-input <id> -m 'Run RAILWAY_API_TOKEN=$DEPLOY_RAILWAY_TOKEN railway whoami'
-```
+Use account/workspace API tokens, not project tokens. If authentication fails, ask a person to validate, enable or reconnect the assigned account. Exec obtains current credentials per command; do not restart the sandbox to pick up a token, and never inspect token variables.
 
 ## CLI setup
 
+The assigned integration provisions the pinned `railway` CLI and its PATH wrapper. Check readiness with `railway --version`; if unavailable, ask a person to check assignment/provisioning rather than installing an unwrapped global CLI.
+
+For project-local CLIs (including npm/bun/pnpm scripts and npx/bunx), wrap the entire command explicitly:
+
 ```bash
-devbox add nodejs railway
-railway --version
+ficus integration exec railway -- npm run deploy
 ```
+
+For an alternate assigned account use `ficus integration exec railway --connection <connection-id> -- <command>`. Exec is unrestricted, but never use it to inspect or persist credentials. Human terminals receive no Ficus integration credentials; they may use their own CLI login.
 
 ## Pre-deploy app checks
 
@@ -104,16 +93,16 @@ Use account-scoped auth for these commands:
 
 ```bash
 # Auth/account inspection.
-RAILWAY_API_TOKEN="$DEPLOY_RAILWAY_TOKEN" railway whoami
-RAILWAY_API_TOKEN="$DEPLOY_RAILWAY_TOKEN" railway list
+railway whoami
+railway list
 
 # Create/link project and service after explicit consent.
-RAILWAY_API_TOKEN="$DEPLOY_RAILWAY_TOKEN" railway init -n <project-name> --json
-RAILWAY_API_TOKEN="$DEPLOY_RAILWAY_TOKEN" railway add --service <service-name> --json
-RAILWAY_API_TOKEN="$DEPLOY_RAILWAY_TOKEN" railway status
+railway init -n <project-name> --json
+railway add --service <service-name> --json
+railway status
 
 # Deploy after approval for the service/environment.
-RAILWAY_API_TOKEN="$DEPLOY_RAILWAY_TOKEN" railway up --detach --message 'Deploy app'
+railway up --detach --message 'Deploy app'
 ```
 
 Notes:
@@ -125,12 +114,12 @@ Notes:
 
 ```bash
 # Deployment polling and logs.
-RAILWAY_API_TOKEN="$DEPLOY_RAILWAY_TOKEN" railway deployment list --json
-RAILWAY_API_TOKEN="$DEPLOY_RAILWAY_TOKEN" railway logs --build <deployment-id> --lines 300
-RAILWAY_API_TOKEN="$DEPLOY_RAILWAY_TOKEN" railway logs --latest --lines 100
+railway deployment list --json
+railway logs --build <deployment-id> --lines 300
+railway logs --latest --lines 100
 
 # Generate a Railway public domain after successful deploy.
-RAILWAY_API_TOKEN="$DEPLOY_RAILWAY_TOKEN" railway domain --service <service-name> --port <runtime-port> --json
+railway domain --service <service-name> --port <runtime-port> --json
 
 # Verify externally.
 curl -sS -w '\nHTTP_STATUS:%{http_code}\nCONTENT_TYPE:%{content_type}\n' https://<domain>/

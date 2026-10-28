@@ -1,3 +1,4 @@
+import { getSecretStore } from '../services/secrets'
 import { getSquadWorkspacePath } from '../services/squad/workspace'
 import { WORKSPACE_DOT_DIR } from '../services/workspace/dot-dir'
 import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
@@ -29,6 +30,7 @@ const rbacPrefix = `squad-env-rbac-${Date.now()}-${Math.random().toString(36).sl
 let admin: TestUser
 
 beforeAll(async () => {
+  await getSecretStore().initialize()
   admin = await createTestAdmin({ prefix: rbacPrefix, canonicalAdmin: true })
 })
 
@@ -116,6 +118,15 @@ describe('squad-env routes', () => {
   beforeEach(async () => {
     testPrefix = `env-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
+    // Generic exposure fixtures, not the six retired deployment credential names.
+    for (const key of [
+      'DEPLOY_TEST_VERCEL_TOKEN',
+      'DEPLOY_TEST_NETLIFY_TOKEN',
+      'DEPLOY_TEST_RAILWAY_TOKEN',
+      'DEPLOY_TEST_DIGITALOCEAN_TOKEN',
+    ])
+      await getSecretStore().set(key, '', 'test')
+
     // Create a test squad
     const [squad] = await db
       .insert(squads)
@@ -130,8 +141,10 @@ describe('squad-env routes', () => {
   })
 
   afterEach(async () => {
-    delete process.env.DEPLOY_VERCEL_TOKEN
-    delete process.env.DEPLOY_NETLIFY_TOKEN
+    await getSecretStore().delete('DEPLOY_TEST_VERCEL_TOKEN')
+    await getSecretStore().delete('DEPLOY_TEST_NETLIFY_TOKEN')
+    await getSecretStore().delete('DEPLOY_TEST_RAILWAY_TOKEN')
+    await getSecretStore().delete('DEPLOY_TEST_DIGITALOCEAN_TOKEN')
     await app.request('/api/squads/workspace/env/global-secrets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
@@ -347,7 +360,7 @@ describe('squad-env routes', () => {
     }
 
     it('lists selectable secret names without plaintext values', async () => {
-      process.env.DEPLOY_VERCEL_TOKEN = 'vercel-secret'
+      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'vercel-secret', 'test')
 
       const res = await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
         headers: authHeaders(admin.token),
@@ -355,148 +368,148 @@ describe('squad-env routes', () => {
 
       expect(res.status).toBe(200)
       const data = await res.json()
-      expect(JSON.stringify(data)).toContain('DEPLOY_VERCEL_TOKEN')
+      expect(JSON.stringify(data)).toContain('DEPLOY_TEST_VERCEL_TOKEN')
       expect(JSON.stringify(data)).not.toContain('vercel-secret')
     })
 
     it('returns selected secret names without plaintext values', async () => {
-      process.env.DEPLOY_VERCEL_TOKEN = 'vercel-secret'
+      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'vercel-secret', 'test')
 
       const res = await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_VERCEL_TOKEN'] }),
+        body: JSON.stringify({ keys: ['DEPLOY_TEST_VERCEL_TOKEN'] }),
       })
 
       expect(res.status).toBe(200)
       const data = await res.json()
-      expect(data.exposedSecretKeys).toEqual(['DEPLOY_VERCEL_TOKEN'])
+      expect(data.exposedSecretKeys).toEqual(['DEPLOY_TEST_VERCEL_TOKEN'])
       expect(JSON.stringify(data)).not.toContain('vercel-secret')
 
       const getRes = await app.request(`/api/squads/workspace/${squadId}/env`, { headers: authHeaders(admin.token) })
       const getData = await getRes.json()
       expect(getData.content).not.toContain('vercel-secret')
-      expect(getData.exposedSecretKeys).toEqual(['DEPLOY_VERCEL_TOKEN'])
+      expect(getData.exposedSecretKeys).toEqual(['DEPLOY_TEST_VERCEL_TOKEN'])
     })
 
     it('resolves squad UUID prefixes when exposing secrets', async () => {
-      process.env.DEPLOY_NETLIFY_TOKEN = 'netlify-secret'
+      await getSecretStore().set('DEPLOY_TEST_NETLIFY_TOKEN', 'netlify-secret', 'test')
       const prefix = squadId.slice(0, 8)
 
       const res = await app.request(`/api/squads/workspace/${prefix}/env/secrets`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_NETLIFY_TOKEN'] }),
+        body: JSON.stringify({ keys: ['DEPLOY_TEST_NETLIFY_TOKEN'] }),
       })
 
       expect(res.status).toBe(200)
       const data = await res.json()
-      expect(data.exposedSecretKeys).toEqual(['DEPLOY_NETLIFY_TOKEN'])
+      expect(data.exposedSecretKeys).toEqual(['DEPLOY_TEST_NETLIFY_TOKEN'])
 
       const getRes = await app.request(`/api/squads/workspace/${squadId}/env`, { headers: authHeaders(admin.token) })
       const getData = await getRes.json()
-      expect(getData.exposedSecretKeys).toEqual(['DEPLOY_NETLIFY_TOKEN'])
+      expect(getData.exposedSecretKeys).toEqual(['DEPLOY_TEST_NETLIFY_TOKEN'])
     })
 
     it('overrides exposed secrets on POST so the UI can unexpose unchecked secrets', async () => {
-      process.env.DEPLOY_VERCEL_TOKEN = 'vercel-secret'
-      process.env.DEPLOY_NETLIFY_TOKEN = 'netlify-secret'
+      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'vercel-secret', 'test')
+      await getSecretStore().set('DEPLOY_TEST_NETLIFY_TOKEN', 'netlify-secret', 'test')
 
       await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_VERCEL_TOKEN', 'DEPLOY_NETLIFY_TOKEN'] }),
+        body: JSON.stringify({ keys: ['DEPLOY_TEST_VERCEL_TOKEN', 'DEPLOY_TEST_NETLIFY_TOKEN'] }),
       })
 
       const res = await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_NETLIFY_TOKEN'] }),
+        body: JSON.stringify({ keys: ['DEPLOY_TEST_NETLIFY_TOKEN'] }),
       })
 
       expect(res.status).toBe(200)
       const data = await res.json()
-      expect(data.exposedSecretKeys).toEqual(['DEPLOY_NETLIFY_TOKEN'])
+      expect(data.exposedSecretKeys).toEqual(['DEPLOY_TEST_NETLIFY_TOKEN'])
     })
 
     it('appends exposed secrets on PUT instead of replacing existing exposed secrets', async () => {
-      process.env.DEPLOY_VERCEL_TOKEN = 'vercel-secret'
-      process.env.DEPLOY_NETLIFY_TOKEN = 'netlify-secret'
+      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'vercel-secret', 'test')
+      await getSecretStore().set('DEPLOY_TEST_NETLIFY_TOKEN', 'netlify-secret', 'test')
 
       await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_VERCEL_TOKEN'] }),
+        body: JSON.stringify({ keys: ['DEPLOY_TEST_VERCEL_TOKEN'] }),
       })
 
       const res = await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_NETLIFY_TOKEN'] }),
+        body: JSON.stringify({ keys: ['DEPLOY_TEST_NETLIFY_TOKEN'] }),
       })
 
       expect(res.status).toBe(200)
       const data = await res.json()
-      expect(data.exposedSecretKeys).toEqual(['DEPLOY_VERCEL_TOKEN', 'DEPLOY_NETLIFY_TOKEN'])
+      expect(data.exposedSecretKeys).toEqual(['DEPLOY_TEST_VERCEL_TOKEN', 'DEPLOY_TEST_NETLIFY_TOKEN'])
     })
 
     it('removes exposed secrets on DELETE', async () => {
-      process.env.DEPLOY_VERCEL_TOKEN = 'vercel-secret'
-      process.env.DEPLOY_NETLIFY_TOKEN = 'netlify-secret'
+      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'vercel-secret', 'test')
+      await getSecretStore().set('DEPLOY_TEST_NETLIFY_TOKEN', 'netlify-secret', 'test')
 
       await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_VERCEL_TOKEN', 'DEPLOY_NETLIFY_TOKEN'] }),
+        body: JSON.stringify({ keys: ['DEPLOY_TEST_VERCEL_TOKEN', 'DEPLOY_TEST_NETLIFY_TOKEN'] }),
       })
 
       const res = await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_VERCEL_TOKEN'] }),
+        body: JSON.stringify({ keys: ['DEPLOY_TEST_VERCEL_TOKEN'] }),
       })
 
       expect(res.status).toBe(200)
       const data = await res.json()
-      expect(data.exposedSecretKeys).toEqual(['DEPLOY_NETLIFY_TOKEN'])
+      expect(data.exposedSecretKeys).toEqual(['DEPLOY_TEST_NETLIFY_TOKEN'])
     })
 
     it('reports effective exposure for global-only, squad-only, both, and neither exposure states', async () => {
-      process.env.DEPLOY_VERCEL_TOKEN = 'global-vercel-secret'
-      process.env.DEPLOY_NETLIFY_TOKEN = 'squad-netlify-secret'
+      await getSecretStore().set('DEPLOY_TEST_VERCEL_TOKEN', 'global-vercel-secret', 'test')
+      await getSecretStore().set('DEPLOY_TEST_NETLIFY_TOKEN', 'squad-netlify-secret', 'test')
 
       const globalRes = await app.request('/api/squads/workspace/env/global-secrets', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_VERCEL_TOKEN', 'DEPLOY_RAILWAY_TOKEN'] }),
+        body: JSON.stringify({ keys: ['DEPLOY_TEST_VERCEL_TOKEN', 'DEPLOY_TEST_RAILWAY_TOKEN'] }),
       })
       expect(globalRes.status).toBe(200)
       const globalData = await globalRes.json()
-      expect(globalData.globallyExposedSecretKeys).toEqual(['DEPLOY_RAILWAY_TOKEN', 'DEPLOY_VERCEL_TOKEN'])
+      expect(globalData.globallyExposedSecretKeys).toEqual(['DEPLOY_TEST_RAILWAY_TOKEN', 'DEPLOY_TEST_VERCEL_TOKEN'])
       expect(JSON.stringify(globalData)).not.toContain('global-vercel-secret')
 
       await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_NETLIFY_TOKEN', 'DEPLOY_RAILWAY_TOKEN'] }),
+        body: JSON.stringify({ keys: ['DEPLOY_TEST_NETLIFY_TOKEN', 'DEPLOY_TEST_RAILWAY_TOKEN'] }),
       })
 
-      const globalOnly = await getListedSecret('DEPLOY_VERCEL_TOKEN')
+      const globalOnly = await getListedSecret('DEPLOY_TEST_VERCEL_TOKEN')
       expect(globalOnly.exposed).toBe(true)
       expect(globalOnly.squadExposed).toBe(false)
       expect(globalOnly.globallyExposed).toBe(true)
 
-      const squadOnly = await getListedSecret('DEPLOY_NETLIFY_TOKEN')
+      const squadOnly = await getListedSecret('DEPLOY_TEST_NETLIFY_TOKEN')
       expect(squadOnly.exposed).toBe(true)
       expect(squadOnly.squadExposed).toBe(true)
       expect(squadOnly.globallyExposed).toBe(false)
 
-      const both = await getListedSecret('DEPLOY_RAILWAY_TOKEN')
+      const both = await getListedSecret('DEPLOY_TEST_RAILWAY_TOKEN')
       expect(both.exposed).toBe(true)
       expect(both.squadExposed).toBe(true)
       expect(both.globallyExposed).toBe(true)
 
-      const neither = await getListedSecret('DEPLOY_DIGITALOCEAN_TOKEN')
+      const neither = await getListedSecret('DEPLOY_TEST_DIGITALOCEAN_TOKEN')
       expect(neither.exposed).toBe(false)
       expect(neither.squadExposed).toBe(false)
       expect(neither.globallyExposed).toBe(false)
@@ -506,7 +519,7 @@ describe('squad-env routes', () => {
       const res = await app.request(`/api/squads/workspace/${squadId}/env/secrets`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-        body: JSON.stringify({ keys: ['DEPLOY_VERCEL_TOKEN; echo leaked'] }),
+        body: JSON.stringify({ keys: ['DEPLOY_TEST_VERCEL_TOKEN; echo leaked'] }),
       })
 
       expect(res.status).toBe(400)

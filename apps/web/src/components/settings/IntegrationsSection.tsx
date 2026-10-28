@@ -1,3 +1,5 @@
+import { isDeploymentIntegrationKey } from '@ficus/shared'
+import { DeploymentIntegrationSettings } from '../integrations/DeploymentIntegrationSettings'
 import { ExternalLink } from './SettingsRow'
 import { Link } from 'react-router-dom'
 import { IntegrationCredentialSettings } from '../integrations/IntegrationCredentialSettings'
@@ -215,14 +217,8 @@ export function IntegrationDirectoryCard({
               </p>
             </div>
           )}
-          {entry.connectionMode === 'deployment' && (
-            <div className="space-y-4">
-              <IntegrationCredentialSettings provider={entry.key} kind="deployment" canWrite={canWrite} />
-              <p className="text-sm text-muted">
-                Choose which squads can use this token in each squad’s Environment settings. Existing exposure choices
-                are preserved.
-              </p>
-            </div>
+          {isDeploymentIntegrationKey(entry.key) && (
+            <DeploymentIntegrationSettings provider={entry.key} label={entry.label} canWrite={canWrite} />
           )}
           {entry.key === 'linear' && <LinearIntegrationSettings canWrite={canWrite} />}
           {entry.key === 'notion' && <NotionIntegrationSettings canRead canWrite={canWrite} embedded />}

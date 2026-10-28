@@ -11,7 +11,6 @@ import { channelLinkQueryKeys } from './queryKeys'
 import { getChannelLinks } from './api/channelLinks'
 import { listIntegrationOutputs } from './api/integrations'
 import { getSquadGitAuthorDefaults } from './api/integrations'
-import { getDeploymentIntegrationSettings } from './api/integrations'
 import { feedQueryKeys } from './queryKeys'
 import { getFeedVisit } from './api/auth'
 import { listDoneWorkStreams } from './api/squads'
@@ -1121,25 +1120,14 @@ export const integrationQueries = {
       retry: false,
     }),
   outputs: () => queryOptions({ queryKey: integrationQueryKeys.outputs(), queryFn: listIntegrationOutputs }),
-  credentialSettings: (provider: string, kind: 'channel' | 'deployment' | 'service') =>
+  credentialSettings: (provider: string, kind: 'channel' | 'service') =>
     queryOptions({
       queryKey:
         kind === 'service'
           ? integrationQueryKeys.serviceSettings(provider)
-          : kind === 'deployment'
-            ? integrationQueryKeys.deploymentSettings(provider)
-            : integrationQueryKeys.channelSettings(provider),
+          : integrationQueryKeys.channelSettings(provider),
       queryFn: () =>
-        kind === 'service'
-          ? getServiceIntegrationSettings(provider)
-          : kind === 'deployment'
-            ? getDeploymentIntegrationSettings(provider)
-            : getChannelIntegrationSettings(provider),
-    }),
-  deploymentSettings: (provider: string) =>
-    queryOptions({
-      queryKey: integrationQueryKeys.deploymentSettings(provider),
-      queryFn: () => getDeploymentIntegrationSettings(provider),
+        kind === 'service' ? getServiceIntegrationSettings(provider) : getChannelIntegrationSettings(provider),
     }),
   channelSettings: (provider: string) =>
     queryOptions({

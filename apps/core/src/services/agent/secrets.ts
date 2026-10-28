@@ -36,7 +36,7 @@ import { isLiveAgentStatus, isUserAssistantAgentType, type AgentStatus } from '@
 import { agentSecretExposures, agents, db } from '../../db'
 import { getHomeDir } from '../../lib/utils/home'
 import { createLogger } from '../../lib/infra/logger'
-import { getDeploymentAwareSecretValue } from '../integrations/deployment/settings'
+import { getSecretStore } from '../secrets'
 import { normalizeSecretKeys } from '../squad/env'
 import { isHostRuntime } from '../sandbox/runtime'
 import { ensureWorkspaceDotDir, prepareWorkspaceDotDir } from '../workspace/dot-dir'
@@ -256,7 +256,7 @@ export function removeAgentSecretsFile(sandboxId: string): void {
  */
 export async function materializeAgentSecretsFile(
   sandboxId: string,
-  getSecretValue: (key: string) => string | undefined = getDeploymentAwareSecretValue
+  getSecretValue: (key: string) => string | undefined = (key) => getSecretStore().get(key)
 ): Promise<string[]> {
   const agentId = agentIdFromAgentSandboxId(sandboxId)
   if (!agentId) return []
@@ -359,7 +359,7 @@ export async function regenerateAgentSecretFilesForSecretKey(key: string): Promi
  */
 export async function agentSecretNamesForSandbox(
   sandboxId: string,
-  getSecretValue: (key: string) => string | undefined = getDeploymentAwareSecretValue
+  getSecretValue: (key: string) => string | undefined = (key) => getSecretStore().get(key)
 ): Promise<string[]> {
   const agentId = agentIdFromAgentSandboxId(sandboxId)
   if (!agentId) return []

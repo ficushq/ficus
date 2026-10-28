@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { DEPLOYMENT_INTEGRATION_KEYS } from '@ficus/shared'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, waitFor } from '@testing-library/dom'
 import { acquireDomHarness } from '../../test/domHarness'
@@ -156,56 +157,49 @@ test('failed toggle keeps disabled settings hidden and shows an error', async ()
   expect(container.querySelector('#integration-settings-github')).toBeNull()
 })
 
-test('deployment providers reveal protected token fields inside their cards', async () => {
-  const provider = {
-    key: 'vercel',
-    label: 'Vercel',
-    enabled: true,
-    description: 'Deploy apps',
-    connectionMode: 'deployment',
-  }
-  client.setQueryData(integrationQueryKeys.catalog(), { integrations: [provider] })
-  const fields = [
-    {
-      key: 'DEPLOY_VERCEL_TOKEN',
-      label: 'Access token',
-      secret: true,
-      configured: true,
-      placeholder: 'Vercel access token',
-    },
-  ]
-  client.setQueryData(integrationQueryKeys.deploymentSettings('vercel'), { fields })
-  const calls: { url: string; body: unknown }[] = []
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    calls.push({ url: String(input), body: init?.body ? JSON.parse(String(init.body)) : null })
-    return Response.json({ fields })
-  }) as typeof fetch
-  const container = await render()
-  await harness.act(async () =>
-    fireEvent.click(
-      [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Settings'))!
+for (const provider of DEPLOYMENT_INTEGRATION_KEYS)
+  test(`${provider} card connects a normal account then teaches squad assignment, not exposure`, async () => {
+    client.setQueryData(integrationQueryKeys.catalog(), {
+      integrations: [{ key: provider, label: provider, enabled: true, connectionMode: 'credential' }],
+    })
+    client.setQueryData(integrationQueryKeys.pool(provider), [])
+    const calls: { url: string; body: any }[] = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), body: init?.body ? JSON.parse(String(init.body)) : null })
+      return Response.json(String(input).includes('/connections?') ? [] : {})
+    }) as typeof fetch
+    const container = await render()
+    await harness.act(async () =>
+      fireEvent.click([...container.querySelectorAll('button')].find((b) => b.textContent?.includes('Settings'))!)
     )
-  )
-  const token = container.querySelector('input[type="password"]') as HTMLInputElement
-  expect(token).not.toBeNull()
-  expect(token.value).toBe('')
-  expect(token.placeholder).toContain('replacement')
-  await harness.act(async () => fireEvent.change(token, { target: { value: 'new-test-token' } }))
-  await harness.act(async () =>
-    fireEvent.click(
-      [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Save credentials'))!
+    expect(container.textContent).toContain('assign')
+    expect(container.textContent).not.toContain('exposure')
+    const name = container.querySelector('input[name="displayName"]') as HTMLInputElement
+    const token = container.querySelector('input[type="password"]') as HTMLInputElement
+    expect(token).not.toBeNull()
+    expect(token.value).toBe('')
+    await harness.act(async () => {
+      if (provider === 'cloudflare')
+        fireEvent.change(container.querySelector('input[name="accountId"]')!, {
+          target: { value: 'synthetic-account' },
+        })
+      fireEvent.change(name, { target: { value: 'Personal account' } })
+      fireEvent.change(token, { target: { value: 'synthetic-new-token' } })
+    })
+    await harness.act(async () => fireEvent.submit(container.querySelector('form')!))
+    await waitFor(() =>
+      expect(calls.find((c) => c.url.endsWith('/integrations/connections'))?.body).toEqual({
+        provider,
+        displayName: 'Personal account',
+        configuration: { version: 1, ...(provider === 'cloudflare' ? { accountId: 'synthetic-account' } : {}) },
+        credential: 'synthetic-new-token',
+      })
     )
-  )
-  await waitFor(() =>
-    expect(
-      calls.some(
-        (call) =>
-          call.url.endsWith('/providers/vercel/deployment-settings') &&
-          (call.body as Record<string, string>)?.DEPLOY_VERCEL_TOKEN === 'new-test-token'
-      )
-    ).toBe(true)
-  )
-})
+    expect(calls.some((c) => c.url.includes('deployment-settings'))).toBe(false)
+    await waitFor(() =>
+      expect(container.querySelector<HTMLInputElement>('input[type="password"]')?.value ?? '').toBe('')
+    )
+  })
 
 test('Google service accounts use a blank multiline field and save through the integration', async () => {
   const provider = {

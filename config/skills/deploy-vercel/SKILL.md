@@ -18,27 +18,22 @@ For squad project work, invoke the following project-directory commands through 
 ## Guardrails
 
 - Ask before project creation, production deployment, domain changes, paid features, or public exposure.
-- Required Ficus secret: `DEPLOY_VERCEL_TOKEN`. Do not ask users to paste it in chat.
-- Ask a human admin/operator to expose only this secret in squad Environment settings or with `ficus squad-env expose-secrets <squad-id> DEPLOY_VERCEL_TOKEN` before running provider CLI commands.
-- Do not store secrets in `.env` unless the human explicitly approves and they are needed by the app.
+- Requires a healthy Vercel integration account assigned to this squad. If unauthenticated, ask a person to connect or assign it in Settings → Integrations.
+- Never read, print, log, commit, or write integration credentials to files; use the assigned CLI or integration exec.
+- Custom app configuration may live in project files as directed by the human; integration credentials must never be written there.
 
-## If `DEPLOY_VERCEL_TOKEN` is not set
+## Connect and assign
 
-Walk the human through account/token setup before attempting CLI commands:
+If no healthy account is assigned, walk the human through account setup before attempting CLI commands:
 
 1. Ask them to sign in or create a Vercel account at https://vercel.com/signup.
 2. Ask them to choose or create the Vercel team/account that should own the project. Mention that team-owned projects may have billing implications.
 3. Direct them to Vercel Account Settings → Tokens: https://vercel.com/account/settings/tokens.
 4. Ask them to create a token named `ficus-deploy` with the minimum practical scope for the intended account/team.
-5. Do **not** ask them to paste the token in chat. Open Ficus **Settings → Integrations → Vercel**, enable the integration, and have them save the token in its credential field. Saved tokens remain hidden; enter a replacement there to rotate it.
+5. Do **not** ask them to paste the token in chat. Open Ficus **Settings → Integrations → Vercel**, enable the integration, and have them create a named account with the token, then validate and enable it. Saved tokens remain hidden; replace the token on that account to rotate it.
 
-6. Ask an admin/operator to expose only `DEPLOY_VERCEL_TOKEN` to this squad from the Squad Settings tab → Environment section. CLI fallback:
-
-```bash
-ficus squad-env expose-secrets <squad-id> DEPLOY_VERCEL_TOKEN
-```
-
-7. Verify non-secret access with `ficus squad-env secrets <squad-id>` and then `VERCEL_TOKEN="$DEPLOY_VERCEL_TOKEN" vercel whoami`.
+6. Ask an admin/operator to assign the account in this squad’s **Integrations** tab and choose its default account. Existing imported accounts start unassigned.
+7. Verify access without inspecting credentials: `vercel whoami`.
 
 ## Project directory and upload hygiene
 
@@ -46,10 +41,15 @@ Deploy from the app project directory, not the shared workspace root. If uploadi
 
 ## CLI setup
 
+The assigned integration provisions the pinned `vercel` CLI and its PATH wrapper. Check readiness with `vercel --version`; if unavailable, ask a person to check assignment/provisioning rather than installing an unwrapped global CLI.
+
+For project-local CLIs (including npm/bun/pnpm scripts and npx/bunx), wrap the entire command explicitly:
+
 ```bash
-devbox add nodejs vercel
-vercel --version
+ficus integration exec vercel -- npm run deploy
 ```
+
+For an alternate assigned account use `ficus integration exec vercel --connection <connection-id> -- <command>`. Exec is unrestricted, but never use it to inspect or persist credentials. Human terminals receive no Ficus integration credentials; they may use their own CLI login.
 
 ## Safe flow
 
@@ -59,15 +59,15 @@ bun install
 bun run build
 
 # Link only after consent to use/create the Vercel project.
-VERCEL_TOKEN="$DEPLOY_VERCEL_TOKEN" vercel link
-VERCEL_TOKEN="$DEPLOY_VERCEL_TOKEN" vercel project ls
+vercel link
+vercel project ls
 
 # Preview deploy first.
-VERCEL_TOKEN="$DEPLOY_VERCEL_TOKEN" vercel deploy
+vercel deploy
 
 # Inspect status/logs.
-VERCEL_TOKEN="$DEPLOY_VERCEL_TOKEN" vercel ls
-VERCEL_TOKEN="$DEPLOY_VERCEL_TOKEN" vercel logs <deployment-url-or-id>
+vercel ls
+vercel logs <deployment-url-or-id>
 ```
 
 ## Production, rollback, cleanup

@@ -1,3 +1,4 @@
+import { isDeploymentIntegrationKey } from '@ficus/shared'
 import clsx from 'clsx'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -107,7 +108,7 @@ function SingleConnectionAssignment({
     <section className={clsx(!embedded && 'mt-6 border-b border-panel-border py-4')}>
       <h3 className="text-sm font-medium text-primary">Connection for this squad — {label}</h3>
       <p className="mt-1 text-xs text-muted">Choose the global {provider} connection used by this squad.</p>
-      {provider === 'github' && value.scope && (
+      {(provider === 'github' || isDeploymentIntegrationKey(provider)) && value.scope && (
         <div className="mt-3 text-sm">
           {value.scope.inheritDefault ? (
             <p className="text-accent-light">
@@ -130,10 +131,10 @@ function SingleConnectionAssignment({
           )}
         </div>
       )}
-      {provider === 'github' ? (
+      {provider === 'github' || isDeploymentIntegrationKey(provider) ? (
         <div className="mt-3 space-y-2">
           {value.connections.length === 0 && (
-            <p className="text-sm text-muted">Connect a GitHub account in Integrations to get started.</p>
+            <p className="text-sm text-muted">Connect a {label} account in Integrations to get started.</p>
           )}
           {value.connections.map((connection) => {
             const attached = value.attached?.find((item) => item.id === connection.id)
@@ -183,7 +184,10 @@ function SingleConnectionAssignment({
             )
           })}
           <p className="text-xs text-muted">
-            The default account is used for git and gh. Flows can select any account attached here.
+            {provider === 'github'
+              ? 'The default account is used for git and gh.'
+              : 'The default account is used for provider commands.'}{' '}
+            Flows can select any account attached here.
             {value.commitSigning?.accounts.some((account) => account.state === 'on') &&
               ' Each commit is signed by the attached account its committer email belongs to. Commits made as an attached account with signing off are not signed. A commit whose committer email belongs to no attached account is refused rather than signed by a different account.'}
           </p>

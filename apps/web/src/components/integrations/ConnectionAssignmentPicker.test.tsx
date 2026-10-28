@@ -293,3 +293,45 @@ describe('managed shared vaults', () => {
     expect(box('Alpha').disabled).toBe(true)
   })
 })
+
+for (const provider of ['cloudflare', 'digitalocean', 'netlify', 'railway', 'supabase', 'vercel']) {
+  test(`${provider} supports multiple attached accounts, an explicit default and inherited default`, async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+    client.setQueryData(integrationQueryKeys.squad('squad-1', provider), {
+      ...selection,
+      providerKey: provider,
+      scope: { inheritDefault: false },
+      attached: [
+        { ...selection.connections[0], isDefault: true },
+        { ...selection.connections[2], isDefault: false },
+      ],
+    })
+    const { ConnectionAssignmentPicker } = await import('./ConnectionAssignmentPicker')
+    await harness.act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ConnectionAssignmentPicker
+            squadId="squad-1"
+            provider={provider}
+            presentation={{ label: provider }}
+            canRead
+            canWrite
+          />
+        </QueryClientProvider>
+      )
+    )
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(3)
+    expect(container.textContent).toContain('Use global default')
+    expect(container.textContent).not.toContain('git and gh')
+    await harness.act(async () => {
+      fireEvent.click([...container.querySelectorAll('button')].find((b) => b.textContent === 'Make default')!)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(
+      requests.some(
+        (r) => r.method === 'PUT' && r.body === JSON.stringify({ connectionId: 'three', makeDefault: true })
+      )
+    ).toBe(true)
+    client.clear()
+  })
+}
