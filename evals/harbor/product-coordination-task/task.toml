@@ -1,0 +1,25 @@
+schema_version = "1.3"
+artifacts = ["/logs/artifacts/model.patch"]
+[task]
+name = "ficus-eval/coordination-v4-config-service"
+description = "Benchmark-derived shared-repository coordination case study"
+[agent]
+network_mode = "no-network"
+timeout_sec = 7200.0
+[environment]
+docker_image = "ficus-coordination-v4:preflight"
+cpus = 2
+memory_mb = 8192
+storage_mb = 10240
+build_timeout_sec = 900.0
+[verifier]
+network_mode = "no-network"
+environment_mode = "separate"
+timeout_sec = 300.0
+[verifier.environment]
+cpus = 2
+memory_mb = 8192
+storage_mb = 10240
+[[verifier.collect]]
+command = "cd /app && mkdir -p /logs/artifacts && git diff --binary baseline HEAD > /logs/artifacts/model.patch && git log --all --date=iso-strict --format=fuller --stat > /logs/artifacts/git-history.txt && git worktree list --porcelain > /logs/artifacts/worktrees.txt && git status --porcelain=v1 > /logs/artifacts/status.txt && git bundle create /logs/artifacts/repository.bundle --all"
+timeout_sec = 60.0

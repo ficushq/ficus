@@ -1,0 +1,86 @@
+{
+  "experiment": "coordination-v3",
+  "arm": "pi",
+  "trial": "task__dCsgame",
+  "status": "AgentTimeoutError at 7200 seconds during engineering repairs; no final approval or completed delivery",
+  "last_committed_revision": "62c3e637a2d0f6dcd962eb230c5ffdaa33337a02",
+  "working_tree_clean": false,
+  "uncommitted_paths": [
+    "COORDINATION.md",
+    "searchlib/structure/cfamily_frontend.py",
+    "tests/test_integration.py",
+    "tests/test_structure.py"
+  ],
+  "execution": {
+    "elapsed_seconds_including_setup_and_verification": 7259.695468790946,
+    "agent_limit_seconds": 7200,
+    "exception_type": "AgentTimeoutError",
+    "confirmed_usd": 10.451969,
+    "requests": 695,
+    "unknown_usage": 0,
+    "phase_confirmed_usd": 29.191059,
+    "phase_cap_usd": 35
+  },
+  "external_grade": {
+    "mode": "Normal Harbor verifier after timeout; git diff baseline HEAD applies only committed files in separate pristine environment. Uncommitted final repairs are excluded.",
+    "counts": {
+      "total": 47,
+      "passed": 41,
+      "failures": 6,
+      "skipped": 0,
+      "accepted": false
+    },
+    "failed_tests": [
+      "test_simple_pattern_cpp",
+      "test_optional_metavar",
+      "test_literal_dollar_sign",
+      "test_multiple_files_sorted",
+      "test_default_languages_include_cpp",
+      "test_special_chars_in_captures"
+    ]
+  },
+  "native_coordination": {
+    "roles_dispatched": {
+      "architect": 1,
+      "engineer": 19,
+      "reviewer": 8
+    },
+    "returned_subagent_calls": 23,
+    "approved_final_delivery": false,
+    "ending": "Repeated C++ parsing repairs; last reviewer withheld approval, final engineer assignment was still active at timeout. Reviewer findings are not independently reproduced defect counts."
+  },
+  "requirements_audit": {
+    "path": "/app/ORIGINAL_REQUEST.md",
+    "expected_characters": 13275,
+    "written_characters": 13276,
+    "exact_match": false,
+    "equal_ignoring_outer_whitespace": true,
+    "source_sha256": "0f12418fb3e1080394d945bfe00e7c47f02a3d2b27ab4a8fb3500173771d0ae4",
+    "interim": true
+  },
+  "integrity": {
+    "frozen_runner_and_prepared_task_hashes_match": true,
+    "runtime_archive_sha256": "25c45f893b53625c1cba4c3233506ac76627c066681fb0253fe168b85254d9f4",
+    "image_id": "sha256:a23a761eb0d277cf4bfc136c8146cf300ca9f54f92e1cf063356d56717b1a07c",
+    "operator_candidate_edits_or_task_hints": false,
+    "automatic_retry": false
+  },
+  "artifacts_sha256": {
+    "result.json": "b7c67f341b5d6cbdf4c98d7f0c579291b58e8738997e30380952aa127cf99c1d",
+    "verifier/counts.json": "00ad4c4d21a973c95a164f53c567554fc6d2ef1ddcfc37aeecc51d1a1ebabb58",
+    "verifier/results.xml": "6905b5dd7ba51265e6b1f8a4e34dd288235b4a9ee2ab20b0f983d2e30f372188",
+    "artifacts/logs/artifacts/model.patch": "57521649247035b6637fd25168487643b7156a4bfdb848a2ad97d67c9266a500",
+    "artifacts/logs/artifacts/repository.bundle": "41163cefc99553fe3bfe404c494cc9bada1696f69e6327ff750f1739561a8b68",
+    "artifacts/logs/artifacts/status.txt": "b2866b04e024187d67682d9cbadcda18d942710d0422a31a684be1257cab900e",
+    "artifacts/logs/artifacts/git-history.txt": "e96c965a826eac541ea08eb3b4b7ad55186495fedf3ebc4405d96cc9f7b01da0",
+    "agent/pi/sessions/2026-10-27T21-09-11-247Z_01a17f32-15cd-701d-9b25-c7dda3f72cbf.jsonl": "30772c3f617506a7cb0dc28d917d32444c538bcc3c4281b9caf87a8dc38207f4"
+  },
+  "limitations": [
+    "Single inspected adapted parser case, not an unseen result or official benchmark score.",
+    "Native prompts and wrapper guidance both changed; not an isolated causal estimate.",
+    "Standard-library-only constraint is atypical of product work.",
+    "Role prompts, decomposition and session reuse differ between harnesses.",
+    "Model requests serialized; cannot infer unrestricted parallel throughput or human attention saved.",
+    "Timeout result grades last committed files, not unfinished final repairs."
+  ]
+}

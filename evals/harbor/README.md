@@ -264,6 +264,25 @@ per-arm limits, and autonomy-measurement limitations.
 records the v2 prompt asymmetry, the production preservation fix, and the v3
 same-guidance replay. Ficus completed normal delivery at 44/47 external tests;
 `coordination-v3-ficus-result.json` separates source-read evidence, native review,
-external correctness, project-test portability, and cost. Pi's declared replay
-uses the explicitly amended $35 phase cap with spending retained. This is an
-inspected-task diagnostic, not an unseen benchmark or isolated causal estimate.
+external correctness, project-test portability, and cost. Pi timed out during
+repairs at 41/47 on its last committed tree, costing $10.451969; see
+`coordination-v3-pi-result.json`. Neither arm met whole-product acceptance.
+The archive audit also corrects an earlier claim: #677 guidance was already
+present in v3. This is an inspected-task diagnostic, not an unseen benchmark
+or isolated causal estimate.
+
+## Fresh product coordination
+
+`coordination-v4-selection.json` freezes the external configuration-service case
+before test/reference inspection; `coordination-v4-plan.json` declares the pair.
+Versioning/inheritance, schema/format support and approval workflows arrive
+together, with normal Python libraries available identically to both harnesses.
+The upstream final-checkpoint policy selects 76 unchanged tests. The reference
+passes all 76, baseline and candidate-collision controls fail, and both native
+setup/network probes pass (`coordination-v4-ready.json`).
+
+The user authorized a fresh $50 phase starting at zero, with historical ledgers
+preserved and the unchanged $5.50 per-call reservation. Run Ficus then Pi, one
+attempt each, no task hints, repairs or hidden-test feedback. Report external
+correctness separately from coordination, unattended completion, cost and time.
+The runtime is unchanged from v3, with both merged guidance fixes verified.

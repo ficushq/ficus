@@ -259,7 +259,7 @@
       }
     ],
     "initial_all_four_streams_reference_source": true,
-    "additional_documentation_closeout": "Separate design/implementation/review/publication stream changed only COORDINATION.md and docs/coordination/integration.md. Product tree unchanged. Frozen runtime excludes subsequently merged PR #677; not a test of that fix.",
+    "additional_documentation_closeout": "Separate design/implementation/review/publication stream changed only COORDINATION.md and docs/coordination/integration.md. Product unchanged. CORRECTION: archive audit found #677 closeout guidance already present, contrary to the initial report; extra closeout occurred despite that guidance.",
     "review_findings": "Native reviewers requested Python, cross-language and integration repairs. Do not count un-reproduced reviewer findings as independently verified defect catches."
   },
   "project_test_audit": {
@@ -283,7 +283,7 @@
     "ficus_v3_external_passed": 44,
     "seven_prior_schema_failures_eliminated": true,
     "pi_v2_retry1_external_passed": 44,
-    "pi_v3": "Matched-guidance run underway; no result yet",
+    "pi_v3": "41/47; timed out at 7200 seconds during repairs; see coordination-v3-pi-result.json",
     "qualification": "Inspected-task diagnostic; both native guidance and wrapper parity changed. Earlier Ficus v2 stopped during closeout and Pi v2 timed out."
   },
   "integrity": {

@@ -1,0 +1,39 @@
+{
+  "experiment": "coordination-v4",
+  "declared_at_utc": "2026-10-28T00:02:40.538888+00:00",
+  "source": "https://github.com/gabeorlanski/scb-problems",
+  "revision": "9cd9ca3a51c3d3e2a99d2488a25baf73a2204451",
+  "case": "dynamic_config_service_api",
+  "checkpoints": [1, 2, 3],
+  "selection_reason": "REST product with interacting versioned storage/inheritance, schema registry and multi-format ingestion, and approval workflows/diffs. Chosen from task descriptions/specifications before downloading or inspecting its tests or reference.",
+  "other_specs_considered": [
+    "execution_server checkpoints 1-3",
+    "textdrop checkpoints 1-3",
+    "trajectory_api checkpoints 1-3"
+  ],
+  "selection_method": "Purposive product-coordination case, not random sampling. No selection on scores.",
+  "tests_or_reference_inspected_before_selection": false,
+  "spec_sha256": {
+    "dynamic_config_service_api/config.yaml": "e4294304f1ca155d34865ae884446560a980ff7faf4186014bdc75842b04d7e5",
+    "dynamic_config_service_api/checkpoint_1.md": "abf4663412d36973680303565d54687f2805b722032106a645b84102ed48f2c8",
+    "dynamic_config_service_api/checkpoint_2.md": "f46c71dfa3d8de2ffd678355bafe215505192d631f37926f33f7ef4245285ce9",
+    "dynamic_config_service_api/checkpoint_3.md": "10648d66ff6eeb4677fe2680ebc065d1ac7c19e0cf0a6ce5ac7fa63fa70ff1c2"
+  },
+  "protocol": "Same three requests together, same coordination contract and two-worker limit. Respect upstream checkpoint_3 include_prior_tests:false. This adapts upstream sequential development and is not an official SCBench score.",
+  "dependencies": "Python 3.12 with common web, schema, YAML and JSON-patch packages preinstalled identically for both arms. No standard-library-only restriction. Resolve and freeze package versions before inference. Runtime egress remains restricted.",
+  "runtime": "Include merged original-request guidance #690 and task-evidence closeout #677. Freeze exact archive and source changes before inference.",
+  "model": "gpt-6.1-sol",
+  "agent_timeout_seconds": 7200,
+  "budget_phase": "budget-phase-2026-10-28-000028-reset50",
+  "cap_usd": 50,
+  "reservation_per_request_usd": 5.5,
+  "order": ["ficus", "pi"],
+  "paid_start_gates": [
+    "unchanged upstream reference passes complete selected suite",
+    "empty candidate fails",
+    "candidate verifier-collision controls fail closed",
+    "both native setup/network smoke tests pass",
+    "all source/runtime/image/runner hashes frozen"
+  ],
+  "no_automatic_retry": true
+}

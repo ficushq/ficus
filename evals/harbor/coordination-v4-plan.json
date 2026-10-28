@@ -1,0 +1,59 @@
+{
+  "experiment": "coordination-v4-product-service",
+  "type": "Fresh benchmark-derived product-coordination case; not official sequential SCBench protocol",
+  "source_repository": "https://github.com/gabeorlanski/scb-problems",
+  "source_revision": "9cd9ca3a51c3d3e2a99d2488a25baf73a2204451",
+  "task": "dynamic_config_service_api",
+  "requests": [1, 2, 3],
+  "selection": "REST product with interacting versioned storage/inheritance, schema registry and multi-format ingestion, and approval workflows/diffs. Chosen from task descriptions/specifications before downloading or inspecting its tests or reference.",
+  "protocol_delta": "Supply all three requests upfront, require >=3 implementation packages plus final integration/review, keep one shared repository and team state. Let coordinators choose dependencies and boundaries. Official tests unchanged; no grade feedback during work.",
+  "conditions": ["ficus", "pi"],
+  "order_rule": "Retain the original predeclared order, Ficus then Pi; no outcome-based reordering.",
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "worker_limit": 2,
+  "inference_limit": "Existing proxy serializes each client including settlement; no parallel speed or human-time-saved claims.",
+  "budget": {
+    "phase": "budget-phase-2026-10-28-000028-reset50",
+    "phase_cap_usd": 50,
+    "opening_exposure_usd": 0,
+    "reservation_usd": 5.5,
+    "reset_authorization": "User: ok reset with new cap of $50 and continue",
+    "previous_ledgers_preserved": true
+  },
+  "resources": {
+    "cpus": 2,
+    "memory_mb": 8192,
+    "storage_mb": 10240,
+    "agent_timeout_sec": 7200,
+    "verifier_timeout_sec": 300,
+    "ficus_overhead": "Additional disposable PostgreSQL: 0.5CPU/512MiB"
+  },
+  "acceptance": "All 76 unchanged checkpoint_3 upstream tests pass; upstream include_prior_tests:false respected. Report native coordination and completion separately.",
+  "coordination_checks": [
+    ">=3 distinct implementation packages, not one renamed task",
+    "architect/engineer/independent reviewer role provenance",
+    "dependency and shared-file/branch handoffs",
+    "all required work integrated in /app HEAD",
+    "final integrated independent approval",
+    "waits, unintegrated branches, rework, interventions, cost and elapsed time"
+  ],
+  "stop_policy": "One attempt per arm; no automatic retry or operator code/task hints. Stop on provider/accounting failure, budget rejection, or invalid controls. Preserve incomplete arms.",
+  "runtime": "Identical v3 runtime; archive audit verifies both merged #690 and #677 guidance already present. Common Python web/schema/YAML/JSON-patch dependencies added identically to both arm images.",
+  "supersedes": "New task, retains all prior diagnostics.",
+  "change": "Fresh product domain and normal dependency availability; no task-specific hints or acceptance feedback.",
+  "diagnostic_checks": [
+    "Every created stream/package points to original source rather than a summary",
+    "Compare preserved source to supplied request text",
+    "Confirm architect/engineer/reviewer read source before acting",
+    "Audit original schema fidelity separately from external score",
+    "No extra coordinator or operator correction"
+  ],
+  "limitations": [
+    "Single purposively selected task, not a random sample or official leaderboard score",
+    "All three requests supplied together instead of upstream sequential checkpoints",
+    "Model calls remain serialized; no unrestricted parallel throughput or human-time-saved claim",
+    "Role prompts, decomposition, sessions and harness overhead differ",
+    "Grade covers committed integration tree; uncommitted edits separately reported"
+  ]
+}

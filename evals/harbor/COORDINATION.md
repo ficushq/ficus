@@ -403,8 +403,10 @@ separate publication-evidence documentation closeout. Final main is
 `c7888719a052cc3100aa17b0b31fbc105a71428a`, with a clean working tree.
 The last stream changed only two coordination documents; product code remains
 identical to independently approved `fceeee554c8122e40d711a12a00f32f8a8a925ee`.
-This frozen runtime did not contain subsequently merged #677, so the extra
-closeout is not evidence about that fix.
+Correction after an exact archive audit: this frozen runtime already inherited
+#677 closeout guidance, despite the initial report claiming otherwise. All six
+files match that commit after reversing only the #690 delta. The extra closeout
+therefore happened despite that guidance. No runtime change is needed for v4.
 
 The committed original-source document is byte-identical to the complete
 13,247-character manager input. Successful explicit full-source reads are visible
@@ -433,3 +435,23 @@ reset, hold release, or change to the $5.50 reservation. No Pi result is availab
 at this record's publication. After this pair, prefer a fresh externally authored
 product-coordination workload with normal dependency access rather than further
 tuning against this inspected parser task.
+
+### V3 Pi outcome and pair closeout
+
+Pi reached the 7,200-second limit during engineering repairs, after 19 engineer,
+eight reviewer and one architect assignments. It used **$10.451969** across 695
+receipted calls. The final reviewer withheld approval; four files remained dirty.
+The normal verifier grades `git diff baseline HEAD`, excluding those unfinished
+repairs: **41/47** on committed `62c3e637a2d0f6dcd962eb230c5ffdaa33337a02`.
+No completed delivery or approval is claimed. See `coordination-v3-pi-result.json`.
+
+Ficus finished with 44/47 at $8.692806; Pi timed out with 41/47 at $10.451969.
+Neither passed whole-product acceptance. The original source was preserved by
+both, but this inspected parser case cannot establish general superiority.
+
+The old phase closed with $29.191059 confirmed and no unresolved receipts.
+The user authorized a fresh **$50 from zero**, preserving every previous ledger.
+`coordination-v4-selection.json` freezes a new configuration-service workload
+before inspecting its tests/reference: storage and inheritance, schema/format
+support, and approval workflows/diffs, with ordinary libraries available.
+This remains a benchmark-derived coordination case, not official SCBench protocol.

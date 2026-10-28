@@ -1,0 +1,221 @@
+{
+  "experiment": "coordination-v4-product-service",
+  "all_gates_passed": true,
+  "inference_started": false,
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "image": "ficus-coordination-v4:preflight",
+  "image_id": "sha256:6951b79471484d5d8deb179fbb40025575244cba4e2ed9cf962a4c6bce93aa84",
+  "controls": [
+    {
+      "job": "coordv4-control-nop",
+      "result_sha256": "392774cfc56562bd548aae7c7eda1c121a2d3afb8592d5e493c08caaff29bd5a",
+      "reward": 0.0,
+      "counts": null,
+      "counts_sha256": null
+    },
+    {
+      "job": "coordv4-control-oracle",
+      "result_sha256": "eb0e5707d1d954118119f967694ce391f51895bc5d753633dee5099246bc4ea3",
+      "reward": 1.0,
+      "counts": {
+        "total": 76,
+        "passed": 76,
+        "failures": 0,
+        "skipped": 0,
+        "accepted": true
+      },
+      "counts_sha256": "3bc0434ad9dc4eed0ba031f279096e6ab63376126ec56d7d2aaedc16a721ca8c"
+    },
+    {
+      "job": "coordv4-collision-nop",
+      "result_sha256": "d0347f0c5c8d1d0fa5bc063133feef9929cf9bbee1bbca185b98219979601e8b",
+      "reward": 0.0,
+      "counts": {
+        "total": 76,
+        "passed": 0,
+        "failures": 76,
+        "skipped": 0,
+        "accepted": false
+      },
+      "counts_sha256": "326cbf1a2b9e25e2d7fcbb194d8ae438aa8e6d9abf71b9b386c830add729d7be"
+    },
+    {
+      "job": "coordv4-collision-oracle",
+      "result_sha256": "e246df7a0cedc17f16f40d5e2ef1a99b4f5423e5ce1d6845b2a62e5eddf952ec",
+      "reward": 1.0,
+      "counts": {
+        "total": 76,
+        "passed": 76,
+        "failures": 0,
+        "skipped": 0,
+        "accepted": true
+      },
+      "counts_sha256": "3bc0434ad9dc4eed0ba031f279096e6ab63376126ec56d7d2aaedc16a721ca8c"
+    }
+  ],
+  "probes": [
+    {
+      "job": "coordv4-probe-ficus",
+      "result_sha256": "d027fb1170e3502cbcc6a2fcdc276af362072720a6a6c10c4860e5d8771600e9",
+      "checks": {
+        "database_loopback": true,
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "ficus_api_ready": true,
+        "ficus_worker_ready": true,
+        "native_provider_preload": true
+      },
+      "egress": {
+        "response_header_timeout_seconds": 600,
+        "original_config_sha256": "78c18e58efbc7c8e226cb311e2a4cf3863d5a2f3e54b3bf15a0ea4b885345290",
+        "context_sha256": {
+          "Dockerfile": "a2385dd6b3eee6e04c49b467df84ed2a273fd402a9cdd404a64fb535e9b26ff7",
+          "allowlist.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bin/network-policy": "ff1cacfb95e17cda3668f389176ae54e5e4139cff12ee54b4d745722ad0ff0b2",
+          "entrypoint.sh": "2e225ed745eb5976f93afd52d91c844b954b5f6f45373fb70c4c509e36d1e069",
+          "gost.yaml": "9293a0f45fbd16d3e59c06aa559a9544193ead48575b9ca7163c5e8e7bad8ed1"
+        },
+        "network_policy_unchanged": true
+      }
+    },
+    {
+      "job": "coordv4-probe-pi",
+      "result_sha256": "106c538fb0467078686b83dd6c11b5372c095d6f1913cec672a6cd25c9500a1b",
+      "checks": {
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "pinned_pi_and_subagent_extension": true
+      },
+      "egress": {
+        "response_header_timeout_seconds": 600,
+        "original_config_sha256": "78c18e58efbc7c8e226cb311e2a4cf3863d5a2f3e54b3bf15a0ea4b885345290",
+        "context_sha256": {
+          "Dockerfile": "a2385dd6b3eee6e04c49b467df84ed2a273fd402a9cdd404a64fb535e9b26ff7",
+          "allowlist.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bin/network-policy": "ff1cacfb95e17cda3668f389176ae54e5e4139cff12ee54b4d745722ad0ff0b2",
+          "entrypoint.sh": "2e225ed745eb5976f93afd52d91c844b954b5f6f45373fb70c4c509e36d1e069",
+          "gost.yaml": "9293a0f45fbd16d3e59c06aa559a9544193ead48575b9ca7163c5e8e7bad8ed1"
+        },
+        "network_policy_unchanged": true
+      }
+    }
+  ],
+  "runtime_archive_sha256": "25c45f893b53625c1cba4c3233506ac76627c066681fb0253fe168b85254d9f4",
+  "runtime_audit": {
+    "runtime_archive_sha256": "25c45f893b53625c1cba4c3233506ac76627c066681fb0253fe168b85254d9f4",
+    "reused_from": "coordination-v3/runtime.tar.gz",
+    "new_archive_changes": false,
+    "guidance_690_present_reverse_patch_verified": true,
+    "guidance_677_present_exact_six_files_verified": true,
+    "members": {
+      "config/agent-types/architect.yaml": {
+        "runtime_sha256": "db9ebf6388fb8fc09c71f42228ae41ecd58dca0790b9b059d92ff1cb1c30f8db",
+        "after_reversing_690_exactly_matches_677_commit": true
+      },
+      "config/agent-types/engineer.yaml": {
+        "runtime_sha256": "22e8368bbbbbd74a104ea9d2720f08c498bd3e99dff3c3efda35ed3ed92411eb",
+        "after_reversing_690_exactly_matches_677_commit": true
+      },
+      "config/agent-types/manager.yaml": {
+        "runtime_sha256": "88335898013d6407a776ef6ced4f776ac5324d614898f9a42956bc7cd2f5f54e"
+      },
+      "config/agent-types/reviewer.yaml": {
+        "runtime_sha256": "a63413bde1ec293724cf5f3e2ea075bccec025a38c4b400643a870191e21a0ef",
+        "after_reversing_690_exactly_matches_677_commit": true
+      },
+      "config/agent-types/shared/squad-rules.md": {
+        "runtime_sha256": "341151fe89599b88d1c08fefc2bbd12b7ca8f5a324cd11c664458a974d0fe2e4",
+        "after_reversing_690_exactly_matches_677_commit": true
+      },
+      "config/skills/brainstorming/SKILL.md": {
+        "runtime_sha256": "84159be6e8177dfae017553e4753cf8eeb5d03a13c68663092121a4a02e43892",
+        "after_reversing_690_exactly_matches_677_commit": true
+      },
+      "config/skills/writing-plans/SKILL.md": {
+        "runtime_sha256": "52b5be47a7ce28fb286be72c72af07f070c0ac7854c852b9ab5ae6fd5974de10",
+        "after_reversing_690_exactly_matches_677_commit": true
+      }
+    },
+    "correction": "Earlier report incorrectly claimed #677 absent. Runtime audit proves its guidance was already inherited by coordination v3. Do not treat v3 extra closeout as a test of an absent fix."
+  },
+  "runner_source_sha256": {
+    "evals/harbor/coordination.py": "c38afdd4f5498746ff28cf6a0be05fa28540f6a83123e7e1247211697dca3e4f",
+    "evals/harbor/ficus_agent.py": "8fbda2d9ff16c6f0479f89fd34d8a61607cd2e215d7782473f578f90f675b1d5",
+    "evals/harbor/pi_workflow.py": "00712cabe8eebbd571c7ef438b357c019bb9735492ff8bfb29a870d3ed2c03e3",
+    "evals/harbor/run-pilot.py": "5cc985dfb9f0cf6b3bc7bea359901a9b219685eeaa33b15d210ba5c37173edc7",
+    "evals/harbor/budget_proxy.py": "e3d3deb1342d8963949fe9ac3a2ec2a271b18cbdaca83901df126efd00c36648",
+    "evals/harbor/checkpoint.py": "8c80cae256f7ef5d856e5ee101af9ce9edf3f1a9bccae4bf1cf376c25ec52523",
+    "evals/harbor/run_concurrent_feature.py": "48af6ab7e74bb0b3556dc41ba287d2e38d3b882ebe3f1ca9d7f94e63021b869e",
+    "apps/core/src/scripts/harbor-trial.ts": "b4fe48c5fb3214864a6ed704cb8db1b1fd9f202a578b4a47ea0236f628e58acb",
+    "evals/harbor/coordination_egress.py": "026ca5ccb04571521ecf6de2cc5ea563afbdec19668b3394f64b0909c08b538e",
+    "evals/harbor/requirement-fidelity-guidance.patch": "e670776bc3f10b777f0e8b69ffb2d46ee5d583a3d087bcb8f6974d5ee7c3b120",
+    "evals/harbor/prepare_requirement_fidelity.py": "35ee3a8aed8d310259c2a66e30417a06a4aca3b0137f2bfce49e386961eee5b5",
+    "evals/harbor/test_requirement_fidelity.py": "8601a2562972a23942a1bc1372875b90550fa07ba8e7ccaf28464e691a6843b0",
+    "evals/harbor/coordination-v4-plan.json": "1906fff6ed96ca8b5907a78e6a9406ac581b031a3b79c5b72e8635e26292d75b",
+    "evals/harbor/coordination-v4-selection.json": "9c76e2bbde3f9057515369d2ba4236ea7236ec3ee7aaa59fe5d966ebf939e966",
+    "evals/harbor/prepare_product_coordination.py": "906307b06af3e34d8b9cca720fb0c033eebf867968c7d4609c45a21e8d501022",
+    "evals/harbor/deepswe_controls.py": "ace9563bfca88dbe4db3ed5281e6b49fc1a41aa176c0c0458f056a5f4c432c53",
+    "evals/harbor/deepswe_network_smoke.py": "3c7e174a38a98ed8655512b9bf734d3e8294e0e81557f74e18d27552f1b3220c"
+  },
+  "private_launcher_sha256": "caef2fa27c59d0cc5d21bd9bf884e6b68f3d5d82f2d814fbaf2634afe6793486",
+  "private_pair_driver_sha256": "67ba5e7a3e31cf4dbb1f0af557e93bb28602f246abbb23af0fc98e3a10193eee",
+  "source_file_sha256": {
+    "LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "dynamic_config_service_api/checkpoint_1.md": "abf4663412d36973680303565d54687f2805b722032106a645b84102ed48f2c8",
+    "dynamic_config_service_api/checkpoint_2.md": "f46c71dfa3d8de2ffd678355bafe215505192d631f37926f33f7ef4245285ce9",
+    "dynamic_config_service_api/checkpoint_3.md": "10648d66ff6eeb4677fe2680ebc065d1ac7c19e0cf0a6ce5ac7fa63fa70ff1c2",
+    "dynamic_config_service_api/config.yaml": "e4294304f1ca155d34865ae884446560a980ff7faf4186014bdc75842b04d7e5",
+    "dynamic_config_service_api/solutions/checkpoint_3/config_server.py": "c4a6246b40a90d52bfd73fc1735f6e9cb5252b36a332cd0166862204b2a9b3ce",
+    "dynamic_config_service_api/solutions/checkpoint_3/config_service/__init__.py": "5f89314006843d398757ed47c44ca428210b9b62c58e9f9feb82ab99c43a33d6",
+    "dynamic_config_service_api/solutions/checkpoint_3/config_service/errors.py": "6346261630f45c61bc3cc42deea85479cc8ceb98711c9a35699f18ae1678f9bc",
+    "dynamic_config_service_api/solutions/checkpoint_3/config_service/models.py": "f929b7bca7d36a283cde5ed9490d08d916f5e51dee8c7832c42de9114a4a38e7",
+    "dynamic_config_service_api/solutions/checkpoint_3/config_service/raw_parsing.py": "3294ff77a3b5c2becaaed8158bca8bf50744d1f6df74587fc202eaf99520acaa",
+    "dynamic_config_service_api/solutions/checkpoint_3/config_service/schema_registry.py": "0b8ffff0f7338ffbc04ec6dc9529b91b0866b096a828d1d7fef0a04d8b26e600",
+    "dynamic_config_service_api/solutions/checkpoint_3/config_service/store.py": "399e0d2947a790a7b5a31251c827b639fb96b39722398475e02177274002da03",
+    "dynamic_config_service_api/solutions/checkpoint_3/config_service/utils.py": "d6e4bda31d4c10e54ed69586874cf427335f2e4350c46cd8e4ba0245f29496f8",
+    "dynamic_config_service_api/solutions/checkpoint_3/config_service/validators.py": "fedb56f585813bd95ab17e8a434c1838a544e5636ff6d9e4267f1a8b2d019be6",
+    "dynamic_config_service_api/solutions/checkpoint_3/requirements.txt": "4670bd0955aa33f37f1c6b55075842bcf4ac53c4e334483b9e00de69f9509a55",
+    "dynamic_config_service_api/solutions/checkpoint_3/tests/__init__.py": "5f89314006843d398757ed47c44ca428210b9b62c58e9f9feb82ab99c43a33d6",
+    "dynamic_config_service_api/solutions/checkpoint_3/tests/test_raw_parsing.py": "ec46e06f754b79a19cc78a3892cb26deff9af8c98fa55b5e222ed4ad9300883e",
+    "dynamic_config_service_api/solutions/checkpoint_3/tests/test_schema_registry.py": "9e6cde580f4052a866862c4232cdc17b011e7e9ab14b9248cc5fc070ba3536f1",
+    "dynamic_config_service_api/solutions/checkpoint_3/tests/test_server.py": "63f740025a1d62b246e47f3853014e657a994d407a68b5862dfaa89b636fda4d",
+    "dynamic_config_service_api/solutions/checkpoint_3/tests/test_store.py": "5b905c85cd6bc599f92566269da3ec191786c089be8e8b3a6fc85410770fe23b",
+    "dynamic_config_service_api/tests/conftest.py": "17f078d42da08acaa4280633a7bbe74e843c8481bbdea5b1276fd23261fcf587",
+    "dynamic_config_service_api/tests/test_checkpoint_3.py": "11ba57396aefe28e62638db63876691aa80d5ea90b16ba80d279b9bea96e6fc5"
+  },
+  "prepared_file_sha256": {
+    "instruction.md": "77359548b26e9545a3723341d6a4697f87d27962311ec210654fde65758b9f34",
+    "task.toml": "e068811b8cbf2e5528627ac24f41f77ba231a7527d1906e32e3ff7514977f485",
+    "tests/expected-count.txt": "461144ccfd56ee3cf0f9a9d80e520c5b872166b23092d5fd838ecbdb46d64dab",
+    "tests/test.sh": "c371855c01b236fe00802c966bebff56ef5b4aa719bdca4686da1ecba88ceb2e",
+    "tests/score.py": "653eece7380e787a15fbfe4e8fcf325e3a8a6bdaa209d44eec64272b9b8d49f0",
+    "solution/solve.sh": "9cdb87cbeec09331bcc396d549bf949dd4f812508173707364f5d0761d387ec6",
+    "environment/Dockerfile": "e8d5f0c95008e0d6ead86e73fce2f0333bfb8adc399647c10001cda2aa6b5174",
+    "environment/requirements.lock": "f9d416fa260818d3ebe0ea4cc3786cc4983c1d9e168286ae3b9ae5885e3a52e4",
+    "tests/official/conftest.py": "17f078d42da08acaa4280633a7bbe74e843c8481bbdea5b1276fd23261fcf587",
+    "tests/official/test_checkpoint_3.py": "11ba57396aefe28e62638db63876691aa80d5ea90b16ba80d279b9bea96e6fc5",
+    "solution/reference/requirements.txt": "4670bd0955aa33f37f1c6b55075842bcf4ac53c4e334483b9e00de69f9509a55",
+    "solution/reference/config_server.py": "c4a6246b40a90d52bfd73fc1735f6e9cb5252b36a332cd0166862204b2a9b3ce",
+    "solution/reference/config_service/store.py": "399e0d2947a790a7b5a31251c827b639fb96b39722398475e02177274002da03",
+    "solution/reference/config_service/models.py": "f929b7bca7d36a283cde5ed9490d08d916f5e51dee8c7832c42de9114a4a38e7",
+    "solution/reference/config_service/validators.py": "fedb56f585813bd95ab17e8a434c1838a544e5636ff6d9e4267f1a8b2d019be6",
+    "solution/reference/config_service/schema_registry.py": "0b8ffff0f7338ffbc04ec6dc9529b91b0866b096a828d1d7fef0a04d8b26e600",
+    "solution/reference/config_service/__init__.py": "5f89314006843d398757ed47c44ca428210b9b62c58e9f9feb82ab99c43a33d6",
+    "solution/reference/config_service/raw_parsing.py": "3294ff77a3b5c2becaaed8158bca8bf50744d1f6df74587fc202eaf99520acaa",
+    "solution/reference/config_service/utils.py": "d6e4bda31d4c10e54ed69586874cf427335f2e4350c46cd8e4ba0245f29496f8",
+    "solution/reference/config_service/errors.py": "6346261630f45c61bc3cc42deea85479cc8ceb98711c9a35699f18ae1678f9bc",
+    "solution/reference/tests/__init__.py": "5f89314006843d398757ed47c44ca428210b9b62c58e9f9feb82ab99c43a33d6",
+    "solution/reference/tests/test_store.py": "5b905c85cd6bc599f92566269da3ec191786c089be8e8b3a6fc85410770fe23b",
+    "solution/reference/tests/test_server.py": "63f740025a1d62b246e47f3853014e657a994d407a68b5862dfaa89b636fda4d",
+    "solution/reference/tests/test_schema_registry.py": "9e6cde580f4052a866862c4232cdc17b011e7e9ab14b9248cc5fc070ba3536f1",
+    "solution/reference/tests/test_raw_parsing.py": "ec46e06f754b79a19cc78a3892cb26deff9af8c98fa55b5e222ed4ad9300883e"
+  },
+  "dependencies_sha256": "f9d416fa260818d3ebe0ea4cc3786cc4983c1d9e168286ae3b9ae5885e3a52e4",
+  "phase_cap_usd": 50,
+  "opening_phase_exposure_usd": 0,
+  "budget_phase": "budget-phase-2026-10-28-000028-reset50",
+  "egress_header_timeout_seconds": 600,
+  "no_paid_calls_in_controls": true,
+  "unit_checks": "8 unittest tests passed; Ruff clean; root bun typecheck passed"
+}
