@@ -108,6 +108,12 @@ Under **Squad settings → Integrations → GitHub → Event rules**, choose an 
 - **Create work stream:** save a selected workflow, or the squad default, paused for owner preparation. The event’s repository and issue/PR references are attached automatically; a Git checkout is prepared separately before resume. Existing bound work is reused.
 - **Ignore:** take no squad action.
 
+Rules run from top to bottom and the first matching enabled rule applies, so
+**Add event rule** inserts the new rule at the top, ahead of the broader
+defaults; use **Up**/**Down** to reorder. **Reset to default rules** (click
+again to confirm) replaces the list with the built-in defaults in the form;
+nothing changes until you save.
+
 A repository filter is an exact `owner/repository`, or a pattern with `*`
 (`owner/*`, `owner/svc-*`). Patterns match incoming events directly, and they
 also establish polling watches and hosted-relay subscriptions: the pattern is
