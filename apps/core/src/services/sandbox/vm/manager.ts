@@ -78,6 +78,7 @@ import { reconcileVmSetup } from './setup-reconciler'
 import { runIdempotentSandboxOperation } from './retry'
 import { reconcileRemoteToolchain } from '../toolchain/remote-adapter'
 import { buildBashrcContent } from '../bashrc'
+import { INTEGRATION_BIN_RELATIVE_PATH } from '@ficus/shared/integration-wrapper-path'
 import { WORKSPACE_DOT_DIR } from '../../workspace/dot-dir'
 import { vmWorkspaceLayout, type WorkspaceLayout, type WorkspaceLayoutContext } from '../workspace-layout'
 import { createLogger } from '../../../lib/infra/logger'
@@ -851,6 +852,7 @@ export class VmSandboxManager implements ISandboxManager {
         devboxSeedHash: computeDevboxSeedHash(role),
         bashrcContent: buildBashrcContent(setupWorkRoot, setupWorkRoot, {
           devboxDir: `${boxDotDir(boxHome(sandboxId))}/devbox`,
+          integrationBinDir: `${boxHome(sandboxId)}/workspace/${INTEGRATION_BIN_RELATIVE_PATH}`,
         }),
         gitCredentialsRequired: false,
       })
@@ -1223,7 +1225,10 @@ export class VmSandboxManager implements ISandboxManager {
   private async ensureBoxBashrc(client: SandboxClient, sandboxId: string, role: BoxRole): Promise<void> {
     const workRoot = boxWorkRoot(sandboxId, role)
     const devboxDir = `${boxDotDir(boxHome(sandboxId))}/devbox`
-    const content = buildBashrcContent(workRoot, workRoot, { devboxDir })
+    const content = buildBashrcContent(workRoot, workRoot, {
+      devboxDir,
+      integrationBinDir: `${boxHome(sandboxId)}/workspace/${INTEGRATION_BIN_RELATIVE_PATH}`,
+    })
     await client.write({
       path: `${workRoot}/${WORKSPACE_DOT_DIR}/.bashrc`,
       content: Buffer.from(content).toString('base64'),

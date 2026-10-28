@@ -1,3 +1,4 @@
+import { INTEGRATION_BIN_RELATIVE_PATH } from '@ficus/shared/integration-wrapper-path'
 /**
  * The shared per-sandbox asset manifest — the single source of truth for WHICH
  * assets a sandbox needs, where each COMES FROM (the materializer output on the
@@ -17,13 +18,15 @@
  * partial-secret-cleanup convention):
  *   1. `skills`    — materialized skills tree → `<skills anchor>/…` (all roles)
  *   2. `squad-env` — squad `.env`  → `<workspace>/.ficus/.env`  (0600, squad-scoped)
- *   3. `identity`  — identity key  → `<private>/identity.pem` (0600, per-agent;
+ *   3. `integration-wrappers` — token-free executable PATH shims → workspace
+ *                    `.ficus/integration-bin` (0755, squad-scoped)
+ *   4. `identity`  — identity key  → `<private>/identity.pem` (0600, per-agent;
  *                    a shared squad box has no single agent identity)
- *   4. `memory`    — memory replica → `<memory>/…` (SQUAD box only — squad
+ *   5. `memory`    — memory replica → `<memory>/…` (SQUAD box only — squad
  *                    memory lives only where the workspace layout points)
- *   5. `squad-ssh` — squad ssh dir → `<ssh anchor>/…` (keys 0600;
+ *   6. `squad-ssh` — squad ssh dir → `<ssh anchor>/…` (keys 0600;
  *                    `config`/`known_hosts`/`*.pub` 0644; squad-scoped)
- *   6. `agent-secrets` — per-agent Secret Store exposures →
+ *   7. `agent-secrets` — per-agent Secret Store exposures →
  *                    `<private>/.ficus/agent-secrets.env` (0600; ONLY an
  *                    agent's own `agent_<id>` box — never a shared box)
  *
@@ -33,9 +36,9 @@
  * the same role logic `syncBoxFiles` applies:
  *   - solo agent: skills + identity + agent-secrets
  *   - system-manager: skills + identity
- *   - squad MEMBER (agent with a squadId): skills + squad-env + identity + ssh
+ *   - squad MEMBER (agent with a squadId): skills + squad-env + wrappers + identity + ssh
  *     + agent-secrets
- *   - squad BOX (role 'squad'): skills + squad-env + memory + ssh
+ *   - squad BOX (role 'squad'): skills + squad-env + wrappers + memory + ssh
  *
  * Applicability is decided here; content EXISTENCE is not — sources are pure
  * path computation, and a missing/empty materializer output surfaces as
@@ -223,6 +226,27 @@ export const SANDBOX_ASSETS: SandboxAsset[] = [
       if (!squadId) return null
       const workRoot = getSquadWorkspacePath(squadId)
       return { hostPath: workspaceDotPath(workRoot, '.env'), files: dotDirFile(workRoot, '.env', '0600') }
+    },
+  },
+  {
+    name: 'integration-wrappers',
+    // Rides the existing shared workspace mount on docker/k8s and storage on host.
+    // VM pushes its own copy here, even on a member box whose cwd is private.
+    dest: { base: 'workspace', relPath: '' },
+    mode: '0755',
+    scope: 'squad',
+    required: true,
+    source: async ({ squadId }) => {
+      if (!squadId) return null
+      const hostPath = join(getSquadWorkspacePath(squadId), INTEGRATION_BIN_RELATIVE_PATH)
+      return {
+        hostPath,
+        files: async () =>
+          (await listTree(hostPath, () => '0755')).map((file) => ({
+            ...file,
+            relPath: `${INTEGRATION_BIN_RELATIVE_PATH}/${file.relPath}`,
+          })),
+      }
     },
   },
   {

@@ -1,3 +1,4 @@
+import { writeExecutionWrappers } from '../execution-wrappers'
 import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integrations'
 useEnabledIntegrationFixtures('notion')
 import { expect, test } from 'bun:test'
@@ -32,20 +33,29 @@ import { expectCleanExit, expectFailedExit, runCapturedProcess } from '../../../
 
 const binary = join(dirname(Bun.resolveSync('ntn/package.json', import.meta.dir)), 'bin', 'ntn')
 
-test('GitHub bindings work in POSIX sh and remain inherited by child Bash shells', async () => {
+test('GitHub executable wrappers work in POSIX sh and child Bash shells', async () => {
   const root = mkdtempSync(join(tmpdir(), 'ficus-integration-shell-'))
   const squadId = crypto.randomUUID()
   const bindings = githubCommandBindings(squadId)
   try {
     // Own the executable so this regression needs no provider or installed CLI.
     const ficus = join(root, 'ficus')
+    const wrappers = join(root, 'wrappers')
+    writeExecutionWrappers(wrappers, [{ binary: 'gh', providerKey: 'github' }], squadId)
+    writeFileSync(join(root, 'gh'), '#!/bin/sh\nexit 0\n', { mode: 0o700 })
     writeFileSync(ficus, '#!/bin/sh\nprintf "%s\\n" "$@"\n', { mode: 0o700 })
     for (const [shell, command] of [
       ['sh', 'gh pr list'],
       ['bash', "bash -c 'gh pr list'"],
     ]) {
-      const result = await runCapturedProcess([shell, '-c', `${bindings}\n${command}`], {
-        env: { ...process.env, PATH: `${root}:${process.env.PATH}`, BASH_ENV: undefined, ENV: undefined },
+      const result = await runCapturedProcess([shell, '-c', `gh() { exit 99; };\n${bindings}\n${command}`], {
+        env: {
+          ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('BASH_FUNC_'))),
+          PATH: `${wrappers}:${root}:${process.env.PATH}`,
+          FICUS_TOKEN: 'synthetic-agent-token',
+          BASH_ENV: undefined,
+          ENV: undefined,
+        },
         timeoutMs: 3_000,
       })
       expectCleanExit(result)
@@ -56,7 +66,7 @@ test('GitHub bindings work in POSIX sh and remain inherited by child Bash shells
         '--squad',
         squadId,
         '--',
-        'gh',
+        join(root, 'gh'),
         'pr',
         'list',
       ])

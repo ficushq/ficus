@@ -27,10 +27,11 @@ const AGENT_UUID = '22222222-2222-4222-8222-222222222222'
 const names = (resolved: Array<{ asset: SandboxAsset; source: AssetSource }>) => resolved.map((r) => r.asset.name)
 
 describe('SANDBOX_ASSETS', () => {
-  test('declares the 6 assets in vm push order (secrets-last convention)', () => {
+  test('declares the 7 assets in vm push order (secrets-last convention)', () => {
     expect(SANDBOX_ASSETS.map((a) => a.name)).toEqual([
       'skills',
       'squad-env',
+      'integration-wrappers',
       'identity',
       'memory',
       'squad-ssh',
@@ -95,6 +96,7 @@ describe('resolveSandboxAssets scope rules', () => {
     expect(names(await resolveSandboxAssets(ctx))).toEqual([
       'skills',
       'squad-env',
+      'integration-wrappers',
       'identity',
       'squad-ssh',
       'agent-secrets',
@@ -107,12 +109,24 @@ describe('resolveSandboxAssets scope rules', () => {
       squadId: '11111111-1111-4111-8111-111111111111',
       role: 'squad',
     }
-    expect(names(await resolveSandboxAssets(ctx))).toEqual(['skills', 'squad-env', 'memory', 'squad-ssh'])
+    expect(names(await resolveSandboxAssets(ctx))).toEqual([
+      'skills',
+      'squad-env',
+      'integration-wrappers',
+      'memory',
+      'squad-ssh',
+    ])
   })
 
   test('squad box derives squadId from the sandboxId prefix when ctx omits it (mirrors syncBoxFiles)', async () => {
     const ctx: AssetContext = { sandboxId: 'squad_11111111-1111-4111-8111-111111111111', role: 'squad' }
-    expect(names(await resolveSandboxAssets(ctx))).toEqual(['skills', 'squad-env', 'memory', 'squad-ssh'])
+    expect(names(await resolveSandboxAssets(ctx))).toEqual([
+      'skills',
+      'squad-env',
+      'integration-wrappers',
+      'memory',
+      'squad-ssh',
+    ])
   })
 })
 

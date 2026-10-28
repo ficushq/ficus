@@ -245,7 +245,9 @@ describe('host env', () => {
     mkdirSync(join(home, 'ssh', SQUAD), { recursive: true })
     writeFileSync(join(home, 'ssh', SQUAD, 'config'), '')
     const env = buildHostCommandEnv({ base: { PATH: '/bin', HOME: home }, ficusToken: 'tok', squadId: SQUAD })
-    expect(env.PATH).toBe(`${hostBinDir()}:/bin`)
+    expect(env.PATH).toBe(
+      `${hostBinDir()}:${join(home, 'workspaces', 'squads', SQUAD, '.ficus', 'integration-bin')}:/bin`
+    )
     expect(env.FICUS_TOKEN).toBe('tok')
     expect(env.FICUS_API_URL).toBe(resolveHostApiUrl())
     expect(env.GIT_SSH_COMMAND).toBe(`ssh -F '${join(home, 'ssh', SQUAD, 'config')}'`)
@@ -452,4 +454,13 @@ describe('host env public address', () => {
       expect(buildHostCommandEnv({ base: { PATH: '/bin' } }).APP_URL).toBe('https://settings.example.com')
     })
   })
+})
+
+test('host agent and human command envs prepend squad wrapper storage without granting human identity', () => {
+  const human = buildHostCommandEnv({ squadId: SQUAD, base: { PATH: '/bin' } })
+  const agent = buildHostCommandEnv({ squadId: SQUAD, base: { PATH: '/bin' }, ficusToken: 'synthetic-token' })
+  expect(human.PATH).toContain(`/workspaces/squads/${SQUAD}/.ficus/integration-bin:`)
+  expect(agent.PATH).toBe(human.PATH)
+  expect(human.FICUS_TOKEN).toBeUndefined()
+  expect(buildHostPreamble({ squadId: SQUAD })).toContain('integration-bin')
 })

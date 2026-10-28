@@ -1,3 +1,4 @@
+import { integrationWrapperPreamble, INTEGRATION_BIN_RELATIVE_PATH } from '@ficus/shared/integration-wrapper-path'
 /**
  * Shared bashrc content generation for sandbox terminal sessions.
  *
@@ -27,7 +28,7 @@ import vmDevboxRouting from '../../../../../packages/sandbox-server/src/services
 export function buildBashrcContent(
   workspacePath: string,
   workspaceMount: string,
-  opts: { devboxDir?: string; toolchainDir?: string } = {}
+  opts: { devboxDir?: string; toolchainDir?: string; integrationBinDir?: string } = {}
 ): string {
   const lines = [
     "export PS1='\\[\\033[01;32m\\]\\w\\[\\033[00m\\]\\$ '",
@@ -77,5 +78,9 @@ export function buildBashrcContent(
     '[ -f /opt/sandbox/runtime-env.sh ] && . /opt/sandbox/runtime-env.sh'
   )
 
-  return lines.join('\n') + '\n'
+  return (
+    lines.join('\n') +
+    '\n' +
+    integrationWrapperPreamble(opts.integrationBinDir ?? `${workspaceMount}/${INTEGRATION_BIN_RELATIVE_PATH}`)
+  )
 }

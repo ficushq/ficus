@@ -1967,6 +1967,7 @@ describe('docker-sandbox-manager', () => {
       const scripts = fs.readdirSync(tmpDir)
       const scriptContent = fs.readFileSync(path.join(tmpDir, scripts[0]!), 'utf-8')
       expect(scriptContent).toContain('/workspace/sq1/.ficus/.env')
+      expect(scriptContent).toContain('export PATH=\'/workspace/sq1/.ficus/integration-bin\':"$PATH"')
     })
   })
 

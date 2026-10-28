@@ -1,3 +1,4 @@
+import { integrationWrapperPreamble, INTEGRATION_BIN_RELATIVE_PATH } from '@ficus/shared/integration-wrapper-path'
 /**
  * Host runtime environment.
  *
@@ -295,7 +296,10 @@ export function buildHostCommandEnv(
 ): Record<string, string> {
   const base = opts.base ?? getHostBaseEnv()
   const env: Record<string, string> = { ...base }
-  env.PATH = `${hostBinDir()}:${base.PATH ?? FALLBACK_PATH}`
+  const wrapperPrefix = opts.squadId
+    ? `${join(getSquadWorkspacePath(opts.squadId), INTEGRATION_BIN_RELATIVE_PATH)}:`
+    : ''
+  env.PATH = `${hostBinDir()}:${wrapperPrefix}${base.PATH ?? FALLBACK_PATH}`
   env.FICUS_API_URL = resolveHostApiUrl()
   const appUrl = resolvePublicAppUrl()
   if (appUrl) env.APP_URL = appUrl
@@ -408,6 +412,10 @@ export function buildHostPreamble(opts: HostIdentityOptions & { squadId?: string
   const unmanaged = IDENTITY_ENV_KEYS.filter((key) => !set.has(key))
   if (unmanaged.length > 0) lines.push(`unset ${unmanaged.join(' ')}`)
   lines.push(`export PATH="$${binVar}:$PATH"`)
+  if (opts.squadId)
+    lines.push(
+      integrationWrapperPreamble(join(getSquadWorkspacePath(opts.squadId), INTEGRATION_BIN_RELATIVE_PATH)).trimEnd()
+    )
   lines.push(`unset ${locals.join(' ')} ${IDENTITY_ALIAS_KEYS.join(' ')}`)
   return `${lines.join('\n')}\n`
 }

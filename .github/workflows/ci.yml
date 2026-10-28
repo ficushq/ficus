@@ -1004,6 +1004,8 @@ jobs:
           src/services/amtp/node-conformance.test.ts
           src/services/integrations/notion/cli.e2e.test.ts
           src/services/integrations/notion/core-lifecycle.e2e.test.ts
+          src/services/integrations/execution-wrappers.test.ts
+          src/services/sandbox/host/terminal-bootstrap.test.ts
           src/test-utils/captured-process.test.ts
           src/services/machines/artifact-extension-smoke.test.ts
           src/services/model-selection/openai-compatible.test.ts

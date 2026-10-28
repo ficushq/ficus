@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { EventEmitter } from 'events'
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { HostSandboxManager, setHostStopBeforeFenceHookForTest, whenChildSettles } from './manager'
@@ -270,6 +270,31 @@ describe('HostSandboxManager', () => {
     pty!.write('pwd; exit\r')
     await new Promise<void>((resolve) => pty!.onExit(() => resolve()))
     expect(data).toContain(privateDir)
+  })
+
+  test('host web terminals use managed Bash regardless of selected SHELL and restore wrappers after profiles', async () => {
+    manager = new HostSandboxManager({
+      baseEnv: () => ({ PATH: '/usr/bin:/bin', HOME: home, SHELL: '/no-selected-shell' }),
+    })
+    writeFileSync(join(home, '.bash_profile'), 'export PATH=/usr/bin:/bin\n')
+    await manager.ensureSandbox('agent_a1', { workspacePath: '', squadId: SQUAD })
+    const pty = manager.spawnShell('agent_a1', 80, 24)
+    expect(pty).not.toBeNull()
+    if (!pty) return
+    let data = ''
+    pty.onData((d) => {
+      data += d
+    })
+    const timer = setTimeout(() => pty.kill(), 3000)
+    try {
+      const exited = new Promise<void>((resolve) => pty.onExit(() => resolve()))
+      pty.write('printf "%s\\n" "$PATH"; exit\r')
+      await exited
+      expect(data).toContain(join(home, 'workspaces', 'squads', SQUAD, '.ficus', 'integration-bin'))
+    } finally {
+      clearTimeout(timer)
+      pty.kill()
+    }
   })
 
   test('spawnShell on an untracked sandbox returns null', () => {
