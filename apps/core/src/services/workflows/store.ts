@@ -10,7 +10,7 @@ import {
 import { db, workStreamFlowRuns, workStreamFlowTransitions, workStreams } from '../../db'
 import { resolveStoredWorkflow, workflowFingerprint, WorkflowError } from './catalog'
 
-const requestIdentity = z.object({ requestId: z.string().uuid(), actorKey: z.string().trim().min(1).max(500) }).strict()
+const requestIdentity = z.strictObject({ requestId: z.uuid(), actorKey: z.string().trim().min(1).max(500) })
 
 /**
  * Optional preparation-only persistence boundary, not mounted as an execution API.

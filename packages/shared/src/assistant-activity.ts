@@ -152,7 +152,7 @@ export interface AssistantConversationActivityDetail {
 export function assistantConversationPath(id: string): string {
   const params = new URLSearchParams({
     chat: 'open',
-    assistantConversation: z.string().uuid().parse(id),
+    assistantConversation: z.uuid().parse(id),
   })
   return `/?${params}`
 }

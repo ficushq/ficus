@@ -18,7 +18,7 @@ async function canAccessSquadlessImage(identity: Identity, perm: 'agents:read' |
   return hasPermission(identity, perm)
 }
 
-const imageIdSchema = z.string().uuid()
+const imageIdSchema = z.uuid()
 
 export const imagesRouter = new Hono()
   .get('/:id', async (c) => {

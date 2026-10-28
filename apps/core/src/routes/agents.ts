@@ -246,10 +246,7 @@ export const agentsRouter = new Hono()
       } catch {
         return c.json({ error: 'Invalid JSON body' }, 400)
       }
-      const parsed = z
-        .object({ actionIds: z.array(z.string().min(1)).min(1).max(100) })
-        .strict()
-        .safeParse(raw)
+      const parsed = z.strictObject({ actionIds: z.array(z.string().min(1)).min(1).max(100) }).safeParse(raw)
       if (!parsed.success) return c.json({ error: 'actionIds must be a non-empty array of at most 100 IDs' }, 400)
 
       const requestedIds = [...new Set(parsed.data.actionIds)]
@@ -1097,6 +1094,7 @@ export const agentsRouter = new Hono()
             devboxReady: true,
             controllable,
             runtime: isHostRuntime() ? ('host' as const) : ('docker' as const),
+            logStreaming: typeof manager.streamLogs === 'function',
           },
           toolchain
         )
@@ -1126,6 +1124,7 @@ export const agentsRouter = new Hono()
             : {}),
           controllable,
           runtime: isVmRuntime() ? ('vm' as const) : ('k8s' as const),
+          logStreaming: typeof manager.streamLogs === 'function',
           ...(provisioning ? { provisioning } : {}),
         },
         toolchain

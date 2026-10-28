@@ -76,7 +76,7 @@ export function isUnsureScreenshotGuess(probability: number): boolean {
 
 export const guessScreenshotRequestSchema = z.object({
   /** A staged upload from `POST /api/images` (no agent or squad), by the same user. */
-  imageId: z.string().uuid(),
+  imageId: z.uuid(),
 })
 export type GuessScreenshotRequest = z.infer<typeof guessScreenshotRequestSchema>
 
@@ -101,16 +101,16 @@ export interface ScreenshotWorkStreamsResponse {
  */
 const screenshotChoicesSchema = z.object({
   kind: z.enum(SCREENSHOT_KIND_IDS).optional(),
-  squadId: z.string().uuid().nullable().optional(),
+  squadId: z.uuid().nullable().optional(),
   action: z.enum(SCREENSHOT_ACTION_IDS).optional(),
-  workStreamId: z.string().uuid().optional(),
+  workStreamId: z.uuid().optional(),
 })
 export type ScreenshotChoices = z.infer<typeof screenshotChoicesSchema>
 
 export const fileScreenshotRequestSchema = screenshotChoicesSchema
   .extend({
     /** A staged upload from `POST /api/images` (no agent or squad), by the same user. */
-    imageId: z.string().uuid(),
+    imageId: z.uuid(),
     note: z.string().trim().max(2000).optional(),
     /**
      * What the card was filled in with from the guess, when there was one: a weak work stream

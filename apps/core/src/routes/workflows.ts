@@ -40,7 +40,7 @@ import {
   WorkflowError,
 } from '../services/workflows/catalog'
 
-const revisionSchema = z.object({ revision: z.string().min(1).max(200) }).strict()
+const revisionSchema = z.strictObject({ revision: z.string().min(1).max(200) })
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 /** Multipart framing and the `path` field on top of the file's own bytes. */
 const MULTIPART_OVERHEAD = 64 * 1024
@@ -72,7 +72,7 @@ export const workflowsRouter = new Hono()
       return c.json({ error: 'Forbidden' }, 403)
     return c.json(visible.map(serializeWorkflow))
   })
-  .get('/reviewers', zValidator('query', z.object({ squadId: z.string().uuid() })), async (c) => {
+  .get('/reviewers', zValidator('query', z.object({ squadId: z.uuid() })), async (c) => {
     const { squadId } = c.req.valid('query')
     if (!(await hasPermission(c.get('identity')!, 'workstreams:read', squadId)))
       return c.json({ error: 'Forbidden' }, 403)
@@ -206,7 +206,7 @@ export const workflowsRouter = new Hono()
   )
   .post(
     '/runs/:streamId/advance',
-    zValidator('json', z.object({ requestId: z.string().uuid(), command: workflowCommandSchema }).strict()),
+    zValidator('json', z.strictObject({ requestId: z.uuid(), command: workflowCommandSchema })),
     async (c) => {
       c.set('authzChecked', true)
       const identity = c.get('identity')
@@ -241,21 +241,17 @@ export const workflowsRouter = new Hono()
       return c.json(result)
     }
   )
-  .post(
-    '/runs/:streamId/finish',
-    zValidator('json', z.object({ version: z.number().int().nonnegative() }).strict()),
-    async (c) => {
-      c.set('authzChecked', true)
-      const identity = c.get('identity')
-      if (!identity) return c.json({ error: 'Unauthorized' }, 401)
-      const stream = await WorkStream.find(c.req.param('streamId'))
-      if (!stream) return c.json({ error: 'Work stream not found' }, 404)
-      return c.json(await finishFlow(stream.id, c.req.valid('json').version, identity))
-    }
-  )
+  .post('/runs/:streamId/finish', zValidator('json', z.strictObject({ version: z.int().nonnegative() })), async (c) => {
+    c.set('authzChecked', true)
+    const identity = c.get('identity')
+    if (!identity) return c.json({ error: 'Unauthorized' }, 401)
+    const stream = await WorkStream.find(c.req.param('streamId'))
+    if (!stream) return c.json({ error: 'Work stream not found' }, 404)
+    return c.json(await finishFlow(stream.id, c.req.valid('json').version, identity))
+  })
   .post(
     '/parse',
-    zValidator('json', z.object({ squadId: z.string().uuid(), text: z.string().max(256000) }).strict()),
+    zValidator('json', z.strictObject({ squadId: z.uuid(), text: z.string().max(256000) })),
     async (c) => {
       c.set('authzChecked', true)
       const identity = c.get('identity')
@@ -281,7 +277,7 @@ export const workflowsRouter = new Hono()
       if (!c.get('identity')) return c.json({ error: 'Unauthorized' }, 401)
       return next()
     },
-    zValidator('json', z.object({ squadId: z.string().uuid(), source: workflowSourceSchema }).strict()),
+    zValidator('json', z.strictObject({ squadId: z.uuid(), source: workflowSourceSchema })),
     async (c) => {
       const identity: Identity | undefined = c.get('identity')
       if (!identity) return c.json({ error: 'Unauthorized' }, 401)
@@ -325,7 +321,7 @@ export const workflowsRouter = new Hono()
       await authorizeWorkflow(c.get('identity')!, 'workflows:update', c.req.param('id'))
       await next()
     },
-    zValidator('json', z.object({ revision: z.string().min(1).max(200), preset: workflowPresetSchema }).strict()),
+    zValidator('json', z.strictObject({ revision: z.string().min(1).max(200), preset: workflowPresetSchema })),
     async (c) => {
       const { revision, preset } = c.req.valid('json')
       return c.json({
@@ -352,7 +348,7 @@ export const workflowsRouter = new Hono()
       await authorizeWorkflow(c.get('identity')!, 'workflows:update', c.req.param('id'))
       await next()
     },
-    zValidator('json', z.object({ revision: z.string().min(1).max(200), disabled: z.boolean() }).strict()),
+    zValidator('json', z.strictObject({ revision: z.string().min(1).max(200), disabled: z.boolean() })),
     async (c) => {
       const { revision, disabled } = c.req.valid('json')
       return c.json(serializeWorkflow(await setWorkflowDisabled(c.req.param('id'), revision, disabled)))

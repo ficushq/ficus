@@ -59,6 +59,34 @@ If a federated send permanently fails (recipient closed/denying, peer rejects, o
 retries exhaust), the sending agent receives a local system inbox message with the
 failure reason and `metadata.federationBounce` — a `202 {enqueued}` is not final.
 
+## AMTP 0.2 compatibility and package maintenance
+
+Ficus uses `amtp-protocol`, `amtp-engine` and the conformance fixture `amtp-node`
+0.2.0. The protocol supports Zod `^3.25.0 || ^4.0.0`; Ficus resolves Zod 4
+without a root override. The exported protocol schemas are now `ZodType<T>`,
+not `ZodObject`: consumers must not rely on `.shape` or `.extend`.
+
+Authenticated GETs now sign AMTP route-relative paths (`/amtp/handles` and
+`/amtp/attachments/<id>`), independent of `/api` or reverse-proxy prefixes.
+The router passes the selected route pathname to the engine; the exact observed
+request path remains the sole legacy 0.1 fallback. Authentication diagnostics
+are logged locally, while rejected requests still return a uniform 401.
+
+For mixed-version peers, upgraded receivers accept old observed-path signatures.
+Outgoing GETs to a prefixed 0.1 receiver require upstream's opt-in per-peer
+`legacySignedGetPathPrefix`. This release intentionally requires coordinated
+peer upgrades rather than exposing that setting: upgrade these receivers before
+relying on handle discovery or attachment pulls from them. Message POST signing is unchanged. See the upstream
+[0.2.0 changelog](https://github.com/ficushq/amtp/blob/v0.2.0/CHANGELOG.md).
+
+`patches/amtp-node@0.2.0.patch` retains the existing conformance-only phase
+tracing (registration, upload/fsync and whoami lifecycle) and the awaited
+`program.parseAsync()` entrypoint barrier. The published 0.2.0 source still uses
+`program.parse()` and has none of these trace hooks, so the patch is still
+needed. When upgrading again, check both the published source and the real-node
+conformance tests before dropping it; preserve upstream's service commands and
+build-info/version handling when rebasing the entrypoint hunk.
+
 ## Testing
 
 To validate the full cross-instance flow end to end (peering → identity →

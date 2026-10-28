@@ -52,7 +52,7 @@ function taskError(status: 400 | 403 | 404 | 409 | 500, options: { message: stri
   })
 }
 
-const uuid = z.string().uuid()
+const uuid = z.uuid()
 export const assistantMessageSchema = z
   .object({
     clientId: uuid,

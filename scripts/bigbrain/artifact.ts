@@ -49,20 +49,18 @@ const fileFields = Object.fromEntries(fileNames.map((name) => [name, digestSchem
   (typeof fileNames)[number],
   typeof digestSchema
 >
-export const bigbrainProvenanceSchema = z
-  .object({
-    schema: z.literal(1),
-    repository: z.literal(REPOSITORY),
-    upstreamCommit: z.literal(MANAGED_BIGBRAIN_UPSTREAM_COMMIT),
-    ficusRepository: z.literal('https://github.com/ficushq/ficus.git'),
-    ficusCommit: z.string().regex(/^[a-f0-9]{40}$/),
-    target: z.literal('bun'),
-    bunVersion: z.string().regex(/^\d+\.\d+\.\d+$/),
-    license: z.literal('AGPL-3.0-only'),
-    files: z.object(fileFields).strict(),
-    digest: digestSchema,
-  })
-  .strict()
+export const bigbrainProvenanceSchema = z.strictObject({
+  schema: z.literal(1),
+  repository: z.literal(REPOSITORY),
+  upstreamCommit: z.literal(MANAGED_BIGBRAIN_UPSTREAM_COMMIT),
+  ficusRepository: z.literal('https://github.com/ficushq/ficus.git'),
+  ficusCommit: z.string().regex(/^[a-f0-9]{40}$/),
+  target: z.literal('bun'),
+  bunVersion: z.string().regex(/^\d+\.\d+\.\d+$/),
+  license: z.literal('AGPL-3.0-only'),
+  files: z.strictObject(fileFields),
+  digest: digestSchema,
+})
 export type BigbrainArtifactProvenance = z.infer<typeof bigbrainProvenanceSchema>
 export type BuildRunner = (argv: string[], cwd: string) => Promise<{ code: number; stdout: string }>
 

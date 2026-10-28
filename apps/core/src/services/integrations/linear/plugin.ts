@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { IntegrationPluginV1 } from '../plugin'
 import { linearOutputAdapter } from './outputs'
 
-const configurationSchema = z.object({ version: z.literal(1) }).strict()
+const configurationSchema = z.strictObject({ version: z.literal(1) })
 export async function linearQuery<T>(
   credential: string,
   query: string,

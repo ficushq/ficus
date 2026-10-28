@@ -210,7 +210,7 @@ describe('ManagedBigbrainIntegrationSettings', () => {
   })
 
   test('a retried create reuses the same request ID; success starts a fresh draft', async () => {
-    await render()
+    await render(true, [research])
     const [name, ...others] = [...container.querySelectorAll<HTMLInputElement>('form input')]
     // The vault name is the only input: every new vault is owned by `ficus` in BigBrain.
     expect(others).toEqual([])
@@ -230,7 +230,7 @@ describe('ManagedBigbrainIntegrationSettings', () => {
   })
 
   test('the create form says the new vault is owned by ficus in BigBrain', async () => {
-    await render()
+    await render(true, [research])
     const form = container.querySelector('form')!
     expect(form.textContent).toContain(
       "In BigBrain, the vault's owner is ficus. Once it is ready, invite people as members."
@@ -240,7 +240,7 @@ describe('ManagedBigbrainIntegrationSettings', () => {
     expect(button('Create vault').disabled).toBe(false)
   })
 
-  for (const list of [[], [research], [research, design]]) {
+  for (const list of [[], [research]]) {
     test(`exactly one divider separates ${list.length} vault(s) from the new vault form`, async () => {
       await render(true, list)
       expect(rows()).toHaveLength(list.length)
@@ -250,6 +250,50 @@ describe('ManagedBigbrainIntegrationSettings', () => {
       expect(container.querySelector('form')!.className).toContain('border-t')
     })
   }
+
+  test('the cap is stated with the count in use', async () => {
+    await render(true, [research])
+    expect(container.textContent).toContain('A server hosts at most 2 shared vaults: 1 of 2 in use.')
+    expect(container.textContent).not.toContain('keeps its place')
+    expect(container.querySelector('form')).not.toBeNull()
+  })
+
+  test('a failed vault counts and is said to keep its place; the form gives way to a note with the same divider', async () => {
+    await render(true, [research, design])
+    expect(container.textContent).toContain('2 of 2 in use.')
+    expect(container.textContent).toContain('A failed vault keeps its place until it is deleted.')
+    expect(container.querySelector('form')).toBeNull()
+    expect(button('Create vault')).toBeUndefined()
+    const note = [...container.querySelectorAll('p')].find((p) =>
+      p.textContent?.includes('Delete one to create another')
+    )!
+    expect(note.className).toContain('border-t')
+  })
+
+  test('a reader sees the count but no note about creating', async () => {
+    await render(false, [research, design])
+    expect(container.textContent).toContain('2 of 2 in use.')
+    expect(container.textContent).not.toContain('Delete one to create another')
+    expect(container.querySelector('form')).toBeNull()
+  })
+
+  test('a deleted vault frees its place', async () => {
+    await render(true, [research, vault({ ...design, state: 'deleted' })])
+    expect(container.textContent).toContain('1 of 2 in use.')
+    expect(container.querySelector('form')).not.toBeNull()
+  })
+
+  test('a capacity refusal from the server is explained in the same words', async () => {
+    await render(true, [research])
+    const name = container.querySelector<HTMLInputElement>('form input')!
+    await act(() => fireEvent.input(name, { target: { value: 'Archive' } }))
+    respond = (url, method) =>
+      method === 'GET' ? Response.json({ vaults: [research] }) : Response.json({ code: 'capacity' }, { status: 409 })
+    await act(() => fireEvent.submit(name.closest('form')!))
+    expect(container.textContent).toContain(
+      'This server already has its 2 shared vaults. Delete one to create another.'
+    )
+  })
 
   test('deleting requires the exact name and states that existing backups are not removed', async () => {
     await render()

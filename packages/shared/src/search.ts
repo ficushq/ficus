@@ -10,7 +10,7 @@ export const entitySearchQuerySchema = z.object({
   q: z.string().trim().min(1).max(120),
   limit: z.coerce.number().int().min(1).max(50).default(20),
   kind: searchEntityKindSchema.optional(),
-  squadId: z.string().uuid().optional(),
+  squadId: z.uuid().optional(),
 })
 export type EntitySearchQuery = z.infer<typeof entitySearchQuerySchema>
 export interface EntitySearchResult {

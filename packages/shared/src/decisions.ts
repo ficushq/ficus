@@ -375,7 +375,7 @@ export const decisionRoutingSchema = z.object({
     z.partialRecord(z.enum(DECISION_PURPOSES), z.array(z.string()).max(8)),
     DECISION_PURPOSES.length
   ).default({}),
-  timeoutMs: z.number().int().min(250).max(DECISION_TIMEOUT_MAX_MS).default(DECISION_TIMEOUT_DEFAULT_MS),
+  timeoutMs: z.int().min(250).max(DECISION_TIMEOUT_MAX_MS).default(DECISION_TIMEOUT_DEFAULT_MS),
 })
 export type DecisionRouting = z.infer<typeof decisionRoutingSchema>
 

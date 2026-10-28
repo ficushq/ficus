@@ -12,7 +12,7 @@ export const nativeMemberSchema = z.object({
   handle: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/),
   role: z.enum(['owner', 'member']),
   permissions,
-  revoked: z.string().datetime().nullable(),
+  revoked: z.iso.datetime().nullable(),
 })
 export const nativeCredentialSchema = z.object({
   id: z.string().regex(/^[0-9a-f]{8}$/),
@@ -23,7 +23,7 @@ export const nativeCredentialSchema = z.object({
   followsMember: z.boolean().optional().default(false),
   minted_by: z.string().optional(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
-  revoked: z.string().datetime().nullable(),
+  revoked: z.iso.datetime().nullable(),
 })
 const mintedSchema = z.object({
   credential: nativeCredentialSchema,
@@ -144,6 +144,6 @@ export class NativeVaultAdmin {
   }
   async revokeCredential(id: string): Promise<void> {
     if (!/^[a-f0-9]{8}$/.test(id)) throw new Error('invalid_request')
-    await this.invoke(['credential', 'revoke', id], z.object({ id: z.literal(id), revoked: z.literal(true) }).strict())
+    await this.invoke(['credential', 'revoke', id], z.strictObject({ id: z.literal(id), revoked: z.literal(true) }))
   }
 }

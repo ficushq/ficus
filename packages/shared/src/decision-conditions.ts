@@ -21,25 +21,21 @@ const comparison = z.enum(['at-least', 'at-most'])
 
 export const decisionConditionSchema = z.discriminatedUnion('type', [
   /** The probability that a yes/no question is true, compared with a threshold. */
-  z.object({ type: z.literal('yesno'), question: questionName.optional(), op: comparison, probability }).strict(),
+  z.strictObject({ type: z.literal('yesno'), question: questionName.optional(), op: comparison, probability }),
   /** A choice question picked this option, optionally with at least this probability. */
-  z
-    .object({
-      type: z.literal('choice'),
-      question: questionName.optional(),
-      equals: z.string().regex(DECISION_NAME_PATTERN, 'Use the name of an option.'),
-      minConfidence: probability.optional(),
-    })
-    .strict(),
+  z.strictObject({
+    type: z.literal('choice'),
+    question: questionName.optional(),
+    equals: z.string().regex(DECISION_NAME_PATTERN, 'Use the name of an option.'),
+    minConfidence: probability.optional(),
+  }),
   /** A score question's nearest level, compared with a level of that question. */
-  z
-    .object({
-      type: z.literal('score'),
-      question: questionName.optional(),
-      op: comparison,
-      level: z.string().trim().min(1).max(200),
-    })
-    .strict(),
+  z.strictObject({
+    type: z.literal('score'),
+    question: questionName.optional(),
+    op: comparison,
+    level: z.string().trim().min(1).max(200),
+  }),
 ])
 export type DecisionCondition = z.infer<typeof decisionConditionSchema>
 

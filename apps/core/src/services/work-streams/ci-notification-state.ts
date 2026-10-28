@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 const decimal = z.string().regex(/^[1-9][0-9]{0,19}$/)
 export const ciNotificationSchema = z.object({
-  recipientId: z.string().uuid(),
+  recipientId: z.uuid(),
   repository: z
     .string()
     .regex(/^[\w.-]+\/[\w.-]+$/)

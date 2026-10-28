@@ -153,7 +153,7 @@ async function releaseInPass(
     limit < 1 ||
     limit > 25 ||
     (options.revisionIds &&
-      (options.revisionIds.length > 25 || options.revisionIds.some((id) => !z.string().uuid().safeParse(id).success)))
+      (options.revisionIds.length > 25 || options.revisionIds.some((id) => !z.uuid().safeParse(id).success)))
   )
     throw new Error('invalid_release_batch')
   if (options.revisionIds?.length === 0) return 0

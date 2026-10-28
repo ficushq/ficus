@@ -68,11 +68,10 @@ const log = createLogger('routes:machines')
 
 // One SSH host public key: the type and base64 fields of a known_hosts line.
 const hostKeySchema = z
-  .object({
+  .strictObject({
     keyType: z.string().min(1).max(64),
     publicKey: z.string().min(1).max(16384),
   })
-  .strict()
   .refine((k) => isWellFormedHostKey(k.keyType, k.publicKey), {
     message: 'publicKey must be a base64 SSH public key whose blob carries keyType',
   })
@@ -84,7 +83,7 @@ const createMachineSchema = z
     provider: z.enum(['ssh', 'exe']).optional(),
     // Required for BYO-SSH; omitted for 'exe' (its endpoint comes from provision).
     sshHost: z.string().min(1).optional(),
-    sshPort: z.number().int().min(1).max(65535).optional(),
+    sshPort: z.int().min(1).max(65535).optional(),
     sshUser: z.string().min(1).optional(),
     scope: z.enum(['shared', 'dedicated']).optional(),
     // Opt into the machine-level egress lockdown (applied at bootstrap). Default
@@ -110,7 +109,7 @@ const createMachineSchema = z
 
 const migrateBoxSchema = z.object({
   sandboxId: z.string().min(1),
-  evacuationId: z.string().uuid().optional(),
+  evacuationId: z.uuid().optional(),
   // A SQUAD box moves by DEFAULT (it carries ~/workspace and has its local
   // deployments quiesced/restarted around the move). Pass `false` to get the
   // old refusal instead (`{moved:false, reason:'squad-box'}`).
@@ -120,25 +119,25 @@ const migrateBoxSchema = z.object({
   // executions are lost with the torn-down source box — see
   // MigrateOptions.force.
   force: z
-    .object({ reason: z.string().trim().min(1).max(FORCE_MIGRATION_REASON_MAX_LENGTH), requestId: z.string().uuid() })
+    .object({ reason: z.string().trim().min(1).max(FORCE_MIGRATION_REASON_MAX_LENGTH), requestId: z.uuid() })
     .optional(),
 })
 
 const beginEvacuationSchema = z.object({
-  operationId: z.string().uuid(),
-  targetMachineId: z.string().uuid(),
-  sourceGeneration: z.number().int().nonnegative().nullable(),
-  targetGeneration: z.number().int().nonnegative().nullable(),
+  operationId: z.uuid(),
+  targetMachineId: z.uuid(),
+  sourceGeneration: z.int().nonnegative().nullable(),
+  targetGeneration: z.int().nonnegative().nullable(),
 })
 const evacuationReceiptSchema = z.object({
-  operationId: z.string().uuid(),
-  sourceMachineId: z.string().uuid(),
-  targetMachineId: z.string().uuid(),
-  sourceGeneration: z.number().int().nonnegative().nullable(),
-  targetGeneration: z.number().int().nonnegative().nullable(),
+  operationId: z.uuid(),
+  sourceMachineId: z.uuid(),
+  targetMachineId: z.uuid(),
+  sourceGeneration: z.int().nonnegative().nullable(),
+  targetGeneration: z.int().nonnegative().nullable(),
   rosterDigest: z.string().regex(/^[a-f0-9]{64}$/),
   manifestDigest: z.string().regex(/^[a-f0-9]{64}$/),
-  verifiedAt: z.string().datetime(),
+  verifiedAt: z.iso.datetime(),
 })
 
 const quiesceSchema = z.object({

@@ -68,35 +68,31 @@ export const BIGBRAIN_EXECUTE_ENVIRONMENT_GUIDANCE =
   'BigBrain has no shell credentials, so it cannot be used through the Ficus CLI. Agents read the BigBrain vaults attached to this squad with the bigbrain_* tools. If those tools are missing, ask the squad manager to check that a BigBrain vault is attached to this squad and enabled.'
 
 const providerKeySchema = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)
-const createSchema = z
-  .object({
-    provider: providerKeySchema,
-    displayName: z.string().trim().min(1).max(200),
-    configuration: z.unknown().optional(),
-    credential: z.string().min(1).max(16_384),
-  })
-  .strict()
-const confirmationSchema = z.object({ confirmAssigned: z.boolean().optional() }).strict()
-const credentialSchema = z
-  .object({ credential: z.string().min(1).max(16_384), confirmAssigned: z.boolean().optional() })
-  .strict()
-const assignmentSchema = z.object({ connectionId: z.string().uuid(), makeDefault: z.boolean().optional() }).strict()
-const authorizationStartSchema = z
-  .object({ returnTo: z.string().min(1).max(1_024), connectionId: z.string().uuid().optional() })
-  .strict()
-const authorizationCallbackSchema = z
-  .object({
-    state: z.string().min(1).max(256),
-    code: z.string().min(1).max(4_096).optional(),
-    denied: z.literal(true).optional(),
-  })
-  .strict()
-const authorizationCompleteSchema = z
-  .object({
-    localFlowId: z.string().uuid(),
-    handle: z.string().regex(BROKER_COMPLETION_HANDLE_PATTERN),
-  })
-  .strict()
+const createSchema = z.strictObject({
+  provider: providerKeySchema,
+  displayName: z.string().trim().min(1).max(200),
+  configuration: z.unknown().optional(),
+  credential: z.string().min(1).max(16_384),
+})
+const confirmationSchema = z.strictObject({ confirmAssigned: z.boolean().optional() })
+const credentialSchema = z.strictObject({
+  credential: z.string().min(1).max(16_384),
+  confirmAssigned: z.boolean().optional(),
+})
+const assignmentSchema = z.strictObject({ connectionId: z.uuid(), makeDefault: z.boolean().optional() })
+const authorizationStartSchema = z.strictObject({
+  returnTo: z.string().min(1).max(1_024),
+  connectionId: z.uuid().optional(),
+})
+const authorizationCallbackSchema = z.strictObject({
+  state: z.string().min(1).max(256),
+  code: z.string().min(1).max(4_096).optional(),
+  denied: z.literal(true).optional(),
+})
+const authorizationCompleteSchema = z.strictObject({
+  localFlowId: z.uuid(),
+  handle: z.string().regex(BROKER_COMPLETION_HANDLE_PATTERN),
+})
 
 export interface IntegrationRoutesService extends Pick<
   IntegrationConnectionService,
@@ -280,12 +276,10 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       '/providers/bigbrain/local-connections',
       zValidator(
         'json',
-        z
-          .object({
-            bindingId: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
-            displayName: z.string().trim().min(1).max(200),
-          })
-          .strict()
+        z.strictObject({
+          bindingId: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
+          displayName: z.string().trim().min(1).max(200),
+        })
       ),
       async (c) => {
         const denied = await authorize(c, 'integrations:write:bigbrain')
@@ -364,7 +358,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       )
       return c.json({ integrations })
     })
-    .put('/providers/:provider/enabled', zValidator('json', z.object({ enabled: z.boolean() }).strict()), async (c) => {
+    .put('/providers/:provider/enabled', zValidator('json', z.strictObject({ enabled: z.boolean() })), async (c) => {
       const provider = c.req.param('provider')
       if (!providerKeySchema.safeParse(provider).success) return c.json({ error: 'Invalid provider' }, 400)
       const denied = await authorize(c, `integrations:write:${provider}`)
@@ -569,7 +563,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       }
     })
     .post('/providers/github/authorization/device/:id/poll', async (c) => {
-      const id = z.string().uuid().safeParse(c.req.param('id'))
+      const id = z.uuid().safeParse(c.req.param('id'))
       if (!id.success) return c.json({ error: 'Invalid authorization' }, 400)
       const access = await completionAccess(c, service, 'github', { kind: 'device', id: id.data })
       if (access instanceof Response) return access
@@ -587,7 +581,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       }
     })
     .post('/providers/github/authorization/device/:id/cancel', async (c) => {
-      const id = z.string().uuid().safeParse(c.req.param('id'))
+      const id = z.uuid().safeParse(c.req.param('id'))
       if (!id.success) return c.json({ error: 'Invalid authorization' }, 400)
       const access = await completionAccess(c, service, 'github', { kind: 'device', id: id.data })
       if (access instanceof Response) return access
@@ -669,7 +663,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
     })
     .post(
       '/connections/:connectionId/github-commit-signing',
-      zValidator('json', z.object({ enabled: z.boolean() }).strict()),
+      zValidator('json', z.strictObject({ enabled: z.boolean() })),
       async (c) => {
         const denied = await authorize(c, 'integrations:write:github')
         if (denied) return denied
@@ -767,21 +761,17 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       if (!service.refresh) return c.json({ error: 'Refresh unavailable' }, 404)
       return c.json(await service.refresh(connectionId))
     })
-    .put(
-      '/providers/:provider/default',
-      zValidator('json', z.object({ connectionId: z.string().uuid() }).strict()),
-      async (c) => {
-        const provider = parseProviderParam(c.req.param('provider'))
-        if (!provider) return c.json({ error: 'Unsupported integration' }, 404)
-        const denied = await authorize(c, `integrations:write:${provider}`)
-        if (denied) return denied
-        // Managed shared vaults have no provider-global default: each squad selects explicitly.
-        if (isManagedBigbrainProvider(provider)) return managedLifecycleOnly(c)
-        if (!service.setDefault) return c.json({ error: 'Unsupported integration' }, 404)
-        await service.setDefault(provider, c.req.valid('json').connectionId)
-        return c.json({ ok: true })
-      }
-    )
+    .put('/providers/:provider/default', zValidator('json', z.strictObject({ connectionId: z.uuid() })), async (c) => {
+      const provider = parseProviderParam(c.req.param('provider'))
+      if (!provider) return c.json({ error: 'Unsupported integration' }, 404)
+      const denied = await authorize(c, `integrations:write:${provider}`)
+      if (denied) return denied
+      // Managed shared vaults have no provider-global default: each squad selects explicitly.
+      if (isManagedBigbrainProvider(provider)) return managedLifecycleOnly(c)
+      if (!service.setDefault) return c.json({ error: 'Unsupported integration' }, 404)
+      await service.setDefault(provider, c.req.valid('json').connectionId)
+      return c.json({ ok: true })
+    })
     .post('/connections/:connectionId/validate', async (c) => {
       const denied = await authorizeConnection(c, service, 'write')
       if (denied) return denied
@@ -848,10 +838,7 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
     .put(
       '/:squadId/integrations/:provider/scope',
       requireSquadPermission('integrations:write', 'squadId'),
-      zValidator(
-        'json',
-        z.object({ enabled: z.boolean().optional(), inheritDefault: z.boolean().optional() }).strict()
-      ),
+      zValidator('json', z.strictObject({ enabled: z.boolean().optional(), inheritDefault: z.boolean().optional() })),
       async (c) => {
         const provider = parseProviderParam(c.req.param('provider'))
         // Managed shared vaults have no default to inherit: each squad selects vaults explicitly.
@@ -866,7 +853,7 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
       // Same resolution as every other squad guard — the raw route param may be a short id
       // prefix, which names no squad and would authorize the wrong scope.
       requireSquadPermission('integrations:use', 'squadId'),
-      zValidator('json', z.object({ connectionId: z.string().uuid().optional() }).strict()),
+      zValidator('json', z.strictObject({ connectionId: z.uuid().optional() })),
       async (c) => {
         const providerKey = parseProviderParam(c.req.param('provider'))
         if (!providerKey || !service.executionEnvironment) return c.json({ error: 'Unsupported integration' }, 404)
@@ -893,14 +880,12 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
       requireSquadPermission('integrations:use', 'squadId'),
       zValidator(
         'json',
-        z
-          .object({
-            payload: z
-              .string()
-              .min(1)
-              .max(Math.ceil((MAX_SIGNING_PAYLOAD_BYTES * 4) / 3) + 4),
-          })
-          .strict()
+        z.strictObject({
+          payload: z
+            .string()
+            .min(1)
+            .max(Math.ceil((MAX_SIGNING_PAYLOAD_BYTES * 4) / 3) + 4),
+        })
       ),
       async (c) => {
         const identity = c.get('identity')
@@ -992,7 +977,7 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
         const providerKey = parseProviderParam(c.req.param('provider'))
         if (!providerKey) return c.json({ error: 'Invalid provider' }, 400)
         const connectionId = c.req.query('connectionId')
-        if (connectionId !== undefined && !z.string().uuid().safeParse(connectionId).success)
+        if (connectionId !== undefined && !z.uuid().safeParse(connectionId).success)
           return c.json({ error: 'Invalid connection' }, 400)
         await service.unassign(
           resolvedSquadId(c),
@@ -1126,7 +1111,7 @@ function authorizationFailure(
 }
 
 const localSetupSchema = z
-  .object({
+  .strictObject({
     vaultId: z
       .string()
       .regex(/^[a-f0-9]{16}$/)
@@ -1136,7 +1121,6 @@ const localSetupSchema = z
     confirmVaultAccess: z.literal(true),
     replaceExisting: z.boolean().optional(),
   })
-  .strict()
   .refine((value) => (value.vaultId === undefined) !== (value.vaultPath === undefined), {
     message: 'Choose exactly one vault',
   })

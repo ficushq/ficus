@@ -63,12 +63,24 @@ describe('SquadSettingsTab sandbox section', () => {
   })
 
   test('docker runtime keeps lifecycle settings and logs under Workspace', () => {
-    const html = renderSandboxSection('squad-docker-1', { status: 'running', runtime: 'docker' })
+    const html = renderSandboxSection('squad-docker-1', { status: 'running', runtime: 'docker', logStreaming: true })
     expect(html).toContain('>Workspace<')
     expect(html).toContain('Sandbox Lifecycle')
     expect(html).toContain('Git commit identity')
     expect(html).toContain('Sandbox Logs')
     expect(html).not.toContain('General Settings')
+  })
+
+  // The vm runtime has no container-log stream (boxes surface output through
+  // exec), so the panel would only ever say "not supported": leave it out.
+  test('a runtime without log streaming keeps the sandbox settings but drops the logs panel', () => {
+    const html = renderSandboxSection('squad-vm-1', { status: 'running', runtime: 'vm', logStreaming: false })
+    expect(html).toContain('>Workspace<')
+    expect(html).toContain('Sandbox Lifecycle')
+    expect(html).not.toContain('Sandbox Logs')
+    // A status that does not say either way is treated as unsupported, never as a dead panel.
+    const unsaid = renderSandboxSection('squad-vm-2', { status: 'running', runtime: 'vm' })
+    expect(unsaid).not.toContain('Sandbox Logs')
   })
 
   // First load: the runtime is not known yet. Mounting the pane anyway opens a
@@ -83,7 +95,11 @@ describe('SquadSettingsTab sandbox section', () => {
 
 function renderSettingsTab(permissions: string[], entry = '/squads/squad-1/settings'): string {
   const queryClient = new QueryClient()
-  queryClient.setQueryData(queryKeys.sandbox.status('squad-1'), { status: 'running', runtime: 'docker' })
+  queryClient.setQueryData(queryKeys.sandbox.status('squad-1'), {
+    status: 'running',
+    runtime: 'docker',
+    logStreaming: true,
+  })
   queryClient.setQueryData(queryKeys.auth.permissions('squad-1'), {
     permissions,
     identity: { type: 'user', userId: 'user-1' },

@@ -23,84 +23,74 @@ export const sourceIdentifier = z
       s.split('/').every((p) => p !== '' && p !== '.' && p !== '..')
   )
 export const searchInput = z
-  .object({
+  .strictObject({
     query: text.optional(),
     queries: z.array(text).min(1).max(8).optional(),
-    n: z.number().int().min(1).max(50).optional(),
+    n: z.int().min(1).max(50).optional(),
     source: z.string().min(1).max(128).optional(),
     after: day.optional(),
     before: day.optional(),
     type: z.enum(['reference', 'entity']).optional(),
   })
-  .strict()
   .refine((s) => (s.query !== undefined) !== (s.queries !== undefined))
-export const readInput = z
-  .object({
-    path: sourceIdentifier,
-    start: z.number().int().nonnegative().safe().optional(),
-    chars: z.number().int().min(1).max(80000).optional(),
-    q: text.optional(),
-    slack: z.number().int().min(0).max(20).optional(),
-    after: day.optional(),
-    before: day.optional(),
-    n: z.number().int().min(1).max(1000).optional(),
-    order: z.enum(['asc', 'desc']).optional(),
-    toc: z.boolean().optional(),
-    attachment: z
-      .string()
-      .min(1)
-      .max(255)
-      .refine(
-        (s) =>
-          /^blob:[a-f0-9]{64}$/.test(s) ||
-          (!s.includes('/') &&
-            !s.includes('\\') &&
-            !s.includes(':') &&
-            s !== '.' &&
-            s !== '..' &&
-            [...s].every((c) => c.charCodeAt(0) >= 32))
-      )
-      .optional(),
-  })
-  .strict()
-export const dropInput = z
-  .object({
-    title: z.string().trim().min(1).max(200),
-    body: z
-      .string()
-      .min(1)
-      .refine((s) => !!s.trim() && Buffer.byteLength(s) <= 128 * 1024),
-    kind: z.enum(['note', 'idea', 'finding', 'research', 'request']).optional(),
-  })
-  .strict()
-const hit = z
-  .object({
-    path: sourceIdentifier,
-    title: z.string().optional(),
-    snippet: z.string().optional(),
-    score: z.number().finite().optional(),
-  })
-  .passthrough()
-const searchResult = z
-  .object({
-    hits: z.array(hit).max(50),
-    only_agent_records: z.boolean().optional(),
-    applied_filters: z.record(z.string(), z.unknown()).optional(),
-    relaxation: z.unknown().optional(),
-  })
-  .passthrough()
-const integer = z.number().int().nonnegative().safe()
+export const readInput = z.strictObject({
+  path: sourceIdentifier,
+  start: z.int().nonnegative().safe().optional(),
+  chars: z.int().min(1).max(80000).optional(),
+  q: text.optional(),
+  slack: z.int().min(0).max(20).optional(),
+  after: day.optional(),
+  before: day.optional(),
+  n: z.int().min(1).max(1000).optional(),
+  order: z.enum(['asc', 'desc']).optional(),
+  toc: z.boolean().optional(),
+  attachment: z
+    .string()
+    .min(1)
+    .max(255)
+    .refine(
+      (s) =>
+        /^blob:[a-f0-9]{64}$/.test(s) ||
+        (!s.includes('/') &&
+          !s.includes('\\') &&
+          !s.includes(':') &&
+          s !== '.' &&
+          s !== '..' &&
+          [...s].every((c) => c.charCodeAt(0) >= 32))
+    )
+    .optional(),
+})
+export const dropInput = z.strictObject({
+  title: z.string().trim().min(1).max(200),
+  body: z
+    .string()
+    .min(1)
+    .refine((s) => !!s.trim() && Buffer.byteLength(s) <= 128 * 1024),
+  kind: z.enum(['note', 'idea', 'finding', 'research', 'request']).optional(),
+})
+const hit = z.looseObject({
+  path: sourceIdentifier,
+  title: z.string().optional(),
+  snippet: z.string().optional(),
+  score: z.number().finite().optional(),
+})
+const searchResult = z.looseObject({
+  hits: z.array(hit).max(50),
+  only_agent_records: z.boolean().optional(),
+  applied_filters: z.record(z.string(), z.unknown()).optional(),
+  relaxation: z.unknown().optional(),
+})
+const integer = z.int().nonnegative().safe()
 const noteResult = z
-  .object({
+  .looseObject({
     path: sourceIdentifier,
     markdown: z.string(),
     markdown_length: integer.optional(),
     start: integer.optional(),
     end: integer.optional(),
     truncated: z.boolean().optional(),
-    links: z.array(z.object({ name: z.string(), path: sourceIdentifier.nullable() }).passthrough()).optional(),
+    links: z.array(z.looseObject({ name: z.string(), path: sourceIdentifier.nullable() })).optional(),
   })
-  .passthrough()
   .refine((s) => {
     const fields = [s.markdown_length, s.start, s.end]
     return (
@@ -109,10 +99,9 @@ const noteResult = z
     )
   })
 const dropResult = z.union([
-  z.object({ queued: z.literal(true), id: z.string().min(1).max(256) }).passthrough(),
+  z.looseObject({ queued: z.literal(true), id: z.string().min(1).max(256) }),
   z
-    .object({ id: z.string().min(1).max(256), path: sourceIdentifier, ref_path: sourceIdentifier.optional() })
-    .passthrough()
+    .looseObject({ id: z.string().min(1).max(256), path: sourceIdentifier, ref_path: sourceIdentifier.optional() })
     .refine((s) => !('queued' in s)),
 ])
 export interface BigbrainCallOptions {
@@ -182,7 +171,7 @@ export class BigbrainClient {
     if (Buffer.byteLength(JSON.stringify(value)) > 512 * 1024) throw new BigbrainError('response_too_large')
     const result = z
       .object({
-        content: z.array(z.object({ type: z.literal('text'), text: z.string() }).passthrough()).min(1),
+        content: z.array(z.looseObject({ type: z.literal('text'), text: z.string() })).min(1),
         isError: z.boolean().optional(),
       })
       .safeParse(value)

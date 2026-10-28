@@ -13,12 +13,10 @@ import { promoteEligibleQueuedStreams } from './admission'
 import { createLogger } from '../../lib/infra/logger'
 
 const log = createLogger('work-stream-pause')
-export const pauseWorkStreamSchema = z
-  .object({
-    reason: z.string().trim().max(2000).optional(),
-    parkAfterMinutes: z.number().int().min(1).max(10080).nullable().optional(),
-  })
-  .strict()
+export const pauseWorkStreamSchema = z.strictObject({
+  reason: z.string().trim().max(2000).optional(),
+  parkAfterMinutes: z.int().min(1).max(10080).nullable().optional(),
+})
 export class WorkStreamPausedError extends Error {
   constructor(readonly workStreamId: string) {
     super(`Work stream ${workStreamId} is paused. Wait for explicit resume.`)

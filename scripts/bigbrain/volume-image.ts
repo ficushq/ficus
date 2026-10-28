@@ -9,34 +9,24 @@ import { storageReservationSchema } from './storage'
 import { ensureOwnedDirectory, openPrivateFile, readPrivateJson, writePrivateJson } from './secure-files'
 import { runPrivateCommand, type PrivateCommandRunner } from './process'
 
-const uint = z.number().int().safe().nonnegative()
+const uint = z.int().safe().nonnegative()
 const keySchema = managedBigbrainHostBindingSchema
   .omit({ hostEpoch: true })
   .extend({ vaultId: managedBigbrainHostBindingSchema.shape.tenantId })
-  .strict()
-const stampSchema = keySchema
-  .extend({
-    schema: z.literal(1),
-    creationRequestId: managedBigbrainHostBindingSchema.shape.tenantId,
-    creationHash: z.string().regex(/^sha256:[0-9a-f]{64}$/),
-  })
-  .strict()
+const stampSchema = keySchema.extend({
+  schema: z.literal(1),
+  creationRequestId: managedBigbrainHostBindingSchema.shape.tenantId,
+  creationHash: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+})
 /** Root-private birth stamp written AS the image file before allocation (crash adoption proof). */
 export const birthStampSchema = stampSchema
 export const imageJournalSchema = stampSchema
   .extend({
     storage: storageReservationSchema,
-    identity: z
-      .object({ uid: uint.min(1).max(0xfffffffe), gid: uint.min(1).max(0xfffffffe) })
-      .strict()
-      .nullable(),
-    image: z
-      .object({ device: uint, inode: uint.min(1) })
-      .strict()
-      .nullable(),
+    identity: z.strictObject({ uid: uint.min(1).max(0xfffffffe), gid: uint.min(1).max(0xfffffffe) }).nullable(),
+    image: z.strictObject({ device: uint, inode: uint.min(1) }).nullable(),
     formatted: z.boolean(),
   })
-  .strict()
   .refine((v) => !v.formatted || (v.identity !== null && v.image !== null))
 export type ImageJournal = z.infer<typeof imageJournalSchema>
 export type PreparedImage = ImageJournal & {

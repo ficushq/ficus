@@ -38,7 +38,7 @@ import {
 // rethrows a generic 400 "Malformed JSON" HTTPException, masking the real
 // oversized-body status. Parsing the body manually (as /api/user-preferences
 // does) keeps the bodyLimit middleware's 413 intact.
-const uuidParam = z.string().uuid()
+const uuidParam = z.uuid()
 const log = createLogger('theme-presets')
 
 export const themePresetsRouter = new Hono()

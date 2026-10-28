@@ -67,9 +67,10 @@ function toolParameters(schema: z.ZodType) {
   return z.toJSONSchema(schema, TOOL_SCHEMA_OPTIONS) as JsonSchema
 }
 
-export const assistantEditorPresetSchema = z
-  .object({ id: z.string().regex(/^[a-z][a-z0-9-]{0,99}$/), description: z.string().max(4000) })
-  .strict()
+export const assistantEditorPresetSchema = z.strictObject({
+  id: z.string().regex(/^[a-z][a-z0-9-]{0,99}$/),
+  description: z.string().max(4000),
+})
 export type AssistantEditorPreset = z.infer<typeof assistantEditorPresetSchema>
 
 /** Every page kind the assistant-editor framework supports. Adding a kind
@@ -94,37 +95,33 @@ const assistantEditorOperationSchema = z.discriminatedUnion('op', [
 const draftDocumentSchema = z
   .unknown()
   .refine((value) => value != null && JSON.stringify(value).length <= 256_000, 'Draft is too large')
-const draftHistorySchema = z.object({ canUndo: z.boolean(), canRedo: z.boolean() }).strict()
+const draftHistorySchema = z.strictObject({ canUndo: z.boolean(), canRedo: z.boolean() })
 
 /** Page editors expose data and proposals, never a remotely executable browser callback. */
-const workflowAssistantEditorSyncSchema = z
-  .object({
-    kind: z.literal('workflow'),
-    target: z.object({ presetId: z.string().min(1).max(100).optional() }).strict(),
-    revision: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
-    document: draftDocumentSchema,
-    preset: assistantEditorPresetSchema.extend({ id: z.string().max(100) }).optional(),
-    selection: z.string().max(200).optional(),
-    history: draftHistorySchema.optional(),
-    acknowledgedProposalId: z.string().uuid().optional(),
-  })
-  .strict()
+const workflowAssistantEditorSyncSchema = z.strictObject({
+  kind: z.literal('workflow'),
+  target: z.strictObject({ presetId: z.string().min(1).max(100).optional() }),
+  revision: z.int().min(0).max(Number.MAX_SAFE_INTEGER),
+  document: draftDocumentSchema,
+  preset: assistantEditorPresetSchema.extend({ id: z.string().max(100) }).optional(),
+  selection: z.string().max(200).optional(),
+  history: draftHistorySchema.optional(),
+  acknowledgedProposalId: z.uuid().optional(),
+})
 
-const themeAssistantEditorSyncSchema = z
-  .object({
-    kind: z.literal('theme'),
-    target: z.object({ presetId: z.string().min(1).max(100).optional() }).strict(),
-    revision: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
-    document: draftDocumentSchema,
-    selection: themeSelectionSchema.optional(),
-    history: draftHistorySchema.optional(),
-    // Model-facing insights (resolved key colors, contrast warnings) computed
-    // by the web host from the live-painted draft and synced through so the
-    // server (and the model) can read them; see theme-assistant.ts.
-    insights: themeInsightsSchema.optional(),
-    acknowledgedProposalId: z.string().uuid().optional(),
-  })
-  .strict()
+const themeAssistantEditorSyncSchema = z.strictObject({
+  kind: z.literal('theme'),
+  target: z.strictObject({ presetId: z.string().min(1).max(100).optional() }),
+  revision: z.int().min(0).max(Number.MAX_SAFE_INTEGER),
+  document: draftDocumentSchema,
+  selection: themeSelectionSchema.optional(),
+  history: draftHistorySchema.optional(),
+  // Model-facing insights (resolved key colors, contrast warnings) computed
+  // by the web host from the live-painted draft and synced through so the
+  // server (and the model) can read them; see theme-assistant.ts.
+  insights: themeInsightsSchema.optional(),
+  acknowledgedProposalId: z.uuid().optional(),
+})
 
 export const assistantEditorSyncSchema = z.discriminatedUnion('kind', [
   workflowAssistantEditorSyncSchema,
@@ -144,15 +141,13 @@ export type AssistantEditorState = AssistantEditorSync & {
   closed?: boolean
   expiresAt?: string
 }
-export const assistantEditorReadSchema = z
-  .object({
-    include: z
-      .array(z.enum(['contract', 'agentTypes', 'integrationOutputs']))
-      .max(3)
-      .optional(),
-    integration: z.string().min(1).max(100).optional(),
-  })
-  .strict()
+export const assistantEditorReadSchema = z.strictObject({
+  include: z
+    .array(z.enum(['contract', 'agentTypes', 'integrationOutputs']))
+    .max(3)
+    .optional(),
+  integration: z.string().min(1).max(100).optional(),
+})
 export const assistantEditorReadParameters = toolParameters(assistantEditorReadSchema)
 export type AssistantEditorReadState = AssistantEditorState & {
   contract?: string
@@ -195,9 +190,8 @@ export function assistantEditorReadResult(state: AssistantEditorReadState, optio
 }
 
 export const assistantEditorProposalSchema = z
-  .object({
+  .strictObject({
     baseRevision: z
-      .number()
       .int()
       .min(0)
       .describe(
@@ -233,7 +227,6 @@ export const assistantEditorProposalSchema = z
         'Alternative for a complete redesign: JSON.stringify of only read.document, never the read envelope. Do not include operations when using documentJson.'
       ),
   })
-  .strict()
   .refine(
     (value) =>
       [value.operations, value.documentJson, value.historyAction].filter((item) => item !== undefined).length <= 1 &&

@@ -1553,12 +1553,15 @@ describe('squads routes', () => {
       const body = await res.json()
       expect(body.runtime).toBe('host')
       expect(body).not.toHaveProperty('toolchain')
+      // Always stated, so the UI never has to guess from the runtime name.
+      expect(typeof body.logStreaming).toBe('boolean')
 
       process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
       const docker = await (
         await app.request(`/api/squads/${declared.id}/sandbox/status`, { headers: authHeaders(admin.token) })
       ).json()
       expect(docker).toHaveProperty('toolchain')
+      expect(typeof docker.logStreaming).toBe('boolean')
     })
 
     // The declaration is still stored on host (so it applies if the deployment

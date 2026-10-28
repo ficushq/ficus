@@ -118,14 +118,12 @@ async function prepareHostWorkspaceOverride(workspacePath: string): Promise<Prep
 }
 
 const idleDaysSchema = z.coerce.number().int().min(1).max(3650)
-const idleConsultantsDormancySchema = z
-  .object({
-    days: z.number().int().min(1).max(3650),
-    // Required: the consultants the caller previewed. The server still re-checks each one.
-    // Synchronous, so one request is kept small; the web sends chunks of 25.
-    agentIds: z.array(z.string().uuid()).min(1).max(100),
-  })
-  .strict()
+const idleConsultantsDormancySchema = z.strictObject({
+  days: z.int().min(1).max(3650),
+  // Required: the consultants the caller previewed. The server still re-checks each one.
+  // Synchronous, so one request is kept small; the web sends chunks of 25.
+  agentIds: z.array(z.uuid()).min(1).max(100),
+})
 
 /**
  * Reject mutating an archived (soft-deleted) squad with 410 Gone.
@@ -1088,6 +1086,9 @@ export const squadsRouter = new Hono()
           {
             status: hasIt ? 'running' : 'not_found',
             runtime: isHostRuntime() ? ('host' as const) : ('docker' as const),
+            // Whether the log WebSocket has anything to serve (services/ws/logs.ts
+            // gates on the same optional method), so the UI can leave the panel out.
+            logStreaming: typeof manager.streamLogs === 'function',
             devboxReady: true,
             ...(isHostRuntime()
               ? {
@@ -1117,6 +1118,7 @@ export const squadsRouter = new Hono()
             ? await openSandboxOverloadPressure(squad.sandboxId).then((pressure) => (pressure ? { pressure } : {}))
             : {}),
           runtime: isVmRuntime() ? ('vm' as const) : ('k8s' as const),
+          logStreaming: typeof manager.streamLogs === 'function',
           ...(provisioning ? { provisioning } : {}),
         },
         toolchain

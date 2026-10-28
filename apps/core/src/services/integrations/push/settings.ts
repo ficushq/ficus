@@ -113,7 +113,7 @@ export async function configurePushIntegration(provider: string, input: unknown,
       const url = new URL(values.VAPID_SUBJECT)
       if (
         url.protocol === 'mailto:'
-          ? !z.string().email().safeParse(url.pathname).success
+          ? !z.email().safeParse(url.pathname).success
           : url.protocol !== 'https:' || !url.hostname
       )
         throw new Error()
