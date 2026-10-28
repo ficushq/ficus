@@ -24,7 +24,8 @@ export interface SandboxStatusDeps {
     status: string
     reason?: string
     devboxReady?: boolean
-    readiness?: 'ready' | 'ready_degraded'
+    assetsRefreshPending?: boolean
+    readiness?: 'pending' | 'reconciling' | 'ready' | 'ready_degraded'
     degradation?: { reasons: string[]; attemptCount: number; nextAttemptAt?: string }
     toolchain?: { status: string; reason?: string }
   }>
@@ -53,11 +54,15 @@ function describeStatus(status: {
   status: string
   reason?: string
   devboxReady?: boolean
-  readiness?: 'ready' | 'ready_degraded'
+  assetsRefreshPending?: boolean
+  readiness?: 'pending' | 'reconciling' | 'ready' | 'ready_degraded'
   degradation?: { reasons: string[]; attemptCount: number; nextAttemptAt?: string }
   toolchain?: { status: string; reason?: string }
 }): string {
   const toolchain = describeToolchain(status.toolchain)
+  if (status.status === 'starting' && status.assetsRefreshPending === true) {
+    return toolchain && status.toolchain?.status !== 'pending' ? toolchain : 'idle — assets refresh on next start'
+  }
   if (status.status === 'running') {
     if (status.readiness === 'ready_degraded') {
       const labels: Record<string, string> = {
@@ -146,6 +151,7 @@ export function createSandboxStatusTool(
           status: string
           reason?: string
           devboxReady?: boolean
+          assetsRefreshPending?: boolean
           toolchain?: { status: string; reason?: string }
         }
         try {

@@ -103,3 +103,18 @@ describe('semantic sandbox styling', () => {
     expect(resolveSandboxStyle({ status: 'unknown' } as any).config.dotColor).toBe('bg-status-neutral-solid')
   })
 })
+
+describe('deferred assets styling', () => {
+  test('idle assets refresh does not pulse or imply installation', () => {
+    const result = resolveSandboxStyle({
+      status: 'starting',
+      readiness: 'pending',
+      assetsRefreshPending: true,
+      reason: 'idle; assets refresh on next start',
+    })
+    expect(result.config.label).toBe('Idle')
+    expect(result.config.pulse).toBeUndefined()
+    expect(result.config.dotColor).toBe('bg-status-neutral-solid')
+    expect(result.reason).toBe(' — assets refresh on next start')
+  })
+})

@@ -1,4 +1,5 @@
 import { describe, test, expect, afterEach } from 'bun:test'
+import type { HealthResponse } from '../client/http-client'
 import { createHash } from 'crypto'
 import { EventEmitter } from 'events'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
@@ -76,7 +77,7 @@ interface FakeClient {
   shell: () => any
   devboxReady: () => Promise<void>
   toolchainReady: (active?: boolean) => Promise<void>
-  health: () => Promise<{ healthy: boolean; devboxReady: boolean; version: string; uptimeSeconds: number }>
+  health: () => Promise<HealthResponse>
   close: () => void
 }
 
@@ -121,9 +122,14 @@ function makeFakeClient(endpoint: string, bashScript = { stdout: 'ok', exitCode:
   return client
 }
 
+// These implementations are always supplied by makeHarness; callers may invoke
+// them without treating the rest of the optional manager overrides as required.
+type HarnessDeps = Partial<VmSandboxManagerDeps> &
+  Pick<VmSandboxManagerDeps, 'getSetupState' | 'ensureBox' | 'markSetupRepairNeeded'>
+
 /** Records every effect the manager drives so tests can assert order/args. */
 interface Harness {
-  deps: Partial<VmSandboxManagerDeps>
+  deps: HarnessDeps
   log: string[]
   ensureCalls: EnsureBoxOpts[]
   removeCalls: Array<{ sandboxId: string; archivePrivate?: boolean; timeoutMs?: number }>
@@ -247,7 +253,7 @@ function makeHarness(opts?: { machineForSandbox?: (id: string) => string; bashSc
 
   let port = 40000
   const boxPorts = new Map<string, number>()
-  const deps: Partial<VmSandboxManagerDeps> = {
+  const deps: HarnessDeps = {
     // The manager resolves the machine ONCE (via a resolvePlacement-shaped request)
     // and hands its id to ensureBox; the reverse-tunnel callback (resolveBoxApiUrl)
     // uses that same machine. The full request is recorded so tests can assert its
@@ -980,6 +986,113 @@ describe('VmSandboxManager', () => {
       reason: 'sandbox setup has not been reconciled',
       devboxReady: false,
     })
+  })
+
+  describe('live startup health projection', () => {
+    for (const readiness of ['missing', 'pending', 'reconciling'] as const) {
+      for (const condition of ['overloaded', 'Docker unresponsive', 'normal startup'] as const) {
+        test(`${readiness} setup preserves ${condition} diagnostics without changing setup`, async () => {
+          const h = makeHarness()
+          h.setBoxStatus('ready')
+          h.setMachineBoxRow({ machineId: 'm1', port: 50100, status: 'ready' })
+          const setup: VmSetupState | null =
+            readiness === 'missing'
+              ? null
+              : {
+                  sandboxId: 'squad_s1',
+                  desiredFingerprint: 'startup-fingerprint',
+                  readiness,
+                  reasons: [],
+                  attemptCount: 0,
+                  nextAttemptAt: null,
+                  pendingInvocationId: null,
+                  pendingInvocationKind: null,
+                  lastFailureClass: null,
+                  lastAttemptAt: null,
+                  updatedAt: new Date('2026-10-28T00:00:00Z'),
+                }
+          const priorSetup = structuredClone(setup)
+          h.setSetupState(setup)
+          let repairCalls = 0
+          const repair = h.deps.markSetupRepairNeeded
+          h.deps.markSetupRepairNeeded = async (...args) => {
+            repairCalls++
+            return repair(...args)
+          }
+          const mgr = new VmSandboxManager(h.deps)
+          // Attach a live client, not a successful setup/ensure or an idle box.
+          expect(await mgr.getOrAttachClient('squad_s1')).not.toBeNull()
+          const client = [...h.clients.values()][0]
+          const pressure: NonNullable<HealthResponse['pressure']> = {
+            cpus: 8,
+            load: condition === 'overloaded' ? [28, 24, 20] : [1, 1, 1],
+            memTotalMb: 16_384,
+            memAvailableMb: 8_192,
+          }
+          const runtimeHealth: NonNullable<HealthResponse['runtimeHealth']> =
+            condition === 'Docker unresponsive'
+              ? { status: 'degraded', reason: 'Docker did not answer within 15s' }
+              : { status: 'ready' }
+          client.health = async () => {
+            client.healthCalls++
+            return { healthy: true, devboxReady: false, version: 'test', uptimeSeconds: 1, pressure, runtimeHealth }
+          }
+
+          const status = await mgr.getSandboxStatus('squad_s1')
+          expect(client.healthCalls).toBe(1)
+          expect(status).toMatchObject({ status: 'starting', chain: { boxServer: 'up' }, pressure, runtimeHealth })
+          expect(status.reason).toBe(
+            condition === 'Docker unresponsive'
+              ? 'Docker did not answer within 15s'
+              : readiness === 'missing'
+                ? 'sandbox setup has not been reconciled'
+                : 'required sandbox assets are not ready'
+          )
+          expect(status.degradation).toBeUndefined()
+          // Pending readiness is now an explicit API fact, not a promotion to
+          // execution-ready or a mutation of the durable setup generation.
+          expect(status.readiness).toBe(readiness === 'missing' ? undefined : readiness)
+          expect(status.devboxReady).toBe(false)
+          expect(status.assetsRefreshPending).toBeUndefined()
+          expect(repairCalls).toBe(0)
+          expect(await h.deps.getSetupState('squad_s1')).toEqual(priorSetup)
+          expect(h.ensureCalls).toHaveLength(0)
+          expect(h.stopCalls).toHaveLength(0)
+          expect(h.removeCalls).toHaveLength(0)
+        })
+      }
+    }
+  })
+
+  test('projects runtime degradation without marking assets broken and clears it after recovery', async () => {
+    const h = makeHarness()
+    const mgr = new VmSandboxManager(h.deps)
+    await mgr.ensureSandbox('squad_s1', squadOpts)
+    const client = [...h.clients.values()][0]
+    let degraded = true
+    client.health = async () => ({
+      healthy: true,
+      devboxReady: true,
+      version: 'test',
+      uptimeSeconds: 1,
+      runtimeHealth: degraded
+        ? { status: 'degraded', reason: 'Docker did not answer within 15s' }
+        : { status: 'ready' },
+    })
+    expect(await mgr.getSandboxStatus('squad_s1')).toMatchObject({
+      status: 'running',
+      readiness: 'ready_degraded',
+      devboxReady: true,
+      reason: 'Docker did not answer within 15s',
+      runtimeHealth: { status: 'degraded', reason: 'Docker did not answer within 15s' },
+    })
+    expect((await h.deps.getSetupState('squad_s1'))?.readiness).toBe('ready')
+    await expect(mgr.exec('squad_s1', ['echo', 'diagnostic'])).resolves.toEqual(Buffer.from('ok'))
+    expect(client.bashCalls.at(-1)?.command).toBe("'echo' 'diagnostic'")
+    degraded = false
+    const recovered = await mgr.getSandboxStatus('squad_s1')
+    expect(recovered).toMatchObject({ status: 'running', readiness: 'ready', runtimeHealth: { status: 'ready' } })
+    expect(recovered.reason).toBeUndefined()
   })
 
   test('persists live Devbox cache loss so lifecycle repair becomes due', async () => {
@@ -1920,7 +2033,7 @@ describe('VmSandboxManager', () => {
     expect(client.healthCalls).toBe(before)
   })
 
-  test('an idle box still reports the honest setup state (pending → starting, not running)', async () => {
+  test('an idle box reports deferred assets without claiming active startup or execution readiness', async () => {
     const h = makeHarness()
     const mgr = new VmSandboxManager(h.deps)
     await mgr.ensureSandbox('squad_s1', squadOpts)
@@ -1941,9 +2054,136 @@ describe('VmSandboxManager', () => {
       lastAttemptAt: null,
       updatedAt: new Date(),
     })
+    const ensuresBefore = h.ensureCalls.length
     const status = await mgr.getSandboxStatus('squad_s1')
-    expect(status.status).toBe('starting')
+    expect(h.ensureCalls).toHaveLength(ensuresBefore)
+    expect(h.stopCalls).toEqual([])
+    expect(h.removeCalls).toEqual([])
+    // Coarse status remains non-ready for execution/recovery consumers.
+    expect(status).toMatchObject({
+      status: 'starting',
+      readiness: 'pending',
+      devboxReady: false,
+      assetsRefreshPending: true,
+      reason: 'required sandbox assets are not ready',
+    })
     expect(client.healthCalls).toBe(before)
+
+    // Durable in-progress work must not be described as lazy refresh, even if
+    // the last physical chain observation was idle.
+    h.setSetupState({ ...(await h.deps.getSetupState('squad_s1'))!, pendingInvocationId: 'sync-1' })
+    expect(await mgr.getSandboxStatus('squad_s1')).not.toHaveProperty('assetsRefreshPending')
+    h.setSetupState({
+      ...(await h.deps.getSetupState('squad_s1'))!,
+      readiness: 'reconciling',
+      pendingInvocationId: null,
+    })
+    expect(await mgr.getSandboxStatus('squad_s1')).not.toHaveProperty('assetsRefreshPending')
+
+    // Nor does an actually starting box or an awake box waiting for assets.
+    h.setSetupState({ ...(await h.deps.getSetupState('squad_s1'))!, readiness: 'pending' })
+    h.setBoxChain({ boxProvisioned: true, machine: 'reachable', boxServer: 'up' })
+    const pressure = {
+      cpus: 8,
+      load: [28, 20, 12] as [number, number, number],
+      memTotalMb: 16000,
+      memAvailableMb: 4000,
+    }
+    client.health = async () => ({ healthy: true, devboxReady: true, version: 'v1', uptimeSeconds: 10, pressure })
+    expect(await mgr.getSandboxStatus('squad_s1')).toMatchObject({ status: 'starting', pressure })
+    expect(await mgr.getSandboxStatus('squad_s1')).not.toHaveProperty('assetsRefreshPending')
+    h.setBoxStatus('starting')
+    expect(await mgr.getSandboxStatus('squad_s1')).not.toHaveProperty('assetsRefreshPending')
+  })
+
+  test.each(['pending', 'reconciling'] as const)(
+    'preserves Docker diagnostics while assets are %s',
+    async (readiness) => {
+      const h = makeHarness()
+      const mgr = new VmSandboxManager(h.deps)
+      await mgr.ensureSandbox('squad_s1', squadOpts)
+      h.setSetupState({ ...(await h.deps.getSetupState('squad_s1'))!, readiness })
+      const runtimeHealth: NonNullable<HealthResponse['runtimeHealth']> = {
+        status: 'degraded',
+        reason: 'Docker did not answer within 2s',
+      }
+      const client = [...h.clients.values()][0]
+      client.health = async () => ({
+        healthy: true,
+        devboxReady: true,
+        version: 'test',
+        uptimeSeconds: 1,
+        runtimeHealth,
+      })
+      const status = await mgr.getSandboxStatus('squad_s1')
+      expect(status).toMatchObject({
+        status: 'starting',
+        readiness,
+        devboxReady: false,
+        runtimeHealth,
+        reason: runtimeHealth.reason,
+      })
+      expect(status).not.toHaveProperty('assetsRefreshPending')
+      expect(h.ensureCalls).toHaveLength(1)
+      expect(h.stopCalls).toEqual([])
+      expect(h.removeCalls).toEqual([])
+    }
+  )
+
+  test.each(['starting', 'failed'] as const)(
+    'restart %s takes precedence over idle pending assets',
+    async (physical) => {
+      const h = makeHarness()
+      h.deps.boxChainHealth = async () => ({
+        status: physical,
+        chain: { boxProvisioned: true, machine: 'reachable', boxServer: 'idle' },
+        ...(physical === 'starting' ? { restartPending: true } : { reason: 'box restart failed' }),
+      })
+      const mgr = new VmSandboxManager(h.deps)
+      await mgr.ensureSandbox('squad_s1', squadOpts)
+      h.setSetupState({ ...(await h.deps.getSetupState('squad_s1'))!, readiness: 'pending' })
+      const status = await mgr.getSandboxStatus('squad_s1')
+      expect(status).toMatchObject({
+        status: physical,
+        reason: physical === 'starting' ? 'box restart in progress' : 'box restart failed',
+        ...(physical === 'starting' ? { restartPending: true } : {}),
+      })
+      expect(status).not.toHaveProperty('assetsRefreshPending')
+    }
+  )
+
+  test('an in-flight ensure is not idle refresh even with a stale idle chain observation', async () => {
+    const h = makeHarness()
+    const ensureBox = h.deps.ensureBox
+    let pause = false
+    let release!: () => void
+    let entered!: () => void
+    const blocked = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    h.deps.ensureBox = async (opts) => {
+      if (pause) {
+        entered()
+        await gate
+      }
+      return ensureBox(opts)
+    }
+    const mgr = new VmSandboxManager(h.deps)
+    await mgr.ensureSandbox('squad_s1', squadOpts)
+    h.setBoxChain({ boxProvisioned: true, machine: 'reachable', boxServer: 'idle' })
+    h.setSetupState({ ...(await h.deps.getSetupState('squad_s1'))!, readiness: 'pending' })
+    pause = true
+    const ensuring = mgr.ensureSandbox('squad_s1', squadOpts)
+    await blocked
+    try {
+      expect(await mgr.getSandboxStatus('squad_s1')).not.toHaveProperty('assetsRefreshPending')
+    } finally {
+      release()
+      await ensuring
+    }
   })
 
   test('buildBoxEnv sets FICUS_SANDBOX_ROLE mirroring pod-spec (agent→agent, squad/system-manager→squad)', async () => {
@@ -2627,6 +2867,46 @@ describe('VmSandboxManager', () => {
       expect(h.addForwardCalls).toHaveLength(1)
     })
 
+    test('keeps a Docker-degraded live box attached and usable after status sampling', async () => {
+      const h = makeHarness()
+      const owner = new VmSandboxManager(h.deps)
+      await owner.ensureSandbox('squad_s1', squadOpts)
+      h.setMachineBoxRow({ machineId: 'm1', port: 50123, status: 'ready' })
+      const createClient = h.deps.createClient!
+      const runtimeHealth: NonNullable<HealthResponse['runtimeHealth']> = {
+        status: 'degraded',
+        reason: 'Docker did not answer within 2s',
+      }
+      h.deps.createClient = (...args) => {
+        const client = createClient(...args)
+        client.health = async () => ({
+          healthy: true,
+          devboxReady: true,
+          version: 'test',
+          uptimeSeconds: 1,
+          runtimeHealth,
+        })
+        return client
+      }
+      // A separate process attaches without re-ensuring/restarting the box.
+      const observer = new VmSandboxManager(h.deps)
+      expect(await observer.attachExistingSandbox('squad_s1', squadOpts)).toBe(true)
+      const attached = await observer.getOrAttachClient('squad_s1')
+      expect(await observer.getSandboxStatus('squad_s1')).toMatchObject({
+        status: 'running',
+        readiness: 'ready_degraded',
+        devboxReady: true,
+        runtimeHealth,
+        reason: runtimeHealth.reason,
+      })
+      expect(await observer.getOrAttachClient('squad_s1')).toBe(attached)
+      expect(h.clients.get('127.0.0.1:61001')?.closed).toBe(0)
+      expect((await h.deps.getSetupState('squad_s1'))?.readiness).toBe('ready')
+      expect(h.ensureCalls).toHaveLength(1)
+      expect(h.stopCalls).toEqual([])
+      expect(h.removeCalls).toEqual([])
+    })
+
     test('returns null when there is no row, the row is not ready, or the machine is not ready', async () => {
       const h = makeHarness()
       const mgr = new VmSandboxManager(h.deps)
@@ -3028,4 +3308,94 @@ describe('VmSandboxManager local deployment targets', () => {
     } as any)
     expect(await manager.getSandboxMachineId('agent_box')).toBe('machine-7')
   })
+})
+
+describe('VM last-resort restart', () => {
+  test('uses the box manager without attaching/ensuring/execing and refuses duplicate restart', async () => {
+    const h = makeHarness()
+    let finish!: () => void
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    const calls: string[] = []
+    h.deps.restartBox = async (id) => {
+      calls.push(id)
+      await pending
+      return 'http://127.0.0.1:62000'
+    }
+    const mgr = new VmSandboxManager(h.deps)
+    try {
+      const first = mgr.restartSandbox('squad_s1')
+      await Bun.sleep(0)
+      await expect(mgr.restartSandbox('squad_s1')).rejects.toThrow('busy')
+      expect(calls).toEqual(['squad_s1'])
+      expect(h.ensureCalls).toEqual([])
+      expect(h.createdEndpoints).toEqual([])
+      finish()
+      await first
+      await mgr.restartSandbox('squad_s1')
+      expect(calls).toEqual(['squad_s1', 'squad_s1'])
+    } finally {
+      finish()
+      await mgr.cleanup()
+    }
+  })
+
+  test('failed restart releases the lifecycle gate and surfaces failure without deleting data', async () => {
+    const h = makeHarness()
+    let fail = true
+    h.deps.restartBox = async () => {
+      if (fail) throw new Error('restart failed')
+      return 'http://127.0.0.1:62000'
+    }
+    const mgr = new VmSandboxManager(h.deps)
+    try {
+      await expect(mgr.restartSandbox('squad_s1')).rejects.toThrow('restart failed')
+      fail = false
+      await mgr.restartSandbox('squad_s1')
+      expect(h.removeCalls).toEqual([])
+      expect(h.stopCalls).toEqual([])
+    } finally {
+      await mgr.cleanup()
+    }
+  })
+
+  test('restart takes a non-waiting setup lease and does not execute when setup owns it', async () => {
+    const h = makeHarness()
+    let called = false
+    h.deps.restartBox = async () => {
+      called = true
+      return 'http://127.0.0.1:62000'
+    }
+    h.deps.withSetupLease = async (id, _fn, options) => {
+      expect(id).toBe('squad_s1')
+      expect(options?.ifAvailable).toBe(true)
+      throw new Error('setup busy')
+    }
+    const mgr = new VmSandboxManager(h.deps)
+    try {
+      await expect(mgr.restartSandbox('squad_s1')).rejects.toThrow('busy')
+      expect(called).toBe(false)
+    } finally {
+      await mgr.cleanup()
+    }
+  })
+})
+
+test('restart preserves tracked execution layout and lifecycle options while refreshing the client', async () => {
+  const h = makeHarness()
+  h.deps.restartBox = async () => 'http://127.0.0.1:62000'
+  const mgr = new VmSandboxManager(h.deps)
+  try {
+    await mgr.ensureSandbox('squad_s1', squadOpts)
+    const before = mgr.getLifecycleState('squad_s1')
+    const apiUrl = mgr.resolveToolApiUrl('squad_s1')
+    await mgr.restartSandbox('squad_s1')
+    expect(mgr.getLifecycleState('squad_s1')).toEqual(before)
+    expect(mgr.resolveToolApiUrl('squad_s1')).toBe(apiUrl)
+    expect(mgr.getClient('squad_s1')).not.toBeNull()
+    expect(h.createdEndpoints.at(-1)).toBe('127.0.0.1:62000')
+  } finally {
+    await mgr.cleanup()
+  }
 })

@@ -685,6 +685,18 @@ export async function acquireDedicatedConnectionSlot(): Promise<() => void> {
   }
 }
 
+/** Non-queueing variant for interactive recovery: never launch stale work later. */
+export function tryAcquireDedicatedConnectionSlot(): (() => void) | null {
+  if (dedicatedConnectionsInUse >= DEDICATED_CONNECTION_LIMIT) return null
+  dedicatedConnectionsInUse++
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    releaseDedicatedConnectionSlot()
+  }
+}
+
 export async function withDedicatedConnectionSlot<T>(fn: () => Promise<T>): Promise<T> {
   const release = await acquireDedicatedConnectionSlot()
   try {

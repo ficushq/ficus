@@ -14,7 +14,8 @@ function makeDeps(
       status: string
       reason?: string
       devboxReady?: boolean
-      readiness?: 'ready' | 'ready_degraded'
+      assetsRefreshPending?: boolean
+      readiness?: 'pending' | 'reconciling' | 'ready' | 'ready_degraded'
       degradation?: { reasons: string[]; attemptCount: number; nextAttemptAt?: string }
       toolchain?: { status: string; reason?: string }
     }
@@ -39,6 +40,29 @@ async function run(tool: ReturnType<typeof createSandboxStatusTool>) {
 }
 
 describe('createSandboxStatusTool', () => {
+  it('describes deferred assets as idle, not starting or execution-ready', async () => {
+    const { deps } = makeDeps({
+      agent_a1: { status: 'starting', readiness: 'pending', devboxReady: false, assetsRefreshPending: true },
+    })
+    const { text } = await run(createSandboxStatusTool({ agentId: 'a1', sandboxId: 'agent_a1' }, deps))
+    expect(text).toContain('idle — assets refresh on next start')
+    expect(text).not.toContain('starting')
+    expect(text).not.toContain(': ready')
+  })
+
+  it('keeps active toolchain work visible over a stale deferred refresh observation', async () => {
+    const { deps } = makeDeps({
+      agent_a1: {
+        status: 'starting',
+        assetsRefreshPending: true,
+        toolchain: { status: 'installing' },
+      },
+    })
+    const { text } = await run(createSandboxStatusTool({ agentId: 'a1', sandboxId: 'agent_a1' }, deps))
+    expect(text).toContain('installing packages')
+    expect(text).not.toContain('idle')
+  })
+
   it('reports the private box as ready when running and devbox-ready', async () => {
     const { deps, queried } = makeDeps({ agent_a1: { status: 'running', devboxReady: true } })
     const tool = createSandboxStatusTool({ agentId: 'a1', sandboxId: 'agent_a1' }, deps)

@@ -13,6 +13,9 @@ import { positiveIntEnv, resolvePlacement } from './placement'
 import { SERVER_LIB_REMOTE_PATH } from './server-bundle'
 import {
   bindMachineBox as bindMachineBoxReal,
+  beginBoxRestart as beginBoxRestartReal,
+  isStaleBoxRestart,
+  finishBoxRestart as finishBoxRestartReal,
   clearBoxSyncedHashes as clearBoxSyncedHashesReal,
   deleteMachineBox as deleteMachineBoxReal,
   externalizeUnverifiedBoxStop as externalizeUnverifiedBoxStopReal,
@@ -337,6 +340,8 @@ export interface BoxTunnels {
 
 /** All external effects, injectable for tests; each defaults to production. */
 export interface BoxManagerDeps {
+  beginBoxRestart?: typeof beginBoxRestartReal
+  finishBoxRestart?: typeof finishBoxRestartReal
   runner?: SshRunner
   /** Host→host pipe used by {@link streamBoxStateArchive} (migration transport);
    *  defaults to ssh.ts's process-wide streamer. */
@@ -1224,7 +1229,7 @@ export function socketStartFailureReport(
  * seam. Returns the local endpoint (`http://127.0.0.1:<localPort>`).
  */
 export async function startBoxAndAwaitHealth(
-  opts: { machine: Machine; sandboxId: string; unixUser: string; port: number },
+  opts: { machine: Machine; sandboxId: string; unixUser: string; port: number; timeoutMs?: number },
   deps: BoxManagerDeps = {}
 ): Promise<string> {
   const runner = deps.runner ?? defaultSshRunner
@@ -1253,7 +1258,7 @@ export async function startBoxAndAwaitHealth(
       `enabled=$(${ctl.systemctl} show -p UnitFileState --value ${u.socket}) && [ "$enabled" = enabled ] && ` +
       `active=$(${ctl.systemctl} show -p ActiveState --value ${u.socket}) && [ "$active" = active ] )`
   )
-  const restartRes = await runner.run(machine, restartCmd)
+  const restartRes = await runner.run(machine, restartCmd, { timeoutMs: opts.timeoutMs ?? 30_000 })
   if (restartRes.exitCode === BOX_PORT_BUSY_EXIT_CODE) {
     throw new BoxPortBusyError(sandboxId, machine.name, port, restartRes.stderr, 'resume')
   }
@@ -1269,6 +1274,65 @@ export async function startBoxAndAwaitHealth(
   const endpoint = `http://127.0.0.1:${localPort}`
   await pollBoxHealth(endpoint, deps)
   return endpoint
+}
+
+/** A safe refusal before any restart side effect. */
+export class BoxRestartError extends Error {
+  constructor(
+    message: string,
+    readonly status: 404 | 409 | 503
+  ) {
+    super(message)
+    this.name = 'BoxRestartError'
+  }
+}
+
+/**
+ * Last-resort host-side recovery, NEVER an exec into the box. The VM adapter
+ * holds the shared setup lease; the conditional row claim also excludes migration
+ * and duplicate restarts. Only the existing server unit is restarted: no asset
+ * provisioning, user removal, workspace mutation, or machine-wide operations.
+ * SSH/tunnel steps have their own deadlines; health gets a short recovery budget.
+ */
+export async function restartBox(sandboxId: string, deps: BoxManagerDeps = {}): Promise<string> {
+  const box = await (deps.getMachineBox ?? getMachineBoxReal)(sandboxId)
+  if (!box) throw new BoxRestartError('Sandbox box not found', 404)
+  if (box.sandboxId !== sandboxId || box.unixUser !== boxUnixUser(sandboxId)) {
+    throw new BoxRestartError('Sandbox box identity does not match', 409)
+  }
+  if (box.migrating || (!['ready', 'restart_failed'].includes(box.status) && !isStaleBoxRestart(box, deps.now?.()))) {
+    throw new BoxRestartError('Sandbox lifecycle operation in progress or box is stopped', 409)
+  }
+  const machine = await (deps.getMachine ?? getMachineReal)(box.machineId)
+  if (!machine || machine.status !== 'ready') throw new BoxRestartError('Sandbox machine is not ready', 503)
+  if (!(await (deps.beginBoxRestart ?? beginBoxRestartReal)(box))) {
+    throw new BoxRestartError('Sandbox changed or another lifecycle operation is in progress', 409)
+  }
+  const finish = deps.finishBoxRestart ?? finishBoxRestartReal
+  const announce = (status: string) =>
+    eventEmitter.emit('box.status', {
+      sandboxId,
+      machineId: box.machineId,
+      port: box.port,
+      status,
+    })
+  announce('restarting')
+  try {
+    const endpoint = await startBoxAndAwaitHealth(
+      { machine, sandboxId, unixUser: box.unixUser, port: box.port, timeoutMs: 30_000 },
+      {
+        ...deps,
+        healthBudgetMs: 15_000,
+      }
+    )
+    if (!(await finish(box, 'ready')))
+      throw new BoxRestartError('Sandbox changed during restart; check its status', 409)
+    announce('ready')
+    return endpoint
+  } catch (error) {
+    if (await finish(box, 'restart_failed')) announce('restart_failed')
+    throw error
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2823,6 +2887,8 @@ export interface BoxChainHealth {
 export const LISTENING_FRESH_MS = 150_000
 
 export interface BoxStatusWithChain {
+  restartPending?: boolean
+  reason?: string
   status: 'ready' | 'stopped' | 'starting' | 'failed' | 'absent'
   chain: BoxChainHealth
 }
@@ -2889,8 +2955,19 @@ export async function boxChainHealth(sandboxId: string, deps: BoxManagerDeps = {
       },
     }
   }
-  if (box.status === 'ensuring') {
-    return { status: 'starting', chain: { boxProvisioned: true, machine: 'unknown', boxServer: 'unknown' } }
+  if (box.status === 'restart_failed' || isStaleBoxRestart(box, deps.now?.())) {
+    return {
+      status: 'failed',
+      reason: 'box restart failed; readiness is unverified',
+      chain: { boxProvisioned: true, machine: 'unknown', boxServer: 'unknown' },
+    }
+  }
+  if (box.status === 'ensuring' || box.status === 'restarting') {
+    return {
+      status: 'starting',
+      ...(box.status === 'restarting' ? { restartPending: true } : {}),
+      chain: { boxProvisioned: true, machine: 'unknown', boxServer: 'unknown' },
+    }
   }
 
   // A live ('ready') row: terminal failure is defined by the box's HOST, not by a

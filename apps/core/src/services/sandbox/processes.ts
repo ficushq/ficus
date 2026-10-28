@@ -1,7 +1,7 @@
 import { SANDBOX_PROCESS_SIGNALS, type SandboxProcesses, type SandboxProcessSignal } from '@ficus/shared'
 import { createLogger } from '../../lib/infra/logger'
 import type { Identity } from '../rbac/permissions'
-import { SandboxHttpError, type SandboxClient } from './client/http-client'
+import { SandboxHttpError, SandboxTransportError, type SandboxClient } from './client/http-client'
 
 const log = createLogger('sandbox-processes')
 
@@ -64,6 +64,47 @@ export async function listSandboxProcesses(
   return client.listProcesses().catch(translate)
 }
 
+const CONTROL_TIMEOUT_MS = 45_000
+
+function controlTimeout(): SandboxProcessesError {
+  return new SandboxProcessesError(
+    'Sandbox control timed out; the action may have taken effect. Refresh processes before retrying.',
+    504
+  )
+}
+
+/** Include client attachment in the budget; never send a delayed control after it expires. */
+async function control<T>(
+  sandboxId: string,
+  getClient: GetClient,
+  run: (client: SandboxClient, signal: AbortSignal) => Promise<T>
+): Promise<T> {
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const error = controlTimeout()
+      controller.abort(error)
+      reject(error)
+    }, CONTROL_TIMEOUT_MS)
+  })
+  try {
+    return await Promise.race([
+      deadline,
+      (async () => {
+        const client = await clientFor(sandboxId, getClient)
+        controller.signal.throwIfAborted()
+        return run(client, controller.signal)
+      })(),
+    ]).catch((error) => {
+      if (error instanceof SandboxTransportError && error.kind === 'timeout') throw controlTimeout()
+      return translate(error)
+    })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /** Signal one process the sandbox's user owns. Audited: this stops someone's work. */
 export async function signalSandboxProcess(
   sandboxId: string,
@@ -72,8 +113,9 @@ export async function signalSandboxProcess(
   actor: Identity,
   getClient: GetClient = defaultGetClient
 ) {
-  const client = await clientFor(sandboxId, getClient)
-  const result = await client.signalProcess(pid, signal).catch(translate)
+  const result = await control(sandboxId, getClient, (client, abortSignal) =>
+    client.signalProcess(pid, signal, abortSignal)
+  )
   log.info(`${describe(actor)} sent SIG${result.signal} to pid ${result.pid} in ${sandboxId}: ${result.command}`)
   return result
 }
@@ -85,8 +127,9 @@ export async function stopSandboxContainer(
   actor: Identity,
   getClient: GetClient = defaultGetClient
 ) {
-  const client = await clientFor(sandboxId, getClient)
-  const result = await client.stopContainer(containerId).catch(translate)
+  const result = await control(sandboxId, getClient, (client, abortSignal) =>
+    client.stopContainer(containerId, abortSignal)
+  )
   log.info(`${describe(actor)} stopped container ${result.id} in ${sandboxId}`)
   return result
 }
