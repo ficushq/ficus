@@ -124,7 +124,8 @@ export type WorkStreamPresentationState =
   | ManualWaitPresentationState
   | `delivery_${DeliveryPresentationKind}`
 export type SubagentPresentationState = 'queued' | 'running' | 'idle' | 'stopped' | 'done' | 'failed'
-export type SandboxPresentationState = SandboxRuntimeState | 'installing_packages' | 'running_setup' | 'degraded'
+export type SandboxPresentationState =
+  SandboxRuntimeState | 'installing_packages' | 'running_setup' | 'degraded' | 'idle'
 
 export const AGENT_STATUS_ROLE = {
   active: 'progress',
@@ -182,6 +183,7 @@ export const SUBAGENT_STATUS_ROLE = {
 } as const satisfies Record<SubagentPresentationState, StatusRole>
 
 export const SANDBOX_STATUS_ROLE = {
+  idle: 'neutral',
   not_found: 'neutral',
   pending: 'attention',
   starting: 'attention',
@@ -331,16 +333,20 @@ export interface SandboxPresentationFacts {
   status: SandboxRuntimeState
   devboxReady?: boolean
   readiness?: 'pending' | 'reconciling' | 'ready' | 'ready_degraded'
+  /** Explicit deferred refresh, never inferred from a pending readiness alone. */
+  assetsRefreshPending?: boolean
   toolchain?: { status: SandboxToolchainStatus }
 }
 
 /** Project physical and setup facts into a named state before applying UI treatment. */
 export function selectSandboxPresentationState(facts: SandboxPresentationFacts): SandboxPresentationState {
-  if (facts.status !== 'running') return facts.status
+  const deferred = facts.status === 'starting' && facts.assetsRefreshPending === true
+  if (facts.status !== 'running' && !deferred) return facts.status
   if (facts.readiness === 'ready_degraded') return 'degraded'
   if (facts.toolchain?.status === 'failed') return 'failed'
   if (facts.toolchain?.status === 'running_setup') return 'running_setup'
   if (facts.toolchain?.status === 'installing') return 'installing_packages'
+  if (deferred) return 'idle'
   if (facts.toolchain?.status === 'pending') return 'degraded'
   if (facts.devboxReady === false) return 'installing_packages'
   return 'running'

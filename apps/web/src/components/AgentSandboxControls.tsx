@@ -72,8 +72,8 @@ export function AgentSandboxControls({ agentId, compact = false }: AgentSandboxC
 
   // Machine-box lifecycle is infrastructure, so the agent info panel only shows health.
   if (status.runtime === 'vm') {
-    const { label, detail, healthy } = resolveVmChainDisplay(status)
-    const treatment = webStatus(healthy ? 'success' : 'attention')
+    const { label, detail, healthy, role } = resolveVmChainDisplay(status)
+    const treatment = webStatus(role ?? (healthy ? 'success' : 'attention'))
     return (
       <dl className={rowClass}>
         <dt className={labelClass}>{compact ? 'Agent' : 'Sandbox'}</dt>

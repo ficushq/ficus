@@ -162,17 +162,22 @@ test.each(vmStartupReasons)('normal VM startup does not warn for "%s"', async (r
   })
 })
 
-test('idle setup-pending VM does not acquire a health warning', async () => {
+test('idle setup-pending VM shows deferred assets without a health warning', async () => {
   await withIndicator(
     {
       ...healthy,
       status: 'starting',
       reason: 'required sandbox assets are not ready',
       chain: { boxProvisioned: true, machine: 'reachable', boxServer: 'idle' },
+      readiness: 'pending',
+      assetsRefreshPending: true,
       toolchain: { status: 'pending', desiredFingerprint: 'test' },
     },
-    async ({ warning }) => {
+    async ({ doc, warning }) => {
       expect(Boolean(warning())).toBe(false)
+      expect(doc.body.textContent).toContain('Idle')
+      expect(doc.body.textContent).toContain('assets refresh on next start')
+      expect(doc.body.textContent).not.toContain('Starting')
     }
   )
 })
@@ -222,3 +227,35 @@ test('a reasonless runtime degradation still has useful warning detail', async (
     expect(card()!.querySelector('a')).not.toBeNull()
   })
 })
+
+test.each([
+  ['overload', { pressure }, 'Overloaded: Load 28.0 on 8 CPUs'],
+  [
+    'Docker degradation',
+    { runtimeHealth: { status: 'degraded', reason: 'Docker did not answer within 2s' } },
+    'Docker did not answer within 2s',
+  ],
+] satisfies Array<[string, Partial<SandboxStatus>, string]>)(
+  'idle refresh does not hide %s warnings',
+  async (_, diagnostics, message) => {
+    await withIndicator(
+      {
+        ...healthy,
+        status: 'starting',
+        readiness: 'pending',
+        assetsRefreshPending: true,
+        reason: 'required sandbox assets are not ready',
+        chain: { boxProvisioned: true, machine: 'reachable', boxServer: 'idle' },
+        ...diagnostics,
+      },
+      async ({ dom, doc, warning, card }) => {
+        expect(doc.body.textContent).toContain('Idle')
+        expect(doc.body.textContent).toContain('assets refresh on next start')
+        expect(warning()).not.toBeNull()
+        await dom.act(async () => warning()!.focus())
+        expect(card()!.textContent).toContain(message)
+        expect(card()!.querySelector('a')!.getAttribute('href')).toContain('setting=sandbox-processes')
+      }
+    )
+  }
+)
