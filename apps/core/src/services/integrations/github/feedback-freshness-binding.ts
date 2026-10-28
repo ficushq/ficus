@@ -68,3 +68,8 @@ export function gitHubFreshnessBindingSQL(fact: SQLWrapper, sourceKey: SQLWrappe
       AND ${fact} #>> '{github,status,data,repository}' = ${fact} #>> '{data,repository}')
   ), false)`
 }
+
+/** Safely retain indexed UUID lookups even for malformed legacy canonical metadata. */
+export function gitHubFeedbackRevisionIdSQL(fact: SQLWrapper) {
+  return sql`case when ${fact} #>> '{github,revisionId}' ~ ${UUID} then (${fact} #>> '{github,revisionId}')::uuid end`
+}

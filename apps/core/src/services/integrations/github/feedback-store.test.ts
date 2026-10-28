@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import { eq, inArray } from 'drizzle-orm'
 import {
   db,
@@ -481,3 +481,54 @@ test('replaying the same captured poll source after a newer version retains its 
     await h.close()
   }
 })
+
+for (const clocks of ['equal', 'both missing', 'old missing', 'new missing'] as const)
+  test(`OFF ${clocks} clocks record sequence freshness without a current-text provider witness`, async () => {
+    const provider = await import('./feedback-provider')
+    const current = spyOn(provider, 'readCurrentGitHubFeedback').mockRejectedValue(
+      new GitHubApiUnavailableError('http_503')
+    )
+    const trust = await import('./feedback-trust')
+    const authorTrust = spyOn(trust, 'resolveGitHubAuthorTrust')
+    const h = await fixture()
+    try {
+      await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadIds[0]!))
+      const oldInput = event('OLD_RAW', time)
+      const newInput = event('NEW_RAW', time)
+      if (clocks === 'both missing' || clocks === 'old missing')
+        delete (oldInput.payload.comment as Record<string, unknown>).updated_at
+      if (clocks === 'both missing' || clocks === 'new missing')
+        delete (newInput.payload.comment as Record<string, unknown>).updated_at
+      const ids = [await h.source(oldInput), await h.source(newInput)]
+      const old = await store.captureGitHubFeedback(ids[0]!, {
+        unfiltered: 'content',
+        authorizeSource: async () => true,
+      })
+      const fresh = await store.captureGitHubFeedback(ids[1]!, {
+        unfiltered: 'content',
+        authorizeSource: async () => true,
+      })
+      expect(fresh.revision.sequence).toBeGreaterThan(old.revision.sequence)
+      expect(fresh.revision.decision).toBe('historical')
+      expect(fresh.revision.releaseState).toBe('retained')
+      const [object] = await db
+        .select()
+        .from(githubFeedbackObjects)
+        .where(eq(githubFeedbackObjects.id, fresh.revision.objectId))
+      expect(object!.currentRevisionId).toBe(fresh.revision.id)
+      const [prior] = await db
+        .select()
+        .from(githubFeedbackRevisions)
+        .where(eq(githubFeedbackRevisions.id, old.revision.id))
+      expect(prior!.releaseState).toBe('obsolete')
+      const { isUnfilteredGitHubEvent } = await import('./author-filter')
+      const [source] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, ids[1]!))
+      expect(await isUnfilteredGitHubEvent(db, source!)).toBe(true)
+      expect(current).not.toHaveBeenCalled()
+      expect(authorTrust).not.toHaveBeenCalled()
+    } finally {
+      authorTrust.mockRestore()
+      current.mockRestore()
+      await h.close()
+    }
+  })

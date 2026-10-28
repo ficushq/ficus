@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { gitHubFreshnessBindingSQL } from './feedback-freshness-binding'
+import { gitHubInboxEventFreshSQL } from './feedback-inbox-freshness'
 import { inbox } from '../../../db'
 import { eventAuthoritySquadId, inboxIntegrationEventId, inboxRecipientAgentId } from './feedback-pass-read'
 
@@ -33,7 +33,7 @@ export function withheldGitHubInboxCondition() {
     WHERE fenced_event.id = ${inboxIntegrationEventId()}
       AND fenced_event.integration = 'github'
       AND fenced_event.source_key NOT LIKE 'github-status:%'
-      AND (NOT ${gitHubFreshnessBindingSQL(sql`fenced_event.fact`, sql`fenced_event.source_key`)} OR COALESCE(
+      AND (NOT ${gitHubInboxEventFreshSQL(sql`fenced_event.id`, sql`fenced_event.fact`, sql`fenced_event.source_key`, eventAuthoritySquadId('fenced_event'))} OR COALESCE(
         (SELECT fenced_squad.github_author_filter FROM squads fenced_squad
           WHERE fenced_squad.id = ${eventAuthoritySquadId('fenced_event')}),
         true

@@ -157,6 +157,7 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
   const hashes = new Set([content.contentHash, ...(withParent ? [withParent.contentHash] : [])])
   let currentHash: string | null = null
   if (
+    !unfiltered &&
     beforeRead &&
     !known &&
     !hashes.has(knownHead?.contentHash ?? '') &&

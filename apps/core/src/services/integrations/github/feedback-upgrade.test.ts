@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { eq, inArray } from 'drizzle-orm'
+import { InboxMessage } from '../../../entities/InboxMessage'
+import { githubOutputAdapter } from '../outputs/github'
+import { captureGitHubFeedback, recordCanonicalGitHubFeedback } from './feedback-store'
 import { Agent } from '../../../entities/Agent'
 import { app } from '../../../index'
 import {
@@ -11,6 +14,7 @@ import {
   integrationAuditEvents,
   integrationConnections,
   integrationOutputEvents,
+  githubFeedbackRevisions,
   messages,
   roleAssignments,
   roles,
@@ -291,4 +295,190 @@ test('a matching client ID on an unrelated accepted send cannot authorize unboun
     ).success
   ).toBe(true)
   expect(await (await listAs(tokenOff, agentOff, '?all=true')).text()).not.toContain(legacy.message.id)
+})
+
+let nativeId = 1000
+function readFixture() {
+  const id = ++nativeId
+  const first = '2026-10-02T10:00:00Z'
+  const next = '2026-10-02T10:01:00Z'
+  const input = (body: string, updatedAt = first, action = 'edited') => ({
+    type: 'issues',
+    githubObservation: { kind: 'webhook' as const, deliveryId: crypto.randomUUID() },
+    payload: {
+      action,
+      repository: { id: 10, full_name: 'acme/project' },
+      sender: { id: 2, login: 'outside', type: 'User' },
+      issue: {
+        id,
+        number: 9,
+        title: `Read fixture ${id}`,
+        body,
+        user: { id: 2, login: 'outside', type: 'User' },
+        created_at: first,
+        updated_at: updatedAt,
+      },
+      assignee: { login: 'ficus-bot' },
+    },
+  })
+  const source = async (
+    body: string,
+    options: { newer?: boolean; filtered?: boolean; action?: boolean; at?: string } = {}
+  ) => {
+    const connection = connections.find((item) => item.squadId === squadOff)!
+    const [fact] = githubOutputAdapter.normalize(
+      input(body, options.at ?? (options.newer ? next : first), options.action ? 'assigned' : 'edited')
+    )
+    const [event] = await db
+      .insert(integrationOutputEvents)
+      .values({
+        integration: 'github',
+        sourceKey: crypto.randomUUID(),
+        eventKey: fact!.eventKey,
+        authority: {
+          kind: 'connection',
+          connectionId: connection.id,
+          connectionRevision: connection.revision,
+          squadId: squadOff,
+        },
+        fact: fact!,
+      })
+      .returning()
+    eventIds.push(event!.id)
+    const captured = await captureGitHubFeedback(event!.id, {
+      authorizeSource: async () => true,
+      ...(options.filtered ? { decideParent: async () => true } : { unfiltered: 'content' as const }),
+    })
+    if (!options.filtered && fact!.github?.rawParent)
+      await captureGitHubFeedback(event!.id, { authorizeSource: async () => true, unfiltered: 'parent' })
+    return { event: event!, ...captured }
+  }
+  const notice = async (event: typeof integrationOutputEvents.$inferSelect) =>
+    (
+      await db
+        .insert(inbox)
+        .values({
+          senderType: 'system',
+          recipientType: 'agent',
+          recipientId: agentOff,
+          subject: event.fact.subject,
+          // A queued snapshot may predate compact notification formatting; retain its actual prose.
+          content: event.fact.body,
+          metadata: { source: 'integration-notification', integrationEventId: event.id },
+        })
+        .returning()
+    )[0]!
+  return { id, source, notice }
+}
+async function assertReadVisibility(notice: typeof inbox.$inferSelect, visible: boolean) {
+  const marker = notice.content.match(/(?:OLD_INBOX_BANNER|PARENT_OLD)_\d+/)?.[0]
+  expect(marker).toBeDefined()
+  const entity = await InboxMessage.listForRecipient('agent', agentOff, { includeRead: true })
+  expect(entity.some((item) => item.id === notice.id)).toBe(visible)
+  for (const query of [
+    '?all=true',
+    '?limit=50&readState=all',
+    `?limit=50&readState=all&search=${encodeURIComponent(marker!)}`,
+  ]) {
+    const response = await listAs(tokenOff, agentOff, query)
+    expect(response.status).toBe(200)
+    const text = await response.text()
+    expect(text.includes(notice.id)).toBe(visible)
+    if (query.includes('search=')) expect((JSON.parse(text) as { totalCount: number }).totalCount).toBe(visible ? 1 : 0)
+  }
+  expect((await app.request(`/api/inbox/message/${notice.id}`, { headers: authHeaders(tokenOff) })).status).toBe(
+    visible ? 200 : 403
+  )
+}
+const unreadCount = async () =>
+  (
+    (await (await app.request(`/api/inbox/agent/${agentOff}/count`, { headers: authHeaders(tokenOff) })).json()) as {
+      count: number
+    }
+  ).count
+
+for (const transition of [false, true])
+  test(`stale bound raw inbox reads are fenced across all APIs${transition ? ' after ON/OFF transitions' : ''}`, async () => {
+    await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, squadOff))
+    const h = readFixture()
+    const baseline = await unreadCount()
+    const a = await h.source(`OLD_INBOX_BANNER_${h.id}`)
+    const notice = await h.notice(a.event)
+    expect(await unreadCount()).toBe(baseline + 1)
+    await assertReadVisibility(notice, true)
+    if (transition) await db.update(squads).set({ githubAuthorFilter: true }).where(eq(squads.id, squadOff))
+    await h.source(`NEW_INBOX_TEXT_${h.id}`, { newer: true, filtered: transition })
+    await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, squadOff))
+    await assertReadVisibility(notice, false)
+    expect(await unreadCount()).toBe(baseline)
+    const [unchanged] = await db.select().from(inbox).where(eq(inbox.id, notice.id))
+    expect(unchanged).toEqual(notice)
+    await db.update(inbox).set({ deliveredAt: new Date() }).where(eq(inbox.id, notice.id))
+    await assertReadVisibility(notice, true) // Accepted history, not a new delivery.
+  })
+
+for (const canonical of [false, true])
+  test(`${canonical ? 'approved canonical' : 'raw OFF'} queued quotation disappears from every read when its parent changes`, async () => {
+    await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, squadOff))
+    const h = readFixture()
+    await h.source(`PARENT_OLD_${h.id}`)
+    if (canonical) await db.update(squads).set({ githubAuthorFilter: true }).where(eq(squads.id, squadOff))
+    const action = await h.source(`PARENT_OLD_${h.id}`, { action: true, filtered: canonical })
+    let event = action.event
+    if (canonical) {
+      expect(action.revision.envelope!.data.parentContent).toBeDefined()
+      await db
+        .update(githubFeedbackRevisions)
+        .set({ decision: 'allow_once', decidedByUserId: human.id, decidedAt: new Date(), releaseState: 'ready' })
+        .where(eq(githubFeedbackRevisions.id, action.revision.id))
+      event = await recordCanonicalGitHubFeedback(action.revision.id, action.event.id, async () => true)
+      eventIds.push(event.id)
+    }
+    const notice = await h.notice(event)
+    await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, squadOff))
+    await assertReadVisibility(notice, true)
+    await h.source(`PARENT_NEW_${h.id}`, { newer: true })
+    await assertReadVisibility(notice, false)
+    expect((await db.select().from(inbox).where(eq(inbox.id, notice.id)))[0]).toEqual(notice)
+  })
+
+for (const canonical of [false, true])
+  test(`${canonical ? 'canonical' : 'raw'} undelivered inbox cannot reuse another delivery's settled old revision`, async () => {
+    await db.update(squads).set({ githubAuthorFilter: canonical }).where(eq(squads.id, squadOff))
+    const h = readFixture()
+    const old = await h.source(`OLD_INBOX_BANNER_${h.id}`, { filtered: canonical })
+    let event = old.event
+    if (canonical) {
+      await db
+        .update(githubFeedbackRevisions)
+        .set({ decision: 'allow_once', decidedByUserId: human.id, decidedAt: new Date(), releaseState: 'ready' })
+        .where(eq(githubFeedbackRevisions.id, old.revision.id))
+      event = await recordCanonicalGitHubFeedback(old.revision.id, old.event.id, async () => true)
+      eventIds.push(event.id)
+    }
+    await db
+      .update(githubFeedbackRevisions)
+      .set({ releaseState: 'delivered' })
+      .where(eq(githubFeedbackRevisions.id, old.revision.id))
+    const notice = await h.notice(event)
+    await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, squadOff))
+    await assertReadVisibility(notice, true)
+    await h.source(`NEW_INBOX_TEXT_${h.id}`, { newer: true })
+    expect(
+      (await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.id, old.revision.id)))[0]!
+        .releaseState
+    ).toBe('delivered')
+    await assertReadVisibility(notice, false)
+  })
+
+test('inbox currentness honors identical-text watermark over a delayed different-text revision', async () => {
+  await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, squadOff))
+  const h = readFixture()
+  const old = await h.source(`OLD_INBOX_BANNER_${h.id}`)
+  const notice = await h.notice(old.event)
+  const noOp = await h.source(`OLD_INBOX_BANNER_${h.id}`, { at: '2026-10-02T10:03:00Z' })
+  expect(noOp.revision.id).toBe(old.revision.id)
+  const delayed = await h.source(`NEW_INBOX_TEXT_${h.id}`, { at: '2026-10-02T10:02:00Z' })
+  expect(delayed.revision.releaseState).toBe('obsolete')
+  await assertReadVisibility(notice, true)
 })

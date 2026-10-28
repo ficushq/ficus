@@ -1,4 +1,4 @@
-import { and, eq, inArray, not, notInArray, or, sql } from 'drizzle-orm'
+import { and, eq, inArray, not, notInArray, or, sql, type SQLWrapper } from 'drizzle-orm'
 import { alias, type AnyPgColumn } from 'drizzle-orm/pg-core'
 import {
   db,
@@ -12,31 +12,52 @@ import {
 
 type ReadStore = Pick<typeof db, 'select'>
 
-/** One ordering predicate for capture and final admission, including delivered audit rows. */
-function knownNewerRevision(store: ReadStore, object: typeof githubFeedbackObjects.$inferSelect) {
+type FeedbackClock = {
+  currentRevisionId: string | null | AnyPgColumn
+  providerVersion: string | null | AnyPgColumn
+}
+type RevisionColumns = Record<'id' | 'objectId' | 'providerVersion' | 'sequence', AnyPgColumn>
+
+/** Effective clock includes identical-text observations without changing their immutable revision. */
+export function gitHubFeedbackVersionSQL(revision: RevisionColumns, object: FeedbackClock) {
+  return sql`case when ${revision.id} = ${object.currentRevisionId}
+    then coalesce(${object.providerVersion}::timestamptz, ${revision.providerVersion}::timestamptz)
+    else ${revision.providerVersion}::timestamptz end`
+}
+
+/** One ordering predicate for capture, final admission and pure inbox reads. */
+function knownNewerRevision(store: ReadStore, object: FeedbackClock, older: RevisionColumns = githubFeedbackRevisions) {
   const newer = alias(githubFeedbackRevisions, 'newer_feedback_revision')
-  // An identical-text replay keeps its immutable revision but may advance the object's clock.
-  // Use that clock for the head on BOTH sides, lest delayed intermediate text obsolete the head.
-  const version = (revision: { id: AnyPgColumn; providerVersion: AnyPgColumn }) =>
-    sql`case when ${revision.id} = ${object.currentRevisionId}
-      then coalesce(${object.providerVersion}::timestamptz, ${revision.providerVersion}::timestamptz)
-      else ${revision.providerVersion}::timestamptz end`
-  const newerVersion = version(newer)
-  const olderVersion = version(githubFeedbackRevisions)
+  const newerVersion = gitHubFeedbackVersionSQL(newer, object)
+  const olderVersion = gitHubFeedbackVersionSQL(older, object)
   const newerExists = store
     .select({ id: newer.id })
     .from(newer)
     .where(
       and(
-        eq(newer.objectId, githubFeedbackRevisions.objectId),
+        eq(newer.objectId, older.objectId),
         sql`case
       when ${newerVersion} is not null and ${olderVersion} is not null and ${newerVersion} <> ${olderVersion}
       then ${newerVersion} > ${olderVersion}
-      else ${newer.sequence} > ${githubFeedbackRevisions.sequence}
+      else ${newer.sequence} > ${older.sequence}
     end`
       )
     )
   return sql`exists (${newerExists})`
+}
+
+/** Composable local currentness: one snapshot for list/page/search/count without body materialization. */
+export function currentGitHubFeedbackRevisionSQL(revisionId: SQLWrapper, squadId: SQLWrapper) {
+  const revision = alias(githubFeedbackRevisions, 'current_feedback_revision')
+  const object = alias(githubFeedbackObjects, 'current_feedback_object')
+  const current = db
+    .select({ id: revision.id })
+    .from(revision)
+    .innerJoin(object, eq(object.id, revision.objectId))
+    .where(
+      and(eq(revision.id, revisionId), eq(revision.squadId, squadId), not(knownNewerRevision(db, object, revision)))
+    )
+  return sql`exists (${current})`
 }
 
 /** Local freshness, independent of delivery settlement. Call under the authority lock for effects. */

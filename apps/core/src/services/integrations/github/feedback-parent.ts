@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { GitHubFeedbackContent, IntegrationOutputFact } from '@ficus/shared'
-import { and, desc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, or, sql, type SQLWrapper } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import {
   db,
   chatSendReceipts,
@@ -14,17 +15,21 @@ import {
   type DbTx,
 } from '../../../db'
 import { githubActionReviewed, hasGitHubParentText, withoutGitHubParentText } from './feedback-envelope'
-import { isCurrentGitHubFeedbackRevision } from './feedback-obsolescence'
+import {
+  currentGitHubFeedbackRevisionSQL,
+  gitHubFeedbackVersionSQL,
+  isCurrentGitHubFeedbackRevision,
+} from './feedback-obsolescence'
 import { isTrustedGitHubFeedbackContent, resolveGitHubAuthorTrust } from './feedback-trust'
 
 type Revision = typeof githubFeedbackRevisions.$inferSelect
 
 const sha256Hex = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex')
 /** Hash of stored reviewed text, computed in SQL so bodies are never materialized for this check. */
-const storedTextHash = (field: 'body' | 'title') =>
+const storedTextHash = (field: 'body' | 'title', envelope: SQLWrapper = githubFeedbackRevisions.envelope) =>
   sql<
     string | null
-  >`case when ${githubFeedbackRevisions.envelope} is null then null else encode(sha256(convert_to(coalesce(${githubFeedbackRevisions.envelope} #>> ${`{data,content,${field}}`}, ''), 'UTF8')), 'hex') end`
+  >`case when ${envelope} is null then null else encode(sha256(convert_to(coalesce(${envelope} #>> ${`{data,content,${field}}`}, ''), 'UTF8')), 'hex') end`
 
 /**
  * Whether an action may carry its parent issue or PR's CURRENT title and description at capture.
@@ -240,69 +245,74 @@ export async function supersedeGitHubParentText(tx: DbTx, revision: Revision): P
  * human approvals and filter OFF. New envelopes bind provider-native identity/clock into the hash;
  * legacy unbound quotations fail closed. Known different text at an equal/unknown/later clock
  * invalidates the quote, including ambiguous captures and an identical-text head watermark.
+ * This predicate is shared by final effects and unaccepted inbox reads; no trust/provider I/O.
  */
+export function gitHubQuotedParentFreshSQL(squadId: SQLWrapper, envelope: SQLWrapper) {
+  const parent = sql`(${envelope} #> '{data,parentContent}')`
+  const object = alias(githubFeedbackObjects, 'quoted_parent_object')
+  const revision = alias(githubFeedbackRevisions, 'quoted_parent_revision')
+  const identity = and(
+    eq(object.squadId, squadId),
+    sql`${object.repositoryId} = ${envelope} #>> '{data,repositoryId}'`,
+    sql`${object.objectKind} = ${parent}->>'objectKind'`,
+    sql`${object.nativeId} = ${parent}->>'nativeId'`
+  )
+  const hash = (field: 'body' | 'title') => sql`encode(sha256(convert_to(${parent}->>${field}, 'UTF8')), 'hex')`
+  const matches = db
+    .select({ id: revision.id })
+    .from(object)
+    .innerJoin(revision, eq(revision.objectId, object.id))
+    .where(
+      and(
+        identity,
+        sql`${storedTextHash('body', revision.envelope)} = ${hash('body')}`,
+        sql`${storedTextHash('title', revision.envelope)} = ${hash('title')}`
+      )
+    )
+    .orderBy(desc(revision.sequence))
+    .limit(1)
+  // Only normalized finite provider clocks can authorize the timestamp fallback. A malformed
+  // legacy clock is unknown, not a throwing cast or an inferred current time (e.g. "now").
+  const iso = String.raw`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$`
+  const clock = sql`case when ${parent}->>'providerVersion' ~ ${iso}
+    AND pg_input_is_valid(${parent}->>'providerVersion', 'timestamp with time zone')
+    then (${parent}->>'providerVersion')::timestamptz end`
+  const currentClock = gitHubFeedbackVersionSQL(revision, object)
+  const different = db
+    .select({ id: revision.id })
+    .from(object)
+    .innerJoin(revision, eq(revision.objectId, object.id))
+    .where(
+      and(
+        identity,
+        or(
+          sql`${storedTextHash('body', revision.envelope)} is distinct from ${hash('body')}`,
+          sql`${storedTextHash('title', revision.envelope)} is distinct from ${hash('title')}`
+        ),
+        sql`(${clock} is null or ${currentClock} is null or ${currentClock} >= ${clock})`
+      )
+    )
+  return sql<boolean>`(
+    NOT coalesce(${envelope} #>> '{data,projection}' = 'action' AND (${envelope}->'data') ? 'parentContent', false)
+    OR (coalesce(
+      ${parent}->>'objectKind' IN ('issue', 'pull_request')
+      AND jsonb_typeof(${parent}->'nativeId') = 'string' AND ${parent}->>'nativeId' ~ '^[1-9][0-9]*$'
+      AND jsonb_typeof(${parent}->'body') = 'string' AND jsonb_typeof(${parent}->'title') = 'string'
+      AND ${envelope} #>> '{data,repositoryId}' ~ '^[1-9][0-9]*$', false)
+      AND (${currentGitHubFeedbackRevisionSQL(sql`(${matches})`, squadId)} OR NOT exists (${different})))
+  )`
+}
+
 export async function isGitHubQuotedParentFresh(
   store: Pick<typeof db, 'select'>,
   squadId: string,
   envelope: IntegrationOutputFact | null
 ): Promise<boolean> {
   if (!envelope || !hasGitHubParentText(envelope)) return true
-  const parent = envelope.data.parentContent as Record<string, unknown> | null
-  if (
-    !parent ||
-    !['issue', 'pull_request'].includes(String(parent.objectKind)) ||
-    typeof parent.nativeId !== 'string' ||
-    !/^[1-9][0-9]*$/.test(parent.nativeId) ||
-    typeof parent.body !== 'string' ||
-    typeof parent.title !== 'string' ||
-    !envelope.data.repositoryId
-  )
-    return false
-  const identity = and(
-    eq(githubFeedbackObjects.squadId, squadId),
-    eq(githubFeedbackObjects.repositoryId, String(envelope.data.repositoryId)),
-    eq(githubFeedbackObjects.objectKind, String(parent.objectKind)),
-    eq(githubFeedbackObjects.nativeId, parent.nativeId)
-  )
-  // Equal/missing provider clocks use revision sequence too: older different text is not a veto
-  // when a known-current revision proves this exact quote (including a same-text watermark).
-  const [matching] = await store
-    .select({ id: githubFeedbackRevisions.id })
-    .from(githubFeedbackObjects)
-    .innerJoin(githubFeedbackRevisions, eq(githubFeedbackRevisions.objectId, githubFeedbackObjects.id))
-    .where(
-      and(
-        identity,
-        sql`${storedTextHash('body')} = ${sha256Hex(parent.body)}`,
-        sql`${storedTextHash('title')} = ${sha256Hex(parent.title)}`
-      )
-    )
-    .orderBy(desc(githubFeedbackRevisions.sequence))
-    .limit(1)
-  if (matching && (await isCurrentGitHubFeedbackRevision(store, matching.id))) return true
-  const clock =
-    typeof parent.providerVersion === 'string' && Number.isFinite(Date.parse(parent.providerVersion))
-      ? parent.providerVersion
-      : null
-  const currentClock = sql`case when ${githubFeedbackRevisions.id} = ${githubFeedbackObjects.currentRevisionId}
-    then coalesce(${githubFeedbackObjects.providerVersion}::timestamptz, ${githubFeedbackRevisions.providerVersion}::timestamptz)
-    else ${githubFeedbackRevisions.providerVersion}::timestamptz end`
-  const [different] = await store
-    .select({ id: githubFeedbackRevisions.id })
-    .from(githubFeedbackObjects)
-    .innerJoin(githubFeedbackRevisions, eq(githubFeedbackRevisions.objectId, githubFeedbackObjects.id))
-    .where(
-      and(
-        identity,
-        or(
-          sql`${storedTextHash('body')} is distinct from ${sha256Hex(parent.body)}`,
-          sql`${storedTextHash('title')} is distinct from ${sha256Hex(parent.title)}`
-        ),
-        clock ? sql`(${currentClock} is null or ${currentClock} >= ${clock}::timestamptz)` : sql`true`
-      )
-    )
-    .limit(1)
-  return !different
+  const [result] = await store
+    .select({ fresh: gitHubQuotedParentFreshSQL(sql`${squadId}::uuid`, sql`${JSON.stringify(envelope)}::jsonb`) })
+    .from(sql`(values (1)) as quoted_parent_read(dummy)`)
+  return result?.fresh === true
 }
 
 /** Stale quotation settlement; never transfers a human approval to a different reviewed hash. */

@@ -404,6 +404,16 @@ fallback applies. Partial raw bookkeeping remains eligible for unmatched recover
 A mode change never turns historical OFF bookkeeping into canonical approval.
 Both unfinished raw and canonical flow deliveries become `superseded` when their
 tracked version is older; accepted effects and source facts are not rewritten.
+Raw OFF capture never invokes the filtered current-text provider witness, including
+when provider clocks are equal or absent; a provider outage cannot prevent the
+local sequence observation and supersession.
+
+Unaccepted inbox list, page, search, count, single-message and attachment reads
+apply the same local freshness fence, not merely a native-binding shape check.
+Every raw own/parent observation must still be current; canonical revisions and
+their quoted parent text are checked too, even after ON/OFF transitions. These are
+pure SQL reads without provider or author-trust I/O or mutations to inbox/audit
+snapshots. Already accepted messages and receipts remain readable history.
 
 An agent that posts to GitHub with a squad connection posts as the person who
 connected that account. If that person is trusted (linked, or added manually),

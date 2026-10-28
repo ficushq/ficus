@@ -120,7 +120,9 @@ Author filtering is on by default for new squads. Squads that existed before the
 feature start with it off, so raw routing does not apply author-trust checks until
 you turn it on. Version freshness is always enforced: once a newer version of the
 same GitHub object is known, a delayed older version is not delivered, even with
-author filtering off. Ficus keeps an audit snapshot of dropped older events.
+author filtering off. This also applies to unaccepted inbox reads and queued
+parent quotations, not just automatic delivery. Ficus keeps an audit snapshot of
+dropped older events.
 Undelivered legacy GitHub prose without native object/version provenance is also
 withheld in every mode, including off; turning filtering off no longer restores
 those old unbound messages. Their audit reason is `github_freshness_unbound`.
