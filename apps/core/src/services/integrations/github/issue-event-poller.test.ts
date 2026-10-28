@@ -336,3 +336,20 @@ test('no repository lookup occurs for baselines, empty pages, historical or unsu
     expect(calls).toBe(1)
   }
 })
+
+test.each([false, true])(
+  'poll parent clock preserves API snapshot or genuine unknown, never restated lifecycle time (%s)',
+  async (missing) => {
+    const native = item(11)
+    if (missing) delete (native.issue as Record<string, unknown>).updated_at
+    const poller = new GitHubIssueEventPoller(
+      async () => 'synthetic',
+      withRepository(async () => response([native]))
+    )
+    const result = await poller.poll(connection, { watermark: 10 })
+    const event = result.events[0]!
+    const fact = githubOutputAdapter.normalize(event)[0]!
+    expect(fact.occurredAt).toBe('2026-09-07T10:00:00.000Z')
+    expect(fact.github!.rawParent!.providerVersion).toBe(missing ? null : '2026-09-07T12:00:00.000Z')
+  }
+)

@@ -17,6 +17,13 @@ export const githubNativeId = (value: unknown): string | null =>
 const text = (value: unknown) => (typeof value === 'string' ? value : '')
 const timestamp = (value: unknown) =>
   typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null
+// A lifecycle poll's payload clock is the event occurrence, not its embedded CURRENT text.
+const retimedIssue = (event: VerifiedIngressEvent) =>
+  event.type === 'issues' &&
+  event.githubObservation?.kind === 'poll' &&
+  Object.hasOwn(event, 'githubIssueSnapshotVersion')
+const contentVersion = (event: VerifiedIngressEvent, item: Record<string, unknown>) =>
+  timestamp(retimedIssue(event) ? event.githubIssueSnapshotVersion : item.updated_at)
 const sha = (value: unknown) =>
   typeof value === 'string' && /^[0-9a-f]{40,64}$/i.test(value) ? value.toLowerCase() : undefined
 /** GitHub's opaque GraphQL node ID, bounded; it only selects what to read, never what to trust. */
@@ -332,7 +339,7 @@ function githubActionContent(
       title,
       body,
       nativeId: parentId,
-      providerVersion: timestamp(parent.updated_at),
+      providerVersion: contentVersion(event, parent),
     })
     const reviewed = githubActionReviewed(identity, withParent)
     // Too large to review: the factual message stands alone (it is never truncated into approval).
@@ -344,7 +351,7 @@ function githubActionContent(
         title,
         body,
         unchanged:
-          timestamp(parent.created_at) !== null && timestamp(parent.created_at) === timestamp(parent.updated_at),
+          timestamp(parent.created_at) !== null && timestamp(parent.created_at) === contentVersion(event, parent),
         ...(nodeId(parent.node_id) ? { nodeId: nodeId(parent.node_id) } : {}),
         ...reviewed,
         delivery: withParent,
@@ -484,7 +491,8 @@ export function normalizeGitHubFeedback(
   const unchangedCreation =
     objectKind !== 'review' &&
     timestamp(item.created_at) !== null &&
-    timestamp(item.created_at) === timestamp(item.updated_at ?? item.created_at)
+    timestamp(item.created_at) ===
+      (retimedIssue(event) ? contentVersion(event, item) : timestamp(item.updated_at ?? item.created_at))
   // Anything else (every edit, a polled review, a polled comment changed since creation) is
   // `unknown` here. Capture may then verify it from GitHub's edit history: the author and every
   // editor, never the last editor alone (`feedback-edit-history.ts`).
@@ -494,10 +502,7 @@ export function normalizeGitHubFeedback(
   // The signed sender of an edit is one more editor to verify, never proof by itself.
   const editedBy =
     payload.action === 'edited' && verifiedWebhook ? (githubContentIdentity(payload.sender) ?? undefined) : undefined
-  const providerVersion =
-    objectKind === 'review' || (event.githubObservation?.kind === 'poll' && objectKind === 'issue')
-      ? null
-      : timestamp(item.updated_at)
+  const providerVersion = objectKind === 'review' ? null : contentVersion(event, item)
   const fragment = nativeId
     ? objectKind === 'issue_comment'
       ? `#issuecomment-${nativeId}`

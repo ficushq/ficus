@@ -93,6 +93,11 @@ export class GitHubIssueEventPoller implements EventPollingCapability<GitHubIssu
       // duplicate row, since these Activity families never delete.
       const event: IssueIngress = {
         type: 'issues',
+        githubObservation: { kind: 'poll' },
+        githubIssueSnapshotVersion:
+          typeof issue.updated_at === 'string' && Number.isFinite(Date.parse(issue.updated_at))
+            ? new Date(issue.updated_at).toISOString()
+            : null,
         payload: {
           action: item.event,
           issue: {

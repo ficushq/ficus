@@ -537,3 +537,76 @@ for (const clocks of ['equal', 'both missing', 'old missing', 'new missing'] as 
       await h.close()
     }
   })
+
+test('real poll snapshot B at T7 stays current against delayed webhook A at T5, independently of lifecycle T3', async () => {
+  const { GitHubIssueEventPoller } = await import('./issue-event-poller')
+  const { isUnfilteredGitHubEvent } = await import('./author-filter')
+  const h = await fixture()
+  try {
+    await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadIds[0]!))
+    const author = { id: 2, login: 'outside', type: 'User' }
+    const snapshot = {
+      id: 100,
+      number: 3,
+      title: 'Title',
+      body: 'B',
+      user: author,
+      created_at: time,
+      updated_at: '2026-10-02T10:07:00Z',
+    }
+    const poller = new GitHubIssueEventPoller(
+      async () => 'synthetic',
+      async (url) =>
+        url.includes('/issues/events?')
+          ? Response.json([
+              {
+                id: 11,
+                event: 'assigned',
+                created_at: '2026-10-02T10:03:00Z',
+                issue: snapshot,
+                actor: author,
+                assignee: { login: 'ficus-bot' },
+              },
+            ])
+          : Response.json({ id: 10, full_name: 'acme/project' })
+    )
+    const result = await poller.poll(
+      {
+        id: 'fixture',
+        squadId: h.squadIds[0]!,
+        providerKey: 'github',
+        adapterVersion: 1,
+        configuration: { kind: 'issue-events', owner: 'acme', repo: 'project' },
+      },
+      { watermark: 10 }
+    )
+    const polled = result.events[0]!
+    const bId = await h.source(polled)
+    await store.captureGitHubFeedback(bId, { unfiltered: 'content', authorizeSource: async () => true })
+    const b = await store.captureGitHubFeedback(bId, { unfiltered: 'parent', authorizeSource: async () => true })
+    expect(b.revision.providerVersion).toBe('2026-10-02T10:07:00.000Z')
+    const aId = await h.source({
+      type: 'issues',
+      githubObservation: { kind: 'webhook' },
+      payload: {
+        action: 'edited',
+        repository: { id: 10, full_name: 'acme/project' },
+        issue: { ...snapshot, body: 'A', updated_at: '2026-10-02T10:05:00Z' },
+        sender: author,
+      },
+    })
+    const a = await store.captureGitHubFeedback(aId, { unfiltered: 'content', authorizeSource: async () => true })
+    expect(a.revision.releaseState).toBe('obsolete')
+    const [bEvent] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, bId))
+    const [aEvent] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, aId))
+    expect(bEvent!.fact.occurredAt).toBe('2026-10-02T10:03:00.000Z')
+    expect(await isUnfilteredGitHubEvent(db, bEvent!)).toBe(true)
+    expect(await isUnfilteredGitHubEvent(db, aEvent!)).toBe(false)
+    expect(
+      (await db.select().from(githubFeedbackObjects).where(eq(githubFeedbackObjects.id, b.revision.objectId)))[0]!
+        .currentRevisionId
+    ).toBe(b.revision.id)
+  } finally {
+    await h.close()
+  }
+})
