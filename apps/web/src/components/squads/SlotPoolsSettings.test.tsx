@@ -148,8 +148,7 @@ async function harness(pools: SlotPool[], respond?: (call: Call) => { status: nu
   const document = dom.window.document
   const button = (label: string) =>
     [...document.querySelectorAll('button')].find((candidate) => candidate.textContent === label) as
-      | HTMLButtonElement
-      | undefined
+      HTMLButtonElement | undefined
   const type = async (field: HTMLInputElement | HTMLTextAreaElement, value: string) => {
     await dom.act(async () => {
       fireEvent.input(field, { target: { value } })

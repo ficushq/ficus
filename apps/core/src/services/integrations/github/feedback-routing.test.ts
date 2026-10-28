@@ -359,11 +359,10 @@ test('an outage during the current-version witness defers a second version; afte
     // The resource proof reads the comment first; the current-version witness reads it again.
     const witnessFails = (answer: () => unknown) => {
       let commentReads = 0
-      h.read.mockImplementation(
-        async <T>(path: string, squadId: string, connectionId?: string): Promise<T | null> =>
-          path === '/repos/acme/project/issues/comments/30' && ++commentReads > 1
-            ? (answer() as T | null)
-            : fixtureRead<T>(path, squadId, connectionId)
+      h.read.mockImplementation(async <T>(path: string, squadId: string, connectionId?: string): Promise<T | null> =>
+        path === '/repos/acme/project/issues/comments/30' && ++commentReads > 1
+          ? (answer() as T | null)
+          : fixtureRead<T>(path, squadId, connectionId)
       )
     }
     // A second version of the known comment at the same provider clock needs that witness.

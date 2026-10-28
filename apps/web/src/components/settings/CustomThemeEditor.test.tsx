@@ -76,8 +76,7 @@ async function render({
   baseId = 'harbor',
   appearance = 'dark',
   onReady = undefined as
-    | ((value: ReturnType<typeof useTheme>, store: ReturnType<typeof useThemeSyncStore>) => void)
-    | undefined,
+    ((value: ReturnType<typeof useTheme>, store: ReturnType<typeof useThemeSyncStore>) => void) | undefined,
   idleCoalesceMs = undefined as number | undefined,
   scheduleIdleTimeout = undefined as ((callback: () => void, ms: number) => ReturnType<typeof setTimeout>) | undefined,
   cancelIdleTimeout = undefined as ((handle: ReturnType<typeof setTimeout>) => void) | undefined,

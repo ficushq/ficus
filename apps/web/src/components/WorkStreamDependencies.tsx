@@ -104,52 +104,60 @@ export function WorkStreamDependencies({
   return (
     <section aria-label="Dependencies">
       <h3 className="text-xs font-medium text-secondary">Dependencies</h3>
-      <ul className="mt-1 space-y-1.5">
-        {rows.map((row, index) => (
-          <li
-            key={row.wait?.id ?? row.id ?? index}
-            data-blocking={row.wait ? true : undefined}
-            className="min-w-0 text-sm"
-          >
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-              <DependencyLink
-                id={row.id}
-                dependency={row.id ? streams.get(row.id) : undefined}
-                onSelect={onSelectWorkStream}
-              />
-              {row.wait && (
-                <span className="text-xs font-medium text-status-attention-700 dark:text-status-attention-300">
-                  Blocking · <WaitAge wait={row.wait} />
-                </span>
+      <ul className="mt-1 space-y-3">
+        {rows.map((row, index) => {
+          const dependency = row.id ? streams.get(row.id) : undefined
+          const statusLabel = dependency ? workStreamStatusLabel(dependency) : null
+          const condition = dependencyConditionText(row.edge)
+          return (
+            <li
+              key={row.wait?.id ?? row.id ?? index}
+              data-blocking={row.wait ? true : undefined}
+              className="grid min-w-0 grid-cols-[0.75rem_minmax(0,1fr)] gap-x-1.5 gap-y-0.5 text-sm [overflow-wrap:anywhere]"
+            >
+              <DependencyLink id={row.id} dependency={dependency} onSelect={onSelectWorkStream} />
+              {(statusLabel || row.wait) && (
+                <div className="col-start-2 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs">
+                  {statusLabel && (
+                    <span className={dependency?.status === 'done' ? 'text-muted' : 'text-secondary'}>
+                      {statusLabel}
+                    </span>
+                  )}
+                  {row.wait && (
+                    <span className="font-medium text-status-attention-700 dark:text-status-attention-300">
+                      Blocking · <WaitAge wait={row.wait} />
+                    </span>
+                  )}
+                </div>
               )}
-            </div>
-            {dependencyConditionText(row.edge) && (
-              <div
-                data-condition={row.edge!.condition}
-                data-satisfied={row.edge!.satisfied}
-                className={clsx(
-                  'mt-0.5 pl-3.5 text-xs',
-                  row.edge!.holdsDelivery
-                    ? 'text-status-attention-700 dark:text-status-attention-300'
-                    : 'text-secondary'
-                )}
-              >
-                {dependencyConditionText(row.edge)}
-              </div>
-            )}
-            {row.wait?.message && (
-              <div className="mt-0.5 pl-3.5 text-xs text-secondary">
-                <MarkdownContent variant="document">{row.wait.message}</MarkdownContent>
-              </div>
-            )}
-          </li>
-        ))}
+              {condition && (
+                <div
+                  data-condition={row.edge!.condition}
+                  data-satisfied={row.edge!.satisfied}
+                  className={clsx(
+                    'col-start-2 min-w-0 text-xs',
+                    row.edge!.holdsDelivery
+                      ? 'text-status-attention-700 dark:text-status-attention-300'
+                      : 'text-secondary'
+                  )}
+                >
+                  {condition}
+                </div>
+              )}
+              {row.wait?.message && (
+                <div className="col-start-2 min-w-0 text-xs text-secondary">
+                  <MarkdownContent variant="document">{row.wait.message}</MarkdownContent>
+                </div>
+              )}
+            </li>
+          )
+        })}
       </ul>
     </section>
   )
 }
 
-/** "● number · title  In Progress": opens the dependency (in place when the caller can switch streams). */
+/** Fixed marker gutter and a wrapping title; opens in place when the caller can switch streams. */
 function DependencyLink({
   id,
   dependency,
@@ -174,18 +182,18 @@ function DependencyLink({
         onClick={() => (onSelect ? onSelect(id!) : setOpen(true))}
         disabled={!canOpen}
         className={clsx(
-          'ficus-button ficus-button-link inline-flex min-w-0 items-center gap-1.5 text-left disabled:text-secondary disabled:no-underline',
+          'ficus-button ficus-button-link col-span-2 grid min-w-0 grid-cols-[0.75rem_minmax(0,1fr)] items-start gap-x-1.5 text-left disabled:text-secondary disabled:no-underline',
           done && 'opacity-70'
         )}
       >
         {done ? (
-          <span aria-label="Done status" className="inline-flex shrink-0 text-status-success-fg">
+          <span aria-label="Done status" className="mt-1 inline-flex justify-self-center text-status-success-fg">
             <CheckIcon className="h-3 w-3" />
           </span>
         ) : (
           <span
             aria-label={statusLabel ? `${statusLabel} status` : 'Unknown status'}
-            className={clsx('h-2 w-2 shrink-0 rounded-full', treatment.markerClass)}
+            className={clsx('mt-1.5 h-2 w-2 justify-self-center rounded-full', treatment.markerClass)}
           />
         )}
         {dependency ? (
@@ -196,7 +204,6 @@ function DependencyLink({
           </span>
         )}
       </button>
-      {statusLabel && <span className={clsx('text-xs', done ? 'text-muted' : 'text-secondary')}>{statusLabel}</span>}
       {open && dependency && (
         <WorkStreamViewModal workStreamId={dependency.id} squadId={dependency.squadId} onClose={() => setOpen(false)} />
       )}

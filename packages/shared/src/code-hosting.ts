@@ -22,9 +22,7 @@ export const codeHostReferenceSchema = z.strictObject({
 export type CodeHostReference = z.infer<typeof codeHostReferenceSchema>
 
 export type CodeHostReferenceDescription =
-  | { status: 'absent' }
-  | { status: 'invalid'; issues: string[] }
-  | { status: 'valid'; reference: CodeHostReference }
+  { status: 'absent' } | { status: 'invalid'; issues: string[] } | { status: 'valid'; reference: CodeHostReference }
 
 /** Human-readable, path-qualified Zod issues; unknown keys also list the accepted keys. */
 export function formatCodeHostIssues(error: z.ZodError): string[] {

@@ -58,9 +58,7 @@ export function changeRequestHeadFromFact(integration: string, fact: Integration
 }
 
 export type StreamBranchMatch =
-  | { kind: 'none' }
-  | { kind: 'bound'; number: number }
-  | { kind: 'unbound'; reference: CodeHostReference }
+  { kind: 'none' } | { kind: 'bound'; number: number } | { kind: 'unbound'; reference: CodeHostReference }
 
 /**
  * Whether a stream's own branch identifies this pull request: same integration and repository

@@ -133,9 +133,7 @@ export async function githubMatchingEvent(store: Store, event: Event): Promise<E
  *   the event keeps its place in the unmatched queue or is excluded from it by its capture.
  */
 export type GitHubOutputPreparation =
-  | { kind: 'ready'; event: Event }
-  | { kind: 'settle'; reason: string }
-  | { kind: 'defer' }
+  { kind: 'ready'; event: Event } | { kind: 'settle'; reason: string } | { kind: 'defer' }
 
 const DEFER: GitHubOutputPreparation = { kind: 'defer' }
 

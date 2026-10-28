@@ -91,8 +91,7 @@ export function openRouterSpecForDirect(spec: string): string {
 }
 
 export type OpenRouterFallbackEntry =
-  | { source: string; provider: string; modelId: string; fallback: string }
-  | { source: string; error: string }
+  { source: string; provider: string; modelId: string; fallback: string } | { source: string; error: string }
 
 function canonicalSpec(parsed: OpenRouterDirectSpec): string {
   return `${parsed.provider}:${parsed.modelId}${parsed.thinkingLevel ? `:${parsed.thinkingLevel}` : ''}`

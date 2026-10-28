@@ -162,17 +162,15 @@ export async function listSlotHistory(
   `)
   const hasMore = rows.length > limit
   const selected = rows.slice(0, limit)
-  const items = selected.map(
-    (row): SlotHistoryItem => ({
-      kind: row.kind,
-      id: row.id,
-      ownerAgentId: row.owner_agent_id,
-      ownerShortId: row.owner_agent_id.slice(0, 8),
-      status: row.status,
-      reason: row.reason,
-      endedAt: row.ended_at === null ? null : new Date(row.ended_at),
-    })
-  )
+  const items = selected.map((row): SlotHistoryItem => ({
+    kind: row.kind,
+    id: row.id,
+    ownerAgentId: row.owner_agent_id,
+    ownerShortId: row.owner_agent_id.slice(0, 8),
+    status: row.status,
+    reason: row.reason,
+    endedAt: row.ended_at === null ? null : new Date(row.ended_at),
+  }))
   const last = selected.at(-1)
   return {
     items,

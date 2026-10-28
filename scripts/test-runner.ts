@@ -56,6 +56,8 @@ export async function runTests(options: {
   concurrency?: number
   reverse?: boolean
   cacheSchema?: boolean
+  /** Cleanup gets up to 15s (ownership probe + down); then force-stop a stuck child. */
+  stopGraceMs?: number
   /** Extra `bun test` arguments placed before the files, such as a test name pattern. */
   args?: string[]
 }) {
@@ -65,6 +67,9 @@ export async function runTests(options: {
   if (!Number.isSafeInteger(concurrency) || concurrency < 1 || (!isolated && concurrency !== 1)) {
     throw new Error('Concurrency must be a positive integer and requires isolated files')
   }
+  const stopGraceMs = options.stopGraceMs ?? 20000
+  if (!Number.isFinite(stopGraceMs) || stopGraceMs < 0 || stopGraceMs > 20000)
+    throw new Error('Stop grace must be between 0 and 20000ms')
   const files = discoverTests(cwd, roots)
   if (reverse) files.reverse()
   const batches = isolated ? files.map((file) => [file]) : [files]
@@ -73,9 +78,17 @@ export async function runTests(options: {
   let next = 0
   let failed = false
   const started = performance.now()
+  const killTimers = new Map<ReturnType<typeof Bun.spawn>, ReturnType<typeof setTimeout>>()
   const stop = () => {
     failed = true
-    for (const child of children) child.kill('SIGTERM')
+    for (const child of children) {
+      child.kill('SIGTERM')
+      if (!killTimers.has(child))
+        killTimers.set(
+          child,
+          setTimeout(() => child.kill('SIGKILL'), stopGraceMs)
+        )
+    }
   }
   process.once('SIGINT', stop)
   process.once('SIGTERM', stop)
@@ -127,7 +140,11 @@ export async function runTests(options: {
               `FAIL ${isolated ? batch[0] : `shared suite (${batch.length} files)`}: ${error instanceof Error ? error.message : String(error)}`
             )
           } finally {
-            if (child) children.delete(child)
+            if (child) {
+              children.delete(child)
+              clearTimeout(killTimers.get(child))
+              killTimers.delete(child)
+            }
             closeSync(fd)
           }
         }

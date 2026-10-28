@@ -11,8 +11,7 @@ import type { ContentBlock } from '@ficus/shared'
 export type AnyBlock = ContentBlock | Exclude<StreamingContentBlock, SystemNoticeBlock>
 
 export type BlockGroup<B extends AnyBlock = AnyBlock> =
-  | { type: 'single'; block: B; index: number }
-  | { type: 'group'; blocks: B[]; startIndex: number }
+  { type: 'single'; block: B; index: number } | { type: 'group'; blocks: B[]; startIndex: number }
 
 /** Text blocks break groups; runs of 2+ thinking/tool blocks collapse into one row. */
 export function groupBlocks<B extends AnyBlock>(blocks: B[]): BlockGroup<B>[] {

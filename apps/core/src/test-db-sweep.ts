@@ -1,25 +1,11 @@
 /**
- * Orphaned test-DB sweeper.
- *
- * Every checkout (repo root or worktree) that runs `bun test` gets its own
- * compose project named `ficus-test-<sha256(repoRoot)[0:8]>` whose postgres is
- * deliberately left running between runs for reuse speed. Nothing tears the
- * project down when a worktree is deleted, and OrbStack resurrects running
- * containers on VM boot — so orphans used to run forever (RAM via tmpfs +
- * disk via container/volumes). This module reaps them.
- *
- * Orphan detection:
- * - Labeled containers carry a `dev.ficus.test-db.repo-root` label (set via
- *   TEST_REPO_ROOT at `up` time): orphan iff that path no longer exists.
- * - Unlabeled containers can't be reversed from the hash: orphan iff
- *   the hash matches none of this repo's live worktree paths (`git worktree
- *   list` covers the main checkout and every linked worktree).
- *
- * Used by test-setup.ts (throttled, every `bun test` boot) and
- * scripts/docker-gc.ts (forced, periodic).
+ * Test DB inventory helpers and the maintenance entry point. Inventory/path
+ * absence is NOT deletion authority: only the recorded lifecycle sweep may
+ * remove a project (dead owner, same clone/host, 2h old, matching token labels).
  */
 import { createHash } from 'crypto'
 import { existsSync } from 'fs'
+import { sweepStaleTestDbs } from '@ficus/shared/testDbLifecycle'
 
 export const TEST_DB_LABEL = 'dev.ficus.test-db'
 export const TEST_DB_REPO_ROOT_LABEL = 'dev.ficus.test-db.repo-root'
@@ -66,6 +52,7 @@ export function findOrphanProjects(args: {
 }
 
 export interface SweepDeps {
+  sweep?: (root: string) => string[]
   /** Run a command, return stdout ('' on any failure). Injectable for tests. */
   exec: (cmd: string[], opts?: { timeoutMs?: number }) => string
   log?: (msg: string) => void
@@ -77,6 +64,7 @@ export function defaultExec(cmd: string[], opts?: { timeoutMs?: number }): strin
       stdout: 'pipe',
       stderr: 'ignore',
       timeout: opts?.timeoutMs ?? 15000,
+      killSignal: 'SIGKILL',
     })
     if (res.exitCode !== 0) return ''
     return res.stdout.toString()
@@ -117,30 +105,18 @@ export function listLiveWorktreePaths(exec: SweepDeps['exec'], cwd: string): str
 }
 
 /**
- * Find and tear down orphaned test-DB projects. Never throws; safe to call
- * from the test preload. Returns the projects it removed.
+ * Compatibility maintenance entry point; never deletes from inventory alone.
+ * Returns only projects whose owned teardown actually succeeded.
  */
 export function sweepOrphanTestDbs(args: {
   composeFile: string
   currentRepoRoot: string
   deps?: Partial<SweepDeps>
 }): string[] {
-  const exec = args.deps?.exec ?? defaultExec
-  const log = args.deps?.log ?? (() => {})
   try {
-    const containers = listTestDbContainers(exec)
-    if (containers.length === 0) return []
-    const orphans = findOrphanProjects({
-      containers,
-      liveWorktreePaths: listLiveWorktreePaths(exec, args.currentRepoRoot),
-      currentProject: projectNameForPath(args.currentRepoRoot),
-    })
-    for (const project of orphans) {
-      log(`Reaping orphaned test DB project ${project} (worktree gone)`)
-      exec(['docker', 'compose', '-p', project, '-f', args.composeFile, 'down', '--volumes'], { timeoutMs: 30000 })
-    }
-    return orphans
-  } catch {
+    return (args.deps?.sweep ?? sweepStaleTestDbs)(args.currentRepoRoot)
+  } catch (error) {
+    args.deps?.log?.(`Test DB sweep failed: ${String(error).slice(-2000)}`)
     return []
   }
 }

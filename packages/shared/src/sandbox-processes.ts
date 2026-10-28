@@ -31,8 +31,7 @@ export interface SandboxContainer {
 }
 
 export type SandboxContainers =
-  | { available: true; containers: SandboxContainer[] }
-  | { available: false; reason: string }
+  { available: true; containers: SandboxContainer[] } | { available: false; reason: string }
 
 export interface SandboxProcesses {
   pressure: SandboxPressure | null
