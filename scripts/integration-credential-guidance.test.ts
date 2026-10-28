@@ -89,3 +89,31 @@ test('active credential wikis have no retired instructions or per-agent feature 
     }).toEqual({ name, retired: false })
   }
 })
+
+// Cross-check setup prose against the owning implementation, not historical key names.
+test('Discord setup matches the token-only form, discovered identity and optional HTTP UI', () => {
+  const plugins = read('apps/core/src/services/integrations/channels/plugins.ts')
+  const discordChannel = plugins.slice(plugins.lastIndexOf('credentialFields:'))
+  expect([...discordChannel.matchAll(/key: '([^']+)'/g)].map((match) => match[1])).toEqual(['botToken'])
+  expect(discordChannel).toContain('/applications/@me')
+  const ui = read('apps/web/src/components/integrations/ChannelIntegrationSettings.tsx')
+  expect(ui).toContain('Slash commands work through the gateway.')
+  expect(ui).toContain('Optionally set the Interactions Endpoint URL')
+  expect(ui).toContain('Server ID')
+  const skill = read('config/skills/setup-discord/SKILL.md')
+  expect(skill).toContain('Bot token is the only credential field')
+  expect(skill).toContain('discovers the Application ID and public key')
+  expect(skill).toContain('Server ID')
+  expect(skill).toContain('HTTP delivery is optional')
+  expect(skill).not.toMatch(/DISCORD_(?:APPLICATION_ID|PUBLIC_KEY|GUILD_ID)|copy:\n/)
+})
+
+test('Telegram setup respects the UI that hides its webhook URL', () => {
+  const ui = read('apps/web/src/components/integrations/ChannelIntegrationSettings.tsx')
+  expect(ui).toContain("data.webhook && provider !== 'telegram'")
+  expect(ui).toContain('no URLs to paste')
+  const skill = read('config/skills/setup-telegram/SKILL.md')
+  expect(skill).toContain('no webhook URL to copy')
+  expect(skill).toContain('Connection status')
+  expect(skill).not.toMatch(/(?:displayed public|exact) webhook URL|panel supplies.*webhook URL/)
+})

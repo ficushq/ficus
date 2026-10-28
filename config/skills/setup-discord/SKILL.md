@@ -37,56 +37,56 @@ Never ask for tokens in chat. Never read, print, log or commit credentials, even
 volunteered. Saved credentials remain hidden; replace them in the owning card to
 rotate. Enable and validate the connection there. No channel token belongs in a
 sandbox or integration exec command; channel plugins have no command execution.
-Use the webhook URL from that panel, including any public base path; never infer
-an API hostname from `APP_URL`. Saved changes reconcile without a manual restart.
+Slash commands work through the gateway; HTTP delivery is optional. If using HTTP,
+copy the Interactions Endpoint URL from that panel, including any public base path;
+never infer an API hostname from `APP_URL`. Saved changes reconcile without a manual restart.
 
 ## Prerequisites
 
-- The webhook URL shown in the owning integration card
 - The human must perform steps in the Discord Developer Portal
 - At least one squad must exist to link the channel to
 
-Use the exact webhook URL from the integration card, not a derived hostname.
+No public webhook URL is needed for the default gateway delivery.
 
 ## Step 1: Create Discord Application
 
 **Walk the human through these steps in the [Discord Developer Portal](https://discord.com/developers/applications):**
 
 1. Click **New Application** and name it (e.g., "Ficus")
-2. Go to **General Information** and copy:
-   - **Application ID** → needed for `DISCORD_APPLICATION_ID`
-   - **Public Key** → needed for `DISCORD_PUBLIC_KEY`
+2. Continue to the Bot section. Ficus discovers the Application ID and public key
+   during connection setup; do not ask the human to copy or enter either value.
 
 ## Step 2: Create the Bot
 
 **Still in the Discord Developer Portal:**
 
 1. Go to the **Bot** section
-2. Click **Reset Token** and copy the token → needed for `DISCORD_BOT_TOKEN`
+2. Click **Reset Token** and keep the token private for the Ficus Bot token form.
 3. Under **Privileged Gateway Intents**, enable:
    - **Message Content Intent** — required for reading thread replies
 
 ## Step 3: Configure the Integration
 
-Direct the human to enter the following in **Settings → Integrations → Discord**:
+Have the human open **Settings → Integrations → Discord** and enter only the
+**Bot token**. Bot token is the only credential field. Save, validate and enable
+the connection. Ficus discovers the Application ID and public key through Discord;
+the public key stays hidden. No manual restart is required.
 
-- `DISCORD_APPLICATION_ID` — the Application ID from Step 1
-- `DISCORD_PUBLIC_KEY` — the Public Key from Step 1
-- `DISCORD_BOT_TOKEN` — the Bot Token from Step 2
-- `DISCORD_GUILD_ID` (optional) — for faster command updates during development
+After inviting the bot, the card discovers its servers. If there is more than one,
+choose **Server the bot answers in** under **Default squad**. This is a separate
+routing selector, not a credential field. The selected identity appears as
+**Server ID**; a single discovered server can be selected automatically. If no
+server is available, invite the bot first. Server-specific command registration
+follows the selected server; without one, registration is global.
 
-Have the human save, validate and enable the connection in the Discord card.
-No manual restart is required.
+## Step 4: Optional HTTP Interactions Endpoint
 
-## Step 4: Configure Interactions Endpoint
-
-**Walk the human through:**
-
-1. In the Discord Developer Portal, go to **General Information**
-2. Set **Interactions Endpoint URL** to the exact webhook URL shown in
-   **Settings → Integrations → Discord**
-3. Discord will verify the endpoint using the public key — it should succeed
-   if the secrets are configured correctly and the API is running
+HTTP delivery is optional: Ficus connects the gateway and slash commands work
+through it without a public endpoint. For HTTP delivery only, copy the
+**Interactions Endpoint URL** from **Settings → Integrations → Discord** into
+**General Information → Interactions Endpoint URL** in the Developer Portal.
+Discord verifies it with the discovered public key; no key input or token-bearing
+shell command is needed.
 
 ## Step 5: Invite Bot to Server
 
@@ -112,7 +112,7 @@ ficus discord register
 ```
 
 > **Note:** Global commands may take up to 1 hour to propagate on Discord's side.
-> If `DISCORD_GUILD_ID` is set, guild-specific commands are registered instead
+> If a server is selected in the integration card, guild-specific commands are registered instead
 > (instant updates — useful during setup and testing).
 
 Check registration status:
@@ -181,8 +181,8 @@ This can be configured via the Settings UI under the channel instance settings.
 
 | Problem                       | Solution                                                         |
 | ----------------------------- | ---------------------------------------------------------------- |
-| Interactions endpoint fails   | Verify `DISCORD_PUBLIC_KEY` matches, API is reachable            |
-| Commands not appearing        | Wait up to 1 hour for global commands, or set `DISCORD_GUILD_ID` |
-| Bot doesn't respond           | Check `DISCORD_BOT_TOKEN` is valid, bot is invited to server     |
+| Interactions endpoint fails   | For optional HTTP delivery, check connection status and endpoint reachability; do not retrieve keys            |
+| Commands not appearing        | Wait for global command propagation; inspect the separate server selection and registration status |
+| Bot doesn't respond           | Check validation/gateway status, bot invitation and server routing; replace a rejected token only in the card     |
 | "Thinking..." never goes away | Check API logs for errors in consultant execution                |
 | Thread replies not working    | Verify **Message Content Intent** is enabled in bot settings     |

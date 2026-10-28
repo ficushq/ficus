@@ -125,8 +125,8 @@ Steps:
 **Skill:** `setup-discord`
 
 1. Walk the human through creating the Discord application and bot
-2. Configure secrets (`DISCORD_APPLICATION_ID`, `DISCORD_PUBLIC_KEY`, `DISCORD_BOT_TOKEN`)
-3. Set the interactions endpoint URL
+2. Enter only the Bot token in Settings → Integrations → Discord; Ficus discovers application identity
+3. Use gateway delivery by default; HTTP interactions endpoint setup is optional
 4. Invite the bot to the server
 5. Register slash commands: `ficus discord register`
 6. Create the channel instance and link to squads
@@ -200,13 +200,11 @@ ficus channel list                      # Channel instances exist
 | GitHub integration connection       | If GitHub   | Authorize an account and assign it to the squad                                  |
 | GitHub integration webhook settings | Optional    | Direct webhook signature verification                                            |
 | Linear integration webhook settings | If Linear   | Webhook signature verification (legacy `LINEAR_WEBHOOK_SECRET` is imported once) |
-| `DISCORD_APPLICATION_ID`            | If Discord  | Discord app ID                                                                   |
-| `DISCORD_PUBLIC_KEY`                | If Discord  | Discord interaction verification                                                 |
-| `DISCORD_BOT_TOKEN`                 | If Discord  | Discord bot authentication                                                       |
+| Discord Bot token form              | If Discord  | Only credential input; application identity is discovered                                                       |
 | `SLACK_SIGNING_SECRET`              | If Slack    | Slack request verification                                                       |
 | `SLACK_BOT_TOKEN`                   | If Slack    | Slack bot authentication                                                         |
 | `TELEGRAM_BOT_TOKEN`                | If Telegram | Telegram bot authentication                                                      |
-| `TELEGRAM_WEBHOOK_SECRET`           | If Telegram | Telegram webhook verification                                                    |
+| Telegram webhook signing            | Automatic   | Generated and registered by Core, not human input                                                    |
 | `TELEGRAM_BOT_ID`                   | If Telegram | Discovered numeric Bot ID                                                            |
 | `OPENAI_API_KEY`                    | Recommended | Embeddings, voice, memory                                                        |
 | `GOOGLE_APPLICATION_CREDENTIALS`    | Optional    | Text-to-speech                                                                   |
