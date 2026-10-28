@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:te
 import { eq, inArray } from 'drizzle-orm'
 import { Agent } from '../../entities/Agent'
 import { AgentType } from '../../entities/AgentType'
-import { agentTypes, agents, messages } from '../../db/schema'
+import { agentTypes, agents, messages, chatSendReceipts } from '../../db/schema'
 import { db } from '../../db'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { handleControlSignal } from './control-signals'
@@ -33,6 +33,7 @@ describe('control signal clear-queue', () => {
     const agentRows = await db.select().from(agents).where(eq(agents.agentTypeId, testAgentTypeId))
     const agentIds = agentRows.map((row) => row.id)
     if (agentIds.length > 0) {
+      await db.delete(chatSendReceipts).where(inArray(chatSendReceipts.agentId, agentIds))
       await db.delete(messages).where(inArray(messages.agentId, agentIds))
       await db.delete(agents).where(inArray(agents.id, agentIds))
     }
@@ -112,6 +113,62 @@ describe('control signal clear-queue', () => {
     expect(clearQueue).toHaveBeenCalledTimes(1)
     expect(queueCleared).toEqual([{ agentId: agent.id, cleared: 2, deleted: 2, owned: true, ok: true }])
     expect(remainingMessages.map((message) => message.content)).toEqual(['already delivered'])
+  })
+
+  it('clears receipt-backed chat input without allowing a delayed send retry to enqueue it again', async () => {
+    const execution = await agent.queueExecution({ message: 'initial turn' })
+    const initial = (await agent.listMessages()).messages[0]!
+    await agent.confirmPendingMessage(initial.id)
+    const clientId = crypto.randomUUID()
+    const options = { metadata: { clientId }, deliveryMode: 'follow-up' as const }
+    await agent.sendMessage('cancel me', options)
+    const [receipt] = await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, agent.id))
+    expect(receipt?.messageId).toBeTruthy()
+    const owner = { generation: crypto.randomUUID(), executionId: execution.id }
+    const claimed = await agent.claimPendingInterventionForSessionDelivery(receipt!.messageId!, owner)
+    // This is the production regression: a durable acceptance receipt protects
+    // the message from the old blanket DELETE.
+    await expect(db.delete(messages).where(eq(messages.id, receipt!.messageId!)).execute()).rejects.toThrow()
+
+    const clearQueue = mock(() => ({ steering: [], followUp: ['cancel me'] }))
+    registerSession(agent.id, {
+      executionId: execution.id,
+      session: { pi: { clearQueue } },
+    } as any)
+    const acks: unknown[] = []
+    const unsubscribe = eventEmitter.on('agent.queue-cleared', (event) => acks.push(event))
+    try {
+      await handleControlSignal({ action: 'clear-queue', agentId: agent.id })
+      expect(acks).toEqual([{ agentId: agent.id, cleared: 1, deleted: 1, owned: true, ok: true }])
+      expect(await Agent.findMessage(receipt!.messageId!)).toBeNull()
+      expect(
+        await agent.confirmSessionDelivery(claimed!.metadata!.sessionDelivery!.id, owner, 'late-entry', {
+          executionId: execution.id,
+          streamGroupId: 'late-group',
+        })
+      ).toEqual([])
+      const [tombstone] = await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, agent.id))
+      expect(tombstone).toEqual({ ...receipt, messageId: null })
+      expect(await agent.sendMessage('cancel me', options)).toMatchObject({ success: true, queued: false })
+      expect((await agent.listMessages()).messages.map((message) => message.content)).toEqual(['initial turn'])
+      await expect(agent.sendMessage('different payload', options)).rejects.toThrow()
+      // Deliberately submitting the restored draft is a new send identity.
+      await agent.sendMessage('cancel me', { ...options, metadata: { clientId: crypto.randomUUID() } })
+      expect((await agent.listMessages()).messages.filter((message) => message.pending)).toHaveLength(1)
+    } finally {
+      unsubscribe()
+    }
+  })
+
+  it('clears a receipt-backed queue without a live session and retains retry protection', async () => {
+    const clientId = crypto.randomUUID()
+    const execution = await agent.queueExecution({ message: 'cancel queued turn', metadata: { clientId } })
+    expect(await agent.clearQueue()).toMatchObject({ ok: true, deleted: 1, code: 'no_active_execution' })
+    expect((await agent.listMessages()).messages).toEqual([])
+    expect((await agent.queueExecution({ message: 'cancel queued turn', metadata: { clientId } })).id).toBe(
+      execution.id
+    )
+    expect((await agent.listMessages()).messages).toEqual([])
   })
 })
 
