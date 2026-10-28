@@ -1,3 +1,4 @@
+import { coalesceVmProvision } from '../sandbox/vm/provision-flight'
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
@@ -11,8 +12,11 @@ import {
   MACHINE_STARTUP_RETRY_DELAYS_MS,
   STARTUP_RETRY_DELAYS_MS,
   startupRetryCode,
+  startupRetryDelays,
   startupRetryNotice,
 } from './startup-retry'
+import { installBoxOnMachine, boxUnixUser } from '../machines/box-manager'
+import type { Machine } from '../machines/queries'
 import { BoxPortBusyError } from '../machines/box-port-busy'
 import { streamManager } from '../streaming/buffer'
 import { MachineUnavailableError, resolvePlacement } from '../machines/placement'
@@ -265,6 +269,130 @@ describe('durable startup retry', () => {
       expect(failed.error).toContain('Address already in use')
       expect(failed.error).toContain('users:(("sshd",pid=4242')
       expect(runner).toHaveBeenCalledTimes(BOX_PORT_BUSY_RETRY_DELAYS_MS.length + 1)
+    } finally {
+      runner.mockRestore()
+    }
+  })
+
+  it('requeues an exit-73 provision through execution startup, bounded by the port-busy budget', async () => {
+    // Only the transport is fake: map the real provision result, run the real
+    // execution catch, and inspect durable queue/admission state on every retry.
+    const diagnostic = 'FICUS_BOX_LOCK_TIMEOUT box=box_test holder_pid=4242 wait_seconds=75'
+    const runner = spyOn(runners, 'createRunner').mockImplementation(async () => {
+      await installBoxOnMachine(
+        {
+          machine: { name: 'lock-test' } as Machine,
+          sandboxId: agent.id,
+          unixUser: boxUnixUser(agent.id),
+          port: 51276,
+          role: 'agent',
+          env: {},
+          authToken: 'test-token',
+        },
+        {
+          runner: { run: async () => ({ exitCode: 73, stdout: '', stderr: diagnostic }) },
+          clearBoxSyncedHashes: async () => {},
+        }
+      )
+      throw new Error('Lock timeout unexpectedly succeeded')
+    })
+    try {
+      let execution = await agent.queueExecution({ message: 'Keep the lock waiter request' })
+      const id = execution.id
+      for (const [index, delay] of BOX_PORT_BUSY_RETRY_DELAYS_MS.entries()) {
+        expect(await execution.start()).toBe(true)
+        const notices: string[] = []
+        streamManager.create(id).subscribe((event) => {
+          if (event.type === 'system_message') notices.push(event.text)
+        })
+        const [before] = await db.execute<{ now: Date }>(sql`select clock_timestamp() as now`)
+        await execution.run()
+        execution = await Execution.mustFind(id)
+        expect(execution.status).toBe('queued')
+        expect(execution.startupRetryCount).toBe(index + 1)
+        expect(execution.message).toBe('Keep the lock waiter request')
+        expect(execution.endedAt).toBeNull()
+        expect(execution.failureClass).toBeNull()
+        const [after] = await db.execute<{ now: Date }>(sql`select clock_timestamp() as now`)
+        expect(execution.startupRetryAt!.getTime()).toBeGreaterThanOrEqual(new Date(before.now).getTime() + delay)
+        expect(execution.startupRetryAt!.getTime()).toBeLessThanOrEqual(new Date(after.now).getTime() + delay)
+        expect(notices).toEqual([expect.stringContaining('provisioning lock is busy')])
+        expect(notices[0]).toContain('retry automatically')
+        expect((await Agent.mustFind(agent.id)).status).toBe('idle')
+        const [admission] = await db
+          .select()
+          .from(executionAdmissionReservations)
+          .where(eq(executionAdmissionReservations.executionId, id))
+        expect(admission.state).toBe('queued')
+        expect(await execution.start()).toBe(false)
+        await db
+          .update(executions)
+          .set({ startupRetryAt: new Date(0) })
+          .where(eq(executions.id, id))
+      }
+      expect(await execution.start()).toBe(true)
+      await execution.run()
+      const failed = await Execution.mustFind(id)
+      expect(failed.status).toBe('failed')
+      expect(failed.startupRetryCount).toBe(BOX_PORT_BUSY_RETRY_DELAYS_MS.length)
+      expect(failed.error).toContain(diagnostic)
+      expect(runner).toHaveBeenCalledTimes(BOX_PORT_BUSY_RETRY_DELAYS_MS.length + 1)
+    } finally {
+      runner.mockRestore()
+    }
+  })
+
+  it.each([
+    ['BoxPortBusyError', 'box_port_busy'],
+    ['BoxLockTimeoutError', 'box_lock_timeout'],
+    ['BoxStopUnverifiedError', 'box_stop_unverified'],
+    ['MachineUnavailableError', 'machine_unreachable'],
+    ['MachineNotReadyError', 'machine_bootstrapping'],
+    ['MachineNotReadyError', 'machine_registered'],
+    ['BoxBashBusyError', 'box_bash_busy'],
+    ['SandboxReadinessPendingError', 'sandbox_readiness_pending'],
+  ])('requeues a shared %s failure with owner parity through the bounded execution budget', async (name, code) => {
+    const sandboxId = `shared-startup-${crypto.randomUUID()}`
+    const original = Object.assign(new Error('owner diagnostic'), {
+      name,
+      ...(code.startsWith('machine_') ? { machineStatus: code.slice(8) } : {}),
+    })
+    await expect(
+      coalesceVmProvision(
+        sandboxId,
+        async () => {
+          throw original
+        },
+        async () => ''
+      )
+    ).rejects.toBe(original)
+    const shared = await coalesceVmProvision(
+      sandboxId,
+      async () => 'unexpected provision',
+      async () => ''
+    ).catch((error) => error)
+    expect(startupRetryCode(shared)).toBe(startupRetryCode(original))
+    const runner = spyOn(runners, 'createRunner').mockRejectedValue(shared)
+    try {
+      let execution = await agent.queueExecution({ message: 'Keep follower request' })
+      for (const [index] of startupRetryDelays(code).entries()) {
+        expect(await execution.start()).toBe(true)
+        await execution.run()
+        execution = await Execution.mustFind(execution.id)
+        expect(execution.status).toBe('queued')
+        expect(execution.startupRetryCount).toBe(index + 1)
+        expect(execution.failureClass).toBeNull()
+        expect(execution.endedAt).toBeNull()
+        await db
+          .update(executions)
+          .set({ startupRetryAt: new Date(0) })
+          .where(eq(executions.id, execution.id))
+      }
+      expect(await execution.start()).toBe(true)
+      await execution.run()
+      await execution.reload()
+      expect(execution.status).toBe('failed')
+      expect(execution.startupRetryCount).toBe(startupRetryDelays(code).length)
     } finally {
       runner.mockRestore()
     }

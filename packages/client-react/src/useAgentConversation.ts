@@ -1309,10 +1309,11 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
         liveMessageCollectionGenerationsRef.current.delete(id)
         messageRequestGenerationsRef.current.invalidate(id)
       }
-    } catch {
-      // Keep local queue entries until the server confirms the clear.
+    } finally {
+      // Refresh even after a partial failure, but propagate it: callers must not
+      // restore a draft as though messages were canceled without confirmation.
+      await queryClient.invalidateQueries({ queryKey: queryKeys.agents.messages(resolvedAgentId) })
     }
-    await queryClient.invalidateQueries({ queryKey: queryKeys.agents.messages(resolvedAgentId) })
   }, [resolvedAgentId, client, queryClient])
 
   // Manual refresh: invalidate the conversation's persisted data and force a fresh SSE

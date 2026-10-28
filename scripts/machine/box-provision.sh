@@ -2191,7 +2191,10 @@ if [ "${PREPARE_NIX_CACHE}" != true ]; then
     exit 2
   fi
   if [ "$(id -u)" -ne 0 ]; then
-    exec sudo bash "${BASH_SOURCE[0]}" "${ORIGINAL_ARGS[@]}"
+    # sudo env_reset drops manual overrides. Carry only these non-secret
+    # values as argv; preserve explicit CLI precedence on the second parse.
+    exec sudo env "FICUS_HOST_ROOT=${FICUS_HOST_ROOT}" "FICUS_BOX_LOCK_WAIT_SECONDS=${BOX_LOCK_WAIT_SECONDS}" \
+      bash "${BASH_SOURCE[0]}" "${ORIGINAL_ARGS[@]}"
   fi
   acquire_box_lock || exit $?
 fi

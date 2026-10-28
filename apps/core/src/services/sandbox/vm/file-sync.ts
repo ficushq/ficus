@@ -770,12 +770,44 @@ async function removeManagedFiles(
   await runBash(client, `rm -f -- ${paths.join(' ')}`, 'asset_prune', undefined, fence)
 }
 
+const ASSET_SYNC_REQUIRED = Symbol('asset sync required')
+
+/** Reuse the exact content/revocation plan without opening Bash, writing files,
+ * or stamping rows. A match makes health-only reconnect safe across processes. */
+export async function boxFilesCurrent(
+  sandboxId: string,
+  opts: SandboxOptions,
+  deps: SyncBoxFilesDeps = {}
+): Promise<boolean> {
+  try {
+    await syncBoxFilesImpl(null, sandboxId, opts, deps, true)
+    return true
+  } catch (error) {
+    if (error === ASSET_SYNC_REQUIRED) return false
+    throw error
+  }
+}
+
 export async function syncBoxFiles(
   client: SandboxClient,
   sandboxId: string,
   opts: SandboxOptions,
   deps: SyncBoxFilesDeps = {}
 ): Promise<void> {
+  await syncBoxFilesImpl(client, sandboxId, opts, deps)
+}
+
+async function syncBoxFilesImpl(
+  client: SandboxClient | null,
+  sandboxId: string,
+  opts: SandboxOptions,
+  deps: SyncBoxFilesDeps = {},
+  checkOnly = false
+): Promise<void> {
+  const requireClient = () => {
+    if (!client) throw new Error('Read-only asset check attempted a remote operation')
+    return client
+  }
   const home = (deps.boxHome ?? defaultBoxHome)(sandboxId)
   const role = resolveRole(sandboxId, opts)
   const squadId = opts.squadId ?? getSquadIdFromSandbox(sandboxId) ?? undefined
@@ -785,9 +817,15 @@ export async function syncBoxFiles(
 
   const clearLegacyTree = async (name: string, root: string): Promise<void> => {
     if (name === 'squad-ssh') {
-      await runBash(client, legacySquadSshCleanupCommand(root), 'asset_prune', undefined, deps.bashFence)
+      await runBash(requireClient(), legacySquadSshCleanupCommand(root), 'asset_prune', undefined, deps.bashFence)
     } else if (name === 'skills' || name === 'memory') {
-      await runBash(client, `find ${shellQuote(root)} -mindepth 1 -delete`, 'asset_prune', undefined, deps.bashFence)
+      await runBash(
+        requireClient(),
+        `find ${shellQuote(root)} -mindepth 1 -delete`,
+        'asset_prune',
+        undefined,
+        deps.bashFence
+      )
     }
   }
 
@@ -814,13 +852,14 @@ export async function syncBoxFiles(
     if (previous?.hash === hash) {
       // Upgrade legacy hash-only stamps while the source is still present, so
       // a later revoke has an exact bounded deletion manifest.
-      if (box && !previous.files) await stamp(box.machineId, sandboxId, name, hash, currentFiles)
+      if (box && !previous.files && !checkOnly) await stamp(box.machineId, sandboxId, name, hash, currentFiles)
       return
     }
     if (hashFiles.length === 0 && !previous) return
     // Validate source paths before any write/delete so a malformed materializer
     // cannot escape the declared managed destination.
     currentFiles.forEach((relPath) => validatedManagedPath(destRoot, relPath))
+    if (checkOnly) throw ASSET_SYNC_REQUIRED
     const mutate = async () => {
       if (previous && !previous.files && clearLegacy) await clearLegacy()
       if (files.length || pushWhenEmpty) await push()
@@ -829,7 +868,7 @@ export async function syncBoxFiles(
         .map((path) => canonicalManagedPath(name, path))
         .filter((path) => !current.has(path))
       await removeManagedFiles(
-        client,
+        requireClient(),
         destRoot,
         name === 'squad-ssh' ? removableSshPaths(stale) : stale,
         deps.bashFence
@@ -840,7 +879,7 @@ export async function syncBoxFiles(
   }
 
   // Verify canonical work roots before any managed asset changes.
-  await prepareBoxWorkspaceDotDirs(client, home, deps.bashFence)
+  if (!checkOnly) await prepareBoxWorkspaceDotDirs(requireClient(), home, deps.bashFence)
 
   // Resolve the applicable assets for this box (manifest order, scope-filtered).
   // `squadId` matches the manifest's own derivation, so passing opts.squadId
@@ -874,7 +913,7 @@ export async function syncBoxFiles(
         root,
         material.files,
         async () => {
-          const conflicts = await writeSshFiles(client, home, material, deps.bashFence)
+          const conflicts = await writeSshFiles(requireClient(), home, material, deps.bashFence)
           await recordConflicts(sandboxId, squadId!, conflicts)
         },
         [],
@@ -900,7 +939,7 @@ export async function syncBoxFiles(
       asset.name,
       baseDir,
       files,
-      () => pushAssetFiles(client, baseDir, files, deps.bashFence),
+      () => pushAssetFiles(requireClient(), baseDir, files, deps.bashFence),
       isSingleFile ? [asset.dest.relPath] : [],
       !isSingleFile ? () => clearLegacyTree(asset.name, baseDir) : undefined
     )
@@ -919,7 +958,7 @@ export async function syncBoxFiles(
         // known_hosts block too; user entries stay.
         isSsh
           ? async () => {
-              await mergeKnownHostsOnBox(client, root, null, deps.bashFence)
+              await mergeKnownHostsOnBox(requireClient(), root, null, deps.bashFence)
               await recordConflicts(sandboxId, null, [])
             }
           : async () => {},
