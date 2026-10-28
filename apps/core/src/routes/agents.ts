@@ -1091,6 +1091,7 @@ export const agentsRouter = new Hono()
             devboxReady: true,
             controllable,
             runtime: isHostRuntime() ? ('host' as const) : ('docker' as const),
+            logStreaming: typeof manager.streamLogs === 'function',
           },
           toolchain
         )
@@ -1120,6 +1121,7 @@ export const agentsRouter = new Hono()
             : {}),
           controllable,
           runtime: isVmRuntime() ? ('vm' as const) : ('k8s' as const),
+          logStreaming: typeof manager.streamLogs === 'function',
           ...(provisioning ? { provisioning } : {}),
         },
         toolchain
