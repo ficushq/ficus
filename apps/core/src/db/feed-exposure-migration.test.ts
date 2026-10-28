@@ -45,3 +45,21 @@ test('migration freezes the legacy boundary once and keeps exact, account-scoped
     if (error !== rollback) throw error
   }
 })
+
+test('generated exposure snapshot follows and preserves the canonical provisioning schema', async () => {
+  const parent = await Bun.file(new URL('../../drizzle/meta/0236_snapshot.json', import.meta.url)).json()
+  const successor = await Bun.file(new URL('../../drizzle/meta/0237_snapshot.json', import.meta.url)).json()
+  expect(successor.prevId).toBe(parent.id)
+  const expected = structuredClone(parent)
+  expected.id = successor.id
+  expected.prevId = parent.id
+  expected.tables['public.feed_completion_views'] = successor.tables['public.feed_completion_views']
+  expected.tables['public.users'].columns.feed_updates_after = {
+    name: 'feed_updates_after',
+    type: 'timestamp with time zone',
+    primaryKey: false,
+    notNull: false,
+  }
+  expect(successor.tables['public.vm_box_provision_attempts']).toBeDefined()
+  expect(successor).toEqual(expected)
+})

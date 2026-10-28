@@ -91,3 +91,15 @@ test('listSquadActivity forwards an abort signal for canonical head reconciliati
   await listSquadActivity('squad-1', { signal: controller.signal }, apiFetchMock)
   expect(apiFetchCalls.at(-1)).toEqual(['/squads/squad-1/activity', { signal: controller.signal }])
 })
+
+test('Feed completion queries use exact unseen semantics with existing squad filters and paging', async () => {
+  const calls: string[] = []
+  await listDoneWorkStreams(
+    { feedUpdates: true, statuses: ['done'], squadIds: ['b', 'a'], cursor: 'next', limit: 20 },
+    (async (path: string) => {
+      calls.push(path)
+      return {}
+    }) as never
+  )
+  expect(calls).toEqual(['/workstreams?statuses=done&limit=20&squadIds=a%2Cb&feedUpdates=true&cursor=next'])
+})

@@ -143,6 +143,19 @@ export function AccountFeedVisit({
   useEffect(() => {
     if (retained.length && section.current && section.current.getBoundingClientRect().top < 0) setNewAbove(true)
   }, [retained])
+  useEffect(() => {
+    const heading = section.current?.querySelector('summary')
+    if (!newAbove || !heading || !window.IntersectionObserver) return
+    const observer = new window.IntersectionObserver((entries) => {
+      if (
+        document.visibilityState === 'visible' &&
+        entries.some((entry) => entry.isIntersecting && entry.boundingClientRect.top >= 0)
+      )
+        setNewAbove(false)
+    })
+    observer.observe(heading)
+    return () => observer.disconnect()
+  }, [newAbove])
   const streams = retained.filter((stream) => squadIds.length === 0 || squadIds.includes(stream.squadId))
   // These remain useful pointers into domain-unread Assistant conversations. Feed exposure does
   // not consume their unread state; they are not labeled as new Feed completions.
@@ -221,7 +234,11 @@ export function AccountFeedVisit({
                             <>
                               {' '}
                               ·{' '}
-                              <time dateTime={latest.createdAt} title={new Date(latest.createdAt).toLocaleString()}>
+                              <time
+                                dateTime={latest.createdAt}
+                                title={new Date(latest.createdAt).toLocaleString()}
+                                aria-label={new Date(latest.createdAt).toLocaleString()}
+                              >
                                 {formatAssistantUpdateTime(latest.createdAt)}
                               </time>
                             </>
@@ -263,6 +280,7 @@ export function AccountFeedVisit({
                               <time
                                 dateTime={new Date(stream.completedAt).toISOString()}
                                 title={new Date(stream.completedAt).toLocaleString()}
+                                aria-label={new Date(stream.completedAt).toLocaleString()}
                               >
                                 {formatAssistantUpdateTime(new Date(stream.completedAt).toISOString())}
                               </time>

@@ -195,4 +195,4 @@ one visit, loaded rows are retained and deduplicated by completion revision. Exi
 work-stream websocket invalidation, foreground/reconnect refetch, and pull-to-refresh
 retrieve live completions; events themselves never acknowledge anything. Timestamps
 use the existing compact Assistant formatting, with full local date/time in the title
-and a machine-readable `time` value.
+and accessible label, plus a machine-readable `time` value.

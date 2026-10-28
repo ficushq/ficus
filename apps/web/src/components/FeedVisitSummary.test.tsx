@@ -275,3 +275,126 @@ test('overlapping refetched pages do not create duplicate completion rows', asyn
   await view.render()
   expect(dom!.window.document.querySelectorAll('[data-completion-id="overlap"]')).toHaveLength(1)
 })
+
+test('the upward affordance clears when the Updates heading is exposed without clicking it', async () => {
+  const view = await setup()
+  await view.render()
+  const section = dom!.window.document.querySelector('details')!
+  section.getBoundingClientRect = () => ({ top: -200, bottom: -100 }) as DOMRect
+  view.setRows([stream('arrived-above')])
+  await view.render()
+  expect(text()).toContain('New updates ↑')
+  const heading = section.querySelector('summary')!
+  await dom!.act(async () => {
+    for (const observer of [...observers])
+      if (observer.targets.has(heading))
+        observer.callback(
+          [
+            {
+              target: heading,
+              isIntersecting: true,
+              intersectionRatio: 1,
+              boundingClientRect: { top: 0 },
+            } as IntersectionObserverEntry,
+          ],
+          {} as IntersectionObserver
+        )
+  })
+  expect(text()).not.toContain('New updates ↑')
+  expect(view.saved).toEqual([]) // heading exposure is not row exposure
+})
+
+test('compact timestamps expose exact date and time to assistive technology', async () => {
+  const view = await setup()
+  await view.render()
+  for (const time of dom!.window.document.querySelectorAll('time')) {
+    expect(time.getAttribute('aria-label')).toBe(new Date(time.dateTime).toLocaleString())
+  }
+})
+
+test('real query cache isolates remounts and accounts while concurrent visits retain their own rows', async () => {
+  const { QueryClient, QueryClientProvider, useInfiniteQuery } = await import('@tanstack/react-query')
+  await setup() // Installs the DOM/observer harness; the unused fixture root remains empty.
+  const first = dom!.createRoot()
+  const second = dom!.createRoot()
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const receipts = new Map<string, Set<string>>()
+  const rows = [stream('visible'), stream('offscreen')]
+  let reads = 0
+  const hooks = {
+    useInfiniteQuery: ((options: Parameters<typeof useInfiniteQuery>[0]) =>
+      useInfiniteQuery({
+        ...options,
+        queryFn: async () => {
+          reads++
+          const user = options.queryKey[2] as string
+          return { items: rows.filter((row) => !receipts.get(user)?.has(row.id)), hasMore: false, totalCount: 2 }
+        },
+      })) as never,
+  }
+  const emptyActivity = (() => ({ ownerId: null, activity: undefined })) as never
+  const save = (user: string) => async (id: string) => {
+    const seen = receipts.get(user) ?? new Set<string>()
+    seen.add(id)
+    receipts.set(user, seen)
+    return { seen: true as const }
+  }
+  const saveOne = save('one')
+  const saveTwo = save('two')
+  const render = async (target: typeof first, user: string, visit: number) => {
+    await dom!.act(async () => {
+      target.root.render(
+        <MemoryRouter>
+          <QueryClientProvider client={cache}>
+            <ReactQueryHooksProvider hooks={hooks}>
+              <AccountFeedVisit
+                key={`${user}:${visit}`}
+                userId={user}
+                acknowledge={user === 'one' ? saveOne : saveTwo}
+                useActivity={emptyActivity}
+              />
+            </ReactQueryHooksProvider>
+          </QueryClientProvider>
+        </MemoryRouter>
+      )
+    })
+    await dom!.act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    })
+  }
+  try {
+    await render(first, 'one', 1)
+    await render(second, 'one', 1)
+    expect(first.container.textContent).toContain('visible')
+    expect(second.container.textContent).toContain('visible')
+    const visible = first.container.querySelector('[data-completion-id="visible"]')!
+    await dom!.act(async () => {
+      for (const observer of [...observers])
+        if (observer.targets.has(visible))
+          observer.callback(
+            [{ target: visible, isIntersecting: true, intersectionRatio: 1 } as IntersectionObserverEntry],
+            {} as IntersectionObserver
+          )
+    })
+    expect(receipts.get('one')).toEqual(new Set(['visible']))
+    await dom!.act(async () => {
+      await cache.invalidateQueries({ queryKey: ['squads'] })
+    })
+    await dom!.act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    })
+    // A refetch cannot remove an already displayed completion from either current visit.
+    expect(first.container.textContent).toContain('visible')
+    expect(second.container.textContent).toContain('visible')
+    await render(first, 'one', 2)
+    expect(first.container.textContent).not.toContain('visible')
+    expect(first.container.textContent).toContain('offscreen')
+    await render(first, 'two', 1)
+    expect(first.container.textContent).toContain('visible')
+    expect(receipts.get('two')).toBeUndefined()
+    expect(reads).toBeGreaterThanOrEqual(6)
+  } finally {
+    await cache.cancelQueries()
+    cache.clear()
+  }
+})

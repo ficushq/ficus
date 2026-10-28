@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { db } from '../db'
-import { squads, workStreams } from '../db/schema'
+import { squads, users, workStreams } from '../db/schema'
 import { identityMiddleware } from '../middleware/identity'
 import { workStreamsRouter } from './work-streams'
 import { createTestAdmin, createTestUser, cleanupTestRbac, authHeaders, type TestUser } from '../test-utils'
@@ -112,4 +112,31 @@ test('out-of-order completion older than an exposed row is still new; invalid co
   expect((await request(owner, `/${delayed.id}/feed-seen`, { completedAt: '2025-12-01T00:00:00.000Z' })).status).toBe(
     200
   )
+})
+
+test('concurrent receipts are idempotent and cannot advance the frozen legacy boundary', async () => {
+  await db
+    .update(users)
+    .set({ feedUpdatesAfter: new Date(oldAt), lastFeedVisitAt: new Date('2027-01-01T00:00:00Z') })
+    .where(eq(users.id, owner.id))
+  expect((await list(owner)).items.map((row) => row.id)).toEqual([newest])
+  const responses = await Promise.all(
+    Array.from({ length: 3 }, () => request(owner, `/${newest}/feed-seen`, { completedAt: '2026-02-01T00:00:00.000Z' }))
+  )
+  expect(responses.map((response) => response.status)).toEqual([200, 200, 200])
+  expect((await list(owner)).totalCount).toBe(0)
+  const [account] = await db.select({ boundary: users.feedUpdatesAfter }).from(users).where(eq(users.id, owner.id))
+  expect(account.boundary?.toISOString()).toBe(oldAt)
+  expect((await list(other)).totalCount).toBe(3)
+})
+
+test('feed query and acknowledgement cannot accept active work or bypass authorization', async () => {
+  const [active] = await db
+    .insert(workStreams)
+    .values({ squadId, title: 'Still working', status: 'active' })
+    .returning()
+  expect((await request(owner, `/${active.id}/feed-seen`, { completedAt: at })).status).toBe(409)
+  expect((await request(owner, `?statuses=active&limit=20&feedUpdates=true&squadId=${squadId}`)).status).toBe(400)
+  expect((await request(owner, `?statuses=done&feedUpdates=true&squadId=${squadId}`)).status).toBe(400)
+  expect((await request(denied, `?statuses=done&limit=20&feedUpdates=true&squadId=${squadId}`)).status).toBe(403)
 })
