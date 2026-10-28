@@ -3,6 +3,7 @@ import { afterEach, expect, test } from 'bun:test'
 import type { WorkStream } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { ReactQueryHooksProvider } from '../reactQueryHooks'
+import { ApiError } from '../api/client'
 import { AccountFeedVisit } from './FeedVisitSummary'
 
 let dom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
@@ -37,7 +38,8 @@ async function setup() {
   const { root } = dom.createRoot()
   const saved: string[] = []
   let rows: WorkStream[] = [stream('missed')]
-  let fail = false
+  let fail: boolean | 'conflict' = false
+  let attempts = 0
   let squadIds: string[] = []
   let userId = 'one'
   let hasNextPage = false
@@ -64,6 +66,8 @@ async function setup() {
     }) as never,
   }
   const acknowledge = async (id: string) => {
+    attempts++
+    if (fail === 'conflict') throw new ApiError(409, 'Completion changed; refresh the Feed')
     if (fail) throw new Error('offline')
     saved.push(id)
     return { seen: true as const }
@@ -122,7 +126,8 @@ async function setup() {
     setRows: (value: WorkStream[]) => {
       rows = value
     },
-    setFail: (value: boolean) => {
+    attempts: () => attempts,
+    setFail: (value: boolean | 'conflict') => {
       fail = value
     },
     setSquads: (value: string[]) => {
@@ -308,7 +313,9 @@ test('compact timestamps expose exact date and time to assistive technology', as
   const view = await setup()
   await view.render()
   for (const time of dom!.window.document.querySelectorAll('time')) {
-    expect(time.getAttribute('aria-label')).toBe(new Date(time.dateTime).toLocaleString())
+    expect(time.hasAttribute('aria-label')).toBe(false)
+    expect(time.querySelector('.sr-only')?.textContent).toBe(new Date(time.dateTime).toLocaleString())
+    expect(time.querySelector('[aria-hidden="true"]')).not.toBeNull()
   }
 })
 
@@ -397,4 +404,42 @@ test('real query cache isolates remounts and accounts while concurrent visits re
     await cache.cancelQueries()
     cache.clear()
   }
+})
+
+test('a stale completion response is terminal instead of retrying the same revision forever', async () => {
+  const view = await setup()
+  view.setFail('conflict')
+  await view.render()
+  await view.expose('missed')
+  expect(text()).toContain('Completion changed; refresh the Feed')
+  expect(text()).not.toContain('Could not save seen state')
+  expect([...dom!.window.document.querySelectorAll('button')].some((button) => button.textContent === 'Retry')).toBe(
+    false
+  )
+  await view.expose('missed', false)
+  await view.expose('missed')
+  expect(view.attempts()).toBe(1)
+  expect(view.saved).toEqual([])
+})
+
+test('the upward affordance stays in the Feed scroll pane rather than overlapping fixed app controls', async () => {
+  const view = await setup()
+  await view.render()
+  dom!.window.document.querySelector('details')!.getBoundingClientRect = () => ({ top: -200 }) as DOMRect
+  view.setRows([stream('offscreen-arrival')])
+  await view.render()
+  const jump = [...dom!.window.document.querySelectorAll('button')].find(
+    (button) => button.textContent === 'New updates ↑'
+  )!
+  expect(jump.classList.contains('fixed')).toBe(false)
+  expect(jump.parentElement?.classList.contains('sticky')).toBe(true)
+  expect(jump.parentElement?.classList.contains('h-0')).toBe(true)
+})
+
+test('the count explicitly describes loaded completions while more pages remain', async () => {
+  const view = await setup()
+  view.setPaging()
+  await view.render()
+  expect(text()).toContain('1 completed shown')
+  expect(text()).toContain('Show more updates')
 })

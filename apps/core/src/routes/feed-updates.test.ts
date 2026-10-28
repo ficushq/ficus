@@ -1,8 +1,9 @@
-import { afterAll, beforeAll, expect, test } from 'bun:test'
+import { afterAll, beforeAll, expect, test, spyOn } from 'bun:test'
 import { Hono } from 'hono'
-import { eq } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../db'
-import { squads, users, workStreams } from '../db/schema'
+import { feedCompletionViews, squads, users, workStreams } from '../db/schema'
+import { WorkStream } from '../entities/WorkStream'
 import { identityMiddleware } from '../middleware/identity'
 import { workStreamsRouter } from './work-streams'
 import { createTestAdmin, createTestUser, cleanupTestRbac, authHeaders, type TestUser } from '../test-utils'
@@ -34,6 +35,11 @@ beforeAll(async () => {
   owner = await createTestAdmin({ prefix })
   other = await createTestAdmin({ prefix })
   denied = await createTestUser({ prefix })
+  // Existing accounts predate their missed completions; NULL is not an unbounded baseline.
+  await db
+    .update(users)
+    .set({ createdAt: new Date('2025-01-01T00:00:00Z') })
+    .where(inArray(users.id, [owner.id, other.id]))
   ;[{ id: squadId }] = await db.insert(squads).values({ name: prefix, purpose: 'Feed exposure tests' }).returning()
   const create = async (title: string, completedAt: string) => {
     const [row] = await db
@@ -139,4 +145,60 @@ test('feed query and acknowledgement cannot accept active work or bypass authori
   expect((await request(owner, `?statuses=active&limit=20&feedUpdates=true&squadId=${squadId}`)).status).toBe(400)
   expect((await request(owner, `?statuses=done&feedUpdates=true&squadId=${squadId}`)).status).toBe(400)
   expect((await request(denied, `?statuses=done&limit=20&feedUpdates=true&squadId=${squadId}`)).status).toBe(403)
+})
+
+test('a new account sees no historical Updates on its first visit but does see subsequent completions', async () => {
+  const newcomer = await createTestAdmin({ prefix })
+  expect((await list(newcomer)).totalCount).toBe(0)
+  const [live] = await db
+    .insert(workStreams)
+    .values({
+      squadId,
+      title: 'After account creation',
+      status: 'done',
+      metadata: { completion: { completedAt: new Date(Date.now() + 1000).toISOString() } },
+    })
+    .returning()
+  expect((await list(newcomer)).items.map((row) => row.id)).toEqual([live.id])
+})
+
+test('undated legacy completions stay in history and cannot replay after metadata edits', async () => {
+  const before = (await list(other)).totalCount
+  const [legacy] = await db
+    .insert(workStreams)
+    .values({ squadId, title: 'Legacy completion', status: 'done', updatedAt: new Date() })
+    .returning()
+  expect((await list(other)).totalCount).toBe(before)
+  expect(
+    (await request(other, `/${legacy.id}/feed-seen`, { completedAt: legacy.updatedAt.toISOString() })).status
+  ).toBe(409)
+  await db
+    .update(workStreams)
+    .set({ title: 'Edited legacy completion', updatedAt: new Date(Date.now() + 1000) })
+    .where(eq(workStreams.id, legacy.id))
+  expect((await list(other)).totalCount).toBe(before)
+  const history = await request(other, `?statuses=done&limit=200&squadId=${squadId}`)
+  expect((await history.json()).items.some((row: { id: string }) => row.id === legacy.id)).toBe(true)
+})
+
+test('exact receipt timestamps do not depend on the database session time zone', async () => {
+  const completedAt = '2026-03-01T12:34:56.789Z'
+  const [row] = await db
+    .insert(workStreams)
+    .values({ squadId, title: 'Timezone invariant', status: 'done', metadata: { completion: { completedAt } } })
+    .returning()
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL TIME ZONE 'America/Los_Angeles'`)
+    // Route the real entity statement through this real transaction to control only its session setting.
+    const execute = spyOn(db, 'execute').mockImplementation(tx.execute.bind(tx))
+    try {
+      expect(await WorkStream.acknowledgeFeedCompletion(owner.id, row.id, new Date(completedAt))).toBe(true)
+    } finally {
+      execute.mockRestore()
+    }
+    const [receipt] = await tx.select().from(feedCompletionViews).where(eq(feedCompletionViews.workStreamId, row.id))
+    expect(receipt.completedAt.toISOString()).toBe(completedAt)
+  })
+  const result = await request(owner, `?statuses=done&limit=200&feedUpdates=true&squadId=${squadId}`)
+  expect((await result.json()).items.some((item: { id: string }) => item.id === row.id)).toBe(false)
 })

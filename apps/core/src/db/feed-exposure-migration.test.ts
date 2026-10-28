@@ -16,19 +16,26 @@ test('migration freezes the legacy boundary once and keeps exact, account-scoped
       await tx.execute(sql.raw(`CREATE SCHEMA "${namespace}"; SET LOCAL search_path TO "${namespace}"`))
       await tx.execute(
         sql.raw(
-          'CREATE TABLE users (id uuid PRIMARY KEY, last_feed_visit_at timestamptz); CREATE TABLE work_streams (id uuid PRIMARY KEY)'
+          'CREATE TABLE users (id uuid PRIMARY KEY, last_feed_visit_at timestamptz, created_at timestamp NOT NULL); CREATE TABLE work_streams (id uuid PRIMARY KEY)'
         )
       )
       const user = crypto.randomUUID()
       const work = crypto.randomUUID()
-      await tx.execute(sql`INSERT INTO users VALUES (${user}, '2026-01-01T00:00:00Z')`)
+      const neverVisited = crypto.randomUUID()
+      await tx.execute(sql`INSERT INTO users VALUES (${user}, '2026-01-01T00:00:00Z', '2025-01-01T00:00:00')`)
+      await tx.execute(sql`INSERT INTO users VALUES (${neverVisited}, NULL, '2025-06-01T00:00:00')`)
+      await tx.execute(sql`SET LOCAL TIME ZONE 'America/Los_Angeles'`)
       await tx.execute(sql`INSERT INTO work_streams VALUES (${work})`)
       await tx.execute(sql.raw(migration.replaceAll('"public".', `"${namespace}".`)))
       await tx.execute(sql`UPDATE users SET last_feed_visit_at = '2026-02-01T00:00:00Z'`)
       const rows = await tx.execute(
-        sql`SELECT to_char(feed_updates_after AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS boundary FROM users`
+        sql`SELECT to_char(feed_updates_after AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS boundary FROM users WHERE id = ${user}`
       )
       expect(rows[0]?.boundary).toBe('2026-01-01')
+      const [newcomer] = await tx.execute(
+        sql`SELECT to_char(feed_updates_after AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') AS boundary FROM users WHERE id = ${neverVisited}`
+      )
+      expect(newcomer?.boundary).toBe('2025-06-01 00:00')
       await tx.execute(
         sql`INSERT INTO feed_completion_views (user_id, work_stream_id, completed_at) VALUES (${user}, ${work}, '2026-01-02T00:00:00Z') ON CONFLICT DO NOTHING`
       )

@@ -155,7 +155,8 @@ The web Feed separates pending actions from informational updates:
 - **Updates** lists missed and live work-stream completions in one section. Rows
   stay for the current visit, including after their seen state is saved. New arrivals
   append without reordering existing rows. An offscreen arrival offers **New updates ↑**;
-  only clicking it scrolls and opens the section. Completed history remains unchanged.
+  only clicking it scrolls and opens the section. The control is sticky inside the Feed
+  scroll pane, not fixed over global navigation or Assistant controls. Completed history remains unchanged.
 - Assistant rows remain pointers to **unread Assistant updates**. Exposing a Feed row
   does not read the conversation or its messages. These pointers can remain after a
   refresh until their domain unread state changes; they are not labeled new completions.
@@ -165,7 +166,10 @@ visible browser tab and its section is open. Hidden tabs, collapsed sections,
 filtered squads, offscreen rows, and unfetched pages are not acknowledged. Returning
 from a hidden tab requires a fresh intersection observation. If observation is not
 supported, the Feed conservatively leaves updates unseen. Failed persistence keeps
-**New** visible and offers Retry; it never claims that seen state was saved.
+**New** visible and offers Retry; it never claims that seen state was saved. A 409
+completion-revision conflict instead asks to refresh the Feed and stops retrying the
+stale revision. When more pages remain, the header explicitly counts completions
+**shown**, not the total historical backlog.
 
 ### Completion exposure API
 
@@ -174,7 +178,10 @@ completions for the authenticated user, using the existing terminal keyset curso
 and squad filters. Authorization and effective `progress` attention (stream override,
 then squad, then default) apply before paging and counting. Ordinary completed-history
 queries do not exclude acknowledged rows. Undated/invalid legacy completion records
-remain in history rather than creating an unacknowledgeable Update.
+remain in history rather than creating an unacknowledgeable Update. Feed receipts
+never use the mutable `updated_at` fallback used by legacy completed history. Receipt
+revisions stay `timestamptz` during comparison and insertion, independent of session
+timezone.
 
 `POST /api/workstreams/:id/feed-seen` accepts `{ "completedAt": "<ISO timestamp>" }`.
 It checks read access and atomically records only the exact current done revision.
@@ -183,11 +190,13 @@ user, work stream, and completion timestamp; concurrent tabs/retries are idempot
 A later completion of a reopened stream is a different revision. No broad watermark
 advances past unseen holes, and no domain action or Assistant unread state is mutated.
 
-On upgrade, `users.feed_updates_after` copies the legacy visit watermark **once** to
-avoid replaying previously suppressed history. It is never advanced by either new
+On upgrade, `users.feed_updates_after` copies the legacy visit watermark **once**,
+falling back to the account creation time when there was no old Feed visit, to avoid
+replaying pre-account or previously suppressed history. New accounts also use their
+creation time whenever this column is null; no first-visit/fresh-now cutoff is created. It is never advanced by either new
 exposure or legacy clients. Earlier versions did not record row exposure, so their
 seen/unseen distinctions cannot be reconstructed. Accounts without a legacy boundary
-can page through all accessible unacknowledged completions.
+can page through accessible unacknowledged completions **after account creation**.
 
 The web query cache is scoped to account and visit. A fresh mount fetches authoritative
 unseen data; it cannot briefly replay another visit's cached acknowledgements. During
@@ -195,4 +204,5 @@ one visit, loaded rows are retained and deduplicated by completion revision. Exi
 work-stream websocket invalidation, foreground/reconnect refetch, and pull-to-refresh
 retrieve live completions; events themselves never acknowledge anything. Timestamps
 use the existing compact Assistant formatting, with full local date/time in the title
-and accessible label, plus a machine-readable `time` value.
+and visually hidden exact-time text (not a prohibited `aria-label`), plus a
+machine-readable `time` value.

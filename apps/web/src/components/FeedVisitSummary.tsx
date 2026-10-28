@@ -2,6 +2,7 @@ import clsx from 'clsx'
 import { workStreamRef, workStreamTitle, type WorkStream } from '@ficus/shared'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useInfiniteQuery } from '../reactQueryHooks'
+import { ApiError } from '../api/client'
 import { acknowledgeFeedCompletion } from '../api/squads'
 import { feedQueries } from '../queryOptions'
 import { usePermissions } from '../hooks/usePermissions'
@@ -23,6 +24,17 @@ export function FeedVisitSummary(props: FeedProps) {
   ) : null
 }
 
+/** Keep the compact visual format without naming a role that prohibits aria-label. */
+function FeedTimestamp({ value }: { value: string }) {
+  const exact = new Date(value).toLocaleString()
+  return (
+    <time dateTime={value} title={exact}>
+      <span aria-hidden="true">{formatAssistantUpdateTime(value)}</span>
+      <span className="sr-only">{exact}</span>
+    </time>
+  )
+}
+
 /** Exposure is deliberately conservative: no observer support means no automatic acknowledgement. */
 function CompletionExposure({
   stream,
@@ -38,16 +50,17 @@ function CompletionExposure({
   const key = completionKey(stream)
   const row = useRef<HTMLLIElement>(null)
   const retry = useRef<() => void>(() => {})
-  const [state, setState] = useState<'new' | 'seen' | 'failed'>(() => (seen.has(key) ? 'seen' : 'new'))
+  const [state, setState] = useState<'new' | 'seen' | 'failed' | 'changed'>(() => (seen.has(key) ? 'seen' : 'new'))
   useEffect(() => {
     const target = row.current
     if (!target || !stream.completedAt || !window.IntersectionObserver) return
     let active = true
     let visible = false
     let saving = false
+    let changed = false
     let saved = seen.has(key)
     const save = () => {
-      if (!active || !visible || saving || saved || document.visibilityState !== 'visible') return
+      if (!active || !visible || saving || saved || changed || document.visibilityState !== 'visible') return
       // Intersection notifications can have been queued before a section was collapsed.
       if (target.closest('details:not([open])')) return
       saving = true
@@ -57,8 +70,9 @@ function CompletionExposure({
           seen.add(key)
           if (active) setState('seen')
         })
-        .catch(() => {
-          if (active) setState('failed')
+        .catch((error) => {
+          changed = error instanceof ApiError && error.status === 409
+          if (active) setState(changed ? 'changed' : 'failed')
         })
         .finally(() => {
           saving = false
@@ -92,8 +106,15 @@ function CompletionExposure({
     <li ref={row} data-completion-id={stream.id}>
       <div className="relative">
         {children}
-        {state !== 'seen' && <span className="absolute right-3 top-2.5 text-xs text-muted">New</span>}
+        {(state === 'new' || state === 'failed') && (
+          <span className="absolute right-3 top-2.5 text-xs text-muted">New</span>
+        )}
       </div>
+      {state === 'changed' && (
+        <p role="status" className="ml-9 text-xs text-muted">
+          Completion changed; refresh the Feed.
+        </p>
+      )}
       {state === 'failed' && (
         <p role="status" className="ml-9 text-xs text-muted">
           Could not save seen state.{' '}
@@ -166,7 +187,7 @@ export function AccountFeedVisit({
       : (activity.activity?.conversations ?? []).filter((row) => row.unreadUpdates > 0)
   if (!streams.length && !unreadConversations.length && !completed.isError) return null
   const parts = [
-    streams.length ? `${streams.length} completed` : '',
+    streams.length ? `${streams.length} completed${completed.hasNextPage ? ' shown' : ''}` : '',
     unreadConversations.length
       ? `${unreadConversations.length} Assistant ${unreadConversations.length === 1 ? 'update' : 'updates'}`
       : '',
@@ -174,19 +195,21 @@ export function AccountFeedVisit({
   return (
     <>
       {newAbove && (
-        <button
-          type="button"
-          className="ficus-button ficus-button-secondary fixed bottom-5 right-5 z-20 rounded-full px-3 py-2 text-sm shadow-sm"
-          onClick={() => {
-            if (section.current) {
-              section.current.open = true
-              section.current.scrollIntoView({ block: 'start' })
-            }
-            setNewAbove(false)
-          }}
-        >
-          New updates ↑
-        </button>
+        <div className="pointer-events-none sticky top-2 z-10 flex h-0 items-start justify-end">
+          <button
+            type="button"
+            className="ficus-button ficus-button-secondary pointer-events-auto shrink-0 rounded-full px-3 py-2 text-sm shadow-sm"
+            onClick={() => {
+              if (section.current) {
+                section.current.open = true
+                section.current.scrollIntoView({ block: 'start' })
+              }
+              setNewAbove(false)
+            }}
+          >
+            New updates ↑
+          </button>
+        </div>
       )}
       <details ref={section} open className="mb-4 group" data-testid="feed-visit-summary">
         <summary className="ficus-button ficus-button-ghost flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-left marker:hidden [&::-webkit-details-marker]:hidden">
@@ -233,14 +256,7 @@ export function AccountFeedVisit({
                           {latest && (
                             <>
                               {' '}
-                              ·{' '}
-                              <time
-                                dateTime={latest.createdAt}
-                                title={new Date(latest.createdAt).toLocaleString()}
-                                aria-label={new Date(latest.createdAt).toLocaleString()}
-                              >
-                                {formatAssistantUpdateTime(latest.createdAt)}
-                              </time>
+                              · <FeedTimestamp value={latest.createdAt} />
                             </>
                           )}
                         </span>
@@ -276,14 +292,7 @@ export function AccountFeedVisit({
                           {stream.completedAt && (
                             <>
                               {' '}
-                              ·{' '}
-                              <time
-                                dateTime={new Date(stream.completedAt).toISOString()}
-                                title={new Date(stream.completedAt).toLocaleString()}
-                                aria-label={new Date(stream.completedAt).toLocaleString()}
-                              >
-                                {formatAssistantUpdateTime(new Date(stream.completedAt).toISOString())}
-                              </time>
+                              · <FeedTimestamp value={new Date(stream.completedAt).toISOString()} />
                             </>
                           )}
                         </span>
