@@ -1156,8 +1156,53 @@ runs its **own rootless dockerd** instead (spec §5):
   as the box user and enables a `docker.service` **systemd `--user`** unit under
   the box user's linger. The daemon listens on `unix:///run/user/<uid>/docker.sock`;
   containers run inside the box user's own subuid/subgid namespace (auto-allocated
-  by `useradd`, or allocated deterministically if missing), so a container escape
-  lands in the _box user_, not root, and other boxes' files stay unreadable.
+  by `useradd`, or allocated above all existing ranges if missing), so a container
+  escape lands in the _box user_, not root, and other boxes' files stay unreadable.
+- **Provisioning environment isolation.** Commands run as the box user pin
+  `HOME`, XDG config/data/cache/runtime paths and `DOCKER_CONFIG` to that box,
+  use its rootless socket, and discard inherited Docker context/TLS selectors.
+  Resetting only `HOME` is insufficient: Docker's setuptool writes its unit under
+  `XDG_CONFIG_HOME`, which may still point into the provisioning caller's home.
+  The generated Docker service pins the same paths, runtime directory and bus
+  address explicitly: the user manager launches the daemon separately and may
+  itself retain another UID's environment. This is per-service configuration,
+  not a global manager-environment change. The runtime fixture also poisons its
+  own user manager before restart to verify this second boundary.
+- **CPU/memory containment (cgroup v2).** The root-owned
+  `user-<uid>.slice` is the box boundary, not `docker.service`: systemd's Docker
+  driver creates container scopes outside the daemon's own service cgroup.
+  Provisioning installs the root-owned slice limits **before enabling linger**,
+  then verifies the kernel's `memory.high`, `memory.max` and `cpu.max` are finite,
+  positive and no larger than the configured box caps. These checks also cover
+  already-active slices. No separate runtime `system.control` overrides are left
+  behind when the account is removed. The required hierarchy is:
+  ```text
+  user.slice/user-<uid>.slice/                 # root-owned CPU/memory boundary
+    user@<uid>.service/                       # this box's delegated user manager
+      ficus.slice/ficus-docker.slice/
+        docker.service/                      # rootlesskit/dockerd/containerd/shims
+        docker-<container-id>.scope/          # container payloads
+  ```
+  The Docker drop-in pins `Slice=ficus-docker.slice`,
+  `--exec-opt native.cgroupdriver=systemd` and
+  `--cgroup-parent=ficus-docker.slice`, retaining service delegation only inside
+  the existing user-manager subtree. Even a workload choosing another container
+  cgroup parent through that manager stays below the root-owned box boundary.
+  Provisioning checks both managers' `ControlGroup` paths and requires Docker to
+  report the `systemd` driver on cgroup v2. Failure refuses the success UID marker
+  and attempts a bounded stop/disable of **only this user's** Docker service;
+  cleanup failure cannot be interpreted as proof that an escaped daemon stopped.
+  It never enables the rootful daemon, adds host privileges, changes global
+  delegation, or removes security/port restrictions. CPU quota bounds scheduled
+  CPU time, not host load averages or all sources of I/O pressure.
+- **Existing boxes / recreation.** The script is content-hashed into provisioning
+  drift, so existing boxes receive this wiring on their next full provision or
+  recreation, not by a live fleet migration. Installing/changing the drop-in
+  restarts that box's Docker once; unchanged healthy provisions leave its
+  containers alone, and a stopped daemon is started again. Conflicting
+  `daemon.json` driver/parent settings fail startup rather than silently bypassing
+  the chosen wiring. User-manager operations and Docker readiness checks are
+  bounded; an unresponsive daemon is a provisioning failure, not deferred success.
 - **`DOCKER_HOST`.** The box user's uid is `useradd`-assigned and NOT
   deterministic, so `box-provision.sh` prints it once on stdout (`FICUS_BOX_UID=<uid>`);
   box-manager reads it (`parseBoxUid`) and bakes
@@ -1462,6 +1507,26 @@ box's own `/write` + `/bash`, never root):
   or `FICUS_TEST_SYSTEMD` and skips otherwise; running the full main flow (seed +
   cached-shellenv + a comfort tool resolving in a PLAIN `/bash`) therefore needs a
   **native-amd64 systemd host**, aligned with those gated blocks.
+- **Containment validation requires a real systemd VM.**
+  `scripts/machine/box-provision.test.sh` runs the real provisioning code against
+  a temporary host tree with mocked account managers, systemd, Docker and kernel
+  cgroup files. It verifies generated flags/units, first provision, legacy
+  convergence, idempotence, stopped-daemon recreation, and rejection of escaped
+  ancestry, missing controllers, unbounded limits and failed startup. It does
+  **not** prove real kernel accounting or enforcement. The normal PR CI job
+  `Rootless box cgroup containment` runs `scripts/machine/box-cgroup.integration.sh`
+  on its own disposable Ubuntu 24.04 systemd VM. It verifies host-visible
+  dockerd/containerd/shim/payload cgroups, ancestor CPU/memory caps and accounting,
+  inability to raise ancestor limits, unchanged reprovision, daemon restart, a
+  caller-selected container parent, and reprovision after stopping the user
+  manager. Commands, job runtime and the single sleeping container's lifetime are
+  bounded. The fixture refuses non-disposable hosts and missing prerequisites;
+  it never skips to green or disables security restrictions. All five runtime
+  phases and cleanup passed for commit
+  [751f4949](https://github.com/ficushq/ficus/commit/751f4949681385ea3d8d4d81120401f3e385bf7b)
+  in the [real containment CI job](https://github.com/ficushq/ficus/actions/runs/40632730516/job/122632864143).
+  **Each subsequent PR head must pass its own runtime CI**; historical results,
+  authoring the fixture or passing local static guards do not replace that proof.
 - **Sync-on-every-ensure re-push traffic.** File sync (CLI, skills, `.env`,
   identity, memory) re-pushes on every ensure rather than diffing, so a busy
   ensure/park cycle re-transfers unchanged artifacts. Acceptable at current
@@ -1510,11 +1575,6 @@ Slice 6 shipped the events surface, the pin setter + migrate-with-teardown
 fix, and the web Machines admin section (above). These remain open follow-ups,
 none blocking the above:
 
-- **`box-provision.sh` restarts rootless Docker on every provision.** Any full
-  (re-)provision of a running box therefore stops its containers even when
-  nothing about Docker changed. Making that conditional changes the script,
-  which is hashed into the spec hash, so shipping it reprovisions every box
-  once and has to be scheduled.
 - **Persist the GitHub public profile on the connection.** The author name and
   email are cached per Core process. A process that has not loaded the profile
   yet resolves the login-only identity while the token is unusable (mid-refresh

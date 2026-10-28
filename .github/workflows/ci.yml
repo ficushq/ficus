@@ -444,6 +444,10 @@ jobs:
         run: bun test ./setup-shell-ci-gate.test.ts
         working-directory: .github
 
+      - name: Validate rootless containment CI guard
+        run: bun test ./rootless-box-containment.test.ts
+        working-directory: .github
+
       - name: Validate CLI publish gate
         run: bun test ./cli-publish-gate.test.ts ./cla-workflow.test.ts ./public-contribution-workflows.test.ts
         working-directory: .github
@@ -1023,6 +1027,41 @@ jobs:
           FICUS_BIGBRAIN_SHARED_ARTIFACT: ${{ runner.temp }}/bigbrain-shared
           FICUS_BIGBRAIN_SHARED_DEPS: ${{ runner.temp }}/bigbrain-shared-deps
           FICUS_BIGBRAIN_REQUIRE_SHARED_SMOKE: '1'
+
+  # A separate disposable VM: never run real provisioning against a shared box.
+  # No manual dispatch, cloud provisioning, host security overrides or stress load.
+  rootless-box-containment:
+    name: Rootless box cgroup containment
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Rootless prerequisites (disposable runner only)
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = true && test "$RUNNER_ENVIRONMENT" = github-hosted
+          # runner-images removes the Docker apt source after baking the engine.
+          # Restore its official feed and match extras to the installed engine;
+          # do not upgrade/reconfigure the runner's rootful daemon.
+          curl --max-time 30 --retry 2 -fsSL https://download.docker.com/linux/ubuntu/gpg \
+            | sudo gpg --batch --dearmor -o /usr/share/keyrings/ficus-rootless-ci.gpg
+          printf 'deb [arch=%s signed-by=/usr/share/keyrings/ficus-rootless-ci.gpg] https://download.docker.com/linux/ubuntu noble stable\n' \
+            "$(dpkg --print-architecture)" | sudo tee /etc/apt/sources.list.d/ficus-rootless-ci.list >/dev/null
+          version=$(dpkg-query -W -f='${Version}' docker-ce)
+          sudo timeout --kill-after=15s 180s apt-get update -qq
+          sudo env DEBIAN_FRONTEND=noninteractive timeout --kill-after=15s 180s \
+            apt-get install -y -qq --no-install-recommends "docker-ce-rootless-extras=$version" uidmap slirp4netns dbus-user-session
+      - name: Prove real daemon, shim and payload ancestry across recreation
+        run: |
+          set -euo pipefail
+          status=0
+          out=$(sudo env FICUS_TEST_DISPOSABLE_SYSTEMD=1 \
+            "GITHUB_ACTIONS=$GITHUB_ACTIONS" "RUNNER_ENVIRONMENT=$RUNNER_ENVIRONMENT" \
+            "GITHUB_RUN_ID=$GITHUB_RUN_ID" "GITHUB_RUN_ATTEMPT=$GITHUB_RUN_ATTEMPT" \
+            timeout --kill-after=90s 10m bash scripts/machine/box-cgroup.integration.sh 2>&1) || status=$?
+          printf '%s\n' "$out"
+          if (( status != 0 )); then exit "$status"; fi
+          grep -Fxq '5 real rootless containment phases passed' <<<"$out"
 
   # Managed BigBrain containment on a DISPOSABLE runner (never a shared or production host):
   # real toolkit install, root launcher, two vaults with their own accounts, loop mounts,
