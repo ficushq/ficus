@@ -1,0 +1,70 @@
+{
+  "experiment": "coordination-v8-circuit-eval",
+  "type": "Fresh benchmark-derived product-coordination case; not official sequential SCBench protocol",
+  "source_repository": "https://github.com/gabeorlanski/scb-problems",
+  "source_revision": "9cd9ca3a51c3d3e2a99d2488a25baf73a2204451",
+  "task": "circuit_eval",
+  "requests": [1, 2, 3],
+  "selection": "Fresh circuit CLI selected from its specs before test/reference inspection; v7 command-runner audit deferred and its mistaken one-run statistic claim withdrawn.",
+  "protocol_delta": "Three requests supplied together. Identical coordinator-owned bookkeeping permission added to both harnesses. All upstream tests/fixtures unchanged.",
+  "conditions": ["ficus", "pi"],
+  "order_rule": "Retain the original predeclared order, Ficus then Pi; no outcome-based reordering.",
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "worker_limit": 2,
+  "inference_limit": "Existing proxy serializes each client including settlement; no parallel speed or human-time-saved claims.",
+  "budget": {
+    "phase": "budget-phase-2026-10-28-000028-reset50",
+    "phase_cap_usd": 50,
+    "opening_exposure_usd": 20.08183,
+    "reservation_usd": 5.5,
+    "reset_authorization": "No reset; user approved both bookkeeping clarification and fresh matched run within remaining $29.918170.",
+    "previous_ledgers_preserved": true
+  },
+  "resources": {
+    "cpus": 2,
+    "memory_mb": 8192,
+    "storage_mb": 10240,
+    "agent_timeout_sec": 7200,
+    "verifier_timeout_sec": 300,
+    "ficus_overhead": "Additional disposable PostgreSQL: 0.5CPU/512MiB"
+  },
+  "acceptance": "All 205 upstream tests from requests 1-3 pass with zero skips.",
+  "coordination_checks": [
+    ">=3 distinct implementation packages, not one renamed task",
+    "architect/engineer/independent reviewer role provenance",
+    "dependency and shared-file/branch handoffs",
+    "all required work integrated in /app HEAD",
+    "final integrated independent approval",
+    "waits, unintegrated branches, rework, interventions, cost and elapsed time"
+  ],
+  "stop_policy": "One attempt per arm; no automatic retry or operator code/task hints. Stop on provider/accounting failure, budget rejection, or invalid controls. Preserve incomplete arms.",
+  "runtime": "Same frozen runtime archive and image as v5. Only versioned coordinator handoff adds factual COORDINATION.md ownership.",
+  "supersedes": "Preserves every prior result, incomplete audit and ledger.",
+  "change": "Fresh external task and symmetric bookkeeping contract; production runtime, role prompts and reopening behavior unchanged.",
+  "diagnostic_checks": [
+    "Every created stream/package points to original source rather than a summary",
+    "Compare preserved source to supplied request text",
+    "Confirm architect/engineer/reviewer read source before acting",
+    "Audit original schema fidelity separately from external score",
+    "No extra coordinator or operator correction",
+    "Report acceptance-test failures and skip counts separately; no operator hints, candidate repairs or retries.",
+    "Separate coordinator/planning/implementation/review/repair/closeout costs using explicit role/task and attempt metadata; do not infer hidden reasoning. Reconcile attributed receipts to proxy total and disclose unattributed/rounding differences.",
+    "Measure phase wall-clock intervals and overlapping workers separately; phase spans are not additive.",
+    "Audit any approved-stream reopening: distinguish substantive repairs from factual record closeout."
+  ],
+  "limitations": [
+    "Single purposively selected task, not a random sample or official leaderboard score",
+    "All three requests supplied together instead of upstream sequential checkpoints",
+    "Model calls remain serialized; no unrestricted parallel throughput or human-time-saved claim",
+    "Role prompts, decomposition, sessions and harness overhead differ",
+    "Grade covers committed integration tree; uncommitted edits separately reported"
+  ],
+  "paid_start_gates": [
+    "Pinned complete specification/assertion audit validates before proxy startup and runner credential read",
+    "Reference, stderr-noisy reference and collision reference 205/205 zero skips",
+    "Empty/collision-empty fail; disabling operator width checks, XOR and reversing MUX each fail tests",
+    "Both native restricted-network probes pass",
+    "Frozen source, image, runtime, ledger and no duplicate client checked"
+  ]
+}

@@ -582,3 +582,39 @@ file hashes are in `coordination-v6-audit.json`; no complete audit, reference pa
 or candidate score is claimed. Host collection lacked pytest, but no collection
 or environment change was needed for the rejection witness. No new model calls
 or budget changes occurred. Existing $29.918170 remains available.
+
+### V8: symmetric bookkeeping and fresh circuit task
+
+`coordination_bookkeeping.py` gives both coordinators the same permission to
+maintain factual `COORDINATION.md` status and references after review. It excludes
+product code/tests/design, integration, changing review decisions, and bypassing
+review gates. Production reopening behavior and the previous adapter remain
+unchanged. The versioned runner requires a pinned contract audit before reading
+scoped credentials; the private launcher also checks it before starting the proxy.
+
+The execution-server candidate (v7) remains deferred, not established invalid.
+Its initial audit mistakenly read an empty-state standard-deviation assertion as
+a one-run assertion; that claim was withdrawn before inference. The incomplete
+audit and correction are preserved in `coordination-v7-audit.json`.
+
+V8 uses SCBench `circuit_eval` requests 1–3 at the same pinned revision. All 205
+collected cases (86 test functions) were reviewed against the original grammar,
+error taxonomy, Boolean/vector semantics and examples. Original tests, helpers
+and timeouts are byte-identical. The private audit retains exact quoted evidence,
+full inventory and hashes; its digest is in `coordination-v8-ready.json`. This
+attests a source review, not automated proof of semantic completeness. Default
+input tests permit a missing-input error and some composite tests only check a
+subset of outputs; those coverage weaknesses remain disclosed and unmodified.
+
+Reference, noisy-stderr reference and collision-reference pass 205/205 without
+skips. Empty and collision-empty fail. Disabling operator width checks fails six
+tests, disabling XOR fails 23, and reversing MUX fails three. Both native setup and
+restricted-network probes pass without provider credentials. The unchanged
+$50 phase has $20.081830 settled and $29.918170 remaining before launch, with no
+unresolved receipts. The pair remains Ficus then Pi, one attempt each, GPT-6.1 Sol,
+two workers, serialized model requests and the same frozen production runtime.
+
+The analysis will separate role/attempt costs and elapsed intervals, including
+substantive repairs versus factual closeout. Overlapping wall intervals are not
+additive. This fresh single-case comparison cannot isolate the causal effect of
+the prompt change from the task change or establish a general harness ranking.

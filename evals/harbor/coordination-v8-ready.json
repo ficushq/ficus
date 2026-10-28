@@ -1,0 +1,251 @@
+{
+  "experiment": "coordination-v8-circuit-eval",
+  "frozen_at_utc": "2026-10-28T16:48:52.700375+00:00",
+  "all_gates_passed": true,
+  "inference_started": false,
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "image": "ficus-coordination-v4:preflight",
+  "image_id": "sha256:6951b79471484d5d8deb179fbb40025575244cba4e2ed9cf962a4c6bce93aa84",
+  "controls": [
+    {
+      "job": "coordv8-control-reference",
+      "reward": 1.0,
+      "counts": {
+        "total": 205,
+        "passed": 205,
+        "failures": 0,
+        "skipped": 0,
+        "accepted": true
+      },
+      "result_sha256": "8c561489796944442f24233f17211eb58a352201e68b244f9e3620085ae699b3"
+    },
+    {
+      "job": "coordv8-control-nop",
+      "reward": 0.0,
+      "counts": null,
+      "result_sha256": "3ac5932d36db3081c76f10d4192c5e586fcb1878c8ebf6dae75e1f249efae6ee"
+    },
+    {
+      "job": "coordv8-control-collision-nop",
+      "reward": 0.0,
+      "counts": {
+        "total": 205,
+        "passed": 0,
+        "failures": 205,
+        "skipped": 0,
+        "accepted": false
+      },
+      "result_sha256": "b436c10e17307f159404511c695700fa39c0d9690f9a7c7b3036b577c7df3f0e"
+    },
+    {
+      "job": "coordv8-control-collision-oracle",
+      "reward": 1.0,
+      "counts": {
+        "total": 205,
+        "passed": 205,
+        "failures": 0,
+        "skipped": 0,
+        "accepted": true
+      },
+      "result_sha256": "47f3356553ac088d93f28ff99db2ced8ae005dc73477a57da0ea40dbf90afc73"
+    },
+    {
+      "job": "coordv8-control-verbose",
+      "reward": 1.0,
+      "counts": {
+        "total": 205,
+        "passed": 205,
+        "failures": 0,
+        "skipped": 0,
+        "accepted": true
+      },
+      "result_sha256": "bc246dbf1f07cdca4e87333e5943e22cb05b78a4f0b3770b3c99a4367564801f"
+    },
+    {
+      "job": "coordv8-control-no-operator-widths",
+      "reward": 0.0,
+      "counts": {
+        "total": 205,
+        "passed": 199,
+        "failures": 6,
+        "skipped": 0,
+        "accepted": false
+      },
+      "result_sha256": "c4876f39fa47ec510e2b248a91ae2a7c8ed1a76b0bf73860083b51844bcc63a6"
+    },
+    {
+      "job": "coordv8-control-wrong-xor",
+      "reward": 0.0,
+      "counts": {
+        "total": 205,
+        "passed": 182,
+        "failures": 23,
+        "skipped": 0,
+        "accepted": false
+      },
+      "result_sha256": "b9bf62eaf62f15f09c70177a28f916b76b4fc59629335dd990e7e8247f92072a"
+    },
+    {
+      "job": "coordv8-control-reversed-mux",
+      "reward": 0.0,
+      "counts": {
+        "total": 205,
+        "passed": 202,
+        "failures": 3,
+        "skipped": 0,
+        "accepted": false
+      },
+      "result_sha256": "c95cf5998ceec0e29e30f93055ea9e50b35e55b9f0794d209620edb6feb58386"
+    }
+  ],
+  "probes": [
+    {
+      "arm": "ficus",
+      "result_sha256": "f634584611a40afe291a5609131a06de2e7451ff84c8c96685f6f48ebb163cdf",
+      "network": {
+        "database_loopback": true,
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "ficus_api_ready": true,
+        "ficus_worker_ready": true,
+        "native_provider_preload": true
+      },
+      "egress": {
+        "response_header_timeout_seconds": 600,
+        "original_config_sha256": "78c18e58efbc7c8e226cb311e2a4cf3863d5a2f3e54b3bf15a0ea4b885345290",
+        "context_sha256": {
+          "Dockerfile": "a2385dd6b3eee6e04c49b467df84ed2a273fd402a9cdd404a64fb535e9b26ff7",
+          "allowlist.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bin/network-policy": "ff1cacfb95e17cda3668f389176ae54e5e4139cff12ee54b4d745722ad0ff0b2",
+          "entrypoint.sh": "2e225ed745eb5976f93afd52d91c844b954b5f6f45373fb70c4c509e36d1e069",
+          "gost.yaml": "9293a0f45fbd16d3e59c06aa559a9544193ead48575b9ca7163c5e8e7bad8ed1"
+        },
+        "network_policy_unchanged": true
+      }
+    },
+    {
+      "arm": "pi",
+      "result_sha256": "040bb625ca6817f019e17d521f4156d9fdfda448ae8c569b292c4ae0c9eeecbb",
+      "network": {
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "pinned_pi_and_subagent_extension": true
+      },
+      "egress": {
+        "response_header_timeout_seconds": 600,
+        "original_config_sha256": "78c18e58efbc7c8e226cb311e2a4cf3863d5a2f3e54b3bf15a0ea4b885345290",
+        "context_sha256": {
+          "Dockerfile": "a2385dd6b3eee6e04c49b467df84ed2a273fd402a9cdd404a64fb535e9b26ff7",
+          "allowlist.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bin/network-policy": "ff1cacfb95e17cda3668f389176ae54e5e4139cff12ee54b4d745722ad0ff0b2",
+          "entrypoint.sh": "2e225ed745eb5976f93afd52d91c844b954b5f6f45373fb70c4c509e36d1e069",
+          "gost.yaml": "9293a0f45fbd16d3e59c06aa559a9544193ead48575b9ca7163c5e8e7bad8ed1"
+        },
+        "network_policy_unchanged": true
+      }
+    }
+  ],
+  "runtime_archive_sha256": "25c45f893b53625c1cba4c3233506ac76627c066681fb0253fe168b85254d9f4",
+  "private_launcher_sha256": "99252e14c7a0bdf31b35fde7f4a0242db262412335efa944501a3eadc1ae60c5",
+  "private_pair_driver_sha256": "67ba5e7a3e31cf4dbb1f0af557e93bb28602f246abbb23af0fc98e3a10193eee",
+  "contract_audit_sha256": "73395e1adc5ff9fcca2bd305a1c487ff3a5b8eac0c53be4257c8d32ddd82791a",
+  "prepared_file_sha256": {
+    "collected-nodes.json": "166e25a5ba4691e0809702b6c0aa81a44656468c9b6a869152ff9454e66b2b36",
+    "instruction.md": "3bb9bd8e9d33647b80d1471a9d5d288d8dbd97ffba4c9af7c49811819809a5ab",
+    "task.toml": "be1c05a165a7588a0fbe32cd84ff4b23b47037a0b6c23d3214099ab2dd4960f7",
+    "tests/expected-count.txt": "c78a99d2279a1f64709a9adee6bff80120f18bdd0ae7bdc220443d5750f36a92",
+    "tests/test.sh": "a2591678c771e1df55f33da7cc9a2512f301d6be56814f8f7a3b945f4c06c38b",
+    "tests/score.py": "653eece7380e787a15fbfe4e8fcf325e3a8a6bdaa209d44eec64272b9b8d49f0",
+    "solution/solve.sh": "b7257ba8fdaf5999e0a3ac953fae1fbe6480b0e92cf0e7378070cf8b0eea524a",
+    "environment/Dockerfile": "e8d5f0c95008e0d6ead86e73fce2f0333bfb8adc399647c10001cda2aa6b5174",
+    "environment/requirements.lock": "f9d416fa260818d3ebe0ea4cc3786cc4983c1d9e168286ae3b9ae5885e3a52e4",
+    "tests/official/conftest.py": "9f371e98841457c088b39578bcf2f48c4e94b0b2904bf5ed0c758b8c01d99a53",
+    "tests/official/novel_circuits.py": "a86bd6a0f595920b518bfe507a612d938861c4a536a22fa165cf7a5807908973",
+    "tests/official/test_checkpoint_2.py": "f34927c5e4ac7657fda5f8e2848595d62cde0e6f3cd0b9d692d9b00209fa1eca",
+    "tests/official/test_checkpoint_3.py": "0f19f511a697434432d543210318806e849ea43a91d1c015a59f97e8d50c3745",
+    "tests/official/test_checkpoint_1.py": "367e3560fcd530ea01ce9ceeade022d6a4d06accfe84a9fce237cf2291d89146",
+    "tests/official/helpers.py": "83bf8b211673b6fc63253817239362db4ba1ea9fa83ff79abff26544edfa7aa7",
+    "solution/reference/circopt.py": "c59ed9c936e42b4d8f541a71ce2f8f294422f6d717824ab53849ff005707ae8c",
+    "solution/reference/requirements.txt": "63309d9b05d776ea9d97a6e26718ec1768f82132454b6c56083b956438d8e8af",
+    "solution/reference/circuit/validator.py": "b83a21a0430ac034b59a3a130e144b17a0ed2e8cc85872cf8e0aad751aa0c3d2",
+    "solution/reference/circuit/__init__.py": "935929e3e367769de6ab20573fc54c306f3d341f86320a0e5402ede4cdf1a602",
+    "solution/reference/circuit/parser.py": "7c60df05916bba713f852cf3dff309258c36802d0e65d03ec2baa5654881da4c",
+    "solution/reference/circuit/ast.py": "c97986e4060b3f3a1fbf00cade44bb5d2f9a89fd2edbf63e98f09b4b061b194a",
+    "solution/reference/circuit/errors.py": "8d4f29fece72719e7f8f0825d75dffb7ab47e44de76f9df9ffdfd42cfecf2808",
+    "solution/reference/circuit/evaluator.py": "751e48e539b2469a9caeeb5e3b75950ef3dcd2cb4839ec78771e405666c6a475"
+  },
+  "runner_source_sha256": {
+    "evals/harbor/coordination.py": "c38afdd4f5498746ff28cf6a0be05fa28540f6a83123e7e1247211697dca3e4f",
+    "evals/harbor/ficus_agent.py": "8fbda2d9ff16c6f0479f89fd34d8a61607cd2e215d7782473f578f90f675b1d5",
+    "evals/harbor/pi_workflow.py": "00712cabe8eebbd571c7ef438b357c019bb9735492ff8bfb29a870d3ed2c03e3",
+    "evals/harbor/run-pilot.py": "721daa9b0d38d6aba5fc914438304af5679da844cd3cc15b99d62327e2d16af3",
+    "evals/harbor/budget_proxy.py": "e3d3deb1342d8963949fe9ac3a2ec2a271b18cbdaca83901df126efd00c36648",
+    "evals/harbor/checkpoint.py": "8c80cae256f7ef5d856e5ee101af9ce9edf3f1a9bccae4bf1cf376c25ec52523",
+    "evals/harbor/run_concurrent_feature.py": "48af6ab7e74bb0b3556dc41ba287d2e38d3b882ebe3f1ca9d7f94e63021b869e",
+    "apps/core/src/scripts/harbor-trial.ts": "b4fe48c5fb3214864a6ed704cb8db1b1fd9f202a578b4a47ea0236f628e58acb",
+    "evals/harbor/coordination_egress.py": "026ca5ccb04571521ecf6de2cc5ea563afbdec19668b3394f64b0909c08b538e",
+    "evals/harbor/requirement-fidelity-guidance.patch": "e670776bc3f10b777f0e8b69ffb2d46ee5d583a3d087bcb8f6974d5ee7c3b120",
+    "evals/harbor/prepare_requirement_fidelity.py": "35ee3a8aed8d310259c2a66e30417a06a4aca3b0137f2bfce49e386961eee5b5",
+    "evals/harbor/test_requirement_fidelity.py": "8601a2562972a23942a1bc1372875b90550fa07ba8e7ccaf28464e691a6843b0",
+    "evals/harbor/coordination-v4-plan.json": "1906fff6ed96ca8b5907a78e6a9406ac581b031a3b79c5b72e8635e26292d75b",
+    "evals/harbor/coordination-v4-selection.json": "9c76e2bbde3f9057515369d2ba4236ea7236ec3ee7aaa59fe5d966ebf939e966",
+    "evals/harbor/prepare_product_coordination.py": "906307b06af3e34d8b9cca720fb0c033eebf867968c7d4609c45a21e8d501022",
+    "evals/harbor/deepswe_controls.py": "ace9563bfca88dbe4db3ed5281e6b49fc1a41aa176c0c0458f056a5f4c432c53",
+    "evals/harbor/deepswe_network_smoke.py": "3c7e174a38a98ed8655512b9bf734d3e8294e0e81557f74e18d27552f1b3220c",
+    "evals/harbor/prepare_trajectory_coordination.py": "791933512ff941b6c8a60f8bf421f9d44387878fbc919792d0fe848fb1e4094c",
+    "evals/harbor/trajectory_verifier_controls.py": "96d6cca9276987ed3cdd54e6e7e6f61149e1a0da3e2a2282f334bd6e2f2d6ba9",
+    "evals/harbor/coordination-v5-plan.json": "56932f8634d0c0f9ee4f934ad835910d1fa7ef34bca92baec3d535a3dff8c852",
+    "evals/harbor/coordination-v5-selection.json": "680395a16e69a5f9582501b60a6a0b260d32f70df7c4fb2f217009e027b98fd9",
+    "evals/harbor/coordination_bookkeeping.py": "44ee1ed3fa8611c165da78b7ad510a9b045e3ea9aea066148f358c261f7a5c78",
+    "evals/harbor/contract_audit.py": "924303560fa774a60a4017260fa65aaed3b87c9a086dd925f9597fb605787e33",
+    "evals/harbor/prepare_circuit_coordination.py": "d694f2cc4dc7ef56214bb5397888fb43a8c3cebe2d0e77e339401c322e7c31ba",
+    "evals/harbor/circuit_verifier_controls.py": "cc16fdf15f335349d47c1e36faa83ea7e1339227e2a0d1e81b80414cb0d237c1",
+    "evals/harbor/coordination-v8-plan.json": "6fe914e1f5ead08e81a70ac2f2e8e06d6c82dc374e1c1965dcf38335bde00354",
+    "evals/harbor/coordination-v8-selection.json": "a207b00ab57e0d35abaf9d6fa3b13fbee06512992e156ebf1f4777deceb88f98"
+  },
+  "control_evidence_sha256": {
+    "jobs/coordv8-control-reference/task__EPpPETe/result.json": "8c561489796944442f24233f17211eb58a352201e68b244f9e3620085ae699b3",
+    "jobs/coordv8-control-reference/task__EPpPETe/verifier/counts.json": "2b9d75d0b24e128539e6b62edba8d49a6b3fbb092c351677c11a4aa58e86e2f8",
+    "jobs/coordv8-control-nop/task__Xfy6ksH/result.json": "3ac5932d36db3081c76f10d4192c5e586fcb1878c8ebf6dae75e1f249efae6ee",
+    "jobs/coordv8-control-collision-nop/task__YeUjRVp/result.json": "b436c10e17307f159404511c695700fa39c0d9690f9a7c7b3036b577c7df3f0e",
+    "jobs/coordv8-control-collision-nop/task__YeUjRVp/verifier/counts.json": "f16095f1eb4b213b5b2bfc4223b09207aeacf3d7faa8637fd0901a960c900fc7",
+    "jobs/coordv8-control-collision-oracle/task__qBnz2ws/result.json": "47f3356553ac088d93f28ff99db2ced8ae005dc73477a57da0ea40dbf90afc73",
+    "jobs/coordv8-control-collision-oracle/task__qBnz2ws/verifier/counts.json": "2b9d75d0b24e128539e6b62edba8d49a6b3fbb092c351677c11a4aa58e86e2f8",
+    "jobs/coordv8-control-verbose/task__QTpFycX/result.json": "bc246dbf1f07cdca4e87333e5943e22cb05b78a4f0b3770b3c99a4367564801f",
+    "jobs/coordv8-control-verbose/task__QTpFycX/verifier/counts.json": "2b9d75d0b24e128539e6b62edba8d49a6b3fbb092c351677c11a4aa58e86e2f8",
+    "jobs/coordv8-control-no-operator-widths/task__F6tqDn6/result.json": "c4876f39fa47ec510e2b248a91ae2a7c8ed1a76b0bf73860083b51844bcc63a6",
+    "jobs/coordv8-control-no-operator-widths/task__F6tqDn6/verifier/counts.json": "86bd8f3513d0ba35683806967c73ade807c3c63704943ca303c1fc83fb296ff0",
+    "jobs/coordv8-control-wrong-xor/task__NMDgbsm/result.json": "b9bf62eaf62f15f09c70177a28f916b76b4fc59629335dd990e7e8247f92072a",
+    "jobs/coordv8-control-wrong-xor/task__NMDgbsm/verifier/counts.json": "dd1142065dfece154dce48329cead4e6a2d8f14e63828df9643bbbd878a32ddf",
+    "jobs/coordv8-control-reversed-mux/task__RvwePk8/result.json": "c95cf5998ceec0e29e30f93055ea9e50b35e55b9f0794d209620edb6feb58386",
+    "jobs/coordv8-control-reversed-mux/task__RvwePk8/verifier/counts.json": "d5e275f34f9e50bd72be4240aec599b44132783d8cbd321e3c10059ed7597692",
+    "jobs/coordv8-probe-ficus/task__tZLDbcY/result.json": "f634584611a40afe291a5609131a06de2e7451ff84c8c96685f6f48ebb163cdf",
+    "jobs/coordv8-probe-ficus/task__tZLDbcY/agent/network-smoke.json": "075792f0f74241df9bd668a2a04b5dc740e08d3290ac51438e866b866df34f38",
+    "jobs/coordv8-probe-ficus/task__tZLDbcY/agent/coordination-egress.json": "2f2b438a5c0fdcb172985efda3743612e812f80d96f619d02dd73e9e2bc5b0ad",
+    "jobs/coordv8-probe-pi/task__ypBAYMQ/result.json": "040bb625ca6817f019e17d521f4156d9fdfda448ae8c569b292c4ae0c9eeecbb",
+    "jobs/coordv8-probe-pi/task__ypBAYMQ/agent/network-smoke.json": "a51bd185e985cd4e7c25f253c6d4990f923a2779cb5ead954129ee938e56207b",
+    "jobs/coordv8-probe-pi/task__ypBAYMQ/agent/coordination-egress.json": "2f2b438a5c0fdcb172985efda3743612e812f80d96f619d02dd73e9e2bc5b0ad"
+  },
+  "budget": {
+    "phase": "budget-phase-2026-10-28-000028-reset50",
+    "cap_usd": 50,
+    "opening_confirmed_usd": 20.08183,
+    "remaining_usd": 29.91817,
+    "unresolved_receipts": 0,
+    "reservation_usd": 5.5,
+    "reset": false
+  },
+  "audit": {
+    "collected_tests": 205,
+    "audited_test_functions": 86,
+    "upstream_files_byte_identical": true,
+    "fixture_changes": false,
+    "contract_gate": "Pinned report and all files checked before proxy start and before scoped credentials are read",
+    "limitations": [
+      "Default-input tests permit missing-input errors, so do not fully enforce default filling.",
+      "Some composite tests inspect a subset of outputs; mutation controls do not prove exhaustive coverage.",
+      "Single purposive case, model calls serialized; no general ranking or human-time-saved claims."
+    ]
+  }
+}

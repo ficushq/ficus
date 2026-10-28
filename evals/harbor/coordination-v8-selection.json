@@ -1,0 +1,19 @@
+{
+  "experiment": "coordination-v8",
+  "declared_at_utc": "2026-10-28T16:34:46.424175+00:00",
+  "source": "https://github.com/gabeorlanski/scb-problems",
+  "revision": "9cd9ca3a51c3d3e2a99d2488a25baf73a2204451",
+  "candidate": "circuit_eval",
+  "requests": [1, 2, 3],
+  "selection_reason": "Explicit grammar and error taxonomy; parsing/graph validation, scalar evaluation and vector expressions/radix integration provide separable technical packages with shared interfaces. Selected from specs before tests/reference inspection.",
+  "tests_or_reference_inspected_before_selection": false,
+  "contract": "coordination-bookkeeping-v1",
+  "phase_cap_usd": 50,
+  "remaining_usd": 29.91817,
+  "request_reservation_usd": 5.5,
+  "spec_sha256": {
+    "checkpoint_3.md": "6989a82b4049c278eae1b24e5d9119b8d4cb7aa5179eec9a9db1ec810a87395a",
+    "checkpoint_2.md": "26f1c4b8d2355b1c1b2b0eef84db6e8b8296216b331b5cf85081ac240d4c26a8",
+    "checkpoint_1.md": "5e83257b93e169e269ebc64f4621e712f1903bb5d7784e158755ec0d43112baf"
+  }
+}

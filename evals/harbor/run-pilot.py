@@ -19,6 +19,9 @@ parser.add_argument("--client", help="Proxy client label; defaults to harness-ta
 parser.add_argument("--runtime-archive", type=Path)
 parser.add_argument("--checkpoint-dir", type=Path)
 parser.add_argument("--coordination", action="store_true")
+parser.add_argument("--coordination-bookkeeping", action="store_true")
+parser.add_argument("--contract-audit", type=Path)
+parser.add_argument("--contract-audit-sha256")
 parser.add_argument("--coordination-egress-header-timeout", type=int, choices=(600,))
 parser.add_argument("--artifact-patch", type=Path)
 parser.add_argument("--artifact-sha256")
@@ -37,6 +40,18 @@ if args.coordination_egress_header_timeout and not (
     args.coordination and args.restricted_network
 ):
     parser.error("Egress timeout override requires restricted coordination mode")
+if args.coordination_bookkeeping:
+    if not (args.coordination and args.contract_audit and args.contract_audit_sha256):
+        parser.error(
+            "Bookkeeping comparison requires coordination and a pinned contract audit"
+        )
+    from contract_audit import require_ready
+
+    require_ready(args.contract_audit, args.task, args.contract_audit_sha256)
+elif args.contract_audit or args.contract_audit_sha256:
+    parser.error(
+        "Contract-audit arguments require the versioned bookkeeping comparison"
+    )
 access = json.loads(args.access.read_text())
 if args.restricted_network:
     config = tomllib.loads((args.task / "task.toml").read_text())
@@ -93,7 +108,9 @@ if args.harness == "ficus":
         parser.error("Ficus requires --runtime-archive")
     command += [
         "-a",
-        "coordination:FicusCoordination"
+        "coordination_bookkeeping:FicusBookkeepingCoordination"
+        if args.coordination_bookkeeping
+        else "coordination:FicusCoordination"
         if args.coordination
         else "artifact_reviewer:FicusArtifactReviewer"
         if args.workflow == "reviewer"
@@ -126,7 +143,9 @@ else:
         parser.error("Use engineer or planned for the Pi baseline")
     command += [
         "-a",
-        "coordination:PiCoordination"
+        "coordination_bookkeeping:PiBookkeepingCoordination"
+        if args.coordination_bookkeeping
+        else "coordination:PiCoordination"
         if args.coordination
         else "pi_workflow:PiWorkflow",
         "--ak",

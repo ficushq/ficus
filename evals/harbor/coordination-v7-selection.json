@@ -1,0 +1,20 @@
+{
+  "experiment": "coordination-v7",
+  "declared_at_utc": "2026-10-28T16:32:11.343793+00:00",
+  "source": "https://github.com/gabeorlanski/scb-problems",
+  "revision": "9cd9ca3a51c3d3e2a99d2488a25baf73a2204451",
+  "candidate": "execution_server",
+  "requests": [1, 2, 3],
+  "selection_reason": "Local command runner integrates process lifecycle/statistics, output tracking, and structured/compressed input serialization. Select from specifications before test/reference inspection.",
+  "tests_or_reference_inspected_before_selection": false,
+  "protocol": "All three requests upfront, matched native roles and original-source preservation, new symmetric coordinator bookkeeping contract.",
+  "paid_start": "Blocked until full contract audit, frozen controls, native setup probes and unchanged budget gates pass.",
+  "phase_cap_usd": 50,
+  "remaining_at_selection_usd": 29.91817,
+  "request_reservation_usd": 5.5,
+  "spec_sha256": {
+    "checkpoint_3.md": "8f3ff579d2ecc3f830b8f1d515b22b5d6fbdf137e628ac4d45241123ceb1a14e",
+    "checkpoint_2.md": "5254df8ed6779738ed17232ce6967db36afc515424918a93bf38fb5aea0bbd9e",
+    "checkpoint_1.md": "5255ea6878fac36a5440f867143b70247f4bf3a93693d76b56f52def35c3fe98"
+  }
+}
