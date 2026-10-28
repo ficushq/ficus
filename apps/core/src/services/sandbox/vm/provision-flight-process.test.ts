@@ -3,16 +3,29 @@ import { join } from 'node:path'
 import { db, sandboxExposureCleanup, vmBoxProvisionAttempts, machines, machineBoxes } from '../../../db'
 import { eq } from 'drizzle-orm'
 
-type Event = { role: string; pid: number; event: string; result?: string; error?: string; at?: number }
+type Event = {
+  role: string
+  pid: number
+  event: string
+  result?: string
+  error?: string
+  code?: string | null
+  at?: number
+}
 
-function child(role: string, id: string, failure: boolean | 'fresh', fixture = 'provision-flight-process.ts') {
+function child(
+  role: string,
+  id: string,
+  failure: boolean | 'fresh' | 'setup-failure',
+  fixture = 'provision-flight-process.ts'
+) {
   const process = Bun.spawn(
     [
       Bun.which('bun')!,
       join(import.meta.dir, 'fixtures', fixture),
       role,
       id,
-      failure === 'fresh' ? 'fresh' : failure ? 'failure' : 'success',
+      typeof failure === 'string' ? failure : failure ? 'failure' : 'success',
     ],
     {
       env: { ...globalThis.process.env },
@@ -148,6 +161,7 @@ test('two fresh-box processes publish success only after owner setup, then admit
     id: machineId,
     name: machineId,
     provider: 'ssh',
+    status: 'ready',
     sshHost: '127.0.0.1',
     sshUser: 'ficus',
     sshKeyId: 'test',
@@ -169,6 +183,7 @@ test('two fresh-box processes publish success only after owner setup, then admit
     expect(await api.process.exited).toBe(0)
     expect(await worker.process.exited).toBe(0)
     await Promise.all([api.output, worker.output])
+    expect([...api.events, ...worker.events].filter((event) => event.event === 'failed')).toEqual([])
     expect(worker.events.filter((event) => event.event === 'assets' || event.event === 'setup')).toEqual([])
     const setup = api.events.find((event) => event.event === 'setup-complete')!
     const bash = worker.events.find((event) => event.event === 'first-bash')!
@@ -209,45 +224,94 @@ test('clean owner shutdown lets a different process provision immediately withou
   }
 }, 20_000)
 
-test('preempt-stop and immediate resume in two processes never provision before authoritative stop verification', async () => {
-  const id = `agent_stop_resume_${crypto.randomUUID()}`
-  const machineId = crypto.randomUUID()
-  await db.insert(machines).values({
-    id: machineId,
-    name: machineId,
-    provider: 'ssh',
-    status: 'ready',
-    sshHost: '127.0.0.1',
-    sshUser: 'ficus',
-    sshKeyId: 'test',
-    sshPublicKey: 'test',
-  })
-  await db
-    .insert(machineBoxes)
-    .values({ sandboxId: id, machineId, unixUser: 'test', port: 45000, status: 'ready', authToken: 'synthetic' })
-  const preempt = child('preempt', id, false, 'stop-resume-process.ts')
-  let resume: ReturnType<typeof child> | undefined
+for (const mode of ['resume', 'resume-ensure']) {
+  test(`preempt-stop and immediate ${mode} in two processes never provision before authoritative stop verification`, async () => {
+    const id = `agent_stop_resume_${crypto.randomUUID()}`
+    const machineId = crypto.randomUUID()
+    await db.insert(machines).values({
+      id: machineId,
+      name: machineId,
+      provider: 'ssh',
+      status: 'ready',
+      sshHost: '127.0.0.1',
+      sshUser: 'ficus',
+      sshKeyId: 'test',
+      sshPublicKey: 'test',
+    })
+    await db
+      .insert(machineBoxes)
+      .values({ sandboxId: id, machineId, unixUser: 'test', port: 45000, status: 'ready', authToken: 'synthetic' })
+    const preempt = child('preempt', id, false, 'stop-resume-process.ts')
+    let resume: ReturnType<typeof child> | undefined
+    try {
+      await preempt.waitFor('stop-proof')
+      resume = child(mode, id, false, 'stop-resume-process.ts')
+      await resume.waitFor('waiting')
+      expect(resume.events.some((event) => event.event === 'provision')).toBe(false)
+      preempt.release()
+      await resume.waitFor('startup-retry')
+      const [unverified] = await db.select().from(machineBoxes).where(eq(machineBoxes.sandboxId, id))
+      expect(unverified!.status).toBe('stop_unverified')
+      expect(resume.events.some((event) => event.event === 'provision')).toBe(false)
+      // Retry invokes the real stop/readback path; it never clears a DB marker.
+      // Plain ensure owns a failed physical generation. Honor its first real
+      // 30-second retry schedule; never clear the stop proof or cooldown row.
+      if (mode === 'resume-ensure') await Bun.sleep(30_100)
+      resume.releaseSetup()
+      expect(await preempt.process.exited).toBe(0)
+      expect(await resume.process.exited).toBe(0)
+      await resume.output
+      expect(resume.events.filter((event) => event.event === 'stop-proof')).toHaveLength(2)
+      expect(resume.events.filter((event) => event.event === 'provision')).toHaveLength(1)
+      expect(resume.events.at(-1)!.result).toBe('resumed')
+    } finally {
+      await preempt.stop()
+      await resume?.stop()
+      await db.delete(machines).where(eq(machines.id, machineId))
+    }
+  }, 60_000)
+}
+
+test('a second process five seconds after a non-allowlisted owner setup failure still receives startup retry', async () => {
+  const id = `agent_setup_failure_${crypto.randomUUID()}`
+  const owner = child('owner', id, 'setup-failure')
+  let follower: ReturnType<typeof child> | undefined
   try {
-    await preempt.waitFor('stop-proof')
-    resume = child('resume', id, false, 'stop-resume-process.ts')
-    await resume.waitFor('waiting')
-    expect(resume.events.some((event) => event.event === 'provision')).toBe(false)
-    preempt.release()
-    await resume.waitFor('startup-retry')
-    const [unverified] = await db.select().from(machineBoxes).where(eq(machineBoxes.sandboxId, id))
-    expect(unverified!.status).toBe('stop_unverified')
-    expect(resume.events.some((event) => event.event === 'provision')).toBe(false)
-    // Retry invokes the real stop/readback path; it never clears a DB marker.
-    resume.releaseSetup()
-    expect(await preempt.process.exited).toBe(0)
-    expect(await resume.process.exited).toBe(0)
-    await resume.output
-    expect(resume.events.filter((event) => event.event === 'stop-proof')).toHaveLength(2)
-    expect(resume.events.filter((event) => event.event === 'provision')).toHaveLength(1)
-    expect(resume.events.at(-1)!.result).toBe('resumed')
+    await owner.waitFor('provision')
+    owner.release()
+    await owner.process.exited
+    await owner.output
+    expect(owner.events.at(-1)!.code).toBe('sandbox_readiness_pending')
+    const [failed] = await db.select().from(vmBoxProvisionAttempts).where(eq(vmBoxProvisionAttempts.sandboxId, id))
+    expect(failed!.failureCount).toBe(0)
+    expect(failed!.retryAt!.getTime()).toBeLessThanOrEqual(Date.now())
+    await Bun.sleep(5_000)
+    follower = child('follower', id, 'setup-failure')
+    await follower.waitFor('provision')
+    follower.release()
+    await follower.process.exited
+    await follower.output
+    expect(follower.events.at(-1)!.code).toBe('sandbox_readiness_pending')
   } finally {
-    await preempt.stop()
-    await resume?.stop()
-    await db.delete(machines).where(eq(machines.id, machineId))
+    await owner.stop()
+    await follower?.stop()
+  }
+}, 20_000)
+
+test('a new process recovers an abandoned generation without spending any startup retry', async () => {
+  const id = `agent_abandoned_${crypto.randomUUID()}`
+  await db.insert(vmBoxProvisionAttempts).values({ sandboxId: id, failureCount: 8 })
+  const replacement = child('replacement', id, false)
+  try {
+    await replacement.waitFor('provision')
+    replacement.release()
+    expect(await replacement.process.exited).toBe(0)
+    await replacement.output
+    expect(replacement.events.at(-1)!.result).toBe('owner-ready')
+    const rows = await db.select().from(vmBoxProvisionAttempts).where(eq(vmBoxProvisionAttempts.sandboxId, id))
+    expect(rows.find((row) => row.failureClass === 'abandoned')!.failureCount).toBe(0)
+    expect(rows.filter((row) => row.status === 'succeeded')).toHaveLength(1)
+  } finally {
+    await replacement.stop()
   }
 }, 20_000)

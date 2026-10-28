@@ -48,7 +48,7 @@ const manager = new VmSandboxManager({
             throw new Error('stop lost its authoritative fences')
           emit('stop-proof', { attempt: stopCalls })
           if (role === 'preempt') await release.promise
-          const verified = role === 'resume' && stopCalls > 1
+          const verified = role.startsWith('resume') && stopCalls > 1
           return { exitCode: verified ? 0 : 1, stdout: '', stderr: '' }
         },
       },
@@ -103,12 +103,14 @@ try {
     emit('stopped', { result: result.kind })
   } else {
     const options = { workspacePath: '', k8s: { sandboxType: 'agent' as const } }
-    const error = await manager.recreateSandbox(sandboxId, options).catch((error) => error)
+    const ensure = () =>
+      role === 'resume-ensure' ? manager.ensureSandbox(sandboxId, options) : manager.recreateSandbox(sandboxId, options)
+    const error = await ensure().catch((error) => error)
     const code = startupRetryCode(error)
     if (code !== 'box_stop_unverified') throw new Error(`Expected bounded startup retry, received ${code}`)
     emit('startup-retry', { code })
     await retry.promise
-    await manager.recreateSandbox(sandboxId, options)
+    await ensure()
     emit('result', { result: 'resumed' })
   }
 } catch (error) {

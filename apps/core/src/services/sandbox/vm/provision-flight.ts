@@ -75,6 +75,15 @@ export function provisionBackoffMs(failureCount: number): number {
   return Math.min(30_000 * 2 ** Math.min(Math.max(0, failureCount - 1), 5), 15 * 60_000)
 }
 
+/** Physical provisioning succeeded, but setup must be retried under its own
+ * durable invocation fence. Never turn this into a terminal physical failure. */
+export class VmPostProvisionSetupError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : 'Sandbox post-provision setup did not complete', { cause })
+    this.name = 'VmPostProvisionSetupError'
+  }
+}
+
 /** Sanitized shared failure: remote stderr and configuration stay in the owner
  * log/error, never in this table or the follower's public error. */
 export class VmProvisionFailedError extends Error {
@@ -103,7 +112,10 @@ async function latestAttempt(sandboxId: string): Promise<Attempt | undefined> {
 }
 
 function sharedFailure(row: Attempt): never {
-  const retryCode = row.failureClass === 'abandoned' ? 'sandbox_readiness_pending' : row.failureClass?.split(':')[1]
+  const retryCode =
+    row.failureClass === 'abandoned' || row.failureClass === 'interrupted'
+      ? 'sandbox_readiness_pending'
+      : row.failureClass?.split(':')[1]
   const cause = new Error('Shared physical provisioning failed')
   if (retryCode === 'box_port_busy') cause.name = 'BoxPortBusyError'
   else if (retryCode === 'box_lock_timeout') cause.name = 'BoxLockTimeoutError'
@@ -174,17 +186,17 @@ export async function coalesceVmProvision<T>(
       assertOwned?.()
       if (latest?.status === 'running') {
         // We now own the same authoritative session lock, so the old Core owner
-        // died/lost its connection. Abandonment is at most the first cooldown,
-        // never inherited exponential backoff from earlier provisioning failures.
+        // died/lost its connection. This holder can recover immediately without
+        // spending execution retries on a cooldown: it owns the authoritative lock.
         // A remote script may still run: its host flock remains the final fence.
-        const failureCount = 1
+        const failureCount = 0
         const [abandoned] = await db
           .update(attempts)
           .set({
             status: 'failed',
             failureClass: 'abandoned',
             failureCount,
-            retryAt: new Date(Date.now() + provisionBackoffMs(failureCount)),
+            retryAt: new Date(),
             completedAt: new Date(),
           })
           .where(and(eq(attempts.id, latest.id), eq(attempts.status, 'running')))
@@ -243,8 +255,12 @@ export async function coalesceVmProvision<T>(
         // The bind/reaper placement race occurs BEFORE provisioning and is safe
         // for the existing one-shot re-placement loop to retry immediately.
         const placement = error instanceof MachineNotReadyError
+        const setup = error instanceof VmPostProvisionSetupError
         const retryCode = startupRetryCode(error)
-        const failureCount = placement ? 0 : current!.failureCount + 1
+        // Stop proof has not started physical provisioning; do not inherit an
+        // old physical failure streak that would outlive its execution budget.
+        const failureCount =
+          placement || setup ? 0 : retryCode === 'box_stop_unverified' ? 1 : current!.failureCount + 1
         assertOwned?.()
         await db
           .update(attempts)
@@ -256,7 +272,7 @@ export async function coalesceVmProvision<T>(
                 ? `retry:${retryCode}`
                 : 'provision',
             failureCount,
-            retryAt: placement ? null : new Date(Date.now() + provisionBackoffMs(failureCount)),
+            retryAt: placement ? null : new Date(Date.now() + (setup ? 0 : provisionBackoffMs(failureCount))),
             completedAt: new Date(),
           })
           .where(and(eq(attempts.id, current!.id), eq(attempts.status, 'running')))

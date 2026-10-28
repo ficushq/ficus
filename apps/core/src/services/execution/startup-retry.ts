@@ -16,6 +16,10 @@ export const MACHINE_STARTUP_RETRY_DELAYS_MS = [10_000, 20_000, 30_000, 60_000, 
  */
 export const BOX_PORT_BUSY_RETRY_DELAYS_MS = [10_000, 20_000, 40_000, 80_000, 160_000] as const
 
+/** Align the three stop-proof retries with physical-generation cooldowns so
+ * each retry can make a new authoritative verification attempt. */
+export const STOP_VERIFICATION_STARTUP_RETRY_DELAYS_MS = [30_000, 60_000, 120_000] as const
+
 /** The startup retry code for a busy box port. */
 export const BOX_PORT_BUSY_RETRY_CODE = 'box_port_busy'
 /** Host lock contention shares the existing bounded provisioning retry budget. */
@@ -27,6 +31,7 @@ const MACHINE_READINESS_ERRORS = new Set(['MachineUnavailableError', 'MachineNot
 
 /** The retry schedule for a startup retry code (see {@link startupRetryCode}). */
 export function startupRetryDelays(code: string): readonly number[] {
+  if (code === 'box_stop_unverified') return STOP_VERIFICATION_STARTUP_RETRY_DELAYS_MS
   if (code === BOX_PORT_BUSY_RETRY_CODE || code === BOX_LOCK_TIMEOUT_RETRY_CODE) return BOX_PORT_BUSY_RETRY_DELAYS_MS
   return code.startsWith('machine_') ? MACHINE_STARTUP_RETRY_DELAYS_MS : STARTUP_RETRY_DELAYS_MS
 }
@@ -64,8 +69,10 @@ const DATABASE_CONNECTION_ERRORS = new Set([
  */
 export function startupRetryCode(error: unknown): string | null {
   const seen = new Set<object>()
+  let setupFallback: string | null = null
   while (error instanceof Error && !seen.has(error)) {
     seen.add(error)
+    if (error.name === 'VmPostProvisionSetupError') setupFallback = 'sandbox_readiness_pending'
     const code = (error as Error & { code?: unknown }).code
     if (typeof code === 'string' && DATABASE_CONNECTION_ERRORS.has(code)) return code
     const machineStatus = (error as Error & { machineStatus?: unknown }).machineStatus
@@ -91,7 +98,7 @@ export function startupRetryCode(error: unknown): string | null {
     if (error.name === 'BoxLockTimeoutError') return BOX_LOCK_TIMEOUT_RETRY_CODE
     error = error.cause
   }
-  return null
+  return setupFallback
 }
 
 /** The first error in the cause chain with this name, if any. */

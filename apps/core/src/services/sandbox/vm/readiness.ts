@@ -6,6 +6,7 @@ export async function waitForVmSetupReady(
   read: () => Promise<VmSetupState | null>,
   options: {
     signal?: AbortSignal
+    fingerprint?: string
     timeoutMs?: number
     now?: () => number
     sleep?: (ms: number) => Promise<void>
@@ -17,6 +18,12 @@ export async function waitForVmSetupReady(
   for (;;) {
     options.signal?.throwIfAborted()
     const state = await read()
+    options.signal?.throwIfAborted()
+    if (state && options.fingerprint && state.desiredFingerprint !== options.fingerprint) {
+      const error = new Error('Sandbox setup fingerprint changed; startup will retry')
+      error.name = 'SandboxReadinessPendingError'
+      throw error
+    }
     if (state && (state.readiness === 'ready' || state.readiness === 'ready_degraded') && !state.pendingInvocationId)
       return state
     if (now() >= deadline) {

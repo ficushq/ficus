@@ -390,21 +390,30 @@ Recursive provisioning is rejected before taking another lease/slot.
 A successful follower reads the authoritative ready box/machine and creates its
 **own local SSH forward**; no process-local endpoint, environment, executor token
 or remote stderr is persisted in the flight-result table. It does not repeat the
-owner's setup Bash commands. Execution startup and VM `exec` wait up to 30 seconds
-for pending/reconciling readiness (also fencing a pending setup invocation), then
-requeue startup within the existing bounded retry budget rather than admitting a
-command early. The exact server refusal `Failed to start bash invocation: bash
+owner's setup Bash commands. The follower also checks the desired fingerprint
+against its own setup spec; a mixed-version mismatch requeues startup rather than
+attaching to incompatible setup. Execution startup awaits `ensureSandbox`, whose
+ready-generation joins wait up to 30 seconds for pending/reconciling readiness
+(also fencing a pending setup invocation), then requeue within the bounded startup
+budget rather than admitting a command early. Generic VM `exec` is not an
+admission gate: monitors, cleanup and deployment commands must not stall merely
+because a background repair has set setup to pending or reconciling.
+The exact server refusal `Failed to start bash invocation: bash
 invocation is already active` is likewise startup-retryable; other exit-127
 failures are not. This never retries an already-started model turn.
 
 A preempt-stop racing resume is also startup-retryable (`box_stop_unverified`).
-The retry runs normal stop/recreate reconciliation: only successful socket
+Both plain ensure and recreate run normal stop reconciliation before provisioning:
+only successful socket
 `UnitFileState`, all-unit `ActiveState`, and forward-removal proof permits
 recreation. The durable `stop_unverified` row is never cleared to force progress.
 In particular, `not_found` with `boxProvisioned=true` is a display projection
 also used for unverified stops, **not** authoritative stop proof. Known transient
 machine statuses keep their longer machine retry schedule; other unverified
-stops use the default bounded startup budget.
+stops use three startup delays of 30, 60 and 120 seconds. Their generation cooldown
+is capped at 30 seconds, without inheriting an older physical failure streak, so
+each retry can actually attempt verification instead of exhausting the budget
+while waiting for the lifecycle sweep.
 
 An unchanged ready box reconnects **without** the setup lease or a dedicated
 permit. The fast path checks its physical provisioning marker, desired setup
@@ -421,10 +430,17 @@ that already-established client, not another ensure, and retains its durable
 all-or-nothing cleanup acknowledgement. Read-only cleanup sweeps attach to an
 existing ready box and do not provision one.
 
-Ordinary failures back off for 30 seconds, doubling to a maximum of 15 minutes;
+Physical provisioning failures back off for 30 seconds, doubling to a maximum of
+15 minutes;
 success resets the failure count. Followers/backoff callers receive a sanitized
 error identifying the failed attempt and retry time, while the original caller
-retains its diagnostic error. Shared failures preserve the allowlisted startup
+retains its diagnostic error. Post-physical setup failures carry a
+`VmPostProvisionSetupError` with the original diagnostic cause: allowlisted causes
+keep their startup code; other setup errors become `sandbox_readiness_pending`.
+They reset the physical failure count and have no physical cooldown. Recovery
+still passes through durable invocation reconciliation; an unknown remote Bash
+outcome is never permission to blindly repeat it. Shared failures preserve the allowlisted
+startup
 classification for transient `machine_*`, port-busy (75), host-lock timeout (73),
 Bash contention, stop-verification and readiness-pending errors. Each uses the same execution retry
 schedule as the owner; budget exhaustion still terminates the execution.
@@ -434,10 +450,13 @@ with `failureClass=interrupted`, `retryAt=completedAt=now` and failure count zer
 Ownership registration includes inserts crossing shutdown, and late callbacks
 cannot publish success. A replacement can provision immediately after acquiring
 the released lease. An unclean lost owner leaves a `running` generation: the next
-lease owner marks it abandoned with only the first 30-second cooldown, regardless
-of earlier failures. Startup waits/requeues across that cooldown before recovery. The
-idempotent remote script remains protected by the host lock if its original
-process is still unwinding. An old owner cannot overwrite that terminal result. The existing
+lease owner marks it abandoned with failure count zero and an immediately expired
+retry time, then recovers in that same call. Holding the authoritative lease makes
+a separate cooldown unnecessary and avoids spending the startup budget before a
+real attempt. Both abandoned and interrupted results remain startup-retryable if
+a follower observes them before expiry. The idempotent remote script remains
+protected by the host lock if its original process is still unwinding. An old owner
+cannot overwrite that terminal result. The existing
 bind/reaper race remains a safe immediate re-placement exception: it happens
 before host provisioning begins.
 
@@ -518,10 +537,15 @@ reconciling admission, and two independent VM-manager processes ensuring a fresh
 box. The fresh-box test uses real PostgreSQL/PgBouncer leases and setup rows:
 the generation stays running while the owner is held in setup; the follower's
 first Bash occurs only after owner setup completes and readiness is published.
-A separate two-process preempt-stop/immediate-resume test uses the real stop
+Two-process preempt-stop/immediate-resume tests cover both recreate and plain
+ensure, using the real stop
 orchestration and durable rows with synthetic SSH readbacks: failed verification
 keeps `stop_unverified`, queues startup rather than provisioning, and only a
-subsequent successful authoritative stop allows recreation.
+subsequent successful authoritative stop allows recreation. The plain-ensure test
+waits its actual first 30-second startup delay without clearing either the stop
+marker or cooldown. Separate processes also verify that a non-allowlisted owner
+setup error remains retryable five seconds later, and an abandoned generation
+recovers on its first call without consuming startup retries.
 A separate owner-shutdown/replacement-process test provisions within five seconds,
 which excludes the former 30-second cooldown. Physical installs, tunnels, assets
 and Bash are synthetic; these tests do not launch real VMs or restart services.
@@ -530,10 +554,17 @@ The `manager.test.ts` 20-ready-agent reconnect measurement used 40 ms synthetic
 health latency and the real setup-lease/dedicated-permit implementation on the
 before path:
 
-| Version |   N | Measured resume wall time | Peak concurrent health checks | Setup lease calls |
-| ------- | --: | ------------------------: | ----------------------------: | ----------------: |
-| Before  |  20 |                7,976.5 ms |                             2 |                40 |
-| After   |  20 |                   50.1 ms |                            20 |                 0 |
+| Version                              |   N | Measured resume wall time | Peak concurrent health checks | Setup lease calls |
+| ------------------------------------ | --: | ------------------------: | ----------------------------: | ----------------: |
+| Before                               |  20 |                7,976.5 ms |                             2 |                40 |
+| After                                |  20 |                   50.1 ms |                            20 |                 0 |
+| After + actual freshness comparisons |  20 |                   47.6 ms |                            20 |                 0 |
+
+The final variant uses the actual asset sync and read-only comparison functions
+with synthetic skill contents, transport and stored hashes. Each of the 20 fast-path
+reconnects must read current assets; freshness is no longer stubbed to `true`.
+An ensure-path Bash-refusal test also exercises a real `runBash` response rather
+than relying only on a regex classifier test.
 
 These are synthetic measurements, **not** a production speedup estimate. The
 before run included database acquisition/polling; the after path takes no

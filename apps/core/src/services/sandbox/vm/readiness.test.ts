@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { waitForVmSetupReady } from './readiness'
-import { startupRetryCode } from '../../execution/startup-retry'
+import { startupRetryCode, startupRetryDelays } from '../../execution/startup-retry'
 import type { VmSetupState } from './setup-state'
 
 const state = (readiness: VmSetupState['readiness']) => ({ readiness, pendingInvocationId: null }) as VmSetupState
@@ -57,4 +57,8 @@ test('single-active Bash startup conflict retries, without treating arbitrary ex
   expect(startupRetryCode(new Error('wrapped', { cause: conflict }))).toBe('box_bash_busy')
   expect(startupRetryCode(new Error('Command failed (exit 127): command not found'))).toBeNull()
   expect(startupRetryCode(new Error('bash invocation is already active'))).toBeNull()
+})
+
+test('stop-verification retry schedule clears each physical cooldown with retries remaining', () => {
+  expect(startupRetryDelays('box_stop_unverified')).toEqual([30_000, 60_000, 120_000])
 })

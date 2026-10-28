@@ -75,7 +75,7 @@ import {
   type VmSetupReadiness,
   type VmSetupReasonCode,
 } from './setup-state'
-import { coalesceVmProvision } from './provision-flight'
+import { coalesceVmProvision, VmPostProvisionSetupError } from './provision-flight'
 import { waitForVmSetupReady } from './readiness'
 import { reconcileVmSetup } from './setup-reconciler'
 import { runIdempotentSandboxOperation } from './retry'
@@ -606,6 +606,18 @@ function lifecycleGenerationFromVmSpecHash(specHash: string | null | undefined):
  */
 const BOX_REMOVE_ARCHIVE_TIMEOUT_MS = 5 * 60_000
 
+/** Preserve machine-specific startup budgets without weakening stop proof. */
+function stopVerificationError(sandboxId: string, machineStatus?: string): Error {
+  const message = `Cannot recreate ${sandboxId} until its stop is verified`
+  const cause = new BoxStopUnverifiedError(sandboxId)
+  if (machineStatus && machineStatus !== 'ready') {
+    const error = new MachineUnavailableError(message, machineStatus)
+    error.cause = cause
+    return error
+  }
+  return new Error(message, { cause })
+}
+
 export class VmSandboxManager implements ISandboxManager {
   private readonly deps: VmSandboxManagerDeps
   private readonly sandboxes = new Map<string, VmSandboxState>()
@@ -840,7 +852,10 @@ export class VmSandboxManager implements ISandboxManager {
         // best-effort components as one durable setup generation. No other Core
         // process may replace the desired fingerprint while this generation runs.
         const setupResult = skipSetup
-          ? await waitForVmSetupReady(() => this.deps.getSetupState(sandboxId), { signal: opts.signal })
+          ? await waitForVmSetupReady(() => this.deps.getSetupState(sandboxId), {
+              signal: opts.signal,
+              fingerprint: setupFingerprint,
+            })
           : await (async () => {
               // Publish pending readiness before required asset sync. The box manager
               // has already made the physical server reachable, but API status must
@@ -1090,6 +1105,14 @@ export class VmSandboxManager implements ISandboxManager {
           return await this.deps.withProvision(
             sandboxId,
             async () => {
+              // A normal resume need not have spec drift. Repair a preempt-stop
+              // through the same authoritative readbacks, not a display status
+              // or a lifecycle sweep racing the execution retry budget.
+              const current = await this.deps.getMachineBox(sandboxId)
+              if (current?.status === 'stop_unverified') {
+                const stop = await this.deps.stopBox(sandboxId)
+                if (stop.kind === 'unverified') throw stopVerificationError(sandboxId, stop.machineStatus)
+              }
               const placed = await this.deps.ensureBox({
                 sandboxId,
                 machineId: machine.id,
@@ -1108,7 +1131,11 @@ export class VmSandboxManager implements ISandboxManager {
                 beginPhysicalWork,
               })
               timer.merge(placed.timings)
-              return finishEnsure(placed)
+              try {
+                return await finishEnsure(placed)
+              } catch (error) {
+                throw new VmPostProvisionSetupError(error)
+              }
             },
             async () => {
               // The owner's endpoint is process-local. A shared success only
@@ -1389,9 +1416,9 @@ export class VmSandboxManager implements ISandboxManager {
     return null
   }
 
+  // Startup admission is ensureSandbox. Generic exec also serves monitors,
+  // cleanup and deployments; background setup repair must not stall those.
   async exec(sandboxId: string, args: string[], options?: SandboxExecOptions): Promise<Buffer> {
-    this.requireSandbox(sandboxId)
-    await waitForVmSetupReady(() => this.deps.getSetupState(sandboxId))
     const state = this.requireSandbox(sandboxId)
     this.touch(state)
 
@@ -1617,18 +1644,7 @@ export class VmSandboxManager implements ISandboxManager {
       log.info(`Recreating box to apply spec change: ${sandboxId}`)
       // Park (state persists on disk) then re-ensure with the new spec.
       const stop = await this.stopSandbox(sandboxId)
-      if (stop.kind === 'unverified') {
-        const message = `Cannot recreate ${sandboxId} until its stop is verified`
-        // Preserve machine-specific retry policy when known. A ready host
-        // can still be finishing a preempt-stop: retry startup, never bypass
-        // the authoritative unit/forward readbacks or force a recreation.
-        if (stop.machineStatus && stop.machineStatus !== 'ready') {
-          const error = new MachineUnavailableError(message, stop.machineStatus)
-          error.cause = new BoxStopUnverifiedError(sandboxId)
-          throw error
-        }
-        throw new Error(message, { cause: new BoxStopUnverifiedError(sandboxId) })
-      }
+      if (stop.kind === 'unverified') throw stopVerificationError(sandboxId, stop.machineStatus)
       return this.ensureSandbox(sandboxId, opts)
     })
   }

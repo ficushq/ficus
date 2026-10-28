@@ -5,7 +5,12 @@ import { EventEmitter } from 'node:events'
 import { VmSandboxManager } from '../manager'
 import { withVmSetupLease } from '../setup-state'
 import { vmProvisionLifecycle } from '../provision-flight'
-import type { Machine, MachineBox } from '../../../machines/queries'
+import { getMachine, getMachineBox } from '../../../machines/queries'
+import { boxUnixUser } from '../../../machines/box-manager'
+import { db, machines, machineBoxes } from '../../../../db'
+import { eq } from 'drizzle-orm'
+import { createHash } from 'node:crypto'
+import { startupRetryCode } from '../../../execution/startup-retry'
 import type { SandboxClient } from '../../client/http-client'
 
 const [role, sandboxId, outcome] = process.argv.slice(2)
@@ -31,15 +36,36 @@ input.on('line', (line) => {
       })
   }
 })
-const machine = { id: 'synthetic-machine', name: 'synthetic-machine', status: 'ready' } as Machine
-const box = {
-  sandboxId,
-  machineId: machine.id,
-  unixUser: 'box_aaaaaaaaaaaa',
-  port: 51234,
-  status: 'ready',
-  authToken: 'synthetic-only',
-} as MachineBox
+// Real durable setup rows need a physical-row fixture. Derive a unique synthetic
+// machine key from this test's random sandbox id, so two processes share it.
+const key = createHash('sha256').update(sandboxId).digest('hex')
+const machineId = `${key.slice(0, 8)}-${key.slice(8, 12)}-${key.slice(12, 16)}-${key.slice(16, 20)}-${key.slice(20, 32)}`
+await db
+  .insert(machines)
+  .values({
+    id: machineId,
+    name: machineId,
+    provider: 'ssh',
+    status: 'ready',
+    sshHost: '127.0.0.1',
+    sshUser: 'test',
+    sshKeyId: 'test',
+    sshPublicKey: 'test',
+  })
+  .onConflictDoNothing()
+await db
+  .insert(machineBoxes)
+  .values({
+    sandboxId,
+    machineId,
+    unixUser: boxUnixUser(sandboxId),
+    port: 51234,
+    status: 'ensuring',
+    authToken: 'synthetic-only',
+  })
+  .onConflictDoNothing()
+const box = (await getMachineBox(sandboxId))!
+const machine = (await getMachine(box.machineId))!
 let provisioned = false
 const manager = new VmSandboxManager({
   getBundleVersion: async () => 'synthetic-bundle',
@@ -49,15 +75,20 @@ const manager = new VmSandboxManager({
   resolveGitHubIdentity: async () => ({}),
   resolveMachine: async () => machine,
   resolveBoxApiUrl: async () => 'http://127.0.0.1:59999',
-  ensureBox: async () => {
+  ensureBox: async (opts) => {
     provisioned = true
     emit('provision')
     await release.promise
     if (outcome === 'failure') throw new Error('synthetic owner failure')
-    return { machine, box, endpoint: `http://127.0.0.1:${41000 + (process.pid % 10000)}` }
+    const [ready] = await db
+      .update(machineBoxes)
+      .set({ status: 'ready', authToken: 'synthetic-only', provisionedSpecHash: opts.specHash })
+      .where(eq(machineBoxes.sandboxId, sandboxId))
+      .returning()
+    return { machine, box: ready!, endpoint: `http://127.0.0.1:${41000 + (process.pid % 10000)}` }
   },
-  getMachineBox: async () => box,
-  getMachine: async () => machine,
+  getMachineBox,
+  getMachine,
   ensureMaster: async () => {},
   addForward: async () => {
     emit('local-forward')
@@ -68,6 +99,7 @@ const manager = new VmSandboxManager({
   createClient: () =>
     ({
       close() {},
+      write: async () => {},
       devboxReady: async () => {},
       health: async () => ({ healthy: true, devboxReady: true }),
       bash() {
@@ -80,34 +112,17 @@ const manager = new VmSandboxManager({
       },
     }) as unknown as SandboxClient,
   syncBoxFiles: async () => {
+    if (outcome === 'setup-failure') throw new Error('synthetic required-asset failure')
     if (outcome === 'fresh') emit('assets')
   },
   seedBoxDevbox: async () => {
-    emit('setup')
-    await releaseSetup.promise
-    emit('setup-complete', { at: Date.now() })
+    if (outcome === 'fresh') {
+      emit('setup')
+      await releaseSetup.promise
+      emit('setup-complete', { at: Date.now() })
+    }
     return {}
   },
-  // Ready setup avoids any command/tool installation; still runs the real
-  // first-contact cleanup with the explicit client and durable acknowledgement.
-  ...(outcome === 'fresh'
-    ? {}
-    : {
-        getSetupState: async () => ({ readiness: 'ready', pendingInvocationId: null }) as any,
-        ensureSetupFingerprint: async (id: string, fingerprint: string) => ({
-          sandboxId: id,
-          desiredFingerprint: fingerprint,
-          readiness: 'ready' as const,
-          reasons: [],
-          attemptCount: 0,
-          nextAttemptAt: null,
-          pendingInvocationId: null,
-          pendingInvocationKind: null,
-          lastFailureClass: null,
-          lastAttemptAt: null,
-          updatedAt: new Date(),
-        }),
-      }),
   withSetupLease: (id, fn, wait) =>
     withVmSetupLease(id, fn, {
       ...wait,
@@ -125,7 +140,11 @@ try {
   }
   emit('result', { result: provisioned ? 'owner-ready' : 'joined-ready' })
 } catch (error) {
-  emit('failed', { error: error instanceof Error ? error.name : 'unknown', detail: String(error) })
+  emit('failed', {
+    error: error instanceof Error ? error.name : 'unknown',
+    code: startupRetryCode(error),
+    detail: String(error),
+  })
 } finally {
   input.close()
   await manager.cleanup()
