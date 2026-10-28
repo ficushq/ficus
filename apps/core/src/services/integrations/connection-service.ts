@@ -153,6 +153,7 @@ export class IntegrationConnectionService {
       throw new IntegrationManualCredentialNotAllowedError()
     const provider = this.#resolveProvider(input.providerKey, input.adapterVersion)
     const configuration = provider.parseConfig(input.configuration)
+    const credential = input.authorizationGrant ? input.credential : input.credential.trim()
     const id = this.#uuid()
     const materialRevision = this.#uuid()
     const credentialRef =
@@ -162,9 +163,9 @@ export class IntegrationConnectionService {
         : `__integration-credential:${id}:${materialRevision}:bearer`)
     if (!input.stagedCredentialRef) {
       try {
-        await this.#credentials.set(credentialRef, input.credential, input.actor)
+        await this.#credentials.set(credentialRef, credential, input.actor)
       } catch (error) {
-        if (!input.authorizationFlowId || this.#credentials.get(credentialRef) !== input.credential) throw error
+        if (!input.authorizationFlowId || this.#credentials.get(credentialRef) !== credential) throw error
         // A deterministic flow-scoped write committed before acknowledgement.
       }
     }
@@ -207,7 +208,7 @@ export class IntegrationConnectionService {
       connection = committed
     }
     try {
-      await this.#validateAndRecord(connection, provider, input.credential)
+      await this.#validateAndRecord(connection, provider, credential)
       await this.#audit(connection, 'create', input.actor)
       return this.safeView((await this.#repository.get(id)) ?? connection)
     } catch (error) {
@@ -303,6 +304,7 @@ export class IntegrationConnectionService {
     const current = await this.#mustGet(id)
     if (!authorizationGrant && !this.#allowsManualCredential(current.providerKey))
       throw new IntegrationManualCredentialNotAllowedError()
+    if (!authorizationGrant) credential = credential.trim()
     const parsedConfiguration =
       configuration === undefined
         ? undefined

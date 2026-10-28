@@ -97,7 +97,7 @@ function fakeProviders() {
       return Response.json({ ok: false, error: 'invalid_auth' })
     }
     if (url.includes('discord.com/api')) {
-      if (auth !== 'Bot good') return new Response('{}', { status: 401 })
+      if (auth !== 'Bot good-token') return new Response('{}', { status: 401 })
       if (url.endsWith('/users/@me')) return Response.json({ id: 'bot-user' })
       if (url.endsWith('/applications/@me')) return Response.json({ id: 'app-1', verify_key: 'pk-1' })
       if (url.endsWith('/users/@me/guilds')) return Response.json([{ id: 'g-1', name: 'Only Guild' }])
@@ -208,7 +208,11 @@ test('saving a Telegram bot token creates a validated connection with discovered
 
 test('a rejected credential is kept for the card to explain but never served to the transport', async () => {
   const connections = make()
-  const view = await connections.configure('slack', { botToken: 'xoxb-bad', signingSecret: 'sig' }, 'test')
+  const view = await connections.configure(
+    'slack',
+    { botToken: 'xoxb-bad', signingSecret: 'synthetic-signing' },
+    'test'
+  )
   expect(view.connection).toMatchObject({ source: 'connection', authState: 'invalid', lastErrorCode: 'invalid_auth' })
   expect(view.setup.state).toBe('needs_attention')
   expect(view.setup.issues[0]).toContain('Slack rejected the saved credential')
@@ -226,7 +230,7 @@ test('a rejected credential is kept for the card to explain but never served to 
       .where(eq(integrationCredentialCleanupJobs.credentialRef, before.credentialRef))
   ).toHaveLength(1)
   expect(fixed.identity).toEqual({ teamId: 'T123', botUserId: 'U1', teamName: 'Acme' })
-  expect(connections.get('slack')?.credential).toEqual({ botToken: 'xoxb-good', signingSecret: 'sig' })
+  expect(connections.get('slack')?.credential).toEqual({ botToken: 'xoxb-good', signingSecret: 'synthetic-signing' })
   expect(
     await db.select().from(integrationConnections).where(eq(integrationConnections.providerKey, 'slack'))
   ).toHaveLength(1)
@@ -266,7 +270,7 @@ test('a default squad creates the routing entry from the discovered identity, on
 
 test('Discord routing needs a server: discovered when the bot is in exactly one, otherwise chosen', async () => {
   const connections = make()
-  let view = await connections.configure('discord', { botToken: 'good' }, 'test')
+  let view = await connections.configure('discord', { botToken: 'good-token' }, 'test')
   expect(view.identity).toEqual({ applicationId: 'app-1', publicKey: 'pk-1' })
   expect(view.guilds).toEqual([{ id: 'g-1', name: 'Only Guild' }])
   expect(await connections.discoverDiscordGuild()).toBe('g-1')
@@ -311,14 +315,14 @@ test('platform-managed material is neither migrated nor editable, and still serv
   const view = await connections.view('slack')
   expect(view.fields.every((field) => field.managed && field.configured)).toBe(true)
   expect(JSON.stringify(view)).not.toContain('platform-token')
-  await expect(connections.configure('slack', { botToken: 'replacement', signingSecret: 'x' }, 'test')).rejects.toThrow(
-    'managed'
-  )
+  await expect(
+    connections.configure('slack', { botToken: 'replacement', signingSecret: 'synthetic-replacement' }, 'test')
+  ).rejects.toThrow('managed')
 })
 
 test('a usable managed Slack connection (broker authority) wins over the manual one for the transport', async () => {
   const connections = make({ authority: 'platform_broker' })
-  await connections.configure('slack', { botToken: 'xoxb-good', signingSecret: 'sig' }, 'test')
+  await connections.configure('slack', { botToken: 'xoxb-good', signingSecret: 'synthetic-signing' }, 'test')
   await createManagedSlackConnection(connections.plugins)
   await connections.refresh()
 
@@ -337,7 +341,7 @@ test('a usable managed Slack connection (broker authority) wins over the manual 
 
 test('falls back to the manual connection when the managed one is disabled or unauthenticated', async () => {
   const connections = make({ authority: 'platform_broker' })
-  await connections.configure('slack', { botToken: 'xoxb-good', signingSecret: 'sig' }, 'test')
+  await connections.configure('slack', { botToken: 'xoxb-good', signingSecret: 'synthetic-signing' }, 'test')
 
   // Disabled managed connection: manual wins.
   await createManagedSlackConnection(connections.plugins, { enable: false })
@@ -355,7 +359,7 @@ test('local authority never offers the managed connection, even if a broker row 
   // Authority is 'local' (default from `make()`), so `#managedRow` never looks
   // at the broker-authority row at all — the manual connection is the only one.
   const connections = make()
-  await connections.configure('slack', { botToken: 'xoxb-good', signingSecret: 'sig' }, 'test')
+  await connections.configure('slack', { botToken: 'xoxb-good', signingSecret: 'synthetic-signing' }, 'test')
   await createManagedSlackConnection(connections.plugins)
   await connections.refresh()
   expect(connections.get('slack')).toMatchObject({ authority: 'local', credential: { botToken: 'xoxb-good' } })
@@ -369,7 +373,11 @@ test("manual configure() never rotates the managed row, even when it is the conn
   expect(connections.get('slack')?.authority).toBe('platform_broker')
 
   const [before] = await db.select().from(integrationConnections).where(eq(integrationConnections.id, managed.id))
-  const view = await connections.configure('slack', { botToken: 'xoxb-good', signingSecret: 'sig' }, 'test')
+  const view = await connections.configure(
+    'slack',
+    { botToken: 'xoxb-good', signingSecret: 'synthetic-signing' },
+    'test'
+  )
   expect(view.connection?.id).not.toBe(managed.id)
 
   const [after] = await db.select().from(integrationConnections).where(eq(integrationConnections.id, managed.id))
@@ -467,4 +475,14 @@ test('default squad routing works from the managed connection when no manual one
   const rows = await db.select().from(channelInstances).where(eq(channelInstances.provider, 'slack'))
   expect(rows).toHaveLength(1)
   expect(rows[0]).toMatchObject({ providerConfig: { teamId: 'T-routing' }, defaultSquadId: squadId })
+})
+
+test('channel settings reject pasted token/signing leaves below eight characters', async () => {
+  const connections = make()
+  for (let length = 1; length < 8; length++) {
+    await expect(connections.configure('discord', { botToken: 's'.repeat(length) }, 'test')).rejects.toThrow()
+    await expect(
+      connections.configure('slack', { botToken: 'xoxb-good', signingSecret: 's'.repeat(length) }, 'test')
+    ).rejects.toThrow()
+  }
 })

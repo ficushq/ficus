@@ -8,7 +8,7 @@ export interface StoredKeyRedaction<T> {
 export interface ContentSafetyPort {
   /** Replace every stored secret value and known credential format with a marker. */
   redact<T>(input: T): T
-  /** Redact and report the sanitized key names whose exact stored values matched. */
+  /** Redact all policies; report only input-protected exact matches for refusal/audit. */
   redactWithStoredKeys<T>(input: T): StoredKeyRedaction<T>
   /**
    * Drop a partial stored value cut off at an edge of text: a trailing fragment
@@ -26,7 +26,12 @@ export interface StoredValueFragmentEdges {
   trailing?: boolean
 }
 
-type SecretEntry = { key: string; value: string }
+export type SecretEntry = {
+  key: string
+  value: string
+  /** Redact exact values/fragments, but exclude them from input refusal and audit attribution. */
+  outputOnly?: boolean
+}
 
 /** KMP failure table: for each prefix of `pattern`, the length of its longest proper border. */
 function failureTable(pattern: string): Int32Array {
@@ -119,7 +124,7 @@ export class ContentSafety implements ContentSafetyPort {
   replaceSecretEntries(entries: readonly SecretEntry[]): void {
     this.#entries = entries
       .filter((entry) => entry.value.length > 0)
-      .map((entry) => ({ key: safeKeyName(entry.key), value: entry.value }))
+      .map((entry) => ({ ...entry, key: safeKeyName(entry.key) }))
       .sort((left, right) => right.value.length - left.value.length)
     this.#fragmentMatchers = undefined
   }
@@ -355,7 +360,7 @@ export class ContentSafety implements ContentSafetyPort {
     // Interpolated Drizzle messages no longer carry the Error object/type.
     const queryStart = input.indexOf('Failed query: ')
     if (queryStart >= 0 && storedKeys) {
-      for (const entry of this.#entries) if (input.includes(entry.value)) storedKeys.add(entry.key)
+      for (const entry of this.#entries) if (!entry.outputOnly && input.includes(entry.value)) storedKeys.add(entry.key)
     }
     let value = queryStart < 0 ? input : `${input.slice(0, queryStart)}${DATABASE_QUERY_FAILED}`
     const placeholders: string[] = []
@@ -368,7 +373,7 @@ export class ContentSafety implements ContentSafetyPort {
     const spans: MatchSpan[] = []
     for (const entry of this.#entries) {
       let start = value.indexOf(entry.value)
-      if (start >= 0 && storedKeys) storedKeys.add(entry.key)
+      if (start >= 0 && storedKeys && !entry.outputOnly) storedKeys.add(entry.key)
       while (start >= 0) {
         spans.push({ start, end: start + entry.value.length, stored: entry })
         start = value.indexOf(entry.value, start + 1)

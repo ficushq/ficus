@@ -844,7 +844,9 @@ async function startup(): Promise<void> {
     import('./lib/infra/logger'),
     import('./services/security/content-safety-registry'),
   ])
+  const { initializeSquadEnvSecretSource } = await import('./services/security/squad-env-secret-source')
   setLogContentSanitizer((args) => getContentSafetyRegistry().redact(args))
+  await initializeSquadEnvSecretSource()
 
   // This process's own SecretStore instance/cache needs its own onboarding
   // onChange listener (GitHub/Slack/Discord token changes) — see

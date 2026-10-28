@@ -484,3 +484,30 @@ describe('ContentSafety.trimStoredValueFragments cut placement', () => {
     expect(aResult).toBe('a'.repeat(49_999))
   })
 })
+
+test('output-only exact values redact and trim but never attribute a refused input', () => {
+  const value = 'synthetic-env-value'
+  const safety = ContentSafety.fromSecretEntries([{ key: 'SQUAD_ENV', value, outputOnly: true }])
+  expect(safety.redactWithStoredKeys({ content: `APP_KEY=${value}` })).toEqual({
+    value: { content: 'APP_KEY=[REDACTED_SECRET_ENV:SQUAD_ENV]' },
+    storedKeys: [],
+  })
+  expect(safety.trimStoredValueFragments(`hello ${value.slice(0, -2)}`, { trailing: true })).toBe('hello ')
+  const shared = ContentSafety.fromSecretEntries([
+    { key: 'ENV', value, outputOnly: true },
+    { key: 'INTEGRATION', value },
+  ])
+  expect(shared.redactWithStoredKeys(value).storedKeys).toEqual(['INTEGRATION'])
+})
+
+test('Failed query output-only attribution never becomes a stored-key refusal', () => {
+  const value = 'synthetic-env-query-value'
+  const envOnly = ContentSafety.fromSecretEntries([{ key: 'squad-env.APP_TOKEN', value, outputOnly: true }])
+  expect(envOnly.redactWithStoredKeys(`Failed query: select '${value}'`).storedKeys).toEqual([])
+  expect(envOnly.redact(`Failed query: select '${value}'`)).not.toContain(value)
+  const alsoProtected = ContentSafety.fromSecretEntries([
+    { key: 'squad-env.APP_TOKEN', value, outputOnly: true },
+    { key: 'integration', value },
+  ])
+  expect(alsoProtected.redactWithStoredKeys(`Failed query: select '${value}'`).storedKeys).toEqual(['integration'])
+})
