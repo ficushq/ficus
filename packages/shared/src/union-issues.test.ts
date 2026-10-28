@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { z } from 'zod'
 import { workflowCustomizationSchema, workflowSourceSchema } from './workflows'
-import { explainedUnion } from './union-issues'
+import { describeZodIssue, explainedUnion } from './union-issues'
 
 const design = {
   id: 'design',
@@ -86,6 +86,14 @@ describe('step validation messages', () => {
     ])
   })
 
+  test('an otherwise valid step with an unknown field reports that field at the step', () => {
+    // Zod 4 returns the only failing member's issues directly when they are all continuable, so this
+    // is an unrecognized_keys issue at the step rather than an explained invalid_union.
+    expect(issues(source({ ...gate, extra: 1 }))).toEqual([
+      { path: 'definition.steps.1', code: 'unrecognized_keys', message: 'Unrecognized key: "extra"' },
+    ])
+  })
+
   test('valid steps still parse, with the same defaults', () => {
     const parsed = workflowSourceSchema.parse(source(gate))
     expect(parsed.kind === 'inline' && parsed.definition.steps[1]).toMatchObject({
@@ -109,5 +117,46 @@ describe('explainedUnion', () => {
   test('without a discriminator, a field only one member has selects it', () => {
     const result = schema.safeParse({ b: 'one' })
     expect(!result.success && result.error.issues[0]!.message).toBe('thing: b must be a number')
+  })
+})
+
+describe('describeZodIssue', () => {
+  const schema = z
+    .object({ name: z.string(), size: z.number().int().max(3), tags: z.array(z.string()).min(1) })
+    .strict()
+  function described(value: unknown) {
+    const result = schema.safeParse(value)
+    if (result.success) throw new Error('expected a validation failure')
+    return result.error.issues.map((issue) => describeZodIssue(issue, issue.path.join('.'), { root: value }))
+  }
+
+  test('tells a missing field from a wrong type', () => {
+    expect(described({ size: 1, tags: ['a'] })).toEqual(['name is required'])
+    expect(described({ name: 1, size: 1, tags: ['a'] })).toEqual(['name must be text'])
+  })
+
+  test('without a root, a missing field is recognised from the default message', () => {
+    const result = schema.safeParse({ size: 1, tags: ['a'] })
+    expect(!result.success && describeZodIssue(result.error.issues[0]!, 'name')).toBe('name is required')
+  })
+
+  test('describes sizes, whole numbers, unknown fields and allowed values', () => {
+    expect(described({ name: 'a', size: 4, tags: [], other: true })).toEqual([
+      'size must be at most 3',
+      'tags must have at least 1 items',
+      "unknown field 'other'",
+    ])
+    expect(described({ name: 'a', size: 1.5, tags: ['a'] })).toEqual(['size must be a whole number'])
+    const choice = z.object({ mode: z.enum(['a', 'b']), exact: z.literal('x') })
+    const result = choice.safeParse({ mode: 'c', exact: 'y' })
+    expect(
+      !result.success && result.error.issues.map((issue) => describeZodIssue(issue, String(issue.path[0])))
+    ).toEqual(['mode must be one of: a, b', 'exact must be "x"'])
+  })
+
+  test('a discriminated union without a matching member lists the valid discriminators', () => {
+    const union = z.discriminatedUnion('kind', [z.object({ kind: z.literal('a') }), z.object({ kind: z.literal('b') })])
+    const result = union.safeParse({ kind: 'c' })
+    expect(!result.success && describeZodIssue(result.error.issues[0]!, 'kind')).toBe('kind must be one of: a, b')
   })
 })
