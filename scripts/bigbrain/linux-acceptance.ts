@@ -852,6 +852,40 @@ try {
       renamedJoin.vault === rA.receipt.upstreamVaultId,
     JSON.stringify(renamedJoin.ok ? renamedJoin.name : { invite: third.ok ? 'issued' : third.code, ...renamedJoin })
   )
+  // A real join under load: the child first fills A's read bucket (credential-free whoamis until
+  // the gateway answers 429), then joins with upstream connectInvite itself, never the harness's
+  // spent-link fallback. Only a refused redeem (nothing spent, e.g. the global bucket) runs the
+  // child again; a refused whoami after the redeem fails the check with its trail.
+  const loaded = helper({
+    requestId: randomUUID(),
+    action: 'member-invite',
+    ...fenceA(),
+    displayName: 'Katherine',
+    access: 'read',
+  })
+  sh(['/bin/rm', '-f', `${memberHome}/shared-connections.json`])
+  const loadedJoin = await nativeClient(
+    memberHome,
+    `const endpoint = m.endpointURL(new URL(input).origin);
+     let refused = 0;
+     for (let i = 0; i < 40 && refused === 0; i++) {
+       const r = await nativeFetch(endpoint + '/v1/whoami');
+       await r.arrayBuffer();
+       if (r.status === 429) refused++;
+     }
+     const saved = await m.connectInvite(path, input);
+     console.log(JSON.stringify({ ok: true, loaded: refused === 1, role: saved.identity.role, trail }));`,
+    loaded.ok ? String(loaded.invite.inviteUrl) : ''
+  )
+  check(
+    "a join while the vault's read bucket is full completes: the whoami after the redeem is served",
+    loaded.ok === true &&
+      loadedJoin.ok === true &&
+      loadedJoin.loaded === true &&
+      loadedJoin.role === 'member' &&
+      JSON.stringify(loadedJoin.trail) === JSON.stringify(['POST /v1/invites/redeem 200', 'GET /v1/whoami 200']),
+    JSON.stringify(loadedJoin.ok ? loadedJoin.trail : { invite: loaded.ok ? 'issued' : loaded.code, ...loadedJoin })
+  )
   sh(['/bin/rm', '-rf', memberHome])
   // A vault created before Ficus wrote names: upstream's default, as the vault UID left it.
   writeFileSync(identityPath(B), JSON.stringify({ id: rB.receipt.upstreamVaultId, name: 'Shared BigBrain' }), {
