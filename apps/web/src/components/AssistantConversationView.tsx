@@ -81,6 +81,9 @@ function DurableConversation(props: AssistantConversationViewProps) {
   const [archive, setArchive] = useState<AssistantEntry[]>([])
   const [archiveBefore, setArchiveBefore] = useState<number>()
   const [archiveHasMore, setArchiveHasMore] = useState(false)
+  const [archiveLoading, setArchiveLoading] = useState(false)
+  const [archiveError, setArchiveError] = useState<string>()
+  const archiveRequestPending = useRef(false)
   const [error, setError] = useState<string>()
   const [voiceRequested, setVoiceRequested] = useState(false)
   const [attempt, setAttempt] = useState(0)
@@ -351,6 +354,27 @@ function DurableConversation(props: AssistantConversationViewProps) {
       />
     </div>
   )
+  const loadEarlierMessages = async () => {
+    // Guard even clicks dispatched before React commits the disabled state.
+    if (archiveRequestPending.current) return
+    archiveRequestPending.current = true
+    setArchiveLoading(true)
+    setArchiveError(undefined)
+    try {
+      const page = await api.history(props.id, archiveBefore)
+      setArchive((current) => [
+        ...page.entries.filter((entry) => !current.some((row) => row.id === entry.id)),
+        ...current,
+      ])
+      setArchiveBefore(page.before)
+      setArchiveHasMore(page.hasMore)
+    } catch {
+      setArchiveError('Could not load earlier messages.')
+    } finally {
+      archiveRequestPending.current = false
+      setArchiveLoading(false)
+    }
+  }
   // The conversation's stored history (shown, never replayed to the agent). It starts the transcript
   // and scrolls away with the messages instead of holding space above them.
   const earlierConversation = (archive.length > 0 || archiveHasMore) && (
@@ -360,20 +384,20 @@ function DurableConversation(props: AssistantConversationViewProps) {
     >
       <summary className="cursor-pointer px-3 py-2 text-muted">Earlier conversation</summary>
       <div className="min-w-0 px-3 pb-2">
+        {archiveError && (
+          <p role="alert" className="text-status-danger-600 dark:text-status-danger-400">
+            {archiveError}
+          </p>
+        )}
         {archiveHasMore && (
           <button
+            type="button"
             className="ficus-button ficus-button-link"
-            onClick={async () => {
-              const page = await api.history(props.id, archiveBefore)
-              setArchive((current) => [
-                ...page.entries.filter((entry) => !current.some((row) => row.id === entry.id)),
-                ...current,
-              ])
-              setArchiveBefore(page.before)
-              setArchiveHasMore(page.hasMore)
-            }}
+            disabled={archiveLoading}
+            aria-busy={archiveLoading}
+            onClick={() => void loadEarlierMessages()}
           >
-            Load earlier messages
+            {archiveLoading ? 'Loading earlier messages…' : archiveError ? 'Retry' : 'Load earlier messages'}
           </button>
         )}
         {archive.map((entry) => (
