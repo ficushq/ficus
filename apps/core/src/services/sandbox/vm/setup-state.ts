@@ -5,6 +5,7 @@ import {
   createPostgresConnection,
   getDirectConnectionString,
   withDedicatedConnectionSlot,
+  tryAcquireDedicatedConnectionSlot,
 } from '../../../db/connection'
 import { fleetIncidents, machineBoxes, vmBoxSetupStates } from '../../../db/schema'
 import { eventEmitter } from '../../../lib/infra/event-emitter'
@@ -390,7 +391,15 @@ export async function listDueVmSetups(now = new Date(), limit = 8): Promise<VmSe
 /** Acquisition budget exceeds the ten-minute streamed devbox install budget. */
 const VM_SETUP_LEASE_WAIT_TIMEOUT_MS = 15 * 60_000
 
-type VmSetupLeaseWait = {
+export class VmSetupLeaseBusyError extends Error {
+  constructor() {
+    super('Sandbox lifecycle is busy; retry when the current operation finishes')
+  }
+}
+
+export type VmSetupLeaseWait = {
+  /** Interactive recovery must never wait behind setup and restart the box later. */
+  ifAvailable?: boolean
   signal?: AbortSignal
   /** Injectable acquisition clock/sleep for deterministic contention tests. */
   now?: () => number
@@ -413,7 +422,7 @@ export async function withVmSetupLease<T>(
   let delayMs = 250
   for (;;) {
     checkWaiting()
-    const attempt = await withDedicatedConnectionSlot(async () => {
+    const run = async () => {
       // The global slot queue can itself be busy; never start stale work after it drains.
       checkWaiting()
       const connection = createPostgresConnection(getDirectConnectionString(), { max: 1, idle_timeout: 0 })
@@ -436,8 +445,21 @@ export async function withVmSetupLease<T>(
       } finally {
         await connection.end({ timeout: 5 })
       }
-    })
+    }
+    let attempt: Awaited<ReturnType<typeof run>>
+    if (wait.ifAvailable) {
+      const release = tryAcquireDedicatedConnectionSlot()
+      if (!release) throw new VmSetupLeaseBusyError()
+      try {
+        attempt = await run()
+      } finally {
+        release()
+      }
+    } else {
+      attempt = await withDedicatedConnectionSlot(run)
+    }
     if (attempt.acquired) return attempt.value
+    if (wait.ifAvailable) throw new VmSetupLeaseBusyError()
     // A contended box must not occupy either of the two shared dedicated slots
     // while waiting for its owner. The callback runs only once, under the lock.
     checkWaiting()

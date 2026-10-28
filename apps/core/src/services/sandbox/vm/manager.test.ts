@@ -3029,3 +3029,93 @@ describe('VmSandboxManager local deployment targets', () => {
     expect(await manager.getSandboxMachineId('agent_box')).toBe('machine-7')
   })
 })
+
+describe('VM last-resort restart', () => {
+  test('uses the box manager without attaching/ensuring/execing and refuses duplicate restart', async () => {
+    const h = makeHarness()
+    let finish!: () => void
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    const calls: string[] = []
+    h.deps.restartBox = async (id) => {
+      calls.push(id)
+      await pending
+      return 'http://127.0.0.1:62000'
+    }
+    const mgr = new VmSandboxManager(h.deps)
+    try {
+      const first = mgr.restartSandbox('squad_s1')
+      await Bun.sleep(0)
+      await expect(mgr.restartSandbox('squad_s1')).rejects.toThrow('busy')
+      expect(calls).toEqual(['squad_s1'])
+      expect(h.ensureCalls).toEqual([])
+      expect(h.createdEndpoints).toEqual([])
+      finish()
+      await first
+      await mgr.restartSandbox('squad_s1')
+      expect(calls).toEqual(['squad_s1', 'squad_s1'])
+    } finally {
+      finish()
+      await mgr.cleanup()
+    }
+  })
+
+  test('failed restart releases the lifecycle gate and surfaces failure without deleting data', async () => {
+    const h = makeHarness()
+    let fail = true
+    h.deps.restartBox = async () => {
+      if (fail) throw new Error('restart failed')
+      return 'http://127.0.0.1:62000'
+    }
+    const mgr = new VmSandboxManager(h.deps)
+    try {
+      await expect(mgr.restartSandbox('squad_s1')).rejects.toThrow('restart failed')
+      fail = false
+      await mgr.restartSandbox('squad_s1')
+      expect(h.removeCalls).toEqual([])
+      expect(h.stopCalls).toEqual([])
+    } finally {
+      await mgr.cleanup()
+    }
+  })
+
+  test('restart takes a non-waiting setup lease and does not execute when setup owns it', async () => {
+    const h = makeHarness()
+    let called = false
+    h.deps.restartBox = async () => {
+      called = true
+      return 'http://127.0.0.1:62000'
+    }
+    h.deps.withSetupLease = async (id, _fn, options) => {
+      expect(id).toBe('squad_s1')
+      expect(options?.ifAvailable).toBe(true)
+      throw new Error('setup busy')
+    }
+    const mgr = new VmSandboxManager(h.deps)
+    try {
+      await expect(mgr.restartSandbox('squad_s1')).rejects.toThrow('busy')
+      expect(called).toBe(false)
+    } finally {
+      await mgr.cleanup()
+    }
+  })
+})
+
+test('restart preserves tracked execution layout and lifecycle options while refreshing the client', async () => {
+  const h = makeHarness()
+  h.deps.restartBox = async () => 'http://127.0.0.1:62000'
+  const mgr = new VmSandboxManager(h.deps)
+  try {
+    await mgr.ensureSandbox('squad_s1', squadOpts)
+    const before = mgr.getLifecycleState('squad_s1')
+    const apiUrl = mgr.resolveToolApiUrl('squad_s1')
+    await mgr.restartSandbox('squad_s1')
+    expect(mgr.getLifecycleState('squad_s1')).toEqual(before)
+    expect(mgr.resolveToolApiUrl('squad_s1')).toBe(apiUrl)
+    expect(mgr.getClient('squad_s1')).not.toBeNull()
+    expect(h.createdEndpoints.at(-1)).toBe('127.0.0.1:62000')
+  } finally {
+    await mgr.cleanup()
+  }
+})

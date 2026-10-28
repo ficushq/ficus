@@ -151,6 +151,8 @@ export interface SandboxChainHealth {
 }
 
 export interface SandboxStatus {
+  /** VM host-side restart is still waiting for server health. */
+  restartPending?: boolean
   status: 'not_found' | 'pending' | 'starting' | 'running' | 'succeeded' | 'failed' | 'terminating' | 'unknown'
   phase?: string
   reason?: string
@@ -237,6 +239,18 @@ export async function startSandbox(squadId: string): Promise<void> {
  */
 export async function stopSandbox(squadId: string): Promise<void> {
   await apiFetch(`/squads/${squadId}/sandbox/stop`, { method: 'POST' })
+}
+
+/** VM-only host recovery. A client deadline does not prove the remote restart failed. */
+export async function restartSandbox(squadId: string): Promise<void> {
+  try {
+    await apiFetch(`/squads/${squadId}/sandbox/restart`, { method: 'POST', signal: AbortSignal.timeout(100_000) })
+  } catch (error) {
+    if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+      throw new Error('Restart request timed out; its outcome is unknown. Check sandbox status before retrying.')
+    }
+    throw error
+  }
 }
 
 /** What the squad's sandbox is running (samples CPU for about a second). */
