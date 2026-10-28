@@ -221,10 +221,16 @@ Project-local CLIs and npm/bun/pnpm scripts can bypass the global wrapper. Wrap 
 
 ```bash
 ficus integration exec <provider> -- npm run deploy
+ficus integration exec <provider> -- bun run deploy
+ficus integration exec <provider> -- pnpm run deploy
 ficus integration exec <provider> --connection <attached-account-id> -- <command>
 ```
 
 The current squad context supplies the squad selector; outside that context provide `--squad <squad-id>` before `--`. Exec still checks authorization and assignment on every invocation. If authentication fails, ask a person to check account validation, enablement, token scope and squad assignment; do not inspect token variables or restart a process to reload credentials. Human terminals receive no integration credentials and may use their own CLI login. Host-runtime CLIs must already be installed by the operator.
+
+Custom app secrets belong in squad **Environment Variables** (visible to agents and
+terminals) or human-directed files in the squad or agent workspace. Never copy
+integration credentials into those locations or leave them in persistent processes.
 
 ## Deployment records
 
@@ -271,10 +277,13 @@ Read the matching provider skill for concrete CLI steps:
 
 ## External provider commands
 
-Install reusable CLIs in the shared runtime with `squad_bash` and Devbox where possible:
+Assigned integrations provision their pinned provider CLIs and wrappers. Do not
+install replacement global provider CLIs to work around provisioning failures. On
+host, ask the operator to install the real binaries. Install only general project
+tools with `squad_bash` and Devbox where needed:
 
 ```bash
-devbox add nodejs bun gh vercel netlify-cli railway wrangler supabase-cli doctl
+devbox add nodejs bun
 ```
 
 Use provider local app/staging environments before production. Always verify the final public URL with `curl` or the provider CLI; do not assume a successful deploy means the URL is reachable.

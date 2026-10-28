@@ -40,7 +40,9 @@ async function generateHelpFor(subcommands: string[]): Promise<string> {
     ]
     const results = await Promise.all(promises)
 
-    const filtered = results.filter(Boolean)
+    // Agent references never advertise operator-only commands, even for an
+    // assistant acting with a human's broad permissions. Operator CLI help is unchanged.
+    const filtered = results.filter(Boolean).map((section) => filterHelpSection(section, ['*']))
     if (filtered.length > 0) {
       return `You have access to the \`ficus\` CLI. Here's the full command reference:\n\n${filtered.join('\n\n---\n\n')}`
     }
@@ -220,6 +222,7 @@ function helpSectionGroup(section: string): string {
 }
 
 function mayUse(key: string, permissions: readonly string[]): boolean {
+  if (key === 'secret' || key.startsWith('secret ')) return false
   const required = CLI_COMMAND_PERMISSIONS[key]
   if (!required) return true
   return required.some((permission) => permissions.some((held) => permissionMatches(held, permission)))

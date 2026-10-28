@@ -47,6 +47,8 @@ For project-local CLIs (including npm/bun/pnpm scripts and npx/bunx), wrap the e
 
 ```bash
 ficus integration exec vercel -- npm run deploy
+ficus integration exec vercel -- bun run deploy
+ficus integration exec vercel -- pnpm run deploy
 ```
 
 For an alternate assigned account use `ficus integration exec vercel --connection <connection-id> -- <command>`. Exec is unrestricted, but never use it to inspect or persist credentials. Human terminals receive no Ficus integration credentials; they may use their own CLI login.
@@ -93,3 +95,13 @@ ficus deploy external record <squad-id> --name <deployment-name> --provider <pro
 ficus deploy external update <deployment-id> --status failed
 ficus deploy external archive <deployment-id>
 ```
+
+## Runtime context and custom configuration
+
+The squad runtime supplies `FICUS_SQUAD_ID`; outside that context add
+`--squad <squad-id>` before `--`. This selector does not grant authorization.
+On the host runtime, the operator must install the real CLI; managed wrappers
+still provide per-command authentication. Never replace them with token exports.
+Custom app secrets may use squad **Environment Variables** (visible to agents and
+terminals) or human-directed files in the squad or agent workspace. Integration
+credentials must never be copied into those locations or persistent processes.

@@ -304,6 +304,64 @@ test('local first contact repairs the squad env too, not only the mounted privat
   }
 })
 
+test('cleanup acknowledges full oversized legacy promotion and private removal without registering oversized values', async () => {
+  const { runExposureCleanupSweep } = await api()
+  const { db, squads, sandboxExposureCleanup, squadEnvDetections } = await import('../../db')
+  const { eq, inArray } = await import('drizzle-orm')
+  const { getSquadWorkspacePath } = await import('../squad/workspace')
+  const { getSquadEnvSecretSource, resetSquadEnvSecretSource } = await import('../security/squad-env-secret-source')
+  const { resetContentSafetyRegistry } = await import('../security/content-safety-registry')
+  const home = temp(),
+    previousHome = process.env.HOME_DIR,
+    previousKey = process.env.FICUS_ENCRYPTION_KEY,
+    id = crypto.randomUUID(),
+    sandboxId = `squad_${id}`
+  const targets = [
+    { targetId: `squad:${id}`, sourceId: id, squadId: id, kind: 'squad' as const },
+    { targetId: `private:${sandboxId}`, sourceId: sandboxId, squadId: null, kind: 'private' as const },
+  ]
+  const targetIds = targets.map(({ targetId }) => targetId)
+  process.env.HOME_DIR = home
+  delete process.env.FICUS_ENCRYPTION_KEY
+  resetContentSafetyRegistry()
+  await resetSquadEnvSecretSource()
+  try {
+    await db.insert(squads).values({ id, name: `cleanup-${id}`, purpose: 'test', envDetectionBootstrapped: true })
+    const dot = join(getSquadWorkspacePath(id), '.ficus')
+    const privateDot = join(home, 'private', sandboxId, '.ficus')
+    const content = 'APP_TOKEN=synthetic-legacy-cleanup-token\n#' + 'x'.repeat(256 * 1024)
+    mkdirSync(dot, { recursive: true })
+    mkdirSync(privateDot, { recursive: true })
+    writeFileSync(join(dot, '.env'), content)
+    writeFileSync(join(privateDot, 'agent-secrets.env'), 'OLD_TOKEN=synthetic-retired-token')
+    await runExposureCleanupSweep({ discover: async () => targets })
+    expect(readFileSync(join(dot, 'env.user'), 'utf8')).toBe(content)
+    expect(readFileSync(join(dot, '.env'), 'utf8')).toContain(content)
+    expect(existsSync(join(privateDot, 'agent-secrets.env'))).toBe(false)
+    const rows = await db
+      .select()
+      .from(sandboxExposureCleanup)
+      .where(inArray(sandboxExposureCleanup.targetId, targetIds))
+    expect(rows).toHaveLength(2)
+    expect(rows.every(({ status, reason }) => status === 'done' && reason === null)).toBe(true)
+    const [trusted] = await db.select().from(squadEnvDetections).where(eq(squadEnvDetections.squadId, id))
+    expect(trusted).toMatchObject({ contentHash: null, entries: [], reason: 'oversized' })
+    const source = getSquadEnvSecretSource()
+    expect(source.entries()).toEqual([])
+    expect(source.notice(id)).toContain('256 KiB')
+    expect(source.notice(id)).not.toMatch(/unreadable|outside Settings/)
+  } finally {
+    resetContentSafetyRegistry()
+    await resetSquadEnvSecretSource()
+    if (previousHome === undefined) delete process.env.HOME_DIR
+    else process.env.HOME_DIR = previousHome
+    if (previousKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = previousKey
+    await db.delete(sandboxExposureCleanup).where(inArray(sandboxExposureCleanup.targetId, targetIds))
+    await db.delete(squads).where(eq(squads.id, id))
+  }
+})
+
 test('status retains outstanding VM copy acknowledgements after switching runtime', async () => {
   const { getExposureCleanupStatus } = await api()
   const { db, sandboxExposureCleanup } = await import('../../db')

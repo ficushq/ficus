@@ -20,9 +20,6 @@ need this — squad linking is configured in the channel instance (Step 3).
 **Before starting, check what's already configured:**
 
 ```bash
-# Check if Slack secrets exist
-ficus secret list | grep SLACK
-
 # Check if channel instances exist
 ficus channel list
 ```
@@ -30,22 +27,23 @@ ficus channel list
 If Slack is already set up, you only need to update the channel instance
 to link additional squads.
 
-## How Secrets Are Handled
+## Credential handling
 
-- **User-provided secrets** (Signing Secret, Bot Token): Direct the human to
-  enter them in **Settings → Integrations → Slack**. Do not ask them to paste secrets
-  in chat. If they offer to paste a value and want you to set it, you can use
-  `ficus secret set`.
+Have the human enter credentials only in **Settings → Integrations → Slack**.
+Never ask for tokens in chat. Never read, print, log or commit credentials, even if
+volunteered. Saved credentials remain hidden; replace them in the owning card to
+rotate. Enable and validate the connection there. No channel token belongs in a
+sandbox or integration exec command; channel plugins have no command execution.
+Use the webhook URL from that panel, including any public base path; never infer
+an API hostname from `APP_URL`. Saved changes reconcile without a manual restart.
 
 ## Prerequisites
 
-- The **API URL** from the Platform URLs section in your system prompt
+- The webhook URL shown in the owning integration card
 - The human must perform steps in the Slack API portal
 - At least one squad must exist to link the channel to
 
-> **Note:** Your system prompt includes a "Platform URLs" section with the Web UI,
-> API, and webhook endpoint URLs. Use the API URL from there in the steps below.
-> It is also available as the `$APP_URL` env var (web UI URL) in sandbox shells.
+Use the exact webhook URL from the integration card, not a derived hostname.
 
 ## Step 1: Create the Slack App
 
@@ -56,7 +54,7 @@ The fastest method. Walk the human through:
 1. Go to [Slack API](https://api.slack.com/apps)
 2. Click **Create New App** → **From an app manifest**
 3. Select the target workspace
-4. Use the following YAML manifest (replace `YOUR_API_URL` with the API URL from Platform URLs):
+4. Use the following YAML manifest (replace each `YOUR_WEBHOOK_URL` with the exact URL from the Slack integration card):
 
 ```yaml
 display_information:
@@ -69,7 +67,7 @@ features:
     always_online: true
   slash_commands:
     - command: /ficus
-      url: https://YOUR_API_URL/api/webhooks/channels/slack
+      url: YOUR_WEBHOOK_URL
       description: Interact with Ficus AI assistant
       usage_hint: '[status|ask|help|notify|unnotify] [message]'
       should_escape: false
@@ -97,7 +95,7 @@ oauth_config:
       - app_mentions:read
 settings:
   event_subscriptions:
-    request_url: https://YOUR_API_URL/api/webhooks/channels/slack
+    request_url: YOUR_WEBHOOK_URL
     bot_events:
       - message.channels
       - message.groups
@@ -123,7 +121,7 @@ If the human prefers manual configuration:
 
 - Go to **Slash Commands** → **Create New Command**
 - Command: `/ficus`
-- Request URL: `<API_URL>/api/webhooks/channels/slack`
+- Request URL: copy the exact URL from **Settings → Integrations → Slack**
 - Description: "Interact with Ficus AI assistant"
 
 **OAuth Scopes** (under OAuth & Permissions → Bot Token Scopes):
@@ -137,26 +135,20 @@ If the human prefers manual configuration:
 **Event Subscriptions:**
 
 - Toggle **Enable Events** on
-- Request URL: `<API_URL>/api/webhooks/channels/slack`
+- Request URL: copy the exact URL from **Settings → Integrations → Slack**
 - Subscribe to bot events: `message.channels`, `message.groups`, `message.im`, `message.mpim`, `app_mention`
 
 **Install:** Go to **Install App** → **Install to Workspace**
 
-## Step 2: Configure Secrets
+## Step 2: Configure the Integration
 
 Direct the human to enter the following in **Settings → Integrations → Slack**:
 
-- `SLACK_SIGNING_SECRET` — from Basic Information → App Credentials → Signing Secret
-- `SLACK_BOT_TOKEN` — from OAuth & Permissions → Bot User OAuth Token (starts with `xoxb-`)
+- **Signing secret** — from Basic Information → App Credentials → Signing Secret
+- **Bot token** — from OAuth & Permissions → Bot User OAuth Token (starts with `xoxb-`)
 
-If the human pastes a value in chat and wants you to set it, use
-`ficus secret set <key> "<value>"`.
-
-Restart the API:
-
-```bash
-ficus system restart
-```
+Have the human save, validate and enable the connection in the Slack card.
+Check its **Connection status**. No manual restart is required.
 
 ## Step 3: Create Channel Instance
 
@@ -203,8 +195,8 @@ scroll to bottom).
 
 | Problem                        | Solution                                                            |
 | ------------------------------ | ------------------------------------------------------------------- |
-| Slash command returns error    | Verify `SLACK_SIGNING_SECRET` matches the app's signing secret      |
-| Event subscriptions fail       | Check the events URL ends with `/events`, API is reachable          |
+| Slash command returns error    | Check Connection status; if signing credentials were rejected, have the human replace Signing secret in the Slack card with the app's current value |
+| Event subscriptions fail       | Use the exact events URL from the integration card; check API reachability          |
 | Bot doesn't respond to threads | Verify event subscriptions are enabled and `message.*` events added |
 | "dispatch_failed" in Slack     | API didn't respond in 3s — check API health and logs                |
 | Bot can't post in channel      | Invite the bot to the channel, or use `chat:write.public` scope     |

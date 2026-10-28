@@ -55,6 +55,11 @@ Public sources checked 2026-10-28 (no account credentials used):
 - npm metadata: https://registry.npmjs.org/wrangler/4.154.0, https://registry.npmjs.org/netlify-cli/27.15.0, https://registry.npmjs.org/vercel/65.5.0
 - Native releases: https://github.com/digitalocean/doctl/releases/tag/v2.1.0, https://github.com/railwayapp/cli/releases/tag/v5.71.0, https://github.com/supabase/cli/releases/tag/v2.122.0
 
-## Staged rollout boundary
+## Rollout boundary
 
-This change does not deploy itself or mutate live accounts, host variables or runtime skill configuration. Removal of all other exposure surfaces, fleet-wide removal of stale files, expanded credential detection and the broad agent-facing documentation rewrite are separate rollout stages. Existing exposure of unrelated custom values is not claimed removed by this provider migration.
+This change does not deploy itself or mutate live accounts, host variables or
+runtime skill configuration. Exposure removal, automatic stale-file cleanup,
+expanded detection and agent guidance are covered by the [final credential
+model acceptance matrix](../wiki/integration-execution.md#acceptance-matrix).
+Unavailable runtime targets remain explicitly pending with durable retry; never
+infer completed cleanup from a successful Core upgrade alone.

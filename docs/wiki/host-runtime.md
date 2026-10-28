@@ -119,9 +119,8 @@ What is actually enforced for an agent shell:
   resolves to `<HOME_DIR>/host/bin/ficus`. Assigned integration wrappers are also
   prepended after sourcing the environment.
 - **Reserved keys are rejected at write time** — see
-  [Reserved squad env keys](#reserved-squad-env-keys) — and are also filtered
-  out of Secret Store rendering, so a Secret Store key literally named
-  `FICUS_API_URL` cannot reach `.ficus/.env` either.
+  [Reserved squad env keys](#reserved-squad-env-keys) — and cannot override the injected identity. Integration credentials are never
+  rendered into sandbox files.
 - **A per-agent CLI auth store.** Host agents run as your unix user with your
   `$HOME`, so without `FICUS_AUTH_STORE` the `ficus` CLI falls back to
   `~/.ficus/cli/auth.json` — YOUR login, against whatever instance you last
@@ -136,7 +135,7 @@ What is actually enforced for an agent shell:
 Run `ficus whoami` in any shell to see which instance it talks to and as whom.
 
 **Standing limits.** The above closes the ACCIDENT: no squad env variable, no
-stale value and no Secret Store name can reach an agent's identity or its `ficus`
+stale generated value can reach an agent's identity or its `ficus`
 by mistake. It is not a security boundary, and host mode does not have one:
 
 - `.ficus/.env` is executed as shell, not parsed. A squad env written
@@ -156,8 +155,8 @@ assign `FICUS_TOKEN`, `FICUS_API_URL`, `FICUS_PASSWORD`, `FICUS_AUTH_STORE`,
 `FICUS_IDENTITY_TOKEN`, `FICUS_IDENTITY_AUTH_STORE` and `FICUS_IDENTITY_AGENT_ID`
 aliases: the agent's identity is injected by ficus, and setting it there would
 make every agent in the squad act as a different identity. Writes naming one
-are rejected with a 400 naming the key and the reason, and the same names are
-filtered out of Secret Store exposure rendering.
+are rejected with a 400 naming the key and the reason. Integration credentials
+are obtained only through per-command exec, not generated environment files.
 
 `PATH` is deliberately NOT reserved — adding to it is a legitimate squad env —
 because the shim re-prepend above already keeps `ficus` pointing at ficus's own CLI.
@@ -170,15 +169,14 @@ stops them taking effect.
 - The login-shell snapshot runs `$SHELL -l -c`, so anything exported from the
   operator's LOGIN files (`~/.zprofile`/`~/.zlogin`/`~/.profile`, plus their
   system-wide counterparts) DOES reach agent shells. `~/.zshrc` is not part of
-  that snapshot — it is sourced only by the interactive shells the terminal
-  spawns. The guarantee is "no core-process secrets", not "no secrets".
+  that snapshot. Web terminals use the managed Bash initialization described
+  above. The guarantee is "no core-process secrets", not "no secrets".
 - There is no cross-agent isolation on host: every squad agent and
   `squad_bash` run as the same unix user on one filesystem, so an agent's
   private dir (`<HOME_DIR>/private/<sandboxId>`) is readable by every other
   agent on the instance. Squad agents are mutually trusted by design; use
-  docker/k8s/vm when that is not acceptable. For the same reason,
-  [per-agent secrets](secret-store.md#per-agent-secrets) are refused on host:
-  a value cannot be kept private to one agent there.
+  docker/k8s/vm when that is not acceptable. A human-directed private file is
+  not an isolation boundary on host.
 
 ## Per-squad workspace override
 

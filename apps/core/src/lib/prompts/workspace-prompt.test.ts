@@ -119,7 +119,7 @@ describe('buildWorkspacePrompt — sharesParentBox (subagent)', () => {
     expect(p).toContain('shared with your parent agent and sibling subagents')
     expect(p).not.toContain('no teammate can read it')
     expect(p).not.toContain('keys and secrets')
-    expect(p).toContain('Do not treat it as a secret store')
+    expect(p).toContain('Do not keep sensitive material here')
   })
 
   it('warns that the private dir is shared with the parent and sibling subagents', () => {

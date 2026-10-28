@@ -241,7 +241,12 @@ The flow owns participation and delivery policy, including `pr-merge`, `pr-auto-
 
 Schedule list/show output separates configured Enabled state from execution Health. `show` includes attempts, failure counters, recovery timestamps, and the bounded safe error/automatic-disable reason. Temporary schedules can use `--expires-at <ISO-datetime>`; update with `--clear-expires-at` to restore indefinite operation.
 
-### Secret Commands
+### Operator credential automation
+
+`ficus secret` is operator-only, for people automating supported instance
+settings under their own permissions. Integration-owned credentials use the
+owning Settings → Integrations cards or webhook panels. Arbitrary keys are not delivered to squads.
+Agent references omit this command; `/api/secrets` remains an operator API.
 
 ```bash
 ficus secret list             # List all secrets (names only, no values)
@@ -282,32 +287,31 @@ the host runtime ficus re-prepends its own shim directory afterwards, so squad
 PATH additions apply but cannot displace `ficus`.
 
 ```bash
-ficus squad-env get <squadId>                # Get .ficus/.env content for a squad
-ficus squad-env set <squadId> <content>      # Set .ficus/.env content (use quotes for multi-line)
-ficus squad-env set-file <squadId> <path>    # Set .ficus/.env content from a file
-ficus squad-env secrets <squadId>            # List per-squad/global secret exposure status
-ficus squad-env expose-secrets <squadId> KEY # Expose Secret Store keys to one squad
-ficus squad-env global-secrets               # List globally exposed Secret Store keys
-ficus squad-env expose-global KEY            # Expose Secret Store keys to all squads
-ficus squad-env unexpose-global KEY          # Remove global exposure
+ficus squad-env get <squadId>                # Get custom env.user content for a squad
+ficus squad-env set <squadId> <content>      # Set custom env.user content (use quotes for multi-line)
+ficus squad-env set-file <squadId> <path>    # Set custom env.user content from a file
 ```
 
-#### Per-agent secrets
+### Integration command execution
 
-To give a credential to ONE agent rather than a whole squad, expose a Secret Store
-key to that agent. Only its own sandbox receives the value, as environment variables
-in its `bash` commands (subagents it dispatches share its sandbox and inherit them).
-`squad_bash`, other agents and the shared workspace never see it. Listing returns
-names only. Changing an exposure needs `env:write` on the agent's squad, and
-adding a key also needs permission to read that key in the Secret Store. Agent
-tokens are refused: a person decides. See
-[Per-agent secrets](../secret-store.md#per-agent-secrets).
+Assigned global provider CLIs use per-command PATH wrappers, including nested
+processes. If unauthenticated, ask a person to connect, validate, enable or assign
+the account. Project-local CLIs and package-manager scripts can bypass wrappers:
 
 ```bash
-ficus agent secrets <agentId>                       # List keys exposed to this agent (names only)
-ficus agent expose-secrets <agentId> KEY [KEY...]   # Expose Secret Store keys to this agent only
-ficus agent unexpose-secrets <agentId> KEY [KEY...] # Remove them from the agent's sandbox
+ficus integration exec <provider> -- npm run deploy
+ficus integration exec <provider> -- bun run deploy
+ficus integration exec <provider> -- pnpm run deploy
+ficus integration exec <provider> --connection <attached-account-id> -- <command>
 ```
+
+The squad runtime supplies `FICUS_SQUAD_ID`; outside it, add `--squad <squad-id>`
+before `--`. Exec is unrestricted, not a credential inspection tool. Never read,
+print, log, commit or persist a token. Human terminals use their own login;
+wrappers pass through with a stderr note and no Ficus integration credentials.
+Custom secrets go in squad Environment Variables (visible to agents and terminals)
+or human-directed squad/agent workspace files, not copied integration tokens.
+See [execution contracts](../integration-execution.md).
 
 ### Channel Instance Commands
 
