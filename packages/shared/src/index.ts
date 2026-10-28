@@ -130,3 +130,5 @@ export * from './screenshot-filing'
 export * from './github-feedback'
 
 export * from './managed-bigbrain'
+
+export { boundedRecord } from './zod-helpers'
