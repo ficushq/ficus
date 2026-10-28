@@ -365,6 +365,15 @@ member's work runs in the squad sandbox, so use the squad commands for it. In
 the web app, the squad's Workspace settings and an agent's own-sandbox controls
 have a **Processes** section.
 
+The squad header's sandbox pill adds a warning icon when the status reports overload,
+runtime degradation, or an informative failure reason (including Docker timeouts).
+Hover, focus, or press the icon to read the diagnostics and follow **Open Processes**
+to that squad's Workspace settings. Load and memory use the same summary as Info and
+Processes; ordinary startup alone is not an overload warning. Older status responses
+still surface their pressure and reason without requiring runtime-health fields.
+Opening the warning does not sample processes or run Docker diagnostics; **Show processes**
+remains an explicit action in the destination panel.
+
 These need `squads:update` for a squad sandbox, or permission to run the agent.
 Listing needs it too, because command lines can contain secrets. The sandbox
 server runs as the sandbox's own user, so it can only see and signal that

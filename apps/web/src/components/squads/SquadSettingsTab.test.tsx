@@ -17,7 +17,7 @@ function renderSandboxSection(squadId: string, status?: SandboxStatus): string {
   // its fallback no matter what — every "no Sandbox Logs" assertion would pass
   // vacuously. Grant the permission so their absence means something.
   queryClient.setQueryData(queryKeys.auth.permissions(squadId), {
-    permissions: ['sandbox:logs'],
+    permissions: ['sandbox:logs', 'squads:update'],
     identity: { type: 'user', userId: 'user-1' },
   })
   queryClient.setQueryData(queryKeys.squads.basic(squadId), {
@@ -60,6 +60,14 @@ describe('SquadSettingsTab sandbox section', () => {
     const html = renderSandboxSection('squad-host-2', { status: 'running', runtime: 'host' })
     expect(html).toContain('Workspace directory')
     expect(html).toContain('Git commit identity')
+  })
+
+  test('the warning deep-link target identifies the Processes panel in Workspace', () => {
+    const html = renderSandboxSection('squad-processes', { status: 'running', runtime: 'vm' })
+    expect(html).toMatch(
+      /data-setting-target="sandbox-processes"[^>]*><section[^>]*aria-labelledby="sandbox-processes-heading"/
+    )
+    expect(html).toContain('Show processes')
   })
 
   test('docker runtime keeps lifecycle settings and logs under Workspace', () => {

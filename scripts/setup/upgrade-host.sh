@@ -133,7 +133,7 @@ if [[ -n ${RESTORE_HOST_SET} ]]; then
     cfg_load "${CONFIG}"
     SRC_DEST=$(cfg_source_dest) || die "could not read source.dest from ${CONFIG}"
     # shellcheck disable=SC2034 # caller globals: lib.sh's render_core_unit reads them
-    RUN_USER=$(cfg_get '.core.run_user' "$(id -un)")
+    RUN_USER=$(cfg_core_run_user)
     # shellcheck disable=SC2034
     DB_MODE=$(cfg_get '.database.mode' 'container')
     # shellcheck disable=SC2034
@@ -160,6 +160,7 @@ fi
 
 ensure_yq
 cfg_load "${CONFIG}"
+RUN_USER=$(cfg_core_run_user)
 
 # ============================================================== mode selection
 #
@@ -219,7 +220,6 @@ fi
 CORE_PORT=$(cfg_get '.core.port' '3000')
 [[ ${CORE_PORT} =~ ^[0-9]+$ ]] || die "config: core.port must be a number"
 CORE_SERVE_WEB=$(cfg_bool '.core.serve_web' 'true')
-RUN_USER=$(cfg_get '.core.run_user' "$(id -un)")
 # Not a secret and not a credential — the unit templates need it for the
 # `After=… docker.service` ordering, and re-rendering a unit without it would
 # quietly drop that ordering on a container-database box.
@@ -242,6 +242,7 @@ BUN_BIN=/usr/local/bin/bun
 # hence the explicit TERM/HUP/INT ones). One toolkit run at a time may
 # migrate, restore or reconcile this host (the lock, like those steps, is
 # root-only).
+[[ ${SRC_MODE} != artifact ]] || require_hosted_core_units_non_root
 require_host_layout_ready
 [[ ${ARTIFACT_MODE} -eq 0 ]] || require_artifact_conversion_ready "${SRC_DEST}"
 host_migrate_lock

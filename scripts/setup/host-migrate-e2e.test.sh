@@ -52,9 +52,9 @@
 # releases the test names) and passes everything else to the real curl.
 #
 # The entrypoints need real root, GNU coreutils, OpenSSL 3, bun, jq, python3
-# and mikefarah yq, so the suite self-skips — loudly, without the ENABLED
-# marker — anywhere else. CI runs it as root; locally, run it in a throwaway
-# Ubuntu 24.04 container. The setup-host.sh case (E6) also needs a systemd
+# and mikefarah yq, plus useradd/userdel for an isolated service account, so
+# the suite self-skips — loudly, without the ENABLED marker — anywhere else.
+# CI runs it as root; locally, run it in a throwaway Ubuntu 24.04 container. The setup-host.sh case (E6) also needs a systemd
 # host (/run/systemd/system) and prints `SKIP E6: …` without one — except on
 # CI (GITHUB_ACTIONS=true), where a skip counts as a failure.
 #
@@ -94,7 +94,7 @@ probe() { "$@" 2>&1 || true; }
 skip_reason=''
 [[ ${EUID} -eq 0 ]] || skip_reason='not running as root'
 if [[ -z ${skip_reason} ]]; then
-  for cmd in bun jq python3 curl tar openssl sha256sum setsid runuser mkfifo git; do
+  for cmd in bun jq python3 curl tar openssl sha256sum setsid runuser mkfifo git useradd userdel; do
     command -v "${cmd}" >/dev/null 2>&1 || skip_reason=${skip_reason:-"${cmd} is not on PATH"}
   done
 fi
@@ -116,15 +116,24 @@ fi
 echo 'FICUS host-migration e2e section: ENABLED'
 
 SCRATCH=$(mktemp -d -t host-migrate-e2e-test.XXXXXX)
+# Hosted fixtures must use a real unprivileged account, including the managed
+# Bun/Node cross-user smoke check. Allow traversal of its isolated runtime.
+chmod 0755 "${SCRATCH}"
+CORE_USER="ficus-hme-$$"
+CORE_USER_CREATED=0
 BG_PIDS=()
 cleanup() {
   local pid
   for pid in ${BG_PIDS[@]+"${BG_PIDS[@]}"}; do
     kill -KILL -- "-${pid}" 2>/dev/null || kill -KILL "${pid}" 2>/dev/null || true
   done
+  if [[ ${CORE_USER_CREATED} -eq 1 ]]; then userdel -r "${CORE_USER}" >/dev/null 2>&1 || true; fi
   rm -rf "${SCRATCH}"
 }
 trap cleanup EXIT
+useradd --system --create-home --home-dir "${SCRATCH}/service-home" \
+  --shell /usr/sbin/nologin --user-group "${CORE_USER}"
+CORE_USER_CREATED=1
 
 REAL_CURL=$(command -v curl)
 REAL_SLEEP=$(command -v sleep)
@@ -217,6 +226,7 @@ cat >"${SHIM}/systemctl" <<SHIMEOF
 #!/usr/bin/env bash
 printf 'systemctl %s\n' "\$*" >>"${CALLS}"
 verb=\${1:-}
+norm() { case \$1 in *.service | *.timer | *.socket | *.target) printf '%s' "\$1" ;; *) printf '%s.service' "\$1" ;; esac; }
 d=\$(cat "${CTL}/dest" 2>/dev/null)
 st=plain
 grep -qx 'E2EMARK=1' "\${d}/.env" 2>/dev/null && st=marked
@@ -238,7 +248,6 @@ fi
 # link per Alias= — so the Alias= bridge and the reverse can be checked on disk.
 if [[ -n \${E2E_UNIT_EMULATION:-} && -n \${FICUS_SYSTEMD_UNIT_DIR:-} ]]; then
   U=\${FICUS_SYSTEMD_UNIT_DIR}
-  norm() { case \$1 in *.service | *.timer | *.socket | *.target) printf '%s' "\$1" ;; *) printf '%s.service' "\$1" ;; esac; }
   case "\${verb}" in
     reenable)
       "\$0" disable "\${@:2}" && "\$0" enable "\${@:2}"
@@ -271,12 +280,20 @@ if [[ -n \${E2E_UNIT_EMULATION:-} && -n \${FICUS_SYSTEMD_UNIT_DIR:-} ]]; then
 fi
 case "\${verb}" in
   show)
-    if [[ -n \${E2E_FIN_RUNTIME:-} && "\$*" == *ActiveState* ]]; then
+    if [[ " \$* " == *" -p User "* ]]; then
+      # Model systemd's effective User from the fixture unit, not UID-zero
+      # output intended for NRestarts. Missing User= yields the root default.
+      f="\${FICUS_SYSTEMD_UNIT_DIR:?}/\$(norm "\${@: -1}")"
+      [[ -f \${f} ]] || exit 1
+      sed -n 's/^User=//p' "\${f}" | tail -n 1
+    elif [[ " \$* " == *" -p NRestarts "* ]]; then
+      printf '0\n'
+    elif [[ -n \${E2E_FIN_RUNTIME:-} && "\$*" == *ActiveState* ]]; then
       u=\$(norm "\${@: -1}")
       if [[ -f "${CTL}/runtime-\${u}" ]]; then cat "${CTL}/runtime-\${u}"
       elif [[ \${u} == *backup.service ]]; then echo inactive
       else echo active; fi
-    else printf '0\n'; fi ;;
+    else exit 1; fi ;;
   start | stop)
     if [[ -n \${E2E_FIN_RUNTIME:-} ]]; then
       shift
@@ -441,6 +458,7 @@ publish move "${SHA_MOVE}" NEEDS_E2EMOVE >"${ART_MOVE}"
 # for e2emove, and its config under ${H}/setup.
 unit() { printf '%s/units/%s' "${H}" "$1"; } # unit FILE-NAME-UNDER-THE-UNIT-DIR
 SNAP_FILES=(dest/.env etc/managed.env etc/backup.env setup/ficus-setup.yaml bin/nightly-backup.sh
+  root/etc/sudoers.d/ficus-update
   "units/${HL_UNIT_API}.service" "units/${HL_UNIT_WORKER}.service" "units/${HL_UNIT_API}.service.d/extra.conf"
   "units/${HL_UNIT_BACKUP}.service" "units/${HL_UNIT_BACKUP}.timer")
 MIGS=e2emark
@@ -449,7 +467,7 @@ new_host() { # NAME
   H="${SCRATCH}/host-$1"
   DEST="${H}/dest"
   OLD_REL="${DEST}/releases/${SHA_OLD}-000000000000"
-  mkdir -p "${OLD_REL}" "${H}/etc" "${H}/units/${HL_UNIT_API}.service.d" "${H}/bin" "${H}/sysbin" "${H}/stage" "${H}/setup" "${H}/root" "${H}/data"
+  mkdir -p "${OLD_REL}" "${H}/etc" "${H}/units/${HL_UNIT_API}.service.d" "${H}/bin" "${H}/sysbin" "${H}/stage" "${H}/setup" "${H}/root/etc/sudoers.d" "${H}/data"
   make_tree "${OLD_REL}"
   printf '{"schema":1,"commit":"%s","envPrefix":"FICUS","hostLayout":2}\n' "${SHA_OLD}" >"${OLD_REL}/artifact.json"
   printf '{"sha":"x"}\n' >"${OLD_REL}/.ficus-release-complete"
@@ -460,11 +478,16 @@ new_host() { # NAME
   printf 'DATABASE_URL=postgres://user:pw@localhost/db\nFICUS_ENCRYPTION_KEY=enc-key-1\nFICUS_PASSWORD=pw-1\nFICUS_SANDBOX_RUNTIME=host\nAPP_URL=https://acme.ficus.sh\n' >"${DEST}/.env"
   printf "FICUS_BACKUP_S3_ACCESS_KEY='ak'\nFICUS_BACKUP_S3_SECRET_KEY='sk'\nFICUS_BACKUP_PASSPHRASE='pp'\n" >"${H}/etc/backup.env"
   printf '#!/usr/bin/env bash\n# the nightly backup (test fixture)\nDEST=%s\n' "${DEST}" >"${H}/bin/nightly-backup.sh"
-  printf '[Service]\nWorkingDirectory=%s/current/apps/core\nEnvironment=FICUS_ROOT=%s/current\n' "${DEST}" "${DEST}" >"$(unit "${HL_UNIT_API}.service")"
-  printf '[Service]\nWorkingDirectory=%s/current/apps/core\nEnvironment=FICUS_ROOT=%s/current\n' "${DEST}" "${DEST}" >"$(unit "${HL_UNIT_WORKER}.service")"
+  printf '[Service]\nUser=%s\nWorkingDirectory=%s/current/apps/core\nEnvironment=FICUS_ROOT=%s/current\n' "${CORE_USER}" "${DEST}" "${DEST}" >"$(unit "${HL_UNIT_API}.service")"
+  printf '[Service]\nUser=%s\nWorkingDirectory=%s/current/apps/core\nEnvironment=FICUS_ROOT=%s/current\n' "${CORE_USER}" "${DEST}" "${DEST}" >"$(unit "${HL_UNIT_WORKER}.service")"
   printf '[Service]\nLimitNOFILE=4096\n' >"$(unit "${HL_UNIT_API}.service.d/extra.conf")"
   printf '[Service]\nType=oneshot\nExecStart=%s\n' "${H}/bin/nightly-backup.sh" >"$(unit "${HL_UNIT_BACKUP}.service")"
   printf '[Timer]\nOnCalendar=*-*-* 03:15:00\n' >"$(unit "${HL_UNIT_BACKUP}.timer")"
+  # An already-provisioned non-root Core has its self-update restart grant.
+  # Keep it inside the fake host and snapshot it with the other config files.
+  printf '%s ALL=(root) NOPASSWD: /usr/bin/systemctl restart %s, /usr/bin/systemctl restart %s\n' \
+    "${CORE_USER}" "${HL_UNIT_API}" "${HL_UNIT_WORKER}" >"${H}/root/etc/sudoers.d/ficus-update"
+  chmod 0440 "${H}/root/etc/sudoers.d/ficus-update"
   chmod 0600 "${DEST}/.env" "${H}/etc/backup.env"
   chmod 0755 "${H}/bin/nightly-backup.sh"
   cat >"${H}/setup/ficus-setup.yaml" <<YAMLEOF
@@ -475,7 +498,7 @@ source:
 core:
   origin: https://acme.ficus.sh
   port: 3999
-  run_user: root
+  run_user: ${CORE_USER}
 database:
   mode: external
   dsn: postgres://user:pw@localhost/db
@@ -654,6 +677,9 @@ calls_line() { sed 's/^systemctl //' "${CALLS}" | tr '\n' '|'; }
 
 # ========================================= E1. a migration on upgrade (§1)
 new_host happy
+expect_eq 'E1 fixture remains hosted, configured as the unprivileged service account' \
+  "$(yq -r '.source.mode' "${CONFIG}"):$(yq -r '.core.run_user' "${CONFIG}")" "artifact:${CORE_USER}"
+expect_eq 'E1 fixture service account has nonzero UID' "$([[ $(id -u "${CORE_USER}") -ne 0 ]] && echo nonroot)" nonroot
 healthy_add "${SHA_MARK}-*"
 upgrade "${ART_MARK}"
 expect_eq 'E1 upgrade onto a release that needs e2emark: exits 0' "${RC}" '0'
@@ -836,14 +862,16 @@ convert_host() { # NAME
 # The unit NAME.service as lib.sh renders it for this host's current layout.
 expected_unit() { # api|worker
   bash -c 'source "$1/lib.sh"
-    SRC_DEST=$2 RUN_USER=root DB_MODE=external BUN_BIN=/usr/local/bin/bun CORE_LAYOUT=artifact
-    render_core_unit "$1/systemd/ficus-$3.service.tmpl"' _ "${TK}" "${DEST}" "$1"
+    SRC_DEST=$2 RUN_USER=$4 DB_MODE=external BUN_BIN=/usr/local/bin/bun CORE_LAYOUT=artifact
+    render_core_unit "$1/systemd/ficus-$3.service.tmpl"' _ "${TK}" "${DEST}" "$1" "${CORE_USER}"
 }
 convert_host convert
 upgrade "${ART_MARK}"
 expect_eq 'E5 C-FIN refuses git-to-artifact conversion' "${RC}" 1
 expect_match 'E5 conversion guidance names bridge toolkit' "${OUT}" 'ficus-host-layout-bridge'
-expect_eq 'E5 refusal leaves checkout/config/runtime/journals untouched' "$(same_as "${H}/pristine"):$(git -C "$DEST" rev-parse HEAD):$(sets):$(pending):$(wc -l <"$CALLS")" "same:${CONV_SHA}:0:none:0"
+expect_eq 'E5 refusal leaves checkout/config/runtime/journals untouched' "$(same_as "${H}/pristine"):$(git -C "$DEST" rev-parse HEAD):$(sets):$(pending)" "same:${CONV_SHA}:0:none"
+expect_eq 'E5 refusal only reads effective unit users, with no systemctl mutations' "$(calls_line)" \
+  "show -p User --value ${HL_UNIT_API}|show -p User --value ${HL_UNIT_WORKER}|"
 expect_eq 'E5 no release tree or current is created' "$([[ ! -e $DEST/releases && ! -L $DEST/current ]] && echo untouched)" untouched
 
 # ============ E6. setup-host.sh re-run on a host a SIGKILL left journaled (§9)

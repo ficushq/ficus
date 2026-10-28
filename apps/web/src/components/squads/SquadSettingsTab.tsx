@@ -148,7 +148,9 @@ export function SquadSettingsTab({
             <div className="mb-8 space-y-8">
               <SandboxSettings squadId={squadId} />
               <Can permission="squads:update" squadId={squadId}>
-                <SandboxProcesses target={{ kind: 'squad', squadId }} />
+                <div data-setting-target="sandbox-processes">
+                  <SandboxProcesses target={{ kind: 'squad', squadId }} />
+                </div>
               </Can>
               {logsAvailable && (
                 <Can permission="sandbox:logs" squadId={squadId}>
