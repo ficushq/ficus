@@ -1,3 +1,4 @@
+import { MIN_INTEGRATION_CREDENTIAL_LENGTH } from '../../security/integration-credential-entries'
 import { randomBytes } from 'node:crypto'
 import { z } from 'zod'
 import { createLogger } from '../../../lib/infra/logger'
@@ -166,8 +167,8 @@ export interface ChannelConnectionsDependencies {
 }
 
 const configureInputSchema = z.strictObject({
-  botToken: z.string().max(4096).nullable().optional(),
-  signingSecret: z.string().max(4096).nullable().optional(),
+  botToken: z.string().trim().min(MIN_INTEGRATION_CREDENTIAL_LENGTH).max(4096).nullable().optional(),
+  signingSecret: z.string().trim().min(MIN_INTEGRATION_CREDENTIAL_LENGTH).max(4096).nullable().optional(),
   guildId: z.string().trim().max(64).nullable().optional(),
   defaultSquadId: z.uuid().nullable().optional(),
 })

@@ -63,7 +63,7 @@ describe('StoredSecretToolContainment pre-call denial', () => {
   })
 
   test('gives the agent an actionable stored-value refusal naming refusal and no retry', () => {
-    expect(STORED_SECRET_TOOL_REFUSAL).toContain('stored Secret Store value')
+    expect(STORED_SECRET_TOOL_REFUSAL).not.toContain('Secret Store')
     expect(STORED_SECRET_TOOL_REFUSAL).toContain('refused')
     expect(STORED_SECRET_TOOL_REFUSAL).toContain('must not retry')
   })
@@ -298,4 +298,48 @@ describe('StoredSecretToolContainment deduplication', () => {
     await containment.waitForAuditWrites()
     expect(settled).toBe(true)
   })
+})
+
+test('allows normal app env file writes with squad env values but refuses integration leaves', async () => {
+  const env = syntheticValue()
+  const token = syntheticValue()
+  const safety = ContentSafety.fromSecretEntries([
+    { key: 'ENV', value: env, outputOnly: true },
+    { key: 'INTEGRATION', value: token },
+  ])
+  const audits: AuditRow[] = []
+  const agent = fakeAgent()
+  const containment = containmentWithSink(async (row) => {
+    audits.push(row)
+  })
+  const detach = containment.attachBeforeToolCall(agent, safety)
+  expect(
+    await agent.beforeToolCall!(contextWith({ path: 'app/.env.local', content: `APP_KEY=${env}` }))
+  ).toBeUndefined()
+  expect(audits).toEqual([])
+  expect(await agent.beforeToolCall!(contextWith({ command: `echo ${token}` }))).toEqual({
+    block: true,
+    reason: STORED_SECRET_TOOL_REFUSAL,
+  })
+  expect(audits.map((row) => row.secretKey)).toEqual(['INTEGRATION'])
+  detach()
+})
+
+test('allows an app env write containing Failed query and an output-only env value without audit', async () => {
+  const value = 'synthetic-env-query-value'
+  const safety = ContentSafety.fromSecretEntries([{ key: 'squad-env.APP_TOKEN', value, outputOnly: true }])
+  const audits: AuditRow[] = []
+  const containment = containmentWithSink(async (input) => {
+    audits.push(input)
+  })
+  const agent = fakeAgent()
+  const detach = containment.attachBeforeToolCall(agent, safety)
+  try {
+    expect(
+      await agent.beforeToolCall!(contextWith({ path: 'app/.env.local', content: `Failed query: ${value}` }))
+    ).toBeUndefined()
+    expect(audits).toEqual([])
+  } finally {
+    detach()
+  }
 })

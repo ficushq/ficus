@@ -14,7 +14,7 @@ const log = createLogger('stored-secret-containment')
  * content-free: it never names the key or echoes any payload bytes.
  */
 export const STORED_SECRET_TOOL_REFUSAL =
-  'A stored Secret Store value appeared in this tool payload. The call was refused before execution; you must not retry using that value.'
+  'A protected credential value appeared in this tool payload. The call was refused before execution; you must not retry using that value.'
 
 export type StoredSecretToolAuditSink = (input: StoredSecretToolAuditInput) => Promise<void>
 

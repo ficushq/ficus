@@ -190,6 +190,7 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
   declare typeContext: Record<string, string> | null
   declare isAnonymous: boolean
   declare globalCollaborationEnabled: boolean
+  declare envDetectionBootstrapped: boolean
   declare order: number
   declare metadata: Record<string, unknown>
   declare maxConcurrentWorkStreams: number | null
@@ -241,6 +242,7 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
       typeContext: squads.typeContext,
       isAnonymous: squads.isAnonymous,
       globalCollaborationEnabled: squads.globalCollaborationEnabled,
+      envDetectionBootstrapped: squads.envDetectionBootstrapped,
       order: squads.order,
       metadata: squads.metadata,
       maxConcurrentWorkStreams: squads.maxConcurrentWorkStreams,
@@ -304,6 +306,8 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
       .values({
         name: input.name,
         purpose: input.purpose,
+        // New squads have no legacy disk content to bless during upgrade.
+        envDetectionBootstrapped: true,
         squadPresetId: input.squadPresetId ?? null,
         defaultAgents: input.defaultAgents ?? [],
         context: input.context ?? null,
@@ -471,6 +475,8 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
    */
   static async update(id: string, input: UpdateSquadInput): Promise<Squad> {
     if (hasReservedGitHubAuthorityMetadata(input.metadata)) throw new Error('Reserved GitHub authority metadata')
+    // Feature-owned authority cannot be reset through generic squad updates.
+    if (Object.hasOwn(input, 'envDetectionBootstrapped')) throw new Error('Reserved env detection state')
     // Human-only: changed exclusively through setGitHubAuthorFilter, never generic squad updates.
     if (Object.hasOwn(input, 'githubAuthorFilter')) throw new Error('Reserved GitHub author filter setting')
     if (Object.hasOwn(input, 'githubUntrustedHandling')) throw new Error('Reserved GitHub author filter setting')

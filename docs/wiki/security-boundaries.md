@@ -169,6 +169,134 @@ outputs and unrelated integrations must remain intact. The `integrations/export`
 subtree is export-specific; the separate `integrations/projection` subtree is
 shared credential/tool projection and is not removed.
 
+## Tool credential detection
+
+Connection credentials are registered with the process-local content-safety matcher
+as secret leaf values, not serialized bundles. This includes manual provider tokens,
+channel credential leaves, and OAuth access/refresh tokens. OAuth expiry, revision,
+and client binding identifiers are not secrets. Connection material is identified
+by the internal `__integration-credential:` storage namespace. Secret leaves must
+contain at least 8 characters to be exact-matched; shorter legacy values are not
+exact-matched, and new manual/channel credential inputs enforce the same floor.
+Opaque manual tokens are trimmed consistently before route validation, storage
+and execution; existing padded values are matched as their effective trimmed
+tokens. The eight-character floor applies after that normalization. OAuth and
+channel bundle leaf strings are not blindly trimmed. Credential-pattern detection
+is independent of this exact-match minimum. Other
+encrypted stored values retain their existing minimum length (12 characters) and
+public-key / identifier exclusions. Storage, transactional OAuth refresh, rotation,
+deletion, initial cache loading and cross-process cache refresh all use the same
+matcher publication path. Union publication protects both sides of a rotation.
+Retired integration leaves remain matched for one hour from replacement/deletion,
+including while provider revocation is pending and across API/worker restarts.
+The prior encrypted bundle and an absolute deadline are persisted in a separate
+protected retirement table in the same transaction as the credential mutation.
+Ordinary Secret Store get/list APIs do not expose retired material. Per-key
+transaction locks serialize concurrent first writes, rotations and deletion.
+Startup and peer cache refresh restore only secret leaves, not bundle envelopes
+or OAuth metadata. Neither unrelated updates nor late refreshes renew the deadline.
+Expiry is checked at redaction boundaries; normal full cache refresh also removes
+expired durable rows. Integration retirement remains encrypted and independent
+of the env-only authority table described below.
+
+Integration credentials and remaining matchable stored secrets are redacted from
+tool output and refuse matching tool input before execution. Refusal/audit details
+contain key identifiers only, never credential values. This is leak containment,
+not a restriction on what `ficus integration exec` may execute, and not a guarantee
+against transformed/encoded secrets or a malicious agent that already holds one.
+Channel plugins still do not deliver credentials to sandboxes.
+
+Squad Environment Variables are **output-only** detection entries: they never
+refuse input or produce stored-credential tool audit matches. An agent may use a
+custom value to write an application's `.env.local`. If the same value is also an
+integration or protected stored credential, that independent input protection still
+applies. Output redaction (including partial streaming/truncated fragments) applies
+to both policies.
+
+The env heuristic uses statically decoded shell-literal assignments from canonical
+squad `.ficus/env.user` only. Unquoted literals, single/double quotes, concatenated
+quote fragments, shell backslash escaping/line continuation, multiline quotes and
+Bash ANSI-C quotes are decoded without running a shell. For ANSI-C Unicode escapes,
+both UTF-8 and C-locale escaped representations are conservatively registered; the
+detector does not read or change a runtime locale. An embedded unquoted `#`
+is part of the value; only a `#` starting a shell word begins a comment. Assignment
+words and `export` declarations (including multiple assignments and semicolon
+separators) are recognized; arbitrary command arguments and heredoc bodies are not
+interpreted as environment definitions. The detector never evaluates variables,
+parameter/command/arithmetic/process substitutions, or locale-dependent quotes.
+Such dynamic values and malformed/unsupported statements are not inferred. This
+is not an interpreter for arbitrary shell scripts or control flow.
+
+After literal decoding, the heuristic is:
+
+- Public/publishable key names and `NEXT_PUBLIC_`, `VITE_`, `REACT_APP_` prefixes
+  are excluded, case-insensitively.
+- Values under 12 characters are not registered (for example `production`).
+- Keys ending in `_TOKEN`, `_KEY`, `_SECRET`, `_PASSWORD`, `_CREDENTIALS`, or those
+  exact bare names, case-insensitively, match every value at least 12 characters.
+- Other keys require at least 32 characters, at least 4 Shannon bits per character,
+  and at least two of lowercase, uppercase, digits and non-alphanumeric characters.
+  Whitespace-containing values, HTTP(S) URLs, and absolute or explicit relative/home
+  paths are excluded on this entropy-only path. Repeated values, ordinary words
+  and common UUID identifiers do not meet the rule. This is a heuristic, not a
+  classification guarantee for every possible configuration value. Hex-only secrets
+  under generic names commonly score below 4 bits and are not reliably matched;
+  use an explicit secret-suffixed name for those values.
+
+Environment detection authority lives in a dedicated protected DB table containing
+only the content hash and parsed squad-env entries, never integration credentials.
+It has no encryption-key dependency: Core's supported no-key startup and env edits
+still work. At upgrade, existing squads receive one bounded legacy snapshot; this
+explicitly trusts their initial `env.user` bytes once. A separate durable per-squad
+bootstrap marker prevents a missing or malformed record from authorizing another
+snapshot. New squads are marked already bootstrapped and need an API/service write
+to register values. The first runtime creation of `env.user` is such a service
+write: an empty new-squad environment or promoted legacy custom content publishes
+its trusted record in the locked creation callback. Existing `env.user` files are
+not re-authorized by regeneration. Generic squad updates cannot reset the marker.
+
+After bootstrap, only API/service environment writes update the trusted record.
+An on-disk file whose hash differs is ignored for detection, not parsed into new
+entries. A fixed warning is logged once per squad per process, and Environment
+settings show a nonsecret notice explaining that the content must be saved there.
+Users with env-write permission can explicitly re-save unchanged content while
+that notice is present (including Ctrl/Cmd+S); pending/read-only submissions stay
+disabled, and successful registration clears the notice after re-fetch.
+Settings GET reads are separately bounded at 256 KiB for both `env.user` and the
+legacy `.env` fallback, including file growth during reads. Oversized content
+returns HTTP 413 (`squad_env_too_large`), never an editable prefix or empty
+substitute. The file is left unchanged. Settings shows an explicit error with no
+editor/Save, including when an older query value is cached; saves also wait for
+pending reads. Reduce the file outside Settings, reload, then save the smaller
+content there to register output redaction. Unsafe/unreadable files return a
+controlled 409 without falling back to generated content. Generic runtime env
+regeneration and strict cleanup retain their existing full-content behavior.
+Detection skips legacy files above 256 KiB with a warning; ordinary API/service
+writes enforce the same UTF-8 byte cap before any file write. The narrowly scoped
+first-file legacy promotion preserves full oversized content so runtime/rollout
+cleanup cannot stall on its size; it atomically records `reason: oversized`, a
+null hash and no detection entries, rather than parsing/registering large values. Bounded reads also tolerate a file
+growing after its metadata check. Symlink settings and files are not followed.
+
+The process-wide source enumerates DB squad records, not workspace directories.
+Startup awaits bootstrap; an owned periodic runner refreshes DB snapshots in both
+API and worker. Synchronous file checks are throttled to once per second, checking
+only `env.user` metadata. Signature/hash observations are cached even for negative
+or null-hash results; unchanged mismatches are not re-read/re-hashed every tick.
+Current trusted authority is still checked on each scan: changed file signatures
+are re-read, and API/peer authority changes can grant or revoke matching entries
+without re-reading unchanged file bytes. API/service writes
+refresh their process immediately; peer refresh and file-check intervals mean
+cross-process changes are not instantaneous. No shell parsing or DB work happens
+for every streamed chunk. Matching across squads is deliberately allowed; these
+values are never used for input refusal. No arbitrary workspace files (including
+app `.env.local` files) are scanned or registered. Dynamic shell expressions are
+not evaluated, so their resulting runtime values are not inferred.
+
+Regression pointers: the focused content-safety, content-safety-registry,
+squad-env-secret-source, stored-secret-tool-containment, secrets/store and squad/env
+tests cover the policies and their lifecycle boundaries.
+
 ## Historical rationale and verification pointers
 
 The preserved sources are `docs/history/plans/2026-06-17-rbac-v2-design.md`, `docs/history/plans/2026-06-17-rbac-v2-plan-3-deferred-security.md`, `docs/history/decisions/2026-08-14-integrations-bigbrain.md`, and `docs/history/plans/2026-08-14-integrations-bigbrain.md`. Historical “deferred security” titles do not imply their entire implementation remains unfinished.
