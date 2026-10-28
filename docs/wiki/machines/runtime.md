@@ -372,15 +372,15 @@ Provisioning has two independent fences:
 The advisory lease uses one reserved **direct** PostgreSQL session, never a
 transaction-pooled connection. Result queries are short main-pool operations;
 no database transaction stays open across SSH, and no second dedicated slot is
-acquired inside the lease. Permit acquisition is non-queueing: both dedicated-
+acquired inside the lease. Permit acquisition is non-queueing: both dedicated
 permit saturation and advisory contention use bounded, signal-checked polling,
 without entering the global unbounded permit FIFO. Contended callers return the
 dedicated slot between attempts, so another box can progress; an acquisition
 abort/deadline settles even if both unrelated permit owners remain held. An
 already-acquired callback still keeps its permit and lock until it settles.
-Idle/session-lifetime
-client retirement is disabled for the owned session, queries retain the dedicated
-statement budget, and a detected session loss fences late result publication.
+Idle/session-lifetime client retirement is disabled for the owned session, queries
+retain the dedicated statement budget, and a detected session loss fences late
+result publication.
 Recursive provisioning is rejected before taking another lease/slot.
 
 A successful follower reads the authoritative ready box/machine and creates its

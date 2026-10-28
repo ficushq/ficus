@@ -11,6 +11,15 @@ function deferred() {
   return { promise, resolve }
 }
 
+function expectSaturated() {
+  const spare = tryAcquireDedicatedConnectionSlot()
+  try {
+    expect(spare).toBeNull()
+  } finally {
+    spare?.()
+  }
+}
+
 async function bounded<T>(promise: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
@@ -275,7 +284,7 @@ for (const interruption of ['abort', 'timeout'] as const) {
         interruption === 'abort' ? 'synthetic permit cancellation' : 'timed out'
       )
       expect(entered).toBe(false)
-      expect(tryAcquireDedicatedConnectionSlot()).toBeNull()
+      expectSaturated()
     } finally {
       owners.forEach((release) => release())
       await result
@@ -285,10 +294,54 @@ for (const interruption of ['abort', 'timeout'] as const) {
     const available = [tryAcquireDedicatedConnectionSlot(), tryAcquireDedicatedConnectionSlot()]
     try {
       expect(available.every(Boolean)).toBe(true)
-      expect(tryAcquireDedicatedConnectionSlot()).toBeNull()
+      expectSaturated()
       expect(entered).toBe(false)
     } finally {
       available.forEach((release) => release?.())
     }
   })
 }
+
+test('a saturated lease retries when a permit returns and keeps acquired ownership through abort', async () => {
+  const owners = [await acquireDedicatedConnectionSlot(), await acquireDedicatedConnectionSlot()]
+  const contended = deferred()
+  const retry = deferred()
+  const entered = deferred()
+  const finish = deferred()
+  const abort = new AbortController()
+  let calls = 0
+  const pending = withVmSetupLease(
+    randomUUID(),
+    async () => {
+      calls++
+      entered.resolve()
+      await finish.promise
+      return 'owned callback finished'
+    },
+    {
+      signal: abort.signal,
+      sleep: async () => {
+        contended.resolve()
+        await retry.promise
+      },
+    }
+  )
+  try {
+    await bounded(contended.promise)
+    expect(calls).toBe(0)
+    owners.shift()!()
+    retry.resolve()
+    await bounded(entered.promise)
+    abort.abort(new Error('must not race acquired callback'))
+    // One original owner and the acquired callback still occupy BOTH permits.
+    expectSaturated()
+    finish.resolve()
+    expect(await bounded(pending)).toBe('owned callback finished')
+    expect(calls).toBe(1)
+  } finally {
+    owners.forEach((release) => release())
+    retry.resolve()
+    finish.resolve()
+    await pending.catch(() => {})
+  }
+})
