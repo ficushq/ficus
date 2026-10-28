@@ -31,6 +31,17 @@ if id -u "$BOX" >/dev/null 2>&1; then exit 2; fi
 reserved="$(cat /proc/sys/net/ipv4/ip_local_reserved_ports)"
 uid='' owned=false caller=''
 
+# CI fixture only: no credentials/config dumps or host-wide journal. Collect
+# evidence before destroying the account, including when provisioning failed.
+diagnose_runtime_failure() {
+  local uid="$1"
+  echo "Rootless runtime failure diagnostics for $BOX (uid=$uid)"
+  timeout --kill-after=2s 5s systemctl --machine="$BOX@.host" --user \
+    show docker.service -p ActiveState -p SubState -p Result -p ExecMainStatus -p ControlGroup || true
+  timeout --kill-after=2s 5s journalctl --no-pager --boot --lines=80 --output=short-monotonic \
+    "_UID=$uid" _SYSTEMD_USER_UNIT=docker.service || true
+}
+
 # Every process/container belongs to this exact freshly created account. Never
 # use host-wide Docker cleanup, process-name kills, or another fixture's data.
 cleanup() {
@@ -40,6 +51,7 @@ cleanup() {
     # A failed provision may already have created the user/manager.
     uid="$(id -u "$BOX" 2>/dev/null)" || uid=''
     if [ -n "$uid" ]; then
+      if [ "$rc" -ne 0 ]; then diagnose_runtime_failure "$uid"; fi
       timeout --kill-after=5s 10s systemctl --machine="$BOX@.host" --user stop \
         ficus-sandbox-server.socket ficus-sandbox-server-proxy.service ficus-sandbox-server.service docker.service || rc=1
       timeout --kill-after=5s 10s loginctl disable-linger "$BOX" || rc=1

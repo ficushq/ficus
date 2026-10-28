@@ -32,3 +32,13 @@ test('the runtime fixture refuses shared/live hosts and owns bounded payloads an
   expect(fixture).toContain('cpu.max')
   expect(fixture).not.toMatch(/docker (?:system prune|rm.*\$\(|run -d)|pkill|apparmor_restrict_unprivileged_userns/)
 })
+
+test('failed runtime acceptance captures bounded exact-account diagnostics before teardown', () => {
+  const fixture = readFileSync(resolve(root, 'scripts/machine/box-cgroup.integration.sh'), 'utf8')
+  expect(fixture).toContain('diagnose_runtime_failure()')
+  expect(fixture).toContain('timeout --kill-after=2s 5s journalctl')
+  expect(fixture).toContain('"_UID=$uid" _SYSTEMD_USER_UNIT=docker.service')
+  expect(fixture).toContain('show docker.service -p ActiveState -p SubState -p Result -p ExecMainStatus')
+  expect(fixture.indexOf('diagnose_runtime_failure "$uid"')).toBeLessThan(fixture.indexOf('--user stop'))
+  expect(fixture).not.toContain('-p Environment')
+})
