@@ -35,7 +35,7 @@
 import { createHash } from 'crypto'
 import { relative } from 'path'
 import type { IPty } from 'bun-pty'
-import type { SandboxPressure } from '@ficus/shared'
+import type { SandboxPressure, SandboxRuntimeHealth } from '@ficus/shared'
 import {
   getSquadIdFromSandbox,
   type ISandboxManager,
@@ -549,6 +549,8 @@ export interface VmSandboxStatus {
   chain?: BoxChainHealth
   /** Load and memory from the box's last health check; absent for an idle box. */
   pressure?: SandboxPressure
+  /** Live runtime diagnostics, independent of native Bash admission and durable asset readiness. */
+  runtimeHealth?: SandboxRuntimeHealth
 }
 
 function lifecycleGenerationFromVmSpecHash(specHash: string | null | undefined): string | null {
@@ -1522,6 +1524,7 @@ export class VmSandboxManager implements ISandboxManager {
         const idle = chain?.boxServer === 'idle'
         let liveDevboxReady = idle
         let pressure: SandboxPressure | undefined
+        let runtimeHealth: SandboxRuntimeHealth | undefined
         let repairReason: VmSetupReasonCode = 'transport_recovery_failed'
         const statusClient = idle ? null : await this.getOrAttachClient(sandboxId)
         if (statusClient) {
@@ -1537,6 +1540,7 @@ export class VmSandboxManager implements ISandboxManager {
             })
             liveDevboxReady = health.healthy && health.devboxReady
             pressure = health.pressure
+            runtimeHealth = health.runtimeHealth
             this.observeHealth(sandboxId, health.uptimeSeconds)
             repairReason = 'devbox_unavailable'
           } catch {
@@ -1544,16 +1548,22 @@ export class VmSandboxManager implements ISandboxManager {
             repairReason = 'transport_recovery_failed'
           }
         }
+        const liveHealth = {
+          ...(pressure ? { pressure } : {}),
+          ...(runtimeHealth ? { runtimeHealth } : {}),
+          ...(runtimeHealth?.status === 'degraded' ? { reason: runtimeHealth.reason } : {}),
+        }
         if (!setup) {
           return {
             status: 'starting',
             reason: 'sandbox setup has not been reconciled',
             devboxReady: false,
             chain,
+            ...liveHealth,
           }
         }
         if (setup.readiness === 'pending' || setup.readiness === 'reconciling') {
-          return { status: 'starting', reason: 'required sandbox assets are not ready', chain }
+          return { status: 'starting', reason: 'required sandbox assets are not ready', chain, ...liveHealth }
         }
         if (setup?.readiness === 'ready_degraded') {
           const projected = projectVmSetupState(setup)
@@ -1562,7 +1572,7 @@ export class VmSandboxManager implements ISandboxManager {
             readiness: 'ready_degraded',
             devboxReady: liveDevboxReady && !projected.reasons.includes('devbox_unavailable'),
             chain,
-            ...(pressure ? { pressure } : {}),
+            ...liveHealth,
             degradation: {
               reasons: projected.reasons,
               attemptCount: projected.attemptCount,
@@ -1583,7 +1593,7 @@ export class VmSandboxManager implements ISandboxManager {
             readiness: 'ready_degraded',
             devboxReady: false,
             chain,
-            ...(pressure ? { pressure } : {}),
+            ...liveHealth,
             degradation: {
               reasons: projected.reasons.includes(repairReason) ? projected.reasons : [repairReason],
               attemptCount: projected.attemptCount,
@@ -1591,7 +1601,13 @@ export class VmSandboxManager implements ISandboxManager {
             },
           }
         }
-        return { status: 'running', readiness: 'ready', devboxReady: true, chain, ...(pressure ? { pressure } : {}) }
+        return {
+          status: 'running',
+          readiness: runtimeHealth?.status === 'degraded' ? 'ready_degraded' : 'ready',
+          devboxReady: true,
+          chain,
+          ...liveHealth,
+        }
       }
       case 'starting':
         // Non-terminal: box mid-(re-)provision, or its machine is up but the
