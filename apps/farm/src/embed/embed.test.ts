@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { Window } from 'happy-dom'
 import { appToFarmMessage, parseFarmToAppMessage } from '@ficus/shared/farm-embed'
 import { CSRF_HEADER } from '@ficus/shared/http-headers'
 import { embedTheme, exchangeHandoff, haptic, isEmbedded, resetEmbedForTests, startEmbed } from './embed'
@@ -87,16 +88,23 @@ describe('farm embed', () => {
       type: 'theme',
       theme: { themeId: 'iris', appearance: 'light', customTheme: null },
     })
-    const frame = document.createElement('iframe')
-    document.body.appendChild(frame)
-    window.dispatchEvent(
-      new window.MessageEvent('message', { data: theme, source: frame.contentWindow as never }) as unknown as Event
-    )
-    window.dispatchEvent(
-      new window.MessageEvent('message', { data: theme, source: window as never }) as unknown as Event
-    )
-    expect(embedTheme()).toBeNull()
-    frame.remove()
+    // happy-dom 21 disables iframe loading by default. Opt in only for this
+    // isolated about:blank fixture; a null source would impersonate the app.
+    const frameHost = new Window({ settings: { enableIframePageLoading: true } })
+    try {
+      const frame = frameHost.document.createElement('iframe')
+      frameHost.document.body.appendChild(frame)
+      expect(frame.contentWindow).not.toBeNull()
+      window.dispatchEvent(
+        new window.MessageEvent('message', { data: theme, source: frame.contentWindow as never }) as unknown as Event
+      )
+      window.dispatchEvent(
+        new window.MessageEvent('message', { data: theme, source: window as never }) as unknown as Event
+      )
+      expect(embedTheme()).toBeNull()
+    } finally {
+      frameHost.close()
+    }
     send(theme)
     expect(embedTheme()?.themeId).toBe('iris')
   })
