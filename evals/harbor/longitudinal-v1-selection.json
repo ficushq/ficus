@@ -1,0 +1,20 @@
+{
+  "experiment": "longitudinal-v1",
+  "selected_at_utc": "2026-10-28T18:58:10.613886+00:00",
+  "task": "datagate",
+  "source_repository": "https://github.com/gabeorlanski/scb-problems",
+  "source_revision": "9cd9ca3a51c3d3e2a99d2488a25baf73a2204451",
+  "requests": [
+    1,
+    2,
+    3
+  ],
+  "selection_basis": "Previously unused product progression: CSV ingestion followed by pagination/sorting then filtering. Selected from specifications before fetching tests or references.",
+  "spec_sha256": {
+    "checkpoint_1.md": "bf85a2e7eb5b0df771300a3b24e366092cf128f0397d589f0c0d1e110716a9d2",
+    "checkpoint_2.md": "fa0aab9fe0ebfca78c5b6491cda5baf9f44df9a312715c5c9b6495ca31c12b17",
+    "checkpoint_3.md": "9a52bcb109ac3488da8862b8a150fcc451495cef7e3f48a5a30580a804db8336"
+  },
+  "status": "selected_for_offline_audit",
+  "inference_started": false
+}

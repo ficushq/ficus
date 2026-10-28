@@ -314,6 +314,10 @@ class FicusSquad(BaseAgent):
             env=self.env,
         )
 
+    async def on_settled(self, outcome, environment, context):
+        """Optional study hook after native quiescence; default ends the trial."""
+        return False
+
     async def run(
         self, instruction: str, environment: BaseEnvironment, context: AgentContext
     ):
@@ -403,6 +407,10 @@ class FicusSquad(BaseAgent):
                 settled_since = (settled_since or time.monotonic()) if status else None
                 if settled_since and time.monotonic() - settled_since >= 5:
                     outcome = status
+                    if await self.on_settled(outcome, environment, context):
+                        settled_since = None
+                        outcome = "interrupted"
+                        continue
                     break
                 await asyncio.sleep(2)
         finally:

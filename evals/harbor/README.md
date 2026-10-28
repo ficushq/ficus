@@ -5,6 +5,13 @@ tools, execution queue, isolated database, and work-stream state machine. Harbor
 owns task instructions, containers, time limits, verifier, and scores. This is
 not a new benchmark or replacement grader.
 
+The current follow-up is the [sequential product-work pilot](LONGITUDINAL.md):
+three requests delivered one at a time, with native history and memory retained.
+The [v8 overhead audit](coordination-v8-overhead.md) is complete and required no
+new inference. The October 28 phase retains its $50 cap and the unresolved $5.50
+hold; current accounting is recorded in the sequential study's readiness report.
+Earlier phases and their receipts remain preserved.
+
 Four fresh four-arm FeatureBench comparisons are complete (Pandas, Sphinx,
 xarray, seaborn). Ficus passes 3/4 tasks in both configurations; Pi passes 1/4 as
 a squad and 2/4 as a single engineer. All four fail seaborn. Pi engineers are
@@ -32,7 +39,7 @@ grade unchanged, then hit the conservative budget guard during a second cycle fo
 documentation closeout. Its captured artifact was graded separately without
 inference; it is not counted as autonomous delivery.
 
-The active phase was explicitly reset by the user on October 27, 2026 after
+An earlier phase was explicitly reset by the user on October 27, 2026 after
 rotating the API key, retaining a **$30 cap** and the existing **$5.50 per-request
 reservation**. The minimal key check cost $0.000072. See the
 [declared Pi retry](coordination-v2-pi-retry1-plan.json) for authorization and

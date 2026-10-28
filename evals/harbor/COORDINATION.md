@@ -637,3 +637,15 @@ The $50 phase has $27.011128 confirmed plus the original $5.50 hold, leaving
 $17.488872 conservative headroom. No ledger reset, hold release, candidate fix,
 production change or further paid run occurred. This single fresh case does not
 establish a general ranking or causal benefit from the bookkeeping clarification.
+
+## Next: sustained product work
+
+V8 is complete. The read-only [planning/context audit](coordination-v8-overhead.md)
+identifies an output-limit-rejected plan write, oversized repeated plan/state
+reads, and a corrected recipient lookup. These are optimization hypotheses, not
+measured causal savings or a reason to remove original requirements and review.
+
+The user authorized the [sequential product-work pilot](LONGITUDINAL.md), using
+unused DataGate requests 1–3, one at a time, in the same repository and native
+sessions. Its [plan](longitudinal-v1-plan.json) preserves the current cap and
+historical missing-receipt hold. It does not alter or rerun v8.

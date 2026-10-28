@@ -1,0 +1,54 @@
+{
+  "experiment": "longitudinal-v1-datagate",
+  "status": "frozen-pre-inference",
+  "authorized_by": "User: ok do 1 and 2, following completed v8 and remaining-budget disclosure",
+  "source": "longitudinal-v1-selection.json",
+  "requests": [
+    1,
+    2,
+    3
+  ],
+  "release_policy": "One original request at a time; release next only after native completion and clean committed artifact capture. Never reveal future requests, tests, solutions or grade feedback to either candidate.",
+  "state_policy": "One task container/repository throughout each arm. Ficus retains same database, squad, manager, role sessions and native memory. Pi retains same coordinator session, repository and durable notes; packaged child sessions remain native fresh-per-assignment.",
+  "memory_policy": "Ficus native memory enabled with keyword/FTS fallback, no embedding provider configured. Pi native session plus filesystem notes. Measure actual save/search/reuse separately; no claim of equal memory implementation or causal memory benefit.",
+  "decomposition": "Each incremental request goes through architect, engineer and independent review; coordinator chooses natural packages without a forced three-package minimum per increment. At most two workers; same factual bookkeeping permission.",
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "output_limit": 8192,
+  "model_calls_serialized": true,
+  "order": [
+    "ficus",
+    "pi"
+  ],
+  "candidate_policy": "One first attempt per arm; no paid retries, operator hints or repairs, production prompt changes, or hidden grader feedback.",
+  "grading": "Snapshot each completed increment; independently reapply each patch to the pristine /app baseline in the separate verifier after candidate work. Unchanged upstream assertions cover delivered checkpoints and prior regressions. No grade feedback to candidates. Never replace an earlier artifact with later work.",
+  "budget": {
+    "phase": "budget-phase-2026-10-28-000028-reset50",
+    "cap_usd": 50,
+    "opening_confirmed_usd": 27.011128,
+    "retained_hold_usd": 5.5,
+    "retained_hold_call": 1193,
+    "conservative_remaining_usd": 17.488872,
+    "per_request_reservation_usd": 5.5,
+    "new_unknown_receipt": "Stop and preserve; no automatic reconciliation or retries."
+  },
+  "required_prepaid_gates": [
+    "Full specification/assertion audit for selected checkpoints",
+    "Per-checkpoint reference passes, no-op fails, feature mutations fail",
+    "No future-request or grader leakage; independent checkpoint artifacts",
+    "Persistent native state and memory smoke probes without provider calls",
+    "All fixture/adapter/task hashes pinned, budget identity and no duplicate clients verified"
+  ],
+  "measurements": [
+    "External acceptance and prior-feature regressions at each delivery",
+    "Clean committed delivery and independent approval per increment",
+    "Native delegation, session continuity, memory writes/searches/actual reuse",
+    "Incremental wall time, receipts, role costs, intervention/wait events",
+    "Retained state versus recreated state and native harness differences"
+  ],
+  "limits": [
+    "Three incremental requests is a short longitudinal pilot, not long-running production reliability.",
+    "No causal memory attribution without an ablation.",
+    "No human-time-saved or unrestricted parallel throughput claims."
+  ]
+}

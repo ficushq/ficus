@@ -1,0 +1,500 @@
+{
+  "study": "coordination-v8-planning-overhead",
+  "method": "Explicit tool args/results and usage only. Character sizes are not tokens or additive billable savings; flags overlap. Every receipt attributed to an architect execution, not guessed sub-actions.",
+  "evidence_sha256": {
+    "snapshot.json": "a782c45352a748fdd866a083b04c21ddc78ba8f18b4cd52f7edf6d093502987f",
+    "messages.json": "2b39f003b0f582cfe27e98cee19f2b948db39be54ee51953965466373b25400c"
+  },
+  "architects": [
+    {
+      "agent": "5dcd5b00-0c17-409d-970e-b8d29d602022",
+      "stream": "CLI and check executable",
+      "calls": 14,
+      "native_usd": 0.2497579,
+      "output_tokens": 8113,
+      "cache_read_tokens": 496864,
+      "cache_write_tokens": 47543,
+      "tool_count": 12,
+      "returned_text_chars": 83933,
+      "successful_plan_argument_chars": 23434,
+      "flags_nonexclusive": {
+        "original_source_read": 1,
+        "native_state_read": 4,
+        "plan_read": 2,
+        "handoff_or_inbox": 4,
+        "plan_write": 2
+      },
+      "length_stop_receipts": [],
+      "tools": [
+        {
+          "message_id": "31cfa7d4-0803-4d7c-bf09-c5488bef348a",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "original_source_read",
+            "native_state_read",
+            "plan_read"
+          ],
+          "argument_chars": 129,
+          "returned_text_chars": 23455,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "4abef662-1689-4c5a-8d1e-f9e7cfa540df",
+          "tool": "set_agent_purpose",
+          "flags_nonexclusive": [],
+          "argument_chars": 44,
+          "returned_text_chars": 52,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "a57dc313-7440-4954-831a-866beeefc129",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "native_state_read",
+            "plan_read"
+          ],
+          "argument_chars": 416,
+          "returned_text_chars": 50332,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "e7a05864-0c01-41a5-86c6-b29dd6b68e14",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "native_state_read"
+          ],
+          "argument_chars": 182,
+          "returned_text_chars": 7974,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "c5d1430d-94ff-4594-8117-16d44ae62e1e",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "handoff_or_inbox"
+          ],
+          "argument_chars": 701,
+          "returned_text_chars": 64,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "18585628-aaa9-4853-97b2-d9c81dff9299",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "plan_write"
+          ],
+          "argument_chars": 21834,
+          "returned_text_chars": 11,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "1afc6e6c-1436-49fe-8ab9-ff8850213e12",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [],
+          "argument_chars": 307,
+          "returned_text_chars": 116,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "2c039c4b-de09-4915-b246-cfad90a9df81",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "handoff_or_inbox"
+          ],
+          "argument_chars": 698,
+          "returned_text_chars": 64,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "60c8af01-2770-4083-9e91-68f014c394d1",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [],
+          "argument_chars": 163,
+          "returned_text_chars": 1509,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "15e16e5c-b3fb-48b1-a4ff-2c9b28d0d89c",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "handoff_or_inbox"
+          ],
+          "argument_chars": 1726,
+          "returned_text_chars": 66,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "cfcf3d25-f3b7-452b-822a-c26838dd9bd9",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "native_state_read",
+            "plan_write"
+          ],
+          "argument_chars": 1600,
+          "returned_text_chars": 162,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "96f7aae1-f249-4a98-b809-2880d20f7542",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "handoff_or_inbox"
+          ],
+          "argument_chars": 1342,
+          "returned_text_chars": 128,
+          "error": false,
+          "output_limit_rejection": false
+        }
+      ]
+    },
+    {
+      "agent": "93eb9829-cdd7-43b6-8ded-67a7b40231c4",
+      "stream": "Final integration and independent acceptance",
+      "calls": 9,
+      "native_usd": 0.2627984,
+      "output_tokens": 7994,
+      "cache_read_tokens": 297094,
+      "cache_write_tokens": 61238,
+      "tool_count": 8,
+      "returned_text_chars": 142929,
+      "successful_plan_argument_chars": 25879,
+      "flags_nonexclusive": {
+        "original_source_read": 1,
+        "native_state_read": 5,
+        "plan_read": 3,
+        "plan_write": 1,
+        "handoff_or_inbox": 1
+      },
+      "length_stop_receipts": [],
+      "tools": [
+        {
+          "message_id": "f4362138-1fa3-47b9-9657-6c73ea4b108a",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "original_source_read",
+            "native_state_read",
+            "plan_read"
+          ],
+          "argument_chars": 135,
+          "returned_text_chars": 26167,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "6a5056ec-8051-4b18-91be-7d19c85ebcc0",
+          "tool": "set_agent_purpose",
+          "flags_nonexclusive": [],
+          "argument_chars": 46,
+          "returned_text_chars": 54,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "70a1ab47-bef7-4f41-8e6f-82543db871c5",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "native_state_read"
+          ],
+          "argument_chars": 322,
+          "returned_text_chars": 6006,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "84f11bf9-ae52-4c9a-8496-243680c27179",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "native_state_read"
+          ],
+          "argument_chars": 471,
+          "returned_text_chars": 43509,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "a0228bcb-3385-4454-b95f-fd11b038382a",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "native_state_read",
+            "plan_read"
+          ],
+          "argument_chars": 751,
+          "returned_text_chars": 51247,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "5962fd9d-c96d-433d-abd5-5c7444057317",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "native_state_read",
+            "plan_read"
+          ],
+          "argument_chars": 617,
+          "returned_text_chars": 15838,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "720aa43c-e2bf-4639-b598-8a5d1ede2d5c",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "plan_write"
+          ],
+          "argument_chars": 25879,
+          "returned_text_chars": 42,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "df5ae4f0-e36f-4bca-a867-dfd6f12e2c40",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "handoff_or_inbox"
+          ],
+          "argument_chars": 1829,
+          "returned_text_chars": 66,
+          "error": false,
+          "output_limit_rejection": false
+        }
+      ]
+    },
+    {
+      "agent": "b88edc29-e773-4875-8e47-d89083acfaee",
+      "stream": "Circuit core parser and validation",
+      "calls": 8,
+      "native_usd": 0.2644236,
+      "output_tokens": 14968,
+      "cache_read_tokens": 192006,
+      "cache_write_tokens": 38198,
+      "tool_count": 7,
+      "returned_text_chars": 22907,
+      "successful_plan_argument_chars": 22941,
+      "flags_nonexclusive": {
+        "original_source_read": 1,
+        "native_state_read": 1,
+        "plan_read": 1,
+        "plan_write": 2,
+        "handoff_or_inbox": 2
+      },
+      "length_stop_receipts": [
+        {
+          "response_id": "resp_0b2dbfc7f24e9864016ae2285abf0c87d285cdb7a5ab91b422",
+          "output_tokens": 8192,
+          "native_usd": 0.0856087
+        }
+      ],
+      "tools": [
+        {
+          "message_id": "f76f122d-bdfe-4293-94f0-fe78b76cf383",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "original_source_read",
+            "native_state_read",
+            "plan_read"
+          ],
+          "argument_chars": 129,
+          "returned_text_chars": 21647,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "03aa6451-bde7-493a-a96a-274bc3e34843",
+          "tool": "set_agent_purpose",
+          "flags_nonexclusive": [],
+          "argument_chars": 37,
+          "returned_text_chars": 45,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "ef079a39-de52-4b96-8194-21da3ce23dae",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [],
+          "argument_chars": 293,
+          "returned_text_chars": 874,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "40765359-6432-462d-adc1-096608d9dfad",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "plan_write"
+          ],
+          "argument_chars": 30120,
+          "returned_text_chars": 164,
+          "error": true,
+          "output_limit_rejection": true
+        },
+        {
+          "message_id": "db2fc185-2669-4763-a4c6-31b557382c13",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "plan_write"
+          ],
+          "argument_chars": 22941,
+          "returned_text_chars": 35,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "78669643-93cd-480e-aa63-a30b065315c9",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "handoff_or_inbox"
+          ],
+          "argument_chars": 1546,
+          "returned_text_chars": 76,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "726ed9bf-d8af-4f17-93e6-0ea4973a526f",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "handoff_or_inbox"
+          ],
+          "argument_chars": 1101,
+          "returned_text_chars": 66,
+          "error": false,
+          "output_limit_rejection": false
+        }
+      ]
+    },
+    {
+      "agent": "dca20548-b3c8-4ec7-b571-f5e19b365449",
+      "stream": "Evaluation engine and runtime values",
+      "calls": 10,
+      "native_usd": 0.2755473,
+      "output_tokens": 7972,
+      "cache_read_tokens": 299148,
+      "cache_write_tokens": 66341,
+      "tool_count": 9,
+      "returned_text_chars": 90022,
+      "successful_plan_argument_chars": 24876,
+      "flags_nonexclusive": {
+        "original_source_read": 1,
+        "native_state_read": 5,
+        "plan_read": 2,
+        "handoff_or_inbox": 3,
+        "plan_write": 1
+      },
+      "length_stop_receipts": [],
+      "tools": [
+        {
+          "message_id": "951bc0d5-de17-46de-9c4a-d6e184cd6c06",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "original_source_read",
+            "native_state_read",
+            "plan_read"
+          ],
+          "argument_chars": 186,
+          "returned_text_chars": 24231,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "768a9c64-ab36-48ce-a887-4ea5c7173ebc",
+          "tool": "set_agent_purpose",
+          "flags_nonexclusive": [],
+          "argument_chars": 48,
+          "returned_text_chars": 56,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "1141c8c4-a06e-407f-9c2b-76d59bd993e2",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "native_state_read",
+            "plan_read"
+          ],
+          "argument_chars": 335,
+          "returned_text_chars": 49166,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "265256f5-1395-4e63-89f1-1a722eecc957",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "handoff_or_inbox"
+          ],
+          "argument_chars": 1066,
+          "returned_text_chars": 61,
+          "error": true,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "f5528e34-c527-4625-aa7d-ff2af67b8ac7",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "native_state_read"
+          ],
+          "argument_chars": 90,
+          "returned_text_chars": 11556,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "78080bb7-ff74-4bab-a3b6-5f293ad483b3",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "handoff_or_inbox"
+          ],
+          "argument_chars": 1258,
+          "returned_text_chars": 186,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "31026dbf-81bd-4e6b-b9a1-29611379d06e",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "native_state_read",
+            "plan_write"
+          ],
+          "argument_chars": 24876,
+          "returned_text_chars": 10,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "dcf6c0a8-f33a-4daf-9565-31a826485018",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "native_state_read"
+          ],
+          "argument_chars": 121,
+          "returned_text_chars": 4626,
+          "error": false,
+          "output_limit_rejection": false
+        },
+        {
+          "message_id": "95008998-f2ef-4af6-9a1e-d2703bc8e571",
+          "tool": "squad_bash",
+          "flags_nonexclusive": [
+            "handoff_or_inbox"
+          ],
+          "argument_chars": 2260,
+          "returned_text_chars": 130,
+          "error": false,
+          "output_limit_rejection": false
+        }
+      ]
+    }
+  ]
+}
