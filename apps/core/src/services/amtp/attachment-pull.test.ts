@@ -4,6 +4,7 @@ import { sha256Hex } from '../inbox/attachment-storage'
 import { generateInstanceKeyPair, instanceIdFromPublicKeyPem } from './crypto'
 import { resetSettingsStore } from '../settings/store'
 import type { AmtpAttachmentRef } from '@ficus/shared'
+import { canonicalPeerGetString, verifyEnvelope } from 'amtp-protocol'
 
 const { privateKeyPem, publicKeyPem } = generateInstanceKeyPair()
 const INSTANCE_ID = instanceIdFromPublicKeyPem(publicKeyPem)
@@ -49,6 +50,37 @@ describe('pullAttachment', () => {
     expect(typeof capturedHeaders!['x-amtp-timestamp']).toBe('string')
     expect(Number(capturedHeaders!['x-amtp-timestamp'])).toBeGreaterThan(0)
   })
+
+  test.each(['/amtp/attachments/att-123', '/api/amtp/attachments/att-123'])(
+    'pull from a peer verifying %s has no legacy-path retries',
+    async (signedPath) => {
+      const bytes = new TextEncoder().encode('hello')
+      let requests = 0
+      const fetchImpl = (async (url, init) => {
+        requests++
+        expect(String(url)).toBe('https://peer.example/api/amtp/attachments/att-123')
+        const headers = new Headers(init?.headers)
+        expect(headers.get('x-amtp-instance')).toBe(INSTANCE_ID)
+        const valid = verifyEnvelope(
+          publicKeyPem,
+          new TextEncoder().encode(canonicalPeerGetString('GET', signedPath, Number(headers.get('x-amtp-timestamp')))),
+          headers.get('x-amtp-signature')!
+        )
+        return valid ? new Response(bytes) : Response.json({ error: 'Unauthorized' }, { status: 401 })
+      }) as typeof fetch
+      const result = pullAttachment(
+        { signer, fetchImpl },
+        { peerBaseUrl: 'https://peer.example/api', ref: makeRef(bytes) }
+      )
+      // 0.2 succeeds; the prefixed 0.1 receiver needs a coordinated upgrade.
+      if (signedPath.startsWith('/api/')) {
+        await expect(result).rejects.toThrow('ATTACHMENT_PULL_FAILED')
+      } else {
+        expect(await result).toEqual(bytes)
+      }
+      expect(requests).toBe(1)
+    }
+  )
 
   test('sha256 mismatch: throws ATTACHMENT_HASH_MISMATCH', async () => {
     const bytes = new TextEncoder().encode('hello')

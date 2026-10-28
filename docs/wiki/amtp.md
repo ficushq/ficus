@@ -74,9 +74,9 @@ are logged locally, while rejected requests still return a uniform 401.
 
 For mixed-version peers, upgraded receivers accept old observed-path signatures.
 Outgoing GETs to a prefixed 0.1 receiver require upstream's opt-in per-peer
-`legacySignedGetPathPrefix`. Ficus does not expose that setting yet: coordinate
-peer upgrades before relying on handle discovery or attachment pulls against
-such receivers. Message POST signing is unchanged. See the upstream
+`legacySignedGetPathPrefix`. This release intentionally requires coordinated
+peer upgrades rather than exposing that setting: upgrade these receivers before
+relying on handle discovery or attachment pulls from them. Message POST signing is unchanged. See the upstream
 [0.2.0 changelog](https://github.com/ficushq/amtp/blob/v0.2.0/CHANGELOG.md).
 
 `patches/amtp-node@0.2.0.patch` retains the existing conformance-only phase
