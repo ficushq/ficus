@@ -503,3 +503,13 @@ regrade artifacts, and Pi-only continuation launcher. Pi receives the same
 unchanged requests and amended grader, without the diagnostic findings. The
 original pair driver remains stopped. The existing $50 phase and $5.50 request
 reservation remain in force, with $5.871567 spent before Pi starts.
+
+### V4 completed comparison
+
+Both arms finished native delivery with clean committed trees and identical
+qualified external grades: 25 passed, 5 failed, 46 skipped. Pi used $5.261944 in
+42m 58s of agent execution; Ficus used $5.871567 in 50m 20s. The phase settled at
+$11.133511 with no unresolved receipts. See [the full comparison](coordination-v4-results.md)
+and `coordination-v4-results.json` for source fidelity, native coordination,
+artifact hashes, grading limitations, and the proposed next study. No additional
+paid run was launched.
