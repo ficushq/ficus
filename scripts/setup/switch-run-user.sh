@@ -16,7 +16,8 @@
 #     toggle or artifact sync renders the same User=;
 #   * gives the user group read on the file artifacts, its sudoers rules, the
 #     pooler, managed BigBrain's read paths, the backup script's new HOME and
-#     the units' User=, then restarts with the shared health wait and checks
+#     the units' User=, checks the stored paths (S4) while the services are
+#     still stopped, then restarts with the shared health wait and checks
 #     S1-S10 before it prints its trailer.
 # Root keeps owning the code, config, units, sudoers, interpreters and .env
 # (root 0600). --revert runs the same steps back to root.
@@ -33,6 +34,31 @@
 # from <dest>/.env. Idempotent: on a host that is already where it was asked
 # to go it only runs the success checks. The last line on stdout is
 # `FICUS_RUN_USER=<user>` (`root` after a revert or a rolled-back failure).
+#
+# The run survives the session that started it. The work is done by a
+# "worker": this script re-executed under setsid, in a session of its own,
+# with stdin /dev/null and its output in files, under
+# $(host_migrate_backup_root)/run-user-switch-runs/ (root 0700):
+#   <run>.log  stderr: the progress, as it goes;
+#   <run>.out  stdout: the FICUS_RUN_USER= trailer, then, written once the
+#              worker has exited (whatever ended it but SIGKILL),
+#              `FICUS_RUN_USER_SWITCH_EXIT=<exit code>`.
+# The invocation the caller started stays attached to it: it prints where the
+# files are, streams <run>.log to its stderr, waits, prints the trailer on
+# stdout and exits with the worker's code. A caller that stays connected sees
+# exactly what it saw before (stderr progress, the trailer last on stdout, the
+# same exit codes). When the session ends (ssh dropped or killed: SIGHUP,
+# SIGPIPE, the process group killed), only the attached invocation dies; the
+# worker has no terminal and no pipe back to the caller, so it finishes the
+# switch or its rollback and releases the host lock. INT or TERM sent to the
+# attached invocation (Ctrl-C) is passed on to the worker, which rolls back as
+# before; once a rollback has started the worker ignores HUP, INT and TERM
+# until it ends. A caller that lost its session observes the result later:
+# the run is over when <run>.out ends with FICUS_RUN_USER_SWITCH_EXIT (and
+# $(host_migrate_backup_root)/.lock is free); a RUN_USER_SWITCH journal left
+# behind means it was not settled, and the next run of this script settles it.
+# Every run holds host_migrate_lock from start to end, so a second run (a
+# retry) waits for the first to finish before it looks at the journal.
 set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
 # shellcheck source=lib.sh
@@ -48,6 +74,7 @@ Options:
 EOF
 }
 
+ORIG_ARGS=("$@")
 CONFIG='' TARGET_USER=ficus REVERT=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -65,6 +92,54 @@ done
 
 # ------------------------------------------------------------------ P1 (part)
 [[ ${EUID} -eq 0 ]] || die 'switch-run-user.sh must run as root (it moves HOME_DIR and re-owns it)'
+
+# ------------------------------------------------- detached from the session
+#
+# Starts the worker (see the header) and stays attached to it; never returns.
+switch_attached_run() { # ARGS...
+  local runs run log out worker tailer rc=0 f
+  runs="$(host_migrate_backup_root)/run-user-switch-runs"
+  mkdir -p -- "${runs}" && chmod 0700 "$(host_migrate_backup_root)" "${runs}" ||
+    die "could not create ${runs} (root 0700) — nothing was changed"
+  run="${runs}/$(date -u '+%Y%m%dT%H%M%SZ')-$$"
+  log="${run}.log" out="${run}.out"
+  (umask 077 && : >"${log}" && : >"${out}") || die "could not create ${log} — nothing was changed"
+  # Keep the 20 newest runs.
+  while IFS= read -r f; do rm -f -- "${f}" "${f%.log}.out"; done < <(ls -1t -- "${runs}"/*.log 2>/dev/null | tail -n +21)
+  log_info "this run goes on if the session ends — progress: ${log}, result: ${out} (FICUS_RUN_USER_SWITCH_EXIT=<code> once it is over)"
+  # The worker's own wrapper writes the exit line: the attached side may be gone by then.
+  FICUS_RUN_USER_SWITCH_WORKER=1 FICUS_RUN_USER_SWITCH_LOG=${log} FICUS_RUN_USER_SWITCH_OUT=${out} \
+    setsid -w bash -c '
+      bash "$@" </dev/null >"${FICUS_RUN_USER_SWITCH_OUT}" 2>>"${FICUS_RUN_USER_SWITCH_LOG}"
+      rc=$?
+      printf "FICUS_RUN_USER_SWITCH_EXIT=%s\n" "${rc}" >>"${FICUS_RUN_USER_SWITCH_OUT}"
+      exit "${rc}"' ficus-switch-run-user "${SCRIPT_DIR}/$(basename -- "${BASH_SOURCE[0]}")" "$@" \
+    </dev/null >/dev/null 2>&1 &
+  worker=$!
+  # A background job of a non-interactive shell is never a process-group
+  # leader, so setsid does not fork: ${worker} is the worker's wrapper itself.
+  trap 'kill -TERM "${worker}" 2>/dev/null || true' INT TERM
+  tail -n +1 -s 0.2 -F --pid="${worker}" -- "${log}" >&2 2>/dev/null &
+  tailer=$!
+  while :; do
+    wait "${worker}" && rc=0 || rc=$?
+    # A trapped INT/TERM interrupts wait (> 128) while the worker goes on.
+    kill -0 "${worker}" 2>/dev/null || break
+  done
+  wait "${tailer}" 2>/dev/null || true
+  grep -v '^FICUS_RUN_USER_SWITCH_EXIT=' -- "${out}" || true
+  exit "${rc}"
+}
+if [[ ${FICUS_RUN_USER_SWITCH_WORKER:-} != 1 ]]; then
+  if have setsid; then switch_attached_run "${ORIG_ARGS[@]}"; fi
+  log_warn 'setsid is not installed: this run does not survive the end of its session'
+fi
+
+# One run at a time, from here to the end: a second run (a retry) waits for
+# the first to finish, and only then reads the config and the journal, which
+# the first may still be rewriting (a rollback restores the config).
+log_info "taking the host lock $(host_migrate_backup_root)/.lock (a run already holding it is waited for)"
+host_migrate_lock
 
 ensure_yq
 cfg_load "${CONFIG}"
@@ -257,9 +332,32 @@ listed_sudo_commands() { # SUDO_L_OUTPUT
 
 # ------------------------------------------------------- the success checks
 
-# S1-S10 for GOAL. Prints each failure; returns 1 when any failed.
-switch_checks() { # GOAL OLD NEW RELEASE
-  local goal=$1 old=$2 new=$3 release=$4 unit pid owner rc=0 out expected listed f pooler
+# S4: no STRUCTURED column (rebase-home's `REBASE_HOME` lines: kind text or
+# jsonb-string, the value is a path Core opens) still holds a path under OLD.
+# Free-text columns (message content, a work stream's file list) do not count:
+# a live instance keeps writing mentions of the old HOME there (an agent
+# quoting it), and they name no file. --structured-only leaves them out
+# altogether: counting them scans every row of messages.metadata three times,
+# which is what made this check take minutes on a busy instance; were one
+# reported anyway, it is a `REBASE_HOME_TEXT` line, which the grep ignores.
+switch_check_stored_paths() { # OLD NEW RELEASE
+  local old=$1 new=$2 release=$3 out started=${SECONDS}
+  if ! out=$(switch_rebase "${SWITCH_SET}" "${release}" "${old}" "${new}" --dry-run --structured-only 2>/dev/null); then
+    log_error 'S4: rebase-home.js --dry-run failed'
+    return 1
+  fi
+  if grep -Eq '^REBASE_HOME [^=]+=[1-9]' <<<"${out}" || ! grep -q '^REBASE_HOME ' <<<"${out}"; then
+    log_error "S4: stored paths still name ${old}: [$(grep -E '^REBASE_HOME [^=]+=[1-9]' <<<"${out}" | tr '\n' ' ' || true)]"
+    return 1
+  fi
+  log_info "S4: no stored path names ${old} ($((SECONDS - started)) s)"
+}
+
+# S1-S10 for GOAL. Prints each failure; returns 1 when any failed. S4 is
+# skipped when the caller already ran it ("no-s4": the switch checks the
+# database before it restarts the services).
+switch_checks() { # GOAL OLD NEW RELEASE [no-s4]
+  local goal=$1 old=$2 new=$3 release=$4 s4=${5:-} unit pid owner rc=0 out expected listed f pooler
   for unit in "${HL_UNIT_API}" "${HL_UNIT_WORKER}"; do
     [[ $(unit_user "${unit}") == "${goal}" ]] || { log_error "S1: ${unit} User= is '$(unit_user "${unit}")', not ${goal}"; rc=1; }
     pid=$(as_root systemctl show -p MainPID --value "${unit}" 2>/dev/null || true)
@@ -272,11 +370,7 @@ switch_checks() { # GOAL OLD NEW RELEASE
     out=$(find "${new}" -xdev ! -user "${goal}" -print 2>&1 | head -n 5) || true
     [[ -z ${out} ]] || { log_error "S3: not everything under ${new} belongs to ${goal}: ${out}"; rc=1; }
   fi
-  out=$(switch_rebase "${SWITCH_SET}" "${release}" "${old}" "${new}" --dry-run 2>/dev/null) || { log_error 'S4: rebase-home.js --dry-run failed'; rc=1; }
-  if grep -Eq '^REBASE_HOME [^=]+=[1-9]' <<<"${out}" || ! grep -q '^REBASE_HOME ' <<<"${out}"; then
-    log_error "S4: stored paths still name ${old}"
-    rc=1
-  fi
+  if [[ ${s4} != no-s4 ]]; then switch_check_stored_paths "${old}" "${new}" "${release}" || rc=1; fi
   if [[ ${goal} != root ]]; then
     # -q: no "-- No entries --" or permission hint, so only a real line counts.
     out=$(as_root runuser -u "${goal}" -- journalctl -q -u "${HL_UNIT_API}" -n 1 --no-pager 2>/dev/null || true)
@@ -314,7 +408,18 @@ switch_checks() { # GOAL OLD NEW RELEASE
 # re-render the pooler for the user the run started from, restart. Each step
 # is attempted whatever the previous one did; a failure is logged and makes
 # the rollback report failure, but never stops it.
+#
+# What it stops it always starts again, whatever step the journal reached:
+# the core units (restart_core_services), the pooler (re-rendered when step
+# 11 ran, else started as it is) BEFORE the core units, and the backup timer.
+# It is idempotent: settling a journal whose rollback already ran (HOME and
+# the stored paths back, the services up, only the checks failed) does every
+# step again and finds nothing left to change.
+#
+# HUP, INT and TERM are ignored from here to the end of the run: a rollback
+# that started always finishes.
 switch_rollback() {
+  trap '' HUP INT TERM
   local journal setdir goal from old new release header rc=0
   journal=$(run_user_switch_journal)
   IFS=$'\t' read -r setdir goal from old new release <"${journal}" || die "unreadable run-user switch journal ${journal}"
@@ -330,7 +435,11 @@ switch_rollback() {
   as_root systemctl stop "${HL_UNIT_API}" "${HL_UNIT_WORKER}" || { log_error 'could not stop the core units'; rc=1; }
   if [[ ${POOL_ENABLED} == true ]]; then as_root systemctl stop "${HL_UNIT_POOLER}" || true; fi
   if switch_step_ran 5; then
-    switch_rebase "${setdir}" "${release}" "${new}" "${old}" >&2 || { log_error "could not rebase the stored paths back to ${old}"; rc=1; }
+    # --force: every structured path under NEW is this run's (P6 found none
+    # before it), and one still under OLD (S4 failed on it) belongs there, so
+    # merging them back is the rollback; rebase-home would refuse otherwise.
+    switch_rebase "${setdir}" "${release}" "${new}" "${old}" --force >&2 ||
+      { log_error "could not rebase the stored paths back to ${old}"; rc=1; }
   fi
   if switch_step_ran 4 && [[ -d ${new} && ! -e ${old} ]]; then
     rename_only "${new}" "${old}" || { log_error "could not move ${new} back to ${old}"; rc=1; }
@@ -346,11 +455,20 @@ switch_rollback() {
   if switch_step_ran 9; then
     (switch_artifact_groups "${from}") || { log_error 'could not put the artifact groups back'; rc=1; }
   fi
-  if switch_step_ran 11 && [[ ${POOL_ENABLED} == true ]]; then
-    (install_pooler "$(envfile_direct_dsn "${ENV_FILE}")" "${POOL_SIZE}" "${POOL_RESERVE}" "${TEMPLATES}") ||
-      { log_error "could not re-render ${HL_UNIT_POOLER} for ${from}"; rc=1; }
-  fi
   as_root systemctl daemon-reload || rc=1
+  if [[ ${POOL_ENABLED} == true ]]; then
+    # Stopped above whatever the journal says, so always brought back, before
+    # the core units (pool_mode transaction: Core's DATABASE_URL goes through it).
+    if switch_step_ran 11; then
+      (install_pooler "$(envfile_direct_dsn "${ENV_FILE}")" "${POOL_SIZE}" "${POOL_RESERVE}" "${TEMPLATES}") ||
+        { log_error "could not re-render ${HL_UNIT_POOLER} for ${from}"; rc=1; }
+    else
+      { as_root systemctl start "${HL_UNIT_POOLER}" &&
+        retry_until 30 1 "pgbouncer listening on 127.0.0.1:${FICUS_PGBOUNCER_PORT}" \
+          bash -c "exec 3<>/dev/tcp/127.0.0.1/${FICUS_PGBOUNCER_PORT}"; } ||
+        { log_error "could not start ${HL_UNIT_POOLER} again"; rc=1; }
+    fi
+  fi
   (restart_core_services "${CORE_PORT}") || { log_error 'the core services did not come back up after the rollback'; rc=1; }
   if [[ -f ${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_BACKUP}.timer ]]; then as_root systemctl start "${HL_UNIT_BACKUP}.timer" || rc=1; fi
   # The host must pass the same checks for the user it went back to (S1-S10;
@@ -483,13 +601,16 @@ switch_run() { # GOAL FROM OLD NEW RELEASE
   as_root systemctl daemon-reload
 
   switch_journal_step 15
-  log_step 'switch 15/17: restart and wait for health'
+  # S4 checks the database only: run it while nothing writes to it and
+  # nothing competes with it (the services restart right after).
+  log_step 'switch 15/17: no stored path names the old HOME (S4), restart and wait for health'
+  switch_check_stored_paths "${old}" "${new}" "${release}" || die 'a success check failed (S4)'
   restart_core_services "${CORE_PORT}"
   if [[ -f ${FICUS_SYSTEMD_UNIT_DIR}/${HL_UNIT_BACKUP}.timer ]]; then as_root systemctl start "${HL_UNIT_BACKUP}.timer"; fi
 
   switch_journal_step 16
   log_step 'switch 16/17: success checks'
-  switch_checks "${goal}" "${old}" "${new}" "${release}" || die 'a success check failed'
+  switch_checks "${goal}" "${old}" "${new}" "${release}" no-s4 || die 'a success check failed'
 
   switch_journal_step 17
   log_step 'switch 17/17: done'
@@ -505,6 +626,7 @@ switch_run() { # GOAL FROM OLD NEW RELEASE
 switch_on_exit() { # RC
   local rc=$1
   trap - EXIT
+  trap '' HUP INT TERM
   if [[ ${SWITCH_DONE} -eq 0 && -e $(run_user_switch_journal) ]]; then
     log_error 'the switch failed — rolling back'
     if switch_rollback; then printf 'FICUS_RUN_USER=%s\n' "${RESULT_USER}"; fi
@@ -512,13 +634,15 @@ switch_on_exit() { # RC
   fi
   exit "${rc}"
 }
-trap 'switch_on_exit 143' TERM
-trap 'switch_on_exit 129' HUP
-trap 'switch_on_exit 130' INT
+switch_signal_traps() {
+  trap 'switch_on_exit 143' TERM
+  trap 'switch_on_exit 129' HUP
+  trap 'switch_on_exit 130' INT
+}
+switch_signal_traps
 
 # ------------------------------------------------------------ main
 
-host_migrate_lock
 UPDATE_SUDOERS_FILE=${HL_SUDOERS}
 RESULT_USER=''
 SWITCH_SET=''
@@ -533,6 +657,7 @@ if [[ -e $(run_user_switch_journal) ]]; then
   else
     log_warn "an interrupted run-user switch is journaled in $(run_user_switch_journal) — rolling it back first"
     switch_rollback || die 'could not settle the interrupted run-user switch'
+    switch_signal_traps # switch_rollback ignored them while it ran
   fi
   cfg_load "${CONFIG}"
   CONFIGURED_USER=$(cfg_get '.core.run_user' '')
