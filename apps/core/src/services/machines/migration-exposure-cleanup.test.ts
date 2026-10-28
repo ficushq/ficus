@@ -17,12 +17,12 @@ import { boxHomeForUser, boxUnixUser } from './box-paths'
 import type { SshRunner } from './ssh'
 import type { Machine } from './queries'
 
-function fixture() {
+function fixture(namespace: 'squad' | 'agent' = 'squad') {
   const root = mkdtempSync(join(tmpdir(), 'migration-retirement-'))
   const source = join(root, 'source'),
     staging = join(root, 'staging'),
     final = join(root, 'final')
-  const sandboxId = `squad_${crypto.randomUUID()}`,
+  const sandboxId = `${namespace}_${crypto.randomUUID()}`,
     user = boxUnixUser(sandboxId),
     home = boxHomeForUser(user)
   const identity = {
@@ -49,6 +49,8 @@ function fixture() {
       .replaceAll(user, userInfo().username)
   const runner: SshRunner = {
     async run(_machine, command, opts) {
+      expect(command).toContain(home)
+      expect(opts?.timeoutMs).toBe(30_000)
       return run(localize(command, source), opts?.stdin)
     },
   }
@@ -147,6 +149,26 @@ test('source settings conflicts abort sanitation without following links or chan
       prepareMigrationSource(f.runner, f.machine, f.sandboxId, { generatedEnv: async () => Buffer.from(cleanEnv) })
     ).rejects.toThrow('sanitation failed')
     expect(readFileSync(join(external, '.env'), 'utf8')).toBe('CUSTOM=untouched')
+  } finally {
+    rmSync(f.root, { recursive: true, force: true })
+  }
+})
+
+test('agent migration removes only retired private credentials without regenerating a squad workspace', async () => {
+  const { prepareMigrationSource } = await import('./migration-exposure-cleanup')
+  const f = fixture('agent')
+  try {
+    writeFileSync(join(f.source, '.private/.ficus/agent-secrets.env'), 'OLD_TOKEN=synthetic-retired')
+    writeFileSync(join(f.source, '.private/custom'), 'keep private data')
+    writeFileSync(join(f.source, 'workspace/.ficus/.env'), 'CUSTOM=not-carried-by-agent-transfer')
+    await prepareMigrationSource(f.runner, f.machine, f.sandboxId, {
+      generatedEnv: async () => {
+        throw new Error('must not resolve squad environment')
+      },
+    })
+    expect(existsSync(join(f.source, '.private/.ficus/agent-secrets.env'))).toBe(false)
+    expect(readFileSync(join(f.source, '.private/custom'), 'utf8')).toBe('keep private data')
+    expect(readFileSync(join(f.source, 'workspace/.ficus/.env'), 'utf8')).toBe('CUSTOM=not-carried-by-agent-transfer')
   } finally {
     rmSync(f.root, { recursive: true, force: true })
   }
