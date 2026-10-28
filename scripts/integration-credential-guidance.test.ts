@@ -130,6 +130,27 @@ test('detection documentation tracks trusted authority, bounds and retired-token
   }
 })
 
+test('environment docs distinguish legacy promotion compatibility from ordinary capped writes', () => {
+  const doc = read('docs/wiki/integration-execution.md')
+  for (const contract of [
+    'first service creation',
+    'full oversized legacy content',
+    'atomically',
+    '`oversized` with no entries',
+    'Negative signature/hash results',
+    'changed file signatures',
+    'API/service or peer authority updates',
+  ])
+    expect(doc).toContain(contract)
+  for (const path of ['docs/wiki/settings-ui.md', 'docs/upgrade/secret-exposure-retirement.md']) {
+    const guidance = read(path)
+    expect(guidance).toContain('legacy promotion')
+    expect(guidance).toContain('oversized')
+    expect(guidance).toContain('no entries')
+    expect(guidance).toContain('ordinary API/service writes')
+  }
+})
+
 // Cross-check setup prose against the owning implementation, not historical key names.
 test('Discord setup matches the token-only form, discovered identity and optional HTTP UI', () => {
   const plugins = read('apps/core/src/services/integrations/channels/plugins.ts')

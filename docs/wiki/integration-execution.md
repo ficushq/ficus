@@ -177,6 +177,19 @@ marker prevents a missing, corrupt or unreadable record from authorizing another
 disk snapshot, including after restart. No-key startup, detection and env edits
 remain supported.
 
+Trusted **first service creation** of `env.user` also registers its content: an
+empty new-squad environment does not need an initial manual save, and bounded
+legacy promotion from a custom `.env` registers its literal secret-like values.
+This service-owned write is distinct from discovering an arbitrary disk-only file,
+which cannot create trusted state after bootstrap.
+
+There is one narrow size exception for **legacy promotion** during runtime
+regeneration/rollout cleanup: preserve **full oversized legacy content** in
+`env.user` and atomically record reason `oversized` with no entries. Regeneration
+and cleanup must not stall on the legacy file's size; detection shows the oversized
+notice, not a false unreadable or edited-outside-Settings notice. This does not
+register oversized values for matching or raise the cap on ordinary input writes.
+
 After bootstrap only Environment API/service writes update trusted state. A direct
 disk edit cannot register new redaction values: the file must match the trusted
 hash or that squad's env entries are ignored. A safe warning is logged **once per squad per process**,
@@ -184,11 +197,14 @@ and a one-line Environment settings notice explains how to register the values b
 saving in Settings; even an unchanged save can register them. Oversized/unreadable
 legacy files are skipped with a warning/notice, not silently trusted on a later
 restart. DB authority refresh and on-disk checks are throttled to **at most once per second**
-(with immediate local API/service-write refresh); unchanged file metadata reuses
-cached matching entries. Bounded descriptor reads, regular-file checks and no-follow
+(with immediate local API/service-write refresh). Negative signature/hash results
+are cached too: unchanged mismatching/null-hash files are not repeatedly read and
+hashed. The cache reevaluates changed file signatures and current trusted state,
+including API/service or peer authority updates; a prior mismatch does not freeze
+future registration. Bounded descriptor reads, regular-file checks and no-follow
 checks prevent oversized or symlink input from bypassing these limits.
 
-Environment API/service writes reject content above 256 KiB before file writes.
+Ordinary Environment API/service writes reject content above 256 KiB before file writes.
 The Settings GET also bounds reads: oversized files return 413, unreadable or unsafe
 files return 409, without editable empty/truncated substitutes. The editor and Save
 are unavailable on read errors; saving is also disabled while a read is pending.
@@ -262,6 +278,8 @@ Run focused files, not the full Core suite.
 | Integration leaf minimum 8 (including legacy), trimmed manual tokens, manual/channel input validation and independent patterns | `services/security/integration-credential-entries.test.ts`, `content-safety.test.ts`, `routes/integrations.test.ts`, `services/integrations/channels/connections.test.ts` |
 | Integration storage/refresh/rotation/delete, conservative cache transition and encrypted durable one-hour retirement across restart/peer refresh with original expiry | `services/secrets/store.test.ts`, `services/integrations/authorization/refresh-service.test.ts`, `services/security/content-safety-registry.test.ts` |
 | One-time legacy env bootstrap, protected DB authority/marker without encryption key, restart/missing/corrupt row behavior, ignored direct edits, notices, 256 KiB cap and throttled refresh | `services/security/squad-env-secret-source.test.ts`, `services/security/squad-env-detection-repository.test.ts`, `routes/squad-env.test.ts`, `services/squad/env.test.ts` |
+| Trusted first service creation: empty new squad has no false notice, bounded legacy promotion registers values; oversized legacy promotion preserves full content/runtime cleanup and atomically records oversized/no entries | `services/squad/env.test.ts`, `services/security/squad-env-detection-repository.test.ts`, `services/sandbox/exposure-retirement.test.ts` |
+| Negative signature/hash caching avoids repeated reads of unchanged mismatches/null hashes; changed signatures and API/service/peer authority updates reevaluate | `services/security/squad-env-secret-source.test.ts`, `squad-env-detection-repository.test.ts` under that directory |
 | Bounded GET 413/409 without editable substitutes, byte/growth limits, no file mutation; error/pending UI and smaller-file recovery | `services/squad/env-settings-read.test.ts`, `routes/squad-env.test.ts`, `apps/web/src/components/squads/SquadEnvConfig.test.tsx` (repo-relative) |
 | Env output-only matching including failed-query attribution; public/ordinary-value exclusions; app env writes allowed, integration tool input refused | `services/security/squad-env-secret-source.test.ts`, `content-safety.test.ts`, `stored-secret-tool-containment.test.ts`, `tool-output-redaction.test.ts` |
 | Active skill/prompt text, six deploy script examples, channel setup, honest legacy deploy option help, operator-only docs | `scripts/integration-credential-guidance.test.ts` (repo-relative), `lib/utils/cli-help.test.ts` |

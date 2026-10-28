@@ -285,3 +285,11 @@ Oversized files cannot be edited here: reduce the file outside Settings, reload,
 then save to register it. Failed/unsafe reads show an error without editable partial
 or empty content; saving is disabled during reads. Failed reads and over-cap
 rejected writes leave the existing file unchanged.
+
+The cap still applies to ordinary API/service writes. Only service-owned legacy promotion
+during runtime regeneration/cleanup preserves a larger existing custom `.env`
+intact in `env.user`, atomically recording `oversized` with no entries for detection.
+Runtime cleanup does not stall on this size; the oversized notice remains until
+smaller content is explicitly saved. Trusted first creation of an empty new-squad
+file or bounded legacy file registers it without an initial manual save. A raw
+on-disk edit is not this service-owned promotion and grants no detection authority.

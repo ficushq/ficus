@@ -21,12 +21,23 @@ Thereafter only Environment API/service saves register values. Later direct disk
 are ignored for detection, with a once-per-squad-per-process warning and a notice
 in Environment Settings; explicitly save there to register changed or unchanged
 values. Oversized/unreadable legacy files are skipped with a notice, not repeatedly
-snapshotted. API/service writes share the cap; Settings reads fail safely without
+snapshotted. The cap remains for ordinary API/service writes; Settings reads fail safely without
 editable partial/empty substitutes. Reduce an oversized file outside Settings,
 reload, then save; failed reads and over-cap rejected writes leave the file unchanged. Public/publishable
 keys are excluded, and env entries never refuse input, including failed-query
 attribution. No integration credentials are copied into this env authority. See
 [full detection limits and persistence](../wiki/integration-execution.md#detection-boundaries).
+
+Trusted first service creation registers empty new-squad files and bounded legacy
+custom `.env` content without requiring a manual save. A narrow **legacy promotion**
+exception preserves the full oversized custom `.env` in `env.user` during runtime
+regeneration/cleanup, atomically recording reason `oversized` with no entries.
+Regeneration/cleanup succeeds rather than stalling on size, with the oversized
+notice instead of a false unreadable or mismatch notice. Detection stays skipped
+until smaller content is saved; ordinary input, Settings GET and scanner caps are
+unchanged. Arbitrary raw disk edits are not trusted service creation. Negative
+signature/hash caching also avoids re-reading unchanged untrusted files; changed
+file signatures and authoritative API/service or peer updates trigger reevaluation.
 
 ## Automatic cleanup after upgrading Core
 
