@@ -162,6 +162,24 @@ describe('handleUpload (raw streaming upload)', () => {
     expect(readFileSync(p).equals(big)).toBe(true)
   })
 
+  it('refuses interrupted raw streams with 400 and keeps the original file', async () => {
+    const p = join(testDir, 'interrupted.txt')
+    writeFileSync(p, 'original')
+    const url = new URL('http://box/upload?path=' + encodeURIComponent(p))
+    const req = new Request(url, {
+      method: 'POST',
+      body: new ReadableStream({
+        pull(c) {
+          c.error(new Error('private source error'))
+        },
+      }),
+    })
+    const response = await handleUpload(url, req)
+    expect(response.status).toBe(400)
+    expect(readFileSync(p, 'utf8')).toBe('original')
+    expect(JSON.stringify(await response.json())).not.toContain('private source error')
+  })
+
   it('never materializes a raw upload body', async () => {
     const p = join(testDir, 'stream.bin')
     const { url, request } = makeReq(p, Buffer.from('stream bytes'))

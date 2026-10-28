@@ -248,16 +248,31 @@ export async function handleUpload(url: URL, req: Request): Promise<Response> {
     }
   }
 
+  let bodyFailed = false
+  async function* source() {
+    if (!req.body) return
+    try {
+      yield* req.body
+    } catch (error) {
+      bodyFailed = true
+      throw error
+    }
+  }
   try {
     const result = await atomicVerifiedWrite({
       path: policy.path,
       allowedRoots: [policy.allowedRoot],
-      content: req.body ?? new Uint8Array(),
+      content: source(),
       signal: req.signal,
       mode,
     })
     return Response.json(result)
   } catch (error) {
+    if (bodyFailed || req.signal.aborted)
+      return Response.json(
+        { error: 'Failed to read upload body; candidate was not published', phase: 'pre-publication' },
+        { status: 400 }
+      )
     return atomicFailureResponse(error)
   }
 }
