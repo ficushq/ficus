@@ -27,6 +27,7 @@ import {
 } from './types'
 import { acquireAgentQueueLock } from '../execution/agent-admission'
 import { slotNotificationNotifier } from './notifications'
+import { orderedSlotWaiters } from './queue-order'
 
 type SlotPoolRow = typeof slotPools.$inferSelect
 type SlotClaimRow = typeof slotClaims.$inferSelect
@@ -348,14 +349,9 @@ export async function expireAndPromoteLocked(tx: DbTx, pool: SlotPoolRow, now: D
 
   // A disabled pool never grants: disabling cancels its waiters, and this
   // guard keeps any straggler from being promoted while it stays disabled.
-  while (!pool.disabledAt && activeCount < pool.capacity) {
-    const [waiter] = await tx
-      .select()
-      .from(slotWaiters)
-      .where(and(eq(slotWaiters.poolId, pool.id), eq(slotWaiters.status, 'queued')))
-      .orderBy(asc(slotWaiters.enqueueSequence), asc(slotWaiters.id))
-      .limit(1)
-    if (!waiter) break
+  const waiters = !pool.disabledAt && activeCount < pool.capacity ? await orderedSlotWaiters(tx, pool) : []
+  for (const waiter of waiters) {
+    if (activeCount >= pool.capacity) break
 
     // Deliberately non-locking: lifecycle cleanup already follows agent lock -> pool lock.
     // The squads join fences promotion: an archived squad's pool can never grant
@@ -705,7 +701,7 @@ async function requireLiveOwner(tx: DbTx, squadId: string, agentId: string): Pro
 }
 
 /**
- * Claim capacity, joining the FIFO queue when none is free.
+ * Claim capacity, joining the priority-ordered queue when none is free.
  *
  * Claim and subscribe were separate round trips: a blocked `claim` told the
  * caller to run `subscribe`, so every contended acquisition cost two commands
