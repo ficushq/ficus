@@ -89,7 +89,7 @@ async function lockedEditor(
   actor: Actor,
   action: (state: AssistantEditorState | null, owner: string) => Promise<AssistantEditorState | null>
 ) {
-  if (!z.string().uuid().safeParse(id).success) throw new HTTPException(404, { message: 'Editor not found' })
+  if (!z.uuid().safeParse(id).success) throw new HTTPException(404, { message: 'Editor not found' })
   if ('agentId' in actor)
     await requireAssistantConversation({ type: 'agent', agentId: actor.agentId, squadId: null }, id)
   return db.transaction(async (tx) => {

@@ -245,10 +245,7 @@ export const agentsRouter = new Hono()
       } catch {
         return c.json({ error: 'Invalid JSON body' }, 400)
       }
-      const parsed = z
-        .object({ actionIds: z.array(z.string().min(1)).min(1).max(100) })
-        .strict()
-        .safeParse(raw)
+      const parsed = z.strictObject({ actionIds: z.array(z.string().min(1)).min(1).max(100) }).safeParse(raw)
       if (!parsed.success) return c.json({ error: 'actionIds must be a non-empty array of at most 100 IDs' }, 400)
 
       const requestedIds = [...new Set(parsed.data.actionIds)]

@@ -7,18 +7,16 @@ import {
 } from '@ficus/shared/managed-bigbrain'
 import { readBoundedControlBytes } from './control-input'
 
-const inputSchema = z
-  .object({
-    membersPath: z
-      .string()
-      .min(1)
-      .max(4096)
-      .refine((v) => isAbsolute(v) && resolve(v) === v && !/\p{Cc}/u.test(v)),
-    handle: managedBigbrainOwnerSchema.shape.handle,
-    issuedAt: z.string(),
-    expiresAt: z.string(),
-  })
-  .strict()
+const inputSchema = z.strictObject({
+  membersPath: z
+    .string()
+    .min(1)
+    .max(4096)
+    .refine((v) => isAbsolute(v) && resolve(v) === v && !/\p{Cc}/u.test(v)),
+  handle: managedBigbrainOwnerSchema.shape.handle,
+  issuedAt: z.string(),
+  expiresAt: z.string(),
+})
 export type NativeAppLinkIssuer = (store: string, handle: string, now: Date) => { secret: string; expires: string }
 /** Internal policy adapter, run as the isolated vault UID, never a privileged general API.
  * The root controller authenticates/authorizes the owner and manages durable replay receipts.

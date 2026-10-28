@@ -8,17 +8,17 @@ import { randomUUID } from 'node:crypto'
 
 const activationChallengeSchema = z.object({
   operationDigest: z.string().regex(/^[a-f0-9]{64}$/),
-  id: z.string().uuid(),
-  instanceId: z.string().uuid(),
-  origin: z.string().url(),
+  id: z.uuid(),
+  instanceId: z.uuid(),
+  origin: z.url(),
   nonce: z.string().min(32).max(128),
-  expiresAt: z.string().datetime(),
+  expiresAt: z.iso.datetime(),
 })
 const configSchema = z.union([
   z.object({ enabled: z.literal(false) }),
   z.object({
     enabled: z.literal(true),
-    instanceId: z.string().uuid(),
+    instanceId: z.uuid(),
     delivery: z.literal('direct'),
     liveActivities: z.boolean().optional(),
   }),
@@ -47,7 +47,7 @@ export async function enrollManagedCloudPro(input: { publicKey: string; label: s
     timeoutMs: 20000,
   })
 }
-const notificationSchema = relayRoutingSchema.extend({ type: z.literal('open'), origin: z.string().url() })
+const notificationSchema = relayRoutingSchema.extend({ type: z.literal('open'), origin: z.url() })
 const admissionSchema = z.object({
   accepted: z.boolean(),
   suppressed: z.boolean().optional(),

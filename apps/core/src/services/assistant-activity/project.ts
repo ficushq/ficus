@@ -21,8 +21,8 @@ export const ASSISTANT_REQUEST_KEY = 'assistantRequest'
 export const ASSISTANT_TASK_MUTATION_KEY = 'assistantTaskMutation'
 export const assistantTaskMutationSchema = z.object({
   operation: z.enum(['continue', 'retry', 'cancel']),
-  taskId: z.string().uuid(),
-  expectedRequestId: z.string().uuid(),
+  taskId: z.uuid(),
+  expectedRequestId: z.uuid(),
 })
 export type AssistantTaskMutation = z.infer<typeof assistantTaskMutationSchema>
 /** Route-supplied delegation facts recorded on an outgoing Assistant request. */
@@ -32,7 +32,7 @@ export const TASK_LABEL_MAX_LENGTH = 80
 
 export const assistantDelegationSchema = z.object({
   kind: z.enum(['background', 'squad', 'agent']),
-  squadId: z.string().uuid().nullable().optional(),
+  squadId: z.uuid().nullable().optional(),
   label: z.string().trim().min(1).max(TASK_LABEL_MAX_LENGTH).optional(),
 })
 export type AssistantDelegation = z.infer<typeof assistantDelegationSchema>
@@ -45,7 +45,7 @@ export interface AssistantActivityInvalidation {
 }
 
 type InboxRow = typeof inbox.$inferSelect
-const uuid = z.string().uuid()
+const uuid = z.uuid()
 
 /** Bounded first line of a request when the delegation carried no label. */
 export function fallbackTaskLabel(content: string): string {

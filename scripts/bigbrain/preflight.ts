@@ -231,22 +231,18 @@ export function verifyLoopBacking(
   expected: { device: string; image: string; inode: number; imageDevice: number },
   value: unknown
 ): void {
-  const schema = z
-    .object({
-      loopdevices: z
-        .array(
-          z
-            .object({
-              name: z.string(),
-              'back-file': z.string(),
-              'back-ino': z.union([z.number().int().safe(), z.string().regex(/^\d+$/)]),
-              'back-maj:min': z.string(),
-            })
-            .passthrough()
-        )
-        .length(1),
-    })
-    .passthrough()
+  const schema = z.looseObject({
+    loopdevices: z
+      .array(
+        z.looseObject({
+          name: z.string(),
+          'back-file': z.string(),
+          'back-ino': z.union([z.int().safe(), z.string().regex(/^\d+$/)]),
+          'back-maj:min': z.string(),
+        })
+      )
+      .length(1),
+  })
   const parsed = schema.safeParse(value)
   if (!parsed.success || !/^7:\d+$/.test(expected.device)) {
     // Fixed tokens only: the schema's own key names and an entry count, never values.

@@ -21,54 +21,48 @@ function validatePushDestination(
     ctx.addIssue({ code: 'custom', message: 'Invalid push destination', path: ['deviceToken'] })
 }
 export const relayPairingSchema = z
-  .object({
-    instanceId: z.string().uuid(),
+  .strictObject({
+    instanceId: z.uuid(),
     deviceToken: z.string().max(4096),
     transport: z.enum(['apns', 'fcm']).optional(),
     environment: z.enum(['production', 'sandbox']),
   })
-  .strict()
   .superRefine(validatePushDestination)
 // No arbitrary aps keys or caller-chosen origin/URL. Content previews are opt-in;
 // otherwise only event type and a numeric work reference describe the update.
 // Grouping (threadKey), replacement (collapseKey), and urgency (interruptionLevel) are
 // structure rather than content, so they travel outside the preview.
-export const relayRoutingSchema = z
-  .object({
-    eventType: z.enum(['question', 'review', 'blocked', 'done', 'canceled', 'created', 'message', 'update']).optional(),
-    workStreamNumber: z.number().int().positive().max(2147483647).optional(),
-    preview: z
-      .object({ title: z.string().max(200), body: z.string().max(500), subtitle: z.string().max(80).optional() })
-      .strict()
-      .optional(),
-    collapseKey: z.string().min(1).max(64).optional(),
-    threadKey: z.string().min(1).max(64).optional(),
-    interruptionLevel: z.enum(['passive', 'active', 'time-sensitive']).optional(),
-    squadId: z.string().uuid().optional(),
-    agentId: z.string().uuid().optional(),
-    workStreamId: z.string().uuid().optional(),
-    waitId: z.string().uuid().optional(),
-    questionId: z.string().uuid().optional(),
-    messageId: z.string().uuid().optional(),
-    // The Action Center item's id, which is composite (`agent-question:<id>`,
-    // `workstream-blocked:<workStreamId>:<waitId>`), never a bare UUID. Kept to an
-    // identifier's characters so it can carry no content into the push payload.
-    actionId: z
-      .string()
-      .min(1)
-      .max(200)
-      .regex(/^[A-Za-z0-9_-]+(?::[A-Za-z0-9_-]+)*$/)
-      .optional(),
-  })
-  .strict()
-export const relaySendSchema = z
-  .object({
-    version: z.literal(PUSH_RELAY_PROTOCOL),
-    bindingToken: relayBindingTokenSchema,
-    eventId: z.string().uuid(),
-    routing: relayRoutingSchema,
-  })
-  .strict()
+export const relayRoutingSchema = z.strictObject({
+  eventType: z.enum(['question', 'review', 'blocked', 'done', 'canceled', 'created', 'message', 'update']).optional(),
+  workStreamNumber: z.int().positive().max(2147483647).optional(),
+  preview: z
+    .strictObject({ title: z.string().max(200), body: z.string().max(500), subtitle: z.string().max(80).optional() })
+    .optional(),
+  collapseKey: z.string().min(1).max(64).optional(),
+  threadKey: z.string().min(1).max(64).optional(),
+  interruptionLevel: z.enum(['passive', 'active', 'time-sensitive']).optional(),
+  squadId: z.uuid().optional(),
+  agentId: z.uuid().optional(),
+  workStreamId: z.uuid().optional(),
+  waitId: z.uuid().optional(),
+  questionId: z.uuid().optional(),
+  messageId: z.uuid().optional(),
+  // The Action Center item's id, which is composite (`agent-question:<id>`,
+  // `workstream-blocked:<workStreamId>:<waitId>`), never a bare UUID. Kept to an
+  // identifier's characters so it can carry no content into the push payload.
+  actionId: z
+    .string()
+    .min(1)
+    .max(200)
+    .regex(/^[A-Za-z0-9_-]+(?::[A-Za-z0-9_-]+)*$/)
+    .optional(),
+})
+export const relaySendSchema = z.strictObject({
+  version: z.literal(PUSH_RELAY_PROTOCOL),
+  bindingToken: relayBindingTokenSchema,
+  eventId: z.uuid(),
+  routing: relayRoutingSchema,
+})
 export type RelayRouting = z.infer<typeof relayRoutingSchema>
 export type RelaySend = z.infer<typeof relaySendSchema>
 
@@ -77,37 +71,34 @@ export type RelaySend = z.infer<typeof relaySendSchema>
  * preference's default; either the device or the account can turn them off,
  * and both must allow them before preview text is delivered.
  */
-export const nativeNotificationPolicySchema = z
-  .object({
-    enabled: z.boolean(),
-    showPreviews: z.boolean(),
-    mutedSquadIds: z.array(z.string().uuid()).max(200),
-    onlySquadIds: z.array(z.string().uuid()).max(200).optional(),
-    eventTypes: z
-      .array(z.enum(['question', 'review', 'blocked', 'done', 'canceled', 'created', 'message', 'update']))
-      .max(8)
-      .optional(),
-    quietHours: z
-      .object({
-        startMinute: z.number().int().min(0).max(1439),
-        endMinute: z.number().int().min(0).max(1439),
-        timeZone: z
-          .string()
-          .max(100)
-          .refine((zone) => {
-            try {
-              new Intl.DateTimeFormat('en', { timeZone: zone })
-              return true
-            } catch {
-              return false
-            }
-          }, 'Use an IANA time zone'),
-      })
-      .strict()
-      .refine((hours) => hours.startMinute !== hours.endMinute, 'Quiet hours must have a duration')
-      .optional(),
-  })
-  .strict()
+export const nativeNotificationPolicySchema = z.strictObject({
+  enabled: z.boolean(),
+  showPreviews: z.boolean(),
+  mutedSquadIds: z.array(z.uuid()).max(200),
+  onlySquadIds: z.array(z.uuid()).max(200).optional(),
+  eventTypes: z
+    .array(z.enum(['question', 'review', 'blocked', 'done', 'canceled', 'created', 'message', 'update']))
+    .max(8)
+    .optional(),
+  quietHours: z
+    .strictObject({
+      startMinute: z.int().min(0).max(1439),
+      endMinute: z.int().min(0).max(1439),
+      timeZone: z
+        .string()
+        .max(100)
+        .refine((zone) => {
+          try {
+            new Intl.DateTimeFormat('en', { timeZone: zone })
+            return true
+          } catch {
+            return false
+          }
+        }, 'Use an IANA time zone'),
+    })
+    .refine((hours) => hours.startMinute !== hours.endMinute, 'Quiet hours must have a duration')
+    .optional(),
+})
 export type NativeNotificationPolicy = z.infer<typeof nativeNotificationPolicySchema>
 export const defaultNativeNotificationPolicy: NativeNotificationPolicy = {
   enabled: true,
@@ -151,30 +142,30 @@ export function nativeNotificationDecision(
 }
 
 export const installationKeySchema = z.string().regex(/^[0-9a-f]{64}$/)
-export const instanceEnrollmentSchema = z
-  .object({ publicKey: installationKeySchema, label: z.string().trim().min(1).max(60) })
-  .strict()
+export const instanceEnrollmentSchema = z.strictObject({
+  publicKey: installationKeySchema,
+  label: z.string().trim().min(1).max(60),
+})
 export const activationActionSchema = z
   .discriminatedUnion('action', [
-    z.object({ action: z.literal('refresh'), activationId: z.string().uuid() }).strict(),
-    z
-      .object({
-        action: z.literal('bind'),
-        activationId: z.string().uuid(),
-        deviceToken: z.string().max(4096),
-        transport: z.enum(['apns', 'fcm']).optional(),
-        environment: z.enum(['sandbox', 'production']),
-        bindingToken: relayBindingTokenSchema,
-        notificationPolicy: nativeNotificationPolicySchema.optional(),
-      })
-      .strict(),
+    z.strictObject({ action: z.literal('refresh'), activationId: z.uuid() }),
+    z.strictObject({
+      action: z.literal('bind'),
+      activationId: z.uuid(),
+      deviceToken: z.string().max(4096),
+      transport: z.enum(['apns', 'fcm']).optional(),
+      environment: z.enum(['sandbox', 'production']),
+      bindingToken: relayBindingTokenSchema,
+      notificationPolicy: nativeNotificationPolicySchema.optional(),
+    }),
   ])
   .superRefine((value, ctx) => {
     if (value.action === 'bind') validatePushDestination(value, ctx)
   })
-export const activationProofSchema = z
-  .object({ challengeId: z.string().uuid(), signature: z.string().regex(/^[0-9a-f]{128}$/) })
-  .strict()
+export const activationProofSchema = z.strictObject({
+  challengeId: z.uuid(),
+  signature: z.string().regex(/^[0-9a-f]{128}$/),
+})
 export type ActivationOperation = { action: 'activate'; label: string } | ActivationAction
 export function activationOperationPayload(operation: ActivationOperation): string {
   return JSON.stringify(

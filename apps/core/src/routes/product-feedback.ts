@@ -23,14 +23,12 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const hasControlChars = (value: string) =>
   Array.from(value).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
 
-const requestSchema = z
-  .object({
-    category: z.enum(PRODUCT_FEEDBACK_CATEGORIES),
-    message: z.string().trim().min(PRODUCT_FEEDBACK_MESSAGE_MIN).max(PRODUCT_FEEDBACK_MESSAGE_MAX),
-    includeSubmitter: z.boolean(),
-    page: z.string().refine(isProductFeedbackPage).optional(),
-  })
-  .strict()
+const requestSchema = z.strictObject({
+  category: z.enum(PRODUCT_FEEDBACK_CATEGORIES),
+  message: z.string().trim().min(PRODUCT_FEEDBACK_MESSAGE_MIN).max(PRODUCT_FEEDBACK_MESSAGE_MAX),
+  includeSubmitter: z.boolean(),
+  page: z.string().refine(isProductFeedbackPage).optional(),
+})
 
 type SubmitterRecord = { displayName: string | null; email: string }
 

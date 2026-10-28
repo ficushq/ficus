@@ -33,7 +33,7 @@ async function deliverInboxInPass(agentId: string, githubMessageIds: string[]): 
   const agent = await Agent.mustFind(agentId)
   const cohort = githubOutputPass()?.ordinary
   const selected = cohort ? (cohort.get(agent.id) ?? []) : (await selectGitHubInboxPage(agent.id)).map((row) => row.id)
-  const ids = [...new Set([...selected, ...githubMessageIds.filter((id) => z.string().uuid().safeParse(id).success)])]
+  const ids = [...new Set([...selected, ...githubMessageIds.filter((id) => z.uuid().safeParse(id).success)])]
   cohort?.delete(agent.id)
   const { renewKnownGitHubOutputs } = await import('../integrations/github/feedback-renewal')
   for (const id of ids) {
@@ -42,7 +42,7 @@ async function deliverInboxInPass(agentId: string, githubMessageIds: string[]): 
       const row = await readOutputInbox(db, id)
       if (!row || row.recipientId !== agent.id || row.readAt || row.deliveredAt) return
       const eventId = row.metadata?.integrationEventId
-      if (typeof eventId !== 'string' || !z.string().uuid().safeParse(eventId).success) return
+      if (typeof eventId !== 'string' || !z.uuid().safeParse(eventId).success) return
       const clientId = `github-feedback:${eventId}:${id}`
       const [receipt] = await db
         .select({

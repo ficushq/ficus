@@ -21,7 +21,7 @@ export function createScreenshotsRouter(deps: ScreenshotFilingDeps = {}) {
     .post('/guess', zValidator('json', guessScreenshotRequestSchema), async (c) =>
       c.json(await guessScreenshot(c.get('identity'), c.req.valid('json'), deps))
     )
-    .get('/work-streams', zValidator('query', z.object({ squadId: z.string().uuid() })), async (c) =>
+    .get('/work-streams', zValidator('query', z.object({ squadId: z.uuid() })), async (c) =>
       c.json(await listScreenshotWorkStreams(c.get('identity'), c.req.valid('query').squadId))
     )
     .post('/file', zValidator('json', fileScreenshotRequestSchema), async (c) =>

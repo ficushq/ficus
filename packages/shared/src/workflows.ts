@@ -18,25 +18,23 @@ const identifier = workflowIdentifierSchema
 const text = z.string().trim().min(1).max(64_000)
 const destination = z.union([identifier, z.literal('finish')])
 
-export const workflowParticipantSchema = z
-  .object({
-    // Existing agent-type IDs need not follow the flow's local ID convention.
-    agentTypeId: z.string().trim().min(1).max(100),
-    tier: z
-      .string()
-      .trim()
-      .min(1)
-      .max(100)
-      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-      .optional(),
-    session: z.enum(['reuse-within-stream', 'fresh-per-attempt']),
-  })
-  .strict()
+export const workflowParticipantSchema = z.strictObject({
+  // Existing agent-type IDs need not follow the flow's local ID convention.
+  agentTypeId: z.string().trim().min(1).max(100),
+  tier: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+    .optional(),
+  session: z.enum(['reuse-within-stream', 'fresh-per-attempt']),
+})
 
 export const workflowTransitionSchema = explainedUnion(
   [
-    z.object({ next: destination }).strict(),
-    z.object({ parallel: z.array(identifier).min(2).max(16), join: destination.default('finish') }).strict(),
+    z.strictObject({ next: destination }),
+    z.strictObject({ parallel: z.array(identifier).min(2).max(16), join: destination.default('finish') }),
     z.preprocess(
       (value) => {
         // Drafts saved by the early editor used a separate resume destination.
@@ -47,17 +45,15 @@ export const workflowTransitionSchema = explainedUnion(
         }
         return value
       },
-      z
-        .object({
-          returnTo: identifier.describe('Step that performs the requested revisions, for example create-assets.'),
-          afterRework: z
-            .enum(['follow-graph', 'return-to-requester'])
-            .optional()
-            .describe(
-              'Default: follow-graph runs the normal outgoing arrows after revisions. return-to-requester sends the corrected result straight back to the step requesting changes, bypassing the correction step’s forward arrows.'
-            ),
-        })
-        .strict()
+      z.strictObject({
+        returnTo: identifier.describe('Step that performs the requested revisions, for example create-assets.'),
+        afterRework: z
+          .enum(['follow-graph', 'return-to-requester'])
+          .optional()
+          .describe(
+            'Default: follow-graph runs the normal outgoing arrows after revisions. return-to-requester sends the corrected result straight back to the step requesting changes, bypassing the correction step’s forward arrows.'
+          ),
+      })
     ),
   ],
   { label: 'transition' }
@@ -88,21 +84,20 @@ export const WORKFLOW_DECISION_INPUT_INFO: Record<WorkflowDecisionInput, { label
 }
 export const DEFAULT_WORKFLOW_DECISION_INPUT: WorkflowDecisionInput[] = ['title', 'description', 'incoming-results']
 
-export const workflowDecisionRouteSchema = z.object({ when: decisionConditionSchema, outcome: identifier }).strict()
+export const workflowDecisionRouteSchema = z.strictObject({ when: decisionConditionSchema, outcome: identifier })
 export type WorkflowDecisionRoute = z.infer<typeof workflowDecisionRouteSchema>
 
 export const workflowStepSchema = explainedUnion(
   [
     z
-      .object({
+      .strictObject({
         ...stepFields,
         kind: z.literal('agent').default('agent'),
         participant: identifier.describe('ID of an entry in the definition’s participants.'),
       })
-      .strict()
       .describe('A participant agent does the work and submits one of the outcomes with evidence.'),
     z
-      .object({
+      .strictObject({
         ...stepFields,
         kind: z.literal('human-approval'),
         approver: z
@@ -112,7 +107,6 @@ export const workflowStepSchema = explainedUnion(
             'assigned-reviewers: one of the work stream’s assigned reviewers who has review permission decides; with nobody assigned, anyone with review permission. reviewers: anyone with workstreams:review permission in the squad.'
           ),
       })
-      .strict()
       .describe('A person with review permission chooses the outcome; no agent runs.'),
     /**
      * No agent works on a decision step: Core asks a decision model its questions about the
@@ -121,7 +115,7 @@ export const workflowStepSchema = explainedUnion(
      * `unavailable`. Either one omitted waits for a person to choose, like a human approval.
      */
     z
-      .object({
+      .strictObject({
         id: stepFields.id,
         name: stepFields.name,
         instructions: stepFields.instructions,
@@ -140,7 +134,6 @@ export const workflowStepSchema = explainedUnion(
           .describe('Outcome when no decision model answers; omit it to let a person choose.'),
         outcomes,
       })
-      .strict()
       .describe(
         'A decision model answers typed questions and the first matching route picks the outcome; no agent runs. It cannot be a returnTo target.'
       ),
@@ -168,32 +161,26 @@ export function workflowDecisionStepIssues(
   return issues
 }
 
-export const workflowRoutingSchema = z
-  .object({
-    mode: z.enum(['guided', 'flexible', 'adaptive']),
-    returnTo: z.enum(['declared-only', 'earlier-steps']),
-    delegation: z.enum(['disabled', 'allowed']),
-  })
-  .strict()
+export const workflowRoutingSchema = z.strictObject({
+  mode: z.enum(['guided', 'flexible', 'adaptive']),
+  returnTo: z.enum(['declared-only', 'earlier-steps']),
+  delegation: z.enum(['disabled', 'allowed']),
+})
 
-export const workflowLimitsSchema = z
-  .object({
-    maxStepAttempts: z.number().int().min(1).max(100).optional(),
-    maxDelegations: z.number().int().min(0).max(100),
-    maxParallelAttempts: z.number().int().min(1).max(32).optional(),
-    onLimit: z.literal('request-owner-input'),
-  })
-  .strict()
+export const workflowLimitsSchema = z.strictObject({
+  maxStepAttempts: z.int().min(1).max(100).optional(),
+  maxDelegations: z.int().min(0).max(100),
+  maxParallelAttempts: z.int().min(1).max(32).optional(),
+  onLimit: z.literal('request-owner-input'),
+})
 
 // This is a flow definition contract, not an expansion of the legacy stream API.
 // Deliverable completion must remain unavailable there until runtime gates exist.
-export const workflowCompletionSchema = z
-  .object({
-    mode: z.enum(['deliverable', 'pr-merge', 'pr-auto-merge', 'direct-merge', 'review-approval']),
-    followChanges: z.boolean().optional(),
-    changeEventsTo: z.union([z.literal('delivery-owner'), z.object({ step: identifier }).strict()]).optional(),
-  })
-  .strict()
+export const workflowCompletionSchema = z.strictObject({
+  mode: z.enum(['deliverable', 'pr-merge', 'pr-auto-merge', 'direct-merge', 'review-approval']),
+  followChanges: z.boolean().optional(),
+  changeEventsTo: z.union([z.literal('delivery-owner'), z.strictObject({ step: identifier })]).optional(),
+})
 
 /** Keep early saved workflows/drafts readable after removing redundant step metadata. */
 export function normalizeWorkflowStep(value: unknown): unknown {
@@ -214,22 +201,20 @@ export function normalizeWorkflowStep(value: unknown): unknown {
   return value
 }
 
-const definitionShape = z
-  .object({
-    schemaVersion: z.literal(1),
-    name: z.string().trim().min(1).max(200),
-    participants: keyedRecord(identifier, workflowParticipantSchema).refine(
-      (value) => Object.keys(value).length <= 64,
-      'Use at most 64 participants'
-    ),
-    entry: identifier,
-    routing: workflowRoutingSchema,
-    limits: workflowLimitsSchema,
-    steps: z.array(z.preprocess(normalizeWorkflowStep, workflowStepSchema)).min(1).max(128),
-    completion: workflowCompletionSchema,
-    subscriptions: z.array(integrationSubscriptionSchema).max(32).optional(),
-  })
-  .strict()
+const definitionShape = z.strictObject({
+  schemaVersion: z.literal(1),
+  name: z.string().trim().min(1).max(200),
+  participants: keyedRecord(identifier, workflowParticipantSchema).refine(
+    (value) => Object.keys(value).length <= 64,
+    'Use at most 64 participants'
+  ),
+  entry: identifier,
+  routing: workflowRoutingSchema,
+  limits: workflowLimitsSchema,
+  steps: z.array(z.preprocess(normalizeWorkflowStep, workflowStepSchema)).min(1).max(128),
+  completion: workflowCompletionSchema,
+  subscriptions: z.array(integrationSubscriptionSchema).max(32).optional(),
+})
 
 /** Structural schema for incomplete editor drafts, before normalization and graph validation. */
 export const workflowDefinitionShapeSchema = definitionShape
@@ -422,79 +407,69 @@ export const workflowDefinitionSchema = definitionShape
   })
 
 export const workflowScopeSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('instance') }).strict(),
-  z.object({ kind: z.literal('squad'), squadId: z.string().uuid() }).strict(),
-  z.object({ kind: z.literal('user'), userId: z.string().uuid() }).strict(),
+  z.strictObject({ kind: z.literal('instance') }),
+  z.strictObject({ kind: z.literal('squad'), squadId: z.uuid() }),
+  z.strictObject({ kind: z.literal('user'), userId: z.uuid() }),
 ])
 export type WorkflowScope = z.infer<typeof workflowScopeSchema>
 
-export const workflowPresetSchema = z
-  .object({
-    id: identifier,
-    description: z.string().max(4000).optional(),
-    scope: workflowScopeSchema.optional(),
-    definition: workflowDefinitionSchema,
-  })
-  .strict()
+export const workflowPresetSchema = z.strictObject({
+  id: identifier,
+  description: z.string().max(4000).optional(),
+  scope: workflowScopeSchema.optional(),
+  definition: workflowDefinitionSchema,
+})
 
 export type WorkflowPreset = z.infer<typeof workflowPresetSchema>
 
 export const workflowCustomizationSchema = z.discriminatedUnion('op', [
-  z
-    .object({ op: z.literal('set-subscriptions'), subscriptions: z.array(integrationSubscriptionSchema).max(32) })
-    .strict(),
-  z.object({ op: z.literal('put-participant'), id: identifier, participant: workflowParticipantSchema }).strict(),
-  z.object({ op: z.literal('remove-participant'), id: identifier }).strict(),
-  z.object({ op: z.literal('put-step'), step: workflowStepSchema }).strict(),
-  z.object({ op: z.literal('remove-step'), id: identifier }).strict(),
-  z
-    .object({
-      op: z.literal('update-step'),
-      id: identifier,
-      // Derived schemas do not inherit `.describe()` text on zod 4, so each kind's is reapplied.
-      changes: z.union([
-        workflowStepSchema.options[0]
-          .omit({ id: true, kind: true })
-          .partial()
-          .describe(workflowStepSchema.options[0].description ?? ''),
-        workflowStepSchema.options[1]
-          .omit({ id: true, kind: true })
-          .partial()
-          .describe(workflowStepSchema.options[1].description ?? ''),
-        workflowStepSchema.options[2]
-          .omit({ id: true, kind: true })
-          .partial()
-          .describe(workflowStepSchema.options[2].description ?? ''),
-      ]),
-    })
-    .strict(),
-  z
-    .object({
-      op: z.literal('set-outcome'),
-      id: identifier,
-      outcome: identifier,
-      transition: workflowTransitionSchema,
-    })
-    .strict(),
-  z.object({ op: z.literal('remove-outcome'), id: identifier, outcome: identifier }).strict(),
-  z.object({ op: z.literal('set-entry'), entry: identifier }).strict(),
-  z.object({ op: z.literal('set-name'), name: z.string().trim().min(1).max(200) }).strict(),
-  z.object({ op: z.literal('set-step-order'), ids: z.array(identifier).min(1).max(128) }).strict(),
-  z.object({ op: z.literal('set-routing'), routing: workflowRoutingSchema }).strict(),
-  z.object({ op: z.literal('set-limits'), limits: workflowLimitsSchema }).strict(),
-  z.object({ op: z.literal('set-completion'), completion: workflowCompletionSchema }).strict(),
+  z.strictObject({ op: z.literal('set-subscriptions'), subscriptions: z.array(integrationSubscriptionSchema).max(32) }),
+  z.strictObject({ op: z.literal('put-participant'), id: identifier, participant: workflowParticipantSchema }),
+  z.strictObject({ op: z.literal('remove-participant'), id: identifier }),
+  z.strictObject({ op: z.literal('put-step'), step: workflowStepSchema }),
+  z.strictObject({ op: z.literal('remove-step'), id: identifier }),
+  z.strictObject({
+    op: z.literal('update-step'),
+    id: identifier,
+    // Derived schemas do not inherit `.describe()` text on zod 4, so each kind's is reapplied.
+    changes: z.union([
+      workflowStepSchema.options[0]
+        .omit({ id: true, kind: true })
+        .partial()
+        .describe(workflowStepSchema.options[0].description ?? ''),
+      workflowStepSchema.options[1]
+        .omit({ id: true, kind: true })
+        .partial()
+        .describe(workflowStepSchema.options[1].description ?? ''),
+      workflowStepSchema.options[2]
+        .omit({ id: true, kind: true })
+        .partial()
+        .describe(workflowStepSchema.options[2].description ?? ''),
+    ]),
+  }),
+  z.strictObject({
+    op: z.literal('set-outcome'),
+    id: identifier,
+    outcome: identifier,
+    transition: workflowTransitionSchema,
+  }),
+  z.strictObject({ op: z.literal('remove-outcome'), id: identifier, outcome: identifier }),
+  z.strictObject({ op: z.literal('set-entry'), entry: identifier }),
+  z.strictObject({ op: z.literal('set-name'), name: z.string().trim().min(1).max(200) }),
+  z.strictObject({ op: z.literal('set-step-order'), ids: z.array(identifier).min(1).max(128) }),
+  z.strictObject({ op: z.literal('set-routing'), routing: workflowRoutingSchema }),
+  z.strictObject({ op: z.literal('set-limits'), limits: workflowLimitsSchema }),
+  z.strictObject({ op: z.literal('set-completion'), completion: workflowCompletionSchema }),
 ])
 
 export const workflowSourceSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('inline'), definition: workflowDefinitionSchema }).strict(),
-  z
-    .object({
-      kind: z.literal('preset'),
-      id: identifier,
-      revision: z.string().min(1).max(200).optional(),
-      customizations: z.array(workflowCustomizationSchema).max(512).default([]),
-    })
-    .strict(),
+  z.strictObject({ kind: z.literal('inline'), definition: workflowDefinitionSchema }),
+  z.strictObject({
+    kind: z.literal('preset'),
+    id: identifier,
+    revision: z.string().min(1).max(200).optional(),
+    customizations: z.array(workflowCustomizationSchema).max(512).default([]),
+  }),
 ])
 
 export type WorkflowCustomization = z.infer<typeof workflowCustomizationSchema>
@@ -624,32 +599,25 @@ export function applyWorkflowCustomizations(base: WorkflowDefinition, operations
 }
 
 /** Explicit squad policy for creating work from an integration output. */
-export const workflowEventTriggerSchema = z
-  .object({
-    id: identifier,
-    source: integrationSubscriptionSchema.shape.source,
-    match: keyedRecord(
-      integrationDataPathSchema,
-      z.object({ value: z.union([z.string().max(2000), z.number().finite(), z.boolean()]) }).strict()
-    ).refine((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 16, 'Use 1–16 matches'),
-    create: z
-      .object({
-        workflow: workflowSourceSchema,
-        titlePrefix: z.string().max(100).default(''),
-        additionalContext: z.string().trim().max(10000).optional(),
-        metadata: keyedRecord(
-          integrationDataPathSchema,
-          z.object({ event: integrationDataPathSchema }).strict()
-        ).refine(
-          (value) =>
-            Object.keys(value).length <= 16 &&
-            Object.keys(value).every(
-              (path) => !['completion', 'sources', 'sourceWarnings', 'tracked'].includes(path.split('.')[0]!)
-            ),
-          'Use at most 16 non-reserved metadata bindings'
+export const workflowEventTriggerSchema = z.strictObject({
+  id: identifier,
+  source: integrationSubscriptionSchema.shape.source,
+  match: keyedRecord(
+    integrationDataPathSchema,
+    z.strictObject({ value: z.union([z.string().max(2000), z.number().finite(), z.boolean()]) })
+  ).refine((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 16, 'Use 1–16 matches'),
+  create: z.strictObject({
+    workflow: workflowSourceSchema,
+    titlePrefix: z.string().max(100).default(''),
+    additionalContext: z.string().trim().max(10000).optional(),
+    metadata: keyedRecord(integrationDataPathSchema, z.strictObject({ event: integrationDataPathSchema })).refine(
+      (value) =>
+        Object.keys(value).length <= 16 &&
+        Object.keys(value).every(
+          (path) => !['completion', 'sources', 'sourceWarnings', 'tracked'].includes(path.split('.')[0]!)
         ),
-      })
-      .strict(),
-  })
-  .strict()
+      'Use at most 16 non-reserved metadata bindings'
+    ),
+  }),
+})
 export type WorkflowEventTrigger = z.infer<typeof workflowEventTriggerSchema>

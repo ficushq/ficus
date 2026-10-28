@@ -24,7 +24,7 @@ export type PlatformMaintenanceCompatibilityDecision =
     }
 
 const commitSha = z.string().regex(/^[0-9a-f]{40}$/)
-const uuid = z.string().uuid()
+const uuid = z.uuid()
 
 export function legacyUpgradePolicy(raw = process.env.FICUS_LEGACY_PLATFORM_MAINTENANCE_UPGRADE): LegacyUpgradePolicy {
   if (raw === undefined || raw === '') return 'observe'

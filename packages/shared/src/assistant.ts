@@ -14,7 +14,7 @@ export const assistantEntrySchema = z.object({
   toolError: z.boolean().optional(),
   interrupted: z.boolean().optional(),
   /** Durable Assistant updates this entry presented; acknowledgment requires a final entry naming them. */
-  assistantUpdateIds: z.array(z.string().uuid()).max(10).optional(),
+  assistantUpdateIds: z.array(z.uuid()).max(10).optional(),
 })
 export type AssistantEntry = z.infer<typeof assistantEntrySchema>
 /** App-wide Assistant conversations and page-editor drafts carry different tools and surfaces. */

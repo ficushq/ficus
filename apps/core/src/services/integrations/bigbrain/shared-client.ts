@@ -18,52 +18,44 @@ import { MANAGED_VAULT_READABLE_STATES } from './managed/readable'
 export const BIGBRAIN_SHARED_GATEWAY_SOCKET = '/run/ficus-bigbrain/gateway/http.sock'
 export const BIGBRAIN_SHARED_RESPONSE_BYTES = 512 * 1024
 const text = z.string().trim().min(1).max(1000)
-const integer = z.number().int().safe().nonnegative()
+const integer = z.int().safe().nonnegative()
 export const sharedSearchInput = z
-  .object({
+  .strictObject({
     query: text.optional(),
     queries: z.array(text).min(1).max(8).optional(),
     limit: integer.min(1).max(50).optional(),
   })
-  .strict()
   .refine((v) => (v.query !== undefined) !== (v.queries !== undefined))
-export const sharedReadInput = z
-  .object({
-    id: z
-      .string()
-      .max(200)
-      .regex(/^(?:ins|ast|ent)_[a-zA-Z0-9_-]+$/),
-    start: integer.optional(),
-    chars: integer.min(1).max(80000).optional(),
-  })
-  .strict()
-export const sharedRecentInput = z
-  .object({ before: integer.min(1).optional(), limit: integer.min(1).max(50).optional() })
-  .strict()
-const rpcResult = z
-  .object({
-    jsonrpc: z.literal('2.0'),
-    id: z.string(),
-    result: z
-      .object({
-        content: z
-          .array(z.object({ type: z.literal('text'), text: z.string() }).strict())
-          .min(1)
-          .max(32),
-        isError: z.boolean().optional(),
-      })
-      .strict(),
-  })
-  .strict()
-const whoamiSchema = z
-  .object({
-    vault: z.object({ id: z.string().uuid() }).passthrough(),
-    role: z.string(),
-    kind: z.string(),
-    permissions: z.array(z.string()).max(8),
-    credential: z.object({ id: z.string() }).passthrough(),
-  })
-  .passthrough()
+export const sharedReadInput = z.strictObject({
+  id: z
+    .string()
+    .max(200)
+    .regex(/^(?:ins|ast|ent)_[a-zA-Z0-9_-]+$/),
+  start: integer.optional(),
+  chars: integer.min(1).max(80000).optional(),
+})
+export const sharedRecentInput = z.strictObject({
+  before: integer.min(1).optional(),
+  limit: integer.min(1).max(50).optional(),
+})
+const rpcResult = z.strictObject({
+  jsonrpc: z.literal('2.0'),
+  id: z.string(),
+  result: z.strictObject({
+    content: z
+      .array(z.strictObject({ type: z.literal('text'), text: z.string() }))
+      .min(1)
+      .max(32),
+    isError: z.boolean().optional(),
+  }),
+})
+const whoamiSchema = z.looseObject({
+  vault: z.looseObject({ id: z.uuid() }),
+  role: z.string(),
+  kind: z.string(),
+  permissions: z.array(z.string()).max(8),
+  credential: z.looseObject({ id: z.string() }),
+})
 type SharedFetch = (url: string, init: RequestInit) => Promise<Response>
 /** Core's synchronized view of one managed vault (from authoritative Platform summaries). */
 export interface ManagedReadVault {

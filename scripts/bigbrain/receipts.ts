@@ -8,10 +8,10 @@ import {
 } from '@ficus/shared/managed-bigbrain'
 import { storageReservationSchema } from './storage'
 
-const uint = z.number().int().safe().nonnegative()
+const uint = z.int().safe().nonnegative()
 const vaultActions = ['create', 'rename', 'read-revoke', 'read-reconnect', 'delete'] as const
 export const controlReceiptSchema = z
-  .object({
+  .strictObject({
     schema: z.literal(1),
     receipt: managedBigbrainHostReceiptSchema,
     phase: z.enum([
@@ -26,30 +26,23 @@ export const controlReceiptSchema = z
     ]),
     displayName: z.string().min(1).max(120),
     owner: managedBigbrainOwnerSchema,
-    operation: z
-      .object({
-        requestId: z
-          .string()
-          .uuid()
-          .regex(/^[0-9a-f-]{36}$/),
-        action: z.enum(vaultActions),
-        inputHash: z.string().regex(/^sha256:[0-9a-f]{64}$/),
-        expectedGeneration: uint,
-      })
-      .strict(),
+    operation: z.strictObject({
+      requestId: z.uuid().regex(/^[0-9a-f-]{36}$/),
+      action: z.enum(vaultActions),
+      inputHash: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+      expectedGeneration: uint,
+    }),
     storage: storageReservationSchema,
     os: z
-      .object({
+      .strictObject({
         uid: uint.min(1),
         gid: uint.min(1),
         imageDevice: uint,
         imageInode: uint.min(1),
         mountDevice: z.string().regex(/^7:\d+$/),
       })
-      .strict()
       .nullable(),
   })
-  .strict()
   .refine(
     (v) =>
       v.receipt.vaultId === v.storage.vaultId &&

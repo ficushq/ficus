@@ -34,12 +34,11 @@ export const googleCloudIntegrationCatalog: SafeIntegrationCatalogEntry = {
 export function parseGoogleServiceAccount(value: string) {
   try {
     const credentials = z
-      .object({
+      .looseObject({
         type: z.literal('service_account'),
-        client_email: z.string().email(),
+        client_email: z.email(),
         private_key: z.string().min(1),
       })
-      .passthrough()
       .parse(JSON.parse(value))
     if (createPrivateKey(credentials.private_key).asymmetricKeyType !== 'rsa') throw new Error()
     return credentials

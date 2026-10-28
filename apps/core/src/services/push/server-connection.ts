@@ -8,13 +8,13 @@ import { getSecretStore } from '../secrets'
 import { pushRelayConfig, relayConnectionSecretKey, resolvePushRelayBaseUrl } from './relay'
 
 const statusSchema = z.object({
-  instanceId: z.string().uuid(),
+  instanceId: z.uuid(),
   name: z.string(),
-  origin: z.string().url(),
+  origin: z.url(),
   instancePro: z.boolean(),
-  allowance: z.number().int().nonnegative().nullable(),
-  used: z.number().int().nonnegative(),
-  registered: z.number().int().nonnegative(),
+  allowance: z.int().nonnegative().nullable(),
+  used: z.int().nonnegative(),
+  registered: z.int().nonnegative(),
 })
 export class RelayConnectionError extends Error {
   constructor(
@@ -39,7 +39,7 @@ function publicOrigin(raw: string | undefined) {
  * approval poll (older Clouds send neither); the credential-scoped status never sees account data.
  */
 const connectionRecordSchema = z.object({
-  connectedAt: z.string().datetime({ offset: true }),
+  connectedAt: z.iso.datetime({ offset: true }),
   connectedBy: z.string().min(1).optional(),
   accountEmail: z.string().min(1).optional(),
 })
@@ -49,7 +49,7 @@ const connectionRecordKey = (credentialKey: string) =>
   credentialKey.replace(/^__push-relay-connection:/, '__push-relay-connection-record:')
 /** Cloud's optional approval details; a malformed value is dropped rather than failing the connection. */
 const approvalDetails = {
-  connectedAt: z.string().datetime({ offset: true }).optional().catch(undefined),
+  connectedAt: z.iso.datetime({ offset: true }).optional().catch(undefined),
   accountEmail: z.string().trim().email().max(320).optional().catch(undefined),
 }
 async function describeUser(userId: string): Promise<string | undefined> {
@@ -75,7 +75,7 @@ const dependencies = {
 const pendingKey = '__push-relay-pending'
 const verifierKey = (id: string) => `__push-relay-verifier:${id}`
 const pendingSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   userId: z.string(),
   origin: z.string(),
   baseUrl: z.string(),
@@ -233,7 +233,7 @@ export class RelayServerConnection {
       const verifier = randomBytes(32).toString('base64url')
       const codeChallenge = createHash('sha256').update(verifier).digest('base64url')
       const result = z
-        .object({ id: z.string().uuid(), expiresIn: z.number().positive().max(600) })
+        .object({ id: z.uuid(), expiresIn: z.number().positive().max(600) })
         .parse(await this.request(baseUrl, 'authorize', { name, origin, codeChallenge }))
       // Persist the raw verifier separately so Secret Store redaction recognizes it.
       // A crash before updating the pointer leaves the previous request recoverable.

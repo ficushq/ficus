@@ -2,28 +2,21 @@ import { z } from 'zod'
 import { managedPaths } from './paths'
 import { MANAGED_BIGBRAIN_MAX_VAULTS } from '@ficus/shared/managed-bigbrain'
 
-const uint = z.number().int().safe().nonnegative()
-const uuid = z
-  .string()
-  .uuid()
-  .regex(/^[0-9a-f-]{36}$/)
-const policySchema = z
-  .object({
-    maxVaults: uint.min(2).max(MANAGED_BIGBRAIN_MAX_VAULTS),
-    perVaultDiskBytes: uint.min(16 * 1024 * 1024).max(512 * 1024 * 1024),
-    minCoreFreeDiskBytes: uint.min(2 * 1024 ** 3),
-  })
-  .strict()
-export const storageReservationSchema = z
-  .object({
-    vaultId: uuid,
-    username: z.string().regex(/^bbv_[0-9a-f]{24}$/),
-    port: uint.min(30000).max(30099),
-    diskBytes: uint.min(1).max(512 * 1024 * 1024),
-    mount: z.string(),
-    image: z.string(),
-  })
-  .strict()
+const uint = z.int().safe().nonnegative()
+const uuid = z.uuid().regex(/^[0-9a-f-]{36}$/)
+const policySchema = z.strictObject({
+  maxVaults: uint.min(2).max(MANAGED_BIGBRAIN_MAX_VAULTS),
+  perVaultDiskBytes: uint.min(16 * 1024 * 1024).max(512 * 1024 * 1024),
+  minCoreFreeDiskBytes: uint.min(2 * 1024 ** 3),
+})
+export const storageReservationSchema = z.strictObject({
+  vaultId: uuid,
+  username: z.string().regex(/^bbv_[0-9a-f]{24}$/),
+  port: uint.min(30000).max(30099),
+  diskBytes: uint.min(1).max(512 * 1024 * 1024),
+  mount: z.string(),
+  image: z.string(),
+})
 export type StorageReservation = z.infer<typeof storageReservationSchema>
 
 /** Called under the host lifecycle lock, before allocating anything. Existing reservations
@@ -38,14 +31,13 @@ export function planVaultStorage(input: {
   root?: string
 }): StorageReservation {
   const parsed = z
-    .object({
+    .strictObject({
       vaultId: uuid,
       existing: z.array(storageReservationSchema).max(MANAGED_BIGBRAIN_MAX_VAULTS),
       policy: policySchema,
       freeDiskBytes: uint,
       root: z.string().optional(),
     })
-    .strict()
     .safeParse(input)
   if (!parsed.success) throw new Error('invalid_request')
   const { vaultId, existing, policy, freeDiskBytes, root } = parsed.data

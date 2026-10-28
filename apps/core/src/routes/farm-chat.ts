@@ -40,7 +40,7 @@ import { wsManager } from '../services/ws/manager'
  * updates go out on the `farmChat` WebSocket topic.
  */
 
-const uuidParam = z.string().uuid()
+const uuidParam = z.uuid()
 const MESSAGE_PAGE = 50
 
 export const farmChatRouter = new Hono()

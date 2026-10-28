@@ -887,7 +887,7 @@ async function acceptOutputDelivery(deliveryId: string, target: Delivery['target
 
 /** Rechecked under the stream lock before agent queue acceptance. */
 export async function isCurrentIntegrationDelivery(store: Store, deliveryId: string, agentId: string, inboxId: string) {
-  if (!z.string().uuid().safeParse(deliveryId).success) return false
+  if (!z.uuid().safeParse(deliveryId).success) return false
   const [delivery] = await store
     .select()
     .from(integrationOutputDeliveries)
@@ -980,7 +980,7 @@ export async function isCurrentIntegrationNotification(store: Store, agentId: st
     message.recipientId !== agentId ||
     message.metadata?.source !== 'integration-notification' ||
     typeof message.metadata.integrationEventId !== 'string' ||
-    !z.string().uuid().safeParse(message.metadata.integrationEventId).success
+    !z.uuid().safeParse(message.metadata.integrationEventId).success
   )
     return false
   const event = await readOutputEvent(store, message.metadata.integrationEventId)
@@ -1017,7 +1017,7 @@ export async function isCurrentIntegrationNotification(store: Store, agentId: st
   if (message.metadata.integrationCreationNotice === true) {
     if (
       !workStreamId ||
-      !z.string().uuid().safeParse(workStreamId).success ||
+      !z.uuid().safeParse(workStreamId).success ||
       typeof message.metadata.integrationRuleId !== 'string'
     )
       return false
@@ -1046,7 +1046,7 @@ export async function isCurrentIntegrationNotification(store: Store, agentId: st
     )
   }
   if (workStreamId) {
-    if (!z.string().uuid().safeParse(workStreamId).success) return false
+    if (!z.uuid().safeParse(workStreamId).success) return false
     const [stream] = await store.select().from(workStreams).where(eq(workStreams.id, workStreamId))
     if (
       !stream ||
@@ -1150,9 +1150,7 @@ function historyQuery() {
 }
 type HistoryRow = Awaited<ReturnType<typeof historyQuery>>[number]
 type HistoryItem = Omit<HistoryRow, 'eventId' | 'squadId'> & { fact: Event['fact'] }
-const historyCursorSchema = z
-  .object({ streamId: z.string().uuid(), at: z.string().datetime(), id: z.string().uuid() })
-  .strict()
+const historyCursorSchema = z.strictObject({ streamId: z.uuid(), at: z.iso.datetime(), id: z.uuid() })
 function decodeHistoryCursor(streamId: string, cursor?: string) {
   if (cursor === undefined) return undefined
   try {

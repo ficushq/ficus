@@ -38,24 +38,24 @@ export type ChannelPlugin<C, Credential, Identity> = IntegrationPluginV1<C, Cred
 
 const secret = z.string().trim().min(1).max(4096)
 
-export const telegramConfigurationSchema = z
-  .object({ version: z.literal(1), botId: z.string().min(1).optional(), username: z.string().min(1).optional() })
-  .strict()
-export const telegramCredentialSchema = z.object({ botToken: secret, webhookSecret: secret }).strict()
+export const telegramConfigurationSchema = z.strictObject({
+  version: z.literal(1),
+  botId: z.string().min(1).optional(),
+  username: z.string().min(1).optional(),
+})
+export const telegramCredentialSchema = z.strictObject({ botToken: secret, webhookSecret: secret })
 export type TelegramConfiguration = z.infer<typeof telegramConfigurationSchema>
 export type TelegramCredential = z.infer<typeof telegramCredentialSchema>
 export type TelegramIdentity = Pick<TelegramConfiguration, 'botId' | 'username'>
 
-export const slackConfigurationSchema = z
-  .object({
-    version: z.literal(1),
-    teamId: z.string().min(1).optional(),
-    botUserId: z.string().min(1).optional(),
-    teamName: z.string().min(1).optional(),
-    /** Only ever set by a managed (broker) install; a manual save never types it. */
-    appId: z.string().min(1).optional(),
-  })
-  .strict()
+export const slackConfigurationSchema = z.strictObject({
+  version: z.literal(1),
+  teamId: z.string().min(1).optional(),
+  botUserId: z.string().min(1).optional(),
+  teamName: z.string().min(1).optional(),
+  /** Only ever set by a managed (broker) install; a manual save never types it. */
+  appId: z.string().min(1).optional(),
+})
 /** The broker's grant configuration allows a null team name; Core's schema only ever omits it. */
 const parseSlackConfigurationInput = (value: unknown): SlackConfiguration => {
   if (
@@ -69,7 +69,7 @@ const parseSlackConfigurationInput = (value: unknown): SlackConfiguration => {
   }
   return slackConfigurationSchema.parse(value)
 }
-export const slackCredentialSchema = z.object({ botToken: secret, signingSecret: secret }).strict()
+export const slackCredentialSchema = z.strictObject({ botToken: secret, signingSecret: secret })
 export type SlackConfiguration = z.infer<typeof slackConfigurationSchema>
 export type SlackCredential = z.infer<typeof slackCredentialSchema>
 export type SlackIdentity = Pick<SlackConfiguration, 'teamId' | 'botUserId' | 'teamName'>
@@ -82,16 +82,14 @@ function slackBotTokenFromCredential(raw: string): string {
   return parseOAuthCredential(raw).accessToken
 }
 
-export const discordConfigurationSchema = z
-  .object({
-    version: z.literal(1),
-    applicationId: z.string().min(1).optional(),
-    publicKey: z.string().min(1).optional(),
-    /** Optional: register slash commands to one guild (instant) instead of globally (up to an hour). */
-    guildId: z.string().min(1).optional(),
-  })
-  .strict()
-export const discordCredentialSchema = z.object({ botToken: secret }).strict()
+export const discordConfigurationSchema = z.strictObject({
+  version: z.literal(1),
+  applicationId: z.string().min(1).optional(),
+  publicKey: z.string().min(1).optional(),
+  /** Optional: register slash commands to one guild (instant) instead of globally (up to an hour). */
+  guildId: z.string().min(1).optional(),
+})
+export const discordCredentialSchema = z.strictObject({ botToken: secret })
 export type DiscordConfiguration = z.infer<typeof discordConfigurationSchema>
 export type DiscordCredential = z.infer<typeof discordCredentialSchema>
 export type DiscordIdentity = Pick<DiscordConfiguration, 'applicationId' | 'publicKey'>

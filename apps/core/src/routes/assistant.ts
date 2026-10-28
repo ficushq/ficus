@@ -38,7 +38,7 @@ import { markAssistantUpdatesProcessed } from '../services/assistant-activity/ac
 import { resolveActingUser } from '../services/rbac'
 import { requirePermission } from '../middleware/require-permission'
 
-const uuid = z.string().uuid()
+const uuid = z.uuid()
 const createSchema = z.object({
   id: uuid,
   title: z.string().trim().min(1).max(120).optional(),

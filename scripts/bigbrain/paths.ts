@@ -9,19 +9,14 @@ export const GATEWAY_UNIT = 'ficus-bigbrain-gateway.service'
 export const GATEWAY_CLIENT_GROUP = 'ficus-bigbrain-client'
 /** A login name the installer accepts for the hosted Core account (useradd's portable set). */
 export const CORE_ACCOUNT_NAME = /^[a-z_][a-z0-9_-]{0,31}$/
-const pathInput = z
-  .object({
-    vaultId: z
-      .string()
-      .uuid()
-      .regex(/^[0-9a-f-]{36}$/),
-    // Only fixture/operator injection; never taken from a helper/API request.
-    root: z
-      .string()
-      .refine((v) => isAbsolute(v) && resolve(v) === v && v !== '/')
-      .optional(),
-  })
-  .strict()
+const pathInput = z.strictObject({
+  vaultId: z.uuid().regex(/^[0-9a-f-]{36}$/),
+  // Only fixture/operator injection; never taken from a helper/API request.
+  root: z
+    .string()
+    .refine((v) => isAbsolute(v) && resolve(v) === v && v !== '/')
+    .optional(),
+})
 
 export function managedPaths(input: { vaultId: string; root?: string }) {
   const parsed = pathInput.safeParse(input)

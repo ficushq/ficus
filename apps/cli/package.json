@@ -14,7 +14,8 @@
     "@ficus/client-core": "workspace:*",
     "@ficus/shared": "workspace:*",
     "commander": "^12.0.0",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "amtp-protocol": "^0.1.2",

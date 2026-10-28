@@ -12,7 +12,7 @@ import { agents, assistantTasks, db } from '../db'
 import { InboxMessage } from '../entities/InboxMessage'
 import type { Identity } from '../services/rbac'
 
-const uuid = z.string().uuid()
+const uuid = z.uuid()
 const statusSchema = z.object({
   status: reportableAssistantTaskStatusSchema,
   requestId: uuid.optional(),

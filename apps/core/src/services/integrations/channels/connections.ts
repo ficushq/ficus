@@ -165,14 +165,12 @@ export interface ChannelConnectionsDependencies {
   resolveAuthority?: () => OAuthAuthority
 }
 
-const configureInputSchema = z
-  .object({
-    botToken: z.string().max(4096).nullable().optional(),
-    signingSecret: z.string().max(4096).nullable().optional(),
-    guildId: z.string().trim().max(64).nullable().optional(),
-    defaultSquadId: z.string().uuid().nullable().optional(),
-  })
-  .strict()
+const configureInputSchema = z.strictObject({
+  botToken: z.string().max(4096).nullable().optional(),
+  signingSecret: z.string().max(4096).nullable().optional(),
+  guildId: z.string().trim().max(64).nullable().optional(),
+  defaultSquadId: z.uuid().nullable().optional(),
+})
 export type ConfigureChannelInput = z.infer<typeof configureInputSchema>
 
 type Listener = (states: ReadonlyMap<ChannelProviderKey, ChannelConnectionState | undefined>) => void | Promise<void>
