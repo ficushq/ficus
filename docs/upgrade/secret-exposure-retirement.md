@@ -4,6 +4,30 @@ Squad, global and per-agent Secret Store exposure has been removed. The upgrade 
 
 Custom secrets belong in squad **Workspace → Environment Variables**, or files chosen by a person. Environment Variables remain visible to agents and terminals; `env.user` and other custom files are preserved. Integration credentials are delivered only through per-command integration exec. Human terminals remain token-free and can use the person's own provider login. Operator `ficus secret`, `/api/secrets` and feature-owned encrypted storage remain available.
 
+## Detection compatibility on upgrade
+
+Integration exact matching now uses secret leaves of at least **8 characters**;
+new manual/channel secrets enforce that minimum too. Shorter legacy leaves are
+not exact-matched; independent credential-pattern detection remains active.
+Rotation/deletion retains encrypted prior integration material for **one hour**,
+including across restart, with the original expiry rather than a renewed grace.
+This is detection coverage, not provider revocation or persistent sandbox delivery.
+
+Existing `.ficus/env.user` files receive a **one-time** trusted snapshot, capped
+at **256 KiB** (UTF-8 bytes). Trusted hashes/parsed output-only entries live in a
+protected DB table independent of the encryption key; a separate durable bootstrap
+marker prevents re-trusting disk after record deletion/corruption or restart.
+Thereafter only Environment API/service saves register values. Later direct disk edits
+are ignored for detection, with a once-per-squad-per-process warning and a notice
+in Environment Settings; explicitly save there to register changed or unchanged
+values. Oversized/unreadable legacy files are skipped with a notice, not repeatedly
+snapshotted. API/service writes share the cap; Settings reads fail safely without
+editable partial/empty substitutes. Reduce an oversized file outside Settings,
+reload, then save; failed reads and over-cap rejected writes leave the file unchanged. Public/publishable
+keys are excluded, and env entries never refuse input, including failed-query
+attribution. No integration credentials are copied into this env authority. See
+[full detection limits and persistence](../wiki/integration-execution.md#detection-boundaries).
+
 ## Automatic cleanup after upgrading Core
 
 Every environment regeneration immediately stops emitting exposure exports. The worker also starts an independent cleanup sweep at startup and checks for due targets every minute, including after a Core restart. No agent activity or sandbox ensure is needed to start cleanup.

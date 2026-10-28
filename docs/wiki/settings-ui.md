@@ -274,3 +274,14 @@ integration tokens in either place: connect accounts in **Settings → Integrati
 then assign them in the squad’s **Integrations** tab. There is no key allowlist or
 per-agent credential panel. Assigned CLIs use per-command wrappers; human terminals
 use their own logins. Channel tokens belong only in their owning integration cards.
+
+Environment content is limited to **256 KiB** (UTF-8 bytes). Existing content is
+snapshotted once for output-only redaction, then only saves through Settings or
+the Environment API/service register trusted values. Later direct disk edits are
+ignored for detection and produce an Environment notice; Save can register even
+unchanged content. This is not input refusal or a workspace-file scanner. Public
+and short ordinary values are excluded; see [detection boundaries](integration-execution.md#detection-boundaries).
+Oversized files cannot be edited here: reduce the file outside Settings, reload,
+then save to register it. Failed/unsafe reads show an error without editable partial
+or empty content; saving is disabled during reads. Failed reads and over-cap
+rejected writes leave the existing file unchanged.

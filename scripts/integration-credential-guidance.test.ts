@@ -90,6 +90,46 @@ test('active credential wikis have no retired instructions or per-agent feature 
   }
 })
 
+test('detection documentation tracks trusted authority, bounds and retired-token persistence', () => {
+  const source = read('apps/core/src/services/security/squad-env-secret-source.ts')
+  expect(source).toContain('const REFRESH_MS = 1000')
+  expect(read('apps/core/src/services/security/squad-env-detection-repository.ts')).toContain(
+    'MAX_SQUAD_ENV_BYTES = 256 * 1024'
+  )
+  expect(read('apps/core/src/services/security/integration-credential-entries.ts')).toContain(
+    'MIN_INTEGRATION_CREDENTIAL_LENGTH = 8'
+  )
+  expect(read('apps/core/src/services/secrets/integration-retirement.ts')).toContain(
+    'RETIRED_INTEGRATION_GRACE_MS = 60 * 60_000'
+  )
+  const doc = read('docs/wiki/integration-execution.md')
+  for (const contract of [
+    'shorter legacy leaves are not exact-matched',
+    'Pattern-based detection remains independent',
+    'encrypted durable one-hour retirement',
+    'squad_env_detections',
+    'no encryption-key dependency',
+    'one-time legacy snapshot',
+    '256 KiB',
+    'at most once per second',
+    'once per squad per process',
+    'failed-query attribution',
+    'PUBLIC',
+    'PUBLISHABLE',
+    'NEXT_PUBLIC_',
+    'VITE_',
+    'REACT_APP_',
+  ])
+    expect(doc).toContain(contract)
+  expect(doc).not.toContain('Changes\nare rechecked at redaction boundaries with metadata-based parse caching')
+  for (const path of ['docs/wiki/settings-ui.md', 'docs/upgrade/secret-exposure-retirement.md']) {
+    const guidance = read(path)
+    expect(guidance).toContain('256 KiB')
+    expect(guidance).toContain('Settings')
+    expect(guidance).toContain('direct disk edits')
+  }
+})
+
 // Cross-check setup prose against the owning implementation, not historical key names.
 test('Discord setup matches the token-only form, discovered identity and optional HTTP UI', () => {
   const plugins = read('apps/core/src/services/integrations/channels/plugins.ts')
