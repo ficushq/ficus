@@ -5,5 +5,14 @@
     "rootDir": "../..",
     "types": ["@types/bun"]
   },
-  "include": ["src/**/*", "../../scripts/artifact/**/*.ts", "../../scripts/bigbrain/**/*.ts", "package.json"]
+  "include": [
+    "src/**/*",
+    "../../scripts/artifact/**/*.ts",
+    "../../scripts/bigbrain/**/*.ts",
+    "../../packages/sandbox-server/src/services/atomic-write.ts",
+    "../../packages/sandbox-server/src/services/filesystem.ts",
+    "../../packages/sandbox-server/src/services/download.ts",
+    "../../packages/sandbox-server/src/paths.ts",
+    "package.json"
+  ]
 }

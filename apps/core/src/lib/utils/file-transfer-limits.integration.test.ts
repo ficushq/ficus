@@ -79,11 +79,22 @@ test('8MiB multipart -> Core staging -> sandbox atomic upload -> streaming downl
       '\r\n--fixture\r\nContent-Disposition: form-data; name="path_file"\r\n\r\nlarge.bin\r\n--fixture--\r\n'
     )
   }
+  const parts = multipart()
+  const uploadBody = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const part = await parts.next()
+      if (part.done) controller.close()
+      else controller.enqueue(part.value)
+    },
+    async cancel() {
+      await parts.return(undefined)
+    },
+  })
   try {
     const upload = await fetch(`http://127.0.0.1:${core.port}/api/squads/fixture/workspace/upload`, {
       method: 'POST',
       headers: { 'content-type': 'multipart/form-data; boundary=fixture' },
-      body: ReadableStream.from(multipart()),
+      body: uploadBody,
     })
     expect(upload.status).toBe(200)
     expect(await upload.json()).toEqual([

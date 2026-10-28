@@ -700,7 +700,7 @@ describe('internal event token resolution', () => {
 })
 
 test('internal events reject bytes before parsing and dispatch, only after token auth', async () => {
-  const transport = new LocalEventTransport({ role: 'api', token: TOKEN })
+  const transport = new LocalEventTransport({ token: TOKEN })
   const make = (token: string) =>
     new Request('http://localhost' + INTERNAL_EVENTS_PATH, {
       method: 'POST',
