@@ -2,7 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { db, assistantUpdates, assistantConversations, assistantTasks, inbox } from '../db'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../lib/zod-validator'
 import { markAssistantUpdatesSeen } from '../services/assistant-activity/acknowledge'
 import {
   listAssistantActivity,

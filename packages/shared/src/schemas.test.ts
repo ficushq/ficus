@@ -102,7 +102,7 @@ describe('chatRequestSchema consultant scope', () => {
   it('accepts scope.type "consultant" with a squad id', () => {
     const parsed = chatRequestSchema.parse({
       message: 'hello',
-      scope: { type: 'consultant', id: '11111111-1111-1111-1111-111111111111' },
+      scope: { type: 'consultant', id: '11111111-1111-4111-8111-111111111111' },
     })
     expect(parsed.scope?.type).toBe('consultant')
   })
@@ -138,7 +138,7 @@ describe('chatRequestSchema image attachments', () => {
 describe('amtpEnvelopeSchema', () => {
   const valid = {
     v: 1,
-    id: '11111111-1111-1111-1111-111111111111',
+    id: '11111111-1111-4111-8111-111111111111',
     ts: 1750000000000,
     from: 'amtp://senderInstance/alice',
     to: 'amtp://recipientInstance/bob',
@@ -153,7 +153,7 @@ describe('amtpEnvelopeSchema', () => {
     const result = amtpEnvelopeSchema.safeParse({
       ...valid,
       subject: 'greetings',
-      inReplyTo: '22222222-2222-2222-2222-222222222222',
+      inReplyTo: '22222222-2222-4222-8222-222222222222',
       agentKey: 'opaque-key',
       agentSig: 'opaque-sig',
     })

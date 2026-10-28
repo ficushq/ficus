@@ -85,7 +85,7 @@ const searchResult = z
   .object({
     hits: z.array(hit).max(50),
     only_agent_records: z.boolean().optional(),
-    applied_filters: z.record(z.unknown()).optional(),
+    applied_filters: z.record(z.string(), z.unknown()).optional(),
     relaxation: z.unknown().optional(),
   })
   .passthrough()

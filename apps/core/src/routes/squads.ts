@@ -5,7 +5,7 @@ import { resolveActingUser } from '../services/rbac'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { parseOptionalJsonObjectBody } from '../middleware/json-body-errors'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../lib/zod-validator'
 import { z } from 'zod'
 import {
   createSquadSchema,

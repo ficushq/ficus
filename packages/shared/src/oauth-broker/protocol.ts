@@ -68,7 +68,7 @@ export const brokerRedeemRequest = z
 
 export const brokerRedeemResponse = z
   .object({
-    configuration: z.unknown(),
+    configuration: z.unknown().optional(),
     credential: providerCredential,
     displayName: z.string().min(1).max(200),
   })
@@ -89,7 +89,7 @@ export const brokerRefreshResponse = z
     accessToken: token,
     refreshToken: token.nullable(),
     expiresAt,
-    configuration: z.unknown(),
+    configuration: z.unknown().optional(),
   })
   .strict()
   .refine((value) => Object.hasOwn(value, 'configuration'), { message: 'configuration is required' })

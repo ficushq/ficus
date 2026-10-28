@@ -29,7 +29,7 @@ import { keyscanPinForTest } from './test-host-key-pin'
 const testPin = async () => ({ knownHostsPath: '/pins/machine.known_hosts', alias: 'ficus-trust.machine' })
 
 const SECRET_KEY = 'machine-ssh:tunnel-test'
-const MACHINE_ID = '22222222-2222-2222-2222-222222222222'
+const MACHINE_ID = '22222222-2222-4222-8222-222222222222'
 // The manager derives the control-socket filename from a short sha256 digest of
 // the machine id (not the raw 36-char UUID), so tests that kill a socket must
 // target the same derived name.
@@ -630,7 +630,7 @@ describe('MachineTunnelManager', () => {
     expect(fake.cancelCalls().length).toBe(0)
 
     // A forward for a DIFFERENT machine must survive this machine's release.
-    const otherId = '33333333-3333-3333-3333-333333333333'
+    const otherId = '33333333-3333-4333-8333-333333333333'
     const otherLocal = await mgr.addForward(makeMachine({ id: otherId }), 50200)
     await mgr.cancelMachineForwards(MACHINE_ID)
     expect(fake.cancelCalls().length).toBe(0)

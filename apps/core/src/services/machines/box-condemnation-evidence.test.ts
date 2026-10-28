@@ -17,7 +17,7 @@ describe('persistBoxCondemnationEvidence', () => {
     const observedAt = new Date('2026-08-21T16:00:00.000Z')
     await persistBoxCondemnationEvidence({
       sandboxId,
-      machineId: '11111111-1111-1111-1111-111111111111',
+      machineId: '11111111-1111-4111-8111-111111111111',
       classification: 'running_http_dead',
       probes: [
         { observedAt, kind: 'http_status', elapsedMs: 12, status: 503 },
@@ -72,7 +72,7 @@ describe('persistBoxCondemnationEvidence', () => {
     await clearEvidence()
     const base = {
       sandboxId,
-      machineId: '11111111-1111-1111-1111-111111111111',
+      machineId: '11111111-1111-4111-8111-111111111111',
       classification: 'exited' as const,
       probes: [],
       machineSnapshot: { observedAt: new Date(), liveness: 'exited' as const },

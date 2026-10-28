@@ -171,7 +171,7 @@ describe('formatInboxMessages', () => {
   it('formats workspace voice messages with corrected From line and reply guidance', () => {
     const messages = [
       {
-        id: '12345678-1234-1234-1234-123456789abc',
+        id: '12345678-1234-4234-8234-123456789abc',
         subject: null,
         content:
           'Check the launch plan\n\nReply to the workspace voice assistant through inbox: ficus inbox send <this message\'s sender id> "<message>" --recipient-type voice_assistant --from <your-agent-id>.',
@@ -193,7 +193,7 @@ describe('formatInboxMessages', () => {
   it('formats single message', () => {
     const messages = [
       {
-        id: '12345678-1234-1234-1234-123456789abc',
+        id: '12345678-1234-4234-8234-123456789abc',
         subject: 'Test Subject',
         content: 'Test content',
         senderType: 'system',
@@ -213,7 +213,7 @@ describe('formatInboxMessages', () => {
   it('asks other agents to mark messages read, but not Assistant agents or forwarded task updates', () => {
     const message = (metadata: Record<string, unknown> = {}) =>
       ({
-        id: '12345678-1234-1234-1234-123456789abc',
+        id: '12345678-1234-4234-8234-123456789abc',
         subject: 'Assistant task update',
         content: 'Merged the fix.',
         senderType: 'system',
@@ -226,7 +226,7 @@ describe('formatInboxMessages', () => {
     const forAssistant = formatInboxMessages([message()], { recipientAgentTypeId: 'assistant' })
     expect(forAssistant).not.toContain(footer)
     expect(forAssistant).not.toContain('ficus inbox read')
-    expect(forAssistant).toContain('### Message 12345678-1234-1234-1234-123456789abc')
+    expect(forAssistant).toContain('### Message 12345678-1234-4234-8234-123456789abc')
     expect(forAssistant).toContain('Merged the fix.')
     const forwarded = message({ source: 'assistant_task_update' })
     expect(formatInboxMessages([forwarded, forwarded])).not.toContain(footer)
@@ -237,18 +237,18 @@ describe('formatInboxMessages', () => {
   it('formats multiple messages', () => {
     const messages = [
       {
-        id: 'aaaaaaaa-1234-1234-1234-123456789abc',
+        id: 'aaaaaaaa-1234-4234-8234-123456789abc',
         subject: 'First',
         content: 'First content',
         senderType: 'user',
         createdAt: new Date('2024-01-15T10:00:00Z'),
       },
       {
-        id: 'bbbbbbbb-1234-1234-1234-123456789abc',
+        id: 'bbbbbbbb-1234-4234-8234-123456789abc',
         subject: 'Second',
         content: 'Second content',
         senderType: 'agent',
-        senderId: 'cccccccc-1234-1234-1234-123456789def',
+        senderId: 'cccccccc-1234-4234-8234-123456789def',
         createdAt: new Date('2024-01-15T11:00:00Z'),
       },
     ] as InboxMessage[]
@@ -265,7 +265,7 @@ describe('formatInboxMessages', () => {
   it('formats every attachment with metadata and an exact download command', () => {
     const messages = [
       {
-        id: '12345678-1234-1234-1234-123456789abc',
+        id: '12345678-1234-4234-8234-123456789abc',
         subject: null,
         content: 'Files are attached',
         senderType: 'system',
@@ -305,7 +305,7 @@ describe('formatInboxMessages', () => {
 
   it('leaves messages without attachments unchanged', () => {
     const message = {
-      id: '12345678-1234-1234-1234-123456789abc',
+      id: '12345678-1234-4234-8234-123456789abc',
       subject: null,
       content: 'No files',
       senderType: 'system',
@@ -318,7 +318,7 @@ describe('formatInboxMessages', () => {
 
   it('neutralizes control and Markdown syntax in attachment display metadata', () => {
     const message = {
-      id: '12345678-1234-1234-1234-123456789abc',
+      id: '12345678-1234-4234-8234-123456789abc',
       subject: null,
       content: 'Untrusted file',
       senderType: 'system',

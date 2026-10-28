@@ -24,7 +24,7 @@ const silentLog = { info: () => {}, warn: () => {}, debug: () => {} }
 function makeBox(overrides: Partial<MachineBox> = {}): MachineBox {
   return {
     sandboxId: 'agent_a1',
-    machineId: '11111111-1111-1111-1111-111111111111',
+    machineId: '11111111-1111-4111-8111-111111111111',
     unixUser: 'box_deadbeef',
     port: 50100,
     status: 'ready',

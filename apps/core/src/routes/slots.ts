@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../lib/zod-validator'
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { Permissions } from '@ficus/shared'

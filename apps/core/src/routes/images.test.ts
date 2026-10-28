@@ -462,7 +462,7 @@ describe('POST /api/images/sign-urls', () => {
     const res = await buildApp().request('/api/images/sign-urls', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ids: ['11111111-1111-1111-1111-111111111111'] }),
+      body: JSON.stringify({ ids: ['11111111-1111-4111-8111-111111111111'] }),
     })
 
     expect(res.status).toBe(401)
@@ -544,7 +544,7 @@ describe('POST /api/images/sign-urls', () => {
       { type: 'image', data: Buffer.from('n').toString('base64'), mimeType: 'image/png' },
     ])
     const workerTok = await createTestAgentToken({ agentId: agentA.id, squadId: squadA.id })
-    const bogus = '99999999-9999-9999-9999-999999999999'
+    const bogus = '99999999-9999-4999-9999-999999999999'
     try {
       const res = await buildApp().request('/api/images/sign-urls', {
         method: 'POST',

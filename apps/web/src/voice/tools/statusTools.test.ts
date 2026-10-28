@@ -36,7 +36,7 @@ describe('voiceWorkStreamStatus', () => {
 })
 
 describe('get_work', () => {
-  const squadId = '11111111-1111-1111-1111-111111111111'
+  const squadId = '11111111-1111-4111-8111-111111111111'
   function tools(overrides: Partial<Parameters<typeof createStatusTools>[0]> = {}) {
     return createStatusTools({
       listSquads: async () => [{ id: squadId, name: 'Ficus', createdAt: '2026-01-01' }] as any,

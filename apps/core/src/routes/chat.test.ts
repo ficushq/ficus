@@ -245,7 +245,7 @@ describe('POST /api/chat', () => {
         body: JSON.stringify({
           agentId: textOnlyAgent.id,
           message: 'Look at this',
-          imageIds: ['00000000-0000-0000-0000-000000000301'],
+          imageIds: ['00000000-0000-4000-8000-000000000301'],
         }),
       })
 

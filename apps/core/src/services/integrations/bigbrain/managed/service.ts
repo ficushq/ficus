@@ -381,7 +381,7 @@ export function createManagedVaultService(deps: ManagedVaultServiceDeps) {
   }
 }
 
-function parse<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, input: unknown): T {
+function parse<T>(schema: z.ZodType<T>, input: unknown): T {
   const parsed = schema.safeParse(input)
   if (!parsed.success) throw new ManagedVaultServiceError('invalid_request', 400)
   return parsed.data

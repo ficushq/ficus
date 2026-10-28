@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { keyedRecord } from './zod-helpers'
 import { integrationSubscriptionSchema, integrationDataPathSchema } from './integration-outputs'
 import { decisionQuestionsSchema } from './decisions'
 import { decisionConditionIssue, decisionConditionSchema } from './decision-conditions'
@@ -62,8 +63,7 @@ export const workflowTransitionSchema = explainedUnion(
   { label: 'transition' }
 )
 
-const outcomes = z
-  .record(identifier, workflowTransitionSchema)
+const outcomes = keyedRecord(identifier, workflowTransitionSchema)
   .refine((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 16, 'Use 1–16 outcomes')
   .describe('1–16 named outcomes, each with one transition.')
 const stepFields = {
@@ -218,9 +218,10 @@ const definitionShape = z
   .object({
     schemaVersion: z.literal(1),
     name: z.string().trim().min(1).max(200),
-    participants: z
-      .record(identifier, workflowParticipantSchema)
-      .refine((value) => Object.keys(value).length <= 64, 'Use at most 64 participants'),
+    participants: keyedRecord(identifier, workflowParticipantSchema).refine(
+      (value) => Object.keys(value).length <= 64,
+      'Use at most 64 participants'
+    ),
     entry: identifier,
     routing: workflowRoutingSchema,
     limits: workflowLimitsSchema,
@@ -450,10 +451,20 @@ export const workflowCustomizationSchema = z.discriminatedUnion('op', [
     .object({
       op: z.literal('update-step'),
       id: identifier,
+      // Derived schemas do not inherit `.describe()` text on zod 4, so each kind's is reapplied.
       changes: z.union([
-        workflowStepSchema.options[0].omit({ id: true, kind: true }).partial(),
-        workflowStepSchema.options[1].omit({ id: true, kind: true }).partial(),
-        workflowStepSchema.options[2].omit({ id: true, kind: true }).partial(),
+        workflowStepSchema.options[0]
+          .omit({ id: true, kind: true })
+          .partial()
+          .describe(workflowStepSchema.options[0].description ?? ''),
+        workflowStepSchema.options[1]
+          .omit({ id: true, kind: true })
+          .partial()
+          .describe(workflowStepSchema.options[1].description ?? ''),
+        workflowStepSchema.options[2]
+          .omit({ id: true, kind: true })
+          .partial()
+          .describe(workflowStepSchema.options[2].description ?? ''),
       ]),
     })
     .strict(),
@@ -617,27 +628,26 @@ export const workflowEventTriggerSchema = z
   .object({
     id: identifier,
     source: integrationSubscriptionSchema.shape.source,
-    match: z
-      .record(
-        integrationDataPathSchema,
-        z.object({ value: z.union([z.string().max(2000), z.number().finite(), z.boolean()]) }).strict()
-      )
-      .refine((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 16, 'Use 1–16 matches'),
+    match: keyedRecord(
+      integrationDataPathSchema,
+      z.object({ value: z.union([z.string().max(2000), z.number().finite(), z.boolean()]) }).strict()
+    ).refine((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 16, 'Use 1–16 matches'),
     create: z
       .object({
         workflow: workflowSourceSchema,
         titlePrefix: z.string().max(100).default(''),
         additionalContext: z.string().trim().max(10000).optional(),
-        metadata: z
-          .record(integrationDataPathSchema, z.object({ event: integrationDataPathSchema }).strict())
-          .refine(
-            (value) =>
-              Object.keys(value).length <= 16 &&
-              Object.keys(value).every(
-                (path) => !['completion', 'sources', 'sourceWarnings', 'tracked'].includes(path.split('.')[0]!)
-              ),
-            'Use at most 16 non-reserved metadata bindings'
-          ),
+        metadata: keyedRecord(
+          integrationDataPathSchema,
+          z.object({ event: integrationDataPathSchema }).strict()
+        ).refine(
+          (value) =>
+            Object.keys(value).length <= 16 &&
+            Object.keys(value).every(
+              (path) => !['completion', 'sources', 'sourceWarnings', 'tracked'].includes(path.split('.')[0]!)
+            ),
+          'Use at most 16 non-reserved metadata bindings'
+        ),
       })
       .strict(),
   })

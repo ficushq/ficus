@@ -48,7 +48,7 @@ export const tableBlockSchema = z
   .object({
     type: z.literal('table'),
     columns: z.array(tableColumnSchema),
-    rows: z.array(z.record(z.unknown())),
+    rows: z.array(z.record(z.string(), z.unknown())),
   })
   .strict()
 
@@ -56,7 +56,7 @@ export const chartBlockSchema = z
   .object({
     type: z.literal('chart'),
     library: z.literal('vega-lite'),
-    spec: z.record(z.unknown()),
+    spec: z.record(z.string(), z.unknown()),
   })
   .strict()
 

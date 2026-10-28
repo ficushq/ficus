@@ -9,6 +9,7 @@ import {
 } from './event-predicates'
 import { eventPredicateField } from './event-predicate-catalog'
 import { z } from 'zod'
+import { keyedRecord } from './zod-helpers'
 import { integrationSubscriptionSchema, integrationValueAt, type IntegrationOutputFact } from './integration-outputs'
 import { workflowEventTriggerSchema, workflowSourceSchema, type WorkflowSource } from './workflows'
 
@@ -52,25 +53,23 @@ export const squadEventRuleSchema = z
     if (rule.predicates?.length) validateEventPredicates(rule.source, rule.predicates, ctx)
   })
 export type SquadEventRule = z.infer<typeof squadEventRuleSchema>
-export const squadEventRulesSchema = z
-  .record(
-    z.string().regex(/^[a-z][a-z0-9-]*$/),
-    z
-      .array(squadEventRuleSchema)
-      .max(32)
-      .refine((rules) => new Set(rules.map((rule) => rule.id)).size === rules.length, 'Duplicate event rule ID')
-  )
-  .superRefine((providers, ctx) => {
-    for (const [provider, rules] of Object.entries(providers))
-      rules.forEach((rule, index) => {
-        if (rule.source.integration !== provider)
-          ctx.addIssue({
-            code: 'custom',
-            path: [provider, index, 'source'],
-            message: 'Rule provider must match its integration',
-          })
-      })
-  })
+export const squadEventRulesSchema = keyedRecord(
+  z.string().regex(/^[a-z][a-z0-9-]*$/),
+  z
+    .array(squadEventRuleSchema)
+    .max(32)
+    .refine((rules) => new Set(rules.map((rule) => rule.id)).size === rules.length, 'Duplicate event rule ID')
+).superRefine((providers, ctx) => {
+  for (const [provider, rules] of Object.entries(providers))
+    rules.forEach((rule, index) => {
+      if (rule.source.integration !== provider)
+        ctx.addIssue({
+          code: 'custom',
+          path: [provider, index, 'source'],
+          message: 'Rule provider must match its integration',
+        })
+    })
+})
 const record = (value: unknown): Record<string, any> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, any>) : {}
 const strings = (value: unknown): string[] =>

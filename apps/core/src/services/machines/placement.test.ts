@@ -27,7 +27,7 @@ import { EXE_PROVIDER_SSH_KEY } from './provider-credentials'
 
 function makeMachine(overrides: Partial<Machine> = {}): Machine {
   return {
-    id: '11111111-1111-1111-1111-111111111111',
+    id: '11111111-1111-4111-8111-111111111111',
     name: 'm-test',
     provider: 'ssh',
     providerRef: null,
@@ -55,7 +55,7 @@ function makeMachine(overrides: Partial<Machine> = {}): Machine {
 function makeBox(overrides: Partial<MachineBox> = {}): MachineBox {
   return {
     sandboxId: 'sb-1',
-    machineId: '11111111-1111-1111-1111-111111111111',
+    machineId: '11111111-1111-4111-8111-111111111111',
     unixUser: 'box_x',
     port: 50100,
     status: 'ready',
@@ -215,8 +215,8 @@ describe('resolvePlacement — explicit pin', () => {
 
 describe('resolvePlacement — sticky existing box', () => {
   it('returns the recorded ready machine for an existing box, never re-placing', async () => {
-    const machineA = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000', status: 'ready' })
-    const machineB = makeMachine({ id: 'bbbbbbbb-0000-0000-0000-000000000000', status: 'ready' })
+    const machineA = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000', status: 'ready' })
+    const machineB = makeMachine({ id: 'bbbbbbbb-0000-4000-8000-000000000000', status: 'ready' })
     const box = makeBox({ machineId: machineA.id, status: 'ready' })
     let placementConsulted = false
     const resolved = await resolvePlacement(
@@ -236,8 +236,8 @@ describe('resolvePlacement — sticky existing box', () => {
   })
 
   it('does NOT stick when the recorded machine is not ready (falls through to placement)', async () => {
-    const notReady = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000', status: 'unreachable' })
-    const ready = makeMachine({ id: 'bbbbbbbb-0000-0000-0000-000000000000', status: 'ready', scope: 'shared' })
+    const notReady = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000', status: 'unreachable' })
+    const ready = makeMachine({ id: 'bbbbbbbb-0000-4000-8000-000000000000', status: 'ready', scope: 'shared' })
     const box = makeBox({ machineId: notReady.id, status: 'ready' })
     const resolved = await resolvePlacement(
       { sandboxId: 'sb-1', role: 'agent' },
@@ -260,9 +260,9 @@ describe('resolvePlacement — packed shared pool', () => {
   it('best-fit packs onto the fullest ready shared machine that still fits', async () => {
     // Default capacity 10. Frees: mA = 10-8 = 2, mB = 10-5 = 5, mC = 10-2 = 8.
     // Incoming agent weighs 1 → all fit; best fit (smallest free) = mA.
-    const mA = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000', name: 'm-a' })
-    const mB = makeMachine({ id: 'bbbbbbbb-0000-0000-0000-000000000000', name: 'm-b' })
-    const mC = makeMachine({ id: 'cccccccc-0000-0000-0000-000000000000', name: 'm-c' })
+    const mA = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000', name: 'm-a' })
+    const mB = makeMachine({ id: 'bbbbbbbb-0000-4000-8000-000000000000', name: 'm-b' })
+    const mC = makeMachine({ id: 'cccccccc-0000-4000-8000-000000000000', name: 'm-c' })
     const { deps, provisioned } = makeStore([mA, mB, mC], {
       [mA.id]: ['agent_a', 'agent_b', 'agent_c', 'agent_d', 'agent_e', 'agent_f', 'agent_g', 'agent_h'], // 8
       [mB.id]: ['agent_i', 'agent_j', 'agent_k', 'agent_l', 'agent_m'], // 5
@@ -276,8 +276,8 @@ describe('resolvePlacement — packed shared pool', () => {
   it('sums mixed box roles by weight (agent_ + system_manager_ prefixes)', async () => {
     // mLoaded hosts an agent + a system-manager: 1+1 = 2 used → free 8. mEmpty is
     // free 10. An incoming agent (1) fits both; best fit is the fuller mLoaded.
-    const mLoaded = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000', name: 'm-loaded' })
-    const mEmpty = makeMachine({ id: 'bbbbbbbb-0000-0000-0000-000000000000', name: 'm-empty' })
+    const mLoaded = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000', name: 'm-loaded' })
+    const mEmpty = makeMachine({ id: 'bbbbbbbb-0000-4000-8000-000000000000', name: 'm-empty' })
     const { deps } = makeStore([mLoaded, mEmpty], {
       [mLoaded.id]: ['agent_y', 'system_manager_z'],
     })
@@ -289,7 +289,7 @@ describe('resolvePlacement — packed shared pool', () => {
     // Capacity 10, nine agent boxes → free 1 == incoming agent weight 1. The box
     // must pack THERE with no provision: an exclusive `free > incoming` boundary
     // would wrongly spin up a fresh VM for a box that fits exactly.
-    const m = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000', name: 'm-exact' })
+    const m = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000', name: 'm-exact' })
     const { deps, provisioned } = makeStore([m], {
       [m.id]: ['agent_a', 'agent_b', 'agent_c', 'agent_d', 'agent_e', 'agent_f', 'agent_g', 'agent_h', 'agent_i'], // 9
     })
@@ -302,7 +302,7 @@ describe('resolvePlacement — packed shared pool', () => {
     // Squad weight (10) == capacity (10): an empty ready VM has free 10 == incoming,
     // so the squad lands there and provisions nothing. This is the same >= boundary
     // as above at the squad-exclusive scale.
-    const empty = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000', name: 'm-empty' })
+    const empty = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000', name: 'm-empty' })
     const { deps, provisioned } = makeStore([empty])
     const resolved = await resolvePlacement({ sandboxId: 'squad_new', role: 'squad', squadId: 'sq-new' }, deps)
     expect(resolved.id).toBe(empty.id)
@@ -312,8 +312,8 @@ describe('resolvePlacement — packed shared pool', () => {
   it('never packs anything onto a squad-occupied machine (squad weight == capacity → free 0)', async () => {
     // A VM hosting one squad box has free 0 — not even a weight-1 agent fits, so
     // squads are effectively VM-exclusive under the default weights.
-    const squadVm = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000', name: 'm-squad' })
-    const other = makeMachine({ id: 'bbbbbbbb-0000-0000-0000-000000000000', name: 'm-other' })
+    const squadVm = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000', name: 'm-squad' })
+    const other = makeMachine({ id: 'bbbbbbbb-0000-4000-8000-000000000000', name: 'm-other' })
     const { deps, provisioned } = makeStore([squadVm, other], {
       [squadVm.id]: ['squad_x'], // 10 used → free 0
     })
@@ -328,8 +328,8 @@ describe('resolvePlacement — packed shared pool', () => {
     // must be ineligible: without the free >= incoming filter, best-fit's
     // smallest-free sort would rank it FIRST for the incoming agent. The roomy
     // machine wins and nothing is provisioned.
-    const over = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000', name: 'm-over' })
-    const roomy = makeMachine({ id: 'bbbbbbbb-0000-0000-0000-000000000000', name: 'm-roomy' })
+    const over = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000', name: 'm-over' })
+    const roomy = makeMachine({ id: 'bbbbbbbb-0000-4000-8000-000000000000', name: 'm-roomy' })
     const { deps, provisioned } = makeStore([over, roomy], {
       [over.id]: ['squad_a', 'agent_b'], // 10+1 = 11 used → free -1
       [roomy.id]: ['agent_c'], // 1 used → free 9
@@ -341,25 +341,25 @@ describe('resolvePlacement — packed shared pool', () => {
 
   it('breaks free-capacity ties deterministically by (createdAt, id)', async () => {
     const older = makeMachine({
-      id: 'bbbbbbbb-0000-0000-0000-000000000000',
+      id: 'bbbbbbbb-0000-4000-8000-000000000000',
       createdAt: new Date('2020-01-01T00:00:00Z'),
     })
     const newer = makeMachine({
-      id: 'aaaaaaaa-0000-0000-0000-000000000000',
+      id: 'aaaaaaaa-0000-4000-8000-000000000000',
       createdAt: new Date('2021-01-01T00:00:00Z'),
     })
     const byCreated = await resolvePlacement({ sandboxId: 'agent_new', role: 'agent' }, makeStore([newer, older]).deps)
     expect(byCreated.id).toBe(older.id)
 
-    const twinA = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000' })
-    const twinB = makeMachine({ id: 'bbbbbbbb-0000-0000-0000-000000000000' })
+    const twinA = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000' })
+    const twinB = makeMachine({ id: 'bbbbbbbb-0000-4000-8000-000000000000' })
     const byId = await resolvePlacement({ sandboxId: 'agent_new', role: 'agent' }, makeStore([twinB, twinA]).deps)
     expect(byId.id).toBe(twinA.id)
   })
 
   it('provisions a fresh shared VM with a unique exe-<8hex> name when nothing fits', async () => {
     // One machine at used 1 → free 9 < incoming squad weight 10, so nothing fits.
-    const full = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000' })
+    const full = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000' })
     const { deps, provisioned, boxes } = makeStore([full], {
       [full.id]: ['agent_a'], // 1 used → free 9 < incoming squad weight 10
     })
@@ -414,11 +414,11 @@ describe('resolvePlacement — packed shared pool', () => {
     // shared VM with room. The agent scoped to sq-1 must land on the shared VM:
     // purpose='squad' machines are invisible to the packer (they drain naturally).
     const legacySquadVm = makeMachine({
-      id: 'aaaaaaaa-0000-0000-0000-000000000000',
+      id: 'aaaaaaaa-0000-4000-8000-000000000000',
       purpose: 'squad',
       squadId: 'sq-1',
     })
-    const sharedVm = makeMachine({ id: 'bbbbbbbb-0000-0000-0000-000000000000' })
+    const sharedVm = makeMachine({ id: 'bbbbbbbb-0000-4000-8000-000000000000' })
     const { deps, provisioned } = makeStore([legacySquadVm, sharedVm])
     const resolved = await resolvePlacement({ sandboxId: 'agent_a1', role: 'agent', squadId: 'sq-1' }, deps)
     expect(resolved.id).toBe(sharedVm.id)
@@ -426,7 +426,7 @@ describe('resolvePlacement — packed shared pool', () => {
   })
 
   it('ignores legacy commons VMs too (purpose != shared)', async () => {
-    const legacyCommons = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000', purpose: 'commons' })
+    const legacyCommons = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000', purpose: 'commons' })
     const { deps, provisioned } = makeStore([legacyCommons])
     const resolved = await resolvePlacement({ sandboxId: 'agent_solo', role: 'agent' }, deps)
     expect(resolved.id).not.toBe(legacyCommons.id)
@@ -438,7 +438,7 @@ describe('resolvePlacement — packed shared pool', () => {
     process.env.FICUS_MACHINE_UNIT_CAPACITY = '2'
     // An EMPTY shared machine exists (free 2) but a squad box weighs 10 → it can
     // never fit anywhere; provision a fresh VM for it rather than looping.
-    const empty = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000' })
+    const empty = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000' })
     const { deps, provisioned } = makeStore([empty])
     const resolved = await resolvePlacement({ sandboxId: 'squad_big', role: 'squad', squadId: 'sq-big' }, deps)
     expect(resolved.id).not.toBe(empty.id)
@@ -447,7 +447,7 @@ describe('resolvePlacement — packed shared pool', () => {
   })
 
   it('sticky short-circuits before packing (load query never consulted)', async () => {
-    const recorded = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000' })
+    const recorded = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000' })
     const box = makeBox({ machineId: recorded.id })
     let loadsConsulted = false
     const resolved = await resolvePlacement(
@@ -577,8 +577,8 @@ describe('resolvePlacement — BYO-only (no exe provider)', () => {
   })
 
   it('picks the least-loaded machine when several are ready', async () => {
-    const busy = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000' })
-    const idle = makeMachine({ id: 'bbbbbbbb-0000-0000-0000-000000000000' })
+    const busy = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000' })
+    const idle = makeMachine({ id: 'bbbbbbbb-0000-4000-8000-000000000000' })
     const resolved = await resolvePlacement(
       { sandboxId: 'sb-1', role: 'agent' },
       {

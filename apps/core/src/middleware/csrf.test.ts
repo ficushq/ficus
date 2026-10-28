@@ -140,7 +140,7 @@ describe('csrfProtection', () => {
   // A local app on its own origin authenticates its own API calls with its own bearer;
   // Core never reads a header credential on the proxy route.
   test("local-app proxy: the app's own bearer from the app's own origin → allowed", async () => {
-    const res = await app().request('/api/app/0d7c1e2a-0000-0000-0000-000000000000/api/items', {
+    const res = await app().request('/api/app/0d7c1e2a-0000-4000-8000-000000000000/api/items', {
       method: 'POST',
       headers: { Authorization: 'Bearer app-token', Origin: 'https://noah--0d7c1e2a0000.ficus.garden' },
     })
@@ -148,7 +148,7 @@ describe('csrfProtection', () => {
   })
 
   test('local-app proxy: a header does not exempt a Ficus-session cookie from the CSRF header', async () => {
-    const res = await app().request('/api/app/0d7c1e2a-0000-0000-0000-000000000000/api/items', {
+    const res = await app().request('/api/app/0d7c1e2a-0000-4000-8000-000000000000/api/items', {
       method: 'POST',
       headers: { Cookie: 'ficus_session=t', Authorization: 'Bearer ficus_agent_x' },
     })

@@ -226,7 +226,7 @@ async function openOwnedFile(
 export async function readPrivateJson<T>(
   directory: string,
   name: string,
-  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  schema: z.ZodType<T>,
   options: Options = {}
 ): Promise<T> {
   return readOwnedJson(directory, name, schema, options, true)
@@ -238,7 +238,7 @@ export async function readPrivateJson<T>(
 export async function readPublicJson<T>(
   directory: string,
   name: string,
-  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  schema: z.ZodType<T>,
   options: Options = {}
 ): Promise<T> {
   return readOwnedJson(directory, name, schema, options, false)
@@ -246,7 +246,7 @@ export async function readPublicJson<T>(
 async function readOwnedJson<T>(
   directory: string,
   name: string,
-  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  schema: z.ZodType<T>,
   options: Options,
   privateFile: boolean
 ): Promise<T> {
@@ -304,7 +304,7 @@ export async function writePrivateJson<T>(
   directory: string,
   name: string,
   value: unknown,
-  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  schema: z.ZodType<T>,
   options: Options = {}
 ): Promise<void> {
   try {
@@ -320,7 +320,7 @@ export async function writePublicJson<T>(
   directory: string,
   name: string,
   value: unknown,
-  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  schema: z.ZodType<T>,
   options: Options = {}
 ): Promise<void> {
   try {

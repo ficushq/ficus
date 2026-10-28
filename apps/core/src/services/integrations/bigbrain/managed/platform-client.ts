@@ -6,7 +6,7 @@
  * bounded body and deadline, and strict shared response schemas. Errors carry only an
  * allowlisted contract code; raw Platform bodies, URLs and tokens never cross this boundary.
  */
-import { z, type ZodType, type ZodTypeDef } from 'zod'
+import { z, type ZodType } from 'zod'
 import {
   MANAGED_BIGBRAIN_ERROR_CODES,
   managedBigbrainCapabilitiesSchema,
@@ -72,7 +72,7 @@ function statusCode(status: number): ManagedBigbrainErrorCode {
 async function call<T>(
   method: Method,
   path: string,
-  schema: ZodType<T, ZodTypeDef, unknown>,
+  schema: ZodType<T>,
   body: unknown,
   options: CallOptions = {}
 ): Promise<T> {

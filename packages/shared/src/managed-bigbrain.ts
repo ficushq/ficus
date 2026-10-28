@@ -583,8 +583,11 @@ export const managedBigbrainHostReplySchema = z
   .refine((v) => !v.ok || v.action !== 'probe' || v.physicalHostBinding === v.capabilities.physicalHostBinding)
 export type ManagedBigbrainHostReply = z.infer<typeof managedBigbrainHostReplySchema>
 
-/** Root-written private material, never transported in HostReply/Platform response. */
-export const managedBigbrainReadHandoffSchema = z
+/**
+ * The read handoff's fields without its cross-field check, for deriving other schemas (zod 4 cannot
+ * `.omit()` a refined object). Validate handoffs with `managedBigbrainReadHandoffSchema`.
+ */
+export const managedBigbrainReadHandoffObjectSchema = z
   .object({
     contractVersion: version,
     tenantId: uuid,
@@ -602,7 +605,10 @@ export const managedBigbrainReadHandoffSchema = z
     token: z.string().regex(/^sv_[0-9a-f]{8}_[A-Za-z0-9_-]{43}$/),
   })
   .strict()
-  .refine((v) => v.token.slice(3, 11) === v.credentialId)
+/** Root-written private material, never transported in HostReply/Platform response. */
+export const managedBigbrainReadHandoffSchema = managedBigbrainReadHandoffObjectSchema.refine(
+  (v) => v.token.slice(3, 11) === v.credentialId
+)
 export type ManagedBigbrainReadHandoff = z.infer<typeof managedBigbrainReadHandoffSchema>
 
 function originHasVault(origin: string, vaultId: string): boolean {
@@ -750,7 +756,7 @@ export type ManagedBigbrainDnsRecord = z.infer<typeof managedBigbrainDnsRecordSc
 function parseHostMessage<T>(
   body: string | Uint8Array,
   limit: number,
-  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  schema: z.ZodType<T>,
   code: ManagedBigbrainErrorCode
 ): T {
   try {

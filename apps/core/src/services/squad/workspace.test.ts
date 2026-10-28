@@ -120,7 +120,7 @@ describe('squad-workspace', () => {
     })
 
     it('does not throw for non-existent workspace', async () => {
-      await expect(removeSquadWorkspace('00000000-0000-0000-0000-000000000001')).resolves.toBeUndefined()
+      await expect(removeSquadWorkspace('00000000-0000-4000-8000-000000000001')).resolves.toBeUndefined()
     })
   })
 
@@ -161,7 +161,7 @@ describe('squad-workspace', () => {
     })
 
     it('returns empty array for non-existent workspace', () => {
-      const files = searchWorkspaceFiles('00000000-0000-0000-0000-000000000002')
+      const files = searchWorkspaceFiles('00000000-0000-4000-8000-000000000002')
       expect(files).toEqual([])
     })
 

@@ -98,7 +98,7 @@ function memberView(member: ManagedBigbrainMember): ManagedVaultMemberView {
 
 export function managedVaultMemberMethods(ctx: ManagedVaultMemberContext) {
   const limiter = ctx.limiter ?? managedVaultMemberLimiter
-  function parse<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, input: unknown): T {
+  function parse<T>(schema: z.ZodType<T>, input: unknown): T {
     const parsed = schema.safeParse(input)
     if (!parsed.success) throw ctx.fail('invalid_request')
     return parsed.data
