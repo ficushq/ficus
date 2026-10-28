@@ -11,6 +11,7 @@ import {
   type IntegrationSubscription,
   type TrackedResource,
   type WorkflowStep,
+  workflowPresetSchema,
 } from '@ficus/shared'
 import {
   db,
@@ -89,9 +90,17 @@ async function create(
     codeHost?: boolean
     codeHostTarget?: string
     tracked?: TrackedResource[]
+    reviewed?: boolean
   } = {}
 ) {
-  const flow = definition()
+  const flow = options.reviewed
+    ? workflowPresetSchema.parse(
+        Bun.YAML.parse(
+          await Bun.file(new URL('../../../../../../config/workflows/reviewed-coding.yaml', import.meta.url)).text()
+        )
+      ).definition
+    : definition()
+  if (options.reviewed) for (const participant of Object.values(flow.participants)) participant.agentTypeId = prefix
   if (options.inactive) {
     flow.participants.later = { agentTypeId: prefix, session: 'reuse-within-stream' }
     flow.steps[0]!.outcomes = { completed: { next: 'review' } }
@@ -162,6 +171,7 @@ beforeAll(async () => {
   await db.insert(agentTypes).values({
     id: prefix,
     name: 'Output fixture worker',
+    extraScopes: ['workstreams:respond'],
     model: 'anthropic:claude-sonnet-4-5',
     systemPrompt: 'Test worker',
   })
@@ -3141,4 +3151,337 @@ test('recording a relevant source fact alone has no routing, inbox or trigger si
     await db.select().from(integrationOutputTriggerRuns).where(eq(integrationOutputTriggerRuns.eventId, event.id))
   ).toHaveLength(0)
   expect(event.matchedAt).toBeNull()
+})
+
+for (const conclusion of ['success', 'failure']) {
+  test(`CI ${conclusion} wakes active review without reopening completed implement or approving review`, async () => {
+    const number = conclusion === 'success' ? 3201 : 3202
+    const id = await create(number, { reviewed: true, codeHost: true, codeHostTarget: 'implement' })
+    const implementation = (await getFlow(id))!
+    await advanceFlow(
+      id,
+      {
+        action: 'complete',
+        expectedVersion: implementation.version,
+        attemptId: 1,
+        outcome: 'completed',
+        evidence: 'Implementation ready for review',
+      },
+      randomUUID(),
+      { type: 'legacy' }
+    )
+    const review = (await getFlow(id))!
+    const event = fact(number, {
+      output: 'pull_request.ci_completed',
+      data: { repository: `${prefix}/repo`, pullRequest: { number, headSha: 'a'.repeat(40) }, conclusion },
+    })
+    await publish(event)
+    const [delivery] = await deliveries(id)
+    expect(delivery!.targets).toMatchObject([{ agentId: review.attemptAgents['2'], attemptId: 2 }])
+    const [message] = await db.select().from(inbox).where(eq(inbox.id, delivery!.targets[0]!.inboxId))
+    expect(await isCurrentFlowMessage(message!)).toBe(true)
+    await publish(event)
+    expect(await deliveries(id)).toHaveLength(1)
+    expect((await getFlow(id))!.state).toEqual(review.state)
+    expect(Object.keys((await getFlow(id))!.attemptAgents)).toHaveLength(2)
+  })
+}
+
+test('unaccepted CI follows a transition to review, fences stale inbox, and retries without duplicate mail', async () => {
+  const id = await create(3203, { reviewed: true, codeHost: true, codeHostTarget: 'implement' })
+  const event = fact(3203, { output: 'pull_request.ci_completed' })
+  await publish(event)
+  const before = (await deliveries(id))[0]!
+  const [stale] = await db.select().from(inbox).where(eq(inbox.id, before.targets[0]!.inboxId))
+  expect(await isCurrentFlowMessage(stale!)).toBe(true)
+  const run = (await getFlow(id))!
+  await advanceFlow(
+    id,
+    {
+      action: 'complete',
+      expectedVersion: run.version,
+      attemptId: 1,
+      outcome: 'completed',
+      evidence: 'Ready for review',
+    },
+    randomUUID(),
+    { type: 'legacy' }
+  )
+  const review = (await getFlow(id))!
+  const [after] = await deliveries(id)
+  expect(after!.id).toBe(before.id)
+  expect(after!.status).toBe('queued')
+  expect(after!.targets).toMatchObject([{ agentId: review.attemptAgents['2'], attemptId: 2 }])
+  expect(await isCurrentFlowMessage(stale!)).toBe(false)
+  const [current] = await db.select().from(inbox).where(eq(inbox.id, after!.targets[0]!.inboxId))
+  expect(await isCurrentFlowMessage(current!)).toBe(true)
+  // Provider send failure/process retry retains the same current inbox and intent.
+  send.mockRejectedValueOnce(new Error('Transient delivery failure'))
+  await reconcileOutputDeliveries(id)
+  await publish(event)
+  expect(await deliveries(id)).toMatchObject([{ id: after!.id, status: 'queued', targets: after!.targets }])
+  // On approval the configured completion-ready recipient remains the engineer,
+  // but the observation itself neither reopens implementation nor approves delivery.
+  await advanceFlow(
+    id,
+    {
+      action: 'complete',
+      expectedVersion: review.version,
+      attemptId: 2,
+      outcome: 'approved',
+      evidence: 'Reviewed',
+    },
+    randomUUID(),
+    { type: 'legacy' }
+  )
+  const approved = (await getFlow(id))!
+  expect(approved.state.status).toBe('completion-ready')
+  expect((await deliveries(id))[0]!.targets).toMatchObject([
+    { agentId: approved.attemptAgents['1'], version: approved.version },
+  ])
+  expect(await isCurrentFlowMessage(current!)).toBe(false)
+})
+
+async function beginCIReview(number: number) {
+  const id = await create(number, { reviewed: true, codeHost: true, codeHostTarget: 'implement' })
+  const run = (await getFlow(id))!
+  await advanceFlow(
+    id,
+    {
+      action: 'complete',
+      expectedVersion: run.version,
+      attemptId: 1,
+      outcome: 'completed',
+      evidence: 'Implementation ready',
+    },
+    randomUUID(),
+    { type: 'legacy' }
+  )
+  return { id, run: (await getFlow(id))! }
+}
+
+for (const [index, type] of ['manual', 'question', 'dependency', 'review'].entries()) {
+  test(`CI observer retains the active review ${type} wait and delivers only after it clears`, async () => {
+    const { openWait, closeOpenWaits, listOpenWaits } = await import('../../work-streams/waits')
+    const number = 3210 + index
+    const { id, run } = await beginCIReview(number)
+    const { wait } = await openWait(db, {
+      workStreamId: id,
+      type: type as 'manual' | 'question' | 'dependency' | 'review',
+      ...(['manual', 'question'].includes(type)
+        ? { scope: 'attempt' as const, flowAttemptId: 2 }
+        : { scope: 'stream' as const }),
+      message: 'Do not wake the reviewer yet',
+    })
+    await publish(fact(number, { output: 'pull_request.ci_completed' }))
+    expect((await deliveries(id))[0]!.targets).toEqual([])
+    expect((await listOpenWaits(db, id)).map((row) => row.id)).toContain(wait.id)
+    expect((await getFlow(id))!.state).toEqual(run.state)
+    await closeOpenWaits(db, { waitId: wait.id }, 'cleared')
+    await ensureFlowDispatch(id)
+    expect((await deliveries(id))[0]!.targets).toMatchObject([{ agentId: run.attemptAgents['2'], attemptId: 2 }])
+    expect((await getFlow(id))!.state).toEqual(run.state)
+  })
+}
+
+for (const parked of [false, true]) {
+  test(`CI observer retains ${parked ? 'parked admission' : 'pause'} without waking a reviewer`, async () => {
+    const { pauseWorkStream, resumeWorkStream } = await import('../../work-streams/pause')
+    const number = parked ? 3220 : 3221
+    const { id, run } = await beginCIReview(number)
+    if (parked) await db.update(workStreams).set({ status: 'queued' }).where(eq(workStreams.id, id))
+    else await pauseWorkStream(id, { reason: 'Explicit pause' })
+    await publish(fact(number, { output: 'pull_request.ci_completed' }))
+    expect((await deliveries(id))[0]!.targets).toEqual([])
+    expect((await getFlow(id))!.state.attempts).toEqual(run.state.attempts)
+    if (parked) await db.update(workStreams).set({ status: 'active' }).where(eq(workStreams.id, id))
+    else await resumeWorkStream(id)
+    await ensureFlowDispatch(id)
+    expect((await deliveries(id))[0]!.targets).toMatchObject([{ agentId: run.attemptAgents['2'], attemptId: 2 }])
+  })
+}
+
+for (const status of ['done', 'canceled'] as const) {
+  test(`CI observations cannot wake ${status} review consumers`, async () => {
+    const { id } = await beginCIReview(status === 'done' ? 3222 : 3223)
+    await publish(fact(status === 'done' ? 3222 : 3223, { output: 'pull_request.ci_completed' }))
+    const [before] = await deliveries(id)
+    const target = before!.targets[0]!
+    const [message] = await db.select().from(inbox).where(eq(inbox.id, target.inboxId))
+    await db.update(workStreams).set({ status }).where(eq(workStreams.id, id))
+    expect(await isCurrentFlowMessage(message!)).toBe(false)
+    await reconcileOutputDeliveries(id)
+    expect((await deliveries(id))[0]).toMatchObject({ status: 'superseded', reason: 'Work stream ended' })
+  })
+}
+
+test('CI observation authorizes only the current reviewer; fixes still use the declared return to implementation', async () => {
+  const { id, run } = await beginCIReview(3224)
+  await publish(fact(3224, { output: 'pull_request.ci_completed' }))
+  const target = (await deliveries(id))[0]!.targets[0]!
+  const [message] = await db.select().from(inbox).where(eq(inbox.id, target.inboxId))
+  await expect(
+    advanceFlow(
+      id,
+      {
+        action: 'complete',
+        expectedVersion: run.version,
+        attemptId: 1,
+        outcome: 'completed',
+        evidence: 'Cannot edit a completed attempt',
+      },
+      randomUUID(),
+      { type: 'agent', agentId: target.agentId, squadId }
+    )
+  ).rejects.toThrow()
+  await advanceFlow(
+    id,
+    {
+      action: 'complete',
+      expectedVersion: run.version,
+      attemptId: 2,
+      outcome: 'changes-requested',
+      evidence: 'Current-head CI failure requires implementation changes',
+    },
+    randomUUID(),
+    { type: 'agent', agentId: target.agentId, squadId }
+  )
+  const returned = (await getFlow(id))!
+  expect(returned.state.attempts[2]).toMatchObject({ stepId: 'implement', status: 'running' })
+  expect(await isCurrentFlowMessage(message!)).toBe(false)
+  // PR rework feedback is not rerouted as a CI observation.
+  await publish(fact(3224, { output: 'pull_request.updated' }))
+  const updated = (await deliveries(id)).find((row) => row.subscription.source.output === 'pull_request.updated')!
+  expect(updated.targets).toMatchObject([{ agentId: returned.attemptAgents['3'], attemptId: 3 }])
+})
+
+test('accepted CI survives a review transition and crash recovery without replaying the observation', async () => {
+  const { chatSendReceipts } = await import('../../../db')
+  const id = await create(3225, { reviewed: true, codeHost: true, codeHostTarget: 'implement' })
+  const event = fact(3225, { output: 'pull_request.ci_completed' })
+  const implementation = (await getFlow(id))!
+  const agent = await Agent.mustFind(implementation.attemptAgents['1']!)
+  send.mockImplementation(function (this: Agent, ...args: Parameters<Agent['sendMessage']>) {
+    return realSend.apply(this, args)
+  })
+  try {
+    await publish(event)
+  } finally {
+    send.mockResolvedValue({ success: true, queued: true, status: 'queued' })
+    await (await agent.getActiveExecution())?.stop()
+  }
+  const before = (await deliveries(id))[0]!
+  expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, agent.id))).toHaveLength(1)
+  // Acceptance committed, settlement did not. The new reviewer must not get a second copy.
+  await db.update(inbox).set({ deliveredAt: null }).where(eq(inbox.id, before.targets[0]!.inboxId))
+  await advanceFlow(
+    id,
+    {
+      action: 'complete',
+      expectedVersion: implementation.version,
+      attemptId: 1,
+      outcome: 'completed',
+      evidence: 'CI checked; ready for review',
+    },
+    randomUUID(),
+    { type: 'legacy' }
+  )
+  const calls = send.mock.calls.length
+  await reconcileOutputDeliveries(id)
+  await publish(event)
+  expect(send.mock.calls.length).toBe(calls)
+  expect(await deliveries(id)).toMatchObject([{ id: before.id, status: 'delivered', targets: before.targets }])
+})
+
+for (const conclusion of ['success', 'failure']) {
+  test(`CI ${conclusion} informs running implementation when its configured review consumer has not started`, async () => {
+    const number = conclusion === 'success' ? 3230 : 3231
+    const id = await create(number, { reviewed: true, codeHost: true, codeHostTarget: 'review' })
+    const run = (await getFlow(id))!
+    await publish(
+      fact(number, {
+        output: 'pull_request.ci_completed',
+        data: { repository: `${prefix}/repo`, pullRequest: { number }, conclusion },
+      })
+    )
+    expect((await deliveries(id))[0]!.targets).toMatchObject([{ agentId: run.attemptAgents['1'], attemptId: 1 }])
+    expect((await getFlow(id))!.state).toEqual(run.state)
+    expect(Object.keys((await getFlow(id))!.attemptAgents)).toHaveLength(1)
+  })
+}
+
+function workflowCI(number: number, workflowId: number, runNumber: number, conclusion: string, head: string) {
+  return githubOutputAdapter.normalize({
+    type: 'workflow_run',
+    payload: {
+      action: 'completed',
+      repository: { full_name: `${prefix}/repo` },
+      workflow_run: {
+        id: workflowId * 100 + runNumber,
+        workflow_id: workflowId,
+        run_number: runNumber,
+        run_attempt: 1,
+        name: `Workflow ${workflowId}`,
+        conclusion,
+        head_sha: head,
+        updated_at: new Date().toISOString(),
+        pull_requests: [{ number }],
+      },
+    },
+  })[0]!
+}
+
+test('review CI preserves exact workflow/head evidence without inferring all checks passed', async () => {
+  const { id, run } = await beginCIReview(3232)
+  const head = 'b'.repeat(40)
+  const success = await publish(workflowCI(3232, 1, 11, 'success', head))
+  const failure = await publish(workflowCI(3232, 2, 1, 'failure', head))
+  const rows = await deliveries(id)
+  for (const eventId of [success, failure]) {
+    const row = rows.find((row) => row.eventId === eventId)!
+    expect(row.targets).toMatchObject([{ agentId: run.attemptAgents['2'], attemptId: 2 }])
+    const [message] = await db.select().from(inbox).where(eq(inbox.id, row.targets[0]!.inboxId))
+    expect(message!.content).toContain(`Head: ${head}`)
+    expect(message!.content).toContain(eventId === success ? 'Workflow 1: success' : 'Workflow 2: failure')
+  }
+  expect((await getFlow(id))!.state).toEqual(run.state)
+})
+
+test('review CI suppresses an out-of-order older head while a question blocks the observer', async () => {
+  const { openWait, listOpenWaits } = await import('../../work-streams/waits')
+  const { id, run } = await beginCIReview(3233)
+  const { wait } = await openWait(db, {
+    workStreamId: id,
+    type: 'question',
+    flowAttemptId: 2,
+    message: 'Wait for context',
+  })
+  const current = await publish(workflowCI(3233, 1, 11, 'success', 'b'.repeat(40)))
+  const old = await publish(workflowCI(3233, 1, 10, 'failure', 'a'.repeat(40)))
+  const rows = await deliveries(id)
+  expect(rows.find((row) => row.eventId === old)!.status).toBe('superseded')
+  expect(rows.find((row) => row.eventId === current)).toMatchObject({ status: 'pending', targets: [] })
+  expect((await listOpenWaits(db, id)).map((row) => row.id)).toContain(wait.id)
+  expect((await getFlow(id))!.state).toEqual(run.state)
+})
+
+test('a new reviewer wait fences already queued observational CI before acceptance', async () => {
+  const { openWait, closeOpenWaits } = await import('../../work-streams/waits')
+  const { id } = await beginCIReview(3234)
+  await publish(fact(3234, { output: 'pull_request.ci_completed' }))
+  const target = (await deliveries(id))[0]!.targets[0]!
+  const [message] = await db.select().from(inbox).where(eq(inbox.id, target.inboxId))
+  expect(await isCurrentFlowMessage(message!)).toBe(true)
+  const { wait } = await openWait(db, {
+    workStreamId: id,
+    type: 'manual',
+    flowAttemptId: 2,
+    message: 'Block acceptance',
+  })
+  expect(await isCurrentFlowMessage(message!)).toBe(false)
+  await expect(db.transaction((tx) => lockFlowInboxDelivery(tx, target.agentId, [target.inboxId]))).rejects.toThrow(
+    'superseded'
+  )
+  await closeOpenWaits(db, { waitId: wait.id }, 'cleared')
+  expect(await isCurrentFlowMessage(message!)).toBe(true)
 })
