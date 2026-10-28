@@ -4,7 +4,7 @@
 
 Open **Settings → Integrations** to search the app directory. Each card has a global enabled/disabled switch. Expand **Settings** on an enabled card to manage its accounts, app configuration, and webhook delivery. Enabling a card opens its settings; disabling it hides them.
 
-The global switch applies across all squads. Disabling an integration stops new credential access, polling, webhook handling, and workflow output delivery, and reconciles its tools and credentials out of squad sandboxes. Existing account credentials, each account's enabled state, and squad assignments are preserved. Re-enabling restores those selections, subject to normal credential validation. Requests already sent to a provider may finish; disabling does not revoke the external authorization. Use Disconnect for that separate lifecycle action.
+The global switch applies across all squads. Disabling an integration stops new credential access, polling, webhook handling, and workflow output delivery, and reconciles its projected tools and wrappers out of squad sandboxes. Existing account credentials, each account's enabled state, and squad assignments are preserved. Re-enabling restores those selections, subject to normal credential validation. Requests already sent to a provider may finish; disabling does not revoke the external authorization. Use Disconnect for that separate lifecycle action.
 
 Integrations start disabled until explicitly enabled. Saved enable/disable choices are preserved on subsequent upgrades and restarts. Changing a switch requires the provider's global integration write permission. Per-account switches and squad assignment choices still apply beneath the global switch.
 
@@ -137,3 +137,17 @@ the feature selections and credentials.
 The global **Maximum active agents** setting now lives in **Settings → System**,
 alongside maintenance and restart controls. **Logs** contains server logs. Previous
 Agent Execution settings links continue to resolve to System.
+
+## Agent credential usage
+
+Assigned, healthy integrations authenticate their globally provisioned CLIs through
+per-command PATH wrappers, including nested child processes. If unauthenticated,
+ask a person to connect, validate, enable or assign the integration. Use
+`ficus integration exec <provider> -- npm run deploy` for project-local scripts
+(or bun/pnpm), and `--connection <attached-account-id>` for alternate accounts.
+Outside squad runtime context add `--squad <squad-id>` before `--`. Never read,
+print, log, commit or persist credentials. Human terminals use their own provider
+login, not integration credentials. Custom app secrets use squad Environment
+Variables (visible to agents and terminals) or human-directed workspace files.
+Channel credentials stay server-side; configure Discord, Slack and Telegram only
+in their Settings → Integrations cards. Core owns Telegram webhook registration.

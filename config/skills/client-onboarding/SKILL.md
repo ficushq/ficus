@@ -25,7 +25,6 @@ Before starting, confirm with the human:
 Quick health check:
 
 ```bash
-ficus system restart  # Ensure clean state
 # Verify API is healthy (check from the system manager's perspective)
 ficus squad list      # Should return empty or existing squads
 ```
@@ -36,21 +35,25 @@ ficus squad list      # Should return empty or existing squads
 
 Configure the essential secrets first, since everything else depends on them.
 
-**Secret handling rules:**
+**Credential handling rules:**
 
-- For **sensitive secrets** (API keys, tokens, passwords): direct the human to
-  **the matching Settings → Integrations card or AI Providers form**. Never ask them to paste secrets in chat. If
-  they volunteer a value, you can set it for them via CLI.
-- For **auto-generated secrets** (webhook secrets): generate and set via CLI
-  (`ficus secret set KEY "$(openssl rand -hex 32)"`). Don't read the value back —
-  tell the human they can view/copy it in the Settings UI.
+- Direct the human to the matching **Settings → Integrations** card or **AI
+  Providers** form. Never ask for credentials in chat, even if volunteered.
+- Generate webhook signing secrets only through the owning webhook panel; the
+  human copies the new value to the provider before saving. Saved values stay
+  hidden and rotation uses replacement, not read-back.
+- Never read, print, log or commit tokens. Assigned provider CLIs use per-command
+  wrappers. For project-local scripts use `ficus integration exec <provider> -- npm run deploy`
+  (bun/pnpm equivalent); outside squad context add `--squad <squad-id>`.
+- Custom app secrets use squad **Environment Variables** (visible to agents and
+  terminals) or human-directed squad/agent workspace files, not integration tokens.
 
 **Minimum required:**
 
-1. `FICUS_PASSWORD` — authentication for the web UI and API
+1. Bootstrap and personal authentication — server setup and Account settings
 2. AI provider credentials (at least one) — for agent execution
 3. GitHub account connection in Settings → Integrations — assign it to the squad for repository access
-4. `OPENAI_API_KEY` — for memory embeddings and voice (recommended)
+4. OpenAI API services connection — for memory embeddings and voice (recommended)
 
 **Ask the human:**
 
@@ -143,7 +146,7 @@ Steps:
 **Skill:** `setup-telegram`
 
 1. Walk the human through creating the bot via @BotFather
-2. Configure secrets and register the webhook
+2. Configure the Telegram integration; Core registers the webhook
 3. Create the channel instance and link to squads
 4. Verify by messaging the bot
 
@@ -204,7 +207,7 @@ ficus channel list                      # Channel instances exist
 | `SLACK_BOT_TOKEN`                   | If Slack    | Slack bot authentication                                                         |
 | `TELEGRAM_BOT_TOKEN`                | If Telegram | Telegram bot authentication                                                      |
 | `TELEGRAM_WEBHOOK_SECRET`           | If Telegram | Telegram webhook verification                                                    |
-| `TELEGRAM_BOT_ID`                   | If Telegram | Telegram bot username                                                            |
+| `TELEGRAM_BOT_ID`                   | If Telegram | Discovered numeric Bot ID                                                            |
 | `OPENAI_API_KEY`                    | Recommended | Embeddings, voice, memory                                                        |
 | `GOOGLE_APPLICATION_CREDENTIALS`    | Optional    | Text-to-speech                                                                   |
 | `APP_URL`                           | Auto        | Set by infrastructure (K8s ConfigMap)                                            |

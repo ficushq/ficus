@@ -12,10 +12,9 @@ This skill is for the System Manager helping a human configure their instance. C
 ```bash
 ficus provider-auth list
 ficus integration list --json
-ficus secret list
 ```
 
-Do not ask the human to paste credentials into chat. Direct them to the owning settings page. Do not use `ficus secret set` for integration-owned credentials; their legacy secret endpoints are retired. Saved integration secrets cannot be revealed: enter a replacement to rotate them. Webhook panels can generate a new signing secret for the human to copy into the provider before saving it.
+Do not ask the human to paste credentials into chat. Direct them to the owning settings page. Saved integration secrets cannot be revealed: enter a replacement to rotate them. Webhook panels can generate a new signing secret for the human to copy into the provider before saving it.
 
 ## Agent Models
 
@@ -45,15 +44,31 @@ Administrators can alternatively configure Application Default Credentials on th
 
 There is no Secrets & Keys page. Git author overrides are under Settings → Git; the self-hosted exe.dev account key is under Machines. Apple Push and Web Push credentials live in Integrations. The bootstrap admin password is deployment configuration; personal authentication is managed under Account. Hosted deployments hide platform infrastructure credentials, including the exe.dev key. Do not ask hosted users to configure or reveal that key.
 
-The encryption key belongs in the server environment, not in the secret store. Changing bootstrap/database settings may require a controlled restart. Do not restart for Google speech or OpenAI API-service credential rotation.
+The encryption key belongs in the server environment, not in squad Environment Variables or workspace files. Changing bootstrap/database settings may require a controlled restart. Do not restart for Google speech or OpenAI API-service credential rotation.
 
 ## Troubleshooting
 
 | Problem                                    | Check                                                                                                       |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| Secret store unavailable                   | Server `FICUS_ENCRYPTION_KEY` configuration                                                                 |
+| Credential encryption unavailable                   | Server `FICUS_ENCRYPTION_KEY` configuration                                                                 |
 | Agent-model authentication                 | AI Providers account, provider enable state, and `ficus provider-auth get <provider>`                       |
 | Unexpected OpenAI fallback                 | AI Providers and legacy server environment credentials; API-services setup alone must not enroll a provider |
 | Voice/transcription/embeddings unavailable | OpenAI API services switch and key; Memory’s embeddings switch                                              |
 | Message read-aloud unavailable             | Google Cloud switch, service-account JSON or server ADC, and Text-to-Speech API access                      |
 | GitHub commands fail                       | Global/squad integration enable state, selected account, and App repository access                          |
+
+## Using assigned integrations and custom application secrets
+
+Provider CLIs authenticate through per-command PATH wrappers when a healthy account
+is assigned to the squad. If unauthenticated, ask a person to connect, validate,
+enable or assign the integration. For project-local scripts use
+`ficus integration exec <provider> -- npm run deploy` (or `-- bun run deploy` /
+`-- pnpm run deploy`); use `--connection <connection-id>` for another attached
+account. Outside squad runtime context add `--squad <squad-id>` before `--`.
+Never read, print, log or commit tokens, or copy integration credentials into
+environment files. Human terminals use their own provider login.
+
+Custom application secrets belong in squad **Workspace → Environment Variables**
+(visible to agents and terminals) or human-directed files in the squad or agent
+workspace. Do not register workspace-file secrets with any detector or promise
+that they will be detected. Do not create a separate per-agent credential service.

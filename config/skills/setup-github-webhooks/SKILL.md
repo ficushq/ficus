@@ -29,7 +29,7 @@ optional and useful for self-hosting or a custom GitHub App.
 1. Ask the human to open **Settings → Integrations → GitHub → Webhook delivery**.
 2. They can generate a secret there, copy it into their GitHub App's webhook
    settings (or a repository webhook), then save it in Ficus. Saved secrets are
-   never revealed. Do not use `ficus secret` or ask them to paste secrets in chat.
+   never revealed. Never ask them to paste secrets in chat; use only this owning panel.
 3. Copy the webhook URL from the integration panel. It includes the instance's
    public base path. Do not infer an `api-` hostname from `APP_URL`.
 4. Use JSON delivery and the events below. No Ficus restart is required.

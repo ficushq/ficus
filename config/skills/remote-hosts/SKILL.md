@@ -34,7 +34,7 @@ squad (`FICUS_SQUAD_ID`) access, and prints:
 1. The **public key** (one line, ready to paste).
 2. Install instructions for the human who owns the box.
 
-The private key never leaves ficus's secret store and is never printed,
+The private key never leaves Ficus-managed encrypted storage and is never printed,
 returned by the API, or shown in the web UI — only the public key is ever
 surfaced. That means installation **requires a human**: hand the printed
 block to the box's owner (in chat, a ticket, however you'd reach them) and

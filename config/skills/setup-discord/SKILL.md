@@ -20,9 +20,6 @@ need this — squad linking is configured in the channel instance (Step 7).
 **Before starting, check what's already configured:**
 
 ```bash
-# Check if Discord secrets exist
-ficus secret list | grep DISCORD
-
 # Check if channel instances exist
 ficus channel list
 
@@ -33,22 +30,23 @@ ficus webhook status discord
 If Discord is already set up, you only need to update the channel instance
 to link additional squads.
 
-## How Secrets Are Handled
+## Credential handling
 
-- **User-provided secrets** (Application ID, Public Key, Bot Token, Guild ID):
-  Direct the human to enter them in **Settings → Integrations → Discord**. Do not ask
-  them to paste secrets in chat. If they offer to paste a value and want you
-  to set it, you can use `ficus secret set`.
+Have the human enter credentials only in **Settings → Integrations → Discord**.
+Never ask for tokens in chat. Never read, print, log or commit credentials, even if
+volunteered. Saved credentials remain hidden; replace them in the owning card to
+rotate. Enable and validate the connection there. No channel token belongs in a
+sandbox or integration exec command; channel plugins have no command execution.
+Use the webhook URL from that panel, including any public base path; never infer
+an API hostname from `APP_URL`. Saved changes reconcile without a manual restart.
 
 ## Prerequisites
 
-- The **API URL** from the Platform URLs section in your system prompt
+- The webhook URL shown in the owning integration card
 - The human must perform steps in the Discord Developer Portal
 - At least one squad must exist to link the channel to
 
-> **Note:** Your system prompt includes a "Platform URLs" section with the Web UI,
-> API, and webhook endpoint URLs. Use the API URL from there in the steps below.
-> It is also available as the `$APP_URL` env var (web UI URL) in sandbox shells.
+Use the exact webhook URL from the integration card, not a derived hostname.
 
 ## Step 1: Create Discord Application
 
@@ -68,7 +66,7 @@ to link additional squads.
 3. Under **Privileged Gateway Intents**, enable:
    - **Message Content Intent** — required for reading thread replies
 
-## Step 3: Configure Secrets
+## Step 3: Configure the Integration
 
 Direct the human to enter the following in **Settings → Integrations → Discord**:
 
@@ -77,22 +75,16 @@ Direct the human to enter the following in **Settings → Integrations → Disco
 - `DISCORD_BOT_TOKEN` — the Bot Token from Step 2
 - `DISCORD_GUILD_ID` (optional) — for faster command updates during development
 
-If the human pastes a value in chat and wants you to set it, use
-`ficus secret set <key> "<value>"`.
-
-Restart the API to pick up the new secrets:
-
-```bash
-ficus system restart
-```
+Have the human save, validate and enable the connection in the Discord card.
+No manual restart is required.
 
 ## Step 4: Configure Interactions Endpoint
 
 **Walk the human through:**
 
 1. In the Discord Developer Portal, go to **General Information**
-2. Set **Interactions Endpoint URL** to the webhook endpoint from your Platform
-   URLs, e.g.: `<API_URL>/api/webhooks/channels/discord`
+2. Set **Interactions Endpoint URL** to the exact webhook URL shown in
+   **Settings → Integrations → Discord**
 3. Discord will verify the endpoint using the public key — it should succeed
    if the secrets are configured correctly and the API is running
 
@@ -110,7 +102,10 @@ ficus system restart
 4. Copy the generated URL and open it in a browser
 5. Select the target server and authorize
 
-## Step 6: Register Slash Commands
+## Step 6: Verify Slash Commands
+
+Core registers slash commands when the usable connection revision changes.
+To explicitly retry registration if needed:
 
 ```bash
 ficus discord register
