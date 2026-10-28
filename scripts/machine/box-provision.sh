@@ -1372,7 +1372,9 @@ restore_stream() {
   # non-zero, and `set -e` propagates that to the caller (which aborts the
   # migration with the SOURCE box still fully intact). Nothing below this line
   # runs on a failed extraction.
-  "${SUDO[@]}" tar -x "$(tar_codec_flag)" --exclude='*/.ficus/agent-secrets.env' --exclude='workspace/.ficus/.env' --no-same-owner --no-overwrite-dir -f - -C "${staging}"
+  # migrateBox sanitizes managed plaintext before its immutable source scan.
+  # Do not filter here: staged/final manifests must match that source exactly.
+  "${SUDO[@]}" tar -x "$(tar_codec_flag)" --no-same-owner --no-overwrite-dir -f - -C "${staging}"
 
   # Unquoted on purpose: STATE_DIRS is a space-separated list, and arg
   # validation has already proved it non-empty and made every entry a plain path

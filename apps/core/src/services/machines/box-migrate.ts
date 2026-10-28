@@ -39,6 +39,7 @@ import { loadMigrationManifest, persistMigrationManifest } from './migration-evi
 import { compareMigrationManifests } from './migration-manifest'
 import type { MigrationManifestV1 } from './migration-manifest'
 import { scanMigrationManifest as scanMigrationManifestReal } from './migration-scanner'
+import { prepareMigrationSource as prepareMigrationSourceReal } from './migration-exposure-cleanup'
 import { defaultSshRunner } from './ssh'
 import { sandboxActivity } from './sandbox-activity'
 export { sandboxActivity, sandboxHasActiveExecution } from './sandbox-activity'
@@ -300,6 +301,8 @@ const AGENT_ARCHIVE_EXEC_TIMEOUT_MS = Number(process.env.FICUS_BOX_MIGRATE_AGENT
 
 /** All external effects, injectable for tests; each defaults to production. */
 export interface MigrateDeps extends BoxManagerDeps {
+  /** Managed retirement before the immutable source snapshot, after writers stop. */
+  prepareMigrationSource?: typeof prepareMigrationSourceReal
   isVmRuntime?: () => boolean
   fenceBoxForMigration?: typeof fenceBoxForMigrationReal
   clearBoxMigrating?: typeof clearBoxMigratingReal
@@ -692,8 +695,9 @@ export async function migrateBox(
     // (~/.private for agent/system-manager, ~/workspace + ~/.private for a
     // squad box) — and agree ONE codec both machines can write AND read, so
     // the transfer can never produce an archive the destination cannot decode.
-    // This step only READS: a failure leaves the old box fully intact and
-    // nothing provisioned.
+    // First retire only managed plaintext while source writers are stopped.
+    // Snapshot AFTER sanitation: restore and verification must stay exact.
+    // A failure leaves custom source data intact and nothing provisioned.
     //
     // The measurement is the baseline the post-restore destination check
     // compares against (step 8.5). Taking it from the SOURCE — rather than
@@ -712,6 +716,7 @@ export async function migrateBox(
     }
     try {
       codec = await detectCodec(runner, [oldMachine, target])
+      await (deps.prepareMigrationSource ?? prepareMigrationSourceReal)(runner, oldMachine, sandboxId)
       sourceFacts = await measureStateDirs(runner, oldMachine, sandboxId, home, stateDirs)
       sourceManifest = await scanManifest(runner, oldMachine, home, unixUser, manifestIdentity)
       persistMigrationManifest(sourceManifest)

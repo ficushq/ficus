@@ -224,6 +224,7 @@ function makeHarness(opts: HarnessOpts = {}) {
   let sourceMeasures = 0
   const deps: MigrateDeps = {
     isVmRuntime: () => true,
+    prepareMigrationSource: async () => {},
     runner,
     getMachineBox: async () => {
       boxReads++
@@ -2374,4 +2375,33 @@ describe('sandboxHasActiveExecution (DB)', () => {
     expect(await sandboxHasActiveExecution('agent_not-a-uuid')).toBe(true)
     expect(await sandboxHasActiveExecution('mystery_box')).toBe(true)
   })
+})
+
+it('sanitizes only after quiescence and before source snapshot/provision; failure preserves source and aborts', async () => {
+  const h = makeHarness()
+  const scan = h.deps.scanMigrationManifest!
+  let prepared = false
+  h.deps.prepareMigrationSource = async () => {
+    expect(h.runnerCommands.some((command) => command.includes('terminate-user'))).toBe(true)
+    expect(h.events).not.toContain('measure-source')
+    expect(h.events).not.toContain('install')
+    prepared = true
+  }
+  h.deps.scanMigrationManifest = async (...args) => {
+    expect(prepared).toBe(true)
+    return scan(...args)
+  }
+  expect((await migrateBox(SANDBOX_ID, TARGET_MACHINE_ID, h.deps)).moved).toBe(true)
+  const failing = makeHarness()
+  failing.deps.prepareMigrationSource = async () => {
+    throw new Error('synthetic settings conflict')
+  }
+  expect(await migrateBox(SANDBOX_ID, TARGET_MACHINE_ID, failing.deps)).toMatchObject({
+    moved: false,
+    reason: 'archive-failed',
+  })
+  expect(failing.events).not.toContain('install')
+  expect(failing.events).not.toContain('stream')
+  expect(failing.events).not.toContain('teardown-old')
+  expect(failing.runnerCommands.some((command) => command.includes(' start '))).toBe(true)
 })

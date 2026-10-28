@@ -39,7 +39,11 @@ test('worker owns immediate/periodic cleanup and restore cannot resurrect retire
   const provisioning = read('scripts/machine/box-provision.sh')
   const extractions = provisioning.split('\n').filter((l) => /tar (?:-x|xzf)/.test(l) && !l.trimStart().startsWith('#'))
   expect(extractions.length).toBe(2)
-  for (const line of extractions) expect(line).toContain("--exclude='*/.ficus/agent-secrets.env'")
+  expect(extractions.find((line) => line.includes('tar xzf'))).toContain("--exclude='*/.ficus/agent-secrets.env'")
+  expect(extractions.find((line) => line.includes('tar -x'))).not.toContain('--exclude')
+  expect(read('apps/core/src/services/machines/box-migrate.ts')).toContain(
+    'prepareMigrationSourceReal)(runner, oldMachine, sandboxId)'
+  )
 })
 
 test('restoring an old VM archive excludes retired managed files but preserves env.user', async () => {
