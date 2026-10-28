@@ -410,6 +410,9 @@ sudo `env_reset`; `FICUS_BOX_LOCK_WAIT_SECONDS` is a manual fallback.
 For manual non-root runs, re-entry passes the effective wait and the test-only
 `FICUS_HOST_ROOT` through `sudo env` argv (not inherited environment); explicit
 `--lock-wait-seconds` still wins. No other environment is forwarded this way.
+Manual non-root re-entry requires sudo permission for that `env ... bash`
+command; a sudoers rule permitting only `bash` will refuse it. In that case,
+run manually as root using existing authorized access rather than changing policy.
 **Core always passes the argument**, paired with its explicit, unchanged
 SSH/stream budget: one quarter of that budget rounded down to seconds, capped
 at 180 seconds. This leaves connection, execution and cleanup headroom:
