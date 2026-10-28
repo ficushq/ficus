@@ -71,8 +71,8 @@ export function SandboxProcesses({ target }: { target: SandboxProcessesTarget })
 
   return (
     <section aria-labelledby="sandbox-processes-heading" className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0 basis-96 grow">
           <h3 id="sandbox-processes-heading" className="text-sm font-medium text-primary">
             Processes
           </h3>
@@ -82,7 +82,7 @@ export function SandboxProcesses({ target }: { target: SandboxProcessesTarget })
         </div>
         <button
           type="button"
-          className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm rounded-md disabled:opacity-50"
+          className="ficus-button ficus-button-secondary shrink-0 whitespace-nowrap px-3 py-1.5 text-sm rounded-md disabled:opacity-50"
           disabled={isFetching}
           onClick={() => (open ? void refetch() : setOpen(true))}
         >
