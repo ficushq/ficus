@@ -10,7 +10,7 @@ import { getHomeDir } from '../../lib/utils/home'
 import { createLogger } from '../../lib/infra/logger'
 import { createPeriodicRunner, type PeriodicRunner } from '../../lib/infra/PeriodicRunner'
 import { prepareWorkspaceDotDir, WorkspaceDotDirConflictError } from '../workspace/dot-dir'
-import { regenerateEnvFileForSquad } from '../squad/env'
+import { regenerateEnvFileForSquadStrict } from '../squad/env'
 import { isVmRuntime } from './runtime'
 import { isCanonicalSquadId } from '../squad/workspace'
 
@@ -149,7 +149,7 @@ async function cleanTarget(
 ): Promise<boolean> {
   switch (target.kind) {
     case 'squad':
-      await regenerateEnvFileForSquad(target.sourceId)
+      await regenerateEnvFileForSquadStrict(target.sourceId)
       return true
     case 'private':
       await cleanLegacyPrivateDirectory(join(getHomeDir(), 'private', target.sourceId))
@@ -170,7 +170,7 @@ async function cleanTarget(
     case 'vm': {
       const { cleanExposureFilesOnBox } = await import('./vm/file-sync')
       // Re-render for this attempt too; never push a stale host-side snapshot.
-      if (target.squadId) await regenerateEnvFileForSquad(target.squadId)
+      if (target.squadId) await regenerateEnvFileForSquadStrict(target.squadId)
       return cleanExposureFilesOnBox(target.sourceId, target.squadId, client ? { getClient: async () => client } : {})
     }
   }

@@ -1,5 +1,5 @@
 import { firstPartyIntegrationPlugin } from '../first-party-plugins'
-import { regenerateEnvFileForSquad } from '../../squad/env'
+import { regenerateEnvFileForSquadStrict } from '../../squad/env'
 import { getSecretStore } from '../../secrets'
 import { fingerprintToolchain } from '../../sandbox/toolchain/config'
 import { readToolchainReconcileSnapshot } from '../../sandbox/toolchain/state'
@@ -84,7 +84,7 @@ export class IntegrationProjectionReconciler {
     credentialRevision: bigint | null
   }> {
     try {
-      await (this.#dependencies.regenerateEnv ?? regenerateEnvFileForSquad)(claim.squadId)
+      await (this.#dependencies.regenerateEnv ?? regenerateEnvFileForSquadStrict)(claim.squadId)
     } catch {
       throw new IntegrationProjectionFailure('protected_env_write_failed')
     }

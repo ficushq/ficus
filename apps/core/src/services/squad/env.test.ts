@@ -62,7 +62,7 @@ describe('squad-env', () => {
     })
 
     it('fails closed with a clear error when canonical settings is a file, and regeneration reports failure', async () => {
-      const { getEnvFile, regenerateEnvFileForSquad } = await getModule()
+      const { getEnvFile, regenerateEnvFileForSquadStrict } = await getModule()
       const { getSquadWorkspacePath } = await import('./workspace')
       const { WORKSPACE_DOT_DIR, WorkspaceDotDirConflictError } = await import('../workspace/dot-dir')
       const squadId = randomUUID()
@@ -71,8 +71,8 @@ describe('squad-env', () => {
       writeFileSync(join(root, WORKSPACE_DOT_DIR), 'preserved invalid settings')
 
       expect(() => getEnvFile(squadId)).toThrow(WorkspaceDotDirConflictError)
-      // A fleet-wide regeneration must not stop on this squad, and writes nothing into it.
-      await expect(regenerateEnvFileForSquad(squadId)).rejects.toBeInstanceOf(WorkspaceDotDirConflictError)
+      // Strict acknowledgements must fail, without writing into the conflicting path.
+      await expect(regenerateEnvFileForSquadStrict(squadId)).rejects.toBeInstanceOf(WorkspaceDotDirConflictError)
       expect(existsSync(join(root, WORKSPACE_DOT_DIR, '.env'))).toBe(false)
       expect(readFileSync(join(root, WORKSPACE_DOT_DIR), 'utf-8')).toBe('preserved invalid settings')
     })

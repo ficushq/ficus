@@ -22,9 +22,9 @@ export async function prepareMigrationSource(
     ? await (
         deps.generatedEnv ??
         (async (id) => {
-          const { regenerateEnvFileForSquad } = await import('../squad/env')
+          const { regenerateEnvFileForSquadStrict } = await import('../squad/env')
           const { getSquadWorkspacePath } = await import('../squad/workspace')
-          await regenerateEnvFileForSquad(id)
+          await regenerateEnvFileForSquadStrict(id)
           return readFileSync(join(getSquadWorkspacePath(id), '.ficus', '.env'))
         })
       )(squadId)

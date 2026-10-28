@@ -4,7 +4,14 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync, chmodSync, renameSy
 import { loadProtectedIntegrationBindings } from '../integrations/projection/protected-env'
 import { githubSigningPublicKeyForSquad } from '../integrations/github/commit-signing-store'
 import { getSquadWorkspacePath } from './workspace'
-import { ensureWorkspaceDotDir, prepareWorkspaceDotDir, workspaceDotPath } from '../workspace/dot-dir'
+import {
+  ensureWorkspaceDotDir,
+  prepareWorkspaceDotDir,
+  workspaceDotPath,
+  WorkspaceDotDirConflictError,
+} from '../workspace/dot-dir'
+import { createLogger } from '../../lib/infra/logger'
+const log = createLogger('squad-env')
 const USER_ENV_FILE = 'env.user'
 const GENERATED_ENV_FILE = '.env'
 // Recognize old platform output only; do not discard unrelated user-authored comments.
@@ -189,7 +196,7 @@ export async function setEnvFile(squadId: string, content: string): Promise<void
 }
 
 /** Regenerate from custom environment content only. Errors must reach rollout retry status. */
-export async function regenerateEnvFileForSquad(squadId: string): Promise<void> {
+export async function regenerateEnvFileForSquadStrict(squadId: string): Promise<void> {
   const content = getEnvFile(squadId) ?? ''
   // Preserve pre-env.user custom configuration before replacing the generated file.
   const userPath = getUserEnvPath(squadId)
@@ -198,6 +205,23 @@ export async function regenerateEnvFileForSquad(squadId: string): Promise<void> 
     writeFileSync(userPath, content, { mode: 0o600 })
   }
   await writeGeneratedEnvFile(squadId, content)
+}
+
+/**
+ * Normal startup/bulk/ensure paths must not turn one known settings conflict into
+ * a worker-wide failure. Still invalidate projections after this call so their
+ * strict reconciler can record failure/backoff. Other errors remain fatal.
+ * Cleanup/migration acknowledgements MUST use the strict entrypoint above.
+ */
+export async function regenerateEnvFileForSquad(squadId: string): Promise<void> {
+  try {
+    await regenerateEnvFileForSquadStrict(squadId)
+  } catch (error) {
+    if (!(error instanceof WorkspaceDotDirConflictError)) throw error
+    log.warn(
+      `Deferred environment regeneration for squad ${squadId}: ${error.message} Automatic cleanup/projection retries remain pending until this is repaired.`
+    )
+  }
 }
 
 // Compatibility export for existing callers; delivery lives in the executable wrapper asset.
