@@ -111,6 +111,7 @@ const MESSAGES: Record<string, string> = {
   moderation_selection_conflict:
     'Some selected events changed or were already decided by someone else. Review them again before deciding.',
   moderation_request_conflict: 'This decision conflicts with an earlier request. Review the selection again.',
+  moderation_parent_content_stale: 'The quoted parent text is permanently stale; this event can only be denied.',
   moderation_content_unavailable: 'The content of a selected event is unavailable, so it can only be denied.',
   moderation_author_unavailable: 'The author of a selected event is unknown, so it cannot be trusted.',
   revision_not_found: 'This event no longer exists in this squad.',

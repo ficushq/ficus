@@ -930,6 +930,8 @@ export const squads = pgTable('squads', {
   globalCollaborationEnabled: boolean('global_collaboration_enabled').notNull().default(false),
   order: integer('order').notNull().default(0),
   metadata: jsonb('metadata').notNull().default({}),
+  // Feature-owned one-time legacy env snapshot marker, never generic writable metadata.
+  envDetectionBootstrapped: boolean('env_detection_bootstrapped').notNull().default(false),
   // GitHub author filter: ON holds comments/reviews from untrusted authors for human review.
   // OFF routes GitHub events exactly as before the filter existed. New squads default ON;
   // squads that existed at rollout were migrated OFF. Human-only; never part of generic updates.
@@ -968,6 +970,30 @@ export const squads = pgTable('squads', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
   archivedAt: timestamp('archived_at'),
+})
+
+/** Encrypted retired connection bundles, inaccessible through the ordinary Secret Store APIs. */
+export const integrationCredentialRetirements = pgTable(
+  'integration_credential_retirements',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    credentialKey: text('credential_key').notNull(),
+    encryptedValue: text('encrypted_value').notNull(),
+    iv: text('iv').notNull(),
+    expiresAt: timestamp('expires_at').notNull(),
+  },
+  (table) => [index('integration_credential_retirements_expiry_idx').on(table.expiresAt)]
+)
+
+/** API-authoritative env-only detection state. Never stores integration credentials. */
+export const squadEnvDetections = pgTable('squad_env_detections', {
+  squadId: uuid('squad_id')
+    .primaryKey()
+    .references(() => squads.id, { onDelete: 'cascade' }),
+  contentHash: varchar('content_hash', { length: 64 }),
+  entries: jsonb('entries').$type<Array<{ key: string; value: string }>>().notNull().default([]),
+  reason: text('reason').$type<'oversized' | 'unreadable' | null>(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })
 
 export const sandboxToolchainProvisions = pgTable(
@@ -1578,6 +1604,8 @@ export const githubFeedbackSources = pgTable(
     authority: jsonb('authority')
       .$type<import('../services/integrations/outputs/types').IntegrationOutputAuthority>()
       .notNull(),
+    // Server-owned freshness-only raw observation; never author trust or canonical approval.
+    unfiltered: boolean('unfiltered').notNull().default(false),
     transportKey: text('transport_key'),
     observedAt: timestamp('observed_at', { withTimezone: true }).notNull().defaultNow(),
   },

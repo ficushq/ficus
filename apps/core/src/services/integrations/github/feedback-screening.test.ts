@@ -775,3 +775,24 @@ test('untrusted handling defaults to hold, is human-only, and is not a generic s
     await h.close()
   }
 })
+
+test('an obsolete pending revision cannot be queued or released by a late safe screen', async () => {
+  const h = await fixture()
+  try {
+    const late = fakeDecide(async () => {
+      await db
+        .update(githubFeedbackRevisions)
+        .set({ releaseState: 'obsolete', decisionVersion: 1 })
+        .where(eq(githubFeedbackRevisions.id, h.revisionId))
+      return SAFE
+    })
+    expect(await screenGitHubFeedback(h.revisionId, { decide: late.decide })).toMatchObject({
+      released: false,
+      outcome: 'skipped',
+    })
+    expect(await h.revision()).toMatchObject({ decision: 'pending', releaseState: 'obsolete' })
+    expect(await enqueueGitHubFeedbackScreening(await h.revision())).toBe(false)
+  } finally {
+    await h.close()
+  }
+})

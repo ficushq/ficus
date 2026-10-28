@@ -68,6 +68,8 @@ test('the GitHub plugin/parser retains repository issue polling and emits new as
   })
   let events = [item(1)]
   const request = spyOn(globalThis, 'fetch').mockImplementation((async (url: any) => {
+    if (String(url) === 'https://api.github.com/repos/acme/widgets')
+      return Response.json({ id: 10, full_name: 'acme/widgets' })
     expect(String(url)).toContain('/repos/acme/widgets/issues/events')
     return Response.json(events)
   }) as typeof fetch)
@@ -91,6 +93,7 @@ test('the GitHub plugin/parser retains repository issue polling and emits new as
     events = [item(2), item(1)]
     const next = await poll.poll(connection, baseline.nextCursor)
     expect(next.events).toHaveLength(1)
+    expect(next.events[0]!.payload).toMatchObject({ repository: { id: 10 } })
     expect(plugin.runtime.provider.outputs!.normalize(next.events[0]!)[0]).toMatchObject({
       output: 'issue.assigned',
       data: { repository: 'acme/widgets', assignee: 'testbot' },

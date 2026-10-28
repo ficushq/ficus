@@ -423,8 +423,8 @@ export async function setKnownHosts(squadId: string, knownHosts: string): Promis
 
 // Workspace Environment
 
-export async function getWorkspaceEnv(squadId: string): Promise<{ content: string }> {
-  return apiFetch<{ content: string }>(`/squads/workspace/${squadId}/env`)
+export async function getWorkspaceEnv(squadId: string): Promise<{ content: string; detectionNotice?: string }> {
+  return apiFetch<{ content: string; detectionNotice?: string }>(`/squads/workspace/${squadId}/env`)
 }
 
 export async function setWorkspaceEnv(squadId: string, content: string): Promise<void> {

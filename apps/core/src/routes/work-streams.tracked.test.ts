@@ -32,6 +32,7 @@ import { WorkStream } from '../entities/WorkStream'
 import { createTestGitHubConnection } from '../test-utils/github-connection'
 import * as repositorySetup from '../services/work-streams/repository-setup'
 import { INTEGRATION_DEFAULT_PREFIX } from '../services/integrations/scope-settings'
+import { githubOutputAdapter } from '../services/integrations/outputs/github'
 import { publishIntegrationOutput } from '../services/integrations/outputs/runtime'
 import type { IntegrationOutputAuthority } from '../services/integrations/outputs/types'
 import {
@@ -645,16 +646,29 @@ describe('work-stream tracked-resource routes', () => {
     expect(stream.metadata.tracked[0]).toMatchObject({ number: 4930, connectionId: connection.id })
 
     const managerBefore = await db.select().from(inbox).where(eq(inbox.recipientId, manager!.id))
-    const closed = await publishIntegrationOutput(
-      'github',
-      {
-        ...issueFact(4930),
-        output: 'issue.updated',
-        subject: `Issue ${repo}#4930 closed`,
-        data: { repository: repo, issue: { number: 4930 }, action: 'closed', state: 'closed' },
+    const [closedFact] = githubOutputAdapter.normalize({
+      type: 'issues',
+      githubObservation: { kind: 'webhook' },
+      payload: {
+        action: 'closed',
+        repository: { id: 10, full_name: repo },
+        issue: {
+          id: 49300,
+          number: 4930,
+          title: 'Tracked issue',
+          body: 'Please take a look.',
+          state: 'closed',
+          updated_at: new Date().toISOString(),
+          user: { id: 2, login: 'author', type: 'User' },
+        },
+        sender: { id: 2, login: 'author', type: 'User' },
       },
-      { kind: 'connection', connectionId: connection.id, squadId: testSquadId }
-    )
+    })
+    const closed = await publishIntegrationOutput('github', closedFact!, {
+      kind: 'connection',
+      connectionId: connection.id,
+      squadId: testSquadId,
+    })
     eventIds.push(closed)
 
     const hash = createHash('sha256')

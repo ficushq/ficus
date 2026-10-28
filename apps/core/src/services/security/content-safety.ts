@@ -360,7 +360,7 @@ export class ContentSafety implements ContentSafetyPort {
     // Interpolated Drizzle messages no longer carry the Error object/type.
     const queryStart = input.indexOf('Failed query: ')
     if (queryStart >= 0 && storedKeys) {
-      for (const entry of this.#entries) if (input.includes(entry.value)) storedKeys.add(entry.key)
+      for (const entry of this.#entries) if (!entry.outputOnly && input.includes(entry.value)) storedKeys.add(entry.key)
     }
     let value = queryStart < 0 ? input : `${input.slice(0, queryStart)}${DATABASE_QUERY_FAILED}`
     const placeholders: string[] = []

@@ -1,4 +1,4 @@
-import { SquadEnvSecretSource } from './squad-env-secret-source'
+import { getSquadEnvSecretSource } from './squad-env-secret-source'
 import { getSecretStore, type SecretValueConsumer } from '../secrets/store'
 import {
   ContentSafety,
@@ -9,6 +9,7 @@ import {
 } from './content-safety'
 
 export interface ContentSafetySecretSource {
+  refreshContentSafety?(): void
   bindContentSafetyConsumer(consumer: SecretValueConsumer): () => void
 }
 
@@ -25,7 +26,7 @@ export class ContentSafetyRegistry implements ContentSafetyPort {
   #outputEntries: readonly SecretEntry[] = []
 
   constructor(
-    store: ContentSafetySecretSource,
+    private readonly store: ContentSafetySecretSource,
     private readonly outputSource?: ContentSafetyOutputSource
   ) {
     const consumer: SecretValueConsumer = {
@@ -66,6 +67,7 @@ export class ContentSafetyRegistry implements ContentSafetyPort {
   }
 
   #refreshOutput(): void {
+    this.store.refreshContentSafety?.()
     const entries = this.outputSource?.entries()
     if (entries && entries !== this.#outputEntries) {
       this.#outputEntries = entries
@@ -89,7 +91,7 @@ export function getContentSafetyRegistry(): ContentSafetyRegistry {
   const source = getSecretStore()
   if (!processRegistry || processRegistrySource !== source) {
     processRegistry?.dispose()
-    processRegistry = new ContentSafetyRegistry(source, new SquadEnvSecretSource())
+    processRegistry = new ContentSafetyRegistry(source, getSquadEnvSecretSource())
     processRegistrySource = source
   }
   return processRegistry

@@ -63,6 +63,8 @@ export interface VerifiedIngressEvent {
   metadata?: Readonly<Record<string, unknown>>
   /** Internal durable identity for synthetic polling dispatch; never added to the native payload. */
   logicalEventKey?: string
+  /** Issue-poller-owned API snapshot clock, retained before lifecycle retiming; null is genuinely unknown. */
+  githubIssueSnapshotVersion?: string | null
   /** Set only by authenticated ingress composition, not native payload/observability metadata. */
   githubObservation?: { kind: 'webhook' | 'poll'; deliveryId?: string }
 }

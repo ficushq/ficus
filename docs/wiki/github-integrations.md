@@ -311,12 +311,14 @@ rather than metadata so generic squad updates cannot change it). Migrations
 `0208_github_author_filter` (added OFF, for squads that existed at rollout) and
 `0209_github_author_filter_default_on` (ON for new squads) set it. User documentation: `apps/docs/src/content/docs/connect/github.mdx`.
 
-- **OFF** keeps pre-feature routing: no capture, hold, queue or trust lookup.
-  Exact connection and repository authorization still apply. Notices are accepted
-  at delivery as they were before the filter (no stream-state or exact-text gate)
-  and pre-flow streams still skip bot comments. One difference remains: GitHub
-  notices are delivered one message at a time against an acceptance receipt in
-  every squad, instead of batched with the rest of the mailbox.
+- **OFF** keeps raw routing without author-trust checks, history reads, screening
+  or human holds. Freshness is independent of that switch: normalized native
+  snapshots are recorded locally before routing and rechecked at final acceptance.
+  Unbound undelivered legacy raw prose is withheld even with filtering OFF (see the
+  rollout fence below). Known-older raw text is dropped with its audit snapshot retained; newer raw facts
+  and their notification formatting stay unchanged. Exact connection authority
+  still applies, pre-flow streams still skip bot comments, and GitHub notices are
+  delivered one at a time against ordinary acceptance receipts, not batched.
 - **ON** gates otherwise-matching feedback (issue and PR comments, reviews,
   inline review comments, issue and PR text) before any agent effect: inbox
   delivery, wake, consultant creation, work creation and trigger runs. This
@@ -343,15 +345,19 @@ a polled comment changed since creation, any `edited` event) and the author is
 trusted, capture reads GitHub's edit history (GraphQL `userContentEdits`,
 `editor`, and title renames) with one bounded query through the squad's
 authorized connection, before any lock. The answer must match the captured
-object, repository, author and exact text:
+object, repository and author. For a signed webhook or Ficus poll read, the
+current text may differ: the complete **current** editor history conservatively
+covers the captured older text too. Other sources still require exact text.
+History verification establishes authorship, never freshness or permission to
+deliver an obsolete revision:
 
-| Edit history                                                                                         | Result                                                       |
-| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Never edited                                                                                         | `creation` by the author; delivered if the author is trusted |
-| Edited; the author and every editor (plus the signed sender of an `edited` webhook) trusted          | `verified_edit`; delivered automatically                     |
-| Any editor not trusted                                                                               | held (`untrusted_editor`)                                    |
-| Deleted or unidentifiable editor, history over 50 entries, different text or object, a refused query | held (`unknown_editor`)                                      |
-| GitHub unavailable or the pass's provider budget spent                                               | capture retried later, nothing written                       |
+| Edit history                                                                                                                                                           | Result                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Never edited, with matching captured/current text                                                                                                                      | `creation` by the author; delivered if the author is trusted |
+| Edited; the author and every editor (plus the signed sender of an `edited` webhook) trusted                                                                            | `verified_edit`; delivered automatically                     |
+| Any editor not trusted                                                                                                                                                 | held (`untrusted_editor`)                                    |
+| Contradictory different text with empty history, deleted/unidentifiable editor, history over 50 entries, different object, unauthenticated stale text, a refused query | held (`unknown_editor`)                                      |
+| GitHub unavailable or the pass's provider budget spent                                                                                                                 | capture retried later, nothing written                       |
 
 The editors are bound into the reviewed hash (`data.editors`), so a decision
 applies to exactly that text and that set of editors; a later edit is a new
@@ -361,7 +367,55 @@ Content from untrusted authors is held without any history read.
 
 A later observation of text already captured (same object, author, text and
 review state), such as a poll racing a webhook, replays that revision. It never
-creates a new held copy of feedback already delivered or held.
+creates a new held copy of feedback already delivered or held. A newer provider
+timestamp on identical text advances the object's freshness watermark without
+changing the immutable revision or upgrading its decision. Delayed intermediate
+text cannot outrank that watermark.
+
+Capturing a newer version of the same squad/repository/kind/native object closes
+older pending versions as `obsolete`, regardless of hold reason, including an
+untrusted author or unknown editor. Undelivered older releases are also fenced;
+uncompleted canonical flow deliveries become `superseded`. Provider timestamps
+order versions when both exist and differ; equal or missing timestamps use capture
+sequence. Existing ambiguity holds still apply to the new capture. Out-of-order
+captures behind a known newer version are immediately obsolete, even if that newer
+version was already delivered. Obsolete rows retain their snapshots and decisions
+for audit, leave Pending, and cannot be revived by moderation, screening, replay,
+or turning the author filter off. Capture and final acceptance share the authority
+lock; removed leases prevent stale release workers from undoing obsolescence.
+Previously accepted delivery receipts and `delivered` settlement remain intact,
+but are not freshness authority: known-older snapshots cannot materialize again,
+pass final acceptance (even with the author filter OFF), or authorize a later
+parent quotation. Unfinished canonical work is superseded even for those rows.
+
+OFF observations use the same object/revision ordering and identical-text watermark.
+New observations have `decision: historical`, `releaseState: retained`, and
+`reason: filter_disabled`: freshness bookkeeping, **not** approval, a delivered
+claim, a human hold or an entry in Pending/Releasing. Existing immutable decisions
+are preserved on replay. `github_feedback_sources.unfiltered` is server-owned
+provenance for the raw path (migration `0234_github_raw_feedback_freshness`, default
+false for existing sources), never a transported trust flag. Former filtered
+sources and projected status events cannot replay raw, and human denies remain
+final. Raw action parent snapshots are normalized independently of actor trust,
+including polls; old action facts without that native parent provenance fail
+closed. Issue polls retain the authenticated API snapshot `updated_at` separately
+from the payload clock restated for the lifecycle occurrence. The snapshot clock
+orders its embedded parent text; lifecycle timing and event deduplication stay
+unchanged. Sequence fallback applies only to equal or genuinely unknown version
+clocks. Partial raw bookkeeping remains eligible for unmatched recovery.
+A mode change never turns historical OFF bookkeeping into canonical approval.
+Both unfinished raw and canonical flow deliveries become `superseded` when their
+tracked version is older; accepted effects and source facts are not rewritten.
+Raw OFF capture never invokes the filtered current-text provider witness, including
+when provider clocks are equal or absent; a provider outage cannot prevent the
+local sequence observation and supersession.
+
+Unaccepted inbox list, page, search, count, single-message and attachment reads
+apply the same local freshness fence, not merely a native-binding shape check.
+Every raw own/parent observation must still be current; canonical revisions and
+their quoted parent text are checked too, even after ON/OFF transitions. These are
+pure SQL reads without provider or author-trust I/O or mutations to inbox/audit
+snapshots. Already accepted messages and receipts remain readable history.
 
 An agent that posts to GitHub with a squad connection posts as the person who
 connected that account. If that person is trusted (linked, or added manually),
@@ -398,19 +452,28 @@ both hold:
   check as comment authors;
 - the text is provably theirs. Issue and PR payloads name the creator but not
   who last edited the title or description, and `updated_at` moves on any
-  activity. As in managed memory reads, the latest captured revision of the
+  activity. For event delivery, the latest captured revision of the
   parent (`issue`/`pull_request` object, same squad and repository) with exactly
   this title and body decides: an automatic or human-allowed revision attributed
   to its creation by the same account proves it, a pending or denied one refuses
   it. A revision attributed by a verified edit history in which only that
-  author edited also proves it. Without such a revision, an unchanged payload
+  author edited also proves it. A matching snapshot cannot prove current text
+  if a newer parent version is known, even if the snapshot was delivered before.
+  Without such a revision, an unchanged payload
   (`created_at` equals `updated_at`) proves it, or an edit history read at
   capture showing only the author's own edits. Otherwise the factual message is
   captured.
 
-The variant is a different reviewed object: its hash covers the parent text and
-author, so a moderator's approval and the canonical event's admission bind to
-the version with the text. Its preview uses the comment caps (24,000 characters,
+The variant is a different reviewed object: its hash covers the parent text,
+author, native parent identity and provider clock, so a moderator's approval and
+the canonical event's admission bind to the version with the text. Final
+acceptance rechecks local parent freshness under the same authority lock as
+capture, for automatic, approved and filter-OFF delivery alike. An action queued
+before a newer parent capture cannot deliver the old quotation. Equal/missing
+clocks use captured revision sequence when the exact quoted text has a known
+current revision; otherwise conflicting text at an equal/unknown clock fails
+closed. The current revision's identical-text watermark also applies. Legacy
+quotations lacking native parent provenance fail closed. Its preview uses the comment caps (24,000 characters,
 `notificationTruncated`) and a variant over the 256 KiB review cap is not
 offered. A replay matches either candidate hash and never upgrades history.
 Final acceptance (`isTrustedGitHubFeedbackContent`) rechecks the parent author's
@@ -419,8 +482,35 @@ agent has received the action (no delivered notice or flow delivery, no trigger
 run), release settlement or renewal supersedes it: a new automatic revision
 carries exactly the factual message, takes over the original source
 associations, and the old one becomes `obsolete` (`parent_trust_revoked`).
-Anything else follows the normal revocation hold (`trust_revoked`). Polled
-actions offer no variant and stay held.
+A stale or legacy-unbound quotation follows the same automatic-only factual
+fallback when its factual actor remains trusted and **no** target has accepted an
+effect, including durable queue acceptance before inbox acknowledgement. Its
+old immutable envelope becomes obsolete (`parent_content_stale`). A human-approved
+or model-screened stale quotation instead returns to Held/Pending with that
+reason, **deny-only**: Allow once/Allow and trust are refused, including bulk
+approvals and filter-OFF release. Denial resolves it without another approval/release
+loop. Its approval is never transferred to a factual-only hash, and the original
+decision audit is retained. An already-accepted effect is
+never repeated as a replacement. Other trust revocations follow the normal hold
+(`trust_revoked`). Polled actions offer no trusted parent-text variant and stay held.
+
+**Raw OFF actions have a separate factual-only recovery path** (`feedback-raw-facts.ts`).
+If a bound raw action's parent becomes obsolete while its own action remains current,
+Ficus persists an immutable `github-raw-facts:` event with only the normalized action
+facts. It does not substitute new parent prose, check author trust, or transfer a
+human/model decision. Existing queued effect scopes are retained; trigger receipts
+prevent recreating an existing work stream, and its owner setup notice is preserved.
+Only still-unaccepted recipients receive the factual variant. Original and replacement
+receipts (including acceptance before inbox acknowledgement and native aliases) dedupe
+per recipient under the same final authority lock. Accepted messages/receipts and raw
+source snapshots are unchanged; retries cannot send the fact twice. The original audit
+reason is `github_feedback_obsolete`; the factual variant records
+`github_factual_parent_obsolete`. It is OFF-only, not canonical approval after a toggle.
+The shared 25-image pass budget still applies: a candidate reserves its source and
+factual variant together. If that budget defers replacement, the original flow
+intent stays retryable with `github_factual_parent_obsolete_pending`; the old prose
+remains fenced until a later bounded pass persists the factual intent. Notification
+fanout persists identities rather than loading every original inbox body.
 
 Rule matching and
 work-stream bindings still read the source fact, so predicates such as
@@ -469,7 +559,8 @@ Canonical and status effects keep their own routing record.
 
 Turning the filter OFF (`author-filter-setting.ts`) records a one-time allow by
 that human for each held revision with readable content, released the same way.
-Held revisions with unavailable content stay pending. Turning it back ON never
+Held revisions with unavailable content stay pending. Permanently stale parent
+quotations (`parent_content_stale`) remain deny-only and are not released by this toggle. Turning it back ON never
 re-holds released events.
 
 **Decision-model screening** (`feedback-screen-policy.ts`, `feedback-screening.ts`)
@@ -531,10 +622,34 @@ Search, outline and backlinks withhold documents without provenance in ON
 squads. `resolveEventTrackedResource` refuses held events. Activity drops issue
 titles. Legacy YAML shell and batch handlers for feedback events are retired.
 
-**Rollout fence** (`feedback-upgrade.ts`): undelivered legacy GitHub prose already
-in agent inboxes of an ON squad is hidden from list, search, count, read and
-attachment reads, and final acceptance refuses it. Delivered rows stay readable
-history and are never re-sent. Nothing is backfilled or replayed.
+**Native issue-poll identity** (`issue-event-poller.ts`): only a poll with new
+eligible issue events obtains repository metadata using the same assigned credential.
+The returned positive native ID and case-insensitive `full_name` must match before
+any event is emitted. Verified IDs (including an in-flight lookup) are cached per
+repository for the poller's lifetime, not used as authorization: every event feed
+still uses its assigned credential. The initial identity request consumes a poll
+reservation/budget unit; cached use adds no request. Baselines, unchanged reads and
+pages without new eligible events do not fetch identity. Lookup/validation/budget
+failures log a content-free reason, emit nothing and leave the cursor unchanged.
+This enriches newly polled events only, never rebinds or replays legacy messages.
+
+**Rollout fence** (`feedback-upgrade.ts`): undelivered legacy GitHub prose without
+native object/version provenance is hidden from list, search, count, single and
+attachment reads, and final acceptance refuses it **in every mode, including OFF**.
+This ends the old OFF rollout expectation for unbound undelivered messages; turning
+filtering off cannot restore them. This also includes **pre-upgrade queued OFF
+`review_requested`, `assigned`, and `labeled` raw notifications with native provenance
+for the action itself but no `rawParent` binding for their embedded issue/PR title or
+body**. Those in-flight notices will not be delivered after upgrade, and cannot use
+the new factual recovery path without that original parent provenance. Native-bound raw OFF routing remains unchanged
+and never adds author-trust checks. No identity/version is guessed, no source is
+backfilled and nothing is replayed. The immutable event/inbox rows remain available
+for audit; preparation/renewal records `github_freshness_unbound` on the source event
+so an operator can distinguish missing freshness provenance from an author hold.
+Already delivered messages and accepted receipts (including queue acceptance before
+inbox acknowledgement) remain intact and readable as history, never re-sent. Other
+providers and server-owned content-free status projections are unaffected. ON also
+keeps otherwise-bound unaccepted GitHub prose behind its normal final admission gate.
 
 **Limits and residual risk.** Revisions and decisions are kept with no retention
 sweep yet, like the raw output events they reference. Agents keep their

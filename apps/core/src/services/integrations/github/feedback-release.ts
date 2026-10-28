@@ -18,7 +18,7 @@ import { recordCanonicalGitHubFeedback } from './feedback-store'
 import { isGitHubFeedbackAdmitted } from './feedback-admission'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
 import { isTrustedGitHubFeedbackContent } from './feedback-trust'
-import { supersedeGitHubParentText } from './feedback-parent'
+import { settleStaleGitHubParentText, supersedeGitHubParentText } from './feedback-parent'
 
 type Event = typeof integrationOutputEvents.$inferSelect
 const reasons = [
@@ -296,6 +296,10 @@ async function releaseInPass(
         await lockGitHubTrustAuthority(tx)
         const current = await readFeedbackRevision(tx, id, true)
         if (!current || current.leaseToken !== leaseToken) return // The lease was authoritatively taken over; a stale worker cannot settle it.
+        if (state !== 'delivered' && (await settleStaleGitHubParentText(tx, current))) {
+          settledSquadId = current.squadId
+          return
+        }
         const untrusted =
           current.decision === 'automatic' &&
           state !== 'delivered' &&

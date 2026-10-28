@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { EventPollingCapability, EventPollingSignal, RuntimeConnection, VerifiedIngressEvent } from '../types'
+import { createLogger } from '../../../lib/infra/logger'
+import { EventPollingBudgetExceededError } from '../event-polling-budget'
 import type { GitHubPollingFetch } from './event-poller'
 
 export interface GitHubIssueEventPollingConfig {
@@ -15,9 +17,17 @@ interface Cursor extends Record<string, unknown> {
 }
 
 type Native = Record<string, any>
+type IssueIngress = VerifiedIngressEvent & {
+  payload: Record<string, unknown> & { repository: { full_name: string; id?: number } }
+}
+const log = createLogger('github-issue-poller')
 
 /** Repository assignment discovery, including issues that do not yet have a Ficus stream. */
 export class GitHubIssueEventPoller implements EventPollingCapability<GitHubIssueEventPollingConfig> {
+  // Identity only, never authority: every poll still reads the feed with its assigned credential.
+  // Share in-flight lookups too; failures are evicted and never bless a later poll.
+  private readonly repositoryIds = new Map<string, Promise<number>>()
+
   constructor(
     private readonly credential: (
       connection: RuntimeConnection<GitHubIssueEventPollingConfig>
@@ -64,7 +74,7 @@ export class GitHubIssueEventPoller implements EventPollingCapability<GitHubIssu
         budgetUnitsConsumed: 1,
       }
 
-    const events: VerifiedIngressEvent[] = []
+    const events: IssueIngress[] = []
     for (const item of [...native].reverse()) {
       if (item.id <= cursor.watermark || item.id > ceiling) continue
       const issue = item.issue
@@ -81,8 +91,13 @@ export class GitHubIssueEventPoller implements EventPollingCapability<GitHubIssu
       // rests on this event's `created_at` equalling the issue's `closed_at`,
       // which GitHub holds to in practice; any skew would leave a permanent
       // duplicate row, since these Activity families never delete.
-      const event: VerifiedIngressEvent = {
+      const event: IssueIngress = {
         type: 'issues',
+        githubObservation: { kind: 'poll' },
+        githubIssueSnapshotVersion:
+          typeof issue.updated_at === 'string' && Number.isFinite(Date.parse(issue.updated_at))
+            ? new Date(issue.updated_at).toISOString()
+            : null,
         payload: {
           action: item.event,
           issue: {
@@ -109,6 +124,23 @@ export class GitHubIssueEventPoller implements EventPollingCapability<GitHubIssu
       })
       events.push(event)
     }
+    let budgetUnitsConsumed = 1
+    if (events.length) {
+      const key = `${owner}/${repo}`.toLowerCase()
+      let identity = this.repositoryIds.get(key)
+      if (!identity) {
+        identity = this.lookupRepositoryId(owner, repo, headers, signal, () => budgetUnitsConsumed++)
+        this.repositoryIds.set(key, identity)
+      }
+      let repositoryId: number
+      try {
+        repositoryId = await identity
+      } catch (error) {
+        if (this.repositoryIds.get(key) === identity) this.repositoryIds.delete(key)
+        throw error // No result/cursor is committed when identity cannot be verified.
+      }
+      for (const event of events) event.payload.repository.id = repositoryId
+    }
     const hasNext = /<[^>]+>;\s*rel="next"/.test(response.headers.get('link') ?? '')
     // GitHub's repository event feed is newest-first. Keep the old watermark until
     // the scan reaches it, so bounded page scans cannot skip a burst of assignments.
@@ -116,6 +148,50 @@ export class GitHubIssueEventPoller implements EventPollingCapability<GitHubIssu
     const nextCursor: Cursor = complete
       ? { watermark: ceiling, etag }
       : { watermark: cursor.watermark, scan: { page: page + 1, ceiling, etag } }
-    return { events, nextCursor, suggestedIntervalMs: 60_000, budgetUnitsConsumed: 1 }
+    return { events, nextCursor, suggestedIntervalMs: 60_000, budgetUnitsConsumed }
+  }
+
+  private async lookupRepositoryId(
+    owner: string,
+    repo: string,
+    headers: Record<string, string>,
+    signal: EventPollingSignal | undefined,
+    reserved: () => void
+  ): Promise<number> {
+    let reason = 'request_budget_unavailable'
+    try {
+      signal?.reserveRequest()
+      reserved()
+      // An event-feed ETag is not a repository-identity conditional.
+      const repositoryHeaders = { ...headers }
+      delete repositoryHeaders['if-none-match']
+      reason = 'request_failed'
+      const response = await this.request(
+        `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+        { headers: repositoryHeaders, signal, redirect: 'error' }
+      )
+      if (!response.ok) {
+        reason = `http_${response.status}`
+        throw new Error(reason)
+      }
+      reason = 'invalid_response'
+      const repository = await response.json()
+      if (
+        typeof repository?.full_name !== 'string' ||
+        repository.full_name.toLowerCase() !== `${owner}/${repo}`.toLowerCase()
+      ) {
+        reason = 'full_name_mismatch'
+        throw new Error(reason)
+      }
+      if (!Number.isSafeInteger(repository.id) || repository.id <= 0) {
+        reason = 'invalid_repository_id'
+        throw new Error(reason)
+      }
+      return repository.id
+    } catch (error) {
+      log.warn(`Issue events withheld: repository identity ${reason}; cursor retained`)
+      if (error instanceof EventPollingBudgetExceededError) throw error
+      throw new Error(`GitHub issue repository identity lookup failed (${reason})`)
+    }
   }
 }

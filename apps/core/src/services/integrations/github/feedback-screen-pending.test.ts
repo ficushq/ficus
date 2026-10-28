@@ -11,7 +11,7 @@ import {
   squads,
   users,
 } from '../../../db'
-import { getGitHubFeedbackSummary } from './feedback-review'
+import { getGitHubFeedbackSummary, listGitHubFeedback } from './feedback-review'
 import { SCREEN_PENDING_BATCH, screenPendingGitHubFeedback } from './feedback-screen-pending'
 
 const ENVELOPE = {
@@ -296,6 +296,22 @@ test('re-screens results without a verdict (unavailable, unconfigured, skipped, 
       expect(byId.get(id!)).toMatchObject({ state: 'held', outcome })
     expect(byId.get(running!)).toMatchObject({ state: 'running', attempts: 1 })
     expect(h.scheduled.flat().sort()).toEqual([unavailable, unconfigured, skipped, sourceUnavailable].sort())
+  } finally {
+    await h.close()
+  }
+})
+
+test('obsolete pending decisions are audit only, absent from queue counts and screening', async () => {
+  const h = await fixture()
+  try {
+    await h.revisions(1, { releaseState: 'obsolete' })
+    expect((await getGitHubFeedbackSummary(h.human, h.squadId)).pending).toBe(0)
+    expect((await listGitHubFeedback(h.human, h.squadId, { queue: 'pending', limit: 10 })).items).toHaveLength(0)
+    expect(await screenPendingGitHubFeedback(h.human, h.squadId, { schedule: h.schedule })).toMatchObject({
+      queued: 0,
+      skipped: 0,
+    })
+    expect(await h.screenings()).toHaveLength(0)
   } finally {
     await h.close()
   }

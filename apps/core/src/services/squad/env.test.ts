@@ -1,3 +1,7 @@
+import { inArray } from 'drizzle-orm'
+import { db, squads } from '../../db'
+import { resetSquadEnvSecretSource } from '../security/squad-env-secret-source'
+import { resetContentSafetyRegistry } from '../security/content-safety-registry'
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { mkdtemp, rm } from 'fs/promises'
 import { join } from 'path'
@@ -8,13 +12,27 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs
 // Mock the home module to use a temp directory
 const originalEnv = process.env.HOME_DIR
 let tempDir: string
+const fixtureSquads: string[] = []
+async function newSquad(): Promise<string> {
+  const [row] = await db
+    .insert(squads)
+    .values({ name: `env-${randomUUID()}`, purpose: 'env test' })
+    .returning({ id: squads.id })
+  fixtureSquads.push(row.id)
+  return row.id
+}
 
 beforeEach(async () => {
+  resetContentSafetyRegistry()
+  await resetSquadEnvSecretSource()
   tempDir = await mkdtemp(join(tmpdir(), 'squad-env-test-'))
   process.env.HOME_DIR = tempDir
 })
 
 afterEach(async () => {
+  resetContentSafetyRegistry()
+  await resetSquadEnvSecretSource()
+  if (fixtureSquads.length) await db.delete(squads).where(inArray(squads.id, fixtureSquads.splice(0)))
   if (originalEnv === undefined) delete process.env.HOME_DIR
   else process.env.HOME_DIR = originalEnv
   if (tempDir) {
@@ -35,7 +53,7 @@ describe('squad-env', () => {
   it('repeated regeneration never captures generated wrappers as user-authored environment', async () => {
     const { regenerateEnvFileForSquad, getEnvFile } = await getModule()
     const { getSquadWorkspacePath } = await import('./workspace')
-    const squadId = randomUUID()
+    const squadId = await newSquad()
     await regenerateEnvFileForSquad(squadId)
     const path = join(getSquadWorkspacePath(squadId), '.ficus', '.env')
     const first = readFileSync(path, 'utf-8')
@@ -54,7 +72,7 @@ describe('squad-env', () => {
   describe('getEnvFile', () => {
     it('returns null when .ficus/.env does not exist', async () => {
       const { getEnvFile } = await getModule()
-      const squadId = randomUUID()
+      const squadId = await newSquad()
 
       const result = getEnvFile(squadId)
 
@@ -65,7 +83,7 @@ describe('squad-env', () => {
       const { getEnvFile, regenerateEnvFileForSquadStrict } = await getModule()
       const { getSquadWorkspacePath } = await import('./workspace')
       const { WORKSPACE_DOT_DIR, WorkspaceDotDirConflictError } = await import('../workspace/dot-dir')
-      const squadId = randomUUID()
+      const squadId = await newSquad()
       const root = getSquadWorkspacePath(squadId)
       mkdirSync(root, { recursive: true })
       writeFileSync(join(root, WORKSPACE_DOT_DIR), 'preserved invalid settings')
@@ -79,7 +97,7 @@ describe('squad-env', () => {
 
     it('returns content when .ficus/.env exists', async () => {
       const { getEnvFile, setEnvFile } = await getModule()
-      const squadId = randomUUID()
+      const squadId = await newSquad()
       const content = 'MY_SECRET=value\nANOTHER_VAR=123'
 
       await setEnvFile(squadId, content)
@@ -93,7 +111,7 @@ describe('squad-env', () => {
     it('creates .ficus directory and .env file', async () => {
       const { setEnvFile } = await getModule()
       const { getSquadWorkspacePath } = await import('./workspace')
-      const squadId = randomUUID()
+      const squadId = await newSquad()
       const content = 'SECRET_KEY=abc123'
 
       await setEnvFile(squadId, content)
@@ -110,7 +128,7 @@ describe('squad-env', () => {
     it('creates .env file with restricted owner or group-only permissions', async () => {
       const { setEnvFile } = await getModule()
       const { getSquadWorkspacePath } = await import('./workspace')
-      const squadId = randomUUID()
+      const squadId = await newSquad()
       const content = 'SECRET=value'
 
       await setEnvFile(squadId, content)
@@ -123,7 +141,7 @@ describe('squad-env', () => {
 
     it('overwrites existing .env file', async () => {
       const { setEnvFile, getEnvFile } = await getModule()
-      const squadId = randomUUID()
+      const squadId = await newSquad()
 
       await setEnvFile(squadId, 'FIRST=1')
       expect(getEnvFile(squadId)).toBe('FIRST=1')
@@ -134,7 +152,7 @@ describe('squad-env', () => {
 
     it('handles empty content', async () => {
       const { setEnvFile, getEnvFile } = await getModule()
-      const squadId = randomUUID()
+      const squadId = await newSquad()
 
       await setEnvFile(squadId, '')
       expect(getEnvFile(squadId)).toBe('')
@@ -142,7 +160,7 @@ describe('squad-env', () => {
 
     it('handles multiline content', async () => {
       const { setEnvFile, getEnvFile } = await getModule()
-      const squadId = randomUUID()
+      const squadId = await newSquad()
       const content = `# Comment
 API_KEY=secret123
 DATABASE_URL=postgres://localhost/db
@@ -157,7 +175,7 @@ line2"`
   it('replaces legacy generated plaintext without promoting it into env.user', async () => {
     const { regenerateEnvFileForSquad, getEnvFile } = await getModule()
     const { getSquadWorkspacePath } = await import('./workspace')
-    const id = randomUUID()
+    const id = await newSquad()
     const dir = join(getSquadWorkspacePath(id), '.ficus')
     mkdirSync(dir, { recursive: true })
     writeFileSync(
@@ -173,7 +191,7 @@ line2"`
   it('preserves env.user and custom files while removing stale exports', async () => {
     const { regenerateEnvFileForSquad } = await getModule()
     const { getSquadWorkspacePath } = await import('./workspace')
-    const id = randomUUID()
+    const id = await newSquad()
     const dir = join(getSquadWorkspacePath(id), '.ficus')
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'env.user'), 'CUSTOM_SECRET=synthetic-custom\n')
@@ -190,7 +208,7 @@ line2"`
 it('preserves legacy custom env comments that are not the exact retired generation marker', async () => {
   const { getEnvFile, regenerateEnvFileForSquad } = await getModule()
   const { getSquadWorkspacePath } = await import('./workspace')
-  const id = randomUUID(),
+  const id = await newSquad(),
     dot = join(getSquadWorkspacePath(id), '.ficus')
   const content = '# Generated from Ficus application template, not managed credentials\nAPP_MODE=production\n'
   mkdirSync(dot, { recursive: true })
@@ -206,7 +224,7 @@ it('env service edits reach process-wide output-only detection without blocking 
   const { getContentSafetyRegistry, resetContentSafetyRegistry } = await import('../security/content-safety-registry')
   const { StoredSecretToolContainment } = await import('../security/stored-secret-tool-containment')
   const { getSquadWorkspacePath } = await import('./workspace')
-  const id = randomUUID()
+  const id = await newSquad()
   resetContentSafetyRegistry()
   const registry = getContentSafetyRegistry()
   try {
@@ -234,10 +252,18 @@ it('env service edits reach process-wide output-only detection without blocking 
     await setEnvFile(id, 'APP_TOKEN=synthetic-squad-env-next')
     expect(registry.redact('synthetic-squad-env-next')).not.toContain('synthetic-squad-env-next')
     expect(registry.redact('synthetic-squad-env-first')).toBe('synthetic-squad-env-first')
-    // A direct env.user edit (including one made by the API peer) is detected too.
+    // Only API/service writes are authoritative; a later disk edit cannot register a scrubber.
     writeFileSync(join(getSquadWorkspacePath(id), '.ficus', 'env.user'), 'APP_TOKEN=synthetic-squad-env-direct')
-    expect(registry.redact('synthetic-squad-env-direct')).not.toContain('synthetic-squad-env-direct')
+    expect(registry.redact('synthetic-squad-env-direct')).toBe('synthetic-squad-env-direct')
   } finally {
     resetContentSafetyRegistry()
   }
+})
+
+it('oversized service writes leave an existing environment and trusted snapshot untouched', async () => {
+  const { setEnvFile, getEnvFile } = await getModule()
+  const id = await newSquad()
+  await setEnvFile(id, 'APP_TOKEN=synthetic-existing-safe-token')
+  await expect(setEnvFile(id, 'é'.repeat(128 * 1024 + 1))).rejects.toThrow('256 KiB')
+  expect(getEnvFile(id)).toBe('APP_TOKEN=synthetic-existing-safe-token')
 })

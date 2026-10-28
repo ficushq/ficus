@@ -117,7 +117,23 @@ author filtering on, Ficus holds feedback it can't attribute to someone the squa
 trusts until a person reviews it.
 
 Author filtering is on by default for new squads. Squads that existed before the
-feature start with it off, so their routing is unchanged until you turn it on.
+feature start with it off, so raw routing does not apply author-trust checks until
+you turn it on. Version freshness is always enforced: once a newer version of the
+same GitHub object is known, a delayed older version is not delivered, even with
+author filtering off. This also applies to unaccepted inbox reads and queued
+parent quotations, not just automatic delivery. Ficus keeps an audit snapshot of
+dropped older events.
+Undelivered legacy GitHub prose without native object/version provenance is also
+withheld in every mode, including off; turning filtering off no longer restores
+those old unbound messages. This includes pre-upgrade queued off-mode
+`review_requested`, `assigned`, and `labeled` notifications: even if they identify the
+action itself, they lack the new `rawParent` binding for the issue or pull request
+text embedded in the message, so those in-flight notices will not be delivered
+after upgrade. Their audit reason is `github_freshness_unbound`.
+Ficus does not guess their identity or version or replay them. Already accepted
+messages and receipts remain history; other providers and proven content-free
+status facts are unchanged. New native-bound raw feedback still routes without
+author-trust checks when filtering is off.
 Turn it on or off in the squad's **Settings → Integrations** under **GitHub
 feedback review → Filter GitHub feedback by author**. Leave it off only if every
 repository the squad watches is private to people you trust. When you turn it
@@ -233,6 +249,26 @@ to the event on GitHub. Choose one or more events, then:
 - **Allow and trust author** delivers the selected events and adds their authors
   as trusted authors of this squad. Their other held events stay held until you
   review them.
+
+When Ficus captures a newer version of the same comment, review, issue or pull
+request, older pending versions become obsolete and leave the list automatically.
+Their audit records are kept, but those older versions are never delivered.
+Earlier delivery receipts do not authorize sending old text again. An action
+waiting to quote an issue or pull request is checked again before delivery: if
+the parent changed, the old quotation is withheld, even with author filtering
+off. An automatic action may be replaced with its trusted factual message alone
+if no recipient accepted it. A stale human-approved quotation returns as **deny-only**:
+it cannot be allowed again, even in a bulk approval or by turning filtering off.
+Its approval never silently transfers to a different message. Older quotations
+without enough parent provenance are also withheld.
+
+With filtering **off**, a modern native-bound action whose parent goes stale instead
+gets an immutable factual-only variant for recipients who have not accepted the
+original. It contains no old or replacement parent prose and adds no author-trust
+check or approval. Recipients who already accepted keep their original message and
+receipt and get nothing new, including after retries or partial delivery. Original
+snapshots remain auditable as `github_feedback_obsolete`; the factual variant records
+`github_factual_parent_obsolete`. This does not rebind or replay pre-upgrade notices.
 
 Allowed events are delivered by normal routing at the time you approve, so they
 reach whoever owns that work now. Paused or parked work receives them the usual

@@ -324,3 +324,22 @@ test('allows normal app env file writes with squad env values but refuses integr
   expect(audits.map((row) => row.secretKey)).toEqual(['INTEGRATION'])
   detach()
 })
+
+test('allows an app env write containing Failed query and an output-only env value without audit', async () => {
+  const value = 'synthetic-env-query-value'
+  const safety = ContentSafety.fromSecretEntries([{ key: 'squad-env.APP_TOKEN', value, outputOnly: true }])
+  const audits: AuditRow[] = []
+  const containment = containmentWithSink(async (input) => {
+    audits.push(input)
+  })
+  const agent = fakeAgent()
+  const detach = containment.attachBeforeToolCall(agent, safety)
+  try {
+    expect(
+      await agent.beforeToolCall!(contextWith({ path: 'app/.env.local', content: `Failed query: ${value}` }))
+    ).toBeUndefined()
+    expect(audits).toEqual([])
+  } finally {
+    detach()
+  }
+})

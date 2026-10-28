@@ -1,7 +1,13 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { randomBytes, randomUUID } from 'crypto'
 import { eq } from 'drizzle-orm'
-import { db, integrationCredentialCleanupJobs, integrationRevocationJobs, secrets } from '../../db'
+import {
+  db,
+  integrationCredentialCleanupJobs,
+  integrationCredentialRetirements,
+  integrationRevocationJobs,
+  secrets,
+} from '../../db'
 import {
   createGeneratedSecretEnvironmentFixture,
   isMatchableSecret,
@@ -44,6 +50,7 @@ describe('SecretStore', () => {
   beforeEach(async () => {
     process.env.FICUS_ENCRYPTION_KEY = testKey
     await db.delete(secrets)
+    await db.delete(integrationCredentialRetirements)
     store = makeStore()
     await store.initialize()
   })
@@ -898,6 +905,7 @@ describe('SecretStore — platform-managed keys', () => {
   beforeEach(async () => {
     process.env.FICUS_ENCRYPTION_KEY = testKey
     await db.delete(secrets)
+    await db.delete(integrationCredentialRetirements)
     managedFixture = createGeneratedSecretEnvironmentFixture()
     managedKey = managedFixture.key
     managedValue = managedFixture.value
@@ -1027,6 +1035,7 @@ describe('integration credential leaf detection', () => {
   beforeEach(async () => {
     process.env.FICUS_ENCRYPTION_KEY = randomBytes(32).toString('hex')
     await db.delete(secrets)
+    await db.delete(integrationCredentialRetirements)
     store = makeStore()
     await store.initialize()
   })
@@ -1071,7 +1080,7 @@ describe('integration credential leaf detection', () => {
     }
   })
 
-  test('covers both leaf generations before cache publication and removes retired values afterwards', async () => {
+  test('covers both leaf generations during publication and retains retired values for grace', async () => {
     const oldAccess = 'synthetic-old-access'
     const oldRefresh = 'synthetic-old-refresh'
     const newAccess = 'synthetic-new-access'
@@ -1082,7 +1091,11 @@ describe('integration credential leaf detection', () => {
     let transitionChecked = false
     const unsubscribe = store.bindContentSafetyConsumer({
       replace(entries) {
-        if (entries.some((e) => e.value === oldAccess) && entries.some((e) => e.value === newAccess)) {
+        if (
+          !transitionChecked &&
+          entries.some((e) => e.value === oldAccess) &&
+          entries.some((e) => e.value === newAccess)
+        ) {
           transitionChecked = true
           expect(store.get(ref)).toBe(previous)
           for (const token of [oldAccess, oldRefresh, newAccess, newRefresh]) {
@@ -1095,11 +1108,11 @@ describe('integration credential leaf detection', () => {
     try {
       await store.set(ref, bundle(newAccess, newRefresh))
       expect(transitionChecked).toBe(true)
-      expect(registry.redact(oldAccess)).toBe(oldAccess)
+      expect(registry.redact(oldAccess)).not.toContain(oldAccess)
       expect(registry.redact(newAccess)).not.toContain(newAccess)
       await store.delete(ref)
-      expect(registry.redact(newAccess)).toBe(newAccess)
-      expect(registry.redact(newRefresh)).toBe(newRefresh)
+      expect(registry.redact(newAccess)).not.toContain(newAccess)
+      expect(registry.redact(newRefresh)).not.toContain(newRefresh)
     } finally {
       unsubscribe()
       registry.dispose()
@@ -1121,10 +1134,10 @@ describe('integration credential leaf detection', () => {
       for (const value of ['synthetic-mutated-access', 'synthetic-mutated-refresh']) {
         expect(registry.redactWithStoredKeys(value).storedKeys).not.toHaveLength(0)
       }
-      expect(registry.redact('synthetic-initial-refresh')).toBe('synthetic-initial-refresh')
+      expect(registry.redact('synthetic-initial-refresh')).not.toContain('synthetic-initial-refresh')
       await store.deleteWithDurableMutation(ref, async () => undefined)
-      expect(registry.redact('synthetic-mutated-refresh')).toBe('synthetic-mutated-refresh')
-      // Short integration material is still a credential (e.g. local client IDs).
+      expect(registry.redact('synthetic-mutated-refresh')).not.toContain('synthetic-mutated-refresh')
+      // Exactly eight characters remains protected; shorter legacy leaves do not match.
       await store.set(ref, '12abcdef')
       expect(registry.redactWithStoredKeys('12abcdef').storedKeys).not.toHaveLength(0)
     } finally {
@@ -1150,17 +1163,246 @@ describe('integration credential leaf detection', () => {
       await peer.set(ref, bundle('synthetic-rotated-access', 'synthetic-rotated-refresh'))
       await reader.reload()
       expect(registry.redact('synthetic-rotated-refresh')).not.toContain('synthetic-rotated-refresh')
-      expect(registry.redact('synthetic-peer-access')).toBe('synthetic-peer-access')
+      expect(registry.redact('synthetic-peer-access')).not.toContain('synthetic-peer-access')
       const loadedRegistry = new ContentSafetyRegistry(peer)
       expect(loadedRegistry.redact('synthetic-rotated-access')).not.toContain('synthetic-rotated-access')
       loadedRegistry.dispose()
       await peer.delete(ref)
       await reader.refreshKey(ref)
-      expect(registry.redact('synthetic-rotated-access')).toBe('synthetic-rotated-access')
+      expect(registry.redact('synthetic-rotated-access')).not.toContain('synthetic-rotated-access')
     } finally {
       peer.stopPeriodicRefresh()
       reader.stopPeriodicRefresh()
       registry.dispose()
     }
   })
+
+  test('parallel key refreshes cannot erase another key retirement from a newer DB snapshot', async () => {
+    const other = `${ref}:other`
+    await store.set(ref, 'synthetic-first-racing-token')
+    await store.set(other, 'synthetic-second-racing-token')
+    const captured = deferred()
+    const release = deferred()
+    class DelayedRetirementStore extends SecretStore {
+      delayNext = false
+      protected override async readRetiredIntegrationEntries() {
+        const entries = await super.readRetiredIntegrationEntries()
+        if (this.delayNext) {
+          this.delayNext = false
+          captured.resolve()
+          await release.promise
+        }
+        return entries
+      }
+    }
+    const reader = new DelayedRetirementStore()
+    await reader.initialize()
+    const registry = new ContentSafetyRegistry(reader)
+    await store.delete(ref)
+    reader.delayNext = true
+    const firstRefresh = reader.refreshKey(ref)
+    try {
+      await captured.promise
+      await store.delete(other)
+      await reader.refreshKey(other)
+    } finally {
+      release.resolve()
+      await firstRefresh
+    }
+    try {
+      expect(registry.redactWithStoredKeys('synthetic-second-racing-token').storedKeys).not.toHaveLength(0)
+      expect(registry.redactWithStoredKeys('synthetic-first-racing-token').storedKeys).not.toHaveLength(0)
+    } finally {
+      registry.dispose()
+      reader.stopPeriodicRefresh()
+    }
+  })
+
+  test('self-originated deletion refreshes do not repeatedly notify listeners', async () => {
+    const events: Array<string | undefined> = []
+    const unsubscribe = store.onChange((key, value) => {
+      if (key === ref) events.push(value)
+    })
+    try {
+      await store.set(ref, 'synthetic-idempotent-delete-token')
+      await store.delete(ref)
+      await store.refreshKey(ref)
+      await store.refreshKey(ref)
+      expect(events).toHaveLength(2)
+      expect(events).toStrictEqual(['synthetic-idempotent-delete-token', undefined])
+    } finally {
+      unsubscribe()
+    }
+  })
+
+  test('retired snapshots remain encrypted, hidden and transactionally rolled back with failed obligations', async () => {
+    await store.set(ref, bundle('synthetic-at-rest-old-access', 'synthetic-at-rest-old-refresh'))
+    const failure = new Error('synthetic durable mutation failure')
+    await expect(
+      store.setWithDurableObligation(ref, 'synthetic-rejected-replacement', 'test', async () => {
+        throw failure
+      })
+    ).rejects.toThrow(failure.message)
+    await expect(
+      store.deleteWithDurableMutation(ref, async () => {
+        throw failure
+      })
+    ).rejects.toThrow(failure.message)
+    await store.mutateSecret(ref, () => undefined)
+    expect(
+      await db
+        .select()
+        .from(integrationCredentialRetirements)
+        .where(eq(integrationCredentialRetirements.credentialKey, ref))
+    ).toEqual([])
+    await store.set(ref, 'synthetic-new-at-rest-token')
+    const rows = await db
+      .select()
+      .from(integrationCredentialRetirements)
+      .where(eq(integrationCredentialRetirements.credentialKey, ref))
+    expect(rows).toHaveLength(1)
+    expect(JSON.stringify(rows)).not.toContain('synthetic-at-rest-old')
+    expect(store.get(ref)).toBe('synthetic-new-at-rest-token')
+    expect(store.get(rows[0]!.id)).toBeUndefined()
+    expect((await store.list()).some(({ key }) => key === rows[0]!.id || key === ref)).toBe(false)
+  })
+
+  test('concurrent first writes serialize and keep both committed generations protected after restart', async () => {
+    const peer = makeStore()
+    await peer.initialize()
+    await Promise.all([
+      store.set(ref, 'synthetic-concurrent-first-token'),
+      peer.set(ref, 'synthetic-concurrent-second-token'),
+    ])
+    const restarted = makeStore()
+    await restarted.initialize()
+    const registry = new ContentSafetyRegistry(restarted)
+    try {
+      const current = restarted.get(ref)
+      expect(current).toBeDefined()
+      expect(['synthetic-concurrent-first-token', 'synthetic-concurrent-second-token']).toContain(current!)
+      expect(registry.redactWithStoredKeys('synthetic-concurrent-first-token').storedKeys).not.toHaveLength(0)
+      expect(registry.redactWithStoredKeys('synthetic-concurrent-second-token').storedKeys).not.toHaveLength(0)
+      expect(
+        await db
+          .select()
+          .from(integrationCredentialRetirements)
+          .where(eq(integrationCredentialRetirements.credentialKey, ref))
+      ).toHaveLength(1)
+    } finally {
+      registry.dispose()
+      peer.stopPeriodicRefresh()
+      restarted.stopPeriodicRefresh()
+    }
+  })
+
+  for (const operation of ['set', 'mutate', 'obligation', 'delete', 'durable-delete'] as const) {
+    test(`retired OAuth leaves survive restart after ${operation} with the original absolute expiry`, async () => {
+      let now = 100_000
+      const writer = makeStore({ now: () => now })
+      await writer.initialize()
+      const oldAccess = 'synthetic-restart-access-token'
+      const oldRefresh = 'synthetic-restart-refresh-token'
+      await writer.set(ref, bundle(oldAccess, oldRefresh))
+      if (operation === 'set')
+        await writer.set(ref, bundle('synthetic-new-restart-access', 'synthetic-new-restart-refresh'))
+      if (operation === 'mutate')
+        await writer.mutateSecret(ref, () => bundle('synthetic-new-restart-access', 'synthetic-new-restart-refresh'))
+      if (operation === 'obligation')
+        await writer.setWithDurableObligation(
+          ref,
+          bundle('synthetic-new-restart-access', 'synthetic-new-restart-refresh'),
+          'test',
+          async () => undefined
+        )
+      if (operation === 'delete') await writer.delete(ref)
+      if (operation === 'durable-delete') await writer.deleteWithDurableMutation(ref, async () => undefined)
+      class Reloadable extends SecretStore {
+        reload() {
+          return this.loadFromDb()
+        }
+      }
+      now += 59 * 60_000
+      const restarted = new Reloadable({ now: () => now })
+      await restarted.initialize()
+      const registry = new ContentSafetyRegistry(restarted)
+      try {
+        for (const token of [oldAccess, oldRefresh]) {
+          expect(registry.redact(token)).not.toContain(token)
+          expect(registry.redactWithStoredKeys(token).storedKeys).not.toHaveLength(0)
+        }
+        await restarted.refreshKey(ref)
+        await restarted.reload()
+        now += 60_000
+        for (const token of [oldAccess, oldRefresh]) {
+          expect(registry.redact(token)).toBe(token)
+          expect(registry.redactWithStoredKeys(token).storedKeys).toEqual([])
+        }
+        await restarted.reload()
+        expect(
+          await db
+            .select()
+            .from(integrationCredentialRetirements)
+            .where(eq(integrationCredentialRetirements.credentialKey, ref))
+        ).toEqual([])
+      } finally {
+        registry.dispose()
+        writer.stopPeriodicRefresh()
+        restarted.stopPeriodicRefresh()
+      }
+    })
+  }
+})
+
+test('retired integration leaves survive rotation, deletion and later publication for exactly one hour', async () => {
+  const originalKey = process.env.FICUS_ENCRYPTION_KEY
+  process.env.FICUS_ENCRYPTION_KEY = randomBytes(32).toString('hex')
+  let now = 10_000
+  const local = new SecretStore({ now: () => now })
+  await local.initialize()
+  const ref = `__integration-credential:grace:${randomUUID()}`
+  const unrelated = `GRACE_TEST_${randomUUID()}`
+  const registry = new ContentSafetyRegistry(local)
+  let late: ContentSafetyRegistry | undefined
+  let nested = 0
+  const unsubscribe = local.bindContentSafetyConsumer({
+    replace() {
+      if (nested > 0) throw new Error('reentrant content-safety expiry')
+      nested++
+      try {
+        registry.redact('safe diagnostic')
+      } finally {
+        nested--
+      }
+    },
+    update() {},
+  })
+  try {
+    await local.set(ref, 'synthetic-retired-token')
+    await local.set(ref, 'synthetic-current-token')
+    expect(registry.redactWithStoredKeys('synthetic-retired-token').storedKeys).not.toHaveLength(0)
+    await local.set(unrelated, 'synthetic-unrelated-value')
+    now += 30 * 60_000
+    await local.delete(ref)
+    late = new ContentSafetyRegistry(local)
+    for (const token of ['synthetic-retired-token', 'synthetic-current-token']) {
+      expect(late.redactWithStoredKeys(token).storedKeys).not.toHaveLength(0)
+      expect(registry.redact(token)).not.toContain(token)
+    }
+    now += 30 * 60_000
+    expect(registry.redact('synthetic-retired-token')).toBe('synthetic-retired-token')
+    expect(registry.redact('synthetic-current-token')).not.toContain('synthetic-current-token')
+    now += 30 * 60_000
+    expect(late.redactWithStoredKeys('synthetic-current-token').storedKeys).toEqual([])
+    expect(registry.redact('synthetic-current-token')).toBe('synthetic-current-token')
+  } finally {
+    registry.dispose()
+    late?.dispose()
+    unsubscribe()
+    await local.delete(ref)
+    await local.delete(unrelated)
+    local.stopPeriodicRefresh()
+    if (originalKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = originalKey
+  }
 })

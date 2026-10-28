@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect } from 'react'
+import { ApiError } from '../../api/client'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getWorkspaceEnv, setWorkspaceEnv } from '../../api/squads'
 import clsx from 'clsx'
@@ -13,12 +14,13 @@ export function SquadEnvConfig({ squadId }: Props) {
   const queryClient = useQueryClient()
   const [value, setValue] = useState('')
   const [saved, setSaved] = useState(false)
+  const submitting = useRef(false)
   const { can, isLoading: permissionsLoading } = usePermissions(squadId)
   const canWriteEnv = !permissionsLoading && can('env:write')
 
   const queryKey = ['squads', squadId, 'workspace-env']
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isFetching, error } = useQuery({
     queryKey,
     queryFn: () => getWorkspaceEnv(squadId),
   })
@@ -37,22 +39,37 @@ export function SquadEnvConfig({ squadId }: Props) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey })
       setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
     },
   })
 
+  useEffect(() => {
+    if (!saved) return
+    const timer = setTimeout(() => setSaved(false), 2000)
+    return () => clearTimeout(timer)
+  }, [saved])
+
+  const canSave =
+    canWriteEnv && !isLoading && !isFetching && !error && (dirty || !!data?.detectionNotice) && !mutation.isPending
   const handleSave = useCallback(() => {
-    mutation.mutate(value)
-  }, [value, mutation])
+    if (!canSave || submitting.current) return
+    // Mutation observer notifications render asynchronously; guard rapid
+    // button/keyboard submissions before the pending state is painted too.
+    submitting.current = true
+    mutation.mutate(value, {
+      onSettled: () => {
+        submitting.current = false
+      },
+    })
+  }, [canSave, value, mutation])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault()
-        if (dirty) handleSave()
+        handleSave()
       }
     },
-    [dirty, handleSave]
+    [handleSave]
   )
 
   if (isLoading) {
@@ -68,7 +85,11 @@ export function SquadEnvConfig({ squadId }: Props) {
     return (
       <div>
         <h4 className="text-sm font-medium text-primary mb-2">Environment Variables</h4>
-        <div className="text-sm text-status-danger-500 py-4">Failed to load environment variables</div>
+        <div role="alert" className="text-sm text-status-danger-500 py-4">
+          {error instanceof ApiError && error.status === 413
+            ? 'Environment exceeds 256 KiB. Output redaction is unavailable for this file. The existing file is unchanged and cannot be edited here; reduce it outside Settings, then reload and save it here.'
+            : 'Failed to load environment variables'}
+        </div>
       </div>
     )
   }
@@ -81,6 +102,12 @@ export function SquadEnvConfig({ squadId }: Props) {
           Custom secrets and environment variables for this squad. Values are visible to agents and terminals.
         </p>
       </div>
+
+      {data?.detectionNotice && (
+        <p role="status" className="text-xs text-status-review-600 mt-1 mb-2">
+          {data.detectionNotice}
+        </p>
+      )}
 
       <textarea
         value={value}
@@ -102,11 +129,11 @@ export function SquadEnvConfig({ squadId }: Props) {
         <span className="text-xs text-muted">{dirty ? 'Unsaved changes' : saved ? '✓ Saved' : 'Ctrl+S to save'}</span>
         <button
           onClick={handleSave}
-          disabled={!canWriteEnv || !dirty || mutation.isPending}
+          disabled={!canSave}
           className={clsx(
             'ficus-button ficus-button-primary',
             'px-3 py-1 text-sm rounded-md font-medium transition-colors',
-            !dirty && 'opacity-50 cursor-not-allowed'
+            !canSave && 'opacity-50 cursor-not-allowed'
           )}
         >
           {mutation.isPending ? 'Saving...' : 'Save'}

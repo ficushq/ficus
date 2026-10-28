@@ -90,7 +90,13 @@ async function squadScreens(squadId: string, store: Store = db): Promise<boolean
  * content) stay with a person. Returns whether a screen is waiting to run.
  */
 export async function enqueueGitHubFeedbackScreening(revision: Revision, store: Store = db): Promise<boolean> {
-  if (revision.decision !== 'pending' || revision.reason !== 'untrusted_author' || !revision.envelope) return false
+  if (
+    revision.releaseState === 'obsolete' ||
+    revision.decision !== 'pending' ||
+    revision.reason !== 'untrusted_author' ||
+    !revision.envelope
+  )
+    return false
   if (!(await squadScreens(revision.squadId, store))) return false
   await store
     .insert(githubFeedbackScreenings)
@@ -246,6 +252,7 @@ function stillScreenable(revision: Revision, claimed: typeof githubFeedbackScree
   return (
     revision.squadId === claimed.squadId &&
     revision.decision === 'pending' &&
+    revision.releaseState !== 'obsolete' &&
     revision.decisionVersion === claimed.decisionVersion &&
     revision.contentHash === claimed.contentHash &&
     revision.reason === 'untrusted_author'

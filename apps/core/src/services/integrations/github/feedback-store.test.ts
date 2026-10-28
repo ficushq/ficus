@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import { eq, inArray } from 'drizzle-orm'
 import {
   db,
@@ -14,7 +14,12 @@ import * as store from './feedback-store'
 import { GitHubApiUnavailableError } from '../../github/api-client'
 
 const time = '2026-10-02T10:00:00Z'
-function event(body = 'A', updatedAt = time, review = false, transportId?: string): VerifiedIngressEvent {
+function event(
+  body = 'A',
+  updatedAt = time,
+  review = false,
+  transportId?: string
+): Omit<VerifiedIngressEvent, 'payload'> & { payload: Record<string, unknown> } {
   return {
     type: review ? 'pull_request_review' : 'issue_comment',
     githubObservation: { kind: 'webhook', deliveryId: transportId },
@@ -372,6 +377,235 @@ test('a GitHub outage during the current-version witness defers the capture inst
       .where(eq(githubFeedbackObjects.id, a.revision.objectId))
     expect(object!.currentRevisionId).toBe(b.revision.id)
     expect((await revisions()).some((row) => row.reason === 'ambiguous_observation')).toBe(false)
+  } finally {
+    await h.close()
+  }
+})
+
+test('newer captures obsolete every older pending hold and replay cannot resurrect it', async () => {
+  const h = await fixture()
+  try {
+    const a = await h.capture(event('Untrusted old author'))
+    expect(a.revision.reason).toBe('untrusted_author')
+    const b = await h.capture(event('Final', '2026-10-02T10:01:00Z'))
+    const [old] = await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.id, a.revision.id))
+    expect(old!.releaseState).toBe('obsolete')
+    expect(old!.decision).toBe('pending') // preserve audit, not a fabricated human decision
+    expect(old!.envelope).toEqual(a.revision.envelope)
+    const replay = await h.capture(event('Untrusted old author'))
+    expect(replay.revision.releaseState).toBe('obsolete')
+    expect(b.revision.releaseState).toBe('held')
+  } finally {
+    await h.close()
+  }
+})
+
+test('identical-text newer replay advances freshness without replacing immutable revision or decision', async () => {
+  const h = await fixture()
+  try {
+    const a = await h.capture(event('A', time))
+    const noOp = await h.capture(event('A', '2026-10-02T10:03:00Z'))
+    expect(noOp.revision.id).toBe(a.revision.id)
+    expect(noOp.revision.providerVersion).toBe(a.revision.providerVersion)
+    expect(noOp.revision.decision).toBe('pending')
+    const b = await h.capture(event('B', '2026-10-02T10:02:00Z'))
+    expect(b.revision.releaseState).toBe('obsolete')
+    const [current] = await db
+      .select()
+      .from(githubFeedbackRevisions)
+      .where(eq(githubFeedbackRevisions.id, a.revision.id))
+    expect(current!.releaseState).toBe('held')
+    const [object] = await db
+      .select()
+      .from(githubFeedbackObjects)
+      .where(eq(githubFeedbackObjects.id, a.revision.objectId))
+    expect(object!.providerVersion).toBe('2026-10-02T10:03:00.000Z')
+    expect(object!.currentRevisionId).toBe(a.revision.id)
+  } finally {
+    await h.close()
+  }
+})
+
+test.each(['equal', 'both missing', 'old missing', 'new missing'])(
+  '%s provider clocks use sequence for obsolescence, even when the newer capture is ambiguous',
+  async (clocks) => {
+    const h = await fixture()
+    try {
+      const aInput = event('A', time, clocks === 'both missing')
+      const bInput = event('B', time, clocks === 'both missing')
+      if (clocks === 'old missing') delete (aInput.payload.comment as Record<string, unknown>).updated_at
+      if (clocks === 'new missing') delete (bInput.payload.comment as Record<string, unknown>).updated_at
+      const a = await h.capture(aInput)
+      const b = await h.capture(bInput)
+      expect(b.revision.objectId).toBe(a.revision.objectId)
+      expect(b.revision.sequence).toBeGreaterThan(a.revision.sequence)
+      expect(
+        (await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.id, a.revision.id)))[0]!
+          .releaseState
+      ).toBe('obsolete')
+      expect(b.revision.releaseState).toBe('held')
+    } finally {
+      await h.close()
+    }
+  }
+)
+
+test('obsolescence identity is squad, repository, kind and native ID, never just native ID', async () => {
+  const h = await fixture()
+  try {
+    const original = await h.capture(event('Original'))
+    const differentRepo = event('Other repo', '2026-10-02T10:01:00Z')
+    differentRepo.payload.repository = { id: 11, full_name: 'acme/other' }
+    const differentNative = event('Other native', '2026-10-02T10:01:00Z')
+    ;(differentNative.payload.comment as Record<string, unknown>).id = 99
+    await h.capture(differentRepo)
+    await h.capture(differentNative)
+    await h.capture(event('Other kind', '2026-10-02T10:01:00Z', true))
+    await h.capture(event('Other squad', '2026-10-02T10:01:00Z'), { squadId: h.squadIds[1] })
+    const [stored] = await db
+      .select()
+      .from(githubFeedbackRevisions)
+      .where(eq(githubFeedbackRevisions.id, original.revision.id))
+    expect(stored!.releaseState).toBe('held')
+  } finally {
+    await h.close()
+  }
+})
+
+test('replaying the same captured poll source after a newer version retains its obsolete audit identity', async () => {
+  const h = await fixture()
+  try {
+    const input = { ...event('Old'), githubObservation: { kind: 'poll' as const } }
+    const id = await h.source(input)
+    const first = await store.captureGitHubFeedback(id, { authorizeSource: async () => true })
+    await h.capture(event('New', '2026-10-02T10:01:00Z'))
+    const replay = await store.captureGitHubFeedback(id, { authorizeSource: async () => true })
+    expect(replay.revision.id).toBe(first.revision.id)
+    expect(replay.revision.releaseState).toBe('obsolete')
+  } finally {
+    await h.close()
+  }
+})
+
+for (const clocks of ['equal', 'both missing', 'old missing', 'new missing'] as const)
+  test(`OFF ${clocks} clocks record sequence freshness without a current-text provider witness`, async () => {
+    const provider = await import('./feedback-provider')
+    const current = spyOn(provider, 'readCurrentGitHubFeedback').mockRejectedValue(
+      new GitHubApiUnavailableError('http_503')
+    )
+    const trust = await import('./feedback-trust')
+    const authorTrust = spyOn(trust, 'resolveGitHubAuthorTrust')
+    const h = await fixture()
+    try {
+      await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadIds[0]!))
+      const oldInput = event('OLD_RAW', time)
+      const newInput = event('NEW_RAW', time)
+      if (clocks === 'both missing' || clocks === 'old missing')
+        delete (oldInput.payload.comment as Record<string, unknown>).updated_at
+      if (clocks === 'both missing' || clocks === 'new missing')
+        delete (newInput.payload.comment as Record<string, unknown>).updated_at
+      const ids = [await h.source(oldInput), await h.source(newInput)]
+      const old = await store.captureGitHubFeedback(ids[0]!, {
+        unfiltered: 'content',
+        authorizeSource: async () => true,
+      })
+      const fresh = await store.captureGitHubFeedback(ids[1]!, {
+        unfiltered: 'content',
+        authorizeSource: async () => true,
+      })
+      expect(fresh.revision.sequence).toBeGreaterThan(old.revision.sequence)
+      expect(fresh.revision.decision).toBe('historical')
+      expect(fresh.revision.releaseState).toBe('retained')
+      const [object] = await db
+        .select()
+        .from(githubFeedbackObjects)
+        .where(eq(githubFeedbackObjects.id, fresh.revision.objectId))
+      expect(object!.currentRevisionId).toBe(fresh.revision.id)
+      const [prior] = await db
+        .select()
+        .from(githubFeedbackRevisions)
+        .where(eq(githubFeedbackRevisions.id, old.revision.id))
+      expect(prior!.releaseState).toBe('obsolete')
+      const { isUnfilteredGitHubEvent } = await import('./author-filter')
+      const [source] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, ids[1]!))
+      expect(await isUnfilteredGitHubEvent(db, source!)).toBe(true)
+      expect(current).not.toHaveBeenCalled()
+      expect(authorTrust).not.toHaveBeenCalled()
+    } finally {
+      authorTrust.mockRestore()
+      current.mockRestore()
+      await h.close()
+    }
+  })
+
+test('real poll snapshot B at T7 stays current against delayed webhook A at T5, independently of lifecycle T3', async () => {
+  const { GitHubIssueEventPoller } = await import('./issue-event-poller')
+  const { isUnfilteredGitHubEvent } = await import('./author-filter')
+  const h = await fixture()
+  try {
+    await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadIds[0]!))
+    const author = { id: 2, login: 'outside', type: 'User' }
+    const snapshot = {
+      id: 100,
+      number: 3,
+      title: 'Title',
+      body: 'B',
+      user: author,
+      created_at: time,
+      updated_at: '2026-10-02T10:07:00Z',
+    }
+    const poller = new GitHubIssueEventPoller(
+      async () => 'synthetic',
+      async (url) =>
+        url.includes('/issues/events?')
+          ? Response.json([
+              {
+                id: 11,
+                event: 'assigned',
+                created_at: '2026-10-02T10:03:00Z',
+                issue: snapshot,
+                actor: author,
+                assignee: { login: 'ficus-bot' },
+              },
+            ])
+          : Response.json({ id: 10, full_name: 'acme/project' })
+    )
+    const result = await poller.poll(
+      {
+        id: 'fixture',
+        squadId: h.squadIds[0]!,
+        providerKey: 'github',
+        adapterVersion: 1,
+        configuration: { kind: 'issue-events', owner: 'acme', repo: 'project' },
+      },
+      { watermark: 10 }
+    )
+    const polled = result.events[0]!
+    const bId = await h.source(polled)
+    await store.captureGitHubFeedback(bId, { unfiltered: 'content', authorizeSource: async () => true })
+    const b = await store.captureGitHubFeedback(bId, { unfiltered: 'parent', authorizeSource: async () => true })
+    expect(b.revision.providerVersion).toBe('2026-10-02T10:07:00.000Z')
+    const aId = await h.source({
+      type: 'issues',
+      githubObservation: { kind: 'webhook' },
+      payload: {
+        action: 'edited',
+        repository: { id: 10, full_name: 'acme/project' },
+        issue: { ...snapshot, body: 'A', updated_at: '2026-10-02T10:05:00Z' },
+        sender: author,
+      },
+    })
+    const a = await store.captureGitHubFeedback(aId, { unfiltered: 'content', authorizeSource: async () => true })
+    expect(a.revision.releaseState).toBe('obsolete')
+    const [bEvent] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, bId))
+    const [aEvent] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, aId))
+    expect(bEvent!.fact.occurredAt).toBe('2026-10-02T10:03:00.000Z')
+    expect(await isUnfilteredGitHubEvent(db, bEvent!)).toBe(true)
+    expect(await isUnfilteredGitHubEvent(db, aEvent!)).toBe(false)
+    expect(
+      (await db.select().from(githubFeedbackObjects).where(eq(githubFeedbackObjects.id, b.revision.objectId)))[0]!
+        .currentRevisionId
+    ).toBe(b.revision.id)
   } finally {
     await h.close()
   }

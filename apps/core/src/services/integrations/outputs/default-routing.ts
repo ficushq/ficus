@@ -1,3 +1,5 @@
+import { mayReceiveRawGitHubFacts, GITHUB_FACTUAL_PARENT_OBSOLETE } from '../github/feedback-raw-facts'
+import { rawGitHubFactsSourceId } from '../github/feedback-freshness-binding'
 import { createHash } from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import {
@@ -262,11 +264,12 @@ async function send(
 ): Promise<boolean> {
   if (event.integration === 'github') {
     const afterCommit: Array<() => void> = []
-    const key = `integration-notification:${logicalEventKey(event, `${workStreamId ?? 'squad'}:${recipientId}`)}`
+    const key = `integration-notification:${logicalEventKey(event, `${workStreamId ?? 'squad'}:${recipientId}`)}${rawGitHubFactsSourceId(event) ? ':raw-facts' : ''}`
     let refused = false
     const message = await db
       .transaction(async (tx) => {
         await lockAdmittedGitHubOutput(tx, event)
+        if (!(await mayReceiveRawGitHubFacts(tx, event, recipientId))) return null
         // Another assigned account may already have sent this logical notice (same provider event,
         // same recipient). Its winner stands; this observation adds no second action.
         const [winner] = await tx
@@ -283,10 +286,16 @@ async function send(
           {
             recipientId,
             subject: event.fact.subject,
-            content: defaultNotificationContent(event, workStreamId, additionalContext, squadId),
+            content: defaultNotificationContent(
+              event,
+              workStreamId,
+              rawGitHubFactsSourceId(event) ? undefined : additionalContext,
+              rawGitHubFactsSourceId(event) && event.authority.kind === 'connection' ? event.authority.squadId : squadId
+            ),
             metadata: {
               source: 'integration-notification',
               integrationEventId: event.id,
+              ...(rawGitHubFactsSourceId(event) ? { integrationFactualReason: GITHUB_FACTUAL_PARENT_OBSOLETE } : {}),
               ...(workStreamId ? { workStreamId } : {}),
             },
             wakeEligible: true,
