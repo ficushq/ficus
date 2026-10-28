@@ -67,6 +67,7 @@ import {
 import type { Machine, MachineBox } from './queries'
 import type { SshResult, SshRunner, SshStreamer } from './ssh'
 import { BOX_PORT_BUSY_EXIT_CODE, BoxPortBusyError } from './box-port-busy'
+import { startupRetryCode } from '../execution/startup-retry'
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -1078,8 +1079,9 @@ describe('ensureBox', () => {
   })
 
   // box-provision.sh exits 75 only when the box socket could not bind because
-  // something holds its port. That alone becomes the retryable BoxPortBusyError,
-  // carrying systemd's reason and the holder. Other exits stay plain errors.
+  // something holds its port. It becomes the retryable BoxPortBusyError,
+  // carrying systemd's reason and the holder. Exit 73 is lock contention;
+  // other exits stay plain errors.
   const BUSY_STDERR = [
     'box-provision.sh: ficus-box-u.socket failed to start (ListenStream=127.0.0.1:51276)',
     '--- systemctl status ficus-box-u.socket ---',
@@ -1106,6 +1108,15 @@ describe('ensureBox', () => {
         clearBoxSyncedHashes: async () => {},
       }
     ).catch((e: unknown) => e)
+
+  it('installBoxOnMachine makes exit 73 retryable and preserves the lock holder diagnostic', async () => {
+    const diagnostic = 'FICUS_BOX_LOCK_TIMEOUT box=box_test holder_pid=4242 wait_seconds=75'
+    const error = await provisionWith(73, diagnostic)
+    expect(startupRetryCode(error)).toBe('box_lock_timeout')
+    expect(startupRetryCode(new Error('ensure failed', { cause: error }))).toBe('box_lock_timeout')
+    expect((error as Error).message).toContain(diagnostic)
+    expect(startupRetryCode(await provisionWith(1, diagnostic))).toBeNull()
+  })
 
   it('installBoxOnMachine turns the port-busy exit into BoxPortBusyError with the real reason', async () => {
     const error = await provisionWith(BOX_PORT_BUSY_EXIT_CODE, BUSY_STDERR)

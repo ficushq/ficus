@@ -18,6 +18,8 @@ export const BOX_PORT_BUSY_RETRY_DELAYS_MS = [10_000, 20_000, 40_000, 80_000, 16
 
 /** The startup retry code for a busy box port. */
 export const BOX_PORT_BUSY_RETRY_CODE = 'box_port_busy'
+/** Host lock contention shares the existing bounded provisioning retry budget. */
+export const BOX_LOCK_TIMEOUT_RETRY_CODE = 'box_lock_timeout'
 
 /** Machine statuses that come back to `ready` by themselves; anything else fails at once. */
 const TRANSIENT_MACHINE_STATUSES = new Set(['registered', 'bootstrapping', 'unreachable'])
@@ -25,7 +27,7 @@ const MACHINE_READINESS_ERRORS = new Set(['MachineUnavailableError', 'MachineNot
 
 /** The retry schedule for a startup retry code (see {@link startupRetryCode}). */
 export function startupRetryDelays(code: string): readonly number[] {
-  if (code === BOX_PORT_BUSY_RETRY_CODE) return BOX_PORT_BUSY_RETRY_DELAYS_MS
+  if (code === BOX_PORT_BUSY_RETRY_CODE || code === BOX_LOCK_TIMEOUT_RETRY_CODE) return BOX_PORT_BUSY_RETRY_DELAYS_MS
   return code.startsWith('machine_') ? MACHINE_STARTUP_RETRY_DELAYS_MS : STARTUP_RETRY_DELAYS_MS
 }
 
@@ -56,9 +58,9 @@ const DATABASE_CONNECTION_ERRORS = new Set([
 /**
  * Why a startup failure is worth retrying, or null. Drizzle and admission effects can wrap the
  * original error, so the cause chain is walked. A machine that isn't ready yet yields
- * `machine_<status>`, and a box whose socket port is held yields `box_port_busy` (both matched
- * by name to avoid importing the machine modules here). Any other box provisioning failure is
- * not retried.
+ * `machine_<status>`; port and host-lock contention yield `box_port_busy` and
+ * `box_lock_timeout` (matched by name to avoid importing the machine modules here).
+ * Any other box provisioning failure is not retried.
  */
 export function startupRetryCode(error: unknown): string | null {
   const seen = new Set<object>()
@@ -74,6 +76,7 @@ export function startupRetryCode(error: unknown): string | null {
     )
       return `machine_${machineStatus}`
     if (error.name === 'BoxPortBusyError') return BOX_PORT_BUSY_RETRY_CODE
+    if (error.name === 'BoxLockTimeoutError') return BOX_LOCK_TIMEOUT_RETRY_CODE
     error = error.cause
   }
   return null
@@ -101,6 +104,9 @@ export function startupRetryNotice(error: unknown): string {
     const summary = (findInCauseChain(error, 'BoxPortBusyError') as (Error & { summary?: unknown }) | null)?.summary
     const reason = typeof summary === 'string' ? ` (${summary})` : ''
     return `The sandbox could not start because its port on the machine is busy${reason}; this will retry automatically.`
+  }
+  if (code === BOX_LOCK_TIMEOUT_RETRY_CODE) {
+    return 'The sandbox provisioning lock is busy; this will retry automatically.'
   }
   if (code?.startsWith('machine_')) {
     return 'The sandbox machine is still starting up; this will start automatically once it is ready.'
