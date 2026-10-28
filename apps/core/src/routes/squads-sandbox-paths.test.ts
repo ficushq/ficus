@@ -237,3 +237,51 @@ it('workspace transfers disable their per-request idle timeout after authorizati
   await app.request(`/api/squads/${squadId}/workspace/download?path=file`, { headers: authHeaders(token) }, server)
   expect(calls).toEqual([0, 0])
 })
+
+for (const refusal of ['malformed', 'count', 'bytes'])
+  it(`multipart ${refusal} fails before publishing any earlier file`, async () => {
+    touched.length = 0
+    const head = '--test\r\nContent-Disposition: form-data; name="first"; filename="first.txt"\r\n\r\ncomplete\r\n'
+    let tail = ''
+    if (refusal === 'malformed')
+      tail =
+        '--test\r\nBroken-header\r\nContent-Disposition: form-data; name="last"; filename="last.txt"\r\n\r\nlast\r\n'
+    if (refusal === 'count')
+      for (let i = 0; i < 257; i++)
+        tail += '--test\r\nContent-Disposition: form-data; name="extra' + i + '"\r\n\r\nx\r\n'
+    if (refusal === 'bytes')
+      tail = '--test\r\nContent-Disposition: form-data; name="extra"\r\n\r\n' + 'x'.repeat(4 * 1024 ** 2) + '\r\n'
+    const response = await app.request(`/api/squads/${squadId}/workspace/upload`, {
+      method: 'POST',
+      headers: { ...authHeaders(token), 'content-type': 'multipart/form-data; boundary=test' },
+      body: head + tail + '--test--\r\n',
+    })
+    expect(response.status).toBe(refusal === 'bytes' ? 413 : 400)
+    if (refusal === 'bytes')
+      expect(await response.json()).toMatchObject({ code: 'REQUEST_BODY_TOO_LARGE', maxBytes: 4 * 1024 ** 2 })
+    expect(touched).toEqual([])
+  })
+
+it('publishes every file when a later part exceeds the former hidden header thresholds', async () => {
+  touched.length = 0
+  const body =
+    '--test\r\nContent-Disposition: form-data; name="first"; filename="first.txt"\r\n\r\none\r\n--test\r\nX-Padding: ' +
+    'x'.repeat(82 * 1024) +
+    '\r\n' +
+    Array.from({ length: 2001 }, (_, i) => `X-${i}: x\r\n`).join('') +
+    'Content-Disposition: form-data; name="last"; filename="last.txt"\r\n\r\ntwo\r\n--test--\r\n'
+  const response = await app.request(`/api/squads/${squadId}/workspace/upload?overwrite=true`, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'content-type': 'multipart/form-data; boundary=test' },
+    body,
+  })
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({
+    uploaded: 2,
+    results: [
+      { path: 'first.txt', status: 'created' },
+      { path: 'last.txt', status: 'created' },
+    ],
+  })
+  expect(touched.filter((p) => p.endsWith('last.txt'))).toHaveLength(2)
+})

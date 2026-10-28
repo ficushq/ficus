@@ -53,7 +53,6 @@
         "@earendil-works/pi-ai": "0.99.1",
         "@earendil-works/pi-coding-agent": "0.99.1",
         "@earendil-works/pi-tui": "0.99.1",
-        "@fastify/busboy": "3.2.4",
         "@ficus/sandbox-server": "workspace:*",
         "@ficus/shared": "workspace:*",
         "@google-cloud/text-to-speech": "^6.4.0",
@@ -801,8 +800,6 @@
     "@expressive-code/plugin-shiki": ["@expressive-code/plugin-shiki@0.44.2", "", { "dependencies": { "@expressive-code/core": "^0.44.2", "shiki": "^4.0.2" } }, "sha512-ebWIvCDzXvjyD8rH6T6DfytYJw1GoArLR4nusIAE4VxXrCQf3d+owytiv010KU/dUg+SRLZskDn0N+HaFXeuSg=="],
 
     "@expressive-code/plugin-text-markers": ["@expressive-code/plugin-text-markers@0.44.2", "", { "dependencies": { "@expressive-code/core": "^0.44.2" } }, "sha512-SNI7EgUSiADqbqUzzMbj1ZeC/r2pa5eg3KyFOGAd3a7EsIA4qzjXQLp+ODWQtHVDKFCdGs4J3ovSJUqvKIK96g=="],
-
-    "@fastify/busboy": ["@fastify/busboy@3.2.4", "", {}, "sha512-lQS8xcXT54rdJb+wlG/Q7SMSdtkZEpLPHooSDUZyyZm9LJD7X1kONPhVoPaHq+dsPtWUGGLIz9gBNhs9qKbylw=="],
 
     "@ficus/client-core": ["@ficus/client-core@workspace:packages/client-core"],
 

@@ -33,7 +33,6 @@
     "@earendil-works/pi-ai": "0.99.1",
     "@earendil-works/pi-coding-agent": "0.99.1",
     "@earendil-works/pi-tui": "0.99.1",
-    "@fastify/busboy": "3.2.4",
     "@ficus/sandbox-server": "workspace:*",
     "@ficus/shared": "workspace:*",
     "@google-cloud/text-to-speech": "^6.4.0",

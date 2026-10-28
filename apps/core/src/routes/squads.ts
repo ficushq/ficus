@@ -1,3 +1,4 @@
+import { WORKSPACE_MULTIPART_METADATA_BYTES } from '../services/attachments/workspace-multipart-reader'
 import { getBunServer } from 'hono/bun'
 import { stageWorkspaceMultipart, InvalidWorkspaceMultipartError } from '../services/attachments/workspace-multipart'
 import { publishWorkspaceUpload } from '../services/squad/workspace-upload'
@@ -836,7 +837,16 @@ export const squadsRouter = new Hono()
       })
       return c.json({ uploaded: results.filter((r) => r.status !== 'error').length, results })
     } catch (error) {
-      if (error instanceof InvalidWorkspaceMultipartError) return c.json({ error: error.message }, 400)
+      if (error instanceof InvalidWorkspaceMultipartError)
+        return c.json(
+          {
+            error: error.message,
+            ...(error.status === 413
+              ? { code: 'REQUEST_BODY_TOO_LARGE', maxBytes: WORKSPACE_MULTIPART_METADATA_BYTES }
+              : {}),
+          },
+          error.status
+        )
       log.error('Error uploading files:', error)
       return c.json({ error: `Failed to upload: ${publicErrorMessage(error)}` }, 500)
     } finally {

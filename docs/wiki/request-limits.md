@@ -28,6 +28,16 @@ The exact method/path policy and precedence live in [`request-body-limits.ts`](.
 - **Local-app proxy:** opaque requests and responses remain streaming and are not parsed or limited by this API policy. Application authorization and proxy lifetime rules still apply.
 - Existing decoded-image size/count rules and attachment storage quotas remain independent of transport budgets. File/text contents in legacy JSON transports keep their previous 128 MiB transport ceiling.
 
+### Workspace multipart envelope budgets
+
+Workspace **file-content bytes remain unlimited**, but the multipart envelope has explicit resource budgets:
+
+- Up to **1,000 files** and **1,000 corresponding `path_<file-field>` entries** per request, plus **256 other field entries**. Duplicate field entries count toward these budgets; the first value still wins. A path-looking field without a corresponding file counts as other metadata, so it cannot bypass that budget. These counts imply at most 2,256 parts. Larger file sets must use separate uploads, never silent omission.
+- **4 MiB aggregate metadata:** decoded UTF-8 non-file field data, UTF-8 field names/filenames, raw part headers and framing (including boundary parameters, preamble and epilogue). Names and filenames are counted separately from their raw header representation. This is not a file-content-byte quota. UTF-8/BOM handling matches the native multipart reader.
+- At most **4,096 header lines per part**. Long headers and more than 2,000 header pairs within these explicit budgets are accepted; there is no hidden 80 KiB header cutoff.
+
+All parts must be parsed successfully before any file is published. Malformed or incomplete framing, count overflow and invalid headers return **400**; aggregate metadata-byte overflow returns **413** with `REQUEST_BODY_TOO_LARGE` and `maxBytes: 4194304`. Rejection cancels the input and removes every temporary stage rather than publishing or reporting success for a subset. Staging is sequential with at most one open staging-file descriptor. Only bounded part headers/non-file values use native multipart decoding; file contents stream directly to disk.
+
 Bun's listener limit applies even to streamed request bodies. Core and the sandbox therefore explicitly use `maxRequestBodySize: Infinity`, **together with** bounded ordinary readers and exact transfer exceptions. The sandbox retains a 100 MiB ceiling for JSON and confined upload requests. Do not deploy the listener setting without these readers, or revert the readers while leaving the listener uncapped. Workspace upload/download requests disable only their listener's shorter per-request idle timer; cancellation, client budgets and sandbox idle-lifecycle accounting remain in effect.
 
 ## Collection budgets
