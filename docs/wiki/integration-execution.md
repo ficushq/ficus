@@ -49,6 +49,25 @@ ficus integration exec github --squad <squad-id> --connection <attached-account-
 ficus integration exec <provider> --squad <squad-id> -- npm run deploy
 ```
 
+### Explicit accounts and nested wrappers
+
+`--connection` selects an attached account for the whole same-provider/squad
+command subtree, including a direct `-- gh …` or a script that later finds `gh`
+on PATH. The CLI carries **token-free intent**, not authorization or cached
+credentials, in the transient child-only `FICUS_INTEGRATION_EXEC_SELECTION`
+environment variable: JSON `{ providerKey, squadId, connectionId }`.
+
+Every nested wrapper still enters normal exec and calls Core again with that
+connection ID. A revoked, detached, unhealthy or unavailable explicit account
+fails; it never silently falls back to the default. A missing/unhealthy default
+does not block a healthy explicit account. An explicit inner `--connection`
+overrides inherited intent. The tuple is inherited only when both provider and
+squad match exactly; an unrelated/default exec clears prior intent from its
+child environment. Malformed context fails closed without echoing its contents.
+This metadata is never written into wrappers, bashrc or persistent environments,
+and does not replace all-provider credential scrubbing. Like `--connection`, it
+cannot grant access to an unattached or unauthorized account.
+
 Exec does not restrict the command or its descendants. Credentials exist only in that command's transient process environment. Never read, print, log, persist, or commit a credential. SIGINT/SIGTERM are forwarded; argv, standard streams and exit status are preserved.
 
 ## Executable wrappers and lifecycle

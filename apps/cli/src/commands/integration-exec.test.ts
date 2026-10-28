@@ -1,5 +1,48 @@
 import { expect, test } from 'bun:test'
-import { commandExecutionEnvironment } from './integration-exec'
+import { commandExecutionEnvironment, executionConnectionId, INTEGRATION_EXEC_SELECTION_ENV } from './integration-exec'
+
+const scope = { providerKey: 'github', squadId: 'squad-one' }
+const selection = { ...scope, connectionId: 'attached-alternate' }
+
+test('selection is scoped to the exact provider and squad, and an explicit inner choice wins', () => {
+  const inherited = { [INTEGRATION_EXEC_SELECTION_ENV]: JSON.stringify(selection) }
+  expect(executionConnectionId(scope, undefined, inherited)).toBe('attached-alternate')
+  expect(executionConnectionId({ ...scope, providerKey: 'linear' }, undefined, inherited)).toBeUndefined()
+  expect(executionConnectionId({ ...scope, squadId: 'squad-two' }, undefined, inherited)).toBeUndefined()
+  expect(executionConnectionId(scope, 'inner-alternate', inherited)).toBe('inner-alternate')
+  expect(executionConnectionId(scope, 'inner-alternate', { [INTEGRATION_EXEC_SELECTION_ENV]: 'malformed' })).toBe(
+    'inner-alternate'
+  )
+  expect(executionConnectionId(scope, undefined, {})).toBeUndefined()
+})
+
+test('malformed inherited selection refuses without echoing data or falling back to default', () => {
+  for (const raw of [
+    '',
+    'not-json',
+    'null',
+    'false',
+    '[]',
+    '{}',
+    JSON.stringify({ ...selection, connectionId: '' }),
+    JSON.stringify({ ...selection, squadId: 5 }),
+  ]) {
+    expect(() => executionConnectionId(scope, undefined, { [INTEGRATION_EXEC_SELECTION_ENV]: raw })).toThrow(
+      'Invalid integration execution selection context'
+    )
+  }
+})
+
+test('only the current explicit selection reaches the child; unrelated/default exec clears prior intent', () => {
+  const inherited = { [INTEGRATION_EXEC_SELECTION_ENV]: JSON.stringify(selection), GH_TOKEN: 'synthetic-old' }
+  const result = { environment: { LINEAR_API_KEY: 'synthetic-new' }, scrubVariables: ['GH_TOKEN', 'LINEAR_API_KEY'] }
+  const environment = commandExecutionEnvironment(inherited, result)
+  expect(environment).toEqual({ LINEAR_API_KEY: 'synthetic-new' })
+  const next = { ...selection, connectionId: 'inner-alternate' }
+  const selected = commandExecutionEnvironment(inherited, result, next)
+  expect(selected).toEqual({ LINEAR_API_KEY: 'synthetic-new', [INTEGRATION_EXEC_SELECTION_ENV]: JSON.stringify(next) })
+  expect(inherited[INTEGRATION_EXEC_SELECTION_ENV]).toBe(JSON.stringify(selection))
+})
 
 test('exec scrubs every declared provider, including selected-provider stale values, without restricting commands', () => {
   const inherited = {

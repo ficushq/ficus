@@ -1,4 +1,4 @@
-import { runIntegrationCommand, type IntegrationExecutionEnvironment } from './integration-exec'
+import { executionConnectionId, runIntegrationCommand, type IntegrationExecutionEnvironment } from './integration-exec'
 import type {
   GitHubCommitSigningSummary,
   IntegrationAuthorizationStart,
@@ -73,13 +73,20 @@ export function registerIntegrationCommands(
     .allowUnknownOption(false)
     .action(
       run(async (provider, command: string[], options) => {
+        const scope = { providerKey: provider, squadId: options.squad }
+        const connectionId = executionConnectionId(scope, options.connection)
         const result = await apiPost<IntegrationExecutionEnvironment>(
           `/api/squads/${options.squad}/integrations/${provider}/execute-environment`,
           {
-            ...(options.connection ? { connectionId: options.connection } : {}),
+            ...(connectionId !== undefined ? { connectionId } : {}),
           }
         )
-        process.exitCode = await runIntegrationCommand(command, result)
+        process.exitCode = await runIntegrationCommand(
+          command,
+          result,
+          process.env,
+          connectionId !== undefined ? { ...scope, connectionId } : undefined
+        )
       })
     )
 
