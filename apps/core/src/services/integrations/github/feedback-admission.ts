@@ -4,7 +4,8 @@ import { outputSnapshotMatches, readFeedbackRevision } from './feedback-pass-rea
 import { githubContentHash } from './feedback-envelope'
 import { captureGitHubFeedback, type FeedbackCaptureDependencies } from './feedback-store'
 import { isTrustedGitHubFeedbackContent } from './feedback-trust'
-import { isGitHubParentTextAdmissible } from './feedback-parent'
+import { isCurrentGitHubFeedbackRevision } from './feedback-obsolescence'
+import { isGitHubQuotedParentFresh, isGitHubParentTextAdmissible } from './feedback-parent'
 
 type Event = typeof integrationOutputEvents.$inferSelect
 
@@ -62,5 +63,10 @@ export async function isGitHubFeedbackAdmitted(store: typeof db | DbTx, event: E
     github: { content: null, status: null, revisionId: revision.id },
   }
   if (githubContentHash(event.fact) !== githubContentHash(expected)) return false
+  if (
+    !(await isCurrentGitHubFeedbackRevision(store, revision.id)) ||
+    !(await isGitHubQuotedParentFresh(store, revision.squadId, revision.envelope))
+  )
+    return false
   return revision.decision !== 'automatic' || isTrustedGitHubFeedbackContent(store, revision.squadId, revision)
 }

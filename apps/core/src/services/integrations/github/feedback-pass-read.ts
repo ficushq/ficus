@@ -1,4 +1,5 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { rawGitHubFactsSourceId } from './feedback-freshness-binding'
+import { and, eq, sql, type SQLWrapper } from 'drizzle-orm'
 import { db, integrationOutputEvents, githubOutputProofs, githubFeedbackRevisions, inbox, type DbTx } from '../../../db'
 import { githubOutputPass, GITHUB_PASS_READ_LIMIT } from './feedback-pass'
 
@@ -60,6 +61,7 @@ export async function readOutputCandidate(store: Store, id: string) {
   const [identity] = await store
     .select({
       integration: integrationOutputEvents.integration,
+      sourceKey: integrationOutputEvents.sourceKey,
       revisionId: sql<string | null>`${integrationOutputEvents.fact}->'github'->>'revisionId'`,
     })
     .from(integrationOutputEvents)
@@ -72,8 +74,9 @@ export async function readOutputCandidate(store: Store, id: string) {
           .from(githubOutputProofs)
           .where(eq(githubOutputProofs.eventId, id))
       : []
+  const factualSourceId = rawGitHubFactsSourceId(identity)
   if (identity.integration === 'github' && pass) {
-    const ids = new Set([id, ...(proof ? [proof.sourceId] : [])])
+    const ids = new Set([id, ...(proof ? [proof.sourceId] : []), ...(factualSourceId ? [factualSourceId] : [])])
     const needed =
       [...ids].filter((eventId) => !pass.bodies.has(`event:${eventId}`)).length +
       (identity.revisionId && !pass.revisions.has(identity.revisionId) ? 1 : 0)
@@ -83,6 +86,7 @@ export async function readOutputCandidate(store: Store, id: string) {
   if (event?.integration === 'github') {
     if (identity.revisionId && !(await readFeedbackRevision(store, identity.revisionId))) return undefined
     if (proof && !(await readOutputEvent(store, proof.sourceId))) return undefined
+    if (factualSourceId && !(await readOutputEvent(store, factualSourceId))) return undefined
   }
   return event
 }
@@ -157,8 +161,13 @@ const UUID_PATTERN = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{
  * value. Comparing as uuid lets the events' primary-key index serve every inbox read and write;
  * a `::text` comparison on the key column forced a sequential scan of the whole events table.
  */
-export function inboxIntegrationEventId() {
-  return sql`(CASE WHEN ${inbox.metadata}->>'integrationEventId' ~ ${UUID_PATTERN} THEN (${inbox.metadata}->>'integrationEventId')::uuid END)`
+export function inboxIntegrationEventId(metadata: SQLWrapper = inbox.metadata) {
+  return sql`(CASE WHEN ${metadata}->>'integrationEventId' ~ ${UUID_PATTERN} THEN (${metadata}->>'integrationEventId')::uuid END)`
+}
+
+/** Guard the legacy text recipient id while retaining indexed receipt lookups. */
+export function inboxRecipientAgentId(recipientId: SQLWrapper = inbox.recipientId) {
+  return sql`(CASE WHEN ${recipientId} ~ ${UUID_PATTERN} THEN ${recipientId}::uuid END)`
 }
 
 /** The squad id stored in an output event's authority, as a uuid (NULL when absent or malformed). */

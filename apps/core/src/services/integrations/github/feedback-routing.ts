@@ -1,3 +1,5 @@
+import { rawGitHubFactsOrigin, preserveRawGitHubActionFacts, GITHUB_FEEDBACK_OBSOLETE } from './feedback-raw-facts'
+import { rawGitHubFactsSourceId } from './feedback-freshness-binding'
 import { and, eq, gt, ne, sql } from 'drizzle-orm'
 import { eventEmitter } from '../../../lib/infra/event-emitter'
 import {
@@ -28,6 +30,8 @@ import {
 } from './feedback-pass'
 import { readOutputEvent } from './feedback-pass-read'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
+import { GITHUB_FRESHNESS_UNBOUND, hasGitHubFreshnessBinding } from './feedback-freshness-binding'
+import { observeUnfilteredGitHubFeedback } from './feedback-unfiltered'
 import { isGitHubAuthorFilterEnabled, isUnfilteredGitHubEvent } from './author-filter'
 import {
   enqueueGitHubFeedbackScreening,
@@ -101,6 +105,10 @@ export async function isGitHubOutputAdmitted(store: Store, event: Event): Promis
 /** Raw matching is internal only, retrieved through an exact stored association, never merged into delivery. */
 export async function githubMatchingEvent(store: Store, event: Event): Promise<Event> {
   if (event.integration !== 'github') return event
+  if (rawGitHubFactsSourceId(event)) {
+    const source = await rawGitHubFactsOrigin(store, event)
+    return source ? { ...event, fact: source.fact } : event
+  }
   const [proof] = await store.select().from(githubOutputProofs).where(eq(githubOutputProofs.eventId, event.id))
   let source = proof ? await readOutputEvent(store, proof.sourceEventId) : undefined
   if (!proof && event.fact.github?.revisionId && (await isGitHubFeedbackAdmitted(store, event))) {
@@ -137,6 +145,29 @@ export type GitHubOutputPreparation =
 
 const DEFER: GitHubOutputPreparation = { kind: 'defer' }
 
+async function prepareUnfilteredGitHubOutput(
+  input: Event,
+  settle: (reason: string) => GitHubOutputPreparation
+): Promise<GitHubOutputPreparation> {
+  try {
+    if (!(await observeUnfilteredGitHubFeedback(input))) return settle(GITHUB_FRESHNESS_UNBOUND)
+    if (await isUnfilteredGitHubEvent(db, input)) return { kind: 'ready', event: input }
+    const afterCommit: Array<() => void> = []
+    const factual = await db.transaction(async (tx) => {
+      await lockGitHubOutputAuthority(tx, input)
+      return preserveRawGitHubActionFacts(tx, input.id, afterCommit)
+    })
+    afterCommit.forEach((callback) => callback())
+    if (factual && (await isUnfilteredGitHubEvent(db, factual))) return { kind: 'ready', event: factual }
+    return settle(GITHUB_FEEDBACK_OBSOLETE)
+  } catch (error) {
+    if (error instanceof Error && ['feedback_filter_enabled', 'feedback_capacity_deferred'].includes(error.message))
+      return DEFER
+    if (error instanceof Error && error.message === 'feedback_source_unavailable') return settle('github_unauthorized')
+    throw error
+  }
+}
+
 /**
  * Entry to every output effect. First query relevance, then capture; held content returns null.
  * Assigned provider I/O finishes before any authority/stream/agent lock. The server-owned witness
@@ -171,7 +202,8 @@ async function prepareGitHubOutputInPass(
   // Only a raw provider source is ever settled. Canonical (`github-feedback:`) and status
   // (`github-status:`) effects keep `matchedAt` as their own routing record, which the release
   // worker reads; a dead end for one of those is a deferral.
-  const raw = !input.fact.github?.revisionId && !input.sourceKey.startsWith('github-status:')
+  const raw =
+    !input.fact.github?.revisionId && !input.sourceKey.startsWith('github-status:') && !rawGitHubFactsSourceId(input)
   const settle = (reason: string): GitHubOutputPreparation => (raw ? { kind: 'settle', reason } : DEFER)
   if (input.integration !== 'github') return ready(input)
   if (!reserveGitHubEvent(input.id)) return DEFER
@@ -181,9 +213,11 @@ async function prepareGitHubOutputInPass(
     !(await authorized(db, 'github', input.authority, input.authority.squadId))
   )
     return settle('github_unauthorized')
-  // Filter OFF: no capture, hold, provider witness or projection; the event routes as before.
+  if (!input.fact.github?.content && !hasGitHubFreshnessBinding(input)) return settle(GITHUB_FRESHNESS_UNBOUND)
+  // Filter OFF: local freshness bookkeeping only; no author gate, provider witness or projection.
   if (!(await isGitHubAuthorFilterEnabled(db, input.authority.squadId)))
-    return (await isUnfilteredGitHubEvent(db, input)) ? ready(input) : settle('github_not_routable')
+    return prepareUnfilteredGitHubOutput(input, settle)
+  if (rawGitHubFactsSourceId(input)) return DEFER // OFF-only facts never inherit a filtered approval.
   let source = input
   const [prior] = await db.select().from(githubOutputProofs).where(eq(githubOutputProofs.eventId, input.id))
   if (prior) {
@@ -238,13 +272,15 @@ async function prepareGitHubOutputInPass(
   if (!plan.relevant && !prior && !input.fact.github?.revisionId) return settle('github_irrelevant')
   if (!factual && !input.fact.github?.revisionId) {
     const [known] = await db
-      .select({ decision: githubFeedbackRevisions.decision })
+      .select({ decision: githubFeedbackRevisions.decision, releaseState: githubFeedbackRevisions.releaseState })
       .from(githubFeedbackSources)
       .innerJoin(githubFeedbackRevisions, eq(githubFeedbackRevisions.id, githubFeedbackSources.revisionId))
       .where(eq(githubFeedbackSources.eventId, source.id))
       .limit(1)
     // Explicit history is released only by the reviewed-source release adapter, never a raw
     // retry or a trust-list change. In particular, pending replays cost no provider requests.
+    if (known?.releaseState === 'obsolete') return settle('github_feedback_obsolete')
+    if (known?.decision === 'historical') return settle('github_unfiltered_history')
     if (known && known.decision !== 'automatic') return DEFER
   }
   const access = await readGitHubResource(source)
@@ -282,14 +318,15 @@ async function prepareGitHubOutputInPass(
         // The filter was turned OFF between the relevance read and the capture transaction:
         // route the raw event as the filter-OFF path would, instead of holding it.
         if (error instanceof Error && error.message === 'feedback_filter_disabled')
-          return (await isUnfilteredGitHubEvent(db, input)) ? ready(input) : settle('github_not_routable')
+          return prepareUnfilteredGitHubOutput(input, settle)
         // GitHub could not answer the current-version witness: retry later, never hold as ambiguous.
         if (error instanceof Error && error.message === 'feedback_provider_unavailable') return DEFER
         throw error
       }
       // Content-free, after the capture transaction committed: the human queue count changed.
-      if (captured.revision.decision === 'pending' && captured.disposition !== 'replay')
+      if (captured.obsoleteCount || (captured.revision.decision === 'pending' && captured.disposition !== 'replay'))
         eventEmitter.emit('githubFeedback.updated', { squadId: captured.revision.squadId })
+      if (captured.revision.releaseState === 'obsolete') return settle('github_feedback_obsolete')
       // Squads that screen untrusted feedback: the capture transaction queued a decision-model
       // screen for a new held revision. Run it off this path; the revision stays held meanwhile.
       if (native && captured.disposition !== 'replay' && (await isGitHubFeedbackScreenWaiting(captured.revision.id)))

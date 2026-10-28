@@ -9,12 +9,14 @@ import { githubContentIdentity, githubNativeId } from './feedback-envelope'
  * A webhook or poll names a comment's, review's, issue's or pull request's AUTHOR, but not who
  * edited it since. GitHub records that history (GraphQL `Comment.userContentEdits`, `editor`, and
  * `RenamedTitleEvent` for titles). One bounded query through the squad's authorized connection
- * decides, for exactly the captured text:
+ * decides for the captured text:
  * - never edited: `creation` by the author;
  * - edited: `verified_edit`, listing the author's co-writers (every editor in the history, plus the
  *   signed webhook sender of an edit). Capture delivers it automatically only if the author AND every
  *   listed editor is trusted in the squad; trusting the author never vouches for other editors.
- * - anything uncertain (a different node, repository, author or text than captured, a truncated
+ * - authenticated stale webhook/poll text: `verified_edit` with the complete CURRENT editor set,
+ *   a conservative superset; capture obsolescence independently prevents outdated delivery;
+ * - anything uncertain (a different node, repository or author, unauthenticated stale text, a truncated
  *   history, a deleted or unidentifiable editor, a refused query): null, and the content stays held.
  * GitHub not answering at all throws {@link import('../../github/api-client').GitHubApiUnavailableError}
  * so capture retries later instead of deciding.
@@ -54,7 +56,9 @@ export interface GitHubEditHistoryTarget {
   nativeId: string
   repositoryId: string
   author: GitHubAccountIdentity
-  /** The exact captured text; the history only speaks for it if GitHub's current text is identical. */
+  /** Ingress-owned provenance, never payload metadata. Without it, current text must match exactly. */
+  capturedSource?: 'webhook' | 'poll'
+  /** The exact captured text. Authentic stale observations use the complete current history. */
   body: string
   /** Issues and pull requests only. */
   title?: string
@@ -98,14 +102,15 @@ export function decideGitHubEditors(
 ): GitHubEditorVerification | null {
   const node = record(record(response).node)
   const isParent = target.objectKind === 'issue' || target.objectKind === 'pull_request'
+  const sameText = text(node.body) === target.body && (!isParent || text(node.title) === (target.title ?? ''))
+  const authentic = target.capturedSource === 'webhook' || target.capturedSource === 'poll'
   if (
     node.__typename !== TYPENAMES[target.objectKind] ||
     githubNativeId(node.databaseId) !== target.nativeId ||
     githubNativeId(record(node.repository).databaseId) !== target.repositoryId ||
     actorIdentity(node.author)?.accountId !== target.author.accountId ||
-    // Bound to the exact captured version: a later edit is a new version, verified on its own.
-    text(node.body) !== target.body ||
-    (isParent && text(node.title) !== (target.title ?? ''))
+    // Full current history conservatively covers earlier text only from authenticated ingress.
+    (!sameText && !authentic)
   )
     return null
   const edits = complete(node.userContentEdits)
@@ -122,7 +127,7 @@ export function decideGitHubEditors(
   const lastEditor = node.lastEditedAt ? actorIdentity(node.editor) : null
   if (node.lastEditedAt && !add(lastEditor)) return null
   if (target.editedBy) add(target.editedBy)
-  if (editors.size === 0) return { attribution: 'creation', editor: null, editors: [] }
+  if (editors.size === 0) return sameText ? { attribution: 'creation', editor: null, editors: [] } : null
   const renameActors = renames.map((rename) => actorIdentity(record(rename).actor))
   const editor = target.editedBy ?? lastEditor ?? renameActors.at(-1) ?? [...editors.values()][0]!
   return {
@@ -134,7 +139,10 @@ export function decideGitHubEditors(
 }
 
 /** The text an edit-history read must match, or null when the content cannot be verified at all. */
-export function githubEditHistoryTarget(content: GitHubFeedbackContent): GitHubEditHistoryTarget | null {
+export function githubEditHistoryTarget(
+  content: GitHubFeedbackContent,
+  capturedSource?: 'webhook' | 'poll'
+): GitHubEditHistoryTarget | null {
   if (
     content.objectKind === 'action' ||
     content.attribution !== 'unknown' ||
@@ -150,6 +158,7 @@ export function githubEditHistoryTarget(content: GitHubFeedbackContent): GitHubE
     return null
   const written = record(content.delivery.data.content)
   return {
+    ...(capturedSource ? { capturedSource } : {}),
     nodeId: content.nodeId,
     objectKind: content.objectKind,
     nativeId: content.nativeId,

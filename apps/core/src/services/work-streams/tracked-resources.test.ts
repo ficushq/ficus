@@ -25,6 +25,7 @@ import { Agent } from '../../entities/Agent'
 import { WorkStream } from '../../entities/WorkStream'
 import { createTestGitHubConnection } from '../../test-utils/github-connection'
 import { attachFlow, dispatchFlow } from '../workflows/execution'
+import { githubOutputAdapter } from '../integrations/outputs/github'
 import { publishIntegrationOutput } from '../integrations/outputs/runtime'
 import type { IntegrationOutputAuthority } from '../integrations/outputs/types'
 import {
@@ -318,8 +319,25 @@ test('the delivery change request cannot be untracked, and removing a tracked is
 test('removing a tracked link supersedes its pending deliveries', async () => {
   const resource = trackedIssue(2310)
   const id = await createStream({ metadata: { tracked: [resource] }, flow: 'follow' })
+  const [fact] = githubOutputAdapter.normalize({
+    type: 'issues',
+    githubObservation: { kind: 'webhook' },
+    payload: {
+      action: 'edited',
+      repository: { id: 10, full_name: repo },
+      issue: {
+        id: 23100,
+        number: 2310,
+        title: 'Tracked issue',
+        body: 'Please take a look.',
+        updated_at: new Date().toISOString(),
+        user: { id: 2, login: 'author', type: 'User' },
+      },
+      sender: { id: 2, login: 'author', type: 'User' },
+    },
+  })
   eventIds.push(
-    (await publishIntegrationOutput('github', issueFact(2310, { output: 'issue.updated' }), {
+    (await publishIntegrationOutput('github', fact!, {
       kind: 'connection',
       connectionId,
       squadId,

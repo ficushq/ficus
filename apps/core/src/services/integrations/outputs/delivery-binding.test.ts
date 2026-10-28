@@ -44,15 +44,15 @@ function pull(
     merged: options.merged ?? false,
     title: 'Delivery',
     updated_at: new Date().toISOString(),
-    user: { login: 'tauagent', type: 'Bot' },
+    user: { id: 22, login: 'tauagent', type: 'Bot' },
     head: { ref: options.head, sha: 'a'.repeat(40), repo: { full_name: options.headRepository ?? repository } },
     base: { ref: options.base ?? 'main', repo: { full_name: repository } },
   }
 }
-const sender = { login: 'reviewer', type: 'User' }
+const sender = { id: 11, login: 'reviewer', type: 'User' }
 const opened = (pr: ReturnType<typeof pull>, action = 'opened'): VerifiedIngressEvent => ({
   type: 'pull_request',
-  payload: { action, number: pr.number, pull_request: pr, repository: { full_name: repository }, sender },
+  payload: { action, number: pr.number, pull_request: pr, repository: { id: 10, full_name: repository }, sender },
   metadata: {},
 })
 const reviewed = (pr: ReturnType<typeof pull>): VerifiedIngressEvent => ({
@@ -61,7 +61,7 @@ const reviewed = (pr: ReturnType<typeof pull>): VerifiedIngressEvent => ({
     action: 'submitted',
     pull_request: pr,
     review: {
-      id: randomUUID(),
+      id: pr.number * 1000 + 1,
       state: 'changes_requested',
       body: 'Please rename this.',
       submitted_at: new Date().toISOString(),
@@ -69,7 +69,7 @@ const reviewed = (pr: ReturnType<typeof pull>): VerifiedIngressEvent => ({
       user: sender,
       commit_id: 'a'.repeat(40),
     },
-    repository: { full_name: repository },
+    repository: { id: 10, full_name: repository },
     sender,
   },
   metadata: {},
@@ -78,15 +78,15 @@ const commented = (number: number): VerifiedIngressEvent => ({
   type: 'issue_comment',
   payload: {
     action: 'created',
-    issue: { number, title: 'Delivery', pull_request: { url: 'x' } },
+    issue: { id: number * 1000, number, title: 'Delivery', pull_request: { url: 'x' } },
     comment: {
-      id: randomUUID(),
+      id: number * 1000 + 2,
       body: 'One more thing.',
       created_at: new Date().toISOString(),
       html_url: `https://github.com/${repository}/pull/${number}#comment`,
       user: sender,
     },
-    repository: { full_name: repository },
+    repository: { id: 10, full_name: repository },
     sender,
   },
   metadata: {},

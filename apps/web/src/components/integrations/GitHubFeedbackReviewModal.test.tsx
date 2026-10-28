@@ -369,3 +369,17 @@ test('held items show the decision model’s verdict in the list and the detail'
   // The verdict informs; the decision controls are unchanged.
   expect(buttonIn(dialog(), 'Allow once')).toBeDefined()
 })
+
+test('stale parent quotations allow only deny, including mixed bulk selections', async () => {
+  api.pending = [item(1, { reason: 'parent_content_stale' }), item(2)]
+  const dialog = await render()
+  await harness.act(async () => fireEvent.click(checkbox(dialog(), 1)))
+  expect(buttonIn(dialog(), 'Allow once').disabled).toBe(true)
+  expect(buttonIn(dialog(), 'Allow and trust author').disabled).toBe(true)
+  expect(buttonIn(dialog(), 'Deny').disabled).toBe(false)
+  expect(dialog().textContent).toContain('can only be denied')
+  await harness.act(async () => fireEvent.click(checkbox(dialog(), 2)))
+  expect(buttonIn(dialog(), 'Allow once').disabled).toBe(true)
+  await harness.act(async () => fireEvent.click(checkbox(dialog(), 1)))
+  expect(buttonIn(dialog(), 'Allow once').disabled).toBe(false)
+})

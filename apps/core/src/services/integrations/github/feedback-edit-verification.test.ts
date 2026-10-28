@@ -143,6 +143,7 @@ test('a polled review by a trusted author is verified as never edited and delive
     // One bounded history read, bound to the exact captured object and text.
     expect(h.calls).toEqual([
       {
+        capturedSource: 'poll',
         nodeId: 'PRR_node',
         objectKind: 'review',
         nativeId: '900',
@@ -371,6 +372,43 @@ test('a later edit is a new version, verified again on its own history', async (
     expect(second.revision.id).not.toBe(first.revision.id)
     expect(second.revision).toMatchObject({ decision: 'pending', reason: 'untrusted_editor' })
     expect(h.calls.map((call) => call.body)).toEqual(['Version 1', 'Version 2'])
+  } finally {
+    await h.close()
+  }
+})
+
+test('trusted poll author with contradictory empty edit history remains held as unknown_editor', async () => {
+  const { decideGitHubEditors } = await import('./feedback-edit-history')
+  const h = await fixture()
+  try {
+    const verified = decideGitHubEditors(
+      {
+        nodeId: 'PRR_node',
+        objectKind: 'review',
+        nativeId: '900',
+        repositoryId: '10',
+        author: identity(noah),
+        body: 'Captured X',
+        capturedSource: 'poll',
+      },
+      {
+        node: {
+          __typename: 'PullRequestReview',
+          databaseId: 900,
+          repository: { databaseId: 10 },
+          author: { __typename: 'User', databaseId: noah.id, login: noah.login },
+          body: 'Current Y',
+          lastEditedAt: null,
+          editor: null,
+          userContentEdits: { totalCount: 0, nodes: [] },
+        },
+      }
+    )
+    expect(verified).toBeNull()
+    const result = await h.capture(review('poll', 'Captured X'), verified)
+    expect(result.revision.decision).toBe('pending')
+    expect(result.revision.reason).toBe('unknown_editor')
+    expect(result.revision.attribution).toBe('unknown')
   } finally {
     await h.close()
   }

@@ -1,7 +1,9 @@
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
-import { db, type DbTx, type integrationOutputEvents } from '../../../db'
-import { readOutputEvent, readOutputCandidate, readFeedbackRevision } from './feedback-pass-read'
+import { db, type DbTx, integrationOutputEvents } from '../../../db'
+import { eventEmitter } from '../../../lib/infra/event-emitter'
+import { GITHUB_FRESHNESS_UNBOUND, hasGitHubFreshnessBinding } from './feedback-freshness-binding'
+import { outputSnapshotMatches, readOutputEvent, readOutputCandidate, readFeedbackRevision } from './feedback-pass-read'
 import { authorized } from '../outputs/authority'
 import { withGitHubOutputPass, reserveGitHubEvent, githubOutputPass, inGitHubCandidate } from './feedback-pass'
 import { isGitHubFeedbackAdmitted } from './feedback-admission'
@@ -31,6 +33,7 @@ export async function renewKnownGitHubOutputs(eventIds: string[]) {
  */
 export async function isGitHubOutputRevoked(store: typeof db | DbTx, event: Event) {
   return (
+    !hasGitHubFreshnessBinding(event) ||
     event.authority.kind !== 'connection' ||
     !(await authorized(store, 'github', event.authority, event.authority.squadId)) ||
     (!!event.fact.github?.revisionId && !(await isGitHubFeedbackAdmitted(store, event)))
@@ -56,7 +59,7 @@ async function renewKnownInPass(eventIds: string[]) {
         return true
       }
       if (await isGitHubOutputRevoked(db, event)) {
-        await withholdRevokedAutomaticGitHubOutput(event.id)
+        await withholdRevokedGitHubFeedback(event.id)
         result.withheld.push(event.id)
         return true
       }
@@ -79,25 +82,43 @@ async function renewKnownInPass(eventIds: string[]) {
   return result
 }
 
-/** Observed automatic revocation is held history, not a grant when trust returns later. */
-export async function withholdRevokedAutomaticGitHubOutput(eventId: string) {
+/** Hold stale quotations in every mode; automatic trust revocations never revive with later trust. */
+export async function withholdRevokedGitHubFeedback(eventId: string) {
   if (!z.uuid().safeParse(eventId).success) return
   const { githubFeedbackRevisions } = await import('../../../db')
   const { lockGitHubTrustAuthority } = await import('./trust-authority-lock')
   const { isTrustedGitHubFeedbackContent } = await import('./feedback-trust')
   const { hasAcceptedGitHubFeedbackReceipts } = await import('./feedback-release')
-  const { supersedeGitHubParentText } = await import('./feedback-parent')
+  const { settleStaleGitHubParentText, supersedeGitHubParentText } = await import('./feedback-parent')
+  let changedSquadId: string | null = null
   await db.transaction(async (tx) => {
     await lockGitHubTrustAuthority(tx)
     const event = await readOutputEvent(tx, eventId)
-    if (event?.integration !== 'github' || !event.fact.github?.revisionId || event.authority.kind !== 'connection')
+    if (event?.integration !== 'github' || event.authority.kind !== 'connection') return
+    if (!hasGitHubFreshnessBinding(event)) {
+      await tx
+        .update(integrationOutputEvents)
+        .set({ lastErrorCode: GITHUB_FRESHNESS_UNBOUND })
+        .where(outputSnapshotMatches(event))
       return
+    }
+    if (!event.fact.github?.revisionId) return
     const revision = await readFeedbackRevision(tx, event.fact.github.revisionId, true)
     if (
+      revision &&
+      event.eventKey === revision.id &&
+      event.sourceKey === `github-feedback:${revision.squadId}:${revision.id}` &&
+      event.authority.squadId === revision.squadId &&
+      !(await hasAcceptedGitHubFeedbackReceipts(event.id)) &&
+      (await settleStaleGitHubParentText(tx, revision))
+    ) {
+      changedSquadId = revision.squadId
+      return
+    }
+    if (
       !revision ||
+      revision.releaseState === 'obsolete' ||
       revision.decision !== 'automatic' ||
-      // Already replaced by its factual message: never re-held for a person to release the parent text.
-      (revision.releaseState === 'obsolete' && revision.reason === 'parent_trust_revoked') ||
       event.eventKey !== revision.id ||
       event.sourceKey !== `github-feedback:${revision.squadId}:${revision.id}` ||
       event.authority.squadId !== revision.squadId ||
@@ -124,5 +145,7 @@ export async function withholdRevokedAutomaticGitHubOutput(eventId: string) {
         updatedAt: new Date(),
       })
       .where(eq(githubFeedbackRevisions.id, revision.id))
+    changedSquadId = revision.squadId
   })
+  if (changedSquadId) eventEmitter.emit('githubFeedback.updated', { squadId: changedSquadId })
 }
