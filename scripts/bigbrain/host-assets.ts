@@ -19,9 +19,13 @@ import { renderAggregateUnit, renderControlLauncher, renderGatewayUnit } from '.
 export const GATEWAY_ACCOUNT = 'ficus-bb-gateway'
 const GATEWAY_COMMENT = 'Ficus managed BigBrain gateway'
 const digest = z.string().regex(/^sha256:[0-9a-f]{64}$/)
-export const hostAssetsSchema = z
-  .object({ schema: z.literal(1), launcher: digest, slice: digest, gateway: digest, tmpfiles: digest })
-  .strict()
+export const hostAssetsSchema = z.strictObject({
+  schema: z.literal(1),
+  launcher: digest,
+  slice: digest,
+  gateway: digest,
+  tmpfiles: digest,
+})
 const sha = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`
 
 export interface HostAssetOptions {

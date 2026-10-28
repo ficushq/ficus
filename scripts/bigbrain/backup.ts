@@ -17,53 +17,49 @@ import { readPrivateJson, writePrivateJson } from './secure-files'
 import { runPrivateCommand, startServiceDeliberately, type PrivateCommandRunner } from './process'
 import { BIGBRAIN_ETC } from './install'
 
-const uuid = z
-  .string()
-  .uuid()
-  .regex(/^[0-9a-f-]{36}$/)
+const uuid = z.uuid().regex(/^[0-9a-f-]{36}$/)
 const digest = z.string().regex(/^sha256:[0-9a-f]{64}$/)
 /** Archive directory name inside the existing encrypted Core backup envelope. */
 export const MANAGED_BACKUP_DIR = 'managed-bigbrain'
 /** Secret-free: data tarballs carry the native stores; credentials are rotated on restore. */
 export const backupManifestSchema = z
-  .object({
+  .strictObject({
     schema: z.literal(1),
     tenantId: uuid,
     sourcePhysicalHostBinding: uuid,
     vaults: z
       .array(
-        z
-          .object({
-            vaultId: uuid,
-            upstreamVaultId: uuid,
-            generation: z.number().int().safe().positive(),
-            displayName: z.string().min(1).max(120),
-            owner: managedBigbrainOwnerSchema,
-            archive: z.string().regex(/^vaults\/[0-9a-f-]{36}\.tar$/),
-            sha256: digest,
-            bytes: z.number().int().safe().positive(),
-            /** The vault's recorded origin (absent in archives that predate tenant-prefixed
-             * hostnames: those vaults all use bb-<32 hex>). Restore keeps its first label. */
-            origin: z.string().max(253).optional(),
-          })
-          .strict()
+        z.strictObject({
+          vaultId: uuid,
+          upstreamVaultId: uuid,
+          generation: z.int().safe().positive(),
+          displayName: z.string().min(1).max(120),
+          owner: managedBigbrainOwnerSchema,
+          archive: z.string().regex(/^vaults\/[0-9a-f-]{36}\.tar$/),
+          sha256: digest,
+          bytes: z.int().safe().positive(),
+          /** The vault's recorded origin (absent in archives that predate tenant-prefixed
+           * hostnames: those vaults all use bb-<32 hex>). Restore keeps its first label. */
+          origin: z.string().max(253).optional(),
+        })
       )
       .max(MANAGED_BIGBRAIN_MAX_VAULTS),
     /** Vaults a nightly run could not stage (fixed codes only); never present in `vaults`. */
     excluded: z
-      .array(z.object({ vaultId: uuid, code: z.string().regex(/^[a-z_]{1,40}$/) }).strict())
+      .array(z.strictObject({ vaultId: uuid, code: z.string().regex(/^[a-z_]{1,40}$/) }))
       .max(MANAGED_BIGBRAIN_MAX_VAULTS)
       .default([]),
   })
-  .strict()
   .refine((m) => m.vaults.every((v) => v.archive === `vaults/${v.vaultId}.tar`))
   .refine((m) => m.vaults.every((v) => v.origin === undefined || managedBigbrainOriginHasVault(v.origin, v.vaultId)))
   .refine((m) => m.excluded.every((e) => !m.vaults.some((v) => v.vaultId === e.vaultId)))
   .refine((m) => new Set(m.vaults.map((v) => v.vaultId)).size === m.vaults.length)
 export type BackupManifest = z.infer<typeof backupManifestSchema>
-const leaseSchema = z
-  .object({ schema: z.literal(1), leaseId: uuid, stopped: z.array(uuid).max(MANAGED_BIGBRAIN_MAX_VAULTS) })
-  .strict()
+const leaseSchema = z.strictObject({
+  schema: z.literal(1),
+  leaseId: uuid,
+  stopped: z.array(uuid).max(MANAGED_BIGBRAIN_MAX_VAULTS),
+})
 
 export interface BackupOptions {
   /** Fixture roots only; the installed role always uses the fixed paths. */

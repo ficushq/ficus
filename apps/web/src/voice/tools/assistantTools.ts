@@ -20,7 +20,7 @@ export interface AssistantToolEnvironment extends VoiceToolExecutor {
   can?: (permission: string) => boolean
 }
 const text = z.string().trim().min(1)
-const limit = z.number().int().min(1).max(50).default(20)
+const limit = z.int().min(1).max(50).default(20)
 function tool(
   name: string,
   description: string,
@@ -153,7 +153,7 @@ export function createAssistantTools(
             request: text.max(20000),
             squadId: text.optional(),
             mode: z.enum(['steer', 'follow-up']).default('steer'),
-            inReplyTo: z.string().uuid().optional(),
+            inReplyTo: z.uuid().optional(),
           })
           .parse(args)
         const squad = input.squadId ? await squadId(input.squadId, true) : undefined
@@ -197,7 +197,7 @@ export function createAssistantTools(
             path: z.string().max(2000).optional(),
             query: z.string().trim().max(1000).optional(),
             directory: z.boolean().default(false),
-            offset: z.number().int().min(0).default(0),
+            offset: z.int().min(0).default(0),
           })
           .refine((value) => !(value.query && value.source !== 'memory'), { message: 'query requires source=memory' })
           .parse(args)
@@ -235,7 +235,7 @@ export function createAssistantTools(
           .object({
             view: z.enum(['actions', 'notifications']),
             status: z.enum(['unread', 'read', 'all']).default('unread'),
-            limit: z.number().int().min(1).max(20).default(5),
+            limit: z.int().min(1).max(20).default(5),
           })
           .parse(args)
         if (input.view === 'actions') return deps.listPendingActions()

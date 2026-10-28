@@ -13,10 +13,10 @@ import { readPrivateJson, writePrivateJson } from './secure-files'
 
 export const MEMBER_INVITE_CACHE = 'member-invites.json'
 const entrySchema = z
-  .object({
-    requestId: z.string().uuid(),
+  .strictObject({
+    requestId: z.uuid(),
     inputHash: z.string().regex(/^sha256:[0-9a-f]{64}$/),
-    expiresAt: z.string().datetime().max(40),
+    expiresAt: z.iso.datetime().max(40),
     phase: z.enum(['pending', 'complete']),
     inviteId: z
       .string()
@@ -27,23 +27,21 @@ const entrySchema = z
       .regex(/^[A-Za-z0-9_-]{43}$/)
       .nullable(),
   })
-  .strict()
   .refine((v) => (v.phase === 'complete') === (v.inviteId !== null && v.secret !== null))
   .refine((v) => (v.inviteId === null) === (v.secret === null))
 /** A request whose invite was cancelled or redeemed: secret-free, so a replay answers
  * invite_expired and never mints again. Pruned at the invite's expiry; never counts toward the cap. */
-const spentSchema = z.object({ requestId: z.string().uuid(), expiresAt: z.string().datetime().max(40) }).strict()
+const spentSchema = z.strictObject({ requestId: z.uuid(), expiresAt: z.iso.datetime().max(40) })
 /** Spent requests remembered per vault (sized so the whole file fits the private-file budget). A vault
  * that would need more refuses new invites with `capacity` until the oldest expire (fails closed). */
 export const MAX_SPENT_MEMBER_INVITES = 72
 /** Display name and access are not stored: the input hash binds them to the request. */
 export const memberInviteCacheSchema = z
-  .object({
+  .strictObject({
     schema: z.literal(1),
     invites: z.array(entrySchema).max(MANAGED_BIGBRAIN_MAX_MEMBER_INVITES),
     spent: z.array(spentSchema).max(MAX_SPENT_MEMBER_INVITES).default([]),
   })
-  .strict()
   .refine((v) => {
     const ids = [...v.invites, ...v.spent].map((e) => e.requestId)
     return new Set(ids).size === ids.length

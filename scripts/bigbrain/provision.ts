@@ -128,17 +128,15 @@ export async function prepareStorage(input: ControlReceipt, deps: ProvisionDeps)
   return saveVaultRecord({ ...record, phase: 'storage_ready', os }, deps)
 }
 
-const identitySchema = z.object({ id: z.string().uuid() }).passthrough()
-const whoamiSchema = z
-  .object({
-    vault: z.object({ id: z.string().uuid() }).passthrough(),
-    handle: z.string(),
-    role: z.string(),
-    kind: z.string(),
-    permissions: z.array(z.string()),
-    credential: z.object({ id: z.string() }).passthrough(),
-  })
-  .passthrough()
+const identitySchema = z.looseObject({ id: z.uuid() })
+const whoamiSchema = z.looseObject({
+  vault: z.looseObject({ id: z.uuid() }),
+  handle: z.string(),
+  role: z.string(),
+  kind: z.string(),
+  permissions: z.array(z.string()),
+  credential: z.looseObject({ id: z.string() }),
+})
 /** The native vault's own identity file (`.shared-identity.json`), read by root without
  * following links from the verified mount. This is what Ficus later binds read access to. */
 export async function readUpstreamIdentity(record: ControlReceipt, deps: ProvisionDeps): Promise<string> {

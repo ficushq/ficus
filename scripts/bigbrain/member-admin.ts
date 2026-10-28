@@ -56,36 +56,37 @@ const displayName = managedBigbrainPendingInviteSchema.shape.displayName
 const handle = managedBigbrainMemberHandleSchema
 const access = managedBigbrainMemberAccessSchema
 export const memberAdminInputSchema = z.discriminatedUnion('op', [
-  z.object({ op: z.literal('list'), membersPath }).strict(),
-  z
-    .object({ op: z.literal('invite'), membersPath, displayName, access, issuedAt: z.string().datetime().max(40) })
-    .strict(),
-  z.object({ op: z.literal('cancel'), membersPath, inviteId: managedBigbrainInviteIdSchema }).strict(),
-  z.object({ op: z.literal('set-access'), membersPath, handle, access }).strict(),
-  z.object({ op: z.literal('remove'), membersPath, handle }).strict(),
-  z.object({ op: z.literal('vault-identity'), vaultPath }).strict(),
-  z.object({ op: z.literal('vault-name'), vaultPath, name: managedBigbrainDisplayNameSchema }).strict(),
+  z.strictObject({ op: z.literal('list'), membersPath }),
+  z.strictObject({ op: z.literal('invite'), membersPath, displayName, access, issuedAt: z.iso.datetime().max(40) }),
+  z.strictObject({ op: z.literal('cancel'), membersPath, inviteId: managedBigbrainInviteIdSchema }),
+  z.strictObject({ op: z.literal('set-access'), membersPath, handle, access }),
+  z.strictObject({ op: z.literal('remove'), membersPath, handle }),
+  z.strictObject({ op: z.literal('vault-identity'), vaultPath }),
+  z.strictObject({ op: z.literal('vault-name'), vaultPath, name: managedBigbrainDisplayNameSchema }),
 ])
 export type MemberAdminInput = z.infer<typeof memberAdminInputSchema>
 
 const secret = z.string().regex(/^[A-Za-z0-9_-]{43}$/)
 /** The one secret-bearing result: the controller turns it into the link and never logs it. */
-export const memberInviteMintSchema = z
-  .object({ inviteId: managedBigbrainInviteIdSchema, secret, expiresAt: z.string().datetime().max(40) })
-  .strict()
+export const memberInviteMintSchema = z.strictObject({
+  inviteId: managedBigbrainInviteIdSchema,
+  secret,
+  expiresAt: z.iso.datetime().max(40),
+})
 /** The vault's upstream identity: its id (never changed by Ficus) and its server name, null when
  * the file has none. */
-export const vaultIdentityResultSchema = z
-  .object({ upstreamVaultId: z.string().uuid(), name: z.string().max(4096).nullable() })
-  .strict()
+export const vaultIdentityResultSchema = z.strictObject({
+  upstreamVaultId: z.uuid(),
+  name: z.string().max(4096).nullable(),
+})
 export const memberAdminResultSchemas = {
   list: managedBigbrainMemberRosterSchema,
   invite: memberInviteMintSchema,
-  cancel: z.object({ inviteId: managedBigbrainInviteIdSchema }).strict(),
+  cancel: z.strictObject({ inviteId: managedBigbrainInviteIdSchema }),
   'set-access': managedBigbrainMemberSchema,
   remove: managedBigbrainMemberSchema,
   'vault-identity': vaultIdentityResultSchema,
-  'vault-name': vaultIdentityResultSchema.extend({ changed: z.boolean() }).strict(),
+  'vault-name': vaultIdentityResultSchema.extend({ changed: z.boolean() }),
 } as const
 /** Codes the adapter may answer with; anything else is the controller's `upstream_protocol`. */
 export const MEMBER_ADMIN_CODES = [
@@ -97,8 +98,8 @@ export const MEMBER_ADMIN_CODES = [
   'operation_failed',
 ] as const
 export const memberAdminReplySchema = z.union([
-  z.object({ ok: z.literal(true), result: z.unknown().optional() }).strict(),
-  z.object({ ok: z.literal(false), code: z.enum(MEMBER_ADMIN_CODES) }).strict(),
+  z.strictObject({ ok: z.literal(true), result: z.unknown().optional() }),
+  z.strictObject({ ok: z.literal(false), code: z.enum(MEMBER_ADMIN_CODES) }),
 ])
 
 // What the pinned store records; only the fields below ever leave this process.
@@ -215,7 +216,7 @@ function changeable(store: string, target: string, api: NativeMemberApi) {
 }
 
 // What upstream keeps in `.shared-identity.json`; every other field is preserved as it is.
-const upstreamIdentity = z.object({ id: z.string().uuid(), name: z.unknown().optional() }).passthrough()
+const upstreamIdentity = z.looseObject({ id: z.uuid(), name: z.unknown().optional() })
 function vaultIdentity(root: string, api: NativeMemberApi) {
   const parsed = upstreamIdentity.safeParse(api.sharedVaultIdentity(root))
   if (!parsed.success) throw new Error('upstream_protocol')
