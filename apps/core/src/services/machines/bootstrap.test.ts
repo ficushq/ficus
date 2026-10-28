@@ -1275,10 +1275,15 @@ ${
   refuseElevation
     ? 'echo "ficus-test: sudo refused: $*" >&2; exit 77'
     : `
-[ "$1" = bash ] && [ "$2" = '${boxProvisionPath}' ] || exit 78
+# Accept only the two forwarded overrides and this exact script. Never run
+# arbitrary sudo argv or lose the synthetic root while simulating env_reset.
+[ "$1" = env ] && [ "$2" = 'FICUS_HOST_ROOT=${dir}' ] || exit 78
+case "$3" in FICUS_BOX_LOCK_WAIT_SECONDS=*) ;; *) exit 78 ;; esac
+[ "$4" = bash ] && [ "$5" = '${boxProvisionPath}' ] || exit 78
 printf '%s\n' "$*" >> '${dir}/elevations'
-shift
-FICUS_FIXTURE_UID=0 exec '${bash}' "$@"`
+host_root="$2"; lock_wait="$3"
+shift 4
+exec env -i PATH="$PATH" FICUS_FIXTURE_UID=0 "$host_root" "$lock_wait" '${bash}' "$@"`
 }
 `,
       { mode: 0o755 }
@@ -1514,7 +1519,10 @@ FICUS_FIXTURE_UID=0 exec '${bash}' "$@"`
     expect(existsSync(join(env.FICUS_HOST_ROOT!, 'run/ficus-box-locks/ficus-box-box_0123456789ab.lock'))).toBe(true)
     const elevations = join(env.FICUS_HOST_ROOT!, 'elevations')
     if (uid === 0) expect(existsSync(elevations)).toBe(false)
-    else expect(readFileSync(elevations, 'utf8').trim().split('\n')).toHaveLength(1)
+    else
+      expect(readFileSync(elevations, 'utf8')).toBe(
+        `env FICUS_HOST_ROOT=${env.FICUS_HOST_ROOT} FICUS_BOX_LOCK_WAIT_SECONDS=180 bash ${boxProvisionPath} --sandbox-id x --unix-user box_0123456789ab --port 50100\n`
+      )
     expect(stderr.match(/ficus-test:/g)).toHaveLength(1)
     expect(stderr).toContain('machine layout inventory failed; nothing was changed')
     expect(stdout).toBe('')
@@ -1539,7 +1547,9 @@ FICUS_FIXTURE_UID=0 exec '${bash}' "$@"`
       { env }
     )
     expect(exitCode).toBe(77)
-    expect(stderr).toContain('ficus-test: sudo refused: bash ')
+    expect(stderr).toBe(
+      `ficus-test: sudo refused: env FICUS_HOST_ROOT=${env.FICUS_HOST_ROOT} FICUS_BOX_LOCK_WAIT_SECONDS=180 bash ${boxProvisionPath} --sandbox-id x --unix-user box_0123456789ab --port 50100\n`
+    )
     expect(stderr).not.toContain('bash refused:')
     expect(stderr).not.toContain('machine layout inventory failed')
     expect(existsSync(join(env.FICUS_HOST_ROOT!, 'run'))).toBe(false)

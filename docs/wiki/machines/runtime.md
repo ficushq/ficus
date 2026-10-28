@@ -406,7 +406,13 @@ before host provisioning begins.
 
 The manual host-lock wait defaults to **180 seconds**. The validated
 `--lock-wait-seconds <nonnegative seconds>` argument survives root re-exec and
-sudo `env_reset`; `FICUS_BOX_LOCK_WAIT_SECONDS` is only a manual fallback.
+sudo `env_reset`; `FICUS_BOX_LOCK_WAIT_SECONDS` is a manual fallback.
+For manual non-root runs, re-entry passes the effective wait and the test-only
+`FICUS_HOST_ROOT` through `sudo env` argv (not inherited environment); explicit
+`--lock-wait-seconds` still wins. No other environment is forwarded this way.
+Manual non-root re-entry requires sudo permission for that `env ... bash`
+command; a sudoers rule permitting only `bash` will refuse it. In that case,
+run manually as root using existing authorized access rather than changing policy.
 **Core always passes the argument**, paired with its explicit, unchanged
 SSH/stream budget: one quarter of that budget rounded down to seconds, capped
 at 180 seconds. This leaves connection, execution and cleanup headroom:
@@ -441,6 +447,17 @@ the named holder instead. Locks release with the last owning descriptor, includi
 on process death. Side-effect-free print modes and unprivileged
 `--prepare-nix-cache` do not acquire this lock: service startup can invoke cache
 preparation while provisioning owns it. Cache publication remains root-only.
+
+During execution startup, an install exiting 73 becomes `BoxLockTimeoutError`
+and startup code `box_lock_timeout`, retaining the holder diagnostic. The
+execution and its admission reservation return to `queued`, not terminal failure,
+with the existing port-busy retry schedule (10, 20, 40, 80, 160 seconds).
+After five retries, persistent contention fails with the original diagnostic.
+This does not replay a model turn or a settled operation. Other provisioning
+failures remain terminal; exit 75 keeps its existing busy-port behavior.
+The shell harness covers non-root `env_reset` re-entry, lock-holder isolation,
+and both environment and explicit-argument wait values; the Core startup test
+feeds exit 73 through installation into durable execution requeue and exhaustion.
 
 Cancellation/deadlines while acquiring the Core lease never cancel the holder.
 After acquisition, work and cleanup must settle before releasing ownership;
