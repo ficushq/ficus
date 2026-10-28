@@ -999,7 +999,7 @@ export async function isCurrentIntegrationNotification(store: Store, agentId: st
   // and the immutable canonical decision are independent; neither can replace the other.
   if (event.integration !== 'github') return true
   const [recipient] = await store.select({ squadId: agents.squadId }).from(agents).where(eq(agents.id, agentId))
-  // Filter OFF: pre-feature acceptance. Exact connection authority still applies, but the
+  // Filter OFF: connection authority and version freshness still apply, but the
   // stream-state and exact-content gates below bind a delivery to a reviewed decision, which a
   // filter-OFF squad has none of: before the filter its notices were accepted as persisted
   // (including to queued streams and after a rule edit).
@@ -1009,7 +1009,8 @@ export async function isCurrentIntegrationNotification(store: Store, agentId: st
   )
     return (
       recipient?.squadId === event.authority.squadId &&
-      (await authorized(store, event.integration, event.authority, event.authority.squadId))
+      (await authorized(store, event.integration, event.authority, event.authority.squadId)) &&
+      (await isGitHubOutputAdmitted(store, event))
     )
   const matching = await githubMatchingEvent(store, event)
   let additionalContext: string | undefined

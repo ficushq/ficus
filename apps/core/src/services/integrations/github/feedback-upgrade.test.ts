@@ -1,14 +1,17 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { eq, inArray } from 'drizzle-orm'
+import { Agent } from '../../../entities/Agent'
 import { app } from '../../../index'
 import {
   agentTokens,
+  chatSendReceipts,
   agents,
   db,
   inbox,
   integrationAuditEvents,
   integrationConnections,
   integrationOutputEvents,
+  messages,
   roleAssignments,
   roles,
   settings,
@@ -198,18 +201,30 @@ describe('GitHub trust rollout fence for pre-existing queued notifications', () 
     expect(adminText).not.toContain(pending.message.id)
   })
 
-  test('OFF squad (rollout default for existing squads) and other providers keep pre-feature behavior', async () => {
+  test('OFF withholds unbound legacy GitHub prose, preserving accepted history and other providers', async () => {
     const off = await legacyNotification(squadOff, agentOff)
+    const historical = await legacyNotification(squadOff, agentOff, { delivered: true })
+    const status = await legacyNotification(squadOff, agentOff, { status: true })
     const linear = await legacyNotification(squadOn, agentOn, { integration: 'linear' })
-    expect(await (await listAs(tokenOff, agentOff)).text()).toContain(off.message.id)
+    const text = await (await listAs(tokenOff, agentOff, '?all=true')).text()
+    expect(text).not.toContain(off.message.id)
+    expect(text).toContain(historical.message.id)
+    expect(text).toContain(status.message.id)
     expect((await app.request(`/api/inbox/message/${off.message.id}`, { headers: authHeaders(tokenOff) })).status).toBe(
-      200
+      403
     )
-    expect(await isCurrentIntegrationNotification(db, agentOff, off.message.id)).toBe(true)
+    expect(await isCurrentIntegrationNotification(db, agentOff, off.message.id)).toBe(false)
     expect(await (await listAs(tokenOn, agentOn)).text()).toContain(linear.message.id)
+    const { renewKnownGitHubOutputs } = await import('./feedback-renewal')
+    await renewKnownGitHubOutputs([off.event.id])
+    const [audit] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, off.event.id))
+    expect(audit!.lastErrorCode).toBe('github_freshness_unbound')
+    expect(audit!.fact).toEqual(off.event.fact)
+    const [unchanged] = await db.select().from(inbox).where(eq(inbox.id, historical.message.id))
+    expect(unchanged).toEqual(historical.message)
   })
 
-  test('toggling is idempotent: OFF restores pre-feature visibility, ON fences again, delivered rows never replay', async () => {
+  test('toggling cannot restore unbound legacy prose; rows and accepted history stay intact', async () => {
     const queued = await legacyNotification(squadOn, agentOn)
     const fenced = async () => !(await (await listAs(tokenOn, agentOn, '?all=true')).text()).includes(queued.message.id)
     expect(await fenced()).toBe(true)
@@ -218,8 +233,8 @@ describe('GitHub trust rollout fence for pre-existing queued notifications', () 
     const [before] = await db.select().from(inbox).where(eq(inbox.id, queued.message.id))
 
     await setGitHubAuthorFilter({ type: 'user', userId: human.id } as never, squadOn, false)
-    expect(await fenced()).toBe(false)
-    expect(await isCurrentIntegrationNotification(db, agentOn, queued.message.id)).toBe(true)
+    expect(await fenced()).toBe(true)
+    expect(await isCurrentIntegrationNotification(db, agentOn, queued.message.id)).toBe(false)
     await setGitHubAuthorFilter({ type: 'user', userId: human.id } as never, squadOn, true)
     expect(await fenced()).toBe(true)
     expect(await isCurrentIntegrationNotification(db, agentOn, queued.message.id)).toBe(false)
@@ -228,4 +243,52 @@ describe('GitHub trust rollout fence for pre-existing queued notifications', () 
     // No rewrite of the original row: receipts, idempotency keys and delivery state are untouched.
     expect(after).toEqual(before!)
   })
+})
+
+test('an accepted legacy raw receipt before acknowledgement stays historical and is never replayed', async () => {
+  const legacy = await legacyNotification(squadOff, agentOff)
+  const clientId = `github-feedback:${legacy.event.id}:${legacy.message.id}`
+  const accepted = await (
+    await Agent.mustFind(agentOff)
+  ).sendMessage(legacy.message.content, { deliveryMode: 'steer', metadata: { clientId } })
+  expect(accepted.success).toBe(true)
+  const [before] = await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.clientId, clientId))
+  expect(before!.state).toBe('accepted')
+  expect(typeof before!.messageId).toBe('string')
+  expect(typeof before!.executionId).toBe('string')
+  expect(before!.acceptedAt instanceof Date).toBe(true)
+  // Reproduce a pre-upgrade accepted inbox message. The current admission fence would correctly
+  // reject a new unbound send, so only the synthetic historical message gets its old provenance.
+  const [acceptedMessage] = await db.select().from(messages).where(eq(messages.id, before!.messageId!))
+  await db
+    .update(messages)
+    .set({
+      metadata: {
+        ...(acceptedMessage!.metadata as Record<string, unknown>),
+        source: 'inbox',
+        inboxMessageIds: [legacy.message.id],
+        executionId: before!.executionId,
+      },
+    })
+    .where(eq(messages.id, acceptedMessage!.id))
+  expect(await (await listAs(tokenOff, agentOff, '?all=true')).text()).toContain(legacy.message.id)
+  const { renewKnownGitHubOutputs } = await import('./feedback-renewal')
+  await renewKnownGitHubOutputs([legacy.event.id])
+  const [after] = await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.clientId, clientId))
+  expect(after).toEqual(before)
+  const [unchanged] = await db.select().from(inbox).where(eq(inbox.id, legacy.message.id))
+  expect(unchanged).toEqual(legacy.message)
+})
+
+test('a matching client ID on an unrelated accepted send cannot authorize unbound legacy inbox prose', async () => {
+  const legacy = await legacyNotification(squadOff, agentOff)
+  const clientId = `github-feedback:${legacy.event.id}:${legacy.message.id}`
+  expect(
+    (
+      await (
+        await Agent.mustFind(agentOff)
+      ).sendMessage('Unrelated accepted message', { deliveryMode: 'steer', metadata: { clientId } })
+    ).success
+  ).toBe(true)
+  expect(await (await listAs(tokenOff, agentOff, '?all=true')).text()).not.toContain(legacy.message.id)
 })

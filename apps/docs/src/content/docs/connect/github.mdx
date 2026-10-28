@@ -121,6 +121,13 @@ feature start with it off, so raw routing does not apply author-trust checks unt
 you turn it on. Version freshness is always enforced: once a newer version of the
 same GitHub object is known, a delayed older version is not delivered, even with
 author filtering off. Ficus keeps an audit snapshot of dropped older events.
+Undelivered legacy GitHub prose without native object/version provenance is also
+withheld in every mode, including off; turning filtering off no longer restores
+those old unbound messages. Their audit reason is `github_freshness_unbound`.
+Ficus does not guess their identity or version or replay them. Already accepted
+messages and receipts remain history; other providers and proven content-free
+status facts are unchanged. New native-bound raw feedback still routes without
+author-trust checks when filtering is off.
 Turn it on or off in the squad's **Settings → Integrations** under **GitHub
 feedback review → Filter GitHub feedback by author**. Leave it off only if every
 repository the squad watches is private to people you trust. When you turn it

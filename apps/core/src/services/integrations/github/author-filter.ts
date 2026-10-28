@@ -9,6 +9,7 @@ import {
   type DbTx,
 } from '../../../db'
 
+import { hasGitHubFreshnessBinding } from './feedback-freshness-binding'
 import { outputSnapshotMatches, readFeedbackRevision } from './feedback-pass-read'
 import { isCurrentGitHubFeedbackRevision } from './feedback-obsolescence'
 import { isGitHubQuotedParentFresh } from './feedback-parent'
@@ -33,7 +34,7 @@ export async function isGitHubAuthorFilterEnabled(store: Store, squadId: string)
 /**
  * With the filter OFF, GitHub events route exactly as they did before the filter existed:
  * a raw provider event is its own effect. Freshness-only observations fence known-older text
- * independently of author trust. These exceptions keep each observation single-delivery
+ * independently of author trust; unbound legacy raw prose fails closed in every mode. These exceptions keep each observation single-delivery
  * when a squad switches modes:
  * - a raw event the filter already captured or projected while ON is delivered through that
  *   capture (held captures are released when the filter is turned off), never a second time raw;
@@ -42,6 +43,7 @@ export async function isGitHubAuthorFilterEnabled(store: Store, squadId: string)
  * or obsolete revision never is.
  */
 export async function isUnfilteredGitHubEvent(store: Store, event: Event): Promise<boolean> {
+  if (!hasGitHubFreshnessBinding(event)) return false
   if (event.sourceKey.startsWith('github-status:')) return true
   if (event.sourceKey.startsWith('github-feedback:')) {
     // A human deny (or a settled/obsolete release) is final in every mode.

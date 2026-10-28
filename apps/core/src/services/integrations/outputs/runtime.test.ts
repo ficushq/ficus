@@ -54,19 +54,102 @@ const subscription: IntegrationSubscription = {
   },
   deliver: { to: { participant: 'worker' }, whenInactive: 'retain' },
 }
-const fact = (number: number, changes: Partial<IntegrationOutputFact> = {}): IntegrationOutputFact => ({
-  output: 'pull_request.reviewed',
-  version: 1,
-  eventKey: randomUUID(),
-  resourceKey: `${prefix}/repo#${number}`,
-  occurredAt: new Date().toISOString(),
-  data: { repository: `${prefix}/repo`, pullRequest: { number } },
-  subject: 'Review feedback',
-  body: 'Please verify the edge case.',
-  ...changes,
-})
-// These fixtures are the pre-filter routing contract: a squad with its GitHub author filter OFF
-// routes events exactly as before. A real assigned connection supplies the squad authority.
+// OFF still exercises raw routing, but new/queued feedback must now have server-normalized
+// native provenance. Unbound legacy behavior is tested separately in feedback-upgrade.test.ts.
+const fact = (number: number, changes: Partial<IntegrationOutputFact> = {}): IntegrationOutputFact => {
+  const result: IntegrationOutputFact = {
+    output: 'pull_request.reviewed',
+    version: 1,
+    eventKey: randomUUID(),
+    resourceKey: `${prefix}/repo#${number}`,
+    occurredAt: new Date().toISOString(),
+    data: { repository: `${prefix}/repo`, pullRequest: { number } },
+    subject: 'Review feedback',
+    body: 'Please verify the edge case.',
+    ...changes,
+  }
+  const nativeId = parseInt(createHash('sha256').update(result.eventKey).digest('hex').slice(0, 12), 16)
+  const user = { id: 2, login: 'external-fixture', type: 'User' }
+  const parent = {
+    id: number,
+    number,
+    title: 'Fixture parent',
+    body: result.body,
+    user,
+    state: 'open',
+    created_at: result.occurredAt,
+    updated_at: result.occurredAt,
+  }
+  const repository = { id: 10, full_name: String(result.data.repository) }
+  const isCI = result.output === 'pull_request.ci_completed'
+  const isIssue = result.output.startsWith('issue.')
+  const action = result.output.endsWith('.assigned')
+    ? 'assigned'
+    : result.output.endsWith('.review_requested')
+      ? 'review_requested'
+      : result.output.endsWith('.merged')
+        ? 'closed'
+        : 'edited'
+  const type = isCI
+    ? 'workflow_run'
+    : result.output.endsWith('.reviewed')
+      ? 'pull_request_review'
+      : result.output.endsWith('.comment')
+        ? 'issue_comment'
+        : isIssue
+          ? 'issues'
+          : 'pull_request'
+  const payload = {
+    action: isCI
+      ? 'completed'
+      : type === 'pull_request_review'
+        ? 'submitted'
+        : type === 'issue_comment'
+          ? 'created'
+          : action,
+    repository,
+    sender: user,
+    ...(isIssue || type === 'issue_comment'
+      ? { issue: parent }
+      : { pull_request: { ...parent, merged: action === 'closed' } }),
+    ...(type === 'pull_request_review'
+      ? { review: { id: nativeId, body: result.body, state: 'commented', user, submitted_at: result.occurredAt } }
+      : {}),
+    ...(type === 'issue_comment'
+      ? {
+          comment: {
+            id: nativeId,
+            body: result.body,
+            user,
+            created_at: result.occurredAt,
+            updated_at: result.occurredAt,
+          },
+        }
+      : {}),
+    ...(isCI
+      ? {
+          workflow_run: {
+            id: nativeId,
+            workflow_id: 1,
+            run_number: 1,
+            run_attempt: 1,
+            name: 'Fixture workflow',
+            conclusion: 'success',
+            head_sha: 'a'.repeat(40),
+            updated_at: result.occurredAt,
+            pull_requests: [{ number }],
+          },
+        }
+      : {}),
+  }
+  const normalized = githubOutputAdapter.normalize({
+    type,
+    payload,
+    githubObservation: { kind: 'webhook', deliveryId: result.eventKey },
+  })[0]
+  result.github = normalized?.github
+  return result
+}
 let fixtureConnectionId: string
 const fixtureAuthority = () => ({ kind: 'connection' as const, connectionId: fixtureConnectionId, squadId })
 async function publish(event: IntegrationOutputFact) {
@@ -254,7 +337,7 @@ test('distinct CI workflows on one PR each deliver immediately with identifiable
       type: 'workflow_run',
       payload: {
         action: 'completed',
-        repository: { full_name: `${prefix}/repo` },
+        repository: { id: 10, full_name: `${prefix}/repo` },
         workflow_run: {
           id: workflowId,
           workflow_id: workflowId,
@@ -262,7 +345,7 @@ test('distinct CI workflows on one PR each deliver immediately with identifiable
           conclusion,
           run_number: 1,
           run_attempt: 1,
-          head_sha: 'abc123',
+          head_sha: 'a'.repeat(40),
           updated_at: new Date().toISOString(),
           pull_requests: [{ number }],
         },
@@ -282,7 +365,7 @@ test('distinct CI workflows on one PR each deliver immediately with identifiable
         )
       )
     const message = messages.find((entry) => entry.subject === event!.subject)!
-    expect(message.content).toContain(`${name}: ${conclusion}\nHead: abc123 · Run 1 · Attempt 1`)
+    expect(message.content).toContain(`${name}: ${conclusion}\nHead: ${'a'.repeat(40)} · Run 1 · Attempt 1`)
     expect(message.content).not.toContain('deliveryInstructions')
     expect(message.content).not.toContain('rework')
   }
@@ -472,7 +555,7 @@ test('a second issue assignment keeps the trigger receipt and cannot duplicate l
   const event = {
     type: 'issues',
     payload: {
-      repository: { full_name: `${prefix}/repo` },
+      repository: { id: 10, full_name: `${prefix}/repo` },
       action: 'assigned',
       assignee: { login: 'ficus-bot' },
       issue: { id: 123, number: 12, title: 'Investigate', updated_at: new Date().toISOString() },
@@ -492,17 +575,19 @@ test('a second issue assignment keeps the trigger receipt and cannot duplicate l
     expect(watch).toBeDefined()
     const provider = new GitHubPollingProvider(
       async () => 'fixture-token',
-      async () =>
-        Response.json([
-          {
-            id: 100,
-            event: 'assigned',
-            created_at: event.payload.issue.updated_at,
-            issue: event.payload.issue,
-            assignee: event.payload.assignee,
-            actor: { login: 'operator' },
-          },
-        ])
+      async (url) =>
+        url.includes('/issues/events?')
+          ? Response.json([
+              {
+                id: 100,
+                event: 'assigned',
+                created_at: event.payload.issue.updated_at,
+                issue: event.payload.issue,
+                assignee: event.payload.assignee,
+                actor: { login: 'operator' },
+              },
+            ])
+          : Response.json({ id: 10, full_name: `${prefix}/repo` })
     )
     const result = await provider.capabilities.event_polling!.poll(
       {
@@ -512,6 +597,8 @@ test('a second issue assignment keeps the trigger receipt and cannot duplicate l
       { watermark: 99 }
     )
     expect(result.events).toHaveLength(1)
+    expect(result.events[0]!.payload.repository.id).toBe(10)
+    expect(result.budgetUnitsConsumed).toBe(2)
     expect(await publishIntegrationOutputs('github', result.events[0]!, fixtureAuthority())).toEqual([squadId])
     expect(await publishIntegrationOutputs('github', event, fixtureAuthority())).toEqual([squadId])
     event.payload.issue.updated_at = new Date(Date.now() + 1000).toISOString()
@@ -1937,7 +2024,7 @@ for (const provider of ['github', 'linear'])
                 type: 'issues',
                 payload: {
                   action: 'assigned',
-                  repository: { full_name: `${prefix}/repo` },
+                  repository: { id: 10, full_name: `${prefix}/repo` },
                   assignee: { login: config.assignee },
                   issue: { id: 900 + index, number: 900 + index, updated_at: at, labels: [{ name: 'bug' }] },
                 },
@@ -3003,7 +3090,7 @@ function descriptionFact(number: number) {
   return githubOutputAdapter.normalize({
     type: 'pull_request',
     payload: {
-      repository: { full_name: `${prefix}/repo` },
+      repository: { id: 10, full_name: `${prefix}/repo` },
       action: 'synchronize',
       pull_request: {
         id: number,
@@ -3415,7 +3502,7 @@ function workflowCI(number: number, workflowId: number, runNumber: number, concl
     type: 'workflow_run',
     payload: {
       action: 'completed',
-      repository: { full_name: `${prefix}/repo` },
+      repository: { id: 10, full_name: `${prefix}/repo` },
       workflow_run: {
         id: workflowId * 100 + runNumber,
         workflow_id: workflowId,

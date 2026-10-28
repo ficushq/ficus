@@ -1,6 +1,7 @@
 import { db, type integrationOutputEvents } from '../../../db'
 import { eventEmitter } from '../../../lib/infra/event-emitter'
 import { authorized } from '../outputs/authority'
+import { hasGitHubFreshnessBinding } from './feedback-freshness-binding'
 import { captureGitHubFeedback } from './feedback-store'
 
 type Event = typeof integrationOutputEvents.$inferSelect
@@ -12,9 +13,10 @@ type Event = typeof integrationOutputEvents.$inferSelect
  * fence it under the existing authority lock. Accepted effects keep their ordinary raw receipts.
  */
 export async function observeUnfilteredGitHubFeedback(event: Event): Promise<boolean> {
+  if (!hasGitHubFreshnessBinding(event)) return false
   if (event.fact.github?.revisionId || event.sourceKey.startsWith('github-status:')) return true
   const content = event.fact.github?.content
-  if (!content) return true // content-free outputs and pre-rollout facts without native identity
+  if (!content) return true // server-normalized content-free native outputs only
   // Old action envelopes cannot prove the freshness of the raw parent prose they carry.
   if (content.objectKind === 'action' && !event.fact.github?.rawParent) return false
   const parts = event.fact.github?.rawParent ? (['content', 'parent'] as const) : (['content'] as const)

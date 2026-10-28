@@ -314,7 +314,8 @@ rather than metadata so generic squad updates cannot change it). Migrations
 - **OFF** keeps raw routing without author-trust checks, history reads, screening
   or human holds. Freshness is independent of that switch: normalized native
   snapshots are recorded locally before routing and rechecked at final acceptance.
-  Known-older raw text is dropped with its audit snapshot retained; newer raw facts
+  Unbound undelivered legacy raw prose is withheld even with filtering OFF (see the
+  rollout fence below). Known-older raw text is dropped with its audit snapshot retained; newer raw facts
   and their notification formatting stay unchanged. Exact connection authority
   still applies, pre-flow streams still skip bot comments, and GitHub notices are
   delivered one at a time against ordinary acceptance receipts, not batched.
@@ -588,10 +589,30 @@ Search, outline and backlinks withhold documents without provenance in ON
 squads. `resolveEventTrackedResource` refuses held events. Activity drops issue
 titles. Legacy YAML shell and batch handlers for feedback events are retired.
 
-**Rollout fence** (`feedback-upgrade.ts`): undelivered legacy GitHub prose already
-in agent inboxes of an ON squad is hidden from list, search, count, read and
-attachment reads, and final acceptance refuses it. Delivered rows stay readable
-history and are never re-sent. Nothing is backfilled or replayed.
+**Native issue-poll identity** (`issue-event-poller.ts`): only a poll with new
+eligible issue events obtains repository metadata using the same assigned credential.
+The returned positive native ID and case-insensitive `full_name` must match before
+any event is emitted. Verified IDs (including an in-flight lookup) are cached per
+repository for the poller's lifetime, not used as authorization: every event feed
+still uses its assigned credential. The initial identity request consumes a poll
+reservation/budget unit; cached use adds no request. Baselines, unchanged reads and
+pages without new eligible events do not fetch identity. Lookup/validation/budget
+failures log a content-free reason, emit nothing and leave the cursor unchanged.
+This enriches newly polled events only, never rebinds or replays legacy messages.
+
+**Rollout fence** (`feedback-upgrade.ts`): undelivered legacy GitHub prose without
+native object/version provenance is hidden from list, search, count, single and
+attachment reads, and final acceptance refuses it **in every mode, including OFF**.
+This ends the old OFF rollout expectation for unbound undelivered messages; turning
+filtering off cannot restore them. Native-bound raw OFF routing remains unchanged
+and never adds author-trust checks. No identity/version is guessed, no source is
+backfilled and nothing is replayed. The immutable event/inbox rows remain available
+for audit; preparation/renewal records `github_freshness_unbound` on the source event
+so an operator can distinguish missing freshness provenance from an author hold.
+Already delivered messages and accepted receipts (including queue acceptance before
+inbox acknowledgement) remain intact and readable as history, never re-sent. Other
+providers and server-owned content-free status projections are unaffected. ON also
+keeps otherwise-bound unaccepted GitHub prose behind its normal final admission gate.
 
 **Limits and residual risk.** Revisions and decisions are kept with no retention
 sweep yet, like the raw output events they reference. Agents keep their

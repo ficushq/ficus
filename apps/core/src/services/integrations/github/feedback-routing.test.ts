@@ -3894,6 +3894,11 @@ test('OFF final acceptance rejects a raw snapshot after a newer raw capture wins
     await db.transaction(async (tx) => {
       await lockGitHubOutputAuthority(tx, old!)
       expect(await isGitHubOutputAdmitted(tx, old!)).toBe(false)
+      const [notice] = await tx
+        .select({ id: inbox.id })
+        .from(inbox)
+        .where(sql`${inbox.metadata}->>'integrationEventId' = ${oldId}`)
+      expect(await isCurrentIntegrationNotification(tx, h.managerId, notice!.id)).toBe(false)
     })
   } finally {
     await h.close()
@@ -3922,6 +3927,31 @@ test('newer raw OFF capture supersedes unfinished raw flow deliveries without re
     expect(rows.some((row) => row.status === 'superseded')).toBe(true)
     const [audit] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, oldId!))
     expect(audit!.fact.body).toContain('HELD_SENTINEL')
+  } finally {
+    await h.close()
+  }
+})
+
+test('OFF withholds unbound legacy raw prose with an audit reason, but bound raw feedback still routes unchanged', async () => {
+  const h = await fixture()
+  try {
+    await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadId))
+    const legacy = h.fact()
+    delete legacy.github
+    const legacyId = await publishIntegrationOutput('github', legacy, h.authority)
+    expect(await db.select().from(inbox).where(eq(inbox.recipientId, h.managerId))).toHaveLength(0)
+    const [audit] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, legacyId!))
+    expect(audit!.lastErrorCode).toBe('github_freshness_unbound')
+    expect(audit!.fact).toEqual(legacy)
+    h.native.body = 'BOUND_RAW_STILL_ROUTES'
+    h.native.updated_at = '2026-10-02T10:02:00Z'
+    const bound = h.fact()
+    await publishIntegrationOutput('github', bound, h.authority)
+    const notices = await db.select().from(inbox).where(eq(inbox.recipientId, h.managerId))
+    expect(notices).toHaveLength(1)
+    expect(notices[0]!.content).toContain(bound.body)
+    expect(await isCurrentIntegrationNotification(db, h.managerId, notices[0]!.id)).toBe(true)
+    expect(h.read).not.toHaveBeenCalled()
   } finally {
     await h.close()
   }

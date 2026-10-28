@@ -28,6 +28,7 @@ import {
 } from './feedback-pass'
 import { readOutputEvent } from './feedback-pass-read'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
+import { GITHUB_FRESHNESS_UNBOUND, hasGitHubFreshnessBinding } from './feedback-freshness-binding'
 import { observeUnfilteredGitHubFeedback } from './feedback-unfiltered'
 import { isGitHubAuthorFilterEnabled, isUnfilteredGitHubEvent } from './author-filter'
 import {
@@ -143,7 +144,7 @@ async function prepareUnfilteredGitHubOutput(
   settle: (reason: string) => GitHubOutputPreparation
 ): Promise<GitHubOutputPreparation> {
   try {
-    if (!(await observeUnfilteredGitHubFeedback(input))) return settle('github_not_routable')
+    if (!(await observeUnfilteredGitHubFeedback(input))) return settle(GITHUB_FRESHNESS_UNBOUND)
     return (await isUnfilteredGitHubEvent(db, input)) ? { kind: 'ready', event: input } : settle('github_not_routable')
   } catch (error) {
     if (error instanceof Error && ['feedback_filter_enabled', 'feedback_capacity_deferred'].includes(error.message))
@@ -197,6 +198,7 @@ async function prepareGitHubOutputInPass(
     !(await authorized(db, 'github', input.authority, input.authority.squadId))
   )
     return settle('github_unauthorized')
+  if (!input.fact.github?.content && !hasGitHubFreshnessBinding(input)) return settle(GITHUB_FRESHNESS_UNBOUND)
   // Filter OFF: local freshness bookkeeping only; no author gate, provider witness or projection.
   if (!(await isGitHubAuthorFilterEnabled(db, input.authority.squadId)))
     return prepareUnfilteredGitHubOutput(input, settle)

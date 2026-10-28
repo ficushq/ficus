@@ -161,6 +161,11 @@ export function inboxIntegrationEventId() {
   return sql`(CASE WHEN ${inbox.metadata}->>'integrationEventId' ~ ${UUID_PATTERN} THEN (${inbox.metadata}->>'integrationEventId')::uuid END)`
 }
 
+/** Guard the legacy text recipient id while retaining indexed receipt lookups. */
+export function inboxRecipientAgentId() {
+  return sql`(CASE WHEN ${inbox.recipientId} ~ ${UUID_PATTERN} THEN ${inbox.recipientId}::uuid END)`
+}
+
 /** The squad id stored in an output event's authority, as a uuid (NULL when absent or malformed). */
 export function eventAuthoritySquadId(alias: string) {
   return sql`(CASE WHEN ${sql.raw(alias)}.authority->>'squadId' ~ ${UUID_PATTERN} THEN (${sql.raw(alias)}.authority->>'squadId')::uuid END)`
