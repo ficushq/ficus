@@ -1324,35 +1324,12 @@ runs its **own rootless dockerd** instead (spec §5):
   floor that could exceed their capacity. Values are floored to whole KiB in
   the provisioner; kernel readback can additionally round down to page size.
 
-  **Target and evidence (2026-10-28):** the reported incident on `mh-noah`,
-  `box_e49af02f8b45`, `user-30033.slice` had a 5.97 GB historical peak against
-  a 5.87 GB soft / 8.38 GB hard cap and over ten million `high` events. Those
-  cumulative values alone do not establish current throttling. A subsequent
-  read-only baseline on that same slice, 22:14:16.486–22:14:56.005 UTC, ran the
-  focused CI-style Core runner with its isolated test database:
-  `src/services/maintenance/store.test.ts` (13 tests) followed by
-  `src/services/machines/bootstrap.test.ts -t "per-box slice limits"` (3 tests).
-  Both completed successfully; other tests excluded by the filter were not run.
-  Across 39.519 seconds, `memory.events high` stayed **10226286 → 10226286**;
-  `max`, `oom`, `oom_kill` and `oom_group_kill` stayed zero. Memory PSI total
-  deltas were **2005 µs some / 1863 µs full**, with avg10 zero at both endpoints.
-  `memory.current` was 1759531008 → 1697583104 bytes; the lifetime peak stayed
-  5966659584 bytes (not a workload-specific peak). `cpu.max` stayed
-  `400000 100000` (four cores); CPU PSI total deltas were
-  2656991 µs some / 1013554 µs full, with 27 throttled periods. Host load averages
-  went from 6.68/10.36/9.57 to 6.04/9.75/9.40. Shared-slice measurements include
-  concurrent activity, so these are not isolated workload attribution.
-
-  **Application/after-state verification remains pending.** That baseline still
-  read `memory.high=5869019136`, `memory.max=8384315392`: it does not demonstrate
-  the new sizing rule or reproduce the historical memory pressure. With this
-  host's `MemTotal=16375616 kB`, the new configured soft cap is **7545883648
-  bytes** (kernel page-rounded **7545880576** on 4 KiB pages), while the hard cap
-  stays **8384315392 bytes**. The normal provision fixture verifies selection,
-  writing and convergence of an existing slice without restarting healthy
-  Docker for a cap-only change; it is not live-host enforcement evidence.
-  No manual host edit, forced reprovision, restart, upgrade or DB relocation
-  was performed for this change.
+  The motivating measurement was a **5.97 GB** historical peak against a
+  **5.87 GB** soft cap on a database-running squad. Lifetime `memory.events`
+  counts are not evidence of current pressure: retain timestamped per-run
+  deltas in the validation report rather than treating them as a current rate.
+  Provisioning fixtures prove selection and convergence, not live-host
+  enforcement or workload improvement.
 
   After the updated artifact reaches the target through authorized normal
   provisioning, read that **same parent slice**, not just the Docker service:
