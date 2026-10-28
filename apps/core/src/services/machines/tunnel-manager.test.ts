@@ -266,7 +266,10 @@ describe('MachineTunnelManager', () => {
     controlDirs.push(controlDir)
   })
 
-  function manager(fake: FakeSsh, overrides: { controlTimeoutMs?: number } = {}): MachineTunnelManager {
+  function manager(
+    fake: FakeSsh,
+    overrides: { controlTimeoutMs?: number; allocateLocalPort?: () => Promise<number> } = {}
+  ): MachineTunnelManager {
     return new MachineTunnelManager({ resolveHostKeyPin: testPin, spawn: fake.spawn, controlDir, ...overrides })
   }
 
@@ -1267,15 +1270,44 @@ describe('MachineTunnelManager', () => {
 
   it('refreshForward atomically replaces only the exact live forward', async () => {
     const fake = new FakeSsh()
-    const mgr = manager(fake)
+    // Fake ssh never binds the allocated ports. Real bind-0 can hand the just-freed
+    // port back, so use distinct fixture ports when asserting numerical inequality.
+    let nextPort = 62001
+    const mgr = manager(fake, { allocateLocalPort: async () => nextPort++ })
 
     const first = await mgr.addForward(makeMachine(), 50100)
+    const sibling = await mgr.addForward(makeMachine(), 50101)
     const repaired = await mgr.refreshForward(makeMachine(), 50100)
 
     expect(repaired).not.toBe(first)
     expect(fake.cancelCalls()).toHaveLength(1)
-    expect(fake.forwardLocalCalls()).toHaveLength(2)
+    expect(fake.cancelCalls()[0]).toContain(`${first}:127.0.0.1:50100`)
+    expect(fake.forwardLocalCalls().map((call) => call[call.indexOf('-L') + 1])).toEqual([
+      `${first}:127.0.0.1:50100`,
+      `${sibling}:127.0.0.1:50101`,
+      `${repaired}:127.0.0.1:50100`,
+    ])
+    expect(fake.masterSpawns()).toBe(1)
     expect(mgr.endpointFor(MACHINE_ID, 50100)).toBe(`http://127.0.0.1:${repaired}`)
+    expect(mgr.endpointFor(MACHINE_ID, 50101)).toBe(`http://127.0.0.1:${sibling}`)
+  })
+
+  it('refreshForward still cancels and rebinds when allocation reuses the released port', async () => {
+    const fake = new FakeSsh()
+    const mgr = manager(fake, { allocateLocalPort: async () => 40943 })
+    const first = await mgr.addForward(makeMachine(), 50100)
+    const repaired = await mgr.refreshForward(makeMachine(), 50100)
+    expect(repaired).toBe(first)
+    const operations = fake.calls
+      .filter((call) => call.includes('-L'))
+      .map((call) => [call[call.indexOf('-O') + 1], call[call.indexOf('-L') + 1]])
+    expect(operations).toEqual([
+      ['forward', '40943:127.0.0.1:50100'],
+      ['cancel', '40943:127.0.0.1:50100'],
+      ['forward', '40943:127.0.0.1:50100'],
+    ])
+    expect(fake.masterSpawns()).toBe(1)
+    expect(mgr.endpointFor(MACHINE_ID, 50100)).toBe('http://127.0.0.1:40943')
   })
 
   it('reports preserved versus restarted master in exact-forward repair diagnostics', async () => {
