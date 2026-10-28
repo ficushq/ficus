@@ -21,6 +21,13 @@ execution: {
 - GitHub declares `gh` and `GH_TOKEN`, `GITHUB_TOKEN`, `GITHUB_USER`. Linear declares `LINEAR_API_KEY` and no binary: Ficus does not provision a Linear CLI. It can still authenticate arbitrary scripts through exec. Channel plugins have no execution declaration.
 - The declaration is not serialized into the public catalog. Credentials never enter public declarations or wrapper files.
 
+Execution callbacks keep their precise configuration/credential types. OAuth-only
+views and refresh services consume authorization capabilities, not command
+execution callbacks. A manual-to-managed OAuth view drops the manual execution
+declaration when replacing its credential codec; it must not advertise that a
+manual-token resolver accepts an OAuth bundle. Execution uses the original plugin
+registry, not that OAuth-flow-only view.
+
 `IntegrationExecutionService` resolves the live squad default, or an explicitly named **attached** connection. The assigned repository reconciles squad enable/default choices and checks the effective global provider switch. Delivery additionally requires matching provider and adapter version, an enabled/authenticated/healthy connection, matching material/validated revisions, and unexpired validation. OAuth delivery also checks the active client authority and token expiry. Invalid or absent material refuses delivery. The credential store is refreshed on each invocation; no credential is cached in a wrapper.
 
 ## HTTP and CLI contract
