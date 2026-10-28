@@ -65,6 +65,13 @@ test('8MiB multipart -> Core staging -> sandbox atomic upload -> streaming downl
     yield text.encode('--fixture\r\nContent-Disposition: form-data; name="file"; filename="large.bin"\r\n\r\n')
     for (let i = 0; i < 128; i++) yield chunk
     yield text.encode(
+      '\r\n--fixture\r\nX-Padding: ' +
+        'x'.repeat(82 * 1024) +
+        '\r\n' +
+        Array.from({ length: 2001 }, (_, i) => `X-${i}: x\r\n`).join('') +
+        'Content-Disposition: form-data; name="later"; filename="later.txt"\r\n\r\nlater contents'
+    )
+    yield text.encode(
       '\r\n--fixture\r\nContent-Disposition: form-data; name="path_file"\r\n\r\nlarge.bin\r\n--fixture--\r\n'
     )
   }
@@ -75,7 +82,13 @@ test('8MiB multipart -> Core staging -> sandbox atomic upload -> streaming downl
       body: ReadableStream.from(multipart()),
     })
     expect(upload.status).toBe(200)
-    expect(await upload.json()).toEqual([{ path: 'large.bin', status: 'created' }])
+    expect(await upload.json()).toEqual([
+      { path: 'large.bin', status: 'created' },
+      { path: 'later.txt', status: 'created' },
+    ])
+    expect(
+      await (await fetch(`http://127.0.0.1:${core.port}/api/squads/fixture/workspace/download?path=later.txt`)).text()
+    ).toBe('later contents')
     const download = await fetch(`http://127.0.0.1:${core.port}/api/squads/fixture/workspace/download`)
     expect(download.status).toBe(200)
     let bytes = 0
