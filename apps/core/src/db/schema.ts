@@ -2851,10 +2851,28 @@ export const users = pgTable('users', {
   email: text('email').notNull().unique(),
   displayName: text('display_name'),
   lastFeedVisitAt: timestamp('last_feed_visit_at', { withTimezone: true }),
+  // Frozen migration boundary only. New Feed exposure never advances this value.
+  feedUpdatesAfter: timestamp('feed_updates_after', { withTimezone: true }),
   disabledAt: timestamp('disabled_at'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })
+
+// Feed exposure is independent of visit timestamps and domain-specific unread state.
+export const feedCompletionViews = pgTable(
+  'feed_completion_views',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    workStreamId: uuid('work_stream_id')
+      .notNull()
+      .references(() => workStreams.id, { onDelete: 'cascade' }),
+    completedAt: timestamp('completed_at', { withTimezone: true }).notNull(),
+    seenAt: timestamp('seen_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.workStreamId, table.completedAt] })]
+)
 
 // An external sender is linked within a configured provider instance, never by display name.
 export const channelIdentityLinks = pgTable(

@@ -1,294 +1,277 @@
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, test } from 'bun:test'
-import type { PendingAction } from '@ficus/shared'
+import type { WorkStream } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { ReactQueryHooksProvider } from '../reactQueryHooks'
 import { AccountFeedVisit } from './FeedVisitSummary'
 
 let dom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
+const observers = new Set<{ callback: IntersectionObserverCallback; targets: Set<Element> }>()
 afterEach(async () => {
   await dom?.cleanup()
   dom = undefined
+  observers.clear()
 })
+const at = '2026-10-28T12:00:00.000Z'
+const stream = (id: string, squadId = 's1') => ({ id, title: id, squadId, completedAt: at }) as WorkStream
 
-test('waits for successful visible loading, freezes the visit baseline, and acknowledges once', async () => {
+async function setup() {
   dom = await acquireDomHarness({ url: 'http://localhost/' })
+  Object.defineProperty(dom.window, 'IntersectionObserver', {
+    configurable: true,
+    value: class {
+      entry: { callback: IntersectionObserverCallback; targets: Set<Element> }
+      constructor(callback: IntersectionObserverCallback) {
+        this.entry = { callback, targets: new Set<Element>() }
+        observers.add(this.entry)
+      }
+      observe(target: Element) {
+        this.entry.targets.add(target)
+        observers.add(this.entry)
+      }
+      disconnect() {
+        observers.delete(this.entry)
+      }
+    },
+  })
   const { root } = dom.createRoot()
-  let ready = false
-  let fetched = false
-  let workSuccess = false
-  let lastVisitedAt: string | null = '2026-01-01T00:00:00.000Z'
-  const observedAt = '2026-01-03T00:00:00.000Z'
   const saved: string[] = []
-  const countWindows: unknown[][] = []
-  const acknowledge = async (at: string) => {
-    saved.push(at)
-    return { lastVisitedAt: at }
-  }
+  let rows: WorkStream[] = [stream('missed')]
+  let fail = false
+  let squadIds: string[] = []
+  let userId = 'one'
+  let hasNextPage = false
+  let fetched = true
+  const keys: unknown[][] = []
   const hooks = {
-    useQuery: ((options: { queryKey: unknown[] }) => {
-      const key = options.queryKey
-      if (key[0] === 'auth')
-        return { isSuccess: true, isFetchedAfterMount: fetched, data: { lastVisitedAt, observedAt } }
-      return { isSuccess: workSuccess }
-    }) as never,
+    useQuery: (() => ({
+      isSuccess: true,
+      isFetchedAfterMount: true,
+      data: { lastVisitedAt: '2026-01-01T00:00:00.000Z', observedAt: at },
+    })) as never,
     useInfiniteQuery: ((options: { queryKey: unknown[] }) => {
-      countWindows.push(options.queryKey.slice(2, 4))
+      keys.push(options.queryKey)
       return {
         isSuccess: true,
-        data: {
-          pages: [
-            {
-              totalCount: 12,
-              items: [{ id: 'completed-work', title: 'Ship the fix', completedAt: '2026-01-02T12:00:00.000Z' }],
-            },
-          ],
+        isFetchedAfterMount: fetched,
+        data: { pages: [{ items: rows, totalCount: rows.length }] },
+        hasNextPage,
+        fetchNextPage: async () => {
+          rows = [...rows, stream('next-page')]
+          await render()
         },
       }
     }) as never,
   }
-  const actions = [
-    { createdAt: '2026-01-02T00:00:00.000Z' },
-    { createdAt: '2025-12-01T00:00:00.000Z' },
-  ] as PendingAction[]
-  const conversationId = '507a9ac0-164e-4f49-9441-e57522bdc52b'
+  const acknowledge = async (id: string) => {
+    if (fail) throw new Error('offline')
+    saved.push(id)
+    return { seen: true as const }
+  }
   const useActivity = (() => ({
-    ownerId: 'one',
-    unreadConversations: 1,
-    isError: false,
+    ownerId: userId,
     activity: {
-      totals: {
-        unreadConversations: 1,
-        unreadUpdates: 2,
-        workingTasks: 1,
-        waitingTasks: 0,
-        needsInputTasks: 0,
-        unavailableTasks: 0,
-      },
-      hasMore: false,
       conversations: [
         {
-          id: conversationId,
-          title: 'Hosting comparison',
-          updatedAt: '2026-01-02T13:00:00.000Z',
-          latestUpdateSequence: 2,
-          unreadUpdates: 2,
-          workingTasks: 1,
-          waitingTasks: 0,
-          needsInputTasks: 0,
-          unavailableTasks: 0,
-          latestUpdate: {
-            messageId: 'm2',
-            preview: 'Comparison table attached.',
-            createdAt: '2026-01-02T13:00:00.000Z',
-          },
-        },
-        {
-          id: '6a1c0b4e-8c2d-4f3e-9a7b-1c2d3e4f5a6b',
-          title: 'Quiet task',
-          updatedAt: '2026-01-02T13:00:00.000Z',
-          latestUpdateSequence: 1,
-          unreadUpdates: 0,
-          workingTasks: 1,
-          waitingTasks: 0,
-          needsInputTasks: 0,
-          unavailableTasks: 0,
-          latestUpdate: null,
+          id: 'chat',
+          title: 'Assistant pointer',
+          unreadUpdates: 1,
+          latestUpdate: { createdAt: at, preview: 'Still unread' },
         },
       ],
     },
   })) as never
-  const render = () =>
-    dom!.act(async () => {
+  const render = async () =>
+    dom!.act(async () =>
       root.render(
-        <MemoryRouter initialEntries={['/?squad=test']}>
+        <MemoryRouter initialEntries={['/?squad=s1']}>
           <ReactQueryHooksProvider hooks={hooks}>
             <AccountFeedVisit
-              userId="one"
-              ActionCenter={({ actions }) => <div>{actions.length} new question</div>}
-              actions={actions}
-              ready={ready}
+              key={userId}
+              userId={userId}
+              squadIds={squadIds}
               acknowledge={acknowledge}
               useActivity={useActivity}
             />
           </ReactQueryHooksProvider>
         </MemoryRouter>
       )
-    })
-  await render()
-  expect(saved).toEqual([])
-  fetched = true
-  await render()
-  expect(saved).toEqual([])
-  ready = true
-  workSuccess = true
-  Object.defineProperty(dom.window.document, 'visibilityState', { configurable: true, value: 'hidden' })
-  await render()
-  expect(saved).toEqual([])
-  Object.defineProperty(dom.window.document, 'visibilityState', { configurable: true, value: 'visible' })
-  await dom.act(async () => {
-    dom!.window.document.dispatchEvent(new dom!.window.Event('visibilitychange'))
-  })
-  expect(saved).toEqual([observedAt])
-  expect(dom.window.document.body.textContent).toContain('12 completed · 1 Assistant update · 1 needs your input')
-  expect(dom.window.document.body.textContent).toContain('Ship the fix')
-  expect(dom.window.document.body.textContent).toContain('1 new question')
-  // Unread Assistant updates are passive rows that open the conversation; quiet tasks are not listed.
-  const assistantRows = [...dom.window.document.querySelectorAll('[aria-label="Assistant updates"] a')]
-  expect(assistantRows).toHaveLength(1)
-  expect(assistantRows[0].textContent).toContain('Hosting comparison')
-  expect(assistantRows[0].textContent).toContain('Comparison table attached.')
-  expect(assistantRows[0].textContent).toContain('2 unread updates')
-  expect(assistantRows[0].getAttribute('href')).toBe(`/?squad=test&chat=open&assistantConversation=${conversationId}`)
-  expect(dom.window.document.body.textContent).not.toContain('Quiet task')
-  const completedLink = [...dom.window.document.querySelectorAll('a')].find((link) =>
-    link.textContent?.includes('Ship the fix')
-  )
-  expect(completedLink?.getAttribute('href')).toBe('/?squad=test&ws=completed-work')
-  // The header pads its hover highlight; the rows indent by the same amount so their markers
-  // stay under the header title (12px padding + 16px chevron + 8px gap).
-  const header = dom.window.document.querySelector('summary')!
-  expect(header.classList.contains('px-3')).toBe(true)
-  expect(assistantRows[0].classList.contains('pl-9')).toBe(true)
-  expect(completedLink?.classList.contains('pl-9')).toBe(true)
-  const section = dom.window.document.querySelector('details')!
-  expect(section.open).toBe(true)
-  await dom.act(async () => {
-    dom!.window.document.querySelector('summary')!.click()
-  })
-  expect(section.open).toBe(false)
-  lastVisitedAt = observedAt
-  await render()
-  expect(countWindows.at(-1)).toEqual(['2026-01-01T00:00:00.000Z', observedAt])
-  expect(saved).toEqual([observedAt])
-  const dismiss = dom.window.document.querySelector<HTMLButtonElement>(
-    'button[aria-label="Dismiss updates since your last visit"]'
-  )!
-  expect(dismiss).not.toBeNull()
-  // A compact ghost control in the ghost header row, not an underlined link; the row drops its own
-  // hover while Dismiss is hovered so the two highlights never stack.
-  expect(dismiss.classList.contains('ficus-button-ghost')).toBe(true)
-  expect(dismiss.classList.contains('ficus-button-link')).toBe(false)
-  expect(header.classList.contains('has-[button:hover]:bg-transparent')).toBe(true)
-  await dom.act(async () => dismiss.click())
-  expect(dom.window.document.querySelector('[data-testid="feed-visit-summary"]')).toBeNull()
-  await render()
-  expect(dom.window.document.querySelector('[data-testid="feed-visit-summary"]')).toBeNull()
-  expect(saved).toEqual([observedAt])
-})
-
-test('first visit establishes a watermark without claiming previous completions', async () => {
-  dom = await acquireDomHarness({ url: 'http://localhost/' })
-  const { root } = dom.createRoot()
-  const saved: string[] = []
-  const observedAt = '2026-01-03T00:00:00.000Z'
-  const hooks = {
-    useQuery: ((options: { queryKey: unknown[] }) =>
-      options.queryKey[0] === 'auth'
-        ? { isSuccess: true, isFetchedAfterMount: true, data: { lastVisitedAt: null, observedAt } }
-        : { isSuccess: true }) as never,
-    useInfiniteQuery: (() => ({ isSuccess: true, data: { pages: [{ totalCount: 100, items: [] }] } })) as never,
-  }
-  await dom.act(async () => {
-    root.render(
-      <MemoryRouter initialEntries={['/?squad=test']}>
-        <ReactQueryHooksProvider hooks={hooks}>
-          <AccountFeedVisit
-            useActivity={
-              (() => ({ ownerId: null, activity: undefined, unreadConversations: 0, isError: false })) as never
-            }
-            userId="new"
-            actions={[]}
-            ready
-            acknowledge={async (at) => {
-              saved.push(at)
-              return { lastVisitedAt: at }
-            }}
-          />
-        </ReactQueryHooksProvider>
-      </MemoryRouter>
     )
-  })
-  expect(saved).toEqual([observedAt])
-  expect(dom.window.document.body.textContent).not.toContain('Since your last visit')
+  const expose = async (id: string, visible = true) =>
+    dom!.act(async () => {
+      for (const observer of [...observers])
+        for (const target of observer.targets) {
+          if (target.getAttribute('data-completion-id') === id)
+            observer.callback(
+              [{ target, isIntersecting: visible, intersectionRatio: visible ? 1 : 0 } as IntersectionObserverEntry],
+              {} as IntersectionObserver
+            )
+        }
+    })
+  const visibility = async (value: 'hidden' | 'visible') =>
+    dom!.act(async () => {
+      Object.defineProperty(dom!.window.document, 'visibilityState', { configurable: true, value })
+      dom!.window.document.dispatchEvent(new dom!.window.Event('visibilitychange'))
+    })
+  return {
+    render,
+    expose,
+    visibility,
+    saved,
+    keys,
+    setRows: (value: WorkStream[]) => {
+      rows = value
+    },
+    setFail: (value: boolean) => {
+      fail = value
+    },
+    setSquads: (value: string[]) => {
+      squadIds = value
+    },
+    setUser: (value: string) => {
+      userId = value
+    },
+    setPaging: () => {
+      hasNextPage = true
+    },
+    setFetched: (value: boolean) => {
+      fetched = value
+    },
+  }
+}
+const text = () => dom!.window.document.body.textContent ?? ''
+
+test('live completions join retained Updates without duplicate actions or acknowledgement on mount', async () => {
+  const view = await setup()
+  await view.render()
+  expect(text()).toContain('Updates')
+  expect(text()).not.toContain('Since your last visit')
+  expect(text()).not.toContain('needs your input')
+  expect(view.saved).toEqual([])
+  await view.expose('missed')
+  expect(view.saved).toEqual(['missed'])
+  view.setRows([stream('live')])
+  await view.render()
+  expect(text()).toContain('missed')
+  expect(text()).toContain('live')
+  await view.expose('live')
+  expect(view.saved).toEqual(['missed', 'live'])
+  view.setRows([stream('live')])
+  await view.render()
+  await view.expose('live')
+  expect(dom!.window.document.querySelectorAll('[data-completion-id="live"]')).toHaveLength(1)
+  expect(view.saved).toEqual(['missed', 'live'])
+  expect(dom!.window.document.querySelector('time[title]')).not.toBeNull()
+  expect(dom!.window.document.querySelector('a[href*="ws=live"]')).not.toBeNull()
 })
 
-test('a squad filter scopes completions to the selected squads and hides account-level Assistant updates', async () => {
-  dom = await acquireDomHarness({ url: 'http://localhost/' })
-  const { root } = dom.createRoot()
-  const completedKeys: unknown[][] = []
-  const hooks = {
-    useQuery: ((options: { queryKey: unknown[] }) =>
-      options.queryKey[0] === 'auth'
-        ? {
-            isSuccess: true,
-            isFetchedAfterMount: true,
-            data: { lastVisitedAt: '2026-01-01T00:00:00.000Z', observedAt: '2026-01-03T00:00:00.000Z' },
-          }
-        : { isSuccess: true }) as never,
-    useInfiniteQuery: ((options: { queryKey: unknown[] }) => {
-      completedKeys.push(options.queryKey)
-      const filtered = (options.queryKey[5] as string[]).length > 0
-      return {
-        isSuccess: true,
-        data: {
-          pages: [
-            filtered
-              ? { totalCount: 1, items: [{ id: 'ficus-work', title: 'Ficus fix', completedAt: null }] }
-              : { totalCount: 0, items: [] },
-          ],
-        },
-      }
-    }) as never,
+test('background, collapsed, offscreen, filtered and unfetched pages are not acknowledged', async () => {
+  const view = await setup()
+  view.setPaging()
+  await view.visibility('hidden')
+  await view.render()
+  await view.expose('missed')
+  expect(view.saved).toEqual([])
+  await view.visibility('visible')
+  expect(view.saved).toEqual([]) // wait for fresh observer evidence
+  const details = dom!.window.document.querySelector('details')!
+  details.open = false
+  await view.expose('missed')
+  expect(view.saved).toEqual([])
+  details.open = true
+  await view.expose('missed', false)
+  expect(view.saved).toEqual([])
+  view.setSquads(['s2'])
+  view.setRows([stream('filtered-in', 's2')])
+  await view.render()
+  expect(dom!.window.document.querySelector('[data-completion-id="missed"]')).toBeNull()
+  expect(view.saved).toEqual([])
+  await view.expose('filtered-in')
+  expect(view.saved).toEqual(['filtered-in'])
+  expect(view.saved).not.toContain('next-page')
+  expect(text()).not.toContain('Assistant pointer')
+})
+
+test('failed persistence stays new and retries only with exposure; Assistant unread is independent', async () => {
+  const view = await setup()
+  view.setFail(true)
+  await view.render()
+  await view.expose('missed')
+  expect(view.saved).toEqual([])
+  expect(text()).toContain('Could not save seen state')
+  expect(text()).toContain('New')
+  expect(text()).toContain('1 unread update')
+  view.setFail(false)
+  const retry = [...dom!.window.document.querySelectorAll('button')].find((button) => button.textContent === 'Retry')!
+  await dom!.act(async () => retry.click())
+  expect(view.saved).toEqual(['missed'])
+  expect(text()).not.toContain('Could not save seen state')
+  expect(text()).toContain('1 unread update')
+})
+
+test('fresh mounts and accounts do not replay cached acknowledged rows', async () => {
+  const view = await setup()
+  await view.render()
+  await view.expose('missed')
+  view.setUser('two')
+  view.setFetched(false)
+  await view.render()
+  expect(text()).not.toContain('missed')
+  expect(view.keys.at(-1)).toContain('two')
+  view.setRows([stream('other-account')])
+  view.setFetched(true)
+  await view.render()
+  expect(text()).toContain('other-account')
+  expect(text()).not.toContain('missed')
+  await view.expose('other-account')
+  expect(view.saved).toEqual(['missed', 'other-account'])
+})
+
+test('offscreen live updates offer an upward control without scrolling automatically', async () => {
+  const view = await setup()
+  await view.render()
+  const section = dom!.window.document.querySelector('details')!
+  let scrolls = 0
+  section.getBoundingClientRect = () => ({ top: -200, bottom: -100 }) as DOMRect
+  section.scrollIntoView = () => {
+    scrolls++
   }
-  const useActivity = (() => ({
-    ownerId: 'one',
-    unreadConversations: 1,
-    isError: false,
-    activity: {
-      totals: {},
-      hasMore: false,
-      conversations: [
-        {
-          id: '507a9ac0-164e-4f49-9441-e57522bdc52b',
-          title: 'Hosting comparison',
-          unreadUpdates: 1,
-          latestUpdate: null,
-        },
-      ],
-    },
-  })) as never
-  const render = (squadIds: string[]) =>
-    dom!.act(async () => {
-      root.render(
-        <MemoryRouter>
-          <ReactQueryHooksProvider hooks={hooks}>
-            <AccountFeedVisit
-              userId="one"
-              ActionCenter={({ actions }) => <div>{actions.length} new question</div>}
-              actions={[]}
-              ready
-              squadIds={squadIds}
-              acknowledge={async (at) => ({ lastVisitedAt: at })}
-              useActivity={useActivity}
-            />
-          </ReactQueryHooksProvider>
-        </MemoryRouter>
-      )
-    })
+  view.setRows([stream('live-offscreen')])
+  await view.render()
+  expect(scrolls).toBe(0)
+  expect(view.saved).toEqual([])
+  const jump = [...dom!.window.document.querySelectorAll('button')].find(
+    (button) => button.textContent === 'New updates ↑'
+  )!
+  expect(jump).toBeDefined()
+  await dom!.act(async () => jump.click())
+  expect(scrolls).toBe(1)
+  expect(section.open).toBe(true)
+  expect(view.saved).toEqual([])
+})
 
-  await render(['squad-2', 'squad-1'])
-  // The completed query asks the server for the selected squads only (sorted for a stable key).
-  expect(completedKeys.at(-1)?.slice(5)).toEqual([['squad-1', 'squad-2']])
-  const text = () => dom!.window.document.body.textContent ?? ''
-  expect(text()).toContain('1 completed')
-  expect(text()).toContain('Ficus fix')
-  expect(text()).not.toContain('Assistant update')
-  expect(text()).not.toContain('Hosting comparison')
+test('seen state survives section filtering within the visit and unloaded pagination stays unseen', async () => {
+  const view = await setup()
+  view.setPaging()
+  await view.render()
+  await view.expose('missed')
+  view.setSquads(['s2'])
+  view.setRows([])
+  await view.render()
+  view.setSquads([])
+  await view.render()
+  expect(dom!.window.document.querySelector('[data-completion-id="missed"]')?.textContent).not.toContain('New')
+  const more = [...dom!.window.document.querySelectorAll('button')].find(
+    (button) => button.textContent === 'Show more updates'
+  )!
+  await dom!.act(async () => more.click())
+  expect(text()).toContain('next-page')
+  expect(view.saved).not.toContain('next-page')
+})
 
-  // All squads keeps the account-level Assistant updates.
-  await render([])
-  expect(completedKeys.at(-1)?.slice(5)).toEqual([[]])
-  expect(text()).toContain('1 Assistant update')
-  expect(text()).toContain('Hosting comparison')
+test('overlapping refetched pages do not create duplicate completion rows', async () => {
+  const view = await setup()
+  view.setRows([stream('overlap'), stream('overlap')])
+  await view.render()
+  expect(dom!.window.document.querySelectorAll('[data-completion-id="overlap"]')).toHaveLength(1)
 })

@@ -202,16 +202,3 @@ export async function addCredentialVerify(response: unknown, displayName?: strin
     body: JSON.stringify({ response, displayName }),
   })
 }
-
-export interface FeedVisit {
-  lastVisitedAt: string | null
-  observedAt: string
-}
-
-export function getFeedVisit(): Promise<FeedVisit> {
-  return apiFetch('/auth/me/feed-visit')
-}
-
-export function acknowledgeFeedVisit(visitedAt: string): Promise<{ lastVisitedAt: string }> {
-  return apiFetch('/auth/me/feed-visit', { method: 'POST', body: JSON.stringify({ visitedAt }) })
-}

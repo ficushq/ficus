@@ -108,9 +108,8 @@ export const assistantQueryKeys = {
 }
 
 export const feedQueryKeys = {
-  visit: (userId: string) => ['auth', 'feed-visit', userId] as const,
-  completed: (after: string, before: string, squads: readonly string[] = []) =>
-    ['squads', 'feed-completed', after, before, 'items', [...squads].sort()] as const,
+  updates: (userId: string, visitId: string, squads: readonly string[]) =>
+    ['squads', 'feed-updates', userId, visitId, [...squads].sort()] as const,
   recent: (after: string, squads: readonly string[]) => ['squads', 'feed-recent', after, [...squads].sort()] as const,
 }
 

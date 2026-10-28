@@ -145,3 +145,54 @@ The new topic and event are additive. Older clients do not subscribe and continu
 | `packages/client-core/src/ws.ts`                         | Socket reconnect and automatic topic resubscription                 |
 | `apps/web/src/components/QueryInvalidator.tsx`           | Web action/question signal and reconnect reconciliation             |
 | `apps/web/src/hooks/usePendingActions.ts`                | Web authoritative pending query and polling                         |
+
+## Feed Updates and exposure
+
+The web Feed separates pending actions from informational updates:
+
+- **Needs you / Action Center** is the only home for questions and review requests,
+  regardless of when they arrived. Seeing an action never resolves or dismisses it.
+- **Updates** lists missed and live work-stream completions in one section. Rows
+  stay for the current visit, including after their seen state is saved. New arrivals
+  append without reordering existing rows. An offscreen arrival offers **New updates ↑**;
+  only clicking it scrolls and opens the section. Completed history remains unchanged.
+- Assistant rows remain pointers to **unread Assistant updates**. Exposing a Feed row
+  does not read the conversation or its messages. These pointers can remain after a
+  refresh until their domain unread state changes; they are not labeled new completions.
+
+A completion is exposed when at least half its row intersects the viewport in the
+visible browser tab and its section is open. Hidden tabs, collapsed sections,
+filtered squads, offscreen rows, and unfetched pages are not acknowledged. Returning
+from a hidden tab requires a fresh intersection observation. If observation is not
+supported, the Feed conservatively leaves updates unseen. Failed persistence keeps
+**New** visible and offers Retry; it never claims that seen state was saved.
+
+### Completion exposure API
+
+`GET /api/workstreams?statuses=done&limit=20&feedUpdates=true` returns only unacknowledged
+completions for the authenticated user, using the existing terminal keyset cursor
+and squad filters. Authorization and effective `progress` attention (stream override,
+then squad, then default) apply before paging and counting. Ordinary completed-history
+queries do not exclude acknowledged rows. Undated/invalid legacy completion records
+remain in history rather than creating an unacknowledgeable Update.
+
+`POST /api/workstreams/:id/feed-seen` accepts `{ "completedAt": "<ISO timestamp>" }`.
+It checks read access and atomically records only the exact current done revision.
+A stale completion returns 409. Receipts in `feed_completion_views` are unique by
+user, work stream, and completion timestamp; concurrent tabs/retries are idempotent.
+A later completion of a reopened stream is a different revision. No broad watermark
+advances past unseen holes, and no domain action or Assistant unread state is mutated.
+
+On upgrade, `users.feed_updates_after` copies the legacy visit watermark **once** to
+avoid replaying previously suppressed history. It is never advanced by either new
+exposure or legacy clients. Earlier versions did not record row exposure, so their
+seen/unseen distinctions cannot be reconstructed. Accounts without a legacy boundary
+can page through all accessible unacknowledged completions.
+
+The web query cache is scoped to account and visit. A fresh mount fetches authoritative
+unseen data; it cannot briefly replay another visit's cached acknowledgements. During
+one visit, loaded rows are retained and deduplicated by completion revision. Existing
+work-stream websocket invalidation, foreground/reconnect refetch, and pull-to-refresh
+retrieve live completions; events themselves never acknowledge anything. Timestamps
+use the existing compact Assistant formatting, with full local date/time in the title
+and a machine-readable `time` value.

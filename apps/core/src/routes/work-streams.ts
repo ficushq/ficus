@@ -550,6 +550,7 @@ export const workStreamsRouter = new Hono()
     const statusesParam = c.req.query('statuses')
     const limitParam = c.req.query('limit')
     const countOnly = c.req.query('countOnly') === 'true'
+    const feedUpdates = c.req.query('feedUpdates') === 'true'
     const respectAttention = c.req.query('respectAttention') === 'true'
     const cursor = c.req.query('cursor')
     const completionRange = z
@@ -588,6 +589,12 @@ export const workStreamsRouter = new Hono()
     }
 
     const identity: Identity = c.get('identity')
+
+    if (
+      feedUpdates &&
+      (identity.type !== 'user' || limitParam === undefined || countOnly || statuses?.join(',') !== 'done')
+    )
+      return c.json({ error: 'Feed updates require a user and a paginated done query' }, 400)
 
     // The feed's cross-squad query is the only caller. Paginated responses are cursor-snapshotted
     // server-side, so a per-viewer filter would silently shorten pages and break `totalCount`;
@@ -643,6 +650,7 @@ export const workStreamsRouter = new Hono()
           statuses: terminalStatuses,
           limit,
           cursor: decodedCursor,
+          feedUserId: feedUpdates && identity.type === 'user' ? identity.userId : undefined,
           completedAfter,
           completedBefore,
         })
@@ -836,6 +844,21 @@ export const workStreamsRouter = new Hono()
     const filtered = await filterToAccessibleSquads(identity, requestedStreams, (s) => s.squadId ?? null)
     const attended = respectAttention ? await filterToAttendedStreams(identity, filtered) : filtered
     return c.json(await serializeCanonicalWorkStreams(attended))
+  })
+  .post('/:id/feed-seen', zValidator('json', z.object({ completedAt: z.iso.datetime() })), async (c) => {
+    const identity: Identity = c.get('identity')
+    if (identity.type !== 'user') return c.json({ error: 'Not a user' }, 400)
+    const stream = await WorkStream.find(c.req.param('id'))
+    if (!stream) return c.json({ error: 'Work stream not found' }, 404)
+    c.set('authzChecked', true)
+    if (!(await hasPermission(identity, 'workstreams:read', stream.squadId))) return c.json({ error: 'Forbidden' }, 403)
+    const saved = await WorkStream.acknowledgeFeedCompletion(
+      identity.userId,
+      stream.id,
+      new Date(c.req.valid('json').completedAt)
+    )
+    if (!saved) return c.json({ error: 'Completion changed; refresh the Feed' }, 409)
+    return c.json({ seen: true })
   })
   .post('/', zValidator('json', createWorkStreamSchema), async (c) => {
     const input = c.req.valid('json')

@@ -251,6 +251,7 @@ export async function listDoneWorkStreams(
     limit?: number
     completedAfter?: string
     completedBefore?: string
+    feedUpdates?: boolean
     cursor?: string | null
   },
   fetch: typeof apiFetch = apiFetch
@@ -263,6 +264,7 @@ export async function listDoneWorkStreams(
   else if (opts.squadIds?.length) params.set('squadIds', [...new Set(opts.squadIds)].sort().join(','))
   if (opts.completedAfter) params.set('completedAfter', opts.completedAfter)
   if (opts.completedBefore) params.set('completedBefore', opts.completedBefore)
+  if (opts.feedUpdates) params.set('feedUpdates', 'true')
   if (opts.cursor) params.set('cursor', opts.cursor)
   return fetch<DoneWorkStreamsPage>(`/workstreams?${params.toString()}`)
 }
@@ -555,4 +557,12 @@ export function countCompletedWorkStreams(
     completedBefore,
   })
   return apiFetch(`/workstreams?${params}`)
+}
+
+/** Persist only this exposed completion; never updates a visit watermark or resolves an action. */
+export function acknowledgeFeedCompletion(id: string, completedAt: string): Promise<{ seen: true }> {
+  return apiFetch(`/workstreams/${encodeURIComponent(id)}/feed-seen`, {
+    method: 'POST',
+    body: JSON.stringify({ completedAt }),
+  })
 }
