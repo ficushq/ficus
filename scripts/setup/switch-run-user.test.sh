@@ -30,7 +30,8 @@
 #     rule included, and passes the success checks for it;
 #   * a run killed mid-switch leaves its journal; every other toolkit entry
 #     refuses while it exists, and the next run settles it;
-#   * --revert goes back to root;
+#   * --revert refuses hosted artifact configs without changes, but still
+#     goes back to root for self-hosted git configs (including the default);
 #   * P6 refuses on a structured target hit (REBASE_HOME_TARGET) and passes
 #     over free-text mentions of the new HOME (REBASE_HOME_TARGET_TEXT);
 #   * S4 runs --structured-only, before the services restart, and only after
@@ -416,6 +417,7 @@ oldest_run() { run_files "$1" | tail -n 1; }
 
 # ------------------------------------------------- 1. a switch, end to end
 fresh_host
+# A legacy hosted root host can still be repaired by the forward switch.
 env_before=$(sha256sum <"${DEST}/.env")
 out=$(run_switch)
 expect_match 'switch: exits 0' "${out}" $'\nrc=0$'
@@ -465,6 +467,19 @@ expect_match 'switch again: only the checks run, then the trailer' "${out}" 'alr
 expect_eq 'switch again: exits 0 with the same trailer' "$(last_line "${out}")$(grep -o 'rc=[0-9]*$' <<<"${out}")" "FICUS_RUN_USER=${SVC}rc=0"
 
 # ------------------------------------------------------------- 2. --revert
+# Hosted reverts must refuse without changing config, HOME, units or DB.
+hosted_before=$(sha256sum "${CFG}" "${DEST}/.env" "${STATE}/db" "${UNITS}/ficus-api.service" "${UNITS}/ficus-worker.service")
+: >"${STATE}/systemctl.log"
+out=$(run_switch --revert)
+expect_match 'hosted revert: exits nonzero with consistent service-user guidance' "${out}" \
+  'core.run_user.*hosted Core runs as an unprivileged service user'
+expect_match 'hosted revert: fails' "${out}" $'\nrc=1$'
+expect_eq 'hosted revert: files and stored paths are unchanged' \
+  "$(sha256sum "${CFG}" "${DEST}/.env" "${STATE}/db" "${UNITS}/ficus-api.service" "${UNITS}/ficus-worker.service")" "${hosted_before}"
+expect_eq 'hosted revert: HOME stays with the service user and no service operation runs' \
+  "$([[ -d ${NEW} && ! -e ${OLD} ]] && echo home):$(cat "${STATE}/systemctl.log")" 'home:'
+# The same artifact-layout host with self-hosted source semantics keeps revert.
+yq -i '.source.mode = "git-https"' "${CFG}"
 out=$(run_switch --revert)
 expect_eq 'revert: exits 0 with FICUS_RUN_USER=root' "$(last_line "${out}")$(grep -o 'rc=[0-9]*$' <<<"${out}")" 'FICUS_RUN_USER=rootrc=0'
 expect_eq 'revert: HOME is back at /root/.ficus' "$([[ -e ${NEW} ]] && echo new || echo gone):$(cat "${OLD}/sessions/s1/log")" 'gone:x'
@@ -571,6 +586,7 @@ out=$(run_switch)
 expect_eq 'revert rollback: the switch itself succeeds' "$(last_line "${out}")" "FICUS_RUN_USER=${SVC}"
 cp -p "${H}/etc/sudoers.d/ficus-update" "${S}/update-switched"
 : >"${STATE}/unhealthy-as-root"
+yq -i '.source.mode = "git-ssh"' "${CFG}"
 out=$(run_switch --revert)
 rm -f "${STATE}/unhealthy-as-root"
 expect_match 'revert rollback: the revert fails' "${out}" $'\nrc=[1-9][0-9]*$'
@@ -628,6 +644,7 @@ expect_eq 'S4: a free-text mention of the old HOME after the rebase does not fai
 expect_eq 'S4: ...the mention is still there (and still names the old HOME)' "$(grep -c "^~${OLD}/mentioned-later$" "${STATE}/db")" 1
 # The rollback's post-check, the same: a mention of the HOME it left, after
 # the rebase back, does not make the rollback report failure.
+yq -i 'del(.source.mode)' "${CFG}"
 out=$(run_switch --revert)
 expect_eq 'S4: the revert ignores the mentions too' "$(last_line "${out}")$(grep -o 'rc=[0-9]*$' <<<"${out}")" 'FICUS_RUN_USER=rootrc=0'
 fresh_host
@@ -810,6 +827,7 @@ expect_match 'operator: an unknown entrypoint is a usage error' "${out}" $'\nrc=
 install -m 0755 "${SCRIPT_DIR}/run-core-operator.sh" "${S}/run-core-operator.sh"
 out=$(runuser -u "${SVC}" -- bash "${S}/run-core-operator.sh" --dest "${DEST}" box-control 2>&1 || true)
 expect_match 'operator: refuses to run unless root' "${out}" 'run it as root'
+yq -i '.source.mode = "git-https"' "${CFG}"
 run_switch --revert >/dev/null
 out=$(operator box-control)
 expect_match 'operator: on a root host the entrypoint runs as root' "${out}" "(^|"$'\n'")user=root"$'\n'

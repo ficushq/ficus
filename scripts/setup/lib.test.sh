@@ -2586,6 +2586,7 @@ EOF
   cat >"${PROV_TMP}/sh-artifact.yaml" <<EOF
 core:
   origin: https://acme.example:3000
+  run_user: ficus
 source:
   mode: artifact
   repo: https://github.com/example/ficus.git
@@ -4505,6 +4506,117 @@ EOF
   rm -rf "${SEED_TMP}"
 else
   log_warn "mikefarah yq not on PATH — skipping seed.sh/setup-host.sh optional-seeding tests"
+fi
+
+# --- hosted artifact Core must never be configured or upgraded as root ------
+if yq_is_mikefarah; then
+  HR_TMP=$(mktemp -d)
+  cp "${SCRIPT_DIR}/"{lib.sh,setup-host.sh,upgrade-host.sh} "${HR_TMP}/"
+  # Run the real entrypoints and parser, replacing only host operations. The
+  # lock is the first mutation boundary: never let these tests cross it.
+  cat >>"${HR_TMP}/lib.sh" <<'MOCKS'
+id() {
+  if [[ $* == -un ]]; then printf '%s\n' "${HR_INVOKER:-root}";
+  elif [[ $* == '-u root-alias' ]]; then echo 0;
+  else command id "$@"; fi
+}
+as_root() { "$@"; }
+host_migrate_lock() { die 'TEST: mutation boundary'; }
+require_artifact_conversion_ready() { :; }
+systemctl() {
+  printf '%s\n' "$*" >>"${HR_CALLS}"
+  [[ $1 == show && $2 == -p && $3 == User && $4 == --value ]] || return 98
+  case "$5" in
+    ficus-api) [[ ${HR_API} != ERROR ]] || return 1; printf '%s' "${HR_API}" ;;
+    ficus-worker) [[ ${HR_WORKER} != ERROR ]] || return 1; printf '%s' "${HR_WORKER}" ;;
+    *) return 99 ;;
+  esac
+}
+MOCKS
+  hr_config() { # MODE USER ("absent" omits the key)
+    printf 'source:\n  mode: %s\n  repo: https://example.invalid/core.git\n  dest: %s/core\ncore:\n  origin: https://example.invalid\n' "$1" "${HR_TMP}" >"${HR_TMP}/config.yaml"
+    [[ $2 == absent ]] || printf '  run_user: %s\n' "$2" >>"${HR_TMP}/config.yaml"
+    return 0
+  }
+  hr_run() { # SCRIPT API_USER WORKER_USER [INVOKER]
+    local rc=0 out
+    : >"${HR_TMP}/calls"
+    out=$(HR_CALLS="${HR_TMP}/calls" HR_API="$2" HR_WORKER="$3" HR_INVOKER="${4:-root}" \
+      FICUS_HOST_ROOT="${HR_TMP}/host" HOST_MIGRATE_BACKUP_ROOT="${HR_TMP}/backups" \
+      FICUS_ARTIFACT_TARBALL_URL=${HR_INPUTS-t} FICUS_ARTIFACT_MANIFEST_URL=${HR_INPUTS-m} \
+      FICUS_ARTIFACT_SIG_URL=${HR_INPUTS-s} FICUS_ARTIFACT_PUBKEY_B64=${HR_INPUTS-k} \
+      bash "${HR_TMP}/$1" --config "${HR_TMP}/config.yaml" 2>&1) || rc=$?
+    printf '%s\nrc=%s' "${out}" "${rc}"
+  }
+  for hr_script in setup-host.sh upgrade-host.sh; do
+    for hr_user in root absent "''" null 0 root-alias; do
+      hr_config artifact "${hr_user}"
+      hr_out=$(hr_run "${hr_script}" ficus ficus)
+      expect_match "${hr_script}: artifact core.run_user=${hr_user} refuses during config parsing" \
+        "${hr_out}" 'core.run_user.*hosted Core runs as an unprivileged service user'
+      expect_match "${hr_script}: artifact root config exits nonzero" "${hr_out}" 'rc=1$'
+      expect_eq "${hr_script}: root config never inspects units or reaches mutations" \
+        "$(cat "${HR_TMP}/calls")$(grep -o 'TEST: mutation boundary' <<<"${hr_out}" || true)" ''
+    done
+  done
+  hr_config artifact root
+  for hr_script in setup-host.sh upgrade-host.sh; do
+    hr_out=$(HR_INPUTS='' hr_run "${hr_script}" ficus ficus)
+    expect_match "${hr_script}: config root refuses even without artifact ENV inputs" \
+      "${hr_out}" 'core.run_user.*hosted Core runs as an unprivileged service user'
+  done
+  if [[ ${EUID} -eq 0 ]]; then
+    hr_out=$(bash "${HR_TMP}/upgrade-host.sh" --config "${HR_TMP}/config.yaml" --restore-host-backup "${HR_TMP}" 2>&1) || true
+    expect_match 'artifact restore: provided root config refuses before rendering units' \
+      "${hr_out}" 'core.run_user.*hosted Core runs as an unprivileged service user'
+  fi
+  hr_config artifact ficus
+  for hr_unit in api worker; do
+    for hr_user in root '' 0 root-alias; do
+      hr_api=ficus hr_worker=ficus
+      if [[ ${hr_unit} == api ]]; then hr_api=${hr_user}; else hr_worker=${hr_user}; fi
+      hr_out=$(hr_run upgrade-host.sh "${hr_api}" "${hr_worker}")
+      expect_match "artifact upgrade: ${hr_unit} User=${hr_user:-<empty>} refuses" \
+        "${hr_out}" "ficus-${hr_unit}.*switch-run-user.sh"
+      expect_match 'artifact upgrade: unit refusal explains hosted service user policy' \
+        "${hr_out}" 'hosted Core runs as an unprivileged service user'
+      expect_match 'artifact upgrade: root unit exits nonzero' "${hr_out}" 'rc=1$'
+      expect_not_match 'artifact upgrade: root unit refuses before mutation boundary' "${hr_out}" 'TEST: mutation boundary'
+    done
+  done
+  for hr_unit in api worker; do
+    hr_api=ficus hr_worker=ficus
+    if [[ ${hr_unit} == api ]]; then hr_api=ERROR; else hr_worker=ERROR; fi
+    hr_out=$(hr_run upgrade-host.sh "${hr_api}" "${hr_worker}")
+    expect_match 'artifact upgrade: failed unit query fails closed before changes' "${hr_out}" "could not.*ficus-${hr_unit}.*User"
+    expect_not_match 'artifact upgrade: failed query never reaches mutation boundary' "${hr_out}" 'TEST: mutation boundary'
+  done
+  hr_out=$(hr_run upgrade-host.sh ficus ficus)
+  expect_match 'artifact upgrade: non-root units reach the normal preflight' "${hr_out}" 'TEST: mutation boundary'
+  expect_eq 'artifact upgrade: checks both effective unit users' "$(cat "${HR_TMP}/calls")" \
+    $'show -p User --value ficus-api\nshow -p User --value ficus-worker'
+
+  # Empty/missing source.mode still means git-ssh; artifact ENV inputs alone
+  # do not turn a self-hosted checkout into a hosted install.
+  for hr_mode in git-ssh git-https "''"; do
+    for hr_user in root absent "''"; do
+      hr_config "${hr_mode}" "${hr_user}"
+      hr_out=$(hr_run upgrade-host.sh root root)
+      expect_match "self-hosted ${hr_mode}/${hr_user}: root still reaches preflight" "${hr_out}" 'TEST: mutation boundary'
+      expect_eq 'self-hosted upgrade: no hosted unit-user restriction' "$(cat "${HR_TMP}/calls")" ''
+    done
+  done
+  # Exercise the shared resolver with a non-root invoker and all defaults.
+  for hr_mode in artifact git-ssh git-https; do
+    for hr_user in absent "''" null; do
+      hr_config "${hr_mode}" "${hr_user}"
+      hr_out=$(HR_INVOKER=ficus bash -c 'source "$1/lib.sh"; cfg_load "$1/config.yaml"; cfg_core_run_user' _ "${HR_TMP}" 2>&1) || true
+      expect_eq "${hr_mode}: ${hr_user} keeps the invoking-user default" "${hr_out}" ficus
+    done
+  done
+  rm -rf "${HR_TMP}"
+else
+  log_warn 'skipping hosted root refusal tests — mikefarah yq not available'
 fi
 
 # --- upgrade-host.sh mode selection (artifact vs git) -----------------------
