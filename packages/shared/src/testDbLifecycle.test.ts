@@ -7,7 +7,7 @@ import { testDbProjectName } from './testDbPort'
 
 const now = Date.now()
 const record = {
-  version: 1,
+  version: 2,
   repoRoot: '/repo',
   project: testDbProjectName('/repo'),
   composeFile: '/repo/docker-compose.test.yml',
@@ -16,6 +16,8 @@ const record = {
   pid: 123,
   token: 'unique',
   createdAt: now - 7200001,
+  ownerReleased: false,
+  borrowers: [],
 }
 // Identity is checked separately from age/liveness; ambiguous owners fail closed.
 test('stale classification requires age, matching scope/host, and a provably dead owner', () => {
@@ -239,6 +241,130 @@ test('sequential runner lanes borrow one lifetime and clean up only after both c
     expect(exit).toBe(0)
     expect(readFileSync(f.log, 'utf8').split('down --volumes')).toHaveLength(2)
   } finally {
+    f.child.kill('SIGKILL')
+    await f.child.exited
+    f.clean()
+  }
+})
+
+for (const inventory of ['exit 1', 'kill -KILL $$', 'exec sleep 60']) {
+  test(`failed initial inventory never claims or mutates a project: ${inventory}`, async () => {
+    const f = await fixture('console.log("CLAIMED")', `case "$*" in *-q*) ${inventory};; esac`)
+    try {
+      const [exit, output, error] = await Promise.all([
+        f.child.exited,
+        new Response(f.child.stdout).text(),
+        new Response(f.child.stderr).text(),
+      ])
+      expect(exit).toBe(1)
+      expect(output).not.toContain('CLAIMED')
+      expect(error).toContain('inventory')
+      expect(readFileSync(f.log, 'utf8')).not.toMatch(/\b(up|down)\b/)
+      const registry = join(f.dir, readdirSync(f.dir).find((name) => name.startsWith('ficus-test-db-owners-'))!)
+      expect(readdirSync(registry)).toEqual([])
+    } finally {
+      f.child.kill('SIGKILL')
+      await f.child.exited
+      f.clean()
+    }
+  }, 10000)
+}
+
+for (const action of ['reclaim', 'sweep', 'manual-down'] as const) {
+  test(`live borrower protects a dead parent's project from ${action}, then last borrower cleans up`, async () => {
+    const f = await fixture('console.log(process.env.FICUS_TEST_DB_OWNER); setInterval(() => {}, 1000)')
+    let borrower: Bun.Subprocess<'ignore', 'pipe', 'pipe'> | undefined
+    try {
+      const token = new TextDecoder().decode((await f.child.stdout.getReader().read()).value).trim()
+      const code = `import {ownTestDb} from ${JSON.stringify(source)}; ownTestDb(${JSON.stringify(f.root)}); console.log("borrowed"); setInterval(() => {}, 1000)`
+      borrower = Bun.spawn([process.execPath, '-e', code], {
+        env: { ...f.env, FICUS_TEST_DB_OWNER: token },
+        stdin: 'ignore',
+        stdout: 'pipe',
+        stderr: 'pipe',
+      })
+      expect(new TextDecoder().decode((await borrower.stdout.getReader().read()).value)).toContain('borrowed')
+      f.child.kill('SIGKILL')
+      await f.child.exited
+      const registry = join(f.dir, readdirSync(f.dir).find((name) => name.startsWith('ficus-test-db-owners-'))!)
+      const file = join(registry, readdirSync(registry)[0]!)
+      const owner = JSON.parse(readFileSync(file, 'utf8'))
+      owner.createdAt = Date.now() - 7200001
+      writeFileSync(file, JSON.stringify(owner))
+      writeFileSync(f.log, '')
+      const request =
+        action === 'reclaim'
+          ? `ownTestDb(${JSON.stringify(f.root)})`
+          : action === 'sweep'
+            ? `console.log(JSON.stringify(sweepStaleTestDbs(${JSON.stringify(f.root)})))`
+            : `process.exit(stopOwnedTestDb(${JSON.stringify(f.root)}) ? 0 : 1)`
+      const result = Bun.spawnSync(
+        [
+          process.execPath,
+          '-e',
+          `import {ownTestDb,sweepStaleTestDbs,stopOwnedTestDb} from ${JSON.stringify(source)}; ${request}`,
+        ],
+        { env: f.env, stdout: 'pipe', stderr: 'pipe', timeout: 15000 }
+      )
+      expect(result.exitCode).toBe(action === 'sweep' ? 0 : 1)
+      if (action === 'sweep') expect(JSON.parse(result.stdout.toString())).toEqual([])
+      expect(readFileSync(f.log, 'utf8')).not.toContain('down')
+      expect(() => process.kill(borrower!.pid, 0)).not.toThrow()
+      borrower.kill('SIGTERM')
+      await borrower.exited
+      expect(readFileSync(f.log, 'utf8')).toContain('down --volumes --remove-orphans')
+      expect(readdirSync(registry)).toEqual([])
+    } finally {
+      borrower?.kill('SIGKILL')
+      if (borrower) await borrower.exited
+      f.child.kill('SIGKILL')
+      await f.child.exited
+      f.clean()
+    }
+  })
+}
+
+test('stale decisions fail closed for unknown borrowers and old membership schemas', () => {
+  const withBorrower = { ...record, borrowers: [456] }
+  const context = {
+    now,
+    host: 'local',
+    scope: '/repo/.git',
+    ownerAlive: (pid: number): boolean | undefined => (pid === 456 ? undefined : false),
+  }
+  expect(canReapTestDb(withBorrower, context)).toBe(false)
+  expect(canReapTestDb(withBorrower, { ...context, ownerAlive: (pid) => pid === 456 })).toBe(false)
+  expect(canReapTestDb(withBorrower, { ...context, ownerAlive: () => false })).toBe(true)
+  expect(canReapTestDb({ ...record, version: 1 }, { ...context, ownerAlive: () => false })).toBe(false)
+})
+
+test('normal owner release defers teardown to its last live borrower, even while owner PID exists', async () => {
+  const f = await fixture(
+    'console.log(process.env.FICUS_TEST_DB_OWNER); process.on("SIGUSR1", () => {session.release();console.log("released")}); setInterval(() => {}, 1000)'
+  )
+  let borrower: Bun.Subprocess<'ignore', 'pipe', 'pipe'> | undefined
+  try {
+    const reader = f.child.stdout.getReader()
+    const token = new TextDecoder().decode((await reader.read()).value).trim()
+    const code = `import {ownTestDb} from ${JSON.stringify(source)}; ownTestDb(${JSON.stringify(f.root)}); console.log("borrowed"); setInterval(() => {},1000)`
+    borrower = Bun.spawn([process.execPath, '-e', code], {
+      env: { ...f.env, FICUS_TEST_DB_OWNER: token },
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    await borrower.stdout.getReader().read()
+    writeFileSync(f.log, '')
+    f.child.kill('SIGUSR1')
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain('released')
+    expect(readFileSync(f.log, 'utf8')).not.toContain('down')
+    borrower.kill('SIGTERM')
+    await borrower.exited
+    expect(() => process.kill(f.child.pid, 0)).not.toThrow()
+    expect(readFileSync(f.log, 'utf8').split('down --volumes')).toHaveLength(2)
+  } finally {
+    borrower?.kill('SIGKILL')
+    if (borrower) await borrower.exited
     f.child.kill('SIGKILL')
     await f.child.exited
     f.clean()

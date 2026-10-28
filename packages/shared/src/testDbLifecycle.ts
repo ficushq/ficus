@@ -1,6 +1,15 @@
 /** Host-only ownership for ephemeral Compose databases. No age-only deletion. */
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { hostname, homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { acquireTestDbLock } from './testDbLock'
@@ -18,6 +27,8 @@ export interface TestDbOwner {
   pid: number
   token: string
   createdAt: number
+  ownerReleased: boolean
+  borrowers: number[]
 }
 function ownerAlive(pid: number): boolean | undefined {
   if (!Number.isSafeInteger(pid) || pid <= 0) return undefined
@@ -30,7 +41,10 @@ function ownerAlive(pid: number): boolean | undefined {
 }
 function valid(record: TestDbOwner): boolean {
   return (
-    record.version === 1 &&
+    record.version === 2 &&
+    typeof record.ownerReleased === 'boolean' &&
+    Array.isArray(record.borrowers) &&
+    record.borrowers.every((pid) => Number.isSafeInteger(pid) && pid > 0) &&
     typeof record.repoRoot === 'string' &&
     resolve(record.repoRoot) === record.repoRoot &&
     record.project === testDbProjectName(record.repoRoot) &&
@@ -51,8 +65,26 @@ export function canReapTestDb(
     record.scope === context.scope &&
     record.host === context.host &&
     context.now - record.createdAt >= STALE_MS &&
-    context.ownerAlive(record.pid) === false
+    usersGone(record, context.ownerAlive)
   )
+}
+/** Unknown PID state protects resources just like a live process does. */
+function usersGone(record: TestDbOwner, alive = ownerAlive): boolean {
+  return (record.ownerReleased || alive(record.pid) === false) && record.borrowers.every((pid) => alive(pid) === false)
+}
+function writeOwner(file: string, record: TestDbOwner): void {
+  // A killed borrower must not leave a partially overwritten membership record.
+  const temporary = `${file}.${randomUUID()}.tmp`
+  try {
+    writeFileSync(temporary, JSON.stringify(record), { mode: 0o600 })
+    renameSync(temporary, file)
+  } finally {
+    try {
+      unlinkSync(temporary)
+    } catch {
+      /* Already renamed or removed. */
+    }
+  }
 }
 function registry(): string {
   const dir = join(
@@ -161,7 +193,7 @@ export function stopOwnedTestDb(repoRoot: string): boolean {
   return locked(repoRoot, () => {
     const file = join(registry(), `${testDbProjectName(repoRoot)}.json`)
     const owner = readOwner(file)
-    if (existsSync(file) && (!owner || owner.host !== hostname() || ownerAlive(owner.pid) !== false)) {
+    if (existsSync(file) && (!owner || owner.host !== hostname() || !usersGone(owner))) {
       console.error(`[test-db] Refusing teardown of ${testDbProjectName(repoRoot)}: live owner or unknown ownership`)
       return false
     }
@@ -226,10 +258,20 @@ export function ownTestDb(
     const previous = readOwner(file)
     if (previous && previous.repoRoot !== repoRoot)
       throw new Error('Test DB project identity collision; refusing foreign ownership')
-    if (previous && inherited === previous.token && previous.host === hostname() && ownerAlive(previous.pid) === true)
-      return undefined
+    if (
+      previous &&
+      inherited === previous.token &&
+      previous.host === hostname() &&
+      !previous.ownerReleased &&
+      ownerAlive(previous.pid) === true
+    ) {
+      if (previous.pid === process.pid) return undefined
+      previous.borrowers = [...new Set([...previous.borrowers, process.pid])]
+      writeOwner(file, previous)
+      return { owner: previous, borrowed: true }
+    }
     if (existsSync(file)) {
-      if (!previous || previous.host !== hostname() || ownerAlive(previous.pid) !== false)
+      if (!previous || previous.host !== hostname() || !usersGone(previous))
         throw new Error(
           `Test DB ${testDbProjectName(repoRoot)} already has a live or unknown owner; use a separate worktree.`
         )
@@ -240,13 +282,17 @@ export function ownTestDb(
         ['docker', 'ps', '-a', '-q', '--filter', `label=com.docker.compose.project=${testDbProjectName(repoRoot)}`],
         { stdout: 'pipe', stderr: 'pipe', timeout: 5000, killSignal: 'SIGKILL' }
       )
-      if (listed.exitCode === 0 && listed.stdout.toString().trim())
+      if (listed.exitCode !== 0 || listed.signalCode)
+        throw new Error(
+          `Cannot verify test database inventory (limit 5000ms): ${listed.stderr.toString().slice(-2000) || listed.signalCode || listed.exitCode}`
+        )
+      if (listed.stdout.toString().trim())
         throw new Error(
           `Refusing to adopt unrecorded test database ${testDbProjectName(repoRoot)}. Confirm it is unused, then run this worktree's test:db:down.`
         )
     }
     const owner: TestDbOwner = {
-      version: 1,
+      version: 2,
       repoRoot,
       composeFile: join(repoRoot, 'docker-compose.test.yml'),
       project: testDbProjectName(repoRoot),
@@ -255,27 +301,35 @@ export function ownTestDb(
       pid: process.pid,
       token: randomUUID(),
       createdAt: Date.now(),
+      ownerReleased: false,
+      borrowers: [],
     }
-    writeFileSync(file, JSON.stringify(owner), { mode: 0o600 })
-    return owner
+    writeOwner(file, owner)
+    return { owner, borrowed: false }
   })
   if (!record) return { release() {} }
-  process.env.FICUS_TEST_DB_OWNER = record.token
+  process.env.FICUS_TEST_DB_OWNER = record.owner.token
   let released = false
   const release = () => {
     if (released) return
     released = true
     try {
       locked(repoRoot, () => {
-        if (readOwner(file)?.token !== record.token) return
-        if (downTestDb(record)) unlinkSync(file)
-        else if (!process.exitCode) process.exitCode = 1
+        const current = readOwner(file)
+        if (!current || current.token !== record.owner.token) return
+        if (record.borrowed) current.borrowers = current.borrowers.filter((pid) => pid !== process.pid)
+        else current.ownerReleased = true
+        writeOwner(file, current)
+        if (usersGone(current)) {
+          if (downTestDb(current)) unlinkSync(file)
+          else if (!process.exitCode) process.exitCode = 1
+        }
       })
     } catch (error) {
       console.error(`[test-db] Cleanup ownership check failed: ${String(error)}`)
       if (!process.exitCode) process.exitCode = 1
     }
-    if (process.env.FICUS_TEST_DB_OWNER === record.token) delete process.env.FICUS_TEST_DB_OWNER
+    if (process.env.FICUS_TEST_DB_OWNER === record.owner.token) delete process.env.FICUS_TEST_DB_OWNER
   }
   process.once('exit', release)
   if (options.handleSignals !== false) {

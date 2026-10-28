@@ -398,10 +398,13 @@ bun run docker:gc -- --install  # Install/refresh a daily 13:00 launchd agent
 
 Test startup and `bun run docker:gc` use the same conservative stale-project
 sweep: only recorded owners on this host, in the same Git clone, older than
-two hours, with a provably dead PID and matching container owner-token labels
-are eligible. A live owner is protected regardless of age or path deletion.
-Other clones, ambiguous PID checks, changed labels and unrecorded legacy
-projects are never deleted automatically. Ownership records live under the
+two hours, with provably dead owner and borrower PIDs and matching container
+owner-token labels are eligible. A live owner is protected regardless of age or path deletion.
+Borrowers register before using the database; a killed lending parent alone
+does not authorize teardown, and the last departing borrower completes deferred
+cleanup. Failed or timed-out initial inventory never authorizes claiming an
+unrecorded project. Other clones, ambiguous PID checks, changed labels and
+unrecorded legacy projects are never deleted automatically. Ownership records live under the
 user/host-specific cache directory (`XDG_CACHE_HOME`, otherwise `~/.cache`);
 keep them for crash and reboot recovery. The
 startup sweep schedules at most three cleanups within a 15s scheduling budget
