@@ -1,3 +1,4 @@
+import { runIntegrationCommand, type IntegrationExecutionEnvironment } from './integration-exec'
 import type {
   GitHubCommitSigningSummary,
   IntegrationAuthorizationStart,
@@ -72,35 +73,13 @@ export function registerIntegrationCommands(
     .allowUnknownOption(false)
     .action(
       run(async (provider, command: string[], options) => {
-        const result = await apiPost<{ environment: Record<string, string> }>(
+        const result = await apiPost<IntegrationExecutionEnvironment>(
           `/api/squads/${options.squad}/integrations/${provider}/execute-environment`,
           {
             ...(options.connection ? { connectionId: options.connection } : {}),
           }
         )
-        const environment = { ...process.env }
-        delete environment.GH_TOKEN
-        delete environment.GITHUB_TOKEN
-        delete environment.GITHUB_USER
-        const child = Bun.spawn(command, {
-          env: { ...environment, ...result.environment },
-          stdin: 'inherit',
-          stdout: 'inherit',
-          stderr: 'inherit',
-        })
-        const forward = (signal: NodeJS.Signals) => {
-          child.kill(signal)
-        }
-        const interrupt = () => forward('SIGINT'),
-          terminate = () => forward('SIGTERM')
-        process.on('SIGINT', interrupt)
-        process.on('SIGTERM', terminate)
-        try {
-          process.exitCode = await child.exited
-        } finally {
-          process.off('SIGINT', interrupt)
-          process.off('SIGTERM', terminate)
-        }
+        process.exitCode = await runIntegrationCommand(command, result)
       })
     )
 

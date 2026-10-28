@@ -152,7 +152,15 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain', options: { 
   )
   app.route(
     '/api/squads',
-    createSquadIntegrationsRouter({ selection, assign, unassign, retryProjection, executionEnvironment, signGitObject })
+    createSquadIntegrationsRouter({
+      selection,
+      assign,
+      unassign,
+      retryProjection,
+      executionEnvironment,
+      executionVariableNames: () => ['GH_TOKEN', 'GITHUB_TOKEN', 'GITHUB_USER', 'LINEAR_API_KEY'],
+      signGitObject,
+    })
   )
   return {
     app,
@@ -251,7 +259,10 @@ describe('integration routes', () => {
         expect(response.status).toBe(200)
         expect(response.headers.get('cache-control')).toBe('no-store')
         expect(calls.executionEnvironment).toHaveBeenCalledWith(squadId, 'github', summary.id)
-        expect(await response.json()).toEqual({ environment: { GH_TOKEN: 'execution-only-token' } })
+        expect(await response.json()).toEqual({
+          environment: { GH_TOKEN: 'execution-only-token' },
+          scrubVariables: ['GH_TOKEN', 'GITHUB_TOKEN', 'GITHUB_USER', 'LINEAR_API_KEY'],
+        })
       }
     }
   })

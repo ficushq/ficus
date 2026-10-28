@@ -191,6 +191,7 @@ export interface SquadIntegrationRoutesService {
     providerKey: string,
     input: { enabled?: boolean; inheritDefault?: boolean }
   ): Promise<unknown>
+  executionVariableNames?(): string[]
   executionEnvironment?(
     squadId: string,
     providerKey: string,
@@ -871,7 +872,7 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
             },
             409
           )
-        return c.json({ environment })
+        return c.json({ environment, scrubVariables: service.executionVariableNames?.() ?? [] })
       }
     )
     .post(
