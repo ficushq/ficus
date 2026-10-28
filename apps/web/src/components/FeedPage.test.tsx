@@ -370,9 +370,11 @@ describe('FeedPage', () => {
             <FeedPage
               dependencies={{
                 ...urlDependencies,
-                FeedVisitSummary: ({ actions, squadIds }) => {
-                  visitSquads.push(squadIds)
-                  return <div>{actions.map((a) => `visit:${a.id}`).join(',')}</div>
+                FeedVisitSummary: (props) => {
+                  visitSquads.push(props.squadIds)
+                  expect(props).not.toHaveProperty('actions')
+                  expect(props).not.toHaveProperty('ready')
+                  return null
                 },
               }}
             />
@@ -384,10 +386,8 @@ describe('FeedPage', () => {
     expect(html).toContain('1 pending')
     expect(html).toContain('source-review')
     expect(html).not.toContain('ficus-review')
-    // The visit summary receives the same squad selection and only the selected squads' actions.
+    // Updates share the squad filter, but never receive actions or depend on their loading state.
     expect(visitSquads).toEqual([['squad-2']])
-    expect(html).toContain('visit:source-review')
-    expect(html).not.toContain('visit:ficus-review')
   })
 
   test('pulling down at the top refreshes feed work stream and action queries', async () => {

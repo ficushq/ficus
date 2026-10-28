@@ -20,7 +20,17 @@ import { resolveCreationWorkflow } from '../services/workflows/creation-source'
 import { notifyFlowWaitResolution } from '../services/work-streams/wait-scope'
 import { eq, desc, and, sql, inArray, type SQL } from 'drizzle-orm'
 import { db, squads, workStreams, uuidPrefixCondition, AmbiguousPrefixError } from '../db'
-import { executions, workStreamWaits, workStreamFlowRuns, workStreamWorktrees, worktreeCleanupJobs } from '../db/schema'
+import {
+  users,
+  feedCompletionViews,
+  squadSubscriptions,
+  workStreamSubscriptions,
+  executions,
+  workStreamWaits,
+  workStreamFlowRuns,
+  workStreamWorktrees,
+  worktreeCleanupJobs,
+} from '../db/schema'
 import {
   describeCodeHostReference,
   ConflictingDependencyConditionError,
@@ -29,6 +39,7 @@ import {
   normalizeDependencyInputs,
   WORK_STREAM_ADMITTED_STATUSES,
   workStreamSourceLinkKindSchema,
+  DEFAULT_ATTENTION,
   workStreamWaitActor,
 } from '@ficus/shared'
 import type {
@@ -194,16 +205,20 @@ export interface TerminalWorkStreamPage {
   hasMore: boolean
 }
 
-const terminalCompletionTimeSql = sql<Date | null>`date_trunc('milliseconds', CASE
-  WHEN ${workStreams.metadata}->'completion' ? 'completedAt' THEN
-    CASE
-      WHEN jsonb_typeof(${workStreams.metadata}->'completion'->'completedAt') = 'string'
-        AND pg_input_is_valid(${workStreams.metadata}->'completion'->>'completedAt', 'timestamp with time zone')
-      THEN ((${workStreams.metadata}->'completion'->>'completedAt')::timestamptz AT TIME ZONE 'UTC')
-      ELSE NULL
-    END
-  ELSE ${workStreams.updatedAt}
+// Feed receipts require an immutable, explicitly dated completion revision. Keep this
+// timestamptz throughout: converting to timestamp would make persisted receipts depend
+// on the database session's timezone. Legacy updatedAt fallback is history-only.
+const storedCompletionTimeSql = sql<Date | null>`date_trunc('milliseconds', CASE
+  WHEN jsonb_typeof(${workStreams.metadata}->'completion'->'completedAt') = 'string'
+    AND pg_input_is_valid(${workStreams.metadata}->'completion'->>'completedAt', 'timestamp with time zone')
+  THEN (${workStreams.metadata}->'completion'->>'completedAt')::timestamptz
+  ELSE NULL
 END)`
+
+const terminalCompletionTimeSql = sql<Date | null>`CASE
+  WHEN ${workStreams.metadata}->'completion' ? 'completedAt' THEN ${storedCompletionTimeSql} AT TIME ZONE 'UTC'
+  ELSE date_trunc('milliseconds', ${workStreams.updatedAt})
+END`
 
 const terminalPriorityRankSql = sql<number>`CASE ${workStreams.priority}
   WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3
@@ -939,6 +954,21 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     return rows[0]?.count ?? 0
   }
 
+  /** A stale/delayed exposure must never acknowledge a later completion of the same stream. */
+  static async acknowledgeFeedCompletion(userId: string, workStreamId: string, completedAt: Date): Promise<boolean> {
+    const rows = await db.execute(sql`
+      INSERT INTO ${feedCompletionViews} (user_id, work_stream_id, completed_at)
+      SELECT ${userId}::uuid, ${workStreams.id}, ${storedCompletionTimeSql}
+      FROM ${workStreams}
+      WHERE ${workStreams.id} = ${workStreamId} AND ${workStreams.status} = 'done'
+        AND ${storedCompletionTimeSql} = ${completedAt.toISOString()}::timestamptz
+      ON CONFLICT (user_id, work_stream_id, completed_at) DO UPDATE
+        SET seen_at = ${feedCompletionViews.seenAt}
+      RETURNING work_stream_id
+    `)
+    return rows.length > 0
+  }
+
   /** Load a bounded frozen snapshot page without volatile status predicates. */
   static async listSnapshotRowsByIds(ids: string[]): Promise<WorkStream[]> {
     if (ids.length === 0) return []
@@ -958,6 +988,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     cursor?: TerminalWorkStreamCursorKey
     completedBefore?: Date
     completedAfter?: Date
+    feedUserId?: string
   }): Promise<TerminalWorkStreamPage> {
     const conditions: SQL[] = [inArray(workStreams.status, options.statuses)]
     if (options.squadId) conditions.push(uuidPrefixCondition(workStreams.squadId, options.squadId))
@@ -966,6 +997,27 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       conditions.push(sql`${terminalCompletionTimeSql} <= ${options.completedBefore.toISOString()}::timestamptz`)
     if (options.completedAfter)
       conditions.push(sql`${terminalCompletionTimeSql} > ${options.completedAfter.toISOString()}::timestamptz`)
+    if (options.feedUserId) {
+      const userId = options.feedUserId
+      conditions.push(sql`${storedCompletionTimeSql} IS NOT NULL`)
+      conditions.push(sql`${storedCompletionTimeSql} >
+        (SELECT coalesce(${users.feedUpdatesAfter}, ${users.createdAt} AT TIME ZONE 'UTC')
+          FROM ${users} WHERE ${users.id} = ${userId})`)
+      conditions.push(sql`NOT EXISTS (
+        SELECT 1 FROM ${feedCompletionViews}
+        WHERE ${feedCompletionViews.userId} = ${userId}
+          AND ${feedCompletionViews.workStreamId} = ${workStreams.id}
+          AND ${feedCompletionViews.completedAt} = ${storedCompletionTimeSql}
+      )`)
+      // Apply attention before LIMIT/count, with the same stream > squad > default precedence.
+      conditions.push(sql`coalesce(
+        (SELECT ${workStreamSubscriptions.attention}->>'progress' FROM ${workStreamSubscriptions}
+          WHERE ${workStreamSubscriptions.userId} = ${userId} AND ${workStreamSubscriptions.workStreamId} = ${workStreams.id}),
+        (SELECT ${squadSubscriptions.attention}->>'progress' FROM ${squadSubscriptions}
+          WHERE ${squadSubscriptions.userId} = ${userId} AND ${squadSubscriptions.squadId} = ${workStreams.squadId}),
+        ${DEFAULT_ATTENTION.progress}
+      ) <> 'mute'`)
+    }
     const countWhere = and(...conditions)
     if (options.cursor) conditions.push(terminalCursorCondition(options.cursor))
 

@@ -62,7 +62,7 @@ export function FeedPage({ dependencies = {} }: FeedPageProps) {
         <div ref={setFilterContainer} />
       </div>
 
-      <VisitSummary actions={actions} ready={actionsStatus === 'ready'} squadIds={squadFilters} />
+      <VisitSummary squadIds={squadFilters} />
 
       {actionsError || actions.length > 0 ? (
         <details open className="mb-4 group">

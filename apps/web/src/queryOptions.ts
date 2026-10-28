@@ -12,7 +12,6 @@ import { getChannelLinks } from './api/channelLinks'
 import { listIntegrationOutputs } from './api/integrations'
 import { getSquadGitAuthorDefaults } from './api/integrations'
 import { feedQueryKeys } from './queryKeys'
-import { getFeedVisit } from './api/auth'
 import { listDoneWorkStreams } from './api/squads'
 import { client } from './api/clientInstance'
 import { assistantApi } from './api/assistant'
@@ -1205,29 +1204,18 @@ export const assistantQueries = {
 }
 
 export const feedQueries = {
-  visit: (userId: string) =>
-    queryOptions({
-      queryKey: feedQueryKeys.visit(userId),
-      queryFn: getFeedVisit,
-      staleTime: 0,
-      refetchOnMount: 'always',
-      refetchOnWindowFocus: false,
-    }),
-  completed: (after: string, before: string, squadIds: readonly string[] = []) =>
+  updates: (userId: string, visitId: string, squadIds: readonly string[]) =>
     infiniteQueryOptions({
-      queryKey: feedQueryKeys.completed(after, before, squadIds),
+      queryKey: feedQueryKeys.updates(userId, visitId, squadIds),
       queryFn: ({ pageParam }) =>
-        listDoneWorkStreams({
-          completedAfter: after,
-          completedBefore: before,
-          squadIds,
-          statuses: ['done'],
-          limit: 20,
-          cursor: pageParam,
-        }),
+        listDoneWorkStreams({ feedUpdates: true, squadIds, statuses: ['done'], limit: 20, cursor: pageParam }),
       initialPageParam: undefined as string | null | undefined,
       getNextPageParam: (page) => (page.hasMore ? page.nextCursor : undefined),
-      staleTime: 30_000,
+      staleTime: 0,
+      gcTime: 0,
+      refetchOnMount: 'always',
+      refetchOnWindowFocus: 'always',
+      refetchOnReconnect: 'always',
     }),
   recent: (after: string, squadIds: readonly string[]) =>
     queryOptions({

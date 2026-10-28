@@ -1,238 +1,325 @@
 import clsx from 'clsx'
-import { workStreamRef } from '@ficus/shared'
-import { workStreamTitle } from '@ficus/shared'
-import { useEffect, useRef, useState } from 'react'
-import { useQuery, useInfiniteQuery } from '../reactQueryHooks'
-import type { PendingAction } from '@ficus/shared'
-import { acknowledgeFeedVisit, type FeedVisit } from '../api/auth'
-import { feedQueries, queries } from '../queryOptions'
+import { workStreamRef, workStreamTitle, type WorkStream } from '@ficus/shared'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useInfiniteQuery } from '../reactQueryHooks'
+import { ApiError } from '../api/client'
+import { acknowledgeFeedCompletion } from '../api/squads'
+import { feedQueries } from '../queryOptions'
 import { usePermissions } from '../hooks/usePermissions'
 import { useAssistantActivity } from '../hooks/useAssistantActivity'
 import { formatAssistantUpdateTime } from '../lib/assistantActivityPresentation'
 import { Link, useLocation } from 'react-router-dom'
 import { ChevronRightIcon } from './icons'
 import { webStatus } from '../lib/statusPresentation'
-import { ActionCenterContent } from './ActionCenterContent'
 
 const ALL_SQUADS: readonly string[] = []
+const completionKey = (stream: WorkStream) => `${stream.id}:${stream.completedAt}`
 
-export function FeedVisitSummary({
-  actions,
-  ready,
-  squadIds = ALL_SQUADS,
-}: {
-  actions: PendingAction[]
-  ready: boolean
-  /** The Feed's squad filter; empty means all squads. `actions` arrive already filtered. */
-  squadIds?: readonly string[]
-}) {
+type FeedProps = { squadIds?: readonly string[] }
+
+export function FeedVisitSummary(props: FeedProps) {
   const { identity } = usePermissions()
   return identity?.type === 'user' ? (
-    <AccountFeedVisit
-      key={identity.userId}
-      userId={identity.userId}
-      actions={actions}
-      ready={ready}
-      squadIds={squadIds}
-    />
+    <AccountFeedVisit key={identity.userId} userId={identity.userId} {...props} />
   ) : null
+}
+
+/** Keep the compact visual format without naming a role that prohibits aria-label. */
+function FeedTimestamp({ value }: { value: string }) {
+  const exact = new Date(value).toLocaleString()
+  return (
+    <time dateTime={value} title={exact}>
+      <span aria-hidden="true">{formatAssistantUpdateTime(value)}</span>
+      <span className="sr-only">{exact}</span>
+    </time>
+  )
+}
+
+/** Exposure is deliberately conservative: no observer support means no automatic acknowledgement. */
+function CompletionExposure({
+  stream,
+  acknowledge,
+  seen,
+  children,
+}: {
+  stream: WorkStream
+  acknowledge: typeof acknowledgeFeedCompletion
+  seen: Set<string>
+  children: ReactNode
+}) {
+  const key = completionKey(stream)
+  const row = useRef<HTMLLIElement>(null)
+  const retry = useRef<() => void>(() => {})
+  const [state, setState] = useState<'new' | 'seen' | 'failed' | 'changed'>(() => (seen.has(key) ? 'seen' : 'new'))
+  useEffect(() => {
+    const target = row.current
+    if (!target || !stream.completedAt || !window.IntersectionObserver) return
+    let active = true
+    let visible = false
+    let saving = false
+    let changed = false
+    let saved = seen.has(key)
+    const save = () => {
+      if (!active || !visible || saving || saved || changed || document.visibilityState !== 'visible') return
+      // Intersection notifications can have been queued before a section was collapsed.
+      if (target.closest('details:not([open])')) return
+      saving = true
+      void acknowledge(stream.id, new Date(stream.completedAt!).toISOString())
+        .then(() => {
+          saved = true
+          seen.add(key)
+          if (active) setState('seen')
+        })
+        .catch((error) => {
+          changed = error instanceof ApiError && error.status === 409
+          if (active) setState(changed ? 'changed' : 'failed')
+        })
+        .finally(() => {
+          saving = false
+        })
+    }
+    retry.current = save
+    const observer = new window.IntersectionObserver(
+      (entries) => {
+        visible = entries.some(
+          (entry) => entry.target === target && entry.isIntersecting && entry.intersectionRatio >= 0.5
+        )
+        if (visible) save()
+      },
+      { threshold: 0.5 }
+    )
+    const observe = () => {
+      visible = false
+      observer.disconnect()
+      if (document.visibilityState === 'visible') observer.observe(target)
+    }
+    observe()
+    document.addEventListener('visibilitychange', observe)
+    return () => {
+      active = false
+      observer.disconnect()
+      document.removeEventListener('visibilitychange', observe)
+      retry.current = () => {}
+    }
+  }, [stream.id, stream.completedAt, acknowledge, seen, key])
+  return (
+    <li ref={row} data-completion-id={stream.id}>
+      <div className="relative">
+        {children}
+        {(state === 'new' || state === 'failed') && (
+          <span className="absolute right-3 top-2.5 text-xs text-muted">New</span>
+        )}
+      </div>
+      {state === 'changed' && (
+        <p role="status" className="ml-9 text-xs text-muted">
+          Completion changed; refresh the Feed.
+        </p>
+      )}
+      {state === 'failed' && (
+        <p role="status" className="ml-9 text-xs text-muted">
+          Could not save seen state.{' '}
+          <button type="button" className="ficus-button ficus-button-link" onClick={() => retry.current()}>
+            Retry
+          </button>
+        </p>
+      )}
+    </li>
+  )
 }
 
 export function AccountFeedVisit({
   userId,
-  actions,
-  ready,
   squadIds = ALL_SQUADS,
-  acknowledge = acknowledgeFeedVisit,
-  ActionCenter = ActionCenterContent,
+  acknowledge = acknowledgeFeedCompletion,
   useActivity = useAssistantActivity,
-}: {
+}: FeedProps & {
   userId: string
-  actions: PendingAction[]
-  ready: boolean
-  squadIds?: readonly string[]
-  acknowledge?: typeof acknowledgeFeedVisit
-  ActionCenter?: typeof ActionCenterContent
+  acknowledge?: typeof acknowledgeFeedCompletion
   useActivity?: typeof useAssistantActivity
 }) {
   const location = useLocation()
-  const visit = useQuery(feedQueries.visit(userId))
-  // Passive: unread Assistant task updates are listed here as a pointer into the conversation,
-  // never as a Needs-you action. Opening the row does not mark anything seen. Assistant
-  // conversations belong to the account rather than a squad, so a squad filter hides them.
+  // Separate cache per mount/account: an old query page must not replay a saved receipt on refresh.
+  const [visitId] = useState(() => crypto.randomUUID())
+  const completed = useInfiniteQuery(feedQueries.updates(userId, visitId, squadIds))
+  const [seen] = useState(() => new Set<string>())
+  const [retained, setRetained] = useState<WorkStream[]>([])
+  const section = useRef<HTMLDetailsElement>(null)
+  const [newAbove, setNewAbove] = useState(false)
+  useEffect(() => {
+    if (!completed.isSuccess || !completed.isFetchedAfterMount) return
+    const incoming = completed.data.pages.flatMap((page) => page.items)
+    setRetained((previous) => {
+      const keys = new Set(previous.map(completionKey))
+      const added = incoming.filter((stream) => {
+        const key = completionKey(stream)
+        if (keys.has(key)) return false
+        keys.add(key)
+        return true
+      })
+      if (!added.length) return previous
+      // Append, rather than reorder existing rows underneath the reader.
+      return [...previous, ...added]
+    })
+  }, [completed.data, completed.isSuccess, completed.isFetchedAfterMount])
+  useEffect(() => {
+    if (retained.length && section.current && section.current.getBoundingClientRect().top < 0) setNewAbove(true)
+  }, [retained])
+  useEffect(() => {
+    const heading = section.current?.querySelector('summary')
+    if (!newAbove || !heading || !window.IntersectionObserver) return
+    const observer = new window.IntersectionObserver((entries) => {
+      if (
+        document.visibilityState === 'visible' &&
+        entries.some((entry) => entry.isIntersecting && entry.boundingClientRect.top >= 0)
+      )
+        setNewAbove(false)
+    })
+    observer.observe(heading)
+    return () => observer.disconnect()
+  }, [newAbove])
+  const streams = retained.filter((stream) => squadIds.length === 0 || squadIds.includes(stream.squadId))
+  // These remain useful pointers into domain-unread Assistant conversations. Feed exposure does
+  // not consume their unread state; they are not labeled as new Feed completions.
   const activity = useActivity()
   const unreadConversations =
-    squadIds.length > 0 ? [] : (activity.activity?.conversations ?? []).filter((row) => row.unreadUpdates > 0)
-  const work = useQuery(queries.squads.attentionWorkStreams())
-  const [snapshot, setSnapshot] = useState<FeedVisit | null>(null)
-  const [dismissed, setDismissed] = useState(false)
-  const acknowledged = useRef(false)
-  useEffect(() => {
-    // Do not use another mount/device's cached watermark or change this visit's
-    // baseline when a background refresh returns a newer account timestamp.
-    if (visit.isSuccess && visit.isFetchedAfterMount) setSnapshot((current) => current ?? visit.data)
-  }, [visit.isSuccess, visit.isFetchedAfterMount, visit.data])
-  const completed = useInfiniteQuery({
-    ...feedQueries.completed(snapshot?.lastVisitedAt ?? '', snapshot?.observedAt ?? '', squadIds),
-    enabled: Boolean(snapshot?.lastVisitedAt),
-  })
-  const loaded = ready && work.isSuccess && snapshot && (!snapshot.lastVisitedAt || completed.isSuccess)
-  useEffect(() => {
-    if (!loaded || !snapshot || acknowledged.current) return
-    const save = () => {
-      if (document.visibilityState === 'hidden' || acknowledged.current) return
-      acknowledged.current = true
-      void acknowledge(snapshot.observedAt).catch(() => {
-        // Keep the old account watermark on failure; never claim unseen work was read.
-        acknowledged.current = false
-      })
-    }
-    save()
-    document.addEventListener('visibilitychange', save)
-    return () => document.removeEventListener('visibilitychange', save)
-  }, [loaded, snapshot, acknowledge])
-
-  if (dismissed || !snapshot?.lastVisitedAt || !completed.data || !ready) return null
-  const since = Date.parse(snapshot.lastVisitedAt)
-  const until = Date.parse(snapshot.observedAt)
-  const newActions = actions.filter((action) => {
-    const created = Date.parse(action.createdAt)
-    return created > since && created <= until
-  })
-  const totalCount = completed.data.pages[0]?.totalCount ?? 0
-  const streams = completed.data.pages.flatMap((page) => page.items)
+    squadIds.length > 0 || activity.ownerId !== userId
+      ? []
+      : (activity.activity?.conversations ?? []).filter((row) => row.unreadUpdates > 0)
+  if (!streams.length && !unreadConversations.length && !completed.isError) return null
   const parts = [
-    totalCount ? `${totalCount} completed` : '',
+    streams.length ? `${streams.length} completed${completed.hasNextPage ? ' shown' : ''}` : '',
     unreadConversations.length
       ? `${unreadConversations.length} Assistant ${unreadConversations.length === 1 ? 'update' : 'updates'}`
       : '',
-    newActions.length ? `${newActions.length} ${newActions.length === 1 ? 'needs' : 'need'} your input` : '',
   ].filter(Boolean)
-  if (!parts.length) return null
   return (
-    <details open className="mb-4 group" data-testid="feed-visit-summary">
-      {/* While the pointer is on Dismiss, the row drops its own hover so only the control that will
-          receive the click is highlighted (Dismiss never toggles the section). */}
-      <summary className="ficus-button ficus-button-ghost flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-left marker:hidden has-[button:hover]:bg-transparent [&::-webkit-details-marker]:hidden">
-        <span
-          aria-hidden="true"
-          className="shrink-0 text-placeholder transition-transform group-open:rotate-90 motion-reduce:transition-none"
-        >
-          <ChevronRightIcon className="h-4 w-4" />
-        </span>
-        <span className="text-sm font-semibold text-secondary">Since your last visit</span>
-        <span className="text-xs text-muted">{parts.join(' · ')}</span>
-        {/* A compact ghost control in the header: its own padding is the hit area, and the negative
-            margins keep the row height and text position, insetting its highlight 4px inside the row. */}
-        <button
-          type="button"
-          className="ficus-button ficus-button-ghost -my-1 -mr-2 ml-auto shrink-0 rounded px-2 py-2 text-xs text-muted"
-          aria-label="Dismiss updates since your last visit"
-          onClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            setDismissed(true)
-          }}
-        >
-          Dismiss
-        </button>
-      </summary>
-      <div className="space-y-3 pb-3 pt-3">
-        {unreadConversations.length > 0 && (
-          <ul className="space-y-1" aria-label="Assistant updates">
-            {unreadConversations.map((conversation) => {
-              const params = new URLSearchParams(location.search)
-              for (const key of ['commandStack', 'commandQuery', 'assistantChat']) params.delete(key)
-              params.set('chat', 'open')
-              params.set('assistantConversation', conversation.id)
-              const latest = conversation.latestUpdate
-              return (
-                <li key={conversation.id}>
-                  <Link
-                    to={{ pathname: location.pathname, search: params.toString() }}
-                    className="flex items-start gap-2 rounded-lg py-2.5 pl-9 pr-3 hover:bg-surface-hover"
-                  >
-                    <span aria-hidden="true" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-badge" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium text-primary break-words">{conversation.title}</span>
-                      {latest && <span className="mt-0.5 block truncate text-xs text-muted">{latest.preview}</span>}
-                      <span className="mt-1 block text-xs text-muted">
-                        {conversation.unreadUpdates === 1
-                          ? '1 unread update'
-                          : `${conversation.unreadUpdates} unread updates`}
-                        {latest && (
-                          <>
-                            {' '}
-                            · <time dateTime={latest.createdAt}>{formatAssistantUpdateTime(latest.createdAt)}</time>
-                          </>
-                        )}
-                      </span>
-                    </span>
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-        {streams.length > 0 && (
-          <ul className="space-y-1">
-            {streams.map((stream) => {
-              const params = new URLSearchParams(location.search)
-              params.set('ws', workStreamRef(stream))
-              return (
-                <li key={stream.id}>
-                  <Link
-                    to={{ pathname: location.pathname, search: params.toString() }}
-                    className="flex items-start gap-2 rounded-lg py-2.5 pl-9 pr-3 hover:bg-surface-hover"
-                  >
-                    <span
-                      aria-hidden="true"
-                      className={clsx('mt-1.5 h-2 w-2 shrink-0 rounded-full', webStatus('success').markerClass)}
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium text-primary break-words">
-                        {workStreamTitle(stream)}
-                      </span>
-                      <span className="mt-1 block text-xs text-muted">
-                        Completed
-                        {stream.completedAt && (
-                          <>
-                            {' '}
-                            ·{' '}
-                            <time dateTime={new Date(stream.completedAt).toISOString()}>
-                              {new Date(stream.completedAt).toLocaleString(undefined, {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: 'numeric',
-                                minute: '2-digit',
-                              })}
-                            </time>
-                          </>
-                        )}
-                      </span>
-                    </span>
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-        {completed.hasNextPage && (
+    <>
+      {newAbove && (
+        <div className="pointer-events-none sticky top-2 z-10 flex h-0 items-start justify-end">
           <button
-            className="ficus-button ficus-button-link ml-9 text-xs"
-            disabled={completed.isFetchingNextPage}
-            onClick={() => void completed.fetchNextPage()}
+            type="button"
+            className="ficus-button ficus-button-secondary pointer-events-auto shrink-0 rounded-full px-3 py-2 text-sm shadow-sm"
+            onClick={() => {
+              if (section.current) {
+                section.current.open = true
+                section.current.scrollIntoView({ block: 'start' })
+              }
+              setNewAbove(false)
+            }}
           >
-            {completed.isFetchingNextPage ? 'Loading…' : 'Show more updates'}
+            New updates ↑
           </button>
-        )}
-        {completed.isFetchNextPageError && (
-          <p role="alert" className="ml-9 text-sm text-status-danger-600 dark:text-status-danger-400">
-            Could not load more updates. Try again.
-          </p>
-        )}
-        {newActions.length > 0 && <ActionCenter actions={newActions} isLoading={false} />}
-      </div>
-    </details>
+        </div>
+      )}
+      <details ref={section} open className="mb-4 group" data-testid="feed-visit-summary">
+        <summary className="ficus-button ficus-button-ghost flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-left marker:hidden [&::-webkit-details-marker]:hidden">
+          <span
+            aria-hidden="true"
+            className="shrink-0 text-placeholder transition-transform group-open:rotate-90 motion-reduce:transition-none"
+          >
+            <ChevronRightIcon className="h-4 w-4" />
+          </span>
+          <span className="text-sm font-semibold text-secondary">Updates</span>
+          <span className="text-xs text-muted">{parts.join(' · ')}</span>
+        </summary>
+        <div className="space-y-3 pb-3 pt-3">
+          {completed.isError && (
+            <p role="alert" className="ml-9 text-sm text-muted">
+              Could not load updates.{' '}
+              <button type="button" className="ficus-button ficus-button-link" onClick={() => void completed.refetch()}>
+                Retry
+              </button>
+            </p>
+          )}
+          {unreadConversations.length > 0 && (
+            <ul className="space-y-1" aria-label="Assistant updates">
+              {unreadConversations.map((conversation) => {
+                const params = new URLSearchParams(location.search)
+                for (const key of ['commandStack', 'commandQuery', 'assistantChat']) params.delete(key)
+                params.set('chat', 'open')
+                params.set('assistantConversation', conversation.id)
+                const latest = conversation.latestUpdate
+                return (
+                  <li key={conversation.id}>
+                    <Link
+                      to={{ pathname: location.pathname, search: params.toString() }}
+                      className="flex items-start gap-2 rounded-lg py-2.5 pl-9 pr-3 hover:bg-surface-hover"
+                    >
+                      <span aria-hidden="true" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-badge" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium text-primary break-words">{conversation.title}</span>
+                        {latest && <span className="mt-0.5 block truncate text-xs text-muted">{latest.preview}</span>}
+                        <span className="mt-1 block text-xs text-muted">
+                          {conversation.unreadUpdates === 1
+                            ? '1 unread update'
+                            : `${conversation.unreadUpdates} unread updates`}
+                          {latest && (
+                            <>
+                              {' '}
+                              · <FeedTimestamp value={latest.createdAt} />
+                            </>
+                          )}
+                        </span>
+                      </span>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+
+          {streams.length > 0 && (
+            <ul className="space-y-1" aria-label="Completed work updates">
+              {streams.map((stream) => {
+                const params = new URLSearchParams(location.search)
+                params.set('ws', workStreamRef(stream))
+                return (
+                  <CompletionExposure key={completionKey(stream)} stream={stream} acknowledge={acknowledge} seen={seen}>
+                    <Link
+                      to={{ pathname: location.pathname, search: params.toString() }}
+                      className="flex items-start gap-2 rounded-lg py-2.5 pl-9 pr-14 hover:bg-surface-hover"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={clsx('mt-1.5 h-2 w-2 shrink-0 rounded-full', webStatus('success').markerClass)}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium text-primary break-words">
+                          {workStreamTitle(stream)}
+                        </span>
+                        <span className="mt-1 block text-xs text-muted">
+                          Completed
+                          {stream.completedAt && (
+                            <>
+                              {' '}
+                              · <FeedTimestamp value={new Date(stream.completedAt).toISOString()} />
+                            </>
+                          )}
+                        </span>
+                      </span>
+                    </Link>
+                  </CompletionExposure>
+                )
+              })}
+            </ul>
+          )}
+          {completed.hasNextPage && (
+            <button
+              type="button"
+              className="ficus-button ficus-button-link ml-9 text-xs"
+              disabled={completed.isFetchingNextPage}
+              onClick={() => void completed.fetchNextPage()}
+            >
+              {completed.isFetchingNextPage ? 'Loading…' : 'Show more updates'}
+            </button>
+          )}
+          {completed.isFetchNextPageError && (
+            <p role="alert" className="ml-9 text-sm text-status-danger-600 dark:text-status-danger-400">
+              Could not load more updates. Try again.
+            </p>
+          )}
+        </div>
+      </details>
+    </>
   )
 }
