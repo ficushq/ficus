@@ -130,14 +130,14 @@ export function buildWorkspacePrompt(opts: WorkspacePromptOptions = {}): string 
         ? 'private from squad teammates, but shared with any subagents you dispatch'
         : 'YOUR private directory; no teammate can read it'
   const privateUse = sharedConsultants
-    ? 'Keep scratch files here to avoid collisions. Do not modify other conversations’ directories, shared shell configuration, or credentials. This directory is not a secret store.'
+    ? 'Keep scratch files here to avoid collisions. Do not modify other conversations’ directories, shared shell configuration, or credentials. Do not keep sensitive material in this shared directory.'
     : sharesParentBox
-      ? 'Do not treat it as a secret store because your parent and siblings can read it.'
+      ? 'Do not keep sensitive material here because your parent and siblings can read it.'
       : mayShareWithSubagents
-        ? 'Do not treat it as a secret store because dispatched subagents can read it.'
+        ? 'Do not keep sensitive material here because dispatched subagents can read it.'
         : 'Use it for personal scratch, keys, and secrets.'
   const privateShellUse = sharesParentBox
-    ? 'Because that area is shared with the parent and siblings, do not use it as a secret store.'
+    ? 'Because that area is shared with the parent and siblings, do not use it for sensitive material.'
     : mayShareWithSubagents
       ? 'Because dispatched subagents can share that area, do not use it for sensitive material.'
       : 'Reserve it for exception-only personal scratch, private temporary artifacts, or sensitive material.'

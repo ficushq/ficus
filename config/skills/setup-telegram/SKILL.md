@@ -10,7 +10,6 @@ routing. Inspect existing routing first:
 
 ```bash
 ficus channel list
-ficus webhook status telegram
 ```
 
 ## Step 1: Create the bot
@@ -35,8 +34,8 @@ Core registers the webhook using the saved connection and generated signing
 secret, and reconciles on connection changes. Do not register it with a
 provider-API shell command, read a token, or manually restart Ficus. There is
 no webhook URL to copy or paste in the Telegram card. Use its **Connection status**
-and `ficus webhook status telegram` to diagnose setup; Core owns the public URL
-and registration. Never infer an API hostname from `APP_URL`.
+to diagnose setup; Core owns the public URL and registration. Never infer an API
+hostname from `APP_URL`.
 
 ## Step 4: Create Channel Instance
 
@@ -56,7 +55,6 @@ ficus channel create \
 ## Step 5: Verify
 
 ```bash
-ficus webhook status telegram
 ficus channel list
 ```
 
@@ -66,9 +64,8 @@ message should receive a consultant reply. Replies to messages retain context.
 ## Troubleshooting
 
 - Webhook registration fails: check connection validation/enablement in the
-  Telegram card. Use **Connection status**, `ficus webhook status telegram`,
-  and sanitized Core registration failure diagnostics; do not retrieve tokens or
-  construct provider-API URLs.
+  Telegram card. Use **Connection status** and sanitized Core registration
+  failure diagnostics; do not retrieve tokens or construct provider-API URLs.
 - Bot does not respond: verify the discovered numeric Bot ID and channel routing.
 - Webhook authentication fails: replace credentials through the owning panel
   and let Core reconcile; never retrieve a signing secret or use a token URL.

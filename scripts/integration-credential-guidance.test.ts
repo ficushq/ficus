@@ -7,18 +7,48 @@ const read = (path: string) => readFileSync(join(root, path), 'utf8')
 function activeFiles(directory: string): string[] {
   return readdirSync(join(root, directory), { withFileTypes: true }).flatMap((entry) => {
     const path = `${directory}/${entry.name}`
-    return entry.isDirectory() ? activeFiles(path) : /\.(md|yaml)$/.test(path) ? [path] : []
+    return entry.isDirectory() ? activeFiles(path) : /\.(md|yaml|ts)$/.test(path) ? [path] : []
   })
 }
 
+const forbidden =
+  /secret store|ficus secret\b|(?:expose|unexpose)-(?:secrets|global)|agent-secrets\.env|DEPLOY_[A-Z]+_TOKEN|squad-env\s+secrets\b|\bagent\s+secrets\b|global-secrets|exposed keys?\b|Secrets\s*&\s*Keys|\/api\/secrets\b|secrets:(?:read|write)\b/i
+
+test('retired-guidance audit recognizes every retired command, label, key and permission spelling', () => {
+  for (const text of [
+    'Secret Store',
+    'ficus secret get',
+    'expose-secrets',
+    'unexpose-global',
+    'agent-secrets.env',
+    'DEPLOY_CLOUDFLARE_TOKEN',
+    'ficus squad-env secrets',
+    'agent secrets',
+    'global-secrets',
+    'exposed key',
+    'exposed keys',
+    'Secrets & Keys',
+    '/api/secrets',
+    'secrets:read',
+    'secrets:write',
+  ])
+    expect({ text, forbidden: forbidden.test(text) }).toEqual({ text, forbidden: true })
+})
+
 test('active skills and agent prompts never teach retired credential delivery or operator-store commands', () => {
-  const forbidden = /secret store|ficus secret\b|(?:expose|unexpose)-(?:secrets|global)|agent-secrets\.env/i
   const violations = [
     ...activeFiles('config/skills'),
     ...activeFiles('config/agent-types'),
-    'config/roles/defaults.yaml',
+    ...activeFiles('apps/core/src/lib/prompts'),
   ].filter((path) => forbidden.test(read(path)))
   expect(violations).toEqual([])
+  // Roles contain operator permission data, not just instruction comments. Audit
+  // comments (including inline ones) without banning or changing valid capabilities.
+  const roleComments = read('config/roles/defaults.yaml')
+    .split('\n')
+    .map((line) => line.split('#').slice(1).join('#'))
+    .join('\n')
+  expect(roleComments).not.toMatch(forbidden)
 })
 
 for (const provider of ['cloudflare', 'digitalocean', 'netlify', 'railway', 'supabase', 'vercel']) {
@@ -44,6 +74,48 @@ test('channel setup uses owning settings, never token-bearing provider calls or 
     expect(skill).toContain('Never read, print, log or commit')
   }
   expect(read('config/skills/setup-telegram/SKILL.md')).toContain('Core registers the webhook')
+})
+
+test('channel setup never teaches the generic webhook status command that cannot route channels', () => {
+  const command = read('apps/cli/src/commands/webhook.ts')
+  expect(command).toContain('`/api/webhooks/${provider}/status`')
+  const route = read('apps/core/src/routes/webhooks.ts')
+  expect(route).toContain("'/channels/:provider/status'")
+  expect(route).toContain('webhookRegistry.getProcessor(provider)')
+  for (const provider of ['discord', 'slack', 'telegram']) {
+    const skill = read(`config/skills/setup-${provider}/SKILL.md`)
+    expect(skill).not.toMatch(/ficus webhook status\b/)
+    expect(skill).toContain('Connection status')
+  }
+})
+
+test('Slack setup and onboarding name owning card fields rather than retired credential keys', () => {
+  const plugins = read('apps/core/src/services/integrations/channels/plugins.ts')
+  const slack = plugins.slice(
+    plugins.indexOf('const slack: ChannelPlugin'),
+    plugins.indexOf('const discord: ChannelPlugin')
+  )
+  expect(slack).toContain("key: 'slack'")
+  expect([...slack.matchAll(/label: '([^']+)'/g)].map((match) => match[1])).toEqual(['Bot token', 'Signing secret'])
+  for (const path of ['config/skills/setup-slack/SKILL.md', 'config/skills/client-onboarding/SKILL.md']) {
+    const skill = read(path)
+    expect(skill).toContain('Bot token')
+    expect(skill).toContain('Signing secret')
+    expect(skill).toContain('Settings → Integrations → Slack')
+    expect(skill).not.toMatch(/SLACK_(?:SIGNING_SECRET|BOT_TOKEN)|TELEGRAM_BOT_(?:TOKEN|ID)|OPENAI_API_KEY/)
+  }
+  const onboarding = read('config/skills/client-onboarding/SKILL.md')
+  expect(onboarding).toContain('OpenAI API services')
+  expect(onboarding).toContain('numeric Bot ID')
+})
+
+test('credential prompts scope wrappers to squad sandboxes and environment help describes custom input', () => {
+  for (const name of ['system-manager', 'assistant-worker']) {
+    expect(read(`config/agent-types/${name}.yaml`)).toContain('In squad sandboxes, globally provisioned')
+  }
+  const command = read('apps/cli/src/commands/squad-env.ts')
+  expect(command).not.toContain('.ficus/.env content')
+  expect(command.match(/custom env\.user content/g)).toHaveLength(3)
 })
 
 test('CLI option remains compatible but describes metadata, not credential injection', () => {

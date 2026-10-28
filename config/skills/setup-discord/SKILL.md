@@ -22,10 +22,9 @@ need this — squad linking is configured in the channel instance (Step 7).
 ```bash
 # Check if channel instances exist
 ficus channel list
-
-# Check webhook status
-ficus webhook status discord
 ```
+
+Check **Connection status** in **Settings → Integrations → Discord**.
 
 If Discord is already set up, you only need to update the channel instance
 to link additional squads.
@@ -158,10 +157,7 @@ ficus channel link-squad client-discord "*"
 
 ## Step 8: Verify
 
-```bash
-# Check webhook endpoint
-ficus webhook status discord
-```
+Check **Connection status** in **Settings → Integrations → Discord**.
 
 Ask the human to test in their Discord server:
 

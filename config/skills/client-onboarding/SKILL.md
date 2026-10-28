@@ -111,7 +111,7 @@ Steps:
 
 Steps:
 
-1. Set the webhook signing secret in Settings → Integrations → Linear → Webhook delivery (`PUT /api/integrations/providers/linear/webhook`); the `LINEAR_WEBHOOK_SECRET` env var is legacy and imported only once
+1. Configure the webhook signing secret in Settings → Integrations → Linear → Webhook delivery
 2. Walk the human through creating the webhook in Linear's UI
 3. Configure squad metadata for team routing
 4. Verify with `ficus webhook status linear`
@@ -137,7 +137,7 @@ Steps:
 **Skill:** `setup-slack`
 
 1. Walk the human through creating the Slack app (manifest is fastest)
-2. Configure secrets (`SLACK_SIGNING_SECRET`, `SLACK_BOT_TOKEN`)
+2. Have the human enter **Bot token** and **Signing secret** in Settings → Integrations → Slack, then save, validate and enable the connection
 3. Create the channel instance and link to squads
 4. Verify with `/ficus help` in Slack
 
@@ -192,21 +192,22 @@ ficus channel list                      # Channel instances exist
 - [ ] (GitHub) Assign a test issue → verify the squad manager receives it
 - [ ] (Linear) Assign a test issue → verify the squad manager receives it
 
-## Quick Reference: All Secrets
+## Quick Reference: Settings and Connections
 
-| Secret                              | Required    | Purpose                                                                          |
-| ----------------------------------- | ----------- | -------------------------------------------------------------------------------- |
-| `FICUS_PASSWORD`                    | Yes         | Web UI / API authentication                                                      |
-| GitHub integration connection       | If GitHub   | Authorize an account and assign it to the squad                                  |
-| GitHub integration webhook settings | Optional    | Direct webhook signature verification                                            |
-| Linear integration webhook settings | If Linear   | Webhook signature verification (legacy `LINEAR_WEBHOOK_SECRET` is imported once) |
-| Discord Bot token form              | If Discord  | Only credential input; application identity is discovered                                                       |
-| `SLACK_SIGNING_SECRET`              | If Slack    | Slack request verification                                                       |
-| `SLACK_BOT_TOKEN`                   | If Slack    | Slack bot authentication                                                         |
-| `TELEGRAM_BOT_TOKEN`                | If Telegram | Telegram bot authentication                                                      |
-| Telegram webhook signing            | Automatic   | Generated and registered by Core, not human input                                                    |
-| `TELEGRAM_BOT_ID`                   | If Telegram | Discovered numeric Bot ID                                                            |
-| `OPENAI_API_KEY`                    | Recommended | Embeddings, voice, memory                                                        |
-| `GOOGLE_APPLICATION_CREDENTIALS`    | Optional    | Text-to-speech                                                                   |
-| `APP_URL`                           | Auto        | Set by infrastructure (K8s ConfigMap)                                            |
-| `VAPID_SUBJECT`                     | For iOS     | Push notification sender identity                                                |
+| Capability | Owning settings and input | When needed |
+| --- | --- | --- |
+| Bootstrap and personal authentication | Server setup and Account settings | Required |
+| Agent-model access | Settings → AI Providers; account login or API key | At least one provider |
+| GitHub repository access | Settings → Integrations → GitHub; connect an account, then assign it to the squad | If using GitHub |
+| Direct GitHub/Linear webhooks | The provider's Webhook delivery panel; generate/replace signing material there | If direct delivery is configured |
+| Discord bot | Settings → Integrations → Discord; **Bot token** only, application identity discovered | If using Discord |
+| Slack bot | Settings → Integrations → Slack; **Bot token** and **Signing secret** | If using Slack |
+| Telegram bot | Settings → Integrations → Telegram; **Bot token**, with signing secret generated and webhook registered by Core | If using Telegram |
+| Telegram routing | Discovered **numeric Bot ID** in the Telegram card, used in the channel instance; this is nonsecret identity, not a credential input | If using Telegram |
+| Embeddings and voice | Settings → Integrations → OpenAI API services; **API key**, separate from agent-model accounts | Recommended |
+| Read-aloud speech | Settings → Integrations → Google Cloud; service-account JSON or server ADC | Optional |
+| Push notifications | Apple Push and Web Push integration cards | If using push |
+| Public application URLs | Server deployment configuration | Required for public links/delivery |
+
+Use connection status and provider validation to diagnose setup. These are owning
+forms and connections, not credential names to export or copy into squad files.

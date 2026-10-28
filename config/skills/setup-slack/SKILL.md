@@ -144,11 +144,11 @@ If the human prefers manual configuration:
 
 Direct the human to enter the following in **Settings → Integrations → Slack**:
 
-- `SLACK_SIGNING_SECRET` — from Basic Information → App Credentials → Signing Secret
-- `SLACK_BOT_TOKEN` — from OAuth & Permissions → Bot User OAuth Token (starts with `xoxb-`)
+- **Signing secret** — from Basic Information → App Credentials → Signing Secret
+- **Bot token** — from OAuth & Permissions → Bot User OAuth Token (starts with `xoxb-`)
 
 Have the human save, validate and enable the connection in the Slack card.
-No manual restart is required.
+Check its **Connection status**. No manual restart is required.
 
 ## Step 3: Create Channel Instance
 
@@ -195,7 +195,7 @@ scroll to bottom).
 
 | Problem                        | Solution                                                            |
 | ------------------------------ | ------------------------------------------------------------------- |
-| Slash command returns error    | Verify `SLACK_SIGNING_SECRET` matches the app's signing secret      |
+| Slash command returns error    | Check Connection status; if signing credentials were rejected, have the human replace Signing secret in the Slack card with the app's current value |
 | Event subscriptions fail       | Use the exact events URL from the integration card; check API reachability          |
 | Bot doesn't respond to threads | Verify event subscriptions are enabled and `message.*` events added |
 | "dispatch_failed" in Slack     | API didn't respond in 3s — check API health and logs                |

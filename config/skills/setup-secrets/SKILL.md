@@ -42,7 +42,7 @@ Administrators can alternatively configure Application Default Credentials on th
 
 ## Remaining Infrastructure Secrets
 
-There is no Secrets & Keys page. Git author overrides are under Settings → Git; the self-hosted exe.dev account key is under Machines. Apple Push and Web Push credentials live in Integrations. The bootstrap admin password is deployment configuration; personal authentication is managed under Account. Hosted deployments hide platform infrastructure credentials, including the exe.dev key. Do not ask hosted users to configure or reveal that key.
+Git author overrides are under Settings → Git; the self-hosted exe.dev account key is under Machines. Apple Push and Web Push credentials live in Integrations. The bootstrap admin password is deployment configuration; personal authentication is managed under Account. Hosted deployments hide platform infrastructure credentials, including the exe.dev key. Do not ask hosted users to configure or reveal that key.
 
 The encryption key belongs in the server environment, not in squad Environment Variables or workspace files. Changing bootstrap/database settings may require a controlled restart. Do not restart for Google speech or OpenAI API-service credential rotation.
 
@@ -70,5 +70,5 @@ environment files. Human terminals use their own provider login.
 
 Custom application secrets belong in squad **Workspace → Environment Variables**
 (visible to agents and terminals) or human-directed files in the squad or agent
-workspace. Do not register workspace-file secrets with any detector or promise
-that they will be detected. Do not create a separate per-agent credential service.
+workspace. Workspace files are not scanned for secrets; do not promise detection
+for those files. There is no separate per-agent credential service.
