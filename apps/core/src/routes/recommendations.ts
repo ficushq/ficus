@@ -15,6 +15,7 @@ import {
   InvalidRecommendationCursorError,
   RecommendationCursorResetRequiredError,
 } from '../services/operations-analyst/cursor'
+import { routeParam } from '../lib/route-param'
 
 const status = z.enum(['open', 'acknowledged', 'dismissed', 'resolved'])
 const uuid = z.string().uuid()
@@ -80,7 +81,7 @@ operationsRecommendationsRouter.get('/', async (c) => {
 operationsRecommendationsRouter.get(
   '/:id',
   validateRecommendationId,
-  requireEntityPermission(Permissions.RECOMMENDATIONS_READ, (c) => recommendationSquadId(c.req.param('id'))),
+  requireEntityPermission(Permissions.RECOMMENDATIONS_READ, (c) => recommendationSquadId(routeParam(c, 'id'))),
   async (c) => {
     const value = await getRecommendationDetail(c.req.param('id'))
     return value ? c.json(value) : c.json({ error: 'Not found' }, 404)
@@ -89,7 +90,7 @@ operationsRecommendationsRouter.get(
 operationsRecommendationsRouter.patch(
   '/:id/status',
   validateRecommendationId,
-  requireEntityPermission(Permissions.RECOMMENDATIONS_UPDATE, (c) => recommendationSquadId(c.req.param('id'))),
+  requireEntityPermission(Permissions.RECOMMENDATIONS_UPDATE, (c) => recommendationSquadId(routeParam(c, 'id'))),
   async (c) => {
     const parsedBody = await parseJsonBody(c)
     if (!parsedBody.ok) return c.json({ error: 'Invalid JSON body' }, 400)

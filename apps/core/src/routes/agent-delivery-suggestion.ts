@@ -12,6 +12,7 @@ import {
 } from '../services/composer/delivery-suggestion'
 import { captureCorrection } from '../services/decisions/evals/capture'
 import { decide, isDecisionFeatureEnabled } from '../services/decisions/service'
+import { routeParam } from '../lib/route-param'
 
 const bodySchema = z.object({ draft: z.string().max(DELIVERY_SUGGESTION_MAX_DRAFT_LENGTH) })
 const correctionSchema = z.object({
@@ -33,8 +34,8 @@ export function createAgentDeliverySuggestionRouter(deps: DeliverySuggestionDeps
   return new Hono()
     .post(
       '/:id/delivery-suggestion',
-      requireEntityPermission('agents:run', async (c) => (await Agent.find(c.req.param('id')))?.squadId ?? null, {
-        loadOwnerUserId: async (c) => (await Agent.find(c.req.param('id')))?.ownerUserId ?? null,
+      requireEntityPermission('agents:run', async (c) => (await Agent.find(routeParam(c, 'id')))?.squadId ?? null, {
+        loadOwnerUserId: async (c) => (await Agent.find(routeParam(c, 'id')))?.ownerUserId ?? null,
       }),
       async (c) => {
         const agent = await Agent.find(c.req.param('id'))
@@ -49,8 +50,8 @@ export function createAgentDeliverySuggestionRouter(deps: DeliverySuggestionDeps
     )
     .post(
       '/:id/delivery-suggestion/correction',
-      requireEntityPermission('agents:run', async (c) => (await Agent.find(c.req.param('id')))?.squadId ?? null, {
-        loadOwnerUserId: async (c) => (await Agent.find(c.req.param('id')))?.ownerUserId ?? null,
+      requireEntityPermission('agents:run', async (c) => (await Agent.find(routeParam(c, 'id')))?.squadId ?? null, {
+        loadOwnerUserId: async (c) => (await Agent.find(routeParam(c, 'id')))?.ownerUserId ?? null,
       }),
       /**
        * POST /api/agents/:id/delivery-suggestion/correction — the user sent a draft in the other mode
