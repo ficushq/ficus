@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile, mkdir, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { stageWorkspaceMultipart } from '../attachments/workspace-multipart'
@@ -64,4 +64,32 @@ test('remote stream publication verifies identity and reopens only safe small le
 test('fallback checks encoded envelope bytes without allocating content', () => {
   expect(legacyUploadFits('/workspace/file', 5)).toBe(true)
   expect(legacyUploadFits('/workspace/file', 100 * 1024 ** 2)).toBe(false)
+})
+
+test('local streaming upload rejects outside-root symlinks but preserves inside-root symlink compatibility', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'upload-root-'))
+  const outside = await mkdtemp(join(tmpdir(), 'upload-outside-'))
+  const form = new FormData()
+  form.append('file', new File(['candidate'], 'file'))
+  const staged = await stageWorkspaceMultipart(new Request('http://localhost/', { method: 'POST', body: form }))
+  try {
+    await writeFile(join(outside, 'file'), 'outside original')
+    await symlink(outside, join(root, 'escape'))
+    staged.fields.set('path_file', 'escape/file')
+    expect(await publishWorkspaceUpload({ staged, workspacePath: root, targetDir: '', overwrite: true })).toMatchObject(
+      [{ status: 'error' }]
+    )
+    expect(await readFile(join(outside, 'file'), 'utf8')).toBe('outside original')
+    await mkdir(join(root, 'actual'))
+    await symlink(join(root, 'actual'), join(root, 'inside'))
+    staged.fields.set('path_file', 'inside/file')
+    expect(await publishWorkspaceUpload({ staged, workspacePath: root, targetDir: '', overwrite: true })).toEqual([
+      { path: 'inside/file', status: 'created' },
+    ])
+    expect(await readFile(join(root, 'actual/file'), 'utf8')).toBe('candidate')
+  } finally {
+    await staged.cleanup()
+    await rm(root, { recursive: true, force: true })
+    await rm(outside, { recursive: true, force: true })
+  }
 })
