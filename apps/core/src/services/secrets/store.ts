@@ -193,7 +193,13 @@ export function createGeneratedSecretEnvironmentFixture(): GeneratedSecretEnviro
   return Object.freeze(fixture)
 }
 
+export const RETIRED_INTEGRATION_GRACE_MS = 60 * 60_000
+
+type RetiredIntegrationLeaf = { key: string; value: string; expiresAt: number }
+
 export interface SecretStoreOptions {
+  /** Clock for expiring retired integration material. */
+  now?: () => number
   testEnvironmentReadFixtures?: readonly GeneratedSecretEnvironmentFixture[]
   testEnvironmentMigrationFixtures?: readonly GeneratedSecretEnvironmentFixture[]
 }
@@ -239,6 +245,10 @@ export class SecretDecryptError extends Error {
 
 export class SecretStore {
   private cache = new Map<string, string>()
+  private retiredIntegrationLeaves = new Map<string, RetiredIntegrationLeaf>()
+  private nextRetiredExpiry = Infinity
+  private publishingContentSafety = false
+  private readonly now: () => number
   private encryptionKey: Buffer | null = null
   private refreshRunner: PeriodicRunner | null = null
   private changeListeners: SecretChangeListener[] = []
@@ -256,6 +266,7 @@ export class SecretStore {
   private readonly testEnvironmentMigrationKeys: readonly string[]
 
   constructor(options: SecretStoreOptions = {}) {
+    this.now = options.now ?? Date.now
     const readFixtures = options.testEnvironmentReadFixtures ?? []
     const migrationFixtures = options.testEnvironmentMigrationFixtures ?? []
     const records = [...readFixtures, ...migrationFixtures].map((fixture) => {
@@ -328,9 +339,19 @@ export class SecretStore {
    */
   bindContentSafetyConsumer(consumer: SecretValueConsumer): () => void {
     const entries = this.matcherEntriesForCache(this.cache)
-    consumer.replace(this.contentSafetyEntries(entries))
+    this.refreshContentSafety()
+    consumer.replace([...this.contentSafetyEntries(entries), ...this.retiredEntries()])
     this.contentSafetyConsumers.add(consumer)
     return () => this.contentSafetyConsumers.delete(consumer)
+  }
+
+  /** Expiry is checked cheaply at redaction boundaries as well as normal cache refreshes. */
+  refreshContentSafety(): void {
+    if (!this.publishingContentSafety && this.now() >= this.nextRetiredExpiry) this.publishCache(this.cache)
+  }
+
+  private retiredEntries(): Array<{ key: string; value: string }> {
+    return [...this.retiredIntegrationLeaves.values()].map(({ key, value }) => ({ key, value }))
   }
 
   private matcherEntriesForCache(cache: ReadonlyMap<string, string>): Map<string, string> {
@@ -365,15 +386,43 @@ export class SecretStore {
 
   /** Publish cache and matcher through a conservative union generation so neither side can expose an unmatched value. */
   private publishCache(nextCache: Map<string, string>): void {
+    // Consumers may log or redact synchronously while a generation is being
+    // published. Those boundaries must not recursively start expiry work.
+    this.publishingContentSafety = true
+    try {
+      this.publishCacheGeneration(nextCache)
+    } finally {
+      this.publishingContentSafety = false
+    }
+  }
+
+  private publishCacheGeneration(nextCache: Map<string, string>): void {
     const previousCache = this.cache
     const previousMatcher = this.matcherEntriesForCache(previousCache)
     const nextMatcher = this.matcherEntriesForCache(nextCache)
     const asEntries = (entries: ReadonlyMap<string, string>) => this.contentSafetyEntries(entries)
-    const previousEntries = asEntries(previousMatcher)
-    const nextEntries = asEntries(nextMatcher)
-    // A rotation has two values for the same key. Retain both until cache
-    // publication crosses the boundary; a Map keyed only by name would drop
-    // the old value too early.
+    const previousActive = asEntries(previousMatcher)
+    const nextActive = asEntries(nextMatcher)
+    const now = this.now()
+    const retired = new Map([...this.retiredIntegrationLeaves].filter(([, leaf]) => leaf.expiresAt > now))
+    for (const leaf of previousActive) {
+      if (
+        leaf.key.startsWith(INTEGRATION_CREDENTIAL_PREFIX) &&
+        !nextActive.some((candidate) => candidate.key === leaf.key && candidate.value === leaf.value)
+      ) {
+        retired.set(JSON.stringify([leaf.key, leaf.value]), { ...leaf, expiresAt: now + RETIRED_INTEGRATION_GRACE_MS })
+      }
+    }
+    const previousEntries = [...previousActive, ...this.retiredEntries()]
+    const nextEntries = [
+      ...nextActive,
+      ...[...retired.values()]
+        .filter((leaf) => !nextActive.some((candidate) => candidate.key === leaf.key && candidate.value === leaf.value))
+        .map(({ key, value }) => ({ key, value })),
+    ]
+    // Union publication covers both sides atomically. Retired integration
+    // leaves also remain protected for an hour, including after deletion, so
+    // still-running commands cannot leak a token while revocation is pending.
     const unionEntries = [
       ...previousEntries,
       ...nextEntries.filter(
@@ -395,6 +444,11 @@ export class SecretStore {
     }
 
     this.cache = nextCache
+    this.retiredIntegrationLeaves = retired
+    this.nextRetiredExpiry = [...retired.values()].reduce(
+      (earliest, leaf) => Math.min(earliest, leaf.expiresAt),
+      Infinity
+    )
     try {
       for (const consumer of this.contentSafetyConsumers) consumer.replace(nextEntries)
       for (const key of new Set([...previousMatcher.keys(), ...nextMatcher.keys()])) {
@@ -412,7 +466,7 @@ export class SecretStore {
       const safeMatcher = this.matcherEntriesForCache(safeCache)
       for (const consumer of this.contentSafetyConsumers) {
         try {
-          consumer.replace(asEntries(safeMatcher))
+          consumer.replace([...asEntries(safeMatcher), ...this.retiredEntries()])
         } catch {
           // Every possible prior matcher generation covers the retained intersection.
         }

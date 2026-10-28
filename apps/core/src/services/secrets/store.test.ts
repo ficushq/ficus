@@ -1071,7 +1071,7 @@ describe('integration credential leaf detection', () => {
     }
   })
 
-  test('covers both leaf generations before cache publication and removes retired values afterwards', async () => {
+  test('covers both leaf generations during publication and retains retired values for grace', async () => {
     const oldAccess = 'synthetic-old-access'
     const oldRefresh = 'synthetic-old-refresh'
     const newAccess = 'synthetic-new-access'
@@ -1082,7 +1082,11 @@ describe('integration credential leaf detection', () => {
     let transitionChecked = false
     const unsubscribe = store.bindContentSafetyConsumer({
       replace(entries) {
-        if (entries.some((e) => e.value === oldAccess) && entries.some((e) => e.value === newAccess)) {
+        if (
+          !transitionChecked &&
+          entries.some((e) => e.value === oldAccess) &&
+          entries.some((e) => e.value === newAccess)
+        ) {
           transitionChecked = true
           expect(store.get(ref)).toBe(previous)
           for (const token of [oldAccess, oldRefresh, newAccess, newRefresh]) {
@@ -1095,11 +1099,11 @@ describe('integration credential leaf detection', () => {
     try {
       await store.set(ref, bundle(newAccess, newRefresh))
       expect(transitionChecked).toBe(true)
-      expect(registry.redact(oldAccess)).toBe(oldAccess)
+      expect(registry.redact(oldAccess)).not.toContain(oldAccess)
       expect(registry.redact(newAccess)).not.toContain(newAccess)
       await store.delete(ref)
-      expect(registry.redact(newAccess)).toBe(newAccess)
-      expect(registry.redact(newRefresh)).toBe(newRefresh)
+      expect(registry.redact(newAccess)).not.toContain(newAccess)
+      expect(registry.redact(newRefresh)).not.toContain(newRefresh)
     } finally {
       unsubscribe()
       registry.dispose()
@@ -1121,10 +1125,10 @@ describe('integration credential leaf detection', () => {
       for (const value of ['synthetic-mutated-access', 'synthetic-mutated-refresh']) {
         expect(registry.redactWithStoredKeys(value).storedKeys).not.toHaveLength(0)
       }
-      expect(registry.redact('synthetic-initial-refresh')).toBe('synthetic-initial-refresh')
+      expect(registry.redact('synthetic-initial-refresh')).not.toContain('synthetic-initial-refresh')
       await store.deleteWithDurableMutation(ref, async () => undefined)
-      expect(registry.redact('synthetic-mutated-refresh')).toBe('synthetic-mutated-refresh')
-      // Short integration material is still a credential (e.g. local client IDs).
+      expect(registry.redact('synthetic-mutated-refresh')).not.toContain('synthetic-mutated-refresh')
+      // Exactly eight characters remains protected; shorter legacy leaves do not match.
       await store.set(ref, '12abcdef')
       expect(registry.redactWithStoredKeys('12abcdef').storedKeys).not.toHaveLength(0)
     } finally {
@@ -1150,17 +1154,70 @@ describe('integration credential leaf detection', () => {
       await peer.set(ref, bundle('synthetic-rotated-access', 'synthetic-rotated-refresh'))
       await reader.reload()
       expect(registry.redact('synthetic-rotated-refresh')).not.toContain('synthetic-rotated-refresh')
-      expect(registry.redact('synthetic-peer-access')).toBe('synthetic-peer-access')
+      expect(registry.redact('synthetic-peer-access')).not.toContain('synthetic-peer-access')
       const loadedRegistry = new ContentSafetyRegistry(peer)
       expect(loadedRegistry.redact('synthetic-rotated-access')).not.toContain('synthetic-rotated-access')
       loadedRegistry.dispose()
       await peer.delete(ref)
       await reader.refreshKey(ref)
-      expect(registry.redact('synthetic-rotated-access')).toBe('synthetic-rotated-access')
+      expect(registry.redact('synthetic-rotated-access')).not.toContain('synthetic-rotated-access')
     } finally {
       peer.stopPeriodicRefresh()
       reader.stopPeriodicRefresh()
       registry.dispose()
     }
   })
+})
+
+test('retired integration leaves survive rotation, deletion and later publication for exactly one hour', async () => {
+  const originalKey = process.env.FICUS_ENCRYPTION_KEY
+  process.env.FICUS_ENCRYPTION_KEY = randomBytes(32).toString('hex')
+  let now = 10_000
+  const local = new SecretStore({ now: () => now })
+  await local.initialize()
+  const ref = `__integration-credential:grace:${randomUUID()}`
+  const unrelated = `GRACE_TEST_${randomUUID()}`
+  const registry = new ContentSafetyRegistry(local)
+  let late: ContentSafetyRegistry | undefined
+  let nested = 0
+  const unsubscribe = local.bindContentSafetyConsumer({
+    replace() {
+      if (nested > 0) throw new Error('reentrant content-safety expiry')
+      nested++
+      try {
+        registry.redact('safe diagnostic')
+      } finally {
+        nested--
+      }
+    },
+    update() {},
+  })
+  try {
+    await local.set(ref, 'synthetic-retired-token')
+    await local.set(ref, 'synthetic-current-token')
+    expect(registry.redactWithStoredKeys('synthetic-retired-token').storedKeys).not.toHaveLength(0)
+    await local.set(unrelated, 'synthetic-unrelated-value')
+    now += 30 * 60_000
+    await local.delete(ref)
+    late = new ContentSafetyRegistry(local)
+    for (const token of ['synthetic-retired-token', 'synthetic-current-token']) {
+      expect(late.redactWithStoredKeys(token).storedKeys).not.toHaveLength(0)
+      expect(registry.redact(token)).not.toContain(token)
+    }
+    now += 30 * 60_000
+    expect(registry.redact('synthetic-retired-token')).toBe('synthetic-retired-token')
+    expect(registry.redact('synthetic-current-token')).not.toContain('synthetic-current-token')
+    now += 30 * 60_000
+    expect(late.redactWithStoredKeys('synthetic-current-token').storedKeys).toEqual([])
+    expect(registry.redact('synthetic-current-token')).toBe('synthetic-current-token')
+  } finally {
+    registry.dispose()
+    late?.dispose()
+    unsubscribe()
+    await local.delete(ref)
+    await local.delete(unrelated)
+    local.stopPeriodicRefresh()
+    if (originalKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = originalKey
+  }
 })

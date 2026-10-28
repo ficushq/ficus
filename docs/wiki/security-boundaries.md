@@ -175,13 +175,18 @@ Connection credentials are registered with the process-local content-safety matc
 as secret leaf values, not serialized bundles. This includes manual provider tokens,
 channel credential leaves, and OAuth access/refresh tokens. OAuth expiry, revision,
 and client binding identifiers are not secrets. Connection material is identified
-by the internal `__integration-credential:` storage namespace; all nonempty secret
-leaves are matched, including short local integration credentials. Other encrypted
-stored values retain their existing minimum length (12 characters) and public-key /
-identifier exclusions. Storage, transactional OAuth refresh, rotation, deletion,
-initial cache loading and cross-process cache refresh all use the same matcher
-publication path. Both old and new tokens are matched while cache publication
-crosses a rotation; obsolete coverage is removed after publication.
+by the internal `__integration-credential:` storage namespace. Secret leaves must
+contain at least 8 characters to be exact-matched; shorter legacy values are not
+exact-matched, and new manual/channel credential inputs enforce the same floor.
+Credential-pattern detection is independent of this exact-match minimum. Other
+encrypted stored values retain their existing minimum length (12 characters) and
+public-key / identifier exclusions. Storage, transactional OAuth refresh, rotation,
+deletion, initial cache loading and cross-process cache refresh all use the same
+matcher publication path. Union publication protects both sides of a rotation.
+Retired integration leaves remain matched in each running process for one hour
+from replacement/deletion, including while provider revocation is pending; later
+unrelated updates do not renew that grace. Expiry is checked at redaction boundaries
+and cache refreshes. This in-memory grace does not survive a Core process restart.
 
 Integration credentials and remaining matchable stored secrets are redacted from
 tool output and refuse matching tool input before execution. Refusal/audit details
@@ -213,6 +218,8 @@ is not an interpreter for arbitrary shell scripts or control flow.
 
 After literal decoding, the heuristic is:
 
+- Public/publishable key names and `NEXT_PUBLIC_`, `VITE_`, `REACT_APP_` prefixes
+  are excluded, case-insensitively.
 - Values under 12 characters are not registered (for example `production`).
 - Keys ending in `_TOKEN`, `_KEY`, `_SECRET`, `_PASSWORD`, `_CREDENTIALS`, or those
   exact bare names, case-insensitively, match every value at least 12 characters.
@@ -221,7 +228,9 @@ After literal decoding, the heuristic is:
   Whitespace-containing values, HTTP(S) URLs, and absolute or explicit relative/home
   paths are excluded on this entropy-only path. Repeated values, ordinary words
   and common UUID identifiers do not meet the rule. This is a heuristic, not a
-  classification guarantee for every possible configuration value.
+  classification guarantee for every possible configuration value. Hex-only secrets
+  under generic names commonly score below 4 bits and are not reliably matched;
+  use an explicit secret-suffixed name for those values.
 
 The process-wide source checks only the canonical squad directories and env.user
 file metadata at each redaction boundary, reusing parsed values until a file

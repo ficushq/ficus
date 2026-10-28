@@ -9,6 +9,7 @@ import {
 } from './content-safety'
 
 export interface ContentSafetySecretSource {
+  refreshContentSafety?(): void
   bindContentSafetyConsumer(consumer: SecretValueConsumer): () => void
 }
 
@@ -25,7 +26,7 @@ export class ContentSafetyRegistry implements ContentSafetyPort {
   #outputEntries: readonly SecretEntry[] = []
 
   constructor(
-    store: ContentSafetySecretSource,
+    private readonly store: ContentSafetySecretSource,
     private readonly outputSource?: ContentSafetyOutputSource
   ) {
     const consumer: SecretValueConsumer = {
@@ -66,6 +67,7 @@ export class ContentSafetyRegistry implements ContentSafetyPort {
   }
 
   #refreshOutput(): void {
+    this.store.refreshContentSafety?.()
     const entries = this.outputSource?.entries()
     if (entries && entries !== this.#outputEntries) {
       this.#outputEntries = entries
