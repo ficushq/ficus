@@ -44,7 +44,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Use Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -65,7 +65,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Use Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -119,7 +119,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Use Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -147,7 +147,7 @@ jobs:
           fetch-depth: 0
 
       - name: Use Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -514,7 +514,7 @@ jobs:
           fetch-depth: 0
 
       - name: Use Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -623,7 +623,7 @@ jobs:
           fetch-depth: 0
 
       - name: Use Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -791,7 +791,7 @@ jobs:
           fetch-depth: 0
 
       - name: Use Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -850,7 +850,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Use Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -875,7 +875,7 @@ jobs:
           fetch-depth: 0
 
       - name: Use Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -1034,7 +1034,7 @@ jobs:
           fetch-depth: 0
 
       - name: Use Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -1136,7 +1136,7 @@ jobs:
           persist-credentials: false
 
       - name: Use Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -1525,7 +1525,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Use Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
