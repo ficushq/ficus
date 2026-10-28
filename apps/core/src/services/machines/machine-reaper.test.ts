@@ -31,7 +31,7 @@ const GRACE = 10_000
  *  override single fields to prove each exclusion. */
 function makeMachine(overrides: Partial<Machine> = {}): Machine {
   return {
-    id: '11111111-1111-1111-1111-111111111111',
+    id: '11111111-1111-4111-8111-111111111111',
     name: 'exe-0a1b2c3d',
     provider: 'exe',
     providerRef: 'vm-ref',
@@ -269,10 +269,10 @@ describe('reapEmptyMachines', () => {
 
   it('never reaps or stamps dedicated, BYO, or user-registered exe machines', async () => {
     const machines = [
-      makeMachine({ id: '11111111-1111-1111-1111-111111111111', purpose: 'dedicated', scope: 'dedicated' }),
-      makeMachine({ id: '22222222-2222-2222-2222-222222222222', provider: 'ssh', autoProvisioned: false }),
-      makeMachine({ id: '33333333-3333-3333-3333-333333333333', autoProvisioned: false }),
-      makeMachine({ id: '44444444-4444-4444-4444-444444444444', autoProvisioned: false, emptySince: null }),
+      makeMachine({ id: '11111111-1111-4111-8111-111111111111', purpose: 'dedicated', scope: 'dedicated' }),
+      makeMachine({ id: '22222222-2222-4222-8222-222222222222', provider: 'ssh', autoProvisioned: false }),
+      makeMachine({ id: '33333333-3333-4333-8333-333333333333', autoProvisioned: false }),
+      makeMachine({ id: '44444444-4444-4444-8444-444444444444', autoProvisioned: false, emptySince: null }),
     ]
     const { deps, terminated, deleted, stamped } = makeHarness(machines)
     await reapEmptyMachines(deps)
@@ -321,8 +321,8 @@ describe('reapEmptyMachines', () => {
   })
 
   it("one machine's failed terminate restores its claim, keeps its row, and does not block the sweep", async () => {
-    const bad = makeMachine({ id: '11111111-1111-1111-1111-111111111111', name: 'exe-bad' })
-    const good = makeMachine({ id: '22222222-2222-2222-2222-222222222222', name: 'exe-good' })
+    const bad = makeMachine({ id: '11111111-1111-4111-8111-111111111111', name: 'exe-bad' })
+    const good = makeMachine({ id: '22222222-2222-4222-8222-222222222222', name: 'exe-good' })
     const terminated: string[] = []
     const { deps, deleted, restored } = makeHarness([bad, good], {
       terminate: async (machine) => {

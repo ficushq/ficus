@@ -41,8 +41,8 @@ function fakeDeps(machines: Machine[], failing: Set<string> = new Set()) {
 describe('parseMachineBootstrapTarget', () => {
   it('takes a machine id or all-stale from FICUS_MB_MACHINE', () => {
     expect(parseMachineBootstrapTarget({ FICUS_MB_MACHINE: 'all-stale' })).toBe('all-stale')
-    expect(parseMachineBootstrapTarget({ FICUS_MB_MACHINE: '22222222-2222-2222-2222-222222222222' })).toBe(
-      '22222222-2222-2222-2222-222222222222'
+    expect(parseMachineBootstrapTarget({ FICUS_MB_MACHINE: '22222222-2222-4222-8222-222222222222' })).toBe(
+      '22222222-2222-4222-8222-222222222222'
     )
   })
 

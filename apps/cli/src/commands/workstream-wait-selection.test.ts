@@ -31,9 +31,9 @@ describe('selectOpenWait (CLI resolve-sugar ambiguity rule)', () => {
   })
 
   it('selects the single open wait of the target type', () => {
-    const target = wait('bbbb1111-0000-0000-0000-000000000000', 'manual', 'need creds')
+    const target = wait('bbbb1111-0000-4000-8000-000000000000', 'manual', 'need creds')
     const selected = selectOpenWait(
-      [wait('aaaa1111-0000-0000-0000-000000000000', 'review'), target, wait('cccc', 'question')],
+      [wait('aaaa1111-0000-4000-8000-000000000000', 'review'), target, wait('cccc', 'question')],
       'manual',
       { typeLabel: 'manual (input-request)' }
     )
@@ -41,8 +41,8 @@ describe('selectOpenWait (CLI resolve-sugar ambiguity rule)', () => {
   })
 
   it('REFUSES with two open waits of the target type and requires --wait, listing the ids', () => {
-    const a = wait('aaaa1111-0000-0000-0000-000000000000', 'manual', 'first')
-    const b = wait('bbbb2222-0000-0000-0000-000000000000', 'manual', 'second')
+    const a = wait('aaaa1111-0000-4000-8000-000000000000', 'manual', 'first')
+    const b = wait('bbbb2222-0000-4000-8000-000000000000', 'manual', 'second')
     let error: unknown
     try {
       selectOpenWait([a, b], 'manual', { typeLabel: 'manual (input-request)' })
@@ -57,15 +57,15 @@ describe('selectOpenWait (CLI resolve-sugar ambiguity rule)', () => {
   })
 
   it('an explicit --wait id (or unique prefix) picks among several open waits', () => {
-    const a = wait('aaaa1111-0000-0000-0000-000000000000', 'manual', 'first')
-    const b = wait('bbbb2222-0000-0000-0000-000000000000', 'manual', 'second')
+    const a = wait('aaaa1111-0000-4000-8000-000000000000', 'manual', 'first')
+    const b = wait('bbbb2222-0000-4000-8000-000000000000', 'manual', 'second')
     expect(selectOpenWait([a, b], 'manual', { explicitWaitId: b.id, typeLabel: 'manual' }).id).toBe(b.id)
     expect(selectOpenWait([a, b], 'manual', { explicitWaitId: 'bbbb2222', typeLabel: 'manual' }).id).toBe(b.id)
   })
 
   it('an explicit --wait id that matches nothing (or a wait of another type) throws', () => {
-    const a = wait('aaaa1111-0000-0000-0000-000000000000', 'manual', 'first')
-    const review = wait('cccc3333-0000-0000-0000-000000000000', 'review', 'round')
+    const a = wait('aaaa1111-0000-4000-8000-000000000000', 'manual', 'first')
+    const review = wait('cccc3333-0000-4000-8000-000000000000', 'review', 'round')
     expect(() => selectOpenWait([a, review], 'manual', { explicitWaitId: 'dddd', typeLabel: 'manual' })).toThrow(
       WaitSelectionError
     )
@@ -76,8 +76,8 @@ describe('selectOpenWait (CLI resolve-sugar ambiguity rule)', () => {
   })
 
   it('an ambiguous --wait prefix throws instead of guessing', () => {
-    const a = wait('aaaa1111-0000-0000-0000-000000000000', 'manual')
-    const b = wait('aaaa2222-0000-0000-0000-000000000000', 'manual')
+    const a = wait('aaaa1111-0000-4000-8000-000000000000', 'manual')
+    const b = wait('aaaa2222-0000-4000-8000-000000000000', 'manual')
     expect(() => selectOpenWait([a, b], 'manual', { explicitWaitId: 'aaaa', typeLabel: 'manual' })).toThrow(
       /multiple open manual waits/i
     )
@@ -137,7 +137,7 @@ describe('selectOpenWait (CLI resolve-sugar ambiguity rule)', () => {
     })
 
     it('ignores closed waits of OTHER types (a closed review wait is not a manual target)', () => {
-      const closedReview = closedWait('dddd4444-0000-0000-0000-000000000000', 'review', { resolution: 'approved' })
+      const closedReview = closedWait('dddd4444-0000-4000-8000-000000000000', 'review', { resolution: 'approved' })
       expect(() =>
         selectOpenWait([open], 'manual', {
           explicitWaitId: closedReview.id,
@@ -148,8 +148,8 @@ describe('selectOpenWait (CLI resolve-sugar ambiguity rule)', () => {
     })
 
     it('falls back to the generic no-match error when the prefix matches several closed waits', () => {
-      const staleA = closedWait('eeee1111-0000-0000-0000-000000000000', 'manual')
-      const staleB = closedWait('eeee2222-0000-0000-0000-000000000000', 'manual')
+      const staleA = closedWait('eeee1111-0000-4000-8000-000000000000', 'manual')
+      const staleB = closedWait('eeee2222-0000-4000-8000-000000000000', 'manual')
       expect(() =>
         selectOpenWait([open], 'manual', {
           explicitWaitId: 'eeee',
@@ -167,8 +167,8 @@ describe('selectOpenWait (CLI resolve-sugar ambiguity rule)', () => {
   })
 
   it('truncates very long wait messages in the ambiguity listing so the error stays scannable', () => {
-    const a = wait('aaaa1111-0000-0000-0000-000000000000', 'manual', 'word '.repeat(60))
-    const b = wait('bbbb2222-0000-0000-0000-000000000000', 'manual', 'second')
+    const a = wait('aaaa1111-0000-4000-8000-000000000000', 'manual', 'word '.repeat(60))
+    const b = wait('bbbb2222-0000-4000-8000-000000000000', 'manual', 'second')
     let error: unknown
     try {
       selectOpenWait([a, b], 'manual', { typeLabel: 'manual' })

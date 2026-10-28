@@ -150,7 +150,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
       throw new Error('Command failed with exit code 1: secret-like fixture output')
     }
     const launch = new LocalDeploymentProcessSupervisor(manager).startManagedLocalDeployment({
-      localDeploymentId: 'abcdef12-1234-1234-1234-123456789abc',
+      localDeploymentId: 'abcdef12-1234-4234-8234-123456789abc',
       sandboxId: 'squad_fixture',
       command: 'fixture',
       port: 5173,
@@ -167,7 +167,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
       const manager = new FakeSandboxManager()
       const supervisor = new LocalDeploymentProcessSupervisor(manager)
       await supervisor.startManagedLocalDeployment({
-        localDeploymentId: 'abcdef12-1234-1234-1234-123456789abc',
+        localDeploymentId: 'abcdef12-1234-4234-8234-123456789abc',
         sandboxId: 'squad_1',
         command: "bun run dev -- --title 'Ficus app'",
         cwd: '/workspace/1/my app',
@@ -186,14 +186,14 @@ describe('LocalDeploymentProcessSupervisor', () => {
       const launchCommand = encodedLaunchCommand.slice(1, -1).replaceAll(`'"'"'`, "'")
       expect(launchCommand).toBe(
         [
-          "FICUS_LOCAL_DEPLOYMENT_ID='abcdef12-1234-1234-1234-123456789abc'",
+          "FICUS_LOCAL_DEPLOYMENT_ID='abcdef12-1234-4234-8234-123456789abc'",
           "FICUS_LOCAL_DEPLOYMENT_PORT='5173'",
           "PORT='5173'",
           "FICUS_APP_BASE_PATH='/'",
           "FICUS_LOCAL_DEPLOYMENT_CWD='/workspace/1/my app'",
-          "FICUS_LOCAL_DEPLOYMENT_DIR='/workspace/1/.ficus/local-deployments/abcdef12-1234-1234-1234-123456789abc'",
+          "FICUS_LOCAL_DEPLOYMENT_DIR='/workspace/1/.ficus/local-deployments/abcdef12-1234-4234-8234-123456789abc'",
           `FICUS_LOCAL_DEPLOYMENT_COMMAND='bun run dev -- --title '"'"'Ficus app'"'"''`,
-          "bash '/workspace/1/.ficus/local-deployments/abcdef12-1234-1234-1234-123456789abc/run.sh'",
+          "bash '/workspace/1/.ficus/local-deployments/abcdef12-1234-4234-8234-123456789abc/run.sh'",
         ].join(' ')
       )
     } finally {
@@ -210,7 +210,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
       const manager = new FakeSandboxManager()
       const supervisor = new LocalDeploymentProcessSupervisor(manager)
       await supervisor.startManagedLocalDeployment({
-        localDeploymentId: 'abcdef12-1234-1234-1234-123456789abc',
+        localDeploymentId: 'abcdef12-1234-4234-8234-123456789abc',
         sandboxId: 'squad_1',
         command: 'bun run dev',
         port: 5173,
@@ -218,7 +218,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
 
       const command = manager.execCalls[0].args.join(' ')
       expect(command).toContain('FICUS_APP_BASE_PATH=')
-      expect(command).toContain('/api/app/abcdef12-1234-1234-1234-123456789abc/')
+      expect(command).toContain('/api/app/abcdef12-1234-4234-8234-123456789abc/')
     } finally {
       if (previousAppsDomain === undefined) delete process.env.FICUS_APPS_DOMAIN
       else process.env.FICUS_APPS_DOMAIN = previousAppsDomain
@@ -230,7 +230,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
     const supervisor = new LocalDeploymentProcessSupervisor(manager)
 
     await supervisor.startManagedLocalDeployment({
-      localDeploymentId: '12345678-1234-1234-1234-123456789abc',
+      localDeploymentId: '12345678-1234-4234-8234-123456789abc',
       sandboxId: 'squad_1',
       command: 'bun run dev',
       cwd: '/workspace/app',
@@ -239,9 +239,9 @@ describe('LocalDeploymentProcessSupervisor', () => {
 
     const command = manager.execCalls[0].args.join(' ')
     expect(command).toContain(
-      'mkdir -p /workspace/1/.ficus/local-deployments/12345678-1234-1234-1234-123456789abc/logs'
+      'mkdir -p /workspace/1/.ficus/local-deployments/12345678-1234-4234-8234-123456789abc/logs'
     )
-    expect(command).toContain('cat > /workspace/1/.ficus/local-deployments/12345678-1234-1234-1234-123456789abc/run.sh')
+    expect(command).toContain('cat > /workspace/1/.ficus/local-deployments/12345678-1234-4234-8234-123456789abc/run.sh')
     expect(command).toContain('FICUS_LOCAL_DEPLOYMENT_DIR/logs/current.log')
   })
 
@@ -250,7 +250,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
     const supervisor = new LocalDeploymentProcessSupervisor(manager)
 
     await supervisor.startManagedLocalDeployment({
-      localDeploymentId: '12345678-1234-1234-1234-123456789abc',
+      localDeploymentId: '12345678-1234-4234-8234-123456789abc',
       sandboxId: 'squad_1',
       command: 'bun run dev',
       port: 5173,
@@ -270,7 +270,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
     const supervisor = new LocalDeploymentProcessSupervisor(manager)
 
     await supervisor.startManagedLocalDeployment({
-      localDeploymentId: 'abcdef12-1234-1234-1234-123456789abc',
+      localDeploymentId: 'abcdef12-1234-4234-8234-123456789abc',
       sandboxId: 'squad_1',
       command: 'bun run dev',
       port: 5173,
@@ -290,7 +290,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
     const supervisor = new LocalDeploymentProcessSupervisor(manager)
 
     await supervisor.startManagedLocalDeployment({
-      localDeploymentId: 'abcdef12-1234-1234-1234-123456789abc',
+      localDeploymentId: 'abcdef12-1234-4234-8234-123456789abc',
       sandboxId: 'squad_1',
       command: 'node server.cjs',
       port: 5173,
@@ -298,7 +298,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
 
     const command = manager.execCalls[0].args[2]
     const record = command.indexOf(
-      `printf '%s\\n' "$PATH" > '/workspace/1/.ficus/local-deployments/abcdef12-1234-1234-1234-123456789abc/${LAUNCH_PATH_FILE}'`
+      `printf '%s\\n' "$PATH" > '/workspace/1/.ficus/local-deployments/abcdef12-1234-4234-8234-123456789abc/${LAUNCH_PATH_FILE}'`
     )
     expect(record).toBeGreaterThan(-1)
     expect(record).toBeLessThan(command.indexOf("ficus_tmux_new '"))
@@ -309,7 +309,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
     const supervisor = new LocalDeploymentProcessSupervisor(manager)
 
     const result = await supervisor.startManagedLocalDeployment({
-      localDeploymentId: 'abcdef12-1234-1234-1234-123456789abc',
+      localDeploymentId: 'abcdef12-1234-4234-8234-123456789abc',
       sandboxId: 'squad_1',
       command: 'bun run dev -- --host 0.0.0.0',
       port: 5173,
@@ -327,7 +327,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
     const supervisor = new LocalDeploymentProcessSupervisor(manager)
     const processId = 'tau-local-deployment-persisted' // Existing recorded identity, not a new writer.
     const result = await supervisor.startManagedLocalDeployment({
-      localDeploymentId: 'abcdef12-1234-1234-1234-123456789abc',
+      localDeploymentId: 'abcdef12-1234-4234-8234-123456789abc',
       sandboxId: 'squad_1',
       command: 'echo ready',
       port: 5173,
@@ -392,7 +392,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
       )
     }
     const launch = new LocalDeploymentProcessSupervisor(manager).startManagedLocalDeployment({
-      localDeploymentId: 'abcdef12-1234-1234-1234-123456789abc',
+      localDeploymentId: 'abcdef12-1234-4234-8234-123456789abc',
       sandboxId: 'squad_1',
       command: 'bun run dev',
       port: 5173,
@@ -406,7 +406,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
     const supervisor = new LocalDeploymentProcessSupervisor(manager)
 
     await supervisor.startManagedLocalDeployment({
-      localDeploymentId: 'abcdef12-1234-1234-1234-123456789abc',
+      localDeploymentId: 'abcdef12-1234-4234-8234-123456789abc',
       sandboxId: 'squad_1',
       command: 'bun run dev',
       port: 5173,
@@ -423,7 +423,7 @@ describe('LocalDeploymentProcessSupervisor', () => {
     const supervisor = new LocalDeploymentProcessSupervisor(manager)
 
     await supervisor.startManagedLocalDeployment({
-      localDeploymentId: 'aabbccdd-1234-1234-1234-123456789abc',
+      localDeploymentId: 'aabbccdd-1234-4234-8234-123456789abc',
       sandboxId: 'squad_2',
       command: 'bun run start',
       port: 3000,
@@ -431,9 +431,9 @@ describe('LocalDeploymentProcessSupervisor', () => {
 
     const command = manager.execCalls[0].args.join(' ')
     expect(command).toContain(
-      'mkdir -p /workspace/2/.ficus/local-deployments/aabbccdd-1234-1234-1234-123456789abc/logs'
+      'mkdir -p /workspace/2/.ficus/local-deployments/aabbccdd-1234-4234-8234-123456789abc/logs'
     )
-    expect(command).toContain('cat > /workspace/2/.ficus/local-deployments/aabbccdd-1234-1234-1234-123456789abc/run.sh')
+    expect(command).toContain('cat > /workspace/2/.ficus/local-deployments/aabbccdd-1234-4234-8234-123456789abc/run.sh')
     expect(command).toMatch(/FICUS_LOCAL_DEPLOYMENT_CWD.*\/workspace\/2/)
   })
   describe('attached log paths', () => {
@@ -566,7 +566,7 @@ describe('local deployment launcher', () => {
 describe('LocalDeploymentProcessSupervisor with the pinned tmux', () => {
   const SQUAD = '0f0e0d0c-1111-4222-8333-444455556666'
   const SANDBOX = `squad_${SQUAD}`
-  const ID = 'abcdef12-1234-1234-1234-123456789abc'
+  const ID = 'abcdef12-1234-4234-8234-123456789abc'
   const SESSION = 'ficus-local-deployment-abcdef12'
   let root: string
   let box: FakeTmuxBox

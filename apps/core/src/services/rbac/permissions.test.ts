@@ -950,8 +950,8 @@ describe('getAccessibleSquadIds fail-closed when authority is missing', () => {
   test('returns no squads when the agent does not exist in the database', async () => {
     const identity: AgentIdentity = {
       type: 'agent',
-      agentId: '00000000-dead-beef-0000-000000000000',
-      squadId: '00000000-dead-beef-0000-000000000001',
+      agentId: '00000000-dead-4eef-8000-000000000000',
+      squadId: '00000000-dead-4eef-8000-000000000001',
     }
 
     expect(await getAccessibleSquadIds(identity)).toEqual([])

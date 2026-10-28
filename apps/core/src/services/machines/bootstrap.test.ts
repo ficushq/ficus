@@ -25,7 +25,7 @@ const expectedVersion = createHash('sha256').update(bootstrapSh).update(boxProvi
 
 function makeMachine(overrides: Partial<Machine> = {}): Machine {
   return {
-    id: '22222222-2222-2222-2222-222222222222',
+    id: '22222222-2222-4222-8222-222222222222',
     name: 'boot-test',
     provider: 'ssh',
     providerRef: null,

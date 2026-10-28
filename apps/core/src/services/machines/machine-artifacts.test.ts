@@ -26,7 +26,7 @@ function stagedThenRenamed(command: string, dest: string): boolean {
 
 function makeMachine(overrides: Partial<Machine> = {}): Machine {
   return {
-    id: '44444444-4444-4444-4444-444444444444',
+    id: '44444444-4444-4444-8444-444444444444',
     name: 'artifact-test',
     provider: 'ssh',
     providerRef: null,

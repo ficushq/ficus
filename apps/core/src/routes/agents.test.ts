@@ -911,7 +911,7 @@ describe('agent image input model capability validation', () => {
     const res = await app.request(`/api/agents/${agent.id}/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
-      body: JSON.stringify({ content: 'look', imageIds: ['00000000-0000-0000-0000-000000000201'] }),
+      body: JSON.stringify({ content: 'look', imageIds: ['00000000-0000-4000-8000-000000000201'] }),
     })
 
     expect(res.status).toBe(400)

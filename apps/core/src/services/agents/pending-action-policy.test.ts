@@ -58,7 +58,7 @@ afterAll(async () => {
 
 describe('pending action response capability', () => {
   test('does not turn historical question visibility into response authority', async () => {
-    const recipient = { type: 'user' as const, userId: '00000000-0000-0000-0000-000000000001' }
+    const recipient = { type: 'user' as const, userId: '00000000-0000-4000-8000-000000000001' }
 
     // Read-only attention visibility never implies the ability to respond; response
     // authority lives in question-authorization (see question-authorization.test.ts).

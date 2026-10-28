@@ -51,7 +51,7 @@ describe('InboxMessage remote sender', () => {
           peerInstanceId: 'peer-instance-abc',
           fromAddress,
           fromHandle: 'alice',
-          envelopeId: '00000000-0000-0000-0000-000000000001',
+          envelopeId: '00000000-0000-4000-8000-000000000001',
           agentSigVerified: false,
         },
         sender: { name: 'alice' },

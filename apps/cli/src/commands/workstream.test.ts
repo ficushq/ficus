@@ -29,11 +29,11 @@ describe('workstream CLI commands', () => {
     ;(outputError as ReturnType<typeof mock>).mockClear()
     ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(false)
     ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({
-      id: '11111111-1111-1111-1111-111111111111',
+      id: '11111111-1111-4111-8111-111111111111',
       title: 'Implement feature',
     })
     ;(apiPatch as ReturnType<typeof mock>).mockResolvedValue({
-      id: '22222222-2222-2222-2222-222222222222',
+      id: '22222222-2222-4222-8222-222222222222',
       title: 'Implement feature',
     })
   })
@@ -237,7 +237,7 @@ describe('workstream CLI commands', () => {
     it('keeps default table titles user-friendly by truncating long names', async () => {
       ;(apiGet as ReturnType<typeof mock>).mockResolvedValue([
         {
-          id: '11111111-1111-1111-1111-111111111111',
+          id: '11111111-1111-4111-8111-111111111111',
           title: 'This is an exact long title that should be shortened in the default table',
           status: 'pending',
           squadId: 'squad-1',
@@ -261,7 +261,7 @@ describe('workstream CLI commands', () => {
       const title = 'This is an exact long title that scripts can safely search for'
       ;(apiGet as ReturnType<typeof mock>).mockResolvedValue([
         {
-          id: '11111111-1111-1111-1111-111111111111',
+          id: '11111111-1111-4111-8111-111111111111',
           title,
           status: 'pending',
           squadId: 'squad-1',
@@ -284,7 +284,7 @@ describe('workstream CLI commands', () => {
     it('prints full work stream objects when JSON mode is enabled', async () => {
       const streams = [
         {
-          id: '11111111-1111-1111-1111-111111111111',
+          id: '11111111-1111-4111-8111-111111111111',
           title: 'This is an exact long title for JSON consumers',
           status: 'pending',
           squadId: 'squad-1',
@@ -306,12 +306,12 @@ describe('workstream CLI commands', () => {
       await run([
         'workstream',
         'done',
-        '22222222-2222-2222-2222-222222222222',
+        '22222222-2222-4222-8222-222222222222',
         '--next-steps',
         'Open a follow-up for docs',
       ])
 
-      expect(apiPatch).toHaveBeenCalledWith('/api/workstreams/22222222-2222-2222-2222-222222222222', {
+      expect(apiPatch).toHaveBeenCalledWith('/api/workstreams/22222222-2222-4222-8222-222222222222', {
         status: 'done',
         nextSteps: 'Open a follow-up for docs',
       })
@@ -320,9 +320,9 @@ describe('workstream CLI commands', () => {
 
   describe('request-review', () => {
     it('omits completesOnApproval by default (server default = completes)', async () => {
-      await run(['workstream', 'request-review', '11111111-1111-1111-1111-111111111111', '-m', 'please review'])
+      await run(['workstream', 'request-review', '11111111-1111-4111-8111-111111111111', '-m', 'please review'])
 
-      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/11111111-1111-1111-1111-111111111111/request-review', {
+      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/11111111-1111-4111-8111-111111111111/request-review', {
         message: 'please review',
       })
     })
@@ -331,13 +331,13 @@ describe('workstream CLI commands', () => {
       await run([
         'workstream',
         'request-review',
-        '11111111-1111-1111-1111-111111111111',
+        '11111111-1111-4111-8111-111111111111',
         '-m',
         'mid-work checkpoint',
         '--no-complete',
       ])
 
-      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/11111111-1111-1111-1111-111111111111/request-review', {
+      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/11111111-1111-4111-8111-111111111111/request-review', {
         message: 'mid-work checkpoint',
         completesOnApproval: false,
       })
@@ -347,18 +347,18 @@ describe('workstream CLI commands', () => {
   describe('approve', () => {
     it('reports a checkpoint approval as continuing (stream not done)', async () => {
       ;(apiGet as ReturnType<typeof mock>).mockResolvedValue({
-        id: '11111111-1111-1111-1111-111111111111',
-        openWaits: [{ id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', type: 'review' }],
+        id: '11111111-1111-4111-8111-111111111111',
+        openWaits: [{ id: 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa', type: 'review' }],
       })
       ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({
-        id: '11111111-1111-1111-1111-111111111111',
+        id: '11111111-1111-4111-8111-111111111111',
         status: 'active',
       })
 
-      await run(['workstream', 'approve', '11111111-1111-1111-1111-111111111111', '-m', 'keep going'])
+      await run(['workstream', 'approve', '11111111-1111-4111-8111-111111111111', '-m', 'keep going'])
 
       expect(apiPost).toHaveBeenCalledWith(
-        '/api/workstreams/11111111-1111-1111-1111-111111111111/waits/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/resolve',
+        '/api/workstreams/11111111-1111-4111-8111-111111111111/waits/aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa/resolve',
         { resolution: 'approved', note: 'keep going' }
       )
       expect(output).toHaveBeenCalledWith(
@@ -369,15 +369,15 @@ describe('workstream CLI commands', () => {
 
     it('reports a completing approval as done', async () => {
       ;(apiGet as ReturnType<typeof mock>).mockResolvedValue({
-        id: '11111111-1111-1111-1111-111111111111',
-        openWaits: [{ id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', type: 'review' }],
+        id: '11111111-1111-4111-8111-111111111111',
+        openWaits: [{ id: 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa', type: 'review' }],
       })
       ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({
-        id: '11111111-1111-1111-1111-111111111111',
+        id: '11111111-1111-4111-8111-111111111111',
         status: 'done',
       })
 
-      await run(['workstream', 'approve', '11111111-1111-1111-1111-111111111111'])
+      await run(['workstream', 'approve', '11111111-1111-4111-8111-111111111111'])
 
       expect(output).toHaveBeenCalledWith(expect.objectContaining({ status: 'done' }), expect.stringContaining('done'))
     })
@@ -386,13 +386,13 @@ describe('workstream CLI commands', () => {
   describe('reopen', () => {
     it('POSTs to the reopen route and reports the admission outcome', async () => {
       ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({
-        id: '11111111-1111-1111-1111-111111111111',
+        id: '11111111-1111-4111-8111-111111111111',
         status: 'queued',
       })
 
-      await run(['workstream', 'reopen', '11111111-1111-1111-1111-111111111111'])
+      await run(['workstream', 'reopen', '11111111-1111-4111-8111-111111111111'])
 
-      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/11111111-1111-1111-1111-111111111111/reopen')
+      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/11111111-1111-4111-8111-111111111111/reopen')
       expect(output).toHaveBeenCalledWith(
         expect.objectContaining({ status: 'queued' }),
         expect.stringContaining('queued for admission')
@@ -405,7 +405,7 @@ describe('workstream CLI commands', () => {
       const logSpy = spyOn(console, 'log').mockImplementation(() => {})
       ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(false)
       ;(apiGet as ReturnType<typeof mock>).mockResolvedValue({
-        id: '11111111-1111-1111-1111-111111111111',
+        id: '11111111-1111-4111-8111-111111111111',
         title: 'Retain evidence',
         status: 'done',
         squadId: 'sq-1',
@@ -418,7 +418,7 @@ describe('workstream CLI commands', () => {
         },
       })
       try {
-        await run(['workstream', 'get', '11111111-1111-1111-1111-111111111111'])
+        await run(['workstream', 'get', '11111111-1111-4111-8111-111111111111'])
         const printed = logSpy.mock.calls.map((call) => String(call[0])).join('\n')
         expect(printed).toContain('Auto cleanup: disabled (retain worktree)')
         expect(printed).toContain(
@@ -433,7 +433,7 @@ describe('workstream CLI commands', () => {
       const logSpy = spyOn(console, 'log').mockImplementation(() => {})
       ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(false)
       ;(apiGet as ReturnType<typeof mock>).mockResolvedValue({
-        id: '11111111-1111-1111-1111-111111111111',
+        id: '11111111-1111-4111-8111-111111111111',
         title: 'Connect API phase 3',
         status: 'active',
         squadId: 'sq-1',
@@ -453,7 +453,7 @@ describe('workstream CLI commands', () => {
         ],
       })
 
-      await run(['workstream', 'get', '11111111-1111-1111-1111-111111111111'])
+      await run(['workstream', 'get', '11111111-1111-4111-8111-111111111111'])
 
       const printed = logSpy.mock.calls.map((call) => String(call[0])).join('\n')
       expect(printed).toContain('Wait history')
@@ -469,7 +469,7 @@ describe('workstream CLI commands', () => {
       const logSpy = spyOn(console, 'log').mockImplementation(() => {})
       ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(false)
       ;(apiGet as ReturnType<typeof mock>).mockResolvedValue({
-        id: '11111111-1111-1111-1111-111111111111',
+        id: '11111111-1111-4111-8111-111111111111',
         title: 'Fix issue',
         status: 'active',
         squadId: 'sq-1',
@@ -480,7 +480,7 @@ describe('workstream CLI commands', () => {
         },
       })
 
-      await run(['workstream', 'get', '11111111-1111-1111-1111-111111111111'])
+      await run(['workstream', 'get', '11111111-1111-4111-8111-111111111111'])
 
       const printed = logSpy.mock.calls.map((call) => String(call[0])).join('\n')
       expect(printed).toContain('  [issue] acme/widgets#12 (tracked) https://github.com/acme/widgets/issues/12')
@@ -491,7 +491,7 @@ describe('workstream CLI commands', () => {
       const logSpy = spyOn(console, 'log').mockImplementation(() => {})
       ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(false)
       ;(apiGet as ReturnType<typeof mock>).mockResolvedValue({
-        id: '11111111-1111-1111-1111-111111111111',
+        id: '11111111-1111-4111-8111-111111111111',
         title: 'Fix issue',
         status: 'active',
         squadId: 'sq-1',
@@ -516,7 +516,7 @@ describe('workstream CLI commands', () => {
         },
       })
 
-      await run(['workstream', 'get', '11111111-1111-1111-1111-111111111111'])
+      await run(['workstream', 'get', '11111111-1111-4111-8111-111111111111'])
 
       const printed = logSpy.mock.calls.map((call) => String(call[0])).join('\n')
       expect(printed).toContain('  [pull_request] acme/widgets#7 (delivery PR, merged)')
@@ -529,7 +529,7 @@ describe('workstream CLI commands', () => {
       const logSpy = spyOn(console, 'log').mockImplementation(() => {})
       ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(false)
       ;(apiGet as ReturnType<typeof mock>).mockResolvedValue({
-        id: '11111111-1111-1111-1111-111111111111',
+        id: '11111111-1111-4111-8111-111111111111',
         title: 'Fix issue',
         status: 'active',
         squadId: 'sq-1',
@@ -549,7 +549,7 @@ describe('workstream CLI commands', () => {
         },
       })
 
-      await run(['workstream', 'get', '11111111-1111-1111-1111-111111111111'])
+      await run(['workstream', 'get', '11111111-1111-4111-8111-111111111111'])
 
       const printed = logSpy.mock.calls.map((call) => String(call[0])).join('\n')
       expect(printed).toContain('  [issue] ENG-12 (tracked) https://linear.app/acme/issue/ENG-12/fix-thing')
@@ -561,12 +561,12 @@ describe('workstream CLI commands', () => {
     it('does not emit human progress logs before created flow JSON', async () => {
       const logSpy = spyOn(console, 'log').mockImplementation(() => {})
       const created = {
-        id: '11111111-1111-1111-1111-111111111111',
+        id: '11111111-1111-4111-8111-111111111111',
         title: 'Implement feature',
         status: 'pending',
         spawnedAgents: [
-          { id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', agentTypeId: 'engineer', status: 'idle' },
-          { id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', agentTypeId: 'reviewer', status: 'idle' },
+          { id: 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa', agentTypeId: 'engineer', status: 'idle' },
+          { id: 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb', agentTypeId: 'reviewer', status: 'idle' },
         ],
       }
       ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(true)
@@ -589,7 +589,7 @@ describe('workstream CLI commands', () => {
 
     it('prints the created work stream as machine-readable JSON when JSON mode is enabled', async () => {
       const created = {
-        id: '11111111-1111-1111-1111-111111111111',
+        id: '11111111-1111-4111-8111-111111111111',
         title: 'Implement feature',
         status: 'pending',
         metadata: { git: { branch: 'feature/workstream' } },
@@ -713,7 +713,7 @@ describe('workstream CLI commands', () => {
     })
 
     it('creates from an integration event and reports reuse when the event was already handled', async () => {
-      const eventId = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
+      const eventId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
       await run(['workstream', 'create', 'Fix bug', '--squad', 'squad-1', '--from-event', eventId])
       expect(apiPost).toHaveBeenLastCalledWith(
         '/api/workstreams',
@@ -756,7 +756,7 @@ describe('workstream CLI commands', () => {
     })
 
     it('tracks by integration event id', async () => {
-      const eventId = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
+      const eventId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
       await run(['workstream', 'track', 'stream-1', '--event', eventId])
       expect(apiPost).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', { event: eventId })
     })
@@ -780,7 +780,7 @@ describe('workstream CLI commands', () => {
       await run(['workstream', 'track', 'stream-1', '--issue', 'acme/widgets#12', '--delivery'])
       expect(outputError).toHaveBeenLastCalledWith(new Error('--delivery applies to pull requests only'))
 
-      await run(['workstream', 'track', 'stream-1', '--event', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', '--delivery'])
+      await run(['workstream', 'track', 'stream-1', '--event', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', '--delivery'])
       expect(outputError).toHaveBeenLastCalledWith(new Error('--delivery applies to pull requests only'))
       expect(apiPost).not.toHaveBeenCalled()
     })
@@ -852,7 +852,7 @@ describe('workstream CLI commands', () => {
         'track',
         'stream-1',
         '--event',
-        'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+        'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
         '--connection',
         'conn-1',
       ])
@@ -1359,7 +1359,7 @@ describe('workstream CLI commands', () => {
   describe('direct handoff', () => {
     it('preserves queued status and reports pending admission', async () => {
       ;(apiPatch as ReturnType<typeof mock>).mockResolvedValue({
-        id: '12345678-0000-0000-0000-000000000000',
+        id: '12345678-0000-4000-8000-000000000000',
         title: 'Queued',
         status: 'queued',
       })
@@ -1375,7 +1375,7 @@ describe('workstream CLI commands', () => {
 
     it('reports an admitted handoff without pending wording', async () => {
       ;(apiPatch as ReturnType<typeof mock>).mockResolvedValue({
-        id: '12345678-0000-0000-0000-000000000000',
+        id: '12345678-0000-4000-8000-000000000000',
         title: 'Active',
         status: 'active',
       })
@@ -1394,7 +1394,7 @@ describe('workstream CLI commands', () => {
   })
 
   describe('wait verbs (typed resolution sugar)', () => {
-    const wsId = '12345678-0000-0000-0000-000000000000'
+    const wsId = '12345678-0000-4000-8000-000000000000'
 
     it('request-input opens a manual wait via the new route', async () => {
       await run(['workstream', 'request-input', 'ws-1', '-m', 'need credentials'])
@@ -1657,7 +1657,7 @@ describe('workstream CLI commands', () => {
   describe('park', () => {
     it('maps park to POST /api/workstreams/:id/park', async () => {
       ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({
-        id: '33333333-3333-3333-3333-333333333333',
+        id: '33333333-3333-4333-8333-333333333333',
         title: 'Parked stream',
         status: 'queued',
         queuePosition: 2,
@@ -1674,7 +1674,7 @@ describe('workstream CLI commands', () => {
 
     it('forwards --preempt-running explicitly', async () => {
       ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({
-        id: '33333333-3333-3333-3333-333333333333',
+        id: '33333333-3333-4333-8333-333333333333',
         title: 'Preempted stream',
         status: 'queued',
       })
@@ -1698,7 +1698,7 @@ describe('workstream CLI commands', () => {
 
     it('warns when the park was a no-op (stream immediately re-admitted)', async () => {
       ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({
-        id: '44444444-4444-4444-4444-444444444444',
+        id: '44444444-4444-4444-8444-444444444444',
         title: 'Boomerang stream',
         status: 'pending',
         reAdmitted: true,
@@ -1744,8 +1744,8 @@ describe('workstream CLI commands', () => {
 
   describe('getWorkStreamAgentTypes', () => {
     it('returns an agent id to type mapping for JSON output', () => {
-      const engineerId = '11111111-1111-1111-1111-111111111111'
-      const missingId = '22222222-2222-2222-2222-222222222222'
+      const engineerId = '11111111-1111-4111-8111-111111111111'
+      const missingId = '22222222-2222-4222-8222-222222222222'
       const summaries = new Map([
         [engineerId, { id: engineerId, agentTypeId: 'engineer', metadata: null, status: 'idle' }],
         [missingId, null],
@@ -1814,7 +1814,7 @@ describe('workstream CLI commands', () => {
     })
 
     it('includes each bound agent id prefix, type, name, and status when available', () => {
-      const agentId = '11111111-1111-1111-1111-111111111111'
+      const agentId = '11111111-1111-4111-8111-111111111111'
       const summaries = new Map([
         [
           agentId,
@@ -1831,15 +1831,15 @@ describe('workstream CLI commands', () => {
     })
 
     it('marks missing or deleted agents as unknown without dropping the binding', () => {
-      const agentId = '22222222-2222-2222-2222-222222222222'
+      const agentId = '22222222-2222-4222-8222-222222222222'
       const summaries = new Map([[agentId, null]])
 
       expect(formatWorkStreamAgents([agentId], summaries)).toBe('22222222 (unknown)')
     })
 
     it('preserves the work stream agent order', () => {
-      const engineerId = '33333333-3333-3333-3333-333333333333'
-      const reviewerId = '44444444-4444-4444-4444-444444444444'
+      const engineerId = '33333333-3333-4333-8333-333333333333'
+      const reviewerId = '44444444-4444-4444-8444-444444444444'
       const summaries = new Map([
         [engineerId, { id: engineerId, agentTypeId: 'engineer', metadata: null, status: 'idle' }],
         [reviewerId, { id: reviewerId, agentTypeId: 'reviewer', metadata: null, status: 'idle' }],

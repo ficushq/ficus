@@ -2835,7 +2835,7 @@ describe('agents service', () => {
       const imageOnly = await agent.recordMessage({
         role: 'human',
         content: '',
-        metadata: { imageIds: ['00000000-0000-0000-0000-000000000101'] },
+        metadata: { imageIds: ['00000000-0000-4000-8000-000000000101'] },
         pending: true,
       })
       await new Promise((r) => setTimeout(r, 10))

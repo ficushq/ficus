@@ -5,7 +5,7 @@ import { signImageUrl, __resetSigningKeyForTests } from '../services/images/sign
 import { resetSecretStore } from '../services/secrets'
 
 const PASSWORD = 'test-password-xyz'
-const ID = '11111111-1111-1111-1111-111111111111'
+const ID = '11111111-1111-4111-8111-111111111111'
 
 function buildApp() {
   const app = new Hono()

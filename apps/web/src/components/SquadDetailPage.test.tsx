@@ -302,7 +302,7 @@ test('a cold slug route keeps placeholders until canonical queries settle withou
     },
   })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
-  const canonical = { ...squad, id: '11111111-1111-1111-1111-111111111111', name: 'Ficus' }
+  const canonical = { ...squad, id: '11111111-1111-4111-8111-111111111111', name: 'Ficus' }
   const { root, container } = dom.createRoot()
   const flush = () =>
     dom.act(async () => {
