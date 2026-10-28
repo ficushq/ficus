@@ -28,9 +28,7 @@ const LIFECYCLE_COMPLETION_CLAIM_LEASE_MS = 5 * 60 * 1000
 export const agentLifecycleDbTimestampSql = sql`date_trunc('milliseconds', clock_timestamp()) AT TIME ZONE 'UTC'`
 
 type LifecycleTeardownClaimDecision<TClaim> =
-  | { kind: 'claimed'; claim: TClaim }
-  | { kind: 'complete' }
-  | { kind: 'busy' }
+  { kind: 'claimed'; claim: TClaim } | { kind: 'complete' } | { kind: 'busy' }
 
 /** Shared short-claim / external-effects / conditional-settle lifecycle shape. */
 async function runLifecycleEpisodeTeardown<TClaim>(input: {
@@ -59,8 +57,7 @@ export function setMakeDormantBeforeExecutionLockHookForTest(hook: (() => Promis
   makeDormantBeforeExecutionLockHook = hook
 }
 let finalizationEffectHook:
-  | ((stage: 'tokens' | 'descendants' | 'questions' | 'schedules' | 'storage') => Promise<void>)
-  | undefined
+  ((stage: 'tokens' | 'descendants' | 'questions' | 'schedules' | 'storage') => Promise<void>) | undefined
 export function setFinalizationBeforeCasHookForTest(hook: (() => Promise<void>) | undefined): void {
   finalizationBeforeCasHook = hook
 }
@@ -70,8 +67,7 @@ export function setFinalizationEffectHookForTest(
   finalizationEffectHook = hook
 }
 let dormancyEffectHook:
-  | ((stage: 'monitors' | 'tokens' | 'children' | 'schedules' | 'sandbox') => Promise<void>)
-  | undefined
+  ((stage: 'monitors' | 'tokens' | 'children' | 'schedules' | 'sandbox') => Promise<void>) | undefined
 export function setDormancyEffectHookForTest(
   hook: ((stage: 'monitors' | 'tokens' | 'children' | 'schedules' | 'sandbox') => Promise<void>) | undefined
 ): void {
@@ -1292,7 +1288,7 @@ async function finalizeResolvedDescendants(
   workBudget: FinalizationWorkBudget,
   progress?: FinalizationProgress
 ): Promise<boolean> {
-  for (let index = 0; index < rows.length; ) {
+  for (let index = 0; index < rows.length;) {
     const depth = rows[index]!.depth
     let depthComplete = true
     const failedAtDepth: string[] = []

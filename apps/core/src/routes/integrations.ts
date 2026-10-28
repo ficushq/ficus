@@ -149,9 +149,7 @@ export interface IntegrationRoutesService extends Pick<
       providerKey: string
       userId: string
       source:
-        | { kind: 'callback'; state: string }
-        | { kind: 'complete'; localFlowId: string }
-        | { kind: 'device'; id: string }
+        { kind: 'callback'; state: string } | { kind: 'complete'; localFlowId: string } | { kind: 'device'; id: string }
     }): Promise<OAuthAuthorizationPurpose | null>
     start(input: {
       providerKey: string
@@ -235,9 +233,7 @@ async function completionAccess(
   service: IntegrationRoutesService,
   provider: string,
   source:
-    | { kind: 'callback'; state: string }
-    | { kind: 'complete'; localFlowId: string }
-    | { kind: 'device'; id: string }
+    { kind: 'callback'; state: string } | { kind: 'complete'; localFlowId: string } | { kind: 'device'; id: string }
 ): Promise<Response | { identity: Extract<Identity, { type: 'user' }>; personal: boolean }> {
   const identity = c.get('identity') as Identity | undefined
   if (identity?.type !== 'user') {

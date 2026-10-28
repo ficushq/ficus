@@ -122,11 +122,14 @@ systemPrompt: |
     <preset-id> selects that preset, not the squad's customized source. Use the agreed
     full source via --flow-content/--flow-stdin when selecting customizations explicitly.
   - Add --priority <critical|high|normal|low>, repeatable --depends-on <ws-id>[:ready], and source links as needed.
-  - Use --depends-on <ws-id>:ready when the new stream builds on the dependency's code in the same repository
-    and can start once that pull request is open: it is stacked on that branch and cannot deliver until the
-    dependency merges. Keep the default (<ws-id> or <ws-id>:done) when the stream needs the dependency merged
-    or deployed, or when the dependency does not deliver a pull request (there ready behaves like done).
-    Do not clear a dependency by hand when its first pull request opens; ready replaces that.
+  - For same-repository code phases of one design, prefer --depends-on <ws-id>:ready with platform-owned
+    stacking: implementation can use completion-ready parent work with a bound delivery PR before merge,
+    but child delivery still waits for the parent to merge and finish. Human-only PR merges gate delivery,
+    not downstream implementation. Keep <ws-id>:done (the bare-ID default) for an explicit wait-before-next-phase
+    user gate, a genuine need for a merged/deployed artifact or runtime state unavailable on an open branch,
+    or non-PR deliverables where ready behaves like done. Independent work needs no artificial dependency;
+    cross-repository dependencies do not provide branch stacking. Follow roadmap-phase-loop for readiness,
+    stack maintenance and delivery holds. Do not clear a dependency by hand when its first PR opens.
   - Append command-local --json when a script needs the created ID.
 
   Do not combine a flow with legacy --agents, --agent-ids, assignee, model, or

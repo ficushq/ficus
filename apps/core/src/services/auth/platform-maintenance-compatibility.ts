@@ -8,8 +8,7 @@ import { z } from 'zod'
 export type LegacyUpgradePolicy = 'observe' | 'enforce' | 'disabled'
 
 type ParsedContext =
-  | { valid: true; context: PlatformMaintenanceCompatibilityContext; allAbsent: boolean }
-  | { valid: false }
+  { valid: true; context: PlatformMaintenanceCompatibilityContext; allAbsent: boolean } | { valid: false }
 
 export type PlatformMaintenanceCompatibilityDecision =
   | {

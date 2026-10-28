@@ -37,10 +37,7 @@ export type PopoverDismissReason = PopupDismissReason | 'anchor' | 'tab' | 'sele
 
 /** What gets focus when a popover opens: the first focusable element, the selected one, nothing, or a pick. */
 export type PopoverInitialFocus =
-  | 'first'
-  | 'selected'
-  | 'none'
-  | ((surface: HTMLElement) => HTMLElement | null | undefined)
+  'first' | 'selected' | 'none' | ((surface: HTMLElement) => HTMLElement | null | undefined)
 
 /** The value of the trigger's `aria-haspopup`; `disclosure` renders none (a plain expanded/collapsed control). */
 export type PopoverKind = 'menu' | 'listbox' | 'dialog' | 'disclosure'

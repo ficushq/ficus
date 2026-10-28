@@ -12,15 +12,7 @@ import { workStreamWaitActor } from './types'
 
 /** Platform-neutral meanings used by web, mobile, and native adapters. */
 export type StatusRole =
-  | 'progress'
-  | 'queue'
-  | 'review'
-  | 'humanWait'
-  | 'externalWait'
-  | 'attention'
-  | 'danger'
-  | 'success'
-  | 'neutral'
+  'progress' | 'queue' | 'review' | 'humanWait' | 'externalWait' | 'attention' | 'danger' | 'success' | 'neutral'
 
 export type AgentPresentationState = AgentStatus | 'offline'
 export type DeliveryPresentationKind = 'approval' | 'review' | 'merge' | 'external' | 'setup' | 'failure'
@@ -45,14 +37,7 @@ export interface WorkStreamDeliveryGateFacts {
  * Never grants approval/merge authority. Omission and future values mean unknown.
  */
 export type CodeHostDeliveryReason =
-  | 'ci-pending'
-  | 'ci-failed'
-  | 'merge-conflict'
-  | 'changes-requested'
-  | 'draft'
-  | 'awaiting-merge'
-  | 'merged'
-  | 'closed'
+  'ci-pending' | 'ci-failed' | 'merge-conflict' | 'changes-requested' | 'draft' | 'awaiting-merge' | 'merged' | 'closed'
 
 /**
  * Server-owned facts explaining a delivery presentation. Omitted fields are

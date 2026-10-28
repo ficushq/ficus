@@ -32,9 +32,7 @@ interface Props {
 }
 
 type Dialog =
-  | { kind: 'dormant'; folder: StorageFolder }
-  | { kind: 'remove'; folders: StorageFolder[] }
-  | { kind: 'idle' }
+  { kind: 'dormant'; folder: StorageFolder } | { kind: 'remove'; folders: StorageFolder[] } | { kind: 'idle' }
 
 /** Snapshots saved before agent attribution have a bare "Agent files" home with no agent details. */
 const isAgentFolder = (folder: StorageFolder) =>

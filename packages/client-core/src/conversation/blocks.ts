@@ -226,8 +226,7 @@ export function reduceStreamingBlocks(
 
 /** A run of content blocks, or a pinned notice between runs. */
 export type BlockSegment<B> =
-  | { type: 'blocks'; key: string; blocks: B[] }
-  | { type: 'notice'; notice: SystemNoticeBlock }
+  { type: 'blocks'; key: string; blocks: B[] } | { type: 'notice'; notice: SystemNoticeBlock }
 
 /**
  * Split a response's blocks at its pinned notices, so a renderer can draw each

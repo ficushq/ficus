@@ -15,8 +15,7 @@
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent'
 
 export type ShellCreatedLink =
-  | { kind: 'pull_request'; url: string; number: number }
-  | { kind: 'work_stream'; number: number }
+  { kind: 'pull_request'; url: string; number: number } | { kind: 'work_stream'; number: number }
 
 /** The shell tools whose results can carry created links. */
 const SHELL_TOOL_NAMES = new Set(['bash', 'squad_bash'])
