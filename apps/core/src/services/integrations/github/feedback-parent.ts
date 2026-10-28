@@ -271,9 +271,10 @@ export function gitHubQuotedParentFreshSQL(squadId: SQLWrapper, envelope: SQLWra
     )
     .orderBy(desc(revision.sequence))
     .limit(1)
-  // Only normalized finite provider clocks can authorize the timestamp fallback. A malformed
-  // legacy clock is unknown, not a throwing cast or an inferred current time (e.g. "now").
-  const iso = String.raw`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$`
+  // Only the normalizer's finite millisecond UTC clocks can authorize the fallback. PostgreSQL
+  // otherwise normalizes leap seconds and retains sub-millisecond precision, unlike Date.parse.
+  // Legacy clocks outside this format are unknown, never inferred or used in a throwing cast.
+  const iso = String.raw`^[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\.[0-9]{3}Z$`
   const clock = sql`case when ${parent}->>'providerVersion' ~ ${iso}
     AND pg_input_is_valid(${parent}->>'providerVersion', 'timestamp with time zone')
     then (${parent}->>'providerVersion')::timestamptz end`

@@ -764,21 +764,27 @@ test.each(['automatic', 'allow_trust'] as const)(
   }
 )
 
-test.each(['2026-10-28T04:03:41.000Z', 'not-a-clock', 'now', 'infinity'])(
-  'quoted-parent timestamp fallback accepts only a finite native clock (%s)',
-  async (providerVersion) => {
-    const { githubParentTextContent } = await import('./feedback-envelope')
-    const { isGitHubQuotedParentFresh } = await import('./feedback-parent')
-    const h = await fixture()
-    try {
-      await h.capture(observation(banner, 20))
-      const fact = githubOutputAdapter.normalize(observation(final, 41, 'assigned'))[0]!
-      const envelope = githubParentTextContent(fact.github!.content!)!.delivery!
-      const parent = envelope.data.parentContent as Record<string, unknown>
-      parent.providerVersion = providerVersion
-      expect(await isGitHubQuotedParentFresh(db, h.squadId, envelope)).toBe(providerVersion.startsWith('2026-'))
-    } finally {
-      await h.close()
-    }
+test.each([
+  '2026-10-28T04:03:41.000Z',
+  'not-a-clock',
+  'now',
+  'infinity',
+  '2026-10-28T04:03:60.000Z',
+  '2026-10-28T04:03:20.0001Z',
+])('quoted-parent timestamp fallback accepts only a finite native clock (%s)', async (providerVersion) => {
+  const { githubParentTextContent } = await import('./feedback-envelope')
+  const { isGitHubQuotedParentFresh } = await import('./feedback-parent')
+  const h = await fixture()
+  try {
+    await h.capture(observation(banner, 20))
+    const fact = githubOutputAdapter.normalize(observation(final, 41, 'assigned'))[0]!
+    const envelope = githubParentTextContent(fact.github!.content!)!.delivery!
+    const parent = envelope.data.parentContent as Record<string, unknown>
+    parent.providerVersion = providerVersion
+    expect(await isGitHubQuotedParentFresh(db, h.squadId, envelope)).toBe(
+      providerVersion === '2026-10-28T04:03:41.000Z'
+    )
+  } finally {
+    await h.close()
   }
-)
+})
