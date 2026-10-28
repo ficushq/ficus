@@ -1,0 +1,265 @@
+{
+  "experiment": "coordination-v5-trajectory-api",
+  "frozen_at_utc": "2026-10-28T03:10:41.089738+00:00",
+  "all_gates_passed": true,
+  "inference_started": false,
+  "model": "gpt-6.1-sol",
+  "thinking": "medium",
+  "image": "ficus-coordination-v4:preflight",
+  "image_id": "sha256:6951b79471484d5d8deb179fbb40025575244cba4e2ed9cf962a4c6bce93aa84",
+  "controls": [
+    {
+      "job": "coordv5-control-oracle",
+      "reward": 1,
+      "counts": {
+        "total": 256,
+        "passed": 256,
+        "failures": 0,
+        "skipped": 0,
+        "accepted": true
+      },
+      "result_sha256": "a03330c66369f1635f53a30e74a041cacfce1b0a64e97ca4fa2ab1c87f602df2"
+    },
+    {
+      "job": "coordv5-control-nop",
+      "reward": 0,
+      "counts": null,
+      "result_sha256": "2467fc56fdc26021c6197b6cc1bba50975a07cc9b8b9ded6d24c544b1bb805e1"
+    },
+    {
+      "job": "coordv5-control-collision-nop",
+      "reward": 0,
+      "counts": {
+        "total": 256,
+        "passed": 0,
+        "failures": 256,
+        "skipped": 0,
+        "accepted": false
+      },
+      "result_sha256": "60bcf3d55528b7b3a09f1b245d004b9c3119ae30583f0e96da8c745508541da3"
+    },
+    {
+      "job": "coordv5-control-collision-oracle",
+      "reward": 1,
+      "counts": {
+        "total": 256,
+        "passed": 256,
+        "failures": 0,
+        "skipped": 0,
+        "accepted": true
+      },
+      "result_sha256": "ce99c49cb5c4d7205dd729e384c1c26dd19109d318b4e4f1565d01d09a5fe834"
+    },
+    {
+      "job": "coordv5-control-verbose",
+      "reward": 1,
+      "counts": {
+        "total": 256,
+        "passed": 256,
+        "failures": 0,
+        "skipped": 0,
+        "accepted": true
+      },
+      "result_sha256": "c7a182d5c5942537c59413e054ac63a6652d6360860812432464420b8ac29613"
+    },
+    {
+      "job": "coordv5-control-no-etag",
+      "reward": 0,
+      "counts": {
+        "total": 256,
+        "passed": 241,
+        "failures": 15,
+        "skipped": 0,
+        "accepted": false
+      },
+      "result_sha256": "1e5d3ef38d848f1648dd5668f17c5d5f5189ef7556e42752b93ac1e64dc1a606"
+    },
+    {
+      "job": "coordv5-control-no-reports",
+      "reward": 0,
+      "counts": {
+        "total": 256,
+        "passed": 247,
+        "failures": 9,
+        "skipped": 0,
+        "accepted": false
+      },
+      "result_sha256": "9d8b8e257849de9e3a949b0c8a5e03b129bdd35809b6863ecdcd59ea14252a63"
+    },
+    {
+      "job": "coordv5-control-no-forks",
+      "reward": 0,
+      "counts": {
+        "total": 256,
+        "passed": 168,
+        "failures": 88,
+        "skipped": 0,
+        "accepted": false
+      },
+      "result_sha256": "14df0095f8c9bb3a373774680d1e9236ee35c9e9130eb405f3b7a7c12afbbd98"
+    }
+  ],
+  "probes": [
+    {
+      "arm": "ficus",
+      "result_sha256": "5945a7792fcf2377923be99cb73bb79888b4f034d6ddb69c75e83ba84867220b",
+      "network": {
+        "database_loopback": true,
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "ficus_api_ready": true,
+        "ficus_worker_ready": true,
+        "native_provider_preload": true
+      },
+      "egress": {
+        "response_header_timeout_seconds": 600,
+        "original_config_sha256": "78c18e58efbc7c8e226cb311e2a4cf3863d5a2f3e54b3bf15a0ea4b885345290",
+        "context_sha256": {
+          "Dockerfile": "a2385dd6b3eee6e04c49b467df84ed2a273fd402a9cdd404a64fb535e9b26ff7",
+          "allowlist.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bin/network-policy": "ff1cacfb95e17cda3668f389176ae54e5e4139cff12ee54b4d745722ad0ff0b2",
+          "entrypoint.sh": "2e225ed745eb5976f93afd52d91c844b954b5f6f45373fb70c4c509e36d1e069",
+          "gost.yaml": "9293a0f45fbd16d3e59c06aa559a9544193ead48575b9ca7163c5e8e7bad8ed1"
+        },
+        "network_policy_unchanged": true
+      }
+    },
+    {
+      "arm": "pi",
+      "result_sha256": "e4cf8992b91c950860f282369e46b97bc66484874bb9593409c7e0b3bbfa9a57",
+      "network": {
+        "scoped_proxy_reachable": true,
+        "public_fetch_blocked": true,
+        "pinned_pi_and_subagent_extension": true
+      },
+      "egress": {
+        "response_header_timeout_seconds": 600,
+        "original_config_sha256": "78c18e58efbc7c8e226cb311e2a4cf3863d5a2f3e54b3bf15a0ea4b885345290",
+        "context_sha256": {
+          "Dockerfile": "a2385dd6b3eee6e04c49b467df84ed2a273fd402a9cdd404a64fb535e9b26ff7",
+          "allowlist.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bin/network-policy": "ff1cacfb95e17cda3668f389176ae54e5e4139cff12ee54b4d745722ad0ff0b2",
+          "entrypoint.sh": "2e225ed745eb5976f93afd52d91c844b954b5f6f45373fb70c4c509e36d1e069",
+          "gost.yaml": "9293a0f45fbd16d3e59c06aa559a9544193ead48575b9ca7163c5e8e7bad8ed1"
+        },
+        "network_policy_unchanged": true
+      }
+    }
+  ],
+  "runtime_archive_sha256": "25c45f893b53625c1cba4c3233506ac76627c066681fb0253fe168b85254d9f4",
+  "private_launcher_sha256": "76c52fd68c53278eb29653a44dc3e99b31c7e435a5d48a6f31313c29a256f5e8",
+  "private_pair_driver_sha256": "67ba5e7a3e31cf4dbb1f0af557e93bb28602f246abbb23af0fc98e3a10193eee",
+  "prepared_file_sha256": {
+    "instruction.md": "d066a028d347b1361d4402e8aedaaca9b8f6564b018c8ff702f3c903a6e439cf",
+    "task.toml": "931b2fd37385b83e42d28ed4804f7557234852eb5e4b8f8a61cde4a07ce6f56c",
+    "tests/expected-count.txt": "f16c302d5d30e1d3fbe955cf4f637f58a871adeba597922e3baad0aeeb13f656",
+    "tests/test.sh": "fd7f97452062bbc8b59026121b26cbfcc2b5e0dca04c9ff144f9b2b598e90fd1",
+    "tests/score.py": "653eece7380e787a15fbfe4e8fcf325e3a8a6bdaa209d44eec64272b9b8d49f0",
+    "solution/solve.sh": "f4f8b7505fdd30e0c9d4503c9bb9236db23420cc1883a3263fe10825ed775fd0",
+    "environment/Dockerfile": "e8d5f0c95008e0d6ead86e73fce2f0333bfb8adc399647c10001cda2aa6b5174",
+    "environment/requirements.lock": "f9d416fa260818d3ebe0ea4cc3786cc4983c1d9e168286ae3b9ae5885e3a52e4",
+    "tests/official/conftest.py": "e71fc9123329a7c0bc079ce014e93400b1132ed1156e5c247c93f27e45a7d192",
+    "tests/official/test_checkpoint_2.py": "968d892cc41dc6b176f5588327b7d7a04b5b3358ed50f62f7210ae5f2e90a0e6",
+    "tests/official/test_checkpoint_3.py": "d317909b89bc9aef332d58616ae2c1925b24672535b999868fe186cdccda6a5f",
+    "tests/official/test_checkpoint_1.py": "ba736f0f98f7417bc0a2b6cf36a89bbdc6bf26dc823182a6e1504bfa485cd759",
+    "tests/official/data/checkpoint_2_cases.json": "4467e0df9a3c57a7a58ea391e91db23b67fae63acbfa60b832b0d1eb9a9e5ed4",
+    "tests/official/data/checkpoint_5_cases.json": "bfb18b225a745d049d31dc5f7b69b78c572ff809442a16dcb3cce7dd38584a6c",
+    "tests/official/data/checkpoint_3_cases.json": "fdbdc9daaf820f1a6e1a10a49360a5189a7b4dcfac73b636224568bfc7c53b2f",
+    "tests/official/data/checkpoint_4_cases.json": "503f5b5bbd2b1e9ea697892a708eb444bf62de50edf0db1d09724a341bf275a6",
+    "tests/official/data/checkpoint_1_cases.json": "2009c69d9abf7b1b24b2c61aa97d968f027f1d5bf09422a14eded939e9165603",
+    "solution/reference/requirements.txt": "9816234f18368e84c473f7570b85e8099be142e8f9e7e0c6800f44f1bc3e6bdd",
+    "solution/reference/trajectory_api.py": "02e99449bfa008e405c6d32584bf3b1f9500268c95668894d492f986cd4f7671"
+  },
+  "runner_source_sha256": {
+    "evals/harbor/coordination.py": "c38afdd4f5498746ff28cf6a0be05fa28540f6a83123e7e1247211697dca3e4f",
+    "evals/harbor/ficus_agent.py": "8fbda2d9ff16c6f0479f89fd34d8a61607cd2e215d7782473f578f90f675b1d5",
+    "evals/harbor/pi_workflow.py": "00712cabe8eebbd571c7ef438b357c019bb9735492ff8bfb29a870d3ed2c03e3",
+    "evals/harbor/run-pilot.py": "5cc985dfb9f0cf6b3bc7bea359901a9b219685eeaa33b15d210ba5c37173edc7",
+    "evals/harbor/budget_proxy.py": "e3d3deb1342d8963949fe9ac3a2ec2a271b18cbdaca83901df126efd00c36648",
+    "evals/harbor/checkpoint.py": "8c80cae256f7ef5d856e5ee101af9ce9edf3f1a9bccae4bf1cf376c25ec52523",
+    "evals/harbor/run_concurrent_feature.py": "48af6ab7e74bb0b3556dc41ba287d2e38d3b882ebe3f1ca9d7f94e63021b869e",
+    "apps/core/src/scripts/harbor-trial.ts": "b4fe48c5fb3214864a6ed704cb8db1b1fd9f202a578b4a47ea0236f628e58acb",
+    "evals/harbor/coordination_egress.py": "026ca5ccb04571521ecf6de2cc5ea563afbdec19668b3394f64b0909c08b538e",
+    "evals/harbor/requirement-fidelity-guidance.patch": "e670776bc3f10b777f0e8b69ffb2d46ee5d583a3d087bcb8f6974d5ee7c3b120",
+    "evals/harbor/prepare_requirement_fidelity.py": "35ee3a8aed8d310259c2a66e30417a06a4aca3b0137f2bfce49e386961eee5b5",
+    "evals/harbor/test_requirement_fidelity.py": "8601a2562972a23942a1bc1372875b90550fa07ba8e7ccaf28464e691a6843b0",
+    "evals/harbor/coordination-v4-plan.json": "1906fff6ed96ca8b5907a78e6a9406ac581b031a3b79c5b72e8635e26292d75b",
+    "evals/harbor/coordination-v4-selection.json": "9c76e2bbde3f9057515369d2ba4236ea7236ec3ee7aaa59fe5d966ebf939e966",
+    "evals/harbor/prepare_product_coordination.py": "906307b06af3e34d8b9cca720fb0c033eebf867968c7d4609c45a21e8d501022",
+    "evals/harbor/deepswe_controls.py": "ace9563bfca88dbe4db3ed5281e6b49fc1a41aa176c0c0458f056a5f4c432c53",
+    "evals/harbor/deepswe_network_smoke.py": "3c7e174a38a98ed8655512b9bf734d3e8294e0e81557f74e18d27552f1b3220c",
+    "evals/harbor/prepare_trajectory_coordination.py": "791933512ff941b6c8a60f8bf421f9d44387878fbc919792d0fe848fb1e4094c",
+    "evals/harbor/trajectory_verifier_controls.py": "96d6cca9276987ed3cdd54e6e7e6f61149e1a0da3e2a2282f334bd6e2f2d6ba9",
+    "evals/harbor/coordination-v5-plan.json": "56932f8634d0c0f9ee4f934ad835910d1fa7ef34bca92baec3d535a3dff8c852",
+    "evals/harbor/coordination-v5-selection.json": "680395a16e69a5f9582501b60a6a0b260d32f70df7c4fb2f217009e027b98fd9"
+  },
+  "control_evidence_sha256": {
+    "jobs/coordv5-control-oracle/task__aeXbVF2/result.json": "a03330c66369f1635f53a30e74a041cacfce1b0a64e97ca4fa2ab1c87f602df2",
+    "jobs/coordv5-control-oracle/task__aeXbVF2/verifier/counts.json": "41a74d442181243da0f6c16777e95913bfc5cfd29beb085bccae910a0a56bc5e",
+    "jobs/coordv5-control-nop/task__KMyKrMG/result.json": "2467fc56fdc26021c6197b6cc1bba50975a07cc9b8b9ded6d24c544b1bb805e1",
+    "jobs/coordv5-control-collision-nop/task__gNgG9AP/result.json": "60bcf3d55528b7b3a09f1b245d004b9c3119ae30583f0e96da8c745508541da3",
+    "jobs/coordv5-control-collision-nop/task__gNgG9AP/verifier/counts.json": "d5465f3a83fc313c80020c0ecdbc08a2b6b267991868ce86711fd04d1794a24c",
+    "jobs/coordv5-control-collision-oracle/task__wXjoqvJ/result.json": "ce99c49cb5c4d7205dd729e384c1c26dd19109d318b4e4f1565d01d09a5fe834",
+    "jobs/coordv5-control-collision-oracle/task__wXjoqvJ/verifier/counts.json": "41a74d442181243da0f6c16777e95913bfc5cfd29beb085bccae910a0a56bc5e",
+    "jobs/coordv5-control-verbose/task__Yq6pi6m/result.json": "c7a182d5c5942537c59413e054ac63a6652d6360860812432464420b8ac29613",
+    "jobs/coordv5-control-verbose/task__Yq6pi6m/verifier/counts.json": "41a74d442181243da0f6c16777e95913bfc5cfd29beb085bccae910a0a56bc5e",
+    "jobs/coordv5-control-no-etag/task__EE4YocK/result.json": "1e5d3ef38d848f1648dd5668f17c5d5f5189ef7556e42752b93ac1e64dc1a606",
+    "jobs/coordv5-control-no-etag/task__EE4YocK/verifier/counts.json": "4844575e54b615ab8a39487763aabd0a515ceeffb11fa578509903eb7ceb4272",
+    "jobs/coordv5-control-no-reports/task__LxpNEbD/result.json": "9d8b8e257849de9e3a949b0c8a5e03b129bdd35809b6863ecdcd59ea14252a63",
+    "jobs/coordv5-control-no-reports/task__LxpNEbD/verifier/counts.json": "4206ca2eec2f31c431640a3d0cd7716ac4ddd9f09fc3537ae258f0c4fc6235f3",
+    "jobs/coordv5-control-no-forks/task__YfrHFm2/result.json": "14df0095f8c9bb3a373774680d1e9236ee35c9e9130eb405f3b7a7c12afbbd98",
+    "jobs/coordv5-control-no-forks/task__YfrHFm2/verifier/counts.json": "40fbd33745f1d03c9dfff60bb7e46362d0ee0e454484bef9c2865fe76dd0bba1",
+    "jobs/coordv5-probe-ficus/task__vLjVdqA/result.json": "5945a7792fcf2377923be99cb73bb79888b4f034d6ddb69c75e83ba84867220b",
+    "jobs/coordv5-probe-ficus/task__vLjVdqA/agent/network-smoke.json": "075792f0f74241df9bd668a2a04b5dc740e08d3290ac51438e866b866df34f38",
+    "jobs/coordv5-probe-ficus/task__vLjVdqA/agent/coordination-egress.json": "2f2b438a5c0fdcb172985efda3743612e812f80d96f619d02dd73e9e2bc5b0ad",
+    "jobs/coordv5-probe-pi/task__kdiPivi/result.json": "e4cf8992b91c950860f282369e46b97bc66484874bb9593409c7e0b3bbfa9a57",
+    "jobs/coordv5-probe-pi/task__kdiPivi/agent/network-smoke.json": "a51bd185e985cd4e7c25f253c6d4990f923a2779cb5ead954129ee938e56207b",
+    "jobs/coordv5-probe-pi/task__kdiPivi/agent/coordination-egress.json": "2f2b438a5c0fdcb172985efda3743612e812f80d96f619d02dd73e9e2bc5b0ad"
+  },
+  "fixture_amendment": {
+    "scope": "Log capture only; all non-fixture ASTs unchanged. Startup/request/shutdown timeouts retained. No test assertions changed.",
+    "changes": [
+      {
+        "path": "tests/official/conftest.py",
+        "before_sha256": "2058749f163a12feb5b2e851e406db7fe342d31ae930ce455968670f605be63d",
+        "after_sha256": "e71fc9123329a7c0bc079ce014e93400b1132ed1156e5c247c93f27e45a7d192",
+        "diff": "--- original/conftest.py\n+++ drained/conftest.py\n@@ -9,6 +9,8 @@\n import shlex\n import socket\n import subprocess\n+import contextlib\n+import tempfile\n import time\n from pathlib import Path\n \n@@ -37,35 +39,36 @@\n \n @pytest.fixture(scope=\"module\")\n def api_server(entrypoint_argv: list[str]) -> str:\n-    process = subprocess.Popen(\n-        entrypoint_argv,\n-        stdout=subprocess.PIPE,\n-        stderr=subprocess.PIPE,\n-    )\n-    base_url = \"http://127.0.0.1:8080\"\n+    with contextlib.ExitStack() as logs:\n+        process = subprocess.Popen(\n+            entrypoint_argv,\n+            stdout=logs.enter_context(tempfile.NamedTemporaryFile(prefix=\"server-stdout-\", dir=\"/logs/verifier\", delete=False)),\n+            stderr=logs.enter_context(tempfile.NamedTemporaryFile(prefix=\"server-stderr-\", dir=\"/logs/verifier\", delete=False)),\n+        )\n+        base_url = \"http://127.0.0.1:8080\"\n \n-    try:\n-        for _ in range(100):\n+        try:\n+            for _ in range(100):\n+                try:\n+                    with socket.create_connection(\n+                        (\"127.0.0.1\", 8080), timeout=0.2\n+                    ):\n+                        break\n+                except OSError:\n+                    if process.poll() is not None:\n+                        raise RuntimeError(\"Server exited before readiness\")\n+                    time.sleep(0.1)\n+            else:\n+                raise RuntimeError(\"Server failed to start\")\n+\n+            yield base_url\n+        finally:\n+            process.terminate()\n             try:\n-                with socket.create_connection(\n-                    (\"127.0.0.1\", 8080), timeout=0.2\n-                ):\n-                    break\n-            except OSError:\n-                if process.poll() is not None:\n-                    raise RuntimeError(\"Server exited before readiness\")\n-                time.sleep(0.1)\n-        else:\n-            raise RuntimeError(\"Server failed to start\")\n-\n-        yield base_url\n-    finally:\n-        process.terminate()\n-        try:\n-            process.wait(timeout=5)\n-        except subprocess.TimeoutExpired:\n-            process.kill()\n-            process.wait(timeout=5)\n+                process.wait(timeout=5)\n+            except subprocess.TimeoutExpired:\n+                process.kill()\n+                process.wait(timeout=5)\n \n \n @pytest.fixture(scope=\"module\")\n"
+      },
+      {
+        "path": "tests/official/test_checkpoint_2.py",
+        "before_sha256": "71a08b96d0b6689de3f690d585e71641888bb5145473b69d3c1d17fa18479b53",
+        "after_sha256": "968d892cc41dc6b176f5588327b7d7a04b5b3358ed50f62f7210ae5f2e90a0e6",
+        "diff": "--- original/test_checkpoint_2.py\n+++ drained/test_checkpoint_2.py\n@@ -10,6 +10,8 @@\n import re\n import socket\n import subprocess\n+import contextlib\n+import tempfile\n import time\n from dataclasses import dataclass\n from pathlib import Path\n@@ -41,33 +43,34 @@\n \n @pytest.fixture()\n def api_server(entrypoint_argv: list[str]) -> str:\n-    process = subprocess.Popen(\n-        entrypoint_argv,\n-        stdout=subprocess.PIPE,\n-        stderr=subprocess.PIPE,\n-    )\n-    base_url = \"http://127.0.0.1:8080\"\n-\n-    try:\n-        for _ in range(100):\n+    with contextlib.ExitStack() as logs:\n+        process = subprocess.Popen(\n+            entrypoint_argv,\n+            stdout=logs.enter_context(tempfile.NamedTemporaryFile(prefix=\"server-stdout-\", dir=\"/logs/verifier\", delete=False)),\n+            stderr=logs.enter_context(tempfile.NamedTemporaryFile(prefix=\"server-stderr-\", dir=\"/logs/verifier\", delete=False)),\n+        )\n+        base_url = \"http://127.0.0.1:8080\"\n+\n+        try:\n+            for _ in range(100):\n+                try:\n+                    with socket.create_connection((\"127.0.0.1\", 8080), 0.2):\n+                        break\n+                except OSError:\n+                    if process.poll() is not None:\n+                        raise RuntimeError(\"Server exited before readiness\")\n+                    time.sleep(0.1)\n+            else:\n+                raise RuntimeError(\"Server failed to start\")\n+\n+            yield base_url\n+        finally:\n+            process.terminate()\n             try:\n-                with socket.create_connection((\"127.0.0.1\", 8080), 0.2):\n-                    break\n-            except OSError:\n-                if process.poll() is not None:\n-                    raise RuntimeError(\"Server exited before readiness\")\n-                time.sleep(0.1)\n-        else:\n-            raise RuntimeError(\"Server failed to start\")\n-\n-        yield base_url\n-    finally:\n-        process.terminate()\n-        try:\n-            process.wait(timeout=5)\n-        except subprocess.TimeoutExpired:\n-            process.kill()\n-            process.wait(timeout=5)\n+                process.wait(timeout=5)\n+            except subprocess.TimeoutExpired:\n+                process.kill()\n+                process.wait(timeout=5)\n \n \n def normalize_headers(headers: dict[str, str]) -> dict[str, str]:\n"
+      },
+      {
+        "path": "tests/official/test_checkpoint_3.py",
+        "before_sha256": "37cad9fb43b4ea52e94cf8245c3667aa8944dc58f23bde633c16cdfa228816f1",
+        "after_sha256": "d317909b89bc9aef332d58616ae2c1925b24672535b999868fe186cdccda6a5f",
+        "diff": "--- original/test_checkpoint_3.py\n+++ drained/test_checkpoint_3.py\n@@ -10,6 +10,8 @@\n import re\n import socket\n import subprocess\n+import contextlib\n+import tempfile\n import time\n from dataclasses import dataclass\n from pathlib import Path\n@@ -41,33 +43,34 @@\n \n @pytest.fixture()\n def api_server(entrypoint_argv: list[str]) -> str:\n-    process = subprocess.Popen(\n-        entrypoint_argv,\n-        stdout=subprocess.PIPE,\n-        stderr=subprocess.PIPE,\n-    )\n-    base_url = \"http://127.0.0.1:8080\"\n-\n-    try:\n-        for _ in range(100):\n+    with contextlib.ExitStack() as logs:\n+        process = subprocess.Popen(\n+            entrypoint_argv,\n+            stdout=logs.enter_context(tempfile.NamedTemporaryFile(prefix=\"server-stdout-\", dir=\"/logs/verifier\", delete=False)),\n+            stderr=logs.enter_context(tempfile.NamedTemporaryFile(prefix=\"server-stderr-\", dir=\"/logs/verifier\", delete=False)),\n+        )\n+        base_url = \"http://127.0.0.1:8080\"\n+\n+        try:\n+            for _ in range(100):\n+                try:\n+                    with socket.create_connection((\"127.0.0.1\", 8080), 0.2):\n+                        break\n+                except OSError:\n+                    if process.poll() is not None:\n+                        raise RuntimeError(\"Server exited before readiness\")\n+                    time.sleep(0.1)\n+            else:\n+                raise RuntimeError(\"Server failed to start\")\n+\n+            yield base_url\n+        finally:\n+            process.terminate()\n             try:\n-                with socket.create_connection((\"127.0.0.1\", 8080), 0.2):\n-                    break\n-            except OSError:\n-                if process.poll() is not None:\n-                    raise RuntimeError(\"Server exited before readiness\")\n-                time.sleep(0.1)\n-        else:\n-            raise RuntimeError(\"Server failed to start\")\n-\n-        yield base_url\n-    finally:\n-        process.terminate()\n-        try:\n-            process.wait(timeout=5)\n-        except subprocess.TimeoutExpired:\n-            process.kill()\n-            process.wait(timeout=5)\n+                process.wait(timeout=5)\n+            except subprocess.TimeoutExpired:\n+                process.kill()\n+                process.wait(timeout=5)\n \n \n def normalize_headers(headers: dict[str, str]) -> dict[str, str]:\n"
+      }
+    ]
+  },
+  "budget": {
+    "phase": "budget-phase-2026-10-28-000028-reset50",
+    "cap_usd": 50,
+    "opening_confirmed_usd": 11.133511,
+    "remaining_usd": 38.866489,
+    "unresolved_receipts": 0,
+    "reservation_usd": 5.5,
+    "reset": false
+  },
+  "audit": {
+    "collected_tests": 256,
+    "reference_skips": 0,
+    "skip_xfail_calls_in_selected_suite": 0,
+    "expected_input_data_byte_identical": true,
+    "assertion_asts_unchanged": true,
+    "checkpoint_2_3_case_setup": "Each case reconstructs dependencies on fresh server; no skipped setup.",
+    "checkpoint_1_setup": "Module server and shared store; failures are not converted to skips.",
+    "limitations": [
+      "Single purposive case, not official sequential SCBench or general ranking.",
+      "Passing reference and mutation controls do not prove all natural-language requirements covered or eliminate every ambiguity.",
+      "No tests, reference implementation or audit findings supplied to agents."
+    ]
+  }
+}

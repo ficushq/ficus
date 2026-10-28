@@ -513,3 +513,27 @@ $11.133511 with no unresolved receipts. See [the full comparison](coordination-v
 and `coordination-v4-results.json` for source fidelity, native coordination,
 artifact hashes, grading limitations, and the proposed next study. No additional
 paid run was launched.
+
+### V5 pre-run audit: trajectory API
+
+The next candidate, `trajectory_api` requests 1–3 at the same pinned SCBench
+revision, was chosen from specifications before test/reference inspection.
+`coordination-v5-selection.json` records selection and rejection gates. No ledger
+reset occurs: the current $50 phase has $11.133511 settled and $38.866489 remaining.
+
+The suite collects 256 tests covering ingestion/validation, search/reports,
+append/finalize concurrency, and fork lineage. All three checkpoints are graded.
+Checkpoint 2/3 cases reconstruct their own dependencies on fresh servers rather
+than skipping undefined setup; there are no skip/xfail calls in the selected suite.
+The reference passes 256/256. Three fixtures used undrained pipes, so preparation
+changes only log capture to retained files, with bounded lifecycle unchanged and
+all non-fixture ASTs identical. Assertions and input/expected case data are not
+changed. `prepare_trajectory_coordination.py` records that patch explicitly.
+
+Paid start additionally requires positive noisy-reference/collision controls,
+negative baseline/collision controls, three reference mutations that disable
+ETag checks/reporting/forking, and both native setup/network probes. Frozen task,
+runner, image, runtime and control hashes are recorded before model calls.
+`coordination-v5-plan.json` retains the same model and coordination prompts; it
+adds no grader-derived hints to either arm. This remains an adapted case study,
+not an official sequential SCBench score or a measurement of human focus saved.

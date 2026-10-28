@@ -1,0 +1,26 @@
+{
+  "experiment": "coordination-v5",
+  "declared_at_utc": "2026-10-28T03:01:01.757205+00:00",
+  "source": "https://github.com/gabeorlanski/scb-problems",
+  "revision": "9cd9ca3a51c3d3e2a99d2488a25baf73a2204451",
+  "candidate": "trajectory_api",
+  "requests": [1, 2, 3],
+  "selection_reason": "Multi-component product: validated ingestion and token-cost accounting; search/reporting; optimistic concurrency, appends/finalization and branching lineage. Select for audit before seeing tests/reference, not on model scores.",
+  "other_specs_considered": ["textdrop requests 1-3", "execution_server requests 1-3"],
+  "candidate_tests_or_reference_previously_inspected": false,
+  "audit_rejection_policy": "Reject before paid inference if assertions conflict with supplied specs, dependent skips mask coverage, reference fails, baseline/collision controls pass, or fixture robustness fails. Preserve every rejected candidate.",
+  "budget": {
+    "phase": "budget-phase-2026-10-28-000028-reset50",
+    "cap_usd": 50,
+    "opening_spend_usd": 11.133511,
+    "remaining_usd": 38.866489,
+    "reservation_usd": 5.5,
+    "reset": false
+  },
+  "spec_sha256": {
+    "trajectory_api/checkpoint_3.md": "34f383f2bdede7c141341b652b66107fec07ab9622e76ccd00fec18b732d3c77",
+    "trajectory_api/checkpoint_2.md": "ac127c3efe6d7c48e75227082b86a3ec55e3c90f529c0257e0d932c26a7bee0a",
+    "trajectory_api/config.yaml": "d33b76794ccce67014a8e13d37082d92af8861253f1dbed9e5e3453a22c28bf3",
+    "trajectory_api/checkpoint_1.md": "c0738351222452df7469fd11242d4453e6bdbdaf85b702b720dda856ffcd5c7d"
+  }
+}
