@@ -81,3 +81,9 @@ export function getClientAddress(request: Request): string {
     trustedProxies: configuredTrustedProxies(),
   })
 }
+
+/** Preserve trusted socket metadata when a bounded body replaces the Fetch Request. */
+export function copyPeerAddress(from: Request, to: Request): void {
+  const peer = peerAddresses.get(from)
+  if (peer) peerAddresses.set(to, peer)
+}

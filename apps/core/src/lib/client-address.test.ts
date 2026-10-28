@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'bun:test'
+import { copyPeerAddress, getClientAddress } from './client-address'
+import { afterEach, describe, expect, it, test } from 'bun:test'
 import { attachPeerAddress, isTrustedProxyPeer, resolveClientAddress } from './client-address'
 
 describe('resolveClientAddress', () => {
@@ -94,4 +95,15 @@ describe('isTrustedProxyPeer', () => {
     expect(isTrustedProxyPeer(fromPeer('203.0.113.20'))).toBe(false)
     expect(isTrustedProxyPeer(fromPeer(undefined))).toBe(false)
   })
+})
+
+test('body replacement copies socket peer, never a resolved or forwarded identity', () => {
+  for (const peer of ['127.0.0.1', '203.0.113.9', undefined]) {
+    const original = new Request('http://localhost/', { headers: { 'x-forwarded-for': '198.51.100.8' } })
+    attachPeerAddress(original, peer)
+    const replacement = new Request(original)
+    copyPeerAddress(original, replacement)
+    expect(getClientAddress(replacement)).toBe(getClientAddress(original))
+    expect(isTrustedProxyPeer(replacement)).toBe(isTrustedProxyPeer(original))
+  }
 })
