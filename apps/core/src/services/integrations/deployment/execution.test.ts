@@ -247,7 +247,9 @@ test('manual route/store-to-exec values stay protected through padding, legacy r
   const store = getSecretStore()
   const registry = new ContentSafetyRegistry(store)
   const originalFetch = globalThis.fetch
-  globalThis.fetch = (async () => Response.json({ user: { id: 'synthetic-user' } })) as typeof fetch
+  globalThis.fetch = Object.assign(async () => Response.json({ user: { id: 'synthetic-user' } }), {
+    preconnect: () => {},
+  })
   const refs = new Set<string>()
   let id: string | undefined
   let reader: SecretStore | undefined
