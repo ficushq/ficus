@@ -1,13 +1,42 @@
 # Hosted Core as a non-root service user: audit and migration plan
 
-Status: audit and plan only. Nothing in this document changes runtime
-behaviour; every code or toolkit change it proposes is a follow-up (listed in
-[Follow-up changes](#follow-up-changes)). Rootless Docker is out of scope:
-where Core uses the host's Docker daemon, the service user joins the `docker`
-group.
+Status: implemented; the original audit and migration design below are
+retained as historical context, subject to the implementation updates here.
+Rootless Docker is out of scope: where Core uses the host's Docker daemon,
+the service user joins the `docker` group.
 
 Audited at `main` c155f243 (2026-10-26), with ficushq/ficus#678 (open) read
 for the pooler account.
+
+## Hosted root refusal (2026-10-28)
+
+Root is no longer a supported state for hosted Core. The hosted tenants have
+moved to `ficus`, and new tenants provision directly as `ficus`. The platform
+always renders `core.run_user: ficus` and removes its switch/revert job and UI
+(platform changes are separate from this Core toolkit change).
+
+- `setup-host.sh` and `upgrade-host.sh` resolve `core.run_user` at config-parse
+  time. For `source.mode: artifact`, root/UID 0 is refused with guidance that
+  hosted Core runs as an unprivileged service user. Missing, null and empty
+  values retain the invoking-user default, but cannot default to root on a
+  hosted install. Self-hosted `git-ssh` / `git-https` configs (including the
+  default source mode) keep their current invoking-user behaviour. Artifact
+  release inputs alone do not change that distinction.
+- Before any upgrade mutation or host-migration reconciliation, artifact
+  hosts read `systemctl show -p User --value` for **both** `ficus-api` and
+  `ficus-worker`. Root/UID 0 or empty/unset `User` (systemd's root default)
+  refuses even when the config says `ficus`; failed queries fail closed.
+  The refusal points to `switch-run-user.sh` to repair the host first.
+- The forward switch stays available for self-hosters and for repairing a
+  legacy root artifact host. `--revert` refuses artifact configs with the
+  same unprivileged-service-user guidance, but remains available for
+  self-hosted configs on the required artifact layout. Automatic failure
+  rollback and interrupted-switch recovery are unchanged: they may restore
+  the starting state to avoid leaving a broken host. A root state after a
+  failed repair must be repaired before a hosted upgrade can proceed.
+- Regression coverage is in `scripts/setup/lib.test.sh` (configuration and
+  mocked systemd state) and `scripts/setup/switch-run-user.test.sh` (hosted
+  revert refusal, forward repair and self-hosted revert/rollback).
 
 ## Implementation status (2026-10-27)
 
@@ -65,13 +94,14 @@ Where the implementation departs from the plan below:
 
 ## Why
 
-The hosted layout leaves `core.run_user` empty and runs `setup-host.sh` as
-root, so `RUN_USER` falls back to `root` and `ficus-api` / `ficus-worker` run
-with `User=root`. PgBouncer refuses to start as root, which is why
-ficushq/ficus#678 gives the pooler its own system account. The decision is to
-move Core itself onto an unprivileged service user, `ficus`, after launch. This
-document lists everything that depends on Core being root today, and the
-switch plan that keeps each of them working.
+At the time of the original audit, the hosted layout left `core.run_user`
+empty and ran `setup-host.sh` as root, so `RUN_USER` fell back to `root` and
+`ficus-api` / `ficus-worker` ran with `User=root`. PgBouncer refuses to start
+as root, which is why ficushq/ficus#678 gives the pooler its own system account.
+The decision was to move Core itself onto an unprivileged service user,
+`ficus`, after launch.
+That migration is complete; the historical audit and switch plan explain the
+root-era dependencies and how they were preserved.
 
 ## Contents
 
@@ -286,9 +316,10 @@ runs as `ficus`, and `ficus-pgbouncer` is never created (2.3).
 
 ### 2.2 Existing hosts: switch-run-user.sh
 
-A new toolkit script (F4) in the shape of `enable-pooler.sh`. The platform
-ships it with `lib.sh` and the systemd templates and runs it over ssh as root
-(F7).
+The toolkit script (F4) follows the shape of `enable-pooler.sh` and ships
+with `lib.sh` and the systemd templates. It runs as root. The platform's
+hosted switch job is retired; the tool remains for self-hosters and legacy
+host repair.
 
 **Timing.** The switch happens after launch, one tenant at a time, each in its
 own maintenance window. It is not a fleet-wide sweep: each run is checked (S1-S10
@@ -298,6 +329,7 @@ the worker's normal shutdown.
 
 ```
 switch-run-user.sh --config /root/ficus-setup/ficus-setup.yaml [--user ficus]
+# Self-hosted source.mode git-ssh/git-https only:
 switch-run-user.sh --config /root/ficus-setup/ficus-setup.yaml --revert
 ```
 
@@ -313,7 +345,7 @@ rolled-back failure).
 | P1  | euid 0; `require_host_layout_ready`, `require_host_env_ready`; `host_migrate_lock` taken; no journaled host migration (`PENDING` absent)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | P2  | Artifact layout (`<dest>/current` resolves to a complete release)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | P3  | Either not yet switched (config `core.run_user` empty or `root`, units `User=root`), or already switched (config says `<user>`, units `User=<user>`, old HOME absent, new HOME present). In the second case only the success checks run, and then the trailer prints                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| P4  | The old HOME (from `.env` `HOME_DIR`) exists. The new HOME `/home/<user>/.ficus` is absent or an empty directory. `stat -c %d` of both parents is equal, so the move is one `rename(2)`. Otherwise it dies with: `refusing: <old HOME> and /home/<user> are on different filesystems — this switch moves HOME with a single rename and never copies it; nothing was changed`. The switch never falls back to a copy: a copy doubles disk use, races a live HOME and needs its own verification. The operator leaves that host on root (still fully supported) and reports it. A host with a separate `/home` needs its own plan, for example a service-user home on the root filesystem |
+| P4  | The old HOME (from `.env` `HOME_DIR`) exists. The new HOME `/home/<user>/.ficus` is absent or an empty directory. `stat -c %d` of both parents is equal, so the move is one `rename(2)`. Otherwise it dies with: `refusing: <old HOME> and /home/<user> are on different filesystems — this switch moves HOME with a single rename and never copies it; nothing was changed`. The switch never falls back to a copy: a copy doubles disk use, races a live HOME and needs its own verification. The operator stops and reports the failed repair; root is supported only for self-hosted configs, never as a hosted steady state. A host with a separate `/home` needs its own plan, for example a service-user home on the root filesystem |
 | P5  | No symlink inside the old HOME has an absolute target under the old HOME (`find "$OLD" -type l -lname "$OLD/*"`). Such links would dangle after the move; the script lists them and refuses                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | P6  | `rebase-home.js --dry-run --from "$OLD" --to "$NEW"` reports no `REBASE_HOME_TARGET` rows (nothing already stored under the new HOME in a structured column; free-text mentions in `messages.metadata` and `work_streams.files` are reported as `REBASE_HOME_TARGET_TEXT` and do not count)                                                                                                                                                                                                                                                                                                                                                                                             |
 | P7  | `ficus-backup.service` is not running                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
@@ -391,7 +423,8 @@ tenants with APNs (R7); `systemctl start ficus-backup.service` succeeds and the
 new archive contains the HOME tree (T11); BigBrain tenants create and delete a
 scratch vault (R3-R6).
 
-**Rollback** (`--revert`, and the automatic path for any failure after step 3):
+**Rollback** (self-hosted `--revert`, and the automatic recovery path for any
+failure after step 3; hosted explicit reverts are refused):
 
 1. Stop `ficus-api` and `ficus-worker`, and the pooler.
 2. If step 5 ran: `_hl_rebase_home "$ENV_FILE" <current> "$NEW" "$OLD"` (the

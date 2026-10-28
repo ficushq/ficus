@@ -38,30 +38,26 @@ const LOCAL_OPEN: ReadonlySet<LocalDeployment['status']> = new Set(['running', '
 export function squadApps(remote: readonly RemoteDeployment[], local: readonly LocalDeployment[]): FarmApp[] {
   const remotes = remote
     .filter((d) => !d.archivedAt && d.url)
-    .map(
-      (d): FarmApp => ({
-        id: `remote:${d.id}`,
-        squadId: d.squadId,
-        name: d.name,
-        kind: 'remote',
-        where: `${d.provider} · ${d.environment}`,
-        status: d.status,
-        url: d.url!,
-      })
-    )
+    .map((d): FarmApp => ({
+      id: `remote:${d.id}`,
+      squadId: d.squadId,
+      name: d.name,
+      kind: 'remote',
+      where: `${d.provider} · ${d.environment}`,
+      status: d.status,
+      url: d.url!,
+    }))
   const locals = local
     .filter((d) => !d.archivedAt && LOCAL_OPEN.has(d.status))
-    .map(
-      (d): FarmApp => ({
-        id: `local:${d.id}`,
-        squadId: d.squadId,
-        name: d.name,
-        kind: 'local',
-        where: 'Sandbox',
-        status: d.status,
-        url: d.urlPathOrHost,
-      })
-    )
+    .map((d): FarmApp => ({
+      id: `local:${d.id}`,
+      squadId: d.squadId,
+      name: d.name,
+      kind: 'local',
+      where: 'Sandbox',
+      status: d.status,
+      url: d.urlPathOrHost,
+    }))
   const byName = (a: FarmApp, b: FarmApp) => a.name.localeCompare(b.name)
   return [...remotes.sort(byName), ...locals.sort(byName)]
 }

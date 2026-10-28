@@ -4,14 +4,7 @@ import { Link } from 'react-router-dom'
 
 // Decorative accents are deliberately separate from status meaning.
 export type BadgeColor =
-  | StatusRole
-  | 'accent-1'
-  | 'accent-2'
-  | 'accent-3'
-  | 'accent-4'
-  | 'accent-5'
-  | 'accent-6'
-  | 'accent-7'
+  StatusRole | 'accent-1' | 'accent-2' | 'accent-3' | 'accent-4' | 'accent-5' | 'accent-6' | 'accent-7'
 
 const COLOR_CLASSES: Record<BadgeColor, string> = {
   progress: 'bg-status-progress-badge-surface text-status-progress-badge-fg',

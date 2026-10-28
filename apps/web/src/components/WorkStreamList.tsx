@@ -67,16 +67,7 @@ const FEED_METADATA_LINK_CLASS =
 // --- Filter types ---
 
 export type WsStatusFilterValue =
-  | 'active'
-  | 'in_progress'
-  | 'in_review'
-  | 'paused'
-  | 'waiting'
-  | 'idle'
-  | 'monitoring'
-  | 'queued'
-  | 'done'
-  | 'canceled'
+  'active' | 'in_progress' | 'in_review' | 'paused' | 'waiting' | 'idle' | 'monitoring' | 'queued' | 'done' | 'canceled'
 
 interface WsStatusFilterOption {
   label: string

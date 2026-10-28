@@ -33,11 +33,10 @@ export const TEST_DB_NOT_READY = 'Test postgres did not become ready in time'
 /**
  * Probe, start and wait for the test Postgres container.
  *
- * With `allowFallback: false` this is exactly the original sequence: the
- * compose result is ignored, readiness is polled `maxWait` times one second
- * apart, and a spawn error propagates. With `allowFallback: true` a failed or
- * unrunnable `docker compose up` reports the database unavailable immediately
- * instead of waiting out the readiness budget for a container that cannot exist.
+ * A failed Compose command reports failure immediately, even when a database
+ * is required, so the owner's EXIT cleanup can run without a pointless wait.
+ * Only the local optional path converts an unrunnable binary to a fallback.
+
  */
 export function startTestDb(options: {
   isReady: () => boolean
@@ -56,7 +55,7 @@ export function startTestDb(options: {
     if (!allowFallback) throw error
     return { ready: false, reason: `could not run docker compose: ${error instanceof Error ? error.message : error}` }
   }
-  if (allowFallback && up.exitCode !== 0) {
+  if (up.exitCode !== 0) {
     return {
       ready: false,
       reason: `docker compose up failed (exit ${String(up.exitCode)}): ${up.stderr.trim() || '(no output)'}`,
@@ -75,7 +74,7 @@ export function startTestDb(options: {
 export function unavailableTestDbMessage(reason: string): string {
   return (
     `Core test database unavailable (${reason}). ` +
-    'This test needs Postgres: fix Docker, then run bun run test:db:down && bun run test:db:up.'
+    'This test needs Postgres: fix Docker, then run bun run test:db:down && bun run test.'
   )
 }
 
@@ -84,7 +83,7 @@ export function unavailableTestDbBanner(reason: string): string {
   return (
     `Core test database unavailable: ${reason}\n` +
     'Continuing so database-free tests can run; every database use will fail with "Core test database unavailable".\n' +
-    'Fix Docker, then run: bun run test:db:down && bun run test:db:up (set FICUS_TEST_REQUIRE_DB=1 to exit instead).'
+    'Fix Docker, then run: bun run test:db:down && bun run test (set FICUS_TEST_REQUIRE_DB=1 to exit instead).'
   )
 }
 

@@ -213,6 +213,8 @@ export interface SandboxStatus {
     reason?: string
     updatedAt?: string
   }
+  /** Executor health, separate from setup readiness; absent on older servers. */
+  runtimeHealth?: { status: 'ready' | 'degraded'; reason?: string }
   /** VM runtime only — see {@link SandboxChainHealth}. */
   chain?: SandboxChainHealth
   /** Load and memory from the sandbox's last health check (VM runtime). */

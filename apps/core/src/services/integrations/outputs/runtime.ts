@@ -68,7 +68,7 @@ import { reconcileGitHubFeedbackRelease } from '../github/feedback-release-runti
 import { readOutputEvent, readOutputCandidate, readOutputInbox } from '../github/feedback-pass-read'
 import { isGitHubOutputRevoked, renewKnownGitHubOutputs } from '../github/feedback-renewal'
 
-import { outputRecipients } from './routing-audience'
+import { isInferredCIObservation, outputRecipients } from './routing-audience'
 export { outputRecipients } from './routing-audience'
 
 const log = createLogger('integration-outputs')
@@ -765,14 +765,24 @@ async function reconcileOutputDeliveryCandidates(
               )
           )
         ) {
+          if (!isInferredCIObservation(delivery.subscription) || accepted.some(Boolean)) {
+            await tx
+              .update(integrationOutputDeliveries)
+              .set({ status: 'superseded', reason: 'Recipient attempt changed', updatedAt: new Date() })
+              .where(eq(integrationOutputDeliveries.id, delivery.id))
+            continue
+          }
+          // No queue accepted this CI observation. Rebind the SAME intent to the
+          // current consumers below, fencing stale inbox mail through targets.
+          // Never replay an already accepted (even partially accepted) delivery.
           await tx
             .update(integrationOutputDeliveries)
-            .set({ status: 'superseded', reason: 'Recipient attempt changed', updatedAt: new Date() })
+            .set({ status: 'pending', targets: [], reason: null })
             .where(eq(integrationOutputDeliveries.id, delivery.id))
+        } else {
+          for (const target of delivery.targets) wake.set(target.inboxId, { deliveryId: delivery.id, target })
           continue
         }
-        for (const target of delivery.targets) wake.set(target.inboxId, { deliveryId: delivery.id, target })
-        continue
       }
       if (!recipients.length) {
         await tx
@@ -1418,8 +1428,7 @@ async function applyOutputTriggers(event: Event) {
             .where(and(eq(workStreams.squadId, id), inArray(workStreams.status, ['active', 'queued'])))
           const bound = existing.find((stream) => {
             const source = integrationValueAt(stream.metadata, 'integrationSource') as
-              | Record<string, unknown>
-              | undefined
+              Record<string, unknown> | undefined
             if (
               source?.integration === event.integration &&
               source.connectionId ===

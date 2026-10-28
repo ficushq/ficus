@@ -83,7 +83,7 @@ describe('docker/git output parsing', () => {
 })
 
 describe('sweepOrphanTestDbs', () => {
-  test('tears down exactly the orphans and returns them; never throws on exec failure', () => {
+  test('missing worktrees alone never authorize deletion; maintenance uses the owned lifecycle sweep', () => {
     const downs: string[] = []
     const exec = (cmd: string[]) => {
       if (cmd[0] === 'docker' && cmd[1] === 'ps') {
@@ -99,14 +99,16 @@ describe('sweepOrphanTestDbs', () => {
     const removed = sweepOrphanTestDbs({
       composeFile: '/repo/main/docker-compose.test.yml',
       currentRepoRoot: ROOT,
-      deps: { exec },
+      deps: { exec, sweep: () => [] },
     })
-    expect(removed).toEqual([projectNameForPath(WT_GONE)])
-    expect(downs).toEqual([projectNameForPath(WT_GONE)])
+    expect(removed).toEqual([])
+    expect(downs).toEqual([])
 
     const throwing = () => {
       throw new Error('docker exploded')
     }
-    expect(sweepOrphanTestDbs({ composeFile: 'x', currentRepoRoot: ROOT, deps: { exec: throwing } })).toEqual([])
+    expect(
+      sweepOrphanTestDbs({ composeFile: 'x', currentRepoRoot: ROOT, deps: { exec: throwing, sweep: throwing } })
+    ).toEqual([])
   })
 })

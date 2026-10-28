@@ -28,11 +28,7 @@ export interface SystemLogStreamResult {
 export type SystemLogProviderId = 'k8s' | 'pm2' | 'systemd' | 'docker' | 'file' | 'unavailable'
 
 export type SystemLogErrorCode =
-  | 'CONFIG_INVALID'
-  | 'PROVIDER_UNAVAILABLE'
-  | 'TARGET_NOT_FOUND'
-  | 'ACCESS_DENIED'
-  | 'STREAM_FAILED'
+  'CONFIG_INVALID' | 'PROVIDER_UNAVAILABLE' | 'TARGET_NOT_FOUND' | 'ACCESS_DENIED' | 'STREAM_FAILED'
 
 /** A stable, client-safe error from a system log provider. */
 export class SystemLogProviderError extends Error {

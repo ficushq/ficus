@@ -257,3 +257,53 @@ test('a hung refresh cannot keep a completed row action disabled', async () => {
     expect(button('Kill process 4301')!.disabled).toBe(false)
   })
 })
+
+for (const kind of ['squad', 'agent'] as const) {
+  test(`${kind} process header keeps its action compact across loading and refresh states`, async () => {
+    let resolveListing!: (value: SandboxProcessesData) => void
+    const pending = new Promise<SandboxProcessesData>((resolve) => {
+      resolveListing = resolve
+    })
+    const list =
+      kind === 'squad'
+        ? spyOn(workspaceApi, 'getSandboxProcesses').mockReturnValue(pending)
+        : spyOn(agentApi, 'getAgentSandboxProcesses').mockReturnValue(pending)
+    spies.push(list)
+    const dom = await acquireDomHarness({ url: 'http://localhost' })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const root = dom.createRoot()
+    try {
+      await dom.act(async () =>
+        root.root.render(
+          <QueryClientProvider client={queryClient}>
+            <SandboxProcesses target={kind === 'squad' ? { kind, squadId: 's' } : { kind, agentId: 'a' }} />
+          </QueryClientProvider>
+        )
+      )
+      const button = dom.window.document.querySelector('button')!
+      const header = button.parentElement!
+      // DOM tests cannot measure flex layout; browser verification covers actual widths.
+      expect(header.classList.contains('flex-wrap')).toBe(true)
+      expect(header.firstElementChild!.classList.contains('min-w-0')).toBe(true)
+      const expectCompactAction = (label: string) => {
+        expect(button.textContent).toBe(label)
+        expect(button.classList.contains('shrink-0')).toBe(true)
+        expect(button.classList.contains('whitespace-nowrap')).toBe(true)
+      }
+      expectCompactAction('Show processes')
+      expect(list).not.toHaveBeenCalled()
+      await dom.act(async () => button.click())
+      expectCompactAction('Loading…')
+      expect(button.disabled).toBe(true)
+      await dom.act(async () => {
+        resolveListing(listing)
+        await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      })
+      expectCompactAction('Refresh')
+      expect(button.disabled).toBe(false)
+    } finally {
+      await dom.cleanup()
+      queryClient.clear()
+    }
+  })
+}

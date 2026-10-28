@@ -632,7 +632,7 @@ export async function runFileCapturedProcess(
       capturePaths: Object.freeze([stdoutPath, stderrPath]),
       pid: proc.pid,
       exitCode: outcome,
-      signalCode: proc.signalCode,
+      signalCode: proc.signalCode === null ? null : String(proc.signalCode),
       stdout,
       stderr,
     }

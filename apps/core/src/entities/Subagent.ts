@@ -298,8 +298,7 @@ export class Subagent {
               reason: 'Parent became dormant',
               stopActive: true,
               expectedResourceGeneration: (child.metadata as Record<string, unknown> | null)?.resourceGeneration as
-                | string
-                | undefined,
+                string | undefined,
               parentFence,
             }))
           ) {
