@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -109,8 +109,10 @@ test('provision trace exposes a stalled source location without defeating the pr
 
 test('real provision keeps bounded tracing and original five-phase acceptance', () => {
   const fixture = readFileSync(resolve(root, 'scripts/machine/box-cgroup.integration.sh'), 'utf8')
-  expect(fixture).toContain('timeout --kill-after=5s 150s bash "$TRACE" "$TARGET"')
-  expect(fixture).toContain('FICUS_CI_PROVISION_EXIT status=')
+  expect(fixture).toContain('bash "$CAPTURE" 150s bash "$TRACE" "$TARGET"')
+  const capture = readFileSync(resolve(root, 'scripts/machine/box-provision-ci-capture.sh'), 'utf8')
+  expect(capture).toContain('timeout --kill-after=5s "$duration" "$@" 2>&1')
+  expect(capture).toContain('FICUS_CI_PROVISION_EXIT status=')
   for (const phase of [
     'first-provision',
     'unchanged-reprovision',
@@ -121,4 +123,106 @@ test('real provision keeps bounded tracing and original five-phase acceptance', 
     expect(fixture).toContain(`assert_workload ${phase}`)
   }
   expect(fixture).toContain("printf '5 real rootless containment phases passed\\n'")
+})
+
+for (const failure of ['lock', 'timeout'] as const) {
+  test(`actual failed-phase capture reaches job output and step summary: ${failure}`, () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ficus-phase-capture-'))
+    try {
+      const script = join(dir, 'synthetic-provision.sh')
+      const summary = join(dir, 'summary.md')
+      const scratch = join(dir, 'scratch')
+      mkdirSync(scratch)
+      writeFileSync(summary, '')
+      writeFileSync(
+        script,
+        `printf '%s\\n' 'full stdout <fixture> & detail'
+printf '%s\\n' 'full stderr fixture' >&2
+printf '%s\\n' 'FICUS_BOX_LOCK_TIMEOUT box=box_aaaaaaaaaaaa holder_pid=123 wait_seconds=1 lock=/fixture/lock' >&2
+printf '%060000d\\n' 0
+printf '%060000d\\n' 1 >&2
+${failure === 'lock' ? 'exit 73' : 'sleep 5'}
+`
+      )
+      // Transport stub only: execute the EXACT capture entrypoint shared with
+      // provision(), never the privileged/disposable-host integration entry.
+      const sudo = join(dir, 'sudo')
+      writeFileSync(
+        sudo,
+        '#!/usr/bin/env bash\nbash "$CAPTURE" 1s bash -c \'echo earlier-successful-phase\'\nexec bash "$CAPTURE" "$PHASE_DEADLINE" bash "$TRACE" "$SYNTHETIC" argument-not-for-logs\n'
+      )
+      chmodSync(sudo, 0o755)
+      const run = workflow.jobs['rootless-box-containment'].steps.find(
+        (step: { name?: string }) => step.name === 'Prove real daemon, shim and payload ancestry across recreation'
+      ).run
+      const result = spawnSync('bash', ['-c', run], {
+        env: {
+          ...process.env,
+          PATH: `${dir}:${process.env.PATH}`,
+          TMPDIR: scratch,
+          CAPTURE: resolve(root, 'scripts/machine/box-provision-ci-capture.sh'),
+          TRACE: resolve(root, 'scripts/machine/box-provision-ci-trace.sh'),
+          SYNTHETIC: script,
+          PHASE_DEADLINE: '1s',
+          GITHUB_STEP_SUMMARY: summary,
+          GITHUB_ACTIONS: 'true',
+          RUNNER_ENVIRONMENT: 'github-hosted',
+          GITHUB_RUN_ID: 'synthetic',
+          GITHUB_RUN_ATTEMPT: '1',
+          TRACE_PRIVATE_VALUE: 'environment-not-for-logs',
+        },
+        encoding: 'utf8',
+        timeout: 3_000,
+      })
+      const expectedStatus = failure === 'lock' ? 73 : 124
+      expect(result.status).toBe(expectedStatus)
+      const report = readFileSync(summary, 'utf8')
+      for (const output of [result.stdout, report]) {
+        expect(output).toContain('full stdout')
+        expect(output).toContain('full stderr fixture')
+        expect(output).toContain('0'.repeat(60_000))
+        expect(output).toContain('0'.repeat(59_999) + '1')
+        expect(output).toContain('FICUS_BOX_LOCK_TIMEOUT box=box_aaaaaaaaaaaa holder_pid=123')
+        expect(output).toContain(`FICUS_CI_PROVISION_EXIT status=${expectedStatus}`)
+        expect(output).not.toContain('argument-not-for-logs')
+        expect(output).not.toContain('environment-not-for-logs')
+      }
+      expect(result.stdout).toContain('<fixture> & detail')
+      expect(report).toContain('&lt;fixture&gt; &amp; detail')
+      expect(result.stdout).toContain('earlier-successful-phase')
+      expect(report).not.toContain('earlier-successful-phase')
+      expect(readdirSync(scratch)).toEqual([])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+}
+
+test('oversize phase capture fails explicitly and retains middle lock diagnosis within its byte budget', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ficus-phase-budget-'))
+  try {
+    const script = join(dir, 'oversize.sh')
+    writeFileSync(
+      script,
+      `head -c 150000 /dev/zero | tr '\\0' a
+printf '\\nFICUS_BOX_LOCK_TIMEOUT holder_pid=456\\n' >&2
+head -c 150000 /dev/zero | tr '\\0' b
+`
+    )
+    const result = spawnSync(
+      'bash',
+      [resolve(root, 'scripts/machine/box-provision-ci-capture.sh'), '1s', 'bash', script],
+      {
+        encoding: 'utf8',
+        timeout: 3_000,
+      }
+    )
+    expect(result.status).toBe(74)
+    expect(result.stdout).toContain('FICUS_CI_PROVISION_OUTPUT_LIMIT')
+    expect(result.stdout).toContain('FICUS_BOX_LOCK_TIMEOUT holder_pid=456')
+    expect(result.stdout).toContain('FICUS_CI_PROVISION_EXIT status=0 capture_status=74')
+    expect(Buffer.byteLength(result.stdout)).toBeLessThan(140_000)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
