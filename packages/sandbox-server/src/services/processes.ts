@@ -11,6 +11,7 @@
  */
 
 import { execFile, execSync } from 'child_process'
+import { basename } from 'path'
 import { readdirSync, readFileSync } from 'fs'
 // Type-only: the server bundle must not pull in @ficus/shared's runtime.
 import type {
@@ -46,6 +47,7 @@ export interface ProcOptions {
   clockTicks?: number
 }
 
+export const DOCKER_HEALTH_TIMEOUT_MS = 2_000
 const DOCKER_TIMEOUT_MS = 15_000
 const CONTAINER_STOP_TIMEOUT_MS = 40_000
 
@@ -204,6 +206,66 @@ export async function listBoxProcesses(
   return processes.slice(0, opts.limit ?? 200)
 }
 
+/** Detached runc exec only starts the container process; it must not take five minutes. */
+export const STALE_RUNC_EXEC_SECONDS = 5 * 60
+
+/**
+ * Only detached exec is a control-path deadline. A foreground `runc exec` waits
+ * for its workload and may legitimately run for hours. Never signal either.
+ * Use argv, not the truncated display command, and never inspect another UID.
+ */
+export function staleRuncExecReason(opts: ProcOptions = {}): string | undefined {
+  const procRoot = opts.procRoot ?? '/proc'
+  const uid = opts.uid ?? process.getuid?.() ?? -1
+  const uptime = Number(read(`${procRoot}/uptime`)?.split(' ')[0])
+  if (!Number.isFinite(uptime)) return undefined
+  const hz = opts.clockTicks ?? clockTicks()
+  for (const pid of ownedPids(procRoot, uid)) {
+    const sample = readStat(procRoot, pid)
+    if (!sample || !Number.isFinite(sample.startTicks) || uptime - sample.startTicks / hz < STALE_RUNC_EXEC_SECONDS)
+      continue
+    const argv = read(`${procRoot}/${pid}/cmdline`)?.split('\0').filter(Boolean) ?? []
+    if (!['runc', 'docker-runc'].includes(basename(argv[0] ?? ''))) continue
+    // Find the subcommand after global options, not a container named "exec".
+    let exec = 1
+    while (argv[exec]?.startsWith('-')) {
+      if (['--root', '--log', '--log-format', '--rootless', '--criu'].includes(argv[exec]!)) exec++
+      exec++
+    }
+    if (argv[exec] !== 'exec') continue
+    // Stop at the container positional argument: workload flags are not runc flags.
+    for (let i = exec + 1; i < argv.length; i++) {
+      const arg = argv[i]!
+      if (arg === '-d' || arg === '--detach' || arg === '--detach=true') {
+        return `Detached runc exec has been stuck for at least ${STALE_RUNC_EXEC_SECONDS}s`
+      }
+      if (!arg.startsWith('-')) break
+      if (
+        [
+          '--console-socket',
+          '--cwd',
+          '--env',
+          '-e',
+          '--user',
+          '-u',
+          '--additional-gids',
+          '-g',
+          '--process',
+          '-p',
+          '--pid-file',
+          '--apparmor',
+          '--cap',
+          '-c',
+          '--process-label',
+          '--preserve-fds',
+        ].includes(arg)
+      )
+        i++
+    }
+  }
+  return undefined
+}
+
 /** Signal one process the box user owns. Refuses anything else. */
 export function signalBoxProcess(
   pid: unknown,
@@ -236,8 +298,11 @@ type DockerRunner = (args: string[], timeoutMs: number) => Promise<string>
 
 const runDocker: DockerRunner = (args, timeoutMs) =>
   new Promise((resolve, reject) => {
-    execFile('docker', args, { encoding: 'utf-8', timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 }, (error, stdout) =>
-      error ? reject(error) : resolve(stdout)
+    execFile(
+      'docker',
+      args,
+      { encoding: 'utf-8', timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 8 * 1024 * 1024 },
+      (error, stdout) => (error ? reject(error) : resolve(stdout))
     )
   })
 
@@ -257,6 +322,19 @@ function parseJsonLines(output: string): Record<string, string>[] {
 function timedOut(error: unknown): boolean {
   const value = error as { killed?: boolean; signal?: string; code?: string }
   return value?.killed === true || value?.signal === 'SIGTERM' || value?.code === 'ETIMEDOUT'
+}
+
+/** Cheap async daemon probe; never blocks the executor's event loop. */
+export async function probeBoxDocker(docker: DockerRunner = runDocker): Promise<void> {
+  try {
+    await docker(['info', '--format', '{{.ServerVersion}}'], DOCKER_HEALTH_TIMEOUT_MS)
+  } catch (error) {
+    throw new Error(
+      timedOut(error)
+        ? `Docker did not answer within ${DOCKER_HEALTH_TIMEOUT_MS / 1_000}s`
+        : 'Docker is not available in this box'
+    )
+  }
 }
 
 /**

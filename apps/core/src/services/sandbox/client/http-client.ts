@@ -11,7 +11,7 @@
 
 import { EventEmitter } from 'events'
 import { randomUUID } from 'node:crypto'
-import type { SandboxPressure, SandboxProcesses, SandboxProcessSignal } from '@ficus/shared'
+import type { SandboxPressure, SandboxProcesses, SandboxProcessSignal, SandboxRuntimeHealth } from '@ficus/shared'
 import type { ConfinedEntry, ConfinedWriteStatus } from '@ficus/shared/confined-fs'
 
 export type SandboxTransportKind = 'connection_refused' | 'connection_reset' | 'timeout' | 'network' | 'socket_closed'
@@ -323,6 +323,8 @@ export interface HealthResponse {
   uptimeSeconds: number
   /** Load and memory; absent from servers that predate it or off Linux. */
   pressure?: SandboxPressure
+  /** Execution admission health; `healthy` remains executor liveness. */
+  runtimeHealth?: SandboxRuntimeHealth
   runtimeContract?: {
     runtime: 'docker'
     version: 1

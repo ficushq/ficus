@@ -1,4 +1,5 @@
 import { describe, test, expect, afterEach } from 'bun:test'
+import type { HealthResponse } from '../client/http-client'
 import { createHash } from 'crypto'
 import { EventEmitter } from 'events'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
@@ -76,7 +77,7 @@ interface FakeClient {
   shell: () => any
   devboxReady: () => Promise<void>
   toolchainReady: (active?: boolean) => Promise<void>
-  health: () => Promise<{ healthy: boolean; devboxReady: boolean; version: string; uptimeSeconds: number }>
+  health: () => Promise<HealthResponse>
   close: () => void
 }
 
@@ -980,6 +981,35 @@ describe('VmSandboxManager', () => {
       reason: 'sandbox setup has not been reconciled',
       devboxReady: false,
     })
+  })
+
+  test('projects runtime degradation without marking assets broken and clears it after recovery', async () => {
+    const h = makeHarness()
+    const mgr = new VmSandboxManager(h.deps)
+    await mgr.ensureSandbox('squad_s1', squadOpts)
+    const client = [...h.clients.values()][0]
+    let degraded = true
+    client.health = async () => ({
+      healthy: true,
+      devboxReady: true,
+      version: 'test',
+      uptimeSeconds: 1,
+      runtimeHealth: degraded
+        ? { status: 'degraded', reason: 'Docker did not answer within 15s' }
+        : { status: 'ready' },
+    })
+    expect(await mgr.getSandboxStatus('squad_s1')).toMatchObject({
+      status: 'running',
+      readiness: 'ready_degraded',
+      devboxReady: true,
+      reason: 'Docker did not answer within 15s',
+      runtimeHealth: { status: 'degraded', reason: 'Docker did not answer within 15s' },
+    })
+    expect((await h.deps.getSetupState('squad_s1'))?.readiness).toBe('ready')
+    degraded = false
+    const recovered = await mgr.getSandboxStatus('squad_s1')
+    expect(recovered).toMatchObject({ status: 'running', readiness: 'ready', runtimeHealth: { status: 'ready' } })
+    expect(recovered.reason).toBeUndefined()
   })
 
   test('persists live Devbox cache loss so lifecycle repair becomes due', async () => {

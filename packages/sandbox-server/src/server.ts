@@ -69,7 +69,7 @@ import {
   prepareDevboxShellEnv,
   selfCacheDevboxEnvOnBoot,
 } from './services/devbox-env'
-import { getHealthResponse, setDevboxReady } from './services/health'
+import { boxRuntimeHealth, getHealthResponse, runtimeHealthAdmission, setDevboxReady } from './services/health'
 import { handleShell } from './services/shell'
 import { WorkspaceWatcher } from './services/watcher'
 import { exemptLongLivedStreamFromIdleTimeout, sandboxListenerIdleTimeout } from './services/streaming-routes'
@@ -254,6 +254,9 @@ async function main(): Promise<void> {
         // Health check — exempt from the auth gate (readiness probes run
         // unauthenticated; health exposes no execution/file surface).
         if (pathname === '/healthz' && req.method === 'GET') {
+          // Snapshot-only response: even an unresponsive Docker daemon must not
+          // stall executor liveness. A single bounded refresh runs on demand.
+          void boxRuntimeHealth.refresh()
           return Response.json(getHealthResponse())
         }
 
@@ -347,12 +350,11 @@ async function main(): Promise<void> {
                 }
                 return Response.json({ error: 'Managed toolchain activation failed' }, { status: 500 })
               }
-            case '/processes':
-              return Response.json({
-                pressure: readPressure(),
-                processes: await listBoxProcesses(),
-                containers: await listBoxContainers(),
-              })
+            case '/processes': {
+              const [processes, containers] = await Promise.all([listBoxProcesses(), listBoxContainers()])
+              boxRuntimeHealth.observeContainers(containers)
+              return Response.json({ pressure: readPressure(), processes, containers })
+            }
             case '/processes/signal':
             case '/containers/stop':
               try {
@@ -368,6 +370,8 @@ async function main(): Promise<void> {
                 throw error
               }
             case '/bash': {
+              const refused = await runtimeHealthAdmission()
+              if (refused) return refused
               await bashReady
               const response = handleBash(body, undefined, { onAdmissionFenced: requestReservation.release })
               bashReservationTransferred = true
