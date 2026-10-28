@@ -154,8 +154,7 @@ describe('RecommendationsPage request gating', () => {
     try {
       const button = (label: string) =>
         [...mounted.container.querySelectorAll('button')].find((element) => element.textContent?.includes(label)) as
-          | HTMLButtonElement
-          | undefined
+          HTMLButtonElement | undefined
       expect(mounted.container.textContent).toContain('Load more')
       await act(async () => {
         button('Load more')?.click()

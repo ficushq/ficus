@@ -17,8 +17,6 @@ import { mock } from 'bun:test'
  * a module-level singleton resolved on each call, tests can clear/override its
  * behavior (and assert on it) regardless of when the SES client was constructed.
  */
-export const sesSendMock = mock(
-  async (_command?: unknown): Promise<{ MessageId: string }> => ({
-    MessageId: 'test-message-id',
-  })
-)
+export const sesSendMock = mock(async (_command?: unknown): Promise<{ MessageId: string }> => ({
+  MessageId: 'test-message-id',
+}))

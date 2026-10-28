@@ -153,11 +153,19 @@ same configuration; canceled waiters do not return. A disabled pool can still be
 edited, and unregistered once empty. Disable, enable and guidance changes need
 `slots:write`.
 
-`ficus slot claim` joins the FIFO queue when no capacity is free, returning
+`ficus slot claim` joins the slot queue when no capacity is free, returning
 `queued` with a waiter id, so a contended claim no longer needs a second
 `subscribe` call. Pass `--no-subscribe` to get the immediate-only answer
 (`unavailable`, queueing nobody). `queued` is not ownership: wait for the grant
 before starting protected work.
+
+Queued subscriptions are granted by the highest current priority among the
+agent's active work streams in the pool's squad (critical, high, normal, low),
+then FIFO within equal priorities. Both assigned agents and crew members count;
+being only a stream's owner or creator does not. Agents without active work
+streams use normal priority. Membership and priority changes affect the next
+grant without preempting existing holders or resetting FIFO position. This uses
+stored work-stream priorities, not dependency-based boosts or execution timing.
 
 A live queued subscription suppresses automatic work-stream continuation nudges
 and idle escalation until no queued waits remain. It does not block human

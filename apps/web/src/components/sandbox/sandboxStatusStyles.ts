@@ -67,6 +67,11 @@ export function sandboxPollInterval(_status?: SandboxStatus): number {
 /** Reasons that merely echo the label and so add no information. */
 const REDUNDANT_REASONS = new Set(['Scheduling', 'Pending', 'Running', 'PodInitializing', 'ContainerCreating'])
 
+/** Ignore normal lifecycle reasons that merely repeat the status, including in warning details. */
+export function sandboxReasonDetail(reason?: string): string | undefined {
+  return reason && !REDUNDANT_REASONS.has(reason) ? reason : undefined
+}
+
 /** Resolve the display style and a human reason suffix (e.g. " (CrashLoopBackOff)") for a status. */
 export function resolveSandboxStyle(status: SandboxStatus): { config: StatusStyle; reason: string } {
   const toolchain = status.toolchain
@@ -74,10 +79,11 @@ export function resolveSandboxStyle(status: SandboxStatus): { config: StatusStyl
   const presentationState = selectSandboxPresentationState(status)
   const config = styleForState(presentationState)
   if (isRunning) {
-    const safeReason = toolchain?.status === 'failed' ? toolchain.reason : status.reason
-    return { config, reason: safeReason && !REDUNDANT_REASONS.has(safeReason) ? ` (${safeReason})` : '' }
+    const safeReason = sandboxReasonDetail(toolchain?.status === 'failed' ? toolchain.reason : status.reason)
+    return { config, reason: safeReason ? ` (${safeReason})` : '' }
   }
-  const physicalReason = status.reason && !REDUNDANT_REASONS.has(status.reason) ? ` (${status.reason})` : ''
+  const detail = sandboxReasonDetail(status.reason)
+  const physicalReason = detail ? ` (${detail})` : ''
   const toolchainDetail =
     toolchain?.status === 'failed'
       ? `Toolchain failed${toolchain.reason ? ` (${toolchain.reason})` : ''}`

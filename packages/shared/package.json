@@ -28,6 +28,7 @@
     "./confined-fs": "./src/node/confined-fs.ts",
     "./provider-health": "./src/provider-health.ts",
     "./test-fixtures/work-stream-presentation": "./src/test-fixtures/work-stream-presentation.ts",
+    "./testDbLifecycle": "./src/testDbLifecycle.ts",
     "./testDbLock": "./src/testDbLock.ts",
     "./testDbReady": "./src/testDbReady.ts",
     "./testDbPort": "./src/testDbPort.ts",

@@ -800,10 +800,7 @@ export function parseMachineSnapshotOutput(stdout: string): {
   logTail: string | undefined
 } {
   const liveness = stdout.match(/^FICUS_BOX_LIVENESS=(running|idle|exited)$/m)?.[1] as
-    | 'running'
-    | 'idle'
-    | 'exited'
-    | undefined
+    'running' | 'idle' | 'exited' | undefined
   return {
     liveness,
     containerStates: section(stdout, 'CONTAINER_STATES'),
@@ -2737,9 +2734,7 @@ export async function removeBox(
  * ensure resumes it (spec §8). No-op when the box row is absent.
  */
 export type BoxStopResult =
-  | { kind: 'verified' }
-  | { kind: 'unverified'; machineStatus?: string }
-  | { kind: 'not-found' }
+  { kind: 'verified' } | { kind: 'unverified'; machineStatus?: string } | { kind: 'not-found' }
 
 export async function stopBox(sandboxId: string, deps: BoxManagerDeps = {}): Promise<BoxStopResult> {
   const runner = deps.runner ?? defaultSshRunner

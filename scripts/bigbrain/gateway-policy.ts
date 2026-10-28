@@ -225,7 +225,7 @@ export function createGatewayHandler(options: {
   const releaseReserved = (vault: VaultLoad) => {
     reservedActive--
     vault.reserved--
-    for (let i = 0; i < reservedWaiters.length; ) {
+    for (let i = 0; i < reservedWaiters.length;) {
       const waiter = reservedWaiters[i]!
       if (!reservedFits(waiter.vault)) {
         i++

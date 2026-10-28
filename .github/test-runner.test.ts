@@ -95,3 +95,42 @@ test('failing runner flushes a large diagnostic log before its caller exits', as
     await child.exited
   }
 })
+
+test('cancellation escalates a TERM-resistant test child and returns without a survivor', async () => {
+  const cwd = await fixture({
+    'src/hung.test.ts':
+      'import {test} from "bun:test"; import {writeFileSync} from "node:fs"; process.on("SIGTERM", () => {}); writeFileSync("ready", String(process.pid)); test("hung", async () => { await Bun.sleep(60000) }, 65000)',
+  })
+  const runner = join(import.meta.dir, '../scripts/test-runner.ts')
+  const entry = join(cwd, 'run.ts')
+  await Bun.write(
+    entry,
+    `import {runTests} from ${JSON.stringify(runner)}; try { await runTests({cwd:${JSON.stringify(cwd)}, roots:['src'], stopGraceMs:100}) } catch { process.exitCode=1 }`
+  )
+  const child = Bun.spawn([process.execPath, entry], { cwd, stdout: 'pipe', stderr: 'pipe' })
+  let pid: number | undefined
+  try {
+    for (let i = 0; i < 100; i++) {
+      if (await Bun.file(join(cwd, 'ready')).exists()) {
+        pid = Number(await Bun.file(join(cwd, 'ready')).text())
+        break
+      }
+      await Bun.sleep(20)
+    }
+    expect(pid).toBeDefined()
+    child.kill('SIGTERM')
+    const result = await Promise.race([child.exited, Bun.sleep(2000).then(() => 'timeout')])
+    expect(result).toBe(1)
+    expect(() => process.kill(pid!, 0)).toThrow()
+  } finally {
+    if (pid) {
+      try {
+        process.kill(pid, 'SIGKILL')
+      } catch {
+        // The test child may already have exited after escalation.
+      }
+    }
+    child.kill('SIGKILL')
+    await child.exited
+  }
+})

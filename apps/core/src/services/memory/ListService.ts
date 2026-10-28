@@ -16,8 +16,7 @@ export interface MemoryListEntry {
 }
 
 export type MemoryListResult =
-  | { success: true; path: string; entries: MemoryListEntry[] }
-  | { success: false; path: string; error: MemoryError }
+  { success: true; path: string; entries: MemoryListEntry[] } | { success: false; path: string; error: MemoryError }
 
 export class ListService {
   private static _instance: ListService | null = null

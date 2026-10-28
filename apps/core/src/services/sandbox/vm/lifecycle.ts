@@ -394,8 +394,7 @@ export function createVmKeepAlive(deps: VmKeepAliveDeps): (sandboxId: string) =>
 }
 
 export type VmSetupAgentOwner<TAgent> =
-  | { kind: 'live'; agent: TAgent }
-  | { kind: 'retire'; lifecycleGeneration: string | null | undefined }
+  { kind: 'live'; agent: TAgent } | { kind: 'retire'; lifecycleGeneration: string | null | undefined }
 
 export function classifyVmSetupAgentOwner<
   TAgent extends { status: AgentStatus; metadata: Record<string, unknown> | null },
