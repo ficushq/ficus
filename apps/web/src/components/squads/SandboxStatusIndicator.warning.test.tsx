@@ -143,9 +143,75 @@ test.each([
   ['legacy non-VM', { status: 'starting', runtime: 'docker', reason: 'Scheduling' }, 'Sandbox starting'],
 ] satisfies Array<[string, SandboxStatus, string]>)('%s does not acquire a false warning', async (_, status, label) => {
   await withIndicator(status, async ({ doc, warning }) => {
-    expect(warning()).toBeNull()
+    expect(Boolean(warning())).toBe(false)
     expect(doc.body.textContent).toContain(label)
   })
+})
+
+// These are the normal VM getSandboxStatus producer reasons, not just K8s phase tokens.
+const vmStartupReasons = [
+  'sandbox setup has not been reconciled',
+  'required sandbox assets are not ready',
+  'box is provisioning or its health probe has not yet passed',
+]
+
+test.each(vmStartupReasons)('normal VM startup does not warn for "%s"', async (reason) => {
+  await withIndicator({ ...healthy, status: 'starting', reason }, async ({ doc, warning }) => {
+    expect(Boolean(warning())).toBe(false)
+    expect(doc.body.textContent).toContain('Starting')
+  })
+})
+
+test('idle setup-pending VM does not acquire a health warning', async () => {
+  await withIndicator(
+    {
+      ...healthy,
+      status: 'starting',
+      reason: 'required sandbox assets are not ready',
+      chain: { boxProvisioned: true, machine: 'reachable', boxServer: 'idle' },
+      toolchain: { status: 'pending', desiredFingerprint: 'test' },
+    },
+    async ({ warning }) => {
+      expect(Boolean(warning())).toBe(false)
+    }
+  )
+})
+
+test.each(vmStartupReasons)('overloaded VM retains normal startup context: "%s"', async (reason) => {
+  await withIndicator({ ...healthy, status: 'starting', reason, pressure }, async ({ dom, warning, card }) => {
+    expect(warning()).not.toBeNull()
+    await dom.act(async () => warning()!.focus())
+    expect(card()!.textContent).toContain('Overloaded: Load 28.0 on 8 CPUs')
+    expect(card()!.textContent).toContain(reason)
+  })
+})
+
+test('explicit runtime degradation is not masked by an ordinary startup reason', async () => {
+  await withIndicator(
+    {
+      ...healthy,
+      status: 'starting',
+      reason: 'required sandbox assets are not ready',
+      runtimeHealth: { status: 'degraded', reason: 'Docker did not answer within 2s' },
+    },
+    async ({ dom, warning, card }) => {
+      expect(warning()).not.toBeNull()
+      await dom.act(async () => warning()!.focus())
+      expect(card()!.textContent).toContain('Docker did not answer within 2s')
+      expect(card()!.textContent).toContain('required sandbox assets are not ready')
+    }
+  )
+})
+
+test('unknown genuine failure reasons are still surfaced on older starting payloads', async () => {
+  await withIndicator(
+    { ...healthy, status: 'starting', reason: 'Executor failed to attach: connection refused' },
+    async ({ dom, warning, card }) => {
+      expect(warning()).not.toBeNull()
+      await dom.act(async () => warning()!.focus())
+      expect(card()!.textContent).toContain('Executor failed to attach: connection refused')
+    }
+  )
 })
 
 test('a reasonless runtime degradation still has useful warning detail', async () => {

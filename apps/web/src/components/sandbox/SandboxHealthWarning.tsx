@@ -8,6 +8,14 @@ import { PressureSummary } from './SandboxProcesses'
 import { sandboxReasonDetail } from './sandboxStatusStyles'
 import { resolveVmChainDisplay } from './vmChainHealth'
 
+// Exact normal-startup reasons emitted by VM getSandboxStatus, including older
+// payloads without runtimeHealth. These are context, not evidence of a failure.
+const VM_STARTUP_REASONS = new Set([
+  'sandbox setup has not been reconciled',
+  'required sandbox assets are not ready',
+  'box is provisioning or its health probe has not yet passed',
+])
+
 /** Diagnostic context for the header pill, without fetching the expensive Processes listing. */
 export function SandboxHealthWarning({ squadId, status }: { squadId: string; status: SandboxStatus }) {
   const anchor = useRef<HTMLButtonElement>(null)
@@ -15,19 +23,21 @@ export function SandboxHealthWarning({ squadId, status }: { squadId: string; sta
   const hover = useHoverCard({ focusVisibleOnly: false })
   const overloaded = isSandboxOverloaded(status.pressure)
   const degraded = status.runtimeHealth?.status === 'degraded' || status.readiness === 'ready_degraded'
-  // Prefer the executor diagnostic, but never discard another available reason.
-  // Reuse the normal lifecycle filter rather than guessing health from Starting.
+  const runtimeReason = sandboxReasonDetail(status.runtimeHealth?.reason)
+  const statusReason = sandboxReasonDetail(status.reason)
+  const normalStartup = status.status === 'starting' && VM_STARTUP_REASONS.has(status.reason ?? '')
+  const hasWarningReason = runtimeReason || (statusReason && !normalStartup)
+  if (!overloaded && !degraded && !hasWarningReason) return null
+
+  // Eligibility is separate from context: even normal startup reasons remain
+  // available when pressure or explicit degradation actually warrants a warning.
   const reasons = [
     ...new Set(
-      [
-        sandboxReasonDetail(status.runtimeHealth?.reason),
-        sandboxReasonDetail(status.reason),
-        degraded ? resolveVmChainDisplay(status).detail : undefined,
-      ].filter((reason): reason is string => !!reason)
+      [runtimeReason, statusReason, degraded ? resolveVmChainDisplay(status).detail : undefined].filter(
+        (reason): reason is string => !!reason
+      )
     ),
   ]
-  if (!overloaded && !degraded && reasons.length === 0) return null
-
   const details = (
     <>
       {overloaded && status.pressure && <PressureSummary pressure={status.pressure} />}
