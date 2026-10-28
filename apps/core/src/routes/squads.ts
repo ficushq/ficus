@@ -1179,6 +1179,9 @@ export const squadsRouter = new Hono()
           {
             status: hasIt ? 'running' : 'not_found',
             runtime: isHostRuntime() ? ('host' as const) : ('docker' as const),
+            // Whether the log WebSocket has anything to serve (services/ws/logs.ts
+            // gates on the same optional method), so the UI can leave the panel out.
+            logStreaming: typeof manager.streamLogs === 'function',
             devboxReady: true,
             ...(isHostRuntime()
               ? {
@@ -1208,6 +1211,7 @@ export const squadsRouter = new Hono()
             ? await openSandboxOverloadPressure(squad.sandboxId).then((pressure) => (pressure ? { pressure } : {}))
             : {}),
           runtime: isVmRuntime() ? ('vm' as const) : ('k8s' as const),
+          logStreaming: typeof manager.streamLogs === 'function',
           ...(provisioning ? { provisioning } : {}),
         },
         toolchain
