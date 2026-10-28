@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, sym
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { renderExecutionWrapper, writeExecutionWrappers } from './execution-wrappers'
-import { runCapturedProcess } from '../../test-utils/captured-process'
+import { expectCleanExit, runCapturedProcess } from '../../test-utils/captured-process'
 
 const roots: string[] = []
 afterEach(() => {
@@ -162,12 +162,7 @@ test('ntn nested invocations select Notion and human login passes through withou
 test('Docker, k8s, VM and host command preambles reach ntn wrappers from nested children', async () => {
   const { DockerSandboxManager } = await import('../sandbox/docker/manager')
   const { buildHostPreamble, hostBinDir } = await import('../sandbox/host/env')
-  const { buildPreamble } = await import('../../../../../packages/sandbox-server/src/services/bash')
-  const previous = {
-    HOME_DIR: process.env.HOME_DIR,
-    WORKSPACE_PATH: process.env.WORKSPACE_PATH,
-    FICUS_BOX_HOME: process.env.FICUS_BOX_HOME,
-  }
+  const previousHomeDir = process.env.HOME_DIR
   const squad = '11111111-2222-4333-8444-555555555555'
   const f = fixture()
   process.env.HOME_DIR = f.root
@@ -197,10 +192,28 @@ test('Docker, k8s, VM and host command preambles reach ntn wrappers from nested 
       } else if (runtime === 'host') {
         preamble = buildHostPreamble({ squadId: squad, ficusToken: 'synthetic-agent-identity' }) + nested
       } else {
-        process.env.WORKSPACE_PATH = runtime === 'vm' ? join(f.root, runtime, '.private') : workspace
-        if (runtime === 'vm') process.env.FICUS_BOX_HOME = join(f.root, runtime)
-        else delete process.env.FICUS_BOX_HOME
-        preamble = buildPreamble({ sourceEnv: true, activateDevbox: true }) + nested
+        // Run the real server implementation without importing its sources into Core's composite TS project.
+        // Use a fixture file so captured-process diagnostic clipping cannot truncate the generated script.
+        const scriptPath = join(f.root, `${runtime}-preamble.sh`)
+        const generated = await runCapturedProcess(
+          [
+            process.execPath,
+            '-e',
+            'const { buildPreamble } = await import(process.argv[1]); await Bun.write(process.argv[2], buildPreamble({ sourceEnv: true, activateDevbox: true }))',
+            join(import.meta.dir, '../../../../../packages/sandbox-server/src/services/bash.ts'),
+            scriptPath,
+          ],
+          {
+            env: {
+              ...f.env,
+              WORKSPACE_PATH: runtime === 'vm' ? join(f.root, runtime, '.private') : workspace,
+              ...(runtime === 'vm' ? { FICUS_BOX_HOME: join(f.root, runtime) } : {}),
+            },
+            timeoutMs: 3000,
+          }
+        )
+        expectCleanExit(generated)
+        preamble = readFileSync(scriptPath, 'utf8') + nested
       }
       const result = await runCapturedProcess(['/bin/sh', '-c', preamble], {
         env: {
@@ -215,9 +228,7 @@ test('Docker, k8s, VM and host command preambles reach ntn wrappers from nested 
       expect(preamble).not.toContain('NOTION_API_TOKEN')
     }
   } finally {
-    for (const [key, value] of Object.entries(previous)) {
-      if (value === undefined) delete process.env[key]
-      else process.env[key] = value
-    }
+    if (previousHomeDir === undefined) delete process.env.HOME_DIR
+    else process.env.HOME_DIR = previousHomeDir
   }
 })
