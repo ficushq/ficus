@@ -33,7 +33,7 @@
     "@aws-sdk/client-ses": "^3.1156.0",
     "@earendil-works/pi-agent-core": "0.99.1",
     "@earendil-works/pi-ai": "0.99.1",
-    "@earendil-works/pi-coding-agent": "0.99.1",
+    "@earendil-works/pi-coding-agent": "1.4.0",
     "@earendil-works/pi-tui": "0.99.1",
     "@google-cloud/text-to-speech": "^6.4.0",
     "@hono/zod-validator": "^0.9.1",
