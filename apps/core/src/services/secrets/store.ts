@@ -1,3 +1,11 @@
+import {
+  lockIntegrationCredential,
+  retainIntegrationCredential,
+  loadRetiredIntegrationLeaves,
+  pruneRetiredIntegrationCredentials,
+  type RetiredIntegrationLeaf,
+} from './integration-retirement'
+export { RETIRED_INTEGRATION_GRACE_MS } from './integration-retirement'
 import { integrationCredentialEntries, INTEGRATION_CREDENTIAL_PREFIX } from '../security/integration-credential-entries'
 import { migrateLinearWebhookSettings } from '../integrations/linear/webhook-settings'
 import { migrateGitHubWebhookSettings, LEGACY_GITHUB_WEBHOOK_SECRET_KEY } from '../integrations/github/webhook-settings'
@@ -192,10 +200,6 @@ export function createGeneratedSecretEnvironmentFixture(): GeneratedSecretEnviro
   process.env[key] = value
   return Object.freeze(fixture)
 }
-
-export const RETIRED_INTEGRATION_GRACE_MS = 60 * 60_000
-
-type RetiredIntegrationLeaf = { key: string; value: string; expiresAt: number }
 
 export interface SecretStoreOptions {
   /** Clock for expiring retired integration material. */
@@ -405,14 +409,8 @@ export class SecretStore {
     const nextActive = asEntries(nextMatcher)
     const now = this.now()
     const retired = new Map([...this.retiredIntegrationLeaves].filter(([, leaf]) => leaf.expiresAt > now))
-    for (const leaf of previousActive) {
-      if (
-        leaf.key.startsWith(INTEGRATION_CREDENTIAL_PREFIX) &&
-        !nextActive.some((candidate) => candidate.key === leaf.key && candidate.value === leaf.value)
-      ) {
-        retired.set(JSON.stringify([leaf.key, leaf.value]), { ...leaf, expiresAt: now + RETIRED_INTEGRATION_GRACE_MS })
-      }
-    }
+    // Retirements were committed with their authoritative mutation. Never
+    // infer a new deadline from a stale peer cache or a process restart.
     const previousEntries = [...previousActive, ...this.retiredEntries()]
     const nextEntries = [
       ...nextActive,
@@ -536,6 +534,27 @@ export class SecretStore {
     this.latestAppliedKeyRefreshGlobal = Math.max(this.latestAppliedKeyRefreshGlobal, request)
   }
 
+  private mergeRetiredIntegrationEntries(entries: ReadonlyMap<string, RetiredIntegrationLeaf>): void {
+    // Independent key refreshes can complete out of order. Retirement records
+    // are append-only until expiry, so merge absolute deadlines, never replace
+    // another key's newer snapshot or extend a deadline merely by observing it.
+    const now = this.now()
+    for (const [id, leaf] of this.retiredIntegrationLeaves) {
+      if (leaf.expiresAt <= now) this.retiredIntegrationLeaves.delete(id)
+    }
+    for (const [id, leaf] of entries) {
+      if (leaf.expiresAt > now && leaf.expiresAt > (this.retiredIntegrationLeaves.get(id)?.expiresAt ?? 0)) {
+        this.retiredIntegrationLeaves.set(id, leaf)
+      }
+    }
+  }
+
+  protected readRetiredIntegrationEntries(): Promise<Map<string, RetiredIntegrationLeaf>> {
+    return this.encryptionKey
+      ? loadRetiredIntegrationLeaves(this.encryptionKey, this.now())
+      : Promise.resolve(new Map())
+  }
+
   protected async selectRow(key: string): Promise<typeof secrets.$inferSelect | undefined> {
     const [row] = await db.select().from(secrets).where(eq(secrets.key, key))
     return row
@@ -551,6 +570,9 @@ export class SecretStore {
 
     const request = ++this.operationSequence
     const row = await this.selectRow(key)
+    const retired = key.startsWith(INTEGRATION_CREDENTIAL_PREFIX)
+      ? await this.readRetiredIntegrationEntries()
+      : undefined
 
     // Only successfully applied newer results or a newer local mutation may
     // supersede this request. A newer request that failed must not suppress a
@@ -565,11 +587,13 @@ export class SecretStore {
 
     if (!row) {
       this.markKeyRefreshApplied(key, request)
-      if (this.cache.has(key)) {
+      const wasCached = this.cache.has(key)
+      if (wasCached || retired) {
+        if (retired) this.mergeRetiredIntegrationEntries(retired)
         const nextCache = new Map(this.cache)
         nextCache.delete(key)
         this.publishCache(nextCache)
-        await this.notifyListeners(key, undefined)
+        if (wasCached) await this.notifyListeners(key, undefined)
       }
       return
     }
@@ -584,7 +608,11 @@ export class SecretStore {
     }
 
     this.markKeyRefreshApplied(key, request)
-    if (this.cache.get(key) === value) return
+    if (retired) this.mergeRetiredIntegrationEntries(retired)
+    if (this.cache.get(key) === value) {
+      if (retired) this.publishCache(new Map(this.cache))
+      return
+    }
     const nextCache = new Map(this.cache)
     nextCache.set(key, value)
     this.publishCache(nextCache)
@@ -640,6 +668,9 @@ export class SecretStore {
    * Set a secret value. Encrypts and writes to DB, updates cache.
    */
   async set(key: string, value: string, updatedBy = 'admin'): Promise<void> {
+    if (key.startsWith(INTEGRATION_CREDENTIAL_PREFIX)) {
+      return this.setWithDurableObligation(key, value, updatedBy, async () => undefined)
+    }
     if (!this.encryptionKey) {
       throw new Error('Cannot set secrets: FICUS_ENCRYPTION_KEY not configured')
     }
@@ -689,6 +720,11 @@ export class SecretStore {
     }
     const { encrypted, iv } = encrypt(value, this.encryptionKey)
     const result = await db.transaction(async (tx) => {
+      await lockIntegrationCredential(tx, key)
+      if (key.startsWith(INTEGRATION_CREDENTIAL_PREFIX)) {
+        const [previous] = await tx.select().from(secrets).where(eq(secrets.key, key)).for('update')
+        await retainIntegrationCredential(tx, previous, this.now())
+      }
       await tx
         .insert(secrets)
         .values({ key, encryptedValue: encrypted, iv, updatedAt: new Date(), updatedBy })
@@ -699,12 +735,16 @@ export class SecretStore {
       return obligation(tx)
     })
 
-    const nextCache = new Map(this.cache)
-    nextCache.set(key, value)
-    this.publishCache(nextCache)
-    this.markLocalCacheMutation(key)
+    if (key.startsWith(INTEGRATION_CREDENTIAL_PREFIX)) {
+      await this.refreshKey(key)
+    } else {
+      const nextCache = new Map(this.cache)
+      nextCache.set(key, value)
+      this.publishCache(nextCache)
+      this.markLocalCacheMutation(key)
+      await this.notifyListeners(key, value)
+    }
     log.info(`Secret '${key}' updated by ${updatedBy}`)
-    await this.notifyListeners(key, value)
     this.emitCrossProcessChange(key)
     return result
   }
@@ -721,17 +761,26 @@ export class SecretStore {
       throw new Error('Cannot delete secrets: FICUS_ENCRYPTION_KEY not configured')
     }
     const result = await db.transaction(async (tx) => {
+      await lockIntegrationCredential(tx, key)
+      if (key.startsWith(INTEGRATION_CREDENTIAL_PREFIX)) {
+        const [previous] = await tx.select().from(secrets).where(eq(secrets.key, key)).for('update')
+        await retainIntegrationCredential(tx, previous, this.now())
+      }
       const mutation = await mutationBeforeDelete(tx)
       await tx.delete(secrets).where(eq(secrets.key, key))
       return mutation
     })
 
-    const nextCache = new Map(this.cache)
-    nextCache.delete(key)
-    this.publishCache(nextCache)
-    this.markLocalCacheMutation(key)
+    if (key.startsWith(INTEGRATION_CREDENTIAL_PREFIX)) {
+      await this.refreshKey(key)
+    } else {
+      const nextCache = new Map(this.cache)
+      nextCache.delete(key)
+      this.publishCache(nextCache)
+      this.markLocalCacheMutation(key)
+      await this.notifyListeners(key, undefined)
+    }
     log.info(`Secret '${key}' deleted`)
-    await this.notifyListeners(key, undefined)
     this.emitCrossProcessChange(key)
     return result
   }
@@ -765,6 +814,7 @@ export class SecretStore {
 
     const runOnce = (): Promise<{ wrote: boolean; value?: string }> =>
       db.transaction(async (tx) => {
+        await lockIntegrationCredential(tx, key)
         const [row] = await tx.select().from(secrets).where(eq(secrets.key, key)).for('update')
 
         // Throws on decrypt failure → transaction aborts, row untouched.
@@ -777,6 +827,7 @@ export class SecretStore {
 
         const next = mutate(current)
         if (next === undefined) return { wrote: false }
+        await retainIntegrationCredential(tx, row, this.now())
 
         const { encrypted, iv } = encrypt(next, encryptionKey)
         if (row) {
@@ -803,12 +854,16 @@ export class SecretStore {
     }
 
     if (!result.wrote) return
-    const nextCache = new Map(this.cache)
-    nextCache.set(key, result.value!)
-    this.publishCache(nextCache)
-    this.markLocalCacheMutation(key)
+    if (key.startsWith(INTEGRATION_CREDENTIAL_PREFIX)) {
+      await this.refreshKey(key)
+    } else {
+      const nextCache = new Map(this.cache)
+      nextCache.set(key, result.value!)
+      this.publishCache(nextCache)
+      this.markLocalCacheMutation(key)
+      await this.notifyListeners(key, result.value!)
+    }
     log.info(`Secret '${key}' mutated by ${updatedBy}`)
-    await this.notifyListeners(key, result.value!)
     this.emitCrossProcessChange(key)
   }
 
@@ -895,6 +950,7 @@ export class SecretStore {
 
     const request = ++this.operationSequence
     const rows = await this.selectAllRows()
+    const retired = await this.readRetiredIntegrationEntries()
 
     // Only successfully applied newer refreshes or a newer local mutation may
     // supersede this snapshot. Merely starting a request that later fails must
@@ -916,8 +972,10 @@ export class SecretStore {
         log.error(`Failed to decrypt secret '${row.key}' — skipping`, err)
       }
     }
+    this.mergeRetiredIntegrationEntries(retired)
     this.publishCache(nextCache)
     this.latestAppliedFullRefresh = request
+    await pruneRetiredIntegrationCredentials(this.now())
   }
 
   /**

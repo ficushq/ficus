@@ -972,6 +972,19 @@ export const squads = pgTable('squads', {
   archivedAt: timestamp('archived_at'),
 })
 
+/** Encrypted retired connection bundles, inaccessible through the ordinary Secret Store APIs. */
+export const integrationCredentialRetirements = pgTable(
+  'integration_credential_retirements',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    credentialKey: text('credential_key').notNull(),
+    encryptedValue: text('encrypted_value').notNull(),
+    iv: text('iv').notNull(),
+    expiresAt: timestamp('expires_at').notNull(),
+  },
+  (table) => [index('integration_credential_retirements_expiry_idx').on(table.expiresAt)]
+)
+
 /** API-authoritative env-only detection state. Never stores integration credentials. */
 export const squadEnvDetections = pgTable('squad_env_detections', {
   squadId: uuid('squad_id')

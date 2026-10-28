@@ -183,10 +183,17 @@ encrypted stored values retain their existing minimum length (12 characters) and
 public-key / identifier exclusions. Storage, transactional OAuth refresh, rotation,
 deletion, initial cache loading and cross-process cache refresh all use the same
 matcher publication path. Union publication protects both sides of a rotation.
-Retired integration leaves remain matched in each running process for one hour
-from replacement/deletion, including while provider revocation is pending; later
-unrelated updates do not renew that grace. Expiry is checked at redaction boundaries
-and cache refreshes. This in-memory grace does not survive a Core process restart.
+Retired integration leaves remain matched for one hour from replacement/deletion,
+including while provider revocation is pending and across API/worker restarts.
+The prior encrypted bundle and an absolute deadline are persisted in a separate
+protected retirement table in the same transaction as the credential mutation.
+Ordinary Secret Store get/list APIs do not expose retired material. Per-key
+transaction locks serialize concurrent first writes, rotations and deletion.
+Startup and peer cache refresh restore only secret leaves, not bundle envelopes
+or OAuth metadata. Neither unrelated updates nor late refreshes renew the deadline.
+Expiry is checked at redaction boundaries; normal full cache refresh also removes
+expired durable rows. Integration retirement remains encrypted and independent
+of the env-only authority table described below.
 
 Integration credentials and remaining matchable stored secrets are redacted from
 tool output and refuse matching tool input before execution. Refusal/audit details
