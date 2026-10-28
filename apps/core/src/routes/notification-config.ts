@@ -1,3 +1,4 @@
+import { assertArrayLimit, assertRecordLimit } from '../lib/validation/request-collections'
 import { publicErrorMessage } from '../db/errors'
 import { resolveActingUser } from '../services/rbac'
 import { Hono } from 'hono'
@@ -36,6 +37,8 @@ notificationConfigRouter.put('/me', async (c) => {
     c,
     {} as { showPreviews?: unknown; pushEnabled?: unknown; mutedEvents?: unknown }
   )
+  if (Array.isArray(body.mutedEvents) && body.mutedEvents.length > 100)
+    return c.json({ error: 'Use at most 100 muted events' }, 400)
   const prefs = await UserNotificationPreferences.upsert(identity.userId, {
     showPreviews: typeof body.showPreviews === 'boolean' ? body.showPreviews : undefined,
     pushEnabled: typeof body.pushEnabled === 'boolean' ? body.pushEnabled : undefined,
@@ -55,6 +58,17 @@ notificationConfigRouter.get('/', requirePermission('settings:read'), async (c) 
 // PUT /api/notification-config
 notificationConfigRouter.put('/', requirePermission('settings:write'), async (c) => {
   const body = await c.req.json()
+  try {
+    assertArrayLimit(body.rules, 1000, 'notification rules')
+    assertRecordLimit(body.channels, 256, 'notification channels')
+    if (Array.isArray(body.rules))
+      for (const rule of body.rules) {
+        assertArrayLimit(rule?.channels, 100, 'rule channels')
+        assertRecordLimit(rule?.match, 256, 'rule matches')
+      }
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : 'Invalid notification config' }, 400)
+  }
   await db
     .insert(notificationConfig)
     .values({ id: 'default', rules: body.rules, channels: body.channels })

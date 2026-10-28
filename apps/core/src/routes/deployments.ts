@@ -1,3 +1,4 @@
+import { boundedRecord } from '@ficus/shared'
 import { publicErrorMessage } from '../db/errors'
 import { withDeviceStreamRevocation } from '../services/streaming/device-revocation'
 import { Hono } from 'hono'
@@ -57,9 +58,12 @@ function localDeploymentAliasErrorStatus(error: LocalDeploymentAliasError): 400 
 const deploymentEnvironmentSchema = z.enum(['preview', 'staging', 'production'])
 const deploymentStatusSchema = z.enum(['planned', 'deploying', 'ready', 'failed', 'rolled_back', 'destroyed'])
 const deploymentCostRiskSchema = z.enum(['none', 'low', 'metered', 'paid_required'])
-const metadataSchema = z.record(z.string(), z.unknown()).refine((metadata) => !containsSecretLikeKey(metadata), {
-  message: 'Deployment metadata must not contain secrets or tokens',
-})
+const metadataSchema = boundedRecord(z.record(z.string(), z.unknown()), 256).refine(
+  (metadata) => !containsSecretLikeKey(metadata),
+  {
+    message: 'Deployment metadata must not contain secrets or tokens',
+  }
+)
 
 const createDeploymentSchema = z.object({
   name: z.string().trim().min(1).max(100),

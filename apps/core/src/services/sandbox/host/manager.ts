@@ -412,7 +412,7 @@ export class HostSandboxManager implements ISandboxManager {
   ): Promise<{
     owned: boolean
     fileCount: number
-    skipped: Array<{ path: string; reason: string; detail?: string }>
+    skipped: Array<{ path: string; reason: string; detail?: string; count?: number }>
   }> {
     const unsafe = [...config.include, ...config.exclude].find((p) => !isSafeWatchPattern(p))
     if (unsafe) {

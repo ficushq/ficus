@@ -35,7 +35,7 @@ type AtomicWriteOperations = {
   readDestination: (path: string) => Promise<DestinationState | undefined>
   openStage: (path: string, flags: 'wx+', mode: 0o600) => Promise<StageHandle>
   statPath: (path: string) => Promise<{ dev: number | bigint; ino: number | bigint; mode: number }>
-  readPath: (path: string) => Promise<Buffer>
+  readPathIdentity: (path: string) => Promise<FileIdentity>
   rename: (from: string, to: string) => Promise<void>
   removeOwnedStage: (path: string) => Promise<void>
   capturedUmask: number
@@ -332,9 +332,9 @@ describe('stage and publication protocol', () => {
           events.push('path-stat')
           return base.statPath(statPath)
         },
-        readPath: async (readPath) => {
+        readPathIdentity: async (readPath) => {
           events.push('path-read')
-          return base.readPath(readPath)
+          return base.readPathIdentity(readPath)
         },
       }
     )
@@ -471,8 +471,8 @@ describe('stage and publication protocol', () => {
               await base.rename(from, to)
               published = true
             },
-            readPath: async (readPath) =>
-              published && readPath === path ? Buffer.from('post-rename-C') : base.readPath(readPath),
+            readPathIdentity: async (readPath) =>
+              published && readPath === path ? identity(Buffer.from('post-rename-C')) : base.readPathIdentity(readPath),
           })
         ),
         /candidate may have been published.*success was not reported/i,
@@ -680,6 +680,7 @@ describe('primary-first error handling', () => {
                 throw primary
               },
               close: async () => {
+                await handle.close()
                 throw close
               },
             }
@@ -730,6 +731,7 @@ describe('primary-first error handling', () => {
                 throw primary
               },
               close: async () => {
+                await handle.close()
                 throw close
               },
             }
@@ -772,6 +774,7 @@ describe('primary-first error handling', () => {
                   return {
                     ...handle,
                     close: async () => {
+                      await handle.close()
                       throw new Error(`raw close ${stagePath}`)
                     },
                   }
@@ -825,7 +828,7 @@ describe('stable atomic failure classification', () => {
     const postPath = join(testDir, 'classifier-post.txt')
     const post = await captureRejection(
       writeAtomically(request(postPath, Buffer.from('candidate')), {
-        readPath: async () => Buffer.from('corrupt-after-rename'),
+        readPathIdentity: async () => identity(Buffer.from('corrupt-after-rename')),
       })
     )
     const rename = await captureRejection(
@@ -857,4 +860,67 @@ describe('stable atomic failure classification', () => {
       expect(module.getAtomicWriteFailureCode(new Error('Edit conflict spoof'))).toBe(undefined)
     })
   })
+})
+
+describe('streaming publication', () => {
+  test('publishes incremental source with exact identity', async () => {
+    const module = await atomicModule()
+    const path = join(testDir, 'stream.txt')
+    async function* chunks() {
+      yield Buffer.from('abc')
+      yield Buffer.from('def')
+    }
+    const result = await module.atomicVerifiedWrite({ path, allowedRoots: [testDir], content: chunks() })
+    expect(result).toEqual({ bytesWritten: 6, sha256: sha256(Buffer.from('abcdef')) })
+    expectBytes(path, Buffer.from('abcdef'))
+  })
+  test('source failure leaves original intact and cleans candidate', async () => {
+    const module = await atomicModule()
+    const path = join(testDir, 'stream.txt')
+    writeFileSync(path, 'original')
+    async function* chunks() {
+      yield Buffer.from('abc')
+      throw new Error('private source error')
+    }
+    await expectBoundedRejection(
+      module.atomicVerifiedWrite({ path, allowedRoots: [testDir], content: chunks() }),
+      /not published/,
+      ['private source error']
+    )
+    expectBytes(path, Buffer.from('original'))
+    expect(await (await import('fs/promises')).readdir(testDir)).toEqual(['stream.txt'])
+  })
+  test('checks expected streamed identity and cancellation before rename', async () => {
+    const module = await atomicModule()
+    const path = join(testDir, 'stream.txt')
+    const controller = new AbortController()
+    async function* chunks() {
+      yield Buffer.from('abc')
+      controller.abort()
+    }
+    await expectBoundedRejection(
+      module.atomicVerifiedWrite({ path, allowedRoots: [testDir], content: chunks(), signal: controller.signal }),
+      /not published/
+    )
+    async function* mismatch() {
+      yield Buffer.from('abc')
+    }
+    await expectBoundedRejection(
+      module.atomicVerifiedWrite({
+        path,
+        allowedRoots: [testDir],
+        content: mismatch(),
+        expectedResult: identity(Buffer.from('wrong')),
+      }),
+      /identity mismatch/
+    )
+    expect(await (await import('fs/promises')).readdir(testDir)).toEqual([])
+  })
+})
+
+test('stream byte offsets remain exact beyond signed and unsigned 32-bit boundaries', async () => {
+  const { checkedByteOffset } = await atomicModule()
+  expect(checkedByteOffset(2 ** 31 - 1, 2)).toBe(2 ** 31 + 1)
+  expect(checkedByteOffset(2 ** 32 - 1, 2)).toBe(2 ** 32 + 1)
+  expect(() => checkedByteOffset(Number.MAX_SAFE_INTEGER, 1)).toThrow('byte count overflow')
 })

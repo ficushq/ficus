@@ -209,6 +209,12 @@ Check file/directory existence and metadata.
 }
 ```
 
+### `POST /upload`
+
+Raw streaming file upload. Query parameters are `path`, optional `createDirs=true`, and optional octal `mode` (for example `0600`). The authenticated request body is streamed into the verified atomic writer; it is not a JSON/base64 envelope and has no generic file-byte ceiling. Responses report `bytesWritten` and `sha256` only after verification. Interrupted bodies return 400 without publishing a candidate. Existing path, mode and classified atomic-failure rules still apply.
+
+The listener explicitly allows streaming bodies while JSON and confined-upload readers retain their 100 MiB transport ceiling. Uploads and downloads disable the shorter listener idle timer, but retain client cancellation, operational timeouts and sandbox lifecycle accounting. Core's client has a five-minute upload timeout. See [Request limits and file transfers](../request-limits.md) for bundle refresh/legacy fallback behavior, quotas and rollout/rollback coupling.
+
 ### `GET /download`
 
 Raw streaming download, the large-file mirror of `POST /upload`. `POST /read` base64-encodes its window into JSON after allocating it, so it cannot serve big files (256 MiB files failed with `Out of memory`). `/download` streams bytes from disk without materializing them.

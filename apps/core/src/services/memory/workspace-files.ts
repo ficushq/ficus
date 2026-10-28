@@ -15,7 +15,7 @@ import { resolveWorkspaceLayout } from '../sandbox/workspace-layout'
 export interface WorkspaceFilesIngestInput {
   files: Array<{ path: string; content?: string | null; event: 'change' | 'delete' }>
   reconcile?: boolean
-  skipped?: Array<{ path: string; reason: string; detail?: string }>
+  skipped?: Array<{ path: string; reason: string; detail?: string; count?: number }>
 }
 
 export interface WorkspaceFilesIngestResult {

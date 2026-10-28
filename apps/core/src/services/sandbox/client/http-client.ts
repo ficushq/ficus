@@ -608,8 +608,8 @@ export class SandboxClient {
     return this.post('/read', request)
   }
 
-  async write(request: WriteRequest): Promise<WriteResponse> {
-    return this.post('/write', request)
+  async write(request: WriteRequest, signal?: AbortSignal): Promise<WriteResponse> {
+    return this.post('/write', request, signal)
   }
 
   /**
@@ -622,7 +622,8 @@ export class SandboxClient {
    */
   async upload(request: {
     path: string
-    content: Uint8Array
+    content: Uint8Array | Blob | ReadableStream<Uint8Array>
+    signal?: AbortSignal
     createDirs?: boolean
     mode?: string
   }): Promise<WriteResponse> {
@@ -633,6 +634,7 @@ export class SandboxClient {
       `/upload?${params.toString()}`,
       {
         method: 'POST',
+        signal: request.signal,
         headers: { 'content-type': 'application/octet-stream', ...this.authHeaders },
         // The project's lib.dom BodyInit shadows Bun's (same clash as the
         // WebSocket constructor above); Bun's fetch accepts a Uint8Array body.

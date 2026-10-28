@@ -3,7 +3,7 @@ import { sentAssistantRouting } from '../services/routing/assistant-routing-prev
 import { captureRoutingCorrection } from '../services/routing/routing-eval-capture'
 import { listActiveSlotWaits } from '../services/slots/active-waits'
 import { listActiveSlotHolds } from '../services/slots/active-holds'
-import { chatPagePathSchema } from '@ficus/shared'
+import { chatPagePathSchema, chatRequestSchema } from '@ficus/shared'
 import { getModelCatalog } from '../services/model-selection/model-catalog'
 import { withChatQueueState } from '../services/chat/queued-messages'
 import { replySuggestionsEnabled, withVisibleReplySuggestions } from '../services/reply-suggestions/visibility'
@@ -79,6 +79,7 @@ const IMAGE_UNSUPPORTED_ERROR = 'This model does not support image input. Use a 
 class ImageInputUnsupportedError extends Error {}
 
 function validateAgentImageInput(agent: Agent, imageIds?: string[]): string | null {
+  if (!chatRequestSchema.shape.imageIds.safeParse(imageIds).success) return 'Invalid image IDs (max 100)'
   if (!imageIds?.length) return null
   return agent.supportsSelectedModelImages() === false ? IMAGE_UNSUPPORTED_ERROR : null
 }
@@ -665,6 +666,8 @@ export const agentsRouter = new Hono()
         /** Required to message a dormant agent; without it the send is refused with AGENT_DORMANT. */
         wake?: boolean
       }>()
+      if (!chatRequestSchema.shape.imageIds.safeParse(body.imageIds).success)
+        return c.json({ error: 'Invalid image IDs (max 100)' }, 400)
       const pagePathResult = chatPagePathSchema.optional().safeParse(body.pagePath)
       if (!pagePathResult.success) return c.json({ error: 'Invalid page path' }, 400)
       if (!body.content.trim() && !body.imageIds?.length) {

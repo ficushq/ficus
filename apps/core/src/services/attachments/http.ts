@@ -1,5 +1,8 @@
 /** Buffer a multipart body, refusing it as soon as it exceeds `maxBytes` (the declared length is not trusted). */
 export async function readBoundedMultipart(request: Request, maxBytes: number): Promise<FormData> {
+  // Snapshot before consuming: Bun's lazy FormData serialization must materialize
+  // the matching boundary in Headers before its body stream is drained.
+  const contentType = request.headers.get('content-type') ?? ''
   if (!request.body) throw new Error('Missing multipart body')
   const reader = request.body.getReader()
   const chunks: Uint8Array[] = []
@@ -24,7 +27,7 @@ export async function readBoundedMultipart(request: Request, maxBytes: number): 
     bytes.set(chunk, offset)
     offset += chunk.byteLength
   }
-  return new Response(bytes, { headers: { 'content-type': request.headers.get('content-type') ?? '' } }).formData()
+  return new Response(bytes, { headers: { 'content-type': contentType } }).formData()
 }
 
 /** An attachment `Content-Disposition` with an ASCII-safe fallback name and the exact UTF-8 name. */

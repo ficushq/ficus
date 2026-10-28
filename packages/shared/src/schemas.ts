@@ -1,3 +1,5 @@
+import { requestMetadataSchema } from './request-metadata'
+import { boundedRecord } from './zod-helpers'
 import { z } from 'zod'
 import { workflowSourceSchema, workflowEventTriggerSchema } from './workflows'
 import { squadEventRulesSchema } from './squad-event-rules'
@@ -115,18 +117,29 @@ export type SquadPresetWorkflows = z.infer<typeof squadPresetWorkflowsSchema>
 
 /** Authority lives in dedicated tables, never in generic metadata (even deletion patches). */
 export function hasReservedGitHubAuthorityMetadata(value: unknown): boolean {
-  if (!value || typeof value !== 'object') return false
-  return Object.entries(value).some(
-    ([key, child]) =>
-      key
-        .split('.')
-        .some((segment) =>
-          ['githubAuthorTrust', 'githubFeedbackModeration', 'githubPersonalIdentity'].includes(segment)
-        ) || hasReservedGitHubAuthorityMetadata(child)
-  )
+  const stack: unknown[] = [value]
+  const seen = new WeakSet<object>()
+  while (stack.length) {
+    const current = stack.pop()
+    if (!current || typeof current !== 'object' || seen.has(current)) continue
+    seen.add(current)
+    for (const key in current) {
+      if (!Object.hasOwn(current, key)) continue
+      if (
+        key
+          .split('.')
+          .some((segment) =>
+            ['githubAuthorTrust', 'githubFeedbackModeration', 'githubPersonalIdentity'].includes(segment)
+          )
+      )
+        return true
+      stack.push((current as Record<string, unknown>)[key])
+    }
+  }
+  return false
 }
 
-export const squadMetadataSchema = z.record(z.string(), z.unknown()).superRefine((metadata, ctx) => {
+export const squadMetadataSchema = requestMetadataSchema.superRefine((metadata, ctx) => {
   if (hasReservedGitHubAuthorityMetadata(metadata))
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Reserved GitHub authority metadata' })
   if (metadata.integrationRules !== undefined) {
@@ -187,9 +200,9 @@ export const createSquadSchema = z.object({
   name: z.string().min(1).max(200),
   purpose: z.string().default(''),
   squadPresetId: z.string().optional(),
-  defaultAgents: z.array(z.string()).optional(),
+  defaultAgents: z.array(z.string()).max(100).optional(),
   context: z.string().optional(),
-  typeContext: z.record(z.string(), z.string()).optional(),
+  typeContext: boundedRecord(z.record(z.string(), z.string()), 256).optional(),
   metadata: squadMetadataSchema.optional().default({}),
   globalCollaborationEnabled: z.boolean().optional(),
   hostWorkspacePath: hostWorkspacePathSchema.optional(),
@@ -199,9 +212,9 @@ export const updateSquadSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   purpose: z.string().optional(),
   status: squadStatusSchema.optional(),
-  defaultAgents: z.array(z.string()).optional(),
+  defaultAgents: z.array(z.string()).max(100).optional(),
   context: z.string().nullable().optional(),
-  typeContext: z.record(z.string(), z.string().nullable()).nullable().optional(),
+  typeContext: boundedRecord(z.record(z.string(), z.string().nullable()), 256).nullable().optional(),
   order: z.int().min(0).optional(),
   metadata: squadMetadataSchema.optional(),
   globalCollaborationEnabled: z.boolean().optional(),
@@ -218,7 +231,7 @@ export const updateSquadSchema = z.object({
 })
 
 export const reorderSquadsSchema = z.object({
-  ids: z.array(z.uuid()).min(1),
+  ids: z.array(z.uuid()).max(1000).min(1),
 })
 
 // Squad relationship schemas
@@ -228,7 +241,7 @@ export const createSquadRelationshipSchema = z.object({
   sourceSquadId: z.uuid(),
   targetSquadId: z.uuid(),
   relationshipType: squadRelationshipTypeSchema,
-  metadata: z.record(z.string(), z.unknown()).optional().default({}),
+  metadata: requestMetadataSchema.optional().default({}),
 })
 
 // Work Stream schemas
@@ -301,8 +314,8 @@ export const workStreamSourceLinkSchema = z.object({
 export const workStreamPromptSchema = z.object({
   type: workStreamPromptTypeSchema,
   message: z.string().min(1),
-  options: z.array(z.string()).optional(),
-  files: z.array(z.string()).optional(),
+  options: z.array(z.string()).max(100).optional(),
+  files: z.array(z.string()).max(1000).optional(),
 })
 
 export const createWorkStreamSchema = z
@@ -317,18 +330,18 @@ export const createWorkStreamSchema = z
     /** Legacy input retained for a clear rejection from the creation boundary. */
     assigneeAgentIndex: z.int().min(0).optional(),
     ownerAgentId: z.string().nullable().optional(),
-    agentIds: z.array(z.string()).optional(),
+    agentIds: z.array(z.string()).max(100).optional(),
     assignedReviewerIds: z.array(z.uuid()).max(64).optional(),
     /** Legacy input retained for a clear rejection from the creation boundary. */
-    agents: z.array(z.string().min(1)).optional(),
+    agents: z.array(z.string().min(1)).max(100).optional(),
     /** Legacy input; participant models now belong to the flow. */
-    agentModelOverrides: z.record(z.string(), z.string()).optional(),
+    agentModelOverrides: boundedRecord(z.record(z.string(), z.string()), 256).optional(),
     handoffMessage: z.string().nullable().optional(),
     /** Attribute the request to a specific user (agent creators only; ignored for direct user creates). */
     requestingUserId: z.uuid().nullable().optional(),
-    dependsOn: z.array(workStreamDependencyInputSchema).optional().default([]),
+    dependsOn: z.array(workStreamDependencyInputSchema).max(100).optional().default([]),
     priority: workStreamPrioritySchema.optional(),
-    metadata: z.record(z.string(), z.unknown()).optional().default({}),
+    metadata: requestMetadataSchema.optional().default({}),
     /** Create from an observed integration event: tracks its resource and reuses the stream that already handles it. */
     integrationEventId: z.uuid().optional(),
     completionMode: workStreamCompletionModeSchema.optional(),
@@ -352,12 +365,12 @@ export const updateWorkStreamSchema = z.object({
   priority: workStreamPrioritySchema.optional(),
   assigneeAgentId: z.string().nullable().optional(),
   ownerAgentId: z.string().nullable().optional(),
-  agentIds: z.array(z.string()).nullable().optional(),
+  agentIds: z.array(z.string()).max(100).nullable().optional(),
   assignedReviewerIds: z.array(z.uuid()).max(64).optional(),
-  dependsOn: z.array(workStreamDependencyInputSchema).optional(),
+  dependsOn: z.array(workStreamDependencyInputSchema).max(100).optional(),
   handoffMessage: z.string().nullable().optional(),
-  files: z.array(z.string()).optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
+  files: z.array(z.string()).max(1000).optional(),
+  metadata: requestMetadataSchema.optional(),
   nextSteps: z.string().min(1).optional(),
   completionMode: workStreamCompletionModeSchema.optional(),
   repository: z.string().min(1).optional(),
@@ -569,7 +582,7 @@ export const sendInboxMessageSchema = z.object({
   asSystem: z.boolean().optional(),
   subject: z.string().optional(),
   content: z.string().min(1),
-  metadata: z.record(z.string(), z.unknown()).optional(),
+  metadata: requestMetadataSchema.optional(),
   deliveryMode: z.enum(['steer', 'follow-up']).optional().default('steer'),
   // A dormant agent recipient is refused (409 AGENT_DORMANT) unless the sender explicitly asks to
   // wake it. System-authored sends (asSystem) keep their own wake policy and ignore this.
@@ -581,7 +594,7 @@ export const sendInboxMessageSchema = z.object({
   // Structured lifecycle report for a reply to a saved Assistant mailbox (`assistant:<uuid>`).
   // Only the agent that received the request may report, and only on local sends.
   assistantTaskStatus: reportableAssistantTaskStatusSchema.optional(),
-  attachmentIds: z.array(z.string().min(1)).optional(),
+  attachmentIds: z.array(z.string().min(1)).max(100).optional(),
   // Federation signed-send (Slice 5). agentKey/agentSig authorize authorship; the client
   // envelope id becomes the idempotency/dedup key; inReplyToEnvelopeId is the WIRE reply
   // target (distinct from inReplyTo, which is a LOCAL inbox-message id).

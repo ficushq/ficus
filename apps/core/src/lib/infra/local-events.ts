@@ -1,3 +1,4 @@
+import { readBoundedBody, RequestBodyTooLargeError } from '@ficus/shared/read-bounded-body'
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createLogger } from './logger'
 
@@ -486,8 +487,14 @@ export class LocalEventTransport {
 
     let body: unknown
     try {
-      body = await request.json()
-    } catch {
+      const bytes = await readBoundedBody(request, 4 * 1024 ** 2)
+      body = await new Response(bytes).json()
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError)
+        return Response.json(
+          { error: error.message, code: 'REQUEST_BODY_TOO_LARGE', maxBytes: error.maxBytes },
+          { status: 413 }
+        )
       return new Response('Bad Request', { status: 400 })
     }
     const { channel, payload } = (body ?? {}) as { channel?: unknown; payload?: unknown }

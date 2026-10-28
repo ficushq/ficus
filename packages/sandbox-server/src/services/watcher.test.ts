@@ -401,3 +401,46 @@ describe('rejectSymlinks', () => {
     }
   }, 15_000)
 })
+
+test('a 2100-file pattern preserves 1000 files and aggregates 1100 skipped diagnostics', async () => {
+  for (let i = 0; i < 2100; i++) writeFileSync(join(TEST_DIR, `file-${i}.md`), '# Reference')
+  const { files, skipped } = await WorkspaceWatcher.scanFiles(TEST_DIR, { include: ['*.md'], exclude: [] })
+  expect(files).toHaveLength(1000)
+  expect(new Set(files.map((file) => file.path)).size).toBe(1000)
+  expect(skipped).toEqual([
+    {
+      path: expect.any(String),
+      reason: 'max_files_exceeded',
+      count: 1100,
+      detail: expect.stringContaining('example'),
+    },
+  ])
+})
+
+test('skip aggregation begins only above 1000 details and preserves every reason total', async () => {
+  const binary = Buffer.from([0, 255])
+  for (let i = 0; i < 1000; i++) writeFileSync(join(TEST_DIR, `file-${i}.bin`), binary)
+  const detailed = await WorkspaceWatcher.scanFiles(TEST_DIR, { include: ['*.bin'], exclude: [] })
+  expect(detailed.files).toEqual([])
+  expect(detailed.skipped).toHaveLength(1000)
+  expect(detailed.skipped.every((skip) => skip.reason === 'binary' && skip.count === undefined)).toBe(true)
+
+  for (let i = 1000; i < 1100; i++) writeFileSync(join(TEST_DIR, `file-${i}.bin`), binary)
+  writeFileSync(join(TEST_DIR, 'big.md'), 'x'.repeat(101 * 1024))
+  // Deterministic read failure, independent of file permissions or test user.
+  const read = spyOn(fsPromises, 'readFile').mockRejectedValueOnce(new Error('synthetic EIO'))
+  try {
+    const aggregate = await WorkspaceWatcher.scanFiles(TEST_DIR, { include: ['*.bin', 'big.md'], exclude: [] })
+    expect(aggregate.files).toEqual([])
+    expect(aggregate.skipped).toHaveLength(4)
+    expect(Object.fromEntries(aggregate.skipped.map((skip) => [skip.reason, skip.count]))).toEqual({
+      max_files_exceeded: 100,
+      binary: 999,
+      unreadable: 1,
+      file_too_large: 1,
+    })
+    expect(aggregate.skipped.every((skip) => skip.detail?.includes('example'))).toBe(true)
+  } finally {
+    read.mockRestore()
+  }
+})
