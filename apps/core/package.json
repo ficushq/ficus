@@ -52,7 +52,7 @@
     "chokidar": "5.0.0",
     "cron-parser": "^5.10.2",
     "drizzle-orm": "0.45.4",
-    "entities": "7.0.1",
+    "entities": "8.1.0",
     "hono": "^4.13.14",
     "js-yaml": "^4.1.1",
     "jsdom": "^27.0.1",
