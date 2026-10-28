@@ -5,8 +5,7 @@ import { copyPeerAddress } from '../lib/client-address'
 
 const MiB = 1024 ** 2
 export type RequestBodyPolicy =
-  | { kind: 'bounded'; maxBytes: number }
-  | { kind: 'stream' | 'route-owned'; reason: string }
+  { kind: 'bounded'; maxBytes: number } | { kind: 'stream' | 'route-owned'; reason: string }
 const bounded = (maxBytes: number): RequestBodyPolicy => ({ kind: 'bounded', maxBytes })
 
 /** Exact method/segment exceptions; new API mutations inherit a finite default. */

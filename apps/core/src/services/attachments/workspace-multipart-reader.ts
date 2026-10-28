@@ -178,7 +178,7 @@ export async function readWorkspaceMultipart(request: Request, consume: (part: W
       account(endHeaders)
       const headers = header.bytes()
       let lineCount = 0
-      for (let start = 0; start < headers.length; ) {
+      for (let start = 0; start < headers.length;) {
         if (++lineCount > HEADER_LINES) collectionOverflow()
         const crlf = headers.indexOf('\r\n', start)
         const end = crlf < 0 ? headers.length : crlf
