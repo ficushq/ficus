@@ -1,6 +1,11 @@
 import { expect, test } from 'bun:test'
 import { firstPartyIntegrationPlugin } from '../first-party-plugins'
 
+// Bun fetch includes a preconnect helper; model that boundary without weakening types.
+function stubFetch(handler: (...args: Parameters<typeof fetch>) => Promise<Response>): typeof fetch {
+  return Object.assign(handler, { preconnect() {} })
+}
+
 const validBodies: Record<string, unknown> = {
   cloudflare: { success: true, result: { status: 'active' } },
   digitalocean: { account: { uuid: 'account-id' } },
@@ -21,20 +26,20 @@ for (const [key, body] of Object.entries(validBodies)) {
       credential: 'synthetic-token',
     }
     try {
-      globalThis.fetch = (async (_url: unknown, init: RequestInit) => {
-        requests.push(init)
+      globalThis.fetch = stubFetch(async (_url, init) => {
+        requests.push(init!)
         return Response.json(body)
-      }) as typeof fetch
+      })
       expect(await plugin.runtime.provider.validate(context)).toEqual({ ok: true, grantedScopes: [] })
       expect(requests[0]?.headers).toMatchObject({ Authorization: 'Bearer synthetic-token' })
       expect(requests[0]?.signal).toBeDefined()
-      globalThis.fetch = (async () => Response.json({ error: 'synthetic-token' }, { status: 401 })) as typeof fetch
+      globalThis.fetch = stubFetch(async () => Response.json({ error: 'synthetic-token' }, { status: 401 }))
       expect(await plugin.runtime.provider.validate(context)).toEqual({ ok: false, code: 'invalid_auth' })
-      globalThis.fetch = (async () => Response.json({ errors: [{ message: 'synthetic-token' }] })) as typeof fetch
+      globalThis.fetch = stubFetch(async () => Response.json({ errors: [{ message: 'synthetic-token' }] }))
       expect(await plugin.runtime.provider.validate(context)).toEqual({ ok: false, code: 'invalid_auth' })
-      globalThis.fetch = (async () => {
+      globalThis.fetch = stubFetch(async () => {
         throw new Error('synthetic-token')
-      }) as typeof fetch
+      })
       expect(await plugin.runtime.provider.validate(context)).toEqual({ ok: false, code: 'provider_unavailable' })
     } finally {
       globalThis.fetch = original
