@@ -13,6 +13,8 @@ type Entry = { key: string; value: string }
  * binding and revision are public metadata, not credential material.
  */
 export function integrationCredentialEntries(key: string, raw: string): Entry[] {
+  // Opaque manual providers execute trimmed tokens. Normalize legacy padding
+  // too, but preserve exact OAuth/channel leaf semantics inside bundles.
   let material: unknown
   try {
     const oauth = parseOAuthCredential(raw)
@@ -20,9 +22,9 @@ export function integrationCredentialEntries(key: string, raw: string): Entry[] 
   } catch {
     try {
       const parsed: unknown = JSON.parse(raw)
-      material = parsed !== null && typeof parsed === 'object' ? parsed : raw
+      material = parsed !== null && typeof parsed === 'object' ? parsed : raw.trim()
     } catch {
-      material = raw
+      material = raw.trim()
     }
   }
   const entries: Entry[] = []

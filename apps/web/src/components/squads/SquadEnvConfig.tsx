@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getWorkspaceEnv, setWorkspaceEnv } from '../../api/squads'
 import clsx from 'clsx'
@@ -13,6 +13,7 @@ export function SquadEnvConfig({ squadId }: Props) {
   const queryClient = useQueryClient()
   const [value, setValue] = useState('')
   const [saved, setSaved] = useState(false)
+  const submitting = useRef(false)
   const { can, isLoading: permissionsLoading } = usePermissions(squadId)
   const canWriteEnv = !permissionsLoading && can('env:write')
 
@@ -37,22 +38,36 @@ export function SquadEnvConfig({ squadId }: Props) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey })
       setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
     },
   })
 
+  useEffect(() => {
+    if (!saved) return
+    const timer = setTimeout(() => setSaved(false), 2000)
+    return () => clearTimeout(timer)
+  }, [saved])
+
+  const canSave = canWriteEnv && !isLoading && !error && (dirty || !!data?.detectionNotice) && !mutation.isPending
   const handleSave = useCallback(() => {
-    mutation.mutate(value)
-  }, [value, mutation])
+    if (!canSave || submitting.current) return
+    // Mutation observer notifications render asynchronously; guard rapid
+    // button/keyboard submissions before the pending state is painted too.
+    submitting.current = true
+    mutation.mutate(value, {
+      onSettled: () => {
+        submitting.current = false
+      },
+    })
+  }, [canSave, value, mutation])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault()
-        if (dirty) handleSave()
+        handleSave()
       }
     },
-    [dirty, handleSave]
+    [handleSave]
   )
 
   if (isLoading) {
@@ -108,11 +123,11 @@ export function SquadEnvConfig({ squadId }: Props) {
         <span className="text-xs text-muted">{dirty ? 'Unsaved changes' : saved ? '✓ Saved' : 'Ctrl+S to save'}</span>
         <button
           onClick={handleSave}
-          disabled={!canWriteEnv || !dirty || mutation.isPending}
+          disabled={!canSave}
           className={clsx(
             'ficus-button ficus-button-primary',
             'px-3 py-1 text-sm rounded-md font-medium transition-colors',
-            !dirty && 'opacity-50 cursor-not-allowed'
+            !canSave && 'opacity-50 cursor-not-allowed'
           )}
         >
           {mutation.isPending ? 'Saving...' : 'Save'}

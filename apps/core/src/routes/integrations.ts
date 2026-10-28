@@ -72,11 +72,11 @@ const createSchema = z.strictObject({
   provider: providerKeySchema,
   displayName: z.string().trim().min(1).max(200),
   configuration: z.unknown().optional(),
-  credential: z.string().min(MIN_INTEGRATION_CREDENTIAL_LENGTH).max(16_384),
+  credential: z.string().max(16_384).trim().min(MIN_INTEGRATION_CREDENTIAL_LENGTH),
 })
 const confirmationSchema = z.strictObject({ confirmAssigned: z.boolean().optional() })
 const credentialSchema = z.strictObject({
-  credential: z.string().min(MIN_INTEGRATION_CREDENTIAL_LENGTH).max(16_384),
+  credential: z.string().max(16_384).trim().min(MIN_INTEGRATION_CREDENTIAL_LENGTH),
   confirmAssigned: z.boolean().optional(),
 })
 const assignmentSchema = z.strictObject({ connectionId: z.uuid(), makeDefault: z.boolean().optional() })

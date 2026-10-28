@@ -178,7 +178,11 @@ and client binding identifiers are not secrets. Connection material is identifie
 by the internal `__integration-credential:` storage namespace. Secret leaves must
 contain at least 8 characters to be exact-matched; shorter legacy values are not
 exact-matched, and new manual/channel credential inputs enforce the same floor.
-Credential-pattern detection is independent of this exact-match minimum. Other
+Opaque manual tokens are trimmed consistently before route validation, storage
+and execution; existing padded values are matched as their effective trimmed
+tokens. The eight-character floor applies after that normalization. OAuth and
+channel bundle leaf strings are not blindly trimmed. Credential-pattern detection
+is independent of this exact-match minimum. Other
 encrypted stored values retain their existing minimum length (12 characters) and
 public-key / identifier exclusions. Storage, transactional OAuth refresh, rotation,
 deletion, initial cache loading and cross-process cache refresh all use the same
@@ -252,6 +256,9 @@ After bootstrap, only API/service environment writes update the trusted record.
 An on-disk file whose hash differs is ignored for detection, not parsed into new
 entries. A fixed warning is logged once per squad per process, and Environment
 settings show a nonsecret notice explaining that the content must be saved there.
+Users with env-write permission can explicitly re-save unchanged content while
+that notice is present (including Ctrl/Cmd+S); pending/read-only submissions stay
+disabled, and successful registration clears the notice after re-fetch.
 Legacy files above 256 KiB are skipped with a warning; API/service writes enforce
 the same UTF-8 byte cap before any file write. Bounded reads also tolerate a file
 growing after its metadata check. Symlink settings and files are not followed.

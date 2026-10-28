@@ -57,11 +57,11 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain', options: { 
   const setEnabled = mock(async (_provider: string, enabled: boolean, _actor: string) => ({ enabled }))
   const list = mock(async () => [{ ...summary, configuration: { apiBase: 'secret' }, credentialRef: 'secret' }])
   const get = mock(async () => ({ ...summary, configuration: { version: 1 }, usage: { squadCount: 0, squads: [] } }))
-  const create = mock(async () => get())
+  const create = mock(async (_input: unknown) => get())
   const validate = mock(async () => get())
   const enable = mock(async () => get())
   const disable = mock(async () => {})
-  const replaceCredential = mock(async () => get())
+  const replaceCredential = mock(async (_id: string, _credential: string, _actor: string, _confirm?: boolean) => get())
   const remove = mock(async () => {})
   const providerFor = mock(async () => loadedProvider)
   const githubRepositoryAccess = mock(async () => ({
@@ -1772,7 +1772,7 @@ test('manual credential create and replacement reject values shorter than eight 
     { type: 'system', systemTokenId: 'min-test', name: 'test', scopes: ['*'] },
     'example'
   )
-  for (const credential of ['x', '1234567']) {
+  for (const credential of ['x', '1234567', '    1234567   ', '          ']) {
     const created = await app.request('/api/integrations/connections', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -1788,4 +1788,29 @@ test('manual credential create and replacement reject values shorter than eight 
   }
   expect(calls.create).not.toHaveBeenCalled()
   expect(calls.replaceCredential).not.toHaveBeenCalled()
+})
+
+test('manual credential routes pass normalized valid input to create and replace', async () => {
+  const { app, calls } = createApp(
+    { type: 'system', systemTokenId: 'normalization-test', name: 'test', scopes: ['*'] },
+    'example'
+  )
+  const created = await app.request('/api/integrations/connections', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      provider: 'example',
+      displayName: 'Example',
+      credential: '  synthetic-effective-route-token  ',
+    }),
+  })
+  expect(created.status).toBe(201)
+  expect(calls.create.mock.calls[0]?.[0]).toMatchObject({ credential: 'synthetic-effective-route-token' })
+  const replaced = await app.request(`/api/integrations/connections/${summary.id}/credential`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ credential: '  synthetic-effective-route-replacement  ' }),
+  })
+  expect(replaced.status).toBe(200)
+  expect(calls.replaceCredential.mock.calls[0]?.[1]).toBe('synthetic-effective-route-replacement')
 })

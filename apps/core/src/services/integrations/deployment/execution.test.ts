@@ -1,3 +1,11 @@
+import {
+  DbIntegrationCredentialCleanupRepository,
+  IntegrationCredentialCleanupWorker,
+} from '../credential-cleanup-worker'
+import { Hono } from 'hono'
+import { createIntegrationsRouter } from '../../../routes/integrations'
+import { ContentSafetyRegistry } from '../../security/content-safety-registry'
+import { SecretStore } from '../../secrets/store'
 import { expect, test } from 'bun:test'
 import { eq, inArray } from 'drizzle-orm'
 import { join } from 'node:path'
@@ -224,5 +232,94 @@ test('every integration assigned: generated env/files stay credential-free, depl
     await gh.dispose()
     await db.delete(squads).where(eq(squads.id, squadId))
     await db.delete(squads).where(eq(squads.id, otherSquad))
+  }
+})
+
+test('manual route/store-to-exec values stay protected through padding, legacy refresh, replacement and durable retirement', async () => {
+  const squadId = crypto.randomUUID()
+  await db.insert(squads).values({ id: squadId, name: 'Synthetic padded manual token', purpose: 'test' })
+  const app = new Hono()
+  app.use('*', async (c, next) => {
+    c.set('identity', { type: 'system', systemTokenId: 'synthetic-manual-route', name: 'test', scopes: ['*'] })
+    await next()
+  })
+  app.route('/api/integrations', createIntegrationsRouter(integrationRoutesService))
+  const store = getSecretStore()
+  const registry = new ContentSafetyRegistry(store)
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async () => Response.json({ user: { id: 'synthetic-user' } })) as typeof fetch
+  const refs = new Set<string>()
+  let id: string | undefined
+  let reader: SecretStore | undefined
+  let restarted: ContentSafetyRegistry | undefined
+  let now = Date.now()
+  try {
+    const created = await app.request('/api/integrations/connections', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'vercel',
+        displayName: 'Synthetic padded token',
+        configuration: { version: 1 },
+        credential: '  synthetic-effective-padded-manual  ',
+      }),
+    })
+    expect(created.status).toBe(201)
+    id = (await created.json()).id
+    const [row] = await db.select().from(integrationConnections).where(eq(integrationConnections.id, id!))
+    refs.add(row!.credentialRef)
+    expect(store.get(row!.credentialRef)).toBe('synthetic-effective-padded-manual')
+    await integrationConnectionService.enable(id!, 'test')
+    await squadIntegrationRoutesService.assign(squadId, 'vercel', id!)
+    const check = async (token: string) => {
+      const environment = await squadIntegrationRoutesService.executionEnvironment(squadId, 'vercel', id!)
+      expect(environment?.VERCEL_TOKEN).toBe(token)
+      expect(registry.redact(environment!.VERCEL_TOKEN)).not.toContain(token)
+      expect(registry.redactWithStoredKeys(environment!.VERCEL_TOKEN).storedKeys).not.toHaveLength(0)
+    }
+    await check('synthetic-effective-padded-manual')
+    // Existing encrypted rows are not rewritten merely to add matcher coverage.
+    await store.set(row!.credentialRef, ' \t synthetic-effective-padded-manual \n')
+    await store.refreshKey(row!.credentialRef)
+    await check('synthetic-effective-padded-manual')
+    reader = new SecretStore({ now: () => now })
+    await reader.initialize()
+    restarted = new ContentSafetyRegistry(reader)
+    expect(restarted.redactWithStoredKeys('synthetic-effective-padded-manual').storedKeys).not.toHaveLength(0)
+    await integrationConnectionService.replaceCredential(id!, '  synthetic-effective-replacement  ', 'test', true)
+    const [replacement] = await db.select().from(integrationConnections).where(eq(integrationConnections.id, id!))
+    refs.add(replacement!.credentialRef)
+    expect(store.get(replacement!.credentialRef)).toBe('synthetic-effective-replacement')
+    await integrationConnectionService.validate(id!, 'test')
+    await integrationConnectionService.enable(id!, 'test')
+    await check('synthetic-effective-replacement')
+    const cleanup = new IntegrationCredentialCleanupWorker(
+      new DbIntegrationCredentialCleanupRepository([...refs]),
+      store
+    )
+    expect(await cleanup.runOnce()).toBe(true)
+    await reader.refreshKey(row!.credentialRef)
+    expect(restarted.redactWithStoredKeys('synthetic-effective-padded-manual').storedKeys).not.toHaveLength(0)
+    await integrationConnectionService.remove(id!, 'test', true)
+    expect(await cleanup.runOnce()).toBe(true)
+    await reader.refreshKey(replacement!.credentialRef)
+    for (const token of ['synthetic-effective-padded-manual', 'synthetic-effective-replacement']) {
+      expect(restarted.redactWithStoredKeys(token).storedKeys).not.toHaveLength(0)
+    }
+    now += 60 * 60_000 + 5000
+    for (const token of ['synthetic-effective-padded-manual', 'synthetic-effective-replacement']) {
+      expect(restarted.redactWithStoredKeys(token).storedKeys).toEqual([])
+    }
+  } finally {
+    globalThis.fetch = originalFetch
+    restarted?.dispose()
+    reader?.stopPeriodicRefresh()
+    registry.dispose()
+    if (id) await db.delete(integrationConnections).where(eq(integrationConnections.id, id))
+    for (const ref of refs) {
+      await db.delete(integrationCredentialCleanupJobs).where(eq(integrationCredentialCleanupJobs.credentialRef, ref))
+      await store.delete(ref)
+    }
+    await db.delete(squads).where(eq(squads.id, squadId))
   }
 })
