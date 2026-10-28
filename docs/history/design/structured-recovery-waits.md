@@ -1,10 +1,10 @@
 # Structured recovery waits and bounded retry policy
 
-Status: **proposed; policy approval required before implementation**.
+Status: **approved for implementation on 2026-10-28, with the binding constraints below**.
 
 The restart-attribution prerequisite is implemented in
 [Restart interruption context](../../wiki/restart-recovery.md). This document
-proposes the remaining server/CLI/UI contract. It is not implemented behavior.
+defines the approved remaining server/CLI/UI contract. It is not yet implemented behavior.
 
 ## Goals and boundaries
 
@@ -45,7 +45,7 @@ type ManualInputRequest = {
   | {
       kind: 'provide'
       purpose: 'task-input'
-      input: { type: 'file' | 'value'; name: string }
+      input: { type: 'file' | 'config-value' | 'product-choice'; name: string }
       use: string
     }
 )
@@ -53,11 +53,11 @@ type ManualInputRequest = {
 
 Subjects, names, labels and consequences are bounded plain-language fields, not
 an arbitrary ask or executable instructions. Decisions require 2–8 unique option
-ids. `provide` names the exact tenant-owned file or value, not “send diagnostics”.
+ids. `provide` names only an exact task file, configuration value or product choice, not “send diagnostics”.
 Credentials must use the existing integration/secret-input surfaces, not raw
 secrets in an answer. Platform/host logs, invocation-registry exports, listener
 identity and other tenant-inaccessible diagnostic targets are rejected; they are
-not valid task inputs. The question is generated from the kind and its fields.
+not valid task inputs. The same validator that rejects untyped waits must reject any wording requesting logs, journal output, registry/host state or a human-run command, including requests disguised as a typed `provide` or `decide`. Tests must cover this binding rule. The question is generated from the kind and its fields.
 
 `decide` and `provide` are for genuine task inputs, not alternative spellings for
 an unresolved recovery problem. A recovery-linked request must use its persisted
@@ -131,6 +131,8 @@ work-stream owner. Set recipient provenance server-side; a worker cannot select
 redefined: add an explicit manager target for recovery, and update projections,
 notification fallbacks and Action Center filtering together.
 
+The manager may grant **at most one extra recovery cycle per recovery record**. If that extra cycle also exhausts unexplained failures, the server automatically forwards the record to the owner—without manager prose or another manager decision. The Action Center renders only the generated attempted action, count and last error, with Continue/Stop buttons. The manager cannot reset this limit by re-opening or re-forwarding the record.
+
 The manager can inspect its authorized environment, repair/re-plan, then resolve
 with Continue or Stop, or explicitly forward the same generated plain question
 to the requesting owner. Forwarding is audited and idempotent; it forwards no raw
@@ -139,7 +141,7 @@ an unroutable diagnostic for the system owner; do not silently expose it to a
 human or grant another agent authority.
 
 - **Continue:** atomically close this recovery wait and authorize a new audited
-  three-attempt recovery cycle. Requeue only through normal admission; unrelated
+  three-attempt recovery cycle. A manager can do this once per record; after its exhaustion, only the owner may authorize another bounded cycle. Requeue only through normal admission; unrelated
   waits, pause, dependency and approval gates remain in force.
 - **Stop:** stop further automatic retries and keep the affected scope held for
   the manager's existing re-plan/cancel path. Record the decision and remove the
@@ -200,7 +202,9 @@ Required focused coverage:
    manager-targeted Continue/Stop with the exact generated summary.
 3. Free-text host-log ask rejected by server, including alternate worker writers;
    fabricated counts, restart claims, foreign ids and kind-switch bypass rejected.
-4. Manager handling/forwarding, owner visibility and authorization; duplicate and
+4. Manager handling/forwarding, the one-extra-cycle limit and automatic owner
+   escalation on its exhaustion (generated summary only); owner visibility and
+   authorization; duplicate and
    stale decisions; Continue does not clear unrelated gates; Stop preserves scope.
 5. Legitimate design/input requests before failure; exact file/value and option
    validation; legacy history display/resolution; CLI serialization and UI buttons.
@@ -209,5 +213,5 @@ Required focused coverage:
    approval, pause, dependency, slot and provider behavior.
 
 No production restart, deployment, infrastructure addition or permission change
-is part of implementing or verifying this design. The policy decision below is
-required before structural implementation; rejecting it leaves this scope open.
+is part of implementing or verifying this design. Policy approval permits the
+structural implementation only; it is not deployment or merge authorization.
