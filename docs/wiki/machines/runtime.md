@@ -1507,7 +1507,7 @@ box's own `/write` + `/bash`, never root):
   or `FICUS_TEST_SYSTEMD` and skips otherwise; running the full main flow (seed +
   cached-shellenv + a comfort tool resolving in a PLAIN `/bash`) therefore needs a
   **native-amd64 systemd host**, aligned with those gated blocks.
-- **Containment runtime acceptance remains unverified.**
+- **Containment validation requires a real systemd VM.**
   `scripts/machine/box-provision.test.sh` runs the real provisioning code against
   a temporary host tree with mocked account managers, systemd, Docker and kernel
   cgroup files. It verifies generated flags/units, first provision, legacy
@@ -1521,9 +1521,12 @@ box's own `/write` + `/bash`, never root):
   caller-selected container parent, and reprovision after stopping the user
   manager. Commands, job runtime and the single sleeping container's lifetime are
   bounded. The fixture refuses non-disposable hosts and missing prerequisites;
-  it never skips to green or disables security restrictions. **Runtime acceptance
-  requires this job to have actually passed on the PR head**; authoring it or
-  passing the local static CI guards is not that evidence.
+  it never skips to green or disables security restrictions. All five runtime
+  phases and cleanup passed for commit
+  [751f4949](https://github.com/ficushq/ficus/commit/751f4949681385ea3d8d4d81120401f3e385bf7b)
+  in the [real containment CI job](https://github.com/ficushq/ficus/actions/runs/40632730516/job/122632864143).
+  **Each subsequent PR head must pass its own runtime CI**; historical results,
+  authoring the fixture or passing local static guards do not replace that proof.
 - **Sync-on-every-ensure re-push traffic.** File sync (CLI, skills, `.env`,
   identity, memory) re-pushes on every ensure rather than diffing, so a busy
   ensure/park cycle re-transfers unchanged artifacts. Acceptable at current
