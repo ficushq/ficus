@@ -26,6 +26,7 @@ for tool in dockerd-rootless-setuptool.sh docker rootlesskit newuidmap slirp4net
 [ -x /usr/lib/systemd/systemd-socket-proxyd ]
 
 TARGET="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/box-provision.sh"
+TRACE="${TARGET%/*}/box-provision-ci-trace.sh"
 BOX="box_$(printf '%s' "${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}-${RANDOM}" | sha256sum | cut -c1-12)"
 if id -u "$BOX" >/dev/null 2>&1; then exit 2; fi
 reserved="$(cat /proc/sys/net/ipv4/ip_local_reserved_ports)"
@@ -81,8 +82,14 @@ export DOCKER_CONFIG="$caller/docker" DOCKER_HOST="unix://$caller/docker.sock" D
 
 provision() {
   # Small bounded fixture: 1 CPU and 512 MiB for the entire box, no load test.
-  timeout --kill-after=5s 150s bash "$TARGET" --sandbox-id squad_cgroup_ci --unix-user "$BOX" \
-    --unit-mode user --with-docker --port 50123 --nproc 2 --memtotal-kb 1048576
+  # Keep output live in the job's capture, including the last source location
+  # before a hang. Never dump expanded commands/configuration. Preserve failure
+  # (including timeout124) rather than letting teardown obscure its status.
+  local rc=0
+  timeout --kill-after=5s 150s bash "$TRACE" "$TARGET" --sandbox-id squad_cgroup_ci --unix-user "$BOX" \
+    --unit-mode user --with-docker --port 50123 --nproc 2 --memtotal-kb 1048576 || rc=$?
+  printf 'FICUS_CI_PROVISION_EXIT status=%s\n' "$rc" >&2
+  if [ "$rc" -ne 0 ]; then return "$rc"; fi
   uid="$(id -u "$BOX")"
 }
 userctl() { timeout --kill-after=5s 30s systemctl --machine="$BOX@.host" --user "$@"; }
