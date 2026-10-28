@@ -18,6 +18,7 @@ import {
 import { listPeriodicRunnerNames, listPeriodicRunners } from '../../lib/infra/PeriodicRunner'
 import { listen } from '../../lib/infra/local-events'
 import { serializeOAuthCredential } from '../integrations/authorization/credential-bundle'
+import { configureOAuthApp, resolveOAuthClientCredentials } from '../integrations/authorization/client-credentials'
 import { ContentSafetyRegistry } from '../security/content-safety-registry'
 
 function makeStore(options?: ConstructorParameters<typeof SecretStore>[0]): SecretStore {
@@ -1054,6 +1055,52 @@ describe('integration credential leaf detection', () => {
       tokenRevision: 1,
       clientBinding: { clientId: 'public-client-id' },
     })
+
+  test('same-value integration set still notifies once while peer refresh remains a no-op', async () => {
+    await store.set(ref, 'synthetic-same-value-token')
+    const events: string[] = []
+    store.onChange((key) => { events.push(key) })
+    await store.set(ref, 'synthetic-same-value-token')
+    expect(events).toEqual([ref])
+    await store.refreshKey(ref)
+    expect(events).toEqual([ref])
+  })
+
+  test('self-hosted OAuth app secrets register only client-secret leaves under the integration prefix', async () => {
+    const previousManaged = process.env.FICUS_MANAGED
+    delete process.env.FICUS_MANAGED
+    const registry = new ContentSafetyRegistry(store)
+    try {
+      for (const provider of ['github', 'notion']) {
+        const clientId = `public-${provider}-client-identifier`
+        const clientSecret = `synthetic-${provider}-client-secret`
+        await configureOAuthApp(provider, { clientId, clientSecret, capabilitiesAcknowledged: true }, store, 'test', 'https://example.test/callback')
+        expect(resolveOAuthClientCredentials(provider, store)?.clientSecret).toBe(clientSecret)
+        const result = registry.redactWithStoredKeys(clientSecret)
+        expect(result.value).not.toContain(clientSecret)
+        expect(result.storedKeys).toHaveLength(1)
+        expect(result.storedKeys[0]).toStartWith('__integration-credential:')
+        expect(registry.redact(clientId)).toBe(clientId)
+      }
+      // Historical records retain their original binding/storage keys on upgrade.
+      const key = `__integration-oauth-app:github:client:${randomUUID()}`
+      await store.set(key, JSON.stringify({ clientId: 'historical-public-client', clientSecret: 'synthetic-historical-client-secret' }))
+      expect(registry.redactWithStoredKeys('synthetic-historical-client-secret').storedKeys).toHaveLength(1)
+      const peer = makeStore()
+      try {
+        await peer.initialize()
+        const peerRegistry = new ContentSafetyRegistry(peer)
+        try {
+          expect(peerRegistry.redact('synthetic-historical-client-secret')).not.toContain('synthetic-historical-client-secret')
+          expect(peerRegistry.redact('historical-public-client')).toBe('historical-public-client')
+        } finally { peerRegistry.dispose() }
+      } finally { peer.stopPeriodicRefresh() }
+    } finally {
+      registry.dispose()
+      if (previousManaged === undefined) delete process.env.FICUS_MANAGED
+      else process.env.FICUS_MANAGED = previousManaged
+    }
+  })
 
   test('matches manual credentials and every secret channel leaf without matching OAuth metadata', async () => {
     const registry = new ContentSafetyRegistry(store)

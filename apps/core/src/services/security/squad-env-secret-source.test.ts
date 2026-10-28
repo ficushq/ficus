@@ -96,6 +96,22 @@ describe('squad env heuristic', () => {
     }
     expect(isSecretLikeSquadEnvValue('APP_PASSWORD', 'long password with spaces')).toBe(true)
   })
+  test('detects generic 64/128 hex secrets without classifying commit IDs or low-entropy hex', () => {
+    for (const length of [64, 128]) {
+      const value = createHash('sha512').update(`synthetic-hex-fixture-${length}`).digest('hex').slice(0, length)
+      expect(isSecretLikeSquadEnvValue('CUSTOM', value)).toBe(true)
+      expect(isSecretLikeSquadEnvValue('CUSTOM', value.toUpperCase())).toBe(true)
+      for (const key of ['COMMIT_SHA', 'GIT_COMMIT', 'SOURCE_REVISION', 'BUILD_HASH', 'SHA256', 'CHECKSUM']) {
+        expect(isSecretLikeSquadEnvValue(key, value)).toBe(false)
+      }
+    }
+    for (const value of [
+      createHash('sha1').update('synthetic-commit').digest('hex'),
+      'deadbeef'.repeat(8),
+      'a'.repeat(128),
+      '1234567890'.repeat(8),
+    ]) expect(isSecretLikeSquadEnvValue('CUSTOM', value)).toBe(false)
+  })
   test('requires long high entropy for other keys, excluding ordinary config', () => {
     expect(isSecretLikeSquadEnvValue('CUSTOM', 'aB3dE5gH7jK9mN2pQ4sT6vW8yZ0cF1iL')).toBe(true)
     for (const value of [
@@ -538,3 +554,16 @@ for (const nullHash of [false, true]) {
     }
   })
 }
+
+ test('output placeholders reveal neither squad identity nor environment variable names', async () => {
+  const f = fixture()
+  const id = randomUUID()
+  f.file(id, 'OTHER_SQUAD_PRIVATE_PROJECT_TOKEN=synthetic-neutral-label-token')
+  await f.source.initialize()
+  const redacted = f.registry.redactWithStoredKeys('synthetic-neutral-label-token')
+  expect(redacted.value).not.toContain('synthetic-neutral-label-token')
+  expect(redacted.value).not.toContain('OTHER_SQUAD_PRIVATE_PROJECT_TOKEN')
+  expect(redacted.value).not.toContain(id)
+  expect(redacted.storedKeys).toEqual([])
+  f.registry.dispose()
+})

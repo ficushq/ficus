@@ -486,3 +486,19 @@ test('channel settings reject pasted token/signing leaves below eight characters
     ).rejects.toThrow()
   }
 })
+
+ test('empty credential fields from a cleared settings draft preserve the saved connection', async () => {
+  const connections = make()
+  await connections.configure('slack', { botToken: 'xoxb-good', signingSecret: 'synthetic-signing' }, 'test')
+  const before = connections.stored('slack')
+  for (const empty of ['', '   ']) {
+    await connections.configure('slack', { botToken: empty, signingSecret: empty }, 'test')
+    expect(connections.stored('slack')).toEqual(before)
+  }
+  await expect(connections.configure('slack', { botToken: null }, 'test')).rejects.toThrow()
+})
+ test('empty credential drafts never create a new connection without required credentials', async () => {
+  const connections = make()
+  await expect(connections.configure('slack', { botToken: '', signingSecret: '' }, 'test')).rejects.toThrow()
+  expect(connections.stored('slack')).toBeUndefined()
+})
