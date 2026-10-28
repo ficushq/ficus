@@ -10,7 +10,7 @@ Integrations start disabled until explicitly enabled. Saved enable/disable choic
 
 The API exposes the effective global state as `enabled` in `GET /api/integrations/catalog`; change it with `PUT /api/integrations/providers/:provider/enabled` and `{ "enabled": false }` (or `true`). State is durable and checked directly across Core processes. Providers with deployment restrictions also expose a safe `availability: { available, reason? }` in the catalog. An unavailable provider remains under Disabled with a visible explanation and refuses enable requests server-side, even if a saved enabled flag exists; saved connection data is not removed. BigBrain availability describes the connected Core deployment, not whether a local binding has been configured. It is managed through Integrations, rather than the generic settings API.
 
-GitHub account setup, account selection, and credential lifecycle are described in [GitHub integrations](github-integrations.md).
+GitHub account setup, account selection, and credential lifecycle are described in [GitHub integrations](github-integrations.md). See [Integration command execution](integration-execution.md) for per-command environments, plugin execution declarations, all-runtime PATH wrappers, and the accepted project-local CLI gap.
 
 Workflows can consume typed integration outputs, and optional squad triggers can create work from issue assignments or review requests. See [Workflows: integration updates and triggers](workflows.md#integration-updates-and-new-work-triggers) and the subscription runtime. GitHub streams with declared subscriptions use their flow consumers; unconverted streams keep the legacy scripts described below.
 

@@ -148,7 +148,24 @@ describe('oauthPluginView', () => {
     expect(view.connection.parseConfiguration({ version: 1, teamId: 'T1' })).toEqual({ version: 1, teamId: 'T1' })
   })
 
-  test('every existing non-authorization field of the plugin survives the view unchanged', () => {
+  test('managed OAuth views do not expose execution callbacks for the original manual credential', () => {
+    const plugin: IntegrationPluginV1<FakeConfiguration, { token: string }> = {
+      ...manualWithManagedPlugin(['platform_broker']),
+      execution: { binaries: ['fake'], environment: { TOKEN: ({ credential }) => credential.token } },
+    }
+    const execution = plugin.execution!
+    const view = oauthPluginView(plugin, 'platform_broker')!
+    expect(view).not.toHaveProperty('execution')
+    expect(plugin.execution).toBe(execution)
+    expect(
+      execution.environment.TOKEN!({
+        configuration: { version: 1, teamId: 'T1' },
+        credential: { token: 'synthetic-manual' },
+      })
+    ).toBe('synthetic-manual')
+  })
+
+  test('OAuth-independent plugin metadata survives the managed view unchanged', () => {
     const plugin = manualWithManagedPlugin(['platform_broker'])
     const view = oauthPluginView(plugin, 'platform_broker')!
     expect(view.presentation).toBe(plugin.presentation)

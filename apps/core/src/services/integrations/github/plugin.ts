@@ -103,6 +103,14 @@ export function createGitHubPlugin(
         },
       },
     },
+    execution: {
+      binaries: ['gh'],
+      environment: {
+        GH_TOKEN: ({ credential }) => credential.accessToken,
+        GITHUB_TOKEN: ({ credential }) => credential.accessToken,
+        GITHUB_USER: ({ configuration }) => configuration.login,
+      },
+    },
     sandbox: {
       packages: [],
       setupSteps: [],

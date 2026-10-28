@@ -1,3 +1,4 @@
+import { IntegrationExecutionService, executionVariableNames } from './execution'
 import { isManagedBigbrainProvider } from './bigbrain/managed/availability'
 import { createManagedHostClient } from './bigbrain/managed/host-client'
 import { createManagedVaultService } from './bigbrain/managed/service'
@@ -51,7 +52,6 @@ import {
 } from './channels/settings'
 import { getSettingsStore } from '../settings'
 import { configureLinearWebhook, getLinearWebhookSettings } from './linear/webhook-settings'
-import { resolveLinearConnection } from './linear/resolve-connection'
 import {
   globalIntegrationDefault,
   initializeGitHubDefault,
@@ -829,25 +829,22 @@ export const squadIntegrationRoutesService = {
     eventEmitter.emit('integration.projection-invalidated', { squadId, providerKey })
     return scope
   },
+  executionVariableNames: () => executionVariableNames(integrationRegistry.plugins()),
   async executionEnvironment(
     squadId: string,
     providerKey: string,
     connectionId?: string
   ): Promise<Record<string, string> | null> {
-    if (providerKey === 'linear') {
-      const resolved = await resolveLinearConnection(squadId)
-      return resolved && (!connectionId || resolved.connection.id === connectionId)
-        ? { LINEAR_API_KEY: resolved.credential }
-        : null
-    }
-    if (providerKey !== 'github') return null
-    const connection = await resolveGitHubConnection(squadId, connectionId)
-    if (!connection) return null
-    return {
-      GH_TOKEN: connection.credential.accessToken,
-      GITHUB_TOKEN: connection.credential.accessToken,
-      GITHUB_USER: connection.configuration.login,
-    }
+    return new IntegrationExecutionService({
+      plugins: integrationRegistry.plugins(),
+      assignments: integrationConnectionRepository,
+      readCredential: async (reference) => {
+        const store = getSecretStore()
+        await store.refreshKey(reference)
+        return store.get(reference)
+      },
+      authority: resolveOAuthAuthority,
+    }).environment(squadId, providerKey, connectionId)
   },
   /** `audience: 'assigned'` (managed shared vaults, ordinary squad readers): only this squad's
    * attached connections, never the global pool's names or state. Managed shared vaults list only

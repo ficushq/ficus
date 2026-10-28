@@ -456,6 +456,10 @@ jobs:
         run: bun test ./subprocess-lane-gate.test.ts
         working-directory: .github
 
+      - name: Validate integration execution type boundaries
+        run: bun test ./integration-execution-types.test.ts
+        working-directory: .github
+
       - name: Validate PR rewind fork-point gate
         run: bun test ./pr-rewind-gate.test.ts
         working-directory: .github
@@ -1012,6 +1016,8 @@ jobs:
           src/services/amtp/node-conformance.test.ts
           src/services/integrations/notion/cli.e2e.test.ts
           src/services/integrations/notion/core-lifecycle.e2e.test.ts
+          src/services/integrations/execution-wrappers.test.ts
+          src/services/sandbox/host/terminal-bootstrap.test.ts
           src/test-utils/captured-process.test.ts
           src/services/machines/artifact-extension-smoke.test.ts
           src/services/model-selection/openai-compatible.test.ts

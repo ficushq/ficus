@@ -15,7 +15,11 @@ import {
   type OAuthCredentialBundleV1,
 } from './credential-bundle'
 
-type OAuthPlugin = IntegrationPluginV1<unknown, OAuthCredentialBundleV1>
+// Refresh uses only these capabilities; it never invokes command execution resolvers.
+type OAuthPlugin = Pick<
+  IntegrationPluginV1<unknown, OAuthCredentialBundleV1>,
+  'connection' | 'authorization' | 'classifyError'
+>
 export type RefreshReason = 'proactive' | 'explicit' | 'authentication_failure'
 export type RefreshResult = {
   status: 'refreshed' | 'unchanged' | 'reauthorization_required' | 'degraded'

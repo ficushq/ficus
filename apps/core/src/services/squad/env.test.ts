@@ -53,7 +53,13 @@ describe('squad-env', () => {
     await regenerateEnvFileForSquad(squadId)
     expect(readFileSync(path, 'utf-8')).toBe(first)
     expect(getEnvFile(squadId)).toBe('')
-    expect(first.match(/gh\(\)/g)).toHaveLength(1)
+    expect(first).not.toContain('gh()')
+    expect(first).not.toContain('git()')
+    expect(
+      readFileSync(join(getSquadWorkspacePath(squadId), '.ficus', 'integration-bin', '.git-config'), 'utf8').match(
+        /git\(\)/g
+      )
+    ).toHaveLength(1)
   })
 
   describe('getEnvFile', () => {
@@ -107,7 +113,9 @@ describe('squad-env', () => {
       const envPath = join(workspacePath, '.ficus', '.env')
       expect(existsSync(envPath)).toBe(true)
       expect(readFileSync(envPath, 'utf-8')).toContain(content)
-      expect(readFileSync(envPath, 'utf-8')).toContain('ficus integration exec github')
+      expect(readFileSync(join(workspacePath, '.ficus', 'integration-bin', '.git-config'), 'utf8')).toContain(
+        'ficus integration exec github'
+      )
     })
 
     it('creates .env file with restricted owner or group-only permissions', async () => {

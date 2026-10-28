@@ -23,6 +23,7 @@ import type { ISandboxManager, SandboxExecOptions, SandboxOptions, SandboxRuntim
 import { getSquadIdFromSandbox } from '../types'
 import { hostWorkspaceLayout, type WorkspaceLayout, type WorkspaceLayoutContext } from '../workspace-layout'
 import { buildHostCommandEnv, ensureCliShim, getHostBaseEnv } from './env'
+import { ensureHostTerminalBootstrap } from './terminal-bootstrap'
 import { ensureSshFamilyShims } from './ssh-shims'
 import { createHostBrowserBackend, type HostBrowserEngine } from './browser'
 import { acquireSquadWatchLock, type SquadWatchLock } from './watch-lock'
@@ -379,9 +380,11 @@ export class HostSandboxManager implements ISandboxManager {
       ...buildHostCommandEnv({ squadId: state.squadId, base: this.baseEnv() }),
       PWD: cwd,
     }
-    const shell = env.SHELL || '/bin/bash'
+    // Human terminals use managed Bash: login profiles run before managed PATH is restored.
+    env.SHELL = '/bin/bash'
     try {
-      return ptySpawn(shell, ['-l'], {
+      const rc = ensureHostTerminalBootstrap(state.squadId, env.HOME ?? '/')
+      return ptySpawn('/bin/bash', ['--noprofile', '--rcfile', rc, '-i'], {
         name: 'xterm-256color',
         cols,
         rows,

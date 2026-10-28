@@ -87,9 +87,13 @@ An agent shell is one the runtime gave a scoped token. Those shells get:
 | `FICUS_AGENT_ID`      | That agent's id, passed by the runner (not guessed from the sandbox id)    |
 
 Shells the runtime does NOT give a token — web terminals, `exec`, anything the
-sandbox manager spawns — are operator-driven and unchanged: they keep your
-`~/.ficus/cli/auth.json` and your `ficus` behaves exactly as it does in any other
-shell of yours.
+sandbox manager spawns — are operator-driven: they keep your
+`~/.ficus/cli/auth.json`. Host web terminals use a Ficus-managed Bash bootstrap:
+normal Bash login profiles run first, then Ficus restores the shim and integration
+wrapper PATH without granting an agent identity. The bootstrap is stored in
+`<HOME_DIR>/host/terminals/`, never in your profiles or workspace override repo.
+Provider CLI wrappers pass through to your own login with a one-line stderr note.
+See [Integration command execution](integration-execution.md) for the contract.
 
 What is actually enforced for an agent shell:
 
@@ -112,7 +116,8 @@ What is actually enforced for an agent shell:
 - **The shim directory is re-prepended to `PATH`** after the squad env is
   applied. Squad-env PATH additions are honoured — `PATH=$PATH:/opt/toolchain`
   is a supported thing to write — but they cannot displace `ficus`, which always
-  resolves to `<HOME_DIR>/host/bin/ficus`.
+  resolves to `<HOME_DIR>/host/bin/ficus`. Assigned integration wrappers are also
+  prepended after sourcing the environment.
 - **Reserved keys are rejected at write time** — see
   [Reserved squad env keys](#reserved-squad-env-keys) — and are also filtered
   out of Secret Store rendering, so a Secret Store key literally named

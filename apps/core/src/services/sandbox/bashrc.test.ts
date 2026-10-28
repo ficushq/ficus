@@ -13,6 +13,8 @@ describe('buildBashrcContent', () => {
 
     // Sources the workspace .env at the container mount.
     expect(content).toContain('[ -f /workspace/.ficus/.env ] && set -a && . /workspace/.ficus/.env && set +a')
+    expect(content).toContain('export PATH=\'/workspace/.ficus/integration-bin\':"$PATH"')
+    expect(content.lastIndexOf('integration-bin')).toBeGreaterThan(content.lastIndexOf('runtime-env.sh'))
     // Bare `devbox shellenv` (devbox.json is the shell's cwd on k8s/docker).
     expect(content).toContain('eval "$(devbox shellenv --init-hook 2>/dev/null)" 2>/dev/null || true')
     // NOT the box-mode `cd <dir> && devbox shellenv` form.
@@ -32,11 +34,13 @@ describe('buildBashrcContent', () => {
     // (the devbox lives on the box, out of the shell cwd).
     const content = buildBashrcContent('/home/box_x/workspace', '/home/box_x/workspace', {
       devboxDir: '/home/box_x/.tau/devbox',
+      integrationBinDir: '/home/box_x/workspace/.ficus/integration-bin',
     })
 
     expect(content).toContain(
       'eval "$(cd /home/box_x/.tau/devbox && devbox shellenv --init-hook 2>/dev/null)" 2>/dev/null || true'
     )
+    expect(content).toContain('export PATH=\'/home/box_x/workspace/.ficus/integration-bin\':"$PATH"')
     expect(content).toContain('devbox() {')
     expect(content).toContain('search="$PWD"')
     expect(content).toContain('command devbox "$@"')
