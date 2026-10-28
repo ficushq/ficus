@@ -1,0 +1,56 @@
+{
+  "experiment": "coordination-v8",
+  "authorized": true,
+  "authorized_by": "User: Continue Pi; retain hold and cap",
+  "declared_at_utc": "2026-10-28T18:04:12.321460+00:00",
+  "scope": "Pi-only first paid attempt after original preflight blocked before inference. Original pair must not restart.",
+  "phase": "budget-phase-2026-10-28-000028-reset50",
+  "phase_cap_usd": 50,
+  "request_reservation_usd": 5.5,
+  "confirmed_phase_usd_at_declaration": 24.589231,
+  "retained_hold": {
+    "call_id": 1193,
+    "client": "coordv8-paid-ficus",
+    "usd": 5.5
+  },
+  "exposure_usd_at_declaration": 30.089231,
+  "remaining_usd_at_declaration": 19.910769,
+  "guard_delta": "Permit exactly the original unsettled call1193 with full5500000-microdollar charge. Require no Pi calls and no other unsettled calls; all original cap/no-retry/frozen-input/proxy checks remain.",
+  "candidate_or_grader_changes": false,
+  "ledger_reset_or_reconciliation": false,
+  "original_launcher_sha256": "99252e14c7a0bdf31b35fde7f4a0242db262412335efa944501a3eadc1ae60c5",
+  "original_blocked_pi_log_sha256": "f4c79335ff32defcaa6dd089834605c253e680b8155bd8201cfff2c0f191a2c3",
+  "continuation_launcher_sha256": "576b61e85759f4283b109ceb2385cd971154233eabb81916cb20f8bddc3c42f9",
+  "guard_checks": [
+    {
+      "case": "approved",
+      "expected_allowed": true,
+      "passed": true
+    },
+    {
+      "case": "missing",
+      "expected_allowed": false,
+      "passed": true
+    },
+    {
+      "case": "released",
+      "expected_allowed": false,
+      "passed": true
+    },
+    {
+      "case": "new-unknown",
+      "expected_allowed": false,
+      "passed": true
+    },
+    {
+      "case": "different-id",
+      "expected_allowed": false,
+      "passed": true
+    },
+    {
+      "case": "pi-already-called",
+      "expected_allowed": false,
+      "passed": true
+    }
+  ]
+}
