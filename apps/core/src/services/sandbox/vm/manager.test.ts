@@ -983,6 +983,78 @@ describe('VmSandboxManager', () => {
     })
   })
 
+  describe('live startup health projection', () => {
+    for (const readiness of ['missing', 'pending', 'reconciling'] as const) {
+      for (const condition of ['overloaded', 'Docker unresponsive', 'normal startup'] as const) {
+        test(`${readiness} setup preserves ${condition} diagnostics without changing setup`, async () => {
+          const h = makeHarness()
+          h.setBoxStatus('ready')
+          h.setMachineBoxRow({ machineId: 'm1', port: 50100, status: 'ready' })
+          const setup: VmSetupState | null =
+            readiness === 'missing'
+              ? null
+              : {
+                  sandboxId: 'squad_s1',
+                  desiredFingerprint: 'startup-fingerprint',
+                  readiness,
+                  reasons: [],
+                  attemptCount: 0,
+                  nextAttemptAt: null,
+                  pendingInvocationId: null,
+                  pendingInvocationKind: null,
+                  lastFailureClass: null,
+                  lastAttemptAt: null,
+                  updatedAt: new Date('2026-10-28T00:00:00Z'),
+                }
+          const priorSetup = structuredClone(setup)
+          h.setSetupState(setup)
+          let repairCalls = 0
+          const repair = h.deps.markSetupRepairNeeded
+          h.deps.markSetupRepairNeeded = async (...args) => {
+            repairCalls++
+            return repair(...args)
+          }
+          const mgr = new VmSandboxManager(h.deps)
+          // Attach a live client, not a successful setup/ensure or an idle box.
+          expect(await mgr.getOrAttachClient('squad_s1')).not.toBeNull()
+          const client = [...h.clients.values()][0]
+          const pressure: NonNullable<HealthResponse['pressure']> = {
+            cpus: 8,
+            load: condition === 'overloaded' ? [28, 24, 20] : [1, 1, 1],
+            memTotalMb: 16_384,
+            memAvailableMb: 8_192,
+          }
+          const runtimeHealth: NonNullable<HealthResponse['runtimeHealth']> =
+            condition === 'Docker unresponsive'
+              ? { status: 'degraded', reason: 'Docker did not answer within 15s' }
+              : { status: 'ready' }
+          client.health = async () => {
+            client.healthCalls++
+            return { healthy: true, devboxReady: false, version: 'test', uptimeSeconds: 1, pressure, runtimeHealth }
+          }
+
+          const status = await mgr.getSandboxStatus('squad_s1')
+          expect(client.healthCalls).toBe(1)
+          expect(status).toMatchObject({ status: 'starting', chain: { boxServer: 'up' }, pressure, runtimeHealth })
+          expect(status.reason).toBe(
+            condition === 'Docker unresponsive'
+              ? 'Docker did not answer within 15s'
+              : readiness === 'missing'
+                ? 'sandbox setup has not been reconciled'
+                : 'required sandbox assets are not ready'
+          )
+          expect(status.degradation).toBeUndefined()
+          expect(status.readiness).toBeUndefined()
+          expect(repairCalls).toBe(0)
+          expect(await h.deps.getSetupState('squad_s1')).toEqual(priorSetup)
+          expect(h.ensureCalls).toHaveLength(0)
+          expect(h.stopCalls).toHaveLength(0)
+          expect(h.removeCalls).toHaveLength(0)
+        })
+      }
+    }
+  })
+
   test('projects runtime degradation without marking assets broken and clears it after recovery', async () => {
     const h = makeHarness()
     const mgr = new VmSandboxManager(h.deps)
