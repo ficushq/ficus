@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { createHash, randomUUID } from 'crypto'
+import { spawn } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
@@ -22,6 +23,54 @@ const boxProvisionSh = readFileSync(join(repoRoot, 'scripts/machine/box-provisio
 // The drift hash covers BOTH scripts (fixed order: bootstrap.sh then
 // box-provision.sh), so a change to either re-triggers a push.
 const expectedVersion = createHash('sha256').update(bootstrapSh).update(boxProvisionSh).digest('hex')
+
+// A foreground fixture owns its entire POSIX process group, not just its first
+// shell. Re-exec bugs and pipeline descendants must not survive a test failure.
+// This is deliberately below Bun's existing 5s budget, not a timeout increase.
+async function runHostFixture(command: string[], env: NodeJS.ProcessEnv = {}, timeoutMs = 2_000) {
+  const proc = spawn(command[0]!, command.slice(1), {
+    env: { ...process.env, ...env },
+    detached: true, // group ownership only: never unref; always terminate + await
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let stdout = ''
+  let stderr = ''
+  proc.stdout.on('data', (data) => {
+    stdout += data.toString()
+  })
+  proc.stderr.on('data', (data) => {
+    stderr += data.toString()
+  })
+  const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+    proc.once('error', reject)
+    proc.once('close', (code, signal) => resolve({ code, signal }))
+  })
+  const stop = () => {
+    if (!proc.pid) return
+    try {
+      process.kill(-proc.pid, 'SIGKILL')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+    }
+  }
+  let expired = false
+  const timer = setTimeout(() => {
+    expired = true
+    stop()
+  }, timeoutMs)
+  try {
+    const { code, signal } = await closed
+    // A timed-out descendant can outlive a shell that already exited0.
+    // Never turn that incomplete invocation into a successful result.
+    if (expired) throw new Error(`Host fixture exceeded ${timeoutMs}ms: ${stderr}`)
+    if (code === null) throw new Error(`Host fixture terminated by ${signal}: ${stderr}`)
+    return { exitCode: code, stdout, stderr }
+  } finally {
+    clearTimeout(timer)
+    stop()
+    await closed.catch(() => {})
+  }
+}
 
 function makeMachine(overrides: Partial<Machine> = {}): Machine {
   return {
@@ -1186,7 +1235,7 @@ describe('browser tools Phase 2 — machine plumbing (group membership, socket e
   })
 })
 
-describe('box-provision.sh validation (unprivileged — must exit BEFORE any sudo call)', () => {
+describe('box-provision.sh validation and privilege boundaries (synthetic host)', () => {
   const boxProvisionPath = join(repoRoot, 'scripts/machine/box-provision.sh')
   // Resolve before adding the fixture's bash shim: only the nested inventory
   // shell is refused, not the real script under test.
@@ -1202,37 +1251,42 @@ describe('box-provision.sh validation (unprivileged — must exit BEFORE any sud
     args: string[],
     options: { env?: Record<string, string> } = {}
   ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-    const proc = Bun.spawn([bash, boxProvisionPath, ...args], {
-      stdin: 'ignore',
-      stdout: 'pipe',
-      stderr: 'pipe',
-      ...(options.env ? { env: { ...process.env, ...options.env } } : {}),
-    })
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ])
-    return { exitCode, stdout, stderr }
+    // Even valid restore-parser cases run with a synthetic absent account and
+    // an owned host root, never real sudo or the machine's /run lock directory.
+    return runHostFixture([bash, boxProvisionPath, ...args], options.env ?? refusingInventoryEnv(0))
   }
 
-  /**
-   * Refuse the inventory boundary with exit 77, before any host access/effects.
-   * Simulate both caller UIDs on every platform: non-root reaches sudo, while
-   * root invokes the inventory bash directly. Neither shim runs its arguments.
-   */
-  function refusingInventoryEnv(uid: number): Record<string, string> {
+  /** Re-exec legitimately as root, then refuse ONLY the inventory bash. */
+  function refusingInventoryEnv(uid: number, refuseElevation = false): Record<string, string> {
     const dir = mkdtempSync(join(tmpdir(), 'ficus-refusing-inventory-'))
     fixtureRoots.push(dir)
-    writeFileSync(join(dir, 'id'), `#!/bin/sh\n[ "$#" = 1 ] && [ "$1" = -u ] || exit 78\nprintf '%s\\n' '${uid}'\n`, {
+    writeFileSync(
+      join(dir, 'id'),
+      `#!/bin/sh
+[ "$#" = 1 ] && [ "$1" = -u ] || exit 78
+printf '%s\n' "\${FICUS_FIXTURE_UID:-${uid}}"
+`,
+      { mode: 0o755 }
+    )
+    writeFileSync(
+      join(dir, 'sudo'),
+      `#!/bin/sh
+${
+  refuseElevation
+    ? 'echo "ficus-test: sudo refused: $*" >&2; exit 77'
+    : `
+[ "$1" = bash ] && [ "$2" = '${boxProvisionPath}' ] || exit 78
+printf '%s\n' "$*" >> '${dir}/elevations'
+shift
+FICUS_FIXTURE_UID=0 exec '${bash}' "$@"`
+}
+`,
+      { mode: 0o755 }
+    )
+    writeFileSync(join(dir, 'bash'), '#!/bin/sh\necho "ficus-test: bash refused: $*" >&2\nexit 77\n', {
       mode: 0o755,
     })
-    for (const command of ['sudo', 'bash']) {
-      writeFileSync(join(dir, command), `#!/bin/sh\necho "ficus-test: ${command} refused: $*" >&2\nexit 77\n`, {
-        mode: 0o755,
-      })
-    }
-    return { PATH: `${dir}:${process.env.PATH ?? ''}`, FICUS_HOST_ROOT: dir }
+    return { PATH: `${dir}:${process.env.PATH ?? ''}`, FICUS_HOST_ROOT: dir, FICUS_FIXTURE_UID: String(uid) }
   }
 
   it('rejects an invalid --unix-user charset (exit 2)', async () => {
@@ -1444,18 +1498,35 @@ describe('box-provision.sh validation (unprivileged — must exit BEFORE any sud
   })
 
   it.each([1000, 0])('lets valid box user + port reach the refused layout inventory (caller UID %s)', async (uid) => {
+    const env = refusingInventoryEnv(uid)
     const { exitCode, stdout, stderr } = await runBoxProvision(
       ['--sandbox-id', 'x', '--unix-user', 'box_0123456789ab', '--port', '50100'],
-      { env: refusingInventoryEnv(uid) }
+      { env }
     )
-    // The first privileged call is now the layout inventory. Its failure is
-    // deliberately normalized to exit 3, NOT the shim's exit 77. Require both
-    // the exact boundary and the fail-closed diagnostic, not just "not exit 2".
+    // Valid input elevates and acquires the REAL host lock before inventory.
+    // Inventory failure is still normalized to exactly3, not the shim's77.
     expect(exitCode).toBe(3)
-    const boundary = uid === 0 ? 'bash refused: -s -- ' : 'sudo refused: bash -s -- '
-    expect(stderr).toContain(`ficus-test: ${boundary}`)
+    expect(stderr).toContain('ficus-test: bash refused: -s -- ')
+    expect(existsSync(join(env.FICUS_HOST_ROOT!, 'run/ficus-box-locks/ficus-box-box_0123456789ab.lock'))).toBe(true)
+    const elevations = join(env.FICUS_HOST_ROOT!, 'elevations')
+    if (uid === 0) expect(existsSync(elevations)).toBe(false)
+    else expect(readFileSync(elevations, 'utf8').trim().split('\n')).toHaveLength(1)
     expect(stderr.match(/ficus-test:/g)).toHaveLength(1)
     expect(stderr).toContain('machine layout inventory failed; nothing was changed')
+    expect(stdout).toBe('')
+  })
+
+  it('reports elevation refusal separately, before lock acquisition or inventory', async () => {
+    const env = refusingInventoryEnv(1000, true)
+    const { exitCode, stdout, stderr } = await runBoxProvision(
+      ['--sandbox-id', 'x', '--unix-user', 'box_0123456789ab', '--port', '50100'],
+      { env }
+    )
+    expect(exitCode).toBe(77)
+    expect(stderr).toContain('ficus-test: sudo refused: bash ')
+    expect(stderr).not.toContain('bash refused:')
+    expect(stderr).not.toContain('machine layout inventory failed')
+    expect(existsSync(join(env.FICUS_HOST_ROOT!, 'run'))).toBe(false)
     expect(stdout).toBe('')
   })
 
@@ -1567,8 +1638,8 @@ describe('waitForSshReady', () => {
 // "succeeds" while delivering an empty or partial ~/workspace, or one that
 // leaves it root-owned, destroys a squad's authoritative work.
 //
-// The script's privileged calls are satisfied by a PATH shim (`sudo` execs its
-// arguments, `id`/`getent` answer for a fake box user, `chown` records and
+// The script's privileged calls are satisfied by a PATH shim (`sudo` re-execs
+// as simulated root, `id`/`getent` answer for a fake box user, `chown` records and
 // no-ops) so no root is needed. Extraction, member selection, and the 0755/0700
 // locks are therefore exercised for real; only the chown's EFFECT is simulated
 // (its arguments are asserted instead) — that part needs a live smoke.
@@ -1618,11 +1689,14 @@ describe.skipIf(!GNU_TAR)('box-provision.sh --restore-stream (real tar, shimmed 
       writeFileSync(path, `#!/usr/bin/env bash\n${body}\n`)
       chmodSync(path, 0o755)
     }
-    write('sudo', 'exec "$@"')
-    write('id', `if [ "$1" = "-u" ] && [ -n "\${2:-}" ]; then echo 1000; else echo 1000; fi`)
+    write('sudo', 'FICUS_FIXTURE_UID=0 exec "$@"')
+    write('id', 'if [ "$#" = 1 ] && [ "$1" = -u ]; then echo "${FICUS_FIXTURE_UID:-1000}"; else echo 1000; fi')
     write('getent', `echo "${BOX_USER}:x:1000:1000::${home}:/bin/bash"`)
     write('chown', `echo "$@" >> ${chownLog}`)
-    write('install', 'dest="${!#}"; mkdir -p "$dest"; chmod 700 "$dest"')
+    write(
+      'install',
+      'mode=755; while [ "$#" -gt 1 ]; do if [ "$1" = -m ]; then mode="$2"; shift; fi; shift; done; mkdir -p "$1"; chmod "$mode" "$1"'
+    )
     // The script calls bare `tar`, whose extract needs GNU-tar flags. Pin it to
     // the GNU tar this block gated on so a macOS bsdtar can't reach the script.
     write('tar', `exec ${GNU_TAR} "$@"`)
@@ -1640,10 +1714,30 @@ describe.skipIf(!GNU_TAR)('box-provision.sh --restore-stream (real tar, shimmed 
       `(tar -c ${flag} -f - -C ${fixture.root}/src workspace .private${cut}) | ` +
       `bash ${boxProvisionPath} --unix-user ${BOX_USER} --restore-stream ` +
       `--codec ${opts.codec} --state-dirs '${opts.stateDirs}' --staging-id ${opts.stagingId === undefined ? '11111111-1111-4111-8111-111111111111' : opts.stagingId}`
-    const proc = Bun.spawn(['bash', '-c', script], { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' })
-    const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited])
-    return { exitCode, stderr }
+    return runHostFixture(['bash', '-c', script], { FICUS_HOST_ROOT: fixture.root, FICUS_FIXTURE_UID: '1000' })
   }
+
+  it('terminates and awaits an owned descendant even if its shell already exited', async () => {
+    const fixture = makeFixture()
+    const childPidPath = join(fixture.root, 'child.pid')
+    try {
+      // The parent exits0, but the descendant keeps both inherited pipes open.
+      // Merely killing/awaiting the first shell would leak sleep for30s.
+      await expect(
+        runHostFixture(['bash', '-c', 'sleep 30 & printf "%s" "$!" > "$1"', 'fixture', childPidPath])
+      ).rejects.toThrow('Host fixture exceeded 2000ms')
+      const pid = Number(readFileSync(childPidPath, 'utf8'))
+      expect(pid).toBeGreaterThan(1)
+      // An orphan can briefly remain a zombie awaiting init reaping. No
+      // runnable descendant may survive the awaited group/pipe closure.
+      const state = Bun.spawnSync(['ps', '-o', 'stat=', '-p', String(pid)])
+        .stdout.toString()
+        .trim()
+      expect(state === '' || state.startsWith('Z')).toBe(true)
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true })
+    }
+  })
 
   it('extracts the piped tar into operation staging, leaving HOME untouched until promotion', async () => {
     const fixture = makeFixture()
@@ -1654,6 +1748,8 @@ describe.skipIf(!GNU_TAR)('box-provision.sh --restore-stream (real tar, shimmed 
       })
 
       expect(exitCode).toBe(0)
+      expect(existsSync(join(fixture.root, 'run/ficus-box-locks', `ficus-box-${BOX_USER}.lock`))).toBe(true)
+      expect(statSync(join(fixture.root, 'run/ficus-box-locks')).mode & 0o777).toBe(0o755)
       // The whole tree landed — not just the top-level dir entries.
       expect(
         readFileSync(
