@@ -259,6 +259,15 @@ settings show a nonsecret notice explaining that the content must be saved there
 Users with env-write permission can explicitly re-save unchanged content while
 that notice is present (including Ctrl/Cmd+S); pending/read-only submissions stay
 disabled, and successful registration clears the notice after re-fetch.
+Settings GET reads are separately bounded at 256 KiB for both `env.user` and the
+legacy `.env` fallback, including file growth during reads. Oversized content
+returns HTTP 413 (`squad_env_too_large`), never an editable prefix or empty
+substitute. The file is left unchanged. Settings shows an explicit error with no
+editor/Save, including when an older query value is cached; saves also wait for
+pending reads. Reduce the file outside Settings, reload, then save the smaller
+content there to register output redaction. Unsafe/unreadable files return a
+controlled 409 without falling back to generated content. Generic runtime env
+regeneration and strict cleanup retain their existing full-content behavior.
 Legacy files above 256 KiB are skipped with a warning; API/service writes enforce
 the same UTF-8 byte cap before any file write. Bounded reads also tolerate a file
 growing after its metadata check. Symlink settings and files are not followed.

@@ -1,3 +1,4 @@
+import { readSettingsEnvFile } from './env-settings-read'
 import { assertSquadEnvSize, getSquadEnvSecretSource } from '../security/squad-env-secret-source'
 import { projectExecutionWrappers } from '../integrations/project-execution-wrappers'
 import { join } from 'path'
@@ -182,8 +183,19 @@ export function getEnvFile(squadId: string): string | null {
   const generatedEnvPath = getGeneratedEnvPath(squadId)
   if (!existsSync(generatedEnvPath)) return null
   const content = readFileSync(generatedEnvPath, 'utf-8')
-  if (content.includes(LEGACY_EXPOSURE_MARKER) || content.includes(GENERATED_INTEGRATION_MARKER)) return ''
-  return content
+  return legacyUserContent(content)
+}
+
+function legacyUserContent(content: string): string {
+  return content.includes(LEGACY_EXPOSURE_MARKER) || content.includes(GENERATED_INTEGRATION_MARKER) ? '' : content
+}
+
+/** Bounded, non-truncating Settings read. Runtime regeneration retains getEnvFile semantics. */
+export function getEnvFileForSettings(squadId: string): string | null {
+  const content = readSettingsEnvFile(getUserEnvPath(squadId))
+  if (content !== null) return content
+  const legacy = readSettingsEnvFile(getGeneratedEnvPath(squadId))
+  return legacy === null ? null : legacyUserContent(legacy)
 }
 
 /**

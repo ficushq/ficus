@@ -1,3 +1,4 @@
+import { ApiError } from '../../api/client'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getWorkspaceEnv, setWorkspaceEnv } from '../../api/squads'
@@ -19,7 +20,7 @@ export function SquadEnvConfig({ squadId }: Props) {
 
   const queryKey = ['squads', squadId, 'workspace-env']
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isFetching, error } = useQuery({
     queryKey,
     queryFn: () => getWorkspaceEnv(squadId),
   })
@@ -47,7 +48,8 @@ export function SquadEnvConfig({ squadId }: Props) {
     return () => clearTimeout(timer)
   }, [saved])
 
-  const canSave = canWriteEnv && !isLoading && !error && (dirty || !!data?.detectionNotice) && !mutation.isPending
+  const canSave =
+    canWriteEnv && !isLoading && !isFetching && !error && (dirty || !!data?.detectionNotice) && !mutation.isPending
   const handleSave = useCallback(() => {
     if (!canSave || submitting.current) return
     // Mutation observer notifications render asynchronously; guard rapid
@@ -83,7 +85,11 @@ export function SquadEnvConfig({ squadId }: Props) {
     return (
       <div>
         <h4 className="text-sm font-medium text-primary mb-2">Environment Variables</h4>
-        <div className="text-sm text-status-danger-500 py-4">Failed to load environment variables</div>
+        <div role="alert" className="text-sm text-status-danger-500 py-4">
+          {error instanceof ApiError && error.status === 413
+            ? 'Environment exceeds 256 KiB. Output redaction is unavailable for this file. The existing file is unchanged and cannot be edited here; reduce it outside Settings, then reload and save it here.'
+            : 'Failed to load environment variables'}
+        </div>
       </div>
     )
   }

@@ -1,3 +1,4 @@
+import { SquadEnvSettingsReadError } from '../services/squad/env-settings-read'
 import { MAX_SQUAD_ENV_BYTES, getSquadEnvSecretSource } from '../services/security/squad-env-secret-source'
 import { Hono } from 'hono'
 import { zValidator } from '../lib/zod-validator'
@@ -20,9 +21,14 @@ export const squadEnvRouter = new Hono()
   .get('/:squadId/env', requireSquadPermission('env:read', 'squadId'), async (c) => {
     const squadId = resolvedSquadId(c)
 
-    const content = squadEnv.getEnvFile(squadId)
-    const detectionNotice = getSquadEnvSecretSource().notice(squadId)
-    return c.json({ content: content ?? '', ...(detectionNotice ? { detectionNotice } : {}) })
+    try {
+      const content = squadEnv.getEnvFileForSettings(squadId)
+      const detectionNotice = getSquadEnvSecretSource().notice(squadId)
+      return c.json({ content: content ?? '', ...(detectionNotice ? { detectionNotice } : {}) })
+    } catch (error) {
+      if (!(error instanceof SquadEnvSettingsReadError)) throw error
+      return c.json({ error: error.message, code: error.code }, error.status)
+    }
   })
 
   // Set .ficus/.env content

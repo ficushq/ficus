@@ -1,6 +1,6 @@
 import { getSquadWorkspacePath } from '../services/squad/workspace'
 import { WORKSPACE_DOT_DIR } from '../services/workspace/dot-dir'
-import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'bun:test'
 import { like } from 'drizzle-orm'
@@ -123,6 +123,131 @@ describe('squad-env routes', () => {
   })
 
   describe('GET /api/squads/workspace/:squadId/env', () => {
+    it('rejects oversized Settings files without truncated or empty fallbacks and preserves runtime reads', async () => {
+      const { getEnvFile } = await import('../services/squad/env')
+      const dir = join(getSquadWorkspacePath(squadId), WORKSPACE_DOT_DIR)
+      mkdirSync(dir, { recursive: true })
+      try {
+        for (const [name, prefix] of [
+          ['env.user', 'SYNTHETIC_TOKEN='],
+          ['.env', 'SYNTHETIC_LEGACY='],
+          ['.env', '# Generated from Ficus Secret Store allowlist. Do not edit values here.\n'],
+        ]) {
+          rmSync(join(dir, 'env.user'), { force: true })
+          writeFileSync(join(dir, '.env'), 'FALLBACK=must-not-overwrite')
+          const path = join(dir, name)
+          const original = Buffer.from(prefix + 'x'.repeat(256 * 1024))
+          writeFileSync(path, original)
+          const result = await app.request(`/api/squads/workspace/${squadId}/env`, {
+            headers: authHeaders(admin.token),
+          })
+          expect(result.status).toBe(413)
+          const body = await result.json()
+          expect(body.code).toBe('squad_env_too_large')
+          expect(body.error).toContain('256 KiB')
+          expect(body.error).toContain('unchanged')
+          expect(body.error).toContain('Output redaction')
+          expect(body).not.toHaveProperty('content')
+          expect(JSON.stringify(body)).not.toContain(prefix)
+          expect(readFileSync(path).equals(original)).toBe(true)
+          // Runtime/strict-cleanup behavior is not globally capped by this GET fix.
+          if (name === 'env.user') expect(getEnvFile(squadId)).toBe(original.toString('utf8'))
+        }
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('preserves exact byte-cap UTF8 content and normal legacy/marker behavior', async () => {
+      const dir = join(getSquadWorkspacePath(squadId), WORKSPACE_DOT_DIR)
+      mkdirSync(dir, { recursive: true })
+      const read = async () => {
+        const result = await app.request(`/api/squads/workspace/${squadId}/env`, { headers: authHeaders(admin.token) })
+        expect(result.status).toBe(200)
+        return (await result.json()).content
+      }
+      try {
+        writeFileSync(join(dir, '.env'), 'LEGACY=preserved')
+        expect(await read()).toBe('LEGACY=preserved')
+        writeFileSync(join(dir, 'env.user'), '')
+        expect(await read()).toBe('')
+        const exact = 'é'.repeat(128 * 1024)
+        writeFileSync(join(dir, 'env.user'), exact)
+        expect(await read()).toBe(exact)
+        rmSync(join(dir, 'env.user'))
+        writeFileSync(
+          join(dir, '.env'),
+          '# Generated protected integration bindings. Do not edit values here.\nPUBLIC=hidden'
+        )
+        expect(await read()).toBe('')
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('does not return fallback content for an unreadable or symlinked user file', async () => {
+      const dir = join(getSquadWorkspacePath(squadId), WORKSPACE_DOT_DIR)
+      const user = join(dir, 'env.user')
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, '.env'), 'FALLBACK=must-not-save')
+      writeFileSync(join(dir, 'synthetic-target'), 'SYNTHETIC=preserved')
+      try {
+        for (const symlink of [false, true]) {
+          if (symlink) symlinkSync(join(dir, 'synthetic-target'), user)
+          else mkdirSync(user)
+          const result = await app.request(`/api/squads/workspace/${squadId}/env`, {
+            headers: authHeaders(admin.token),
+          })
+          expect(result.status).toBe(409)
+          expect(await result.json()).toMatchObject({ code: 'squad_env_unreadable' })
+          expect(readFileSync(join(dir, 'synthetic-target'), 'utf8')).toBe('SYNTHETIC=preserved')
+          rmSync(user, { recursive: true, force: true })
+        }
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('keeps oversized legacy bootstrap warning visible and recovers only after external reduction and API resave', async () => {
+      const { getSquadEnvSecretSource } = await import('../services/security/squad-env-secret-source')
+      const dir = join(getSquadWorkspacePath(squadId), WORKSPACE_DOT_DIR)
+      const path = join(dir, 'env.user')
+      mkdirSync(dir, { recursive: true })
+      const original = '#' + 'x'.repeat(256 * 1024)
+      writeFileSync(path, original)
+      try {
+        await getSquadEnvSecretSource().initialize()
+        expect(getSquadEnvSecretSource().notice(squadId)).toContain('256 KiB')
+        const rejected = await app.request(`/api/squads/workspace/${squadId}/env`, {
+          headers: authHeaders(admin.token),
+        })
+        expect(rejected.status).toBe(413)
+        expect(await rejected.json()).not.toHaveProperty('content')
+        expect(readFileSync(path, 'utf8')).toBe(original)
+        const smaller = 'APP_TOKEN=synthetic-smaller-legacy-token'
+        // Explicit operator-side reduction, not an API truncation or an empty UI overwrite.
+        writeFileSync(path, smaller)
+        const read = await app.request(`/api/squads/workspace/${squadId}/env`, { headers: authHeaders(admin.token) })
+        expect(read.status).toBe(200)
+        const body = await read.json()
+        expect(body.content).toBe(smaller)
+        expect(body.detectionNotice).toBeString()
+        const saved = await app.request(`/api/squads/workspace/${squadId}/env`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
+          body: JSON.stringify({ content: smaller }),
+        })
+        expect(saved.status).toBe(200)
+        const recovered = await app.request(`/api/squads/workspace/${squadId}/env`, {
+          headers: authHeaders(admin.token),
+        })
+        expect(await recovered.json()).toEqual({ content: smaller })
+        expect(readFileSync(path, 'utf8')).toBe(smaller)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
     it('returns empty content for new squad', async () => {
       const res = await app.request(`/api/squads/workspace/${squadId}/env`, { headers: authHeaders(admin.token) })
 

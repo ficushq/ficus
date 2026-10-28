@@ -40,7 +40,7 @@ test('Environment settings show the nonsecret detection notice for an untrusted 
   }
 })
 
-async function mountedFixture({ readOnly = false, failFirst = false } = {}) {
+async function mountedFixture({ readOnly = false, failFirst = false, oversized = false, cached = true } = {}) {
   const { acquireDomHarness } = await import('../../test/domHarness')
   const { PermissionsProvider } = await import('../../hooks/usePermissions')
   const originalFetch = globalThis.fetch
@@ -50,7 +50,8 @@ async function mountedFixture({ readOnly = false, failFirst = false } = {}) {
   })
   const content = 'APP_TOKEN=synthetic-untrusted-settings-token'
   const queryKey = ['squads', 's1', 'workspace-env']
-  client.setQueryData(queryKey, { content, detectionNotice: 'Save this environment in Settings to register it.' })
+  if (cached)
+    client.setQueryData(queryKey, { content, detectionNotice: 'Save this environment in Settings to register it.' })
   const requests: unknown[] = []
   let registered = false
   let release!: () => void
@@ -65,6 +66,13 @@ async function mountedFixture({ readOnly = false, failFirst = false } = {}) {
         return Response.json({ error: 'synthetic retry failure' }, { status: 500 })
       registered = true
       return Response.json({ success: true })
+    }
+    if (oversized) {
+      await gate
+      return Response.json(
+        { code: 'squad_env_too_large', error: 'Squad environment exceeds 256 KiB; existing file unchanged.' },
+        { status: 413 }
+      )
     }
     return Response.json({
       content,
@@ -104,6 +112,12 @@ async function mountedFixture({ readOnly = false, failFirst = false } = {}) {
   }
   return {
     dom,
+    client,
+    refetch: () => client.invalidateQueries({ queryKey }),
+    fileReduced: () => {
+      oversized = false
+      return client.invalidateQueries({ queryKey })
+    },
     requests,
     content,
     release,
@@ -175,6 +189,60 @@ test('failed unchanged registration can be retried without inventing a content e
     await f.dom.act(async () => fireEvent.click(f.button()))
     await waitFor(() => expect(f.dom.window.document.querySelector('[role=status]')).toBeNull())
     expect(f.requests).toEqual([{ content: f.content }, { content: f.content }])
+  } finally {
+    await f.cleanup()
+  }
+})
+
+for (const cached of [true, false]) {
+  test(`oversized GET is non-editable, does not replace cached content or send writes (cached=${cached})`, async () => {
+    const { fireEvent, waitFor } = await import('@testing-library/dom')
+    const f = await mountedFixture({ oversized: true, cached })
+    try {
+      if (cached) {
+        await f.dom.act(async () => {
+          void f.refetch()
+        })
+        await waitFor(() => expect(f.button().disabled).toBe(true))
+      } else expect(document.querySelector('textarea')).toBeNull()
+      f.release()
+      await waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toContain('256 KiB'))
+      expect(document.querySelector('[role="alert"]')?.textContent).toContain('unchanged')
+      expect(document.querySelector('textarea')).toBeNull()
+      expect(document.querySelector('button')).toBeNull()
+      fireEvent.keyDown(document.body, { key: 's', ctrlKey: true })
+      fireEvent.keyDown(document.body, { key: 's', metaKey: true })
+      expect(f.requests).toHaveLength(0)
+      expect(f.client.getQueryData(['squads', 's1', 'workspace-env'])).toEqual(
+        cached
+          ? { content: f.content, detectionNotice: 'Save this environment in Settings to register it.' }
+          : undefined
+      )
+    } finally {
+      await f.cleanup()
+    }
+  })
+}
+
+test('a smaller file loaded after the oversized error becomes explicitly registerable without losing its content', async () => {
+  const { fireEvent, waitFor } = await import('@testing-library/dom')
+  const f = await mountedFixture({ oversized: true, cached: false })
+  try {
+    f.release()
+    await waitFor(() => expect(document.querySelector('[role="alert"]')?.textContent).toContain('256 KiB'))
+    expect(f.requests).toHaveLength(0)
+    await f.dom.act(async () => {
+      await f.fileReduced()
+    })
+    await waitFor(() => expect(document.querySelector('textarea')?.value).toBe(f.content))
+    expect(f.button().disabled).toBe(false)
+    await f.dom.act(async () => {
+      fireEvent.click(f.button())
+    })
+    await waitFor(() => expect(document.querySelector('[role="status"]')).toBeNull())
+    expect(f.requests).toEqual([{ content: f.content }])
+    expect(f.textarea().value).toBe(f.content)
+    expect(f.button().disabled).toBe(true)
   } finally {
     await f.cleanup()
   }
