@@ -287,3 +287,32 @@ test('local first contact repairs the squad env too, not only the mounted privat
     await db.delete(sandboxExposureCleanup).where(eq(sandboxExposureCleanup.sourceId, `squad_${id}`))
   }
 })
+
+test('status retains outstanding VM copy acknowledgements after switching runtime', async () => {
+  const { getExposureCleanupStatus } = await api()
+  const { db, sandboxExposureCleanup } = await import('../../db')
+  const { eq } = await import('drizzle-orm')
+  const id = `agent_${crypto.randomUUID()}`,
+    previous = process.env.FICUS_SANDBOX_RUNTIME
+  process.env.FICUS_SANDBOX_RUNTIME = 'host'
+  try {
+    await db.insert(sandboxExposureCleanup).values([
+      { targetId: `private:${id}`, sourceId: id, kind: 'private', squadId: null, status: 'done' },
+      {
+        targetId: `vm:${id}`,
+        sourceId: id,
+        kind: 'vm',
+        squadId: null,
+        status: 'pending',
+        reason: 'Sandbox unreachable; automatic cleanup will retry.',
+      },
+    ])
+    const result = await getExposureCleanupStatus(id)
+    expect(result.status).toBe('pending')
+    expect(result.targets?.some((row) => row.targetId === `vm:${id}`)).toBe(true)
+  } finally {
+    await db.delete(sandboxExposureCleanup).where(eq(sandboxExposureCleanup.sourceId, id))
+    if (previous === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = previous
+  }
+})

@@ -269,7 +269,9 @@ export async function getExposureCleanupStatus(sandboxId: string, squadId?: stri
     .from(sandboxExposureCleanup)
     .where(
       or(
-        ...[...new Set([...ids, `private:${sandboxId}`])].map((id) => eq(sandboxExposureCleanup.targetId, id)),
+        ...[...new Set([...ids, `private:${sandboxId}`, `vm:${sandboxId}`])].map((id) =>
+          eq(sandboxExposureCleanup.targetId, id)
+        ),
         and(
           eq(sandboxExposureCleanup.kind, 'archive'),
           sql`left(${sandboxExposureCleanup.sourceId}, ${sandboxId.length + 1}) = ${sandboxId + '-'}`
