@@ -16,7 +16,7 @@ import { moodCache, reportWatching, robotMoodsEnabled } from '../services/robot-
  * caller could list (the same rule as GET /api/agents) are kept.
  */
 
-const uuid = z.string().uuid()
+const uuid = z.uuid()
 const watchingBody = z.object({ agentIds: z.array(z.string().max(100)).max(FARM_WATCHING_MAX_AGENTS) })
 
 export interface FarmRouterDeps {

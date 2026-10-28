@@ -9,10 +9,10 @@ import { resolveWorkspaceLayout } from '../sandbox/workspace-layout'
 import { WriteService } from '../memory'
 
 export const squadFileReadSchema = z.object({
-  squadId: z.string().uuid(),
+  squadId: z.uuid(),
   path: z.string().min(1).max(2048),
-  offset: z.number().int().min(0).default(0),
-  limit: z.number().int().min(1).max(20000).default(12000),
+  offset: z.int().min(0).default(0),
+  limit: z.int().min(1).max(20000).default(12000),
 })
 /**
  * Bounded read under the same permission as the matching HTTP route: memory:read for the memory

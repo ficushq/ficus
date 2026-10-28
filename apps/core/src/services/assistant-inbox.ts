@@ -24,7 +24,7 @@ export async function validateAssistantInboxReply(
   replyTo: unknown,
   options: { assistantTaskStatus?: string } = {}
 ): Promise<void> {
-  if (senderType !== 'system' && !z.string().uuid().safeParse(replyTo).success)
+  if (senderType !== 'system' && !z.uuid().safeParse(replyTo).success)
     throw new Error('inReplyTo must be a full inbox message UUID')
   if (!(await assistantInboxOwner(recipientId))) throw new Error('Assistant conversation not found')
   if (options.assistantTaskStatus !== undefined && senderType !== 'agent')

@@ -79,7 +79,7 @@ const NO_WHITESPACE_RE = /^\S+$/
 const createHostSchema = z.object({
   name: z.string().regex(NAME_RE, 'name must match ^[a-z0-9][a-z0-9-]{0,62}$'),
   sshHost: z.string().min(1).regex(NO_WHITESPACE_RE, 'sshHost must not contain whitespace/newlines'),
-  sshPort: z.number().int().min(1).max(65535).optional(),
+  sshPort: z.int().min(1).max(65535).optional(),
   sshUser: z.string().min(1).regex(NO_WHITESPACE_RE, 'sshUser must not contain whitespace/newlines'),
   description: z.string().optional(),
   squadIds: z.array(z.string().min(1)).optional(),

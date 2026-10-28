@@ -35,19 +35,13 @@ export function createPushServerConnectionRouter(service: RelayServerConnection 
   router.get('/', requirePermission('settings:read'), async (c) => c.json(await service.status()))
   router.post('/', requirePermission('settings:write'), async (c) => {
     const body = await parseJsonBody(c)
-    const input = z
-      .object({ name: z.string().trim().min(1).max(80) })
-      .strict()
-      .safeParse(body.ok ? body.value : null)
+    const input = z.strictObject({ name: z.string().trim().min(1).max(80) }).safeParse(body.ok ? body.value : null)
     if (!input.success) return c.json({ error: 'Enter a server name (up to 80 characters).' }, 400)
     return c.json(await service.start(userId(c), input.data.name))
   })
   router.post('/poll', requirePermission('settings:write'), async (c) => {
     const body = await parseJsonBody(c)
-    const input = z
-      .object({ id: z.string().uuid() })
-      .strict()
-      .safeParse(body.ok ? body.value : null)
+    const input = z.strictObject({ id: z.uuid() }).safeParse(body.ok ? body.value : null)
     if (!input.success) return c.json({ error: 'Invalid connection request.' }, 400)
     return c.json(await service.poll(userId(c), input.data.id))
   })

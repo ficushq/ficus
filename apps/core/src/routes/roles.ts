@@ -57,7 +57,7 @@ rolesRouter.get('/:id', requirePermission('roles:read'), async (c) => {
 rolesRouter.post('/', requirePermission('roles:create'), async (c) => {
   const body = await c.req.json()
   const parsed = createRoleSchema.safeParse(body)
-  if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400)
+  if (!parsed.success) return c.json({ error: z.flattenError(parsed.error) }, 400)
 
   const { name, slug, permissions } = parsed.data
 
@@ -75,7 +75,7 @@ rolesRouter.put('/:id', requirePermission('roles:update'), async (c) => {
 
   const body = await c.req.json()
   const parsed = updateRoleSchema.safeParse(body)
-  if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400)
+  if (!parsed.success) return c.json({ error: z.flattenError(parsed.error) }, 400)
 
   const affectedUsers = parsed.data.permissions === undefined ? [] : await listAssignedHumanUsers(role.id)
 

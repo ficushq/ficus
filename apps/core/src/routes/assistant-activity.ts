@@ -10,14 +10,14 @@ import {
   toAssistantActivityUpdate,
 } from '../services/assistant-activity/read'
 
-const uuid = z.string().uuid()
+const uuid = z.uuid()
 const activityQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(30),
   offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
 })
 const detailQuerySchema = z.object({ beforeSequence: z.coerce.number().int().min(1).optional() })
 const seenSchema = z.object({ messageIds: z.array(uuid).min(1).max(50) })
-const seenThroughSchema = z.object({ sequence: z.number().int().min(0) })
+const seenThroughSchema = z.object({ sequence: z.int().min(0) })
 
 /**
  * Read-only activity discovery plus human acknowledgment. Mounted inside the Assistant router

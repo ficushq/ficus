@@ -69,19 +69,22 @@ const label = z
   .min(1)
   .max(120)
   .refine((v) => v === v.trim() && !/\p{Cc}/u.test(v))
-const requestId = z.string().uuid()
-const generation = z.number().int().safe().min(1)
-export const createManagedVaultInputSchema = z.object({ requestId, displayName: label }).strict()
-export const renameManagedVaultInputSchema = z
-  .object({ requestId, expectedGeneration: generation, displayName: label })
-  .strict()
-export const managedVaultFenceInputSchema = z.object({ requestId, expectedGeneration: generation }).strict()
-export const managedVaultReadAccessInputSchema = managedVaultFenceInputSchema
-  .extend({ action: z.enum(['revoke', 'reconnect']) })
-  .strict()
-export const deleteManagedVaultInputSchema = managedVaultFenceInputSchema
-  .extend({ confirmedVaultId: z.string().uuid(), confirmedName: label })
-  .strict()
+const requestId = z.uuid()
+const generation = z.int().safe().min(1)
+export const createManagedVaultInputSchema = z.strictObject({ requestId, displayName: label })
+export const renameManagedVaultInputSchema = z.strictObject({
+  requestId,
+  expectedGeneration: generation,
+  displayName: label,
+})
+export const managedVaultFenceInputSchema = z.strictObject({ requestId, expectedGeneration: generation })
+export const managedVaultReadAccessInputSchema = managedVaultFenceInputSchema.extend({
+  action: z.enum(['revoke', 'reconnect']),
+})
+export const deleteManagedVaultInputSchema = managedVaultFenceInputSchema.extend({
+  confirmedVaultId: z.uuid(),
+  confirmedName: label,
+})
 
 /** Management DTO: never credentials, read material, host paths or another vault's data. */
 export interface ManagedVaultView {

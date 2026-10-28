@@ -46,10 +46,10 @@ export interface GitHubFeedbackRouterOptions {
   scheduleScreens?: (revisionIds: string[]) => void
 }
 
-const squadParam = z.object({ squadId: z.string().uuid() })
-const revisionParam = squadParam.extend({ revisionId: z.string().uuid() })
+const squadParam = z.object({ squadId: z.uuid() })
+const revisionParam = squadParam.extend({ revisionId: z.uuid() })
 const accountParam = squadParam.extend({ accountId: githubAccountIdSchema })
-const empty = z.object({}).strict()
+const empty = z.strictObject({})
 
 function failure(c: Context, error: unknown) {
   if (error instanceof GitHubFeedbackError)

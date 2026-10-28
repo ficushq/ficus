@@ -69,7 +69,7 @@ const defaults: ProductFeedbackDependencies = {
   coreVersion: corePackage.version,
 }
 
-const createdSchema = z.object({ id: z.string().uuid() })
+const createdSchema = z.object({ id: z.uuid() })
 
 /** https (or http on loopback, for local development) without credentials, query or fragment. */
 function intakeUrl(baseUrl: string): string | null {

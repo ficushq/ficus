@@ -18,7 +18,7 @@ import {
 import { routeParam } from '../lib/route-param'
 
 const status = z.enum(['open', 'acknowledged', 'dismissed', 'resolved'])
-const uuid = z.string().uuid()
+const uuid = z.uuid()
 const identitySubject = (identity: Identity): string => {
   if (identity.type === 'user') return `user:${identity.userId}`
   if (identity.type === 'agent') return identity.userId ? `user:${identity.userId}` : `agent:${identity.agentId}`
@@ -94,7 +94,7 @@ operationsRecommendationsRouter.patch(
   async (c) => {
     const parsedBody = await parseJsonBody(c)
     if (!parsedBody.ok) return c.json({ error: 'Invalid JSON body' }, 400)
-    const body = z.object({ status }).strict().safeParse(parsedBody.value)
+    const body = z.strictObject({ status }).safeParse(parsedBody.value)
     if (!body.success) return c.json({ error: 'Invalid body' }, 400)
     const result = await updateRecommendationStatus(
       c.req.param('id'),

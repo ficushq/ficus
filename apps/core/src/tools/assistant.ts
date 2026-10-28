@@ -435,7 +435,7 @@ export function createAssistantTools(
       Type.Object({ agentId: uuid, beforeId: Type.Optional(uuid), limit }),
       async (input) => {
         const { user } = await access()
-        const target = await Agent.find(z.string().uuid().parse(input.agentId))
+        const target = await Agent.find(z.uuid().parse(input.agentId))
         if (!target || !(await hasAgentResourcePermission(user, target, 'agents:read')))
           throw new Error('Agent not found')
         const [{ execution }, page] = await Promise.all([
@@ -459,7 +459,7 @@ export function createAssistantTools(
       Type.Object({ agentId: uuid, request, imageIds }),
       async (input, clientId) => {
         const { user, conversation } = await access()
-        const target = await Agent.find(z.string().uuid().parse(input.agentId))
+        const target = await Agent.find(z.uuid().parse(input.agentId))
         if (!target || !(await hasAgentResourcePermission(user, target, 'chat:send')))
           throw new Error('Agent not found')
         const forwarded = input.imageIds?.length
@@ -552,7 +552,7 @@ export function createAssistantTools(
         const { user } = await access()
         if (input.dismiss ? input.answer !== undefined : input.answer === undefined)
           throw new Error('Pass an answer, or dismiss=true without an answer')
-        const question = await getAgentQuestion(z.string().uuid().parse(input.questionId))
+        const question = await getAgentQuestion(z.uuid().parse(input.questionId))
         const target = question ? await Agent.find(question.agentId) : null
         if (input.dismiss) {
           // Dismissal sends nothing to the asking agent, so its lifecycle state is irrelevant.

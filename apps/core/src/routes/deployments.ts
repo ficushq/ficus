@@ -47,7 +47,7 @@ import { routeParam } from '../lib/route-param'
 const AMBIGUOUS_LOCAL_DEPLOYMENT_LINK_ERROR = 'This app link is no longer unique — get a fresh URL.'
 
 /** PATCH /local-deployments/:id: only the alias is editable; `null` clears it. */
-const updateLocalDeploymentSchema = z.object({ alias: z.string().max(253).nullable() }).strict()
+const updateLocalDeploymentSchema = z.strictObject({ alias: z.string().max(253).nullable() })
 
 /** A refused alias: taken or cooling down is a conflict; anything else is the request's fault. */
 function localDeploymentAliasErrorStatus(error: LocalDeploymentAliasError): 400 | 409 {
@@ -64,8 +64,8 @@ const metadataSchema = z.record(z.string(), z.unknown()).refine((metadata) => !c
 const createDeploymentSchema = z.object({
   name: z.string().trim().min(1).max(100),
   provider: z.string().trim().min(1).max(100),
-  url: z.string().url().optional().nullable(),
-  providerProjectUrl: z.string().url().optional().nullable(),
+  url: z.url().optional().nullable(),
+  providerProjectUrl: z.url().optional().nullable(),
   environment: deploymentEnvironmentSchema.optional(),
   status: deploymentStatusSchema.optional(),
   costRisk: deploymentCostRiskSchema.optional(),
@@ -76,8 +76,8 @@ const createDeploymentSchema = z.object({
 
 const updateDeploymentSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
-  url: z.string().url().optional().nullable(),
-  providerProjectUrl: z.string().url().optional().nullable(),
+  url: z.url().optional().nullable(),
+  providerProjectUrl: z.url().optional().nullable(),
   environment: deploymentEnvironmentSchema.optional(),
   status: deploymentStatusSchema.optional(),
   costRisk: deploymentCostRiskSchema.optional(),

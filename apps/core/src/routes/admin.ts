@@ -24,7 +24,7 @@ const nixGcSchema = z.object({
 
 const workspaceGcSchema = z.object({
   apply: z.boolean().optional(),
-  limit: z.number().int().min(1).max(5_000).optional(),
+  limit: z.int().min(1).max(5_000).optional(),
   cursor: z
     .string()
     .max(255)

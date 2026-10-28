@@ -18,13 +18,11 @@ import { parseJsonBody } from './json-body'
 const log = createLogger('system')
 const app = new Hono()
 
-const adminHoldSchema = z.object({ active: z.boolean(), reason: z.string().trim().max(500).optional() }).strict()
-const leaseSchema = z
-  .object({ holder: z.string().trim().min(1).max(200), ttlSeconds: z.number().int().min(120).max(600) })
-  .strict()
-const leaseIdSchema = z.string().uuid()
+const adminHoldSchema = z.strictObject({ active: z.boolean(), reason: z.string().trim().max(500).optional() })
+const leaseSchema = z.strictObject({ holder: z.string().trim().min(1).max(200), ttlSeconds: z.int().min(120).max(600) })
+const leaseIdSchema = z.uuid()
 // Marking is one UPDATE; the sweep does the slow work. Still bound a single request.
-const removeDormantSchema = z.object({ agentIds: z.array(z.string().uuid()).min(1).max(500) }).strict()
+const removeDormantSchema = z.strictObject({ agentIds: z.array(z.uuid()).min(1).max(500) })
 
 const ensureMaintenanceInitialized: MiddlewareHandler = async (_c, next) => {
   // Idempotent INSERT ... ON CONFLICT is intentionally performed per request:
@@ -72,7 +70,7 @@ app.put('/pause/admin', requirePermission('system:pause'), async (c) => {
   if (identity.type === 'system') return c.json({ error: 'System tokens cannot change the administrator hold' }, 403)
   const body = await parseJsonBody(c)
   const parsed = adminHoldSchema.safeParse(body.ok ? body.value : undefined)
-  if (!parsed.success) return c.json({ error: 'Invalid request', details: parsed.error.flatten() }, 400)
+  if (!parsed.success) return c.json({ error: 'Invalid request', details: z.flattenError(parsed.error) }, 400)
   const result = await maintenanceStore.setAdminHold({ ...parsed.data, actor: auditActor(identity) })
   await signalMaintenance(result.generation)
   return c.json(result)
@@ -145,7 +143,7 @@ app.get('/storage/files', requirePermission('system:logs'), async (c) => {
 app.post('/storage/dormant-agents/remove', requirePermission('system:cleanup'), async (c) => {
   const body = await parseJsonBody(c)
   const parsed = removeDormantSchema.safeParse(body.ok ? body.value : undefined)
-  if (!parsed.success) return c.json({ error: 'Invalid request', details: parsed.error.flatten() }, 400)
+  if (!parsed.success) return c.json({ error: 'Invalid request', details: z.flattenError(parsed.error) }, 400)
   return c.json(await requestDormantRemoval(parsed.data.agentIds), 202)
 })
 

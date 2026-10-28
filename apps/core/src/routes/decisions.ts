@@ -195,12 +195,11 @@ app.put('/features/:id', requirePermission('provider-auth:write'), async (c) => 
 // Match existing unscoped RBAC semantics: system user roles, or a live worker's own squad authority.
 const evaluationPermission = () => requireAnyPermission('decisions:evaluate', 'provider-auth:write')
 const acquireEvaluation = createEvaluationLimiter()
-const evaluationInput = decisionRequestSchema
-  .extend({
-    providerId: z.string().min(1).max(128),
-    purpose: z.enum(DECISION_PURPOSES),
-  })
-  .strict()
+const evaluationInput = z.strictObject({
+  ...decisionRequestSchema.shape,
+  providerId: z.string().min(1).max(128),
+  purpose: z.enum(DECISION_PURPOSES),
+})
 
 app.get('/evaluate', evaluationPermission(), (c) =>
   c.json({
