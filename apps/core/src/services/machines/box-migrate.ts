@@ -1,3 +1,4 @@
+import { withBoxHostLock, DEFAULT_BOX_SSH_TIMEOUT_MS } from './box-host-lock'
 import { randomBytes, randomUUID } from 'crypto'
 import { db } from '../../db'
 import { eventEmitter } from '../../lib/infra/event-emitter'
@@ -670,7 +671,9 @@ export async function migrateBox(
         : // User mode needs no explicit unit stop: terminate-user takes the whole
           // user manager down, and the box's three units live inside it.
           `sudo loginctl terminate-user ${unixUser}`
-    const stopResult = await runner.run(oldMachine, quiesceCmd)
+    const stopResult = await runner.run(oldMachine, withBoxHostLock(unixUser, quiesceCmd), {
+      timeoutMs: DEFAULT_BOX_SSH_TIMEOUT_MS,
+    })
     if (stopResult.exitCode !== 0) return terminal({ moved: false, reason: 'quiesce-failed' })
     sourceUnitStopped = true
 
@@ -1132,9 +1135,13 @@ export async function migrateBox(
         // onHost: the source may still run its legacy units (not re-provisioned since the rename).
         const result = await runner.run(
           oldMachine,
-          ctl.onHost(
-            (u) => `${ctl.systemctl} start ${u.socket} 2>/dev/null || true; ${ctl.systemctl} restart ${u.unit}`
-          )
+          withBoxHostLock(
+            unixUser,
+            ctl.onHost(
+              (u) => `${ctl.systemctl} start ${u.socket} 2>/dev/null || true; ${ctl.systemctl} restart ${u.unit}`
+            )
+          ),
+          { timeoutMs: DEFAULT_BOX_SSH_TIMEOUT_MS }
         )
         if (result.exitCode !== 0) restartSourceError = new Error(`source box restart failed: ${result.stderr.trim()}`)
       } catch (error) {

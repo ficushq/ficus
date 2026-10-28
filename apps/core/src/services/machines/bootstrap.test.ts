@@ -13,7 +13,7 @@ import {
   waitForSshReady,
 } from './bootstrap'
 import { buildBoxProvisionArtifact } from './box-provision-artifact'
-import { tarCodecFlag } from './box-manager'
+import { tarCodecFlag, startBoxAndAwaitHealth, type BoxManagerDeps } from './box-manager'
 import { devboxInstallCommand } from './devbox-seed'
 import type { SshResult, SshRunner } from './ssh'
 
@@ -1417,6 +1417,8 @@ FICUS_FIXTURE_UID=0 exec '${bash}' "$@"`
       'gzip',
       '--state-dirs',
       'workspace .private',
+      '--staging-id',
+      '11111111-1111-4111-8111-111111111111',
     ])
     // The fixture user is deliberately absent, so this message proves parsing
     // reached the restore branch without relying on tar or host state.
@@ -1476,6 +1478,8 @@ FICUS_FIXTURE_UID=0 exec '${bash}' "$@"`
         'gzip',
         '--state-dirs',
         'workspace .private',
+        '--staging-id',
+        '11111111-1111-4111-8111-111111111111',
       ])
       expect(stderr).toContain('cannot restore')
       expect(stderr).not.toContain('invalid --port')
@@ -1514,6 +1518,18 @@ FICUS_FIXTURE_UID=0 exec '${bash}' "$@"`
     expect(stderr.match(/ficus-test:/g)).toHaveLength(1)
     expect(stderr).toContain('machine layout inventory failed; nothing was changed')
     expect(stdout).toBe('')
+  })
+
+  it.each(['', '-1', 'NaN', '--remove'])('rejects invalid lock-wait argv before sudo or lock: %s', async (value) => {
+    const env = refusingInventoryEnv(1000)
+    const result = await runBoxProvision(
+      ['--unix-user', 'box_0123456789ab', '--port', '50100', '--lock-wait-seconds', value],
+      { env }
+    )
+    expect(result.exitCode).toBe(2)
+    expect(result.stderr).toContain('--lock-wait-seconds requires a nonnegative number')
+    expect(existsSync(join(env.FICUS_HOST_ROOT!, 'elevations'))).toBe(false)
+    expect(existsSync(join(env.FICUS_HOST_ROOT!, 'run'))).toBe(false)
   })
 
   it('reports elevation refusal separately, before lock acquisition or inventory', async () => {
@@ -1689,7 +1705,7 @@ describe.skipIf(!GNU_TAR)('box-provision.sh --restore-stream (real tar, shimmed 
       writeFileSync(path, `#!/usr/bin/env bash\n${body}\n`)
       chmodSync(path, 0o755)
     }
-    write('sudo', 'FICUS_FIXTURE_UID=0 exec "$@"')
+    write('sudo', `exec env -i PATH="${shim}:$PATH" FICUS_HOST_ROOT="${root}" FICUS_FIXTURE_UID=0 "$@"`)
     write('id', 'if [ "$#" = 1 ] && [ "$1" = -u ]; then echo "${FICUS_FIXTURE_UID:-1000}"; else echo 1000; fi')
     write('getent', `echo "${BOX_USER}:x:1000:1000::${home}:/bin/bash"`)
     write('chown', `echo "$@" >> ${chownLog}`)
@@ -1705,7 +1721,13 @@ describe.skipIf(!GNU_TAR)('box-provision.sh --restore-stream (real tar, shimmed 
 
   async function runRestoreStream(
     fixture: ReturnType<typeof makeFixture>,
-    opts: { codec: 'gzip' | 'zstd'; stateDirs: string; truncateTo?: number; stagingId?: string }
+    opts: {
+      codec: 'gzip' | 'zstd'
+      stateDirs: string
+      truncateTo?: number
+      stagingId?: string
+      lockWaitSeconds?: number
+    }
   ): Promise<{ exitCode: number; stderr: string }> {
     const flag = opts.codec === 'zstd' ? '--zstd' : '-z'
     const cut = opts.truncateTo === undefined ? '' : ` | head -c ${opts.truncateTo}`
@@ -1713,9 +1735,118 @@ describe.skipIf(!GNU_TAR)('box-provision.sh --restore-stream (real tar, shimmed 
       `export PATH="${fixture.shim}:$PATH"; ` +
       `(tar -c ${flag} -f - -C ${fixture.root}/src workspace .private${cut}) | ` +
       `bash ${boxProvisionPath} --unix-user ${BOX_USER} --restore-stream ` +
-      `--codec ${opts.codec} --state-dirs '${opts.stateDirs}' --staging-id ${opts.stagingId === undefined ? '11111111-1111-4111-8111-111111111111' : opts.stagingId}`
+      `${opts.lockWaitSeconds === undefined ? '' : `--lock-wait-seconds ${opts.lockWaitSeconds} `}--codec ${opts.codec} --state-dirs '${opts.stateDirs}' --staging-id ${opts.stagingId === undefined ? '11111111-1111-4111-8111-111111111111' : opts.stagingId}`
     return runHostFixture(['bash', '-c', script], { FICUS_HOST_ROOT: fixture.root, FICUS_FIXTURE_UID: '1000' })
   }
+
+  it('manual provisioning excludes actual Core restart commands, without blocking another box or replaying a timed-out waiter', async () => {
+    const fixture = makeFixture()
+    const bash = Bun.which('bash')!
+    const flock = Bun.which('flock')!
+    const ready = join(fixture.root, 'manual-held')
+    const release = join(fixture.root, 'manual-release')
+    const controls = join(fixture.root, 'controls')
+    const env = { PATH: `${fixture.shim}:${process.env.PATH}`, FICUS_HOST_ROOT: fixture.root, FICUS_FIXTURE_UID: '0' }
+    writeFileSync(
+      join(fixture.shim, 'flock'),
+      `#!/bin/bash
+'${flock}' "$@" || exit $?
+if [ ! -e '${ready}' ]; then
+  touch '${ready}'
+  while [ ! -e '${release}' ]; do sleep .01; done
+fi
+`,
+      { mode: 0o755 }
+    )
+    writeFileSync(
+      join(fixture.shim, 'bash'),
+      `#!/bin/sh
+# Only inventory is refused: the real provisioning dispatch still owns its lock.
+[ "$1" != -s ] || exit 77
+exec '${bash}' "$@"
+`,
+      { mode: 0o755 }
+    )
+    writeFileSync(
+      join(fixture.shim, 'sudo'),
+      `#!/bin/sh
+[ "$1" != -n ] || shift
+exec env -i PATH='${fixture.shim}:${process.env.PATH}' FICUS_HOST_ROOT='${fixture.root}' FICUS_FIXTURE_UID=0 "$@"
+`,
+      { mode: 0o755 }
+    )
+    writeFileSync(
+      join(fixture.shim, 'systemctl'),
+      `#!/bin/sh
+printf '%s\n' "$*" >> '${controls}'
+case "$*" in *UnitFileState*) echo enabled;; *ActiveState*) echo active;; esac
+`,
+      { mode: 0o755 }
+    )
+    const owner = runHostFixture(
+      [
+        bash,
+        boxProvisionPath,
+        '--sandbox-id',
+        'squad_manual',
+        '--unix-user',
+        BOX_USER,
+        '--port',
+        '50100',
+        '--lock-wait-seconds',
+        '1',
+      ],
+      env,
+      4_000
+    ).catch((error) => error as Error)
+    const deps: BoxManagerDeps = {
+      runner: { run: async (_machine, command) => runHostFixture([bash, '-c', command], env) },
+      tunnels: { ensureMaster: async () => {}, addForward: async () => 50100 } as BoxManagerDeps['tunnels'],
+      fetch: async () => new Response('{}', { status: 200 }),
+    }
+    const restart = (unixUser: string) =>
+      startBoxAndAwaitHealth(
+        {
+          machine: makeMachine(),
+          sandboxId: 'squad_manual',
+          unixUser,
+          port: 50100,
+          timeoutMs: 2_000,
+        },
+        deps
+      )
+    try {
+      const deadline = Date.now() + 2_000
+      while (!existsSync(ready) && Date.now() < deadline) await Bun.sleep(5)
+      expect(existsSync(ready)).toBe(true)
+      // Real non-root restore re-entry drops incidental environment in sudo.
+      // Its argv bound must still expire under the holder, not queue for180s.
+      const restore = await runRestoreStream(fixture, {
+        codec: 'gzip',
+        stateDirs: 'workspace .private',
+        lockWaitSeconds: 0,
+      })
+      expect(restore.exitCode).toBe(73)
+      expect(restore.stderr).toContain('FICUS_BOX_LOCK_TIMEOUT')
+      expect(existsSync(fixture.chownLog)).toBe(false)
+      await expect(restart(BOX_USER)).rejects.toThrow('exit 73')
+      expect(existsSync(controls)).toBe(false)
+      await expect(restart('box_bbbbbbbbbbbb')).resolves.toBe('http://127.0.0.1:50100')
+      const beforeRelease = readFileSync(controls, 'utf8')
+      writeFileSync(release, '')
+      const result = await owner
+      expect(result).not.toBeInstanceOf(Error)
+      expect((result as { exitCode: number }).exitCode).toBe(3)
+      // The exited waiter cannot wake and mutate AFTER Core reported failure.
+      expect(readFileSync(controls, 'utf8')).toBe(beforeRelease)
+      await expect(restart(BOX_USER)).resolves.toBe('http://127.0.0.1:50100')
+      expect(readFileSync(controls, 'utf8')).toContain('--user restart ficus-sandbox-server.service')
+    } finally {
+      writeFileSync(release, '')
+      await owner
+      rmSync(fixture.root, { recursive: true, force: true })
+    }
+  })
 
   it('terminates and awaits an owned descendant even if its shell already exited', async () => {
     const fixture = makeFixture()
@@ -1745,6 +1876,7 @@ describe.skipIf(!GNU_TAR)('box-provision.sh --restore-stream (real tar, shimmed 
       const { exitCode, stderr } = await runRestoreStream(fixture, {
         codec: 'gzip',
         stateDirs: 'workspace .private',
+        lockWaitSeconds: 0.1,
       })
 
       expect(exitCode).toBe(0)
@@ -1805,21 +1937,25 @@ describe.skipIf(!GNU_TAR)('box-provision.sh --restore-stream (real tar, shimmed 
     }
   })
 
-  it('requires operation staging and never falls back to extracting into HOME', async () => {
-    const fixture = makeFixture()
-    try {
-      const { exitCode } = await runRestoreStream(fixture, {
-        codec: 'gzip',
-        stateDirs: 'workspace .private',
-        stagingId: '',
-      })
-      expect(exitCode).not.toBe(0)
-      expect(existsSync(join(fixture.home, 'workspace', 'authoritative.txt'))).toBe(false)
-      expect(existsSync(join(fixture.home, '.private', 'secret.txt'))).toBe(false)
-    } finally {
-      rmSync(fixture.root, { recursive: true, force: true })
+  it.each(['', 'invalid'])(
+    'requires valid operation staging before privilege/lock and never extracts into HOME (%s)',
+    async (stagingId) => {
+      const fixture = makeFixture()
+      try {
+        const { exitCode } = await runRestoreStream(fixture, {
+          codec: 'gzip',
+          stateDirs: 'workspace .private',
+          stagingId,
+        })
+        expect(exitCode).not.toBe(0)
+        expect(existsSync(join(fixture.root, 'run'))).toBe(false)
+        expect(existsSync(join(fixture.home, 'workspace', 'authoritative.txt'))).toBe(false)
+        expect(existsSync(join(fixture.home, '.private', 'secret.txt'))).toBe(false)
+      } finally {
+        rmSync(fixture.root, { recursive: true, force: true })
+      }
     }
-  })
+  )
 
   it('FAILS CLOSED on a truncated stream — non-zero exit, and never claims a restore', async () => {
     const fixture = makeFixture()

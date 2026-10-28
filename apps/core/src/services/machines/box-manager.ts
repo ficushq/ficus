@@ -1,3 +1,4 @@
+import { boxProvisionLockArgs, DEFAULT_BOX_SSH_TIMEOUT_MS, withBoxHostLock } from './box-host-lock'
 import { createHash } from 'crypto'
 import { mkdir, readFile, readdir, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
@@ -1118,7 +1119,7 @@ export async function installBoxOnMachine(opts: InstallBoxOpts, deps: BoxManager
   const provisionCmd =
     `sudo bash ${BOX_PROVISION_PATH} --sandbox-id ${shellQuote(sandboxId)} ` +
     `--unix-user ${shellQuote(unixUser)} --port ${port} --unit-mode ${unitMode}` +
-    `${withDocker ? ' --with-docker' : ''}`
+    `${withDocker ? ' --with-docker' : ''} ${boxProvisionLockArgs(BOX_PROVISION_RUN_TIMEOUT_MS)}`
   // box-provision creates the unix user, enables linger, and (for docker roles)
   // runs dockerd-rootless-setuptool install — the latter pulls/sets up rootless
   // docker and can take a minute+, past the SSH runner's 30s default.
@@ -1258,7 +1259,8 @@ export async function startBoxAndAwaitHealth(
       `enabled=$(${ctl.systemctl} show -p UnitFileState --value ${u.socket}) && [ "$enabled" = enabled ] && ` +
       `active=$(${ctl.systemctl} show -p ActiveState --value ${u.socket}) && [ "$active" = active ] )`
   )
-  const restartRes = await runner.run(machine, restartCmd, { timeoutMs: opts.timeoutMs ?? 30_000 })
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_BOX_SSH_TIMEOUT_MS
+  const restartRes = await runner.run(machine, withBoxHostLock(unixUser, restartCmd, timeoutMs), { timeoutMs })
   if (restartRes.exitCode === BOX_PORT_BUSY_EXIT_CODE) {
     throw new BoxPortBusyError(sandboxId, machine.name, port, restartRes.stderr, 'resume')
   }
@@ -2003,14 +2005,16 @@ export async function restorePrivateArchive(
   // A multi-GB squad workspace tar must not die on the runner's 30s default;
   // migration passes a large budget (the scratch push AND the extraction both
   // scale with archive size). Absent = runner default (non-migrate callers).
-  const runOpts = opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : undefined
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_BOX_SSH_TIMEOUT_MS
+  const runOpts = { timeoutMs }
   const pushRes = await runner.run(machine, pushCmd, { stdin: bytes, ...runOpts })
   if (pushRes.exitCode !== 0) {
     throw new Error(`private archive push failed for ${sandboxId} (exit ${pushRes.exitCode}): ${pushRes.stderr.trim()}`)
   }
 
   const restoreCmd =
-    `sudo bash ${BOX_PROVISION_PATH} --unix-user ${shellQuote(unixUser)} ` + `--restore ${shellQuote(scratchPath)}`
+    `sudo bash ${BOX_PROVISION_PATH} --unix-user ${shellQuote(unixUser)} ` +
+    `--restore ${shellQuote(scratchPath)} ${boxProvisionLockArgs(timeoutMs)}`
   try {
     const res = await runner.run(machine, restoreCmd, runOpts)
     if (res.exitCode !== 0) {
@@ -2218,9 +2222,10 @@ export function buildStreamRestoreCommand(
   unixUser: string,
   dirs: string[],
   codec: ArchiveCodec,
-  stagingId = '00000000-0000-4000-8000-000000000000'
+  stagingId = '00000000-0000-4000-8000-000000000000',
+  timeoutMs = DEFAULT_BOX_SSH_TIMEOUT_MS
 ): string {
-  return `sudo bash ${BOX_PROVISION_PATH} ${renderShellArgs(buildStreamRestoreArgs(unixUser, dirs, codec, stagingId))}`
+  return `sudo bash ${BOX_PROVISION_PATH} ${renderShellArgs(buildStreamRestoreArgs(unixUser, dirs, codec, stagingId))} ${boxProvisionLockArgs(timeoutMs)}`
 }
 
 /** Observable facts about one home-relative state dir on a box. */
@@ -2542,8 +2547,11 @@ export async function streamBoxStateArchive(
   try {
     result = await streamer.stream(
       { machine: source.machine, command: buildArchiveStreamCommand(source.home, stateDirs, codec) },
-      { machine: dest.machine, command: buildStreamRestoreCommand(dest.unixUser, stateDirs, codec, dest.stagingId) },
-      opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : undefined
+      {
+        machine: dest.machine,
+        command: buildStreamRestoreCommand(dest.unixUser, stateDirs, codec, dest.stagingId, opts.timeoutMs),
+      },
+      { timeoutMs: opts.timeoutMs ?? DEFAULT_BOX_SSH_TIMEOUT_MS }
     )
   } catch (err) {
     throw new BoxArchiveStreamError(
@@ -2605,10 +2613,11 @@ export async function removeBoxUserOnMachine(
   // the revocation independent of --remove's exit — the command's status is
   // still --remove's, so the throw-on-failure below is unchanged.
   const tokenPath = `${BROWSER_TOKENS_DIR}/${unixUser}.token`
+  const timeoutMs = deps.timeoutMs ?? DEFAULT_BOX_SSH_TIMEOUT_MS
   const removeCmd =
     `sudo rm -f ${shellQuote(tokenPath)}; ` +
-    `sudo bash ${BOX_PROVISION_PATH} --unix-user ${shellQuote(unixUser)} --remove`
-  const res = await runner.run(machine, removeCmd, deps.timeoutMs ? { timeoutMs: deps.timeoutMs } : undefined)
+    `sudo bash ${BOX_PROVISION_PATH} --unix-user ${shellQuote(unixUser)} --remove ${boxProvisionLockArgs(timeoutMs)}`
+  const res = await runner.run(machine, removeCmd, { timeoutMs })
   if (res.exitCode !== 0) {
     throw new Error(
       `box-provision --remove failed for user ${unixUser} on machine ${machine.name} (exit ${res.exitCode}): ${res.stderr.trim()}`
@@ -2813,7 +2822,9 @@ export async function stopBox(sandboxId: string, deps: BoxManagerDeps = {}): Pro
   }
   let verified: boolean
   try {
-    const result = await runner.run(machine, stopCmd)
+    const result = await runner.run(machine, withBoxHostLock(box.unixUser, stopCmd), {
+      timeoutMs: DEFAULT_BOX_SSH_TIMEOUT_MS,
+    })
     verified = result.exitCode === 0
     await tunnels.removeForward(machine, box.port)
   } catch (error) {

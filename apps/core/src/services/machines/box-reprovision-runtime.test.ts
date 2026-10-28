@@ -11,6 +11,7 @@ import {
   REPROVISION_ALLOW_START,
   REPROVISION_GUARD_NAME,
   captureRuntimeCommand,
+  restoreRuntimeCommand,
   readReprovisionEnvCommand,
   runningReprovisionProbeCommand,
   verifyInstalledCommand,
@@ -118,4 +119,24 @@ describe('reprovision remote commands', () => {
     expect(command).not.toContain(`127.0.0.1:${box.port}`)
     expect(command).toContain('--config -')
   })
+})
+
+it('serializes standalone runtime capture and restore with the provision inode inside120s SSH', () => {
+  const runtime = {
+    server: false,
+    socket: true,
+    proxy: false,
+    docker: false,
+    manager: false,
+    linger: false,
+    serverEnabled: false,
+    socketEnabled: true,
+    dockerEnabled: false,
+  }
+  for (const command of [captureRuntimeCommand(box), restoreRuntimeCommand(box, runtime)]) {
+    expect(command).toContain('ficus-box-locks')
+    expect(command).toContain(`ficus-box-${box.unixUser}.lock`)
+    expect(command).toContain('flock -x -w 30 200')
+    expect(command.indexOf('flock -x')).toBeLessThan(command.indexOf('userctl()'))
+  }
 })

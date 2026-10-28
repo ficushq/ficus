@@ -364,9 +364,11 @@ Provisioning has two independent fences:
   `vm_box_provision_attempts` (migration `0236_vm_box_provision_attempts`). Each
   caller snapshots the current generation **before** waiting for the existing
   `vm-box-setup:<sandboxId>` advisory lease. A waiter consumes that generation's
-  immutable success/failure instead of executing a second `ensureBox`. Completed
-  generations are retained for at least one hour, beyond the 15-minute acquisition
-  budget; indexed opportunistic cleanup also prunes old results for removed boxes.
+  immutable result instead of executing a second `ensureBox`. A delayed failed
+  follower follows latest state if its cooldown expired or a newer generation
+  succeeded; a live failure cooldown is still shared. Completed generations
+  are retained for at least one hour, beyond the 15-minute acquisition budget;
+  indexed opportunistic cleanup prunes only the currently leased box's old results.
   A later independent ensure still performs the usual health/spec reconciliation.
 
 The advisory lease uses one reserved **direct** PostgreSQL session, never a
@@ -395,13 +397,41 @@ Ordinary failures back off for 30 seconds, doubling to a maximum of 15 minutes;
 success resets the failure count. Followers/backoff callers receive a sanitized
 error identifying the failed attempt and retry time, while the original caller
 retains its diagnostic error. A lost owner leaves a `running` generation: the next
-lease owner marks it abandoned and backs off for 15 minutes rather than replaying
-unknown work. An old owner cannot overwrite that terminal result. The existing
+lease owner marks it abandoned using the same exponential failure backoff
+(first failure: 30 seconds), then permits normal recovery after expiry. The
+idempotent remote script remains protected by the host lock if its original
+process is still unwinding. An old owner cannot overwrite that terminal result. The existing
 bind/reaper race remains a safe immediate re-placement exception: it happens
 before host provisioning begins.
 
-The host-lock wait defaults to **180 seconds** (`FICUS_BOX_LOCK_WAIT_SECONDS`
-can override it with a nonnegative number of seconds). Timeout exits **73** with
+The manual host-lock wait defaults to **180 seconds**. The validated
+`--lock-wait-seconds <nonnegative seconds>` argument survives root re-exec and
+sudo `env_reset`; `FICUS_BOX_LOCK_WAIT_SECONDS` is only a manual fallback.
+**Core always passes the argument**, paired with its explicit, unchanged
+SSH/stream budget: one quarter of that budget rounded down to seconds, capped
+at 180 seconds. This leaves connection, execution and cleanup headroom:
+
+| Caller | SSH/stream bound | Maximum lock wait |
+| --- | --- | --- |
+| Default remove/remnant sweep, restart/park, non-migration restore/stream | 30s | 7s |
+| Offline runtime capture/restore | 120s | 30s |
+| Nix cache publication | 180s | 45s |
+| Physical install | 300s | 75s |
+| Migration restore/remove with a 30-minute override | 1800s | 180s |
+
+Machine-health removals use the same budget-paired removal entrypoint. A waiter
+exits on the machine before its caller's deadline; it cannot remain queued and
+later remove/restart a box after reporting a lock failure. This does not promise
+to cancel an already-acquired remote operation after SSH transport loss.
+
+Standalone Core restart/park, migration quiesce/rollback and offline runtime
+restore/capture also hold **the same inode and FD 200** across their systemctl
+mutations and readbacks. A manual provision's daemon-reload therefore cannot
+interleave with their enable/restart/show sequence. Every production writer of
+`vm_box_provision_attempts`, including per-box retention cleanup, holds that
+box's lifecycle lease; detected session loss fences further publication.
+
+Timeout exits **73** with
 `FICUS_BOX_LOCK_TIMEOUT`, the box user, `holder_pid`, wait and lock path. The PID
 is published only by the lock owner; at the timeout boundary it may identify a
 just-exited owner. A waiting/timed-out invocation has not entered provisioning and

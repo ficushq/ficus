@@ -64,6 +64,11 @@
 #            not configure or connect to a server port, so they may omit it. If
 #            supplied in any mode, it must be a separate value in 1024-65535.
 #
+# --lock-wait-seconds <seconds>
+#            Bounded whole-run lock acquisition (default180s). Core passes a
+#            value below its SSH/stream deadline; argv survives sudo env_reset.
+#            Timeout exits73 naming the holder, before mutation/containment.
+#
 # --unit-mode system|user
 #            WHICH systemd manager runs the box server. Defaults from
 #            --sandbox-id: `agent_*` → system, everything else (`squad_*`,
@@ -168,6 +173,7 @@ PREPARE_NIX_CACHE=false
 PUBLISH_NIX_CACHE=false
 MEMTOTAL_KB_OVERRIDE=""
 NPROC_OVERRIDE=""
+BOX_LOCK_WAIT_SECONDS="${FICUS_BOX_LOCK_WAIT_SECONDS:-180}"
 
 # The subordinate-id maps ensure_subid_range allocates from. Real paths in
 # production; overridable ONLY so the side-effect-free --print-subid-start dry run
@@ -209,6 +215,14 @@ while [ "$#" -gt 0 ]; do
       fi
       PORT="${2}"
       PORT_SUPPLIED=true
+      shift 2
+      ;;
+    --lock-wait-seconds)
+      if [ "$#" -lt 2 ] || [[ ! "${2}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+        echo 'box-provision.sh: --lock-wait-seconds requires a nonnegative number' >&2
+        exit 2
+      fi
+      BOX_LOCK_WAIT_SECONDS="$2"
       shift 2
       ;;
     --with-docker)
@@ -2120,7 +2134,7 @@ fi
 acquire_box_lock() {
   local dir="${FICUS_HOST_ROOT}/run/ficus-box-locks" path holder_pid wait_seconds
   path="${dir}/ficus-box-${UNIX_USER}.lock"
-  wait_seconds="${FICUS_BOX_LOCK_WAIT_SECONDS:-180}"
+  wait_seconds="${BOX_LOCK_WAIT_SECONDS}"
   if [[ ! "${wait_seconds}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
     echo 'box-provision.sh: invalid FICUS_BOX_LOCK_WAIT_SECONDS' >&2
     return 2
@@ -2157,6 +2171,10 @@ if [ "${PREPARE_NIX_CACHE}" != true ]; then
     validate_box_target remove || exit $?
   elif [ "${RESTORE}" = true ] || [ "${RESTORE_STREAM}" = true ]; then
     validate_box_target 'restore into' || exit $?
+    if [ "${RESTORE_STREAM}" = true ] && [[ ! "${STAGING_ID}" =~ ^[0-9a-f-]{36}$ ]]; then
+      echo 'box-provision.sh: --restore-stream requires a UUID --staging-id' >&2
+      exit 2
+    fi
   fi
   if [ "${PUBLISH_NIX_CACHE}" = true ] && [ "$(id -u)" -ne 0 ]; then
     echo 'box-provision.sh: Nix cache publication requires root' >&2

@@ -2642,7 +2642,7 @@ describe('restorePrivateArchive', () => {
     // (c) box-provision extracts the scratch tar into the box home.
     expect(calls[1].command).toBe(
       `sudo bash /opt/ficus/bin/box-provision.sh --unix-user '${boxUnixUser('sb-1')}' ` +
-        `--restore '/tmp/ficus-restore-sb-1.tar.gz'`
+        `--restore '/tmp/ficus-restore-sb-1.tar.gz' --lock-wait-seconds 7`
     )
     // (d) the scratch tar (a full copy of the private tree) never lingers.
     expect(calls[2].command).toBe(`sudo rm -f '/tmp/ficus-restore-sb-1.tar.gz'`)
@@ -2932,7 +2932,7 @@ describe('buildStreamRestoreCommand', () => {
     expect(cmd).toBe(
       `sudo bash /opt/ficus/bin/box-provision.sh --unix-user 'box_ffffeeee2222' ` +
         `--restore-stream --codec zstd --state-dirs 'workspace .private' ` +
-        `--staging-id '00000000-0000-4000-8000-000000000000'`
+        `--staging-id '00000000-0000-4000-8000-000000000000' --lock-wait-seconds 7`
     )
     expect(cmd).not.toContain('--port')
     expect(cmd).not.toContain('/tmp/')
@@ -2971,6 +2971,8 @@ describe('buildStreamRestoreCommand', () => {
         'workspace .private',
         '--staging-id',
         '00000000-0000-4000-8000-000000000000',
+        '--lock-wait-seconds',
+        '7',
       ])
       expect(argv.filter((arg) => arg === unixUser)).toHaveLength(1)
     } finally {
@@ -3294,7 +3296,9 @@ describe('streamBoxStateArchive (fail-closed matrix)', () => {
 
     expect(result).toEqual({ bytes: 123456 })
     expect(calls[0].source).toBe(buildArchiveStreamCommand('/home/box_y', ['workspace', '.private'], 'zstd'))
-    expect(calls[0].dest).toBe(buildStreamRestoreCommand('box_abc123abc123', ['workspace', '.private'], 'zstd'))
+    expect(calls[0].dest).toBe(
+      buildStreamRestoreCommand('box_abc123abc123', ['workspace', '.private'], 'zstd', undefined, 1_800_000)
+    )
     expect(calls[0].timeoutMs).toBe(1_800_000)
   })
 
@@ -3650,7 +3654,7 @@ describe('persistent park/resume (executed remote shell)', () => {
       writeFileSync(join(dir, `${unit}.active`), 'active')
       writeFileSync(join(dir, `${unit}.enabled`), unit === names.socket ? 'enabled' : 'disabled')
     }
-    writeFileSync(join(dir, 'sudo'), '#!/bin/sh\nexec "$@"\n')
+    writeFileSync(join(dir, 'sudo'), '#!/bin/sh\n[ "$1" != -n ] || shift\nexec "$@"\n')
     writeFileSync(
       join(dir, 'systemctl'),
       `#!/bin/bash
@@ -3710,6 +3714,7 @@ done
           env: {
             PATH: `${dir}:/usr/bin:/bin`,
             FIXTURE: dir,
+            FICUS_HOST_ROOT: dir,
             MANAGER: manager,
             FAIL_VERB: failVerb,
             READBACK: readback,
@@ -4315,11 +4320,14 @@ describe('box unit commands by mode', () => {
     // about which unit exists (and a light box still gets no docker).
     const provCall = calls.find((c) => c.command.includes('box-provision.sh'))!
     expect(provCall.command).toContain('--unit-mode system')
+    expect(provCall.command).toContain('--lock-wait-seconds 75')
     expect(provCall.command).not.toContain('--with-docker')
     // Resuming pairs persistent parking with enable --now; failure is not
     // hidden by a successful server restart.
     const legacy = `${FOREIGN_BOX_UNIT_PREFIX}-${unixUser}`
     const restart = calls.find((c) => c.command.includes('systemctl'))!.command
+    expect(restart).toContain('flock -x -w 7 200')
+    expect(restart).toContain(`ficus-box-${unixUser}.lock`)
     expect(restart).toContain(
       `sudo systemctl reset-failed ${unit} 2>/dev/null || true; if ! sudo systemctl enable --now ficus-box-${unixUser}.socket; then `
     )
@@ -4328,6 +4336,8 @@ describe('box unit commands by mode', () => {
     expect(restart).not.toContain(`sudo systemctl restart ${legacy}.service`)
 
     const stop = await stopCommand(sandboxId)
+    expect(stop).toContain('flock -x -w 7 200')
+    expect(stop).toContain(`ficus-box-${unixUser}.lock`)
     expect(stop).toContain(
       `sudo systemctl stop ficus-box-${unixUser}.socket ficus-box-${unixUser}-proxy.service ${unit}`
     )
@@ -4971,15 +4981,17 @@ describe('removeBoxUserOnMachine (teardown budget)', () => {
 
     expect(calls).toHaveLength(1)
     expect(calls[0].command).toContain('--remove')
+    expect(calls[0].command).toContain('--lock-wait-seconds 180')
     expect(calls[0].timeoutMs).toBe(30 * 60_000)
   })
 
-  it('leaves the runner default in place when no budget is given (the remnant-sweep path)', async () => {
+  it('pairs the default30s budget with a7s remote wait (the remnant-sweep path)', async () => {
     const { runner, calls } = makeTimeoutRunner()
 
     await removeBoxUserOnMachine(makeMachine(), 'box_abc123abc123', { runner })
 
-    expect(calls[0].timeoutMs).toBeUndefined()
+    expect(calls[0].timeoutMs).toBe(30_000)
+    expect(calls[0].command).toContain('--lock-wait-seconds 7')
   })
 
   it('teardownBoxOnMachine threads its caller’s budget down to the --remove', async () => {

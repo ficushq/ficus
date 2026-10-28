@@ -1,3 +1,4 @@
+import { boxHostLockScript } from './box-host-lock'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, rename, lstat } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -70,7 +71,7 @@ enabled() {
 }`
 }
 export function captureRuntimeCommand(box: MachineBox): string {
-  return remote(`${runtimePreamble(box)}
+  return remote(`${boxHostLockScript(box.unixUser, 120_000)}${runtimePreamble(box)}
 server=$(boxactive "$unit")
 sock=$(boxactive "$socket")
 prox=$(boxactive "$proxy")
@@ -83,7 +84,7 @@ printf '{"server":%s,"socket":%s,"proxy":%s,"docker":%s,"manager":%s,"linger":%s
 }
 export function restoreRuntimeCommand(box: MachineBox, state: RuntimeState): string {
   validateRuntime(state)
-  return remote(`${runtimePreamble(box)}
+  return remote(`${boxHostLockScript(box.unixUser, 120_000)}${runtimePreamble(box)}
 # Provision may have started sockets, the user manager and rootless Docker.
 # Stop only this registered box's chain before restoring its recorded intent.
 if [ "$mode" = system ] || [ "$manager" = true ]; then

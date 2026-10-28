@@ -358,6 +358,16 @@ printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$
     return 1
   }
 
+  for wait_arg in '' -1 NaN --remove; do
+    make_host
+    provision --lock-wait-seconds "$wait_arg"
+    expect_eq "lock wait argv: invalid '$wait_arg' refuses before privilege" "$PROV_RC" 2
+    expect_eq 'lock wait argv: invalid input never reaches systemctl' "$(cat "${R}/calls.log")" ''
+    expect_eq 'lock wait argv: invalid input creates no host lock' \
+      "$([[ -e ${R}/run/ficus-box-locks ]] && echo yes || echo no)" no
+    rm -rf "${R}"
+  done
+
   make_host
   docker_shims
   provision --sandbox-id squad_lock --with-docker --subuid-file "${R}/subuid" --subgid-file "${R}/subgid" --memtotal-kb 8131584 --nproc 8
