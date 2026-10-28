@@ -124,7 +124,7 @@ function makeFakeClient(endpoint: string, bashScript = { stdout: 'ok', exitCode:
 
 /** Records every effect the manager drives so tests can assert order/args. */
 interface Harness {
-  deps: Partial<VmSandboxManagerDeps>
+  deps: Partial<VmSandboxManagerDeps> & Pick<VmSandboxManagerDeps, 'getSetupState' | 'markSetupRepairNeeded'>
   log: string[]
   ensureCalls: EnsureBoxOpts[]
   removeCalls: Array<{ sandboxId: string; archivePrivate?: boolean; timeoutMs?: number }>
@@ -248,7 +248,7 @@ function makeHarness(opts?: { machineForSandbox?: (id: string) => string; bashSc
 
   let port = 40000
   const boxPorts = new Map<string, number>()
-  const deps: Partial<VmSandboxManagerDeps> = {
+  const deps: Harness['deps'] = {
     // The manager resolves the machine ONCE (via a resolvePlacement-shaped request)
     // and hands its id to ensureBox; the reverse-tunnel callback (resolveBoxApiUrl)
     // uses that same machine. The full request is recorded so tests can assert its
