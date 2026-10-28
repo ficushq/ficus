@@ -52,11 +52,12 @@ export function gitHubInboxEventFreshSQL(
           sql`${revision.squadId} is distinct from ${squadId}`,
           eq(revision.decision, 'deny'),
           not(
+            // All three predicates are unconditional; Drizzle's optional return covers empty and().
             and(
               ne(revision.releaseState, 'obsolete'),
               currentGitHubFeedbackRevisionSQL(revision.id, squadId),
               sql`case when ${sourceKey} LIKE 'github-raw-facts:%' then ${gitHubQuotedParentFreshSQL(squadId, fact)} else ${gitHubQuotedParentFreshSQL(squadId, revision.envelope)} end`
-            )
+            )!
           )
         )
       )
