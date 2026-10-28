@@ -267,7 +267,7 @@ async function acceptGitHubNotification(agent: Agent, message: InboxMessage, eve
       await message.update({ deliveredAt: accepted.acceptedAt })
   } catch {
     // The persisted row remains pending. Enqueue/success without a receipt is not delivery.
-    const { withholdRevokedAutomaticGitHubOutput } = await import('../integrations/github/feedback-renewal')
-    await withholdRevokedAutomaticGitHubOutput(eventId)
+    const { withholdRevokedGitHubFeedback } = await import('../integrations/github/feedback-renewal')
+    await withholdRevokedGitHubFeedback(eventId)
   }
 }

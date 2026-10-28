@@ -113,14 +113,28 @@ export function githubActionReviewed(
  */
 export function withGitHubParentText(
   facts: IntegrationOutputFact,
-  parent: { author: GitHubAccountIdentity; objectKind: 'issue' | 'pull_request'; title: string; body: string }
+  parent: {
+    author: GitHubAccountIdentity
+    objectKind: 'issue' | 'pull_request'
+    title: string
+    body: string
+    nativeId: string
+    providerVersion: string | null
+  }
 ): IntegrationOutputFact {
   const notification = parentTextMessage(facts.body, parent)
   return {
     ...facts,
     data: {
       ...facts.data,
-      parentContent: { author: parent.author, title: parent.title, body: parent.body },
+      parentContent: {
+        author: parent.author,
+        title: parent.title,
+        body: parent.body,
+        objectKind: parent.objectKind,
+        nativeId: parent.nativeId,
+        providerVersion: parent.providerVersion,
+      },
       notificationTruncated: notification.length > NOTIFICATION_LIMIT,
     },
     body: notification.slice(0, NOTIFICATION_LIMIT),
@@ -312,7 +326,14 @@ function githubActionContent(
     const objectKind = isPR ? 'pull_request' : 'issue'
     const title = text(parent.title)
     const body = text(parent.body)
-    const withParent = withGitHubParentText(delivery, { author: parentAuthor, objectKind, title, body })
+    const withParent = withGitHubParentText(delivery, {
+      author: parentAuthor,
+      objectKind,
+      title,
+      body,
+      nativeId: parentId,
+      providerVersion: timestamp(parent.updated_at),
+    })
     const reviewed = githubActionReviewed(identity, withParent)
     // Too large to review: the factual message stands alone (it is never truncated into approval).
     if (reviewed.byteCount <= REVIEWED_LIMIT)

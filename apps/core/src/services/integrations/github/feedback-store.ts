@@ -20,12 +20,15 @@ import {
   type GitHubEditHistoryTarget,
 } from './feedback-edit-history'
 import { isGitHubAuthorFilterEnabled } from './author-filter'
-import { obsoleteOlderGitHubFeedback } from './feedback-obsolescence'
+import { isGitHubQuotedParentFresh } from './feedback-parent'
+import { isCurrentGitHubFeedbackRevision, obsoleteOlderGitHubFeedback } from './feedback-obsolescence'
 import { squads } from '../../../db/schema'
 
 type Event = typeof integrationOutputEvents.$inferSelect
 export interface FeedbackCaptureDependencies {
-  /** Must check live connection revision AND exact repository/native resource. No provider I/O under locks. */
+  /** Internal OFF observation only. No author checks/history I/O; never grants canonical approval. */
+  unfiltered?: 'content' | 'parent'
+  /** Filtered: live connection AND exact native resource. OFF: local connection authority only. */
   authorizeSource(event: Event): Promise<boolean>
   /**
    * Authenticated current-object read. Null/mismatch/error cannot establish freshness. A
@@ -94,7 +97,13 @@ async function readProvider<T>(read: () => Promise<T>): Promise<T | null> {
  */
 export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptureDependencies) {
   const event = await readOutputEvent(db, eventId)
-  const observed = event?.fact.github?.content
+  const unfiltered = deps.unfiltered !== undefined
+  if (
+    unfiltered &&
+    (deps.readCurrent || deps.verifyEditors || deps.decideFresh || deps.decideParent || deps.queueScreening)
+  )
+    throw new Error('invalid_unfiltered_capture')
+  const observed = deps.unfiltered === 'parent' ? event?.fact.github?.rawParent : event?.fact.github?.content
   if (
     !event ||
     event.integration !== 'github' ||
@@ -122,16 +131,10 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
     eq(githubFeedbackObjects.nativeId, identity.nativeId)
   )
   const [beforeRead] = await db.select().from(githubFeedbackObjects).where(condition)
-  const [knownHead] = beforeRead?.currentRevisionId
-    ? await db
-        .select({
-          contentHash: githubFeedbackRevisions.contentHash,
-          author: githubFeedbackRevisions.author,
-          envelope: githubFeedbackRevisions.envelope,
-        })
-        .from(githubFeedbackRevisions)
-        .where(eq(githubFeedbackRevisions.id, beforeRead.currentRevisionId))
-    : []
+  const knownHead = beforeRead?.currentRevisionId
+    ? await readFeedbackRevision(db, beforeRead.currentRevisionId)
+    : undefined
+  if (beforeRead?.currentRevisionId && !knownHead) throw new Error('feedback_capacity_deferred')
   // Already captured text needs no provider work: the transaction replays that revision.
   const known = sameCapturedText(knownHead, content)
   // Edit history is read only when it could matter: for content (or quoted parent text) whose
@@ -172,7 +175,11 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
     // since. Serialize with that toggle (it updates the squad row) and never hold an event the
     // squad no longer filters: the caller routes it raw instead.
     await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, squadId)).for('share')
-    if (!(await isGitHubAuthorFilterEnabled(tx, squadId))) throw new Error('feedback_filter_disabled')
+    const enabled = await isGitHubAuthorFilterEnabled(tx, squadId)
+    if (!unfiltered && !enabled) throw new Error('feedback_filter_disabled')
+    if (unfiltered && enabled) throw new Error('feedback_filter_enabled')
+    // OFF uses only a local authority callback; final freshness effects serialize with rotation.
+    if (unfiltered && !(await deps.authorizeSource(event))) throw new Error('feedback_source_unavailable')
     await tx.insert(githubFeedbackObjects).values(identity).onConflictDoNothing()
     const [object] = await tx.select().from(githubFeedbackObjects).where(condition).for('update')
     if (!object) throw new Error('feedback_capture_failed')
@@ -216,6 +223,7 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
         Date.parse(content.providerVersion) < Date.parse(object.providerVersion)
       )
       const ambiguous =
+        !unfiltered &&
         !!head &&
         (!content.providerVersion || content.providerVersion === object.providerVersion) &&
         (!hashes.has(currentHash ?? '') || beforeRead?.currentRevisionId !== object.currentRevisionId)
@@ -268,10 +276,15 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
         // The parent's text is captured only if its author is trusted now and provably wrote it;
         // otherwise (untrusted, unverifiable, edited by someone else) the factual message is.
         const chosen =
-          withParent && deps.decideParent && (await deps.decideParent(tx, squadId, content)) ? withParent : content
+          !unfiltered && withParent && deps.decideParent && (await deps.decideParent(tx, squadId, content))
+            ? withParent
+            : content
         // Only the first capture may be automatic. Pending replay or stronger evidence never upgrades history.
         const automatic =
-          reason === 'untrusted_author' && !!chosen.delivery && !!(await deps.decideFresh?.(tx, squadId, chosen))
+          !unfiltered &&
+          reason === 'untrusted_author' &&
+          !!chosen.delivery &&
+          !!(await deps.decideFresh?.(tx, squadId, chosen))
         // Held although its author is trusted: someone in its verified edit history is not.
         const heldReason =
           !automatic &&
@@ -296,9 +309,9 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
             attribution: chosen.attribution,
             providerVersion: chosen.providerVersion,
             routingProvenance: deps.routingProvenance ?? [],
-            reason: automatic ? 'trusted_author' : heldReason,
-            decision: automatic ? 'automatic' : 'pending',
-            releaseState: automatic ? 'ready' : 'held',
+            reason: unfiltered ? 'filter_disabled' : automatic ? 'trusted_author' : heldReason,
+            decision: unfiltered ? 'historical' : automatic ? 'automatic' : 'pending',
+            releaseState: unfiltered ? 'retained' : automatic ? 'ready' : 'held',
           })
           .returning({ id: githubFeedbackRevisions.id })
         revision = await readFeedbackRevision(tx, created!.id)
@@ -346,6 +359,7 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
         squadId,
         authority: event.authority,
         transportKey: transportKey ?? null,
+        unfiltered,
       })
       .onConflictDoNothing()
     return { revision, disposition, obsoleteCount, canonicalKey: `github-feedback:${squadId}:${revision.id}` }
@@ -386,6 +400,8 @@ export async function recordCanonicalGitHubFeedback(
       !revision ||
       revision.squadId !== association.squadId ||
       revision.releaseState === 'obsolete' ||
+      !(await isCurrentGitHubFeedbackRevision(tx, revision.id)) ||
+      !(await isGitHubQuotedParentFresh(tx, revision.squadId, revision.envelope)) ||
       !['allow_once', 'allow_trust', 'screened', 'automatic'].includes(revision.decision) ||
       (revision.decision === 'automatic' && !(await isTrustedGitHubFeedbackContent(tx, revision.squadId, revision))) ||
       !revision.envelope ||

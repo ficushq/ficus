@@ -311,12 +311,13 @@ rather than metadata so generic squad updates cannot change it). Migrations
 `0208_github_author_filter` (added OFF, for squads that existed at rollout) and
 `0209_github_author_filter_default_on` (ON for new squads) set it. User documentation: `apps/docs/src/content/docs/connect/github.mdx`.
 
-- **OFF** keeps pre-feature routing: no capture, hold, queue or trust lookup.
-  Exact connection and repository authorization still apply. Notices are accepted
-  at delivery as they were before the filter (no stream-state or exact-text gate)
-  and pre-flow streams still skip bot comments. One difference remains: GitHub
-  notices are delivered one message at a time against an acceptance receipt in
-  every squad, instead of batched with the rest of the mailbox.
+- **OFF** keeps raw routing without author-trust checks, history reads, screening
+  or human holds. Freshness is independent of that switch: normalized native
+  snapshots are recorded locally before routing and rechecked at final acceptance.
+  Known-older raw text is dropped with its audit snapshot retained; newer raw facts
+  and their notification formatting stay unchanged. Exact connection authority
+  still applies, pre-flow streams still skip bot comments, and GitHub notices are
+  delivered one at a time against ordinary acceptance receipts, not batched.
 - **ON** gates otherwise-matching feedback (issue and PR comments, reviews,
   inline review comments, issue and PR text) before any agent effect: inbox
   delivery, wake, consultant creation, work creation and trigger runs. This
@@ -381,6 +382,27 @@ version was already delivered. Obsolete rows retain their snapshots and decision
 for audit, leave Pending, and cannot be revived by moderation, screening, replay,
 or turning the author filter off. Capture and final acceptance share the authority
 lock; removed leases prevent stale release workers from undoing obsolescence.
+Previously accepted delivery receipts and `delivered` settlement remain intact,
+but are not freshness authority: known-older snapshots cannot materialize again,
+pass final acceptance (even with the author filter OFF), or authorize a later
+parent quotation. Unfinished canonical work is superseded even for those rows.
+
+OFF observations use the same object/revision ordering and identical-text watermark.
+New observations have `decision: historical`, `releaseState: retained`, and
+`reason: filter_disabled`: freshness bookkeeping, **not** approval, a delivered
+claim, a human hold or an entry in Pending/Releasing. Existing immutable decisions
+are preserved on replay. `github_feedback_sources.unfiltered` is server-owned
+provenance for the raw path (migration `0233_github_raw_feedback_freshness`, default
+false for existing sources), never a transported trust flag. Former filtered
+sources and projected status events cannot replay raw, and human denies remain
+final. Raw action parent snapshots are normalized independently of actor trust,
+including polls; old action facts without that native parent provenance fail
+closed. Issue polls intentionally have no provider content clock because their
+`updated_at` is restated to the lifecycle occurrence time; the same sequence
+fallback applies. Partial raw bookkeeping remains eligible for unmatched recovery.
+A mode change never turns historical OFF bookkeeping into canonical approval.
+Both unfinished raw and canonical flow deliveries become `superseded` when their
+tracked version is older; accepted effects and source facts are not rewritten.
 
 An agent that posts to GitHub with a squad connection posts as the person who
 connected that account. If that person is trusted (linked, or added manually),
@@ -417,19 +439,28 @@ both hold:
   check as comment authors;
 - the text is provably theirs. Issue and PR payloads name the creator but not
   who last edited the title or description, and `updated_at` moves on any
-  activity. As in managed memory reads, the latest captured revision of the
+  activity. For event delivery, the latest captured revision of the
   parent (`issue`/`pull_request` object, same squad and repository) with exactly
   this title and body decides: an automatic or human-allowed revision attributed
   to its creation by the same account proves it, a pending or denied one refuses
   it. A revision attributed by a verified edit history in which only that
-  author edited also proves it. Without such a revision, an unchanged payload
+  author edited also proves it. A matching snapshot cannot prove current text
+  if a newer parent version is known, even if the snapshot was delivered before.
+  Without such a revision, an unchanged payload
   (`created_at` equals `updated_at`) proves it, or an edit history read at
   capture showing only the author's own edits. Otherwise the factual message is
   captured.
 
-The variant is a different reviewed object: its hash covers the parent text and
-author, so a moderator's approval and the canonical event's admission bind to
-the version with the text. Its preview uses the comment caps (24,000 characters,
+The variant is a different reviewed object: its hash covers the parent text,
+author, native parent identity and provider clock, so a moderator's approval and
+the canonical event's admission bind to the version with the text. Final
+acceptance rechecks local parent freshness under the same authority lock as
+capture, for automatic, approved and filter-OFF delivery alike. An action queued
+before a newer parent capture cannot deliver the old quotation. Equal/missing
+clocks use captured revision sequence when the exact quoted text has a known
+current revision; otherwise conflicting text at an equal/unknown clock fails
+closed. The current revision's identical-text watermark also applies. Legacy
+quotations lacking native parent provenance fail closed. Its preview uses the comment caps (24,000 characters,
 `notificationTruncated`) and a variant over the 256 KiB review cap is not
 offered. A replay matches either candidate hash and never upgrades history.
 Final acceptance (`isTrustedGitHubFeedbackContent`) rechecks the parent author's
@@ -438,8 +469,15 @@ agent has received the action (no delivered notice or flow delivery, no trigger
 run), release settlement or renewal supersedes it: a new automatic revision
 carries exactly the factual message, takes over the original source
 associations, and the old one becomes `obsolete` (`parent_trust_revoked`).
-Anything else follows the normal revocation hold (`trust_revoked`). Polled
-actions offer no variant and stay held.
+A stale or legacy-unbound quotation follows the same automatic-only factual
+fallback when its factual actor remains trusted and **no** target has accepted an
+effect, including durable queue acceptance before inbox acknowledgement. Its
+old immutable envelope becomes obsolete (`parent_content_stale`). A human-approved
+or model-screened stale quotation instead returns to Held/Pending with that
+reason for renewed review; its approval is never transferred to a factual-only
+hash, and the original decision audit is retained. An already-accepted effect is
+never repeated as a replacement. Other trust revocations follow the normal hold
+(`trust_revoked`). Polled actions offer no variant and stay held.
 
 Rule matching and
 work-stream bindings still read the source fact, so predicates such as

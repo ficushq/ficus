@@ -1617,6 +1617,8 @@ export const githubFeedbackSources = pgTable(
     authority: jsonb('authority')
       .$type<import('../services/integrations/outputs/types').IntegrationOutputAuthority>()
       .notNull(),
+    // Server-owned freshness-only raw observation; never author trust or canonical approval.
+    unfiltered: boolean('unfiltered').notNull().default(false),
     transportKey: text('transport_key'),
     observedAt: timestamp('observed_at', { withTimezone: true }).notNull().defaultNow(),
   },

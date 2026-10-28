@@ -28,6 +28,7 @@ import {
 } from './feedback-pass'
 import { readOutputEvent } from './feedback-pass-read'
 import { lockGitHubTrustAuthority } from './trust-authority-lock'
+import { observeUnfilteredGitHubFeedback } from './feedback-unfiltered'
 import { isGitHubAuthorFilterEnabled, isUnfilteredGitHubEvent } from './author-filter'
 import {
   enqueueGitHubFeedbackScreening,
@@ -137,6 +138,21 @@ export type GitHubOutputPreparation =
 
 const DEFER: GitHubOutputPreparation = { kind: 'defer' }
 
+async function prepareUnfilteredGitHubOutput(
+  input: Event,
+  settle: (reason: string) => GitHubOutputPreparation
+): Promise<GitHubOutputPreparation> {
+  try {
+    if (!(await observeUnfilteredGitHubFeedback(input))) return settle('github_not_routable')
+    return (await isUnfilteredGitHubEvent(db, input)) ? { kind: 'ready', event: input } : settle('github_not_routable')
+  } catch (error) {
+    if (error instanceof Error && ['feedback_filter_enabled', 'feedback_capacity_deferred'].includes(error.message))
+      return DEFER
+    if (error instanceof Error && error.message === 'feedback_source_unavailable') return settle('github_unauthorized')
+    throw error
+  }
+}
+
 /**
  * Entry to every output effect. First query relevance, then capture; held content returns null.
  * Assigned provider I/O finishes before any authority/stream/agent lock. The server-owned witness
@@ -181,9 +197,9 @@ async function prepareGitHubOutputInPass(
     !(await authorized(db, 'github', input.authority, input.authority.squadId))
   )
     return settle('github_unauthorized')
-  // Filter OFF: no capture, hold, provider witness or projection; the event routes as before.
+  // Filter OFF: local freshness bookkeeping only; no author gate, provider witness or projection.
   if (!(await isGitHubAuthorFilterEnabled(db, input.authority.squadId)))
-    return (await isUnfilteredGitHubEvent(db, input)) ? ready(input) : settle('github_not_routable')
+    return prepareUnfilteredGitHubOutput(input, settle)
   let source = input
   const [prior] = await db.select().from(githubOutputProofs).where(eq(githubOutputProofs.eventId, input.id))
   if (prior) {
@@ -246,6 +262,7 @@ async function prepareGitHubOutputInPass(
     // Explicit history is released only by the reviewed-source release adapter, never a raw
     // retry or a trust-list change. In particular, pending replays cost no provider requests.
     if (known?.releaseState === 'obsolete') return settle('github_feedback_obsolete')
+    if (known?.decision === 'historical') return settle('github_unfiltered_history')
     if (known && known.decision !== 'automatic') return DEFER
   }
   const access = await readGitHubResource(source)
@@ -283,7 +300,7 @@ async function prepareGitHubOutputInPass(
         // The filter was turned OFF between the relevance read and the capture transaction:
         // route the raw event as the filter-OFF path would, instead of holding it.
         if (error instanceof Error && error.message === 'feedback_filter_disabled')
-          return (await isUnfilteredGitHubEvent(db, input)) ? ready(input) : settle('github_not_routable')
+          return prepareUnfilteredGitHubOutput(input, settle)
         // GitHub could not answer the current-version witness: retry later, never hold as ambiguous.
         if (error instanceof Error && error.message === 'feedback_provider_unavailable') return DEFER
         throw error

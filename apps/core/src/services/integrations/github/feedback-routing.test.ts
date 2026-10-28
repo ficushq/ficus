@@ -2851,7 +2851,7 @@ async function grantSquadUpdate(squadId: string, userId: string) {
 const filterOf = async (squadId: string) =>
   (await db.select({ enabled: squads.githubAuthorFilter }).from(squads).where(eq(squads.id, squadId)))[0]!.enabled
 
-test('author filter OFF routes an untrusted comment exactly as before: no hold, capture or provider witness', async () => {
+test('author filter OFF routes an untrusted comment unchanged: freshness bookkeeping only, no hold or provider witness', async () => {
   const h = await fixture()
   try {
     expect(await filterOf(h.squadId)).toBe(true) // squads created after rollout default ON
@@ -2861,9 +2861,16 @@ test('author filter OFF routes an untrusted comment exactly as before: no hold, 
     expect(messages).toHaveLength(1)
     expect(messages[0]!.metadata).toMatchObject({ source: 'integration-notification', integrationEventId: eventId })
     expect(messages[0]!.content).toContain('HELD_SENTINEL')
-    expect(
-      await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.squadId, h.squadId))
-    ).toHaveLength(0)
+    const observations = await db
+      .select()
+      .from(githubFeedbackRevisions)
+      .where(eq(githubFeedbackRevisions.squadId, h.squadId))
+    expect(observations).toHaveLength(1)
+    expect(observations[0]).toMatchObject({
+      decision: 'historical',
+      releaseState: 'retained',
+      reason: 'filter_disabled',
+    })
     expect(await db.select().from(githubOutputProofs).where(eq(githubOutputProofs.sourceEventId, eventId!))).toEqual([])
     expect(h.read).not.toHaveBeenCalled()
     // Webhook/poll duplicates and retries stay single-delivery.
@@ -2998,10 +3005,14 @@ for (const first of ['off', 'on'] as const)
       if (first === 'off') expect(again).toBe(eventId)
       await reconcileUnmatchedOutputs()
       expect(await db.select().from(inbox).where(eq(inbox.recipientId, h.managerId))).toHaveLength(1)
-      if (first === 'off')
-        expect(
-          await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.squadId, h.squadId))
-        ).toHaveLength(0)
+      if (first === 'off') {
+        const history = await db
+          .select()
+          .from(githubFeedbackRevisions)
+          .where(eq(githubFeedbackRevisions.squadId, h.squadId))
+        expect(history).toHaveLength(1)
+        expect(history[0]!.decision).toBe('historical') // bookkeeping never turns into an approval
+      }
     } finally {
       await h.close()
     }
@@ -3495,6 +3506,60 @@ describe('trusted actor actions with the author filter ON (default squad rules)'
     }
   })
 
+  test.each(['webhook', 'poll'] as const)(
+    'OFF action parent freshness uses content clocks/sequence, never actor trust (%s)',
+    async (observation) => {
+      const h = await defaultRulesFixture()
+      try {
+        await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadId))
+        const newer = assignedTo('ficus-bot', outsider, { ...at(2), body: 'CURRENT_RAW_PARENT' }, observation)
+        await publishIntegrationOutput('github', newer, h.authority)
+        const older = assignedTo('ficus-bot', outsider, { ...at(1), body: 'OLD_RAW_PARENT' }, observation)
+        const oldId = await publishIntegrationOutput('github', older, h.authority)
+        const messages = await managerMessages(h.managerId)
+        // Issue poll payloads restate updated_at to the lifecycle occurrence time. Their parent
+        // content version is deliberately null; the approved sequence fallback, not that clock,
+        // orders these observations. A later poll is therefore the newer observation here.
+        expect(messages).toHaveLength(observation === 'poll' ? 2 : 1)
+        expect(messages[0]!.content).toContain(newer.body)
+        expect(messages[0]!.content).not.toContain('OLD_RAW_PARENT')
+        const audit = await revisions(h.squadId)
+        expect(
+          audit.some(
+            (row) =>
+              row.releaseState === 'obsolete' &&
+              row.envelope!.body!.includes(observation === 'poll' ? 'CURRENT_RAW_PARENT' : 'OLD_RAW_PARENT')
+          )
+        ).toBe(true)
+        expect(audit.every((row) => row.decision === 'historical')).toBe(true)
+        const [old] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, oldId!))
+        expect(old!.matchedAt).not.toBeNull()
+        if (observation === 'webhook') expect(old!.lastErrorCode).toBe('github_not_routable')
+        else expect(older.github!.rawParent!.providerVersion).toBeNull()
+        expect(older.github!.rawParent!.objectKind).toBe('issue')
+        if (observation === 'poll') expect(older.github!.content!.parentText).toBeUndefined()
+      } finally {
+        await h.close()
+      }
+    }
+  )
+
+  test('OFF recovery finishes a partially recorded raw action instead of hiding it from unmatched reconciliation', async () => {
+    const h = await defaultRulesFixture()
+    try {
+      await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadId))
+      const fact = assignedTo('ficus-bot', outsider)
+      const event = await recordIntegrationOutput('github', fact, h.authority)
+      await captureGitHubFeedback(event.id, { unfiltered: 'content', authorizeSource: async () => true })
+      expect(await managerMessages(h.managerId)).toHaveLength(0)
+      await reconcileUnmatchedOutputs()
+      expect(await managerMessages(h.managerId)).toHaveLength(1)
+      expect(await revisions(h.squadId)).toHaveLength(2)
+    } finally {
+      await h.close()
+    }
+  })
+
   test('a held action carries the trusted author’s text into review, bound to that exact hash', async () => {
     const { reconcileFlows } = await import('../../workflows/execution')
     const { moderateGitHubFeedback } = await import('./feedback-moderation')
@@ -3708,6 +3773,156 @@ test('turning the author filter OFF never revives obsolete pending audit revisio
     expect(rows.filter((row) => row.decision === 'allow_once')).toHaveLength(1)
   } finally {
     await revoke()
+    await h.close()
+  }
+})
+
+test.each([false, true])(
+  'freshness is independent of author filtering: delayed raw/captured version leaves audit, never a notification (OFF: %s)',
+  async (off) => {
+    const h = await fixture()
+    try {
+      if (off) await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadId))
+      else await h.trust()
+      h.native.body = 'NEWEST_RAW_TEXT'
+      h.native.updated_at = '2026-10-02T10:02:00Z'
+      const newerFact = h.fact()
+      const newerId = await publishIntegrationOutput('github', newerFact, h.authority)
+      h.native.body = 'STALE_RAW_SENTINEL'
+      h.native.updated_at = '2026-10-02T10:01:00Z'
+      const olderId = await publishIntegrationOutput('github', h.fact(), h.authority)
+      const notices = await db.select().from(inbox).where(eq(inbox.recipientId, h.managerId))
+      expect(notices).toHaveLength(1)
+      expect(notices[0]!.content).toContain('NEWEST_RAW_TEXT')
+      expect(notices[0]!.content).not.toContain('STALE_RAW_SENTINEL')
+      const audit = await db
+        .select()
+        .from(githubFeedbackRevisions)
+        .where(eq(githubFeedbackRevisions.squadId, h.squadId))
+      expect(audit).toHaveLength(2)
+      expect(audit.find((row) => row.envelope!.body!.includes('STALE_RAW_SENTINEL'))).toMatchObject({
+        releaseState: 'obsolete',
+        ...(off ? { decision: 'historical' } : {}),
+      })
+      const [old] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, olderId!))
+      expect(old!.fact.body).toContain('STALE_RAW_SENTINEL') // raw audit is not rewritten
+      h.native.body = 'NEXT_RAW_TEXT'
+      h.native.updated_at = '2026-10-02T10:03:00Z'
+      const nextId = await publishIntegrationOutput('github', h.fact(), h.authority)
+      const after = await db.select().from(inbox).where(eq(inbox.recipientId, h.managerId))
+      expect(after).toHaveLength(2)
+      if (off) {
+        const [source] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, newerId!))
+        expect(source!.fact).toEqual(newerFact)
+        expect(notices[0]!.content).toContain(newerFact.body)
+        expect(notices[0]!.metadata?.integrationEventId).toBe(newerId)
+        expect(after.find((notice) => notice.metadata?.integrationEventId === nextId)!.content).toContain(h.fact().body)
+        expect(audit.every((row) => row.decision === 'historical')).toBe(true)
+        expect(h.read).not.toHaveBeenCalled()
+      }
+    } finally {
+      await h.close()
+    }
+  }
+)
+
+test('raw OFF identical-text replay preserves revision and advances the freshness watermark', async () => {
+  const h = await fixture()
+  try {
+    await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadId))
+    const first = await publishIntegrationOutput('github', h.fact(), h.authority)
+    const [original] = await db
+      .select()
+      .from(githubFeedbackRevisions)
+      .where(eq(githubFeedbackRevisions.squadId, h.squadId))
+    h.native.updated_at = '2026-10-02T10:03:00Z'
+    await publishIntegrationOutput('github', h.fact(), h.authority)
+    h.native.body = 'DELAYED_INTERMEDIATE'
+    h.native.updated_at = '2026-10-02T10:02:00Z'
+    await publishIntegrationOutput('github', h.fact(), h.authority)
+    const rows = await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.squadId, h.squadId))
+    expect(rows).toHaveLength(2)
+    expect(rows.find((r) => r.id === original!.id)!.envelope).toEqual(original!.envelope)
+    expect(rows.find((r) => r.id !== original!.id)!.releaseState).toBe('obsolete')
+    expect(await db.select().from(inbox).where(eq(inbox.recipientId, h.managerId))).toHaveLength(2)
+    await expect(recordCanonicalGitHubFeedback(original!.id, first!, async () => true)).rejects.toThrow(
+      'feedback_not_admitted'
+    )
+    expect(h.read).not.toHaveBeenCalled()
+  } finally {
+    await h.close()
+  }
+})
+
+test.each([false, true])(
+  'cross-mode freshness reconciles the same object without granting trust (OFF first: %s)',
+  async (offFirst) => {
+    const h = await fixture()
+    try {
+      await h.trust()
+      await db.update(squads).set({ githubAuthorFilter: !offFirst }).where(eq(squads.id, h.squadId))
+      h.native.body = 'CURRENT_ACROSS_MODES'
+      h.native.updated_at = '2026-10-02T10:02:00Z'
+      await publishIntegrationOutput('github', h.fact(), h.authority)
+      await db.update(squads).set({ githubAuthorFilter: offFirst }).where(eq(squads.id, h.squadId))
+      h.native.body = 'STALE_ACROSS_MODES'
+      h.native.updated_at = '2026-10-02T10:01:00Z'
+      await publishIntegrationOutput('github', h.fact(), h.authority)
+      const notices = await db.select().from(inbox).where(eq(inbox.recipientId, h.managerId))
+      expect(notices).toHaveLength(1)
+      expect(notices[0]!.content).toContain('CURRENT_ACROSS_MODES')
+      const rows = await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.squadId, h.squadId))
+      expect(rows.find((r) => r.envelope!.body!.includes('STALE_ACROSS_MODES'))!.releaseState).toBe('obsolete')
+    } finally {
+      await h.close()
+    }
+  }
+)
+
+test('OFF final acceptance rejects a raw snapshot after a newer raw capture wins the authority lock', async () => {
+  const { prepareGitHubOutputOutcome, isGitHubOutputAdmitted, lockGitHubOutputAuthority } =
+    await import('./feedback-routing')
+  const h = await fixture()
+  try {
+    await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadId))
+    const oldId = await publishIntegrationOutput('github', h.fact(), h.authority)
+    const [old] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, oldId!))
+    expect((await prepareGitHubOutputOutcome(old!)).kind).toBe('ready')
+    h.native.body = 'NEW_RAW_BEFORE_FINAL_ACCEPTANCE'
+    h.native.updated_at = '2026-10-02T10:02:00Z'
+    await publishIntegrationOutput('github', h.fact(), h.authority)
+    await db.transaction(async (tx) => {
+      await lockGitHubOutputAuthority(tx, old!)
+      expect(await isGitHubOutputAdmitted(tx, old!)).toBe(false)
+    })
+  } finally {
+    await h.close()
+  }
+})
+
+test('newer raw OFF capture supersedes unfinished raw flow deliveries without rewriting their audit event', async () => {
+  const h = await fixture()
+  try {
+    await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadId))
+    await h.stream(true)
+    const oldId = await publishIntegrationOutput('github', h.fact(), h.authority)
+    const before = await db
+      .select()
+      .from(integrationOutputDeliveries)
+      .where(eq(integrationOutputDeliveries.eventId, oldId!))
+    expect(before.length).toBeGreaterThan(0)
+    h.native.body = 'RAW_FLOW_FINAL'
+    h.native.updated_at = '2026-10-02T10:02:00Z'
+    await publishIntegrationOutput('github', h.fact(), h.authority)
+    const rows = await db
+      .select()
+      .from(integrationOutputDeliveries)
+      .where(eq(integrationOutputDeliveries.eventId, oldId!))
+    expect(rows.every((row) => ['delivered', 'superseded'].includes(row.status))).toBe(true)
+    expect(rows.some((row) => row.status === 'superseded')).toBe(true)
+    const [audit] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, oldId!))
+    expect(audit!.fact.body).toContain('HELD_SENTINEL')
+  } finally {
     await h.close()
   }
 })

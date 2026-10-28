@@ -10,6 +10,8 @@ import {
   messages,
   chatSendReceipts,
   githubFeedbackRevisions,
+  githubFeedbackDecisions,
+  githubFeedbackSources,
   githubTrustedAuthors,
   integrationOutputEvents,
   integrationOutputDeliveries,
@@ -164,6 +166,7 @@ async function fixture() {
         )
       ids.push(...canonical.map(({ id }) => id))
       await db.delete(inbox).where(eq(inbox.recipientId, agent!.id))
+      await db.delete(githubFeedbackDecisions).where(eq(githubFeedbackDecisions.squadId, squadId))
       await db.delete(squads).where(eq(squads.id, squadId))
       await db.delete(integrationOutputEvents).where(inArray(integrationOutputEvents.id, ids))
     },
@@ -403,3 +406,360 @@ test('obsolete parent revisions cannot vouch for quoting the old parent prose in
     await h.close()
   }
 })
+
+test.each([false, true])(
+  'delivered old feedback is not reusable authority after newer capture (filter OFF: %s)',
+  async (off) => {
+    const { isUnfilteredGitHubEvent } = await import('./author-filter')
+    const h = await fixture()
+    try {
+      const old = await h.capture(observation(banner, 20))
+      const canonical = await recordCanonicalGitHubFeedback(old.revision.id, old.event.id, async () => true)
+      await releaseGitHubFeedback(
+        { authorizeSource: async () => true, route: (event) => h.accept(event) },
+        { revisionIds: [old.revision.id] }
+      )
+      await h.capture(observation(final, 41))
+      const delayed = await h.capture(observation(banner, 20, 'assigned'))
+      expect(delayed.revision.envelope!.data.parentContent).toBeUndefined()
+      if (off) await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadId))
+      expect(await isGitHubFeedbackAdmitted(db, canonical)).toBe(false)
+      expect(await isUnfilteredGitHubEvent(db, canonical)).toBe(false)
+      await expect(recordCanonicalGitHubFeedback(old.revision.id, old.event.id, async () => true)).rejects.toThrow(
+        'feedback_not_admitted'
+      )
+      expect((await h.row(old.revision.id)).releaseState).toBe('delivered')
+      expect(await h.received()).toHaveLength(1)
+    } finally {
+      await h.close()
+    }
+  }
+)
+
+test.each([false, true])(
+  'queued parent quotation fails final acceptance and OFF guard after parent changes (filter OFF: %s)',
+  async (off) => {
+    const { isUnfilteredGitHubEvent } = await import('./author-filter')
+    const h = await fixture()
+    try {
+      const oldHistory = { node: { ...history.node, body: banner } }
+      await h.capture(observation(banner, 20), oldHistory)
+      const action = await h.capture(observation(banner, 20, 'assigned'), oldHistory)
+      expect(action.revision.envelope!.body).toContain(banner)
+      const canonical = await recordCanonicalGitHubFeedback(action.revision.id, action.event.id, async () => true)
+      await h.capture(observation(final, 41))
+      if (off) await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadId))
+      expect(await isGitHubFeedbackAdmitted(db, canonical)).toBe(false)
+      expect(await isUnfilteredGitHubEvent(db, canonical)).toBe(false)
+      await expect(h.accept(canonical)).rejects.toThrow()
+      expect(await h.received()).toHaveLength(0)
+    } finally {
+      await h.close()
+    }
+  }
+)
+
+test('automatic stale parent quotation becomes a distinct trusted factual-only action with no repeated effects', async () => {
+  const h = await fixture()
+  try {
+    const oldHistory = { node: { ...history.node, body: banner } }
+    await h.capture(observation(banner, 20), oldHistory)
+    const action = await h.capture(observation(banner, 20, 'assigned'), oldHistory)
+    await h.capture(observation(final, 41))
+    let routed = 0
+    await releaseGitHubFeedback(
+      {
+        authorizeSource: async () => true,
+        route: async () => {
+          routed++
+        },
+      },
+      { revisionIds: [action.revision.id] }
+    )
+    expect(routed).toBe(0)
+    expect((await h.row(action.revision.id)).releaseState).toBe('obsolete')
+    const replacements = await db
+      .select()
+      .from(githubFeedbackRevisions)
+      .where(eq(githubFeedbackRevisions.objectId, action.revision.objectId))
+    const facts = replacements.find((r) => r.id !== action.revision.id)!
+    expect(facts).toMatchObject({ decision: 'automatic', releaseState: 'ready' })
+    expect(facts.envelope!.data.parentContent).toBeUndefined()
+    expect(facts.contentHash).not.toBe(action.revision.contentHash)
+    await releaseGitHubFeedback(
+      { authorizeSource: async () => true, route: (event) => h.accept(event) },
+      { revisionIds: [facts.id] }
+    )
+    expect(await h.received()).toHaveLength(1)
+    expect((await h.received())[0]!.content).not.toContain('rebasing')
+    expect((await h.row(action.revision.id)).envelope).toEqual(action.revision.envelope)
+  } finally {
+    await h.close()
+  }
+})
+
+test.each([
+  { kind: 'stale', off: false },
+  { kind: 'stale', off: true },
+  { kind: 'legacy', off: false },
+  { kind: 'legacy', off: true },
+])('human-approved parent quotation is held without approval transfer (%j)', async ({ kind, off }) => {
+  const { githubActionReviewed } = await import('./feedback-envelope')
+  const h = await fixture()
+  try {
+    const oldHistory = { node: { ...history.node, body: banner } }
+    await h.capture(observation(banner, 20), oldHistory)
+    const action = await h.capture(observation(banner, 20, 'assigned'), oldHistory)
+    const envelope = structuredClone(action.revision.envelope!)
+    if (kind === 'legacy') delete (envelope.data.parentContent as Record<string, unknown>).nativeId
+    const reviewed = githubActionReviewed(action.event.fact.github!.content!, envelope)
+    await db
+      .update(githubFeedbackRevisions)
+      .set({
+        envelope,
+        ...reviewed,
+        decision: 'allow_once',
+        decidedByUserId: crypto.randomUUID(),
+        decidedAt: new Date(),
+      })
+      .where(eq(githubFeedbackRevisions.id, action.revision.id))
+    const [approval] = await db
+      .insert(githubFeedbackDecisions)
+      .values({
+        requestId: crypto.randomUUID(),
+        revisionId: action.revision.id,
+        squadId: h.squadId,
+        requestHash: 'b'.repeat(64),
+        contentHash: reviewed.contentHash,
+        decisionVersion: action.revision.decisionVersion + 1,
+        action: 'allow_once',
+        userId: crypto.randomUUID(),
+      })
+      .returning()
+    if (kind === 'stale') await h.capture(observation(final, 41))
+    if (off) await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadId))
+    let routed = 0
+    await releaseGitHubFeedback(
+      {
+        authorizeSource: async () => true,
+        route: async () => {
+          routed++
+        },
+      },
+      { revisionIds: [action.revision.id] }
+    )
+    expect(routed).toBe(0)
+    expect(await h.row(action.revision.id)).toMatchObject({
+      decision: 'pending',
+      releaseState: 'held',
+      reason: 'parent_content_stale',
+    })
+    expect(
+      await db
+        .select()
+        .from(githubFeedbackRevisions)
+        .where(eq(githubFeedbackRevisions.objectId, action.revision.objectId))
+    ).toHaveLength(1)
+    expect((await h.row(action.revision.id)).envelope).toEqual(envelope)
+    expect(
+      (
+        await db
+          .select()
+          .from(githubFeedbackDecisions)
+          .where(eq(githubFeedbackDecisions.revisionId, action.revision.id))
+      )[0]
+    ).toEqual(approval)
+  } finally {
+    await h.close()
+  }
+})
+
+test('a legacy automatic quote falls back to facts, but an already accepted effect is never repeated', async () => {
+  const { githubActionReviewed } = await import('./feedback-envelope')
+  const { sql } = await import('drizzle-orm')
+  for (const accepted of [false, 'canonical', 'raw'] as const) {
+    const h = await fixture()
+    try {
+      const oldHistory = { node: { ...history.node, body: banner } }
+      await h.capture(observation(banner, 20), oldHistory)
+      const action = await h.capture(observation(banner, 20, 'assigned'), oldHistory)
+      const canonical = await recordCanonicalGitHubFeedback(action.revision.id, action.event.id, async () => true)
+      if (accepted) {
+        await h.accept(canonical)
+        // Crash after durable queue acceptance but before inbox/release acknowledgement.
+        await db
+          .update(inbox)
+          .set({ deliveredAt: null })
+          .where(sql`${inbox.metadata}->>'integrationEventId' = ${canonical.id}`)
+        await db
+          .update(integrationOutputEvents)
+          .set({ matchedAt: null })
+          .where(eq(integrationOutputEvents.id, canonical.id))
+      }
+      if (accepted === 'raw') {
+        // Synthetic accepted raw-source receipt for the same immutable revision: a different
+        // effect identity must not evade the no-accepted-effects replacement guard.
+        await db
+          .update(githubFeedbackSources)
+          .set({ unfiltered: true })
+          .where(eq(githubFeedbackSources.eventId, action.event.id))
+        await db
+          .update(inbox)
+          .set({ metadata: { integrationEventId: action.event.id } })
+          .where(sql`${inbox.metadata}->>'integrationEventId' = ${canonical.id}`)
+        await db
+          .update(chatSendReceipts)
+          .set({ clientId: sql`replace(${chatSendReceipts.clientId}, ${canonical.id}, ${action.event.id})` })
+          .where(sql`${chatSendReceipts.clientId} like ${`github-feedback:${canonical.id}:%`}`)
+      }
+      const envelope = structuredClone(action.revision.envelope!)
+      delete (envelope.data.parentContent as Record<string, unknown>).nativeId
+      await db
+        .update(githubFeedbackRevisions)
+        .set({ envelope, ...githubActionReviewed(action.event.fact.github!.content!, envelope) })
+        .where(eq(githubFeedbackRevisions.id, action.revision.id))
+      // Test a historical stored legacy snapshot, including its already-canonical image.
+      await db
+        .update(integrationOutputEvents)
+        .set({
+          fact: {
+            ...envelope,
+            eventKey: action.revision.id,
+            github: { content: null, status: null, revisionId: action.revision.id },
+          },
+        })
+        .where(eq(integrationOutputEvents.id, canonical.id))
+      await releaseGitHubFeedback(
+        {
+          authorizeSource: async () => true,
+          route: async () => {
+            throw new Error('stale quote must never route')
+          },
+        },
+        { revisionIds: [action.revision.id] }
+      )
+      const rows = await db
+        .select()
+        .from(githubFeedbackRevisions)
+        .where(eq(githubFeedbackRevisions.objectId, action.revision.objectId))
+      expect(rows).toHaveLength(accepted ? 1 : 2)
+      if (!accepted)
+        expect(rows.find((row) => row.id !== action.revision.id)!.envelope!.data.parentContent).toBeUndefined()
+      expect(await h.received()).toHaveLength(accepted ? 1 : 0)
+    } finally {
+      await h.close()
+    }
+  }
+})
+
+test.each([false, true])(
+  'current quoted text uses sequence when parent provider clocks are equal or missing (%s)',
+  async (missing) => {
+    const h = await fixture()
+    const sameClock = (body: string, action = 'edited') => {
+      const event = observation(body, 20, action)
+      if (missing) delete (event.payload.pull_request as Record<string, unknown>).updated_at
+      return event
+    }
+    try {
+      await h.capture(sameClock(banner), { node: { ...history.node, body: banner } })
+      await h.capture(sameClock(final))
+      const action = await h.capture(sameClock(final, 'assigned'))
+      expect(action.revision.envelope!.data.parentContent).toBeDefined()
+      const canonical = await recordCanonicalGitHubFeedback(action.revision.id, action.event.id, async () => true)
+      expect(await isGitHubFeedbackAdmitted(db, canonical)).toBe(true)
+    } finally {
+      await h.close()
+    }
+  }
+)
+
+test('delivered settlement preserves receipts but does not keep unfinished canonical work alive after a newer capture', async () => {
+  const h = await fixture()
+  try {
+    const old = await h.capture(observation(banner, 20))
+    const canonical = await recordCanonicalGitHubFeedback(old.revision.id, old.event.id, async () => true)
+    await releaseGitHubFeedback(
+      { authorizeSource: async () => true, route: (event) => h.accept(event) },
+      { revisionIds: [old.revision.id] }
+    )
+    const [stream] = await db
+      .insert(workStreams)
+      .values({ squadId: h.squadId, title: 'Synthetic late audience' })
+      .returning()
+    const definition = createBlankWorkflow()
+    await db.insert(workStreamFlowRuns).values({
+      workStreamId: stream!.id,
+      source: { schemaVersion: 1, source: { kind: 'inline' }, definition },
+      state: createWorkflowRun(definition),
+      createdBy: 'test',
+      createRequestId: crypto.randomUUID(),
+      createRequestHash: 'a'.repeat(64),
+    })
+    const [unfinished] = await db
+      .insert(integrationOutputDeliveries)
+      .values({
+        eventId: canonical.id,
+        workStreamId: stream!.id,
+        subscriptionId: 'late',
+        subscription: {
+          id: 'late',
+          source: { integration: 'github', output: 'pull_request.updated', version: 1 },
+          match: {},
+          deliver: { to: 'active', whenInactive: 'retain' },
+        },
+        status: 'pending',
+      })
+      .returning()
+    await h.capture(observation(final, 41))
+    const [delivery] = await db
+      .select()
+      .from(integrationOutputDeliveries)
+      .where(eq(integrationOutputDeliveries.id, unfinished!.id))
+    expect(delivery!.status).toBe('superseded')
+    expect((await h.row(old.revision.id)).releaseState).toBe('delivered')
+    expect(await h.received()).toHaveLength(1)
+  } finally {
+    await h.close()
+  }
+})
+
+test.each(['automatic', 'allow_trust'] as const)(
+  'inbox renewal withholds stale quoted parent before acceptance (%s)',
+  async (decision) => {
+    const { withholdRevokedGitHubFeedback } = await import('./feedback-renewal')
+    const { eventEmitter } = await import('../../../lib/infra/event-emitter')
+    const h = await fixture()
+    try {
+      const oldHistory = { node: { ...history.node, body: banner } }
+      await h.capture(observation(banner, 20), oldHistory)
+      const action = await h.capture(observation(banner, 20, 'assigned'), oldHistory)
+      const canonical = await recordCanonicalGitHubFeedback(action.revision.id, action.event.id, async () => true)
+      if (decision !== 'automatic')
+        await db
+          .update(githubFeedbackRevisions)
+          .set({ decision, decidedAt: new Date(), decidedByUserId: crypto.randomUUID() })
+          .where(eq(githubFeedbackRevisions.id, action.revision.id))
+      await h.capture(observation(final, 41))
+      const updates: string[] = []
+      const onUpdate = ({ squadId }: { squadId: string }) => {
+        if (squadId === h.squadId) updates.push(squadId)
+      }
+      const unsubscribe = eventEmitter.on('githubFeedback.updated', onUpdate)
+      try {
+        await withholdRevokedGitHubFeedback(canonical.id)
+      } finally {
+        unsubscribe()
+      }
+      expect(updates).toEqual([h.squadId])
+      expect(await h.row(action.revision.id)).toMatchObject({
+        releaseState: decision === 'automatic' ? 'obsolete' : 'held',
+        reason: 'parent_content_stale',
+      })
+      expect(await isGitHubFeedbackAdmitted(db, canonical)).toBe(false)
+      expect(await h.received()).toHaveLength(0)
+    } finally {
+      await h.close()
+    }
+  }
+)

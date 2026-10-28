@@ -314,6 +314,9 @@ test('the parent-text alternative is the factual message plus the current title 
     author: { accountId: '2', login: 'outside', accountType: 'User' },
     title: 'PARENT_TITLE_SENTINEL',
     body: 'PARENT_SENTINEL',
+    objectKind: 'issue',
+    nativeId: '100',
+    providerVersion: '2026-10-02T10:00:00.000Z',
   })
   expect(variant.delivery.subject).toBe(content.delivery!.subject)
   expect(variant.contentHash).not.toBe(content.contentHash)

@@ -1,0 +1,1 @@
+ALTER TABLE "github_feedback_sources" ADD COLUMN "unfiltered" boolean DEFAULT false NOT NULL;

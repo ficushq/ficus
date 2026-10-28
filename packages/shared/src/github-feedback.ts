@@ -126,6 +126,8 @@ export interface GitHubFeedbackEnvelope {
   /** Provenance assigned by verified ingress, not provider text/metadata. */
   observation?: { kind: 'webhook' | 'poll'; deliveryId?: string }
   content: GitHubFeedbackContent | null
+  /** Normalizer-owned parent snapshot for raw OFF freshness only; never a trust/quote grant. */
+  rawParent?: GitHubFeedbackContent
   /** Explicit content-free lifecycle projection. Never executes squad content rules/bindings. */
   status: import('./integration-outputs').IntegrationOutputFact | null
 }

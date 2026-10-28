@@ -1104,7 +1104,7 @@ async function reconcileUnmatchedOutputsInPass() {
             eq(integrationOutputEvents.integration, 'github'),
             isNull(integrationOutputEvents.matchedAt),
             unmatchedCursor ? gt(integrationOutputEvents.id, unmatchedCursor) : undefined,
-            sql`(${integrationOutputEvents.sourceKey} LIKE 'github-feedback:%' OR NOT EXISTS (SELECT 1 FROM github_feedback_sources WHERE event_id = ${integrationOutputEvents.id}))`,
+            sql`(${integrationOutputEvents.sourceKey} LIKE 'github-feedback:%' OR NOT EXISTS (SELECT 1 FROM github_feedback_sources WHERE event_id = ${integrationOutputEvents.id} AND unfiltered = false))`,
             sql`NOT EXISTS (SELECT 1 FROM github_output_proofs WHERE source_event_id = ${integrationOutputEvents.id} AND event_id <> ${integrationOutputEvents.id})`
           )
         )
