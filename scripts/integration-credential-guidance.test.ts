@@ -131,6 +131,12 @@ test('detection documentation tracks trusted authority, bounds and retired-token
 })
 
 test('environment docs distinguish legacy promotion compatibility from ordinary capped writes', () => {
+  const source = read('apps/core/src/services/security/squad-env-secret-source.ts')
+  expect(source).toContain('async recordLegacyPromotion(')
+  expect(source).toContain("{ contentHash: null, entries: [], reason: 'oversized' }")
+  const regeneration = read('apps/core/src/services/squad/env.ts')
+  expect(regeneration).toContain('await getSquadEnvSecretSource().recordLegacyPromotion(squadId, content, () =>')
+  expect(regeneration).toContain("{ mode: 0o600, flag: 'wx' }")
   const doc = read('docs/wiki/integration-execution.md')
   for (const contract of [
     'first service creation',
