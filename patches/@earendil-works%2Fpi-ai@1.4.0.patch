@@ -1,8 +1,8 @@
 diff --git a/dist/api/anthropic-messages.js b/dist/api/anthropic-messages.js
-index 501971b2a57af4332783fa18457b8821e23b7570..a61bbc18fad1042ecfa009e76da7fc95a595bdbd 100644
+index 841da89..f1b102b 100644
 --- a/dist/api/anthropic-messages.js
 +++ b/dist/api/anthropic-messages.js
-@@ -698,8 +698,10 @@ export const streamSimple = (model, context, options) => {
+@@ -777,8 +777,10 @@ export const streamSimple = (model, context, options) => {
          thinkingBudgetTokens: Math.min(adjusted.thinkingBudget, Math.max(0, maxTokens - 1024)),
      });
  };
@@ -13,10 +13,10 @@ index 501971b2a57af4332783fa18457b8821e23b7570..a61bbc18fad1042ecfa009e76da7fc95
 +function isOAuthToken(_apiKey) {
 +    return false;
  }
- function createClient(model, apiKey, optionsHeaders, fetch, dynamicHeaders, sessionId) {
+ function createClient(model, apiKey, optionsHeaders, fetch, dynamicHeaders, sessionId, federation, identity) {
      // Copilot: Bearer auth.
 diff --git a/dist/api/openai-codex-responses.js b/dist/api/openai-codex-responses.js
-index 40014b3b7eacb3a8e5e43daac2cec6446e8810c2..2ed67a6294f22a638581c30c7cc8839a98cb5ddd 100644
+index 45bcd08..a59caaa 100644
 --- a/dist/api/openai-codex-responses.js
 +++ b/dist/api/openai-codex-responses.js
 @@ -50,7 +50,7 @@ function assertSuccessfulOutput(output) {
@@ -29,10 +29,10 @@ index 40014b3b7eacb3a8e5e43daac2cec6446e8810c2..2ed67a6294f22a638581c30c7cc8839a
  function isRetryableError(status, errorText) {
      if (status === 429 && isTerminalRateLimitError(errorText)) {
 diff --git a/dist/env-api-keys.js b/dist/env-api-keys.js
-index e1b12358cb5a90820db8da0a2fb931c3fb1ebe27..26ba56ded14c261794ebd12db611bbe7dc30cd98 100644
+index e27cf6f..0be42d4 100644
 --- a/dist/env-api-keys.js
 +++ b/dist/env-api-keys.js
-@@ -67,7 +67,8 @@ function getApiKeyEnvVars(provider) {
+@@ -72,7 +72,8 @@ function getApiKeyEnvVars(provider) {
      // ANTHROPIC_AUTH_TOKEN participates in env discovery/status, but
      // getEnvApiKey() skips it because requests must pass it as Authorization: Bearer.
      if (provider === "anthropic") {
@@ -43,15 +43,15 @@ index e1b12358cb5a90820db8da0a2fb931c3fb1ebe27..26ba56ded14c261794ebd12db611bbe7
      const envMap = {
          "ant-ling": "ANT_LING_API_KEY",
 diff --git a/dist/providers/anthropic.js b/dist/providers/anthropic.js
-index 88cf6d040c1806c2760e119826355a4f6ce5f5e5..e5970bb9e00bec47d9beee9dd1dd1693e12c22ec 100644
+index 320e78a..5321cdb 100644
 --- a/dist/providers/anthropic.js
 +++ b/dist/providers/anthropic.js
 @@ -1,9 +1,11 @@
  import { anthropicMessagesApi } from "../api/anthropic-messages.lazy.js";
 -import { lazyOAuth } from "../auth/helpers.js";
 -import { loadAnthropicOAuth } from "../auth/oauth/load.js";
--import { ANTHROPIC_API_KEY_ENV, ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_OAUTH_TOKEN_ENV } from "../env-api-keys.js";
-+import { ANTHROPIC_API_KEY_ENV, ANTHROPIC_AUTH_TOKEN_ENV } from "../env-api-keys.js";
+-import { ANTHROPIC_API_KEY_ENV, ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_FEDERATION_RULE_ID_ENV, ANTHROPIC_IDENTITY_TOKEN_FILE_ENV, ANTHROPIC_OAUTH_TOKEN_ENV, ANTHROPIC_ORGANIZATION_ID_ENV, ANTHROPIC_SERVICE_ACCOUNT_ID_ENV, ANTHROPIC_WORKSPACE_ID_ENV, } from "../env-api-keys.js";
++import { ANTHROPIC_API_KEY_ENV, ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_FEDERATION_RULE_ID_ENV, ANTHROPIC_IDENTITY_TOKEN_FILE_ENV, ANTHROPIC_ORGANIZATION_ID_ENV, ANTHROPIC_SERVICE_ACCOUNT_ID_ENV, ANTHROPIC_WORKSPACE_ID_ENV, } from "../env-api-keys.js";
  import { createProvider } from "../models.js";
  import { ANTHROPIC_MODELS } from "./anthropic.models.js";
 +// Ficus: Anthropic does not permit third-party products to sign in with, store, or route
@@ -87,8 +87,8 @@ index 88cf6d040c1806c2760e119826355a4f6ce5f5e5..e5970bb9e00bec47d9beee9dd1dd1693
 +                if (apiKey && !isClaudeSubscriptionToken(apiKey))
                      return { auth: { apiKey }, source: envVar };
              }
-             return undefined;
-@@ -43,11 +47,6 @@ export function anthropicProvider() {
+             // Workload identity federation: the Anthropic SDK exchanges the identity
+@@ -65,11 +69,6 @@ export function anthropicProvider() {
          baseUrl: "https://api.anthropic.com",
          auth: {
              apiKey: anthropicApiKeyAuth(),
@@ -101,7 +101,7 @@ index 88cf6d040c1806c2760e119826355a4f6ce5f5e5..e5970bb9e00bec47d9beee9dd1dd1693
          models: Object.values(ANTHROPIC_MODELS),
          api: anthropicMessagesApi(),
 diff --git a/dist/utils/retry.js b/dist/utils/retry.js
-index 38781fbb440d41ad5f53bc216c27422c2be01074..eeac8c9227f1ea96c9a70e8ed2473512bd9b236a 100644
+index 1ae291c..3b24e55 100644
 --- a/dist/utils/retry.js
 +++ b/dist/utils/retry.js
 @@ -19,6 +19,15 @@ const NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN = buildProviderErrorPattern([
@@ -117,6 +117,6 @@ index 38781fbb440d41ad5f53bc216c27422c2be01074..eeac8c9227f1ea96c9a70e8ed2473512
 +    "usage_limit_reached",
 +    "hit your ChatGPT usage limit",
 +    "usage limit has been reached",
- ]);
- const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
-     // Generic provider load, HTTP status, and server-side transient failures.
+     // Sign in with ChatGPT on a ChatGPT Business plan: a usage limit set by the
+     // workspace admin. Only the admin can raise it.
+     "subscription_sharing_workplace_individual_usage_limit_exceeded",
