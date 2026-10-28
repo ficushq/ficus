@@ -134,6 +134,9 @@ test('routine model reads omit catalogs, transport fields, and duplicate proposa
  */
 function isAdditiveKey(key: string, value: unknown) {
   if (key === 'propertyNames') return true
+  // Approved request cardinalities, asserted independently against production validators.
+  if (key === 'maxProperties') return value === 16 || value === 64
+  if (key === 'maxItems') return value === 3
   if (key === 'maximum') return value === Number.MAX_SAFE_INTEGER
   if (key === 'type') return value === 'string'
   if (key === 'pattern') return typeof value === 'string' && value.startsWith('^([0-9a-fA-F]{8}-')
@@ -182,4 +185,10 @@ test('the contract check notices removed fields, requirements and descriptions',
   expect(contractDifferences(schema, { ...schema, additionalProperties: true })).toEqual([
     '$.additionalProperties: added true',
   ])
+})
+
+test('model-facing bounded records preserve their cardinality metadata', () => {
+  const edit = JSON.stringify(assistantEditorEditParameters)
+  expect(edit).toContain('"maxProperties":16')
+  expect(edit).toContain('"maxProperties":64')
 })

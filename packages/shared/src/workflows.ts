@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { keyedRecord } from './zod-helpers'
+import { boundedRecord, keyedRecord } from './zod-helpers'
 import { integrationSubscriptionSchema, integrationDataPathSchema } from './integration-outputs'
 import { decisionQuestionsSchema } from './decisions'
 import { decisionConditionIssue, decisionConditionSchema } from './decision-conditions'
@@ -63,7 +63,7 @@ export const workflowTransitionSchema = explainedUnion(
   { label: 'transition' }
 )
 
-const outcomes = keyedRecord(identifier, workflowTransitionSchema)
+const outcomes = boundedRecord(keyedRecord(identifier, workflowTransitionSchema), 16)
   .refine((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 16, 'Use 1–16 outcomes')
   .describe('1–16 named outcomes, each with one transition.')
 const stepFields = {
@@ -218,7 +218,7 @@ const definitionShape = z
   .object({
     schemaVersion: z.literal(1),
     name: z.string().trim().min(1).max(200),
-    participants: keyedRecord(identifier, workflowParticipantSchema).refine(
+    participants: boundedRecord(keyedRecord(identifier, workflowParticipantSchema), 64).refine(
       (value) => Object.keys(value).length <= 64,
       'Use at most 64 participants'
     ),
@@ -628,18 +628,21 @@ export const workflowEventTriggerSchema = z
   .object({
     id: identifier,
     source: integrationSubscriptionSchema.shape.source,
-    match: keyedRecord(
-      integrationDataPathSchema,
-      z.object({ value: z.union([z.string().max(2000), z.number().finite(), z.boolean()]) }).strict()
+    match: boundedRecord(
+      keyedRecord(
+        integrationDataPathSchema,
+        z.object({ value: z.union([z.string().max(2000), z.number().finite(), z.boolean()]) }).strict()
+      ),
+      16
     ).refine((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 16, 'Use 1–16 matches'),
     create: z
       .object({
         workflow: workflowSourceSchema,
         titlePrefix: z.string().max(100).default(''),
         additionalContext: z.string().trim().max(10000).optional(),
-        metadata: keyedRecord(
-          integrationDataPathSchema,
-          z.object({ event: integrationDataPathSchema }).strict()
+        metadata: boundedRecord(
+          keyedRecord(integrationDataPathSchema, z.object({ event: integrationDataPathSchema }).strict()),
+          16
         ).refine(
           (value) =>
             Object.keys(value).length <= 16 &&

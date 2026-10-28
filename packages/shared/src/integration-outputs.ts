@@ -1,6 +1,6 @@
 import type { EventPredicateField } from './event-predicate-catalog'
 import { z } from 'zod'
-import { keyedRecord } from './zod-helpers'
+import { boundedRecord, keyedRecord } from './zod-helpers'
 
 const name = z
   .string()
@@ -16,12 +16,15 @@ export const integrationDataPathSchema = z
     (path) => path.split('.').every((part) => !['__proto__', 'prototype', 'constructor'].includes(part)),
     'Reserved path'
   )
-export const integrationMatchSchema = keyedRecord(
-  integrationDataPathSchema,
-  z.union([
-    z.object({ streamMetadata: integrationDataPathSchema }).strict(),
-    z.object({ value: z.union([z.string().max(2000), z.number().finite(), z.boolean()]) }).strict(),
-  ])
+export const integrationMatchSchema = boundedRecord(
+  keyedRecord(
+    integrationDataPathSchema,
+    z.union([
+      z.object({ streamMetadata: integrationDataPathSchema }).strict(),
+      z.object({ value: z.union([z.string().max(2000), z.number().finite(), z.boolean()]) }).strict(),
+    ])
+  ),
+  16
 ).refine((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 16, 'Use 1–16 equality matches')
 export const integrationSubscriptionSchema = z
   .object({

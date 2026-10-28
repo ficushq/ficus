@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { keyedRecord } from './zod-helpers'
+import { boundedRecord, keyedRecord } from './zod-helpers'
 
 /*
  * Decision models: fast models that answer typed questions about some input
@@ -21,7 +21,7 @@ export const decisionQuestionSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('choice'),
     instructions,
-    options: keyedRecord(decisionName, z.string().trim().max(1000)).refine(
+    options: boundedRecord(keyedRecord(decisionName, z.string().trim().max(1000)), 64).refine(
       (options) => Object.keys(options).length >= 2 && Object.keys(options).length <= 64,
       {
         message: 'A choice needs 2 to 64 options.',
@@ -42,7 +42,7 @@ export const decisionQuestionSchema = z.discriminatedUnion('type', [
 ])
 export type DecisionQuestion = z.infer<typeof decisionQuestionSchema>
 
-export const decisionQuestionsSchema = keyedRecord(decisionName, decisionQuestionSchema).refine(
+export const decisionQuestionsSchema = boundedRecord(keyedRecord(decisionName, decisionQuestionSchema), 64).refine(
   (questions) => Object.keys(questions).length >= 1 && Object.keys(questions).length <= 64,
   {
     message: 'Ask 1 to 64 questions.',
@@ -78,7 +78,7 @@ export type DecisionImage = z.infer<typeof decisionImageSchema>
 
 export const decisionRequestSchema = z.object({
   /** What the questions are about: text, or JSON for structured input. Treated as data, never instructions. */
-  state: z.union([z.string(), z.record(z.string(), z.unknown()), z.array(z.unknown())]),
+  state: z.union([z.string(), boundedRecord(z.record(z.string(), z.unknown()), 256), z.array(z.unknown()).max(1000)]),
   questions: decisionQuestionsSchema,
   /**
    * Images the questions are also about, treated as data like `state`. Only providers whose model
@@ -342,9 +342,9 @@ export const DECISION_PURPOSE_INFO: Record<
 /** An instance feature's switch: `auto` is on exactly when a decision model is set up for it. */
 export const DECISION_FEATURE_SWITCH_VALUES = ['auto', 'on', 'off'] as const
 export type DecisionFeatureSwitch = (typeof DECISION_FEATURE_SWITCH_VALUES)[number]
-export const decisionFeatureSwitchesSchema = z.partialRecord(
-  z.enum(DECISION_PURPOSES),
-  z.enum(DECISION_FEATURE_SWITCH_VALUES)
+export const decisionFeatureSwitchesSchema = boundedRecord(
+  z.partialRecord(z.enum(DECISION_PURPOSES), z.enum(DECISION_FEATURE_SWITCH_VALUES)),
+  DECISION_PURPOSES.length
 )
 export type DecisionFeatureSwitches = z.infer<typeof decisionFeatureSwitchesSchema>
 
@@ -371,7 +371,10 @@ export const DECISION_TIMEOUT_MAX_MS = 30_000
 export const decisionRoutingSchema = z.object({
   /** For purposes without their own order. */
   default: z.array(z.string()).max(8).default([]),
-  purposes: z.partialRecord(z.enum(DECISION_PURPOSES), z.array(z.string()).max(8)).default({}),
+  purposes: boundedRecord(
+    z.partialRecord(z.enum(DECISION_PURPOSES), z.array(z.string()).max(8)),
+    DECISION_PURPOSES.length
+  ).default({}),
   timeoutMs: z.number().int().min(250).max(DECISION_TIMEOUT_MAX_MS).default(DECISION_TIMEOUT_DEFAULT_MS),
 })
 export type DecisionRouting = z.infer<typeof decisionRoutingSchema>

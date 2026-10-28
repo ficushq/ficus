@@ -1,3 +1,4 @@
+import { boundedRecord } from './zod-helpers'
 import { z } from 'zod'
 import {
   CUSTOM_THEME_FORMAT,
@@ -44,11 +45,12 @@ export const themeOperationSchema = z.discriminatedUnion('op', [
       variant: variantName,
       // `null` removes a token; a string sets it. Validated as color grammar
       // downstream by validateCustomTheme, not re-validated here.
-      tokens: z
-        .record(z.string().min(1).max(64), z.union([seedColor, z.null()]))
-        .refine((tokens) => Object.keys(tokens).length > 0 && Object.keys(tokens).length <= 64, {
+      tokens: boundedRecord(z.record(z.string().min(1).max(64), z.union([seedColor, z.null()])), 64).refine(
+        (tokens) => Object.keys(tokens).length > 0 && Object.keys(tokens).length <= 64,
+        {
           message: 'set-overrides requires 1-64 token entries',
-        }),
+        }
+      ),
     })
     .strict(),
   z.object({ op: z.literal('set-base'), base: z.string().min(1).max(100) }).strict(),
@@ -130,9 +132,10 @@ const KEY_COLOR_NAMES = ['primary', 'surface', 'page', 'text', 'border', 'onAcce
 export const themeInsightsVariantSchema = z
   .object({
     resolvedAppearance: z.enum(['light', 'dark', 'constant']),
-    keyColors: z
-      .partialRecord(z.enum(KEY_COLOR_NAMES), z.string().max(40))
-      .refine((colors) => Object.keys(colors).length <= KEY_COLOR_NAMES.length),
+    keyColors: boundedRecord(
+      z.partialRecord(z.enum(KEY_COLOR_NAMES), z.string().max(40)),
+      KEY_COLOR_NAMES.length
+    ).refine((colors) => Object.keys(colors).length <= KEY_COLOR_NAMES.length),
     contrastWarnings: z.array(z.string().max(200)).max(20),
   })
   .strict()
