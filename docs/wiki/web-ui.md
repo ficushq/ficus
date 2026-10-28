@@ -144,7 +144,12 @@ Refreshes preserve expansion; switching streams or reopening details resets it.
 The **Dependencies** list shows, under each dependency, the condition its edge waits on and
 whether it is satisfied ("Waits until its pull request is ready", "Unlocked when its pull request
 was ready · built on `branch` · delivery held until it merges"); a delivery hold uses the attention
-text color. In the Work Stream Graph a `ready` edge is dashed, a satisfied edge uses the success
+text color. Dependency rows reserve a fixed marker gutter: full wrapping titles sit above a
+metadata line (status and blocking age), with conditions and optional messages aligned to the
+same text column. Rows use a 12px gap and 2px between their own lines. The focused browser
+regression is `CHROMIUM_PATH=/path/to/chromium bun scripts/check-work-stream-dependencies-layout.ts`
+from `apps/web`; `SCREENSHOT_DIR` saves light/dark, narrow/desktop evidence.
+In the Work Stream Graph a `ready` edge is dashed, a satisfied edge uses the success
 color, each edge carries a title with both facts, and the legend names the three treatments.
 Descriptions wrap long paths, URLs and inline code within the modal; wide tables and code
 blocks retain contained scrolling. The focused, DB-free browser regression can be run from
