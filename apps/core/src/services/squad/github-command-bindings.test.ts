@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test'
-import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs'
+import { integrationWrapperPreamble } from '@ficus/shared/integration-wrapper-path'
+import { writeExecutionWrappers } from '../integrations/execution-wrappers'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { githubCommandBindings } from './env'
@@ -21,7 +23,8 @@ function runGit(bindings: string, env: Record<string, string>): string[] {
   chmodSync(join(dir, 'git'), 0o755)
   writeFileSync(join(dir, 'env.sh'), bindings)
   const result = Bun.spawnSync(['bash', '-c', `. ${join(dir, 'env.sh')}; git commit -m hi`], {
-    env: { PATH: `${dir}:/usr/bin:/bin`, ...env },
+    env: { PATH: `${dir}:/usr/bin:/bin`, HOME: dir, ...env },
+    timeout: 3000,
     stdout: 'pipe',
     stderr: 'pipe',
   })
@@ -30,34 +33,105 @@ function runGit(bindings: string, env: Record<string, string>): string[] {
   return result.stdout.toString().trimEnd().split('\n')
 }
 
-/** Source the bindings in bash with only a fake `ficus` on PATH (it prints its argv), then run `cmd`. */
-function runWithFicus(bindings: string, cmd: string): string[] {
+/** Exercise the actual post-activation assets, with provider/CLI transport replaced by synthetic executables. */
+function runManagedCommand(cmd: string, agent = true) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-gh-bindings-')))
   dirs.push(dir)
-  writeFileSync(
-    join(dir, 'ficus'),
-    '#!/bin/sh\nprintf "ficus"; for a in "$@"; do printf " %s" "$a"; done; printf "\\n"\n'
+  const wrappers = join(dir, '.ficus', 'integration-bin')
+  const real = join(dir, 'real')
+  mkdirSync(real)
+  writeExecutionWrappers(
+    wrappers,
+    [{ binary: 'gh', providerKey: 'github' }],
+    'squad-1',
+    githubCommandBindings('squad-1', KEY)
   )
-  chmodSync(join(dir, 'ficus'), 0o755)
-  writeFileSync(join(dir, 'env.sh'), bindings)
-  const result = Bun.spawnSync(['bash', '-c', `. ${join(dir, 'env.sh')}; ${cmd}`], {
-    env: { PATH: `${dir}:/usr/bin:/bin` },
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  expect(result.stderr.toString()).toBe('')
+  writeFileSync(join(dir, '.ficus', '.env'), 'SQUAD_SETTING=preserved\n')
+  const calls = join(dir, 'calls')
+  writeFileSync(calls, '')
+  writeFileSync(
+    join(real, 'ficus'),
+    '#!/bin/sh\nset -eu\n{ printf "CALL\\n"; printf "%s\\n" "$@"; } >> "$FIXTURE_CALLS"\nwhile [ "$#" -gt 0 ] && [ "$1" != -- ]; do shift; done\n[ "$#" -gt 0 ] || exit 64\nshift\nexec "$@"\n',
+    { mode: 0o755 }
+  )
+  writeFileSync(
+    join(real, 'gh'),
+    '#!/bin/sh\nif [ "$1" = auth ] && [ "$2" = git-credential ]; then\n  printf "username=synthetic-user\\npassword=synthetic-gh-token\\n"\nelse\n  printf "gh %s\\n" "$*"\nfi\n',
+    { mode: 0o755 }
+  )
+  // The managed assets carry instructions only, not even the injected test identity.
+  for (const file of [join(dir, '.ficus', '.env'), join(wrappers, 'gh'), join(wrappers, '.git-config')]) {
+    const asset = readFileSync(file, 'utf8')
+    expect(asset).not.toContain('synthetic-agent-identity')
+    expect(asset).not.toContain('synthetic-gh-token')
+  }
+  expect(readFileSync(join(dir, '.ficus', '.env'), 'utf8')).not.toContain('git()')
+  expect(readFileSync(join(wrappers, '.git-config'), 'utf8')).not.toContain('gh()')
+  const result = Bun.spawnSync(
+    ['bash', '--noprofile', '--norc', '-c', '. "$FIXTURE_ENV"\n' + integrationWrapperPreamble(wrappers) + cmd],
+    {
+      cwd: dir,
+      env: {
+        PATH: `${real}:/usr/bin:/bin`,
+        HOME: dir,
+        GH_CONFIG_DIR: dir,
+        XDG_CONFIG_HOME: dir,
+        FIXTURE_CALLS: calls,
+        FIXTURE_ENV: join(dir, '.ficus', '.env'),
+        GIT_CONFIG_NOSYSTEM: '1',
+        GIT_CONFIG_GLOBAL: '/dev/null',
+        GIT_TERMINAL_PROMPT: '0',
+        ...(agent ? { FICUS_TOKEN: 'synthetic-agent-identity' } : {}),
+      },
+      timeout: 3000,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    }
+  )
   expect(result.exitCode).toBe(0)
-  return result.stdout.toString().trimEnd().split('\n')
+  return {
+    stdout: result.stdout.toString(),
+    stderr: result.stderr.toString(),
+    realGh: join(real, 'gh'),
+    calls: readFileSync(calls, 'utf8')
+      .split('CALL\n')
+      .slice(1)
+      .map((call) => call.trimEnd().split('\n')),
+  }
 }
 
 describe('githubCommandBindings', () => {
-  it('gh and the git credential helper run through the ficus CLI', () => {
-    expect(runWithFicus(githubCommandBindings('squad-1'), 'gh pr list --limit 1')).toEqual([
-      'ficus integration exec github --squad squad-1 -- gh pr list --limit 1',
+  it('the executable gh wrapper dispatches through ficus after loading .git-config', () => {
+    const result = runManagedCommand('gh pr list --limit 1')
+    expect(result.stdout).toBe('gh pr list --limit 1\n')
+    expect(result.stderr).toBe('')
+    expect(result.calls).toEqual([
+      ['integration', 'exec', 'github', '--squad', 'squad-1', '--', result.realGh, 'pr', 'list', '--limit', '1'],
     ])
     const bindings = githubCommandBindings('squad-1', KEY)
     expect(bindings).toContain('command ficus integration exec github --squad')
     expect(bindings).toContain('-c gpg.ssh.program=ficus')
+  })
+
+  it('real Git invokes its per-command credential helper through ficus and the executable wrapper', () => {
+    const result = runManagedCommand("printf 'protocol=https\\nhost=github.com\\n\\n' | git credential fill")
+    expect(result.stderr).toBe('')
+    expect(result.stdout).toBe(
+      'protocol=https\nhost=github.com\nusername=synthetic-user\npassword=synthetic-gh-token\n'
+    )
+    expect(result.calls).toEqual([
+      ['integration', 'exec', 'github', '--squad', 'squad-1', '--', 'gh', 'auth', 'git-credential', 'get'],
+      ['integration', 'exec', 'github', '--squad', 'squad-1', '--', result.realGh, 'auth', 'git-credential', 'get'],
+    ])
+  })
+
+  it('human activation does not load Git overrides or acquire Ficus integration credentials', () => {
+    const result = runManagedCommand('type -t git; gh pr list --limit 1', false)
+    expect(result.stdout).toBe('file\ngh pr list --limit 1\n')
+    expect(result.stderr).toBe(
+      'Ficus integration credentials are only available to agents; running gh without Ficus credentials.\n'
+    )
+    expect(result.calls).toEqual([])
   })
 
   it('without a signing key, git only gets the credential helper', () => {
