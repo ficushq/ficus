@@ -29,7 +29,7 @@ export const spawnSquadAgentSchema = z.object({
 
 export const chatScopeSchema = z.object({
   type: chatScopeTypeSchema,
-  id: z.string().uuid().optional(),
+  id: z.uuid().optional(),
 })
 
 export const imageContentSchema = z.object({
@@ -47,9 +47,9 @@ export const chatRequestSchema = z
   .object({
     message: z.string(),
     pagePath: chatPagePathSchema.optional(),
-    agentId: z.string().uuid().optional(),
+    agentId: z.uuid().optional(),
     scope: chatScopeSchema.optional(),
-    imageIds: z.array(z.string().uuid()).max(MAX_IMAGE_ATTACHMENTS_PER_MESSAGE).optional(),
+    imageIds: z.array(z.uuid()).max(MAX_IMAGE_ATTACHMENTS_PER_MESSAGE).optional(),
     deliveryMode: z.enum(['steer', 'follow-up']).optional(),
     clientId: z.string().max(128).optional(),
   })
@@ -60,13 +60,11 @@ export const chatRequestSchema = z
 // Squad schemas
 export const squadStatusSchema = z.enum(['active', 'paused', 'archived'])
 
-export const squadGithubIdentitySchema = z
-  .object({
-    githubTokenSecretKey: z.string().trim().min(1).max(255).optional(),
-    gitUserName: z.string().trim().min(1).max(200).optional(),
-    gitUserEmail: z.string().trim().email().max(320).optional(),
-  })
-  .strict()
+export const squadGithubIdentitySchema = z.strictObject({
+  githubTokenSecretKey: z.string().trim().min(1).max(255).optional(),
+  gitUserName: z.string().trim().min(1).max(200).optional(),
+  gitUserEmail: z.string().trim().email().max(320).optional(),
+})
 
 const MAX_TOOLCHAIN_PACKAGES = 64
 const MAX_TOOLCHAIN_PACKAGE_BYTES = 255
@@ -84,7 +82,7 @@ const packageSpecSchema = z
   .refine((value) => utf8Bytes(value) <= MAX_TOOLCHAIN_PACKAGE_BYTES, 'Package spec is too long')
 
 export const squadToolchainSchema = z
-  .object({
+  .strictObject({
     packages: z.array(packageSpecSchema).max(MAX_TOOLCHAIN_PACKAGES),
     setupScript: z
       .string()
@@ -92,7 +90,6 @@ export const squadToolchainSchema = z
       .refine((value) => utf8Bytes(value) <= MAX_TOOLCHAIN_SETUP_BYTES, 'Setup script is too long')
       .optional(),
   })
-  .strict()
   .superRefine((toolchain, ctx) => {
     if (new Set(toolchain.packages).size !== toolchain.packages.length) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['packages'], message: 'Package specs must be unique' })
@@ -102,24 +99,18 @@ export const squadToolchainSchema = z
     }
   })
 
-export const squadWorkflowSetupSchema = z
-  .object({
-    guidance: z.string().trim().max(16000),
-    choices: z
-      .array(z.object({ when: z.string().trim().min(1).max(2000), source: workflowSourceSchema }).strict())
-      .max(32),
-    completedAt: z.string().datetime().optional(),
-  })
-  .strict()
+export const squadWorkflowSetupSchema = z.strictObject({
+  guidance: z.string().trim().max(16000),
+  choices: z.array(z.strictObject({ when: z.string().trim().min(1).max(2000), source: workflowSourceSchema })).max(32),
+  completedAt: z.iso.datetime().optional(),
+})
 
 /** A squad preset recommends a library of flows; it never starts their participants. */
-export const squadPresetWorkflowsSchema = z
-  .object({
-    default: workflowSourceSchema,
-    guidance: z.string().trim().max(16000).default(''),
-    choices: squadWorkflowSetupSchema.shape.choices.default([]),
-  })
-  .strict()
+export const squadPresetWorkflowsSchema = z.strictObject({
+  default: workflowSourceSchema,
+  guidance: z.string().trim().max(16000).default(''),
+  choices: squadWorkflowSetupSchema.shape.choices.default([]),
+})
 export type SquadPresetWorkflows = z.infer<typeof squadPresetWorkflowsSchema>
 
 /** Authority lives in dedicated tables, never in generic metadata (even deletion patches). */
@@ -211,31 +202,31 @@ export const updateSquadSchema = z.object({
   defaultAgents: z.array(z.string()).optional(),
   context: z.string().nullable().optional(),
   typeContext: z.record(z.string(), z.string().nullable()).nullable().optional(),
-  order: z.number().int().min(0).optional(),
+  order: z.int().min(0).optional(),
   metadata: squadMetadataSchema.optional(),
   globalCollaborationEnabled: z.boolean().optional(),
   // Concurrency cap for admitted work streams; null = unlimited. Lowering never evicts.
-  maxConcurrentWorkStreams: z.number().int().min(1).nullable().optional(),
+  maxConcurrentWorkStreams: z.int().min(1).nullable().optional(),
   // Auto-park grace minutes for active streams with open waits; null → default 30; 0 = immediate.
-  blockedGraceMinutes: z.number().int().min(0).nullable().optional(),
+  blockedGraceMinutes: z.int().min(0).nullable().optional(),
   // Make consultants dormant after this many idle days; null = off.
-  consultantIdleDormancyDays: z.number().int().min(1).max(3650).nullable().optional(),
+  consultantIdleDormancyDays: z.int().min(1).max(3650).nullable().optional(),
   // vm runtime: pin the squad's box to a machine (null unpins). Ignored by k8s/docker.
-  machineId: z.string().uuid().nullable().optional(),
+  machineId: z.uuid().nullable().optional(),
   // host runtime: absolute directory this squad works in (null = default storage path).
   hostWorkspacePath: hostWorkspacePathSchema.nullable().optional(),
 })
 
 export const reorderSquadsSchema = z.object({
-  ids: z.array(z.string().uuid()).min(1),
+  ids: z.array(z.uuid()).min(1),
 })
 
 // Squad relationship schemas
 export const squadRelationshipTypeSchema = z.enum(['reports_to', 'collaborates', 'depends_on'])
 
 export const createSquadRelationshipSchema = z.object({
-  sourceSquadId: z.string().uuid(),
-  targetSquadId: z.string().uuid(),
+  sourceSquadId: z.uuid(),
+  targetSquadId: z.uuid(),
   relationshipType: squadRelationshipTypeSchema,
   metadata: z.record(z.string(), z.unknown()).optional().default({}),
 })
@@ -283,7 +274,7 @@ const workStreamDependencyConditionSchema = z.enum(WORK_STREAM_DEPENDENCY_CONDIT
 /** A bare ID waits for `done`; the object form names the unlock condition. */
 export const workStreamDependencyInputSchema = z.union([
   z.string().min(1),
-  z.object({ id: z.string().min(1), condition: workStreamDependencyConditionSchema.optional() }).strict(),
+  z.strictObject({ id: z.string().min(1), condition: workStreamDependencyConditionSchema.optional() }),
 ])
 export const workStreamPromptTypeSchema = z.enum(['text', 'select', 'multi_select'])
 export const workStreamCompletionModeSchema = z.enum(WORK_STREAM_COMPLETION_MODES)
@@ -324,22 +315,22 @@ export const createWorkStreamSchema = z
     description: z.string().optional().default(''),
     assigneeAgentId: z.string().optional(),
     /** Legacy input retained for a clear rejection from the creation boundary. */
-    assigneeAgentIndex: z.number().int().min(0).optional(),
+    assigneeAgentIndex: z.int().min(0).optional(),
     ownerAgentId: z.string().nullable().optional(),
     agentIds: z.array(z.string()).optional(),
-    assignedReviewerIds: z.array(z.string().uuid()).max(64).optional(),
+    assignedReviewerIds: z.array(z.uuid()).max(64).optional(),
     /** Legacy input retained for a clear rejection from the creation boundary. */
     agents: z.array(z.string().min(1)).optional(),
     /** Legacy input; participant models now belong to the flow. */
     agentModelOverrides: z.record(z.string(), z.string()).optional(),
     handoffMessage: z.string().nullable().optional(),
     /** Attribute the request to a specific user (agent creators only; ignored for direct user creates). */
-    requestingUserId: z.string().uuid().nullable().optional(),
+    requestingUserId: z.uuid().nullable().optional(),
     dependsOn: z.array(workStreamDependencyInputSchema).optional().default([]),
     priority: workStreamPrioritySchema.optional(),
     metadata: z.record(z.string(), z.unknown()).optional().default({}),
     /** Create from an observed integration event: tracks its resource and reuses the stream that already handles it. */
-    integrationEventId: z.string().uuid().optional(),
+    integrationEventId: z.uuid().optional(),
     completionMode: workStreamCompletionModeSchema.optional(),
     repository: z.string().min(1).optional(),
     gitRemote: z.string().min(1).optional(),
@@ -362,7 +353,7 @@ export const updateWorkStreamSchema = z.object({
   assigneeAgentId: z.string().nullable().optional(),
   ownerAgentId: z.string().nullable().optional(),
   agentIds: z.array(z.string()).nullable().optional(),
-  assignedReviewerIds: z.array(z.string().uuid()).max(64).optional(),
+  assignedReviewerIds: z.array(z.uuid()).max(64).optional(),
   dependsOn: z.array(workStreamDependencyInputSchema).optional(),
   handoffMessage: z.string().nullable().optional(),
   files: z.array(z.string()).optional(),
@@ -431,7 +422,7 @@ export const sendBackWorkStreamSchema = z.object({
 
 export const requestInputWorkStreamSchema = z.object({
   scope: z.enum(['stream', 'attempt']).optional(),
-  flowAttemptId: z.number().int().positive().optional(),
+  flowAttemptId: z.int().positive().optional(),
   /** What input/action is needed, and from whom; stored on the manual wait. */
   message: z.string().min(1),
   /** Who must act: human (default) or owner (the stream's owning agent). */
@@ -453,41 +444,34 @@ export const setQuestionBlockingSchema = z.object({
 })
 
 // Squad schedule schemas
-export const squadScheduleSpawnAgentActionSchema = z
-  .object({
-    type: z.literal('spawn_agent'),
-    agentTypeId: z.string().min(1),
-    prompt: z.string().min(1),
-    workStream: z
-      .object({
-        title: z.string().min(1).max(500),
-        description: z.string().optional(),
-        completionMode: workStreamCompletionModeSchema.optional(),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict()
+export const squadScheduleSpawnAgentActionSchema = z.strictObject({
+  type: z.literal('spawn_agent'),
+  agentTypeId: z.string().min(1),
+  prompt: z.string().min(1),
+  workStream: z
+    .strictObject({
+      title: z.string().min(1).max(500),
+      description: z.string().optional(),
+      completionMode: workStreamCompletionModeSchema.optional(),
+    })
+    .optional(),
+})
 
-export const squadScheduleInboxMessageActionSchema = z
-  .object({
-    type: z.literal('inbox_message'),
-    targetAgentId: z.string().min(1),
-    subject: z.string().optional(),
-    content: z.string().min(1),
-  })
-  .strict()
+export const squadScheduleInboxMessageActionSchema = z.strictObject({
+  type: z.literal('inbox_message'),
+  targetAgentId: z.string().min(1),
+  subject: z.string().optional(),
+  content: z.string().min(1),
+})
 
-export const squadScheduleCreateWorkStreamActionSchema = z
-  .object({
-    type: z.literal('create_work_stream'),
-    workflow: workflowSourceSchema.optional(),
-    title: z.string().min(1).max(500),
-    description: z.string().optional(),
-    assigneeAgentId: z.string().optional(),
-    completionMode: workStreamCompletionModeSchema.optional(),
-  })
-  .strict()
+export const squadScheduleCreateWorkStreamActionSchema = z.strictObject({
+  type: z.literal('create_work_stream'),
+  workflow: workflowSourceSchema.optional(),
+  title: z.string().min(1).max(500),
+  description: z.string().optional(),
+  assigneeAgentId: z.string().optional(),
+  completionMode: workStreamCompletionModeSchema.optional(),
+})
 
 export const squadScheduleActionSchema = z.discriminatedUnion('type', [
   squadScheduleSpawnAgentActionSchema,
@@ -533,13 +517,13 @@ export const updateSquadScheduleSchema = z.object({
 export const createPeerSchema = z.object({
   localAlias: z.string().min(1).max(200),
   instanceId: z.string().min(1).max(64),
-  baseUrl: z.string().url(),
+  baseUrl: z.url(),
   publicKeyPem: z.string().min(1),
 })
 
 export const updatePeerSchema = z.object({
   localAlias: z.string().min(1).max(200).optional(),
-  baseUrl: z.string().url().optional(),
+  baseUrl: z.url().optional(),
   publicKeyPem: z.string().min(1).optional(),
   status: z.enum(['active', 'disabled']).optional(),
 })
@@ -603,6 +587,6 @@ export const sendInboxMessageSchema = z.object({
   // target (distinct from inReplyTo, which is a LOCAL inbox-message id).
   agentKey: z.string().min(1).optional(),
   agentSig: z.string().min(1).optional(),
-  id: z.string().uuid().optional(),
+  id: z.uuid().optional(),
   inReplyToEnvelopeId: z.string().min(1).optional(),
 })

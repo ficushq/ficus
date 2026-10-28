@@ -80,16 +80,18 @@ const requiredDocument = z.unknown().refine((value) => value !== undefined, { me
 
 /** Creating a preset never takes `visibility` — a new preset always starts
  * private; sharing is a deliberate, separate action via the visibility route. */
-export const createThemePresetRequestSchema = z.object({ document: requiredDocument }).strict()
-export const updateThemePresetRequestSchema = z
-  .object({ revision: z.number().int().nonnegative(), document: requiredDocument })
-  .strict()
-export const deleteThemePresetRequestSchema = z.object({ revision: z.number().int().nonnegative() }).strict()
+export const createThemePresetRequestSchema = z.strictObject({ document: requiredDocument })
+export const updateThemePresetRequestSchema = z.strictObject({
+  revision: z.int().nonnegative(),
+  document: requiredDocument,
+})
+export const deleteThemePresetRequestSchema = z.strictObject({ revision: z.int().nonnegative() })
 /** `PUT /theme-presets/:id/visibility` — owner-only, revision-checked, like the
  * document update route. Sharing/unsharing never touches the document. */
-export const updateThemePresetVisibilityRequestSchema = z
-  .object({ revision: z.number().int().nonnegative(), visibility: themePresetVisibilitySchema })
-  .strict()
+export const updateThemePresetVisibilityRequestSchema = z.strictObject({
+  revision: z.int().nonnegative(),
+  visibility: themePresetVisibilitySchema,
+})
 
 export type CreateThemePresetRequest = z.infer<typeof createThemePresetRequestSchema>
 export type UpdateThemePresetRequest = z.infer<typeof updateThemePresetRequestSchema>

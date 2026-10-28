@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { z } from 'zod'
 import {
+  describeZodType,
   formatWorkflowSchemaReference,
   workflowSchemaOverview,
   workflowStepKindReference,
@@ -58,5 +60,17 @@ describe('workflow schema reference', () => {
     expect(() => formatWorkflowSchemaReference('approval')).toThrow(
       'Unknown step kind; use one of: agent, human-approval, decision'
     )
+  })
+})
+
+describe('Zod 4 format descriptions', () => {
+  test('top-level UUID formats retain the UUID label', () => {
+    expect(describeZodType(z.uuid())).toBe('UUID')
+    expect(describeZodType(z.uuid().max(36))).toBe('UUID, at most 36 characters')
+  })
+
+  test('top-level integers retain whole-number labels and explicit bounds', () => {
+    expect(describeZodType(z.int())).toBe('whole number')
+    expect(describeZodType(z.int().min(1).max(10))).toBe('whole number 1–10')
   })
 })

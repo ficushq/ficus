@@ -8,26 +8,23 @@ import { z } from 'zod'
  * Stored at `metadata.push` on the inbox row. Only system-authored messages are trusted to
  * carry one (agents and users cannot restyle their own alerts).
  */
-export const inboxPushPresentationSchema = z
-  .object({
-    title: z.string().trim().min(1).max(120),
-    body: z.string().trim().min(1).max(300),
-    /** Original Markdown when a producer clips its presentation. Only push renderers
-     * consume this source, converting to plain text before applying payload limits. */
-    source: z
-      .object({ title: z.string().optional(), body: z.string().optional(), subtitle: z.string().optional() })
-      .strict()
-      .optional(),
-    /** Rendered under the title on iOS; typically the squad name. */
-    subtitle: z.string().trim().min(1).max(80).optional(),
-    /** A later push with the same key replaces this one on the device. */
-    collapseKey: z.string().trim().min(1).max(64).optional(),
-    /** Pushes sharing a key are grouped together on the device. */
-    threadKey: z.string().trim().min(1).max(64).optional(),
-    /** passive = silent, no lock-screen interruption; active = normal; time-sensitive = breaks through focus. */
-    interruptionLevel: z.enum(['passive', 'active', 'time-sensitive']).optional(),
-  })
-  .strict()
+export const inboxPushPresentationSchema = z.strictObject({
+  title: z.string().trim().min(1).max(120),
+  body: z.string().trim().min(1).max(300),
+  /** Original Markdown when a producer clips its presentation. Only push renderers
+   * consume this source, converting to plain text before applying payload limits. */
+  source: z
+    .strictObject({ title: z.string().optional(), body: z.string().optional(), subtitle: z.string().optional() })
+    .optional(),
+  /** Rendered under the title on iOS; typically the squad name. */
+  subtitle: z.string().trim().min(1).max(80).optional(),
+  /** A later push with the same key replaces this one on the device. */
+  collapseKey: z.string().trim().min(1).max(64).optional(),
+  /** Pushes sharing a key are grouped together on the device. */
+  threadKey: z.string().trim().min(1).max(64).optional(),
+  /** passive = silent, no lock-screen interruption; active = normal; time-sensitive = breaks through focus. */
+  interruptionLevel: z.enum(['passive', 'active', 'time-sensitive']).optional(),
+})
 
 export type InboxPushPresentation = z.infer<typeof inboxPushPresentationSchema>
 

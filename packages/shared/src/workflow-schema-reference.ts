@@ -45,10 +45,14 @@ function range(min: number | undefined, max: number | undefined, unit: string) {
 
 /** The definitions of a schema's checks, e.g. `{ check: 'min_length', minimum: 1 }`. */
 function checkDefs(schema: z.ZodType): z.core.$ZodCheckDef[] {
-  return (schema._zod.def.checks ?? []).map((check) => check._zod.def)
+  const checks = (schema._zod.def.checks ?? []).map((check) => check._zod.def)
+  // Top-level formats are their own check, not an entry in def.checks.
+  return schema instanceof z.ZodStringFormat || schema instanceof z.ZodNumberFormat
+    ? [schema._zod.def, ...checks]
+    : checks
 }
 
-function describeString(schema: z.ZodString) {
+function describeString(schema: z.ZodString | z.ZodStringFormat) {
   let min: number | undefined
   let max: number | undefined
   let pattern: string | undefined
@@ -138,7 +142,7 @@ export function describeZodType(schema: z.ZodType, depth = 0): string {
   const inner = unwrapZodSchema(schema)
   const name = depth > 0 || schema !== workflowTransitionSchema ? typeName(inner) : undefined
   if (name) return name
-  if (inner instanceof z.ZodString) return describeString(inner)
+  if (inner instanceof z.ZodString || inner instanceof z.ZodStringFormat) return describeString(inner)
   if (inner instanceof z.ZodNumber) return describeNumber(inner)
   if (inner instanceof z.ZodBoolean) return 'true | false'
   if (inner instanceof z.ZodLiteral) return String(inner.value)

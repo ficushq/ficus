@@ -102,55 +102,45 @@ export interface WorkflowRun {
 }
 
 const commandFields = {
-  expectedVersion: z.number().int().nonnegative(),
-  attemptId: z.number().int().positive(),
+  expectedVersion: z.int().nonnegative(),
+  attemptId: z.int().positive(),
 }
 export const workflowCommandSchema = z.discriminatedUnion('action', [
-  z
-    .object({
-      ...commandFields,
-      action: z.literal('rework'),
-      feedback: z.string().trim().min(1).max(64_000),
-    })
-    .strict(),
-  z
-    .object({
-      ...commandFields,
-      action: z.literal('delegate'),
-      participant: workflowParticipantSchema,
-      task: z.string().trim().min(1).max(64000),
-    })
-    .strict(),
-  z
-    .object({
-      expectedVersion: commandFields.expectedVersion,
-      attemptId: commandFields.attemptId.nullable(),
-      action: z.literal('revise'),
-      operations: z.array(workflowCustomizationSchema).min(1).max(512),
-      reason: z.string().trim().min(1).max(4000),
-      active: z.enum(['keep', 'restart']),
-    })
-    .strict(),
-  z
-    .object({
-      ...commandFields,
-      action: z.literal('complete'),
-      outcome: z.string().min(1).max(100),
-      // May be empty only for a human approval that moves work forward; see workflowOutcomeRequiresEvidence.
-      evidence: z.string().trim().max(64_000),
-      // An agent doing rework may return its result directly to the requester.
-      resume: z.boolean().default(false),
-    })
-    .strict(),
-  z
-    .object({
-      ...commandFields,
-      action: z.literal('return'),
-      targetStepId: z.string().min(1).max(100),
-      resumeAt: z.string().min(1).max(100),
-      feedback: z.string().trim().min(1).max(64_000),
-    })
-    .strict(),
+  z.strictObject({
+    ...commandFields,
+    action: z.literal('rework'),
+    feedback: z.string().trim().min(1).max(64_000),
+  }),
+  z.strictObject({
+    ...commandFields,
+    action: z.literal('delegate'),
+    participant: workflowParticipantSchema,
+    task: z.string().trim().min(1).max(64000),
+  }),
+  z.strictObject({
+    expectedVersion: commandFields.expectedVersion,
+    attemptId: commandFields.attemptId.nullable(),
+    action: z.literal('revise'),
+    operations: z.array(workflowCustomizationSchema).min(1).max(512),
+    reason: z.string().trim().min(1).max(4000),
+    active: z.enum(['keep', 'restart']),
+  }),
+  z.strictObject({
+    ...commandFields,
+    action: z.literal('complete'),
+    outcome: z.string().min(1).max(100),
+    // May be empty only for a human approval that moves work forward; see workflowOutcomeRequiresEvidence.
+    evidence: z.string().trim().max(64_000),
+    // An agent doing rework may return its result directly to the requester.
+    resume: z.boolean().default(false),
+  }),
+  z.strictObject({
+    ...commandFields,
+    action: z.literal('return'),
+    targetStepId: z.string().min(1).max(100),
+    resumeAt: z.string().min(1).max(100),
+    feedback: z.string().trim().min(1).max(64_000),
+  }),
 ])
 
 export type WorkflowCommand = z.infer<typeof workflowCommandSchema>

@@ -23,12 +23,10 @@ export const ATTENTION_LEVELS = ['mute', 'show', 'notify'] as const
 export type AttentionKind = (typeof ATTENTION_KINDS)[number]
 export type AttentionLevel = (typeof ATTENTION_LEVELS)[number]
 
-export const attentionSchema = z
-  .object({
-    decisions: z.enum(ATTENTION_LEVELS),
-    progress: z.enum(ATTENTION_LEVELS),
-  })
-  .strict()
+export const attentionSchema = z.strictObject({
+  decisions: z.enum(ATTENTION_LEVELS),
+  progress: z.enum(ATTENTION_LEVELS),
+})
 
 export type Attention = z.infer<typeof attentionSchema>
 
