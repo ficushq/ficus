@@ -1,6 +1,6 @@
 import { lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { parse } from 'dotenv'
+import { parseShellLiteralAssignments } from './shell-literal-assignments'
 import { getSquadsBasePath, isCanonicalSquadId } from '../squad/workspace'
 import type { SecretEntry } from './content-safety'
 
@@ -64,10 +64,10 @@ export class SquadEnvSecretSource {
           next.set(path, cached)
           continue
         }
-        const values = parse(readFileSync(path, 'utf8'))
-        const entries = Object.entries(values)
-          .filter(([key, value]) => isSecretLikeSquadEnvValue(key, value))
-          .map(([key, value]) => ({ key: `squad-env.${id}.${key}`, value, outputOnly: true as const }))
+        const values = parseShellLiteralAssignments(readFileSync(path, 'utf8'))
+        const entries = values
+          .filter(({ key, value }) => isSecretLikeSquadEnvValue(key, value))
+          .map(({ key, value }) => ({ key: `squad-env.${id}.${key}`, value, outputOnly: true as const }))
         next.set(path, { signature, entries })
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {

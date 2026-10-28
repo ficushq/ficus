@@ -197,9 +197,21 @@ integration or protected stored credential, that independent input protection st
 applies. Output redaction (including partial streaming/truncated fragments) applies
 to both policies.
 
-The env heuristic uses literal dotenv-style assignments from canonical squad
-`.ficus/env.user` only, with no shell evaluation, variable expansion or command
-substitution:
+The env heuristic uses statically decoded shell-literal assignments from canonical
+squad `.ficus/env.user` only. Unquoted literals, single/double quotes, concatenated
+quote fragments, shell backslash escaping/line continuation, multiline quotes and
+Bash ANSI-C quotes are decoded without running a shell. For ANSI-C Unicode escapes,
+both UTF-8 and C-locale escaped representations are conservatively registered; the
+detector does not read or change a runtime locale. An embedded unquoted `#`
+is part of the value; only a `#` starting a shell word begins a comment. Assignment
+words and `export` declarations (including multiple assignments and semicolon
+separators) are recognized; arbitrary command arguments and heredoc bodies are not
+interpreted as environment definitions. The detector never evaluates variables,
+parameter/command/arithmetic/process substitutions, or locale-dependent quotes.
+Such dynamic values and malformed/unsupported statements are not inferred. This
+is not an interpreter for arbitrary shell scripts or control flow.
+
+After literal decoding, the heuristic is:
 
 - Values under 12 characters are not registered (for example `production`).
 - Keys ending in `_TOKEN`, `_KEY`, `_SECRET`, `_PASSWORD`, `_CREDENTIALS`, or those
@@ -218,7 +230,7 @@ API and worker without a background scanner or notification delay. Symlink setti
 and files are not followed. On transient read failures, last-known coverage is
 retained until a successful read/removal. Matching across squads is deliberately
 allowed; these values are never used for input refusal. No arbitrary workspace
-files (including app `.env.local` files) are scanned or registered. Complex shell
+files (including app `.env.local` files) are scanned or registered. Dynamic shell
 expressions are not evaluated, so their resulting runtime values are not inferred.
 
 Regression pointers: the focused content-safety, content-safety-registry,
