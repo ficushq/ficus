@@ -120,7 +120,9 @@ The gateway is credential-free and routes by host name. It limits each vault and
 token buckets and in-flight caps (429 `busy`). One exception keeps a join from spending an invite
 for nothing: a successful invite redeem reserves the single `whoami` that follows it, for that
 vault and the returned credential only, keyed by a SHA-256 hash (never the credential), single
-use, at most 16 at once and for 30 seconds.
+use, at most 16 at once and for 30 seconds. Reserved requests have their own in-flight cap (one
+per vault, two per host), so in-flight never exceeds the normal caps plus two; a reserved `whoami`
+that finds its cap full waits up to 5 seconds for a slot instead of being refused.
 
 Ficus reads with an upstream agent credential that has exactly `read` and follows no member,
 re-verified on every call. Agents see five read tools that require an explicit vault and resolve

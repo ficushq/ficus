@@ -15,6 +15,13 @@ const REQUEST_MS = 15000
  * keyed by a hash of the new credential (never the credential), bounded in count and lifetime. */
 export const JOIN_GRACE_MS = 30_000
 export const JOIN_GRACE_MAX = 16
+/** Reserved whoamis pass the normal in-flight caps but have their own small ones, so in-flight never
+ * exceeds the normal caps (4 host, 2 per vault) plus this allowance. A reserved whoami that finds its
+ * cap full waits for a slot (in arrival order, at most JOIN_WAIT_MS) instead of being refused. */
+export const JOIN_RESERVED_VAULT = 1
+/** Defence in depth: with MANAGED_BIGBRAIN_MAX_VAULTS (2) vaults the per-vault cap already bounds this. */
+export const JOIN_RESERVED_HOST = 2
+export const JOIN_WAIT_MS = 5_000
 const MEMBER_CREDENTIAL = /^sv_[A-Za-z0-9_-]{1,512}$/
 const credentialKey = (vaultId: string, credential: string) =>
   `${vaultId}:${createHash('sha256').update(credential).digest('hex')}`
@@ -206,13 +213,66 @@ export function createGatewayHandler(options: {
   fetch?: (url: string, init: RequestInit & { unix: string }) => Promise<Response>
   /** Fixture-only override of the fixed socket location. */
   socketPath?: (vaultId: string) => string
+  /** Fixture-only override of JOIN_WAIT_MS. */
+  joinWaitMs?: number
 }): (request: Request) => Promise<Response> {
   const now = options.now ?? Date.now
   const forward = options.fetch ?? ((url, init) => fetch(url, init))
   const socketFor = options.socketPath ?? vaultSocketPath
   let aggregate = 0
   const globalBucket = new Bucket(2, 20, now())
-  const vaults = new Map<string, { active: number; mutations: number; read: Bucket; write: Bucket }>()
+  type VaultLoad = { active: number; mutations: number; reserved: number; read: Bucket; write: Bucket }
+  const vaults = new Map<string, VaultLoad>()
+  let reservedActive = 0
+  const reservedWaiters: Array<{ vault: VaultLoad; admit: () => void }> = []
+  const reservedFits = (vault: VaultLoad) => reservedActive < JOIN_RESERVED_HOST && vault.reserved < JOIN_RESERVED_VAULT
+  const takeReserved = (vault: VaultLoad) => {
+    reservedActive++
+    vault.reserved++
+  }
+  const releaseReserved = (vault: VaultLoad) => {
+    reservedActive--
+    vault.reserved--
+    for (let i = 0; i < reservedWaiters.length; ) {
+      const waiter = reservedWaiters[i]!
+      if (!reservedFits(waiter.vault)) {
+        i++
+        continue
+      }
+      reservedWaiters.splice(i, 1)
+      takeReserved(waiter.vault)
+      waiter.admit()
+    }
+  }
+  /** Resolves true holding a reserved slot, or false (holding nothing) on timeout or abort. */
+  const acquireReserved = (vault: VaultLoad, signal: AbortSignal): Promise<boolean> => {
+    if (reservedFits(vault) && !reservedWaiters.some((w) => w.vault === vault)) {
+      takeReserved(vault)
+      return Promise.resolve(true)
+    }
+    return new Promise((resolve) => {
+      const waiter = {
+        vault,
+        admit: () => {
+          clearTimeout(timer)
+          signal.removeEventListener('abort', give)
+          resolve(true)
+        },
+      }
+      const give = () => {
+        const index = reservedWaiters.indexOf(waiter)
+        if (index < 0) return
+        reservedWaiters.splice(index, 1)
+        clearTimeout(timer)
+        signal.removeEventListener('abort', give)
+        resolve(false)
+      }
+      const timer = setTimeout(give, options.joinWaitMs ?? JOIN_WAIT_MS)
+      signal.addEventListener('abort', give, { once: true })
+      reservedWaiters.push(waiter)
+      if (signal.aborted) give()
+    })
+  }
   // Insertion-ordered: the oldest reservation is dropped first when full.
   const joinGrace = new Map<string, number>()
   const pruneGrace = (at: number) => {
@@ -259,14 +319,21 @@ export function createGatewayHandler(options: {
     for (const [id, v] of vaults) if (!v.active && !manifest.routes.some((r) => r.vaultId === id)) vaults.delete(id)
     let vault = vaults.get(route.vaultId)
     if (!vault) {
-      vault = { active: 0, mutations: 0, read: new Bucket(1, 10, now()), write: new Bucket(0.5, 10, now()) }
+      vault = {
+        active: 0,
+        mutations: 0,
+        reserved: 0,
+        read: new Bucket(1, 10, now()),
+        write: new Bucket(0.5, 10, now()),
+      }
       vaults.set(route.vaultId, vault)
     }
     // MCP POSTs are reads; all other POSTs are serialized mutations (including native auth).
     const mutation = request.method === 'POST' && url.pathname !== '/mcp'
     const redeem = request.method === 'POST' && url.pathname === '/v1/invites/redeem'
-    // The reserved whoami after a join is admitted past the buckets and in-flight caps (it is still
-    // counted while in flight); every other request, including a second whoami, is limited as usual.
+    // The reserved whoami after a join skips the buckets and the normal in-flight caps for its own
+    // small ones (still counted in the normal totals while in flight); every other request, including
+    // a second whoami, is limited as usual.
     const reserved =
       request.method === 'GET' &&
       url.pathname === '/v1/whoami' &&
@@ -274,7 +341,7 @@ export function createGatewayHandler(options: {
     if (!reserved) {
       if (aggregate >= 4 || vault.active >= 2 || (mutation && vault.mutations >= 1)) return refusal(429, 'busy')
       if (!(mutation ? vault.write : vault.read).take(now()) || !globalBucket.take(now())) return refusal(429, 'busy')
-    }
+    } else if (!(await acquireReserved(vault, request.signal))) return refusal(429, 'busy')
     aggregate++
     vault.active++
     if (mutation) vault.mutations++
@@ -297,6 +364,7 @@ export function createGatewayHandler(options: {
       aggregate--
       vault!.active--
       if (mutation) vault!.mutations--
+      if (reserved) releaseReserved(vault!)
     }
     try {
       const type = request.headers.get('Content-Type')?.split(';')[0]?.trim().toLowerCase()
