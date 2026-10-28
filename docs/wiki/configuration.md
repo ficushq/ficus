@@ -7,6 +7,10 @@ holds, and how humans and machines authenticate against the API.
 [docs/wiki/setup.md](setup.md#what-it-writes) for the keys it manages and when it
 replaces them. This page is the reference for everything else.
 
+## Request and upload budgets
+
+See [Request limits and file transfers](request-limits.md) for API byte budgets, collection maxima, streaming workspace exceptions and sandbox-bundle rollout requirements.
+
 ## Config files
 
 ```bash
