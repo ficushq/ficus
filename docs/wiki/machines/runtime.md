@@ -1158,6 +1158,11 @@ runs its **own rootless dockerd** instead (spec §5):
   containers run inside the box user's own subuid/subgid namespace (auto-allocated
   by `useradd`, or allocated above all existing ranges if missing), so a container
   escape lands in the _box user_, not root, and other boxes' files stay unreadable.
+- **Provisioning environment isolation.** Commands run as the box user pin
+  `HOME`, XDG config/data/cache/runtime paths and `DOCKER_CONFIG` to that box,
+  use its rootless socket, and discard inherited Docker context/TLS selectors.
+  Resetting only `HOME` is insufficient: Docker's setuptool writes its unit under
+  `XDG_CONFIG_HOME`, which may still point into the provisioning caller's home.
 - **CPU/memory containment (cgroup v2).** The root-owned
   `user-<uid>.slice` is the box boundary, not `docker.service`: systemd's Docker
   driver creates container scopes outside the daemon's own service cgroup.

@@ -270,7 +270,9 @@ exit 0'
     printf '/usr/bin/dockerd-rootless.sh --iptables=false\n' >"${R}/fakedb/docker-exec"
     shim dockerd-rootless-setuptool.sh '
 echo "setuptool $*" >>"$STUB_R/calls.log"
-d="$HOME/.config/systemd/user"; mkdir -p "$d"
+# Match Docker 28.0.4 setuptool init/install_systemd config resolution.
+d="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"; mkdir -p "$d"
+printf "%s\n" "$HOME" "${XDG_CONFIG_HOME:-}" "${XDG_DATA_HOME:-}" "${XDG_CACHE_HOME:-}" "${DOCKER_CONFIG:-}" "${DOCKER_HOST:-}" "${DOCKER_CONTEXT-unset}" "${DOCKER_TLS-unset}" "${DOCKER_TLS_VERIFY-unset}" "${DOCKER_CERT_PATH-unset}" >"$STUB_R/fakedb/box-env"
 printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$STUB_R/fakedb/docker-exec")" >"$d/docker.service"'
     shim pgrep 'echo "pgrep $*" >>"$STUB_R/calls.log"; [ -f "$STUB_R/fakedb/stale-dockerd" ]'
     local cg=/user.slice/user-1001.slice manager=/user.slice/user-1001.slice/user@1001.service
@@ -426,6 +428,29 @@ printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$
   docker_verbs() { # VERB → how many times provisioning ran it on docker.service
     grep -c "^systemctl --machine=${BOX}@.host --user $1 docker.service$" "${R}/calls.log" || true
   }
+  # sudo/runuser may preserve the caller's XDG/Docker config. Docker's real
+  # setuptool uses XDG_CONFIG_HOME for its unit, independently of HOME:
+  # https://github.com/moby/moby/blob/v28.0.4/contrib/dockerd-rootless-setuptool.sh
+  make_host
+  docker_shims
+  mkdir -p "${R}/caller/config" "${R}/caller/docker"
+  printf preserve >"${R}/caller/config/sentinel"
+  printf preserve >"${R}/caller/docker/sentinel"
+  XDG_CONFIG_HOME="${R}/caller/config" XDG_DATA_HOME="${R}/caller/data" \
+    XDG_CACHE_HOME="${R}/caller/cache" DOCKER_CONFIG="${R}/caller/docker" \
+    DOCKER_HOST=unix:///caller/docker.sock DOCKER_CONTEXT=caller-context \
+    DOCKER_TLS=1 DOCKER_TLS_VERIFY=1 DOCKER_CERT_PATH="${R}/caller/certs" docker_provision
+  expect_eq 'docker caller config: provision succeeds with poisoned caller config' "$PROV_RC" 0
+  H="${R}/home/${BOX}"
+  expect_eq 'docker caller config: unit belongs to box, not caller' \
+    "$([[ -f ${H}/.config/systemd/user/docker.service ]] && echo yes || echo no)" yes
+  expect_eq 'docker caller config: caller files untouched' \
+    "$(find "${R}/caller" -type f | wc -l | tr -d ' ')" 2
+  expect_eq 'docker caller config: all child config and endpoint paths are box-owned' \
+    "$(cat "${R}/fakedb/box-env")" \
+    "$(printf '%s\n' "$H" "$H/.config" "$H/.local/share" "$H/.cache" "$H/.docker" 'unix:///run/user/1001/docker.sock' unset unset unset unset)"
+  rm -rf "${R}"
+
   make_host
   docker_shims
   docker_provision

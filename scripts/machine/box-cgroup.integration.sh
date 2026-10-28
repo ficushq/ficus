@@ -29,7 +29,7 @@ TARGET="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/box-provision.sh"
 BOX="box_$(printf '%s' "${GITHUB_RUN_ID:?}-${GITHUB_RUN_ATTEMPT:?}-${RANDOM}" | sha256sum | cut -c1-12)"
 if id -u "$BOX" >/dev/null 2>&1; then exit 2; fi
 reserved="$(cat /proc/sys/net/ipv4/ip_local_reserved_ports)"
-uid='' owned=false
+uid='' owned=false caller=''
 
 # Every process/container belongs to this exact freshly created account. Never
 # use host-wide Docker cleanup, process-name kills, or another fixture's data.
@@ -54,12 +54,18 @@ cleanup() {
     printf '%s\n' "$reserved" >/proc/sys/net/ipv4/ip_local_reserved_ports
     timeout --kill-after=5s 10s systemctl daemon-reload || rc=1
   fi
+  if [ -n "$caller" ]; then rm -rf -- "$caller"; fi
   exit "$rc"
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 owned=true
+# Deliberately inaccessible caller config: HOME-only isolation reproduced the
+# Docker setuptool failure on the first PR run. Keep this poison in every phase.
+caller="$(mktemp -d /tmp/ficus-cgroup-caller.XXXXXX)"
+export XDG_CONFIG_HOME="$caller/config" XDG_DATA_HOME="$caller/data" XDG_CACHE_HOME="$caller/cache"
+export DOCKER_CONFIG="$caller/docker" DOCKER_HOST="unix://$caller/docker.sock" DOCKER_CONTEXT=caller-context
 
 provision() {
   # Small bounded fixture: 1 CPU and 512 MiB for the entire box, no load test.
@@ -69,8 +75,12 @@ provision() {
 }
 userctl() { timeout --kill-after=5s 30s systemctl --machine="$BOX@.host" --user "$@"; }
 as_box() {
-  timeout --kill-after=5s 40s runuser -u "$BOX" -- env \
-    "HOME=/home/$BOX" "XDG_RUNTIME_DIR=/run/user/$uid" \
+  timeout --kill-after=5s 40s runuser -u "$BOX" -- \
+    env -u DOCKER_CONTEXT -u DOCKER_TLS -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH \
+    "HOME=/home/$BOX" "XDG_CONFIG_HOME=/home/$BOX/.config" \
+    "XDG_DATA_HOME=/home/$BOX/.local/share" "XDG_CACHE_HOME=/home/$BOX/.cache" \
+    "DOCKER_CONFIG=/home/$BOX/.docker" "DOCKER_HOST=unix:///run/user/$uid/docker.sock" \
+    "XDG_RUNTIME_DIR=/run/user/$uid" \
     "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus" "$@"
 }
 docker_box() { as_box docker --host="unix:///run/user/$uid/docker.sock" "$@"; }

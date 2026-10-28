@@ -913,7 +913,10 @@ box_uid() {
 # does not reliably reset it — the setuptool writes ~/.config/systemd/user +
 # ~/.docker, so a wrong HOME would land them under the invoking user. PATH is
 # pinned so the box user's (possibly empty) environment still finds the system
-# dockerd-rootless scripts.
+# dockerd-rootless scripts. HOME alone is insufficient: the Docker setuptool
+# resolves its unit through XDG_CONFIG_HOME, and Docker CLI contexts through
+# DOCKER_CONFIG. Pin all writable config roots and the endpoint to this box;
+# never inherit the provisioning caller's paths, context or TLS configuration.
 #
 # The drop-to-box-user command cannot be `"${SUDO[@]}" -u` — when box-provision
 # itself runs AS ROOT (a root SSH admin user), SUDO is the empty array, so that
@@ -932,7 +935,13 @@ run_as_box() {
     as_box=(sudo -u "${UNIX_USER}")
   fi
   "${as_box[@]}" \
-    env "HOME=${home}" \
+    env -u DOCKER_CONTEXT -u DOCKER_TLS -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH \
+      "HOME=${home}" \
+      "XDG_CONFIG_HOME=${home}/.config" \
+      "XDG_DATA_HOME=${home}/.local/share" \
+      "XDG_CACHE_HOME=${home}/.cache" \
+      "DOCKER_CONFIG=${home}/.docker" \
+      "DOCKER_HOST=unix://${runtime_dir}/docker.sock" \
       "XDG_RUNTIME_DIR=${runtime_dir}" \
       "DBUS_SESSION_BUS_ADDRESS=unix:path=${runtime_dir}/bus" \
       "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
