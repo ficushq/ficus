@@ -41,12 +41,18 @@ const queues = new Map<string, Promise<void>>()
 const PAGE_BYTES = 1024 * 1024
 const MAX_ERROR_BYTES = 512
 
+/** Never coerce streamed file positions to 32-bit integers. */
+export function checkedByteOffset(offset: number, bytes: number): number {
+  const next = offset + bytes
+  if (!Number.isSafeInteger(next) || next < 0) throw new Error('Atomic write byte count overflow')
+  return next
+}
+
 async function pathIdentity(path: string): Promise<FileIdentity> {
   const hash = createHash('sha256')
   let bytes = 0
   for await (const chunk of createReadStream(path, { highWaterMark: PAGE_BYTES })) {
-    bytes += chunk.byteLength
-    if (!Number.isSafeInteger(bytes)) throw prePublicationError('Atomic write byte count overflow')
+    bytes = checkedByteOffset(bytes, chunk.byteLength)
     hash.update(chunk)
   }
   return { bytes, sha256: hash.digest('hex') }
@@ -225,8 +231,7 @@ function nodeStageHandle(file: FileHandle): StageHandle {
         const result = await file.write(bytes, written, bytes.byteLength - written, offset)
         if (result.bytesWritten <= 0) throw prePublicationError('Atomic write made no progress')
         written += result.bytesWritten
-        offset += result.bytesWritten
-        if (!Number.isSafeInteger(offset)) throw prePublicationError('Atomic write byte count overflow')
+        offset = checkedByteOffset(offset, result.bytesWritten)
       }
     },
     readAt: async (offset, length) => {
@@ -284,7 +289,7 @@ async function readHandleIdentity(
       throw published ? publishedError(category) : prePublicationError(category)
     }
     hash.update(chunk)
-    offset += chunk.byteLength
+    offset = checkedByteOffset(offset, chunk.byteLength)
   }
   if ((await handle.readAt(offset, 1)).byteLength !== 0) {
     const category = 'Atomic write handle readback exceeded expected bytes'
@@ -330,8 +335,7 @@ export async function atomicVerifiedWrite(
       const source = request.content instanceof Uint8Array ? [request.content] : request.content
       for await (const chunk of source) {
         request.signal?.throwIfAborted()
-        bytes += chunk.byteLength
-        if (!Number.isSafeInteger(bytes)) throw prePublicationError('Atomic write byte count overflow')
+        bytes = checkedByteOffset(bytes, chunk.byteLength)
         hash.update(chunk)
         await handle.writeAll(chunk)
       }

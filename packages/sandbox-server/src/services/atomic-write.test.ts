@@ -917,3 +917,10 @@ describe('streaming publication', () => {
     expect(await (await import('fs/promises')).readdir(testDir)).toEqual([])
   })
 })
+
+test('stream byte offsets remain exact beyond signed and unsigned 32-bit boundaries', async () => {
+  const { checkedByteOffset } = await atomicModule()
+  expect(checkedByteOffset(2 ** 31 - 1, 2)).toBe(2 ** 31 + 1)
+  expect(checkedByteOffset(2 ** 32 - 1, 2)).toBe(2 ** 32 + 1)
+  expect(() => checkedByteOffset(Number.MAX_SAFE_INTEGER, 1)).toThrow('byte count overflow')
+})
