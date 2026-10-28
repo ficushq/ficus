@@ -76,3 +76,17 @@ test('attached deploy skills use assigned exec credentials rather than obsolete 
     expect(skill).toContain('assign')
   }
 })
+
+test('deployment router and wiki agree with assigned accounts rather than the retired provider path', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  for (const path of ['config/skills/deploy-app/SKILL.md', 'docs/wiki/deployments.md']) {
+    const source = readFileSync(join(import.meta.dir, '../../../../../..', path), 'utf8')
+    expect(source).not.toContain('DEPLOY_')
+    expect(source).not.toContain('expose-secrets')
+    expect(source).not.toContain('ficus squad-env secrets')
+    expect(source).not.toContain('ficus secret')
+    expect(source).toContain('PATH wrapper')
+    expect(source).toContain('ficus integration exec <provider> --')
+  }
+})

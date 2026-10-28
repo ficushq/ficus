@@ -8,7 +8,7 @@ The upgrade automatically imports each existing `DEPLOY_CLOUDFLARE_TOKEN`, `DEPL
 
 Both encrypted stored values and environment-only values are imported; the stored value wins if both exist (including an empty stored tombstone). Remove the obsolete `DEPLOY_*_TOKEN` variables from the Core host environment after upgrading. These six names are ignored from this version onward, including when a stored row is deleted; they cannot restore the old lookup/export path.
 
-Each provider has a durable per-provider migration marker, written even if no token exists. Importing the encrypted credential, creating its connection, writing the marker and deleting its old stored key happen in one transaction. Concurrent starts serialize on the marker. A failure before commit preserves the source for a later startup retry; a failure after commit retries cache reconciliation, not credential creation. Once marked, subsequent starts never overwrite a rotated/reauthorized account or recreate a deleted connection, even if the host variable remains set. Migration performs no provider API calls. If startup reports a migration failure, resolve the underlying storage/encryption failure and restart; do not delete markers to retry an already committed import.
+Each provider has a durable per-provider migration marker, written even if no token exists. Importing the encrypted credential, creating its connection, writing the marker and deleting its old stored key happen in one transaction. Concurrent starts serialize on the marker. A failure before commit preserves the source for a later startup retry; a failure after commit retries cache reconciliation, not credential creation. Once marked, subsequent starts never overwrite a rotated/reauthorized account or recreate a deleted connection, even if the host variable remains set. Migration performs no provider API calls. A missing encryption key or a per-provider import failure logs a warning without aborting startup. A failed conversion retains its encrypted source and no completed marker; a post-commit reconciliation failure instead retains the completed marker and retries only reconciliation. Other providers continue. After a migration warning, resolve the underlying storage/encryption failure and restart; do not delete markers to retry an already committed import.
 
 The retired deployment-settings endpoints and deployment catalog mode are removed. Operator secret commands and unrelated storage remain available, but the six retired deployment names are no longer an authentication configuration surface.
 
@@ -27,9 +27,11 @@ Agent commands use the current squad context. When invoking exec outside a manag
 
 The optional Cloudflare account ID is nonsecret **connection configuration**. It travels as `CLOUDFLARE_ACCOUNT_ID` only through exec alongside that account, not a global sandbox binding. Project/site/organization selections otherwise remain project-local CLI configuration or explicit flags. DigitalOcean exec uses the default CLI context so a previously selected local context cannot override its assigned token. Railway accepts account/workspace API tokens, not project tokens. DigitalOcean tokens need account read permission for validation as well as deployment permissions; Cloudflare validation uses the user API-token verification endpoint.
 
+Host runtime does not provision CLIs: the operator must install the matching provider CLI on the host before using its wrapper.
+
 ## CLI pins and provenance
 
-The normal integration projection installs the CLI and attaches its matching `deploy-<provider>` skill. Releases are pinned in `apps/core/src/services/integrations/deployment/cli-releases.json`:
+On managed runtimes the normal integration projection installs the CLI and attaches its matching `deploy-<provider>` skill. Releases are pinned in `apps/core/src/services/integrations/deployment/cli-releases.json`:
 
 | Provider | CLI | Version | Exec token variable |
 | --- | --- | --- | --- |
