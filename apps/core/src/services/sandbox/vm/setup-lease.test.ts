@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { randomUUID } from 'crypto'
 import { withVmSetupLease } from './setup-state'
+import { acquireDedicatedConnectionSlot, tryAcquireDedicatedConnectionSlot } from '../../../db/connection'
 
 function deferred() {
   let resolve!: () => void
@@ -244,3 +245,50 @@ test('recovery lease refuses a saturated connection gate instead of queueing', a
     await Promise.all(owners)
   }
 })
+
+for (const interruption of ['abort', 'timeout'] as const) {
+  test(`${interruption} rejects while BOTH dedicated permits remain occupied, without leaving queued ownership`, async () => {
+    const owners = [await acquireDedicatedConnectionSlot(), await acquireDedicatedConnectionSlot()]
+    const abort = new AbortController()
+    let now = 0
+    let entered = false
+    const pending = withVmSetupLease(
+      randomUUID(),
+      async () => {
+        entered = true
+      },
+      {
+        now: () => now,
+        signal: abort.signal,
+        sleep: async () => {},
+      }
+    )
+    const result = pending.catch((error) => error)
+    try {
+      // Invocation has synchronously attempted acquisition with both owners
+      // held. Neither owner is released until AFTER rejection is proved.
+      if (interruption === 'abort') abort.abort(new Error('synthetic permit cancellation'))
+      else now = 16 * 60_000
+      const error = await bounded(result)
+      expect(error).toBeInstanceOf(Error)
+      expect((error as Error).message).toContain(
+        interruption === 'abort' ? 'synthetic permit cancellation' : 'timed out'
+      )
+      expect(entered).toBe(false)
+      expect(tryAcquireDedicatedConnectionSlot()).toBeNull()
+    } finally {
+      owners.forEach((release) => release())
+      await result
+    }
+    // No canceled waiter can steal a newly returned permit, nor can a failed
+    // acquisition decrement capacity still owned by the original callers.
+    const available = [tryAcquireDedicatedConnectionSlot(), tryAcquireDedicatedConnectionSlot()]
+    try {
+      expect(available.every(Boolean)).toBe(true)
+      expect(tryAcquireDedicatedConnectionSlot()).toBeNull()
+      expect(entered).toBe(false)
+    } finally {
+      available.forEach((release) => release?.())
+    }
+  })
+}

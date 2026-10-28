@@ -5,7 +5,6 @@ import {
   createPostgresConnection,
   DEDICATED_CONNECTION_SESSION,
   getDirectConnectionString,
-  withDedicatedConnectionSlot,
   tryAcquireDedicatedConnectionSlot,
 } from '../../../db/connection'
 import { fleetIncidents, machineBoxes, vmBoxSetupStates } from '../../../db/schema'
@@ -427,7 +426,7 @@ export async function withVmSetupLease<T>(
   for (;;) {
     checkWaiting()
     const run = async () => {
-      // The global slot queue can itself be busy; never start stale work after it drains.
+      // Recheck after taking a permit; never start work after its acquisition budget.
       checkWaiting()
       let sessionClosed = false
       const assertOwned = () => {
@@ -470,16 +469,20 @@ export async function withVmSetupLease<T>(
       }
     }
     let attempt: Awaited<ReturnType<typeof run>>
-    if (wait.ifAvailable) {
-      const release = tryAcquireDedicatedConnectionSlot()
-      if (!release) throw new VmSetupLeaseBusyError()
+    // Never join the global unbounded permit queue: an abort/deadline must
+    // settle even if BOTH unrelated permit owners remain held. Permit
+    // contention follows the same bounded polling path as advisory contention,
+    // with no canceled queue entry that could steal ownership later.
+    const release = tryAcquireDedicatedConnectionSlot()
+    if (!release) {
+      if (wait.ifAvailable) throw new VmSetupLeaseBusyError()
+      attempt = { acquired: false }
+    } else {
       try {
         attempt = await run()
       } finally {
         release()
       }
-    } else {
-      attempt = await withDedicatedConnectionSlot(run)
     }
     if (attempt.acquired) return attempt.value
     if (wait.ifAvailable) throw new VmSetupLeaseBusyError()

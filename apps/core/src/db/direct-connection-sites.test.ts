@@ -35,8 +35,13 @@ describe('session-scoped sites use the direct DSN under the slot gate (source gu
       expect(source).toContain('getDirectConnectionString(')
       expect(source).not.toMatch(/\bgetConnectionString\(\)/)
       // Either the callback form or the acquire/release pair (run-lock holds
-      // its slot across a returned handle).
-      expect(/withDedicatedConnectionSlot\(|acquireDedicatedConnectionSlot\(/.test(source)).toBe(true)
+      // its slot across a returned handle), including bounded non-queueing
+      // acquisition for signal/deadline-aware lifecycle waits.
+      expect(
+        /\b(?:withDedicatedConnectionSlot|acquireDedicatedConnectionSlot|tryAcquireDedicatedConnectionSlot)\(/.test(
+          source
+        )
+      ).toBe(true)
     })
   }
 
