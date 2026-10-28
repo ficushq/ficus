@@ -2629,7 +2629,7 @@ test('tracked issue events on a parked stream notify the independent owner and r
   expect(await db.select().from(executions).where(eq(executions.agentId, workerId))).toEqual(before)
 })
 
-test('tracked issue events never bypass admission, pauses or unrelated waits', async () => {
+test('tracked issue events retain paused delivery until resume', async () => {
   const paused = await create(2050, { codeHost: true, tracked: [trackedIssue(2051)] })
   const { pauseWorkStream, resumeWorkStream } = await import('../../work-streams/pause')
   await pauseWorkStream(paused, { reason: 'Deliberate hold' })
@@ -2639,7 +2639,11 @@ test('tracked issue events never bypass admission, pauses or unrelated waits', a
   await resumeWorkStream(paused)
   await reconcileOutputDeliveries(paused)
   expect((await deliveries(paused))[0]!.targets).toHaveLength(1)
+})
 
+// Separate streams and independent policies: retain each original assertion without making
+// the unrelated-wait scenario share the pause/resume scenario's five-second test budget.
+test('tracked issue events never bypass unrelated delivery-approval waits', async () => {
   // A delivery-approval wait only ever waives the designated code-host feedback.
   const blocked = await create(2052, { codeHost: true, tracked: [trackedIssue(2053)] })
   const run = (await getFlow(blocked))!

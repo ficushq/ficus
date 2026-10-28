@@ -344,8 +344,8 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
         .update(githubFeedbackObjects)
         .set({ providerVersion: content.providerVersion })
         .where(eq(githubFeedbackObjects.id, object.id))
-    // Reserve the new immutable head before optional factual-intent work can spend the pass budget.
-    if (!(await readFeedbackRevision(tx, revision.id))) throw new Error('feedback_capacity_deferred')
+    // Every selected/created revision was already read above; do not reread its image
+    // before obsolescence. The pass cache keeps that head available during factual recovery.
     const obsoleteCount = await obsoleteOlderGitHubFeedback(tx, object.id, afterCommit)
     const reconciled = await readFeedbackRevision(tx, revision.id)
     if (!reconciled) throw new Error('feedback_capacity_deferred')

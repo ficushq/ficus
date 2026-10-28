@@ -225,12 +225,13 @@ export async function preserveRawGitHubActionFacts(
         triggerSquadIds: source.triggerSquadIds,
       })
       .onConflictDoNothing()
-    ;[variant] = await tx
+    const [storedVariant] = await tx
       .select()
       .from(integrationOutputEvents)
       .where(
         and(eq(integrationOutputEvents.sourceKey, sourceKey), eq(integrationOutputEvents.eventKey, source.eventKey))
       )
+    variant = storedVariant
     if (variant && pass) pass.bodies.set(`event:${variant.id}`, structuredClone(variant))
   }
   if (!variant || !(await rawGitHubFactsOrigin(tx, variant))) return
