@@ -5,11 +5,11 @@ import { eq } from 'drizzle-orm'
 
 type Event = { role: string; pid: number; event: string; result?: string; error?: string; at?: number }
 
-function child(role: string, id: string, failure: boolean | 'fresh') {
+function child(role: string, id: string, failure: boolean | 'fresh', fixture = 'provision-flight-process.ts') {
   const process = Bun.spawn(
     [
       Bun.which('bun')!,
-      join(import.meta.dir, 'fixtures/provision-flight-process.ts'),
+      join(import.meta.dir, 'fixtures', fixture),
       role,
       id,
       failure === 'fresh' ? 'fresh' : failure ? 'failure' : 'success',
@@ -206,5 +206,48 @@ test('clean owner shutdown lets a different process provision immediately withou
   } finally {
     await api.stop()
     await worker?.stop()
+  }
+}, 20_000)
+
+test('preempt-stop and immediate resume in two processes never provision before authoritative stop verification', async () => {
+  const id = `agent_stop_resume_${crypto.randomUUID()}`
+  const machineId = crypto.randomUUID()
+  await db.insert(machines).values({
+    id: machineId,
+    name: machineId,
+    provider: 'ssh',
+    status: 'ready',
+    sshHost: '127.0.0.1',
+    sshUser: 'ficus',
+    sshKeyId: 'test',
+    sshPublicKey: 'test',
+  })
+  await db
+    .insert(machineBoxes)
+    .values({ sandboxId: id, machineId, unixUser: 'test', port: 45000, status: 'ready', authToken: 'synthetic' })
+  const preempt = child('preempt', id, false, 'stop-resume-process.ts')
+  let resume: ReturnType<typeof child> | undefined
+  try {
+    await preempt.waitFor('stop-proof')
+    resume = child('resume', id, false, 'stop-resume-process.ts')
+    await resume.waitFor('waiting')
+    expect(resume.events.some((event) => event.event === 'provision')).toBe(false)
+    preempt.release()
+    await resume.waitFor('startup-retry')
+    const [unverified] = await db.select().from(machineBoxes).where(eq(machineBoxes.sandboxId, id))
+    expect(unverified!.status).toBe('stop_unverified')
+    expect(resume.events.some((event) => event.event === 'provision')).toBe(false)
+    // Retry invokes the real stop/readback path; it never clears a DB marker.
+    resume.releaseSetup()
+    expect(await preempt.process.exited).toBe(0)
+    expect(await resume.process.exited).toBe(0)
+    await resume.output
+    expect(resume.events.filter((event) => event.event === 'stop-proof')).toHaveLength(2)
+    expect(resume.events.filter((event) => event.event === 'provision')).toHaveLength(1)
+    expect(resume.events.at(-1)!.result).toBe('resumed')
+  } finally {
+    await preempt.stop()
+    await resume?.stop()
+    await db.delete(machines).where(eq(machines.id, machineId))
   }
 }, 20_000)

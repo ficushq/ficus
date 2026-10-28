@@ -397,6 +397,15 @@ command early. The exact server refusal `Failed to start bash invocation: bash
 invocation is already active` is likewise startup-retryable; other exit-127
 failures are not. This never retries an already-started model turn.
 
+A preempt-stop racing resume is also startup-retryable (`box_stop_unverified`).
+The retry runs normal stop/recreate reconciliation: only successful socket
+`UnitFileState`, all-unit `ActiveState`, and forward-removal proof permits
+recreation. The durable `stop_unverified` row is never cleared to force progress.
+In particular, `not_found` with `boxProvisioned=true` is a display projection
+also used for unverified stops, **not** authoritative stop proof. Known transient
+machine statuses keep their longer machine retry schedule; other unverified
+stops use the default bounded startup budget.
+
 An unchanged ready box reconnects **without** the setup lease or a dedicated
 permit. The fast path checks its physical provisioning marker, desired setup
 fingerprint, readiness, absence of pending setup invocations, and whether a
@@ -417,7 +426,7 @@ success resets the failure count. Followers/backoff callers receive a sanitized
 error identifying the failed attempt and retry time, while the original caller
 retains its diagnostic error. Shared failures preserve the allowlisted startup
 classification for transient `machine_*`, port-busy (75), host-lock timeout (73),
-Bash contention and readiness-pending errors. Each uses the same execution retry
+Bash contention, stop-verification and readiness-pending errors. Each uses the same execution retry
 schedule as the owner; budget exhaustion still terminates the execution.
 
 Clean API and worker shutdown mark **only their own** running generations failed
@@ -509,6 +518,10 @@ reconciling admission, and two independent VM-manager processes ensuring a fresh
 box. The fresh-box test uses real PostgreSQL/PgBouncer leases and setup rows:
 the generation stays running while the owner is held in setup; the follower's
 first Bash occurs only after owner setup completes and readiness is published.
+A separate two-process preempt-stop/immediate-resume test uses the real stop
+orchestration and durable rows with synthetic SSH readbacks: failed verification
+keeps `stop_unverified`, queues startup rather than provisioning, and only a
+subsequent successful authoritative stop allows recreation.
 A separate owner-shutdown/replacement-process test provisions within five seconds,
 which excludes the former 30-second cooldown. Physical installs, tunnels, assets
 and Bash are synthetic; these tests do not launch real VMs or restart services.

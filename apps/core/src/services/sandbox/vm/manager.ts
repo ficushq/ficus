@@ -94,6 +94,7 @@ import {
   removeBox as removeBoxReal,
   restartBox as restartBoxReal,
   BoxRestartError,
+  BoxStopUnverifiedError,
   stopBox as stopBoxReal,
   boxChainHealth as boxChainHealthReal,
   type BoxChainHealth,
@@ -1618,13 +1619,15 @@ export class VmSandboxManager implements ISandboxManager {
       const stop = await this.stopSandbox(sandboxId)
       if (stop.kind === 'unverified') {
         const message = `Cannot recreate ${sandboxId} until its stop is verified`
-        // Only an observed non-ready machine is an infrastructure failure. A
-        // ready host that failed stop verification remains a terminal refusal.
-        // Startup retry owns the allowlist of transient machine statuses.
+        // Preserve machine-specific retry policy when known. A ready host
+        // can still be finishing a preempt-stop: retry startup, never bypass
+        // the authoritative unit/forward readbacks or force a recreation.
         if (stop.machineStatus && stop.machineStatus !== 'ready') {
-          throw new MachineUnavailableError(message, stop.machineStatus)
+          const error = new MachineUnavailableError(message, stop.machineStatus)
+          error.cause = new BoxStopUnverifiedError(sandboxId)
+          throw error
         }
-        throw new Error(message)
+        throw new Error(message, { cause: new BoxStopUnverifiedError(sandboxId) })
       }
       return this.ensureSandbox(sandboxId, opts)
     })

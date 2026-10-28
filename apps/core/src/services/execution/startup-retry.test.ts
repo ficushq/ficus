@@ -345,6 +345,7 @@ describe('durable startup retry', () => {
   it.each([
     ['BoxPortBusyError', 'box_port_busy'],
     ['BoxLockTimeoutError', 'box_lock_timeout'],
+    ['BoxStopUnverifiedError', 'box_stop_unverified'],
     ['MachineUnavailableError', 'machine_unreachable'],
     ['MachineNotReadyError', 'machine_bootstrapping'],
     ['MachineNotReadyError', 'machine_registered'],

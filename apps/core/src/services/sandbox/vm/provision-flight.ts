@@ -107,6 +107,7 @@ function sharedFailure(row: Attempt): never {
   const cause = new Error('Shared physical provisioning failed')
   if (retryCode === 'box_port_busy') cause.name = 'BoxPortBusyError'
   else if (retryCode === 'box_lock_timeout') cause.name = 'BoxLockTimeoutError'
+  else if (retryCode === 'box_stop_unverified') cause.name = 'BoxStopUnverifiedError'
   else if (retryCode === 'box_bash_busy') cause.name = 'BoxBashBusyError'
   else if (retryCode === 'sandbox_readiness_pending') cause.name = 'SandboxReadinessPendingError'
   else if (retryCode?.startsWith('machine_')) {

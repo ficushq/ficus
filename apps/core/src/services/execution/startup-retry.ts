@@ -87,6 +87,7 @@ export function startupRetryCode(error: unknown): string | null {
       return 'box_bash_busy'
     if (error.name === 'SandboxReadinessPendingError') return 'sandbox_readiness_pending'
     if (error.name === 'BoxPortBusyError') return BOX_PORT_BUSY_RETRY_CODE
+    if (error.name === 'BoxStopUnverifiedError') return 'box_stop_unverified'
     if (error.name === 'BoxLockTimeoutError') return BOX_LOCK_TIMEOUT_RETRY_CODE
     error = error.cause
   }
@@ -111,6 +112,8 @@ export function findInCauseChain(error: unknown, name: string): Error | null {
  */
 export function startupRetryNotice(error: unknown): string {
   const code = startupRetryCode(error)
+  if (code === 'box_stop_unverified')
+    return 'The sandbox is still verifying its previous stop; this will retry automatically.'
   if (code === 'box_bash_busy')
     return 'The sandbox is finishing another startup command; this will retry automatically.'
   if (code === 'sandbox_readiness_pending') return 'The sandbox is finishing setup; this will retry automatically.'

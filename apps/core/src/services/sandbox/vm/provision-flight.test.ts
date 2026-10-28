@@ -455,6 +455,7 @@ test('loss of the owned direct DB session shares abandonment and fences the late
 for (const [name, code] of [
   ['BoxPortBusyError', 'box_port_busy'],
   ['BoxLockTimeoutError', 'box_lock_timeout'],
+  ['BoxStopUnverifiedError', 'box_stop_unverified'],
   ['MachineUnavailableError', 'machine_unreachable'],
   ['MachineNotReadyError', 'machine_bootstrapping'],
   ['MachineNotReadyError', 'machine_registered'],

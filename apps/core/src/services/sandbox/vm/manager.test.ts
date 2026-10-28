@@ -2386,11 +2386,11 @@ describe('VmSandboxManager', () => {
     ['registered', 'machine_registered'],
     ['bootstrapping', 'machine_bootstrapping'],
     ['unreachable', 'machine_unreachable'],
-    ['reaping', null],
-    ['terminated', null],
-    ['unknown', null],
-    ['ready', null],
-    [undefined, null],
+    ['reaping', 'box_stop_unverified'],
+    ['terminated', 'box_stop_unverified'],
+    ['unknown', 'box_stop_unverified'],
+    ['ready', 'box_stop_unverified'],
+    [undefined, 'box_stop_unverified'],
   ])('recreate preserves an unverified %s stop and its retry classification', async (machineStatus, retryCode) => {
     const h = makeHarness()
     let unverified = true
