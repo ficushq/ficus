@@ -75,6 +75,17 @@ export function startupRetryCode(error: unknown): string | null {
       TRANSIENT_MACHINE_STATUSES.has(machineStatus)
     )
       return `machine_${machineStatus}`
+    // Older box servers encode this pre-spawn refusal in their terminal SSE
+    // error instead of a structured code. Match only the exact server refusal
+    // (and our setup wrapper), never generic exit 127 or arbitrary contention.
+    if (
+      error.name === 'BoxBashBusyError' ||
+      /^(?:Command failed \(exit 127\): )?Failed to start bash invocation: bash invocation is already active$/.test(
+        error.message
+      )
+    )
+      return 'box_bash_busy'
+    if (error.name === 'SandboxReadinessPendingError') return 'sandbox_readiness_pending'
     if (error.name === 'BoxPortBusyError') return BOX_PORT_BUSY_RETRY_CODE
     if (error.name === 'BoxLockTimeoutError') return BOX_LOCK_TIMEOUT_RETRY_CODE
     error = error.cause
@@ -100,6 +111,9 @@ export function findInCauseChain(error: unknown, name: string): Error | null {
  */
 export function startupRetryNotice(error: unknown): string {
   const code = startupRetryCode(error)
+  if (code === 'box_bash_busy')
+    return 'The sandbox is finishing another startup command; this will retry automatically.'
+  if (code === 'sandbox_readiness_pending') return 'The sandbox is finishing setup; this will retry automatically.'
   if (code === BOX_PORT_BUSY_RETRY_CODE) {
     const summary = (findInCauseChain(error, 'BoxPortBusyError') as (Error & { summary?: unknown }) | null)?.summary
     const reason = typeof summary === 'string' ? ` (${summary})` : ''

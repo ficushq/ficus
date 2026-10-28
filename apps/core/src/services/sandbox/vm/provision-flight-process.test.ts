@@ -1,18 +1,18 @@
 import { expect, test } from 'bun:test'
 import { join } from 'node:path'
-import { db, sandboxExposureCleanup } from '../../../db'
+import { db, sandboxExposureCleanup, vmBoxProvisionAttempts, machines, machineBoxes } from '../../../db'
 import { eq } from 'drizzle-orm'
 
-type Event = { role: string; pid: number; event: string; result?: string; error?: string }
+type Event = { role: string; pid: number; event: string; result?: string; error?: string; at?: number }
 
-function child(role: string, id: string, failure: boolean) {
+function child(role: string, id: string, failure: boolean | 'fresh') {
   const process = Bun.spawn(
     [
       Bun.which('bun')!,
       join(import.meta.dir, 'fixtures/provision-flight-process.ts'),
       role,
       id,
-      failure ? 'failure' : 'success',
+      failure === 'fresh' ? 'fresh' : failure ? 'failure' : 'success',
     ],
     {
       env: { ...globalThis.process.env },
@@ -62,6 +62,14 @@ function child(role: string, id: string, failure: boolean) {
         clearTimeout(timer)
         listeners.delete(event)
       }
+    },
+    shutdown() {
+      process.stdin.write('shutdown\n')
+      process.stdin.flush()
+    },
+    releaseSetup() {
+      process.stdin.write('release-setup\n')
+      process.stdin.flush()
     },
     release() {
       process.stdin.write('release\n')
@@ -132,3 +140,71 @@ for (const failure of [false, true]) {
     }
   }, 20_000)
 }
+
+test('two fresh-box processes publish success only after owner setup, then admit follower Bash', async () => {
+  const id = `process-fresh-${crypto.randomUUID()}`
+  const machineId = crypto.randomUUID()
+  await db.insert(machines).values({
+    id: machineId,
+    name: machineId,
+    provider: 'ssh',
+    sshHost: '127.0.0.1',
+    sshUser: 'ficus',
+    sshKeyId: 'test',
+    sshPublicKey: 'test',
+  })
+  await db.insert(machineBoxes).values({ sandboxId: id, machineId, unixUser: 'test', port: 45000 })
+  const api = child('api', id, 'fresh')
+  let worker: ReturnType<typeof child> | undefined
+  try {
+    await api.waitFor('provision')
+    worker = child('worker', id, 'fresh')
+    await worker.waitFor('waiting')
+    api.release()
+    await api.waitFor('setup')
+    const [generation] = await db.select().from(vmBoxProvisionAttempts).where(eq(vmBoxProvisionAttempts.sandboxId, id))
+    expect(generation!.status).toBe('running')
+    expect(worker.events.some((event) => event.event === 'first-bash')).toBe(false)
+    api.releaseSetup()
+    expect(await api.process.exited).toBe(0)
+    expect(await worker.process.exited).toBe(0)
+    await Promise.all([api.output, worker.output])
+    expect(worker.events.filter((event) => event.event === 'assets' || event.event === 'setup')).toEqual([])
+    const setup = api.events.find((event) => event.event === 'setup-complete')!
+    const bash = worker.events.find((event) => event.event === 'first-bash')!
+    expect(bash.at!).toBeGreaterThanOrEqual(setup.at!)
+    expect(worker.events.at(-1)!.result).toBe('joined-ready')
+  } finally {
+    api.releaseSetup()
+    await api.stop()
+    await worker?.stop()
+    await db.delete(machines).where(eq(machines.id, machineId))
+  }
+}, 20_000)
+
+test('clean owner shutdown lets a different process provision immediately without cooldown', async () => {
+  const id = `process-shutdown-${crypto.randomUUID()}`
+  const api = child('api', id, false)
+  let worker: ReturnType<typeof child> | undefined
+  try {
+    await api.waitFor('provision')
+    worker = child('worker-replacement', id, false)
+    await worker.waitFor('waiting')
+    api.shutdown()
+    await api.waitFor('interrupted')
+    // waitFor has a five-second bound: the old 30-second cooldown cannot pass.
+    await worker.waitFor('provision')
+    const rows = await db.select().from(vmBoxProvisionAttempts).where(eq(vmBoxProvisionAttempts.sandboxId, id))
+    const interrupted = rows.find((row) => row.failureClass === 'interrupted')!
+    expect(interrupted.retryAt!.getTime()).toBe(interrupted.completedAt!.getTime())
+    expect(interrupted.failureCount).toBe(0)
+    worker.release()
+    expect(await api.process.exited).toBe(0)
+    expect(await worker.process.exited).toBe(0)
+    await worker.output
+    expect(worker.events.at(-1)!.result).toBe('owner-ready')
+  } finally {
+    await api.stop()
+    await worker?.stop()
+  }
+}, 20_000)

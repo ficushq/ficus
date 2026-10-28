@@ -4,6 +4,7 @@ import { createInterface } from 'node:readline'
 import { EventEmitter } from 'node:events'
 import { VmSandboxManager } from '../manager'
 import { withVmSetupLease } from '../setup-state'
+import { vmProvisionLifecycle } from '../provision-flight'
 import type { Machine, MachineBox } from '../../../machines/queries'
 import type { SandboxClient } from '../../client/http-client'
 
@@ -11,9 +12,24 @@ const [role, sandboxId, outcome] = process.argv.slice(2)
 if (!role || !sandboxId) throw new Error('role and synthetic sandboxId required')
 const emit = (event: string, extra = {}) => console.log(JSON.stringify({ role, pid: process.pid, event, ...extra }))
 const release = Promise.withResolvers<void>()
+const releaseSetup = Promise.withResolvers<void>()
 const input = createInterface({ input: process.stdin })
 input.on('line', (line) => {
   if (line === 'release') release.resolve()
+  if (line === 'release-setup') releaseSetup.resolve()
+  if (line === 'shutdown') {
+    void vmProvisionLifecycle
+      .interrupt()
+      .then(() => {
+        emit('interrupted')
+        release.resolve()
+        releaseSetup.resolve()
+      })
+      .catch((error) => {
+        emit('shutdown-failed', { detail: String(error) })
+        process.exitCode = 1
+      })
+  }
 })
 const machine = { id: 'synthetic-machine', name: 'synthetic-machine', status: 'ready' } as Machine
 const box = {
@@ -52,6 +68,8 @@ const manager = new VmSandboxManager({
   createClient: () =>
     ({
       close() {},
+      devboxReady: async () => {},
+      health: async () => ({ healthy: true, devboxReady: true }),
       bash() {
         const stream = new EventEmitter()
         queueMicrotask(() => {
@@ -61,22 +79,35 @@ const manager = new VmSandboxManager({
         return stream
       },
     }) as unknown as SandboxClient,
-  syncBoxFiles: async () => {},
+  syncBoxFiles: async () => {
+    if (outcome === 'fresh') emit('assets')
+  },
+  seedBoxDevbox: async () => {
+    emit('setup')
+    await releaseSetup.promise
+    emit('setup-complete', { at: Date.now() })
+    return {}
+  },
   // Ready setup avoids any command/tool installation; still runs the real
   // first-contact cleanup with the explicit client and durable acknowledgement.
-  ensureSetupFingerprint: async (id, fingerprint) => ({
-    sandboxId: id,
-    desiredFingerprint: fingerprint,
-    readiness: 'ready',
-    reasons: [],
-    attemptCount: 0,
-    nextAttemptAt: null,
-    pendingInvocationId: null,
-    pendingInvocationKind: null,
-    lastFailureClass: null,
-    lastAttemptAt: null,
-    updatedAt: new Date(),
-  }),
+  ...(outcome === 'fresh'
+    ? {}
+    : {
+        getSetupState: async () => ({ readiness: 'ready', pendingInvocationId: null }) as any,
+        ensureSetupFingerprint: async (id: string, fingerprint: string) => ({
+          sandboxId: id,
+          desiredFingerprint: fingerprint,
+          readiness: 'ready' as const,
+          reasons: [],
+          attemptCount: 0,
+          nextAttemptAt: null,
+          pendingInvocationId: null,
+          pendingInvocationKind: null,
+          lastFailureClass: null,
+          lastAttemptAt: null,
+          updatedAt: new Date(),
+        }),
+      }),
   withSetupLease: (id, fn, wait) =>
     withVmSetupLease(id, fn, {
       ...wait,
@@ -88,9 +119,13 @@ const manager = new VmSandboxManager({
 })
 try {
   await manager.ensureSandbox(sandboxId, { workspacePath: '', k8s: { sandboxType: 'agent' } })
+  if (outcome === 'fresh') {
+    await manager.exec(sandboxId, ['bash', '-lc', 'true'])
+    emit('first-bash', { at: Date.now() })
+  }
   emit('result', { result: provisioned ? 'owner-ready' : 'joined-ready' })
 } catch (error) {
-  emit('failed', { error: error instanceof Error ? error.name : 'unknown' })
+  emit('failed', { error: error instanceof Error ? error.name : 'unknown', detail: String(error) })
 } finally {
   input.close()
   await manager.cleanup()

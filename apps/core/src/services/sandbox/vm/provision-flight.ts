@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { and, asc, desc, eq, gt, lt } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, lt } from 'drizzle-orm'
 import { db } from '../../../db'
 import { vmBoxProvisionAttempts as attempts } from '../../../db/schema'
 import { MachineNotReadyError } from '../../machines/queries'
@@ -11,6 +11,65 @@ const activeProvision = new AsyncLocalStorage<string>()
 // More than the 15-minute acquisition budget. Do not delete a result a waiter
 // still needs, even if newer requests have already created another generation.
 const RESULT_RETENTION_MS = 60 * 60_000
+
+/** Process-local ownership, not all running rows: API and worker shut down independently. */
+export class VmProvisionLifecycle {
+  private readonly owned = new Set<number>()
+  private stopping = false
+  private readonly creating = new Set<Promise<void>>()
+
+  assertRunning(): void {
+    if (this.stopping) throw Object.assign(new Error('VM provisioning interrupted by shutdown'), { code: '57P01' })
+  }
+
+  async registerCreation<T extends { id: number }>(create: () => Promise<T>): Promise<T> {
+    this.assertRunning()
+    const pending = Promise.withResolvers<void>()
+    this.creating.add(pending.promise)
+    try {
+      const row = await create()
+      this.owned.add(row.id)
+      if (this.stopping) {
+        await this.interruptRows([row.id])
+        this.owned.delete(row.id)
+        this.assertRunning()
+      }
+      return row
+    } finally {
+      pending.resolve()
+      this.creating.delete(pending.promise)
+    }
+  }
+
+  release(id: number): void {
+    this.owned.delete(id)
+  }
+
+  async interrupt(): Promise<void> {
+    this.stopping = true
+    // No new creates can start after stopping. Await already-issued inserts
+    // before taking the final snapshot, or a clean exit could leave a running row.
+    await Promise.all([...this.creating])
+    await this.interruptRows([...this.owned])
+  }
+
+  private async interruptRows(ids: number[]): Promise<void> {
+    if (!ids.length) return
+    const now = new Date()
+    await db
+      .update(attempts)
+      .set({
+        status: 'failed',
+        failureClass: 'interrupted',
+        failureCount: 0,
+        retryAt: now,
+        completedAt: now,
+      })
+      .where(and(inArray(attempts.id, ids), eq(attempts.status, 'running')))
+  }
+}
+
+export const vmProvisionLifecycle = new VmProvisionLifecycle()
 
 export function provisionBackoffMs(failureCount: number): number {
   return Math.min(30_000 * 2 ** Math.min(Math.max(0, failureCount - 1), 5), 15 * 60_000)
@@ -44,9 +103,12 @@ async function latestAttempt(sandboxId: string): Promise<Attempt | undefined> {
 }
 
 function sharedFailure(row: Attempt): never {
-  const retryCode = row.failureClass?.split(':')[1]
+  const retryCode = row.failureClass === 'abandoned' ? 'sandbox_readiness_pending' : row.failureClass?.split(':')[1]
   const cause = new Error('Shared physical provisioning failed')
   if (retryCode === 'box_port_busy') cause.name = 'BoxPortBusyError'
+  else if (retryCode === 'box_lock_timeout') cause.name = 'BoxLockTimeoutError'
+  else if (retryCode === 'box_bash_busy') cause.name = 'BoxBashBusyError'
+  else if (retryCode === 'sandbox_readiness_pending') cause.name = 'SandboxReadinessPendingError'
   else if (retryCode?.startsWith('machine_')) {
     cause.name = 'MachineNotReadyError'
     Object.assign(cause, { machineStatus: retryCode.slice('machine_'.length) })
@@ -79,9 +141,12 @@ export async function coalesceVmProvision<T>(
   join: () => Promise<T>,
   options: {
     wait?: VmSetupLeaseWait
+    lifecycle?: VmProvisionLifecycle
     withLease?: (fn: (assertOwned?: () => void) => Promise<T>) => Promise<T>
   } = {}
 ): Promise<T> {
+  const lifecycle = options.lifecycle ?? vmProvisionLifecycle
+  lifecycle.assertRunning()
   const nested = activeProvision.getStore()
   if (nested) throw new Error(`Nested VM provisioning is not supported (${nested} -> ${sandboxId})`)
   options.wait?.signal?.throwIfAborted()
@@ -90,6 +155,7 @@ export async function coalesceVmProvision<T>(
     options.withLease ?? ((fn) => withVmSetupLease(sandboxId, fn, options.wait))
   return withLease((assertOwned) =>
     activeProvision.run(sandboxId, async () => {
+      lifecycle.assertRunning()
       // Join the observed running generation (or first since entry). Successful
       // results are immutable; stale failures defer to subsequent recovery.
       let [joined] = await db
@@ -107,9 +173,10 @@ export async function coalesceVmProvision<T>(
       assertOwned?.()
       if (latest?.status === 'running') {
         // We now own the same authoritative session lock, so the old Core owner
-        // died/lost its connection. Use the normal failure cooldown before retry.
+        // died/lost its connection. Abandonment is at most the first cooldown,
+        // never inherited exponential backoff from earlier provisioning failures.
         // A remote script may still run: its host flock remains the final fence.
-        const failureCount = latest.failureCount + 1
+        const failureCount = 1
         const [abandoned] = await db
           .update(attempts)
           .set({
@@ -142,16 +209,21 @@ export async function coalesceVmProvision<T>(
       }
       if (latest?.status === 'failed' && latest.retryAt && latest.retryAt.getTime() > Date.now()) sharedFailure(latest)
 
-      const [current] = await db
-        .insert(attempts)
-        .values({
-          sandboxId,
-          failureCount: latest?.status === 'failed' ? latest.failureCount : 0,
-        })
-        .returning()
+      const current = await lifecycle.registerCreation(async () => {
+        const [row] = await db
+          .insert(attempts)
+          .values({
+            sandboxId,
+            failureCount: latest?.status === 'failed' ? latest.failureCount : 0,
+          })
+          .returning()
+        return row!
+      })
       try {
+        lifecycle.assertRunning()
         assertOwned?.()
         const value = await provision()
+        lifecycle.assertRunning()
         assertOwned?.()
         const published = await db
           .update(attempts)
@@ -161,6 +233,12 @@ export async function coalesceVmProvision<T>(
         if (!published.length) throw new Error(`VM provision lost generation ownership for ${sandboxId}`)
         return value
       } catch (error) {
+        try {
+          lifecycle.assertRunning()
+        } catch (interrupted) {
+          await lifecycle.interrupt()
+          throw interrupted
+        }
         // The bind/reaper placement race occurs BEFORE provisioning and is safe
         // for the existing one-shot re-placement loop to retry immediately.
         const placement = error instanceof MachineNotReadyError
@@ -183,6 +261,7 @@ export async function coalesceVmProvision<T>(
           .where(and(eq(attempts.id, current!.id), eq(attempts.status, 'running')))
         throw error
       } finally {
+        lifecycle.release(current!.id)
         // Only this leased box's old terminal generations. Never fail an ensure
         // just because opportunistic retention cleanup could not run.
         try {

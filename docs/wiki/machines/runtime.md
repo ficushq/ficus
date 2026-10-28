@@ -360,7 +360,7 @@ Provisioning has two independent fences:
   locks. The descriptor stays open through the whole run, including failure
   containment, rather than only around restore extraction. Existing extraction
   and shared-cache locks remain separate.
-- **In Core**, API and worker VM managers share physical-ensure results through
+- **In Core**, API and worker VM managers share complete provisioning/setup results through
   `vm_box_provision_attempts` (migration `0236_vm_box_provision_attempts`). Each
   caller snapshots the current generation **before** waiting for the existing
   `vm-box-setup:<sandboxId>` advisory lease. A waiter consumes that generation's
@@ -369,7 +369,9 @@ Provisioning has two independent fences:
   succeeded; a live failure cooldown is still shared. Completed generations
   are retained for at least one hour, beyond the 15-minute acquisition budget;
   indexed opportunistic cleanup prunes only the currently leased box's old results.
-  A later independent ensure still performs the usual health/spec reconciliation.
+  Success is published only after required assets and post-provision setup have
+  finished and durable readiness is `ready` or `ready_degraded`. A later
+  independent ensure still performs health/spec reconciliation.
 
 The advisory lease uses one reserved **direct** PostgreSQL session, never a
 transaction-pooled connection. Result queries are short main-pool operations;
@@ -387,8 +389,25 @@ Recursive provisioning is rejected before taking another lease/slot.
 
 A successful follower reads the authoritative ready box/machine and creates its
 **own local SSH forward**; no process-local endpoint, environment, executor token
-or remote stderr is persisted in the flight-result table. Each process still
-performs its required file/setup checks. First-contact exposure retirement uses
+or remote stderr is persisted in the flight-result table. It does not repeat the
+owner's setup Bash commands. Execution startup and VM `exec` wait up to 30 seconds
+for pending/reconciling readiness (also fencing a pending setup invocation), then
+requeue startup within the existing bounded retry budget rather than admitting a
+command early. The exact server refusal `Failed to start bash invocation: bash
+invocation is already active` is likewise startup-retryable; other exit-127
+failures are not. This never retries an already-started model turn.
+
+An unchanged ready box reconnects **without** the setup lease or a dedicated
+permit. The fast path checks its physical provisioning marker, desired setup
+fingerprint, readiness, absence of pending setup invocations, and whether a
+scheduled degraded repair is due. It also computes the ordinary asset
+content/revocation comparisons without remote writes or Bash; changed or removed
+skills, secrets, identity or SSH material fall back to fenced setup. Only then
+are a local forward and health check sufficient. Unhealthy or changed boxes take
+one lease covering physical ensure and all post-provision setup. No nested
+setup lease is acquired.
+
+First-contact exposure retirement during setup/attach uses
 that already-established client, not another ensure, and retains its durable
 all-or-nothing cleanup acknowledgement. Read-only cleanup sweeps attach to an
 existing ready box and do not provision one.
@@ -396,9 +415,18 @@ existing ready box and do not provision one.
 Ordinary failures back off for 30 seconds, doubling to a maximum of 15 minutes;
 success resets the failure count. Followers/backoff callers receive a sanitized
 error identifying the failed attempt and retry time, while the original caller
-retains its diagnostic error. A lost owner leaves a `running` generation: the next
-lease owner marks it abandoned using the same exponential failure backoff
-(first failure: 30 seconds), then permits normal recovery after expiry. The
+retains its diagnostic error. Shared failures preserve the allowlisted startup
+classification for transient `machine_*`, port-busy (75), host-lock timeout (73),
+Bash contention and readiness-pending errors. Each uses the same execution retry
+schedule as the owner; budget exhaustion still terminates the execution.
+
+Clean API and worker shutdown mark **only their own** running generations failed
+with `failureClass=interrupted`, `retryAt=completedAt=now` and failure count zero.
+Ownership registration includes inserts crossing shutdown, and late callbacks
+cannot publish success. A replacement can provision immediately after acquiring
+the released lease. An unclean lost owner leaves a `running` generation: the next
+lease owner marks it abandoned with only the first 30-second cooldown, regardless
+of earlier failures. Startup waits/requeues across that cooldown before recovery. The
 idempotent remote script remains protected by the host lock if its original
 process is still unwinding. An old owner cannot overwrite that terminal result. The existing
 bind/reaper race remains a safe immediate re-placement exception: it happens
@@ -417,13 +445,13 @@ run manually as root using existing authorized access rather than changing polic
 SSH/stream budget: one quarter of that budget rounded down to seconds, capped
 at 180 seconds. This leaves connection, execution and cleanup headroom:
 
-| Caller | SSH/stream bound | Maximum lock wait |
-| --- | --- | --- |
-| Default remove/remnant sweep, restart/park, non-migration restore/stream | 30s | 7s |
-| Offline runtime capture/restore, operator unit control | 120s | 30s |
-| Nix cache publication | 180s | 45s |
-| Physical install | 300s | 75s |
-| Migration restore/remove with a 30-minute override | 1800s | 180s |
+| Caller                                                                   | SSH/stream bound | Maximum lock wait |
+| ------------------------------------------------------------------------ | ---------------- | ----------------- |
+| Default remove/remnant sweep, restart/park, non-migration restore/stream | 30s              | 7s                |
+| Offline runtime capture/restore, operator unit control                   | 120s             | 30s               |
+| Nix cache publication                                                    | 180s             | 45s               |
+| Physical install                                                         | 300s             | 75s               |
+| Migration restore/remove with a 30-minute override                       | 1800s            | 180s              |
 
 Machine-health removals use the same budget-paired removal entrypoint. A waiter
 exits on the machine before its caller's deadline; it cannot remain queued and
@@ -472,6 +500,37 @@ fake-systemctl interleavings, timeout/holder PID and Docker ownership;
 VM-manager processes, shared success/failure/backoff, different-box progress,
 cancellation, lost sessions and generation fencing. These checks do not provision
 or repair a live host or establish that a deployed incident is resolved.
+
+#### Restart/readiness regression evidence (2026-10-28)
+
+Focused regressions cover shared failure execution requeue/exhaustion, owned
+shutdown (including an insert/shutdown race), unclean abandonment, pending and
+reconciling admission, and two independent VM-manager processes ensuring a fresh
+box. The fresh-box test uses real PostgreSQL/PgBouncer leases and setup rows:
+the generation stays running while the owner is held in setup; the follower's
+first Bash occurs only after owner setup completes and readiness is published.
+A separate owner-shutdown/replacement-process test provisions within five seconds,
+which excludes the former 30-second cooldown. Physical installs, tunnels, assets
+and Bash are synthetic; these tests do not launch real VMs or restart services.
+
+The `manager.test.ts` 20-ready-agent reconnect measurement used 40 ms synthetic
+health latency and the real setup-lease/dedicated-permit implementation on the
+before path:
+
+| Version |   N | Measured resume wall time | Peak concurrent health checks | Setup lease calls |
+| ------- | --: | ------------------------: | ----------------------------: | ----------------: |
+| Before  |  20 |                7,976.5 ms |                             2 |                40 |
+| After   |  20 |                   50.1 ms |                            20 |                 0 |
+
+These are synthetic measurements, **not** a production speedup estimate. The
+before run included database acquisition/polling; the after path takes no
+setup lease. Shared-host pressure also changed between samples, so wall times
+are not a controlled host benchmark. The concurrency and lease-count assertions
+are the decisive regression proof. No live 20-VM experiment, deployment,
+restart, failed-turn replay, or new infrastructure was performed. The reported
+historical incident is consistent with the reproduced code defects; without
+retained incident records, its exact deployed timeline/root cause remains
+unverified.
 
 ### Executor auth + loopback bind (cross-box hardening)
 

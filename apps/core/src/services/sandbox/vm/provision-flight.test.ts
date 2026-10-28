@@ -1,6 +1,11 @@
 import { expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { coalesceVmProvision, provisionBackoffMs, VmProvisionFailedError } from './provision-flight'
+import {
+  coalesceVmProvision,
+  provisionBackoffMs,
+  VmProvisionFailedError,
+  VmProvisionLifecycle,
+} from './provision-flight'
 import { withVmSetupLease } from './setup-state'
 import { db } from '../../../db'
 import { vmBoxProvisionAttempts as attempts } from '../../../db/schema'
@@ -177,18 +182,18 @@ for (const interruption of ['abort', 'timeout'] as const) {
 
 test('an abandoned running generation fails/backoffs before any retry can run', async () => {
   const id = randomUUID()
-  await db.insert(attempts).values({ sandboxId: id })
+  await db.insert(attempts).values({ sandboxId: id, failureCount: 8 })
   let calls = 0
-  await expect(
-    coalesceVmProvision(
-      id,
-      async () => {
-        calls++
-        return ''
-      },
-      async () => ''
-    )
-  ).rejects.toBeInstanceOf(VmProvisionFailedError)
+  const failure = await coalesceVmProvision(
+    id,
+    async () => {
+      calls++
+      return ''
+    },
+    async () => ''
+  ).catch((error) => error)
+  expect(failure).toBeInstanceOf(VmProvisionFailedError)
+  expect(startupRetryCode(failure)).toBe('sandbox_readiness_pending')
   const [row] = await db.select().from(attempts).where(eq(attempts.sandboxId, id))
   expect(row!.failureClass).toBe('abandoned')
   expect(row!.retryAt!.getTime()).toBeGreaterThan(Date.now() + 25_000)
@@ -449,6 +454,10 @@ test('loss of the owned direct DB session shares abandonment and fences the late
 
 for (const [name, code] of [
   ['BoxPortBusyError', 'box_port_busy'],
+  ['BoxLockTimeoutError', 'box_lock_timeout'],
+  ['MachineUnavailableError', 'machine_unreachable'],
+  ['MachineNotReadyError', 'machine_bootstrapping'],
+  ['MachineNotReadyError', 'machine_registered'],
   ['Error', '53300'],
 ] as const) {
   test(`shared/backoff failure preserves the safe startup retry classification ${code}`, async () => {
@@ -456,6 +465,7 @@ for (const [name, code] of [
     const original = Object.assign(new Error('synthetic private diagnostics'), {
       name,
       ...(code === '53300' ? { code } : {}),
+      ...(code.startsWith('machine_') ? { machineStatus: code.slice(8) } : {}),
     })
     await expect(
       coalesceVmProvision(
@@ -476,3 +486,85 @@ for (const [name, code] of [
     expect(JSON.stringify(shared)).not.toContain('private diagnostics')
   })
 }
+
+test('clean shutdown interrupts only owned generations and the replacement immediately provisions', async () => {
+  const lifecycle = new VmProvisionLifecycle()
+  const id = randomUUID()
+  const otherId = randomUUID()
+  const entered = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  const owner = coalesceVmProvision(
+    id,
+    async () => {
+      entered.resolve()
+      await release.promise
+      return 'late result'
+    },
+    async () => '',
+    { lifecycle }
+  ).catch((error) => error)
+  try {
+    await entered.promise
+    await db.insert(attempts).values({ sandboxId: otherId })
+    const now = Date.now()
+    await lifecycle.interrupt()
+    const [own] = await db.select().from(attempts).where(eq(attempts.sandboxId, id))
+    const [other] = await db.select().from(attempts).where(eq(attempts.sandboxId, otherId))
+    expect(own!.status).toBe('failed')
+    expect(own!.failureClass).toBe('interrupted')
+    expect(own!.retryAt!.getTime()).toBeGreaterThanOrEqual(now)
+    expect(own!.retryAt!.getTime()).toBeLessThanOrEqual(Date.now())
+    expect(own!.failureCount).toBe(0)
+    expect(other!.status).toBe('running')
+    release.resolve()
+    expect(await owner).toBeInstanceOf(Error)
+    expect(
+      await coalesceVmProvision(
+        id,
+        async () => 'replacement',
+        async () => 'stale'
+      )
+    ).toBe('replacement')
+    await expect(
+      coalesceVmProvision(
+        randomUUID(),
+        async () => 'must not start',
+        async () => '',
+        { lifecycle }
+      )
+    ).rejects.toThrow('interrupted')
+  } finally {
+    release.resolve()
+    await owner
+  }
+})
+
+test('shutdown waits for a generation insert crossing its ownership snapshot', async () => {
+  const lifecycle = new VmProvisionLifecycle()
+  const id = randomUUID()
+  const release = Promise.withResolvers<void>()
+  const creation = lifecycle
+    .registerCreation(async () => {
+      await release.promise
+      const [row] = await db.insert(attempts).values({ sandboxId: id }).returning()
+      return row!
+    })
+    .catch((error) => error)
+  let stopped = false
+  const shutdown = lifecycle.interrupt().then(() => {
+    stopped = true
+  })
+  try {
+    await Bun.sleep(10)
+    expect(stopped).toBe(false)
+    release.resolve()
+    await shutdown
+    expect(await creation).toBeInstanceOf(Error)
+    const [row] = await db.select().from(attempts).where(eq(attempts.sandboxId, id))
+    expect(row!.failureClass).toBe('interrupted')
+    expect(row!.retryAt!.getTime()).toBeLessThanOrEqual(Date.now())
+  } finally {
+    release.resolve()
+    await Promise.all([creation, shutdown])
+  }
+})

@@ -1,3 +1,4 @@
+import { vmProvisionLifecycle } from './services/sandbox/vm/provision-flight'
 import { requestBodyLimits } from './middleware/request-body-limits'
 import { stopAllBigbrainProcesses } from './services/integrations/bigbrain/stdio-transport'
 import { RuntimeReadiness } from './lib/infra/readiness'
@@ -1120,6 +1121,7 @@ if (import.meta.main) {
     // First, while the server still runs: relayed app sockets get 1012 (service
     // restart) and reconnect once Core is back, instead of dying with 1006.
     await shutdownLocalAppWebSockets()
+    await vmProvisionLifecycle.interrupt()
     await stopSubsystems(subsystems, log)
     terminalManager.cleanup()
     await getSandboxManager().cleanup()

@@ -76,6 +76,7 @@ import {
   type VmSetupReasonCode,
 } from './setup-state'
 import { coalesceVmProvision } from './provision-flight'
+import { waitForVmSetupReady } from './readiness'
 import { reconcileVmSetup } from './setup-reconciler'
 import { runIdempotentSandboxOperation } from './retry'
 import { reconcileRemoteToolchain } from '../toolchain/remote-adapter'
@@ -125,6 +126,7 @@ import {
   stableSetupInvocationId,
   type SetupBashFence,
   syncBoxFiles as syncBoxFilesReal,
+  boxFilesCurrent,
 } from './file-sync'
 import { currentBundleVersionCached } from '../../machines/server-bundle'
 import {
@@ -387,6 +389,7 @@ export interface VmSandboxManagerDeps {
    * the install entirely.
    */
   seedBoxDevbox(client: SandboxClient, sandboxId: string, role: BoxRole, invocationId?: string): Promise<BoxStepTimings>
+  boxFilesCurrent(sandboxId: string, opts: SandboxOptions, box: MachineBox): Promise<boolean>
   getSetupState(sandboxId: string): Promise<VmSetupState | null>
   deleteSetupState(sandboxId: string): Promise<void>
   withProvision: typeof coalesceVmProvision
@@ -518,6 +521,7 @@ function productionDeps(): VmSandboxManagerDeps {
       }),
     seedBoxDevbox: (client, sandboxId, role, invocationId) =>
       seedBoxDevboxReal(client, sandboxId, role, {}, invocationId),
+    boxFilesCurrent: (sandboxId, opts, box) => boxFilesCurrent(sandboxId, opts, { box }),
     getSetupState: (sandboxId) => getVmSetupState(sandboxId),
     deleteSetupState: (sandboxId) => deleteVmSetupState(sandboxId),
     withProvision: coalesceVmProvision,
@@ -728,7 +732,6 @@ export class VmSandboxManager implements ISandboxManager {
       // something is systemically wrong, so surface it.
       const MAX_PLACEMENT_ATTEMPTS = 2
       let env!: BoxEnv
-      let placed!: Awaited<ReturnType<VmSandboxManagerDeps['ensureBox']>>
       let finishPhysicalSetup: ((outcome: 'ready' | 'failed') => void) | undefined
       const beginPhysicalWork = (reason: 'runtime_start' | 'runtime_reconnect' | 'spec_reconcile') => {
         finishPhysicalSetup ??= beginSandboxSetupWork(this, sandboxId, reason)
@@ -741,6 +744,305 @@ export class VmSandboxManager implements ISandboxManager {
           }
         }
       }
+      const setupWorkRoot = boxWorkRoot(sandboxId, role)
+      const setupFingerprint = computeVmSetupFingerprint({
+        specHash,
+        devboxSeedHash: computeDevboxSeedHash(role),
+        bashrcContent: buildBashrcContent(setupWorkRoot, setupWorkRoot, {
+          devboxDir: `${boxDotDir(boxHome(sandboxId))}/devbox`,
+          integrationBinDir: `${boxHome(sandboxId)}/workspace/${INTEGRATION_BIN_RELATIVE_PATH}`,
+        }),
+        gitCredentialsRequired: false,
+      })
+
+      const finishEnsure = async (
+        placed: Awaited<ReturnType<VmSandboxManagerDeps['ensureBox']>>,
+        skipSetup = false
+      ): Promise<string> => {
+        const { machine: placedMachine, box, endpoint } = placed
+        this.touchedMachines.add(placedMachine.id)
+
+        // Refresh the row activity heartbeat unconditionally, once per ensure:
+        // box-manager only seeds it on the full-provision path (its healthy
+        // fast-path returns BEFORE the ready upsert), so a re-ensure over an
+        // already-healthy box would otherwise leave a stale row heartbeat — and the
+        // OTHER process's idle reaper reads max(local, row), both stale, parking a
+        // live box under an active session. Fire-and-forget like touch(): a failed
+        // heartbeat write must never fail the ensure.
+        const ensuredAt = this.deps.now()
+        void this.deps.persistBoxActivity(sandboxId, ensuredAt).catch((err) => {
+          log.warn(`Failed to persist ensure activity heartbeat for ${sandboxId}:`, err)
+        })
+
+        // SandboxClient prepends the scheme itself; pass a bare host:port. The
+        // box's executor auth token rides along so every request passes the
+        // server's per-box auth gate (null for legacy rows → no header, and the
+        // legacy server does not enforce).
+        const boxAuthToken = box.authToken ?? undefined
+        const existing = this.sandboxes.get(sandboxId)
+        // Reuse the live client when nothing addressable changed. close() aborts EVERY
+        // in-flight request on a client, and an aborted /bash stream ends without a
+        // terminal exitCode — which the bash reader reports as BashOutcomeUnknownError
+        // ("Bash invocation outcome is unknown"). The
+        // keep-warm sweep re-ensures already-healthy boxes about once a minute, so
+        // swapping the client unconditionally here silently killed any agent command
+        // that happened to be running at that moment: long execs, builds, and monitors
+        // died at a ~60s drumbeat while the box itself was perfectly healthy. Only a
+        // genuinely different target (new machine, new forward, rotated token) needs a
+        // new client — and only then is closing the old one correct.
+        const reusableClient =
+          existing !== undefined &&
+          existing.endpoint === endpoint &&
+          existing.machineId === placedMachine.id &&
+          existing.authToken === boxAuthToken
+        let client = reusableClient ? existing.client : this.deps.createClient(stripScheme(endpoint), boxAuthToken)
+        if (existing && !reusableClient) existing.client.close()
+        // A full ensure supersedes any read-only attached client for this box.
+        this.dropAttachedClient(sandboxId)
+
+        this.sandboxes.set(sandboxId, {
+          sandboxId,
+          machineId: placedMachine.id,
+          role,
+          endpoint,
+          client,
+          authToken: boxAuthToken,
+          workspacePath: opts.workspacePath,
+          workRoot: boxWorkRoot(sandboxId, role),
+          apiUrl: env.FICUS_API_URL ?? '',
+          lastActivityAt: ensuredAt,
+          // The heartbeat write above just refreshed the row (regardless of which
+          // box-manager path the ensure took), so the first persisted touch can
+          // wait a full throttle interval.
+          lastPersistedActivityAt: ensuredAt,
+          // Seed the idle policy from the caller's opts (k8s idleTimeout is already in
+          // ms; see ensure.ts). Re-ensure rebuilds this state object, so a user toggle
+          // of alwaysOn / idleTimeout is naturally picked up (mirrors k8s pod-manager's
+          // refresh of existing.alwaysOn/idleTimeout on a re-ensure).
+          idleTimeoutMs: opts.k8s?.idleTimeout ?? DEFAULT_IDLE_TIMEOUT_MS,
+          // The vm-wide always-on default (see vmBoxAlwaysOnDefault's doc) wins over
+          // the caller's requested value — a box is always-on if EITHER the caller
+          // opted in OR the runtime default policy is on (the common case today).
+          // Setting FICUS_VM_BOX_PARK_ON_IDLE=true drops the OR down to the caller's
+          // own opts.k8s.alwaysOn, restoring pre-policy behavior exactly.
+          alwaysOn: (opts.k8s?.alwaysOn ?? false) || vmBoxAlwaysOnDefault(),
+          specHash,
+          options: opts,
+        })
+
+        if (!connectionReleased) {
+          releaseConnection()
+          connectionReleased = true
+        }
+
+        // Serialize fingerprint publication, required asset sync, and all
+        // best-effort components as one durable setup generation. No other Core
+        // process may replace the desired fingerprint while this generation runs.
+        const setupResult = skipSetup
+          ? await waitForVmSetupReady(() => this.deps.getSetupState(sandboxId), { signal: opts.signal })
+          : await (async () => {
+              // Publish pending readiness before required asset sync. The box manager
+              // has already made the physical server reachable, but API status must
+              // remain `starting` until required files are safely present.
+              const durableSetup = await this.deps.ensureSetupFingerprint(sandboxId, setupFingerprint)
+              if (durableSetup.pendingInvocationId) {
+                try {
+                  try {
+                    await client.cancelBashInvocation(durableSetup.pendingInvocationId, 'transport-loss')
+                  } catch (error) {
+                    client = await this.recoverClient(sandboxId, client, error as Error)
+                    await client.cancelBashInvocation(durableSetup.pendingInvocationId, 'transport-loss')
+                  }
+                  if (
+                    !(await this.deps.clearSetupPendingInvocation(
+                      sandboxId,
+                      setupFingerprint,
+                      durableSetup.pendingInvocationId
+                    ))
+                  ) {
+                    throw new Error(`VM setup fingerprint changed while clearing invocation ${sandboxId}`)
+                  }
+                } catch (error) {
+                  throw new Error(`VM setup invocation cleanup remains unproven for ${sandboxId}`, { cause: error })
+                }
+              }
+
+              // Required assets remain fatal. A failure leaves durable `pending` state
+              // and produces no ready log line. Ambiguous Bash cleanup is fenced before
+              // any later ensure may repeat file synchronization.
+              //
+              // A box that already holds a ready generation KEEPS it while its required
+              // assets are re-verified. The keep-warm sweep re-ensures every live box
+              // each minute; publishing `pending` for the sync's duration surfaced as a
+              // Running→Starting status flap whenever the sync was slow (30s under host
+              // load), and every status consumer saw a healthy box as not-ready for
+              // that window. Only a box that has never been ready — or lost readiness —
+              // publishes `pending` before the sync; a failed re-sync on a ready box
+              // revokes readiness explicitly in the catch below.
+              const retainReadiness = durableSetup.readiness === 'ready' || durableSetup.readiness === 'ready_degraded'
+              if (
+                !retainReadiness &&
+                !(await this.deps.markSetupPending(sandboxId, setupFingerprint, new Date(this.deps.now())))
+              ) {
+                throw new Error(`VM setup fingerprint changed before required asset sync ${sandboxId}`)
+              }
+              const bashFence: SetupBashFence = {
+                before: async (invocationId, kind) => {
+                  if (!(await this.deps.setSetupPendingInvocation(sandboxId, setupFingerprint, invocationId, kind))) {
+                    throw new Error(`VM setup already has an unproven invocation for ${sandboxId}`)
+                  }
+                },
+                after: async (invocationId) => {
+                  if (!(await this.deps.clearSetupPendingInvocation(sandboxId, setupFingerprint, invocationId))) {
+                    throw new Error(`VM setup fingerprint changed while clearing file sync ${sandboxId}`)
+                  }
+                },
+              }
+              try {
+                await this.deps.cleanupExposure?.(sandboxId, client)
+                await timer.time('assets', () =>
+                  this.deps.syncBoxFiles(client, sandboxId, opts, box, bashFence, (operation) =>
+                    trackSandboxSetupWork(this, sandboxId, 'asset_reconcile', operation)
+                  )
+                )
+                if (
+                  !retainReadiness &&
+                  !(await this.deps.restoreSetupAfterAssets(
+                    sandboxId,
+                    setupFingerprint,
+                    durableSetup,
+                    new Date(this.deps.now())
+                  ))
+                ) {
+                  throw new Error(`VM setup generation changed after required asset sync ${sandboxId}`)
+                }
+              } catch (error) {
+                if (error instanceof BashOutcomeUnknownError) {
+                  try {
+                    try {
+                      await client.cancelBashInvocation(error.invocationId, 'transport-loss')
+                    } catch {
+                      client = await this.recoverClient(sandboxId, client, error)
+                      await client.cancelBashInvocation(error.invocationId, 'transport-loss')
+                    }
+                    await bashFence.after(error.invocationId)
+                  } catch {
+                    // The pre-admission fence remains durable for the next cycle.
+                  }
+                }
+                if (retainReadiness) {
+                  // A ready box whose required-asset re-sync failed must stop
+                  // advertising readiness: the next ensure re-syncs from `pending`.
+                  // Fingerprint-scoped — a false return means a newer generation owns
+                  // the row, and that generation publishes its own readiness.
+                  try {
+                    await this.deps.markSetupPending(sandboxId, setupFingerprint, new Date(this.deps.now()))
+                  } catch (revokeError) {
+                    log.warn(
+                      `Failed to revoke readiness for ${sandboxId} after required asset re-sync failure`,
+                      revokeError
+                    )
+                  }
+                }
+                throw error
+              }
+
+              const setupAttemptNow = new Date(this.deps.now())
+              const reconcileSetup = () =>
+                reconcileVmSetup(
+                  {
+                    sandboxId,
+                    fingerprint: setupFingerprint,
+                    configureGit: false,
+                    devboxInvocationId: computeDevboxInstallInvocationId(sandboxId, role),
+                    gitInvocationId: stableSetupInvocationId('git_config', 'credential-helper'),
+                    squadId:
+                      opts.squadId ?? (sandboxId.startsWith('squad_') ? sandboxId.slice('squad_'.length) : undefined),
+                    initialReasons: env.FICUS_API_URL?.startsWith('http://127.0.0.1:')
+                      ? []
+                      : ['callback_transport_degraded'],
+                    now: setupAttemptNow,
+                    leaseAlreadyHeld: true,
+                  },
+                  {
+                    withLease: (id, fn) => this.deps.withSetupLease(id, fn),
+                    ensureFingerprint: (id, fingerprint) => this.deps.ensureSetupFingerprint(id, fingerprint),
+                    markReconciling: (id, fingerprint, now) => this.deps.markSetupReconciling(id, fingerprint, now),
+                    setPendingInvocation: (id, fingerprint, invocationId, kind) =>
+                      this.deps.setSetupPendingInvocation(id, fingerprint, invocationId, kind),
+                    clearPendingInvocation: (id, fingerprint, invocationId) =>
+                      this.deps.clearSetupPendingInvocation(id, fingerprint, invocationId),
+                    mergeObservedReasons: (id, fingerprint, reasons, now) =>
+                      this.deps.mergeSetupObservedReasons(id, fingerprint, reasons, now),
+                    markDegraded: (input) => this.deps.markSetupDegraded(input),
+                    markReady: (id, fingerprint, now) => this.deps.markSetupReady(id, fingerprint, now),
+                    getClient: () => this.requireSandbox(sandboxId).client,
+                    recoverClient: (failed, cause) => this.recoverClient(sandboxId, failed, cause),
+                    seedDevbox: async (current, invocationId) => {
+                      timer.merge(await this.deps.seedBoxDevbox(current, sandboxId, role, invocationId))
+                    },
+                    signalDevboxReady: (current) =>
+                      timer.time('devbox-ready', async () => {
+                        await current.devboxReady()
+                        const health = await current.health()
+                        if (!health.healthy || !health.devboxReady)
+                          throw new Error('Devbox shell environment is not live')
+                      }),
+                    writeBashrc: (current) =>
+                      timer.time('bashrc', () => this.ensureBoxBashrc(current, sandboxId, role)),
+                    // GitHub credentials are resolved by the squad shell per command.
+                    configureGit: async () => {},
+                    sleep: (ms) => Bun.sleep(ms),
+                    now: () => new Date(this.deps.now()),
+                  }
+                )
+              const setupMutationDue =
+                durableSetup.readiness === 'pending' ||
+                durableSetup.readiness === 'reconciling' ||
+                (durableSetup.readiness === 'ready_degraded' &&
+                  durableSetup.nextAttemptAt !== null &&
+                  durableSetup.nextAttemptAt.getTime() <= setupAttemptNow.getTime())
+              return setupMutationDue
+                ? trackSandboxSetupWork(this, sandboxId, 'setup_reconcile', reconcileSetup)
+                : reconcileSetup()
+            })()
+        if (
+          !setupResult ||
+          !['ready', 'ready_degraded'].includes(setupResult.readiness) ||
+          setupResult.pendingInvocationId
+        )
+          throw Object.assign(new Error(`Sandbox setup is not ready for ${sandboxId}`), {
+            name: 'SandboxReadinessPendingError',
+          })
+
+        // ONE structured summary line answers "where did the time go" for this
+        // ensure (see box-timing.ts's module doc) — measurement only, never used to
+        // change behavior. Non-fatal, matching box-manager.ts's priorBoxesOnMachine
+        // annotation: a fully-live box must never be failed by a formatting bug in
+        // the LOG LINE describing it.
+        try {
+          let readyLine = this.deps.formatBoxReadyLine(
+            sandboxId,
+            placedMachine.id,
+            this.deps.now() - startedAt,
+            timer.steps,
+            { role, priorBoxesOnMachine: placed.priorBoxesOnMachine }
+          )
+          if (setupResult.readiness === 'ready_degraded') {
+            const retryInMs = setupResult.nextAttemptAt
+              ? Math.max(0, setupResult.nextAttemptAt.getTime() - this.deps.now())
+              : 0
+            readyLine = `${readyLine.replace('Box ready', 'Box ready_degraded')} reasons=${setupResult.reasons.join(',')} attempt=${setupResult.attemptCount} retryInMs=${retryInMs}`
+          } else {
+            readyLine = `${readyLine} readiness=ready`
+          }
+          log.info(readyLine)
+        } catch (err) {
+          log.warn(`Failed to format "Box ready" summary line for ${sandboxId} (measurement only, non-fatal):`, err)
+        }
+        return sandboxId
+      }
+
       for (let attempt = 1; ; attempt++) {
         const machine = await timer.time('placement', () =>
           this.deps.resolveMachine({
@@ -754,10 +1056,40 @@ export class VmSandboxManager implements ISandboxManager {
         env = await this.buildBoxEnv(sandboxId, opts, specHash, machine, timer)
 
         try {
-          placed = await this.deps.withProvision(
+          // Reconnect an unchanged, fully set-up box without consuming either
+          // global dedicated permit. Asset revocations are checked before this
+          // path, so a healthy transport never hides required file mutations.
+          const readyBox = await this.deps.getMachineBox(sandboxId)
+          const readySetup = await this.deps.getSetupState(sandboxId)
+          if (
+            readyBox?.status === 'ready' &&
+            readyBox.authToken &&
+            readyBox.machineId === machine.id &&
+            readyBox.provisionedSpecHash === computeProvisioningMarker(specHash, env) &&
+            readySetup?.desiredFingerprint === setupFingerprint &&
+            ['ready', 'ready_degraded'].includes(readySetup.readiness) &&
+            !readySetup.pendingInvocationId &&
+            (!readySetup.nextAttemptAt || readySetup.nextAttemptAt.getTime() > this.deps.now()) &&
+            (await this.deps.boxFilesCurrent(sandboxId, opts, readyBox))
+          ) {
+            await this.deps.ensureMaster(machine)
+            const port = await this.deps.addForward(machine, readyBox.port)
+            const endpoint = `http://127.0.0.1:${port}`
+            const probe = this.deps.createClient(stripScheme(endpoint), readyBox.authToken)
+            let healthy = false
+            try {
+              healthy = opts.boxLiveness === 'listening' || (await probe.health()).healthy
+            } catch {
+              /* The fenced slow path diagnoses and repairs failed health. */
+            } finally {
+              probe.close()
+            }
+            if (healthy) return finishEnsure({ machine, box: readyBox, endpoint, timings: {} }, true)
+          }
+          return await this.deps.withProvision(
             sandboxId,
-            () =>
-              this.deps.ensureBox({
+            async () => {
+              const placed = await this.deps.ensureBox({
                 sandboxId,
                 machineId: machine.id,
                 env,
@@ -773,7 +1105,10 @@ export class VmSandboxManager implements ISandboxManager {
                 // socket-activated box that has deliberately stood down.
                 liveness: opts.boxLiveness,
                 beginPhysicalWork,
-              }),
+              })
+              timer.merge(placed.timings)
+              return finishEnsure(placed)
+            },
             async () => {
               // The owner's endpoint is process-local. A shared success only
               // grants attachment to the authoritative ready row, never a
@@ -783,18 +1118,19 @@ export class VmSandboxManager implements ISandboxManager {
                 throw new Error(`Shared provision no longer ready for ${sandboxId}`)
               const machine = await this.deps.getMachine(box.machineId)
               if (!machine || machine.status !== 'ready')
-                throw new Error(`Shared provision machine unavailable for ${sandboxId}`)
+                throw new MachineNotReadyError(
+                  `Shared provision machine unavailable for ${sandboxId}`,
+                  machine?.status ?? 'unreachable'
+                )
               await this.deps.ensureMaster(machine)
               const localPort = await this.deps.addForward(machine, box.port)
-              return { machine, box, endpoint: `http://127.0.0.1:${localPort}`, timings: {} }
+              return finishEnsure({ machine, box, endpoint: `http://127.0.0.1:${localPort}`, timings: {} }, true)
             },
             {
               wait: { signal: opts.signal },
               withLease: (fn) => this.deps.withSetupLease(sandboxId, fn, { signal: opts.signal }),
             }
           )
-          timer.merge(placed.timings)
-          break
         } catch (err) {
           if (err instanceof MachineNotReadyError && attempt < MAX_PLACEMENT_ATTEMPTS) {
             log.warn(
@@ -808,279 +1144,6 @@ export class VmSandboxManager implements ISandboxManager {
           throw err
         }
       }
-      const { machine: placedMachine, box, endpoint } = placed
-      this.touchedMachines.add(placedMachine.id)
-
-      // Refresh the row activity heartbeat unconditionally, once per ensure:
-      // box-manager only seeds it on the full-provision path (its healthy
-      // fast-path returns BEFORE the ready upsert), so a re-ensure over an
-      // already-healthy box would otherwise leave a stale row heartbeat — and the
-      // OTHER process's idle reaper reads max(local, row), both stale, parking a
-      // live box under an active session. Fire-and-forget like touch(): a failed
-      // heartbeat write must never fail the ensure.
-      const ensuredAt = this.deps.now()
-      void this.deps.persistBoxActivity(sandboxId, ensuredAt).catch((err) => {
-        log.warn(`Failed to persist ensure activity heartbeat for ${sandboxId}:`, err)
-      })
-
-      // SandboxClient prepends the scheme itself; pass a bare host:port. The
-      // box's executor auth token rides along so every request passes the
-      // server's per-box auth gate (null for legacy rows → no header, and the
-      // legacy server does not enforce).
-      const boxAuthToken = box.authToken ?? undefined
-      const existing = this.sandboxes.get(sandboxId)
-      // Reuse the live client when nothing addressable changed. close() aborts EVERY
-      // in-flight request on a client, and an aborted /bash stream ends without a
-      // terminal exitCode — which the bash reader reports as BashOutcomeUnknownError
-      // ("Bash invocation outcome is unknown"). The
-      // keep-warm sweep re-ensures already-healthy boxes about once a minute, so
-      // swapping the client unconditionally here silently killed any agent command
-      // that happened to be running at that moment: long execs, builds, and monitors
-      // died at a ~60s drumbeat while the box itself was perfectly healthy. Only a
-      // genuinely different target (new machine, new forward, rotated token) needs a
-      // new client — and only then is closing the old one correct.
-      const reusableClient =
-        existing !== undefined &&
-        existing.endpoint === endpoint &&
-        existing.machineId === placedMachine.id &&
-        existing.authToken === boxAuthToken
-      let client = reusableClient ? existing.client : this.deps.createClient(stripScheme(endpoint), boxAuthToken)
-      if (existing && !reusableClient) existing.client.close()
-      // A full ensure supersedes any read-only attached client for this box.
-      this.dropAttachedClient(sandboxId)
-
-      this.sandboxes.set(sandboxId, {
-        sandboxId,
-        machineId: placedMachine.id,
-        role,
-        endpoint,
-        client,
-        authToken: boxAuthToken,
-        workspacePath: opts.workspacePath,
-        workRoot: boxWorkRoot(sandboxId, role),
-        apiUrl: env.FICUS_API_URL ?? '',
-        lastActivityAt: ensuredAt,
-        // The heartbeat write above just refreshed the row (regardless of which
-        // box-manager path the ensure took), so the first persisted touch can
-        // wait a full throttle interval.
-        lastPersistedActivityAt: ensuredAt,
-        // Seed the idle policy from the caller's opts (k8s idleTimeout is already in
-        // ms; see ensure.ts). Re-ensure rebuilds this state object, so a user toggle
-        // of alwaysOn / idleTimeout is naturally picked up (mirrors k8s pod-manager's
-        // refresh of existing.alwaysOn/idleTimeout on a re-ensure).
-        idleTimeoutMs: opts.k8s?.idleTimeout ?? DEFAULT_IDLE_TIMEOUT_MS,
-        // The vm-wide always-on default (see vmBoxAlwaysOnDefault's doc) wins over
-        // the caller's requested value — a box is always-on if EITHER the caller
-        // opted in OR the runtime default policy is on (the common case today).
-        // Setting FICUS_VM_BOX_PARK_ON_IDLE=true drops the OR down to the caller's
-        // own opts.k8s.alwaysOn, restoring pre-policy behavior exactly.
-        alwaysOn: (opts.k8s?.alwaysOn ?? false) || vmBoxAlwaysOnDefault(),
-        specHash,
-        options: opts,
-      })
-
-      releaseConnection()
-      connectionReleased = true
-
-      const setupWorkRoot = boxWorkRoot(sandboxId, role)
-      const setupFingerprint = computeVmSetupFingerprint({
-        specHash,
-        devboxSeedHash: computeDevboxSeedHash(role),
-        bashrcContent: buildBashrcContent(setupWorkRoot, setupWorkRoot, {
-          devboxDir: `${boxDotDir(boxHome(sandboxId))}/devbox`,
-          integrationBinDir: `${boxHome(sandboxId)}/workspace/${INTEGRATION_BIN_RELATIVE_PATH}`,
-        }),
-        gitCredentialsRequired: false,
-      })
-
-      // Serialize fingerprint publication, required asset sync, and all
-      // best-effort components as one durable setup generation. No other Core
-      // process may replace the desired fingerprint while this generation runs.
-      const setupResult = await this.deps.withSetupLease(sandboxId, async () => {
-        // Publish pending readiness before required asset sync. The box manager
-        // has already made the physical server reachable, but API status must
-        // remain `starting` until required files are safely present.
-        const durableSetup = await this.deps.ensureSetupFingerprint(sandboxId, setupFingerprint)
-        if (durableSetup.pendingInvocationId) {
-          try {
-            try {
-              await client.cancelBashInvocation(durableSetup.pendingInvocationId, 'transport-loss')
-            } catch (error) {
-              client = await this.recoverClient(sandboxId, client, error as Error)
-              await client.cancelBashInvocation(durableSetup.pendingInvocationId, 'transport-loss')
-            }
-            if (
-              !(await this.deps.clearSetupPendingInvocation(
-                sandboxId,
-                setupFingerprint,
-                durableSetup.pendingInvocationId
-              ))
-            ) {
-              throw new Error(`VM setup fingerprint changed while clearing invocation ${sandboxId}`)
-            }
-          } catch (error) {
-            throw new Error(`VM setup invocation cleanup remains unproven for ${sandboxId}`, { cause: error })
-          }
-        }
-
-        // Required assets remain fatal. A failure leaves durable `pending` state
-        // and produces no ready log line. Ambiguous Bash cleanup is fenced before
-        // any later ensure may repeat file synchronization.
-        //
-        // A box that already holds a ready generation KEEPS it while its required
-        // assets are re-verified. The keep-warm sweep re-ensures every live box
-        // each minute; publishing `pending` for the sync's duration surfaced as a
-        // Running→Starting status flap whenever the sync was slow (30s under host
-        // load), and every status consumer saw a healthy box as not-ready for
-        // that window. Only a box that has never been ready — or lost readiness —
-        // publishes `pending` before the sync; a failed re-sync on a ready box
-        // revokes readiness explicitly in the catch below.
-        const retainReadiness = durableSetup.readiness === 'ready' || durableSetup.readiness === 'ready_degraded'
-        if (
-          !retainReadiness &&
-          !(await this.deps.markSetupPending(sandboxId, setupFingerprint, new Date(this.deps.now())))
-        ) {
-          throw new Error(`VM setup fingerprint changed before required asset sync ${sandboxId}`)
-        }
-        const bashFence: SetupBashFence = {
-          before: async (invocationId, kind) => {
-            if (!(await this.deps.setSetupPendingInvocation(sandboxId, setupFingerprint, invocationId, kind))) {
-              throw new Error(`VM setup already has an unproven invocation for ${sandboxId}`)
-            }
-          },
-          after: async (invocationId) => {
-            if (!(await this.deps.clearSetupPendingInvocation(sandboxId, setupFingerprint, invocationId))) {
-              throw new Error(`VM setup fingerprint changed while clearing file sync ${sandboxId}`)
-            }
-          },
-        }
-        try {
-          await this.deps.cleanupExposure?.(sandboxId, client)
-          await timer.time('assets', () =>
-            this.deps.syncBoxFiles(client, sandboxId, opts, box, bashFence, (operation) =>
-              trackSandboxSetupWork(this, sandboxId, 'asset_reconcile', operation)
-            )
-          )
-          if (
-            !retainReadiness &&
-            !(await this.deps.restoreSetupAfterAssets(
-              sandboxId,
-              setupFingerprint,
-              durableSetup,
-              new Date(this.deps.now())
-            ))
-          ) {
-            throw new Error(`VM setup generation changed after required asset sync ${sandboxId}`)
-          }
-        } catch (error) {
-          if (error instanceof BashOutcomeUnknownError) {
-            try {
-              try {
-                await client.cancelBashInvocation(error.invocationId, 'transport-loss')
-              } catch {
-                client = await this.recoverClient(sandboxId, client, error)
-                await client.cancelBashInvocation(error.invocationId, 'transport-loss')
-              }
-              await bashFence.after(error.invocationId)
-            } catch {
-              // The pre-admission fence remains durable for the next cycle.
-            }
-          }
-          if (retainReadiness) {
-            // A ready box whose required-asset re-sync failed must stop
-            // advertising readiness: the next ensure re-syncs from `pending`.
-            // Fingerprint-scoped — a false return means a newer generation owns
-            // the row, and that generation publishes its own readiness.
-            try {
-              await this.deps.markSetupPending(sandboxId, setupFingerprint, new Date(this.deps.now()))
-            } catch (revokeError) {
-              log.warn(`Failed to revoke readiness for ${sandboxId} after required asset re-sync failure`, revokeError)
-            }
-          }
-          throw error
-        }
-
-        const setupAttemptNow = new Date(this.deps.now())
-        const reconcileSetup = () =>
-          reconcileVmSetup(
-            {
-              sandboxId,
-              fingerprint: setupFingerprint,
-              configureGit: false,
-              devboxInvocationId: computeDevboxInstallInvocationId(sandboxId, role),
-              gitInvocationId: stableSetupInvocationId('git_config', 'credential-helper'),
-              squadId: opts.squadId ?? (sandboxId.startsWith('squad_') ? sandboxId.slice('squad_'.length) : undefined),
-              initialReasons: env.FICUS_API_URL?.startsWith('http://127.0.0.1:') ? [] : ['callback_transport_degraded'],
-              now: setupAttemptNow,
-              leaseAlreadyHeld: true,
-            },
-            {
-              withLease: (id, fn) => this.deps.withSetupLease(id, fn),
-              ensureFingerprint: (id, fingerprint) => this.deps.ensureSetupFingerprint(id, fingerprint),
-              markReconciling: (id, fingerprint, now) => this.deps.markSetupReconciling(id, fingerprint, now),
-              setPendingInvocation: (id, fingerprint, invocationId, kind) =>
-                this.deps.setSetupPendingInvocation(id, fingerprint, invocationId, kind),
-              clearPendingInvocation: (id, fingerprint, invocationId) =>
-                this.deps.clearSetupPendingInvocation(id, fingerprint, invocationId),
-              mergeObservedReasons: (id, fingerprint, reasons, now) =>
-                this.deps.mergeSetupObservedReasons(id, fingerprint, reasons, now),
-              markDegraded: (input) => this.deps.markSetupDegraded(input),
-              markReady: (id, fingerprint, now) => this.deps.markSetupReady(id, fingerprint, now),
-              getClient: () => this.requireSandbox(sandboxId).client,
-              recoverClient: (failed, cause) => this.recoverClient(sandboxId, failed, cause),
-              seedDevbox: async (current, invocationId) => {
-                timer.merge(await this.deps.seedBoxDevbox(current, sandboxId, role, invocationId))
-              },
-              signalDevboxReady: (current) =>
-                timer.time('devbox-ready', async () => {
-                  await current.devboxReady()
-                  const health = await current.health()
-                  if (!health.healthy || !health.devboxReady) throw new Error('Devbox shell environment is not live')
-                }),
-              writeBashrc: (current) => timer.time('bashrc', () => this.ensureBoxBashrc(current, sandboxId, role)),
-              // GitHub credentials are resolved by the squad shell per command.
-              configureGit: async () => {},
-              sleep: (ms) => Bun.sleep(ms),
-              now: () => new Date(this.deps.now()),
-            }
-          )
-        const setupMutationDue =
-          durableSetup.readiness === 'pending' ||
-          durableSetup.readiness === 'reconciling' ||
-          (durableSetup.readiness === 'ready_degraded' &&
-            durableSetup.nextAttemptAt !== null &&
-            durableSetup.nextAttemptAt.getTime() <= setupAttemptNow.getTime())
-        return setupMutationDue
-          ? trackSandboxSetupWork(this, sandboxId, 'setup_reconcile', reconcileSetup)
-          : reconcileSetup()
-      })
-
-      // ONE structured summary line answers "where did the time go" for this
-      // ensure (see box-timing.ts's module doc) — measurement only, never used to
-      // change behavior. Non-fatal, matching box-manager.ts's priorBoxesOnMachine
-      // annotation: a fully-live box must never be failed by a formatting bug in
-      // the LOG LINE describing it.
-      try {
-        let readyLine = this.deps.formatBoxReadyLine(
-          sandboxId,
-          placedMachine.id,
-          this.deps.now() - startedAt,
-          timer.steps,
-          { role, priorBoxesOnMachine: placed.priorBoxesOnMachine }
-        )
-        if (setupResult.readiness === 'ready_degraded') {
-          const retryInMs = setupResult.nextAttemptAt
-            ? Math.max(0, setupResult.nextAttemptAt.getTime() - this.deps.now())
-            : 0
-          readyLine = `${readyLine.replace('Box ready', 'Box ready_degraded')} reasons=${setupResult.reasons.join(',')} attempt=${setupResult.attemptCount} retryInMs=${retryInMs}`
-        } else {
-          readyLine = `${readyLine} readiness=ready`
-        }
-        log.info(readyLine)
-      } catch (err) {
-        log.warn(`Failed to format "Box ready" summary line for ${sandboxId} (measurement only, non-fatal):`, err)
-      }
-      return sandboxId
     } finally {
       if (!connectionReleased) releaseConnection()
     }
@@ -1326,6 +1389,8 @@ export class VmSandboxManager implements ISandboxManager {
   }
 
   async exec(sandboxId: string, args: string[], options?: SandboxExecOptions): Promise<Buffer> {
+    this.requireSandbox(sandboxId)
+    await waitForVmSetupReady(() => this.deps.getSetupState(sandboxId))
     const state = this.requireSandbox(sandboxId)
     this.touch(state)
 

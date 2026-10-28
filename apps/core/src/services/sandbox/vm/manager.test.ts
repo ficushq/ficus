@@ -26,7 +26,7 @@ import { MachineUnavailableError, type PlacementRequest } from '../../machines/p
 import { startupRetryCode } from '../../execution/startup-retry'
 import { MachineNotReadyError } from '../../machines/queries'
 import type { SandboxOptions, SandboxRuntime } from '../types'
-import type { VmSetupState } from './setup-state'
+import { withVmSetupLease, type VmSetupState } from './setup-state'
 import { observeSandboxSetupProgress, type SandboxSetupProgressEvent } from '../setup-progress'
 
 // ---------------------------------------------------------------------------
@@ -526,6 +526,9 @@ describe('VmSandboxManager', () => {
     const h = makeHarness()
     const id = 'agent_joined'
     h.setMachineBoxRow({ machineId: 'm1', port: 51234, status: 'ready' })
+    // The successful generation now includes post-provision setup.
+    const setup = await h.deps.ensureSetupFingerprint!(id, 'joined-fixture')
+    h.setSetupState({ ...setup, readiness: 'ready' })
     // Deliberately select the persisted-success branch, not the physical callback.
     h.deps.withProvision = async (_id, _run, join) => join()
     const mgr = new VmSandboxManager(h.deps)
@@ -536,7 +539,7 @@ describe('VmSandboxManager', () => {
       expect(h.addForwardCalls).toEqual([{ machineId: 'm1', remotePort: 51234 }])
       expect(h.createdEndpoints).toEqual(['127.0.0.1:61001'])
       expect(h.createdClientTokens).toEqual([`row-tok-${id}`])
-      expect(h.syncCalls).toEqual([id])
+      expect(h.syncCalls).toEqual([])
     } finally {
       await mgr.cleanup()
     }
@@ -3473,3 +3476,166 @@ test('exposure retirement repairs on first ensure and attach, independently of p
   expect(contacts).toContain('agent_retirement')
   await mgr.cleanup()
 })
+
+test('ready reconnect checks health in parallel without a setup lease or setup Bash', async () => {
+  const managers: VmSandboxManager[] = []
+  let active = 0
+  let peak = 0
+  let leases = 0
+  const count = 20
+  try {
+    const harnesses = await Promise.all(
+      Array.from({ length: count }, async (_, i) => {
+        const h = makeHarness()
+        const id = `agent_resume_${crypto.randomUUID()}_${i}`
+        const opts = { workspacePath: '', k8s: { sandboxType: 'agent' as const } }
+        h.deps.boxFilesCurrent = async () => true
+        const mgr = new VmSandboxManager(h.deps)
+        managers.push(mgr)
+        await mgr.ensureSandbox(id, opts)
+        const ensured = h.ensureCalls[0]!
+        const placed = await h.deps.ensureBox(ensured)
+        placed.box.provisionedSpecHash = ensured.specHash!
+        placed.machine.status = 'ready'
+        h.deps.getMachineBox = async () => placed.box
+        // The manager copies dependencies at construction. Reconnect in a new
+        // process-shaped manager using the same durable rows and fake transport.
+        h.deps.withSetupLease = async (id, fn) => {
+          leases++
+          return withVmSetupLease(id, fn)
+        }
+        h.deps.ensureBox = async () => {
+          active++
+          peak = Math.max(peak, active)
+          await Bun.sleep(40)
+          active--
+          return placed
+        }
+        h.deps.createClient = () =>
+          ({
+            ...makeFakeClient('resume'),
+            health: async () => {
+              active++
+              peak = Math.max(peak, active)
+              await Bun.sleep(40)
+              active--
+              return { healthy: true, devboxReady: true, version: 'test', uptimeSeconds: 100 }
+            },
+          }) as any
+        const resumed = new VmSandboxManager(h.deps)
+        managers.push(resumed)
+        return { h, id, opts, resumed }
+      })
+    )
+    const before = performance.now()
+    await Promise.all(harnesses.map(({ resumed, id, opts }) => resumed.ensureSandbox(id, opts)))
+    console.log(
+      `synthetic ready resume N=${count} elapsedMs=${(performance.now() - before).toFixed(1)} peakHealth=${peak} leases=${leases}`
+    )
+    expect(peak).toBe(count)
+    expect(leases).toBe(0)
+    for (const { h } of harnesses) expect(h.syncCalls).toHaveLength(1)
+  } finally {
+    await Promise.all(managers.map((manager) => manager.cleanup()))
+  }
+}, 30_000)
+
+test('generation remains running through owner setup and pending setup never admits execution Bash', async () => {
+  const h = makeHarness()
+  const setup = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  let published = false
+  h.deps.withProvision = async (_id, provision) => {
+    const value = await provision()
+    published = true
+    return value
+  }
+  h.deps.seedBoxDevbox = async () => {
+    setup.resolve()
+    await release.promise
+    return {}
+  }
+  const mgr = new VmSandboxManager(h.deps)
+  const ensure = mgr.ensureSandbox('agent_fresh', { workspacePath: '', k8s: { sandboxType: 'agent' } })
+  let bash: Promise<Buffer> | undefined
+  try {
+    await setup.promise
+    expect(published).toBe(false)
+    const client = [...h.clients.values()][0]!
+    bash = mgr.exec('agent_fresh', ['bash', '-lc', 'echo admitted'])
+    await Bun.sleep(20)
+    expect(client.bashCalls.some((call) => call.command.includes('echo admitted'))).toBe(false)
+    release.resolve()
+    await ensure
+    await bash
+    expect(published).toBe(true)
+    expect(client.bashCalls.some((call) => call.command.includes('echo admitted'))).toBe(true)
+  } finally {
+    release.resolve()
+    await ensure
+    await bash
+    await mgr.cleanup()
+  }
+})
+
+for (const status of ['registered', 'bootstrapping', 'unreachable']) {
+  test(`a successful-generation join preserves retryability when its machine becomes ${status}`, async () => {
+    const h = makeHarness()
+    h.setMachineBoxRow({ machineId: 'm1', port: 51234, status: 'ready' })
+    h.setMachineStatus(status)
+    h.deps.withProvision = async (_id, _run, join) => join()
+    const mgr = new VmSandboxManager(h.deps)
+    try {
+      const error = await mgr.ensureSandbox('agent_joined', agentOpts).catch((error) => error)
+      expect(startupRetryCode(error)).toBe(`machine_${status}`)
+      expect(h.ensureCalls).toHaveLength(0)
+    } finally {
+      await mgr.cleanup()
+    }
+  })
+}
+
+for (const change of ['assets', 'spec', 'pending', 'reconciling', 'degraded-due', 'unhealthy'] as const) {
+  test(`ready reconnect retains the full setup fence for ${change}`, async () => {
+    const h = makeHarness()
+    const id = 'agent_reconnect_fence'
+    const opts = { workspacePath: '', k8s: { sandboxType: 'agent' as const } }
+    const original = new VmSandboxManager(h.deps)
+    let resumed: VmSandboxManager | undefined
+    try {
+      await original.ensureSandbox(id, opts)
+      const request = h.ensureCalls[0]!
+      const placed = await h.deps.ensureBox(request)
+      placed.box.provisionedSpecHash = change === 'spec' ? 'outdated' : request.specHash!
+      placed.machine.status = 'ready'
+      h.deps.getMachineBox = async () => placed.box
+      h.deps.boxFilesCurrent = async () => change !== 'assets'
+      const setup = (await h.deps.getSetupState(id))!
+      if (change === 'pending' || change === 'reconciling') h.setSetupState({ ...setup, readiness: change })
+      if (change === 'degraded-due')
+        h.setSetupState({ ...setup, readiness: 'ready_degraded', nextAttemptAt: new Date(0) })
+      if (change === 'unhealthy') {
+        const create = h.deps.createClient!
+        h.deps.createClient = (...args) => {
+          const client = create(...args)
+          client.health = async () => {
+            throw new Error('synthetic transport unavailable')
+          }
+          return client
+        }
+      }
+      let leases = 0
+      h.deps.withSetupLease = async (_id, fn) => {
+        leases++
+        return fn()
+      }
+      resumed = new VmSandboxManager(h.deps)
+      await resumed.ensureSandbox(id, opts)
+      expect(leases).toBe(1)
+      expect(h.syncCalls).toEqual([id, id])
+    } finally {
+      await original.cleanup()
+      await resumed?.cleanup()
+    }
+  })
+}
