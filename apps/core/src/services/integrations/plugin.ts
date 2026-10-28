@@ -68,7 +68,7 @@ export interface IntegrationAgentToolFactory<Context = unknown, Tool = unknown> 
   createTools(context: Context): readonly Tool[] | Promise<readonly Tool[]>
 }
 
-/** Server-only, per-command credential delivery. Never used by sandbox env/file projection. */
+/** Server-owned declaration: only binary names are projected; environment resolvers run per command. */
 export interface IntegrationExecutionDeclaration<C, Credential> {
   /** Globally installed CLIs to wrap. Package managers/project-local CLIs are not wrapped. */
   readonly binaries: readonly string[]
