@@ -30,6 +30,7 @@ import {
 import { isActiveExecutionStatus } from '../services/execution/status'
 import {
   BOX_PORT_BUSY_RETRY_CODE,
+  BOX_LOCK_TIMEOUT_RETRY_CODE,
   STARTUP_RETRY_DELAYS_MS,
   findInCauseChain,
   startupRetryCode,
@@ -1030,9 +1031,11 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
     log.warn(
       code === BOX_PORT_BUSY_RETRY_CODE
         ? "Retrying execution startup: the box's socket port is busy"
-        : code.startsWith('machine_')
-          ? "Retrying execution startup: the box's machine is not ready yet"
-          : 'Retrying execution startup after a transient database failure',
+        : code === BOX_LOCK_TIMEOUT_RETRY_CODE
+          ? 'Retrying execution startup: the box provisioning lock is busy'
+          : code.startsWith('machine_')
+            ? "Retrying execution startup: the box's machine is not ready yet"
+            : 'Retrying execution startup after a transient database failure',
       {
         executionId: this.id,
         agentId: this.agentId,
