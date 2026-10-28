@@ -451,10 +451,20 @@ export const workflowCustomizationSchema = z.discriminatedUnion('op', [
     .object({
       op: z.literal('update-step'),
       id: identifier,
+      // Derived schemas do not inherit `.describe()` text on zod 4, so each kind's is reapplied.
       changes: z.union([
-        workflowStepSchema.options[0].omit({ id: true, kind: true }).partial(),
-        workflowStepSchema.options[1].omit({ id: true, kind: true }).partial(),
-        workflowStepSchema.options[2].omit({ id: true, kind: true }).partial(),
+        workflowStepSchema.options[0]
+          .omit({ id: true, kind: true })
+          .partial()
+          .describe(workflowStepSchema.options[0].description ?? ''),
+        workflowStepSchema.options[1]
+          .omit({ id: true, kind: true })
+          .partial()
+          .describe(workflowStepSchema.options[1].description ?? ''),
+        workflowStepSchema.options[2]
+          .omit({ id: true, kind: true })
+          .partial()
+          .describe(workflowStepSchema.options[2].description ?? ''),
       ]),
     })
     .strict(),

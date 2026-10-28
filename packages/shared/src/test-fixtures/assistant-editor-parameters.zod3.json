@@ -1,0 +1,2181 @@
+{
+  "read": {
+    "type": "object",
+    "properties": {
+      "include": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": [
+            "contract",
+            "agentTypes",
+            "integrationOutputs"
+          ]
+        }
+      },
+      "integration": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      }
+    },
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "edit": {
+    "type": "object",
+    "properties": {
+      "baseRevision": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Use the latest confirmed revision from read or an applied edit result. Revisions increase on undo and redo too; never subtract from the revision."
+      },
+      "summary": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4000
+      },
+      "preset": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,99}$"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 4000
+          }
+        },
+        "additionalProperties": false,
+        "description": "Update the visible preset ID and/or description. ID may change only before the preset is first saved (read.target.presetId is absent). Describe when squads should choose this workflow. Can accompany operations or documentJson, or be used alone. Cannot accompany historyAction. Workflow pages only; other page kinds never send this."
+      },
+      "historyAction": {
+        "type": "string",
+        "enum": [
+          "undo",
+          "redo"
+        ],
+        "description": "Undo or redo one edit in the same history as the user buttons. Name and preset metadata are excluded. Read history.canUndo/canRedo first. Do not combine with operations or documentJson."
+      },
+      "operations": {
+        "type": "array",
+        "items": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "set-subscriptions"
+                },
+                "subscriptions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100,
+                        "pattern": "^[a-z][a-z0-9_.-]*$"
+                      },
+                      "source": {
+                        "type": "object",
+                        "properties": {
+                          "integration": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100,
+                            "pattern": "^[a-z][a-z0-9_.-]*$"
+                          },
+                          "output": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100,
+                            "pattern": "^[a-z][a-z0-9_.-]*$"
+                          },
+                          "version": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "connectionId": {
+                            "type": "string",
+                            "format": "uuid"
+                          }
+                        },
+                        "required": [
+                          "integration",
+                          "output",
+                          "version"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "match": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "streamMetadata": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200,
+                                  "pattern": "^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)*$"
+                                }
+                              },
+                              "required": [
+                                "streamMetadata"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "value": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "maxLength": 2000
+                                    },
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "boolean"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "value"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      },
+                      "deliver": {
+                        "type": "object",
+                        "properties": {
+                          "to": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "participant": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100,
+                                    "pattern": "^[a-z][a-z0-9_.-]*$"
+                                  }
+                                },
+                                "required": [
+                                  "participant"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "step": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100,
+                                    "pattern": "^[a-z][a-z0-9_.-]*$"
+                                  }
+                                },
+                                "required": [
+                                  "step"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "string",
+                                "const": "active"
+                              },
+                              {
+                                "type": "string",
+                                "const": "delivery-owner"
+                              }
+                            ]
+                          },
+                          "whenInactive": {
+                            "type": "string",
+                            "enum": [
+                              "retain",
+                              "manager"
+                            ],
+                            "default": "retain"
+                          }
+                        },
+                        "required": [
+                          "to"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "source",
+                      "match",
+                      "deliver"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 32
+                }
+              },
+              "required": [
+                "op",
+                "subscriptions"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "put-participant"
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "pattern": "^[a-z][a-z0-9-]*$"
+                },
+                "participant": {
+                  "type": "object",
+                  "properties": {
+                    "agentTypeId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "tier": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100,
+                      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                    },
+                    "session": {
+                      "type": "string",
+                      "enum": [
+                        "reuse-within-stream",
+                        "fresh-per-attempt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "agentTypeId",
+                    "session"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "op",
+                "id",
+                "participant"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "remove-participant"
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "pattern": "^[a-z][a-z0-9-]*$"
+                }
+              },
+              "required": [
+                "op",
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "put-step"
+                },
+                "step": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100,
+                          "pattern": "^[a-z][a-z0-9-]*$",
+                          "description": "Unique step ID; outcomes and entry refer to it."
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200,
+                          "description": "Display name; connections still use id."
+                        },
+                        "instructions": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64000,
+                          "description": "What to do and how to judge the result."
+                        },
+                        "output": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64000,
+                          "description": "The expected result or evidence; guidance, not a validated format."
+                        },
+                        "outcomes": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "next": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100,
+                                        "pattern": "^[a-z][a-z0-9-]*$"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "finish"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "next"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "parallel": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 100,
+                                      "pattern": "^[a-z][a-z0-9-]*$"
+                                    },
+                                    "minItems": 2,
+                                    "maxItems": 16
+                                  },
+                                  "join": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100,
+                                        "pattern": "^[a-z][a-z0-9-]*$"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "finish"
+                                      }
+                                    ],
+                                    "default": "finish"
+                                  }
+                                },
+                                "required": [
+                                  "parallel"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "returnTo": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100,
+                                    "pattern": "^[a-z][a-z0-9-]*$",
+                                    "description": "Step that performs the requested revisions, for example create-assets."
+                                  },
+                                  "afterRework": {
+                                    "type": "string",
+                                    "enum": [
+                                      "follow-graph",
+                                      "return-to-requester"
+                                    ],
+                                    "description": "Default: follow-graph runs the normal outgoing arrows after revisions. return-to-requester sends the corrected result straight back to the step requesting changes, bypassing the correction step’s forward arrows."
+                                  }
+                                },
+                                "required": [
+                                  "returnTo"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          "description": "1–16 named outcomes, each with one transition."
+                        },
+                        "kind": {
+                          "type": "string",
+                          "const": "agent",
+                          "default": "agent"
+                        },
+                        "participant": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100,
+                          "pattern": "^[a-z][a-z0-9-]*$",
+                          "description": "ID of an entry in the definition’s participants."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "instructions",
+                        "output",
+                        "outcomes",
+                        "participant"
+                      ],
+                      "additionalProperties": false,
+                      "description": "A participant agent does the work and submits one of the outcomes with evidence."
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100,
+                          "pattern": "^[a-z][a-z0-9-]*$",
+                          "description": "Unique step ID; outcomes and entry refer to it."
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200,
+                          "description": "Display name; connections still use id."
+                        },
+                        "instructions": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64000,
+                          "description": "What to do and how to judge the result."
+                        },
+                        "output": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64000,
+                          "description": "The expected result or evidence; guidance, not a validated format."
+                        },
+                        "outcomes": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "next": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100,
+                                        "pattern": "^[a-z][a-z0-9-]*$"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "finish"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "next"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "parallel": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 100,
+                                      "pattern": "^[a-z][a-z0-9-]*$"
+                                    },
+                                    "minItems": 2,
+                                    "maxItems": 16
+                                  },
+                                  "join": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100,
+                                        "pattern": "^[a-z][a-z0-9-]*$"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "finish"
+                                      }
+                                    ],
+                                    "default": "finish"
+                                  }
+                                },
+                                "required": [
+                                  "parallel"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "returnTo": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100,
+                                    "pattern": "^[a-z][a-z0-9-]*$",
+                                    "description": "Step that performs the requested revisions, for example create-assets."
+                                  },
+                                  "afterRework": {
+                                    "type": "string",
+                                    "enum": [
+                                      "follow-graph",
+                                      "return-to-requester"
+                                    ],
+                                    "description": "Default: follow-graph runs the normal outgoing arrows after revisions. return-to-requester sends the corrected result straight back to the step requesting changes, bypassing the correction step’s forward arrows."
+                                  }
+                                },
+                                "required": [
+                                  "returnTo"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          "description": "1–16 named outcomes, each with one transition."
+                        },
+                        "kind": {
+                          "type": "string",
+                          "const": "human-approval"
+                        },
+                        "approver": {
+                          "type": "string",
+                          "enum": [
+                            "assigned-reviewers",
+                            "reviewers"
+                          ],
+                          "default": "assigned-reviewers",
+                          "description": "assigned-reviewers: one of the work stream’s assigned reviewers who has review permission decides; with nobody assigned, anyone with review permission. reviewers: anyone with workstreams:review permission in the squad."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "instructions",
+                        "output",
+                        "outcomes",
+                        "kind"
+                      ],
+                      "additionalProperties": false,
+                      "description": "A person with review permission chooses the outcome; no agent runs."
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100,
+                          "pattern": "^[a-z][a-z0-9-]*$",
+                          "description": "Unique step ID; outcomes and entry refer to it."
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200,
+                          "description": "Display name; connections still use id."
+                        },
+                        "instructions": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64000,
+                          "description": "What to do and how to judge the result."
+                        },
+                        "kind": {
+                          "type": "string",
+                          "const": "decision"
+                        },
+                        "input": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "title",
+                              "description",
+                              "handoff",
+                              "incoming-results"
+                            ]
+                          },
+                          "minItems": 1,
+                          "maxItems": 4,
+                          "default": [
+                            "title",
+                            "description",
+                            "incoming-results"
+                          ]
+                        },
+                        "questions": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "const": "yesno"
+                                  },
+                                  "instructions": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 4000
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "instructions"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "const": "choice"
+                                  },
+                                  "instructions": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 4000
+                                  },
+                                  "options": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                      "type": "string",
+                                      "maxLength": 1000
+                                    },
+                                    "propertyNames": {
+                                      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "instructions",
+                                  "options"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "const": "score"
+                                  },
+                                  "instructions": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 4000
+                                  },
+                                  "levels": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "label": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 200
+                                        },
+                                        "description": {
+                                          "type": "string",
+                                          "maxLength": 1000
+                                        }
+                                      },
+                                      "required": [
+                                        "label"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "minItems": 2,
+                                    "maxItems": 10
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "instructions",
+                                  "levels"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          "propertyNames": {
+                            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                          }
+                        },
+                        "routes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "when": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "yesno"
+                                      },
+                                      "question": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                                      },
+                                      "op": {
+                                        "type": "string",
+                                        "enum": [
+                                          "at-least",
+                                          "at-most"
+                                        ]
+                                      },
+                                      "probability": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "op",
+                                      "probability"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "choice"
+                                      },
+                                      "question": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                                      },
+                                      "equals": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                                      },
+                                      "minConfidence": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "equals"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "score"
+                                      },
+                                      "question": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                                      },
+                                      "op": {
+                                        "type": "string",
+                                        "enum": [
+                                          "at-least",
+                                          "at-most"
+                                        ]
+                                      },
+                                      "level": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 200
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "op",
+                                      "level"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                ]
+                              },
+                              "outcome": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100,
+                                "pattern": "^[a-z][a-z0-9-]*$"
+                              }
+                            },
+                            "required": [
+                              "when",
+                              "outcome"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 32,
+                          "default": []
+                        },
+                        "otherwise": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100,
+                          "pattern": "^[a-z][a-z0-9-]*$",
+                          "description": "Outcome when no route matches; omit it to let a person choose."
+                        },
+                        "unavailable": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100,
+                          "pattern": "^[a-z][a-z0-9-]*$",
+                          "description": "Outcome when no decision model answers; omit it to let a person choose."
+                        },
+                        "outcomes": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "next": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100,
+                                        "pattern": "^[a-z][a-z0-9-]*$"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "finish"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "next"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "parallel": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 100,
+                                      "pattern": "^[a-z][a-z0-9-]*$"
+                                    },
+                                    "minItems": 2,
+                                    "maxItems": 16
+                                  },
+                                  "join": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100,
+                                        "pattern": "^[a-z][a-z0-9-]*$"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "finish"
+                                      }
+                                    ],
+                                    "default": "finish"
+                                  }
+                                },
+                                "required": [
+                                  "parallel"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "returnTo": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100,
+                                    "pattern": "^[a-z][a-z0-9-]*$",
+                                    "description": "Step that performs the requested revisions, for example create-assets."
+                                  },
+                                  "afterRework": {
+                                    "type": "string",
+                                    "enum": [
+                                      "follow-graph",
+                                      "return-to-requester"
+                                    ],
+                                    "description": "Default: follow-graph runs the normal outgoing arrows after revisions. return-to-requester sends the corrected result straight back to the step requesting changes, bypassing the correction step’s forward arrows."
+                                  }
+                                },
+                                "required": [
+                                  "returnTo"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          "description": "1–16 named outcomes, each with one transition."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "instructions",
+                        "kind",
+                        "questions",
+                        "outcomes"
+                      ],
+                      "additionalProperties": false,
+                      "description": "A decision model answers typed questions and the first matching route picks the outcome; no agent runs. It cannot be a returnTo target."
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "op",
+                "step"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "remove-step"
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "pattern": "^[a-z][a-z0-9-]*$"
+                }
+              },
+              "required": [
+                "op",
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "update-step"
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "pattern": "^[a-z][a-z0-9-]*$"
+                },
+                "changes": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200,
+                          "description": "Display name; connections still use id."
+                        },
+                        "instructions": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64000,
+                          "description": "What to do and how to judge the result."
+                        },
+                        "output": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64000,
+                          "description": "The expected result or evidence; guidance, not a validated format."
+                        },
+                        "outcomes": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "next": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100,
+                                        "pattern": "^[a-z][a-z0-9-]*$"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "finish"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "next"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "parallel": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 100,
+                                      "pattern": "^[a-z][a-z0-9-]*$"
+                                    },
+                                    "minItems": 2,
+                                    "maxItems": 16
+                                  },
+                                  "join": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100,
+                                        "pattern": "^[a-z][a-z0-9-]*$"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "finish"
+                                      }
+                                    ],
+                                    "default": "finish"
+                                  }
+                                },
+                                "required": [
+                                  "parallel"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "returnTo": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100,
+                                    "pattern": "^[a-z][a-z0-9-]*$",
+                                    "description": "Step that performs the requested revisions, for example create-assets."
+                                  },
+                                  "afterRework": {
+                                    "type": "string",
+                                    "enum": [
+                                      "follow-graph",
+                                      "return-to-requester"
+                                    ],
+                                    "description": "Default: follow-graph runs the normal outgoing arrows after revisions. return-to-requester sends the corrected result straight back to the step requesting changes, bypassing the correction step’s forward arrows."
+                                  }
+                                },
+                                "required": [
+                                  "returnTo"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          "description": "1–16 named outcomes, each with one transition."
+                        },
+                        "participant": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100,
+                          "pattern": "^[a-z][a-z0-9-]*$",
+                          "description": "ID of an entry in the definition’s participants."
+                        }
+                      },
+                      "additionalProperties": false,
+                      "description": "A participant agent does the work and submits one of the outcomes with evidence."
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200,
+                          "description": "Display name; connections still use id."
+                        },
+                        "instructions": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64000,
+                          "description": "What to do and how to judge the result."
+                        },
+                        "output": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64000,
+                          "description": "The expected result or evidence; guidance, not a validated format."
+                        },
+                        "outcomes": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "next": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100,
+                                        "pattern": "^[a-z][a-z0-9-]*$"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "finish"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "next"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "parallel": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 100,
+                                      "pattern": "^[a-z][a-z0-9-]*$"
+                                    },
+                                    "minItems": 2,
+                                    "maxItems": 16
+                                  },
+                                  "join": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100,
+                                        "pattern": "^[a-z][a-z0-9-]*$"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "finish"
+                                      }
+                                    ],
+                                    "default": "finish"
+                                  }
+                                },
+                                "required": [
+                                  "parallel"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "returnTo": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100,
+                                    "pattern": "^[a-z][a-z0-9-]*$",
+                                    "description": "Step that performs the requested revisions, for example create-assets."
+                                  },
+                                  "afterRework": {
+                                    "type": "string",
+                                    "enum": [
+                                      "follow-graph",
+                                      "return-to-requester"
+                                    ],
+                                    "description": "Default: follow-graph runs the normal outgoing arrows after revisions. return-to-requester sends the corrected result straight back to the step requesting changes, bypassing the correction step’s forward arrows."
+                                  }
+                                },
+                                "required": [
+                                  "returnTo"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          "description": "1–16 named outcomes, each with one transition."
+                        },
+                        "approver": {
+                          "type": "string",
+                          "enum": [
+                            "assigned-reviewers",
+                            "reviewers"
+                          ],
+                          "default": "assigned-reviewers",
+                          "description": "assigned-reviewers: one of the work stream’s assigned reviewers who has review permission decides; with nobody assigned, anyone with review permission. reviewers: anyone with workstreams:review permission in the squad."
+                        }
+                      },
+                      "additionalProperties": false,
+                      "description": "A person with review permission chooses the outcome; no agent runs."
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200,
+                          "description": "Display name; connections still use id."
+                        },
+                        "instructions": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64000,
+                          "description": "What to do and how to judge the result."
+                        },
+                        "input": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "title",
+                              "description",
+                              "handoff",
+                              "incoming-results"
+                            ]
+                          },
+                          "minItems": 1,
+                          "maxItems": 4,
+                          "default": [
+                            "title",
+                            "description",
+                            "incoming-results"
+                          ]
+                        },
+                        "questions": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "const": "yesno"
+                                  },
+                                  "instructions": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 4000
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "instructions"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "const": "choice"
+                                  },
+                                  "instructions": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 4000
+                                  },
+                                  "options": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                      "type": "string",
+                                      "maxLength": 1000
+                                    },
+                                    "propertyNames": {
+                                      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "instructions",
+                                  "options"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "const": "score"
+                                  },
+                                  "instructions": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 4000
+                                  },
+                                  "levels": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "label": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 200
+                                        },
+                                        "description": {
+                                          "type": "string",
+                                          "maxLength": 1000
+                                        }
+                                      },
+                                      "required": [
+                                        "label"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "minItems": 2,
+                                    "maxItems": 10
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "instructions",
+                                  "levels"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          "propertyNames": {
+                            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                          }
+                        },
+                        "routes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "when": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "yesno"
+                                      },
+                                      "question": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                                      },
+                                      "op": {
+                                        "type": "string",
+                                        "enum": [
+                                          "at-least",
+                                          "at-most"
+                                        ]
+                                      },
+                                      "probability": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "op",
+                                      "probability"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "choice"
+                                      },
+                                      "question": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                                      },
+                                      "equals": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                                      },
+                                      "minConfidence": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "equals"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "score"
+                                      },
+                                      "question": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                                      },
+                                      "op": {
+                                        "type": "string",
+                                        "enum": [
+                                          "at-least",
+                                          "at-most"
+                                        ]
+                                      },
+                                      "level": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 200
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "op",
+                                      "level"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                ]
+                              },
+                              "outcome": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100,
+                                "pattern": "^[a-z][a-z0-9-]*$"
+                              }
+                            },
+                            "required": [
+                              "when",
+                              "outcome"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 32,
+                          "default": []
+                        },
+                        "otherwise": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100,
+                          "pattern": "^[a-z][a-z0-9-]*$",
+                          "description": "Outcome when no route matches; omit it to let a person choose."
+                        },
+                        "unavailable": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100,
+                          "pattern": "^[a-z][a-z0-9-]*$",
+                          "description": "Outcome when no decision model answers; omit it to let a person choose."
+                        },
+                        "outcomes": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "next": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100,
+                                        "pattern": "^[a-z][a-z0-9-]*$"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "finish"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "next"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "parallel": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 100,
+                                      "pattern": "^[a-z][a-z0-9-]*$"
+                                    },
+                                    "minItems": 2,
+                                    "maxItems": 16
+                                  },
+                                  "join": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100,
+                                        "pattern": "^[a-z][a-z0-9-]*$"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "finish"
+                                      }
+                                    ],
+                                    "default": "finish"
+                                  }
+                                },
+                                "required": [
+                                  "parallel"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "returnTo": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100,
+                                    "pattern": "^[a-z][a-z0-9-]*$",
+                                    "description": "Step that performs the requested revisions, for example create-assets."
+                                  },
+                                  "afterRework": {
+                                    "type": "string",
+                                    "enum": [
+                                      "follow-graph",
+                                      "return-to-requester"
+                                    ],
+                                    "description": "Default: follow-graph runs the normal outgoing arrows after revisions. return-to-requester sends the corrected result straight back to the step requesting changes, bypassing the correction step’s forward arrows."
+                                  }
+                                },
+                                "required": [
+                                  "returnTo"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          "description": "1–16 named outcomes, each with one transition."
+                        }
+                      },
+                      "additionalProperties": false,
+                      "description": "A decision model answers typed questions and the first matching route picks the outcome; no agent runs. It cannot be a returnTo target."
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "op",
+                "id",
+                "changes"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "set-outcome"
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "pattern": "^[a-z][a-z0-9-]*$"
+                },
+                "outcome": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "pattern": "^[a-z][a-z0-9-]*$"
+                },
+                "transition": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "next": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100,
+                              "pattern": "^[a-z][a-z0-9-]*$"
+                            },
+                            {
+                              "type": "string",
+                              "const": "finish"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "next"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "parallel": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100,
+                            "pattern": "^[a-z][a-z0-9-]*$"
+                          },
+                          "minItems": 2,
+                          "maxItems": 16
+                        },
+                        "join": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100,
+                              "pattern": "^[a-z][a-z0-9-]*$"
+                            },
+                            {
+                              "type": "string",
+                              "const": "finish"
+                            }
+                          ],
+                          "default": "finish"
+                        }
+                      },
+                      "required": [
+                        "parallel"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "returnTo": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100,
+                          "pattern": "^[a-z][a-z0-9-]*$",
+                          "description": "Step that performs the requested revisions, for example create-assets."
+                        },
+                        "afterRework": {
+                          "type": "string",
+                          "enum": [
+                            "follow-graph",
+                            "return-to-requester"
+                          ],
+                          "description": "Default: follow-graph runs the normal outgoing arrows after revisions. return-to-requester sends the corrected result straight back to the step requesting changes, bypassing the correction step’s forward arrows."
+                        }
+                      },
+                      "required": [
+                        "returnTo"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "op",
+                "id",
+                "outcome",
+                "transition"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "remove-outcome"
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "pattern": "^[a-z][a-z0-9-]*$"
+                },
+                "outcome": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "pattern": "^[a-z][a-z0-9-]*$"
+                }
+              },
+              "required": [
+                "op",
+                "id",
+                "outcome"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "set-entry"
+                },
+                "entry": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "pattern": "^[a-z][a-z0-9-]*$"
+                }
+              },
+              "required": [
+                "op",
+                "entry"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "set-name"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                }
+              },
+              "required": [
+                "op",
+                "name"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "set-step-order"
+                },
+                "ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "pattern": "^[a-z][a-z0-9-]*$"
+                  },
+                  "minItems": 1,
+                  "maxItems": 128
+                }
+              },
+              "required": [
+                "op",
+                "ids"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "set-routing"
+                },
+                "routing": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "guided",
+                        "flexible",
+                        "adaptive"
+                      ]
+                    },
+                    "returnTo": {
+                      "type": "string",
+                      "enum": [
+                        "declared-only",
+                        "earlier-steps"
+                      ]
+                    },
+                    "delegation": {
+                      "type": "string",
+                      "enum": [
+                        "disabled",
+                        "allowed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "returnTo",
+                    "delegation"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "op",
+                "routing"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "set-limits"
+                },
+                "limits": {
+                  "type": "object",
+                  "properties": {
+                    "maxStepAttempts": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100
+                    },
+                    "maxDelegations": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "maxParallelAttempts": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 32
+                    },
+                    "onLimit": {
+                      "type": "string",
+                      "const": "request-owner-input"
+                    }
+                  },
+                  "required": [
+                    "maxDelegations",
+                    "onLimit"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "op",
+                "limits"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "set-completion"
+                },
+                "completion": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "deliverable",
+                        "pr-merge",
+                        "pr-auto-merge",
+                        "direct-merge",
+                        "review-approval"
+                      ]
+                    },
+                    "followChanges": {
+                      "type": "boolean"
+                    },
+                    "changeEventsTo": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "const": "delivery-owner"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "step": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100,
+                              "pattern": "^[a-z][a-z0-9-]*$"
+                            }
+                          },
+                          "required": [
+                            "step"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "op",
+                "completion"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "set-palette"
+                },
+                "primary": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "secondary": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "tertiary": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "neutral": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "contrast": {
+                  "type": "string",
+                  "enum": [
+                    "standard",
+                    "high"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "static",
+                    "harmonized"
+                  ]
+                }
+              },
+              "required": [
+                "op"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "set-overrides"
+                },
+                "variant": {
+                  "type": "string",
+                  "enum": [
+                    "light",
+                    "dark",
+                    "constant"
+                  ]
+                },
+                "tokens": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "propertyNames": {
+                    "minLength": 1,
+                    "maxLength": 64
+                  }
+                }
+              },
+              "required": [
+                "op",
+                "variant",
+                "tokens"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "set-base"
+                },
+                "base": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              },
+              "required": [
+                "op",
+                "base"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "rename"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+                }
+              },
+              "required": [
+                "op",
+                "name"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "clear-overrides"
+                },
+                "variant": {
+                  "type": "string",
+                  "enum": [
+                    "light",
+                    "dark",
+                    "constant"
+                  ]
+                }
+              },
+              "required": [
+                "op"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "minItems": 1,
+        "maxItems": 512,
+        "description": "Preferred: an atomic list of targeted changes to read.document, using this page kind's own operation set (workflow customizations or theme operations — never mix kinds; the server rejects an operation from the wrong page kind)."
+      },
+      "documentJson": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256000,
+        "description": "Alternative for a complete redesign: JSON.stringify of only read.document, never the read envelope. Do not include operations when using documentJson."
+      }
+    },
+    "required": [
+      "baseRevision",
+      "summary"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

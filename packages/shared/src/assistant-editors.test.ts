@@ -1,7 +1,10 @@
 import { expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   assistantEditorProposalSchema,
   assistantEditorEditParameters,
+  assistantEditorReadParameters,
   assistantEditorReadResult,
   type AssistantEditorReadState,
 } from './assistant-editors'
@@ -123,4 +126,60 @@ test('routine model reads omit catalogs, transport fields, and duplicate proposa
   expect(reference.agentTypes).toEqual([{ id: 'general', name: 'General Purpose', description: undefined }])
   expect(reference.integrationOutputs).toEqual([state.integrationOutputs![1]!])
   expect(() => assistantEditorReadResult(state, { include: ['unknown'] })).toThrow()
+})
+
+/**
+ * Keys zod 4's JSON Schema adds that zod 3's converter left out. They only describe what validation
+ * already enforced (record key patterns, safe-integer bounds, the UUID pattern, explicit string types).
+ */
+function isAdditiveKey(key: string, value: unknown) {
+  if (key === 'propertyNames') return true
+  if (key === 'maximum') return value === Number.MAX_SAFE_INTEGER
+  if (key === 'type') return value === 'string'
+  if (key === 'pattern') return typeof value === 'string' && value.startsWith('^([0-9a-fA-F]{8}-')
+  return false
+}
+
+/** Differences between the committed zod 3 contract and a generated schema, beyond additive keys. */
+function contractDifferences(expected: unknown, actual: unknown, path = '$'): string[] {
+  if (Array.isArray(expected) || Array.isArray(actual)) {
+    if (!Array.isArray(expected) || !Array.isArray(actual) || expected.length !== actual.length)
+      return [`${path}: ${JSON.stringify(expected)?.slice(0, 120)} became ${JSON.stringify(actual)?.slice(0, 120)}`]
+    return expected.flatMap((item, index) => contractDifferences(item, actual[index], `${path}[${index}]`))
+  }
+  if (!expected || !actual || typeof expected !== 'object' || typeof actual !== 'object')
+    return Object.is(expected, actual) ? [] : [`${path}: ${JSON.stringify(expected)} became ${JSON.stringify(actual)}`]
+  const want = expected as Record<string, unknown>
+  // Zod 4 writes discriminated unions as oneOf; the members are disjoint, so it means the same as anyOf.
+  const have = Object.fromEntries(
+    Object.entries(actual).map(([key, value]) => [key === 'oneOf' && !('oneOf' in want) ? 'anyOf' : key, value])
+  )
+  const differences: string[] = []
+  for (const key of new Set([...Object.keys(want), ...Object.keys(have)])) {
+    if (key === '$schema') continue
+    if (!(key in want)) {
+      if (!isAdditiveKey(key, have[key])) differences.push(`${path}.${key}: added ${JSON.stringify(have[key])}`)
+    } else if (!(key in have)) differences.push(`${path}.${key}: removed`)
+    else differences.push(...contractDifferences(want[key], have[key], `${path}.${key}`))
+  }
+  return differences
+}
+
+test('model-facing tool parameters keep the zod 3 contract', () => {
+  const baseline = JSON.parse(
+    readFileSync(join(import.meta.dir, 'test-fixtures/assistant-editor-parameters.zod3.json'), 'utf8')
+  ) as { read: unknown; edit: unknown }
+  expect(contractDifferences(baseline.read, assistantEditorReadParameters)).toEqual([])
+  expect(contractDifferences(baseline.edit, assistantEditorEditParameters)).toEqual([])
+})
+
+test('the contract check notices removed fields, requirements and descriptions', () => {
+  const schema = { type: 'object', properties: { a: { type: 'string', description: 'A' } }, required: ['a'] }
+  expect(contractDifferences(schema, { ...schema, required: [] })).toEqual([`$.required: ["a"] became []`])
+  expect(contractDifferences(schema, { ...schema, properties: { a: { type: 'string' } } })).toEqual([
+    '$.properties.a.description: removed',
+  ])
+  expect(contractDifferences(schema, { ...schema, additionalProperties: true })).toEqual([
+    '$.additionalProperties: added true',
+  ])
 })
