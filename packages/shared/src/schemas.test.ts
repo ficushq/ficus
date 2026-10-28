@@ -153,7 +153,7 @@ describe('amtpEnvelopeSchema', () => {
     const result = amtpEnvelopeSchema.safeParse({
       ...valid,
       subject: 'greetings',
-      inReplyTo: '22222222-2222-2222-2222-222222222222',
+      inReplyTo: '22222222-2222-4222-8222-222222222222',
       agentKey: 'opaque-key',
       agentSig: 'opaque-sig',
     })
