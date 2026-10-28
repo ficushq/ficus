@@ -82,7 +82,7 @@ const createHostSchema = z.object({
   sshPort: z.number().int().min(1).max(65535).optional(),
   sshUser: z.string().min(1).regex(NO_WHITESPACE_RE, 'sshUser must not contain whitespace/newlines'),
   description: z.string().optional(),
-  squadIds: z.array(z.string().min(1)).optional(),
+  squadIds: z.array(z.string().min(1)).max(100).optional(),
 })
 
 // Squad-surface add-and-grant: same host fields, minus `squadIds` (the target

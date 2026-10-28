@@ -12,9 +12,12 @@ import { GitHubFeedbackError } from '../services/integrations/github/feedback-tr
 import type { Identity } from '../services/rbac/permissions'
 import { eventEmitter } from '../lib/infra/event-emitter'
 
-const permissionArraySchema = z.array(z.string()).refine((perms) => perms.every(isGrantablePermission), {
-  message: 'permissions contains an invalid or non-grantable value (global "*" and unknown permissions are rejected)',
-})
+const permissionArraySchema = z
+  .array(z.string())
+  .max(100)
+  .refine((perms) => perms.every(isGrantablePermission), {
+    message: 'permissions contains an invalid or non-grantable value (global "*" and unknown permissions are rejected)',
+  })
 
 const createRoleSchema = z.object({
   name: z.string().min(1),

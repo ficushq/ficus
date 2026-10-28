@@ -1,3 +1,4 @@
+import { boundedRecord } from '@ficus/shared'
 import { z } from 'zod'
 import { createPrivateKey } from 'node:crypto'
 import { getSecretStore } from '../../secrets'
@@ -56,7 +57,7 @@ export function getGoogleCloudIntegrationSettings() {
   return result
 }
 export async function configureGoogleCloudIntegration(input: unknown, actor: string) {
-  const values = z.record(z.string(), z.string().max(16384).nullable()).parse(input)
+  const values = boundedRecord(z.record(z.string(), z.string().max(16384).nullable()), 256).parse(input)
   const value = values[GOOGLE_CLOUD_CREDENTIAL]
   if (value) parseGoogleServiceAccount(value)
   return writeIntegrationCredentialFields(fields, values, actor)

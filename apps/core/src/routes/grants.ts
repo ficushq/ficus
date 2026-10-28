@@ -11,8 +11,8 @@ const sensitivitySchema = z.enum(['public', 'internal', 'restricted', 'confident
 
 const grantPolicyScopeSchema = z
   .object({
-    sourceTypes: z.array(z.string().min(1)).optional(),
-    paths: z.array(z.string().min(1)).optional(),
+    sourceTypes: z.array(z.string().min(1)).max(100).optional(),
+    paths: z.array(z.string().min(1)).max(100).optional(),
     sensitivity: sensitivitySchema.optional(),
   })
   .strict()

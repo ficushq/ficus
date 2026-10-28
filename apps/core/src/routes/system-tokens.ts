@@ -21,7 +21,7 @@ const platformMaintenanceUpgradePolicy = legacyUpgradePolicy()
 
 const createSystemTokenSchema = z.object({
   name: z.string().min(1).max(200),
-  scopes: z.array(z.string().min(1)).min(1),
+  scopes: z.array(z.string().min(1)).max(100).min(1),
 })
 
 // Managing user-less, scoped automation tokens is privilege-granting — admin-gated.

@@ -656,7 +656,7 @@ authRouter.get('/settings', identityMiddleware, requirePermission('settings:read
 authRouter.put('/settings', identityMiddleware, requirePermission('settings:write'), async (c) => {
   const parsed = z
     .object({
-      allowedDomains: z.array(z.string().trim().min(1)).optional(),
+      allowedDomains: z.array(z.string().trim().min(1)).max(100).optional(),
       requireInvite: z.boolean().optional(),
       defaultSignupRoleId: z.string().uuid().nullable().optional(),
     })

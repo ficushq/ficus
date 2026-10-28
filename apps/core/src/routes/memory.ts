@@ -99,14 +99,16 @@ const ingestUrlBodySchema = z.object({
 })
 
 const workspaceFileSchema = z.object({
-  files: z.array(
-    z.object({
-      path: z.string(),
-      content: z.string().optional(),
-      contentHash: z.string().optional(),
-      event: z.enum(['change', 'delete']),
-    })
-  ),
+  files: z
+    .array(
+      z.object({
+        path: z.string(),
+        content: z.string().optional(),
+        contentHash: z.string().optional(),
+        event: z.enum(['change', 'delete']),
+      })
+    )
+    .max(1000),
   reconcile: z.boolean().optional(),
   skipped: z
     .array(
@@ -116,6 +118,7 @@ const workspaceFileSchema = z.object({
         detail: z.string().optional(),
       })
     )
+    .max(1000)
     .optional(),
 })
 

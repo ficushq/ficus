@@ -1,3 +1,4 @@
+import { boundedRecord } from '@ficus/shared'
 import { BigbrainError } from '../services/integrations/bigbrain/errors'
 import type { BigbrainLocalConnections } from '../services/integrations/bigbrain/local-connections'
 import { BigbrainSetupError, type BigbrainLocalSetup } from '../services/integrations/bigbrain/local-setup'
@@ -389,7 +390,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
     })
     .put(
       '/providers/:provider/service-settings',
-      zValidator('json', z.record(z.string(), z.string().max(16384).nullable())),
+      zValidator('json', boundedRecord(z.record(z.string(), z.string().max(16384).nullable()), 256)),
       async (c) => {
         const provider = c.req.param('provider')
         const denied = await authorize(c, `integrations:write:${provider}`)
@@ -423,7 +424,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
     })
     .put(
       '/providers/:provider/deployment-settings',
-      zValidator('json', z.record(z.string(), z.string().max(16384).nullable())),
+      zValidator('json', boundedRecord(z.record(z.string(), z.string().max(16384).nullable()), 256)),
       async (c) => {
         const provider = c.req.param('provider')
         const denied = await authorize(c, `integrations:write:${provider}`)
@@ -463,7 +464,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
     })
     .put(
       '/providers/:provider/channel-settings',
-      zValidator('json', z.record(z.string(), z.string().max(16384).nullable())),
+      zValidator('json', boundedRecord(z.record(z.string(), z.string().max(16384).nullable()), 256)),
       async (c) => {
         const provider = c.req.param('provider')
         const denied = await authorize(c, `integrations:write:${provider}`)
