@@ -10,6 +10,16 @@ const ACTION_ID = '^[1-9][0-9]*-[0-9a-f]{24}$'
 const UUID = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
 export const GITHUB_FRESHNESS_UNBOUND = 'github_freshness_unbound'
 
+export function rawGitHubFactsSourceId(event: Pick<Event, 'integration' | 'sourceKey'>): string | null {
+  return event.integration === 'github' && new RegExp(`^github-raw-facts:${UUID.slice(1, -1)}$`).test(event.sourceKey)
+    ? event.sourceKey.slice(17)
+    : null
+}
+
+export function rawGitHubFactsSourceIdSQL(sourceKey: SQLWrapper) {
+  return sql`case when ${sourceKey} ~ ${`^github-raw-facts:${UUID.slice(1, -1)}$`} then substring(${sourceKey} from 18)::uuid end`
+}
+
 /** Shape of server-normalized native provenance, NOT trust/approval or a substitute for admission. */
 export function hasGitHubFreshnessBinding(event: Pick<Event, 'integration' | 'sourceKey' | 'fact'>): boolean {
   if (event.integration !== 'github') return true
@@ -31,7 +41,9 @@ export function hasGitHubFreshnessBinding(event: Pick<Event, 'integration' | 'so
   const parent = github?.rawParent
   if (identity(content) && KINDS.includes(content.objectKind))
     return (
-      content.objectKind !== 'action' || (identity(parent) && ['issue', 'pull_request'].includes(parent.objectKind))
+      content.objectKind !== 'action' ||
+      (!!rawGitHubFactsSourceId(event) && !parent && event.fact.data.projection === 'action') ||
+      (identity(parent) && ['issue', 'pull_request'].includes(parent.objectKind))
     )
   if (content != null) return false
   const status = github?.status
@@ -59,6 +71,7 @@ export function gitHubFreshnessBindingSQL(fact: SQLWrapper, sourceKey: SQLWrappe
     OR (${sourceKey} LIKE 'github-feedback:%' AND ${fact} #>> '{github,revisionId}' ~ ${UUID})
     OR (${identity('content')} AND ${fact} #>> '{github,content,objectKind}' IN ('issue', 'pull_request', 'issue_comment', 'review', 'review_comment', 'action')
       AND (${fact} #>> '{github,content,objectKind}' <> 'action' OR
+        (${sourceKey} ~ ${`^github-raw-facts:${UUID.slice(1, -1)}$`} AND ${fact} #>> '{data,projection}' = 'action' AND (${fact} #> '{github,rawParent}' IS NULL OR ${fact} #> '{github,rawParent}' = 'null'::jsonb)) OR
         (${identity('rawParent')} AND ${fact} #>> '{github,rawParent,objectKind}' IN ('issue', 'pull_request'))))
     OR ((${fact} #> '{github,content}' IS NULL OR ${fact} #> '{github,content}' = 'null'::jsonb)
       AND ${fact} #>> '{github,status,data,projection}' = 'status'

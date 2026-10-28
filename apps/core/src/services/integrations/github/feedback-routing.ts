@@ -1,3 +1,5 @@
+import { rawGitHubFactsOrigin, preserveRawGitHubActionFacts, GITHUB_FEEDBACK_OBSOLETE } from './feedback-raw-facts'
+import { rawGitHubFactsSourceId } from './feedback-freshness-binding'
 import { and, eq, gt, ne, sql } from 'drizzle-orm'
 import { eventEmitter } from '../../../lib/infra/event-emitter'
 import {
@@ -103,6 +105,10 @@ export async function isGitHubOutputAdmitted(store: Store, event: Event): Promis
 /** Raw matching is internal only, retrieved through an exact stored association, never merged into delivery. */
 export async function githubMatchingEvent(store: Store, event: Event): Promise<Event> {
   if (event.integration !== 'github') return event
+  if (rawGitHubFactsSourceId(event)) {
+    const source = await rawGitHubFactsOrigin(store, event)
+    return source ? { ...event, fact: source.fact } : event
+  }
   const [proof] = await store.select().from(githubOutputProofs).where(eq(githubOutputProofs.eventId, event.id))
   let source = proof ? await readOutputEvent(store, proof.sourceEventId) : undefined
   if (!proof && event.fact.github?.revisionId && (await isGitHubFeedbackAdmitted(store, event))) {
@@ -145,7 +151,15 @@ async function prepareUnfilteredGitHubOutput(
 ): Promise<GitHubOutputPreparation> {
   try {
     if (!(await observeUnfilteredGitHubFeedback(input))) return settle(GITHUB_FRESHNESS_UNBOUND)
-    return (await isUnfilteredGitHubEvent(db, input)) ? { kind: 'ready', event: input } : settle('github_not_routable')
+    if (await isUnfilteredGitHubEvent(db, input)) return { kind: 'ready', event: input }
+    const afterCommit: Array<() => void> = []
+    const factual = await db.transaction(async (tx) => {
+      await lockGitHubOutputAuthority(tx, input)
+      return preserveRawGitHubActionFacts(tx, input.id, afterCommit)
+    })
+    afterCommit.forEach((callback) => callback())
+    if (factual && (await isUnfilteredGitHubEvent(db, factual))) return { kind: 'ready', event: factual }
+    return settle(GITHUB_FEEDBACK_OBSOLETE)
   } catch (error) {
     if (error instanceof Error && ['feedback_filter_enabled', 'feedback_capacity_deferred'].includes(error.message))
       return DEFER
@@ -188,7 +202,8 @@ async function prepareGitHubOutputInPass(
   // Only a raw provider source is ever settled. Canonical (`github-feedback:`) and status
   // (`github-status:`) effects keep `matchedAt` as their own routing record, which the release
   // worker reads; a dead end for one of those is a deferral.
-  const raw = !input.fact.github?.revisionId && !input.sourceKey.startsWith('github-status:')
+  const raw =
+    !input.fact.github?.revisionId && !input.sourceKey.startsWith('github-status:') && !rawGitHubFactsSourceId(input)
   const settle = (reason: string): GitHubOutputPreparation => (raw ? { kind: 'settle', reason } : DEFER)
   if (input.integration !== 'github') return ready(input)
   if (!reserveGitHubEvent(input.id)) return DEFER
@@ -202,6 +217,7 @@ async function prepareGitHubOutputInPass(
   // Filter OFF: local freshness bookkeeping only; no author gate, provider witness or projection.
   if (!(await isGitHubAuthorFilterEnabled(db, input.authority.squadId)))
     return prepareUnfilteredGitHubOutput(input, settle)
+  if (rawGitHubFactsSourceId(input)) return DEFER // OFF-only facts never inherit a filtered approval.
   let source = input
   const [prior] = await db.select().from(githubOutputProofs).where(eq(githubOutputProofs.eventId, input.id))
   if (prior) {

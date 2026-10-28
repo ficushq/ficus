@@ -91,7 +91,9 @@ async function readProvider<T>(read: () => Promise<T>): Promise<T | null> {
 /**
  * Capture only otherwise-relevant content. An internal live-trust resolver may decide a NEW
  * unambiguous version under the authority lock. Pending history is never upgraded on replay.
- * Does not send, wake, route, or claim triggers. The revision key is stable across source transports.
+ * Does not send, wake, or claim triggers. Obsoleting raw parents may persist factual replacement
+ * intents for existing effects; normal routing and acceptance remain separate. The revision key
+ * is stable across source transports.
  * An action offering parent text has two candidate hashes (factual, with parent text); a replay of
  * either is the same observation, and only a NEW revision chooses between them.
  */
@@ -169,7 +171,8 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
   }
   // The callback's authorization is fresh immediately before entering the transaction.
   if (!(await deps.authorizeSource(event))) throw new Error('feedback_source_unavailable')
-  return db.transaction(async (tx) => {
+  const afterCommit: Array<() => void> = []
+  const result = await db.transaction(async (tx) => {
     // Even storage-only captures must fence every final acceptance of an older revision.
     await lockGitHubTrustAuthority(tx)
     // The relevance read happened before provider I/O; a human may have turned the filter OFF
@@ -341,7 +344,7 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
         .update(githubFeedbackObjects)
         .set({ providerVersion: content.providerVersion })
         .where(eq(githubFeedbackObjects.id, object.id))
-    const obsoleteCount = await obsoleteOlderGitHubFeedback(tx, object.id)
+    const obsoleteCount = await obsoleteOlderGitHubFeedback(tx, object.id, afterCommit)
     const reconciled = await readFeedbackRevision(tx, revision.id)
     if (!reconciled) throw new Error('feedback_capacity_deferred')
     revision = reconciled
@@ -365,6 +368,8 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
       .onConflictDoNothing()
     return { revision, disposition, obsoleteCount, canonicalKey: `github-feedback:${squadId}:${revision.id}` }
   })
+  afterCommit.forEach((callback) => callback())
+  return result
 }
 
 /**

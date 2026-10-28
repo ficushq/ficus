@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test, setSystemTime } from 'bun:test'
-import { eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { createBlankWorkflow, createWorkflowRun } from '@ficus/shared'
 import {
   db,
@@ -41,6 +41,7 @@ import {
   isCurrentIntegrationDelivery,
 } from '../outputs/runtime'
 import * as renewal from './feedback-renewal'
+import { prepareGitHubOutputOutcome } from './feedback-routing'
 import { captureGitHubFeedback, recordCanonicalGitHubFeedback } from './feedback-store'
 import { githubContentHash } from './feedback-envelope'
 import { deliverInboxMessagesToAgent } from '../../inbox/inboxDelivery'
@@ -3517,25 +3518,22 @@ describe('trusted actor actions with the author filter ON (default squad rules)'
         const older = assignedTo('ficus-bot', outsider, { ...at(1), body: 'OLD_RAW_PARENT' }, observation)
         const oldId = await publishIntegrationOutput('github', older, h.authority)
         const messages = await managerMessages(h.managerId)
-        // Issue poll payloads restate updated_at to the lifecycle occurrence time. Their parent
-        // content version is deliberately null; the approved sequence fallback, not that clock,
-        // orders these observations. A later poll is therefore the newer observation here.
-        expect(messages).toHaveLength(observation === 'poll' ? 2 : 1)
+        // These are authentic snapshot clocks, not lifecycle-restated payloads. Both transports
+        // withhold the old prose while preserving that separate assignment as immutable facts.
+        expect(messages).toHaveLength(2)
         expect(messages[0]!.content).toContain(newer.body)
         expect(messages[0]!.content).not.toContain('OLD_RAW_PARENT')
+        expect(messages[1]!.content).toContain('Assignee: @ficus-bot')
+        expect(messages[1]!.content).not.toContain('OLD_RAW_PARENT')
         const audit = await revisions(h.squadId)
         expect(
-          audit.some(
-            (row) =>
-              row.releaseState === 'obsolete' &&
-              row.envelope!.body!.includes(observation === 'poll' ? 'CURRENT_RAW_PARENT' : 'OLD_RAW_PARENT')
-          )
+          audit.some((row) => row.releaseState === 'obsolete' && row.envelope!.body!.includes('OLD_RAW_PARENT'))
         ).toBe(true)
         expect(audit.every((row) => row.decision === 'historical')).toBe(true)
         const [old] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, oldId!))
         expect(old!.matchedAt).not.toBeNull()
-        if (observation === 'webhook') expect(old!.lastErrorCode).toBe('github_not_routable')
-        else expect(older.github!.rawParent!.providerVersion).toBeNull()
+        expect(old!.lastErrorCode).toBe('github_factual_parent_obsolete')
+        expect(older.github!.rawParent!.providerVersion).toBe('2026-10-02T11:01:00.000Z')
         expect(older.github!.rawParent!.objectKind).toBe('issue')
         if (observation === 'poll') expect(older.github!.content!.parentText).toBeUndefined()
       } finally {
@@ -3951,6 +3949,561 @@ test('OFF withholds unbound legacy raw prose with an audit reason, but bound raw
     expect(notices).toHaveLength(1)
     expect(notices[0]!.content).toContain(bound.body)
     expect(await isCurrentIntegrationNotification(db, h.managerId, notices[0]!.id)).toBe(true)
+    expect(h.read).not.toHaveBeenCalled()
+  } finally {
+    await h.close()
+  }
+})
+
+test.each([false, true])(
+  'OFF stale parent preserves immutable facts only for the unaccepted recipient (ack=%s)',
+  async (ack) => {
+    const h = await fixture()
+    const trust = spyOn(await import('./feedback-trust'), 'resolveGitHubAuthorTrust').mockImplementation(() => {
+      throw new Error('OFF must not resolve author trust')
+    })
+    try {
+      await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadId))
+      const manager = await Agent.mustFind(h.managerId)
+      const [other] = await db
+        .insert(agents)
+        .values({ squadId: h.squadId, agentTypeId: manager.agentTypeId, status: 'idle' })
+        .returning()
+      const parent = {
+        id: 20,
+        number: 3,
+        title: 'OLD_PARENT_TITLE',
+        body: 'OLD_PARENT_BODY',
+        user: { id: 2, login: 'author', type: 'User' },
+        created_at: '2026-10-01T10:00:00Z',
+        updated_at: '2026-10-02T10:00:00Z',
+      }
+      const rawFact = githubOutputAdapter.normalize({
+        type: 'pull_request',
+        githubObservation: { kind: 'webhook' },
+        payload: {
+          action: 'review_requested',
+          repository: { id: 10, full_name: 'acme/project' },
+          sender: parent.user,
+          requested_reviewer: { id: 3, login: 'reviewer', type: 'User' },
+          pull_request: parent,
+        },
+      })[0]!
+      const raw = await recordIntegrationOutput('github', rawFact, h.authority)
+      expect((await prepareGitHubOutputOutcome(raw)).kind).toBe('ready')
+      await db
+        .update(integrationOutputEvents)
+        .set({ matchedAt: new Date() })
+        .where(eq(integrationOutputEvents.id, raw.id))
+      const notices = await db
+        .insert(inbox)
+        .values(
+          [h.managerId, other!.id].map((recipientId) => ({
+            recipientType: 'agent' as const,
+            recipientId,
+            senderType: 'system' as const,
+            subject: rawFact.subject,
+            content: rawFact.body!,
+            idempotencyKey: `raw-recipient:${raw.id}:${recipientId}`,
+            metadata: { source: 'integration-notification', integrationEventId: raw.id, wakeEligible: true },
+          }))
+        )
+        .returning()
+      h.useRealSend()
+      await deliverInboxMessagesToAgent(h.managerId, [notices[0]!.id])
+      expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, h.managerId))).toHaveLength(1)
+      if (!ack) await db.update(inbox).set({ deliveredAt: null }).where(eq(inbox.id, notices[0]!.id))
+      const originalRows = await db
+        .select()
+        .from(inbox)
+        .where(
+          inArray(
+            inbox.id,
+            notices.map((n) => n.id)
+          )
+        )
+      const originalReceipts = await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, h.managerId))
+      await publishIntegrationOutput(
+        'github',
+        githubOutputAdapter.normalize({
+          type: 'pull_request',
+          githubObservation: { kind: 'webhook' },
+          payload: {
+            action: 'edited',
+            repository: { id: 10, full_name: 'acme/project' },
+            sender: parent.user,
+            pull_request: {
+              ...parent,
+              title: 'NEW_PARENT_TITLE',
+              body: 'NEW_PARENT_BODY',
+              updated_at: '2026-10-02T10:01:00Z',
+            },
+          },
+        })[0]!,
+        h.authority
+      )
+      const [variant] = await db
+        .select()
+        .from(integrationOutputEvents)
+        .where(eq(integrationOutputEvents.sourceKey, `github-raw-facts:${raw.id}`))
+      expect(variant).toBeDefined()
+      expect(variant!.lastErrorCode).toBe('github_factual_parent_obsolete')
+      expect(JSON.stringify(variant!.fact)).not.toContain('OLD_PARENT')
+      expect(JSON.stringify(variant!.fact)).not.toContain('NEW_PARENT')
+      const replacements = await db
+        .select()
+        .from(inbox)
+        .where(sql`${inbox.metadata}->>'integrationEventId' = ${variant!.id}`)
+      expect(replacements.map((row) => row.recipientId)).toEqual([other!.id])
+      expect(replacements[0]!.content).toContain('review requested')
+      expect(await InboxMessage.isWithheldGitHubNotification(notices[1]!.id)).toBe(true)
+      expect(await isCurrentIntegrationNotification(db, other!.id, replacements[0]!.id)).toBe(true)
+      await deliverInboxMessagesToAgent(other!.id)
+      await reconcileUnmatchedOutputs()
+      const [duplicate] = await db
+        .insert(inbox)
+        .values({
+          recipientType: 'agent',
+          recipientId: other!.id,
+          senderType: 'system',
+          content: replacements[0]!.content,
+          metadata: { source: 'integration-notification', integrationEventId: variant!.id, wakeEligible: true },
+        })
+        .returning()
+      expect(await isCurrentIntegrationNotification(db, other!.id, duplicate!.id)).toBe(false)
+      expect(await InboxMessage.isWithheldGitHubNotification(duplicate!.id)).toBe(true)
+      await deliverInboxMessagesToAgent(other!.id, [replacements[0]!.id, duplicate!.id])
+      expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, other!.id))).toHaveLength(1)
+      expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, h.managerId))).toEqual(
+        originalReceipts
+      )
+      expect(
+        await db
+          .select()
+          .from(inbox)
+          .where(
+            inArray(
+              inbox.id,
+              notices.map((n) => n.id)
+            )
+          )
+      ).toEqual(originalRows)
+      const [savedSource] = await db
+        .select()
+        .from(integrationOutputEvents)
+        .where(eq(integrationOutputEvents.id, raw.id))
+      expect(savedSource!.fact).toEqual(rawFact)
+      expect(savedSource!.lastErrorCode).toBe('github_feedback_obsolete')
+      expect(h.read).not.toHaveBeenCalled()
+    } finally {
+      trust.mockRestore()
+      await h.close()
+    }
+  }
+)
+
+test('OFF partial flow acceptance replaces only unfinished consumers and recovers factual acceptance before ack', async () => {
+  const h = await fixture()
+  try {
+    await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadId))
+    const manager = await Agent.mustFind(h.managerId)
+    const [other] = await db
+      .insert(agents)
+      .values({ squadId: h.squadId, agentTypeId: manager.agentTypeId, status: 'idle' })
+      .returning()
+    const streams = [
+      await h.stream(true, 'pull_request.review_requested'),
+      await h.stream(true, 'pull_request.review_requested'),
+    ]
+    for (const [index, id] of streams.entries())
+      await db
+        .update(workStreamFlowRuns)
+        .set({ attemptAgents: { '1': index ? other!.id : h.managerId } })
+        .where(eq(workStreamFlowRuns.workStreamId, id))
+    const parent = {
+      id: 20,
+      number: 3,
+      title: 'STALE_FLOW_TITLE',
+      body: 'STALE_FLOW_BODY',
+      user: { id: 2, login: 'author', type: 'User' },
+      created_at: '2026-10-01T10:00:00Z',
+      updated_at: '2026-10-02T10:00:00Z',
+    }
+    const event = (action: string, body: string, updated_at: string) =>
+      githubOutputAdapter.normalize({
+        type: 'pull_request',
+        githubObservation: { kind: 'webhook' },
+        payload: {
+          action,
+          repository: { id: 10, full_name: 'acme/project' },
+          sender: parent.user,
+          requested_reviewer: { id: 3, login: 'reviewer', type: 'User' },
+          pull_request: { ...parent, body, updated_at },
+        },
+      })[0]!
+    const sourceId = await publishIntegrationOutput(
+      'github',
+      event('review_requested', parent.body, parent.updated_at),
+      h.authority
+    )
+    const originalNotices = await db
+      .select()
+      .from(inbox)
+      .where(sql`${inbox.metadata}->>'integrationEventId' = ${sourceId}`)
+    expect(originalNotices).toHaveLength(2)
+    h.useRealSend()
+    await reconcileOutputDeliveries(streams[0]!)
+    expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, h.managerId))).toHaveLength(1)
+    const accepted = (
+      await db
+        .select()
+        .from(inbox)
+        .where(eq(inbox.id, originalNotices.find((row) => row.recipientId === h.managerId)!.id))
+    )[0]!
+    await publishIntegrationOutput('github', event('edited', 'NEW_FLOW_PARENT', '2026-10-02T10:01:00Z'), h.authority)
+    const [variant] = await db
+      .select()
+      .from(integrationOutputEvents)
+      .where(eq(integrationOutputEvents.sourceKey, `github-raw-facts:${sourceId}`))
+    expect(variant).toBeDefined()
+    for (const id of streams) await reconcileOutputDeliveries(id)
+    const facts = await db
+      .select()
+      .from(inbox)
+      .where(sql`${inbox.metadata}->>'integrationEventId' = ${variant!.id}`)
+    expect(facts.map((row) => row.recipientId)).toEqual([other!.id])
+    expect(facts[0]!.content).toContain('review requested')
+    expect(facts[0]!.content).not.toContain('STALE_FLOW')
+    expect(facts[0]!.content).not.toContain('NEW_FLOW_PARENT')
+    const [pending] = await db
+      .select()
+      .from(integrationOutputDeliveries)
+      .where(
+        and(
+          eq(integrationOutputDeliveries.eventId, variant!.id),
+          eq(integrationOutputDeliveries.workStreamId, streams[1]!)
+        )
+      )
+    expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, other!.id))).toHaveLength(1)
+    // Simulate the receipt committing before the acknowledgement; retry must settle, not repeat.
+    await db.update(inbox).set({ deliveredAt: null }).where(eq(inbox.id, facts[0]!.id))
+    await reconcileOutputDeliveries(streams[1]!)
+    expect(
+      (await db.select().from(integrationOutputDeliveries).where(eq(integrationOutputDeliveries.id, pending!.id)))[0]!
+        .status
+    ).toBe('delivered')
+    expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, other!.id))).toHaveLength(1)
+    expect((await db.select().from(inbox).where(eq(inbox.id, accepted.id)))[0]).toEqual(accepted)
+    expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, h.managerId))).toHaveLength(1)
+    expect(h.read).not.toHaveBeenCalled()
+  } finally {
+    await h.close()
+  }
+})
+
+async function rawFactualFixture() {
+  const h = await fixture()
+  await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadId))
+  const parent = {
+    id: 20,
+    number: 3,
+    title: 'OLD_FACT_TITLE',
+    body: 'OLD_FACT_BODY',
+    user: { id: 2, login: 'author', type: 'User' },
+    created_at: '2026-10-01T10:00:00Z',
+    updated_at: '2026-10-02T10:00:00Z',
+  }
+  const event = (action: string, update = false) =>
+    githubOutputAdapter.normalize({
+      type: 'pull_request',
+      githubObservation: { kind: 'webhook' },
+      payload: {
+        action,
+        repository: { id: 10, full_name: 'acme/project' },
+        sender: parent.user,
+        requested_reviewer: { id: 3, login: 'reviewer', type: 'User' },
+        pull_request: update ? { ...parent, body: 'NEW_FACT_BODY', updated_at: '2026-10-02T10:01:00Z' } : parent,
+      },
+    })[0]!
+  const source = await recordIntegrationOutput('github', event('review_requested'), h.authority)
+  expect((await prepareGitHubOutputOutcome(source)).kind).toBe('ready')
+  await db
+    .update(integrationOutputEvents)
+    .set({ matchedAt: new Date() })
+    .where(eq(integrationOutputEvents.id, source.id))
+  return {
+    ...h,
+    source,
+    async stale() {
+      await publishIntegrationOutput('github', event('edited', true), h.authority)
+      return (
+        await db
+          .select()
+          .from(integrationOutputEvents)
+          .where(eq(integrationOutputEvents.sourceKey, `github-raw-facts:${source.id}`))
+      )[0]
+    },
+  }
+}
+
+test.each(['automatic', 'screened', 'allow_once'] as const)(
+  'OFF factual replacement never transfers a filtered %s source decision',
+  async (decision) => {
+    const h = await rawFactualFixture()
+    try {
+      const { githubFeedbackSources } = await import('../../../db')
+      const associations = await db
+        .select()
+        .from(githubFeedbackSources)
+        .where(eq(githubFeedbackSources.eventId, h.source.id))
+      await db
+        .update(githubFeedbackSources)
+        .set({ unfiltered: false })
+        .where(eq(githubFeedbackSources.eventId, h.source.id))
+      await db
+        .update(githubFeedbackRevisions)
+        .set({
+          decision,
+          ...(decision === 'allow_once' ? { decidedByUserId: h.userId, decidedAt: new Date() } : {}),
+          releaseState: 'ready',
+        })
+        .where(eq(githubFeedbackRevisions.id, associations[0]!.revisionId))
+      expect(await h.stale()).toBeUndefined()
+      expect(
+        (
+          await db
+            .select()
+            .from(githubFeedbackRevisions)
+            .where(eq(githubFeedbackRevisions.id, associations[0]!.revisionId))
+        )[0]!.decision
+      ).toBe(decision)
+      expect(h.read).not.toHaveBeenCalled()
+    } finally {
+      await h.close()
+    }
+  }
+)
+
+test('OFF factual aliases bind exact immutable source and authority; ON cannot upgrade them or read providers', async () => {
+  const h = await rawFactualFixture()
+  try {
+    const { isGitHubOutputAdmitted } = await import('./feedback-routing')
+    const { rawGitHubFactsOrigin } = await import('./feedback-raw-facts')
+    const variant = (await h.stale())!
+    expect(await isGitHubOutputAdmitted(db, variant)).toBe(true)
+    expect((await rawGitHubFactsOrigin(db, variant))!.id).toBe(h.source.id)
+    expect(await isGitHubOutputAdmitted(db, { ...variant, fact: { ...variant.fact, body: 'FORGED_FACT' } })).toBe(false)
+    expect(await isGitHubOutputAdmitted(db, { ...variant, sourceKey: `github-raw-facts:${crypto.randomUUID()}` })).toBe(
+      false
+    )
+    expect(
+      await isGitHubOutputAdmitted(db, {
+        ...variant,
+        authority: { ...h.authority, connectionRevision: crypto.randomUUID() },
+      })
+    ).toBe(false)
+    const before = await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.squadId, h.squadId))
+    await db.update(squads).set({ githubAuthorFilter: true }).where(eq(squads.id, h.squadId))
+    expect((await prepareGitHubOutputOutcome(variant)).kind).toBe('defer')
+    expect(await isGitHubOutputAdmitted(db, variant)).toBe(false)
+    expect(
+      await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.squadId, h.squadId))
+    ).toEqual(before)
+    await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadId))
+    expect(await isGitHubOutputAdmitted(db, variant)).toBe(true)
+    expect(h.read).not.toHaveBeenCalled()
+  } finally {
+    await h.close()
+  }
+})
+
+test.each([false, true])(
+  'factual recipient dedupe requires actual accepted inbox membership, not just a receipt client ID (%s)',
+  async (bound) => {
+    const h = await rawFactualFixture()
+    try {
+      const { executions, messages } = await import('../../../db')
+      const { mayReceiveRawGitHubFacts } = await import('./feedback-raw-facts')
+      const [notice] = await db
+        .insert(inbox)
+        .values({
+          recipientType: 'agent',
+          recipientId: h.managerId,
+          senderType: 'system',
+          content: h.source.fact.body!,
+          metadata: { source: 'integration-notification', integrationEventId: h.source.id },
+        })
+        .returning()
+      const [execution] = await db.insert(executions).values({ agentId: h.managerId }).returning()
+      const clientId = `github-feedback:${h.source.id}:${notice!.id}`
+      const [message] = await db
+        .insert(messages)
+        .values({
+          agentId: h.managerId,
+          role: 'human',
+          content: 'Accepted synthetic message',
+          metadata: {
+            source: 'inbox',
+            clientId,
+            executionId: execution!.id,
+            inboxMessageIds: [bound ? notice!.id : crypto.randomUUID()],
+          },
+        })
+        .returning()
+      await db.insert(chatSendReceipts).values({
+        agentId: h.managerId,
+        clientId,
+        requestHash: 'a'.repeat(64),
+        state: 'accepted',
+        messageId: message!.id,
+        executionId: execution!.id,
+        acceptedAt: new Date(),
+        disposition: 'turn',
+      })
+      const variant = (await h.stale())!
+      expect(await mayReceiveRawGitHubFacts(db, variant, h.managerId)).toBe(!bound)
+      expect(
+        (
+          await db
+            .select()
+            .from(inbox)
+            .where(sql`${inbox.metadata}->>'integrationEventId' = ${variant.id}`)
+        ).length
+      ).toBe(bound ? 0 : 1)
+      expect((await db.select().from(messages).where(eq(messages.id, message!.id)))[0]).toEqual(message)
+    } finally {
+      await h.close()
+    }
+  }
+)
+
+test('factual receipt dedupe spans native aliases for the same action but never another squad', async () => {
+  const h = await rawFactualFixture()
+  let aliasId: string | undefined
+  try {
+    const { mayReceiveRawGitHubFacts } = await import('./feedback-raw-facts')
+    const variant = (await h.stale())!
+    const [alias] = await db
+      .insert(integrationOutputEvents)
+      .values({
+        integration: 'github',
+        sourceKey: `native-alias:${crypto.randomUUID()}`,
+        eventKey: h.source.eventKey,
+        fact: h.source.fact,
+        authority: h.authority,
+      })
+      .returning()
+    aliasId = alias!.id
+    await db.insert(inbox).values({
+      recipientType: 'agent',
+      recipientId: h.managerId,
+      senderType: 'system',
+      content: h.source.fact.body!,
+      deliveredAt: new Date(),
+      metadata: { source: 'integration-notification', integrationEventId: aliasId },
+    })
+    expect(await mayReceiveRawGitHubFacts(db, variant, h.managerId)).toBe(false)
+    await db
+      .update(integrationOutputEvents)
+      .set({ authority: { ...h.authority, squadId: crypto.randomUUID() } })
+      .where(eq(integrationOutputEvents.id, aliasId))
+    expect(await mayReceiveRawGitHubFacts(db, variant, h.managerId)).toBe(true)
+  } finally {
+    if (aliasId) await db.delete(integrationOutputEvents).where(eq(integrationOutputEvents.id, aliasId))
+    await h.close()
+  }
+})
+
+test('stale OFF creation preserves its existing paused stream and owner setup, even before the original notice persisted', async () => {
+  const h = await rawFactualFixture()
+  try {
+    const streamId = await h.stream(true, 'pull_request.review_requested')
+    await db.update(workStreams).set({ ownerAgentId: h.managerId }).where(eq(workStreams.id, streamId))
+    await db.insert(integrationOutputTriggerRuns).values({
+      squadId: h.squadId,
+      triggerId: 'existing-trigger',
+      sourceKey: 'github:any-account',
+      resourceKey: h.source.fact.resourceKey,
+      eventId: h.source.id,
+      workStreamId: streamId,
+    })
+    const variant = (await h.stale())!
+    const notices = await db
+      .select()
+      .from(inbox)
+      .where(sql`${inbox.metadata}->>'integrationEventId' = ${variant.id}`)
+    expect(notices).toHaveLength(1)
+    expect(notices[0]!.metadata?.integrationCreationNotice).toBe(true)
+    expect(notices[0]!.content).toContain('workflow is paused')
+    expect(notices[0]!.content).toContain('ficus workstream resume')
+    expect(notices[0]!.content).toContain('review requested')
+    expect(notices[0]!.content).not.toContain('OLD_FACT')
+    expect(notices[0]!.content).not.toContain('NEW_FACT_BODY')
+    await reconcileUnmatchedOutputs()
+    expect((await h.effects()).triggers).toBe(1)
+    expect((await h.effects()).streams).toBe(1)
+    expect(h.read).not.toHaveBeenCalled()
+  } finally {
+    await h.close()
+  }
+})
+
+test('OFF factual final acceptance rejects raw prose even when a system inbox row names the valid factual alias', async () => {
+  const h = await rawFactualFixture()
+  try {
+    const variant = (await h.stale())!
+    const [notice] = await db
+      .insert(inbox)
+      .values({
+        recipientType: 'agent',
+        recipientId: h.managerId,
+        senderType: 'system',
+        subject: variant.fact.subject,
+        content: h.source.fact.body!,
+        metadata: { source: 'integration-notification', integrationEventId: variant.id, wakeEligible: true },
+      })
+      .returning()
+    expect(await isCurrentIntegrationNotification(db, h.managerId, notice!.id)).toBe(false)
+    expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, h.managerId))).toHaveLength(0)
+  } finally {
+    await h.close()
+  }
+})
+
+test('pre-upgrade OFF action provenance without rawParent stays unbound; it cannot manufacture factual recovery', async () => {
+  const h = await fixture()
+  try {
+    await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, h.squadId))
+    const legacy = githubOutputAdapter.normalize({
+      type: 'pull_request',
+      githubObservation: { kind: 'webhook' },
+      payload: {
+        action: 'review_requested',
+        repository: { id: 10, full_name: 'acme/project' },
+        sender: { id: 2, login: 'outside', type: 'User' },
+        pull_request: {
+          id: 20,
+          number: 3,
+          title: 'LEGACY_PARENT',
+          body: 'LEGACY_PARENT_BODY',
+          user: { id: 2, login: 'outside', type: 'User' },
+          updated_at: '2026-10-02T10:00:00Z',
+        },
+      },
+    })[0]!
+    expect(legacy.github!.content!.nativeId).toBeTruthy()
+    delete legacy.github!.rawParent
+    const id = await publishIntegrationOutput('github', legacy, h.authority)
+    const [source] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, id!))
+    expect(source!.lastErrorCode).toBe('github_freshness_unbound')
+    expect(source!.fact).toEqual(legacy)
+    expect((await h.effects()).inbox).toBe(0)
+    expect(
+      await db
+        .select()
+        .from(integrationOutputEvents)
+        .where(eq(integrationOutputEvents.sourceKey, `github-raw-facts:${id}`))
+    ).toHaveLength(0)
     expect(h.read).not.toHaveBeenCalled()
   } finally {
     await h.close()

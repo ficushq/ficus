@@ -10,6 +10,8 @@ import {
   type DbTx,
 } from '../../../db'
 
+import { GITHUB_FEEDBACK_OBSOLETE, preserveRawGitHubActionFacts } from './feedback-raw-facts'
+
 type ReadStore = Pick<typeof db, 'select'>
 
 type FeedbackClock = {
@@ -85,7 +87,11 @@ export async function isCurrentGitHubFeedbackRevision(store: ReadStore, revision
  * Keep the original decision, hold reason and immutable snapshot as audit evidence. Invalidate the
  * decision version and release lease so a displayed selection or in-flight worker cannot revive it.
  */
-export async function obsoleteOlderGitHubFeedback(tx: DbTx, objectId: string): Promise<number> {
+export async function obsoleteOlderGitHubFeedback(
+  tx: DbTx,
+  objectId: string,
+  afterCommit: Array<() => void> = []
+): Promise<number> {
   const [object] = await tx.select().from(githubFeedbackObjects).where(eq(githubFeedbackObjects.id, objectId))
   if (!object) throw new Error('feedback_capture_failed')
   const newerExists = knownNewerRevision(tx, object)
@@ -143,11 +149,27 @@ export async function obsoleteOlderGitHubFeedback(tx: DbTx, objectId: string): P
         )
       )
     )
+  const rawActions = await tx
+    .select({ id: integrationOutputEvents.id })
+    .from(integrationOutputEvents)
+    .where(
+      and(
+        inArray(integrationOutputEvents.id, raw),
+        sql`${integrationOutputEvents.fact} #>> '{github,content,objectKind}' = 'action'`,
+        sql`${integrationOutputEvents.fact} #> '{github,rawParent}' IS NOT NULL`,
+        sql`${integrationOutputEvents.lastErrorCode} IS DISTINCT FROM ${GITHUB_FEEDBACK_OBSOLETE}`
+      )
+    )
+  for (const source of rawActions) await preserveRawGitHubActionFacts(tx, source.id, afterCommit)
+  await tx
+    .update(integrationOutputEvents)
+    .set({ lastErrorCode: GITHUB_FEEDBACK_OBSOLETE })
+    .where(inArray(integrationOutputEvents.id, raw))
   await tx
     .update(integrationOutputDeliveries)
     .set({
       status: 'superseded',
-      reason: 'Feedback revision obsolete',
+      reason: GITHUB_FEEDBACK_OBSOLETE,
       updatedAt: new Date(),
     })
     .where(

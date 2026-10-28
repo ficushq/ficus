@@ -9,7 +9,8 @@ import {
   type DbTx,
 } from '../../../db'
 
-import { hasGitHubFreshnessBinding } from './feedback-freshness-binding'
+import { rawGitHubFactsOrigin } from './feedback-raw-facts'
+import { hasGitHubFreshnessBinding, rawGitHubFactsSourceId } from './feedback-freshness-binding'
 import { outputSnapshotMatches, readFeedbackRevision } from './feedback-pass-read'
 import { isCurrentGitHubFeedbackRevision } from './feedback-obsolescence'
 import { isGitHubQuotedParentFresh } from './feedback-parent'
@@ -44,6 +45,7 @@ export async function isGitHubAuthorFilterEnabled(store: Store, squadId: string)
  */
 export async function isUnfilteredGitHubEvent(store: Store, event: Event): Promise<boolean> {
   if (!hasGitHubFreshnessBinding(event)) return false
+  if (rawGitHubFactsSourceId(event) && !(await rawGitHubFactsOrigin(store, event))) return false
   if (event.sourceKey.startsWith('github-status:')) return true
   if (event.sourceKey.startsWith('github-feedback:')) {
     // A human deny (or a settled/obsolete release) is final in every mode.
@@ -83,7 +85,9 @@ export async function isUnfilteredGitHubEvent(store: Store, event: Event): Promi
   const expected = event.fact.github?.content ? (event.fact.github.rawParent ? 2 : 1) : 0
   if (
     captured.length !== expected ||
-    (event.fact.github?.content?.objectKind === 'action' && !event.fact.github.rawParent)
+    (event.fact.github?.content?.objectKind === 'action' &&
+      !event.fact.github.rawParent &&
+      !rawGitHubFactsSourceId(event))
   )
     return false
   for (const observation of captured) {

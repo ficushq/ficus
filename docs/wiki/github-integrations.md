@@ -351,13 +351,13 @@ covers the captured older text too. Other sources still require exact text.
 History verification establishes authorship, never freshness or permission to
 deliver an obsolete revision:
 
-| Edit history                                                                                                             | Result                                                       |
-| ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
-| Never edited                                                                                                             | `creation` by the author; delivered if the author is trusted |
-| Edited; the author and every editor (plus the signed sender of an `edited` webhook) trusted                              | `verified_edit`; delivered automatically                     |
-| Any editor not trusted                                                                                                   | held (`untrusted_editor`)                                    |
-| Deleted or unidentifiable editor, history over 50 entries, different object, unauthenticated stale text, a refused query | held (`unknown_editor`)                                      |
-| GitHub unavailable or the pass's provider budget spent                                                                   | capture retried later, nothing written                       |
+| Edit history                                                                                                                                                           | Result                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Never edited, with matching captured/current text                                                                                                                      | `creation` by the author; delivered if the author is trusted |
+| Edited; the author and every editor (plus the signed sender of an `edited` webhook) trusted                                                                            | `verified_edit`; delivered automatically                     |
+| Any editor not trusted                                                                                                                                                 | held (`untrusted_editor`)                                    |
+| Contradictory different text with empty history, deleted/unidentifiable editor, history over 50 entries, different object, unauthenticated stale text, a refused query | held (`unknown_editor`)                                      |
+| GitHub unavailable or the pass's provider budget spent                                                                                                                 | capture retried later, nothing written                       |
 
 The editors are bound into the reviewed hash (`data.editors`), so a decision
 applies to exactly that text and that set of editors; a later edit is a new
@@ -398,9 +398,11 @@ false for existing sources), never a transported trust flag. Former filtered
 sources and projected status events cannot replay raw, and human denies remain
 final. Raw action parent snapshots are normalized independently of actor trust,
 including polls; old action facts without that native parent provenance fail
-closed. Issue polls intentionally have no provider content clock because their
-`updated_at` is restated to the lifecycle occurrence time; the same sequence
-fallback applies. Partial raw bookkeeping remains eligible for unmatched recovery.
+closed. Issue polls retain the authenticated API snapshot `updated_at` separately
+from the payload clock restated for the lifecycle occurrence. The snapshot clock
+orders its embedded parent text; lifecycle timing and event deduplication stay
+unchanged. Sequence fallback applies only to equal or genuinely unknown version
+clocks. Partial raw bookkeeping remains eligible for unmatched recovery.
 A mode change never turns historical OFF bookkeeping into canonical approval.
 Both unfinished raw and canonical flow deliveries become `superseded` when their
 tracked version is older; accepted effects and source facts are not rewritten.
@@ -485,10 +487,25 @@ fallback when its factual actor remains trusted and **no** target has accepted a
 effect, including durable queue acceptance before inbox acknowledgement. Its
 old immutable envelope becomes obsolete (`parent_content_stale`). A human-approved
 or model-screened stale quotation instead returns to Held/Pending with that
-reason for renewed review; its approval is never transferred to a factual-only
-hash, and the original decision audit is retained. An already-accepted effect is
+reason, **deny-only**: Allow once/Allow and trust are refused, including bulk
+approvals and filter-OFF release. Denial resolves it without another approval/release
+loop. Its approval is never transferred to a factual-only hash, and the original
+decision audit is retained. An already-accepted effect is
 never repeated as a replacement. Other trust revocations follow the normal hold
-(`trust_revoked`). Polled actions offer no variant and stay held.
+(`trust_revoked`). Polled actions offer no trusted parent-text variant and stay held.
+
+**Raw OFF actions have a separate factual-only recovery path** (`feedback-raw-facts.ts`).
+If a bound raw action's parent becomes obsolete while its own action remains current,
+Ficus persists an immutable `github-raw-facts:` event with only the normalized action
+facts. It does not substitute new parent prose, check author trust, or transfer a
+human/model decision. Existing queued effect scopes are retained; trigger receipts
+prevent recreating an existing work stream, and its owner setup notice is preserved.
+Only still-unaccepted recipients receive the factual variant. Original and replacement
+receipts (including acceptance before inbox acknowledgement and native aliases) dedupe
+per recipient under the same final authority lock. Accepted messages/receipts and raw
+source snapshots are unchanged; retries cannot send the fact twice. The original audit
+reason is `github_feedback_obsolete`; the factual variant records
+`github_factual_parent_obsolete`. It is OFF-only, not canonical approval after a toggle.
 
 Rule matching and
 work-stream bindings still read the source fact, so predicates such as
@@ -537,7 +554,8 @@ Canonical and status effects keep their own routing record.
 
 Turning the filter OFF (`author-filter-setting.ts`) records a one-time allow by
 that human for each held revision with readable content, released the same way.
-Held revisions with unavailable content stay pending. Turning it back ON never
+Held revisions with unavailable content stay pending. Permanently stale parent
+quotations (`parent_content_stale`) remain deny-only and are not released by this toggle. Turning it back ON never
 re-holds released events.
 
 **Decision-model screening** (`feedback-screen-policy.ts`, `feedback-screening.ts`)
@@ -614,7 +632,11 @@ This enriches newly polled events only, never rebinds or replays legacy messages
 native object/version provenance is hidden from list, search, count, single and
 attachment reads, and final acceptance refuses it **in every mode, including OFF**.
 This ends the old OFF rollout expectation for unbound undelivered messages; turning
-filtering off cannot restore them. Native-bound raw OFF routing remains unchanged
+filtering off cannot restore them. This also includes **pre-upgrade queued OFF
+`review_requested`, `assigned`, and `labeled` raw notifications with native provenance
+for the action itself but no `rawParent` binding for their embedded issue/PR title or
+body**. Those in-flight notices will not be delivered after upgrade, and cannot use
+the new factual recovery path without that original parent provenance. Native-bound raw OFF routing remains unchanged
 and never adds author-trust checks. No identity/version is guessed, no source is
 backfilled and nothing is replayed. The immutable event/inbox rows remain available
 for audit; preparation/renewal records `github_freshness_unbound` on the source event

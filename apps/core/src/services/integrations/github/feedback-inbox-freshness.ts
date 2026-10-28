@@ -1,6 +1,7 @@
 import { and, eq, ne, not, or, sql, type SQLWrapper } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { db, githubFeedbackRevisions, githubFeedbackSources, githubOutputProofs } from '../../../db'
+import { rawGitHubFactsProofSQL } from './feedback-raw-facts'
 import { currentGitHubFeedbackRevisionSQL } from './feedback-obsolescence'
 import { gitHubQuotedParentFreshSQL } from './feedback-parent'
 import { gitHubFeedbackRevisionIdSQL, gitHubFreshnessBindingSQL } from './feedback-freshness-binding'
@@ -50,7 +51,13 @@ export function gitHubInboxEventFreshSQL(
           sql`${source.squadId} is distinct from ${squadId}`,
           sql`${revision.squadId} is distinct from ${squadId}`,
           eq(revision.decision, 'deny'),
-          not(freshRevision!)
+          not(
+            and(
+              ne(revision.releaseState, 'obsolete'),
+              currentGitHubFeedbackRevisionSQL(revision.id, squadId),
+              sql`case when ${sourceKey} LIKE 'github-raw-facts:%' then ${gitHubQuotedParentFreshSQL(squadId, fact)} else ${gitHubQuotedParentFreshSQL(squadId, revision.envelope)} end`
+            )
+          )
         )
       )
     )
@@ -58,7 +65,8 @@ export function gitHubInboxEventFreshSQL(
     .select({ id: githubOutputProofs.eventId })
     .from(githubOutputProofs)
     .where(and(eq(githubOutputProofs.sourceEventId, eventId), ne(githubOutputProofs.eventId, eventId)))
-  return sql<boolean>`(${gitHubFreshnessBindingSQL(fact, sourceKey)} AND case
+  return sql<boolean>`(${gitHubFreshnessBindingSQL(fact, sourceKey)}
+    AND (${sourceKey} NOT LIKE 'github-raw-facts:%' OR ${rawGitHubFactsProofSQL(eventId, fact, sourceKey)}) AND case
     when ${sourceKey} LIKE 'github-status:%' then true
     when ${sourceKey} LIKE 'github-feedback:%' then exists (${canonical})
     when ${fact} #> '{github,content}' is null OR ${fact} #> '{github,content}' = 'null'::jsonb then true

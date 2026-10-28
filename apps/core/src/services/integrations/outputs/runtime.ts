@@ -1,3 +1,5 @@
+import { mayReceiveRawGitHubFacts, GITHUB_FACTUAL_PARENT_OBSOLETE } from '../github/feedback-raw-facts'
+import { rawGitHubFactsSourceId } from '../github/feedback-freshness-binding'
 import { z } from 'zod'
 import { waitsForAgent } from '../../work-streams/wait-scope'
 import { awaitsCodeHostDelivery } from '../../workflows/delivery-state'
@@ -484,7 +486,10 @@ async function finalizeOutputRouting(event: Event) {
   if (refused) return
   await db
     .update(integrationOutputEvents)
-    .set({ matchedAt: new Date(), lastErrorCode: null })
+    .set({
+      matchedAt: new Date(),
+      lastErrorCode: rawGitHubFactsSourceId(event) ? GITHUB_FACTUAL_PARENT_OBSOLETE : null,
+    })
     // A stale observation must not settle stronger native evidence after it was
     // persisted. If native routing crashes, that row stays in the durable retry queue.
     .where(
@@ -675,6 +680,8 @@ async function reconcileOutputDeliveryCandidates(
               : !owner || ['terminated', 'terminating'].includes(owner.status)
                 ? 'Work stream parked; owner unavailable'
                 : ''
+          if (!holdReason && ownerId && !(await mayReceiveRawGitHubFacts(tx, event, ownerId)))
+            holdReason = 'Work stream parked; owner already received fact'
           if (!holdReason && ownerId) {
             const notice = await InboxMessage.persistSystemAgentOnceInTransaction(
               tx,
@@ -708,7 +715,25 @@ async function reconcileOutputDeliveryCandidates(
           .where(eq(integrationOutputDeliveries.id, delivery.id))
         continue
       }
-      const recipients = outputRecipients(run, stream, delivery.subscription, squad?.managerId)
+      const audience = outputRecipients(run, stream, delivery.subscription, squad?.managerId)
+      const recipients = [] as typeof audience
+      for (const target of audience)
+        if (
+          await mayReceiveRawGitHubFacts(
+            tx,
+            event,
+            target.agentId,
+            delivery.targets.find((existing) => existing.agentId === target.agentId)?.inboxId
+          )
+        )
+          recipients.push(target)
+      if (rawGitHubFactsSourceId(event) && audience.length && !recipients.length) {
+        await tx
+          .update(integrationOutputDeliveries)
+          .set({ status: 'superseded', reason: 'Factual event already accepted by recipients', updatedAt: new Date() })
+          .where(eq(integrationOutputDeliveries.id, delivery.id))
+        continue
+      }
       if (
         recipients.length &&
         (
@@ -918,6 +943,7 @@ export async function isCurrentIntegrationDelivery(store: Store, deliveryId: str
     !(await shouldNotifyEvent(store, event))
   )
     return false
+  if (!(await mayReceiveRawGitHubFacts(store, event, agentId, inboxId))) return false
   const matching = await githubMatchingEvent(store, event)
   const current = codeHostingRegistry
     .subscriptions(run.state.definition, stream.metadata)
@@ -995,10 +1021,35 @@ export async function isCurrentIntegrationNotification(store: Store, agentId: st
     return false
   const event = await readOutputEvent(store, message.metadata.integrationEventId)
   if (!event) return false
+  if (!(await mayReceiveRawGitHubFacts(store, event, agentId, inboxId))) return false
   // Other providers retain their existing notification behavior. GitHub connection authority
   // and the immutable canonical decision are independent; neither can replace the other.
   if (event.integration !== 'github') return true
   const [recipient] = await store.select({ squadId: agents.squadId }).from(agents).where(eq(agents.id, agentId))
+  // A new OFF factual alias has its own immutable envelope. Never admit an old raw
+  // inbox body merely because it names that alias; legacy raw routing below is unchanged.
+  if (rawGitHubFactsSourceId(event)) {
+    const workStreamId = typeof message.metadata.workStreamId === 'string' ? message.metadata.workStreamId : undefined
+    const creation = message.metadata.integrationCreationNotice === true
+    const [stream] =
+      creation && workStreamId ? await store.select().from(workStreams).where(eq(workStreams.id, workStreamId)) : []
+    if (creation && (!stream || stream.ownerAgentId !== agentId || !['active', 'queued'].includes(stream.status)))
+      return false
+    const content =
+      creation && stream
+        ? creationNotificationContent(event, stream)
+        : defaultNotificationContent(
+            event,
+            workStreamId,
+            undefined,
+            event.authority.kind === 'connection' ? event.authority.squadId : undefined
+          )
+    if (
+      message.content !== content ||
+      message.subject !== (creation ? `New work stream you own: ${event.fact.subject}` : event.fact.subject)
+    )
+      return false
+  }
   // Filter OFF: connection authority and version freshness still apply, but the
   // stream-state and exact-content gates below bind a delivery to a reviewed decision, which a
   // filter-OFF squad has none of: before the filter its notices were accepted as persisted

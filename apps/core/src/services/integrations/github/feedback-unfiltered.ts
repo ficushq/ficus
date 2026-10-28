@@ -1,7 +1,7 @@
 import { db, type integrationOutputEvents } from '../../../db'
 import { eventEmitter } from '../../../lib/infra/event-emitter'
 import { authorized } from '../outputs/authority'
-import { hasGitHubFreshnessBinding } from './feedback-freshness-binding'
+import { hasGitHubFreshnessBinding, rawGitHubFactsSourceId } from './feedback-freshness-binding'
 import { captureGitHubFeedback } from './feedback-store'
 
 type Event = typeof integrationOutputEvents.$inferSelect
@@ -14,6 +14,7 @@ type Event = typeof integrationOutputEvents.$inferSelect
  */
 export async function observeUnfilteredGitHubFeedback(event: Event): Promise<boolean> {
   if (!hasGitHubFreshnessBinding(event)) return false
+  if (rawGitHubFactsSourceId(event)) return true
   if (event.fact.github?.revisionId || event.sourceKey.startsWith('github-status:')) return true
   const content = event.fact.github?.content
   if (!content) return true // server-normalized content-free native outputs only

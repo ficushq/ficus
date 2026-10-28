@@ -125,7 +125,11 @@ parent quotations, not just automatic delivery. Ficus keeps an audit snapshot of
 dropped older events.
 Undelivered legacy GitHub prose without native object/version provenance is also
 withheld in every mode, including off; turning filtering off no longer restores
-those old unbound messages. Their audit reason is `github_freshness_unbound`.
+those old unbound messages. This includes pre-upgrade queued off-mode
+`review_requested`, `assigned`, and `labeled` notifications: even if they identify the
+action itself, they lack the new `rawParent` binding for the issue or pull request
+text embedded in the message, so those in-flight notices will not be delivered
+after upgrade. Their audit reason is `github_freshness_unbound`.
 Ficus does not guess their identity or version or replay them. Already accepted
 messages and receipts remain history; other providers and proven content-free
 status facts are unchanged. New native-bound raw feedback still routes without
@@ -253,9 +257,18 @@ Earlier delivery receipts do not authorize sending old text again. An action
 waiting to quote an issue or pull request is checked again before delivery: if
 the parent changed, the old quotation is withheld, even with author filtering
 off. An automatic action may be replaced with its trusted factual message alone
-if no recipient accepted it. A stale human-approved quotation returns for review;
-its approval never silently transfers to a different message. Older quotations
+if no recipient accepted it. A stale human-approved quotation returns as **deny-only**:
+it cannot be allowed again, even in a bulk approval or by turning filtering off.
+Its approval never silently transfers to a different message. Older quotations
 without enough parent provenance are also withheld.
+
+With filtering **off**, a modern native-bound action whose parent goes stale instead
+gets an immutable factual-only variant for recipients who have not accepted the
+original. It contains no old or replacement parent prose and adds no author-trust
+check or approval. Recipients who already accepted keep their original message and
+receipt and get nothing new, including after retries or partial delivery. Original
+snapshots remain auditable as `github_feedback_obsolete`; the factual variant records
+`github_factual_parent_obsolete`. This does not rebind or replay pre-upgrade notices.
 
 Allowed events are delivered by normal routing at the time you approve, so they
 reach whoever owns that work now. Paused or parked work receives them the usual

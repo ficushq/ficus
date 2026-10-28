@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, sql, type SQLWrapper } from 'drizzle-orm'
 import { db, integrationOutputEvents, githubOutputProofs, githubFeedbackRevisions, inbox, type DbTx } from '../../../db'
 import { githubOutputPass, GITHUB_PASS_READ_LIMIT } from './feedback-pass'
 
@@ -157,13 +157,13 @@ const UUID_PATTERN = '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{
  * value. Comparing as uuid lets the events' primary-key index serve every inbox read and write;
  * a `::text` comparison on the key column forced a sequential scan of the whole events table.
  */
-export function inboxIntegrationEventId() {
-  return sql`(CASE WHEN ${inbox.metadata}->>'integrationEventId' ~ ${UUID_PATTERN} THEN (${inbox.metadata}->>'integrationEventId')::uuid END)`
+export function inboxIntegrationEventId(metadata: SQLWrapper = inbox.metadata) {
+  return sql`(CASE WHEN ${metadata}->>'integrationEventId' ~ ${UUID_PATTERN} THEN (${metadata}->>'integrationEventId')::uuid END)`
 }
 
 /** Guard the legacy text recipient id while retaining indexed receipt lookups. */
-export function inboxRecipientAgentId() {
-  return sql`(CASE WHEN ${inbox.recipientId} ~ ${UUID_PATTERN} THEN ${inbox.recipientId}::uuid END)`
+export function inboxRecipientAgentId(recipientId: SQLWrapper = inbox.recipientId) {
+  return sql`(CASE WHEN ${recipientId} ~ ${UUID_PATTERN} THEN ${recipientId}::uuid END)`
 }
 
 /** The squad id stored in an output event's authority, as a uuid (NULL when absent or malformed). */
