@@ -7,6 +7,7 @@ import ts from 'typescript'
 // contents and the raw keyedRecord constructor are intentionally not request validators.
 const shared = [
   'schemas',
+  'request-metadata',
   'workflows',
   'decisions',
   'integration-outputs',

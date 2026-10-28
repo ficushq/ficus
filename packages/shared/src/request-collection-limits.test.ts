@@ -82,3 +82,27 @@ test('workflow maps reject before child parsing', () => {
   expect(result.success).toBe(false)
   if (!result.success) expect(JSON.stringify(result.error.issues)).toContain('too_big')
 })
+
+test('caller-supplied nested metadata is gated before downstream history/config parsers', () => {
+  for (const [nested, maximum] of [
+    [map(257), 256],
+    [Array(1001).fill(null), 1000],
+  ] as const) {
+    const result = schemas.updateWorkStreamSchema.safeParse({ metadata: { completion: { delivery: nested } } })
+    expect(result.success).toBe(false)
+    if (!result.success)
+      expect(result.error.issues).toMatchObject([
+        { code: 'too_big', maximum, path: ['metadata', 'completion', 'delivery'] },
+      ])
+  }
+  expect(schemas.updateWorkStreamSchema.safeParse({ metadata: { nested: { ok: [1, 2] } } }).success).toBe(true)
+})
+
+test('metadata authority scan does not recurse on deep under-budget JSON', () => {
+  let value: Record<string, unknown> = { githubAuthorTrust: {} }
+  for (let i = 0; i < 100000; i++) value = { child: value }
+  expect(schemas.hasReservedGitHubAuthorityMetadata(value)).toBe(true)
+  let safe: Record<string, unknown> = { safe: true }
+  for (let i = 0; i < 100000; i++) safe = { child: safe }
+  expect(schemas.hasReservedGitHubAuthorityMetadata(safe)).toBe(false)
+})

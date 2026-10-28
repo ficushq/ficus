@@ -1,3 +1,4 @@
+import { requestMetadataSchema } from './request-metadata'
 import { boundedRecord } from './zod-helpers'
 import { z } from 'zod'
 import { workflowSourceSchema, workflowEventTriggerSchema } from './workflows'
@@ -125,67 +126,75 @@ export type SquadPresetWorkflows = z.infer<typeof squadPresetWorkflowsSchema>
 
 /** Authority lives in dedicated tables, never in generic metadata (even deletion patches). */
 export function hasReservedGitHubAuthorityMetadata(value: unknown): boolean {
-  if (!value || typeof value !== 'object') return false
-  return Object.entries(value).some(
-    ([key, child]) =>
-      key
-        .split('.')
-        .some((segment) =>
-          ['githubAuthorTrust', 'githubFeedbackModeration', 'githubPersonalIdentity'].includes(segment)
-        ) || hasReservedGitHubAuthorityMetadata(child)
-  )
+  const stack: unknown[] = [value]
+  const seen = new WeakSet<object>()
+  while (stack.length) {
+    const current = stack.pop()
+    if (!current || typeof current !== 'object' || seen.has(current)) continue
+    seen.add(current)
+    for (const key in current) {
+      if (!Object.hasOwn(current, key)) continue
+      if (
+        key
+          .split('.')
+          .some((segment) =>
+            ['githubAuthorTrust', 'githubFeedbackModeration', 'githubPersonalIdentity'].includes(segment)
+          )
+      )
+        return true
+      stack.push((current as Record<string, unknown>)[key])
+    }
+  }
+  return false
 }
 
-export const squadMetadataSchema = boundedRecord(z.record(z.string(), z.unknown()), 256).superRefine(
-  (metadata, ctx) => {
-    if (hasReservedGitHubAuthorityMetadata(metadata))
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Reserved GitHub authority metadata' })
-    if (metadata.integrationRules !== undefined) {
-      const result = squadEventRulesSchema.safeParse(metadata.integrationRules)
-      if (!result.success)
-        for (const issue of result.error.issues) ctx.addIssue({ ...issue, path: ['integrationRules', ...issue.path] })
-    }
-    if (metadata.integrationTriggers !== undefined && metadata.integrationTriggers !== null) {
-      const result = z
-        .array(workflowEventTriggerSchema)
-        .max(32)
-        .refine((items) => new Set(items.map((item) => item.id)).size === items.length, 'Duplicate trigger ID')
-        .safeParse(metadata.integrationTriggers)
-      if (!result.success)
-        for (const issue of result.error.issues)
-          ctx.addIssue({ ...issue, path: ['integrationTriggers', ...issue.path] })
-    }
-    if (metadata.workflowSetup !== undefined && metadata.workflowSetup !== null) {
-      const setup = squadWorkflowSetupSchema.safeParse(metadata.workflowSetup)
-      if (!setup.success)
-        for (const issue of setup.error.issues) ctx.addIssue({ ...issue, path: ['workflowSetup', ...issue.path] })
-    }
-    if (metadata.workflow !== undefined && metadata.workflow !== null) {
-      const result = workflowSourceSchema.safeParse(metadata.workflow)
-      if (!result.success)
-        for (const issue of result.error.issues) ctx.addIssue({ ...issue, path: ['workflow', ...issue.path] })
-    }
-    const schemas: Array<[string, z.ZodTypeAny]> = [
-      ['githubIdentity', squadGithubIdentitySchema],
-      ['sandbox.toolchain', squadToolchainSchema.nullable()],
-    ]
+export const squadMetadataSchema = requestMetadataSchema.superRefine((metadata, ctx) => {
+  if (hasReservedGitHubAuthorityMetadata(metadata))
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Reserved GitHub authority metadata' })
+  if (metadata.integrationRules !== undefined) {
+    const result = squadEventRulesSchema.safeParse(metadata.integrationRules)
+    if (!result.success)
+      for (const issue of result.error.issues) ctx.addIssue({ ...issue, path: ['integrationRules', ...issue.path] })
+  }
+  if (metadata.integrationTriggers !== undefined && metadata.integrationTriggers !== null) {
+    const result = z
+      .array(workflowEventTriggerSchema)
+      .max(32)
+      .refine((items) => new Set(items.map((item) => item.id)).size === items.length, 'Duplicate trigger ID')
+      .safeParse(metadata.integrationTriggers)
+    if (!result.success)
+      for (const issue of result.error.issues) ctx.addIssue({ ...issue, path: ['integrationTriggers', ...issue.path] })
+  }
+  if (metadata.workflowSetup !== undefined && metadata.workflowSetup !== null) {
+    const setup = squadWorkflowSetupSchema.safeParse(metadata.workflowSetup)
+    if (!setup.success)
+      for (const issue of setup.error.issues) ctx.addIssue({ ...issue, path: ['workflowSetup', ...issue.path] })
+  }
+  if (metadata.workflow !== undefined && metadata.workflow !== null) {
+    const result = workflowSourceSchema.safeParse(metadata.workflow)
+    if (!result.success)
+      for (const issue of result.error.issues) ctx.addIssue({ ...issue, path: ['workflow', ...issue.path] })
+  }
+  const schemas: Array<[string, z.ZodTypeAny]> = [
+    ['githubIdentity', squadGithubIdentitySchema],
+    ['sandbox.toolchain', squadToolchainSchema.nullable()],
+  ]
 
-    for (const [key, schema] of schemas) {
-      const path = key.split('.')
-      const value = path.reduce<unknown>((current, segment) => {
-        return current && typeof current === 'object' ? (current as Record<string, unknown>)[segment] : undefined
-      }, metadata)
-      if (value === undefined) continue
+  for (const [key, schema] of schemas) {
+    const path = key.split('.')
+    const value = path.reduce<unknown>((current, segment) => {
+      return current && typeof current === 'object' ? (current as Record<string, unknown>)[segment] : undefined
+    }, metadata)
+    if (value === undefined) continue
 
-      const result = schema.safeParse(value)
-      if (!result.success) {
-        for (const issue of result.error.issues) {
-          ctx.addIssue({ ...issue, path: [...path, ...issue.path] })
-        }
+    const result = schema.safeParse(value)
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        ctx.addIssue({ ...issue, path: [...path, ...issue.path] })
       }
     }
   }
-)
+})
 
 /** Host runtime squad workspace override: absolute, no `..` segments. */
 export const hostWorkspacePathSchema = z
@@ -241,7 +250,7 @@ export const createSquadRelationshipSchema = z.object({
   sourceSquadId: z.string().uuid(),
   targetSquadId: z.string().uuid(),
   relationshipType: squadRelationshipTypeSchema,
-  metadata: boundedRecord(z.record(z.string(), z.unknown()), 256).optional().default({}),
+  metadata: requestMetadataSchema.optional().default({}),
 })
 
 // Work Stream schemas
@@ -341,7 +350,7 @@ export const createWorkStreamSchema = z
     requestingUserId: z.string().uuid().nullable().optional(),
     dependsOn: z.array(workStreamDependencyInputSchema).max(100).optional().default([]),
     priority: workStreamPrioritySchema.optional(),
-    metadata: boundedRecord(z.record(z.string(), z.unknown()), 256).optional().default({}),
+    metadata: requestMetadataSchema.optional().default({}),
     /** Create from an observed integration event: tracks its resource and reuses the stream that already handles it. */
     integrationEventId: z.string().uuid().optional(),
     completionMode: workStreamCompletionModeSchema.optional(),
@@ -370,7 +379,7 @@ export const updateWorkStreamSchema = z.object({
   dependsOn: z.array(workStreamDependencyInputSchema).max(100).optional(),
   handoffMessage: z.string().nullable().optional(),
   files: z.array(z.string()).max(1000).optional(),
-  metadata: boundedRecord(z.record(z.string(), z.unknown()), 256).optional(),
+  metadata: requestMetadataSchema.optional(),
   nextSteps: z.string().min(1).optional(),
   completionMode: workStreamCompletionModeSchema.optional(),
   repository: z.string().min(1).optional(),
@@ -589,7 +598,7 @@ export const sendInboxMessageSchema = z.object({
   asSystem: z.boolean().optional(),
   subject: z.string().optional(),
   content: z.string().min(1),
-  metadata: boundedRecord(z.record(z.string(), z.unknown()), 256).optional(),
+  metadata: requestMetadataSchema.optional(),
   deliveryMode: z.enum(['steer', 'follow-up']).optional().default('steer'),
   // A dormant agent recipient is refused (409 AGENT_DORMANT) unless the sender explicitly asks to
   // wake it. System-authored sends (asSystem) keep their own wake policy and ignore this.
