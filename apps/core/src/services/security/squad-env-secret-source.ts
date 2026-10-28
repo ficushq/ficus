@@ -8,6 +8,7 @@ const SECRET_NAME = /(?:^|_)(?:TOKEN|KEY|SECRET|PASSWORD|CREDENTIALS)$/i
 
 /** Literal values only; never source a shell file or evaluate substitutions. */
 export function isSecretLikeSquadEnvValue(key: string, value: string): boolean {
+  if (/PUBLIC|PUBLISHABLE/i.test(key) || /^(?:NEXT_PUBLIC_|VITE_|REACT_APP_)/i.test(key)) return false
   if (value.length < 12) return false
   if (SECRET_NAME.test(key)) return true
   if (value.length < 32 || /\s/.test(value) || /^(?:https?:|\/|\.{1,2}\/|~\/)/i.test(value)) return false

@@ -888,7 +888,7 @@ describe('integration routes', () => {
         provider: 'example',
         displayName: 'Brain',
         configuration: { version: 1 },
-        credential: 'bearer',
+        credential: 'synthetic-bearer',
       }),
     })
     expect(response.status).toBe(201)
@@ -1765,4 +1765,27 @@ describe('managed shared BigBrain on Ficus Cloud', () => {
     )
     expect(inherit.status).toBe(409)
   })
+})
+
+test('manual credential create and replacement reject values shorter than eight characters', async () => {
+  const { app, calls } = createApp(
+    { type: 'system', systemTokenId: 'min-test', name: 'test', scopes: ['*'] },
+    'example'
+  )
+  for (const credential of ['x', '1234567']) {
+    const created = await app.request('/api/integrations/connections', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'example', displayName: 'Example', credential }),
+    })
+    expect(created.status).toBe(400)
+    const replaced = await app.request(`/api/integrations/connections/${summary.id}/credential`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ credential }),
+    })
+    expect(replaced.status).toBe(400)
+  }
+  expect(calls.create).not.toHaveBeenCalled()
+  expect(calls.replaceCredential).not.toHaveBeenCalled()
 })

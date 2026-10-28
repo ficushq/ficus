@@ -499,3 +499,15 @@ test('output-only exact values redact and trim but never attribute a refused inp
   ])
   expect(shared.redactWithStoredKeys(value).storedKeys).toEqual(['INTEGRATION'])
 })
+
+test('Failed query output-only attribution never becomes a stored-key refusal', () => {
+  const value = 'synthetic-env-query-value'
+  const envOnly = ContentSafety.fromSecretEntries([{ key: 'squad-env.APP_TOKEN', value, outputOnly: true }])
+  expect(envOnly.redactWithStoredKeys(`Failed query: select '${value}'`).storedKeys).toEqual([])
+  expect(envOnly.redact(`Failed query: select '${value}'`)).not.toContain(value)
+  const alsoProtected = ContentSafety.fromSecretEntries([
+    { key: 'squad-env.APP_TOKEN', value, outputOnly: true },
+    { key: 'integration', value },
+  ])
+  expect(alsoProtected.redactWithStoredKeys(`Failed query: select '${value}'`).storedKeys).toEqual(['integration'])
+})

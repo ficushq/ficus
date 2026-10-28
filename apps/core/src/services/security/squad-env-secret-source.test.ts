@@ -264,3 +264,17 @@ test('covers the UTF-8 interpretation of ANSI-C Unicode escapes without reading 
   expect(f.registry.redactWithStoredKeys(actual.stdout).storedKeys).toEqual([])
   f.registry.dispose()
 })
+
+test('public/browser-exposed keys do not match even on the secret-name path', () => {
+  for (const key of [
+    'STRIPE_PUBLISHABLE_KEY',
+    'NEXT_PUBLIC_API_KEY',
+    'SSH_PUBLIC_KEY',
+    'VITE_APP_TOKEN',
+    'REACT_APP_SECRET',
+    'public_token',
+  ]) {
+    expect(isSecretLikeSquadEnvValue(key, 'aB3dE5gH7jK9mN2pQ4sT6vW8yZ0cF1iL')).toBe(false)
+  }
+  expect(isSecretLikeSquadEnvValue('PORT', '3000')).toBe(false)
+})

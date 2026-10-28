@@ -349,8 +349,8 @@ export class SecretStore {
       }
     }
     // Ordinary stored values keep their public-identifier/minimum-length
-    // exclusions. Integration material is expanded below and every secret leaf
-    // is protected, even a short local integration credential.
+    // exclusions. Integration material is expanded below with a separate leaf
+    // minimum, so short legacy values cannot mangle ordinary prose.
     for (const [key, value] of entries) {
       if (!key.startsWith(INTEGRATION_CREDENTIAL_PREFIX) && !isMatchableSecret(key, value)) entries.delete(key)
     }

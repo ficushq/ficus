@@ -1,3 +1,4 @@
+import { MIN_INTEGRATION_CREDENTIAL_LENGTH } from '../services/security/integration-credential-entries'
 import { boundedRecord } from '@ficus/shared'
 import { BigbrainError } from '../services/integrations/bigbrain/errors'
 import type { BigbrainLocalConnections } from '../services/integrations/bigbrain/local-connections'
@@ -71,11 +72,11 @@ const createSchema = z.strictObject({
   provider: providerKeySchema,
   displayName: z.string().trim().min(1).max(200),
   configuration: z.unknown().optional(),
-  credential: z.string().min(1).max(16_384),
+  credential: z.string().min(MIN_INTEGRATION_CREDENTIAL_LENGTH).max(16_384),
 })
 const confirmationSchema = z.strictObject({ confirmAssigned: z.boolean().optional() })
 const credentialSchema = z.strictObject({
-  credential: z.string().min(1).max(16_384),
+  credential: z.string().min(MIN_INTEGRATION_CREDENTIAL_LENGTH).max(16_384),
   confirmAssigned: z.boolean().optional(),
 })
 const assignmentSchema = z.strictObject({ connectionId: z.uuid(), makeDefault: z.boolean().optional() })
