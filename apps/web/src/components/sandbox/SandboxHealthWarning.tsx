@@ -1,4 +1,4 @@
-import { isSandboxOverloaded } from '@ficus/shared'
+import { hasSandboxPressureWarning } from '@ficus/shared'
 import { useId, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import type { SandboxStatus } from '../../api/workspace'
@@ -21,7 +21,7 @@ export function SandboxHealthWarning({ squadId, status }: { squadId: string; sta
   const anchor = useRef<HTMLButtonElement>(null)
   const id = useId()
   const hover = useHoverCard({ focusVisibleOnly: false })
-  const overloaded = isSandboxOverloaded(status.pressure)
+  const overloaded = hasSandboxPressureWarning(status.pressure)
   const degraded = status.runtimeHealth?.status === 'degraded' || status.readiness === 'ready_degraded'
   const runtimeReason = sandboxReasonDetail(status.runtimeHealth?.reason)
   const statusReason = sandboxReasonDetail(status.reason)

@@ -1714,8 +1714,8 @@ describe('squads routes', () => {
           ],
           containers: { available: true, containers: [] },
         }),
-        signalProcess: async (pid: number, signal: string) => {
-          calls.push(['signal', pid, signal])
+        signalProcess: async (pid: number, signal: string, _abortSignal: AbortSignal, startTicks?: number) => {
+          calls.push(['signal', pid, signal, startTicks])
           return { pid, signal, command: 'bun tsc -p apps/core' }
         },
         stopContainer: async (id: string) => {
@@ -1742,7 +1742,7 @@ describe('squads routes', () => {
         const signalled = await app.request(`/api/squads/${squad.id}/sandbox/processes/2838629/signal`, {
           method: 'POST',
           headers: { ...authHeaders(admin.token), 'content-type': 'application/json' },
-          body: JSON.stringify({ signal: 'kill' }),
+          body: JSON.stringify({ signal: 'kill', startTicks: 900000 }),
         })
         expect(signalled.status).toBe(200)
         const stopped = await app.request(`/api/squads/${squad.id}/sandbox/containers/tau-core-tsc/stop`, {
@@ -1751,7 +1751,7 @@ describe('squads routes', () => {
         })
         expect(stopped.status).toBe(200)
         expect(calls).toEqual([
-          ['signal', 2838629, 'KILL'],
+          ['signal', 2838629, 'KILL', 900000],
           ['stop', 'tau-core-tsc'],
         ])
 
