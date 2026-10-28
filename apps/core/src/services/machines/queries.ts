@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'crypto'
-import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm'
 import { db, instanceMaintenanceState, machineBoxes, machines } from '../../db'
 import type { MachineCapabilities } from '../../db/schema'
 import { BoxPortRangeExhaustedError, FIRST_BOX_PORT, LAST_BOX_PORT } from './box-ports'
@@ -463,6 +463,57 @@ export async function upsertMachineBox(box: typeof machineBoxes.$inferInsert): P
   return row
 }
 
+/** Compare the full physical identity: a stale request must not mutate a replacement box. */
+function sameBoxIdentity(box: MachineBox) {
+  return and(
+    eq(machineBoxes.sandboxId, box.sandboxId),
+    eq(machineBoxes.machineId, box.machineId),
+    eq(machineBoxes.unixUser, box.unixUser),
+    eq(machineBoxes.port, box.port),
+    box.authToken === null ? isNull(machineBoxes.authToken) : eq(machineBoxes.authToken, box.authToken)
+  )
+}
+
+/** A crashed Core must not leave recovery disabled indefinitely. The setup
+ * lease still excludes a live owner even after this UI/retry window expires. */
+export const BOX_RESTART_STALE_MS = 120_000
+
+export function isStaleBoxRestart(box: MachineBox, now = Date.now()): boolean {
+  return box.status === 'restarting' && now - box.updatedAt.getTime() >= BOX_RESTART_STALE_MS
+}
+
+/** Atomic restart claim, mutually exclusive with the migration row-lock fence. */
+export async function beginBoxRestart(box: MachineBox): Promise<boolean> {
+  const rows = await db
+    .update(machineBoxes)
+    .set({ status: 'restarting', lastListeningAt: null, updatedAt: new Date() })
+    .where(
+      and(
+        sameBoxIdentity(box),
+        eq(machineBoxes.migrating, false),
+        or(
+          inArray(machineBoxes.status, ['ready', 'restart_failed']),
+          and(
+            eq(machineBoxes.status, 'restarting'),
+            lte(machineBoxes.updatedAt, new Date(Date.now() - BOX_RESTART_STALE_MS))
+          )
+        )
+      )
+    )
+    .returning({ sandboxId: machineBoxes.sandboxId })
+  return rows.length === 1
+}
+
+/** Never overwrite a concurrent stop/removal/replacement after the host operation. */
+export async function finishBoxRestart(box: MachineBox, status: 'ready' | 'restart_failed'): Promise<boolean> {
+  const rows = await db
+    .update(machineBoxes)
+    .set({ status, updatedAt: new Date() })
+    .where(and(sameBoxIdentity(box), eq(machineBoxes.status, 'restarting')))
+    .returning({ sandboxId: machineBoxes.sandboxId })
+  return rows.length === 1
+}
+
 /**
  * Persist the coarse cross-process activity heartbeat for a box. Callers
  * throttle (the vm manager writes at most every ~30s per box), so this is a
@@ -915,11 +966,15 @@ export async function fenceBoxForMigration(
         return false
     }
     const [box] = await tx
-      .select({ migrating: machineBoxes.migrating, migrationOwner: machineBoxes.migrationOwner })
+      .select({
+        migrating: machineBoxes.migrating,
+        migrationOwner: machineBoxes.migrationOwner,
+        status: machineBoxes.status,
+      })
       .from(machineBoxes)
       .where(eq(machineBoxes.sandboxId, sandboxId))
       .for('update')
-    if (!box) return false
+    if (!box || box.status === 'restarting') return false
     if (box.migrating && box.migrationOwner === owner) return owner !== undefined
     if (box.migrating && owner === undefined) return false
 

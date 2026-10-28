@@ -1,3 +1,10 @@
+/** Runtime diagnostics, separate from executor liveness and asset setup; not a native Bash admission gate. */
+export interface SandboxRuntimeHealth {
+  status: 'ready' | 'degraded'
+  /** Non-secret, human-readable control-path failure; absent when ready. */
+  reason?: string
+}
+
 /** Load and memory a sandbox reports. On a shared VM host the load is machine-wide. */
 export interface SandboxPressure {
   cpus: number

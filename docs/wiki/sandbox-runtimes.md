@@ -363,7 +363,20 @@ ficus squad sandbox-stop-container <squadId> <container>
 The same commands exist under `ficus agent` for an agent's own sandbox. A squad
 member's work runs in the squad sandbox, so use the squad commands for it. In
 the web app, the squad's Workspace settings and an agent's own-sandbox controls
-have a **Processes** section.
+have a **Processes** section. Stop/Kill pending state and errors belong to the
+individual row, so other processes and containers remain controllable. Both
+process actions require confirmation. For containerd shims, Stop (TERM) is
+ineffective; shim and runc rows offer Kill directly, still with confirmation.
+Killing these runtime processes may disrupt their containers; prefer stopping
+the specific container when Docker responds.
+
+Control requests have a 45-second Core budget (including connecting to the box)
+and a 50-second browser budget. Docker's stop command has a 40-second budget,
+with its CLI force-killed at that deadline. Leaving the panel cancels its browser
+requests. Cancellation or timeout does **not** prove that the signal or container
+stop was undone: refresh Processes to check the current state before explicitly
+retrying. Controls are never retried automatically, and a slow refresh does not
+keep a completed control disabled.
 
 The squad header's sandbox pill adds a warning icon when the status reports overload,
 runtime degradation, or an informative failure reason (including Docker timeouts).
@@ -381,6 +394,27 @@ user's processes and its own containers. It refuses to signal itself and the
 processes that run it. Processes inside containers can run as other users, so
 stop the container instead. Every signal and container stop is logged with the
 caller.
+
+### Last-resort VM recovery
+
+If Processes cannot answer, a user with `squads:update` can use **Workspace
+settings → Sandbox Lifecycle → Recovery → Restart** on the `vm` runtime.
+Confirming restarts only that squad's sandbox-server unit through the machine's
+box manager, not through Bash or the box's HTTP command server. It interrupts
+commands and terminals, but does not reprovision the box, delete its workspace
+or private files, restart other boxes, or reboot the machine. Rootless Docker
+is a separate service: this is not a machine-wide Docker reset.
+
+`POST /api/squads/:id/sandbox/restart` uses the authorized squad's stored box
+identity. Busy setup, migration, or another restart returns a conflict rather
+than queueing a restart for later. SSH is bounded to 30 seconds, followed by
+bounded tunnel establishment and a 15-second server-health wait. A successful
+response confirms the server answered health, **not** that setup or a declared
+toolchain has finished. The status payload exposes `restartPending` while
+waiting; errors leave readiness unverified. If Core is interrupted, that pending
+indicator expires after two minutes and recovery can be retried once the old
+lifecycle lease is gone. The browser stops waiting after 100 seconds; a request
+timeout means the outcome is unknown, so check status before retrying.
 
 ## Squad sandbox toolchains
 

@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import * as childProcess from 'child_process'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -7,6 +8,8 @@ import {
   listBoxContainers,
   listBoxProcesses,
   readPressure,
+  probeBoxDocker,
+  staleRuncExecReason,
   signalBoxProcess,
   stopBoxContainer,
 } from './processes'
@@ -99,6 +102,63 @@ const shim: FakeProcess = {
   rssKb: 13_164,
 }
 const postgres: FakeProcess = { pid: 2347436, ppid: 2347410, uid: OTHER_UID, comm: 'postgres', cmdline: ['postgres'] }
+
+describe('bounded Docker health probe', () => {
+  test('uses a cheap bounded info request and names timeout vs unavailable', async () => {
+    await probeBoxDocker(async (args, ms) => {
+      expect(args).toEqual(['info', '--format', '{{.ServerVersion}}'])
+      expect(ms).toBe(2_000)
+      return '28.0.0'
+    })
+    await expect(
+      probeBoxDocker(async () => {
+        throw { killed: true }
+      })
+    ).rejects.toThrow('Docker did not answer within 2s')
+    await expect(
+      probeBoxDocker(async () => {
+        throw new Error('missing')
+      })
+    ).rejects.toThrow('Docker is not available in this box')
+  })
+})
+
+describe('stale detached runc exec control paths', () => {
+  test('rejects only old detached exec, not long-running foreground work or another box', () => {
+    const root = fakeProc([
+      {
+        pid: 10,
+        ppid: 1,
+        uid: BOX_UID,
+        comm: 'runc',
+        cmdline: ['/usr/bin/runc', '--root', '/run/runc', 'exec', '--detach', 'container'],
+        startTicks: 970_100,
+      },
+      { pid: 11, ppid: 1, uid: BOX_UID, comm: 'runc', cmdline: ['runc', 'exec', 'container', 'sleep', '3600'] },
+      { pid: 12, ppid: 1, uid: OTHER_UID, comm: 'runc', cmdline: ['runc', 'exec', '-d', 'container'] },
+      { pid: 13, ppid: 1, uid: BOX_UID, comm: 'runc', cmdline: ['runc', 'exec', 'container', 'workload', '--detach'] },
+      { pid: 14, ppid: 1, uid: BOX_UID, comm: 'bash', cmdline: ['bash', '-c', 'runc exec --detach container'] },
+      { pid: 15, ppid: 1, uid: BOX_UID, comm: 'runc', cmdline: ['runc', 'create', '--detach', 'container'] },
+      { pid: 16, ppid: 1, uid: BOX_UID, comm: 'runc', cmdline: ['runc', 'run', 'exec', '--detach'] },
+      shim,
+      tsc,
+    ])
+    const options = { procRoot: root, uid: BOX_UID, clockTicks: 100 }
+    // 299s is below the 5min setup deadline; normal foreground exec may last hours.
+    expect(staleRuncExecReason(options)).toBeUndefined()
+    writeProcess(root, {
+      pid: 10,
+      ppid: 1,
+      uid: BOX_UID,
+      comm: 'runc',
+      cmdline: ['/usr/bin/runc', '--root', '/run/runc', 'exec', '--process', '/tmp/process.json', '-d', 'container'],
+      startTicks: 970_000,
+    })
+    expect(staleRuncExecReason(options)).toBe('Detached runc exec has been stuck for at least 300s')
+    rmSync(join(root, '10'), { recursive: true })
+    expect(staleRuncExecReason(options)).toBeUndefined()
+  })
+})
 
 describe('readPressure', () => {
   test('reads cpus, load and memory', () => {
@@ -255,4 +315,25 @@ describe('box containers', () => {
     for (const id of ['', '-rm', 'a b', 'x;reboot', 42])
       await expect(stopBoxContainer(id, docker)).rejects.toMatchObject({ status: 400 })
   })
+})
+
+test('wedged Docker control is forcefully bounded, not left waiting for a TERM-ignoring CLI', async () => {
+  let options: childProcess.ExecFileOptions | undefined
+  const execute = spyOn(childProcess, 'execFile').mockImplementation(((
+    _file: string,
+    _args: string[],
+    opts: childProcess.ExecFileOptions,
+    callback: (error: Error, stdout: string) => void
+  ) => {
+    options = opts
+    callback(Object.assign(new Error('timed out'), { killed: true }), '')
+    return {} as childProcess.ChildProcess
+  }) as typeof childProcess.execFile)
+  try {
+    await expect(stopBoxContainer('synthetic-container')).rejects.toMatchObject({ status: 504 })
+    expect(options?.timeout).toBe(40_000)
+    expect(options?.killSignal).toBe('SIGKILL')
+  } finally {
+    execute.mockRestore()
+  }
 })
