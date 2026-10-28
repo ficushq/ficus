@@ -5,23 +5,20 @@ const WEB_URL = /^https?:\/\//i
 const WEB_URL_MESSAGE = 'must be an http(s) URL'
 
 /** Resource identity only. Access always comes from the integration's squad connection. */
-export const codeHostReferenceSchema = z
-  .object({
-    integration: z
-      .string()
-      .regex(/^[a-z][a-z0-9-]*$/)
-      .max(100),
-    repository: z.string().trim().min(1).max(500),
-    changeRequest: z
-      .object({
-        number: z.number().int().positive().safe(),
-        url: z.string().url().regex(WEB_URL, WEB_URL_MESSAGE).max(2000).optional(),
-      })
-      .strict()
-      .optional(),
-    connectionId: z.string().uuid().optional(),
-  })
-  .strict()
+export const codeHostReferenceSchema = z.strictObject({
+  integration: z
+    .string()
+    .regex(/^[a-z][a-z0-9-]*$/)
+    .max(100),
+  repository: z.string().trim().min(1).max(500),
+  changeRequest: z
+    .strictObject({
+      number: z.int().positive().safe(),
+      url: z.url().regex(WEB_URL, WEB_URL_MESSAGE).max(2000).optional(),
+    })
+    .optional(),
+  connectionId: z.uuid().optional(),
+})
 export type CodeHostReference = z.infer<typeof codeHostReferenceSchema>
 
 export type CodeHostReferenceDescription =
@@ -167,31 +164,27 @@ const integrationName = z
   .string()
   .regex(/^[a-z][a-z0-9-]*$/)
   .max(100)
-export const trackedResourceOriginSchema = z
-  .object({
-    eventId: z.string().uuid(),
-    resourceKey: z.string().min(1).max(500),
-    output: z.string().min(1).max(100),
-    occurredAt: z.string().max(64).optional(),
-  })
-  .strict()
+export const trackedResourceOriginSchema = z.strictObject({
+  eventId: z.uuid(),
+  resourceKey: z.string().min(1).max(500),
+  output: z.string().min(1).max(100),
+  occurredAt: z.string().max(64).optional(),
+})
 /** Tracked resource identity. Access always comes from the squad's integration connection, never from this record. */
-export const trackedResourceObjectSchema = z
-  .object({
-    integration: integrationName,
-    repository: z.string().trim().min(1).max(500),
-    kind: z.enum(TRACKED_RESOURCE_KINDS),
-    number: z.number().int().positive().safe(),
-    connectionId: z.string().uuid().optional(),
-    url: z.string().url().regex(WEB_URL, WEB_URL_MESSAGE).max(2000).optional(),
-    addedAt: z.string().max(64).optional(),
-    origin: trackedResourceOriginSchema.optional(),
-    /** Provider-native identity (e.g. a Linear issue UUID), for matching when repository/number aren't known. */
-    externalId: z.string().min(1).max(200).optional(),
-    // Only meaningful for kind 'pull_request'; flags a tracked PR as a delivery change request.
-    delivery: z.literal(true).optional(),
-  })
-  .strict()
+export const trackedResourceObjectSchema = z.strictObject({
+  integration: integrationName,
+  repository: z.string().trim().min(1).max(500),
+  kind: z.enum(TRACKED_RESOURCE_KINDS),
+  number: z.int().positive().safe(),
+  connectionId: z.uuid().optional(),
+  url: z.url().regex(WEB_URL, WEB_URL_MESSAGE).max(2000).optional(),
+  addedAt: z.string().max(64).optional(),
+  origin: trackedResourceOriginSchema.optional(),
+  /** Provider-native identity (e.g. a Linear issue UUID), for matching when repository/number aren't known. */
+  externalId: z.string().min(1).max(200).optional(),
+  // Only meaningful for kind 'pull_request'; flags a tracked PR as a delivery change request.
+  delivery: z.literal(true).optional(),
+})
 /** Same identity as {@link trackedResourceObjectSchema}, plus the cross-field delivery/kind constraint. */
 export const trackedResourceSchema = trackedResourceObjectSchema.refine(
   (value) => !value.delivery || value.kind === 'pull_request',
@@ -206,19 +199,15 @@ export interface ResolvedTrackedResource extends Omit<TrackedResource, 'delivery
   /** True for the codeHost PR and any tracked PR explicitly flagged as a delivery change request. */
   delivery: boolean
 }
-export const deliveryPullRequestStateSchema = z
-  .object({
-    state: z.enum(['open', 'merged', 'closed']),
-    at: z.string().max(64),
-    headSha: z.string().max(64).optional(),
-    eventId: z.string().uuid().optional(),
-  })
-  .strict()
-export const workStreamDeliveryStateSchema = z
-  .object({
-    pullRequests: z.record(z.string(), deliveryPullRequestStateSchema),
-  })
-  .strict()
+export const deliveryPullRequestStateSchema = z.strictObject({
+  state: z.enum(['open', 'merged', 'closed']),
+  at: z.string().max(64),
+  headSha: z.string().max(64).optional(),
+  eventId: z.uuid().optional(),
+})
+export const workStreamDeliveryStateSchema = z.strictObject({
+  pullRequests: z.record(z.string(), deliveryPullRequestStateSchema),
+})
 export type WorkStreamDeliveryState = z.infer<typeof workStreamDeliveryStateSchema>
 /** Parses the work stream's delivery state, defaulting to an empty map when absent or invalid. */
 export function readDeliveryState(metadata: unknown): WorkStreamDeliveryState {

@@ -70,6 +70,10 @@ export function SquadSettingsTab({
   const hostRuntime = sandboxStatus?.runtime === 'host'
   const sections = SECTIONS
   const sandboxSectionReady = sandboxStatus !== undefined && !hostRuntime
+  // The log WebSocket serves only runtimes whose manager streams container
+  // logs (docker, k8s); on the vm runtime boxes surface output through exec,
+  // so the panel would only ever show "not supported".
+  const logsAvailable = sandboxStatus?.logStreaming === true
   const { can, isLoading: permissionsLoading } = usePermissions(squadId)
   const canDeleteSquad = !permissionsLoading && can('squads:delete')
   const activeSection: SectionId = isValidSection(sectionParam) ? sectionParam : 'general'
@@ -146,9 +150,11 @@ export function SquadSettingsTab({
               <Can permission="squads:update" squadId={squadId}>
                 <SandboxProcesses target={{ kind: 'squad', squadId }} />
               </Can>
-              <Can permission="sandbox:logs" squadId={squadId}>
-                <SandboxLogs squadId={squadId} />
-              </Can>
+              {logsAvailable && (
+                <Can permission="sandbox:logs" squadId={squadId}>
+                  <SandboxLogs squadId={squadId} />
+                </Can>
+              )}
             </div>
           )}
 

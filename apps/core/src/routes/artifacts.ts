@@ -1,6 +1,6 @@
 import { publicErrorMessage } from '../db/errors'
 import { Hono } from 'hono'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../lib/zod-validator'
 import {
   artifactReferenceSchema,
   artifactRequestActionSchema,

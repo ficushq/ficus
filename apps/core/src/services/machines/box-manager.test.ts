@@ -74,7 +74,7 @@ import { BOX_PORT_BUSY_EXIT_CODE, BoxPortBusyError } from './box-port-busy'
 
 function makeMachine(overrides: Partial<Machine> = {}): Machine {
   return {
-    id: '11111111-1111-1111-1111-111111111111',
+    id: '11111111-1111-4111-8111-111111111111',
     name: 'box-test',
     provider: 'ssh',
     providerRef: null,
@@ -97,7 +97,7 @@ function makeMachine(overrides: Partial<Machine> = {}): Machine {
 function makeBox(overrides: Partial<MachineBox> = {}): MachineBox {
   return {
     sandboxId: 'sb-1',
-    machineId: '11111111-1111-1111-1111-111111111111',
+    machineId: '11111111-1111-4111-8111-111111111111',
     unixUser: boxUnixUser('sb-1'),
     port: 50100,
     status: 'ensuring',
@@ -1917,8 +1917,8 @@ describe('ensureBox', () => {
 
   it('re-ensure sticks to the recorded ready machine even when another is less-loaded', async () => {
     const events: string[] = []
-    const machineA = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000', status: 'ready' })
-    const machineB = makeMachine({ id: 'bbbbbbbb-0000-0000-0000-000000000000', status: 'ready' })
+    const machineA = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000', status: 'ready' })
+    const machineB = makeMachine({ id: 'bbbbbbbb-0000-4000-8000-000000000000', status: 'ready' })
     const readyBox = makeBox({ status: 'ready', machineId: machineA.id })
 
     const result = await ensureBox(
@@ -1946,8 +1946,8 @@ describe('ensureBox', () => {
   // ── migrate-with-teardown (the slice-5 correctness fix) ──────────────────
   it('migrate-with-teardown: an explicit pin that differs from the box machine tears down the OLD box BEFORE binding the new one', async () => {
     const events: string[] = []
-    const machineA = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000', status: 'ready' })
-    const machineB = makeMachine({ id: 'bbbbbbbb-0000-0000-0000-000000000000', status: 'ready' })
+    const machineA = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000', status: 'ready' })
+    const machineB = makeMachine({ id: 'bbbbbbbb-0000-4000-8000-000000000000', status: 'ready' })
     const existingOnA = makeBox({ status: 'ready', machineId: machineA.id, port: 50100 })
     const boundOnB = makeBox({ status: 'ensuring', machineId: machineB.id, port: 50200 })
     const { runner } = makeFakeRunner(events)
@@ -2009,8 +2009,8 @@ describe('ensureBox', () => {
 
   it('migrate-with-teardown archives ~/.private for an agent box (role-appropriate) before removal', async () => {
     const events: string[] = []
-    const machineA = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000', status: 'ready' })
-    const machineB = makeMachine({ id: 'bbbbbbbb-0000-0000-0000-000000000000', status: 'ready' })
+    const machineA = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000', status: 'ready' })
+    const machineB = makeMachine({ id: 'bbbbbbbb-0000-4000-8000-000000000000', status: 'ready' })
     const existingOnA = makeBox({ status: 'ready', machineId: machineA.id, port: 50100 })
     const boundOnB = makeBox({ status: 'ensuring', machineId: machineB.id, port: 50200 })
     const { runner } = makeFakeRunner(events, (command) =>
@@ -2068,8 +2068,8 @@ describe('ensureBox', () => {
     // SSHes the unreachable host and throws, which would fail ensure for the whole
     // outage. Instead we skip the teardown and rebind cleanly on B.
     const events: string[] = []
-    const notReadyA = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000', status: 'terminated' })
-    const machineB = makeMachine({ id: 'bbbbbbbb-0000-0000-0000-000000000000', status: 'ready' })
+    const notReadyA = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000', status: 'terminated' })
+    const machineB = makeMachine({ id: 'bbbbbbbb-0000-4000-8000-000000000000', status: 'ready' })
     const existingOnDead = makeBox({ status: 'ready', machineId: notReadyA.id, port: 50100 })
     const boundOnB = makeBox({ status: 'ensuring', machineId: machineB.id, port: 50200 })
     // A teardown against the dead host would SSH and throw; prove it never runs.
@@ -2138,8 +2138,8 @@ describe('ensureBox', () => {
     // the row-based reconciler can't see them once the row is repointed; a
     // machine-side sweep is a follow-up, see runtime.md Backlog.)
     const events: string[] = []
-    const machineA = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000', status: 'ready' })
-    const machineB = makeMachine({ id: 'bbbbbbbb-0000-0000-0000-000000000000', status: 'ready' })
+    const machineA = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000', status: 'ready' })
+    const machineB = makeMachine({ id: 'bbbbbbbb-0000-4000-8000-000000000000', status: 'ready' })
     const existingOnA = makeBox({ status: 'ready', machineId: machineA.id, port: 50100 })
     const boundOnB = makeBox({ status: 'ensuring', machineId: machineB.id, port: 50200 })
     const { runner } = makeFakeRunner(events, (command) =>
@@ -2228,8 +2228,8 @@ describe('ensureBox', () => {
 
   it('falls back to placement (and warns) when the recorded machine is not ready', async () => {
     const events: string[] = []
-    const notReadyA = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000', status: 'bootstrapping' })
-    const machineB = makeMachine({ id: 'bbbbbbbb-0000-0000-0000-000000000000', status: 'ready' })
+    const notReadyA = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000', status: 'bootstrapping' })
+    const machineB = makeMachine({ id: 'bbbbbbbb-0000-4000-8000-000000000000', status: 'ready' })
     const staleBox = makeBox({ status: 'ready', machineId: notReadyA.id })
     const boxOnB = makeBox({ status: 'ensuring', machineId: machineB.id })
     const { runner } = makeFakeRunner(events)
@@ -2317,8 +2317,8 @@ describe('resolveMachineForBox', () => {
   })
 
   it('picks the least-loaded machine when several are ready', async () => {
-    const busy = makeMachine({ id: 'aaaaaaaa-0000-0000-0000-000000000000' })
-    const idle = makeMachine({ id: 'bbbbbbbb-0000-0000-0000-000000000000' })
+    const busy = makeMachine({ id: 'aaaaaaaa-0000-4000-8000-000000000000' })
+    const idle = makeMachine({ id: 'bbbbbbbb-0000-4000-8000-000000000000' })
     const resolved = await resolveMachineForBox(null, {
       queryReadySharedMachines: async () => [
         { machine: busy, boxCount: 5 },
@@ -2330,11 +2330,11 @@ describe('resolveMachineForBox', () => {
 
   it('breaks a load tie deterministically by createdAt then id', async () => {
     const older = makeMachine({
-      id: 'cccccccc-0000-0000-0000-000000000000',
+      id: 'cccccccc-0000-4000-8000-000000000000',
       createdAt: new Date('2020-01-01T00:00:00Z'),
     })
     const newer = makeMachine({
-      id: 'aaaaaaaa-0000-0000-0000-000000000000',
+      id: 'aaaaaaaa-0000-4000-8000-000000000000',
       createdAt: new Date('2021-01-01T00:00:00Z'),
     })
     // Same box count → the older machine wins regardless of input order.
@@ -3564,7 +3564,7 @@ describe('stopBox', () => {
   it('externalizes a durable stop marker, removes its old forward, and invalidates the original identity', async () => {
     const events: string[] = []
     const statuses: Array<{ sandboxId: string; machineId: string; status: string; port: number }> = []
-    const machine = makeMachine({ id: '11111111-1111-1111-1111-111111111111', status: 'unreachable' })
+    const machine = makeMachine({ id: '11111111-1111-4111-8111-111111111111', status: 'unreachable' })
     const unsubscribe = eventEmitter.on('box.status', (event) => statuses.push(event))
     try {
       await expect(

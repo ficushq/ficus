@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../lib/zod-validator'
 import type {
   GitHubPersonalIdentityStatus,
   IntegrationAuthorizationStart,
@@ -42,8 +42,8 @@ function failure(c: Context, error: unknown) {
   }
   return c.json({ error: 'GitHub identity unavailable', code: 'identity_unavailable' }, 503)
 }
-const empty = z.object({}).strict()
-const id = z.object({ id: z.string().uuid() })
+const empty = z.strictObject({})
+const id = z.object({ id: z.uuid() })
 
 /** Mount behind normal identity, CSRF and authz-sentinel middleware; no public callback bypass. */
 export function createGitHubIdentityRouter(service: GitHubIdentityRoutesService): Hono {
@@ -82,7 +82,7 @@ export function createGitHubIdentityRouter(service: GitHubIdentityRoutesService)
   })
   app.post(
     '/authorization/start',
-    zValidator('json', z.object({ returnTo: z.string().min(1).max(1_024) }).strict()),
+    zValidator('json', z.strictObject({ returnTo: z.string().min(1).max(1_024) })),
     async (c) => {
       try {
         return c.json(await service.start(c.get('identity') as Identity, c.req.valid('json').returnTo))

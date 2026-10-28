@@ -40,14 +40,17 @@ const label = z
   .min(1)
   .max(120)
   .refine((v) => v === v.trim() && !/\p{Cc}/u.test(v))
-const fence = { requestId: z.string().uuid(), expectedGeneration: z.number().int().safe().min(1) }
-export const managedVaultMemberInviteInputSchema = z
-  .object({ ...fence, displayName: label, access: managedBigbrainMemberAccessSchema })
-  .strict()
-export const managedVaultMemberFenceInputSchema = z.object(fence).strict()
-export const managedVaultMemberAccessInputSchema = z
-  .object({ ...fence, access: managedBigbrainMemberAccessSchema })
-  .strict()
+const fence = { requestId: z.uuid(), expectedGeneration: z.int().safe().min(1) }
+export const managedVaultMemberInviteInputSchema = z.strictObject({
+  ...fence,
+  displayName: label,
+  access: managedBigbrainMemberAccessSchema,
+})
+export const managedVaultMemberFenceInputSchema = z.strictObject(fence)
+export const managedVaultMemberAccessInputSchema = z.strictObject({
+  ...fence,
+  access: managedBigbrainMemberAccessSchema,
+})
 
 /** One roster entry for the settings card. `system` members are shown and never editable. */
 export interface ManagedVaultMemberView extends ManagedBigbrainMember {
@@ -98,7 +101,7 @@ function memberView(member: ManagedBigbrainMember): ManagedVaultMemberView {
 
 export function managedVaultMemberMethods(ctx: ManagedVaultMemberContext) {
   const limiter = ctx.limiter ?? managedVaultMemberLimiter
-  function parse<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, input: unknown): T {
+  function parse<T>(schema: z.ZodType<T>, input: unknown): T {
     const parsed = schema.safeParse(input)
     if (!parsed.success) throw ctx.fail('invalid_request')
     return parsed.data

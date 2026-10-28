@@ -43,15 +43,27 @@ function range(min: number | undefined, max: number | undefined, unit: string) {
   return undefined
 }
 
-function describeString(schema: z.ZodString) {
+/** The definitions of a schema's checks, e.g. `{ check: 'min_length', minimum: 1 }`. */
+function checkDefs(schema: z.ZodType): z.core.$ZodCheckDef[] {
+  const checks = (schema._zod.def.checks ?? []).map((check) => check._zod.def)
+  // Top-level formats are their own check, not an entry in def.checks.
+  return schema instanceof z.ZodStringFormat || schema instanceof z.ZodNumberFormat
+    ? [schema._zod.def, ...checks]
+    : checks
+}
+
+function describeString(schema: z.ZodString | z.ZodStringFormat) {
   let min: number | undefined
   let max: number | undefined
   let pattern: string | undefined
-  for (const check of schema._def.checks) {
-    if (check.kind === 'min') min = check.value
-    else if (check.kind === 'max') max = check.value
-    else if (check.kind === 'regex') pattern = check.regex.source
-    else if (check.kind === 'uuid') pattern = 'UUID'
+  for (const check of checkDefs(schema)) {
+    if (check.check === 'min_length') min = (check as z.core.$ZodCheckMinLengthDef).minimum
+    else if (check.check === 'max_length') max = (check as z.core.$ZodCheckMaxLengthDef).maximum
+    else if (check.check === 'string_format') {
+      const format = check as z.core.$ZodCheckStringFormatDef
+      if (format.format === 'regex' && format.pattern) pattern = format.pattern.source
+      else if (format.format === 'uuid') pattern = 'UUID'
+    }
   }
   const length = range(min, max, 'characters')
   return [pattern ? (pattern === 'UUID' ? 'UUID' : `text matching ${pattern}`) : 'text', length]
@@ -63,10 +75,10 @@ function describeNumber(schema: z.ZodNumber) {
   let min: number | undefined
   let max: number | undefined
   let integer = false
-  for (const check of schema._def.checks) {
-    if (check.kind === 'min') min = check.value
-    else if (check.kind === 'max') max = check.value
-    else if (check.kind === 'int') integer = true
+  for (const check of checkDefs(schema)) {
+    if (check.check === 'greater_than') min = Number((check as z.core.$ZodCheckGreaterThanDef).value)
+    else if (check.check === 'less_than') max = Number((check as z.core.$ZodCheckLessThanDef).value)
+    else if (check.check === 'number_format') integer = true
   }
   return [integer ? 'whole number' : 'number', min !== undefined || max !== undefined ? range(min, max, '') : '']
     .filter(Boolean)
@@ -74,54 +86,81 @@ function describeNumber(schema: z.ZodNumber) {
     .trim()
 }
 
+function describeArrayLength(schema: z.ZodArray) {
+  let min: number | undefined
+  let max: number | undefined
+  for (const check of checkDefs(schema)) {
+    if (check.check === 'min_length') min = (check as z.core.$ZodCheckMinLengthDef).minimum
+    else if (check.check === 'max_length') max = (check as z.core.$ZodCheckMaxLengthDef).maximum
+    else if (check.check === 'length_equals') min = max = (check as z.core.$ZodCheckLengthEqualsDef).length
+  }
+  return range(min, max, 'items')
+}
+
+/** `.describe()` text sits on whichever wrapper it was called on. */
+function descriptionOf(schema: z.ZodType): string | undefined {
+  let described: z.ZodType | undefined = schema
+  while (described && !described.description)
+    described =
+      described instanceof z.ZodDefault || described instanceof z.ZodOptional
+        ? (described.unwrap() as z.ZodType)
+        : described instanceof z.ZodPipe
+          ? ((described.in instanceof z.ZodTransform ? described.out : described.in) as z.ZodType)
+          : undefined
+  return described?.description
+}
+
 /**
  * `{ type: choice, instructions, options }`: literal fields show their value, optional ones a `?`.
  * With `types`, every field shows its allowed values.
  */
-function describeObjectKeys(schema: z.ZodObject<z.ZodRawShape>, depth: number, types = false) {
+function describeObjectKeys(schema: z.ZodObject, depth: number, types = false) {
   const keys = Object.entries(schema.shape).map(([key, field]) => {
-    const inner = unwrapZodSchema(field as z.ZodTypeAny)
-    const label = (field as z.ZodTypeAny).isOptional() ? `${key}?` : key
+    const inner = unwrapZodSchema(field as z.ZodType)
+    const label = (field as z.ZodType).isOptional() ? `${key}?` : key
     if (inner instanceof z.ZodLiteral) return `${key}: ${String(inner.value)}`
-    return types ? `${label}: ${describeZodType(field as z.ZodTypeAny, depth + 1)}` : label
+    return types ? `${label}: ${describeZodType(field as z.ZodType, depth + 1)}` : label
   })
   return `{ ${keys.join(', ')} }`
 }
 
-/** Shared types the reference names instead of expanding; the overview explains each name. */
-let namedTypes: Map<z.ZodTypeAny, string> | undefined
-function typeName(schema: z.ZodTypeAny) {
+/**
+ * Shared types the reference names instead of expanding; the overview explains each name.
+ * Keyed by definition: `.describe()` returns a copy that shares its original's definition.
+ */
+let namedTypes: Map<z.core.$ZodTypeDef, string> | undefined
+function typeName(schema: z.ZodType) {
   namedTypes ??= new Map([
-    [unwrapZodSchema(workflowIdentifierSchema), 'ID'],
-    [unwrapZodSchema(workflowTransitionSchema), 'transition'],
+    [unwrapZodSchema(workflowIdentifierSchema)._zod.def, 'ID'],
+    [unwrapZodSchema(workflowTransitionSchema)._zod.def, 'transition'],
   ])
-  return namedTypes.get(schema)
+  return namedTypes.get(schema._zod.def)
 }
 
 /** Allowed values of a schema in one line; nested objects show their field names only. */
-export function describeZodType(schema: z.ZodTypeAny, depth = 0): string {
+export function describeZodType(schema: z.ZodType, depth = 0): string {
   const inner = unwrapZodSchema(schema)
   const name = depth > 0 || schema !== workflowTransitionSchema ? typeName(inner) : undefined
   if (name) return name
-  if (inner instanceof z.ZodString) return describeString(inner)
+  if (inner instanceof z.ZodString || inner instanceof z.ZodStringFormat) return describeString(inner)
   if (inner instanceof z.ZodNumber) return describeNumber(inner)
   if (inner instanceof z.ZodBoolean) return 'true | false'
   if (inner instanceof z.ZodLiteral) return String(inner.value)
   if (inner instanceof z.ZodEnum) return (inner.options as string[]).join(' | ')
   if (inner instanceof z.ZodArray) {
-    const length = range(inner._def.minLength?.value, inner._def.maxLength?.value, 'items')
-    return `list of ${describeZodType(inner.element, depth + 1)}${length ? ` (${length})` : ''}`
+    const length = describeArrayLength(inner)
+    return `list of ${describeZodType(inner.element as z.ZodType, depth + 1)}${length ? ` (${length})` : ''}`
   }
   if (inner instanceof z.ZodRecord)
-    return `map of ${describeZodType(inner.keySchema, depth + 1)} → ${describeZodType(inner.valueSchema, depth + 1)}`
-  if (inner instanceof z.ZodUnion || inner instanceof z.ZodDiscriminatedUnion)
-    return (inner.options as z.ZodTypeAny[]).map((option) => describeZodType(option, depth + 1)).join(' | ')
+    return `map of ${describeZodType(inner.keyType as z.ZodType, depth + 1)} → ${describeZodType(inner.valueType as z.ZodType, depth + 1)}`
+  if (inner instanceof z.ZodUnion)
+    return (inner.options as z.ZodType[]).map((option) => describeZodType(option, depth + 1)).join(' | ')
   if (inner instanceof z.ZodObject) return describeObjectKeys(inner, depth)
-  return inner._def.typeName?.replace(/^Zod/, '').toLowerCase() ?? 'value'
+  return inner._zod.def.type ?? 'value'
 }
 
-function stepOptions(): z.ZodTypeAny[] {
-  return workflowStepSchema.options as unknown as z.ZodTypeAny[]
+function stepOptions(): z.ZodType[] {
+  return workflowStepSchema.options as unknown as z.ZodType[]
 }
 
 export function workflowStepKinds(): string[] {
@@ -134,15 +173,14 @@ export function workflowSchemaOverview(): WorkflowSchemaOverview {
     description: option.description,
   }))
   const defaultKind = stepOptions()
-    .map((option) => (unwrapZodSchema(option) as z.ZodObject<z.ZodRawShape>).shape.kind)
-    .find((field): field is z.ZodDefault<z.ZodTypeAny> => field instanceof z.ZodDefault)
-    ?._def.defaultValue()
+    .map((option) => (unwrapZodSchema(option) as z.ZodObject).shape.kind)
+    .find((field): field is z.ZodDefault => field instanceof z.ZodDefault)?._zod.def.defaultValue as string | undefined
   return {
     kinds,
     defaultKind,
     id: `${describeString(unwrapZodSchema(workflowIdentifierSchema) as z.ZodString)}; not ${WORKFLOW_RESERVED_IDS.join(', ')}`,
-    transitions: (workflowTransitionSchema.options as readonly z.ZodTypeAny[]).map((option) =>
-      describeObjectKeys(unwrapZodSchema(option) as z.ZodObject<z.ZodRawShape>, 0, true)
+    transitions: (workflowTransitionSchema.options as readonly z.ZodType[]).map((option) =>
+      describeObjectKeys(unwrapZodSchema(option) as z.ZodObject, 0, true)
     ),
   }
 }
@@ -152,23 +190,15 @@ export function workflowStepKindReference(kind: string): WorkflowStepKindReferen
   const option = stepOptions().find((candidate) => discriminatorLiteral(candidate, 'kind') === kind)
   if (!option) return undefined
   const reference: WorkflowStepKindReference = { kind, description: option.description, required: [], optional: [] }
-  const shape = (unwrapZodSchema(option) as z.ZodObject<z.ZodRawShape>).shape
+  const shape = (unwrapZodSchema(option) as z.ZodObject).shape
   // The kind identifies the step, so it leads; the rest keep schema order.
   const names = ['kind', ...Object.keys(shape).filter((name) => name !== 'kind')]
   for (const [name, field] of names.map((name) => [name, shape[name]] as const)) {
-    const schema = field as z.ZodTypeAny
+    const schema = field as z.ZodType
     const entry: WorkflowSchemaField = { name, type: describeZodType(schema) }
-    if (schema instanceof z.ZodDefault) entry.default = schema._def.defaultValue()
-    // Descriptions sit on whichever wrapper `.describe()` was called on.
-    let described: z.ZodTypeAny | undefined = schema
-    while (described && !described.description)
-      described =
-        described instanceof z.ZodDefault || described instanceof z.ZodOptional
-          ? described._def.innerType
-          : described instanceof z.ZodEffects
-            ? described._def.schema
-            : undefined
-    if (described?.description) entry.description = described.description
+    if (schema instanceof z.ZodDefault) entry.default = schema._zod.def.defaultValue
+    const description = descriptionOf(schema)
+    if (description) entry.description = description
     ;(schema.isOptional() ? reference.optional : reference.required).push(entry)
   }
   return reference

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { keyedRecord } from './zod-helpers'
 import { eventPredicateFields, eventPredicateField } from './event-predicate-catalog'
 import {
   integrationDataPathSchema,
@@ -8,20 +9,18 @@ import {
 
 /** Synthetic, user-entered facts only. Flat allowlisted paths avoid exposing stored provider payloads. */
 export const syntheticEventSampleSchema = z
-  .object({
+  .strictObject({
     source: integrationSubscriptionSchema.shape.source,
-    fields: z
-      .record(
-        integrationDataPathSchema,
-        z.union([
-          z.string().max(2000),
-          z.number().finite(),
-          z.boolean(),
-          z.array(z.string().max(2000)).max(100),
-          z.null(),
-        ])
-      )
-      .refine((fields) => Object.keys(fields).length <= 32, 'Use at most 32 sample fields'),
+    fields: keyedRecord(
+      integrationDataPathSchema,
+      z.union([
+        z.string().max(2000),
+        z.number().finite(),
+        z.boolean(),
+        z.array(z.string().max(2000)).max(100),
+        z.null(),
+      ])
+    ).refine((fields) => Object.keys(fields).length <= 32, 'Use at most 32 sample fields'),
     login: z
       .string()
       .max(100)
@@ -29,7 +28,6 @@ export const syntheticEventSampleSchema = z
       .default(''),
     mentioned: z.boolean().default(false),
   })
-  .strict()
   .superRefine((sample, ctx) => {
     const fields = eventPredicateFields(sample.source)
     if (!fields) ctx.addIssue({ code: 'custom', path: ['source'], message: 'Unsupported sample event version' })

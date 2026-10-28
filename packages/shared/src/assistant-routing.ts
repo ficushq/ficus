@@ -42,12 +42,12 @@ export interface AssistantRoutingCorrection extends AssistantRoutingTarget {
 
 export const assistantRoutingCorrectionRequestSchema = z.discriminatedUnion('scope', [
   z.object({
-    messageId: z.string().uuid(),
-    clientId: z.string().uuid(),
+    messageId: z.uuid(),
+    clientId: z.uuid(),
     scope: z.literal('squad'),
-    squadId: z.string().uuid(),
+    squadId: z.uuid(),
   }),
-  z.object({ messageId: z.string().uuid(), clientId: z.string().uuid(), scope: z.literal('none') }),
+  z.object({ messageId: z.uuid(), clientId: z.uuid(), scope: z.literal('none') }),
 ])
 export type AssistantRoutingCorrectionRequest = z.infer<typeof assistantRoutingCorrectionRequestSchema>
 
@@ -72,13 +72,13 @@ export const assistantRoutingSendSchema = z.object({
   hint: z
     .object({
       scope: z.enum(['instance', 'general', 'squad']),
-      squadId: z.string().uuid().optional(),
+      squadId: z.uuid().optional(),
       confidence: z.number().min(0).max(1),
     })
     .optional(),
   pick: z
     .discriminatedUnion('scope', [
-      z.object({ scope: z.literal('squad'), squadId: z.string().uuid() }),
+      z.object({ scope: z.literal('squad'), squadId: z.uuid() }),
       z.object({ scope: z.literal('none') }),
     ])
     .optional(),

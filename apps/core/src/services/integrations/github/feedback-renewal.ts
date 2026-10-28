@@ -39,7 +39,7 @@ export async function isGitHubOutputRevoked(store: typeof db | DbTx, event: Even
 
 async function renewKnownInPass(eventIds: string[]) {
   const ids = [...new Set(eventIds)]
-  if (ids.length > GITHUB_RENEWAL_READ_LIMIT || ids.some((id) => !z.string().uuid().safeParse(id).success))
+  if (ids.length > GITHUB_RENEWAL_READ_LIMIT || ids.some((id) => !z.uuid().safeParse(id).success))
     throw new Error('invalid_github_renewal_batch')
   const result = { renewed: [] as string[], withheld: [] as string[], deferred: [] as string[] }
   const selected = ids.filter((id) => {
@@ -81,7 +81,7 @@ async function renewKnownInPass(eventIds: string[]) {
 
 /** Observed automatic revocation is held history, not a grant when trust returns later. */
 export async function withholdRevokedAutomaticGitHubOutput(eventId: string) {
-  if (!z.string().uuid().safeParse(eventId).success) return
+  if (!z.uuid().safeParse(eventId).success) return
   const { githubFeedbackRevisions } = await import('../../../db')
   const { lockGitHubTrustAuthority } = await import('./trust-authority-lock')
   const { isTrustedGitHubFeedbackContent } = await import('./feedback-trust')

@@ -3,13 +3,19 @@ import { Hono } from 'hono'
 import { requirePeerSignatureGet } from './require-peer-signature-get'
 import { canonicalPeerGetString } from 'amtp-protocol'
 import { authzSentinel } from './authz-sentinel'
+import { routeParam } from '../lib/route-param'
 import { Peer } from '../entities/Peer'
 import { generateInstanceKeyPair, instanceIdFromPublicKeyPem, signEnvelope } from '../services/amtp/crypto'
 
-function buildApp() {
+function buildApp(prefix = '/api/amtp') {
   const app = new Hono()
-  app.use('/api/*', authzSentinel)
-  app.get('/api/amtp/attachments/:id', requirePeerSignatureGet, (c) =>
+  app.use('*', authzSentinel)
+  app.get(
+    `${prefix}/attachments/:id`,
+    requirePeerSignatureGet((c) => `/amtp/attachments/${encodeURIComponent(routeParam(c, 'id'))}`),
+    (c) => c.json({ ok: true, peer: c.get('peerInstanceId') })
+  )
+  app.get(`${prefix}/handles`, requirePeerSignatureGet('/amtp/handles'), (c) =>
     c.json({ ok: true, peer: c.get('peerInstanceId') })
   )
   return app
@@ -51,6 +57,47 @@ afterAll(async () => {
 const PATH = '/api/amtp/attachments/a1'
 
 describe('requirePeerSignatureGet', () => {
+  for (const prefix of ['/api/amtp', '/proxy/api/amtp']) {
+    for (const route of ['/attachments/a1', '/handles']) {
+      test(`accepts route-relative signature for ${prefix}${route}`, async () => {
+        const ts = Date.now()
+        const sig = signEnvelope(
+          activeKeys.privateKeyPem,
+          new TextEncoder().encode(canonicalPeerGetString('GET', `/amtp${route}`, ts))
+        )
+        const res = await buildApp(prefix).request(`${prefix}${route}`, {
+          headers: {
+            'x-amtp-instance': activeInstanceId,
+            'x-amtp-signature': sig,
+            'x-amtp-timestamp': String(ts),
+          },
+        })
+        expect(res.status).toBe(200)
+        expect(await res.json()).toEqual({ ok: true, peer: activeInstanceId })
+      })
+    }
+  }
+
+  test.each(['/amtp/attachments/OTHER', '/other/amtp/attachments/a1', '/amtp/handles'])(
+    'rejects a signature for an unrelated route: %s',
+    async (signedPath) => {
+      const ts = Date.now()
+      const sig = signEnvelope(
+        activeKeys.privateKeyPem,
+        new TextEncoder().encode(canonicalPeerGetString('GET', signedPath, ts))
+      )
+      const res = await app.request(PATH, {
+        headers: {
+          'x-amtp-instance': activeInstanceId,
+          'x-amtp-signature': sig,
+          'x-amtp-timestamp': String(ts),
+        },
+      })
+      expect(res.status).toBe(401)
+      expect(await res.json()).toEqual({ error: 'Unauthorized' })
+    }
+  )
+
   test('valid signature + headers → 200, body.peer === peerInstanceId', async () => {
     const ts = Date.now()
     const canonical = canonicalPeerGetString('GET', PATH, ts)

@@ -133,13 +133,17 @@ const safeFields = new Set(
     ' '
   )
 )
+function isDiscriminatorMiss(issue: object) {
+  return 'errors' in issue && Array.isArray(issue.errors) && issue.errors.length === 0
+}
+
 export function validateStructuredInput<T>(
   schema: {
     safeParse(
       value: unknown
     ):
       | { success: true; data: T }
-      | { success: false; error: { issues: { code: string; path: (string | number)[]; message?: string }[] } }
+      | { success: false; error: { issues: readonly { code: string; path: PropertyKey[]; message?: string }[] } }
   },
   value: unknown
 ): T {
@@ -149,17 +153,21 @@ export function validateStructuredInput<T>(
     const path =
       issue.path
         .slice(0, 8)
-        .map((part) => (typeof part === 'number' ? `[${part}]` : safeFields.has(part) ? part : '[key]'))
+        .map((part) =>
+          typeof part === 'number' ? `[${part}]` : typeof part === 'string' && safeFields.has(part) ? part : '[key]'
+        )
         .join('.')
         .replace(/\.\[/g, '[') || 'root'
     // Ficus's own checks (custom issues) say how to fix it, e.g. "Route 1: uses unknown outcome '…';
     // add it to the step's outcomes". A failed step names its kind and the fields it is missing,
     // e.g. "human-approval step: output is required". Anything these quote from the input is
     // caller data, like the keys above, so quoted values and listed names are left out.
+    // A discriminated union without a member for the given value has no member issues; it lists the values.
+    const explained = issue.code === 'custom' || (issue.code === 'invalid_union' && !isDiscriminatorMiss(issue))
     const message = (
-      issue.code === 'custom' || issue.code === 'invalid_union'
+      explained
         ? (issue.message ?? issue.code)
-        : describeZodIssue(issue as Parameters<typeof describeZodIssue>[0])
+        : describeZodIssue(issue as Parameters<typeof describeZodIssue>[0], '', { root: value })
     )
       .replace(/'[^']*'/g, "'…'")
       .replace(/\([^()]*\)/g, '(…)')

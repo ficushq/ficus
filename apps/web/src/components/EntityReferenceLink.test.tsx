@@ -7,8 +7,8 @@ import { queries } from '../queryOptions'
 import { EntityReferenceLink } from './EntityReferenceLink'
 import type { EntityReference } from '../lib/entityReference'
 
-const agentId = 'abc12345-1234-1234-1234-123456789012'
-const workId = 'def12345-1234-1234-1234-123456789012'
+const agentId = 'abc12345-1234-4234-8234-123456789012'
+const workId = 'def12345-1234-4234-8234-123456789012'
 
 async function fixture(reference: EntityReference, onOpenAgent?: (agent: import('@ficus/shared').Agent) => void) {
   // Load lazy modules before installing the DOM's constructor globals.

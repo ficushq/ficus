@@ -18,7 +18,7 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { Hono, type Context } from 'hono'
 import { WorkStreamStackedDeliveryHoldError } from '../services/work-streams/dependency-edges'
 import { createMiddleware } from 'hono/factory'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../lib/zod-validator'
 import {
   approveWorkStreamSchema,
   InvalidDependencyConditionError,
@@ -554,8 +554,8 @@ export const workStreamsRouter = new Hono()
     const cursor = c.req.query('cursor')
     const completionRange = z
       .object({
-        completedAfter: z.string().datetime().optional(),
-        completedBefore: z.string().datetime().optional(),
+        completedAfter: z.iso.datetime().optional(),
+        completedBefore: z.iso.datetime().optional(),
       })
       .safeParse({ completedAfter: c.req.query('completedAfter'), completedBefore: c.req.query('completedBefore') })
     if (!completionRange.success) return c.json({ error: 'Invalid completion date range' }, 400)
@@ -1044,10 +1044,7 @@ export const workStreamsRouter = new Hono()
       const identity = c.get('identity') as Identity | undefined
       if (identity?.type !== 'agent') return c.json({ error: 'Agent identity required' }, 403)
       const body = await parseOptionalJsonObjectBody(c, {} as Record<string, unknown>)
-      const parsed = z
-        .object({ events: z.literal('terminal').optional() })
-        .strict()
-        .safeParse(body)
+      const parsed = z.strictObject({ events: z.literal('terminal').optional() }).safeParse(body)
       if (!parsed.success)
         return c.json({ error: 'Only terminal events are supported; recipient is the calling agent' }, 400)
       try {

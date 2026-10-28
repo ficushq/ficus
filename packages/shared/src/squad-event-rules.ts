@@ -9,68 +9,61 @@ import {
 } from './event-predicates'
 import { eventPredicateField } from './event-predicate-catalog'
 import { z } from 'zod'
+import { keyedRecord } from './zod-helpers'
 import { integrationSubscriptionSchema, integrationValueAt, type IntegrationOutputFact } from './integration-outputs'
 import { workflowEventTriggerSchema, workflowSourceSchema, type WorkflowSource } from './workflows'
 
 export const squadEventRuleSchema = z
-  .object({
+  .strictObject({
     id: workflowEventTriggerSchema.shape.id,
     enabled: z.boolean().default(true),
     source: integrationSubscriptionSchema.shape.source,
     match: workflowEventTriggerSchema.shape.match.optional(),
     predicates: z.array(eventRulePredicateSchema).max(16).optional(),
-    filters: z
-      .object({
-        squadRouting: z.boolean().default(false),
-        repository: z.string().trim().max(200).optional(),
-        labels: z.array(z.string().trim().min(1).max(100)).max(100).optional(),
-        teamId: z.string().trim().max(200).optional(),
-        audience: z.enum(['connected-account', 'assigned-or-mentioned', 'any']).default('connected-account'),
-      })
-      .strict(),
+    filters: z.strictObject({
+      squadRouting: z.boolean().default(false),
+      repository: z.string().trim().max(200).optional(),
+      labels: z.array(z.string().trim().min(1).max(100)).max(100).optional(),
+      teamId: z.string().trim().max(200).optional(),
+      audience: z.enum(['connected-account', 'assigned-or-mentioned', 'any']).default('connected-account'),
+    }),
     action: z.discriminatedUnion('type', [
-      z
-        .object({ type: z.literal('notify-manager'), additionalContext: z.string().trim().max(10000).optional() })
-        .strict(),
-      z
-        .object({ type: z.literal('notify-consultant'), additionalContext: z.string().trim().max(10000).optional() })
-        .strict(),
-      z.object({ type: z.literal('ignore') }).strict(),
-      z
-        .object({
-          type: z.literal('start-workstream'),
-          workflow: workflowSourceSchema.optional(),
-          titlePrefix: z.string().max(100).optional(),
-          additionalContext: z.string().trim().max(10000).optional(),
-          metadata: workflowEventTriggerSchema.shape.create.shape.metadata.optional(),
-        })
-        .strict(),
+      z.strictObject({ type: z.literal('notify-manager'), additionalContext: z.string().trim().max(10000).optional() }),
+      z.strictObject({
+        type: z.literal('notify-consultant'),
+        additionalContext: z.string().trim().max(10000).optional(),
+      }),
+      z.strictObject({ type: z.literal('ignore') }),
+      z.strictObject({
+        type: z.literal('start-workstream'),
+        workflow: workflowSourceSchema.optional(),
+        titlePrefix: z.string().max(100).optional(),
+        additionalContext: z.string().trim().max(10000).optional(),
+        metadata: workflowEventTriggerSchema.shape.create.shape.metadata.optional(),
+      }),
     ]),
   })
-  .strict()
   .superRefine((rule, ctx) => {
     if (rule.predicates?.length) validateEventPredicates(rule.source, rule.predicates, ctx)
   })
 export type SquadEventRule = z.infer<typeof squadEventRuleSchema>
-export const squadEventRulesSchema = z
-  .record(
-    z.string().regex(/^[a-z][a-z0-9-]*$/),
-    z
-      .array(squadEventRuleSchema)
-      .max(32)
-      .refine((rules) => new Set(rules.map((rule) => rule.id)).size === rules.length, 'Duplicate event rule ID')
-  )
-  .superRefine((providers, ctx) => {
-    for (const [provider, rules] of Object.entries(providers))
-      rules.forEach((rule, index) => {
-        if (rule.source.integration !== provider)
-          ctx.addIssue({
-            code: 'custom',
-            path: [provider, index, 'source'],
-            message: 'Rule provider must match its integration',
-          })
-      })
-  })
+export const squadEventRulesSchema = keyedRecord(
+  z.string().regex(/^[a-z][a-z0-9-]*$/),
+  z
+    .array(squadEventRuleSchema)
+    .max(32)
+    .refine((rules) => new Set(rules.map((rule) => rule.id)).size === rules.length, 'Duplicate event rule ID')
+).superRefine((providers, ctx) => {
+  for (const [provider, rules] of Object.entries(providers))
+    rules.forEach((rule, index) => {
+      if (rule.source.integration !== provider)
+        ctx.addIssue({
+          code: 'custom',
+          path: [provider, index, 'source'],
+          message: 'Rule provider must match its integration',
+        })
+    })
+})
 const record = (value: unknown): Record<string, any> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, any>) : {}
 const strings = (value: unknown): string[] =>

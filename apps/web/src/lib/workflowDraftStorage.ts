@@ -39,17 +39,17 @@ const definition = workflowDefinitionShapeSchema.extend({
         workflowStepSchema.options[0].extend({
           instructions: z.string(),
           output: z.string(),
-          outcomes: z.record(draftTransition),
+          outcomes: z.record(z.string(), draftTransition),
         }),
         workflowStepSchema.options[1].extend({
           instructions: z.string(),
           output: z.string(),
-          outcomes: z.record(draftTransition),
+          outcomes: z.record(z.string(), draftTransition),
         }),
         workflowStepSchema.options[2].extend({
           instructions: z.string(),
           questions: draftQuestions,
-          outcomes: z.record(draftTransition),
+          outcomes: z.record(z.string(), draftTransition),
         }),
       ])
     )
@@ -62,7 +62,7 @@ const definition = workflowDefinitionShapeSchema.extend({
 })
 const draftSchema = z.object({
   version: z.literal(1),
-  positions: z.record(z.object({ x: z.number().finite(), y: z.number().finite() })).default({}),
+  positions: z.record(z.string(), z.object({ x: z.number().finite(), y: z.number().finite() })).default({}),
   id: z.string(),
   idEdited: z.boolean(),
   description: z.string(),

@@ -27,17 +27,17 @@ test('ssh trust migration marks every endpoint Core already connected to for ado
       )
       await tx.execute(
         sql.raw(`INSERT INTO "machines" ("id", "name", "provider", "ssh_host", "ssh_port") VALUES
-          ('11111111-1111-1111-1111-111111111111', 'byo', 'ssh', '10.0.0.9', 2222),
-          ('22222222-2222-2222-2222-222222222222', 'vm', 'exe', 'vm.exe.xyz', 22)`)
+          ('11111111-1111-4111-8111-111111111111', 'byo', 'ssh', '10.0.0.9', 2222),
+          ('22222222-2222-4222-8222-222222222222', 'vm', 'exe', 'vm.exe.xyz', 22)`)
       )
       await tx.execute(
         sql.raw(`INSERT INTO "squads" ("id", "metadata") VALUES
-          ('33333333-3333-3333-3333-333333333333', '{"memory":{"sync":{"providers":[
+          ('33333333-3333-4333-8333-333333333333', '{"memory":{"sync":{"providers":[
             {"type":"git","repoUrl":"git@GitHub.com:org/mem.git"},
             {"type":"git","repoUrl":"https://github.com/org/other.git"},
             {"type":"s3","bucket":"b"}]}}}'),
-          ('44444444-4444-4444-4444-444444444444', '{"memory":{"sync":{"providers":"not-an-array"}}}'),
-          ('55555555-5555-5555-5555-555555555555', '{}')`)
+          ('44444444-4444-4444-8444-444444444444', '{"memory":{"sync":{"providers":"not-an-array"}}}'),
+          ('55555555-5555-4555-8555-555555555555', '{}')`)
       )
 
       for (const statement of statements) await tx.execute(sql.raw(statement))
@@ -57,7 +57,7 @@ test('ssh trust migration marks every endpoint Core already connected to for ado
           adoption_pending: true,
         },
         {
-          scope: 'machine:11111111-1111-1111-1111-111111111111',
+          scope: 'machine:11111111-1111-4111-8111-111111111111',
           kind: 'machine',
           squad_id: null,
           ssh_host: '10.0.0.9',
@@ -65,7 +65,7 @@ test('ssh trust migration marks every endpoint Core already connected to for ado
           adoption_pending: true,
         },
         {
-          scope: 'machine:22222222-2222-2222-2222-222222222222',
+          scope: 'machine:22222222-2222-4222-8222-222222222222',
           kind: 'exe-machine',
           squad_id: null,
           ssh_host: 'vm.exe.xyz',
@@ -73,9 +73,9 @@ test('ssh trust migration marks every endpoint Core already connected to for ado
           adoption_pending: true,
         },
         {
-          scope: 'memory-git:33333333-3333-3333-3333-333333333333:github.com',
+          scope: 'memory-git:33333333-3333-4333-8333-333333333333:github.com',
           kind: 'memory-git',
-          squad_id: '33333333-3333-3333-3333-333333333333',
+          squad_id: '33333333-3333-4333-8333-333333333333',
           ssh_host: 'github.com',
           ssh_port: 22,
           adoption_pending: true,

@@ -12,7 +12,7 @@ import {
   managedBigbrainHostReceiptSchema,
   managedBigbrainLimitsSchema,
   managedBigbrainOwnerSchema,
-  managedBigbrainReadHandoffSchema,
+  managedBigbrainReadHandoffObjectSchema,
   managedBigbrainVaultShortId,
   type ManagedBigbrainHostReceipt,
 } from '@ficus/shared/managed-bigbrain'
@@ -22,7 +22,7 @@ export type ManagedVault = typeof managedBigbrainVaults.$inferSelect
 export type ManagedVaultAction = 'create' | 'rename' | 'read-revoke' | 'read-reconnect' | 'delete'
 /** The imported host read handoff minus its token: identity/binding facts that are safe to
  * persist. The token itself is stored only in the credential store. */
-export const managedReadMaterialSchema = managedBigbrainReadHandoffSchema.innerType().omit({ token: true })
+export const managedReadMaterialSchema = managedBigbrainReadHandoffObjectSchema.omit({ token: true })
 export type ManagedReadMaterial = z.infer<typeof managedReadMaterialSchema>
 export type ManagedVaultStoreCode =
   | 'invalid_request'
@@ -47,52 +47,44 @@ export class ManagedVaultStoreError extends Error {
   }
 }
 
-const uuid = z.string().uuid()
+const uuid = z.uuid()
 const label = z
   .string()
   .min(1)
   .max(120)
   .refine((v) => v === v.trim() && !/\p{Cc}/u.test(v))
-export const managedCreateRecipeSchema = z
-  .object({
-    origin: z.string().max(253),
-    limits: managedBigbrainLimitsSchema,
-    upstreamCommit: z.string().regex(/^[0-9a-f]{40}$/),
-    artifactDigest: z.string().regex(/^sha256:[0-9a-f]{64}$/),
-  })
-  .strict()
+export const managedCreateRecipeSchema = z.strictObject({
+  origin: z.string().max(253),
+  limits: managedBigbrainLimitsSchema,
+  upstreamCommit: z.string().regex(/^[0-9a-f]{40}$/),
+  artifactDigest: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+})
 export type ManagedCreateRecipe = z.infer<typeof managedCreateRecipeSchema>
-const createRequestSchema = z
-  .object({
-    vaultId: uuid.optional(),
-    requestId: uuid,
-    displayName: label,
-    hostOwnerUserId: uuid,
-    ownerHandle: managedBigbrainOwnerSchema.shape.handle,
-    ownerDisplay: managedBigbrainOwnerSchema.shape.display,
-    actorUserId: uuid,
-    recipe: managedCreateRecipeSchema,
-    /** Live vaults allowed on this host; checked under a lock with the insert. */
-    maxLive: z.number().int().min(1).optional(),
-  })
-  .strict()
+const createRequestSchema = z.strictObject({
+  vaultId: uuid.optional(),
+  requestId: uuid,
+  displayName: label,
+  hostOwnerUserId: uuid,
+  ownerHandle: managedBigbrainOwnerSchema.shape.handle,
+  ownerDisplay: managedBigbrainOwnerSchema.shape.display,
+  actorUserId: uuid,
+  recipe: managedCreateRecipeSchema,
+  /** Live vaults allowed on this host; checked under a lock with the insert. */
+  maxLive: z.int().min(1).optional(),
+})
 export type ManagedVaultCreateRequest = z.infer<typeof createRequestSchema>
 const operationRequestSchema = z.discriminatedUnion('action', [
-  z
-    .object({
-      action: z.literal('rename'),
-      requestId: uuid,
-      expectedGeneration: z.number().int().min(1),
-      displayName: label,
-    })
-    .strict(),
-  z
-    .object({
-      action: z.enum(['read-revoke', 'read-reconnect', 'delete']),
-      requestId: uuid,
-      expectedGeneration: z.number().int().min(1),
-    })
-    .strict(),
+  z.strictObject({
+    action: z.literal('rename'),
+    requestId: uuid,
+    expectedGeneration: z.int().min(1),
+    displayName: label,
+  }),
+  z.strictObject({
+    action: z.enum(['read-revoke', 'read-reconnect', 'delete']),
+    requestId: uuid,
+    expectedGeneration: z.int().min(1),
+  }),
 ])
 export type ManagedVaultOperationRequest = z.infer<typeof operationRequestSchema>
 

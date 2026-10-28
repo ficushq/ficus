@@ -84,24 +84,20 @@ export async function readStagedArchive(
  * restored database is the vault authority), the archived hostname label (bb-<32 hex> or
  * <tenant>-bb-<12 hex>, never re-derived from the current tenant label) in THIS host's installed
  * zone, a strictly newer generation, and read access always revoked. */
-export const restoreEntrySchema = z
-  .object({
-    vaultId: z.string().uuid(),
-    upstreamVaultId: z.string().uuid(),
-    generation: z.number().int().safe().positive(),
-    displayName: z.string().min(1).max(120),
-    owner: managedBigbrainOwnerSchema,
-    origin: z.string().max(253),
-  })
-  .strict()
+export const restoreEntrySchema = z.strictObject({
+  vaultId: z.uuid(),
+  upstreamVaultId: z.uuid(),
+  generation: z.int().safe().positive(),
+  displayName: z.string().min(1).max(120),
+  owner: managedBigbrainOwnerSchema,
+  origin: z.string().max(253),
+})
 export type RestoreEntry = z.infer<typeof restoreEntrySchema>
-export const restorePlanSchema = z
-  .object({
-    schema: z.literal(2),
-    manifestDigest: z.string().regex(/^sha256:[0-9a-f]{64}$/),
-    vaults: z.array(restoreEntrySchema).max(MANAGED_BIGBRAIN_MAX_VAULTS),
-  })
-  .strict()
+export const restorePlanSchema = z.strictObject({
+  schema: z.literal(2),
+  manifestDigest: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+  vaults: z.array(restoreEntrySchema).max(MANAGED_BIGBRAIN_MAX_VAULTS),
+})
 export type RestorePlan = z.infer<typeof restorePlanSchema>
 
 /** Every archived vault is restored (whole-instance restore semantics: a vault deleted after the

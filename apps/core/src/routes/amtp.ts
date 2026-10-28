@@ -1,6 +1,6 @@
 import { getPostgresError, publicErrorMessage } from '../db/errors'
 import { Hono } from 'hono'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../lib/zod-validator'
 import type { Context } from 'hono'
 import {
   createPeerSchema,
@@ -194,7 +194,7 @@ export const amtpRouter = new Hono()
   // Peer-facing handle discovery (parent design §6.2): which handles this instance
   // publishes. Auth = instance signature over the canonical GET string (established
   // peers only) — the public /identity payload intentionally does NOT include handles.
-  .get('/handles', requirePeerSignatureGet, async (c) => {
+  .get('/handles', requirePeerSignatureGet('/amtp/handles'), async (c) => {
     return c.json(await amtpEngine.listHandles())
   })
 
@@ -474,20 +474,24 @@ export const amtpRouter = new Hono()
   // (default-deny via outbox check). Both the auth-failed and the not-authorized cases return 404
   // to avoid leaking existence. TLS-at-transport assumption (§10) makes the 5-min replay window
   // acceptable for this idempotent, read-only route.
-  .get('/attachments/:id', requirePeerSignatureGet, async (c) => {
-    const peerInstanceId = c.get('peerInstanceId')!
-    const id = c.req.param('id')
+  .get(
+    '/attachments/:id',
+    requirePeerSignatureGet((c) => `/amtp/attachments/${encodeURIComponent(routeParam(c, 'id'))}`),
+    async (c) => {
+      const peerInstanceId = c.get('peerInstanceId')!
+      const id = c.req.param('id')
 
-    const result = await amtpEngine.serveAttachment({ peerInstanceId, attachmentId: id })
-    if (!result.found) return c.json({ error: 'Not found' }, 404)
+      const result = await amtpEngine.serveAttachment({ peerInstanceId, attachmentId: id })
+      if (!result.found) return c.json({ error: 'Not found' }, 404)
 
-    // `new Uint8Array(bytes)` is MANDATORY (not conditional): `new Response(Buffer)` is the exact
-    // BodyInit pattern that produces the known inbox.ts:148 tsc error; wrapping avoids a NEW error.
-    return new Response(new Uint8Array(result.bytes), {
-      status: 200,
-      headers: {
-        'content-type': result.contentType,
-        'content-length': String(result.byteSize),
-      },
-    })
-  })
+      // `new Uint8Array(bytes)` is MANDATORY (not conditional): `new Response(Buffer)` is the exact
+      // BodyInit pattern that produces the known inbox.ts:148 tsc error; wrapping avoids a NEW error.
+      return new Response(new Uint8Array(result.bytes), {
+        status: 200,
+        headers: {
+          'content-type': result.contentType,
+          'content-length': String(result.byteSize),
+        },
+      })
+    }
+  )

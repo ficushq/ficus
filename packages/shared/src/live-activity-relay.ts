@@ -6,61 +6,53 @@ import type { LiveActivityState } from './live-activity'
 export const LIVE_ACTIVITY_RELAY_PROTOCOL = 1 as const
 export const LIVE_ACTIVITY_RELAY_MAX_BODY_BYTES = 8192
 export const liveActivityBindingTokenSchema = z.string().regex(/^ficus_pla_[A-Za-z0-9_-]{43}$/)
-const uuid = z.string().uuid()
-const sequence = z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
-const count = z.number().int().nonnegative().max(2147483647)
+const uuid = z.uuid()
+const sequence = z.int().positive().max(Number.MAX_SAFE_INTEGER)
+const count = z.int().nonnegative().max(2147483647)
 
-export const relayLiveActivityStateSchema = z
-  .object({
-    activeCount: count,
-    needsYouCount: count,
-    top: z
-      .array(
-        z
-          .object({
-            id: uuid,
-            number: z.number().int().positive().max(2147483647).optional(),
-            title: z.string().max(200),
-            bucket: z.enum(['needsYou', 'running', 'blocked', 'queued', 'paused', 'externalWait']),
-            squadId: uuid,
-            agentId: uuid.optional(),
-          })
-          .strict()
-      )
-      .max(3),
-  })
-  .strict() satisfies z.ZodType<LiveActivityState>
+export const relayLiveActivityStateSchema = z.strictObject({
+  activeCount: count,
+  needsYouCount: count,
+  top: z
+    .array(
+      z.strictObject({
+        id: uuid,
+        number: z.int().positive().max(2147483647).optional(),
+        title: z.string().max(200),
+        bucket: z.enum(['needsYou', 'running', 'blocked', 'queued', 'paused', 'externalWait']),
+        squadId: uuid,
+        agentId: uuid.optional(),
+      })
+    )
+    .max(3),
+}) satisfies z.ZodType<LiveActivityState>
 
 /** Device-signed registration, sent directly to the relay, never authenticated by Core alone.
  * activityKey is carried in immutable native attributes for both remote and local starts.
  * ActivityKit activityId is opaque and distinct from our lifecycle UUID. */
 export const relayLiveActivityRegistrationSchema = z.discriminatedUnion('kind', [
-  z
-    .object({
-      version: z.literal(LIVE_ACTIVITY_RELAY_PROTOCOL),
-      activationId: uuid,
-      bindingToken: liveActivityBindingTokenSchema,
-      deviceToken: apnsTokenSchema,
-      environment: z.enum(['production', 'sandbox']),
-      previews: z.boolean().optional(),
-      aggregateKey: uuid.optional(),
-      kind: z.literal('start'),
-    })
-    .strict(),
-  z
-    .object({
-      version: z.literal(LIVE_ACTIVITY_RELAY_PROTOCOL),
-      activationId: uuid,
-      bindingToken: liveActivityBindingTokenSchema,
-      deviceToken: apnsTokenSchema,
-      environment: z.enum(['production', 'sandbox']),
-      previews: z.boolean().optional(),
-      aggregateKey: uuid.optional(),
-      kind: z.literal('update'),
-      activityKey: uuid,
-      activityId: z.string().min(1).max(256),
-    })
-    .strict(),
+  z.strictObject({
+    version: z.literal(LIVE_ACTIVITY_RELAY_PROTOCOL),
+    activationId: uuid,
+    bindingToken: liveActivityBindingTokenSchema,
+    deviceToken: apnsTokenSchema,
+    environment: z.enum(['production', 'sandbox']),
+    previews: z.boolean().optional(),
+    aggregateKey: uuid.optional(),
+    kind: z.literal('start'),
+  }),
+  z.strictObject({
+    version: z.literal(LIVE_ACTIVITY_RELAY_PROTOCOL),
+    activationId: uuid,
+    bindingToken: liveActivityBindingTokenSchema,
+    deviceToken: apnsTokenSchema,
+    environment: z.enum(['production', 'sandbox']),
+    previews: z.boolean().optional(),
+    aggregateKey: uuid.optional(),
+    kind: z.literal('update'),
+    activityKey: uuid,
+    activityId: z.string().min(1).max(256),
+  }),
 ])
 export type RelayLiveActivityRegistration = z.infer<typeof relayLiveActivityRegistrationSchema>
 
@@ -92,36 +84,34 @@ const envelope = {
   sequence,
 }
 export const relayLiveActivitySendSchema = z.discriminatedUnion('event', [
-  z.object({ ...envelope, event: z.literal('start'), contentState: relayLiveActivityStateSchema }).strict(),
-  z.object({ ...envelope, event: z.literal('update'), contentState: relayLiveActivityStateSchema }).strict(),
+  z.strictObject({ ...envelope, event: z.literal('start'), contentState: relayLiveActivityStateSchema }),
+  z.strictObject({ ...envelope, event: z.literal('update'), contentState: relayLiveActivityStateSchema }),
   // Cleanup carries no content. The relay constructs an empty state and immediate dismissal.
-  z.object({ ...envelope, event: z.literal('end') }).strict(),
+  z.strictObject({ ...envelope, event: z.literal('end') }),
 ])
 export type RelayLiveActivitySend = z.infer<typeof relayLiveActivitySendSchema>
 
 export const relayLiveActivityResponseSchema = z.discriminatedUnion('status', [
-  z.object({ version: z.literal(1), status: z.literal('sent') }).strict(),
+  z.strictObject({ version: z.literal(1), status: z.literal('sent') }),
   // Aggregate contribution is durable; provider delivery is asynchronous.
-  z.object({ version: z.literal(1), status: z.literal('queued') }).strict(),
+  z.strictObject({ version: z.literal(1), status: z.literal('queued') }),
   // Duplicate means the original provider acceptance is recorded, not merely admission.
-  z.object({ version: z.literal(1), status: z.literal('duplicate') }).strict(),
-  z.object({ version: z.literal(1), status: z.literal('superseded') }).strict(),
-  z
-    .object({
-      version: z.literal(1),
-      status: z.literal('rejected'),
-      reason: z.enum([
-        'unauthorized',
-        'pro_required',
-        'destination_revoked',
-        'conflict',
-        'rate_limited',
-        'in_flight',
-        'provider_unavailable',
-        'delivery_unknown',
-      ]),
-    })
-    .strict(),
+  z.strictObject({ version: z.literal(1), status: z.literal('duplicate') }),
+  z.strictObject({ version: z.literal(1), status: z.literal('superseded') }),
+  z.strictObject({
+    version: z.literal(1),
+    status: z.literal('rejected'),
+    reason: z.enum([
+      'unauthorized',
+      'pro_required',
+      'destination_revoked',
+      'conflict',
+      'rate_limited',
+      'in_flight',
+      'provider_unavailable',
+      'delivery_unknown',
+    ]),
+  }),
 ])
 export type RelayLiveActivityResponse = z.infer<typeof relayLiveActivityResponseSchema>
 
@@ -214,19 +204,17 @@ export function buildRelayLiveActivityPayload(
 
 /** Separate proof domain from alert/enrollment operations. Verify operationDigest against
  * the locally requested registration before signing; never sign a server-selected operation. */
-export const liveActivityRegistrationChallengeSchema = z
-  .object({
-    version: z.literal(1),
-    id: uuid,
-    instanceId: uuid,
-    activationId: uuid,
-    origin: z.string().url().max(512),
-    nonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
-    expiresAt: z.string().datetime(),
-    operationDigest: z.string().regex(/^[a-f0-9]{64}$/),
-    generation: z.number().int().nonnegative().max(2147483646),
-  })
-  .strict()
+export const liveActivityRegistrationChallengeSchema = z.strictObject({
+  version: z.literal(1),
+  id: uuid,
+  instanceId: uuid,
+  activationId: uuid,
+  origin: z.url().max(512),
+  nonce: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+  expiresAt: z.iso.datetime(),
+  operationDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  generation: z.int().nonnegative().max(2147483646),
+})
 export type LiveActivityRegistrationChallenge = z.infer<typeof liveActivityRegistrationChallengeSchema>
 export function liveActivityRegistrationProofMessage(value: LiveActivityRegistrationChallenge): string {
   const c = liveActivityRegistrationChallengeSchema.parse(value)
@@ -242,44 +230,36 @@ export function liveActivityRegistrationProofMessage(value: LiveActivityRegistra
     c.generation,
   ])
 }
-export const liveActivityRegistrationReceiptSchema = z
-  .object({
-    version: z.literal(1),
-    activationId: uuid,
-    destinationId: uuid,
-    aggregateKey: uuid.optional(),
-    generation: z.number().int().positive().max(2147483647),
-  })
-  .strict()
+export const liveActivityRegistrationReceiptSchema = z.strictObject({
+  version: z.literal(1),
+  activationId: uuid,
+  destinationId: uuid,
+  aggregateKey: uuid.optional(),
+  generation: z.int().positive().max(2147483647),
+})
 export type LiveActivityRegistrationReceipt = z.infer<typeof liveActivityRegistrationReceiptSchema>
 
 /** Native-to-Core routing metadata. APNs tokens never cross this boundary in relay mode. */
 export const coreLiveActivityRegistrationSchema = z.discriminatedUnion('kind', [
-  liveActivityRegistrationReceiptSchema
-    .extend({
-      kind: z.literal('start'),
-      bindingToken: liveActivityBindingTokenSchema,
-    })
-    .strict(),
-  liveActivityRegistrationReceiptSchema
-    .extend({
-      kind: z.literal('update'),
-      bindingToken: liveActivityBindingTokenSchema,
-      activityKey: uuid,
-      activityId: z.string().min(1).max(256),
-    })
-    .strict(),
+  liveActivityRegistrationReceiptSchema.extend({
+    kind: z.literal('start'),
+    bindingToken: liveActivityBindingTokenSchema,
+  }),
+  liveActivityRegistrationReceiptSchema.extend({
+    kind: z.literal('update'),
+    bindingToken: liveActivityBindingTokenSchema,
+    activityKey: uuid,
+    activityId: z.string().min(1).max(256),
+  }),
 ])
 export type CoreLiveActivityRegistration = z.infer<typeof coreLiveActivityRegistrationSchema>
 
 /** Idempotent revocation is safe to replay indefinitely: a revoked capability cannot be reused. */
-export const liveActivityRevocationSchema = z
-  .object({
-    activationId: uuid,
-    bindingToken: liveActivityBindingTokenSchema,
-    signature: z.string().regex(/^[a-f0-9]{128}$/i),
-  })
-  .strict()
+export const liveActivityRevocationSchema = z.strictObject({
+  activationId: uuid,
+  bindingToken: liveActivityBindingTokenSchema,
+  signature: z.string().regex(/^[a-f0-9]{128}$/i),
+})
 export function liveActivityRevocationMessage(input: { activationId: string; bindingToken: string }) {
   return JSON.stringify([
     'ficus-live-activity-revoke-v1',

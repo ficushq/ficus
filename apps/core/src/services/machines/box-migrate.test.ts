@@ -19,8 +19,8 @@ import type { SshResult, SshRunner } from './ssh'
 // Fakes
 // ---------------------------------------------------------------------------
 
-const OLD_MACHINE_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
-const TARGET_MACHINE_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+const OLD_MACHINE_ID = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa'
+const TARGET_MACHINE_ID = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb'
 const FENCE_EXECUTOR = Object.create(db) as typeof db
 const SANDBOX_ID = 'agent_11111111-1111-1111-1111-111111111111'
 
@@ -669,7 +669,7 @@ describe('migrateBox', () => {
 
   describe('structured forced migration audit', () => {
     const force = {
-      actor: { type: 'user' as const, id: '11111111-1111-1111-1111-111111111111' },
+      actor: { type: 'user' as const, id: '11111111-1111-4111-8111-111111111111' },
       reason: 'Evacuate failing source host',
       requestId: '22222222-2222-4222-8222-222222222222',
     }
@@ -1383,7 +1383,7 @@ describe('migrateBox', () => {
   // -------------------------------------------------------------------------
 
   const DRIFTS: Array<[string, Partial<MachineBox>]> = [
-    ['machineId', { machineId: 'cccccccc-cccc-cccc-cccc-cccccccccccc' }],
+    ['machineId', { machineId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' }],
     ['port', { port: 50777 }],
     ['authToken', { authToken: 'tok-minted-by-concurrent-ensure' }],
   ]

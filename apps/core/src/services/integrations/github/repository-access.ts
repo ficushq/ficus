@@ -3,11 +3,11 @@ import type { GitHubRepositoryAccess } from '@ficus/shared'
 
 const LIMIT = 20
 const installationsSchema = z.object({
-  total_count: z.number().int().nonnegative(),
+  total_count: z.int().nonnegative(),
   installations: z
     .array(
       z.object({
-        id: z.number().int().positive(),
+        id: z.int().positive(),
         account: z.object({ login: z.string().min(1).max(100) }),
         permissions: z.object({ contents: z.string().optional(), workflows: z.string().optional() }),
         suspended_at: z.string().nullable(),
@@ -15,7 +15,7 @@ const installationsSchema = z.object({
     )
     .max(LIMIT),
 })
-const repositoriesSchema = z.object({ total_count: z.number().int().nonnegative() })
+const repositoriesSchema = z.object({ total_count: z.int().nonnegative() })
 
 /** Read-only, bounded check of this user's access through this App, not /repos user permissions. */
 export async function checkGitHubRepositoryAccess(

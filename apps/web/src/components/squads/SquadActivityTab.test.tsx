@@ -783,12 +783,12 @@ describe('background presence (operator decisions 2026-08-27)', () => {
   })
 })
 
-for (const reference of ['abc12345-1234-1234-1234-123456789abc', 'abc12345']) {
+for (const reference of ['abc12345-1234-4234-8234-123456789abc', 'abc12345']) {
   test(`inline agent ${reference} retains squad filters and scroll without opening the source`, async () => {
     await import('../EntityReferenceModal')
     const dom = await acquireDomHarness({ url: 'http://localhost/' })
     // The target is intentionally outside this squad's roster and belongs to another squad.
-    const target = { ...agent, id: 'abc12345-1234-1234-1234-123456789abc', squadId: 'other-squad' }
+    const target = { ...agent, id: 'abc12345-1234-4234-8234-123456789abc', squadId: 'other-squad' }
     const item = { ...messageItem, preview: [{ text: 'Review agent', href: `ficus:agent:${reference}` }] }
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
     const allowed = new Set(['agents:read'])

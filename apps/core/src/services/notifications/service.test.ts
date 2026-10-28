@@ -609,13 +609,13 @@ describe('NotificationService', () => {
       await callSendPushNotifications(
         service,
         { title: 'Hello', body: 'World', url: '/inbox' },
-        { recipientType: 'user', recipientId: '00000000-0000-0000-0000-000000000001' },
+        { recipientType: 'user', recipientId: '00000000-0000-4000-8000-000000000001' },
         'inbox.messageReceived'
       )
 
       const allLogs = consoleSpy.mock.calls.map((c: any[]) => c.join(' ')).join('\n')
       expect(allLogs).toContain(
-        'Resolved push recipients for inbox.messageReceived: 00000000-0000-0000-0000-000000000001'
+        'Resolved push recipients for inbox.messageReceived: 00000000-0000-4000-8000-000000000001'
       )
     })
 

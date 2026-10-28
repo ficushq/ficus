@@ -33,7 +33,7 @@ const configOutput = z.object({
     bigbrain: z.object({
       command: bounded,
       args: z.array(bounded).min(3).max(16),
-      env: z.record(bounded),
+      env: z.record(z.string(), bounded),
     }),
   }),
 })

@@ -24,36 +24,32 @@ const optionalSeedField = z.union([seedColor, z.null()])
 const variantName = z.enum(['light', 'dark', 'constant'])
 
 export const themeOperationSchema = z.discriminatedUnion('op', [
-  z
-    .object({
-      op: z.literal('set-palette'),
-      // `primary: null` clears the WHOLE palette (matches the editor's own
-      // "clear primary drops the palette" behavior) — every other palette
-      // field requires a primary seed to mean anything.
-      primary: optionalSeedField.optional(),
-      secondary: optionalSeedField.optional(),
-      tertiary: optionalSeedField.optional(),
-      neutral: optionalSeedField.optional(),
-      contrast: z.enum(['standard', 'high']).optional(),
-      status: z.enum(['static', 'harmonized']).optional(),
-    })
-    .strict(),
-  z
-    .object({
-      op: z.literal('set-overrides'),
-      variant: variantName,
-      // `null` removes a token; a string sets it. Validated as color grammar
-      // downstream by validateCustomTheme, not re-validated here.
-      tokens: z
-        .record(z.string().min(1).max(64), z.union([seedColor, z.null()]))
-        .refine((tokens) => Object.keys(tokens).length > 0 && Object.keys(tokens).length <= 64, {
-          message: 'set-overrides requires 1-64 token entries',
-        }),
-    })
-    .strict(),
-  z.object({ op: z.literal('set-base'), base: z.string().min(1).max(100) }).strict(),
-  z.object({ op: z.literal('rename'), name: z.string().trim().min(1).max(40) }).strict(),
-  z.object({ op: z.literal('clear-overrides'), variant: variantName.optional() }).strict(),
+  z.strictObject({
+    op: z.literal('set-palette'),
+    // `primary: null` clears the WHOLE palette (matches the editor's own
+    // "clear primary drops the palette" behavior) — every other palette
+    // field requires a primary seed to mean anything.
+    primary: optionalSeedField.optional(),
+    secondary: optionalSeedField.optional(),
+    tertiary: optionalSeedField.optional(),
+    neutral: optionalSeedField.optional(),
+    contrast: z.enum(['standard', 'high']).optional(),
+    status: z.enum(['static', 'harmonized']).optional(),
+  }),
+  z.strictObject({
+    op: z.literal('set-overrides'),
+    variant: variantName,
+    // `null` removes a token; a string sets it. Validated as color grammar
+    // downstream by validateCustomTheme, not re-validated here.
+    tokens: z
+      .record(z.string().min(1).max(64), z.union([seedColor, z.null()]))
+      .refine((tokens) => Object.keys(tokens).length > 0 && Object.keys(tokens).length <= 64, {
+        message: 'set-overrides requires 1-64 token entries',
+      }),
+  }),
+  z.strictObject({ op: z.literal('set-base'), base: z.string().min(1).max(100) }),
+  z.strictObject({ op: z.literal('rename'), name: z.string().trim().min(1).max(40) }),
+  z.strictObject({ op: z.literal('clear-overrides'), variant: variantName.optional() }),
 ])
 export type ThemeOperation = z.infer<typeof themeOperationSchema>
 
@@ -127,28 +123,25 @@ export function applyThemeOperations(base: CustomThemeDocument, operations: unkn
 
 const KEY_COLOR_NAMES = ['primary', 'surface', 'page', 'text', 'border', 'onAccent', 'danger', 'success'] as const
 
-export const themeInsightsVariantSchema = z
-  .object({
-    resolvedAppearance: z.enum(['light', 'dark', 'constant']),
-    keyColors: z
-      .record(z.enum(KEY_COLOR_NAMES), z.string().max(40))
-      .refine((colors) => Object.keys(colors).length <= KEY_COLOR_NAMES.length),
-    contrastWarnings: z.array(z.string().max(200)).max(20),
-  })
-  .strict()
+export const themeInsightsVariantSchema = z.strictObject({
+  resolvedAppearance: z.enum(['light', 'dark', 'constant']),
+  keyColors: z
+    .partialRecord(z.enum(KEY_COLOR_NAMES), z.string().max(40))
+    .refine((colors) => Object.keys(colors).length <= KEY_COLOR_NAMES.length),
+  contrastWarnings: z.array(z.string().max(200)).max(20),
+})
 export type ThemeInsightsVariant = z.infer<typeof themeInsightsVariantSchema>
 
 export const themeInsightsSchema = z
-  .object({
+  .strictObject({
     light: themeInsightsVariantSchema.optional(),
     dark: themeInsightsVariantSchema.optional(),
     constant: themeInsightsVariantSchema.optional(),
   })
-  .strict()
   .refine((value) => JSON.stringify(value).length <= 8_000, 'Theme insights are too large')
 export type ThemeInsights = z.infer<typeof themeInsightsSchema>
 
-export const themeSelectionSchema = z.object({ tab: z.enum(['light', 'dark', 'constant']).optional() }).strict()
+export const themeSelectionSchema = z.strictObject({ tab: z.enum(['light', 'dark', 'constant']).optional() })
 export type ThemeSelection = z.infer<typeof themeSelectionSchema>
 
 // ---------------------------------------------------------------------------

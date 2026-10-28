@@ -1,4 +1,4 @@
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../lib/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { requirePermission } from '../middleware'
@@ -24,7 +24,7 @@ const nixGcSchema = z.object({
 
 const workspaceGcSchema = z.object({
   apply: z.boolean().optional(),
-  limit: z.number().int().min(1).max(5_000).optional(),
+  limit: z.int().min(1).max(5_000).optional(),
   cursor: z
     .string()
     .max(255)

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { MANAGED_BIGBRAIN_MAX_VAULTS } from '@ficus/shared'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -73,7 +74,18 @@ function failure(error: unknown): string {
   if (code === 'owner_unavailable') return 'Owner device links are not available for this vault.'
   if (code === 'human_required' || code === 'permission_required') return 'You do not have permission to do that.'
   if (code === 'squad_permission_required') return 'This account cannot change integrations for that squad.'
+  if (code === 'capacity')
+    return `This server already has its ${MANAGED_BIGBRAIN_MAX_VAULTS} shared vaults. Delete one to create another.`
   return code ? `That did not work (${code.slice(0, 40)}).` : 'That did not work. Try again.'
+}
+
+/**
+ * Vaults that count against the server's cap: every row that is not deleted,
+ * the same rule the server applies (a failed or half-created vault holds its
+ * slot until it is deleted and its resources are gone).
+ */
+function liveVaultCount(vaults: readonly { state: string }[] | undefined): number {
+  return vaults?.filter((vault) => vault.state !== 'deleted').length ?? 0
 }
 
 const newDraft = () => ({ requestId: crypto.randomUUID(), displayName: '' })
@@ -95,6 +107,9 @@ export function ManagedBigbrainIntegrationSettings({ canWrite }: { canWrite: boo
     },
     onError: (error) => setCreateError(failure(error)),
   })
+  const live = liveVaultCount(vaults.data)
+  const full = live >= MANAGED_BIGBRAIN_MAX_VAULTS
+  const holdsFailed = (vaults.data ?? []).some((vault) => vault.state === 'failed')
 
   return (
     <section>
@@ -137,6 +152,13 @@ export function ManagedBigbrainIntegrationSettings({ canWrite }: { canWrite: boo
               Unable to load shared vaults.
             </p>
           )}
+          {vaults.data && (
+            <p className="mb-2 text-xs text-muted">
+              A server hosts at most {MANAGED_BIGBRAIN_MAX_VAULTS} shared vaults: {live} of{' '}
+              {MANAGED_BIGBRAIN_MAX_VAULTS} in use.
+              {holdsFailed ? ' A failed vault keeps its place until it is deleted.' : ''}
+            </p>
+          )}
           {vaults.data?.length === 0 && <p className="text-sm text-muted">No shared vaults yet.</p>}
           {/* Dividers only between rows: the form below draws the single line after the list. */}
           <ul className="divide-y divide-panel-border">
@@ -146,7 +168,12 @@ export function ManagedBigbrainIntegrationSettings({ canWrite }: { canWrite: boo
           </ul>
         </LoadingContent>
       </div>
-      {canWrite && (
+      {canWrite && full && (
+        <p className="mt-5 border-t border-th-border pt-4 text-sm text-muted">
+          This server has its {MANAGED_BIGBRAIN_MAX_VAULTS} shared vaults. Delete one to create another.
+        </p>
+      )}
+      {canWrite && !full && (
         <form
           className="mt-5 flex flex-col gap-2 border-t border-th-border pt-4"
           onSubmit={(event) => {

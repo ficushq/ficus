@@ -9,7 +9,7 @@ import { planRebalance, rebalanceFleet, RebalanceInProgressError, type Rebalance
 
 function makeMachine(overrides: Partial<Machine> = {}): Machine {
   return {
-    id: '11111111-1111-1111-1111-111111111111',
+    id: '11111111-1111-4111-8111-111111111111',
     name: 'm-test',
     provider: 'exe',
     providerRef: null,

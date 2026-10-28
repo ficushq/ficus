@@ -10,20 +10,15 @@ import { z } from 'zod'
 import { MANAGED_BIGBRAIN_UPSTREAM_COMMIT } from '@ficus/shared/managed-bigbrain'
 import { BigbrainConfigSchema, type BigbrainConfigV2 } from '../local-bindings'
 
-const uuid = z
-  .string()
-  .uuid()
-  .regex(/^[0-9a-f-]{36}$/)
+const uuid = z.uuid().regex(/^[0-9a-f-]{36}$/)
 
-export const ManagedSharedConfigSchema = z
-  .object({
-    version: z.literal(2),
-    mode: z.literal('managed_shared'),
-    vaultId: uuid,
-    upstreamVaultId: uuid,
-    upstreamCommit: z.literal(MANAGED_BIGBRAIN_UPSTREAM_COMMIT),
-  })
-  .strict()
+export const ManagedSharedConfigSchema = z.strictObject({
+  version: z.literal(2),
+  mode: z.literal('managed_shared'),
+  vaultId: uuid,
+  upstreamVaultId: uuid,
+  upstreamCommit: z.literal(MANAGED_BIGBRAIN_UPSTREAM_COMMIT),
+})
 export type ManagedSharedConfig = z.infer<typeof ManagedSharedConfigSchema>
 export type BigbrainConfiguration = BigbrainConfigV2 | ManagedSharedConfig
 

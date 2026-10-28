@@ -138,7 +138,7 @@
     "@types/react": "19.2.13"
   },
   "patchedDependencies": {
-    "amtp-node@0.1.2": "patches/amtp-node@0.1.2.patch",
+    "amtp-node@0.2.0": "patches/amtp-node@0.2.0.patch",
     "@earendil-works/pi-coding-agent@0.99.1": "patches/@earendil-works%2Fpi-coding-agent@0.99.1.patch",
     "@earendil-works/pi-ai@0.99.1": "patches/@earendil-works%2Fpi-ai@0.99.1.patch"
   }

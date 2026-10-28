@@ -413,8 +413,7 @@ usersRouter.patch('/:id', requirePermission('users:update'), async (c) => {
 
   const body = await c.req.json()
   const parsed = z
-    .object({ displayName: z.string().nullable().optional(), email: z.string().email().optional() })
-    .passthrough()
+    .looseObject({ displayName: z.string().nullable().optional(), email: z.email().optional() })
     .safeParse(body)
   if (!parsed.success || hasReservedGitHubAuthorityMetadata(body)) return c.json({ error: 'Invalid user profile' }, 400)
   // Whitelist only safe profile fields — explicitly exclude disabledAt, id,

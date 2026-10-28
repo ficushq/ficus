@@ -1,5 +1,5 @@
-import { afterEach, expect, test } from 'bun:test'
-import { createGatewayHandler, gatewayManifestSchema } from './gateway-policy'
+import { afterEach, describe, expect, test } from 'bun:test'
+import { createGatewayHandler, gatewayManifestSchema, JOIN_GRACE_MAX, JOIN_RESERVED_HOST } from './gateway-policy'
 const id = '11111111-1111-4111-8111-111111111111'
 const other = '22222222-2222-4222-8222-222222222222'
 const a = `bb-${id.replaceAll('-', '')}.example.com`
@@ -286,4 +286,269 @@ test('suspension, stale/invalid manifest and removed routes fail closed without 
   current = { ...manifest, routes: [] }
   expect((await handle(request())).status).toBe(404)
   expect(calls).toBe(0)
+})
+
+describe('the whoami that completes a join is reserved by the successful redeem', () => {
+  const credential = 'sv_' + 'N'.repeat(43)
+  const redeem = (host = a) =>
+    request(host, '/v1/invites/redeem', { method: 'POST', headers: { Authorization: 'Bearer ' + 'L'.repeat(43) } })
+  const whoami = (token = credential, host = a) =>
+    request(host, '/v1/whoami', { headers: { Authorization: `Bearer ${token}` } })
+  /** A handler whose upstream answers a redeem with `credential` (or `redeemStatus`), anything else 200. */
+  const setup = (redeemStatus = 200) => {
+    let now = 0
+    let issued = credential
+    const calls: string[] = []
+    const handle = createGatewayHandler({
+      manifest: async () => manifest,
+      now: () => now,
+      fetch: async (url, init) => {
+        calls.push(`${init.method} ${new URL(url).pathname}`)
+        return new URL(url).pathname === '/v1/invites/redeem'
+          ? Response.json({ token: issued, vault: { id: other, name: 'Alpha' } }, { status: redeemStatus })
+          : new Response('ok')
+      },
+    })
+    const drain = async (host = a) => {
+      for (let i = 0; i < 40; i++) {
+        const response = await handle(request(host, '/v1/whoami', { headers: { Authorization: `Bearer drain${i}` } }))
+        await response.text()
+        if (response.status === 429) return
+      }
+      throw new Error('bucket never filled')
+    }
+    return {
+      handle,
+      drain,
+      calls,
+      advance: (ms: number) => (now += ms),
+      issue: (token: string) => (issued = token),
+    }
+  }
+  const status = async (promise: Promise<Response>) => {
+    const response = await promise
+    await response.text()
+    return response.status
+  }
+
+  test('redeem then whoami under a full bucket is served, and the redeem body is relayed unchanged', async () => {
+    const f = setup()
+    await f.drain()
+    const redeemed = await f.handle(redeem())
+    expect(redeemed.status).toBe(200)
+    expect(redeemed.headers.get('Cache-Control')).toBe('no-store')
+    expect(await redeemed.json()).toEqual({ token: credential, vault: { id: other, name: 'Alpha' } })
+    expect(await status(f.handle(whoami()))).toBe(200)
+    expect(f.calls.at(-1)).toBe('GET /v1/whoami')
+  })
+
+  test('the reservation is single use, whoami only, and never covers another credential or vault', async () => {
+    const f = setup()
+    await f.handle(redeem()).then((r) => r.text())
+    await f.drain()
+    await f.drain(b)
+    // An unrelated whoami, the same credential on another vault, and another path stay limited.
+    expect(await status(f.handle(whoami('sv_' + 'X'.repeat(43))))).toBe(429)
+    expect(await status(f.handle(whoami(credential, b)))).toBe(429)
+    expect(
+      await status(f.handle(request(a, '/v1/members', { headers: { Authorization: `Bearer ${credential}` } })))
+    ).toBe(429)
+    expect(await status(f.handle(whoami()))).toBe(200)
+    expect(await status(f.handle(whoami()))).toBe(429)
+  })
+
+  test('the reservation also passes the in-flight caps, which stay enforced for everything else', async () => {
+    let release!: () => void
+    const held = new Promise<void>((r) => (release = r))
+    const handle = createGatewayHandler({
+      manifest: async () => manifest,
+      fetch: async (url) =>
+        new URL(url).pathname === '/v1/invites/redeem'
+          ? Response.json({ token: credential, vault: { id: other, name: 'Alpha' } })
+          : new Response(
+              new ReadableStream({
+                async pull(c) {
+                  await held
+                  c.close()
+                },
+              })
+            ),
+    })
+    await (await handle(redeem())).text()
+    const open = [await retained(handle(request())), await retained(handle(request()))]
+    expect(await status(handle(request()))).toBe(429)
+    const served = await retained(handle(whoami()))
+    expect(served.status).toBe(200)
+    expect(await status(handle(request()))).toBe(429)
+    release()
+    await Promise.all([...open, served].map((r) => r.text()))
+  })
+
+  test('the reservation expires', async () => {
+    const f = setup()
+    await f.handle(redeem()).then((r) => r.text())
+    f.advance(30_000)
+    await f.drain()
+    expect(await status(f.handle(whoami()))).toBe(429)
+  })
+
+  test('a refused redeem, an unexpected credential shape or a missing token reserves nothing', async () => {
+    for (const [redeemStatus, token] of [
+      [401, credential],
+      [200, 'not-a-member-credential'],
+      [200, ''],
+    ] as const) {
+      const f = setup(redeemStatus)
+      f.issue(token)
+      await f.handle(redeem()).then((r) => r.text())
+      await f.drain()
+      expect(await status(f.handle(whoami()))).toBe(429)
+    }
+  })
+
+  test('reservations are bounded: the oldest is dropped first', async () => {
+    const f = setup()
+    const tokens = Array.from({ length: JOIN_GRACE_MAX + 1 }, (_, i) => `sv_member${i}`)
+    for (const token of tokens) {
+      f.issue(token)
+      f.advance(1_000) // the write bucket keeps up; every reservation is still live
+      expect(await status(f.handle(redeem()))).toBe(200)
+    }
+    await f.drain()
+    expect(await status(f.handle(whoami(tokens[0])))).toBe(429)
+    for (const token of tokens.slice(1)) expect(await status(f.handle(whoami(token)))).toBe(200)
+  })
+})
+
+describe('reserved whoamis have their own small in-flight caps', () => {
+  /** Upstream: each redeem issues the next credential; each whoami streams until released. */
+  const setup = (joinWaitMs?: number) => {
+    let issued = 0
+    let inFlight = 0
+    let peak = 0
+    const held: Array<() => void> = []
+    const handle = createGatewayHandler({
+      manifest: async () => manifest,
+      joinWaitMs,
+      fetch: async (url) => {
+        if (new URL(url).pathname === '/v1/invites/redeem')
+          return Response.json({ token: `sv_member${issued++}`, vault: { id: other, name: 'Alpha' } })
+        inFlight++
+        peak = Math.max(peak, inFlight)
+        let release!: () => void
+        const done = new Promise<void>((r) => (release = r))
+        held.push(release)
+        return new Response(
+          new ReadableStream({
+            async pull(c) {
+              await done
+              c.close()
+            },
+            cancel: release,
+          })
+        )
+      },
+    })
+    const join = async (host: string) => {
+      const response = await handle(
+        request(host, '/v1/invites/redeem', { method: 'POST', headers: { Authorization: 'Bearer link' } })
+      )
+      return ((await response.json()) as { token: string }).token
+    }
+    const whoami = (host: string, token: string) =>
+      handle(request(host, '/v1/whoami', { headers: { Authorization: `Bearer ${token}` } }))
+    /** Consumes a response; its in-flight slot is released once its body ends. */
+    const end = async (response: Response) => {
+      await response.text()
+      inFlight--
+    }
+    return { handle, join, whoami, end, held, inFlight: () => inFlight, peak: () => peak }
+  }
+  const settle = () => new Promise((r) => setTimeout(r, 20))
+
+  test('in-flight never exceeds the normal caps plus the reserved allowance; a full cap waits, then serves', async () => {
+    const f = setup()
+    const [a1, a2, a3] = [await f.join(a), await f.join(a), await f.join(a)]
+    const [b1] = [await f.join(b)]
+    // The normal caps are full: 2 per vault, 4 host-wide.
+    const normal = [
+      await retained(f.handle(request(a))),
+      await retained(f.handle(request(a))),
+      await retained(f.handle(request(b))),
+      await retained(f.handle(request(b))),
+    ]
+    expect((await f.handle(request(a))).status).toBe(429)
+    const first = await retained(f.whoami(a, a1))
+    expect(first.status).toBe(200)
+    // Vault A's reserved slot is taken: the next reserved whoami on A waits; B still has one host slot.
+    let secondDone = false
+    const second = f.whoami(a, a2).then((r) => {
+      secondDone = true
+      return r
+    })
+    const onB = await retained(f.whoami(b, b1))
+    expect(onB.status).toBe(200)
+    // The host reserved cap is now full too.
+    let thirdDone = false
+    const third = f.whoami(a, a3).then((r) => {
+      thirdDone = true
+      return r
+    })
+    await settle()
+    expect([secondDone, thirdDone]).toEqual([false, false])
+    expect(f.inFlight()).toBe(4 + JOIN_RESERVED_HOST)
+    // Ending A's reserved whoami admits the next waiter on A, in arrival order.
+    f.held[4]!()
+    await f.end(first)
+    const admitted = await retained(second)
+    expect(admitted.status).toBe(200)
+    await settle()
+    expect(thirdDone).toBe(false)
+    f.held[6]!()
+    await f.end(admitted)
+    expect((await retained(third)).status).toBe(200)
+    expect(f.peak()).toBe(4 + JOIN_RESERVED_HOST)
+    for (const release of f.held) release()
+    await Promise.all(normal.map((r) => r.text()))
+  })
+
+  test('a reserved whoami that cannot get a slot in time is refused busy, holding nothing', async () => {
+    const f = setup(50)
+    const [a1, a2] = [await f.join(a), await f.join(a)]
+    const first = await retained(f.whoami(a, a1))
+    const refused = await f.whoami(a, a2)
+    expect(refused.status).toBe(429)
+    expect(refused.headers.get('Retry-After')).toBe('1')
+    f.held[0]!()
+    await f.end(first)
+    // The refused waiter left no slot or queue entry behind: a fresh join is served at once.
+    const a3 = await f.join(a)
+    const next = await retained(f.whoami(a, a3))
+    expect(next.status).toBe(200)
+    for (const release of f.held) release()
+  })
+
+  test('an aborted waiter leaves the queue', async () => {
+    const f = setup()
+    const [a1, a2, a3] = [await f.join(a), await f.join(a), await f.join(a)]
+    const first = await retained(f.whoami(a, a1))
+    const abort = new AbortController()
+    const gone = f.handle(
+      request(a, '/v1/whoami', { headers: { Authorization: `Bearer ${a2}` }, signal: abort.signal })
+    )
+    let waitingDone = false
+    const waiting = f.whoami(a, a3).then((r) => {
+      waitingDone = true
+      console.log('DBG status', r.status)
+      return r
+    })
+    abort.abort()
+    expect((await gone).status).toBe(429)
+    await settle()
+    expect(waitingDone).toBe(false)
+    f.held[0]!()
+    await f.end(first)
+    expect((await retained(waiting)).status).toBe(200)
+    for (const release of f.held) release()
+  })
 })

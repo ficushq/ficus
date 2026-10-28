@@ -14,10 +14,11 @@
     "@ficus/client-core": "workspace:*",
     "@ficus/shared": "workspace:*",
     "commander": "^12.0.0",
-    "yaml": "^2.9.1"
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "amtp-protocol": "^0.1.2",
+    "amtp-protocol": "^0.2.0",
     "@types/bun": "^1.4.4",
     "@types/node": "^25.2.3"
   }

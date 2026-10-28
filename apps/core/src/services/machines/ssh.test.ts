@@ -13,7 +13,7 @@ const testPin = async () => MACHINE_PIN
 
 function makeMachine(overrides: Partial<Machine> = {}): Machine {
   return {
-    id: '11111111-1111-1111-1111-111111111111',
+    id: '11111111-1111-4111-8111-111111111111',
     name: 'ssh-test',
     provider: 'ssh',
     providerRef: null,

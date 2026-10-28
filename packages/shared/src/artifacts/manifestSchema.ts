@@ -13,100 +13,80 @@ export const artifactLocalPathSchema = z
     'Path must not contain empty or parent directory segments'
   )
 
-export const artifactEntrySchema = z
-  .object({
-    type: artifactEntryTypeSchema,
-    path: artifactLocalPathSchema,
-  })
-  .strict()
+export const artifactEntrySchema = z.strictObject({
+  type: artifactEntryTypeSchema,
+  path: artifactLocalPathSchema,
+})
 
 export const artifactStatusSchema = z.enum(['working', 'ready', 'error'])
 
 export const artifactRequestActionSchema = z.enum(['create', 'continue', 'ask', 'fork', 'archive', 'delete'])
 
-export const artifactPublishRecordSchema = z
-  .object({
-    at: z.string().min(1),
-    entry: artifactEntrySchema,
-    status: artifactStatusSchema,
-    changeSummary: z.string().min(1),
-    changeDetails: z.string().min(1).optional(),
-    title: z.string().min(1).optional(),
-    summary: z.string().min(1).optional(),
-  })
-  .strict()
+export const artifactPublishRecordSchema = z.strictObject({
+  at: z.string().min(1),
+  entry: artifactEntrySchema,
+  status: artifactStatusSchema,
+  changeSummary: z.string().min(1),
+  changeDetails: z.string().min(1).optional(),
+  title: z.string().min(1).optional(),
+  summary: z.string().min(1).optional(),
+})
 
 export const artifactReferenceTypeSchema = z.enum(['agent', 'thread', 'workstream', 'url', 'file', 'api', 'artifact'])
 
 const artifactReferenceNoteSchema = z.string().min(1).optional()
 
-export const agentArtifactReferenceSchema = z
-  .object({
-    type: z.literal('agent'),
-    id: z.string().min(1),
-    note: artifactReferenceNoteSchema,
-  })
-  .strict()
+export const agentArtifactReferenceSchema = z.strictObject({
+  type: z.literal('agent'),
+  id: z.string().min(1),
+  note: artifactReferenceNoteSchema,
+})
 
-export const threadArtifactReferenceSchema = z
-  .object({
-    type: z.literal('thread'),
-    id: z.string().min(1),
-    note: artifactReferenceNoteSchema,
-  })
-  .strict()
+export const threadArtifactReferenceSchema = z.strictObject({
+  type: z.literal('thread'),
+  id: z.string().min(1),
+  note: artifactReferenceNoteSchema,
+})
 
-export const workstreamArtifactReferenceSchema = z
-  .object({
-    type: z.literal('workstream'),
-    id: z.string().min(1),
-    note: artifactReferenceNoteSchema,
-  })
-  .strict()
+export const workstreamArtifactReferenceSchema = z.strictObject({
+  type: z.literal('workstream'),
+  id: z.string().min(1),
+  note: artifactReferenceNoteSchema,
+})
 
-export const urlArtifactReferenceSchema = z
-  .object({
-    type: z.literal('url'),
-    url: z.string().min(1).url(),
-    note: artifactReferenceNoteSchema,
-  })
-  .strict()
+export const urlArtifactReferenceSchema = z.strictObject({
+  type: z.literal('url'),
+  url: z.string().min(1).url(),
+  note: artifactReferenceNoteSchema,
+})
 
-export const fileArtifactReferenceSchema = z
-  .object({
-    type: z.literal('file'),
-    path: artifactLocalPathSchema,
-    note: artifactReferenceNoteSchema,
-  })
-  .strict()
+export const fileArtifactReferenceSchema = z.strictObject({
+  type: z.literal('file'),
+  path: artifactLocalPathSchema,
+  note: artifactReferenceNoteSchema,
+})
 
-const apiArtifactReferenceWithIdSchema = z
-  .object({
-    type: z.literal('api'),
-    id: z.string().min(1),
-    url: z.string().min(1).url().optional(),
-    note: artifactReferenceNoteSchema,
-  })
-  .strict()
+const apiArtifactReferenceWithIdSchema = z.strictObject({
+  type: z.literal('api'),
+  id: z.string().min(1),
+  url: z.string().min(1).url().optional(),
+  note: artifactReferenceNoteSchema,
+})
 
-const apiArtifactReferenceWithUrlSchema = z
-  .object({
-    type: z.literal('api'),
-    id: z.string().min(1).optional(),
-    url: z.string().min(1).url(),
-    note: artifactReferenceNoteSchema,
-  })
-  .strict()
+const apiArtifactReferenceWithUrlSchema = z.strictObject({
+  type: z.literal('api'),
+  id: z.string().min(1).optional(),
+  url: z.string().min(1).url(),
+  note: artifactReferenceNoteSchema,
+})
 
 export const apiArtifactReferenceSchema = z.union([apiArtifactReferenceWithIdSchema, apiArtifactReferenceWithUrlSchema])
 
-export const artifactArtifactReferenceSchema = z
-  .object({
-    type: z.literal('artifact'),
-    id: z.string().min(1),
-    note: artifactReferenceNoteSchema,
-  })
-  .strict()
+export const artifactArtifactReferenceSchema = z.strictObject({
+  type: z.literal('artifact'),
+  id: z.string().min(1),
+  note: artifactReferenceNoteSchema,
+})
 
 export const artifactReferenceSchema = z.union([
   agentArtifactReferenceSchema,
@@ -118,56 +98,48 @@ export const artifactReferenceSchema = z.union([
   artifactArtifactReferenceSchema,
 ])
 
-export const artifactRequestSchema = z
-  .object({
-    at: z.string().min(1),
-    from: z.literal('voice'),
-    action: artifactRequestActionSchema,
-    brief: z.string().min(1),
-    references: z.array(artifactReferenceSchema).optional(),
-  })
-  .strict()
+export const artifactRequestSchema = z.strictObject({
+  at: z.string().min(1),
+  from: z.literal('voice'),
+  action: artifactRequestActionSchema,
+  brief: z.string().min(1),
+  references: z.array(artifactReferenceSchema).optional(),
+})
 
 export const artifactQuestionResponseModeSchema = z.enum(['free_text', 'single_select', 'multi_select'])
 export const artifactQuestionPrioritySchema = z.enum(['low', 'normal', 'high'])
 export const artifactQuestionStatusSchema = z.enum(['open', 'answered'])
 
-export const artifactQuestionResponseSchema = z
-  .object({
-    at: z.string().min(1),
-    from: z.literal('voice'),
-    answer: z.string().min(1),
-    brief: z.string().min(1),
-  })
-  .strict()
+export const artifactQuestionResponseSchema = z.strictObject({
+  at: z.string().min(1),
+  from: z.literal('voice'),
+  answer: z.string().min(1),
+  brief: z.string().min(1),
+})
 
-export const artifactQuestionSchema = z
-  .object({
-    id: z.string().min(1),
-    at: z.string().min(1),
-    title: z.string().min(1).optional(),
-    question: z.string().min(1),
-    context: z.string().min(1).optional(),
-    responseMode: artifactQuestionResponseModeSchema,
-    choices: z.array(z.string().min(1)).optional(),
-    priority: artifactQuestionPrioritySchema.optional(),
-    status: artifactQuestionStatusSchema,
-    response: artifactQuestionResponseSchema.optional(),
-  })
-  .strict()
+export const artifactQuestionSchema = z.strictObject({
+  id: z.string().min(1),
+  at: z.string().min(1),
+  title: z.string().min(1).optional(),
+  question: z.string().min(1),
+  context: z.string().min(1).optional(),
+  responseMode: artifactQuestionResponseModeSchema,
+  choices: z.array(z.string().min(1)).optional(),
+  priority: artifactQuestionPrioritySchema.optional(),
+  status: artifactQuestionStatusSchema,
+  response: artifactQuestionResponseSchema.optional(),
+})
 
-export const artifactManifestSchema = z
-  .object({
-    id: z.string().min(1),
-    title: z.string().min(1),
-    status: artifactStatusSchema,
-    summary: z.string().min(1).optional(),
-    entry: artifactEntrySchema.optional(),
-    createdAt: z.string().min(1),
-    updatedAt: z.string().min(1),
-    archived: z.boolean(),
-  })
-  .strict()
+export const artifactManifestSchema = z.strictObject({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  status: artifactStatusSchema,
+  summary: z.string().min(1).optional(),
+  entry: artifactEntrySchema.optional(),
+  createdAt: z.string().min(1),
+  updatedAt: z.string().min(1),
+  archived: z.boolean(),
+})
 
 export type ArtifactEntryType = z.infer<typeof artifactEntryTypeSchema>
 export type ArtifactLocalPath = z.infer<typeof artifactLocalPathSchema>

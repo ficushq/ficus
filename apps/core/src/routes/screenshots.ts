@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../lib/zod-validator'
 import { z } from 'zod'
 import { fileScreenshotRequestSchema, guessScreenshotRequestSchema } from '@ficus/shared'
 import { requirePermission } from '../middleware/require-permission'
@@ -21,7 +21,7 @@ export function createScreenshotsRouter(deps: ScreenshotFilingDeps = {}) {
     .post('/guess', zValidator('json', guessScreenshotRequestSchema), async (c) =>
       c.json(await guessScreenshot(c.get('identity'), c.req.valid('json'), deps))
     )
-    .get('/work-streams', zValidator('query', z.object({ squadId: z.string().uuid() })), async (c) =>
+    .get('/work-streams', zValidator('query', z.object({ squadId: z.uuid() })), async (c) =>
       c.json(await listScreenshotWorkStreams(c.get('identity'), c.req.valid('query').squadId))
     )
     .post('/file', zValidator('json', fileScreenshotRequestSchema), async (c) =>

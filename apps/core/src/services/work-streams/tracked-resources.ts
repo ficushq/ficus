@@ -42,20 +42,18 @@ const trackedResourceInputSchema = trackedResourceObjectSchema.pick({
  * (`owner/repo#12`, `ENG-12`), or an explicit resource.
  */
 export const trackedResourceRequestSchema = z.union([
-  z.object({ event: z.string().uuid() }).strict(),
-  z.object({ url: z.string().url(), delivery: z.literal(true).optional() }).strict(),
-  z
-    .object({
-      reference: z.string().trim().min(1).max(500),
-      // GitHub references name no kind of their own, so the caller picks; Linear has only issues.
-      kind: trackedResourceObjectSchema.shape.kind.optional(),
-      // The account the reference belongs to, when the caller names one. Authorization checks it
-      // against the squad's own assignment, exactly as it does for an explicit resource.
-      connectionId: trackedResourceObjectSchema.shape.connectionId,
-      delivery: z.literal(true).optional(),
-    })
-    .strict(),
-  z.object({ resource: trackedResourceInputSchema, delivery: z.literal(true).optional() }).strict(),
+  z.strictObject({ event: z.uuid() }),
+  z.strictObject({ url: z.url(), delivery: z.literal(true).optional() }),
+  z.strictObject({
+    reference: z.string().trim().min(1).max(500),
+    // GitHub references name no kind of their own, so the caller picks; Linear has only issues.
+    kind: trackedResourceObjectSchema.shape.kind.optional(),
+    // The account the reference belongs to, when the caller names one. Authorization checks it
+    // against the squad's own assignment, exactly as it does for an explicit resource.
+    connectionId: trackedResourceObjectSchema.shape.connectionId,
+    delivery: z.literal(true).optional(),
+  }),
+  z.strictObject({ resource: trackedResourceInputSchema, delivery: z.literal(true).optional() }),
 ])
 export type TrackedResourceRequest = z.infer<typeof trackedResourceRequestSchema>
 

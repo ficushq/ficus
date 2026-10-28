@@ -2,87 +2,67 @@ import { z } from 'zod'
 
 export const presentationToneSchema = z.enum(['neutral', 'info', 'success', 'warning', 'error'])
 
-export const markdownBlockSchema = z
-  .object({
-    type: z.literal('markdown'),
-    content: z.string().min(1),
-  })
-  .strict()
+export const markdownBlockSchema = z.strictObject({
+  type: z.literal('markdown'),
+  content: z.string().min(1),
+})
 
-const htmlBlockHeightSchema = z.number().int().min(120).max(4000)
+const htmlBlockHeightSchema = z.int().min(120).max(4000)
 
-export const htmlBlockSchema = z
-  .object({
-    type: z.literal('html'),
-    content: z.string().min(1),
-    iframeAccessibilityTitle: z.string().min(1).optional(),
-    height: htmlBlockHeightSchema.optional(),
-    minHeight: htmlBlockHeightSchema.optional(),
-    maxHeight: htmlBlockHeightSchema.optional(),
-  })
-  .strict()
+export const htmlBlockSchema = z.strictObject({
+  type: z.literal('html'),
+  content: z.string().min(1),
+  iframeAccessibilityTitle: z.string().min(1).optional(),
+  height: htmlBlockHeightSchema.optional(),
+  minHeight: htmlBlockHeightSchema.optional(),
+  maxHeight: htmlBlockHeightSchema.optional(),
+})
 
-export const metricItemSchema = z
-  .object({
-    label: z.string().min(1),
-    value: z.union([z.string().min(1), z.number()]),
-    tone: presentationToneSchema.optional(),
-  })
-  .strict()
+export const metricItemSchema = z.strictObject({
+  label: z.string().min(1),
+  value: z.union([z.string().min(1), z.number()]),
+  tone: presentationToneSchema.optional(),
+})
 
-export const metricsBlockSchema = z
-  .object({
-    type: z.literal('metrics'),
-    items: z.array(metricItemSchema),
-  })
-  .strict()
+export const metricsBlockSchema = z.strictObject({
+  type: z.literal('metrics'),
+  items: z.array(metricItemSchema),
+})
 
-export const tableColumnSchema = z
-  .object({
-    key: z.string().min(1),
-    label: z.string().min(1),
-  })
-  .strict()
+export const tableColumnSchema = z.strictObject({
+  key: z.string().min(1),
+  label: z.string().min(1),
+})
 
-export const tableBlockSchema = z
-  .object({
-    type: z.literal('table'),
-    columns: z.array(tableColumnSchema),
-    rows: z.array(z.record(z.unknown())),
-  })
-  .strict()
+export const tableBlockSchema = z.strictObject({
+  type: z.literal('table'),
+  columns: z.array(tableColumnSchema),
+  rows: z.array(z.record(z.string(), z.unknown())),
+})
 
-export const chartBlockSchema = z
-  .object({
-    type: z.literal('chart'),
-    library: z.literal('vega-lite'),
-    spec: z.record(z.unknown()),
-  })
-  .strict()
+export const chartBlockSchema = z.strictObject({
+  type: z.literal('chart'),
+  library: z.literal('vega-lite'),
+  spec: z.record(z.string(), z.unknown()),
+})
 
-export const calloutBlockSchema = z
-  .object({
-    type: z.literal('callout'),
-    title: z.string().min(1).optional(),
-    content: z.string().min(1),
-    tone: presentationToneSchema.optional(),
-  })
-  .strict()
+export const calloutBlockSchema = z.strictObject({
+  type: z.literal('callout'),
+  title: z.string().min(1).optional(),
+  content: z.string().min(1),
+  tone: presentationToneSchema.optional(),
+})
 
-export const timelineItemSchema = z
-  .object({
-    title: z.string().min(1),
-    at: z.string().min(1).optional(),
-    content: z.string().min(1).optional(),
-  })
-  .strict()
+export const timelineItemSchema = z.strictObject({
+  title: z.string().min(1),
+  at: z.string().min(1).optional(),
+  content: z.string().min(1).optional(),
+})
 
-export const timelineBlockSchema = z
-  .object({
-    type: z.literal('timeline'),
-    items: z.array(timelineItemSchema),
-  })
-  .strict()
+export const timelineBlockSchema = z.strictObject({
+  type: z.literal('timeline'),
+  items: z.array(timelineItemSchema),
+})
 
 export const presentationBlockSchema = z.discriminatedUnion('type', [
   markdownBlockSchema,
@@ -94,21 +74,18 @@ export const presentationBlockSchema = z.discriminatedUnion('type', [
   timelineBlockSchema,
 ])
 
-export const presentationSectionSchema = z
-  .object({
-    id: z.string().min(1),
-    title: z.string().min(1).optional(),
-    blocks: z.array(presentationBlockSchema),
-  })
-  .strict()
+export const presentationSectionSchema = z.strictObject({
+  id: z.string().min(1),
+  title: z.string().min(1).optional(),
+  blocks: z.array(presentationBlockSchema),
+})
 
 export const presentationSchema = z
-  .object({
+  .strictObject({
     schemaVersion: z.literal(1),
     title: z.string().min(1),
     sections: z.array(presentationSectionSchema),
   })
-  .strict()
   .superRefine((presentation, context) => {
     presentation.sections.forEach((section, sectionIndex) => {
       section.blocks.forEach((block, blockIndex) => {

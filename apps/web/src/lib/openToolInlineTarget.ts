@@ -20,11 +20,12 @@ export interface OpenLocalAppDependencies {
  * Open a local app in a new tab the way the Apps tab does: its browser URL under the server's public address.
  * The tab opens during the click, while the browser still allows it, and goes to the app once its address is
  * resolved; it closes again when the app can't be opened (gone or archived).
+ * Resolves to whether the app was opened, so the caller can tell the viewer when it wasn't.
  */
 export async function openLocalApp(
   localDeploymentId: string,
   dependencies: OpenLocalAppDependencies = {}
-): Promise<void> {
+): Promise<boolean> {
   const open = dependencies.open ?? window.open.bind(window)
   const tab = open('', '_blank')
   if (tab) tab.opener = null
@@ -40,8 +41,10 @@ export async function openLocalApp(
     const url = getLocalDeploymentBrowserUrl(localDeployment.urlPathOrHost, publicAppUrl)
     if (tab) tab.location.href = url
     else open(url, '_blank', 'noopener,noreferrer')
+    return true
   } catch (error) {
     tab?.close()
     console.warn('Could not open local app', { localDeploymentId, error })
+    return false
   }
 }

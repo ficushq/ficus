@@ -17,13 +17,11 @@ const DECISION_STRING_MAX = 500
 const DECISION_LIST_MAX = 50
 
 const scalar = z.union([z.string().max(2000), z.number().finite(), z.boolean()])
-export const eventPredicateSchema = z
-  .object({
-    field: integrationDataPathSchema,
-    op: z.enum(['eq', 'neq', 'in', 'gt', 'gte', 'lt', 'lte', 'contains', 'exists']),
-    value: z.union([scalar, z.array(scalar).min(1).max(100)]),
-  })
-  .strict()
+export const eventPredicateSchema = z.strictObject({
+  field: integrationDataPathSchema,
+  op: z.enum(['eq', 'neq', 'in', 'gt', 'gte', 'lt', 'lte', 'contains', 'exists']),
+  value: z.union([scalar, z.array(scalar).min(1).max(100)]),
+})
 export type EventPredicate = z.infer<typeof eventPredicateSchema>
 
 /**
@@ -31,29 +29,26 @@ export type EventPredicate = z.infer<typeof eventPredicateSchema>
  * other check of its rule passes, at most once per event, and never with event content in the question:
  * the event goes in the decision's state, as data.
  */
-export const eventDecisionPredicateSchema = z
-  .object({
-    kind: z.literal('decision'),
-    question: decisionQuestionSchema,
-    /**
-     * The answer that matches, a decision condition without `question` (the predicate asks one). Defaults to
-     * `{ type: 'yesno', op: 'at-least', probability: 0.5 }` for a yes/no question; required otherwise.
-     */
-    when: decisionConditionSchema.optional(),
-    /** What of the event to send. Default: its subject, title, author, labels and text. */
-    input: z
-      .object({
-        /** Allowlisted event fields to send instead of the default title, author and labels. */
-        fields: z.array(integrationDataPathSchema).max(EVENT_DECISION_INPUT_MAX_FIELDS).optional(),
-        /** Send the event's text (body or comment). Default true. */
-        body: z.boolean().optional(),
-      })
-      .strict()
-      .optional(),
-    /** When no decision model answers (none configured, or none in time). */
-    onUnavailable: z.enum(['no-match', 'match']).default('no-match'),
-  })
-  .strict()
+export const eventDecisionPredicateSchema = z.strictObject({
+  kind: z.literal('decision'),
+  question: decisionQuestionSchema,
+  /**
+   * The answer that matches, a decision condition without `question` (the predicate asks one). Defaults to
+   * `{ type: 'yesno', op: 'at-least', probability: 0.5 }` for a yes/no question; required otherwise.
+   */
+  when: decisionConditionSchema.optional(),
+  /** What of the event to send. Default: its subject, title, author, labels and text. */
+  input: z
+    .strictObject({
+      /** Allowlisted event fields to send instead of the default title, author and labels. */
+      fields: z.array(integrationDataPathSchema).max(EVENT_DECISION_INPUT_MAX_FIELDS).optional(),
+      /** Send the event's text (body or comment). Default true. */
+      body: z.boolean().optional(),
+    })
+    .optional(),
+  /** When no decision model answers (none configured, or none in time). */
+  onUnavailable: z.enum(['no-match', 'match']).default('no-match'),
+})
 export type EventDecisionPredicate = z.infer<typeof eventDecisionPredicateSchema>
 
 /** A rule condition: a typed field comparison, or a decision-model question (`kind: 'decision'`). */

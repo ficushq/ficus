@@ -262,7 +262,7 @@ pushRouter.delete('/live-activity/relay/:activationId', async (c) => {
   if (c.get('identity')?.type !== 'user') return c.json({ error: 'User identity required' }, 401)
   c.set('authzChecked', true)
   const activationId = c.req.param('activationId')
-  if (!z.string().uuid().safeParse(activationId).success) return c.json({ error: 'Invalid registration' }, 400)
+  if (!z.uuid().safeParse(activationId).success) return c.json({ error: 'Invalid registration' }, 400)
   // Cleanup remains available with delivery disabled.
   await unregisterActivityRelay(getPushUserId(c)!, activationId)
   return c.json({ success: true })

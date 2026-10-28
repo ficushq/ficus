@@ -6,66 +6,56 @@ const id = z
   .string()
   .regex(/^[1-9][0-9]*$/)
   .refine((value) => Number.isSafeInteger(Number(value)))
-const nativeId = z.number().int().positive().safe()
+const nativeId = z.int().positive().safe()
 const repository = z.string().regex(/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/)
 const sha = z.string().regex(/^[0-9a-f]{40,64}$/)
-const pr = z.object({ number: nativeId, headSha: sha.optional() }).strict()
+const pr = z.strictObject({ number: nativeId, headSha: sha.optional() })
 const base = { repository, repositoryId: nativeId, projection: z.literal('status') }
-const lifecycle = z
-  .object({
-    ...base,
-    action: z.enum(['closed', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft']),
-    state: z.enum(['open', 'closed', 'merged', 'unknown']),
-    pullRequest: pr,
-    pullRequestState: z.enum(['open', 'closed', 'merged', 'unknown']),
-    draft: z.boolean().optional(),
-    mergeConflict: z.literal(true).optional(),
-  })
-  .strict()
-const ci = z
-  .object({
-    ...base,
-    action: z.literal('completed'),
-    state: z.enum([
-      'success',
-      'failure',
-      'neutral',
-      'cancelled',
-      'skipped',
-      'timed_out',
-      'action_required',
-      'stale',
-      'startup_failure',
-    ]),
-    pullRequest: pr,
-    ci: z
-      .object({
-        workflowId: id,
-        runId: id,
-        runNumber: z.union([id, z.literal('')]),
-        runAttempt: z.union([id, z.literal('')]),
-      })
-      .strict(),
-  })
-  .strict()
-const security = z
-  .object({
-    ...base,
-    action: z.string().refine((value) => DEPENDABOT_ACTIONS.includes(value)),
-    state: z.enum(['open', 'fixed', 'dismissed', 'auto_dismissed']),
-    severity: z.enum(['low', 'medium', 'high', 'critical']),
-    alert: z
-      .object({
-        number: nativeId,
-        externalId: z.string(),
-        advisoryId: z
-          .string()
-          .regex(/^GHSA-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}$/i)
-          .optional(),
-      })
-      .strict(),
-  })
-  .strict()
+const lifecycle = z.strictObject({
+  ...base,
+  action: z.enum(['closed', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft']),
+  state: z.enum(['open', 'closed', 'merged', 'unknown']),
+  pullRequest: pr,
+  pullRequestState: z.enum(['open', 'closed', 'merged', 'unknown']),
+  draft: z.boolean().optional(),
+  mergeConflict: z.literal(true).optional(),
+})
+const ci = z.strictObject({
+  ...base,
+  action: z.literal('completed'),
+  state: z.enum([
+    'success',
+    'failure',
+    'neutral',
+    'cancelled',
+    'skipped',
+    'timed_out',
+    'action_required',
+    'stale',
+    'startup_failure',
+  ]),
+  pullRequest: pr,
+  ci: z.strictObject({
+    workflowId: id,
+    runId: id,
+    runNumber: z.union([id, z.literal('')]),
+    runAttempt: z.union([id, z.literal('')]),
+  }),
+})
+const security = z.strictObject({
+  ...base,
+  action: z.string().refine((value) => DEPENDABOT_ACTIONS.includes(value)),
+  state: z.enum(['open', 'fixed', 'dismissed', 'auto_dismissed']),
+  severity: z.enum(['low', 'medium', 'high', 'critical']),
+  alert: z.strictObject({
+    number: nativeId,
+    externalId: z.string(),
+    advisoryId: z
+      .string()
+      .regex(/^GHSA-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}-[23456789cfghjmpqrvwx]{4}$/i)
+      .optional(),
+  }),
+})
 
 /** One allowlisted factual renderer shared by normalization and stored-proof validation. */
 export function buildGitHubStatus(

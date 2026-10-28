@@ -34,6 +34,8 @@ interface AgentChatProps {
   sendOptions?: (message: string) => { assistantRouting?: AssistantRoutingSend } | undefined
   onConversation?: (conversation: AgentChatController) => void
   renderMessageFooter?: React.ComponentProps<typeof ChatView>['renderMessageFooter']
+  /** Starts the transcript and scrolls with it (see ChatView's `beforeMessages`). */
+  beforeConversation?: React.ReactNode
   afterConversation?: React.ReactNode
   dependencies?: AgentChatDependencies
   agentId?: string
@@ -133,6 +135,7 @@ export function AgentChat({
   beforeSend,
   onDraftChange,
   sendOptions,
+  beforeConversation,
   afterConversation,
   renderMessageFooter,
 }: AgentChatProps) {
@@ -442,6 +445,7 @@ export function AgentChat({
       enableFullscreen={enableFullscreen}
       embedded={embedded}
       header={typeof header === 'function' ? header({ waitingForSandbox: conv.waitingForSandbox }) : header}
+      beforeMessages={beforeConversation}
       headerStatus={
         conv.agentId && agent?.squadId && !isTerminated && !isDormant ? (
           <>

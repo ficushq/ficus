@@ -24,7 +24,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { HTTPException } from 'hono/http-exception'
 import { isDeepStrictEqual } from 'node:util'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../lib/zod-validator'
 import { and, asc, desc, eq, ilike, isNull, notInArray, sql } from 'drizzle-orm'
 import {
   ASSISTANT_CONVERSATION_KINDS,
@@ -38,7 +38,7 @@ import { markAssistantUpdatesProcessed } from '../services/assistant-activity/ac
 import { resolveActingUser } from '../services/rbac'
 import { requirePermission } from '../middleware/require-permission'
 
-const uuid = z.string().uuid()
+const uuid = z.uuid()
 const createSchema = z.object({
   id: uuid,
   title: z.string().trim().min(1).max(120).optional(),

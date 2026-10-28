@@ -9,7 +9,7 @@ describe('ficus agent model subcommand', () => {
     ;(apiPatch as ReturnType<typeof mock>).mockClear()
     ;(outputError as ReturnType<typeof mock>).mockClear()
     ;(apiPatch as ReturnType<typeof mock>).mockResolvedValue({
-      id: '33333333-3333-3333-3333-333333333333',
+      id: '33333333-3333-4333-8333-333333333333',
       modelOverride: null,
       configuredModel: 'anthropic:claude-sonnet-4-5',
     })

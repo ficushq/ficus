@@ -1,6 +1,6 @@
 import { publicErrorMessage } from '../db/errors'
 import { Hono } from 'hono'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../lib/zod-validator'
 import { createSquadRelationshipSchema } from '@ficus/shared'
 import type { SquadRelationshipType } from '@ficus/shared'
 import { eq } from 'drizzle-orm'

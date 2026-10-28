@@ -1,5 +1,6 @@
 import type { EventPredicateField } from './event-predicate-catalog'
 import { z } from 'zod'
+import { keyedRecord } from './zod-helpers'
 
 const name = z
   .string()
@@ -15,40 +16,32 @@ export const integrationDataPathSchema = z
     (path) => path.split('.').every((part) => !['__proto__', 'prototype', 'constructor'].includes(part)),
     'Reserved path'
   )
-export const integrationMatchSchema = z
-  .record(
-    integrationDataPathSchema,
-    z.union([
-      z.object({ streamMetadata: integrationDataPathSchema }).strict(),
-      z.object({ value: z.union([z.string().max(2000), z.number().finite(), z.boolean()]) }).strict(),
-    ])
-  )
-  .refine((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 16, 'Use 1–16 equality matches')
-export const integrationSubscriptionSchema = z
-  .object({
-    id: name,
-    source: z
-      .object({
-        integration: name,
-        output: name,
-        version: z.number().int().positive(),
-        connectionId: z.string().uuid().optional(),
-      })
-      .strict(),
-    match: integrationMatchSchema,
-    deliver: z
-      .object({
-        to: z.union([
-          z.object({ participant: name }).strict(),
-          z.object({ step: name }).strict(),
-          z.literal('active'),
-          z.literal('delivery-owner'),
-        ]),
-        whenInactive: z.enum(['retain', 'manager']).default('retain'),
-      })
-      .strict(),
-  })
-  .strict()
+export const integrationMatchSchema = keyedRecord(
+  integrationDataPathSchema,
+  z.union([
+    z.strictObject({ streamMetadata: integrationDataPathSchema }),
+    z.strictObject({ value: z.union([z.string().max(2000), z.number().finite(), z.boolean()]) }),
+  ])
+).refine((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 16, 'Use 1–16 equality matches')
+export const integrationSubscriptionSchema = z.strictObject({
+  id: name,
+  source: z.strictObject({
+    integration: name,
+    output: name,
+    version: z.int().positive(),
+    connectionId: z.uuid().optional(),
+  }),
+  match: integrationMatchSchema,
+  deliver: z.strictObject({
+    to: z.union([
+      z.strictObject({ participant: name }),
+      z.strictObject({ step: name }),
+      z.literal('active'),
+      z.literal('delivery-owner'),
+    ]),
+    whenInactive: z.enum(['retain', 'manager']).default('retain'),
+  }),
+})
 export type IntegrationSubscription = z.infer<typeof integrationSubscriptionSchema>
 export type IntegrationOutputField = {
   type: 'string' | 'number' | 'boolean'

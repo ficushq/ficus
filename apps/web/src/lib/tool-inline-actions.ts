@@ -33,6 +33,22 @@ export type ToolInlineAction = { key: string; label: string; access?: ToolInline
   | { kind: 'pull_request'; url: string; number: number }
 )
 
+const UNAVAILABLE_MESSAGES: Record<ToolInlineAction['kind'], string> = {
+  monitor: 'That monitor is no longer available.',
+  subagent: 'That subagent chat is no longer available.',
+  question: 'That question is no longer available.',
+  work_stream: 'That work stream could not be found.',
+  artifact: 'That artifact is no longer available.',
+  local_app: 'That local app is no longer available.',
+  memory_note: 'That memory note is no longer available.',
+  pull_request: 'That pull request could not be opened.',
+}
+
+/** The short notice shown when clicking an inline action finds its target gone or out of reach. */
+export function getToolInlineActionUnavailableMessage(kind: ToolInlineAction['kind']): string {
+  return UNAVAILABLE_MESSAGES[kind]
+}
+
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

@@ -391,3 +391,32 @@ bunx pm2 save                              # persist across pm2 resurrections
 ```bash
 bun run k3d:teardown    # Delete cluster entirely (data in ~/.ficus/ preserved)
 ```
+
+## Zod schema maintenance
+
+Use Zod 4 constructors for new schemas: `z.strictObject`/`z.looseObject`,
+`z.uuid()`/`z.email()`/`z.url()`, `z.iso.datetime()` and `z.int()`. Plain
+`z.object()` still strips unknown keys; do not change that policy while refactoring.
+Strictness is inherited by `.extend()` and `.omit()`.
+
+A syntax cleanup must preserve parsed values and **complete error payloads**, not
+just whether input passes. Some older forms intentionally remain:
+
+- `z.string().trim().email()` validates after trimming; `z.email().trim()` does not.
+- `z.string().min(1).url()` preserves issue order for empty input.
+- `z.string().url(message)` customizes only format errors; `z.url(message)` also
+  customizes wrong-type errors (see the memory ingestion route).
+- Existing `.int().safe()` chains produce two issues for unsafe integers. Removing
+  `.safe()` changes that payload even though accepted values stay the same.
+- Coercing integer schemas keep `z.coerce.number().int()`; replacing them with
+  `z.int()` would remove coercion.
+
+Use `z.flattenError(error)` for existing `{ formErrors, fieldErrors }` responses.
+`z.treeifyError(error)` is a different structure, not a drop-in replacement.
+Core routes must keep using `lib/zod-validator.ts` to serialize validation errors.
+
+Schema introspection also needs care: top-level string formats are
+`ZodStringFormat` instances, not `ZodString` instances, and top-level string/number
+formats carry their own check outside `def.checks`. The workflow schema reference
+handles both forms. Compatibility tests live in
+`packages/shared/src/zod-idioms.test.ts` and `workflow-schema-reference.test.ts`.

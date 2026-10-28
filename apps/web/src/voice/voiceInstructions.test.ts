@@ -77,8 +77,8 @@ describe('buildVoiceInstructions', () => {
 })
 
 test('resolves the current squad slug and supplies full tool IDs', () => {
-  const squadId = '11111111-1111-1111-1111-111111111111'
-  const managerId = '22222222-2222-2222-2222-222222222222'
+  const squadId = '11111111-1111-4111-8111-111111111111'
+  const managerId = '22222222-2222-4222-8222-222222222222'
   const instructions = buildVoiceInstructions({
     currentPath: '/squads/ficus',
     squads: [

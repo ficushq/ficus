@@ -84,7 +84,7 @@ ficus inbox read m1
     const answerSummary = (questionAnswer?: QuestionAnswerCardData) => ({
       id: 'm1',
       senderType: 'user' as const,
-      senderId: '51846fad-0000-0000-0000-000000000000',
+      senderId: '51846fad-0000-4000-8000-000000000000',
       subject: 'Answer to your question',
       preview: '**Question:** Proceed?',
       senderDisplay: 'Noah [51846fad]',

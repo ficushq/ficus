@@ -6,7 +6,7 @@ import { monitorWorkRoot, sessionNameForMonitor } from './launcher'
 import { setHostWorkspaceOverride, clearHostWorkspaceOverrides } from '../sandbox/host/workspace-overrides'
 import { boxHome } from '../machines/box-paths'
 
-const SQUAD = '11111111-2222-3333-4444-555555555555'
+const SQUAD = '11111111-2222-4333-8444-555555555555'
 
 describe('monitorWorkRoot', () => {
   let prevRuntime: string | undefined
@@ -65,5 +65,5 @@ describe('monitorWorkRoot', () => {
 })
 
 it('gives new monitors canonical session identities', () => {
-  expect(sessionNameForMonitor('abcdef12-1234-1234-1234-123456789abc')).toBe('ficus-monitor-abcdef12')
+  expect(sessionNameForMonitor('abcdef12-1234-4234-8234-123456789abc')).toBe('ficus-monitor-abcdef12')
 })

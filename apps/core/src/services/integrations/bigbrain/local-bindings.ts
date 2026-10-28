@@ -14,39 +14,33 @@ const pathSchema = z
   .max(4096)
   .refine((s) => isAbsolute(s) && [...s].every((c) => c.charCodeAt(0) >= 32 && c.charCodeAt(0) !== 127))
 export const BIGBRAIN_BINDINGS_FILE = 'bigbrain-bindings.json'
-const declaration = z
-  .object({
-    id: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
-    label: z
-      .string()
-      .min(1)
-      .max(120)
-      .refine((s) => [...s].every((c) => c.charCodeAt(0) >= 32 && c.charCodeAt(0) !== 127)),
-    vaultPath: pathSchema,
-    executablePath: pathSchema,
-    clientId: z.string().regex(/^[a-f0-9]{8}$/),
-    tokenStorePath: pathSchema.optional(),
-  })
-  .strict()
-export const BigbrainConfigSchema = z
-  .object({
-    version: z.literal(2),
-    bindingId: declaration.shape.id,
-    bindingFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
-    vaultPath: pathSchema,
-    executablePath: pathSchema,
-  })
-  .strict()
+const declaration = z.strictObject({
+  id: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
+  label: z
+    .string()
+    .min(1)
+    .max(120)
+    .refine((s) => [...s].every((c) => c.charCodeAt(0) >= 32 && c.charCodeAt(0) !== 127)),
+  vaultPath: pathSchema,
+  executablePath: pathSchema,
+  clientId: z.string().regex(/^[a-f0-9]{8}$/),
+  tokenStorePath: pathSchema.optional(),
+})
+export const BigbrainConfigSchema = z.strictObject({
+  version: z.literal(2),
+  bindingId: declaration.shape.id,
+  bindingFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  vaultPath: pathSchema,
+  executablePath: pathSchema,
+})
 export type BigbrainConfigV2 = z.infer<typeof BigbrainConfigSchema>
 export type BigbrainBindingDeclaration = z.infer<typeof declaration>
-const bindingsFileSchema = z
-  .object({
-    version: z.literal(1),
-    /** Present when Ficus wrote the file itself (one-click setup). Absent on hand-written files. */
-    managedBy: z.literal('ficus').optional(),
-    bindings: z.array(declaration).max(32),
-  })
-  .strict()
+const bindingsFileSchema = z.strictObject({
+  version: z.literal(1),
+  /** Present when Ficus wrote the file itself (one-click setup). Absent on hand-written files. */
+  managedBy: z.literal('ficus').optional(),
+  bindings: z.array(declaration).max(32),
+})
 /** What is on disk now: nothing, a Ficus-managed file, a hand-written file, or an unusable one. */
 export type BigbrainBindingsFileState =
   | { status: 'none'; bindings: [] }

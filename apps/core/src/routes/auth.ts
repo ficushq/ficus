@@ -3,7 +3,7 @@ import { permissionMatches } from '../services/rbac'
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
 import { CSRF_HEADER } from '@ficus/shared/http-headers'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../lib/zod-validator'
 import { parseOptionalJsonObjectBody } from '../middleware/json-body-errors'
 import { createHash, timingSafeEqual } from 'crypto'
 import { eq, sql } from 'drizzle-orm'
@@ -655,12 +655,11 @@ authRouter.get('/settings', identityMiddleware, requirePermission('settings:read
 
 authRouter.put('/settings', identityMiddleware, requirePermission('settings:write'), async (c) => {
   const parsed = z
-    .object({
+    .strictObject({
       allowedDomains: z.array(z.string().trim().min(1)).optional(),
       requireInvite: z.boolean().optional(),
-      defaultSignupRoleId: z.string().uuid().nullable().optional(),
+      defaultSignupRoleId: z.uuid().nullable().optional(),
     })
-    .strict()
     .safeParse(await c.req.json())
   if (!parsed.success) return c.json({ error: 'Invalid sign-up settings' }, 400)
   // Sign-up policy decides who can become a person here (and in which role). Agents and system
@@ -987,7 +986,7 @@ authRouter.get('/me/feed-visit', identityMiddleware, async (c) => {
 authRouter.post(
   '/me/feed-visit',
   identityMiddleware,
-  zValidator('json', z.object({ visitedAt: z.string().datetime() })),
+  zValidator('json', z.object({ visitedAt: z.iso.datetime() })),
   async (c) => {
     const identity = c.get('identity')
     if (identity.type !== 'user') return c.json({ error: 'Not a user' }, 400)
