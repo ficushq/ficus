@@ -881,23 +881,52 @@ jobs:
           LANE_NAMES: test-gates,test-typecheck,test-core,test-web
         run: bun .github/lane-gate.ts verify-result
 
+  # The required check keeps its original name; a skipped/cancelled shard is
+  # not success. Matrix fail-fast is disabled so both inventories get diagnostics.
   subprocess-tests:
+    if: always()
+    needs: [subprocess-shards]
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 1
+    steps:
+      - name: Require every subprocess shard
+        env:
+          RESULT: ${{ needs.subprocess-shards.result }}
+        run: test "$RESULT" = success
+
+  subprocess-shards:
+    runs-on: ubuntu-24.04
+    # Hang backstop, NOT the performance budget: the final wall-time check
+    # still fails at 600s and the runner stops tests at 540s plus cleanup.
+    # Setup hang limits total 16m; reserve time to report unstarted inventory
+    # even in that worst case instead of letting the outer job cancel first.
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
 
     steps:
+      - name: Start lane clock
+        run: |
+          started=$(date +%s)
+          echo "FICUS_TEST_LANE_STARTED=$started" >> "$GITHUB_ENV"
+          echo "FICUS_TEST_DEADLINE_MS=$(( (started + 540) * 1000 ))" >> "$GITHUB_ENV"
       - uses: actions/checkout@v7
+        timeout-minutes: 3
         with:
           # cli-bundle.test.ts stamps real commit info from git, which needs
           # full history — see the `test` job's identical checkout step.
           fetch-depth: 0
 
       - name: Use Node.js 24
+        timeout-minutes: 1
         uses: actions/setup-node@v7
         with:
           node-version: 24
 
       - uses: oven-sh/setup-bun@v2
+        timeout-minutes: 1
         with:
           # Keep in lockstep with .bun-version (enforced by
           # .github/bun-version-gate.test.ts) and the `test` job's pin.
@@ -916,6 +945,7 @@ jobs:
       # that same test family). The pin did not fix that and does not claim to.
       # Cache downloaded packages only. Installed module trees are worktree/layout-specific.
       - name: Cache Bun dependencies
+        timeout-minutes: 1
         uses: actions/cache@v6
         with:
           path: ~/.bun/install/cache
@@ -925,6 +955,7 @@ jobs:
 
       # Start PostgreSQL container (allows caching the image)
       - name: Start PostgreSQL
+        timeout-minutes: 1
         run: |
           docker run -d \
             --name postgres-test \
@@ -939,6 +970,7 @@ jobs:
             paradedb/paradedb:latest
 
       - name: Wait for PostgreSQL
+        timeout-minutes: 1
         run: |
           for i in {1..60}; do
             if docker exec postgres-test pg_isready -U postgres -d ficus_test && \
@@ -955,9 +987,11 @@ jobs:
           exit 1
 
       - name: Install dependencies
+        timeout-minutes: 4
         run: bun install --frozen-lockfile
 
       - name: Create database extensions
+        timeout-minutes: 1
         run: |
           for i in {1..10}; do
             if docker exec postgres-test psql -U postgres -d ficus_test -c "CREATE EXTENSION IF NOT EXISTS vector;" && \
@@ -973,9 +1007,11 @@ jobs:
 
       # Pure/owned-loopback tests, not the privileged host containment acceptance lane.
       - name: Run managed BigBrain host unit tests
+        timeout-minutes: 1
         run: bun run test:bigbrain-host
 
       - name: Build pinned shared BigBrain fixture
+        timeout-minutes: 1
         run: |
           bun scripts/bigbrain/build-artifact.ts --out-dir "$RUNNER_TEMP/bigbrain-shared"
           bun scripts/bigbrain/prepare-native-smoke.ts "$RUNNER_TEMP/bigbrain-shared" "$RUNNER_TEMP/bigbrain-shared-deps"
@@ -985,8 +1021,9 @@ jobs:
       # to apps/core without adding it here fails that gate, which is what
       # stops the silent drift back into the contended `test` job.
       - name: Run real-subprocess tests
+        id: subprocess
         run: >-
-          bun ../../scripts/run-core-tests.ts --subprocess
+          bun ../../scripts/run-core-tests.ts --subprocess --subprocess-shard ${{ matrix.shard }}/2
           src/services/work-streams/repository-setup.test.ts
           src/services/work-streams/dependency-stacking.git.test.ts
           src/services/work-streams/worktree-cleanup-runtime.test.ts
@@ -1042,6 +1079,23 @@ jobs:
           FICUS_BIGBRAIN_SHARED_ARTIFACT: ${{ runner.temp }}/bigbrain-shared
           FICUS_BIGBRAIN_SHARED_DEPS: ${{ runner.temp }}/bigbrain-shared-deps
           FICUS_BIGBRAIN_REQUIRE_SHARED_SMOKE: '1'
+
+      - name: Report lane wall time
+        if: always()
+        env:
+          TEST_OUTCOME: ${{ steps.subprocess.outcome }}
+        run: |
+          if [ "$TEST_OUTCOME" = skipped ] && command -v bun >/dev/null && [ -f scripts/run-core-tests.ts ]; then
+            echo 'Setup failed; per-file inventory (all unstarted):' | tee -a "$GITHUB_STEP_SUMMARY"
+            bun scripts/run-core-tests.ts --subprocess --subprocess-shard ${{ matrix.shard }}/2 --list \
+              | sed 's/^isolated /UNSTARTED 0.000s /' | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          elapsed=$(( $(date +%s) - FICUS_TEST_LANE_STARTED ))
+          echo "Subprocess shard ${{ matrix.shard }}/2: ${elapsed}s including checkout/setup/dependencies/tests/reporting (post actions follow)." | tee -a "$GITHUB_STEP_SUMMARY"
+          if ! (( elapsed < 600 )); then
+            echo "::error::Subprocess lane exceeded its 600s end-to-end budget"
+            exit 1
+          fi
 
   # A separate disposable VM: never run real provisioning against a shared box.
   # No manual dispatch, cloud provisioning, host security overrides or stress load.

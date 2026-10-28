@@ -22,6 +22,7 @@ Options:
   --reverse                        Run files in reverse order
   --subprocess                     Run the full isolated lane only (CI subprocess job; any
                                    paths must be exactly the CI subprocess inventory)
+  --subprocess-shard <1/2|2/2>      Run one of two disjoint file lists (requires --subprocess)
   -h, --help                       Show this help
 
 Examples:
@@ -33,7 +34,7 @@ export function coreTestPlan() {
   const workflow = Bun.YAML.parse(readFileSync(resolve(repoRoot, '.github/workflows/ci.yml'), 'utf8')) as {
     jobs: Record<string, { steps: Array<{ name?: string; run?: string }> }>
   }
-  const step = workflow.jobs['subprocess-tests']!.steps.find((entry) => entry.name === 'Run real-subprocess tests')
+  const step = workflow.jobs['subprocess-shards']!.steps.find((entry) => entry.name === 'Run real-subprocess tests')
   const subprocess = [...(step?.run ?? '').matchAll(/\bsrc\/[\w./-]+\.test\.ts\b/g)].map((match) => `./${match[0]}`)
   if (subprocess.length === 0 || new Set(subprocess).size !== subprocess.length)
     throw new Error('Subprocess lane inventory is empty or duplicated')
@@ -57,6 +58,7 @@ export type CoreTestOptions =
       reverse: boolean
       subprocessOnly: boolean
       testNamePattern?: string
+      subprocessShard?: 1 | 2
     }
 
 /** Parses runner arguments; throws on anything it cannot honor instead of falling back to the full suite. */
@@ -66,24 +68,39 @@ export function parseCoreTestArgs(args: string[]): CoreTestOptions {
   let reverse = false
   let subprocessOnly = false
   let testNamePattern: string | undefined
+  let subprocessShard: 1 | 2 | undefined
   for (let index = 0; index < args.length; index++) {
     const arg = args[index]!
     if (arg === '-h' || arg === '--help') return { help: true }
     else if (arg === '--list') list = true
     else if (arg === '--reverse') reverse = true
     else if (arg === '--subprocess') subprocessOnly = true
-    else if (arg === '-t' || arg === '--test-name-pattern' || arg.startsWith('--test-name-pattern=')) {
+    else if (arg === '--subprocess-shard') {
+      const shard = args[++index]
+      if (subprocessShard !== undefined || (shard !== '1/2' && shard !== '2/2'))
+        throw new Error('--subprocess-shard must be exactly 1/2 or 2/2, given once')
+      subprocessShard = shard === '1/2' ? 1 : 2
+    } else if (arg === '-t' || arg === '--test-name-pattern' || arg.startsWith('--test-name-pattern=')) {
       if (testNamePattern !== undefined) throw new Error('Test name pattern given more than once')
       testNamePattern = arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : args[++index]
       if (!testNamePattern) throw new Error(`${arg.split('=')[0]} requires a non-empty pattern`)
     } else if (arg.startsWith('-')) throw new Error(`Unknown option: ${arg}`)
     else paths.push(arg)
   }
+  if (subprocessShard !== undefined && !subprocessOnly) throw new Error('--subprocess-shard requires --subprocess')
   if (subprocessOnly && testNamePattern !== undefined)
     throw new Error('--subprocess runs the full isolated lane and cannot be combined with a test name pattern')
   if (testNamePattern !== undefined && paths.length === 0)
     throw new Error('A test name pattern requires at least one path; it would otherwise run the full suite')
-  return { help: false, paths, list, reverse, subprocessOnly, testNamePattern }
+  return {
+    help: false,
+    paths,
+    list,
+    reverse,
+    subprocessOnly,
+    testNamePattern,
+    ...(subprocessShard === undefined ? {} : { subprocessShard }),
+  }
 }
 
 /**
@@ -106,6 +123,21 @@ export function selectSubprocessLane(
       )
   }
   return { shared: [], isolated: plan.isolated }
+}
+
+/** Balance the four measured long poles, then alternate all remaining files.
+ * Selection uses the FULL isolated inventory, including auto-detected module mocks.
+ * Never use timing data as a membership filter: new files are assigned automatically.
+ */
+export function subprocessShardFiles(files: string[], shard: 1 | 2): string[] {
+  const heavy = [
+    ['./src/services/integrations/github/feedback-routing.test.ts', './src/services/execution/pickup.test.ts'],
+    ['./src/services/integrations/outputs/runtime.test.ts', './src/services/amtp/node-conformance.test.ts'],
+  ]
+  const assigned = new Map(heavy.flatMap((group, index) => group.map((file) => [file, index + 1] as const)))
+  const rest = [...files].sort().filter((file) => !assigned.has(file))
+  rest.forEach((file, index) => assigned.set(file, (index % 2) + 1))
+  return files.filter((file) => assigned.get(file) === shard)
 }
 
 /** Resolves path arguments to discovered Core test files, keeping each file's normal lane. */
@@ -163,6 +195,7 @@ if (import.meta.main) {
     console.error(error instanceof Error ? error.message : String(error))
     process.exit(2)
   }
+  if (options.subprocessShard) selection.isolated = subprocessShardFiles(selection.isolated, options.subprocessShard)
   const { reverse, subprocessOnly } = options
   // CI's core job skips the isolated lane, which runs in its own job. Focused
   // runs always execute what was asked for.
@@ -184,6 +217,8 @@ if (import.meta.main) {
   const onTerm = () => interrupted('SIGTERM')
   process.once('SIGINT', onInt)
   process.once('SIGTERM', onTerm)
+  const deadline =
+    process.env.FICUS_TEST_DEADLINE_MS === undefined ? undefined : Number(process.env.FICUS_TEST_DEADLINE_MS)
   let session: ReturnType<typeof ownTestDb> | undefined
   try {
     if (!process.env.DATABASE_URL) {
@@ -194,7 +229,15 @@ if (import.meta.main) {
     const args = options.testNamePattern === undefined ? [] : [`--test-name-pattern=${options.testNamePattern}`]
     if (runShared) await runTests({ cwd: coreRoot, roots: selection.shared, reverse, args })
     if (runIsolated)
-      await runTests({ cwd: coreRoot, roots: selection.isolated, isolated: true, reverse, cacheSchema: true, args })
+      await runTests({
+        cwd: coreRoot,
+        roots: selection.isolated,
+        isolated: true,
+        reverse,
+        cacheSchema: true,
+        args,
+        deadline,
+      })
   } finally {
     session?.release()
     process.removeListener('SIGINT', onInt)

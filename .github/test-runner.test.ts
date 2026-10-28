@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assertTestCompletion, discoverTests, runTests } from '../scripts/test-runner'
@@ -16,6 +16,7 @@ test('completion fails closed for early success, missing files, failed tests, si
   expect(() => assertTestCompletion(summary, 0, null, 2)).toThrow('1 of 2')
   expect(() => assertTestCompletion(summary, 101, null, 1)).toThrow('status 101')
   expect(() => assertTestCompletion(summary, null, 'SIGTERM', 1)).toThrow('SIGTERM')
+  expect(() => assertTestCompletion(summary, null, 15, 1)).toThrow('15')
   expect(() => assertTestCompletion(summary, null, null, 1)).toThrow('status null')
   expect(() => assertTestCompletion(summary.replace('0 fail', '1 fail'), 0, null, 1)).toThrow('zero-failure')
   expect(() => assertTestCompletion(summary + summary, 0, null, 1)).toThrow('final summary')
@@ -133,4 +134,124 @@ test('cancellation escalates a TERM-resistant test child and returns without a s
     child.kill('SIGKILL')
     await child.exited
   }
+})
+
+async function budgetRun(files: Record<string, string>, budgetMs: number, reportDelayMs = 0) {
+  const cwd = await fixture(files)
+  const entry = join(cwd, 'run.ts')
+  const report = join(cwd, 'summary.md')
+  await Bun.write(
+    entry,
+    `import {runTests} from ${JSON.stringify(join(import.meta.dir, '../scripts/test-runner.ts'))};
+const log = console.log;
+console.log = (...args) => {
+  log(...args);
+  if (String(args[0]).startsWith('PASS ')) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${reportDelayMs});
+};
+try { await runTests({cwd:${JSON.stringify(cwd)},roots:['src'],isolated:true,deadline:Date.now()+${budgetMs},stopGraceMs:100}) }
+catch { process.exitCode=1 }`
+  )
+  const child = Bun.spawn([process.execPath, entry], {
+    cwd,
+    env: { ...process.env, GITHUB_STEP_SUMMARY: report },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  try {
+    const [exit, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ])
+    return {
+      cwd,
+      exit,
+      stdout,
+      stderr,
+      summary: (await Bun.file(report).exists()) ? await Bun.file(report).text() : '',
+    }
+  } finally {
+    child.kill('SIGKILL')
+    await child.exited
+  }
+}
+
+test('deadline stops a TERM-resistant child, reports incomplete and unstarted files, and fails', async () => {
+  const result = await budgetRun(
+    {
+      'src/a.test.ts':
+        'import {test} from "bun:test"; import {writeFileSync} from "node:fs"; process.on("SIGTERM",()=>{}); writeFileSync("pid",String(process.pid)); test("hung",()=>Bun.sleep(2000),3000)',
+      'src/b.test.ts': 'throw new Error("must not start")',
+    },
+    300
+  )
+  expect(result.exit).toBe(1)
+  expect(result.stdout).toContain('Lane deadline exceeded')
+  expect(result.stdout).toMatch(/INCOMPLETE\s+\d+\.\d+s\s+\.\/src\/a.test.ts/)
+  expect(result.stdout).toContain('UNSTARTED 0.000s ./src/b.test.ts')
+  expect(result.summary).toContain('INCOMPLETE')
+  expect(() => process.kill(Number(readFileSync(join(result.cwd, 'pid'), 'utf8')), 0)).toThrow()
+}, 5000)
+
+test('an expired deadline starts no files and still reports the complete inventory', async () => {
+  const result = await budgetRun({ 'src/a.test.ts': 'throw new Error("must not start")' }, -1)
+  expect(result.exit).toBe(1)
+  expect(result.stdout).toContain('UNSTARTED 0.000s ./src/a.test.ts')
+  expect(result.stdout).toContain('Lane deadline exceeded')
+})
+
+test('timings are real per-file durations sorted slowest first and include failed files', async () => {
+  const result = await budgetRun(
+    {
+      'src/a.test.ts': 'import {test} from "bun:test"; test("fast",()=>{})',
+      'src/b.test.ts':
+        'import {test,expect} from "bun:test"; test("slow failure",async()=>{await Bun.sleep(100);expect(1).toBe(2)})',
+      'src/c.test.ts': 'throw new Error("must not start")',
+    },
+    3000
+  )
+  expect(result.exit).toBe(1)
+  const rows = result.stdout.split('\n').filter((line) => /^(PASSED|FAILED|UNSTARTED) \d/.test(line))
+  expect(rows).toHaveLength(3)
+  expect(rows[0]).toMatch(/^FAILED .*b.test.ts$/)
+  expect(rows[1]).toMatch(/^PASSED .*a.test.ts$/)
+  expect(rows[2]).toMatch(/^UNSTARTED .*c.test.ts$/)
+  expect(result.summary).toContain('Per-file timing')
+})
+
+test('invalid deadlines fail closed', async () => {
+  const cwd = await fixture({ 'src/a.test.ts': '' })
+  for (const deadline of [NaN, Infinity, 0])
+    await expect(runTests({ cwd, roots: ['src'], deadline })).rejects.toThrow('Deadline')
+})
+
+test('deadline gives the child time to clean up, but graceful termination cannot turn it green', async () => {
+  const result = await budgetRun(
+    {
+      'src/a.test.ts':
+        'import {test} from "bun:test"; import {writeFileSync} from "node:fs"; process.on("SIGTERM",()=>{writeFileSync("cleaned","yes");process.exit(0)}); test("hung",()=>Bun.sleep(2000),3000)',
+    },
+    300
+  )
+  expect(result.exit).toBe(1)
+  expect(result.stdout).toContain('Lane deadline exceeded')
+  expect(result.stdout).toContain('INCOMPLETE')
+  expect(readFileSync(join(result.cwd, 'cleaned'), 'utf8')).toBe('yes')
+})
+
+test('passing files also emit a complete timing summary', async () => {
+  const result = await budgetRun({ 'src/a.test.ts': 'import {test} from "bun:test"; test("pass",()=>{})' }, 3000)
+  expect(result.exit).toBe(0)
+  expect(result.stdout).toContain('Test suite passed')
+  expect(result.summary).toMatch(/PASSED \d+\.\d+s \.\/src\/a.test.ts/)
+})
+
+test('deadline crossed after the last passing file still makes the runner fail', async () => {
+  // Delay the parent reporter synchronously so the final Date.now check, not
+  // the event-loop timer, must enforce the deadline after every child passed.
+  const result = await budgetRun({ 'src/a.test.ts': 'import {test} from "bun:test"; test("pass",()=>{})' }, 500, 600)
+  expect(result.exit).toBe(1)
+  expect(result.stdout).toContain('PASSED')
+  expect(result.stdout).toContain('Lane deadline exceeded')
+  expect(result.summary).toContain('Lane deadline exceeded')
 })
