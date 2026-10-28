@@ -855,7 +855,9 @@ if (import.meta.main) {
         import('./lib/infra/logger'),
         import('./services/security/content-safety-registry'),
       ])
+      const { initializeSquadEnvSecretSource } = await import('./services/security/squad-env-secret-source')
       setLogContentSanitizer((args) => getContentSafetyRegistry().redact(args))
+      await initializeSquadEnvSecretSource()
 
       // Ensure VAPID keys exist (must be after secret store init)
       await getVapidKeys()

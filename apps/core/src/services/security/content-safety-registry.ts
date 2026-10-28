@@ -1,4 +1,4 @@
-import { SquadEnvSecretSource } from './squad-env-secret-source'
+import { getSquadEnvSecretSource } from './squad-env-secret-source'
 import { getSecretStore, type SecretValueConsumer } from '../secrets/store'
 import {
   ContentSafety,
@@ -91,7 +91,7 @@ export function getContentSafetyRegistry(): ContentSafetyRegistry {
   const source = getSecretStore()
   if (!processRegistry || processRegistrySource !== source) {
     processRegistry?.dispose()
-    processRegistry = new ContentSafetyRegistry(source, new SquadEnvSecretSource())
+    processRegistry = new ContentSafetyRegistry(source, getSquadEnvSecretSource())
     processRegistrySource = source
   }
   return processRegistry

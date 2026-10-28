@@ -1,3 +1,4 @@
+import { MAX_SQUAD_ENV_BYTES, getSquadEnvSecretSource } from '../services/security/squad-env-secret-source'
 import { Hono } from 'hono'
 import { zValidator } from '../lib/zod-validator'
 import { z } from 'zod'
@@ -8,7 +9,10 @@ import { requireSquadPermission } from '../middleware'
 import { resolvedSquadId } from '../middleware/require-permission'
 
 const setEnvSchema = z.object({
-  content: z.string(),
+  content: z
+    .string()
+    .max(MAX_SQUAD_ENV_BYTES)
+    .refine((value) => Buffer.byteLength(value, 'utf8') <= MAX_SQUAD_ENV_BYTES, 'Squad environment exceeds 256 KiB'),
 })
 
 export const squadEnvRouter = new Hono()
@@ -17,7 +21,8 @@ export const squadEnvRouter = new Hono()
     const squadId = resolvedSquadId(c)
 
     const content = squadEnv.getEnvFile(squadId)
-    return c.json({ content: content ?? '' })
+    const detectionNotice = getSquadEnvSecretSource().notice(squadId)
+    return c.json({ content: content ?? '', ...(detectionNotice ? { detectionNotice } : {}) })
   })
 
   // Set .ficus/.env content

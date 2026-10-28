@@ -82,6 +82,12 @@ export function SquadEnvConfig({ squadId }: Props) {
         </p>
       </div>
 
+      {data?.detectionNotice && (
+        <p role="status" className="text-xs text-status-review-600 mt-1 mb-2">
+          {data.detectionNotice}
+        </p>
+      )}
+
       <textarea
         value={value}
         disabled={!canWriteEnv}

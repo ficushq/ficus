@@ -19,3 +19,23 @@ test('Workspace renders only custom environment settings and explains agent/term
   expect(html).not.toContain('exposed secrets')
   expect(html).toContain('<textarea')
 })
+
+test('Environment settings show the nonsecret detection notice for an untrusted disk edit', () => {
+  const queryClient = new QueryClient()
+  const detectionNotice =
+    'This environment was edited outside Settings; save it in Settings to register changed values for output redaction.'
+  queryClient.setQueryData(['squads', 's1', 'workspace-env'], { content: 'CUSTOM=keep', detectionNotice })
+  queryClient.setQueryData(queryKeys.auth.permissions('s1'), { permissions: ['env:read', 'env:write'] })
+  try {
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={queryClient}>
+        <SquadEnvConfig squadId="s1" />
+      </QueryClientProvider>
+    )
+    expect(html).toContain(detectionNotice)
+    expect(html).toContain('role="status"')
+    expect(html).not.toContain('contentHash')
+  } finally {
+    queryClient.clear()
+  }
+})

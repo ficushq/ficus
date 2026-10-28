@@ -329,4 +329,41 @@ describe('squad-env routes', () => {
       }
     }
   })
+
+  it('rejects env writes above the 256 KiB byte cap, including multibyte content', async () => {
+    for (const content of ['#' + 'x'.repeat(256 * 1024), '#' + 'é'.repeat(128 * 1024)]) {
+      const response = await app.request(`/api/squads/workspace/${squadId}/env`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
+        body: JSON.stringify({ content }),
+      })
+      expect(response.status).toBe(400)
+      expect(existsSync(join(getSquadWorkspacePath(squadId), WORKSPACE_DOT_DIR, 'env.user'))).toBe(false)
+    }
+  })
+
+  it('surfaces a nonsecret detection notice after an on-disk edit without trusting it', async () => {
+    const content = 'APP_TOKEN=synthetic-trusted-settings-token'
+    const response = await app.request(`/api/squads/workspace/${squadId}/env`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
+      body: JSON.stringify({ content }),
+    })
+    expect(response.status).toBe(200)
+    writeFileSync(
+      join(getSquadWorkspacePath(squadId), WORKSPACE_DOT_DIR, 'env.user'),
+      'APP_TOKEN=synthetic-untrusted-settings-token'
+    )
+    const { getSquadEnvSecretSource } = await import('../services/security/squad-env-secret-source')
+    await getSquadEnvSecretSource().initialize()
+    const result = await app.request(`/api/squads/workspace/${squadId}/env`, { headers: authHeaders(admin.token) })
+    const data = await result.json()
+    expect(data.detectionNotice).toContain('outside Settings')
+    expect(Object.keys(data).sort()).toEqual(['content', 'detectionNotice'])
+    expect(
+      getSquadEnvSecretSource()
+        .entries()
+        .some((entry) => entry.value === 'synthetic-untrusted-settings-token')
+    ).toBe(false)
+  })
 })

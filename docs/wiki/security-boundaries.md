@@ -232,15 +232,33 @@ After literal decoding, the heuristic is:
   under generic names commonly score below 4 bits and are not reliably matched;
   use an explicit secret-suffixed name for those values.
 
-The process-wide source checks only the canonical squad directories and env.user
-file metadata at each redaction boundary, reusing parsed values until a file
-changes. Existing values are loaded on first use; edits/deletion are seen by both
-API and worker without a background scanner or notification delay. Symlink settings
-and files are not followed. On transient read failures, last-known coverage is
-retained until a successful read/removal. Matching across squads is deliberately
-allowed; these values are never used for input refusal. No arbitrary workspace
-files (including app `.env.local` files) are scanned or registered. Dynamic shell
-expressions are not evaluated, so their resulting runtime values are not inferred.
+Environment detection authority lives in a dedicated protected DB table containing
+only the content hash and parsed squad-env entries, never integration credentials.
+It has no encryption-key dependency: Core's supported no-key startup and env edits
+still work. At upgrade, existing squads receive one bounded legacy snapshot; this
+explicitly trusts their initial `env.user` bytes once. A separate durable per-squad
+bootstrap marker prevents a missing or malformed record from authorizing another
+snapshot. New squads are marked already bootstrapped and need an API/service write
+to register values. Generic squad updates cannot reset that marker.
+
+After bootstrap, only API/service environment writes update the trusted record.
+An on-disk file whose hash differs is ignored for detection, not parsed into new
+entries. A fixed warning is logged once per squad per process, and Environment
+settings show a nonsecret notice explaining that the content must be saved there.
+Legacy files above 256 KiB are skipped with a warning; API/service writes enforce
+the same UTF-8 byte cap before any file write. Bounded reads also tolerate a file
+growing after its metadata check. Symlink settings and files are not followed.
+
+The process-wide source enumerates DB squad records, not workspace directories.
+Startup awaits bootstrap; an owned periodic runner refreshes DB snapshots in both
+API and worker. Synchronous file checks are throttled to once per second, checking
+only `env.user` metadata and reusing hash-validated entries. API/service writes
+refresh their process immediately; peer refresh and file-check intervals mean
+cross-process changes are not instantaneous. No shell parsing or DB work happens
+for every streamed chunk. Matching across squads is deliberately allowed; these
+values are never used for input refusal. No arbitrary workspace files (including
+app `.env.local` files) are scanned or registered. Dynamic shell expressions are
+not evaluated, so their resulting runtime values are not inferred.
 
 Regression pointers: the focused content-safety, content-safety-registry,
 squad-env-secret-source, stored-secret-tool-containment, secrets/store and squad/env

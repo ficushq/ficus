@@ -1,3 +1,4 @@
+import { assertSquadEnvSize, getSquadEnvSecretSource } from '../security/squad-env-secret-source'
 import { projectExecutionWrappers } from '../integrations/project-execution-wrappers'
 import { join } from 'path'
 import { existsSync, mkdirSync, writeFileSync, readFileSync, chmodSync, renameSync, rmSync } from 'fs'
@@ -189,9 +190,12 @@ export function getEnvFile(squadId: string): string | null {
  * Set the user-authored squad env content and regenerate the sandbox .env file.
  */
 export async function setEnvFile(squadId: string, content: string): Promise<void> {
+  assertSquadEnvSize(content)
   const ficusDir = ensureFicusDir(squadId)
   const userEnvPath = join(ficusDir, USER_ENV_FILE)
-  writeFileSync(userEnvPath, content, { mode: 0o600 })
+  await getSquadEnvSecretSource().recordWrite(squadId, content, () =>
+    writeFileSync(userEnvPath, content, { mode: 0o600 })
+  )
   await writeGeneratedEnvFile(squadId, content)
 }
 

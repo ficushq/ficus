@@ -740,7 +740,8 @@ test('the git author identity resolved while a rotated GitHub token is being val
     expect(duringValidation?.identity).toEqual(before)
     expect(await getGitHubAuthorDefaults(squadId, profileRequest)).toEqual(before)
     expect((await resolveGitHubConnection(squadId))?.credential.accessToken).toBe('synthetic-access-new')
-    expect(safety.redact(previousCredential.accessToken)).toBe(previousCredential.accessToken)
+    // Retired leaves protect in-flight output throughout the one-hour grace.
+    expect(safety.redact(previousCredential.accessToken)).not.toContain(previousCredential.accessToken)
     expect(safety.redactWithStoredKeys('synthetic-refresh-new').storedKeys).not.toHaveLength(0)
   } finally {
     safety.dispose()
