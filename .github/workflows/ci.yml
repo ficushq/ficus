@@ -896,9 +896,11 @@ jobs:
 
   subprocess-shards:
     runs-on: ubuntu-24.04
-    # Emergency backstop only. The runner's 9-minute absolute deadline includes
-    # setup and leaves 20s TERM/KILL cleanup plus reporting inside the 10m target.
-    timeout-minutes: 15
+    # Hang backstop, NOT the performance budget: the final wall-time check
+    # still fails at 600s and the runner stops tests at 540s plus cleanup.
+    # Setup hang limits total 16m; reserve time to report unstarted inventory
+    # even in that worst case instead of letting the outer job cancel first.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -911,7 +913,7 @@ jobs:
           echo "FICUS_TEST_LANE_STARTED=$started" >> "$GITHUB_ENV"
           echo "FICUS_TEST_DEADLINE_MS=$(( (started + 540) * 1000 ))" >> "$GITHUB_ENV"
       - uses: actions/checkout@v7
-        timeout-minutes: 1
+        timeout-minutes: 3
         with:
           # cli-bundle.test.ts stamps real commit info from git, which needs
           # full history — see the `test` job's identical checkout step.
@@ -985,7 +987,7 @@ jobs:
           exit 1
 
       - name: Install dependencies
-        timeout-minutes: 2
+        timeout-minutes: 4
         run: bun install --frozen-lockfile
 
       - name: Create database extensions

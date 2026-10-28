@@ -54,10 +54,13 @@ setup, checkout, dependency installation, tests and reporting/post actions, not
 summed test-body durations. Provider queue time is excluded. The first step
 starts a lane clock; an absolute **540-second** deadline stops test execution,
 allows the existing **20-second** TERM-to-KILL cleanup grace, and leaves time
-for reports before the target. The unchanged 15-minute job timeout is only an
-emergency backstop. Setup steps are individually bounded (at most 12 minutes
-combined); an already-expired deadline starts no tests and fails with inventory
-diagnostics rather than waiting for the outer timeout.
+for reports before the target. The 20-minute job timeout is only a hang
+backstop, not a performance allowance: the final wall-time check still fails at
+600 seconds. Setup steps are individually bounded (at most 16 minutes combined),
+with 3 minutes for full-history checkout and 4 minutes for dependency installation
+to tolerate cold caches. The outer backstop leaves room for diagnostics even
+if setup consumes all those hang limits; an already-expired deadline starts no
+tests and fails with inventory diagnostics rather than waiting for cancellation.
 
 On success and failure, logs and the Actions job summary contain all selected
 files sorted by measured wall duration, with `PASSED`, `FAILED`, `INCOMPLETE`

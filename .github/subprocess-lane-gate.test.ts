@@ -143,7 +143,7 @@ test('two shards preserve the required aggregate and reserve time for deadline d
   expect(shards).toBeDefined()
   expect(shards.strategy).toEqual({ 'fail-fast': false, matrix: { shard: [1, 2] } })
   expect(shards['runs-on']).toBe('ubuntu-24.04')
-  expect(shards['timeout-minutes']).toBe(15)
+  expect(shards['timeout-minutes']).toBe(20)
   expect(shards.steps[0].run).toContain('FICUS_TEST_DEADLINE_MS=$(( (started + 540) * 1000 ))')
   const run = shards.steps.find((step: any) => step.name === 'Run real-subprocess tests')
   expect(run.run).toContain('--subprocess-shard ${{ matrix.shard }}/2')
@@ -151,7 +151,13 @@ test('two shards preserve the required aggregate and reserve time for deadline d
   expect(run['continue-on-error']).toBeUndefined()
   const setup = shards.steps.slice(1, shards.steps.indexOf(run))
   expect(setup.every((step: any) => step['timeout-minutes'] > 0)).toBe(true)
-  expect(setup.reduce((sum: number, step: any) => sum + step['timeout-minutes'], 0)).toBeLessThanOrEqual(12)
+  expect(setup.find((step: any) => step.uses === 'actions/checkout@v7')['timeout-minutes']).toBe(3)
+  expect(setup.find((step: any) => step.name === 'Install dependencies')['timeout-minutes']).toBe(4)
+  // Hang limits are not the performance budget; even worst-case setup must
+  // leave room for expired-deadline inventory reporting before the outer kill.
+  expect(setup.reduce((sum: number, step: any) => sum + step['timeout-minutes'], 0)).toBeLessThanOrEqual(
+    shards['timeout-minutes'] - 3
+  )
   const report = shards.steps.find((step: any) => step.name === 'Report lane wall time')
   expect(report.if).toBe('always()')
   expect(report.run).toContain('elapsed < 600')

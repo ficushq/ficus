@@ -136,13 +136,18 @@ test('cancellation escalates a TERM-resistant test child and returns without a s
   }
 })
 
-async function budgetRun(files: Record<string, string>, budgetMs: number) {
+async function budgetRun(files: Record<string, string>, budgetMs: number, reportDelayMs = 0) {
   const cwd = await fixture(files)
   const entry = join(cwd, 'run.ts')
   const report = join(cwd, 'summary.md')
   await Bun.write(
     entry,
     `import {runTests} from ${JSON.stringify(join(import.meta.dir, '../scripts/test-runner.ts'))};
+const log = console.log;
+console.log = (...args) => {
+  log(...args);
+  if (String(args[0]).startsWith('PASS ')) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${reportDelayMs});
+};
 try { await runTests({cwd:${JSON.stringify(cwd)},roots:['src'],isolated:true,deadline:Date.now()+${budgetMs},stopGraceMs:100}) }
 catch { process.exitCode=1 }`
   )
@@ -239,4 +244,14 @@ test('passing files also emit a complete timing summary', async () => {
   expect(result.exit).toBe(0)
   expect(result.stdout).toContain('Test suite passed')
   expect(result.summary).toMatch(/PASSED \d+\.\d+s \.\/src\/a.test.ts/)
+})
+
+test('deadline crossed after the last passing file still makes the runner fail', async () => {
+  // Delay the parent reporter synchronously so the final Date.now check, not
+  // the event-loop timer, must enforce the deadline after every child passed.
+  const result = await budgetRun({ 'src/a.test.ts': 'import {test} from "bun:test"; test("pass",()=>{})' }, 500, 600)
+  expect(result.exit).toBe(1)
+  expect(result.stdout).toContain('PASSED')
+  expect(result.stdout).toContain('Lane deadline exceeded')
+  expect(result.summary).toContain('Lane deadline exceeded')
 })
