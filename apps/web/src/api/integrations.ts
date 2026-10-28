@@ -37,6 +37,7 @@ export interface IntegrationConnection extends IntegrationConnectionSummary {
   adapterVersion: number
   configuration: {
     version: 1 | 2
+    accountId?: string
     bindingId?: string
     bindingFingerprint?: string
     vaultPath?: string
@@ -64,7 +65,7 @@ export interface IntegrationConnection extends IntegrationConnectionSummary {
 export interface IntegrationCatalogItem {
   availability?: { available: boolean; reason?: string }
   setup?: { state: 'configured' | 'needs_setup' | 'needs_attention'; issues: string[] }
-  connectionMode?: 'local' | 'managed' | 'credential' | 'oauth2' | 'channel' | 'deployment' | 'service'
+  connectionMode?: 'local' | 'managed' | 'credential' | 'oauth2' | 'channel' | 'service'
 
   enabled?: boolean
   key: string
@@ -512,14 +513,6 @@ export const configureChannelIntegration = (provider: string, fields: Record<str
     body: JSON.stringify(fields),
   })
 
-export const getDeploymentIntegrationSettings = (provider: string) =>
-  apiFetch<ChannelIntegrationSettings>(`/integrations/providers/${provider}/deployment-settings`)
-export const configureDeploymentIntegration = (provider: string, fields: Record<string, string | null>) =>
-  apiFetch<ChannelIntegrationSettings>(`/integrations/providers/${provider}/deployment-settings`, {
-    method: 'PUT',
-    body: JSON.stringify(fields),
-  })
-
 export const getServiceIntegrationSettings = (provider: string) =>
   apiFetch<ChannelIntegrationSettings>(`/integrations/providers/${provider}/service-settings`)
 export const configureServiceIntegration = (provider: string, fields: Record<string, string | null>) =>
@@ -537,3 +530,12 @@ export function getSquadGitAuthorDefaults(squadId: string): Promise<{
 
 export const listIntegrationOutputs = () =>
   apiFetch<import('@ficus/shared').IntegrationOutputDescriptor[]>('/integrations/outputs')
+
+export const createDeploymentIntegration = (
+  provider: string,
+  body: { displayName: string; credential: string; configuration: { version: 1; accountId?: string } }
+) =>
+  apiFetch<IntegrationConnection>('/integrations/connections', {
+    method: 'POST',
+    body: JSON.stringify({ provider, ...body }),
+  })

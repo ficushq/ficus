@@ -249,6 +249,7 @@ describe('host env', () => {
       `${hostBinDir()}:${join(home, 'workspaces', 'squads', SQUAD, '.ficus', 'integration-bin')}:/bin`
     )
     expect(env.FICUS_TOKEN).toBe('tok')
+    expect(env.FICUS_SQUAD_ID).toBe(SQUAD)
     expect(env.FICUS_API_URL).toBe(resolveHostApiUrl())
     expect(env.GIT_SSH_COMMAND).toBe(`ssh -F '${join(home, 'ssh', SQUAD, 'config')}'`)
     expect(env.FICUS_SQUAD_SSH_DIR).toBe(join(home, 'ssh', SQUAD))
@@ -272,6 +273,7 @@ describe('host env', () => {
     expect(env.GIT_SSH_COMMAND).toBeUndefined()
     expect(env.FICUS_TOKEN).toBeUndefined()
     expect(env.FICUS_SQUAD_SSH_DIR).toBeUndefined()
+    expect(env.FICUS_SQUAD_ID).toBeUndefined()
   })
 
   test('buildHostCommandEnv omits GIT_SSH_COMMAND when the squad has no ssh config yet', () => {

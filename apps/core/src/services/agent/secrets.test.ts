@@ -286,6 +286,15 @@ describe('redaction', () => {
 })
 
 describe('renderAgentSecretsFile', () => {
+  it('never renders any of the six retired deployment names, even with an injected legacy getter', () => {
+    const providers = ['CLOUDFLARE', 'DIGITALOCEAN', 'NETLIFY', 'RAILWAY', 'SUPABASE', 'VERCEL']
+    expect(
+      renderAgentSecretsFile(
+        providers.map((provider) => `DEPLOY_${provider}_TOKEN`),
+        () => 'synthetic-retired'
+      )
+    ).toBeNull()
+  })
   it('quotes values for the shell and skips unset keys', () => {
     const content = renderAgentSecretsFile(['B_KEY', 'A_KEY', 'UNSET_KEY'], (key) =>
       key === 'UNSET_KEY' ? undefined : key === 'A_KEY' ? "it's" : 'plain'

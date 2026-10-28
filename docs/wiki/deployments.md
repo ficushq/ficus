@@ -4,7 +4,7 @@
 
 - Private authenticated sandbox local apps from squad workspaces.
 - Skill-guided external provider deployments.
-- Provider tokens stored in Secret Store and explicitly exposed per squad when a sandbox needs them.
+- Named provider accounts connected in Settings → Integrations and assigned per squad; CLIs authenticate through the PATH wrapper.
 
 ## What Ficus does not support in this scope
 
@@ -116,42 +116,23 @@ Direct loopback health probes do not verify proxy access. A provider-side `403` 
 - Private local apps by default.
 - Public exposure requires explicit human confirmation.
 - Billing actions require explicit human confirmation.
-- Secrets stay in Secret Store until a human explicitly allowlists selected keys for a squad sandbox.
-- Never expose all Secret Store keys to a squad automatically.
+- Integration credentials are available only to an authorized command through the assigned integration.
+- Never read, print, log or persist integration tokens.
 
-## Provider deployment secret exposure
+## Assigned deployment integrations
 
-Save deployment credentials in **Settings → Integrations**. Cloudflare, DigitalOcean, Netlify, Railway, Supabase, and Vercel each have a card with a global enable switch and protected token field. GitHub Pages uses the GitHub integration’s account. Existing tokens and exposure choices are preserved on upgrade; fresh integrations start disabled. Secrets & Keys and `ficus secret set` no longer edit these provider tokens.
+A person connects a named Cloudflare, DigitalOcean, Netlify, Railway, Supabase or Vercel account in **Settings → Integrations**, validates and enables it, then assigns it in the squad’s **Integrations** tab. Multiple accounts can be attached with a default, or selected explicitly for a command. GitHub Pages uses the assigned GitHub account. Imported deployment accounts are disabled and unassigned; exposure choices are not copied. See [upgrade actions](../upgrade/deploy-provider-connections.md).
 
-Disabling a provider retains its saved token and allowlists, but removes that token from generated squad environments. Re-enabling restores it to the same squads. Rotating a token updates both squad-specific and global exposures. A credential already copied into a running process remains subject to the provider’s own token revocation.
+An assigned, healthy account authenticates the provider CLI through its **PATH wrapper**. Credentials are resolved fresh for each command, never written into generated sandbox files or persistent environments. Revocation, disablement and unassignment deny new credential use immediately. Provider CLI installation and the matching deploy skill follow the normal integration projection; host runtimes require an operator-installed CLI.
 
-Provider skills use Ficus Secret Store names such as `DEPLOY_VERCEL_TOKEN` and `DEPLOY_CLOUDFLARE_TOKEN`. These values are not automatically available in squad sandboxes. Before running provider CLI commands, a human admin/operator must explicitly expose only the required secret keys to the squad through the squad **Environment** settings UI or the admin/operator CLI:
+Project-local CLIs and package-manager scripts may bypass global wrappers. Wrap the whole command:
 
 ```bash
-# Lists names/status only; does not print secret values.
-ficus squad-env secrets <squad-id>
-
-# Allowlist only the provider token needed by this squad.
-ficus squad-env expose-secrets <squad-id> DEPLOY_VERCEL_TOKEN
-
-# Or expose common deployment tokens to every existing and future squad.
-ficus squad-env expose-global DEPLOY_VERCEL_TOKEN
+ficus integration exec <provider> -- npm run deploy
+ficus integration exec <provider> --connection <attached-account-id> -- <command>
 ```
 
-You can also configure this in the squad **Environment** settings UI. The UI lists Secret Store key names, set status, and exposure status only; it never displays secret values. Both the UI and `ficus squad-env secrets` list only the keys you may read in the Secret Store, plus keys already exposed to the squad (so you can remove them).
-
-Secret exposure storage model:
-
-- Selected key names are stored in Core's server-controlled database tables, not in the workspace.
-- Adding a key to a squad's or the global exposure requires permission to read that key in the Secret Store (`secrets:read`, or `secrets:read:<group>` for the key's group), on top of `env:write` / `settings:write`. For example an operator holding `secrets:read:integration` can add only integration keys such as `DEPLOY_*`. Removing a key never needs it, and keys that are already exposed stay exposed. The refusal (403) is the same whether or not the key exists.
-- Globally exposed keys are rendered into every existing squad env file immediately and into future squad env files when generated.
-- User-authored environment content is stored in `.ficus/env.user`.
-- Reserved keys: squad env content may not assign `FICUS_TOKEN`, `FICUS_API_URL`, `FICUS_PASSWORD`, `FICUS_AUTH_STORE`, `FICUS_AGENT_CONTEXT`, `FICUS_AGENT_ID` or the `FICUS_IDENTITY_*` aliases. The agent's identity is injected by ficus; setting one in a squad env would make every agent in the squad act as a different identity, against a possibly different instance. Such a write is rejected with a 400 naming the key, and the same names are filtered out of Secret Store exposure rendering. `PATH` is not reserved — on the host runtime ficus re-prepends its `ficus` shim directory after the squad env is sourced, so PATH additions apply but cannot displace `ficus`.
-- The generated sandbox env file `.ficus/.env` contains `.ficus/env.user` content plus selected Secret Store values so shells, local app commands, and deployment CLIs can source them.
-- Normal APIs and UI responses return user-authored env content and key names/status only; they do not return generated plaintext Secret Store values.
-- Secret Store rotation/deletion regenerates affected squad `.ficus/.env` files so stale selected or globally exposed values are updated or removed.
-
-Treat selected exposure as explicit access to that squad; do not use it for unrelated secrets.
+Agent runtime context supplies the squad selector; otherwise provide `--squad <squad-id>` before `--`. Core still authorizes every invocation. Do not inspect or persist integration credentials. If a provider reports unauthenticated, ask a person to validate, enable or assign the account, rather than reading variables or restarting to reload a token. Human terminals remain token-free and may use the operator’s own CLI login. Custom app values can live in squad Environment Variables or human-directed workspace files; integration credentials must not be copied there.
 
 ## K8s local app smoke checklist
 

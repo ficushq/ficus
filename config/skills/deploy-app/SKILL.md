@@ -18,7 +18,7 @@ Use external cloud providers only after:
 1. You have identified the app type and deployment target.
 2. Tests/build pass locally in the app project directory in your shared workspace.
 3. The human has approved public exposure, billing, domains, databases, or always-on services.
-4. Required provider tokens are stored in Ficus Secrets, not pasted into chat.
+4. A healthy provider integration account is connected and assigned to this squad, never pasted into chat.
 
 ## First checks
 
@@ -26,7 +26,6 @@ Use external cloud providers only after:
 pwd
 find . -maxdepth 2 -name package.json -o -name Dockerfile -o -name vite.config.* -o -name next.config.*
 ficus deploy local list <squad-id>
-ficus secret list
 ```
 
 ## App type guidance
@@ -212,51 +211,20 @@ Test with a non-default port before external deployment:
 PORT=4173 timeout 5s bash -c 'bun run start >/tmp/app-port.log 2>&1 & pid=$!; sleep 1; curl -sS http://127.0.0.1:4173/; kill $pid; wait $pid || true'
 ```
 
-## Secret handling and missing provider tokens
+## Assigned provider accounts
 
-Do not ask users to paste secrets in chat. If a required deployment token is missing, read the matching provider skill and help the human create a token with suitable scope. Have them save it in **Settings → Integrations → the provider’s card** and enable the integration. Deployment tokens are no longer edited through Secrets & Keys or `ficus secret set`. GitHub Pages uses the GitHub integration’s connected account.
+Do not ask people to paste credentials in chat. For Cloudflare, DigitalOcean, Netlify, Railway, Supabase and Vercel, a person connects a named account in **Settings → Integrations**, validates and enables it, then assigns it in the squad’s **Integrations** tab. Imported accounts are unassigned; previous exposure choices are not copied. GitHub Pages uses the assigned GitHub integration account.
 
-Existing tokens and squad exposure choices are preserved on upgrade. Global disable withholds the deployment token from generated squad environments; re-enable restores the previous exposure choices. Then have an admin/operator expose only the required provider token in the squad’s **Environment** settings.
+Read the matching provider skill. An assigned, healthy account authenticates its provider CLI through the provisioned **PATH wrapper**, including nested child processes. No integration credential is written into environment files or delivered to human terminals. Never read, print, log, commit or persist integration credentials.
 
-Provider CLI commands in squad sandboxes can only read Secret Store values after a human admin/operator explicitly exposes selected secret keys to that squad in Environment settings or via the admin/operator CLI. Never expose all secrets automatically.
-
-Use the provider's expected environment variable name while mapping from the Ficus secret:
-
-| Provider     | Ficus secret key              | CLI environment variable                        |
-| ------------ | ----------------------------- | ----------------------------------------------- |
-| Vercel       | `DEPLOY_VERCEL_TOKEN`         | `VERCEL_TOKEN`                                  |
-| Netlify      | `DEPLOY_NETLIFY_TOKEN`        | `NETLIFY_AUTH_TOKEN`                            |
-| Cloudflare   | `DEPLOY_CLOUDFLARE_TOKEN`     | `CLOUDFLARE_API_TOKEN`                          |
-| GitHub Pages | GitHub integration connection | Ficus resolves the assigned account per command |
-| Railway      | `DEPLOY_RAILWAY_TOKEN`        | `RAILWAY_API_TOKEN` for account/project flows   |
-| DigitalOcean | `DEPLOY_DIGITALOCEAN_TOKEN`   | `DIGITALOCEAN_ACCESS_TOKEN`                     |
-| Supabase     | `DEPLOY_SUPABASE_TOKEN`       | `SUPABASE_ACCESS_TOKEN`                         |
-
-Token troubleshooting:
-
-- `ficus squad-env secrets <squad-id>` showing `isSet=true exposed=true` only proves Ficus has and exposes the secret. It does not prove the current process has the latest value or that the provider accepts the token.
-- If a provider returns Unauthorized after a token was recently added/replaced, ask the human/admin to refresh/restart the agent/sandbox process and verify token type/scope.
-- Do not put command strings containing `$DEPLOY_*_TOKEN` inside double-quoted `ficus inbox` or `ficus workstream request-input` messages; Bash can expand and leak secrets. Use single quotes or heredocs when mentioning env-var syntax literally.
+Project-local CLIs and npm/bun/pnpm scripts can bypass the global wrapper. Wrap the entire command:
 
 ```bash
-# Bad: may expand the secret before sending the message.
-ficus workstream request-input <id> -m "Run VERCEL_TOKEN=$DEPLOY_VERCEL_TOKEN vercel whoami"
-
-# Good: keeps the env-var syntax literal.
-ficus workstream request-input <id> -m 'Run VERCEL_TOKEN=$DEPLOY_VERCEL_TOKEN vercel whoami'
+ficus integration exec <provider> -- npm run deploy
+ficus integration exec <provider> --connection <attached-account-id> -- <command>
 ```
 
-Provider CLI commands in squad sandboxes can only read exposed secrets:
-
-```bash
-# Shows names/status only; never prints secret values.
-ficus squad-env secrets <squad-id>
-
-# Admin/operator only: expose the provider token(s) needed by this squad.
-# This renders selected values into the squad's sandbox .ficus/.env file,
-# so treat it as explicit access.
-ficus squad-env expose-secrets <squad-id> DEPLOY_VERCEL_TOKEN
-```
+The current squad context supplies the squad selector; outside that context provide `--squad <squad-id>` before `--`. Exec still checks authorization and assignment on every invocation. If authentication fails, ask a person to check account validation, enablement, token scope and squad assignment; do not inspect token variables or restart a process to reload credentials. Human terminals receive no integration credentials and may use their own CLI login. Host-runtime CLIs must already be installed by the operator.
 
 ## Deployment records
 

@@ -1,5 +1,5 @@
+import { isRetiredDeploymentKey } from '../services/secrets/retired-deployment'
 import { getGitHubAuthorDefaults } from '../services/integrations/github/author-defaults'
-import { deploymentProviderForSecret } from '../services/integrations/deployment/settings'
 import { isChannelCredential } from '../services/integrations/channels/settings'
 import { Hono } from 'hono'
 import { requireSecretKeyPermission, requireSecretListAccess } from '../middleware/require-secret-permission'
@@ -18,8 +18,8 @@ const log = createLogger('secrets-route')
 // readable or writable by tenant users. Reads/writes/deletes of a managed key
 // fail closed (403), and the value is refused before the store is ever touched.
 const retiredIntegrationKey = (key: string) =>
+  isRetiredDeploymentKey(key) ||
   isChannelCredential(key) ||
-  !!deploymentProviderForSecret(key) ||
   /^(?:GH_TOKEN|GITHUB_TOKEN)(?:_|$)/.test(key) ||
   key === 'GOOGLE_SERVICE_ACCOUNT_JSON' ||
   key === 'OPENAI_API_KEY' ||

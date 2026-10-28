@@ -301,6 +301,7 @@ export function buildHostCommandEnv(
     : ''
   env.PATH = `${hostBinDir()}:${wrapperPrefix}${base.PATH ?? FALLBACK_PATH}`
   env.FICUS_API_URL = resolveHostApiUrl()
+  if (opts.squadId) env.FICUS_SQUAD_ID = opts.squadId
   const appUrl = resolvePublicAppUrl()
   if (appUrl) env.APP_URL = appUrl
   // An INJECTED TOKEN is what makes a shell an agent's. Operator-driven shells

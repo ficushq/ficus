@@ -18,26 +18,21 @@ For squad project work, invoke the following project-directory commands through 
 ## Guardrails
 
 - Ask before site creation, production deploy, domain/DNS changes, paid add-ons, or public exposure.
-- Required Ficus secret: `DEPLOY_NETLIFY_TOKEN`. Do not paste tokens into chat.
-- Ask a human admin/operator to expose only this secret in squad Environment settings or with `ficus squad-env expose-secrets <squad-id> DEPLOY_NETLIFY_TOKEN` before running provider CLI commands.
+- Requires a healthy Netlify integration account assigned to this squad. If unauthenticated, ask a person to connect or assign it in Settings → Integrations.
+- Never read, print, log, commit, or write integration credentials to files; use the assigned CLI or integration exec.
 
-## If `DEPLOY_NETLIFY_TOKEN` is not set
+## Connect and assign
 
-Walk the human through account/token setup before attempting CLI commands:
+If no healthy account is assigned, walk the human through account setup before attempting CLI commands:
 
 1. Ask them to sign in or create a Netlify account at https://app.netlify.com/signup.
 2. Ask them to choose or create the Netlify team that should own the site. Mention that team features/add-ons can affect billing.
 3. Direct them to User Settings → Applications → Personal access tokens: https://app.netlify.com/user/applications#personal-access-tokens.
 4. Ask them to create a token named `ficus-deploy`.
-5. Do **not** ask them to paste the token in chat. Open Ficus **Settings → Integrations → Netlify**, enable the integration, and have them save the token in its credential field. Saved tokens remain hidden; enter a replacement there to rotate it.
+5. Do **not** ask them to paste the token in chat. Open Ficus **Settings → Integrations → Netlify**, enable the integration, and have them create a named account with the token, then validate and enable it. Saved tokens remain hidden; replace the token on that account to rotate it.
 
-6. Ask an admin/operator to expose only `DEPLOY_NETLIFY_TOKEN` to this squad from the Squad Settings tab → Environment section. CLI fallback:
-
-```bash
-ficus squad-env expose-secrets <squad-id> DEPLOY_NETLIFY_TOKEN
-```
-
-7. Verify non-secret access with `ficus squad-env secrets <squad-id>` and then `NETLIFY_AUTH_TOKEN="$DEPLOY_NETLIFY_TOKEN" netlify status` or `netlify sites:list`.
+6. Ask an admin/operator to assign the account in this squad’s **Integrations** tab and choose its default account. Existing imported accounts start unassigned.
+7. Verify access without inspecting credentials: `netlify sites:list`.
 
 ## Project directory and upload hygiene
 
@@ -45,10 +40,15 @@ Deploy from the app project directory, not the shared workspace root. Prefer dep
 
 ## CLI setup
 
+The assigned integration provisions the pinned `netlify` CLI and its PATH wrapper. Check readiness with `netlify --version`; if unavailable, ask a person to check assignment/provisioning rather than installing an unwrapped global CLI.
+
+For project-local CLIs (including npm/bun/pnpm scripts and npx/bunx), wrap the entire command explicitly:
+
 ```bash
-devbox add nodejs netlify-cli
-netlify --version
+ficus integration exec netlify -- npm run deploy
 ```
+
+For an alternate assigned account use `ficus integration exec netlify --connection <connection-id> -- <command>`. Exec is unrestricted, but never use it to inspect or persist credentials. Human terminals receive no Ficus integration credentials; they may use their own CLI login.
 
 ## Safe flow
 
@@ -57,16 +57,16 @@ bun install
 bun run build
 
 # Link/create only after consent.
-NETLIFY_AUTH_TOKEN="$DEPLOY_NETLIFY_TOKEN" netlify sites:list
-NETLIFY_AUTH_TOKEN="$DEPLOY_NETLIFY_TOKEN" netlify link
+netlify sites:list
+netlify link
 
 # Draft deploy first; adjust --dir to the app build output.
-NETLIFY_AUTH_TOKEN="$DEPLOY_NETLIFY_TOKEN" netlify deploy --dir dist
+netlify deploy --dir dist
 
 # Inspect.
-NETLIFY_AUTH_TOKEN="$DEPLOY_NETLIFY_TOKEN" netlify status
-NETLIFY_AUTH_TOKEN="$DEPLOY_NETLIFY_TOKEN" netlify deploy:list
-NETLIFY_AUTH_TOKEN="$DEPLOY_NETLIFY_TOKEN" netlify open:admin
+netlify status
+netlify deploy:list
+netlify open:admin
 ```
 
 ## Production, rollback, cleanup

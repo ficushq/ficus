@@ -88,6 +88,24 @@ describe('Secret save validation with an injected validator', () => {
     mock.restore()
   })
 
+  test('all six retired deployment names refuse operator reads, writes and deletes without exposing or losing stored source', async () => {
+    for (const provider of ['CLOUDFLARE', 'DIGITALOCEAN', 'NETLIFY', 'RAILWAY', 'SUPABASE', 'VERCEL']) {
+      const key = `DEPLOY_${provider}_TOKEN`
+      await getSecretStore().set(key, 'synthetic-retired-source')
+      expect((await app.request(`/secrets/${key}`, { headers: authHeaders(admin.token) })).status).toBe(404)
+      expect((await app.request(`/secrets/${key}`, req({ value: 'synthetic-replacement' }))).status).toBe(400)
+      expect(
+        (await app.request(`/secrets/${key}`, { method: 'DELETE', headers: authHeaders(admin.token) })).status
+      ).toBe(404)
+      expect(getSecretStore().get(key)).toBeUndefined()
+    }
+    const response = await app.request('/secrets', { headers: authHeaders(admin.token) })
+    expect(response.status).toBe(200)
+    expect(JSON.stringify(await response.json())).not.toContain('DEPLOY_')
+    expect(await db.select().from(secrets)).toHaveLength(6)
+    expect(fetchCalls).toEqual([])
+  })
+
   test('GitHub webhook material is inaccessible through legacy secret APIs', async () => {
     for (const key of ['GITHUB_WEBHOOK_SECRET', '__integration-webhook:github']) {
       await getSecretStore().set(key, 'hidden-webhook-material')

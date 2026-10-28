@@ -1,10 +1,10 @@
 import { projectExecutionWrappers } from '../integrations/project-execution-wrappers'
-import { deploymentProviderForSecret, getDeploymentAwareSecretValue } from '../integrations/deployment/settings'
+import { isRetiredDeploymentKey } from '../secrets/retired-deployment'
 import { join } from 'path'
 import { existsSync, mkdirSync, writeFileSync, readFileSync, chmodSync, renameSync, rmSync } from 'fs'
 import { eq, isNull } from 'drizzle-orm'
 import { db, squads, squadSecretExposures, globalSecretExposures } from '../../db'
-import { isManagedSecretKey } from '../secrets'
+import { getSecretStore, isManagedSecretKey } from '../secrets'
 import { loadProtectedIntegrationBindings } from '../integrations/projection/protected-env'
 import { githubSigningPublicKeyForSquad } from '../integrations/github/commit-signing-store'
 import { getSquadWorkspacePath } from './workspace'
@@ -147,7 +147,7 @@ export function normalizeSecretKeys(keys: string[]): string[] {
         // is the single chokepoint: every persistence and render path routes
         // exposure keys through here, so a managed key can neither be stored as
         // an exposure nor rendered into .ficus/.env.
-        .filter((key) => !key.startsWith('__') && !isManagedSecretKey(key))
+        .filter((key) => !key.startsWith('__') && !isManagedSecretKey(key) && !isRetiredDeploymentKey(key))
         .filter(
           (key) =>
             !/^(?:GH_TOKEN|GITHUB_TOKEN)(?:_|$)/.test(key) &&
@@ -171,7 +171,7 @@ function renderSecretExports(keys: string[], getSecretValue: (key: string) => st
   const lines = normalizeSecretKeys(keys)
     .map((key) => {
       const value = getSecretValue(key)
-      if (value === undefined) return deploymentProviderForSecret(key) ? `unset ${key}` : null
+      if (value === undefined) return null
       return `export ${key}=${shellQuote(value)}`
     })
     .filter((line): line is string => line !== null)
@@ -233,7 +233,7 @@ async function writeGeneratedEnvFile(
   squadId: string,
   content: string,
   keys: string[],
-  getSecretValue: (key: string) => string | undefined = getDeploymentAwareSecretValue
+  getSecretValue: (key: string) => string | undefined = (key) => getSecretStore().get(key)
 ): Promise<void> {
   const ficusDir = ensureFicusDir(squadId)
   const envPath = join(ficusDir, GENERATED_ENV_FILE)

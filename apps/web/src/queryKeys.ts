@@ -74,7 +74,6 @@ export const integrationQueryKeys = {
   managedBigbrainMembers: (vaultId: string) =>
     [...integrationQueryKeys.all, 'managed-vaults', 'bigbrain', vaultId, 'members'] as const,
   serviceSettings: (provider: string) => [...integrationQueryKeys.all, 'service-settings', provider] as const,
-  deploymentSettings: (provider: string) => [...integrationQueryKeys.all, 'deployment-settings', provider] as const,
   channelSettings: (provider: string) => [...integrationQueryKeys.all, 'channel-settings', provider] as const,
   linearWebhook: () => [...integrationQueryKeys.all, 'webhook', 'linear'] as const,
   squadGitAuthorDefaults: (squadId: string) =>
