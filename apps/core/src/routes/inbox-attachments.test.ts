@@ -136,3 +136,23 @@ describe('inbox attachment routes — sentinel regression', () => {
     expect(msg.status).toBe(200)
   })
 })
+
+test('unknown-length oversize multipart is rejected before parsing', async () => {
+  await getSettingsStore().set('INBOX_MAX_ATTACHMENT_BYTES', '4')
+  const [row] = await db
+    .insert(inbox)
+    .values({ recipientType: 'user', recipientId: admin.id, senderType: 'system', content: 'hi' })
+    .returning()
+  const response = await app.request(`/api/inbox/${row.id}/attachments`, {
+    method: 'POST',
+    headers: { ...authHeaders(admin.token), 'content-type': 'multipart/form-data; boundary=test' },
+    body: new ReadableStream({
+      start(c) {
+        c.enqueue(new Uint8Array(65541))
+        c.close()
+      },
+    }),
+  })
+  expect(response.status).toBe(413)
+  expect(await response.json()).toEqual({ error: 'ATTACHMENT_TOO_LARGE' })
+})
