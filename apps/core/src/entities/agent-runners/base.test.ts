@@ -1007,6 +1007,23 @@ describe('AgentRunner (base class)', () => {
       expect(JSON.stringify(runner.storedSecretAudits)).not.toContain('call-opts')
     })
 
+    it('delivers restart context first, before the resumed model prompt and other system events', async () => {
+      const buffer = new StreamBuffer()
+      const events: any[] = []
+      buffer.subscribe((event) => events.push(event))
+      createBufferSpy.mockReturnValue(buffer)
+      execution.restartContext = { restartId: 'restart-1', restartedAt: '2026-10-28T21:32:00.000Z' }
+      mockSession.switchedBack = { from: 'old', to: 'new', reason: 'recovered' }
+      await runner.run()
+      const expected =
+        'Ficus restarted at 2026-10-28T21:32:00.000Z; any command running then was cancelled by the restart and may have partial effects. This is not an incident: check the affected state and re-run what was interrupted. [restart id: restart-1]'
+      expect(mockSession.pi.promptCalls[0].text).toStartWith(expected)
+      expect(events.filter((event) => event.type === 'system_message')[0]?.text).toBe(expected)
+      expect(agent.status).not.toBe('waiting-input')
+      expect(execution.status).toBe('running')
+      expect(events.some((event) => event.type === 'error')).toBe(false)
+    })
+
     it('emits a system_message when the session reports a switch-back', async () => {
       const buffer = new StreamBuffer()
       const events: any[] = []

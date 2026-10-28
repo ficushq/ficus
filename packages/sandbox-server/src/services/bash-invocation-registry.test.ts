@@ -675,3 +675,37 @@ describe('quarantine and retention', () => {
     expect(value.hasActiveInvocations()).toBe(false)
   })
 })
+
+test('restart cancellation persists reason and correlation independently of cancellation receipt time', async () => {
+  const { dir, value } = await registry()
+  await value.acquire('restart-command', 'digest')
+  const restart = { restartId: 'restart-1', restartedAt: '2026-10-28T21:32:00.000Z' }
+  await value.terminate('restart-command', 'core_restart', restart)
+  const key = createHash('sha256').update('restart-command').digest('hex')
+  const terminal = JSON.parse(await readFile(join(dir, 'generations', `${key}.json`), 'utf8'))
+  expect(terminal).toMatchObject({ state: 'terminated', cancelReason: 'core_restart', restart })
+  expect(terminal.cancelRequestedAt).not.toBe(restart.restartedAt)
+})
+
+test('cleanup retry preserves the original cancellation cause and restart context', async () => {
+  let attempts = 0
+  const { dir, value } = await registry(async () => {
+    if (++attempts === 1) throw new Error('cleanup temporarily unavailable')
+  })
+  await value.acquire('cleanup-retry', 'digest')
+  const restart = { restartId: 'restart-1', restartedAt: '2026-10-28T21:32:00.000Z' }
+  await expect(value.terminate('cleanup-retry', 'core_restart', restart)).rejects.toThrow(
+    'cleanup temporarily unavailable'
+  )
+  await value.terminate('cleanup-retry', 'transport-loss')
+  const key = createHash('sha256').update('cleanup-retry').digest('hex')
+  const terminal = JSON.parse(await readFile(join(dir, 'generations', `${key}.json`), 'utf8'))
+  expect(terminal).toMatchObject({ state: 'terminated', cancelReason: 'core_restart', restart })
+})
+
+test('unattributed cancellation cannot claim a restart', async () => {
+  const { value } = await registry()
+  await value.acquire('no-correlation', 'digest')
+  await expect(value.terminate('no-correlation', 'core_restart')).rejects.toThrow('requires restart correlation')
+  await value.terminate('no-correlation', 'transport-loss')
+})

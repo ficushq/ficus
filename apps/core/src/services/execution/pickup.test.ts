@@ -46,6 +46,7 @@ import {
   setPickupExecutionLockedHookForTests,
 } from './pickup'
 import {
+  PROCESS_RESTART_NOTICE,
   recoverInterruptedExecutionsForStartup,
   requeueAbandonedLeaseExecutions,
   requeueOwnedExecutionsForShutdown,
@@ -1109,13 +1110,43 @@ describeSubprocess('attemptPickup result matrix', () => {
       .set({ leaseExpiresAt: new Date(Date.now() + 60_000), lastHeartbeatAt: new Date() })
       .where(eq(executionAdmissionReservations.executionId, execution.id))
 
-    expect(await requeueOwnedExecutionsForShutdown()).toContain(execution.id)
+    const restart = { restartId: 'restart-owned', restartedAt: '2026-10-28T21:32:00.000Z' }
+    expect(await requeueOwnedExecutionsForShutdown([], { restart })).toContain(execution.id)
     expect((await Execution.mustFind(execution.id)).status).toBe('queued')
     await expectCanonicalQueuedAdmission(execution.id, agent.id)
     // Posted at SHUTDOWN, before any restart has happened — say so, rather than
     // claiming a recovery that is still in the future.
     const notices = (await db.select().from(messages).where(eq(messages.agentId, agent.id))).map((m) => m.content)
-    expect(notices).toContain('[System] Agent paused for a worker restart; it will resume automatically.')
+    expect(notices).toContain(
+      '[System] Agent paused for a worker restart; it will resume automatically. [restart id: restart-owned; time: 2026-10-28T21:32:00.000Z]'
+    )
+    const { prepareRestartResume } = await import('./startup-recovery')
+    const resumed = await prepareRestartResume(execution.id, agent.id)
+    expect(resumed).toEqual(restart)
+    expect(await prepareRestartResume(execution.id, agent.id)).toEqual(restart)
+    const rows = await db.select().from(messages).where(eq(messages.agentId, agent.id))
+    const resumeRows = rows.filter((row) => (row.metadata as any)?.restartPhase === 'resume')
+    expect(resumeRows).toHaveLength(1)
+    expect(resumeRows[0]?.content).toBe(
+      'Ficus restarted at 2026-10-28T21:32:00.000Z; any command running then was cancelled by the restart and may have partial effects. This is not an incident: check the affected state and re-run what was interrupted. [restart id: restart-owned]'
+    )
+    for (const row of rows.filter((row) => (row.metadata as any)?.restartPhase)) {
+      expect(row.metadata).toMatchObject({ restart, executionId: execution.id, isSystem: true })
+    }
+    // No temporal inference for another execution or agent.
+    expect(await prepareRestartResume(randomUUID(), agent.id)).toBeUndefined()
+    expect(await prepareRestartResume(execution.id, randomUUID())).toBeUndefined()
+    // A later unknown interruption must supersede this prior restart, not reuse
+    // its timestamp merely because the same execution is picked up again.
+    await db.insert(messages).values({
+      agentId: agent.id,
+      role: 'assistant',
+      content: PROCESS_RESTART_NOTICE,
+      createdAt: new Date(Date.now() + 1000),
+      metadata: { isSystem: true, admissionRecoveryExecutionId: execution.id, executionId: execution.id },
+    })
+    expect(await prepareRestartResume(execution.id, agent.id)).toBeUndefined()
+
     expect(notices).not.toContain('[System] Agent recovered after a process restart.')
   })
 
@@ -1196,8 +1227,8 @@ describeSubprocess('attemptPickup result matrix', () => {
         ({ content }) => content
       )
       expect(
-        noticeContents.filter(
-          (content) => content === '[System] Agent paused for a worker restart; it will resume automatically.'
+        noticeContents.filter((content) =>
+          content.startsWith('[System] Agent paused for a worker restart; it will resume automatically.')
         )
       ).toHaveLength(1)
       expect(noticeContents).not.toContain('[System] Agent interrupted and will resume automatically.')
@@ -1230,8 +1261,8 @@ describeSubprocess('attemptPickup result matrix', () => {
       ({ content }) => content
     )
     expect(
-      notices.filter(
-        (content) => content === '[System] Agent paused for a worker restart; it will resume automatically.'
+      notices.filter((content) =>
+        content.startsWith('[System] Agent paused for a worker restart; it will resume automatically.')
       )
     ).toHaveLength(1)
   })
@@ -2542,7 +2573,7 @@ describeSubprocess('attemptPickup result matrix', () => {
       expect(await recoverInterruptedExecutionsForStartup()).not.toContain(execution.id)
       expect((await Execution.mustFind(execution.id)).toJson()).toEqual(executionBefore.toJson())
       expect(await db.select().from(messages).where(eq(messages.agentId, agent.id))).not.toContainEqual(
-        expect.objectContaining({ content: '[System] Agent recovered after a process restart.' })
+        expect.objectContaining({ content: PROCESS_RESTART_NOTICE })
       )
       expect(messageEvents).toEqual([])
       expect(agentEvents).toEqual([])
@@ -2559,7 +2590,7 @@ describeSubprocess('attemptPickup result matrix', () => {
       expect(await recoverInterruptedExecutionsForStartup()).toContain(execution.id)
       expect((await Execution.mustFind(execution.id)).status).toBe('queued')
       expect(await db.select().from(messages).where(eq(messages.agentId, agent.id))).toContainEqual(
-        expect.objectContaining({ content: '[System] Agent recovered after a process restart.' })
+        expect.objectContaining({ content: PROCESS_RESTART_NOTICE })
       )
       expect(messageEvents).toEqual([expect.objectContaining({ agentId: agent.id, executionId: execution.id })])
       expect(agentEvents).toHaveLength(1)
@@ -2574,7 +2605,7 @@ describeSubprocess('attemptPickup result matrix', () => {
       expect(agentEvents).toHaveLength(1)
       expect(
         (await db.select().from(messages).where(eq(messages.agentId, agent.id))).filter(
-          (message) => message.content === '[System] Agent recovered after a process restart.'
+          (message) => message.content === PROCESS_RESTART_NOTICE
         )
       ).toHaveLength(1)
     } finally {
@@ -2682,7 +2713,7 @@ describeSubprocess('attemptPickup result matrix', () => {
       )
       expect(
         (await db.select().from(messages).where(eq(messages.agentId, agent.id))).filter(
-          (message) => message.content === '[System] Agent recovered after a process restart.'
+          (message) => message.content === PROCESS_RESTART_NOTICE
         )
       ).toEqual([])
       expect(events).toEqual([])

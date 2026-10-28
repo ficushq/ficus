@@ -28,7 +28,7 @@ import {
   getMaxConcurrentAgents,
   stopExecutionPickup,
 } from './services/execution/pickup'
-import { drainCommands } from './services/sandbox/command-drain'
+import { createRestartContext, drainCommands } from './services/sandbox/command-drain'
 import { scheduler, scheduleHealthNotifier } from './services/scheduling'
 import { reconcileSchedulesOnStartup } from './services/scheduling/reconciliation'
 import { streamManager } from './services/streaming/buffer'
@@ -1273,7 +1273,8 @@ async function shutdownWorker(reason: string): Promise<void> {
   // short window to finish, then cancel the rest with a message telling the agent the worker
   // restarted, so it re-runs them when it resumes instead of guessing at a lost connection.
   stopExecutionPickup()
-  const drained = await drainCommands()
+  const restart = createRestartContext()
+  const drained = await drainCommands(undefined, restart)
   if (drained.finished || drained.canceled)
     log.info(`Drained sandbox commands: ${drained.finished} finished, ${drained.canceled} canceled for the restart`)
 
@@ -1291,7 +1292,7 @@ async function shutdownWorker(reason: string): Promise<void> {
   // rather than leaving the next boot to prove we are dead.
   const { requeueOwnedExecutionsForShutdown } = await import('./services/execution/startup-recovery')
   try {
-    for (const id of await requeueOwnedExecutionsForShutdown(executionIds)) {
+    for (const id of await requeueOwnedExecutionsForShutdown(executionIds, { restart })) {
       log.info(`Re-queued owned execution ${id} during shutdown`)
     }
   } catch (error) {

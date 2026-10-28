@@ -54,6 +54,7 @@
     "./platform-usage": "./src/platform-usage.ts",
     "./testDbUp": "./src/testDbUp.ts",
     "./integration-wrapper-path": "./src/integration-wrapper-path.ts",
+    "./restart-context": "./src/restart-context.ts",
     "./identity": "./src/identity.ts",
     "./env-naming": "./src/env-naming.ts",
     "./box-user": "./src/box-user.ts",

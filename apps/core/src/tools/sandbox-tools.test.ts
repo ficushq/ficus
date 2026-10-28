@@ -1530,12 +1530,15 @@ describe('createHttpBashOperations', () => {
       const running = createHttpBashOperations(manager, 'test-sandbox').exec('sleep 60', '/workspace', {
         onData: () => {},
       })
-      const drained = drainCommands(5)
+      const restart = { restartId: 'restart-1', restartedAt: '2026-10-28T21:32:00.000Z' }
+      const drained = drainCommands(5, restart)
       expect(await drained).toEqual({ finished: 0, canceled: 1 })
-      expect(stream.cancelAndWait).toHaveBeenCalledWith('worker-stop')
+      expect(stream.cancelAndWait).toHaveBeenCalledWith('core_restart', restart)
       const error = (await running.catch((caught: unknown) => caught)) as Error
-      expect(error.message).toContain('Command canceled: the Ficus worker is restarting')
-      expect(error.message).toContain('run it again')
+      expect(error.message).toStartWith(
+        'This command was cancelled by a Ficus restart at 2026-10-28T21:32:00.000Z; nothing is wrong with your work or the box. Re-run it when your sandbox is back.'
+      )
+      expect(error).toMatchObject({ reason: 'core_restart', restart })
 
       const bash = (manager.getClientForSandbox as ReturnType<typeof mock>).mock.results[0].value.bash
       const calls = bash.mock.calls.length

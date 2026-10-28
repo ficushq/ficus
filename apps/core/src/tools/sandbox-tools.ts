@@ -1,3 +1,4 @@
+import type { RestartContext } from '@ficus/shared/restart-context'
 import { consultantScratchPath } from '../services/sandbox/consultant-sandbox'
 /**
  * K8s Sandbox Tools
@@ -594,7 +595,7 @@ export function createHttpBashOperations(
 
       const timeout = normalizeBashTimeoutSeconds(options.timeout)
 
-      let cancelForRestart: () => Promise<void> = async () => {}
+      let cancelForRestart: (restart: RestartContext) => Promise<void> = async () => {}
       const running = new Promise<{ exitCode: number | null }>((resolve, reject) => {
         const stream = client.bash({
           command,
@@ -638,14 +639,14 @@ export function createHttpBashOperations(
         }
 
         // The worker is shutting down and this command outlived the drain window.
-        cancelForRestart = async () => {
+        cancelForRestart = async (restart) => {
           if (settled) return
           settled = true
           let cleanupError: Error | undefined
-          await stream.cancelAndWait('worker-stop').catch((error: Error) => {
+          await stream.cancelAndWait('core_restart', restart).catch((error: Error) => {
             cleanupError = error
           })
-          reject(commandCanceledForRestartError(cleanupError))
+          reject(commandCanceledForRestartError(restart, cleanupError))
         }
 
         stream.on('data', (response) => {
@@ -771,7 +772,7 @@ export function createHttpBashOperations(
           })
         }
       })
-      trackCommand({ settled: running, cancelForRestart: () => cancelForRestart() })
+      trackCommand({ settled: running, cancelForRestart: (restart) => cancelForRestart(restart) })
       return running
     },
   }

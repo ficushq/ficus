@@ -1,3 +1,4 @@
+import { restartResumeNotice } from '@ficus/shared/restart-context'
 import { consultantSandboxSquadId, consultantScratchPath } from '../../services/sandbox/consultant-sandbox'
 import { resolveWorkspaceLayout } from '../../services/sandbox/workspace-layout'
 import { messageTextForModel } from '../../services/chat/message-context'
@@ -818,6 +819,9 @@ export abstract class AgentRunner {
     // Create buffer early so errors during session creation can be pushed to the
     // SSE stream instead of being silently swallowed.
     this.buffer = createBuffer(this.execution.id)
+    if (this.execution.restartContext) {
+      this.buffer.push({ type: 'system_message', text: restartResumeNotice(this.execution.restartContext) })
+    }
     this.collector = new StreamEventCollector(this.buffer, () => this.persistence.currentStreamGroupId)
     this.persistence.attach({
       collector: this.collector,
@@ -1569,8 +1573,11 @@ export abstract class AgentRunner {
     const claimed = await this.agent.claimInitialPendingMessagesForSessionDelivery(this.deliveryOwner)
     this.noteHumanSenders(claimed)
     const prepared = claimed.length > 0 ? await this.prepareMessagesForModel(claimed) : claimed
-    const text =
+    const initialText =
       prepared.length > 0 ? this.buildInitialPromptText(prepared) : this.execution.message?.trim() || 'Continue.'
+    const text = this.execution.restartContext
+      ? `${restartResumeNotice(this.execution.restartContext)}\n\n${initialText}`
+      : initialText
     const { imageIds, images } = await this.loadPendingMessageImages(prepared)
 
     try {
