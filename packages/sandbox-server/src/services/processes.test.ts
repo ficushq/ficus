@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import * as childProcess from 'child_process'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -255,4 +256,25 @@ describe('box containers', () => {
     for (const id of ['', '-rm', 'a b', 'x;reboot', 42])
       await expect(stopBoxContainer(id, docker)).rejects.toMatchObject({ status: 400 })
   })
+})
+
+test('wedged Docker control is forcefully bounded, not left waiting for a TERM-ignoring CLI', async () => {
+  let options: childProcess.ExecFileOptions | undefined
+  const execute = spyOn(childProcess, 'execFile').mockImplementation(((
+    _file: string,
+    _args: string[],
+    opts: childProcess.ExecFileOptions,
+    callback: (error: Error, stdout: string) => void
+  ) => {
+    options = opts
+    callback(Object.assign(new Error('timed out'), { killed: true }), '')
+    return {} as childProcess.ChildProcess
+  }) as typeof childProcess.execFile)
+  try {
+    await expect(stopBoxContainer('synthetic-container')).rejects.toMatchObject({ status: 504 })
+    expect(options?.timeout).toBe(40_000)
+    expect(options?.killSignal).toBe('SIGKILL')
+  } finally {
+    execute.mockRestore()
+  }
 })

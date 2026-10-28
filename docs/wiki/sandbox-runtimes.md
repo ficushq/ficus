@@ -363,7 +363,20 @@ ficus squad sandbox-stop-container <squadId> <container>
 The same commands exist under `ficus agent` for an agent's own sandbox. A squad
 member's work runs in the squad sandbox, so use the squad commands for it. In
 the web app, the squad's Workspace settings and an agent's own-sandbox controls
-have a **Processes** section.
+have a **Processes** section. Stop/Kill pending state and errors belong to the
+individual row, so other processes and containers remain controllable. Both
+process actions require confirmation. For containerd shims, Stop (TERM) is
+ineffective; shim and runc rows offer Kill directly, still with confirmation.
+Killing these runtime processes may disrupt their containers; prefer stopping
+the specific container when Docker responds.
+
+Control requests have a 45-second Core budget (including connecting to the box)
+and a 50-second browser budget. Docker's stop command has a 40-second budget,
+with its CLI force-killed at that deadline. Leaving the panel cancels its browser
+requests. Cancellation or timeout does **not** prove that the signal or container
+stop was undone: refresh Processes to check the current state before explicitly
+retrying. Controls are never retried automatically, and a slow refresh does not
+keep a completed control disabled.
 
 These need `squads:update` for a squad sandbox, or permission to run the agent.
 Listing needs it too, because command lines can contain secrets. The sandbox

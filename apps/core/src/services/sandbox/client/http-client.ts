@@ -880,14 +880,16 @@ export class SandboxClient {
   /** Signal one process the box user owns; the server refuses anything else (403). */
   async signalProcess(
     pid: number,
-    signal: SandboxProcessSignal
+    signal: SandboxProcessSignal,
+    abortSignal?: AbortSignal
   ): Promise<{ pid: number; signal: SandboxProcessSignal; command: string }> {
-    return this.post('/processes/signal', { pid, signal })
+    return this.post('/processes/signal', { pid, signal }, abortSignal)
   }
 
   /** Stop one of the box's containers by id or name. */
-  async stopContainer(id: string): Promise<{ id: string }> {
-    return this.post('/containers/stop', { id })
+  async stopContainer(id: string, abortSignal?: AbortSignal): Promise<{ id: string }> {
+    // Docker itself has a 40s budget; don't abandon a graceful stop at the default 30s.
+    return this.post('/containers/stop', { id }, abortSignal, 45_000)
   }
 
   async health(): Promise<HealthResponse> {
@@ -1115,15 +1117,17 @@ export class SandboxClient {
     return new SandboxHttpError(message, resp.status, code)
   }
 
-  private async post<T>(path: string, body: unknown): Promise<T> {
+  private async post<T>(path: string, body: unknown, signal?: AbortSignal, timeoutMs?: number): Promise<T> {
     return this.withUnary(
       path,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...this.authHeaders },
         body: JSON.stringify(body),
+        signal,
       },
-      (resp) => this.consumeJsonResponse<T>(resp)
+      (resp) => this.consumeJsonResponse<T>(resp),
+      timeoutMs
     )
   }
 

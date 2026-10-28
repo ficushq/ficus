@@ -236,8 +236,11 @@ type DockerRunner = (args: string[], timeoutMs: number) => Promise<string>
 
 const runDocker: DockerRunner = (args, timeoutMs) =>
   new Promise((resolve, reject) => {
-    execFile('docker', args, { encoding: 'utf-8', timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 }, (error, stdout) =>
-      error ? reject(error) : resolve(stdout)
+    execFile(
+      'docker',
+      args,
+      { encoding: 'utf-8', timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 8 * 1024 * 1024 },
+      (error, stdout) => (error ? reject(error) : resolve(stdout))
     )
   })
 

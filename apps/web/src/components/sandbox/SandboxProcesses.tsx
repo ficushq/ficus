@@ -1,7 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { isSandboxOverloaded, type SandboxPressure, type SandboxProcessSignal } from '@ficus/shared'
+import {
+  isSandboxOverloaded,
+  type SandboxPressure,
+  type SandboxProcess,
+  type SandboxProcessSignal,
+} from '@ficus/shared'
 import { signalAgentSandboxProcess, stopAgentSandboxContainer } from '../../api/agents'
 import { signalSandboxProcess, stopSandboxContainer } from '../../api/workspace'
 import { actionErrorMessage } from '../../lib/actionError'
@@ -53,22 +58,6 @@ export function SandboxProcesses({ target }: { target: SandboxProcessesTarget })
   const { data, error, isFetching, refetch } = useQuery({ ...query, enabled: open, staleTime: 0 })
   const refresh = () => queryClient.invalidateQueries({ queryKey: query.queryKey })
 
-  const signal = useMutation({
-    mutationFn: ({ pid, signal }: { pid: number; signal: SandboxProcessSignal }) =>
-      target.kind === 'squad'
-        ? signalSandboxProcess(target.squadId, pid, signal)
-        : signalAgentSandboxProcess(target.agentId, pid, signal),
-    onSettled: refresh,
-  })
-  const stopContainer = useMutation({
-    mutationFn: (containerId: string) =>
-      target.kind === 'squad'
-        ? stopSandboxContainer(target.squadId, containerId)
-        : stopAgentSandboxContainer(target.agentId, containerId),
-    onSettled: refresh,
-  })
-  const failure = signal.error ?? stopContainer.error ?? error
-
   return (
     <section aria-labelledby="sandbox-processes-heading" className="space-y-3">
       <div className="flex items-center justify-between gap-3">
@@ -90,9 +79,9 @@ export function SandboxProcesses({ target }: { target: SandboxProcessesTarget })
         </button>
       </div>
 
-      {failure && (
+      {error && (
         <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
-          {actionErrorMessage(failure)}
+          {actionErrorMessage(error)}
         </p>
       )}
 
@@ -135,22 +124,12 @@ export function SandboxProcesses({ target }: { target: SandboxProcessesTarget })
                       {process.protected ? (
                         <span className="text-muted">Runs the sandbox</span>
                       ) : (
-                        <span className="flex gap-1">
-                          <ConfirmButton
-                            label="Stop"
-                            confirmLabel="Stop?"
-                            ariaLabel={`Stop process ${process.pid}`}
-                            disabled={signal.isPending}
-                            onConfirm={() => signal.mutate({ pid: process.pid, signal: 'TERM' })}
-                          />
-                          <ConfirmButton
-                            label="Kill"
-                            confirmLabel="Kill?"
-                            ariaLabel={`Kill process ${process.pid}`}
-                            disabled={signal.isPending}
-                            onConfirm={() => signal.mutate({ pid: process.pid, signal: 'KILL' })}
-                          />
-                        </span>
+                        <ProcessControls
+                          key={`${target.kind}:${target.kind === 'squad' ? target.squadId : target.agentId}:${process.pid}:${process.command}`}
+                          target={target}
+                          process={process}
+                          refresh={refresh}
+                        />
                       )}
                     </td>
                   </tr>
@@ -178,12 +157,12 @@ export function SandboxProcesses({ target }: { target: SandboxProcessesTarget })
                       </span>
                     </span>
                     {container.state === 'running' && (
-                      <ConfirmButton
-                        label="Stop"
-                        confirmLabel="Stop?"
-                        ariaLabel={`Stop container ${container.name}`}
-                        disabled={stopContainer.isPending}
-                        onConfirm={() => stopContainer.mutate(container.id)}
+                      <ContainerControls
+                        key={`${target.kind}:${target.kind === 'squad' ? target.squadId : target.agentId}:${container.id}`}
+                        target={target}
+                        id={container.id}
+                        name={container.name}
+                        refresh={refresh}
                       />
                     )}
                   </li>
@@ -194,5 +173,129 @@ export function SandboxProcesses({ target }: { target: SandboxProcessesTarget })
         </div>
       )}
     </section>
+  )
+}
+
+/** Each row owns both its mutation state and its transport cancellation. */
+function useRowControl<T>(action: (value: T, signal: AbortSignal) => Promise<void>, refresh: () => Promise<unknown>) {
+  const controller = useRef<AbortController | null>(null)
+  useEffect(() => () => controller.current?.abort(), [])
+  return useMutation({
+    mutationFn: async (value: T) => {
+      const current = new AbortController()
+      controller.current = current
+      try {
+        await action(value, current.signal)
+      } finally {
+        if (controller.current === current) controller.current = null
+      }
+    },
+    retry: false,
+    // Refresh is best-effort. A hung listing must not keep a finished control disabled.
+    onSettled: () => {
+      void refresh()
+    },
+  })
+}
+
+function ControlError({ error }: { error: unknown }) {
+  return error ? (
+    <p role="alert" className="whitespace-normal text-status-danger-600 dark:text-status-danger-400">
+      {actionErrorMessage(error)}
+    </p>
+  ) : null
+}
+
+function ProcessControls({
+  target,
+  process,
+  refresh,
+}: {
+  target: SandboxProcessesTarget
+  process: SandboxProcess
+  refresh: () => Promise<unknown>
+}) {
+  const signal = useRowControl(
+    (signal: SandboxProcessSignal, abortSignal) =>
+      target.kind === 'squad'
+        ? signalSandboxProcess(target.squadId, process.pid, signal, abortSignal)
+        : signalAgentSandboxProcess(target.agentId, process.pid, signal, abortSignal),
+    refresh
+  )
+  // Match the executable, not incidental mentions in arguments. This is guidance only;
+  // ownership and protected-process checks still run on the server for every signal.
+  const executable = process.command.split(/\s+/, 1)[0]?.split('/').pop() ?? ''
+  const killDirectly = /^(?:containerd-shim(?:-[\w-]+)?|runc)$/.test(executable)
+  return (
+    <div>
+      {killDirectly && (
+        <p className="max-w-64 whitespace-normal text-muted">
+          Stop (TERM) is ineffective for containerd shims. Use Kill for shim/runc processes; running containers may be
+          disrupted.
+        </p>
+      )}
+      <span className="flex gap-1">
+        {!killDirectly && (
+          <ConfirmButton
+            label="Stop"
+            confirmLabel="Stop?"
+            ariaLabel={`Stop process ${process.pid}`}
+            disabled={signal.isPending}
+            onConfirm={() => signal.mutate('TERM')}
+          />
+        )}
+        <ConfirmButton
+          label="Kill"
+          confirmLabel="Kill?"
+          ariaLabel={`Kill process ${process.pid}`}
+          disabled={signal.isPending}
+          onConfirm={() => signal.mutate('KILL')}
+        />
+        {signal.isPending && (
+          <span role="status" className="text-muted">
+            Sending…
+          </span>
+        )}
+      </span>
+      <ControlError error={signal.error} />
+    </div>
+  )
+}
+
+function ContainerControls({
+  target,
+  id,
+  name,
+  refresh,
+}: {
+  target: SandboxProcessesTarget
+  id: string
+  name: string
+  refresh: () => Promise<unknown>
+}) {
+  const stop = useRowControl(
+    (_: void, abortSignal) =>
+      target.kind === 'squad'
+        ? stopSandboxContainer(target.squadId, id, abortSignal)
+        : stopAgentSandboxContainer(target.agentId, id, abortSignal),
+    refresh
+  )
+  return (
+    <div>
+      <ConfirmButton
+        label="Stop"
+        confirmLabel="Stop?"
+        ariaLabel={`Stop container ${name}`}
+        disabled={stop.isPending}
+        onConfirm={() => stop.mutate()}
+      />
+      {stop.isPending && (
+        <span role="status" className="text-muted">
+          {' '}
+          Stopping…
+        </span>
+      )}
+      <ControlError error={stop.error} />
+    </div>
   )
 }
