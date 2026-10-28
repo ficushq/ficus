@@ -1,0 +1,1100 @@
+{
+  "study": "longitudinal-v1",
+  "status": "completed",
+  "observed_at": "2026-10-28T21:18:32.003375+00:00",
+  "arms": {
+    "ficus": {
+      "trial": "task__nqtXdQF",
+      "native_outcome": {
+        "configuration": "planned",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "persistent-native-keyword-no-embedding-provider",
+        "runtime_sha256": "25c45f893b53625c1cba4c3233506ac76627c066681fb0253fe168b85254d9f4",
+        "database_network": "task",
+        "checkpoint_complete": true,
+        "attempted_roles": ["architect", "engineer", "manager", "reviewer"],
+        "engineer_only_verified": null,
+        "executed_roles": ["architect", "engineer", "manager", "reviewer"],
+        "study": "longitudinal-v1",
+        "increments_delivered": 3,
+        "same_database_and_manager": true
+      },
+      "trial_seconds": 2424.715996,
+      "launcher_seconds": 2428.8030147079844,
+      "exception": null,
+      "accepted": false,
+      "checkpoints": [
+        {
+          "increment": 1,
+          "grade": {
+            "increment": 1,
+            "accepted": true,
+            "expected": 50,
+            "patch_sha256": "ebf77e72d4d540faa908ae82dfad4039771bb477707f9858a013af1f6d47b689",
+            "exit_code": 0,
+            "tests": 50,
+            "passed": 50,
+            "failed": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "failed_tests": [],
+          "head": "be12f87b02069b1e357134bcae2620683ae6e35a",
+          "reviewed_product": "f8c4e493074ab0b2001ce895018ee4dbb978f2a4",
+          "post_review_changed_files": ["COORDINATION.md"],
+          "clean": true,
+          "sources": [
+            {
+              "request": 1,
+              "path": "docs/requests/increment-1-original.md",
+              "original_sha256": "ab804f0becc600d905d939d315e0596aea884ee10584d9b351e09c4174b0b6eb",
+              "verbatim_contained": true,
+              "exact_file": false,
+              "handoff_plus_single_final_newline": true
+            }
+          ],
+          "delivery_interval_seconds": 879.3592150211334,
+          "roles": {
+            "manager": {
+              "calls": 19,
+              "tokens": {
+                "input_uncached": 57,
+                "cache_read": 817733,
+                "cache_write": 109928,
+                "output": 6911
+              },
+              "usd": 0.425828
+            },
+            "architect": {
+              "calls": 10,
+              "tokens": {
+                "input_uncached": 30,
+                "cache_read": 242037,
+                "cache_write": 37907,
+                "output": 11019
+              },
+              "usd": 0.229225
+            },
+            "engineer": {
+              "calls": 38,
+              "tokens": {
+                "input_uncached": 114,
+                "cache_read": 2344090,
+                "cache_write": 88033,
+                "output": 21271
+              },
+              "usd": 0.667446
+            },
+            "reviewer": {
+              "calls": 13,
+              "tokens": {
+                "input_uncached": 39,
+                "cache_read": 480519,
+                "cache_write": 54691,
+                "output": 3788
+              },
+              "usd": 0.222743
+            }
+          },
+          "memory": {
+            "documents": 0,
+            "chunks": 0,
+            "explicit_memory_tool_calls": []
+          },
+          "explicit_source_or_note_read_tool_calls_by_role": {
+            "manager": 3,
+            "architect": 4,
+            "engineer": 4,
+            "reviewer": 5
+          },
+          "native_executions_or_children": [
+            {
+              "id": "5895b4fb-5484-4eb8-94ef-849973ffc164",
+              "role": "manager",
+              "status": "completed"
+            },
+            {
+              "id": "f0272cf3-bda9-44dd-ad4a-6c3d61a03a94",
+              "role": "architect",
+              "status": "completed"
+            },
+            {
+              "id": "e2ef0232-9523-4d69-ab61-4c553cf8d804",
+              "role": "manager",
+              "status": "completed"
+            },
+            {
+              "id": "76fb63e3-8445-411b-90e2-ba595b98d5fe",
+              "role": "engineer",
+              "status": "completed"
+            },
+            {
+              "id": "8ae12807-e442-48c9-a15b-fe7d6be5b1c9",
+              "role": "reviewer",
+              "status": "completed"
+            },
+            {
+              "id": "643fe09c-436c-4806-a746-58baefbe5225",
+              "role": "engineer",
+              "status": "completed"
+            },
+            {
+              "id": "a00e7233-e9f0-4f00-a5f3-9a4d1a14df63",
+              "role": "manager",
+              "status": "completed"
+            },
+            {
+              "id": "f768d1d8-179b-4b9a-a673-36ccbed8fe2a",
+              "role": "reviewer",
+              "status": "completed"
+            },
+            {
+              "id": "033e1997-3dec-4481-a539-1fa610b5efb2",
+              "role": "manager",
+              "status": "completed"
+            },
+            {
+              "id": "3f685c30-b328-443b-b471-c869165d7630",
+              "role": "manager",
+              "status": "completed"
+            }
+          ],
+          "external_by_original_checkpoint": {
+            "test_checkpoint_1": {
+              "tests": 50,
+              "passed": 50,
+              "failed": 0
+            }
+          },
+          "no_future_request_source_file": true
+        },
+        {
+          "increment": 2,
+          "grade": {
+            "increment": 2,
+            "accepted": false,
+            "expected": 122,
+            "patch_sha256": "7e8d52b0d88e007fae02c66e30d38cc59245dc5bd01c2267a1e1921d6c9c8fcc",
+            "exit_code": 1,
+            "tests": 122,
+            "passed": 119,
+            "failed": 3,
+            "errors": 0,
+            "skipped": 0
+          },
+          "failed_tests": [
+            "official.test_checkpoint_2.TestCore::test_shape_objects_includes_rowid",
+            "official.test_checkpoint_2.TestCore::test_rowid_ignores_sort",
+            "official.test_checkpoint_2.TestFunctionality::test_rowid_sequential_all_rows"
+          ],
+          "head": "1e23fa90cbb284353e07e2b3ea2c4e1dd54cfbfe",
+          "reviewed_product": "9e8b276d8240bf13ae8dd2ed899b4a35f7d70800",
+          "post_review_changed_files": ["COORDINATION.md"],
+          "clean": true,
+          "sources": [
+            {
+              "request": 1,
+              "path": "docs/requests/increment-1-original.md",
+              "original_sha256": "ab804f0becc600d905d939d315e0596aea884ee10584d9b351e09c4174b0b6eb",
+              "verbatim_contained": true,
+              "exact_file": false,
+              "handoff_plus_single_final_newline": true
+            },
+            {
+              "request": 2,
+              "path": "docs/requests/increment-2-original.md",
+              "original_sha256": "0b18f3792fb9c38dbf209340708a63a25a19be9c8c3ed982a1bf452249508bf4",
+              "verbatim_contained": true,
+              "exact_file": false,
+              "handoff_plus_single_final_newline": true
+            }
+          ],
+          "delivery_interval_seconds": 657.671788930893,
+          "roles": {
+            "manager": {
+              "calls": 9,
+              "tokens": {
+                "input_uncached": 27,
+                "cache_read": 628247,
+                "cache_write": 15149,
+                "output": 4544
+              },
+              "usd": 0.146194
+            },
+            "architect": {
+              "calls": 12,
+              "tokens": {
+                "input_uncached": 36,
+                "cache_read": 493257,
+                "cache_write": 65044,
+                "output": 18629
+              },
+              "usd": 0.398303
+            },
+            "engineer": {
+              "calls": 30,
+              "tokens": {
+                "input_uncached": 90,
+                "cache_read": 1493615,
+                "cache_write": 72168,
+                "output": 11926
+              },
+              "usd": 0.449236
+            },
+            "reviewer": {
+              "calls": 9,
+              "tokens": {
+                "input_uncached": 27,
+                "cache_read": 305052,
+                "cache_write": 54261,
+                "output": 3278
+              },
+              "usd": 0.198997
+            }
+          },
+          "memory": {
+            "documents": 0,
+            "chunks": 0,
+            "explicit_memory_tool_calls": []
+          },
+          "explicit_source_or_note_read_tool_calls_by_role": {
+            "manager": 3,
+            "architect": 6,
+            "engineer": 2,
+            "reviewer": 2
+          },
+          "native_executions_or_children": [
+            {
+              "id": "9be696fa-8810-4606-a22a-e46d3b754fb9",
+              "role": "manager",
+              "status": "completed"
+            },
+            {
+              "id": "f5ed3e95-b7b7-4641-8b14-92160e62decc",
+              "role": "architect",
+              "status": "completed"
+            },
+            {
+              "id": "7487729b-08c6-4061-8fca-8362f4c81642",
+              "role": "engineer",
+              "status": "completed"
+            },
+            {
+              "id": "69964a06-771c-4e8b-9b66-decc92dd6037",
+              "role": "manager",
+              "status": "completed"
+            },
+            {
+              "id": "b00043bf-c544-44ff-9074-7621f8117787",
+              "role": "reviewer",
+              "status": "completed"
+            },
+            {
+              "id": "8640771f-baba-4d6b-961f-3c960007fbda",
+              "role": "manager",
+              "status": "completed"
+            }
+          ],
+          "external_by_original_checkpoint": {
+            "test_checkpoint_1": {
+              "tests": 50,
+              "passed": 50,
+              "failed": 0
+            },
+            "test_checkpoint_2": {
+              "tests": 72,
+              "passed": 69,
+              "failed": 3
+            }
+          },
+          "no_future_request_source_file": true
+        },
+        {
+          "increment": 3,
+          "grade": {
+            "increment": 3,
+            "accepted": false,
+            "expected": 174,
+            "patch_sha256": "898f4a809b8e52b19a97a227a7a3d1665f5292d2d351b30cd1123451e65bd272",
+            "exit_code": 1,
+            "tests": 174,
+            "passed": 171,
+            "failed": 3,
+            "errors": 0,
+            "skipped": 0
+          },
+          "failed_tests": [
+            "official.test_checkpoint_2.TestCore::test_shape_objects_includes_rowid",
+            "official.test_checkpoint_2.TestCore::test_rowid_ignores_sort",
+            "official.test_checkpoint_2.TestFunctionality::test_rowid_sequential_all_rows"
+          ],
+          "head": "7b55f6b7e58b9a9e99f07fc272c6d61a14f6afae",
+          "reviewed_product": "ef17e118f27d180aaed67c798cc650e9ad6589bd",
+          "post_review_changed_files": ["COORDINATION.md"],
+          "clean": true,
+          "sources": [
+            {
+              "request": 1,
+              "path": "docs/requests/increment-1-original.md",
+              "original_sha256": "ab804f0becc600d905d939d315e0596aea884ee10584d9b351e09c4174b0b6eb",
+              "verbatim_contained": true,
+              "exact_file": false,
+              "handoff_plus_single_final_newline": true
+            },
+            {
+              "request": 2,
+              "path": "docs/requests/increment-2-original.md",
+              "original_sha256": "0b18f3792fb9c38dbf209340708a63a25a19be9c8c3ed982a1bf452249508bf4",
+              "verbatim_contained": true,
+              "exact_file": false,
+              "handoff_plus_single_final_newline": true
+            },
+            {
+              "request": 3,
+              "path": "docs/requests/increment-3-original.md",
+              "original_sha256": "cc06a3d1ed017b04fb50a64f3d37f69993b146de50fb33cf9a6c046aacbb95b4",
+              "verbatim_contained": true,
+              "exact_file": false,
+              "handoff_plus_single_final_newline": true
+            }
+          ],
+          "delivery_interval_seconds": 621.3749258518219,
+          "roles": {
+            "engineer": {
+              "calls": 28,
+              "tokens": {
+                "input_uncached": 84,
+                "cache_read": 1702981,
+                "cache_write": 88231,
+                "output": 15004
+              },
+              "usd": 0.541097
+            },
+            "manager": {
+              "calls": 12,
+              "tokens": {
+                "input_uncached": 36,
+                "cache_read": 1024005,
+                "cache_write": 15301,
+                "output": 5049
+              },
+              "usd": 0.191222
+            },
+            "architect": {
+              "calls": 11,
+              "tokens": {
+                "input_uncached": 33,
+                "cache_read": 457714,
+                "cache_write": 72832,
+                "output": 11743
+              },
+              "usd": 0.345352
+            },
+            "reviewer": {
+              "calls": 11,
+              "tokens": {
+                "input_uncached": 33,
+                "cache_read": 405766,
+                "cache_write": 56671,
+                "output": 3614
+              },
+              "usd": 0.218465
+            }
+          },
+          "memory": {
+            "documents": 0,
+            "chunks": 0,
+            "explicit_memory_tool_calls": []
+          },
+          "explicit_source_or_note_read_tool_calls_by_role": {
+            "manager": 3,
+            "architect": 5,
+            "engineer": 3,
+            "reviewer": 3
+          },
+          "native_executions_or_children": [
+            {
+              "id": "fbc55953-f253-4a0a-b727-ba362a12a59c",
+              "role": "reviewer",
+              "status": "completed"
+            },
+            {
+              "id": "dee7f522-00fe-4b78-8651-a778733f9872",
+              "role": "manager",
+              "status": "completed"
+            },
+            {
+              "id": "6a5c6c15-7a54-4eee-bfff-ccad747a1c90",
+              "role": "engineer",
+              "status": "completed"
+            },
+            {
+              "id": "0b673d7a-1bf1-42a1-93ba-d74e58405fa6",
+              "role": "architect",
+              "status": "completed"
+            },
+            {
+              "id": "85fb49ca-1b5c-4247-b439-07d2863262e4",
+              "role": "manager",
+              "status": "completed"
+            },
+            {
+              "id": "d5ef100a-3ee8-4844-90c1-7e95d254be20",
+              "role": "manager",
+              "status": "completed"
+            },
+            {
+              "id": "3649b25e-e5d7-4205-9a1c-4fd03a4233f5",
+              "role": "manager",
+              "status": "completed"
+            }
+          ],
+          "external_by_original_checkpoint": {
+            "test_checkpoint_1": {
+              "tests": 50,
+              "passed": 50,
+              "failed": 0
+            },
+            "test_checkpoint_2": {
+              "tests": 72,
+              "passed": 69,
+              "failed": 3
+            },
+            "test_checkpoint_3": {
+              "tests": 52,
+              "passed": 52,
+              "failed": 0
+            }
+          },
+          "no_future_request_source_file": true
+        }
+      ],
+      "usage": {
+        "settled_usd": 4.034108,
+        "calls": 202,
+        "new_unresolved": 0,
+        "reconstructed_from_role_tokens_usd": 4.034108,
+        "unattributed_usd": 0,
+        "token_multiset_matches_proxy": true,
+        "rounding": "Each request rounds up to USD micro-units, same as frozen proxy; native unrounded values may differ."
+      },
+      "native_review_outcomes": [
+        {
+          "message_id": "590da06b-84a1-417e-a4a8-3f34f4d1240c",
+          "outcome": "changes-requested",
+          "execution_id": "8ae12807-e442-48c9-a15b-fe7d6be5b1c9"
+        },
+        {
+          "message_id": "c903c66b-5dff-420e-9f69-240acd035fb0",
+          "outcome": "approved",
+          "execution_id": "f768d1d8-179b-4b9a-a673-36ccbed8fe2a"
+        },
+        {
+          "message_id": "9763a1a9-1e2e-4139-a65d-dfc73b5b1bd2",
+          "outcome": "approved",
+          "execution_id": "b00043bf-c544-44ff-9074-7621f8117787"
+        },
+        {
+          "message_id": "cb7b3f89-bf3d-4acb-bb84-8756d560218a",
+          "outcome": "approved",
+          "execution_id": "fbc55953-f253-4a0a-b727-ba362a12a59c"
+        }
+      ],
+      "evidence_sha256": {
+        "result.json": "5d24410b178fe1685b3e6689e9a19e3d173cba7d7650113f67dba56ccab45c51",
+        "verifier/increment-results.json": "b5f1192ab17c7816288bfea92612b4e0a620281d3a2fd61e130373ec8be5f5f8",
+        "agent/increment-deliveries.json": "3545a5bf5f82aaa9ec2c8d8548c1eed59c05a83631ace25c03e44884f4476bb9",
+        "agent/increment-1/repository.head": "3afc716f3f218d13d6b8439dc3fbe0175fd6702ef13c50dfdf14dfd729ad6295",
+        "agent/increment-1/memory.json": "976e46b62272a3979e217dad97799f3f11f37a098130605dc75187292161e324",
+        "agent/increment-1/messages.json": "2f0bdd6f1e04e7f7cf6c7c1a43fe4e482bd5614637bf88d7dc7568b5a7129d1e",
+        "agent/increment-1/snapshot.json": "27b357c4be2196cbaab60dfe3bc9655b331bdd0b6b2bf216d84358a9c4556cb5",
+        "agent/increment-1/repository.bundle": "877857c14dcc45adc1eacda7c78ced3c8aac2649a3b13b77a0b65605214094ec",
+        "agent/increment-1/repository.patch": "ebf77e72d4d540faa908ae82dfad4039771bb477707f9858a013af1f6d47b689",
+        "agent/increment-2/repository.head": "27759fc4cfe16c4a869a860036ea91c83b0cd3ce59ef6ff46d0fd26193bd8b90",
+        "agent/increment-2/memory.json": "976e46b62272a3979e217dad97799f3f11f37a098130605dc75187292161e324",
+        "agent/increment-2/messages.json": "1c392a01dcb7cbdae30cb89cdaddfc7183d7faf05382188e44c309b21c9c2fbe",
+        "agent/increment-2/snapshot.json": "29008833929485fabdea685d3d3781b7f3c0ecfe38fff488259df4392e3ed5ad",
+        "agent/increment-2/repository.bundle": "e5dcf0ccb6a99f10f345fef26f96c736d31c2ac7a5bb29206da2c9d4322d0c6b",
+        "agent/increment-2/repository.patch": "7e8d52b0d88e007fae02c66e30d38cc59245dc5bd01c2267a1e1921d6c9c8fcc",
+        "agent/increment-3/repository.head": "63d41f98fc252e76482fde407bfef29c3124754a9eaaae9a29fa6a0eb8b0361d",
+        "agent/increment-3/memory.json": "976e46b62272a3979e217dad97799f3f11f37a098130605dc75187292161e324",
+        "agent/increment-3/messages.json": "b8dbf3814ec351b19ad90d48a4043f605c7c875770be8b8412d7585b7402a1df",
+        "agent/increment-3/snapshot.json": "35bbfc9f85c1601b80b320a1ec69610206be0cc36eb6bce2b299cd6246a36805",
+        "agent/increment-3/repository.bundle": "1d2b914e91e1d48d4747f1af01777d98888abd9537ee80cc891520e04d267aa8",
+        "agent/increment-3/repository.patch": "898f4a809b8e52b19a97a227a7a3d1665f5292d2d351b30cd1123451e65bd272"
+      },
+      "role_totals_usd": {
+        "manager": 0.763244,
+        "architect": 0.97288,
+        "engineer": 1.657779,
+        "reviewer": 0.640205
+      }
+    },
+    "pi": {
+      "trial": "task__CFEsRaT",
+      "native_outcome": {
+        "study": "longitudinal-v1",
+        "increments_delivered": 3,
+        "memory": "persistent-coordinator-session-and-files",
+        "same_coordinator_session": "/logs/agent/pi/sessions/2026-10-28T20-23-14-740Z_01a1842e-6232-75dc-9e15-b60727016ee4.jsonl"
+      },
+      "trial_seconds": 2070.688628,
+      "launcher_seconds": 2074.4891812090063,
+      "exception": null,
+      "accepted": false,
+      "checkpoints": [
+        {
+          "increment": 1,
+          "grade": {
+            "increment": 1,
+            "accepted": true,
+            "expected": 50,
+            "patch_sha256": "ede369fe8bc448bcdf1b97dc02207ba2fc0df42290c2ca726ea4fd1841627ce0",
+            "exit_code": 0,
+            "tests": 50,
+            "passed": 50,
+            "failed": 0,
+            "errors": 0,
+            "skipped": 0
+          },
+          "failed_tests": [],
+          "head": "9657425cc83fc6ea31c683c17aa1b492a263cc4c",
+          "reviewed_product": "7f57b9734f0edf26c0c5fdc11af46ff784f8dafe",
+          "post_review_changed_files": ["COORDINATION.md"],
+          "clean": true,
+          "sources": [
+            {
+              "request": 1,
+              "path": "REQUEST.md",
+              "original_sha256": "ab804f0becc600d905d939d315e0596aea884ee10584d9b351e09c4174b0b6eb",
+              "verbatim_contained": true,
+              "exact_file": false,
+              "handoff_plus_single_final_newline": true
+            }
+          ],
+          "delivery_interval_seconds": 873.310781955719,
+          "roles": {
+            "coordinator": {
+              "calls": 27,
+              "tokens": {
+                "input_uncached": 81,
+                "cache_read": 256202,
+                "cache_write": 15675,
+                "output": 6718
+              },
+              "usd": 0.132162
+            },
+            "architect": {
+              "calls": 5,
+              "tokens": {
+                "input_uncached": 15,
+                "cache_read": 16251,
+                "cache_write": 7381,
+                "output": 3917
+              },
+              "usd": 0.059279
+            },
+            "engineer": {
+              "calls": 51,
+              "tokens": {
+                "input_uncached": 153,
+                "cache_read": 884784,
+                "cache_write": 82482,
+                "output": 30610
+              },
+              "usd": 0.60111
+            },
+            "reviewer": {
+              "calls": 24,
+              "tokens": {
+                "input_uncached": 72,
+                "cache_read": 293803,
+                "cache_write": 70773,
+                "output": 9708
+              },
+              "usd": 0.303547
+            }
+          },
+          "memory": {
+            "same_session_id": "01a1842e-6232-75dc-9e15-b60727016ee4",
+            "append_only_prefix": true
+          },
+          "explicit_source_or_note_read_tool_calls_by_role": {
+            "architect": 2,
+            "engineer": 9,
+            "reviewer": 9
+          },
+          "native_executions_or_children": [
+            {
+              "increment": 1,
+              "role": "architect",
+              "result_entry": "b6005078",
+              "stop_reason": "stop",
+              "exit_code": 0,
+              "decision": null,
+              "task_sha256": "0fac3381b5798a951b7cd799899ebbee085ff9b8199c0094d651615874d8bf9a"
+            },
+            {
+              "increment": 1,
+              "role": "engineer",
+              "result_entry": "87ff2862",
+              "stop_reason": "stop",
+              "exit_code": 0,
+              "decision": null,
+              "task_sha256": "d1081a3565a6f272f6615194176814997c4ac820332a4dd3b9b9091616db4659"
+            },
+            {
+              "increment": 1,
+              "role": "reviewer",
+              "result_entry": "7ebb8ce3",
+              "stop_reason": "stop",
+              "exit_code": 0,
+              "decision": "reject",
+              "task_sha256": "167fdfca9d0e098276ed3e29823062f0ad3f15194e06a8d614c7fbcfa5b48c9b"
+            },
+            {
+              "increment": 1,
+              "role": "engineer",
+              "result_entry": "20c30cd6",
+              "stop_reason": "stop",
+              "exit_code": 0,
+              "decision": null,
+              "task_sha256": "cde3e3ee99ea1b2e8fd04bae5c00e7f7e89140806d33979d7fb0527afa2b1dee"
+            },
+            {
+              "increment": 1,
+              "role": "reviewer",
+              "result_entry": "d97c8d1f",
+              "stop_reason": "stop",
+              "exit_code": 0,
+              "decision": "reject",
+              "task_sha256": "dbf7018404d56c9ceca5d9967f3bccd0664457cc263766d8eeffbc4612208fa5"
+            },
+            {
+              "increment": 1,
+              "role": "engineer",
+              "result_entry": "1e639827",
+              "stop_reason": "stop",
+              "exit_code": 0,
+              "decision": null,
+              "task_sha256": "f6a5e1f6077eb2383903d2ea135bb79fe0a0c5f5c566a91afade5636bc80161f"
+            },
+            {
+              "increment": 1,
+              "role": "reviewer",
+              "result_entry": "61c60f00",
+              "stop_reason": "stop",
+              "exit_code": 0,
+              "decision": "approve",
+              "task_sha256": "6c8ae4da1a18e98eb5a511ebdab3714994292e9b6f16628bcde95eb01a1ff395"
+            }
+          ],
+          "external_by_original_checkpoint": {
+            "test_checkpoint_1": {
+              "tests": 50,
+              "passed": 50,
+              "failed": 0
+            }
+          },
+          "no_future_request_source_file": true
+        },
+        {
+          "increment": 2,
+          "grade": {
+            "increment": 2,
+            "accepted": false,
+            "expected": 122,
+            "patch_sha256": "5573621fbd8b79491ac2021c3cff0cfab515c67391a1f9a48e001544e9ccfdb1",
+            "exit_code": 1,
+            "tests": 122,
+            "passed": 119,
+            "failed": 3,
+            "errors": 0,
+            "skipped": 0
+          },
+          "failed_tests": [
+            "official.test_checkpoint_2.TestCore::test_shape_objects_includes_rowid",
+            "official.test_checkpoint_2.TestCore::test_rowid_ignores_sort",
+            "official.test_checkpoint_2.TestFunctionality::test_rowid_sequential_all_rows"
+          ],
+          "head": "74a8e9d39db895852c6152fd74ea030ba98cee7e",
+          "reviewed_product": "927b698dcdfe843cf110c8a509b343cb651f4e15",
+          "post_review_changed_files": ["COORDINATION.md"],
+          "clean": true,
+          "sources": [
+            {
+              "request": 1,
+              "path": "REQUEST.md",
+              "original_sha256": "ab804f0becc600d905d939d315e0596aea884ee10584d9b351e09c4174b0b6eb",
+              "verbatim_contained": true,
+              "exact_file": false,
+              "handoff_plus_single_final_newline": true
+            },
+            {
+              "request": 2,
+              "path": "REQUEST_INCREMENT_2.md",
+              "original_sha256": "0b18f3792fb9c38dbf209340708a63a25a19be9c8c3ed982a1bf452249508bf4",
+              "verbatim_contained": true,
+              "exact_file": false,
+              "handoff_plus_single_final_newline": true
+            }
+          ],
+          "delivery_interval_seconds": 411.0284218788147,
+          "roles": {
+            "coordinator": {
+              "calls": 16,
+              "tokens": {
+                "input_uncached": 48,
+                "cache_read": 370063,
+                "cache_write": 13796,
+                "output": 4131
+              },
+              "usd": 0.112908
+            },
+            "architect": {
+              "calls": 10,
+              "tokens": {
+                "input_uncached": 30,
+                "cache_read": 174072,
+                "cache_write": 35443,
+                "output": 7922
+              },
+              "usd": 0.1853
+            },
+            "engineer": {
+              "calls": 18,
+              "tokens": {
+                "input_uncached": 54,
+                "cache_read": 423825,
+                "cache_write": 36678,
+                "output": 12884
+              },
+              "usd": 0.263034
+            },
+            "reviewer": {
+              "calls": 8,
+              "tokens": {
+                "input_uncached": 24,
+                "cache_read": 130804,
+                "cache_write": 40153,
+                "output": 4393
+              },
+              "usd": 0.157444
+            }
+          },
+          "memory": {
+            "same_session_id": "01a1842e-6232-75dc-9e15-b60727016ee4",
+            "append_only_prefix": true
+          },
+          "explicit_source_or_note_read_tool_calls_by_role": {
+            "architect": 5,
+            "engineer": 5,
+            "reviewer": 5
+          },
+          "native_executions_or_children": [
+            {
+              "increment": 2,
+              "role": "architect",
+              "result_entry": "1198fa6f",
+              "stop_reason": "stop",
+              "exit_code": 0,
+              "decision": null,
+              "task_sha256": "271d3909ca623fa9426413d49d8a5fcbbc016ead912ae9161115ae56604b71b7"
+            },
+            {
+              "increment": 2,
+              "role": "engineer",
+              "result_entry": "a140d7ce",
+              "stop_reason": "stop",
+              "exit_code": 0,
+              "decision": null,
+              "task_sha256": "afbeb5da3b7f412f7c8cd32776ce890aff368ecf8a3577693252a1f643c2b44a"
+            },
+            {
+              "increment": 2,
+              "role": "reviewer",
+              "result_entry": "d4dadcf4",
+              "stop_reason": "stop",
+              "exit_code": 0,
+              "decision": "approve",
+              "task_sha256": "d365906d68f28d7a9f8d4f1e8fe16e4fd9077f2095bb0c1262fb23c149d7ee36"
+            }
+          ],
+          "external_by_original_checkpoint": {
+            "test_checkpoint_1": {
+              "tests": 50,
+              "passed": 50,
+              "failed": 0
+            },
+            "test_checkpoint_2": {
+              "tests": 72,
+              "passed": 69,
+              "failed": 3
+            }
+          },
+          "no_future_request_source_file": true
+        },
+        {
+          "increment": 3,
+          "grade": {
+            "increment": 3,
+            "accepted": false,
+            "expected": 174,
+            "patch_sha256": "e97180b99573dbc7dfe70c16ba202e4b38ccc5de8a27d918f5ffbbee82fefce4",
+            "exit_code": 1,
+            "tests": 174,
+            "passed": 171,
+            "failed": 3,
+            "errors": 0,
+            "skipped": 0
+          },
+          "failed_tests": [
+            "official.test_checkpoint_2.TestCore::test_shape_objects_includes_rowid",
+            "official.test_checkpoint_2.TestCore::test_rowid_ignores_sort",
+            "official.test_checkpoint_2.TestFunctionality::test_rowid_sequential_all_rows"
+          ],
+          "head": "b6b9d59c39f1fdfa0ea740b5effc0a5b2191dfe5",
+          "reviewed_product": "6dcb527c9e53ce2df3973164fa1cf46f971e69ed",
+          "post_review_changed_files": ["COORDINATION.md"],
+          "clean": true,
+          "sources": [
+            {
+              "request": 1,
+              "path": "REQUEST.md",
+              "original_sha256": "ab804f0becc600d905d939d315e0596aea884ee10584d9b351e09c4174b0b6eb",
+              "verbatim_contained": true,
+              "exact_file": false,
+              "handoff_plus_single_final_newline": true
+            },
+            {
+              "request": 2,
+              "path": "REQUEST_INCREMENT_2.md",
+              "original_sha256": "0b18f3792fb9c38dbf209340708a63a25a19be9c8c3ed982a1bf452249508bf4",
+              "verbatim_contained": true,
+              "exact_file": false,
+              "handoff_plus_single_final_newline": true
+            },
+            {
+              "request": 3,
+              "path": "REQUEST_INCREMENT_3.md",
+              "original_sha256": "cc06a3d1ed017b04fb50a64f3d37f69993b146de50fb33cf9a6c046aacbb95b4",
+              "verbatim_contained": true,
+              "exact_file": false,
+              "handoff_plus_single_final_newline": true
+            }
+          ],
+          "delivery_interval_seconds": 570.52943110466,
+          "roles": {
+            "coordinator": {
+              "calls": 15,
+              "tokens": {
+                "input_uncached": 45,
+                "cache_read": 553264,
+                "cache_write": 14055,
+                "output": 3825
+              },
+              "usd": 0.12881
+            },
+            "architect": {
+              "calls": 12,
+              "tokens": {
+                "input_uncached": 36,
+                "cache_read": 337129,
+                "cache_write": 54458,
+                "output": 9672
+              },
+              "usd": 0.266656
+            },
+            "engineer": {
+              "calls": 25,
+              "tokens": {
+                "input_uncached": 75,
+                "cache_read": 1126938,
+                "cache_write": 66830,
+                "output": 18201
+              },
+              "usd": 0.46194
+            },
+            "reviewer": {
+              "calls": 10,
+              "tokens": {
+                "input_uncached": 30,
+                "cache_read": 268803,
+                "cache_write": 63715,
+                "output": 5871
+              },
+              "usd": 0.244944
+            }
+          },
+          "memory": {
+            "same_session_id": "01a1842e-6232-75dc-9e15-b60727016ee4",
+            "append_only_prefix": true
+          },
+          "explicit_source_or_note_read_tool_calls_by_role": {
+            "architect": 7,
+            "engineer": 7,
+            "reviewer": 7
+          },
+          "native_executions_or_children": [
+            {
+              "increment": 3,
+              "role": "architect",
+              "result_entry": "21450051",
+              "stop_reason": "stop",
+              "exit_code": 0,
+              "decision": null,
+              "task_sha256": "dfaaa398566bdde3fee68aaa9d7cac8459951633a0abef5f9ef779501ab8db21"
+            },
+            {
+              "increment": 3,
+              "role": "engineer",
+              "result_entry": "46dcc23e",
+              "stop_reason": "stop",
+              "exit_code": 0,
+              "decision": null,
+              "task_sha256": "c8787b82225f00c44f4968d0a7073edb701a40fd197372d05329283826add5d0"
+            },
+            {
+              "increment": 3,
+              "role": "reviewer",
+              "result_entry": "88773f25",
+              "stop_reason": "stop",
+              "exit_code": 0,
+              "decision": "approve",
+              "task_sha256": "dc435b676a2e05f152b9ac237d6d6f9d756c2d9b52cb3e97a1036bab7bb93945"
+            }
+          ],
+          "external_by_original_checkpoint": {
+            "test_checkpoint_1": {
+              "tests": 50,
+              "passed": 50,
+              "failed": 0
+            },
+            "test_checkpoint_2": {
+              "tests": 72,
+              "passed": 69,
+              "failed": 3
+            },
+            "test_checkpoint_3": {
+              "tests": 52,
+              "passed": 52,
+              "failed": 0
+            }
+          },
+          "no_future_request_source_file": true
+        }
+      ],
+      "usage": {
+        "settled_usd": 2.917134,
+        "calls": 221,
+        "new_unresolved": 0,
+        "reconstructed_from_role_tokens_usd": 2.917134,
+        "unattributed_usd": 0,
+        "token_multiset_matches_proxy": true,
+        "rounding": "Each request rounds up to USD micro-units, same as frozen proxy; native unrounded values may differ."
+      },
+      "native_review_outcomes": [
+        {
+          "increment": 1,
+          "role": "reviewer",
+          "result_entry": "7ebb8ce3",
+          "stop_reason": "stop",
+          "exit_code": 0,
+          "decision": "reject",
+          "task_sha256": "167fdfca9d0e098276ed3e29823062f0ad3f15194e06a8d614c7fbcfa5b48c9b"
+        },
+        {
+          "increment": 1,
+          "role": "reviewer",
+          "result_entry": "d97c8d1f",
+          "stop_reason": "stop",
+          "exit_code": 0,
+          "decision": "reject",
+          "task_sha256": "dbf7018404d56c9ceca5d9967f3bccd0664457cc263766d8eeffbc4612208fa5"
+        },
+        {
+          "increment": 1,
+          "role": "reviewer",
+          "result_entry": "61c60f00",
+          "stop_reason": "stop",
+          "exit_code": 0,
+          "decision": "approve",
+          "task_sha256": "6c8ae4da1a18e98eb5a511ebdab3714994292e9b6f16628bcde95eb01a1ff395"
+        },
+        {
+          "increment": 2,
+          "role": "reviewer",
+          "result_entry": "d4dadcf4",
+          "stop_reason": "stop",
+          "exit_code": 0,
+          "decision": "approve",
+          "task_sha256": "d365906d68f28d7a9f8d4f1e8fe16e4fd9077f2095bb0c1262fb23c149d7ee36"
+        },
+        {
+          "increment": 3,
+          "role": "reviewer",
+          "result_entry": "88773f25",
+          "stop_reason": "stop",
+          "exit_code": 0,
+          "decision": "approve",
+          "task_sha256": "dc435b676a2e05f152b9ac237d6d6f9d756c2d9b52cb3e97a1036bab7bb93945"
+        }
+      ],
+      "evidence_sha256": {
+        "result.json": "e8fbd2777d7cd8368fa4c6675d076924fd81d06f846f50e86784292e31092317",
+        "verifier/increment-results.json": "b92f457e2cb6bae74dfebc0bf344e90ad3d29ca0b4302d6361527443205c0390",
+        "agent/increment-deliveries.json": "30446daf9fea87c6d88e873d0f55d287f8aced31b85c99367282899917b38aef",
+        "agent/increment-1/repository.head": "cedee8bdf39bbf251f9786e45157e0010e916b39a24ec220d3dfb71b33909518",
+        "agent/increment-1/repository.bundle": "1542cad1c65fc6b7dcb7b4dfe4998daea39c0b84693f7dacdaa98589c9e170c7",
+        "agent/increment-1/repository.patch": "ede369fe8bc448bcdf1b97dc02207ba2fc0df42290c2ca726ea4fd1841627ce0",
+        "agent/increment-1/coordinator-session.jsonl": "0494a4f5822412406941b617dc9ca2474a18c02a9d77df160435029dbe413342",
+        "agent/increment-2/repository.head": "1fd6416702485d24de489d061a9228e1494398f293c888e680d42602b35b31c5",
+        "agent/increment-2/repository.bundle": "e704be77ce701281783f008104c64b9ba6a5bffb236659dbaf21ef553aae89c0",
+        "agent/increment-2/repository.patch": "5573621fbd8b79491ac2021c3cff0cfab515c67391a1f9a48e001544e9ccfdb1",
+        "agent/increment-2/coordinator-session.jsonl": "d4100a20e2e505694abd8bc36286889025ecd7a255bf1b16748403b2f0294d5d",
+        "agent/increment-3/repository.head": "05ad8b8713553391cf5db07cacd1ed201f3c56857d5f4acdcd5f061c713a652c",
+        "agent/increment-3/repository.bundle": "ee93a57c3b9762486c0f689a0b5c7b1b54135b4e20f58e1d9dc1e8476aade24b",
+        "agent/increment-3/repository.patch": "e97180b99573dbc7dfe70c16ba202e4b38ccc5de8a27d918f5ffbbee82fefce4",
+        "agent/increment-3/coordinator-session.jsonl": "45f9a07e0cd19e6a5a0d5262cc2ab275d81b59d8a69814ee56315c789c06e0ba"
+      },
+      "role_totals_usd": {
+        "coordinator": 0.37388,
+        "architect": 0.511235,
+        "engineer": 1.326084,
+        "reviewer": 0.705935
+      }
+    }
+  },
+  "method": {
+    "grades": "Unchanged frozen external grader, independently applied saved checkpoint patches; cumulative suites are not independent samples.",
+    "cost": "Explicit Ficus usage IDs and agent roles; Pi coordinator assistant receipts and explicit child result roles, deduplicated by responseId. Per-call token tuples and rounded charges reconciled against scoped proxy. Increment boundary is saved snapshot/session prefix.",
+    "hidden_reasoning": "Not inspected; public tools/final replies and usage metadata only.",
+    "limits": [
+      "One three-request case; no general ranking or causal memory claim.",
+      "Model calls serialized; no unrestricted parallel-speed or human-time-saved claim.",
+      "Memory implementation differs: native Ficus keyword/FTS with no embedding provider, Pi coordinator continuation and files."
+    ]
+  },
+  "budget": {
+    "phase": "budget-phase-2026-10-28-000028-reset50",
+    "cap_usd": 50,
+    "confirmed_usd": 33.96237,
+    "retained_hold_usd": 5.5,
+    "retained_hold_call": 1193,
+    "conservative_exposure_usd": 39.46237,
+    "conservative_remaining_usd": 10.53763,
+    "study_settled_usd": 6.951242
+  },
+  "shared_failure": {
+    "contract": "rowid (1-based source-file row number)",
+    "observed": "Both number the first stored data record 1, excluding the header; upstream fixtures expect source-file row 2.",
+    "origin": "Both increment-2 designs explicitly choose header-excluding record ordinals, and their independent reviewers accept that interpretation despite retaining and reading original requests.",
+    "unchanged_grade": true,
+    "introduced_at_increment": 2,
+    "persists_at_increment": 3,
+    "new_increment_3_cases_passed": 52,
+    "interpretation_limit": "The failed fixtures use ordinary single-line CSV records; no claim about untested multiline/blank-record line numbering."
+  }
+}

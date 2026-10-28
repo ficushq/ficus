@@ -76,3 +76,12 @@ memory activity, wall intervals and receipt-backed costs by increment and role.
 Disclose unassigned usage and the historical hold. No general harness ranking,
 human-time-saved claim or unrestricted parallel-throughput claim follows from
 this one three-request product progression.
+
+## Completed outcome
+
+Both arms completed all three native deliveries. External results were identical:
+50/50, 119/122 and 171/174, with the same three row-ID failures persisting after
+increment 2 and zero skips/errors. Ficus cost $4.034108; Pi cost $2.917134. Ficus's
+native memory remained empty while both used persistent repository notes/history.
+See the [validated comparison](longitudinal-v1-results.md) and
+[receipt-reconciled evidence](longitudinal-v1-results.json).

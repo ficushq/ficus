@@ -649,3 +649,12 @@ The user authorized the [sequential product-work pilot](LONGITUDINAL.md), using
 unused DataGate requests 1–3, one at a time, in the same repository and native
 sessions. Its [plan](longitudinal-v1-plan.json) preserves the current cap and
 historical missing-receipt hold. It does not alter or rerun v8.
+
+### Completed successive-request pilot
+
+The [longitudinal-v1 comparison](longitudinal-v1-results.md) is complete: both
+harnesses deliver all three increments and score 50/50, 119/122 and 171/174.
+Both preserve the full original requests but interpret source-file row IDs as
+header-excluding data ordinals. Ficus uses repository notes without invoking its
+available native memory; Pi retains its coordinator session and files. The pair
+costs $6.951242 with no new unresolved receipts. No additional paid run started.
