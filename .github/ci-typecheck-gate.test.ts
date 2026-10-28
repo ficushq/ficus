@@ -40,12 +40,10 @@ const packageJson = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf
 }
 const workspaceManifests = (packageJson.workspaces ?? [])
   .flatMap((pattern) =>
-    [...new Bun.Glob(`${pattern}/package.json`).scanSync({ cwd: repoRoot })].map(
-      (path): WorkspaceManifest => ({
-        path,
-        ...JSON.parse(readFileSync(join(repoRoot, path), 'utf8')),
-      })
-    )
+    [...new Bun.Glob(`${pattern}/package.json`).scanSync({ cwd: repoRoot })].map((path): WorkspaceManifest => ({
+      path,
+      ...JSON.parse(readFileSync(join(repoRoot, path), 'utf8')),
+    }))
   )
   .sort((left, right) => left.path.localeCompare(right.path))
 

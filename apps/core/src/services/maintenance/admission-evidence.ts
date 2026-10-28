@@ -12,10 +12,7 @@ export type AdmissionPauseSubject = Readonly<{
   executionIdHash: string
 }>
 export type RunnerPauseOrigin =
-  | 'write-phase-begin'
-  | 'write-phase-finish-settlement'
-  | 'write-phase-finish-running'
-  | 'scope-abort-effective-change'
+  'write-phase-begin' | 'write-phase-finish-settlement' | 'write-phase-finish-running' | 'scope-abort-effective-change'
 export type MaintenancePauseEvidence =
   | Readonly<{
       origin: 'authoritative-refresh'

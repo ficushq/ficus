@@ -181,7 +181,7 @@ export async function runCapturedProcess(
     return { kind: 'timed-out', code: null, signal: null, stdout: out, stderr: err, timeoutMs: options.timeoutMs! }
   }
   if (child.signalCode) {
-    return { kind: 'signaled', code: null, signal: child.signalCode, stdout: out, stderr: err }
+    return { kind: 'signaled', code: null, signal: String(child.signalCode), stdout: out, stderr: err }
   }
   if (typeof child.exitCode === 'number') {
     return { kind: 'exited', code: child.exitCode, signal: null, stdout: out, stderr: err }

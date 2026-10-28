@@ -51,8 +51,7 @@ export class SessionMessagePersistence {
   private chain: Promise<void> = Promise.resolve()
   private bindings: SessionMessagePersistenceBindings | undefined
   private lastPersistedAssistantState:
-    | { response: string; metadata: MessageMetadata | undefined; messageId: string | undefined }
-    | undefined
+    { response: string; metadata: MessageMetadata | undefined; messageId: string | undefined } | undefined
   private activeToolMessage: { messageId: string; pendingToolCallIds: Set<string> } | undefined
   /** Set by a compaction that did not end the group: the next output starts a new one. */
   private rotateBeforeNextOutput = false
@@ -157,8 +156,7 @@ export class SessionMessagePersistence {
 
   /** The last assistant row written this run (updated by tool-result patches too). */
   lastAssistant():
-    | { response: string; metadata: MessageMetadata | undefined; messageId: string | undefined }
-    | undefined {
+    { response: string; metadata: MessageMetadata | undefined; messageId: string | undefined } | undefined {
     return this.lastPersistedAssistantState
   }
 

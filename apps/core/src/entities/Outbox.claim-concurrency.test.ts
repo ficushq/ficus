@@ -12,8 +12,7 @@ const BATCH_SIZE = 4
 const CAPACITY = CLAIMERS * BATCH_SIZE
 
 type TransactionOutcome =
-  | { claimer: number; status: 'fulfilled'; rows: Outbox[] }
-  | { claimer: number; status: 'rejected'; reason: string }
+  { claimer: number; status: 'fulfilled'; rows: Outbox[] } | { claimer: number; status: 'rejected'; reason: string }
 
 type ClaimerReadiness =
   | { claimer: number; status: 'ready'; pid: number; applicationName: string }
@@ -474,8 +473,7 @@ test('readiness deadline drains a transaction held before its handshake', async 
   let claimWork: Promise<unknown> | undefined
   let settled: Promise<PromiseSettledResult<unknown>[]> | undefined
   let observedReadiness:
-    | Promise<{ status: 'fulfilled'; value: ReadyClaimer[] } | { status: 'rejected'; reason: unknown }>
-    | undefined
+    Promise<{ status: 'fulfilled'; value: ReadyClaimer[] } | { status: 'rejected'; reason: unknown }> | undefined
   let readinessOutcome:
     | { status: 'fulfilled'; value: ReadyClaimer[] }
     | { status: 'rejected'; reason: unknown }

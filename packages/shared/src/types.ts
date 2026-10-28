@@ -50,12 +50,7 @@ export type TaskStatus = 'pending' | 'in-progress' | 'blocked' | 'review' | 'com
 
 // Chat scope types
 export type ChatScopeType =
-  | 'system-manager'
-  | 'task'
-  | 'squad-manager'
-  | 'squad-worker'
-  | 'consultant'
-  | 'artifact-builder'
+  'system-manager' | 'task' | 'squad-manager' | 'squad-worker' | 'consultant' | 'artifact-builder'
 
 // Message roles
 export type MessageRole = 'human' | 'assistant'
@@ -107,14 +102,7 @@ export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhi
 
 // Execution statuses (unified)
 export type ExecutionStatus =
-  | 'queued'
-  | 'waiting-maintenance'
-  | 'waiting-sandbox'
-  | 'running'
-  | 'stopping'
-  | 'stopped'
-  | 'completed'
-  | 'failed'
+  'queued' | 'waiting-maintenance' | 'waiting-sandbox' | 'running' | 'stopping' | 'stopped' | 'completed' | 'failed'
 
 // Message metadata (tool calls captured from Pi SDK)
 export interface MessageToolCall {
@@ -148,8 +136,7 @@ export const DELIVERY_SUGGESTION_MAX_DRAFT_LENGTH = 4000
  * now rather than wait) are its answers, 0 to 1, when it answered.
  */
 export type DeliverySuggestion =
-  | { suggestion: null; related?: number; now?: number }
-  | { suggestion: DeliveryMode; related?: number; now?: number }
+  { suggestion: null; related?: number; now?: number } | { suggestion: DeliveryMode; related?: number; now?: number }
 
 /**
  * `restarted` is a lifecycle notice (the command was relaunched after a loss),
@@ -950,14 +937,7 @@ export type SandboxStatus = 'none' | 'initializing' | 'ready' | 'failed'
 
 /** Physical runtime states returned by managed sandbox status endpoints. */
 export type SandboxRuntimeState =
-  | 'not_found'
-  | 'pending'
-  | 'starting'
-  | 'running'
-  | 'succeeded'
-  | 'failed'
-  | 'terminating'
-  | 'unknown'
+  'not_found' | 'pending' | 'starting' | 'running' | 'succeeded' | 'failed' | 'terminating' | 'unknown'
 
 export type LocalDeploymentVisibility = 'private' | 'public'
 export type LocalDeploymentMode = 'managed' | 'attached'
@@ -1040,13 +1020,7 @@ export interface LocalDeploymentLogs {
 
 export type DeploymentAppType = 'static' | 'spa' | 'next' | 'api' | 'container' | 'db' | 'worker' | 'unknown'
 export type DeploymentProviderId =
-  | 'vercel'
-  | 'github-pages'
-  | 'railway'
-  | 'supabase'
-  | 'digitalocean'
-  | 'cloudflare'
-  | 'netlify'
+  'vercel' | 'github-pages' | 'railway' | 'supabase' | 'digitalocean' | 'cloudflare' | 'netlify'
 export type DeploymentProviderAuth = 'api_token' | 'oauth_device' | 'browser_login'
 export type DeploymentProviderBillingRisk = 'project_create' | 'always_on' | 'managed_db' | 'public_egress'
 
@@ -1340,13 +1314,7 @@ export const WORK_STREAM_COMPLETION_MODES = [
 export type WorkStreamCompletionMode = (typeof WORK_STREAM_COMPLETION_MODES)[number]
 
 export type WorkStreamSourceLinkKind =
-  | 'memory_document'
-  | 'agent_thread'
-  | 'slack_thread'
-  | 'github_issue'
-  | 'linear_issue'
-  | 'channel_message'
-  | 'url'
+  'memory_document' | 'agent_thread' | 'slack_thread' | 'github_issue' | 'linear_issue' | 'channel_message' | 'url'
 
 export interface WorkStreamSourceLink {
   kind: WorkStreamSourceLinkKind

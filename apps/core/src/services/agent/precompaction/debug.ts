@@ -1,13 +1,7 @@
 import type { CompactionResult } from '@earendil-works/pi-coding-agent'
 
 export type PrecompactionLifecycleKind =
-  | 'started'
-  | 'succeeded'
-  | 'failed'
-  | 'aborted'
-  | 'superseded'
-  | 'consumed'
-  | 'rejected'
+  'started' | 'succeeded' | 'failed' | 'aborted' | 'superseded' | 'consumed' | 'rejected'
 
 export type PrecompactionRejectReason = 'model' | 'settings' | 'cutpoint' | 'latestCompaction' | 'prefix'
 

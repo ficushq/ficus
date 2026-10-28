@@ -54,22 +54,18 @@ export const HOME_PATH_COLUMNS: readonly HomePathColumn[] = [
   { table: 'monitors', column: 'cwd', kind: 'text' },
   // Worktree ownership (physical paths in the squad runtime; under HOME on the host runtime), and the
   // copy a pending cleanup job carries.
-  ...WORKTREE_OWNERSHIP_PATHS.map(
-    (key): HomePathColumn => ({
-      table: 'work_stream_worktrees',
-      column: 'ownership',
-      kind: 'jsonb-string',
-      jsonPath: [key],
-    })
-  ),
-  ...WORKTREE_OWNERSHIP_PATHS.map(
-    (key): HomePathColumn => ({
-      table: 'worktree_cleanup_jobs',
-      column: 'removal_input',
-      kind: 'jsonb-string',
-      jsonPath: ['ownership', key],
-    })
-  ),
+  ...WORKTREE_OWNERSHIP_PATHS.map((key): HomePathColumn => ({
+    table: 'work_stream_worktrees',
+    column: 'ownership',
+    kind: 'jsonb-string',
+    jsonPath: [key],
+  })),
+  ...WORKTREE_OWNERSHIP_PATHS.map((key): HomePathColumn => ({
+    table: 'worktree_cleanup_jobs',
+    column: 'removal_input',
+    kind: 'jsonb-string',
+    jsonPath: ['ownership', key],
+  })),
   // The repository and worktree a work stream was set up with (repository-setup.ts).
   { table: 'work_streams', column: 'metadata', kind: 'jsonb-string', jsonPath: ['git', 'repository'] },
   { table: 'work_streams', column: 'metadata', kind: 'jsonb-string', jsonPath: ['git', 'worktree'] },
