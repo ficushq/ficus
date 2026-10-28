@@ -174,7 +174,10 @@ for (const mode of [
         await f.child.exited
       }
       if (mode === 'dead-missing-compose') rmSync(join(f.root, 'docker-compose.test.yml'))
-      const registry = join(f.dir, readdirSync(f.dir).find((name) => name.startsWith('ficus-test-db-owners-'))!)
+      const registry = join(
+        f.dir,
+        readdirSync(f.dir).find((name) => name.startsWith('ficus-test-db-owners-'))!
+      )
       const file = join(registry, readdirSync(registry)[0]!)
       const owner = JSON.parse(readFileSync(file, 'utf8'))
       const currentRoot = mode === 'dead-missing-compose' ? join(f.dir, 'surviving-checkout') : f.root
@@ -260,7 +263,10 @@ for (const inventory of ['exit 1', 'kill -KILL $$', 'exec sleep 60']) {
       expect(output).not.toContain('CLAIMED')
       expect(error).toContain('inventory')
       expect(readFileSync(f.log, 'utf8')).not.toMatch(/\b(up|down)\b/)
-      const registry = join(f.dir, readdirSync(f.dir).find((name) => name.startsWith('ficus-test-db-owners-'))!)
+      const registry = join(
+        f.dir,
+        readdirSync(f.dir).find((name) => name.startsWith('ficus-test-db-owners-'))!
+      )
       expect(readdirSync(registry)).toEqual([])
     } finally {
       f.child.kill('SIGKILL')
@@ -286,7 +292,10 @@ for (const action of ['reclaim', 'sweep', 'manual-down'] as const) {
       expect(new TextDecoder().decode((await borrower.stdout.getReader().read()).value)).toContain('borrowed')
       f.child.kill('SIGKILL')
       await f.child.exited
-      const registry = join(f.dir, readdirSync(f.dir).find((name) => name.startsWith('ficus-test-db-owners-'))!)
+      const registry = join(
+        f.dir,
+        readdirSync(f.dir).find((name) => name.startsWith('ficus-test-db-owners-'))!
+      )
       const file = join(registry, readdirSync(registry)[0]!)
       const owner = JSON.parse(readFileSync(file, 'utf8'))
       owner.createdAt = Date.now() - 7200001
