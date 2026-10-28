@@ -18,6 +18,7 @@ test('rootless box runtime proof runs on a disposable systemd VM in normal PR CI
   expect(run).toContain('scripts/machine/box-cgroup.integration.sh')
   expect(run).toContain('timeout --kill-after=90s 10m')
   expect(run).toContain("grep -Fxq '5 real rootless containment phases passed'")
+  expect(run.slice(run.indexOf('out=$(sudo'), run.indexOf('|| status=$?'))).not.toContain('GITHUB_STEP_SUMMARY')
   expect(run).not.toMatch(/sysctl.*(?:unprivileged_userns|apparmor)|continue-on-error|workflow_dispatch/)
 })
 
@@ -109,6 +110,7 @@ test('provision trace exposes a stalled source location without defeating the pr
 
 test('real provision keeps bounded tracing and original five-phase acceptance', () => {
   const fixture = readFileSync(resolve(root, 'scripts/machine/box-cgroup.integration.sh'), 'utf8')
+  expect(fixture).toContain('CAPTURE="${TARGET%/*}/box-provision-ci-capture.sh"')
   expect(fixture).toContain('bash "$CAPTURE" 150s bash "$TRACE" "$TARGET"')
   const capture = readFileSync(resolve(root, 'scripts/machine/box-provision-ci-capture.sh'), 'utf8')
   expect(capture).toContain('timeout --kill-after=5s "$duration" "$@" 2>&1')
