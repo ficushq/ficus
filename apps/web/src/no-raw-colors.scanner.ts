@@ -18,11 +18,7 @@
  */
 
 export type RawColorCategory =
-  | 'palette-utility'
-  | 'palette-lookup'
-  | 'literal-hex'
-  | 'color-function'
-  | 'inline-color-style'
+  'palette-utility' | 'palette-lookup' | 'literal-hex' | 'color-function' | 'inline-color-style'
 
 export interface RawColorFinding {
   readonly category: RawColorCategory

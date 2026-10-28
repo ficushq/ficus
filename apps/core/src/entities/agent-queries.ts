@@ -35,11 +35,7 @@ import { createPublicKey } from 'crypto'
 export type AgentRow = InferSelectModel<typeof agents>
 
 export type AgentLifecycleSweepKind =
-  | 'legacy-terminated'
-  | 'pending'
-  | 'dormancy-completion'
-  | 'dormant-retention'
-  | 'final-cleanup'
+  'legacy-terminated' | 'pending' | 'dormancy-completion' | 'dormant-retention' | 'final-cleanup'
 
 /**
  * Read only the durable fields needed by lifecycle fences and polling loops.

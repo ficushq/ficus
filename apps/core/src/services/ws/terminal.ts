@@ -51,8 +51,7 @@ function isResizeMessage(data: unknown): data is ResizeMessage {
  */
 /** Where a terminal's shell starts, or why the socket is closed instead. */
 export type TerminalSandboxPreparation =
-  | { ok: true; workspacePath?: string; cwd?: string }
-  | { ok: false; code: number; reason: string }
+  { ok: true; workspacePath?: string; cwd?: string } | { ok: false; code: number; reason: string }
 
 export interface TerminalSandboxDeps {
   findSquad: (squadId: string) => Promise<Squad | null>

@@ -7,13 +7,7 @@ import { bigbrainChildEnvironment } from './stdio-transport'
 
 /** Fixed, outcome-only failure codes. Upstream stdout/stderr is never returned, logged or stored. */
 export type BigbrainSetupCommandFailure =
-  | 'executable_missing'
-  | 'busy'
-  | 'timeout'
-  | 'connection_revoked'
-  | 'no_vault'
-  | 'failed'
-  | 'invalid_output'
+  'executable_missing' | 'busy' | 'timeout' | 'connection_revoked' | 'no_vault' | 'failed' | 'invalid_output'
 
 export class BigbrainSetupCommandError extends Error {
   constructor(

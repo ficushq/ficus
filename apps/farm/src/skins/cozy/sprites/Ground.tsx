@@ -106,7 +106,7 @@ export function CozyYardBack({ i0, j0, w, h }: YardRect) {
 /** Splits [from, to] into stretches of at most a tile. */
 function stretches(from: number, to: number): Array<[number, number]> {
   const out: Array<[number, number]> = []
-  for (let a = from; a < to - 1e-6; ) {
+  for (let a = from; a < to - 1e-6;) {
     const b = Math.min(to, a + 1)
     out.push([a, b])
     a = b

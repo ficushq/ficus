@@ -28,25 +28,23 @@ export const linearTrackedResourceAdapter: TrackedResourceAdapter = {
     // Linear tracks issues only; a pull request lives on the code host, not here.
     if (resource.kind !== 'issue') return []
     const hash = createHash('sha256').update(trackedResourceKey(resource)).digest('hex').slice(0, 12)
-    return ISSUE_EVENTS.map(
-      (event): IntegrationSubscription => ({
-        id: `tracked-${hash}-${event}`,
-        source: {
-          integration: 'linear',
-          output: `issue.${event}`,
-          version: 1,
-          ...(resource.connectionId ? { connectionId: resource.connectionId } : {}),
-        },
-        // The provider id identifies the issue on its own; a comment fact carries nothing else.
-        match: resource.externalId
-          ? { 'issue.id': { value: resource.externalId } }
-          : {
-              teamKey: { value: resource.repository.trim().toLowerCase() },
-              'issue.number': { value: resource.number },
-            },
-        deliver: { to: 'delivery-owner', whenInactive: 'retain' },
-      })
-    )
+    return ISSUE_EVENTS.map((event): IntegrationSubscription => ({
+      id: `tracked-${hash}-${event}`,
+      source: {
+        integration: 'linear',
+        output: `issue.${event}`,
+        version: 1,
+        ...(resource.connectionId ? { connectionId: resource.connectionId } : {}),
+      },
+      // The provider id identifies the issue on its own; a comment fact carries nothing else.
+      match: resource.externalId
+        ? { 'issue.id': { value: resource.externalId } }
+        : {
+            teamKey: { value: resource.repository.trim().toLowerCase() },
+            'issue.number': { value: resource.number },
+          },
+      deliver: { to: 'delivery-owner', whenInactive: 'retain' },
+    }))
   },
   async authorizeSquad(squadId, connectionId) {
     const assignment = await resolveLinearAssignment(squadId)

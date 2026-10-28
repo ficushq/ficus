@@ -358,21 +358,20 @@ export function classifyDeliveryPresentation(
         primary,
         ...deliveryPullRequests(metadata)
           .filter((resource) => resource.source !== 'delivery')
-          .map(
-            (resource) =>
-              classifyPrimaryDeliveryPresentation(
-                state,
-                {
-                  codeHost: {
-                    integration: resource.integration,
-                    repository: resource.repository,
-                    changeRequest: { number: resource.number },
-                    ...(resource.connectionId ? { connectionId: resource.connectionId } : {}),
-                  },
+          .map((resource) =>
+            classifyPrimaryDeliveryPresentation(
+              state,
+              {
+                codeHost: {
+                  integration: resource.integration,
+                  repository: resource.repository,
+                  changeRequest: { number: resource.number },
+                  ...(resource.connectionId ? { connectionId: resource.connectionId } : {}),
                 },
-                events,
-                policies
-              )!
+              },
+              events,
+              policies
+            )!
           ),
       ]
     : [primary]
