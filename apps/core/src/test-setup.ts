@@ -1,12 +1,12 @@
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { randomBytes } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync, statSync, mkdtempSync, rmSync } from 'fs'
-import { sweepOrphanTestDbs } from './test-db-sweep'
+import { existsSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from 'fs'
+import { ownTestDb, sweepStaleTestDbs, downTestDb } from '@ficus/shared/testDbLifecycle'
 import { beforeEach, mock } from 'bun:test'
 import { sesSendMock } from './test-utils/ses-mock'
 import { withTestDbLockSync } from '@ficus/shared/testDbLock'
-import { canExecuteQuery, isComposePostgresReady } from '@ficus/shared/testDbReady'
+import { isComposePostgresReady } from '@ficus/shared/testDbReady'
 import { findFreeTestDbPort, testDbPortFile, testDbProjectName } from '@ficus/shared/testDbPort'
 import { expectedCheckConstraints, expectedTableColumns, findSchemaDrift, parseColumnRows } from './db/expected-schema'
 import { expectedForeignKeys, foreignKeyStatements } from './db/expected-foreign-keys'
@@ -165,17 +165,9 @@ const portFile = testDbPortFile(repoRoot)
 const projectName = testDbProjectName(repoRoot)
 
 function tearDownTestDb(): void {
-  try {
-    // --volumes: test DBs are ephemeral (tmpfs), but if the image ever declares
-    // a VOLUME path the tmpfs doesn't cover, a plain `down` orphans an anonymous
-    // volume per run — this leaked 648 volumes before the tmpfs path was fixed.
-    Bun.spawnSync(['docker', 'compose', '-p', projectName, '-f', composeFile, 'down', '--volumes'], {
-      stdout: 'ignore',
-      stderr: 'ignore',
-      timeout: 10000,
-    })
-  } catch {
-    // ignore
+  if (!downTestDb({ repoRoot, project: projectName, composeFile, token: process.env.FICUS_TEST_DB_OWNER })) {
+    console.error('Cannot reset this worktree test database; refusing to continue after failed cleanup')
+    process.exit(1)
   }
 }
 
@@ -291,7 +283,7 @@ const sqlLiteral = (value: string) => "'" + value.replaceAll("'", "''") + "'"
  */
 function runDdlOrExit(url: string, statements: string[], what: string): void {
   const fail = (detail: string) => {
-    console.error(`Failed to ${what}:\n${detail}\nRecover with: bun run test:db:down && bun run test:db:up`)
+    console.error(`Failed to ${what}:\n${detail}\nRecover with: bun run test:db:down && bun run test`)
     process.exit(1)
   }
   try {
@@ -467,7 +459,7 @@ function verifySchemaApplied(url: string): void {
   console.error(
     `The schema push reported success but the test DB does not match src/db/schema.ts:\n  ${detail}\n` +
       cause +
-      'Recover with: bun run test:db:down && bun run test:db:up'
+      'Recover with: bun run test:db:down && bun run test'
   )
   process.exit(1)
 }
@@ -503,40 +495,8 @@ function resolveTestPort(): number {
 }
 
 function isPostgresReady(port: number): boolean {
-  const opts = { stdout: 'ignore' as const, stderr: 'ignore' as const, timeout: POSTGRES_READY_TIMEOUT_MS }
-
-  if (composeReady(port)) return true
-
-  // Try direct pg_isready if available on host
-  try {
-    const direct = Bun.spawnSync(
-      ['pg_isready', '-h', 'localhost', '-p', String(port), '-U', 'postgres', '-d', 'ficus_test'],
-      opts
-    )
-    if (direct.exitCode === 0) {
-      return canExecuteQuery(port, 'ficus_test', { timeoutMs: POSTGRES_READY_TIMEOUT_MS, cwd: appCwd })
-    }
-  } catch {
-    // pg_isready not installed or timed out, fall through
-  }
-
-  // Last resort: try a raw TCP connection to the port
-  try {
-    const tcp = Bun.spawnSync(
-      [
-        'bun',
-        '-e',
-        `const s=await Bun.connect({hostname:'localhost',port:${port},socket:{data(){},open(s){s.end()},error(){}}});process.exit(0)`,
-      ],
-      { stdout: 'ignore', stderr: 'ignore', timeout: POSTGRES_READY_TIMEOUT_MS }
-    )
-    if (tcp.exitCode === 0) {
-      return canExecuteQuery(port, 'ficus_test', { timeoutMs: POSTGRES_READY_TIMEOUT_MS, cwd: appCwd })
-    }
-  } catch {
-    // fall through
-  }
-  return false
+  // A healthy service on localhost alone is not proof that we own it.
+  return composeReady(port)
 }
 
 // --- Main setup ---
@@ -550,33 +510,23 @@ if (useExternalDb) {
   // Use CI-provided database (already validated above)
   TEST_DATABASE_URL = ciDatabaseUrl!
   console.log('Using external database from CI')
+} else if (!Bun.which('docker') && allowTestDbFallback) {
+  // No Docker executable means this run cannot have created any containers.
+  // Preserve the database-free diagnostic path without claiming a DB lifetime.
+  TEST_DATABASE_URL = ''
+  testDbUnavailableReason = 'Docker executable not found'
 } else {
-  // Explicit maintenance may reap test DBs orphaned by deleted worktrees (throttled: at most once per
-  // hour across all invocations — the marker lives in the OS tmpdir).
+  // Acquire ownership before the first readiness probe or partial Compose up.
+  // EXIT handles schema/setup failures too; independent live runs fail closed.
   try {
-    const sweepMarker = join(tmpdir(), 'ficus-test-db-sweep.last')
-    const last = existsSync(sweepMarker) ? statSync(sweepMarker).mtimeMs : 0
-    if (process.env.FICUS_TEST_SWEEP_ORPHANS === '1' && Date.now() - last > 60 * 60 * 1000) {
-      writeFileSync(sweepMarker, '')
-      const removed = sweepOrphanTestDbs({ composeFile, currentRepoRoot: repoRoot })
-      if (removed.length > 0) console.log(`Reaped orphaned test DB project(s): ${removed.join(', ')}`)
-    }
-  } catch {
-    // never block tests on hygiene
+    sweepStaleTestDbs(repoRoot)
+    ownTestDb(repoRoot)
+  } catch (error) {
+    console.error(`Cannot acquire test database ownership: ${String(error)}`)
+    process.exit(1)
   }
 
-  // Local development: set up our own postgres container.
-  //
-  // The whole probe -> maybe tear down -> maybe recreate sequence runs under
-  // a cross-process lock (see @ficus/shared/testDbLock's doc comment for the
-  // full story — Core issue #795). Without it, apps/core's and the hosted control plane's
-  // `bun test` processes (launched ~simultaneously by the root `bun run
-  // test`) can both probe the same container, both decide it's dead, and
-  // both act — one process's `docker compose down --volumes` then yanks the
-  // container out from under the other's already-open connections mid-test.
-  // NOTE: tearDownTestDb() is intentionally NOT called unconditionally here
-  // (it used to be, which is exactly what caused #795) — resolveTestPort()
-  // below only tears down when its own readiness probe actually fails.
+  // Setup is also serialized for preloads borrowing a runner's lifetime token.
   TEST_DATABASE_URL = withTestDbLockSync(repoRoot, () => {
     const port = resolveTestPort()
     const url = `postgres://postgres:postgres@localhost:${port}/ficus_test`
@@ -590,6 +540,8 @@ if (useExternalDb) {
           stdout: 'ignore',
           stderr: 'pipe',
           env: { ...process.env, TEST_DB_PORT: String(port), TEST_REPO_ROOT: repoRoot },
+          timeout: 30000,
+          killSignal: 'SIGKILL',
         })
         return { exitCode: up.exitCode, stderr: up.stderr.toString() }
       },
@@ -606,7 +558,7 @@ if (useExternalDb) {
         // Do not "fix" this by wrapping the wait loop in try/finally: a
         // `finally` never runs across process.exit() either, so it
         // wouldn't help — the stale-PID path is the actual safety net.
-        console.error(TEST_DB_NOT_READY)
+        console.error(`${TEST_DB_NOT_READY}: ${startup.reason}`)
         process.exit(1)
       }
       // Local direct `bun test` only (see test-utils/test-db-fallback.ts):
@@ -618,8 +570,8 @@ if (useExternalDb) {
       return ''
     }
 
-    // Reusing a live container (the whole point of item 1's fix above) means
-    // rows from a PREVIOUS run's tests can still be sitting in ficus_test —
+    // A preload borrowing the runner's live container can still see rows
+    // from a previous isolated batch in ficus_test —
     // unlike the old unconditional-teardown behavior, which always started
     // every run from a genuinely empty container. Leftover rows are not just
     // a cross-run isolation smell: `drizzle-kit push` below inspects row
@@ -676,7 +628,7 @@ function startTestPooler(opts: {
     }
     const up = Bun.spawnSync(
       ['docker', 'compose', '-p', opts.projectName, '-f', opts.composeFile, 'up', '-d', 'pgbouncer'],
-      { stdout: 'ignore', stderr: 'pipe', env }
+      { stdout: 'ignore', stderr: 'pipe', env, timeout: 30000, killSignal: 'SIGKILL' }
     )
     if (up.exitCode !== 0) {
       console.log(
@@ -761,7 +713,7 @@ if (testDbUnavailableReason !== undefined) {
           'drizzle-kit push could not parse the existing test DB schema (ZodError) and exited 0 having applied nothing.\n' +
             'Something in the database is not introspectable by drizzle-kit — if it is an index, add it to\n' +
             'INTROSPECTION_HOSTILE_INDEXES in apps/core/src/test-setup.ts.\n' +
-            'Recover with: bun run test:db:down && bun run test:db:up\n' +
+            'Recover with: bun run test:db:down && bun run test\n' +
             (stderr || stdout)
         )
         process.exit(1)

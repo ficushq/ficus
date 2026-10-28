@@ -31,7 +31,13 @@ function pooler(action: 'stop' | 'start'): void {
   const argv = CONTAINER
     ? ['docker', action, CONTAINER]
     : ['docker', 'compose', '-p', projectName, '-f', composeFile, action, 'pgbouncer']
-  const r = Bun.spawnSync(argv, { stdout: 'ignore', stderr: 'pipe', env: { ...process.env, TEST_REPO_ROOT: repoRoot } })
+  const r = Bun.spawnSync(argv, {
+    stdout: 'ignore',
+    stderr: 'pipe',
+    env: { ...process.env, TEST_REPO_ROOT: repoRoot },
+    timeout: 10000,
+    killSignal: 'SIGKILL',
+  })
   if (r.exitCode !== 0) throw new Error(`${argv.join(' ')} failed: ${r.stderr.toString()}`)
 }
 

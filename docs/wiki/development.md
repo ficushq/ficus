@@ -226,8 +226,8 @@ instance when several are installed
 
 Database-backed tests use a separate Docker Compose project and dynamically
 allocated PostgreSQL port for each worktree. Core's preload prepares and
-checks the schema; root `bun run test` waits for database readiness before
-starting the configured package suites. Do not point tests at the development
+checks the schema before its package suite. Root `bun run test` starts the
+configured package suites without leaving a separate detached database behind. Do not point tests at the development
 database or assume the Compose file's fallback port 5433 is the actual test
 port.
 
@@ -239,7 +239,7 @@ fixtures, reset only this worktree’s database with `bun run test:db:down`; do 
 remove constraints to make a test pass.
 
 ```bash
-# Configured package test entrypoints, with DB readiness first
+# Configured package test entrypoints, with owned DB lifecycle
 bun run test
 
 # A package suite, with its isolation/completion contract
@@ -283,7 +283,8 @@ for what gates a merge.
 # Default Compose development database (persistent volume)
 bun run docker:up
 
-# This worktree's isolated test database (allocated port, disposable data)
+# This worktree's isolated test DB for manual inspection: stays foreground;
+# Ctrl-C/TERM tears down its containers, networks and volumes
 bun run test:db:up
 
 # Reset only this worktree's disposable test database
@@ -293,8 +294,34 @@ bun run test:db:down
 The development database may instead be the installer-managed container or
 an external server named by this checkout's `DATABASE_URL`; do not start a
 second default Compose database over that installation. `test:db:up` prints
-its allocated port and project. Prefer these isolation-aware test commands
-over the raw `docker:up:test`/`docker:down:test` Compose shortcuts.
+its allocated port and project. `docker:up:test`/`docker:down:test` are aliases
+for these ownership-aware commands, not raw detached Compose shortcuts.
+`test:db:down` refuses to interrupt a live or unknown owner; end the owning
+foreground session first. Concurrent independent test runs need separate
+worktrees; they must not reset each other's data.
+
+Core's package runner owns one database lifetime across its sequential child
+batches (preserving schema reuse). Direct `bun test`, including root-invoked
+diagnostics, owns its local DB through the Core preload. Ownership is registered
+before startup; normal exit, failed setup/schema/tests, INT and TERM all run
+project-scoped `docker compose down --volumes --remove-orphans`. The standalone
+persistent-restart fixture and the shared cross-project readiness fixtures
+own their separate projects and exit hooks; setup
+`lib.test.sh` and `pooler.test.sh` are render-only and start no database.
+Externally supplied CI databases remain CI-owned and are not torn down locally.
+Cleanup probes are capped at 5 seconds and Compose teardown at 10 seconds, with
+hard CLI kills and bounded diagnostics. Failed cleanup keeps the ownership
+record for retry and fails an otherwise successful run. SIGKILL or a machine
+crash cannot run exit handlers; the next startup can reclaim the recorded run.
+The runner forwards cancellation and escalates a stuck test child after 20s.
+
+For setup-script linting, use `bun run lint:setup [files...]` (Python 3 and
+ShellCheck required), rather than invoking ShellCheck on the whole tree in one
+process. It checks files sequentially at warning severity, with 30s/file,
+120s/invocation, 768 MiB address-space and CPU limits. Resource-limit failures
+are errors, never suppressed findings; cancellation kills the child process
+group. On Linux, parent-death signaling also kills ShellCheck if the outer
+harness is killed uncatchably. Flags may lower, but not raise, the caps.
 
 Schema and migration workflow live in [`database.md`](database.md).
 
@@ -369,10 +396,18 @@ bun run docker:gc -- --install  # Install/refresh a daily 13:00 launchd agent
                                 # (dev.tau.docker-gc, retained launchd label; logs to /tmp/ficus-docker-gc.log)
 ```
 
-Normal test runs do not sweep other worktrees' database projects. Orphan
-cleanup is explicit through `bun run docker:gc`; the test preload also supports
-the opt-in `FICUS_TEST_SWEEP_ORPHANS=1` maintenance path, throttled to at most once
-an hour. A project is eligible only after its owning worktree no longer exists.
+Test startup and `bun run docker:gc` use the same conservative stale-project
+sweep: only recorded owners on this host, in the same Git clone, older than
+two hours, with a provably dead PID and matching container owner-token labels
+are eligible. A live owner is protected regardless of age or path deletion.
+Other clones, ambiguous PID checks, changed labels and unrecorded legacy
+projects are never deleted automatically. Ownership records live under the
+user/host-specific cache directory (`XDG_CACHE_HOME`, otherwise `~/.cache`);
+keep them for crash and reboot recovery. The
+startup sweep schedules at most three cleanups within a 15s scheduling budget
+(each cleanup has its own hard bound), so a wedged daemon cannot multiply
+startup hangs. Confirm legacy resources are unused before explicitly running
+that worktree's `test:db:down`; name or age alone is not ownership proof.
 
 For installations that explicitly use PM2, its logs can grow without a
 rotation policy. The optional PM2 logrotate module controls those logs only;
