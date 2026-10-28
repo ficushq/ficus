@@ -1,7 +1,7 @@
 import { useEnabledIntegrationFixtures } from '../../test-utils/enabled-integrations'
-useEnabledIntegrationFixtures('github', 'linear')
+useEnabledIntegrationFixtures('github', 'linear', 'notion')
 import { expect, test } from 'bun:test'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
 import { db, squads, integrationConnections, integrationConnectionAssignments } from '../../db'
@@ -14,7 +14,7 @@ import { serializeOAuthCredential } from './authorization/credential-bundle'
 import { firstPartyIntegrationPlugins } from './first-party-plugins'
 import { setIntegrationEnabled } from './provider-state'
 
-test('assigned GitHub wrapper lifecycle and generic exec follow live account health, rotation, provider disable and detach', async () => {
+test('all migrated providers stay out of generated files and generic exec follow live account health, rotation, provider disable and detach', async () => {
   const squadId = crypto.randomUUID(),
     otherSquad = crypto.randomUUID()
   await db.insert(squads).values([
@@ -26,7 +26,43 @@ test('assigned GitHub wrapper lifecycle and generic exec follow live account hea
   const linearId = crypto.randomUUID(),
     linearRevision = crypto.randomUUID(),
     linearRef = `__integration-test:linear:${linearId}`
+  const notionId = crypto.randomUUID(),
+    notionRevision = crypto.randomUUID(),
+    notionRef = `__integration-test:notion:${notionId}`
+  const notionCredential = {
+    version: 1 as const,
+    tokenRevision: 1,
+    accessToken: 'synthetic-notion-access',
+    refreshToken: 'synthetic-notion-refresh',
+    expiresAt: null,
+  }
   try {
+    await getSecretStore().set(notionRef, serializeOAuthCredential(notionCredential), 'test')
+    await db.insert(integrationConnections).values({
+      id: notionId,
+      providerKey: 'notion',
+      adapterVersion: 1,
+      clientAuthority: 'local',
+      displayName: 'Notion fixture',
+      configuration: {
+        version: 1,
+        workspaceId: 'synthetic-workspace',
+        workspaceName: null,
+        workspaceIcon: null,
+        botId: 'synthetic-bot',
+      },
+      credentialRef: notionRef,
+      materialRevision: notionRevision,
+      validatedRevision: notionRevision,
+      enabled: true,
+      authState: 'authenticated',
+      healthState: 'healthy',
+      validatedAt: new Date(),
+      validationExpiresAt: new Date(Date.now() + 60_000),
+    })
+    await db
+      .insert(integrationConnectionAssignments)
+      .values({ squadId, providerKey: 'notion', connectionId: notionId, isDefault: true })
     await getSecretStore().set(linearRef, 'synthetic-linear-command-only', 'test')
     await db.insert(integrationConnections).values({
       id: linearId,
@@ -52,23 +88,66 @@ test('assigned GitHub wrapper lifecycle and generic exec follow live account hea
         .filter((plugin) => plugin.execution)
         .map((plugin) => plugin.key)
         .sort()
-    ).toEqual(['github', 'linear'])
+    ).toEqual(['github', 'linear', 'notion'])
     expect(await squadIntegrationRoutesService.executionEnvironment(squadId, 'linear')).toEqual({
       LINEAR_API_KEY: 'synthetic-linear-command-only',
     })
+    const oldDot = join(getSquadWorkspacePath(squadId), '.ficus')
+    mkdirSync(oldDot, { recursive: true })
+    writeFileSync(
+      join(oldDot, '.env'),
+      '# Generated protected integration bindings. Do not edit values here.\nexport NOTION_API_TOKEN=synthetic-legacy-notion-token\n'
+    )
     await regenerateEnvFileForSquad(squadId)
     const dot = join(getSquadWorkspacePath(squadId), '.ficus'),
       wrapper = join(dot, 'integration-bin', 'gh')
     expect(existsSync(wrapper)).toBe(true)
     expect(existsSync(join(dot, 'integration-bin', '.git-config'))).toBe(true)
     expect(readFileSync(join(dot, '.env'), 'utf8')).not.toContain('git()')
-    for (const path of [wrapper, join(dot, '.env'), join(dot, 'integration-bin', '.git-config')]) {
+    const notionWrapper = join(dot, 'integration-bin', 'ntn')
+    expect(existsSync(notionWrapper)).toBe(true)
+    expect(readFileSync(notionWrapper, 'utf8')).toContain("exec ficus integration exec 'notion'")
+    const beforeRotation = readFileSync(join(dot, '.env'), 'utf8')
+    expect(beforeRotation).toContain("export NOTION_WORKSPACE_ID='synthetic-workspace'")
+    expect(beforeRotation).not.toContain('NOTION_API_TOKEN')
+    // Every migrated provider is assigned; inspect every generated file, not only .env.
+    const files = readdirSync(dot, { recursive: true, withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => join(entry.parentPath, entry.name))
+    for (const path of files) {
       const content = readFileSync(path, 'utf8')
       expect(content).not.toContain(`test-access-${first.id}`)
       expect(content).not.toContain(`test-access-${second.id}`)
       expect(content).not.toContain('test-refresh')
       expect(content).not.toContain('synthetic-linear-command-only')
+      expect(content).not.toContain('synthetic-legacy-notion-token')
+      expect(content).not.toContain(notionCredential.accessToken)
+      expect(content).not.toContain(notionCredential.refreshToken)
     }
+    expect(await squadIntegrationRoutesService.executionEnvironment(squadId, 'notion')).toEqual({
+      NOTION_API_TOKEN: notionCredential.accessToken,
+    })
+    expect(await squadIntegrationRoutesService.executionEnvironment(squadId, 'notion', notionId)).toEqual({
+      NOTION_API_TOKEN: notionCredential.accessToken,
+    })
+    expect(await squadIntegrationRoutesService.executionEnvironment(otherSquad, 'notion', notionId)).toBeNull()
+    await getSecretStore().set(
+      notionRef,
+      serializeOAuthCredential({ ...notionCredential, accessToken: 'synthetic-notion-rotated', tokenRevision: 2 }),
+      'test'
+    )
+    expect(await squadIntegrationRoutesService.executionEnvironment(squadId, 'notion')).toEqual({
+      NOTION_API_TOKEN: 'synthetic-notion-rotated',
+    })
+    expect(readFileSync(join(dot, '.env'), 'utf8')).toBe(beforeRotation)
+    await regenerateEnvFileForSquad(squadId)
+    expect(readFileSync(join(dot, '.env'), 'utf8')).toBe(beforeRotation)
+    for (const path of files) expect(readFileSync(path, 'utf8')).not.toContain('synthetic-notion-rotated')
+    await db.update(integrationConnections).set({ authState: 'invalid' }).where(eq(integrationConnections.id, notionId))
+    expect(existsSync(notionWrapper)).toBe(true)
+    expect(await squadIntegrationRoutesService.executionEnvironment(squadId, 'notion')).toBeNull()
+    await squadIntegrationRoutesService.unassign(squadId, 'notion')
+    expect(existsSync(notionWrapper)).toBe(false)
     expect(await squadIntegrationRoutesService.executionEnvironment(squadId, 'github')).toMatchObject({
       GITHUB_USER: 'default',
     })
@@ -108,6 +187,8 @@ test('assigned GitHub wrapper lifecycle and generic exec follow live account hea
     expect(existsSync(wrapper)).toBe(false)
     expect(await squadIntegrationRoutesService.executionEnvironment(squadId, 'github', second.id)).toBeNull()
   } finally {
+    await db.delete(integrationConnections).where(eq(integrationConnections.id, notionId))
+    await getSecretStore().delete(notionRef)
     await db.delete(integrationConnections).where(eq(integrationConnections.id, linearId))
     await getSecretStore().delete(linearRef)
     await first.dispose()

@@ -12,24 +12,17 @@ const connection = {
   materialRevision: 'revision',
 }
 
-test('resolves protected bindings in sorted order without exposing refresh material', async () => {
-  const projection = projectIntegrationAssignments([{ plugin: notionPlugin, connection }], {
-    resolveCredential: async () =>
-      JSON.stringify({
-        version: 1,
-        accessToken: "access-'token",
-        refreshToken: 'refresh-TOKEN-SENTINEL',
-        expiresAt: null,
-        tokenRevision: 1,
-      }),
-  })
-  expect(await resolveProtectedBindings(projection)).toEqual([
-    ['NOTION_API_TOKEN', "access-'token"],
-    ['NOTION_WORKSPACE_ID', 'workspace-id'],
-  ])
+test('resolves only nonsecret configuration without credential access', async () => {
+  const projection = projectIntegrationAssignments([{ plugin: notionPlugin, connection }])
+  expect(await resolveProtectedBindings(projection)).toEqual([['NOTION_WORKSPACE_ID', 'workspace-id']])
 })
 
-test('missing or invalid credential material fails closed', async () => {
-  const missing = projectIntegrationAssignments([{ plugin: notionPlugin, connection }])
-  await expect(resolveProtectedBindings(missing)).rejects.toThrow('protected_binding_unavailable')
+test('invalid configuration fails closed', async () => {
+  const missing = projectIntegrationAssignments([
+    {
+      plugin: notionPlugin,
+      connection: { ...connection, configuration: {} },
+    },
+  ])
+  await expect(resolveProtectedBindings(missing)).rejects.toThrow()
 })

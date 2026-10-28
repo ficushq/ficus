@@ -55,30 +55,25 @@ test('connect assign reconcile invoke rotate without reinstall and unassign', as
     credentialRef: 'credential-1',
     materialRevision: 'revision-1',
   }
-  const secrets = new Map([['credential-1', plugin.connection.credential.serialize(grant.credential)]])
-  const assigned = projectIntegrationAssignments([{ plugin, connection }], {
-    resolveCredential: async (reference) => secrets.get(reference),
-  })
+  const assigned = projectIntegrationAssignments([{ plugin, connection }])
   expect(assigned.publicDeclaration.packages).toEqual(['nodejs@24.12.0'])
   expect(assigned.publicDeclaration.readiness).toEqual([
     { id: 'notion-cli', command: 'ntn --version', expectedSubstring: '0.23.25' },
   ])
   const firstEnv = Object.fromEntries(await resolveProtectedBindings(assigned))
-  const fakeCli = (args: string[]) => {
-    expect(args).toEqual(['ntn', 'api', 'v1/search', '--data', '{}'])
-    expect(firstEnv.NOTION_API_TOKEN).toBe('token-one')
-    return { results: [] }
-  }
-  expect(fakeCli(['ntn', 'api', 'v1/search', '--data', '{}'])).toEqual({ results: [] })
-
-  secrets.set(
-    'credential-1',
-    plugin.connection.credential.serialize({ ...grant.credential, accessToken: 'token-two', tokenRevision: 2 })
-  )
-  const rotated = projectIntegrationAssignments([{ plugin, connection }], {
-    resolveCredential: async (reference) => secrets.get(reference),
-  })
+  expect(firstEnv).toEqual({ NOTION_WORKSPACE_ID: 'workspace-1' })
+  expect(
+    plugin.execution!.environment.NOTION_API_TOKEN({ configuration: grant.configuration, credential: grant.credential })
+  ).toBe('token-one')
+  const rotatedCredential = { ...grant.credential, accessToken: 'token-two', tokenRevision: 2 }
+  const rotated = projectIntegrationAssignments([{ plugin, connection }])
   expect(rotated.fingerprint).toBe(assigned.fingerprint)
-  expect(Object.fromEntries(await resolveProtectedBindings(rotated)).NOTION_API_TOKEN).toBe('token-two')
+  expect(await resolveProtectedBindings(rotated)).toEqual(await resolveProtectedBindings(assigned))
+  expect(
+    plugin.execution!.environment.NOTION_API_TOKEN({
+      configuration: grant.configuration,
+      credential: rotatedCredential,
+    })
+  ).toBe('token-two')
   expect(projectIntegrationAssignments([]).publicDeclaration.packages).toEqual([])
 })

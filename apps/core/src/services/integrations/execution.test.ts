@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { IntegrationExecutionService, executionVariableNames } from './execution'
 import { linearPlugin } from './linear/plugin'
+import { notionPlugin } from './notion/plugin'
 import { githubPlugin } from './github/plugin'
 import type { AssignedIntegrationConnectionRecord } from './connection-repository'
 
@@ -40,7 +41,7 @@ function fixture(
     },
   }
   const service = new IntegrationExecutionService({
-    plugins: [linearPlugin, githubPlugin, arbitrary],
+    plugins: [linearPlugin, githubPlugin, notionPlugin, arbitrary],
     assignments: {
       getAssigned: async (squad, provider) =>
         connection?.squadId === squad && connection.providerKey === provider ? connection : null,
@@ -124,4 +125,85 @@ describe('generic per-command execution', () => {
       )
     ).toBeNull()
   })
+})
+
+const notion = {
+  ...row,
+  providerKey: 'notion',
+  configuration: { version: 1, workspaceId: 'workspace', workspaceName: null, workspaceIcon: null, botId: 'bot' },
+}
+const notionCredential = {
+  version: 1,
+  accessToken: 'synthetic-notion-access',
+  refreshToken: 'synthetic-notion-refresh',
+  tokenRevision: 1,
+  expiresAt: null,
+}
+test('Notion resolves default and explicit accounts per command and scrubs its token across providers', async () => {
+  const { service } = fixture(notion, JSON.stringify(notionCredential))
+  expect(await service.environment('squad', 'notion')).toEqual({ NOTION_API_TOKEN: notionCredential.accessToken })
+  expect(await service.environment('squad', 'notion', 'account')).toEqual({
+    NOTION_API_TOKEN: notionCredential.accessToken,
+  })
+  expect(await service.environment('squad', 'notion', 'detached')).toBeNull()
+  expect(await service.environment('other', 'notion')).toBeNull()
+  expect(executionVariableNames([linearPlugin, githubPlugin, notionPlugin])).toContain('NOTION_API_TOKEN')
+})
+test.each([
+  { enabled: false },
+  { authState: 'invalid' },
+  { healthState: 'degraded' },
+  { validatedRevision: 'old' },
+  { validationExpiresAt: now },
+  { clientAuthority: 'platform_broker' },
+])('Notion refuses revoked, stale or wrong-authority credentials before reading: %j', async (override) => {
+  const { service, reads } = fixture(
+    { ...notion, ...override } as AssignedIntegrationConnectionRecord,
+    JSON.stringify(notionCredential)
+  )
+  expect(await service.environment('squad', 'notion')).toBeNull()
+  expect(reads).toEqual([])
+})
+test('Notion refuses expired or malformed OAuth bundles', async () => {
+  for (const raw of ['malformed', JSON.stringify({ ...notionCredential, expiresAt: now.toISOString() })]) {
+    expect(await fixture(notion, raw).service.environment('squad', 'notion')).toBeNull()
+  }
+})
+
+test('Notion keeps explicit attached workspaces separate from the default and never falls back after detach', async () => {
+  const alternate = {
+    ...notion,
+    id: 'alternate',
+    credentialRef: 'alternate-ref',
+    configuration: { ...notion.configuration, workspaceId: 'alternate-workspace' },
+  }
+  const attached = new Map([
+    [notion.id, notion],
+    [alternate.id, alternate],
+  ])
+  const service = new IntegrationExecutionService({
+    plugins: [notionPlugin],
+    authority: () => 'local',
+    now: () => now,
+    assignments: {
+      getAssigned: async () => attached.get(notion.id) ?? null,
+      getAssignedById: async (_squad, _provider, id) => attached.get(id) ?? null,
+    },
+    readCredential: async (ref) =>
+      JSON.stringify({
+        ...notionCredential,
+        accessToken: ref === alternate.credentialRef ? 'synthetic-alternate-notion' : notionCredential.accessToken,
+      }),
+  })
+  expect(await service.environment('squad', 'notion', alternate.id)).toEqual({
+    NOTION_API_TOKEN: 'synthetic-alternate-notion',
+  })
+  expect(await service.environment('squad', 'notion')).toEqual({ NOTION_API_TOKEN: notionCredential.accessToken })
+  attached.delete(notion.id)
+  expect(await service.environment('squad', 'notion')).toBeNull()
+  expect(await service.environment('squad', 'notion', alternate.id)).toEqual({
+    NOTION_API_TOKEN: 'synthetic-alternate-notion',
+  })
+  attached.delete(alternate.id)
+  expect(await service.environment('squad', 'notion', alternate.id)).toBeNull()
 })

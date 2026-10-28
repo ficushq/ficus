@@ -94,6 +94,10 @@ export function createNotionPlugin(client: NotionClientContract): NotionPlugin {
         capabilities: {},
       },
     },
+    execution: {
+      binaries: ['ntn'],
+      environment: { NOTION_API_TOKEN: ({ credential }) => credential.accessToken },
+    },
     sandbox: {
       packages: ['nodejs@24.12.0'],
       setupSteps: [{ id: `notion-cli@${CLI_VERSION}`, script: CLI_SETUP_SCRIPT }],
@@ -101,10 +105,7 @@ export function createNotionPlugin(client: NotionClientContract): NotionPlugin {
       readiness: [{ id: 'notion-cli', command: 'ntn --version', expectedSubstring: CLI_VERSION }],
       skills: ['notion'],
       extensions: [],
-      protectedBindings: [
-        { name: 'NOTION_API_TOKEN', source: { kind: 'oauth_access_token' } },
-        { name: 'NOTION_WORKSPACE_ID', source: { kind: 'configuration', field: 'workspaceId' } },
-      ],
+      protectedBindings: [{ name: 'NOTION_WORKSPACE_ID', source: { kind: 'configuration', field: 'workspaceId' } }],
     },
     lifecycle: { refresh: true, revoke: true },
     classifyError: classifyNotionError,
