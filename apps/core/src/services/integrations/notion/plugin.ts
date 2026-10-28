@@ -13,9 +13,11 @@ import {
   type NotionConnectionConfiguration,
 } from '@ficus/shared/oauth-providers/notion/config'
 
-const CLI_INTEGRITY = 'f7HzeXdh9MPn67Bwlryh28v7ljy9i5yoibA67wFYqh7vezlh4aXCiEonVPuyrkSsv05i6PDITh5UiL/Xk+4i5w=='
+/** Pinned `ntn` release; keep in step with apps/core/package.json and the npm dist.integrity below. */
+const CLI_VERSION = '0.23.25'
+const CLI_INTEGRITY = 'eUgMS0qEvLuXcAfrmi+YDXsTO+m9R27r/C0wJeyxYdBnFJWjqbVjuXP9rMgEhIFu6gAQL5f9JfqyelwzhNeh/g=='
 const CLI_SETUP_SCRIPT = [
-  'archive=$(npm pack --silent ntn@0.22.10)',
+  `archive=$(npm pack --silent ntn@${CLI_VERSION})`,
   `actual=$(node -e "const fs=require('fs'),c=require('crypto');process.stdout.write(c.createHash('sha512').update(fs.readFileSync(process.argv[1])).digest('base64'))" "$archive")`,
   `test "$actual" = "${CLI_INTEGRITY}"`,
   'npm install --global --prefix "$DEVBOX_PROJECT_ROOT/npm" --no-audit --no-fund "./$archive"',
@@ -94,9 +96,9 @@ export function createNotionPlugin(client: NotionClientContract): NotionPlugin {
     },
     sandbox: {
       packages: ['nodejs@24.12.0'],
-      setupSteps: [{ id: 'notion-cli@0.22.10', script: CLI_SETUP_SCRIPT }],
+      setupSteps: [{ id: `notion-cli@${CLI_VERSION}`, script: CLI_SETUP_SCRIPT }],
       initHooks: ['export PATH="$DEVBOX_PROJECT_ROOT/npm/bin:$PATH"'],
-      readiness: [{ id: 'notion-cli', command: 'ntn --version', expectedSubstring: '0.22.10' }],
+      readiness: [{ id: 'notion-cli', command: 'ntn --version', expectedSubstring: CLI_VERSION }],
       skills: ['notion'],
       extensions: [],
       protectedBindings: [

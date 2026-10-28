@@ -14,6 +14,7 @@ import {
   type AgentResourceTarget,
 } from '../services/rbac'
 import type { Identity } from '../services/rbac'
+import { routeParam } from '../lib/route-param'
 
 const VALID_STATUSES = new Set<MonitorStatus>([
   'starting',
@@ -122,7 +123,7 @@ monitorsRouter.get('/', async (c) => {
 
 monitorsRouter.get(
   '/:id',
-  requireAgentResourcePermission('monitors:read', (c) => monitorAgentTarget(c.req.param('id'))),
+  requireAgentResourcePermission('monitors:read', (c) => monitorAgentTarget(routeParam(c, 'id'))),
   async (c) => {
     const id = c.req.param('id')
     const error = validateId(id, 'id')
@@ -135,7 +136,7 @@ monitorsRouter.get(
 
 monitorsRouter.get(
   '/:id/logs',
-  requireAgentResourcePermission('monitors:read', (c) => monitorAgentTarget(c.req.param('id'))),
+  requireAgentResourcePermission('monitors:read', (c) => monitorAgentTarget(routeParam(c, 'id'))),
   async (c) => {
     const id = c.req.param('id')
     const idError = validateId(id, 'id')
@@ -162,7 +163,7 @@ monitorsRouter.get(
 
 monitorsRouter.post(
   '/:id/cancel',
-  requireAgentResourcePermission('monitors:write', (c) => monitorAgentTarget(c.req.param('id')), {
+  requireAgentResourcePermission('monitors:write', (c) => monitorAgentTarget(routeParam(c, 'id')), {
     allowGlobalOverride: true,
   }),
   async (c) => {

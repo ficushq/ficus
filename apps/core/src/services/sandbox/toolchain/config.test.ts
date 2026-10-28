@@ -37,7 +37,7 @@ describe('managed toolchain configuration', () => {
     const base = {
       packages: ['nodejs@24.12.0'],
       initHooks: ['export PATH="$DEVBOX_PROJECT_ROOT/npm/bin:$PATH"'],
-      readiness: [{ id: 'notion-cli', command: 'ntn --version', expectedSubstring: '0.22.10' }],
+      readiness: [{ id: 'notion-cli', command: 'ntn --version', expectedSubstring: '0.23.25' }],
     }
     expect(fingerprintToolchain(base)).not.toBe(fingerprintToolchain({ ...base, initHooks: [] }))
     expect(JSON.parse(renderManagedDevbox(base)).shell.init_hook).toEqual(base.initHooks)

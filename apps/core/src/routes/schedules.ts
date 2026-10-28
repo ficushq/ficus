@@ -12,6 +12,7 @@ import { filterToAccessibleSquads, requireEntityPermission } from '../middleware
 import { hasPermission } from '../services/rbac'
 import type { Identity } from '../services/rbac'
 import { ScheduleExecutionError } from '../services/scheduling/failure-classifier'
+import { routeParam } from '../lib/route-param'
 
 const schedulesRouter = new Hono()
 
@@ -27,7 +28,7 @@ function scheduleSquadId(
 }
 
 async function loadScheduleSquadId(c: Context): Promise<string | null> {
-  const schedule = await Schedule.find(c.req.param('id'))
+  const schedule = await Schedule.find(routeParam(c, 'id'))
   if (!schedule) throw new Error('Schedule not found')
   if (schedule.scopeType === 'squad') return schedule.scopeId
   // Agent-scoped schedules resolve to the owning agent's squad so the entity

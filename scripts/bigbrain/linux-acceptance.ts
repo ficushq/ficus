@@ -480,41 +480,101 @@ try {
   )
   // Disposable VM: the vault hostname resolves to this host's Caddy, as Cloudflare would route it.
   writeFileSync('/etc/hosts', `${readFileSync('/etc/hosts', 'utf8')}\n127.0.0.1 ${new URL(ORIGINS[A]!).hostname}\n`)
-  const clientHome = mkdtempSync('/tmp/bigbrain-native-client-')
-  const redeemScript = `(async () => {
+  // The PINNED native client in a child with a clean environment and its own HOME; links travel
+  // only on its stdin. TLS is the runner's self-signed stand-in for the origin certificate; routing
+  // is what is tested. `body` runs with `m` (lib/sharedConnections.ts), `path` (the connection
+  // store), `input` (stdin) and `connect(link)`.
+  //
+  // The shipped gateway refuses bursts per vault (429 'busy', never forwarded) and these checks
+  // run back to back. A join (upstream connectInvite) is TWO requests: the redeem, which spends
+  // the single-use link and returns the new credential, then saveConnection's whoami. A refused
+  // redeem spent nothing, so the child is run again. A refused whoami after a successful redeem
+  // must never send the spent link again (that is the redeem's 401 "already used", which is how
+  // this lane used to flake): `connect` finishes the join exactly as connectInvite does, with
+  // upstream's own saveConnection and the credential the redeem returned, once the bucket refills.
+  // Every request's method, path and status (never a header or body) is reported on failure.
+  const nativeClientOnce = (home: string, body: string, input: string) => {
+    const script = `(async () => {
+      const trail = [];
+      let redeemed = null;
+      try {
+        const m = await import(${JSON.stringify(`${nativeDeps}/lib/sharedConnections.ts`)});
+        const path = ${JSON.stringify(`${home}/shared-connections.json`)};
+        const input = (await Bun.stdin.text()).trim();
+        const nativeFetch = globalThis.fetch;
+        globalThis.fetch = async (url, init) => {
+          const at = new URL(String(url instanceof Request ? url.url : url)).pathname;
+          const method = init?.method ?? (url instanceof Request ? url.method : 'GET');
+          let response;
+          try {
+            response = await nativeFetch(url, init);
+          } catch (e) {
+            trail.push(method + ' ' + at + ' unreachable');
+            throw e;
+          }
+          trail.push(method + ' ' + at + ' ' + response.status);
+          if (at === '/v1/invites/redeem' && response.ok) redeemed = await response.clone().json();
+          return response;
+        };
+        const connect = async (link) => {
+          try {
+            return await m.connectInvite(path, link);
+          } catch (e) {
+            if (redeemed === null || e?.status !== 429) throw e;
+            const endpoint = m.endpointURL(new URL(link).origin);
+            for (let attempt = 0; ; attempt++) {
+              await Bun.sleep(2500);
+              try {
+                return await m.saveConnection(path, { name: redeemed.vault.name, endpoint, token: redeemed.token });
+              } catch (again) {
+                if (again?.status !== 429 || attempt >= 10) throw again;
+              }
+            }
+          }
+        };
+        ${body}
+      } catch (e) {
+        console.log(JSON.stringify({ ok: false, status: e?.status ?? null, message: String(e?.message ?? e).slice(0, 120),
+          spent: redeemed !== null, trail }));
+      }
+    })()`
+    const out = sh(
+      [
+        '/usr/bin/env',
+        '-i',
+        `HOME=${home}`,
+        'PATH=/usr/bin:/bin',
+        'NODE_TLS_REJECT_UNAUTHORIZED=0',
+        '/usr/local/bin/bun',
+        '--no-install',
+        '--no-env-file',
+        '-e',
+        script,
+      ],
+      input
+    )
     try {
-      const { connectInvite } = await import(${JSON.stringify(`${nativeDeps}/lib/sharedConnections.ts`)});
-      const link = (await Bun.stdin.text()).trim();
-      const saved = await connectInvite(${JSON.stringify(`${clientHome}/shared-connections.json`)}, link);
-      console.log(JSON.stringify({ ok: true, vault: saved.identity?.vault?.id ?? null, role: saved.identity?.role ?? null,
-        permissions: saved.identity?.permissions ?? [], name: saved.name ?? null }));
-    } catch (e) {
-      console.log(JSON.stringify({ ok: false, status: e?.status ?? null, message: String(e?.message ?? e).slice(0, 120) }));
+      return JSON.parse(out.stdout.trim().split('\n').at(-1) ?? '{}') as Record<string, any>
+    } catch {
+      return { ok: false, message: out.stderr.slice(0, 200) }
     }
-  })()`
-  // TLS is the runner's self-signed stand-in for the origin certificate; routing is what is tested.
-  const redeemed = sh(
-    [
-      '/usr/bin/env',
-      '-i',
-      `HOME=${clientHome}`,
-      'PATH=/usr/bin:/bin',
-      'NODE_TLS_REJECT_UNAUTHORIZED=0',
-      '/usr/local/bin/bun',
-      '--no-install',
-      '--no-env-file',
-      '-e',
-      redeemScript,
-    ],
+  }
+  /** Runs the child again only while the gateway refused a request before any link was spent. */
+  const nativeClient = async (home: string, body: string, input = '') => {
+    for (let attempt = 0; ; attempt++) {
+      const result = nativeClientOnce(home, body, input)
+      if (result.ok !== false || result.status !== 429 || result.spent === true || attempt >= 10) return result
+      await Bun.sleep(2500)
+    }
+  }
+  const clientHome = mkdtempSync('/tmp/bigbrain-native-client-')
+  const redeem = await nativeClient(
+    clientHome,
+    `const saved = await connect(input);
+     console.log(JSON.stringify({ ok: true, vault: saved.identity?.vault?.id ?? null, role: saved.identity?.role ?? null,
+       permissions: saved.identity?.permissions ?? [], name: saved.name ?? null }));`,
     ownerInvite.ok ? String(ownerInvite.invite.inviteUrl) : ''
   )
-  const redeem = (() => {
-    try {
-      return JSON.parse(redeemed.stdout.trim().split('\n').at(-1) ?? '{}') as Record<string, any>
-    } catch {
-      return { ok: false, message: redeemed.stderr.slice(0, 200) }
-    }
-  })()
   check(
     'the owner link redeems in the pinned native client through real Caddy and the gateway',
     redeem.ok === true &&
@@ -537,15 +597,7 @@ try {
   // narrowing to read blocks the member's writes; removal revokes the member. Links travel only on
   // a child's stdin and are never printed.
   const memberHome = mkdtempSync('/tmp/bigbrain-native-member-')
-  // The shipped gateway refuses bursts per vault (429 'busy', never forwarded): these checks run
-  // back to back, so a refused request waits for its bucket to refill and is sent again.
-  const memberClient = async (body: string, input = '') => {
-    for (let attempt = 0; ; attempt++) {
-      const result = memberClientOnce(body, input)
-      if (result.ok !== false || result.status !== 429 || attempt >= 10) return result
-      await Bun.sleep(2500)
-    }
-  }
+  const memberClient = (body: string, input = '') => nativeClient(memberHome, body, input)
   const readPaced = async (id: string): Promise<string> => {
     for (let attempt = 0; ; attempt++) {
       try {
@@ -556,41 +608,9 @@ try {
       }
     }
   }
-  const memberClientOnce = (body: string, input = '') => {
-    const script = `(async () => {
-      try {
-        const m = await import(${JSON.stringify(`${nativeDeps}/lib/sharedConnections.ts`)});
-        const path = ${JSON.stringify(`${memberHome}/shared-connections.json`)};
-        const input = (await Bun.stdin.text()).trim();
-        ${body}
-      } catch (e) {
-        console.log(JSON.stringify({ ok: false, status: e?.status ?? null, message: String(e?.message ?? e).slice(0, 120) }));
-      }
-    })()`
-    const out = sh(
-      [
-        '/usr/bin/env',
-        '-i',
-        `HOME=${memberHome}`,
-        'PATH=/usr/bin:/bin',
-        'NODE_TLS_REJECT_UNAUTHORIZED=0',
-        '/usr/local/bin/bun',
-        '--no-install',
-        '--no-env-file',
-        '-e',
-        script,
-      ],
-      input
-    )
-    try {
-      return JSON.parse(out.stdout.trim().split('\n').at(-1) ?? '{}') as Record<string, any>
-    } catch {
-      return { ok: false, message: out.stderr.slice(0, 200) }
-    }
-  }
   const redeemMember = (link: string) =>
     memberClient(
-      `const saved = await m.connectInvite(path, input);
+      `const saved = await connect(input);
        console.log(JSON.stringify({ ok: true, handle: saved.identity.handle, role: saved.identity.role, permissions: saved.identity.permissions }));`,
       link
     )
@@ -773,8 +793,8 @@ try {
   const refused = await redeemMember(second.ok ? String(second.invite.inviteUrl) : '')
   check(
     'a cancelled member invite no longer redeems',
-    cancelled.ok === true && refused.ok === false,
-    JSON.stringify([cancelled.ok ? 'cancelled' : cancelled.code, refused.status])
+    cancelled.ok === true && refused.ok === false && refused.status === 401 && refused.spent === false,
+    JSON.stringify([cancelled.ok ? 'cancelled' : cancelled.code, refused.status, refused.trail])
   )
 
   // ---------------------------------------------------------------- the BigBrain app's server name
@@ -820,7 +840,7 @@ try {
   })
   sh(['/bin/rm', '-f', `${memberHome}/shared-connections.json`])
   const renamedJoin = await memberClient(
-    `const saved = await m.connectInvite(path, input);
+    `const saved = await connect(input);
      console.log(JSON.stringify({ ok: true, name: saved.name, vault: saved.identity.vault.id }));`,
     third.ok ? String(third.invite.inviteUrl) : ''
   )
@@ -830,7 +850,7 @@ try {
       renamedJoin.ok === true &&
       renamedJoin.name === 'Alpha notes' &&
       renamedJoin.vault === rA.receipt.upstreamVaultId,
-    JSON.stringify(renamedJoin.ok ? renamedJoin.name : [third.code, renamedJoin.status])
+    JSON.stringify(renamedJoin.ok ? renamedJoin.name : { invite: third.ok ? 'issued' : third.code, ...renamedJoin })
   )
   sh(['/bin/rm', '-rf', memberHome])
   // A vault created before Ficus wrote names: upstream's default, as the vault UID left it.

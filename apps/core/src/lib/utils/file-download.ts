@@ -10,7 +10,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { Readable } from 'stream'
-import archiver from 'archiver'
+import { TarArchive, ZipArchive } from 'archiver'
 import { downloadDisposition } from '../../services/attachments/http'
 import {
   SandboxDownloadRouteMissingError,
@@ -132,8 +132,8 @@ export function createLocalArchiveResponse(
 ): Response {
   const archive =
     format === 'zip'
-      ? archiver('zip', { zlib: { level: 5 } })
-      : archiver('tar', { gzip: true, gzipOptions: { level: 5 } })
+      ? new ZipArchive({ zlib: { level: 5 } })
+      : new TarArchive({ gzip: true, gzipOptions: { level: 5 } })
   const rootName = path.basename(targetPath) || defaultName
 
   // zip keeps its historical flat layout; tar.gz is rooted at the directory
