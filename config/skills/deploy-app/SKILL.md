@@ -213,7 +213,7 @@ PORT=4173 timeout 5s bash -c 'bun run start >/tmp/app-port.log 2>&1 & pid=$!; sl
 
 ## Assigned provider accounts
 
-Do not ask people to paste credentials in chat. For Cloudflare, DigitalOcean, Netlify, Railway, Supabase and Vercel, a person connects a named account in **Settings → Integrations**, validates and enables it, then assigns it in the squad’s **Integrations** tab. Imported accounts are unassigned; previous exposure choices are not copied. GitHub Pages uses the assigned GitHub integration account.
+Do not ask people to paste credentials in chat. For Cloudflare, DigitalOcean, Netlify, Railway, Supabase and Vercel, a person connects a named account in **Settings → Integrations**, validates and enables it, then assigns it in the squad’s **Integrations** tab. Imported accounts are unassigned. GitHub Pages uses the assigned GitHub integration account.
 
 Read the matching provider skill. An assigned, healthy account authenticates its provider CLI through the provisioned **PATH wrapper**, including nested child processes. No integration credential is written into environment files or delivered to human terminals. Never read, print, log, commit or persist integration credentials.
 

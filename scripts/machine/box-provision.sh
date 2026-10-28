@@ -1425,7 +1425,7 @@ restore_box() {
   # boxes, and `workspace` alongside `.private` for a SQUAD box (its
   # authoritative working tree). They extract straight into the HOME;
   # overwrite-in-place keeps this idempotent.
-  "${SUDO[@]}" tar xzf "${RESTORE_TAR}" --exclude='*/.ficus/agent-secrets.env' --exclude='workspace/.ficus/.env' -C "${home}"
+  "${SUDO[@]}" tar xzf "${RESTORE_TAR}" --exclude='*/.ficus/agent-secrets.env' --anchored --exclude='workspace/.ficus/.env' --no-anchored -C "${home}"
 
   # Re-own EVERY top-level member the archive carried (see reown_members). Read
   # the members from the tar itself rather than assuming `.private`, so a squad

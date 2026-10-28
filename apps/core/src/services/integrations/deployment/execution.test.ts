@@ -158,6 +158,15 @@ test('every integration assigned: generated env/files stay credential-free, depl
       await getSecretStore().set(legacy, `synthetic-legacy-${key}`, 'test')
       sentinels.push(`synthetic-legacy-${key}`)
     }
+    const assignedProviders = await db
+      .select({ key: integrationConnectionAssignments.providerKey })
+      .from(integrationConnectionAssignments)
+      .where(eq(integrationConnectionAssignments.squadId, squadId))
+    expect([...new Set(assignedProviders.map((row) => row.key))].sort()).toEqual(
+      firstPartyIntegrationPlugins.map((plugin) => plugin.key).sort()
+    )
+    for (const key of ['github', 'linear', 'notion', ...Object.keys(providers)])
+      expect(assignedProviders.some((row) => row.key === key)).toBe(true)
     await regenerateEnvFileForSquad(squadId)
     const dot = join(getSquadWorkspacePath(squadId), '.ficus')
     const files = readdirSync(dot, { recursive: true, withFileTypes: true })

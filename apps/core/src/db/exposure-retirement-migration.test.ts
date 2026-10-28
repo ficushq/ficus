@@ -22,7 +22,9 @@ test('canonical migration drops all exposure rows, preserves encrypted operator 
         await tx.unsafe(`INSERT INTO "${table}" VALUES ('SYNTH_OPERATOR_TOKEN')`)
       }
       for (const statement of target!.sql) await tx.unsafe(statement)
-      const rows = await tx.unsafe('SELECT key, encrypted_value, iv FROM secrets')
+      const rows = await tx.unsafe<{ key: string; encrypted_value: string; iv: string }[]>(
+        'SELECT key, encrypted_value, iv FROM secrets'
+      )
       expect([...rows]).toEqual([
         { key: 'SYNTH_OPERATOR_TOKEN', encrypted_value: 'synthetic-ciphertext', iv: 'synthetic-iv' },
       ])
@@ -33,7 +35,7 @@ test('canonical migration drops all exposure rows, preserves encrypted operator 
       await tx.unsafe(
         "INSERT INTO sandbox_exposure_cleanup (target_id, kind, source_id) VALUES ('private:synthetic', 'private', 'synthetic')"
       )
-      const [status] = await tx.unsafe(
+      const [status] = await tx.unsafe<{ status: string; reason: string | null; retry: boolean }[]>(
         'SELECT status, reason, next_attempt_at IS NOT NULL AS retry FROM sandbox_exposure_cleanup'
       )
       expect(status).toEqual({ status: 'pending', reason: null, retry: true })

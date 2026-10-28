@@ -58,6 +58,8 @@ test('restoring an old VM archive excludes retired managed files but preserves e
     mkdirSync(join(src, '.private/.ficus'), { recursive: true })
     mkdirSync(join(src, 'workspace/.ficus'), { recursive: true })
     mkdirSync(home)
+    mkdirSync(join(src, '.private/project/workspace/.ficus'), { recursive: true })
+    writeFileSync(join(src, '.private/project/workspace/.ficus/.env'), 'CUSTOM_NESTED=keep')
     writeFileSync(join(src, '.private/.ficus/agent-secrets.env'), 'SYNTH_TOKEN=retired')
     writeFileSync(join(src, 'workspace/.ficus/.env'), 'SYNTH_TOKEN=retired')
     writeFileSync(join(src, 'workspace/.ficus/env.user'), 'CUSTOM=keep')
@@ -74,6 +76,7 @@ test('restoring an old VM archive excludes retired managed files but preserves e
       home,
     ])
     expect(result.exitCode).toBe(0)
+    expect(readFileSync(join(home, '.private/project/workspace/.ficus/.env'), 'utf8')).toBe('CUSTOM_NESTED=keep')
     expect(existsSync(join(home, '.private/.ficus/agent-secrets.env'))).toBe(false)
     expect(existsSync(join(home, 'workspace/.ficus/.env'))).toBe(false)
     expect(readFileSync(join(home, 'workspace/.ficus/env.user'), 'utf8')).toBe('CUSTOM=keep')
@@ -88,4 +91,18 @@ test('shared query keys, permission text and authorization helpers have no expos
     /secret-exposure|secrets are exposed|environment-secret configuration/
   )
   expect(read('apps/core/src/middleware/require-secret-permission.ts')).not.toContain('secretReader')
+})
+
+test('active prompts and setup guidance never recommend removed exposure commands or choices', () => {
+  for (const path of [
+    'config/agent-types/system-manager.yaml',
+    'config/agent-types/assistant-worker.yaml',
+    'config/skills/setup-secrets/SKILL.md',
+    'config/skills/deploy-app/SKILL.md',
+  ]) {
+    expect(read(path)).not.toMatch(
+      /squad-env (?:expose-secrets|unexpose-secrets|secrets|global-secrets|expose-global|unexpose-global)/
+    )
+    expect(read(path)).not.toMatch(/(?:Environment exposure choices|previous exposure choices)/i)
+  }
 })
