@@ -131,6 +131,9 @@ export class MachineProvisioningCapError extends Error {
 export type PlacementRole = 'squad' | 'agent' | 'system-manager'
 
 export interface PlacementRequest {
+  /** Select an already-ready recorded target for a read-only health reconnect.
+   * The caller must still claim physical capacity before any mutation. */
+  allowReadyReconnect?: boolean
   sandboxId: string
   role: PlacementRole
   /** The squad this box belongs to. Carried by callers for context only — the
@@ -639,7 +642,10 @@ export async function resolvePlacement(req: PlacementRequest, deps: PlacementDep
         machine.status
       )
     }
-    if (!(await (deps.canHost ?? canHostSandbox)(machine.id, req.sandboxId)))
+    const recorded =
+      req.allowReadyReconnect && req.sandboxId ? await (deps.getMachineBox ?? getMachineBoxReal)(req.sandboxId) : null
+    const reconnect = recorded?.status === 'ready' && recorded.machineId === machine.id
+    if (!reconnect && !(await (deps.canHost ?? canHostSandbox)(machine.id, req.sandboxId)))
       throw new HostCapacityUnavailableError({ allowed: false, reason: 'quota', machineId: machine.id })
     return machine
   }
@@ -654,7 +660,10 @@ export async function resolvePlacement(req: PlacementRequest, deps: PlacementDep
     if (box) {
       const recorded = await getMachine(box.machineId)
       if (recorded && recorded.status === 'ready') {
-        if (!(await (deps.canHost ?? canHostSandbox)(recorded.id, req.sandboxId)))
+        if (
+          !(req.allowReadyReconnect && box.status === 'ready') &&
+          !(await (deps.canHost ?? canHostSandbox)(recorded.id, req.sandboxId))
+        )
           throw new HostCapacityUnavailableError({ allowed: false, reason: 'quota', machineId: recorded.id })
         return recorded
       }

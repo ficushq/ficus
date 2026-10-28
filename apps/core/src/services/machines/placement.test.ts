@@ -1008,3 +1008,22 @@ describe('aggregate host capacity placement', () => {
     })
   }
 })
+
+it('permits only the recorded ready target for health-only reconnect despite quota saturation', async () => {
+  const a = makeMachine(),
+    b = makeMachine({ id: '22222222-2222-4222-8222-222222222222' })
+  const { deps } = makeStore([a, b])
+  let quotaChecks = 0
+  deps.canHost = async () => {
+    quotaChecks++
+    return false
+  }
+  deps.getMachineBox = async () => makeBox({ machineId: a.id })
+  const request = { sandboxId: 'agent_existing', role: 'agent' as const, allowReadyReconnect: true }
+  expect((await resolvePlacement(request, deps)).id).toBe(a.id)
+  expect((await resolvePlacement({ ...request, explicitMachineId: a.id }, deps)).id).toBe(a.id)
+  expect(quotaChecks).toBe(0)
+  await expect(resolvePlacement({ ...request, explicitMachineId: b.id }, deps)).rejects.toThrow('host capacity')
+  deps.getMachineBox = async () => makeBox({ machineId: a.id, status: 'stopped' })
+  await expect(resolvePlacement(request, deps)).rejects.toThrow('host capacity')
+})

@@ -1072,6 +1072,9 @@ export class VmSandboxManager implements ISandboxManager {
             squadId,
             explicitMachineId: opts.machineId ?? null,
             dedicated: opts.dedicated ?? false,
+            // Selecting a ready target is not authority to mutate it. The
+            // full-generation ensureBox adapter claims before physical setup.
+            allowReadyReconnect: true,
           })
         )
         env = await this.buildBoxEnv(sandboxId, opts, specHash, machine, timer)
