@@ -30,7 +30,7 @@ export function SquadSandboxStatusCard({ squadId, compact = false }: { squadId: 
   if (status.runtime === 'host') return null
 
   const display = resolveVmChainDisplay(status)
-  const treatment = webStatus(display.healthy ? 'success' : 'attention')
+  const treatment = webStatus(display.role ?? (display.healthy ? 'success' : 'attention'))
 
   return (
     <dl className={compact ? 'flex flex-wrap items-center gap-x-2 gap-y-1' : 'border-b border-panel-border py-3'}>
