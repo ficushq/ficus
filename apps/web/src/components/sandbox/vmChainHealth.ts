@@ -1,4 +1,4 @@
-import { selectSandboxPresentationState } from '@ficus/shared'
+import { selectSandboxPresentationState, type StatusRole } from '@ficus/shared'
 import type { SandboxStatus } from '../../api/workspace'
 
 /** Display for a VM-mode sandbox's chain-health status (see resolveVmChainDisplay). */
@@ -7,8 +7,10 @@ export interface VmChainDisplay {
   label: string
   /** Optional trailing context, e.g. "starts on next use". */
   detail?: string
-  /** True only for the fully-healthy chain — every other state renders as attention-worthy. */
+  /** No chain fault; idle deferred assets still require ensure before execution. */
   healthy: boolean
+  /** Override healthy/attention chrome for a neutral idle state. */
+  role?: StatusRole
 }
 
 /**
@@ -52,7 +54,7 @@ export function resolveVmChainDisplay(status: SandboxStatus): VmChainDisplay {
     case 'starting':
       switch (selectSandboxPresentationState(status)) {
         case 'idle':
-          return { label: 'Idle', detail: 'assets refresh on next start', healthy: true }
+          return { label: 'Idle', detail: 'assets refresh on next start', healthy: true, role: 'neutral' }
         case 'installing_packages':
           return { label: 'Installing packages', healthy: false }
         case 'running_setup':

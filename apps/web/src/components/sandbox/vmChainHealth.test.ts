@@ -132,7 +132,7 @@ describe('deferred VM assets', () => {
           chain: { boxProvisioned: true, machine: 'reachable', boxServer: 'idle' },
         })
       )
-    ).toEqual({ label: 'Idle', detail: 'assets refresh on next start', healthy: true })
+    ).toEqual({ label: 'Idle', detail: 'assets refresh on next start', healthy: true, role: 'neutral' })
   })
 })
 

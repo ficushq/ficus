@@ -97,6 +97,7 @@ describe('idle deferred assets display', () => {
       chain: { boxProvisioned: true, machine: 'reachable', boxServer: 'idle' },
     })
     expect(html).toContain('Idle')
+    expect(html).toContain('bg-status-neutral-solid')
     expect(html).toContain('assets refresh on next start')
     expect(html).not.toContain('Starting')
     expect(html).not.toContain('>Start<')
