@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { coreTestPlan, subprocessShardFiles } from '../scripts/run-core-tests'
 
 /**
  * Keeps the `subprocess-tests` lane's membership honest.
@@ -134,4 +135,48 @@ describe('spawnsRealBun', () => {
     expect(spawnsRealBun(`Bun.spawn(['pkill', '-TERM', 'x'])`)).toBe(false)
     expect(spawnsRealBun(`const x = 'bun is mentioned in a comment'`)).toBe(false)
   })
+})
+
+test('two shards preserve the required aggregate and reserve time for deadline diagnostics', () => {
+  const { jobs } = Bun.YAML.parse(readFileSync(WORKFLOW, 'utf8')) as any
+  const shards = jobs['subprocess-shards']
+  expect(shards).toBeDefined()
+  expect(shards.strategy).toEqual({ 'fail-fast': false, matrix: { shard: [1, 2] } })
+  expect(shards['runs-on']).toBe('ubuntu-24.04')
+  expect(shards['timeout-minutes']).toBe(15)
+  expect(shards.steps[0].run).toContain('FICUS_TEST_DEADLINE_MS=$(( (started + 540) * 1000 ))')
+  const run = shards.steps.find((step: any) => step.name === 'Run real-subprocess tests')
+  expect(run.run).toContain('--subprocess-shard ${{ matrix.shard }}/2')
+  expect(run.if).toBeUndefined()
+  expect(run['continue-on-error']).toBeUndefined()
+  const setup = shards.steps.slice(1, shards.steps.indexOf(run))
+  expect(setup.every((step: any) => step['timeout-minutes'] > 0)).toBe(true)
+  expect(setup.reduce((sum: number, step: any) => sum + step['timeout-minutes'], 0)).toBeLessThanOrEqual(12)
+  const report = shards.steps.find((step: any) => step.name === 'Report lane wall time')
+  expect(report.if).toBe('always()')
+  expect(report.run).toContain('elapsed < 600')
+  expect(report.run).toContain('UNSTARTED 0.000s')
+  expect(report.env.TEST_OUTCOME).toBe('${{ steps.subprocess.outcome }}')
+  expect(jobs['subprocess-tests'].needs).toEqual(['subprocess-shards'])
+  expect(jobs['subprocess-tests'].if).toBe('always()')
+  expect(jobs['subprocess-tests'].steps[0].env.RESULT).toBe('${{ needs.subprocess-shards.result }}')
+  expect(jobs['subprocess-tests'].steps[0].run).toContain('test "$RESULT" = success')
+})
+
+test('shard union equals the canonical lane plus every automatically isolated mock file', () => {
+  const plan = coreTestPlan()
+  expect(plan.subprocess.map((file) => file.slice(2)).sort()).toEqual(laneMembers().sort())
+  expect(new Set(laneMembers()).size).toBe(laneMembers().length)
+  const union = [1, 2].flatMap((shard) => subprocessShardFiles(plan.isolated, shard as 1 | 2))
+  expect(union.sort()).toEqual(plan.isolated)
+  expect(new Set(union).size).toBe(plan.isolated.length)
+})
+
+test('aggregate shell rejects failed, skipped, cancelled and absent shard results', () => {
+  const { jobs } = Bun.YAML.parse(readFileSync(WORKFLOW, 'utf8')) as any
+  const command = jobs['subprocess-tests'].steps[0].run
+  for (const result of ['success', 'failure', 'skipped', 'cancelled', '']) {
+    const child = Bun.spawnSync(['bash', '-c', command], { env: { ...process.env, RESULT: result } })
+    expect(child.exitCode === 0).toBe(result === 'success')
+  }
 })

@@ -96,8 +96,8 @@ const ciSubprocessArgs = (() => {
   const workflow = Bun.YAML.parse(readFileSync(resolve(repoRoot, '.github/workflows/ci.yml'), 'utf8')) as {
     jobs: Record<string, { steps: Array<{ name?: string; run?: string }> }>
   }
-  const run = workflow.jobs['subprocess-tests']!.steps.find((step) => step.name === 'Run real-subprocess tests')!.run!
-  const words = run.trim().split(/\s+/)
+  const run = workflow.jobs['subprocess-shards']!.steps.find((step) => step.name === 'Run real-subprocess tests')!.run!
+  const words = run.replace('--subprocess-shard ${{ matrix.shard }}/2', '').trim().split(/\s+/)
   expect(words.slice(0, 2)).toEqual(['bun', '../../scripts/run-core-tests.ts'])
   return words.slice(2)
 })()
@@ -147,4 +147,72 @@ test('the runner entrypoint lists only requested files and rejects bad arguments
     expect(result.stderr).not.toContain('PASS')
   }
   expect((await runner('--help')).stdout).toContain('Usage: bun run test')
+})
+
+test('two CI file-list shards cover every isolated file exactly once, including module mocks', async () => {
+  const first = await runner('--list', '--subprocess', '--subprocess-shard', '1/2')
+  const second = await runner('--list', '--subprocess', '--subprocess-shard', '2/2')
+  expect(first.exitCode).toBe(0)
+  expect(second.exitCode).toBe(0)
+  const files = [first, second].flatMap((result) =>
+    result.stdout
+      .trim()
+      .split('\n')
+      .map((line) => line.slice(9))
+  )
+  expect(files.sort()).toEqual(plan.isolated)
+  expect(new Set(files).size).toBe(plan.isolated.length)
+  expect(first.stdout).toContain('integrations/github/feedback-routing.test.ts')
+  expect(first.stdout).toContain('execution/pickup.test.ts')
+  expect(second.stdout).toContain('integrations/outputs/runtime.test.ts')
+  expect(second.stdout).toContain('amtp/node-conformance.test.ts')
+  for (const shard of ['0/2', '3/2', '1/3', '1', ''])
+    expect((await runner('--list', '--subprocess', '--subprocess-shard', shard)).exitCode).toBe(2)
+  expect((await runner('--list', '--subprocess-shard', '1/2')).exitCode).toBe(2)
+})
+
+test('CI deadline environment reaches the real entrypoint before any isolated file starts', async () => {
+  const child = Bun.spawn(
+    [process.execPath, resolve(repoRoot, 'scripts/run-core-tests.ts'), '--subprocess', '--subprocess-shard', '1/2'],
+    {
+      cwd: coreRoot,
+      env: {
+        ...process.env,
+        FICUS_TEST_DEADLINE_MS: '1',
+        DATABASE_URL: 'postgres://unused:unused@127.0.0.1:1/unused',
+        GITHUB_STEP_SUMMARY: undefined,
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    }
+  )
+  try {
+    const [exit, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ])
+    expect(exit).toBe(1)
+    expect(stdout).toContain('Lane deadline exceeded')
+    expect(stdout).not.toContain('PASSED')
+    expect(stdout).not.toContain('INCOMPLETE')
+    const listed = await runner('--list', '--subprocess', '--subprocess-shard', '1/2')
+    expect(
+      stdout
+        .split('\n')
+        .filter((line) => line.startsWith('UNSTARTED'))
+        .map((line) => line.slice('UNSTARTED 0.000s '.length))
+        .sort()
+    ).toEqual(
+      listed.stdout
+        .trim()
+        .split('\n')
+        .map((line) => line.slice(9))
+        .sort()
+    )
+    expect(stderr).not.toContain('Connected to test database')
+  } finally {
+    child.kill('SIGKILL')
+    await child.exited
+  }
 })
