@@ -1,10 +1,17 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { and, asc, desc, eq, gt, lt } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, lt, sql } from 'drizzle-orm'
 import { db } from '../../../db'
-import { vmBoxProvisionAttempts as attempts } from '../../../db/schema'
+import { vmBoxProvisionAttempts as attempts, machineCapacityClaims } from '../../../db/schema'
 import { MachineNotReadyError } from '../../machines/queries'
 import { startupRetryCode } from '../../execution/startup-retry'
 import { withVmSetupLease, type VmSetupLeaseWait } from './setup-state'
+
+const physicalGeneration = new AsyncLocalStorage<number>()
+
+/** The physical owner only; followers/health-only reconnects own no host lane. */
+export function currentVmProvisionAttemptId(): number | undefined {
+  return physicalGeneration.getStore()
+}
 
 type Attempt = typeof attempts.$inferSelect
 const activeProvision = new AsyncLocalStorage<string>()
@@ -151,7 +158,7 @@ export async function coalesceVmProvision<T>(
         .returning()
       try {
         assertOwned?.()
-        const value = await provision()
+        const value = await physicalGeneration.run(current!.id, provision)
         assertOwned?.()
         const published = await db
           .update(attempts)
@@ -187,14 +194,14 @@ export async function coalesceVmProvision<T>(
         // just because opportunistic retention cleanup could not run.
         try {
           assertOwned?.()
-          await db
-            .delete(attempts)
-            .where(
-              and(
-                eq(attempts.sandboxId, sandboxId),
-                lt(attempts.completedAt, new Date(Date.now() - RESULT_RETENTION_MS))
-              )
+          await db.delete(attempts).where(
+            and(
+              eq(attempts.sandboxId, sandboxId),
+              lt(attempts.completedAt, new Date(Date.now() - RESULT_RETENTION_MS)),
+              sql`NOT EXISTS (SELECT 1 FROM ${machineCapacityClaims}
+                  WHERE ${machineCapacityClaims.provisionAttemptId} = ${attempts.id})`
             )
+          )
         } catch {
           /* Session loss or optional retention failure must not mask the outcome. */
         }

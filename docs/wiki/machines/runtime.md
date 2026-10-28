@@ -1345,6 +1345,46 @@ runs its **own rootless dockerd** instead (spec §5):
   exhaustion. Missing target convergence or after-state data remains an open
   verification requirement, not something a dry-run fixture can satisfy.
 
+- **Machine-wide CPU admission.** VM work uses a **1.5 × host CPU** budget of
+  reserved box quotas. Each distinct sandbox costs the unchanged kernel quota,
+  `max(1, host CPUs / 2)`; a shared squad box is charged once, not once per agent.
+  This is a forecast of admitted demand, not a sampled utilization threshold or
+  a change to CPU quotas, MemoryMax, the unit packer, or existing cloud authority.
+  Unknown CPU facts defer new demand. Already-accounted demand can continue
+  even when a host is above the target; admission does not evict work.
+
+  Active streams reserve a pending private participant plus their shared box
+  before dispatch creates agents. Actual execution identities replace the
+  placeholder; additional fork participants consume additional private-box quota.
+  Creation, manual admission and automatic promotion respect the host budget,
+  including squads with no stream-count cap. Execution pickup commits its claim
+  with the queued-to-running transition; refusal leaves work queued without
+  starting a runner. Pinned/sticky placement waits rather than moving live boxes;
+  pooled placement tries eligible existing hosts. Quota saturation never causes
+  a new cloud host to be provisioned. Normal first-host bootstrap remains possible,
+  but the concrete physical generation must claim its resolved host before setup.
+
+  Short transactional, machine-wide claims serialize the decision. No transaction
+  or extra DB session spans SSH. Physical setup has **one startup lane per host**,
+  owned by the coalesced provision generation, while different hosts can progress.
+  Same-box followers do not consume another lane. Claims follow lifecycle records,
+  not expiring permits: abandoned/interrupted physical work remains charged until
+  successful same-box recovery or a later confirmed stop. Its same-box successor
+  can recover without double charging or deadlocking on its predecessor. Referenced
+  generations are retained; settled claim rows are reclaimed on subsequent claims.
+  Pre-existing running turns, provisioning and recent box activity are accounted
+  conservatively (recent command/terminal touches have a 60-second cooldown).
+  This does not schedule unmanaged host processes or guarantee memory/I/O capacity.
+
+  The squad header separates **Host load** (one-minute load / host CPUs) from
+  **quota used / budget** (reserved demand). Its details identify host memory,
+  the oversubscription target, and capacity deferral. Missing samples are not zeros.
+  `SandboxStatus.hostCapacity` is additive, contains aggregate numbers only, and
+  uses database reads without probing or waking an idle box. Per-box pressure
+  attribution remains separate from this host admission forecast. Representative
+  burst verification must still collect timestamped `cpu.stat`, `memory.events`
+  and PSI deltas across the host's boxes; passing claim fixtures is not live proof.
+
 - **Existing boxes / recreation.** The script is content-hashed into provisioning
   drift, so existing boxes receive this wiring on their next full provision or
   recreation, not by a live fleet migration. Installing/changing the drop-in

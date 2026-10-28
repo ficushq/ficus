@@ -1,3 +1,4 @@
+import { reservePhysicalHostCapacity } from '../../machines/host-admission'
 /**
  * VmSandboxManager
  *
@@ -485,7 +486,11 @@ export function defaultBoxProvisionVersion(opts: PrebuiltReadOpts = {}): () => s
 
 function productionDeps(): VmSandboxManagerDeps {
   return {
-    ensureBox: (opts) => ensureBoxReal(opts),
+    ensureBox: async (opts) => {
+      if (!opts.machineId) throw new Error('Physical host admission requires resolved placement')
+      await reservePhysicalHostCapacity(opts.machineId, opts.sandboxId)
+      return ensureBoxReal(opts)
+    },
     restartBox: (sandboxId) => restartBoxReal(sandboxId),
     stopBox: (sandboxId) => stopBoxReal(sandboxId),
     removeBox: (sandboxId, opts) => removeBoxReal(sandboxId, opts),

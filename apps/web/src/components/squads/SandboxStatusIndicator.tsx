@@ -1,3 +1,4 @@
+import { HostCapacitySummary } from '../sandbox/HostCapacitySummary'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { queries } from '../../queryOptions'
@@ -13,7 +14,7 @@ import { SandboxHealthWarning } from '../sandbox/SandboxHealthWarning'
  * renders nothing on the host runtime, and a wrapper in the header would leave
  * a padded, background-filled empty box behind it.
  */
-const PILL = 'px-2 py-0.5 rounded-md bg-surface-secondary inline-flex items-center gap-1.5 text-xs'
+const PILL = 'px-2 py-0.5 rounded-md bg-surface-secondary inline-flex flex-wrap items-center gap-1.5 text-xs'
 
 interface SandboxStatusIndicatorProps {
   squadId: string
@@ -72,6 +73,7 @@ export function SandboxStatusIndicator({ squadId }: SandboxStatusIndicatorProps)
     return (
       <div className={clsx(PILL, treatmentColor)}>
         <SandboxHealthWarning squadId={squadId} status={status} />
+        <HostCapacitySummary capacity={status.hostCapacity} pressure={status.pressure} />
         <span className="relative flex h-2 w-2">
           <span className={clsx('relative inline-flex h-2 w-2 rounded-full', treatmentDot)} />
         </span>

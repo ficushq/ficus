@@ -1,3 +1,4 @@
+import { reserveExecutionHostCapacity } from '../machines/host-admission'
 import { cleanupWorktreeForAgent } from '../work-streams/worktree-cleanup-store'
 import { createLogger } from '../../lib/infra/logger'
 import { Execution } from '../../entities/Execution'
@@ -292,6 +293,7 @@ async function doAttemptPickup(execution: Execution): Promise<PickupResult> {
   let fenced = false
   let workStreamPaused = false
   let instancePaused = false
+  let hostFull = false
   let pausedGeneration: number | undefined
   let wokeDuringStart: string | null = null
   const startGuard = async (tx: DbTransaction): Promise<boolean> => {
@@ -352,7 +354,13 @@ async function doAttemptPickup(execution: Execution): Promise<PickupResult> {
       fenced = true
       return false
     }
-    return true
+    const host = await reserveExecutionHostCapacity(tx, {
+      executionId: execution.id,
+      agentId: execution.agentId,
+      sandboxIds,
+    })
+    hostFull = !host.allowed
+    return host.allowed
   }
 
   let started: boolean
@@ -405,7 +413,7 @@ async function doAttemptPickup(execution: Execution): Promise<PickupResult> {
     }
     // The box-migration refusal leaves the row queued for a later tick; a
     // genuine lost CAS means another worker owns the row now.
-    return workStreamPaused ? 'work-stream-paused' : fenced ? 'box-migrating' : 'lost-race'
+    return workStreamPaused ? 'work-stream-paused' : fenced ? 'box-migrating' : hostFull ? 'no-capacity' : 'lost-race'
   }
 
   if (wokeDuringStart) {

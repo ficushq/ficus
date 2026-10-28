@@ -1,6 +1,11 @@
 import { expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { coalesceVmProvision, provisionBackoffMs, VmProvisionFailedError } from './provision-flight'
+import {
+  coalesceVmProvision,
+  currentVmProvisionAttemptId,
+  provisionBackoffMs,
+  VmProvisionFailedError,
+} from './provision-flight'
 import { withVmSetupLease } from './setup-state'
 import { db } from '../../../db'
 import { vmBoxProvisionAttempts as attempts } from '../../../db/schema'
@@ -476,3 +481,22 @@ for (const [name, code] of [
     expect(JSON.stringify(shared)).not.toContain('private diagnostics')
   })
 }
+
+test('current physical generation identity is scoped to the owner callback only', async () => {
+  expect(currentVmProvisionAttemptId()).toBeUndefined()
+  const id = `identity-${randomUUID()}`
+  await coalesceVmProvision(
+    id,
+    async () => {
+      const generation = currentVmProvisionAttemptId()
+      expect(typeof generation).toBe('number')
+      const [row] = await db.select().from(attempts).where(eq(attempts.id, generation!))
+      expect(row).toMatchObject({ sandboxId: id, status: 'running' })
+    },
+    async () => {
+      throw new Error('unexpected follower')
+    },
+    { withLease: (fn) => fn() }
+  )
+  expect(currentVmProvisionAttemptId()).toBeUndefined()
+})

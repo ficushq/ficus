@@ -1,3 +1,4 @@
+import { HostCapacityUnavailableError, reserveWorkStreamHostCapacity } from '../machines/host-admission'
 import { admissionBlockingWaits, admissionBlockedSince, admissionBlockedStreamIds } from './wait-scope'
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import {
@@ -86,8 +87,6 @@ export async function assertManualAdmissionAllowed(
     .from(squads)
     .where(eq(squads.id, input.squadId))
   const cap = capRow?.cap ?? null
-  if (cap === null) return
-
   await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, input.squadId)).for('update')
   const [current] = await tx
     .select({ status: workStreams.status })
@@ -96,9 +95,11 @@ export async function assertManualAdmissionAllowed(
   if (current?.status !== 'queued') return // already admitted (or gone) — not a queued->admitted move
 
   const admitted = await countAdmitted(tx, input.squadId, input.streamId)
-  if (admitted >= cap) {
+  if (cap !== null && admitted >= cap) {
     throw new WorkStreamCapFullError(input.title, cap)
   }
+  const host = await reserveWorkStreamHostCapacity(tx, input)
+  if (!host.allowed) throw new HostCapacityUnavailableError(host)
 }
 
 async function countAdmitted(tx: DbTransaction, squadId: string, excludeId?: string): Promise<number> {
@@ -148,12 +149,11 @@ export async function admitOrQueueAtCreation(
     .from(squads)
     .where(eq(squads.id, input.squadId))
   const cap = capRow?.cap ?? null
-  if (cap === null) return 'admitted'
-
-  // Finite cap: serialize against concurrent creations/promotions.
+  // Serialize squad admission as well as the machine-wide claim, including
+  // unlimited squads: their host is not unlimited.
   await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, input.squadId)).for('update')
   const admitted = await countAdmitted(tx, input.squadId, input.streamId)
-  if (admitted < cap) return 'admitted'
+  if ((cap === null || admitted < cap) && (await reserveWorkStreamHostCapacity(tx, input)).allowed) return 'admitted'
 
   await tx
     .update(workStreams)
@@ -494,7 +494,10 @@ async function promoteEligibleWithinTx(
     .sort(compareByEffectivePriorityThenCreatedAt)
 
   const promotedRows: WorkStreamRow[] = []
-  for (const winner of eligible.slice(0, freeSlots)) {
+  for (const winner of eligible) {
+    if (promotedRows.length >= freeSlots) break
+    const host = await reserveWorkStreamHostCapacity(tx, { squadId, streamId: winner.id })
+    if (!host.allowed) continue
     const [updated] = await tx
       .update(workStreams)
       .set({ status: 'active', updatedAt: new Date() })

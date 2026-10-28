@@ -6,14 +6,8 @@ export function boxCpuQuota(cpus: number): number {
   return Math.max(1, cpus / 2)
 }
 
-export interface HostCapacityDecision {
-  allowed: boolean
-  reason: 'unknown' | 'quota' | 'available' | 'already-accounted'
-  cpus?: number
-  budgetCpus?: number
-  activeQuotaCpus?: number
-  projectedQuotaCpus?: number
-}
+export type { SandboxHostCapacity as HostCapacityDecision } from '@ficus/shared'
+import type { SandboxHostCapacity as HostCapacityDecision } from '@ficus/shared'
 
 /**
  * Charge unique box identities, never agent counts or sampled CPU utilization.

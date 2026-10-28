@@ -369,3 +369,11 @@ describe('durable startup retry', () => {
     }
   })
 })
+
+it('host quota/startup-lane deferral preserves structured automatic retry through shared failures', () => {
+  const owner = Object.assign(new Error('capacity'), { name: 'HostCapacityUnavailableError' })
+  const follower = Object.assign(new Error('shared'), { name: 'MachineNotReadyError', machineStatus: 'capacity' })
+  expect(startupRetryCode(owner)).toBe('machine_capacity')
+  expect(startupRetryCode(new Error('wrapper', { cause: follower }))).toBe('machine_capacity')
+  expect(startupRetryNotice(owner)).toContain('capacity')
+})

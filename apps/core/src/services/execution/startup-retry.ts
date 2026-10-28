@@ -20,7 +20,7 @@ export const BOX_PORT_BUSY_RETRY_DELAYS_MS = [10_000, 20_000, 40_000, 80_000, 16
 export const BOX_PORT_BUSY_RETRY_CODE = 'box_port_busy'
 
 /** Machine statuses that come back to `ready` by themselves; anything else fails at once. */
-const TRANSIENT_MACHINE_STATUSES = new Set(['registered', 'bootstrapping', 'unreachable'])
+const TRANSIENT_MACHINE_STATUSES = new Set(['registered', 'bootstrapping', 'unreachable', 'capacity'])
 const MACHINE_READINESS_ERRORS = new Set(['MachineUnavailableError', 'MachineNotReadyError'])
 
 /** The retry schedule for a startup retry code (see {@link startupRetryCode}). */
@@ -73,6 +73,7 @@ export function startupRetryCode(error: unknown): string | null {
       TRANSIENT_MACHINE_STATUSES.has(machineStatus)
     )
       return `machine_${machineStatus}`
+    if (error.name === 'HostCapacityUnavailableError') return 'machine_capacity'
     if (error.name === 'BoxPortBusyError') return BOX_PORT_BUSY_RETRY_CODE
     error = error.cause
   }
@@ -101,6 +102,9 @@ export function startupRetryNotice(error: unknown): string {
     const summary = (findInCauseChain(error, 'BoxPortBusyError') as (Error & { summary?: unknown }) | null)?.summary
     const reason = typeof summary === 'string' ? ` (${summary})` : ''
     return `The sandbox could not start because its port on the machine is busy${reason}; this will retry automatically.`
+  }
+  if (code === 'machine_capacity') {
+    return 'The sandbox is waiting for host capacity or another sandbox startup to finish; this will retry automatically.'
   }
   if (code?.startsWith('machine_')) {
     return 'The sandbox machine is still starting up; this will start automatically once it is ready.'

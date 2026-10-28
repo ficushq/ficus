@@ -77,6 +77,7 @@ function makeStore(seed: Machine[] = [], boxes: Record<string, string[]> = {}) {
   const provisioned: ProvisionMachineOpts[] = []
   const deps: PlacementDeps = {
     getMachine: async (id) => machines.find((m) => m.id === id) ?? null,
+    canHost: async () => true,
     getMachineBox: async () => null,
     queryReadySharedMachines: async () =>
       machines
@@ -173,7 +174,7 @@ describe('resolvePlacement — explicit pin', () => {
     const machine = makeMachine({ status: 'ready' })
     const resolved = await resolvePlacement(
       { sandboxId: 'sb-1', role: 'agent', explicitMachineId: machine.id },
-      { getMachine: async () => machine, getExeProvider: () => null }
+      { canHost: async () => true, getMachine: async () => machine, getExeProvider: () => null }
     )
     expect(resolved.id).toBe(machine.id)
   })
@@ -192,7 +193,7 @@ describe('resolvePlacement — explicit pin', () => {
     await expect(
       resolvePlacement(
         { sandboxId: 'sb-1', role: 'agent', explicitMachineId: machine.id },
-        { getMachine: async () => machine, getExeProvider: () => null }
+        { canHost: async () => true, getMachine: async () => machine, getExeProvider: () => null }
       )
     ).rejects.toThrow(/not ready/)
   })
@@ -222,6 +223,7 @@ describe('resolvePlacement — sticky existing box', () => {
     const resolved = await resolvePlacement(
       { sandboxId: 'sb-1', role: 'agent' },
       {
+        canHost: async () => true,
         getMachineBox: async () => box,
         getMachine: async (id) => (id === machineA.id ? machineA : machineB),
         getExeProvider: () => null,
@@ -242,6 +244,7 @@ describe('resolvePlacement — sticky existing box', () => {
     const resolved = await resolvePlacement(
       { sandboxId: 'sb-1', role: 'agent' },
       {
+        canHost: async () => true,
         getMachineBox: async () => box,
         getMachine: async (id) => (id === notReady.id ? notReady : ready),
         getExeProvider: () => null,
@@ -453,6 +456,7 @@ describe('resolvePlacement — packed shared pool', () => {
     const resolved = await resolvePlacement(
       { sandboxId: 'agent_sticky', role: 'agent' },
       {
+        canHost: async () => true,
         getMachineBox: async () => box,
         getMachine: async () => recorded,
         getExeProvider: () => fakeExeProvider,
@@ -507,6 +511,7 @@ describe('resolvePlacement — BYO-only (no exe provider)', () => {
         { sandboxId: 'sb-1', role: 'agent' },
         {
           getExeProvider: () => null,
+          canHost: async () => true,
           getMachineBox: async () => null,
           queryReadySharedMachines: async () => [],
           queryTransientSharedMachineStatus: async () => null,
@@ -554,6 +559,7 @@ describe('resolvePlacement — BYO-only (no exe provider)', () => {
         { sandboxId: 'sb-1', role: 'agent' },
         {
           getExeProvider: () => null,
+          canHost: async () => true,
           getMachineBox: async () => null,
           queryReadySharedMachines: async () => (++calls === 1 ? [] : [{ machine, boxCount: 0 }]),
           queryTransientSharedMachineStatus: async () => null,
@@ -569,6 +575,7 @@ describe('resolvePlacement — BYO-only (no exe provider)', () => {
       { sandboxId: 'sb-1', role: 'agent' },
       {
         getExeProvider: () => null,
+        canHost: async () => true,
         getMachineBox: async () => null,
         queryReadySharedMachines: async () => [{ machine, boxCount: 3 }],
       }
@@ -583,6 +590,7 @@ describe('resolvePlacement — BYO-only (no exe provider)', () => {
       { sandboxId: 'sb-1', role: 'agent' },
       {
         getExeProvider: () => null,
+        canHost: async () => true,
         getMachineBox: async () => null,
         queryReadySharedMachines: async () => [
           { machine: busy, boxCount: 5 },
@@ -600,6 +608,7 @@ describe('resolvePlacement — BYO-only (no exe provider)', () => {
       { sandboxId: 'squad_x', role: 'squad', squadId: 'sq-1' },
       {
         getExeProvider: () => null,
+        canHost: async () => true,
         getMachineBox: async () => null,
         queryReadySharedMachines: async () => [{ machine, boxCount: 0 }],
         provisionMachine: async () => {
@@ -962,4 +971,40 @@ describe('defaultGetExeProvider — self-heal', () => {
     // (null here — no exe registered), never throwing out of placement.
     expect(provider).toBeNull()
   })
+})
+
+describe('aggregate host capacity placement', () => {
+  it('skips a quota-saturated least-loaded host', async () => {
+    const a = makeMachine(),
+      b = makeMachine({ id: '22222222-2222-4222-8222-222222222222' })
+    const { deps } = makeStore([a, b])
+    deps.getExeProvider = () => null
+    deps.canHost = async (id) => id === b.id
+    expect((await resolvePlacement({ sandboxId: 'agent_new', role: 'agent' }, deps)).id).toBe(b.id)
+  })
+
+  it('skips a quota-saturated best-fit host', async () => {
+    const a = makeMachine(),
+      b = makeMachine({ id: '22222222-2222-4222-8222-222222222222' })
+    const { deps, provisioned } = makeStore([a, b], { [a.id]: ['agent_old'] })
+    deps.canHost = async (id) => id === b.id
+    expect((await resolvePlacement({ sandboxId: 'agent_new', role: 'agent' }, deps)).id).toBe(b.id)
+    expect(provisioned).toHaveLength(0)
+  })
+
+  for (const pin of ['explicit', 'sticky', 'pool']) {
+    it(`queues ${pin} placement without provisioning more infrastructure when quota is saturated`, async () => {
+      const a = makeMachine()
+      const { deps, provisioned } = makeStore([a])
+      deps.canHost = async () => false
+      if (pin === 'sticky') deps.getMachineBox = async () => makeBox({ machineId: a.id })
+      await expect(
+        resolvePlacement(
+          { sandboxId: 'agent_new', role: 'agent', explicitMachineId: pin === 'explicit' ? a.id : undefined },
+          deps
+        )
+      ).rejects.toThrow('host capacity')
+      expect(provisioned).toHaveLength(0)
+    })
+  }
 })

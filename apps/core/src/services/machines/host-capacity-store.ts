@@ -1,5 +1,5 @@
 import { WORK_STREAM_ADMITTED_STATUSES } from '@ficus/shared'
-import { and, eq, inArray, or, sql } from 'drizzle-orm'
+import { and, eq, inArray, notInArray, or, sql } from 'drizzle-orm'
 import { executions, machineCapacityClaims, machines, vmBoxProvisionAttempts, workStreams } from '../../db/schema'
 import type { DbTransaction } from './queries'
 import { evaluateHostQuotaCounts, type HostCapacityDecision } from './host-capacity-policy'
@@ -30,7 +30,7 @@ function ownerKey(owner: HostCapacityOwner): string {
 }
 
 /** Ignore settled owners immediately, even before opportunistic row cleanup. */
-async function validClaims(tx: DbTransaction): Promise<Claim[]> {
+async function validClaims(tx: DbTransaction, incomingProvisionId = 0): Promise<Claim[]> {
   const rows = await tx
     .select({ claim: machineCapacityClaims })
     .from(machineCapacityClaims)
@@ -44,7 +44,23 @@ async function validClaims(tx: DbTransaction): Promise<Claim[]> {
           eq(machineCapacityClaims.kind, 'execution'),
           inArray(executions.status, ['running', 'waiting-sandbox', 'stopping'])
         ),
-        and(eq(machineCapacityClaims.kind, 'provision'), eq(vmBoxProvisionAttempts.status, 'running'))
+        and(
+          eq(machineCapacityClaims.kind, 'provision'),
+          or(
+            eq(vmBoxProvisionAttempts.status, 'running'),
+            and(
+              eq(vmBoxProvisionAttempts.status, 'failed'),
+              inArray(vmBoxProvisionAttempts.failureClass, ['abandoned', 'interrupted']),
+              sql`NOT EXISTS (SELECT 1 FROM vm_box_provision_attempts newer
+              WHERE newer.sandbox_id = ${vmBoxProvisionAttempts.sandboxId}
+                AND newer.id > ${vmBoxProvisionAttempts.id} AND newer.status = 'succeeded')`,
+              sql`NOT EXISTS (SELECT 1 FROM machine_boxes stopped
+              WHERE stopped.sandbox_id = ${machineCapacityClaims.sandboxId}
+                AND stopped.machine_id = ${machineCapacityClaims.machineId} AND stopped.status = 'stopped'
+                AND stopped.updated_at >= ${vmBoxProvisionAttempts.createdAt})`
+            )
+          )
+        )
       )
     )
   // Adopt pre-upgrade activity and non-execution activity conservatively. An
@@ -63,11 +79,14 @@ async function validClaims(tx: DbTransaction): Promise<Claim[]> {
       FROM owners o JOIN agents p ON p.id = o.parent_agent_id
       WHERE NOT p.id = ANY(o.path)
     )
-    SELECT b.machine_id AS "machineId", b.sandbox_id AS "sandboxId"
+    SELECT b.machine_id AS "machineId", b.sandbox_id AS "sandboxId",
+      CASE WHEN b.status = 'ensuring' OR EXISTS (SELECT 1 FROM vm_box_provision_attempts p
+        WHERE p.sandbox_id = b.sandbox_id AND p.status = 'running' AND p.id <> ${incomingProvisionId})
+        THEN 'provision' ELSE 'execution' END AS kind
     FROM machine_boxes b
     WHERE b.status IN ('ready', 'ensuring', 'stop_unverified') AND (
-      b.last_activity_at > now() - interval '60 seconds'
-      OR EXISTS (SELECT 1 FROM vm_box_provision_attempts p WHERE p.sandbox_id = b.sandbox_id AND p.status = 'running')
+      b.status = 'ensuring' OR b.last_activity_at > now() - interval '60 seconds'
+      OR EXISTS (SELECT 1 FROM vm_box_provision_attempts p WHERE p.sandbox_id = b.sandbox_id AND p.status = 'running' AND p.id <> ${incomingProvisionId})
       OR EXISTS (
         SELECT 1 FROM owners o WHERE
           b.sandbox_id = 'squad_' || o.origin_squad_id::text
@@ -78,13 +97,13 @@ async function validClaims(tx: DbTransaction): Promise<Claim[]> {
             ELSE 'agent_' || o.id::text END)
       )
     )
-  `)) as unknown as HostResource[]
+  `)) as unknown as (HostResource & { kind: 'execution' | 'provision' })[]
   return [
     ...rows.map((row) => row.claim),
     ...observed.map((resource) => ({
       ...resource,
       ownerKey: `observed:${resource.sandboxId}`,
-      kind: 'execution' as const,
+      kind: resource.kind,
     })),
   ]
 }
@@ -120,18 +139,35 @@ function resourcesByMachine(claims: Claim[]): Map<string, Set<string>> {
 }
 
 /** Readout only; authoritative claims must hold the transaction admission lock. */
-export async function readHostCapacity(tx: DbTransaction, machineId: string): Promise<HostCapacityDecision> {
+export async function readHostCapacity(
+  tx: DbTransaction,
+  machineId: string,
+  incomingSandboxIds: string[] = [],
+  workStreamId?: string
+): Promise<HostCapacityDecision> {
   const [machine] = await tx
     .select({ capabilities: machines.capabilities })
     .from(machines)
     .where(eq(machines.id, machineId))
-  const count = resourcesByMachine(await validClaims(tx)).get(machineId)?.size ?? 0
-  return evaluateHostQuotaCounts(machine?.capabilities.cpus, count, count)
+  const claims = await validClaims(tx)
+  const current = resourcesByMachine(claims).get(machineId)?.size ?? 0
+  const projected =
+    resourcesByMachine([
+      ...claims,
+      ...incomingSandboxIds.map((sandboxId) => ({
+        ownerKey: 'preview',
+        kind: 'provision' as const,
+        machineId,
+        sandboxId,
+        workStreamId,
+      })),
+    ]).get(machineId)?.size ?? 0
+  return evaluateHostQuotaCounts(machine?.capabilities.cpus, current, projected)
 }
 
 export interface HostClaimResult {
   allowed: boolean
-  reason?: 'busy' | 'unknown' | 'quota'
+  reason?: 'busy' | 'unknown' | 'quota' | 'starting'
   machineId?: string
   capacity?: HostCapacityDecision
 }
@@ -152,7 +188,27 @@ export async function claimHostCapacity(
   }[]
   if (!lock?.acquired) return { allowed: false, reason: 'busy' }
   const key = ownerKey(owner)
-  const before = await validClaims(tx)
+  const before = await validClaims(tx, owner.kind === 'provision' ? owner.provisionAttemptId : 0)
+  // Reclaim settled ownership without a TTL. Uncertain remote work stays in
+  // validClaims until same-box recovery or affirmative stop proof.
+  const liveKeys = [...new Set(before.map((claim) => claim.ownerKey))]
+  if (liveKeys.length)
+    await tx.delete(machineCapacityClaims).where(notInArray(machineCapacityClaims.ownerKey, liveKeys))
+  else await tx.delete(machineCapacityClaims)
+  if (owner.kind === 'provision') {
+    for (const resource of resources) {
+      if (
+        before.some(
+          (claim) =>
+            claim.kind === 'provision' &&
+            claim.machineId === resource.machineId &&
+            claim.sandboxId !== resource.sandboxId
+        )
+      ) {
+        return { allowed: false, reason: 'starting', machineId: resource.machineId }
+      }
+    }
+  }
   const incoming: Claim[] = [
     ...new Map(resources.map((resource) => [`${resource.machineId}:${resource.sandboxId}`, resource])).values(),
   ].map((resource) => ({
