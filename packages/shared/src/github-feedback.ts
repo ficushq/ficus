@@ -6,22 +6,19 @@ export const githubAccountIdSchema = z
   .regex(/^[1-9][0-9]{0,15}$/)
   .refine((value) => Number.isSafeInteger(Number(value)), 'Invalid GitHub account ID')
 
-export const githubFeedbackSelectionSchema = z
-  .object({
-    revisionId: z.string().uuid(),
-    contentHash: z.string().regex(/^[0-9a-f]{64}$/),
-    decisionVersion: z.number().int().nonnegative(),
-  })
-  .strict()
+export const githubFeedbackSelectionSchema = z.strictObject({
+  revisionId: z.uuid(),
+  contentHash: z.string().regex(/^[0-9a-f]{64}$/),
+  decisionVersion: z.int().nonnegative(),
+})
 
 /** All authority and content are read from storage, not supplied by the caller. */
 export const moderateGitHubFeedbackSchema = z
-  .object({
-    requestId: z.string().uuid(),
+  .strictObject({
+    requestId: z.uuid(),
     action: z.enum(['allow_once', 'deny', 'allow_trust']),
     selections: z.array(githubFeedbackSelectionSchema).min(1).max(50),
   })
-  .strict()
   .refine(
     ({ selections }) => new Set(selections.map((selection) => selection.revisionId)).size === selections.length,
     'Select each revision only once'
@@ -166,15 +163,13 @@ export interface GitHubFeedbackRoute {
 export const githubFeedbackQueueSchema = z.enum(['pending', 'releasing'])
 export type GitHubFeedbackQueue = z.infer<typeof githubFeedbackQueueSchema>
 
-export const githubFeedbackPageQuerySchema = z
-  .object({
-    queue: githubFeedbackQueueSchema.default('pending'),
-    cursor: z.string().max(200).optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(50),
-  })
-  .strict()
+export const githubFeedbackPageQuerySchema = z.strictObject({
+  queue: githubFeedbackQueueSchema.default('pending'),
+  cursor: z.string().max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+})
 
-export const githubAuthorFilterUpdateSchema = z.object({ enabled: z.boolean() }).strict()
+export const githubAuthorFilterUpdateSchema = z.strictObject({ enabled: z.boolean() })
 
 /**
  * What the author filter does with feedback from people the squad doesn't trust.
@@ -183,7 +178,7 @@ export const githubAuthorFilterUpdateSchema = z.object({ enabled: z.boolean() })
  */
 export const GITHUB_UNTRUSTED_HANDLING = ['hold', 'screen'] as const
 export type GitHubUntrustedHandling = (typeof GITHUB_UNTRUSTED_HANDLING)[number]
-export const githubUntrustedHandlingUpdateSchema = z.object({ handling: z.enum(GITHUB_UNTRUSTED_HANDLING) }).strict()
+export const githubUntrustedHandlingUpdateSchema = z.strictObject({ handling: z.enum(GITHUB_UNTRUSTED_HANDLING) })
 
 /**
  * Why a screen ended the way it did. Only `safe` releases anything.
@@ -222,11 +217,12 @@ export interface GitHubFeedbackScreening {
   model: string | null
   screenedAt: string | null
 }
-export const githubTrustedAuthorResolveSchema = z.object({ login: z.string().min(1).max(100) }).strict()
+export const githubTrustedAuthorResolveSchema = z.strictObject({ login: z.string().min(1).max(100) })
 /** `accountId` is the account the human confirmed; the server re-resolves and refuses a mismatch. */
-export const githubTrustedAuthorAddSchema = z
-  .object({ login: z.string().min(1).max(100), accountId: githubAccountIdSchema })
-  .strict()
+export const githubTrustedAuthorAddSchema = z.strictObject({
+  login: z.string().min(1).max(100),
+  accountId: githubAccountIdSchema,
+})
 
 export interface GitHubFeedbackSummary {
   authorFilterEnabled: boolean

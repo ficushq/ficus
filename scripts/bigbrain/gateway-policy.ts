@@ -26,19 +26,12 @@ const MEMBER_CREDENTIAL = /^sv_[A-Za-z0-9_-]{1,512}$/
 const credentialKey = (vaultId: string, credential: string) =>
   `${vaultId}:${createHash('sha256').update(credential).digest('hex')}`
 const routeSchema = z
-  .object({
-    vaultId: z
-      .string()
-      .uuid()
-      .regex(/^[0-9a-f-]{36}$/),
-    upstreamVaultId: z
-      .string()
-      .uuid()
-      .regex(/^[0-9a-f-]{36}$/),
+  .strictObject({
+    vaultId: z.uuid().regex(/^[0-9a-f-]{36}$/),
+    upstreamVaultId: z.uuid().regex(/^[0-9a-f-]{36}$/),
     origin: z.string().max(253),
     state: z.enum(['ready', 'maintenance', 'disabled']),
   })
-  .strict()
   // A recorded origin (either form) for exactly this vault; never re-derived from the current label.
   .refine((v) => managedBigbrainOriginHasVault(v.origin, v.vaultId))
 export const gatewayManifestSchema = managedBigbrainHostBindingSchema
@@ -47,7 +40,6 @@ export const gatewayManifestSchema = managedBigbrainHostBindingSchema
     hostState: managedBigbrainHostStateSchema,
     routes: z.array(routeSchema).max(MANAGED_BIGBRAIN_MAX_VAULTS),
   })
-  .strict()
   .refine((v) => new Set(v.routes.map((r) => r.vaultId)).size === v.routes.length)
   // Routing is by hostname: a duplicate fails closed instead of reaching the first match.
   .refine((v) => new Set(v.routes.map((r) => new URL(r.origin).hostname)).size === v.routes.length)

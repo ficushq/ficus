@@ -9,25 +9,21 @@ import { routeParam } from '../lib/route-param'
 
 const sensitivitySchema = z.enum(['public', 'internal', 'restricted', 'confidential'])
 
-const grantPolicyScopeSchema = z
-  .object({
-    sourceTypes: z.array(z.string().min(1)).optional(),
-    paths: z.array(z.string().min(1)).optional(),
-    sensitivity: sensitivitySchema.optional(),
-  })
-  .strict()
+const grantPolicyScopeSchema = z.strictObject({
+  sourceTypes: z.array(z.string().min(1)).optional(),
+  paths: z.array(z.string().min(1)).optional(),
+  sensitivity: sensitivitySchema.optional(),
+})
 
-const grantPolicySchema = z
-  .object({
-    read: grantPolicyScopeSchema.optional(),
-    write: grantPolicyScopeSchema.omit({ sensitivity: true }).optional(),
-  })
-  .strict()
+const grantPolicySchema = z.strictObject({
+  read: grantPolicyScopeSchema.optional(),
+  write: grantPolicyScopeSchema.omit({ sensitivity: true }).optional(),
+})
 
 const createGrantSchema = z.object({
-  granteeSquadId: z.string().uuid(),
+  granteeSquadId: z.uuid(),
   policy: grantPolicySchema.default({}),
-  expiresAt: z.string().datetime().nullable().optional(),
+  expiresAt: z.iso.datetime().nullable().optional(),
 })
 
 /**

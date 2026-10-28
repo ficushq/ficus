@@ -14,16 +14,14 @@ export interface GitHubWebhookSettings {
   webhookUrl: string
 }
 
-const inputSchema = z
-  .object({
-    secret: z
-      .string()
-      .min(1)
-      .max(16_384)
-      .refine((value) => value.trim().length > 0)
-      .nullable(),
-  })
-  .strict()
+const inputSchema = z.strictObject({
+  secret: z
+    .string()
+    .min(1)
+    .max(16_384)
+    .refine((value) => value.trim().length > 0)
+    .nullable(),
+})
 
 export function resolveGitHubWebhookSecret(store: Pick<WebhookStore, 'get'>): string | null {
   return store.get(GITHUB_WEBHOOK_SETTINGS_KEY) || null

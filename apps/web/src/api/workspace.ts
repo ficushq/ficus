@@ -185,6 +185,12 @@ export interface SandboxStatus {
    */
   runtime?: 'docker' | 'k8s' | 'vm' | 'host'
   /**
+   * Whether the sandbox's container logs can be streamed (the log WebSocket
+   * serves only runtimes whose manager implements it: docker and k8s). The
+   * settings page leaves the logs panel out when this is false.
+   */
+  logStreaming?: boolean
+  /**
    * Host runtime only: the fully resolved workspace directory the squad's
    * agents, terminal and file routes are using right now — the path the last
    * sandbox ensure actually applied, falling back to the resolved path when no

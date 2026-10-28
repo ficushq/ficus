@@ -4,6 +4,8 @@ import { identityMiddleware } from '../middleware/identity'
 import { authzSentinel } from '../middleware/authz-sentinel'
 import { amtpRouter } from './amtp'
 import { Peer } from '../entities/Peer'
+import { InstanceIdentity } from '../entities/InstanceIdentity'
+import { canonicalPeerGetString, verifyEnvelope } from 'amtp-protocol'
 import { authHeaders, assignRole, cleanupTestRbac, createTestRole, createTestUser, type TestUser } from '../test-utils'
 
 const app = new Hono()
@@ -76,6 +78,36 @@ describe('GET /api/amtp/peers/:ref/handles', () => {
       headers: authHeaders(sender.token),
     })
     expect(byInstance.status).toBe(200)
+  })
+
+  test.each([
+    ['/amtp/handles', 200],
+    ['/api/amtp/handles', 502],
+  ] as const)('peer verifying %s → %i without legacy-path retries', async (signedPath, expectedStatus) => {
+    // AMTP 0.2 peers verify the route-relative path; prefixed 0.1 peers verify
+    // the observed path. Coordinated upgrades are required for the latter.
+    const identity = await InstanceIdentity.getOrCreate()
+    let requests = 0
+    globalThis.fetch = (async (url, init) => {
+      requests++
+      expect(String(url)).toBe('https://peer.example/api/amtp/handles')
+      const headers = new Headers(init?.headers)
+      expect(headers.get('x-amtp-instance')).toBe(identity.instanceId)
+      const valid = verifyEnvelope(
+        identity.publicKeyPem,
+        new TextEncoder().encode(canonicalPeerGetString('GET', signedPath, Number(headers.get('x-amtp-timestamp')))),
+        headers.get('x-amtp-signature')!
+      )
+      return valid
+        ? Response.json({ handles: [{ handle: 'alice' }] })
+        : Response.json({ error: 'Unauthorized' }, { status: 401 })
+    }) as typeof fetch
+    const res = await app.request(`/api/amtp/peers/${peer.id}/handles`, { headers: authHeaders(reader.token) })
+    expect(res.status).toBe(expectedStatus)
+    expect(requests).toBe(1)
+    expect(await res.json()).toEqual(
+      expectedStatus === 200 ? { handles: [{ handle: 'alice' }] } : { error: 'Failed to fetch handles from peer' }
+    )
   })
 
   test('unknown ref → 404', async () => {

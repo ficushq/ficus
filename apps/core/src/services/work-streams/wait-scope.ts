@@ -162,7 +162,7 @@ export class FlowWaitSupersededError extends Error {
 }
 
 export async function flowInboxTargets(store: DbHandle, messageIds: string[]) {
-  messageIds = messageIds.filter((id) => z.string().uuid().safeParse(id).success)
+  messageIds = messageIds.filter((id) => z.uuid().safeParse(id).success)
   if (!messageIds.length) return []
   const rows = await store.select({ metadata: inbox.metadata }).from(inbox).where(inArray(inbox.id, messageIds))
   const targets: Array<{ workStreamId: string; attemptId: number; assignment: boolean }> = []
@@ -206,7 +206,7 @@ export async function flowInboxTargets(store: DbHandle, messageIds: string[]) {
 
 /** Must run in the acceptance transaction, before stream/agent queue locks. */
 export async function lockFlowInboxDelivery(store: DbTx, agentId: string, messageIds: string[] = []) {
-  const validIds = messageIds.filter((id) => z.string().uuid().safeParse(id).success)
+  const validIds = messageIds.filter((id) => z.uuid().safeParse(id).success)
   const integrationMessages = validIds.length
     ? (
         await store.select({ id: inbox.id, metadata: inbox.metadata }).from(inbox).where(inArray(inbox.id, validIds))
@@ -217,14 +217,14 @@ export async function lockFlowInboxDelivery(store: DbTx, agentId: string, messag
   if (integrationMessages.length) {
     const eventIds = integrationMessages.flatMap((row) =>
       typeof row.metadata?.integrationEventId === 'string' &&
-      z.string().uuid().safeParse(row.metadata.integrationEventId).success
+      z.uuid().safeParse(row.metadata.integrationEventId).success
         ? [row.metadata.integrationEventId]
         : []
     )
     const deliveryIds = integrationMessages.flatMap((row) =>
       row.metadata?.source === 'integration-output' &&
       typeof row.metadata.integrationDeliveryId === 'string' &&
-      z.string().uuid().safeParse(row.metadata.integrationDeliveryId).success
+      z.uuid().safeParse(row.metadata.integrationDeliveryId).success
         ? [row.metadata.integrationDeliveryId]
         : []
     )
@@ -267,7 +267,7 @@ export async function lockFlowInboxDelivery(store: DbTx, agentId: string, messag
       ...targets.map((target) => target.workStreamId),
       ...integrationMessages
         .map((row) => String(row.metadata?.workStreamId))
-        .filter((id) => z.string().uuid().safeParse(id).success),
+        .filter((id) => z.uuid().safeParse(id).success),
     ]),
   ].sort()
   for (const id of ids)
@@ -282,7 +282,7 @@ export async function lockFlowInboxDelivery(store: DbTx, agentId: string, messag
       }
       const deliveryId = String(row.metadata?.integrationDeliveryId)
       if (
-        !z.string().uuid().safeParse(deliveryId).success ||
+        !z.uuid().safeParse(deliveryId).success ||
         !(await isCurrentIntegrationDelivery(store, deliveryId, agentId, row.id))
       )
         throw new FlowWaitSupersededError()
@@ -298,7 +298,7 @@ export async function lockFlowInboxDelivery(store: DbTx, agentId: string, messag
 
 /** No new locks or provider I/O. Call again AFTER queue waits and before any acceptance writes. */
 export async function assertCurrentIntegrationInbox(store: DbTx, agentId: string, messageIds: string[] = []) {
-  const ids = messageIds.filter((id) => z.string().uuid().safeParse(id).success)
+  const ids = messageIds.filter((id) => z.uuid().safeParse(id).success)
   if (!ids.length) return
   const rows = await store.select({ id: inbox.id, metadata: inbox.metadata }).from(inbox).where(inArray(inbox.id, ids))
   const { isCurrentIntegrationDelivery, isCurrentIntegrationNotification } =
@@ -313,7 +313,7 @@ export async function assertCurrentIntegrationInbox(store: DbTx, agentId: string
       const id = row.metadata.integrationDeliveryId
       if (
         typeof id !== 'string' ||
-        !z.string().uuid().safeParse(id).success ||
+        !z.uuid().safeParse(id).success ||
         !(await isCurrentIntegrationDelivery(store, id, agentId, row.id))
       )
         throw new FlowWaitSupersededError()

@@ -100,7 +100,7 @@ export async function resolveStoredGitHubPurpose(input: {
   if (input.providerKey !== 'github') return null
   const { source } = input
   if (source.kind === 'device') {
-    if (!z.string().uuid().safeParse(source.id).success) return null
+    if (!z.uuid().safeParse(source.id).success) return null
     // Metadata-only join: do not decrypt the device code merely to select a permission family.
     const [row] = await db
       .select({ purpose: integrationAuthorizationFlowReceipts.purpose })
@@ -122,7 +122,7 @@ export async function resolveStoredGitHubPurpose(input: {
     return row?.purpose === 'github_identity' || row?.purpose === 'integration' ? row.purpose : null
   }
   if (source.kind === 'callback' && !BROKER_COMPLETION_HANDLE_PATTERN.test(source.state)) return null
-  if (source.kind === 'complete' && !z.string().uuid().safeParse(source.localFlowId).success) return null
+  if (source.kind === 'complete' && !z.uuid().safeParse(source.localFlowId).success) return null
   const authority = source.kind === 'callback' ? 'local' : 'platform_broker'
   const stateHash = source.kind === 'callback' ? createHash('sha256').update(source.state).digest('hex') : null
   const [state] = await db

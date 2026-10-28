@@ -6,17 +6,14 @@ import { managedPaths } from './paths'
 import { readPrivateJson, writePrivateJson } from './secure-files'
 import type { NativeVaultAdmin } from './native-admin'
 
-const uuid = z
-  .string()
-  .uuid()
-  .regex(/^[0-9a-f-]{36}$/)
+const uuid = z.uuid().regex(/^[0-9a-f-]{36}$/)
 const token = z.string().regex(/^sv_[0-9a-f]{8}_[A-Za-z0-9_-]{43}$/)
 const memberId = z.string().regex(/^mem_[0-9a-f]{8}$/)
 const credentialId = z.string().regex(/^[0-9a-f]{8}$/)
 const fence = { schema: z.literal(1), tenantId: uuid, physicalHostBinding: uuid, vaultId: uuid, requestId: uuid }
 /** Written and fsynced BEFORE the native side effect; `pending` is never permission to repeat it. */
 export const escrowSchema = z
-  .object({
+  .strictObject({
     ...fence,
     phase: z.enum(['pending', 'complete']),
     memberId: memberId.nullable(),
@@ -24,7 +21,6 @@ export const escrowSchema = z
     /** Null after recovery: a lost secret is revoked natively, never re-minted under the same request. */
     token: token.nullable(),
   })
-  .strict()
   .refine(
     (v) =>
       (v.phase === 'pending' ? v.token === null : v.memberId !== null) && (v.token === null || v.credentialId !== null)

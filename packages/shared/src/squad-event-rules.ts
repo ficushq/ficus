@@ -14,41 +14,35 @@ import { integrationSubscriptionSchema, integrationValueAt, type IntegrationOutp
 import { workflowEventTriggerSchema, workflowSourceSchema, type WorkflowSource } from './workflows'
 
 export const squadEventRuleSchema = z
-  .object({
+  .strictObject({
     id: workflowEventTriggerSchema.shape.id,
     enabled: z.boolean().default(true),
     source: integrationSubscriptionSchema.shape.source,
     match: workflowEventTriggerSchema.shape.match.optional(),
     predicates: z.array(eventRulePredicateSchema).max(16).optional(),
-    filters: z
-      .object({
-        squadRouting: z.boolean().default(false),
-        repository: z.string().trim().max(200).optional(),
-        labels: z.array(z.string().trim().min(1).max(100)).max(100).optional(),
-        teamId: z.string().trim().max(200).optional(),
-        audience: z.enum(['connected-account', 'assigned-or-mentioned', 'any']).default('connected-account'),
-      })
-      .strict(),
+    filters: z.strictObject({
+      squadRouting: z.boolean().default(false),
+      repository: z.string().trim().max(200).optional(),
+      labels: z.array(z.string().trim().min(1).max(100)).max(100).optional(),
+      teamId: z.string().trim().max(200).optional(),
+      audience: z.enum(['connected-account', 'assigned-or-mentioned', 'any']).default('connected-account'),
+    }),
     action: z.discriminatedUnion('type', [
-      z
-        .object({ type: z.literal('notify-manager'), additionalContext: z.string().trim().max(10000).optional() })
-        .strict(),
-      z
-        .object({ type: z.literal('notify-consultant'), additionalContext: z.string().trim().max(10000).optional() })
-        .strict(),
-      z.object({ type: z.literal('ignore') }).strict(),
-      z
-        .object({
-          type: z.literal('start-workstream'),
-          workflow: workflowSourceSchema.optional(),
-          titlePrefix: z.string().max(100).optional(),
-          additionalContext: z.string().trim().max(10000).optional(),
-          metadata: workflowEventTriggerSchema.shape.create.shape.metadata.optional(),
-        })
-        .strict(),
+      z.strictObject({ type: z.literal('notify-manager'), additionalContext: z.string().trim().max(10000).optional() }),
+      z.strictObject({
+        type: z.literal('notify-consultant'),
+        additionalContext: z.string().trim().max(10000).optional(),
+      }),
+      z.strictObject({ type: z.literal('ignore') }),
+      z.strictObject({
+        type: z.literal('start-workstream'),
+        workflow: workflowSourceSchema.optional(),
+        titlePrefix: z.string().max(100).optional(),
+        additionalContext: z.string().trim().max(10000).optional(),
+        metadata: workflowEventTriggerSchema.shape.create.shape.metadata.optional(),
+      }),
     ]),
   })
-  .strict()
   .superRefine((rule, ctx) => {
     if (rule.predicates?.length) validateEventPredicates(rule.source, rule.predicates, ctx)
   })

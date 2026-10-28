@@ -95,6 +95,7 @@ const reindexBodySchema = z.object({
 })
 
 const ingestUrlBodySchema = z.object({
+  // Keep the format-only message; z.url(message) also changes invalid-type errors.
   url: z.string().url('A valid URL is required'),
 })
 

@@ -15,17 +15,14 @@ import {
   writePublicText,
 } from './secure-files'
 const digest = z.string().regex(/^sha256:[0-9a-f]{64}$/)
-export const unitOwnershipSchema = managedBigbrainHostBindingSchema
-  .omit({ hostEpoch: true })
-  .extend({
-    schema: z.literal(1),
-    vaultId: managedBigbrainHostBindingSchema.shape.tenantId,
-    artifactDigest: digest,
-    serviceHash: digest,
-    mountHash: digest,
-    tmpfilesHash: digest,
-  })
-  .strict()
+export const unitOwnershipSchema = managedBigbrainHostBindingSchema.omit({ hostEpoch: true }).extend({
+  schema: z.literal(1),
+  vaultId: managedBigbrainHostBindingSchema.shape.tenantId,
+  artifactDigest: digest,
+  serviceHash: digest,
+  mountHash: digest,
+  tmpfilesHash: digest,
+})
 const hash = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`
 interface Options {
   root?: string

@@ -56,10 +56,7 @@ export function createPublicUrlRouter() {
   router.post('/preview', requirePermission('settings:write'), async (c) => {
     if (!isUser(c)) return c.json(USER_REQUIRED, 403)
     const body = await parseJsonBody(c)
-    const input = z
-      .object({ url: urlField })
-      .strict()
-      .safeParse(body.ok ? body.value : null)
+    const input = z.strictObject({ url: urlField }).safeParse(body.ok ? body.value : null)
     if (!input.success) return c.json({ error: 'Send { url } with a URL or null.' }, 400)
     return respond(c, () => previewPublicAppUrl(input.data.url))
   })
@@ -68,8 +65,7 @@ export function createPublicUrlRouter() {
     if (!isUser(c)) return c.json(USER_REQUIRED, 403)
     const body = await parseJsonBody(c)
     const input = z
-      .object({ url: urlField, expectedVersion: z.string().min(1).max(64) })
-      .strict()
+      .strictObject({ url: urlField, expectedVersion: z.string().min(1).max(64) })
       .safeParse(body.ok ? body.value : null)
     if (!input.success) return c.json({ error: 'Send { url, expectedVersion }.' }, 400)
     return respond(c, () => setPublicAppUrl({ ...input.data, actor: auditActor(c.get('identity') as Identity) }))

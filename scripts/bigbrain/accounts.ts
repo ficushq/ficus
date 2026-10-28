@@ -3,7 +3,6 @@ import { runPrivateCommand, type PrivateCommandRunner } from './process'
 const keySchema = managedBigbrainHostBindingSchema
   .omit({ hostEpoch: true })
   .extend({ vaultId: managedBigbrainHostBindingSchema.shape.tenantId })
-  .strict()
 export interface ManagedIdentityKey {
   tenantId: string
   physicalHostBinding: string

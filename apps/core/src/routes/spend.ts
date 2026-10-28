@@ -23,8 +23,8 @@ const filterSchema = {
 }
 
 const rangeSchema = z.object({
-  from: z.string().datetime({ offset: true }).optional(),
-  to: z.string().datetime({ offset: true }).optional(),
+  from: z.iso.datetime({ offset: true }).optional(),
+  to: z.iso.datetime({ offset: true }).optional(),
   ...filterSchema,
 })
 

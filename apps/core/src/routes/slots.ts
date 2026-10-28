@@ -41,7 +41,7 @@ import {
 import { formatSlotClaimTimeout } from '../services/slots/format'
 
 const keySchema = z.string().trim().toLowerCase().regex(SLOT_KEY_PATTERN)
-const uuidSchema = z.string().uuid()
+const uuidSchema = z.uuid()
 // Guidance is trimmed before the length check so surrounding whitespace never
 // counts against the prompt budget; blank or null clears it.
 const usageSchema = z
@@ -51,8 +51,8 @@ const usageSchema = z
   .nullable()
 const registerSchema = z.object({
   key: keySchema,
-  capacity: z.number().int().min(1).max(MAX_SLOT_CAPACITY).optional(),
-  claimTimeoutMs: z.number().int().min(MIN_SLOT_CLAIM_TIMEOUT_MS).max(MAX_SLOT_CLAIM_TIMEOUT_MS).optional(),
+  capacity: z.int().min(1).max(MAX_SLOT_CAPACITY).optional(),
+  claimTimeoutMs: z.int().min(MIN_SLOT_CLAIM_TIMEOUT_MS).max(MAX_SLOT_CLAIM_TIMEOUT_MS).optional(),
   usage: usageSchema.optional(),
 })
 /** Partial update: send only the fields to change. */
@@ -75,7 +75,7 @@ const historyQuerySchema = z.object({
         : typeof value === 'string' && /^\d+$/.test(value)
           ? Number(value)
           : value,
-    z.number().int().min(1).max(MAX_SLOT_HISTORY_LIMIT)
+    z.int().min(1).max(MAX_SLOT_HISTORY_LIMIT)
   ),
   cursor: z.string().min(1).max(1000).optional(),
 })

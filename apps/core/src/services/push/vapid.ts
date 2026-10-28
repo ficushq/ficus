@@ -99,7 +99,7 @@ export function getVapidContactSubject(value = getSecretStore().get('VAPID_SUBJE
     const url = new URL(subject)
     if (
       url.protocol === 'mailto:'
-        ? z.string().email().safeParse(url.pathname).success
+        ? z.email().safeParse(url.pathname).success
         : url.protocol === 'https:' && !!url.hostname
     )
       return subject

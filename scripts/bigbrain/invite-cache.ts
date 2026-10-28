@@ -7,25 +7,24 @@ import {
 } from '@ficus/shared/managed-bigbrain'
 import { readPrivateJson, writePrivateJson } from './secure-files'
 const entrySchema = z
-  .object({
-    requestId: z.string().uuid(),
+  .strictObject({
+    requestId: z.uuid(),
     inputHash: z.string().regex(/^sha256:[0-9a-f]{64}$/),
-    expiresAt: z.string().datetime().max(40),
+    expiresAt: z.iso.datetime().max(40),
     phase: z.enum(['pending', 'complete']),
     secret: z
       .string()
       .regex(/^[a-zA-Z0-9_-]{43}$/)
       .nullable(),
   })
-  .strict()
   .refine((v) => (v.phase === 'complete') === (v.secret !== null))
 export const ownerInviteCacheSchema = z
-  .object({ schema: z.literal(1), invites: z.array(entrySchema).max(MANAGED_BIGBRAIN_MAX_ACTIVE_INVITES) })
-  .strict()
+  .strictObject({ schema: z.literal(1), invites: z.array(entrySchema).max(MANAGED_BIGBRAIN_MAX_ACTIVE_INVITES) })
   .refine((v) => new Set(v.invites.map((e) => e.requestId)).size === v.invites.length)
-const resultSchema = z
-  .object({ secret: z.string().regex(/^[a-zA-Z0-9_-]{43}$/), expiresAt: z.string().datetime().max(40) })
-  .strict()
+const resultSchema = z.strictObject({
+  secret: z.string().regex(/^[a-zA-Z0-9_-]{43}$/),
+  expiresAt: z.iso.datetime().max(40),
+})
 
 /** Root-only cache beneath a validated control directory. Caller MUST hold the host lifecycle
  * lock, initialize the empty file exactly once during reservation, and supply a live owner +

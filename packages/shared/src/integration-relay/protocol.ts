@@ -21,27 +21,23 @@ export const githubRepositoryKey = z
   .regex(/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}\/[a-zA-Z0-9_.-]{1,100}$/)
   .refine((value) => !['.', '..'].includes(value.split('/')[1]!))
   .transform((value) => value.toLowerCase())
-const connectionId = z.string().uuid()
-const connectionRevision = z.string().uuid()
+const connectionId = z.uuid()
+const connectionRevision = z.uuid()
 const accessToken = z.string().min(1).max(16_384)
-export const relayStatusRequest = z.object({}).strict()
-export const relayStatusResponse = z
-  .object({
-    enabled: z.boolean(),
-    connections: z.array(z.object({ connectionId, connectionRevision }).strict()).max(100),
-  })
-  .strict()
-export const relaySubscribeRequest = z
-  .object({
-    connectionId,
-    connectionRevision,
-    accessToken,
-    repositories: z.array(githubRepositoryKey).min(1).max(100),
-  })
-  .strict()
-export const relayUnsubscribeRequest = z.object({ connectionId, connectionRevision }).strict()
-export const relaySuccessResponse = z.object({ ok: z.literal(true) }).strict()
-export const relayPullRequest = z.object({ connectionId, connectionRevision, accessToken }).strict()
+export const relayStatusRequest = z.strictObject({})
+export const relayStatusResponse = z.strictObject({
+  enabled: z.boolean(),
+  connections: z.array(z.strictObject({ connectionId, connectionRevision })).max(100),
+})
+export const relaySubscribeRequest = z.strictObject({
+  connectionId,
+  connectionRevision,
+  accessToken,
+  repositories: z.array(githubRepositoryKey).min(1).max(100),
+})
+export const relayUnsubscribeRequest = z.strictObject({ connectionId, connectionRevision })
+export const relaySuccessResponse = z.strictObject({ ok: z.literal(true) })
+export const relayPullRequest = z.strictObject({ connectionId, connectionRevision, accessToken })
 
 /**
  * Shared shape for a leased delivery envelope, parameterized by provider-specific
@@ -55,19 +51,17 @@ function relayDeliveryEnvelope<
   ResourceKey extends z.ZodTypeAny,
   EventType extends z.ZodTypeAny,
 >(resourceId: ResourceId, resourceKey: ResourceKey, eventType: EventType) {
-  return z
-    .object({
-      id: z.string().uuid(),
-      leaseToken: z.string().uuid(),
-      connectionId,
-      connectionRevision,
-      deliveryId: z.string().min(1).max(100),
-      resourceId,
-      resourceKey,
-      eventType,
-      payload: z.record(z.string(), z.unknown()),
-    })
-    .strict()
+  return z.strictObject({
+    id: z.uuid(),
+    leaseToken: z.uuid(),
+    connectionId,
+    connectionRevision,
+    deliveryId: z.string().min(1).max(100),
+    resourceId,
+    resourceKey,
+    eventType,
+    payload: z.record(z.string(), z.unknown()),
+  })
 }
 
 export const relayDelivery = relayDeliveryEnvelope(
@@ -75,16 +69,12 @@ export const relayDelivery = relayDeliveryEnvelope(
   githubRepositoryKey,
   z.string().regex(/^[a-z_]{1,64}$/)
 )
-export const relayPullResponse = z.object({ deliveries: z.array(relayDelivery).max(RELAY_BATCH_SIZE) }).strict()
-export const relayAckRequest = z
-  .object({
-    connectionId,
-    connectionRevision,
-    deliveries: z
-      .array(z.object({ id: z.string().uuid(), leaseToken: z.string().uuid() }).strict())
-      .max(RELAY_BATCH_SIZE),
-  })
-  .strict()
+export const relayPullResponse = z.strictObject({ deliveries: z.array(relayDelivery).max(RELAY_BATCH_SIZE) })
+export const relayAckRequest = z.strictObject({
+  connectionId,
+  connectionRevision,
+  deliveries: z.array(z.strictObject({ id: z.uuid(), leaseToken: z.uuid() })).max(RELAY_BATCH_SIZE),
+})
 export type RelayDelivery = z.infer<typeof relayDelivery>
 
 /** Provider keys accepted at `/api/integration-relay/<provider>/...` route paths. */
@@ -103,7 +93,7 @@ export const slackTeamId = z.string().regex(/^T[A-Z0-9]{2,30}$/)
  * `auth.test`) and proves the token belongs to our app (via `bots.info`)
  * rather than trusting a client-declared team id or repository-style list.
  */
-export const slackRelaySubscribeRequest = z.object({ connectionId, connectionRevision, accessToken }).strict()
+export const slackRelaySubscribeRequest = z.strictObject({ connectionId, connectionRevision, accessToken })
 
 /** Identical shape to the GitHub pull request; reused rather than duplicated. */
 export const slackRelayPullRequest = relayPullRequest
@@ -125,7 +115,5 @@ export type SlackRelayEventType = (typeof SLACK_RELAY_EVENT_TYPES)[number]
  *   tenant disables the connection rather than leaving a dead one active.
  */
 export const slackRelayDelivery = relayDeliveryEnvelope(slackTeamId, slackTeamId, z.enum(SLACK_RELAY_EVENT_TYPES))
-export const slackRelayPullResponse = z
-  .object({ deliveries: z.array(slackRelayDelivery).max(RELAY_BATCH_SIZE) })
-  .strict()
+export const slackRelayPullResponse = z.strictObject({ deliveries: z.array(slackRelayDelivery).max(RELAY_BATCH_SIZE) })
 export type SlackRelayDelivery = z.infer<typeof slackRelayDelivery>

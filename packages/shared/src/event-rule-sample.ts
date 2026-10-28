@@ -9,7 +9,7 @@ import {
 
 /** Synthetic, user-entered facts only. Flat allowlisted paths avoid exposing stored provider payloads. */
 export const syntheticEventSampleSchema = z
-  .object({
+  .strictObject({
     source: integrationSubscriptionSchema.shape.source,
     fields: keyedRecord(
       integrationDataPathSchema,
@@ -28,7 +28,6 @@ export const syntheticEventSampleSchema = z
       .default(''),
     mentioned: z.boolean().default(false),
   })
-  .strict()
   .superRefine((sample, ctx) => {
     const fields = eventPredicateFields(sample.source)
     if (!fields) ctx.addIssue({ code: 'custom', path: ['source'], message: 'Unsupported sample event version' })
