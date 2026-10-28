@@ -3,7 +3,7 @@ import { expect, mock, spyOn, test } from 'bun:test'
 import { StrictMode, useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
-import { fireEvent, waitFor } from '@testing-library/dom'
+import { fireEvent, getByRole, queryByRole, waitFor } from '@testing-library/dom'
 import { acquireDomHarness } from '../test/domHarness'
 import { queryKeys } from '../queryKeys'
 import { assistantApi } from '../api/assistant'
@@ -278,6 +278,104 @@ test('the earlier conversation starts the transcript as a collapsed disclosure t
     expect(details.textContent!.indexOf('Oldest question')).toBeLessThan(details.textContent!.indexOf('Earlier result'))
     expect([...details.querySelectorAll('button')].some((b) => b.textContent === 'Load earlier messages')).toBe(false)
   } finally {
+    await f.cleanup()
+  }
+})
+test('loading earlier messages is busy and prevents duplicate requests until the page arrives', async () => {
+  const f = await fixture()
+  type HistoryPage = Awaited<ReturnType<typeof assistantApi.history>>
+  let resolve!: (page: HistoryPage) => void
+  f.api.history.mockResolvedValueOnce({
+    entries: [{ id: 'legacy', role: 'assistant', text: 'Earlier result', final: true }],
+    hasMore: true,
+    before: 7,
+  } as any)
+  f.api.history.mockImplementationOnce(
+    () =>
+      new Promise<HistoryPage>((done) => {
+        resolve = done
+      }) as any
+  )
+  try {
+    await f.dom.act(async () => f.render())
+    const details = f.container.querySelector<HTMLDetailsElement>('[data-earlier-conversation]')!
+    details.open = true
+    const load = getByRole(details, 'button', { name: 'Load earlier messages' }) as HTMLButtonElement
+    await f.dom.act(async () => {
+      load.click()
+      load.click()
+    })
+    expect(load.disabled).toBe(true)
+    expect(load.textContent).toBe('Loading earlier messages…')
+    expect(load.getAttribute('aria-busy')).toBe('true')
+    expect(f.api.history).toHaveBeenCalledTimes(2) // Initial history plus one older page.
+    await f.dom.act(async () => load.click())
+    expect(f.api.history).toHaveBeenCalledTimes(2)
+    expect(details.textContent).toContain('Earlier result')
+    await f.dom.act(async () => resolve({ entries: [], hasMore: true, before: 3 }))
+    expect(getByRole(details, 'button', { name: 'Load earlier messages' })).toBe(load)
+    expect(load.disabled).toBe(false)
+    expect(load.getAttribute('aria-busy')).toBe('false')
+    expect(details.open).toBe(true)
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('a failed earlier page is announced without an unhandled rejection and Retry loads the same page', async () => {
+  const f = await fixture()
+  const unhandled = mock(() => {})
+  process.on('unhandledRejection', unhandled)
+  f.api.history.mockResolvedValueOnce({
+    entries: [{ id: 'legacy', role: 'assistant', text: 'Earlier result', final: true }],
+    hasMore: true,
+    before: 7,
+  } as any)
+  f.api.history.mockRejectedValueOnce(new Error('Network unavailable'))
+  try {
+    await f.dom.act(async () => f.render())
+    const details = f.container.querySelector<HTMLDetailsElement>('[data-earlier-conversation]')!
+    details.open = true
+    await f.dom.act(async () => getByRole(details, 'button', { name: 'Load earlier messages' }).click())
+    expect(getByRole(details, 'alert').textContent).toContain('Could not load earlier messages.')
+    expect(details.textContent).toContain('Earlier result')
+    const retry = getByRole(details, 'button', { name: 'Retry' }) as HTMLButtonElement
+    expect(retry.disabled).toBe(false)
+    let resolve!: (page: Awaited<ReturnType<typeof assistantApi.history>>) => void
+    f.api.history.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        }) as any
+    )
+    await f.dom.act(async () => retry.click())
+    expect(retry.disabled).toBe(true)
+    expect(retry.textContent).toBe('Loading earlier messages…')
+    expect(queryByRole(details, 'alert')).toBeNull()
+    expect(f.api.history.mock.calls.slice(1)).toEqual([
+      ['conversation', 7],
+      ['conversation', 7],
+    ])
+    await f.dom.act(async () =>
+      resolve({
+        entries: [
+          { id: 'oldest', role: 'user', text: 'Oldest question', final: true },
+          { id: 'legacy', role: 'assistant', text: 'Earlier result', final: true },
+        ] as any,
+        hasMore: false,
+      })
+    )
+    expect(details.textContent).toContain('Oldest question')
+    expect(details.textContent!.indexOf('Oldest question')).toBeLessThan(details.textContent!.indexOf('Earlier result'))
+    expect(details.textContent!.match(/Earlier result/g)).toHaveLength(1)
+    expect(queryByRole(details, 'alert')).toBeNull()
+    expect(queryByRole(details, 'button')).toBeNull()
+    expect(details.open).toBe(true)
+    // Let the event loop report any unhandled promise; the test runner also rejects these.
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(unhandled).not.toHaveBeenCalled()
+  } finally {
+    process.off('unhandledRejection', unhandled)
     await f.cleanup()
   }
 })
