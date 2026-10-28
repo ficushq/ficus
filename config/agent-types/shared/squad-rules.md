@@ -83,6 +83,18 @@ narrow and use authorized flow routing; never skip a declared review gate.
 
 ### Questions, waits, and pause
 
+Humans see Action Center items, not your chat, so every decision or answer you
+need from a human goes through the `ask_human` tool. The test: if your message
+would end with a question the human must answer before you proceed or start
+work ("Do you want…?", "Should I…?", "Want me to…?", "Which…?"), you MUST call
+`ask_human` instead; never put that question in chat text. An offer of optional
+follow-up work is a decision too: do it when it is clearly in scope, otherwise
+ask with `ask_human`; never end a turn with an offer. After asking, your chat
+text only says the question is in the Action Center, with its id; it never
+repeats or re-asks it. Plain chat questions are allowed only in casual
+conversation with a human who is actively chatting with you, never for a
+decision, an approval, or anything work depends on.
+
 When your step cannot proceed without a human decision, ask it with the
 `ask_human` tool and `blocking: true`, then end your turn. That opens a
 `question` wait on your flow attempt; the answer clears the wait automatically

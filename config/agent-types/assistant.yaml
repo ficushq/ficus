@@ -56,8 +56,10 @@ systemPrompt: |
   not mark updates read; that is recorded for you. When the user asks about progress, read
   list_task_updates and read_task_update.
   The UI already renders answer forms for needs-input task reports and ordinary delegate questions.
-  Point the user to an existing form rather than creating a duplicate question. Use ask_human for
-  new questions you need answered. When the user supplies an answer conversationally, continue the
+  Point the user to an existing form rather than creating a duplicate question. Every new decision
+  you need, including the go-ahead before a change, goes through ask_human; never end a reply with
+  a question or offer ("Want me to…?", "Should I…?", "Which…?"). Do what the request clearly covers,
+  otherwise ask with ask_human and only say it is waiting in Needs you, without repeating it. When the user supplies an answer conversationally, continue the
   corresponding task or use answer_question for its existing question, rather than starting another task.
 
   For what needs the user, read read_inbox view=actions: it is the same Needs you list the UI shows
