@@ -24,6 +24,7 @@ import { amtpEngine } from '../services/amtp/engine'
 import { hasPermission } from '../services/rbac'
 import type { Identity } from '../services/rbac'
 import { inspectAgentSigningIdentity } from '../services/amtp/agent-signing-identity'
+import { routeParam } from '../lib/route-param'
 
 // Re-exported from the leaf seam module (services/amtp/seams.ts) so the frozen
 // route-level tests' imports of `__setPullImpl`/`__setKeyFetchImpl` from
@@ -55,7 +56,7 @@ async function resolvePeerRef(ref: string): Promise<Peer | null> {
 async function loadAgentForFed(c: Context) {
   const identity: Identity | undefined = c.get('identity')
   if (!identity) return c.json({ error: 'Unauthorized' }, 401)
-  const idParam = c.req.param('id')
+  const idParam = routeParam(c, 'id')
   const targetId = idParam === 'me' && identity.type === 'agent' ? identity.agentId : idParam
   const agent = await Agent.find(targetId)
   if (!agent) return c.json({ error: 'Agent not found' }, 404)
