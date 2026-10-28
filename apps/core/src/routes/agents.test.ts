@@ -784,6 +784,24 @@ describe('deprecated inline message routes', () => {
     await db.delete(squads).where(eq(squads.id, squadId))
   })
 
+  it('edits pending messages with agent-run permission and rejects consumed inputs', async () => {
+    const message = await testAgent.recordMessage({ role: 'human', content: 'queued', pending: true })
+    const request = (operation: string, headers = authHeaders(admin.token)) =>
+      app.request(`/api/agents/${testAgent.id}/messages/${message.id}/queue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({ operation }),
+      })
+    expect((await request('steer', {})).status).toBe(401)
+    expect((await request('invalid')).status).toBe(400)
+    expect((await request('follow-up')).status).toBe(200)
+    const [row] = await db.select().from(messagesTable).where(eq(messagesTable.id, message.id))
+    expect(row!.metadata).toMatchObject({ deliveryMode: 'follow-up' })
+    await db.update(messagesTable).set({ pending: false }).where(eq(messagesTable.id, message.id))
+    expect((await request('cancel')).status).toBe(409)
+    expect(await db.select().from(messagesTable).where(eq(messagesTable.id, message.id))).toHaveLength(1)
+  })
+
   it('queues a steer intent on a non-running agent without returning 400', async () => {
     const res = await app.request(`/api/agents/${testAgent.id}/steer`, {
       method: 'POST',

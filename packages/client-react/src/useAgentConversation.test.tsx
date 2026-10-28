@@ -112,6 +112,21 @@ function makeMockClient(opts?: {
         nextSendStatus = 'queued'
         return { success: true, status }
       },
+      updatePendingMessage: async (
+        _agentId: string,
+        messageId: string,
+        operation: 'cancel' | 'steer' | 'follow-up'
+      ) => {
+        messages =
+          operation === 'cancel'
+            ? messages.filter((message) => message.id !== messageId)
+            : messages.map((message) =>
+                message.id === messageId
+                  ? { ...message, metadata: { ...message.metadata, deliveryMode: operation } }
+                  : message
+              )
+        return { success: true }
+      },
       clearQueue: async () => {
         messages = []
         return { success: true }
@@ -4287,5 +4302,70 @@ test('one replacement floor does not revoke a shared result from another valid o
     focusManager.setFocused(true)
     onlineManager.setOnline(true)
     clock.restore()
+  }
+})
+
+test('updates or cancels just the selected persisted pending message', async () => {
+  const mc = makeMockClient({ activeExecution: { active: true, status: 'running' } })
+  const first: Message = {
+    id: 'first',
+    agentId: 'a1',
+    role: 'human',
+    content: 'same',
+    pending: true,
+    queued: true,
+    createdAt: new Date(),
+    metadata: { deliveryMode: 'follow-up' },
+  }
+  mc.setMessages([first, { ...first, id: 'second' }])
+  const hook = await renderHook(() => useAgentConversation({ agentId: 'a1' }), { wrapper: wrap(mc.client) })
+  try {
+    await waitFor(() => expect(hook.result.current.queuedCount).toBe(2))
+    await act(async () => {
+      await hook.result.current.updatePendingMessage('first', 'steer')
+    })
+    await waitFor(() =>
+      expect(hook.result.current.items.find((item) => item.id === 'first')).toMatchObject({
+        kind: 'pending',
+        messageId: 'first',
+        deliveryMode: 'steer',
+      })
+    )
+    await act(async () => {
+      await hook.result.current.updatePendingMessage('first', 'cancel')
+    })
+    await waitFor(() =>
+      expect(hook.result.current.items.filter((item) => item.kind === 'pending').map((item) => item.id)).toEqual([
+        'second',
+      ])
+    )
+  } finally {
+    hook.unmount()
+  }
+})
+
+test('a rejected per-message operation is surfaced and preserves the pending message', async () => {
+  const mc = makeMockClient({ activeExecution: { active: true, status: 'running' } })
+  mc.setMessages([
+    {
+      id: 'first',
+      agentId: 'a1',
+      role: 'human',
+      content: 'keep',
+      pending: true,
+      queued: true,
+      createdAt: new Date(),
+      metadata: { deliveryMode: 'follow-up' },
+    },
+  ])
+  const update = spyOn(mc.client.agents, 'updatePendingMessage').mockRejectedValue(new Error('already consumed'))
+  const hook = await renderHook(() => useAgentConversation({ agentId: 'a1' }), { wrapper: wrap(mc.client) })
+  try {
+    await waitFor(() => expect(hook.result.current.queuedCount).toBe(1))
+    await expect(hook.result.current.updatePendingMessage('first', 'cancel')).rejects.toThrow('already consumed')
+    expect(hook.result.current.items.some((item) => item.id === 'first')).toBe(true)
+  } finally {
+    hook.unmount()
+    update.mockRestore()
   }
 })

@@ -7,6 +7,7 @@ const root = resolve(import.meta.dir, '..')
 const overlayRoot = resolve(root, 'patches/pi-coding-agent-1.4.0-source')
 const expectedSources = [
   'packages/coding-agent/src/core/agent-session.ts',
+  'packages/agent/src/agent.ts',
   'packages/coding-agent/src/core/session-manager.ts',
   'packages/coding-agent/src/core/extensions/loader.ts',
   'packages/coding-agent/src/core/index.ts',
@@ -114,7 +115,17 @@ describe('Pi patch no-drift CI gate', () => {
     expect(writeGuard).toBeGreaterThan(-1)
     expect(guardedCopy).toBeGreaterThan(writeGuard)
     expect(guardedCopy).toBeLessThan(guardEnd)
-    expect(script.indexOf('exit 1', guardEnd)).toBeGreaterThan(guardEnd)
+    expect(script.indexOf('cmp "$PATCH_ARTIFACT" "$GENERATED_PATCH_A"', guardEnd)).toBeGreaterThan(guardEnd)
+    expect(script.indexOf('cmp "$AGENT_PATCH_ARTIFACT" "$TEMP_DIR/run-a-agent.patch"', guardEnd)).toBeGreaterThan(
+      guardEnd
+    )
+    const agentPatch = readFileSync(resolve(root, 'patches/@earendil-works%2Fpi-agent-core@1.4.0.patch'), 'utf8')
+    expect([...agentPatch.matchAll(/^diff --git a\/(\S+) b\/\S+$/gm)].map((match) => match[1]).sort()).toEqual([
+      'dist/agent.d.ts',
+      'dist/agent.d.ts.map',
+      'dist/agent.js',
+      'dist/agent.js.map',
+    ])
     verifyPatchHeaders(patch)
   })
 

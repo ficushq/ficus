@@ -1434,51 +1434,43 @@ export async function clearQueue(agent: Agent, options: { ackTimeoutMs?: number 
   }
 
   const ackTimeoutMs = options.ackTimeoutMs ?? 10_000
-
-  // Running execution — send clear-queue and wait for the worker ack. The
-  // worker clears the SDK queue before deleting DB rows and acking, and acks
-  // even when it fails, so the timeout below now only fires when no worker is
-  // listening at all.
+  const requestId = crypto.randomUUID()
+  const expiresAt = Date.now() + ackTimeoutMs
+  let unsubscribe = () => {}
+  let timer: ReturnType<typeof setTimeout> | undefined
   const ackPromise = new Promise<ClearQueueResult>((resolve) => {
-    const timeout = setTimeout(async () => {
-      unsub()
-      // Best-effort DB cleanup, but this does NOT clear the SDK queue, so the
-      // result stays `ok: false` — the caller must be able to tell the user
-      // their messages may still be delivered.
-      let deleted = 0
-      try {
-        deleted = await agent.deletePendingMessages()
-        log.warn(
-          `clearQueue: timed out waiting for queue-cleared ack for agent ${agent.id}; deleted ${deleted} pending messages from DB (SDK queue NOT cleared)`
-        )
-      } catch (error) {
-        log.warn(
-          `clearQueue: timed out waiting for queue-cleared ack for agent ${agent.id}; fallback DB delete failed`,
-          error
-        )
-      }
-      resolve({ ok: false, cleared: 0, deleted, code: 'ack_timeout' })
+    timer = setTimeout(() => {
+      // An unreachable worker may still hold these messages. Keep them visible.
+      resolve({ ok: false, cleared: 0, deleted: 0, code: 'ack_timeout' })
     }, ackTimeoutMs)
-
-    const unsub = eventEmitter.on('agent.queue-cleared', (data) => {
-      if (data.agentId !== agent.id) return
-      clearTimeout(timeout)
-      unsub()
-      // `ok` is absent on acks from an older worker mid-deploy; treat that as
-      // success so a version skew does not report spurious failures.
-      const acked = data.ok !== false
-      resolve({
-        ok: acked,
-        cleared: data.cleared ?? 0,
-        deleted: data.deleted ?? 0,
-        code: acked ? 'worker_ack' : 'worker_error',
-      })
+    unsubscribe = eventEmitter.on('agent.queue-cleared', (data) => {
+      if (
+        data.agentId !== agent.id ||
+        data.requestId !== requestId ||
+        data.executionId !== activeExecution.id ||
+        !data.owned
+      )
+        return
+      const acked = data.ok === true
+      resolve({ ok: acked, cleared: data.cleared, deleted: data.deleted, code: acked ? 'worker_ack' : 'worker_error' })
     })
   })
-
-  // Send clear-queue signal to worker and wait for ack
-  await notify('agent_control', JSON.stringify({ action: 'clear-queue', agentId: agent.id }))
-  return ackPromise
+  try {
+    await notify(
+      'agent_control',
+      JSON.stringify({
+        action: 'clear-queue',
+        agentId: agent.id,
+        executionId: activeExecution.id,
+        requestId,
+        expiresAt,
+      })
+    )
+    return await ackPromise
+  } finally {
+    unsubscribe()
+    clearTimeout(timer)
+  }
 }
 
 /**

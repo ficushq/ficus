@@ -3272,7 +3272,7 @@ describe('agents service', () => {
       await db.delete(messages).where(eq(messages.agentId, agent.id))
     })
 
-    it('clearQueue reports FAILURE when a running execution never acks, but still deletes the DB rows', async () => {
+    it('clearQueue reports failure and preserves pending rows when a running execution never acks', async () => {
       const agent = await Agent.create({ agentTypeId: testAgentTypeId })
       await agent.recordMessage({ role: 'human', content: 'queued steer', pending: true })
       const execution = await agent.queueExecution({ message: 'running turn' })
@@ -3287,13 +3287,9 @@ describe('agents service', () => {
       expect(result.code).toBe('ack_timeout')
       expect(result.cleared).toBe(0)
 
-      // The DB cleanup is still best-effort: fewer messages survive to be
-      // re-delivered, even though the queue cannot be declared clear. (The
-      // count includes the queued execution's own message, so assert it did
-      // work rather than pinning an exact number.)
-      expect(result.deleted).toBeGreaterThanOrEqual(1)
+      expect(result.deleted).toBe(0)
       const remainingPending = (await agent.listMessages()).messages.filter((message) => message.pending)
-      expect(remainingPending).toEqual([])
+      expect(remainingPending.some((message) => message.content === 'queued steer')).toBe(true)
       await db.delete(messages).where(eq(messages.agentId, agent.id))
     })
 

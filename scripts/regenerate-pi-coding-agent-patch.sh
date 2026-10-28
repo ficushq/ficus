@@ -13,10 +13,12 @@ TEMP_DIR="$(mktemp -d)"
 # Keep compiler module identities consistent across macOS /var aliases.
 TEMP_DIR="$(cd "$TEMP_DIR" && pwd -P)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
-ORIGINAL_PATCH="$TEMP_DIR/original.patch"
 WRITE_MODE=0
 
+AGENT_PATCH_ARTIFACT="$ROOT_DIR/patches/@earendil-works%2Fpi-agent-core@1.4.0.patch"
+AGENT_OUTPUT_FILES=(dist/agent.js dist/agent.js.map dist/agent.d.ts dist/agent.d.ts.map)
 SOURCE_FILES=(
+  packages/agent/src/agent.ts
   packages/coding-agent/src/core/agent-session.ts
   packages/coding-agent/src/core/session-manager.ts
   packages/coding-agent/src/core/extensions/loader.ts
@@ -86,7 +88,6 @@ for source_file in "${SOURCE_FILES[@]}"; do
   test -f "$SOURCE_ROOT/$source_file" || { echo "Missing source overlay: $source_file" >&2; exit 1; }
 done
 test -f "$PATCH_ARTIFACT" || { echo "Missing committed patch artifact" >&2; exit 1; }
-cp "$PATCH_ARTIFACT" "$ORIGINAL_PATCH"
 
 FICUS_VERSION="$(node -p "require('./apps/core/package.json').dependencies['$PACKAGE']")"
 test "$FICUS_VERSION" = 1.4.0 || { echo "Expected Ficus dependency 1.4.0" >&2; exit 1; }
@@ -166,7 +167,15 @@ NODE
   tar -xzf "$coding_tarball" -C "$pack/coding"
   mv "$pack/coding/package" "$pristine_package"
 
+  mkdir -p "$pack/agent"
+  curl --fail --silent --show-error --location "https://registry.npmjs.org/@earendil-works/pi-agent-core/-/pi-agent-core-$FICUS_VERSION.tgz" --output "$pack/agent/package.tgz"
+  test "$(sha1sum "$pack/agent/package.tgz" | cut -d' ' -f1)" = "97c8e22a52e9ba8d1d3d56ccb9bc3aa1506a7ea2"
+  tar -xzf "$pack/agent/package.tgz" -C "$pack/agent"
+  mv "$pack/agent/package" "$TEMP_DIR/$label-agent-pristine"
   (cd "$dir" && bun run build:offline)
+  for output in "${AGENT_OUTPUT_FILES[@]}"; do
+    cmp "$dir/packages/agent/$output" "$TEMP_DIR/$label-agent-pristine/$output"
+  done
   for output in "${OUTPUT_FILES[@]}"; do
     cmp "$dir/packages/coding-agent/$output" "$pristine_package/$output" || {
       echo "Pristine source build does not reproduce published output: $output" >&2
@@ -177,7 +186,11 @@ NODE
   for source_file in "${SOURCE_FILES[@]}"; do
     cp "$SOURCE_ROOT/$source_file" "$dir/$source_file"
   done
+  (cd "$dir/packages/agent" && bun run build)
   (cd "$dir/packages/coding-agent" && bun run build)
+  for output in "${AGENT_OUTPUT_FILES[@]}"; do
+    sha256sum "$dir/packages/agent/$output" | sed "s|$dir/packages/agent/||"
+  done > "$TEMP_DIR/$label.agent.outputs.manifest"
   bun "$ROOT_DIR/.github/pi-agent-session-dataflow-cli.ts" \
     "$dir/packages/coding-agent/src/core/agent-session.ts" \
     "$dir/packages/coding-agent/dist/core/agent-session.js"
@@ -188,6 +201,13 @@ generate_patch() {
   local label="$1"
   local source_package="$TEMP_DIR/$label/packages/coding-agent"
   local pristine_package="$TEMP_DIR/$label-package-pristine"
+  local -a OUTPUT_FILES=("${OUTPUT_FILES[@]}")
+  if [[ "${2:-}" = agent ]]; then
+    source_package="$TEMP_DIR/$label/packages/agent"
+    pristine_package="$TEMP_DIR/$label-agent-pristine"
+    OUTPUT_FILES=("${AGENT_OUTPUT_FILES[@]}")
+    label="$label-agent"
+  fi
   local candidate="$TEMP_DIR/$label-candidate" verify="$TEMP_DIR/$label-verify"
   local generated="$TEMP_DIR/$label.patch"
   cp -a "$pristine_package" "$candidate"
@@ -227,15 +247,16 @@ GENERATED_PATCH_B="$TEMP_DIR/run-b.patch"
 cmp "$GENERATED_PATCH_A" "$GENERATED_PATCH_B"
 echo "Portable generated patches are byte-identical"
 
-if cmp -s "$ORIGINAL_PATCH" "$GENERATED_PATCH_A"; then
-  echo "Regenerated patch is byte-identical to the committed artifact"
-  exit 0
-fi
+cmp "$TEMP_DIR/run-a.agent.outputs.manifest" "$TEMP_DIR/run-b.agent.outputs.manifest"
+generate_patch run-a agent
+generate_patch run-b agent
+cmp "$TEMP_DIR/run-a-agent.patch" "$TEMP_DIR/run-b-agent.patch"
 if [[ "$WRITE_MODE" -eq 1 ]]; then
   cp "$GENERATED_PATCH_A" "$PATCH_ARTIFACT"
-  echo "Regenerated patch for $PACKAGE@$FICUS_VERSION (--write)"
+  cp "$TEMP_DIR/run-a-agent.patch" "$AGENT_PATCH_ARTIFACT"
+  echo "Regenerated verified Pi session and queue patches (--write)"
   exit 0
 fi
-echo "Regenerated Pi patch drifted from the committed artifact" >&2
-echo "Committed artifact was not modified; rerun with --write only for an intentional reviewed update" >&2
-exit 1
+cmp "$PATCH_ARTIFACT" "$GENERATED_PATCH_A"
+cmp "$AGENT_PATCH_ARTIFACT" "$TEMP_DIR/run-a-agent.patch"
+echo "Regenerated patches are byte-identical to committed artifacts"

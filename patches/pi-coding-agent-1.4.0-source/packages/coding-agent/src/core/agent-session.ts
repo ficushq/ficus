@@ -2284,6 +2284,7 @@ export class AgentSession {
 		behavior: "steer" | "followUp",
 		source: InputSource,
 		deliveryId?: string,
+		queueOrder?: string,
 	): Promise<QueuedInputDisposition> {
 		if (text.startsWith("/")) {
 			this._throwIfExtensionCommand(text);
@@ -2301,9 +2302,9 @@ export class AgentSession {
 		expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
 
 		if (behavior === "steer") {
-			await this._queueSteer(expandedText, processedInput.images, deliveryId);
+			await this._queueSteer(expandedText, processedInput.images, deliveryId, queueOrder);
 		} else {
-			await this._queueFollowUp(expandedText, processedInput.images, deliveryId);
+			await this._queueFollowUp(expandedText, processedInput.images, deliveryId, queueOrder);
 		}
 		return "queued";
 	}
@@ -2320,9 +2321,9 @@ export class AgentSession {
 	async steer(
 		text: string,
 		images?: ImageContent[],
-		options?: { source?: InputSource; deliveryId?: string },
+		options?: { source?: InputSource; deliveryId?: string; queueOrder?: string },
 	): Promise<QueuedInputDisposition> {
-		return this._queueUserInput(text, images, "steer", options?.source ?? "interactive", options?.deliveryId);
+		return this._queueUserInput(text, images, "steer", options?.source ?? "interactive", options?.deliveryId, options?.queueOrder);
 	}
 
 	/**
@@ -2336,15 +2337,34 @@ export class AgentSession {
 	async followUp(
 		text: string,
 		images?: ImageContent[],
-		options?: { source?: InputSource; deliveryId?: string },
+		options?: { source?: InputSource; deliveryId?: string; queueOrder?: string },
 	): Promise<QueuedInputDisposition> {
-		return this._queueUserInput(text, images, "followUp", options?.source ?? "interactive", options?.deliveryId);
+		return this._queueUserInput(text, images, "followUp", options?.source ?? "interactive", options?.deliveryId, options?.queueOrder);
 	}
 
 	/**
 	 * Internal: Queue a steering message (already expanded, no extension command check).
 	 */
-	private async _queueSteer(text: string, images?: ImageContent[], deliveryId?: string): Promise<void> {
+	/** Edit a host-owned pending delivery without losing its position or attachments. */
+	async updateQueuedMessage(deliveryId: string, operation: "cancel" | "steer" | "followUp", commit: () => Promise<void>): Promise<boolean> {
+		if (!deliveryId) return false;
+		return this.agent.updateQueuedMessage(
+			(message) => this._deliveryIds.get(message) === deliveryId,
+			operation,
+			async () => {
+				await commit();
+			},
+		).then((updated) => {
+			if (updated) {
+				this._steeringMessages = this.agent.getQueuedMessages("steer").filter((message) => message.role === "user").map((message) => contentText(message.content, ""));
+				this._followUpMessages = this.agent.getQueuedMessages("followUp").filter((message) => message.role === "user").map((message) => contentText(message.content, ""));
+				this._emitQueueUpdate();
+			}
+			return updated;
+		});
+	}
+
+	private async _queueSteer(text: string, images?: ImageContent[], deliveryId?: string, queueOrder?: string): Promise<void> {
 		this._steeringMessages.push(text);
 		this._emitQueueUpdate();
 		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
@@ -2353,13 +2373,13 @@ export class AgentSession {
 		}
 		const message: AgentMessage = { role: "user", content, timestamp: Date.now() };
 		if (deliveryId) this._deliveryIds.set(message, deliveryId);
-		this.agent.steer(message);
+		this.agent.steer(message, queueOrder);
 	}
 
 	/**
 	 * Internal: Queue a follow-up message (already expanded, no extension command check).
 	 */
-	private async _queueFollowUp(text: string, images?: ImageContent[], deliveryId?: string): Promise<void> {
+	private async _queueFollowUp(text: string, images?: ImageContent[], deliveryId?: string, queueOrder?: string): Promise<void> {
 		this._followUpMessages.push(text);
 		this._emitQueueUpdate();
 		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
@@ -2368,7 +2388,7 @@ export class AgentSession {
 		}
 		const message: AgentMessage = { role: "user", content, timestamp: Date.now() };
 		if (deliveryId) this._deliveryIds.set(message, deliveryId);
-		this.agent.followUp(message);
+		this.agent.followUp(message, queueOrder);
 	}
 
 	/**
@@ -2511,9 +2531,9 @@ export class AgentSession {
 	clearQueue(): { steering: string[]; followUp: string[] } {
 		const steering = [...this._steeringMessages];
 		const followUp = [...this._followUpMessages];
+		this.agent.clearAllQueues();
 		this._steeringMessages = [];
 		this._followUpMessages = [];
-		this.agent.clearAllQueues();
 		this._emitQueueUpdate();
 		return { steering, followUp };
 	}

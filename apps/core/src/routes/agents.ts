@@ -1,4 +1,5 @@
 import { readSandboxHostCapacity } from '../services/machines/host-admission'
+import { updatePendingMessage } from '../services/agent/pending-message-control'
 import { getExposureCleanupStatusForDisplay } from '../services/sandbox/exposure-cleanup'
 import { getPostgresError, publicErrorMessage } from '../db/errors'
 import { sentAssistantRouting } from '../services/routing/assistant-routing-preview'
@@ -908,6 +909,26 @@ export const agentsRouter = new Hono()
       throw err
     }
   })
+  .post(
+    '/:id/messages/:messageId/queue',
+    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
+    }),
+    async (c) => {
+      const body = await c.req.json().catch(() => null)
+      if (!body || !['cancel', 'steer', 'follow-up'].includes(body.operation))
+        return c.json({ error: 'Invalid queue operation' }, 400)
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(c.req.param('messageId')))
+        return c.json({ error: 'Invalid message ID' }, 400)
+      const agent = await Agent.find(c.req.param('id'))
+      if (!agent) return c.json({ error: 'Agent not found' }, 404)
+      const result = await updatePendingMessage(agent.id, c.req.param('messageId'), body.operation)
+      if (result === 'updated') return c.json({ success: true })
+      if (result === 'not_pending')
+        return c.json({ error: 'This message is no longer waiting in the queue.', code: result }, 409)
+      return c.json({ error: 'Could not confirm the queue update. Refresh and try again.', code: result }, 503)
+    }
+  )
   // POST /api/agents/:id/clear-queue — clear all pending steer/follow-up messages
   .post(
     '/:id/clear-queue',
