@@ -5,6 +5,7 @@
   "type": "module",
   "private": true,
   "exports": {
+    "./atomic-write": "./src/services/atomic-write.ts",
     "./watcher": "./src/services/watcher.ts"
   },
   "scripts": {
