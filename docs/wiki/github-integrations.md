@@ -506,6 +506,11 @@ per recipient under the same final authority lock. Accepted messages/receipts an
 source snapshots are unchanged; retries cannot send the fact twice. The original audit
 reason is `github_feedback_obsolete`; the factual variant records
 `github_factual_parent_obsolete`. It is OFF-only, not canonical approval after a toggle.
+The shared 25-image pass budget still applies: a candidate reserves its source and
+factual variant together. If that budget defers replacement, the original flow
+intent stays retryable with `github_factual_parent_obsolete_pending`; the old prose
+remains fenced until a later bounded pass persists the factual intent. Notification
+fanout persists identities rather than loading every original inbox body.
 
 Rule matching and
 work-stream bindings still read the source fact, so predicates such as

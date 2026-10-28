@@ -10,7 +10,11 @@ import {
   type DbTx,
 } from '../../../db'
 
-import { GITHUB_FEEDBACK_OBSOLETE, preserveRawGitHubActionFacts } from './feedback-raw-facts'
+import {
+  GITHUB_FEEDBACK_OBSOLETE,
+  GITHUB_FACTUAL_RECOVERY_PENDING,
+  preserveRawGitHubActionFacts,
+} from './feedback-raw-facts'
 
 type ReadStore = Pick<typeof db, 'select'>
 
@@ -160,10 +164,20 @@ export async function obsoleteOlderGitHubFeedback(
         sql`${integrationOutputEvents.lastErrorCode} IS DISTINCT FROM ${GITHUB_FEEDBACK_OBSOLETE}`
       )
     )
-  for (const source of rawActions) await preserveRawGitHubActionFacts(tx, source.id, afterCommit)
+  const deferred: string[] = []
+  for (const source of rawActions) {
+    try {
+      await preserveRawGitHubActionFacts(tx, source.id, afterCommit)
+    } catch (error) {
+      if (error instanceof Error && error.message === 'feedback_capacity_deferred') deferred.push(source.id)
+      else throw error
+    }
+  }
   await tx
     .update(integrationOutputEvents)
-    .set({ lastErrorCode: GITHUB_FEEDBACK_OBSOLETE })
+    .set({
+      lastErrorCode: sql`case when ${inArray(integrationOutputEvents.id, deferred)} then ${GITHUB_FACTUAL_RECOVERY_PENDING} else ${GITHUB_FEEDBACK_OBSOLETE} end`,
+    })
     .where(inArray(integrationOutputEvents.id, raw))
   await tx
     .update(integrationOutputDeliveries)
@@ -175,6 +189,7 @@ export async function obsoleteOlderGitHubFeedback(
     .where(
       and(
         or(inArray(integrationOutputDeliveries.eventId, canonical), inArray(integrationOutputDeliveries.eventId, raw)),
+        notInArray(integrationOutputDeliveries.eventId, deferred),
         notInArray(integrationOutputDeliveries.status, ['delivered', 'superseded'])
       )
     )

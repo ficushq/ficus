@@ -14,7 +14,8 @@ import {
   workStreams,
 } from '../../../db'
 import { creationNotificationContent, defaultNotificationContent } from '../outputs/default-routing'
-import { InboxMessage } from '../../../entities/InboxMessage'
+import { eventEmitter } from '../../../lib/infra/event-emitter'
+import { githubOutputPass, GITHUB_PASS_READ_LIMIT } from './feedback-pass'
 import { githubContentHash, hasGitHubParentText } from './feedback-envelope'
 import {
   hasGitHubFreshnessBinding,
@@ -22,12 +23,18 @@ import {
   rawGitHubFactsSourceIdSQL,
 } from './feedback-freshness-binding'
 import { isCurrentGitHubFeedbackRevision } from './feedback-obsolescence'
-import { readOutputEvent, inboxIntegrationEventId, inboxRecipientAgentId } from './feedback-pass-read'
+import {
+  readOutputEvent,
+  inboxIntegrationEventId,
+  inboxRecipientAgentId,
+  reserveOutputBody,
+} from './feedback-pass-read'
 
 type Event = typeof integrationOutputEvents.$inferSelect
 type Store = typeof db | DbTx
 export const GITHUB_FEEDBACK_OBSOLETE = 'github_feedback_obsolete'
 export const GITHUB_FACTUAL_PARENT_OBSOLETE = 'github_factual_parent_obsolete'
+export const GITHUB_FACTUAL_RECOVERY_PENDING = 'github_factual_parent_obsolete_pending'
 
 /** Deterministic immutable OFF variant. No current parent text, trust, decision or approval is copied. */
 function factualFact(source: Event): IntegrationOutputFact | null {
@@ -139,11 +146,22 @@ export async function preserveRawGitHubActionFacts(
   afterCommit: Array<() => void> = []
 ): Promise<Event | undefined> {
   const source = await readOutputEvent(tx, sourceId)
+  if (!source && (githubOutputPass()?.bodyRows ?? 0) >= GITHUB_PASS_READ_LIMIT)
+    throw new Error('feedback_capacity_deferred')
   const fact = source && factualFact(source)
   if (!source || !fact || source.authority.kind !== 'connection') return
   const squadId = source.authority.squadId
   const observations = await tx
-    .select({ association: githubFeedbackSources, revision: githubFeedbackRevisions, object: githubFeedbackObjects })
+    .select({
+      association: githubFeedbackSources,
+      revision: {
+        id: githubFeedbackRevisions.id,
+        squadId: githubFeedbackRevisions.squadId,
+        decision: githubFeedbackRevisions.decision,
+        releaseState: githubFeedbackRevisions.releaseState,
+      },
+      object: githubFeedbackObjects,
+    })
     .from(githubFeedbackSources)
     .innerJoin(githubFeedbackRevisions, eq(githubFeedbackRevisions.id, githubFeedbackSources.revisionId))
     .innerJoin(githubFeedbackObjects, eq(githubFeedbackObjects.id, githubFeedbackRevisions.objectId))
@@ -184,24 +202,37 @@ export async function preserveRawGitHubActionFacts(
     .limit(1)
   if (projected) return // Never turn a filtered human/model effect into an OFF replay.
   const sourceKey = `github-raw-facts:${source.id}`
-  await tx
-    .insert(integrationOutputEvents)
-    .values({
-      integration: 'github',
-      sourceKey,
-      eventKey: source.eventKey,
-      fact,
-      authority: source.authority,
-      createdAt: source.createdAt,
-      matchedAt: source.matchedAt,
-      lastErrorCode: GITHUB_FACTUAL_PARENT_OBSOLETE,
-      triggerSquadIds: source.triggerSquadIds,
-    })
-    .onConflictDoNothing()
-  const [variant] = await tx
-    .select()
+  const [identity] = await tx
+    .select({ id: integrationOutputEvents.id })
     .from(integrationOutputEvents)
     .where(and(eq(integrationOutputEvents.sourceKey, sourceKey), eq(integrationOutputEvents.eventKey, source.eventKey)))
+  const pass = githubOutputPass()
+  let variant: Event | undefined
+  if (identity && pass?.bodies.has(`event:${identity.id}`)) variant = await readOutputEvent(tx, identity.id)
+  else {
+    if (!reserveOutputBody()) throw new Error('feedback_capacity_deferred')
+    await tx
+      .insert(integrationOutputEvents)
+      .values({
+        integration: 'github',
+        sourceKey,
+        eventKey: source.eventKey,
+        fact,
+        authority: source.authority,
+        createdAt: source.createdAt,
+        matchedAt: source.matchedAt,
+        lastErrorCode: GITHUB_FACTUAL_PARENT_OBSOLETE,
+        triggerSquadIds: source.triggerSquadIds,
+      })
+      .onConflictDoNothing()
+    ;[variant] = await tx
+      .select()
+      .from(integrationOutputEvents)
+      .where(
+        and(eq(integrationOutputEvents.sourceKey, sourceKey), eq(integrationOutputEvents.eventKey, source.eventKey))
+      )
+    if (variant && pass) pass.bodies.set(`event:${variant.id}`, structuredClone(variant))
+  }
   if (!variant || !(await rawGitHubFactsOrigin(tx, variant))) return
   await tx
     .insert(githubFeedbackSources)
@@ -230,7 +261,12 @@ export async function preserveRawGitHubActionFacts(
       .onConflictDoNothing()
   }
   const notices = await tx
-    .select()
+    .select({
+      id: inbox.id,
+      recipientId: inbox.recipientId,
+      idempotencyKey: inbox.idempotencyKey,
+      metadata: inbox.metadata,
+    })
     .from(inbox)
     .where(
       and(
@@ -274,6 +310,15 @@ export async function preserveRawGitHubActionFacts(
     )
   }
   await tx
+    .update(integrationOutputDeliveries)
+    .set({ status: 'superseded', reason: GITHUB_FEEDBACK_OBSOLETE, updatedAt: new Date() })
+    .where(
+      and(
+        eq(integrationOutputDeliveries.eventId, source.id),
+        sql`${integrationOutputDeliveries.status} NOT IN ('delivered', 'superseded')`
+      )
+    )
+  await tx
     .update(integrationOutputEvents)
     .set({ matchedAt: new Date(), lastErrorCode: GITHUB_FEEDBACK_OBSOLETE })
     .where(eq(integrationOutputEvents.id, source.id))
@@ -294,29 +339,60 @@ async function persistFactualNotification(
   const creation = metadata.integrationCreationNotice === true
   if (creation && (!stream || stream.ownerAgentId !== recipientId || !['active', 'queued'].includes(stream.status)))
     return
-  await InboxMessage.persistSystemAgentOnceInTransaction(
-    tx,
-    {
+  const subject = creation ? `New work stream you own: ${variant.fact.subject}` : variant.fact.subject
+  const content =
+    creation && stream
+      ? creationNotificationContent(variant, stream)
+      : defaultNotificationContent(
+          variant,
+          workStreamId,
+          undefined,
+          variant.authority.kind === 'connection' ? variant.authority.squadId : undefined
+        )
+  const idempotencyKey = key.length <= 200 ? key : `github-raw-facts:${githubContentHash(key)}`
+  const [inserted] = await tx
+    .insert(inbox)
+    .values({
+      recipientType: 'agent',
       recipientId,
-      subject: creation ? `New work stream you own: ${variant.fact.subject}` : variant.fact.subject,
-      content:
-        creation && stream
-          ? creationNotificationContent(variant, stream)
-          : defaultNotificationContent(
-              variant,
-              workStreamId,
-              undefined,
-              variant.authority.kind === 'connection' ? variant.authority.squadId : undefined
-            ),
+      senderType: 'system',
+      subject,
+      content,
       metadata: {
         ...metadata,
         integrationEventId: variant.id,
         integrationFactualReason: GITHUB_FACTUAL_PARENT_OBSOLETE,
+        wakeEligible: true,
       },
-      wakeEligible: true,
-      recordOnly: true,
-    },
-    key,
-    afterCommit
-  )
+      idempotencyKey,
+    })
+    .onConflictDoNothing({ target: inbox.idempotencyKey })
+    .returning({ id: inbox.id })
+  // Verify an idempotent winner by equality, without materializing an unbounded mailbox body.
+  const [winner] = inserted
+    ? [inserted]
+    : await tx
+        .select({ id: inbox.id })
+        .from(inbox)
+        .where(
+          and(
+            eq(inbox.idempotencyKey, idempotencyKey),
+            eq(inbox.recipientId, recipientId),
+            eq(inbox.senderType, 'system'),
+            eq(inbox.recipientType, 'agent'),
+            sql`${inbox.subject} IS NOT DISTINCT FROM ${subject ?? null}`,
+            eq(inbox.content, content),
+            sql`${inbox.metadata}->>'integrationEventId' = ${variant.id}`
+          )
+        )
+  if (!winner) throw new Error('Factual notification idempotency payload mismatch')
+  if (inserted)
+    afterCommit.push(() =>
+      eventEmitter.emit('inbox.messageReceived', {
+        messageId: inserted.id,
+        recipientType: 'agent',
+        recipientId,
+        senderAgentId: null,
+      })
+    )
 }

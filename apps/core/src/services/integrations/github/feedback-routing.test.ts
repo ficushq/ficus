@@ -4509,3 +4509,119 @@ test('pre-upgrade OFF action provenance without rawParent stays unbound; it cann
     await h.close()
   }
 })
+
+test('a factual candidate reserves its original source atomically, so body-budget saturation cannot strand every alias', async () => {
+  const h = await rawFactualFixture()
+  try {
+    const variant = (await h.stale())!
+    const { readOutputCandidate } = await import('./feedback-pass-read')
+    const { withGitHubOutputPass, githubOutputPass } = await import('./feedback-pass')
+    const { isGitHubOutputAdmitted } = await import('./feedback-routing')
+    await withGitHubOutputPass(async () => {
+      githubOutputPass()!.bodyRows = 24
+      expect(await readOutputCandidate(db, variant.id)).toBeUndefined()
+      expect(githubOutputPass()!.bodyRows).toBe(24)
+    })
+    await withGitHubOutputPass(async () => {
+      githubOutputPass()!.bodyRows = 23
+      expect((await readOutputCandidate(db, variant.id))!.id).toBe(variant.id)
+      expect(githubOutputPass()!.bodyRows).toBe(25)
+      expect(githubOutputPass()!.bodies.has(`event:${h.source.id}`)).toBe(true)
+      expect(await isGitHubOutputAdmitted(db, variant)).toBe(true)
+    })
+    expect(h.read).not.toHaveBeenCalled()
+  } finally {
+    await h.close()
+  }
+})
+
+test('a body-budget-deferred OFF factual intent keeps its queued flow recoverable while old prose stays fenced', async () => {
+  const h = await rawFactualFixture()
+  try {
+    const streamId = await h.stream(true, 'pull_request.review_requested')
+    await db
+      .update(workStreamFlowRuns)
+      .set({ attemptAgents: { '1': h.managerId } })
+      .where(eq(workStreamFlowRuns.workStreamId, streamId))
+    const [run] = await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, streamId))
+    const [intent] = await db
+      .insert(integrationOutputDeliveries)
+      .values({
+        eventId: h.source.id,
+        workStreamId: streamId,
+        subscriptionId: 'feedback',
+        subscription: run!.state.definition.subscriptions![0]!,
+        status: 'pending',
+      })
+      .returning()
+    const { withGitHubOutputPass, githubOutputPass } = await import('./feedback-pass')
+    const { isGitHubOutputAdmitted } = await import('./feedback-routing')
+    await withGitHubOutputPass(async () => {
+      githubOutputPass()!.bodyRows = 22
+      expect(await h.stale()).toBeUndefined()
+      expect(githubOutputPass()!.bodyRows).toBeLessThanOrEqual(25)
+    })
+    expect(
+      (await db.select().from(integrationOutputDeliveries).where(eq(integrationOutputDeliveries.id, intent!.id)))[0]!
+        .status
+    ).toBe('pending')
+    expect(await isGitHubOutputAdmitted(db, h.source)).toBe(false)
+    h.useRealSend()
+    await reconcileOutputDeliveries(streamId)
+    await reconcileOutputDeliveries(streamId)
+    const [variant] = await db
+      .select()
+      .from(integrationOutputEvents)
+      .where(eq(integrationOutputEvents.sourceKey, `github-raw-facts:${h.source.id}`))
+    expect(variant).toBeDefined()
+    const notices = await db
+      .select()
+      .from(inbox)
+      .where(sql`${inbox.metadata}->>'integrationEventId' = ${variant!.id}`)
+    expect(notices).toHaveLength(1)
+    expect(notices[0]!.content).not.toContain('OLD_FACT')
+    expect(notices[0]!.deliveredAt).not.toBeNull()
+    expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, h.managerId))).toHaveLength(1)
+    expect(h.read).not.toHaveBeenCalled()
+  } finally {
+    await h.close()
+  }
+})
+
+// More recipients than the full-image budget: intent persistence must stay body-free, not
+// roll back the newer parent or strand the tail of an otherwise valid factual replacement.
+test('OFF factual fanout persists more than 25 original recipients without exceeding the shared body budget', async () => {
+  const h = await rawFactualFixture()
+  try {
+    const typeId = (await Agent.mustFind(h.managerId)).agentTypeId
+    const recipients = await db
+      .insert(agents)
+      .values(Array.from({ length: 30 }, () => ({ squadId: h.squadId, agentTypeId: typeId, status: 'idle' as const })))
+      .returning({ id: agents.id })
+    await db.insert(inbox).values(
+      recipients.map(({ id }) => ({
+        recipientType: 'agent' as const,
+        recipientId: id,
+        senderType: 'system' as const,
+        content: h.source.fact.body!,
+        idempotencyKey: `fanout:${h.source.id}:${id}`,
+        metadata: { source: 'integration-notification', integrationEventId: h.source.id },
+      }))
+    )
+    const { withGitHubOutputPass, githubOutputPass } = await import('./feedback-pass')
+    await withGitHubOutputPass(async () => {
+      githubOutputPass()!.bodyRows = 18
+      const variant = await h.stale()
+      expect(variant).toBeDefined()
+      expect(githubOutputPass()!.bodyRows).toBeLessThanOrEqual(25)
+      const notices = await db
+        .select({ id: inbox.id })
+        .from(inbox)
+        .where(sql`${inbox.metadata}->>'integrationEventId' = ${variant!.id}`)
+      expect(notices).toHaveLength(30)
+    })
+    expect(h.read).not.toHaveBeenCalled()
+  } finally {
+    await h.close()
+  }
+}, 30_000)
