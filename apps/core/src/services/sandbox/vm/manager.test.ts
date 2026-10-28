@@ -254,6 +254,7 @@ function makeHarness(opts?: { machineForSandbox?: (id: string) => string; bashSc
   let port = 40000
   const boxPorts = new Map<string, number>()
   const deps: HarnessDeps = {
+    cleanupExposure: async () => {},
     // The manager resolves the machine ONCE (via a resolvePlacement-shaped request)
     // and hands its id to ensureBox; the reverse-tunnel callback (resolveBoxApiUrl)
     // uses that same machine. The full request is recorded so tests can assert its
@@ -3398,4 +3399,19 @@ test('restart preserves tracked execution layout and lifecycle options while ref
   } finally {
     await mgr.cleanup()
   }
+})
+
+test('exposure retirement repairs on first ensure and attach, independently of periodic retry', async () => {
+  const h = makeHarness()
+  const contacts: string[] = []
+  h.deps.cleanupExposure = async (id) => {
+    contacts.push(id)
+  }
+  const mgr = new VmSandboxManager(h.deps)
+  await mgr.ensureSandbox('squad_s1', squadOpts)
+  expect(contacts).toContain('squad_s1')
+  h.setMachineBoxRow({ machineId: 'm1', port: 50100, status: 'ready' })
+  await mgr.getOrAttachClient('agent_retirement')
+  expect(contacts).toContain('agent_retirement')
+  await mgr.cleanup()
 })

@@ -423,52 +423,14 @@ export async function setKnownHosts(squadId: string, knownHosts: string): Promis
 
 // Workspace Environment
 
-export interface SquadEnvSecretStatus {
-  key: string
-  isSet: boolean
-  exposed: boolean
-  globallyExposed: boolean
-  /** Whether the caller may add this key (needs read access to it in the Secret Store). */
-  canExpose: boolean
-  updatedAt: string | null
-  updatedBy: string | null
-}
-
-export async function getWorkspaceEnv(squadId: string): Promise<{ content: string; exposedSecretKeys: string[] }> {
-  return apiFetch<{ content: string; exposedSecretKeys: string[] }>(`/squads/workspace/${squadId}/env`)
+export async function getWorkspaceEnv(squadId: string): Promise<{ content: string }> {
+  return apiFetch<{ content: string }>(`/squads/workspace/${squadId}/env`)
 }
 
 export async function setWorkspaceEnv(squadId: string, content: string): Promise<void> {
   return apiFetch<void>(`/squads/workspace/${squadId}/env`, {
     method: 'PUT',
     body: JSON.stringify({ content }),
-  })
-}
-
-export async function getWorkspaceEnvSecrets(squadId: string): Promise<{ secrets: SquadEnvSecretStatus[] }> {
-  return apiFetch<{ secrets: SquadEnvSecretStatus[] }>(`/squads/workspace/${squadId}/env/secrets`)
-}
-
-export async function setWorkspaceEnvSecrets(
-  squadId: string,
-  keys: string[]
-): Promise<{ success: boolean; exposedSecretKeys: string[] }> {
-  return apiFetch<{ success: boolean; exposedSecretKeys: string[] }>(`/squads/workspace/${squadId}/env/secrets`, {
-    method: 'POST',
-    body: JSON.stringify({ keys }),
-  })
-}
-
-export async function getGlobalWorkspaceEnvSecrets(): Promise<{ globallyExposedSecretKeys: string[] }> {
-  return apiFetch<{ globallyExposedSecretKeys: string[] }>('/squads/workspace/env/global-secrets')
-}
-
-export async function setGlobalWorkspaceEnvSecrets(
-  keys: string[]
-): Promise<{ success: boolean; globallyExposedSecretKeys: string[] }> {
-  return apiFetch<{ success: boolean; globallyExposedSecretKeys: string[] }>('/squads/workspace/env/global-secrets', {
-    method: 'POST',
-    body: JSON.stringify({ keys }),
   })
 }
 

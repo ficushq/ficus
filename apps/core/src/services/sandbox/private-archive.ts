@@ -5,7 +5,6 @@ import { createLogger } from '../../lib/infra/logger'
 import { createPeriodicRunner, type PeriodicRunner } from '../../lib/infra/PeriodicRunner'
 import { getSettingsStore } from '../settings'
 import { workspaceDotPath } from '../workspace/dot-dir'
-import { AGENT_SECRETS_FILE_NAME } from './agent-secrets-file'
 
 /** Ensure and return the archive root: HOME_DIR/private-archive. */
 export function getPrivateArchiveRoot(): string {
@@ -38,7 +37,7 @@ function removeAgentSecretsFileIfPresent(privateRoot: string): void {
   } catch {
     return
   }
-  rmSync(join(dotDir, AGENT_SECRETS_FILE_NAME), { force: true })
+  rmSync(join(dotDir, 'agent-secrets.env'), { force: true })
 }
 
 /**

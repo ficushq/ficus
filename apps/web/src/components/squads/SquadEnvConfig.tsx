@@ -1,13 +1,6 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  getWorkspaceEnv,
-  getWorkspaceEnvSecrets,
-  setWorkspaceEnv,
-  setWorkspaceEnvSecrets,
-  type SquadEnvSecretStatus,
-} from '../../api/squads'
-import { ApiError } from '../../api/client'
+import { getWorkspaceEnv, setWorkspaceEnv } from '../../api/squads'
 import clsx from 'clsx'
 import { usePermissions } from '../../hooks/usePermissions'
 import { FormSkeleton } from '../loading/Skeleton'
@@ -19,27 +12,15 @@ interface Props {
 export function SquadEnvConfig({ squadId }: Props) {
   const queryClient = useQueryClient()
   const [value, setValue] = useState('')
-  const [selectedSecretKeys, setSelectedSecretKeys] = useState<string[]>([])
   const [saved, setSaved] = useState(false)
-  const [secretsSaved, setSecretsSaved] = useState(false)
   const { can, isLoading: permissionsLoading } = usePermissions(squadId)
   const canWriteEnv = !permissionsLoading && can('env:write')
 
   const queryKey = ['squads', squadId, 'workspace-env']
-  const secretsQueryKey = ['squads', squadId, 'workspace-env-secrets']
 
   const { data, isLoading, error } = useQuery({
     queryKey,
     queryFn: () => getWorkspaceEnv(squadId),
-  })
-
-  const {
-    data: secretsData,
-    isLoading: secretsLoading,
-    error: secretsError,
-  } = useQuery({
-    queryKey: secretsQueryKey,
-    queryFn: () => getWorkspaceEnvSecrets(squadId),
   })
 
   // Sync when data loads
@@ -49,18 +30,7 @@ export function SquadEnvConfig({ squadId }: Props) {
     }
   }, [data?.content])
 
-  useEffect(() => {
-    if (secretsData?.secrets) {
-      setSelectedSecretKeys(secretsData.secrets.filter((secret) => secret.exposed).map((secret) => secret.key))
-    }
-  }, [secretsData?.secrets])
-
   const dirty = value !== (data?.content ?? '')
-  const savedSecretKeys = useMemo(
-    () => (secretsData?.secrets ?? []).filter((secret) => secret.exposed).map((secret) => secret.key),
-    [secretsData?.secrets]
-  )
-  const secretsDirty = selectedSecretKeys.slice().sort().join('\n') !== savedSecretKeys.slice().sort().join('\n')
 
   const mutation = useMutation({
     mutationFn: (content: string) => setWorkspaceEnv(squadId, content),
@@ -71,29 +41,9 @@ export function SquadEnvConfig({ squadId }: Props) {
     },
   })
 
-  const secretsMutation = useMutation({
-    mutationFn: (keys: string[]) => setWorkspaceEnvSecrets(squadId, keys),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey })
-      queryClient.invalidateQueries({ queryKey: secretsQueryKey })
-      setSecretsSaved(true)
-      setTimeout(() => setSecretsSaved(false), 2000)
-    },
-  })
-
   const handleSave = useCallback(() => {
     mutation.mutate(value)
   }, [value, mutation])
-
-  const handleSaveSecrets = useCallback(() => {
-    secretsMutation.mutate(selectedSecretKeys)
-  }, [selectedSecretKeys, secretsMutation])
-
-  const toggleSecret = useCallback((secret: SquadEnvSecretStatus) => {
-    setSelectedSecretKeys((current) =>
-      current.includes(secret.key) ? current.filter((key) => key !== secret.key) : [...current, secret.key]
-    )
-  }, [])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -128,8 +78,7 @@ export function SquadEnvConfig({ squadId }: Props) {
       <div className="mb-2">
         <h4 className="text-sm font-medium text-primary">Environment Variables</h4>
         <p className="text-xs text-muted mt-1">
-          Secrets and environment variables for agents and terminal sessions. User-authored values are stored separately
-          from generated Secret Store exports.
+          Custom secrets and environment variables for this squad. Values are visible to agents and terminals.
         </p>
       </div>
 
@@ -167,89 +116,6 @@ export function SquadEnvConfig({ squadId }: Props) {
       {mutation.isError && (
         <p className="text-xs text-status-danger-500 mt-2">Failed to save: {String(mutation.error)}</p>
       )}
-
-      <div className="mt-6 border-t border-th-border pt-4">
-        <h4 data-setting-target="exposed-secret-store-keys" className="text-sm font-medium text-primary">
-          Exposed Secret Store Keys
-        </h4>
-        <p className="text-xs text-muted mt-1">
-          Select only the global secrets this squad sandbox may read as environment variables. Values are never shown
-          here, but selected secrets are rendered into the squad sandbox .ficus/.env file. You can only add secrets you
-          are allowed to read in the Secret Store.
-        </p>
-
-        {secretsLoading ? (
-          <FormSkeleton label="Loading secret assignments" sections={2} />
-        ) : secretsError ? (
-          <div className="text-sm text-status-danger-500 py-4">Failed to load Secret Store keys</div>
-        ) : (
-          <div className="mt-3 space-y-2 max-h-64 overflow-auto rounded-lg border border-th-border p-3">
-            {(secretsData?.secrets ?? []).map((secret) => {
-              const checked = selectedSecretKeys.includes(secret.key)
-              // Adding needs read access in the Secret Store; an exposed key can always be unchecked.
-              const canAdd = secret.isSet && secret.canExpose
-              return (
-                <label key={secret.key} className="flex items-center justify-between gap-3 text-sm">
-                  <span className={clsx('font-mono', secret.isSet ? 'text-primary' : 'text-muted')}>
-                    {secret.key}
-                    {secret.globallyExposed && (
-                      <span className="ml-2 font-sans text-xs text-accent-light">globally exposed</span>
-                    )}
-                    {!secret.isSet ? (
-                      <span className="ml-2 font-sans text-xs text-muted">
-                        {checked ? 'not set; uncheck to remove exposure' : 'not set'}
-                      </span>
-                    ) : (
-                      !secret.canExpose &&
-                      !secret.globallyExposed && (
-                        <span className="ml-2 font-sans text-xs text-muted">
-                          {checked ? 'no read access; uncheck to remove exposure' : 'no read access'}
-                        </span>
-                      )
-                    )}
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={checked || secret.globallyExposed}
-                    disabled={!canWriteEnv || secret.globallyExposed || (!canAdd && !checked)}
-                    onChange={() => canWriteEnv && toggleSecret(secret)}
-                    className="h-4 w-4 rounded border-th-border text-accent-light focus:ring-accent/50 disabled:opacity-50"
-                  />
-                </label>
-              )
-            })}
-          </div>
-        )}
-
-        <div className="flex items-center justify-between mt-2">
-          <span className="text-xs text-muted">
-            {secretsDirty
-              ? 'Unsaved secret exposure changes'
-              : secretsSaved
-                ? '✓ Secret exposure saved'
-                : 'Values hidden'}
-          </span>
-          <button
-            onClick={handleSaveSecrets}
-            disabled={!canWriteEnv || !secretsDirty || secretsMutation.isPending}
-            className={clsx(
-              'ficus-button ficus-button-primary',
-              'px-3 py-1 text-sm rounded-md font-medium transition-colors',
-              !secretsDirty && 'opacity-50 cursor-not-allowed'
-            )}
-          >
-            {secretsMutation.isPending ? 'Saving...' : 'Save exposed secrets'}
-          </button>
-        </div>
-
-        {secretsMutation.isError && (
-          <p className="text-xs text-status-danger-500 mt-2">
-            {secretsMutation.error instanceof ApiError && secretsMutation.error.status === 403
-              ? secretsMutation.error.message
-              : `Failed to save exposed secrets: ${String(secretsMutation.error)}`}
-          </p>
-        )}
-      </div>
     </div>
   )
 }

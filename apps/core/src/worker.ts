@@ -455,6 +455,11 @@ const subsystems: Subsystem[] = [
     () => assistantUpdateRunner.stop()
   ),
   subsystem(
+    'exposure-retirement-cleanup',
+    async () => (await import('./services/sandbox/exposure-cleanup')).startExposureCleanup(),
+    async () => (await import('./services/sandbox/exposure-cleanup')).stopExposureCleanup()
+  ),
+  subsystem(
     'agent-private-archive-lifecycle',
     async () => {
       const { startAgentPrivateArchiveJanitor } = await import('./services/sandbox/private-archive')

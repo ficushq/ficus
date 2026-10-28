@@ -1,3 +1,4 @@
+import { getExposureCleanupStatus } from '../services/sandbox/exposure-cleanup'
 /**
  * sandbox_status Tool
  *
@@ -116,7 +117,11 @@ function defaultDeps(): SandboxStatusDeps {
           const agent = await Agent.find(sandboxId.slice('agent_'.length))
           if (agent?.squadId) squad = await Squad.find(agent.squadId)
         }
-        return mergeSandboxStatus(physical, await resolveToolchainStatus(sandboxId, squad))
+        return mergeSandboxStatus(
+          physical,
+          await resolveToolchainStatus(sandboxId, squad),
+          await getExposureCleanupStatus(sandboxId, squad?.id)
+        )
       } catch (err) {
         log.warn(`Could not resolve managed toolchain status for ${sandboxId}:`, err)
         return physical

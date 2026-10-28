@@ -1,10 +1,6 @@
 import { projectExecutionWrappers } from '../integrations/project-execution-wrappers'
-import { isRetiredDeploymentKey } from '../secrets/retired-deployment'
 import { join } from 'path'
 import { existsSync, mkdirSync, writeFileSync, readFileSync, chmodSync, renameSync, rmSync } from 'fs'
-import { eq, isNull } from 'drizzle-orm'
-import { db, squads, squadSecretExposures, globalSecretExposures } from '../../db'
-import { getSecretStore, isManagedSecretKey } from '../secrets'
 import { loadProtectedIntegrationBindings } from '../integrations/projection/protected-env'
 import { githubSigningPublicKeyForSquad } from '../integrations/github/commit-signing-store'
 import { getSquadWorkspacePath } from './workspace'
@@ -15,35 +11,15 @@ import {
   WorkspaceDotDirConflictError,
 } from '../workspace/dot-dir'
 import { createLogger } from '../../lib/infra/logger'
-
 const log = createLogger('squad-env')
-
-/**
- * Runs one squad's step of an env regeneration that may span many squads. A squad whose workspace
- * dot dir needs a manual fix is skipped with a warning, so it cannot stop every other squad's env
- * from being regenerated (a rotated or deleted secret must still leave the others).
- */
-async function skipConflictedSquad(squadId: string, run: () => Promise<void>): Promise<void> {
-  try {
-    await run()
-  } catch (error) {
-    if (!(error instanceof WorkspaceDotDirConflictError)) throw error
-    log.warn(
-      `Skipped regenerating the env of squad ${squadId}: ${error.message} Until this is fixed, the squad's ` +
-        `sandbox .env may still hold secrets that were rotated, revoked or disconnected since it was last written.`
-    )
-  }
-}
-
 const USER_ENV_FILE = 'env.user'
 const GENERATED_ENV_FILE = '.env'
-const GENERATED_SECRET_MARKER = '# Generated from Ficus Secret Store allowlist. Do not edit values here.'
+// Recognize old platform output only; do not discard unrelated user-authored comments.
+const LEGACY_EXPOSURE_MARKER = '# Generated from Ficus Secret Store allowlist. Do not edit values here.'
 const GENERATED_INTEGRATION_MARKER = '# Generated protected integration bindings. Do not edit values here.'
 
 /**
- * Get the .ficus directory path for a squad workspace. A workspace still under the legacy dot dir
- * is moved first (see services/workspace/dot-dir.ts), so this process never reads an empty `.ficus`
- * while the env is still beside it.
+ * Get the canonical settings directory, refusing conflicting files or symlinks.
  */
 function getFicusDir(squadId: string): string {
   const workspacePath = getSquadWorkspacePath(squadId)
@@ -79,8 +55,6 @@ function getUserEnvPath(squadId: string): string {
 function getGeneratedEnvPath(squadId: string): string {
   return join(getFicusDir(squadId), GENERATED_ENV_FILE)
 }
-
-const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 /**
  * Keys a squad env may never set, each with the reason the writer is told.
@@ -135,59 +109,15 @@ export function describeReservedSquadEnvKeys(keys: string[]): string {
   return keys.map((key) => `Cannot set ${key} in the squad environment: ${RESERVED_SQUAD_ENV_KEYS[key]}.`).join(' ')
 }
 
-/** Valid, exposable Secret Store key names (sorted, deduped). Shared with per-agent exposures. */
-export function normalizeSecretKeys(keys: string[]): string[] {
-  return Array.from(
-    new Set(
-      keys
-        .map((key) => key.trim())
-        .filter((key) => ENV_NAME_PATTERN.test(key))
-        // Platform-managed credentials must NEVER reach a squad/sandbox env,
-        // even if a tenant names one explicitly in the exposure allowlist. This
-        // is the single chokepoint: every persistence and render path routes
-        // exposure keys through here, so a managed key can neither be stored as
-        // an exposure nor rendered into .ficus/.env.
-        .filter((key) => !key.startsWith('__') && !isManagedSecretKey(key) && !isRetiredDeploymentKey(key))
-        .filter(
-          (key) =>
-            !/^(?:GH_TOKEN|GITHUB_TOKEN)(?:_|$)/.test(key) &&
-            key !== 'GITHUB_WEBHOOK_SECRET' &&
-            key !== 'GITHUB_USER' &&
-            key !== 'DEPLOY_GITHUB_PAGES_TOKEN'
-        )
-        // Same reasoning for the identity/PATH names: a Secret Store key called
-        // FICUS_API_URL would otherwise be RENDERED into .ficus/.env and sourced into
-        // every agent shell, which is the very thing the write-time check refuses.
-        .filter((key) => !(key in RESERVED_SQUAD_ENV_KEYS))
-    )
-  ).sort()
-}
-
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`
 }
 
-function renderSecretExports(keys: string[], getSecretValue: (key: string) => string | undefined): string {
-  const lines = normalizeSecretKeys(keys)
-    .map((key) => {
-      const value = getSecretValue(key)
-      if (value === undefined) return null
-      return `export ${key}=${shellQuote(value)}`
-    })
-    .filter((line): line is string => line !== null)
-
-  if (lines.length === 0) return ''
-  return [GENERATED_SECRET_MARKER, ...lines].join('\n')
-}
-
-function renderGeneratedEnvContent(
+export function renderGeneratedEnvContent(
   content: string,
-  keys: string[],
-  getSecretValue: (key: string) => string | undefined,
   protectedBindings: readonly (readonly [string, string])[] = []
 ): string {
   const userContent = content.trimEnd()
-  const secretContent = renderSecretExports(keys, getSecretValue)
   const protectedContent =
     protectedBindings.length === 0
       ? ''
@@ -201,7 +131,6 @@ function renderGeneratedEnvContent(
   // a default account is detached. Only current integration bindings restore them.
   return [
     userContent,
-    secretContent,
     GENERATED_INTEGRATION_MARKER,
     'unset GH_TOKEN GITHUB_TOKEN GITHUB_USER DEPLOY_GITHUB_PAGES_TOKEN',
     protectedContent,
@@ -210,31 +139,7 @@ function renderGeneratedEnvContent(
     .join('\n\n')
 }
 
-function getUserEnvContentForGeneration(squadId: string): string {
-  const userEnvPath = getUserEnvPath(squadId)
-  if (existsSync(userEnvPath)) return readFileSync(userEnvPath, 'utf-8')
-
-  // First-time migration for squads that only have the pre-env.user .ficus/.env file.
-  // Capture legacy user content before generating selected Secret Store exports so
-  // first exposure does not drop existing user variables.
-  const generatedEnvPath = getGeneratedEnvPath(squadId)
-  if (existsSync(generatedEnvPath)) {
-    const legacyContent = readFileSync(generatedEnvPath, 'utf-8')
-    if (legacyContent.includes(GENERATED_SECRET_MARKER) || legacyContent.includes(GENERATED_INTEGRATION_MARKER))
-      return ''
-    writeFileSync(userEnvPath, legacyContent, { mode: 0o600 })
-    return legacyContent
-  }
-
-  return ''
-}
-
-async function writeGeneratedEnvFile(
-  squadId: string,
-  content: string,
-  keys: string[],
-  getSecretValue: (key: string) => string | undefined = (key) => getSecretStore().get(key)
-): Promise<void> {
+async function writeGeneratedEnvFile(squadId: string, content: string): Promise<void> {
   const ficusDir = ensureFicusDir(squadId)
   const envPath = join(ficusDir, GENERATED_ENV_FILE)
   const tempPath = join(ficusDir, `.env.tmp-${crypto.randomUUID()}`)
@@ -249,7 +154,7 @@ async function writeGeneratedEnvFile(
     throw error
   }
   try {
-    writeFileSync(tempPath, renderGeneratedEnvContent(content, keys, getSecretValue, protectedBindings) + '\n', {
+    writeFileSync(tempPath, renderGeneratedEnvContent(content, protectedBindings) + '\n', {
       mode: 0o600,
     })
     chmodSync(tempPath, 0o600)
@@ -276,7 +181,7 @@ export function getEnvFile(squadId: string): string | null {
   const generatedEnvPath = getGeneratedEnvPath(squadId)
   if (!existsSync(generatedEnvPath)) return null
   const content = readFileSync(generatedEnvPath, 'utf-8')
-  if (content.includes(GENERATED_SECRET_MARKER) || content.includes(GENERATED_INTEGRATION_MARKER)) return ''
+  if (content.includes(LEGACY_EXPOSURE_MARKER) || content.includes(GENERATED_INTEGRATION_MARKER)) return ''
   return content
 }
 
@@ -287,108 +192,36 @@ export async function setEnvFile(squadId: string, content: string): Promise<void
   const ficusDir = ensureFicusDir(squadId)
   const userEnvPath = join(ficusDir, USER_ENV_FILE)
   writeFileSync(userEnvPath, content, { mode: 0o600 })
-  await writeGeneratedEnvFile(squadId, content, await getEffectiveExposedSecretKeys(squadId))
+  await writeGeneratedEnvFile(squadId, content)
 }
 
-/** List Secret Store keys explicitly allowed to be rendered into this squad's sandbox env. */
-export async function getExposedSecretKeys(squadId: string): Promise<string[]> {
-  const rows = await db
-    .select({ secretKey: squadSecretExposures.secretKey })
-    .from(squadSecretExposures)
-    .where(eq(squadSecretExposures.squadId, squadId))
-  return normalizeSecretKeys(rows.map((row) => row.secretKey))
-}
-
-export async function getGloballyExposedSecretKeys(): Promise<string[]> {
-  const rows = await db.select({ secretKey: globalSecretExposures.secretKey }).from(globalSecretExposures)
-  return normalizeSecretKeys(rows.map((row) => row.secretKey))
-}
-
-async function getEffectiveExposedSecretKeys(squadId: string, squadKeys?: string[]): Promise<string[]> {
-  const [globalKeys, resolvedSquadKeys] = await Promise.all([
-    getGloballyExposedSecretKeys(),
-    squadKeys ? Promise.resolve(normalizeSecretKeys(squadKeys)) : getExposedSecretKeys(squadId),
-  ])
-  return normalizeSecretKeys([...globalKeys, ...resolvedSquadKeys])
+/** Regenerate from custom environment content only. Errors must reach rollout retry status. */
+export async function regenerateEnvFileForSquadStrict(squadId: string): Promise<void> {
+  const content = getEnvFile(squadId) ?? ''
+  // Preserve pre-env.user custom configuration before replacing the generated file.
+  const userPath = getUserEnvPath(squadId)
+  if (!existsSync(userPath)) {
+    ensureFicusDir(squadId)
+    writeFileSync(userPath, content, { mode: 0o600 })
+  }
+  await writeGeneratedEnvFile(squadId, content)
 }
 
 /**
- * Regenerate one squad's sandbox `.env` from its stored content and exposures. Callers loop it over
- * many squads (exposure, integration and connection changes), so a squad whose workspace dot dir
- * needs a manual fix is skipped with a warning rather than stopping the rest.
+ * Normal startup/bulk/ensure paths must not turn one known settings conflict into
+ * a worker-wide failure. Still invalidate projections after this call so their
+ * strict reconciler can record failure/backoff. Other errors remain fatal.
+ * Cleanup/migration acknowledgements MUST use the strict entrypoint above.
  */
 export async function regenerateEnvFileForSquad(squadId: string): Promise<void> {
-  await skipConflictedSquad(squadId, async () =>
-    writeGeneratedEnvFile(squadId, getEnvFile(squadId) ?? '', await getEffectiveExposedSecretKeys(squadId))
-  )
-}
-
-export async function setGloballyExposedSecretKeys(keys: string[]): Promise<void> {
-  const normalizedKeys = normalizeSecretKeys(keys)
-
-  await db.delete(globalSecretExposures)
-  if (normalizedKeys.length > 0) {
-    await db.insert(globalSecretExposures).values(
-      normalizedKeys.map((key) => ({
-        secretKey: key,
-        updatedAt: new Date(),
-      }))
+  try {
+    await regenerateEnvFileForSquadStrict(squadId)
+  } catch (error) {
+    if (!(error instanceof WorkspaceDotDirConflictError)) throw error
+    log.warn(
+      `Deferred environment regeneration for squad ${squadId}: ${error.message} Automatic cleanup/projection retries remain pending until this is repaired.`
     )
   }
-
-  const allSquads = await db.select({ id: squads.id }).from(squads).where(isNull(squads.archivedAt))
-  for (const squad of allSquads) {
-    await regenerateEnvFileForSquad(squad.id)
-  }
-}
-
-/**
- * Set the explicit Secret Store allowlist for a squad and regenerate .ficus/.env.
- * Only selected keys are rendered; unselected secrets are never exposed.
- */
-export async function setExposedSecretKeys(squadId: string, keys: string[]): Promise<void> {
-  const normalizedKeys = normalizeSecretKeys(keys)
-  const userContent = getUserEnvContentForGeneration(squadId)
-
-  await db.delete(squadSecretExposures).where(eq(squadSecretExposures.squadId, squadId))
-  if (normalizedKeys.length > 0) {
-    await db.insert(squadSecretExposures).values(
-      normalizedKeys.map((key) => ({
-        squadId,
-        secretKey: key,
-        updatedAt: new Date(),
-      }))
-    )
-  }
-
-  await writeGeneratedEnvFile(squadId, userContent, await getEffectiveExposedSecretKeys(squadId, normalizedKeys))
-}
-
-/** Regenerate sandbox env files for squads that expose the changed Secret Store key. */
-export async function regenerateEnvFilesForSecretKey(key: string): Promise<void> {
-  const globalKeys = await getGloballyExposedSecretKeys()
-  const rows = globalKeys.includes(key)
-    ? await db.select({ squadId: squads.id }).from(squads).where(isNull(squads.archivedAt))
-    : await db
-        .select({ squadId: squadSecretExposures.squadId })
-        .from(squadSecretExposures)
-        .where(eq(squadSecretExposures.secretKey, key))
-  for (const { squadId } of rows) {
-    await skipConflictedSquad(squadId, async () => {
-      const keys = await getEffectiveExposedSecretKeys(squadId)
-      await writeGeneratedEnvFile(squadId, getEnvFile(squadId) ?? '', keys)
-    })
-  }
-}
-
-/** Test helper for rendering selected secrets without touching the real Secret Store. */
-export function renderEnvForSecrets(
-  content: string,
-  keys: string[],
-  getSecretValue: (key: string) => string | undefined,
-  protectedBindings: readonly (readonly [string, string])[] = []
-): string {
-  return renderGeneratedEnvContent(content, keys, getSecretValue, protectedBindings)
 }
 
 // Compatibility export for existing callers; delivery lives in the executable wrapper asset.

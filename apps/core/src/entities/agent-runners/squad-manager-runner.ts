@@ -38,7 +38,6 @@ import {
 } from '../../lib/prompts/agent-purpose-prompt'
 import { buildMemorySystemPrompt, MANAGER_MEMORY_GUIDANCE } from '../../lib/prompts/memory-prompt'
 import { buildWorkspacePrompt, workspaceToolNamesForPolicy } from '../../lib/prompts/workspace-prompt'
-import { agentSecretsPromptForSandbox } from '../../lib/prompts/agent-secrets-prompt'
 import { resolveWorkspaceLayout } from '../../services/sandbox/workspace-layout'
 import { readSquadMemoryFile } from '../../services/memory/paths'
 import { buildModelOverridePrompt } from '../../lib/prompts/model-overrides-prompt'
@@ -178,11 +177,7 @@ export class SquadManagerRunner extends AgentRunner {
           mayShareWithSubagents: true,
         })
       )
-      .text(
-        workspaceToolNamesForPolicy(this.agentType.toolsAllow, this.agentType.toolsDeny, true).includes('bash')
-          ? await agentSecretsPromptForSandbox(sandboxId)
-          : ''
-      )
+
       .section('Model Overrides for Spawned Agents', buildModelOverridePrompt())
       .section('Current Squad State', squadContext)
 

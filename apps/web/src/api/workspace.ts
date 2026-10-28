@@ -152,6 +152,17 @@ export interface SandboxChainHealth {
 }
 
 export interface SandboxStatus {
+  exposureCleanup?: {
+    status: 'pending' | 'done' | 'failed'
+    reason: string | null
+    updatedAt: string
+    targets?: Array<{
+      targetId: string
+      status: 'pending' | 'done' | 'failed'
+      reason: string | null
+      updatedAt: string
+    }>
+  }
   /** VM host-side restart is still waiting for server health. */
   restartPending?: boolean
   status: 'not_found' | 'pending' | 'starting' | 'running' | 'succeeded' | 'failed' | 'terminating' | 'unknown'

@@ -1,6 +1,6 @@
 # Integration command execution
 
-Integration execution is an unrestricted, per-command credential path. GitHub, Linear and Notion use this path; deployment credential cards and legacy exposure exports remain until their separate migrations. It does **not** claim that every integration is already token-free in sandbox files.
+Integration execution is an unrestricted, per-command credential path. GitHub, Linear, Notion and the six deployment providers use it. Squad/global/per-agent Secret Store exposure is retired; see the [automatic cleanup upgrade notes](../upgrade/secret-exposure-retirement.md) for durable pending/failed runtime cleanup and retry behavior.
 
 ## Plugin contract
 

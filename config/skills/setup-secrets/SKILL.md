@@ -38,7 +38,7 @@ Administrators can alternatively configure Application Default Credentials on th
 - GitHub: connect an account through Integrations. Standalone instances support device login; hosted instances use the Platform broker. Check GitHub App repository installations and the squad’s selected/inherited account.
 - Linear, Notion, and Bigbrain: configure their integration cards and squad-specific access.
 - Discord, Slack, and Telegram: enable the integration, enter its credentials, then configure routing. See the channel setup skills for provider-specific steps.
-- Cloudflare, DigitalOcean, Netlify, Railway, Supabase, and Vercel: save tokens in their integration cards. Preserve explicit squad Environment exposure choices; see the deployment skills.
+- Cloudflare, DigitalOcean, Netlify, Railway, Supabase, and Vercel: connect an account in Settings → Integrations and assign it to the squad; see the deployment skills.
 - GitHub and Linear webhook signing: use their integration webhook panels, not legacy secret commands.
 
 ## Remaining Infrastructure Secrets
