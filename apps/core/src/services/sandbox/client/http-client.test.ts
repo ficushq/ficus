@@ -675,3 +675,21 @@ it('upload forwards a stream unchanged and propagates caller cancellation', asyn
     globalThis.fetch = previous
   }
 })
+
+it('legacy write fallback propagates upload cancellation without serializing its signal', async () => {
+  const previous = globalThis.fetch
+  const controller = new AbortController()
+  let observed: AbortSignal | undefined
+  globalThis.fetch = mock(async (_url, init) => {
+    observed = init?.signal as AbortSignal
+    expect(JSON.parse(init?.body as string)).toEqual({ path: '/workspace/file', content: 'YQ==' })
+    return Response.json({ bytesWritten: 1 })
+  }) as unknown as typeof fetch
+  try {
+    await new SandboxClient('127.0.0.1:1234').write({ path: '/workspace/file', content: 'YQ==' }, controller.signal)
+    controller.abort()
+    expect(observed?.aborted).toBe(true)
+  } finally {
+    globalThis.fetch = previous
+  }
+})

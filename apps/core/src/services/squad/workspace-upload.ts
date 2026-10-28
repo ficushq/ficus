@@ -15,7 +15,7 @@ interface UploadClient {
     createDirs: boolean
     signal?: AbortSignal
   }): Promise<UploadIdentity>
-  write(request: { path: string; content: string; createDirs: boolean }): Promise<UploadIdentity>
+  write(request: { path: string; content: string; createDirs: boolean }, signal?: AbortSignal): Promise<UploadIdentity>
 }
 export type WorkspaceUploadResult = {
   path: string
@@ -93,11 +93,14 @@ export async function publishWorkspaceUpload(options: {
           if (!legacyUploadFits(targetPath, file.bytes)) throw new Error(upgradeMessage)
           signal?.throwIfAborted()
           const bytes = await Bun.file(file.tempPath).arrayBuffer()
-          response = await client.write({
-            path: targetPath,
-            content: Buffer.from(bytes).toString('base64'),
-            createDirs: true,
-          })
+          response = await client.write(
+            {
+              path: targetPath,
+              content: Buffer.from(bytes).toString('base64'),
+              createDirs: true,
+            },
+            signal
+          )
         }
         if (response.bytesWritten !== file.bytes || (response.sha256 !== undefined && response.sha256 !== file.sha256))
           throw new Error('Upload identity verification failed; success was not reported')

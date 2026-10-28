@@ -606,8 +606,8 @@ export class SandboxClient {
     return this.post('/read', request)
   }
 
-  async write(request: WriteRequest): Promise<WriteResponse> {
-    return this.post('/write', request)
+  async write(request: WriteRequest, signal?: AbortSignal): Promise<WriteResponse> {
+    return this.post('/write', request, signal)
   }
 
   /**
@@ -1117,11 +1117,12 @@ export class SandboxClient {
     return new SandboxHttpError(message, resp.status, code)
   }
 
-  private async post<T>(path: string, body: unknown): Promise<T> {
+  private async post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
     return this.withUnary(
       path,
       {
         method: 'POST',
+        signal,
         headers: { 'content-type': 'application/json', ...this.authHeaders },
         body: JSON.stringify(body),
       },
