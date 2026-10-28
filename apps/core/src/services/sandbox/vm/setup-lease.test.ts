@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { randomUUID } from 'crypto'
 import { withVmSetupLease } from './setup-state'
+import { acquireDedicatedConnectionSlot, tryAcquireDedicatedConnectionSlot } from '../../../db/connection'
 
 function deferred() {
   let resolve!: () => void
@@ -8,6 +9,15 @@ function deferred() {
     resolve = done
   })
   return { promise, resolve }
+}
+
+function expectSaturated() {
+  const spare = tryAcquireDedicatedConnectionSlot()
+  try {
+    expect(spare).toBeNull()
+  } finally {
+    spare?.()
+  }
 }
 
 async function bounded<T>(promise: Promise<T>): Promise<T> {
@@ -242,5 +252,96 @@ test('recovery lease refuses a saturated connection gate instead of queueing', a
   } finally {
     release.resolve()
     await Promise.all(owners)
+  }
+})
+
+for (const interruption of ['abort', 'timeout'] as const) {
+  test(`${interruption} rejects while BOTH dedicated permits remain occupied, without leaving queued ownership`, async () => {
+    const owners = [await acquireDedicatedConnectionSlot(), await acquireDedicatedConnectionSlot()]
+    const abort = new AbortController()
+    let now = 0
+    let entered = false
+    const pending = withVmSetupLease(
+      randomUUID(),
+      async () => {
+        entered = true
+      },
+      {
+        now: () => now,
+        signal: abort.signal,
+        sleep: async () => {},
+      }
+    )
+    const result = pending.catch((error) => error)
+    try {
+      // Invocation has synchronously attempted acquisition with both owners
+      // held. Neither owner is released until AFTER rejection is proved.
+      if (interruption === 'abort') abort.abort(new Error('synthetic permit cancellation'))
+      else now = 16 * 60_000
+      const error = await bounded(result)
+      expect(error).toBeInstanceOf(Error)
+      expect((error as Error).message).toContain(
+        interruption === 'abort' ? 'synthetic permit cancellation' : 'timed out'
+      )
+      expect(entered).toBe(false)
+      expectSaturated()
+    } finally {
+      owners.forEach((release) => release())
+      await result
+    }
+    // No canceled waiter can steal a newly returned permit, nor can a failed
+    // acquisition decrement capacity still owned by the original callers.
+    const available = [tryAcquireDedicatedConnectionSlot(), tryAcquireDedicatedConnectionSlot()]
+    try {
+      expect(available.every(Boolean)).toBe(true)
+      expectSaturated()
+      expect(entered).toBe(false)
+    } finally {
+      available.forEach((release) => release?.())
+    }
+  })
+}
+
+test('a saturated lease retries when a permit returns and keeps acquired ownership through abort', async () => {
+  const owners = [await acquireDedicatedConnectionSlot(), await acquireDedicatedConnectionSlot()]
+  const contended = deferred()
+  const retry = deferred()
+  const entered = deferred()
+  const finish = deferred()
+  const abort = new AbortController()
+  let calls = 0
+  const pending = withVmSetupLease(
+    randomUUID(),
+    async () => {
+      calls++
+      entered.resolve()
+      await finish.promise
+      return 'owned callback finished'
+    },
+    {
+      signal: abort.signal,
+      sleep: async () => {
+        contended.resolve()
+        await retry.promise
+      },
+    }
+  )
+  try {
+    await bounded(contended.promise)
+    expect(calls).toBe(0)
+    owners.shift()!()
+    retry.resolve()
+    await bounded(entered.promise)
+    abort.abort(new Error('must not race acquired callback'))
+    // One original owner and the acquired callback still occupy BOTH permits.
+    expectSaturated()
+    finish.resolve()
+    expect(await bounded(pending)).toBe('owned callback finished')
+    expect(calls).toBe(1)
+  } finally {
+    owners.forEach((release) => release())
+    retry.resolve()
+    finish.resolve()
+    await pending.catch(() => {})
   }
 })

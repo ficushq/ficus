@@ -1,3 +1,4 @@
+import { withBoxHostLock } from './box-host-lock'
 import { foreignUnits } from './foreign-unit.fixture'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -69,8 +70,20 @@ describe('buildBoxControlCommand', () => {
       const ctl = boxUnitControl({ sandboxId, unixUser: boxUnixUser(sandboxId) })
       const stop = buildBoxControlCommand({ sandboxId, action: 'stop' })
       const restart = buildBoxControlCommand({ sandboxId, action: 'restart' })
-      expect(stop).toBe(ctl.onHost((u) => `${ctl.systemctl} stop ${u.allUnits}`))
-      expect(restart).toBe(ctl.onHost((u) => `${ctl.systemctl} restart ${u.unit}`))
+      expect(stop).toBe(
+        withBoxHostLock(
+          boxUnixUser(sandboxId),
+          ctl.onHost((u) => `${ctl.systemctl} stop ${u.allUnits}`),
+          120_000
+        )
+      )
+      expect(restart).toBe(
+        withBoxHostLock(
+          boxUnixUser(sandboxId),
+          ctl.onHost((u) => `${ctl.systemctl} restart ${u.unit}`),
+          120_000
+        )
+      )
       // Runtime control uses only the canonical units after finalization.
       expect(stop).toContain(`${ctl.systemctl} stop ${ctl.allUnits}`)
       expect(stop).not.toContain(`${ctl.systemctl} stop ${foreignUnits(ctl).allUnits}`)

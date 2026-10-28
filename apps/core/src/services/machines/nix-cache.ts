@@ -1,3 +1,4 @@
+import { boxProvisionLockArgs } from './box-host-lock'
 import { boxUnixUser } from './box-paths'
 import type { Machine } from './queries'
 import { defaultSshRunner, type SshRunner } from './ssh'
@@ -17,7 +18,7 @@ export async function publishPrewarmedNixCache(
   }
   const result = await runner.run(
     machine,
-    `sudo bash ${BOX_PROVISION_REMOTE_PATH} --publish-nix-cache --sandbox-id '${sandboxId}' --unix-user '${boxUnixUser(sandboxId)}'`,
+    `sudo bash ${BOX_PROVISION_REMOTE_PATH} --publish-nix-cache --sandbox-id '${sandboxId}' --unix-user '${boxUnixUser(sandboxId)}' ${boxProvisionLockArgs(180_000)}`,
     { timeoutMs: 180_000 }
   )
   if (result.exitCode !== 0) throw new Error(`Nix cache publication failed: ${result.stderr.trim()}`)

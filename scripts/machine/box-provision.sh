@@ -64,6 +64,11 @@
 #            not configure or connect to a server port, so they may omit it. If
 #            supplied in any mode, it must be a separate value in 1024-65535.
 #
+# --lock-wait-seconds <seconds>
+#            Bounded whole-run lock acquisition (default180s). Core passes a
+#            value below its SSH/stream deadline; argv survives sudo env_reset.
+#            Timeout exits73 naming the holder, before mutation/containment.
+#
 # --unit-mode system|user
 #            WHICH systemd manager runs the box server. Defaults from
 #            --sandbox-id: `agent_*` → system, everything else (`squad_*`,
@@ -145,6 +150,8 @@
 
 set -euo pipefail
 
+ORIGINAL_ARGS=("$@")
+
 SANDBOX_ID=""
 UNIX_USER=""
 PORT=""
@@ -166,6 +173,7 @@ PREPARE_NIX_CACHE=false
 PUBLISH_NIX_CACHE=false
 MEMTOTAL_KB_OVERRIDE=""
 NPROC_OVERRIDE=""
+BOX_LOCK_WAIT_SECONDS="${FICUS_BOX_LOCK_WAIT_SECONDS:-180}"
 
 # The subordinate-id maps ensure_subid_range allocates from. Real paths in
 # production; overridable ONLY so the side-effect-free --print-subid-start dry run
@@ -207,6 +215,14 @@ while [ "$#" -gt 0 ]; do
       fi
       PORT="${2}"
       PORT_SUPPLIED=true
+      shift 2
+      ;;
+    --lock-wait-seconds)
+      if [ "$#" -lt 2 ] || [[ ! "${2}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+        echo 'box-provision.sh: --lock-wait-seconds requires a nonnegative number' >&2
+        exit 2
+      fi
+      BOX_LOCK_WAIT_SECONDS="$2"
       shift 2
       ;;
     --with-docker)
@@ -1215,16 +1231,23 @@ provision_docker() {
   fi
 }
 
+# Pure guard, also checked before lock acquisition/privilege elevation. Each
+# destructive helper reasserts it independently of its dispatch caller.
+validate_box_target() {
+  local action="$1"
+  if [[ ! "${UNIX_USER}" =~ ^box_[0-9a-f]{12}$ ]]; then
+    echo "box-provision.sh: refusing to ${action} non-box user '${UNIX_USER}' (must match box_<12hex>)" >&2
+    return 2
+  fi
+}
+
 remove_box() {
   # SAFETY: removal ARCHIVES the home and `userdel -r`s the account — it must
   # ONLY ever touch users this tooling created, which always follow the
   # `box_<12 hex>` convention. Refuse anything else outright (this catches
   # `root`, `ubuntu`, and any other host account that passes the general
-  # provisioning charset). Checked before existence, before any privileged call.
-  if [[ ! "${UNIX_USER}" =~ ^box_[0-9a-f]{12}$ ]]; then
-    echo "box-provision.sh: refusing to remove non-box user '${UNIX_USER}' (must match box_<12hex>)" >&2
-    exit 2
-  fi
+  # provisioning charset). Checked before existence, before any destructive effect.
+  validate_box_target remove || return $?
 
   if ! id -u "${UNIX_USER}" >/dev/null 2>&1; then
     echo "box-provision.sh: user ${UNIX_USER} does not exist; nothing to remove" >&2
@@ -1391,10 +1414,7 @@ reown_members() {
 restore_stream() {
   # SAFETY: this extracts + `chown -R`s inside a user's HOME as root — the same
   # guard --restore carries, for the same reason.
-  if [[ ! "${UNIX_USER}" =~ ^box_[0-9a-f]{12}$ ]]; then
-    echo "box-provision.sh: refusing to restore into non-box user '${UNIX_USER}' (must match box_<12hex>)" >&2
-    exit 2
-  fi
+  validate_box_target 'restore into' || return $?
 
   if ! id -u "${UNIX_USER}" >/dev/null 2>&1; then
     echo "box-provision.sh: user ${UNIX_USER} does not exist; cannot restore" >&2
@@ -1440,11 +1460,8 @@ restore_box() {
   # SAFETY: restore extracts + `chown -R`s inside a user's HOME as root. Like
   # removal, only ever act on `box_<12 hex>` users this tooling created (this
   # refuses `root`, `ubuntu`, and any other host account that passes the
-  # general provisioning charset). Checked before any privileged call.
-  if [[ ! "${UNIX_USER}" =~ ^box_[0-9a-f]{12}$ ]]; then
-    echo "box-provision.sh: refusing to restore into non-box user '${UNIX_USER}' (must match box_<12hex>)" >&2
-    exit 2
-  fi
+  # general provisioning charset). Checked before any destructive effect.
+  validate_box_target 'restore into' || return $?
 
   if [ -z "${RESTORE_TAR}" ]; then
     echo "box-provision.sh: --restore requires a tar path" >&2
@@ -2108,6 +2125,65 @@ fi
 if [ "${PRINT_PORT_GUARD}" = true ]; then
   render_port_guard
   exit 0
+fi
+
+# The root-owned inode is never unlinked: removing a lock file would let a new
+# invocation lock a different inode while an older waiter still owns this one.
+# Keep this FD through the entire dispatch, including failure containment. The
+# restore extraction/cache locks below are separate and must not replace it.
+acquire_box_lock() {
+  local dir="${FICUS_HOST_ROOT}/run/ficus-box-locks" path holder_pid wait_seconds
+  path="${dir}/ficus-box-${UNIX_USER}.lock"
+  wait_seconds="${BOX_LOCK_WAIT_SECONDS}"
+  if [[ ! "${wait_seconds}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    echo 'box-provision.sh: invalid FICUS_BOX_LOCK_WAIT_SECONDS' >&2
+    return 2
+  fi
+  if [ -L "${dir}" ]; then
+    echo "box-provision.sh: refusing symlink lock directory ${dir}" >&2
+    return 2
+  fi
+  install -d -m 0755 "${dir}"
+  # /run/ficus-box-locks is root-owned; never follow an operator-created symlink.
+  if [ -L "${path}" ]; then
+    echo "box-provision.sh: refusing symlink lock ${path}" >&2
+    return 2
+  fi
+  (umask 022; touch "${path}")
+  exec 200<>"${path}"
+  if ! flock -x -w "${wait_seconds}" 200; then
+    holder_pid="$(cat "${path}" 2>/dev/null)"
+    echo "box-provision.sh: FICUS_BOX_LOCK_TIMEOUT box=${UNIX_USER} holder_pid=${holder_pid:-unknown} wait_seconds=${wait_seconds} lock=${path}" >&2
+    return 73
+  fi
+  # flock(1) exits after locking our inherited FD; its kernel PID is not the
+  # script holder. Publish the script PID ONLY after acquisition, never truncate
+  # from a waiter. Diagnostics may name a just-exited owner at the timeout edge.
+  : >"${path}"
+  printf '%s\n' "$$" >&200
+}
+
+# ExecStartPre cache preparation is unprivileged and does not provision; it
+# must not wait for provisioning, which may itself start a service invoking it.
+# Publication retains its existing root-only guard (never elevate a box user).
+if [ "${PREPARE_NIX_CACHE}" != true ]; then
+  if [ "${REMOVE}" = true ]; then
+    validate_box_target remove || exit $?
+  elif [ "${RESTORE}" = true ] || [ "${RESTORE_STREAM}" = true ]; then
+    validate_box_target 'restore into' || exit $?
+    if [ "${RESTORE_STREAM}" = true ] && [[ ! "${STAGING_ID}" =~ ^[0-9a-f-]{36}$ ]]; then
+      echo 'box-provision.sh: --restore-stream requires a UUID --staging-id' >&2
+      exit 2
+    fi
+  fi
+  if [ "${PUBLISH_NIX_CACHE}" = true ] && [ "$(id -u)" -ne 0 ]; then
+    echo 'box-provision.sh: Nix cache publication requires root' >&2
+    exit 2
+  fi
+  if [ "$(id -u)" -ne 0 ]; then
+    exec sudo bash "${BASH_SOURCE[0]}" "${ORIGINAL_ARGS[@]}"
+  fi
+  acquire_box_lock || exit $?
 fi
 
 if [ "${PREPARE_NIX_CACHE}" = true ]; then

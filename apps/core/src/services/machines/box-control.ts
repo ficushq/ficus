@@ -1,3 +1,4 @@
+import { withBoxHostLock } from './box-host-lock'
 import type { Machine, MachineBox } from './queries'
 import { boxUnitControl, boxUnixUser } from './box-paths'
 import type { SshResult, SshRunner } from './ssh'
@@ -52,7 +53,8 @@ export function buildBoxControlCommand(request: BoxControlRequest): string {
   // down, socket first, or the next connection simply re-activates the server.
   // onHost: a box not re-provisioned since the rename still runs its legacy units.
   const action = request.action
-  return ctl.onHost((u) => `${ctl.systemctl} ${action} ${action === 'stop' ? u.allUnits : u.unit}`)
+  const command = ctl.onHost((u) => `${ctl.systemctl} ${action} ${action === 'stop' ? u.allUnits : u.unit}`)
+  return action === 'status' ? command : withBoxHostLock(unixUser, command, 120_000)
 }
 
 /**

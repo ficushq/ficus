@@ -19,7 +19,7 @@ describe('prewarmed Nix object publication', () => {
     expect(calls).toEqual([
       [
         machine,
-        `sudo bash /opt/ficus/bin/box-provision.sh --publish-nix-cache --sandbox-id '${sandboxId}' --unix-user '${boxUnixUser(sandboxId)}'`,
+        `sudo bash /opt/ficus/bin/box-provision.sh --publish-nix-cache --sandbox-id '${sandboxId}' --unix-user '${boxUnixUser(sandboxId)}' --lock-wait-seconds 45`,
         { timeoutMs: 180_000 },
       ],
     ])
