@@ -177,3 +177,8 @@ describe('ConfigSync', () => {
     expect((diff.template as any).name).toBe('Test Agent')
   })
 })
+
+test('template field collection refuses cardinality before loading a row', async () => {
+  const sync = new AgentTypeSync()
+  await expect(sync.revertTemplateFields('not-found', Array(101).fill('name'))).rejects.toThrow('Use at most 100')
+})
