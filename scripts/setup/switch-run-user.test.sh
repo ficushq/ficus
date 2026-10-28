@@ -46,6 +46,9 @@
 #     group) mid-rollback, the worker finishes the rollback, records its
 #     result, and releases the lock; a second run started meanwhile waits for
 #     it instead of settling the journal itself;
+#   * TERM or INT to the attached invocation mid-switch still aborts it: the
+#     worker gets TERM and rolls back, the attached invocation exits with the
+#     worker's code (143) once that is done, and .out records it;
 #   * run-core-operator.sh runs an entrypoint as the account Core runs as, with
 #     the env files parsed (never sourced), the caller's variables winning.
 #
@@ -697,7 +700,38 @@ ${NEW}/workspaces/w/file"
 expect_eq 'settle: ...the pooler runs as the user' \
   "$(grep -h '^User=' "${UNITS}/ficus-pgbouncer.service") $([[ -e ${STATE}/ficus-pgbouncer.active ]] && echo active)" "User=${SVC} active"
 
-# --------------- 9. the run survives its session; a second run waits for it
+# ----------- 9. TERM or INT to the attached invocation still aborts the switch
+# Sent while the run is held in its rebase (step 5): the worker gets TERM,
+# rolls back once the rebase returns, and the attached invocation exits with
+# its code after that, not before. env --default-signal: a background job of
+# this (non-interactive) shell would start with INT ignored, as Ctrl-C's
+# target never does.
+for sig in TERM INT; do
+  fresh_host
+  printf '%s' "${OLD}" >"${STATE}/hold-from"
+  env --default-signal=INT bash "${SCRIPT_DIR}/switch-run-user.sh" --config "${CFG}" --user "${SVC}" >"${S}/abort.out" 2>&1 &
+  attached=$!
+  for _ in $(seq 600); do [[ -e ${STATE}/in-rebase ]] && break; /bin/sleep 0.1; done
+  expect_eq "abort ${sig}: the run is in its rebase" "$([[ -e ${STATE}/in-rebase ]] && echo held)" held
+  kill "-${sig}" "${attached}"
+  /bin/sleep 0.5
+  expect_eq "abort ${sig}: the attached invocation waits for the worker" "$(kill -0 "${attached}" 2>/dev/null && echo waiting)" waiting
+  : >"${STATE}/release-rebase"
+  rc=0
+  wait "${attached}" || rc=$?
+  rm -f "${STATE}/hold-from" "${STATE}/in-rebase" "${STATE}/release-rebase"
+  out=$(cat "${S}/abort.out")
+  expect_eq "abort ${sig}: the worker rolled back to root, the attached invocation exits with its code" \
+    "$(last_line "${out}") rc=${rc}" 'FICUS_RUN_USER=root rc=143'
+  expect_match "abort ${sig}: ...after the rollback completed" "${out}" 'rolled back: the services run as root again'
+  expect_eq "abort ${sig}: ...which .out records, exit line last" "$(cat "$(newest_run out)" 2>/dev/null)" \
+    'FICUS_RUN_USER=root'$'\n''FICUS_RUN_USER_SWITCH_EXIT=143'
+  expect_eq "abort ${sig}: ...HOME, stored paths and services are root's, no journal, the lock free" \
+    "$([[ -d ${OLD} && ! -e ${NEW} ]] && echo home):$(head -n 1 "${STATE}/db"):$(proc_user ficus-api):$([[ -e ${HOST_MIGRATE_BACKUP_ROOT}/RUN_USER_SWITCH ]] && echo journal):$(flock -n "${HOST_MIGRATE_BACKUP_ROOT}/.lock" true && echo free)" \
+    "home:${OLD}/sessions/s1/log:root::free"
+done
+
+# -------------- 10. the run survives its session; a second run waits for it
 # The session: a process group of its own whose output goes through a pipe,
 # like sshd's. Mid-rollback (held in the rebase back), it gets HUP then KILL
 # (the pipe closes with it), and a second run starts meanwhile.

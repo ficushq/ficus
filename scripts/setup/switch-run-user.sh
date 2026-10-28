@@ -51,9 +51,14 @@
 # SIGPIPE, the process group killed), only the attached invocation dies; the
 # worker has no terminal and no pipe back to the caller, so it finishes the
 # switch or its rollback and releases the host lock. INT or TERM sent to the
-# attached invocation (Ctrl-C) is passed on to the worker, which rolls back as
-# before; once a rollback has started the worker ignores HUP, INT and TERM
-# until it ends. A caller that lost its session observes the result later:
+# attached invocation (Ctrl-C) is passed on to the worker as TERM: it rolls
+# back as before, and the attached invocation exits with the worker's code
+# once that is done. Once a rollback has started the worker ignores HUP, INT
+# and TERM until it ends. The worker leaves the session, not the login's
+# cgroup: a host whose systemd-logind kills a session's processes when it
+# ends (KillUserProcesses=yes; Ubuntu and Debian default to no), or an
+# operator who stops the session scope, still kills it — the next run then
+# settles its journal. A caller that lost its session observes the result later:
 # the run is over when <run>.out ends with FICUS_RUN_USER_SWITCH_EXIT (and
 # $(host_migrate_backup_root)/.lock is free); a RUN_USER_SWITCH journal left
 # behind means it was not settled, and the next run of this script settles it.
@@ -107,11 +112,23 @@ switch_attached_run() { # ARGS...
   # Keep the 20 newest runs.
   while IFS= read -r f; do rm -f -- "${f}" "${f%.log}.out"; done < <(ls -1t -- "${runs}"/*.log 2>/dev/null | tail -n +21)
   log_info "this run goes on if the session ends — progress: ${log}, result: ${out} (FICUS_RUN_USER_SWITCH_EXIT=<code> once it is over)"
-  # The worker's own wrapper writes the exit line: the attached side may be gone by then.
+  # The worker's own wrapper writes the exit line: the attached side may be
+  # gone by then. It passes INT and TERM on to the run as TERM (the run is an
+  # asynchronous child, started with INT ignored, so TERM is what it traps)
+  # and waits until the run has exited, rollback included; a HUP sent to the
+  # wrapper is caught and dropped (a caught signal is back to its default in
+  # the run, which keeps its own HUP trap).
   FICUS_RUN_USER_SWITCH_WORKER=1 FICUS_RUN_USER_SWITCH_LOG=${log} FICUS_RUN_USER_SWITCH_OUT=${out} \
     setsid -w bash -c '
-      bash "$@" </dev/null >"${FICUS_RUN_USER_SWITCH_OUT}" 2>>"${FICUS_RUN_USER_SWITCH_LOG}"
-      rc=$?
+      run=""
+      trap "[[ -n \${run} ]] && kill -TERM \${run} 2>/dev/null" INT TERM
+      trap ":" HUP
+      bash "$@" </dev/null >"${FICUS_RUN_USER_SWITCH_OUT}" 2>>"${FICUS_RUN_USER_SWITCH_LOG}" &
+      run=$!
+      while :; do
+        wait "${run}" && rc=0 || rc=$?
+        kill -0 "${run}" 2>/dev/null || break # a trapped signal interrupted wait: the run goes on
+      done
       printf "FICUS_RUN_USER_SWITCH_EXIT=%s\n" "${rc}" >>"${FICUS_RUN_USER_SWITCH_OUT}"
       exit "${rc}"' ficus-switch-run-user "${SCRIPT_DIR}/$(basename -- "${BASH_SOURCE[0]}")" "$@" \
     </dev/null >/dev/null 2>&1 &
@@ -629,11 +646,15 @@ switch_on_exit() { # RC
   trap '' HUP INT TERM
   if [[ ${SWITCH_DONE} -eq 0 && -e $(run_user_switch_journal) ]]; then
     log_error 'the switch failed — rolling back'
-    if switch_rollback; then printf 'FICUS_RUN_USER=%s\n' "${RESULT_USER}"; fi
+    # To the run's own stdout: a signal trap runs inside whatever redirection
+    # the interrupted command had (switch_rebase ... >&2, $(...)).
+    if switch_rollback; then printf 'FICUS_RUN_USER=%s\n' "${RESULT_USER}" >&"${SWITCH_STDOUT}"; fi
     exit "$((rc == 0 ? 1 : rc))"
   fi
   exit "${rc}"
 }
+# The run's stdout, for the trailer switch_on_exit prints.
+exec {SWITCH_STDOUT}>&1
 switch_signal_traps() {
   trap 'switch_on_exit 143' TERM
   trap 'switch_on_exit 129' HUP
