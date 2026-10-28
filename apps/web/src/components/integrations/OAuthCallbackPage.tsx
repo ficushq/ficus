@@ -23,8 +23,7 @@ const TERMINAL_COMPLETION_CODES = new Set([
 ])
 
 type CompletionRequest =
-  | { kind: 'broker'; body: BrokerCompletionPayload }
-  | { kind: 'local'; body: LocalCallbackPayload }
+  { kind: 'broker'; body: BrokerCompletionPayload } | { kind: 'local'; body: LocalCallbackPayload }
 type PageState = 'working' | 'retryable_failure' | 'terminal_failure' | 'cancelled'
 
 function isTerminalCompletionFailure(error: unknown): boolean {

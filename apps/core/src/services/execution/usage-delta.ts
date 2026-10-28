@@ -39,8 +39,7 @@ export function subtractTokens(current: UsageTokens, baseline: UsageTokens | und
  * legitimate "whole capture is the delta" fresh session from `pending`).
  */
 export type UsageBaseline =
-  | { readonly kind: 'pending' }
-  | { readonly kind: 'captured'; readonly snapshot: SessionUsage }
+  { readonly kind: 'pending' } | { readonly kind: 'captured'; readonly snapshot: SessionUsage }
 
 /**
  * Attach `delta` to a cumulative capture. A `captured` baseline computes the

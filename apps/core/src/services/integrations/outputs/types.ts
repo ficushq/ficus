@@ -35,5 +35,4 @@ export interface IntegrationOutputAdapter {
 }
 /** Supplied by the authenticated ingress, never by event payload or stream metadata. */
 export type IntegrationOutputAuthority =
-  | { kind: 'instance' }
-  | { kind: 'connection'; connectionId: string; squadId: string; connectionRevision?: string }
+  { kind: 'instance' } | { kind: 'connection'; connectionId: string; squadId: string; connectionRevision?: string }

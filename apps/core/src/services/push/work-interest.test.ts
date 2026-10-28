@@ -61,8 +61,7 @@ function loader(options: {
               }
             : {
                 derivedState: (options.slotWaiting?.includes(stream.id) ? 'idle' : 'in_progress') as
-                  | 'idle'
-                  | 'in_progress',
+                  'idle' | 'in_progress',
                 hasActiveSlotWait: options.slotWaiting?.includes(stream.id),
                 openWaits: [] as NonNullable<WorkStream['openWaits']>,
               },

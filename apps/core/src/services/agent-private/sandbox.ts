@@ -36,8 +36,7 @@ export async function getAgentSandboxState(target: AgentPrivateTarget): Promise<
 }
 
 export type StartAgentSandboxOutcome =
-  | { ok: true }
-  | { ok: false; reason: 'dormant' | Exclude<EnsureAgentSandboxResult, 'ensured'>; message: string }
+  { ok: true } | { ok: false; reason: 'dormant' | Exclude<EnsureAgentSandboxResult, 'ensured'>; message: string }
 
 const START_REFUSALS: Record<Exclude<EnsureAgentSandboxResult, 'ensured'> | 'dormant', string> = {
   dormant: 'This agent is dormant. Its sandbox starts again when the agent wakes.',

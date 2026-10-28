@@ -49,12 +49,10 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain', options: { 
   }))
   const localCreate = mock(async () => get())
   const localSetupState = mock(async () => ({ state: 'ready', vaults: [] }))
-  const localSetupConnect = mock(
-    async (_input: unknown, _actor: string): Promise<unknown> => ({
-      connection: await get(),
-      enabled: true,
-    })
-  )
+  const localSetupConnect = mock(async (_input: unknown, _actor: string): Promise<unknown> => ({
+    connection: await get(),
+    enabled: true,
+  }))
   const localSetupRelease = mock(async (_bindingId: string) => {})
   const setEnabled = mock(async (_provider: string, enabled: boolean, _actor: string) => ({ enabled }))
   const list = mock(async () => [{ ...summary, configuration: { apiBase: 'secret' }, credentialRef: 'secret' }])
@@ -72,15 +70,13 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain', options: { 
     complete: true,
     installations: [],
   }))
-  const oauthAppGet = mock(
-    (_providerKey: string): SafeOAuthAppSettings => ({
-      authority: 'local',
-      configured: true,
-      clientId: 'client-id',
-      callbackUrl: 'https://ficus.example/settings/integrations/oauth/callback',
-      requiredCapabilities: ['read_content', 'insert_content', 'update_content'],
-    })
-  )
+  const oauthAppGet = mock((_providerKey: string): SafeOAuthAppSettings => ({
+    authority: 'local',
+    configured: true,
+    clientId: 'client-id',
+    callbackUrl: 'https://ficus.example/settings/integrations/oauth/callback',
+    requiredCapabilities: ['read_content', 'insert_content', 'update_content'],
+  }))
   const channelGet = mock((_provider: string) => ({ fields: [] }))
   const channelConfigure = mock(async (_provider: string, _input: unknown, _actor: string) => ({ fields: [] }))
   const webhookGet = mock(() => ({ configured: true, webhookUrl: 'https://ficus.example/api/webhooks/github' }))

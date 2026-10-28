@@ -21,11 +21,10 @@ const CREATE_CONCURRENT_INDEX =
   /^\s*CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\s+"([^"]+)"\s+ON\s+(?:ONLY\s+)?(?:(?:"([^"]+)"\.)?)"([^"]+)"/i
 
 export type MigrationClassification =
-  | { kind: 'transactional' }
-  | { kind: 'concurrent-index'; indexName: string; tableSchema: string; tableName: string }
+  { kind: 'transactional' } | { kind: 'concurrent-index'; indexName: string; tableSchema: string; tableName: string }
 
 function isCommentOnly(sql: string): boolean {
-  for (let index = 0; index < sql.length; ) {
+  for (let index = 0; index < sql.length;) {
     if (/\s/.test(sql[index])) {
       index += 1
       continue
@@ -391,7 +390,7 @@ export async function applyMigrations(
     (migration) => lastCreatedAt == null || Number(lastCreatedAt) < migration.folderMillis
   )
 
-  for (let index = 0; index < pending.length; ) {
+  for (let index = 0; index < pending.length;) {
     const classification = classifyMigration(pending[index])
     if (classification.kind === 'concurrent-index') {
       await applyConcurrentMigration(connection, pending[index], classification, qualifiedLedger, qualifiedIntents)

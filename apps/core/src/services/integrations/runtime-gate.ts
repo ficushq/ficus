@@ -18,8 +18,7 @@ export type RuntimeGateDenialCode =
   | 'unsupported_version'
 
 export type RuntimeGateDecision =
-  | { allowed: true; connection: AssignedIntegrationConnectionRecord }
-  | { allowed: false; code: RuntimeGateDenialCode }
+  { allowed: true; connection: AssignedIntegrationConnectionRecord } | { allowed: false; code: RuntimeGateDenialCode }
 
 export interface RuntimeGateAgent {
   id: string

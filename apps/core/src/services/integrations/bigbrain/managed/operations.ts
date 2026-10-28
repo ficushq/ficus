@@ -10,9 +10,7 @@ import { MANAGED_BIGBRAIN_OWNER_INVITE_TTL_MS } from '@ficus/shared/managed-bigb
 import { db, managedBigbrainOperations } from '../../../../db'
 
 export type InviteWindow =
-  | { status: 'current'; issuedAt: string; expiresAt: string }
-  | { status: 'expired' }
-  | { status: 'conflict' }
+  { status: 'current'; issuedAt: string; expiresAt: string } | { status: 'expired' } | { status: 'conflict' }
 
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
