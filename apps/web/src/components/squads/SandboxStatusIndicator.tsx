@@ -6,6 +6,7 @@ import { applySquadToolchain, startSandbox, stopSandbox } from '../../api/worksp
 import { CAN_START, CAN_STOP, resolveSandboxStyle, sandboxPollInterval } from '../sandbox/sandboxStatusStyles'
 import { resolveVmChainDisplay } from '../sandbox/vmChainHealth'
 import { webStatus } from '../../lib/statusPresentation'
+import { SandboxHealthWarning } from '../sandbox/SandboxHealthWarning'
 
 /**
  * Pill chrome, owned here rather than by the squad header: this indicator
@@ -69,7 +70,8 @@ export function SandboxStatusIndicator({ squadId }: SandboxStatusIndicatorProps)
     const isBusy = toolchainMutation.isPending
 
     return (
-      <span className={clsx(PILL, treatmentColor)}>
+      <div className={clsx(PILL, treatmentColor)}>
+        <SandboxHealthWarning squadId={squadId} status={status} />
         <span className="relative flex h-2 w-2">
           <span className={clsx('relative inline-flex h-2 w-2 rounded-full', treatmentDot)} />
         </span>
@@ -90,7 +92,7 @@ export function SandboxStatusIndicator({ squadId }: SandboxStatusIndicatorProps)
             Retry provisioning
           </button>
         )}
-      </span>
+      </div>
     )
   }
 
@@ -102,7 +104,8 @@ export function SandboxStatusIndicator({ squadId }: SandboxStatusIndicatorProps)
   const canStop = CAN_STOP.has(status.status) && !isBusy
 
   return (
-    <span className={clsx(PILL, config.color)}>
+    <div className={clsx(PILL, config.color)}>
+      <SandboxHealthWarning squadId={squadId} status={status} />
       <span className="relative flex h-2 w-2">
         {config.pulse && (
           <span
@@ -152,6 +155,6 @@ export function SandboxStatusIndicator({ squadId }: SandboxStatusIndicatorProps)
           Stop
         </button>
       )}
-    </span>
+    </div>
   )
 }
