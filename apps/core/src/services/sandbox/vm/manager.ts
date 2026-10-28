@@ -35,7 +35,7 @@
 import { createHash } from 'crypto'
 import { relative } from 'path'
 import type { IPty } from 'bun-pty'
-import type { SandboxPressure } from '@ficus/shared'
+import type { SandboxPressure, SandboxRuntimeHealth } from '@ficus/shared'
 import {
   getSquadIdFromSandbox,
   type ISandboxManager,
@@ -70,6 +70,7 @@ import {
   restoreVmSetupAfterRequiredAssets,
   setVmSetupPendingInvocation,
   withVmSetupLease,
+  type VmSetupLeaseWait,
   type VmSetupState,
   type VmSetupReadiness,
   type VmSetupReasonCode,
@@ -89,6 +90,8 @@ import {
   computeProvisioningMarker,
   ensureBox as ensureBoxReal,
   removeBox as removeBoxReal,
+  restartBox as restartBoxReal,
+  BoxRestartError,
   stopBox as stopBoxReal,
   boxChainHealth as boxChainHealthReal,
   type BoxChainHealth,
@@ -287,6 +290,7 @@ export interface VmSandboxManagerDeps {
     /** See box-timing.ts's `BoxReadyContext.priorBoxesOnMachine`. */
     priorBoxesOnMachine?: number
   }>
+  restartBox(sandboxId: string): Promise<string>
   stopBox(sandboxId: string): Promise<BoxStopResult>
   removeBox(sandboxId: string, opts: { archivePrivate?: boolean; timeoutMs?: number }): Promise<void>
   /** Live box status + the {@link BoxChainHealth} breakdown the VM chain-health UI surfaces. */
@@ -382,7 +386,7 @@ export interface VmSandboxManagerDeps {
   seedBoxDevbox(client: SandboxClient, sandboxId: string, role: BoxRole, invocationId?: string): Promise<BoxStepTimings>
   getSetupState(sandboxId: string): Promise<VmSetupState | null>
   deleteSetupState(sandboxId: string): Promise<void>
-  withSetupLease<T>(sandboxId: string, fn: () => Promise<T>): Promise<T>
+  withSetupLease<T>(sandboxId: string, fn: () => Promise<T>, wait?: VmSetupLeaseWait): Promise<T>
   ensureSetupFingerprint(sandboxId: string, fingerprint: string): Promise<VmSetupState>
   markSetupPending(sandboxId: string, fingerprint: string, now: Date): Promise<boolean>
   restoreSetupAfterAssets(sandboxId: string, fingerprint: string, prior: VmSetupState, now: Date): Promise<boolean>
@@ -478,6 +482,7 @@ export function defaultBoxProvisionVersion(opts: PrebuiltReadOpts = {}): () => s
 function productionDeps(): VmSandboxManagerDeps {
   return {
     ensureBox: (opts) => ensureBoxReal(opts),
+    restartBox: (sandboxId) => restartBoxReal(sandboxId),
     stopBox: (sandboxId) => stopBoxReal(sandboxId),
     removeBox: (sandboxId, opts) => removeBoxReal(sandboxId, opts),
     boxChainHealth: (sandboxId) => boxChainHealthReal(sandboxId),
@@ -510,7 +515,7 @@ function productionDeps(): VmSandboxManagerDeps {
       seedBoxDevboxReal(client, sandboxId, role, {}, invocationId),
     getSetupState: (sandboxId) => getVmSetupState(sandboxId),
     deleteSetupState: (sandboxId) => deleteVmSetupState(sandboxId),
-    withSetupLease: (sandboxId, fn) => withVmSetupLease(sandboxId, fn),
+    withSetupLease: (sandboxId, fn, wait) => withVmSetupLease(sandboxId, fn, wait),
     ensureSetupFingerprint: (sandboxId, fingerprint) => ensureVmSetupFingerprint(sandboxId, fingerprint),
     markSetupPending: (sandboxId, fingerprint, now) => markVmSetupPending(sandboxId, fingerprint, now),
     restoreSetupAfterAssets: (sandboxId, fingerprint, prior, now) =>
@@ -534,6 +539,7 @@ function productionDeps(): VmSandboxManagerDeps {
 
 /** The status shape callers destructure — mirrors K8sPodManager.queryPodStatus. */
 export interface VmSandboxStatus {
+  restartPending?: boolean
   status: 'running' | 'starting' | 'failed' | 'not_found'
   reason?: string
   devboxReady?: boolean
@@ -550,6 +556,8 @@ export interface VmSandboxStatus {
   chain?: BoxChainHealth
   /** Load and memory from the box's last health check; absent for an idle box. */
   pressure?: SandboxPressure
+  /** Live runtime diagnostics, independent of native Bash admission and durable asset readiness. */
+  runtimeHealth?: SandboxRuntimeHealth
 }
 
 function lifecycleGenerationFromVmSpecHash(specHash: string | null | undefined): string | null {
@@ -1071,6 +1079,35 @@ export class VmSandboxManager implements ISandboxManager {
     )
   }
 
+  /** Host-side recovery remains usable when the sandbox HTTP/exec server is wedged. */
+  async restartSandbox(sandboxId: string): Promise<void> {
+    // Reject immediately: queueing behind ensure/recovery would restart a box
+    // after it had recovered and potentially started a new user command.
+    if (this.connectionGates.has(sandboxId)) throw new BoxRestartError('Sandbox lifecycle is busy', 409)
+    const release = await this.acquireConnection(sandboxId)
+    try {
+      await this.deps.withSetupLease(
+        sandboxId,
+        async () => {
+          const state = this.sandboxes.get(sandboxId)
+          const endpoint = await this.deps.restartBox(sandboxId)
+          // Keep env/layout/lifecycle metadata: Restart is not a remove/ensure.
+          if (state) {
+            const client = this.deps.createClient(endpoint.replace(/^http:\/\//, ''), state.authToken)
+            state.client.close()
+            state.client = client
+            state.endpoint = endpoint
+          }
+          this.dropAttachedClient(sandboxId)
+          this.healthObservations.delete(sandboxId)
+        },
+        { ifAvailable: true }
+      )
+    } finally {
+      release()
+    }
+  }
+
   async stopSandbox(sandboxId: string, options: { lifecycleGeneration?: string | null } = {}) {
     const release = await this.acquireConnection(sandboxId)
     try {
@@ -1153,17 +1190,19 @@ export class VmSandboxManager implements ISandboxManager {
   async removeSandbox(sandboxId: string): Promise<void> {
     const release = await this.acquireConnection(sandboxId)
     try {
-      const state = this.sandboxes.get(sandboxId)
-      if (state) {
-        state.client.close()
-        this.sandboxes.delete(sandboxId)
-      }
-      this.dropAttachedClient(sandboxId)
-      this.healthObservations.delete(sandboxId)
-      // Agent/system-manager boxes carry a per-box `~/.private` worth archiving;
-      // squad boxes share a workspace with nothing per-remove to keep.
-      const archivePrivate = !sandboxId.startsWith('squad_')
-      await this.deps.removeBox(sandboxId, { archivePrivate, timeoutMs: BOX_REMOVE_ARCHIVE_TIMEOUT_MS })
+      await this.deps.withSetupLease(sandboxId, async () => {
+        const state = this.sandboxes.get(sandboxId)
+        if (state) {
+          state.client.close()
+          this.sandboxes.delete(sandboxId)
+        }
+        this.dropAttachedClient(sandboxId)
+        this.healthObservations.delete(sandboxId)
+        // Agent/system-manager boxes carry a per-box `~/.private` worth archiving;
+        // squad boxes share a workspace with nothing per-remove to keep.
+        const archivePrivate = !sandboxId.startsWith('squad_')
+        await this.deps.removeBox(sandboxId, { archivePrivate, timeoutMs: BOX_REMOVE_ARCHIVE_TIMEOUT_MS })
+      })
     } finally {
       release()
     }
@@ -1505,7 +1544,7 @@ export class VmSandboxManager implements ISandboxManager {
 
   /** Live box status mapped onto the k8s-shaped discriminant callers consume. */
   async getSandboxStatus(sandboxId: string): Promise<VmSandboxStatus> {
-    const [{ status, chain }, setup] = await Promise.all([
+    const [{ status, chain, reason, restartPending }, setup] = await Promise.all([
       this.deps.boxChainHealth(sandboxId),
       this.deps.getSetupState(sandboxId),
     ])
@@ -1527,6 +1566,7 @@ export class VmSandboxManager implements ISandboxManager {
         const idle = chain?.boxServer === 'idle'
         let liveDevboxReady = idle
         let pressure: SandboxPressure | undefined
+        let runtimeHealth: SandboxRuntimeHealth | undefined
         let repairReason: VmSetupReasonCode = 'transport_recovery_failed'
         const statusClient = idle ? null : await this.getOrAttachClient(sandboxId)
         if (statusClient) {
@@ -1542,6 +1582,7 @@ export class VmSandboxManager implements ISandboxManager {
             })
             liveDevboxReady = health.healthy && health.devboxReady
             pressure = health.pressure
+            runtimeHealth = health.runtimeHealth
             this.observeHealth(sandboxId, health.uptimeSeconds)
             repairReason = 'devbox_unavailable'
           } catch {
@@ -1549,16 +1590,22 @@ export class VmSandboxManager implements ISandboxManager {
             repairReason = 'transport_recovery_failed'
           }
         }
+        const liveHealth = {
+          ...(pressure ? { pressure } : {}),
+          ...(runtimeHealth ? { runtimeHealth } : {}),
+          ...(runtimeHealth?.status === 'degraded' ? { reason: runtimeHealth.reason } : {}),
+        }
         if (!setup) {
           return {
             status: 'starting',
             reason: 'sandbox setup has not been reconciled',
             devboxReady: false,
             chain,
+            ...liveHealth,
           }
         }
         if (setup.readiness === 'pending' || setup.readiness === 'reconciling') {
-          return { status: 'starting', reason: 'required sandbox assets are not ready', chain }
+          return { status: 'starting', reason: 'required sandbox assets are not ready', chain, ...liveHealth }
         }
         if (setup?.readiness === 'ready_degraded') {
           const projected = projectVmSetupState(setup)
@@ -1567,7 +1614,7 @@ export class VmSandboxManager implements ISandboxManager {
             readiness: 'ready_degraded',
             devboxReady: liveDevboxReady && !projected.reasons.includes('devbox_unavailable'),
             chain,
-            ...(pressure ? { pressure } : {}),
+            ...liveHealth,
             degradation: {
               reasons: projected.reasons,
               attemptCount: projected.attemptCount,
@@ -1588,7 +1635,7 @@ export class VmSandboxManager implements ISandboxManager {
             readiness: 'ready_degraded',
             devboxReady: false,
             chain,
-            ...(pressure ? { pressure } : {}),
+            ...liveHealth,
             degradation: {
               reasons: projected.reasons.includes(repairReason) ? projected.reasons : [repairReason],
               attemptCount: projected.attemptCount,
@@ -1596,17 +1643,30 @@ export class VmSandboxManager implements ISandboxManager {
             },
           }
         }
-        return { status: 'running', readiness: 'ready', devboxReady: true, chain, ...(pressure ? { pressure } : {}) }
+        return {
+          status: 'running',
+          readiness: runtimeHealth?.status === 'degraded' ? 'ready_degraded' : 'ready',
+          devboxReady: true,
+          chain,
+          ...liveHealth,
+        }
       }
       case 'starting':
         // Non-terminal: box mid-(re-)provision, or its machine is up but the
         // tunnel/probe hasn't converged yet. Kept out of the terminal 'failed'
         // bucket so routes/recovery keep the session alive (mirrors k8s 'starting').
-        return { status: 'starting', reason: 'box is provisioning or its health probe has not yet passed', chain }
+        return {
+          status: 'starting',
+          reason: restartPending
+            ? 'box restart in progress'
+            : 'box is provisioning or its health probe has not yet passed',
+          ...(restartPending ? { restartPending } : {}),
+          chain,
+        }
       case 'failed':
         // Terminal: the box's machine is gone or no longer ready — outage.ts
         // treats this as a crash and arms a recovery watch.
-        return { status: 'failed', reason: 'box machine is gone or no longer ready', chain }
+        return { status: 'failed', reason: reason ?? 'box machine is gone or no longer ready', chain }
       case 'stopped':
       case 'absent':
       default:

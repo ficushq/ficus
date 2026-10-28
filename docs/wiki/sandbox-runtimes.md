@@ -382,6 +382,27 @@ processes that run it. Processes inside containers can run as other users, so
 stop the container instead. Every signal and container stop is logged with the
 caller.
 
+### Last-resort VM recovery
+
+If Processes cannot answer, a user with `squads:update` can use **Workspace
+settings → Sandbox Lifecycle → Recovery → Restart** on the `vm` runtime.
+Confirming restarts only that squad's sandbox-server unit through the machine's
+box manager, not through Bash or the box's HTTP command server. It interrupts
+commands and terminals, but does not reprovision the box, delete its workspace
+or private files, restart other boxes, or reboot the machine. Rootless Docker
+is a separate service: this is not a machine-wide Docker reset.
+
+`POST /api/squads/:id/sandbox/restart` uses the authorized squad's stored box
+identity. Busy setup, migration, or another restart returns a conflict rather
+than queueing a restart for later. SSH is bounded to 30 seconds, followed by
+bounded tunnel establishment and a 15-second server-health wait. A successful
+response confirms the server answered health, **not** that setup or a declared
+toolchain has finished. The status payload exposes `restartPending` while
+waiting; errors leave readiness unverified. If Core is interrupted, that pending
+indicator expires after two minutes and recovery can be retried once the old
+lifecycle lease is gone. The browser stops waiting after 100 seconds; a request
+timeout means the outcome is unknown, so check status before retrying.
+
 ## Squad sandbox toolchains
 
 Declare packages and an optional idempotent setup hook for every sandbox owned
