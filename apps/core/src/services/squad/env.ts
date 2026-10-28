@@ -218,7 +218,9 @@ export async function regenerateEnvFileForSquadStrict(squadId: string): Promise<
   const userPath = getUserEnvPath(squadId)
   if (!existsSync(userPath)) {
     ensureFicusDir(squadId)
-    writeFileSync(userPath, content, { mode: 0o600 })
+    await getSquadEnvSecretSource().recordLegacyPromotion(squadId, content, () =>
+      writeFileSync(userPath, content, { mode: 0o600, flag: 'wx' })
+    )
   }
   await writeGeneratedEnvFile(squadId, content)
 }

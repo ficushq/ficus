@@ -250,7 +250,10 @@ still work. At upgrade, existing squads receive one bounded legacy snapshot; thi
 explicitly trusts their initial `env.user` bytes once. A separate durable per-squad
 bootstrap marker prevents a missing or malformed record from authorizing another
 snapshot. New squads are marked already bootstrapped and need an API/service write
-to register values. Generic squad updates cannot reset that marker.
+to register values. The first runtime creation of `env.user` is such a service
+write: an empty new-squad environment or promoted legacy custom content publishes
+its trusted record in the locked creation callback. Existing `env.user` files are
+not re-authorized by regeneration. Generic squad updates cannot reset the marker.
 
 After bootstrap, only API/service environment writes update the trusted record.
 An on-disk file whose hash differs is ignored for detection, not parsed into new
@@ -268,14 +271,21 @@ pending reads. Reduce the file outside Settings, reload, then save the smaller
 content there to register output redaction. Unsafe/unreadable files return a
 controlled 409 without falling back to generated content. Generic runtime env
 regeneration and strict cleanup retain their existing full-content behavior.
-Legacy files above 256 KiB are skipped with a warning; API/service writes enforce
-the same UTF-8 byte cap before any file write. Bounded reads also tolerate a file
+Detection skips legacy files above 256 KiB with a warning; ordinary API/service
+writes enforce the same UTF-8 byte cap before any file write. The narrowly scoped
+first-file legacy promotion preserves full oversized content so runtime/rollout
+cleanup cannot stall on its size; it atomically records `reason: oversized`, a
+null hash and no detection entries, rather than parsing/registering large values. Bounded reads also tolerate a file
 growing after its metadata check. Symlink settings and files are not followed.
 
 The process-wide source enumerates DB squad records, not workspace directories.
 Startup awaits bootstrap; an owned periodic runner refreshes DB snapshots in both
 API and worker. Synchronous file checks are throttled to once per second, checking
-only `env.user` metadata and reusing hash-validated entries. API/service writes
+only `env.user` metadata. Signature/hash observations are cached even for negative
+or null-hash results; unchanged mismatches are not re-read/re-hashed every tick.
+Current trusted authority is still checked on each scan: changed file signatures
+are re-read, and API/peer authority changes can grant or revoke matching entries
+without re-reading unchanged file bytes. API/service writes
 refresh their process immediately; peer refresh and file-check intervals mean
 cross-process changes are not instantaneous. No shell parsing or DB work happens
 for every streamed chunk. Matching across squads is deliberately allowed; these

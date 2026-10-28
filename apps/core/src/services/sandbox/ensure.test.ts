@@ -1,15 +1,17 @@
+import { resetContentSafetyRegistry } from '../security/content-safety-registry'
+import { resetSquadEnvSecretSource } from '../security/squad-env-secret-source'
 import { describe, it, expect, afterEach, spyOn } from 'bun:test'
 import { randomUUID, createHash, createPublicKey } from 'crypto'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { getSquadMemoryBasePath, getSquadMemoryPath, ensureSquadMemoryPath } from '../memory/paths'
 import * as homeUtils from '../../lib/utils/home'
 import * as sandboxFactory from './factory'
 import * as localDeploymentHealth from '../deploy/local-deployment-health'
 import * as identityModule from '../amtp/agent-identity'
-import { db, agents } from '../../db'
+import { db, agents, sandboxExposureCleanup } from '../../db'
 import { squads } from '../../db/schema'
 import { ToolchainAdapterError, ToolchainProvisioningError } from './toolchain/provision'
 import { getProvisionState } from './toolchain/state'
@@ -29,6 +31,36 @@ import type { AdmissionEffectSpec } from '../maintenance/admission-reservation'
 import { trackSandboxSetupWork, type SandboxSetupProgressEvent } from './setup-progress'
 import { computeDockerSpecHash } from './docker/manager'
 import type { SandboxOptions as ManagerSandboxOptions } from './types'
+
+/** Real authority owner; runtime creation must not bypass protected env persistence. */
+async function createSquadSandboxFixture() {
+  const id = randomUUID()
+  const sandboxId = `squad_${id}`
+  const home = homeUtils.getHomeDir()
+  const workspace = getSquadWorkspacePath(id)
+  await db.insert(squads).values({ id, name: `ensure-fixture-${id}`, purpose: 'test', envDetectionBootstrapped: true })
+  return {
+    id,
+    async dispose() {
+      resetContentSafetyRegistry()
+      await resetSquadEnvSecretSource()
+      try {
+        await db.delete(sandboxExposureCleanup).where(inArray(sandboxExposureCleanup.sourceId, [id, sandboxId]))
+        // Detection rows cascade with their squad; no fake-ID authority survives.
+        await db.delete(squads).where(eq(squads.id, id))
+      } finally {
+        for (const path of [
+          workspace,
+          join(home, 'private', sandboxId),
+          join(home, 'skills', 'sandboxes', `squad-${id}`),
+          join(home, 'ssh', id),
+          join(home, 'memory', id),
+        ])
+          rmSync(path, { recursive: true, force: true })
+      }
+    },
+  }
+}
 
 describe('normalizeWatchPatterns', () => {
   it('matches the watcher: strips leading slash, workspace/ prefix, whitespace; drops empties', async () => {
@@ -811,7 +843,8 @@ describe('ensureWorkspaceSandbox federation identity (#788)', () => {
   })
 
   it("guard: a squad-role box (the squad's own shared sandbox) does NOT get a single-agent identity", async () => {
-    const squadId = randomUUID()
+    const fixture = await createSquadSandboxFixture()
+    const squadId = fixture.id
     const sandboxId = `squad_${squadId}`
 
     const getSandboxManagerSpy = spyOn(sandboxFactory, 'getSandboxManager').mockReturnValue({
@@ -835,11 +868,7 @@ describe('ensureWorkspaceSandbox federation identity (#788)', () => {
       getSandboxManagerSpy.mockRestore()
       isK8sRuntimeSpy.mockRestore()
       restartLocalDeploymentsSpy.mockRestore()
-      const home = homeUtils.getHomeDir()
-      rmSync(join(home, 'private', sandboxId), { recursive: true, force: true })
-      rmSync(join(home, 'skills', 'sandboxes', `squad-${squadId}`), { recursive: true, force: true })
-      rmSync(join(home, 'ssh', squadId), { recursive: true, force: true })
-      rmSync(join(home, 'memory', squadId), { recursive: true, force: true })
+      await fixture.dispose()
     }
   })
 })
@@ -872,10 +901,11 @@ describe('ensureSquadSandbox workspace lifecycle', () => {
 
 describe('ensureSquadSandbox memory mount', () => {
   it('mounts squad memory read-only at /memory/<squadId>', async () => {
-    const testSquadId = randomUUID()
+    const fixture = await createSquadSandboxFixture()
+    const testSquadId = fixture.id
 
     // Ensure test memory path exists
-    const memoryPath = ensureSquadMemoryPath(testSquadId)
+    ensureSquadMemoryPath(testSquadId)
 
     // Spy on getSandboxManager to return a mock manager
     let capturedOptions: any = null
@@ -914,19 +944,13 @@ describe('ensureSquadSandbox memory mount', () => {
       isK8sRuntimeSpy.mockRestore()
       restartLocalDeploymentsSpy.mockRestore()
 
-      // Clean up test memory directory
-      if (existsSync(memoryPath)) {
-        rmSync(memoryPath, { recursive: true, force: true })
-      }
-      // The manifest-driven mounts pre-create their host source dirs.
-      const home = homeUtils.getHomeDir()
-      rmSync(join(home, 'skills', 'sandboxes', `squad-${testSquadId}`), { recursive: true, force: true })
-      rmSync(join(home, 'ssh', testSquadId), { recursive: true, force: true })
+      await fixture.dispose()
     }
   })
 
   it('threads squadId into the warm-box ensureSandbox options (Docker)', async () => {
-    const squadId = randomUUID()
+    const fixture = await createSquadSandboxFixture()
+    const squadId = fixture.id
     let capturedOptions: any = null
     const mockManager = {
       ensureSandbox: async (_id: string, options: any) => {
@@ -949,11 +973,7 @@ describe('ensureSquadSandbox memory mount', () => {
       getSandboxManagerSpy.mockRestore()
       isK8sRuntimeSpy.mockRestore()
       restartLocalDeploymentsSpy.mockRestore()
-      // The manifest-driven mounts pre-create their host source dirs.
-      const home = homeUtils.getHomeDir()
-      rmSync(join(home, 'skills', 'sandboxes', `squad-${squadId}`), { recursive: true, force: true })
-      rmSync(join(home, 'ssh', squadId), { recursive: true, force: true })
-      rmSync(join(home, 'memory', squadId), { recursive: true, force: true })
+      await fixture.dispose()
     }
   })
 })

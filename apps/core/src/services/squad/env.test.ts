@@ -1,8 +1,15 @@
-import { inArray } from 'drizzle-orm'
-import { db, squads } from '../../db'
-import { resetSquadEnvSecretSource } from '../security/squad-env-secret-source'
+import { Squad } from '../../entities/Squad'
+import { createHash } from 'node:crypto'
+import { ContentSafetyRegistry } from '../security/content-safety-registry'
+import { eq, inArray } from 'drizzle-orm'
+import { db, squads, squadEnvDetections } from '../../db'
+import {
+  resetSquadEnvSecretSource,
+  getSquadEnvSecretSource,
+  SquadEnvSecretSource,
+} from '../security/squad-env-secret-source'
 import { resetContentSafetyRegistry } from '../security/content-safety-registry'
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test'
 import { mkdtemp, rm } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
@@ -12,6 +19,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs
 // Mock the home module to use a temp directory
 const originalEnv = process.env.HOME_DIR
 let tempDir: string
+let originalEncryptionKey: string | undefined
 const fixtureSquads: string[] = []
 async function newSquad(): Promise<string> {
   const [row] = await db
@@ -23,6 +31,7 @@ async function newSquad(): Promise<string> {
 }
 
 beforeEach(async () => {
+  originalEncryptionKey = process.env.FICUS_ENCRYPTION_KEY
   resetContentSafetyRegistry()
   await resetSquadEnvSecretSource()
   tempDir = await mkdtemp(join(tmpdir(), 'squad-env-test-'))
@@ -30,6 +39,8 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  if (originalEncryptionKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+  else process.env.FICUS_ENCRYPTION_KEY = originalEncryptionKey
   resetContentSafetyRegistry()
   await resetSquadEnvSecretSource()
   if (fixtureSquads.length) await db.delete(squads).where(inArray(squads.id, fixtureSquads.splice(0)))
@@ -266,4 +277,124 @@ it('oversized service writes leave an existing environment and trusted snapshot 
   await setEnvFile(id, 'APP_TOKEN=synthetic-existing-safe-token')
   await expect(setEnvFile(id, 'é'.repeat(128 * 1024 + 1))).rejects.toThrow('256 KiB')
   expect(getEnvFile(id)).toBe('APP_TOKEN=synthetic-existing-safe-token')
+})
+
+it('Squad.create then first regeneration publishes durable empty authority without an unreadable notice', async () => {
+  const { regenerateEnvFileForSquadStrict } = await getModule()
+  const squad = await Squad.create({
+    name: `env-real-create-${randomUUID()}`,
+    purpose: 'synthetic initial environment',
+  })
+  fixtureSquads.push(squad.id)
+  expect(squad.envDetectionBootstrapped).toBe(true)
+  await regenerateEnvFileForSquadStrict(squad.id)
+  await getSquadEnvSecretSource().initialize()
+  expect(getSquadEnvSecretSource().notice(squad.id)).toBeUndefined()
+  const [stored] = await db.select().from(squadEnvDetections).where(eq(squadEnvDetections.squadId, squad.id))
+  expect(stored?.contentHash).toBe(createHash('sha256').update('').digest('hex'))
+  const peer = new SquadEnvSecretSource()
+  await peer.initialize()
+  expect(peer.notice(squad.id)).toBeUndefined()
+})
+
+for (const oversized of [false, true]) {
+  it(`legacy promotion is a trusted service creation, preserving full content and size policy (oversized=${oversized})`, async () => {
+    const { regenerateEnvFileForSquadStrict } = await getModule()
+    const { getSquadWorkspacePath } = await import('./workspace')
+    delete process.env.FICUS_ENCRYPTION_KEY
+    const id = await newSquad()
+    const dot = join(getSquadWorkspacePath(id), '.ficus')
+    const content = 'APP_TOKEN=synthetic-promoted-legacy-token\n' + (oversized ? '#' + 'x'.repeat(256 * 1024) : '')
+    mkdirSync(dot, { recursive: true })
+    writeFileSync(join(dot, '.env'), content)
+    // Upgrade had no env.user to snapshot: this is not a second bootstrap.
+    await getSquadEnvSecretSource().initialize()
+    await regenerateEnvFileForSquadStrict(id)
+    expect(readFileSync(join(dot, 'env.user'), 'utf8')).toBe(content)
+    expect(readFileSync(join(dot, '.env'), 'utf8')).toContain(content.trimEnd())
+    const [stored] = await db.select().from(squadEnvDetections).where(eq(squadEnvDetections.squadId, id))
+    expect(stored.reason).toBe(oversized ? 'oversized' : null)
+    const peer = new SquadEnvSecretSource()
+    await peer.initialize()
+    const registry = new ContentSafetyRegistry(
+      {
+        bindContentSafetyConsumer(c) {
+          c.replace([])
+          return () => {}
+        },
+      },
+      peer
+    )
+    try {
+      if (oversized) {
+        expect(stored.contentHash).toBeNull()
+        expect(stored.entries).toEqual([])
+        expect(peer.notice(id)).toContain('256 KiB')
+        expect(peer.notice(id)).not.toContain('outside Settings')
+        expect(peer.entries()).toEqual([])
+      } else {
+        expect(stored.contentHash).toBe(createHash('sha256').update(content).digest('hex'))
+        expect(peer.notice(id)).toBeUndefined()
+        expect(registry.redactWithStoredKeys('synthetic-promoted-legacy-token')).toEqual({
+          value: expect.not.stringContaining('synthetic-promoted-legacy-token'),
+          storedKeys: [],
+        })
+      }
+      // Ordinary API/service oversized writes still fail even for promoted files.
+      const { setEnvFile } = await getModule()
+      await expect(setEnvFile(id, 'x'.repeat(256 * 1024 + 1))).rejects.toThrow('256 KiB')
+      expect(readFileSync(join(dot, 'env.user'), 'utf8')).toBe(content)
+    } finally {
+      registry.dispose()
+    }
+  })
+}
+
+it('regeneration does not authorize an existing directly edited env.user', async () => {
+  const { setEnvFile, regenerateEnvFileForSquadStrict } = await getModule()
+  const { getSquadWorkspacePath } = await import('./workspace')
+  const id = await newSquad()
+  const original = 'APP_TOKEN=synthetic-service-original-token'
+  await setEnvFile(id, original)
+  writeFileSync(join(getSquadWorkspacePath(id), '.ficus', 'env.user'), 'APP_TOKEN=synthetic-direct-untrusted-token')
+  await regenerateEnvFileForSquadStrict(id)
+  const peer = new SquadEnvSecretSource()
+  await peer.initialize()
+  expect(peer.entries()).toEqual([])
+  expect(peer.notice(id)).toContain('outside Settings')
+  const [stored] = await db.select().from(squadEnvDetections).where(eq(squadEnvDetections.squadId, id))
+  expect(stored.contentHash).toBe(createHash('sha256').update(original).digest('hex'))
+})
+
+it('a failed authority transaction cannot create env.user or acknowledge regeneration', async () => {
+  const { regenerateEnvFileForSquadStrict } = await getModule()
+  const { getSquadWorkspacePath } = await import('./workspace')
+  const id = await newSquad()
+  await db.delete(squads).where(eq(squads.id, id))
+  await expect(regenerateEnvFileForSquadStrict(id)).rejects.toThrow()
+  expect(existsSync(join(getSquadWorkspacePath(id), '.ficus', 'env.user'))).toBe(false)
+})
+
+it('a concurrent authorized API write wins over a stale missing-file promotion and retry succeeds', async () => {
+  const { setEnvFile, regenerateEnvFileForSquadStrict } = await getModule()
+  const { getSquadWorkspacePath } = await import('./workspace')
+  const id = await newSquad()
+  const content = 'APP_TOKEN=synthetic-concurrent-api-token'
+  const source = getSquadEnvSecretSource()
+  const promote = source.recordLegacyPromotion.bind(source)
+  const interleave = spyOn(source, 'recordLegacyPromotion').mockImplementation(async (squadId, legacy, write) => {
+    await setEnvFile(squadId, content)
+    return promote(squadId, legacy, write)
+  })
+  try {
+    await expect(regenerateEnvFileForSquadStrict(id)).rejects.toThrow('EEXIST')
+    expect(readFileSync(join(getSquadWorkspacePath(id), '.ficus', 'env.user'), 'utf8')).toBe(content)
+    const [stored] = await db.select().from(squadEnvDetections).where(eq(squadEnvDetections.squadId, id))
+    expect(stored.contentHash).toBe(createHash('sha256').update(content).digest('hex'))
+    expect(source.notice(id)).toBeUndefined()
+  } finally {
+    interleave.mockRestore()
+  }
+  await regenerateEnvFileForSquadStrict(id)
+  expect(readFileSync(join(getSquadWorkspacePath(id), '.ficus', 'env.user'), 'utf8')).toBe(content)
 })
