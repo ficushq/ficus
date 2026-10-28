@@ -11,7 +11,7 @@
  */
 
 import { Hono, type Context } from 'hono'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../lib/zod-validator'
 import { z } from 'zod'
 import * as squadEnv from '../services/squad/env'
 import { getSecretStore } from '../services/secrets'

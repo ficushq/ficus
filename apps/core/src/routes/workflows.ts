@@ -5,7 +5,7 @@ import { outputDeliveryHistory, outputDeliveryHistoryPage } from '../services/in
 import { listOpenWaits, toWaitJson } from '../services/work-streams/waits'
 import { getFlowUsage } from '../services/workflows/usage'
 import { Hono } from 'hono'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../lib/zod-validator'
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { workflowPresetSchema, workflowSourceSchema, workflowCommandSchema } from '@ficus/shared'

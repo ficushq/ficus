@@ -18,7 +18,7 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { Hono, type Context } from 'hono'
 import { WorkStreamStackedDeliveryHoldError } from '../services/work-streams/dependency-edges'
 import { createMiddleware } from 'hono/factory'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../lib/zod-validator'
 import {
   approveWorkStreamSchema,
   InvalidDependencyConditionError,

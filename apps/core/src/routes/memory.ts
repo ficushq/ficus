@@ -19,7 +19,7 @@ import { publicErrorMessage } from '../db/errors'
 import { Hono } from 'hono'
 import type { MemorySourceType } from '@ficus/shared'
 import { AGENT_THREAD_SEARCH_ENABLED, isMemorySourceType } from '@ficus/shared'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../lib/zod-validator'
 import { z } from 'zod'
 import { Squad } from '../entities/Squad'
 import {

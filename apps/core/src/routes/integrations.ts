@@ -11,7 +11,7 @@ import { Hono, type Context } from 'hono'
 import { db } from '../db'
 import { GitHubFeedbackError, requireGitHubHuman } from '../services/integrations/github/feedback-trust'
 import type { OAuthAuthorizationPurpose } from '../services/integrations/authorization/state-repository'
-import { zValidator } from '@hono/zod-validator'
+import { zValidator } from '../lib/zod-validator'
 import { z } from 'zod'
 import { requireSquadPermission } from '../middleware'
 // Every squad route below is guarded, so the handler acts on the id the guard resolved and
