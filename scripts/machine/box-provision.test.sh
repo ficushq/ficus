@@ -205,8 +205,34 @@ case "$verb" in
         if [ -f "$STUB_R/fakedb/$name" ]; then cat "$STUB_R/fakedb/$name" >"$cg/$name"; fi
       done
     fi
-    if [ -n "${manager_args[*]}" ] && [ -f "$STUB_R/fakedb/fail-docker-reload" ]; then exit 92; fi ;;
+    if [ -n "${manager_args[*]}" ] && [ -f "$STUB_R/fakedb/fail-docker-reload" ]; then exit 92; fi
+    # A user manager re-executing its bus drops the caller once: the reload
+    # completed, but the client reports a transport error.
+    if [ -n "${manager_args[*]}" ] && [ -f "$STUB_R/fakedb/flaky-docker-reload" ]; then
+      rm -f "$STUB_R/fakedb/flaky-docker-reload"
+      echo "Reload daemon failed: Transport endpoint is not connected" >&2
+      exit 1
+    fi ;;
   show)
+    case " $* " in
+      *" DropInPaths "*)
+        unit="${!#}"
+        if [ "$unit" = docker.service ] && [ -f "$dir/docker.service.d/override.conf" ]; then
+          echo "DropInPaths=$dir/docker.service.d/override.conf"
+        else
+          echo "DropInPaths="
+        fi
+        # A reload that genuinely never ran leaves the manager reporting one pending.
+        if [ -f "$STUB_R/fakedb/fail-docker-reload" ]; then echo NeedDaemonReload=yes; else echo NeedDaemonReload=no; fi
+        exit 0 ;;
+    esac
+    # The user manager dropped the bus connection of this caller once (live
+    # incident 2026-10-28): the readback itself is fine on the next attempt.
+    if [ -n "${manager_args[*]}" ] && [ -f "$STUB_R/fakedb/flaky-readback" ]; then
+      rm -f "$STUB_R/fakedb/flaky-readback"
+      echo "Failed to get properties: Transport endpoint is not connected" >&2
+      exit 1
+    fi
     case " $* " in
       *" ControlGroup "*)
         unit="${!#}"
@@ -345,6 +371,19 @@ printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$
       expect_eq "$mode provision: $failure failure emits no UID marker" "$(grep -c '^FICUS_BOX_UID=' "${R}/stdout.log" || true)" 0
       rm -rf "${R}"
     done
+    if [ "$mode" = user ]; then
+      # A transient bus disconnect on the enablement readback is retried through
+      # the user-manager wrapper, not treated as a failed readback.
+      make_host
+      touch "${R}/fakedb/flaky-readback"
+      provision --sandbox-id "$sandbox_id" --unit-mode "$mode"
+      expect_eq 'user provision: transient readback disconnect still succeeds' "$PROV_RC" 0
+      expect_eq 'user provision: transient readback disconnect was retried' \
+        "$(grep -c "user manager bus disconnected during 'systemctl --user show'; retrying" "${R}/stderr.log" || true)" 1
+      expect_eq 'user provision: transient readback disconnect emits the UID marker' \
+        "$(grep -c '^FICUS_BOX_UID=' "${R}/stdout.log" || true)" 1
+      rm -rf "${R}"
+    fi
     make_host
     provision --sandbox-id "$sandbox_id" --unit-mode "$mode"
     if [ "$mode" = system ]; then
@@ -518,6 +557,24 @@ printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$
     "$(cat "${R}/sys/fs/cgroup/user.slice/user-1001.slice/cpu.max")" '400000 100000'
   expect_eq 'docker containment: no global or peer service mutation' \
     "$(grep -c -E '^systemctl (stop|restart|set-property).*user@(1000|1002)|^systemctl (stop|restart) docker.service' "${R}/calls.log" || true)" 0
+  # A transient "Transport endpoint is not connected" from the user manager's
+  # daemon-reload is not a containment failure: the drop-in is loaded, so the
+  # run must succeed without stopping or disabling Docker (live incident 2026-10-28).
+  touch "${R}/fakedb/flaky-docker-reload"
+  docker_provision
+  expect_eq 'docker reload disconnect: provisioning succeeds' "$PROV_RC" 0
+  # Two manager reloads per run (box unit, containment drop-in) plus the one
+  # retry the wrapper makes after the disconnect; the drop-in is verified once.
+  expect_eq 'docker reload disconnect: reload was retried' \
+    "$(grep -c "^systemctl --machine=${BOX}@.host --user daemon-reload$" "${R}/calls.log" || true)" 3
+  expect_eq 'docker reload disconnect: drop-in verified through the manager' \
+    "$(grep -c "^systemctl --machine=${BOX}@.host --user show -p DropInPaths -p NeedDaemonReload docker.service$" "${R}/calls.log" || true)" 1
+  expect_eq 'docker reload disconnect: no containment failure' \
+    "$(grep -c 'Docker containment failed' "${R}/stderr.log" || true)" 0
+  expect_eq 'docker reload disconnect: docker not stopped or disabled' \
+    "$(( $(docker_verbs stop) + $(docker_verbs disable) ))" 0
+  expect_eq 'docker reload disconnect: daemon still running' \
+    "$([[ -f ${R}/fakedb/active-docker.service ]] && echo yes || echo no)" yes
   rm -rf "${R}"
 
   # Negative cases exercise the real provision path against fake readbacks.
