@@ -455,3 +455,28 @@ The user authorized a fresh **$50 from zero**, preserving every previous ledger.
 before inspecting its tests/reference: storage and inheritance, schema/format
 support, and approval workflows/diffs, with ordinary libraries available.
 This remains a benchmark-derived coordination case, not official SCBench protocol.
+
+### V4 first arm: native delivery, verifier interruption
+
+Ficus completed four native streams and delivered clean committed main
+`25f55b42acb7da62d3d0a3b61ab62e927dfb95d9` after about 50 minutes of agent
+execution. Usage is $5.871567 over 272 settled requests. The native final reviewer
+reports 410 project tests passing; that is not an external acceptance score.
+The external verifier timed out at 300 seconds, so the fail-closed pair driver
+stopped before Pi. No complete score exists. All checkpoint hashes were verified.
+
+A bounded offline probe on the exact unmodified patch reproduced output-pipe
+backpressure: after 118 health requests, the server stalled with 8,172 bytes in
+the grader-style stderr pipe. Draining the pipe immediately restored HTTP 200.
+The official subprocess fixture captures both pipes without draining while the
+service runs. The quiet reference passed, so the existing reference control did
+not expose this candidate-dependent fixture failure.
+
+An unchanged-suite stop-after-first-failure diagnostic also found a separate
+bootstrap ambiguity: four passed, six skipped, then a dependent resolve check
+failed. The official helper skips first-proposal flows when there is no active
+version, citing an unspecified sentinel, but later tests assume activation. The
+reference returns version 0 while the candidate documents null/no-active behavior.
+Preserve these observations; neither waive failures nor infer a full score.
+See `coordination-v4-ficus-interrupted.json`. No candidate edits or hints occurred.
+A separately declared verifier-IO amendment is needed before resuming the pair.

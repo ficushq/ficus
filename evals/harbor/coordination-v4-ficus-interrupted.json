@@ -1,0 +1,231 @@
+{
+  "experiment": "coordination-v4",
+  "arm": "ficus",
+  "trial": "task__yFmCNhe",
+  "status": "Native delivery completed; external verifier timed out after 300 seconds. Pair stopped before Pi. No complete external score.",
+  "committed_revision": "25f55b42acb7da62d3d0a3b61ab62e927dfb95d9",
+  "working_tree_clean": true,
+  "execution": {
+    "elapsed_seconds_including_setup_and_verification": 3375.3831355419243,
+    "agent_started_at": "2026-10-28T00:11:49.614958Z",
+    "agent_finished_at": "2026-10-28T01:02:09.683809Z",
+    "confirmed_usd": 5.871567,
+    "requests": 272,
+    "unknown_usage": 0,
+    "phase_cap_usd": 50,
+    "phase_remaining_usd": 44.128433,
+    "exception_type": "VerifierTimeoutError"
+  },
+  "native_coordination": {
+    "streams": [
+      {
+        "id": "cf709d1b-4bdd-42cb-995f-62ca7747af17",
+        "title": "Configuration core: immutable drafts, scoping and resolution",
+        "status": "done"
+      },
+      {
+        "id": "1cb1632c-66b7-4184-a785-3972a8f9faad",
+        "title": "Schema registry, safe raw parsing and deterministic validation",
+        "status": "done"
+      },
+      {
+        "id": "1731e866-b0c4-462e-802f-b50d3346089b",
+        "title": "Final integrated configuration server, executable delivery and independent review",
+        "status": "done"
+      },
+      {
+        "id": "38a8b189-52f3-4cf5-b04e-8188b3ae8763",
+        "title": "Approval policies, proposals, review quorum and deterministic diffs",
+        "status": "done"
+      }
+    ],
+    "flows": [
+      {
+        "title": "Configuration core: immutable drafts, scoping and resolution",
+        "attempts": [
+          {
+            "step": "design",
+            "participant": "architect",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "implement",
+            "participant": "engineer",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "review",
+            "participant": "reviewer",
+            "status": "completed",
+            "outcome": "approved"
+          }
+        ]
+      },
+      {
+        "title": "Schema registry, safe raw parsing and deterministic validation",
+        "attempts": [
+          {
+            "step": "design",
+            "participant": "architect",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "implement",
+            "participant": "engineer",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "review",
+            "participant": "reviewer",
+            "status": "returned",
+            "outcome": "changes-requested"
+          },
+          {
+            "step": "implement",
+            "participant": "engineer",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "review",
+            "participant": "reviewer",
+            "status": "returned",
+            "outcome": "changes-requested"
+          },
+          {
+            "step": "implement",
+            "participant": "engineer",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "review",
+            "participant": "reviewer",
+            "status": "completed",
+            "outcome": "approved"
+          }
+        ]
+      },
+      {
+        "title": "Approval policies, proposals, review quorum and deterministic diffs",
+        "attempts": [
+          {
+            "step": "design",
+            "participant": "architect",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "implement",
+            "participant": "engineer",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "review",
+            "participant": "reviewer",
+            "status": "completed",
+            "outcome": "approved"
+          }
+        ]
+      },
+      {
+        "title": "Final integrated configuration server, executable delivery and independent review",
+        "attempts": [
+          {
+            "step": "design",
+            "participant": "architect",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "implement",
+            "participant": "engineer",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "review",
+            "participant": "reviewer",
+            "status": "returned",
+            "outcome": "changes-requested"
+          },
+          {
+            "step": "implement",
+            "participant": "engineer",
+            "status": "completed",
+            "outcome": "completed"
+          },
+          {
+            "step": "review",
+            "participant": "reviewer",
+            "status": "completed",
+            "outcome": "approved"
+          }
+        ]
+      }
+    ],
+    "project_tests_reported_by_native_reviewer": 410,
+    "project_tests_independently_rerun": false,
+    "original_source_exact": true,
+    "original_source_equal_ignoring_outer_whitespace": true,
+    "original_source_sha256": "ea5678abe691a3c1354309d26bf574860825524b6396648152aa80269d74850f"
+  },
+  "external_grade": {
+    "complete": false,
+    "accepted": false,
+    "score": null,
+    "reason": "Verifier timeout; no final counts/JUnit from original attempt. Do not report inferred totals from partial progress output."
+  },
+  "offline_diagnostics": {
+    "model_calls": 0,
+    "network": "none",
+    "candidate_edits": false,
+    "feedback_to_agents": false,
+    "logging_probe": {
+      "purpose": "Offline candidate logging/backpressure diagnostic; no candidate edits or inference",
+      "requests_before_block": 118,
+      "drained_stderr_bytes": 8172,
+      "health_after_drain": 200,
+      "process_alive_before_cleanup": true
+    },
+    "first_failure_probe": {
+      "mode": "Unchanged official suite with stop-after-first-failure, bounded to 90 seconds; separate diagnostic, not full score",
+      "passed": 4,
+      "skipped": 6,
+      "failed": 1,
+      "first_failed_test": "TestCore.test_11_resolve_billing_after_activation",
+      "observed": "404 not_found resolving billing after earlier proposal/approval prerequisites were skipped.",
+      "qualification": "Official helper skips bootstrap flows when :active is not 200 with integer version, explicitly citing unspecified no-active sentinel. Later resolve assertion still assumes activation. Reference supplies version 0; candidate documents null/no-active semantics. Do not equate this dependent failure with an independently established product defect."
+    }
+  },
+  "integrity": {
+    "frozen_runner_and_task_hashes_match": true,
+    "checkpoint_complete": true,
+    "checkpoint_payload_hashes_verified": 3,
+    "runtime_archive_sha256": "25c45f893b53625c1cba4c3233506ac76627c066681fb0253fe168b85254d9f4",
+    "image_id": "sha256:6951b79471484d5d8deb179fbb40025575244cba4e2ed9cf962a4c6bce93aa84",
+    "automatic_retry": false
+  },
+  "artifacts_sha256": {
+    "result.json": "aafceac0bee84ae0856276c95268f13e6138cd65d14a324e7f11a5c92e1dc7e0",
+    "agent/snapshot.json": "5bf1451a1486999314e2842f07d2734713d7e7b9b7c72ff2851a2f0496478aec",
+    "agent/messages.json": "f30ee8946678162767163c7f5e45500c16a79ceb7f0d1b7c73634682721881e1",
+    "verifier/tests.log": "fec61b13bba3c32e3c58ba74b61b42b161cddf8848db51d23f6ac807e3afa947",
+    "artifacts/logs/artifacts/model.patch": "ebd1331065ce07a0b99fa54221c3099ba1dfecc3aec547714cb349ce5db01961",
+    "artifacts/logs/artifacts/repository.bundle": "15877670a83d32f9630be59d60dcc8f970d7d99a5d06913be3b1b1b7108fe756",
+    "artifacts/logs/artifacts/status.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "artifacts/logs/artifacts/git-history.txt": "5bdf0a86f65e9428e016e1627db8bfa593238f179790b31243d0c7e3935d8fa7"
+  },
+  "diagnostic_sha256": {
+    "logging-probe.py": "5bc5e2d16217935719718c09a9e9dc109094eb0567b9382a6f154fa0447114c1",
+    "logging-result.json": "674c1408c6c128ef18fea6e6024dba48a1bf41e7227f8a5c144beea0d0976460",
+    "first-failure.xml": "28f365ebe94d0bd42b6ad1e4e3a07dc702a10c62ac5467c70ed70972349f7909",
+    "first-failure.log": "67a582681c7f415f7f42e812da8df7b2ded24f250d918d6ae08b0c62865a8d37"
+  },
+  "next_step_requires_protocol_amendment": "Drain server output in a separately versioned verifier fixture, preserving original attempt and all assertions. Regrade the same committed artifact offline and disclose bootstrap skips/dependent failures separately, then run Pi against that same amended verifier. No candidate repair or new Ficus inference."
+}
