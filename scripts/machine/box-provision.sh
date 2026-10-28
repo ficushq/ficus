@@ -1063,6 +1063,29 @@ verify_docker_cgroup() {
   [ "${info}" = 'systemd 2' ]
 }
 
+# The daemon is launched by systemd, NOT by run_as_box: the user manager may
+# carry stale caller paths (observed XDG_RUNTIME_DIR=/run/user/<other-uid>).
+# Pin that second environment boundary too, without changing the manager or
+# another service. Explicit paths do not rely on inherited XDG specifiers.
+render_docker_override() {
+  local launcher="$1" home="$2" uid="$3"
+  printf '%s\n' \
+    '[Service]' \
+    'ExecStart=' \
+    "ExecStart=${launcher} --exec-opt native.cgroupdriver=systemd --cgroup-parent=ficus-docker.slice" \
+    'Slice=ficus-docker.slice' \
+    'Delegate=yes' \
+    'UnsetEnvironment=DOCKER_CONTEXT DOCKER_TLS DOCKER_TLS_VERIFY DOCKER_CERT_PATH' \
+    "Environment=HOME=${home}" \
+    "Environment=XDG_RUNTIME_DIR=/run/user/${uid}" \
+    "Environment=XDG_CONFIG_HOME=${home}/.config" \
+    "Environment=XDG_DATA_HOME=${home}/.local/share" \
+    "Environment=XDG_CACHE_HOME=${home}/.cache" \
+    "Environment=DOCKER_CONFIG=${home}/.docker" \
+    "Environment=DOCKER_HOST=unix:///run/user/${uid}/docker.sock" \
+    "Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus"
+}
+
 # Provision the box user's OWN rootless dockerd (a systemd --user service). NEVER
 # starts a shared rootful daemon (bootstrap.sh masks the system one) — closing
 # the multi-box root hole (spec §5). Idempotent: setuptool tolerates an existing
@@ -1116,7 +1139,7 @@ provision_docker() {
   # Flags intentionally fail startup on conflicting daemon.json settings rather
   # than silently accepting an unverified cgroup driver or parent.
   if ! run_as_box mkdir -p "${override_dir}" \
-    || ! printf '[Service]\nExecStart=\nExecStart=%s --exec-opt native.cgroupdriver=systemd --cgroup-parent=ficus-docker.slice\nSlice=ficus-docker.slice\nDelegate=yes\n' "${launcher_cmd}" \
+    || ! render_docker_override "${launcher_cmd}" "${home}" "$(box_uid)" \
       | run_as_box tee "${override_dir}/override.conf" >/dev/null \
     || ! sysu daemon-reload; then
     docker_containment_failure 'could not install/reload Docker containment drop-in'

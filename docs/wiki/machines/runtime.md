@@ -1163,6 +1163,11 @@ runs its **own rootless dockerd** instead (spec §5):
   use its rootless socket, and discard inherited Docker context/TLS selectors.
   Resetting only `HOME` is insufficient: Docker's setuptool writes its unit under
   `XDG_CONFIG_HOME`, which may still point into the provisioning caller's home.
+  The generated Docker service pins the same paths, runtime directory and bus
+  address explicitly: the user manager launches the daemon separately and may
+  itself retain another UID's environment. This is per-service configuration,
+  not a global manager-environment change. The runtime fixture also poisons its
+  own user manager before restart to verify this second boundary.
 - **CPU/memory containment (cgroup v2).** The root-owned
   `user-<uid>.slice` is the box boundary, not `docker.service`: systemd's Docker
   driver creates container scopes outside the daemon's own service cgroup.

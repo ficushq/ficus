@@ -458,7 +458,20 @@ printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$
   expect_eq 'docker first create: provision succeeds' "$PROV_RC" 0
   expect_eq 'docker first create: the setuptool ran' "$(grep -c '^setuptool install --skip-iptables$' "${R}/calls.log")" 1
   expect_eq 'docker first create: the drop-in strips --iptables=false' \
-    "$(cat "${DU}/docker.service.d/override.conf")" "$(printf '[Service]\nExecStart=\nExecStart=/usr/bin/dockerd-rootless.sh --exec-opt native.cgroupdriver=systemd --cgroup-parent=ficus-docker.slice\nSlice=ficus-docker.slice\nDelegate=yes')"
+    "$(grep -E '^(\[Service\]|ExecStart=|Slice=|Delegate=)' "${DU}/docker.service.d/override.conf")" "$(printf '[Service]\nExecStart=\nExecStart=/usr/bin/dockerd-rootless.sh --exec-opt native.cgroupdriver=systemd --cgroup-parent=ficus-docker.slice\nSlice=ficus-docker.slice\nDelegate=yes')"
+  expect_eq 'docker service environment: overrides inherited user-manager runtime/config paths' \
+    "$(grep '^Environment=' "${DU}/docker.service.d/override.conf" || true)" \
+    "$(printf '%s\n' "Environment=HOME=${R}/home/${BOX}" \
+      'Environment=XDG_RUNTIME_DIR=/run/user/1001' \
+      "Environment=XDG_CONFIG_HOME=${R}/home/${BOX}/.config" \
+      "Environment=XDG_DATA_HOME=${R}/home/${BOX}/.local/share" \
+      "Environment=XDG_CACHE_HOME=${R}/home/${BOX}/.cache" \
+      "Environment=DOCKER_CONFIG=${R}/home/${BOX}/.docker" \
+      'Environment=DOCKER_HOST=unix:///run/user/1001/docker.sock' \
+      'Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus')"
+  expect_eq 'docker service environment: removes inherited caller context/TLS selectors' \
+    "$(grep '^UnsetEnvironment=' "${DU}/docker.service.d/override.conf" || true)" \
+    'UnsetEnvironment=DOCKER_CONTEXT DOCKER_TLS DOCKER_TLS_VERIFY DOCKER_CERT_PATH'
   expect_eq 'docker first create: docker.service is enabled' \
     "$(is_link_to "${DU}/default.target.wants/docker.service" "${DU}/docker.service")" yes
   expect_eq 'docker first create: the auto-started daemon is restarted onto the drop-in' "$(docker_verbs restart)" 1

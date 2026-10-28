@@ -167,6 +167,12 @@ provision
 # One small public fixture image; no workload/build/test DB images or host daemon.
 docker_box pull busybox:1.37.0 >/dev/null
 assert_workload first-provision
+# systemd launches the daemon independently of the provisioning shell. Poison
+# this fixture's own manager too; the Docker unit must override these paths.
+userctl set-environment "HOME=$caller" "XDG_RUNTIME_DIR=$caller/run" \
+  "XDG_CONFIG_HOME=$caller/config" "XDG_DATA_HOME=$caller/data" "XDG_CACHE_HOME=$caller/cache" \
+  "DOCKER_CONFIG=$caller/docker" "DOCKER_HOST=unix://$caller/docker.sock" DOCKER_CONTEXT=caller-context \
+  "DBUS_SESSION_BUS_ADDRESS=unix:path=$caller/bus"
 before="$(userctl show -p MainPID --value docker.service)"
 provision
 [ "$(userctl show -p MainPID --value docker.service)" = "$before" ]
