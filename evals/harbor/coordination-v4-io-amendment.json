@@ -1,0 +1,172 @@
+{
+  "experiment": "coordination-v4",
+  "authorization": "User approved grader-only log draining, offline regrade of saved Ficus artifact, and continuation of Pi after assessment.",
+  "change": "Only official conftest subprocess output capture changes from undrained PIPEs to retained regular files. Startup/request/shutdown/verifier timeouts and all assertions are unchanged.",
+  "original_timeout_preserved": true,
+  "original_ready_sha256": "ff39e4003fd88b59cb5882c9d27ad163f8388609486ac09f1623511b27aa4c09",
+  "original_ficus_result_sha256": "aafceac0bee84ae0856276c95268f13e6138cd65d14a324e7f11a5c92e1dc7e0",
+  "private_pi_launcher_sha256": "ddf40e2550a18524bf3c6cae869c37e6c3b539ecb9b963cd6aceb43faeb9cbdb",
+  "all_controls_passed": true,
+  "controls": [
+    {
+      "job": "coordv4-drained-control-nop",
+      "reward": 0.0,
+      "counts": null,
+      "result_sha256": "e68b08b791bb6c6e5a7b04e21386694deca217d7a5a39e0ebd6f13470d95f716"
+    },
+    {
+      "job": "coordv4-drained-control-oracle",
+      "reward": 1.0,
+      "counts": {
+        "total": 76,
+        "passed": 76,
+        "failures": 0,
+        "skipped": 0,
+        "accepted": true
+      },
+      "result_sha256": "7750f2e736fc75f0efff1820159f580fce96dcd0b0ed551a08cd6b98bbdf186b"
+    },
+    {
+      "job": "coordv4-drained-collision-nop",
+      "reward": 0.0,
+      "counts": {
+        "total": 76,
+        "passed": 0,
+        "failures": 76,
+        "skipped": 0,
+        "accepted": false
+      },
+      "result_sha256": "3a696a454a0395e027a09acb5579c5736b43a0998a3490eab09f872e597887ba"
+    },
+    {
+      "job": "coordv4-drained-collision-oracle",
+      "reward": 1.0,
+      "counts": {
+        "total": 76,
+        "passed": 76,
+        "failures": 0,
+        "skipped": 0,
+        "accepted": true
+      },
+      "result_sha256": "96b60dac85ca8f691ddbe30d2d6ca8accc1a0a313109c8938f0390d575d135fa"
+    },
+    {
+      "job": "coordv4-verbose-original-initialized",
+      "reward": 0.0,
+      "counts": {
+        "total": 76,
+        "passed": 0,
+        "failures": 76,
+        "skipped": 0,
+        "accepted": false
+      },
+      "result_sha256": "6447a7a02001091f453ac5627c54f960f5618d6925236dd08de0c9c7eced91c4"
+    },
+    {
+      "job": "coordv4-verbose-drained-initialized",
+      "reward": 1.0,
+      "counts": {
+        "total": 76,
+        "passed": 76,
+        "failures": 0,
+        "skipped": 0,
+        "accepted": true
+      },
+      "result_sha256": "836a3d723f1002cd068c5ed2c51332d08086aaba433f26ef18d7fa99747dc77d"
+    }
+  ],
+  "control_setup_failure": "The first verbose control could not initialize OracleAgent; its artifacts remain preserved. Explicit task/trial paths fixed control setup before successful initialized control runs. No model calls.",
+  "amended_task_sha256": {
+    "instruction.md": "77359548b26e9545a3723341d6a4697f87d27962311ec210654fde65758b9f34",
+    "task.toml": "e068811b8cbf2e5528627ac24f41f77ba231a7527d1906e32e3ff7514977f485",
+    "tests/expected-count.txt": "461144ccfd56ee3cf0f9a9d80e520c5b872166b23092d5fd838ecbdb46d64dab",
+    "tests/test.sh": "c371855c01b236fe00802c966bebff56ef5b4aa719bdca4686da1ecba88ceb2e",
+    "tests/score.py": "653eece7380e787a15fbfe4e8fcf325e3a8a6bdaa209d44eec64272b9b8d49f0",
+    "solution/solve.sh": "9cdb87cbeec09331bcc396d549bf949dd4f812508173707364f5d0761d387ec6",
+    "environment/Dockerfile": "e8d5f0c95008e0d6ead86e73fce2f0333bfb8adc399647c10001cda2aa6b5174",
+    "environment/requirements.lock": "f9d416fa260818d3ebe0ea4cc3786cc4983c1d9e168286ae3b9ae5885e3a52e4",
+    "tests/official/conftest.py": "69f685b69e4580e32c91904c9c414a27d173d7895cb6e58db9d2e057e6c9a58f",
+    "tests/official/test_checkpoint_3.py": "11ba57396aefe28e62638db63876691aa80d5ea90b16ba80d279b9bea96e6fc5",
+    "solution/reference/requirements.txt": "4670bd0955aa33f37f1c6b55075842bcf4ac53c4e334483b9e00de69f9509a55",
+    "solution/reference/config_server.py": "c4a6246b40a90d52bfd73fc1735f6e9cb5252b36a332cd0166862204b2a9b3ce",
+    "solution/reference/config_service/store.py": "399e0d2947a790a7b5a31251c827b639fb96b39722398475e02177274002da03",
+    "solution/reference/config_service/models.py": "f929b7bca7d36a283cde5ed9490d08d916f5e51dee8c7832c42de9114a4a38e7",
+    "solution/reference/config_service/validators.py": "fedb56f585813bd95ab17e8a434c1838a544e5636ff6d9e4267f1a8b2d019be6",
+    "solution/reference/config_service/schema_registry.py": "0b8ffff0f7338ffbc04ec6dc9529b91b0866b096a828d1d7fef0a04d8b26e600",
+    "solution/reference/config_service/__init__.py": "5f89314006843d398757ed47c44ca428210b9b62c58e9f9feb82ab99c43a33d6",
+    "solution/reference/config_service/raw_parsing.py": "3294ff77a3b5c2becaaed8158bca8bf50744d1f6df74587fc202eaf99520acaa",
+    "solution/reference/config_service/utils.py": "d6e4bda31d4c10e54ed69586874cf427335f2e4350c46cd8e4ba0245f29496f8",
+    "solution/reference/config_service/errors.py": "6346261630f45c61bc3cc42deea85479cc8ceb98711c9a35699f18ae1678f9bc",
+    "solution/reference/tests/__init__.py": "5f89314006843d398757ed47c44ca428210b9b62c58e9f9feb82ab99c43a33d6",
+    "solution/reference/tests/test_store.py": "5b905c85cd6bc599f92566269da3ec191786c089be8e8b3a6fc85410770fe23b",
+    "solution/reference/tests/test_server.py": "63f740025a1d62b246e47f3853014e657a994d407a68b5862dfaa89b636fda4d",
+    "solution/reference/tests/test_schema_registry.py": "9e6cde580f4052a866862c4232cdc17b011e7e9ab14b9248cc5fc070ba3536f1",
+    "solution/reference/tests/test_raw_parsing.py": "ec46e06f754b79a19cc78a3892cb26deff9af8c98fa55b5e222ed4ad9300883e"
+  },
+  "amendment_source_sha256": {
+    "evals/harbor/amend_product_verifier_io.py": "99b48336dcd002b1b305e8f054beddab2e3bccd5a81eef84477484f074ce0d81",
+    "evals/harbor/product_verifier_controls.py": "7c8e47c32638cc35d3a67311c31cecbf27b6ca75dc9de6148571a08f85bc152a"
+  },
+  "fixture_diff": "--- original/tests/official/conftest.py\n+++ amended/tests/official/conftest.py\n@@ -10,6 +10,8 @@\n import socket\n import subprocess\n import time\n+from pathlib import Path\n+from typing import TextIO\n from collections.abc import Generator\n \n import httpx\n@@ -59,14 +61,18 @@\n \n \n def _wait_for_server(\n-    proc: subprocess.Popen[str], base_url: str, timeout: float = 10.0\n+    proc: subprocess.Popen[str], base_url: str,\n+    stdout_log: TextIO, stderr_log: TextIO, timeout: float = 10.0\n ) -> None:\n     \"\"\"Wait for server to be ready.\"\"\"\n     deadline = time.monotonic() + timeout\n     last_error: Exception | None = None\n     while time.monotonic() < deadline:\n         if proc.poll() is not None:\n-            stdout, stderr = proc.communicate(timeout=1)\n+            proc.wait(timeout=1)\n+            stdout_log.seek(0)\n+            stderr_log.seek(0)\n+            stdout, stderr = stdout_log.read(), stderr_log.read()\n             raise RuntimeError(\n                 f\"Server exited early with code {proc.returncode}.\\n\"\n                 f\"stdout:\\n{stdout}\\nstderr:\\n{stderr}\"\n@@ -86,23 +92,31 @@\n     \"\"\"Start API server and yield base URL.\"\"\"\n     port = _get_free_port()\n     cmd = entrypoint_argv + [\"--port\", str(port), \"--address\", \"127.0.0.1\"]\n-    proc = subprocess.Popen(\n-        cmd,\n-        stdout=subprocess.PIPE,\n-        stderr=subprocess.PIPE,\n-        text=True,\n-    )\n-    base_url = f\"http://127.0.0.1:{port}\"\n-    try:\n-        _wait_for_server(proc, base_url)\n-        yield base_url\n-    finally:\n-        proc.terminate()\n+    log_dir = Path(\"/logs/verifier\")\n+    log_dir.mkdir(parents=True, exist_ok=True)\n+    # File-backed output cannot fill a PIPE and block the candidate server.\n+    with (\n+        (log_dir / \"server-stdout.log\").open(\"w+\") as stdout_log,\n+        (log_dir / \"server-stderr.log\").open(\"w+\") as stderr_log,\n+    ):\n+        proc = subprocess.Popen(\n+            cmd,\n+            stdout=stdout_log,\n+            stderr=stderr_log,\n+            text=True,\n+        )\n+        base_url = f\"http://127.0.0.1:{port}\"\n         try:\n-            proc.wait(timeout=5)\n-        except subprocess.TimeoutExpired:\n-            proc.kill()\n-            proc.wait(timeout=5)\n+            _wait_for_server(proc, base_url, stdout_log, stderr_log)\n+            yield base_url\n+        finally:\n+            proc.terminate()\n+            try:\n+                proc.wait(timeout=5)\n+            except subprocess.TimeoutExpired:\n+                proc.kill()\n+                proc.wait(timeout=5)\n+\n \n \n @pytest.fixture(scope=\"module\")\n",
+  "evidence_sha256": {
+    "jobs/coordv4-drained-control-nop/task-drained__4aSsr8n/result.json": "e68b08b791bb6c6e5a7b04e21386694deca217d7a5a39e0ebd6f13470d95f716",
+    "jobs/coordv4-drained-control-oracle/task-drained__xRYVHJk/result.json": "7750f2e736fc75f0efff1820159f580fce96dcd0b0ed551a08cd6b98bbdf186b",
+    "jobs/coordv4-drained-control-oracle/task-drained__xRYVHJk/verifier/counts.json": "3bc0434ad9dc4eed0ba031f279096e6ab63376126ec56d7d2aaedc16a721ca8c",
+    "jobs/coordv4-drained-collision-nop/task-drained__9D5YtmR/result.json": "3a696a454a0395e027a09acb5579c5736b43a0998a3490eab09f872e597887ba",
+    "jobs/coordv4-drained-collision-nop/task-drained__9D5YtmR/verifier/counts.json": "326cbf1a2b9e25e2d7fcbb194d8ae438aa8e6d9abf71b9b386c830add729d7be",
+    "jobs/coordv4-drained-collision-oracle/task-drained__cTuqoo7/result.json": "96b60dac85ca8f691ddbe30d2d6ca8accc1a0a313109c8938f0390d575d135fa",
+    "jobs/coordv4-drained-collision-oracle/task-drained__cTuqoo7/verifier/counts.json": "3bc0434ad9dc4eed0ba031f279096e6ab63376126ec56d7d2aaedc16a721ca8c",
+    "jobs/coordv4-verbose-original-initialized/task__6wgDmRJ/result.json": "6447a7a02001091f453ac5627c54f960f5618d6925236dd08de0c9c7eced91c4",
+    "jobs/coordv4-verbose-original-initialized/task__6wgDmRJ/verifier/counts.json": "326cbf1a2b9e25e2d7fcbb194d8ae438aa8e6d9abf71b9b386c830add729d7be",
+    "jobs/coordv4-verbose-drained-initialized/task-drained__gmdJXGd/result.json": "836a3d723f1002cd068c5ed2c51332d08086aaba433f26ef18d7fa99747dc77d",
+    "jobs/coordv4-verbose-drained-initialized/task-drained__gmdJXGd/verifier/counts.json": "3bc0434ad9dc4eed0ba031f279096e6ab63376126ec56d7d2aaedc16a721ca8c",
+    "ficus-regrade-drained/results.xml": "5c822ea7fc45e07c82ed12e3a5d3258011f30958d1536e1e1ea02a1337e94e13",
+    "ficus-regrade-drained/docker-output.log": "c5259af258dbc65cde7bcf037487b02ed9ab80d1814deba5bb57dcfc5eab6b8d",
+    "ficus-regrade-drained/server-stderr.log": "cd4ff390c0caa137b315613a42bb3de66f72a7e590998a7fb0676fd390fc18c5",
+    "ficus-regrade-drained/reward.txt": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+    "ficus-regrade-drained/counts.json": "91a220028863517727acfa4360671958ab8382c39dc87019c3c9e81e1d636838",
+    "ficus-regrade-drained/tests.log": "c5259af258dbc65cde7bcf037487b02ed9ab80d1814deba5bb57dcfc5eab6b8d",
+    "ficus-regrade-drained/server-stdout.log": "98e27ee954f6cdd77f018cc5937d9a33ca6912e16426daa5e71a42884af9dd5f",
+    "jobs/coordv4-paid-ficus/task__yFmCNhe/result.json": "aafceac0bee84ae0856276c95268f13e6138cd65d14a324e7f11a5c92e1dc7e0",
+    "jobs/coordv4-paid-ficus/task__yFmCNhe/agent/snapshot.json": "5bf1451a1486999314e2842f07d2734713d7e7b9b7c72ff2851a2f0496478aec",
+    "jobs/coordv4-paid-ficus/task__yFmCNhe/agent/messages.json": "f30ee8946678162767163c7f5e45500c16a79ceb7f0d1b7c73634682721881e1",
+    "jobs/coordv4-paid-ficus/task__yFmCNhe/verifier/tests.log": "fec61b13bba3c32e3c58ba74b61b42b161cddf8848db51d23f6ac807e3afa947",
+    "jobs/coordv4-paid-ficus/task__yFmCNhe/artifacts/logs/artifacts/model.patch": "ebd1331065ce07a0b99fa54221c3099ba1dfecc3aec547714cb349ce5db01961",
+    "jobs/coordv4-paid-ficus/task__yFmCNhe/artifacts/logs/artifacts/repository.bundle": "15877670a83d32f9630be59d60dcc8f970d7d99a5d06913be3b1b1b7108fe756",
+    "jobs/coordv4-paid-ficus/task__yFmCNhe/artifacts/logs/artifacts/status.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "jobs/coordv4-paid-ficus/task__yFmCNhe/artifacts/logs/artifacts/git-history.txt": "5bdf0a86f65e9428e016e1627db8bfa593238f179790b31243d0c7e3935d8fa7"
+  },
+  "ficus_regrade": {
+    "counts": {
+      "total": 76,
+      "passed": 25,
+      "failures": 5,
+      "skipped": 46,
+      "accepted": false
+    },
+    "pytest_elapsed_seconds": 0.99,
+    "committed_revision": "25f55b42acb7da62d3d0a3b61ab62e927dfb95d9",
+    "candidate_edits": false,
+    "model_calls": 0,
+    "network": "none",
+    "original_patch_sha256": "ebd1331065ce07a0b99fa54221c3099ba1dfecc3aec547714cb349ce5db01961",
+    "qualifications": [
+      "46 skips largely depend on the unspecified initial-active-version sentinel. The reference uses integer 0; Ficus returns 404 for no active version. Four failures assume bootstrap activation/proposals that prior tests skipped. This does not isolate four independent implementation defects.",
+      "The fifth failure concerns rollback error precedence: test omits checkpoint-1-required to_version but expects checkpoint-3 approval_required (409); candidate returns input validation (400). Preserve failure; no assertion waiver.",
+      "No complete acceptance; do not treat 25/76 as a clean comparative ranking or equate skipped checks with independently demonstrated defects."
+    ]
+  },
+  "continuation": {
+    "arm": "pi",
+    "client": "coordv4-paid-pi",
+    "same_amended_grader": true,
+    "original_pair_driver": "Preserved stopped; never restart. Pi-only continuation, no paid Ficus rerun.",
+    "hints_or_candidate_repairs": false,
+    "phase": "budget-phase-2026-10-28-000028-reset50",
+    "cap_usd": 50,
+    "confirmed_opening_usd": 5.871567,
+    "unresolved_receipts": 0,
+    "per_request_reservation_usd": 5.5,
+    "ledger_reset": false
+  }
+}

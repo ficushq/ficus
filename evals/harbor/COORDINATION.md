@@ -480,3 +480,26 @@ reference returns version 0 while the candidate documents null/no-active behavio
 Preserve these observations; neither waive failures nor infer a full score.
 See `coordination-v4-ficus-interrupted.json`. No candidate edits or hints occurred.
 A separately declared verifier-IO amendment is needed before resuming the pair.
+
+### V4 authorized grader-IO amendment
+
+The original timeout remains preserved. With user approval, a separate task copy
+changes only the official fixture's stdout/stderr capture from undrained pipes
+to retained files. Assertions, timeouts, candidate artifacts, requests, runtime,
+and model settings are unchanged. Ordinary and collision controls still behave
+correctly. A reference wrapped to emit 512 KiB on each stream fails all 76 tests
+under the original fixture and passes 76/76 under the amended fixture. This
+regression control makes the log-handling failure observable.
+
+Offline regrading of Ficus's exact saved committed patch completes in 0.99 seconds:
+25 passed, 5 failed, 46 skipped. Four failures depend on bootstrap actions that
+were skipped because the no-active-version sentinel is unspecified; the fifth
+concerns rollback input-validation versus approval-error precedence. None are
+waived, and this is not a clean 25/76 comparative ranking. No candidate repairs,
+new Ficus model calls, or agent feedback were used.
+
+`coordination-v4-io-amendment.json` freezes the changed fixture, control evidence,
+regrade artifacts, and Pi-only continuation launcher. Pi receives the same
+unchanged requests and amended grader, without the diagnostic findings. The
+original pair driver remains stopped. The existing $50 phase and $5.50 request
+reservation remain in force, with $5.871567 spent before Pi starts.
