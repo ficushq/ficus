@@ -230,3 +230,29 @@ describe('filterCliHelpForPermissions', () => {
     )
   })
 })
+
+describe('operator-only help stays out of every agent reference', () => {
+  test('all generated profiles omit secret even before permission filtering', async () => {
+    clearCliHelpCache()
+    for (const generate of [
+      getSystemManagerCliHelp,
+      getTaskWorkflowCliHelp,
+      getSquadWorkerCliHelp,
+      getSquadManagerCliHelp,
+    ]) {
+      const help = await generate()
+      expect(help).not.toMatch(/^ {2}secret\s/m)
+      expect(help).not.toContain('Usage: ficus secret')
+      expect(help).toContain('integration')
+    }
+  })
+
+  test('broad human permissions do not restore operator commands to an agent reference', () => {
+    const help =
+      'Usage: ficus [options] [command]\n\nCommands:\n  secret [options]  Manage secrets\n                    Operator details\n  integration [options]  Integrations\n\n---\n\nUsage: ficus secret [options] [command]\n\nCommands:\n  get <key>  Read a value\n'
+    const filtered = filterCliHelpForPermissions(help, ['*'])
+    expect(filtered).not.toContain('secret')
+    expect(filtered).not.toContain('Operator details')
+    expect(filtered).toContain('integration')
+  })
+})

@@ -1,6 +1,6 @@
 # Integration command execution
 
-Integration execution is an unrestricted, per-command credential path. GitHub, Linear, Notion and the six deployment providers use it. Squad/global/per-agent Secret Store exposure is retired; see the [automatic cleanup upgrade notes](../upgrade/secret-exposure-retirement.md) for durable pending/failed runtime cleanup and retry behavior.
+Integration execution is an unrestricted, per-command credential path. GitHub, Linear, Notion and the six deployment providers use it. Legacy squad/global/per-agent key delivery is retired; see the [automatic cleanup upgrade notes](../upgrade/secret-exposure-retirement.md) for durable pending/failed runtime cleanup and retry behavior.
 
 ## Plugin contract
 
@@ -138,4 +138,159 @@ Project-local CLIs are an accepted gap: npm/bun/pnpm scripts may put `node_modul
 
 Notion refresh, revocation, credential-drift detection and projection invalidation remain active. Rotated credentials work immediately without rewriting `.env` or wrappers or reinstalling the CLI. Reconciliation may still regenerate token-free metadata and verify installation readiness; rotation does not change generated file contents. Invalid/revoked or detached connections refuse even through a stale wrapper.
 
-No arbitrary exposed values are migrated. Later migrations remove deployment token projection, legacy exposure delivery, and stale files; automatic rollout cleanup, detection and broader agent-facing guidance are separate changes.
+No arbitrary exposed values are migrated. See the cleanup, detection and managed-guidance acceptance below.
+
+## Detection boundaries
+
+### Integration and operator material
+
+Integration credential bundles register secret leaves, including manual tokens,
+OAuth access/refresh tokens and channel signing material, rather than matching
+serialized JSON or OAuth metadata. Each leaf must be at least **8 characters**:
+shorter legacy leaves are not exact-matched and can appear without exact-value
+redaction/refusal. New manual and channel secret inputs enforce the same minimum;
+opaque manual tokens are trimmed before validation, delivery and matching, while
+OAuth/channel leaves retain their exact values. Pattern-based detection remains independent.
+
+Storage, refresh, rotation, reload and deletion update exact-value matching.
+Old/new values coexist across conservative cache publication. Additionally,
+**encrypted durable one-hour retirement** retains prior integration material on
+replacement/deletion in `integration_credential_retirements`, atomically with the
+credential mutation. Startup and peer refresh restore its original absolute expiry,
+never restart the clock. Expired leaves leave matching at redaction/refresh
+boundaries; full cache refresh prunes expired DB rows. This bounded grace protects
+in-flight output after rotation/deletion, not indefinitely running commands or
+provider revocation. Integration material and remaining matchable operator values
+redact tool output and refuse tool input; refusal text does not name an internal
+storage system. Public operator identifiers and values below the operator matcher
+minimum remain excluded. Exec itself remains unrestricted.
+
+### Custom environment: trusted, output-only matching
+
+Squad `.ficus/env.user` is an output-only source. A **one-time legacy snapshot** at
+startup accepts existing files up to **256 KiB** (UTF-8 bytes), deliberately trusting
+those legacy bytes once. The protected `squad_env_detections` DB table holds the
+trusted content hash and parsed env entries, with **no encryption-key dependency**.
+It contains only env-derived values already present in plaintext `env.user`, never
+integration/operator store credentials. An independent durable per-squad bootstrap
+marker prevents a missing, corrupt or unreadable record from authorizing another
+disk snapshot, including after restart. No-key startup, detection and env edits
+remain supported.
+
+Trusted **first service creation** of `env.user` also registers its content: an
+empty new-squad environment does not need an initial manual save, and bounded
+legacy promotion from a custom `.env` registers its literal secret-like values.
+This service-owned write is distinct from discovering an arbitrary disk-only file,
+which cannot create trusted state after bootstrap.
+
+There is one narrow size exception for **legacy promotion** during runtime
+regeneration/rollout cleanup: preserve **full oversized legacy content** in
+`env.user` and atomically record reason `oversized` with no entries. Regeneration
+and cleanup must not stall on the legacy file's size; detection shows the oversized
+notice, not a false unreadable or edited-outside-Settings notice. This does not
+register oversized values for matching or raise the cap on ordinary input writes.
+
+After bootstrap only Environment API/service writes update trusted state. A direct
+disk edit cannot register new redaction values: the file must match the trusted
+hash or that squad's env entries are ignored. A safe warning is logged **once per squad per process**,
+and a one-line Environment settings notice explains how to register the values by
+saving in Settings; even an unchanged save can register them. Oversized/unreadable
+legacy files are skipped with a warning/notice, not silently trusted on a later
+restart. DB authority refresh and on-disk checks are throttled to **at most once per second**
+(with immediate local API/service-write refresh). Negative signature/hash results
+are cached too: unchanged mismatching/null-hash files are not repeatedly read and
+hashed. The cache reevaluates changed file signatures and current trusted state,
+including API/service or peer authority updates; a prior mismatch does not freeze
+future registration. Bounded descriptor reads, regular-file checks and no-follow
+checks prevent oversized or symlink input from bypassing these limits.
+
+Ordinary Environment API/service writes reject content above 256 KiB before file writes.
+The Settings GET also bounds reads: oversized files return 413, unreadable or unsafe
+files return 409, without editable empty/truncated substitutes. The editor and Save
+are unavailable on read errors; saving is also disabled while a read is pending.
+For an oversized file, reduce it outside Settings first, reload, then explicitly
+save to register it. Failed Settings reads and over-cap rejected writes leave the
+existing file unchanged.
+
+Literal values of keys ending in `TOKEN`, `KEY`, `SECRET`, `PASSWORD` or
+`CREDENTIALS` (case-insensitive, underscore boundary) match at 12 characters.
+Keys containing `PUBLIC` or `PUBLISHABLE`, and frontend prefixes `NEXT_PUBLIC_`,
+`VITE_`, `REACT_APP_`, are excluded even on the secret-name path. Other keys require
+at least 32 characters, two character classes and Shannon entropy of at least
+4 bits per character; whitespace, URLs and filesystem paths are excluded from
+that fallback. `production` and other short ordinary values do not match. Parsing
+does not execute shell substitutions or source files; dynamic expressions cannot
+be inferred. Matching is process-wide, so another squad's output may also be
+redacted. These values **never refuse tool input**, including failed-query attribution
+and ordinary app environment-file writes. Human-directed workspace files are not
+registered/scanned by this source.
+
+## Managed guidance updates
+
+Bundled guidance is in `config/agent-types`, `config/agent-types/shared`,
+`config/roles/defaults.yaml` and `config/skills/*/SKILL.md` (including support
+Markdown). `services/config-sync/index.ts` runs `syncAllConfig()` at API startup;
+`SkillSync` and `AgentTypeSync` refresh templates and invalidate entity caches.
+The worker consumes the database definitions. See [configuration sync](config-sync.md)
+for authoritative override/revert semantics.
+
+- Non-overridden fields receive the bundled rewrite. Custom records and
+  overridden `content`, `supportFiles` or `systemPrompt` fields are preserved,
+  not destructively replaced. Administrators should compare affected skill/type
+  templates and deliberately apply credential-guidance changes to custom fields.
+  A full revert also removes unrelated customizations; do not bulk-revert them.
+- `services/agent/skill-materializer.ts` writes enabled database skills to managed
+  materialized/per-sandbox directories; runner `resolveSkillRefs` combines agent
+  type, squad and integration skill references before materialization. Changed
+  content is rewritten and stale managed support files are pruned there. VM
+  `file-sync.ts` transports skill assets. Existing sessions/copies are not proof
+  that a new seed has been consumed; verify after the normal refresh/reconnect.
+- `lib/utils/cli-help.ts` generates cached agent references from the built CLI,
+  omitting operator credential commands even under broad user permissions. Ship
+  the matching CLI with Core; operator `ficus --help` remains unchanged. CLI
+  install bundles also copy `external/skills`; those are a separate upstream
+  source, not the managed `config/skills` seed.
+- This rewrite changes repository seeds and documentation only, not live skills,
+  runtime configuration, user overrides or existing conversations. Historical
+  approved designs are immutable and excluded from the active guidance scan.
+
+## Acceptance matrix
+
+These focused regressions use synthetic credentials and local test resources;
+passing them is evidence of shipped behavior, **not** a live fleet cleanup or
+provider deployment. Paths below are relative to `apps/core/src` unless noted.
+Run focused files, not the full Core suite.
+
+| Requirement | Regression evidence |
+| --- | --- |
+| Generic assigned/healthy/default/alternate-account exec; expiry/authority/refusal | `services/integrations/execution.test.ts`, `deployment/execution.test.ts` under that directory |
+| Inherited all-provider env scrubbing; unrestricted commands, selector defaults and nested explicit accounts | `apps/cli/src/commands/integration-exec.test.ts`, `integration-selection.process.test.ts`, `integration-squad-context.process.test.ts` (repo-relative) |
+| Executable wrapper lookup without recursion, child-process PATH use, argv/status, human pass-through, assignment removal | `services/integrations/execution-wrappers.test.ts`, `execution-lifecycle.test.ts` |
+| Docker agent/squad command hooks and terminal activation | `services/sandbox/docker/manager.test.ts`, `services/sandbox/bashrc.test.ts` |
+| Kubernetes agent/squad preambles and terminal activation | `packages/sandbox-server/src/services/bash.test.ts` (repo-relative), `services/sandbox/bashrc.test.ts` |
+| VM member/squad command and terminal paths; executable copies and pruning | Same sandbox-server/bashrc tests, `services/sandbox/vm/file-sync.test.ts` |
+| Host agent/squad identity-safe shim-first PATH and managed Bash human terminal | `services/sandbox/host/env.test.ts`, `manager.test.ts`, `terminal-bootstrap.test.ts` |
+| Git per-command credential helper/signing instruction remains token-free | `services/squad/github-command-bindings.test.ts` |
+| Every integration assigned (GitHub, Linear, Notion, six deployment providers, nonexec/channel adversarial assignments): no credential in generated `.env`, any generated `.ficus` file, or toolchain configuration | `services/integrations/deployment/execution.test.ts` enumerates the current plugin registry and scans all generated files; `execution-lifecycle.test.ts` covers Notion rotation |
+| Deploy import stored-only/env-only/stored-wins, durable per-provider marker, no overwrite after rotation, no assignments/defaults, retired lookup names | `services/integrations/deployment/migration.test.ts`; operator action notice: [deployment upgrade](../upgrade/deploy-provider-connections.md) |
+| Exposure routes/tables/prompts/panels removed; custom env preserved, generated output clean immediately | `services/sandbox/exposure-retirement.test.ts`, `services/squad/env.test.ts`, `db/exposure-retirement-migration.test.ts` |
+| Startup shared-mount sweep; offline VM pending/reconnect, durable restart retry, both effects acknowledged, conflicting directories/backoff/status; private/archive/restore cleanup | `services/sandbox/exposure-cleanup.test.ts`, `exposure-retirement.test.ts`, `services/machines/migration-exposure-cleanup.test.ts` |
+| Integration leaf minimum 8 (including legacy), trimmed manual tokens, manual/channel input validation and independent patterns | `services/security/integration-credential-entries.test.ts`, `content-safety.test.ts`, `routes/integrations.test.ts`, `services/integrations/channels/connections.test.ts` |
+| Integration storage/refresh/rotation/delete, conservative cache transition and encrypted durable one-hour retirement across restart/peer refresh with original expiry | `services/secrets/store.test.ts`, `services/integrations/authorization/refresh-service.test.ts`, `services/security/content-safety-registry.test.ts` |
+| One-time legacy env bootstrap, protected DB authority/marker without encryption key, restart/missing/corrupt row behavior, ignored direct edits, notices, 256 KiB cap and throttled refresh | `services/security/squad-env-secret-source.test.ts`, `services/security/squad-env-detection-repository.test.ts`, `routes/squad-env.test.ts`, `services/squad/env.test.ts` |
+| Trusted first service creation: empty new squad has no false notice, bounded legacy promotion registers values; oversized legacy promotion preserves full content/runtime cleanup and atomically records oversized/no entries | `services/squad/env.test.ts`, `services/sandbox/exposure-cleanup.test.ts`; real startup fixtures: `services/sandbox/ensure.test.ts` |
+| Negative signature/hash caching avoids repeated reads of unchanged mismatches/null hashes; changed signatures and API/service/peer authority updates reevaluate | `services/security/squad-env-secret-source.test.ts` |
+| Bounded GET 413/409 without editable substitutes, byte/growth limits, no file mutation; error/pending UI and smaller-file recovery | `services/squad/env-settings-read.test.ts`, `routes/squad-env.test.ts`, `apps/web/src/components/squads/SquadEnvConfig.test.tsx` (repo-relative) |
+| Env output-only matching including failed-query attribution; public/ordinary-value exclusions; app env writes allowed, integration tool input refused | `services/security/squad-env-secret-source.test.ts`, `content-safety.test.ts`, `stored-secret-tool-containment.test.ts`, `tool-output-redaction.test.ts` |
+| Active skill/prompt text, six deploy script examples, channel setup, honest legacy deploy option help, operator-only docs | `scripts/integration-credential-guidance.test.ts` (repo-relative), `lib/utils/cli-help.test.ts` |
+| Seed/template updates preserve custom overrides; normal materialization refresh | `services/config-sync/skill-sync.test.ts`, `agent-type-sync.test.ts`, `services/agent/skill-materializer.test.ts` |
+| Channel plugins never deliver exec credentials; Telegram webhook stays Core-owned | All-assigned regression above; `services/integrations/channels/plugins.test.ts`, `lifecycle.test.ts` |
+
+Cleanup acceptance deliberately allows **pending** unreachable targets and
+**failed** targets with a visible reason and delayed retry. No execution gate is
+introduced. A target is not done until regenerated environment and retired-file
+removal are acknowledged; existing processes are not stopped or scrubbed. Consult
+[automatic cleanup](../upgrade/secret-exposure-retirement.md) instead of assuming
+all copies are clean immediately after upgrading. Arbitrary old exposed values
+are never migrated. No deployment, live cleanup or credential inspection is
+part of this validation.

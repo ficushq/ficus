@@ -258,7 +258,12 @@ function registerLocalCommands(deploy: Command): void {
         'page with 404s for /assets/....'
     )
     .option('--cwd <cwd>', 'Working directory inside the sandbox')
-    .option('--env-secret-ref <key>', 'Secret Store key to expose to the process', collect, [])
+    .option(
+      '--env-secret-ref <key>',
+      'Legacy reference metadata only; not resolved or injected. Use assigned integration exec or custom env/files',
+      collect,
+      []
+    )
     .option('--restart-policy <policy>', 'Restart policy (always|never)')
     .option('--alias <name>', ALIAS_OPTION_HELP)
     .action(async (squadId, options) => createLocalDeployment(squadId, { ...options, mode: 'managed' }))

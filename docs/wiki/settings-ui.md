@@ -1,6 +1,6 @@
 # Settings Page
 
-The Settings page (`/settings`) is the central place to configure user preferences, AI providers, secrets, and all config entities (agent types, squad presets, channels, notification rules).
+The Settings page (`/settings`) is the central place to configure user preferences, AI providers, feature-owned credentials, and all config entities (agent types, squad presets, channels, notification rules).
 
 ## Layout
 
@@ -55,7 +55,7 @@ Users, Roles, System Tokens, and Sign-up appear according to the caller's permis
 Connect agent-model accounts via API key or supported subscription OAuth. Provider cards show accounts, enable state, and connection status; model-provider enable states control selection and fallback. OpenAI API services for voice and embeddings are configured separately in Integrations.
 
 > **Requires `FICUS_ENCRYPTION_KEY`.** Credentials are written to the encrypted
-> secret store, so without the key credential mutations fail with
+> feature-owned storage, so without the key credential mutations fail with
 > `Cannot mutate secrets: FICUS_ENCRYPTION_KEY not configured`. Generate one with
 > `echo "FICUS_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env` and restart the
 > api + worker. There is no file-based alternative.
@@ -264,3 +264,32 @@ Squad settings use eight pages grouped by purpose:
 - **Remote access:** SSH keys, known hosts, SSH configuration, and remote hosts.
 
 Old Workflows, Policies, Sandbox, Environment, SSH, and Remote hosts links still resolve to the corresponding new page. Search targets for capacity and host directories follow their new owners. Saving a page updates only its fields, so unrelated settings are not overwritten.
+
+### Squad application secrets and integration accounts
+
+Squad **Workspace → Environment Variables** is for custom application values,
+including custom secrets. They are visible to agents and terminals. Human-directed
+files in squad/agent workspaces are another custom-secret path. Do not put
+integration tokens in either place: connect accounts in **Settings → Integrations**,
+then assign them in the squad’s **Integrations** tab. There is no key allowlist or
+per-agent credential panel. Assigned CLIs use per-command wrappers; human terminals
+use their own logins. Channel tokens belong only in their owning integration cards.
+
+Environment content is limited to **256 KiB** (UTF-8 bytes). Existing content is
+snapshotted once for output-only redaction, then only saves through Settings or
+the Environment API/service register trusted values. Later direct disk edits are
+ignored for detection and produce an Environment notice; Save can register even
+unchanged content. This is not input refusal or a workspace-file scanner. Public
+and short ordinary values are excluded; see [detection boundaries](integration-execution.md#detection-boundaries).
+Oversized files cannot be edited here: reduce the file outside Settings, reload,
+then save to register it. Failed/unsafe reads show an error without editable partial
+or empty content; saving is disabled during reads. Failed reads and over-cap
+rejected writes leave the existing file unchanged.
+
+The cap still applies to ordinary API/service writes. Only service-owned legacy promotion
+during runtime regeneration/cleanup preserves a larger existing custom `.env`
+intact in `env.user`, atomically recording `oversized` with no entries for detection.
+Runtime cleanup does not stall on this size; the oversized notice remains until
+smaller content is explicitly saved. Trusted first creation of an empty new-squad
+file or bounded legacy file registers it without an initial manual save. A raw
+on-disk edit is not this service-owned promotion and grants no detection authority.

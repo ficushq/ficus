@@ -4,6 +4,41 @@ Squad, global and per-agent Secret Store exposure has been removed. The upgrade 
 
 Custom secrets belong in squad **Workspace → Environment Variables**, or files chosen by a person. Environment Variables remain visible to agents and terminals; `env.user` and other custom files are preserved. Integration credentials are delivered only through per-command integration exec. Human terminals remain token-free and can use the person's own provider login. Operator `ficus secret`, `/api/secrets` and feature-owned encrypted storage remain available.
 
+## Detection compatibility on upgrade
+
+Integration exact matching now uses secret leaves of at least **8 characters**;
+new manual/channel secrets enforce that minimum too. Shorter legacy leaves are
+not exact-matched; independent credential-pattern detection remains active.
+Rotation/deletion retains encrypted prior integration material for **one hour**,
+including across restart, with the original expiry rather than a renewed grace.
+This is detection coverage, not provider revocation or persistent sandbox delivery.
+
+Existing `.ficus/env.user` files receive a **one-time** trusted snapshot, capped
+at **256 KiB** (UTF-8 bytes). Trusted hashes/parsed output-only entries live in a
+protected DB table independent of the encryption key; a separate durable bootstrap
+marker prevents re-trusting disk after record deletion/corruption or restart.
+Thereafter only Environment API/service saves register values. Later direct disk edits
+are ignored for detection, with a once-per-squad-per-process warning and a notice
+in Environment Settings; explicitly save there to register changed or unchanged
+values. Oversized/unreadable legacy files are skipped with a notice, not repeatedly
+snapshotted. The cap remains for ordinary API/service writes; Settings reads fail safely without
+editable partial/empty substitutes. Reduce an oversized file outside Settings,
+reload, then save; failed reads and over-cap rejected writes leave the file unchanged. Public/publishable
+keys are excluded, and env entries never refuse input, including failed-query
+attribution. No integration credentials are copied into this env authority. See
+[full detection limits and persistence](../wiki/integration-execution.md#detection-boundaries).
+
+Trusted first service creation registers empty new-squad files and bounded legacy
+custom `.env` content without requiring a manual save. A narrow **legacy promotion**
+exception preserves the full oversized custom `.env` in `env.user` during runtime
+regeneration/cleanup, atomically recording reason `oversized` with no entries.
+Regeneration/cleanup succeeds rather than stalling on size, with the oversized
+notice instead of a false unreadable or mismatch notice. Detection stays skipped
+until smaller content is saved; ordinary input, Settings GET and scanner caps are
+unchanged. Arbitrary raw disk edits are not trusted service creation. Negative
+signature/hash caching also avoids re-reading unchanged untrusted files; changed
+file signatures and authoritative API/service or peer updates trigger reevaluation.
+
 ## Automatic cleanup after upgrading Core
 
 Every environment regeneration immediately stops emitting exposure exports. The worker also starts an independent cleanup sweep at startup and checks for due targets every minute, including after a Core restart. No agent activity or sandbox ensure is needed to start cleanup.
@@ -19,4 +54,4 @@ The sweep is serial and processes at most 25 due targets per pass. Archive strea
 
 Ensure and VM attach/reconnect also invoke the same cleanup as a first-contact backstop for outstanding targets, bypassing the retry deadline when a runtime returns. A durable `done` target is not scanned or rewritten on subsequent contacts; changed squad assignment invalidates that acknowledgement. Cleanup failures do **not** gate agent or terminal execution, stop processes, or promise to erase values already inherited by an existing process. Inspect pending/failed targets rather than assuming all runtime copies were removed merely because Core upgraded. No cleanup status represents revocation of a credential at its provider.
 
-This change ships automatic cleanup code; it does not authorize or perform a live deployment, credential inspection or manual fleet cleanup. Expanded credential detection and the remaining [agent-facing documentation rewrite](https://github.com/ficushq/ficus/blob/5dc267c7adaaa1d6ff786a089b3f2fe3b03bf7b4/docs/superpowers/specs/2026-10-27-integration-credential-delivery-design.md#6-agent-facing-text) are separate stages. Some older wiki exposure instructions await that rewrite; use [integration execution](../wiki/integration-execution.md), not the removed commands.
+This change ships automatic cleanup code; it does not authorize or perform a live deployment, credential inspection or manual fleet cleanup. See the [final credential model and acceptance matrix](../wiki/integration-execution.md#acceptance-matrix) for detection, agent guidance, managed seed updates and focused verification. Historical design documents describe the retired system, not current instructions.

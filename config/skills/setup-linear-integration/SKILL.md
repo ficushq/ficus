@@ -5,7 +5,7 @@ description: Set up Linear through Ficus Integrations, assign accounts to squads
 
 # Setting up Linear
 
-Help the user configure **Settings → Integrations → Linear**. Credentials are managed there, not in Secrets & Keys. Never ask the user to paste a private API key or signing secret into a chat.
+Help the user configure **Settings → Integrations → Linear**. Manage credentials only in that integration card. Never ask the user to paste a private API key or signing secret into a chat.
 
 1. Enable Linear globally. Add an account name and personal API key. In Linear, create the key under Security & Access, with read access to the intended teams.
 2. Validate and enable the account. An imported legacy account starts disabled and needs validation before use.

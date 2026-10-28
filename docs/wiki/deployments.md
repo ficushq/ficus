@@ -129,6 +129,8 @@ Project-local CLIs and package-manager scripts may bypass global wrappers. Wrap 
 
 ```bash
 ficus integration exec <provider> -- npm run deploy
+ficus integration exec <provider> -- bun run deploy
+ficus integration exec <provider> -- pnpm run deploy
 ficus integration exec <provider> --connection <attached-account-id> -- <command>
 ```
 
@@ -149,3 +151,8 @@ ficus deploy local stop <local app-id>
 ```
 
 For the underlying design, see App Deployment Support for Ficus Squads.
+
+The compatibility `--env-secret-ref` option records legacy reference metadata
+only; local apps do not resolve or inject those values. It is not a credential
+delivery path. Use custom app env/files instead. Do not start persistent local
+servers under integration exec: credentials belong only to a bounded command.

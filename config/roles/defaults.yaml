@@ -109,7 +109,7 @@ roles:
   # The shared app-store reviewer account on a designated demo instance
   # (services/demo). A viewer that can also talk: chat with agents, answer
   # their questions, resolve review requests. No creation, deletion,
-  # settings, secrets, integrations, or user management.
+  # settings, credential administration, integrations, or user management.
   - name: Demo Reviewer
     slug: demo-reviewer
     appliesTo: user
@@ -226,7 +226,7 @@ roles:
       # models, verify integrations, and inspect types/channels before spawning.
       # grants:read is squad-scoped (requireSquadPermission) — own squad only.
       - integrations:read # inspect available connections without reading credentials
-      - integrations:use # run gh with a connection assigned to this squad
+      - integrations:use # per-command exec for assigned integrations; never credential administration
       - provider-auth:read # ficus provider-auth list / get / oauth-providers
       - webhooks:read # ficus webhook status <provider>
       - agent-types:read # ficus agent-type list / get
