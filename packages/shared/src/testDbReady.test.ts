@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'fs'
+import { mkdtempSync, rmSync, mkdirSync, symlinkSync, realpathSync } from 'fs'
+import { ownTestDb } from './testDbLifecycle'
+import { testDbProjectName } from './testDbPort'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { canExecuteQuery, getComposeBoundPort, isComposePostgresReady } from './testDbReady'
@@ -36,52 +38,55 @@ function freePort(): number {
 }
 
 function composeUp(projectName: string, port: number, fakeRepoRoot: string): void {
-  Bun.spawnSync(['docker', 'compose', '-p', projectName, '-f', composeFile, 'up', '-d', 'postgres'], {
+  const up = Bun.spawnSync(['docker', 'compose', '-p', projectName, '-f', composeFile, 'up', '-d', 'postgres'], {
     stdout: 'ignore',
     stderr: 'ignore',
-    timeout: 60_000,
+    timeout: 30_000,
+    killSignal: 'SIGKILL',
     env: { ...process.env, TEST_DB_PORT: String(port), TEST_REPO_ROOT: fakeRepoRoot },
   })
-}
-
-function composeDown(projectName: string): void {
-  Bun.spawnSync(['docker', 'compose', '-p', projectName, '-f', composeFile, 'down', '--volumes'], {
-    stdout: 'ignore',
-    stderr: 'ignore',
-    timeout: 20_000,
-  })
+  if (up.exitCode !== 0 || up.signalCode) throw new Error(`Compose startup failed for ${projectName}`)
 }
 
 // Poll with the already-trusted, unchanged primitive (canExecuteQuery) —
 // not isComposePostgresReady, the function under test — so test setup
 // doesn't presuppose the behavior being verified.
-function waitUntilQueryable(port: number, timeoutMs = 60_000): void {
+async function waitUntilQueryable(port: number, timeoutMs = 60_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     if (canExecuteQuery(port, 'ficus_test', { timeoutMs: 3000, cwd: queryCwd })) return
-    Bun.sleepSync(500)
+    await Bun.sleep(500)
   }
   throw new Error(`postgres on port ${port} never became queryable within ${timeoutMs}ms`)
 }
 
 describe('cross-project port ownership (Core #795 follow-up)', () => {
-  const suffix = `${Date.now()}-${process.pid}`
-  const projectA = `ficus-test-ownercheck-a-${suffix}`
-  const projectB = `ficus-test-ownercheck-b-${suffix}`
+  const scratchRoot = realpathSync(mkdtempSync(join(tmpdir(), 'ficus-test-db-ready-test-')))
+  const rootA = join(scratchRoot, 'a')
+  const rootB = join(scratchRoot, 'b')
+  for (const root of [rootA, rootB]) {
+    mkdirSync(root)
+    symlinkSync(composeFile, join(root, 'docker-compose.test.yml'))
+  }
+  const projectA = testDbProjectName(rootA)
+  const projectB = testDbProjectName(rootB)
   const portA = freePort()
   const portB = freePort()
-  const scratchRoot = mkdtempSync(join(tmpdir(), 'ficus-test-db-ready-test-'))
+  let sessionA: ReturnType<typeof ownTestDb> | undefined
+  let sessionB: ReturnType<typeof ownTestDb> | undefined
 
-  beforeAll(() => {
-    composeUp(projectA, portA, scratchRoot)
-    composeUp(projectB, portB, scratchRoot)
-    waitUntilQueryable(portA)
-    waitUntilQueryable(portB)
+  beforeAll(async () => {
+    sessionA = ownTestDb(rootA, { scopeRoot: queryCwd })
+    composeUp(projectA, portA, rootA)
+    sessionB = ownTestDb(rootB, { scopeRoot: queryCwd })
+    composeUp(projectB, portB, rootB)
+    await waitUntilQueryable(portA)
+    await waitUntilQueryable(portB)
   })
 
   afterAll(() => {
-    composeDown(projectA)
-    composeDown(projectB)
+    sessionB?.release()
+    sessionA?.release()
     rmSync(scratchRoot, { recursive: true, force: true })
   })
 

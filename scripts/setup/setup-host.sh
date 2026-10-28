@@ -98,6 +98,7 @@ cfg_load "${CONFIG}"
 # ============================================================== configuration
 
 SRC_MODE=$(cfg_get '.source.mode' 'git-ssh')
+RUN_USER=$(cfg_core_run_user)
 # sshd brute-force protection (lib.sh ensure_fail2ban; opt-in, host.fail2ban; phase_preflight).
 FAIL2BAN_ON=$(fail2ban_setting)
 SRC_REPO=$(cfg_require '.source.repo' 'git repository')
@@ -173,7 +174,6 @@ CORE_ORIGIN=$(cfg_require '.core.origin' 'browser-facing origin')
 CORE_PORT=$(cfg_get '.core.port' '3000')
 [[ ${CORE_PORT} =~ ^[0-9]+$ ]] || die "config: core.port must be a number"
 CORE_SERVE_WEB=$(cfg_bool '.core.serve_web' 'true')
-RUN_USER=$(cfg_get '.core.run_user' "$(id -un)")
 # shellcheck disable=SC2034 # caller global: lib.sh's render_core_unit reads it
 BUN_BIN=/usr/local/bin/bun
 

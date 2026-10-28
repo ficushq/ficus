@@ -1550,6 +1550,44 @@ ensure_fail2ban() {
 #   docker           only on the docker sandbox runtimes (R8); docker
 #                    membership is root-equivalent, so no other runtime gets it
 
+# Shared policy message for configuration, host-state and explicit revert
+# refusals. The forward switch remains available to repair a legacy root host.
+refuse_hosted_core_root() { # [DETAIL]
+  die "core.run_user: hosted Core runs as an unprivileged service user; root is not supported on source.mode=artifact installs${1:+ — $1}"
+}
+
+# systemd system services default an empty User= to root. Also reject numeric
+# UID 0 and any local alias for it; a missing non-root account is created later.
+core_user_is_root() { # USER
+  [[ -z $1 || $1 == root || $1 =~ ^0+$ ]] || [[ $(id -u "$1" 2>/dev/null) == 0 ]]
+}
+
+# Resolve once, at config-parse time, preserving the invoking-user default for
+# self-hosted checkouts (and non-root callers). Hosted artifact configs cannot
+# explicitly or implicitly select root, regardless of artifact ENV inputs.
+cfg_core_run_user() {
+  local user
+  user=$(cfg_get '.core.run_user' "$(id -un)")
+  if [[ $(cfg_get '.source.mode' 'git-ssh') == artifact ]] && core_user_is_root "${user}"; then
+    refuse_hosted_core_root 'set core.run_user to a service account such as ficus'
+  fi
+  printf '%s' "${user}"
+}
+
+# Check the host, not just the config, before upgrade reconciliation or any
+# mutation. A half-switched host must be repaired, not upgraded over. A failed
+# query is not evidence of a safe user; fail closed as well.
+require_hosted_core_units_non_root() {
+  local unit actual
+  for unit in "${HL_UNIT_API}" "${HL_UNIT_WORKER}"; do
+    actual=$(as_root systemctl show -p User --value "${unit}") ||
+      die "could not read ${unit} User from systemd — inspect the host before upgrading"
+    if core_user_is_root "${actual}"; then
+      refuse_hosted_core_root "${unit} runs as '${actual:-<unset: root>}' — run switch-run-user.sh before upgrading"
+    fi
+  done
+}
+
 # The home a service user has, or will have once ensure_run_user creates it.
 # Mutation-free, so the config parse and --dry-run can use it before any
 # phase runs. Root and existing accounts: their passwd home. Missing

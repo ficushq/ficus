@@ -76,13 +76,13 @@ describe('startTestDb without Docker (local direct bun test)', () => {
 })
 
 describe('startTestDb when a database is required (CI and the package runner)', () => {
-  test('keeps the original sequence: compose result ignored, full wait, then not ready', () => {
+  test('failed compose setup does not spend the readiness budget before cleanup', () => {
     const h = harness({ up: daemonDown })
     expect(startTestDb({ ...h, allowFallback: false, maxWait: 30 })).toEqual({
       ready: false,
-      reason: TEST_DB_NOT_READY,
+      reason: 'docker compose up failed (exit 1): ' + daemonDown().stderr.trim(),
     })
-    expect(h.calls).toEqual({ probes: 31, ups: 1, sleeps: 29 })
+    expect(h.calls).toEqual({ probes: 1, ups: 1, sleeps: 0 })
   })
 
   test('a docker spawn error still propagates', () => {
@@ -142,7 +142,7 @@ describe('the unavailable-database stand-in', () => {
 
   test('the message and banner name the cause and the recovery', () => {
     expect(message).toStartWith(`Core test database unavailable (${reason}).`)
-    expect(message).toContain('bun run test:db:down && bun run test:db:up')
+    expect(message).toContain('bun run test:db:down && bun run test')
     const banner = unavailableTestDbBanner(reason)
     expect(banner).toContain(`Core test database unavailable: ${reason}`)
     expect(banner).toContain('FICUS_TEST_REQUIRE_DB=1')

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { discoverTests, runTests } from './test-runner'
+import { ownTestDb, sweepStaleTestDbs } from '../packages/shared/src/testDbLifecycle'
 
 const repoRoot = resolve(import.meta.dir, '..')
 const coreRoot = resolve(repoRoot, 'apps/core')
@@ -173,8 +174,30 @@ if (import.meta.main) {
     for (const file of runIsolated ? selection.isolated : []) console.log(`isolated ${file}`)
     process.exit(0)
   }
-  const args = options.testNamePattern === undefined ? [] : [`--test-name-pattern=${options.testNamePattern}`]
-  if (runShared) await runTests({ cwd: coreRoot, roots: selection.shared, reverse, args })
-  if (runIsolated)
-    await runTests({ cwd: coreRoot, roots: selection.isolated, isolated: true, reverse, cacheSchema: true, args })
+  // One lifetime across the sequential lanes; preloads borrow the token and
+  // keep schema reuse, but no container remains after the owning runner exits.
+  // runTests handles child cancellation before this session's final teardown.
+  const interrupted = (signal: NodeJS.Signals) => {
+    process.exitCode = signal === 'SIGINT' ? 130 : 143
+  }
+  const onInt = () => interrupted('SIGINT')
+  const onTerm = () => interrupted('SIGTERM')
+  process.once('SIGINT', onInt)
+  process.once('SIGTERM', onTerm)
+  let session: ReturnType<typeof ownTestDb> | undefined
+  try {
+    if (!process.env.DATABASE_URL) {
+      sweepStaleTestDbs(repoRoot)
+      session = ownTestDb(repoRoot, { handleSignals: false })
+    }
+    if (process.exitCode) throw new Error('Test run interrupted before startup')
+    const args = options.testNamePattern === undefined ? [] : [`--test-name-pattern=${options.testNamePattern}`]
+    if (runShared) await runTests({ cwd: coreRoot, roots: selection.shared, reverse, args })
+    if (runIsolated)
+      await runTests({ cwd: coreRoot, roots: selection.isolated, isolated: true, reverse, cacheSchema: true, args })
+  } finally {
+    session?.release()
+    process.removeListener('SIGINT', onInt)
+    process.removeListener('SIGTERM', onTerm)
+  }
 }
