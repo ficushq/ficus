@@ -1,0 +1,695 @@
+{
+  "experiment": "coordination-v8",
+  "status": "completed",
+  "observed_at": "2026-10-28T18:40:04.157926+00:00",
+  "arms": {
+    "ficus": {
+      "external": {
+        "total": 205,
+        "passed": 205,
+        "failures": 0,
+        "skipped": 0,
+        "accepted": true
+      },
+      "trial_seconds": 2490.7677698135376,
+      "head": "01a73fbc5add57699298b9e137869ded4d262ec9",
+      "reviewed_product": "47ab1b150eeb887b303453e2f3da17576f070aaa",
+      "clean": true,
+      "post_review_changed_files": ["COORDINATION.md"],
+      "original_requests_exact": true,
+      "handoff_exact": true,
+      "handoff_extra_trailing_newline": false,
+      "source_sha256": "e5d98c86c58bd14976d5cf99f251806e7796da3f7e05697d1de3cc3858972d57",
+      "native_details": [
+        {
+          "role": "manager",
+          "phase": "coordination",
+          "stream": null,
+          "attempt": null,
+          "execution": "833b73ae-9344-43f4-b3d0-13c777e73a40",
+          "calls": 9,
+          "native_usd": 0.2216947,
+          "observed_start": 1793206220.917,
+          "observed_end": 1793206362.515,
+          "observed_span_seconds": 141.59800004959106,
+          "source_read_tool_messages": [
+            "2280618c-3830-43f3-b4ab-c8490e1dbfb0",
+            "e666e835-8dfe-4e16-8f68-4013aec8554e",
+            "f0c11b7e-830c-4105-97a3-fb8612092a87",
+            "86814e19-671d-470e-9765-c43d024a3749"
+          ]
+        },
+        {
+          "role": "architect",
+          "phase": "planning",
+          "stream": "Circuit core parser and validation",
+          "attempt": 1,
+          "execution": "41a5ee70-5788-4504-a19f-317908f51999",
+          "calls": 8,
+          "native_usd": 0.2644236,
+          "observed_start": 1793206331.884,
+          "observed_end": 1793206596.801,
+          "observed_span_seconds": 264.9170000553131,
+          "source_read_tool_messages": [
+            "f76f122d-bdfe-4293-94f0-fe78b76cf383",
+            "40765359-6432-462d-adc1-096608d9dfad",
+            "db2fc185-2669-4763-a4c6-31b557382c13",
+            "726ed9bf-d8af-4f17-93e6-0ea4973a526f"
+          ]
+        },
+        {
+          "role": "manager",
+          "phase": "coordination",
+          "stream": null,
+          "attempt": null,
+          "execution": "89fb6318-4cdc-40fb-9224-c7608d87f224",
+          "calls": 3,
+          "native_usd": 0.0418745,
+          "observed_start": 1793206576.118,
+          "observed_end": 1793206601.037,
+          "observed_span_seconds": 24.918999910354614,
+          "source_read_tool_messages": ["36ec1968-409c-437b-b1fb-fc7dd2e25b94"]
+        },
+        {
+          "role": "engineer",
+          "phase": "implementation",
+          "stream": "Circuit core parser and validation",
+          "attempt": 2,
+          "execution": "8f271118-2df3-4231-8b5a-16084df7edef",
+          "calls": 24,
+          "native_usd": 0.379872,
+          "observed_start": 1793206586.267,
+          "observed_end": 1793206846.629,
+          "observed_span_seconds": 260.3619999885559,
+          "source_read_tool_messages": [
+            "d065ffed-a9cc-4f68-ac54-967dd352b95f",
+            "14f1958b-68d3-4988-b8ab-b19f1e322fc2",
+            "bff2abc9-52d8-41c3-801a-c0d7f8173aad",
+            "189220ad-9fdb-43d6-ba3a-7a39249f39c4",
+            "cb99c5d4-236e-4c80-a60b-a22732469fbc"
+          ]
+        },
+        {
+          "role": "reviewer",
+          "phase": "review",
+          "stream": "Circuit core parser and validation",
+          "attempt": 3,
+          "execution": "4e07c638-e883-4e54-b6cd-d6f675bf1089",
+          "calls": 9,
+          "native_usd": 0.1674908,
+          "observed_start": 1793206834.131,
+          "observed_end": 1793206932.027,
+          "observed_span_seconds": 97.89599990844727,
+          "source_read_tool_messages": [
+            "cbba93c2-56f2-46cc-ba4b-d72ab0433200",
+            "c8e3053c-a76f-4b65-bc4e-67f54dc96086",
+            "ee150a3f-2df6-4c7a-bb74-be75cd3ef536",
+            "9cee5e3d-9694-438a-875c-5e98336925dc",
+            "a98d32aa-975a-4b37-8987-86e904bbdb98"
+          ]
+        },
+        {
+          "role": "manager",
+          "phase": "coordination",
+          "stream": null,
+          "attempt": null,
+          "execution": "2fda42c3-e09f-45e6-9e8c-a8984ad6092c",
+          "calls": 3,
+          "native_usd": 0.0267285,
+          "observed_start": 1793206839.748,
+          "observed_end": 1793206868.345,
+          "observed_span_seconds": 28.597000122070312,
+          "source_read_tool_messages": ["976d5988-67f7-4475-8848-1220fe5e816d"]
+        },
+        {
+          "role": "manager",
+          "phase": "coordination",
+          "stream": null,
+          "attempt": null,
+          "execution": "4da971e2-65c8-40e8-a06e-0d75a6293c59",
+          "calls": 3,
+          "native_usd": 0.1822259,
+          "observed_start": 1793206928.51,
+          "observed_end": 1793206962.511,
+          "observed_span_seconds": 34.00099992752075,
+          "source_read_tool_messages": []
+        },
+        {
+          "role": "architect",
+          "phase": "planning",
+          "stream": "CLI and check executable",
+          "attempt": 1,
+          "execution": "3e75b8a1-e31e-40cf-b8a1-815474cc9fd3",
+          "calls": 14,
+          "native_usd": 0.2497579,
+          "observed_start": 1793206928.831,
+          "observed_end": 1793207246.877,
+          "observed_span_seconds": 318.0460000038147,
+          "source_read_tool_messages": [
+            "31cfa7d4-0803-4d7c-bf09-c5488bef348a",
+            "a57dc313-7440-4954-831a-866beeefc129",
+            "e7a05864-0c01-41a5-86c6-b29dd6b68e14",
+            "18585628-aaa9-4853-97b2-d9c81dff9299"
+          ]
+        },
+        {
+          "role": "architect",
+          "phase": "planning",
+          "stream": "Evaluation engine and runtime values",
+          "attempt": 1,
+          "execution": "fe9124e2-de83-47e9-b5bf-ec6f47ca3d0f",
+          "calls": 10,
+          "native_usd": 0.2755473,
+          "observed_start": 1793206928.908,
+          "observed_end": 1793207249.214,
+          "observed_span_seconds": 320.30599999427795,
+          "source_read_tool_messages": [
+            "951bc0d5-de17-46de-9c4a-d6e184cd6c06",
+            "1141c8c4-a06e-407f-9c2b-76d59bd993e2",
+            "31026dbf-81bd-4e6b-b9a1-29611379d06e",
+            "95008998-f2ef-4af6-9a1e-d2703bc8e571"
+          ]
+        },
+        {
+          "role": "engineer",
+          "phase": "implementation",
+          "stream": "CLI and check executable",
+          "attempt": 2,
+          "execution": "36f4111c-f077-42cb-a05f-804a484f7568",
+          "calls": 17,
+          "native_usd": 0.2805203,
+          "observed_start": 1793207109.956,
+          "observed_end": 1793207471.465,
+          "observed_span_seconds": 361.5089998245239,
+          "source_read_tool_messages": [
+            "0345e06a-f98d-482a-b8dd-3701e277a304",
+            "1409f48f-3c8b-42df-8a42-54000a133006",
+            "1409f48f-3c8b-42df-8a42-54000a133006",
+            "da075a89-b8fb-45c2-a7be-2dd21deb39ef",
+            "667407ee-b583-48fe-86d7-540681951847"
+          ]
+        },
+        {
+          "role": "engineer",
+          "phase": "implementation",
+          "stream": "Evaluation engine and runtime values",
+          "attempt": 2,
+          "execution": "5a1d5d52-8d24-4086-be85-44aec293946b",
+          "calls": 35,
+          "native_usd": 0.481961,
+          "observed_start": 1793207245.875,
+          "observed_end": 1793207703.48,
+          "observed_span_seconds": 457.6050000190735,
+          "source_read_tool_messages": [
+            "8678edbe-9bf0-4ae4-bec2-d823b1dc0ff4",
+            "5ebc0980-2f4e-4fea-bbb9-4499d88aa864",
+            "7305be37-a62e-4fd7-9c64-9eadd7659fc8",
+            "49007537-0e90-4995-aa55-95c117615e91",
+            "5d54d621-0fab-4f92-80ef-1b84dc88ce2e",
+            "56763d43-bb7f-4085-a55c-b45a42119696",
+            "97833f37-71fb-47e2-9550-8b29cfc868eb"
+          ]
+        },
+        {
+          "role": "manager",
+          "phase": "coordination",
+          "stream": null,
+          "attempt": null,
+          "execution": "895334a3-b333-41fe-9df1-9dff8845d871",
+          "calls": 3,
+          "native_usd": 0.0395796,
+          "observed_start": 1793207082.919,
+          "observed_end": 1793207279.617,
+          "observed_span_seconds": 196.6980001926422,
+          "source_read_tool_messages": []
+        },
+        {
+          "role": "reviewer",
+          "phase": "review",
+          "stream": "CLI and check executable",
+          "attempt": 3,
+          "execution": "45e9dcbb-9eba-407d-b99e-584071cc15e2",
+          "calls": 12,
+          "native_usd": 0.2029247,
+          "observed_start": 1793207465.773,
+          "observed_end": 1793207659.938,
+          "observed_span_seconds": 194.16499996185303,
+          "source_read_tool_messages": [
+            "f1588209-c508-48fc-a20c-9902db1cc49d",
+            "81967e08-064a-4d55-9ae0-1ac087b6687b",
+            "79360b45-44df-4aca-8037-ed5c87709f8f",
+            "9a49862f-ad07-439d-8225-056cf0d2536b",
+            "2204be1f-01f7-4e2e-ae5f-4a509d185232",
+            "09f7f34a-6aff-40e2-b842-12deb1360aa1"
+          ]
+        },
+        {
+          "role": "reviewer",
+          "phase": "review",
+          "stream": "Evaluation engine and runtime values",
+          "attempt": 3,
+          "execution": "6267d612-0882-4194-920f-ae01f75d6f24",
+          "calls": 11,
+          "native_usd": 0.2015742,
+          "observed_start": 1793207698.918,
+          "observed_end": 1793207786.526,
+          "observed_span_seconds": 87.60800004005432,
+          "source_read_tool_messages": [
+            "854622b7-d280-44b4-bf92-50a51203fac1",
+            "0a3be938-fbcd-4830-aa2f-5c49226c115e",
+            "7c25b4c9-b032-47b5-81ab-fcca5b13ad3b",
+            "addb4825-aa01-4fa1-a8e7-a83a93b000e7",
+            "08df84a3-fa4e-4c70-9682-a6d5e03e4c0f"
+          ]
+        },
+        {
+          "role": "manager",
+          "phase": "coordination",
+          "stream": null,
+          "attempt": null,
+          "execution": "931c8d21-93c3-4871-b4a1-79d94359419f",
+          "calls": 3,
+          "native_usd": 0.0348167,
+          "observed_start": 1793207782.798,
+          "observed_end": 1793207806.365,
+          "observed_span_seconds": 23.566999912261963,
+          "source_read_tool_messages": []
+        },
+        {
+          "role": "architect",
+          "phase": "planning",
+          "stream": "Final integration and independent acceptance",
+          "attempt": 1,
+          "execution": "c2420005-92aa-478f-90d2-4bff55bf9ebe",
+          "calls": 9,
+          "native_usd": 0.2627984,
+          "observed_start": 1793207783.006,
+          "observed_end": 1793207956.548,
+          "observed_span_seconds": 173.5420000553131,
+          "source_read_tool_messages": [
+            "f4362138-1fa3-47b9-9657-6c73ea4b108a",
+            "84f11bf9-ae52-4c9a-8496-243680c27179",
+            "a0228bcb-3385-4454-b95f-fd11b038382a",
+            "5962fd9d-c96d-433d-abd5-5c7444057317",
+            "720aa43c-e2bf-4639-b598-8a5d1ede2d5c"
+          ]
+        },
+        {
+          "role": "engineer",
+          "phase": "implementation",
+          "stream": "Final integration and independent acceptance",
+          "attempt": 2,
+          "execution": "a7352f54-ef45-4f2a-b965-6c9ed6a593dd",
+          "calls": 20,
+          "native_usd": 0.5872606,
+          "observed_start": 1793207953.932,
+          "observed_end": 1793208342.149,
+          "observed_span_seconds": 388.2170000076294,
+          "source_read_tool_messages": [
+            "0aa66bcd-7ac5-4a5b-8163-4a31403a7dab",
+            "c369d63d-e847-41ed-b2b6-6c18c0598a3e",
+            "b22d1546-e704-4e2f-a131-a5451ecb3f05",
+            "626fc2d6-0eda-4e67-8752-67decafc14e0",
+            "d8d9a5f1-9edc-427e-8c88-0bb1de2e7764",
+            "777760eb-6d42-4e9f-a24f-bd52972863a1",
+            "45271901-790c-4fc6-9d37-3f891e09787d",
+            "65efea81-a76a-4e64-9f57-87d3911e3835"
+          ]
+        },
+        {
+          "role": "manager",
+          "phase": "coordination",
+          "stream": null,
+          "attempt": null,
+          "execution": "7e59dd95-9cb2-4d36-9884-edc8b2ce8db6",
+          "calls": 3,
+          "native_usd": 0.0345287,
+          "observed_start": 1793207638.217,
+          "observed_end": 1793207700.276,
+          "observed_span_seconds": 62.05900001525879,
+          "source_read_tool_messages": []
+        },
+        {
+          "role": "manager",
+          "phase": "coordination",
+          "stream": null,
+          "attempt": null,
+          "execution": "530ebfce-c9da-4fc1-ad3a-2bf19dacf14c",
+          "calls": 2,
+          "native_usd": 0.0190277,
+          "observed_start": 1793208202.296,
+          "observed_end": 1793208218.25,
+          "observed_span_seconds": 15.953999996185303,
+          "source_read_tool_messages": ["2e2038ec-f1a6-48fb-9e80-c21387af7f7a"]
+        },
+        {
+          "role": "manager",
+          "phase": "coordination",
+          "stream": null,
+          "attempt": null,
+          "execution": "b5968035-d702-421a-a85b-9f009c30a727",
+          "calls": 3,
+          "native_usd": 0.028157,
+          "observed_start": 1793208335.414,
+          "observed_end": 1793208350.947,
+          "observed_span_seconds": 15.532999992370605,
+          "source_read_tool_messages": []
+        },
+        {
+          "role": "reviewer",
+          "phase": "review",
+          "stream": "Final integration and independent acceptance",
+          "attempt": 3,
+          "execution": "3e105785-18c5-4bac-bfa2-21e135150337",
+          "calls": 15,
+          "native_usd": 0.4733586,
+          "observed_start": 1793208336.416,
+          "observed_end": 1793208528.092,
+          "observed_span_seconds": 191.67600011825562,
+          "source_read_tool_messages": [
+            "4ee5d276-c62e-44f7-aa97-482a45a1e855",
+            "fad94219-5290-4365-97c5-d638cff27b8d",
+            "31500148-0aa6-47a0-ae6b-abb182d92ace",
+            "bf70cb7f-0811-4873-9112-15e4babf6357",
+            "faaf0536-8648-40b0-ab78-bbe1da34fc34",
+            "58630aa4-c644-4f12-8901-e39da94cebda",
+            "c5aed0d5-71ff-49b6-a788-147a9282eac9"
+          ]
+        },
+        {
+          "role": "manager",
+          "phase": "factual_closeout",
+          "stream": null,
+          "attempt": null,
+          "execution": "05d72a10-dc52-4355-84fd-d94beccda834",
+          "calls": 3,
+          "native_usd": 0.0511796,
+          "observed_start": 1793208522.321,
+          "observed_end": 1793208556.066,
+          "observed_span_seconds": 33.74499988555908,
+          "source_read_tool_messages": ["d0cd95b3-6460-46a8-9aa8-25ea172d8022", "f0d55efa-a633-42f8-8aca-3dd9b7707f27"]
+        }
+      ],
+      "phase_usd": {
+        "coordination": 0.6286333,
+        "planning": 1.0525272,
+        "implementation": 1.7296139,
+        "review": 1.0453483000000001,
+        "factual_closeout": 0.0511796
+      },
+      "native_total_usd": 4.5073023,
+      "reopen_or_return_attempts": 0,
+      "implementation_packages": 3,
+      "confirmed_usd": 4.507401,
+      "unresolved_hold_usd": 5.5,
+      "settled_calls": 219,
+      "proxy_minus_native_usd": 9.87e-5,
+      "settled_tokens": {
+        "input_tokens": 9951288,
+        "uncached_input_tokens": 657,
+        "cache_read_tokens": 9017633,
+        "cache_write_tokens": 932998,
+        "output_tokens": 127173
+      },
+      "observed_concurrency": {
+        "max_active_nonmanager_agents": 2,
+        "max_active_streams": 2,
+        "max_active_execution_counter": 4,
+        "qualification": "Sampled state, not continuous tracing. The execution counter includes queued, waiting-maintenance, waiting-sandbox, running and stopping records, including the manager; it is not a running-worker count."
+      }
+    },
+    "pi": {
+      "external": {
+        "total": 205,
+        "passed": 205,
+        "failures": 0,
+        "skipped": 0,
+        "accepted": true
+      },
+      "trial_seconds": 1789.6234951019287,
+      "head": "baf56055c374c108a6d3c14c006f139df6d67040",
+      "reviewed_product": "42ada7617d85eff76c8d278647a40470813a0002",
+      "clean": true,
+      "post_review_changed_files": ["COORDINATION.md"],
+      "original_requests_exact": true,
+      "handoff_exact": false,
+      "handoff_extra_trailing_newline": true,
+      "source_sha256": "73a82a6f853b776b69c40f5f7a2d1a4c85b46568987e0e84c816d4ef18eac299",
+      "native_details": [
+        {
+          "role": "architect",
+          "phase": "planning",
+          "assignment": "Package A0",
+          "calls": 6,
+          "reconstructed_usd": 0.130052,
+          "observed_start": 1793210765.501,
+          "observed_end": 1793210904.351,
+          "observed_span_seconds": 138.85,
+          "original_source_tool_access": ["read", "write"]
+        },
+        {
+          "role": "engineer",
+          "phase": "implementation",
+          "assignment": "Implement package P1 syntax/model",
+          "calls": 15,
+          "reconstructed_usd": 0.156294,
+          "observed_start": 1793210929.338,
+          "observed_end": 1793211161.101,
+          "observed_span_seconds": 231.763,
+          "original_source_tool_access": ["read"]
+        },
+        {
+          "role": "engineer",
+          "phase": "implementation",
+          "assignment": "Implement package P2 semantic validation/evaluation",
+          "calls": 16,
+          "reconstructed_usd": 0.182832,
+          "observed_start": 1793210929.342,
+          "observed_end": 1793211161.101,
+          "observed_span_seconds": 231.759,
+          "original_source_tool_access": ["read"]
+        },
+        {
+          "role": "engineer",
+          "phase": "implementation",
+          "assignment": "Package P3 CLI implementation",
+          "calls": 13,
+          "reconstructed_usd": 0.16555,
+          "observed_start": 1793211179.248,
+          "observed_end": 1793211374.915,
+          "observed_span_seconds": 195.667,
+          "original_source_tool_access": ["read"]
+        },
+        {
+          "role": "reviewer",
+          "phase": "review",
+          "assignment": "Package R1 independent review / gate G1",
+          "calls": 8,
+          "reconstructed_usd": 0.125737,
+          "observed_start": 1793211179.249,
+          "observed_end": 1793211374.915,
+          "observed_span_seconds": 195.666,
+          "original_source_tool_access": ["read"]
+        },
+        {
+          "role": "engineer",
+          "phase": "repair_implementation",
+          "assignment": "P1-F1 repair",
+          "calls": 11,
+          "reconstructed_usd": 0.131072,
+          "observed_start": 1793211397.26,
+          "observed_end": 1793211530.078,
+          "observed_span_seconds": 132.818,
+          "original_source_tool_access": ["read", "edit"]
+        },
+        {
+          "role": "reviewer",
+          "phase": "review",
+          "assignment": "R2 independent gate G2",
+          "calls": 8,
+          "reconstructed_usd": 0.113865,
+          "observed_start": 1793211397.258,
+          "observed_end": 1793211530.078,
+          "observed_span_seconds": 132.82,
+          "original_source_tool_access": ["read"]
+        },
+        {
+          "role": "engineer",
+          "phase": "repair_implementation",
+          "assignment": "P2-F1 repair required",
+          "calls": 11,
+          "reconstructed_usd": 0.136057,
+          "observed_start": 1793211550.764,
+          "observed_end": 1793211664.612,
+          "observed_span_seconds": 113.848,
+          "original_source_tool_access": ["read"]
+        },
+        {
+          "role": "reviewer",
+          "phase": "repair_review",
+          "assignment": "R1-F1 independent G1 re-review",
+          "calls": 8,
+          "reconstructed_usd": 0.106373,
+          "observed_start": 1793211550.823,
+          "observed_end": 1793211664.612,
+          "observed_span_seconds": 113.789,
+          "original_source_tool_access": ["read"]
+        },
+        {
+          "role": "reviewer",
+          "phase": "repair_review",
+          "assignment": "R2-F1 independent G2 re-review",
+          "calls": 5,
+          "reconstructed_usd": 0.105874,
+          "observed_start": 1793211681.054,
+          "observed_end": 1793211793.388,
+          "observed_span_seconds": 112.334,
+          "original_source_tool_access": ["read"]
+        },
+        {
+          "role": "reviewer",
+          "phase": "review",
+          "assignment": "R3 independent G3 CLI review",
+          "calls": 8,
+          "reconstructed_usd": 0.135063,
+          "observed_start": 1793211681.055,
+          "observed_end": 1793211793.388,
+          "observed_span_seconds": 112.333,
+          "original_source_tool_access": ["read"]
+        },
+        {
+          "role": "engineer",
+          "phase": "repair_implementation",
+          "assignment": "P3-F1 repair",
+          "calls": 9,
+          "reconstructed_usd": 0.09686,
+          "observed_start": 1793211811.837,
+          "observed_end": 1793211880.909,
+          "observed_span_seconds": 69.072,
+          "original_source_tool_access": ["read"]
+        },
+        {
+          "role": "reviewer",
+          "phase": "repair_review",
+          "assignment": "R3-F1 independent G3 re-review",
+          "calls": 7,
+          "reconstructed_usd": 0.132218,
+          "observed_start": 1793211892.46,
+          "observed_end": 1793211996.931,
+          "observed_span_seconds": 104.471,
+          "original_source_tool_access": ["read"]
+        },
+        {
+          "role": "engineer",
+          "phase": "implementation",
+          "assignment": "I1 integration implementation package",
+          "calls": 12,
+          "reconstructed_usd": 0.211557,
+          "observed_start": 1793212016.619,
+          "observed_end": 1793212261.518,
+          "observed_span_seconds": 244.899,
+          "original_source_tool_access": ["read", "write", "write"]
+        },
+        {
+          "role": "reviewer",
+          "phase": "review",
+          "assignment": "R4/G4 FINAL independent integrated-tree review",
+          "calls": 9,
+          "reconstructed_usd": 0.159581,
+          "observed_start": 1793212280.17,
+          "observed_end": 1793212394.578,
+          "observed_span_seconds": 114.408,
+          "original_source_tool_access": ["read", "bash", "bash"]
+        }
+      ],
+      "phase_usd": {
+        "planning": 0.130052,
+        "implementation": 0.716233,
+        "review": 0.534246,
+        "repair_implementation": 0.363989,
+        "repair_review": 0.344465,
+        "coordination": 0.299723,
+        "factual_closeout": 0.033189
+      },
+      "reconstructed_total_usd": 2.421897,
+      "receipt_count": 185,
+      "implementation_packages": 3,
+      "repair_assignments": 3,
+      "repair_review_assignments": 3,
+      "confirmed_usd": 2.421897,
+      "unresolved_hold_usd": 0.0,
+      "settled_calls": 185,
+      "settled_tokens": {
+        "input_tokens": 3699121,
+        "uncached_input_tokens": 555,
+        "cache_read_tokens": 3262757,
+        "cache_write_tokens": 435809,
+        "output_tokens": 100491
+      },
+      "observed_concurrency": {
+        "max_child_result_batch": 2,
+        "installed_subagent_concurrency_limit": 2
+      }
+    }
+  },
+  "evidence_sha256": {
+    "jobs/coordv8-paid-ficus/task__9uvq38e/result.json": "1a5942e0f8de0bcb52f88951bcc347eb96349106a93c59b38507e79c8766be9e",
+    "jobs/coordv8-paid-ficus/task__9uvq38e/verifier/counts.json": "2b9d75d0b24e128539e6b62edba8d49a6b3fbb092c351677c11a4aa58e86e2f8",
+    "jobs/coordv8-paid-ficus/task__9uvq38e/verifier/results.xml": "dc39ebbffa9ef31af9efbe86dcd7a867cc213632c87f5800b197a2fbc59a1530",
+    "jobs/coordv8-paid-ficus/task__9uvq38e/artifacts/logs/artifacts/status.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "jobs/coordv8-paid-ficus/task__9uvq38e/artifacts/logs/artifacts/repository.bundle": "8d4a1e2011e6e6268f43db624ff6e4028db4c1085728f5628990ecd812b69881",
+    "coordv8-paid-ficus-execution.json": "941f7924f5610a7d7d04de1dccf5aeb749a8ac4a2cdce984e057d61a5d9caa14",
+    "jobs/coordv8-paid-pi/task__YoSYXZh/result.json": "ac8a895939f5229368df617d17bd914e31bef3c7b41868a6e11074b97f391c10",
+    "jobs/coordv8-paid-pi/task__YoSYXZh/verifier/counts.json": "2b9d75d0b24e128539e6b62edba8d49a6b3fbb092c351677c11a4aa58e86e2f8",
+    "jobs/coordv8-paid-pi/task__YoSYXZh/verifier/results.xml": "aa1219a5a3b6a28310500b8b165f6fa8695c551dcaa66b36fa0c78aeb86b2e65",
+    "jobs/coordv8-paid-pi/task__YoSYXZh/artifacts/logs/artifacts/status.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "jobs/coordv8-paid-pi/task__YoSYXZh/artifacts/logs/artifacts/repository.bundle": "1912ca10e0065336c6e7968ee2edd7488f332e4bf8628023d81ece101e29821c",
+    "coordv8-paid-pi-execution.json": "81e1ebf5667dcaf1c74213403f5ebce7bc539613f672b3ad2e3baddf3389b747",
+    "jobs/coordv8-paid-ficus/task__9uvq38e/agent/snapshot.json": "a782c45352a748fdd866a083b04c21ddc78ba8f18b4cd52f7edf6d093502987f",
+    "jobs/coordv8-paid-ficus/task__9uvq38e/agent/messages.json": "2b39f003b0f582cfe27e98cee19f2b948db39be54ee51953965466373b25400c",
+    "jobs/coordv8-paid-pi/task__YoSYXZh/agent/pi/sessions/2026-10-28T18-05-07-759Z_01a183af-ef2d-7543-b388-c9864070a277.jsonl": "95c8ded18a4f0e6729315f77def3bb47da43950c0c3d529dad396931029a68d3",
+    "analyze-final.py": "5d05976f3a83640c55084bc43d677d8a369b2c7fcdf7de79531c8729ffa746ab",
+    "jobs/coordv8-paid-ficus/task__9uvq38e/agent/progress.jsonl": "9f884da688395ce4848dee4113524214b3787ab57def282e44c04815250e0aa3",
+    "finish-report.py": "954cfd0d5cb992d173001b5dac348daffc54dc102d8a417467db3b736f438bb7"
+  },
+  "budget": {
+    "cap_usd": 50,
+    "confirmed_usd": 27.011128,
+    "retained_hold_usd": 5.5,
+    "exposure_usd": 32.511128,
+    "conservative_remaining_usd": 17.488872,
+    "unresolved_call_id": 1193,
+    "phase": "budget-phase-2026-10-28-000028-reset50"
+  },
+  "methods": {
+    "phase_cost": "Ficus native usage tagged by execution/stream/attempt; final manager execution classified factual closeout. Pi explicit child assignment (F1=repair) plus coordinator assistant usage before/after final review; reconstructed from token receipts using frozen proxy prices and per-call rounding.",
+    "timing": "Harbor trial start/end is comparable total. Per-assignment observed message windows include tools/queue waits and can overlap; not additive active compute times. Pi child windows end at the parent batch result; paired windows are upper bounds to batch return, not precise individual completion times.",
+    "repair_limitation": "Ficus had an engineer self-repair during integration; its cost is included in implementation because no separate repair attempt isolates it. Zero return attempts does not mean zero fixes.",
+    "unknown_usage": "Ficus missing receipt remains fully reserved and unattributable; never inferred from native costs.",
+    "tokens": "Settled proxy receipts only; input_tokens includes cache reads and writes. Uncached input excludes both. The missing Ficus receipt has no token estimate."
+  },
+  "protocol": {
+    "plan": "coordination-v8-plan.json",
+    "ready": "coordination-v8-ready.json",
+    "source_revision": "9cd9ca3a51c3d3e2a99d2488a25baf73a2204451",
+    "task": "circuit_eval",
+    "requests": [1, 2, 3],
+    "model": "gpt-6.1-sol",
+    "thinking": "medium",
+    "worker_limit": 2,
+    "model_requests_serialized": true,
+    "pi_continuation": "coordination-v8-pi-continuation.json",
+    "paid_attempts_per_arm": 1,
+    "operator_candidate_repairs": 0,
+    "original_pair_restarted": false
+  },
+  "limitations": [
+    "One purposively selected fresh task; no general ranking or causal prompt-improvement inference.",
+    "Requests 1-3 delivered together; not official sequential SCBench scoring.",
+    "Model calls serialized; no parallel throughput or human-time-saved claim.",
+    "Role prompts, decomposition and sessions differ; Ficus plans each stream, Pi plans once.",
+    "External tests are unchanged but are not exhaustive specification proof. Default-input and partial-output coverage weaknesses remain.",
+    "Ficus has one missing receipt reserved at $5.50; final actual comparative cost is not known.",
+    "Worker-state snapshots and child batch windows do not measure continuous compute utilization."
+  ]
+}

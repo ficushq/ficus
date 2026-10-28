@@ -618,3 +618,22 @@ The analysis will separate role/attempt costs and elapsed intervals, including
 substantive repairs versus factual closeout. Overlapping wall intervals are not
 additive. This fresh single-case comparison cannot isolate the causal effect of
 the prompt change from the task change or establish a general harness ranking.
+
+### V8 completed comparison
+
+Both arms passed 205/205 unchanged external tests with zero skips and clean,
+independently reviewed integrated artifacts. Ficus completed four streams without
+returns/reopens in 41m31s for $4.507401 confirmed; Pi completed in 29m50s for
+$2.421897, with three substantive repair/rereview cycles. Both performed factual
+closeout without changing the approved product tree. See
+[the final comparison](coordination-v8-results.md) and
+[receipt/artifact evidence](coordination-v8-results.json) for stage costs, source
+preservation, sampled concurrency and timing qualifications.
+
+The original pair remains stopped. After its guard blocked Pi before any calls,
+Noah authorized Pi's first attempt with Ficus call 1193's $5.50 hold retained.
+That continuation is now complete; no new unresolved receipt or retry occurred.
+The $50 phase has $27.011128 confirmed plus the original $5.50 hold, leaving
+$17.488872 conservative headroom. No ledger reset, hold release, candidate fix,
+production change or further paid run occurred. This single fresh case does not
+establish a general ranking or causal benefit from the bookkeeping clarification.
