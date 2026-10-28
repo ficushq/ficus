@@ -38,7 +38,7 @@
       "devDependencies": {
         "@types/bun": "^1.3.9",
         "@types/node": "^25.2.3",
-        "amtp-protocol": "^0.1.2",
+        "amtp-protocol": "^0.2.0",
       },
     },
     "apps/core": {
@@ -64,8 +64,8 @@
         "@silvia-odwyer/photon-node": "0.3.4",
         "@simplewebauthn/server": "^13.3.0",
         "@sinclair/typebox": "^0.34.48",
-        "amtp-engine": "^0.1.2",
-        "amtp-protocol": "^0.1.2",
+        "amtp-engine": "^0.2.0",
+        "amtp-protocol": "^0.2.0",
         "archiver": "^8.0.0",
         "bun-pty": "^0.4.8",
         "chokidar": "5.0.0",
@@ -93,7 +93,7 @@
         "@types/micromatch": "^4.0.10",
         "@types/turndown": "^5.0.5",
         "@types/web-push": "^3.6.4",
-        "amtp-node": "^0.1.2",
+        "amtp-node": "^0.2.0",
         "concurrently": "^9.2.1",
         "dotenv": "^17.3.1",
         "drizzle-kit": "0.31.10",
@@ -255,7 +255,7 @@
       "name": "@ficus/shared",
       "version": "0.0.1",
       "dependencies": {
-        "amtp-protocol": "^0.1.2",
+        "amtp-protocol": "^0.2.0",
         "zod": "^4.6.7",
       },
       "devDependencies": {
@@ -267,13 +267,12 @@
     "ntn",
   ],
   "patchedDependencies": {
-    "amtp-node@0.1.2": "patches/amtp-node@0.1.2.patch",
+    "amtp-node@0.2.0": "patches/amtp-node@0.2.0.patch",
     "@earendil-works/pi-ai@0.99.1": "patches/@earendil-works%2Fpi-ai@0.99.1.patch",
     "@earendil-works/pi-coding-agent@0.99.1": "patches/@earendil-works%2Fpi-coding-agent@0.99.1.patch",
   },
   "overrides": {
     "@types/react": "19.2.13",
-    "zod": "^4.6.7",
   },
   "packages": {
     "3d-force-graph": ["3d-force-graph@1.79.1", "", { "dependencies": { "accessor-fn": "1", "kapsule": "^1.16", "three": ">=0.118 <1", "three-forcegraph": "1", "three-render-objects": "^1.35" } }, "sha512-iscIVt4jWjJ11KEEswgOIOWk8Ew4EFKHRyERJXJ0ouycqzHCtWwb9E5imnxS5rYF1f1IESkFNAfB+h3EkU0Irw=="],
@@ -1456,11 +1455,11 @@
 
     "amp-message": ["amp-message@0.1.2", "", { "dependencies": { "amp": "0.3.1" } }, "sha512-JqutcFwoU1+jhv7ArgW38bqrE+LQdcRv4NxNw0mp0JHQyB6tXesWRjtYKlDgHRY2o3JE5UTaBGUK8kSWUdxWUg=="],
 
-    "amtp-engine": ["amtp-engine@0.1.2", "", { "dependencies": { "amtp-protocol": "^0.1.1" } }, "sha512-RAoLKYvW3PQFqQqtR7+R/o0esnqgUiKx3KanN42gMciaijrTrD/sgC2rAf83n2rxpS5R8FloXSQYjvF2bvcnIQ=="],
+    "amtp-engine": ["amtp-engine@0.2.0", "", { "dependencies": { "amtp-protocol": "^0.2.0" } }, "sha512-vH1Zno2KwOC6W3VodWZd+GdTO/B5jb1yJv26yD3Rr91ywc1I40nJYj0wl+0bC3IxP8T/GlKZH6E9QjL+b+g43A=="],
 
-    "amtp-node": ["amtp-node@0.1.2", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.29.0", "amtp-engine": "^0.1.2", "amtp-protocol": "^0.1.1", "commander": "^12.0.0" }, "bin": { "amtp": "bin/amtp.js" } }, "sha512-W7wm3Ump8tZrr0xGSom/qv0J5CY6NKVnhS+5H6kaAXMx4YCIiVHaOjar2/oMGqj4d4dVnwL1GJXtWSqfcs502w=="],
+    "amtp-node": ["amtp-node@0.2.0", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.29.0", "amtp-engine": "^0.2.0", "amtp-protocol": "^0.2.0", "commander": "^12.0.0" }, "bin": { "amtp": "bin/amtp.js" } }, "sha512-OwP4xMG+0/6R1P/C0rntfwcTZr+CMH/kuAIWY1bPY0qct4klHJwXg7s+e/gErKlXo+OL17AJQ6DzVIGB75JvGQ=="],
 
-    "amtp-protocol": ["amtp-protocol@0.1.2", "", { "dependencies": { "zod": "^3.24.0" } }, "sha512-0SrTk9zhUv2PSwqpqyud99P4JXR0qJwQYOuDWtUxNvXzgi8NPDB7Hrqw0DQNBvtP9tH7L/KxZUStuPgs8j5TxA=="],
+    "amtp-protocol": ["amtp-protocol@0.2.0", "", { "dependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-s6Ew3yEJEBN6iZcTSetcjX2l+catWWhb2uPAvAboK9orEaY0u/+FVEguqWwUaANiNURnJxpp4vdw0TC8hotDvw=="],
 
     "ansi-colors": ["ansi-colors@4.1.3", "", {}, "sha512-/6w/C21Pm1A7aZitlI5Ni/2J6FFQN8i1Cvz3kHABAAbw93v/NlvKdVOqz7CCWz/3iv/JplRSEEZ83XION15ovw=="],
 
@@ -3753,10 +3752,6 @@
     "@vscode/emmet-helper/jsonc-parser": ["jsonc-parser@2.3.1", "", {}, "sha512-H8jvkz1O50L3dMZCsLqiuB2tA7muqbSg1AtGEkN0leAqGjsUzDJir3Zwr02BhqdcITPg3ei3mZ+HjMocAknhhg=="],
 
     "accepts/mime-types": ["mime-types@3.0.2", "", { "dependencies": { "mime-db": "^1.54.0" } }, "sha512-Lbgzdk0h4juoQ9fCKXW4by0UJqj+nOOrI9MJ1sSj4nI8aI2eo1qmvQEie4VD1glsS250n15LsWsYtCugiStS5A=="],
-
-    "amtp-engine/amtp-protocol": ["amtp-protocol@0.1.1", "", { "dependencies": { "zod": "^3.24.0" } }, "sha512-Q4Iwk/ltPAdRMBonIiGpn86sK1FTEvbjhbVFBdk4p1CsvbWXpY+Qk7z3q8RR00jY/N3+LZiYy8+kYFRIVc4O+A=="],
-
-    "amtp-node/amtp-protocol": ["amtp-protocol@0.1.1", "", { "dependencies": { "zod": "^3.24.0" } }, "sha512-Q4Iwk/ltPAdRMBonIiGpn86sK1FTEvbjhbVFBdk4p1CsvbWXpY+Qk7z3q8RR00jY/N3+LZiYy8+kYFRIVc4O+A=="],
 
     "anymatch/picomatch": ["picomatch@2.3.1", "", {}, "sha512-JU3teHTNjmE2VCGFzuY8EXzCDVwEqB2a8fsIvwaStHhAWJEeVd1o1QD80CU6+ZdEXXSLbSsuLwJjkCBWqRQUVA=="],
 
