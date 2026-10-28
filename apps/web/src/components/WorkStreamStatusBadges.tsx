@@ -1,4 +1,5 @@
-import type { WorkStreamPresentationFacts } from '@ficus/shared'
+import { workStreamSecondaryDeliveryLabel, type WorkStreamPresentationFacts } from '@ficus/shared'
+import clsx from 'clsx'
 import { Badge } from './Badge'
 import {
   getWsDisplayState,
@@ -12,14 +13,17 @@ export function WorkStreamStatusBadges({
   workStream,
   showPrimary = true,
   showQueuePosition = false,
+  className,
 }: {
   workStream: WorkStreamPresentationFacts & { queuePosition?: number | null }
   showPrimary?: boolean
   showQueuePosition?: boolean
+  className?: string
 }) {
   const state = getWsDisplayState(workStream)
   const parked = isWorkStreamParked(workStream)
-  if (!showPrimary && !parked) return null
+  const secondaryDelivery = workStreamSecondaryDeliveryLabel(workStream)
+  if (!showPrimary && !parked && !secondaryDelivery) return null
   const label =
     showQueuePosition && state === 'queued' && workStream.queuePosition != null
       ? `${workStreamStatusLabel(workStream)} — position ${workStream.queuePosition}`
@@ -29,11 +33,17 @@ export function WorkStreamStatusBadges({
       ? `${label} (${workStream.queuePosition})`
       : label
   return (
-    <span className="inline-flex flex-wrap items-center gap-1.5 min-w-0">
+    <span className={clsx('inline-flex flex-wrap items-center gap-1.5 min-w-0', className)}>
       {showPrimary && (
         <Badge color={WS_STATUS_BADGE_COLORS[state]} title={title}>
           {label}
         </Badge>
+      )}
+      {secondaryDelivery && (
+        <span className="text-xs text-secondary" title={`Delivery: ${secondaryDelivery}`}>
+          <span className="sr-only">Delivery: </span>
+          {secondaryDelivery}
+        </span>
       )}
       {parked && (
         <Badge

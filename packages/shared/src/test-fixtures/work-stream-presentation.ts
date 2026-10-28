@@ -13,6 +13,7 @@ export interface PresentationCase {
   attention: boolean
   bucket: WorkBucket
   label: string
+  secondaryLabel?: string
 }
 const active = { status: 'active', openWaits: [] } as const
 const paused = { id: 'pause', pausedAt: '2026-09-21T00:00:00Z', reason: null, parkAt: null, agentIds: [] }
@@ -483,3 +484,23 @@ export const CODE_HOST_DELIVERY_PRESENTATION_CASES: PresentationCase[] = [
     label: 'PRs merged — finalizing delivery',
   },
 ]
+
+// Pair every nonblocking delivery refinement with real active work, including
+// older payloads which omit waits. The delivery facts remain additive.
+const idleDeliveryCases = [...WORK_STREAM_PRESENTATION_CASES, ...CODE_HOST_DELIVERY_PRESENTATION_CASES].filter(
+  (row) => row.state.startsWith('delivery_') && !row.facts.openWaits?.length
+)
+CODE_HOST_DELIVERY_PRESENTATION_CASES.push(
+  ...idleDeliveryCases.flatMap((row): PresentationCase[] =>
+    [[], undefined].map((openWaits) => ({
+      ...row,
+      name: `running with ${row.name}${openWaits ? '' : ' (omitted waits)'}`,
+      facts: { ...row.facts, derivedState: 'in_progress', openWaits },
+      state: 'in_progress',
+      role: 'progress',
+      bucket: 'running',
+      label: 'In Progress',
+      secondaryLabel: row.label,
+    }))
+  )
+)

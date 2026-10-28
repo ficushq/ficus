@@ -4,7 +4,10 @@ import {
   sortCanonicalWorkStreams,
   type CanonicalWorkStreamOrderInput,
 } from './work-stream-order'
-import { WORK_STREAM_PRESENTATION_CASES } from './test-fixtures/work-stream-presentation'
+import {
+  WORK_STREAM_PRESENTATION_CASES,
+  CODE_HOST_DELIVERY_PRESENTATION_CASES,
+} from './test-fixtures/work-stream-presentation'
 
 const at = (day: number) => new Date(`2026-01-${String(day).padStart(2, '0')}T00:00:00Z`)
 
@@ -318,7 +321,9 @@ describe('manual wait actors', () => {
   })
 
   test('active ordering agrees with the native bucket for every shared presentation case', () => {
-    for (const row of WORK_STREAM_PRESENTATION_CASES.filter((row) => row.facts.status === 'active')) {
+    for (const row of [...WORK_STREAM_PRESENTATION_CASES, ...CODE_HOST_DELIVERY_PRESENTATION_CASES].filter(
+      (row) => row.facts.status === 'active'
+    )) {
       const urgency = canonicalWorkStreamSortKey(
         ws(row.name, {
           ...row.facts,
