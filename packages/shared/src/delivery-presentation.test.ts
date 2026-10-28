@@ -69,3 +69,15 @@ test('an approval identifier cannot reinterpret a question or review wait', () =
     })
   ).toBe('waiting_on_answer')
 })
+
+test('actual approval waits keep precedence over a stale running signal', () => {
+  const facts = {
+    status: 'active' as const,
+    derivedState: 'in_progress' as const,
+    delivery: { kind: 'approval' as const, approvalWaitId: 'approval' },
+    openWaits: [{ id: 'approval', type: 'manual' as const }],
+  }
+  expect(selectWorkStreamPresentationState(facts)).toBe('delivery_approval')
+  expect(selectWorkStreamPresentationState({ ...facts, openWaits: [] })).toBe('in_progress')
+  expect(selectWorkStreamPresentationState({ ...facts, openWaits: undefined })).toBe('delivery_approval')
+})

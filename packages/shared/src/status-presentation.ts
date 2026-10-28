@@ -17,6 +17,15 @@ export type StatusRole =
 export type AgentPresentationState = AgentStatus | 'offline'
 export type DeliveryPresentationKind = 'approval' | 'review' | 'merge' | 'external' | 'setup' | 'failure'
 
+export const DELIVERY_STATUS_LABELS = {
+  delivery_approval: 'Approve Delivery',
+  delivery_review: 'Review Pull Request',
+  delivery_merge: 'Merge Pull Request',
+  delivery_external: 'Awaiting Code Host',
+  delivery_setup: 'Delivery Setup Required',
+  delivery_failure: 'Delivery Changes Required',
+} as const satisfies Record<`delivery_${DeliveryPresentationKind}`, string>
+
 /** One designated delivery pull request in the server's delivery view, primary first. */
 export interface WorkStreamDeliveryPullRequestFact {
   number: number
@@ -293,17 +302,28 @@ export function selectWorkStreamPresentationState(
       return MANUAL_WAIT_ACTOR_STATE[humanActionable ? 'human' : 'owner']
     }
     if (waitType) return WORK_STREAM_WAIT_STATE[waitType]
+    // Only this real wait is re-labeled as delivery approval. It still blocks
+    // active work, even if an inconsistent/older payload says in_progress.
+    if (
+      deliveryState === 'delivery_approval' &&
+      workStream.openWaits.some(
+        (wait) => wait.type === 'manual' && wait.id && wait.id === workStream.delivery?.approvalWaitId
+      )
+    )
+      return deliveryState
     if (workStream.derivedState === 'execution_failed') return 'execution_failed'
+    if (workStream.status === 'active' && workStream.derivedState === 'in_progress') return 'in_progress'
     if (deliveryState) return deliveryState
     if (workStream.status === 'queued') return 'queued'
-    // Non-wait-derived states survive an explicit empty wait list: an empty
-    // list cannot speak against a live execution or a failed execution, but a
-    // STALE wait-derived state (in_review/…) must still collapse to idle.
-    if (workStream.derivedState === 'in_progress') return 'in_progress'
+    // An explicit empty list clears stale wait-derived states (in_review/…),
+    // but cannot speak against the live/failed executions handled above.
     return idlePresentationState(workStream)
   }
 
   if (workStream.derivedState === 'execution_failed') return 'execution_failed'
+  // Omitted waits cannot disprove an identified blocking delivery approval.
+  if (deliveryState === 'delivery_approval' && workStream.delivery?.approvalWaitId) return deliveryState
+  if (workStream.status === 'active' && workStream.derivedState === 'in_progress') return 'in_progress'
   const state = deliveryState ?? workStream.derivedState ?? workStream.status
   return state === 'idle' ? idlePresentationState(workStream) : state
 }
@@ -318,10 +338,21 @@ function idlePresentationState(workStream: WorkStreamPresentationFacts): WorkStr
   return 'idle'
 }
 
-/** Whether a stream contributes to a user-attention aggregate. */
+/** Delivery stays discoverable while execution owns the primary status.
+ * Shared by row adapters; never infer provider state from sparse gate facts.
+ */
+export function workStreamSecondaryDeliveryLabel(workStream: WorkStreamPresentationFacts): string | null {
+  if (selectWorkStreamPresentationState(workStream) !== 'in_progress' || !workStream.delivery) return null
+  const state = `delivery_${workStream.delivery.kind}` as keyof typeof DELIVERY_STATUS_LABELS
+  return codeHostDeliveryLabel(workStream.delivery) ?? DELIVERY_STATUS_LABELS[state] ?? null
+}
+
+/** Whether a stream contributes to a user-attention aggregate, independently of its primary bucket. */
 export function workStreamNeedsHumanAttention(workStream: WorkStreamPresentationFacts): boolean {
   const state = selectWorkStreamPresentationState(workStream)
   if (state === 'delivery_approval' || state === 'delivery_review' || state === 'delivery_merge') return true
+  if (state === 'in_progress' && ['approval', 'review', 'merge'].includes(String(workStream.delivery?.kind)))
+    return true
   // `blocked` is selected only for a manual wait a human must clear (a missing
   // or unknown actor is human), or from an older payload that omitted waits,
   // whose historical `blocked` fallback is retained. Owner manual waits

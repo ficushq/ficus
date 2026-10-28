@@ -1,5 +1,6 @@
 import {
   codeHostDeliveryLabel,
+  DELIVERY_STATUS_LABELS,
   MANUAL_WAIT_ACTOR_STATE,
   selectWorkStreamPresentationState,
   workStreamWaitActor,
@@ -22,12 +23,7 @@ import { webStatus } from './statusPresentation'
 // display states (in_progress/in_review/waiting_on_answer/waiting_on_dependency/blocked/idle). The
 // key spaces overlap on queued/done/canceled, which share the same label either way.
 export const WS_STATUS_LABELS: Record<WorkStreamPresentationState, string> = {
-  delivery_approval: 'Approve Delivery',
-  delivery_review: 'Review Pull Request',
-  delivery_merge: 'Merge Pull Request',
-  delivery_external: 'Awaiting Code Host',
-  delivery_setup: 'Delivery Setup Required',
-  delivery_failure: 'Delivery Changes Required',
+  ...DELIVERY_STATUS_LABELS,
   // Stored statuses
   queued: 'Queued',
   active: 'Active',

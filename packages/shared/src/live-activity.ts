@@ -26,9 +26,9 @@ export function workBucket(stream: WorkBucketFacts): WorkBucket {
     state === 'waiting_on_owner'
   )
     return 'externalWait'
+  if (state === 'active' || state === 'in_progress') return 'running'
   if (workStreamNeedsHumanAttention(stream)) return 'needsYou'
   if (['blocked', 'idle', 'execution_failed', 'delivery_setup', 'delivery_failure'].includes(state)) return 'blocked'
-  if (state === 'active' || state === 'in_progress') return 'running'
   return 'queued'
 }
 
@@ -167,7 +167,8 @@ export function buildWorkInterestSnapshot(streams: SnapshotSource[], now: Date =
     top: ordered.slice(0, WIDGET_TOP_LIMIT).map(toWidgetSummary),
     liveActivity: {
       activeCount: bucketCounts.running,
-      needsYouCount: bucketCounts.needsYou,
+      // Human actions remain available even when running is the primary bucket.
+      needsYouCount: ordered.filter(workStreamNeedsHumanAttention).length,
       top: ordered.slice(0, LIVE_ACTIVITY_TOP_LIMIT).map(toStreamLite),
     },
   }

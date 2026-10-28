@@ -22,6 +22,7 @@ import {
   selectSandboxPresentationState,
   selectWorkStreamPresentationState,
   workStreamNeedsHumanAttention,
+  workStreamSecondaryDeliveryLabel,
   type AgentPresentationState,
   type SandboxPresentationState,
   type StatusRole,
@@ -420,6 +421,7 @@ for (const row of CODE_HOST_DELIVERY_PRESENTATION_CASES)
     expect(selectWorkStreamPresentationState(row.facts)).toBe(row.state)
     expect(WORK_STREAM_STATUS_ROLE[row.state]).toBe(row.role)
     expect(workStreamNeedsHumanAttention(row.facts)).toBe(row.attention)
+    expect(workStreamSecondaryDeliveryLabel(row.facts)).toBe(row.secondaryLabel ?? null)
     if (row.state === 'delivery_external' || row.state === 'delivery_failure') {
       expect(
         codeHostDeliveryLabel(row.facts.delivery) ??
@@ -453,5 +455,57 @@ describe('deferred refresh with managed toolchain work', () => {
         toolchain: { status: toolchain },
       })
     ).toBe(expected)
+  })
+})
+
+describe('running delivery precedence boundaries', () => {
+  for (const kind of ['approval', 'review', 'merge', 'external', 'setup', 'failure'] as const) {
+    test(`${kind} never replaces a genuine blocker, pause, terminal or execution failure`, () => {
+      const facts = {
+        status: 'active' as const,
+        derivedState: 'in_progress' as const,
+        delivery: { kind },
+        openWaits: [],
+      }
+      for (const [type, state] of [
+        ['review', 'in_review'],
+        ['question', 'waiting_on_answer'],
+        ['dependency', 'waiting_on_dependency'],
+        ['manual', 'blocked'],
+      ] as const) {
+        const blocked = { ...facts, openWaits: [{ type }] }
+        expect(selectWorkStreamPresentationState(blocked)).toBe(state)
+        expect(workStreamSecondaryDeliveryLabel(blocked)).toBeNull()
+      }
+      for (const override of [{ pause: true }, { status: 'done' as const }, { status: 'canceled' as const }]) {
+        const stopped = { ...facts, ...override }
+        expect(selectWorkStreamPresentationState(stopped)).toBe(override.status ?? 'paused')
+        expect(workStreamNeedsHumanAttention(stopped)).toBe(false)
+        expect(workStreamSecondaryDeliveryLabel(stopped)).toBeNull()
+      }
+      expect(selectWorkStreamPresentationState({ ...facts, derivedState: 'execution_failed' })).toBe('execution_failed')
+      expect(
+        selectWorkStreamPresentationState({
+          ...facts,
+          derivedState: 'idle',
+          hasActiveSlotWait: true,
+          hasActiveMonitor: true,
+        })
+      ).toBe(`delivery_${kind}`)
+      // Queue semantics are unchanged: a delivery refinement does not imply execution.
+      expect(selectWorkStreamPresentationState({ ...facts, status: 'queued' })).toBe(`delivery_${kind}`)
+      expect(selectWorkStreamPresentationState({ ...facts, hasActiveSlotWait: true, hasActiveMonitor: true })).toBe(
+        'in_progress'
+      )
+    })
+  }
+  test('unknown delivery kinds do not invent secondary context or human actions', () => {
+    const facts = {
+      status: 'active' as const,
+      derivedState: 'in_progress' as const,
+      delivery: { kind: 'future' as never },
+    }
+    expect(workStreamSecondaryDeliveryLabel(facts)).toBeNull()
+    expect(workStreamNeedsHumanAttention(facts)).toBe(false)
   })
 })

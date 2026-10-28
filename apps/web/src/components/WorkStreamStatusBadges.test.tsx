@@ -12,6 +12,14 @@ for (const row of [...WORK_STREAM_PRESENTATION_CASES, ...CODE_HOST_DELIVERY_PRES
   test(`visible status matrix: ${row.name}`, () => {
     const html = renderToStaticMarkup(<WorkStreamStatusBadges workStream={row.facts} />)
     expect(html).toContain(row.label)
+    if (row.secondaryLabel) {
+      expect(html).toContain(row.secondaryLabel)
+      expect(html).toContain(`Delivery: ${row.secondaryLabel}`)
+      expect(html.indexOf(row.label)).toBeLessThan(html.indexOf(row.secondaryLabel))
+      expect(renderToStaticMarkup(<WorkStreamStatusBadges workStream={row.facts} showPrimary={false} />)).toContain(
+        row.secondaryLabel
+      )
+    }
     expect(WS_STATUS_BADGE_COLORS[getWsDisplayState(row.facts)]).toBe(webStatus(row.role).badgeColor)
   })
 }
