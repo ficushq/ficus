@@ -112,6 +112,7 @@
       },
       "devDependencies": {
         "@astrojs/check": "0.9.12",
+        "@emnapi/runtime": "1.11.3",
         "@types/bun": "^1.4.4",
         "happy-dom": "^21.0.4",
         "parse5": "^8.0.0",
