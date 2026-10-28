@@ -1,3 +1,4 @@
+import { integrationCredentialEntries, INTEGRATION_CREDENTIAL_PREFIX } from '../security/integration-credential-entries'
 import { migrateLinearWebhookSettings } from '../integrations/linear/webhook-settings'
 import { migrateGitHubWebhookSettings, LEGACY_GITHUB_WEBHOOK_SECRET_KEY } from '../integrations/github/webhook-settings'
 import { eq } from 'drizzle-orm'
@@ -327,7 +328,7 @@ export class SecretStore {
    */
   bindContentSafetyConsumer(consumer: SecretValueConsumer): () => void {
     const entries = this.matcherEntriesForCache(this.cache)
-    consumer.replace(Array.from(entries, ([key, value]) => ({ key, value })))
+    consumer.replace(this.contentSafetyEntries(entries))
     this.contentSafetyConsumers.add(consumer)
     return () => this.contentSafetyConsumers.delete(consumer)
   }
@@ -350,9 +351,15 @@ export class SecretStore {
     // Public identifiers and very short values are dropped here, at the single
     // point that decides what the matcher can ever replace.
     for (const [key, value] of entries) {
-      if (!isMatchableSecret(key, value)) entries.delete(key)
+      if (!key.startsWith(INTEGRATION_CREDENTIAL_PREFIX) && !isMatchableSecret(key, value)) entries.delete(key)
     }
     return entries
+  }
+
+  private contentSafetyEntries(entries: ReadonlyMap<string, string>): Array<{ key: string; value: string }> {
+    return Array.from(entries).flatMap(([key, value]) =>
+      key.startsWith(INTEGRATION_CREDENTIAL_PREFIX) ? integrationCredentialEntries(key, value) : [{ key, value }]
+    )
   }
 
   /** Publish cache and matcher through a conservative union generation so neither side can expose an unmatched value. */
@@ -360,7 +367,7 @@ export class SecretStore {
     const previousCache = this.cache
     const previousMatcher = this.matcherEntriesForCache(previousCache)
     const nextMatcher = this.matcherEntriesForCache(nextCache)
-    const asEntries = (entries: ReadonlyMap<string, string>) => Array.from(entries, ([key, value]) => ({ key, value }))
+    const asEntries = (entries: ReadonlyMap<string, string>) => this.contentSafetyEntries(entries)
     const previousEntries = asEntries(previousMatcher)
     const nextEntries = asEntries(nextMatcher)
     // A rotation has two values for the same key. Retain both until cache

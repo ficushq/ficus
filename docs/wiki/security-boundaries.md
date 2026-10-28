@@ -169,6 +169,62 @@ outputs and unrelated integrations must remain intact. The `integrations/export`
 subtree is export-specific; the separate `integrations/projection` subtree is
 shared credential/tool projection and is not removed.
 
+## Tool credential detection
+
+Connection credentials are registered with the process-local content-safety matcher
+as secret leaf values, not serialized bundles. This includes manual provider tokens,
+channel credential leaves, and OAuth access/refresh tokens. OAuth expiry, revision,
+and client binding identifiers are not secrets. Connection material is identified
+by the internal `__integration-credential:` storage namespace; all nonempty secret
+leaves are matched, including short local integration credentials. Other encrypted
+stored values retain their existing minimum length (12 characters) and public-key /
+identifier exclusions. Storage, transactional OAuth refresh, rotation, deletion,
+initial cache loading and cross-process cache refresh all use the same matcher
+publication path. Both old and new tokens are matched while cache publication
+crosses a rotation; obsolete coverage is removed after publication.
+
+Integration credentials and remaining matchable stored secrets are redacted from
+tool output and refuse matching tool input before execution. Refusal/audit details
+contain key identifiers only, never credential values. This is leak containment,
+not a restriction on what `ficus integration exec` may execute, and not a guarantee
+against transformed/encoded secrets or a malicious agent that already holds one.
+Channel plugins still do not deliver credentials to sandboxes.
+
+Squad Environment Variables are **output-only** detection entries: they never
+refuse input or produce stored-credential tool audit matches. An agent may use a
+custom value to write an application's `.env.local`. If the same value is also an
+integration or protected stored credential, that independent input protection still
+applies. Output redaction (including partial streaming/truncated fragments) applies
+to both policies.
+
+The env heuristic uses literal dotenv-style assignments from canonical squad
+`.ficus/env.user` only, with no shell evaluation, variable expansion or command
+substitution:
+
+- Values under 12 characters are not registered (for example `production`).
+- Keys ending in `_TOKEN`, `_KEY`, `_SECRET`, `_PASSWORD`, `_CREDENTIALS`, or those
+  exact bare names, case-insensitively, match every value at least 12 characters.
+- Other keys require at least 32 characters, at least 4 Shannon bits per character,
+  and at least two of lowercase, uppercase, digits and non-alphanumeric characters.
+  Whitespace-containing values, HTTP(S) URLs, and absolute or explicit relative/home
+  paths are excluded on this entropy-only path. Repeated values, ordinary words
+  and common UUID identifiers do not meet the rule. This is a heuristic, not a
+  classification guarantee for every possible configuration value.
+
+The process-wide source checks only the canonical squad directories and env.user
+file metadata at each redaction boundary, reusing parsed values until a file
+changes. Existing values are loaded on first use; edits/deletion are seen by both
+API and worker without a background scanner or notification delay. Symlink settings
+and files are not followed. On transient read failures, last-known coverage is
+retained until a successful read/removal. Matching across squads is deliberately
+allowed; these values are never used for input refusal. No arbitrary workspace
+files (including app `.env.local` files) are scanned or registered. Complex shell
+expressions are not evaluated, so their resulting runtime values are not inferred.
+
+Regression pointers: the focused content-safety, content-safety-registry,
+squad-env-secret-source, stored-secret-tool-containment, secrets/store and squad/env
+tests cover the policies and their lifecycle boundaries.
+
 ## Historical rationale and verification pointers
 
 The preserved sources are `docs/history/plans/2026-06-17-rbac-v2-design.md`, `docs/history/plans/2026-06-17-rbac-v2-plan-3-deferred-security.md`, `docs/history/decisions/2026-08-14-integrations-bigbrain.md`, and `docs/history/plans/2026-08-14-integrations-bigbrain.md`. Historical “deferred security” titles do not imply their entire implementation remains unfinished.

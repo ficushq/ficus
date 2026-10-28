@@ -18,6 +18,7 @@ import { createGitHubPlugin } from '../github/plugin'
 import { getGitHubAuthorDefaults } from '../github/author-defaults'
 import { resolveGitHubConnection } from '../github/resolve-connection'
 import { resolveOAuthAuthority } from './authority'
+import { ContentSafetyRegistry } from '../../security/content-safety-registry'
 useEnabledIntegrationFixtures('github')
 
 const connection: IntegrationConnectionRecord = {
@@ -665,6 +666,16 @@ test('the git author identity resolved while a rotated GitHub token is being val
   const profileRequest = (async () =>
     Response.json({ id: 123, name: 'Rotating Person', email: 'rotating@example.com' })) as unknown as typeof fetch
   const store = getSecretStore()
+  // Use the production credential namespace (the shared account fixture uses a
+  // test-only key), so this real refresh also verifies matcher publication.
+  const detectionRef = `__integration-credential:${account.id}:detection`
+  const previousCredential = parseOAuthCredential(store.get(account.credentialRef)!)
+  await store.set(detectionRef, serializeOAuthCredential(previousCredential), 'test')
+  await db
+    .update(integrationConnections)
+    .set({ credentialRef: detectionRef })
+    .where(eq(integrationConnections.id, account.id))
+  const safety = new ContentSafetyRegistry(store)
   const invalidations: string[] = []
   let duringValidation:
     | { identity: Awaited<ReturnType<typeof getGitHubAuthorDefaults>>; credentialWithheld: boolean; state: string }
@@ -675,6 +686,10 @@ test('the git author identity resolved while a rotated GitHub token is being val
     {
       async currentUser() {
         const [row] = await db.select().from(integrationConnections).where(eq(integrationConnections.id, account.id))
+        for (const token of ['synthetic-access-new', 'synthetic-refresh-new']) {
+          expect(safety.redact(token)).not.toContain(token)
+          expect(safety.redactWithStoredKeys(token).storedKeys).not.toHaveLength(0)
+        }
         duringValidation = {
           identity: await getGitHubAuthorDefaults(squadId, profileRequest),
           credentialWithheld: (await resolveGitHubConnection(squadId)) === undefined,
@@ -711,6 +726,7 @@ test('the git author identity resolved while a rotated GitHub token is being val
     invalidateAssignments: async (id) => void invalidations.push(id),
   })
   try {
+    expect(safety.redact(previousCredential.accessToken)).not.toContain(previousCredential.accessToken)
     const before = await getGitHubAuthorDefaults(squadId, profileRequest)
     expect(before?.gitUserName).toBe('Rotating Person')
 
@@ -724,7 +740,11 @@ test('the git author identity resolved while a rotated GitHub token is being val
     expect(duringValidation?.identity).toEqual(before)
     expect(await getGitHubAuthorDefaults(squadId, profileRequest)).toEqual(before)
     expect((await resolveGitHubConnection(squadId))?.credential.accessToken).toBe('synthetic-access-new')
+    expect(safety.redact(previousCredential.accessToken)).toBe(previousCredential.accessToken)
+    expect(safety.redactWithStoredKeys('synthetic-refresh-new').storedKeys).not.toHaveLength(0)
   } finally {
+    safety.dispose()
+    await store.delete(detectionRef)
     await account.dispose()
     await db.delete(squads).where(eq(squads.id, squadId))
   }

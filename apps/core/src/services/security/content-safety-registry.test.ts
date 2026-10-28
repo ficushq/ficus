@@ -83,3 +83,23 @@ describe('ContentSafetyRegistry', () => {
     registry.dispose()
   })
 })
+
+describe('mixed detection policies', () => {
+  test('preserves duplicate-key transition values when a later update arrives', () => {
+    let consumer!: SecretValueConsumer
+    const registry = new ContentSafetyRegistry({
+      bindContentSafetyConsumer(value) {
+        consumer = value
+        value.replace([])
+        return () => undefined
+      },
+    })
+    consumer.replace([
+      { key: 'ROTATING', value: 'synthetic-old-value' },
+      { key: 'ROTATING', value: 'synthetic-new-value' },
+    ])
+    consumer.update('OTHER', 'synthetic-other-value')
+    expect(registry.redact('synthetic-old-value synthetic-new-value')).not.toContain('synthetic-')
+    registry.dispose()
+  })
+})

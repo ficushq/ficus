@@ -200,3 +200,44 @@ it('preserves legacy custom env comments that are not the exact retired generati
   expect(readFileSync(join(dot, 'env.user'), 'utf8')).toBe(content)
   expect(readFileSync(join(dot, '.env'), 'utf8')).toContain('APP_MODE=production')
 })
+
+it('env service edits reach process-wide output-only detection without blocking app env writes', async () => {
+  const { setEnvFile } = await getModule()
+  const { getContentSafetyRegistry, resetContentSafetyRegistry } = await import('../security/content-safety-registry')
+  const { StoredSecretToolContainment } = await import('../security/stored-secret-tool-containment')
+  const { getSquadWorkspacePath } = await import('./workspace')
+  const id = randomUUID()
+  resetContentSafetyRegistry()
+  const registry = getContentSafetyRegistry()
+  try {
+    await setEnvFile(id, 'APP_TOKEN=synthetic-squad-env-first\nMODE=production')
+    expect(registry.redact('synthetic-squad-env-first production')).not.toContain('synthetic-squad-env-first')
+    expect(registry.redactWithStoredKeys('synthetic-squad-env-first').storedKeys).toEqual([])
+    const agent: import('../security/stored-secret-tool-containment').StoredSecretToolHookTarget = {}
+    const containment = new StoredSecretToolContainment({
+      agentId: 'test',
+      executionId: 'test',
+      sink: async () => {
+        throw new Error('env must not audit')
+      },
+    })
+    const detach = containment.attachBeforeToolCall(agent, registry)
+    expect(
+      await agent.beforeToolCall!({
+        args: { path: 'app/.env.local', content: 'APP_TOKEN=synthetic-squad-env-first' },
+        toolCall: { id: 'env-write', name: 'write', type: 'toolCall', arguments: {} },
+        assistantMessage: {} as never,
+        context: {} as never,
+      })
+    ).toBeUndefined()
+    detach()
+    await setEnvFile(id, 'APP_TOKEN=synthetic-squad-env-next')
+    expect(registry.redact('synthetic-squad-env-next')).not.toContain('synthetic-squad-env-next')
+    expect(registry.redact('synthetic-squad-env-first')).toBe('synthetic-squad-env-first')
+    // A direct env.user edit (including one made by the API peer) is detected too.
+    writeFileSync(join(getSquadWorkspacePath(id), '.ficus', 'env.user'), 'APP_TOKEN=synthetic-squad-env-direct')
+    expect(registry.redact('synthetic-squad-env-direct')).not.toContain('synthetic-squad-env-direct')
+  } finally {
+    resetContentSafetyRegistry()
+  }
+})

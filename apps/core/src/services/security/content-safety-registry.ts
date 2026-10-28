@@ -1,7 +1,9 @@
+import { SquadEnvSecretSource } from './squad-env-secret-source'
 import { getSecretStore, type SecretValueConsumer } from '../secrets/store'
 import {
   ContentSafety,
   type ContentSafetyPort,
+  type SecretEntry,
   type StoredKeyRedaction,
   type StoredValueFragmentEdges,
 } from './content-safety'
@@ -10,49 +12,71 @@ export interface ContentSafetySecretSource {
   bindContentSafetyConsumer(consumer: SecretValueConsumer): () => void
 }
 
-/**
- * Keeps the exact-value matcher synchronized with Secret Store without exposing
- * a raw snapshot outside the redaction API.
- */
+export interface ContentSafetyOutputSource {
+  /** Stable identity until output-only source entries change. */
+  entries(): readonly SecretEntry[]
+}
+
+/** Keeps protected store entries and output-only configuration in one matcher. */
 export class ContentSafetyRegistry implements ContentSafetyPort {
-  #entries = new Map<string, string>()
+  #entries: readonly SecretEntry[] = []
   #safety = ContentSafety.fromSecretEntries([])
   #unsubscribe: () => void
+  #outputEntries: readonly SecretEntry[] = []
 
-  constructor(store: ContentSafetySecretSource) {
+  constructor(
+    store: ContentSafetySecretSource,
+    private readonly outputSource?: ContentSafetyOutputSource
+  ) {
     const consumer: SecretValueConsumer = {
       replace: (entries) => {
-        this.#entries = new Map(entries.map(({ key, value }) => [key, value]))
-        this.#safety = ContentSafety.fromSecretEntries(entries)
+        this.#entries = [...entries]
+        this.#rebuild()
       },
       update: (key, value) => {
-        const nextEntries = new Map(this.#entries)
-        if (value === undefined) nextEntries.delete(key)
-        else nextEntries.set(key, value)
+        const nextEntries = this.#entries.filter((entry) => entry.key !== key)
+        if (value !== undefined) nextEntries.push({ key, value })
         this.#entries = nextEntries
-        this.#safety = ContentSafety.fromSecretEntries(
-          Array.from(nextEntries, ([entryKey, entryValue]) => ({ key: entryKey, value: entryValue }))
-        )
+        this.#rebuild()
       },
     }
     this.#unsubscribe = store.bindContentSafetyConsumer(consumer)
   }
 
   redact<T>(input: T): T {
+    this.#refreshOutput()
     return this.#safety.redact(input)
   }
 
   redactWithStoredKeys<T>(input: T): StoredKeyRedaction<T> {
+    this.#refreshOutput()
     return this.#safety.redactWithStoredKeys(input)
   }
 
   trimStoredValueFragments(text: string, edges: StoredValueFragmentEdges): string {
+    this.#refreshOutput()
     return this.#safety.trimStoredValueFragments(text, edges)
+  }
+
+  #rebuild(): void {
+    this.#safety = ContentSafety.fromSecretEntries([
+      ...this.#entries,
+      ...this.#outputEntries.map((entry) => ({ ...entry, outputOnly: true })),
+    ])
+  }
+
+  #refreshOutput(): void {
+    const entries = this.outputSource?.entries()
+    if (entries && entries !== this.#outputEntries) {
+      this.#outputEntries = entries
+      this.#rebuild()
+    }
   }
 
   dispose(): void {
     this.#unsubscribe()
-    this.#entries.clear()
+    this.#entries = []
+    this.#outputEntries = []
     this.#safety = ContentSafety.fromSecretEntries([])
   }
 }
@@ -65,7 +89,7 @@ export function getContentSafetyRegistry(): ContentSafetyRegistry {
   const source = getSecretStore()
   if (!processRegistry || processRegistrySource !== source) {
     processRegistry?.dispose()
-    processRegistry = new ContentSafetyRegistry(source)
+    processRegistry = new ContentSafetyRegistry(source, new SquadEnvSecretSource())
     processRegistrySource = source
   }
   return processRegistry

@@ -11,6 +11,7 @@ import {
 } from './store'
 import { listPeriodicRunnerNames, listPeriodicRunners } from '../../lib/infra/PeriodicRunner'
 import { listen } from '../../lib/infra/local-events'
+import { serializeOAuthCredential } from '../integrations/authorization/credential-bundle'
 import { ContentSafetyRegistry } from '../security/content-safety-registry'
 
 function makeStore(options?: ConstructorParameters<typeof SecretStore>[0]): SecretStore {
@@ -1017,5 +1018,149 @@ describe('SecretStore — platform-managed keys', () => {
 
     expect((await store.list()).some((s) => s.key === 'APNS_KEY_P8')).toBe(true)
     expect(store.get('APNS_KEY_P8')).toBe('self-hosted-pem')
+  })
+})
+
+describe('integration credential leaf detection', () => {
+  let store: SecretStore
+  const originalKey = process.env.FICUS_ENCRYPTION_KEY
+  beforeEach(async () => {
+    process.env.FICUS_ENCRYPTION_KEY = randomBytes(32).toString('hex')
+    await db.delete(secrets)
+    store = makeStore()
+    await store.initialize()
+  })
+  afterEach(() => {
+    store.stopPeriodicRefresh()
+    if (originalKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = originalKey
+  })
+  const ref = '__integration-credential:synthetic:bearer'
+  const bundle = (accessToken: string, refreshToken: string) =>
+    serializeOAuthCredential({
+      version: 1,
+      accessToken,
+      refreshToken,
+      expiresAt: '2026-10-28T00:00:00.000Z',
+      tokenRevision: 1,
+      clientBinding: { clientId: 'public-client-id' },
+    })
+
+  test('matches manual credentials and every secret channel leaf without matching OAuth metadata', async () => {
+    const registry = new ContentSafetyRegistry(store)
+    try {
+      await store.set(ref, 'synthetic-manual-token')
+      expect(registry.redactWithStoredKeys('synthetic-manual-token').storedKeys).not.toHaveLength(0)
+      await store.set(
+        ref,
+        JSON.stringify({ botToken: 'synthetic-bot-token', signingSecret: 'synthetic-signing-secret' })
+      )
+      for (const token of ['synthetic-bot-token', 'synthetic-signing-secret']) {
+        expect(registry.redact(token)).not.toContain(token)
+        expect(registry.redactWithStoredKeys(token).storedKeys).not.toHaveLength(0)
+      }
+      await store.set(ref, bundle('synthetic-access-token', 'synthetic-refresh-token'))
+      for (const token of ['synthetic-access-token', 'synthetic-refresh-token']) {
+        expect(registry.redactWithStoredKeys(token).storedKeys).not.toHaveLength(0)
+      }
+      expect(registry.redact('public-client-id 2026-10-28T00:00:00.000Z')).toBe(
+        'public-client-id 2026-10-28T00:00:00.000Z'
+      )
+    } finally {
+      registry.dispose()
+    }
+  })
+
+  test('covers both leaf generations before cache publication and removes retired values afterwards', async () => {
+    const oldAccess = 'synthetic-old-access'
+    const oldRefresh = 'synthetic-old-refresh'
+    const newAccess = 'synthetic-new-access'
+    const newRefresh = 'synthetic-new-refresh'
+    const previous = bundle(oldAccess, oldRefresh)
+    await store.set(ref, previous)
+    const registry = new ContentSafetyRegistry(store)
+    let transitionChecked = false
+    const unsubscribe = store.bindContentSafetyConsumer({
+      replace(entries) {
+        if (entries.some((e) => e.value === oldAccess) && entries.some((e) => e.value === newAccess)) {
+          transitionChecked = true
+          expect(store.get(ref)).toBe(previous)
+          for (const token of [oldAccess, oldRefresh, newAccess, newRefresh]) {
+            expect(registry.redactWithStoredKeys(token).storedKeys).not.toHaveLength(0)
+          }
+        }
+      },
+      update() {},
+    })
+    try {
+      await store.set(ref, bundle(newAccess, newRefresh))
+      expect(transitionChecked).toBe(true)
+      expect(registry.redact(oldAccess)).toBe(oldAccess)
+      expect(registry.redact(newAccess)).not.toContain(newAccess)
+      await store.delete(ref)
+      expect(registry.redact(newAccess)).toBe(newAccess)
+      expect(registry.redact(newRefresh)).toBe(newRefresh)
+    } finally {
+      unsubscribe()
+      registry.dispose()
+    }
+  })
+
+  test('refresh mutation and durable storage/deletion publish leaf detection too', async () => {
+    const registry = new ContentSafetyRegistry(store)
+    try {
+      await store.setWithDurableObligation(
+        ref,
+        bundle('synthetic-initial-access', 'synthetic-initial-refresh'),
+        'test',
+        async () => undefined
+      )
+      expect(registry.redactWithStoredKeys('synthetic-initial-refresh').storedKeys).not.toHaveLength(0)
+      // This is the transactional persistence path used by OAuth refresh.
+      await store.mutateSecret(ref, () => bundle('synthetic-mutated-access', 'synthetic-mutated-refresh'))
+      for (const value of ['synthetic-mutated-access', 'synthetic-mutated-refresh']) {
+        expect(registry.redactWithStoredKeys(value).storedKeys).not.toHaveLength(0)
+      }
+      expect(registry.redact('synthetic-initial-refresh')).toBe('synthetic-initial-refresh')
+      await store.deleteWithDurableMutation(ref, async () => undefined)
+      expect(registry.redact('synthetic-mutated-refresh')).toBe('synthetic-mutated-refresh')
+      // Short integration material is still a credential (e.g. local client IDs).
+      await store.set(ref, '12abcdef')
+      expect(registry.redactWithStoredKeys('12abcdef').storedKeys).not.toHaveLength(0)
+    } finally {
+      registry.dispose()
+    }
+  })
+
+  test('reloads and refreshes leaf detection from encrypted authoritative values', async () => {
+    class ReloadableStore extends SecretStore {
+      reload() {
+        return this.loadFromDb()
+      }
+    }
+    const peer = makeStore()
+    await peer.initialize()
+    const reader = new ReloadableStore()
+    await reader.initialize()
+    const registry = new ContentSafetyRegistry(reader)
+    try {
+      await peer.set(ref, bundle('synthetic-peer-access', 'synthetic-peer-refresh'))
+      await reader.refreshKey(ref)
+      expect(registry.redact('synthetic-peer-access')).not.toContain('synthetic-peer-access')
+      await peer.set(ref, bundle('synthetic-rotated-access', 'synthetic-rotated-refresh'))
+      await reader.reload()
+      expect(registry.redact('synthetic-rotated-refresh')).not.toContain('synthetic-rotated-refresh')
+      expect(registry.redact('synthetic-peer-access')).toBe('synthetic-peer-access')
+      const loadedRegistry = new ContentSafetyRegistry(peer)
+      expect(loadedRegistry.redact('synthetic-rotated-access')).not.toContain('synthetic-rotated-access')
+      loadedRegistry.dispose()
+      await peer.delete(ref)
+      await reader.refreshKey(ref)
+      expect(registry.redact('synthetic-rotated-access')).toBe('synthetic-rotated-access')
+    } finally {
+      peer.stopPeriodicRefresh()
+      reader.stopPeriodicRefresh()
+      registry.dispose()
+    }
   })
 })

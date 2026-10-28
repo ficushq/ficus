@@ -484,3 +484,18 @@ describe('ContentSafety.trimStoredValueFragments cut placement', () => {
     expect(aResult).toBe('a'.repeat(49_999))
   })
 })
+
+test('output-only exact values redact and trim but never attribute a refused input', () => {
+  const value = 'synthetic-env-value'
+  const safety = ContentSafety.fromSecretEntries([{ key: 'SQUAD_ENV', value, outputOnly: true }])
+  expect(safety.redactWithStoredKeys({ content: `APP_KEY=${value}` })).toEqual({
+    value: { content: 'APP_KEY=[REDACTED_SECRET_ENV:SQUAD_ENV]' },
+    storedKeys: [],
+  })
+  expect(safety.trimStoredValueFragments(`hello ${value.slice(0, -2)}`, { trailing: true })).toBe('hello ')
+  const shared = ContentSafety.fromSecretEntries([
+    { key: 'ENV', value, outputOnly: true },
+    { key: 'INTEGRATION', value },
+  ])
+  expect(shared.redactWithStoredKeys(value).storedKeys).toEqual(['INTEGRATION'])
+})
