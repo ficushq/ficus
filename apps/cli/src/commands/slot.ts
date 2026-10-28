@@ -440,7 +440,7 @@ export function registerSlotCommands(program: Command, dependencies = defaultDep
       })
     )
 
-  withSquad(slot.command('subscribe <key>').description('Join the durable FIFO wait queue')).action(
+  withSquad(slot.command('subscribe <key>').description('Join the durable priority-ordered wait queue')).action(
     (key: string, options: SlotOptions) =>
       run(async () => {
         const squadId = resolveSlotSquadId(options.squad)
