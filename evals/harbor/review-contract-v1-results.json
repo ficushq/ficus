@@ -1,0 +1,469 @@
+{
+  "study": "review-contract-v1",
+  "status": "completed",
+  "observed_at": "2026-10-28T22:51:53.761560+00:00",
+  "protocol_commit": "f259556a",
+  "production_prompt_commit": "990b2230",
+  "cells": {
+    "original-baseline": {
+      "trial": "original__vgKeaeY",
+      "verdict": "changes-requested",
+      "target_blocking_detection": false,
+      "target_ambiguity_observation": false,
+      "amendment_control_pass": null,
+      "findings": [
+        "Valid CSV headers beginning with markup-like text are rejected",
+        "Source validation accepts illegal hostname characters",
+        "A malformed remote redirect escapes the fetch error boundary as HTTP 500"
+      ],
+      "native_outcome": {
+        "configuration": "reviewer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "25c45f893b53625c1cba4c3233506ac76627c066681fb0253fe168b85254d9f4",
+        "database_network": "task",
+        "attempted_roles": [
+          "reviewer"
+        ],
+        "engineer_only_verified": null,
+        "executed_roles": [
+          "reviewer"
+        ],
+        "artifact_review": {
+          "base_commit": "da50b01d043431fdc0c0340ab0b047c00f205ef9",
+          "artifact_sha256": "7e8d52b0d88e007fae02c66e30d38cc59245dc5bd01c2267a1e1921d6c9c8fcc",
+          "artifact_commit": "1a201988ad0709489a95282b9e523a26cb609d8f",
+          "valid": true,
+          "repository_unchanged": true,
+          "verdict": "changes-requested"
+        }
+      },
+      "prompt_audit": {
+        "overlay_sha256": "a63413bde1ec293724cf5f3e2ea075bccec025a38c4b400643a870191e21a0ef",
+        "only_overlay_path": "config/agent-types/reviewer.yaml",
+        "native_synced_body_verified": true,
+        "synced_prompt_sha256": "2d57ee4a895b730010fc6365a2d24bb900572713c84c518793a8e196204de698",
+        "egress": {
+          "response_header_timeout_seconds": 600,
+          "original_config_sha256": "78c18e58efbc7c8e226cb311e2a4cf3863d5a2f3e54b3bf15a0ea4b885345290",
+          "context_sha256": {
+            "Dockerfile": "a2385dd6b3eee6e04c49b467df84ed2a273fd402a9cdd404a64fb535e9b26ff7",
+            "allowlist.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bin/network-policy": "ff1cacfb95e17cda3668f389176ae54e5e4139cff12ee54b4d745722ad0ff0b2",
+            "entrypoint.sh": "2e225ed745eb5976f93afd52d91c844b954b5f6f45373fb70c4c509e36d1e069",
+            "gost.yaml": "9293a0f45fbd16d3e59c06aa559a9544193ead48575b9ca7163c5e8e7bad8ed1"
+          },
+          "network_policy_unchanged": true
+        }
+      },
+      "trial_seconds": 250.09831,
+      "launcher_seconds": 253.38130887504667,
+      "usage": {
+        "settled_usd": 0.274422,
+        "calls": 11,
+        "new_unresolved": 0,
+        "unattributed_usd": 0,
+        "token_multiset_matches_proxy": true,
+        "tokens": {
+          "input_uncached": 33,
+          "cache_read": 406033,
+          "cache_write": 62839,
+          "output": 7665
+        }
+      },
+      "evidence_sha256": {
+        "result.json": "9afa9d318710c331634273023b6575f04a3149462b871bd1aadaa8477adbc0e1",
+        "agent/review-result.json": "c8ab971938ce08574d7fcd13f386cee8a47113b9d8387112562d2006353f0f7e",
+        "agent/artifact-review-audit.json": "b698c115af0a15d6cbc250f70d02aecaddc4ffd47e33f4f493025022c97bacbb",
+        "agent/reviewer-prompt-audit.json": "21e95a104949d2210a4ff6322fa730c46eb32f40dbd509e55fff285725825391",
+        "agent/snapshot.json": "3aa4bbafd0afe159dafd05ee7782c64b6126e0113508741156007e705d4fbd8c",
+        "agent/messages.json": "b76a3fda8d29b769df321575a8fd8e7dfefb2b9e08aa0d3ca68442894fce9729"
+      }
+    },
+    "original-candidate": {
+      "trial": "original__edBgzsA",
+      "verdict": "changes-requested",
+      "target_blocking_detection": false,
+      "target_ambiguity_observation": false,
+      "amendment_control_pass": null,
+      "findings": [
+        "Valid CSV is rejected when its first header resembles an XML tag",
+        "Numeric representation limits silently change decimal types or reject valid integer CSVs"
+      ],
+      "native_outcome": {
+        "configuration": "reviewer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "25c45f893b53625c1cba4c3233506ac76627c066681fb0253fe168b85254d9f4",
+        "database_network": "task",
+        "attempted_roles": [
+          "reviewer"
+        ],
+        "engineer_only_verified": null,
+        "executed_roles": [
+          "reviewer"
+        ],
+        "artifact_review": {
+          "base_commit": "da50b01d043431fdc0c0340ab0b047c00f205ef9",
+          "artifact_sha256": "7e8d52b0d88e007fae02c66e30d38cc59245dc5bd01c2267a1e1921d6c9c8fcc",
+          "artifact_commit": "1a201988ad0709489a95282b9e523a26cb609d8f",
+          "valid": true,
+          "repository_unchanged": true,
+          "verdict": "changes-requested"
+        }
+      },
+      "prompt_audit": {
+        "overlay_sha256": "b745249273f78676f188e92f8086d891b1ca943a8b8d318cfe39f975c8be4235",
+        "only_overlay_path": "config/agent-types/reviewer.yaml",
+        "native_synced_body_verified": true,
+        "synced_prompt_sha256": "f6f420b325b06cbea1ed949e1207a2f8b145098ed8c15ca47c11eb1fe0a147fa",
+        "egress": {
+          "response_header_timeout_seconds": 600,
+          "original_config_sha256": "78c18e58efbc7c8e226cb311e2a4cf3863d5a2f3e54b3bf15a0ea4b885345290",
+          "context_sha256": {
+            "Dockerfile": "a2385dd6b3eee6e04c49b467df84ed2a273fd402a9cdd404a64fb535e9b26ff7",
+            "allowlist.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bin/network-policy": "ff1cacfb95e17cda3668f389176ae54e5e4139cff12ee54b4d745722ad0ff0b2",
+            "entrypoint.sh": "2e225ed745eb5976f93afd52d91c844b954b5f6f45373fb70c4c509e36d1e069",
+            "gost.yaml": "9293a0f45fbd16d3e59c06aa559a9544193ead48575b9ca7163c5e8e7bad8ed1"
+          },
+          "network_policy_unchanged": true
+        }
+      },
+      "trial_seconds": 190.005192,
+      "launcher_seconds": 193.37756416690536,
+      "usage": {
+        "settled_usd": 0.218055,
+        "calls": 11,
+        "new_unresolved": 0,
+        "unattributed_usd": 0,
+        "token_multiset_matches_proxy": true,
+        "tokens": {
+          "input_uncached": 33,
+          "cache_read": 378086,
+          "cache_write": 52659,
+          "output": 4853
+        }
+      },
+      "evidence_sha256": {
+        "result.json": "35dfdbac844d3fc15897b10b88f91df212103727cdec2169ea6d17a15921a1d7",
+        "agent/review-result.json": "716e9f3941d469414c9802d3c8d2a27126370b1bc93d4798920280f07ed417d8",
+        "agent/artifact-review-audit.json": "b698c115af0a15d6cbc250f70d02aecaddc4ffd47e33f4f493025022c97bacbb",
+        "agent/reviewer-prompt-audit.json": "ac0f22ab4cf146dc48a479339fc0feb1f14a9f14ad3a851072f4c390e283036b",
+        "agent/snapshot.json": "717b656dfccab5456f51375fe0b492185b8ba974cfc96908ab5e0faaacbd6ac2",
+        "agent/messages.json": "cd3a5f6902711004ce1124b667be51f3860223a4cf84d34e407df70ecb06e896"
+      }
+    },
+    "amended-candidate": {
+      "trial": "amended__aJY2qaw",
+      "verdict": "changes-requested",
+      "target_blocking_detection": false,
+      "target_ambiguity_observation": false,
+      "amendment_control_pass": true,
+      "findings": [
+        "Valid CSV headers beginning with an angle bracket are rejected as markup"
+      ],
+      "native_outcome": {
+        "configuration": "reviewer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "25c45f893b53625c1cba4c3233506ac76627c066681fb0253fe168b85254d9f4",
+        "database_network": "task",
+        "attempted_roles": [
+          "reviewer"
+        ],
+        "engineer_only_verified": null,
+        "executed_roles": [
+          "reviewer"
+        ],
+        "artifact_review": {
+          "base_commit": "da50b01d043431fdc0c0340ab0b047c00f205ef9",
+          "artifact_sha256": "7e8d52b0d88e007fae02c66e30d38cc59245dc5bd01c2267a1e1921d6c9c8fcc",
+          "artifact_commit": "1a201988ad0709489a95282b9e523a26cb609d8f",
+          "valid": true,
+          "repository_unchanged": true,
+          "verdict": "changes-requested"
+        }
+      },
+      "prompt_audit": {
+        "overlay_sha256": "b745249273f78676f188e92f8086d891b1ca943a8b8d318cfe39f975c8be4235",
+        "only_overlay_path": "config/agent-types/reviewer.yaml",
+        "native_synced_body_verified": true,
+        "synced_prompt_sha256": "f6f420b325b06cbea1ed949e1207a2f8b145098ed8c15ca47c11eb1fe0a147fa",
+        "egress": {
+          "response_header_timeout_seconds": 600,
+          "original_config_sha256": "78c18e58efbc7c8e226cb311e2a4cf3863d5a2f3e54b3bf15a0ea4b885345290",
+          "context_sha256": {
+            "Dockerfile": "a2385dd6b3eee6e04c49b467df84ed2a273fd402a9cdd404a64fb535e9b26ff7",
+            "allowlist.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bin/network-policy": "ff1cacfb95e17cda3668f389176ae54e5e4139cff12ee54b4d745722ad0ff0b2",
+            "entrypoint.sh": "2e225ed745eb5976f93afd52d91c844b954b5f6f45373fb70c4c509e36d1e069",
+            "gost.yaml": "9293a0f45fbd16d3e59c06aa559a9544193ead48575b9ca7163c5e8e7bad8ed1"
+          },
+          "network_policy_unchanged": true
+        }
+      },
+      "trial_seconds": 176.116602,
+      "launcher_seconds": 179.4864488330204,
+      "usage": {
+        "settled_usd": 0.214095,
+        "calls": 10,
+        "new_unresolved": 0,
+        "unattributed_usd": 0,
+        "token_multiset_matches_proxy": true,
+        "tokens": {
+          "input_uncached": 30,
+          "cache_read": 337065,
+          "cache_write": 53565,
+          "output": 4641
+        }
+      },
+      "evidence_sha256": {
+        "result.json": "0fb4b7c2d83d89f2980c50dab546fa4ef3d613a5df7d3304d8de80c91ba331e6",
+        "agent/review-result.json": "2b6d1cbe51cbe4b9edbc6e963210099bf94e0be92972a66c91defcfe4cf4a588",
+        "agent/artifact-review-audit.json": "b698c115af0a15d6cbc250f70d02aecaddc4ffd47e33f4f493025022c97bacbb",
+        "agent/reviewer-prompt-audit.json": "ac0f22ab4cf146dc48a479339fc0feb1f14a9f14ad3a851072f4c390e283036b",
+        "agent/snapshot.json": "0dda59baa107e2209a3409459a887f4ea59d26f02cbd80c9c62a1da6f50dff11",
+        "agent/messages.json": "6a5cc64cbb47edef8fee21355b21a1f5bd9e1d268d7eaeb0c18105ff883429df"
+      }
+    },
+    "amended-baseline": {
+      "trial": "amended__9MAnezQ",
+      "verdict": "changes-requested",
+      "target_blocking_detection": false,
+      "target_ambiguity_observation": false,
+      "amendment_control_pass": true,
+      "findings": [
+        "Valid CSV headers beginning with markup-like text are rejected",
+        "Content detection rejects recognizable BOM-less UTF-32 CSV"
+      ],
+      "native_outcome": {
+        "configuration": "reviewer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "25c45f893b53625c1cba4c3233506ac76627c066681fb0253fe168b85254d9f4",
+        "database_network": "task",
+        "attempted_roles": [
+          "reviewer"
+        ],
+        "engineer_only_verified": null,
+        "executed_roles": [
+          "reviewer"
+        ],
+        "artifact_review": {
+          "base_commit": "da50b01d043431fdc0c0340ab0b047c00f205ef9",
+          "artifact_sha256": "7e8d52b0d88e007fae02c66e30d38cc59245dc5bd01c2267a1e1921d6c9c8fcc",
+          "artifact_commit": "1a201988ad0709489a95282b9e523a26cb609d8f",
+          "valid": true,
+          "repository_unchanged": true,
+          "verdict": "changes-requested"
+        }
+      },
+      "prompt_audit": {
+        "overlay_sha256": "a63413bde1ec293724cf5f3e2ea075bccec025a38c4b400643a870191e21a0ef",
+        "only_overlay_path": "config/agent-types/reviewer.yaml",
+        "native_synced_body_verified": true,
+        "synced_prompt_sha256": "2d57ee4a895b730010fc6365a2d24bb900572713c84c518793a8e196204de698",
+        "egress": {
+          "response_header_timeout_seconds": 600,
+          "original_config_sha256": "78c18e58efbc7c8e226cb311e2a4cf3863d5a2f3e54b3bf15a0ea4b885345290",
+          "context_sha256": {
+            "Dockerfile": "a2385dd6b3eee6e04c49b467df84ed2a273fd402a9cdd404a64fb535e9b26ff7",
+            "allowlist.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bin/network-policy": "ff1cacfb95e17cda3668f389176ae54e5e4139cff12ee54b4d745722ad0ff0b2",
+            "entrypoint.sh": "2e225ed745eb5976f93afd52d91c844b954b5f6f45373fb70c4c509e36d1e069",
+            "gost.yaml": "9293a0f45fbd16d3e59c06aa559a9544193ead48575b9ca7163c5e8e7bad8ed1"
+          },
+          "network_policy_unchanged": true
+        }
+      },
+      "trial_seconds": 162.577583,
+      "launcher_seconds": 166.396247375058,
+      "usage": {
+        "settled_usd": 0.172925,
+        "calls": 9,
+        "new_unresolved": 0,
+        "unattributed_usd": 0,
+        "token_multiset_matches_proxy": true,
+        "tokens": {
+          "input_uncached": 27,
+          "cache_read": 258777,
+          "cache_write": 44479,
+          "output": 3579
+        }
+      },
+      "evidence_sha256": {
+        "result.json": "9319b019f55dae542d32025474428e135a1e3e38d76ee201e61cfc0dc37e7e5d",
+        "agent/review-result.json": "48d8ae8cb4cea333528992317a7bc23ab7458ac5e0c40067bf5308bec2e1f144",
+        "agent/artifact-review-audit.json": "b698c115af0a15d6cbc250f70d02aecaddc4ffd47e33f4f493025022c97bacbb",
+        "agent/reviewer-prompt-audit.json": "21e95a104949d2210a4ff6322fa730c46eb32f40dbd509e55fff285725825391",
+        "agent/snapshot.json": "6aabfd25984662ca7904d3427533c7777a89fecd2e9e7a980b32e40bfb5dcec7",
+        "agent/messages.json": "147ad66af64666156a1d4e8f0de6dc353a8e526d48e4b46c785a996ade62c21c"
+      }
+    }
+  },
+  "conclusion": "Neither prompt detects the frozen target mismatch. Both respect the explicit amendment. No demonstrated improvement on the target regression; all four reject other ingestion behavior.",
+  "original_benchmark_scores_unchanged": true,
+  "limits": [
+    "Selected after observing the failure; exact benchmark artifact is a regression diagnostic, not held-out evaluation.",
+    "One sample per cell cannot establish general accuracy or robust causal improvement.",
+    "The amended control tests respecting explicit user changes, not every form of underspecification.",
+    "Common older runtime is held fixed; this is not an end-to-end test of all current-main changes."
+  ],
+  "other_findings": {
+    "angle_header": {
+      "reported_by": [
+        "original-baseline",
+        "original-candidate",
+        "amended-candidate",
+        "amended-baseline"
+      ],
+      "classification": "Reproduced clear CSV-acceptance defect: unquoted header rejected, equivalent quoted header accepted; genuine HTML still rejected."
+    },
+    "invalid_hostname": {
+      "reported_by": [
+        "original-baseline"
+      ],
+      "classification": "Reproduced validation gap with injected fetched bytes: raw vertical-bar hostname accepted. No external DNS claim."
+    },
+    "malformed_redirect": {
+      "reported_by": [
+        "original-baseline"
+      ],
+      "classification": "Reproduced via real loopback HTTP redirect: malformed remote Location becomes 500 rather than controlled retrieval failure."
+    },
+    "numeric_limits": {
+      "reported_by": [
+        "original-candidate"
+      ],
+      "classification": "Reproduced finite huge decimals stored as strings with reversed lexical sort, and 4301-digit integer rejected. Numeric range is unstated; report as a qualified contract-coverage concern, not proof that unlimited precision is required or that Critical severity is appropriate."
+    },
+    "bomless_utf32": {
+      "reported_by": [
+        "amended-baseline"
+      ],
+      "classification": "Reproduced detection gap for both byte orders; explicit charset succeeds. Required detection coverage is not enumerated; qualification applies to scope and severity."
+    }
+  },
+  "reproduction": {
+    "angle_header": {
+      "status": 400,
+      "body": {
+        "error": "Expected CSV, not markup",
+        "ok": false
+      }
+    },
+    "quoted_angle_header": {
+      "status": 200,
+      "body": {
+        "endpoint": "/datasets/f6d649e1e2b972c14b6d60df61d1e7a0d4ec6075e2c57cc7a4a3d9793c2aa623",
+        "ok": true
+      }
+    },
+    "actual_html": {
+      "status": 400,
+      "body": {
+        "error": "Expected CSV, not markup",
+        "ok": false
+      }
+    },
+    "illegal_hostname_injected_fetcher": {
+      "status": 200,
+      "body": {
+        "endpoint": "/datasets/cbacc99640751f95044b1a70b27644551aa3edad1d0b167794b9c7b144379379",
+        "ok": true
+      }
+    },
+    "malformed_remote_redirect": {
+      "status": 500,
+      "body": {
+        "error": "Internal server error",
+        "ok": false
+      }
+    },
+    "large_finite_decimals": {
+      "status": 200,
+      "stored_types": [
+        "str",
+        "str"
+      ],
+      "lexical_order_reverses_numeric_order": true
+    },
+    "large_integer": {
+      "status": 400,
+      "body": {
+        "error": "CSV number exceeds supported representation",
+        "ok": false
+      }
+    },
+    "utf-32-le": {
+      "automatic_status": 400,
+      "explicit_status": 200,
+      "explicit_rows": [
+        [
+          "London",
+          2
+        ]
+      ]
+    },
+    "utf-32-be": {
+      "automatic_status": 400,
+      "explicit_status": 200,
+      "explicit_rows": [
+        [
+          "London",
+          2
+        ]
+      ]
+    },
+    "target_rowid": {
+      "actual_ids": [
+        1,
+        2
+      ],
+      "sorted_ids": [
+        2,
+        1
+      ],
+      "original_expected_ids": [
+        2,
+        3
+      ],
+      "amended_expected_ids": [
+        1,
+        2
+      ]
+    }
+  },
+  "reproduction_script_sha256": "0c7235289b63c5dab34d0d5c2c1b4d0b086ac95f33927a0909a78d8690ff7ec6",
+  "reproduction_output_sha256": "3edfbc428315d2cf239ff1fac449e4a4a22d24356ada56bd4c16a3fd49dd6098",
+  "budget": {
+    "cap_usd": 50,
+    "confirmed_usd": 34.841867,
+    "retained_hold_usd": 5.5,
+    "retained_hold_call": 1193,
+    "exposure_usd": 40.341867,
+    "conservative_remaining_usd": 9.658133,
+    "diagnostic_usd": 0.879497,
+    "diagnostic_calls": 41
+  },
+  "visible_test_oracle_evidence": {
+    "baseline": {
+      "message_id": "0dd7f2d7-9fd6-498a-9e66-7befed9029c8",
+      "observation": "Scratch verifier uses sorted(enumerate(rows, 1)) and expects rowid=i."
+    },
+    "candidate": {
+      "message_id": "3e1317e7-9458-400b-b20b-1812b1be9cd5",
+      "observation": "Scratch verifier expects rowid=i+1 for zero-based data-record index i."
+    },
+    "interpretation": "Both fresh scratch tests reproduce the header-excluding design assumption. This does not identify a hidden reasoning process or prove a general causal explanation."
+  }
+}

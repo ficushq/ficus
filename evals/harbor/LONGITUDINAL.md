@@ -85,3 +85,7 @@ increment 2 and zero skips/errors. Ficus cost $4.034108; Pi cost $2.917134. Ficu
 native memory remained empty while both used persistent repository notes/history.
 See the [validated comparison](longitudinal-v1-results.md) and
 [receipt-reconciled evidence](longitudinal-v1-results.json).
+
+## Follow-up: reviewer contract diagnostic
+
+The [matched reviewer diagnostic](review-contract-v1-results.md) tested the unchanged increment-2 artifact under old/new guidance and an explicit-amendment control. Both prompts missed the original row-number mismatch; both respected the amendment. All four found other ingestion issues. This does not demonstrate the proposed prompt improvement, and does not change this study’s grades. Cost: $0.879497, fully receipted.
