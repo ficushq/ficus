@@ -1,3 +1,4 @@
+import { sandboxControlRequest } from './sandboxControl'
 import type {
   Agent,
   DeliveryMode,
@@ -95,16 +96,25 @@ export async function getAgentSandboxProcesses(agentId: string): Promise<Sandbox
 export async function signalAgentSandboxProcess(
   agentId: string,
   pid: number,
-  signal: SandboxProcessSignal
+  signal: SandboxProcessSignal,
+  abortSignal?: AbortSignal
 ): Promise<void> {
-  await apiFetch(`/agents/${agentId}/sandbox/processes/${pid}/signal`, {
+  await sandboxControlRequest(`/agents/${agentId}/sandbox/processes/${pid}/signal`, {
     method: 'POST',
     body: JSON.stringify({ signal }),
+    signal: abortSignal,
   })
 }
 
-export async function stopAgentSandboxContainer(agentId: string, containerId: string): Promise<void> {
-  await apiFetch(`/agents/${agentId}/sandbox/containers/${encodeURIComponent(containerId)}/stop`, { method: 'POST' })
+export async function stopAgentSandboxContainer(
+  agentId: string,
+  containerId: string,
+  abortSignal?: AbortSignal
+): Promise<void> {
+  await sandboxControlRequest(`/agents/${agentId}/sandbox/containers/${encodeURIComponent(containerId)}/stop`, {
+    method: 'POST',
+    signal: abortSignal,
+  })
 }
 
 export interface AgentScope {

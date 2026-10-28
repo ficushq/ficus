@@ -1,5 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { ConfirmButton } from '../ConfirmButton'
+import { usePermissions } from '../../hooks/usePermissions'
+import { restartSandbox } from '../../api/workspace'
+import { sandboxPollInterval } from '../sandbox/sandboxStatusStyles'
 import { updateSquad } from '../../api/squads'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
@@ -28,6 +32,20 @@ const MAX_STORAGE_GI = 200
 
 export function SandboxSettings({ squadId }: Props) {
   const queryClient = useQueryClient()
+  const { can, isLoading: permissionsLoading, isError: permissionsError } = usePermissions(squadId)
+  const { data: status } = useQuery({
+    ...queries.sandbox.status(squadId),
+    refetchInterval: (query) => sandboxPollInterval(query.state.data),
+  })
+  const restartMutation = useMutation({
+    mutationKey: ['sandbox-restart', squadId],
+    mutationFn: () => restartSandbox(squadId),
+    retry: false,
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sandbox.status(squadId) })
+    },
+  })
+  const restarting = restartMutation.isPending || status?.restartPending === true
 
   const { data: squad, isLoading } = useQuery(queries.squads.basic(squadId))
 
@@ -100,6 +118,40 @@ export function SandboxSettings({ squadId }: Props) {
       </div>
 
       <div className="space-y-4">
+        {status?.runtime === 'vm' && !permissionsLoading && !permissionsError && can('squads:update') && (
+          <div className="border-b border-panel-border p-3">
+            <div className="text-sm font-medium text-primary">Recovery</div>
+            <p className="text-xs text-muted mt-1 mb-2">
+              Restart the box server as a last resort when Processes cannot help. This interrupts running commands and
+              terminals. Workspace and private files are preserved; other boxes are not restarted.
+            </p>
+            <ConfirmButton
+              key={squadId}
+              label={restarting ? 'Restarting…' : 'Restart'}
+              confirmLabel="Confirm restart?"
+              ariaLabel="Restart sandbox"
+              title="Restart this VM sandbox through its host, without using in-box commands"
+              disabled={restarting}
+              onConfirm={() => restartMutation.mutate()}
+              className="px-3 py-1.5 text-sm rounded-md"
+            />
+            {restarting && (
+              <p role="status" className="text-xs text-muted mt-2">
+                Waiting for box server health…
+              </p>
+            )}
+            {restartMutation.isError && (
+              <p role="alert" className="text-xs text-status-danger-500 mt-2">
+                {restartMutation.error.message}
+              </p>
+            )}
+            {restartMutation.isSuccess && !restarting && (
+              <p role="status" className="text-xs text-muted mt-2">
+                Box server restarted. Setup and toolchain readiness are reported separately.
+              </p>
+            )}
+          </div>
+        )}
         {/* Always On toggle */}
         <div className="border-b border-panel-border last:border-b-0 flex items-start gap-3 p-3">
           <button

@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import { tmpdir, userInfo } from 'os'
 import { join } from 'path'
 import { createHash } from 'crypto'
@@ -142,6 +142,76 @@ afterAll(async () => {
   if (leaked.length > 0) {
     throw new Error(`failed to stop ${leaked.length} owned sandbox server process(es) after SIGKILL escalation`)
   }
+})
+
+describe('degraded runtime admission (mock Docker subprocess)', () => {
+  it('keeps native Bash usable during Docker degradation without hiding health or killing active work', async () => {
+    const fakeBin = mkdtempSync(join(tmpdir(), 'sandbox-fake-docker-'))
+    const failed = join(fakeBin, 'failed')
+    writeFileSync(join(fakeBin, 'docker'), `#!/bin/sh\n[ ! -f '${failed}' ] || exit 1\nexit 0\n`, { mode: 0o755 })
+    let server: RunningServer | undefined
+    let active: Promise<string> | undefined
+    try {
+      server = await startServer({
+        PATH: `${fakeBin}:${process.env.PATH}`,
+        FICUS_SANDBOX_ROLE: 'squad',
+        DOCKER_HOST: 'unix:///not-a-real-docker.sock',
+      })
+      const post = (path: string, body: unknown) =>
+        fetch(`${server!.base}${path}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(5_000),
+        })
+      const response = await post('/bash', {
+        command: 'echo ready > active; while [ ! -f release ]; do sleep 0.05; done; echo survived',
+        sourceEnv: false,
+        activateDevbox: false,
+        timeoutSeconds: 10,
+      })
+      expect(response.status).toBe(200)
+      active = response.text()
+      const deadline = Date.now() + 5_000
+      while (!existsSync(join(server.workspace, 'active'))) {
+        if (Date.now() > deadline) throw new Error('foreground fixture never started')
+        await Bun.sleep(10)
+      }
+      writeFileSync(failed, '')
+      const diagnostics = await post('/processes', {})
+      expect((await diagnostics.json()).containers).toEqual({
+        available: false,
+        reason: 'Docker is not available in this box',
+      })
+      const health = await (await fetch(`${server.base}/healthz`)).json()
+      expect(health).toMatchObject({
+        healthy: true,
+        runtimeHealth: { status: 'degraded', reason: 'Docker is not available in this box' },
+      })
+      const diagnostic = await post('/bash', {
+        command: 'touch diagnostic-ran; echo diagnostic; exit 7',
+        sourceEnv: false,
+        activateDevbox: false,
+        timeoutSeconds: 5,
+      })
+      expect(diagnostic.status).toBe(200)
+      const output = await diagnostic.text()
+      expect(output).toContain(Buffer.from('diagnostic\n').toString('base64'))
+      expect(output).toContain('"exitCode":7')
+      expect(existsSync(join(server.workspace, 'diagnostic-ran'))).toBe(true)
+      // Successful Bash is not evidence that Docker recovered.
+      expect((await (await fetch(`${server.base}/healthz`)).json()).runtimeHealth).toEqual(health.runtimeHealth)
+      writeFileSync(join(server.workspace, 'release'), '')
+      expect(await active).toContain('c3Vydml2ZWQK') // survived\n, base64 in SSE
+    } finally {
+      if (server) {
+        writeFileSync(join(server.workspace, 'release'), '')
+        await active?.catch(() => {})
+        await stopServer(server)
+      }
+      rmSync(fakeBin, { recursive: true, force: true })
+    }
+  }, 20_000)
 })
 
 describe('server auth gate (subprocess)', () => {

@@ -693,3 +693,33 @@ it('legacy write fallback propagates upload cancellation without serializing its
     globalThis.fetch = previous
   }
 })
+
+describe('process control cancellation', () => {
+  it('passes cancellation through to signal and container stop without changing body/auth', async () => {
+    const seen: Array<{ path: string; body: unknown; auth: string | null; signal: AbortSignal }> = []
+    const client = new SandboxClient('synthetic.invalid', 'synthetic-token', {
+      fetch: async (url, init) => {
+        seen.push({
+          path: new URL(String(url)).pathname,
+          body: JSON.parse(String(init?.body)),
+          auth: new Headers(init?.headers).get('authorization'),
+          signal: init?.signal as AbortSignal,
+        })
+        return Response.json({ ok: true })
+      },
+    })
+    const controller = new AbortController()
+    try {
+      await client.signalProcess(4242, 'KILL', controller.signal)
+      await client.stopContainer('synthetic-container', controller.signal)
+      controller.abort()
+      expect(seen.map(({ path, body, auth }) => ({ path, body, auth }))).toEqual([
+        { path: '/processes/signal', body: { pid: 4242, signal: 'KILL' }, auth: 'Bearer synthetic-token' },
+        { path: '/containers/stop', body: { id: 'synthetic-container' }, auth: 'Bearer synthetic-token' },
+      ])
+      expect(seen.every(({ signal }) => signal.aborted)).toBe(true)
+    } finally {
+      client.close()
+    }
+  })
+})

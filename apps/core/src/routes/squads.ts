@@ -53,6 +53,10 @@ import {
   isRemoteSandboxRuntime,
   isVmRuntime,
 } from '../services/sandbox/factory'
+import type { VmSandboxManager } from '../services/sandbox/vm/manager'
+import { VmSetupLeaseBusyError } from '../services/sandbox/vm/setup-state'
+import { BoxHealthTimeoutError, BoxRestartError } from '../services/machines/box-manager'
+import { SshTimeoutError } from '../services/machines/ssh'
 import { setHostWorkspaceOverride } from '../services/sandbox/host/workspace-overrides'
 import { hostActiveWorkspacePath } from '../services/sandbox/host/active-workspace'
 import {
@@ -1158,6 +1162,34 @@ export const squadsRouter = new Hono()
       }
       log.error(`Failed to start sandbox for squad ${squad.id}:`, err)
       return c.json({ error: 'Failed to start sandbox' }, 500)
+    }
+  })
+  // POST /api/squads/:id/sandbox/restart - Last-resort VM box-unit recovery.
+  // Identity comes ONLY from the authorized squad, never the request body.
+  .post('/:id/sandbox/restart', requireSquadPermission('squads:update'), async (c) => {
+    const squad = await Squad.find(c.req.param('id'))
+    if (!squad) return c.json({ error: 'Squad not found' }, 404)
+    if (!isVmRuntime()) return c.json({ error: 'Box restart is only available on the VM runtime' }, 400)
+    const archived = archivedGuard(c, squad)
+    if (archived) return archived
+    try {
+      log.info(`VM sandbox restart requested for squad ${squad.id}`, { actor: c.get('identity') })
+      await (getSandboxManager() as VmSandboxManager).restartSandbox(squad.sandboxId)
+      return c.json({ ok: true })
+    } catch (error) {
+      if (error instanceof BoxRestartError) return c.json({ error: error.message }, error.status)
+      if (error instanceof VmSetupLeaseBusyError) return c.json({ error: error.message }, 409)
+      if (error instanceof BoxHealthTimeoutError || error instanceof SshTimeoutError) {
+        return c.json(
+          { error: 'Restart did not confirm readiness within its deadline. Check sandbox status before retrying.' },
+          504
+        )
+      }
+      log.error(`VM sandbox restart failed for squad ${squad.id}:`, error)
+      return c.json(
+        { error: 'Sandbox restart failed; readiness is unverified. Check sandbox status before retrying.' },
+        500
+      )
     }
   })
   // GET /api/squads/:id/sandbox/processes - What the squad box is running.

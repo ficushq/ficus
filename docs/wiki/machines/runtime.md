@@ -1663,6 +1663,41 @@ After expiry, token rotation, or SIGKILL, a replacement lease is validated again
 and atomically adopts stale owner fences before continuing; an old runner cannot clear or
 settle the successor's fence. Ownerless legacy fences alone are cleared at process boot.
 
+## Runtime degradation and Bash admission
+
+The sandbox server reports nested Docker diagnostics separately from executor liveness:
+`/healthz` keeps `healthy: true` while serving requests and adds
+`runtimeHealth: { status: 'ready' | 'degraded', reason?: string }`. A Docker
+probe that fails or exceeds **2 seconds**, or a box-owned **detached runc exec**
+control process at least **5 minutes** old, degrades runtime health. The existing
+Processes Docker failure (including `Docker did not answer within 15s`) feeds
+that same state immediately. Reasons contain no command lines or credentials.
+
+Only detached exec (`runc exec --detach` / `-d`) is age-limited: it should finish
+starting the workload promptly. Non-detached exec waits for the workload and
+can legitimately run for hours; containerd shims and ordinary foreground work
+are not classified as stale by age. Detection never signals or restarts them.
+
+Nested Docker failure, including stale detached runc, does **not** gate native
+`POST /bash` admission or client attachment: ordinary Bash and diagnostic/recovery
+commands remain usable without waiting for a Docker health check. Shell text is
+not an authorization boundary. Native Bash still enforces stopped-session spawn
+admission, invocation ownership/quarantine and execution deadlines; genuine
+failures retain their existing errors. Docker probes and container operations
+retain their own bounded timeouts. Read/write, Processes, cancellation and health
+also remain usable for diagnosis.
+Checks are demand-driven by health, single-flight and cached for 30 seconds;
+no background polling keeps idle boxes awake. Health serves the latest snapshot
+without waiting on Docker. A fresh successful Docker and stale-exec check clears
+degradation automatically. An outstanding timed-out probe is retained until it
+settles so retries cannot accumulate stuck clients.
+
+VM squad/agent status APIs forward `runtimeHealth` and the degraded `reason`,
+projecting `readiness: 'ready_degraded'` for an otherwise ready box. This does
+not change durable asset setup state or executor liveness, trigger setup repair,
+or authorize killing active work. Older servers may omit `runtimeHealth`, and
+idle status checks still do not wake boxes just to probe execution health.
+
 ## VM sandbox setup readiness and transport recovery
 
 VM box liveness and best-effort setup readiness are independent. A usable box remains
