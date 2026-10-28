@@ -147,8 +147,8 @@ manages root-owned `/usr/local/bin/bun` plus
 `/usr/local/bin/node -> /usr/local/bin/bun`. It verifies a real Node shebang as
 `core.run_user`. Hosted tenants set `core.run_user: ficus`: root may run the
 SSH/setup/upgrade toolkit, but never the hosted Core services. For a supported
-BYO non-root upgrade, the invoking operator must either be root or have
-non-interactive sudo, the
+BYO non-root upgrade, the
+invoking operator must either be root or have non-interactive sudo, the
 configured `core.run_user` account must already exist (`setup-host.sh` creates
 it; see "Running Core as a service user"), and Bun source discovery
 must succeed from the invoking operator's `PATH` or `HOME/.bun/bin`; setup then
