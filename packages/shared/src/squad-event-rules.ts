@@ -9,7 +9,7 @@ import {
 } from './event-predicates'
 import { eventPredicateField } from './event-predicate-catalog'
 import { z } from 'zod'
-import { keyedRecord } from './zod-helpers'
+import { boundedRecord, keyedRecord } from './zod-helpers'
 import { integrationSubscriptionSchema, integrationValueAt, type IntegrationOutputFact } from './integration-outputs'
 import { workflowEventTriggerSchema, workflowSourceSchema, type WorkflowSource } from './workflows'
 
@@ -47,12 +47,15 @@ export const squadEventRuleSchema = z
     if (rule.predicates?.length) validateEventPredicates(rule.source, rule.predicates, ctx)
   })
 export type SquadEventRule = z.infer<typeof squadEventRuleSchema>
-export const squadEventRulesSchema = keyedRecord(
-  z.string().regex(/^[a-z][a-z0-9-]*$/),
-  z
-    .array(squadEventRuleSchema)
-    .max(32)
-    .refine((rules) => new Set(rules.map((rule) => rule.id)).size === rules.length, 'Duplicate event rule ID')
+export const squadEventRulesSchema = boundedRecord(
+  keyedRecord(
+    z.string().regex(/^[a-z][a-z0-9-]*$/),
+    z
+      .array(squadEventRuleSchema)
+      .max(32)
+      .refine((rules) => new Set(rules.map((rule) => rule.id)).size === rules.length, 'Duplicate event rule ID')
+  ),
+  256
 ).superRefine((providers, ctx) => {
   for (const [provider, rules] of Object.entries(providers))
     rules.forEach((rule, index) => {

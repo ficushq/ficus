@@ -153,7 +153,7 @@ const releaseSchema = z.object({
   // The EXACT list a prior /quiesce returned — never re-derived from the
   // machine's current boxes, which could include one a concurrent migrate-box
   // owns the fence for.
-  sandboxIds: z.array(z.string().min(1)),
+  sandboxIds: z.array(z.string().min(1)).max(1000),
 })
 
 export function forceMigrationActor(identity: Identity | undefined): ForceMigrationActor | null {

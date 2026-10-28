@@ -414,6 +414,12 @@ describe('provider-auth routes', () => {
     expect(list.map((a: any) => a.id)).toEqual([a1.id, a2.id])
   })
 
+  test('account order collection is refused before element validation', async () => {
+    const res = await app.request('/anthropic/accounts/order', jsonReq('PUT', { order: Array(101).fill(null) }))
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'Use at most 100 accounts' })
+  })
+
   test('PUT /:provider/accounts/order rejects a malformed body', async () => {
     const res = await app.request('/anthropic/accounts/order', jsonReq('PUT', { order: 'not-an-array' }))
     expect(res.status).toBe(400)

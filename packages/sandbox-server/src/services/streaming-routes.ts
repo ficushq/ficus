@@ -23,7 +23,7 @@
  * `/download` streams multi-GiB files and archives; its lifetime is bounded by
  * the consumer (a cancelled body stops the read / kills tar).
  */
-export const LONG_LIVED_STREAM_ROUTES: ReadonlySet<string> = new Set(['/bash', '/download'])
+export const LONG_LIVED_STREAM_ROUTES: ReadonlySet<string> = new Set(['/bash', '/download', '/upload'])
 
 export function sandboxListenerIdleTimeout(unixSocket: boolean): number {
   return unixSocket ? 0 : 255

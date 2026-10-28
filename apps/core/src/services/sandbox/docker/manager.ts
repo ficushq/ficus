@@ -1,3 +1,4 @@
+import { integrationWrapperPreamble, INTEGRATION_BIN_RELATIVE_PATH } from '@ficus/shared/integration-wrapper-path'
 /**
  * Sandbox Manager
  *
@@ -1493,6 +1494,7 @@ export class DockerSandboxManager implements ISandboxManager {
         preamble += `eval "$(cd ${managedContainerRoot}/${WORKSPACE_DOT_DIR}/toolchain && devbox shellenv --init-hook 2>/dev/null)" 2>/dev/null || true\n`
       }
 
+      preamble += integrationWrapperPreamble(`${sandbox.workspaceMount}/${INTEGRATION_BIN_RELATIVE_PATH}`)
       const scriptContent = preamble + ctx.command
       fs.writeFileSync(scriptPath, scriptContent, { mode: 0o755 })
 

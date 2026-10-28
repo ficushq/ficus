@@ -14,3 +14,28 @@ export function keyedRecord<Key extends z.core.$ZodRecordKey, Value extends z.co
       issue.code === 'invalid_key' ? issue.issues.map((inner) => inner.message ?? inner.code).join('; ') : undefined,
   })
 }
+
+/** Reject oversized request maps before record key/value parsing can accumulate issues. */
+export function boundedRecord<S extends z.ZodType>(schema: S, maxEntries: number) {
+  return z
+    .preprocess((value, ctx) => {
+      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+        let count = 0
+        for (const key in value) {
+          if (!Object.hasOwn(value, key)) continue
+          if (++count > maxEntries) {
+            ctx.addIssue({
+              code: 'too_big',
+              origin: 'object',
+              maximum: maxEntries,
+              inclusive: true,
+              message: `Use at most ${maxEntries} entries`,
+            })
+            return z.NEVER
+          }
+        }
+      }
+      return value
+    }, schema)
+    .meta({ maxProperties: maxEntries })
+}

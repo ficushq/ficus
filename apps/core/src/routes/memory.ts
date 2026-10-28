@@ -100,14 +100,16 @@ const ingestUrlBodySchema = z.object({
 })
 
 const workspaceFileSchema = z.object({
-  files: z.array(
-    z.object({
-      path: z.string(),
-      content: z.string().optional(),
-      contentHash: z.string().optional(),
-      event: z.enum(['change', 'delete']),
-    })
-  ),
+  files: z
+    .array(
+      z.object({
+        path: z.string(),
+        content: z.string().optional(),
+        contentHash: z.string().optional(),
+        event: z.enum(['change', 'delete']),
+      })
+    )
+    .max(1000),
   reconcile: z.boolean().optional(),
   skipped: z
     .array(
@@ -115,8 +117,10 @@ const workspaceFileSchema = z.object({
         path: z.string(),
         reason: z.enum(['file_too_large', 'binary', 'max_files_exceeded', 'unreadable']),
         detail: z.string().optional(),
+        count: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
       })
     )
+    .max(1000)
     .optional(),
 })
 

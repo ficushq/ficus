@@ -1814,3 +1814,45 @@ describe('box known_hosts merge (synthetic hosts and keys only)', () => {
     expect(client.files.has(KH)).toBe(false)
   })
 })
+
+test('VM pushes executable token-free wrappers to both squad and member boxes and prunes detached wrappers', async () => {
+  const { writeExecutionWrappers } = await import('../../integrations/execution-wrappers')
+  const { getSquadWorkspacePath } = await import('../../squad/workspace')
+  const squadId = crypto.randomUUID(),
+    wrapperDir = join(getSquadWorkspacePath(squadId), '.ficus', 'integration-bin')
+  writeExecutionWrappers(wrapperDir, [{ binary: 'gh', providerKey: 'github' }], squadId, 'git() { :; }\n')
+  try {
+    for (const sandboxId of [`squad_${squadId}`, `agent_${crypto.randomUUID()}`]) {
+      const client = new FakeClient(),
+        stamps: Record<string, unknown> = {}
+      const deps = {
+        ...fullDeps(),
+        box: { machineId: 'm1', syncedHashes: stamps },
+        stampBoxSyncedHash: async (_m: string, _s: string, name: string, hash: string, files?: string[]) => {
+          stamps[name] = { hash, files }
+        },
+      }
+      await syncBoxFiles(client as any, sandboxId, { ...squadAgentOpts, squadId }, deps)
+      const target = `${HOME(sandboxId)}/workspace/.ficus/integration-bin/gh`
+      expect(client.modeAt(target)).toBe('0755')
+      expect(client.modeAt(`${HOME(sandboxId)}/workspace/.ficus/integration-bin/.git-config`)).toBe('0755')
+      expect(Buffer.from(client.writes().find((w) => w.path === target)!.content, 'base64').toString()).toContain(
+        `--squad '${squadId}'`
+      )
+      writeExecutionWrappers(wrapperDir, [], squadId)
+      client.calls = []
+      await syncBoxFiles(client as any, sandboxId, { ...squadAgentOpts, squadId }, deps)
+      expect(
+        client
+          .bashes()
+          .some(
+            (b) =>
+              b.command === `rm -f -- '${HOME(sandboxId)}/workspace/.ficus/integration-bin/.git-config' '${target}'`
+          )
+      ).toBe(true)
+      writeExecutionWrappers(wrapperDir, [{ binary: 'gh', providerKey: 'github' }], squadId, 'git() { :; }\n')
+    }
+  } finally {
+    rmSync(getSquadWorkspacePath(squadId), { recursive: true, force: true })
+  }
+})

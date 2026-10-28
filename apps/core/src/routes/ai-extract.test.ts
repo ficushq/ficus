@@ -65,3 +65,21 @@ describe('POST /api/ai/extract', () => {
     expect(options.usage.attribution()).toEqual({ userId: admin.id })
   })
 })
+
+test('collection limits stop oversized fields and suggestions before model work', async () => {
+  const prompt = spyOn(SystemManagerRunner, 'buildManagerPrompt').mockRejectedValue(new Error('must not reach model'))
+  spies.push(prompt)
+  for (const fields of [
+    Object.fromEntries(Array.from({ length: 257 }, (_, i) => ['f' + i, null])),
+    { field: { type: 'string', options: Array(101).fill('x') } },
+    { field: { type: 'string', suggestions: Array(101).fill('x') } },
+  ]) {
+    const response = await app.request('/api/ai/extract', {
+      method: 'POST',
+      headers: { ...authHeaders(admin.token), 'content-type': 'application/json' },
+      body: JSON.stringify({ transcript: 'hello', fields }),
+    })
+    expect(response.status).toBe(400)
+  }
+  expect(prompt).not.toHaveBeenCalled()
+})

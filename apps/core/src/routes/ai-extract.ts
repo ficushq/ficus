@@ -1,3 +1,4 @@
+import { assertArrayLimit, assertRecordLimit } from '../lib/validation/request-collections'
 import { Hono } from 'hono'
 import { AgentSession } from '../entities/AgentSession'
 import { SystemManagerRunner } from '../entities/agent-runners/system-manager-runner'
@@ -30,6 +31,17 @@ export const aiExtractRouter = new Hono().post('/', requirePermission('ai:extrac
   }
   if (!body.fields || typeof body.fields !== 'object') {
     return c.json({ error: 'Missing or invalid fields' }, 400)
+  }
+
+  try {
+    assertRecordLimit(body.fields, 256, 'fields')
+    for (const field of Object.values(body.fields)) {
+      if (!field || typeof field !== 'object') continue
+      assertArrayLimit(field.options, 100, 'options')
+      assertArrayLimit(field.suggestions, 100, 'suggestions')
+    }
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : 'Invalid fields' }, 400)
   }
 
   try {

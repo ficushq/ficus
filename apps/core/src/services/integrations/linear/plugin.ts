@@ -57,6 +57,11 @@ export const linearPlugin: IntegrationPluginV1<{ version: 1 }, string> = {
       capabilities: {},
     },
   },
+  execution: {
+    // Linear has no Ficus-provisioned CLI. Scripts can use unrestricted exec.
+    binaries: [],
+    environment: { LINEAR_API_KEY: ({ credential }) => credential },
+  },
   sandbox: {
     packages: [],
     setupSteps: [],

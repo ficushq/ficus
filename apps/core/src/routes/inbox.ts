@@ -1,3 +1,5 @@
+import { getSettingsStore } from '../services/settings'
+import { readBoundedMultipart } from '../services/attachments/http'
 import { publicErrorMessage } from '../db/errors'
 import { Hono } from 'hono'
 import { zValidator } from '../lib/zod-validator'
@@ -596,12 +598,12 @@ export const inboxRouter = new Hono()
     if (result.response) return result.response
     c.set('authzChecked', true)
 
-    const form = await c.req.formData()
-    const file = form.get('file')
-    if (!(file instanceof File)) return c.json({ error: 'Missing "file" upload' }, 400)
-    const bytes = new Uint8Array(await file.arrayBuffer())
-
     try {
+      const maxBytes = Number(getSettingsStore().getTyped('INBOX_MAX_ATTACHMENT_BYTES'))
+      const form = await readBoundedMultipart(c.req.raw, maxBytes + 64 * 1024)
+      const file = form.get('file')
+      if (!(file instanceof File)) return c.json({ error: 'Missing "file" upload' }, 400)
+      const bytes = new Uint8Array(await file.arrayBuffer())
       const att = await InboxAttachment.create({
         messageId,
         filename: file.name || 'attachment',

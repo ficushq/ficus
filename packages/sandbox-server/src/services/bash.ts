@@ -1,3 +1,4 @@
+import { integrationWrapperPreamble, INTEGRATION_BIN_RELATIVE_PATH } from '@ficus/shared/integration-wrapper-path'
 /**
  * Bash execution service.
  *
@@ -174,6 +175,8 @@ export function buildPreamble(opts: { sourceEnv: boolean; activateDevbox: boolea
   // native wheels see Nix runtime libraries and browser tooling uses /tmp.
   preamble += '[ -f /opt/sandbox/runtime-env.sh ] && . /opt/sandbox/runtime-env.sh\n'
 
+  const wrapperRoot = process.env.FICUS_BOX_HOME ? `${process.env.FICUS_BOX_HOME}/workspace` : getWorkspace()
+  preamble += integrationWrapperPreamble(`${wrapperRoot}/${INTEGRATION_BIN_RELATIVE_PATH}`, opts.sourceEnv)
   return preamble
 }
 

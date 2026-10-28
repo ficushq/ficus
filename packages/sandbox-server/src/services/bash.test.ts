@@ -1008,3 +1008,25 @@ describe('long-lived bash streams under the server idle timeout', () => {
     expect(calls).toEqual([['/bash', 0]])
   })
 })
+
+it('k8s and VM agent/squad preambles put executable wrappers after devbox activation', () => {
+  const oldBox = process.env.FICUS_BOX_HOME
+  const oldWorkspace = process.env.WORKSPACE_PATH
+  try {
+    delete process.env.FICUS_BOX_HOME
+    process.env.WORKSPACE_PATH = '/workspace/squad'
+    const container = buildPreamble({ sourceEnv: true, activateDevbox: true })
+    expect(container).toContain('export PATH=\'/workspace/squad/.ficus/integration-bin\':"$PATH"')
+    expect(container.lastIndexOf('integration-bin')).toBeGreaterThan(container.lastIndexOf('runtime-env.sh'))
+    process.env.FICUS_BOX_HOME = '/home/box_fixture'
+    process.env.WORKSPACE_PATH = '/home/box_fixture/.private'
+    expect(buildPreamble({ sourceEnv: true, activateDevbox: true })).toContain(
+      'export PATH=\'/home/box_fixture/workspace/.ficus/integration-bin\':"$PATH"'
+    )
+  } finally {
+    if (oldBox === undefined) delete process.env.FICUS_BOX_HOME
+    else process.env.FICUS_BOX_HOME = oldBox
+    if (oldWorkspace === undefined) delete process.env.WORKSPACE_PATH
+    else process.env.WORKSPACE_PATH = oldWorkspace
+  }
+})

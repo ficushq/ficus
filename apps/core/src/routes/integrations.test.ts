@@ -148,7 +148,15 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain', options: { 
   )
   app.route(
     '/api/squads',
-    createSquadIntegrationsRouter({ selection, assign, unassign, retryProjection, executionEnvironment, signGitObject })
+    createSquadIntegrationsRouter({
+      selection,
+      assign,
+      unassign,
+      retryProjection,
+      executionEnvironment,
+      executionVariableNames: () => ['GH_TOKEN', 'GITHUB_TOKEN', 'GITHUB_USER', 'LINEAR_API_KEY'],
+      signGitObject,
+    })
   )
   return {
     app,
@@ -247,9 +255,87 @@ describe('integration routes', () => {
         expect(response.status).toBe(200)
         expect(response.headers.get('cache-control')).toBe('no-store')
         expect(calls.executionEnvironment).toHaveBeenCalledWith(squadId, 'github', summary.id)
-        expect(await response.json()).toEqual({ environment: { GH_TOKEN: 'execution-only-token' } })
+        expect(await response.json()).toEqual({
+          environment: { GH_TOKEN: 'execution-only-token' },
+          scrubVariables: ['GH_TOKEN', 'GITHUB_TOKEN', 'GITHUB_USER', 'LINEAR_API_KEY'],
+          selection: { providerKey: 'github', squadId, connectionId: summary.id },
+        })
       }
     }
+  })
+
+  test('execution matches inherited intent only to the authorized canonical squad/provider', async () => {
+    for (const routeId of [squadId, squadId.slice(0, 8)]) {
+      for (const [inheritedSelection, explicit, expected] of [
+        [{ providerKey: 'github', squadId, connectionId: summary.id }, undefined, summary.id],
+        [{ providerKey: 'linear', squadId, connectionId: summary.id }, undefined, undefined],
+        [{ providerKey: 'github', squadId: crypto.randomUUID(), connectionId: summary.id }, undefined, undefined],
+        [{ providerKey: 'github', squadId, connectionId: crypto.randomUUID() }, summary.id, summary.id],
+      ] as const) {
+        const { app, calls } = createApp({
+          type: 'system',
+          systemTokenId: 'canonical-exec',
+          name: 'test',
+          scopes: ['integrations:use'],
+        })
+        const response = await app.request(`/api/squads/${routeId}/integrations/github/execute-environment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ inheritedSelection, ...(explicit ? { connectionId: explicit } : {}) }),
+        })
+        expect(response.status).toBe(200)
+        expect(response.headers.get('cache-control')).toBe('no-store')
+        expect(calls.executionEnvironment).toHaveBeenCalledWith(squadId, 'github', expected)
+        expect((await response.json()).selection).toEqual(
+          expected ? { providerKey: 'github', squadId, connectionId: expected } : null
+        )
+      }
+    }
+  })
+
+  test('ambiguous or absent squad prefixes never apply inherited execution selection', async () => {
+    const prefix = crypto.randomUUID().slice(0, 8)
+    const ids = [`${prefix}-1111-4111-8111-111111111111`, `${prefix}-2222-4222-8222-222222222222`]
+    try {
+      await db.insert(squads).values(ids.map((id) => ({ id, name: 'Ambiguous exec scope', purpose: 'test' })))
+      for (const routeId of [prefix, crypto.randomUUID()]) {
+        const { app, calls } = createApp({
+          type: 'system',
+          systemTokenId: 'ambiguous-exec',
+          name: 'test',
+          scopes: ['integrations:use'],
+        })
+        const response = await app.request(`/api/squads/${routeId}/integrations/github/execute-environment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            inheritedSelection: { providerKey: 'github', squadId: ids[0], connectionId: summary.id },
+          }),
+        })
+        expect(response.status).toBe(404)
+        expect(calls.executionEnvironment).not.toHaveBeenCalled()
+      }
+    } finally {
+      for (const id of ids) await db.delete(squads).where(eq(squads.id, id))
+    }
+  })
+
+  test('a noncanonical inherited squad prefix is rejected before credential resolution', async () => {
+    const { app, calls } = createApp({
+      type: 'system',
+      systemTokenId: 'invalid-exec',
+      name: 'test',
+      scopes: ['integrations:use'],
+    })
+    const response = await app.request(`/api/squads/${squadId}/integrations/github/execute-environment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        inheritedSelection: { providerKey: 'github', squadId: squadId.slice(0, 8), connectionId: summary.id },
+      }),
+    })
+    expect(response.status).toBe(400)
+    expect(calls.executionEnvironment).not.toHaveBeenCalled()
   })
 
   test('commit signing status needs GitHub read access and only exists for GitHub connections', async () => {

@@ -68,6 +68,14 @@ export interface IntegrationAgentToolFactory<Context = unknown, Tool = unknown> 
   createTools(context: Context): readonly Tool[] | Promise<readonly Tool[]>
 }
 
+/** Server-owned declaration: only binary names are projected; environment resolvers run per command. */
+export interface IntegrationExecutionDeclaration<C, Credential> {
+  /** Globally installed CLIs to wrap. Package managers/project-local CLIs are not wrapped. */
+  readonly binaries: readonly string[]
+  /** Static names let exec scrub ALL providers before adding only the selected one's values. */
+  readonly environment: Readonly<Record<string, (input: { configuration: C; credential: Credential }) => string>>
+}
+
 export interface IntegrationPluginV1<
   C,
   Credential,
@@ -116,6 +124,7 @@ export interface IntegrationPluginV1<
     readonly provider: IntegrationProvider<C>
     readonly agentTools?: AgentTools
   }
+  readonly execution?: IntegrationExecutionDeclaration<C, Credential>
   readonly sandbox: IntegrationSandboxProjection
   readonly lifecycle: { readonly refresh: boolean; readonly revoke: boolean }
   classifyError(error: unknown): SanitizedProviderFailure

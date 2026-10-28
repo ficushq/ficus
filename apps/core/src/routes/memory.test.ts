@@ -1,3 +1,10 @@
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { WorkspaceWatcher, type WatchEventSink } from '@ficus/sandbox-server/watcher'
+import { ReindexScheduler } from '../services/memory/indexer/ReindexScheduler'
+import { Squad } from '../entities/Squad'
+import { resolveWorkspaceLayout } from '../services/sandbox/workspace-layout'
 import { DrizzleQueryError } from 'drizzle-orm/errors'
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, spyOn } from 'bun:test'
 import { like, inArray, eq } from 'drizzle-orm'
@@ -515,3 +522,127 @@ describe('workspace-files uses namespaced mount path', () => {
     }
   })
 })
+
+it('indexes the complete 1000-file reconcile snapshot when a pattern also skips 1100 files', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'workspace-scan-callback-'))
+  const [squad] = await db
+    .insert(squads)
+    .values({ name: `ws-scan-${Date.now()}`, purpose: 't' })
+    .returning()
+  const originalSecret = process.env.SANDBOX_CALLBACK_SECRET
+  const secret = `sandbox-scan-${Date.now()}`
+  process.env.SANDBOX_CALLBACK_SECRET = secret
+  const callbacks: Array<Parameters<WatchEventSink>[0]> = []
+  const responses: Response[] = []
+  let server: ReturnType<typeof Bun.serve> | undefined
+  const watcher = new WorkspaceWatcher(root, { persistent: false })
+  const source = WorkspaceFileSource.instance()
+  const indexed: string[] = []
+  const snapshots: string[][] = []
+  const originalIndex = source.indexContent
+  const originalReconcile = source.reconcile
+  source.indexContent = async ({ path }) => {
+    indexed.push(path)
+    return { success: true, chunksCreated: 1, linksCreated: 0 }
+  }
+  source.reconcile = async (_squadId, opts = {}) => {
+    snapshots.push(Array.isArray(opts) ? opts : (opts.currentSourceIds ?? []))
+    return { removed: 0 }
+  }
+  try {
+    const store = getSecretStore()
+    try {
+      await store.initialize()
+      await store.set('SANDBOX_CALLBACK_SECRET', secret, 'test')
+    } catch {
+      resetSecretStore()
+    }
+    for (let i = 0; i < 2100; i++) writeFileSync(join(root, `file-${i}.md`), '# Reference')
+    server = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      async fetch(request) {
+        callbacks.push(await request.clone().json())
+        const response = await app.fetch(request)
+        responses.push(response.clone())
+        return response
+      },
+    })
+    // Use the real producer's HTTP callback, serialization and callback-secret auth.
+    await watcher.start({
+      include: ['*.md'],
+      exclude: [],
+      squadId: squad.id,
+      coreCallbackUrl: `http://127.0.0.1:${server.port}/api/memory/${squad.id}/workspace-files`,
+    })
+    expect(callbacks).toHaveLength(1)
+    const scan = callbacks[0]!
+    expect(scan.reconcile).toBe(true)
+    expect(responses).toHaveLength(1)
+    const res = responses[0]!
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ success: true, indexed: 1000, errors: 0, removed: 0 })
+    const { workspaceMount } = resolveWorkspaceLayout({ squadId: squad.id })
+    const paths = scan.files.map((file) => `${workspaceMount}/${file.path}`)
+    expect(paths).toHaveLength(1000)
+    expect(indexed).toEqual(paths)
+    expect(snapshots).toEqual([paths])
+    const updated = await Squad.find(squad.id)
+    expect(updated?.metadata.memory).toMatchObject({
+      workspaceScanStatus: { filesIndexed: 1000, skipped: [{ reason: 'max_files_exceeded', count: 1100 }] },
+    })
+    // The actual file manifest still fails closed; diagnostics do not relax it.
+    const over = await app.request(`/api/memory/${squad.id}/workspace-files`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}` },
+      body: JSON.stringify({
+        files: [...scan.files, scan.files[0]].map((file) => ({ ...file, event: 'change' })),
+        reconcile: true,
+      }),
+    })
+    expect(over.status).toBe(400)
+    for (const count of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      const invalid = await app.request(`/api/memory/${squad.id}/workspace-files`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}` },
+        body: JSON.stringify({
+          files: [],
+          reconcile: true,
+          skipped: [{ path: 'example.md', reason: 'binary', count }],
+        }),
+      })
+      expect(invalid.status).toBe(400)
+    }
+    const diagnostics = await app.request(`/api/memory/${squad.id}/workspace-files`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}` },
+      body: JSON.stringify({
+        files: [],
+        reconcile: true,
+        skipped: Array.from({ length: 1001 }, () => ({ path: 'example.md', reason: 'binary' })),
+      }),
+    })
+    expect(diagnostics.status).toBe(400)
+    expect(indexed).toHaveLength(1000)
+    expect(snapshots).toHaveLength(1)
+  } finally {
+    await watcher.stop()
+    await server?.stop(true)
+    source.indexContent = originalIndex
+    source.reconcile = originalReconcile
+    ReindexScheduler.instance().cancel(squad.id)
+    const store = getSecretStore()
+    try {
+      await store.initialize()
+      await store.delete('SANDBOX_CALLBACK_SECRET')
+    } catch {
+      // Env-only secret stores have nothing to delete.
+    } finally {
+      resetSecretStore()
+    }
+    if (originalSecret === undefined) delete process.env.SANDBOX_CALLBACK_SECRET
+    else process.env.SANDBOX_CALLBACK_SECRET = originalSecret
+    await db.delete(squads).where(eq(squads.id, squad.id))
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 15_000) // Registers and tears down 2,100 real filesystem watches.

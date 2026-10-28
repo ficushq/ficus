@@ -1,3 +1,5 @@
+import { Hono } from 'hono'
+import { requestBodyLimits } from '../../middleware/request-body-limits'
 /**
  * End-to-end streaming download: a REAL sandbox-server process (the box),
  * the real SandboxClient, and Core's `createSandboxFileResponse` served by
@@ -72,17 +74,22 @@ describe.skipIf(!enabled)('streaming download through Core (real sandbox server)
     client = new SandboxClient(`127.0.0.1:${port}`, TOKEN)
     await client.waitForReady(10_000)
 
+    const app = new Hono()
+    app.use('*', requestBodyLimits)
+    app.all('*', async (c) => {
+      const req = c.req.raw
+      const url = new URL(req.url)
+      const filePath = join(workspace, url.searchParams.get('path') ?? '')
+      return createSandboxFileResponse(client, filePath, undefined, {
+        range: req.headers.get('range'),
+        signal: req.signal,
+      })
+    })
     core = Bun.serve({
+      maxRequestBodySize: Infinity,
       hostname: '127.0.0.1',
       port: 0,
-      async fetch(req) {
-        const url = new URL(req.url)
-        const filePath = join(workspace, url.searchParams.get('path') ?? '')
-        return createSandboxFileResponse(client, filePath, undefined, {
-          range: req.headers.get('range'),
-          signal: req.signal,
-        })
-      },
+      fetch: app.fetch,
     })
   })
 

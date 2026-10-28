@@ -1,3 +1,4 @@
+import { boundedRecord } from '@ficus/shared'
 import { z } from 'zod'
 import { getSecretStore, isManagedSecretKey } from '../secrets'
 
@@ -27,7 +28,7 @@ export async function writeIntegrationCredentialFields(
   input: unknown,
   actor: string
 ) {
-  const values = z.record(z.string(), z.string().max(16384).nullable()).parse(input)
+  const values = boundedRecord(z.record(z.string(), z.string().max(16384).nullable()), 256).parse(input)
   const allowed = new Set(fields.map((field) => field.key))
   if (Object.keys(values).some((key) => !allowed.has(key))) throw new Error('Unknown integration credential field')
   if (Object.keys(values).some(isManagedSecretKey)) throw new Error('This credential is managed by your platform.')

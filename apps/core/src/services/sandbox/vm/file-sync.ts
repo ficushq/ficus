@@ -881,12 +881,13 @@ export async function syncBoxFiles(
     // Single-file assets (dest.relPath names the file, e.g. `.ficus/.env`) carry
     // an explicit creation mode — the secrets. Directory-tree assets
     // (dest.relPath === '') are content-only and push at the umask default; the
-    // mode-as-pushed (undefined for trees) is also what the hash folds in.
+    // mode-as-pushed is also what the hash folds in. Executable wrapper trees
+    // explicitly retain mode 0755 rather than relying on the box umask.
     const isSingleFile = asset.dest.relPath !== ''
     const files: PushableFile[] = sortByRelPath(await source.files()).map((f) => ({
       relPath: [asset.dest.relPath, f.relPath].filter((seg) => seg.length > 0).join('/'),
       bytes: f.bytes,
-      mode: isSingleFile ? f.mode : undefined,
+      mode: isSingleFile || asset.mode === '0755' ? f.mode : undefined,
     }))
     await syncAsset(
       asset.name,

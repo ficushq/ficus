@@ -115,4 +115,25 @@ describe('notification-config RBAC guards', () => {
       expect((await guardRequest(path, init, unprivileged.token)).status).toBe(403)
     }
   })
+  test('collection limits reject notification maps and lists before saving', async () => {
+    for (const body of [
+      { rules: Array(1001).fill(null), channels: {} },
+      { rules: [], channels: Object.fromEntries(Array.from({ length: 257 }, (_, i) => ['key' + i, {}])) },
+    ]) {
+      const response = await app.request(
+        '/notification-config',
+        withAuth({ method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+      )
+      expect(response.status).toBe(400)
+    }
+    const response = await app.request(
+      '/notification-config/me',
+      withAuth({
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mutedEvents: Array(101).fill('event') }),
+      })
+    )
+    expect(response.status).toBe(400)
+  })
 })

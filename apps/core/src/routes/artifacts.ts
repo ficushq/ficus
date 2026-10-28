@@ -62,7 +62,7 @@ const requestArtifactSchema = z
     agentId: nonEmptyTrimmedString.optional(),
     artifactId: nonEmptyTrimmedString.optional(),
     brief: nonEmptyTrimmedString,
-    references: z.array(artifactReferenceSchema).optional(),
+    references: z.array(artifactReferenceSchema).max(100).optional(),
     displayModeHint: nonEmptyTrimmedString.optional(),
     answers: z
       .array(
@@ -71,6 +71,7 @@ const requestArtifactSchema = z
           answer: nonEmptyTrimmedString,
         })
       )
+      .max(100)
       .optional(),
   })
   .refine((input) => input.action === 'continue' || input.answers === undefined, {
