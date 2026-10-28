@@ -77,3 +77,11 @@ test('restoring an old VM archive excludes retired managed files but preserves e
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('shared query keys, permission text and authorization helpers have no exposure surface', () => {
+  expect(read('packages/client-core/src/queryKeys.ts')).not.toContain('secret exposures')
+  expect(read('packages/shared/src/permission-catalog.ts')).not.toMatch(
+    /secret-exposure|secrets are exposed|environment-secret configuration/
+  )
+  expect(read('apps/core/src/middleware/require-secret-permission.ts')).not.toContain('secretReader')
+})
