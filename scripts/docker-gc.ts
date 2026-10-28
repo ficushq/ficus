@@ -5,12 +5,9 @@
  * to make the OrbStack VM self-stop (killing every sandbox).
  *
  * What it cleans, and why each thing grows:
- *  1. Orphaned test-DB compose projects (ficus-test-*): each worktree that runs
- *     `bun test` leaves its postgres running for reuse; deleting the worktree
- *     orphans the project forever (test-db-sweep.ts, shared with test-setup).
- *  2. Exited ficus-test containers: OrbStack restarts previously-running
- *     containers on VM boot, but crash-exited ones linger holding volumes.
- *     The harness recreates its DB on demand, so removing these is free.
+ *  1. Recorded stale test-DB projects (ficus-test-*): the lifecycle sweep
+ *     verifies clone, host, dead owner, age and container token labels before
+ *     teardown. Legacy/unrecorded resources need explicit scoped maintenance.
  *  3. Local registry (ficus-registry) untagged blobs: every `bun run k3d:import`
  *     re-tags `latest`, orphaning the previous image's manifest+blobs. The
  *     registry never GCs itself — this was 14 GB (2 live images ≈ 1.4 GB)
@@ -35,7 +32,6 @@ import { installDockerGcLaunchd } from './docker-gc-launchd'
 const repoRoot = join(import.meta.dir, '..')
 const composeFile = join(repoRoot, 'docker-compose.test.yml')
 
-const TEST_CONTAINER_PREFIXES = ['ficus-test-']
 const REGISTRY_CONTAINERS = ['ficus-registry']
 const BUILDX_BUILDERS = ['ficusbuilder']
 const K3D_NODES = ['k3d-ficus-dev-server-0']
@@ -81,25 +77,8 @@ if (!run(['docker', 'info', '--format', '{{.ServerVersion}}'], 20_000).ok) {
 const reaped = sweepOrphanTestDbs({ composeFile, currentRepoRoot: repoRoot, deps: { log } })
 log(`orphaned test-DB projects reaped: ${reaped.length ? reaped.join(', ') : 'none'}`)
 
-// --- 2. exited test-DB containers (harness recreates on demand) ---
-for (const prefix of TEST_CONTAINER_PREFIXES) {
-  const exited = run([
-    'docker',
-    'ps',
-    '-a',
-    '--filter',
-    `name=${prefix}`,
-    '--filter',
-    'status=exited',
-    '--format',
-    '{{.Names}}',
-  ])
-  const exitedNames = exited.out.split('\n').filter(Boolean)
-  if (exitedNames.length) {
-    run(['docker', 'rm', '-v', ...exitedNames])
-    log(`removed exited ${prefix}* containers: ${exitedNames.join(', ')}`)
-  }
-}
+// Exited containers can belong to a live restart test. Never remove them by
+// name/status alone; the owned lifecycle sweep above handles all test resources.
 
 // --- 3. registry GC (untagged blobs from re-pushed :latest images) ---
 const registryVolumeSize = () =>

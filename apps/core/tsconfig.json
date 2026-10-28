@@ -5,5 +5,11 @@
     "rootDir": "../..",
     "types": ["@types/bun"]
   },
-  "include": ["src/**/*", "../../scripts/artifact/**/*.ts", "../../scripts/bigbrain/**/*.ts", "package.json"]
+  "include": [
+    "src/**/*",
+    "../../scripts/test-db.ts",
+    "../../scripts/artifact/**/*.ts",
+    "../../scripts/bigbrain/**/*.ts",
+    "package.json"
+  ]
 }
