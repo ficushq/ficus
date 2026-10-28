@@ -44,6 +44,14 @@ test('native shared BigBrain wire smoke is isolated and required with a built pi
   expect(workflow).toContain('FICUS_BIGBRAIN_SHARED_ARTIFACT: ${{ runner.temp }}/bigbrain-shared')
 })
 
+test('cross-process VM provision proof runs only in the isolated subprocess lane', () => {
+  const file = './src/services/sandbox/vm/provision-flight-process.test.ts'
+  expect(plan.subprocess).toContain(file)
+  expect(plan.isolated).toContain(file)
+  expect(plan.shared).not.toContain(file)
+  expect(selectCoreTests(plan, [file], coreRoot)).toEqual({ shared: [], isolated: [file] })
+})
+
 test('no arguments keep the full-suite selection and CI options', () => {
   expect(parseCoreTestArgs([])).toEqual({ help: false, paths: [], list: false, reverse: false, subprocessOnly: false })
   expect(parseCoreTestArgs(['--subprocess', '--reverse'])).toMatchObject({ subprocessOnly: true, reverse: true })

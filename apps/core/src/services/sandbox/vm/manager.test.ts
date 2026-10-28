@@ -378,6 +378,14 @@ function makeHarness(opts?: { machineForSandbox?: (id: string) => string; bashSc
     async deleteSetupState() {
       setupState = null
     },
+    async withProvision<T>(
+      _sandboxId: string,
+      run: () => Promise<T>,
+      _join: () => Promise<T>,
+      options?: { withLease?: (fn: () => Promise<T>) => Promise<T> }
+    ) {
+      return options?.withLease ? options.withLease(run) : run()
+    },
     async withSetupLease<T>(_sandboxId: string, fn: () => Promise<T>) {
       return fn()
     },
@@ -514,6 +522,56 @@ const agentOpts: SandboxOptions = { workspacePath: '/core/host/private', k8s: { 
 // ---------------------------------------------------------------------------
 
 describe('VmSandboxManager', () => {
+  test('a joined cross-process provision builds only a local forward, never provisions again', async () => {
+    const h = makeHarness()
+    const id = 'agent_joined'
+    h.setMachineBoxRow({ machineId: 'm1', port: 51234, status: 'ready' })
+    // Deliberately select the persisted-success branch, not the physical callback.
+    h.deps.withProvision = async (_id, _run, join) => join()
+    const mgr = new VmSandboxManager(h.deps)
+    try {
+      await mgr.ensureSandbox(id, agentOpts)
+      expect(h.ensureCalls).toHaveLength(0)
+      expect(h.ensureMasterCalls).toEqual(['m1'])
+      expect(h.addForwardCalls).toEqual([{ machineId: 'm1', remotePort: 51234 }])
+      expect(h.createdEndpoints).toEqual(['127.0.0.1:61001'])
+      expect(h.createdClientTokens).toEqual([`row-tok-${id}`])
+      expect(h.syncCalls).toEqual([id])
+    } finally {
+      await mgr.cleanup()
+    }
+  })
+
+  test('first-contact exposure repair uses the established client and durably acknowledges without another ensure', async () => {
+    const h = makeHarness()
+    const id = `agent_${crypto.randomUUID()}`
+    const { cleanupExposureOnContact } = await import('../exposure-cleanup')
+    const { db, sandboxExposureCleanup } = await import('../../../db')
+    const { eq } = await import('drizzle-orm')
+    let contacts = 0
+    h.deps.cleanupExposure = async (sandboxId, client) => {
+      contacts++
+      // Reentrant first contact must return this client, not recurse into ensure
+      // or try to reacquire the physical/setup lifecycle lease.
+      expect(await mgr.getOrAttachClient(sandboxId)).toBe(client)
+      await cleanupExposureOnContact(sandboxId, client)
+    }
+    const mgr = new VmSandboxManager(h.deps)
+    try {
+      await mgr.ensureSandbox(id, agentOpts)
+      expect(h.ensureCalls).toHaveLength(1)
+      expect(contacts).toBe(1)
+      const [ack] = await db
+        .select()
+        .from(sandboxExposureCleanup)
+        .where(eq(sandboxExposureCleanup.targetId, `vm:${id}`))
+      expect(ack!.status).toBe('done')
+    } finally {
+      await mgr.cleanup()
+      await db.delete(sandboxExposureCleanup).where(eq(sandboxExposureCleanup.targetId, `vm:${id}`))
+    }
+  })
+
   test('no-create attachment delegates to durable existing-box discovery', async () => {
     const found = { getOrAttachClient: async () => ({}) }
     await expect(

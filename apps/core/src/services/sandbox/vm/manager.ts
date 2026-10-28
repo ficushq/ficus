@@ -75,6 +75,7 @@ import {
   type VmSetupReadiness,
   type VmSetupReasonCode,
 } from './setup-state'
+import { coalesceVmProvision } from './provision-flight'
 import { reconcileVmSetup } from './setup-reconciler'
 import { runIdempotentSandboxOperation } from './retry'
 import { reconcileRemoteToolchain } from '../toolchain/remote-adapter'
@@ -388,6 +389,7 @@ export interface VmSandboxManagerDeps {
   seedBoxDevbox(client: SandboxClient, sandboxId: string, role: BoxRole, invocationId?: string): Promise<BoxStepTimings>
   getSetupState(sandboxId: string): Promise<VmSetupState | null>
   deleteSetupState(sandboxId: string): Promise<void>
+  withProvision: typeof coalesceVmProvision
   withSetupLease<T>(sandboxId: string, fn: () => Promise<T>, wait?: VmSetupLeaseWait): Promise<T>
   ensureSetupFingerprint(sandboxId: string, fingerprint: string): Promise<VmSetupState>
   markSetupPending(sandboxId: string, fingerprint: string, now: Date): Promise<boolean>
@@ -518,6 +520,7 @@ function productionDeps(): VmSandboxManagerDeps {
       seedBoxDevboxReal(client, sandboxId, role, {}, invocationId),
     getSetupState: (sandboxId) => getVmSetupState(sandboxId),
     deleteSetupState: (sandboxId) => deleteVmSetupState(sandboxId),
+    withProvision: coalesceVmProvision,
     withSetupLease: (sandboxId, fn, wait) => withVmSetupLease(sandboxId, fn, wait),
     ensureSetupFingerprint: (sandboxId, fingerprint) => ensureVmSetupFingerprint(sandboxId, fingerprint),
     markSetupPending: (sandboxId, fingerprint, now) => markVmSetupPending(sandboxId, fingerprint, now),
@@ -751,24 +754,44 @@ export class VmSandboxManager implements ISandboxManager {
         env = await this.buildBoxEnv(sandboxId, opts, specHash, machine, timer)
 
         try {
-          placed = await this.deps.withSetupLease(sandboxId, () =>
-            this.deps.ensureBox({
-              sandboxId,
-              machineId: machine.id,
-              env,
-              role,
-              // NOT the bare specHash (that's also baked into env.FICUS_BOX_SPEC_HASH
-              // above) — computeProvisioningMarker folds a hash of `env` in too, so
-              // box-manager's PARKED-box resume fast path also busts on a rotated
-              // secret, not only a bundle/role/provision-script change. See its doc.
-              specHash: computeProvisioningMarker(specHash, env),
-              // The caller's liveness observation, if any. Set only by the vm
-              // lifecycle tick (one `ss -ltnH` per machine), so its keep-warm
-              // ensures never HTTP-probe — and therefore never wake — a
-              // socket-activated box that has deliberately stood down.
-              liveness: opts.boxLiveness,
-              beginPhysicalWork,
-            })
+          placed = await this.deps.withProvision(
+            sandboxId,
+            () =>
+              this.deps.ensureBox({
+                sandboxId,
+                machineId: machine.id,
+                env,
+                role,
+                // NOT the bare specHash (that's also baked into env.FICUS_BOX_SPEC_HASH
+                // above) — computeProvisioningMarker folds a hash of `env` in too, so
+                // box-manager's PARKED-box resume fast path also busts on a rotated
+                // secret, not only a bundle/role/provision-script change. See its doc.
+                specHash: computeProvisioningMarker(specHash, env),
+                // The caller's liveness observation, if any. Set only by the vm
+                // lifecycle tick (one `ss -ltnH` per machine), so its keep-warm
+                // ensures never HTTP-probe — and therefore never wake — a
+                // socket-activated box that has deliberately stood down.
+                liveness: opts.boxLiveness,
+                beginPhysicalWork,
+              }),
+            async () => {
+              // The owner's endpoint is process-local. A shared success only
+              // grants attachment to the authoritative ready row, never a
+              // second ensure/provision or reuse of another process's port.
+              const box = await this.deps.getMachineBox(sandboxId)
+              if (!box || box.status !== 'ready' || !box.authToken)
+                throw new Error(`Shared provision no longer ready for ${sandboxId}`)
+              const machine = await this.deps.getMachine(box.machineId)
+              if (!machine || machine.status !== 'ready')
+                throw new Error(`Shared provision machine unavailable for ${sandboxId}`)
+              await this.deps.ensureMaster(machine)
+              const localPort = await this.deps.addForward(machine, box.port)
+              return { machine, box, endpoint: `http://127.0.0.1:${localPort}`, timings: {} }
+            },
+            {
+              wait: { signal: opts.signal },
+              withLease: (fn) => this.deps.withSetupLease(sandboxId, fn, { signal: opts.signal }),
+            }
           )
           timer.merge(placed.timings)
           break

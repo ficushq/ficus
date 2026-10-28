@@ -1063,6 +1063,7 @@ jobs:
           src/services/integrations/notion/core-lifecycle.e2e.test.ts
           src/services/integrations/execution-wrappers.test.ts
           src/services/sandbox/host/terminal-bootstrap.test.ts
+          src/services/sandbox/vm/provision-flight-process.test.ts
           src/test-utils/captured-process.test.ts
           src/services/machines/artifact-extension-smoke.test.ts
           src/services/model-selection/openai-compatible.test.ts
@@ -1128,7 +1129,27 @@ jobs:
             "GITHUB_RUN_ID=$GITHUB_RUN_ID" "GITHUB_RUN_ATTEMPT=$GITHUB_RUN_ATTEMPT" \
             timeout --kill-after=90s 10m bash scripts/machine/box-cgroup.integration.sh 2>&1) || status=$?
           printf '%s\n' "$out"
-          if (( status != 0 )); then exit "$status"; fi
+          if (( status != 0 )); then
+            # Keep the last (failed) provision record complete; earlier success
+            # records remain in job output. Its128KiB budget also fits the1MiB
+            # summary ceiling after HTML escaping. Before-provision failures
+            # have no record, so retain their original fixture diagnostics.
+            diagnostic=$(printf '%s\n' "$out" | awk '
+              $0 == "FICUS_CI_PROVISION_RECORD_BEGIN" { record=""; collecting=1 }
+              collecting { record=record $0 ORS }
+              $0 == "FICUS_CI_PROVISION_RECORD_END" && collecting { last=record; collecting=0 }
+              END { printf "%s", last }
+            ')
+            if [ -z "$diagnostic" ]; then diagnostic="$out"; fi
+            # Write only as the runner, never pass a root-writable summary path
+            # through sudo. Escape HTML so diagnostic output cannot hide text.
+            {
+              printf '### Rootless containment failed (exit %s)\n\n<pre>\n' "$status"
+              printf '%s\n' "$diagnostic" | sed 's/\&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'
+              printf '</pre>\n'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit "$status"
+          fi
           grep -Fxq '5 real rootless containment phases passed' <<<"$out"
 
   # Managed BigBrain containment on a DISPOSABLE runner (never a shared or production host):

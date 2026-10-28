@@ -3,8 +3,8 @@ import { and, asc, eq, inArray, isNull, lte, ne, or } from 'drizzle-orm'
 import { db } from '../../../db'
 import {
   createPostgresConnection,
+  DEDICATED_CONNECTION_SESSION,
   getDirectConnectionString,
-  withDedicatedConnectionSlot,
   tryAcquireDedicatedConnectionSlot,
 } from '../../../db/connection'
 import { fleetIncidents, machineBoxes, vmBoxSetupStates } from '../../../db/schema'
@@ -406,9 +406,12 @@ export type VmSetupLeaseWait = {
   sleep?: (ms: number) => Promise<void>
 }
 
+/** The optional callback guard lets result publishers fence a lost direct
+ * session before writing success. Cancellation after acquisition never releases
+ * the lease while the callback is still running. */
 export async function withVmSetupLease<T>(
   sandboxId: string,
-  reconcile: () => Promise<T>,
+  reconcile: (assertOwned?: () => void) => Promise<T>,
   wait: VmSetupLeaseWait = {}
 ): Promise<T> {
   const now = wait.now ?? Date.now
@@ -423,9 +426,25 @@ export async function withVmSetupLease<T>(
   for (;;) {
     checkWaiting()
     const run = async () => {
-      // The global slot queue can itself be busy; never start stale work after it drains.
+      // Recheck after taking a permit; never start work after its acquisition budget.
       checkWaiting()
-      const connection = createPostgresConnection(getDirectConnectionString(), { max: 1, idle_timeout: 0 })
+      let sessionClosed = false
+      const assertOwned = () => {
+        if (sessionClosed) throw new Error(`VM setup lease ownership lost for ${sandboxId}`)
+      }
+      const connection = createPostgresConnection(getDirectConnectionString(), {
+        max: 1,
+        idle_timeout: 0,
+        max_lifetime: 0,
+        connect_timeout: 10,
+        connection: DEDICATED_CONNECTION_SESSION,
+        // A reserved session does not preserve its advisory lock after a socket
+        // loss. Do not send unlock/release through postgres.js's stale reserved
+        // handle (which can write to a null socket), or publish late success.
+        onclose: () => {
+          sessionClosed = true
+        },
+      })
       try {
         const session = await connection.reserve()
         try {
@@ -435,28 +454,35 @@ export async function withVmSetupLease<T>(
           if (!lock?.acquired) return { acquired: false } as const
           try {
             checkWaiting()
-            return { acquired: true, value: await reconcile() } as const
+            assertOwned()
+            const value = await reconcile(assertOwned)
+            assertOwned()
+            return { acquired: true, value } as const
           } finally {
-            await session`select pg_advisory_unlock(hashtextextended(${key}, 0))`
+            if (!sessionClosed) await session`select pg_advisory_unlock(hashtextextended(${key}, 0))`
           }
         } finally {
-          session.release()
+          if (!sessionClosed) session.release()
         }
       } finally {
         await connection.end({ timeout: 5 })
       }
     }
     let attempt: Awaited<ReturnType<typeof run>>
-    if (wait.ifAvailable) {
-      const release = tryAcquireDedicatedConnectionSlot()
-      if (!release) throw new VmSetupLeaseBusyError()
+    // Never join the global unbounded permit queue: an abort/deadline must
+    // settle even if BOTH unrelated permit owners remain held. Permit
+    // contention follows the same bounded polling path as advisory contention,
+    // with no canceled queue entry that could steal ownership later.
+    const release = tryAcquireDedicatedConnectionSlot()
+    if (!release) {
+      if (wait.ifAvailable) throw new VmSetupLeaseBusyError()
+      attempt = { acquired: false }
+    } else {
       try {
         attempt = await run()
       } finally {
         release()
       }
-    } else {
-      attempt = await withDedicatedConnectionSlot(run)
     }
     if (attempt.acquired) return attempt.value
     if (wait.ifAvailable) throw new VmSetupLeaseBusyError()
