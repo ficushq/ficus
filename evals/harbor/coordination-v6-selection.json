@@ -1,0 +1,24 @@
+{
+  "experiment": "coordination-v6-audit",
+  "declared_at_utc": "2026-10-28T05:07:43.480364+00:00",
+  "source": "https://github.com/gabeorlanski/scb-problems",
+  "revision": "9cd9ca3a51c3d3e2a99d2488a25baf73a2204451",
+  "candidate": "textdrop",
+  "requests": [1, 2, 3],
+  "stage": "audit-only; no paid run authorized by this record",
+  "selection_reason": "HTTP storage, markdown rendering, metadata extraction and preview/TOC integration provide interacting product components. Selected from specifications before inspecting this candidate tests/reference.",
+  "tests_or_reference_inspected_before_selection": false,
+  "spec_sha256": {
+    "checkpoint_3.md": "6c44b7b3e2db35d3872cbcab4ac84b8596786fc696dbb3f6453649fe11217b8a",
+    "checkpoint_2.md": "1e31aa4f798048e115327b4ce1b6368fa3169b01e0af2f2e25f2bf846f1968b4",
+    "checkpoint_1.md": "69b71da60614cd1f1b7825d49fa4a740e078c567512ca1657bcf8bbef1913b0f"
+  },
+  "required_gates": [
+    "Full collected-test-to-specification audit with no unresolved disagreement",
+    "Reference/no-op/collision/noisy-server/mutation controls",
+    "Native restricted-network probes",
+    "Frozen symmetric coordinator bookkeeping policy",
+    "Unchanged budget checks"
+  ],
+  "budget_changes": false
+}

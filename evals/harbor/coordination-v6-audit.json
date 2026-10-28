@@ -1,0 +1,46 @@
+{
+  "experiment": "coordination-v6-audit",
+  "candidate": "textdrop",
+  "revision": "9cd9ca3a51c3d3e2a99d2488a25baf73a2204451",
+  "stage": "pre-inference",
+  "decision": "rejected",
+  "reviewer": "Codex offline specification/test audit",
+  "reviewed_at_utc": "2026-10-28T05:10:00.221510+00:00",
+  "reason": "Structural HTML nesting is required, but the test demands a particular no-whitespace serialization between anchor and nested list. Unspecified serialization sensitivity fails the predeclared ambiguity gate.",
+  "affected_test": "tests/test_checkpoint_3.py::test_toc_nesting_mirrors_heading_hierarchy",
+  "spec_evidence": {
+    "file": "checkpoint_3.md",
+    "quote": "hierarchically nested `<ul>/<li>` links to heading fragment IDs."
+  },
+  "test_evidence": {
+    "file": "tests/test_checkpoint_3.py",
+    "quote": "assert \"Parent</a><ul>\" in toc_html"
+  },
+  "witness": {
+    "same_element_attribute_and_nonwhitespace_text_structure": true,
+    "compact_passes_two_literal_nesting_assertions": true,
+    "intertag_newlines_fail_two_literal_nesting_assertions": true,
+    "candidate_execution_or_grade": false,
+    "scope": "Structural witness only; no claim to satisfy the entire service specification"
+  },
+  "audited_file_sha256": {
+    "checkpoint_3.md": "6c44b7b3e2db35d3872cbcab4ac84b8596786fc696dbb3f6453649fe11217b8a",
+    "checkpoint_2.md": "1e31aa4f798048e115327b4ce1b6368fa3169b01e0af2f2e25f2bf846f1968b4",
+    "config.yaml": "94edf1083bb9b744860c93391dfdc99d7db3b966579d06b0fe97d769eeb23b8d",
+    "checkpoint_1.md": "69b71da60614cd1f1b7825d49fa4a740e078c567512ca1657bcf8bbef1913b0f",
+    "tests/conftest.py": "08c1c4d687ab26a34b8c86d30870f6b491c8207e631dac632c39c9db5778c817",
+    "tests/test_checkpoint_2.py": "b1508e235420d999f65bd9c11cadc0720c21a8632e5a26ee5d2b8f92e07da5ed",
+    "tests/test_checkpoint_6.py": "e5a19a656f5220d3ab097cc6dd0d2dd52c718bd3525330bf02c4ba47e6cf15c0",
+    "tests/test_checkpoint_3.py": "b1a7ce7c79f901ac9728d350bc55098e1a0d78c96cb3338e9e8df8838cd8bb29",
+    "tests/test_checkpoint_4.py": "9877a06a880ee5a642e739a8552a0ccc039ef0c0573bc6250334c0ac72101c2e",
+    "tests/test_checkpoint_1.py": "c2231ad4b8702107b56a4cdccf43428e2129186b05c84b4106eb4c154b4247f1",
+    "tests/test_checkpoint_5.py": "950b4e11a9eee1f131689a8f675aa92c00fbb100863611321fdac4e4a8681056",
+    "tests/_helpers.py": "6ead14a3644d6632b557be1b2e5d997bb77ba68299276263be47562a2020a0d1"
+  },
+  "coverage": "Early rejection; not a complete test-to-specification mapping. No claim that remaining assertions agree.",
+  "collection": "Host collection unavailable because benchmark venv has no pytest; rejection witness uses only stdlib and does not require collection. No environment changes made.",
+  "paid_model_calls": 0,
+  "reference_downloaded_or_executed": false,
+  "candidate_fixes_or_assertion_changes": false,
+  "further_action": "Preserve rejected selection; choose another public task or declare an explicit adaptation before any paid run. Do not silently relax tests."
+}

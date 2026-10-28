@@ -554,3 +554,31 @@ Reference/mutation/coverage controls did not establish full specification/test
 agreement. See [the comparison](coordination-v5-results.md) and its JSON evidence
 for qualifications, native repairs, Ficus's extra documentation cycle, and next
 steps. No additional paid run or candidate repair was started.
+
+### Post-v5 diagnosis and pre-inference rejection
+
+The extra D cycle was an explicit manager reopen after the final review, triggered
+by a stale pending-review entry in required `COORDINATION.md`. Runtime reopen
+correctly restarts at entry. Attempts 4–6 used 24 worker calls, about $0.85 in
+native usage records, to change one evidence file. See
+[the closeout audit](coordination-v5-closeout-audit.md) for exact provenance and a
+proposed equal coordinator-bookkeeping policy. No production prompt or frozen
+runtime was changed; it remains an unvalidated next-run clarification.
+
+`contract_audit.py` adds a fail-closed provenance/coverage helper for future
+launchers: freeze collected node IDs and exact source/test evidence, map every
+case, reject ambiguity, pin the report hash, and call it before starting a paid
+proxy. It cannot establish semantic truth automatically and does not retroactively
+modify historical launchers. Tests exercise stale hashes, missing coverage,
+fabricated evidence and unresolved/rejected/retrospective audits.
+
+TextDrop requests 1–3 were preselected for offline audit in
+`coordination-v6-selection.json`, then rejected before inference. Its TOC test
+requires literal `Parent</a><ul>` and `Child</a><ul>` substrings although the
+specification requires nested HTML structure, not whitespace-free serialization.
+The stdlib witness preserves element/attribute/non-whitespace-text structure but
+fails those literals when intertag newlines are inserted. The early rejection and
+file hashes are in `coordination-v6-audit.json`; no complete audit, reference pass
+or candidate score is claimed. Host collection lacked pytest, but no collection
+or environment change was needed for the rejection witness. No new model calls
+or budget changes occurred. Existing $29.918170 remains available.
