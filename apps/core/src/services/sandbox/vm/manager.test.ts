@@ -1920,7 +1920,7 @@ describe('VmSandboxManager', () => {
     expect(client.healthCalls).toBe(before)
   })
 
-  test('an idle box still reports the honest setup state (pending → starting, not running)', async () => {
+  test('an idle box reports deferred assets without claiming active startup or execution readiness', async () => {
     const h = makeHarness()
     const mgr = new VmSandboxManager(h.deps)
     await mgr.ensureSandbox('squad_s1', squadOpts)
@@ -1941,9 +1941,80 @@ describe('VmSandboxManager', () => {
       lastAttemptAt: null,
       updatedAt: new Date(),
     })
+    const ensuresBefore = h.ensureCalls.length
     const status = await mgr.getSandboxStatus('squad_s1')
-    expect(status.status).toBe('starting')
+    expect(h.ensureCalls).toHaveLength(ensuresBefore)
+    expect(h.stopCalls).toEqual([])
+    expect(h.removeCalls).toEqual([])
+    // Coarse status remains non-ready for execution/recovery consumers.
+    expect(status).toMatchObject({
+      status: 'starting',
+      readiness: 'pending',
+      devboxReady: false,
+      assetsRefreshPending: true,
+      reason: 'required sandbox assets are not ready',
+    })
     expect(client.healthCalls).toBe(before)
+
+    // Durable in-progress work must not be described as lazy refresh, even if
+    // the last physical chain observation was idle.
+    h.setSetupState({ ...(await h.deps.getSetupState('squad_s1'))!, pendingInvocationId: 'sync-1' })
+    expect(await mgr.getSandboxStatus('squad_s1')).not.toHaveProperty('assetsRefreshPending')
+    h.setSetupState({
+      ...(await h.deps.getSetupState('squad_s1'))!,
+      readiness: 'reconciling',
+      pendingInvocationId: null,
+    })
+    expect(await mgr.getSandboxStatus('squad_s1')).not.toHaveProperty('assetsRefreshPending')
+
+    // Nor does an actually starting box or an awake box waiting for assets.
+    h.setSetupState({ ...(await h.deps.getSetupState('squad_s1'))!, readiness: 'pending' })
+    h.setBoxChain({ boxProvisioned: true, machine: 'reachable', boxServer: 'up' })
+    const pressure = {
+      cpus: 8,
+      load: [28, 20, 12] as [number, number, number],
+      memTotalMb: 16000,
+      memAvailableMb: 4000,
+    }
+    client.health = async () => ({ healthy: true, devboxReady: true, version: 'v1', uptimeSeconds: 10, pressure })
+    expect(await mgr.getSandboxStatus('squad_s1')).toMatchObject({ status: 'starting', pressure })
+    expect(await mgr.getSandboxStatus('squad_s1')).not.toHaveProperty('assetsRefreshPending')
+    h.setBoxStatus('starting')
+    expect(await mgr.getSandboxStatus('squad_s1')).not.toHaveProperty('assetsRefreshPending')
+  })
+
+  test('an in-flight ensure is not idle refresh even with a stale idle chain observation', async () => {
+    const h = makeHarness()
+    const ensureBox = h.deps.ensureBox
+    let pause = false
+    let release!: () => void
+    let entered!: () => void
+    const blocked = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    h.deps.ensureBox = async (opts) => {
+      if (pause) {
+        entered()
+        await gate
+      }
+      return ensureBox(opts)
+    }
+    const mgr = new VmSandboxManager(h.deps)
+    await mgr.ensureSandbox('squad_s1', squadOpts)
+    h.setBoxChain({ boxProvisioned: true, machine: 'reachable', boxServer: 'idle' })
+    h.setSetupState({ ...(await h.deps.getSetupState('squad_s1'))!, readiness: 'pending' })
+    pause = true
+    const ensuring = mgr.ensureSandbox('squad_s1', squadOpts)
+    await blocked
+    try {
+      expect(await mgr.getSandboxStatus('squad_s1')).not.toHaveProperty('assetsRefreshPending')
+    } finally {
+      release()
+      await ensuring
+    }
   })
 
   test('buildBoxEnv sets FICUS_SANDBOX_ROLE mirroring pod-spec (agent→agent, squad/system-manager→squad)', async () => {

@@ -148,3 +148,20 @@ describe('AgentSandboxControls (host runtime)', () => {
     expect(html).not.toContain('Running')
   })
 })
+
+describe('idle deferred assets display', () => {
+  test('shows the refresh on next start without lifecycle actions', () => {
+    const html = render('idle-assets', {
+      status: 'starting',
+      runtime: 'vm',
+      readiness: 'pending',
+      assetsRefreshPending: true,
+      chain: { boxProvisioned: true, machine: 'reachable', boxServer: 'idle' },
+    })
+    expect(html).toContain('Idle')
+    expect(html).toContain('assets refresh on next start')
+    expect(html).not.toContain('Starting')
+    expect(html).not.toContain('>Start<')
+    expect(html).not.toContain('>Restart<')
+  })
+})

@@ -537,6 +537,8 @@ export interface VmSandboxStatus {
   reason?: string
   devboxReady?: boolean
   readiness?: VmSetupReadiness
+  /** Display-only: idle with deferred assets; NOT proof of execution readiness. */
+  assetsRefreshPending?: boolean
   degradation?: {
     reasons: VmSetupReasonCode[]
     attemptCount: number
@@ -1517,8 +1519,7 @@ export class VmSandboxManager implements ISandboxManager {
         // reachable, and its devbox environment is self-cached by the server at
         // boot, so a box that was setup-ready before it idled is setup-ready
         // when it next wakes. Trust the durable setup state below; every other
-        // branch (setup missing / pending / reconciling / degraded) is
-        // unchanged.
+        // branch still honors durable setup readiness below.
         const idle = chain?.boxServer === 'idle'
         let liveDevboxReady = idle
         let pressure: SandboxPressure | undefined
@@ -1553,7 +1554,22 @@ export class VmSandboxManager implements ISandboxManager {
           }
         }
         if (setup.readiness === 'pending' || setup.readiness === 'reconciling') {
-          return { status: 'starting', reason: 'required sandbox assets are not ready', chain }
+          // Pending is also a lazy invalidation marker, not evidence of work.
+          // Keep the coarse non-ready status for execution/recovery consumers,
+          // while explicitly distinguishing idle refresh for presentation. Do
+          // not probe/wake the box merely to clear the marker. Reconciling,
+          // recorded invocations and local ensures remain active startup.
+          const deferred =
+            idle && setup.readiness === 'pending' && !setup.pendingInvocationId && !this.inflight.has(sandboxId)
+          return {
+            status: 'starting',
+            readiness: setup.readiness,
+            devboxReady: false,
+            reason: 'required sandbox assets are not ready',
+            ...(deferred ? { assetsRefreshPending: true } : {}),
+            chain,
+            ...(pressure ? { pressure } : {}),
+          }
         }
         if (setup?.readiness === 'ready_degraded') {
           const projected = projectVmSetupState(setup)

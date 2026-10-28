@@ -120,3 +120,36 @@ describe('resolveVmChainDisplay', () => {
     expect(missingChainNotFound.label).toBe('Not running')
   })
 })
+
+describe('deferred VM assets', () => {
+  test('idle pending assets describe the next start, not active startup', () => {
+    expect(
+      resolveVmChainDisplay(
+        vmStatus({
+          status: 'starting',
+          readiness: 'pending',
+          assetsRefreshPending: true,
+          chain: { boxProvisioned: true, machine: 'reachable', boxServer: 'idle' },
+        })
+      )
+    ).toEqual({ label: 'Idle', detail: 'assets refresh on next start', healthy: true })
+  })
+})
+
+describe('deferred refresh never hides active toolchain work', () => {
+  test.each([
+    ['installing', 'Installing packages'],
+    ['running_setup', 'Running setup'],
+    ['failed', 'Toolchain failed'],
+  ] as const)('%s stays visible', (toolchain, label) => {
+    expect(
+      resolveVmChainDisplay(
+        vmStatus({
+          status: 'starting',
+          assetsRefreshPending: true,
+          toolchain: { status: toolchain, desiredFingerprint: 'x' },
+        })
+      )
+    ).toMatchObject({ label, healthy: false })
+  })
+})

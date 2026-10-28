@@ -1,3 +1,4 @@
+import { selectSandboxPresentationState } from '@ficus/shared'
 import type { SandboxStatus } from '../../api/workspace'
 
 /** Display for a VM-mode sandbox's chain-health status (see resolveVmChainDisplay). */
@@ -49,6 +50,16 @@ export function resolveVmChainDisplay(status: SandboxStatus): VmChainDisplay {
     }
 
     case 'starting':
+      switch (selectSandboxPresentationState(status)) {
+        case 'idle':
+          return { label: 'Idle', detail: 'assets refresh on next start', healthy: true }
+        case 'installing_packages':
+          return { label: 'Installing packages', healthy: false }
+        case 'running_setup':
+          return { label: 'Running setup', healthy: false }
+        case 'failed':
+          return { label: 'Toolchain failed', detail: status.toolchain?.reason, healthy: false }
+      }
       // A provisioned box on a reachable machine whose server failed the live
       // probe is NOT provisioning — it was ready and is momentarily not
       // answering (mid-restart / CPU-pegged). The coarse status stays 'starting'

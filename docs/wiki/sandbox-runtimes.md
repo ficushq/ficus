@@ -37,6 +37,23 @@ every runtime, including `host`, where the core drives a locally installed
 Chrome/Chromium/Edge in-process — see
 [browser tools](host-runtime.md#browser-tools).
 
+## Idle VM boxes with pending assets
+
+A VM box can be socket-idle while its required assets are marked `pending`.
+This is **Idle — assets refresh on next start**, not active startup. Reading
+status does not wake, restart, or reprovision the box to clear that marker.
+For pending setup, actual provisioning, recorded setup invocations,
+reconciliation, and an ongoing ensure still report startup. Active managed
+toolchain installation/setup and failures stay visible over deferred refresh;
+ready and degraded boxes retain their existing readiness semantics.
+
+The status API adds optional `assetsRefreshPending: true` for this deferred
+case, alongside `readiness: pending` and `devboxReady: false`. The coarse
+`status: starting` remains for execution/recovery compatibility: the display
+marker is **not permission to execute before ensure completes**. Shared/client
+presentation uses the explicit marker to show Idle. Older payloads without it
+keep their existing presentation; a pending flag alone never implies idle.
+
 ## Mixing runtimes (design — not yet shipped)
 
 > **Status: approved direction, not yet implemented.** This section
