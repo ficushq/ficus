@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import postgres from 'postgres'
 import { join } from 'path'
-import { testDbProjectName } from '@ficus/shared/testDbPort'
+import { changeTestPoolerState, withStoppedTestPooler } from '../test-utils/test-pooler'
 import { createResilientClient } from './connection'
 
 // What happens to the main application pool when the loopback PgBouncer in
@@ -19,27 +19,13 @@ if (!POOLED) {
 }
 
 const repoRoot = join(import.meta.dir, '../../../..')
-const composeFile = join(repoRoot, 'docker-compose.test.yml')
-const projectName = testDbProjectName(repoRoot)
 
 // Locally the pooler is the compose `pgbouncer` service; on CI it is a plain
 // `docker run` container named by TEST_PGBOUNCER_CONTAINER (the CI postgres
 // is not a compose service either). Either way stop/start keeps the host port.
 const CONTAINER = process.env.TEST_PGBOUNCER_CONTAINER
 
-function pooler(action: 'stop' | 'start'): void {
-  const argv = CONTAINER
-    ? ['docker', action, CONTAINER]
-    : ['docker', 'compose', '-p', projectName, '-f', composeFile, action, 'pgbouncer']
-  const r = Bun.spawnSync(argv, {
-    stdout: 'ignore',
-    stderr: 'pipe',
-    env: { ...process.env, TEST_REPO_ROOT: repoRoot },
-    timeout: 10000,
-    killSignal: 'SIGKILL',
-  })
-  if (r.exitCode !== 0) throw new Error(`${argv.join(' ')} failed: ${r.stderr.toString()}`)
-}
+const poolerOptions = { repoRoot, container: CONTAINER }
 
 async function eventually<T>(fn: () => Promise<T>, timeoutMs: number): Promise<T> {
   const deadline = Date.now() + timeoutMs
@@ -96,17 +82,16 @@ describe.skipIf(!POOLED)('the main pool survives a PgBouncer restart', () => {
     try {
       expect((await sql<{ one: number }[]>`select 1 as one`)[0].one).toBe(1)
 
-      pooler('stop')
-      await expect(eventually(() => sql`select 1`, 3_000)).rejects.toThrow()
-
-      pooler('start')
+      await withStoppedTestPooler(poolerOptions, async () => {
+        await expect(eventually(() => sql`select 1`, 3_000)).rejects.toThrow()
+      })
       const [row] = await eventually(() => sql<{ one: number }[]>`select 1 as one`, 20_000)
       expect(row.one).toBe(1)
     } finally {
       ;(sql as unknown as { __stopHealthWatchdog?: () => void }).__stopHealthWatchdog?.()
       await sql.end({ timeout: 5 }).catch(() => {})
       // Leave the service up for whatever runs next.
-      pooler('start')
+      changeTestPoolerState(poolerOptions, 'start')
     }
   }, 40_000)
 })

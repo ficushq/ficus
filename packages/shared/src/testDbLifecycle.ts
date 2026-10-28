@@ -167,6 +167,9 @@ export function downTestDb(
         'down',
         '--volumes',
         '--remove-orphans',
+        // Docker's default stop grace is itself 10s: leave CLI overhead margin.
+        '--timeout',
+        '2',
       ],
       {
         env: { ...process.env, TEST_REPO_ROOT: record.repoRoot },

@@ -309,8 +309,10 @@ persistent-restart fixture and the shared cross-project readiness fixtures
 own their separate projects and exit hooks; setup
 `lib.test.sh` and `pooler.test.sh` are render-only and start no database.
 Externally supplied CI databases remain CI-owned and are not torn down locally.
-Cleanup probes are capped at 5 seconds and Compose teardown at 10 seconds, with
-hard CLI kills and bounded diagnostics. Failed cleanup keeps the ownership
+Cleanup probes are capped at 5 seconds and Compose teardown at 10 seconds.
+Stop/restart/teardown commands use an explicit 2-second graceful-stop limit,
+leaving overhead margin inside the hard CLI deadline. CLI processes have
+hard-kill bounds and bounded diagnostics. Failed cleanup keeps the ownership
 record for retry and fails an otherwise successful run. SIGKILL or a machine
 crash cannot run exit handlers; the next startup can reclaim the recorded run.
 The runner forwards cancellation and escalates a stuck test child after 20s.

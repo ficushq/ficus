@@ -370,3 +370,22 @@ test('normal owner release defers teardown to its last live borrower, even while
     f.clean()
   }
 })
+
+test('Compose teardown gives graceful stop a shorter budget than the hard command deadline', async () => {
+  const f = await fixture('')
+  try {
+    expect(await f.child.exited).toBe(0)
+    const down = readFileSync(f.log, 'utf8')
+      .split('\n')
+      .find((line) => line.includes('down --volumes'))!
+      .split(' ')
+    expect(down).toContain('--timeout')
+    const graceMs = Number(down[down.indexOf('--timeout') + 1]) * 1000
+    expect(graceMs).toBeGreaterThan(0)
+    expect(graceMs).toBeLessThanOrEqual(5000) // leave at least 5s of the existing 10s CLI bound for overhead
+  } finally {
+    f.child.kill('SIGKILL')
+    await f.child.exited
+    f.clean()
+  }
+})
