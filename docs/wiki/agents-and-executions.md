@@ -302,6 +302,13 @@ the hook supplies queue placement for locally submitted messages until the serve
 exposes the explicit field; history loaded in a fresh session retains the legacy
 fallback until Core is updated.
 
+Clearing pending input detaches the message from its accepted send receipt and
+deletes it in one transaction. The receipt's client ID, request hash, and execution
+remain as an idempotency tombstone: a delayed retry acknowledges the original send
+without recreating canceled input. An explicit resend from the composer uses a new
+client ID. Clear failures remain visible and do not restore text to the composer
+as though cancellation succeeded.
+
 ### Manager Chat (Interactive)
 
 1. User sends a message via `POST /api/chat`

@@ -22,6 +22,11 @@ export class BigbrainSetupCommandError extends Error {
 export const SETUP_COMMAND_ARGV = Object.freeze(['mcp', 'config'] as const)
 const STDOUT_LIMIT = 64 * 1024
 const STDERR_LIMIT = 16 * 1024
+type DeadlineScheduler = (expire: () => void, milliseconds: number) => () => void
+const scheduleDeadline: DeadlineScheduler = (expire, milliseconds) => {
+  const timer = setTimeout(expire, milliseconds)
+  return () => clearTimeout(timer)
+}
 const DEFAULT_DEADLINE_MS = 20_000
 /** After the wrapper exits, how long its already-written output may take to drain. */
 const CLOSE_GRACE_MS = 500
@@ -53,6 +58,8 @@ export async function runBigbrainSetupCommand(options: {
   executablePath: string
   vaultPath: string
   deadlineMs?: number
+  /** Injectable deadline scheduler for deterministic process tests. */
+  scheduleDeadline?: DeadlineScheduler
 }): Promise<{ clientId: string }> {
   if (running) throw new BigbrainSetupCommandError('busy')
   running = true
@@ -68,7 +75,7 @@ export async function runBigbrainSetupCommand(options: {
 }
 
 function execute(
-  options: { executablePath: string; vaultPath: string; deadlineMs?: number },
+  options: { executablePath: string; vaultPath: string; deadlineMs?: number; scheduleDeadline?: DeadlineScheduler },
   cwd: string
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
@@ -99,7 +106,7 @@ function execute(
     const settle = (outcome: { error: BigbrainSetupCommandError } | { code: number | null }) => {
       if (settled) return
       settled = true
-      clearTimeout(timer)
+      cancelDeadline()
       clearTimeout(closeGrace)
       killGroup()
       child.stdout.removeAllListeners('data')
@@ -114,7 +121,7 @@ function execute(
       })
     }
     const fail = (error: BigbrainSetupCommandError) => settle({ error })
-    const timer = setTimeout(
+    const cancelDeadline = (options.scheduleDeadline ?? scheduleDeadline)(
       () => fail(new BigbrainSetupCommandError('timeout')),
       options.deadlineMs ?? DEFAULT_DEADLINE_MS
     )

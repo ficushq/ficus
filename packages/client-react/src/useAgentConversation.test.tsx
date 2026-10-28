@@ -2274,7 +2274,7 @@ test('a rejected queue clear preserves an unacknowledged optimistic intervention
       hook.result.current.send('keep this')
     })
     await act(async () => {
-      await hook.result.current.cancelAllPending()
+      await expect(hook.result.current.cancelAllPending()).rejects.toThrow('worker unavailable')
     })
     expect(hook.result.current.queuedCount).toBe(1)
   } finally {
