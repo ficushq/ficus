@@ -7,12 +7,11 @@ export interface IntegrationExecutionSelection {
   connectionId: string
 }
 
-export function executionConnectionId(
-  scope: Pick<IntegrationExecutionSelection, 'providerKey' | 'squadId'>,
+export function inheritedExecutionSelection(
   explicit: string | undefined,
   inherited: NodeJS.ProcessEnv = process.env
-): string | undefined {
-  if (explicit !== undefined) return explicit
+): IntegrationExecutionSelection | undefined {
+  if (explicit !== undefined) return undefined
   const raw = inherited[INTEGRATION_EXEC_SELECTION_ENV]
   if (raw === undefined) return undefined
   try {
@@ -24,9 +23,8 @@ export function executionConnectionId(
       )
     )
       throw new Error()
-    return selection.providerKey === scope.providerKey && selection.squadId === scope.squadId
-      ? selection.connectionId
-      : undefined
+    // Parsing is not scope resolution: Core matches against its authorized canonical squad ID.
+    return { providerKey: selection.providerKey, squadId: selection.squadId, connectionId: selection.connectionId }
   } catch {
     // Never silently fall back to a different account or echo inherited data.
     throw new Error('Invalid integration execution selection context')
@@ -37,6 +35,7 @@ export function executionConnectionId(
 export interface IntegrationExecutionEnvironment {
   environment: Record<string, string>
   scrubVariables: string[]
+  selection?: IntegrationExecutionSelection | null
 }
 
 export function commandExecutionEnvironment(

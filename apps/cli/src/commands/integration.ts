@@ -1,4 +1,8 @@
-import { executionConnectionId, runIntegrationCommand, type IntegrationExecutionEnvironment } from './integration-exec'
+import {
+  inheritedExecutionSelection,
+  runIntegrationCommand,
+  type IntegrationExecutionEnvironment,
+} from './integration-exec'
 import type {
   GitHubCommitSigningSummary,
   IntegrationAuthorizationStart,
@@ -73,20 +77,20 @@ export function registerIntegrationCommands(
     .allowUnknownOption(false)
     .action(
       run(async (provider, command: string[], options) => {
-        const scope = { providerKey: provider, squadId: options.squad }
-        const connectionId = executionConnectionId(scope, options.connection)
+        const inheritedSelection = inheritedExecutionSelection(options.connection)
         const result = await apiPost<IntegrationExecutionEnvironment>(
           `/api/squads/${options.squad}/integrations/${provider}/execute-environment`,
           {
-            ...(connectionId !== undefined ? { connectionId } : {}),
+            ...(options.connection !== undefined
+              ? { connectionId: options.connection }
+              : inheritedSelection
+                ? { inheritedSelection }
+                : {}),
           }
         )
-        process.exitCode = await runIntegrationCommand(
-          command,
-          result,
-          process.env,
-          connectionId !== undefined ? { ...scope, connectionId } : undefined
-        )
+        if (result.selection === undefined)
+          throw new Error('Unsupported integration execution selection contract; update Core and CLI together')
+        process.exitCode = await runIntegrationCommand(command, result, process.env, result.selection ?? undefined)
       })
     )
 

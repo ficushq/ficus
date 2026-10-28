@@ -6,6 +6,7 @@ import { writeExecutionWrappers } from '../../../core/src/services/integrations/
 
 const squad = '11111111-1111-4111-8111-111111111111'
 const otherSquad = '33333333-3333-4333-8333-333333333333'
+const ambiguousSquad = '33333333-4444-4444-8444-444444444444'
 const alternate = '22222222-2222-4222-8222-222222222222'
 const override = '44444444-4444-4444-8444-444444444444'
 const cli = new URL('../index.ts', import.meta.url).pathname
@@ -15,7 +16,12 @@ type Request = { squadId: string; provider: string; connectionId?: string }
 /** Actual CLI + wrapper processes, with synthetic loopback authorization and no operator store. */
 async function execute(
   command: (paths: { otherWrapper: string }) => string[],
-  options: { defaultState?: 'healthy' | 'absent' | 'unhealthy'; revokeAfterFirst?: boolean } = {}
+  options: {
+    defaultState?: 'healthy' | 'absent' | 'unhealthy'
+    revokeAfterFirst?: boolean
+    outerSquad?: string
+    omitSelection?: boolean
+  } = {}
 ) {
   const root = mkdtempSync(join(tmpdir(), 'exec-selection-'))
   const requests: Request[] = []
@@ -27,22 +33,40 @@ async function execute(
         new URL(req.url).pathname
       )
       if (!match) return new Response('Unexpected test endpoint', { status: 404 })
-      const body = (await req.json()) as { connectionId?: string }
-      const request = { squadId: match[1]!, provider: match[2]!, ...body }
+      const body = (await req.json()) as {
+        connectionId?: string
+        inheritedSelection?: { providerKey: string; squadId: string; connectionId: string }
+      }
+      // Model the real guard's authoritative unique lookup; production never prefix-matches context.
+      const candidates = [squad, otherSquad, ambiguousSquad].filter((id) => id.startsWith(match[1]!))
+      if (match[1]!.length < 8 || candidates.length !== 1)
+        return Response.json({ error: 'Squad not found' }, { status: 404 })
+      const canonicalSquad = candidates[0]!
+      const inherited = body.inheritedSelection
+      const connectionId =
+        body.connectionId ??
+        (inherited?.squadId === canonicalSquad && inherited.providerKey === match[2]
+          ? inherited.connectionId
+          : undefined)
+      const request = { squadId: canonicalSquad, provider: match[2]!, ...(connectionId ? { connectionId } : {}) }
       requests.push(request)
       if (
-        (!body.connectionId && options.defaultState && options.defaultState !== 'healthy') ||
-        (body.connectionId === alternate && options.revokeAfterFirst && requests.length > 1)
+        (!connectionId && options.defaultState && options.defaultState !== 'healthy') ||
+        (connectionId === alternate && options.revokeAfterFirst && requests.length > 1)
       )
         return Response.json({ error: 'Selected connection unavailable' }, { status: 409 })
-      const account =
-        body.connectionId === alternate ? 'alternate' : body.connectionId === override ? 'override' : 'default'
+      const account = connectionId === alternate ? 'alternate' : connectionId === override ? 'override' : 'default'
       return Response.json({
         environment:
           request.provider === 'github'
             ? { GITHUB_USER: account, GH_TOKEN: 'synthetic-github-command' }
             : { LINEAR_API_KEY: 'synthetic-linear-command' },
         scrubVariables: ['GH_TOKEN', 'GITHUB_TOKEN', 'GITHUB_USER', 'LINEAR_API_KEY'],
+        ...(options.omitSelection
+          ? {}
+          : {
+              selection: connectionId ? { providerKey: request.provider, squadId: canonicalSquad, connectionId } : null,
+            }),
       })
     },
   })
@@ -84,7 +108,7 @@ async function execute(
         'exec',
         'github',
         '--squad',
-        squad,
+        options.outerSquad ?? squad,
         '--connection',
         alternate,
         '--',
@@ -192,4 +216,73 @@ test('revocation between outer exec and nested wrapper refuses instead of fallin
   expect(result.code).not.toBe(0)
   expect(result.stdout).toBe('')
   expect(result.requests.map((r) => r.connectionId)).toEqual([alternate, alternate])
+})
+
+for (const defaultState of ['healthy', 'absent', 'unhealthy'] as const) {
+  for (const nested of [false, true]) {
+    test(`short outer squad preserves alternate through ${nested ? 'nested' : 'direct'} wrapper with ${defaultState} default`, async () => {
+      const result = await execute(() => (nested ? ['/bin/sh', '-c', 'gh'] : ['gh']), {
+        defaultState,
+        outerSquad: squad.slice(0, 8),
+      })
+      expect(result.code).toBe(0)
+      expect(result.stdout).toBe('account=alternate\n')
+      expect(result.requests).toEqual(
+        Array.from({ length: 2 }, () => ({ squadId: squad, provider: 'github', connectionId: alternate }))
+      )
+    })
+  }
+}
+
+for (const [outerSquad, innerSquad] of [
+  [squad, squad.slice(0, 8)],
+  [squad.slice(0, 8), squad],
+  [squad.slice(0, 8), squad.slice(0, 8)],
+]) {
+  test(`nested equivalent squad aliases retain alternate: ${outerSquad} -> ${innerSquad}`, async () => {
+    const result = await execute(() => ['ficus', 'integration', 'exec', 'github', '--squad', innerSquad!, '--', 'gh'], {
+      outerSquad,
+    })
+    expect(result.code).toBe(0)
+    expect(result.stdout).toBe('account=alternate\n')
+    expect(result.requests).toEqual(
+      Array.from({ length: 3 }, () => ({ squadId: squad, provider: 'github', connectionId: alternate }))
+    )
+  })
+}
+
+test('ambiguous and unknown nested squad prefixes refuse without executing or applying inherited selection', async () => {
+  for (const id of [otherSquad.slice(0, 8), '99999999']) {
+    const result = await execute(() => ['ficus', 'integration', 'exec', 'github', '--squad', id, '--', 'gh'])
+    expect(result.code).not.toBe(0)
+    expect(result.stdout).toBe('')
+    expect(result.requests).toEqual([{ squadId: squad, provider: 'github', connectionId: alternate }])
+  }
+})
+
+test('a uniquely resolved different squad prefix cannot inherit the outer account', async () => {
+  const result = await execute(({ otherWrapper }) => [
+    'ficus',
+    'integration',
+    'exec',
+    'github',
+    '--squad',
+    otherSquad.slice(0, 13),
+    '--',
+    otherWrapper,
+  ])
+  expect(result.code).toBe(0)
+  expect(result.stdout).toBe('account=default\n')
+  expect(result.requests).toEqual([
+    { squadId: squad, provider: 'github', connectionId: alternate },
+    { squadId: otherSquad, provider: 'github' },
+    { squadId: otherSquad, provider: 'github' },
+  ])
+})
+
+test('a Core without the canonical selection response fails closed before spawning a command', async () => {
+  const result = await execute(() => ['gh'], { omitSelection: true, outerSquad: squad.slice(0, 8) })
+  expect(result.code).not.toBe(0)
+  expect(result.stdout).toBe('')
+  expect(result.requests).toHaveLength(1)
 })

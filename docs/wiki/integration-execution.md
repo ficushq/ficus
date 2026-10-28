@@ -29,7 +29,10 @@ The existing permission-guarded endpoint remains:
 
 ```text
 POST /api/squads/:squadId/integrations/:provider/execute-environment
-{ "connectionId": "optional-attached-account-uuid" }
+{
+  "connectionId": "optional-explicit-attached-account-uuid",
+  "inheritedSelection": { "providerKey": "github", "squadId": "canonical-full-uuid", "connectionId": "attached-account-uuid" }
+}
 ```
 
 A successful, `Cache-Control: no-store` response is:
@@ -38,10 +41,11 @@ A successful, `Cache-Control: no-store` response is:
 {
   environment: Record<string, string>, // selected provider only
   scrubVariables: string[],           // names from ALL plugin execution declarations
+  selection: { providerKey: string, squadId: string, connectionId: string } | null,
 }
 ```
 
-The CLI copies the inherited environment, deletes every `scrubVariables` entry (including unassigned/disabled providers), then adds only `environment`. Unrelated inherited variables remain. Update Core and the CLI together: the new CLI refuses a response lacking the scrub contract rather than retaining cross-provider credentials.
+The CLI copies the inherited environment, deletes every `scrubVariables` entry (including unassigned/disabled providers), then adds only `environment`. Unrelated inherited variables remain. Update Core and the CLI together: the new CLI refuses a response lacking the scrub or canonical selection contract rather than retaining cross-provider credentials or silently changing accounts.
 
 ```sh
 ficus integration exec github --squad <squad-id> -- gh pr list
@@ -61,9 +65,17 @@ Every nested wrapper still enters normal exec and calls Core again with that
 connection ID. A revoked, detached, unhealthy or unavailable explicit account
 fails; it never silently falls back to the default. A missing/unhealthy default
 does not block a healthy explicit account. An explicit inner `--connection`
-overrides inherited intent. The tuple is inherited only when both provider and
-squad match exactly; an unrelated/default exec clears prior intent from its
-child environment. Malformed context fails closed without echoing its contents.
+overrides inherited intent. Supported short squad IDs are resolved uniquely and
+authorized by Core's existing squad guard. The CLI sends inherited intent as
+`inheritedSelection`; **Core**, not the CLI, compares it against that canonical
+squad ID and provider, after authorization. It returns `selection` with full,
+canonical IDs on successful explicit/inherited selection, or `null` for the
+default. The CLI stores only this authoritative response, never the raw `--squad`
+argument. Equivalent nested short/full forms therefore retain the same account.
+Ambiguous/unknown squad prefixes refuse before credentials are resolved; context
+itself must use a full UUID, never unchecked prefix matching. An unrelated/default
+exec clears prior intent from its child environment. Malformed context fails
+closed without echoing its contents.
 This metadata is never written into wrappers, bashrc or persistent environments,
 and does not replace all-provider credential scrubbing. Like `--connection`, it
 cannot grant access to an unattached or unauthorized account.

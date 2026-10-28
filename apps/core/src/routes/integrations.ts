@@ -849,18 +849,30 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
       // Same resolution as every other squad guard — the raw route param may be a short id
       // prefix, which names no squad and would authorize the wrong scope.
       requireSquadPermission('integrations:use', 'squadId'),
-      zValidator('json', z.strictObject({ connectionId: z.uuid().optional() })),
+      zValidator(
+        'json',
+        z.strictObject({
+          connectionId: z.uuid().optional(),
+          inheritedSelection: z
+            .strictObject({ providerKey: z.string().min(1), squadId: z.uuid(), connectionId: z.uuid() })
+            .optional(),
+        })
+      ),
       async (c) => {
         const providerKey = parseProviderParam(c.req.param('provider'))
         if (!providerKey || !service.executionEnvironment) return c.json({ error: 'Unsupported integration' }, 404)
         c.header('Cache-Control', 'no-store')
         // BigBrain has no shell credentials; a default-account hint would send agents the wrong way.
         if (providerKey === 'bigbrain') return c.json({ error: BIGBRAIN_EXECUTE_ENVIRONMENT_GUIDANCE }, 409)
-        const environment = await service.executionEnvironment(
-          resolvedSquadId(c),
-          providerKey,
-          c.req.valid('json').connectionId
-        )
+        const squadId = resolvedSquadId(c)
+        const { connectionId: explicit, inheritedSelection } = c.req.valid('json')
+        // Only the guard knows the canonical scope behind a short route ID. Never prefix-match intent.
+        const connectionId =
+          explicit ??
+          (inheritedSelection?.squadId === squadId && inheritedSelection.providerKey === providerKey
+            ? inheritedSelection.connectionId
+            : undefined)
+        const environment = await service.executionEnvironment(squadId, providerKey, connectionId)
         if (!environment)
           return c.json(
             {
@@ -868,7 +880,11 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
             },
             409
           )
-        return c.json({ environment, scrubVariables: service.executionVariableNames?.() ?? [] })
+        return c.json({
+          environment,
+          scrubVariables: service.executionVariableNames?.() ?? [],
+          selection: connectionId ? { providerKey, squadId, connectionId } : null,
+        })
       }
     )
     .post(

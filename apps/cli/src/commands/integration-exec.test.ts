@@ -1,19 +1,21 @@
 import { expect, test } from 'bun:test'
-import { commandExecutionEnvironment, executionConnectionId, INTEGRATION_EXEC_SELECTION_ENV } from './integration-exec'
+import {
+  commandExecutionEnvironment,
+  inheritedExecutionSelection,
+  INTEGRATION_EXEC_SELECTION_ENV,
+} from './integration-exec'
 
 const scope = { providerKey: 'github', squadId: 'squad-one' }
 const selection = { ...scope, connectionId: 'attached-alternate' }
 
-test('selection is scoped to the exact provider and squad, and an explicit inner choice wins', () => {
+test('selection parsing defers scope resolution to Core; explicit inner choice discards inherited intent', () => {
   const inherited = { [INTEGRATION_EXEC_SELECTION_ENV]: JSON.stringify(selection) }
-  expect(executionConnectionId(scope, undefined, inherited)).toBe('attached-alternate')
-  expect(executionConnectionId({ ...scope, providerKey: 'linear' }, undefined, inherited)).toBeUndefined()
-  expect(executionConnectionId({ ...scope, squadId: 'squad-two' }, undefined, inherited)).toBeUndefined()
-  expect(executionConnectionId(scope, 'inner-alternate', inherited)).toBe('inner-alternate')
-  expect(executionConnectionId(scope, 'inner-alternate', { [INTEGRATION_EXEC_SELECTION_ENV]: 'malformed' })).toBe(
-    'inner-alternate'
-  )
-  expect(executionConnectionId(scope, undefined, {})).toBeUndefined()
+  expect(inheritedExecutionSelection(undefined, inherited)).toEqual(selection)
+  expect(inheritedExecutionSelection('inner-alternate', inherited)).toBeUndefined()
+  expect(
+    inheritedExecutionSelection('inner-alternate', { [INTEGRATION_EXEC_SELECTION_ENV]: 'malformed' })
+  ).toBeUndefined()
+  expect(inheritedExecutionSelection(undefined, {})).toBeUndefined()
 })
 
 test('malformed inherited selection refuses without echoing data or falling back to default', () => {
@@ -27,7 +29,7 @@ test('malformed inherited selection refuses without echoing data or falling back
     JSON.stringify({ ...selection, connectionId: '' }),
     JSON.stringify({ ...selection, squadId: 5 }),
   ]) {
-    expect(() => executionConnectionId(scope, undefined, { [INTEGRATION_EXEC_SELECTION_ENV]: raw })).toThrow(
+    expect(() => inheritedExecutionSelection(undefined, { [INTEGRATION_EXEC_SELECTION_ENV]: raw })).toThrow(
       'Invalid integration execution selection context'
     )
   }
