@@ -1,4 +1,4 @@
-/** Execution admission health, separate from executor liveness and asset setup. */
+/** Runtime diagnostics, separate from executor liveness and asset setup; not a native Bash admission gate. */
 export interface SandboxRuntimeHealth {
   status: 'ready' | 'degraded'
   /** Non-secret, human-readable control-path failure; absent when ready. */

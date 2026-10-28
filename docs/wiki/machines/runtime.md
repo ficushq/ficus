@@ -1605,11 +1605,11 @@ settle the successor's fence. Ownerless legacy fences alone are cleared at proce
 
 ## Runtime degradation and Bash admission
 
-The sandbox server reports execution health separately from liveness:
+The sandbox server reports nested Docker diagnostics separately from executor liveness:
 `/healthz` keeps `healthy: true` while serving requests and adds
 `runtimeHealth: { status: 'ready' | 'degraded', reason?: string }`. A Docker
 probe that fails or exceeds **2 seconds**, or a box-owned **detached runc exec**
-control process at least **5 minutes** old, degrades admission. The existing
+control process at least **5 minutes** old, degrades runtime health. The existing
 Processes Docker failure (including `Docker did not answer within 15s`) feeds
 that same state immediately. Reasons contain no command lines or credentials.
 
@@ -1618,15 +1618,19 @@ starting the workload promptly. Non-detached exec waits for the workload and
 can legitimately run for hours; containerd shims and ordinary foreground work
 are not classified as stale by age. Detection never signals or restarts them.
 
-`POST /bash` refuses with HTTP 503 and JSON
-`{ code: 'sandbox_degraded', error: 'Sandbox is degraded: …' }` before command
-admission. Known failures refuse immediately, including during recovery checks.
-Read/write, Processes, cancellation and health remain usable for diagnosis.
-Checks are demand-driven by health/admission, single-flight and cached for
-30 seconds; no background polling keeps idle boxes awake. Health serves the
-latest snapshot without waiting on Docker. A fresh successful Docker and
-stale-exec check clears degradation automatically. An outstanding timed-out
-probe is retained until it settles so retries cannot accumulate stuck clients.
+Nested Docker failure, including stale detached runc, does **not** gate native
+`POST /bash` admission or client attachment: ordinary Bash and diagnostic/recovery
+commands remain usable without waiting for a Docker health check. Shell text is
+not an authorization boundary. Native Bash still enforces stopped-session spawn
+admission, invocation ownership/quarantine and execution deadlines; genuine
+failures retain their existing errors. Docker probes and container operations
+retain their own bounded timeouts. Read/write, Processes, cancellation and health
+also remain usable for diagnosis.
+Checks are demand-driven by health, single-flight and cached for 30 seconds;
+no background polling keeps idle boxes awake. Health serves the latest snapshot
+without waiting on Docker. A fresh successful Docker and stale-exec check clears
+degradation automatically. An outstanding timed-out probe is retained until it
+settles so retries cannot accumulate stuck clients.
 
 VM squad/agent status APIs forward `runtimeHealth` and the degraded `reason`,
 projecting `readiness: 'ready_degraded'` for an otherwise ready box. This does

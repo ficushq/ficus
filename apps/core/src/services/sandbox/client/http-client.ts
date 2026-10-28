@@ -323,7 +323,7 @@ export interface HealthResponse {
   uptimeSeconds: number
   /** Load and memory; absent from servers that predate it or off Linux. */
   pressure?: SandboxPressure
-  /** Execution admission health; `healthy` remains executor liveness. */
+  /** Runtime diagnostics, not a native Bash admission gate; `healthy` remains executor liveness. */
   runtimeHealth?: SandboxRuntimeHealth
   runtimeContract?: {
     runtime: 'docker'

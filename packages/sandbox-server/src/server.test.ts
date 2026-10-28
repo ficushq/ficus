@@ -145,7 +145,7 @@ afterAll(async () => {
 })
 
 describe('degraded runtime admission (mock Docker subprocess)', () => {
-  it('projects a Processes failure into health and refuses new bash without killing an active command', async () => {
+  it('keeps native Bash usable during Docker degradation without hiding health or killing active work', async () => {
     const fakeBin = mkdtempSync(join(tmpdir(), 'sandbox-fake-docker-'))
     const failed = join(fakeBin, 'failed')
     writeFileSync(join(fakeBin, 'docker'), `#!/bin/sh\n[ ! -f '${failed}' ] || exit 1\nexit 0\n`, { mode: 0o755 })
@@ -188,13 +188,19 @@ describe('degraded runtime admission (mock Docker subprocess)', () => {
         healthy: true,
         runtimeHealth: { status: 'degraded', reason: 'Docker is not available in this box' },
       })
-      const refused = await post('/bash', { command: 'touch must-not-run' })
-      expect(refused.status).toBe(503)
-      expect(await refused.json()).toMatchObject({
-        code: 'sandbox_degraded',
-        error: expect.stringContaining(health.runtimeHealth.reason),
+      const diagnostic = await post('/bash', {
+        command: 'touch diagnostic-ran; echo diagnostic; exit 7',
+        sourceEnv: false,
+        activateDevbox: false,
+        timeoutSeconds: 5,
       })
-      expect(existsSync(join(server.workspace, 'must-not-run'))).toBe(false)
+      expect(diagnostic.status).toBe(200)
+      const output = await diagnostic.text()
+      expect(output).toContain(Buffer.from('diagnostic\n').toString('base64'))
+      expect(output).toContain('"exitCode":7')
+      expect(existsSync(join(server.workspace, 'diagnostic-ran'))).toBe(true)
+      // Successful Bash is not evidence that Docker recovered.
+      expect((await (await fetch(`${server.base}/healthz`)).json()).runtimeHealth).toEqual(health.runtimeHealth)
       writeFileSync(join(server.workspace, 'release'), '')
       expect(await active).toContain('c3Vydml2ZWQK') // survived\n, base64 in SSE
     } finally {

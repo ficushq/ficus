@@ -549,7 +549,7 @@ export interface VmSandboxStatus {
   chain?: BoxChainHealth
   /** Load and memory from the box's last health check; absent for an idle box. */
   pressure?: SandboxPressure
-  /** Live execution admission health, independent of durable asset readiness. */
+  /** Live runtime diagnostics, independent of native Bash admission and durable asset readiness. */
   runtimeHealth?: SandboxRuntimeHealth
 }
 

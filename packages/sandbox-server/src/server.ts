@@ -69,7 +69,7 @@ import {
   prepareDevboxShellEnv,
   selfCacheDevboxEnvOnBoot,
 } from './services/devbox-env'
-import { boxRuntimeHealth, getHealthResponse, runtimeHealthAdmission, setDevboxReady } from './services/health'
+import { boxRuntimeHealth, getHealthResponse, setDevboxReady } from './services/health'
 import { handleShell } from './services/shell'
 import { WorkspaceWatcher } from './services/watcher'
 import { exemptLongLivedStreamFromIdleTimeout, sandboxListenerIdleTimeout } from './services/streaming-routes'
@@ -370,8 +370,9 @@ async function main(): Promise<void> {
                 throw error
               }
             case '/bash': {
-              const refused = await runtimeHealthAdmission()
-              if (refused) return refused
+              // Nested Docker health is diagnostic, not native Bash liveness.
+              // Keep recovery commands usable; handleBash owns actual spawn,
+              // invocation quarantine and execution deadlines.
               await bashReady
               const response = handleBash(body, undefined, { onAdmissionFenced: requestReservation.release })
               bashReservationTransferred = true

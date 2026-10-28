@@ -1,4 +1,4 @@
-/** Executor liveness and non-destructive execution admission health. */
+/** Executor liveness and non-destructive nested Docker diagnostics. */
 
 const startTime = Date.now()
 import { readExecutorCommandIdentity, type ExecutorCommandIdentity } from './command-identity'
@@ -14,7 +14,7 @@ interface RuntimeHealthDependencies {
 
 /**
  * Demand-driven, single-flight checks, at most once per 30s. No background poll
- * loop keeps an idle box awake. Failed admission never kills existing work.
+ * loop keeps an idle box awake. Findings never gate native Bash or kill work.
  * Keep the underlying probe until it settles even after our deadline: a kernel
  * stuck Docker client must not accumulate more clients on every status poll.
  */
@@ -101,22 +101,6 @@ export class BoxRuntimeHealth {
 }
 
 export const boxRuntimeHealth = new BoxRuntimeHealth()
-
-/** Known degraded boxes refuse immediately; only healthy/first admission awaits a bounded check. */
-export async function runtimeHealthAdmission(runtime = boxRuntimeHealth): Promise<Response | undefined> {
-  const previous = runtime.snapshot()
-  const refresh = runtime.refresh()
-  if (previous.status !== 'degraded') await refresh
-  const health = previous.status === 'degraded' ? previous : runtime.snapshot()
-  if (health.status !== 'degraded') return undefined
-  return Response.json(
-    {
-      code: 'sandbox_degraded',
-      error: `Sandbox is degraded: ${health.reason}. New bash invocations are temporarily refused; inspect Processes.`,
-    },
-    { status: 503 }
-  )
-}
 
 const VERSION = process.env.EXECUTOR_VERSION || '0.2.0'
 

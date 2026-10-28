@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'bun:test'
-import { BoxRuntimeHealth, getHealthResponse, runtimeHealthAdmission } from './health'
+import { BoxRuntimeHealth, getHealthResponse } from './health'
 
-describe('runtime degradation and bash admission', () => {
-  it('refuses new bash clearly, shares the health reason, and recovers on a later healthy check', async () => {
+describe('runtime Docker diagnostics', () => {
+  it('shares Docker failure reasons, caches checks, and recovers on a later healthy check', async () => {
     let now = 0
     let available = false
     let probes = 0
@@ -14,28 +14,21 @@ describe('runtime degradation and bash admission', () => {
         if (!available) throw new Error('Docker is not available in this box')
       },
     })
-    const refused = await runtimeHealthAdmission(runtime)
-    expect(refused?.status).toBe(503)
-    expect(await refused?.json()).toEqual({
-      code: 'sandbox_degraded',
-      error:
-        'Sandbox is degraded: Docker is not available in this box. New bash invocations are temporarily refused; inspect Processes.',
-    })
+    await runtime.refresh()
     expect(getHealthResponse({}, runtime)).toMatchObject({
       healthy: true,
       runtimeHealth: { status: 'degraded', reason: 'Docker is not available in this box' },
     })
-    await runtimeHealthAdmission(runtime)
+    await runtime.refresh()
     expect(probes).toBe(1)
     available = true
     now = 30_000
     await runtime.refresh()
-    expect(await runtimeHealthAdmission(runtime)).toBeUndefined()
     expect(getHealthResponse({}, runtime).runtimeHealth).toEqual({ status: 'ready' })
     expect(probes).toBe(2)
   })
 
-  it('bounds a never-settling Docker probe, shares it, and refuses without waiting again', async () => {
+  it('bounds a never-settling Docker probe without blocking health or accumulating clients', async () => {
     let expire!: () => void
     let probes = 0
     let now = 0
@@ -56,12 +49,14 @@ describe('runtime degradation and bash admission', () => {
     expire()
     await Promise.all([first, second])
     expect(runtime.snapshot()).toEqual({ status: 'degraded', reason: 'Docker did not answer within 2s' })
-    const refused = await runtimeHealthAdmission(runtime)
-    expect(refused?.status).toBe(503)
+    expect(getHealthResponse({}, runtime)).toMatchObject({
+      healthy: true,
+      runtimeHealth: { status: 'degraded', reason: 'Docker did not answer within 2s' },
+    })
     now = 30_000
-    // A recovery check is due but also stuck. Admission must not wait on it.
-    expect((await runtimeHealthAdmission(runtime))?.status).toBe(503)
     const retry = runtime.refresh()
+    // A recovery check is also stuck. Health still serves its latest snapshot.
+    expect(getHealthResponse({}, runtime).runtimeHealth.status).toBe('degraded')
     expire()
     await retry
     expect(probes).toBe(1) // Do not accumulate Docker clients while the original is stuck.
@@ -73,7 +68,8 @@ describe('runtime degradation and bash admission', () => {
       staleExecReason: () => undefined,
     })
     runtime.observeContainers({ available: false, reason: 'This box runs no Docker' })
-    expect(await runtimeHealthAdmission(runtime)).toBeUndefined()
+    await runtime.refresh()
+    expect(runtime.snapshot()).toEqual({ status: 'ready' })
   })
 
   it('Processes timeout wins over an older healthy probe and requires a fresh full check to recover', async () => {

@@ -1078,6 +1078,8 @@ describe('VmSandboxManager', () => {
       runtimeHealth: { status: 'degraded', reason: 'Docker did not answer within 15s' },
     })
     expect((await h.deps.getSetupState('squad_s1'))?.readiness).toBe('ready')
+    await expect(mgr.exec('squad_s1', ['echo', 'diagnostic'])).resolves.toEqual(Buffer.from('ok'))
+    expect(client.bashCalls.at(-1)?.command).toBe("'echo' 'diagnostic'")
     degraded = false
     const recovered = await mgr.getSandboxStatus('squad_s1')
     expect(recovered).toMatchObject({ status: 'running', readiness: 'ready', runtimeHealth: { status: 'ready' } })
@@ -2727,6 +2729,46 @@ describe('VmSandboxManager', () => {
       const again = await mgr.getOrAttachClient('agent_worker_box')
       expect(again).toBe(client!)
       expect(h.addForwardCalls).toHaveLength(1)
+    })
+
+    test('keeps a Docker-degraded live box attached and usable after status sampling', async () => {
+      const h = makeHarness()
+      const owner = new VmSandboxManager(h.deps)
+      await owner.ensureSandbox('squad_s1', squadOpts)
+      h.setMachineBoxRow({ machineId: 'm1', port: 50123, status: 'ready' })
+      const createClient = h.deps.createClient!
+      const runtimeHealth: NonNullable<HealthResponse['runtimeHealth']> = {
+        status: 'degraded',
+        reason: 'Docker did not answer within 2s',
+      }
+      h.deps.createClient = (...args) => {
+        const client = createClient(...args)
+        client.health = async () => ({
+          healthy: true,
+          devboxReady: true,
+          version: 'test',
+          uptimeSeconds: 1,
+          runtimeHealth,
+        })
+        return client
+      }
+      // A separate process attaches without re-ensuring/restarting the box.
+      const observer = new VmSandboxManager(h.deps)
+      expect(await observer.attachExistingSandbox('squad_s1', squadOpts)).toBe(true)
+      const attached = await observer.getOrAttachClient('squad_s1')
+      expect(await observer.getSandboxStatus('squad_s1')).toMatchObject({
+        status: 'running',
+        readiness: 'ready_degraded',
+        devboxReady: true,
+        runtimeHealth,
+        reason: runtimeHealth.reason,
+      })
+      expect(await observer.getOrAttachClient('squad_s1')).toBe(attached)
+      expect(h.clients.get('127.0.0.1:61001')?.closed).toBe(0)
+      expect((await h.deps.getSetupState('squad_s1'))?.readiness).toBe('ready')
+      expect(h.ensureCalls).toHaveLength(1)
+      expect(h.stopCalls).toEqual([])
+      expect(h.removeCalls).toEqual([])
     })
 
     test('returns null when there is no row, the row is not ready, or the machine is not ready', async () => {
