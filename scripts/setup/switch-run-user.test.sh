@@ -33,6 +33,22 @@
 #   * --revert goes back to root;
 #   * P6 refuses on a structured target hit (REBASE_HOME_TARGET) and passes
 #     over free-text mentions of the new HOME (REBASE_HOME_TARGET_TEXT);
+#   * S4 runs --structured-only, before the services restart, and only after
+#     the real rebase; it ignores free-text mentions of the old HOME
+#     (REBASE_HOME_TEXT), in the switch and in the rollback's post-check alike,
+#     and fails (rolling back, the services never started as the user) on a
+#     structured row left under the old HOME;
+#   * with the pooler on, a rollback always starts it again before the core
+#     units, whatever step the journal reached, and S7 passes; a host left
+#     the way a failed settle left one (journal at step 6, HOME and the stored
+#     paths already back, every service up) settles and then switches;
+#   * the run survives its session: killed (HUP, then KILL to its process
+#     group) mid-rollback, the worker finishes the rollback, records its
+#     result, and releases the lock; a second run started meanwhile waits for
+#     it instead of settling the journal itself;
+#   * TERM or INT to the attached invocation mid-switch still aborts it: the
+#     worker gets TERM and rolls back, the attached invocation exits with the
+#     worker's code (143) once that is done, and .out records it;
 #   * run-core-operator.sh runs an entrypoint as the account Core runs as, with
 #     the env files parsed (never sourced), the caller's variables winning.
 #
@@ -71,12 +87,14 @@ summary() {
 SVC=ficus-srut
 skip_reason=''
 [[ ${EUID} -eq 0 ]] || skip_reason='not running as root'
-for cmd in jq yq runuser setpriv flock useradd usermod groupadd userdel sha256sum; do
+for cmd in jq yq runuser setpriv flock setsid tail useradd usermod groupadd userdel sha256sum; do
   [[ -n ${skip_reason} ]] || command -v "${cmd}" >/dev/null 2>&1 || skip_reason="${cmd} is not on PATH"
 done
 if [[ -z ${skip_reason} ]]; then
   [[ $(yq --version 2>&1) == *mikefarah* ]] || skip_reason='mikefarah yq v4 is not on PATH'
   ! id -u "${SVC}" >/dev/null 2>&1 || skip_reason="the account ${SVC} already exists"
+  ! id -u ficus-pgbouncer >/dev/null 2>&1 || skip_reason='the account ficus-pgbouncer already exists'
+  command -v python3 >/dev/null 2>&1 || command -v bun >/dev/null 2>&1 || skip_reason='neither python3 nor bun is on PATH (the fake pooler)'
   [[ ! -e /root/.ficus ]] || skip_reason='/root/.ficus already exists'
 fi
 if [[ -n ${skip_reason} ]]; then
@@ -95,6 +113,7 @@ cleanup() {
   local f
   for f in "${PIDS_DIR}"/*; do [[ -f ${f} ]] && kill -KILL "$(cat "${f}")" 2>/dev/null || true; done
   userdel -r "${SVC}" >/dev/null 2>&1 || true
+  userdel ficus-pgbouncer >/dev/null 2>&1 || true
   rm -rf /root/.ficus "/home/${SVC}" "${S}"
 }
 trap cleanup EXIT
@@ -135,6 +154,20 @@ start() {
       until [[ $(stat -c %U "/proc/${pid}" 2>/dev/null) == "${user}" ]]; do
         if ((waited >= 200)) || ! kill -0 "${pid}" 2>/dev/null; then
           echo "systemctl shim: ${u} (pid ${pid}) never ran as ${user}" >&2
+          kill -KILL "${pid}" 2>/dev/null || true
+          return 1
+        fi
+        /bin/sleep 0.05
+        waited=$((waited + 1))
+      done
+      echo "${pid}" >"${st}/pids/${u}"
+      ;;
+    ficus-pgbouncer)
+      setsid "${SRU_SHIMS}/pooler-listen" </dev/null >/dev/null 2>&1 9>&- &
+      local pid=$! waited=0
+      until bash -c 'exec 3<>/dev/tcp/127.0.0.1/6432' 2>/dev/null; do
+        if ((waited >= 200)) || ! kill -0 "${pid}" 2>/dev/null; then
+          echo "systemctl shim: ${u} never listened on 6432" >&2
           kill -KILL "${pid}" 2>/dev/null || true
           return 1
         fi
@@ -201,44 +234,88 @@ cat "${SRU_SUDOERS_DIR}"/* 2>/dev/null | while IFS= read -r line; do
 done
 EOF
 # rebase-home.js over $SRU_STATE/db (one stored path per line; a line that
-# starts with ~ is a free-text mention, messages.metadata, which is rewritten
-# but, like the real program, never counts toward the target refusal).
+# starts with ~ is a free-text mention, messages.metadata: rewritten, reported
+# as REBASE_HOME_TEXT / REBASE_HOME_TARGET_TEXT, never counted toward the
+# target refusal, and left out by --structured-only — like the real program).
+# Every call is logged to systemctl.log ("rebase <args>"), so a test can see
+# it in order with the unit starts and stops. Hooks, files in $SRU_STATE:
+#   rebase-fails           every call fails;
+#   fail-from              (holds a path) a rebase from it fails;
+#   hold-from              (holds a path) a rebase from it writes in-rebase
+#                          and waits for release-rebase (60 s at most);
+#   leave-after-from       (holds a path) a rebase from it leaves a structured
+#                          row behind under that path;
+#   mention-after-rebase   every rebase is followed by a new free-text mention
+#                          of its --from (a live instance quoting the old HOME);
+#   text-always            free-text lines are printed even with --structured-only.
 cat >"${SHIMS}/bun" <<'EOF'
 #!/usr/bin/env bash
 [[ $1 == dist/rebase-home.js ]] || exit 99
 shift
+st=${SRU_STATE}
+echo "rebase $*" >>"${st}/systemctl.log"
 [[ -n ${DATABASE_URL:-} ]] || exit 2
-from='' to='' dry=0
+from='' to='' dry=0 structured=0 force=0
 while [[ $# -gt 0 ]]; do
   case $1 in
     --from) from=$2; shift 2 ;;
     --to) to=$2; shift 2 ;;
     --dry-run) dry=1; shift ;;
+    --structured-only) structured=1; shift ;;
+    --force) force=1; shift ;;
     *) shift ;;
   esac
 done
-db=${SRU_STATE}/db
-[[ -e ${SRU_STATE}/rebase-fails ]] && exit 1
+hook() { [[ -f ${st}/$1 && $(cat "${st}/$1") == "${from}" ]]; }
+db=${st}/db
+[[ -e ${st}/rebase-fails ]] && exit 1
+text=1
+[[ ${structured} -eq 1 && ! -e ${st}/text-always ]] && text=0
 moving=$(grep -c "^${from}/" "${db}" || true)
 target=$(grep -c "^${to}/" "${db}" || true)
 moving_text=$(grep -c "^~${from}/" "${db}" || true)
 target_text=$(grep -c "^~${to}/" "${db}" || true)
 if [[ ${dry} -eq 1 ]]; then
   echo "REBASE_HOME sessions.path=${moving}"
-  echo "REBASE_HOME messages.metadata=${moving_text}"
+  [[ ${text} -eq 0 ]] || echo "REBASE_HOME_TEXT messages.metadata=${moving_text}"
   echo "REBASE_HOME_TARGET sessions.path=${target}"
-  echo "REBASE_HOME_TARGET_TEXT messages.metadata=${target_text}"
+  [[ ${text} -eq 0 ]] || echo "REBASE_HOME_TARGET_TEXT messages.metadata=${target_text}"
   exit 0
 fi
-if ((moving > 0 && target > 0)); then
+hook fail-from && exit 1
+if hook hold-from; then
+  : >"${st}/in-rebase"
+  for _ in $(seq 600); do [[ -e ${st}/release-rebase ]] && break; /bin/sleep 0.1; done
+fi
+if ((moving > 0 && target > 0 && force == 0)); then
   echo "REBASE_HOME_TARGET sessions.path=${target}"
   echo "REBASE_HOME_TARGET_TEXT messages.metadata=${target_text}"
   exit 3
 fi
 sed -i -e "s|^${from}/|${to}/|" -e "s|^~${from}/|~${to}/|" "${db}"
+if hook leave-after-from; then echo "${from}/left-behind" >>"${db}"; fi
+if [[ -e ${st}/mention-after-rebase ]]; then echo "~${from}/mentioned-later" >>"${db}"; fi
 echo "REBASE_HOME sessions.path=${moving}"
-echo "REBASE_HOME messages.metadata=${moving_text}"
+echo "REBASE_HOME_TEXT messages.metadata=${moving_text}"
 EOF
+# The pooler: something that accepts on 127.0.0.1:6432 (S7 connects to it).
+if command -v python3 >/dev/null 2>&1; then
+  cat >"${SHIMS}/pooler-listen" <<'EOF'
+#!/usr/bin/env bash
+exec python3 -c 'import socket, time
+s = socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(("127.0.0.1", 6432))
+s.listen(16)
+time.sleep(3600)'
+EOF
+else
+  cat >"${SHIMS}/pooler-listen" <<EOF
+#!/usr/bin/env bash
+exec $(command -v bun) -e 'Bun.listen({ hostname: "127.0.0.1", port: 6432, socket: { data() {} } }); setInterval(() => {}, 1e9)'
+EOF
+fi
+printf '#!/usr/bin/env bash\nexit 0\n' >"${SHIMS}/pgbouncer"
 # runuser keeps the shims first on PATH for the probes it runs as the user.
 cat >"${SHIMS}/runuser" <<EOF
 #!/usr/bin/env bash
@@ -252,7 +329,9 @@ export PATH="${SHIMS}:${PATH}"
 # Every fake service start stays root for this long before it drops to its
 # User= (see the systemctl shim), so the suite always runs the slow-runner race.
 export SRU_START_DELAY=${SRU_START_DELAY:-0.3}
-export SRU_STATE="${STATE}" SRU_SUDOERS_DIR="${H}/etc/sudoers.d"
+export SRU_STATE="${STATE}" SRU_SUDOERS_DIR="${H}/etc/sudoers.d" SRU_SHIMS="${SHIMS}"
+# A second run waits for the first on the host lock: not for 15 minutes.
+export HOST_MIGRATE_LOCK_WAIT=120
 export FICUS_HOST_ROOT="${H}" FICUS_SYSTEMD_UNIT_DIR="${UNITS}"
 export HOST_MIGRATE_BACKUP_ROOT="${H}/var/backups/ficus-host-migrate"
 export BACKUP_SCRIPT_PATH="${H}/usr/local/sbin/ficus-backup.sh" BACKUP_ENV_TARGET="${H}/etc/ficus/backup.env"
@@ -263,11 +342,13 @@ CFG="${H}/root/ficus-setup/ficus-setup.yaml"
 OLD=/root/.ficus
 NEW="/home/${SVC}/.ficus"
 REL="${DEST}/releases/r1"
-fresh_host() {
-  local f
+fresh_host() { # [pool] — "pool": database.pool.enabled, the pooler installed and running
+  local f pool=false
+  [[ ${1:-} != pool ]] || pool=true
   for f in "${PIDS_DIR}"/*; do [[ -f ${f} ]] && kill -KILL "$(cat "${f}")" 2>/dev/null || true; done
   userdel -r "${SVC}" >/dev/null 2>&1 || true
-  rm -rf "${OLD}" "/home/${SVC}" "${STATE:?}"/* "${HOST_MIGRATE_BACKUP_ROOT}" "${H}/etc/sudoers.d"/* "${UNITS:?}"/*
+  rm -rf "${OLD}" "/home/${SVC}" "${STATE:?}"/* "${HOST_MIGRATE_BACKUP_ROOT}" "${H}/etc/sudoers.d"/* "${UNITS:?}"/* \
+    "${H}/etc/ficus/pgbouncer"
   mkdir -p "${PIDS_DIR}" "$(dirname "${BACKUP_SCRIPT_PATH}")"
   printf '{"hostLayout":2,"envPrefix":"FICUS"}\n' >"${REL}/artifact.json"
   : >"${REL}/.ficus-release-complete"
@@ -284,6 +365,8 @@ source:
   dest: ${DEST}
 database:
   mode: external
+  pool:
+    enabled: ${pool}
 YAML
   (umask 077 && cat >"${DEST}/.env" <<ENV
 DATABASE_URL=postgresql://u:p@db.invalid:25060/ficus?sslmode=verify-full&sslrootcert=/etc/ficus/database-ca.crt
@@ -304,7 +387,11 @@ ENV
   (
     # shellcheck source=lib.sh
     source "${SCRIPT_DIR}/lib.sh"
-    RUN_USER=root SRC_DEST=${DEST} BUN_BIN=/usr/local/bin/bun DB_MODE=external POOL_ENABLED=false
+    RUN_USER=root SRC_DEST=${DEST} BUN_BIN=/usr/local/bin/bun DB_MODE=external POOL_ENABLED=${pool}
+    if [[ ${pool} == true ]]; then
+      install_pooler "$(envfile_direct_dsn "${DEST}/.env")" 4 2 "${SCRIPT_DIR}/systemd" >/dev/null 2>&1 ||
+        echo 'fresh_host: install_pooler failed' >&2
+    fi
     install_core_units "${SCRIPT_DIR}/systemd" >/dev/null 2>&1
     install_rendered 0755 root root "${BACKUP_SCRIPT_PATH}" render_backup_script_content "${SCRIPT_DIR}/ficus-backup.sh.tmpl" \
       "${DEST}" "${OLD}" external '' https://s3.example r1 bucket tenant/ "${BACKUP_ENV_TARGET}" >/dev/null 2>&1
@@ -322,6 +409,10 @@ run_switch() { # ARGS... — prints the output, then rc=N
 last_line() { printf '%s' "$1" | grep -v '^rc=' | tail -n 1; }
 backup_home() { sed -n "s/^HOME_DIR='\(.*\)'$/\1/p" "${BACKUP_SCRIPT_PATH}"; }
 proc_user() { stat -c %U "/proc/$(cat "${PIDS_DIR}/$1")"; }
+# The newest / oldest / number of the run files matching a glob (none: empty, 0).
+run_files() { ls -1t -- "${HOST_MIGRATE_BACKUP_ROOT}/run-user-switch-runs/"*."$1" 2>/dev/null || true; }
+newest_run() { run_files "$1" | head -n 1; }
+oldest_run() { run_files "$1" | tail -n 1; }
 
 # ------------------------------------------------- 1. a switch, end to end
 fresh_host
@@ -356,9 +447,17 @@ expect_eq 'switch: no BigBrain rule on a host without BigBrain' "$([[ -e ${BIGBR
 expect_eq 'switch: a 0600 artifact becomes root:<user group> 0640' \
   "$(stat -c '%U:%G %a' "${H}/etc/ficus/artifacts/apns.p8")" "root:${SVC} 640"
 expect_eq 'switch: the journal and the backup set are gone' \
-  "$(ls -A "${HOST_MIGRATE_BACKUP_ROOT}" | grep -v '^\.lock$' | grep -v '^run-user-switch$' | wc -l):$(ls -A "${HOST_MIGRATE_BACKUP_ROOT}/run-user-switch" | wc -l)" '0:0'
+  "$(ls -A "${HOST_MIGRATE_BACKUP_ROOT}" | grep -v '^\.lock$' | grep -v '^run-user-switch$' | grep -v '^run-user-switch-runs$' | wc -l):$(ls -A "${HOST_MIGRATE_BACKUP_ROOT}/run-user-switch" | wc -l)" '0:0'
 expect_match 'switch: the backup timer was stopped before the services and started after' \
   "$(tr '\n' ' ' <"${STATE}/systemctl.log")" 'stop ficus-backup.timer .*stop ficus-api ficus-worker .*restart ficus-api ficus-worker .*start ficus-backup.timer'
+events=$(tr '\n' ' ' <"${STATE}/systemctl.log")
+expect_match 'switch: S4 is a --structured-only dry run, after the rebase and before the restart' "${events}" \
+  "rebase --from ${OLD} --to ${NEW} (rebase|systemctl) .*rebase --from ${OLD} --to ${NEW} --dry-run --structured-only .*systemctl restart ficus-api ficus-worker"
+expect_eq 'switch: nothing reads the database after the restart (S4 is not run twice)' \
+  "$(sed -n '/restart ficus-api ficus-worker/,$p' "${STATE}/systemctl.log" | grep -c '^rebase ' || true)" 0
+expect_eq 'switch: the run recorded its trailer and exit code for a caller that lost its session' \
+  "$(cat "$(newest_run out)" 2>/dev/null)" "FICUS_RUN_USER=${SVC}"$'\n''FICUS_RUN_USER_SWITCH_EXIT=0'
+expect_match 'switch: the attached run names its log and result files' "${out}" 'this run goes on if the session ends .*run-user-switch-runs/'
 expect_eq 'switch: .env was rewritten (HOME_DIR only)' "$([[ $(sha256sum <"${DEST}/.env") != "${env_before}" ]] && echo changed)" changed
 
 out=$(run_switch)
@@ -488,9 +587,11 @@ expect_eq 'revert rollback: no journal is left' "$([[ -e ${HOST_MIGRATE_BACKUP_R
 # --------------------------- 5. an interrupted run is settled by the next one
 fresh_host
 # Stop it dead right after the HOME move: rebase-home.js "hangs" and the run is killed.
+# The worker's whole process group dies at once, its wrapper included (a
+# reboot): nothing records an exit code, the attached run exits 137.
 cat >"${SHIMS}/bun.hang" <<'EOF'
 #!/usr/bin/env bash
-[[ " $* " == *' --dry-run '* ]] || { kill -KILL "${SRU_KILL_PID}"; sleep 1; }
+[[ " $* " == *' --dry-run '* ]] || kill -KILL -- "-$(cut -d' ' -f5 /proc/$$/stat)"
 EOF
 cp "${SHIMS}/bun" "${S}/bun.real"
 cat >"${SHIMS}/bun" <<EOF
@@ -501,10 +602,7 @@ EOF
 chmod 0755 "${SHIMS}/bun" "${SHIMS}/bun.hang"
 : >"${STATE}/hang"
 rc=0
-(
-  export SRU_KILL_PID=${BASHPID}
-  exec bash "${SCRIPT_DIR}/switch-run-user.sh" --config "${CFG}" --user "${SVC}"
-) >/dev/null 2>&1 || rc=$?
+bash "${SCRIPT_DIR}/switch-run-user.sh" --config "${CFG}" --user "${SVC}" >/dev/null 2>&1 || rc=$?
 rm -f "${STATE}/hang"
 expect_eq 'killed: the run died' "${rc}" 137
 expect_eq 'killed: the journal is left, after the move' \
@@ -516,6 +614,163 @@ expect_match 'killed: the next run rolls the interrupted switch back first' "${o
 expect_eq 'killed: ...then switches, and succeeds' "$(last_line "${out}")$(grep -o 'rc=[0-9]*$' <<<"${out}")" "FICUS_RUN_USER=${SVC}rc=0"
 expect_eq 'killed: ...with every stored path rebased exactly once' "$(head -n 2 "${STATE}/db")" "${NEW}/sessions/s1/log
 ${NEW}/workspaces/w/file"
+
+# ------------------------------- 7. S4 counts the structured columns only
+# A live instance mentions the old HOME in free text after the rebase; with
+# text-always the fake prints REBASE_HOME_TEXT even under --structured-only,
+# so the check's own scoping (the grep) is under test too.
+fresh_host
+: >"${STATE}/mention-after-rebase"
+: >"${STATE}/text-always"
+out=$(run_switch)
+expect_eq 'S4: a free-text mention of the old HOME after the rebase does not fail the switch' \
+  "$(last_line "${out}")$(grep -o 'rc=[0-9]*$' <<<"${out}")" "FICUS_RUN_USER=${SVC}rc=0"
+expect_eq 'S4: ...the mention is still there (and still names the old HOME)' "$(grep -c "^~${OLD}/mentioned-later$" "${STATE}/db")" 1
+# The rollback's post-check, the same: a mention of the HOME it left, after
+# the rebase back, does not make the rollback report failure.
+out=$(run_switch --revert)
+expect_eq 'S4: the revert ignores the mentions too' "$(last_line "${out}")$(grep -o 'rc=[0-9]*$' <<<"${out}")" 'FICUS_RUN_USER=rootrc=0'
+fresh_host
+: >"${STATE}/mention-after-rebase"
+: >"${STATE}/text-always"
+: >"${STATE}/unhealthy-as-${SVC}"
+out=$(run_switch)
+rm -f "${STATE}/unhealthy-as-${SVC}"
+expect_match 'S4: a rollback whose post-check sees a free-text mention of the new HOME completes' "${out}" \
+  "rolled back: the services run as root again"$'\n''FICUS_RUN_USER=root'$'\n''rc=[1-9]'
+expect_eq 'S4: ...with the mention written after the rebase back in the data' "$(grep -c "^~${NEW}/mentioned-later$" "${STATE}/db")" 1
+expect_eq 'S4: ...and no journal left' "$([[ -e ${HOST_MIGRATE_BACKUP_ROOT}/RUN_USER_SWITCH ]] && echo journal || echo none)" none
+# A structured row left under the old HOME fails S4 before the restart: the
+# services never run as the user, and the rollback (whose rebase back merges
+# the row with the rest: it is the old HOME's) completes.
+fresh_host
+printf '%s' "${OLD}" >"${STATE}/leave-after-from"
+out=$(run_switch)
+expect_match 'S4: a structured row left under the old HOME fails the switch' "${out}" "S4: stored paths still name ${OLD}: \[REBASE_HOME sessions.path=1 \]"
+expect_eq 'S4: ...which rolls back to root' "$(last_line "${out}")" 'FICUS_RUN_USER=root'
+expect_match 'S4: ...exit non-zero' "${out}" $'\nrc=[1-9][0-9]*$'
+expect_eq 'S4: ...the services were restarted once, by the rollback, never as the user' \
+  "$(grep -c '^systemctl restart ficus-api ficus-worker$' "${STATE}/systemctl.log")" 1
+expect_eq 'S4: ...every stored path is under the old HOME again' "$(grep -c "^${NEW}/" "${STATE}/db"):$(grep -c "^${OLD}/" "${STATE}/db")" '0:3'
+expect_eq 'S4: ...no journal left' "$([[ -e ${HOST_MIGRATE_BACKUP_ROOT}/RUN_USER_SWITCH ]] && echo journal || echo none)" none
+rm -f "${STATE}/leave-after-from"
+
+# ------------------- 8. a rollback always brings the pooler back (S7 passes)
+fresh_host pool
+expect_eq 'pooler: the fake host runs it as ficus-pgbouncer' "$(grep -h '^User=' "${UNITS}/ficus-pgbouncer.service") $([[ -e ${STATE}/ficus-pgbouncer.active ]] && echo active)" 'User=ficus-pgbouncer active'
+# The switch dies at step 5 (the rebase): the journal never reached step 11.
+printf '%s' "${OLD}" >"${STATE}/fail-from"
+: >"${STATE}/systemctl.log"
+out=$(run_switch)
+rm -f "${STATE}/fail-from"
+expect_match 'pooler: a switch that fails at step 5 rolls back and passes the checks, S7 included' "${out}" \
+  "rolled back: the services run as root again"$'\n''FICUS_RUN_USER=root'$'\n''rc=[1-9]'
+expect_eq 'pooler: ...the pooler runs again' "$([[ -e ${STATE}/ficus-pgbouncer.active ]] && echo active)" active
+expect_match 'pooler: ...started before the core units' "$(tr '\n' ' ' <"${STATE}/systemctl.log")" \
+  'systemctl stop ficus-pgbouncer .*systemctl start ficus-pgbouncer .*systemctl restart ficus-api ficus-worker'
+# A pooled switch then succeeds, and its revert too.
+out=$(run_switch)
+expect_eq 'pooler: a pooled switch succeeds' "$(last_line "${out}")$(grep -o 'rc=[0-9]*$' <<<"${out}")" "FICUS_RUN_USER=${SVC}rc=0"
+expect_eq 'pooler: ...the pooler runs as the user' "$(grep -h '^User=' "${UNITS}/ficus-pgbouncer.service")" "User=${SVC}"
+
+# The host the way a failed settle left it (noah, 2026-10-27): a switch died
+# at step 6, its rollback put HOME, the stored paths and every file back and
+# the services up (the pooler by hand), but reported failure and kept its
+# journal. The next run settles it from there, then switches.
+fresh_host pool
+: >"${STATE}/hang"
+rc=0
+bash "${SCRIPT_DIR}/switch-run-user.sh" --config "${CFG}" --user "${SVC}" >/dev/null 2>&1 || rc=$?
+rm -f "${STATE}/hang"
+flock "${HOST_MIGRATE_BACKUP_ROOT}/.lock" true # the killed run's last child is gone
+expect_eq 'settle: the run died after journaling step 5' "${rc}:$(tail -n 1 "${HOST_MIGRATE_BACKUP_ROOT}/RUN_USER_SWITCH")" '137:5'
+echo 6 >>"${HOST_MIGRATE_BACKUP_ROOT}/RUN_USER_SWITCH"
+mv "${NEW}" "${OLD}"
+sed -i "s|^${NEW}/|${OLD}/|" "${STATE}/db"
+systemctl start ficus-pgbouncer ficus-api ficus-worker
+setdir=$(cut -f1 "${HOST_MIGRATE_BACKUP_ROOT}/RUN_USER_SWITCH")
+: >"${STATE}/systemctl.log"
+out=$(run_switch)
+expect_match 'settle: the journal at step 6 is rolled back first' "${out}" 'an interrupted run-user switch is journaled .* rolling it back first'
+expect_match 'settle: ...cleanly (the checks pass, S7 included), the journal and its set removed' "${out}" 'rolled back: the services run as root again'
+expect_eq 'settle: ...then the switch runs and succeeds' "$(last_line "${out}")$(grep -o 'rc=[0-9]*$' <<<"${out}")" "FICUS_RUN_USER=${SVC}rc=0"
+expect_eq 'settle: ...the old backup set is gone' "$([[ -e ${setdir} ]] && echo kept || echo gone)" gone
+expect_eq 'settle: ...every stored path rebased exactly once' "$(head -n 2 "${STATE}/db")" "${NEW}/sessions/s1/log
+${NEW}/workspaces/w/file"
+expect_eq 'settle: ...the pooler runs as the user' \
+  "$(grep -h '^User=' "${UNITS}/ficus-pgbouncer.service") $([[ -e ${STATE}/ficus-pgbouncer.active ]] && echo active)" "User=${SVC} active"
+
+# ----------- 9. TERM or INT to the attached invocation still aborts the switch
+# Sent while the run is held in its rebase (step 5): the worker gets TERM,
+# rolls back once the rebase returns, and the attached invocation exits with
+# its code after that, not before. env --default-signal: a background job of
+# this (non-interactive) shell would start with INT ignored, as Ctrl-C's
+# target never does.
+for sig in TERM INT; do
+  fresh_host
+  printf '%s' "${OLD}" >"${STATE}/hold-from"
+  env --default-signal=INT bash "${SCRIPT_DIR}/switch-run-user.sh" --config "${CFG}" --user "${SVC}" >"${S}/abort.out" 2>&1 &
+  attached=$!
+  for _ in $(seq 600); do [[ -e ${STATE}/in-rebase ]] && break; /bin/sleep 0.1; done
+  expect_eq "abort ${sig}: the run is in its rebase" "$([[ -e ${STATE}/in-rebase ]] && echo held)" held
+  kill "-${sig}" "${attached}"
+  /bin/sleep 0.5
+  expect_eq "abort ${sig}: the attached invocation waits for the worker" "$(kill -0 "${attached}" 2>/dev/null && echo waiting)" waiting
+  : >"${STATE}/release-rebase"
+  rc=0
+  wait "${attached}" || rc=$?
+  rm -f "${STATE}/hold-from" "${STATE}/in-rebase" "${STATE}/release-rebase"
+  out=$(cat "${S}/abort.out")
+  expect_eq "abort ${sig}: the worker rolled back to root, the attached invocation exits with its code" \
+    "$(last_line "${out}") rc=${rc}" 'FICUS_RUN_USER=root rc=143'
+  expect_match "abort ${sig}: ...after the rollback completed" "${out}" 'rolled back: the services run as root again'
+  expect_eq "abort ${sig}: ...which .out records, exit line last" "$(cat "$(newest_run out)" 2>/dev/null)" \
+    'FICUS_RUN_USER=root'$'\n''FICUS_RUN_USER_SWITCH_EXIT=143'
+  expect_eq "abort ${sig}: ...HOME, stored paths and services are root's, no journal, the lock free" \
+    "$([[ -d ${OLD} && ! -e ${NEW} ]] && echo home):$(head -n 1 "${STATE}/db"):$(proc_user ficus-api):$([[ -e ${HOST_MIGRATE_BACKUP_ROOT}/RUN_USER_SWITCH ]] && echo journal):$(flock -n "${HOST_MIGRATE_BACKUP_ROOT}/.lock" true && echo free)" \
+    "home:${OLD}/sessions/s1/log:root::free"
+done
+
+# -------------- 10. the run survives its session; a second run waits for it
+# The session: a process group of its own whose output goes through a pipe,
+# like sshd's. Mid-rollback (held in the rebase back), it gets HUP then KILL
+# (the pipe closes with it), and a second run starts meanwhile.
+fresh_host
+: >"${STATE}/unhealthy-as-${SVC}"
+printf '%s' "${NEW}" >"${STATE}/hold-from"
+setsid bash -c 'bash "$1" --config "$2" --user "$3" 2>&1 | cat >"$4"' _ \
+  "${SCRIPT_DIR}/switch-run-user.sh" "${CFG}" "${SVC}" "${S}/session.out" &
+session=$!
+for _ in $(seq 600); do [[ -e ${STATE}/in-rebase ]] && break; /bin/sleep 0.1; done
+expect_eq 'session: the first run is rolling back' "$([[ -e ${STATE}/in-rebase ]] && echo rolling)" rolling
+rm -f "${STATE}/unhealthy-as-${SVC}"
+run_switch >"${S}/second.out" &
+second=$!
+for _ in $(seq 300); do
+  second_log=$(newest_run log)
+  [[ $(run_files log | wc -l) -eq 2 ]] && grep -q 'taking the host lock' "${second_log}" && break
+  /bin/sleep 0.1
+done
+first_log=$(oldest_run log)
+kill -HUP -- "-${session}" 2>/dev/null || true
+/bin/sleep 0.3
+kill -KILL -- "-${session}" 2>/dev/null || true
+wait "${session}" 2>/dev/null || true
+expect_eq 'session: the session is gone, its output cut short (no trailer)' \
+  "$(kill -0 "${session}" 2>/dev/null && echo alive || echo gone):$(grep -c '^FICUS_RUN_USER=' "${S}/session.out" || true)" 'gone:0'
+expect_eq 'session: the second run waits on the lock (it has not looked at the journal)' \
+  "$(if [[ -n ${second_log} && ${first_log} != "${second_log}" ]]; then grep -c 'rolling it back first\|switching from' "${second_log}" || true; else echo 'no second run log'; fi)" 0
+: >"${STATE}/release-rebase"
+wait "${second}" || true
+rm -f "${STATE}/hold-from" "${STATE}/in-rebase" "${STATE}/release-rebase"
+out=$(cat "${S}/second.out")
+expect_match 'session: the first run finished its rollback after the session ended' "$(cat "${first_log}" 2>/dev/null)" \
+  'rolled back: the services run as root again'
+expect_eq 'session: ...and recorded its result: root, exit non-zero' "$(cat "${first_log%.log}.out" 2>/dev/null)" \
+  'FICUS_RUN_USER=root'$'\n''FICUS_RUN_USER_SWITCH_EXIT=1'
+expect_eq 'session: the second run found it settled (no journal to roll back), then switched' \
+  "$(grep -c 'rolling it back first' <<<"${out}" || true):$(last_line "${out}")$(grep -o 'rc=[0-9]*$' <<<"${out}")" "0:FICUS_RUN_USER=${SVC}rc=0"
+expect_eq 'session: the lock is free' "$(flock -n "${HOST_MIGRATE_BACKUP_ROOT}/.lock" true && echo free)" free
 
 # ------------------- 6. the operator wrapper runs entrypoints as the Core account
 cat >"${SHIMS}/fake-bun" <<'EOF'

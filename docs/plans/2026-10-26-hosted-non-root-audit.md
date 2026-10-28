@@ -372,18 +372,18 @@ or back, and never guessed from directory state (the `host_migrate` doctrine).
 
 **Success checks** (all must pass before the trailer):
 
-| #   | Check                                                                                                                                    |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| S1  | `systemctl show -p User --value` is `ficus` for `ficus-api` and `ficus-worker`, and each `MainPID` belongs to `ficus` (`ps -o user= -p`) |
-| S2  | `restart_core_services` passed (health and the worker crash-loop guard)                                                                  |
-| S3  | `test ! -e "$OLD"`, and `find "$NEW" -xdev ! -user ficus` prints nothing                                                                 |
-| S4  | `rebase-home.js --dry-run --from "$OLD" --to "$NEW"` reports 0 rows on every column                                                      |
-| S5  | `runuser -u ficus -- journalctl -u ficus-api -n 1 --no-pager` prints a line                                                              |
-| S6  | `runuser -u ficus -- sudo -n -l` lists exactly the commands in 1.6 for this host                                                         |
-| S7  | With the pooler: `systemctl show -p User --value ficus-pgbouncer` is `ficus` and `127.0.0.1:6432` accepts connections                    |
-| S8  | The installed backup script's `HOME_DIR` is `$NEW` (`backup_script_read_values`)                                                         |
-| S9  | `runuser -u ficus -- test -r` passes for every file artifact, and for `host.json` on BigBrain hosts                                      |
-| S10 | `.env` is still `root 600`; `/opt/ficus-core/current` passes the F8 world-readable check                                                 |
+| #   | Check                                                                                                                                                                                                                    |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| S1  | `systemctl show -p User --value` is `ficus` for `ficus-api` and `ficus-worker`, and each `MainPID` belongs to `ficus` (`ps -o user= -p`)                                                                                 |
+| S2  | `restart_core_services` passed (health and the worker crash-loop guard)                                                                                                                                                  |
+| S3  | `test ! -e "$OLD"`, and `find "$NEW" -xdev ! -user ficus` prints nothing                                                                                                                                                 |
+| S4  | `rebase-home.js --dry-run --structured-only --from "$OLD" --to "$NEW"` reports 0 rows on every structured column (`REBASE_HOME`), run before the restart (step 15); free-text mentions (`REBASE_HOME_TEXT`) do not count |
+| S5  | `runuser -u ficus -- journalctl -u ficus-api -n 1 --no-pager` prints a line                                                                                                                                              |
+| S6  | `runuser -u ficus -- sudo -n -l` lists exactly the commands in 1.6 for this host                                                                                                                                         |
+| S7  | With the pooler: `systemctl show -p User --value ficus-pgbouncer` is `ficus` and `127.0.0.1:6432` accepts connections                                                                                                    |
+| S8  | The installed backup script's `HOME_DIR` is `$NEW` (`backup_script_read_values`)                                                                                                                                         |
+| S9  | `runuser -u ficus -- test -r` passes for every file artifact, and for `host.json` on BigBrain hosts                                                                                                                      |
+| S10 | `.env` is still `root 600`; `/opt/ficus-core/current` passes the F8 world-readable check                                                                                                                                 |
 
 After the trailer, outside the script: the machines page shows every machine
 `ready` and a box terminal opens (R11); a test push reaches an iOS device on

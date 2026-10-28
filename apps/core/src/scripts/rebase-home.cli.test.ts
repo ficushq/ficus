@@ -101,7 +101,13 @@ describeSubprocess('dist/rebase-home.js', () => {
   })
 
   test('exits 2 with the usage on a bad command line, before reading DATABASE_URL', async () => {
-    for (const argv of [[], ['--from', OLD], ['--from', `${OLD}/`, '--to', NEW], ['--from', OLD, '--to', NEW, '-x']]) {
+    for (const argv of [
+      [],
+      ['--from', OLD],
+      ['--from', `${OLD}/`, '--to', NEW],
+      ['--from', OLD, '--to', NEW, '-x'],
+      ['--from', OLD, '--to', NEW, '--structured-only'],
+    ]) {
       const result = await run(argv, getConnectionString())
       expect(result.exitCode, argv.join(' ')).toBe(2)
       expect(result.stderr).toContain('usage: bun dist/rebase-home.js --from')
@@ -112,33 +118,44 @@ describeSubprocess('dist/rebase-home.js', () => {
   test('prints a count for every column, rebases, and exits 0 on a second run that finds nothing', async () => {
     const keys = HOME_PATH_COLUMNS.map(homePathColumnKey)
     const freeText = new Set(HOME_PATH_COLUMNS.filter((entry) => entry.kind === 'jsonb-text').map(homePathColumnKey))
-    const line = (key: string, n: number) => `REBASE_HOME ${key}=${n}`
+    // Structured columns under REBASE_HOME (what switch-run-user.sh S4 fails on), free text under
+    // REBASE_HOME_TEXT (reported, never failing a check).
+    const lines = (count: (key: string) => number) => [
+      ...keys.filter((key) => !freeText.has(key)).map((key) => `REBASE_HOME ${key}=${count(key)}`),
+      ...keys.filter((key) => freeText.has(key)).map((key) => `REBASE_HOME_TEXT ${key}=${count(key)}`),
+    ]
+    const one = (key: string) => (key === 'inbox_attachments.storage_path' ? 1 : 0)
 
     const dry = await run(['--from', OLD, '--to', NEW, '--dry-run'], getConnectionString())
     expect(dry.exitCode, dry.stderr).toBe(0)
     expect(dry.stdout.trim().split('\n')).toEqual([
-      ...keys.map((key) => line(key, key === 'inbox_attachments.storage_path' ? 1 : 0)),
+      ...lines(one),
       // Structured columns under REBASE_HOME_TARGET (what refuses), free text under REBASE_HOME_TARGET_TEXT.
       ...keys.filter((key) => !freeText.has(key)).map((key) => `REBASE_HOME_TARGET ${key}=0`),
       ...keys.filter((key) => freeText.has(key)).map((key) => `REBASE_HOME_TARGET_TEXT ${key}=0`),
     ])
     expect(freeText).toEqual(new Set(['work_streams.files', 'messages.metadata']))
     expect(dry.stderr).toContain('nothing was written')
+    // --structured-only: the same structured lines, no free-text line at all.
+    const structured = await run(['--from', OLD, '--to', NEW, '--dry-run', '--structured-only'], getConnectionString())
+    expect(structured.exitCode, structured.stderr).toBe(0)
+    expect(structured.stdout.trim().split('\n')).toEqual([
+      ...keys.filter((key) => !freeText.has(key)).map((key) => `REBASE_HOME ${key}=${one(key)}`),
+      ...keys.filter((key) => !freeText.has(key)).map((key) => `REBASE_HOME_TARGET ${key}=0`),
+    ])
     const [unchanged] = await sql`SELECT storage_path FROM inbox_attachments WHERE message_id = ${messageId}`
     expect(unchanged!.storage_path).toBe(`${OLD}/inbox-attachments/m1/a1`)
 
     const first = await run(['--from', OLD, '--to', NEW], getConnectionString())
     expect(first.exitCode, first.stderr).toBe(0)
-    expect(first.stdout.trim().split('\n')).toEqual(
-      keys.map((key) => line(key, key === 'inbox_attachments.storage_path' ? 1 : 0))
-    )
+    expect(first.stdout.trim().split('\n')).toEqual(lines(one))
     expect(first.homeEntries).toEqual([])
     const [moved] = await sql`SELECT storage_path FROM inbox_attachments WHERE message_id = ${messageId}`
     expect(moved!.storage_path).toBe(`${NEW}/inbox-attachments/m1/a1`)
 
     const second = await run([`--from=${OLD}`, `--to=${NEW}`], getConnectionString())
     expect(second.exitCode, second.stderr).toBe(0)
-    expect(second.stdout.trim().split('\n')).toEqual(keys.map((key) => line(key, 0)))
+    expect(second.stdout.trim().split('\n')).toEqual(lines(() => 0))
     expect(existsSync(bundle)).toBe(true)
   })
 
