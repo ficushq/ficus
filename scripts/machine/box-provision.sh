@@ -881,8 +881,25 @@ proxy_wait_command() {
 #           and systemd's own "consider using --machine=@.host --user" hint.
 # Bound client calls too: a wedged user manager must not hang provisioning or
 # containment-failure cleanup indefinitely. This does not kill unrelated work.
+# A box user manager re-executing its D-Bus connection answers the caller with
+# "Transport endpoint is not connected" even when the verb completed (seen on a
+# live host on 2026-10-28 on both daemon-reload and a property readback; each
+# failed the whole ensure). That error is about the connection, not the verb:
+# retry it briefly. Every other failure, and stdout, pass through unchanged.
 sysu() {
-  "${SUDO[@]}" timeout --kill-after=5s 20s systemctl --machine="${UNIX_USER}@.host" --user "$@"
+  local attempt rc err
+  err="$(mktemp)"
+  for attempt in 1 2 3; do
+    rc=0
+    "${SUDO[@]}" timeout --kill-after=5s 20s systemctl --machine="${UNIX_USER}@.host" --user "$@" 2>"${err}" || rc=$?
+    if [ "${rc}" = 0 ] || [ "${attempt}" = 3 ] || ! grep -q 'Transport endpoint is not connected' "${err}"; then
+      cat "${err}" >&2
+      rm -f "${err}"
+      return "${rc}"
+    fi
+    echo "box-provision.sh: NOTE ${UNIX_USER} user manager bus disconnected during 'systemctl --user $1'; retrying" >&2
+    sleep 1
+  done
 }
 
 # systemctl for THIS box's server unit, whichever manager owns it. Everything
@@ -1017,6 +1034,39 @@ docker_containment_failure() {
   return 1
 }
 
+# The user manager has loaded the containment drop-in: it lists override.conf
+# among the unit's drop-ins and reports no pending reload.
+docker_dropin_loaded() {
+  local props
+  props="$(sysu show -p DropInPaths -p NeedDaemonReload docker.service 2>/dev/null)" || return 1
+  case "${props}" in
+    *"docker.service.d/override.conf"*) ;;
+    *) return 1 ;;
+  esac
+  case "${props}" in
+    *"NeedDaemonReload=no"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# `systemctl --machine=<box>@.host --user daemon-reload` can exit non-zero with
+# "Reload daemon failed: Transport endpoint is not connected" while the user
+# manager re-executes its bus, even though the reload itself completed (seen on
+# a live host on 2026-10-28; it took every ensure down and disabled Docker on
+# the box). The client exit status is not evidence either way: retry briefly
+# and ask the manager whether the drop-in is loaded, like the box unit reload.
+reload_docker_dropin() {
+  for _ in 1 2 3 4 5; do
+    # Keep stderr: a persistent failure must be diagnosable from the ensure log.
+    sysu daemon-reload || true
+    if docker_dropin_loaded; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 # install_slice_limits reloads the root-owned drop-in before linger/startup.
 # Verify its effect on the kernel (including ALREADY ACTIVE slices), not just
 # systemd configuration. No additional system.control overrides that could
@@ -1143,7 +1193,7 @@ provision_docker() {
   if ! run_as_box mkdir -p "${override_dir}" \
     || ! render_docker_override "${launcher_cmd}" "${home}" "$(box_uid)" \
       | run_as_box tee "${override_dir}/override.conf" >/dev/null \
-    || ! sysu daemon-reload; then
+    || ! reload_docker_dropin; then
     docker_containment_failure 'could not install/reload Docker containment drop-in'
     return 1
   fi
