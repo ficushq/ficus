@@ -35,7 +35,7 @@ export type BoxProcessSignal = SandboxProcessSignal
 export class BoxProcessError extends Error {
   constructor(
     message: string,
-    readonly status: 400 | 403 | 404 | 504
+    readonly status: 400 | 403 | 404 | 409 | 504
   ) {
     super(message)
     this.name = 'BoxProcessError'
@@ -93,10 +93,23 @@ export function readPressure(procRoot = '/proc', opts: ProcOptions = {}): BoxPre
   }
 }
 
-/** Read only the box user's aggregate, never the host root or another user's slice. */
-function slicePath(opts: ProcOptions): string {
+/** Discover our aggregate in either unit layout. Never substitute the host root
+ * or another user's slice if the expected box ancestor cannot be established.
+ */
+function slicePath(opts: ProcOptions): string | null {
   const uid = opts.uid ?? process.getuid?.() ?? -1
-  return `${opts.cgroupRoot ?? '/sys/fs/cgroup'}/user.slice/user-${uid}.slice`
+  const own = read(`${opts.procRoot ?? '/proc'}/self/cgroup`)
+  const path = own
+    ?.split('\n')
+    .find((line) => line.startsWith('0::/'))
+    ?.slice(3)
+  if (!path) return null
+  const parts = path.split('/').filter(Boolean)
+  if (parts.some((part) => part === '.' || part === '..')) return null
+  const index = parts.findIndex(
+    (part) => part === `user-${uid}.slice` || /^ficus-box-[A-Za-z0-9_-]+\.slice$/.test(part)
+  )
+  return index < 0 ? null : `${opts.cgroupRoot ?? '/sys/fs/cgroup'}/${parts.slice(0, index + 1).join('/')}`
 }
 
 function pressureSome(path: string): SandboxPressureAverages | null {
@@ -113,29 +126,76 @@ function pressureSome(path: string): SandboxPressureAverages | null {
   return { avg10: avg10!, avg60: avg60!, avg300: avg300! }
 }
 
+function quotaCpus(slice: string | null): number | null {
+  if (!slice) return null
+  const match = read(`${slice}/cpu.max`)
+    ?.trim()
+    .match(/^(\d+)\s+(\d+)$/)
+  if (!match) return null
+  const quota = Number(match[1]),
+    period = Number(match[2])
+  return Number.isSafeInteger(quota) && quota > 0 && Number.isSafeInteger(period) && period > 0 ? quota / period : null
+}
+
 function readBoxPressure(opts: ProcOptions): SandboxBoxPressure {
   const slice = slicePath(opts)
   return {
     cpuPercent: null,
     sampleMs: null,
-    cpuPressureSome: pressureSome(`${slice}/cpu.pressure`),
-    memoryPressureSome: pressureSome(`${slice}/memory.pressure`),
+    cpuQuotaCpus: quotaCpus(slice),
+    cpuQuotaPercent: null,
+    cpuThrottledPeriods: null,
+    cpuThrottledUsec: null,
+    memoryHighEvents: null,
+    memoryMaxEvents: null,
+    cpuPressureSome: slice ? pressureSome(`${slice}/cpu.pressure`) : null,
+    memoryPressureSome: slice ? pressureSome(`${slice}/memory.pressure`) : null,
   }
 }
 
-function cpuUsage(opts: ProcOptions): number | null {
-  const value = read(`${slicePath(opts)}/cpu.stat`)?.match(/^usage_usec (\d+)$/m)?.[1]
-  const usage = value === undefined ? NaN : Number(value)
-  return Number.isSafeInteger(usage) && usage >= 0 ? usage : null
+function counter(text: string | null, name: string): number | null {
+  const value = text?.match(new RegExp(`^${name} (\\d+)$`, 'm'))?.[1]
+  const count = value === undefined ? NaN : Number(value)
+  return Number.isSafeInteger(count) && count >= 0 ? count : null
 }
 
-function sampledPressure(opts: ProcOptions, before: number | null, elapsedMs: number): BoxPressure | null {
+function pressureCounters(opts: ProcOptions) {
+  const slice = slicePath(opts)
+  const cpu = slice ? read(`${slice}/cpu.stat`) : null
+  const memory = slice ? read(`${slice}/memory.events`) : null
+  return {
+    slice,
+    quota: quotaCpus(slice),
+    usage: counter(cpu, 'usage_usec'),
+    cpuThrottledPeriods: counter(cpu, 'nr_throttled'),
+    cpuThrottledUsec: counter(cpu, 'throttled_usec'),
+    memoryHighEvents: counter(memory, 'high'),
+    memoryMaxEvents: counter(memory, 'max'),
+  }
+}
+
+function sampledPressure(
+  opts: ProcOptions,
+  before: ReturnType<typeof pressureCounters>,
+  elapsedMs: number
+): BoxPressure | null {
   const pressure = readPressure(opts.procRoot, opts)
-  const after = cpuUsage(opts)
-  if (pressure?.box && before !== null && after !== null && after >= before && elapsedMs > 0 && elapsedMs <= 30_000) {
-    const cpuPercent = (after - before) / (elapsedMs * 10)
-    pressure.box.cpuPercent = Math.round(cpuPercent * 10) / 10
-    pressure.box.sampleMs = elapsedMs
+  const after = pressureCounters(opts)
+  if (!pressure?.box || !before.slice || before.slice !== after.slice || elapsedMs <= 0 || elapsedMs > 30_000)
+    return pressure
+  const delta = (before: number | null, after: number | null) =>
+    before !== null && after !== null && after >= before ? after - before : null
+  const box = pressure.box
+  const usage = delta(before.usage, after.usage)
+  if (usage !== null) {
+    box.cpuPercent = Math.round(usage / elapsedMs) / 10
+    if (before.quota !== null && before.quota === after.quota)
+      box.cpuQuotaPercent = Math.round((box.cpuPercent / before.quota) * 10) / 10
+    box.sampleMs = elapsedMs
+  }
+  for (const key of ['cpuThrottledPeriods', 'cpuThrottledUsec', 'memoryHighEvents', 'memoryMaxEvents'] as const) {
+    box[key] = delta(before[key], after[key])
+    if (box[key] !== null) box.sampleMs = elapsedMs
   }
   return pressure
 }
@@ -163,7 +223,7 @@ export class BoxPressureSampler {
     if (this.checking) return this.checking
     if (this.now() - this.sampledAt < 5_000) return Promise.resolve()
     const start = this.now()
-    const usage = cpuUsage(this.opts)
+    const usage = pressureCounters(this.opts)
     this.checking = new Promise<void>((resolve) => setTimeout(resolve, this.opts.sampleMs ?? 1_000))
       .then(() => {
         this.cached = sampledPressure(this.opts, usage, this.now() - start)
@@ -244,9 +304,16 @@ function cgroupPaths(procRoot: string, pid: number): string[] {
   })
 }
 
+function dockerHelper(procRoot: string, pid: number): boolean {
+  const executable = basename(read(`${procRoot}/${pid}/cmdline`)?.split('\0')[0] ?? '')
+  return /^(?:dockerd|rootlesskit|slirp4netns|docker-proxy|containerd|containerd-shim(?:-[\w-]+)?|vpnkit)$/.test(
+    executable
+  )
+}
+
 function unitProtection(procRoot: string, pid: number): ProtectionReason | undefined {
   const units = cgroupPaths(procRoot, pid).flatMap((path) => path.split('/'))
-  if (units.includes('docker.service')) return 'Docker runtime'
+  if (units.includes('docker.service') && dockerHelper(procRoot, pid)) return 'Docker runtime'
   if (units.includes('dbus.service')) return 'Session bus'
   if (units.some((unit) => /^(?:ficus-sandbox-server|ficus-box-[\w-]+)(?:-proxy\.service|\.socket)$/.test(unit)))
     return 'Box listener'
@@ -287,8 +354,7 @@ function protectionReason(
   }
   // Helpers may escape docker.service into sibling scopes. Require both a
   // helper role and a same-owner ancestry anchored in the runtime unit.
-  if (!/^(?:dockerd|rootlesskit|slirp4netns|docker-proxy|containerd|containerd-shim(?:-[\w-]+)?)$/.test(executable))
-    return undefined
+  if (!dockerHelper(procRoot, sample.pid)) return undefined
   let parent = sample.ppid
   const seen = new Set<number>([sample.pid])
   for (let depth = 0; parent > 1 && !seen.has(parent) && depth < 64; depth++) {
@@ -326,7 +392,7 @@ export async function listBoxProcessSnapshot(
   }
   const now = opts.now ?? (() => performance.now())
   const started = now()
-  const usage = cpuUsage(opts)
+  const usage = pressureCounters(opts)
   const first = sample()
   if (sampleMs > 0) await new Promise((resolve) => setTimeout(resolve, sampleMs))
   const elapsedMs = now() - started
@@ -343,6 +409,7 @@ export async function listBoxProcessSnapshot(
     processes.push({
       pid: current.pid,
       ppid: current.ppid,
+      startTicks: current.startTicks,
       cpuPercent: Math.round(cpuPercent * 10) / 10,
       memRssMb: rssMb(procRoot, current.pid),
       ageSeconds: Math.max(0, Math.round(uptimeSeconds - current.startTicks / ticksPerSecond)),
@@ -426,7 +493,7 @@ export function staleRuncExecReason(opts: ProcOptions = {}): string | undefined 
 export function signalBoxProcess(
   pid: unknown,
   signal: unknown,
-  opts: ProcOptions & { kill?: (pid: number, signal: NodeJS.Signals) => void } = {}
+  opts: ProcOptions & { startTicks?: unknown; kill?: (pid: number, signal: NodeJS.Signals) => void } = {}
 ): { pid: number; signal: BoxProcessSignal; command: string } {
   const procRoot = opts.procRoot ?? '/proc'
   const uid = opts.uid ?? process.getuid?.() ?? -1
@@ -438,10 +505,18 @@ export function signalBoxProcess(
   if (!BOX_PROCESS_SIGNALS.includes(name as BoxProcessSignal)) {
     throw new BoxProcessError(`signal must be one of ${BOX_PROCESS_SIGNALS.join(', ')}`, 400)
   }
+  if (
+    opts.startTicks !== undefined &&
+    (typeof opts.startTicks !== 'number' || !Number.isSafeInteger(opts.startTicks) || opts.startTicks < 0)
+  ) {
+    throw new BoxProcessError('startTicks must be a non-negative safe integer', 400)
+  }
   const stat = readStat(procRoot, pid)
   const owner = ownerUid(procRoot, pid)
   if (!stat || owner === null) throw new BoxProcessError(`No process ${pid}`, 404)
   if (owner !== uid) throw new BoxProcessError(`Process ${pid} is not owned by this box`, 403)
+  if (opts.startTicks !== undefined && stat.startTicks !== opts.startTicks)
+    throw new BoxProcessError(`Process ${pid} no longer matches the listed startTicks; refresh the process list`, 409)
   const reason = protectionReason(procRoot, uid, selfPid, stat)
   if (reason) throw new BoxProcessError(`Process ${pid}: ${reason}; cannot be signalled`, 403)
   const command = commandLine(procRoot, stat)

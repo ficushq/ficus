@@ -1830,17 +1830,25 @@ The Processes panel retains the host load/memory line. `/healthz`, squad/agent
 `sandbox-status`, the squad header warning and `sandbox-ps` carry the same additive
 `pressure.box` fields:
 
-- `cpuPercent`: delta of `user-<uid>.slice/cpu.stat` **usage_usec** (user + system
-  CPU time), divided by the actual monotonic sampling window. **100% = one CPU**,
-  not percent of the quota. The slice includes short-lived tasks and containers
-  missed by the process list. Processes samples this alongside its per-PID ticks.
-- `sampleMs`: actual window duration (normally about one second).
+- `cpuPercent`: delta of the box slice's `cpu.stat` **usage_usec** (user + system
+  CPU time), divided by the actual monotonic sampling window. **100% = one CPU**.
+  The slice includes short-lived tasks and containers missed by the process list.
+  Processes samples this alongside its per-PID ticks.
+- `cpuQuotaCpus`: quota / period from `cpu.max`; `cpuQuotaPercent` expresses sampled
+  usage as a share of that quota. An unlimited/missing/malformed quota, or a quota
+  changed during sampling, leaves the share unknown.
+- `cpuThrottledPeriods` / `cpuThrottledUsec`: deltas of `nr_throttled` and
+  `throttled_usec` in `cpu.stat`, not lifetime totals.
+- `memoryHighEvents` / `memoryMaxEvents`: `memory.events` high/max counter deltas.
+- `sampleMs`: actual counter window duration (normally about one second).
 - `cpuPressureSome` and `memoryPressureSome`: `{ avg10, avg60, avg300 }` from the
   slice's `cpu.pressure` / `memory.pressure` **some** line. These percentages are
   wall time with at least one task stalled, not CPU utilization or memory use.
 
-The slice is read directly under `/sys/fs/cgroup/user.slice/user-<uid>.slice`;
-there is no fallback to host PSI or another user's slice. Missing/malformed
+The aggregate is discovered from `/proc/self/cgroup`, walking up to the owning
+`user-<uid>.slice` (user-manager layout) or `ficus-box-<user>.slice` (system-unit
+agent layout), then read under `/sys/fs/cgroup`. There is no fallback to host PSI,
+a guessed slice, or another user's slice. Missing/malformed
 metrics, counter resets and sampling windows over 30 seconds report `null`, not
 zero. Older executors omit `box`. Off Linux the existing pressure result is null.
 Health sampling is demand-driven and single-flight: health never waits on it,
@@ -1849,29 +1857,43 @@ reuses completed samples for five seconds, and stops exposing sampled CPU after
 No loop wakes an idle box. Runtime-health degradation, admission, containment,
 restart behavior, quotas and fleet-alert hysteresis are unchanged.
 
-The UI/CLI says **This sandbox overloaded** when either local PSI `some.avg10`
-is at least 10%. Otherwise host load of at least twice the CPU count is labeled
-**Host overloaded**. When both local PSI measurements are known and below that
-threshold and this box uses less than half the host CPUs, the summary explains
-that the host is busy with other boxes. Missing metrics never support that
-inference. Host load can also include host services and uninterruptible I/O;
-these are diagnostic thresholds, not proof of a particular offending process.
+CPU PSI is a **stall** metric, not a cause: other slices can starve a runnable
+box. The UI/CLI says **This sandbox overloaded** for local reclaim (memory PSI
+`some.avg10` at least 10%, or new memory high/max events). On an overloaded host,
+usage of at least 90% of the box quota plus positive throttled-period and
+throttled-time deltas also identifies a quota-bound sandbox. Normal parallel
+work hitting quota on an otherwise quiet host does not create a header warning.
+Host load of at least twice the CPU count without those local signals is labeled
+**Host overloaded**. A box with CPU PSI `some.avg10` at least 10%, below 50% of its
+own quota, no throttling, and known low memory pressure/no reclaim events gets
+the explanation that the host is busy with other boxes. Missing metrics never
+support that inference. Host load can also include host services and
+uninterruptible I/O; these are diagnostic thresholds, not proof of a particular
+offending process. Quota saturation and throttling remain visible as details
+regardless of whether an overload warning is warranted.
 
 Process rows and every signal request use the same fresh `/proc/<pid>/cgroup`
-classification. Descendants of `docker.service` and `dbus.service` are protected
-as **Docker runtime** and **Session bus**. Box socket/proxy units are **Box
-listener**. Server identity/ancestors and the proven user manager remain
-protected. Rootless Docker helpers (`rootlesskit`, `slirp4netns`, `docker-proxy`,
-`containerd` and shims) outside the Docker unit require both a helper executable
-role and same-owner ancestry reaching that unit. Names alone do not protect a
+classification. Docker infrastructure roles (`dockerd`, `containerd` and shims,
+`rootlesskit`, `slirp4netns`, `docker-proxy`, `vpnkit`) in `docker.service` are
+protected as **Docker runtime**; membership alone does not protect payloads.
+Shells and build steps under that unit remain stoppable, including BuildKit RUN
+steps that cannot be stopped through `docker ps`. `dbus.service` processes are
+**Session bus**; box socket/proxy units are **Box listener**. Server
+identity/ancestors and the proven user manager remain protected. Helpers outside
+the Docker unit require both an executable role and same-owner ancestry reaching
+a proven Docker runtime process in that unit. Names alone do not protect a
 process; arbitrary helper children are not protected by ancestry alone.
 
 Membership in the server **service** cgroup does not protect agent command
 shells, tests or builds: they inherit that cgroup and must remain stoppable.
 Protected rows have a short role label instead of controls. Direct signal calls,
 including CLI `sandbox-kill`, receive HTTP 403 with the role and `cannot be
-signalled`; enforcement does not depend on a prior listing. Ownership and PID
-start time are rechecked before signalling. This is not an atomic kernel pidfd
+signalled`; enforcement does not depend on a prior listing. New listings expose
+`startTicks` (the kernel stat starttime), and UI signal requests echo it. CLI
+`sandbox-ps` shows it as START; `sandbox-kill --start-ticks <START>` supplies it.
+A stale row/PID identity mismatch returns HTTP 409 without signalling. Legacy
+clients omitting it retain their previous behavior. Ownership and PID start time
+are also rechecked during the request. This is not an atomic kernel pidfd
 operation, and does not claim to eliminate the final kernel scheduling race.
 Container workloads remain stoppable via `sandbox-stop-container` / the existing
 container Stop action, without killing the daemon, its shims or networking.

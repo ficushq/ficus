@@ -125,7 +125,7 @@ export function SandboxProcesses({ target }: { target: SandboxProcessesTarget })
                         <span className="text-muted">{process.protectionReason ?? 'Runs the sandbox'}</span>
                       ) : (
                         <ProcessControls
-                          key={`${target.kind}:${target.kind === 'squad' ? target.squadId : target.agentId}:${process.pid}:${process.command}`}
+                          key={`${target.kind}:${target.kind === 'squad' ? target.squadId : target.agentId}:${process.pid}:${process.startTicks}:${process.command}`}
                           target={target}
                           process={process}
                           refresh={refresh}
@@ -218,8 +218,8 @@ function ProcessControls({
   const signal = useRowControl(
     (signal: SandboxProcessSignal, abortSignal) =>
       target.kind === 'squad'
-        ? signalSandboxProcess(target.squadId, process.pid, signal, abortSignal)
-        : signalAgentSandboxProcess(target.agentId, process.pid, signal, abortSignal),
+        ? signalSandboxProcess(target.squadId, process.pid, signal, abortSignal, process.startTicks)
+        : signalAgentSandboxProcess(target.agentId, process.pid, signal, abortSignal, process.startTicks),
     refresh
   )
   // Match the executable, not incidental mentions in arguments. This is guidance only;

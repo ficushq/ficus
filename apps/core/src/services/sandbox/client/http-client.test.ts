@@ -1,3 +1,4 @@
+import type { SandboxPressure } from '@ficus/shared'
 import { describe, expect, it, mock } from 'bun:test'
 import {
   classifySandboxTransportError,
@@ -710,11 +711,15 @@ describe('process control cancellation', () => {
     })
     const controller = new AbortController()
     try {
-      await client.signalProcess(4242, 'KILL', controller.signal)
+      await client.signalProcess(4242, 'KILL', controller.signal, 12345)
       await client.stopContainer('synthetic-container', controller.signal)
       controller.abort()
       expect(seen.map(({ path, body, auth }) => ({ path, body, auth }))).toEqual([
-        { path: '/processes/signal', body: { pid: 4242, signal: 'KILL' }, auth: 'Bearer synthetic-token' },
+        {
+          path: '/processes/signal',
+          body: { pid: 4242, signal: 'KILL', startTicks: 12345 },
+          auth: 'Bearer synthetic-token',
+        },
         { path: '/containers/stop', body: { id: 'synthetic-container' }, auth: 'Bearer synthetic-token' },
       ])
       expect(seen.every(({ signal }) => signal.aborted)).toBe(true)
@@ -725,7 +730,7 @@ describe('process control cancellation', () => {
 })
 
 it('preserves per-box pressure in health and the process listing and returns infrastructure refusals', async () => {
-  const pressure = {
+  const pressure: SandboxPressure = {
     cpus: 8,
     load: [35, 20, 10],
     memTotalMb: 16000,

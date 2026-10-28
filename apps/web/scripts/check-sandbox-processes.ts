@@ -54,6 +54,7 @@ try {
   const processes: SandboxProcesses['processes'] = [
     {
       pid: 501,
+      startTicks: 900000,
       ppid: 1,
       cpuPercent: 2,
       memRssMb: 200,
@@ -97,6 +98,14 @@ try {
           },
         },
       })
+    if (path === '/api/squads/synthetic/sandbox/processes/501/signal') {
+      assert.deepEqual(route.request().postDataJSON(), { signal: 'TERM', startTicks: 900000 })
+      actions.push(path)
+      return route.fulfill({
+        status: 409,
+        json: { error: 'Process 501 no longer matches the listed startTicks; refresh the process list' },
+      })
+    }
     if (path === '/api/squads/synthetic/sandbox/containers/db/stop') {
       actions.push(path)
       return route.fulfill({ json: { id: 'db' } })
@@ -104,7 +113,7 @@ try {
     errors.push(`Unexpected API request: ${path}`)
     return route.abort()
   })
-  for (const kind of ['host', 'local', 'missing'] as const)
+  for (const kind of ['host', 'quota', 'local', 'missing'] as const)
     for (const width of [390, 1280])
       for (const dark of [false, true]) {
         pressure = {
@@ -116,9 +125,15 @@ try {
             ? {}
             : {
                 box: {
-                  cpuPercent: 20,
+                  cpuPercent: kind === 'quota' ? 390 : 20,
                   sampleMs: 1000,
-                  cpuPressureSome: quiet,
+                  cpuQuotaCpus: 4,
+                  cpuQuotaPercent: kind === 'quota' ? 97.5 : 5,
+                  cpuThrottledPeriods: kind === 'quota' ? 8 : 0,
+                  cpuThrottledUsec: kind === 'quota' ? 200000 : 0,
+                  memoryHighEvents: kind === 'local' ? 12 : 0,
+                  memoryMaxEvents: 0,
+                  cpuPressureSome: { avg10: 65, avg60: 30, avg300: 10 },
                   memoryPressureSome: kind === 'local' ? { avg10: 25, avg60: 10, avg300: 5 } : quiet,
                 },
               }),
@@ -127,11 +142,14 @@ try {
         await page.setViewportSize({ width, height: 900 })
         await page.goto(`${server.resolvedUrls!.local[0]}processes-fixture${dark ? '?dark' : ''}`)
         await page.getByRole('button', { name: 'Show processes' }).click()
-        const label = kind === 'local' ? 'This sandbox overloaded' : 'Host overloaded'
+        const label = kind === 'local' || kind === 'quota' ? 'This sandbox overloaded' : 'Host overloaded'
         const panel = page.getByRole('region', { name: 'Processes' })
         await panel.getByText(`${label}:`, { exact: true }).waitFor()
         assert.match(await panel.innerText(), /Load 35.8 on 8 CPUs/)
-        assert.match(await panel.innerText(), kind === 'missing' ? /CPU unavailable/ : /20.0% CPU/)
+        assert.match(
+          await panel.innerText(),
+          kind === 'missing' ? /CPU unavailable/ : kind === 'quota' ? /97.5% of 4 CPU quota/ : /20.0% CPU/
+        )
         for (const label of ['Docker runtime', 'Box listener', 'Session bus']) {
           const row = panel.getByRole('row').filter({ hasText: label })
           assert.equal(await row.getByRole('button').count(), 0)
@@ -154,9 +172,11 @@ try {
           await warning.innerText(),
           kind === 'host'
             ? /Host busy with other boxes/
-            : kind === 'local'
-              ? /Memory PSI some 25.0\/10.0\/5.0%/
-              : /unavailable/
+            : kind === 'quota'
+              ? /97.5% of 4 CPU quota/
+              : kind === 'local'
+                ? /Memory PSI some 25.0\/10.0\/5.0%/
+                : /unavailable/
         )
         assert.ok(
           await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
@@ -175,10 +195,18 @@ try {
           stop.click(),
         ])
         assert.equal(actions.length, 1)
+        const signal = panel.getByRole('button', { name: 'Stop process 501', exact: true })
+        await signal.click()
+        await Promise.all([
+          page.waitForResponse((response) => response.url().endsWith('/processes/501/signal')),
+          signal.click(),
+        ])
+        await panel.getByRole('alert').filter({ hasText: 'no longer matches' }).waitFor()
+        assert.equal(actions.length, 2)
       }
   assert.deepEqual(errors, [])
   console.log(
-    'PASS: 12 browser cases (host/local/missing metrics, phone/desktop, light/dark), header attribution, protected rows and container control; no page errors.'
+    'PASS: 16 browser cases (host/quota/reclaim/missing metrics, phone/desktop, light/dark), header attribution, protected rows, container control and stale-PID refusal; no page errors.'
   )
 } finally {
   await browser?.close()

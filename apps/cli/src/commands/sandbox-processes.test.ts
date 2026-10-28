@@ -25,7 +25,13 @@ test('human output uses the same host/local metrics and infrastructure labels', 
         box: {
           cpuPercent: 20,
           sampleMs: 1000,
-          cpuPressureSome: { avg10: 0, avg60: 0, avg300: 0 },
+          cpuPressureSome: { avg10: 65, avg60: 30, avg300: 10 },
+          cpuQuotaCpus: 4,
+          cpuQuotaPercent: 5,
+          cpuThrottledPeriods: 0,
+          cpuThrottledUsec: 0,
+          memoryHighEvents: 0,
+          memoryMaxEvents: 0,
           memoryPressureSome: { avg10: 1, avg60: 1, avg300: 1 },
         },
       },
@@ -88,3 +94,16 @@ for (const kind of ['agent', 'squad'] as const)
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+test('sandbox-kill sends an optional listed startTicks identity', async () => {
+  ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({ pid: 42, signal: 'TERM', command: 'build' })
+  const log = spyOn(console, 'log').mockImplementation(() => {})
+  const command = new Command()
+  registerSandboxProcessCommands(command, 'squad')
+  await command.parseAsync(['sandbox-kill', 'example', '42', '--start-ticks', '900000'], { from: 'user' })
+  expect(apiPost).toHaveBeenCalledWith('/api/squads/example/sandbox/processes/42/signal', {
+    signal: 'TERM',
+    startTicks: 900000,
+  })
+  log.mockRestore()
+})

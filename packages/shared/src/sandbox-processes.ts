@@ -14,8 +14,17 @@ export interface SandboxPressureAverages {
 export interface SandboxBoxPressure {
   /** cpu.stat usage_usec delta; 100% means one CPU, not percent of the quota. */
   cpuPercent: number | null
-  /** Actual monotonic sample duration. Null when usage cannot be sampled. */
+  /** Actual monotonic counter window. Null when no counters can be sampled. */
   sampleMs: number | null
+  /** cpu.max quota / period; null for max, unsupported or unavailable. */
+  cpuQuotaCpus?: number | null
+  /** Usage as a percentage of the stable quota during the sample. */
+  cpuQuotaPercent?: number | null
+  /** Counter deltas over sampleMs; null for unavailable/reset/stale counters. */
+  cpuThrottledPeriods?: number | null
+  cpuThrottledUsec?: number | null
+  memoryHighEvents?: number | null
+  memoryMaxEvents?: number | null
   cpuPressureSome: SandboxPressureAverages | null
   memoryPressureSome: SandboxPressureAverages | null
 }
@@ -27,13 +36,15 @@ export interface SandboxPressure {
   load: [number, number, number]
   memTotalMb: number
   memAvailableMb: number
-  /** Whole user-<uid>.slice, including short-lived tasks; absent on older executors. */
+  /** Own user or system box slice, including short-lived tasks; absent on older executors. */
   box?: SandboxBoxPressure
 }
 
 export interface SandboxProcess {
   pid: number
   ppid: number
+  /** /proc stat starttime, echoed on signals to reject stale-row PID reuse. Absent on older executors. */
+  startTicks?: number
   /** Current CPU use over a short sample, as a percentage of one CPU. */
   cpuPercent: number
   memRssMb: number
@@ -67,15 +78,20 @@ export interface SandboxProcesses {
 export const SANDBOX_PROCESS_SIGNALS = ['TERM', 'INT', 'KILL'] as const
 export type SandboxProcessSignal = (typeof SANDBOX_PROCESS_SIGNALS)[number]
 
-/** Local PSI is wall time with at least one task stalled, not CPU utilization.
- * Ten percent over the last 10s is the diagnostic threshold, not an admission rule.
+/** CPU PSI describes stalls, not their cause. Normal quota-bound parallel work
+ * alone is not an overload warning; on an overloaded host, near-quota usage plus
+ * actual throttling identifies a quota-bound box. Reclaim is a separate signal.
  */
 export function sandboxPressureLabel(
   pressure: SandboxPressure | null | undefined
 ): 'Host overloaded' | 'This sandbox overloaded' | undefined {
   if (!pressure) return undefined
-  if ((pressure.box?.cpuPressureSome?.avg10 ?? 0) >= 10 || (pressure.box?.memoryPressureSome?.avg10 ?? 0) >= 10)
-    return 'This sandbox overloaded'
+  const box = pressure.box
+  const reclaim =
+    (box?.memoryPressureSome?.avg10 ?? 0) >= 10 || (box?.memoryHighEvents ?? 0) > 0 || (box?.memoryMaxEvents ?? 0) > 0
+  const quotaBound =
+    (box?.cpuQuotaPercent ?? 0) >= 90 && (box?.cpuThrottledPeriods ?? 0) > 0 && (box?.cpuThrottledUsec ?? 0) > 0
+  if (reclaim || (isSandboxOverloaded(pressure) && quotaBound)) return 'This sandbox overloaded'
   if (isSandboxOverloaded(pressure)) return 'Host overloaded'
   return undefined
 }
@@ -102,11 +118,25 @@ export function sandboxPressureDetail(pressure: SandboxPressure): string {
   const elsewhere =
     sandboxPressureLabel(pressure) === 'Host overloaded' &&
     box?.cpuPercent != null &&
-    box.cpuPercent < pressure.cpus * 50 &&
-    box.cpuPressureSome != null &&
-    box.memoryPressureSome != null
+    box.cpuQuotaCpus != null &&
+    box.cpuQuotaCpus > 0 &&
+    box.cpuQuotaPercent != null &&
+    box.cpuQuotaPercent < 50 &&
+    box.cpuThrottledPeriods === 0 &&
+    box.cpuThrottledUsec === 0 &&
+    (box.cpuPressureSome?.avg10 ?? 0) >= 10 &&
+    box.memoryPressureSome != null &&
+    box.memoryHighEvents === 0 &&
+    box.memoryMaxEvents === 0
+  const quota =
+    box?.cpuQuotaPercent == null || box.cpuQuotaCpus == null
+      ? 'quota usage unavailable'
+      : `${box.cpuQuotaPercent.toFixed(1)}% of ${box.cpuQuotaCpus} CPU quota`
+  const count = (value: number | null | undefined) => (value == null ? 'unavailable' : String(value))
   return (
-    `This sandbox: ${cpu} · CPU PSI some ${averages(box?.cpuPressureSome)} · Memory PSI some ${averages(box?.memoryPressureSome)} (10/60/300s)` +
-    (elsewhere ? ' · Host busy with other boxes; this sandbox has low measured usage and pressure.' : '')
+    `This sandbox: ${cpu} · ${quota} · CPU PSI some ${averages(box?.cpuPressureSome)} · Memory PSI some ${averages(box?.memoryPressureSome)} (10/60/300s) · Quota throttling ${count(box?.cpuThrottledPeriods)} periods / ${count(box?.cpuThrottledUsec)} µs · Memory events high/max ${count(box?.memoryHighEvents)}/${count(box?.memoryMaxEvents)} (sample deltas)` +
+    (elsewhere
+      ? ' · Host busy with other boxes; this sandbox is stalled below its quota without quota throttling.'
+      : '')
   )
 }

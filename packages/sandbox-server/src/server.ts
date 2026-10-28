@@ -375,7 +375,7 @@ async function main(): Promise<void> {
               try {
                 return Response.json(
                   pathname === '/processes/signal'
-                    ? signalBoxProcess(body.pid, body.signal)
+                    ? signalBoxProcess(body.pid, body.signal, { startTicks: body.startTicks })
                     : await stopBoxContainer(body.id)
                 )
               } catch (error) {

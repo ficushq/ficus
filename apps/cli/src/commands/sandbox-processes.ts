@@ -36,13 +36,14 @@ export function renderSandboxProcesses(result: SandboxProcesses, limit: number):
   outputTable(
     result.processes.slice(0, limit).map((process) => ({
       PID: process.protected ? `${process.pid}*` : String(process.pid),
+      START: process.startTicks === undefined ? '' : String(process.startTicks),
       CPU: `${process.cpuPercent.toFixed(0)}%`,
       MEM: formatMemory(process.memRssMb),
       AGE: formatAge(process.ageSeconds),
       PROTECTION: process.protected ? (process.protectionReason ?? 'Runs the sandbox') : '',
       COMMAND: process.command.length > 100 ? `${process.command.slice(0, 99)}…` : process.command,
     })),
-    ['PID', 'CPU', 'MEM', 'AGE', 'PROTECTION', 'COMMAND']
+    ['PID', 'START', 'CPU', 'MEM', 'AGE', 'PROTECTION', 'COMMAND']
   )
   if (result.processes.some((process) => process.protected))
     console.log('* protected infrastructure; cannot be signalled')
@@ -91,11 +92,15 @@ export function registerSandboxProcessCommands(parent: Command, kind: 'squad' | 
     .command('sandbox-kill <id> <pid>')
     .description(`Signal one process in ${noun} (only processes the sandbox user owns)`)
     .option('-s, --signal <signal>', `Signal: ${SANDBOX_PROCESS_SIGNALS.join(', ')}`, 'TERM')
+    .option('--start-ticks <ticks>', 'Expected START from sandbox-ps (refuse a recycled PID)')
     .action(async (id, pid, options) => {
       try {
+        const startTicks = options.startTicks === undefined ? undefined : Number(options.startTicks)
+        if (startTicks !== undefined && (!/^\d+$/.test(options.startTicks) || !Number.isSafeInteger(startTicks)))
+          throw new Error('start-ticks must be a non-negative safe integer')
         const result = await apiPost<{ pid: number; signal: string; command: string }>(
           `${base(id)}/processes/${encodeURIComponent(pid)}/signal`,
-          { signal: String(options.signal).toUpperCase() }
+          { signal: String(options.signal).toUpperCase(), ...(startTicks === undefined ? {} : { startTicks }) }
         )
         if (isJsonMode()) output(result)
         else console.log(`Sent SIG${result.signal} to ${result.pid}: ${result.command}`)

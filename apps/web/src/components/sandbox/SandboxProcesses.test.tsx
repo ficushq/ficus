@@ -13,6 +13,7 @@ const listing: SandboxProcessesData = {
   processes: [
     {
       pid: 4201,
+      startTicks: 900000,
       ppid: 4200,
       cpuPercent: 187.4,
       memRssMb: 2116,
@@ -115,7 +116,7 @@ test('loads on request, flags overload, protects the sandbox server, and stops w
     expect(signal).not.toHaveBeenCalled()
     await dom.act(async () => button('Stop process 4201').click())
     await settle()
-    expect(signal).toHaveBeenCalledWith('squad-1', 4201, 'TERM', expect.any(AbortSignal))
+    expect(signal).toHaveBeenCalledWith('squad-1', 4201, 'TERM', expect.any(AbortSignal), 900000)
 
     await dom.act(async () => button('Stop container tau-test-ebb213d9-postgres-1').click())
     await dom.act(async () => button('Stop container tau-test-ebb213d9-postgres-1').click())
@@ -229,7 +230,7 @@ test('offers confirmed Kill directly for shims and runc, not commands merely men
     expect(text()).toContain('Stop (TERM) is ineffective for containerd shims')
     expect(button('Kill process 4202')).toBeUndefined()
     await confirm('Kill process 4302')
-    expect(signal).toHaveBeenCalledWith('agent-1', 4302, 'KILL', expect.any(AbortSignal))
+    expect(signal).toHaveBeenCalledWith('agent-1', 4302, 'KILL', expect.any(AbortSignal), 900000)
   }, true)
 })
 
