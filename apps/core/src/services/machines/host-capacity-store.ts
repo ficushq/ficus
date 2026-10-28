@@ -67,6 +67,16 @@ async function validClaims(tx: DbTransaction, incomingProvisionId = 0): Promise<
   // idle socket-activated server is NOT itself demand; a recent command or
   // terminal touch has a short cooldown, while running turns/generations stay
   // charged for their entire lifetime. Descendants share their root's box.
+  // A bind can remain labelled ensuring after an ordinary, awaited failure.
+  // Prefer the latest authoritative outcome; only unowned/uncertain setup holds
+  // a lane conservatively. Exclude the not-yet-admitted incoming generation.
+  const ensuringWithoutOutcome = sql`(b.status = 'ensuring' AND NOT COALESCE((
+    SELECT p.status IN ('succeeded', 'failed')
+      AND COALESCE(p.failure_class, '') NOT IN ('abandoned', 'interrupted')
+    FROM vm_box_provision_attempts p
+    WHERE p.sandbox_id = b.sandbox_id AND p.id <> ${incomingProvisionId}
+    ORDER BY p.id DESC LIMIT 1
+  ), false))`
   const observed = (await tx.execute(sql`
     WITH RECURSIVE owners AS (
       SELECT a.id, a.parent_agent_id, a.agent_type_id, a.owner_user_id, a.squad_id,
@@ -80,12 +90,12 @@ async function validClaims(tx: DbTransaction, incomingProvisionId = 0): Promise<
       WHERE NOT p.id = ANY(o.path)
     )
     SELECT b.machine_id AS "machineId", b.sandbox_id AS "sandboxId",
-      CASE WHEN b.status = 'ensuring' OR EXISTS (SELECT 1 FROM vm_box_provision_attempts p
+      CASE WHEN ${ensuringWithoutOutcome} OR EXISTS (SELECT 1 FROM vm_box_provision_attempts p
         WHERE p.sandbox_id = b.sandbox_id AND p.status = 'running' AND p.id <> ${incomingProvisionId})
         THEN 'provision' ELSE 'execution' END AS kind
     FROM machine_boxes b
     WHERE b.status IN ('ready', 'ensuring', 'stop_unverified') AND (
-      b.status = 'ensuring' OR b.last_activity_at > now() - interval '60 seconds'
+      ${ensuringWithoutOutcome} OR b.last_activity_at > now() - interval '60 seconds'
       OR EXISTS (SELECT 1 FROM vm_box_provision_attempts p WHERE p.sandbox_id = b.sandbox_id AND p.status = 'running' AND p.id <> ${incomingProvisionId})
       OR EXISTS (
         SELECT 1 FROM owners o WHERE

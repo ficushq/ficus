@@ -321,6 +321,11 @@ describe('durable host capacity claims', () => {
         )
       ).allowed
     ).toBe(true)
+    // A failed script can leave a binding in ensuring; that stale label alone
+    // must not retain the lane after its authoritative generation settled.
+    await db
+      .insert(machineBoxes)
+      .values({ sandboxId: 'agent_physical', machineId, unixUser: 'box_failed', port: 20001, status: 'ensuring' })
     await db.update(workStreams).set({ status: 'queued' }).where(eq(workStreams.id, ws.id))
     await db.update(vmBoxProvisionAttempts).set({ status: 'failed' }).where(eq(vmBoxProvisionAttempts.id, attempt.id))
     expect(await db.transaction((tx) => readHostCapacity(tx, machineId))).toMatchObject({ activeQuotaCpus: 0 })

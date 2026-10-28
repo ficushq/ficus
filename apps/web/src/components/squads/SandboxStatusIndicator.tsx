@@ -73,7 +73,6 @@ export function SandboxStatusIndicator({ squadId }: SandboxStatusIndicatorProps)
     return (
       <div className={clsx(PILL, treatmentColor)}>
         <SandboxHealthWarning squadId={squadId} status={status} />
-        <HostCapacitySummary capacity={status.hostCapacity} pressure={status.pressure} />
         <span className="relative flex h-2 w-2">
           <span className={clsx('relative inline-flex h-2 w-2 rounded-full', treatmentDot)} />
         </span>
@@ -81,6 +80,7 @@ export function SandboxStatusIndicator({ squadId }: SandboxStatusIndicatorProps)
           {label}
           {detail ? ` — ${detail}` : ''}
         </span>
+        <HostCapacitySummary capacity={status.hostCapacity} pressure={status.pressure} />
         {canRetryToolchain && (
           <button
             onClick={(e) => {
