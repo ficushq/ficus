@@ -411,11 +411,12 @@ export function buildHostPreamble(opts: HostIdentityOptions & { squadId?: string
   lines.push(`export ${[...set].map(([key, value]) => `${key}="${value}"`).join(' ')}`)
   const unmanaged = IDENTITY_ENV_KEYS.filter((key) => !set.has(key))
   if (unmanaged.length > 0) lines.push(`unset ${unmanaged.join(' ')}`)
-  lines.push(`export PATH="$${binVar}:$PATH"`)
   if (opts.squadId)
     lines.push(
       integrationWrapperPreamble(join(getSquadWorkspacePath(opts.squadId), INTEGRATION_BIN_RELATIVE_PATH)).trimEnd()
     )
+  // Restore shims last: the integration preamble prepends an agent-writable directory.
+  lines.push(`export PATH="$${binVar}:$PATH"`)
   lines.push(`unset ${locals.join(' ')} ${IDENTITY_ALIAS_KEYS.join(' ')}`)
   return `${lines.join('\n')}\n`
 }

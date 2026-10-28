@@ -419,6 +419,39 @@ describe('host env', () => {
     expect(pre.indexOf(`${names.bin}=`)).toBeLessThan(pre.indexOf(`. "${envPath}"`))
   })
 
+  test('executed preamble keeps host shims ahead of agent-writable wrappers after squad PATH overrides', () => {
+    const dot = join(home, 'workspaces', 'squads', SQUAD, '.ficus')
+    const wrappers = join(dot, 'integration-bin')
+    mkdirSync(wrappers, { recursive: true })
+    mkdirSync(hostBinDir(), { recursive: true })
+    writeFileSync(join(dot, '.env'), 'PATH=/squad-tools:/bin\n')
+    writeFileSync(join(hostBinDir(), 'ficus'), '#!/bin/sh\nprintf "host-shim\\n"\n', { mode: 0o755 })
+    writeFileSync(join(wrappers, 'ficus'), '#!/bin/sh\nprintf "wrapper-shadow\\n"\n', { mode: 0o755 })
+    for (const agent of [false, true]) {
+      const options = { squadId: SQUAD, ...(agent ? { ficusToken: 'synthetic-agent' } : {}) }
+      const env = buildHostCommandEnv({ ...options, base: { PATH: '/login-tools:/bin' } })
+      const child = Bun.spawnSync(
+        [
+          '/bin/sh',
+          '-c',
+          buildHostPreamble(options) +
+            'printf "%s\\n" "$PATH"; command -v ficus; ficus; printf "identity=%s\\n" "${FICUS_TOKEN:+set}"',
+        ],
+        {
+          env,
+          timeout: 3000,
+          stdout: 'pipe',
+          stderr: 'pipe',
+        }
+      )
+      expect(child.exitCode).toBe(0)
+      expect(child.stderr.toString()).toBe('')
+      expect(child.stdout.toString()).toBe(
+        `${hostBinDir()}:${wrappers}:/squad-tools:/bin\n${hostBinDir()}/ficus\nhost-shim\nidentity=${agent ? 'set' : ''}\n`
+      )
+    }
+  })
+
   test('buildHostPreamble unsets every identity name it was not given', () => {
     // A stale squad env must not be able to hand a credential to a shell that has none.
     const pre = buildHostPreamble({ squadId: SQUAD })
