@@ -141,6 +141,7 @@ else
     shim runuser "shift 3; ${keep_shims}"
     shim getent 'grep -m1 "^$2:" "$STUB_R/fakedb/$1" || exit 2'
     shim id '
+if [ "$1" = -u ] && [ $# -eq 1 ]; then echo 0; exit 0; fi
 if [ "$1" = -nG ]; then
   printf "%s" "$2"
   while IFS=: read -r group _ _ members; do
@@ -179,6 +180,14 @@ case "$1" in
 esac
 exit 0'
     shim systemctl '
+echo "${STUB_RUN:-single}" >>"$STUB_R/interleave.log"
+if [ "${STUB_RUN:-}" = holder ] && [ ! -e "$STUB_R/holder-entered" ]; then
+  touch "$STUB_R/holder-entered"
+  for _ in $(seq 1 500); do
+    [ ! -e "$STUB_R/hold" ] && break
+    sleep .01
+  done
+fi
 echo "systemctl $*" >>"$STUB_R/calls.log"
 dir="$STUB_R/etc/systemd/system"; verb=""; units=""; manager_args=()
 for a in "$@"; do
@@ -297,11 +306,86 @@ printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$
   }
 
   host_snapshot() {
-    (cd "${R}" && find . \( -path ./calls.log -o -path ./stderr.log -o -path ./stdout.log -o -path ./.shims \) -prune -o -printf '%p %y %l %m\n' | sort
-      find . \( -path ./calls.log -o -path ./stderr.log -o -path ./stdout.log -o -path ./.shims \) -prune -o -type f -exec sha256sum {} + | sort -k2)
+    (cd "${R}" && find . \( -path ./run/lock -o -path ./interleave.log -o -path ./calls.log -o -path ./stderr.log -o -path ./stdout.log -o -path ./.shims \) -prune -o -printf '%p %y %l %m\n' | sort
+      find . \( -path ./run/lock -o -path ./interleave.log -o -path ./calls.log -o -path ./stderr.log -o -path ./stdout.log -o -path ./.shims \) -prune -o -type f -exec sha256sum {} + | sort -k2)
   }
 
   is_link_to() { [[ -L $1 && $(readlink "$1") == "$2" ]] && echo yes || echo no; }
+
+  # Each invocation runs against owned fake services only; children are waited
+  # before fixture removal. The first systemctl pauses the holder mid-provision.
+  start_locked_provision() {
+    PATH="${R}/.shims:${PATH}" STUB_R="${R}" FICUS_HOST_ROOT="${R}" STUB_RUN="$1" \
+      FICUS_BOX_LOCK_WAIT_SECONDS="${2:-3}" bash "${TARGET}" \
+      --unix-user "${3:-${BOX}}" --port 20001 --sandbox-id squad_lock --with-docker \
+      --subuid-file "${R}/subuid" --subgid-file "${R}/subgid" --memtotal-kb 8131584 --nproc 8 \
+      >"${R}/$1.out" 2>"${R}/$1.err" &
+    CHILD=$!
+  }
+  wait_holder() {
+    for _ in $(seq 1 500); do
+      [ -e "${R}/holder-entered" ] && return
+      sleep .01
+    done
+    echo 'holder did not reach fake systemctl' >&2
+    return 1
+  }
+
+  make_host
+  docker_shims
+  provision --sandbox-id squad_lock --with-docker --subuid-file "${R}/subuid" --subgid-file "${R}/subgid" --memtotal-kb 8131584 --nproc 8
+  : >"${R}/interleave.log"
+  touch "${R}/hold"
+  start_locked_provision holder
+  holder=$CHILD
+  wait_holder
+  start_locked_provision waiter
+  waiter=$CHILD
+  sleep .15
+  expect_eq 'full-run lock: waiter cannot reach systemctl while holder runs' \
+    "$(grep -c '^waiter$' "${R}/interleave.log" || true)" 0
+  rm "${R}/hold"
+  holder_rc=0; wait "$holder" || holder_rc=$?
+  waiter_rc=0; wait "$waiter" || waiter_rc=$?
+  expect_eq 'full-run lock: holder succeeds' "$holder_rc" 0
+  expect_eq 'full-run lock: waiter succeeds' "$waiter_rc" 0
+  expect_eq 'full-run lock: systemctl traces do not interleave' \
+    "$(uniq "${R}/interleave.log" | paste -sd, -)" holder,waiter
+  rm -rf "${R}"
+
+  make_host
+  docker_shims
+  provision --sandbox-id squad_lock --with-docker --subuid-file "${R}/subuid" --subgid-file "${R}/subgid" --memtotal-kb 8131584 --nproc 8
+  : >"${R}/interleave.log"
+  touch "${R}/hold"
+  start_locked_provision holder
+  holder=$CHILD
+  wait_holder
+  start_locked_provision timeout 0.1
+  waiter=$CHILD
+  waiter_rc=0; wait "$waiter" || waiter_rc=$?
+  expect_eq 'lock timeout: distinct temporary failure exit' "$waiter_rc" 73
+  expect_eq 'lock timeout: names box and actual holder PID' \
+    "$(grep -c "FICUS_BOX_LOCK_TIMEOUT.*${BOX}.*holder_pid=${holder}" "${R}/timeout.err" || true)" 1
+  expect_eq 'lock timeout: never calls systemctl or containment on holder' \
+    "$(grep -c '^timeout$' "${R}/interleave.log" || true)" 0
+  rm "${R}/hold"
+  holder_rc=0; wait "$holder" || holder_rc=$?
+  expect_eq 'lock timeout: owner still provisions successfully' "$holder_rc" 0
+  expect_eq 'lock timeout: Docker remains active for holder' \
+    "$([[ -f ${R}/fakedb/active-docker.service ]] && echo yes || echo no)" yes
+  rm -rf "${R}"
+
+  # A held lock for another account must not block this box. Acquire the actual
+  # lock inode directly, with no fake systemd shared state between different UIDs.
+  make_host
+  mkdir -p "${R}/run/lock"
+  exec 7>"${R}/run/lock/ficus-box-box_bbbbbbbbbbbb.lock"
+  flock -x 7
+  provision --sandbox-id agent_x --unit-mode system
+  expect_eq 'different box lock: provisioning is independent' "$PROV_RC" 0
+  exec 7>&-
+  rm -rf "${R}"
 
   # -- a fresh system-mode box ------------------------------------------------
   make_host

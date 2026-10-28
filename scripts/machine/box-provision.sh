@@ -145,6 +145,8 @@
 
 set -euo pipefail
 
+ORIGINAL_ARGS=("$@")
+
 SANDBOX_ID=""
 UNIX_USER=""
 PORT=""
@@ -2058,6 +2060,51 @@ fi
 if [ "${PRINT_PORT_GUARD}" = true ]; then
   render_port_guard
   exit 0
+fi
+
+# The root-owned inode is never unlinked: removing a lock file would let a new
+# invocation lock a different inode while an older waiter still owns this one.
+# Keep this FD through the entire dispatch, including failure containment. The
+# restore extraction/cache locks below are separate and must not replace it.
+acquire_box_lock() {
+  local dir="${FICUS_HOST_ROOT}/run/lock" path holder_pid wait_seconds
+  path="${dir}/ficus-box-${UNIX_USER}.lock"
+  wait_seconds="${FICUS_BOX_LOCK_WAIT_SECONDS:-180}"
+  if [[ ! "${wait_seconds}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    echo 'box-provision.sh: invalid FICUS_BOX_LOCK_WAIT_SECONDS' >&2
+    return 2
+  fi
+  install -d -m 0755 "${dir}"
+  # /run/lock is root-owned; never follow an operator-created symlink.
+  if [ -L "${path}" ]; then
+    echo "box-provision.sh: refusing symlink lock ${path}" >&2
+    return 2
+  fi
+  (umask 022; touch "${path}")
+  exec 200<>"${path}"
+  if ! flock -x -w "${wait_seconds}" 200; then
+    holder_pid="$(cat "${path}" 2>/dev/null)"
+    echo "box-provision.sh: FICUS_BOX_LOCK_TIMEOUT box=${UNIX_USER} holder_pid=${holder_pid:-unknown} wait_seconds=${wait_seconds} lock=${path}" >&2
+    return 73
+  fi
+  # flock(1) exits after locking our inherited FD; its kernel PID is not the
+  # script holder. Publish the script PID ONLY after acquisition, never truncate
+  # from a waiter. Diagnostics may name a just-exited owner at the timeout edge.
+  printf '%s\n' "$$" >&200
+}
+
+# ExecStartPre cache preparation is unprivileged and does not provision; it
+# must not wait for provisioning, which may itself start a service invoking it.
+# Publication retains its existing root-only guard (never elevate a box user).
+if [ "${PREPARE_NIX_CACHE}" != true ]; then
+  if [ "${PUBLISH_NIX_CACHE}" = true ] && [ "$(id -u)" -ne 0 ]; then
+    echo 'box-provision.sh: Nix cache publication requires root' >&2
+    exit 2
+  fi
+  if [ "$(id -u)" -ne 0 ]; then
+    exec sudo bash "${BASH_SOURCE[0]}" "${ORIGINAL_ARGS[@]}"
+  fi
+  acquire_box_lock || exit $?
 fi
 
 if [ "${PREPARE_NIX_CACHE}" = true ]; then
