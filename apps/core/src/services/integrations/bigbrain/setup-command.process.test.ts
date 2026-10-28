@@ -97,21 +97,38 @@ test('a hung command and its children are killed at the deadline; one setup runs
 test('a descendant that escaped the process group and holds the pipes cannot wedge setup', async () => {
   const escapedPids = async () =>
     (await bigbrain.launches()).flatMap((entry) => ('escapedPid' in entry ? [Number(entry.escapedPid)] : []))
+  let expire: (() => void) | undefined
+  let timedOut: Promise<unknown> | undefined
   try {
     // Hung wrapper plus an escaped pipe holder: the deadline is still a hard cap.
     await bigbrain.setMode('escaped-child')
-    const started = Date.now()
-    await expect(
-      runBigbrainSetupCommand({ executablePath: bigbrain.executable, vaultPath: vault, deadlineMs: 800 })
-    ).rejects.toMatchObject({ code: 'timeout' })
-    expect(Date.now() - started).toBeLessThan(2500)
+    const pending = runBigbrainSetupCommand({
+      executablePath: bigbrain.executable,
+      vaultPath: vault,
+      deadlineMs: 800,
+      scheduleDeadline: (callback, milliseconds) => {
+        expect(milliseconds).toBe(800)
+        expire = callback
+        return () => {
+          expire = undefined
+        }
+      },
+    })
+    timedOut = pending.then(
+      () => ({ code: 'unexpected_success' }),
+      (error: unknown) => error
+    )
+    // CI may need more than 800ms just to start Bun. Fire the owned deadline
+    // only after the escaped pipe holder exists, so this tests cleanup, not startup speed.
+    await bigbrain.waitForLaunch((entry) => typeof entry.escapedPid === 'number')
+    expect(expire).toBeDefined()
+    expire!()
+    expect(await timedOut).toMatchObject({ code: 'timeout' })
     // A wrapper that exits normally while the escaped holder lingers still settles promptly.
     await bigbrain.setMode('escaped-child-ok')
-    const exited = Date.now()
     await expect(
       runBigbrainSetupCommand({ executablePath: bigbrain.executable, vaultPath: vault, deadlineMs: 10_000 })
     ).resolves.toEqual({ clientId: 'abcd1234' })
-    expect(Date.now() - exited).toBeLessThan(3000)
     // Setup is not left busy.
     await bigbrain.setMode('ok')
     await expect(runBigbrainSetupCommand({ executablePath: bigbrain.executable, vaultPath: vault })).resolves.toEqual({
@@ -119,6 +136,8 @@ test('a descendant that escaped the process group and holds the pipes cannot wed
     })
     expect((await escapedPids()).length).toBe(2)
   } finally {
+    expire?.()
+    await timedOut
     for (const pid of await escapedPids()) {
       try {
         process.kill(pid, 'SIGKILL')

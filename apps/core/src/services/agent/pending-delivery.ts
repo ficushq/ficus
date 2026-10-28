@@ -4,7 +4,8 @@
  * live-session intervention drain.
  */
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm'
-import { db, messages } from '../../db'
+import { db, messages, chatSendReceipts } from '../../db'
+import { acquireAgentQueueLock } from '../execution/agent-admission'
 import { jsonbObjectRecovered } from '../../db/jsonb'
 import { Message, MessageMetadata } from '@ficus/shared'
 import { eventEmitter } from '../../lib/infra/event-emitter'
@@ -537,9 +538,20 @@ export async function markPendingHumanMessagesStrandedRetry(agentId: string, mes
  * @returns The number of messages deleted.
  */
 export async function deletePendingMessages(agentId: string): Promise<number> {
-  const result = await db
-    .delete(messages)
-    .where(and(eq(messages.agentId, agentId), eq(messages.role, 'human'), eq(messages.pending, true)))
-    .returning()
-  return result.length
+  return db.transaction(async (tx) => {
+    await acquireAgentQueueLock(tx, agentId)
+    const pending = await tx
+      .select({ id: messages.id })
+      .from(messages)
+      .where(and(eq(messages.agentId, agentId), eq(messages.role, 'human'), eq(messages.pending, true)))
+      .for('update')
+    if (!pending.length) return 0
+    const ids = pending.map((message) => message.id)
+    // Keep accepted receipts as tombstones so a delayed HTTP retry cannot send
+    // canceled input again. Detach their restrictive FK in the same transaction
+    // as deletion; never erase the idempotency key or request hash.
+    await tx.update(chatSendReceipts).set({ messageId: null }).where(inArray(chatSendReceipts.messageId, ids))
+    const removed = await tx.delete(messages).where(inArray(messages.id, ids)).returning({ id: messages.id })
+    return removed.length
+  })
 }
