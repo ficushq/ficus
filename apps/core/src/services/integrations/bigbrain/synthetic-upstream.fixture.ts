@@ -6,6 +6,7 @@
  * <id>` serves the four public tools. It is not upstream code and holds no real credential.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { watch } from 'node:fs'
 import { join } from 'node:path'
 
 export type SyntheticMode =
@@ -27,6 +28,7 @@ export interface SyntheticBigbrain {
   observed: string
   setMode(mode: SyntheticMode): Promise<void>
   launches(): Promise<Array<Record<string, unknown>>>
+  waitForLaunch(predicate: (entry: Record<string, unknown>) => boolean): Promise<void>
 }
 
 export async function createSyntheticBigbrain(root: string, osHome: string): Promise<SyntheticBigbrain> {
@@ -57,7 +59,7 @@ export async function createSyntheticBigbrain(root: string, osHome: string): Pro
       if (mode === 'sleep') { setTimeout(() => {}, 60000); }
       else if (mode === 'escaped-child' || mode === 'escaped-child-ok') {
         // A descendant in its own session (setsid) keeps stdout/stderr open after the group is killed.
-        const escaped = spawn('setsid', ['sleep', '30'], { stdio: ['ignore', 'inherit', 'inherit'] });
+        const escaped = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { detached: true, stdio: ['ignore', 'inherit', 'inherit'] });
         appendFileSync(${JSON.stringify(observed)}, JSON.stringify({ escapedPid: escaped.pid })+'\\n');
         if (mode === 'escaped-child') setTimeout(() => {}, 60000);
         else { console.log(JSON.stringify({ mcpServers: { bigbrain: { command: 'x', args: ['mcp', '--client', 'abcd1234'], env: { BIGBRAIN_VAULT: vault } } } })); process.exit(0); }
@@ -76,7 +78,7 @@ export async function createSyntheticBigbrain(root: string, osHome: string): Pro
     } else if (args[0] === 'mcp' && args[1] === '--client') {
       if (mode === 'escaped-child' || mode === 'escaped-child-ok') {
         // Same escaped pipe holder for a session; '-ok' then exits the wrapper on its own.
-        const escaped = spawn('setsid', ['sleep', '30'], { stdio: ['ignore', 'inherit', 'inherit'] });
+        const escaped = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { detached: true, stdio: ['ignore', 'inherit', 'inherit'] });
         appendFileSync(${JSON.stringify(observed)}, JSON.stringify({ escapedPid: escaped.pid })+'\\n');
         if (mode === 'escaped-child-ok') process.exit(0);
       }
@@ -97,12 +99,37 @@ export async function createSyntheticBigbrain(root: string, osHome: string): Pro
       mode: 0o700,
     }
   )
-  return {
+  const fixture: SyntheticBigbrain = {
     root,
     osHome,
     executable,
     observed,
     setMode: (mode) => writeFile(modeFile, mode),
+    waitForLaunch(predicate) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => finish(new Error('Synthetic child never became ready')), 10_000)
+        const watcher = watch(root, () => {
+          void check()
+        })
+        let finished = false
+        function finish(error?: Error) {
+          if (finished) return
+          finished = true
+          clearTimeout(timer)
+          watcher.close()
+          if (error) reject(error)
+          else resolve()
+        }
+        async function check() {
+          try {
+            if ((await fixture.launches()).some(predicate)) finish()
+          } catch (error) {
+            finish(error as Error)
+          }
+        }
+        void check()
+      })
+    },
     async launches() {
       try {
         return (await readFile(observed, 'utf8'))
@@ -115,6 +142,7 @@ export async function createSyntheticBigbrain(root: string, osHome: string): Pro
       }
     },
   }
+  return fixture
 }
 
 /** A BigBrain vault: a directory with a regular vault.yaml. */
