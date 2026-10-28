@@ -127,7 +127,7 @@ export function decideGitHubEditors(
   const lastEditor = node.lastEditedAt ? actorIdentity(node.editor) : null
   if (node.lastEditedAt && !add(lastEditor)) return null
   if (target.editedBy) add(target.editedBy)
-  if (editors.size === 0) return { attribution: sameText ? 'creation' : 'verified_edit', editor: null, editors: [] }
+  if (editors.size === 0) return sameText ? { attribution: 'creation', editor: null, editors: [] } : null
   const renameActors = renames.map((rename) => actorIdentity(record(rename).actor))
   const editor = target.editedBy ?? lastEditor ?? renameActors.at(-1) ?? [...editors.values()][0]!
   return {

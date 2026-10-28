@@ -27,7 +27,7 @@ const REASON_LABELS: Record<string, string> = {
   stale_observation: 'Observed out of order; a newer version may exist',
   ambiguous_observation: 'Who made this change could not be verified',
   content_unavailable: 'Content could not be read from GitHub',
-  parent_content_stale: 'Quoted parent text changed or cannot be verified; review is required',
+  parent_content_stale: 'Quoted parent text changed or cannot be verified; this event can only be denied',
   trust_revoked: 'Author was trusted when sent, but trust was removed before delivery',
   filter_disabled: 'Released when the squad turned author filtering off',
   decision_model_allowed: 'A decision model screened it as safe; its author is still not trusted',

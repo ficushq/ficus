@@ -14,7 +14,12 @@ import * as store from './feedback-store'
 import { GitHubApiUnavailableError } from '../../github/api-client'
 
 const time = '2026-10-02T10:00:00Z'
-function event(body = 'A', updatedAt = time, review = false, transportId?: string): VerifiedIngressEvent {
+function event(
+  body = 'A',
+  updatedAt = time,
+  review = false,
+  transportId?: string
+): Omit<VerifiedIngressEvent, 'payload'> & { payload: Record<string, unknown> } {
   return {
     type: review ? 'pull_request_review' : 'issue_comment',
     githubObservation: { kind: 'webhook', deliveryId: transportId },

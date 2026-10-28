@@ -17,6 +17,9 @@ interface Cursor extends Record<string, unknown> {
 }
 
 type Native = Record<string, any>
+type IssueIngress = VerifiedIngressEvent & {
+  payload: Record<string, unknown> & { repository: { full_name: string; id?: number } }
+}
 const log = createLogger('github-issue-poller')
 
 /** Repository assignment discovery, including issues that do not yet have a Ficus stream. */
@@ -71,7 +74,7 @@ export class GitHubIssueEventPoller implements EventPollingCapability<GitHubIssu
         budgetUnitsConsumed: 1,
       }
 
-    const events: VerifiedIngressEvent[] = []
+    const events: IssueIngress[] = []
     for (const item of [...native].reverse()) {
       if (item.id <= cursor.watermark || item.id > ceiling) continue
       const issue = item.issue
@@ -88,7 +91,7 @@ export class GitHubIssueEventPoller implements EventPollingCapability<GitHubIssu
       // rests on this event's `created_at` equalling the issue's `closed_at`,
       // which GitHub holds to in practice; any skew would leave a permanent
       // duplicate row, since these Activity families never delete.
-      const event: VerifiedIngressEvent = {
+      const event: IssueIngress = {
         type: 'issues',
         payload: {
           action: item.event,

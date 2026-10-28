@@ -214,3 +214,9 @@ describe('readGitHubEditorVerification', () => {
     ).rejects.toBeInstanceOf(GitHubApiUnavailableError)
   })
 })
+
+test('authentic stale poll text contradicting a complete empty history is not a verified edit', () => {
+  expect(
+    decideGitHubEditors({ ...review, capturedSource: 'poll', body: 'Captured X' }, node({ body: 'Current Y' }))
+  ).toBeNull()
+})

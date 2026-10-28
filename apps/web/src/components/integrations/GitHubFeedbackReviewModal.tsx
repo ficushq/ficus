@@ -43,6 +43,7 @@ type Action = ModerateGitHubFeedback['action']
 interface SelectedVersion extends GitHubFeedbackSelection {
   author: GitHubAccountIdentity | null
   contentAvailable: boolean
+  canAllow: boolean
 }
 
 const FOCUSABLE =
@@ -249,6 +250,7 @@ export function GitHubFeedbackReviewModal({
           decisionVersion: version.decisionVersion,
           author: version.author,
           contentAvailable: version.contentAvailable,
+          canAllow: version.reason !== 'parent_content_stale',
         })
       return next
     })
@@ -265,6 +267,7 @@ export function GitHubFeedbackReviewModal({
             decisionVersion: row.decisionVersion,
             author: row.author,
             contentAvailable: row.contentAvailable,
+            canAllow: row.reason !== 'parent_content_stale',
           })
       }
       return next
@@ -276,6 +279,8 @@ export function GitHubFeedbackReviewModal({
     ...new Map(selection.flatMap((s) => (s.author ? [[s.author.accountId, s.author]] : []))).values(),
   ]
   const allContentAvailable = selection.every((s) => s.contentAvailable && !withheldIds.has(s.revisionId))
+  const denyOnlyIds = new Set(rows.filter((row) => row.reason === 'parent_content_stale').map((row) => row.id))
+  const allCanAllow = selection.every((s) => s.canAllow && !denyOnlyIds.has(s.revisionId))
   const allAuthorsKnown = selection.every((s) => s.author)
   const busy = decide.isPending
   const moderating = canModerate && queue === 'pending'
@@ -317,7 +322,7 @@ export function GitHubFeedbackReviewModal({
                   <button
                     type="button"
                     className="ficus-button ficus-button-primary px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={busy || !allContentAvailable || !allAuthorsKnown}
+                    disabled={busy || !allContentAvailable || !allAuthorsKnown || !allCanAllow}
                     onClick={() => decide.mutate('allow_trust')}
                   >
                     Allow and trust {trustAuthors.length} {trustAuthors.length === 1 ? 'author' : 'authors'}
@@ -364,7 +369,7 @@ export function GitHubFeedbackReviewModal({
                 <button
                   type="button"
                   className="ficus-button ficus-button-secondary px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={busy || selection.length === 0 || !allContentAvailable}
+                  disabled={busy || selection.length === 0 || !allContentAvailable || !allCanAllow}
                   onClick={() => decide.mutate('allow_once')}
                 >
                   Allow once
@@ -372,7 +377,14 @@ export function GitHubFeedbackReviewModal({
                 <button
                   type="button"
                   className="ficus-button ficus-button-primary px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={busy || selection.length === 0 || !allContentAvailable || !allAuthorsKnown || confirmTrust}
+                  disabled={
+                    busy ||
+                    selection.length === 0 ||
+                    !allContentAvailable ||
+                    !allAuthorsKnown ||
+                    !allCanAllow ||
+                    confirmTrust
+                  }
                   onClick={() => setConfirmTrust(true)}
                 >
                   Allow and trust author

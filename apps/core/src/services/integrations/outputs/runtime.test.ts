@@ -597,7 +597,7 @@ test('a second issue assignment keeps the trigger receipt and cannot duplicate l
       { watermark: 99 }
     )
     expect(result.events).toHaveLength(1)
-    expect(result.events[0]!.payload.repository.id).toBe(10)
+    expect(result.events[0]!.payload).toMatchObject({ repository: { id: 10 } })
     expect(result.budgetUnitsConsumed).toBe(2)
     expect(await publishIntegrationOutputs('github', result.events[0]!, fixtureAuthority())).toEqual([squadId])
     expect(await publishIntegrationOutputs('github', event, fixtureAuthority())).toEqual([squadId])

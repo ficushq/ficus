@@ -90,6 +90,8 @@ export async function moderateGitHubFeedback(
       )
         throw new GitHubFeedbackError('moderation_selection_conflict', 409)
       if (request.action !== 'deny') {
+        if (rows.some((row) => row.reason === 'parent_content_stale'))
+          throw new GitHubFeedbackError('moderation_parent_content_stale', 409)
         if (rows.some((row) => !row.envelope || row.reason === 'content_unavailable'))
           throw new GitHubFeedbackError('moderation_content_unavailable', 409)
         // The detail view withholds the body when no squad connection can read the source any

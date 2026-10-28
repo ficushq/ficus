@@ -30,6 +30,7 @@ test('native binding eligibility agrees between final admission and pure SQL inb
     fact: fact!,
     authority: { kind: 'connection', squadId: crypto.randomUUID(), connectionId: crypto.randomUUID() },
     createdAt: new Date(),
+    triggerSquadIds: [],
     matchedAt: null,
     lastErrorCode: null,
   }

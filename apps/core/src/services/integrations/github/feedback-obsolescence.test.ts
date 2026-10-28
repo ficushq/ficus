@@ -36,7 +36,7 @@ function observation(
   second: number,
   action = 'edited',
   kind: 'webhook' | 'poll' = 'webhook'
-): VerifiedIngressEvent {
+): Omit<VerifiedIngressEvent, 'payload'> & { payload: Record<string, unknown> } {
   return {
     type: 'pull_request',
     githubObservation: kind === 'webhook' ? { kind, deliveryId: crypto.randomUUID() } : { kind },
@@ -338,7 +338,7 @@ test('obsolescence supersedes unfinished canonical flow deliveries, preserving a
             id: status,
             source: { integration: 'github', output: 'pull_request.updated', version: 1 },
             match: {},
-            deliver: { to: 'active', whenInactive: 'retain' },
+            deliver: { to: 'active', whenInactive: 'retain' } as const,
           },
           status: status === 'raw' ? 'pending' : status,
         }))

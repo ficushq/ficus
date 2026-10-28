@@ -319,10 +319,7 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
       if (fact.github.content?.objectKind === 'action') {
         // Raw OFF actions carry the parent's prose regardless of actor trust. Bind its version
         // independently of the optional, trust-gated parent quote used by filtered delivery.
-        const parent = normalizeGitHubFeedback(
-          { ...event, payload: { ...event.payload, action: 'edited' } },
-          fact
-        ).content
+        const parent = normalizeGitHubFeedback({ ...event, payload: { ...payload, action: 'edited' } }, fact).content
         if (parent) fact.github.rawParent = parent
       }
       if (contentObject && fact.github.content) fact.eventKey = digest([fact.eventKey, fact.github.content.contentHash])

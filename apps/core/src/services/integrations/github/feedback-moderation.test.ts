@@ -389,3 +389,66 @@ test('obsolete pending snapshots cannot be allowed or denied again', async () =>
     await h.close()
   }
 })
+
+test('a stale approved quotation is deny-only and cannot loop through a second approval or filter toggle', async () => {
+  const { settleStaleGitHubParentText } = await import('./feedback-parent')
+  const { setGitHubAuthorFilter } = await import('./author-filter-setting')
+  const h = await fixture()
+  try {
+    const selected = await h.revision()
+    const original = (await h.rows())[0]!
+    const envelope = {
+      ...original.envelope!,
+      data: {
+        ...original.envelope!.data,
+        projection: 'action',
+        parentContent: { body: 'Old parent', title: 'Old title' },
+      },
+    }
+    await db
+      .update(githubFeedbackRevisions)
+      .set({ envelope })
+      .where(eq(githubFeedbackRevisions.id, selected.revisionId))
+    await service.moderateGitHubFeedback(h.human, h.squadId, {
+      requestId: crypto.randomUUID(),
+      action: 'allow_once',
+      selections: [selected],
+    })
+    await db.transaction(async (tx) => {
+      const [approved] = await tx
+        .select()
+        .from(githubFeedbackRevisions)
+        .where(eq(githubFeedbackRevisions.id, selected.revisionId))
+      expect(await settleStaleGitHubParentText(tx, approved!)).toBe(true)
+    })
+    const stale = (await h.rows())[0]!
+    expect(stale.reason).toBe('parent_content_stale')
+    const selection = { revisionId: stale.id, contentHash: stale.contentHash, decisionVersion: stale.decisionVersion }
+    for (const action of ['allow_once', 'allow_trust'] as const) {
+      await expect(
+        service.moderateGitHubFeedback(h.human, h.squadId, {
+          requestId: crypto.randomUUID(),
+          action,
+          selections: [selection],
+        })
+      ).rejects.toMatchObject({ code: 'moderation_parent_content_stale' })
+      expect((await h.rows())[0]).toEqual(stale)
+    }
+    expect((await setGitHubAuthorFilter(h.human, h.squadId, false)).released).toBe(0)
+    expect((await h.rows())[0]).toEqual(stale)
+    await db.transaction(async (tx) => {
+      expect(await settleStaleGitHubParentText(tx, stale)).toBe(false)
+    })
+    expect(await h.decisions()).toHaveLength(1)
+    await service.moderateGitHubFeedback(h.human, h.squadId, {
+      requestId: crypto.randomUUID(),
+      action: 'deny',
+      selections: [selection],
+    })
+    expect((await h.rows())[0]!.decision).toBe('deny')
+    expect((await h.rows())[0]!.envelope).toEqual(envelope)
+    expect(await h.decisions()).toHaveLength(2)
+  } finally {
+    await h.close()
+  }
+})

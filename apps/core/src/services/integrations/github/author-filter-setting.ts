@@ -61,7 +61,8 @@ export async function setGitHubAuthorFilter(identity: Identity | undefined, squa
                 eq(githubFeedbackRevisions.decision, 'pending'),
                 ne(githubFeedbackRevisions.releaseState, 'obsolete'),
                 isNotNull(githubFeedbackRevisions.envelope),
-                sql`${githubFeedbackRevisions.reason} IS DISTINCT FROM 'content_unavailable'`
+                sql`${githubFeedbackRevisions.reason} IS DISTINCT FROM 'content_unavailable'`,
+                sql`${githubFeedbackRevisions.reason} IS DISTINCT FROM 'parent_content_stale'`
               )
             )
             .returning({

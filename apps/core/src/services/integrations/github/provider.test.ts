@@ -93,7 +93,7 @@ test('the GitHub plugin/parser retains repository issue polling and emits new as
     events = [item(2), item(1)]
     const next = await poll.poll(connection, baseline.nextCursor)
     expect(next.events).toHaveLength(1)
-    expect(next.events[0]!.payload.repository.id).toBe(10)
+    expect(next.events[0]!.payload).toMatchObject({ repository: { id: 10 } })
     expect(plugin.runtime.provider.outputs!.normalize(next.events[0]!)[0]).toMatchObject({
       output: 'issue.assigned',
       data: { repository: 'acme/widgets', assignee: 'testbot' },
