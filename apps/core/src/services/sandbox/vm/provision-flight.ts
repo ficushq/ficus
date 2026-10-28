@@ -11,7 +11,6 @@ const activeProvision = new AsyncLocalStorage<string>()
 // More than the 15-minute acquisition budget. Do not delete a result a waiter
 // still needs, even if newer requests have already created another generation.
 const RESULT_RETENTION_MS = 60 * 60_000
-const ABANDONED_BACKOFF_MS = 15 * 60_000
 
 export function provisionBackoffMs(failureCount: number): number {
   return Math.min(30_000 * 2 ** Math.min(Math.max(0, failureCount - 1), 5), 15 * 60_000)
@@ -91,8 +90,8 @@ export async function coalesceVmProvision<T>(
     options.withLease ?? ((fn) => withVmSetupLease(sandboxId, fn, options.wait))
   return withLease((assertOwned) =>
     activeProvision.run(sandboxId, async () => {
-      // If this request saw a running generation, use exactly it, not a newer
-      // success/failure. Otherwise join the FIRST generation created since entry.
+      // Join the observed running generation (or first since entry). Successful
+      // results are immutable; stale failures defer to subsequent recovery.
       let [joined] = await db
         .select()
         .from(attempts)
@@ -108,7 +107,7 @@ export async function coalesceVmProvision<T>(
       assertOwned?.()
       if (latest?.status === 'running') {
         // We now own the same authoritative session lock, so the old Core owner
-        // died/lost its connection. Fail/back off rather than replay unknown work.
+        // died/lost its connection. Use the normal failure cooldown before retry.
         // A remote script may still run: its host flock remains the final fence.
         const failureCount = latest.failureCount + 1
         const [abandoned] = await db
@@ -117,14 +116,14 @@ export async function coalesceVmProvision<T>(
             status: 'failed',
             failureClass: 'abandoned',
             failureCount,
-            retryAt: new Date(Date.now() + ABANDONED_BACKOFF_MS),
+            retryAt: new Date(Date.now() + provisionBackoffMs(failureCount)),
             completedAt: new Date(),
           })
           .where(and(eq(attempts.id, latest.id), eq(attempts.status, 'running')))
           .returning()
         if (abandoned) {
           latest = abandoned
-          if (joined?.id === abandoned.id) sharedFailure(abandoned)
+          if (joined?.id === abandoned.id) joined = abandoned
         } else {
           // A lost owner may have finished before its disconnect was observed.
           // Never replace an already-terminal result with abandonment.
@@ -133,8 +132,13 @@ export async function coalesceVmProvision<T>(
         }
       }
       if (joined) {
-        if (joined.status !== 'succeeded') sharedFailure(joined)
-        return join()
+        if (joined.status === 'succeeded') return join()
+        const newerSuccess = latest?.status === 'succeeded' && latest.id > joined.id
+        const expired = joined.status === 'failed' && joined.retryAt && joined.retryAt.getTime() <= Date.now()
+        if (!expired && !newerSuccess) sharedFailure(joined)
+        // A delayed failed follower must not mask subsequent recovery or
+        // renew an already-expired failure. We still hold the lifecycle lease.
+        if (latest?.status === 'succeeded') return join()
       }
       if (latest?.status === 'failed' && latest.retryAt && latest.retryAt.getTime() > Date.now()) sharedFailure(latest)
 
@@ -162,6 +166,7 @@ export async function coalesceVmProvision<T>(
         const placement = error instanceof MachineNotReadyError
         const retryCode = startupRetryCode(error)
         const failureCount = placement ? 0 : current!.failureCount + 1
+        assertOwned?.()
         await db
           .update(attempts)
           .set({
@@ -178,12 +183,21 @@ export async function coalesceVmProvision<T>(
           .where(and(eq(attempts.id, current!.id), eq(attempts.status, 'running')))
         throw error
       } finally {
-        // Only terminal old generations, including removed boxes. Never fail an ensure
+        // Only this leased box's old terminal generations. Never fail an ensure
         // just because opportunistic retention cleanup could not run.
-        await db
-          .delete(attempts)
-          .where(lt(attempts.completedAt, new Date(Date.now() - RESULT_RETENTION_MS)))
-          .catch(() => {})
+        try {
+          assertOwned?.()
+          await db
+            .delete(attempts)
+            .where(
+              and(
+                eq(attempts.sandboxId, sandboxId),
+                lt(attempts.completedAt, new Date(Date.now() - RESULT_RETENTION_MS))
+              )
+            )
+        } catch {
+          /* Session loss or optional retention failure must not mask the outcome. */
+        }
       }
     })
   )

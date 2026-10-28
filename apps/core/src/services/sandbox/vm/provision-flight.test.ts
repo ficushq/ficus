@@ -4,7 +4,7 @@ import { coalesceVmProvision, provisionBackoffMs, VmProvisionFailedError } from 
 import { withVmSetupLease } from './setup-state'
 import { db } from '../../../db'
 import { vmBoxProvisionAttempts as attempts } from '../../../db/schema'
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { MachineNotReadyError } from '../../machines/queries'
 import { startupRetryCode } from '../../execution/startup-retry'
 
@@ -191,7 +191,8 @@ test('an abandoned running generation fails/backoffs before any retry can run', 
   ).rejects.toBeInstanceOf(VmProvisionFailedError)
   const [row] = await db.select().from(attempts).where(eq(attempts.sandboxId, id))
   expect(row!.failureClass).toBe('abandoned')
-  expect(row!.retryAt!.getTime()).toBeGreaterThan(Date.now() + 14 * 60_000)
+  expect(row!.retryAt!.getTime()).toBeGreaterThan(Date.now() + 25_000)
+  expect(row!.retryAt!.getTime()).toBeLessThanOrEqual(Date.now() + 30_000)
   await expect(
     coalesceVmProvision(
       id,
@@ -203,6 +204,39 @@ test('an abandoned running generation fails/backoffs before any retry can run', 
     )
   ).rejects.toThrow()
   expect(calls).toBe(0)
+  await db
+    .update(attempts)
+    .set({ retryAt: new Date(0) })
+    .where(eq(attempts.sandboxId, id))
+  const entered = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  const waiting = Promise.withResolvers<void>()
+  const run = async () => {
+    calls++
+    entered.resolve()
+    await release.promise
+    return 'recovered'
+  }
+  const owner = coalesceVmProvision(id, run, async () => 'recovered')
+  let follower: Promise<string> | undefined
+  try {
+    await entered.promise
+    follower = coalesceVmProvision(id, run, async () => 'recovered', {
+      wait: {
+        sleep: async () => {
+          waiting.resolve()
+          await release.promise
+        },
+      },
+    })
+    await waiting.promise
+    release.resolve()
+    expect(await Promise.all([owner, follower])).toEqual(['recovered', 'recovered'])
+    expect(calls).toBe(1)
+  } finally {
+    release.resolve()
+    await Promise.allSettled([owner, ...(follower ? [follower] : [])])
+  }
 })
 
 test('nested provisioning refuses before a dedicated slot or same-box lock can deadlock', async () => {
@@ -248,71 +282,73 @@ test('a bind/reaper placement race retains the existing safe immediate re-placem
   ).toBe('new machine')
 })
 
-test('a delayed waiter consumes its exact failed generation even after a newer success', async () => {
-  const id = randomUUID()
-  const entered = Promise.withResolvers<void>()
-  const release = Promise.withResolvers<void>()
-  const snapshotted = Promise.withResolvers<void>()
-  const resume = Promise.withResolvers<void>()
-  const owner = coalesceVmProvision(
-    id,
-    async () => {
-      entered.resolve()
-      await release.promise
-      throw new Error('generation one')
-    },
-    async () => ''
-  )
-  const ownerResult = owner.catch((e) => e)
-  let calls = 0
-  let follower: Promise<unknown> | undefined
-  try {
-    await entered.promise
-    follower = coalesceVmProvision(
+for (const newerSuccess of [true, false])
+  test(`a delayed failed follower uses latest state (newer success: ${newerSuccess})`, async () => {
+    const id = randomUUID()
+    const entered = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    const snapshotted = Promise.withResolvers<void>()
+    const resume = Promise.withResolvers<void>()
+    const owner = coalesceVmProvision(
       id,
       async () => {
-        calls++
-        return ''
+        entered.resolve()
+        await release.promise
+        throw new Error('generation one')
       },
-      async () => {
-        calls++
-        return ''
-      },
-      {
-        withLease: async (fn) => {
-          snapshotted.resolve()
-          await resume.promise
-          return withVmSetupLease(id, fn)
-        },
-      }
-    ).catch((e) => e)
-    await snapshotted.promise
-    release.resolve()
-    await ownerResult
-    await db
-      .update(attempts)
-      .set({ retryAt: new Date(0) })
-      .where(eq(attempts.sandboxId, id))
-    expect(
-      await coalesceVmProvision(
+      async () => ''
+    )
+    const ownerResult = owner.catch((e) => e)
+    let calls = 0
+    let follower: Promise<unknown> | undefined
+    try {
+      await entered.promise
+      follower = coalesceVmProvision(
         id,
-        async () => 'generation two',
-        async () => ''
-      )
-    ).toBe('generation two')
-    resume.resolve()
-    const result = await follower
-    expect(result).toBeInstanceOf(VmProvisionFailedError)
-    const [first] = await db.select().from(attempts).where(eq(attempts.sandboxId, id)).orderBy(attempts.id)
-    expect((result as VmProvisionFailedError).attemptId).toBe(first!.id)
-    expect(calls).toBe(0)
-  } finally {
-    release.resolve()
-    resume.resolve()
-    await ownerResult
-    await follower
-  }
-})
+        async () => {
+          calls++
+          return 'recovered'
+        },
+        async () => 'joined latest success',
+        {
+          withLease: async (fn) => {
+            snapshotted.resolve()
+            await resume.promise
+            return withVmSetupLease(id, fn)
+          },
+        }
+      ).catch((e) => e)
+      await snapshotted.promise
+      release.resolve()
+      await ownerResult
+      await db
+        .update(attempts)
+        .set({ retryAt: new Date(0) })
+        .where(eq(attempts.sandboxId, id))
+      if (newerSuccess)
+        expect(
+          await coalesceVmProvision(
+            id,
+            async () => 'generation two',
+            async () => ''
+          )
+        ).toBe('generation two')
+      if (newerSuccess)
+        await db
+          .update(attempts)
+          .set({ retryAt: new Date(Date.now() + 60_000) })
+          .where(and(eq(attempts.sandboxId, id), eq(attempts.status, 'failed')))
+      resume.resolve()
+      const result = await follower
+      expect(result).toBe(newerSuccess ? 'joined latest success' : 'recovered')
+      expect(calls).toBe(newerSuccess ? 0 : 1)
+    } finally {
+      release.resolve()
+      resume.resolve()
+      await ownerResult
+      await follower
+    }
+  })
 
 test('an owner fenced after session loss cannot overwrite an already shared abandoned result', async () => {
   const id = randomUUID()
@@ -340,7 +376,7 @@ test('an owner fenced after session loss cannot overwrite an already shared aban
   expect(row!.failureClass).toBe('abandoned')
 })
 
-test('indexed retention prunes only terminal generations older than the waiter budget, including retired boxes', async () => {
+test('indexed retention prunes only the leased box terminal generations older than the waiter budget', async () => {
   const expired = randomUUID()
   const recent = randomUUID()
   const running = randomUUID()
@@ -350,11 +386,14 @@ test('indexed retention prunes only terminal generations older than the waiter b
     { sandboxId: running, status: 'running', createdAt: new Date(0) },
   ])
   await coalesceVmProvision(
-    randomUUID(),
+    expired,
     async () => 'ready',
     async () => ''
   )
-  expect(await db.select().from(attempts).where(eq(attempts.sandboxId, expired))).toHaveLength(0)
+  const retained = await db.select().from(attempts).where(eq(attempts.sandboxId, expired))
+  expect(retained).toHaveLength(1)
+  expect(retained[0]!.status).toBe('succeeded')
+  expect(retained[0]!.completedAt!.getTime()).toBeGreaterThan(Date.now() - 60_000)
   expect(await db.select().from(attempts).where(eq(attempts.sandboxId, recent))).toHaveLength(1)
   expect(await db.select().from(attempts).where(eq(attempts.sandboxId, running))).toHaveLength(1)
 })
