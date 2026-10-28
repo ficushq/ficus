@@ -75,6 +75,7 @@ const FEATURE_MIGRATIONS = [
   '0208_github_author_filter',
   '0209_github_author_filter_default_on',
   '0210_github_untrusted_handling',
+  '0234_github_raw_feedback_freshness',
 ]
 
 test('feature migrations never rewrite, replay or drop pre-existing data, so rollback only drops new objects', async () => {

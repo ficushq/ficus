@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import type { GitHubPollingFetch } from './event-poller'
 import { GitHubIssueEventPoller } from './issue-event-poller'
 import { GitHubPollingProvider } from './provider'
 import { createEventPollingBudget } from '../event-polling-budget'
@@ -26,6 +27,13 @@ function response(items: unknown[], next = false, etag = 'head') {
   })
 }
 
+function withRepository(page: GitHubPollingFetch): GitHubPollingFetch {
+  return (url, init) =>
+    url.includes('/issues/events?')
+      ? page(url, init)
+      : Promise.resolve(Response.json({ id: 10, full_name: 'acme/widgets' }))
+}
+
 test('provider exposes repository polling and baselines historical assignments without emitting them', async () => {
   const provider = new GitHubPollingProvider(
     async () => 'token',
@@ -43,7 +51,7 @@ test('provider exposes repository polling and baselines historical assignments w
 test('new assignments and removals produce the same typed flow outputs as webhook events', async () => {
   const poller = new GitHubIssueEventPoller(
     async () => 'token',
-    async () => response([item(12, 'unassigned'), item(11), item(10)])
+    withRepository(async () => response([item(12, 'unassigned'), item(11), item(10)]))
   )
   const result = await poller.poll(connection, { watermark: 10 })
   expect(result.events).toHaveLength(2)
@@ -56,7 +64,7 @@ test('new assignments and removals produce the same typed flow outputs as webhoo
     payload: {
       action: 'assigned',
       issue: { ...item(11).issue, updated_at: occurredAt },
-      repository: { full_name: 'acme/widgets' },
+      repository: { id: 10, full_name: 'acme/widgets' },
       assignee: item(11).assignee,
       sender: item(11).actor,
     },
@@ -73,12 +81,13 @@ test('synthesized close and reopen events carry the event time as the close time
   const current = { ...item(11).issue, state: 'closed', closed_at: '2026-09-07T20:00:00Z' }
   const poller = new GitHubIssueEventPoller(
     async () => 'token',
-    async () =>
+    withRepository(async () =>
       response([
         { ...item(13, 'assigned'), issue: current },
         { ...item(12, 'reopened'), issue: current, assignee: null },
         { ...item(11, 'closed'), issue: current, assignee: null },
       ])
+    )
   )
   const result = await poller.poll(connection, { watermark: 10 })
   const issues = result.events.map((event) => (event.payload as Record<string, any>).issue)
@@ -98,7 +107,7 @@ test('synthesized close and reopen events carry the event time as the close time
     payload: {
       action: 'closed',
       issue: { ...item(11).issue, state: 'closed', updated_at: occurredAt, closed_at: occurredAt },
-      repository: { full_name: 'acme/widgets' },
+      repository: { id: 10, full_name: 'acme/widgets' },
       sender: item(11).actor,
     },
   })
@@ -114,18 +123,19 @@ test('page scans retain the previous watermark until a burst is drained within t
     async () => 'token',
     async (url) => {
       urls.push(url)
+      if (!url.includes('/issues/events?')) return Response.json({ id: 10, full_name: 'acme/widgets' })
       return url.endsWith('page=1')
         ? response([item(15), item(14)], true)
         : response([item(14), item(13), item(12)], true)
     }
   )
-  const budget = createEventPollingBudget(1)
+  const budget = createEventPollingBudget(2)
   const first = await poller.poll(connection, { watermark: 12 }, budget.signal)
-  expect(budget.consumed).toBe(1)
+  expect(budget.consumed).toBe(2)
   expect(first.nextCursor).toMatchObject({ watermark: 12, scan: { page: 2, ceiling: 15 } })
   const second = await poller.poll(connection, first.nextCursor, createEventPollingBudget(1).signal)
   expect(second.nextCursor).toEqual({ watermark: 15, etag: 'head' })
-  expect(urls).toHaveLength(2)
+  expect(urls).toHaveLength(3)
   expect(first.events[0]!.logicalEventKey).toBe(second.events[1]!.logicalEventKey)
   expect(second.events).toHaveLength(2)
 })
@@ -146,7 +156,7 @@ test('conditional unchanged reads preserve cursor and emit nothing', async () =>
 test('PR assignments and unrelated issue events are not treated as issue assignments', async () => {
   const poller = new GitHubIssueEventPoller(
     async () => 'token',
-    async () =>
+    withRepository(async () =>
       response([
         {
           ...item(13),
@@ -155,6 +165,7 @@ test('PR assignments and unrelated issue events are not treated as issue assignm
         item(12, 'subscribed'),
         item(11, 'closed'),
       ])
+    )
   )
   const result = await poller.poll(connection, { watermark: 10 })
   expect(result.events).toHaveLength(1)
@@ -189,3 +200,156 @@ test('credential failures, denied reads, malformed pages, and exhausted budgets 
     'budget exhausted'
   )
 })
+
+test('new issue assignments obtain verified native repository identity with one cached budgeted lookup', async () => {
+  const urls: string[] = []
+  let eventId = 12
+  const poller = new GitHubIssueEventPoller(
+    async () => 'assigned-token',
+    async (url, init) => {
+      urls.push(url)
+      expect((init?.headers as Record<string, string>).authorization).toBe('Bearer assigned-token')
+      if (!url.includes('/issues/events?')) {
+        expect((init?.headers as Record<string, string>)['if-none-match']).toBeUndefined()
+        expect(init?.redirect).toBe('error')
+        return Response.json({ id: 10, full_name: 'ACME/Widgets' })
+      }
+      return response([item(eventId), item(eventId - 1)])
+    }
+  )
+  const budget = createEventPollingBudget(2)
+  const first = await poller.poll(connection, { watermark: 10, etag: 'events-only' }, budget.signal)
+  expect(first.events).toHaveLength(2)
+  expect(first.events.every((event) => event.payload.repository.id === 10)).toBe(true)
+  expect(budget.consumed).toBe(2)
+  expect(first.budgetUnitsConsumed).toBe(2)
+  const { hasGitHubFreshnessBinding } = await import('./feedback-freshness-binding')
+  const [fact] = githubOutputAdapter.normalize(first.events[0]!)
+  expect(hasGitHubFreshnessBinding({ integration: 'github', sourceKey: 'native-poll-fixture', fact: fact! })).toBe(true)
+  eventId = 14
+  const cachedBudget = createEventPollingBudget(1)
+  const second = await poller.poll(connection, first.nextCursor, cachedBudget.signal)
+  expect(second.events).toHaveLength(2)
+  expect(second.events.every((event) => event.payload.repository.id === 10)).toBe(true)
+  expect(cachedBudget.consumed).toBe(1)
+  expect(second.budgetUnitsConsumed).toBe(1)
+  expect(urls.filter((url) => !url.includes('/issues/events?'))).toHaveLength(1)
+})
+
+for (const [label, repository] of [
+  ['full_name mismatch', { id: 10, full_name: 'other/project' }],
+  ['invalid id', { id: 0, full_name: 'acme/widgets' }],
+  ['non-integer id', { id: 1.5, full_name: 'acme/widgets' }],
+  ['string id', { id: '10', full_name: 'acme/widgets' }],
+] as const)
+  test(`repository identity ${label} withholds without advancing the issue cursor`, async () => {
+    const cursor = Object.freeze({ watermark: 10, etag: 'old' })
+    const poller = new GitHubIssueEventPoller(
+      async () => 'token',
+      async (url) => (url.includes('/issues/events?') ? response([item(11)]) : Response.json(repository))
+    )
+    await expect(poller.poll(connection, cursor)).rejects.toThrow('repository identity')
+    expect(cursor).toEqual({ watermark: 10, etag: 'old' })
+  })
+
+test('a failed identity lookup leaves the cursor unchanged and does not poison the cache on retry', async () => {
+  let fail = true
+  let lookups = 0
+  const cursor = Object.freeze({ watermark: 10 })
+  const poller = new GitHubIssueEventPoller(
+    async () => 'token',
+    async (url) => {
+      if (url.includes('/issues/events?')) return response([item(11)])
+      lookups++
+      return fail ? new Response(null, { status: 403 }) : Response.json({ id: 10, full_name: 'acme/widgets' })
+    }
+  )
+  await expect(poller.poll(connection, cursor)).rejects.toThrow('403')
+  expect(cursor).toEqual({ watermark: 10 })
+  fail = false
+  const retry = await poller.poll(connection, cursor)
+  expect(retry.events).toHaveLength(1)
+  expect(retry.events[0]!.payload.repository.id).toBe(10)
+  expect(lookups).toBe(2)
+})
+
+test('insufficient identity lookup budget emits nothing, preserves the cursor and retries with a sufficient budget', async () => {
+  let lookups = 0
+  const cursor = Object.freeze({ watermark: 10 })
+  const poller = new GitHubIssueEventPoller(
+    async () => 'token',
+    async (url) => {
+      if (url.includes('/issues/events?')) return response([item(11)])
+      lookups++
+      return Response.json({ id: 10, full_name: 'acme/widgets' })
+    }
+  )
+  await expect(poller.poll(connection, cursor, createEventPollingBudget(1).signal)).rejects.toThrow('budget exhausted')
+  expect(cursor).toEqual({ watermark: 10 })
+  expect(lookups).toBe(0)
+  expect((await poller.poll(connection, cursor, createEventPollingBudget(2).signal)).events).toHaveLength(1)
+})
+
+test('concurrent polls share a single repository lookup, not an authority or request-budget exemption', async () => {
+  let lookups = 0
+  let feeds = 0
+  const poller = new GitHubIssueEventPoller(
+    async () => 'token',
+    async (url) => {
+      if (url.includes('/issues/events?')) {
+        feeds++
+        return response([item(11)])
+      }
+      lookups++
+      await Promise.resolve()
+      return Response.json({ id: 10, full_name: 'acme/widgets' })
+    }
+  )
+  const budgets = [createEventPollingBudget(2), createEventPollingBudget(2)]
+  const results = await Promise.all(budgets.map((budget) => poller.poll(connection, { watermark: 10 }, budget.signal)))
+  expect(results.every((result) => result.events[0]!.payload.repository.id === 10)).toBe(true)
+  expect(lookups).toBe(1)
+  expect(feeds).toBe(2)
+  expect(budgets.reduce((total, budget) => total + budget.consumed, 0)).toBe(3)
+  expect(results.reduce((total, result) => total + result.budgetUnitsConsumed!, 0)).toBe(3)
+})
+
+test('no repository lookup occurs for baselines, empty pages, historical or unsupported events', async () => {
+  for (const [items, cursor] of [
+    [[item(11)], null],
+    [[], { watermark: 10 }],
+    [[item(9)], { watermark: 10 }],
+    [[item(11, 'subscribed')], { watermark: 10 }],
+  ] as const) {
+    let calls = 0
+    const poller = new GitHubIssueEventPoller(
+      async () => 'token',
+      async (url) => {
+        calls++
+        expect(url).toContain('/issues/events?')
+        return response([...items])
+      }
+    )
+    const result = await poller.poll(connection, cursor)
+    expect(result.events).toHaveLength(0)
+    expect(result.budgetUnitsConsumed).toBe(1)
+    expect(calls).toBe(1)
+  }
+})
+
+test.each([false, true])(
+  'poll parent clock preserves API snapshot or genuine unknown, never restated lifecycle time (%s)',
+  async (missing) => {
+    const native = item(11)
+    if (missing) delete (native.issue as Record<string, unknown>).updated_at
+    const poller = new GitHubIssueEventPoller(
+      async () => 'synthetic',
+      withRepository(async () => response([native]))
+    )
+    const result = await poller.poll(connection, { watermark: 10 })
+    const event = result.events[0]!
+    const fact = githubOutputAdapter.normalize(event)[0]!
+    expect(fact.occurredAt).toBe('2026-09-07T10:00:00.000Z')
+    expect(fact.github!.rawParent!.providerVersion).toBe(missing ? null : '2026-09-07T12:00:00.000Z')
+  }
+)

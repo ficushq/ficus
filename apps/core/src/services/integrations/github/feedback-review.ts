@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm'
 import type {
   GitHubFeedbackDetail,
   GitHubFeedbackListItem,
@@ -59,7 +59,7 @@ async function requireReader(identity: Identity | undefined, squadId: string) {
 
 function queueCondition(queue: GitHubFeedbackQueue) {
   return queue === 'pending'
-    ? eq(githubFeedbackRevisions.decision, 'pending')
+    ? and(eq(githubFeedbackRevisions.decision, 'pending'), ne(githubFeedbackRevisions.releaseState, 'obsolete'))
     : and(
         inArray(githubFeedbackRevisions.decision, [...ALLOWED]),
         inArray(githubFeedbackRevisions.releaseState, [...RELEASING])
@@ -77,7 +77,7 @@ export async function getGitHubFeedbackSummary(
     .where(eq(squads.id, squadId))
   const [counts] = await db
     .select({
-      pending: sql<number>`count(*) filter (where ${githubFeedbackRevisions.decision} = 'pending')::int`,
+      pending: sql<number>`count(*) filter (where ${queueCondition('pending')})::int`,
       releasing: sql<number>`count(*) filter (where ${queueCondition('releasing')})::int`,
       // A release retained again and again (no current source, recipient or acceptance) is failing
       // too; without this it would be an invisible, unbounded retry loop.

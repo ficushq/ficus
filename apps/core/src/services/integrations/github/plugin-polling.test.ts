@@ -199,7 +199,9 @@ test('plugin cannot collect delivery facts without an assigned credential', asyn
 test('plugin still polls repository issue events and normalizes assignments without querying PR delivery', async () => {
   const paths: string[] = []
   const fetchMock = spyOn(globalThis, 'fetch').mockImplementation((async (input: Parameters<typeof fetch>[0]) => {
-    paths.push(new URL(String(input)).pathname)
+    const path = new URL(String(input)).pathname
+    paths.push(path)
+    if (path === '/repos/acme/widgets') return Response.json({ id: 10, full_name: 'acme/widgets' })
     return Response.json([
       {
         id: 12,
@@ -216,7 +218,7 @@ test('plugin still polls repository issue events and normalizes assignments with
       { ...connection, configuration: { kind: 'issue-events', owner: 'acme', repo: 'widgets' } },
       { watermark: 11 }
     )
-    expect(paths).toEqual(['/repos/acme/widgets/issues/events'])
+    expect(paths).toEqual(['/repos/acme/widgets/issues/events', '/repos/acme/widgets'])
     expect(result.nextCursor.watermark).toBe(12)
     const outputs = result.events.flatMap((event) => githubOutputAdapter.normalize(event))
     expect(outputs).toHaveLength(1)

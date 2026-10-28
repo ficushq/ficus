@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import {
   db,
   githubFeedbackRevisions,
@@ -42,6 +42,7 @@ const untrustedPending = (squadId: string) =>
   and(
     eq(githubFeedbackRevisions.squadId, squadId),
     eq(githubFeedbackRevisions.decision, 'pending'),
+    ne(githubFeedbackRevisions.releaseState, 'obsolete'),
     eq(githubFeedbackRevisions.reason, 'untrusted_author'),
     isNotNull(githubFeedbackRevisions.envelope)
   )

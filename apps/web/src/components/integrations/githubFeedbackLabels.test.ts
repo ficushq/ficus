@@ -3,7 +3,13 @@ import type { GitHubFeedbackScreening } from '@ficus/shared'
 import { kindLabel, reasonLabel, screeningLabel } from './githubFeedbackLabels'
 
 test('holds that are not about author trust never claim the author is untrusted', () => {
-  for (const reason of ['unknown_editor', 'ambiguous_observation', 'stale_observation', 'source_unverified']) {
+  for (const reason of [
+    'unknown_editor',
+    'ambiguous_observation',
+    'stale_observation',
+    'source_unverified',
+    'parent_content_stale',
+  ]) {
     const label = reasonLabel(reason)!
     expect(label).not.toBe(reason)
     expect(label).not.toMatch(/not trusted/i)

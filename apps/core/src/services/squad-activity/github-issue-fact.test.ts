@@ -112,10 +112,15 @@ describe('GitHub issue dispatch fact', () => {
     })
     const poller = new GitHubIssueEventPoller(
       async () => 'token',
-      async () =>
-        Response.json([entry(3, 'closed', secondClose), entry(2, 'reopened', reopen), entry(1, 'closed', firstClose)], {
-          headers: { etag: 'head' },
-        })
+      async (url) =>
+        url.includes('/issues/events?')
+          ? Response.json(
+              [entry(3, 'closed', secondClose), entry(2, 'reopened', reopen), entry(1, 'closed', firstClose)],
+              {
+                headers: { etag: 'head' },
+              }
+            )
+          : Response.json({ id: 10, full_name: 'acme/widgets' })
     )
     const { events } = await poller.poll(
       {
