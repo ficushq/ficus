@@ -26,7 +26,12 @@ export interface StoredValueFragmentEdges {
   trailing?: boolean
 }
 
-export type SecretEntry = { key: string; value: string; outputOnly?: boolean }
+export type SecretEntry = {
+  key: string
+  value: string
+  /** Redact exact values/fragments, but exclude them from input refusal and audit attribution. */
+  outputOnly?: boolean
+}
 
 /** KMP failure table: for each prefix of `pattern`, the length of its longest proper border. */
 function failureTable(pattern: string): Int32Array {

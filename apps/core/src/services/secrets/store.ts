@@ -348,8 +348,9 @@ export class SecretStore {
         if (value !== undefined) entries.set(key, value)
       }
     }
-    // Public identifiers and very short values are dropped here, at the single
-    // point that decides what the matcher can ever replace.
+    // Ordinary stored values keep their public-identifier/minimum-length
+    // exclusions. Integration material is expanded below and every secret leaf
+    // is protected, even a short local integration credential.
     for (const [key, value] of entries) {
       if (!key.startsWith(INTEGRATION_CREDENTIAL_PREFIX) && !isMatchableSecret(key, value)) entries.delete(key)
     }
