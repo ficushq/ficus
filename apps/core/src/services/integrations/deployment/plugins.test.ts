@@ -82,6 +82,7 @@ test('deployment router and wiki agree with assigned accounts rather than the re
   const { join } = await import('node:path')
   for (const path of ['config/skills/deploy-app/SKILL.md', 'docs/wiki/deployments.md']) {
     const source = readFileSync(join(import.meta.dir, '../../../../../..', path), 'utf8')
+    expect(source).not.toContain('Secret Store')
     expect(source).not.toContain('DEPLOY_')
     expect(source).not.toContain('expose-secrets')
     expect(source).not.toContain('ficus squad-env secrets')

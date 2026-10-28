@@ -4,7 +4,7 @@
 
 - Private authenticated sandbox local apps from squad workspaces.
 - Skill-guided external provider deployments.
-- Provider tokens stored in Secret Store and explicitly exposed per squad when a sandbox needs them.
+- Named provider accounts connected in Settings → Integrations and assigned per squad; CLIs authenticate through the PATH wrapper.
 
 ## What Ficus does not support in this scope
 
