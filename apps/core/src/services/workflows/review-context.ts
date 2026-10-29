@@ -18,7 +18,8 @@ export function producerReviewContexts(
   run: WorkflowRun,
   attempt: WorkflowAttempt,
   interruptions: WorkflowBriefInterruption[] = [],
-  versions: Record<number, number> = {}
+  versions: Record<number, number> = {},
+  settledAt: Record<number, string> = {}
 ): WorkflowProducerReviewContext[] {
   const step = effectiveWorkflowStep(run, attempt)
   if (step.kind !== 'agent') return []
@@ -42,7 +43,13 @@ export function producerReviewContexts(
   return [...targets].map(([gateStepId, routing]) => {
     const previous = workflowEarlierHumanDecisions(run, gateStepId, versions)
     const previousVersion = previous[0] && (previous[0].settledVersion ?? versions[previous[0].id])
-    const afterPrevious = (id: number) => !previous[0] || id > previous[0].id
+    const previousTime = previous[0] && settledAt[previous[0].id]
+    const afterPrevious = (id: number) => {
+      if (!previous[0]) return true
+      const source = run.attempts.find((a) => a.id === id)
+      const version = source?.settledVersion ?? versions[id]
+      return version !== undefined && previousVersion !== undefined ? version > previousVersion : id > previous[0].id
+    }
     return {
       gateStepId,
       ...routing,
@@ -70,7 +77,11 @@ export function producerReviewContexts(
       revisions: (run.revisions ?? [])
         .filter((r) => r.version > (previousVersion ?? 0))
         .map((r) => ({ version: r.version, reason: r.reason })),
-      interruptedExecutions: interruptions.filter((e) => causal.has(e.attemptId) && afterPrevious(e.attemptId)),
+      interruptedExecutions: interruptions.filter(
+        (e) =>
+          causal.has(e.attemptId) &&
+          (previousTime ? Date.parse(e.endedAt) >= Date.parse(previousTime) : afterPrevious(e.attemptId))
+      ),
     }
   })
 }
@@ -102,14 +113,21 @@ export async function loadReviewContexts(
         )
       ),
     store
-      .select({ command: workStreamFlowTransitions.command, version: workStreamFlowTransitions.version })
+      .select({
+        command: workStreamFlowTransitions.command,
+        version: workStreamFlowTransitions.version,
+        createdAt: workStreamFlowTransitions.createdAt,
+      })
       .from(workStreamFlowTransitions)
       .where(eq(workStreamFlowTransitions.workStreamId, workStreamId)),
   ])
   const versions: Record<number, number> = {}
+  const settledAt: Record<number, string> = {}
   for (const receipt of receipts)
-    if (receipt.command.attemptId != null && ['complete', 'return'].includes(receipt.command.action))
+    if (receipt.command.attemptId != null && ['complete', 'return'].includes(receipt.command.action)) {
       versions[receipt.command.attemptId] = receipt.version
+      settledAt[receipt.command.attemptId] = receipt.createdAt.toISOString()
+    }
   const interruptions: WorkflowBriefInterruption[] = rows.flatMap((row) =>
     row.flowContext && row.endedAt
       ? [
@@ -125,6 +143,9 @@ export async function loadReviewContexts(
       : []
   )
   return Object.fromEntries(
-    producers.map((attempt) => [String(attempt.id), producerReviewContexts(run, attempt, interruptions, versions)])
+    producers.map((attempt) => [
+      String(attempt.id),
+      producerReviewContexts(run, attempt, interruptions, versions, settledAt),
+    ])
   )
 }

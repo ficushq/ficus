@@ -47,3 +47,56 @@ test('review context keeps prior empty-note decisions, multi-hop return reasons 
   expect(contexts[0]!.returns.map((r) => r.feedback)).toEqual(['The fallback must support the older reader.'])
   expect(contexts[0]!.interruptedExecutions.map((e) => e.executionId)).toEqual(['failure-a', 'failure-b'])
 })
+
+test('decision intervals use receipt time, not creation order, for a still-running parallel producer', () => {
+  const definition = createBlankWorkflow()
+  definition.steps[0]!.outcomes.completed = { next: 'gate' }
+  definition.steps.push({
+    id: 'gate',
+    kind: 'human-approval',
+    instructions: 'Review staging.',
+    output: 'Decision.',
+    outcomes: { yes: { next: 'finish' } },
+  })
+  const run = createWorkflowRun(definition)
+  run.attempts.push({ id: 2, stepId: 'gate', status: 'completed', outcome: 'yes', settledVersion: 3 })
+  const context = producerReviewContexts(
+    run,
+    run.attempts[0]!,
+    [
+      { executionId: 'before', attemptId: 1, status: 'failed', endedAt: '2026-10-29T00:00:00Z' },
+      { executionId: 'after', attemptId: 1, status: 'stopped', endedAt: '2026-10-29T00:02:00Z' },
+    ],
+    {},
+    { 2: '2026-10-29T00:01:00Z' }
+  )
+  expect(context[0]!.interruptedExecutions.map((e) => e.executionId)).toEqual(['after'])
+})
+
+test('a causal return settled after the last decision is retained even when its requester was created first', () => {
+  const definition = createBlankWorkflow()
+  definition.steps[0]!.outcomes.completed = { next: 'gate' }
+  definition.steps.push({
+    id: 'gate',
+    kind: 'human-approval',
+    instructions: 'Review staging.',
+    output: 'Decision.',
+    outcomes: { yes: { next: 'finish' } },
+  })
+  const run = createWorkflowRun(definition)
+  run.attempts.push(
+    { id: 3, stepId: 'execute', status: 'returned', settledVersion: 7 },
+    { id: 4, stepId: 'gate', status: 'completed', outcome: 'yes', settledVersion: 6 },
+    { ...run.attempts[0]!, id: 5, sourceAttemptIds: [3] }
+  )
+  run.returns.push({
+    id: 1,
+    requestedByAttemptId: 3,
+    targetStepId: 'execute',
+    resumeAt: 'gate',
+    feedback: 'Retain the older reader after the parallel review.',
+    status: 'open',
+  })
+  const contexts = producerReviewContexts(run, run.attempts.at(-1)!)
+  expect(contexts[0]!.returns.map((r) => r.id)).toEqual([1])
+})
