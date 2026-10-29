@@ -51,7 +51,7 @@ import { createVerifiedEditTool, type VerifiedEditOperations } from './verified-
 import { withSharedWorkspaceHint } from './private-bash-hint'
 import { createLogger } from '../lib/infra/logger'
 import {
-  COMMAND_REFUSED_FOR_RESTART,
+  commandRefusedForRestartError,
   commandCanceledForRestartError,
   isCommandDrainActive,
   trackCommand,
@@ -590,7 +590,7 @@ export function createHttpBashOperations(
       }
     ): Promise<{ exitCode: number | null }> => {
       // A stopping worker starts nothing new; the agent retries after the restart.
-      if (isCommandDrainActive()) throw new Error(COMMAND_REFUSED_FOR_RESTART)
+      if (isCommandDrainActive(sandboxId)) throw commandRefusedForRestartError(sandboxId)
       const client = manager.getClientForSandbox(sandboxId)
       if (!client) {
         throw await mapFailure(new Error(`No K8s sandbox client found for ${sandboxId}`))
@@ -650,6 +650,7 @@ export function createHttpBashOperations(
             cleanupError = error
           })
           reject(commandCanceledForRestartError(restart, cleanupError))
+          if (cleanupError) throw cleanupError
         }
 
         stream.on('data', (response) => {
@@ -783,7 +784,7 @@ export function createHttpBashOperations(
           })
         }
       })
-      trackCommand({ settled: running, cancelForRestart: (restart) => cancelForRestart(restart) })
+      trackCommand({ sandboxId, settled: running, cancelForRestart: (restart) => cancelForRestart(restart) })
       return running
     },
   }

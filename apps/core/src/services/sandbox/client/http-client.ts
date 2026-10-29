@@ -320,6 +320,8 @@ export interface ShellOutput {
 }
 
 export interface HealthResponse {
+  /** Actual running interpreter; absent on older executor bundles. */
+  bunVersion?: string
   healthy: boolean
   devboxReady: boolean
   version: string

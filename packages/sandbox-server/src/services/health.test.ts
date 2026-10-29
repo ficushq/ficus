@@ -110,6 +110,7 @@ describe('getHealthResponse', () => {
   it('should return health info', () => {
     const res = getHealthResponse()
     expect(res.healthy).toBe(true)
+    expect(res.bunVersion).toBe(Bun.version)
     expect(res.version).toBeDefined()
     expect(typeof res.uptimeSeconds).toBe('number')
   })

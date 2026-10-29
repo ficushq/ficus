@@ -1,9 +1,9 @@
 # VM host Bun convergence
 
-> Implementation checkpoint: pins, atomic disk convergence, offline preview and
-> installed-layout compatibility validation are implemented. Scoped graceful box
-> adoption is a required prerequisite still being integrated; this checkpoint is
-> **not rollout-ready**. No existing fleet update is claimed.
+> Source implementation and local validation only. Adoption is **eventual**,
+> after natural idle exit and normal ensure, not immediate fleet convergence.
+> Active, pending and unknown boxes remain deferred. No fleet update or live
+> rollout has been performed or authorized.
 
 ## Pin and delivery contract
 
@@ -53,19 +53,51 @@ readback succeeds. Running processes still require normal idle reconciliation
 to adopt a rollback; changing disk alone is neither upgrade nor rollback proof
 for an already-running server. Do not reinstall nix or delete `/nix`.
 
-## Box adoption safety (required integration)
+## Eventual box adoption through normal reconciliation
 
-Disk publication deliberately does not issue systemctl restarts. Adoption must
-use normal provisioning/reconciliation and the canonical release runtime
-identity, retaining the owning lifecycle generation, setup leases, provision
-coalescing, limits and uncertain remote-invocation barriers. Active/unknown work
-and pending invocations must defer adoption; no success stamp may hide deferred
-work. Canonical trusted restart context and cancel-before-disconnect must be
-reused, scoped to the affected box: **never use a process-wide command drain for
-one box**. Other boxes and Core's global shutdown semantics must be unaffected.
-A real process/client/registry/tool proof is required before rollout readiness;
-a clean executor SIGTERM/exit alone does not establish an agent-visible normal
-restart.
+Disk publication deliberately does not restart services. The effective release's
+bootstrap Bun pin participates in the provision identity alongside the effective
+box-provision script. A pin change therefore reaches ordinary spec reconciliation
+for existing boxes; the release's immutable assets are the source in artifact
+installs, not a checkout-relative `.bun-version` read.
+
+A running older executor cannot prove a newly introduced maintenance protocol.
+An unsupported endpoint or database idleness is **not** permission to force its
+restart. Normal ensure/recreate instead:
+
+1. Defers while execution/deployment activity, a pending/ambiguous setup invocation,
+   unavailable activity information, or an active/unknown server remains. It keeps
+   the old published spec/setup identity and reusable client. Repeated reconciliation
+   does not HTTP-poll the old executor, which would reset its idle-exit window.
+2. Lets the existing executor's conservative idle policy finish commands and stand
+   down naturally. A read-only host probe requires an inactive server and proxy,
+   active activation socket, exact current disk Bun, no pending server/proxy systemd jobs, and
+   no unresolved registry/active/quarantine entries. Read errors, symlinks and unknown
+   results defer; no guessed success stamp is written.
+3. Under the existing owning setup lease/provision coalescer and box-scoped command
+   admission fence, rechecks the proof, takes the existing host flock, stops **only
+   the socket**, and rechecks inactivity/registry/jobs. A connection that overtook
+   socket closure causes backoff and listener restoration, never a server kill.
+4. Keeps socket activation closed through normal provisioning and `server.env`
+   publication (`--defer-socket-start`). It starts the replacement service before
+   reopening the listener, verifies the actual running `Bun.version` over health,
+   and only then publishes the new provision/spec stamp. Listener restoration runs
+   on both success and failure; an uncertain SSH result must not be mistaken for
+   a successful claim. The owning lifecycle generation is retained.
+
+This is not an immediate fleet-wide restart. Always-active boxes, unresolved work,
+failed/unknown units and boxes without a proven socket-activated idle path stay
+pending for later reconciliation or separately authorized investigation. No remote
+maintenance endpoint or unsafe legacy fallback is introduced here.
+
+The selected box's admission fence reuses canonical trusted restart attribution
+and cancellation-before-disconnect; failed cancellation prevents replacement.
+It does not use process-wide `drainCommands()` or stop unrelated boxes. A command
+that races admission sees a normal restart notice, not a recovery failure.
+Normally active legacy commands finish before natural idle exit; the independent
+real-server restart proof also checks durable cancellation context, agent-visible
+notice, zero failure-budget charge, no human wait, inspected partial effects and
+explicit safe retry. This does not claim arbitrary model retry behavior.
 
 ## Offline preview — safe to run now
 
@@ -90,17 +122,16 @@ metadata is rejected; unknown version/work/generation never invents safe adoptio
 Do not include credentials, tokens or customer content.
 
 Output separates `disk` (`current`, `replace-bun-only`, `inspect-version-first`)
-from each box's `adoption` (`current`, `idle-normal-reconcile`, `defer-active`,
-`defer-uncertain`) and preserves generation. `mutation` is always false. Example:
+from each box's `adoption` (`current`, `await-natural-idle-exit-then-normal-ensure`, `defer-active`,
+`defer-uncertain`) and preserves generation. `mutation` is always false and `convergence` is `eventual-idle-adoption`. Example:
 old synthetic prebaked host → disk replacement planned; idle box → normal
 reconcile; active box → defer; uncertain invocation → defer. Tests run with
 forbidden command sentinels and verify byte/mtime/directory snapshots unchanged.
 
 ## Future gated rollout — NOT performed by this change
 
-1. Finish scoped adoption integration and its real-path agent restart proof;
-   independently review code, require exact-head approval and applicable green
-   CI, then merge under normal repository rules. A merged code PR does not
+1. Independently review the code and local installed-layout evidence, require
+   exact-head approval and applicable green CI, then merge under normal rules. A merged code PR does not
    establish fleet adoption.
 2. Before **any** live rollout, ask Noah a **blocking** question describing the
    exact release, targets, effects, validation and rollback. Obtain applicable
@@ -135,6 +166,9 @@ Claim required native test capacity first where applicable, use Bun from
 cd apps/core
 bun test src/services/machines/host-bun.test.ts \
   src/services/machines/host-bun-preview.test.ts
+# For the full legacy proof, supply owned Bun 1.2.23 and an older server bundle.
+FICUS_TEST_LEGACY_BUN=/owned/fixtures/bun-1.2.23 \
+FICUS_TEST_LEGACY_SERVER_ENTRY=/owned/fixtures/older-server.js \
 bun test src/services/machines/installed-machine-bundles.test.ts
 cd ../..
 bun run test:db:down
@@ -150,24 +184,37 @@ An unavailable entrypoint negative control prevents silently testing source.
 Every fixture is removed; no actual `/opt` is used. Full Core tests/typecheck
 are not run locally.
 
-### Requirement trace and checkpoint evidence
+### Requirement trace and local evidence
 
-| Binding requirement                                                                                                                         | Implementation / validation                                                                                                                                                                  | Checkpoint status                                               |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| Bootstrap and machine image install exactly `.bun-version`; prefer derivation, correct stale comment                                        | Image derives from copied pin; standalone literal rationale above; source contract tests                                                                                                     | Implemented                                                     |
-| Regression fails if either host pin differs from repo pin, following Docker source-contract style                                           | `host-bun.test.ts` reads repository sources independently; RED observed on both original 1.2.23 sites                                                                                        | Implemented                                                     |
-| Existing hosts, including prebaked skips, actually converge via safe Bun replacement **and normal server adoption**; document image rebuild | Atomic fixture tests, rollback/lock/idempotence tests, offline preview and gated image instructions; scoped runtime adoption integration remains required                                    | **Incomplete** until adoption integration                       |
-| Run sandbox-server suite and PR 765 stdout cases on 1.4.2 installed layout; prove agents see normal graceful restart                        | Real machine-bundle layout: 394 package tests across 23 files, zero skips/failures; ten CLI stdout cases via counted installed wrapper; canonical scoped restart/tool proof remains required | Compatibility validated; **graceful adoption proof incomplete** |
-| Audit other host-installed runtime pin drift, list in PR, fix only Bun                                                                      | Source audit below; other pins/tool behavior unchanged                                                                                                                                       | Audited; carry findings into PR                                 |
+| Binding requirement                                                               | Implementation / validation                                                                                                                                         |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Exact repo Bun in bootstrap and machine image                                     | Image derives from copied pin; portable bootstrap literal rationale above; independent source contract tests                                                        |
+| Regression catches either host pin drifting                                       | `host-bun.test.ts` reads repository sources independently; RED observed on both original 1.2.23 sites                                                               |
+| Existing/prebaked hosts converge safely through normal server adoption            | Atomic installer/rollback/lock/idempotence fixtures; runtime identity, non-waking deferral, socket claim and normal provision/start; gated image instructions       |
+| Installed-layout package/stdout compatibility and agent-visible graceful behavior | Full sandbox-server suite, ten counted-wrapper CLI cases, real older/current bundle natural-exit adoption, real installed-server scoped restart/tool/recovery proof |
+| Audit other runtimes; change only Bun                                             | Source findings below; carry these findings into the PR                                                                                                             |
 
-Checkpoint validation on Bun 1.4.2: 12 host Bun/atomic fixture tests and two
-preview tests passed; two installed-layout orchestration tests passed (their
-394 package tests and ten CLI cases are nested verification, **not additional
-independent orchestration tests**). Existing `bootstrap.test.ts` passed 134 tests
-with one unrelated nft syntax-validation capability skip; that skip is not Bun
-convergence evidence. Focused ESLint, outer/embedded shellcheck, `bash -n` and
-`git diff --check` passed. No full Core test suite/typecheck, image build or live
-operation was run. These are checkpoint results, not final scoped-restart proof.
+Local validation used Bun 1.4.2 and **four** installed-layout orchestration tests.
+Their nested checks are not additional independent orchestration tests: the full
+sandbox-server suite (398 tests / 23 files, no skips/failures), ten CLI stdout cases, one
+legacy adoption proof and one scoped graceful restart proof. The legacy proof
+used Bun **1.2.23** with a bundle built from repository revision
+`2cf7635fb59165477549306cdf83d720b4c46c74`, before these changes, with no maintenance
+endpoint. The historical bundle is copied into the owned installed layout; the
+replacement uses the newly built release bundle and 1.4.2. It proves repeated
+polling does not wake the old server, active commands finish, unknown persisted
+work defers after exit, normal ensure adopts, generation is preserved, and another
+real executor stays uninterrupted. Host/systemd/tunnel/persistence seams are
+fixtures; Bash/HTTP/registry/idle-exit/executables are real. Without the two legacy
+fixture inputs, the test remains a current-runtime compatibility regression, not
+proof of a historical runtime upgrade.
+
+Focused tests cover installer/source contracts, offline non-mutation, admission,
+setup/generation barriers and runtime readback. Existing bootstrap tests retain
+one unrelated nft syntax-validation capability skip; that skip is not Bun
+convergence evidence. The sandbox-server package typecheck and focused lint/shell
+checks pass. Full Core tests/typecheck are left to CI; no image build or live
+operation was run.
 
 ## Source-only other-runtime audit (Bun only is changed)
 

@@ -141,3 +141,53 @@ test('sandbox-server package suite runs on installed Bun with the installed serv
     console.info(result.output)
   })
 }, 180000) // Required full package suite is isolated/sequential (~75s), not Core's suite.
+
+test('installed legacy bundle adopts pinned Bun after natural idle exit through normal VM ensure', async () => {
+  await installedFixture(async (root) => {
+    const legacy = process.env.FICUS_TEST_LEGACY_SERVER_ENTRY
+    if (legacy) await copyFile(legacy, join(root, 'server/legacy.js'))
+    const result = await execute(
+      [
+        join(root, 'bin/bun'),
+        'run',
+        'test',
+        'src/services/sandbox/vm/manager.test.ts',
+        '-t',
+        'legacy installed executor',
+      ],
+      join(repo, 'apps/core'),
+      {
+        ...process.env,
+        FICUS_SANDBOX_TEST_SERVER_ENTRY: join(root, 'server/server.js'),
+        ...(legacy ? { FICUS_TEST_LEGACY_SERVER_ENTRY: join(root, 'server/legacy.js') } : {}),
+        BUN_PTY_LIB: join(root, 'server/librust_pty.so'),
+      },
+      60000
+    )
+    expect(result.code, result.output).toBe(0)
+    expect(result.output).toContain('Test suite passed')
+    console.info(
+      'Installed legacy server: normal ensure adopted Bun 1.4.2 after natural idle exit; active/unknown work remained deferred.'
+    )
+  })
+}, 90000) // Build installed release layout, run focused real legacy/current process proof.
+
+test('installed server preserves box-scoped agent-visible graceful restart and unrelated work', async () => {
+  await installedFixture(async (root) => {
+    const result = await execute(
+      [join(root, 'bin/bun'), 'run', 'test', 'src/services/sandbox/box-command-restart.test.ts'],
+      join(repo, 'apps/core'),
+      {
+        ...process.env,
+        FICUS_SANDBOX_TEST_SERVER_ENTRY: join(root, 'server/server.js'),
+        BUN_PTY_LIB: join(root, 'server/librust_pty.so'),
+      },
+      60000
+    )
+    expect(result.code, result.output).toBe(0)
+    expect(result.output).toContain('Test suite passed')
+    console.info(
+      'Installed server: trusted box-scoped restart reached the agent tool/recovery boundary with zero failures; unrelated executor uninterrupted.'
+    )
+  })
+}, 90000)

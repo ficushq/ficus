@@ -78,13 +78,14 @@ test('offline preview separates disk and process adoption, defers active/uncerta
       mode: 'offline-preview',
       desiredBunVersion: desired,
       mutation: false,
+      convergence: 'eventual-idle-adoption',
       hosts: [
         {
           id: 'synthetic-host',
           prebaked: true,
           disk: 'replace-bun-only',
           boxes: [
-            { id: 'idle', lifecycleGeneration: 'owned-1', adoption: 'idle-normal-reconcile' },
+            { id: 'idle', lifecycleGeneration: 'owned-1', adoption: 'await-natural-idle-exit-then-normal-ensure' },
             { id: 'busy', lifecycleGeneration: 'owned-2', adoption: 'defer-active' },
             { id: 'unknown', lifecycleGeneration: 'owned-3', adoption: 'defer-uncertain' },
             { id: 'pending', lifecycleGeneration: 'owned-4', adoption: 'defer-uncertain' },

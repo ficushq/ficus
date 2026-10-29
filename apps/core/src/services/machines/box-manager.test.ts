@@ -5273,3 +5273,73 @@ describe('provisioning marker decomposition', () => {
     })
   })
 })
+
+it('refuses a successful HTTP start on the wrong Bun before publishing the adopted spec', async () => {
+  const events: string[] = []
+  const machine = makeMachine()
+  const box = makeBox()
+  const { deps, upserts } = happyDeps(events, machine, box)
+  Object.assign(deps, {
+    fetch: async () => ({ ok: true, status: 200, json: async () => ({ healthy: true, bunVersion: '1.2.23' }) }),
+  })
+  await expect(
+    ensureBox(
+      {
+        sandboxId: box.sandboxId,
+        machineId: machine.id,
+        role: 'agent',
+        env: {},
+        specHash: 'desired',
+        expectedBunVersion: '1.4.2',
+      },
+      deps
+    )
+  ).rejects.toThrow('Bun runtime mismatch')
+  expect(upserts.some((row) => row.status === 'ready')).toBe(false)
+})
+
+it('a lost idle claim defers normal adoption before bind or spec publication', async () => {
+  const events: string[] = []
+  const machine = makeMachine()
+  const box = makeBox({ status: 'ready', reconcilableSpecHash: 'old', provisionedSpecHash: 'old-marker' })
+  const { deps, binds, upserts } = happyDeps(events, machine, box)
+  Object.assign(deps, { fetch: async () => ({ ok: true, status: 200, json: async () => ({ bunVersion: '1.4.2' }) }) })
+  deps.getMachineBox = async () => box
+  const run = deps.runner.run
+  deps.runner.run = (machine, command, options) =>
+    command.includes('FICUS_BUN_ADOPTION=claimed')
+      ? Promise.resolve({ exitCode: 74, stdout: '', stderr: '' })
+      : run(machine, command, options)
+  const result = await ensureBox(
+    {
+      sandboxId: box.sandboxId,
+      machineId: machine.id,
+      role: 'agent',
+      env: {},
+      specHash: 'desired',
+      expectedBunVersion: '1.4.2',
+      adoptIdleRuntime: true,
+    },
+    deps
+  )
+  expect(result.runtimeAdoptionDeferred).toBe(true)
+  expect(result.box.reconcilableSpecHash).toBe('old')
+  expect(binds).toHaveLength(0)
+  expect(upserts).toHaveLength(0)
+  expect(events).not.toContain('restart')
+})
+
+it('starts the replacement server before reopening an idle-adoption activation socket', async () => {
+  const events: string[] = []
+  const machine = makeMachine()
+  const box = makeBox({ sandboxId: 'agent_fixture', unixUser: 'box_fixture' })
+  const { deps, calls } = happyDeps(events, machine, box)
+  await startBoxAndAwaitHealth(
+    { machine, sandboxId: box.sandboxId, unixUser: box.unixUser, port: box.port, activationSocketHeld: true },
+    deps
+  )
+  const command = calls.find((call) => call.command.includes(' restart '))!.command
+  expect(command.indexOf('restart ficus-box-box_fixture.service')).toBeLessThan(
+    command.indexOf('enable --now ficus-box-box_fixture.socket')
+  )
+})

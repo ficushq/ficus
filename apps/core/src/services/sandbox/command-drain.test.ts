@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import {
   commandCanceledForRestartError,
+  commandRefusedForRestartError,
   restartContextForCommandError,
   drainCommands,
   isCommandDrainActive,
   resetCommandDrainForTests,
   trackCommand,
+  withBoxCommandDrain,
 } from './command-drain'
 
 afterEach(() => resetCommandDrainForTests())
@@ -81,4 +83,69 @@ test('restart attribution follows genuine causes but rejects fabricated metadata
   const cycle = new Error('cycle')
   cycle.cause = cycle
   expect(restartContextForCommandError(cycle)).toBeUndefined()
+})
+
+describe('box command drain', () => {
+  test('cancels only the selected box, holds admission through restart, and leaves global shutdown open', async () => {
+    expect(typeof withBoxCommandDrain).toBe('function')
+    const selected = command()
+    const unrelated = command()
+    trackCommand({ ...selected, sandboxId: 'selected' })
+    trackCommand({ ...unrelated, sandboxId: 'unrelated' })
+    const result = await withBoxCommandDrain(
+      'selected',
+      async (context) => {
+        expect(context).toEqual(restart)
+        expect(isCommandDrainActive('selected')).toBe(true)
+        const refused = commandRefusedForRestartError('selected')
+        expect(refused.message).toContain('Nothing ran')
+        expect(restartContextForCommandError(refused)).toEqual(restart)
+        expect(isCommandDrainActive('unrelated')).toBe(false)
+        expect(isCommandDrainActive()).toBe(false)
+        expect(selected.cancelForRestart).toHaveBeenCalledWith(restart)
+        expect(unrelated.cancelForRestart).not.toHaveBeenCalled()
+        return 'adopted'
+      },
+      0,
+      restart
+    )
+    expect(result).toBe('adopted')
+    expect(isCommandDrainActive('selected')).toBe(false)
+    expect(await drainCommands(0, restart)).toEqual({ finished: 0, canceled: 1 })
+    expect(unrelated.cancelForRestart).toHaveBeenCalledWith(restart)
+  })
+
+  test('unproven cancellation prevents disconnect, releases the gate, and preserves the cause', async () => {
+    const failure = new Error('remote cleanup unproven')
+    const selected = command()
+    trackCommand({
+      ...selected,
+      sandboxId: 'selected',
+      cancelForRestart: async () => {
+        throw failure
+      },
+    })
+    const disconnected = mock(async () => {})
+    await expect(withBoxCommandDrain('selected', disconnected, 0, restart)).rejects.toBe(failure)
+    expect(disconnected).not.toHaveBeenCalled()
+    expect(isCommandDrainActive('selected')).toBe(false)
+    selected.finish()
+  })
+
+  test('overlapping box drains retain the first restart context and do not reopen each other', async () => {
+    const hold = Promise.withResolvers<void>()
+    const first = withBoxCommandDrain('selected', async () => hold.promise, 0, restart)
+    await withBoxCommandDrain(
+      'selected',
+      async (context) => {
+        expect(context).toEqual(restart)
+      },
+      0,
+      { ...restart, restartId: 'later' }
+    )
+    expect(isCommandDrainActive('selected')).toBe(true)
+    hold.resolve()
+    await first
+    expect(isCommandDrainActive('selected')).toBe(false)
+  })
 })

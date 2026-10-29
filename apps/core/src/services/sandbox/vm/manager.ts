@@ -142,6 +142,10 @@ import { getSecretStore } from '../../secrets'
 import { effectiveMachineScripts, type PrebuiltReadOpts } from '../../machines/machine-prebuilt'
 import { resolvePublicAppUrl } from '../../../lib/public-app-url'
 
+import { bunVersionFromBootstrap, probeBoxBunAdoption } from '../../machines/bun-runtime-adoption'
+import { sandboxHasActiveExecution } from '../../machines/sandbox-activity'
+import { commandRefusedForRestartError, isCommandDrainActive, withBoxCommandDrain } from '../command-drain'
+
 const log = createLogger('vm-sandbox')
 
 // The box's SandboxClient can be spoken to as soon as box-manager's ensureBox
@@ -152,6 +156,9 @@ type BoxRole = EnsureBoxOpts['role']
 
 /** The vm runtime discriminant (now a first-class member of `SandboxRuntime`). */
 const VM_RUNTIME: SandboxRuntime = 'vm'
+
+/** Internal control flow only; never charged as a startup/tool failure. */
+class RuntimeAdoptionDeferred extends Error {}
 
 /**
  * Minimum spacing between persisted activity heartbeats per box. Activity is
@@ -286,6 +293,10 @@ export interface VmLifecycleState {
 
 /** All external effects the manager drives, injectable for tests; each defaults to production. */
 export interface VmSandboxManagerDeps {
+  /** Non-waking host proof: old process stood down, registry clear, disk Bun current. */
+  runtimeAdoptionIdle(machine: Machine, box: MachineBox): Promise<boolean>
+  hasActiveExecution(sandboxId: string): Promise<boolean>
+  hasActiveDeployment(sandboxId: string): Promise<boolean>
   ensureBox(opts: EnsureBoxOpts): Promise<{
     machine: Machine
     box: MachineBox
@@ -294,6 +305,7 @@ export interface VmSandboxManagerDeps {
     timings?: BoxStepTimings
     /** See box-timing.ts's `BoxReadyContext.priorBoxesOnMachine`. */
     priorBoxesOnMachine?: number
+    runtimeAdoptionDeferred?: boolean
   }>
   restartBox(sandboxId: string): Promise<string>
   stopBox(sandboxId: string): Promise<BoxStopResult>
@@ -445,44 +457,22 @@ export interface VmSandboxManagerDeps {
 }
 
 /**
- * Hash the box-provision script into {@link VmSandboxManager.computeSpecHash}'s
- * `provisionVersion` ingredient; memoized so the (synchronous) spec hash stays
- * cheap. Same formula as before — sha256 hex, first 16 chars — only the SOURCE
- * of the bytes changed, so a git-checkout run keeps producing the exact value it
- * always did and no box's spec hash shifts under it.
- *
- * The bytes come from {@link effectiveMachineScripts}: the copy inlined at build
- * time (`with { type: 'text' }`) in a source/bundle run, the release's own
- * prebuilt `machine/box-provision.sh` in an artifact deployment — the SAME
- * resolution `bootstrapMachine`, `currentBootstrapVersion` and
- * `boxProvisionArtifact` use, so this hash tracks the script the machines
- * actually receive.
- *
- * This replaced a runtime `readFileSync` of `scripts/machine/box-provision.sh`
- * at a path relative to `import.meta.dir`, with a catch-all that memoized the
- * literal `'noscript'`. That path resolves only in a src-layout run: production
- * runs the bundle (`bun run dist/index.js`), where `import.meta.dir` is
- * `apps/core/dist` and the six-level traversal lands outside the repo entirely —
- * so every deployed core hashed `'noscript'` forever and the box spec hash
- * silently stopped tracking box-provision.sh (script changes never recreated a
- * box; only bundle/role/squad changes did). Deploying this fix therefore flips
- * `provisionVersion` once on every already-deployed core, which reads as spec
- * drift for every existing box: each drifted box is parked and fully
- * re-provisioned once, when idle (agent boxes: no active session; squad boxes:
- * the idle gate in reconcileSquadSandboxSpecs). That re-provision is
- * non-destructive — park keeps the box's home, and box-provision.sh's provision
- * mode is idempotent over an existing user — but it is a one-time fleet-wide
- * re-provision pass, which is the deliberate price of the ingredient becoming
- * live again.
- *
- * `opts` is a test seam (mirrors `currentBootstrapVersion`); production calls it
- * with no arguments.
+ * Process-stable identity of the effective release's provision script AND Bun.
+ * Read immutable machine assets in deployments, not checkout-relative files.
+ * Pin drift enters normal reconciliation, but never authorizes restarting a
+ * running/unknown legacy executor: it must first stand down naturally.
+ * `opts` injects owned prebuilt assets for tests.
  */
 export function defaultBoxProvisionVersion(opts: PrebuiltReadOpts = {}): () => string {
   let cached: string | null = null
   return () => {
     if (cached === null) {
-      cached = createHash('sha256').update(effectiveMachineScripts(opts).boxProvisionScript).digest('hex').slice(0, 16)
+      const scripts = effectiveMachineScripts(opts)
+      cached = createHash('sha256')
+        .update(scripts.boxProvisionScript)
+        .update(`\0bun:${bunVersionFromBootstrap(scripts.bootstrapScript)}`)
+        .digest('hex')
+        .slice(0, 16)
     }
     return cached
   }
@@ -490,6 +480,11 @@ export function defaultBoxProvisionVersion(opts: PrebuiltReadOpts = {}): () => s
 
 function productionDeps(): VmSandboxManagerDeps {
   return {
+    runtimeAdoptionIdle: (machine, box) =>
+      probeBoxBunAdoption(machine, box, bunVersionFromBootstrap(effectiveMachineScripts().bootstrapScript)),
+    hasActiveExecution: sandboxHasActiveExecution,
+    hasActiveDeployment: async (sandboxId) =>
+      (await import('../../deploy/local-deployment-service')).hasActiveLocalDeployments(sandboxId),
     ensureBox: async (opts) => {
       if (!opts.machineId) throw new Error('Physical host admission requires resolved placement')
       await reservePhysicalHostCapacity(opts.machineId, opts.sandboxId)
@@ -1110,40 +1105,70 @@ export class VmSandboxManager implements ISandboxManager {
             }
             if (healthy) return finishEnsure({ machine, box: readyBox, endpoint, timings: {} }, true)
           }
+          if (
+            readyBox?.status === 'ready' &&
+            readyBox.reconcilableSpecHash !== specHash &&
+            !(await this.runtimeAdoptionAllowed(machine, readyBox))
+          ) {
+            return this.deferRuntimeAdoption(sandboxId, opts.signal)
+          }
           return await this.deps.withProvision(
             sandboxId,
             async () => {
-              // A normal resume need not have spec drift. Repair a preempt-stop
-              // through the same authoritative readbacks, not a display status
-              // or a lifecycle sweep racing the execution retry budget.
-              const current = await this.deps.getMachineBox(sandboxId)
-              if (current?.status === 'stop_unverified') {
-                const stop = await this.deps.stopBox(sandboxId)
-                if (stop.kind === 'unverified') throw stopVerificationError(sandboxId, stop.machineStatus)
+              const observed = await this.deps.getMachineBox(sandboxId)
+              const provision = async () => {
+                // A normal resume need not have spec drift. Repair a preempt-stop
+                // through the same authoritative readbacks, not a display status
+                // or a lifecycle sweep racing the execution retry budget.
+                const current = await this.deps.getMachineBox(sandboxId)
+                if (current?.status === 'stop_unverified') {
+                  const stop = await this.deps.stopBox(sandboxId)
+                  if (stop.kind === 'unverified') throw stopVerificationError(sandboxId, stop.machineStatus)
+                }
+                if (
+                  current?.status === 'ready' &&
+                  current.reconcilableSpecHash !== specHash &&
+                  !(await this.runtimeAdoptionAllowed(machine, current))
+                ) {
+                  return this.deferRuntimeAdoption(sandboxId, opts.signal)
+                }
+                const placed = await this.deps.ensureBox({
+                  sandboxId,
+                  machineId: machine.id,
+                  env,
+                  role,
+                  // NOT the bare specHash (that's also baked into env.FICUS_BOX_SPEC_HASH
+                  // above) — computeProvisioningMarker folds a hash of `env` in too, so
+                  // box-manager's PARKED-box resume fast path also busts on a rotated
+                  // secret, not only a bundle/role/provision-script change. See its doc.
+                  specHash: computeProvisioningMarker(specHash, env),
+                  expectedBunVersion: bunVersionFromBootstrap(effectiveMachineScripts().bootstrapScript),
+                  adoptIdleRuntime: Boolean(
+                    current && current.status !== 'stopped' && current.reconcilableSpecHash !== specHash
+                  ),
+                  // The caller's liveness observation, if any. Set only by the vm
+                  // lifecycle tick (one `ss -ltnH` per machine), so its keep-warm
+                  // ensures never HTTP-probe — and therefore never wake — a
+                  // socket-activated box that has deliberately stood down.
+                  liveness: opts.boxLiveness,
+                  beginPhysicalWork,
+                })
+                timer.merge(placed.timings)
+                if (placed.runtimeAdoptionDeferred) {
+                  if (placed.box.status === 'ready') return this.deferRuntimeAdoption(sandboxId, opts.signal)
+                  const pending = new Error('Runtime adoption is awaiting a proven idle activation chain')
+                  pending.name = 'SandboxReadinessPendingError'
+                  throw new VmPostProvisionSetupError(pending)
+                }
+                try {
+                  return await finishEnsure(placed)
+                } catch (error) {
+                  throw new VmPostProvisionSetupError(error)
+                }
               }
-              const placed = await this.deps.ensureBox({
-                sandboxId,
-                machineId: machine.id,
-                env,
-                role,
-                // NOT the bare specHash (that's also baked into env.FICUS_BOX_SPEC_HASH
-                // above) — computeProvisioningMarker folds a hash of `env` in too, so
-                // box-manager's PARKED-box resume fast path also busts on a rotated
-                // secret, not only a bundle/role/provision-script change. See its doc.
-                specHash: computeProvisioningMarker(specHash, env),
-                // The caller's liveness observation, if any. Set only by the vm
-                // lifecycle tick (one `ss -ltnH` per machine), so its keep-warm
-                // ensures never HTTP-probe — and therefore never wake — a
-                // socket-activated box that has deliberately stood down.
-                liveness: opts.boxLiveness,
-                beginPhysicalWork,
-              })
-              timer.merge(placed.timings)
-              try {
-                return await finishEnsure(placed)
-              } catch (error) {
-                throw new VmPostProvisionSetupError(error)
-              }
+              return observed?.status === 'ready' && observed.reconcilableSpecHash !== specHash
+                ? withBoxCommandDrain(sandboxId, provision)
+                : provision()
             },
             async () => {
               // The owner's endpoint is process-local. A shared success only
@@ -1158,6 +1183,8 @@ export class VmSandboxManager implements ISandboxManager {
                   `Shared provision machine unavailable for ${sandboxId}`,
                   machine?.status ?? 'unreachable'
                 )
+              if (box.reconcilableSpecHash && box.reconcilableSpecHash !== specHash)
+                return this.deferRuntimeAdoption(sandboxId, opts.signal)
               await this.deps.ensureMaster(machine)
               const localPort = await this.deps.addForward(machine, box.port)
               return finishEnsure({ machine, box, endpoint: `http://127.0.0.1:${localPort}`, timings: {} }, true)
@@ -1183,6 +1210,29 @@ export class VmSandboxManager implements ISandboxManager {
     } finally {
       if (!connectionReleased) releaseConnection()
     }
+  }
+
+  private async runtimeAdoptionAllowed(machine: Machine, box: MachineBox): Promise<boolean> {
+    try {
+      const setup = await this.deps.getSetupState(box.sandboxId)
+      if (setup?.pendingInvocationId || setup?.reasons.includes('command_outcome_ambiguous')) return false
+      if (await this.deps.hasActiveExecution(box.sandboxId)) return false
+      if (await this.deps.hasActiveDeployment(box.sandboxId)) return false
+      return await this.deps.runtimeAdoptionIdle(machine, box)
+    } catch {
+      return false
+    }
+  }
+
+  private async deferRuntimeAdoption(sandboxId: string, signal?: AbortSignal): Promise<string> {
+    signal?.throwIfAborted()
+    // Do not publish the desired hash/fingerprint, close a reusable client, or
+    // HTTP-poll a live legacy executor: polling would prevent its idle exit.
+    if (!this.getClientForSandbox(sandboxId) && !(await this.attachClient(sandboxId, true))) {
+      throw new Error(`Deferred runtime adoption could not attach existing box ${sandboxId}`)
+    }
+    log.debug(`Runtime adoption deferred until known idle exit: ${sandboxId}`)
+    return sandboxId
   }
 
   async attachExistingSandbox(sandboxId: string, _opts: SandboxOptions): Promise<boolean> {
@@ -1237,6 +1287,14 @@ export class VmSandboxManager implements ISandboxManager {
   }
 
   async stopSandbox(sandboxId: string, options: { lifecycleGeneration?: string | null } = {}) {
+    return this.stopSandboxWithGuard(sandboxId, options)
+  }
+
+  private async stopSandboxWithGuard(
+    sandboxId: string,
+    options: { lifecycleGeneration?: string | null },
+    beforeStop?: (box: MachineBox | null) => Promise<void>
+  ) {
     const release = await this.acquireConnection(sandboxId)
     try {
       return await this.deps.withSetupLease(sandboxId, async () => {
@@ -1261,6 +1319,7 @@ export class VmSandboxManager implements ISandboxManager {
             return { kind: 'generation-mismatch', actualLifecycleGeneration } as const
           }
         }
+        await beforeStop?.(current)
         if (state) {
           state.client.close()
           this.sandboxes.delete(sandboxId)
@@ -1427,6 +1486,7 @@ export class VmSandboxManager implements ISandboxManager {
   // Startup admission is ensureSandbox. Generic exec also serves monitors,
   // cleanup and deployments; background setup repair must not stall those.
   async exec(sandboxId: string, args: string[], options?: SandboxExecOptions): Promise<Buffer> {
+    if (isCommandDrainActive(sandboxId)) throw commandRefusedForRestartError(sandboxId)
     const state = this.requireSandbox(sandboxId)
     this.touch(state)
 
@@ -1467,6 +1527,7 @@ export class VmSandboxManager implements ISandboxManager {
   }
 
   async execStatus(sandboxId: string, args: string[]): Promise<number> {
+    if (isCommandDrainActive(sandboxId)) throw commandRefusedForRestartError(sandboxId)
     const state = this.requireSandbox(sandboxId)
     this.touch(state)
 
@@ -1504,6 +1565,7 @@ export class VmSandboxManager implements ISandboxManager {
     onStderr: (chunk: Buffer) => void = () => {},
     onEnd?: () => void
   ): { cancel: () => void; cancelAndWait: () => Promise<void> } {
+    if (isCommandDrainActive(sandboxId)) throw commandRefusedForRestartError(sandboxId)
     const state = this.requireSandbox(sandboxId)
     this.touch(state)
 
@@ -1537,6 +1599,7 @@ export class VmSandboxManager implements ISandboxManager {
   // with a clear "log streaming not supported for this runtime".
 
   spawnShell(sandboxId: string, cols: number, rows: number, _workspacePath?: string, cwd?: string): IPty | null {
+    if (isCommandDrainActive(sandboxId)) throw commandRefusedForRestartError(sandboxId)
     const state = this.sandboxes.get(sandboxId)
     if (!state) {
       log.warn(`Cannot spawn shell - box not found: ${sandboxId}`)
@@ -1649,11 +1712,31 @@ export class VmSandboxManager implements ISandboxManager {
 
   async recreateSandbox(sandboxId: string, opts: SandboxOptions): Promise<string> {
     return trackSandboxSetupWork(this, sandboxId, 'spec_reconcile', async () => {
-      log.info(`Recreating box to apply spec change: ${sandboxId}`)
-      // Park (state persists on disk) then re-ensure with the new spec.
-      const stop = await this.stopSandbox(sandboxId)
-      if (stop.kind === 'unverified') throw stopVerificationError(sandboxId, stop.machineStatus)
-      return this.ensureSandbox(sandboxId, opts)
+      const box = await this.deps.getMachineBox(sandboxId)
+      if (box?.status === 'ready') return this.ensureSandbox(sandboxId, opts)
+      return withBoxCommandDrain(sandboxId, async () => {
+        log.info(`Recreating box to apply spec change: ${sandboxId}`)
+        // Park (state persists on disk) then re-ensure with the new spec.
+        try {
+          const stop = await this.stopSandboxWithGuard(
+            sandboxId,
+            box ? { lifecycleGeneration: lifecycleGenerationFromVmSpecHash(box.reconcilableSpecHash) } : {},
+            async (current) => {
+              opts.signal?.throwIfAborted()
+              if (current?.status !== 'ready') return
+              const machine = await this.deps.getMachine(current.machineId)
+              if (!machine || !(await this.runtimeAdoptionAllowed(machine, current)))
+                throw new RuntimeAdoptionDeferred()
+            }
+          )
+          if (stop.kind === 'unverified') throw stopVerificationError(sandboxId, stop.machineStatus)
+          if (stop.kind === 'generation-mismatch') return this.deferRuntimeAdoption(sandboxId, opts.signal)
+          return this.ensureSandbox(sandboxId, opts)
+        } catch (error) {
+          if (error instanceof RuntimeAdoptionDeferred) return this.deferRuntimeAdoption(sandboxId, opts.signal)
+          throw error
+        }
+      })
     })
   }
 
@@ -1860,7 +1943,7 @@ export class VmSandboxManager implements ISandboxManager {
     return p
   }
 
-  private async attachClient(sandboxId: string): Promise<SandboxClient | null> {
+  private async attachClient(sandboxId: string, passive = false): Promise<SandboxClient | null> {
     const box = await this.deps.getMachineBox(sandboxId)
     if (!box || box.status !== 'ready') return null
     const machine = await this.deps.getMachine(box.machineId)
@@ -1890,7 +1973,7 @@ export class VmSandboxManager implements ISandboxManager {
     void this.deps.persistBoxActivity(sandboxId, this.deps.now()).catch((err) => {
       log.warn(`Failed to persist attach activity heartbeat for ${sandboxId}:`, err)
     })
-    await this.deps.cleanupExposure?.(sandboxId, client)
+    if (!passive) await this.deps.cleanupExposure?.(sandboxId, client)
     return client
   }
 

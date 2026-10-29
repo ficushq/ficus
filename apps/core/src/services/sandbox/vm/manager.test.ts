@@ -260,6 +260,9 @@ function makeHarness(opts?: { machineForSandbox?: (id: string) => string; bashSc
   let port = 40000
   const boxPorts = new Map<string, number>()
   const deps: HarnessDeps = {
+    runtimeAdoptionIdle: async () => true,
+    hasActiveExecution: async () => false,
+    hasActiveDeployment: async () => false,
     cleanupExposure: async () => {},
     // The manager resolves the machine ONCE (via a resolvePlacement-shaped request)
     // and hands its id to ensureBox; the reverse-tunnel callback (resolveBoxApiUrl)
@@ -2721,7 +2724,7 @@ describe('VmSandboxManager', () => {
           endpointFor: () => 'http://127.0.0.1:59999',
           checkHealth: async () => true,
         },
-        fetch: async () => ({ ok: true, status: 200 }),
+        fetch: async () => ({ ok: true, status: 200, json: async () => ({ bunVersion: '1.4.2' }) }),
         getMachine: async (id: string) => ({
           id,
           name: id,
@@ -3328,10 +3331,13 @@ describe('defaultBoxProvisionVersion', () => {
   const CHECKED_IN_SCRIPT = join(import.meta.dir, '../../../../../../scripts/machine/box-provision.sh')
 
   test('hashes the checked-in box-provision.sh, and is never the "noscript" blind spot', () => {
-    // The pre-change formula, recomputed from the file bytes: sha256 hex,
-    // first 16 chars. Pinned so the fix cannot shift every git-mode box's spec
-    // hash (which would recreate the fleet's boxes on deploy).
-    const expected = createHash('sha256').update(readFileSync(CHECKED_IN_SCRIPT)).digest('hex').slice(0, 16)
+    // The desired host runtime is part of provisioning identity. Hash drift
+    // is applied only after conservative idle adoption, never a fleet restart.
+    const expected = createHash('sha256')
+      .update(readFileSync(CHECKED_IN_SCRIPT))
+      .update('\0bun:1.4.2')
+      .digest('hex')
+      .slice(0, 16)
 
     const version = defaultBoxProvisionVersion()
     expect(version()).toBe(expected)
@@ -3347,9 +3353,9 @@ describe('defaultBoxProvisionVersion', () => {
       mkdirSync(join(root, 'machine'), { recursive: true })
       const sentinel = '#!/bin/bash\n# SENTINEL-BOX-PROVISION-FROM-ARTIFACT\n'
       writeFileSync(join(root, 'machine', 'box-provision.sh'), sentinel)
-      writeFileSync(join(root, 'machine', 'bootstrap.sh'), '#!/bin/bash\n# SENTINEL-BOOTSTRAP\n')
+      writeFileSync(join(root, 'machine', 'bootstrap.sh'), '#!/bin/bash\nBUN_VERSION="9.8.7"\n')
 
-      const expected = createHash('sha256').update(sentinel).digest('hex').slice(0, 16)
+      const expected = createHash('sha256').update(sentinel).update('\0bun:9.8.7').digest('hex').slice(0, 16)
       expect(defaultBoxProvisionVersion({ root })()).toBe(expected)
       // The injection actually changed the answer (not the git-checkout value).
       expect(defaultBoxProvisionVersion({ root })()).not.toBe(defaultBoxProvisionVersion()())
@@ -3801,3 +3807,397 @@ for (const machineStatus of ['registered', 'bootstrapping', 'unreachable']) {
     }
   })
 }
+
+describe('Bun adoption through normal spec reconciliation', () => {
+  test('polling a live legacy process defers without HTTP, park, publication or client close; idle ensure adopts', async () => {
+    const h = makeHarness()
+    let idle = false
+    Object.assign(h.deps, { runtimeAdoptionIdle: async () => idle, hasActiveExecution: async () => false })
+    const manager = new VmSandboxManager(h.deps)
+    const id = 'agent_runtime-fixture'
+    const options = { ...agentOpts, lifecycleGeneration: 'owning-generation' }
+    await manager.ensureSandbox(id, options)
+    const oldSpec = await manager.getRunningSandboxSpecHash(id)
+    h.setMachineBoxRow({ machineId: 'm1', port: 40001, status: 'ready', reconcilableSpecHash: oldSpec })
+    h.setProvisionVersion('bun-1.4.2')
+    const client = [...h.clients.values()][0]!
+    const before = { ensures: h.ensureCalls.length, health: client.healthCalls, writes: h.syncCalls.length }
+    for (let i = 0; i < 3; i++) await manager.recreateSandbox(id, options)
+    expect(h.ensureCalls.length).toBe(before.ensures)
+    expect(h.stopCalls).toHaveLength(0)
+    expect(h.syncCalls.length).toBe(before.writes)
+    expect(client.healthCalls).toBe(before.health)
+    expect(client.closed).toBe(0)
+    expect(await manager.getRunningSandboxSpecHash(id)).toBe(oldSpec)
+    expect(manager.isSandboxSpecDrifted(id, options)).toBe(true)
+    // A later normal ensure, after natural idle exit, applies the desired bytes.
+    idle = true
+    await manager.ensureSandbox(id, options)
+    expect(h.ensureCalls.length).toBe(before.ensures + 1)
+    expect(h.ensureCalls.at(-1)!.env.FICUS_BOX_SPEC_HASH).toStartWith('lifecycle:owning-generation:')
+    expect(manager.isSandboxSpecDrifted(id, options)).toBe(false)
+  })
+
+  test.each(['active', 'unknown', 'pending', 'deployment'] as const)(
+    '%s work blocks replacement before the host probe',
+    async (kind) => {
+      const h = makeHarness()
+      let probes = 0
+      Object.assign(h.deps, {
+        hasActiveDeployment: async () => kind === 'deployment',
+        runtimeAdoptionIdle: async () => {
+          probes++
+          return true
+        },
+        hasActiveExecution: async () => {
+          if (kind === 'unknown') throw new Error('activity unavailable')
+          return kind === 'active'
+        },
+      })
+      const manager = new VmSandboxManager(h.deps)
+      await manager.ensureSandbox('squad_s1', squadOpts)
+      const oldSpec = await manager.getRunningSandboxSpecHash('squad_s1')
+      h.setMachineBoxRow({ machineId: 'm1', port: 40001, status: 'ready', reconcilableSpecHash: oldSpec })
+      h.setProvisionVersion('bun-1.4.2')
+      if (kind === 'pending') {
+        const setup = await h.deps.getSetupState('squad_s1')
+        h.setSetupState({ ...setup!, pendingInvocationId: 'remote-outcome-unproven' })
+      }
+      const before = h.ensureCalls.length
+      await manager.ensureSandbox('squad_s1', squadOpts)
+      expect(h.ensureCalls.length).toBe(before)
+      expect(probes).toBe(0)
+      expect(await manager.getRunningSandboxSpecHash('squad_s1')).toBe(oldSpec)
+    }
+  )
+})
+
+test('legacy installed executor idle-exits and the next normal ensure adopts the atomically replaced Bun', async () => {
+  const { copyFile, mkdir, readlink, rename, rm } = await import('node:fs/promises')
+  const { SandboxClient } = await import('../client/http-client')
+  const { createHttpBashOperations } = await import('../../../tools/sandbox-tools')
+  const { probeBoxBunAdoption, withIdleBunRuntimeClaim } = await import('../../machines/bun-runtime-adoption')
+  const root = mkdtempSync(join(tmpdir(), 'legacy-bun-adoption-'))
+  const home = join(root, 'home')
+  const bin = join(root, 'bin')
+  const stable = join(bin, 'bun')
+  const socket = join(root, 'executor.sock')
+  const children: Array<ReturnType<typeof Bun.spawn>> = []
+  const output: Array<Promise<string>> = []
+  const connections: SandboxClient[] = []
+  const entry =
+    process.env.FICUS_SANDBOX_TEST_SERVER_ENTRY ??
+    new URL('../../../../../../packages/sandbox-server/src/server.ts', import.meta.url).pathname
+  const legacyEntry = process.env.FICUS_TEST_LEGACY_SERVER_ENTRY ?? entry
+  const legacyBun = process.env.FICUS_TEST_LEGACY_BUN ?? process.execPath
+  const id = 'agent_installed-runtime-fixture'
+  const options = { ...agentOpts, lifecycleGeneration: 'preserved-generation' }
+  const h = makeHarness()
+  let current: ReturnType<typeof Bun.spawn>
+  let launches = 0
+  let healthRequests = 0
+  const launch = async (boxHome = home, boxSocket = socket, executable = stable, serverEntry = entry) => {
+    const proc = Bun.spawn([executable, serverEntry], {
+      env: {
+        ...process.env,
+        HOME: boxHome,
+        FICUS_BOX_HOME: boxHome,
+        WORKSPACE_PATH: boxHome,
+        EXECUTOR_SOCKET: boxSocket,
+        EXECUTOR_SERVICE_CGROUP: '',
+        EXECUTOR_AUTH_TOKEN: 'fixture-token',
+        EXECUTOR_BIND: '',
+        FICUS_BOX_PORT: '',
+        EXECUTOR_DOCKER_RUNTIME: '',
+        EXECUTOR_IDLE_EXIT_MS: '750',
+        FICUS_SANDBOX_ROLE: 'agent',
+        BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0',
+        PATH: `${bin}:${process.env.PATH}`,
+      },
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    children.push(proc)
+    let logs = ''
+    const drain = async (stream: ReadableStream<Uint8Array>) => {
+      for await (const bytes of stream) logs += new TextDecoder().decode(bytes)
+    }
+    output.push(
+      Promise.all([
+        drain(proc.stdout as ReadableStream<Uint8Array>),
+        drain(proc.stderr as ReadableStream<Uint8Array>),
+      ]).then(() => logs)
+    )
+    const deadline = Date.now() + 10000
+    while (!logs.includes('HTTP server listening on unix:')) {
+      if (proc.exitCode !== null || Date.now() >= deadline) throw new Error(`Owned executor failed to start: ${logs}`)
+      await Bun.sleep(10)
+    }
+    if (boxSocket === socket) launches++
+    return proc
+  }
+  let manager: VmSandboxManager | undefined
+  try {
+    await mkdir(home)
+    await mkdir(bin)
+    await copyFile(legacyBun, stable)
+    current = await launch(home, socket, stable, legacyEntry)
+    const otherHome = join(root, 'other-home')
+    const otherSocket = join(root, 'other.sock')
+    await mkdir(otherHome)
+    const other = await launch(otherHome, otherSocket, process.execPath)
+    const otherClient = new SandboxClient('other-fixture', 'fixture-token', {
+      fetch: (url, init) => fetch(url, { ...init, unix: otherSocket } as RequestInit & { unix: string }),
+    })
+    connections.push(otherClient)
+    const otherReady = Promise.withResolvers<void>()
+    const otherOps = createHttpBashOperations(
+      {
+        getClientForSandbox: () => otherClient,
+        getSandboxStatus: async () => ({ status: 'running' }),
+        resolveToolApiUrl: () => 'http://fixture',
+      },
+      'other-box'
+    )
+    const otherRunning = otherOps
+      .exec('printf ready; while [ ! -f release ]; do sleep .05; done; printf completed > affected', otherHome, {
+        onData: (data) => {
+          if (data.toString().includes('ready')) otherReady.resolve()
+        },
+      })
+      .catch((error) => error)
+    await otherReady.promise
+    const legacyExe = await readlink(`/proc/${current.pid}/exe`)
+    const previous = Bun.spawnSync([`/proc/${current.pid}/exe`, '--version'])
+      .stdout.toString()
+      .trim()
+    if (process.env.FICUS_TEST_LEGACY_BUN) expect(previous).toBe('1.2.23')
+    const fetchExecutor = async (url: string | URL | Request, init?: RequestInit) => {
+      if (new URL(typeof url === 'string' ? url : url instanceof URL ? url.href : url.url).pathname === '/healthz')
+        healthRequests++
+      return fetch(url, { ...init, unix: socket } as RequestInit & { unix: string })
+    }
+    const unsupported = await fetchExecutor('http://fixture/runtime/restart', {
+      method: 'POST',
+      headers: { authorization: 'Bearer fixture-token' },
+      body: '{}',
+    })
+    expect(unsupported.status).toBe(404)
+    await unsupported.text()
+    h.deps.createClient = () => {
+      const client = new SandboxClient('fixture', 'fixture-token', { fetch: fetchExecutor })
+      connections.push(client)
+      // Setup writes are represented by the existing manager harness; only
+      // the actual agent operation crosses HTTP into the owned executor root.
+      const bash = client.bash.bind(client)
+      const health = client.health.bind(client)
+      return Object.assign(client, {
+        health: async () => ({ ...(await health()), devboxReady: true }),
+        bash: (request: any) => (request.cwd === home ? bash(request) : makeBashStream({ exitCode: 0 })),
+        write: async () => {},
+        toolchainReady: async () => {},
+        devboxReady: async () => {},
+      }) as any
+    }
+    h.setSyncBoxFiles(async () => {})
+    let desiredMarker: string | null = null
+    const ensure = h.deps.ensureBox
+    let previousPlacement: Awaited<ReturnType<typeof ensure>>
+    let socketClaims = 0
+    h.deps.ensureBox = async (input) => {
+      const provision = async () => {
+        if (current.exitCode !== null) {
+          current = await launch()
+          const health = await fetchExecutor('http://fixture/healthz')
+          expect(((await health.json()) as { bunVersion: string }).bunVersion).toBe(input.expectedBunVersion)
+        }
+        const placed = await ensure(input)
+        placed.box.reconcilableSpecHash = input.env.FICUS_BOX_SPEC_HASH ?? null
+        desiredMarker = placed.box.reconcilableSpecHash
+        h.setMachineBoxRow({
+          machineId: 'm1',
+          port: placed.box.port,
+          status: 'ready',
+          reconcilableSpecHash: desiredMarker,
+        })
+        previousPlacement = placed
+        return placed
+      }
+      if (!input.adoptIdleRuntime) return provision()
+      const claim = await withIdleBunRuntimeClaim(
+        previousPlacement.machine,
+        previousPlacement.box,
+        input.expectedBunVersion!,
+        async () => {
+          socketClaims++
+          expect(readFileSync(join(root, 'socket-state'), 'utf8').trim()).toBe('inactive')
+          return provision()
+        },
+        fixtureRunner
+      )
+      return claim.adopted ? claim.value : { ...previousPlacement, runtimeAdoptionDeferred: true }
+    }
+    const executable = (name: string, script: string) =>
+      writeFileSync(join(bin, name), `#!/bin/sh\n${script}\n`, { mode: 0o755 })
+    executable('id', 'echo 1000')
+    executable('sudo', '[ "$1" = -n ] && shift; case "$1" in systemctl|bash) exec "$@" ;; *) exit 99 ;; esac')
+    executable(
+      'systemctl',
+      'for unit; do :; done; case "$1" in stop) echo inactive > "$STATE_ROOT/socket-state" ;; start) echo active > "$STATE_ROOT/socket-state" ;; show) echo 0 ;; is-active) case "$unit" in *.socket) cat "$STATE_ROOT/socket-state" ;; *proxy.service) echo inactive ;; *.service) echo "$SERVER_STATE" ;; *) exit 98 ;; esac ;; *) exit 97 ;; esac'
+    )
+    writeFileSync(join(root, 'socket-state'), 'active\n')
+    const fixtureRunner = {
+      run: async (_machine: unknown, command: string) => {
+        const relocated = command.replaceAll(`/home/${boxUnixUser(id)}`, home).replaceAll('/opt/ficus/bin/bun', stable)
+        const proc = Bun.spawn(['bash', '-c', relocated], {
+          env: {
+            PATH: `${bin}:/usr/bin:/bin`,
+            SERVER_STATE: current.exitCode === null ? 'active' : 'inactive',
+            STATE_ROOT: root,
+            FICUS_HOST_ROOT: root,
+          },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        })
+        const [stdout, stderr, exitCode] = await Promise.all([
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ])
+        return { stdout, stderr, exitCode }
+      },
+    }
+    h.deps.runtimeAdoptionIdle = (machine, box) => probeBoxBunAdoption(machine, box, '1.4.2', fixtureRunner)
+    manager = new VmSandboxManager(h.deps)
+    await manager.ensureSandbox(id, options)
+    const oldSpec = desiredMarker
+    const ops = createHttpBashOperations(manager, id)
+    const ready = Promise.withResolvers<void>()
+    const running = ops
+      .exec('printf ready; while [ ! -f release ]; do sleep .05; done; printf completed > affected', home, {
+        onData: (data) => {
+          if (data.toString().includes('ready')) ready.resolve()
+        },
+      })
+      .catch((error) => error)
+    await ready.promise
+    // Publish new bytes by rename: the old process retains the old executable inode.
+    await copyFile(process.execPath, `${stable}.next`)
+    await rename(`${stable}.next`, stable)
+    expect(await readlink(`/proc/${current.pid}/exe`)).toBe(`${legacyExe} (deleted)`)
+    expect(Bun.spawnSync([stable, '--version']).stdout.toString().trim()).toBe('1.4.2')
+    h.setProvisionVersion('bun-1.4.2')
+    const beforeHealth = healthRequests
+    for (let i = 0; i < 3; i++) {
+      await manager.recreateSandbox(id, options)
+      await Bun.sleep(50)
+    }
+    expect(healthRequests).toBe(beforeHealth)
+    expect(desiredMarker).toBe(oldSpec)
+    expect(h.stopCalls).toHaveLength(0)
+    writeFileSync(join(home, 'release'), '')
+    expect(await running).toEqual({ exitCode: 0 })
+    expect(readFileSync(join(home, 'affected'), 'utf8')).toBe('completed')
+    // The legacy server, not Core and not the test, performs its normal idle exit.
+    const naturalExit = await Promise.race([current.exited, Bun.sleep(8000).then(() => 'timeout')])
+    expect(naturalExit).toBe(0)
+    expect(await output[0]).toContain('exiting')
+    expect(other.exitCode).toBeNull()
+    // Unknown persisted work remains a blocker even after the process stood down.
+    const active = join(home, '.ficus/runtime/bash-invocations/active')
+    await mkdir(active, { recursive: true })
+    writeFileSync(join(active, 'unknown.json'), '{"state":"quarantined"}')
+    await manager.ensureSandbox(id, options)
+    expect(launches).toBe(1)
+    expect(desiredMarker).toBe(oldSpec)
+    await rm(join(active, 'unknown.json'))
+    await manager.ensureSandbox(id, options)
+    expect(launches).toBe(2)
+    expect(socketClaims).toBe(1)
+    expect(readFileSync(join(root, 'socket-state'), 'utf8').trim()).toBe('active')
+    expect(desiredMarker).toStartWith('lifecycle:preserved-generation:')
+    expect(desiredMarker).not.toBe(oldSpec)
+    expect(
+      Bun.spawnSync([`/proc/${current.pid}/exe`, '--version'])
+        .stdout.toString()
+        .trim()
+    ).toBe('1.4.2')
+    expect(await ops.exec('printf resumed > resumed', home, { onData: () => {} })).toEqual({ exitCode: 0 })
+    expect(readFileSync(join(home, 'resumed'), 'utf8')).toBe('resumed')
+    expect(other.exitCode).toBeNull()
+    writeFileSync(join(otherHome, 'release'), '')
+    expect(await otherRunning).toEqual({ exitCode: 0 })
+    expect(readFileSync(join(otherHome, 'affected'), 'utf8')).toBe('completed')
+  } finally {
+    // No live hosts/units are touched. Stop every owned server and drain pipes.
+    for (const client of connections) client.close()
+    for (const child of children) {
+      if (child.exitCode === null) child.kill('SIGTERM')
+      const exited = await Promise.race([child.exited, Bun.sleep(3000).then(() => null)])
+      if (exited === null) {
+        child.kill('SIGKILL')
+        await child.exited
+      }
+    }
+    await Promise.all(output)
+    // Harness cleanup must not issue commands to an already-exited executor.
+    if (manager) await manager.cleanup()
+    await rm(root, { recursive: true, force: true })
+  }
+}, 30000) // Real legacy/current processes, natural idle exit, HTTP Bash and normal manager ensure.
+
+test('routine setup without runtime spec drift does not activate box command drain', async () => {
+  const { isCommandDrainActive } = await import('../command-drain')
+  const h = makeHarness()
+  const ensure = h.deps.ensureBox
+  h.deps.ensureBox = async (input) => {
+    expect(isCommandDrainActive(input.sandboxId)).toBe(false)
+    return ensure(input)
+  }
+  const manager = new VmSandboxManager(h.deps)
+  await manager.ensureSandbox('agent_unchanged', agentOpts)
+  const spec = await manager.getRunningSandboxSpecHash('agent_unchanged')
+  h.setMachineBoxRow({ machineId: 'm1', port: 40001, status: 'ready', reconcilableSpecHash: spec })
+  await manager.ensureSandbox('agent_unchanged', agentOpts)
+})
+
+test('runtime recreation rechecks idle proof after acquiring the owning setup lease', async () => {
+  const h = makeHarness()
+  let idle = true
+  let changeDuringLease = false
+  h.deps.runtimeAdoptionIdle = async () => idle
+  h.deps.withSetupLease = async (_id, action) => {
+    if (changeDuringLease) idle = false
+    return action()
+  }
+  const manager = new VmSandboxManager(h.deps)
+  await manager.ensureSandbox('agent_lease-race', agentOpts)
+  const previous = await manager.getRunningSandboxSpecHash('agent_lease-race')
+  h.setMachineBoxRow({ machineId: 'm1', port: 40001, status: 'ready', reconcilableSpecHash: previous })
+  changeDuringLease = true
+  h.setProvisionVersion('bun-1.4.2')
+  const before = h.ensureCalls.length
+  await manager.recreateSandbox('agent_lease-race', agentOpts)
+  expect(h.stopCalls).toHaveLength(0)
+  expect(h.ensureCalls).toHaveLength(before)
+  expect(await manager.getRunningSandboxSpecHash('agent_lease-race')).toBe(previous)
+})
+
+test('scoped runtime drain fences generic VM exec admission without affecting another box', async () => {
+  const { withBoxCommandDrain, restartContextForCommandError } = await import('../command-drain')
+  const h = makeHarness()
+  const manager = new VmSandboxManager(h.deps)
+  await manager.ensureSandbox('agent_selected', agentOpts)
+  await manager.ensureSandbox('agent_other', agentOpts)
+  await withBoxCommandDrain(
+    'agent_selected',
+    async (restart) => {
+      const outcome = await manager.exec('agent_selected', ['echo', 'must-not-start']).catch((error) => error)
+      expect(outcome).toBeInstanceOf(Error)
+      expect(restartContextForCommandError(outcome)).toEqual(restart)
+      expect(await manager.exec('agent_other', ['echo', 'allowed'])).toEqual(Buffer.from('ok'))
+    },
+    0
+  )
+})

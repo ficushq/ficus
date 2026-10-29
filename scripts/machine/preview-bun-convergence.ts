@@ -51,6 +51,7 @@ export function previewBunConvergence(input: unknown, desired: string) {
     mode: 'offline-preview',
     desiredBunVersion: desired,
     mutation: false,
+    convergence: 'eventual-idle-adoption',
     hosts: (input.hosts as unknown as HostInventory[]).map((host) => ({
       id: host.id,
       prebaked: host.prebaked,
@@ -70,7 +71,7 @@ export function previewBunConvergence(input: unknown, desired: string) {
               ? 'defer-uncertain'
               : box.work === 'active'
                 ? 'defer-active'
-                : 'idle-normal-reconcile',
+                : 'await-natural-idle-exit-then-normal-ensure',
       })),
     })),
   }
