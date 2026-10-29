@@ -384,7 +384,8 @@ function PendingMessageRow({
   deliveryMode,
   status,
   queued,
-  onUpdate,
+  onSwitchMode,
+  onCancel,
   onRetry,
   metadata,
   agentId,
@@ -395,18 +396,19 @@ function PendingMessageRow({
   deliveryMode?: DeliveryMode
   status: 'sending' | 'queued' | 'failed'
   queued?: boolean
-  onUpdate?: (operation: 'cancel' | DeliveryMode) => Promise<void>
+  onSwitchMode?: (mode: DeliveryMode) => Promise<void>
+  onCancel?: () => Promise<void>
   onRetry?: () => void
   metadata?: MessageMetadata | null
 }) {
   const [updating, setUpdating] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
-  const update = async (operation: 'cancel' | DeliveryMode) => {
-    if (!onUpdate || updating) return
+  const run = async (operation: () => Promise<void>) => {
+    if (updating) return
     setUpdating(true)
     setUpdateError(null)
     try {
-      await onUpdate(operation)
+      await operation()
     } catch (error) {
       setUpdateError(error instanceof Error ? error.message : 'Could not update this message.')
     } finally {
@@ -418,54 +420,77 @@ function PendingMessageRow({
       ? { ...(metadata ?? {}), ...(imageIds?.length ? { imageIds } : {}), ...(deliveryMode ? { deliveryMode } : {}) }
       : undefined
   const auto = automatedSource({ role: 'human', metadata: effectiveMetadata ?? null })
+  const showHeader = queued && !auto && (deliveryMode || onCancel)
+  const modeLabel = (
+    <>
+      {deliveryMode === 'steer' ? <LightningIcon className="h-3.5 w-3.5" /> : <ClockIcon className="h-3.5 w-3.5" />}
+      {deliveryMode === 'steer' ? 'Interrupt' : 'Follow up'}
+    </>
+  )
+  // Compact controls on the accent bubble: a translucent on-accent wash instead of the canvas hover fill.
+  const bubbleControl =
+    'ficus-button ficus-button-ghost text-inherit hover:text-on-accent hover:bg-on-accent/15 focus-visible:bg-on-accent/15 disabled:opacity-60'
 
   return (
-    <div className="flex justify-end">
+    <div className="flex flex-col items-end">
       <div
+        aria-busy={updating || undefined}
         className={clsx(
-          'max-w-[90%] md:max-w-[80%] rounded-lg break-words',
-          !auto && 'px-3 md:px-4 py-2 md:py-3 bg-accent text-on-accent'
+          'max-w-[90%] md:max-w-[80%] rounded-lg break-words transition-opacity',
+          !auto && 'px-3 md:px-4 py-2 md:py-3 bg-accent text-on-accent',
+          updating && 'opacity-70'
         )}
       >
-        {deliveryMode && !auto && queued && (
-          <div className="flex items-center gap-1.5 mb-1 text-on-accent/80 text-xs">
-            {deliveryMode === 'steer' ? (
-              <>
-                <LightningIcon className="h-3.5 w-3.5" /> Interrupt
-              </>
+        {showHeader && (
+          <div className="-mx-1.5 -mt-0.5 mb-1 flex items-center justify-between gap-3 text-xs text-on-accent/80">
+            {deliveryMode && onSwitchMode ? (
+              <SelectionPopup
+                label="Queued message delivery"
+                title="Change when this queued message is delivered"
+                value={deliveryMode}
+                onChange={(mode) => {
+                  if (mode !== deliveryMode) void run(() => onSwitchMode(mode))
+                }}
+                width={300}
+                openOnHover
+                disabled={updating}
+                options={[
+                  {
+                    value: 'steer',
+                    label: 'Interrupt',
+                    description: 'Deliver at the next point the agent can take a message.',
+                  },
+                  {
+                    value: 'follow-up',
+                    label: 'Follow up',
+                    description: 'Deliver after the agent finishes its current turn.',
+                  },
+                ]}
+                className={clsx(bubbleControl, 'inline-flex items-center gap-1.5 rounded px-1.5 py-0.5')}
+              >
+                {modeLabel}
+                <ChevronDownIcon className="h-3 w-3" />
+              </SelectionPopup>
+            ) : deliveryMode ? (
+              <span className="inline-flex items-center gap-1.5 px-1.5 py-0.5">{modeLabel}</span>
             ) : (
-              <>
-                <ClockIcon className="h-3.5 w-3.5" /> Follow up
-              </>
+              <span />
+            )}
+            {onCancel && (
+              <button
+                type="button"
+                aria-label="Cancel queued message"
+                title="Cancel and move it back to the composer"
+                disabled={updating}
+                onClick={() => void run(onCancel)}
+                className={clsx(bubbleControl, 'inline-flex items-center justify-center rounded p-1')}
+              >
+                <CloseIcon className="h-3.5 w-3.5" />
+              </button>
             )}
           </div>
         )}
         <HumanMessageContent content={content} metadata={effectiveMetadata} showRaw={false} agentId={agentId} />
-        {queued && onUpdate && !auto && (
-          <div className="flex items-center gap-2 mt-2" aria-label="Pending message controls">
-            <button
-              type="button"
-              disabled={updating}
-              className="ficus-button ficus-button-ghost text-on-accent hover:text-primary text-xs px-2 py-1"
-              onClick={() => void update(deliveryMode === 'follow-up' ? 'steer' : 'follow-up')}
-            >
-              {deliveryMode === 'follow-up' ? 'Switch to Interrupt' : 'Switch to Follow up'}
-            </button>
-            <button
-              type="button"
-              disabled={updating}
-              className="ficus-button ficus-button-ghost text-on-accent hover:text-primary text-xs px-2 py-1"
-              onClick={() => void update('cancel')}
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-        {updateError && (
-          <div role="alert" className="mt-1 text-xs">
-            {updateError}
-          </div>
-        )}
 
         {status === 'failed' && onRetry && (
           <button
@@ -478,6 +503,14 @@ function PendingMessageRow({
         )}
         {status === 'sending' && !auto && <div className="mt-1 text-xs text-on-accent/80">Sending…</div>}
       </div>
+      {updateError && (
+        <p
+          role="alert"
+          className="mt-1 max-w-[90%] text-right text-xs text-status-danger-600 dark:text-status-danger-400 md:max-w-[80%]"
+        >
+          {updateError}
+        </p>
+      )}
     </div>
   )
 }
@@ -1005,28 +1038,9 @@ export function ChatView({
     setInputValue
   )
 
-  const handleCancelQueue = useCallback(async () => {
-    if (!onCancelQueue || pendingItems.length === 0) return
-    if (clearQueueConfirmTimeoutRef.current) {
-      clearTimeout(clearQueueConfirmTimeoutRef.current)
-      clearQueueConfirmTimeoutRef.current = null
-    }
-    setConfirmingClearQueue(false)
-    setIsClearingQueue(true)
-    setClearQueueError(null)
-    try {
-      // Collect content from pending items to restore to input
-      const restoredText = pendingItems
-        .filter((i) => i.kind === 'pending')
-        .map((i) => (i.kind === 'pending' ? i.content : ''))
-        .join('\n\n')
-      const restoredImageIds = pendingItems
-        .filter((i) => i.kind === 'pending')
-        .flatMap((i) => (i.kind === 'pending' ? (i.imageIds ?? []) : []))
-
-      await onCancelQueue()
-
-      // Restore content to input field
+  // Canceled queued messages return to the composer so nothing typed is lost.
+  const restoreToComposer = useCallback(
+    (restoredText: string, restoredImageIds: string[]) => {
       const prev = inputRef.current
       const next = prev ? prev + '\n\n' + restoredText : restoredText
       setInputValue(next)
@@ -1048,12 +1062,37 @@ export function ChatView({
           })),
         ])
       }
+    },
+    [pendingImageSrcs, saveDraft, setInputValue]
+  )
+
+  const handleCancelQueue = useCallback(async () => {
+    if (!onCancelQueue || pendingItems.length === 0) return
+    if (clearQueueConfirmTimeoutRef.current) {
+      clearTimeout(clearQueueConfirmTimeoutRef.current)
+      clearQueueConfirmTimeoutRef.current = null
+    }
+    setConfirmingClearQueue(false)
+    setIsClearingQueue(true)
+    setClearQueueError(null)
+    try {
+      // Collect content from pending items to restore to input
+      const restoredText = pendingItems
+        .filter((i) => i.kind === 'pending')
+        .map((i) => (i.kind === 'pending' ? i.content : ''))
+        .join('\n\n')
+      const restoredImageIds = pendingItems
+        .filter((i) => i.kind === 'pending')
+        .flatMap((i) => (i.kind === 'pending' ? (i.imageIds ?? []) : []))
+
+      await onCancelQueue()
+      restoreToComposer(restoredText, restoredImageIds)
     } catch (error) {
       setClearQueueError(error instanceof Error ? error.message : 'Please try again.')
     } finally {
       setIsClearingQueue(false)
     }
-  }, [onCancelQueue, pendingImageSrcs, pendingItems, saveDraft, setInputValue])
+  }, [onCancelQueue, pendingItems, restoreToComposer])
 
   const handleCancelQueueClick = useCallback(async () => {
     if (isClearingQueue) return
@@ -2006,9 +2045,17 @@ export function ChatView({
                 status={item.status}
                 queued={item.queued}
                 metadata={item.metadata}
-                onUpdate={
+                onSwitchMode={
                   item.messageId && onUpdatePendingMessage
-                    ? (operation) => onUpdatePendingMessage(item.messageId!, operation)
+                    ? (mode) => onUpdatePendingMessage(item.messageId!, mode)
+                    : undefined
+                }
+                onCancel={
+                  item.messageId && onUpdatePendingMessage
+                    ? async () => {
+                        await onUpdatePendingMessage(item.messageId!, 'cancel')
+                        restoreToComposer(item.content, item.imageIds ?? [])
+                      }
                     : undefined
                 }
                 onRetry={item.status === 'failed' && onRetry ? () => onRetry(item.id) : undefined}
