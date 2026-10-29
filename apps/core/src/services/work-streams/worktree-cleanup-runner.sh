@@ -13,6 +13,64 @@ const fail = (reason) => { throw new Error(reason); };
 const inside = (root, child) => child.startsWith(root + '/');
 const exists = (p) => { try { fs.lstatSync(p); return true; } catch (e) { if (e.code === 'ENOENT') return false; throw e; } };
 const physical = (p) => { if (fs.realpathSync(p) !== p) fail('Canonical path changed'); };
+// Legacy evidence is path-backed in this squad's workspace. Observe it in the
+// same filesystem as Git removal; never accept the API host's path resolution.
+const observeEvidence = (files) => {
+  if (!Array.isArray(files) || !files.length || files.length > 1000 || JSON.stringify(files).length > 65536)
+    fail('Unrecognized or oversized evidence records; retain for inspection');
+  physical(o.workspace); physical(o.worktree); physical(o.gitDirectory);
+  const tree = fs.lstatSync(o.worktree, { bigint: true });
+  if (!tree.isDirectory() || `${tree.dev}:${tree.ino}` !== o.directoryIdentity) fail('Worktree directory identity changed');
+  // Do not infer bind-mount identity from realpath: it does not resolve mount
+  // aliases. Without a readable Linux mount table this correction fails closed.
+  if (process.platform !== 'linux') fail('Evidence mount identity is unavailable; retain for inspection');
+  const mounts = fs.readFileSync('/proc/self/mountinfo', 'utf8').trim().split('\n').map((line) => {
+    const fields = line.split(' ');
+    if (fields.length < 10 || !fields.includes('-')) fail('Evidence mount identity is unavailable');
+    return fields[4].replace(/\\([0-7]{3})/g, (_, octal) => String.fromCharCode(parseInt(octal, 8)));
+  });
+  const workspace = fs.lstatSync(o.workspace, { bigint: true });
+  const privateGit = fs.lstatSync(o.gitDirectory, { bigint: true });
+  const rootIds = [tree, privateGit].map((stat) => `${stat.dev}:${stat.ino}`);
+  const identities = files.map((file) => {
+    if (typeof file !== 'string' || !file.length || file.length > 4096 || file.includes('\0') || file.split('/').includes('..'))
+      fail('Unrecognized evidence path; retain for inspection');
+    const resolved = path.resolve(o.workspace, file);
+    if (!inside(o.workspace, resolved) || resolved === o.worktree || inside(o.worktree, resolved) ||
+        resolved === o.gitDirectory || inside(o.gitDirectory, resolved)) fail('Evidence is not safely outside the owned tree');
+    if (mounts.some((mount) => inside(o.workspace, mount) && (resolved === mount || inside(mount, resolved))))
+      fail('Evidence crosses a mounted workspace path; retain for inspection');
+    physical(resolved);
+    const ancestry = [];
+    let current = o.workspace;
+    for (const component of path.relative(o.workspace, resolved).split('/')) {
+      const stat = fs.lstatSync(current, { bigint: true });
+      if (!stat.isDirectory() || stat.isSymbolicLink() || stat.dev !== workspace.dev || rootIds.includes(`${stat.dev}:${stat.ino}`))
+        fail('Evidence ancestry is unresolved or aliases the owned tree');
+      ancestry.push(`${stat.dev}:${stat.ino}:${stat.mode}`);
+      current = path.join(current, component);
+    }
+    const fingerprint = (stat) => `${stat.dev}:${stat.ino}:${stat.mode}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+    const fd = fs.openSync(resolved, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+    try {
+      const stat = fs.fstatSync(fd, { bigint: true });
+      if (!stat.isFile() || stat.dev !== workspace.dev || fingerprint(stat) !== fingerprint(fs.lstatSync(resolved, { bigint: true })))
+        fail('Evidence is not an accessible stable regular file');
+      ancestry.push(fingerprint(stat));
+    } finally { fs.closeSync(fd); }
+    physical(resolved);
+    return ancestry;
+  });
+  return { files, identities };
+};
+if (process.argv[3] === 'evidence') {
+  console.log(JSON.stringify(observeEvidence(input.files)));
+  process.exit(0);
+}
+const checkEvidence = () => {
+  if (input.evidence && JSON.stringify(observeEvidence(input.evidence.files)) !== JSON.stringify(input.evidence))
+    fail('Evidence identity changed; retain for inspection');
+};
 if (!/^[0-9a-f-]{36}$/.test(operationId) || !/^[0-9a-f]{40}$/.test(head)) fail('Invalid operation identity');
 for (const key of ['workspace', 'repository', 'commonDirectory', 'gitDirectory', 'worktree']) {
   if (typeof o[key] !== 'string' || !path.isAbsolute(o[key]) || path.normalize(o[key]) !== o[key]) fail('Invalid owned path');
@@ -59,6 +117,7 @@ for (const directory of [o.commonDirectory, records, active]) {
 let removalStarted = false;
 let outcome;
 try {
+  checkEvidence();
   physical(o.worktree); physical(o.gitDirectory);
   const identity = fs.lstatSync(o.worktree, { bigint: true });
   if (!identity.isDirectory() || `${identity.dev}:${identity.ino}` !== o.directoryIdentity) fail('Worktree directory identity changed');
@@ -208,6 +267,7 @@ try {
   physical(o.worktree);
   const finalIdentity = fs.lstatSync(o.worktree, { bigint: true });
   if (`${finalIdentity.dev}:${finalIdentity.ino}` !== o.directoryIdentity) fail('Worktree directory identity changed');
+  checkEvidence();
   removalStarted = true;
   git(o.repository, 'worktree', 'remove', '--', o.worktree);
   if (exists(o.worktree) || exists(o.gitDirectory)) fail('Removal left an owned residual; inspect before reuse');
