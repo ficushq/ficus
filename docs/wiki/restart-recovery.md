@@ -127,7 +127,12 @@ this change performs no live restart, artifact refresh or deployment.
 
 ### Scope continuity and accounting failures
 
-Tool budgets use server-owned operation families, not caller-editable arguments.
+Tool budgets use the tool family and normalized target: the command for Bash,
+the path for file operations, and stable arguments for other tools. Ordinary
+unquoted command spacing and timeout parameters do not buy a fresh budget;
+quoted data and complex scripts retain their semantics. An unrelated successful
+inspection or explained error does not settle a failing target. Only a confirmed
+success of that same target resolves its episode.
 Within a stream, successor attempts retain the allowance; a revised workflow
 participant also retains it when a fresh agent replaces the previous session.
 Unrelated participants/scopes stay separate, and ambiguous concurrent lineages

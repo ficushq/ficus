@@ -184,13 +184,17 @@ async function databaseNow(tx: DbHandle): Promise<number> {
 /** The timestamp comes from durable state, never a tool argument or a new process's clock baseline. */
 export async function recoveryRetryDelay(origin: RecoveryOrigin, operation: string): Promise<number> {
   const source = await trustedOrigin(db, origin, false)
-  const record = await activeRecovery(db, source, operation)
+  const record =
+    (await pendingRecoveryRecord(db, origin.agentId, source.workStreamId, true)) ??
+    (await activeRecovery(db, source, operation))
   if (!record) return 0
   if (record.state.state === 'recovering') return Math.max(0, (record.state.nextRetryAt ?? 0) - (await databaseNow(db)))
   try {
     const held = await db.transaction(async (tx) => {
       const latestSource = await trustedOrigin(tx, origin)
-      let current = await activeRecovery(tx, latestSource, operation, true)
+      let current =
+        (await pendingRecoveryRecord(tx, origin.agentId, latestSource.workStreamId, true, true)) ??
+        (await activeRecovery(tx, latestSource, operation, true))
       if (current) current = await adoptRecovery(tx, latestSource, current)
       if (!current || current.state.state === 'resolved') return null
       if (current.state.state === 'recovering')
@@ -834,11 +838,13 @@ export async function recoveryContinuationIsCurrent(
   return true
 }
 
-export async function assertNoPendingRecovery(
+async function pendingRecoveryRecord(
   dbx: DbHandle,
   agentId: string,
-  workStreamId: string | null
-): Promise<void> {
+  workStreamId: string | null,
+  heldOnly = false,
+  lock = false
+) {
   const [run] = workStreamId
     ? await dbx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, workStreamId))
     : []
@@ -851,8 +857,8 @@ export async function assertNoPendingRecovery(
         .filter((attempt) => attempt.step?.kind === 'agent' && attempt.step.participant === participant)
         .map((attempt) => attempt.id)
     : []
-  const [record] = await dbx
-    .select({ id: recoveryEpisodes.id })
+  const query = dbx
+    .select()
     .from(recoveryEpisodes)
     .where(
       and(
@@ -861,11 +867,22 @@ export async function assertNoPendingRecovery(
           ...(relatedAttempts.length ? [inArray(recoveryEpisodes.flowAttemptId, relatedAttempts)] : [])
         ),
         workStreamId ? eq(recoveryEpisodes.workStreamId, workStreamId) : isNull(recoveryEpisodes.workStreamId),
-        sql`${recoveryEpisodes.state}->>'state' <> 'resolved'`,
-        sql`(${recoveryEpisodes.state}->>'failures')::int > 0`
+        heldOnly
+          ? sql`${recoveryEpisodes.state}->>'state' IN ('waiting-manager', 'waiting-owner', 'stopped')`
+          : sql`${recoveryEpisodes.state}->>'state' <> 'resolved'`,
+        heldOnly ? undefined : sql`(${recoveryEpisodes.state}->>'failures')::int > 0`
       )
     )
     .limit(1)
-  if (record)
+  const [record] = await (lock ? query.for('update') : query)
+  return record
+}
+
+export async function assertNoPendingRecovery(
+  dbx: DbHandle,
+  agentId: string,
+  workStreamId: string | null
+): Promise<void> {
+  if (await pendingRecoveryRecord(dbx, agentId, workStreamId))
     throw new Error('Use the existing typed recovery decision; task inputs cannot bypass an unresolved recovery')
 }

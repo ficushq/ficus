@@ -856,7 +856,7 @@ test('argument variations share one normalized tool budget and cannot buy extra 
     },
     () => ({ agentId: worker.id, executionId: execution.id })
   )
-  for (const [n, command] of ['npm test', ' npm test ', 'npm test --run'].entries())
+  for (const [n, command] of ['npm test', ' npm test ', 'npm  test'].entries())
     await expect(executeTool(tool, `variant-${n}`, { command })).rejects.toThrow('Lost outcome')
   let [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))
   expect(record!.state.state).toBe('waiting-manager')
@@ -865,7 +865,7 @@ test('argument variations share one normalized tool budget and cannot buy extra 
     { action: 'continue', expectedVersion: record!.version },
     { agentId: squad.managerAgentId }
   )
-  for (const [n, command] of ['npm test --verbose', 'npm test --quiet', 'npm test --retry'].entries())
+  for (const [n, command] of ['npm\ttest', ' npm  test', 'npm test  '].entries())
     await expect(executeTool(tool, `more-variant-${n}`, { command })).rejects.toThrow('Lost outcome')
   ;[record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))
   expect(record!.state).toMatchObject({ state: 'waiting-owner', managerCycles: 1, failures: 6 })
@@ -1152,3 +1152,74 @@ test('manager prose compatibility does not bypass its own unresolved same-scope 
     (await other.block({ createdBy: 'manager', createdByAgentId: worker.id, message: 'Choose a release target' })).type
   ).toBe('manual')
 })
+
+test.each(['bash', 'edit'])(
+  '%s unrelated success does not reset the failing target budget',
+  async (name) => {
+    const { Type } = await import('@sinclair/typebox')
+    const { wrapToolWithRecovery } = await import('./runtime')
+    const { recoveryEpisodes } = await import('../../db')
+    const target = name === 'bash' ? { command: 'npm test' } : { path: 'src/task.ts' }
+    const inspection = name === 'bash' ? { command: 'git status' } : { path: 'notes.md' }
+    const tool = wrapToolWithRecovery(
+      {
+        name,
+        label: name,
+        description: 'fixture',
+        parameters: Type.Any(),
+        execute: async (_id, params) => {
+          if (JSON.stringify(params) === JSON.stringify(inspection))
+            return { content: [{ type: 'text' as const, text: 'Inspected' }], details: {} }
+          throw new Error('Lost outcome')
+        },
+      },
+      () => ({ agentId: worker.id, executionId: execution.id })
+    )
+    await expect(executeTool(tool, 'failed-one', target)).rejects.toThrow('Lost outcome')
+    await executeTool(tool, 'inspection', inspection)
+    await expect(executeTool(tool, 'failed-two', target)).rejects.toThrow('Lost outcome')
+    await expect(executeTool(tool, 'failed-three', target)).rejects.toThrow('Lost outcome')
+    const records = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))
+    expect(records).toHaveLength(1)
+    expect(records[0]!.state).toMatchObject({ failures: 3, state: 'waiting-manager' })
+  },
+  10000
+)
+
+test('explained feedback is not confirmation that a previously failing operation succeeded', async () => {
+  const { Type } = await import('@sinclair/typebox')
+  const { wrapToolWithRecovery } = await import('./runtime')
+  const { ToolFeedbackError } = await import('../../tools/tool-feedback')
+  const { recoveryEpisodes } = await import('../../db')
+  let mode = 'unknown'
+  const tool = wrapToolWithRecovery(
+    {
+      name: 'bash',
+      label: 'Bash',
+      description: 'fixture',
+      parameters: Type.Any(),
+      execute: async () => {
+        if (mode === 'unknown') throw new Error('Lost outcome')
+        if (mode === 'input') throw new ToolFeedbackError('input', 'Correct the input')
+        return {
+          content: [{ type: 'text' as const, text: '' }],
+          details: {},
+          isError: mode !== 'success',
+          structuredContent: { exit_code: mode === 'success' ? 0 : 1 },
+        }
+      },
+    },
+    () => ({ agentId: worker.id, executionId: execution.id })
+  )
+  await expect(executeTool(tool, 'unknown', { command: 'npm test' })).rejects.toThrow('Lost outcome')
+  mode = 'input'
+  await expect(executeTool(tool, 'input', { command: 'npm test' })).rejects.toThrow('Correct the input')
+  mode = 'exit'
+  await executeTool(tool, 'exit', { command: 'npm test' })
+  let [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))
+  expect(record!.state).toMatchObject({ state: 'recovering', failures: 1 })
+  mode = 'success'
+  await executeTool(tool, 'success', { command: 'npm test' })
+  ;[record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))
+  expect(record!.state.state).toBe('resolved')
+}, 10000)

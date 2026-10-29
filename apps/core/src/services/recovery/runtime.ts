@@ -1,3 +1,4 @@
+import { recoveryInvocationKey, recoveryOperationKey } from './operation'
 import { ToolFeedbackError } from '../../tools/tool-feedback'
 import { createHash } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -16,21 +17,6 @@ import { toolRecoveryContext, type ToolRecoveryContext } from './context'
 import { createLogger } from '../../lib/infra/logger'
 const log = createLogger('recovery-boundary')
 
-function stableValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stableValue)
-  if (value && typeof value === 'object')
-    return Object.fromEntries(
-      Object.entries(value)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([key, entry]) => [key, stableValue(entry)])
-    )
-  return value
-}
-
-/** Budget identity is a server-owned operation family, not caller-editable arguments. */
-function operationKey(name: string): string {
-  return createHash('sha256').update(name).digest('hex')
-}
 function attemptedAction(name: string): string {
   if (name === 'bash' || name === 'squad_bash') return 'run the requested command'
   if (name === 'read') return 'read the project files'
@@ -101,10 +87,8 @@ export function wrapToolWithRecovery<T extends ToolDefinition>(
       if (!source) return execute(...args)
       await observeModelProgress(source)
       const [toolCallId, params, signal] = args
-      const operation = operationKey(tool.name)
-      const invocation = createHash('sha256')
-        .update(JSON.stringify([tool.name, stableValue(params)]))
-        .digest('hex')
+      const operation = recoveryOperationKey(tool.name, params)
+      const invocation = recoveryInvocationKey(tool.name, params)
       return exclusiveOperation(`${source.agentId}:${invocation}`, async () => {
         let ordinal = 0
         const observed = new Set<unknown>()
@@ -165,13 +149,6 @@ export function wrapToolWithRecovery<T extends ToolDefinition>(
           } catch (error) {
             const restart = restartContextForCommandError(error)
             if ((!restart && signal?.aborted) || explainedFailure(error)) {
-              if (!(error instanceof RecoveryHeldError))
-                await settleRecoveryOperation(
-                  source,
-                  operation,
-                  `${source.executionId}:${toolCallId}:explained`,
-                  'explained'
-                ).catch(() => {})
               throw error
             }
             let record = context.latest
@@ -201,9 +178,12 @@ export function wrapToolWithRecovery<T extends ToolDefinition>(
           }
           // An accounting outage must not turn a confirmed successful side effect
           // into an apparently failed operation that an agent might repeat.
-          await settleRecoveryOperation(source, operation, `${source.executionId}:${toolCallId}:success`).catch(
-            (error) => log.error('Unable to settle confirmed recovery outcome', error)
-          )
+          const outcome = result as { isError?: boolean; structuredContent?: { exit_code?: number } }
+          const exitCode = outcome.structuredContent?.exit_code
+          if (!outcome.isError && (!Number.isInteger(exitCode) || exitCode === 0))
+            await settleRecoveryOperation(source, operation, `${source.executionId}:${toolCallId}:success`).catch(
+              (error) => log.error('Unable to settle confirmed recovery outcome', error)
+            )
           return result
         })
       })
