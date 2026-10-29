@@ -1536,8 +1536,8 @@ describe('agent sandbox stop/restart', () => {
     const signalled: unknown[][] = []
     const client = {
       listProcesses: async () => ({ pressure: null, processes: [], containers: { available: false, reason: 'x' } }),
-      signalProcess: async (pid: number, signal: string) => {
-        signalled.push([pid, signal])
+      signalProcess: async (pid: number, signal: string, _abortSignal: AbortSignal, startTicks?: number) => {
+        signalled.push([pid, signal, startTicks])
         return { pid, signal, command: 'sleep 60' }
       },
     }
@@ -1552,10 +1552,11 @@ describe('agent sandbox stop/restart', () => {
       expect((await listed.json()).processes).toEqual([])
       const sent = await app.request(`/api/agents/${soloAgent.id}/sandbox/processes/4242/signal`, {
         method: 'POST',
-        headers: authHeaders(admin.token),
+        headers: { ...authHeaders(admin.token), 'content-type': 'application/json' },
+        body: JSON.stringify({ startTicks: 900000 }),
       })
       expect(sent.status).toBe(200)
-      expect(signalled).toEqual([[4242, 'TERM']])
+      expect(signalled).toEqual([[4242, 'TERM', 900000]])
 
       const shared = await app.request(`/api/agents/${subAgent.id}/sandbox/processes`, {
         headers: authHeaders(admin.token),

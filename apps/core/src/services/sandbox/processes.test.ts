@@ -5,6 +5,7 @@ import {
   listSandboxProcesses,
   parseContainerId,
   parseProcessId,
+  parseProcessStartTicks,
   parseProcessSignal,
   sandboxProcessesErrorResponse,
   signalSandboxProcess,
@@ -89,6 +90,10 @@ describe('sandbox process management', () => {
     expect(parseProcessSignal('kill')).toBe('KILL')
     expect(() => parseProcessSignal('HUP')).toThrow('signal must be one of')
     expect(parseProcessId('2838629')).toBe(2838629)
+    expect(parseProcessStartTicks(undefined)).toBeUndefined()
+    expect(parseProcessStartTicks(0)).toBe(0)
+    for (const ticks of [-1, '100', null, NaN, Infinity])
+      expect(() => parseProcessStartTicks(ticks)).toThrow('startTicks')
     for (const pid of [undefined, '', '1', '0', '-3', '12a', '1e3']) expect(() => parseProcessId(pid)).toThrow('pid')
     expect(parseContainerId('tau-test-ebb213d9-postgres-1')).toBe('tau-test-ebb213d9-postgres-1')
     for (const id of [undefined, '', '-rm', 'a b', 'x;reboot'])
@@ -160,3 +165,16 @@ test('bounds attachment and both controls, cancels requests, and never signals a
     clearTimeout(watchdog)
   }
 }, 60_000)
+
+test('forwards listed process identity and preserves stale-row refusal', async () => {
+  const getClient = clientReturning({
+    signalProcess: async (_pid, _signal, _abortSignal, startTicks) => {
+      expect(startTicks).toBe(900000)
+      throw new SandboxHttpError('Process 42 no longer matches the listed startTicks; refresh the process list', 409)
+    },
+  })
+  expect(await failure(signalSandboxProcess('squad_x', 42, 'TERM', user, getClient, 900000))).toEqual({
+    status: 409,
+    body: { error: 'Process 42 no longer matches the listed startTicks; refresh the process list' },
+  })
+})

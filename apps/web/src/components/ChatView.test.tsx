@@ -877,6 +877,38 @@ ${longBody}
 })
 
 describe('ChatView clear pending queue', () => {
+  test('shows a failed clear without restoring input, and restores it only after a successful retry', async () => {
+    const { flushSync } = await import('react-dom')
+    const onCancelQueue = mock(async () => {
+      throw new Error('Worker could not confirm cancellation')
+    })
+    const { dom, window } = await renderChatView(
+      <ChatView
+        items={[{ kind: 'pending', id: 'queued', content: 'Keep this queued', status: 'queued' }]}
+        onSend={() => undefined}
+        onCancelQueue={onCancelQueue}
+      />
+    )
+    const button = [...window.document.querySelectorAll('button')].find((candidate) =>
+      candidate.textContent?.includes('pending message')
+    )!
+    const click = () =>
+      dom.act(async () => {
+        flushSync(() => button.dispatchEvent(new window.MouseEvent('click', { bubbles: true })))
+      })
+    await click()
+    await click()
+    expect(window.document.querySelector('textarea')?.value).toBe('')
+    expect(window.document.querySelector('[role="alert"]')?.textContent).toContain(
+      'Could not clear pending messages: Worker could not confirm cancellation'
+    )
+    onCancelQueue.mockImplementation(async () => undefined)
+    await click()
+    await click()
+    expect(window.document.querySelector('textarea')?.value).toBe('Keep this queued')
+    expect(window.document.querySelector('[role="alert"]')).toBeNull()
+  })
+
   test('right-aligns the clear pending button above the chat input', async () => {
     const pendingItems: RenderItem[] = [
       {

@@ -415,6 +415,36 @@ printf "[Service]\nExecStart=%s\n[Install]\nWantedBy=default.target\n" "$(cat "$
     "$([[ -f ${R}/fakedb/active-docker.service ]] && echo yes || echo no)" yes
   rm -rf "${R}"
 
+  # Manual non-root entry must survive sudo env_reset. The shim refuses to
+  # exec unless argv restores the fake root, so a regression cannot touch /run.
+  for wait_source in env argv; do
+    make_host
+    shim sudo '
+[ "$1" = env ] && [ "$2" = "FICUS_HOST_ROOT=$STUB_R" ] || exit 98
+exec env -i PATH="$PATH" STUB_R="$STUB_R" "$@"'
+    mkdir -p "${R}/run/ficus-box-locks"
+    echo 4242 >"${R}/run/ficus-box-locks/ficus-box-${BOX}.lock"
+    exec 7<>"${R}/run/ficus-box-locks/ficus-box-${BOX}.lock"
+    flock -x 7
+    wait_args=()
+    env_wait=0.1
+    if [ "$wait_source" = argv ]; then
+      wait_args=(--lock-wait-seconds 0.1)
+      env_wait=30
+    fi
+    reentry_rc=0
+    PATH="${R}/.shims:${PATH}" STUB_R="${R}" FICUS_HOST_ROOT="${R}" STUB_CALLER_UID=1001 \
+      FICUS_BOX_LOCK_WAIT_SECONDS="$env_wait" timeout 3 bash "${TARGET}" \
+      --unix-user "${BOX}" --port 20001 "${wait_args[@]}" \
+      >"${R}/stdout.log" 2>"${R}/stderr.log" || reentry_rc=$?
+    expect_eq "sudo env_reset ($wait_source): timeout survives re-entry" "$reentry_rc" 73
+    expect_eq "sudo env_reset ($wait_source): preserves root, holder and effective wait" \
+      "$(grep -Fc "holder_pid=4242 wait_seconds=0.1 lock=${R}/run/ficus-box-locks/ficus-box-${BOX}.lock" "${R}/stderr.log" || true)" 1
+    expect_eq "sudo env_reset ($wait_source): no provisioning or containment" "$(cat "${R}/calls.log")" ''
+    exec 7>&-
+    rm -rf "${R}"
+  done
+
   # A held lock for another account must not block this box. Acquire the actual
   # lock inode directly, with no fake systemd shared state between different UIDs.
   make_host

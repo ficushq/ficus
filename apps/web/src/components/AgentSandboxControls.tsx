@@ -8,7 +8,7 @@ import { SandboxStatusBadge } from './sandbox/SandboxStatusBadge'
 import { resolveVmChainDisplay } from './sandbox/vmChainHealth'
 import { HOST_RUNTIME_NOTE } from './sandbox/hostRuntime'
 import { webStatus } from '../lib/statusPresentation'
-import { isSandboxOverloaded } from '@ficus/shared'
+import { hasSandboxPressureWarning } from '@ficus/shared'
 import { PressureSummary, SandboxProcesses } from './sandbox/SandboxProcesses'
 
 interface AgentSandboxControlsProps {
@@ -127,7 +127,7 @@ export function AgentSandboxControls({ agentId, compact = false }: AgentSandboxC
         )}
       </dd>
       {!controllable && <p className="mt-1 text-xs text-muted">Shared sandbox — not individually controllable.</p>}
-      {isSandboxOverloaded(status.pressure) && status.pressure && (
+      {hasSandboxPressureWarning(status.pressure) && status.pressure && (
         <div className="mt-1">
           <PressureSummary pressure={status.pressure} />
         </div>

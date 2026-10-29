@@ -663,7 +663,7 @@ ficus workstream track <id> [options]
 | `--url <url>` | Track by code-host resource URL |
 | `--issue <ref>` | Track a GitHub issue (`owner/repo#12`) or a Linear issue (`KEY-123`) |
 | `--pr <ref>` | Track a GitHub pull request, e.g. `owner/repo#12` |
-| `--connection <connectionId>` | Integration connection ID (`--issue`/`--pr` only) |
+| `--connection <connection-id>` | Integration connection ID (`--issue`/`--pr` only) |
 | `--delivery` | Count this pull request toward the work stream's delivery (only with `--url`/`--pr`) |
 
 **Examples:**
@@ -724,7 +724,7 @@ ficus workstream untrack <id> [options]
 | `--url <url>` | Untrack by code-host resource URL |
 | `--issue <ref>` | Untrack a GitHub issue (`owner/repo#12`) or a Linear issue (`KEY-123`) |
 | `--pr <ref>` | Untrack a GitHub pull request, e.g. `owner/repo#12` |
-| `--connection <connectionId>` | Integration connection ID (`--issue`/`--pr` only) |
+| `--connection <connection-id>` | Integration connection ID (`--issue`/`--pr` only) |
 
 **Examples:**
 

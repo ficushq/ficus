@@ -144,7 +144,7 @@ Assigned, healthy integrations authenticate their globally provisioned CLIs thro
 per-command PATH wrappers, including nested child processes. If unauthenticated,
 ask a person to connect, validate, enable or assign the integration. Use
 `ficus integration exec <provider> -- npm run deploy` for project-local scripts
-(or bun/pnpm), and `--connection <attached-account-id>` for alternate accounts.
+(or bun/pnpm), and `--connection <connection-id>` for alternate accounts.
 Outside squad runtime context add `--squad <squad-id>` before `--`. Never read,
 print, log, commit or persist credentials. Human terminals use their own provider
 login, not integration credentials. Custom app secrets use squad Environment
