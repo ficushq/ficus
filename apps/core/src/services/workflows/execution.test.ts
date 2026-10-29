@@ -2696,3 +2696,44 @@ test('explicit human-directed return is atomic on rejection and snapshots bounde
   expect(after.state.attempts.at(-1)!.reviewBrief).toEqual({ kind: 'authored', sourceAttemptIds: [1] })
   expect(after.state.attempts[0]!.feedback).toBe(command.feedback)
 })
+
+test('dedicated PR reviews keep the agent until live merge or closure, including fork reviews', async () => {
+  const api = spyOn(githubApi, 'githubApiGet')
+  const stop = spyOn(Agent.prototype, 'tryTerminate').mockResolvedValue(undefined)
+  try {
+    for (const merged of [false, true]) {
+      const definition = structuredClone(flow)
+      definition.completion = { mode: 'pr-review', followChanges: true }
+      const id = await create('active', definition)
+      await db
+        .update(workStreams)
+        .set({
+          metadata: {
+            codeHost: { integration: 'github', repository: 'example/repo', changeRequest: { number: 757 } },
+            git: { branch: 'review-checkout', baseBranch: 'main' },
+          },
+        })
+        .where(eq(workStreams.id, id))
+      await advance(id, 'completed')
+      await advance(id, 'approved')
+      const before = await WorkStream.mustFind(id)
+      const assigned = before.assigneeAgentId
+      const crew = before.agentIds
+      expect(assigned).toBeTruthy()
+      expect(await externalDeliveryStreamIds(db, [{ id, metadata: before.metadata }])).toEqual(new Set([id]))
+      api.mockResolvedValue(null)
+      await expect(finishFlow(id, 2, actor)).rejects.toThrow('Could not verify the reviewed pull request')
+      api.mockResolvedValue({ merged: false, state: 'open', head: { ref: 'author-fork' }, base: { ref: 'main' } })
+      await expect(finishFlow(id, 2, actor)).rejects.toThrow('Keep this reviewer available')
+      await expect(WorkStream.update(id, { status: 'done' })).rejects.toThrow('Use flow completion')
+      await ensureFlowDispatch(id)
+      expect((await WorkStream.mustFind(id)).assigneeAgentId).toBe(assigned)
+      expect((await WorkStream.mustFind(id)).agentIds).toEqual(crew)
+      api.mockResolvedValue({ merged, state: 'closed', head: { ref: 'author-fork' }, base: { ref: 'main' } })
+      expect((await finishFlow(id, 2, actor)).status).toBe('done')
+    }
+  } finally {
+    api.mockRestore()
+    stop.mockRestore()
+  }
+})

@@ -253,40 +253,46 @@ describe('selectModelSpecWithSwitchBack', () => {
 })
 
 describe('window-aware preference', () => {
+  const windows: Record<string, number> = { small: 272_000, large: 1_000_000 }
   const allUsable = {
+    modelCatalog: {
+      getProviders: () => [{ id: 'test-window' }],
+      getModel: (provider: string, id: string) =>
+        provider === 'test-window' && windows[id] ? { id, provider, contextWindow: windows[id] } : undefined,
+    },
     isProviderConfigured: () => true,
     isProviderDisabled: () => false,
     isProviderHealthy: () => true,
   }
 
   it('prefers a later candidate whose window fits the current context', () => {
-    // gpt-5.5 = 272k, glm-5.2 = 1M (pi catalog). 500k tokens only fits glm-5.2.
-    const sel = selectModelSpec('openai-codex:gpt-5.5,zai:glm-5.2', {
+    // Fixed windows test selection policy independently of the evolving provider catalog.
+    const sel = selectModelSpec('test-window:small,test-window:large', {
       ...allUsable,
       preferContextTokens: 500_000,
     })
-    expect(sel.selected).toBe('zai:glm-5.2')
+    expect(sel.selected).toBe('test-window:large')
   })
 
   it('keeps first-usable when the context fits it', () => {
-    const sel = selectModelSpec('openai-codex:gpt-5.5,zai:glm-5.2', {
+    const sel = selectModelSpec('test-window:small,test-window:large', {
       ...allUsable,
       preferContextTokens: 100_000,
     })
-    expect(sel.selected).toBe('openai-codex:gpt-5.5')
+    expect(sel.selected).toBe('test-window:small')
   })
 
   it('falls back to first-usable when nothing fits', () => {
-    const sel = selectModelSpec('openai-codex:gpt-5.5,zai:glm-5-turbo', {
+    const sel = selectModelSpec('test-window:small,test-window:large', {
       ...allUsable,
       preferContextTokens: 5_000_000,
     })
-    expect(sel.selected).toBe('openai-codex:gpt-5.5')
+    expect(sel.selected).toBe('test-window:small')
   })
 
   it('is inert when preferContextTokens is absent', () => {
-    const sel = selectModelSpec('openai-codex:gpt-5.5,zai:glm-5.2', { ...allUsable })
-    expect(sel.selected).toBe('openai-codex:gpt-5.5')
+    const sel = selectModelSpec('test-window:small,test-window:large', { ...allUsable })
+    expect(sel.selected).toBe('test-window:small')
   })
 })
 

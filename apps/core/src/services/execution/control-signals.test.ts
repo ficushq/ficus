@@ -51,7 +51,7 @@ describe('control signal clear-queue', () => {
     expect(abort).not.toHaveBeenCalled()
   })
 
-  it('deletes pending DB rows and acks with zero SDK-cleared messages when this worker has no active session', async () => {
+  it('ignores clear requests on a worker with no active session', async () => {
     await agent.recordMessage({ role: 'human', content: 'queued steer', pending: true })
     const queueCleared: unknown[] = []
     eventEmitter.on('agent.queue-cleared', (event) => queueCleared.push(event))
@@ -59,27 +59,59 @@ describe('control signal clear-queue', () => {
     await handleControlSignal({ action: 'clear-queue', agentId: agent.id })
 
     const remainingPending = (await agent.listMessages()).messages.filter((message) => message.pending)
-    expect(queueCleared).toEqual([{ agentId: agent.id, cleared: 0, deleted: 1, owned: false, ok: true }])
-    expect(remainingPending).toEqual([])
+    expect(queueCleared).toEqual([])
+    expect(remainingPending).toHaveLength(1)
   })
 
-  it('acks with ok:false instead of going silent when clearing the SDK queue throws', async () => {
+  it('ignores stale or expired clears and echoes the owning request identity', async () => {
+    const updateQueuedMessage = mock(async () => true)
+    const executionId = crypto.randomUUID()
+    await agent.recordMessage({
+      role: 'human',
+      content: 'queued steer',
+      pending: true,
+      metadata: { deliveryMode: 'steer' },
+    })
+    registerSession(agent.id, { executionId, session: { pi: { updateQueuedMessage } } } as any)
+    const acknowledgements: unknown[] = []
+    const off = eventEmitter.on('agent.queue-cleared', (event) => acknowledgements.push(event))
+    try {
+      await handleControlSignal({ action: 'clear-queue', agentId: agent.id, executionId: 'old' })
+      await handleControlSignal({ action: 'clear-queue', agentId: agent.id, executionId, expiresAt: Date.now() - 1 })
+      expect(updateQueuedMessage).not.toHaveBeenCalled()
+      expect(acknowledgements).toEqual([])
+      expect((await agent.listMessages()).messages.filter((message) => message.pending)).toHaveLength(1)
+      await handleControlSignal({ action: 'clear-queue', agentId: agent.id, executionId, requestId: 'request-1' })
+      expect(acknowledgements).toMatchObject([{ executionId, requestId: 'request-1', owned: true, ok: true }])
+    } finally {
+      off()
+    }
+  })
+
+  it('acks with ok:false instead of going silent when canceling from the SDK queue throws', async () => {
     // The API blocks on this ack. A throw that escaped the handler used to
     // strand it for the full 10s timeout, after which it deleted the DB rows
     // itself and reported success — while the SDK queue it cannot reach still
     // held the messages, so the agent answered them anyway.
-    await agent.recordMessage({ role: 'human', content: 'queued steer', pending: true })
-    const clearQueue = mock(() => {
+    const message = await agent.recordMessage({
+      role: 'human',
+      content: 'queued steer',
+      pending: true,
+      metadata: { deliveryMode: 'steer' },
+    })
+    const owner = { generation: crypto.randomUUID(), executionId: crypto.randomUUID() }
+    await agent.claimPendingInterventionForSessionDelivery(message.id, owner)
+    const updateQueuedMessage = mock(async () => {
       throw new Error('pi SDK exploded')
     })
     const queueCleared: { ok?: boolean; code?: string }[] = []
     eventEmitter.on('agent.queue-cleared', (event) => queueCleared.push(event))
     registerSession(agent.id, {
       agentId: agent.id,
-      executionId: crypto.randomUUID(),
+      executionId: owner.executionId,
       collector: {} as any,
       buffer: {} as any,
-      session: { pi: { clearQueue } } as any,
+      session: { pi: { updateQueuedMessage } } as any,
     })
 
     // It must not reject either — an unhandled rejection in the notification
@@ -88,13 +120,54 @@ describe('control signal clear-queue', () => {
 
     expect(queueCleared).toHaveLength(1)
     expect(queueCleared[0]).toMatchObject({ ok: false, code: 'worker_error', owned: true })
+    expect(await Agent.findMessage(message.id)).not.toBeNull()
   })
 
-  it('clears the SDK queue, deletes pending rows, and acks clear-queue when this worker owns the session', async () => {
+  it('cancels only user-sent messages, leaving inbox and monitor deliveries queued in the session', async () => {
+    const owner = { generation: crypto.randomUUID(), executionId: crypto.randomUUID() }
+    const record = async (content: string, metadata: Record<string, unknown>) => {
+      const message = await agent.recordMessage({
+        role: 'human',
+        content,
+        pending: true,
+        metadata: { deliveryMode: 'steer', ...metadata },
+      })
+      return (await agent.claimPendingInterventionForSessionDelivery(message.id, owner))!
+    }
+    const mine = await record('mine', {})
+    const inbox = await record('inbox', { source: 'inbox' })
+    const monitor = await record('monitor', { source: 'monitor' })
+    await agent.recordMessage({
+      role: 'human',
+      content: 'unclaimed inbox',
+      pending: true,
+      metadata: { source: 'inbox' },
+    })
+    const canceledDeliveryIds: string[] = []
+    const updateQueuedMessage = mock(async (deliveryId: string, _operation: string, commit: () => Promise<void>) => {
+      canceledDeliveryIds.push(deliveryId)
+      await commit()
+      return true
+    })
+    const acks: unknown[] = []
+    eventEmitter.on('agent.queue-cleared', (event) => acks.push(event))
+    registerSession(agent.id, { executionId: owner.executionId, session: { pi: { updateQueuedMessage } } } as any)
+
+    await handleControlSignal({ action: 'clear-queue', agentId: agent.id })
+
+    expect(canceledDeliveryIds).toEqual([mine.metadata!.sessionDelivery!.id])
+    expect(acks).toMatchObject([{ cleared: 1, deleted: 1, owned: true, ok: true }])
+    const remaining = (await agent.listMessages()).messages.map((message) => message.content).toSorted()
+    expect(remaining).toEqual(['inbox', 'monitor', 'unclaimed inbox'])
+    expect(inbox.id).toBeTruthy()
+    expect(monitor.id).toBeTruthy()
+  })
+
+  it('deletes unclaimed pending rows and acks clear-queue when this worker owns the session', async () => {
     await agent.recordMessage({ role: 'human', content: 'queued steer', pending: true })
     await agent.recordMessage({ role: 'human', content: 'queued follow-up', pending: true })
     await agent.recordMessage({ role: 'human', content: 'already delivered', pending: false })
-    const clearQueue = mock(() => ({ steering: ['steer-1'], followUp: ['follow-up-1'] }))
+    const updateQueuedMessage = mock(async () => true)
     const queueCleared: unknown[] = []
     eventEmitter.on('agent.queue-cleared', (event) => queueCleared.push(event))
     registerSession(agent.id, {
@@ -103,15 +176,16 @@ describe('control signal clear-queue', () => {
       collector: {} as any,
       buffer: {} as any,
       session: {
-        pi: { clearQueue },
+        pi: { updateQueuedMessage },
       } as any,
     })
 
     await handleControlSignal({ action: 'clear-queue', agentId: agent.id })
 
     const remainingMessages = (await agent.listMessages()).messages
-    expect(clearQueue).toHaveBeenCalledTimes(1)
-    expect(queueCleared).toEqual([{ agentId: agent.id, cleared: 2, deleted: 2, owned: true, ok: true }])
+    // Nothing was claimed into the session, so nothing needs an SDK cancel.
+    expect(updateQueuedMessage).not.toHaveBeenCalled()
+    expect(queueCleared).toMatchObject([{ agentId: agent.id, cleared: 0, deleted: 2, owned: true, ok: true }])
     expect(remainingMessages.map((message) => message.content)).toEqual(['already delivered'])
   })
 
@@ -130,10 +204,13 @@ describe('control signal clear-queue', () => {
     // the message from the old blanket DELETE.
     await expect(db.delete(messages).where(eq(messages.id, receipt!.messageId!)).execute()).rejects.toThrow()
 
-    const clearQueue = mock(() => ({ steering: [], followUp: ['cancel me'] }))
+    const updateQueuedMessage = mock(async (_deliveryId: string, _operation: string, commit: () => Promise<void>) => {
+      await commit()
+      return true
+    })
     registerSession(agent.id, {
       executionId: execution.id,
-      session: { pi: { clearQueue } },
+      session: { pi: { updateQueuedMessage } },
     } as any)
     const acks: unknown[] = []
     const unsubscribe = eventEmitter.on('agent.queue-cleared', (event) => acks.push(event))

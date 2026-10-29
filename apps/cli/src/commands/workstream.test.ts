@@ -1308,7 +1308,7 @@ describe('workstream CLI commands', () => {
       expect(outputError).toHaveBeenCalledWith(
         expect.objectContaining({
           message:
-            'Invalid --completion-mode: invalid. Must be one of: pr-merge, pr-auto-merge, review-approval, direct-merge, deliverable',
+            'Invalid --completion-mode: invalid. Must be one of: pr-review, pr-merge, pr-auto-merge, review-approval, direct-merge, deliverable',
         })
       )
       expect(exitSpy).toHaveBeenCalledWith(1)

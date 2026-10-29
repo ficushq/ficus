@@ -66,6 +66,24 @@ describe('pending delivery FIFO', () => {
     )
   })
 
+  it('keeps lossless timestamp ordering keys on initial claims', async () => {
+    const inserted = await insertTiedSteers()
+    await db
+      .update(messages)
+      .set({ createdAt: sql`'2026-10-28 00:00:00.000200'::timestamp` })
+      .where(eq(messages.id, ids.first))
+    await db
+      .update(messages)
+      .set({ createdAt: sql`'2026-10-28 00:00:00.000100'::timestamp` })
+      .where(eq(messages.id, ids.second))
+    const claimed = await agent.claimInitialPendingMessagesForSessionDelivery()
+    expect(claimed.map((row) => row.id)).toEqual([inserted[1]!.id, inserted[0]!.id])
+    const keys = claimed.map((row) => (row as typeof row & { deliveryOrder: string }).deliveryOrder)
+    expect(keys[0]).toContain('.000100:')
+    expect(keys[1]).toContain('.000200:')
+    expect([...keys].sort()).toEqual(keys)
+  })
+
   it('prioritizes tied immediate rows and preserves FIFO within follow-ups', async () => {
     const [followUpFirst, followUpSecond] = await Promise.all([
       db

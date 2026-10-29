@@ -1312,6 +1312,7 @@ export const WORK_STREAM_PRIORITIES = ['critical', 'high', 'normal', 'low'] as c
 export type WorkStreamPriority = (typeof WORK_STREAM_PRIORITIES)[number]
 export type WorkStreamPromptType = 'text' | 'select' | 'multi_select'
 export const WORK_STREAM_COMPLETION_MODES = [
+  'pr-review',
   'pr-merge',
   'pr-auto-merge',
   'review-approval',

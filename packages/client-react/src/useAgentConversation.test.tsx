@@ -112,6 +112,22 @@ function makeMockClient(opts?: {
         nextSendStatus = 'queued'
         return { success: true, status }
       },
+      updatePendingMessage: async (
+        _agentId: string,
+        messageId: string,
+        operation: 'cancel' | 'steer' | 'follow-up'
+      ) => {
+        messages =
+          operation === 'cancel'
+            ? messages.filter((message) => message.id !== messageId)
+            : messages.map((message) =>
+                message.id === messageId
+                  ? { ...message, metadata: { ...message.metadata, deliveryMode: operation } }
+                  : message
+              )
+        return { success: true }
+      },
+      sendQueuedNow: async () => ({ success: true, code: 'started' as const }),
       clearQueue: async () => {
         messages = []
         return { success: true }
@@ -4287,5 +4303,102 @@ test('one replacement floor does not revoke a shared result from another valid o
     focusManager.setFocused(true)
     onlineManager.setOnline(true)
     clock.restore()
+  }
+})
+
+test('updates or cancels just the selected persisted pending message', async () => {
+  const mc = makeMockClient({ activeExecution: { active: true, status: 'running' } })
+  const first: Message = {
+    id: 'first',
+    agentId: 'a1',
+    role: 'human',
+    content: 'same',
+    pending: true,
+    queued: true,
+    createdAt: new Date(),
+    metadata: { deliveryMode: 'follow-up' },
+  }
+  mc.setMessages([first, { ...first, id: 'second' }])
+  const hook = await renderHook(() => useAgentConversation({ agentId: 'a1' }), { wrapper: wrap(mc.client) })
+  try {
+    await waitFor(() => expect(hook.result.current.queuedCount).toBe(2))
+    await act(async () => {
+      await hook.result.current.updatePendingMessage('first', 'steer')
+    })
+    await waitFor(() =>
+      expect(hook.result.current.items.find((item) => item.id === 'first')).toMatchObject({
+        kind: 'pending',
+        messageId: 'first',
+        deliveryMode: 'steer',
+      })
+    )
+    await act(async () => {
+      await hook.result.current.updatePendingMessage('first', 'cancel')
+    })
+    await waitFor(() =>
+      expect(hook.result.current.items.filter((item) => item.kind === 'pending').map((item) => item.id)).toEqual([
+        'second',
+      ])
+    )
+  } finally {
+    hook.unmount()
+  }
+})
+
+test('a rejected per-message operation is surfaced and preserves the pending message', async () => {
+  const mc = makeMockClient({ activeExecution: { active: true, status: 'running' } })
+  mc.setMessages([
+    {
+      id: 'first',
+      agentId: 'a1',
+      role: 'human',
+      content: 'keep',
+      pending: true,
+      queued: true,
+      createdAt: new Date(),
+      metadata: { deliveryMode: 'follow-up' },
+    },
+  ])
+  const update = spyOn(mc.client.agents, 'updatePendingMessage').mockRejectedValue(new Error('already consumed'))
+  const hook = await renderHook(() => useAgentConversation({ agentId: 'a1' }), { wrapper: wrap(mc.client) })
+  try {
+    await waitFor(() => expect(hook.result.current.queuedCount).toBe(1))
+    await expect(hook.result.current.updatePendingMessage('first', 'cancel')).rejects.toThrow('already consumed')
+    expect(hook.result.current.items.some((item) => item.id === 'first')).toBe(true)
+  } finally {
+    hook.unmount()
+    update.mockRestore()
+  }
+})
+
+test('the clear count leaves out inbox and monitor deliveries, and send-now counts queued interrupts', async () => {
+  const mc = makeMockClient({ activeExecution: { active: true, status: 'running' } })
+  const base: Message = {
+    id: 'mine',
+    agentId: 'a1',
+    role: 'human',
+    content: 'mine',
+    pending: true,
+    queued: true,
+    createdAt: new Date(),
+    metadata: { deliveryMode: 'steer' },
+  }
+  mc.setMessages([
+    base,
+    { ...base, id: 'inbox', content: 'inbox', metadata: { source: 'inbox', deliveryMode: 'steer' } },
+    { ...base, id: 'monitor', content: 'monitor', metadata: { source: 'monitor', deliveryMode: 'follow-up' } },
+  ])
+  const send = spyOn(mc.client.agents, 'sendQueuedNow')
+  const hook = await renderHook(() => useAgentConversation({ agentId: 'a1' }), { wrapper: wrap(mc.client) })
+  try {
+    await waitFor(() => expect(hook.result.current.queuedInterruptCount).toBe(2))
+    expect(hook.result.current.queuedCount).toBe(1)
+    await act(async () => {
+      await hook.result.current.sendQueuedNow()
+    })
+    expect(send).toHaveBeenCalledWith('a1')
+  } finally {
+    hook.unmount()
+    send.mockRestore()
   }
 })

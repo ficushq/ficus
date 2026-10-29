@@ -4,17 +4,21 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PI_MONO_DIR="${PI_MONO_DIR:-$ROOT_DIR/../../pi-mono}"
 PACKAGE="@earendil-works/pi-coding-agent"
-EXPECTED_REF="d86654abb8862e201933517d6f1fce9f88dd117f"
-EXPECTED_AI_TARBALL_SHA1="2945bf014fbb314bd37b919e83317560e0a8fa1d"
-EXPECTED_CODING_AGENT_TARBALL_SHA1="00e7e6c668d67d0825fc8814d80097eb07ec44e0"
-SOURCE_ROOT="$ROOT_DIR/patches/pi-coding-agent-0.99.1-source"
-PATCH_ARTIFACT="$ROOT_DIR/patches/@earendil-works%2Fpi-coding-agent@0.99.1.patch"
+EXPECTED_REF="4a080252f06caf63a525d7873c5d94d3c23887e0"
+EXPECTED_AI_TARBALL_SHA1="2ddca1029bbe97e26298d998d3a66d09db7759e2"
+EXPECTED_CODING_AGENT_TARBALL_SHA1="7f5dd2a4f7fa46ed252465ac4d341831896b1fc2"
+SOURCE_ROOT="$ROOT_DIR/patches/pi-coding-agent-1.4.0-source"
+PATCH_ARTIFACT="$ROOT_DIR/patches/@earendil-works%2Fpi-coding-agent@1.4.0.patch"
 TEMP_DIR="$(mktemp -d)"
+# Keep compiler module identities consistent across macOS /var aliases.
+TEMP_DIR="$(cd "$TEMP_DIR" && pwd -P)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
-ORIGINAL_PATCH="$TEMP_DIR/original.patch"
 WRITE_MODE=0
 
+AGENT_PATCH_ARTIFACT="$ROOT_DIR/patches/@earendil-works%2Fpi-agent-core@1.4.0.patch"
+AGENT_OUTPUT_FILES=(dist/agent.js dist/agent.js.map dist/agent.d.ts dist/agent.d.ts.map)
 SOURCE_FILES=(
+  packages/agent/src/agent.ts
   packages/coding-agent/src/core/agent-session.ts
   packages/coding-agent/src/core/session-manager.ts
   packages/coding-agent/src/core/extensions/loader.ts
@@ -84,10 +88,9 @@ for source_file in "${SOURCE_FILES[@]}"; do
   test -f "$SOURCE_ROOT/$source_file" || { echo "Missing source overlay: $source_file" >&2; exit 1; }
 done
 test -f "$PATCH_ARTIFACT" || { echo "Missing committed patch artifact" >&2; exit 1; }
-cp "$PATCH_ARTIFACT" "$ORIGINAL_PATCH"
 
 FICUS_VERSION="$(node -p "require('./apps/core/package.json').dependencies['$PACKAGE']")"
-test "$FICUS_VERSION" = 0.99.1 || { echo "Expected Ficus dependency 0.99.1" >&2; exit 1; }
+test "$FICUS_VERSION" = 1.4.0 || { echo "Expected Ficus dependency 1.4.0" >&2; exit 1; }
 
 manifest_outputs() {
   local root="$1"
@@ -150,7 +153,7 @@ function update(dir) {
 update(root);
 NODE
   mkdir -p "$pack/ai" "$pack/coding"
-  local ai_tarball="$pack/ai/earendil-works-pi-ai-0.99.1.tgz"
+  local ai_tarball="$pack/ai/earendil-works-pi-ai-1.4.0.tgz"
   curl --fail --silent --show-error --location "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-$FICUS_VERSION.tgz" --output "$ai_tarball"
   test "$(sha1sum "$ai_tarball" | cut -d' ' -f1)" = "$EXPECTED_AI_TARBALL_SHA1"
   tar -xzf "$ai_tarball" -C "$pack/ai"
@@ -158,13 +161,21 @@ NODE
   cp "$pack/ai/package/dist/providers/data/"*.json "$dir/packages/ai/src/providers/data/"
   cp "$pack/ai/package/dist/providers/data/.manifest.json" "$dir/packages/ai/src/providers/data/"
 
-  local coding_tarball="$pack/coding/earendil-works-pi-coding-agent-0.99.1.tgz"
+  local coding_tarball="$pack/coding/earendil-works-pi-coding-agent-1.4.0.tgz"
   curl --fail --silent --show-error --location "https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-$FICUS_VERSION.tgz" --output "$coding_tarball"
   test "$(sha1sum "$coding_tarball" | cut -d' ' -f1)" = "$EXPECTED_CODING_AGENT_TARBALL_SHA1"
   tar -xzf "$coding_tarball" -C "$pack/coding"
   mv "$pack/coding/package" "$pristine_package"
 
+  mkdir -p "$pack/agent"
+  curl --fail --silent --show-error --location "https://registry.npmjs.org/@earendil-works/pi-agent-core/-/pi-agent-core-$FICUS_VERSION.tgz" --output "$pack/agent/package.tgz"
+  test "$(sha1sum "$pack/agent/package.tgz" | cut -d' ' -f1)" = "97c8e22a52e9ba8d1d3d56ccb9bc3aa1506a7ea2"
+  tar -xzf "$pack/agent/package.tgz" -C "$pack/agent"
+  mv "$pack/agent/package" "$TEMP_DIR/$label-agent-pristine"
   (cd "$dir" && bun run build:offline)
+  for output in "${AGENT_OUTPUT_FILES[@]}"; do
+    cmp "$dir/packages/agent/$output" "$TEMP_DIR/$label-agent-pristine/$output"
+  done
   for output in "${OUTPUT_FILES[@]}"; do
     cmp "$dir/packages/coding-agent/$output" "$pristine_package/$output" || {
       echo "Pristine source build does not reproduce published output: $output" >&2
@@ -175,7 +186,11 @@ NODE
   for source_file in "${SOURCE_FILES[@]}"; do
     cp "$SOURCE_ROOT/$source_file" "$dir/$source_file"
   done
+  (cd "$dir/packages/agent" && bun run build)
   (cd "$dir/packages/coding-agent" && bun run build)
+  for output in "${AGENT_OUTPUT_FILES[@]}"; do
+    sha256sum "$dir/packages/agent/$output" | sed "s|$dir/packages/agent/||"
+  done > "$TEMP_DIR/$label.agent.outputs.manifest"
   bun "$ROOT_DIR/.github/pi-agent-session-dataflow-cli.ts" \
     "$dir/packages/coding-agent/src/core/agent-session.ts" \
     "$dir/packages/coding-agent/dist/core/agent-session.js"
@@ -186,6 +201,13 @@ generate_patch() {
   local label="$1"
   local source_package="$TEMP_DIR/$label/packages/coding-agent"
   local pristine_package="$TEMP_DIR/$label-package-pristine"
+  local -a OUTPUT_FILES=("${OUTPUT_FILES[@]}")
+  if [[ "${2:-}" = agent ]]; then
+    source_package="$TEMP_DIR/$label/packages/agent"
+    pristine_package="$TEMP_DIR/$label-agent-pristine"
+    OUTPUT_FILES=("${AGENT_OUTPUT_FILES[@]}")
+    label="$label-agent"
+  fi
   local candidate="$TEMP_DIR/$label-candidate" verify="$TEMP_DIR/$label-verify"
   local generated="$TEMP_DIR/$label.patch"
   cp -a "$pristine_package" "$candidate"
@@ -225,15 +247,16 @@ GENERATED_PATCH_B="$TEMP_DIR/run-b.patch"
 cmp "$GENERATED_PATCH_A" "$GENERATED_PATCH_B"
 echo "Portable generated patches are byte-identical"
 
-if cmp -s "$ORIGINAL_PATCH" "$GENERATED_PATCH_A"; then
-  echo "Regenerated patch is byte-identical to the committed artifact"
-  exit 0
-fi
+cmp "$TEMP_DIR/run-a.agent.outputs.manifest" "$TEMP_DIR/run-b.agent.outputs.manifest"
+generate_patch run-a agent
+generate_patch run-b agent
+cmp "$TEMP_DIR/run-a-agent.patch" "$TEMP_DIR/run-b-agent.patch"
 if [[ "$WRITE_MODE" -eq 1 ]]; then
   cp "$GENERATED_PATCH_A" "$PATCH_ARTIFACT"
-  echo "Regenerated patch for $PACKAGE@$FICUS_VERSION (--write)"
+  cp "$TEMP_DIR/run-a-agent.patch" "$AGENT_PATCH_ARTIFACT"
+  echo "Regenerated verified Pi session and queue patches (--write)"
   exit 0
 fi
-echo "Regenerated Pi patch drifted from the committed artifact" >&2
-echo "Committed artifact was not modified; rerun with --write only for an intentional reviewed update" >&2
-exit 1
+cmp "$PATCH_ARTIFACT" "$GENERATED_PATCH_A"
+cmp "$AGENT_PATCH_ARTIFACT" "$TEMP_DIR/run-a-agent.patch"
+echo "Regenerated patches are byte-identical to committed artifacts"

@@ -3363,3 +3363,223 @@ describe('ChatView composer draft', () => {
     expect(textarea().value).toBe('Please move "Fix it" to Billing.\n\nPlease move "Docs" to Chlea.')
   })
 })
+
+describe('ChatView queued message controls', () => {
+  const queued = (overrides: Partial<Extract<RenderItem, { kind: 'pending' }>> = {}): RenderItem => ({
+    kind: 'pending',
+    id: 'first',
+    messageId: 'first',
+    content: 'Queued request',
+    deliveryMode: 'follow-up',
+    status: 'queued',
+    queued: true,
+    ...overrides,
+  })
+  const deliveryTrigger = (window: Window | Awaited<ReturnType<typeof installDom>>['window']) =>
+    window.document.querySelector<HTMLButtonElement>('button[aria-label="Queued message delivery"]')
+  const cancelButton = (window: Window | Awaited<ReturnType<typeof installDom>>['window']) =>
+    window.document.querySelector<HTMLButtonElement>('button[aria-label="Cancel queued message"]')
+
+  test('the delivery label opens on hover like the composer delivery menu', async () => {
+    const { window } = await renderChatView(
+      <ChatView items={[queued()]} onSend={() => {}} onUpdatePendingMessage={mock(async () => {})} />
+    )
+    await restPointerOn(deliveryTrigger(window)!)
+    expect(window.document.querySelector('[role="option"]')).not.toBeNull()
+  })
+
+  test('the delivery label switches only this saved message to the chosen mode', async () => {
+    const onUpdatePendingMessage = mock(async () => {})
+    const { dom, window } = await renderChatView(
+      <ChatView items={[queued()]} onSend={() => {}} onUpdatePendingMessage={onUpdatePendingMessage} />
+    )
+    expect(deliveryTrigger(window)?.textContent).toContain('Follow up')
+    await dom.act(async () => deliveryTrigger(window)!.click())
+    const option = (label: string) =>
+      [...window.document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((row) =>
+        row.textContent?.includes(label)
+      )!
+    // Re-choosing the current mode sends nothing.
+    await dom.act(async () => option('Follow up').click())
+    expect(onUpdatePendingMessage).not.toHaveBeenCalled()
+    await dom.act(async () => deliveryTrigger(window)!.click())
+    await dom.act(async () => option('Interrupt').click())
+    expect(onUpdatePendingMessage).toHaveBeenCalledWith('first', 'steer')
+  })
+
+  test('canceling one message moves its text back to the composer', async () => {
+    const onUpdatePendingMessage = mock(async () => {})
+    const { dom, window } = await renderChatView(
+      <ChatView
+        items={[queued({ content: 'Bring me back' })]}
+        onSend={() => {}}
+        onUpdatePendingMessage={onUpdatePendingMessage}
+      />
+    )
+    await dom.act(async () => cancelButton(window)!.click())
+    await flushReact()
+    expect(onUpdatePendingMessage).toHaveBeenCalledWith('first', 'cancel')
+    expect((window.document.querySelector('textarea') as HTMLTextAreaElement).value).toBe('Bring me back')
+  })
+
+  test('a rejected edit keeps the message and the composer unchanged and says why', async () => {
+    const onUpdatePendingMessage = mock(async () => {
+      throw new Error('This message is no longer waiting in the queue.')
+    })
+    const { dom, window } = await renderChatView(
+      <ChatView items={[queued()]} onSend={() => {}} onUpdatePendingMessage={onUpdatePendingMessage} />
+    )
+    await dom.act(async () => cancelButton(window)!.click())
+    await flushReact()
+    expect(window.document.querySelector('[role="alert"]')?.textContent).toContain('no longer waiting')
+    expect(window.document.body.textContent).toContain('Queued request')
+    expect((window.document.querySelector('textarea') as HTMLTextAreaElement).value).toBe('')
+  })
+
+  test('controls stay disabled while an edit is in flight', async () => {
+    const pending = deferred<void>()
+    const onUpdatePendingMessage = mock(() => pending.promise)
+    const { dom, window } = await renderChatView(
+      <ChatView items={[queued()]} onSend={() => {}} onUpdatePendingMessage={onUpdatePendingMessage} />
+    )
+    await dom.act(async () => cancelButton(window)!.click())
+    expect(cancelButton(window)!.disabled).toBe(true)
+    expect(deliveryTrigger(window)!.disabled).toBe(true)
+    await dom.act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+  })
+
+  const sendNowButton = (window: Window | Awaited<ReturnType<typeof installDom>>['window']) =>
+    [...window.document.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
+      /^Send \d+ now$/.test(button.textContent ?? '')
+    )
+
+  test('Send now appears while running with queued interrupts, counting inbox ones, and calls the handler', async () => {
+    const onSendQueuedNow = mock(async () => {})
+    const { dom, window } = await renderChatView(
+      <ChatView
+        items={[
+          queued({ id: 'a', messageId: 'a', deliveryMode: 'steer' }),
+          queued({ id: 'b', messageId: 'b', deliveryMode: 'steer', metadata: { source: 'inbox' } }),
+          queued({ id: 'c', messageId: 'c', deliveryMode: 'follow-up' }),
+        ]}
+        onSend={() => {}}
+        executionStatus="running"
+        onSendQueuedNow={onSendQueuedNow}
+      />
+    )
+    expect(sendNowButton(window)?.textContent).toBe('Send 2 now')
+    await dom.act(async () => sendNowButton(window)!.click())
+    expect(onSendQueuedNow).toHaveBeenCalledTimes(1)
+  })
+
+  test('Send now is hidden with only follow-ups queued', async () => {
+    const { window } = await renderChatView(
+      <ChatView
+        items={[queued({ deliveryMode: 'follow-up' })]}
+        onSend={() => {}}
+        executionStatus="running"
+        onSendQueuedNow={mock(async () => {})}
+      />
+    )
+    expect(sendNowButton(window)).toBeUndefined()
+  })
+
+  test('Send now is hidden when the agent is not running', async () => {
+    const { window } = await renderChatView(
+      <ChatView
+        items={[queued({ deliveryMode: 'steer' })]}
+        onSend={() => {}}
+        executionStatus="queued"
+        onSendQueuedNow={mock(async () => {})}
+      />
+    )
+    expect(sendNowButton(window)).toBeUndefined()
+  })
+
+  test('a failed Send now explains itself in the composer alert', async () => {
+    const onSendQueuedNow = mock(async () => {
+      throw new Error('The agent is still stopping.')
+    })
+    const { dom, window } = await renderChatView(
+      <ChatView
+        items={[queued({ deliveryMode: 'steer' })]}
+        onSend={() => {}}
+        executionStatus="running"
+        onSendQueuedNow={onSendQueuedNow}
+      />
+    )
+    await dom.act(async () => sendNowButton(window)!.click())
+    await flushReact()
+    expect(window.document.querySelector('[role="alert"]')?.textContent).toContain(
+      'Could not send queued interrupts now: The agent is still stopping.'
+    )
+  })
+
+  test('Clear pending messages counts only user-sent messages', async () => {
+    const { window } = await renderChatView(
+      <ChatView
+        items={[
+          queued({ id: 'a', messageId: 'a' }),
+          queued({ id: 'b', messageId: 'b', metadata: { source: 'inbox' } }),
+          queued({ id: 'c', messageId: 'c', metadata: { source: 'monitor' } }),
+        ]}
+        onSend={() => {}}
+        isStreaming
+        onCancelQueue={mock(async () => {})}
+      />
+    )
+    expect(window.document.body.textContent).toContain('Clear 1 pending message')
+  })
+
+  test('unsaved sends and monitor deliveries keep a plain mode label without controls', async () => {
+    const { window } = await renderChatView(
+      <ChatView
+        items={[
+          queued({ id: 'client-1', messageId: undefined, content: 'Still sending' }),
+          queued({
+            id: 'monitor-1',
+            messageId: 'monitor-1',
+            content: 'Monitor event',
+            metadata: { source: 'monitor' },
+          }),
+        ]}
+        onSend={() => {}}
+        onUpdatePendingMessage={mock(async () => {})}
+      />
+    )
+    expect(window.document.body.textContent).toContain('Still sending')
+    expect(window.document.querySelectorAll('button[aria-label="Queued message delivery"]')).toHaveLength(0)
+    expect(window.document.querySelectorAll('button[aria-label="Cancel queued message"]')).toHaveLength(0)
+  })
+
+  test('a queued inbox delivery can switch mode from its pill but cannot be canceled', async () => {
+    const onUpdatePendingMessage = mock(async () => {})
+    const { dom, window } = await renderChatView(
+      <ChatView
+        items={[
+          queued({
+            id: 'inbox-1',
+            messageId: 'inbox-1',
+            content: 'From inbox',
+            deliveryMode: 'follow-up',
+            // The sender asked for an interrupt; the queue currently holds it as a follow-up.
+            metadata: { source: 'inbox', inboxDeliveryMode: 'steer' },
+          }),
+        ]}
+        onSend={() => {}}
+        onUpdatePendingMessage={onUpdatePendingMessage}
+      />
+    )
+    expect(cancelButton(window)).toBeNull()
+    expect(deliveryTrigger(window)?.textContent).toContain('Follow up')
+    await dom.act(async () => deliveryTrigger(window)!.click())
+    const interrupt = [...window.document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((row) =>
+      row.textContent?.includes('Interrupt')
+    )!
+    await dom.act(async () => interrupt.click())
+    expect(onUpdatePendingMessage).toHaveBeenCalledWith('inbox-1', 'steer')
+  })
+})

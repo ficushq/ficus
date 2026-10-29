@@ -706,7 +706,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     )
     .option(
       '--completion-mode <mode>',
-      "Completion mode: 'pr-merge' (default), 'pr-auto-merge', 'review-approval', or 'direct-merge'"
+      "Completion mode: 'pr-review' (until PR merge/closure), 'pr-merge' (default), 'pr-auto-merge', 'review-approval', or 'direct-merge'"
     )
     .action(async (id, options) => {
       try {

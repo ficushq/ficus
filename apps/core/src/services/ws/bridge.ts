@@ -217,6 +217,7 @@ function resolve(entry: EventEntry): ResolvedRoute | null {
 
   // Internal worker nudges; no client-facing topic.
   if (
+    event === 'agent.queue-message-updated' ||
     event === 'sandbox.provision-transition' ||
     event === 'integration.projection-invalidated' ||
     event === 'liveActivity.interestChanged'

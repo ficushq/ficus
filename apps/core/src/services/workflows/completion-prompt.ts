@@ -10,6 +10,8 @@ import {
 /** Delivery guidance is shared by every flow participant, independent of squad or agent type. */
 export function flowCompletionInstructions(mode: WorkflowDefinition['completion']['mode']): string {
   const guidance = {
+    'pr-review':
+      'Review the existing pull request and post the review. Keep this work stream open and remain its dedicated reviewer for follow-up comments, new commits, and re-review requests. After completing the review steps, wait for integration events; do not poll, merge, or close the PR just to finish this work stream. The same delivery agent receives further events at completion-ready. The stream may be parked to release capacity while retaining the reviewer and conversation. Only finish after the code host confirms the reviewed PR has merged or closed. This policy grants no authority to modify or merge the PR.',
     deliverable:
       'Deliver the requested result with verification evidence. No PR, repository mutation, or additional reviewer is required by this completion mode.',
     'review-approval':

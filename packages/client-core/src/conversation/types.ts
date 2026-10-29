@@ -54,7 +54,8 @@ export type RenderItem =
     }
   | {
       kind: 'pending'
-      id: string // clientId
+      id: string // clientId or persisted message ID
+      messageId?: string // present only after the server accepted and returned the pending row
       content: string
       imageIds?: string[]
       deliveryMode?: DeliveryMode

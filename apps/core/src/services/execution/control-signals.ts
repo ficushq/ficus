@@ -1,3 +1,9 @@
+import {
+  cancelClaimedUserMessages,
+  updateClaimedMessage,
+  type PendingMessageOperation,
+  type PendingMessageResult,
+} from '../agent/pending-message-control'
 import { beginTransitionalOperation, endTransitionalOperation, getSession, removeSession } from './session-state'
 import { disposePrecompactionController } from '../agent/precompaction/registry'
 import { eventEmitter } from '../../lib/infra/event-emitter'
@@ -24,10 +30,48 @@ export async function handleControlSignal(payload: {
   agentId: string
   message?: string
   executionId?: string
+  messageId?: string
+  requestId?: string
+  expiresAt?: number
+  operation?: PendingMessageOperation
 }): Promise<void> {
   const active = getSession(payload.agentId)
 
   switch (payload.action) {
+    case 'update-pending-message': {
+      if (
+        !active ||
+        active.executionId !== payload.executionId ||
+        !payload.messageId ||
+        !payload.requestId ||
+        !payload.expiresAt ||
+        !payload.operation ||
+        !['cancel', 'steer', 'follow-up'].includes(payload.operation)
+      )
+        return
+      let result: PendingMessageResult = 'unavailable'
+      try {
+        result = await updateClaimedMessage({
+          agentId: payload.agentId,
+          messageId: payload.messageId,
+          executionId: active.executionId,
+          operation: payload.operation,
+          session: active.session,
+          stillOwned: () => getSession(payload.agentId) === active,
+          expiresAt: payload.expiresAt,
+        })
+      } catch (error) {
+        log.error('Could not update pending message', error)
+      }
+      eventEmitter.emit('agent.queue-message-updated', {
+        agentId: payload.agentId,
+        executionId: active.executionId,
+        messageId: payload.messageId,
+        requestId: payload.requestId,
+        result,
+      })
+      return
+    }
     case 'abort-tool': {
       // Only abort the current bash command, not the entire session
       if (active) {
@@ -40,33 +84,41 @@ export async function handleControlSignal(payload: {
     }
 
     case 'clear-queue': {
-      // agent_control notifications are broadcast to every worker. Only the
-      // worker that owns the in-memory session can clear Pi's SDK queue.
-      //
-      // EVERY path below acks, including the failure path. The API blocks on
-      // this ack (services/agent/lifecycle.ts's clearQueue); a throw that
-      // escaped this case used to strand it for the full 10s timeout, after
-      // which it deleted the DB rows itself and returned `success: true` —
-      // while the SDK queue it could not reach still held the messages, so the
-      // agent processed them anyway. The user saw a slow request, a success,
-      // and their "cleared" messages being answered.
-      const owned = Boolean(active)
+      // Broadcasts may only clear the live owner, never a replacement execution.
+      if (
+        !active ||
+        (payload.executionId && active.executionId !== payload.executionId) ||
+        (payload.expiresAt && Date.now() >= payload.expiresAt)
+      )
+        return
+      const owned = true
+      const correlation = { requestId: payload.requestId, executionId: payload.executionId }
       let cleared = 0
       let deleted = 0
       try {
-        if (active) {
-          // Owning worker: clear SDK queue FIRST, then delete DB rows, then ack.
-          // This ordering prevents messages from becoming invisible in the DB
-          // while still queued in the SDK.
-          const result = active.session.pi.clearQueue()
-          cleared = result.steering.length + result.followUp.length
-        }
+        // Only user-sent messages are cleared: cancel the ones this session holds one at a
+        // time (each waits for any concurrent per-message edit), so inbox and monitor
+        // deliveries already in the SDK queue stay there. Then delete unclaimed rows.
+        cleared = await cancelClaimedUserMessages({
+          agentId: payload.agentId,
+          executionId: active.executionId,
+          session: active.session,
+          stillOwned: () => getSession(payload.agentId) === active,
+          expiresAt: payload.expiresAt ?? Date.now() + TRANSITION_TIMEOUT_MS,
+        })
         const agent = await Agent.find(payload.agentId)
-        deleted = (await agent?.deletePendingMessages()) ?? 0
+        deleted = cleared + ((await agent?.deletePendingMessages({ unclaimedOnly: true })) ?? 0)
         log.info(
           `clear-queue: agentId=${payload.agentId} owned=${owned} cleared ${cleared} from SDK queue, deleted ${deleted} from DB`
         )
-        eventEmitter.emit('agent.queue-cleared', { agentId: payload.agentId, cleared, deleted, owned, ok: true })
+        eventEmitter.emit('agent.queue-cleared', {
+          agentId: payload.agentId,
+          cleared,
+          deleted,
+          owned,
+          ok: true,
+          ...correlation,
+        })
       } catch (error) {
         // Ack the failure rather than staying silent: a reported failure is
         // recoverable (the user retries), a silent one is not (the API waits,
@@ -79,6 +131,7 @@ export async function handleControlSignal(payload: {
           owned,
           ok: false,
           code: 'worker_error',
+          ...correlation,
         })
       }
       return

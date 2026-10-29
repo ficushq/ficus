@@ -3,13 +3,13 @@
  * durable at-least-once queue behind both the initial-prompt claim and the
  * live-session intervention drain.
  */
-import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm'
+import { and, asc, eq, getTableColumns, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm'
 import { db, messages, chatSendReceipts } from '../../db'
 import { acquireAgentQueueLock } from '../execution/agent-admission'
 import { jsonbObjectRecovered } from '../../db/jsonb'
 import { Message, MessageMetadata } from '@ficus/shared'
 import { eventEmitter } from '../../lib/infra/event-emitter'
-import { mapMessage } from '../../entities/message-mapper'
+import { mapMessage, messageDeliveryOrder } from '../../entities/message-mapper'
 import { messageEventData } from '../../entities/message-event'
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -317,7 +317,7 @@ export async function confirmAllPendingMessages(agentId: string): Promise<number
  */
 export async function listPendingHumanMessages(agentId: string): Promise<Message[]> {
   const rows = await db
-    .select()
+    .select({ ...getTableColumns(messages), deliveryOrder: messageDeliveryOrder })
     .from(messages)
     .where(and(eq(messages.agentId, agentId), eq(messages.role, 'human'), eq(messages.pending, true)))
     .orderBy(...messageFifoOrder())
@@ -394,11 +394,13 @@ export async function claimInitialPendingMessagesForSessionDelivery(
       updated.pending,
       updated.injected_at AS "injectedAt",
       updated.created_at AS "createdAt",
-      updated.enqueue_order AS "enqueueOrder"
+      updated.enqueue_order AS "enqueueOrder",
+      to_char(updated.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US') || ':' ||
+        lpad(COALESCE(updated.enqueue_order, 0)::text, 20, '0') AS "deliveryOrder"
     FROM updated
     JOIN selected ON selected.id = updated.id
     ORDER BY selected.delivery_priority ASC, selected.created_at ASC, selected.enqueue_order ASC
-  `)) as unknown as Array<typeof messages.$inferSelect>
+  `)) as unknown as Array<typeof messages.$inferSelect & { deliveryOrder: string }>
 
   const claimed = rows.map((row) =>
     mapMessage({
@@ -420,7 +422,7 @@ export async function claimInitialPendingMessagesForSessionDelivery(
  */
 export async function listPendingInterventionsForSessionDelivery(agentId: string): Promise<Message[]> {
   const rows = await db
-    .select()
+    .select({ ...getTableColumns(messages), deliveryOrder: messageDeliveryOrder })
     .from(messages)
     .where(
       and(
@@ -463,7 +465,7 @@ export async function claimPendingInterventionForSessionDelivery(
         isNull(messages.injectedAt)
       )
     )
-    .returning()
+    .returning({ ...getTableColumns(messages), deliveryOrder: messageDeliveryOrder })
 
   if (!updated) return null
 
@@ -532,18 +534,33 @@ export async function markPendingHumanMessagesStrandedRetry(agentId: string, mes
   }
 }
 
+/** Rows a person sent through chat. Inbox and monitor deliveries are never bulk-cleared. */
+export const userSentMessage = sql`COALESCE(${messages.metadata}->>'source', '') NOT IN ('inbox', 'monitor')`
+
 /**
- * Delete all pending human messages for the agent.
- * Called when clearing the steer/follow-up queue.
+ * Delete the agent's pending user-sent messages when clearing the steer/follow-up queue.
+ * Inbox and monitor deliveries stay queued. `unclaimedOnly` leaves rows a live session
+ * holds, which the worker cancels through its SDK queue instead.
  * @returns The number of messages deleted.
  */
-export async function deletePendingMessages(agentId: string): Promise<number> {
+export async function deletePendingMessages(
+  agentId: string,
+  options: { unclaimedOnly?: boolean } = {}
+): Promise<number> {
   return db.transaction(async (tx) => {
     await acquireAgentQueueLock(tx, agentId)
     const pending = await tx
       .select({ id: messages.id })
       .from(messages)
-      .where(and(eq(messages.agentId, agentId), eq(messages.role, 'human'), eq(messages.pending, true)))
+      .where(
+        and(
+          eq(messages.agentId, agentId),
+          eq(messages.role, 'human'),
+          eq(messages.pending, true),
+          userSentMessage,
+          options.unclaimedOnly ? isNull(messages.injectedAt) : undefined
+        )
+      )
       .for('update')
     if (!pending.length) return 0
     const ids = pending.map((message) => message.id)

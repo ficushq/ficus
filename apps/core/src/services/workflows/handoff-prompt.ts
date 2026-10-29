@@ -9,6 +9,7 @@ import {
   type WorkflowRun,
   type WorkflowProducerReviewContext,
 } from '@ficus/shared'
+import { flowCompletionInstructions } from './completion-prompt'
 import { flowCapabilityInstructions } from './capability-instructions'
 
 type HandoffStream = {
@@ -97,6 +98,7 @@ export function flowMessage(
     stream.handoffMessage ? `Owner's handoff:\n${stream.handoffMessage}` : '',
     reviewContexts?.length ? `Context for the next human review:\n${JSON.stringify(reviewContexts, null, 2)}` : '',
     flowCapabilityInstructions(run.state, attempt, run.version),
+    run.state.definition.completion.mode === 'pr-review' ? flowCompletionInstructions('pr-review') : '',
     attempt.branch || activeWorkflowAttempts(run.state).length > 1
       ? 'Parallel work is active in this shared workspace.'
       : '',

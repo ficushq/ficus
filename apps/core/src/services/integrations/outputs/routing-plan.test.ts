@@ -401,3 +401,58 @@ test('bot comments and reviews get no pre-flow compatibility route (the stream s
     await h.close()
   }
 })
+
+test('fresh review requests have a manager audience after completion, never for original replays or active owners', async () => {
+  const h = await fixture()
+  try {
+    const metadata = {
+      integrationRules: {
+        github: [
+          {
+            id: 'review',
+            enabled: true,
+            source: { integration: 'github', output: 'pull_request.review_requested', version: 1 },
+            filters: { audience: 'any' },
+            action: { type: 'start-workstream' },
+          },
+        ],
+      },
+    }
+    await db.update(squads).set({ metadata }).where(eq(squads.id, h.squadId))
+    const original = await h.event()
+    original.fact.output = 'pull_request.review_requested'
+    original.fact.occurredAt = '2026-10-29T10:00:00Z'
+    await db
+      .update(integrationOutputEvents)
+      .set({ fact: original.fact })
+      .where(eq(integrationOutputEvents.id, original.id))
+    const streamId = await h.stream(false, 'done')
+    await db.insert(integrationOutputTriggerRuns).values({
+      squadId: h.squadId,
+      triggerId: 'review',
+      sourceKey: 'github:any-account',
+      resourceKey: original.fact.resourceKey,
+      eventId: original.id,
+      workStreamId: streamId,
+    })
+    expect((await planning.planOutputRouting(original, async () => true)).relevant).toBe(false)
+    const next = await h.event()
+    next.fact.output = 'pull_request.review_requested'
+    next.fact.occurredAt = '2026-10-29T11:00:00Z'
+    await db.update(integrationOutputEvents).set({ fact: next.fact }).where(eq(integrationOutputEvents.id, next.id))
+    const plan = await planning.planOutputRouting(next, async () => true)
+    expect(plan.routes.map((route) => route.kind)).toEqual(['notify-manager'])
+    expect(plan.routes[0]!.recipientId).toBe(h.managerId)
+    expect((await planning.planOutputRouting(next, async () => false)).relevant).toBe(false)
+    await db.update(workStreams).set({ status: 'active' }).where(eq(workStreams.id, streamId))
+    expect(
+      (await planning.planOutputRouting(next, async () => true)).routes.some((route) => route.kind === 'notify-manager')
+    ).toBe(false)
+    await db.update(workStreams).set({ status: 'done' }).where(eq(workStreams.id, streamId))
+    metadata.integrationRules.github[0]!.enabled = false
+    await db.update(squads).set({ metadata }).where(eq(squads.id, h.squadId))
+    expect((await planning.planOutputRouting(next, async () => true)).relevant).toBe(false)
+  } finally {
+    await h.close()
+  }
+})

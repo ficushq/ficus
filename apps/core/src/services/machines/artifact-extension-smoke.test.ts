@@ -27,8 +27,8 @@ describe('smokeConfiguredExtensions', () => {
 
     expect(manifest.dependencies).toEqual({ typescript: '^5.7.0' })
     expect(manifest.peerDependencies).toEqual({
-      '@earendil-works/pi-coding-agent': '0.99.1',
-      '@earendil-works/pi-tui': '0.99.1',
+      '@earendil-works/pi-coding-agent': '1.4.0',
+      '@earendil-works/pi-tui': '1.4.0',
       '@sinclair/typebox': '^0.34.48',
     })
     expect(manifest.peerDependenciesMeta).toEqual({

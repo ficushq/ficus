@@ -39,6 +39,7 @@ import {
 } from '../github/feedback-routing'
 import { ciNotificationSchema, settleCiNotification } from '../../work-streams/ci-notifications'
 import { readOutputInbox } from '../github/feedback-pass-read'
+import { completedReviewRequest } from './trigger-receipts'
 import { resolveSquadEventRule } from './event-rule-decisions'
 
 type Event = typeof integrationOutputEvents.$inferSelect
@@ -75,12 +76,20 @@ export function eventRuleTrigger(
         { value: integrationValueAt(event.fact.data, binding.event) },
       ])
     )
+  let workflow = eventRuleWorkflow(rule, metadata)
+  if (event.integration === 'github' && event.fact.output === 'pull_request.review_requested') {
+    const completion = { mode: 'pr-review' as const, followChanges: true, changeEventsTo: 'delivery-owner' as const }
+    workflow =
+      workflow.kind === 'inline'
+        ? { ...workflow, definition: { ...workflow.definition, completion } }
+        : { ...workflow, customizations: [...(workflow.customizations ?? []), { op: 'set-completion', completion }] }
+  }
   return {
     id: rule.id,
     source: rule.source,
     match: match as WorkflowEventTrigger['match'],
     create: {
-      workflow: eventRuleWorkflow(rule, metadata),
+      workflow,
       titlePrefix: rule.action.titlePrefix ?? '',
       additionalContext: rule.action.additionalContext,
       metadata: bindings,
@@ -214,14 +223,35 @@ export async function routeDefaultNotifications(
     .innerJoin(workStreams, eq(workStreams.id, integrationOutputDeliveries.workStreamId))
     .where(and(eq(integrationOutputDeliveries.eventId, event.id), eq(workStreams.squadId, squadId)))
     .limit(1)
-  if (matchedStream || delivery || latest?.handled.includes(squadId)) return { refused }
+  if (
+    matchedStream ||
+    delivery ||
+    (latest?.handled.includes(squadId) && event.fact.output !== 'pull_request.review_requested')
+  )
+    return { refused }
   // Authorized above; any decision conditions are asked here, after the webhook was acknowledged.
-  const { rule } = await resolveEventRuleDecisions(
+  const { rule, decisions } = await resolveEventRuleDecisions(
     event.fact.data.projection === 'status' ? event : matching,
     squad,
     login,
-    ['notify-manager', 'notify-consultant']
+    event.fact.output === 'pull_request.review_requested'
+      ? ['notify-manager', 'notify-consultant', 'start-workstream']
+      : ['notify-manager', 'notify-consultant']
   )
+  if (rule?.action.type === 'start-workstream' && squad.managerAgentId) {
+    const trigger = eventRuleTrigger(squad.metadata, matching, login, decisions)
+    const completed = trigger && (await completedReviewRequest(db, squadId, trigger, matching))
+    if (completed) {
+      const context = [
+        rule.action.additionalContext,
+        `A fresh review request arrived after work ${workStreamRef(completed)} was ${completed.status}. Decide whether to reopen that stream or start another review round; it has not been reopened automatically.`,
+      ]
+        .filter(Boolean)
+        .join('\n\n')
+      if (await send(event, squad.managerAgentId, undefined, context, squadId)) refused = true
+    }
+  }
+  if (latest?.handled.includes(squadId)) return { refused }
   if (rule?.action.type === 'notify-manager' && squad.managerAgentId) {
     if (await send(event, squad.managerAgentId, undefined, rule.action.additionalContext, squadId)) refused = true
   }

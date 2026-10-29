@@ -239,6 +239,15 @@ export function agentsResource(t: Transport) {
     stream: async (agentId: string, callbacks: AgentStreamCallbacks): Promise<void> => {
       openReconnectableAgentStream(t, agentId, callbacks)
     },
+    updatePendingMessage: (
+      agentId: string,
+      messageId: string,
+      operation: 'cancel' | DeliveryMode
+    ): Promise<{ success: boolean }> =>
+      t.request(`/agents/${agentId}/messages/${messageId}/queue`, { method: 'POST', body: { operation } }),
+    // Stop the running turn and deliver every queued interrupt in a new one.
+    sendQueuedNow: (agentId: string): Promise<{ success: boolean; code: 'started' | 'already_starting' }> =>
+      t.request(`/agents/${agentId}/send-now`, { method: 'POST' }),
     // Clear all queued (pending) steer/follow-up messages.
     clearQueue: (agentId: string): Promise<{ success: boolean }> =>
       t.request(`/agents/${agentId}/clear-queue`, { method: 'POST' }),

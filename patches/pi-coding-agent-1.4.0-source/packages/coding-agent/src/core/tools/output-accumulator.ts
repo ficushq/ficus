@@ -1,8 +1,6 @@
-import { randomBytes } from "node:crypto";
-import { createWriteStream, type WriteStream } from "node:fs";
+import type { WriteStream } from "node:fs";
 import { open } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { createOutputFileStream } from "../../utils/output-files.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type TruncationResult, truncateTail } from "./truncate.ts";
 
 export interface OutputAccumulatorOptions {
@@ -29,11 +27,6 @@ export interface FullOutput {
 	content: string;
 	/** Whether `content` omits part of the output. */
 	truncated: boolean;
-}
-
-function defaultTempFilePath(prefix: string): string {
-	const id = randomBytes(8).toString("hex");
-	return join(tmpdir(), `${prefix}-${id}.log`);
 }
 
 function byteLength(text: string): number {
@@ -325,8 +318,9 @@ export class OutputAccumulator {
 		if (this.tempFilePath || !this.persistFullOutput) {
 			return;
 		}
-		this.tempFilePath = defaultTempFilePath(this.tempFilePrefix);
-		this.tempFileStream = createWriteStream(this.tempFilePath);
+		const { path, stream } = createOutputFileStream(this.tempFilePrefix, ".log");
+		this.tempFilePath = path;
+		this.tempFileStream = stream;
 		for (const chunk of this.rawChunks) {
 			this.tempFileStream.write(chunk);
 		}

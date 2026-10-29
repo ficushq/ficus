@@ -321,6 +321,26 @@ key is never read for tracked-resource identity. `github.repo` above is still
 useful to give the new stream a resolvable repository identity for later
 correlation. This is optional squad policy, not a requirement of its squad preset. A manager can configure a saved preset or an inline flow using the normal squad metadata/configuration tools. Change the trigger source to `pull_request.review_requested`, match `requestedReviewer`, and map `github.pr.number` from `pullRequest.number` to start a configured PR-review flow instead.
 
+GitHub `pull_request.review_requested` start-workstream rules preserve the selected
+workflow steps but set completion to `pr-review`, enable `followChanges`, and send
+change events to the delivery owner. This is a persistent reviewer assignment:
+at completion-ready the existing delivery agent still receives comments and
+re-requests, and automatic continuation excludes the externally waiting stream.
+`finishFlow` checks the squad-authorized code-host API for a merged or closed PR;
+unknown/unreadable/open states fail closed. Unlike PR implementation delivery,
+review completion neither requires the review checkout to match the author's
+branch (fork reviews are valid) nor records the reviewed commit as our deliverable.
+Parking preserves the agent and history; retained events resume through normal
+admission. This applies to newly created review streams, not a rewrite of existing
+workflow runs or other streams that a rule merely binds.
+
+For an already-terminal review stream, a later provider occurrence of a review
+request has a manager audience in both firewall planning and actual delivery.
+The original trigger receipt still prevents duplicate streams; original-event
+replays and alternate projections with the same occurrence time do not notify.
+Active or queued matching streams keep ownership, including paused consumers.
+The fallback uses the normal authorized, filtered, idempotent notification path.
+
 The trigger binds metadata atomically and reuses an existing matching nonterminal stream. Repeated events create at most one stream per trigger/resource. A receipt remains even after completion/deletion; starting another stream for the same resource is an explicit action. The selected flow can also declare subscriptions for later updates—for example `issue.updated` and `issue.comment`, matched on `repository` and `issue.number`, sent to its `worker`.
 
 Flow graphs show integrations with dotted connections. Select an integration to see its match rules, consumer, pending deliveries, and event links. Edit subscriptions in the complete YAML/JSON definition or ask the manager to configure them. A flow with GitHub subscriptions owns its GitHub notifications; omitted outputs are not sent through the old reviewer fallback. Integration event subscriptions documents the runtime, compatibility boundary, and current limits.

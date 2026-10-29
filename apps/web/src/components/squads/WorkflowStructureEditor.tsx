@@ -617,13 +617,14 @@ export function WorkflowCompletionEditor({
             })
           }
         >
-          {['deliverable', 'review-approval', 'pr-merge', 'pr-auto-merge', 'direct-merge'].map((mode) => (
+          {['deliverable', 'review-approval', 'pr-review', 'pr-merge', 'pr-auto-merge', 'direct-merge'].map((mode) => (
             <option key={mode} value={mode}>
               {
                 {
                   deliverable: 'Verified deliverable',
                   'review-approval': 'Human delivery approval',
                   'pr-merge': 'Human merges the change',
+                  'pr-review': 'PR review',
                   'pr-auto-merge': 'Automatic merge',
                   'direct-merge': 'Direct merge',
                 }[mode]
@@ -638,6 +639,7 @@ export function WorkflowCompletionEditor({
             deliverable:
               'Finish when all active paths, direct-return requests, and blocking waits are settled. No extra review or merge is implied.',
             'review-approval': 'A human must approve final delivery, even after all agent steps finish.',
+            'pr-review': 'Keep the reviewer available until the existing pull request merges or closes.',
             'pr-merge': 'Wait for a human to merge the change request. Ficus verifies the merge independently.',
             'pr-auto-merge':
               'The squad must explicitly allow automatic merge. Ficus still waits for a verified merge before completion.',

@@ -1325,8 +1325,8 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
    * Called when clearing the steer/follow-up queue.
    * @returns The number of messages deleted.
    */
-  async deletePendingMessages(): Promise<number> {
-    return pendingDelivery.deletePendingMessages(this.id)
+  async deletePendingMessages(options?: { unclaimedOnly?: boolean }): Promise<number> {
+    return pendingDelivery.deletePendingMessages(this.id, options)
   }
 
   // ---------------------------------------------------------------------------
@@ -1513,6 +1513,11 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
    */
   async clearQueue(options: { ackTimeoutMs?: number } = {}): Promise<lifecycle.ClearQueueResult> {
     return lifecycle.clearQueue(this, options)
+  }
+
+  /** Stop the running turn and deliver every queued interrupt in a new one. */
+  async sendQueuedNow(options?: { settleTimeoutMs?: number; pollMs?: number }): Promise<lifecycle.SendQueuedNowResult> {
+    return lifecycle.sendQueuedNow(this, options)
   }
 
   /**
@@ -1929,14 +1934,6 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       refuseIfDormant,
       lifecycleDormancyEpisodeAtAcceptance,
     } = options
-    const interventionPayloadMatches = (message: { content: string; metadata: unknown }) => {
-      const existing = message.metadata as MessageMetadata | null
-      return (
-        message.content === content &&
-        JSON.stringify(existing?.imageIds ?? []) === JSON.stringify(imageIds ?? []) &&
-        (existing?.deliveryMode ?? 'steer') === deliveryMode
-      )
-    }
     const clientId = metadata?.clientId
     const hashes = clientId
       ? chatSendRequestHashes({ agentId: this.id, clientId, content, imageIds, deliveryMode })
@@ -2066,7 +2063,9 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
             .where(and(eq(executions.id, receipt.executionId), eq(executions.agentId, this.id)))
             .limit(1)
           if (!boundMessage || !boundExecution) throw new Error('Idempotency receipt bound identity no longer exists')
-          if (!interventionPayloadMatches(boundMessage)) throw new ChatIdempotencyConflictError()
+          // The receipt hash above is the immutable acceptance identity, including
+          // the original delivery mode. Queue edits can change the bound row's
+          // mode; replay must acknowledge the original send without undoing them.
           return {
             success: true as const,
             status: boundExecution.status,

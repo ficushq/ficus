@@ -204,3 +204,87 @@ it('discarding a multi-buffer incomplete UTF-8 host tail preserves the complete 
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+it('cancels one identical queued message and switches modes without losing FIFO position or images', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'pi-queue-edit-'))
+  const { session, ...fixture } = await controlledPiSession(root)
+  const run = session.prompt('start', { deliveryId: 'initial' })
+  try {
+    await fixture.waitForRequest(1)
+    const image = { type: 'image' as const, mimeType: 'image/png', data: 'fixture' }
+    await session.followUp('same', [image], { deliveryId: 'first', queueOrder: '001' })
+    await session.steer('same', undefined, { deliveryId: 'second', queueOrder: '002' })
+    await session.followUp('same', undefined, { deliveryId: 'cancel', queueOrder: '003' })
+    await session.followUp('same', undefined, { deliveryId: 'last', queueOrder: '004' })
+    expect(await session.updateQueuedMessage('cancel', 'cancel', async () => {})).toBe(true)
+    expect(await session.updateQueuedMessage('first', 'steer', async () => {})).toBe(true)
+    expect(await session.updateQueuedMessage('first', 'followUp', async () => {})).toBe(true)
+    expect(await session.updateQueuedMessage('second', 'followUp', async () => {})).toBe(true)
+    expect(session.getSteeringMessages()).toEqual([])
+    expect(session.getFollowUpMessages()).toEqual(['same', 'same', 'same'])
+    fixture.reply(0)
+    await fixture.waitForRequest(2)
+    const users = fixture.requests[1]!.messages.filter((message) => message.role === 'user')
+    expect(users.at(-1)!.content).toContainEqual(image)
+    expect(
+      await session.updateQueuedMessage('first', 'cancel', async () => {
+        throw new Error('must not run')
+      })
+    ).toBe(false)
+    fixture.reply(1)
+    await fixture.waitForRequest(3)
+    fixture.reply(2)
+    await fixture.waitForRequest(4)
+    fixture.reply(3)
+    await run
+    expect(fixture.requestDeliveryIds.at(-1)).toEqual(['initial', 'first', 'second', 'last'])
+  } finally {
+    await session.abort()
+    await run.catch(() => {})
+    session.dispose()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('waits for durable queue edits before consumption and leaves the message unchanged on rollback', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'pi-queue-commit-'))
+  const fixture = await controlledPiSession(root)
+  const { session } = fixture
+  const gate = Promise.withResolvers<void>()
+  const entered = Promise.withResolvers<void>()
+  const run = session.prompt('start', { deliveryId: 'initial' })
+  let edit: Promise<boolean> | undefined
+  try {
+    await fixture.waitForRequest(1)
+    await session.followUp('keep', undefined, { deliveryId: 'keep' })
+    await expect(
+      session.updateQueuedMessage('keep', 'cancel', async () => {
+        throw new Error('rollback')
+      })
+    ).rejects.toThrow('rollback')
+    expect(session.getFollowUpMessages()).toEqual(['keep'])
+    await session.followUp('remove', undefined, { deliveryId: 'remove' })
+    edit = session.updateQueuedMessage('remove', 'cancel', async () => {
+      entered.resolve()
+      await gate.promise
+    })
+    await entered.promise
+    fixture.reply(0)
+    // The queue remains intact until the durable edit commits.
+    expect(session.getFollowUpMessages()).toEqual(['keep', 'remove'])
+    expect(() => session.clearQueue()).toThrow('Queue update in progress')
+    gate.resolve()
+    expect(await edit).toBe(true)
+    await fixture.waitForRequest(2)
+    fixture.reply(1)
+    await run
+    expect(fixture.requestDeliveryIds.at(-1)).toEqual(['initial', 'keep'])
+  } finally {
+    gate.resolve()
+    await edit?.catch(() => {})
+    await session.abort()
+    await run.catch(() => {})
+    session.dispose()
+    rmSync(root, { recursive: true, force: true })
+  }
+})

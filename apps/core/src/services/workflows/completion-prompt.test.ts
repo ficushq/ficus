@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { deliveryBindingSelfCheck, deliveryInstructionsForRun, flowCompletionInstructions } from './completion-prompt'
-import { advanceWorkflowRun, createBlankWorkflow, createWorkflowRun, type WorkflowRun } from '@ficus/shared'
+import {
+  advanceWorkflowRun,
+  createBlankWorkflow,
+  createWorkflowRun,
+  type WorkflowDecisionBrief,
+  type WorkflowRun,
+} from '@ficus/shared'
 
 const stream = (id: string, metadata?: unknown) => ({ id, metadata })
 const run = (mode: 'pr-merge' | 'pr-auto-merge' | 'deliverable') => {
@@ -122,19 +128,27 @@ describe('auto-merge enabling versus delivery', () => {
     )
     const activeStream = { id: 'internal-gates', status: 'active' }
     let state = createWorkflowRun(definition)
-    const complete = (current: WorkflowRun, outcome: string) =>
+    const complete = (current: WorkflowRun, outcome: string, decisionBrief?: WorkflowDecisionBrief) =>
       advanceWorkflowRun(current, {
         action: 'complete',
         expectedVersion: current.version,
         attemptId: current.activeAttemptId,
         outcome,
         evidence: 'Verified internal step.',
+        decisionBrief,
       })
     expect(deliveryInstructionsForRun(activeStream, state, state.version)).toBeUndefined()
     state = complete(state, 'completed')
     expect(state.attempts.at(-1)!.stepId).toBe('review')
     expect(deliveryInstructionsForRun(activeStream, state, state.version)).toBeUndefined()
-    state = complete(state, 'approved')
+    expect(() => complete(state, 'approved')).toThrow('decisionBrief')
+    state = complete(state, 'approved', {
+      decision: 'Approve the independently reviewed synthetic change.',
+      recommendation: 'Approve because independent review verified the change.',
+      approvalEffect:
+        'Approval allows this synthetic workflow to reach its configured delivery policy, not bypass checks or protections.',
+      risks: 'CI or external review may still prevent merging.',
+    })
     expect(state.attempts.at(-1)!.stepId).toBe('human')
     expect(deliveryInstructionsForRun(activeStream, state, state.version)).toBeUndefined()
     // The pure runtime routes gates; the server separately authorizes the human actor.
@@ -235,4 +249,12 @@ describe('auto-merge enabling versus delivery', () => {
     for (const mode of ['pr-merge', 'direct-merge', 'review-approval', 'deliverable'] as const)
       expect(flowCompletionInstructions(mode)).not.toContain('enable native auto-merge now')
   })
+})
+
+test('PR review policy keeps the reviewer available without granting merge authority', () => {
+  const text = flowCompletionInstructions('pr-review')
+  expect(text).toContain('dedicated reviewer')
+  expect(text).toContain('wait for integration events')
+  expect(text).toContain('merged or closed')
+  expect(text).not.toContain('enable native auto-merge now')
 })
