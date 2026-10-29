@@ -9,11 +9,29 @@ export const WORKFLOW_DECISION_BRIEF_LIMITS = {
 } as const
 
 /** Mask literal data, never change the submitted text. This linter is deliberately field-local. */
-function authoredProse(text: string): string {
-  return text.replace(
+function authoredProse(text: string): { prose: string; shortToken?: string } {
+  let shortToken: string | undefined
+  const prose = text.replace(
     /```[\s\S]*?```|`[^`\n]*`|\]\([^)]*\)|https?:\/\/[^\s]+|(?<![\w])(?:\.{0,2}\/|~\/|[A-Za-z]:\\)[\w./\\-]+|(?<![\w])(?!(?:[Ww]\/[Oo]|[Bb]\/[Cc])\b)(?:[\w@.-]+\/)[\w./@+-]+|\b[\w.+-]+@[\w.-]+\b|\b[\w+-]+(?:\.[a-z0-9_][\w-]*)+\b|(?<![\w])\.[a-z][\w.-]*|\b[\da-fA-F]{8}-[\da-fA-F-]{27,}\b|\b[\da-fA-F]{40,64}\b|"[^"\n]*"|“[^”]*”|‘[^’]*’|(?<![\p{L}])'[^'\n]+'(?![\p{L}])/gu,
-    (literal) => ` ${literal.match(/[.!?]+$/)?.[0] ?? ''} `
+    (literal: string, offset: number) => {
+      const before = text.slice(0, offset)
+      const after = text.slice(offset + literal.length)
+      const namedLiteral =
+        /\b(?:file|filename|path|host|hostname|domain|resource|identifier|id|name|named|called)\s+(?:[\w-]+\s+)?$/i.test(
+          before
+        )
+      // A capitalized continuation plus an imperative is stronger evidence than
+      // an unknown domain suffix. Explicitly named technical data stays literal.
+      if (!namedLiteral && /^[A-Za-z]+(?:\.[a-z]+)+$/.test(literal) && /^\.Then\s+(?:deploy|proceed)\b/.test(after))
+        return literal
+      // A pronoun followed by "then deploy" can explain a short-prose refusal,
+      // but is not enough evidence to reject an otherwise valid private domain.
+      if (!namedLiteral && /^(?:this|that|it)\.then$/.test(literal) && /^\s+(?:deploy|proceed)\b/.test(after))
+        shortToken = literal
+      return ` ${literal.match(/[.!?]+$/)?.[0] ?? ''} `
+    }
   )
+  return { prose, shortToken }
 }
 
 /** Conservative compression checks, not a grammar or factual-accuracy judge. */
@@ -21,10 +39,8 @@ export function decisionBriefProseError(
   field: keyof typeof WORKFLOW_DECISION_BRIEF_LIMITS,
   text: string
 ): string | null {
-  const prose = authoredProse(text).replace(
-    /\b(?:[A-Za-z]\.){2,}|\b(?:Dr|Mr|Mrs|Ms|Prof|Sr|Jr|vs|etc)\./g,
-    'abbreviation'
-  )
+  const authored = authoredProse(text)
+  const prose = authored.prose.replace(/\b(?:[A-Za-z]\.){2,}|\b(?:Dr|Mr|Mrs|Ms|Prof|Sr|Jr|vs|etc)\./g, 'abbreviation')
   const words = [...new Intl.Segmenter(undefined, { granularity: 'word' }).segment(prose)].filter((s) => s.isWordLike)
   const token =
     prose.match(/\b[A-Za-z]+[.!?][A-Z][a-z]+\b|[a-zA-Z]{33,}/)?.[0] ??
@@ -35,7 +51,9 @@ export function decisionBriefProseError(
     return (n < 32 && ![9, 10, 13].includes(n)) || [127, 0x200b, 0x2060, 0xfeff].includes(n)
   })
   if (control || token || words.length < (field === 'decision' ? 3 : 2)) {
-    const offender = control ? `U+${control.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}` : token
+    const offender = control
+      ? `U+${control.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`
+      : (token ?? authored.shortToken)
     return `decisionBrief.${field} must be readable prose with normal spacing and complete words.${offender ? ` Check token ${JSON.stringify(offender)}.` : ' Add an explanatory sentence, not only literal identifiers.'}`
   }
   if (

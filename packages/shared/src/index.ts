@@ -142,5 +142,4 @@ export * from './workflow-review-history'
 
 export * from './workflow-review-waits'
 
-// Synthetic brief shared by cross-package contract tests.
-export { brief as workflowReviewBriefFixture } from './test-fixtures/workflow-review'
+export * from './workflow-review-presentation'

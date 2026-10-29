@@ -1,8 +1,8 @@
+import { brief as workflowReviewBriefFixture } from '@ficus/shared/test-fixtures/workflow-review'
 import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 import {
   advanceWorkflowRun,
-  workflowReviewBriefFixture,
   type WorkflowDecisionBrief,
   createWorkflowRun,
   workflowPresetSchema,

@@ -288,3 +288,21 @@ describe('isRunning', () => {
     expect(isRunning(makeAgent({ status: 'idle' }), true)).toBe(true)
   })
 })
+
+describe('badge kind follows independently actionable input, not a failing plant', () => {
+  it('uses a question badge when a failed plant also has an open question', () => {
+    const stream = facts({ ...active, derivedState: 'execution_failed', openWaits: [makeWait('question')] })
+    expect(badgeFor('failed', stream)).toBe('question')
+  })
+  it('keeps questions actionable while a separate review is blocked by an owner hold', () => {
+    const stream = facts({
+      ...active,
+      openWaits: [
+        makeWait('manual', { id: 'gate', resolutionHandler: 'workflow', flowAttemptId: 3 }),
+        makeWait('manual', { id: 'owner', actor: 'owner', flowAttemptId: 3 }),
+        makeWait('question', { id: 'question', flowAttemptId: 8 }),
+      ],
+    })
+    expect(badgeFor(plantStateFor(stream)!, stream)).toBe('question')
+  })
+})

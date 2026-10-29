@@ -1,3 +1,4 @@
+import { brief as workflowReviewBriefFixture } from '@ficus/shared/test-fixtures/workflow-review'
 import { expect, spyOn, test } from 'bun:test'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
@@ -7,7 +8,6 @@ import {
   createBlankWorkflow,
   workflowStepSchema,
   routeWorkflowDecision,
-  workflowReviewBriefFixture,
   createWorkflowRun,
   workflowPresetSchema,
   type WorkflowTransition,

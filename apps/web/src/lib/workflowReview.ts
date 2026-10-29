@@ -1,5 +1,7 @@
+export { humanGateSubtitle, workflowReviewPlainText as plainText } from '@ficus/shared'
 import {
   activeWorkflowAttempts,
+  workflowReviewPlainText as plainText,
   workflowReviewBlockingWaits,
   workflowCompletionTargets,
   isWorkflowHumanGateWait,
@@ -195,18 +197,6 @@ export function documentTitle(markdown: string | undefined): string | undefined 
   return text.length > 140 ? `${text.slice(0, 139).trimEnd()}…` : text
 }
 
-/** Markdown reduced to readable plain text, for a clamped preview. */
-export function plainText(markdown: string): string {
-  return markdown
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
-    .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+[.)])\s+/gm, '')
-    .replace(/[*_~`]+/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
 /** Instructions longer than this start collapsed behind a preview in the review document. */
 export const LONG_INSTRUCTIONS = { characters: 420, lines: 6 }
 
@@ -248,12 +238,4 @@ export function workflowReviewPath(workStreamRef: string, waitId?: string): stri
   const params = new URLSearchParams({ review: workStreamRef })
   if (waitId) params.set('reviewWait', waitId)
   return `/?${params}`
-}
-
-/** Compact gate-kind description, never per-round authorization. */
-export function humanGateSubtitle(instructions: string, fallback: string): string {
-  const text = plainText(instructions)
-  const sentence =
-    [...new Intl.Segmenter(undefined, { granularity: 'sentence' }).segment(text)][0]?.segment.trim() || fallback
-  return `Human approval · ${sentence.length <= 160 ? sentence : sentence.slice(0, 160).replace(/\s+\S*$/, '') + '…'}`
 }

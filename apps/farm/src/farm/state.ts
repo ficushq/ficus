@@ -108,7 +108,7 @@ export function badgeFor(state: PlantState, stream: WorkStream): BadgeKind | nul
       return 'blocked'
     default:
       // A sequencing wait may control the plant while independent human input remains actionable.
-      return 'blocked'
+      return stream.openWaits?.some((wait) => wait.type === 'question') ? 'question' : 'blocked'
   }
 }
 

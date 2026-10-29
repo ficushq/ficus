@@ -1,3 +1,4 @@
+import { brief as workflowReviewBriefFixture } from '@ficus/shared/test-fixtures/workflow-review'
 import { afterEach, describe, expect, it } from 'bun:test'
 import { queryKeys, type ResolveWorkStreamWaitResult } from '@ficus/client-core'
 import {
@@ -6,7 +7,6 @@ import {
   advanceWorkflowRun,
   workflowStepSchema,
   routeWorkflowDecision,
-  workflowReviewBriefFixture,
   type PendingAction,
   type WorkStream,
 } from '@ficus/shared'
@@ -582,3 +582,32 @@ it('Farm restarted decision fallback shows only the new gate message and explici
   expect(panel.textContent).not.toContain(workflowReviewBriefFixture.decision)
   expect(panel.textContent).not.toContain('Carried forward from an earlier step')
 })
+
+for (const [name, instructions, summary] of [
+  [
+    'formatted instructions',
+    '# Review **the architecture**. Keep authorization in the brief.',
+    'Review the architecture.',
+  ],
+  ['a named fallback', '', 'Taste test'],
+  [
+    'long instructions',
+    'Review ' + 'the staging scope '.repeat(20) + '.',
+    'Review ' + 'the staging scope '.repeat(20) + '.',
+  ],
+] as const) {
+  it(`Farm shows the web gate-summary subtitle for ${name}`, async () => {
+    const run = workflowRun('gate')
+    const gate = run.state.attempts[1]!
+    gate.reviewBrief = { kind: 'none' }
+    const step = run.state.definition.steps.find((s) => s.id === gate.stepId)!
+    step.instructions = instructions
+    const api = fakeApi({ workflowRun: () => Promise.resolve(run), getWorkStream: () => Promise.resolve(stream()) })
+    const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
+    const subtitle = container.querySelector('.g-decision-title + .g-action-note')!
+    const sentence = summary.length <= 160 ? summary : summary.slice(0, 160).replace(/\s+\S*$/, '') + '…'
+    expect(subtitle.textContent).toBe(`Human approval · ${sentence}`)
+    expect(button(container, 'Approved').disabled).toBe(true)
+    expect(api.advanceWorkflow).not.toHaveBeenCalled()
+  })
+}
