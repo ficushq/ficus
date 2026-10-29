@@ -83,9 +83,16 @@ describe('memory routes', () => {
     await db.delete(squads).where(like(squads.name, `${testPrefix}%`))
   })
 
+  it.each(['101', '0', '-1', 'abc', '1.5'])('rejects an invalid or excessive search limit (%s)', async (limit) => {
+    const response = await app.request(`/api/memory/${targetSquadId}/search?query=needle&limit=${limit}`, {
+      headers: authHeaders(admin.token),
+    })
+    expect(response.status).toBe(400)
+  })
+
   it('sync status reports hidden pending GitHub reindex counts by reason without content', async () => {
     await db.insert(memoryDocuments).values(
-      ['stale', 'legacy'].map((reason) => ({
+      ['stale', 'legacy', 'filter_changed', 'decision_changed'].map((reason) => ({
         squadId: targetSquadId,
         sourceType: 'github_issue',
         sourceId: `repo/${reason}#1`,
@@ -99,7 +106,10 @@ describe('memory routes', () => {
     })
     expect(response.status).toBe(200)
     const body = await response.json()
-    expect(body.managedGitHub).toEqual({ hiddenPendingReindex: 2, reasons: { stale: 1, legacy: 1 } })
+    expect(body.managedGitHub).toEqual({
+      hiddenPendingReindex: 4,
+      reasons: { stale: 1, legacy: 1, filter_changed: 1, decision_changed: 1 },
+    })
     expect(JSON.stringify(body)).not.toContain('PRIVATE_STATUS_SENTINEL')
   })
 

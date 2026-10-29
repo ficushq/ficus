@@ -19,7 +19,7 @@ import { SlackThreadSource } from '../sources/SlackThreadSource'
 import type { IndexResult } from '../sources/types'
 import type { MemorySourceAdapter } from '../sources/adapter'
 import type { LiveMemorySourceAdapter } from '../sources/live-adapter'
-import { withheldGitHubMemoryDocuments } from '../../integrations/github/managed-content'
+import { groupGitHubMemorySnapshots, withheldGitHubMemoryDocuments } from '../../integrations/github/managed-content'
 
 // ============================================================================
 // Types
@@ -252,7 +252,9 @@ export class IndexingService {
       doc?.sourceType === 'github_issue' &&
       (
         await withheldGitHubMemoryDocuments(squadId, [doc.id], db, {
-          snapshots: new Map([[doc.id, (doc.frontmatter as Record<string, unknown>).githubProjection]]),
+          snapshots: groupGitHubMemorySnapshots([
+            [doc.id, (doc.frontmatter as Record<string, unknown>).githubProjection],
+          ]),
         })
       ).has(doc.id)
     )
@@ -288,6 +290,7 @@ export class IndexingService {
       .from(memoryLinks)
       .innerJoin(memoryDocuments, eq(memoryLinks.sourceDocumentId, memoryDocuments.id))
       .where(and(eq(memoryLinks.squadId, squadId), eq(memoryLinks.targetDocumentId, targetDoc.id)))
+      .limit(100)
 
     // A GitHub source document's title is prose; it is listed only while the author filter admits it.
     const withheld = await withheldGitHubMemoryDocuments(
@@ -295,7 +298,7 @@ export class IndexingService {
       links.map((link) => link.sourceDocumentId),
       db,
       {
-        snapshots: new Map(
+        snapshots: groupGitHubMemorySnapshots(
           links
             .filter((link) => link.sourceType === 'github_issue')
             .map((link) => [link.sourceDocumentId, link.githubProjection])

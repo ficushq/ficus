@@ -117,7 +117,11 @@ describe('managed memory status output', () => {
       await program.parseAsync(['memory', 'sync', 'status', '--squad', 'synthetic-squad'], { from: 'user' })
       expect(get).toHaveBeenCalledWith('/api/memory/synthetic-squad/sync/status')
       if (json) expect(print).toHaveBeenCalledWith(status)
-      else expect(log).toHaveBeenCalledWith(JSON.stringify(status, null, 2))
+      else {
+        expect(log).toHaveBeenCalledWith('GitHub documents hidden pending reindex: 3')
+        expect(log).toHaveBeenCalledWith('  stale: 1')
+        expect(log).toHaveBeenCalledWith('  legacy: 2')
+      }
     } finally {
       get.mockReset().mockResolvedValue({})
       mode.mockReset().mockReturnValue(false)

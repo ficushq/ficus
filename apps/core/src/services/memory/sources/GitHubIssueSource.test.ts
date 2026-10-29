@@ -167,6 +167,7 @@ describe('GitHubIssueSource indexing', () => {
     githubFixtures.push(await createTestGitHubConnection({ squadId: squad.id }))
     globalThis.fetch = mock(async (url: string | URL | Request) => {
       const path = new URL(String(url)).pathname + new URL(String(url)).search
+      if (path === '/repos/acme/api') return Response.json({ id: 1 })
       if (path === '/repos/acme/api/issues/99') {
         return Response.json({
           number: 99,

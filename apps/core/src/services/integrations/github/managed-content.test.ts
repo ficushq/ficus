@@ -1,7 +1,7 @@
 import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integrations'
 useEnabledIntegrationFixtures('github')
 import { afterAll, afterEach, beforeAll, describe, expect, mock, spyOn, test } from 'bun:test'
-import { eq, inArray } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../../db'
 import {
   githubFeedbackObjects,
@@ -519,7 +519,7 @@ describe('read-triggered recovery', () => {
       await SquadSourceConfig.upsert({ ...config, enabled: true })
     }
     ExternalSourceReindexService._reset()
-    installGitHub() // no thread exists: 404, not a successful reindex
+    globalThis.fetch = mock(async () => new Response('unavailable', { status: 503 })) as unknown as typeof fetch
     await ExternalSourceReindexService.instance().reindexSquad(squadA, { sourceTypes: ['github_issue'] })
     expect((await docFor(squadA, number)).frontmatter).toHaveProperty('githubReindex')
   })
@@ -537,6 +537,8 @@ test('failed GitHub chunk replacement preserves the old document and pending rec
   })
   await withheldGitHubMemoryDocuments(squadA, [original.documentId!])
   const before = await docText(original.documentId!)
+  const storedBefore = await docFor(squadA, 203)
+  expect(storedBefore.frontmatter).toHaveProperty('githubReindex')
   const chunk = { index: 0, content: 'replacementatomic', startLine: 1, endLine: 1, metadata: {} }
   const result = await writer.writeDocument({
     squadId: squadA,
@@ -547,6 +549,9 @@ test('failed GitHub chunk replacement preserves the old document and pending rec
   })
   expect(result.success).toBe(false)
   expect(await docText(original.documentId!)).toBe(before)
+  const storedAfter = await docFor(squadA, 203)
+  expect(storedAfter.frontmatter).toEqual(storedBefore.frontmatter)
+  expect(storedAfter.title).toBe(storedBefore.title)
 })
 
 test('read recovery is bounded and deduplicated while later reads enqueue the remaining documents', async () => {
@@ -639,8 +644,12 @@ test('recovery retains the caller freshness constraint until the addressed reind
   expect(await withheldGitHubMemoryDocuments(squadB, [doc.id])).toEqual(new Set([doc.id]))
   await ExternalSourceReindexService.instance().reindexSquad(squadA, { sourceTypes: ['github_issue'] })
   expect((await docFor(squadA, 402)).frontmatter).toHaveProperty('githubReindex')
-  // A queued recovery is honestly counted as hidden, including in the source squad's reads.
-  expect(await search(squadA, 'oldcallersnapshot')).toEqual([])
+  // A caller's marker cannot hide otherwise-current source-squad content.
+  expect((await search(squadA, 'oldcallersnapshot')).length).toBeGreaterThan(0)
+  await db
+    .update(memoryDocuments)
+    .set({ frontmatter: sql`${memoryDocuments.frontmatter} #- '{githubReindex,nextAttemptAt}'` })
+    .where(eq(memoryDocuments.id, doc.id))
   threads.get(402)!.comments = [comment(90402, 'callercurrenttext', TRUSTED)]
   await ExternalSourceReindexService.instance().reindexSquad(squadA, { sourceTypes: ['github_issue'] })
   expect((await docFor(squadA, 402)).frontmatter).not.toHaveProperty('githubReindex')
@@ -717,5 +726,303 @@ test('vector retrieval, direct indexed reads and backlinks all fence stale GitHu
     enabled.mockRestore()
     model.mockRestore()
     generate.mockRestore()
+  }
+})
+
+test('an untrusting caller cannot pin recovery or hide fresh content from its source', async () => {
+  const { ExternalSourceReindexService } = await import('../../memory/indexer/ExternalSourceReindexService')
+  threads.set(701, { issue: issue(701), comments: [comment(95701, 'sourceold', TRUSTED)] })
+  installGitHub()
+  await index(squadA, 701)
+  const doc = await docFor(squadA, 701)
+  await revision(squadB, 'issue_comment', 95701, 'sourcenew', 'automatic', TRUSTED)
+  await db.delete(githubTrustedAuthors).where(eq(githubTrustedAuthors.squadId, squadB))
+  try {
+    expect(await withheldGitHubMemoryDocuments(squadB, [doc.id])).toEqual(new Set([doc.id]))
+    expect(await withheldGitHubMemoryDocuments(squadA, [doc.id])).toEqual(new Set())
+    threads.get(701)!.comments = [comment(95701, 'sourcenew', TRUSTED)]
+    await ExternalSourceReindexService.instance().reindexSquad(squadA, { sourceTypes: ['github_issue'] })
+    expect((await docFor(squadA, 701)).frontmatter).not.toHaveProperty('githubReindex')
+    expect(await withheldGitHubMemoryDocuments(squadA, [doc.id])).toEqual(new Set())
+    expect(await withheldGitHubMemoryDocuments(squadB, [doc.id])).toEqual(new Set([doc.id]))
+  } finally {
+    await db.insert(githubTrustedAuthors).values({
+      squadId: squadB,
+      accountId: String(TRUSTED.id),
+      login: TRUSTED.login,
+      accountType: 'User',
+      addedByUserId: userId,
+    })
+  }
+})
+
+test('OFF-to-ON and changed decisions queue recovery with distinct visible reasons', async () => {
+  threads.set(702, { issue: issue(702), comments: [] })
+  installGitHub()
+  await index(squadOff, 702)
+  const doc = await docFor(squadOff, 702)
+  await db.update(squads).set({ githubAuthorFilter: true }).where(eq(squads.id, squadOff))
+  try {
+    expect(await withheldGitHubMemoryDocuments(squadOff, [doc.id])).toEqual(new Set([doc.id]))
+    expect((await docFor(squadOff, 702)).frontmatter).toHaveProperty('githubReindex.reason', 'filter_changed')
+  } finally {
+    await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, squadOff))
+  }
+  threads.set(703, { issue: issue(703), comments: [comment(95703, 'decisionbody', TRUSTED)] })
+  const captured = await revision(squadA, 'issue_comment', 95703, 'decisionbody', 'automatic', TRUSTED)
+  await index(squadA, 703)
+  await db
+    .update(githubFeedbackRevisions)
+    .set({ decision: 'deny', decidedByUserId: userId, decidedAt: new Date() })
+    .where(eq(githubFeedbackRevisions.id, captured.id))
+  const decisionDoc = await docFor(squadA, 703)
+  expect(await withheldGitHubMemoryDocuments(squadA, [decisionDoc.id])).toEqual(new Set([decisionDoc.id]))
+  expect((await docFor(squadA, 703)).frontmatter).toHaveProperty('githubReindex.reason', 'decision_changed')
+})
+
+test('repository identity fetch failure preserves the entire prior document', async () => {
+  threads.set(704, { issue: issue(704), comments: [] })
+  installGitHub()
+  await index(squadA, 704)
+  const before = await docFor(squadA, 704)
+  const api = globalThis.fetch
+  globalThis.fetch = mock(async (...args: Parameters<typeof fetch>) =>
+    new URL(String(args[0])).pathname === `/repos/${repo}` ? new Response('unavailable', { status: 503 }) : api(...args)
+  ) as typeof fetch
+  expect((await index(squadA, 704)).success).toBe(false)
+  expect(await docFor(squadA, 704)).toEqual(before)
+})
+
+test('mixed null and dated revision clocks fail closed when no revision is current', async () => {
+  threads.set(705, { issue: issue(705), comments: [comment(95705, 'ambiguousclockbody', TRUSTED)] })
+  installGitHub()
+  await index(squadA, 705)
+  for (const clock of [T1, null, T0]) {
+    const row = await revision(squadA, 'issue_comment', 95705, 'conflicting ambiguous text', 'automatic', TRUSTED)
+    await db
+      .update(githubFeedbackRevisions)
+      .set({ providerVersion: clock })
+      .where(eq(githubFeedbackRevisions.id, row.id))
+  }
+  expect(await search(squadA, 'ambiguousclockbody')).toEqual([])
+  expect((await docFor(squadA, 705)).frontmatter).toHaveProperty('githubReindex.reason', 'stale')
+})
+
+test('a reindex between keyword statements cannot mix old and new chunk generations', async () => {
+  threads.set(706, {
+    issue: issue(706, { body: 'mixedgeneration oldword' }),
+    comments: [comment(95706, 'unrelated', TRUSTED)],
+  })
+  installGitHub()
+  await index(squadA, 706)
+  const service = SearchService.instance()
+  type RowQuery = (...args: unknown[]) => Promise<unknown[]>
+  const queries = service as unknown as { fullTextRows: RowQuery; substringRows: RowQuery }
+  const full = queries.fullTextRows.bind(service),
+    substring = queries.substringRows.bind(service)
+  let indexed!: () => void
+  const afterIndex = new Promise<void>((resolve) => {
+    indexed = resolve
+  })
+  const first = spyOn(queries, 'fullTextRows').mockImplementation(async (...args) => {
+    const rows = await full(...args)
+    threads.get(706)!.issue = issue(706)
+    threads.get(706)!.comments = [comment(95706, 'mixedgeneration newword', TRUSTED)]
+    await index(squadA, 706)
+    indexed()
+    return rows
+  })
+  const second = spyOn(queries, 'substringRows').mockImplementation(async (...args) => {
+    await afterIndex
+    return substring(...args)
+  })
+  try {
+    expect(await search(squadA, 'mixedgeneration')).toEqual([])
+  } finally {
+    first.mockRestore()
+    second.mockRestore()
+  }
+})
+
+test('revision and trust lookups are batched, independent of document count', async () => {
+  const { setDatabaseQueryObserverForTest } = await import('../../../db')
+  installGitHub()
+  const ids: string[] = []
+  for (let number = 710; number < 720; number++) {
+    threads.set(number, { issue: issue(number), comments: [] })
+    await index(squadA, number)
+    ids.push((await docFor(squadA, number)).id)
+  }
+  const measure = async (documents: string[]) => {
+    const statements: string[] = []
+    setDatabaseQueryObserverForTest((query) => {
+      statements.push(query)
+    })
+    try {
+      expect((await withheldGitHubMemoryDocuments(squadA, documents)).size).toBe(0)
+    } finally {
+      setDatabaseQueryObserverForTest(undefined)
+    }
+    return statements
+  }
+  const single = await measure(ids.slice(0, 1)),
+    multiple = await measure(ids)
+  expect(multiple.length).toBe(single.length)
+  expect(multiple.filter((query) => query.includes('jsonb_to_recordset')).length).toBe(1)
+})
+
+test('permanent recovery failures are removed, transient failures back off without consuming later ticks', async () => {
+  const { reindexPendingGitHubMemory } = await import('./managed-reindex')
+  const adapter = GitHubIssueSource.instance()
+  threads.set(720, { issue: issue(720), comments: [] })
+  installGitHub()
+  await index(squadA, 720)
+  const doc = await docFor(squadA, 720)
+  await db.update(memoryDocuments).set({ frontmatter: { repo } }).where(eq(memoryDocuments.id, doc.id))
+  await withheldGitHubMemoryDocuments(squadA, [doc.id])
+  globalThis.fetch = mock(async () => new Response('unavailable', { status: 503 })) as unknown as typeof fetch
+  await reindexPendingGitHubMemory(squadA, adapter)
+  const failed = await docFor(squadA, 720)
+  expect(failed.frontmatter).toHaveProperty('githubReindex.attempts', 1)
+  expect(failed.frontmatter).toHaveProperty('githubReindex.nextAttemptAt')
+  const calls = (globalThis.fetch as ReturnType<typeof mock>).mock.calls.length
+  await reindexPendingGitHubMemory(squadA, adapter)
+  expect((globalThis.fetch as ReturnType<typeof mock>).mock.calls.length).toBe(calls)
+  expect((await docFor(squadA, 720)).frontmatter).toEqual(failed.frontmatter)
+  await db
+    .update(memoryDocuments)
+    .set({ frontmatter: sql`${memoryDocuments.frontmatter} #- '{githubReindex,nextAttemptAt}'` })
+    .where(eq(memoryDocuments.id, doc.id))
+  threads.delete(720)
+  installGitHub()
+  await reindexPendingGitHubMemory(squadA, adapter)
+  expect(await docFor(squadA, 720)).toBeUndefined()
+})
+
+test('repository numeric identity is fetched once per repo per indexing pass, not across passes', async () => {
+  const { withGitHubRepositoryCache } = await import('../../memory/sources/GitHubIssueSource')
+  threads.set(721, { issue: issue(721), comments: [] })
+  threads.set(722, { issue: issue(722), comments: [] })
+  installGitHub()
+  const run = () =>
+    withGitHubRepositoryCache(async () => {
+      await index(squadA, 721)
+      await index(squadA, 722)
+    })
+  const count = () =>
+    (globalThis.fetch as ReturnType<typeof mock>).mock.calls.filter(
+      ([url]) => new URL(String(url)).pathname === `/repos/${repo}`
+    ).length
+  await run()
+  expect(count()).toBe(1)
+  await run()
+  expect(count()).toBe(2)
+})
+
+test.each(['repo', 'label'] as const)('recovery removes documents excluded by current %s scope', async (scope) => {
+  const { reindexPendingGitHubMemory } = await import('./managed-reindex')
+  const number = scope === 'repo' ? 723 : 724
+  threads.set(number, { issue: issue(number), comments: [] })
+  installGitHub()
+  await index(squadA, number)
+  const doc = await docFor(squadA, number)
+  await db.update(memoryDocuments).set({ frontmatter: { repo } }).where(eq(memoryDocuments.id, doc.id))
+  await withheldGitHubMemoryDocuments(squadA, [doc.id])
+  const config = { squadId: squadA, sourceType: 'github_issue', enabled: true }
+  await SquadSourceConfig.upsert({
+    ...config,
+    policy: {
+      version: 1,
+      scope: { repos: scope === 'repo' ? [] : [repo], labels: scope === 'label' ? ['wanted'] : [] },
+    },
+  })
+  try {
+    await reindexPendingGitHubMemory(squadA, GitHubIssueSource.instance())
+    expect(await docFor(squadA, number)).toBeUndefined()
+  } finally {
+    await SquadSourceConfig.upsert({ ...config, policy: { version: 1, scope: { repos: [repo] } } })
+  }
+})
+
+test('backlinks are capped even when more than 100 source documents point at one target', async () => {
+  const indexed = await IndexingService.instance().indexFile({
+    squadId: squadA,
+    path: '/memory/capped-target.md',
+    content: '# Target',
+  })
+  const sources = await db
+    .insert(memoryDocuments)
+    .values(
+      Array.from({ length: 101 }, (_, i) => ({
+        squadId: squadA,
+        sourceType: 'memory_file',
+        sourceId: `cap-${i}`,
+        path: `/memory/cap-${i}.md`,
+        contentHash: `cap-${i}`,
+      }))
+    )
+    .returning({ id: memoryDocuments.id })
+  await db.insert(memoryLinks).values(
+    sources.map((source) => ({
+      squadId: squadA,
+      sourceDocumentId: source.id,
+      targetDocumentId: indexed.documentId!,
+      targetRaw: '/memory/capped-target.md',
+    }))
+  )
+  expect((await IndexingService.instance().getBacklinks(squadA, '/memory/capped-target.md')).length).toBe(100)
+})
+
+test('outline section snapshots cannot borrow a later matching document projection', async () => {
+  threads.set(725, { issue: issue(725, { body: '## oldheading' }), comments: [] })
+  installGitHub()
+  await index(squadA, 725)
+  const doc = await docFor(squadA, 725)
+  const service = OutlineService.instance()
+  const internals = service as unknown as { withSections: (...args: unknown[]) => Promise<unknown[]> }
+  const sections = internals.withSections.bind(service)
+  const boundary = spyOn(internals, 'withSections').mockImplementation(async (...args) => {
+    threads.get(725)!.issue = issue(725, { body: '## newheadingsentinel' })
+    await index(squadA, 725)
+    const result = await sections(...args)
+    threads.get(725)!.issue = issue(725, { body: '## oldheading' })
+    await index(squadA, 725)
+    return result
+  })
+  try {
+    expect(JSON.stringify(await service.browse(squadA, doc.path!, { sourceTypes: ['github_issue'] }))).not.toContain(
+      'newheadingsentinel'
+    )
+  } finally {
+    boundary.mockRestore()
+  }
+})
+
+test('an old terminal recovery cannot delete a concurrently replaced document', async () => {
+  const { reindexPendingGitHubMemory } = await import('./managed-reindex')
+  threads.set(726, { issue: issue(726), comments: [] })
+  installGitHub()
+  await index(squadA, 726)
+  const doc = await docFor(squadA, 726)
+  await db.update(memoryDocuments).set({ frontmatter: { repo } }).where(eq(memoryDocuments.id, doc.id))
+  await withheldGitHubMemoryDocuments(squadA, [doc.id])
+  const adapter = GitHubIssueSource.instance(),
+    original = adapter.index.bind(adapter)
+  const concurrent = spyOn(adapter, 'index').mockImplementation(async (squadId, sourceId) => {
+    if (sourceId !== `${repo}#726`) return original(squadId, sourceId)
+    await IndexedDocumentWriter.instance().writeDocument({
+      squadId,
+      sourceType: 'github_issue',
+      sourceId,
+      fetched: { content: '# concurrent terminal survivor', title: 'Survives', frontmatter: { repo } },
+      adapterDefaultSensitivity: 'internal',
+    })
+    return { success: false, chunksCreated: 0, linksCreated: 0, reason: 'not_found' }
+  })
+  try {
+    await reindexPendingGitHubMemory(squadA, adapter)
+    expect((await docFor(squadA, 726)).title).toBe('Survives')
+  } finally {
+    concurrent.mockRestore()
   }
 })

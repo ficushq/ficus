@@ -441,15 +441,15 @@ Unique provenance needle text for structured search results.`
       })
 
       const tool = getTool('memory_search')
-      // The document has no feedback provenance. With the GitHub author filter OFF it is ordinary
-      // indexed content; with the filter ON (the default for new squads) managed search withholds it.
+      // Legacy provenance fails closed regardless of author trust, and queues recovery.
       try {
         await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, testSquadId))
         const result = await exec(tool, { query: 'needle-github-only', sourceTypes: ['github_issue'] })
         const text = (result.content[0] as { text: string }).text
 
-        expect(text).toContain('GitHub Issue')
-        expect((result.details as any).results[0]).toMatchObject({ sourceType: 'github_issue' })
+        expect(text).not.toContain('GitHub Issue')
+        const [hidden] = await db.select().from(memoryDocuments).where(eq(memoryDocuments.id, doc.id))
+        expect(hidden.frontmatter).toHaveProperty('githubReindex.reason', 'legacy')
 
         await db.update(squads).set({ githubAuthorFilter: true }).where(eq(squads.id, testSquadId))
         const withheld = await exec(tool, { query: 'needle-github-only', sourceTypes: ['github_issue'] })

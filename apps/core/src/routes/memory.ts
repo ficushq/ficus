@@ -75,7 +75,11 @@ const appendBodySchema = z.object({
 
 const searchQuerySchema = z.object({
   query: z.string().min(1, 'Query is required'),
-  limit: z.string().optional(),
+  limit: z
+    .string()
+    .regex(/^[1-9][0-9]*$/)
+    .refine((value) => Number(value) <= 100, 'Limit must be at most 100')
+    .optional(),
   mode: z.enum(['hybrid', 'vector', 'keyword']).optional(),
   sourceTypes: z.string().optional(), // Comma-separated known memory source types
   kinds: z.string().optional(), // Comma-separated: decision,pattern

@@ -38,7 +38,7 @@ import { currentGitHubFeedbackRevisionSQL, gitHubFeedbackVersionSQL } from './fe
 export const GITHUB_MEMORY_PROJECTION_SCHEMA = 2
 const GITHUB_ISSUE_SOURCE_TYPE = 'github_issue'
 /** Bounded revision lookup per fetched thread (one parent plus at most 100 comments). */
-const REVISION_LOOKUP_LIMIT = 1000
+const REVISION_LOOKUP_LIMIT = 10000
 
 type Executor = Pick<typeof db, 'select'>
 type ItemKind = 'issue' | 'pull_request' | 'issue_comment'
@@ -153,6 +153,8 @@ interface Candidate {
 }
 
 type RevisionMatch = {
+  repositoryId: string
+  ambiguous: boolean
   squadId: string
   kind: string
   nativeId: string
@@ -172,14 +174,25 @@ type RevisionMatch = {
 /** Current revisions only: matching old text is never currentness evidence. No body reads. */
 async function currentMemoryRevisions(
   executor: Executor,
-  squadIds: string[],
-  repositoryId: string,
-  items: Array<Pick<GitHubMemoryItem, 'nativeId'>>
+  scopes: Array<{ squadId: string; repositoryId: string; items: Array<Pick<GitHubMemoryItem, 'nativeId' | 'kind'>> }>
 ): Promise<RevisionMatch[] | null> {
-  const nativeIds = [...new Set(items.map((item) => item.nativeId).filter((id): id is string => !!id))]
-  if (!nativeIds.length) return []
+  const keys = [
+    ...new Map(
+      scopes.flatMap((scope) =>
+        scope.items
+          .filter((item) => item.nativeId)
+          .map((item) => {
+            const key = { squad: scope.squadId, repo: scope.repositoryId, kind: item.kind, native: item.nativeId }
+            return [JSON.stringify(key), key] as const
+          })
+      )
+    ).values(),
+  ]
+  if (!keys.length) return []
   const rows = await executor
     .select({
+      repositoryId: githubFeedbackObjects.repositoryId,
+      ambiguous: sql<boolean>`${githubFeedbackRevisions.id} is null`,
       squadId: githubFeedbackObjects.squadId,
       kind: githubFeedbackObjects.objectKind,
       nativeId: githubFeedbackObjects.nativeId,
@@ -198,18 +211,32 @@ async function currentMemoryRevisions(
       titleHash: storedTextHash('title'),
     })
     .from(githubFeedbackObjects)
-    .innerJoin(githubFeedbackRevisions, eq(githubFeedbackRevisions.objectId, githubFeedbackObjects.id))
-    .where(
+    .leftJoin(
+      githubFeedbackRevisions,
       and(
-        inArray(githubFeedbackObjects.squadId, squadIds),
-        eq(githubFeedbackObjects.repositoryId, repositoryId),
-        inArray(githubFeedbackObjects.objectKind, ['issue', 'pull_request', 'issue_comment']),
-        inArray(githubFeedbackObjects.nativeId, nativeIds),
+        eq(githubFeedbackRevisions.objectId, githubFeedbackObjects.id),
         currentGitHubFeedbackRevisionSQL(githubFeedbackRevisions.id, githubFeedbackObjects.squadId)
       )
     )
+    .where(
+      sql`exists (select 1 from jsonb_to_recordset(${JSON.stringify(keys)}::jsonb)
+      as scope(squad uuid, repo text, kind text, native text)
+      where scope.squad = ${githubFeedbackObjects.squadId} and scope.repo = ${githubFeedbackObjects.repositoryId}
+        and scope.kind = ${githubFeedbackObjects.objectKind} and scope.native = ${githubFeedbackObjects.nativeId})`
+    )
+
     .limit(REVISION_LOOKUP_LIMIT + 1)
-  return rows.length > REVISION_LOOKUP_LIMIT ? null : rows
+  return rows.length > REVISION_LOOKUP_LIMIT
+    ? null
+    : rows.map((row) => ({
+        ...row,
+        revisionId: row.revisionId ?? '',
+        contentHash: row.contentHash ?? '',
+        sequence: row.sequence ?? 0,
+        releaseState: row.releaseState ?? '',
+        decision: row.decision ?? '',
+        attribution: row.attribution ?? '',
+      }))
 }
 
 const sameText = (item: Pick<GitHubMemoryItem, 'bodyHash' | 'titleHash'>, row: RevisionMatch) =>
@@ -217,6 +244,7 @@ const sameText = (item: Pick<GitHubMemoryItem, 'bodyHash' | 'titleHash'>, row: R
 
 /** Snapshot proofs without a captured revision may only outrank known text by a valid clock. */
 function freshSnapshot(item: GitHubMemoryItem, row: RevisionMatch | undefined, ownSquad: boolean): boolean {
+  if (row?.ambiguous) return false
   if (item.revisionId && ownSquad)
     return (
       !!row &&
@@ -287,7 +315,7 @@ export async function projectGitHubThreadForMemory(
   const repositoryId = nativeId(options.repositoryId)
   const filtered = (await authorFilterStates(executor, [squadId])).get(squadId) ?? true
   const all = [parent, ...children]
-  const versions = repositoryId ? await currentMemoryRevisions(executor, [squadId], repositoryId, all) : null
+  const versions = repositoryId ? await currentMemoryRevisions(executor, [{ squadId, repositoryId, items: all }]) : null
   const trusted = filtered
     ? await trustedGitHubAccounts(executor, squadId, [
         ...all.map((item) => item.author),
@@ -405,12 +433,31 @@ function parseProjection(value: unknown): GitHubMemoryProjection | null {
   return projection
 }
 
+/** Retain EVERY observed generation; Map construction alone silently keeps only the last hit. */
+export function groupGitHubMemorySnapshots(entries: Iterable<readonly [string, unknown]>): Map<string, unknown[]> {
+  const grouped = new Map<string, unknown[]>()
+  for (const [id, proof] of entries) grouped.set(id, [...(grouped.get(id) ?? []), proof])
+  return grouped
+}
+
+export function mixedGitHubMemorySnapshots(entries: Iterable<readonly [string, unknown]>): Set<string> {
+  return new Set(
+    [...groupGitHubMemorySnapshots(entries)]
+      .filter(([, proofs]) => new Set(proofs.map((proof) => githubContentHash(proof ?? null))).size > 1)
+      .map(([id]) => id)
+  )
+}
+
 /** All managed reads check freshness, even with the author filter OFF. No provider calls. */
 export async function withheldGitHubMemoryDocuments(
   callerSquadId: string,
   documentIds: Iterable<string>,
   executor: Pick<typeof db, 'select' | 'update'> = db,
-  options: { enqueue?: boolean; snapshots?: ReadonlyMap<string, unknown> } = {}
+  options: {
+    enqueue?: boolean
+    callerFreshnessOnly?: boolean
+    snapshots?: ReadonlyMap<string, readonly unknown[]>
+  } = {}
 ): Promise<Set<string>> {
   const ids = [...new Set(documentIds)]
   const withheld = new Set<string>()
@@ -420,6 +467,7 @@ export async function withheldGitHubMemoryDocuments(
       id: memoryDocuments.id,
       squadId: memoryDocuments.squadId,
       contentHash: memoryDocuments.contentHash,
+      pendingCaller: sql<string | null>`${memoryDocuments.frontmatter} #>> '{githubReindex,callerSquadId}'`,
       pendingReason: sql<string | null>`${memoryDocuments.frontmatter} #>> '{githubReindex,reason}'`,
       pendingHash: sql<string | null>`${memoryDocuments.frontmatter} #>> '{githubReindex,contentHash}'`,
       projection: sql<unknown>`${memoryDocuments.frontmatter} -> 'githubProjection'`,
@@ -435,51 +483,74 @@ export async function withheldGitHubMemoryDocuments(
     if (doc.pendingHash !== doc.contentHash)
       recovery.push({ id: doc.id, contentHash: doc.contentHash, reason, callerSquadId })
   }
+  const projections = new Map(documents.map((doc) => [doc.id, parseProjection(doc.projection)]))
+  const rows = await currentMemoryRevisions(
+    executor,
+    documents.flatMap((doc) => {
+      const projection = projections.get(doc.id)
+      return projection
+        ? [...new Set([doc.squadId, callerSquadId])].map((squadId) => ({
+            squadId,
+            repositoryId: projection.repositoryId!,
+            items: projection.items,
+          }))
+        : []
+    })
+  )
+  const accounts = [...projections.values()].flatMap(
+    (projection) => projection?.items.flatMap((item) => [item.author, item.editor]) ?? []
+  )
+  const trust = new Map(
+    await Promise.all(
+      [...states]
+        .filter(([, enabled]) => enabled)
+        .map(async ([squad]) => [squad, await trustedGitHubAccounts(executor, squad, accounts)] as const)
+    )
+  )
+  const revisions = new Map(
+    (rows ?? []).map((row) => [`${row.squadId}:${row.repositoryId}:${row.kind}:${row.nativeId}`, row])
+  )
   for (const doc of documents) {
-    if (options.enqueue !== false && ['stale', 'legacy'].includes(doc.pendingReason ?? '')) withheld.add(doc.id)
+    if (options.enqueue !== false && doc.pendingReason && (doc.pendingCaller ?? doc.squadId) === callerSquadId)
+      withheld.add(doc.id)
     if (
       options.snapshots?.has(doc.id) &&
-      githubContentHash(options.snapshots.get(doc.id) ?? null) !== githubContentHash(doc.projection ?? null)
+      (options.snapshots.get(doc.id) ?? []).some(
+        (snapshot) => githubContentHash(snapshot ?? null) !== githubContentHash(doc.projection ?? null)
+      )
     ) {
       withheld.add(doc.id)
       continue
     }
-    const projection = parseProjection(doc.projection)
+    const projection = projections.get(doc.id)
     if (!projection) {
       hideForRecovery(doc, 'legacy')
       continue
     }
     const squads = [...new Set([doc.squadId, callerSquadId])]
-    const rows = await currentMemoryRevisions(executor, squads, projection.repositoryId!, projection.items)
     if (!rows) {
       hideForRecovery(doc, 'stale')
       continue
     }
-    const gates = squads.filter((squad) => states.get(squad))
+    const checksTrust = (squad: string) => states.get(squad) && !(options.callerFreshnessOnly && squad !== doc.squadId)
+    const gates = squads.filter(checksTrust)
     if (gates.length && !projection.filtered) {
-      withheld.add(doc.id)
+      hideForRecovery(doc, 'filter_changed')
       continue
     }
     let visible = true
     for (const squad of squads) {
-      const trusted = states.get(squad)
-        ? await trustedGitHubAccounts(
-            executor,
-            squad,
-            projection.items.flatMap((item) => [item.author, item.editor])
-          )
-        : new Set<string>()
+      const trusted = trust.get(squad) ?? new Set<string>()
       for (const item of projection.items) {
-        const row = rows.find(
-          (row) => row.squadId === squad && row.kind === item.kind && row.nativeId === item.nativeId
-        )
+        const row = revisions.get(`${squad}:${projection.repositoryId}:${item.kind}:${item.nativeId}`)
         if (!freshSnapshot(item, row, squad === doc.squadId)) {
           hideForRecovery(doc, 'stale')
           visible = false
           break
         }
-        if (!states.get(squad)) continue
+        if (!checksTrust(squad)) continue
         if (row && sameText(item, row) && ['pending', 'deny'].includes(row.decision)) {
+          hideForRecovery(doc, 'decision_changed')
           visible = false
           break
         }

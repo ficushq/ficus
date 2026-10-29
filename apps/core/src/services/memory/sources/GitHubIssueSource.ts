@@ -1,8 +1,14 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '../../../db'
 import { memoryDocuments } from '../../../db/schema'
 import { SquadSourceConfig } from '../../../entities/SquadSourceConfig'
-import { githubApiGet, type GitHubIssueApiComment, type GitHubIssueApiItem } from '../../github/api-client'
+import {
+  GitHubApiUnavailableError,
+  githubApiGet,
+  type GitHubIssueApiComment,
+  type GitHubIssueApiItem,
+} from '../../github/api-client'
 import { BaseMemorySourceAdapter, sourceCapabilities, type DiscoveredItem, type FetchedContent } from './adapter'
 import { IndexedDocumentWriter } from './IndexedDocumentWriter'
 import { clearGitHubMemoryReindex } from '../../integrations/github/managed-reindex'
@@ -83,6 +89,12 @@ export function renderIssueMarkdown(
   return lines.join('\n')
 }
 
+const repositoryPass = new AsyncLocalStorage<Map<string, Promise<{ id?: number } | null>>>()
+/** Scoped to a single indexing pass and connection squad, never a cross-request identity cache. */
+export function withGitHubRepositoryCache<T>(run: () => Promise<T>): Promise<T> {
+  return repositoryPass.getStore() ? run() : repositoryPass.run(new Map(), run)
+}
+
 export class GitHubIssueSource extends BaseMemorySourceAdapter {
   private static _instance: GitHubIssueSource | null = null
 
@@ -144,17 +156,34 @@ export class GitHubIssueSource extends BaseMemorySourceAdapter {
     return out
   }
 
+  async indexAll(squadId: string, opts?: { since?: string }): Promise<IndexResult[]> {
+    return withGitHubRepositoryCache(() => super.indexAll(squadId, opts))
+  }
+
   async fetch(squadId: string, sourceId: string): Promise<FetchedContent | null> {
     const ref = parseGithubIssueSourceId(sourceId)
     if (!ref) return null
-    const detail = await githubApiGet<GitHubIssueApiItem>(`/repos/${ref.repo}/issues/${ref.number}`, squadId)
+    const detail = await githubApiGet<GitHubIssueApiItem>(
+      `/repos/${ref.repo}/issues/${ref.number}`,
+      squadId,
+      undefined,
+      { distinguishUnavailable: true }
+    )
     if (!detail) return null
-    const comments =
-      (await githubApiGet<GitHubIssueApiComment[]>(
-        `/repos/${ref.repo}/issues/${ref.number}/comments?per_page=100`,
-        squadId
-      )) ?? []
-    const repository = await githubApiGet<{ id?: number }>(`/repos/${ref.repo}`, squadId)
+    const comments = await githubApiGet<GitHubIssueApiComment[]>(
+      `/repos/${ref.repo}/issues/${ref.number}/comments?per_page=100`,
+      squadId,
+      undefined,
+      { distinguishUnavailable: true }
+    )
+    if (!comments) throw new GitHubApiUnavailableError('comments_unavailable')
+    const cache = repositoryPass.getStore()
+    const key = `${squadId}:${ref.repo}`
+    const request = cache?.get(key) ?? githubApiGet<{ id?: number }>(`/repos/${ref.repo}`, squadId)
+    cache?.set(key, request)
+    const repository = await request
+    if (!repository?.id || !Number.isSafeInteger(repository.id) || repository.id <= 0)
+      throw new GitHubApiUnavailableError('repository_identity_unavailable')
     const kind = detail.pull_request ? 'pull_request' : 'issue'
     // A pull request's captured revisions are keyed by its PR id, which only `/pulls` reports.
     const pull = detail.pull_request
@@ -198,12 +227,47 @@ export class GitHubIssueSource extends BaseMemorySourceAdapter {
 
     const allowedRepos = getPolicyStringArray(config?.policy, 'repos') ?? []
     if (!allowedRepos.includes(ref.repo)) {
-      return { success: false, chunksCreated: 0, linksCreated: 0, error: `GitHub repo not configured: ${ref.repo}` }
+      return {
+        success: false,
+        chunksCreated: 0,
+        linksCreated: 0,
+        reason: 'out_of_scope',
+        error: `GitHub repo not configured: ${ref.repo}`,
+      }
     }
 
-    const fetched = await this.fetch(squadId, sourceId)
+    const [existing] = await db
+      .select({ next: sql<string | null>`${memoryDocuments.frontmatter} #>> '{githubReindex,nextAttemptAt}'` })
+      .from(memoryDocuments)
+      .where(
+        and(
+          eq(memoryDocuments.squadId, squadId),
+          eq(memoryDocuments.sourceType, this.sourceType),
+          eq(memoryDocuments.sourceId, sourceId)
+        )
+      )
+    if (existing?.next && existing.next > new Date().toISOString())
+      return { success: true, skipped: true, chunksCreated: 0, linksCreated: 0, reason: 'recovery_backoff' }
+    let fetched: FetchedContent | null
+    try {
+      fetched = await this.fetch(squadId, sourceId)
+    } catch {
+      return {
+        success: false,
+        chunksCreated: 0,
+        linksCreated: 0,
+        reason: 'unavailable',
+        error: 'GitHub content fetch unavailable',
+      }
+    }
     if (!fetched)
-      return { success: false, chunksCreated: 0, linksCreated: 0, error: `GitHub issue not found: ${sourceId}` }
+      return {
+        success: false,
+        chunksCreated: 0,
+        linksCreated: 0,
+        reason: 'not_found',
+        error: `GitHub issue not found: ${sourceId}`,
+      }
 
     const allowedLabels = getPolicyStringArray(config?.policy, 'labels') ?? []
     if (!frontmatterMatchesConfiguredLabels(fetched.frontmatter, allowedLabels)) {
@@ -211,6 +275,7 @@ export class GitHubIssueSource extends BaseMemorySourceAdapter {
         success: false,
         chunksCreated: 0,
         linksCreated: 0,
+        reason: 'out_of_scope',
         error: `GitHub issue labels not configured: ${sourceId}`,
       }
     }
@@ -232,7 +297,12 @@ export class GitHubIssueSource extends BaseMemorySourceAdapter {
       const callerSquadId = pending?.callerSquadId ?? squadId
       if (
         stored &&
-        !(await withheldGitHubMemoryDocuments(callerSquadId, [result.documentId], db, { enqueue: false })).size
+        !(
+          await withheldGitHubMemoryDocuments(callerSquadId, [result.documentId], db, {
+            enqueue: false,
+            callerFreshnessOnly: true,
+          })
+        ).size
       )
         await clearGitHubMemoryReindex(result.documentId, stored.contentHash, pending)
     }

@@ -52,11 +52,19 @@ document, consumed by the **existing** external-source runner/service through th
 adapter's normal single-document index path before ordinary discovery. A read
 marks at most 25 newly pending documents; each source pass retries at most 25.
 Repeated reads deduplicate by document generation. The existing runner's default
-interval is 30 minutes; no provider work runs on the read path.
+interval is 30 minutes; no provider work runs on the read path. Repeated failed or
+still-unprovable recaptures back off exponentially from 30 minutes to 24 hours;
+not-yet-due requests do not consume the 25 retry slots. Confirmed provider denial
+(including deletion) and repo/label scope exclusion remove the obsolete local
+document instead of retrying forever. Transient provider failures preserve it.
+A missing numeric repository identity is a fetch failure, never an empty rewrite;
+repository identity is fetched once per repo and squad per indexing pass.
 
 Recovery respects source enablement and scope, retains failures for later ticks,
 and clears pending state only after successful current, admissible indexing,
-including the requesting shared-memory caller's gate. Pending state survives
+requiring the source squad's admissibility and the requesting shared-memory
+caller's **freshness only**. The caller's trust/approval gate remains enforced on
+its reads, but cannot pin another squad's recovery. Pending state survives
 process restarts. Clearing compares the validated document generation and marker
 so old work cannot clear a newer request. GitHub document/chunk replacement is
 transactional: failed indexing keeps the prior snapshot and recovery request. No new background job type, bulk migration or live
@@ -69,13 +77,16 @@ include the following source-squad status (also preserved in CLI JSON output):
 {
   "managedGitHub": {
     "hiddenPendingReindex": 3,
-    "reasons": { "stale": 1, "legacy": 2 }
+    "reasons": { "stale": 1, "legacy": 2, "filter_changed": 0, "decision_changed": 0 }
   }
 }
 ```
 
 These are durable requests discovered by reads, not a bulk scan of unread legacy
-documents. Pending documents remain hidden until recovery completes. Disabled
+documents. A pending marker hides the document from the requesting reader until
+recovery completes, not from an independently admissible source-squad reader.
+Counts describe source-owned documents hidden in at least that requesting context;
+they do not imply that every squad has lost access to each document. Disabled
 sources and failed fetches retain their pending counts; status exposes no prose. Normal reindex can restore current admissible
 items while continuing to withhold untrusted or unverifiable content.
 
@@ -92,6 +103,17 @@ document's proof.
 Recovery tests exercise deduplication, bounded read enqueue, recovery of a
 document outside ordinary discovery, disabled-source and failure persistence,
 current reindex completion, and API/CLI status reporting. Read-time checks do
-not fetch providers. Unrelated memory source behavior is unchanged.
+not fetch providers. Revision reads batch all (squad, repo, object) identities;
+trust reads batch per squad; marking pending documents is one bounded update.
+Search limits and backlink results are capped at 100. Mixed query generations
+are rejected before merging/deduplicating search hits and before returning outline
+results. Unrelated memory source semantics are unchanged.
+
+## Known limitation
+
+Comment deletion events are not currently captured as revisions. A deleted
+comment can remain locally retrievable until an ordinary successful reindex
+observes its absence. The local-currentness guarantee does not detect unseen
+remote edits or deletions, and reads never fetch GitHub to discover them.
 
 Policy approval does not constitute code review or merge approval.

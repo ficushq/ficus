@@ -1,3 +1,4 @@
+import { withGitHubRepositoryCache } from '../sources/GitHubIssueSource'
 import type { MemorySourceType } from '@ficus/shared'
 import { SquadSourceConfig } from '../../../entities/SquadSourceConfig'
 import { createLogger } from '../../../lib/infra/logger'
@@ -42,7 +43,9 @@ export class ExternalSourceReindexService {
     const report = {} as ExternalReindexReport
 
     for (const sourceType of sourceTypes) {
-      report[sourceType] = await this.reindexSource(squadId, sourceType)
+      report[sourceType] = await (sourceType === 'github_issue'
+        ? withGitHubRepositoryCache(() => this.reindexSource(squadId, sourceType))
+        : this.reindexSource(squadId, sourceType))
     }
 
     return report
