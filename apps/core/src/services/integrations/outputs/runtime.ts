@@ -1537,6 +1537,21 @@ async function applyOutputTriggers(event: Event) {
           // `bound` test above deliberately keeps using the fact's own target: a Linear comment
           // still binds a legacy `linear.issueId` stream through its trigger metadata.
           const trackable = target ?? identityTarget
+          // A review's lifetime follows the requested PR, even when custom rule bindings
+          // omit legacy github metadata or its checkout uses a different branch.
+          if (
+            event.integration === 'github' &&
+            event.fact.output === 'pull_request.review_requested' &&
+            target?.kind === 'pull_request' &&
+            event.authority.kind === 'connection'
+          ) {
+            metadata.codeHost = {
+              integration: target.integration,
+              repository: target.repository,
+              changeRequest: { number: target.number, ...(target.url ? { url: target.url } : {}) },
+              connectionId: event.authority.connectionId,
+            }
+          }
           if (trackable && event.authority.kind === 'connection') {
             const { mergeTracked } = await import('../../work-streams/tracked-resources')
             metadata.tracked = mergeTracked(metadata.tracked, [

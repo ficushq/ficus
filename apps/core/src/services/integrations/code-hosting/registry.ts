@@ -21,7 +21,7 @@ export interface CodeHostingAdapter {
   changeRequest(
     reference: CodeHostReference,
     squadId: string
-  ): Promise<{ merged: boolean; headBranch: string; baseBranch: string; headSha?: string } | null>
+  ): Promise<{ merged: boolean; closed?: boolean; headBranch: string; baseBranch: string; headSha?: string } | null>
   /**
    * The pull requests a provider reports for one head branch (`state=all`). The GitHub filter is
    * owner-namespace scoped, so forks reusing the branch name never appear. Null means the lookup

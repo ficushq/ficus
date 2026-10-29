@@ -728,6 +728,15 @@ export async function finishFlow(id: string, version: number, identity: Identity
   let metadata = stream.metadata as Record<string, any>
   if (mode === 'review-approval' && identity.type !== 'user')
     throw new WorkflowError('A human must approve delivery', 403)
+  if (mode === 'pr-review') {
+    const binding = codeHostingRegistry.resolve(metadata)
+    if (!binding?.reference.changeRequest)
+      throw new WorkflowError('PR review requires the original pull request in codeHost.changeRequest', 409)
+    const change = await binding.adapter.changeRequest(binding.reference, stream.squadId)
+    if (!change) throw new WorkflowError('Could not verify the reviewed pull request through its integration', 409)
+    if (!change.merged && !change.closed)
+      throw new WorkflowError('Keep this reviewer available until the pull request merges or closes', 409)
+  }
   if (['pr-merge', 'pr-auto-merge', 'direct-merge'].includes(mode)) {
     const binding = codeHostingRegistry.resolve(metadata)
     if (!binding) throw new WorkflowError(codeHostingRegistry.explainMissingBinding(metadata, id))

@@ -1,10 +1,9 @@
 import { createHash } from 'node:crypto'
-import { and, eq, inArray, or, sql } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import {
   ADDRESSABLE_AGENT_STATUSES,
   integrationSubscriptionMatches,
   type IntegrationSubscription,
-  type WorkflowEventTrigger,
   type IntegrationOutputFact,
   type GitHubFeedbackRoute,
   integrationValueAt,
@@ -18,12 +17,13 @@ import {
   integrationConnections,
   integrationOutputEvents,
   integrationOutputDeliveries,
-  integrationOutputTriggerRuns,
   type DbTx,
 } from '../../../db'
 import { codeHostingRegistry } from '../code-hosting'
 import { integrationOutputRegistry } from './registry'
 import { eventRuleTrigger, selectOutputRule } from './default-routing'
+import { completedReviewRequest, findOutputTriggerRun } from './trigger-receipts'
+export { findOutputTriggerRun, outputTriggerSourceKey } from './trigger-receipts'
 import { defaultStreamMatches, preFlowRecipient } from './tracked-match'
 import { planChangeRequestBinding } from './delivery-binding'
 import { githubContentHash } from '../github/feedback-envelope'
@@ -47,33 +47,6 @@ export function outputSourceMatches(subscription: IntegrationSubscription, event
     (!subscription.source.connectionId ||
       (event.authority.kind === 'connection' && event.authority.connectionId === subscription.source.connectionId))
   )
-}
-/** Query the existing resource receipt without claiming it; delivery uses the identical query. */
-export function outputTriggerSourceKey(event: Event, trigger: WorkflowEventTrigger) {
-  return `${event.integration}:${trigger.source.connectionId ?? 'any-account'}`
-}
-export async function findOutputTriggerRun(
-  store: typeof db | DbTx,
-  squadId: string,
-  trigger: WorkflowEventTrigger,
-  event: Event
-) {
-  const [prior] = await store
-    .select()
-    .from(integrationOutputTriggerRuns)
-    .where(
-      and(
-        eq(integrationOutputTriggerRuns.squadId, squadId),
-        eq(integrationOutputTriggerRuns.triggerId, trigger.id),
-        or(
-          eq(integrationOutputTriggerRuns.sourceKey, outputTriggerSourceKey(event, trigger)),
-          sql`${integrationOutputTriggerRuns.sourceKey} LIKE ${`${event.integration}:${trigger.source.connectionId ? `connection:${trigger.source.connectionId}:` : ''}%`}`
-        ),
-        eq(integrationOutputTriggerRuns.resourceKey, event.fact.resourceKey)
-      )
-    )
-    .limit(1)
-  return prior
 }
 const BOT_COMMENT_OUTPUTS = [
   'issue.comment',
@@ -210,6 +183,16 @@ export async function planOutputRouting(
         id: trigger.id,
         recipientId: squad.managerAgentId ?? undefined,
         fingerprint: routeHash([trigger, selectOutputRule(squad.metadata, event, login)]),
+      })
+  }
+  if (!defaultAudienceOwned && trigger && available.some((agent) => agent.id === squad.managerAgentId)) {
+    const completed = await completedReviewRequest(store, squadId, trigger, event)
+    if (completed)
+      routes.push({
+        kind: 'notify-manager',
+        id: trigger.id,
+        recipientId: squad.managerAgentId!,
+        fingerprint: routeHash([trigger, completed.id, completed.status]),
       })
   }
   const [delivery] = await store

@@ -910,6 +910,7 @@ test('native review requests create one bound flow and keep code-host delivery i
     const id = runs[0]!.workStreamId!
     const flow = await getFlow(id)
     expect(flow).not.toBeNull()
+    expect(flow!.state.definition.completion.mode).toBe('pr-review')
     expect((await WorkStream.mustFind(id)).metadata).toMatchObject({
       github: { repo: `${prefix}/repo`, pr: { number: 32 } },
     })
@@ -966,6 +967,39 @@ test('native review requests create one bound flow and keep code-host delivery i
     expect(rows).toHaveLength(1)
     expect(rows[0]!.subscriptionId).toBe('code-host-review-requested')
     expect(rows[0]!.targets[0]!.agentId).toBe(started!.attemptAgents['1'])
+
+    const reviewer = started!.attemptAgents['1']!
+    await advanceFlow(
+      id,
+      {
+        expectedVersion: started!.version,
+        attemptId: started!.state.activeAttemptId,
+        action: 'complete',
+        outcome: 'completed',
+        evidence: 'Review posted; waiting for follow-ups.',
+      },
+      randomUUID(),
+      { type: 'legacy' }
+    )
+    expect((await getFlow(id))!.state.status).toBe('completion-ready')
+    for (const output of ['pull_request.review_requested', 'pull_request.comment', 'pull_request.closed']) {
+      const next = fact(32, {
+        output,
+        data: {
+          repository: `${prefix}/repo`,
+          pullRequest: { number: 32 },
+          requestedReviewer: 'ficus-bot',
+          actor: 'outside',
+        },
+      })
+      const eventId = await publishIntegrationOutput('github', next, authority)
+      eventIds.push(eventId)
+      const routed = (await deliveries(id)).filter((row) => row.eventId === eventId)
+      expect(routed.length).toBeGreaterThan(0)
+      expect(routed.every((row) => row.targets.some((target) => target.agentId === reviewer))).toBe(true)
+    }
+    expect((await WorkStream.mustFind(id)).assigneeAgentId).toBe(reviewer)
+    expect(Object.keys((await getFlow(id))!.attemptAgents)).toHaveLength(1)
     expect(await db.select().from(inbox).where(eq(inbox.recipientId, managerId))).toHaveLength(1)
   })
 })
@@ -3575,4 +3609,46 @@ test('a new reviewer wait fences already queued observational CI before acceptan
   )
   await closeOpenWaits(db, { waitId: wait.id }, 'cleared')
   expect(await isCurrentFlowMessage(message!)).toBe(true)
+})
+
+test('fresh re-requests after completion notify the manager once; original replays and active owners do not', async () => {
+  await withNativeRouting(async (connectionId, managerId) => {
+    const authority = { kind: 'connection' as const, connectionId, squadId }
+    const review = (at: string) =>
+      fact(932, {
+        output: 'pull_request.review_requested',
+        occurredAt: at,
+        data: { repository: `${prefix}/repo`, pullRequest: { number: 932 }, requestedReviewer: 'ficus-bot' },
+      })
+    const first = review('2026-10-29T10:00:00.000Z')
+    const firstId = await publishIntegrationOutput('github', first, authority)
+    eventIds.push(firstId)
+    const [receipt] = await db
+      .select()
+      .from(integrationOutputTriggerRuns)
+      .where(eq(integrationOutputTriggerRuns.eventId, firstId))
+    expect(receipt?.workStreamId).toBeTruthy()
+    const id = receipt!.workStreamId!
+    const notices = () => db.select().from(inbox).where(eq(inbox.recipientId, managerId))
+    expect(await notices()).toHaveLength(1)
+    // Simulate an older already-completed review, before the dedicated-review policy.
+    await db.update(workStreams).set({ status: 'done' }).where(eq(workStreams.id, id))
+    eventIds.push(await publishIntegrationOutput('github', first, authority))
+    expect(await notices()).toHaveLength(1)
+    const next = review('2026-10-29T11:00:00.000Z')
+    for (let i = 0; i < 2; i++) eventIds.push(await publishIntegrationOutput('github', next, authority))
+    expect(await notices()).toHaveLength(2)
+    expect((await notices()).some((row) => row.content.includes('fresh review request'))).toBe(true)
+    expect((await WorkStream.mustFind(id)).status).toBe('done')
+    expect(
+      await db
+        .select()
+        .from(integrationOutputTriggerRuns)
+        .where(eq(integrationOutputTriggerRuns.resourceKey, first.resourceKey))
+    ).toHaveLength(1)
+    // Even a paused/queued current owner retains its events instead of notifying the manager.
+    await db.update(workStreams).set({ status: 'queued' }).where(eq(workStreams.id, id))
+    eventIds.push(await publishIntegrationOutput('github', review('2026-10-29T12:00:00.000Z'), authority))
+    expect(await notices()).toHaveLength(2)
+  })
 })

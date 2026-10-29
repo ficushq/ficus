@@ -4,6 +4,7 @@ import { useStableRef } from '../hooks/useStableRef'
 import { Modal } from './Modal'
 
 const APPROVAL_MESSAGES: Record<WorkStreamCompletionMode, string> = {
+  'pr-review': 'The review work stream completes after its pull request merges or closes.',
   deliverable: 'Approving accepts the requested deliverable.',
   'pr-merge':
     'Approving completes this work stream even if its pull request has not merged. It does not merge the pull request.',

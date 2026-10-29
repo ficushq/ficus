@@ -9,6 +9,7 @@ import { WorkflowDecision } from './WorkflowDecision'
 import { ActionText, ErrorNote, VerbButton } from './ui'
 
 const APPROVAL_MESSAGES: Record<WorkStreamCompletionMode, string> = {
+  'pr-review': 'The review work stream completes after its pull request merges or closes.',
   deliverable: 'Harvesting accepts the requested deliverable.',
   'pr-merge':
     'Harvesting completes this work stream even if its pull request has not merged. It does not merge the pull request.',

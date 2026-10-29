@@ -52,11 +52,19 @@ test('review requests become ordinary typed triggers using the squad workflow', 
   const input = event('pull_request.review_requested', { requestedReviewer: 'Noah', pullRequest: { number: 3 } })
   const trigger = eventRuleTrigger(metadata, input, 'noah')!
   expect(workflowEventTriggerSchema.safeParse(trigger).success).toBe(true)
-  expect(trigger.create.workflow).toEqual({ kind: 'preset', id: 'solo', customizations: [] })
+  const completion = { mode: 'pr-review', followChanges: true, changeEventsTo: 'delivery-owner' } as const
+  expect(trigger.create.workflow).toEqual({
+    kind: 'preset',
+    id: 'solo',
+    customizations: [{ op: 'set-completion', completion }],
+  })
   expect(eventRuleTrigger(metadata, input, 'someone-else')).toBeUndefined()
   expect(eventRuleTrigger({}, input, 'noah')).toBeUndefined()
   const workflow: WorkflowSource = { kind: 'preset', id: 'reviewed-coding', customizations: [] }
-  expect(eventRuleTrigger({ ...metadata, workflow }, input, 'noah')!.create.workflow).toEqual(workflow)
+  expect(eventRuleTrigger({ ...metadata, workflow }, input, 'noah')!.create.workflow).toEqual({
+    ...workflow,
+    customizations: [{ op: 'set-completion', completion }],
+  })
 })
 test('Linear metadata routing accepts both team formats and ignores other teams', () => {
   const input = { ...event('issue.assigned', { teamId: 'team-1' }), integration: 'linear' }

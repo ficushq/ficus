@@ -4,6 +4,7 @@ import { Badge } from './Badge'
 
 /** What each code-host completion mode needs before the stream can complete. */
 const MODE_REQUIREMENTS: Partial<Record<WorkStream['completionMode'], string>> = {
+  'pr-review': 'It completes once the reviewed pull request is merged or closed.',
   'pr-merge': 'It completes once its delivery pull request is merged.',
   'pr-auto-merge': 'It completes once its delivery pull request merges automatically.',
   'direct-merge': 'It completes once its commit is merged into the base branch.',
