@@ -9,6 +9,8 @@ export interface RecoveryState {
   ownerEscalated: boolean
   nextRetryAt: number | null
   lastError: string | null
+  /** Only replay-safe pre-model startup failures can be settled by model-tool progress. */
+  startupOnly?: boolean
 }
 
 export function initialRecoveryState(attempted: string): RecoveryState {

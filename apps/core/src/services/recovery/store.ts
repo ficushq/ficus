@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto'
 import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import {
   activeWorkflowAttempts,
+  RECOVERY_ATTEMPT_BUDGET,
   manualWaitDecisionSchema,
   type ManualWaitDecision,
   type StructuredManualWait,
@@ -21,6 +22,7 @@ import {
   workStreams,
   workStreamWaits,
   workStreamFlowRuns,
+  workStreamContinuations,
 } from '../../db'
 import { initialRecoveryState, failedRecovery, continueRecovery, recoverySummary } from './policy'
 import { openWait, type DbHandle } from '../work-streams/waits'
@@ -206,6 +208,63 @@ export async function recoveryRetryDelay(origin: RecoveryOrigin, operation: stri
   throw new RecoveryHeldError()
 }
 
+/** This boundary is called by the model's first tool, not an execution-start event.
+ * A model tool proves startup/continuation progress, but not completion of an
+ * execution that previously failed after startup. It grants no held retry cycle.
+ */
+export async function settleRecoveryOnModelTool(origin: RecoveryOrigin): Promise<void> {
+  const source = await trustedOrigin(db, origin, false)
+  if (source.execution.status !== 'running' || (source.participant && !source.current)) return
+  const startup = await activeRecovery(db, source, 'execution:run')
+  if (startup?.state.startupOnly && startup.state.state === 'recovering')
+    await settleRecoveryOperation(origin, 'execution:run', `${origin.executionId}:model-tool`)
+  if (!source.workStreamId) return
+  const [candidate] = await db
+    .select()
+    .from(recoveryEpisodes)
+    .where(
+      and(
+        eq(recoveryEpisodes.operationKey, `continuation:${source.workStreamId}`),
+        eq(recoveryEpisodes.agentId, origin.agentId),
+        sql`${recoveryEpisodes.state}->>'state' = 'recovering'`
+      )
+    )
+  if (!candidate) return
+  await db.transaction(async (tx) => {
+    const currentSource = await trustedOrigin(tx, origin)
+    if (currentSource.execution.status !== 'running' || (currentSource.participant && !currentSource.current)) return
+    const [record] = await tx
+      .select()
+      .from(recoveryEpisodes)
+      .where(
+        and(
+          eq(recoveryEpisodes.id, candidate.id),
+          eq(recoveryEpisodes.version, candidate.version),
+          sql`${recoveryEpisodes.state}->>'state' = 'recovering'`
+        )
+      )
+      .for('update')
+    if (!record) return
+    await tx
+      .insert(recoveryAttempts)
+      .values({
+        recoveryId: record.id,
+        executionId: origin.executionId,
+        invocationId: `${origin.executionId}:model-tool`,
+        outcome: 'success',
+      })
+      .onConflictDoNothing()
+    await tx
+      .update(recoveryEpisodes)
+      .set({
+        state: { ...record.state, state: 'resolved', nextRetryAt: null },
+        version: record.version + 1,
+        updatedAt: new Date(),
+      })
+      .where(eq(recoveryEpisodes.id, record.id))
+  })
+}
+
 /** A confirmed result settles this normalized operation, never unrelated scopes or approval waits. */
 export async function settleRecoveryOperation(
   origin: RecoveryOrigin,
@@ -387,6 +446,81 @@ export async function publishRecoveryDecision(id: string): Promise<void> {
   if (record && ['waiting-manager', 'waiting-owner'].includes(record.state.state)) await publish(record)
 }
 
+/** Import only the watchdog's locked, durable counters, never model-supplied counts. */
+export async function exhaustContinuationRecovery(
+  tx: Tx,
+  cycle: typeof workStreamContinuations.$inferSelect,
+  kind: 'transport' | 'delivery',
+  flowAttemptId: number | null,
+  triggerExecutionId?: string
+): Promise<RecoveryRecord> {
+  if (!cycle.assigneeAgentId) throw new Error('Continuation recovery needs its current assignee')
+  const count = kind === 'delivery' ? cycle.deliveryAttemptCount : cycle.transportAttemptCount
+  if (count < RECOVERY_ATTEMPT_BUDGET) throw new Error('Continuation budget is not exhausted')
+  const operationKey = `continuation:${cycle.workStreamId}`
+  let [record] = await tx
+    .select()
+    .from(recoveryEpisodes)
+    .where(and(eq(recoveryEpisodes.operationKey, operationKey), sql`${recoveryEpisodes.state}->>'state' <> 'resolved'`))
+    .for('update')
+  if (!record) {
+    const [previous] = await tx
+      .select()
+      .from(recoveryEpisodes)
+      .where(eq(recoveryEpisodes.operationKey, operationKey))
+      .orderBy(desc(recoveryEpisodes.createdAt))
+      .limit(1)
+    ;[record] = await tx
+      .insert(recoveryEpisodes)
+      .values({
+        agentId: cycle.assigneeAgentId,
+        executionId: triggerExecutionId ?? null,
+        workStreamId: cycle.workStreamId,
+        flowAttemptId,
+        operationKey,
+        state: {
+          ...initialRecoveryState('continue the retained task'),
+          managerCycles: previous?.state.managerCycles ?? 0,
+          ownerEscalated: previous?.state.ownerEscalated ?? false,
+          failures: previous?.state.failures ?? 0,
+        },
+      })
+      .returning()
+  }
+  const error =
+    kind === 'delivery'
+      ? 'The retained task could not be delivered.'
+      : 'The model connection closed before the task could continue.'
+  let state = record!.state
+  let version = record!.version
+  for (let n = 1; n <= count; n++) {
+    const [inserted] = await tx
+      .insert(recoveryAttempts)
+      .values({
+        recoveryId: record!.id,
+        executionId: n === count ? (triggerExecutionId ?? null) : null,
+        invocationId: `continuation:${cycle.generation}:${kind}:${n}`,
+        outcome: 'unknown',
+        // Only the final failure has a retained error/trigger; do not invent earlier details.
+        error: n === count ? error : null,
+      })
+      .onConflictDoNothing()
+      .returning({ id: recoveryAttempts.id })
+    if (!inserted) continue
+    state =
+      state.state === 'recovering'
+        ? failedRecovery(state, { kind: 'unknown', error }, await databaseNow(tx))
+        : { ...state, failures: state.failures + 1, lastError: error }
+    version++
+  }
+  const [updated] = await tx
+    .update(recoveryEpisodes)
+    .set({ state, version, agentId: cycle.assigneeAgentId, flowAttemptId, updatedAt: new Date() })
+    .where(eq(recoveryEpisodes.id, record!.id))
+    .returning()
+  return ensureExhaustedWait(tx, updated!)
+}
+
 /** Called only by runtime tool/execution boundaries; not exposed as an agent API. */
 export async function recordRecoveryFailure(
   origin: RecoveryOrigin,
@@ -431,6 +565,7 @@ export async function recordRecoveryFailure(
           operationKey: scopedOperation(source, input.operationKey),
           state: {
             ...initialRecoveryState(input.attempted),
+            startupOnly: input.retryStartupMessage !== undefined,
             managerCycles: predecessor?.state.managerCycles ?? 0,
             ownerEscalated: predecessor?.state.ownerEscalated ?? false,
             failures: predecessor?.state.failures ?? 0,
@@ -466,6 +601,7 @@ export async function recordRecoveryFailure(
             restart ? { kind: 'restart' } : { kind: 'unknown', error: error! },
             await databaseNow(tx)
           )
+    if (!restart && input.retryStartupMessage === undefined && nextState.startupOnly) nextState.startupOnly = false
     await tx.insert(recoveryAttempts).values({
       recoveryId: current.id,
       executionId: origin.executionId,
@@ -598,7 +734,13 @@ export async function decideRecovery(
           .where(and(eq(workStreamWaits.id, current.waitId), isNull(workStreamWaits.closedAt)))
       }
     }
-    if (parsed.action === 'continue') await persistRecoveryContinuation(tx, updated!, afterCommit)
+    if (parsed.action === 'continue') {
+      if (updated!.workStreamId && updated!.operationKey.startsWith('continuation:')) {
+        const { resetContinuationCycle } = await import('../work-streams/continuation-state')
+        await resetContinuationCycle(tx, updated!.workStreamId, updated!.agentId)
+      }
+      await persistRecoveryContinuation(tx, updated!, afterCommit)
+    }
     return updated!
   })
   afterCommit.forEach((callback) => callback())

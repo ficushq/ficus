@@ -6,6 +6,7 @@ import { FORENSIC_ASK_REFUSAL, CREDENTIAL_INPUT_REFUSAL } from '@ficus/shared'
 import {
   recordRecoveryFailure,
   settleRecoveryOperation,
+  settleRecoveryOnModelTool,
   recoveryRetryDelay,
   RecoveryHeldError,
   type RecoveryOrigin,
@@ -54,6 +55,22 @@ function explainedFailure(error: unknown): boolean {
   return status !== undefined && [400, 401, 403, 404, 409, 422].includes(status)
 }
 
+// One non-locking progress probe per execution, shared by all tools. Bounded
+// retention avoids retaining completed executions in long-lived workers.
+const modelProgress = new Map<string, Promise<void>>()
+async function observeModelProgress(origin: RecoveryOrigin) {
+  let pending = modelProgress.get(origin.executionId)
+  if (!pending) {
+    pending = settleRecoveryOnModelTool(origin).catch((error) => {
+      modelProgress.delete(origin.executionId)
+      log.warn('Unable to record model progress', error)
+    })
+    modelProgress.set(origin.executionId, pending)
+    if (modelProgress.size > 512) modelProgress.delete(modelProgress.keys().next().value!)
+  }
+  await pending
+}
+
 const activeOperations = new Set<string>()
 
 class RecoveryBusyError extends Error {
@@ -82,6 +99,7 @@ export function wrapToolWithRecovery<T extends ToolDefinition>(
     execute: async (...args: Parameters<ToolDefinition['execute']>) => {
       const source = origin()
       if (!source) return execute(...args)
+      await observeModelProgress(source)
       const [toolCallId, params, signal] = args
       const operation = operationKey(tool.name)
       const invocation = createHash('sha256')

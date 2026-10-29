@@ -134,3 +134,16 @@ Healthy tools use non-locking reads, not recovery transactions or agent/stream
 row locks. Recording failures degrade to logging; they do not turn a confirmed
 tool result into a failure. An already-observed hold remains authoritative even
 if a later accounting read, rebind or notification fails.
+
+The continuation watchdog uses the same generated manager/owner recovery card,
+with three real delivery failures or the existing three provider-transport
+continuations. Its counters, not agent prose, populate the ledger. Delivery
+failures that never created an execution have a null execution reference.
+Continue resets the native counter atomically with the audited cycle and wake;
+execution-start events cannot clear these typed holds. Historical untyped
+watchdog waits retain their narrower legacy stale-wait cleanup.
+
+The first actual model tool can confirm continuation or replay-safe startup
+progress before a legitimate task question. It cannot settle a post-startup
+execution failure or authorize a held cycle. Consumed system recovery receipts
+remain task provenance after confirmation, without regaining delivery authority.

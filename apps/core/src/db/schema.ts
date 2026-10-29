@@ -1876,7 +1876,8 @@ export const recoveryEpisodes = pgTable(
     agentId: uuid('agent_id')
       .notNull()
       .references(() => agents.id, { onDelete: 'cascade' }),
-    executionId: uuid('execution_id').notNull(),
+    // Delivery failures may precede any execution; never invent an execution identity.
+    executionId: uuid('execution_id'),
     workStreamId: uuid('work_stream_id').references(() => workStreams.id, { onDelete: 'cascade' }),
     flowAttemptId: integer('flow_attempt_id'),
     operationKey: varchar('operation_key', { length: 128 }).notNull(),
@@ -1906,7 +1907,8 @@ export const recoveryAttempts = pgTable(
     recoveryId: uuid('recovery_id')
       .notNull()
       .references(() => recoveryEpisodes.id, { onDelete: 'cascade' }),
-    executionId: uuid('execution_id').notNull(),
+    // Delivery failures may precede any execution; never invent an execution identity.
+    executionId: uuid('execution_id'),
     invocationId: varchar('invocation_id', { length: 256 }).notNull(),
     outcome: text('outcome').notNull().$type<'unknown' | 'restart' | 'success' | 'explained'>(),
     error: text('error'),

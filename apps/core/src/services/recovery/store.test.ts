@@ -1041,3 +1041,68 @@ test('a verified restart alone does not suppress a legitimate task decision', as
   )
   expect(wait.structured?.request.kind).toBe('decide')
 })
+
+test('the first model tool settles replay-safe startup recovery before a legitimate task question', async () => {
+  const api = await store()
+  const origin = { agentId: worker.id, executionId: execution.id }
+  const record = await api.recordRecoveryFailure(origin, {
+    operationKey: 'execution:run',
+    invocationId: 'startup',
+    attempted: 'start the task',
+    error: new Error('Startup lost'),
+    retryStartupMessage: 'Retained task',
+  })
+  await execution.start()
+  const { Type } = await import('@sinclair/typebox')
+  const { wrapToolWithRecovery } = await import('./runtime')
+  const { requestStructuredInput } = await import('./structured-input')
+  const tool = wrapToolWithRecovery(
+    {
+      name: 'ask_human',
+      label: 'Ask',
+      description: 'fixture',
+      parameters: Type.Object({}),
+      execute: async () => {
+        await requestStructuredInput(
+          stream.id,
+          {
+            schemaVersion: 1,
+            kind: 'decide',
+            purpose: 'task-decision',
+            subject: 'Choose the layout',
+            options: [
+              { id: 'a', label: 'Compact' },
+              { id: 'b', label: 'Wide' },
+            ],
+          },
+          { createdBy: 'agent', createdByAgentId: worker.id }
+        )
+        return { content: [{ type: 'text' as const, text: 'Question created' }], details: {} }
+      },
+    },
+    () => origin
+  )
+  expect((await executeTool(tool, 'question', {})).content).toEqual([{ type: 'text', text: 'Question created' }])
+  const { recoveryEpisodes } = await import('../../db')
+  expect((await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.id, record.id)))[0]!.state.state).toBe(
+    'resolved'
+  )
+})
+
+test('model-tool progress cannot settle an unexplained post-startup execution failure', async () => {
+  const api = await store()
+  const origin = { agentId: worker.id, executionId: execution.id }
+  const record = await api.recordRecoveryFailure(origin, {
+    operationKey: 'execution:run',
+    invocationId: 'post-startup',
+    attempted: 'complete the task',
+    error: new Error('Settlement lost'),
+  })
+  await execution.start()
+  await api.settleRecoveryOnModelTool(origin)
+  const { recoveryEpisodes } = await import('../../db')
+  expect((await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.id, record.id)))[0]!.state.state).toBe(
+    'recovering'
+  )
+  await expect(api.assertNoPendingRecovery(db, worker.id, stream.id)).rejects.toThrow('unresolved recovery')
+})
