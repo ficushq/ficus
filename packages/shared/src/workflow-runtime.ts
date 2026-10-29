@@ -238,7 +238,9 @@ function startAttempt(
     if (producer && effectiveWorkflowStep(state, producer).kind === 'agent') {
       const authored = [
         ...new Set([
-          ...sources.filter((a) => a.decisionBrief).map((a) => a.id),
+          ...sources
+            .filter((a) => a.decisionBrief && effectiveWorkflowStep(state, a).kind === 'agent')
+            .map((a) => a.id),
           ...workflowCarryForwardSources(state, sourceAttemptIds).map((a) => a.id),
         ]),
       ].sort((a, b) => a - b)

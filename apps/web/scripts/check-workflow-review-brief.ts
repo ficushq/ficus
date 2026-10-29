@@ -6,6 +6,8 @@ import { resolve } from 'node:path'
 import { createServer } from 'vite'
 import type { Browser } from 'playwright-core'
 const root = resolve(import.meta.dir, '..')
+// PostCSS/Tailwind resolve their content configuration from cwd, even with a Vite root.
+process.chdir(root)
 const { chromium } = createRequire(resolve(root, '../core/package.json'))(
   'playwright-core'
 ) as typeof import('playwright-core')
@@ -61,6 +63,11 @@ try {
         await page.goto(`${server.resolvedUrls!.local[0]}review-fixture?mode=${mode}${dark ? '&dark' : ''}`)
         const dialog = page.getByRole('dialog')
         await dialog.waitFor()
+        assert.equal(
+          await dialog.evaluate((el) => getComputedStyle(el).position),
+          'fixed',
+          'Production Tailwind utilities must be present'
+        )
         const article = dialog.getByRole('article', { name: 'Decision brief', exact: true })
         if (mode === 'legacy') {
           assert.equal(await article.count(), 0)

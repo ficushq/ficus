@@ -206,6 +206,7 @@ test('an authored join preserves the other causal input brief through a non-agen
     attemptId: 3,
     outcome: 'yes',
     evidence: '',
+    decisionBrief: { ...brief, decision: 'Approve the separate prerequisite only.' },
   })
   run = advanceWorkflowRun(run, {
     action: 'complete',
