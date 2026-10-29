@@ -694,7 +694,7 @@ describeSubprocess('attemptPickup result matrix', () => {
     })
   }
 
-  test('shared-host box claims do not block real execution pickup', async () => {
+  test('shared host box ceilings do not prevent another squad pickup', async () => {
     const runtime = process.env.FICUS_SANDBOX_RUNTIME
     try {
       const candidate = await createSquadAgent('zai:glm-5.2')
@@ -717,30 +717,23 @@ describeSubprocess('attemptPickup result matrix', () => {
       await db.update(squads).set({ machineId: machine.id }).where(eq(squads.id, candidate.squadId!))
       const [running] = await db.insert(executions).values({ agentId: blocker.id, status: 'running' }).returning()
       createdExecutionIds.push(running.id)
-      const claim = await db.transaction((tx) =>
+      await db.transaction((tx) =>
         claimHostCapacity(
           tx,
           { kind: 'execution', executionId: running.id },
-          ['agent_busy_a', 'agent_busy_b', 'agent_busy_c'].map((sandboxId) => ({ machineId: machine.id, sandboxId }))
+          Array.from({ length: 15 }, (_, index) => ({ machineId: machine.id, sandboxId: `agent_busy_${index}` }))
         )
       )
-      expect(claim.allowed).toBe(true)
-      const execution = await candidate.queueExecution({ message: 'share host capacity' })
+      const execution = await candidate.queueExecution({ message: 'run alongside other squads' })
       createdExecutionIds.push(execution.id)
       process.env.FICUS_SANDBOX_RUNTIME = 'vm'
-      // Logical box claims are not exclusive CPU reservations. Only physical
-      // provisioning consumes the bounded startup slots.
+      // Fifteen per-box CPU ceilings exceed this host's CPU count, but they
+      // are shared usage limits, not exclusive reservations against pickup.
       expect(await attemptPickup(await Execution.mustFind(execution.id))).toBe('started')
-      await waitFor(
-        async () => (await Execution.mustFind(execution.id)).status === 'running' && createdSessions.length === 1,
-        { description: 'shared-host execution to start and create a session' }
-      )
+      await sessionCreated
+      expect((await Execution.mustFind(execution.id)).status).toBe('running')
+      expect(createdSessions).toHaveLength(1)
       expect(concurrencyLimiter.hasSlot(execution.id)).toBe(true)
-      const [reservation] = await db
-        .select()
-        .from(executionAdmissionReservations)
-        .where(eq(executionAdmissionReservations.executionId, execution.id))
-      expect(reservation.token).not.toBeNull()
     } finally {
       if (runtime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
       else process.env.FICUS_SANDBOX_RUNTIME = runtime

@@ -255,13 +255,25 @@ for (const mode of ['resume', 'resume-ensure']) {
       expect(unverified!.status).toBe('stop_unverified')
       expect(resume.events.some((event) => event.event === 'provision')).toBe(false)
       // Retry invokes the real stop/readback path; it never clears a DB marker.
-      // Plain ensure owns a failed physical generation. Honor its first real
-      // 30-second retry schedule; never clear the stop proof or cooldown row.
-      if (mode === 'resume-ensure') await Bun.sleep(30_100)
+      // Both ensure and recreation own a durable provisioning generation.
+      // Honor its recorded retry deadline; never clear the stop proof or
+      // cooldown row to force another physical attempt.
+      const [failedAttempt] = await db
+        .select()
+        .from(vmBoxProvisionAttempts)
+        .where(eq(vmBoxProvisionAttempts.sandboxId, id))
+      expect(failedAttempt!.status).toBe('failed')
+      expect(failedAttempt!.failureClass).toBe('retry:box_stop_unverified')
+      expect(failedAttempt!.retryAt).not.toBeNull()
+      await Bun.sleep(Math.max(0, failedAttempt!.retryAt!.getTime() - Date.now()))
       resume.releaseSetup()
       expect(await preempt.process.exited).toBe(0)
-      expect(await resume.process.exited).toBe(0)
+      const resumeExit = await resume.process.exited
       await resume.output
+      expect({ code: resumeExit, failures: resume.events.filter((event) => event.event === 'failed') }).toEqual({
+        code: 0,
+        failures: [],
+      })
       expect(resume.events.filter((event) => event.event === 'stop-proof')).toHaveLength(2)
       expect(resume.events.filter((event) => event.event === 'provision')).toHaveLength(1)
       expect(resume.events.at(-1)!.result).toBe('resumed')

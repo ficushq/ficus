@@ -400,7 +400,7 @@ describe('Agent Runner Integration', () => {
           return (
             settledExecution?.status === 'stopped' &&
             settledAgent?.status === 'idle' &&
-            settledMessages.messages.some((message) => message.content === '[System] Agent was stopped.')
+            settledMessages.messages.some((message) => message.content === '[System] Agent was interrupted.')
           )
         })
 
@@ -414,7 +414,7 @@ describe('Agent Runner Integration', () => {
 
         // Verify system message saved
         const msgs = await agent.listMessages()
-        const systemMsg = msgs.messages.find((m) => m.content === '[System] Agent was stopped.')
+        const systemMsg = msgs.messages.find((m) => m.content === '[System] Agent was interrupted.')
         expect(systemMsg).toBeTruthy()
       } finally {
         await cleanup(agentId, runner)

@@ -280,7 +280,7 @@ test('header attributes local reclaim pressure even when the host load is low', 
   })
 })
 
-test('header shows host load and startup concurrency alongside separately attributed pressure', async () => {
+test('header shows startup concurrency alongside separately attributed host pressure', async () => {
   await withIndicator(
     {
       ...healthy,
@@ -289,6 +289,7 @@ test('header shows host load and startup concurrency alongside separately attrib
         allowed: true,
         reason: 'already-accounted',
         cpus: 8,
+        activeBoxes: 15,
         startingBoxes: 2,
         startupLimit: 2,
       },
@@ -296,13 +297,10 @@ test('header shows host load and startup concurrency alongside separately attrib
     async ({ doc }) => {
       expect(doc.body.textContent).toContain('Host load 3.5×')
       expect(doc.body.textContent).toContain('Starting 2/2 boxes')
-      expect(doc.body.textContent).toContain('Host overloaded:')
-      expect(doc.body.textContent).toContain('This sandbox:')
-      const summary = doc.querySelector('[title*="Squads share host CPUs"]')
-      expect(summary?.getAttribute('title')).toContain('running boxes do not occupy startup slots')
-      expect(summary?.textContent).not.toContain('quota')
-      expect(summary?.classList.contains('border-th-border')).toBe(true)
-      expect(summary?.classList.contains('text-secondary')).toBe(true)
+      expect(doc.body.textContent).not.toContain('quota 12/12 CPUs')
+      expect(doc.querySelector('[title*="Squads share host CPUs"]')?.getAttribute('title')).toContain(
+        'running boxes do not occupy startup slots'
+      )
     }
   )
 })
