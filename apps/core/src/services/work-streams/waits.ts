@@ -106,8 +106,13 @@ export async function openWait(
   ) {
     throw new Error('A typed continue, decide or provide request is required; free-text waits are not accepted')
   }
-  if (input.type === 'manual' && !input.structured && input.createdBy === 'manager')
+  if (input.type === 'manual' && !input.structured && input.createdBy === 'manager') {
     assertHumanAnswerableRequest([input.message ?? ''])
+    if (input.createdByAgentId) {
+      const { assertNoPendingRecovery } = await import('../recovery/store')
+      await assertNoPendingRecovery(dbx, input.createdByAgentId, input.workStreamId)
+    }
+  }
   let structured = input.structured
   let actor = input.actor ?? 'human'
   if (structured) {

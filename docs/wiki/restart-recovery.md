@@ -83,7 +83,7 @@ wake intent together; normal admission delivers it once, retaining other gates.
 Stop keeps the scope held and removes repeated human requests. Missing eligible managers and a manager’s own recovery route directly to an eligible owner. A shared resolver prefers the requesting user/agent owner, then authorized squad operators/admins. If nobody is eligible, it persists an idempotent system diagnostic and keeps the hold without granting authority. Detail/list views project the same current audience as Action Center if manager availability changes; this does not rewrite the wait audit or grant a cycle.
 Standalone tasks use the same policy and typed agent-recovery actions.
 
-New worker manual inputs accept only versioned `continue`, `decide` or `provide` requests. People and managers retain `request-input --message` for ordinary task waits; this does not clear or bypass a structured recovery decision.
+New worker manual inputs accept only versioned `continue`, `decide` or `provide` requests. People and managers retain `request-input --message` for ordinary task waits; this does not clear or bypass a structured recovery decision, or disguise the manager’s own unresolved failures in that same scope.
 `continue` references an existing exhausted runtime record, not a caller-supplied
 attempt count. Product choices use `decide`. `provide` requires either
 `input: {"type":"file","path":"assets/logo.svg"}` (workspace-relative; the response

@@ -1125,3 +1125,29 @@ test('work-stream detail projects the same current owner fallback as the decisio
     'manager'
   )
 })
+
+test('manager prose compatibility does not bypass its own unresolved same-scope recovery', async () => {
+  await db.update(squads).set({ managerAgentId: worker.id }).where(eq(squads.id, squad.id))
+  await (
+    await store()
+  ).recordRecoveryFailure(
+    { agentId: worker.id, executionId: execution.id },
+    {
+      operationKey: 'manager-task',
+      attempted: 'Run the task',
+      invocationId: 'manager-first',
+      error: new Error('unknown outcome'),
+    }
+  )
+  await expect(
+    stream.block({ createdBy: 'manager', createdByAgentId: worker.id, message: 'Choose a release target' })
+  ).rejects.toThrow('unresolved recovery')
+  const other = await storedLegacyWorkStream({
+    squadId: squad.id,
+    title: 'Independent manager task',
+    assigneeAgentId: worker.id,
+  })
+  expect(
+    (await other.block({ createdBy: 'manager', createdByAgentId: worker.id, message: 'Choose a release target' })).type
+  ).toBe('manual')
+})

@@ -48,3 +48,14 @@ test('worker, engineer, reviewer, general and manager each receive restart-safe 
     )
   }
 })
+
+test('CI runs the database-free restart guidance checks', () => {
+  const workflow = Bun.YAML.parse(read('.github/workflows/ci.yml')) as {
+    jobs: Record<string, { steps?: Array<Record<string, unknown>> }>
+  }
+  expect(Object.values(workflow.jobs).flatMap((job) => job.steps ?? [])).toContainEqual({
+    name: 'Validate restart recovery guidance',
+    run: 'bun test ../scripts/restart-recovery-guidance.test.ts',
+    'working-directory': '.github',
+  })
+})
