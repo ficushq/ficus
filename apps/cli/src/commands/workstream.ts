@@ -8,7 +8,7 @@ import {
   parseTrackedResourceUrl,
   trackedResourceLabel,
   parseDependencySpec,
-  manualInputRequestSchema,
+  requestInputWorkStreamSchema,
   manualWaitDecisionSchema,
 } from '@ficus/shared'
 import {
@@ -795,19 +795,39 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     return { ws, wait }
   }
 
-  addStructuredInputOptions(
-    ws
-      .command('request-input <id>')
-      .description('Open a typed continue, decide or provide wait; recovery summaries and routing are server-owned')
-  ).action(async (id, options) => {
-    try {
-      const input = validateStructuredInput(manualInputRequestSchema, await readStructuredInput(options))
-      const result = await apiPost<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}/request-input`, input)
-      output(result, `Work stream ${workStreamLabel(result)} is requesting ${input.kind} input`)
-    } catch (error) {
-      outputError(error as Error)
-    }
-  })
+  ws.command('request-input <id>')
+    .description('Open structured input, or a human/manager prose wait (server-authorized)')
+    .option('--content <text>', 'Inline structured JSON or YAML request')
+    .option('--stdin', 'Read a structured request from stdin')
+    .option('-f, --file <path>', 'Structured request file, or context file with --message', collect, [])
+    .option('-m, --message <text>', 'Prose input for people and managers only; workers must use structured input')
+    .option('--actor <actor>', 'Prose wait actor: human or owner')
+    .option('--scope <scope>', 'Prose wait scope: stream or attempt')
+    .option('--attempt <id>', 'Prose wait flow attempt', parseInt)
+    .action(async (id, options) => {
+      try {
+        const prose = options.message !== undefined
+        if (prose && (options.content !== undefined || options.stdin))
+          throw new Error('Choose prose or structured input, not both')
+        if (!prose && (options.file.length > 1 || options.actor || options.scope || options.attempt))
+          throw new Error('Use one structured source and put its scope/actor in the object')
+        const input = validateStructuredInput(
+          requestInputWorkStreamSchema,
+          prose
+            ? { message: options.message, actor: options.actor, scope: options.scope, flowAttemptId: options.attempt }
+            : await readStructuredInput({ ...options, file: options.file[0] })
+        )
+        const result = await apiPost<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}/request-input`, input)
+        if (prose && options.file.length)
+          await apiPatch(`/api/workstreams/${encodeURIComponent(id)}`, { files: options.file })
+        output(
+          result,
+          `Work stream ${workStreamLabel(result)} is requesting ${'kind' in input ? input.kind : 'manual'} input`
+        )
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
 
   addStructuredInputOptions(
     ws

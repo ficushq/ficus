@@ -434,7 +434,16 @@ export const sendBackWorkStreamSchema = z.object({
   note: z.string().min(1),
 })
 
-export const requestInputWorkStreamSchema = manualInputRequestSchema
+/** Prose compatibility is authorized by the server for people/managers only. */
+export const requestInputWorkStreamSchema = z.union([
+  manualInputRequestSchema,
+  z.strictObject({
+    message: z.string().min(1).max(4000),
+    actor: z.enum(['human', 'owner']).optional(),
+    scope: z.enum(['stream', 'attempt']).optional(),
+    flowAttemptId: z.int().positive().optional(),
+  }),
+])
 
 /** Correct who must act on one open manual wait. */
 export const setWorkStreamWaitActorSchema = z.object({

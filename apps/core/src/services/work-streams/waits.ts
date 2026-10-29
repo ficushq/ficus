@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { InferSelectModel } from 'drizzle-orm'
 import {
   WORK_STREAM_ADMITTED_STATUSES,
+  assertHumanAnswerableRequest,
   manualInputRequestSchema,
   RECOVERY_ATTEMPT_BUDGET,
   taskInputSummary,
@@ -100,12 +101,13 @@ export async function openWait(
     input.type === 'manual' &&
     input.resolutionHandler !== 'workflow' &&
     (input.createdBy === 'agent' ||
-      input.createdBy === 'manager' ||
-      (input.createdByAgentId && input.createdBy !== 'system')) &&
+      (input.createdByAgentId && input.createdBy !== 'system' && input.createdBy !== 'manager')) &&
     !input.structured
   ) {
     throw new Error('A typed continue, decide or provide request is required; free-text waits are not accepted')
   }
+  if (input.type === 'manual' && !input.structured && input.createdBy === 'manager')
+    assertHumanAnswerableRequest([input.message ?? ''])
   let structured = input.structured
   let actor = input.actor ?? 'human'
   if (structured) {

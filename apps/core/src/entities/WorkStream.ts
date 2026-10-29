@@ -2246,7 +2246,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         .set({
           actor: input.actor,
           actorChanges: [...(wait.actorChanges ?? []), change],
-          ...(wait.structured && wait.structured.request.kind !== 'continue'
+          ...(wait.structured
             ? {
                 structured: {
                   ...wait.structured,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { requestInputWorkStreamSchema } from './schemas'
+import { manualInputRequestSchema as requestInputWorkStreamSchema } from './recovery-waits'
 
 const provide = {
   schemaVersion: 1,

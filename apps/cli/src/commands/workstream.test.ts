@@ -1426,8 +1426,15 @@ describe('workstream CLI commands', () => {
       expect(apiPost).not.toHaveBeenCalled()
     })
 
-    it('rejects free prose and forensic requests before calling the API', async () => {
-      await expect(run(['workstream', 'request-input', 'ws-1', '-m', 'Send host logs'])).rejects.toThrow()
+    it('retains human/manager message input and lets the server enforce actor authorization', async () => {
+      await run(['workstream', 'request-input', 'ws-1', '-m', 'Choose the release target', '--actor', 'owner'])
+      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/ws-1/request-input', {
+        message: 'Choose the release target',
+        actor: 'owner',
+      })
+    })
+
+    it('rejects malformed structured forensic requests before calling the API', async () => {
       await run([
         'workstream',
         'request-input',

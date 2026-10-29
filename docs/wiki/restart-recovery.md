@@ -83,7 +83,7 @@ Stop keeps the scope held and removes repeated human requests. Missing eligible
 managers leave a pending record and routing diagnostic, not an owner bypass.
 Standalone tasks use the same policy and typed agent-recovery actions.
 
-New manual inputs accept only versioned `continue`, `decide` or `provide` requests.
+New worker manual inputs accept only versioned `continue`, `decide` or `provide` requests. People and managers retain `request-input --message` for ordinary task waits; this does not clear or bypass a structured recovery decision.
 `continue` references an existing exhausted runtime record, not a caller-supplied
 attempt count. `decide` declares task options; `provide` names only a task file,
 config value or product choice. A shared validator rejects forensic evidence and

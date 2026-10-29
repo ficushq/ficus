@@ -21,7 +21,7 @@ defines the approved server/CLI/UI implementation contract. Deployment is a sepa
 ## Input schema
 
 New worker-openable manual waits use a strict versioned discriminated union.
-The server rejects unknown fields and the legacy free-prose `message`-only form.
+The server rejects unknown fields and the legacy free-prose `message`-only form for workers. Authenticated people and managers retain ordinary prose task waits; recovery decisions always use the runtime ledger.
 Caller attribution and scope come from authenticated identity and the active flow
 attempt, never from a claimed role in the payload.
 

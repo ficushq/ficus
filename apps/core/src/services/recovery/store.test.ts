@@ -228,7 +228,7 @@ test('common wait and question writers reject free forensic asks, while typed ta
   await stream.resolveWait(legacy.id, { resolution: 'cleared' })
 })
 
-test('HTTP rejects an untyped log request and accepts only typed input and matching versioned decisions', async () => {
+test('HTTP rejects malformed structured input and requires matching versioned decisions', async () => {
   const { Hono } = await import('hono')
   const { identityMiddleware } = await import('../../middleware/identity')
   const { workStreamsRouter } = await import('../../routes/work-streams')
@@ -242,7 +242,7 @@ test('HTTP rejects an untyped log request and accepts only typed input and match
         body: JSON.stringify(body),
       })
     )
-  expect((await post('/request-input', { message: 'Send host logs' })).status).toBe(400)
+  expect((await post('/request-input', { kind: 'provide', message: 'Send host logs' })).status).toBe(400)
   const response = await post('/request-input', {
     schemaVersion: 1,
     kind: 'provide',

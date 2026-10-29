@@ -338,7 +338,8 @@ async function waitAttribution(
   if (identity?.type === 'agent') {
     try {
       const squad = await Squad.find(squadId)
-      const isManager = squad?.managerAgentId === identity.agentId
+      const agent = await Agent.find(identity.agentId)
+      const isManager = squad?.managerAgentId === identity.agentId || agent?.agentTypeId === 'system-manager'
       return {
         createdBy: isManager ? 'manager' : 'agent',
         createdByAgentId: identity.agentId,
@@ -1417,7 +1418,10 @@ export const workStreamsRouter = new Hono()
       try {
         const attribution = await waitAttribution(c.get('identity') as Identity | undefined, existing.squadId)
         const { requestStructuredInput } = await import('../services/recovery/structured-input')
-        const wait = await requestStructuredInput(existing.id, input, attribution)
+        const wait =
+          'kind' in input
+            ? await requestStructuredInput(existing.id, input, attribution)
+            : await existing.block({ ...input, ...attribution })
         await existing.reload()
         return c.json({ ...existing.toJson(), wait: toWaitJson(wait) })
       } catch (error) {

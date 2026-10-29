@@ -322,3 +322,23 @@ describe('POST /:id/waits/:waitId/actor', () => {
     )
   })
 })
+
+it('keeps prose for authenticated people and managers, but requires workers to use structured input', async () => {
+  await seedRole('default-worker', ['workstreams:read', 'workstreams:update', 'workstreams:respond'])
+  await seedRole('default-manager', ['workstreams:read', 'workstreams:update', 'workstreams:respond'])
+  const worker = await Agent.create({ agentTypeId, squadId })
+  const manager = (await Agent.find(managerId))!
+  const ws = await stream('prose authorization', { assigneeAgentId: worker.id, agentIds: [worker.id] })
+  const path = `/api/workstreams/${ws.id}/request-input`
+  expect(
+    (await request((await worker.getOrCreateToken())!, 'POST', path, { message: 'Choose a release target' })).status
+  ).toBe(400)
+  expect((await asAdmin('POST', path, { message: 'Choose a release target' })).status).toBe(200)
+  expect(
+    (await request((await manager.getOrCreateToken())!, 'POST', path, { message: 'Wait for the release decision' }))
+      .status
+  ).toBe(200)
+  expect((await request((await manager.getOrCreateToken())!, 'POST', path, { message: 'Send host logs' })).status).toBe(
+    400
+  )
+})
