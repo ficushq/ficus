@@ -3,6 +3,7 @@
  * Manual test DB management using the same isolation logic as test-setup.ts.
  * Usage: bun run src/test-db.ts up|down
  */
+import { requireTestDbCapacity } from '../packages/shared/src/testDbCapacity'
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { findFreeTestDbPort, testDbPortFile, testDbProjectName } from '@ficus/shared/testDbPort'
@@ -21,6 +22,7 @@ const appCwd = existsSync(join(repoRoot, 'apps/core')) ? join(repoRoot, 'apps/co
 const command = process.argv[2]
 
 if (command === 'up') {
+  requireTestDbCapacity()
   sweepStaleTestDbs(repoRoot)
   ownTestDb(repoRoot)
   const READY_TIMEOUT_MS = 5000
