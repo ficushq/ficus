@@ -935,7 +935,7 @@ export const agentsRouter = new Hono()
         return c.json(
           {
             error:
-              'Inbox deliveries can only change when they are delivered, and monitor deliveries cannot be changed.',
+              'Inbox deliveries can only change when they are delivered, and question answers and monitor deliveries cannot be changed.',
             code: result,
           },
           409

@@ -286,7 +286,7 @@ delivered back to the agent, so they never produce this card.
 
 ### Editing a pending message
 
-Each accepted queued chat message has Cancel and Switch to Interrupt/Follow up controls. The API is `POST /api/agents/:id/messages/:messageId/queue` with `{ "operation": "cancel" | "steer" | "follow-up" }`, protected by `agents:run` and the agent's owner/squad scope. The client SDK exposes `agents.updatePendingMessage`. Inbox deliveries accept only `steer` and `follow-up`: their inbox items are already claimed, so deleting the row would lose them. Monitor deliveries accept no operation. Both refusals return `409` with `code: "not_allowed"`.
+Each accepted queued chat message has Cancel and Switch to Interrupt/Follow up controls. The API is `POST /api/agents/:id/messages/:messageId/queue` with `{ "operation": "cancel" | "steer" | "follow-up" }`, protected by `agents:run` and the agent's owner/squad scope. The client SDK exposes `agents.updatePendingMessage`. Inbox deliveries accept only `steer` and `follow-up`: their inbox items are already claimed, so deleting the row would lose them. Question-answer deliveries and monitor deliveries accept no operation: answers are always delivered as interrupts, and answer delivery recovery binds the row only while it is still `steer`. Both refusals return `409` with `code: "not_allowed"`.
 
 `POST /api/agents/:id/clear-queue` removes only user-sent pending messages. A running worker cancels the ones its session holds one at a time through the SDK queue edit, so inbox and monitor deliveries already handed to the session stay queued, then deletes the unclaimed rows.
 
