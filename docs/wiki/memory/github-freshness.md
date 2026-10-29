@@ -1,6 +1,6 @@
 # Managed GitHub memory freshness
 
-Design contract approved on 2026-10-29; implementation and verification are pending.
+Policy approved on 2026-10-29. This page describes the managed GitHub memory contract.
 
 Managed GitHub memory must never return locally known obsolete prose just because
 its author remains trusted or an older matching revision was approved. Freshness
@@ -47,30 +47,51 @@ items through each adapter's list method. It has no document-addressed enqueue
 operation, and discovery limits/time windows can omit an existing document. This
 limitation was reported before implementation.
 
-The planned integration is durable pending-reindex state on the affected
+Recovery uses durable pending-reindex state on the affected
 document, consumed by the **existing** external-source runner/service through the
-adapter's normal single-document index path before ordinary discovery. It must
-respect source enablement and scope, retain failures for retry on existing ticks,
-and clear pending state only after successful current reindex. Deduplication and
-clearing must be tied to the document generation so an old read or old reindex
-cannot overwrite newer state. No new background job type, bulk migration or live
+adapter's normal single-document index path before ordinary discovery. A read
+marks at most 25 newly pending documents; each source pass retries at most 25.
+Repeated reads deduplicate by document generation. The existing runner's default
+interval is 30 minutes; no provider work runs on the read path.
+
+Recovery respects source enablement and scope, retains failures for later ticks,
+and clears pending state only after successful current, admissible indexing,
+including the requesting shared-memory caller's gate. Pending state survives
+process restarts. Clearing compares the validated document generation and marker
+so old work cannot clear a newer request. GitHub document/chunk replacement is
+transactional: failed indexing keeps the prior snapshot and recovery request. No new background job type, bulk migration or live
 reindex operation is authorized.
 
-The existing memory sync/status API and CLI will expose pending counts by reason
-without exposing document text. Normal reindex can restore current admissible
+`GET /api/memory/:squadId/sync/status` and `ficus memory sync status --squad <id>`
+include the following source-squad status (also preserved in CLI JSON output):
+
+```json
+{
+  "managedGitHub": {
+    "hiddenPendingReindex": 3,
+    "reasons": { "stale": 1, "legacy": 2 }
+  }
+}
+```
+
+These are durable requests discovered by reads, not a bulk scan of unread legacy
+documents. Pending documents remain hidden until recovery completes. Disabled
+sources and failed fetches retain their pending counts; status exposes no prose. Normal reindex can restore current admissible
 items while continuing to withhold untrusted or unverifiable content.
 
 ## Verification contract
 
-Focused tests must cover trusted and approved snapshots becoming stale without
+Focused tests cover trusted and approved snapshots becoming stale without
 reindex; older/equal/missing clocks; changed parent and comment text; legacy and
 malformed provenance; filter OFF and ON transitions; shared-squad isolation;
 repository identity; bounded lookup failure; and captures between fetch and
-index. Check keyword/vector retrieval, outline and backlinks for leaked prose.
+index. Keyword/vector retrieval, indexed-document reads, outline and backlinks share
+the freshness gate. Returned snapshots cannot borrow a concurrently reindexed
+document's proof.
 
-Recovery tests must prove deduplication, bounded read enqueue, recovery of a
+Recovery tests exercise deduplication, bounded read enqueue, recovery of a
 document outside ordinary discovery, disabled-source and failure persistence,
-current reindex completion, and API/CLI status reporting. Read-time checks must
-not fetch providers. Unrelated memory source behavior must remain unchanged.
+current reindex completion, and API/CLI status reporting. Read-time checks do
+not fetch providers. Unrelated memory source behavior is unchanged.
 
 Policy approval does not constitute code review or merge approval.
