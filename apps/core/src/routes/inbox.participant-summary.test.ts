@@ -146,9 +146,12 @@ test('serializes only both participant summaries while retaining exact message a
       createdAt: row.createdAt.toISOString(),
     },
   ])
-  for (const name of [undefined, null, 42, { nested: privateSentinel }]) {
+  for (const name of [undefined, null, 42, { nested: privateSentinel }, [privateSentinel]]) {
     Object.assign(privateAgent, { metadata: { name } })
     expect(message.toJson().senderAgent).toEqual({ ...summary(privateAgent), name: null })
+    expect(JSON.stringify(delivery.prepareInboxDelivery([message], 'follow-up', 'follow-up'))).not.toContain(
+      privateSentinel
+    )
   }
   privateAgent.metadata = null
   expect(message.toJson().senderAgent?.name).toBeNull()

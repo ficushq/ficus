@@ -1179,7 +1179,9 @@ export function formatInboxMessageSender(m: InboxMessage): string {
   const senderMetadata = m.metadata?.sender as Record<string, string> | undefined
   const isWorkspaceVoiceSender = m.senderType === 'voice_assistant' && isWorkspaceVoiceRecipient(m.senderId)
   const name =
-    m.senderAgent?.metadata?.name || senderMetadata?.name || (isWorkspaceVoiceSender ? 'Voice Workspace Agent' : '')
+    participantSummary(m.senderAgent)?.name ||
+    senderMetadata?.name ||
+    (isWorkspaceVoiceSender ? 'Voice Workspace Agent' : '')
   const agentTypeName =
     senderMetadata?.agentTypeName ||
     senderMetadata?.agentTypeId ||
