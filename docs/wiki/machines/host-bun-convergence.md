@@ -40,7 +40,10 @@ is retained as `/opt/ficus/bun/bin/bun.previous` before the switch.
   old executable/link still prove usable**.
   It warns and reports `bunConvergence: deferred`; the manifest records actual
   Bun, and Core keeps the machine ready **without acknowledging the desired
-  bootstrap hash**. A later normal stale/bootstrap pass retries. This is not a
+  bootstrap hash**. `appliedBootstrapVersion` separately records that the release
+  scripts were applied, so a deferred Bun swap is not misclassified as a layout
+  migration by the maintenance reprovision operator. Actual layout/journal
+  preflight still runs. A later normal stale/bootstrap pass retries. This is not a
   tight retry loop or a convergence success. Missing/unusable Bun, unsafe layout
   and failed rollback remain fatal; explicit interruption is not swallowed. A transient download outage must not remove
   a working prebaked host from the fleet.
@@ -74,14 +77,35 @@ matches) takes the natural-idle path below. Bundle, role, script, generation,
 mixed and other non-Bun drift retain the established park-and-re-ensure lifecycle
 and its ownership, stop-verification and trusted restart safeguards. They do not
 wait for a Bun bootstrap sweep. Ordinary `ensuring`, `failed` and `restart_failed`
-rows keep normal repair/retry behavior after journal recovery.
+rows keep normal repair/retry behavior; only a row with recorded Bun adoption
+intent runs journal recovery. Ordinary contention retains the existing
+`box_lock_timeout` classification and retry budget.
 
 New boxes, parked resumes and ordinary repairs also remain usable on hosts whose
 disk Bun has not yet been upgraded. Exact runtime readback is mandatory **only
 for verified Bun adoption**. An ordinary start records the observed Bun (or an
 unknown-pin base identity for older bundles), not the desired pin; it therefore
 remains eligible for later Bun adoption. Configuration publication alone is not
-runtime convergence proof.
+runtime convergence proof. In particular, a later explicit idle adoption bypasses
+configuration-only fast paths, even when the desired configuration was already
+installed on an older runtime.
+
+Healthy ready boxes retain the Bun-agnostic fast path: observed runtime drift
+alone does not take a setup lease, run recovery/idle SSH, fence commands or emit a
+restart notice. Existing setup fingerprints remain valid while the runtime is
+deferred; no bulk fingerprint migration is required. Bootstrap's verified
+`bunVersion` capability disqualifies older/unknown disk runtimes before a remote
+idle probe. It is eligibility, not safety proof: the final claim still checks
+actual disk, units, registry and ownership.
+
+Deferring a runtime restart **does not defer configuration or setup**. Required
+asset freshness/revocation checks and due/degraded setup retries still run under
+the normal owner. File-managed SSH revocations and rendered secret rotation can
+apply while old commands continue. Critical server environment changes retain
+ordinary reconciliation and restart safeguards; git-identity-only changes retain
+their existing active-work deferral. Pending/ambiguous remote setup is never
+cancelled or replayed merely for Bun adoption: it reports readiness pending with
+the usable existing client retained.
 
 A running older executor cannot prove a newly introduced maintenance protocol.
 An unsupported endpoint or database idleness is **not** permission to force its
@@ -89,10 +113,10 @@ restart. Normal ensure/recreate instead:
 
 1. Defers while execution/deployment activity, a pending/ambiguous setup invocation,
    unavailable activity information, or an active/unknown server remains. It keeps
-   the old published spec/setup identity and usable normal client state, including
+   the observed runtime identity and usable normal client state, including
    a fresh Core manager. The installed historical proof keeps the original Bash
    alive while that fresh manager runs a real HTTP tool with its callback URL.
-   Repeated reconciliation
+   Required assets/setup still reconcile. Unchanged repeated reconciliation
    does not HTTP-poll the old executor, which would reset its idle-exit window.
 2. Lets the existing executor's conservative idle policy finish commands and stand
    down naturally. A read-only host probe requires an inactive server and proxy,
@@ -113,7 +137,8 @@ restart. Normal ensure/recreate instead:
 
 ### Interrupted claim recovery
 
-Before closing activation, the owner atomically publishes a root-owned journal
+Before the first claim/socket mutation, the owning Core persists the adopting
+marker. Before closing activation, it atomically publishes a root-owned journal
 beside the stable host flock in `/run/ficus-box-locks`. It records a unique claim
 token and exact source/desired row identities (machine, sandbox and spec including
 owning generation). The next **owner of the existing durable setup lease** can
@@ -126,12 +151,14 @@ observed token again under the lock before restoring **only the socket**. It
 then removes only that journal. It never stops a server or replays an uncertain
 agent Bash invocation. Active/pending/unknown work still defers adoption after
 listener reachability is restored. A Bun operation records its desired target in
-`bun_runtime_adopting_spec_hash` before physical provisioning, independently of
+`bun_runtime_adopting_spec_hash` before claiming activation, independently of
 ordinary `ensuring` rows. After interruption it retains the stronger fenced host
 proof; its own active startup execution does not prevent repair once actual host
 idleness is proven. Active/unknown remote work or pending setup remains
-readiness-pending, not successfully adopted. Successful physical setup clears
-the in-progress marker. Malformed, symlinked, changed-generation or overtaken
+readiness-pending, not successfully adopted. Only proven claim/listener cleanup
+clears the in-progress marker; a ready row with unresolved intent projects
+readiness pending. Successful recovery clears ready-row intent with a
+physical-identity/target fence; partial rows still need final idle proof. Malformed, symlinked, changed-generation or overtaken
 journals defer; late cleanup cannot reopen another owner's listener or erase its
 journal. Failed restoration retains recovery evidence for the next owned ensure.
 Existing setup-session ownership checks fence continuation and ready publication.
@@ -155,23 +182,31 @@ real-server restart proof also checks durable cancellation context, agent-visibl
 notice, zero failure-budget charge, no human wait, inspected partial effects and
 explicit safe retry. This does not claim arbitrary model retry behavior.
 
-### Terminal runtime mismatch
+### Bounded adoption failure without an availability outage
 
-A typed adoption health/version mismatch (including an older bundle reporting no
-Bun version) is recorded durably in `bun_runtime_failure_spec_hash` for the exact
-desired spec/generation and original physical box identity. It reports failed,
-not ready, and does not stamp successful convergence. The same target cannot
-restart again after Core restart, normal retry or recreate. A listener-restoration
-failure cannot mask a verified mismatch or erase its attempt bound; the claim
-journal still preserves the separate pending listener recovery. This avoids a
-restart-on-every-idle-exit loop. Status-only writes preserve this evidence; stale
-physical/generation owners cannot mark a replacement failed.
+A healthy HTTP response with a wrong/missing Bun version is a failed **adoption**,
+not a successful convergence stamp or proof of a broken executor. The ordinary
+current-runtime endpoint stays usable; its observed version (or unknown-pin base)
+is retained. `bun_runtime_failure_spec_hash` durably bounds further adoption for
+that exact desired spec/generation across Core restarts, ensure and recreate.
+Normal starts/resumes/repairs remain Bun-agnostic and preserve the bound unless a
+genuinely changed target or verified matching runtime supersedes it.
+
+The verified healthy mismatch and ready/config/runtime metadata are published
+atomically with physical/generation fencing, avoiding an owner-loss window that
+would otherwise strand a bounded failure on an unfinished row. Listener recovery
+is separate: an unproven cleanup retains the adopting marker/journal and reports
+readiness pending, never false ready success. The new owner can restore only the
+matching listener, including a same-generation mismatch whose observed version
+is unknown, without restarting or replaying uncertain work. A different
+generation or unmatched failure/intent cannot use this recovery identity.
 
 Investigate and repair the matching host runtime/server bundle, then deliver a
-changed desired release/spec through the authorized normal path. Successful
-physical setup clears failure metadata. Do not erase the marker or repeatedly
-replay setup merely to reset the budget. The additive nullable-column migration
-is part of the source change; applying it to a live database is not authorized here.
+changed desired release/spec through the authorized normal path. Do not erase
+the bound or replay setup merely to reset it. Status-only writes preserve the
+evidence; stale physical/generation owners cannot poison a replacement. The
+additive nullable-column migration is part of the source change; applying it to
+a live database is not authorized here.
 
 ## Offline preview — safe to run now
 
@@ -281,7 +316,10 @@ endpoint. The historical bundle is copied into the owned installed layout; the
 replacement uses the newly built release bundle and 1.4.2. It proves repeated
 polling does not wake the old server, active commands finish, unknown persisted
 work defers after exit, normal ensure adopts, generation is preserved, and another
-real executor stays uninterrupted. Host/systemd/tunnel/persistence seams are
+real executor stays uninterrupted. During deferral it also uses the real asset
+sync and HTTP file/Bash APIs to remove a revoked synthetic SSH key and rotate a
+rendered environment file while the original command continues, without a new
+server launch or Bun admission fence. Host/systemd/tunnel/persistence seams are
 fixtures; Bash/HTTP/registry/idle-exit/executables are real. Without the two legacy
 fixture inputs, the test remains a current-runtime compatibility regression, not
 proof of a historical runtime upgrade.
