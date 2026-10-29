@@ -828,7 +828,7 @@ describe('durable host capacity claims', () => {
       )
     )
     expect(outcomes.filter((o) => o.allowed)).toHaveLength(1)
-    expect(['busy', 'quota']).toContain(outcomes.find((o) => !o.allowed)?.reason)
+    expect(outcomes.find((o) => !o.allowed)?.reason).toMatch(/^(busy|quota)$/)
     const loser = [b, c][outcomes.findIndex((outcome) => !outcome.allowed)]!
     expect(
       await db.transaction((tx) =>
