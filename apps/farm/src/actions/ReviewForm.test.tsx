@@ -330,3 +330,27 @@ it('kept gates offer live outcomes instead of the original verdicts', async () =
   expect(hasButton(container, 'Approved')).toBe(false)
   expect(container.textContent).toContain('Taste the tomatoes')
 })
+
+it('a second workflow-owned wait blocks the gate; a sibling hold does not', async () => {
+  const gate = wait({
+    id: 'gate-wait',
+    type: 'manual',
+    resolutionHandler: 'workflow',
+    flowAttemptId: 2,
+    workflowHumanGate: true,
+  })
+  const other = wait({
+    id: 'other',
+    type: 'manual',
+    resolutionHandler: 'workflow',
+    flowAttemptId: 2,
+    workflowHumanGate: false,
+  })
+  const api = fakeApi({
+    workflowRun: () => Promise.resolve(workflowRun('gate', { openWaits: [gate, other] })),
+    getWorkStream: () => Promise.resolve(stream()),
+  })
+  const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
+  await typeInto(byLabel(container, 'Decision notes'), 'Ready for staging.')
+  expect(button(container, 'Approved').disabled).toBe(true)
+})

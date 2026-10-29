@@ -644,3 +644,102 @@ test('a PDF that cannot be read falls back to the download offer', async () => {
     await f.cleanup()
   }
 })
+
+test('authored brief leads with repeat-round context and collapses independent evidence', async () => {
+  const f = await fixture()
+  try {
+    const run = gateRun()
+    run.state.attempts[2]!.decisionBrief = {
+      submittedVersion: 7,
+      contexts: [],
+      value: {
+        decision: 'Approve the staging migration design.',
+        recommendation: 'Approve because fallback reads are tested.',
+        approvalEffect: 'Approval permits staging implementation only, not deployment.',
+        risks: 'Parallel paths increase maintenance work.',
+        changesSinceLastReview:
+          'The earlier review requested a smaller scope. This design removes the unrelated rollout.',
+      },
+    }
+    run.state.attempts[3]!.reviewBrief = { kind: 'authored', sourceAttemptIds: [3] }
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), run)
+    await f.render(<WorkflowReviewModal stream={stream} attemptId={4} onClose={() => {}} />)
+    const article = f.doc.querySelector('[aria-label="Decision brief"]')!
+    expect(article).not.toBeNull()
+    expect(article.textContent).toContain('What changed since your last review')
+    const disclosure = [...f.doc.querySelectorAll('details')].find(
+      (d) => d.querySelector('summary')?.textContent === 'Evidence and attachments'
+    )!
+    expect(disclosure.open).toBe(false)
+    expect(article.compareDocumentPosition(disclosure) & 4).toBeTruthy()
+    expect(disclosure.textContent).toContain('Read-only assessment of the head commit.')
+    expect(f.doc.body.textContent).toContain('Human approval · Review the architecture')
+  } finally {
+    await f.cleanup()
+  }
+})
+test('non-agent no-brief notice and carried-forward label preserve the current gate message', async () => {
+  for (const carry of [false, true]) {
+    const f = await fixture()
+    try {
+      const run = gateRun()
+      run.state.attempts[3]!.reviewBrief = carry ? { kind: 'carried-forward', sourceAttemptId: 3 } : { kind: 'none' }
+      if (carry) {
+        run.state.attempts[2]!.decisionBrief = {
+          submittedVersion: 6,
+          contexts: [],
+          value: {
+            decision: 'Approve the staging design.',
+            recommendation: 'Approve because it is tested.',
+            approvalEffect: 'Approval permits staging only, not production.',
+            risks: 'Maintenance effort temporarily increases.',
+          },
+        }
+        // A completed non-agent source carries the nearest agent submission.
+        run.state.attempts.push({ id: 5, stepId: 'design-review', status: 'completed', sourceAttemptIds: [3] })
+        run.state.attempts[3]!.sourceAttemptIds = [5]
+      }
+      f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), run)
+      await f.render(<WorkflowReviewModal stream={stream} attemptId={4} onClose={() => {}} />)
+      expect(f.doc.body.textContent).toContain(
+        carry ? 'Carried forward from an earlier step' : 'No decision brief for this gate'
+      )
+      expect(f.doc.body.textContent).toContain('Review the architecture and completion proposal before release.')
+    } finally {
+      await f.cleanup()
+    }
+  }
+})
+
+test('queued review remains readable with every blocker, disabled controls and automatic clearance', async () => {
+  const f = await fixture()
+  const mutate = spyOn(client.workflows, 'advance').mockResolvedValue(undefined as never)
+  try {
+    const run = gateRun()
+    run.openWaits!.push(
+      ...['owner-a', 'owner-b'].map((id) => ({
+        ...run.openWaits![0]!,
+        id,
+        resolutionHandler: undefined,
+        flowAttemptId: null,
+        actor: 'owner' as const,
+        message: `Waiting for ${id}.`,
+      }))
+    )
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), run)
+    await f.render(<WorkflowReviewModal stream={stream} attemptId={4} onClose={() => {}} />)
+    expect(f.doc.body.textContent).toContain('Review queued')
+    expect(f.doc.body.textContent).toContain('Waiting for owner-a.')
+    expect(f.doc.body.textContent).toContain('Waiting for owner-b.')
+    expect(f.decisionButtons().every((b) => b.disabled)).toBe(true)
+    await f.dom.act(async () => f.decisionButtons()[0]!.click())
+    expect(mutate).not.toHaveBeenCalled()
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), { ...run, openWaits: run.openWaits!.slice(0, 1) })
+    await f.settle()
+    expect(f.doc.body.textContent).not.toContain('Review queued')
+    expect(f.decisionButtons()[0]!.disabled).toBe(false)
+  } finally {
+    mutate.mockRestore()
+    await f.cleanup()
+  }
+})

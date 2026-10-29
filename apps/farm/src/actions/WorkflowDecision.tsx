@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { WorkflowRunDetail } from '@ficus/client-core'
 import {
   activeWorkflowAttempts,
+  workflowReviewBlockingWaits,
+  isWorkflowHumanGateWait,
   effectiveWorkflowStep,
   deliveryPullRequests,
   workflowReworkAttempt,
@@ -192,11 +194,8 @@ function HumanGate({
   const step = stepOf(run.state, attempt)
   if (!step || step.kind === 'agent' || !isPersonGate(run.state, attempt)) return null
   const waits = run.openWaits ?? stream.openWaits ?? []
-  const blockingWaits = waits.filter(
-    (wait) =>
-      (wait.flowAttemptId == null || wait.flowAttemptId === attempt.id) &&
-      !(wait.resolutionHandler === 'workflow' && wait.flowAttemptId === attempt.id)
-  )
+  const gateWait = waits.find((wait) => wait.flowAttemptId === attempt.id && isWorkflowHumanGateWait(wait))
+  const blockingWaits = workflowReviewBlockingWaits(gateWait ?? { type: 'manual', flowAttemptId: attempt.id }, waits)
   const assigned = stream.assignedReviewerIds ?? []
   const restricted = step.kind === 'human-approval' && step.approver === 'assigned-reviewers' && assigned.length > 0
   const canDecide =

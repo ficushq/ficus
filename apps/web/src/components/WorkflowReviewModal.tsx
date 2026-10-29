@@ -1,9 +1,17 @@
+import { WorkflowDecisionBrief } from './WorkflowDecisionBrief'
 import { useId, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from 'react'
 import { flushSync } from 'react-dom'
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { workStreamRef, workStreamTitle, type WorkflowAttempt, type WorkStream } from '@ficus/shared'
+import {
+  workflowReviewBriefForAttempt,
+  workStreamWaitActor,
+  workStreamRef,
+  workStreamTitle,
+  type WorkflowAttempt,
+  type WorkStream,
+} from '@ficus/shared'
 import type { WorkflowRunDetail } from '@ficus/client-core'
 import { client } from '../api/clientInstance'
 import { useMediaQuery } from '../hooks/useMediaQuery'
@@ -16,6 +24,7 @@ import {
   decisionNotesHint,
   focusedHumanGate,
   humanGateContext,
+  humanGateSubtitle,
   openHumanGates,
   outcomeEffect,
   outcomeLabel,
@@ -82,7 +91,13 @@ export function WorkflowReviewModal({
       onClose={onClose}
       title={gate ? `Review ${name}` : 'Review'}
       titleContent={<span className="text-xl leading-snug">{name}</span>}
-      headerExtra={gate && <Badge color="review">{gate.canDecide ? 'Your review' : 'Awaiting review'}</Badge>}
+      headerExtra={
+        gate && (
+          <Badge color={gate.blockingWaits.length ? 'neutral' : 'review'}>
+            {gate.blockingWaits.length ? 'Review queued' : gate.canDecide ? 'Your review' : 'Awaiting review'}
+          </Badge>
+        )
+      }
       size="workspace"
       mobileFullscreen
       noChildPadding
@@ -176,9 +191,11 @@ function ReviewLayout({
     // Each tab is its own document: open it at the top, not at the last one's scroll position.
     if (documentColumn.current) documentColumn.current.scrollTop = 0
   }
+  const brief = workflowReviewBriefForAttempt(run.state, attempt)
+  const hasBriefDisplay = brief.kind !== 'legacy'
   const handoff = (
     <div className="mx-auto w-full max-w-[72ch] px-5 pb-16 pt-6 sm:px-8 sm:pt-8">
-      {!wide && (
+      {!wide && !hasBriefDisplay && (
         <div className="mb-6">
           <ReviewSummary stream={stream} run={run} gate={gate} {...navigation} />
         </div>
@@ -203,11 +220,33 @@ function ReviewLayout({
       <ReviewDocument run={run} sources={gate.sources} />
       {!wide && gate.history.length > 0 && (
         <div className="mt-10 border-t border-panel-border pt-5">
-          <DecisionHistory gate={gate} />
+          <DecisionHistory gate={gate} run={run} />
         </div>
       )}
     </div>
   )
+  const evidenceContent =
+    attachments.length === 0 ? (
+      handoff
+    ) : (
+      <>
+        <ReviewTabs
+          idPrefix={tabsId}
+          attachments={attachments}
+          selected={openFile?.id ?? HANDOFF_TAB}
+          onSelect={selectTab}
+        />
+        <div role="tabpanel" id={`${tabsId}-panel`} aria-labelledby={`${tabsId}-tab-${openFile?.id ?? HANDOFF_TAB}`}>
+          {openFile ? (
+            <div className="mx-auto w-full max-w-[72ch] px-5 pb-16 pt-6 sm:px-8 sm:pt-8">
+              <AttachmentView key={openFile.id} workStreamId={stream.id} attachment={openFile} />
+            </div>
+          ) : (
+            handoff
+          )}
+        </div>
+      </>
+    )
   return (
     <div
       data-review-layout={wide ? 'columns' : 'stacked'}
@@ -221,30 +260,29 @@ function ReviewLayout({
         tabIndex={-1}
         className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain outline-none"
       >
-        {attachments.length === 0 ? (
-          handoff
-        ) : (
+        {hasBriefDisplay ? (
           <>
-            <ReviewTabs
-              idPrefix={tabsId}
-              attachments={attachments}
-              selected={openFile?.id ?? HANDOFF_TAB}
-              onSelect={selectTab}
-            />
-            <div
-              role="tabpanel"
-              id={`${tabsId}-panel`}
-              aria-labelledby={`${tabsId}-tab-${openFile?.id ?? HANDOFF_TAB}`}
-            >
-              {openFile ? (
-                <div className="mx-auto w-full max-w-[72ch] px-5 pb-16 pt-6 sm:px-8 sm:pt-8">
-                  <AttachmentView key={openFile.id} workStreamId={stream.id} attachment={openFile} />
-                </div>
-              ) : (
-                handoff
+            <div className="mx-auto w-full max-w-[72ch] space-y-6 px-5 py-6 sm:px-8 sm:py-8">
+              {!wide && <ReviewSummary stream={stream} run={run} gate={gate} {...navigation} />}
+              <p className="text-sm text-muted">
+                {humanGateSubtitle(gate.step.instructions, gate.step.name ?? gate.step.id)}
+              </p>
+              <WorkflowDecisionBrief run={run.state} attempt={attempt} />
+              {(brief.kind === 'none' || brief.kind === 'carried-forward') && (
+                <MarkdownContent variant="document" className="text-sm text-secondary">
+                  {gate.step.instructions}
+                </MarkdownContent>
               )}
             </div>
+            <details className="border-t border-panel-border">
+              <summary className="cursor-pointer px-5 py-4 text-sm font-medium text-secondary sm:px-8">
+                Evidence and attachments
+              </summary>
+              {evidenceContent}
+            </details>
           </>
+        ) : (
+          evidenceContent
         )}
       </div>
       {wide ? (
@@ -257,7 +295,7 @@ function ReviewLayout({
             <ReviewSummary stream={stream} run={run} gate={gate} {...navigation} />
             <div className="border-t border-panel-border" />
             {gate.canDecide ? <DecisionForm layout="rail" {...decision} /> : <ReadOnlyDecision {...decision} />}
-            {gate.history.length > 0 && <DecisionHistory gate={gate} />}
+            {gate.history.length > 0 && <DecisionHistory gate={gate} run={run} />}
           </div>
         </aside>
       ) : (
@@ -563,9 +601,7 @@ function DecisionButtons({ gate, run, notes, advance }: Omit<DecisionState, 'set
 function DecisionStatus({ gate, advance }: Pick<DecisionState, 'gate' | 'advance'>) {
   return (
     <>
-      {gate.blockingWaits.length > 0 && (
-        <p className="text-xs text-muted">Resolve the other open waits on this step before deciding.</p>
-      )}
+      <ReviewBlockers gate={gate} />
       {advance.error && (
         <p role="alert" className="text-xs text-status-danger-600 dark:text-status-danger-400">
           {actionErrorMessage(advance.error)}
@@ -581,6 +617,7 @@ function ReadOnlyDecision({ gate, run }: Pick<DecisionState, 'gate' | 'run'>) {
     <div className="space-y-2">
       <p className="text-sm font-medium text-primary">Awaiting a decision</p>
       <p className="text-xs text-muted">{gate.readOnlyReason}</p>
+      <ReviewBlockers gate={gate} />
       <ul className="space-y-1 pt-1 text-xs text-secondary">
         {gate.outcomes.map(([outcome, transition]) => (
           <li key={outcome}>
@@ -593,7 +630,7 @@ function ReadOnlyDecision({ gate, run }: Pick<DecisionState, 'gate' | 'run'>) {
   )
 }
 
-function DecisionHistory({ gate }: { gate: HumanGateContext }) {
+function DecisionHistory({ gate, run }: { gate: HumanGateContext; run: WorkflowRunDetail }) {
   return (
     <details className="group">
       <summary className="cursor-pointer text-xs font-medium text-secondary hover:text-primary">
@@ -603,11 +640,12 @@ function DecisionHistory({ gate }: { gate: HumanGateContext }) {
         {gate.history.map((entry) => (
           <li key={entry.id} className="text-xs">
             <p className="font-medium text-secondary">
-              Attempt {entry.id} · {outcomeLabel(entry.outcome ?? '')}
+              Attempt {entry.id} · {entry.outcome ? outcomeLabel(entry.outcome) : 'Returned for rework'}
             </p>
-            {entry.evidence && (
+            <WorkflowDecisionBrief run={run.state} attempt={entry} />
+            {(entry.evidence || entry.feedback) && (
               <MarkdownContent variant="document" className="mt-1 text-xs text-secondary">
-                {entry.evidence}
+                {entry.evidence ?? entry.feedback!}
               </MarkdownContent>
             )}
           </li>
@@ -702,4 +740,34 @@ export function WorkflowReviewRoute() {
   const { workStreamId = '' } = useParams<{ workStreamId: string }>()
   const [params] = useSearchParams()
   return <Navigate to={workflowReviewPath(workStreamId, params.get('wait') ?? undefined)} replace />
+}
+
+/** Blockers remain visible to readers as well as designated deciders. */
+function ReviewBlockers({ gate }: { gate: HumanGateContext }) {
+  if (!gate.blockingWaits.length) return null
+  return (
+    <section aria-label="Review blockers" className="space-y-2 text-xs text-secondary">
+      <p>This review is queued. You can read it now, but you cannot decide until the following blockers are cleared.</p>
+      <ul className="space-y-1">
+        {gate.blockingWaits.map((wait) => (
+          <li key={wait.id}>
+            <span className="font-medium">
+              {wait.type === 'manual'
+                ? workStreamWaitActor(wait) === 'owner'
+                  ? 'Waiting on owner:'
+                  : workStreamWaitActor(wait) === 'manager'
+                    ? 'Waiting on manager:'
+                    : 'Waiting on input:'
+                : wait.type === 'question'
+                  ? 'Waiting for an answer:'
+                  : wait.type === 'dependency'
+                    ? 'Waiting on a dependency:'
+                    : 'Waiting on another review:'}
+            </span>{' '}
+            {wait.message || 'No details were provided.'}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
 }

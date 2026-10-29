@@ -1,5 +1,8 @@
 import {
   activeWorkflowAttempts,
+  workflowReviewBlockingWaits,
+  isWorkflowHumanGateWait,
+  workflowEarlierHumanDecisions,
   describeWorkflowDecision,
   effectiveWorkflowStep,
   workflowIncomingAttempts,
@@ -129,12 +132,8 @@ export function humanGateContext(
   const step = effectiveWorkflowStep(run.state, attempt)
   if (!step || !isHumanGate(run.state, attempt) || step.kind === 'agent') return undefined
   const waits = run.openWaits ?? stream.openWaits ?? []
-  const gateWait = waits.find((wait) => wait.flowAttemptId === attempt.id && wait.resolutionHandler === 'workflow')
-  const blockingWaits = waits.filter(
-    (wait) =>
-      (wait.flowAttemptId == null || wait.flowAttemptId === attempt.id) &&
-      !(wait.resolutionHandler === 'workflow' && wait.flowAttemptId === attempt.id)
-  )
+  const gateWait = waits.find((wait) => wait.flowAttemptId === attempt.id && isWorkflowHumanGateWait(wait))
+  const blockingWaits = workflowReviewBlockingWaits(gateWait ?? { type: 'manual', flowAttemptId: attempt.id }, waits)
   const assigned = stream.assignedReviewerIds ?? []
   // Any reviewer decides for a decision step; only approvals can be limited to assigned reviewers.
   const restricted = step.kind === 'human-approval' && step.approver === 'assigned-reviewers' && assigned.length > 0
@@ -150,9 +149,7 @@ export function humanGateContext(
     ...declared.filter(([outcome]) => outcome === primaryOutcome),
     ...declared.filter(([outcome]) => outcome !== primaryOutcome),
   ]
-  const history = run.state.attempts
-    .filter((entry) => entry.stepId === attempt.stepId && entry.id !== attempt.id && !!entry.outcome)
-    .sort((a, b) => b.id - a.id)
+  const history = workflowEarlierHumanDecisions(run.state, attempt.stepId).filter((entry) => entry.id !== attempt.id)
   return {
     step,
     ...(step.kind === 'decision' && attempt.decision
@@ -238,4 +235,12 @@ export function workflowReviewPath(workStreamRef: string, waitId?: string): stri
   const params = new URLSearchParams({ review: workStreamRef })
   if (waitId) params.set('reviewWait', waitId)
   return `/?${params}`
+}
+
+/** Compact gate-kind description, never per-round authorization. */
+export function humanGateSubtitle(instructions: string, fallback: string): string {
+  const text = plainText(instructions)
+  const sentence =
+    [...new Intl.Segmenter(undefined, { granularity: 'sentence' }).segment(text)][0]?.segment.trim() || fallback
+  return `Human approval · ${sentence.length <= 160 ? sentence : sentence.slice(0, 160).replace(/\s+\S*$/, '') + '…'}`
 }
