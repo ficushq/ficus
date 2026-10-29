@@ -177,7 +177,7 @@ export const workflowLimitsSchema = z.strictObject({
 // This is a flow definition contract, not an expansion of the legacy stream API.
 // Deliverable completion must remain unavailable there until runtime gates exist.
 export const workflowCompletionSchema = z.strictObject({
-  mode: z.enum(['deliverable', 'pr-merge', 'pr-auto-merge', 'direct-merge', 'review-approval']),
+  mode: z.enum(['deliverable', 'pr-review', 'pr-merge', 'pr-auto-merge', 'direct-merge', 'review-approval']),
   followChanges: z.boolean().optional(),
   changeEventsTo: z.union([z.literal('delivery-owner'), z.strictObject({ step: identifier })]).optional(),
 })

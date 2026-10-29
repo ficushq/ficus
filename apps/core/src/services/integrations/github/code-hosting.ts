@@ -156,14 +156,16 @@ export const githubCodeHostingAdapter: CodeHostingAdapter = {
   validateRepository,
   async changeRequest(reference, squadId) {
     if (!reference.changeRequest) return null
-    const pr = await githubApiGet<{ merged: boolean; base: { ref: string }; head: { ref: string; sha?: string } }>(
-      `/repos/${reference.repository}/pulls/${reference.changeRequest.number}`,
-      squadId,
-      reference.connectionId
-    )
+    const pr = await githubApiGet<{
+      merged: boolean
+      state: string
+      base: { ref: string }
+      head: { ref: string; sha?: string }
+    }>(`/repos/${reference.repository}/pulls/${reference.changeRequest.number}`, squadId, reference.connectionId)
     return pr
       ? {
           merged: pr.merged,
+          closed: pr.state === 'closed',
           headBranch: pr.head.ref,
           baseBranch: pr.base.ref,
           ...(pr.head.sha ? { headSha: pr.head.sha } : {}),

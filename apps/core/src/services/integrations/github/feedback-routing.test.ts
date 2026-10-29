@@ -3158,6 +3158,35 @@ describe('trusted actor actions with the author filter ON (default squad rules)'
     }
   })
 
+  test('terminal review re-requests keep the author filter and notify the manager only once', async () => {
+    const h = await defaultRulesFixture()
+    const originalTime = pr.updated_at
+    try {
+      await h.trust()
+      await publishIntegrationOutput('github', reviewRequested(trustedActor), h.authority)
+      const [stream] = await db.select().from(workStreams).where(eq(workStreams.squadId, h.squadId))
+      expect(stream).toBeDefined()
+      await db.update(workStreams).set({ status: 'done' }).where(eq(workStreams.id, stream!.id))
+      const before = await h.effects()
+      await publishIntegrationOutput('github', reviewRequested(trustedActor), h.authority)
+      expect((await h.effects()).inbox).toBe(before.inbox)
+      pr.updated_at = '2026-10-02T12:00:00Z'
+      await publishIntegrationOutput('github', reviewRequested(trustedActor), h.authority)
+      expect((await h.effects()).inbox).toBe(before.inbox + 1)
+      expect((await h.effects()).streams).toBe(before.streams)
+      await publishIntegrationOutput('github', reviewRequested(trustedActor), h.authority)
+      expect((await h.effects()).inbox).toBe(before.inbox + 1)
+      await sentinelFree(h.squadId, h.managerId)
+      pr.updated_at = '2026-10-02T13:00:00Z'
+      await publishIntegrationOutput('github', reviewRequested(outsider), h.authority)
+      expect((await h.effects()).inbox).toBe(before.inbox + 1)
+      expect((await revisions(h.squadId)).some((row) => row.releaseState === 'held')).toBe(true)
+    } finally {
+      pr.updated_at = originalTime
+      await h.close()
+    }
+  })
+
   test('a trusted assignment notifies the manager through the default rule', async () => {
     const h = await defaultRulesFixture()
     try {

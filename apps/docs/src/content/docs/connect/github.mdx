@@ -108,6 +108,26 @@ instance must be reachable at the displayed public URL.
 
 </ModeContent>
 
+## Keep a reviewer with a pull request
+
+When a **Review requested → Start work stream** event rule creates work, Ficus
+uses the squad's chosen workflow with **PR review** completion. The reviewer posts
+its review, then stays available for comments, new commits, and re-review requests.
+Finishing a review round does not finish the work stream: Ficus verifies that the
+pull request has merged or closed before allowing completion.
+
+The stream can be parked to release capacity while keeping its reviewer and
+conversation. Incoming updates remain attached to the stream and wait for it to
+resume; parking does not create a replacement reviewer. A paused stream also
+retains updates until you resume it.
+
+Existing active work streams keep priority over event-rule actions. If a new
+review request arrives after the original review stream has already completed
+or been canceled, Ficus notifies the squad manager to decide what to do next.
+It does not automatically reopen the stream or create another one. Duplicate
+webhook deliveries do not create duplicate notifications. Your account routing
+and GitHub author filter still apply.
+
 ## Control who can send feedback to agents
 
 Anyone who can comment on a public repository can write a pull request review or

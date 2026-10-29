@@ -298,6 +298,7 @@ export function WorkflowGraph({
     deliverable: 'Deliverable',
     'review-approval': 'Human approval',
     'pr-merge': 'Human merge',
+    'pr-review': 'PR merged or closed',
     'pr-auto-merge': 'Auto merge',
     'direct-merge': 'Direct merge',
   }[definition.completion.mode]

@@ -29,7 +29,7 @@ import { deliveryView } from '../work-streams/delivery-pull-requests'
 export function awaitsCodeHostDelivery(state: WorkflowRun, metadata: unknown): boolean {
   return (
     state.status === 'completion-ready' &&
-    ['pr-merge', 'pr-auto-merge'].includes(state.definition.completion.mode) &&
+    ['pr-review', 'pr-merge', 'pr-auto-merge'].includes(state.definition.completion.mode) &&
     state.definition.completion.followChanges === true &&
     !!codeHostingRegistry.resolve(metadata)?.reference.changeRequest
   )
@@ -83,6 +83,12 @@ function classifyPrimaryDeliveryPresentation(
   if (state.status !== 'completion-ready') return undefined
   const mode = state.definition.completion.mode
   if (mode === 'review-approval') return { kind: 'approval' }
+  // Reviewers wait for lifecycle events, not permission to merge or green CI.
+  // Completion still verifies live state in finishFlow; an event is not a finish permit.
+  if (mode === 'pr-review')
+    return awaitsCodeHostDelivery(state, metadata)
+      ? { kind: 'external' }
+      : { kind: 'setup', explanation: { setupReason: 'unbound' } }
   if (!['pr-merge', 'pr-auto-merge', 'direct-merge'].includes(mode)) return undefined
   const git = (metadata as { git?: { commit?: string; branch?: string; baseBranch?: string } } | null)?.git
   if (mode === 'direct-merge') {

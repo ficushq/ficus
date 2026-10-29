@@ -236,3 +236,11 @@ describe('auto-merge enabling versus delivery', () => {
       expect(flowCompletionInstructions(mode)).not.toContain('enable native auto-merge now')
   })
 })
+
+test('PR review policy keeps the reviewer available without granting merge authority', () => {
+  const text = flowCompletionInstructions('pr-review')
+  expect(text).toContain('dedicated reviewer')
+  expect(text).toContain('wait for integration events')
+  expect(text).toContain('merged or closed')
+  expect(text).not.toContain('enable native auto-merge now')
+})

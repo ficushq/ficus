@@ -117,6 +117,7 @@ export const WS_PRIORITY_BADGE_COLORS: Record<WorkStreamPriority, BadgeColor> = 
 
 export const WS_COMPLETION_MODE_BADGE_COLORS: Record<WorkStream['completionMode'], BadgeColor> = {
   'pr-merge': 'accent-2',
+  'pr-review': 'accent-3',
   'pr-auto-merge': 'accent-3',
   'review-approval': 'accent-4',
   'direct-merge': 'accent-5',
@@ -125,6 +126,7 @@ export const WS_COMPLETION_MODE_BADGE_COLORS: Record<WorkStream['completionMode'
 
 export const WS_COMPLETION_MODE_LABELS: Record<WorkStream['completionMode'], string> = {
   'pr-merge': 'pr-merge',
+  'pr-review': 'PR review',
   'pr-auto-merge': 'PR (auto-merge)',
   'review-approval': 'review-approval',
   'direct-merge': 'direct-merge',

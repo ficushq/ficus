@@ -7,6 +7,7 @@ import {
   type WorkflowAttempt,
   type WorkflowRun,
 } from '@ficus/shared'
+import { flowCompletionInstructions } from './completion-prompt'
 import { flowCapabilityInstructions } from './capability-instructions'
 
 type HandoffStream = {
@@ -73,6 +74,7 @@ export function flowMessage(
       : '',
     stream.handoffMessage ? `Owner's handoff:\n${stream.handoffMessage}` : '',
     flowCapabilityInstructions(run.state, attempt, run.version),
+    run.state.definition.completion.mode === 'pr-review' ? flowCompletionInstructions('pr-review') : '',
     attempt.branch || activeWorkflowAttempts(run.state).length > 1
       ? 'Parallel work is active in this shared workspace.'
       : '',
