@@ -1,0 +1,719 @@
+{
+  "study": "requirements-first-v1",
+  "status": "completed",
+  "observed_at": "2026-10-29T16:28:45.466184+00:00",
+  "protocol_commit": "7fe6ea44",
+  "cells": {
+    "original-onepass": {
+      "trial": "original__JFaiEfy",
+      "native_outcome": {
+        "configuration": "reviewer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "25c45f893b53625c1cba4c3233506ac76627c066681fb0253fe168b85254d9f4",
+        "database_network": "task",
+        "attempted_roles": [
+          "reviewer"
+        ],
+        "engineer_only_verified": null,
+        "executed_roles": [
+          "reviewer"
+        ],
+        "artifact_review": {
+          "base_commit": "da50b01d043431fdc0c0340ab0b047c00f205ef9",
+          "artifact_sha256": "7e8d52b0d88e007fae02c66e30d38cc59245dc5bd01c2267a1e1921d6c9c8fcc",
+          "artifact_commit": "1a201988ad0709489a95282b9e523a26cb609d8f",
+          "valid": true,
+          "repository_unchanged": true,
+          "verdict": "changes-requested"
+        }
+      },
+      "prompt_audit": {
+        "overlay_sha256": "a63413bde1ec293724cf5f3e2ea075bccec025a38c4b400643a870191e21a0ef",
+        "only_overlay_path": "config/agent-types/reviewer.yaml",
+        "native_synced_body_verified": true,
+        "synced_prompt_sha256": "2d57ee4a895b730010fc6365a2d24bb900572713c84c518793a8e196204de698",
+        "egress": {
+          "response_header_timeout_seconds": 600,
+          "original_config_sha256": "78c18e58efbc7c8e226cb311e2a4cf3863d5a2f3e54b3bf15a0ea4b885345290",
+          "context_sha256": {
+            "Dockerfile": "a2385dd6b3eee6e04c49b467df84ed2a273fd402a9cdd404a64fb535e9b26ff7",
+            "allowlist.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bin/network-policy": "ff1cacfb95e17cda3668f389176ae54e5e4139cff12ee54b4d745722ad0ff0b2",
+            "entrypoint.sh": "2e225ed745eb5976f93afd52d91c844b954b5f6f45373fb70c4c509e36d1e069",
+            "gost.yaml": "9293a0f45fbd16d3e59c06aa559a9544193ead48575b9ca7163c5e8e7bad8ed1"
+          },
+          "network_policy_unchanged": true
+        }
+      },
+      "trial_seconds": 258.520575,
+      "launcher_seconds": 262.1325513749616,
+      "usage": {
+        "settled_usd": 0.265358,
+        "calls": 10,
+        "new_unresolved": 0,
+        "unattributed_usd": 0,
+        "token_multiset_matches_proxy": true,
+        "tokens": {
+          "input_uncached": 30,
+          "cache_read": 350093,
+          "cache_write": 63802,
+          "output": 7078
+        }
+      },
+      "verdict": "changes-requested",
+      "target_blocking_detection": false,
+      "target_ambiguity_observation": false,
+      "amendment_control_pass": null,
+      "findings": [
+        "Valid CSV headers beginning with '<' are rejected as markup",
+        "A malformed remote redirect escapes as an internal server error",
+        "Global OPTIONS handling turns unknown routes into successes"
+      ],
+      "artifact_audit": {
+        "base_commit": "da50b01d043431fdc0c0340ab0b047c00f205ef9",
+        "artifact_sha256": "7e8d52b0d88e007fae02c66e30d38cc59245dc5bd01c2267a1e1921d6c9c8fcc",
+        "artifact_commit": "1a201988ad0709489a95282b9e523a26cb609d8f",
+        "valid": true,
+        "repository_unchanged": true,
+        "verdict": "changes-requested"
+      },
+      "evidence_sha256": {
+        "result.json": "2762e8f91247f71bbeb6d48dd69c3e1dfedecd212fdc911ccfad3dd54877a8f1",
+        "agent/reviewer-prompt-audit.json": "21e95a104949d2210a4ff6322fa730c46eb32f40dbd509e55fff285725825391",
+        "agent/snapshot.json": "855ef293d1472214a65568f8e6f3f60e22a6f9f06acc4e8c9dc301788492058c",
+        "agent/messages.json": "a956aacebb8629b76dc4185b0690fd398e3bc8dc8624e9ed94986504542f061d",
+        "agent/artifact-review-audit.json": "b698c115af0a15d6cbc250f70d02aecaddc4ffd47e33f4f493025022c97bacbb",
+        "agent/review-result.json": "c562b48686c8f02ae65f5ac68f8866a2eb20c35565248ac1bd97eaed8bfded01"
+      }
+    },
+    "original-expectations": {
+      "trial": "original__VEGc4iE",
+      "native_outcome": {
+        "configuration": "reviewer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "25c45f893b53625c1cba4c3233506ac76627c066681fb0253fe168b85254d9f4",
+        "database_network": "task",
+        "attempted_roles": [
+          "reviewer"
+        ],
+        "engineer_only_verified": null,
+        "executed_roles": [
+          "reviewer"
+        ],
+        "requirements_stage": {
+          "empty_base_verified": true,
+          "base_commit": "da50b01d043431fdc0c0340ab0b047c00f205ef9",
+          "valid": true,
+          "repository_unchanged": true,
+          "expectations_sha256": "64089d7ad5493a3d4dad72b344a4e48deb4b9ad2924f94ad07b688250c2b23d4"
+        }
+      },
+      "prompt_audit": {
+        "overlay_sha256": "a63413bde1ec293724cf5f3e2ea075bccec025a38c4b400643a870191e21a0ef",
+        "only_overlay_path": "config/agent-types/reviewer.yaml",
+        "native_synced_body_verified": true,
+        "synced_prompt_sha256": "2d57ee4a895b730010fc6365a2d24bb900572713c84c518793a8e196204de698",
+        "egress": {
+          "response_header_timeout_seconds": 600,
+          "original_config_sha256": "78c18e58efbc7c8e226cb311e2a4cf3863d5a2f3e54b3bf15a0ea4b885345290",
+          "context_sha256": {
+            "Dockerfile": "a2385dd6b3eee6e04c49b467df84ed2a273fd402a9cdd404a64fb535e9b26ff7",
+            "allowlist.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bin/network-policy": "ff1cacfb95e17cda3668f389176ae54e5e4139cff12ee54b4d745722ad0ff0b2",
+            "entrypoint.sh": "2e225ed745eb5976f93afd52d91c844b954b5f6f45373fb70c4c509e36d1e069",
+            "gost.yaml": "9293a0f45fbd16d3e59c06aa559a9544193ead48575b9ca7163c5e8e7bad8ed1"
+          },
+          "network_policy_unchanged": true
+        }
+      },
+      "trial_seconds": 152.554957,
+      "launcher_seconds": 156.260557667003,
+      "usage": {
+        "settled_usd": 0.118989,
+        "calls": 6,
+        "new_unresolved": 0,
+        "unattributed_usd": 0,
+        "token_multiset_matches_proxy": true,
+        "tokens": {
+          "input_uncached": 18,
+          "cache_read": 104623,
+          "cache_write": 25527,
+          "output": 4467
+        }
+      },
+      "expectation_count": 24,
+      "ambiguity_count": 13,
+      "target_interpretation": "ambiguous",
+      "target_expectations": [
+        {
+          "requirement": "Second request, Response shape: _shape=lists default; _shape=objects returns objects including rowid; rowid not in columns.",
+          "example": "On a dataset with columns name,age and row Ada,37, compare omitted _shape, _shape=lists and _shape=objects.",
+          "expected": "The first two return row arrays; objects mode returns a row object with name=\"Ada\", age=37 and a source rowid. Columns remain [\"name\",\"age\"] and do not gain a synthetic rowid column.",
+          "basis": "explicit"
+        },
+        {
+          "requirement": "Second request, Response shape: rowid is the 1-based source-file row number; sorting precedes pagination.",
+          "example": "Source data rows are A, B, C in that order; query objects sorted descending by name with offset 1 and size 1.",
+          "expected": "The returned B retains its original source identity rather than acquiring a page-relative rowid. A plausible interpretation numbers data rows starting at 1, yielding rowid=2, but whether the header counts is not explicit.",
+          "basis": "interpretation"
+        },
+        {
+          "requirement": "Second request, Visibility toggles: _rowid=hide removes rowid; _total=hide removes total; only hide is valid.",
+          "example": "Query _shape=objects&_rowid=hide&_total=hide; separately try _rowid=show, _rowid=, _total=show and _total=.",
+          "expected": "The successful response omits synthetic rowid from each object and omits total, retaining ordinary dataset fields. Each invalid toggle returns HTTP 400 and a JSON error. A valid hide toggle does not require objects mode according to the stated parameter rules.",
+          "basis": "explicit"
+        },
+        {
+          "requirement": "Second request: any repeated control parameter among _size, _offset, _shape, _sort, _sort_desc, _rowid, _total is HTTP 400.",
+          "example": "For each of the seven controls, send it twice with identical otherwise valid values, such as _size=2&_size=2 or _total=hide&_total=hide; also try differing values.",
+          "expected": "Every repeated-control request returns HTTP 400 and the JSON error envelope, regardless of whether the repeated values agree. Different sort controls together are not repetition.",
+          "basis": "explicit"
+        }
+      ],
+      "target_ambiguities": [
+        "The phrase 1-based source-file row number does not clearly say whether the header or physical lines inside quoted multiline fields count. Source identity should not be silently equated with page position."
+      ],
+      "stage_audit": {
+        "empty_base_verified": true,
+        "base_commit": "da50b01d043431fdc0c0340ab0b047c00f205ef9",
+        "valid": true,
+        "repository_unchanged": true,
+        "expectations_sha256": "64089d7ad5493a3d4dad72b344a4e48deb4b9ad2924f94ad07b688250c2b23d4"
+      },
+      "evidence_sha256": {
+        "result.json": "1303a4ad98371bef5c5e127e7b23283b34c384d990c046a8c32decbb6a6d99fa",
+        "agent/reviewer-prompt-audit.json": "21e95a104949d2210a4ff6322fa730c46eb32f40dbd509e55fff285725825391",
+        "agent/snapshot.json": "48a30827ec1746fb3a4e98553331452e7826045b955837d139559a1845515c5e",
+        "agent/messages.json": "30dab415ca1ebd3610f3c3e0353636c5492540a0fad2d168d844712358431109",
+        "agent/requirements-stage-audit.json": "dde963467232919f9cac2dc2b597c63f322694c1ef1c7b1e65a67871bfbfeacc",
+        "agent/requirements-expectations.json": "64089d7ad5493a3d4dad72b344a4e48deb4b9ad2924f94ad07b688250c2b23d4"
+      }
+    },
+    "original-staged": {
+      "trial": "original__Gxvcgc5",
+      "native_outcome": {
+        "configuration": "reviewer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "25c45f893b53625c1cba4c3233506ac76627c066681fb0253fe168b85254d9f4",
+        "database_network": "task",
+        "attempted_roles": [
+          "reviewer"
+        ],
+        "engineer_only_verified": null,
+        "executed_roles": [
+          "reviewer"
+        ],
+        "artifact_review": {
+          "base_commit": "da50b01d043431fdc0c0340ab0b047c00f205ef9",
+          "artifact_sha256": "7e8d52b0d88e007fae02c66e30d38cc59245dc5bd01c2267a1e1921d6c9c8fcc",
+          "artifact_commit": "1a201988ad0709489a95282b9e523a26cb609d8f",
+          "valid": true,
+          "repository_unchanged": true,
+          "verdict": "changes-requested"
+        }
+      },
+      "prompt_audit": {
+        "overlay_sha256": "a63413bde1ec293724cf5f3e2ea075bccec025a38c4b400643a870191e21a0ef",
+        "only_overlay_path": "config/agent-types/reviewer.yaml",
+        "native_synced_body_verified": true,
+        "synced_prompt_sha256": "2d57ee4a895b730010fc6365a2d24bb900572713c84c518793a8e196204de698",
+        "egress": {
+          "response_header_timeout_seconds": 600,
+          "original_config_sha256": "78c18e58efbc7c8e226cb311e2a4cf3863d5a2f3e54b3bf15a0ea4b885345290",
+          "context_sha256": {
+            "Dockerfile": "a2385dd6b3eee6e04c49b467df84ed2a273fd402a9cdd404a64fb535e9b26ff7",
+            "allowlist.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bin/network-policy": "ff1cacfb95e17cda3668f389176ae54e5e4139cff12ee54b4d745722ad0ff0b2",
+            "entrypoint.sh": "2e225ed745eb5976f93afd52d91c844b954b5f6f45373fb70c4c509e36d1e069",
+            "gost.yaml": "9293a0f45fbd16d3e59c06aa559a9544193ead48575b9ca7163c5e8e7bad8ed1"
+          },
+          "network_policy_unchanged": true
+        }
+      },
+      "trial_seconds": 219.018396,
+      "launcher_seconds": 222.74190675001591,
+      "usage": {
+        "settled_usd": 0.245492,
+        "calls": 11,
+        "new_unresolved": 0,
+        "unattributed_usd": 0,
+        "token_multiset_matches_proxy": true,
+        "tokens": {
+          "input_uncached": 33,
+          "cache_read": 383939,
+          "cache_write": 59387,
+          "output": 5856
+        }
+      },
+      "verdict": "changes-requested",
+      "target_blocking_detection": false,
+      "target_ambiguity_observation": true,
+      "amendment_control_pass": null,
+      "findings": [
+        "Valid CSV is rejected when its first header resembles markup",
+        "Malformed remote redirects escape the fetch-error mapping and return HTTP 500"
+      ],
+      "artifact_audit": {
+        "base_commit": "da50b01d043431fdc0c0340ab0b047c00f205ef9",
+        "artifact_sha256": "7e8d52b0d88e007fae02c66e30d38cc59245dc5bd01c2267a1e1921d6c9c8fcc",
+        "artifact_commit": "1a201988ad0709489a95282b9e523a26cb609d8f",
+        "valid": true,
+        "repository_unchanged": true,
+        "verdict": "changes-requested"
+      },
+      "handoff": {
+        "exact_unedited_bytes": true,
+        "sha256": "64089d7ad5493a3d4dad72b344a4e48deb4b9ad2924f94ad07b688250c2b23d4",
+        "first_tool_reads_expectations": true,
+        "first_tool": {
+          "message_id": "c8f4fafa-a750-44e8-8470-5b077f148fcd",
+          "tool": "read",
+          "args": {
+            "path": "/opt/ficus-harbor/requirements-expectations.json",
+            "offset": 1,
+            "limit": 2000
+          },
+          "is_error": false
+        }
+      },
+      "evidence_sha256": {
+        "result.json": "b2973bac277939052e7b72d8ae6fb249f87a99741c9d12682d7351ec42ea8f03",
+        "agent/reviewer-prompt-audit.json": "21e95a104949d2210a4ff6322fa730c46eb32f40dbd509e55fff285725825391",
+        "agent/snapshot.json": "bfccd924a289284d44bac623f82b93e0b68f0908643e513e2c6c360b26703583",
+        "agent/messages.json": "30a8c4e15714ec6210ed82dc325e1e146f88b922111dacf7ae901405b713b982",
+        "agent/artifact-review-audit.json": "b698c115af0a15d6cbc250f70d02aecaddc4ffd47e33f4f493025022c97bacbb",
+        "agent/review-result.json": "c31ec629dae8e0cd93098179324f51b42f75356e267097ae5c1af161b75850cd",
+        "agent/requirements-expectations-input.json": "64089d7ad5493a3d4dad72b344a4e48deb4b9ad2924f94ad07b688250c2b23d4",
+        "agent/requirements-expectations-after.json": "64089d7ad5493a3d4dad72b344a4e48deb4b9ad2924f94ad07b688250c2b23d4",
+        "agent/requirements-handoff.json": "52eac758699c8875164e619aa450e8f028c528354e4965a8d5089cdf0fc96d7c"
+      }
+    },
+    "amended-expectations": {
+      "trial": "amended__3PyQhE2",
+      "native_outcome": {
+        "configuration": "reviewer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "25c45f893b53625c1cba4c3233506ac76627c066681fb0253fe168b85254d9f4",
+        "database_network": "task",
+        "attempted_roles": [
+          "reviewer"
+        ],
+        "engineer_only_verified": null,
+        "executed_roles": [
+          "reviewer"
+        ],
+        "requirements_stage": {
+          "empty_base_verified": true,
+          "base_commit": "da50b01d043431fdc0c0340ab0b047c00f205ef9",
+          "valid": true,
+          "repository_unchanged": true,
+          "expectations_sha256": "dbc29b6b0d2a29292699f99d9c835a01b5b64d6006c939e9cec2f45f555efa25"
+        }
+      },
+      "prompt_audit": {
+        "overlay_sha256": "a63413bde1ec293724cf5f3e2ea075bccec025a38c4b400643a870191e21a0ef",
+        "only_overlay_path": "config/agent-types/reviewer.yaml",
+        "native_synced_body_verified": true,
+        "synced_prompt_sha256": "2d57ee4a895b730010fc6365a2d24bb900572713c84c518793a8e196204de698",
+        "egress": {
+          "response_header_timeout_seconds": 600,
+          "original_config_sha256": "78c18e58efbc7c8e226cb311e2a4cf3863d5a2f3e54b3bf15a0ea4b885345290",
+          "context_sha256": {
+            "Dockerfile": "a2385dd6b3eee6e04c49b467df84ed2a273fd402a9cdd404a64fb535e9b26ff7",
+            "allowlist.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bin/network-policy": "ff1cacfb95e17cda3668f389176ae54e5e4139cff12ee54b4d745722ad0ff0b2",
+            "entrypoint.sh": "2e225ed745eb5976f93afd52d91c844b954b5f6f45373fb70c4c509e36d1e069",
+            "gost.yaml": "9293a0f45fbd16d3e59c06aa559a9544193ead48575b9ca7163c5e8e7bad8ed1"
+          },
+          "network_policy_unchanged": true
+        }
+      },
+      "trial_seconds": 156.91427,
+      "launcher_seconds": 160.31529924995266,
+      "usage": {
+        "settled_usd": 0.121366,
+        "calls": 7,
+        "new_unresolved": 0,
+        "unattributed_usd": 0,
+        "token_multiset_matches_proxy": true,
+        "tokens": {
+          "input_uncached": 21,
+          "cache_read": 132502,
+          "cache_write": 25568,
+          "output": 4415
+        }
+      },
+      "expectation_count": 22,
+      "ambiguity_count": 12,
+      "target_interpretation": "correct",
+      "target_expectations": [
+        {
+          "requirement": "Response shape: _shape=lists is default; _shape=objects returns objects; rowid is not in columns; invalid shape -> 400.",
+          "example": "For name,score\nA,2\n query with no shape, with _shape=lists, with _shape=objects, and with _shape=invalid.",
+          "expected": "Default and lists rows are [[A,2]]. Object rows are [{name:A,score:2,rowid:1}], with columns still [name,score]. The invalid shape returns HTTP 400. Default lists do not gain an extra rowid column.",
+          "basis": "explicit"
+        },
+        {
+          "requirement": "Explicit final amendment: object rowid is the one-based ordinal of the stored data record excluding the header; embedded-newline CSV records count once; ordinal stays attached through sorting/pagination.",
+          "example": "CSV is name,score\n\"A\ncontinued\",2\nB,1\nC,2\n. Request _shape=objects&_sort=score&_offset=1&_size=2.",
+          "expected": "Returned records are the multiline A record with rowid=1 and C with rowid=3, in that order. The header does not count, the embedded newline does not consume an ordinal, and neither sorting nor pagination renumbers records. This supersedes the earlier source-file line-number definition.",
+          "basis": "explicit"
+        },
+        {
+          "requirement": "Visibility toggles: _rowid=hide removes rowid; _total=hide removes total; only hide is valid.",
+          "example": "Request _shape=objects&_rowid=hide&_total=hide; separately request _rowid=show, _total=false, _rowid=, and _total=.",
+          "expected": "The first succeeds with neither the synthetic rowid field in row objects nor total in the envelope; other response fields remain. Each invalid toggle request returns HTTP 400 with the JSON error envelope.",
+          "basis": "explicit"
+        },
+        {
+          "requirement": "Any repeated control parameter (_size, _offset, _shape, _sort, _sort_desc, _rowid, _total) -> HTTP 400.",
+          "example": "For each named control, send its otherwise valid value twice, e.g. _size=2&_size=2 or _rowid=hide&_rowid=hide; also send _size=2&_size=3.",
+          "expected": "Every such request returns HTTP 400 with the JSON error envelope, including identical duplicates. _sort and _sort_desc appearing once each is not repetition and instead follows the precedence rule.",
+          "basis": "explicit"
+        }
+      ],
+      "target_ambiguities": [],
+      "stage_audit": {
+        "empty_base_verified": true,
+        "base_commit": "da50b01d043431fdc0c0340ab0b047c00f205ef9",
+        "valid": true,
+        "repository_unchanged": true,
+        "expectations_sha256": "dbc29b6b0d2a29292699f99d9c835a01b5b64d6006c939e9cec2f45f555efa25"
+      },
+      "evidence_sha256": {
+        "result.json": "98aaa47e4d6cae39090bc6bff84d4f1be77d86bcb64eee7988209135dba430c4",
+        "agent/reviewer-prompt-audit.json": "21e95a104949d2210a4ff6322fa730c46eb32f40dbd509e55fff285725825391",
+        "agent/snapshot.json": "ae22fddaf9775f80c2aa94d0f838dd83f4db738d6a8160c1e828bea9d03961d6",
+        "agent/messages.json": "d2fc88fd43cf8ad5a0f7f0518e4b2469628c2161b079e419e7280d2341a63d18",
+        "agent/requirements-stage-audit.json": "759446cce3cd5a87b62b9fa05f15113945be2eed7424d575d134ae029737864b",
+        "agent/requirements-expectations.json": "dbc29b6b0d2a29292699f99d9c835a01b5b64d6006c939e9cec2f45f555efa25"
+      }
+    },
+    "amended-staged": {
+      "trial": "amended__2e7httX",
+      "native_outcome": {
+        "configuration": "reviewer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "25c45f893b53625c1cba4c3233506ac76627c066681fb0253fe168b85254d9f4",
+        "database_network": "task",
+        "attempted_roles": [
+          "reviewer"
+        ],
+        "engineer_only_verified": null,
+        "executed_roles": [
+          "reviewer"
+        ],
+        "artifact_review": {
+          "base_commit": "da50b01d043431fdc0c0340ab0b047c00f205ef9",
+          "artifact_sha256": "7e8d52b0d88e007fae02c66e30d38cc59245dc5bd01c2267a1e1921d6c9c8fcc",
+          "artifact_commit": "1a201988ad0709489a95282b9e523a26cb609d8f",
+          "valid": true,
+          "repository_unchanged": true,
+          "verdict": "changes-requested"
+        }
+      },
+      "prompt_audit": {
+        "overlay_sha256": "a63413bde1ec293724cf5f3e2ea075bccec025a38c4b400643a870191e21a0ef",
+        "only_overlay_path": "config/agent-types/reviewer.yaml",
+        "native_synced_body_verified": true,
+        "synced_prompt_sha256": "2d57ee4a895b730010fc6365a2d24bb900572713c84c518793a8e196204de698",
+        "egress": {
+          "response_header_timeout_seconds": 600,
+          "original_config_sha256": "78c18e58efbc7c8e226cb311e2a4cf3863d5a2f3e54b3bf15a0ea4b885345290",
+          "context_sha256": {
+            "Dockerfile": "a2385dd6b3eee6e04c49b467df84ed2a273fd402a9cdd404a64fb535e9b26ff7",
+            "allowlist.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bin/network-policy": "ff1cacfb95e17cda3668f389176ae54e5e4139cff12ee54b4d745722ad0ff0b2",
+            "entrypoint.sh": "2e225ed745eb5976f93afd52d91c844b954b5f6f45373fb70c4c509e36d1e069",
+            "gost.yaml": "9293a0f45fbd16d3e59c06aa559a9544193ead48575b9ca7163c5e8e7bad8ed1"
+          },
+          "network_policy_unchanged": true
+        }
+      },
+      "trial_seconds": 230.37714,
+      "launcher_seconds": 233.85452954203356,
+      "usage": {
+        "settled_usd": 0.254904,
+        "calls": 12,
+        "new_unresolved": 0,
+        "unattributed_usd": 0,
+        "token_multiset_matches_proxy": true,
+        "tokens": {
+          "input_uncached": 36,
+          "cache_read": 426353,
+          "cache_write": 59753,
+          "output": 6281
+        }
+      },
+      "verdict": "changes-requested",
+      "target_blocking_detection": false,
+      "target_ambiguity_observation": false,
+      "amendment_control_pass": true,
+      "findings": [
+        "Valid CSV headers beginning with an angle bracket are rejected as markup",
+        "A malformed upstream redirect escapes remote-fetch error mapping and returns HTTP 500"
+      ],
+      "artifact_audit": {
+        "base_commit": "da50b01d043431fdc0c0340ab0b047c00f205ef9",
+        "artifact_sha256": "7e8d52b0d88e007fae02c66e30d38cc59245dc5bd01c2267a1e1921d6c9c8fcc",
+        "artifact_commit": "1a201988ad0709489a95282b9e523a26cb609d8f",
+        "valid": true,
+        "repository_unchanged": true,
+        "verdict": "changes-requested"
+      },
+      "handoff": {
+        "exact_unedited_bytes": true,
+        "sha256": "dbc29b6b0d2a29292699f99d9c835a01b5b64d6006c939e9cec2f45f555efa25",
+        "first_tool_reads_expectations": true,
+        "first_tool": {
+          "message_id": "a625ff01-cafa-4b0c-ba97-345e673f2add",
+          "tool": "read",
+          "args": {
+            "path": "/opt/ficus-harbor/requirements-expectations.json",
+            "offset": 1,
+            "limit": 2000
+          },
+          "is_error": false
+        }
+      },
+      "evidence_sha256": {
+        "result.json": "41f47a929759d225a89f4083605b893714140ebc42c136bc8c0d2592f6f4e77b",
+        "agent/reviewer-prompt-audit.json": "21e95a104949d2210a4ff6322fa730c46eb32f40dbd509e55fff285725825391",
+        "agent/snapshot.json": "3cae162c8a6e97f3616a1f2ce211f838fbf56ab7e1e021c9cbd6b011e2c73b19",
+        "agent/messages.json": "45aab0f200a29a2cbd21ee62130e130e3ca3972484bcf38d5129ea15de922217",
+        "agent/artifact-review-audit.json": "b698c115af0a15d6cbc250f70d02aecaddc4ffd47e33f4f493025022c97bacbb",
+        "agent/review-result.json": "1ece07e2968f6765a73f0dcd068778a9339da84af9be6de01e6bf27cf5433927",
+        "agent/requirements-expectations-input.json": "dbc29b6b0d2a29292699f99d9c835a01b5b64d6006c939e9cec2f45f555efa25",
+        "agent/requirements-expectations-after.json": "dbc29b6b0d2a29292699f99d9c835a01b5b64d6006c939e9cec2f45f555efa25",
+        "agent/requirements-handoff.json": "a59b511dc474bac1b324c3d2dde2d5239467403a035909a23b7c79ae79d1cde4"
+      }
+    },
+    "amended-onepass": {
+      "trial": "amended__TSVAq6P",
+      "native_outcome": {
+        "configuration": "reviewer",
+        "model_api": "openai-responses",
+        "thinking": "medium",
+        "outcome": "delivered",
+        "memory": "fresh-disabled",
+        "runtime_sha256": "25c45f893b53625c1cba4c3233506ac76627c066681fb0253fe168b85254d9f4",
+        "database_network": "task",
+        "attempted_roles": [
+          "reviewer"
+        ],
+        "engineer_only_verified": null,
+        "executed_roles": [
+          "reviewer"
+        ],
+        "artifact_review": {
+          "base_commit": "da50b01d043431fdc0c0340ab0b047c00f205ef9",
+          "artifact_sha256": "7e8d52b0d88e007fae02c66e30d38cc59245dc5bd01c2267a1e1921d6c9c8fcc",
+          "artifact_commit": "1a201988ad0709489a95282b9e523a26cb609d8f",
+          "valid": true,
+          "repository_unchanged": true,
+          "verdict": "changes-requested"
+        }
+      },
+      "prompt_audit": {
+        "overlay_sha256": "a63413bde1ec293724cf5f3e2ea075bccec025a38c4b400643a870191e21a0ef",
+        "only_overlay_path": "config/agent-types/reviewer.yaml",
+        "native_synced_body_verified": true,
+        "synced_prompt_sha256": "2d57ee4a895b730010fc6365a2d24bb900572713c84c518793a8e196204de698",
+        "egress": {
+          "response_header_timeout_seconds": 600,
+          "original_config_sha256": "78c18e58efbc7c8e226cb311e2a4cf3863d5a2f3e54b3bf15a0ea4b885345290",
+          "context_sha256": {
+            "Dockerfile": "a2385dd6b3eee6e04c49b467df84ed2a273fd402a9cdd404a64fb535e9b26ff7",
+            "allowlist.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bin/network-policy": "ff1cacfb95e17cda3668f389176ae54e5e4139cff12ee54b4d745722ad0ff0b2",
+            "entrypoint.sh": "2e225ed745eb5976f93afd52d91c844b954b5f6f45373fb70c4c509e36d1e069",
+            "gost.yaml": "9293a0f45fbd16d3e59c06aa559a9544193ead48575b9ca7163c5e8e7bad8ed1"
+          },
+          "network_policy_unchanged": true
+        }
+      },
+      "trial_seconds": 187.667737,
+      "launcher_seconds": 191.45780866709538,
+      "usage": {
+        "settled_usd": 0.211142,
+        "calls": 10,
+        "new_unresolved": 0,
+        "unattributed_usd": 0,
+        "token_multiset_matches_proxy": true,
+        "tokens": {
+          "input_uncached": 30,
+          "cache_read": 337781,
+          "cache_write": 54500,
+          "output": 4105
+        }
+      },
+      "verdict": "changes-requested",
+      "target_blocking_detection": false,
+      "target_ambiguity_observation": false,
+      "amendment_control_pass": true,
+      "findings": [
+        "Valid CSV is rejected when its first header begins with an angle bracket"
+      ],
+      "artifact_audit": {
+        "base_commit": "da50b01d043431fdc0c0340ab0b047c00f205ef9",
+        "artifact_sha256": "7e8d52b0d88e007fae02c66e30d38cc59245dc5bd01c2267a1e1921d6c9c8fcc",
+        "artifact_commit": "1a201988ad0709489a95282b9e523a26cb609d8f",
+        "valid": true,
+        "repository_unchanged": true,
+        "verdict": "changes-requested"
+      },
+      "evidence_sha256": {
+        "result.json": "18db73f7a7575ee25688916b6708dcd02e05ba43a1d370bd0f3d6922051a0dcd",
+        "agent/reviewer-prompt-audit.json": "21e95a104949d2210a4ff6322fa730c46eb32f40dbd509e55fff285725825391",
+        "agent/snapshot.json": "ad74e1f16584d5bef10bab01b5f78e61bcea7ad7b16d655f105f241455581985",
+        "agent/messages.json": "441396a91b87304be725d7d813a6896336e4cb9e61aa51c6f94191514f7a01bf",
+        "agent/artifact-review-audit.json": "b698c115af0a15d6cbc250f70d02aecaddc4ffd47e33f4f493025022c97bacbb",
+        "agent/review-result.json": "f9293518370cd9542cc2032bdd404c98332949ac468a20100cdf134d5c787f72"
+      }
+    }
+  },
+  "original_benchmark_scores_unchanged": true,
+  "conclusion": "Both one-pass and requirements-first reviews miss the original target defect; both respect the explicit amendment. The isolated original requirements stage classifies header counting as ambiguous and offers header-excluding numbering before seeing product files. No demonstrated target improvement from the extra stage.",
+  "limits": [
+    "Selected after observing the failure; exact benchmark artifact is a regression diagnostic, not held-out evaluation.",
+    "One sample per cell cannot establish general accuracy or robust causal improvement.",
+    "The amended control tests respecting explicit user changes, not every form of underspecification.",
+    "Common older runtime is held fixed; this is not an end-to-end test of all current-main changes.",
+    "Two-stage procedure uses an extra model session and extra tokens; report total procedure costs, not only final review costs.",
+    "This isolates the procedure with the pre-PR753 prompt in every session; it does not test the combined effect of that prompt addition."
+  ],
+  "reproduction": {
+    "angle_header": {
+      "status": 400,
+      "body": {
+        "error": "Expected CSV, not markup",
+        "ok": false
+      }
+    },
+    "quoted_angle_header": {
+      "status": 200,
+      "body": {
+        "endpoint": "/datasets/f6d649e1e2b972c14b6d60df61d1e7a0d4ec6075e2c57cc7a4a3d9793c2aa623",
+        "ok": true
+      }
+    },
+    "actual_html": {
+      "status": 400,
+      "body": {
+        "error": "Expected CSV, not markup",
+        "ok": false
+      }
+    },
+    "redirect/ipv6": {
+      "status": 500,
+      "body": {
+        "error": "Internal server error",
+        "ok": false
+      }
+    },
+    "redirect/unicode": {
+      "status": 500,
+      "body": {
+        "error": "Internal server error",
+        "ok": false
+      }
+    },
+    "unknown_GET": {
+      "status": 404,
+      "body": {
+        "error": "The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.",
+        "ok": false
+      }
+    },
+    "unknown_OPTIONS": {
+      "status": 200,
+      "body": {
+        "ok": true
+      }
+    },
+    "target_rowid": {
+      "actual_ids": [
+        1,
+        2
+      ],
+      "sorted_ids": [
+        2,
+        1
+      ],
+      "original_expected_ids": [
+        2,
+        3
+      ],
+      "amended_expected_ids": [
+        1,
+        2
+      ]
+    }
+  },
+  "reproduction_script_sha256": "1ed66b2c970e227309d41a75481c41dd857cec68c0ec4a0c498cbda06f19a1d2",
+  "reproduction_output_sha256": "e215dc7b6e5111349656f778dd0b0bf947772407eb0b89732ea343d931b697e3",
+  "budget": {
+    "cap_usd": 50,
+    "confirmed_usd": 36.059118,
+    "retained_hold_usd": 5.5,
+    "retained_hold_call": 1193,
+    "exposure_usd": 41.559118,
+    "conservative_remaining_usd": 8.440882,
+    "diagnostic_usd": 1.217251,
+    "diagnostic_calls": 56
+  },
+  "procedure_totals": {
+    "original": {
+      "onepass_usd": 0.265358,
+      "staged_total_usd": 0.364481,
+      "onepass_seconds": 258.520575,
+      "staged_sum_sequential_seconds": 371.573353
+    },
+    "amended": {
+      "onepass_usd": 0.211142,
+      "staged_total_usd": 0.37627,
+      "onepass_seconds": 187.667737,
+      "staged_sum_sequential_seconds": 387.29141
+    }
+  },
+  "other_findings": {
+    "angle_header": {
+      "reported_by": [
+        "original-onepass",
+        "original-staged",
+        "amended-staged",
+        "amended-onepass"
+      ],
+      "classification": "Reproduced CSV acceptance defect; equivalent quoted CSV succeeds, real HTML rejected. Severity labels are reviewer opinions."
+    },
+    "malformed_redirect": {
+      "reported_by": [
+        "original-onepass",
+        "original-staged",
+        "amended-staged"
+      ],
+      "classification": "Reproduced malformed IPv6 redirect causes 500; original-staged additional invalid-label Unicode redirect also reproduced. Remote fetch failures escape mapping. No candidate repairs."
+    },
+    "unknown_route_options": {
+      "reported_by": [
+        "original-onepass"
+      ],
+      "classification": "Reproduced OPTIONS /unknown 200 versus GET /unknown 404. Conflict with unconditional unknown-route wording, but API describes GET routes and CORS preflight, so treat as qualified method-scope concern rather than unquestioned blocking severity."
+    }
+  }
+}

@@ -5,13 +5,15 @@ tools, execution queue, isolated database, and work-stream state machine. Harbor
 owns task instructions, containers, time limits, verifier, and scores. This is
 not a new benchmark or replacement grader.
 
-The [sequential product-work pilot](LONGITUDINAL.md) and its
-[matched reviewer follow-up](review-contract-v1-results.md) are complete. The new
-reviewer guidance did not detect the shared row-number interpretation error; both
-prompts respected the explicit-amendment control. The [v8 overhead audit](coordination-v8-overhead.md)
-is also complete. The October 28 phase retains its $50 cap and unresolved $5.50
-hold; latest accounting is in the reviewer diagnostic's results. Earlier phases
-and their receipts remain preserved.
+The [sequential product-work pilot](LONGITUDINAL.md),
+[matched reviewer prompt diagnostic](review-contract-v1-results.md), and
+[requirements-first procedure diagnostic](requirements-first-v1-results.md) are
+complete. Neither intervention detected the selected row-number mismatch; both
+respected the explicit-amendment control. The isolated requirements stage itself
+treated header counting as ambiguous before seeing the implementation. The
+[v8 overhead audit](coordination-v8-overhead.md) is also complete. The October 28
+phase retains its $50 cap and unresolved $5.50 hold; latest accounting is in the
+requirements-first results. Earlier phases and their receipts remain preserved.
 
 Four fresh four-arm FeatureBench comparisons are complete (Pandas, Sphinx,
 xarray, seaborn). Ficus passes 3/4 tasks in both configurations; Pi passes 1/4 as

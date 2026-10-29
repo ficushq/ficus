@@ -89,3 +89,7 @@ See the [validated comparison](longitudinal-v1-results.md) and
 ## Follow-up: reviewer contract diagnostic
 
 The [matched reviewer diagnostic](review-contract-v1-results.md) tested the unchanged increment-2 artifact under old/new guidance and an explicit-amendment control. Both prompts missed the original row-number mismatch; both respected the amendment. All four found other ingestion issues. This does not demonstrate the proposed prompt improvement, and does not change this study’s grades. Cost: $0.879497, fully receipted.
+
+## Follow-up: requirements-first procedure
+
+The [requirements-first diagnostic](requirements-first-v1-results.md) separated expectation drafting from implementation access and compared it with fresh one-pass review. Both procedures missed the original target and respected the explicit amendment. The isolated requirements stage itself treated header counting as ambiguous. All six sessions completed for $1.217251; the extra stage cost more without demonstrating target improvement. The original scores remain unchanged.
