@@ -62,6 +62,7 @@ import {
   listSandboxProcesses,
   parseContainerId,
   parseProcessId,
+  parseProcessStartTicks,
   parseProcessSignal,
   sandboxProcessesErrorResponse,
   signalSandboxProcess,
@@ -1214,9 +1215,16 @@ export const agentsRouter = new Hono()
     }),
     async (c) =>
       ownAgentSandbox(c, async (sandboxId) => {
-        const body = await parseOptionalJsonObjectBody(c, {} as { signal?: unknown })
+        const body = await parseOptionalJsonObjectBody(c, {} as { signal?: unknown; startTicks?: unknown })
         const pid = parseProcessId(c.req.param('pid'))
-        return signalSandboxProcess(sandboxId, pid, parseProcessSignal(body.signal), c.get('identity')!)
+        return signalSandboxProcess(
+          sandboxId,
+          pid,
+          parseProcessSignal(body.signal),
+          c.get('identity')!,
+          undefined,
+          parseProcessStartTicks(body.startTicks)
+        )
       })
   )
   .post(

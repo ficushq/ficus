@@ -1,3 +1,4 @@
+import { vmProvisionLifecycle } from './services/sandbox/vm/provision-flight'
 import { stopAllBigbrainProcesses } from './services/integrations/bigbrain/stdio-transport'
 import { RuntimeReadiness } from './lib/infra/readiness'
 import { forwardAssistantUpdates, reconcileAssistantSummaries } from './services/assistant-conversation-updates'
@@ -1274,6 +1275,7 @@ async function shutdownWorker(reason: string): Promise<void> {
   // restarted, so it re-runs them when it resumes instead of guessing at a lost connection.
   stopExecutionPickup()
   const restart = createRestartContext()
+  await vmProvisionLifecycle.interrupt()
   const drained = await drainCommands(undefined, restart)
   if (drained.finished || drained.canceled)
     log.info(`Drained sandbox commands: ${drained.finished} finished, ${drained.canceled} canceled for the restart`)

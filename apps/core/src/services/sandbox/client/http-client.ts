@@ -888,9 +888,14 @@ export class SandboxClient {
   async signalProcess(
     pid: number,
     signal: SandboxProcessSignal,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    startTicks?: number
   ): Promise<{ pid: number; signal: SandboxProcessSignal; command: string }> {
-    return this.post('/processes/signal', { pid, signal }, abortSignal)
+    return this.post(
+      '/processes/signal',
+      { pid, signal, ...(startTicks === undefined ? {} : { startTicks }) },
+      abortSignal
+    )
   }
 
   /** Stop one of the box's containers by id or name. */

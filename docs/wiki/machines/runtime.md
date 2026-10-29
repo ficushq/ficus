@@ -360,7 +360,7 @@ Provisioning has two independent fences:
   locks. The descriptor stays open through the whole run, including failure
   containment, rather than only around restore extraction. Existing extraction
   and shared-cache locks remain separate.
-- **In Core**, API and worker VM managers share physical-ensure results through
+- **In Core**, API and worker VM managers share complete provisioning/setup results through
   `vm_box_provision_attempts` (migration `0236_vm_box_provision_attempts`). Each
   caller snapshots the current generation **before** waiting for the existing
   `vm-box-setup:<sandboxId>` advisory lease. A waiter consumes that generation's
@@ -369,7 +369,9 @@ Provisioning has two independent fences:
   succeeded; a live failure cooldown is still shared. Completed generations
   are retained for at least one hour, beyond the 15-minute acquisition budget;
   indexed opportunistic cleanup prunes only the currently leased box's old results.
-  A later independent ensure still performs the usual health/spec reconciliation.
+  Success is published only after required assets and post-provision setup have
+  finished and durable readiness is `ready` or `ready_degraded`. A later
+  independent ensure still performs health/spec reconciliation.
 
 The advisory lease uses one reserved **direct** PostgreSQL session, never a
 transaction-pooled connection. Result queries are short main-pool operations;
@@ -387,37 +389,97 @@ Recursive provisioning is rejected before taking another lease/slot.
 
 A successful follower reads the authoritative ready box/machine and creates its
 **own local SSH forward**; no process-local endpoint, environment, executor token
-or remote stderr is persisted in the flight-result table. Each process still
-performs its required file/setup checks. First-contact exposure retirement uses
+or remote stderr is persisted in the flight-result table. It does not repeat the
+owner's setup Bash commands. The follower also checks the desired fingerprint
+against its own setup spec; a mixed-version mismatch requeues startup rather than
+attaching to incompatible setup. Execution startup awaits `ensureSandbox`, whose
+ready-generation joins wait up to 30 seconds for pending/reconciling readiness
+(also fencing a pending setup invocation), then requeue within the bounded startup
+budget rather than admitting a command early. Generic VM `exec` is not an
+admission gate: monitors, cleanup and deployment commands must not stall merely
+because a background repair has set setup to pending or reconciling.
+The exact server refusal `Failed to start bash invocation: bash
+invocation is already active` is likewise startup-retryable; other exit-127
+failures are not. This never retries an already-started model turn.
+
+A preempt-stop racing resume is also startup-retryable (`box_stop_unverified`).
+Both plain ensure and recreate run normal stop reconciliation before provisioning:
+only successful socket
+`UnitFileState`, all-unit `ActiveState`, and forward-removal proof permits
+recreation. The durable `stop_unverified` row is never cleared to force progress.
+In particular, `not_found` with `boxProvisioned=true` is a display projection
+also used for unverified stops, **not** authoritative stop proof. Known transient
+machine statuses keep their longer machine retry schedule; other unverified
+stops use three startup delays of 30, 60 and 120 seconds. Their generation cooldown
+is capped at 30 seconds, without inheriting an older physical failure streak, so
+each retry can actually attempt verification instead of exhausting the budget
+while waiting for the lifecycle sweep.
+
+An unchanged ready box reconnects **without** the setup lease or a dedicated
+permit. The fast path checks its physical provisioning marker, desired setup
+fingerprint, readiness, absence of pending setup invocations, and whether a
+scheduled degraded repair is due. It also computes the ordinary asset
+content/revocation comparisons without remote writes or Bash; changed or removed
+skills, secrets, identity or SSH material fall back to fenced setup. Only then
+are a local forward and health check sufficient. Unhealthy or changed boxes take
+one lease covering physical ensure and all post-provision setup. No nested
+setup lease is acquired.
+
+First-contact exposure retirement during setup/attach uses
 that already-established client, not another ensure, and retains its durable
 all-or-nothing cleanup acknowledgement. Read-only cleanup sweeps attach to an
 existing ready box and do not provision one.
 
-Ordinary failures back off for 30 seconds, doubling to a maximum of 15 minutes;
+Physical provisioning failures back off for 30 seconds, doubling to a maximum of
+15 minutes;
 success resets the failure count. Followers/backoff callers receive a sanitized
 error identifying the failed attempt and retry time, while the original caller
-retains its diagnostic error. A lost owner leaves a `running` generation: the next
-lease owner marks it abandoned using the same exponential failure backoff
-(first failure: 30 seconds), then permits normal recovery after expiry. The
-idempotent remote script remains protected by the host lock if its original
-process is still unwinding. An old owner cannot overwrite that terminal result. The existing
+retains its diagnostic error. Post-physical setup failures carry a
+`VmPostProvisionSetupError` with the original diagnostic cause: allowlisted causes
+keep their startup code; other setup errors become `sandbox_readiness_pending`.
+They reset the physical failure count and have no physical cooldown. Recovery
+still passes through durable invocation reconciliation; an unknown remote Bash
+outcome is never permission to blindly repeat it. Shared failures preserve the allowlisted
+startup
+classification for transient `machine_*`, port-busy (75), host-lock timeout (73),
+Bash contention, stop-verification and readiness-pending errors. Each uses the same execution retry
+schedule as the owner; budget exhaustion still terminates the execution.
+
+Clean API and worker shutdown mark **only their own** running generations failed
+with `failureClass=interrupted`, `retryAt=completedAt=now` and failure count zero.
+Ownership registration includes inserts crossing shutdown, and late callbacks
+cannot publish success. A replacement can provision immediately after acquiring
+the released lease. An unclean lost owner leaves a `running` generation: the next
+lease owner marks it abandoned with failure count zero and an immediately expired
+retry time, then recovers in that same call. Holding the authoritative lease makes
+a separate cooldown unnecessary and avoids spending the startup budget before a
+real attempt. Both abandoned and interrupted results remain startup-retryable if
+a follower observes them before expiry. The idempotent remote script remains
+protected by the host lock if its original process is still unwinding. An old owner
+cannot overwrite that terminal result. The existing
 bind/reaper race remains a safe immediate re-placement exception: it happens
 before host provisioning begins.
 
 The manual host-lock wait defaults to **180 seconds**. The validated
 `--lock-wait-seconds <nonnegative seconds>` argument survives root re-exec and
-sudo `env_reset`; `FICUS_BOX_LOCK_WAIT_SECONDS` is only a manual fallback.
+sudo `env_reset`; `FICUS_BOX_LOCK_WAIT_SECONDS` is a manual fallback.
+For manual non-root runs, re-entry passes the effective wait and the test-only
+`FICUS_HOST_ROOT` through `sudo env` argv (not inherited environment); explicit
+`--lock-wait-seconds` still wins. No other environment is forwarded this way.
+Manual non-root re-entry requires sudo permission for that `env ... bash`
+command; a sudoers rule permitting only `bash` will refuse it. In that case,
+run manually as root using existing authorized access rather than changing policy.
 **Core always passes the argument**, paired with its explicit, unchanged
 SSH/stream budget: one quarter of that budget rounded down to seconds, capped
 at 180 seconds. This leaves connection, execution and cleanup headroom:
 
-| Caller | SSH/stream bound | Maximum lock wait |
-| --- | --- | --- |
-| Default remove/remnant sweep, restart/park, non-migration restore/stream | 30s | 7s |
-| Offline runtime capture/restore, operator unit control | 120s | 30s |
-| Nix cache publication | 180s | 45s |
-| Physical install | 300s | 75s |
-| Migration restore/remove with a 30-minute override | 1800s | 180s |
+| Caller                                                                   | SSH/stream bound | Maximum lock wait |
+| ------------------------------------------------------------------------ | ---------------- | ----------------- |
+| Default remove/remnant sweep, restart/park, non-migration restore/stream | 30s              | 7s                |
+| Offline runtime capture/restore, operator unit control                   | 120s             | 30s               |
+| Nix cache publication                                                    | 180s             | 45s               |
+| Physical install                                                         | 300s             | 75s               |
+| Migration restore/remove with a 30-minute override                       | 1800s            | 180s              |
 
 Machine-health removals use the same budget-paired removal entrypoint. A waiter
 exits on the machine before its caller's deadline; it cannot remain queued and
@@ -442,6 +504,17 @@ on process death. Side-effect-free print modes and unprivileged
 `--prepare-nix-cache` do not acquire this lock: service startup can invoke cache
 preparation while provisioning owns it. Cache publication remains root-only.
 
+During execution startup, an install exiting 73 becomes `BoxLockTimeoutError`
+and startup code `box_lock_timeout`, retaining the holder diagnostic. The
+execution and its admission reservation return to `queued`, not terminal failure,
+with the existing port-busy retry schedule (10, 20, 40, 80, 160 seconds).
+After five retries, persistent contention fails with the original diagnostic.
+This does not replay a model turn or a settled operation. Other provisioning
+failures remain terminal; exit 75 keeps its existing busy-port behavior.
+The shell harness covers non-root `env_reset` re-entry, lock-holder isolation,
+and both environment and explicit-argument wait values; the Core startup test
+feeds exit 73 through installation into durable execution requeue and exhaustion.
+
 Cancellation/deadlines while acquiring the Core lease never cancel the holder.
 After acquisition, work and cleanup must settle before releasing ownership;
 there is no timeout race that leaves a mutating callback running after unlock.
@@ -455,6 +528,53 @@ fake-systemctl interleavings, timeout/holder PID and Docker ownership;
 VM-manager processes, shared success/failure/backoff, different-box progress,
 cancellation, lost sessions and generation fencing. These checks do not provision
 or repair a live host or establish that a deployed incident is resolved.
+
+#### Restart/readiness regression evidence (2026-10-28)
+
+Focused regressions cover shared failure execution requeue/exhaustion, owned
+shutdown (including an insert/shutdown race), unclean abandonment, pending and
+reconciling admission, and two independent VM-manager processes ensuring a fresh
+box. The fresh-box test uses real PostgreSQL/PgBouncer leases and setup rows:
+the generation stays running while the owner is held in setup; the follower's
+first Bash occurs only after owner setup completes and readiness is published.
+Two-process preempt-stop/immediate-resume tests cover both recreate and plain
+ensure, using the real stop
+orchestration and durable rows with synthetic SSH readbacks: failed verification
+keeps `stop_unverified`, queues startup rather than provisioning, and only a
+subsequent successful authoritative stop allows recreation. The plain-ensure test
+waits its actual first 30-second startup delay without clearing either the stop
+marker or cooldown. Separate processes also verify that a non-allowlisted owner
+setup error remains retryable five seconds later, and an abandoned generation
+recovers on its first call without consuming startup retries.
+A separate owner-shutdown/replacement-process test provisions within five seconds,
+which excludes the former 30-second cooldown. Physical installs, tunnels, assets
+and Bash are synthetic; these tests do not launch real VMs or restart services.
+
+The `manager.test.ts` 20-ready-agent reconnect measurement used 40 ms synthetic
+health latency and the real setup-lease/dedicated-permit implementation on the
+before path:
+
+| Version                              |   N | Measured resume wall time | Peak concurrent health checks | Setup lease calls |
+| ------------------------------------ | --: | ------------------------: | ----------------------------: | ----------------: |
+| Before                               |  20 |                7,976.5 ms |                             2 |                40 |
+| After                                |  20 |                   50.1 ms |                            20 |                 0 |
+| After + actual freshness comparisons |  20 |                   47.6 ms |                            20 |                 0 |
+
+The final variant uses the actual asset sync and read-only comparison functions
+with synthetic skill contents, transport and stored hashes. Each of the 20 fast-path
+reconnects must read current assets; freshness is no longer stubbed to `true`.
+An ensure-path Bash-refusal test also exercises a real `runBash` response rather
+than relying only on a regex classifier test.
+
+These are synthetic measurements, **not** a production speedup estimate. The
+before run included database acquisition/polling; the after path takes no
+setup lease. Shared-host pressure also changed between samples, so wall times
+are not a controlled host benchmark. The concurrency and lease-count assertions
+are the decisive regression proof. No live 20-VM experiment, deployment,
+restart, failed-turn replay, or new infrastructure was performed. The reported
+historical incident is consistent with the reproduced code defects; without
+retained incident records, its exact deployed timeline/root cause remains
+unverified.
 
 ### Executor auth + loopback bind (cross-box hardening)
 
@@ -1806,6 +1926,80 @@ projecting `readiness: 'ready_degraded'` for an otherwise ready box. This does
 not change durable asset setup state or executor liveness, trigger setup repair,
 or authorize killing active work. Older servers may omit `runtimeHealth`, and
 idle status checks still do not wake boxes just to probe execution health.
+
+## Host versus sandbox pressure and protected processes
+
+The Processes panel retains the host load/memory line. `/healthz`, squad/agent
+`sandbox-status`, the squad header warning and `sandbox-ps` carry the same additive
+`pressure.box` fields:
+
+- `cpuPercent`: delta of the box slice's `cpu.stat` **usage_usec** (user + system
+  CPU time), divided by the actual monotonic sampling window. **100% = one CPU**.
+  The slice includes short-lived tasks and containers missed by the process list.
+  Processes samples this alongside its per-PID ticks.
+- `cpuQuotaCpus`: quota / period from `cpu.max`; `cpuQuotaPercent` expresses sampled
+  usage as a share of that quota. An unlimited/missing/malformed quota, or a quota
+  changed during sampling, leaves the share unknown.
+- `cpuThrottledPeriods` / `cpuThrottledUsec`: deltas of `nr_throttled` and
+  `throttled_usec` in `cpu.stat`, not lifetime totals.
+- `memoryHighEvents` / `memoryMaxEvents`: `memory.events` high/max counter deltas.
+- `sampleMs`: actual counter window duration (normally about one second).
+- `cpuPressureSome` and `memoryPressureSome`: `{ avg10, avg60, avg300 }` from the
+  slice's `cpu.pressure` / `memory.pressure` **some** line. These percentages are
+  wall time with at least one task stalled, not CPU utilization or memory use.
+
+The aggregate is discovered from `/proc/self/cgroup`, walking up to the owning
+`user-<uid>.slice` (user-manager layout) or `ficus-box-<user>.slice` (system-unit
+agent layout), then read under `/sys/fs/cgroup`. There is no fallback to host PSI,
+a guessed slice, or another user's slice. Missing/malformed
+metrics, counter resets and sampling windows over 30 seconds report `null`, not
+zero. Older executors omit `box`. Off Linux the existing pressure result is null.
+Health sampling is demand-driven and single-flight: health never waits on it,
+reuses completed samples for five seconds, and stops exposing sampled CPU after
+30 seconds. Until the first sample finishes it can report PSI but CPU is unknown.
+No loop wakes an idle box. Runtime-health degradation, admission, containment,
+restart behavior, quotas and fleet-alert hysteresis are unchanged.
+
+CPU PSI is a **stall** metric, not a cause: other slices can starve a runnable
+box. The UI/CLI says **This sandbox overloaded** for local reclaim (memory PSI
+`some.avg10` at least 10%, or new memory high/max events). On an overloaded host,
+usage of at least 90% of the box quota plus positive throttled-period and
+throttled-time deltas also identifies a quota-bound sandbox. Normal parallel
+work hitting quota on an otherwise quiet host does not create a header warning.
+Host load of at least twice the CPU count without those local signals is labeled
+**Host overloaded**. A box with CPU PSI `some.avg10` at least 10%, below 50% of its
+own quota, no throttling, and known low memory pressure/no reclaim events gets
+the explanation that the host is busy with other boxes. Missing metrics never
+support that inference. Host load can also include host services and
+uninterruptible I/O; these are diagnostic thresholds, not proof of a particular
+offending process. Quota saturation and throttling remain visible as details
+regardless of whether an overload warning is warranted.
+
+Process rows and every signal request use the same fresh `/proc/<pid>/cgroup`
+classification. Docker infrastructure roles (`dockerd`, `containerd` and shims,
+`rootlesskit`, `slirp4netns`, `docker-proxy`, `vpnkit`) in `docker.service` are
+protected as **Docker runtime**; membership alone does not protect payloads.
+Shells and build steps under that unit remain stoppable, including BuildKit RUN
+steps that cannot be stopped through `docker ps`. `dbus.service` processes are
+**Session bus**; box socket/proxy units are **Box listener**. Server
+identity/ancestors and the proven user manager remain protected. Helpers outside
+the Docker unit require both an executable role and same-owner ancestry reaching
+a proven Docker runtime process in that unit. Names alone do not protect a
+process; arbitrary helper children are not protected by ancestry alone.
+
+Membership in the server **service** cgroup does not protect agent command
+shells, tests or builds: they inherit that cgroup and must remain stoppable.
+Protected rows have a short role label instead of controls. Direct signal calls,
+including CLI `sandbox-kill`, receive HTTP 403 with the role and `cannot be
+signalled`; enforcement does not depend on a prior listing. New listings expose
+`startTicks` (the kernel stat starttime), and UI signal requests echo it. CLI
+`sandbox-ps` shows it as START; `sandbox-kill --start-ticks <START>` supplies it.
+A stale row/PID identity mismatch returns HTTP 409 without signalling. Legacy
+clients omitting it retain their previous behavior. Ownership and PID start time
+are also rechecked during the request. This is not an atomic kernel pidfd
+operation, and does not claim to eliminate the final kernel scheduling race.
+Container workloads remain stoppable via `sandbox-stop-container` / the existing
+container Stop action, without killing the daemon, its shims or networking.
 
 ## VM sandbox setup readiness and transport recovery
 

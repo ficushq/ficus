@@ -50,3 +50,23 @@ test('timeout aborts transport, reports uncertain outcome, and allows an explici
   await expect(sandboxControlRequest('/synthetic', { method: 'POST' }, 5)).resolves.toBeUndefined()
   expect(fetch).toHaveBeenCalledTimes(2)
 })
+
+test('both signal APIs send listed identity and surface a stale-row refusal', async () => {
+  const bodies: unknown[] = []
+  spies.push(
+    spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)))
+      return Response.json(
+        { error: 'Process 42 no longer matches the listed startTicks; refresh the process list' },
+        { status: 409 }
+      )
+    })
+  )
+  for (const send of [signalSandboxProcess, signalAgentSandboxProcess]) {
+    await expect(send('synthetic', 42, 'TERM', undefined, 123)).rejects.toThrow('no longer matches')
+  }
+  expect(bodies).toEqual([
+    { signal: 'TERM', startTicks: 123 },
+    { signal: 'TERM', startTicks: 123 },
+  ])
+})

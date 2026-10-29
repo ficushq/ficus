@@ -1,3 +1,4 @@
+import type { SandboxPressure } from '@ficus/shared'
 import { describe, expect, it, mock } from 'bun:test'
 import {
   classifySandboxTransportError,
@@ -710,11 +711,15 @@ describe('process control cancellation', () => {
     })
     const controller = new AbortController()
     try {
-      await client.signalProcess(4242, 'KILL', controller.signal)
+      await client.signalProcess(4242, 'KILL', controller.signal, 12345)
       await client.stopContainer('synthetic-container', controller.signal)
       controller.abort()
       expect(seen.map(({ path, body, auth }) => ({ path, body, auth }))).toEqual([
-        { path: '/processes/signal', body: { pid: 4242, signal: 'KILL' }, auth: 'Bearer synthetic-token' },
+        {
+          path: '/processes/signal',
+          body: { pid: 4242, signal: 'KILL', startTicks: 12345 },
+          auth: 'Bearer synthetic-token',
+        },
         { path: '/containers/stop', body: { id: 'synthetic-container' }, auth: 'Bearer synthetic-token' },
       ])
       expect(seen.every(({ signal }) => signal.aborted)).toBe(true)
@@ -722,4 +727,41 @@ describe('process control cancellation', () => {
       client.close()
     }
   })
+})
+
+it('preserves per-box pressure in health and the process listing and returns infrastructure refusals', async () => {
+  const pressure: SandboxPressure = {
+    cpus: 8,
+    load: [35, 20, 10],
+    memTotalMb: 16000,
+    memAvailableMb: 4000,
+    box: {
+      cpuPercent: 20,
+      sampleMs: 1000,
+      cpuPressureSome: { avg10: 0, avg60: 0, avg300: 0 },
+      memoryPressureSome: { avg10: 2, avg60: 1, avg300: 0 },
+    },
+  }
+  const client = new SandboxClient('synthetic.invalid', 'synthetic-token', {
+    fetch: async (url) => {
+      const path = new URL(String(url)).pathname
+      if (path === '/processes/signal')
+        return Response.json({ error: 'Process 42: Docker runtime; cannot be signalled' }, { status: 403 })
+      return Response.json(
+        path === '/healthz'
+          ? { healthy: true, pressure }
+          : { pressure, processes: [], containers: { available: true, containers: [] } }
+      )
+    },
+  })
+  try {
+    expect((await client.health()).pressure).toEqual(pressure)
+    expect((await client.listProcesses()).pressure).toEqual(pressure)
+    await expect(client.signalProcess(42, 'KILL')).rejects.toMatchObject({
+      status: 403,
+      message: 'Process 42: Docker runtime; cannot be signalled',
+    })
+  } finally {
+    client.close()
+  }
 })

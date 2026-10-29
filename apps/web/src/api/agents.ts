@@ -98,11 +98,12 @@ export async function signalAgentSandboxProcess(
   agentId: string,
   pid: number,
   signal: SandboxProcessSignal,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  startTicks?: number
 ): Promise<void> {
   await sandboxControlRequest(`/agents/${agentId}/sandbox/processes/${pid}/signal`, {
     method: 'POST',
-    body: JSON.stringify({ signal }),
+    body: JSON.stringify({ signal, startTicks }),
     signal: abortSignal,
   })
 }

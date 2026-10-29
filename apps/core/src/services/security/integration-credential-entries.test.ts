@@ -36,3 +36,24 @@ test('opaque manual values match the trimmed token actually delivered by provide
     oauth.refreshToken,
   ])
 })
+
+test('legacy OAuth app envelopes register only secret leaves using integration credential labels', () => {
+  for (const key of [
+    '__integration-oauth-app:notion',
+    '__integration-oauth-app:github:client:00000000-0000-4000-8000-000000000000',
+  ]) {
+    const raw = JSON.stringify({
+      version: 1,
+      clientId: 'public-client-id',
+      clientSecret: '  synthetic-client-secret  ',
+      capabilitiesAcknowledged: true,
+    })
+    expect(integrationCredentialEntries(key, raw)).toEqual([
+      { key: `__integration-credential:${key.slice(2)}.clientSecret`, value: '  synthetic-client-secret  ' },
+    ])
+    expect(
+      integrationCredentialEntries(key, JSON.stringify({ clientId: 'public-client-id', clientSecret: 'short' }))
+    ).toEqual([])
+    expect(integrationCredentialEntries(key, 'malformed-envelope')).toEqual([])
+  }
+})

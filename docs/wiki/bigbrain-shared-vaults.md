@@ -313,7 +313,7 @@ ficus integration bigbrain vault cancel-invite <vault-uuid> <invite-id> --genera
 ficus integration bigbrain vault set-access <vault-uuid> <member-handle> --access read --generation <n>
 ficus integration bigbrain vault remove-member <vault-uuid> <member-handle> --generation <n>
 ficus integration bigbrain vault delete <vault-uuid> --name "Research" --generation <n>
-ficus integration assign bigbrain --squad <squad-uuid> --connection <connection-uuid>
+ficus integration assign bigbrain --squad <squad-uuid> --connection <connection-id>
 ```
 
 `vault list` shows, per vault, whether Ficus reads it (`ficusReads`, with `readError` when it

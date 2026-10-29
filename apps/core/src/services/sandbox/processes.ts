@@ -49,8 +49,8 @@ function translate(error: unknown): never {
     if (error.status === 404 && /^Request failed: 404$/.test(error.message)) {
       throw new SandboxProcessesError('This sandbox predates process management; restart it to update', 501)
     }
-    if ([400, 403, 404, 504].includes(error.status)) {
-      throw new SandboxProcessesError(error.message, error.status as 400 | 403 | 404 | 504)
+    if ([400, 403, 404, 409, 504].includes(error.status)) {
+      throw new SandboxProcessesError(error.message, error.status as 400 | 403 | 404 | 409 | 504)
     }
   }
   throw error
@@ -111,10 +111,11 @@ export async function signalSandboxProcess(
   pid: number,
   signal: SandboxProcessSignal,
   actor: Identity,
-  getClient: GetClient = defaultGetClient
+  getClient: GetClient = defaultGetClient,
+  startTicks?: number
 ) {
   const result = await control(sandboxId, getClient, (client, abortSignal) =>
-    client.signalProcess(pid, signal, abortSignal)
+    client.signalProcess(pid, signal, abortSignal, startTicks)
   )
   log.info(`${describe(actor)} sent SIG${result.signal} to pid ${result.pid} in ${sandboxId}: ${result.command}`)
   return result
@@ -148,6 +149,15 @@ export function parseProcessSignal(value: unknown): SandboxProcessSignal {
     throw new SandboxProcessesError(`signal must be one of ${SANDBOX_PROCESS_SIGNALS.join(', ')}`, 400)
   }
   return signal as SandboxProcessSignal
+}
+
+/** Optional for legacy clients; new row controls carry their observed identity. */
+export function parseProcessStartTicks(value: unknown): number | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new SandboxProcessesError('startTicks must be a non-negative safe integer', 400)
+  }
+  return value
 }
 
 export function parseProcessId(value: string | undefined): number {

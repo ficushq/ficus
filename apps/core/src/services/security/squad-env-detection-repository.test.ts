@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { eq, sql } from 'drizzle-orm'
 import { db, squadEnvDetections, squads } from '../../db'
 import { Squad } from '../../entities/Squad'
-import { listPeriodicRunnerNames } from '../../lib/infra/PeriodicRunner'
+import { listPeriodicRunnerNames, listPeriodicRunners } from '../../lib/infra/PeriodicRunner'
 import { ContentSafetyRegistry } from './content-safety-registry'
 import { DbSquadEnvDetectionRepository, MAX_SQUAD_ENV_BYTES } from './squad-env-detection-repository'
 import { SquadEnvSecretSource } from './squad-env-secret-source'
@@ -168,6 +168,9 @@ test('periodic DB refresh is an owned stoppable lifecycle rather than work launc
   await instance.initialize()
   instance.start()
   expect(listPeriodicRunnerNames()).toContain('squad-env-detection')
+  const runner = listPeriodicRunners().find((runner) => runner.runnerName === 'squad-env-detection')!
+  expect(runner.runnerIntervalMs).toBeGreaterThanOrEqual(10_000)
+  expect(runner.runnerIntervalMs).toBeLessThanOrEqual(30_000)
   await instance.stop()
   expect(listPeriodicRunnerNames()).not.toContain('squad-env-detection')
 })

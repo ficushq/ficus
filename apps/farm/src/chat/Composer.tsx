@@ -95,6 +95,7 @@ export function Composer({
   const [error, setError] = useState<string | null>(null)
   const [confirmingClear, setConfirmingClear] = useState(false)
   const [clearing, setClearing] = useState(false)
+  const [clearError, setClearError] = useState<string | null>(null)
   const submittingRef = useRef(false)
   const valueRef = useStableRef(value)
   const showClear = useShowClearQueue(queued.length, streaming)
@@ -141,12 +142,15 @@ export function Composer({
     }
     setConfirmingClear(false)
     setClearing(true)
+    setClearError(null)
     const restored = queued.join('\n\n')
     try {
       await onCancelQueue()
       const prev = valueRef.current
       update(prev ? `${prev}\n\n${restored}` : restored)
       textareaRef?.current?.focus()
+    } catch (error) {
+      setClearError(error instanceof Error ? error.message : 'Please try again.')
     } finally {
       setClearing(false)
     }
@@ -165,6 +169,11 @@ export function Composer({
       {error && (
         <p id={errorId} className="g-chat-error" role="alert">
           Message was not sent: {error}
+        </p>
+      )}
+      {clearError && (
+        <p className="g-chat-error" role="alert">
+          Could not clear pending messages: {clearError}
         </p>
       )}
       {onCancelQueue && showClear && queued.length > 0 && (

@@ -18,6 +18,7 @@ import {
 import { listPeriodicRunnerNames, listPeriodicRunners } from '../../lib/infra/PeriodicRunner'
 import { listen } from '../../lib/infra/local-events'
 import { serializeOAuthCredential } from '../integrations/authorization/credential-bundle'
+import { configureOAuthApp, resolveOAuthClientCredentials } from '../integrations/authorization/client-credentials'
 import { ContentSafetyRegistry } from '../security/content-safety-registry'
 
 function makeStore(options?: ConstructorParameters<typeof SecretStore>[0]): SecretStore {
@@ -58,6 +59,18 @@ describe('SecretStore', () => {
   afterEach(() => {
     store.stopPeriodicRefresh()
     process.env.FICUS_ENCRYPTION_KEY = testKey
+  })
+
+  test('explicitly stored secrets are not reclassified by env heuristic exclusions', async () => {
+    const registry = new ContentSafetyRegistry(store)
+    try {
+      const value = '0123456789abcdef'.repeat(4)
+      await store.set('BUILD_HASH', value)
+      expect(registry.redactWithStoredKeys(value).storedKeys).toContain('BUILD_HASH')
+      expect(registry.redact(value)).not.toContain(value)
+    } finally {
+      registry.dispose()
+    }
   })
 
   test('set and get a secret', async () => {
@@ -1055,6 +1068,70 @@ describe('integration credential leaf detection', () => {
       clientBinding: { clientId: 'public-client-id' },
     })
 
+  test('same-value integration set still notifies once while peer refresh remains a no-op', async () => {
+    await store.set(ref, 'synthetic-same-value-token')
+    const events: string[] = []
+    store.onChange((key) => {
+      events.push(key)
+    })
+    await store.set(ref, 'synthetic-same-value-token')
+    expect(events).toEqual([ref])
+    await store.refreshKey(ref)
+    expect(events).toEqual([ref])
+  })
+
+  test('self-hosted OAuth app secrets register only client-secret leaves under the integration prefix', async () => {
+    const previousManaged = process.env.FICUS_MANAGED
+    delete process.env.FICUS_MANAGED
+    const registry = new ContentSafetyRegistry(store)
+    try {
+      for (const provider of ['github', 'notion']) {
+        const clientId = `public-${provider}-client-identifier`
+        const clientSecret = `synthetic-${provider}-client-secret`
+        await configureOAuthApp(
+          provider,
+          { clientId, clientSecret, capabilitiesAcknowledged: true },
+          store,
+          'test',
+          'https://example.test/callback'
+        )
+        expect(resolveOAuthClientCredentials(provider, store)?.clientSecret).toBe(clientSecret)
+        const result = registry.redactWithStoredKeys(clientSecret)
+        expect(result.value).not.toContain(clientSecret)
+        expect(result.storedKeys).toHaveLength(1)
+        // ContentSafety sanitizes colon separators in public matcher labels.
+        expect(result.storedKeys[0]).toStartWith('__integration-credential_')
+        expect(registry.redact(clientId)).toBe(clientId)
+      }
+      // Historical records retain their original binding/storage keys on upgrade.
+      const key = `__integration-oauth-app:github:client:${randomUUID()}`
+      await store.set(
+        key,
+        JSON.stringify({ clientId: 'historical-public-client', clientSecret: 'synthetic-historical-client-secret' })
+      )
+      expect(registry.redactWithStoredKeys('synthetic-historical-client-secret').storedKeys).toHaveLength(1)
+      const peer = makeStore()
+      try {
+        await peer.initialize()
+        const peerRegistry = new ContentSafetyRegistry(peer)
+        try {
+          expect(peerRegistry.redact('synthetic-historical-client-secret')).not.toContain(
+            'synthetic-historical-client-secret'
+          )
+          expect(peerRegistry.redact('historical-public-client')).toBe('historical-public-client')
+        } finally {
+          peerRegistry.dispose()
+        }
+      } finally {
+        peer.stopPeriodicRefresh()
+      }
+    } finally {
+      registry.dispose()
+      if (previousManaged === undefined) delete process.env.FICUS_MANAGED
+      else process.env.FICUS_MANAGED = previousManaged
+    }
+  })
+
   test('matches manual credentials and every secret channel leaf without matching OAuth metadata', async () => {
     const registry = new ContentSafetyRegistry(store)
     try {
@@ -1077,6 +1154,38 @@ describe('integration credential leaf detection', () => {
       )
     } finally {
       registry.dispose()
+    }
+  })
+
+  test('OAuth app leaves retain their original one-hour retirement deadline across restart', async () => {
+    let now = 100_000
+    const writer = makeStore({ now: () => now })
+    await writer.initialize()
+    const keys = ['__integration-oauth-app:notion', `__integration-oauth-app:github:client:${randomUUID()}`]
+    try {
+      for (const key of keys) {
+        await writer.set(
+          key,
+          JSON.stringify({ clientId: 'public-retired-client', clientSecret: 'synthetic-retired-app-secret' })
+        )
+        await writer.delete(key)
+      }
+      now += 59 * 60_000
+      const peer = makeStore({ now: () => now })
+      await peer.initialize()
+      const registry = new ContentSafetyRegistry(peer)
+      try {
+        expect(registry.redact('synthetic-retired-app-secret')).not.toContain('synthetic-retired-app-secret')
+        expect(registry.redact('public-retired-client')).toBe('public-retired-client')
+        for (const key of keys) await peer.refreshKey(key)
+        now += 60_000
+        expect(registry.redact('synthetic-retired-app-secret')).toBe('synthetic-retired-app-secret')
+      } finally {
+        registry.dispose()
+        peer.stopPeriodicRefresh()
+      }
+    } finally {
+      writer.stopPeriodicRefresh()
     }
   })
 

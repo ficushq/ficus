@@ -16,7 +16,8 @@ import type { SecretEntry } from './content-safety'
 
 export { MAX_SQUAD_ENV_BYTES }
 const log = createLogger('squad-env-detection')
-const REFRESH_MS = 1000
+const FILE_SCAN_MS = 1000
+const DB_REFRESH_MS = 15_000
 const SECRET_NAME = /(?:^|_)(?:TOKEN|KEY|SECRET|PASSWORD|CREDENTIALS)$/i
 
 /** Literal values only; never source a shell file or evaluate substitutions. */
@@ -25,6 +26,11 @@ export function isSecretLikeSquadEnvValue(key: string, value: string): boolean {
   if (value.length < 12) return false
   if (SECRET_NAME.test(key)) return true
   if (value.length < 32 || /\s/.test(value) || /^(?:https?:|\/|\.{1,2}\/|~\/)/i.test(value)) return false
+  // SHA-1 commit IDs and explicitly named digests are public identifiers, not
+  // credentials. Long generic hex remains heuristic: its alphabet tops out at
+  // four bits, so the base64-like threshold below cannot detect it reliably.
+  const hex = /^[a-f0-9]+$/i.test(value)
+  if (hex && (value.length < 64 || /(?:^|_)(?:COMMIT|SHA\d*|HASH|CHECKSUM|REVISION)(?:_|$)/i.test(key))) return false
   const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((pattern) => pattern.test(value)).length
   if (classes < 2) return false
   const counts = new Map<string, number>()
@@ -34,14 +40,14 @@ export function isSecretLikeSquadEnvValue(key: string, value: string): boolean {
     const probability = count / value.length
     entropy -= probability * Math.log2(probability)
   }
-  return entropy >= 4
+  return entropy >= (hex ? 3.5 : 4)
 }
 
 export function assertSquadEnvSize(content: string): void {
   if (Buffer.byteLength(content, 'utf8') > MAX_SQUAD_ENV_BYTES) throw new Error('Squad environment exceeds 256 KiB')
 }
 
-function snapshot(content: Buffer): SquadEnvSnapshot {
+function snapshot(content: Buffer): SquadEnvSnapshot & { contentHash: string } {
   return {
     contentHash: createHash('sha256').update(content).digest('hex'),
     entries: parseShellLiteralAssignments(content.toString('utf8')).filter(({ key, value }) =>
@@ -82,7 +88,15 @@ const NOTICES = {
     'This environment was edited outside Settings; its changed values are not registered for output redaction. Save it in Settings to register them.',
 } as const
 
-type CachedFile = { signature: string; hash: string; matchesTrusted: boolean; entries: readonly SecretEntry[] }
+type CachedFile = {
+  signature: string
+  hash: string
+  // Candidates and hash always come from the same bounded bytes. They are not
+  // registered unless the protected DB authority matches this observation.
+  candidates: readonly SecretEntry[]
+  matchesTrusted: boolean
+  entries: readonly SecretEntry[]
+}
 
 /** DB-authoritative output-only source; the mutable workspace never grants authority after bootstrap. */
 export class SquadEnvSecretSource {
@@ -138,7 +152,7 @@ export class SquadEnvSecretSource {
     if (this.#runner) return
     this.#runner = createPeriodicRunner({
       name: 'squad-env-detection',
-      intervalMs: REFRESH_MS,
+      intervalMs: DB_REFRESH_MS,
       runImmediately: false,
       task: () => this.refresh(),
     })
@@ -206,7 +220,7 @@ export class SquadEnvSecretSource {
 
   entries(): readonly SecretEntry[] {
     const now = this.#now()
-    if (now - this.#lastScan < REFRESH_MS) return this.#entries
+    if (now - this.#lastScan < FILE_SCAN_MS) return this.#entries
     // Set before warnings: their sanitizer calls back into this same source.
     this.#lastScan = now
     this.#notices.clear()
@@ -237,10 +251,18 @@ export class SquadEnvSecretSource {
         const cached = this.#files.get(id)
         // Cache observations, not just accepted matches. An unchanged mismatch
         // or null-hash record must not re-read file bytes on each sanitizer tick.
-        const hash =
-          cached && cached.signature === signature
-            ? cached.hash
-            : createHash('sha256').update(readBounded(path)).digest('hex')
+        let hash: string
+        let candidates: readonly SecretEntry[]
+        if (cached && cached.signature === signature) {
+          ;({ hash, candidates } = cached)
+        } else {
+          // Persisted entries were heuristic output, not explicit credential
+          // registrations. Re-evaluate policy on upgrade without resnapshotting
+          // authority: only the existing protected hash can authorize these bytes.
+          const observed = snapshot(readBounded(path))
+          hash = observed.contentHash
+          candidates = observed.entries.map(({ value }) => ({ key: 'squad-env', value, outputOnly: true }))
+        }
         const matchesTrusted = hash === trusted.contentHash
         if (cached && cached.signature === signature && cached.matchesTrusted === matchesTrusted) {
           next.set(id, cached)
@@ -248,10 +270,9 @@ export class SquadEnvSecretSource {
           next.set(id, {
             signature,
             hash,
+            candidates,
             matchesTrusted,
-            entries: matchesTrusted
-              ? trusted.entries.map(({ key, value }) => ({ key: `squad-env.${key}`, value, outputOnly: true }))
-              : [],
+            entries: matchesTrusted ? candidates : [],
           })
         }
         if (!matchesTrusted) this.warn(id, 'mismatch')

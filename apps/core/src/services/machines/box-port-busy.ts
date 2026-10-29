@@ -5,9 +5,9 @@
  * (box-ports.ts), so an outgoing loopback connection could hold one for a while
  * (ESTABLISHED, then TIME_WAIT). A squatting box user can hold one too, on hosts
  * where systemd cannot enforce the port guard. Either way the box cannot start
- * right now, but may be able to shortly. This is the only provisioning failure
- * the execution startup retry treats as transient (startup-retry.ts matches it
- * by name). Every other box-provision failure stays terminal.
+ * right now, but may be able to shortly. Like host-lock contention, this is
+ * transient at execution startup (startup-retry.ts matches it by name).
+ * Other box-provision failures stay terminal.
  */
 
 /**

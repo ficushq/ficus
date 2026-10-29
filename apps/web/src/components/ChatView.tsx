@@ -969,6 +969,7 @@ export function ChatView({
     }
     setConfirmingClearQueue(false)
     setIsClearingQueue(true)
+    setClearQueueError(null)
     try {
       // Collect content from pending items to restore to input
       const restoredText = pendingItems
@@ -1003,6 +1004,8 @@ export function ChatView({
           })),
         ])
       }
+    } catch (error) {
+      setClearQueueError(error instanceof Error ? error.message : 'Please try again.')
     } finally {
       setIsClearingQueue(false)
     }
@@ -1596,6 +1599,7 @@ export function ChatView({
   const [imagePreparationError, setImagePreparationError] = useState<string | null>(null)
   const [imageError, setImageError] = useState<string | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
+  const [clearQueueError, setClearQueueError] = useState<string | null>(null)
 
   const handleAutoSend = useCallback(
     (text: string) => {
@@ -2041,7 +2045,7 @@ export function ChatView({
               inert={isSubmitting}
               className={clsx('space-y-2', isSubmitting && 'pointer-events-none')}
             >
-              {(imagePreparationError || imageError || sendError) && (
+              {(imagePreparationError || imageError || sendError || clearQueueError) && (
                 <div
                   role="alert"
                   aria-live="assertive"
@@ -2051,7 +2055,9 @@ export function ChatView({
                     ? `Image attachment failed: ${imagePreparationError}`
                     : imageError
                       ? `Image upload failed: ${imageError}`
-                      : `Message was not sent: ${sendError}`}
+                      : sendError
+                        ? `Message was not sent: ${sendError}`
+                        : `Could not clear pending messages: ${clearQueueError}`}
                 </div>
               )}
 

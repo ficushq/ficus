@@ -28,6 +28,7 @@ import {
 } from './queries'
 import type { Machine, MachineBox } from './queries'
 import { BOX_PORT_BUSY_EXIT_CODE, BoxPortBusyError } from './box-port-busy'
+import { BOX_LOCK_TIMEOUT_EXIT_CODE, BoxLockTimeoutError } from './box-lock-timeout'
 import { buildPushFileCommand, defaultSshRunner, defaultSshStreamer } from './ssh'
 import type { SshRunner, SshStreamer } from './ssh'
 import { machineTunnels } from './tunnel-manager'
@@ -1126,9 +1127,13 @@ export async function installBoxOnMachine(opts: InstallBoxOpts, deps: BoxManager
   const provRes = await runner.run(machine, provisionCmd, { timeoutMs: BOX_PROVISION_RUN_TIMEOUT_MS })
   // The script exits BOX_PORT_BUSY_EXIT_CODE only when the box socket could not
   // bind because something else holds its port. It may free up, so the
-  // execution retries (startup-retry.ts). Any other failure stays terminal.
+  // execution retries (startup-retry.ts). Lock contention is also transient;
+  // other provisioning failures stay terminal.
   if (provRes.exitCode === BOX_PORT_BUSY_EXIT_CODE) {
     throw new BoxPortBusyError(sandboxId, machine.name, port, provRes.stderr, 'provision')
+  }
+  if (provRes.exitCode === BOX_LOCK_TIMEOUT_EXIT_CODE) {
+    throw new BoxLockTimeoutError(sandboxId, machine.name, provRes.stderr)
   }
   if (provRes.exitCode !== 0) {
     throw new Error(`box-provision failed for ${sandboxId} (exit ${provRes.exitCode}): ${provRes.stderr.trim()}`)
