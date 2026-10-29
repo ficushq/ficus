@@ -106,6 +106,67 @@ test.skipIf(process.platform !== 'linux')(
   }
 )
 
+for (const deletionRoot of ['worktree', 'gitDirectory'] as const) {
+  for (const stage of ['observation', 'entry', 'final'] as const) {
+    test.skipIf(process.platform !== 'linux')(
+      `${deletionRoot} nested mount at evidence ${stage} retains attachments before destructive dispatch`,
+      async () => {
+        const docs = join(root, 'docs')
+        await mkdir(docs)
+        const file = join(docs, 'review.json')
+        await writeFile(file, 'external evidence')
+        const files = [file]
+        await (await WorkStream.mustFind(streamId)).update({ files })
+        const target = join(ownership[deletionRoot], deletionRoot === 'worktree' ? 'node_modules' : 'logs')
+        await mkdir(target, { recursive: true })
+        await writeFile(join(ownership.commonDirectory, 'info/exclude'), 'node_modules/\n')
+        const cleanTable = '1 0 0:1 / / rw - overlay overlay rw'
+        const mountedTable = `${cleanTable}\n2 1 0:1 ${docs} ${target} rw - overlay overlay rw`
+        const mountAdded = join(root, 'mount-added')
+        const dispatched = join(root, 'destructive-dispatch')
+        const bin = join(root, 'git-bin')
+        await mkdir(bin)
+        const git = Bun.which('git')!
+        await writeFile(
+          join(bin, 'git'),
+          `#!/bin/sh
+case " $* " in
+  *" for-each-ref "*) printf mounted > "$FIXTURE_MOUNT_ADDED" ;;
+esac
+exec "${git}" "$@"
+`,
+          { mode: 0o755 }
+        )
+        // Substitute observation data, never mount anything. The final-stage
+        // table changes only after real Git safety checks reach for-each-ref.
+        const mountExec = (args: string[]) => {
+          const modified = [...args]
+          const table =
+            stage === 'final'
+              ? `(fs.existsSync(${JSON.stringify(mountAdded)}) ? ${JSON.stringify(mountedTable)} : ${JSON.stringify(cleanTable)})`
+              : JSON.stringify(stage === 'observation' || args[5] === 'remove' ? mountedTable : cleanTable)
+          modified[2] = modified[2]!
+            .replace("fs.readFileSync('/proc/self/mountinfo', 'utf8')", table)
+            .replace(
+              "git(o.repository, 'worktree', 'remove', '--', o.worktree);",
+              `fs.writeFileSync(${JSON.stringify(dispatched)}, 'reached'); fail('Test blocked destructive dispatch');`
+            )
+          return exec(['env', `PATH=${bin}:${process.env.PATH}`, `FIXTURE_MOUNT_ADDED=${mountAdded}`, ...modified])
+        }
+        await processJob({ execForSquad: async () => mountExec })
+        expect(await job()).toMatchObject({ status: 'deferred', operationId: null })
+        if (stage !== 'observation')
+          expect((await job()).reason).toBe('Deletion root contains a mounted path; retain for inspection')
+        if (stage === 'final') expect(await Bun.file(mountAdded).exists()).toBe(true)
+        expect(await Bun.file(dispatched).exists()).toBe(false)
+        expect((await WorkStream.mustFind(streamId)).toJson()).toMatchObject({ status: 'done', metadata, files })
+        expect(await Bun.file(file).text()).toBe('external evidence')
+        expect(await Bun.file(join(ownership.worktree, 'README')).text()).toBe('delivered\n')
+      }
+    )
+  }
+}
+
 for (const change of ['add', 'replace', 'remove'] as const) {
   test.skipIf(process.platform !== 'linux')(
     `evidence list ${change} before claim cannot authorize stale deletion`,

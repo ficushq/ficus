@@ -462,8 +462,12 @@ worktree and its private Git directory, within the owned squad workspace. Absolu
 paths and paths relative to that workspace are supported. This verification runs
 in the squad sandbox that performs removal, not on the Core host. Missing paths,
 malformed records (including object-shaped legacy entries), parent traversal,
-symlinks anywhere in the resolved path, and nested workspace mount points fail
-closed. Prefix-collision siblings are not treated as children of the worktree.
+symlinks anywhere in the resolved path, and nested workspace mount points along
+the evidence path fail closed. A mount point at or beneath either deletion root
+(the worktree or its private Git directory) also retains the tree: Git could
+otherwise unlink external evidence through that mount even when its ordinary
+external path crosses no mount. These mount checks run at observation and both
+runner rechecks. Prefix-collision siblings are not treated as children of the worktree.
 The external-evidence correction currently requires Linux with readable
 `/proc/self/mountinfo`; unsupported or inaccessible mount identity keeps the tree.
 Observation is bounded to 1,000 paths, 4,096 characters per path and 65,536

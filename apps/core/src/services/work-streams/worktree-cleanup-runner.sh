@@ -29,6 +29,11 @@ const observeEvidence = (files) => {
     if (fields.length < 10 || !fields.includes('-')) fail('Evidence mount identity is unavailable');
     return fields[4].replace(/\\([0-7]{3})/g, (_, octal) => String.fromCharCode(parseInt(octal, 8)));
   });
+  // A mount inside either deletion root can expose external evidence to Git's
+  // recursive unlink even when the evidence path itself crosses no mount.
+  // Reusing this observer also checks mounts introduced before either recheck.
+  if (mounts.some((mount) => [o.worktree, o.gitDirectory].some((root) => mount === root || inside(root, mount))))
+    fail('Deletion root contains a mounted path; retain for inspection');
   const workspace = fs.lstatSync(o.workspace, { bigint: true });
   const privateGit = fs.lstatSync(o.gitDirectory, { bigint: true });
   const rootIds = [tree, privateGit].map((stat) => `${stat.dev}:${stat.ino}`);

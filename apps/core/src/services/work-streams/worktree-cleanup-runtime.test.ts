@@ -248,6 +248,26 @@ test('nested mount aliases and unavailable mount tables fail closed without moun
   expect(await readFile(file, 'utf8')).toBe('keep')
 })
 
+for (const deletionRoot of ['worktree', 'gitDirectory'] as const) {
+  test.skipIf(process.platform !== 'linux')(
+    `a mount exactly at the ${deletionRoot} root rejects external evidence`,
+    async () => {
+      const file = join(root, 'review')
+      await writeFile(file, 'keep')
+      const table = `1 0 0:1 / / rw - overlay overlay rw\n2 1 0:1 / ${ownership[deletionRoot]} rw - overlay overlay rw`
+      const mountedExec = (args: string[]) => {
+        const modified = [...args]
+        modified[2] = modified[2]!.replace("fs.readFileSync('/proc/self/mountinfo', 'utf8')", JSON.stringify(table))
+        return exec(modified)
+      }
+      await expect(runtime.resolveWorktreeEvidence(mountedExec, ownership, [file])).rejects.toThrow(
+        'Deletion root contains a mounted path'
+      )
+      expect(await readFile(file, 'utf8')).toBe('keep')
+    }
+  )
+}
+
 test('existing evidence outside the authoritative workspace is never accepted', async () => {
   const outside = await realpath(await mkdtemp(root + '-boundary-'))
   try {
