@@ -1,3 +1,4 @@
+import '../../../test-utils/require-test-db'
 import { describe, expect, test } from 'bun:test'
 import { SandboxClient, SandboxTransportError } from '../client/http-client'
 import { runIdempotentSandboxOperation } from './retry'

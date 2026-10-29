@@ -286,7 +286,12 @@ readiness; raw-client suites explicitly import `test-utils/require-test-db`
 before reading a DSN or checking optional pooler availability. Both paths
 share one initialization promise, so mixed files and concurrent imports cannot
 repeat schema setup. Importing the DB entrypoint counts as requesting readiness,
-even if that module's caller subsequently does not issue a query.
+even if that module's caller subsequently does not issue a query. Suites that
+load DB-touching modules dynamically inside a test must also import
+`test-utils/require-test-db` at module scope: cold schema setup must not consume
+that test's timeout. The CI import-graph check flags literal test-body imports
+whose runtime static dependency graph reaches the DB without prior module
+readiness; it ignores type-only imports and is not a runtime selection heuristic.
 
 In a Ficus agent runtime, that lazy initializer and `test:db:up` verify an
 **existing** caller-owned `shared-box-intensive` claim before any database

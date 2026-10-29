@@ -127,30 +127,34 @@ for (const path of ['apps/core/src/db/integrations-migration.test.ts', 'apps/cor
   }, 40000)
 }
 
+async function externalFixture(f: ReturnType<typeof fixture>, slowPush = false): Promise<string> {
+  const { expectedTableColumns, expectedCheckConstraints } = await import('../apps/core/src/db/expected-schema')
+  const { expectedForeignKeys } = await import('../apps/core/src/db/expected-foreign-keys')
+  const rows = [
+    ...[...expectedTableColumns()].flatMap(([table, columns]) => [...columns].map((column) => `${table}|${column}`)),
+    ...expectedCheckConstraints().keys(),
+    ...[...expectedForeignKeys()].map(([key, value]) => `${key}|${value.deleteAction}|${value.updateAction}`),
+  ].join('\n')
+  writeFileSync(join(f.dir, 'schema'), rows)
+  writeFileSync(
+    join(f.dir, 'bin', 'ficus'),
+    '#!/bin/sh\necho ficus >> "$LAZY_DB_LOG"\necho \'{"key":"shared-box-intensive","squadId":"fixture","enabled":false}\'\n',
+    { mode: 0o755 }
+  )
+  for (const command of ['psql', 'bunx', 'pg_isready']) {
+    writeFileSync(
+      join(f.dir, 'bin', command),
+      `#!/bin/sh\necho ${command} >> "$LAZY_DB_LOG"\n${command === 'bunx' && slowPush ? 'sleep 6\n' : ''}cat "${join(f.dir, 'schema')}"\n`,
+      { mode: 0o755 }
+    )
+  }
+  return 'postgres://postgres:postgres@127.0.0.1:12345/ficus_test'
+}
+
 test('external DB readiness publishes the validated DSN before concurrent first imports', async () => {
   const f = fixture()
   try {
-    const { expectedTableColumns, expectedCheckConstraints } = await import('../apps/core/src/db/expected-schema')
-    const { expectedForeignKeys } = await import('../apps/core/src/db/expected-foreign-keys')
-    const rows = [
-      ...[...expectedTableColumns()].flatMap(([table, columns]) => [...columns].map((column) => `${table}|${column}`)),
-      ...expectedCheckConstraints().keys(),
-      ...[...expectedForeignKeys()].map(([key, value]) => `${key}|${value.deleteAction}|${value.updateAction}`),
-    ].join('\n')
-    writeFileSync(join(f.dir, 'schema'), rows)
-    writeFileSync(
-      join(f.dir, 'bin', 'ficus'),
-      '#!/bin/sh\necho ficus >> "$LAZY_DB_LOG"\necho \'{"key":"shared-box-intensive","squadId":"fixture","enabled":false}\'\n',
-      { mode: 0o755 }
-    )
-    for (const command of ['psql', 'bunx', 'pg_isready']) {
-      writeFileSync(
-        join(f.dir, 'bin', command),
-        `#!/bin/sh\necho ${command} >> "$LAZY_DB_LOG"\ncat "${join(f.dir, 'schema')}"\n`,
-        { mode: 0o755 }
-      )
-    }
-    const url = 'postgres://postgres:postgres@127.0.0.1:12345/ficus_test'
+    const url = await externalFixture(f)
     const probe = join(f.dir, 'external.test.ts')
     writeFileSync(
       probe,
@@ -228,6 +232,42 @@ test('an already-expired full-lane deadline never acquires DB ownership or capac
     expect(result.code).toBe(1)
     expect(result.output).toContain('Lane deadline exceeded')
     expect(result.output).not.toContain('PASSED')
+  } finally {
+    f.clean()
+  }
+}, 40000)
+
+test('dynamic DB-dependent command suites request readiness before entering test budgets', () => {
+  const f = fixture()
+  try {
+    const result = f.run(['test', 'apps/core/src/services/integrations/execution-wrappers.test.ts'])
+    expect(result.commands).toBe('ficus\n')
+    expect(result.code).not.toBe(0)
+    expect(result.output).toContain('[test-db capacity: unavailable]')
+    // Cold schema work must finish at module readiness, not consume a later
+    // dynamic import's 5s test budget after the pure cases have already run.
+    expect(result.output).not.toContain('(pass)')
+  } finally {
+    f.clean()
+  }
+}, 40000)
+
+test('cold schema setup longer than the default timeout stays outside dynamic-import test bodies', async () => {
+  const f = fixture()
+  try {
+    // Six seconds is deliberately longer than the existing 5s test budget. All
+    // DB commands are fixtures; only this harness test has an integration budget.
+    const url = await externalFixture(f, true)
+    const result = f.run(['test', 'apps/core/src/services/integrations/execution-wrappers.test.ts'], root, {
+      DATABASE_URL: url,
+    })
+    expect(result.code).toBe(0)
+    expect(result.signal).toBeUndefined()
+    expect(result.output).toContain('15 pass')
+    expect(result.output).toContain('0 fail')
+    expect(result.output).not.toContain('timed out')
+    expect(result.commands.split('\n').filter((line) => line === 'bunx')).toHaveLength(1)
+    expect(result.commands).not.toContain('docker')
   } finally {
     f.clean()
   }
