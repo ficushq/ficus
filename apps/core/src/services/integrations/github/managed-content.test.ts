@@ -5,6 +5,9 @@ import { eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../../db'
 import {
   githubFeedbackObjects,
+  githubFeedbackDecisions,
+  integrationConnections,
+  integrationOutputEvents,
   githubFeedbackRevisions,
   githubPersonalIdentities,
   githubTrustedAuthors,
@@ -45,6 +48,7 @@ const squadOff = crypto.randomUUID()
 const userId = crypto.randomUUID()
 const roleId = crypto.randomUUID()
 const repo = `managed-${crypto.randomUUID().slice(0, 8)}/api`
+const deletionSquads: string[] = []
 const fixtures: Awaited<ReturnType<typeof createTestGitHubConnection>>[] = []
 const originalFetch = globalThis.fetch
 
@@ -79,7 +83,8 @@ function installGitHub() {
   globalThis.fetch = mock(async (url: string | URL | Request) => {
     const parsed = new URL(String(url))
     if (parsed.origin !== 'https://api.github.com') throw new Error(`unexpected network: ${parsed.origin}`)
-    if (parsed.pathname === `/repos/${repo}`) return Response.json({ id: 1 })
+    if (parsed.pathname === `/repos/${repo}`) return Response.json({ id: 1, full_name: repo })
+    if (parsed.pathname === `/repositories/1`) return Response.json({ id: 1, full_name: repo })
     // A pull request's own id is only reported by `/pulls/:number`; the issues API gives the issue id.
     const pull = parsed.pathname.match(/^\/repos\/[^/]+\/[^/]+\/pulls\/(\d+)$/)
     if (pull) {
@@ -194,7 +199,14 @@ afterEach(() => {
 
 afterAll(async () => {
   for (const fixture of fixtures.splice(0)) await fixture.dispose()
-  const ids = [squadA, squadB, squadOff]
+  const ids = [squadA, squadB, squadOff, ...deletionSquads]
+  await db.delete(integrationOutputEvents).where(
+    sql`${integrationOutputEvents.authority}->>'squadId' in (${sql.join(
+      ids.map((id) => sql`${id}`),
+      sql`, `
+    )})`
+  )
+  await db.delete(githubFeedbackDecisions).where(inArray(githubFeedbackDecisions.squadId, ids))
   await db.delete(memoryAccessAudit).where(inArray(memoryAccessAudit.callerSquadId, ids))
   await db.delete(squadMemoryGrants).where(inArray(squadMemoryGrants.granteeSquadId, ids))
   await db.delete(memoryLinks).where(inArray(memoryLinks.squadId, ids))
@@ -1148,4 +1160,288 @@ test('a missing source configuration is retryable, never evidence that a reposit
       policy: { version: 1, scope: { repos: [repo] } },
     })
   }
+})
+
+test.each(['uncaptured', 'trusted', 'approved', 'off'] as const)(
+  '%s native deletion fences all managed surfaces without delivery and recovers remaining content',
+  async (basis) => {
+    const { githubOutputAdapter } = await import('../outputs/github')
+    const { recordIntegrationOutput } = await import('../outputs/runtime')
+    const { prepareGitHubOutputOutcome } = await import('./feedback-routing')
+    const { captureGitHubFeedback } = await import('./feedback-store')
+    const { githubMemoryReindexStatus } = await import('./managed-reindex')
+    const { ExternalSourceReindexService } = await import('../../memory/indexer/ExternalSourceReindexService')
+    const { EmbeddingService } = await import('../../memory/indexer/EmbeddingService')
+    const number = { uncaptured: 1500, trusted: 1501, approved: 1502, off: 1503 }[basis]
+    // Isolate status counts from other tests' legitimate pending recoveries.
+    const squadId = crypto.randomUUID()
+    deletionSquads.push(squadId)
+    await db
+      .insert(squads)
+      .values({ id: squadId, name: 'Deletion recovery', purpose: 'test', githubAuthorFilter: basis !== 'off' })
+    await db.insert(githubTrustedAuthors).values({
+      squadId,
+      accountId: String(TRUSTED.id),
+      login: TRUSTED.login,
+      accountType: 'User',
+      addedByUserId: userId,
+    })
+    await SquadSourceConfig.upsert({
+      squadId,
+      sourceType: 'github_issue',
+      enabled: true,
+      policy: { version: 1, scope: { repos: [repo] } },
+    })
+    const nativeId = 99000 + number
+    const body = `deletionprose${basis} [[/memory/deletion-target.md]]`
+    threads.set(number, {
+      issue: issue(number),
+      comments: [comment(nativeId, body, TRUSTED), comment(nativeId + 100, 'remainingcomment', TRUSTED)],
+    })
+    installGitHub()
+    const fixture = await createTestGitHubConnection({ squadId })
+    fixtures.push(fixture)
+    const [connection] = await db.select().from(integrationConnections).where(eq(integrationConnections.id, fixture.id))
+    const authority = {
+      kind: 'connection' as const,
+      squadId,
+      connectionId: fixture.id,
+      connectionRevision: connection!.materialRevision,
+    }
+    const eventIds: string[] = []
+    const source = async (action: string, repositoryId = 1, id = nativeId) => {
+      const fact = githubOutputAdapter.normalize({
+        type: 'issue_comment',
+        githubObservation: { kind: 'webhook', deliveryId: crypto.randomUUID() },
+        payload: {
+          action,
+          repository: { id: repositoryId, full_name: repo },
+          issue: issue(number),
+          comment: {
+            ...comment(id, body, TRUSTED),
+            html_url: `https://github.com/${repo}/issues/${number}#issuecomment-${id}`,
+          },
+        },
+      })[0]!
+      const event = await recordIntegrationOutput('github', fact, authority)
+      eventIds.push(event.id)
+      return event
+    }
+    const old =
+      basis === 'uncaptured'
+        ? null
+        : await captureGitHubFeedback((await source('created')).id, {
+            authorizeSource: async () => true,
+            ...(basis === 'off' ? { unfiltered: 'content' as const } : { decideFresh: async () => true }),
+          })
+    if (basis === 'approved')
+      await db
+        .update(githubFeedbackRevisions)
+        .set({ decision: 'allow_once', releaseState: 'delivered', decidedByUserId: userId, decidedAt: new Date() })
+        .where(eq(githubFeedbackRevisions.id, old!.revision.id))
+    const [audit] = old
+      ? await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.id, old.revision.id))
+      : []
+    const [decisionAudit] =
+      basis === 'approved'
+        ? await db
+            .insert(githubFeedbackDecisions)
+            .values({
+              squadId,
+              revisionId: old!.revision.id,
+              requestId: crypto.randomUUID(),
+              requestHash: 'a'.repeat(64),
+              contentHash: old!.revision.contentHash,
+              decisionVersion: 1,
+              action: 'allow_once',
+              userId,
+            })
+            .returning()
+        : []
+    const embedding = EmbeddingService.instance()
+    const vector = Array.from({ length: 1536 }, () => 1)
+    const enabled = spyOn(embedding, 'isEnabled').mockReturnValue(true)
+    const model = spyOn(embedding, 'getSquadEmbeddingModel').mockResolvedValue('synthetic-embedding')
+    const generate = spyOn(embedding, 'generateQueryEmbedding').mockResolvedValue(vector)
+    try {
+      await IndexingService.instance().indexFile({ squadId, path: '/memory/deletion-target.md', content: '# Target' })
+      expect((await index(squadId, number)).success).toBe(true)
+      const doc = await docFor(squadId, number)
+      await db.update(memoryChunks).set({ embedding: vector }).where(eq(memoryChunks.documentId, doc.id))
+      const vectorRead = (mode: 'vector' | 'hybrid') =>
+        new SearchService({ embeddingService: embedding }).search(squadId, body, {
+          mode,
+          sourceTypes: ['github_issue'],
+        })
+      expect((await search(squadId, `deletionprose${basis}`)).map((hit) => hit.documentId)).toContain(doc.id)
+      expect((await vectorRead('vector')).map((hit) => hit.documentId)).toContain(doc.id)
+      const before = await githubMemoryReindexStatus(squadId)
+      // Deletions need no tracked work stream/rule and must not attempt to fetch the gone comment.
+      const deletion = await source('deleted')
+      expect(await prepareGitHubOutputOutcome(deletion)).toEqual({ kind: 'settle', reason: 'github_comment_deleted' })
+      globalThis.fetch = mock(() => {
+        throw new Error('managed reads are provider-free')
+      }) as unknown as typeof fetch
+      expect(await search(squadId, `deletionprose${basis}`)).toEqual([])
+      expect(await search(squadId, `trustedtitle${number}`)).toEqual([])
+      for (const mode of ['vector', 'hybrid'] as const)
+        expect((await vectorRead(mode)).map((hit) => hit.documentId)).not.toContain(doc.id)
+      expect(await OutlineService.instance().search(squadId, `trustedtitle${number}`)).toEqual([])
+      expect(
+        await IndexingService.instance().getDocumentBySourceId(squadId, 'github_issue', `${repo}#${number}`)
+      ).toBeUndefined()
+      expect(
+        (await IndexingService.instance().getBacklinks(squadId, '/memory/deletion-target.md')).map(
+          (link) => link.sourceTitle
+        )
+      ).not.toContain(doc.title)
+      expect((await githubMemoryReindexStatus(squadId)).reasons.stale - before.reasons.stale).toBe(1)
+      await withheldGitHubMemoryDocuments(squadId, [doc.id])
+      expect((await githubMemoryReindexStatus(squadId)).reasons.stale - before.reasons.stale).toBe(1)
+      installGitHub()
+      // Even a stale provider page with a later edit clock must not resurrect a tombstoned ID.
+      threads.get(number)!.comments[0]!.updated_at = '2099-01-01T00:00:00Z'
+      await ExternalSourceReindexService.instance().reindexSquad(squadId, { sourceTypes: ['github_issue'] })
+      expect(await docText(doc.id)).not.toContain(`deletionprose${basis}`)
+      expect(await docText(doc.id)).toContain('remainingcomment')
+      expect((await docFor(squadId, number)).frontmatter).not.toHaveProperty('githubReindex')
+      expect((await githubMemoryReindexStatus(squadId)).reasons.stale).toBe(before.reasons.stale)
+      if (basis === 'approved')
+        expect(
+          await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.id, old!.revision.id))
+        ).toEqual([audit!])
+      if (decisionAudit)
+        expect(
+          await db
+            .select()
+            .from(githubFeedbackDecisions)
+            .where(eq(githubFeedbackDecisions.revisionId, old!.revision.id))
+        ).toEqual([decisionAudit])
+      const [tombstone] = await db
+        .select()
+        .from(githubFeedbackRevisions)
+        .where(
+          sql`${githubFeedbackRevisions.squadId} = ${squadId} AND ${githubFeedbackRevisions.reason} = 'comment_deleted' AND ${githubFeedbackRevisions.contentHash} = ${deletion.fact.github!.content!.contentHash}`
+        )
+      expect(
+        await db
+          .select()
+          .from(integrationOutputEvents)
+          .where(eq(integrationOutputEvents.sourceKey, `github-feedback:${squadId}:${tombstone!.id}`))
+      ).toEqual([])
+    } finally {
+      enabled.mockRestore()
+      model.mockRestore()
+      generate.mockRestore()
+      await db.delete(integrationOutputEvents).where(inArray(integrationOutputEvents.id, eventIds))
+    }
+  }
+)
+
+test('direct signed deletion ingress never substitutes a recreated repository ID', async () => {
+  const { publishGitHubWebhookOutputs } = await import('./ingress')
+  const { isCurrentGitHubFeedbackRevision } = await import('./feedback-obsolescence')
+  const number = 1510,
+    nativeId = 100510
+  const old = await revision(squadA, 'issue_comment', nativeId, 'repositoryisolation', 'automatic', TRUSTED)
+  await db
+    .update(githubFeedbackObjects)
+    .set({ currentRevisionId: old.id, sequence: old.sequence })
+    .where(eq(githubFeedbackObjects.id, old.objectId))
+  threads.set(number, { issue: issue(number), comments: [comment(nativeId, 'repositoryisolation', TRUSTED)] })
+  installGitHub()
+  await index(squadA, number)
+  await publishGitHubWebhookOutputs({
+    type: 'issue_comment',
+    githubObservation: { kind: 'webhook', deliveryId: crypto.randomUUID() },
+    payload: {
+      action: 'deleted',
+      repository: { id: 999, full_name: repo },
+      issue: issue(number),
+      comment: {
+        ...comment(nativeId, 'repositoryisolation', TRUSTED),
+        html_url: `https://github.com/${repo}/issues/${number}#issuecomment-${nativeId}`,
+      },
+    },
+  })
+  expect(await isCurrentGitHubFeedbackRevision(db, old.id)).toBe(true)
+  expect((await search(squadA, 'repositoryisolation')).length).toBe(1)
+})
+
+test('deferred, duplicate, wrong-object and shared OFF deletions remain identity isolated', async () => {
+  const { githubOutputAdapter } = await import('../outputs/github')
+  const { recordIntegrationOutput } = await import('../outputs/runtime')
+  const { prepareGitHubOutputOutcome } = await import('./feedback-routing')
+  const number = 1520,
+    nativeId = 100520
+  threads.set(number, { issue: issue(number), comments: [comment(nativeId, 'shareddeletionsentinel', TRUSTED)] })
+  installGitHub()
+  await index(squadA, number)
+  await index(squadOff, number)
+  const doc = await docFor(squadA, number)
+  const makeSource = async (squadId: string, id = nativeId, repositoryId = 1, inline = false) => {
+    const fixture = fixtures[squadId === squadOff ? 2 : squadId === squadB ? 1 : 0]!
+    const [connection] = await db.select().from(integrationConnections).where(eq(integrationConnections.id, fixture.id))
+    const fact = githubOutputAdapter.normalize({
+      type: inline ? 'pull_request_review_comment' : 'issue_comment',
+      githubObservation: { kind: 'webhook', deliveryId: crypto.randomUUID() },
+      payload: {
+        action: 'deleted',
+        repository: { id: repositoryId, full_name: repo },
+        ...(inline ? { pull_request: issue(number) } : { issue: issue(number) }),
+        comment: {
+          ...comment(id, 'private deleted text', TRUSTED),
+          html_url: `https://github.com/${repo}/${inline ? 'pull' : 'issues'}/${number}#${inline ? 'discussion_r' : 'issuecomment-'}${id}`,
+        },
+      },
+    })[0]!
+    return recordIntegrationOutput('github', fact, {
+      kind: 'connection',
+      squadId,
+      connectionId: fixture.id,
+      connectionRevision: connection!.materialRevision,
+    })
+  }
+  const wrongRepo = await makeSource(squadA, nativeId, 999)
+  expect(await prepareGitHubOutputOutcome(wrongRepo)).toEqual({
+    kind: 'settle',
+    reason: 'github_repository_unauthorized',
+  })
+  for (const unrelated of [await makeSource(squadA, nativeId + 1), await makeSource(squadA, nativeId, 1, true)]) {
+    expect(await prepareGitHubOutputOutcome(unrelated)).toEqual({ kind: 'settle', reason: 'github_comment_deleted' })
+    expect(await withheldGitHubMemoryDocuments(squadA, [doc.id])).toEqual(new Set())
+  }
+  // A caller-only deletion affects its shared view, not the owner's independent knowledge.
+  expect(await prepareGitHubOutputOutcome(await makeSource(squadB))).toEqual({
+    kind: 'settle',
+    reason: 'github_comment_deleted',
+  })
+  expect(await withheldGitHubMemoryDocuments(squadB, [doc.id])).toEqual(new Set([doc.id]))
+  expect(await withheldGitHubMemoryDocuments(squadA, [doc.id])).toEqual(new Set())
+  expect((await search(squadOff, 'shareddeletionsentinel')).length).toBe(1)
+  const deletion = await makeSource(squadA)
+  globalThis.fetch = mock(async () => new Response('unavailable', { status: 503 })) as unknown as typeof fetch
+  expect(await prepareGitHubOutputOutcome(deletion)).toEqual({ kind: 'defer' })
+  expect(await withheldGitHubMemoryDocuments(squadA, [doc.id])).toEqual(new Set())
+  installGitHub()
+  expect(await prepareGitHubOutputOutcome(deletion)).toEqual({ kind: 'settle', reason: 'github_comment_deleted' })
+  const tombstones = () =>
+    db
+      .select()
+      .from(githubFeedbackRevisions)
+      .where(
+        sql`${githubFeedbackRevisions.squadId} = ${squadA} AND ${githubFeedbackRevisions.contentHash} = ${deletion.fact.github!.content!.contentHash}`
+      )
+  const before = await tombstones()
+  expect(before).toHaveLength(1)
+  for (let i = 0; i < 2; i++)
+    expect(await prepareGitHubOutputOutcome(await makeSource(squadA))).toEqual({
+      kind: 'settle',
+      reason: 'github_comment_deleted',
+    })
+  expect(await tombstones()).toEqual(before)
+  expect(await withheldGitHubMemoryDocuments(squadA, [doc.id])).toEqual(new Set([doc.id]))
+  expect((await search(squadOff, 'shareddeletionsentinel')).length).toBe(1)
+  // OFF bypasses author trust, never either source or caller currentness.
+  expect(await withheldGitHubMemoryDocuments(squadOff, [doc.id])).toEqual(new Set([doc.id]))
 })

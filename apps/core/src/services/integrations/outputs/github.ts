@@ -1,5 +1,5 @@
 import { normalizeDependabot, DEPENDABOT_OUTPUT, DEPENDABOT_ACTIONS } from '../github/dependabot-output'
-import { normalizeGitHubFeedback, safeGitHubPath } from '../github/feedback-envelope'
+import { normalizeGitHubFeedback, safeGitHubPath, githubNativeId, githubContentHash } from '../github/feedback-envelope'
 import { createHash } from 'node:crypto'
 import { githubOutputCatalog, isGitHubSelfComment, type IntegrationOutputFact } from '@ficus/shared'
 import type { IntegrationOutputAdapter } from './types'
@@ -161,15 +161,76 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
       output = 'pull_request.reviewed'
       item = record(payload!.review)
     } else if (event.type === 'pull_request_review_comment') {
-      if (!['created', 'edited'].includes(action)) return []
+      if (!['created', 'edited', 'deleted'].includes(action)) return []
       output = 'pull_request.review_comment'
       item = record(payload!.comment)
     } else if (event.type === 'issue_comment' && native) {
-      if (!['created', 'edited'].includes(action)) return []
+      if (!['created', 'edited', 'deleted'].includes(action)) return []
       output = native.pull_request ? 'pull_request.comment' : 'issue.comment'
       item = record(payload!.comment)
     } else return []
     if (!item) return []
+    if (action === 'deleted' && ['issue_comment', 'pull_request_review_comment'].includes(event.type)) {
+      // Deletion is a terminal native fact, not the deleted author's instructions. Never retain
+      // its body, login, parent title, path or other provider prose in an output/review envelope.
+      const repositoryId = githubNativeId(payload!.repository.id)
+      const nativeId = githubNativeId(item.id)
+      const number = native?.number
+      const inline = event.type === 'pull_request_review_comment'
+      const isPR = inline || !!native?.pull_request
+      if (
+        event.githubObservation?.kind !== 'webhook' ||
+        !repositoryId ||
+        !nativeId ||
+        !Number.isSafeInteger(number) ||
+        number <= 0
+      )
+        return []
+      const url = `https://github.com/${repo}/${isPR ? 'pull' : 'issues'}/${number}#${inline ? 'discussion_r' : 'issuecomment-'}${nativeId}`
+      // The signed payload must bind the comment to this repository, parent and native ID.
+      if (typeof item.html_url !== 'string' || item.html_url.toLowerCase() !== url) return []
+      if (native?.base?.repo?.id !== undefined && githubNativeId(native.base.repo.id) !== repositoryId) return []
+      const objectKind = inline ? ('review_comment' as const) : ('issue_comment' as const)
+      const contentHash = githubContentHash({ repositoryId, objectKind, nativeId, deleted: true })
+      return [
+        {
+          output,
+          version: 1,
+          resourceKey: `${repo}#${number}`,
+          eventKey: `comment-deleted:${contentHash}`,
+          // Only a display clock. GitHub supplies no deletion clock; currentness uses terminality.
+          occurredAt: new Date().toISOString(),
+          data: {
+            repository: repo,
+            repositoryId: Number(repositoryId),
+            action: 'deleted',
+            ...(isPR ? { pullRequest: { number } } : { issue: { number } }),
+            projection: 'invalidation',
+          },
+          subject: 'GitHub comment deleted',
+          body: 'GitHub comment deleted.',
+          url,
+          github: {
+            observation: event.githubObservation,
+            status: null,
+            content: {
+              normalizationVersion: 1,
+              repositoryId,
+              nativeId,
+              objectKind,
+              providerVersion: null,
+              author: null,
+              editor: null,
+              attribution: 'unknown',
+              contentHash,
+              byteCount: 0,
+              reason: 'comment_deleted',
+              delivery: null,
+            },
+          },
+        },
+      ]
+    }
     const timestamp =
       (output === 'pull_request.reviewed'
         ? item.submitted_at

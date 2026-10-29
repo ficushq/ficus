@@ -214,6 +214,22 @@ async function prepareGitHubOutputInPass(
   )
     return settle('github_unauthorized')
   if (!input.fact.github?.content && !hasGitHubFreshnessBinding(input)) return settle(GITHUB_FRESHNESS_UNBOUND)
+  if (input.fact.github?.content?.reason === 'comment_deleted') {
+    // Factual invalidation precedes relevance and the author filter. Memory-only resources have
+    // no output rule, and deleted content must never execute rules or become a review/approval.
+    const access = await readGitHubResource(input)
+    if (!access || access.unavailable) return DEFER
+    if (!access.repositoryAuthorized) return settle('github_repository_unauthorized')
+    if (!access.nativeAuthorized) return settle('github_source_unverified')
+    const captured = await captureGitHubFeedback(input.id, {
+      authorizeSource: (source) =>
+        source.authority.kind === 'connection'
+          ? authorized(db, 'github', source.authority, source.authority.squadId)
+          : Promise.resolve(false),
+    })
+    if (captured.obsoleteCount) eventEmitter.emit('githubFeedback.updated', { squadId: captured.revision.squadId })
+    return settle('github_comment_deleted')
+  }
   // Filter OFF: local freshness bookkeeping only; no author gate, provider witness or projection.
   if (!(await isGitHubAuthorFilterEnabled(db, input.authority.squadId)))
     return prepareUnfilteredGitHubOutput(input, settle)
