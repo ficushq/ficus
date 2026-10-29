@@ -467,7 +467,12 @@ function makeHarness(opts?: { machineForSandbox?: (id: string) => string; bashSc
     },
     async restoreSetupAfterAssets(_sandboxId: string, fingerprint: string, prior: VmSetupState, now: Date) {
       if (!setupState || setupState.desiredFingerprint !== fingerprint || setupState.pendingInvocationId) return false
-      setupState = { ...prior, updatedAt: now }
+      setupState = {
+        ...prior,
+        pendingInvocationId: setupState.pendingInvocationId,
+        pendingInvocationKind: setupState.pendingInvocationKind,
+        updatedAt: now,
+      }
       return true
     },
     async markSetupReconciling(_sandboxId: string, _fingerprint: string, now: Date) {
@@ -3844,7 +3849,7 @@ describe('Bun adoption through normal spec reconciliation', () => {
     Object.assign(h.deps, { runtimeAdoptionIdle: async () => idle, hasActiveExecution: async () => false })
     const manager = new VmSandboxManager(h.deps)
     const id = 'agent_runtime-fixture'
-    const options = { ...agentOpts, lifecycleGeneration: 'owning-generation' }
+    const options = { ...agentOpts, lifecycleGeneration: 'owning-generation', boxLiveness: 'listening' as const }
     await manager.ensureSandbox(id, options)
     const oldSpec = await manager.getRunningSandboxSpecHash(id)
     h.setMachineBoxRow({ machineId: 'm1', port: 40001, status: 'ready', reconcilableSpecHash: oldSpec })
@@ -3927,6 +3932,8 @@ test('legacy installed executor idle-exits and the next normal ensure adopts the
     ...agentOpts,
     squadId: '11111111-1111-4111-8111-111111111111',
     lifecycleGeneration: 'preserved-generation',
+    // The fixture's active listener models the lifecycle's non-waking ss hint.
+    boxLiveness: 'listening' as const,
   }
   const h = makeHarness()
   let current: ReturnType<typeof Bun.spawn>
@@ -5151,3 +5158,178 @@ test('production marked-claim recovery restores only the owned listener and clea
     }
   }
 })
+
+/** An ordinary old-host start has already stamped current configuration but
+ * truthfully records its old runtime. No host SSH is real in this harness. */
+async function keptRuntimeFixture(id: string) {
+  const h = makeHarness({ bashScript: { exitCode: 0 } })
+  const state = { healthError: undefined as Error | undefined, healthCalls: 0, cancellations: [] as string[] }
+  const create = h.deps.createClient!
+  h.deps.createClient = (endpoint, token) => {
+    const client = create(endpoint, token) as unknown as FakeClient
+    Object.defineProperty(client, 'healthError', {
+      get: () => state.healthError,
+      set: (value) => {
+        state.healthError = value
+      },
+    })
+    const health = client.health.bind(client)
+    client.health = async () => {
+      state.healthCalls++
+      return health()
+    }
+    ;(client as any).cancelBashInvocation = async (invocationId: string) => {
+      state.cancellations.push(invocationId)
+    }
+    return client as unknown as ReturnType<NonNullable<typeof h.deps.createClient>>
+  }
+  const ordinary = h.deps.ensureBox
+  let placed!: Awaited<ReturnType<VmSandboxManagerDeps['ensureBox']>>
+  h.deps.ensureBox = async (input) => {
+    placed = await ordinary(input)
+    placed.box.reconcilableSpecHash = input.env.FICUS_BOX_SPEC_HASH!.replace(/:bun:\d+_\d+_\d+$/, ':bun:1_2_23')
+    placed.box.provisionedSpecHash = input.specHash!
+    placed.machine.status = 'ready'
+    placed.machine.capabilities = { bunVersion: '1.2.23' }
+    return placed
+  }
+  const initial = new VmSandboxManager(h.deps)
+  await initial.ensureSandbox(id, agentOpts)
+  h.deps.addForward = async () => Number(new URL(placed.endpoint).port)
+  h.deps.getMachineBox = async () => placed.box
+  h.deps.getMachine = async () => placed.machine
+  h.deps.resolveMachine = async () => placed.machine
+  h.setBunVersion('1.4.2')
+  return { h, initial, placed, state, client: [...h.clients.values()][0]! }
+}
+
+describe('kept Bun runtime retains ordinary recovery', () => {
+  for (const path of ['fast', 'assets'] as const) {
+    test(`repairs a dead old-runtime server through ordinary ensure (${path})`, async () => {
+      const id = `agent_dead_kept_${path}`
+      const { h, initial, client } = await keptRuntimeFixture(id)
+      let broken = false
+      h.deps.boxFilesCurrent = async () => !broken || path === 'fast'
+      const manager = new VmSandboxManager(h.deps)
+      await manager.ensureSandbox(id, { ...agentOpts, boxLiveness: 'listening' })
+      broken = true
+      client.healthError = new Error('owned fixture: executor connection refused')
+      const before = h.ensureCalls.length
+      try {
+        expect(await manager.ensureSandbox(id, agentOpts)).toBe(id)
+        expect(h.ensureCalls).toHaveLength(before + 1)
+        expect(h.ensureCalls.at(-1)!.adoptIdleRuntime).toBe(false)
+        expect(h.ensureCalls.at(-1)!.expectedBunVersion).toBeUndefined()
+        expect(await manager.getRunningSandboxSpecHash(id)).toEndWith(':bun:1_2_23')
+      } finally {
+        await manager.cleanup()
+        await initial.cleanup()
+      }
+    })
+  }
+
+  test('checks the master and repairs a lost tunnel even with a cached old-runtime client', async () => {
+    const id = 'agent_kept_lost_tunnel'
+    const { h, initial, client } = await keptRuntimeFixture(id)
+    let repaired = 0
+    h.deps.ensureMaster = async () => {
+      repaired++
+      client.healthError = undefined
+    }
+    const manager = new VmSandboxManager(h.deps)
+    await manager.ensureSandbox(id, { ...agentOpts, boxLiveness: 'listening' })
+    repaired = 0
+    client.healthError = new Error('owned fixture: lost forward')
+    try {
+      expect(await manager.ensureSandbox(id, agentOpts)).toBe(id)
+      expect(repaired).toBeGreaterThan(0)
+      expect(client.healthCalls).toBeGreaterThan(0)
+      expect(h.ensureCalls).toHaveLength(1)
+    } finally {
+      await manager.cleanup()
+      await initial.cleanup()
+    }
+  })
+
+  for (const pending of [true, false]) {
+    test(`recovers owned ${pending ? 'pending invocation after Core loss' : 'ambiguous due setup'} without restarting the retained server`, async () => {
+      const id = `agent_kept_setup_${pending}`
+      const { h, initial, client, state } = await keptRuntimeFixture(id)
+      const setup = (await h.deps.getSetupState(id))!
+      h.setSetupState({
+        ...setup,
+        readiness: pending ? 'reconciling' : 'ready_degraded',
+        pendingInvocationId: pending ? 'owned-setup-invocation' : null,
+        pendingInvocationKind: pending ? 'assets' : null,
+        reasons: ['command_outcome_ambiguous'],
+        nextAttemptAt: new Date(0),
+        lastAttemptAt: new Date(0),
+      })
+      const cancellations = state.cancellations
+      const manager = new VmSandboxManager(h.deps)
+      try {
+        expect(await manager.ensureSandbox(id, { ...agentOpts, boxLiveness: 'listening' })).toBe(id)
+        expect(cancellations).toEqual(pending ? ['owned-setup-invocation'] : [])
+        expect(await h.deps.getSetupState(id)).toMatchObject({
+          readiness: 'ready',
+          pendingInvocationId: null,
+          reasons: [],
+        })
+        expect(h.ensureCalls).toHaveLength(1)
+        expect(h.stopCalls).toHaveLength(0)
+        expect(manager.getClientForSandbox(id)).not.toBeNull()
+        expect(client.closed).toBe(0)
+      } finally {
+        await manager.cleanup()
+        await initial.cleanup()
+      }
+    })
+  }
+})
+
+for (const branch of ['tracked-race', 'second-proof', 'lower-deferred'] as const) {
+  test(`releases the Bun fence before deferred asset/setup reconciliation (${branch})`, async () => {
+    const { isCommandDrainActive, trackCommand } = await import('../command-drain')
+    const id = `agent_deferred_fence_${branch}`
+    const { h, initial, placed } = await keptRuntimeFixture(id)
+    placed.machine.capabilities = { bunVersion: '1.4.2' }
+    h.deps.boxFilesCurrent = async () => false
+    const work = Promise.withResolvers<void>()
+    let proofs = 0
+    h.deps.runtimeAdoptionIdle = async () => {
+      proofs++
+      return branch !== 'second-proof' || proofs === 1
+    }
+    if (branch === 'tracked-race')
+      h.deps.withSetupLease = async (_id, operation) => {
+        trackCommand({
+          sandboxId: id,
+          settled: work.promise,
+          cancelForRestart: async () => {
+            throw new Error('Must not cancel user work')
+          },
+        })
+        return operation()
+      }
+    h.deps.ensureBox = async (input) => {
+      expect(input.adoptIdleRuntime).toBe(true)
+      return { ...placed, runtimeAdoptionDeferred: true }
+    }
+    let synced = 0
+    h.setSyncBoxFiles(async () => {
+      synced++
+      expect(isCommandDrainActive(id)).toBe(false)
+      expect(await manager.execStatus(id, ['true'])).toBe(0)
+    })
+    const manager = new VmSandboxManager(h.deps)
+    try {
+      expect(await manager.ensureSandbox(id, { ...agentOpts, boxLiveness: 'listening' })).toBe(id)
+      expect(synced).toBe(1)
+      expect(isCommandDrainActive(id)).toBe(false)
+    } finally {
+      work.resolve()
+      await manager.cleanup()
+      await initial.cleanup()
+    }
+  })
+}

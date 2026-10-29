@@ -933,13 +933,6 @@ export class VmSandboxManager implements ISandboxManager {
               // Publish pending readiness before required asset sync. The box manager
               // has already made the physical server reachable, but API status must
               // remain `starting` until required files are safely present.
-              if (preserveAttached) {
-                const prior = await this.deps.getSetupState(sandboxId)
-                if (prior?.pendingInvocationId || prior?.reasons.includes('command_outcome_ambiguous'))
-                  throw Object.assign(new Error('Deferred Bun adoption cannot cancel or replay uncertain setup work'), {
-                    name: 'SandboxReadinessPendingError',
-                  })
-              }
               const durableSetup = await this.deps.ensureSetupFingerprint(sandboxId, setupFingerprint)
               if (durableSetup.pendingInvocationId) {
                 try {
@@ -959,7 +952,10 @@ export class VmSandboxManager implements ISandboxManager {
                     throw new Error(`VM setup fingerprint changed while clearing invocation ${sandboxId}`)
                   }
                 } catch (error) {
-                  throw new Error(`VM setup invocation cleanup remains unproven for ${sandboxId}`, { cause: error })
+                  throw Object.assign(
+                    new Error(`VM setup invocation cleanup remains unproven for ${sandboxId}`, { cause: error }),
+                    { name: 'SandboxReadinessPendingError' }
+                  )
                 }
               }
 
@@ -1139,6 +1135,32 @@ export class VmSandboxManager implements ISandboxManager {
         return sandboxId
       }
 
+      let runtimeRepairNeeded = false
+      const ensurePhysical = async (machine: Machine, adoptIdleRuntime: boolean) => {
+        return this.deps.ensureBox({
+          assertOwned: assertSetupOwned,
+          sandboxId,
+          machineId: machine.id,
+          env,
+          role,
+          // NOT the bare specHash (that's also baked into env.FICUS_BOX_SPEC_HASH
+          // above) — computeProvisioningMarker folds a hash of `env` in too, so
+          // box-manager's PARKED-box resume fast path also busts on a rotated
+          // secret, not only a bundle/role/provision-script change. See its doc.
+          specHash: computeProvisioningMarker(specHash, env),
+          // The host bootstrap sweep may not have upgraded this machine.
+          // Ordinary new/resume/repair must keep working on its current Bun.
+          expectedBunVersion: adoptIdleRuntime ? this.deps.getHostBunVersion() : undefined,
+          adoptIdleRuntime,
+          // The caller's liveness observation, if any. Set only by the vm
+          // lifecycle tick (one `ss -ltnH` per machine), so its keep-warm
+          // ensures never HTTP-probe — and therefore never wake — a
+          // socket-activated box that has deliberately stood down.
+          liveness: opts.boxLiveness,
+          beginPhysicalWork,
+        })
+      }
+
       const deferRuntime = async (): Promise<string> => {
         assertSetupOwned()
         const box = await this.deps.getMachineBox(sandboxId)
@@ -1151,25 +1173,49 @@ export class VmSandboxManager implements ISandboxManager {
         }
         const state = this.sandboxes.get(sandboxId)
         let endpoint =
+          opts.boxLiveness === 'listening' &&
           state?.machineId === host.id &&
           state.remotePort === box.port &&
           state.authToken === (box.authToken ?? undefined)
             ? state.endpoint
             : undefined
-        if (!endpoint) {
-          await this.deps.ensureMaster(host)
-          endpoint = `http://127.0.0.1:${await this.deps.addForward(host, box.port)}`
+        if (!runtimeRepairNeeded) {
+          try {
+            if (!endpoint) {
+              await this.deps.ensureMaster(host)
+              endpoint = `http://127.0.0.1:${await this.deps.addForward(host, box.port)}`
+            }
+            if (opts.boxLiveness !== 'listening') {
+              const probe = this.deps.createClient(stripScheme(endpoint), box.authToken ?? undefined)
+              try {
+                runtimeRepairNeeded = !(await probe.health()).healthy
+              } finally {
+                probe.close()
+              }
+            }
+          } catch {
+            runtimeRepairNeeded = true
+          }
+        }
+        if (runtimeRepairNeeded) {
+          // This is ordinary availability repair, not Bun adoption. The lower
+          // manager retains its host/active-work diagnostics and repair guards.
+          const repaired = await ensurePhysical(host, false)
+          assertSetupOwned()
+          timer.merge(repaired.timings)
+          return finishEnsure(repaired)
         }
         assertSetupOwned()
         // Defer only physical runtime replacement, never required files/setup.
         try {
-          return await finishEnsure({ machine: host, box, endpoint, timings: {} }, false, true)
+          return await finishEnsure({ machine: host, box, endpoint: endpoint!, timings: {} }, false, true)
         } catch (error) {
           throw new VmPostProvisionSetupError(error)
         }
       }
 
       for (let attempt = 1; ; attempt++) {
+        runtimeRepairNeeded = false
         const machine = await timer.time('placement', () =>
           this.deps.resolveMachine({
             sandboxId,
@@ -1221,6 +1267,7 @@ export class VmSandboxManager implements ISandboxManager {
             const keepRuntime = isBunOnlySpecDrift(readyBox.reconcilableSpecHash, specHash)
             let endpoint =
               keepRuntime &&
+              opts.boxLiveness === 'listening' &&
               current?.machineId === machine.id &&
               current.remotePort === readyBox.port &&
               current.authToken === readyBox.authToken
@@ -1232,7 +1279,7 @@ export class VmSandboxManager implements ISandboxManager {
             }
             // Bun-only maintenance must not wake a healthy socket-activated
             // executor or swap its live client merely to retry convergence.
-            if (opts.boxLiveness === 'listening' || keepRuntime)
+            if (opts.boxLiveness === 'listening')
               return finishEnsure({ machine, box: readyBox, endpoint, timings: {} }, true, keepRuntime)
             const probe = this.deps.createClient(stripScheme(endpoint), readyBox.authToken)
             let healthy = false
@@ -1243,7 +1290,8 @@ export class VmSandboxManager implements ISandboxManager {
             } finally {
               probe.close()
             }
-            if (healthy) return finishEnsure({ machine, box: readyBox, endpoint, timings: {} }, true)
+            if (healthy) return finishEnsure({ machine, box: readyBox, endpoint, timings: {} }, true, keepRuntime)
+            runtimeRepairNeeded = true
           }
           return await this.deps.withProvision(
             sandboxId,
@@ -1266,7 +1314,8 @@ export class VmSandboxManager implements ISandboxManager {
                   )
                 }
               }
-              const provision = async () => {
+              const deferred = Symbol('runtime-adoption-deferred')
+              const provision = async (): Promise<string | typeof deferred> => {
                 if (
                   observed?.status !== 'ready' &&
                   observed?.bunRuntimeAdoptingSpecHash &&
@@ -1293,7 +1342,7 @@ export class VmSandboxManager implements ISandboxManager {
                   needsIdleBunAdoption(current, specHash) &&
                   !(await this.runtimeAdoptionAllowed(machine, current))
                 ) {
-                  return deferRuntime()
+                  return deferred
                 }
                 assertSetupOwned()
                 const adoptIdleRuntime = Boolean(
@@ -1309,31 +1358,10 @@ export class VmSandboxManager implements ISandboxManager {
                   (!current.provisionedSpecHash || compatibleConfiguration) &&
                   !adoptIdleRuntime
                 )
-                  return deferRuntime()
+                  return deferred
                 let placed: Awaited<ReturnType<VmSandboxManagerDeps['ensureBox']>>
                 try {
-                  placed = await this.deps.ensureBox({
-                    assertOwned: assertSetupOwned,
-                    sandboxId,
-                    machineId: machine.id,
-                    env,
-                    role,
-                    // NOT the bare specHash (that's also baked into env.FICUS_BOX_SPEC_HASH
-                    // above) — computeProvisioningMarker folds a hash of `env` in too, so
-                    // box-manager's PARKED-box resume fast path also busts on a rotated
-                    // secret, not only a bundle/role/provision-script change. See its doc.
-                    specHash: computeProvisioningMarker(specHash, env),
-                    // The host bootstrap sweep may not have upgraded this machine.
-                    // Ordinary new/resume/repair must keep working on its current Bun.
-                    expectedBunVersion: adoptIdleRuntime ? this.deps.getHostBunVersion() : undefined,
-                    adoptIdleRuntime,
-                    // The caller's liveness observation, if any. Set only by the vm
-                    // lifecycle tick (one `ss -ltnH` per machine), so its keep-warm
-                    // ensures never HTTP-probe — and therefore never wake — a
-                    // socket-activated box that has deliberately stood down.
-                    liveness: opts.boxLiveness,
-                    beginPhysicalWork,
-                  })
+                  placed = await ensurePhysical(machine, adoptIdleRuntime)
                 } catch (error) {
                   const mismatch =
                     error instanceof BunRuntimeMismatchError
@@ -1354,7 +1382,7 @@ export class VmSandboxManager implements ISandboxManager {
                 }
                 timer.merge(placed.timings)
                 if (placed.runtimeAdoptionDeferred) {
-                  if (placed.box.status === 'ready') return deferRuntime()
+                  if (placed.box.status === 'ready') return deferred
                   const pending = new Error('Runtime adoption is awaiting a proven idle activation chain')
                   pending.name = 'SandboxReadinessPendingError'
                   throw new VmPostProvisionSetupError(pending)
@@ -1365,8 +1393,8 @@ export class VmSandboxManager implements ISandboxManager {
                   throw new VmPostProvisionSetupError(error)
                 }
               }
-              return sameHostDrift
-                ? withIdleBoxCommandFence(sandboxId, provision, () => deferRuntime())
+              const result = await (sameHostDrift
+                ? withIdleBoxCommandFence<string | symbol>(sandboxId, provision, async () => deferred)
                 : observed?.status === 'ready' &&
                     observed.machineId === machine.id &&
                     (!observed.reconcilableSpecHash ||
@@ -1377,7 +1405,8 @@ export class VmSandboxManager implements ISandboxManager {
                           'critical'
                       ))
                   ? withBoxCommandDrain(sandboxId, provision)
-                  : provision()
+                  : provision())
+              return typeof result === 'string' ? result : deferRuntime()
             },
             async () => {
               // The owner's endpoint is process-local. A shared success only
@@ -1392,7 +1421,7 @@ export class VmSandboxManager implements ISandboxManager {
                   `Shared provision machine unavailable for ${sandboxId}`,
                   machine?.status ?? 'unreachable'
                 )
-              if (box.reconcilableSpecHash && box.reconcilableSpecHash !== specHash) return deferRuntime()
+              if (box.reconcilableSpecHash && !configurationMatches(box, specHash, env)) return deferRuntime()
               await this.deps.ensureMaster(machine)
               const localPort = await this.deps.addForward(machine, box.port)
               return finishEnsure({ machine, box, endpoint: `http://127.0.0.1:${localPort}`, timings: {} }, true)

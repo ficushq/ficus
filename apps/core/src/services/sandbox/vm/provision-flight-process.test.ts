@@ -134,6 +134,7 @@ for (const failure of [false, true]) {
       } else {
         expect(api.events.at(-1)!.result).toBe('owner-ready')
         expect(worker.events.at(-1)!.result).toBe('joined-ready')
+        expect([...api.events, ...worker.events].filter((e) => e.event === 'assets')).toHaveLength(1)
         expect(worker.events.filter((e) => e.event === 'local-forward')).toHaveLength(1)
         const [ack] = await db
           .select()
