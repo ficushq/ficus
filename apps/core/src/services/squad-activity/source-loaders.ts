@@ -383,7 +383,8 @@ export async function loadInboxSnapshot(executor: Executor, groupId: string): Pr
     await executor.execute(
       sql`SELECT i.*,recipient.squad_id recipient_squad_id,recipient.agent_type_id recipient_type_id,
         sender.squad_id sender_squad_id,
-        sender.agent_type_id sender_type_id,sender.metadata->>'name' sender_name,sender.metadata->>'purpose' sender_purpose,
+        sender.agent_type_id sender_type_id,
+        CASE WHEN jsonb_typeof(sender.metadata->'name')='string' THEN sender.metadata->>'name' END sender_name,
         ws.id ws_id,ws.squad_id ws_squad_id,ws.title ws_title,ws.owner_agent_id,s.manager_agent_id
         FROM inbox i LEFT JOIN agents recipient ON recipient.id=${uuidJoinKey(sql`i.recipient_id`)}
         LEFT JOIN agents sender ON i.sender_type='agent' AND sender.id=${uuidJoinKey(sql`i.sender_id`)}
@@ -404,8 +405,7 @@ export async function loadInboxSnapshot(executor: Executor, groupId: string): Pr
         // Attribution only for same-squad senders — a cross-instance or
         // cross-squad sender's type/name is not this squad's to display.
         senderAgentTypeId: row.sender_squad_id === row.recipient_squad_id ? (row.sender_type_id ?? null) : null,
-        senderName:
-          row.sender_squad_id === row.recipient_squad_id ? (row.sender_name ?? row.sender_purpose ?? null) : null,
+        senderName: row.sender_squad_id === row.recipient_squad_id ? (row.sender_name ?? null) : null,
         subject: row.subject ?? null,
         content: row.content,
         metadata: row.metadata,
