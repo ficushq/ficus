@@ -203,33 +203,22 @@ a VM booted from it needs to install nothing. See § exe.dev in
 (`{"bunVersion","nixVersion","devboxVersion"}`). Near the top of a run,
 `bootstrap.sh` reads it (via `jq`, baked into the image; grep/sed fallback):
 
-- **Marker present** (a VM booted from the ficus-machine image) → SKIP every
-  install step (`install_base_packages`, `install_docker_packages`,
-  `install_bun`, `install_nix`, `install_devbox`) and use the baked tooling.
-  PRESENCE — **not** an exact version match — is the source of truth: a prebaked
-  image is **never reinstalled over at boot**. Skipping the `apt-get update` +
-  release downloads + version probes is what turns a multi-minute bootstrap into
-  a **seconds-long** one.
-  - **All three baked versions equal the script's `BUN_VERSION` / `NIX_VERSION` /
-    `DEVBOX_VERSION` pins** (the healthy case) → a plain fast-path log line, no
-    warning.
-  - **A baked version DRIFTS** from the script's pins (a stale image whose baked
-    toolchain predates a pin bump) → **still skip the installs and boot on the
-    baked tooling**, but log a `WARNING` per drifting tool naming the drift and
-    recommending an image rebake (e.g. `prebaked image nix 2.24.9 != script
-2.25.0 — using baked tooling; rebake the ficus-machine image to change pinned
-versions`). bootstrap does **not** attempt to reinstall over the baked
-    tooling: the official nix installer refuses to run over an existing `/nix` and
-    would error under `set -e`, aborting the whole run and marking the VM
-    `unreachable` — so a naive "upgrade on drift" would **brick** a prebaked
-    machine on a `NIX_VERSION` bump. Changing a pinned version on a prebaked image
-    is therefore done by **rebaking + republishing the image**, not by a boot-time
-    reinstall; the machine keeps booting normally on the baked tooling until then.
-- **Marker absent** (an ordinary BYO-SSH host) → the full install path,
-  **byte-for-byte unchanged**. The fast-path is an optimization, never a
-  dependency.
+- **Marker present** (a VM booted from the ficus-machine image) → skip apt,
+  Docker, nix, devbox and browser INSTALLS, even if their baked versions drift.
+  Never reinstall nix over the baked `/nix`; changes to that toolchain require
+  an image rebake. The marker is immutable image provenance, not live adoption.
+- **Bun only**, on either branch → compare the actual executable version to the
+  script's exact repository pin, stage/verify and atomically replace on drift.
+  The old executable remains available for rollback; existing processes retain
+  their old inode until normal idle provisioning reconciliation adopts the new
+  binary. Bootstrap does not restart box servers itself.
+- **Marker absent** (BYO-SSH Ubuntu host) → full idempotent install path, with
+  the same atomic Bun installer; other tool behavior is unchanged.
 
-**What still runs on the fast path** — the skip covers _only_ the installs. The
+See [host Bun convergence](host-bun-convergence.md) for the offline-only preview,
+validation, remaining adoption prerequisite and separately authorized rollout.
+
+**What still runs on the fast path** — the skip covers baked toolchain installs, not the Bun version check. The
 genuinely per-machine / per-boot work always runs, prebaked or not:
 
 - `make_dirs` (harmless when the dirs are already baked),

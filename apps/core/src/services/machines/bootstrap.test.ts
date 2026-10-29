@@ -335,12 +335,12 @@ describe('machine script docker contract', () => {
     expect(bootstrapSh).toContain('allowtcpforwarding[[:space:]]+no')
   })
 
-  it("bootstrap.sh uses a prebaked image's baked tooling (skips installs) whether or not versions match, and never claims a self-heal", () => {
+  it('bootstrap.sh keeps the prebaked toolchain skip, with Bun converged separately', () => {
     // The marker the ficus-machine image bakes (packages/machine-image/Dockerfile).
-    expect(bootstrapSh).toContain('/opt/ficus/prebaked')
+    expect(bootstrapSh).toContain('PREBAKED_MARKER="${FICUS_ROOT}/prebaked"')
     // The install block is gated on marker PRESENCE (the source of truth for
-    // baked tooling); a drift only warns via the decision logger — it never
-    // re-runs the installs over a prebaked image (a nix reinstall would brick).
+    // baked tooling); nix/devbox drift never invokes their installers. Bun
+    // alone converges through its checked atomic replacement.
     expect(bootstrapSh).toContain('log_prebaked_decision')
     expect(bootstrapSh).toContain('bunVersion')
     // Honest wording: a drift warns + recommends a rebake, it does NOT self-heal.
@@ -803,7 +803,7 @@ describe('bootstrap.sh --core-cidr validation + egress ruleset rendering', () =>
 // --print-subid-start): it reads the marker at `--marker-file`, prints the
 // decision (`skip` = use baked tooling / `install` = full BYO path) on stdout,
 // and logs any drift WARNING on stderr — with NO apt/nix/install side effects.
-// This proves a prebaked image ALWAYS uses its baked tooling (a drift warns but
+// This proves prebaked nix/devbox ALWAYS use their baked tooling (drift warns but
 // never triggers a bricking reinstall over the baked /nix).
 describe('bootstrap.sh prebaked-image decision (--print-prebaked-decision dry run)', () => {
   const bootstrapPath = join(repoRoot, 'scripts/machine/bootstrap.sh')
@@ -857,7 +857,7 @@ describe('bootstrap.sh prebaked-image decision (--print-prebaked-decision dry ru
     expect(stdout.trim()).toBe('skip')
     // A clean match logs the fast-path notice but NEVER a drift warning.
     expect(stderr).not.toContain('WARNING')
-    expect(stderr).toContain('skipping install steps')
+    expect(stderr).toContain('skipping baked toolchain installs; Bun is checked separately')
   })
 
   it('marker present + a version DRIFTS → STILL skip installs (never reinstall over a prebaked image) + honest drift WARNING', async () => {

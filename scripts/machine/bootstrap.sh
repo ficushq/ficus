@@ -44,9 +44,11 @@
 
 set -euo pipefail
 
-# Pinned bun: the repo has no .bun-version / package.json engines pin, so this
-# tracks current stable. Bump deliberately (it changes the bootstrap hash).
-BUN_VERSION="1.2.23"
+# Keep EXACTLY equal to .bun-version (host-bun.test.ts enforces this). This
+# literal is portable: bootstrap is streamed standalone and shipped prebuilt,
+# with no repository checkout or .bun-version on the target host.
+BUN_VERSION="1.4.2"
+BUN_LOCK_TIMEOUT_SECS=120
 
 # Pinned nix + devbox toolchain — what box users need for `devbox install`
 # (per-box comfort-set seeding, apps/core devbox-seed.ts). DEVBOX_VERSION tracks
@@ -86,21 +88,13 @@ BROWSER_DOWNLOAD_ATTEMPTS=2
 FICUS_HOST_ROOT="${FICUS_HOST_ROOT:-}"
 
 FICUS_ROOT="${FICUS_HOST_ROOT}/opt/ficus"
-BUN_INSTALL_DIR="${FICUS_ROOT}/bun"      # official installer target (dispatcher: "install to /opt/ficus/bun")
 BUN_BIN_LINK="${FICUS_ROOT}/bin/bun"     # stable invocation path used by box-provision's unit
 
-# Prebaked-image marker (packages/machine-image/Dockerfile writes it as
-# {"bunVersion","nixVersion","devboxVersion"}). Present ONLY on a VM booted from
-# the ficus-machine image, where bun/nix/devbox/apt prereqs are already baked. Its
-# PRESENCE (regardless of the exact baked versions) is the source of truth that
-# the tooling is baked: main() then SKIPS every install step and uses the baked
-# tooling. This is deliberately NOT gated on a version match — a prebaked image
-# is NEVER reinstalled over at boot (install_nix would brick on an existing /nix,
-# see below), so changing a pinned version is done by REBAKING the image, not by
-# a boot-time reinstall. A drift between the baked pins and the script's pins only
-# logs a WARNING (log_prebaked_decision). Absent on a BYO-SSH bare Ubuntu host
-# (full install path). Overridable via --marker-file for the
-# --print-prebaked-decision dry run ONLY.
+# Prebaked marker records the original image's tooling, not current adoption.
+# Presence skips apt/nix/devbox/browser INSTALLS even on drift (reinstalling nix
+# would brick provisioning). Bun alone is version-checked and atomically
+# converged on both branches. Never rewrite the baked marker after an upgrade.
+# --marker-file overrides it for the read-only prebaked-decision preview only.
 PREBAKED_MARKER="${FICUS_ROOT}/prebaked"
 
 # Multi-user nix lays its default profile here; the `nix` binary lives under it.
@@ -303,21 +297,78 @@ install_docker_packages() {
   "${SUDO[@]}" systemctl mask docker.service docker.socket >/dev/null 2>&1 || true
 }
 
+# Bun is the ONLY baked tool we upgrade in place. Never run the installer over
+# the current executable: a running server retains its old inode until normal
+# idle box reconciliation restarts it. No service control happens here.
 install_bun() {
-  if [ -x "${BUN_INSTALL_DIR}/bin/bun" ]; then
-    local current
-    current="$("${BUN_INSTALL_DIR}/bin/bun" --version 2>/dev/null || echo "")"
-    if [ "${current}" = "${BUN_VERSION}" ]; then
-      "${SUDO[@]}" ln -sf "${BUN_INSTALL_DIR}/bin/bun" "${BUN_BIN_LINK}"
-      return 0
+  "${SUDO[@]}" bash -s -- "${FICUS_ROOT}" "${BUN_VERSION}" "${BUN_LOCK_TIMEOUT_SECS}" <<'FICUS_BUN_INSTALL'
+set -euo pipefail
+root=$1 version=$2 lock_wait=$3
+# Parent layout has already passed require_machine_layout_ready. Refuse linked
+# child directories/lock rather than following an unexpected destination.
+for path in "$root" "$root/bun" "$root/bun/bin" "$root/bin" "$root/bun-install.lock"; do
+  [ ! -L "$path" ] || { echo "Bun upgrade: unsafe linked path: $path" >&2; exit 3; }
+done
+mkdir -p "$root/bun/bin" "$root/bin"
+exec 9>"$root/bun-install.lock"
+flock -x -w "$lock_wait" 9 || { echo 'Bun upgrade: install lock busy' >&2; exit 3; }
+bin="$root/bun/bin/bun"
+link="$root/bin/bun"
+link_bun() {
+  [ "$(readlink "$link" 2>/dev/null || :)" != "$bin" ] || return 0
+  ln -s "$bin" "$stage/link"
+  mv -Tf "$stage/link" "$link"
+}
+stage=$(mktemp -d "$root/.bun-stage.XXXXXXXX")
+switched=false committed=false had_previous=false
+cleanup() {
+  local rc=$?
+  if [ "$switched" = true ] && [ "$committed" = false ]; then
+    if [ "$had_previous" = true ]; then
+      if ! { ln "$bin.previous" "$stage/restore" && mv -Tf "$stage/restore" "$bin"; }; then
+        echo 'Bun upgrade: rollback failed; previous executable retained for operator recovery' >&2
+        rc=3
+      fi
+    else
+      rm -f "$bin" || rc=3
     fi
   fi
-  # Official installer, pinned to an exact tag, into a system-wide location
-  # (NOT a user home). It writes ${BUN_INSTALL_DIR}/bin/bun.
-  curl -fsSL https://bun.sh/install \
-    | "${SUDO[@]}" env "BUN_INSTALL=${BUN_INSTALL_DIR}" bash -s "bun-v${BUN_VERSION}"
-  # Stable path referenced by box-provision's systemd unit ExecStart.
-  "${SUDO[@]}" ln -sf "${BUN_INSTALL_DIR}/bin/bun" "${BUN_BIN_LINK}"
+  rm -rf -- "$stage"
+  exit "$rc"
+}
+trap cleanup EXIT
+if [ -x "$bin" ] && [ "$("$bin" --version)" = "$version" ]; then
+  link_bun
+  exit 0
+fi
+# The installer (including its release download) is bounded by timeout. Only
+# transport retries inside this attempt; no blind retry of a remote invocation.
+curl -fsSL --connect-timeout 15 --max-time 60 --retry 2 https://bun.sh/install > "$stage/install.sh"
+# Keep installer profile/completion side effects out of the admin's real HOME.
+mkdir "$stage/home"
+env HOME="$stage/home" BUN_INSTALL="$stage/runtime" timeout -k 10 180 bash "$stage/install.sh" "bun-v$version"
+candidate="$stage/runtime/bin/bun"
+[ -f "$candidate" ] && [ ! -L "$candidate" ] && [ -x "$candidate" ]
+[ "$("$candidate" --version)" = "$version" ] || { echo 'Bun upgrade: candidate version mismatch' >&2; exit 3; }
+# Retain the previous inode BEFORE switching. A crash after the switch leaves a
+# complete checked binary and the previous binary, never a truncated executable.
+chmod 0755 "$candidate"
+if [ -e "$bin" ]; then
+  [ -f "$bin" ] && [ ! -L "$bin" ]
+  ln "$bin" "$stage/previous"
+  mv -Tf "$stage/previous" "$bin.previous"
+  had_previous=true
+fi
+mv -Tf "$candidate" "$bin"
+switched=true
+if [ "$("$bin" --version)" != "$version" ]; then
+  echo 'Bun upgrade: installed version failed verification; rolling back' >&2
+  exit 3
+fi
+link_bun
+committed=true
+printf 'Bun upgrade: installed %s; running boxes adopt through idle provisioning reconciliation\n' "$version" >&2
+FICUS_BUN_INSTALL
 }
 
 # Put `nix` on the STANDARD system PATH. The multi-user installer only wires nix
@@ -1511,23 +1562,8 @@ marker_field() {
   fi
 }
 
-# Log the prebaked-image decision to stderr. Called by main() ONLY when the
-# marker is already known to exist. It NEVER changes whether the installs run —
-# a prebaked image ALWAYS uses its baked tooling and main() ALWAYS skips the
-# installs when the marker is present. This function only decides what to LOG:
-#   - all baked bun/nix/devbox versions equal this script's pins → a plain
-#     fast-path notice (the common, healthy case); or
-#   - a version DRIFTS (stale image, e.g. a pin bumped but the image not yet
-#     rebaked) → a clear per-field WARNING naming the drift, stating that the
-#     baked tooling is being used, and recommending an image rebake.
-# Why we NEVER reinstall on drift: bun/devbox would overwrite fine, but the
-# official nix installer REFUSES to run over an existing /nix and errors out —
-# under `set -e` that aborts the whole run and BRICKS provisioning (the VM is
-# marked unreachable). Using the baked tooling can never brick. The correct way
-# to change a pinned version on a prebaked image is to REBAKE the image, which
-# the warning tells the operator to do. This is an OPTIMIZATION-and-safety layer
-# only — the per-machine/per-boot steps (make_dirs, write_manifest,
-# apply_egress_lockdown, and the caps probe) run regardless.
+# Report the image baseline. Bun is separately converged by install_bun;
+# nix/devbox/Playwright still use baked tooling on drift and require a rebake.
 log_prebaked_decision() {
   local baked_bun baked_nix baked_devbox baked_playwright
   baked_bun="$(marker_field bunVersion)"
@@ -1538,14 +1574,12 @@ log_prebaked_decision() {
     [ "${baked_nix}" = "${NIX_VERSION}" ] &&
     [ "${baked_devbox}" = "${DEVBOX_VERSION}" ] &&
     [ "${baked_playwright}" = "${PLAYWRIGHT_VERSION}" ]; then
-    echo "bootstrap.sh: prebaked ficus-machine image detected (bun ${baked_bun}, nix ${baked_nix}, devbox ${baked_devbox}, playwright ${baked_playwright} match pins) — skipping install steps" >&2
+    echo "bootstrap.sh: prebaked ficus-machine image detected (bun ${baked_bun}, nix ${baked_nix}, devbox ${baked_devbox}, playwright ${baked_playwright} match pins) — skipping baked toolchain installs; Bun is checked separately" >&2
     return 0
   fi
-  # Drift: DO NOT reinstall (a nix reinstall over the baked /nix bricks the run —
-  # see above). Use the baked tooling and warn per drifting field; a real version
-  # bump is applied by rebaking the image, not by a boot-time reinstall.
+  # Never reinstall nix/devbox on drift. Bun has its own atomic upgrade path.
   [ "${baked_bun}" = "${BUN_VERSION}" ] ||
-    echo "bootstrap.sh: WARNING prebaked image bun ${baked_bun} != script ${BUN_VERSION} — using baked tooling; rebake the ficus-machine image to change pinned versions" >&2
+    echo "bootstrap.sh: WARNING prebaked image bun ${baked_bun} != script ${BUN_VERSION} — Bun will be version-checked and converged independently of the baked toolchain" >&2
   [ "${baked_nix}" = "${NIX_VERSION}" ] ||
     echo "bootstrap.sh: WARNING prebaked image nix ${baked_nix} != script ${NIX_VERSION} — using baked tooling; rebake the ficus-machine image to change pinned versions" >&2
   [ "${baked_devbox}" = "${DEVBOX_VERSION}" ] ||
@@ -2074,26 +2108,14 @@ FICUS_LAYOUT_PREFLIGHT
 }
 
 main() {
-  # Prebaked ficus-machine image: when its /opt/ficus/prebaked marker is PRESENT, the
-  # install_* steps are already baked, so skip them and use the baked tooling —
-  # ALWAYS, regardless of whether the baked versions match this script's pins.
-  # A prebaked image is never reinstalled over at boot (a nix reinstall over the
-  # baked /nix would brick the run — see log_prebaked_decision), so a version
-  # drift only logs a WARNING recommending an image rebake; it never falls back to
-  # the installs. This is the ONLY thing prebaked changes — the per-machine/
-  # per-boot work below (make_dirs, the manifest with the caller's --version hash,
-  # verify_browser's Chromium-sandbox check — which loads the AppArmor profile
-  # into the running kernel and starts the SYSTEM browser service, both per-boot,
-  # and marks browsing unavailable without failing bootstrap if it cannot — and
-  # the egress lockdown) STILL runs, and print_capabilities (the caps probe
-  # reflecting THIS VM) always runs after main. The non-prebaked (no-marker)
-  # branch is the original sequence, unchanged: idempotent installs on a bare host.
-  #
-  # Refuse an old or interrupted machine layout before changing services.
+  # Prebaked hosts skip all toolchain installs EXCEPT Bun. Its atomic checked
+  # replacement never touches baked nix/devbox. Per-boot work remains common.
+  # Refuse old/interrupted machine layouts before changing anything.
   require_machine_layout_ready || return $?
   if [ -f "${PREBAKED_MARKER}" ]; then
     log_prebaked_decision
     make_dirs
+    install_bun
   else
     install_base_packages
     make_dirs

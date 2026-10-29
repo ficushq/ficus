@@ -18,7 +18,10 @@ import { createHash } from 'crypto'
  * integration-vm.test.ts starts the box server unit-free.
  */
 
-const SERVER_ENTRY = join(import.meta.dir, 'server.ts')
+const SERVER_SOURCE = join(import.meta.dir, 'server.ts')
+// Local owned installed-bundle validation; every real server spawn uses this
+// entry, while source-inventory checks still inspect the checked-in source.
+const SERVER_ENTRY = process.env.FICUS_SANDBOX_TEST_SERVER_ENTRY || SERVER_SOURCE
 
 interface RunningServer {
   proc: ReturnType<typeof Bun.spawn>
@@ -390,7 +393,7 @@ describe('server auth gate (subprocess)', () => {
     // Source-level inventory: every `case '/x':` in the dispatch switch must
     // be in JSON_BODY_PATHS, or the case is unreachable dead code and its
     // route 404s — the exact shape of this regression.
-    const src = readFileSync(SERVER_ENTRY, 'utf8')
+    const src = readFileSync(SERVER_SOURCE, 'utf8')
     const allowList = new Set(
       [...(src.match(/JSON_BODY_PATHS = new Set\(\[([^\]]+)\]/)?.[1] ?? '').matchAll(/'([^']+)'/g)].map((m) => m[1])
     )
