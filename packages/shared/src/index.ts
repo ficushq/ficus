@@ -137,3 +137,7 @@ export * from './recovery-waits'
 export type { SandboxHostCapacity } from './host-capacity'
 
 export * from './workflow-decision-brief'
+
+export * from './workflow-review-history'
+
+export * from './workflow-review-waits'

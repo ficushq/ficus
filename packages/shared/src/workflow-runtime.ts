@@ -10,6 +10,12 @@ import {
   type WorkflowParticipant,
   type WorkflowTransition,
 } from './workflows'
+import {
+  workflowEarlierHumanDecisions,
+  workflowCarryForwardSources,
+  type WorkflowBriefSubmission,
+  type WorkflowReviewBriefBinding,
+} from './workflow-review-history'
 import type { WorkflowDecisionRecord } from './workflow-decision'
 
 export interface WorkflowBranch {
@@ -27,6 +33,9 @@ export interface WorkflowJoin {
 }
 
 export interface WorkflowAttempt {
+  decisionBrief?: WorkflowBriefSubmission
+  reviewBrief?: WorkflowReviewBriefBinding
+  settledVersion?: number
   /** Attempts whose handoffs directly started this attempt (empty for the entry). */
   sourceAttemptIds?: number[]
   /** Durable command-response handoff; no inbox delivery is needed for this attempt. */
@@ -85,6 +94,7 @@ export interface WorkflowRun {
     freshSession?: boolean
     sourceAttemptIds?: number[]
     feedback?: string
+    reviewBrief?: WorkflowReviewBriefBinding
   }>
   attempts: WorkflowAttempt[]
   returns: WorkflowReturnObligation[]
@@ -218,16 +228,28 @@ function startAttempt(
   branch?: WorkflowBranch,
   freshSession = false,
   sourceAttemptIds: number[] = [],
-  feedback?: string
+  feedback?: string,
+  reviewBrief?: WorkflowReviewBriefBinding
 ): void {
   const step = stepById(state, stepId)
+  if (step.kind === 'human-approval' && !reviewBrief) {
+    const sources = state.attempts.filter((a) => sourceAttemptIds.includes(a.id))
+    const producer = sources.find((a) => a.settledVersion === state.version)
+    if (producer && effectiveWorkflowStep(state, producer).kind === 'agent') {
+      const authored = sources.filter((a) => a.decisionBrief).map((a) => a.id)
+      if (authored.length) reviewBrief = { kind: 'authored', sourceAttemptIds: authored }
+    } else {
+      const carried = workflowCarryForwardSources(state, sourceAttemptIds)[0]
+      reviewBrief = carried ? { kind: 'carried-forward', sourceAttemptId: carried.id } : { kind: 'none' }
+    }
+  }
   const exhausted =
     state.attempts.slice(state.attemptEpoch ?? 0).filter((attempt) => attempt.stepId === stepId).length >=
     (state.definition.limits.maxStepAttempts ?? Infinity)
   if (exhausted || activeWorkflowAttempts(state).length >= (state.definition.limits.maxParallelAttempts ?? Infinity)) {
     state.pendingStarts ??= []
     if (!state.pendingStarts.some((entry) => entry.stepId === stepId && branchKey(entry.branch) === branchKey(branch)))
-      state.pendingStarts.push({ stepId, branch, freshSession, sourceAttemptIds, feedback })
+      state.pendingStarts.push({ stepId, branch, freshSession, sourceAttemptIds, feedback, reviewBrief })
     if (exhausted) {
       state.status = 'paused'
       state.pauseReason = { type: 'attempt-limit', stepId }
@@ -247,6 +269,7 @@ function startAttempt(
     ...(freshSession ? { freshSession: true } : {}),
   }
   if (step.kind === 'agent') attempt.participant = structuredClone(state.definition.participants[step.participant]!)
+  if (reviewBrief) attempt.reviewBrief = reviewBrief
   state.attempts.push(attempt)
   syncActive(state)
 }
@@ -258,7 +281,15 @@ function finishState(state: WorkflowRun): WorkflowRun {
     activeWorkflowAttempts(state).length < (state.definition.limits.maxParallelAttempts ?? Infinity)
   ) {
     const next = state.pendingStarts.shift()!
-    startAttempt(state, next.stepId, next.branch, next.freshSession, next.sourceAttemptIds, next.feedback)
+    startAttempt(
+      state,
+      next.stepId,
+      next.branch,
+      next.freshSession,
+      next.sourceAttemptIds,
+      next.feedback,
+      next.reviewBrief
+    )
   }
   if (state.status === 'paused' || activeWorkflowAttempts(state).length || state.pendingStarts?.length) return state
   if (state.joins?.some((join) => join.status === 'open'))
@@ -548,6 +579,7 @@ export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): Workf
       command.resumeAt === step.id &&
       isEarlierWorkflowStep(state, command.targetStepId, step.id)
     if (!declared && !flexible) throw new Error('Return path is not allowed by this workflow')
+    attempt.settledVersion = state.version
     requestReturn(state, attempt, command.targetStepId, command.resumeAt, command.feedback)
     return finishState(state)
   }
@@ -562,16 +594,43 @@ export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): Workf
     )
   attempt.outcome = command.outcome
   if (command.evidence) attempt.evidence = command.evidence
+  attempt.settledVersion = state.version
+  const targets = validateWorkflowDecisionBrief(previous, command)
+  if (command.decisionBrief)
+    attempt.decisionBrief = {
+      value: command.decisionBrief,
+      submittedVersion: state.version,
+      contexts: targets.map((gateStepId) => ({
+        gateStepId,
+        previousDecisionAttemptId: workflowEarlierHumanDecisions(previous, gateStepId)[0]?.id,
+        returnIds: [],
+        revisionVersions: [],
+        interruptedExecutions: [],
+      })),
+    }
+  applyCompletionRoute(state, attempt, step, transition, command.resume, command.evidence)
+  return finishState(state)
+}
+
+/** The single effective routing implementation, used on a clone for preflight as well as acceptance. */
+function applyCompletionRoute(
+  state: WorkflowRun,
+  attempt: WorkflowAttempt,
+  step: WorkflowStep,
+  transition: WorkflowTransition,
+  resume: boolean,
+  evidence: string
+): string[] {
   if ('returnTo' in transition) {
-    if (command.resume) throw new Error('A rework request cannot also resolve a return')
+    if (resume) throw new Error('A rework request cannot also resolve a return')
     if (transition.afterRework === 'return-to-requester') {
-      requestReturn(state, attempt, transition.returnTo, step.id, command.evidence, true)
+      requestReturn(state, attempt, transition.returnTo, step.id, evidence, true)
     } else {
       attempt.status = 'returned'
-      attempt.feedback = command.evidence
+      attempt.feedback = evidence
       startAttempt(state, transition.returnTo, attempt.branch, false, [attempt.id])
     }
-    return finishState(state)
+    return [transition.returnTo]
   }
 
   attempt.status = 'completed'
@@ -579,12 +638,12 @@ export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): Workf
   let obligation = activeReturn(state, attempt.branch)
   if (obligation?.direct && obligation.targetStepId === step.id && obligation.resumeAt !== step.id) {
     continueAt(state, obligation.resumeAt, attempt.branch, [attempt.id])
-    return finishState(state)
+    return [obligation.resumeAt]
   }
-  if (command.resume) {
+  if (resume) {
     if (!obligation || obligation.resumeAt === step.id) throw new Error('No return destination for this result')
     continueAt(state, obligation.resumeAt, attempt.branch, [attempt.id])
-    return finishState(state)
+    return [obligation.resumeAt]
   }
   if (obligation?.resumeAt === step.id) {
     obligation.status = 'resolved'
@@ -594,9 +653,11 @@ export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): Workf
   // A nested correction may just have returned to the outer correction step.
   if (obligation?.direct && obligation.targetStepId === step.id && obligation.resumeAt !== step.id) {
     continueAt(state, obligation.resumeAt, attempt.branch, [attempt.id])
-    return finishState(state)
+    return [obligation.resumeAt]
   }
+  let destinations: string[]
   if ('parallel' in transition) {
+    destinations = [...transition.parallel]
     const id = attempt.id
     state.joins ??= []
     state.joins.push({
@@ -614,9 +675,48 @@ export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): Workf
       obligation && (transition.next === 'finish' || transition.next === join?.join)
         ? obligation.resumeAt
         : transition.next
+    destinations = [next]
     continueAt(state, next, attempt.branch, [attempt.id])
   }
-  return finishState(state)
+  return destinations
+}
+
+export function workflowCompletionReviewTargets(
+  run: WorkflowRun,
+  attempt: WorkflowAttempt,
+  outcome: string,
+  resume = false
+): string[] {
+  const state = structuredClone(run)
+  const source = state.attempts.find((a) => a.id === attempt.id)!
+  const step = effectiveWorkflowStep(state, source)
+  const transition = step.outcomes[outcome]
+  if (!transition) throw new Error(`Unknown outcome '${outcome}'`)
+  return [...new Set(applyCompletionRoute(state, source, step, transition, resume, 'Routing preflight.'))]
+    .filter((id) => state.definition.steps.find((s) => s.id === id)?.kind === 'human-approval')
+    .sort()
+}
+
+/** Contextual validation must run before any persistent state, wait or dispatch side effect. */
+export function validateWorkflowDecisionBrief(
+  run: WorkflowRun,
+  command: Extract<WorkflowCommand, { action: 'complete' }>
+): string[] {
+  const attempt = run.attempts.find((a) => a.id === command.attemptId)
+  if (!attempt || effectiveWorkflowStep(run, attempt).kind !== 'agent') return []
+  const targets = workflowCompletionReviewTargets(run, attempt, command.outcome, command.resume)
+  if (targets.length && !command.decisionBrief)
+    throw new Error(
+      `A decisionBrief is required for outcome '${command.outcome}' because it sends this agent's result to human approval '${targets.join("', '")}'.`
+    )
+  const previous = targets
+    .map((id) => ({ id, decision: workflowEarlierHumanDecisions(run, id)[0] }))
+    .filter((t) => t.decision)
+  if (previous.length && !command.decisionBrief?.changesSinceLastReview)
+    throw new Error(
+      `decisionBrief.changesSinceLastReview is required because ${previous.map((t) => `human approval '${t.id}' has an earlier decision (attempt ${t.decision!.id})`).join('; ')}.`
+    )
+  return targets
 }
 
 /** Explicit reopen keeps the audit trail but starts a new bounded pass through the flow. */

@@ -1,3 +1,4 @@
+import { brief } from './test-fixtures/workflow-review'
 import { describe, expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 import { workflowPresetSchema } from './workflows'
@@ -30,6 +31,10 @@ function complete(state: WorkflowRun, outcome = 'completed', resume = false): Wo
     outcome,
     evidence: `Evidence for ${active(state)}: ${outcome}`,
     resume,
+    decisionBrief: {
+      ...brief,
+      changesSinceLastReview: 'The previous design was approved. This retry addresses the reported review findings.',
+    },
   })
 }
 

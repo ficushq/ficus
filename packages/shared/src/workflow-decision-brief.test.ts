@@ -1,12 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { workflowCommandSchema } from './workflow-runtime'
 
-export const brief = {
-  decision: 'Approve the staging migration design.',
-  recommendation: 'Approve because the fallback preserves existing reads.',
-  approvalEffect: 'Approval permits implementation for `cache-stage-example`, not production deployment.',
-  risks: 'Two read paths temporarily increase maintenance work.',
-}
+import { brief } from './test-fixtures/workflow-review'
+
 const parse = (value: unknown) =>
   workflowCommandSchema.safeParse({
     action: 'complete',
