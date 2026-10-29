@@ -3,7 +3,7 @@
 Remote hosts let a squad reach a team-owned box over SSH — a staging server,
 a build machine, a Mac with Xcode, a Windows box with `sshd` — **without**
 ficus installing anything on it. This is deliberately the opposite of
-`machines` (`docs/wiki/machines/runtime.md`): a machine is substrate ficus
+`machines` ([runtime architecture](machines/runtime-architecture.md#remote-hosts-are-not-machines)): a machine is substrate ficus
 bootstraps and runs agent sandboxes on; a remote host is a target ficus's
 agents merely SSH _into_. See § Motivation of
 `docs/history/superpowers/specs/2026-07-14-remote-hosts-design.md` for the full
@@ -401,5 +401,5 @@ Underlying routes: `apps/core/src/routes/remote-hosts.ts`, mounted at
 - Agent-facing skill: `config/skills/remote-hosts/SKILL.md` (granted to
   `manager` and `system-manager` agent types).
 - Design doc: `docs/history/superpowers/specs/2026-07-14-remote-hosts-design.md`.
-- Contrast: `docs/wiki/machines/runtime.md` (`machines` = substrate ficus
+- Contrast: [runtime architecture](machines/runtime-architecture.md#remote-hosts-are-not-machines) (`machines` = substrate ficus
   bootstraps; remote hosts = targets ficus never touches).

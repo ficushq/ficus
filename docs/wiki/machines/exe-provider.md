@@ -46,8 +46,7 @@ exe provider is registered by `registerBuiltinMachineProviders()`
 call time. No key ⇒ `provider:'exe'` requests 400 at `POST /api/machines`
 ("configure exe.dev credentials to provision exe machines") and the
 placement policy's `getExeProvider()` returns `null`, which routes every
-placement decision through the BYO/least-loaded path (see runtime.md §
-Placement) — **exe absent is a fully supported "not opted in" state, not an
+placement decision through the BYO/least-loaded path (see [§ Placement](runtime-placement.md#placement)) — **exe absent is a fully supported "not opted in" state, not an
 error state.**
 
 To start using exe:
@@ -86,7 +85,7 @@ To start using exe:
    prebaked image, skips) the base toolchain, stamps the row `ready`. Only
    placement's provisioning path does this automatically; a hand-issued
    `POST /api/machines` leaves the row `registered` until an operator calls
-   `POST /:id/bootstrap` (mirroring BYO-SSH — see runtime.md).
+   `POST /:id/bootstrap` (mirroring BYO-SSH — see [runtime provisioning](runtime-provisioning.md)).
 
 ## Custom box image: the prebaked `ficus-machine` image
 
@@ -96,7 +95,7 @@ devbox, Docker engine + rootless extras) — a multi-minute cost. To collapse th
 to a **seconds-long** boot, ficus provisions exe VMs from a **prebaked custom
 image**, `ficus-machine`, that bakes exactly that toolchain at the same pinned
 versions and paths. `bootstrap.sh` then detects the baked toolchain and skips the
-installs (see § Prebaked box image + fast bootstrap in `runtime.md`).
+installs (see [§ Prebaked box image + fast bootstrap](runtime-provisioning.md#prebaked-box-image--fast-bootstrap)).
 
 ### The image
 
@@ -336,7 +335,7 @@ operator or the placement/lifecycle machinery explicitly terminates it.
 
 ## Placement: how a box lands on an exe machine
 
-See `docs/wiki/machines/runtime.md` § Placement for the full role/scope-aware
+See [§ Placement](runtime-placement.md#placement) for the full role/scope-aware
 policy (squad-per-VM, the tenant commons singleton, dedicated VMs, and the
 `FICUS_MAX_MACHINES` provisioning cap). In short: when the exe provider is
 registered, ficus auto-provisions and reuses exe machines by role instead of
