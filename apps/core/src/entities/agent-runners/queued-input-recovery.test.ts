@@ -248,7 +248,12 @@ it('restart after compaction reconciles append-before-ack idempotently and relea
 })
 
 it('a cancelled queue cannot be resurrected by reconciliation or a late acknowledgment', async () => {
-  const p = await agent.recordMessage({ role: 'human', content: 'cancel', pending: true })
+  const p = await agent.recordMessage({
+    role: 'human',
+    content: 'cancel',
+    pending: true,
+    metadata: { deliveryMode: 'steer' },
+  })
   const owner = { generation: crypto.randomUUID(), executionId: crypto.randomUUID() }
   const claim = await agent.claimPendingInterventionForSessionDelivery(p.id, owner)
   await agent.deletePendingMessages()

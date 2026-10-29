@@ -1,4 +1,4 @@
-import { isExecutionInitialMessage } from '../chat/queued-messages'
+import { isQueuedIntervention } from '../chat/queued-messages'
 import { acquireAgentQueueLock } from '../execution/agent-admission'
 import { and, eq, isNotNull, sql } from 'drizzle-orm'
 import { db, messages, chatSendReceipts } from '../../db'
@@ -34,20 +34,7 @@ export function allowsPendingOperation(
 }
 
 async function isEditableIntervention(tx: Tx, row: Row): Promise<boolean> {
-  const [receipt] = await tx
-    .select({ disposition: chatSendReceipts.disposition })
-    .from(chatSendReceipts)
-    .where(
-      and(
-        eq(chatSendReceipts.agentId, row.agentId),
-        eq(chatSendReceipts.messageId, row.id),
-        eq(chatSendReceipts.state, 'accepted')
-      )
-    )
-  if (receipt) return receipt.disposition === 'intervention'
-  const message = mapMessage(row)
-  if (!message.metadata?.deliveryMode) return false
-  return !(await isExecutionInitialMessage(tx, message))
+  return isQueuedIntervention(tx, mapMessage(row))
 }
 
 async function commitChange(tx: Tx, row: Row, operation: PendingMessageOperation): Promise<void> {

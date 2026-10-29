@@ -648,13 +648,14 @@ export function ChatView({
   // Clearable pending items (for the clear-queue button): genuinely queued interrupts/follow-ups or
   // failed sends — NOT the lone 'sending' message that started the current turn (clearing it would
   // race the run it triggered). Matches the hook's clearable set.
-  // Only messages a person sent are clearable; inbox and monitor deliveries stay queued.
+  // Exactly what Clear removes: queued messages a person sent (never the send that opened the
+  // current turn, and never inbox or monitor deliveries) plus failed sends.
   const pendingItems = useMemo(
     () =>
       items.filter(
         (i) =>
           i.kind === 'pending' &&
-          (i.queued || i.status === 'queued' || i.status === 'failed') &&
+          (i.queued || i.status === 'failed') &&
           !automatedSource({ role: 'human', metadata: i.metadata })
       ),
     [items]
