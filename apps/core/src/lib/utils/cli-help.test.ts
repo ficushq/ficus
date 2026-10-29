@@ -92,7 +92,7 @@ describe('the CLI named in agent prompts', () => {
     expect(help.startsWith('You have access to the `ficus` CLI.')).toBe(true)
   })
 
-  test('the CLI-missing error names the ficus CLI and its build', async () => {
+  test('the CLI-missing error directs bounded local recovery, not human-run commands', async () => {
     resetCliHelpCacheForTests()
     setCliPathOverrideForTests('/nonexistent/ficus.js')
     try {
@@ -101,7 +101,7 @@ describe('the CLI named in agent prompts', () => {
       expect(error).toContain('bounded recovery budget')
       expect(error).not.toContain('ask them to install')
       expect(error).not.toContain('bun run build:cli')
-      expect(error).toContain('the "ficus" binary is on the PATH')
+      expect(error).toContain('Inspect and repair your authorized local tooling')
       expect(error).toContain('You cannot execute any ficus commands')
     } finally {
       setCliPathOverrideForTests(null)
