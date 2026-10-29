@@ -616,7 +616,7 @@ describe('PrecompactionController cross-session additions', () => {
   })
 
   it('exposes BAKE_TIMEOUT_MS, isDisposed, and getLastActivityAt', () => {
-    expect(BAKE_TIMEOUT_MS).toBe(90_000)
+    expect(BAKE_TIMEOUT_MS).toBe(180_000)
     const c = new PrecompactionController(makeDeps())
     expect(c.isDisposed()).toBe(false)
     const before = c.getLastActivityAt()

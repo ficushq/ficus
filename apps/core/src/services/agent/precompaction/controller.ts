@@ -13,7 +13,9 @@ import {
 } from './debug'
 import { computePrefixFingerprint, matchesPrefixFingerprint, type PrefixFingerprint } from './prefix'
 
-export const BAKE_TIMEOUT_MS = 90_000
+// Background summaries of large contexts may take minutes; the foreground hook
+// still waits only PRECOMPACTION_AWAIT_MS before falling back.
+export const BAKE_TIMEOUT_MS = 180_000
 export const BAKE_RETRY_COOLDOWN_MS = 60_000
 export const PRECOMPACTION_AWAIT_MS = 10_000
 
