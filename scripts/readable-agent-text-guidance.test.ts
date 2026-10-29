@@ -8,11 +8,14 @@ const normalize = (text: string) => text.replace(/\s+/g, ' ')
 const typeDirectory = 'config/agent-types'
 const types = readdirSync(join(root, typeDirectory))
   .filter((file) => file.endsWith('.yaml'))
-  .map((file) => Bun.YAML.parse(read(`${typeDirectory}/${file}`)) as {
-    id: string
-    includes: string[]
-    systemPrompt: string
-  })
+  .map(
+    (file) =>
+      Bun.YAML.parse(read(`${typeDirectory}/${file}`)) as {
+        id: string
+        includes: string[]
+        systemPrompt: string
+      }
+  )
 
 // Assert the rule itself, not just a heading or a slogan elsewhere in a prompt.
 const contracts = [
@@ -66,7 +69,16 @@ test('every built-in agent type includes the shared rule, including assistant wo
 })
 
 test('squad agent types retain the squad guidance include', () => {
-  for (const id of ['manager', 'consultant', 'architect', 'engineer', 'reviewer', 'security-auditor', 'sysops', 'general']) {
+  for (const id of [
+    'manager',
+    'consultant',
+    'architect',
+    'engineer',
+    'reviewer',
+    'security-auditor',
+    'sysops',
+    'general',
+  ]) {
     expect(types.find((type) => type.id === id)!.includes).toContain('squad-rules')
   }
 })
