@@ -107,6 +107,7 @@ export class PendingInterventionQueue {
 
   private async deliverClaimed(message: {
     id: string
+    deliveryOrder?: string
     content: string
     metadata?: MessageMetadata | null
   }): Promise<void> {
@@ -118,7 +119,7 @@ export class PendingInterventionQueue {
         : undefined
 
     if (!this.isActive()) throw new Error('Session closed before queue admission')
-    const options = { deliveryId: message.metadata?.sessionDelivery?.id }
+    const options = { deliveryId: message.metadata?.sessionDelivery?.id, queueOrder: message.deliveryOrder }
     if (mode === 'follow-up') {
       await this.deps.getSession().pi.followUp(messageTextForModel(message), images, options)
     } else {

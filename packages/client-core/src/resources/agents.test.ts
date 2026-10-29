@@ -295,6 +295,13 @@ describe('agentsResource message methods', () => {
     expect(calls[0].options?.signal).toBeInstanceOf(AbortSignal)
   })
 
+  test('queue edits target a specific message and preserve its requested operation', async () => {
+    const { t, calls } = mockTransport()
+    await agentsResource(t).updatePendingMessage('agt-1', 'msg-1', 'follow-up')
+    expect(calls[0].path).toBe('/agents/agt-1/messages/msg-1/queue')
+    expect(calls[0].options).toMatchObject({ method: 'POST', body: { operation: 'follow-up' } })
+  })
+
   test('clearQueue POSTs to /agents/:id/clear-queue', async () => {
     const { t, calls } = mockTransport()
     await agentsResource(t).clearQueue('agt-1')

@@ -284,6 +284,14 @@ delivered back to the agent, so they never produce this card.
 
 ## How Each Use Case Works
 
+### Editing a pending message
+
+Each accepted queued chat message has Cancel and Switch to Interrupt/Follow up controls. The API is `POST /api/agents/:id/messages/:messageId/queue` with `{ "operation": "cancel" | "steer" | "follow-up" }`, protected by `agents:run` and the agent's owner/squad scope. The client SDK exposes `agents.updatePendingMessage`.
+
+Unclaimed rows are edited under the agent admission lock and a row lock. Claimed inputs are routed to the exact owning execution, with a request ID and deadline; other workers cannot acknowledge the operation. The patched Pi queue waits for the database commit before consuming or changing the selected message. A rollback leaves it queued. Once Pi has drained it, edits return a conflict instead of re-enqueuing it. Cancellation keeps the accepted-send receipt tombstone so retrying the same client ID cannot resurrect it.
+
+Switching keeps the original database FIFO key (full PostgreSQL creation timestamp, including microseconds, plus enqueue order), delivery identity, and image objects. The ordering key is selected in SQL rather than reconstructed from a JavaScript Date. Send retries are validated against the immutable receipt hash, so a mode edit does not invalidate an accepted request or revert the edit. Interrupts still run before follow-ups by design; switching away and back does not move a message behind later messages of the same mode. Controls appear after server acceptance, and failures remain visible without hiding the pending row.
+
 ### Chat queue display
 
 The chat send response and public message reads expose a derived `queued` boolean.
@@ -346,7 +354,7 @@ The worker creates one `StreamBuffer` per agent. Same SSE protocol and event typ
 One executor, one queue, and bounded control/intervention paths.
 
 - The worker polls `executions WHERE status = 'queued'`.
-- Authenticated HTTP `agent_control` carries only `stop`, `abort-tool`, `compact`, `reset`, and `clear-queue`.
+- Authenticated HTTP `agent_control` carries only `stop`, `abort-tool`, `compact`, `reset`, `clear-queue`, and `update-pending-message`.
 - Steer/follow-up use durable pending-message rows plus an `app_events` nudge.
 - One `activeSessions` map tracks the current session, buffer, and collector per agent.
 

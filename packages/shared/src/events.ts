@@ -212,23 +212,27 @@ export type EventMap = {
   'liveActivity.interestChanged': { userId: string }
 
   // Control signal ack events
-  /**
-   * Ack for a clear-queue control signal. ALWAYS emitted by the worker, including
-   * on failure — the API blocks on this ack, so a silent failure would strand it
-   * for the full timeout and then report success it cannot vouch for.
-   *
-   * `owned` distinguishes the worker that held the live SDK session (and so
-   * actually emptied the in-memory queue) from one that only deleted DB rows.
-   * Without it a non-owning worker's ack looks identical to a real clear, and
-   * the queued messages get processed anyway.
+  /** Queue invalidation, or a correlated acknowledgement from the owning worker.
+   * API waiters require the exact request/execution identity and owned=true.
+   * Uncorrelated invalidations (such as selective cancellation) cannot complete a bulk clear.
    */
   'agent.queue-cleared': {
     agentId: string
+    executionId?: string
+    requestId?: string
     cleared: number
     deleted: number
     owned?: boolean
     ok?: boolean
     code?: string
+  }
+
+  'agent.queue-message-updated': {
+    agentId: string
+    executionId: string
+    messageId: string
+    requestId: string
+    result: 'updated' | 'not_pending' | 'claimed' | 'unavailable'
   }
 
   // Worker events

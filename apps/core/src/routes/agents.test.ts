@@ -784,6 +784,83 @@ describe('deprecated inline message routes', () => {
     await db.delete(squads).where(eq(squads.id, squadId))
   })
 
+  it('edits pending messages with agent-run permission and rejects consumed inputs', async () => {
+    const message = await testAgent.recordMessage({
+      role: 'human',
+      content: 'queued',
+      pending: true,
+      metadata: { deliveryMode: 'steer' },
+    })
+    const request = (operation: string, headers = authHeaders(admin.token)) =>
+      app.request(`/api/agents/${testAgent.id}/messages/${message.id}/queue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({ operation }),
+      })
+    expect((await request('steer', {})).status).toBe(401)
+    expect((await request('invalid')).status).toBe(400)
+    expect((await request('follow-up')).status).toBe(200)
+    const [row] = await db.select().from(messagesTable).where(eq(messagesTable.id, message.id))
+    expect(row!.metadata).toMatchObject({ deliveryMode: 'follow-up' })
+    await db.update(messagesTable).set({ pending: false }).where(eq(messagesTable.id, message.id))
+    expect((await request('cancel')).status).toBe(409)
+    expect(await db.select().from(messagesTable).where(eq(messagesTable.id, message.id))).toHaveLength(1)
+  })
+
+  it('keeps malformed queue JSON in the shared error boundary and validates the root shape', async () => {
+    const messageId = crypto.randomUUID()
+    const request = (body: string) =>
+      app.request(`/api/agents/${testAgent.id}/messages/${messageId}/queue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
+        body,
+      })
+    const malformed = await request('{')
+    expect(malformed.status).toBe(400)
+    expect(await malformed.json()).toMatchObject({ error: 'Invalid JSON body' })
+    for (const body of ['null', '[]', '"cancel"', '3', 'true', '{}', '{"operation":[]}']) {
+      const response = await request(body)
+      expect(response.status).toBe(400)
+      expect(await response.json()).toMatchObject({ error: 'Invalid queue operation' })
+    }
+  })
+
+  for (const clientId of ['initial-cancel', undefined]) {
+    it(`refuses edits to an initial prompt before pickup (${clientId ? 'with' : 'without'} receipt)`, async () => {
+      await testAgent.sendMessage('initial prompt', { metadata: clientId ? { clientId } : undefined })
+      const execution = (await testAgent.getActiveExecution())!
+      const [initial] = await db.select().from(messagesTable).where(eq(messagesTable.agentId, testAgent.id))
+      const detail = await (
+        await app.request(`/api/agents/${testAgent.id}/messages/${initial.id}`, {
+          headers: authHeaders(admin.token),
+        })
+      ).json()
+      expect(detail).toMatchObject({ queued: false, pending: true })
+      for (const operation of ['cancel', 'steer', 'follow-up']) {
+        const response = await app.request(`/api/agents/${testAgent.id}/messages/${initial.id}/queue`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
+          body: JSON.stringify({ operation }),
+        })
+        expect(response.status).toBe(409)
+        expect(await response.json()).toMatchObject({ code: 'not_pending' })
+      }
+      // Real pickup must still claim the intact original, not silently fall back
+      // to execution.message after an API response that claimed cancellation.
+      const claimed = await testAgent.claimInitialPendingMessagesForSessionDelivery({
+        executionId: execution.id,
+        generation: crypto.randomUUID(),
+      })
+      expect(claimed.map((message) => ({ id: message.id, content: message.content }))).toEqual([
+        { id: initial.id, content: 'initial prompt' },
+      ])
+      if (clientId) {
+        const [receipt] = await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.messageId, initial.id))
+        expect(receipt.disposition).toBe('turn')
+      }
+    })
+  }
+
   it('queues a steer intent on a non-running agent without returning 400', async () => {
     const res = await app.request(`/api/agents/${testAgent.id}/steer`, {
       method: 'POST',

@@ -1,7 +1,13 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { coreTestPlan, parseCoreTestArgs, selectCoreTests, selectSubprocessLane } from '../scripts/run-core-tests'
+import {
+  coreTestPlan,
+  parseCoreTestArgs,
+  selectCoreTests,
+  selectSubprocessLane,
+  subprocessShardFiles,
+} from '../scripts/run-core-tests'
 
 const repoRoot = resolve(import.meta.dir, '..')
 const coreRoot = resolve(repoRoot, 'apps/core')
@@ -222,5 +228,26 @@ test('CI deadline environment reaches the real entrypoint before any isolated fi
   } finally {
     child.kill('SIGKILL')
     await child.exited
+  }
+})
+
+test('keeps the measured slow subprocess tests balanced as the inventory grows', () => {
+  // Seconds from CI run 40921381941: the installed-bundle and provision-flight
+  // additions both fell into shard 1, exhausting its deadline while shard 2
+  // had finished. These are scheduling weights, never pass/fail timeouts.
+  const seconds = new Map([
+    ['./src/services/integrations/github/feedback-routing.test.ts', 109],
+    ['./src/services/execution/pickup.test.ts', 71],
+    ['./src/services/sandbox/vm/provision-flight-process.test.ts', 55],
+    ['./src/services/integrations/outputs/runtime.test.ts', 81],
+    ['./src/services/amtp/node-conformance.test.ts', 73],
+    ['./src/services/machines/installed-machine-bundles.test.ts', 94],
+  ])
+  for (const files of [plan.isolated, [...plan.isolated, './src/new-isolated.test.ts']]) {
+    const shards = [subprocessShardFiles(files, 1), subprocessShardFiles(files, 2)]
+    expect(shards.flat().sort()).toEqual([...files].sort())
+    for (const file of seconds.keys()) expect(shards.flat().filter((entry) => entry === file)).toHaveLength(1)
+    const totals = shards.map((shard) => shard.reduce((sum, file) => sum + (seconds.get(file) ?? 0), 0))
+    expect(Math.abs(totals[0]! - totals[1]!)).toBeLessThan(30)
   }
 })

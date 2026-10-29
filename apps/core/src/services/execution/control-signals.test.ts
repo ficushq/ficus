@@ -51,7 +51,7 @@ describe('control signal clear-queue', () => {
     expect(abort).not.toHaveBeenCalled()
   })
 
-  it('deletes pending DB rows and acks with zero SDK-cleared messages when this worker has no active session', async () => {
+  it('ignores clear requests on a worker with no active session', async () => {
     await agent.recordMessage({ role: 'human', content: 'queued steer', pending: true })
     const queueCleared: unknown[] = []
     eventEmitter.on('agent.queue-cleared', (event) => queueCleared.push(event))
@@ -59,8 +59,26 @@ describe('control signal clear-queue', () => {
     await handleControlSignal({ action: 'clear-queue', agentId: agent.id })
 
     const remainingPending = (await agent.listMessages()).messages.filter((message) => message.pending)
-    expect(queueCleared).toEqual([{ agentId: agent.id, cleared: 0, deleted: 1, owned: false, ok: true }])
-    expect(remainingPending).toEqual([])
+    expect(queueCleared).toEqual([])
+    expect(remainingPending).toHaveLength(1)
+  })
+
+  it('ignores stale or expired clears and echoes the owning request identity', async () => {
+    const clearQueue = mock(() => ({ steering: [], followUp: [] }))
+    const executionId = crypto.randomUUID()
+    registerSession(agent.id, { executionId, session: { pi: { clearQueue } } } as any)
+    const acknowledgements: unknown[] = []
+    const off = eventEmitter.on('agent.queue-cleared', (event) => acknowledgements.push(event))
+    try {
+      await handleControlSignal({ action: 'clear-queue', agentId: agent.id, executionId: 'old' })
+      await handleControlSignal({ action: 'clear-queue', agentId: agent.id, executionId, expiresAt: Date.now() - 1 })
+      expect(clearQueue).not.toHaveBeenCalled()
+      expect(acknowledgements).toEqual([])
+      await handleControlSignal({ action: 'clear-queue', agentId: agent.id, executionId, requestId: 'request-1' })
+      expect(acknowledgements).toMatchObject([{ executionId, requestId: 'request-1', owned: true, ok: true }])
+    } finally {
+      off()
+    }
   })
 
   it('acks with ok:false instead of going silent when clearing the SDK queue throws', async () => {
@@ -111,7 +129,7 @@ describe('control signal clear-queue', () => {
 
     const remainingMessages = (await agent.listMessages()).messages
     expect(clearQueue).toHaveBeenCalledTimes(1)
-    expect(queueCleared).toEqual([{ agentId: agent.id, cleared: 2, deleted: 2, owned: true, ok: true }])
+    expect(queueCleared).toMatchObject([{ agentId: agent.id, cleared: 2, deleted: 2, owned: true, ok: true }])
     expect(remainingMessages.map((message) => message.content)).toEqual(['already delivered'])
   })
 

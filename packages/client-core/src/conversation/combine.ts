@@ -390,6 +390,7 @@ export function combine(
   const persistedQueuedToItem = (m: Message): RenderItem => ({
     kind: 'pending',
     id: m.id,
+    messageId: m.id,
     content: m.content,
     imageIds: m.metadata?.imageIds,
     deliveryMode: m.metadata?.deliveryMode,

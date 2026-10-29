@@ -3363,3 +3363,37 @@ describe('ChatView composer draft', () => {
     expect(textarea().value).toBe('Please move "Fix it" to Billing.\n\nPlease move "Docs" to Chlea.')
   })
 })
+
+test('pending row controls target one saved message and surface rejected queue edits', async () => {
+  const onUpdatePendingMessage = mock(async (_id: string, operation: string) => {
+    if (operation === 'cancel') throw new Error('This message is no longer waiting in the queue.')
+  })
+  const items: RenderItem[] = [
+    {
+      kind: 'pending',
+      id: 'first',
+      messageId: 'first',
+      content: 'Queued request',
+      deliveryMode: 'follow-up',
+      status: 'queued',
+      queued: true,
+    },
+  ]
+  const { dom, window } = await renderChatView(
+    <ChatView items={items} onSend={() => {}} onUpdatePendingMessage={onUpdatePendingMessage} />
+  )
+  const buttons = [...window.document.querySelectorAll('button')]
+  const switchMode = buttons.find((button) => button.textContent === 'Switch to Interrupt')!
+  const cancel = buttons.find((button) => button.textContent === 'Cancel')!
+  expect(switchMode).toBeDefined()
+  await dom.act(async () => {
+    switchMode.click()
+  })
+  expect(onUpdatePendingMessage).toHaveBeenCalledWith('first', 'steer')
+  await dom.act(async () => {
+    cancel.click()
+  })
+  expect(onUpdatePendingMessage).toHaveBeenCalledWith('first', 'cancel')
+  expect(window.document.querySelector('[role="alert"]')?.textContent).toContain('no longer waiting')
+  expect(window.document.body.textContent).toContain('Queued request')
+})

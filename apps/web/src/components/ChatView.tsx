@@ -124,6 +124,7 @@ interface ChatViewProps {
   onRetry?: (clientId: string) => void
   onStop?: () => void
   onAbortTool?: () => void
+  onUpdatePendingMessage?: (messageId: string, operation: 'cancel' | DeliveryMode) => Promise<void>
   onCancelQueue?: () => void | Promise<void>
   deliveryMode?: DeliveryMode
   onDeliveryModeChange?: (m: DeliveryMode) => void
@@ -383,6 +384,7 @@ function PendingMessageRow({
   deliveryMode,
   status,
   queued,
+  onUpdate,
   onRetry,
   metadata,
   agentId,
@@ -393,9 +395,24 @@ function PendingMessageRow({
   deliveryMode?: DeliveryMode
   status: 'sending' | 'queued' | 'failed'
   queued?: boolean
+  onUpdate?: (operation: 'cancel' | DeliveryMode) => Promise<void>
   onRetry?: () => void
   metadata?: MessageMetadata | null
 }) {
+  const [updating, setUpdating] = useState(false)
+  const [updateError, setUpdateError] = useState<string | null>(null)
+  const update = async (operation: 'cancel' | DeliveryMode) => {
+    if (!onUpdate || updating) return
+    setUpdating(true)
+    setUpdateError(null)
+    try {
+      await onUpdate(operation)
+    } catch (error) {
+      setUpdateError(error instanceof Error ? error.message : 'Could not update this message.')
+    } finally {
+      setUpdating(false)
+    }
+  }
   const effectiveMetadata: MessageMetadata | undefined =
     metadata || imageIds?.length || deliveryMode
       ? { ...(metadata ?? {}), ...(imageIds?.length ? { imageIds } : {}), ...(deliveryMode ? { deliveryMode } : {}) }
@@ -424,6 +441,32 @@ function PendingMessageRow({
           </div>
         )}
         <HumanMessageContent content={content} metadata={effectiveMetadata} showRaw={false} agentId={agentId} />
+        {queued && onUpdate && !auto && (
+          <div className="flex items-center gap-2 mt-2" aria-label="Pending message controls">
+            <button
+              type="button"
+              disabled={updating}
+              className="ficus-button ficus-button-ghost text-on-accent hover:text-primary text-xs px-2 py-1"
+              onClick={() => void update(deliveryMode === 'follow-up' ? 'steer' : 'follow-up')}
+            >
+              {deliveryMode === 'follow-up' ? 'Switch to Interrupt' : 'Switch to Follow up'}
+            </button>
+            <button
+              type="button"
+              disabled={updating}
+              className="ficus-button ficus-button-ghost text-on-accent hover:text-primary text-xs px-2 py-1"
+              onClick={() => void update('cancel')}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+        {updateError && (
+          <div role="alert" className="mt-1 text-xs">
+            {updateError}
+          </div>
+        )}
+
         {status === 'failed' && onRetry && (
           <button
             type="button"
@@ -467,6 +510,7 @@ export function ChatView({
   onStop,
   onAbortTool,
   onCancelQueue,
+  onUpdatePendingMessage,
   deliveryMode,
   onDeliveryModeChange,
   suggestedDelivery,
@@ -1962,6 +2006,11 @@ export function ChatView({
                 status={item.status}
                 queued={item.queued}
                 metadata={item.metadata}
+                onUpdate={
+                  item.messageId && onUpdatePendingMessage
+                    ? (operation) => onUpdatePendingMessage(item.messageId!, operation)
+                    : undefined
+                }
                 onRetry={item.status === 'failed' && onRetry ? () => onRetry(item.id) : undefined}
               />
             )

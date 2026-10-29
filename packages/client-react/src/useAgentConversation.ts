@@ -83,6 +83,7 @@ export interface UseAgentConversationResult {
     opts?: { imageIds?: string[]; deliveryMode?: DeliveryMode; clientId?: string }
   ) => SendAcceptanceHandle
   retrySend: (clientId: string) => void
+  updatePendingMessage: (messageId: string, operation: 'cancel' | DeliveryMode) => Promise<void>
   cancelAllPending: () => Promise<void>
   refresh: () => void
   stop: () => void
@@ -1316,6 +1317,23 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     }
   }, [resolvedAgentId, client, queryClient])
 
+  const updatePendingMessage = useCallback(
+    async (messageId: string, operation: 'cancel' | DeliveryMode) => {
+      if (!resolvedAgentId) throw new Error('Wait for the message to finish sending.')
+      try {
+        await client.agents.updatePendingMessage(resolvedAgentId, messageId, operation)
+        messageRequestGenerationsRef.current.invalidate(messageId)
+        liveMessageCollectionGenerationsRef.current.delete(messageId)
+        dispatchLiveMessage({ type: 'retire', messageIds: [messageId] })
+        const message = persistedMessages.find((item) => item.id === messageId)
+        if (message?.metadata?.clientId) dispatch({ type: 'remove', clientIds: [message.metadata.clientId] })
+      } finally {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.agents.messages(resolvedAgentId) })
+      }
+    },
+    [resolvedAgentId, client, queryClient, persistedMessages]
+  )
+
   // Manual refresh: invalidate the conversation's persisted data and force a fresh SSE
   // connection (catchup reconciles any missed events). During an active stream, defer
   // until quiet (or a bounded 30s read-only deadline); no stream buffer is reset.
@@ -1438,6 +1456,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     sendAccepted,
     retrySend,
     cancelAllPending,
+    updatePendingMessage,
     refresh,
     stop,
     abortTool,
