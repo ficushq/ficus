@@ -19,7 +19,18 @@ import {
   type MonitorMessageKind,
 } from '@ficus/shared'
 import { ToolSummary, ToolArgsView, ToolResultView, withoutHiddenToolCalls } from '../lib/tool-renderers'
-import { ActivityIcon, ChevronRightIcon, ClockIcon, MailIcon, RefreshIcon, WarningIcon, WorkStreamIcon } from './icons'
+import {
+  ActivityIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  ClockIcon,
+  MailIcon,
+  RefreshIcon,
+  WarningIcon,
+  WorkStreamIcon,
+} from './icons'
+import { SelectionPopup } from './ThemedPopup'
+import { QUEUED_DELIVERY_OPTIONS, type QueuedDeliveryControl } from '../lib/queuedDelivery'
 import { WorkStreamViewModal } from './WorkStreamViewModal'
 import { QuestionAnswerDeliveryCard } from './QuestionAnswerCard'
 import { ImagePreviewModal } from './ImagePreviewModal'
@@ -200,18 +211,28 @@ export function HumanMessageContent({
   metadata,
   showRaw,
   agentId,
+  deliveryControl,
 }: {
   content: string
   metadata?: MessageMetadata | null
   showRaw?: boolean
   agentId?: string
+  /** A queued inbox delivery's mode switch; other messages ignore it. */
+  deliveryControl?: QueuedDeliveryControl
 }) {
   if (metadata?.source === 'monitor') {
     return <MonitorMessageRow content={content} metadata={metadata} showRaw={showRaw} />
   }
 
   if (metadata?.source === 'inbox') {
-    return <InboxDeliveryMessageCard content={content} metadata={metadata} showRaw={showRaw} />
+    return (
+      <InboxDeliveryMessageCard
+        content={content}
+        metadata={metadata}
+        showRaw={showRaw}
+        deliveryControl={deliveryControl}
+      />
+    )
   }
 
   return (
@@ -453,10 +474,12 @@ function InboxDeliveryMessageCard({
   content,
   metadata,
   showRaw,
+  deliveryControl,
 }: {
   content: string
   metadata: MessageMetadata
   showRaw?: boolean
+  deliveryControl?: QueuedDeliveryControl
 }) {
   const summaries = metadata.inboxMessageSummaries ?? []
   // One body per delivered message, recovered from the delivery prompt itself
@@ -473,6 +496,7 @@ function InboxDeliveryMessageCard({
         bodies={bodies}
         imageIds={metadata.imageIds ?? []}
         showRaw={showRaw}
+        deliveryControl={deliveryControl}
       />
     )
   }
@@ -506,6 +530,7 @@ function InboxDeliveryMessageCard({
             imageIds={index === firstInbox ? (metadata.imageIds ?? []) : []}
             summaries={segment.summaries}
             bodies={segment.bodies}
+            deliveryControl={index === firstInbox ? deliveryControl : undefined}
           />
         )
       )}
@@ -520,6 +545,7 @@ function GenericInboxDeliveryCard({
   bodies,
   imageIds,
   showRaw,
+  deliveryControl,
 }: {
   content: string
   metadata: MessageMetadata
@@ -528,10 +554,20 @@ function GenericInboxDeliveryCard({
   bodies: string[]
   imageIds: string[]
   showRaw?: boolean
+  deliveryControl?: QueuedDeliveryControl
 }) {
   const count = summaries.length || metadata.inboxMessageIds?.length || 1
-  const mode = metadata.inboxDeliveryMode ?? metadata.deliveryMode
+  // A queued delivery shows the mode it will actually be delivered with, which a person may have changed.
+  const mode = deliveryControl
+    ? (metadata.deliveryMode ?? metadata.inboxDeliveryMode)
+    : (metadata.inboxDeliveryMode ?? metadata.deliveryMode)
   const isInterrupt = mode === 'steer'
+  const pillClass = clsx(
+    'shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+    isInterrupt
+      ? 'bg-status-external-wait-100 text-status-external-wait-700 dark:bg-status-external-wait-950/60 dark:text-status-external-wait-300'
+      : 'bg-status-progress-100 text-status-progress-700 dark:bg-status-progress-900/60 dark:text-status-progress-300'
+  )
   const title =
     summaries.length === 1
       ? `Inbox message from ${formatInboxSender(summaries[0])}`
@@ -546,16 +582,32 @@ function GenericInboxDeliveryCard({
         <MailIcon className="h-3.5 w-3.5 shrink-0" />
         {/* A long title wraps; the delivery pill stays one line at its natural size. */}
         <span className="min-w-0">{title}</span>
-        <span
-          className={clsx(
-            'shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-medium',
-            isInterrupt
-              ? 'bg-status-external-wait-100 text-status-external-wait-700 dark:bg-status-external-wait-950/60 dark:text-status-external-wait-300'
-              : 'bg-status-progress-100 text-status-progress-700 dark:bg-status-progress-900/60 dark:text-status-progress-300'
-          )}
-        >
-          {isInterrupt ? 'Interrupt' : 'Follow up'}
-        </span>
+        {deliveryControl && mode ? (
+          <SelectionPopup
+            label="Queued message delivery"
+            title="Change when this queued delivery reaches the agent"
+            value={mode}
+            onChange={(next) => {
+              if (next !== mode) deliveryControl.onChange(next)
+            }}
+            width={300}
+            openOnHover
+            disabled={deliveryControl.disabled}
+            options={QUEUED_DELIVERY_OPTIONS}
+            className={clsx(
+              'ficus-button ficus-button-ghost inline-flex items-center gap-0.5 disabled:opacity-60',
+              pillClass,
+              isInterrupt
+                ? 'hover:bg-status-external-wait-200 hover:text-status-external-wait-800 dark:hover:bg-status-external-wait-900/70 dark:hover:text-status-external-wait-200'
+                : 'hover:bg-status-progress-200 hover:text-status-progress-800 dark:hover:bg-status-progress-800/70 dark:hover:text-status-progress-200'
+            )}
+          >
+            {isInterrupt ? 'Interrupt' : 'Follow up'}
+            <ChevronDownIcon className="h-3 w-3" />
+          </SelectionPopup>
+        ) : (
+          <span className={pillClass}>{isInterrupt ? 'Interrupt' : 'Follow up'}</span>
+        )}
       </div>
 
       <div className="w-full rounded-lg border border-accent/30 bg-accent/10 p-3 text-left text-sm text-primary">

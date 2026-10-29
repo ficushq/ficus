@@ -69,6 +69,29 @@ it('switches without changing FIFO keys or attachments, and refuses consumed or 
   expect(await updateUnclaimedMessage(agent.id, message.id, 'cancel')).toBe('not_pending')
 })
 
+it('lets inbox deliveries change mode but never cancel, and leaves monitor deliveries untouched', async () => {
+  const inbox = await agent.recordMessage({
+    role: 'human',
+    content: 'From the inbox',
+    pending: true,
+    metadata: { source: 'inbox', deliveryMode: 'follow-up', inboxMessageIds: ['inbox-1'] },
+  })
+  const monitor = await agent.recordMessage({
+    role: 'human',
+    content: 'Monitor event',
+    pending: true,
+    metadata: { source: 'monitor', deliveryMode: 'steer' },
+  })
+  expect(await updateUnclaimedMessage(agent.id, inbox.id, 'cancel')).toBe('not_allowed')
+  expect(await updateUnclaimedMessage(agent.id, inbox.id, 'steer')).toBe('updated')
+  expect(await updateUnclaimedMessage(agent.id, monitor.id, 'follow-up')).toBe('not_allowed')
+  expect(await updateUnclaimedMessage(agent.id, monitor.id, 'cancel')).toBe('not_allowed')
+  const rows = await db.select().from(messages).where(eq(messages.agentId, agent.id))
+  expect(rows.map((row) => row.id).toSorted()).toEqual([inbox.id, monitor.id].toSorted())
+  expect(rows.find((row) => row.id === inbox.id)!.metadata).toMatchObject({ source: 'inbox', deliveryMode: 'steer' })
+  expect(rows.find((row) => row.id === monitor.id)!.metadata).toMatchObject({ deliveryMode: 'steer' })
+})
+
 it('requires the exact live SDK claim and rolls back after ownership changes', async () => {
   const message = await agent.recordMessage({
     role: 'human',

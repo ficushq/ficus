@@ -10,7 +10,7 @@ import type { AgentSession } from '../../entities/AgentSession'
 import type { MessageMetadata } from '@ficus/shared'
 
 export type PendingMessageOperation = 'cancel' | 'steer' | 'follow-up'
-export type PendingMessageResult = 'updated' | 'not_pending' | 'claimed' | 'unavailable'
+export type PendingMessageResult = 'updated' | 'not_pending' | 'not_allowed' | 'claimed' | 'unavailable'
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 type Row = typeof messages.$inferSelect
 
@@ -19,6 +19,17 @@ type Row = typeof messages.$inferSelect
  * about cancellation. Receipts are authoritative; older/non-idempotent sends use
  * the first human row bound to the execution instead.
  */
+/** Inbox deliveries already claimed their inbox items, so deleting the row would lose them: they may
+ * only change delivery mode. Monitor deliveries are never edited. */
+export function allowsPendingOperation(
+  metadata: MessageMetadata | null | undefined,
+  operation: PendingMessageOperation
+): boolean {
+  if (metadata?.source === 'monitor') return false
+  if (metadata?.source === 'inbox') return operation !== 'cancel'
+  return true
+}
+
 async function isEditableIntervention(tx: Tx, row: Row): Promise<boolean> {
   const [receipt] = await tx
     .select({ disposition: chatSendReceipts.disposition })
@@ -72,6 +83,7 @@ export async function updateUnclaimedMessage(
       .where(and(eq(messages.id, messageId), eq(messages.agentId, agentId)))
       .for('update')
     if (!row || row.role !== 'human' || !row.pending) return 'not_pending' as const
+    if (!allowsPendingOperation(row.metadata as MessageMetadata | null, operation)) return 'not_allowed' as const
     if (!(await isEditableIntervention(tx, row))) return 'not_pending' as const
     if (row.injectedAt) return 'claimed' as const
     await commitChange(tx, row, operation)
@@ -115,6 +127,7 @@ export async function updateClaimedMessage(input: {
           !input.stillOwned() ||
           Date.now() >= input.expiresAt ||
           !row?.pending ||
+          !allowsPendingOperation(row.metadata as MessageMetadata | null, input.operation) ||
           !(await isEditableIntervention(tx, row)) ||
           !row.injectedAt ||
           current?.id !== claim.id ||
