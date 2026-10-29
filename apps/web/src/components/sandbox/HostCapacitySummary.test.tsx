@@ -28,3 +28,15 @@ test('unknown capacity fails visibly, while an older payload adds no misleading 
   )
   expect(renderToStaticMarkup(<HostCapacitySummary />)).toBe('')
 })
+
+test.each([
+  [8, 'text-secondary'],
+  [12, 'text-status-attention-fg'],
+  [60, 'text-status-attention-fg'],
+])('uses a theme divider independently of quota color at %i CPUs', (activeQuotaCpus, textClass) => {
+  const html = renderToStaticMarkup(<HostCapacitySummary capacity={{ ...capacity, activeQuotaCpus }} />)
+  expect(html).toContain('border-l border-th-border pl-1.5')
+  expect(html).not.toContain('border-current')
+  expect(html).toContain(textClass)
+  expect(html).toContain(`Host quota ${activeQuotaCpus}/12 CPUs`)
+})

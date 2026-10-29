@@ -47,7 +47,7 @@ export function HostCapacitySummary({
   ]
   return (
     <span
-      className={`border-l border-current/20 pl-1.5 ${full ? 'text-status-attention-fg' : 'text-secondary'}`}
+      className={`border-l border-th-border pl-1.5 ${full ? 'text-status-attention-fg' : 'text-secondary'}`}
       title={details.join(' ')}
     >
       {labels.join(' · ')}
