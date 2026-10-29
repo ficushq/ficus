@@ -92,6 +92,42 @@ it('lets inbox deliveries change mode but never cancel, and leaves monitor deliv
   expect(rows.find((row) => row.id === monitor.id)!.metadata).toMatchObject({ deliveryMode: 'steer' })
 })
 
+it('protects an active turn opening message, then lets it be edited once the turn is stopped unstarted', async () => {
+  const execution = await agent.queueExecution({ message: 'nudge', metadata: { clientId: crypto.randomUUID() } })
+  const [opening] = (await agent.listMessages()).messages
+  expect(await updateUnclaimedMessage(agent.id, opening!.id, 'cancel')).toBe('not_pending')
+  await execution.requestStopWithSignal()
+  expect(await updateUnclaimedMessage(agent.id, opening!.id, 'follow-up')).toBe('updated')
+  expect(await updateUnclaimedMessage(agent.id, opening!.id, 'cancel')).toBe('updated')
+  expect((await agent.listMessages()).messages).toEqual([])
+})
+
+it('never edits a queued question answer, which is always delivered as an interrupt', async () => {
+  const answer = await agent.recordMessage({
+    role: 'human',
+    content: 'Answer to your question',
+    pending: true,
+    metadata: {
+      source: 'inbox',
+      deliveryMode: 'steer',
+      inboxMessageSummaries: [
+        {
+          id: crypto.randomUUID(),
+          senderType: 'user',
+          senderId: crypto.randomUUID(),
+          subject: 'Answer to your question',
+          preview: 'Yes',
+          questionAnswer: { questionId: crypto.randomUUID() } as never,
+        },
+      ],
+    },
+  })
+  for (const operation of ['follow-up', 'steer', 'cancel'] as const)
+    expect(await updateUnclaimedMessage(agent.id, answer.id, operation)).toBe('not_allowed')
+  const [row] = await db.select().from(messages).where(eq(messages.id, answer.id))
+  expect(row!.metadata).toMatchObject({ deliveryMode: 'steer' })
+})
+
 it('requires the exact live SDK claim and rolls back after ownership changes', async () => {
   const message = await agent.recordMessage({
     role: 'human',

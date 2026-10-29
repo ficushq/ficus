@@ -6,6 +6,7 @@ import { agentTypes, agents, messages, chatSendReceipts } from '../../db/schema'
 import { db } from '../../db'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { handleControlSignal } from './control-signals'
+import { withChatQueueState } from '../chat/queued-messages'
 import { registerSession, removeSession } from './session-state'
 import { AgentSession } from '../../entities/AgentSession'
 import * as sessionFiles from '../../lib/infra/session-files'
@@ -164,8 +165,18 @@ describe('control signal clear-queue', () => {
   })
 
   it('deletes unclaimed pending rows and acks clear-queue when this worker owns the session', async () => {
-    await agent.recordMessage({ role: 'human', content: 'queued steer', pending: true })
-    await agent.recordMessage({ role: 'human', content: 'queued follow-up', pending: true })
+    await agent.recordMessage({
+      role: 'human',
+      content: 'queued steer',
+      pending: true,
+      metadata: { deliveryMode: 'steer' },
+    })
+    await agent.recordMessage({
+      role: 'human',
+      content: 'queued follow-up',
+      pending: true,
+      metadata: { deliveryMode: 'follow-up' },
+    })
     await agent.recordMessage({ role: 'human', content: 'already delivered', pending: false })
     const updateQueuedMessage = mock(async () => true)
     const queueCleared: unknown[] = []
@@ -237,14 +248,33 @@ describe('control signal clear-queue', () => {
     }
   })
 
-  it('clears a receipt-backed queue without a live session and retains retry protection', async () => {
+  it('keeps a queued turn opening message through Clear, then clears it once the turn is stopped', async () => {
+    // Clearing the opening message of a turn that has not started would not cancel it: the execution keeps
+    // its own copy of the text and sends it anyway. Clear leaves it until the turn ends.
     const clientId = crypto.randomUUID()
-    const execution = await agent.queueExecution({ message: 'cancel queued turn', metadata: { clientId } })
+    const execution = await agent.queueExecution({ message: 'nudge', metadata: { clientId } })
+    const steer = await agent.sendMessage('also this', {
+      deliveryMode: 'steer',
+      metadata: { clientId: crypto.randomUUID() },
+    })
+    expect(steer.success).toBe(true)
+    const shown = await withChatQueueState(agent.id, (await agent.listMessages()).messages)
+    expect(shown.map((message) => [message.content, message.queued])).toEqual([
+      ['nudge', false],
+      ['also this', true],
+    ])
+
     expect(await agent.clearQueue()).toMatchObject({ ok: true, deleted: 1, code: 'no_active_execution' })
+    expect((await agent.listMessages()).messages.map((message) => message.content)).toEqual(['nudge'])
+
+    // A turn stopped before it started leaves its opening message as ordinary, clearable queued input.
+    await execution.requestStopWithSignal()
+    const afterStop = await withChatQueueState(agent.id, (await agent.listMessages()).messages)
+    expect(afterStop.map((message) => message.queued)).toEqual([true])
+    expect(await agent.clearQueue()).toMatchObject({ ok: true, deleted: 1 })
     expect((await agent.listMessages()).messages).toEqual([])
-    expect((await agent.queueExecution({ message: 'cancel queued turn', metadata: { clientId } })).id).toBe(
-      execution.id
-    )
+    // The accepted receipt stays a tombstone, so a delayed retry cannot resurrect the cleared text.
+    expect((await agent.queueExecution({ message: 'nudge', metadata: { clientId } })).id).toBe(execution.id)
     expect((await agent.listMessages()).messages).toEqual([])
   })
 })

@@ -10,6 +10,7 @@ import { jsonbObjectRecovered } from '../../db/jsonb'
 import { Message, MessageMetadata } from '@ficus/shared'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { mapMessage, messageDeliveryOrder } from '../../entities/message-mapper'
+import { isQueuedIntervention } from '../chat/queued-messages'
 import { messageEventData } from '../../entities/message-event'
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -538,8 +539,8 @@ export async function markPendingHumanMessagesStrandedRetry(agentId: string, mes
 export const userSentMessage = sql`COALESCE(${messages.metadata}->>'source', '') NOT IN ('inbox', 'monitor')`
 
 /**
- * Delete the agent's pending user-sent messages when clearing the steer/follow-up queue.
- * Inbox and monitor deliveries stay queued. `unclaimedOnly` leaves rows a live session
+ * Delete the agent's queued user-sent messages when clearing the steer/follow-up queue.
+ * Inbox and monitor deliveries, and the active turn's opening message, stay. `unclaimedOnly` leaves rows a live session
  * holds, which the worker cancels through its SDK queue instead.
  * @returns The number of messages deleted.
  */
@@ -549,8 +550,8 @@ export async function deletePendingMessages(
 ): Promise<number> {
   return db.transaction(async (tx) => {
     await acquireAgentQueueLock(tx, agentId)
-    const pending = await tx
-      .select({ id: messages.id })
+    const candidates = await tx
+      .select()
       .from(messages)
       .where(
         and(
@@ -562,8 +563,11 @@ export async function deletePendingMessages(
         )
       )
       .for('update')
-    if (!pending.length) return 0
-    const ids = pending.map((message) => message.id)
+    // Clear exactly what chat shows as queued: never the active turn's opening message, which that
+    // turn would still send from its own copy of the text.
+    const ids: string[] = []
+    for (const row of candidates) if (await isQueuedIntervention(tx, mapMessage(row))) ids.push(row.id)
+    if (!ids.length) return 0
     // Keep accepted receipts as tombstones so a delayed HTTP retry cannot send
     // canceled input again. Detach their restrictive FK in the same transaction
     // as deletion; never erase the idempotency key or request hash.

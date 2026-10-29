@@ -3,7 +3,7 @@ import { WORK_STREAM_ADMITTED_STATUSES } from '@ficus/shared'
 import { and, eq, inArray, ne, notInArray, or, sql, type SQL } from 'drizzle-orm'
 import { executions, machineCapacityClaims, machines, vmBoxProvisionAttempts, workStreams } from '../../db/schema'
 import type { DbTransaction } from './queries'
-import { evaluateHostQuotaCounts, type HostCapacityDecision } from './host-capacity-policy'
+import { evaluateHostBoxCounts, withHostStartupCapacity, type HostCapacityDecision } from './host-capacity-policy'
 
 export type HostCapacityOwner =
   | { kind: 'stream'; workStreamId: string }
@@ -31,7 +31,7 @@ function ownerKey(owner: HostCapacityOwner): string {
 }
 
 /** Match pickup's queued-owner lifecycle guards. A live running turn remains
- * charged until it settles; a queued turn that cannot resume holds no quota. */
+ * tracked until it settles; a queued turn that cannot resume holds no claim. */
 function queuedOwnerCanResume(agentId: SQL, wakeEligible: SQL): SQL {
   return sql`EXISTS (SELECT 1 FROM agents queued_owner WHERE queued_owner.id = ${agentId}
     AND queued_owner.status <> 'terminated' AND queued_owner.pending_dormancy_at IS NULL
@@ -92,10 +92,10 @@ async function validClaims(tx: DbTransaction, incomingProvisionId = 0): Promise<
   // Adopt pre-upgrade activity and non-execution activity conservatively. An
   // idle socket-activated server is NOT itself demand; a recent command or
   // terminal touch has a short cooldown, while running turns/generations stay
-  // charged for their entire lifetime. Descendants share their root's box.
+  // tracked for their entire lifetime. Descendants share their root's box.
   // A bind can remain labelled ensuring after an ordinary, awaited failure.
   // Prefer the latest physical outcome; pre-start admission/placement refusals
-  // cannot prove earlier remote work stopped. Unowned observations reserve quota,
+  // cannot prove earlier remote work stopped. Unowned observations track activity,
   // never the startup lane: simultaneous unadmitted generations must not mutually
   // block each other. Only a live persisted physical claim owns that lane.
   const ensuringWithoutOutcome = sql`(b.status = 'ensuring' AND NOT COALESCE((
@@ -257,7 +257,13 @@ export async function readHostCapacity(
       ).projected
     : claims
   const projected = resourcesByMachine(planned).get(machineId)?.size ?? 0
-  return evaluateHostQuotaCounts(machine?.capabilities.cpus, current, projected)
+  const capacity = evaluateHostBoxCounts(machine?.capabilities.cpus, current, projected)
+  return {
+    ...capacity,
+    startingBoxes: new Set(
+      claims.filter((claim) => claim.startupActive && claim.machineId === machineId).map((claim) => claim.sandboxId)
+    ).size,
+  }
 }
 
 export interface HostClaimResult {
@@ -269,7 +275,7 @@ export interface HostClaimResult {
 
 export class HostCapacityUnavailableError extends Error {
   constructor(readonly result: HostClaimResult) {
-    super('The machine has no host capacity for another sandbox; work stays queued until capacity is available.')
+    super('The machine is busy starting sandboxes; work waits for a host capacity startup slot.')
     this.name = 'HostCapacityUnavailableError'
   }
 }
@@ -313,26 +319,18 @@ export async function claimHostCapacity(
       .select({ capabilities: machines.capabilities, status: machines.status })
       .from(machines)
       .where(eq(machines.id, machineId))
-    const capacity = evaluateHostQuotaCounts(
+    const capacity = evaluateHostBoxCounts(
       machine?.status === 'ready' ? machine.capabilities.cpus : undefined,
       current.get(machineId)?.size ?? 0,
       projected.get(machineId)?.size ?? 0
     )
-    if (!capacity.allowed)
-      return { allowed: false, reason: capacity.reason === 'unknown' ? 'unknown' : 'quota', machineId, capacity }
-    // Below budget, physical generations may run concurrently. Stagger only
-    // at saturation, including grandfathered resumes above today's target.
-    if (
-      owner.kind === 'provision' &&
-      capacity.projectedQuotaCpus! >= capacity.budgetCpus! &&
-      before.some(
-        (claim) =>
-          claim.startupActive === true &&
-          claim.machineId === machineId &&
-          !resources.some((resource) => resource.machineId === machineId && resource.sandboxId === claim.sandboxId)
+    if (owner.kind === 'provision') {
+      const startup = withHostStartupCapacity(
+        capacity,
+        before.filter((claim) => claim.startupActive && claim.machineId === machineId).map((claim) => claim.sandboxId),
+        resources.filter((resource) => resource.machineId === machineId).map((resource) => resource.sandboxId)
       )
-    ) {
-      return { allowed: false, reason: 'starting', machineId, capacity }
+      if (!startup.allowed) return { allowed: false, reason: 'starting', machineId, capacity: startup }
     }
   }
   for (const { previous, next } of plan.replaced) {
@@ -393,18 +391,18 @@ export async function moveHostResourceClaims(tx: DbTransaction, sandboxId: strin
     .select({ capabilities: machines.capabilities })
     .from(machines)
     .where(eq(machines.id, machineId))
-  const capacity = evaluateHostQuotaCounts(
+  const capacity = evaluateHostBoxCounts(
     machine?.capabilities.cpus,
     resourcesByMachine(before).get(machineId)?.size ?? 0,
     resourcesByMachine(after).get(machineId)?.size ?? 0
   )
-  if (!capacity.allowed)
-    throw new HostCapacityUnavailableError({
-      allowed: false,
-      reason: capacity.reason === 'unknown' ? 'unknown' : 'quota',
-      machineId,
-      capacity,
-    })
+  const startup = withHostStartupCapacity(
+    capacity,
+    before.filter((claim) => claim.startupActive && claim.machineId === machineId).map((claim) => claim.sandboxId),
+    moving.filter((claim) => claim.startupActive).map((claim) => claim.sandboxId)
+  )
+  if (!startup.allowed)
+    throw new HostCapacityUnavailableError({ allowed: false, reason: 'starting', machineId, capacity: startup })
   for (const claim of moving) {
     await tx
       .delete(machineCapacityClaims)

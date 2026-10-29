@@ -303,6 +303,7 @@ function makeHarness(opts?: { machineForSandbox?: (id: string) => string; bashSc
       syncBoxFiles(client, sandboxId, o, box, fence, trackSetupWork),
     seedBoxDevbox: (client: any, sandboxId: string, role: EnsureBoxOpts['role']) =>
       seedBoxDevbox(client, sandboxId, role),
+    reserveHostCapacity: async () => {},
     async ensureBox(o: EnsureBoxOpts) {
       ensureCalls.push(o)
       log.push(`ensureBox:${o.sandboxId}`)
@@ -2505,6 +2506,66 @@ describe('VmSandboxManager', () => {
     await manager.recreateSandbox('squad_s1', squadOpts)
     expect(h.log[0]).toBe('stopBox:squad_s1')
     expect(h.log).toContain('ensureBox:squad_s1')
+  })
+
+  test('recreate waits for startup admission without stopping the old box or closing its client', async () => {
+    const h = makeHarness()
+    const { isCommandDrainActive } = await import('../command-drain')
+    let admitted = true
+    h.deps.reserveHostCapacity = async () => {
+      expect(isCommandDrainActive('squad_s1')).toBe(false)
+      h.log.push('startup-admission')
+      if (!admitted) throw new Error('startup slots busy')
+    }
+    const manager = new VmSandboxManager(h.deps)
+    await manager.ensureSandbox('squad_s1', squadOpts)
+    const client = manager.getClient('squad_s1') as unknown as FakeClient
+    h.setProvisionVersion('prov-2')
+    h.log.length = 0
+    admitted = false
+    await expect(manager.recreateSandbox('squad_s1', squadOpts)).rejects.toThrow('startup slots busy')
+    expect(h.log).toEqual(['startup-admission'])
+    expect(client.closed).toBe(0)
+    expect(manager.getClient('squad_s1')).toBe(client as never)
+    expect(h.removeCalls).toHaveLength(0)
+    admitted = true
+    h.log.length = 0
+    await manager.recreateSandbox('squad_s1', squadOpts)
+    expect(h.log.slice(0, 3)).toEqual(['startup-admission', 'stopBox:squad_s1', 'ensureBox:squad_s1'])
+    expect(client.closed).toBe(1)
+  })
+
+  test('recreate does not stop or drain a generation replaced while waiting for the setup lease', async () => {
+    const h = makeHarness()
+    const leaseState: { replacement?: string } = {}
+    h.deps.withSetupLease = async (_id, operation) => {
+      if (leaseState.replacement)
+        h.setMachineBoxRow({
+          machineId: 'm1',
+          port: 40001,
+          status: 'ready',
+          reconcilableSpecHash: leaseState.replacement,
+        })
+      return operation()
+    }
+    const manager = new VmSandboxManager(h.deps)
+    const options = { ...squadOpts, lifecycleGeneration: 'original' }
+    await manager.ensureSandbox('squad_s1', options)
+    const client = manager.getClient('squad_s1') as unknown as FakeClient
+    h.setMachineBoxRow({
+      machineId: 'm1',
+      port: 40001,
+      status: 'ready',
+      reconcilableSpecHash: manager.computeSpecHash(options),
+    })
+    leaseState.replacement = manager.computeSpecHash({ ...options, lifecycleGeneration: 'replacement' })
+    h.setProvisionVersion('prov-2')
+    const ensureCount = h.ensureCalls.length
+    await manager.recreateSandbox('squad_s1', options)
+    expect(h.stopCalls).toEqual([])
+    expect(h.ensureCalls.length).toBe(ensureCount)
+    expect(client.closed).toBe(0)
+    expect(await manager.getRunningSandboxSpecHash('squad_s1')).toBe(leaseState.replacement)
   })
 
   test('spec drift detection and recreate = stop + re-ensure', async () => {

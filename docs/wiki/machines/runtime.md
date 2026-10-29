@@ -1454,54 +1454,41 @@ runs its **own rootless dockerd** instead (spec §5):
   exhaustion. Missing target convergence or after-state data remains an open
   verification requirement, not something a dry-run fixture can satisfy.
 
-- **Machine-wide CPU admission.** VM work uses a **1.5 × host CPU** budget of
-  reserved box quotas. Each distinct sandbox costs the unchanged kernel quota,
-  `max(1, host CPUs / 2)`; a shared squad box is charged once, not once per agent.
-  This is a forecast of admitted demand, not a sampled utilization threshold or
-  a change to CPU quotas, MemoryMax, the unit packer, or existing cloud authority.
-  Unknown CPU facts defer new demand. Already-accounted demand can continue
-  even when a host is above the target or its CPU facts temporarily disappear;
-  admission does not evict work. An empty one-CPU host admits one minimal
-  private-plus-shared owner set (two one-core quotas); this bounded exception
-  does not admit further demand or change either kernel quota.
+- **Shared-host scheduling and bounded startup.** Squads and private agent boxes
+  share host CPUs. Their kernel `CPUQuota=max(100%, nproc*50%)` values are
+  **ceilings, not exclusive CPU reservations**; adding these ceilings together
+  must not prevent another squad or agent from running. Existing per-box CPU,
+  MemoryHigh, MemoryMax and task limits remain enforced by Linux cgroups.
+  Configured squad work-stream limits and explicit resource pools still apply.
 
-  Active streams reserve a pending private participant plus their shared box
-  before dispatch creates agents. Actual execution identities replace the
-  placeholder; additional fork participants consume additional private-box quota.
-  Shared participants, including inherited private boxes, are canonicalized
-  transactionally across their streams: later membership edits cannot silently
-  enlarge an already-admitted reservation. Claims move atomically with the
-  authoritative box bind, so tentative placement does not leave phantom charges.
-  Recovery requeues retain their admitted footprint, including pre-upgrade turns
-  that actually started before durable claim records existed (`run_started_at`,
-  not the creation-time `started_at`). Never-started queues do not count as
-  admitted work. Queued owners that are terminated, pending dormancy, dormant
-  without wake eligibility, or blocked by a paused stream release their demand.
-  Creation, manual admission and automatic promotion respect the host budget,
-  including squads with no stream-count cap. Execution pickup commits its claim
-  with the queued-to-running transition; refusal leaves work queued without
-  starting a runner. Pinned/sticky placement waits rather than moving live boxes;
-  pooled placement tries eligible existing hosts. Quota saturation never causes
-  a new cloud host to be provisioned. Normal first-host bootstrap remains possible,
-  but the concrete physical generation must claim its resolved host before setup.
+  The durable host ledger tracks distinct boxes across streams, executions and
+  provisioning generations. Shared boxes are deduplicated, actual participants
+  replace pending stream identities, and claims move with authoritative binds.
+  Logical admission does not deny work based on this count or missing CPU facts.
 
-  Short transactional, machine-wide claims serialize the decision. No transaction
-  or extra DB session spans SSH. Physical setup has **one startup lane per host**,
-  owned by a live coalesced provision generation **only when the host is saturated**;
-  below budget, setups can run concurrently. Different hosts can progress and
-  same-box followers do not consume another lane. Short lock contention uses
-  bounded jittered retries, not an indefinitely blocking lock inside lifecycle
-  transactions. Capacity waits requeue without spending startup retries or increasing
+  Physical setup is bounded separately to prevent a provisioning storm after an
+  upgrade: hosts with at least four known CPUs allow **two concurrent startup
+  generations**; smaller hosts or unknown CPU facts allow **one**. Running boxes
+  do not consume startup slots. Only admitted physical generations with live
+  setup leases own slots, and same-box followers share the owner's generation.
+  Different hosts progress independently. Normal box reconnects bypass setup
+  admission. A spec recreation reserves its startup slot **before** stopping the
+  old box, under the same setup lease and generation as the rebuild; a busy host
+  leaves the old box and client available. Lifecycle generation fencing and
+  verified-stop requirements still apply.
+
+  Short transactional claims serialize startup admission. No transaction or
+  extra DB session spans SSH. Lock contention uses bounded jittered retries.
+  Capacity waits requeue without spending startup retries or increasing
   provisioning backoff. A durable first-wait timestamp caps the episode at
   30 minutes: polling slows from 5 seconds to 30 seconds after 2 minutes, then
-  60 seconds after 10 minutes. Unknown CPU capacity fails immediately. Terminal
-  notices include the machine ID and refusal reason, including shared-failure
-  followers; only those allowlisted details are persisted, never remote output.
+  60 seconds after 10 minutes. Terminal notices include the machine ID and
+  refusal reason; only allowlisted details are persisted, never remote output.
   Successful runner startup clears the wait window before model dispatch.
   Actual startup failures retain their separate bounded retry budget.
 
   Claims follow lifecycle records, not expiring permits. Abandoned/interrupted
-  work with an unverified binding remains charged conservatively, but a dead
+  work with an unverified binding remains tracked conservatively, but a dead
   generation cannot hold a permanent startup lane. A running provision claim
   requires its actual granted PostgreSQL session advisory lock in this database;
   a crash that leaves a running row cannot preserve ownership after the session
@@ -1510,21 +1497,21 @@ runs its **own rootless dockerd** instead (spec §5):
   a later confirmed stop, or normal box removal releases the uncertain claim.
   Normal removal deletes the binding after remote teardown; a capacity refusal
   or an unrelated failed retry alone is not evidence that remote work stopped.
-  Same-box recovery does not double charge its predecessor. Referenced generations
+  Same-box recovery does not double count its predecessor. Referenced generations
   are retained; settled claim rows are reclaimed on subsequent claims. Optional
   devbox prewarm uses the same full-generation gate, including its cleanup.
   Pre-existing running turns, provisioning and recent box activity are accounted
   conservatively (recent command/terminal touches have a 60-second cooldown).
   This does not schedule unmanaged host processes or guarantee memory/I/O capacity.
 
-  The squad header separates **Host load** (one-minute load / host CPUs) from
-  **quota used / budget** (reserved demand). Its details identify host memory,
-  the oversubscription target, and capacity deferral. Missing samples are not zeros.
-  `SandboxStatus.hostCapacity` is additive, contains aggregate numbers only, and
-  uses database reads without probing or waking an idle box. Per-box pressure
-  attribution remains separate from this host admission forecast. Representative
-  burst verification must still collect timestamped `cpu.stat`, `memory.events`
-  and PSI deltas across the host's boxes; passing claim fixtures is not live proof.
+  The squad header shows **Host load** (one-minute load / host CPUs) and live
+  **Starting boxes / startup limit** when setup is in progress. It no longer
+  labels summed CPU ceilings as reserved host quota. Missing samples are not
+  zeros. `SandboxStatus.hostCapacity` reports aggregate box counts and startup
+  concurrency using database reads without probing or waking an idle box.
+  Per-box pressure attribution remains separate. Representative burst verification
+  still needs timestamped `cpu.stat`, `memory.events` and PSI deltas across the
+  host's boxes; passing claim fixtures is not live proof.
 
 - **Existing boxes / recreation.** The script is content-hashed into provisioning
   drift, so existing boxes receive this wiring on their next full provision or
