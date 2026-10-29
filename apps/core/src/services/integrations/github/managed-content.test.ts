@@ -628,3 +628,94 @@ test('search never serves an old result under a concurrently reindexed fresh pro
     boundary.mockRestore()
   }
 })
+
+test('recovery retains the caller freshness constraint until the addressed reindex is admissible', async () => {
+  const { ExternalSourceReindexService } = await import('../../memory/indexer/ExternalSourceReindexService')
+  threads.set(402, { issue: issue(402), comments: [comment(90402, 'oldcallersnapshot', TRUSTED)] })
+  installGitHub()
+  await index(squadA, 402)
+  const doc = await docFor(squadA, 402)
+  await revision(squadB, 'issue_comment', 90402, 'callercurrenttext', 'automatic', TRUSTED)
+  expect(await withheldGitHubMemoryDocuments(squadB, [doc.id])).toEqual(new Set([doc.id]))
+  await ExternalSourceReindexService.instance().reindexSquad(squadA, { sourceTypes: ['github_issue'] })
+  expect((await docFor(squadA, 402)).frontmatter).toHaveProperty('githubReindex')
+  // A queued recovery is honestly counted as hidden, including in the source squad's reads.
+  expect(await search(squadA, 'oldcallersnapshot')).toEqual([])
+  threads.get(402)!.comments = [comment(90402, 'callercurrenttext', TRUSTED)]
+  await ExternalSourceReindexService.instance().reindexSquad(squadA, { sourceTypes: ['github_issue'] })
+  expect((await docFor(squadA, 402)).frontmatter).not.toHaveProperty('githubReindex')
+  expect(await withheldGitHubMemoryDocuments(squadB, [doc.id])).toEqual(new Set())
+})
+
+test.each(['orphan-hash', 'bad-comment-title-hash', 'missing-parent', 'duplicate-item'] as const)(
+  'malformed schema-2 provenance fails closed and queues recovery (%s)',
+  async (defect) => {
+    const number = { 'orphan-hash': 501, 'bad-comment-title-hash': 502, 'missing-parent': 503, 'duplicate-item': 504 }[
+      defect
+    ]
+    threads.set(number, { issue: issue(number), comments: [comment(95000 + number, 'malformedproofbody', TRUSTED)] })
+    installGitHub()
+    await index(squadOff, number)
+    const doc = await docFor(squadOff, number)
+    const frontmatter = structuredClone(doc.frontmatter) as {
+      githubProjection: import('./managed-content').GitHubMemoryProjection
+    }
+    const projection = frontmatter.githubProjection
+    if (defect === 'orphan-hash') projection.items[0]!.revisionHash = 'a'.repeat(64)
+    if (defect === 'bad-comment-title-hash') projection.items[1]!.titleHash = 'not-a-hash'
+    if (defect === 'missing-parent')
+      projection.items = projection.items.filter((item: { kind: string }) => item.kind === 'issue_comment')
+    if (defect === 'duplicate-item') projection.items.push(projection.items[1]!)
+    await db.update(memoryDocuments).set({ frontmatter }).where(eq(memoryDocuments.id, doc.id))
+    expect(await withheldGitHubMemoryDocuments(squadOff, [doc.id])).toEqual(new Set([doc.id]))
+    expect((await docFor(squadOff, number)).frontmatter).toHaveProperty('githubReindex.reason', 'legacy')
+  }
+)
+
+test('vector retrieval, direct indexed reads and backlinks all fence stale GitHub snapshots', async () => {
+  const { EmbeddingService } = await import('../../memory/indexer/EmbeddingService')
+  const embedding = EmbeddingService.instance()
+  const enabled = spyOn(embedding, 'isEnabled').mockReturnValue(true)
+  const model = spyOn(embedding, 'getSquadEmbeddingModel').mockResolvedValue('synthetic-embedding')
+  const vector = Array.from({ length: 1536 }, () => 1)
+  const generate = spyOn(embedding, 'generateQueryEmbedding').mockResolvedValue(vector)
+  const service = new SearchService({ embeddingService: embedding })
+  try {
+    await IndexingService.instance().indexFile({
+      squadId: squadA,
+      path: '/memory/freshness-target.md',
+      content: '# Target',
+    })
+    threads.set(601, {
+      issue: issue(601),
+      comments: [comment(95601, 'vectorsentinel [[/memory/freshness-target.md]]', TRUSTED)],
+    })
+    installGitHub()
+    await index(squadA, 601)
+    const doc = await docFor(squadA, 601)
+    await db.update(memoryChunks).set({ embedding: vector }).where(eq(memoryChunks.documentId, doc.id))
+    const vectorRead = () => service.search(squadA, 'vectorsentinel', { mode: 'vector', sourceTypes: ['github_issue'] })
+    expect((await vectorRead()).map((hit) => hit.documentId)).toContain(doc.id)
+    expect(await IndexingService.instance().getDocumentBySourceId(squadA, 'github_issue', `${repo}#601`)).toBeDefined()
+    expect(
+      (await IndexingService.instance().getBacklinks(squadA, '/memory/freshness-target.md')).map(
+        (link) => link.sourceTitle
+      )
+    ).toContain(doc.title)
+    await revision(squadA, 'issue_comment', 95601, 'new vector text', 'pending', TRUSTED)
+    expect((await vectorRead()).map((hit) => hit.documentId)).not.toContain(doc.id)
+    expect(
+      await IndexingService.instance().getDocumentBySourceId(squadA, 'github_issue', `${repo}#601`)
+    ).toBeUndefined()
+    expect(
+      (await IndexingService.instance().getBacklinks(squadA, '/memory/freshness-target.md')).map(
+        (link) => link.sourceTitle
+      )
+    ).not.toContain(doc.title)
+    expect(generate).toHaveBeenCalledTimes(2)
+  } finally {
+    enabled.mockRestore()
+    model.mockRestore()
+    generate.mockRestore()
+  }
+})

@@ -30,7 +30,8 @@ import { currentGitHubFeedbackRevisionSQL, gitHubFeedbackVersionSQL } from './fe
  * squad and the source squad, so trust revocation applies to later reads and an approval in one
  * squad is never a grant to another. Documents without that provenance fail closed.
  *
- * With the filter OFF nothing changes: content is indexed and read as it was before the filter.
+ * With the filter OFF author trust is bypassed, but exact snapshot freshness is still required.
+ * Stale/legacy documents are hidden and queued through the existing external-source reindexer.
  * Low-level authenticated GitHub fetches stay raw; only these agent-facing projections are gated.
  */
 
@@ -371,6 +372,8 @@ function parseProjection(value: unknown): GitHubMemoryProjection | null {
     projection.withheldComments < 0
   )
     return null
+  const identities = new Set<string>()
+  let parents = 0
   for (const item of projection.items) {
     if (
       !item ||
@@ -381,6 +384,8 @@ function parseProjection(value: unknown): GitHubMemoryProjection | null {
       !['trusted', 'approved', 'unfiltered'].includes(item.basis) ||
       !hashValue(item.bodyHash) ||
       (item.kind !== 'issue_comment' && !hashValue(item.titleHash)) ||
+      (item.titleHash !== undefined && !hashValue(item.titleHash)) ||
+      (item.revisionHash !== undefined && !item.revisionId) ||
       !Number.isSafeInteger(item.sequence) ||
       item.sequence < 0 ||
       (item.providerVersion !== null &&
@@ -391,7 +396,12 @@ function parseProjection(value: unknown): GitHubMemoryProjection | null {
       (item.basis === 'approved' && !item.revisionId)
     )
       return null
+    const identity = `${item.kind}:${item.nativeId}`
+    if (identities.has(identity)) return null
+    identities.add(identity)
+    if (item.kind !== 'issue_comment') parents++
   }
+  if (parents !== (projection.parentWithheld ? 0 : 1)) return null
   return projection
 }
 
@@ -410,6 +420,7 @@ export async function withheldGitHubMemoryDocuments(
       id: memoryDocuments.id,
       squadId: memoryDocuments.squadId,
       contentHash: memoryDocuments.contentHash,
+      pendingReason: sql<string | null>`${memoryDocuments.frontmatter} #>> '{githubReindex,reason}'`,
       pendingHash: sql<string | null>`${memoryDocuments.frontmatter} #>> '{githubReindex,contentHash}'`,
       projection: sql<unknown>`${memoryDocuments.frontmatter} -> 'githubProjection'`,
     })
@@ -418,12 +429,14 @@ export async function withheldGitHubMemoryDocuments(
   // A result/chunk generation cannot borrow the proof of a concurrent reindex (or deletion).
   for (const id of options.snapshots?.keys() ?? []) if (!documents.some((doc) => doc.id === id)) withheld.add(id)
   const states = await authorFilterStates(executor, [callerSquadId, ...documents.map((doc) => doc.squadId)])
-  const recovery: Array<{ id: string; contentHash: string; reason: GitHubReindexReason }> = []
+  const recovery: Array<{ id: string; contentHash: string; reason: GitHubReindexReason; callerSquadId: string }> = []
   const hideForRecovery = (doc: (typeof documents)[number], reason: GitHubReindexReason) => {
     withheld.add(doc.id)
-    if (doc.pendingHash !== doc.contentHash) recovery.push({ id: doc.id, contentHash: doc.contentHash, reason })
+    if (doc.pendingHash !== doc.contentHash)
+      recovery.push({ id: doc.id, contentHash: doc.contentHash, reason, callerSquadId })
   }
   for (const doc of documents) {
+    if (options.enqueue !== false && ['stale', 'legacy'].includes(doc.pendingReason ?? '')) withheld.add(doc.id)
     if (
       options.snapshots?.has(doc.id) &&
       githubContentHash(options.snapshots.get(doc.id) ?? null) !== githubContentHash(doc.projection ?? null)

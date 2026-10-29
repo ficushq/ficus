@@ -9,7 +9,7 @@ const pending = sql`${memoryDocuments.frontmatter}->'githubReindex'`
 
 /** Durable deduplication on the document, not an API-process timer or a new job type. */
 export async function enqueueGitHubMemoryReindex(
-  candidates: Array<{ id: string; contentHash: string; reason: GitHubReindexReason }>,
+  candidates: Array<{ id: string; contentHash: string; reason: GitHubReindexReason; callerSquadId: string }>,
   executor: Pick<typeof db, 'update'> = db
 ): Promise<void> {
   for (const candidate of candidates.slice(0, GITHUB_REINDEX_READ_LIMIT))
@@ -18,6 +18,7 @@ export async function enqueueGitHubMemoryReindex(
       .set({
         frontmatter: sql`jsonb_set(${memoryDocuments.frontmatter}, '{githubReindex}', ${JSON.stringify({
           reason: candidate.reason,
+          callerSquadId: candidate.callerSquadId,
           contentHash: candidate.contentHash,
           requestedAt: new Date().toISOString(),
         })}::jsonb)`,

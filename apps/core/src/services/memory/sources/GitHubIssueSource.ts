@@ -228,12 +228,13 @@ export class GitHubIssueSource extends BaseMemorySourceAdapter {
         .select({ contentHash: memoryDocuments.contentHash, frontmatter: memoryDocuments.frontmatter })
         .from(memoryDocuments)
         .where(eq(memoryDocuments.id, result.documentId))
-      if (stored && !(await withheldGitHubMemoryDocuments(squadId, [result.documentId], db, { enqueue: false })).size)
-        await clearGitHubMemoryReindex(
-          result.documentId,
-          stored.contentHash,
-          (stored.frontmatter as Record<string, unknown>).githubReindex
-        )
+      const pending = (stored?.frontmatter as { githubReindex?: { callerSquadId?: string } } | undefined)?.githubReindex
+      const callerSquadId = pending?.callerSquadId ?? squadId
+      if (
+        stored &&
+        !(await withheldGitHubMemoryDocuments(callerSquadId, [result.documentId], db, { enqueue: false })).size
+      )
+        await clearGitHubMemoryReindex(result.documentId, stored.contentHash, pending)
     }
     return result
   }
