@@ -1,3 +1,4 @@
+import '../test-utils/require-test-db'
 import { join } from 'node:path'
 import { readMigrationFiles } from 'drizzle-orm/migrator'
 import { MONOREPO_ROOT } from '../lib/paths'

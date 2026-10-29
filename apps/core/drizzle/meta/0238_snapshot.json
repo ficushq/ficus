@@ -1,5 +1,5 @@
 {
-  "id": "eff0e803-a3bc-4b9c-ae11-e226c9be1fe3",
+  "id": "35139e7d-4764-4c8b-aa30-c3121bfc2a35",
   "prevId": "82cf0d62-598d-48bc-9c19-ad1a5be74897",
   "version": "7",
   "dialect": "postgresql",
@@ -11718,6 +11718,170 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.machine_capacity_claims": {
+      "name": "machine_capacity_claims",
+      "schema": "",
+      "columns": {
+        "owner_key": {
+          "name": "owner_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "machine_id": {
+          "name": "machine_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sandbox_id": {
+          "name": "sandbox_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stream_id": {
+          "name": "stream_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "work_stream_id": {
+          "name": "work_stream_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "execution_id": {
+          "name": "execution_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provision_attempt_id": {
+          "name": "provision_attempt_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "machine_capacity_claims_machine_idx": {
+          "name": "machine_capacity_claims_machine_idx",
+          "columns": [
+            {
+              "expression": "machine_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "machine_capacity_claims_machine_id_machines_id_fk": {
+          "name": "machine_capacity_claims_machine_id_machines_id_fk",
+          "tableFrom": "machine_capacity_claims",
+          "tableTo": "machines",
+          "columnsFrom": [
+            "machine_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "machine_capacity_claims_stream_id_work_streams_id_fk": {
+          "name": "machine_capacity_claims_stream_id_work_streams_id_fk",
+          "tableFrom": "machine_capacity_claims",
+          "tableTo": "work_streams",
+          "columnsFrom": [
+            "stream_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "machine_capacity_claims_work_stream_id_work_streams_id_fk": {
+          "name": "machine_capacity_claims_work_stream_id_work_streams_id_fk",
+          "tableFrom": "machine_capacity_claims",
+          "tableTo": "work_streams",
+          "columnsFrom": [
+            "work_stream_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "machine_capacity_claims_execution_id_executions_id_fk": {
+          "name": "machine_capacity_claims_execution_id_executions_id_fk",
+          "tableFrom": "machine_capacity_claims",
+          "tableTo": "executions",
+          "columnsFrom": [
+            "execution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "machine_capacity_claims_provision_attempt_id_vm_box_provision_attempts_id_fk": {
+          "name": "machine_capacity_claims_provision_attempt_id_vm_box_provision_attempts_id_fk",
+          "tableFrom": "machine_capacity_claims",
+          "tableTo": "vm_box_provision_attempts",
+          "columnsFrom": [
+            "provision_attempt_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "machine_capacity_claims_owner_key_machine_id_sandbox_id_pk": {
+          "name": "machine_capacity_claims_owner_key_machine_id_sandbox_id_pk",
+          "columns": [
+            "owner_key",
+            "machine_id",
+            "sandbox_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "machine_capacity_claims_owner_check": {
+          "name": "machine_capacity_claims_owner_check",
+          "value": "\n      (\"machine_capacity_claims\".\"kind\" = 'stream' AND \"machine_capacity_claims\".\"stream_id\" IS NOT NULL AND \"machine_capacity_claims\".\"execution_id\" IS NULL AND \"machine_capacity_claims\".\"provision_attempt_id\" IS NULL)\n      OR (\"machine_capacity_claims\".\"kind\" = 'execution' AND \"machine_capacity_claims\".\"stream_id\" IS NULL AND \"machine_capacity_claims\".\"execution_id\" IS NOT NULL AND \"machine_capacity_claims\".\"provision_attempt_id\" IS NULL)\n      OR (\"machine_capacity_claims\".\"kind\" = 'provision' AND \"machine_capacity_claims\".\"stream_id\" IS NULL AND \"machine_capacity_claims\".\"provision_attempt_id\" IS NOT NULL AND \"machine_capacity_claims\".\"execution_id\" IS NULL)\n    "
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.machine_evacuation_boxes": {
       "name": "machine_evacuation_boxes",
       "schema": "",
@@ -15118,368 +15282,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.recovery_attempts": {
-      "name": "recovery_attempts",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "recovery_id": {
-          "name": "recovery_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "execution_id": {
-          "name": "execution_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "invocation_id": {
-          "name": "invocation_id",
-          "type": "varchar(256)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "error": {
-          "name": "error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "restart_id": {
-          "name": "restart_id",
-          "type": "varchar(128)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "recovery_attempts_recovery_id_recovery_episodes_id_fk": {
-          "name": "recovery_attempts_recovery_id_recovery_episodes_id_fk",
-          "tableFrom": "recovery_attempts",
-          "tableTo": "recovery_episodes",
-          "columnsFrom": [
-            "recovery_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "recovery_attempt_once": {
-          "name": "recovery_attempt_once",
-          "nullsNotDistinct": false,
-          "columns": [
-            "recovery_id",
-            "invocation_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.recovery_decisions": {
-      "name": "recovery_decisions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "recovery_id": {
-          "name": "recovery_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version": {
-          "name": "version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "action": {
-          "name": "action",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "recovery_decisions_recovery_id_recovery_episodes_id_fk": {
-          "name": "recovery_decisions_recovery_id_recovery_episodes_id_fk",
-          "tableFrom": "recovery_decisions",
-          "tableTo": "recovery_episodes",
-          "columnsFrom": [
-            "recovery_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "recovery_decisions_agent_id_agents_id_fk": {
-          "name": "recovery_decisions_agent_id_agents_id_fk",
-          "tableFrom": "recovery_decisions",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "recovery_decisions_user_id_users_id_fk": {
-          "name": "recovery_decisions_user_id_users_id_fk",
-          "tableFrom": "recovery_decisions",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "recovery_decision_once": {
-          "name": "recovery_decision_once",
-          "nullsNotDistinct": false,
-          "columns": [
-            "recovery_id",
-            "version"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.recovery_episodes": {
-      "name": "recovery_episodes",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "execution_id": {
-          "name": "execution_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "work_stream_id": {
-          "name": "work_stream_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "flow_attempt_id": {
-          "name": "flow_attempt_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "operation_key": {
-          "name": "operation_key",
-          "type": "varchar(128)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version": {
-          "name": "version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "wait_id": {
-          "name": "wait_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_recovery_active_operation": {
-          "name": "idx_recovery_active_operation",
-          "columns": [
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "operation_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"recovery_episodes\".\"state\"->>'state' <> 'resolved'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_recovery_stream": {
-          "name": "idx_recovery_stream",
-          "columns": [
-            {
-              "expression": "work_stream_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "recovery_episodes_agent_id_agents_id_fk": {
-          "name": "recovery_episodes_agent_id_agents_id_fk",
-          "tableFrom": "recovery_episodes",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "recovery_episodes_work_stream_id_work_streams_id_fk": {
-          "name": "recovery_episodes_work_stream_id_work_streams_id_fk",
-          "tableFrom": "recovery_episodes",
-          "tableTo": "work_streams",
-          "columnsFrom": [
-            "work_stream_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "recovery_episodes_wait_id_work_stream_waits_id_fk": {
-          "name": "recovery_episodes_wait_id_work_stream_waits_id_fk",
-          "tableFrom": "recovery_episodes",
-          "tableTo": "work_stream_waits",
-          "columnsFrom": [
-            "wait_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "recovery_version_nonnegative": {
-          "name": "recovery_version_nonnegative",
-          "value": "\"recovery_episodes\".\"version\" >= 0"
-        },
-        "recovery_budget_valid": {
-          "name": "recovery_budget_valid",
-          "value": "(\"recovery_episodes\".\"state\"->>'managerCycles')::integer BETWEEN 0 AND 1 AND (\"recovery_episodes\".\"state\"->>'cycleFailures')::integer BETWEEN 0 AND 3"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.remote_host_grants": {
@@ -22469,12 +22271,6 @@
         "message": {
           "name": "message",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "structured": {
-          "name": "structured",
-          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

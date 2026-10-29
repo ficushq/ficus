@@ -1395,7 +1395,14 @@ describe('VmSandboxManager', () => {
 
     // Machine resolved exactly once for the whole ensure.
     expect(h.resolveMachineCalls).toEqual([
-      { sandboxId: 'squad_s1', role: 'squad', squadId: 's1', explicitMachineId: null, dedicated: false },
+      {
+        sandboxId: 'squad_s1',
+        role: 'squad',
+        squadId: 's1',
+        explicitMachineId: null,
+        dedicated: false,
+        allowReadyReconnect: true,
+      },
     ])
     // ensureBox received the resolved machine's id (no undefined pin, no re-placement).
     expect(h.ensureCalls).toHaveLength(1)
@@ -1430,7 +1437,14 @@ describe('VmSandboxManager', () => {
     await mgr.ensureSandbox('squad_s1', pinned)
 
     expect(h.resolveMachineCalls).toEqual([
-      { sandboxId: 'squad_s1', role: 'squad', squadId: 's1', explicitMachineId: 'm-pinned', dedicated: false },
+      {
+        sandboxId: 'squad_s1',
+        role: 'squad',
+        squadId: 's1',
+        explicitMachineId: 'm-pinned',
+        dedicated: false,
+        allowReadyReconnect: true,
+      },
     ])
     expect(h.ensureCalls[0].machineId).toBe('m-pinned')
   })
@@ -1504,7 +1518,14 @@ describe('VmSandboxManager', () => {
     await mgr.ensureSandbox('agent_a1', squadAgentOpts)
 
     expect(h.resolveMachineCalls).toEqual([
-      { sandboxId: 'agent_a1', role: 'agent', squadId: 's1', explicitMachineId: null, dedicated: false },
+      {
+        sandboxId: 'agent_a1',
+        role: 'agent',
+        squadId: 's1',
+        explicitMachineId: null,
+        dedicated: false,
+        allowReadyReconnect: true,
+      },
     ])
   })
 

@@ -24,6 +24,8 @@ test('recovery migration extends the actual canonical parent without changing ex
   const child = await image(entry.idx)
   expect(child.prevId).toBe(parent.id)
   expect(child.id).not.toBe(parent.id)
+  expect(child.tables['public.recovery_episodes']!.columns.execution_id).toMatchObject({ notNull: false })
+  expect(child.tables['public.recovery_attempts']!.columns.execution_id).toMatchObject({ notNull: false })
   expect(Object.keys(child.tables).sort()).toEqual(
     [
       ...Object.keys(parent.tables),
@@ -59,8 +61,11 @@ test('generated recovery SQL enforces accounting fences and survives execution-l
       await tx.execute(sql`INSERT INTO agents VALUES (${agent})`)
       await tx.execute(sql`INSERT INTO executions VALUES (${execution})`)
       await tx.execute(sql`INSERT INTO work_stream_waits (id, message) VALUES (${wait}, 'Existing input')`)
-      for (const statement of migration.sql)
+      for (const statement of migration.sql) {
+        if (statement.includes('FOREIGN KEY'))
+          expect((await tx.execute(sql`SHOW lock_timeout`))[0]?.lock_timeout).toBe('5s')
         await tx.execute(sql.raw(statement.replaceAll('"public".', `"${namespace}".`)))
+      }
       expect([...(await tx.execute(sql`SELECT message, actor, structured FROM work_stream_waits`))]).toEqual([
         { message: 'Existing input', actor: 'human', structured: null },
       ])
@@ -97,6 +102,16 @@ test('generated recovery SQL enforces accounting fences and survives execution-l
         sql`INSERT INTO recovery_episodes (agent_id, execution_id, operation_key, state) VALUES (${agent}, ${execution}, 'same-operation', ${state}::jsonb)`
       )
       expect((await tx.execute(sql`SELECT count(*)::int AS count FROM recovery_episodes`))[0]?.count).toBe(2)
+      const [delivery] = await tx.execute<{ id: string }>(
+        sql`INSERT INTO recovery_episodes (agent_id, operation_key, state) VALUES (${agent}, 'delivery-without-execution', ${state}::jsonb) RETURNING id`
+      )
+      await tx.execute(
+        sql`INSERT INTO recovery_attempts (recovery_id, invocation_id, outcome) VALUES (${delivery!.id}, 'native-delivery-1', 'unknown')`
+      )
+      expect(
+        (await tx.execute(sql`SELECT execution_id FROM recovery_attempts WHERE recovery_id = ${delivery!.id}`))[0]
+          ?.execution_id
+      ).toBeNull()
       throw rollback
     })
   } catch (error) {

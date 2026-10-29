@@ -1,3 +1,4 @@
+import { claimHostCapacity } from '../machines/host-capacity-store'
 import { afterAll, afterEach, beforeEach, describe, expect, setDefaultTimeout, spyOn, test, beforeAll } from 'bun:test'
 import { acquireMaintenanceTestIsolation } from '../../test-utils/maintenance-test-isolation'
 
@@ -15,6 +16,7 @@ import {
   executionAdmissionReservations,
   instanceMaintenanceState,
   machineBoxes,
+  machines,
   messages,
   squads,
   workStreams,
@@ -691,6 +693,50 @@ describeSubprocess('attemptPickup result matrix', () => {
       }
     })
   }
+
+  test('host quota refusal leaves the real pickup queued and starts no runner', async () => {
+    const runtime = process.env.FICUS_SANDBOX_RUNTIME
+    try {
+      const candidate = await createSquadAgent('zai:glm-5.2')
+      const blocker = await createSquadAgent('zai:glm-5.2')
+      const [machine] = await db
+        .insert(machines)
+        .values({
+          name: `quota-${randomUUID()}`,
+          provider: 'ssh',
+          sshHost: '127.0.0.1',
+          sshUser: 'test',
+          sshKeyId: 'unused',
+          sshPublicKey: 'unused',
+          status: 'ready',
+          capabilities: { cpus: 8 },
+        })
+        .returning()
+      createdMachineIds.push(machine.id)
+      await db.update(agents).set({ machineId: machine.id }).where(eq(agents.id, candidate.id))
+      await db.update(squads).set({ machineId: machine.id }).where(eq(squads.id, candidate.squadId!))
+      const [running] = await db.insert(executions).values({ agentId: blocker.id, status: 'running' }).returning()
+      createdExecutionIds.push(running.id)
+      await db.transaction((tx) =>
+        claimHostCapacity(
+          tx,
+          { kind: 'execution', executionId: running.id },
+          ['agent_busy_a', 'agent_busy_b', 'agent_busy_c'].map((sandboxId) => ({ machineId: machine.id, sandboxId }))
+        )
+      )
+      const execution = await candidate.queueExecution({ message: 'wait for host capacity' })
+      createdExecutionIds.push(execution.id)
+      process.env.FICUS_SANDBOX_RUNTIME = 'vm'
+      expect(await attemptPickup(await Execution.mustFind(execution.id))).toBe('no-capacity')
+      expect((await Execution.mustFind(execution.id)).status).toBe('queued')
+      await expectCanonicalQueuedAdmission(execution.id, candidate.id)
+      expect(createdSessions).toHaveLength(0)
+      expect(concurrencyLimiter.hasSlot(execution.id)).toBe(false)
+    } finally {
+      if (runtime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = runtime
+    }
+  })
 
   test('an execution whose agent was terminated is settled, not deferred forever', async () => {
     const agent = await createSquadAgent('zai:glm-5.2')

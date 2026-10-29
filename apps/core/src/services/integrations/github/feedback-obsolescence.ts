@@ -10,6 +10,7 @@ import {
   type DbTx,
 } from '../../../db'
 
+import { rawGitHubFactsSourceIdSQL } from './feedback-freshness-binding'
 import {
   GITHUB_FEEDBACK_OBSOLETE,
   GITHUB_FACTUAL_RECOVERY_PENDING,
@@ -22,7 +23,7 @@ type FeedbackClock = {
   currentRevisionId: string | null | AnyPgColumn
   providerVersion: string | null | AnyPgColumn
 }
-type RevisionColumns = Record<'id' | 'objectId' | 'providerVersion' | 'sequence', AnyPgColumn>
+type RevisionColumns = Record<'id' | 'objectId' | 'providerVersion' | 'sequence' | 'reason', AnyPgColumn>
 
 /** Effective clock includes identical-text observations without changing their immutable revision. */
 export function gitHubFeedbackVersionSQL(revision: RevisionColumns, object: FeedbackClock) {
@@ -31,7 +32,10 @@ export function gitHubFeedbackVersionSQL(revision: RevisionColumns, object: Feed
     else ${revision.providerVersion}::timestamptz end`
 }
 
-/** One ordering predicate for capture, final admission and pure inbox reads. */
+/** One ordering predicate for capture, final admission and pure inbox reads.
+ * A native comment deletion is terminal for its (squad, repository, kind, native ID),
+ * regardless of provider clocks or arrival order. GitHub does not restore deleted comment IDs.
+ */
 function knownNewerRevision(store: ReadStore, object: FeedbackClock, older: RevisionColumns = githubFeedbackRevisions) {
   const newer = alias(githubFeedbackRevisions, 'newer_feedback_revision')
   const newerVersion = gitHubFeedbackVersionSQL(newer, object)
@@ -43,6 +47,8 @@ function knownNewerRevision(store: ReadStore, object: FeedbackClock, older: Revi
       and(
         eq(newer.objectId, older.objectId),
         sql`case
+      when ${newer.reason} = 'comment_deleted' and ${older.reason} is distinct from 'comment_deleted' then true
+      when ${older.reason} = 'comment_deleted' and ${newer.reason} is distinct from 'comment_deleted' then false
       when ${newerVersion} is not null and ${olderVersion} is not null and ${newerVersion} <> ${olderVersion}
       then ${newerVersion} > ${olderVersion}
       else ${newer.sequence} > ${older.sequence}
@@ -86,7 +92,8 @@ export async function isCurrentGitHubFeedbackRevision(store: ReadStore, revision
  * Runs under the trust-authority lock and object row lock, serializing with final agent acceptance,
  * moderation, screening and release settlement. Provider I/O must already have finished.
  *
- * Provider clocks win when both are present and differ; equal/missing clocks use capture sequence.
+ * Deletion tombstones dominate content. Otherwise provider clocks win when both are present and
+ * differ; equal/missing clocks use capture sequence.
  * An out-of-order capture is therefore immediately obsolete even behind an already delivered row.
  * Keep the original decision, hold reason and immutable snapshot as audit evidence. Invalidate the
  * decision version and release lease so a displayed selection or in-flight worker cannot revive it.
@@ -177,6 +184,11 @@ export async function obsoleteOlderGitHubFeedback(
     .update(integrationOutputEvents)
     .set({
       lastErrorCode: sql`case when ${inArray(integrationOutputEvents.id, deferred)} then ${GITHUB_FACTUAL_RECOVERY_PENDING} else ${GITHUB_FEEDBACK_OBSOLETE} end`,
+      // Factual aliases bind only their own action revision, not the discarded parent.
+      // Once that action is obsolete they can never route; retire unmatched aliases now
+      // instead of reserving their event and source bodies on every reconciliation pass.
+      matchedAt: sql`case when ${rawGitHubFactsSourceIdSQL(integrationOutputEvents.sourceKey)} is not null
+        then coalesce(${integrationOutputEvents.matchedAt}, now()) else ${integrationOutputEvents.matchedAt} end`,
     })
     .where(inArray(integrationOutputEvents.id, raw))
   await tx

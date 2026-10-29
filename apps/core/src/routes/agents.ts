@@ -1,3 +1,4 @@
+import { readSandboxHostCapacity } from '../services/machines/host-admission'
 import { getExposureCleanupStatusForDisplay } from '../services/sandbox/exposure-cleanup'
 import { getPostgresError, publicErrorMessage } from '../db/errors'
 import { sentAssistantRouting } from '../services/routing/assistant-routing-preview'
@@ -1155,6 +1156,7 @@ export const agentsRouter = new Hono()
       mergeSandboxStatus(
         {
           ...status,
+          ...(isVmRuntime() ? { hostCapacity: await readSandboxHostCapacity(sandboxId) } : {}),
           // The overload detector's reading when status did not probe the box itself.
           ...(isVmRuntime() && !('pressure' in status && status.pressure)
             ? await openSandboxOverloadPressure(sandboxId).then((pressure) => (pressure ? { pressure } : {}))

@@ -1,3 +1,5 @@
+import { acquireAgentQueueLock } from '../execution/agent-admission'
+import { listActiveSlotWaits } from '../slots/active-waits'
 import { z } from 'zod'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { activeWorkflowAttempts } from '@ficus/shared'
@@ -165,7 +167,7 @@ export async function flowInboxTargets(store: DbHandle, messageIds: string[]) {
   messageIds = messageIds.filter((id) => z.uuid().safeParse(id).success)
   if (!messageIds.length) return []
   const rows = await store.select({ metadata: inbox.metadata }).from(inbox).where(inArray(inbox.id, messageIds))
-  const targets: Array<{ workStreamId: string; attemptId: number; assignment: boolean }> = []
+  const targets: Array<{ workStreamId: string; attemptId: number; assignment: boolean; readmission?: boolean }> = []
   for (const row of rows) {
     const metadata = row.metadata as {
       source?: string
@@ -173,6 +175,7 @@ export async function flowInboxTargets(store: DbHandle, messageIds: string[]) {
       attemptId?: number
       questionId?: string
       recoveryId?: string
+      workStreamReadmission?: boolean
     } | null
     if (
       (metadata?.source === 'workflow' || metadata?.source === 'workflow-wait-resolution') &&
@@ -183,6 +186,7 @@ export async function flowInboxTargets(store: DbHandle, messageIds: string[]) {
         workStreamId: metadata.workStreamId,
         attemptId: metadata.attemptId,
         assignment: metadata.source === 'workflow' || Boolean(metadata.recoveryId),
+        ...(metadata.workStreamReadmission ? { readmission: true } : {}),
       })
     if (metadata?.source === 'agent-question-answer' && metadata.questionId) {
       const [origin] = await store
@@ -307,6 +311,21 @@ export async function lockFlowInboxDelivery(store: DbTx, agentId: string, messag
       throw new FlowWaitSupersededError()
     if (target.assignment && (await waitsForAttempt(store, target.workStreamId, target.attemptId)).length)
       throw new Error('The flow attempt is waiting for input')
+    if (target.readmission) {
+      const [stream] = await store.select().from(workStreams).where(eq(workStreams.id, target.workStreamId))
+      const [run] = await store
+        .select()
+        .from(workStreamFlowRuns)
+        .where(eq(workStreamFlowRuns.workStreamId, target.workStreamId))
+      if (stream?.status !== 'active' || stream.pause || run?.state.status !== 'running')
+        throw new FlowWaitSupersededError()
+    }
+  }
+  if (targets.some((target) => target.readmission)) {
+    // Same lock as slot claim/subscribe, after stream locks and before acceptance.
+    // Selection alone cannot fence a slot queued while delivery was in flight.
+    await acquireAgentQueueLock(store, agentId)
+    if ((await listActiveSlotWaits(store, [agentId])).length) throw new Error('The flow attempt is waiting for a slot')
   }
 }
 

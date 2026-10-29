@@ -180,6 +180,12 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Verify CLI stdout completion through real pipes
+        # CLI-local bunfig avoids Core's DB preload; Python supplies an OS pipe
+        # rather than Bun.spawn's stdio capture, which masked the regression.
+        working-directory: apps/cli
+        run: bun ../../scripts/test-runner.ts src/stdout-completion.test.ts
+
       - name: Prove cross-user Node shim immunity
         run: sudo env "PATH=$PATH" bash scripts/setup/bun-node-cross-user.test.sh
 
@@ -465,7 +471,7 @@ jobs:
         working-directory: .github
 
       - name: Validate test lane aggregation
-        run: bun test ./lane-gate.test.ts ./test-runner.test.ts ./test-completion-gate.test.ts ./core-test-plan.test.ts ./ci-notification-state.test.ts ./test-schema-cache.test.ts
+        run: bun test ./lane-gate.test.ts ./test-runner.test.ts ./test-completion-gate.test.ts ./core-test-plan.test.ts ./ci-notification-state.test.ts ./test-schema-cache.test.ts ./lazy-test-db.test.ts ./test-db-import-graph.test.ts
         working-directory: .github
 
       - name: Validate typecheck diagnostics evidence gate

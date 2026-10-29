@@ -38,6 +38,8 @@
  * + lock cache, so no slow re-realization happens.
  */
 
+import { coalesceVmProvision } from '../sandbox/vm/provision-flight'
+import { reservePhysicalHostCapacity } from './host-admission'
 import { createLogger } from '../../lib/infra/logger'
 import { SandboxClient } from '../sandbox/client/http-client'
 import { ensureBox as ensureBoxReal, removeBox as removeBoxReal } from './box-manager'
@@ -83,24 +85,33 @@ async function realizeDevboxViaThrowawayBox(machine: Machine, role: SeedBoxRole)
   // Stable per-(machine, role) synthetic id so a repeat pre-warm re-uses the same
   // throwaway box's `.seeded` marker (a fast marker-skip) rather than churning ids.
   const sandboxId = `devbox-prewarm-${role}-${machine.id}`
-  try {
-    // Pin to THIS machine; empty caller env (box-manager bakes the fail-closed
-    // EXECUTOR_* runtime vars + the auth token on top). Not tied to any squad.
-    const { endpoint, box } = await ensureBoxReal({ sandboxId, machineId: machine.id, env: {}, role })
-    const client = new SandboxClient(stripScheme(endpoint), box.authToken ?? undefined)
-    try {
-      await seedBoxDevboxReal(client, sandboxId, role)
-      await publishPrewarmedNixCache(machine, sandboxId)
-    } finally {
-      client.close()
-    }
-  } finally {
-    // Always reclaim the throwaway box (row + machine-side box user/unit). The
-    // warmed /nix store + cached lock persist independently of the box.
-    await removeBoxReal(sandboxId, { archivePrivate: false }).catch((err) => {
-      log.warn(`Failed to remove throwaway pre-warm box ${sandboxId} (non-fatal):`, err)
-    })
-  }
+  await coalesceVmProvision(
+    sandboxId,
+    async () => {
+      // Prewarm is optional work, not an admission bypass. Refusal happens before
+      // any box mutation (including cleanup) and never fails machine bootstrap.
+      await reservePhysicalHostCapacity(machine.id, sandboxId)
+      try {
+        // Pin to THIS machine; empty caller env (box-manager bakes the fail-closed
+        // EXECUTOR_* runtime vars + the auth token on top). Not tied to any squad.
+        const { endpoint, box } = await ensureBoxReal({ sandboxId, machineId: machine.id, env: {}, role })
+        const client = new SandboxClient(stripScheme(endpoint), box.authToken ?? undefined)
+        try {
+          await seedBoxDevboxReal(client, sandboxId, role)
+          await publishPrewarmedNixCache(machine, sandboxId)
+        } finally {
+          client.close()
+        }
+      } finally {
+        // Always reclaim the throwaway box (row + machine-side box user/unit). The
+        // warmed /nix store + cached lock persist independently of the box.
+        await removeBoxReal(sandboxId, { archivePrivate: false }).catch((err) => {
+          log.warn(`Failed to remove throwaway pre-warm box ${sandboxId} (non-fatal):`, err)
+        })
+      }
+    },
+    async () => {}
+  )
 }
 
 /**

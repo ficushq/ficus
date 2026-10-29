@@ -47,6 +47,24 @@ export async function verifyGitHubOutputResource(source: {
     // An assigned repository lookup can authorize a quarantine, never enrich/guess missing IDs
     // or confer native-resource authority on an unknown object.
     if (!repositoryId) return result()
+    if (content?.reason === 'comment_deleted') {
+      // There is no current comment to fetch after deletion. A verified native webhook binds
+      // the terminal identity; the assigned repository lookup above prevents repo-ID poisoning.
+      const parent = record(source.fact.data.pullRequest ?? source.fact.data.issue)
+      const inline = content.objectKind === 'review_comment'
+      const isPR = !!source.fact.data.pullRequest
+      const expected = `https://github.com/${repository.toLowerCase()}/${isPR ? 'pull' : 'issues'}/${parent.number}#${inline ? 'discussion_r' : 'issuecomment-'}${content.nativeId}`
+      return result(
+        source.fact.github?.observation?.kind === 'webhook' &&
+          ['issue_comment', 'review_comment'].includes(content.objectKind) &&
+          !!content.nativeId &&
+          /^[1-9][0-9]*$/.test(content.nativeId) &&
+          number(parent.number) &&
+          (!inline || isPR) &&
+          source.fact.url === expected &&
+          content.delivery === null
+      )
+    }
     const root = `/repos/${repository.toLowerCase()}`
     if (source.fact.output === 'dependabot_alert.updated') {
       // Keep security authority independent of bot trust, and never infer webhook provenance from sender.

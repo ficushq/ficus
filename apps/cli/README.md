@@ -33,6 +33,18 @@ bun run build:cli
 ./apps/cli/dist/ficus.js --help
 ```
 
+## Stdout completion regression tests
+
+From `apps/cli`, with the repository-pinned Bun and Python 3:
+
+```bash
+bun ../../scripts/test-runner.ts src/stdout-completion.test.ts
+```
+
+These offline tests exercise the actual CLI against synthetic HTTP responses,
+comparing real pipe, slow-reader and regular-file output. See the
+[diagnostic matrix and runtime limitations](stdout-completion.md).
+
 ## Integration credentials
 
 Assigned, healthy integrations authenticate globally provisioned CLIs through

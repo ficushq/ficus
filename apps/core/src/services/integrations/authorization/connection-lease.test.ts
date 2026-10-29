@@ -1,3 +1,4 @@
+import '../../../test-utils/require-test-db'
 import { describe, expect, test } from 'bun:test'
 import { createPostgresConnection, getConnectionString } from '../../../db/connection'
 import { ConnectionAuthorizationLease, ConnectionLeaseUnavailableError } from './connection-lease'
