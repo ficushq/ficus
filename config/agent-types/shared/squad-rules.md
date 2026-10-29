@@ -135,7 +135,7 @@ Pick the wait by who must act:
 not `-m` prose. For example:
 
 ```bash
-ficus workstream request-input <id> --content '{"schemaVersion":1,"kind":"provide","purpose":"task-input","actor":"owner","input":{"type":"config-value","name":"target branch"},"use":"Choose the implementation base"}'
+ficus workstream request-input <id> --content '{"schemaVersion":1,"kind":"provide","purpose":"task-input","actor":"owner","input":{"type":"config-value","key":"git.baseBranch","declaredIn":"ficus:work-stream"},"use":"Choose the implementation base"}'
 ```
 
 The same validator rejects technical-evidence and human-run-command requests
@@ -258,7 +258,7 @@ metadata, **do not implement on `main`** — request input on the work stream so
 the manager can configure it before you continue:
 
 ```
-ficus workstream request-input <workstream-id> --content '{"schemaVersion":1,"kind":"provide","purpose":"task-input","actor":"owner","input":{"type":"config-value","name":"git.worktree and git.branch"},"use":"Configure the dedicated worktree before implementation"}'
+ficus workstream request-input <workstream-id> --content '{"schemaVersion":1,"kind":"provide","purpose":"task-input","actor":"owner","input":{"type":"config-value","key":"git.worktree","declaredIn":"ficus:work-stream"},"use":"Configure the dedicated worktree and matching branch before implementation"}'
 ```
 
 **Intentional no-worktree case:** In rare cases the manager may indicate (in

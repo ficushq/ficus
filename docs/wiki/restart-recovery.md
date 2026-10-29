@@ -59,8 +59,9 @@ gates remain binding.
 Focused tests cover exact tool text, RPC ordering, persisted registry cause,
 cleanup retries, durable pause/resume correlation and idempotence, stale-context
 rejection, notice-before-admission-failure ordering, first model-prompt context,
-and a real subprocess interrupted after partial output then safely retried with
-no wait created. The model-provider boundary uses a deterministic session fixture;
+and the real SDK Bash tool through its recovery wrapper, streaming HTTP executor
+process and on-disk invocation registry. Restart drain interrupts partial output;
+a subsequent explicit safe retry proves zero unexplained failures and no wait. The model-provider boundary uses a deterministic session fixture;
 these tests do not claim to prove arbitrary model obedience.
 
 ## Structured recovery decisions
@@ -79,21 +80,30 @@ can grant one extra cycle or forward to the requesting owner. Exhausting that ex
 cycle automatically forwards the same server-generated action/count/error summary,
 without diagnostic prose. Continue commits an audited cycle and a durable scoped
 wake intent together; normal admission delivers it once, retaining other gates.
-Stop keeps the scope held and removes repeated human requests. Missing eligible managers and a manager’s own recovery route directly to an eligible owner. A shared resolver prefers the requesting user/agent owner, then authorized squad operators/admins. If nobody is eligible, it persists an idempotent system diagnostic and keeps the hold without granting authority.
+Stop keeps the scope held and removes repeated human requests. Missing eligible managers and a manager’s own recovery route directly to an eligible owner. A shared resolver prefers the requesting user/agent owner, then authorized squad operators/admins. If nobody is eligible, it persists an idempotent system diagnostic and keeps the hold without granting authority. Detail/list views project the same current audience as Action Center if manager availability changes; this does not rewrite the wait audit or grant a cycle.
 Standalone tasks use the same policy and typed agent-recovery actions.
 
 New worker manual inputs accept only versioned `continue`, `decide` or `provide` requests. People and managers retain `request-input --message` for ordinary task waits; this does not clear or bypass a structured recovery decision.
 `continue` references an existing exhausted runtime record, not a caller-supplied
-attempt count. `decide` declares task options; `provide` names only a task file,
-config value or product choice. A shared validator rejects forensic evidence and
-human-run commands, including disguised typed requests and human-question paths.
+attempt count. Product choices use `decide`. `provide` requires either
+`input: {"type":"file","path":"assets/logo.svg"}` (workspace-relative; the response
+is also a workspace-relative path), or a `config-value` with an exact `key` and
+`declaredIn`. A workspace JSON declaration must contain that top-level key or JSON
+Schema `properties` entry. The server namespace `ficus:work-stream` declares only
+`git.worktree`, `git.branch` and `git.baseBranch`, so missing worktree setup does
+not itself require a workspace declaration. The server validates file-backed
+declarations with bounded, canonical workspace reads before taking wait locks;
+remote executors must support scoped-read proof. This never provisions an executor.
+A narrow shared guard additionally rejects forensic asks and human-run commands,
+including disguised typed requests and human-question paths, while preserving
+product logging/registry questions and agent-proposed actions.
 Credentials continue through protected credential/integration surfaces, never
 plaintext task responses. Old waits retain their legacy response/history behavior.
 
 For example, a legitimate owner-agent task input is:
 
 ```sh
-ficus workstream request-input STREAM --content '{"schemaVersion":1,"kind":"provide","purpose":"task-input","actor":"owner","input":{"type":"config-value","name":"target branch"},"use":"choose the implementation base"}'
+ficus workstream request-input STREAM --content '{"schemaVersion":1,"kind":"provide","purpose":"task-input","actor":"owner","input":{"type":"config-value","key":"git.baseBranch","declaredIn":"ficus:work-stream"},"use":"choose the implementation base"}'
 ```
 
 Resolve it with its current version and matching response kind:

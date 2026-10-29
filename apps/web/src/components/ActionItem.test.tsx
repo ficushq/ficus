@@ -1459,8 +1459,9 @@ for (const decision of ['continue', 'stop'] as const) {
   })
 }
 
-for (const kind of ['decide', 'provide'] as const) {
-  test(`typed ${kind} renders the declared task input and submits its version`, async () => {
+for (const variant of ['decide', 'provide', 'file'] as const) {
+  const kind = variant === 'decide' ? 'decide' : 'provide'
+  test(`typed ${variant} renders the declared task input and submits its version`, async () => {
     const dom = await acquireDomHarness({ url: 'http://localhost/' })
     const rendered = dom.createRoot()
     const originalFetch = globalThis.fetch
@@ -1495,7 +1496,10 @@ for (const kind of ['decide', 'provide'] as const) {
               schemaVersion: 1,
               kind,
               purpose: 'task-input',
-              input: { type: 'config-value', name: 'release channel' },
+              input:
+                variant === 'file'
+                  ? { type: 'file', path: 'assets/logo.svg' }
+                  : { type: 'config-value', key: 'git.baseBranch', declaredIn: 'ficus:work-stream' },
               use: 'choose the target',
             },
     }
@@ -1511,7 +1515,11 @@ for (const kind of ['decide', 'provide'] as const) {
       )
       expect(dom.window.document.body.textContent).not.toContain('LEGACY_NOT_RENDERED')
       if (kind === 'provide') {
-        expect(dom.window.document.querySelector('label')?.textContent).toContain('release channel')
+        expect(dom.window.document.querySelector('label')?.textContent).toContain(
+          variant === 'file' ? 'assets/logo.svg' : 'git.baseBranch'
+        )
+        if (variant === 'provide')
+          expect(dom.window.document.body.textContent).toContain('Declared in ficus:work-stream')
         const input = dom.window.document.querySelector('textarea')!
         await dom.act(async () => {
           Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, 'value')!.set!.call(input, 'beta')

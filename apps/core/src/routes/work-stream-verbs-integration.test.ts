@@ -167,7 +167,7 @@ describe('work-stream verbs end-to-end integration probes', () => {
       schemaVersion: 1,
       kind: 'provide',
       purpose: 'task-input',
-      input: { type: 'config-value', name: 'release targets' },
+      input: { type: 'file', path: 'inputs/release-targets.json' },
       use: 'choose the release destinations',
     })
     expect(inputRes.status).toBe(200)
@@ -178,9 +178,9 @@ describe('work-stream verbs end-to-end integration probes', () => {
     const blocked = await (await apiFetch(`/api/workstreams/${created.id}`)).json()
     expect((blocked.openWaits ?? []).map((w: { type: string }) => w.type)).toContain('manual')
 
-    // Legitimate multiline task values, not credentials or forensic output.
-    const value = 'staging\npreview'
-    const note = `release targets: ${value}`
+    // A named task-file reference, not a host path or diagnostic blob.
+    const value = 'inputs/approved-release-targets.json'
+    const note = `inputs/release-targets.json: ${value}`
     const resolveRes = await postJson(`/api/workstreams/${created.id}/waits/${wait.id}/input`, {
       action: 'provide',
       expectedVersion: 0,

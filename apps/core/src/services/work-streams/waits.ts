@@ -140,6 +140,15 @@ export async function openWait(
         const { assertNoPendingRecovery } = await import('../recovery/store')
         await assertNoPendingRecovery(dbx, input.createdByAgentId, input.workStreamId)
       }
+      if (request.kind === 'provide' && request.input.type === 'config-value') {
+        const [stream] = await dbx
+          .select({ squadId: workStreams.squadId })
+          .from(workStreams)
+          .where(eq(workStreams.id, input.workStreamId))
+        if (!stream) throw new Error('Work stream not found')
+        const { consumeConfigDeclarationProof } = await import('../recovery/task-declarations')
+        consumeConfigDeclarationProof(structured.request, input.workStreamId, stream.squadId)
+      }
       structured = { request, summary: taskInputSummary(request), version: 0 }
       actor = request.actor ?? 'human'
     }

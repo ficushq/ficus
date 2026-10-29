@@ -47,7 +47,9 @@ type ManualInputRequest = {
       kind: 'provide'
       actor?: 'human' | 'owner'
       purpose: 'task-input'
-      input: { type: 'file' | 'config-value' | 'product-choice'; name: string }
+      input:
+        | { type: 'file'; path: string } // canonical workspace-relative task path
+        | { type: 'config-value'; key: string; declaredIn: string }
       use: string
     }
 )
@@ -55,11 +57,25 @@ type ManualInputRequest = {
 
 Subjects, names, labels and consequences are bounded plain-language fields, not
 an arbitrary ask or executable instructions. Decisions require 2–8 unique option
-ids. `provide` names only an exact task file, configuration value or product choice, not “send diagnostics”.
+ids. `provide` references a workspace-relative task file or an exact declared configuration key, not “send diagnostics”. Product choices use `decide`. The review amendment replaces the original generic `name` and `product-choice` provide forms.
 Credentials must use the existing integration/secret-input surfaces, not raw
 secrets in an answer. Platform/host logs, invocation-registry exports, listener
 identity and other tenant-inaccessible diagnostic targets are rejected; they are
-not valid task inputs. The same validator that rejects untyped waits must reject any wording requesting logs, journal output, registry/host state or a human-run command, including requests disguised as a typed `provide` or `decide`. Tests must cover this binding rule. The question is generated from the kind and its fields.
+not valid task inputs. Structural file/key constraints are primary; a narrow shared wording guard additionally rejects requests for logs, journal output, registry/host state or human-run commands, including reviewed paraphrases in `provide`, question and `decide` fields. Product logging/registry questions and agent-proposed actions remain valid. Tests must cover this binding rule. The question is generated from the kind and its fields.
+
+A configuration `declaredIn` is either a workspace-relative JSON file declaring the
+exact top-level key (or JSON Schema `properties` key), or the server namespace
+`ficus:work-stream`, which currently declares only `git.worktree`, `git.branch`
+and `git.baseBranch`. The latter allows an owner to configure a missing worktree
+without requiring that worktree to exist already. Declarations do not grant
+permission to change settings. Workspace declaration reads are bounded to 64 KiB,
+check canonical containment including symlink escapes, and never provision a box.
+Remote executors must return scoped-read proof; older executors fail closed for
+file-backed declarations rather than silently ignoring containment. The common
+wait writer consumes a one-use scope/content-bound proof after validation outside
+its transaction. Declarations are not persisted. File responses also require a
+workspace-relative path. Credentials still use protected integration surfaces.
+
 
 `decide` and `provide` are for genuine task inputs, not alternative spellings for
 an unresolved recovery problem. A recovery-linked request must use its persisted

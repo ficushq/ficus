@@ -24,7 +24,7 @@ describe('request-input actor validation', () => {
       schemaVersion: 1 as const,
       kind: 'provide' as const,
       purpose: 'task-input' as const,
-      input: { type: 'config-value' as const, name: 'Release channel' },
+      input: { type: 'file' as const, path: 'Release channel' },
       use: 'Select a target',
     }
     for (const actor of ['human', 'owner'] as const) {

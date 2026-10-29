@@ -5,7 +5,7 @@ const provide = {
   schemaVersion: 1,
   kind: 'provide',
   purpose: 'task-input',
-  input: { type: 'config-value', name: 'release channel' },
+  input: { type: 'config-value', key: 'RELEASE_CHANNEL', declaredIn: 'config/task-inputs.schema.json' },
   use: 'Select the deployment target',
 }
 
@@ -37,7 +37,9 @@ describe('structured input requests', () => {
     'execute this command',
     'please run npm test',
   ])('rejects a typed provide disguised as %s', (name) => {
-    expect(requestInputWorkStreamSchema.safeParse({ ...provide, input: { type: 'file', name } }).success).toBe(false)
+    expect(requestInputWorkStreamSchema.safeParse({ ...provide, input: { type: 'file', path: name } }).success).toBe(
+      false
+    )
   })
   test('rejects forbidden asks in use, decision subject, option labels and consequences too', () => {
     expect(requestInputWorkStreamSchema.safeParse({ ...provide, use: 'Please supply logs' }).success).toBe(false)
@@ -66,7 +68,7 @@ describe('structured input requests', () => {
       requestInputWorkStreamSchema.safeParse({
         ...decide,
         options: [
-          { id: 'a', label: 'Continue', consequence: 'Run journalctl' },
+          { id: 'a', label: 'Continue', consequence: 'You run journalctl' },
           { id: 'b', label: 'Stop' },
         ],
       }).success
@@ -93,13 +95,18 @@ describe('structured input requests', () => {
 
 test('credentials remain on protected input surfaces, not named plaintext provide responses', () => {
   for (const name of ['OPENAI_API_KEY', 'access token', 'password', 'private key', 'integration credentials']) {
-    expect(requestInputWorkStreamSchema.safeParse({ ...provide, input: { type: 'config-value', name } }).success).toBe(
-      false
-    )
+    expect(
+      requestInputWorkStreamSchema.safeParse({
+        ...provide,
+        input: { type: 'config-value', key: name, declaredIn: 'config/task-inputs.schema.json' },
+      }).success
+    ).toBe(false)
   }
   expect(
-    requestInputWorkStreamSchema.safeParse({ ...provide, input: { type: 'config-value', name: 'token budget' } })
-      .success
+    requestInputWorkStreamSchema.safeParse({
+      ...provide,
+      input: { type: 'config-value', key: 'TOKEN_BUDGET', declaredIn: 'config/task-inputs.schema.json' },
+    }).success
   ).toBe(true)
 })
 
@@ -108,7 +115,7 @@ test('genuine product/configuration questions are not confused with forensic or 
   expect(
     requestInputWorkStreamSchema.safeParse({
       ...provide,
-      input: { type: 'config-value', name: 'package registry URL' },
+      input: { type: 'config-value', key: 'PACKAGE_REGISTRY_URL', declaredIn: 'config/task-inputs.schema.json' },
     }).success
   ).toBe(true)
   for (const question of [
@@ -139,5 +146,102 @@ test('a product-choice label or generic input name cannot disguise a plaintext c
   expect(
     requestInputWorkStreamSchema.safeParse({ ...provide, input: { type: 'config-value', name: 'pa\u200bssword' } })
       .success
+  ).toBe(false)
+})
+
+test.each([
+  'Please share the logfile from the box',
+  'Share the stderr and dmesg output',
+  'Paste the output of docker ps from the server',
+  'You SSH in and check',
+  'Please upload the syslog files',
+])('rejects the reviewed forensic paraphrase: %s', async (text) => {
+  const { isForbiddenEvidenceRequest } = await import('./recovery-waits')
+  expect(isForbiddenEvidenceRequest(text)).toBe(true)
+})
+
+test.each([
+  'Which container registry should we push to?',
+  'Should the app show an audit log page?',
+  'Run the migration now, or wait for review?',
+  'I will SSH into the authorized project environment and check',
+])('allows genuine product questions and agent-proposed actions: %s', async (text) => {
+  const { isForbiddenEvidenceRequest } = await import('./recovery-waits')
+  expect(isForbiddenEvidenceRequest(text)).toBe(false)
+})
+
+test('provide requires a workspace-relative task path or a key with a declaration; choices use decide', () => {
+  for (const path of [
+    '/var/log/messages',
+    '../host-state.json',
+    'a/../../state',
+    'C:\\logs',
+    'https://host/file',
+    'a//b',
+    'executor stderr dump',
+    '.ficus/state.json',
+  ])
+    expect(requestInputWorkStreamSchema.safeParse({ ...provide, input: { type: 'file', path } }).success).toBe(false)
+  expect(
+    requestInputWorkStreamSchema.safeParse({ ...provide, input: { type: 'file', path: 'assets/logo.svg' } }).success
+  ).toBe(true)
+  expect(
+    requestInputWorkStreamSchema.safeParse({ ...provide, input: { type: 'config-value', key: 'PUBLIC_BASE_URL' } })
+      .success
+  ).toBe(false)
+  expect(
+    requestInputWorkStreamSchema.safeParse({ ...provide, input: { type: 'product-choice', name: 'Layout' } }).success
+  ).toBe(false)
+  expect(
+    requestInputWorkStreamSchema.safeParse({
+      schemaVersion: 1,
+      kind: 'decide',
+      purpose: 'task-decision',
+      subject: 'Choose the migration timing',
+      options: [
+        { id: 'run', label: 'Run the migration' },
+        { id: 'wait', label: 'Wait for review' },
+      ],
+    }).success
+  ).toBe(true)
+  expect(
+    requestInputWorkStreamSchema.safeParse({
+      schemaVersion: 1,
+      kind: 'decide',
+      purpose: 'task-decision',
+      subject: 'Choose a path',
+      options: [
+        { id: 'host', label: 'You SSH in and check' },
+        { id: 'stop', label: 'Stop' },
+      ],
+    }).success
+  ).toBe(false)
+})
+
+test('product logging questions remain legitimate while explicit human execution requests do not', async () => {
+  const { isForbiddenEvidenceRequest } = await import('./recovery-waits')
+  expect(isForbiddenEvidenceRequest('Which logs should the app collect?')).toBe(false)
+  expect(isForbiddenEvidenceRequest('You can run npm test and share the results')).toBe(true)
+})
+
+test('platform configuration uses only the server-declared work-stream keys', () => {
+  for (const key of ['git.worktree', 'git.branch', 'git.baseBranch'])
+    expect(
+      requestInputWorkStreamSchema.safeParse({
+        ...provide,
+        input: { type: 'config-value', key, declaredIn: 'ficus:work-stream' },
+      }).success
+    ).toBe(true)
+  expect(
+    requestInputWorkStreamSchema.safeParse({
+      ...provide,
+      input: { type: 'config-value', key: 'HOST_STATE', declaredIn: 'ficus:work-stream' },
+    }).success
+  ).toBe(false)
+  expect(
+    requestInputWorkStreamSchema.safeParse({
+      ...provide,
+      input: { type: 'config-value', key: 'invented', declaredIn: 'ficus:work-stream' },
+    }).success
   ).toBe(false)
 })

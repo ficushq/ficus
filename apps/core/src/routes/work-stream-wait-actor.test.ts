@@ -60,7 +60,7 @@ const taskInput = (name: string, actor?: unknown) => ({
   schemaVersion: 1,
   kind: 'provide',
   purpose: 'task-input',
-  input: { type: 'config-value', name },
+  input: { type: 'file', path: name },
   use: 'choose the task target',
   ...(actor ? { actor } : {}),
 })

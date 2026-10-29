@@ -263,7 +263,7 @@ test('HTTP rejects malformed structured input and requires matching versioned de
     schemaVersion: 1,
     kind: 'provide',
     purpose: 'task-input',
-    input: { type: 'config-value', name: 'release channel' },
+    input: { type: 'file', path: 'release channel' },
     use: 'Choose the target',
   })
   expect(response.status).toBe(200)
@@ -1105,4 +1105,23 @@ test('model-tool progress cannot settle an unexplained post-startup execution fa
     'recovering'
   )
   await expect(api.assertNoPendingRecovery(db, worker.id, stream.id)).rejects.toThrow('unresolved recovery')
+})
+
+test('work-stream detail projects the same current owner fallback as the decision surface', async () => {
+  const { recordRecoveryFailure } = await store()
+  const { computeDerivedStates } = await import('../work-streams/derived-state')
+  for (const invocationId of ['projection-1', 'projection-2', 'projection-3'])
+    await recordRecoveryFailure(
+      { agentId: worker.id, executionId: execution.id },
+      { operationKey: 'projection', attempted: 'Run the task', invocationId, error: new Error('task failed') }
+    )
+  expect((await computeDerivedStates([stream])).get(stream.id)?.derivedState).toBe('waiting_on_manager')
+  await db.update(agents).set({ status: 'waiting-input' }).where(eq(agents.id, squad.managerAgentId!))
+  const projection = (await computeDerivedStates([stream])).get(stream.id)!
+  expect(projection.openWaits[0]?.actor).toBe('human')
+  expect(projection.derivedState).toBe('blocked')
+  // Presentation changes do not rewrite the historical wait/audit or grant a cycle.
+  expect((await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, stream.id)))[0]?.actor).toBe(
+    'manager'
+  )
 })

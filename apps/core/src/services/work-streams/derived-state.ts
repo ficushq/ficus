@@ -162,6 +162,24 @@ export async function computeDerivedStates(
     ),
   ])
 
+  // The persisted actor records the original route. A manager can become
+  // unavailable later; detail/list views must agree with Action Center and the
+  // decision endpoint, without rewriting history or authorizing another cycle.
+  const recoveryWaits = [...waitsByStream.values()]
+    .flat()
+    .filter((wait) => wait.structured?.request.kind === 'continue' && !wait.structured.stopped)
+  if (recoveryWaits.length) {
+    const { recoveryRecipientsById } = await import('../recovery/recipients')
+    await Promise.all(
+      recoveryWaits.map(async (wait) => {
+        const request = wait.structured!.request
+        if (request.kind !== 'continue') return
+        const audience = await recoveryRecipientsById(request.recoveryId)
+        if (audience) wait.actor = audience.target === 'owner' ? 'human' : 'manager'
+      })
+    )
+  }
+
   const executionCandidates = streams.filter(
     (s) => !s.pause && s.status === 'active' && (waitsByStream.get(s.id)?.length ?? 0) === 0
   )

@@ -204,12 +204,14 @@ export interface BashResponse {
 }
 
 export interface ReadRequest {
+  root?: string
   path: string
   offset?: number
   limit?: number
 }
 
 export interface ReadResponse {
+  verifiedRoot?: string
   content: string // base64
   totalSize: number
   isBinary: boolean

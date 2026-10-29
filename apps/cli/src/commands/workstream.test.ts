@@ -1400,7 +1400,7 @@ describe('workstream CLI commands', () => {
       schemaVersion: 1,
       kind: 'provide',
       purpose: 'task-input',
-      input: { type: 'config-value', name: 'Release channel' },
+      input: { type: 'file', path: 'Release channel' },
       use: 'Choose the target',
     }
 
@@ -1440,7 +1440,7 @@ describe('workstream CLI commands', () => {
         'request-input',
         'ws-1',
         '--content',
-        JSON.stringify({ ...taskInput, input: { type: 'file', name: 'host logs' } }),
+        JSON.stringify({ ...taskInput, input: { type: 'file', path: 'host logs' } }),
       ])
       expect(apiPost).not.toHaveBeenCalled()
       expect(apiPatch).not.toHaveBeenCalled()

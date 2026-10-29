@@ -3,6 +3,8 @@ import {
   manualInputRequestSchema,
   manualWaitDecisionSchema,
   taskInputSummary,
+  taskInputLabel,
+  workspaceTaskPathSchema,
   type ManualInputRequest,
   type ManualWaitDecision,
   type WorkStreamWaitCreatedBy,
@@ -11,6 +13,7 @@ import { db, squads, workStreams, workStreamWaits } from '../../db'
 import { WorkStream } from '../../entities/WorkStream'
 import { decideRecovery, openRecoveryWait, type RecoveryActor } from './store'
 import { notifyFlowWaitResolution } from '../work-streams/wait-scope'
+import { validateConfigDeclaration } from './task-declarations'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 
 export async function requestStructuredInput(
@@ -38,6 +41,7 @@ export async function requestStructuredInput(
     if (!wait) throw new Error('Recovery wait could not be opened')
     return wait
   }
+  if (request.kind === 'provide') await validateConfigDeclaration(request, workStreamId, stream.squadId)
   const summary = taskInputSummary(request)
   return stream.block({
     scope: request.scope,
@@ -90,7 +94,8 @@ export async function resolveStructuredInput(
       if (!option) throw new Error('Select one declared option')
       note = `Selected: ${option.label}`
     } else if (request.kind === 'provide' && decision.action === 'provide') {
-      note = `${request.input.name}: ${decision.value}`
+      const value = request.input.type === 'file' ? workspaceTaskPathSchema.parse(decision.value) : decision.value
+      note = `${taskInputLabel(request.input)}: ${value}`
     } else throw new Error('Decision does not match the input kind')
     const [updated] = await tx
       .update(workStreamWaits)

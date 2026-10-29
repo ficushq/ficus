@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   workStreamWaitActor,
+  taskInputLabel,
   type ManualWaitDecision,
   type WorkStreamWait,
   type StructuredManualWait,
@@ -134,10 +135,18 @@ function StructuredDecisionActions({
             if (!locked && value.trim()) mutation.mutate({ action: 'provide', expectedVersion: version, value })
           }}
         >
-          <label className="block text-sm text-secondary" htmlFor={`input-${id}`}>
-            {request.input.name}
+          <label className="block text-sm text-secondary break-words" htmlFor={`input-${id}`}>
+            {taskInputLabel(request.input)}
           </label>
+          {request.input.type === 'config-value' && (
+            <p className="text-xs text-muted break-words">
+              Declared in <code>{request.input.declaredIn}</code>
+            </p>
+          )}
           <textarea
+            placeholder={
+              request.input.type === 'file' ? 'Workspace-relative file path' : 'Configuration value (not credentials)'
+            }
             id={`input-${id}`}
             className="ficus-input w-full"
             rows={3}

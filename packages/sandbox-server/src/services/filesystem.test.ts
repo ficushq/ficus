@@ -35,6 +35,20 @@ describe('handleRead', () => {
     expect(data.isBinary).toBe(false)
   })
 
+  it('confirms an opt-in workspace read boundary and rejects symlink escapes', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'declaration-outside-'))
+    try {
+      writeFileSync(join(testDir, 'schema.json'), '{"properties":{"PUBLIC_URL":{}}}')
+      const safe = await json(await handleRead({ path: join(testDir, 'schema.json'), root: testDir }))
+      expect(safe.verifiedRoot).toBe(testDir)
+      writeFileSync(join(outside, 'state.json'), '{"HOST_STATE":true}')
+      symlinkSync(join(outside, 'state.json'), join(testDir, 'escape.json'))
+      expect((await handleRead({ path: join(testDir, 'escape.json'), root: testDir })).status).not.toBe(200)
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
   it('should return 404 for missing file', async () => {
     const resp = await handleRead({ path: join(testDir, 'missing.txt') })
     expect(resp.status).toBe(404)
