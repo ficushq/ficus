@@ -1558,6 +1558,12 @@ test('action center human gates use review permission and assigned reviewer filt
       { type: 'user', userId: reviewer.id }
     )
   ).rejects.toThrow('Resolve the waits')
+  await db.update(workStreamWaits).set({ actor: 'manager' }).where(eq(workStreamWaits.id, hold.wait.id))
+  expect(await findAction()).toHaveLength(0)
+  expect(await evaluatePendingAction({ type: 'user', userId: reviewer.id }, action, context)).toEqual({
+    visible: false,
+    canRespond: false,
+  })
   const question = await openWait(db, {
     workStreamId: id,
     type: 'manual',
