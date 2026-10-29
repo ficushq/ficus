@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'crypto'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
+import { tryAcquireDedicatedConnectionSlot } from '../../../db/connection'
 import { db } from '../../../db'
 import { eventEmitter } from '../../../lib/infra/event-emitter'
 import { machineBoxes, machines, vmBoxSetupStates } from '../../../db/schema'
@@ -14,6 +15,7 @@ import {
   projectVmSetupState,
   restoreVmSetupAfterRequiredAssets,
   withVmSetupLease,
+  tryWithVmHostBunAdoption,
 } from './setup-state'
 
 describe('VM setup state policy', () => {
@@ -251,5 +253,79 @@ describe('VM setup invocation generation fencing', () => {
     release()
     await Promise.all([first, second])
     expect(events).toEqual(['first-enter', 'first-exit', 'second-enter'])
+  })
+})
+
+describe('host Bun admission on the existing setup session', () => {
+  test('requires ownership, cannot reenter one host, and needs no second connection permit', async () => {
+    await expect(tryWithVmHostBunAdoption(randomUUID(), async () => 'unsafe')).rejects.toThrow('owned VM setup lease')
+    const host = randomUUID()
+    await withVmSetupLease(`host-permit-${randomUUID()}`, async () => {
+      const occupyOtherSlot = tryAcquireDedicatedConnectionSlot()
+      expect(occupyOtherSlot).toBeDefined()
+      try {
+        expect(
+          await tryWithVmHostBunAdoption(host, async () => {
+            expect(await tryWithVmHostBunAdoption(host, async () => 'must-not-run')).toEqual({ acquired: false })
+            return 'one-session'
+          })
+        ).toEqual({ acquired: true, value: 'one-session' })
+        expect(await tryWithVmHostBunAdoption(host, async () => 'released')).toEqual({
+          acquired: true,
+          value: 'released',
+        })
+      } finally {
+        occupyOtherSlot?.()
+      }
+    })
+  })
+
+  test('lost native session fences a late adoption result and permits the next owner', async () => {
+    const host = randomUUID()
+    const key = `vm-host-bun-adoption:${host}`
+    const entered = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    let owned!: () => void
+    const first = withVmSetupLease(`lost-host-${randomUUID()}`, async (guard) => {
+      if (!guard) throw new Error('Native ownership guard missing')
+      owned = guard
+      return tryWithVmHostBunAdoption(host, async () => {
+        entered.resolve()
+        await release.promise
+        return 'late-ready'
+      })
+    }).catch((error) => error)
+    try {
+      await entered.promise
+      const rows = (await db.execute(sql`select pid from pg_locks where locktype = 'advisory' and granted
+        and database = (select oid from pg_database where datname = current_database()) and objsubid = 1
+        and classid = ((hashtextextended(${key}, 0) >> 32) & 4294967295)::oid
+        and objid = (hashtextextended(${key}, 0) & 4294967295)::oid`)) as unknown as { pid: number }[]
+      expect(rows).toHaveLength(1)
+      await db.execute(sql`select pg_terminate_backend(${rows[0]!.pid})`)
+      let lost = false
+      const deadline = Date.now() + 2000
+      while (Date.now() < deadline) {
+        try {
+          owned()
+        } catch {
+          lost = true
+          break
+        }
+        await Bun.sleep(5)
+      }
+      expect(lost).toBe(true)
+      release.resolve()
+      expect(await first).toBeInstanceOf(Error)
+      expect(String(await first)).toContain('ownership lost')
+      expect(
+        await withVmSetupLease(`next-host-${randomUUID()}`, () =>
+          tryWithVmHostBunAdoption(host, async () => 'next-ready')
+        )
+      ).toEqual({ acquired: true, value: 'next-ready' })
+    } finally {
+      release.resolve()
+      await first
+    }
   })
 })

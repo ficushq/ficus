@@ -316,3 +316,60 @@ test('a new process recovers an abandoned generation without spending any startu
     await replacement.stop()
   }
 }, 20_000)
+
+test('host Bun adoption is excluded across real processes while other hosts and ordinary work progress', async () => {
+  const api = await import('./setup-state')
+  expect(typeof api.tryWithVmHostBunAdoption).toBe('function')
+  const host = crypto.randomUUID()
+  const fixture = 'host-bun-adoption-process.ts'
+  const owner = child('owner', host, false, fixture)
+  const children = [owner]
+  try {
+    await owner.waitFor('acquired')
+    const contending = child('contending', host, false, fixture)
+    children.push(contending)
+    await contending.waitFor('deferred')
+    expect(contending.events.some((event) => event.event === 'acquired')).toBe(false)
+    const other = child('other-host', crypto.randomUUID(), false, fixture)
+    children.push(other)
+    const ordinary = child('ordinary', host, false, fixture)
+    children.push(ordinary)
+    await Promise.all([other.waitFor('acquired'), ordinary.waitFor('acquired')])
+    other.release()
+    ordinary.release()
+    owner.release()
+    await Promise.all(children.map((c) => c.process.exited))
+    expect(await owner.stderr).toBe('')
+  } finally {
+    await Promise.all(children.map((c) => c.stop()))
+  }
+}, 20_000)
+
+for (const outcome of ['success', 'failure', 'defer', 'killed'] as const) {
+  test(`host Bun adoption permit is released after ${outcome}`, async () => {
+    const api = await import('./setup-state')
+    expect(typeof api.tryWithVmHostBunAdoption).toBe('function')
+    const host = crypto.randomUUID()
+    const fixture = 'host-bun-adoption-process.ts'
+    const owner = child(outcome, host, false, fixture)
+    let retry: ReturnType<typeof child> | undefined
+    try {
+      await owner.waitFor('acquired')
+      if (outcome === 'killed') owner.process.kill('SIGKILL')
+      else owner.release()
+      await owner.process.exited
+      await owner.output
+      if (outcome !== 'killed')
+        expect(owner.events.at(-1)!.event).toBe(
+          outcome === 'failure' ? 'failed' : outcome === 'defer' ? 'deferred' : 'released'
+        )
+      retry = child('retry', host, false, fixture)
+      await retry.waitFor('acquired')
+      retry.release()
+      await retry.process.exited
+    } finally {
+      await owner.stop()
+      await retry?.stop()
+    }
+  }, 15_000)
+}

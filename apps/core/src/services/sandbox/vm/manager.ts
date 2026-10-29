@@ -71,6 +71,8 @@ import {
   restoreVmSetupAfterRequiredAssets,
   setVmSetupPendingInvocation,
   withVmSetupLease,
+  tryWithVmHostBunAdoption,
+  type HostBunAdoptionResult,
   type VmSetupLeaseWait,
   type VmSetupState,
   type VmSetupReadiness,
@@ -308,6 +310,8 @@ export interface VmLifecycleState {
 
 /** All external effects the manager drives, injectable for tests; each defaults to production. */
 export interface VmSandboxManagerDeps {
+  /** Cross-process host bound on the existing owned setup session, before the command fence. */
+  withHostBunAdoption<T>(machineId: string, operation: () => Promise<T>): Promise<HostBunAdoptionResult<T>>
   /** Non-waking host proof: old process stood down, registry clear, disk Bun current. */
   runtimeAdoptionIdle(machine: Machine, box: MachineBox): Promise<boolean>
   /** Only under the newly owned durable setup lease, before activity deferral. */
@@ -517,6 +521,7 @@ export async function recoverVmBunRuntimeAdoption(
 
 function productionDeps(): VmSandboxManagerDeps {
   return {
+    withHostBunAdoption: tryWithVmHostBunAdoption,
     recordRuntimeAdoptionFailure: recordBoxBunRuntimeFailure,
     recoverRuntimeAdoption: recoverVmBunRuntimeAdoption,
     runtimeAdoptionIdle: (machine, box) =>
@@ -1135,6 +1140,16 @@ export class VmSandboxManager implements ISandboxManager {
         return sandboxId
       }
 
+      // All physically successful paths share the same non-terminal setup
+      // classification, including a retained runtime repaired after failed health.
+      const finishPhysicalEnsure = async (placed: Parameters<typeof finishEnsure>[0], preserveAttached = false) => {
+        try {
+          return await finishEnsure(placed, false, preserveAttached)
+        } catch (error) {
+          throw new VmPostProvisionSetupError(error)
+        }
+      }
+
       let runtimeRepairNeeded = false
       const ensurePhysical = async (machine: Machine, adoptIdleRuntime: boolean) => {
         return this.deps.ensureBox({
@@ -1203,15 +1218,11 @@ export class VmSandboxManager implements ISandboxManager {
           const repaired = await ensurePhysical(host, false)
           assertSetupOwned()
           timer.merge(repaired.timings)
-          return finishEnsure(repaired)
+          return finishPhysicalEnsure(repaired)
         }
         assertSetupOwned()
         // Defer only physical runtime replacement, never required files/setup.
-        try {
-          return await finishEnsure({ machine: host, box, endpoint: endpoint!, timings: {} }, false, true)
-        } catch (error) {
-          throw new VmPostProvisionSetupError(error)
-        }
+        return finishPhysicalEnsure({ machine: host, box, endpoint: endpoint!, timings: {} }, true)
       }
 
       for (let attempt = 1; ; attempt++) {
@@ -1387,25 +1398,27 @@ export class VmSandboxManager implements ISandboxManager {
                   pending.name = 'SandboxReadinessPendingError'
                   throw new VmPostProvisionSetupError(pending)
                 }
-                try {
-                  return await finishEnsure(placed)
-                } catch (error) {
-                  throw new VmPostProvisionSetupError(error)
-                }
+                return finishPhysicalEnsure(placed)
               }
-              const result = await (sameHostDrift
-                ? withIdleBoxCommandFence<string | symbol>(sandboxId, provision, async () => deferred)
-                : observed?.status === 'ready' &&
-                    observed.machineId === machine.id &&
-                    (!observed.reconcilableSpecHash ||
-                      withoutBun(observed.reconcilableSpecHash) !== withoutBun(specHash) ||
-                      Boolean(
-                        observed.provisionedSpecHash &&
-                        classifyBoxConfigurationMarkerDrift(observed, computeProvisioningMarker(specHash, env), env) ===
-                          'critical'
-                      ))
-                  ? withBoxCommandDrain(sandboxId, provision)
-                  : provision())
+              let result: string | symbol
+              if (sameHostDrift) {
+                const admission = await this.deps.withHostBunAdoption(machine.id, () =>
+                  withIdleBoxCommandFence<string | symbol>(sandboxId, provision, async () => deferred)
+                )
+                result = admission.acquired ? admission.value : deferred
+              } else {
+                const ordinaryRestart =
+                  observed?.status === 'ready' &&
+                  observed.machineId === machine.id &&
+                  (!observed.reconcilableSpecHash ||
+                    withoutBun(observed.reconcilableSpecHash) !== withoutBun(specHash) ||
+                    Boolean(
+                      observed.provisionedSpecHash &&
+                      classifyBoxConfigurationMarkerDrift(observed, computeProvisioningMarker(specHash, env), env) ===
+                        'critical'
+                    ))
+                result = ordinaryRestart ? await withBoxCommandDrain(sandboxId, provision) : await provision()
+              }
               return typeof result === 'string' ? result : deferRuntime()
             },
             async () => {

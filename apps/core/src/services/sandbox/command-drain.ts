@@ -173,9 +173,11 @@ export async function withIdleBoxCommandFence<T>(
   gate.holders++
   boxDrains.set(sandboxId, gate)
   try {
-    if (hasRunningBoxCommands(sandboxId)) return await defer()
-    return await action()
+    if (!hasRunningBoxCommands(sandboxId)) return await action()
   } finally {
     if (--gate.holders === 0) boxDrains.delete(sandboxId)
   }
+  // No restart is happening. In particular, required deferred setup must not
+  // carry restart attribution or keep refusing newly arriving commands.
+  return defer()
 }

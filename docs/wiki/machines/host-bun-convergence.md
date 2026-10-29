@@ -103,9 +103,34 @@ asset freshness/revocation checks and due/degraded setup retries still run under
 the normal owner. File-managed SSH revocations and rendered secret rotation can
 apply while old commands continue. Critical server environment changes retain
 ordinary reconciliation and restart safeguards; git-identity-only changes retain
-their existing active-work deferral. Pending/ambiguous remote setup is never
-cancelled or replayed merely for Bun adoption: it reports readiness pending with
-the usable existing client retained.
+their existing active-work deferral. An identified owned setup invocation still follows normal lease-scoped
+cancellation, verified clearing and reconciliation without restarting the retained
+server. Failed cancellation stays readiness-pending but retries on the next
+ensure. Unknown user work is never killed or replayed merely to force adoption.
+
+A retained runtime is not a health signal. Lifecycle keep-warm uses its existing
+positive listening hint (including a deliberately stood-down socket-activated
+server), so it does not HTTP-wake an idle box. Ordinary request ensures without
+that hint still check the SSH master/forward and health. A failed probe takes the
+normal work-aware diagnostics and current-runtime `ensureBox` repair, without
+requiring the future Bun pin. A dead old-runtime server cannot remain falsely
+ready until convergence. Shared-success followers compare configuration without
+the Bun suffix and only attach to the owner's completed setup; they do not repeat
+asset synchronization merely because the observed runtime is older.
+
+Adoption itself is limited to **one concurrent operation per registered host**
+across Core processes. A PostgreSQL advisory permit is acquired on the existing
+owned setup-lease session, before the command fence and final host idle proof.
+It uses neither another dedicated connection nor an expiring/local-only token.
+Contention defers opportunistically; ordinary starts/repairs bypass this permit.
+Success, deferral, failure and session loss release it; lost ownership fences late
+publication. Other hosts remain independent. This is a concurrency bound plus
+existing sweep staggering, not a promised per-minute fleet rollout rate.
+
+All deferred asset/setup continuations run after releasing the adoption permit
+and its command fence, including tracked-work races, a failed second idle proof
+and a lower-level deferred result. They must not tell newly arriving commands
+that a restart is happening when none occurs.
 
 A running older executor cannot prove a newly introduced maintenance protocol.
 An unsupported endpoint or database idleness is **not** permission to force its
@@ -316,7 +341,9 @@ endpoint. The historical bundle is copied into the owned installed layout; the
 replacement uses the newly built release bundle and 1.4.2. It proves repeated
 polling does not wake the old server, active commands finish, unknown persisted
 work defers after exit, normal ensure adopts, generation is preserved, and another
-real executor stays uninterrupted. During deferral it also uses the real asset
+real executor stays uninterrupted. Before upgrading disk, the explicit historical run also kills its owned old
+executor and proves a normal request repairs it on actual Bun 1.2.23 without an
+adoption claim or false target stamp. During deferral it also uses the real asset
 sync and HTTP file/Bash APIs to remove a revoked synthetic SSH key and rotate a
 rendered environment file while the original command continues, without a new
 server launch or Bun admission fence. Host/systemd/tunnel/persistence seams are

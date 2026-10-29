@@ -8,6 +8,7 @@ import {
   resetCommandDrainForTests,
   trackCommand,
   withBoxCommandDrain,
+  withIdleBoxCommandFence,
 } from './command-drain'
 
 afterEach(() => resetCommandDrainForTests())
@@ -148,4 +149,28 @@ describe('box command drain', () => {
     await first
     expect(isCommandDrainActive('selected')).toBe(false)
   })
+})
+
+test('an idle-fence tracked-work deferral releases its own gate before the continuation', async () => {
+  const work = command()
+  trackCommand({ ...work, sandboxId: 'deferred-setup' })
+  try {
+    expect(
+      await withIdleBoxCommandFence(
+        'deferred-setup',
+        async () => {
+          throw new Error('Must defer')
+        },
+        async () => {
+          expect(isCommandDrainActive('deferred-setup')).toBe(false)
+          await Promise.resolve()
+          expect(isCommandDrainActive('deferred-setup')).toBe(false)
+          expect(work.cancelForRestart).not.toHaveBeenCalled()
+          return 'reconciled'
+        }
+      )
+    ).toBe('reconciled')
+  } finally {
+    work.finish()
+  }
 })

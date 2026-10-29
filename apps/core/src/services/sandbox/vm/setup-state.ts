@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { vmSetupLockKey } from './setup-lock'
 import { createHash } from 'crypto'
 import { and, asc, eq, inArray, isNull, lte, ne, or } from 'drizzle-orm'
@@ -407,6 +408,25 @@ export type VmSetupLeaseWait = {
   sleep?: (ms: number) => Promise<void>
 }
 
+export type HostBunAdoptionResult<T> = { acquired: false } | { acquired: true; value: T }
+interface VmSetupSessionScope {
+  withHostBunAdoption<T>(machineId: string, operation: () => Promise<T>): Promise<HostBunAdoptionResult<T>>
+}
+const setupSessionScope = new AsyncLocalStorage<VmSetupSessionScope>()
+
+/** One adoption per host across API/worker processes. Reuse the ALREADY owned
+ * direct setup session: never take a second dedicated permit inside a lease,
+ * hold a transaction over SSH, or mistake a process-local semaphore for a host
+ * bound. Contention is opportunistic deferral, not an execution failure. */
+export async function tryWithVmHostBunAdoption<T>(
+  machineId: string,
+  operation: () => Promise<T>
+): Promise<HostBunAdoptionResult<T>> {
+  const scope = setupSessionScope.getStore()
+  if (!scope) throw new Error('Host Bun adoption requires an owned VM setup lease')
+  return scope.withHostBunAdoption(machineId, operation)
+}
+
 /** The optional callback guard lets result publishers fence a lost direct
  * session before writing success. Cancellation after acquisition never releases
  * the lease while the callback is still running. */
@@ -456,7 +476,40 @@ export async function withVmSetupLease<T>(
           try {
             checkWaiting()
             assertOwned()
-            const value = await reconcile(assertOwned)
+            // Session advisory locks are reentrant. Fence same-scope duplicate
+            // acquisition too, so concurrent callbacks cannot bypass the bound.
+            const heldHosts = new Set<string>()
+            const scope: VmSetupSessionScope = {
+              async withHostBunAdoption<T>(
+                machineId: string,
+                operation: () => Promise<T>
+              ): Promise<HostBunAdoptionResult<T>> {
+                assertOwned()
+                const hostKey = `vm-host-bun-adoption:${machineId}`
+                if (heldHosts.has(hostKey)) return { acquired: false }
+                heldHosts.add(hostKey)
+                let acquired = false
+                try {
+                  const [hostLock] = await session<
+                    { acquired: boolean }[]
+                  >`select pg_try_advisory_lock(hashtextextended(${hostKey}, 0)) as acquired`
+                  if (!hostLock?.acquired) return { acquired: false }
+                  acquired = true
+                  assertOwned()
+                  const value = await operation()
+                  assertOwned()
+                  return { acquired: true, value }
+                } finally {
+                  try {
+                    if (acquired && !sessionClosed)
+                      await session`select pg_advisory_unlock(hashtextextended(${hostKey}, 0))`
+                  } finally {
+                    heldHosts.delete(hostKey)
+                  }
+                }
+              },
+            }
+            const value = await setupSessionScope.run(scope, () => reconcile(assertOwned))
             assertOwned()
             return { acquired: true, value } as const
           } finally {

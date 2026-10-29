@@ -277,6 +277,9 @@ function makeHarness(opts?: { machineForSandbox?: (id: string) => string; bashSc
   let port = 40000
   const boxPorts = new Map<string, number>()
   const deps: HarnessDeps = {
+    async withHostBunAdoption<T>(_machineId: string, operation: () => Promise<T>) {
+      return { acquired: true as const, value: await operation() }
+    },
     recoverRuntimeAdoption: async () => true,
     runtimeAdoptionIdle: async () => true,
     hasActiveExecution: async () => false,
@@ -3974,7 +3977,8 @@ test('legacy installed executor idle-exits and the next normal ensure adopts the
     )
     const deadline = Date.now() + 10000
     while (!logs.includes('HTTP server listening on unix:')) {
-      if (proc.exitCode !== null || Date.now() >= deadline) throw new Error(`Owned executor failed to start: ${logs}`)
+      if (proc.exitCode !== null || proc.signalCode !== null || Date.now() >= deadline)
+        throw new Error(`Owned executor failed to start: ${logs}`)
       await Bun.sleep(10)
     }
     if (boxSocket === socket) launches++
@@ -4079,14 +4083,17 @@ test('legacy installed executor idle-exits and the next normal ensure adopts the
     let socketClaims = 0
     h.deps.ensureBox = async (input) => {
       const provision = async () => {
-        if (current.exitCode !== null) {
-          current = await launch()
+        if (current.exitCode !== null || current.signalCode !== null) {
+          current = await launch(home, socket, stable, input.adoptIdleRuntime ? entry : legacyEntry)
           const health = await fetchExecutor('http://fixture/healthz')
-          expect(input.expectedBunVersion).toBe('1.4.2')
-          expect(((await health.json()) as { bunVersion: string }).bunVersion).toBe('1.4.2')
+          expect(health.ok).toBe(true)
+          expect(input.expectedBunVersion).toBe(input.adoptIdleRuntime ? '1.4.2' : undefined)
+          if (input.adoptIdleRuntime) expect(((await health.json()) as { bunVersion: string }).bunVersion).toBe('1.4.2')
         }
         const placed = await ensure(input)
-        placed.box.reconcilableSpecHash = input.env.FICUS_BOX_SPEC_HASH ?? null
+        placed.box.reconcilableSpecHash = input.adoptIdleRuntime
+          ? input.env.FICUS_BOX_SPEC_HASH!
+          : input.env.FICUS_BOX_SPEC_HASH!.replace(/:bun:\d+_\d+_\d+$/, ':bun:1_2_23')
         desiredMarker = placed.box.reconcilableSpecHash
         h.setMachineBoxRow({
           machineId: 'm1',
@@ -4137,7 +4144,7 @@ test('legacy installed executor idle-exits and the next normal ensure adopts the
         const proc = Bun.spawn(['bash', '-c', relocated], {
           env: {
             PATH: `${bin}:/usr/bin:/bin`,
-            SERVER_STATE: current.exitCode === null ? 'active' : 'inactive',
+            SERVER_STATE: current.exitCode === null && current.signalCode === null ? 'active' : 'inactive',
             STATE_ROOT: root,
             FICUS_HOST_ROOT: root,
           },
@@ -4152,10 +4159,39 @@ test('legacy installed executor idle-exits and the next normal ensure adopts the
         return { stdout, stderr, exitCode }
       },
     }
+    let hostBun = '1.2.23'
+    const resolve = h.deps.resolveMachine!
+    const readMachine = h.deps.getMachine!
+    h.deps.resolveMachine = async (request) => ({ ...(await resolve(request)), capabilities: { bunVersion: hostBun } })
+    h.deps.getMachine = async (machineId) => {
+      const machine = await readMachine(machineId)
+      return machine ? { ...machine, capabilities: { bunVersion: hostBun } } : null
+    }
     h.deps.runtimeAdoptionIdle = (machine, box) => probeBoxBunAdoption(machine, box, '1.4.2', fixtureRunner)
     manager = new VmSandboxManager(h.deps)
     await manager.ensureSandbox(id, options)
     const oldSpec = desiredMarker
+    if (process.env.FICUS_TEST_LEGACY_BUN) {
+      // Required availability proof: an actual old-runtime executor crashes
+      // before disk upgrade. A normal request (NO listening hint) repairs it,
+      // without strict target Bun, adoption, or a false convergence stamp.
+      h.setBunVersion('1.4.2')
+      current.kill('SIGKILL')
+      await current.exited
+      await manager.ensureSandbox(id, { ...options, boxLiveness: undefined })
+      expect(launches).toBe(2)
+      expect(socketClaims).toBe(0)
+      expect(desiredMarker).toBe(oldSpec)
+      expect(
+        Bun.spawnSync([`/proc/${current.pid}/exe`, '--version'])
+          .stdout.toString()
+          .trim()
+      ).toBe('1.2.23')
+      expect((await manager.getClientForSandbox(id)!.health()).healthy).toBe(true)
+      expect(other.exitCode).toBeNull()
+    }
+    const legacyLaunches = launches
+    const legacyOutput = children.indexOf(current)
     let ops = createHttpBashOperations(manager, id)
     const ready = Promise.withResolvers<void>()
     const running = ops
@@ -4172,6 +4208,7 @@ test('legacy installed executor idle-exits and the next normal ensure adopts the
     expect(await readlink(`/proc/${current.pid}/exe`)).toBe(`${legacyExe} (deleted)`)
     expect(Bun.spawnSync([stable, '--version']).stdout.toString().trim()).toBe('1.4.2')
     h.setBunVersion('1.4.2')
+    hostBun = '1.4.2'
     // A deployed/restarted Core starts with no usable state. Keep the original
     // actual HTTP command alive, and prove fresh deferral supplies real tools
     // and the existing callback URL, not just a fake attached-client cache.
@@ -4202,7 +4239,7 @@ test('legacy installed executor idle-exits and the next normal ensure adopts the
     expect(await Bun.file(join(home, '.ssh/ficus_remote_fixture')).exists()).toBe(false)
     expect(readFileSync(join(home, 'workspace/.ficus/.env'), 'utf8')).toBe(squadEnv)
     expect(current.exitCode).toBeNull()
-    expect(launches).toBe(1)
+    expect(launches).toBe(legacyLaunches)
     expect(socketClaims).toBe(0)
     expect(desiredMarker).toBe(oldSpec)
     expect(healthRequests).toBe(beforeHealth)
@@ -4212,18 +4249,18 @@ test('legacy installed executor idle-exits and the next normal ensure adopts the
     // The legacy server, not Core and not the test, performs its normal idle exit.
     const naturalExit = await Promise.race([current.exited, Bun.sleep(8000).then(() => 'timeout')])
     expect(naturalExit).toBe(0)
-    expect(await output[0]).toContain('exiting')
+    expect(await output[legacyOutput]).toContain('exiting')
     expect(other.exitCode).toBeNull()
     // Unknown persisted work remains a blocker even after the process stood down.
     const active = join(home, '.ficus/runtime/bash-invocations/active')
     await mkdir(active, { recursive: true })
     writeFileSync(join(active, 'unknown.json'), '{"state":"quarantined"}')
     await manager.ensureSandbox(id, options)
-    expect(launches).toBe(1)
+    expect(launches).toBe(legacyLaunches)
     expect(desiredMarker).toBe(oldSpec)
     await rm(join(active, 'unknown.json'))
     await manager.ensureSandbox(id, options)
-    expect(launches).toBe(2)
+    expect(launches).toBe(legacyLaunches + 1)
     expect(socketClaims).toBe(1)
     expect(readFileSync(join(root, 'socket-state'), 'utf8').trim()).toBe('active')
     expect(desiredMarker).toStartWith('lifecycle:preserved-generation:')
@@ -4243,7 +4280,7 @@ test('legacy installed executor idle-exits and the next normal ensure adopts the
     // No live hosts/units are touched. Stop every owned server and drain pipes.
     for (const client of connections) client.close()
     for (const child of children) {
-      if (child.exitCode === null) child.kill('SIGTERM')
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
       const exited = await Promise.race([child.exited, Bun.sleep(3000).then(() => null)])
       if (exited === null) {
         child.kill('SIGKILL')
@@ -5163,7 +5200,12 @@ test('production marked-claim recovery restores only the owned listener and clea
  * truthfully records its old runtime. No host SSH is real in this harness. */
 async function keptRuntimeFixture(id: string) {
   const h = makeHarness({ bashScript: { exitCode: 0 } })
-  const state = { healthError: undefined as Error | undefined, healthCalls: 0, cancellations: [] as string[] }
+  const state = {
+    healthError: undefined as Error | undefined,
+    cancelError: undefined as Error | undefined,
+    healthCalls: 0,
+    cancellations: [] as string[],
+  }
   const create = h.deps.createClient!
   h.deps.createClient = (endpoint, token) => {
     const client = create(endpoint, token) as unknown as FakeClient
@@ -5180,6 +5222,7 @@ async function keptRuntimeFixture(id: string) {
     }
     ;(client as any).cancelBashInvocation = async (invocationId: string) => {
       state.cancellations.push(invocationId)
+      if (state.cancelError) throw state.cancelError
     }
     return client as unknown as ReturnType<NonNullable<typeof h.deps.createClient>>
   }
@@ -5187,6 +5230,7 @@ async function keptRuntimeFixture(id: string) {
   let placed!: Awaited<ReturnType<VmSandboxManagerDeps['ensureBox']>>
   h.deps.ensureBox = async (input) => {
     placed = await ordinary(input)
+    state.healthError = undefined // successful physical repair restored this fixture's executor
     placed.box.reconcilableSpecHash = input.env.FICUS_BOX_SPEC_HASH!.replace(/:bun:\d+_\d+_\d+$/, ':bun:1_2_23')
     placed.box.provisionedSpecHash = input.specHash!
     placed.machine.status = 'ready'
@@ -5221,6 +5265,7 @@ describe('kept Bun runtime retains ordinary recovery', () => {
         expect(h.ensureCalls.at(-1)!.adoptIdleRuntime).toBe(false)
         expect(h.ensureCalls.at(-1)!.expectedBunVersion).toBeUndefined()
         expect(await manager.getRunningSandboxSpecHash(id)).toEndWith(':bun:1_2_23')
+        expect((await manager.getClientForSandbox(id)!.health()).healthy).toBe(true)
       } finally {
         await manager.cleanup()
         await initial.cleanup()
@@ -5333,3 +5378,97 @@ for (const branch of ['tracked-race', 'second-proof', 'lower-deferred'] as const
     }
   })
 }
+
+test('host adoption contention defers outside the command fence without provisioning or blocking ordinary setup', async () => {
+  const { isCommandDrainActive } = await import('../command-drain')
+  const id = 'agent_host_bun_contention'
+  const { h, initial, placed } = await keptRuntimeFixture(id)
+  placed.machine.capabilities = { bunVersion: '1.4.2' }
+  let permits = 0
+  Object.assign(h.deps, {
+    withHostBunAdoption: async () => {
+      permits++
+      return { acquired: false }
+    },
+  })
+  let syncs = 0
+  h.setSyncBoxFiles(async () => {
+    expect(isCommandDrainActive(id)).toBe(false)
+    syncs++
+  })
+  const manager = new VmSandboxManager(h.deps)
+  try {
+    expect(await manager.ensureSandbox(id, { ...agentOpts, boxLiveness: 'listening' })).toBe(id)
+    expect(h.ensureCalls).toHaveLength(1)
+    expect(permits).toBe(1)
+    expect(syncs).toBe(1)
+  } finally {
+    await manager.cleanup()
+    await initial.cleanup()
+  }
+})
+
+test('failed owned setup cancellation stays pending but the next ensure can recover without disturbing user work', async () => {
+  const { trackCommand } = await import('../command-drain')
+  const id = 'agent_kept_setup_retry'
+  const { h, initial, state } = await keptRuntimeFixture(id)
+  const prior = (await h.deps.getSetupState(id))!
+  h.setSetupState({
+    ...prior,
+    readiness: 'reconciling',
+    pendingInvocationId: 'owned-assets-id',
+    pendingInvocationKind: 'assets',
+  })
+  state.cancelError = new Error('Synthetic unproven cancellation')
+  const user = Promise.withResolvers<void>()
+  let userCancellations = 0
+  trackCommand({
+    sandboxId: id,
+    settled: user.promise,
+    cancelForRestart: async () => {
+      userCancellations++
+    },
+  })
+  const manager = new VmSandboxManager(h.deps)
+  try {
+    expect(
+      startupRetryCode(
+        await manager.ensureSandbox(id, { ...agentOpts, boxLiveness: 'listening' }).catch((error) => error)
+      )
+    ).toBe('sandbox_readiness_pending')
+    expect((await h.deps.getSetupState(id))!.pendingInvocationId).toBe('owned-assets-id')
+    state.cancelError = undefined
+    expect(await manager.ensureSandbox(id, { ...agentOpts, boxLiveness: 'listening' })).toBe(id)
+    expect(await h.deps.getSetupState(id)).toMatchObject({ readiness: 'ready', pendingInvocationId: null })
+    expect(state.cancellations.every((invocation) => invocation === 'owned-assets-id')).toBe(true)
+    expect(userCancellations).toBe(0)
+    expect(h.stopCalls).toHaveLength(0)
+    expect(h.ensureCalls).toHaveLength(1)
+  } finally {
+    user.resolve()
+    await manager.cleanup()
+    await initial.cleanup()
+  }
+})
+
+test('setup failure after ordinary kept-runtime health repair retains the zero-budget post-provision classification', async () => {
+  const id = 'agent_kept_repair_setup_failure'
+  const { h, initial, state } = await keptRuntimeFixture(id)
+  const manager = new VmSandboxManager(h.deps)
+  try {
+    await manager.ensureSandbox(id, { ...agentOpts, boxLiveness: 'listening' })
+    state.healthError = new Error('Synthetic dead executor')
+    h.setSyncBoxFiles(async () => {
+      throw new Error('Synthetic required-asset failure')
+    })
+    const error = await manager.ensureSandbox(id, agentOpts).catch((error) => error)
+    expect(error.name).toBe('VmPostProvisionSetupError')
+    expect(h.ensureCalls).toHaveLength(2)
+    h.setSyncBoxFiles(async () => {})
+    expect(await manager.ensureSandbox(id, agentOpts)).toBe(id)
+    expect(h.ensureCalls).toHaveLength(2)
+  } finally {
+    await manager.cleanup()
+    await initial.cleanup()
+  }
+})
