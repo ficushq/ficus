@@ -85,8 +85,10 @@ describe('GitHubIssueSource indexing', () => {
     githubFixtures.push(await createTestGitHubConnection({ squadId: squad.id }))
     globalThis.fetch = mock(async (url: string | URL | Request) => {
       const path = new URL(String(url)).pathname + new URL(String(url)).search
+      if (path === '/repos/acme/api') return Response.json({ id: 1 })
       if (path === '/repos/acme/api/issues/42') {
         return Response.json({
+          id: 42,
           number: 42,
           title: 'Fix login',
           body: 'Body text',
@@ -100,6 +102,7 @@ describe('GitHubIssueSource indexing', () => {
       if (path === '/repos/acme/api/issues/42/comments?per_page=100') {
         return Response.json([
           {
+            id: 43,
             body: 'Comment text',
             created_at: '2026-05-01T01:00:00Z',
             updated_at: '2026-05-01T01:00:00Z',

@@ -1,3 +1,4 @@
+import { githubMemoryReindexStatus } from '../services/integrations/github/managed-reindex'
 import { publicErrorMessage } from '../db/errors'
 /**
  * Memory API Routes
@@ -541,7 +542,7 @@ export const memoryRouter = new Hono()
 
     try {
       const status = await SyncService.instance().getStatus(squad.id)
-      return c.json(status)
+      return c.json({ ...status, managedGitHub: await githubMemoryReindexStatus(squad.id) })
     } catch (e) {
       const error = e as Error
       return c.json({ error: publicErrorMessage(error) }, 500)

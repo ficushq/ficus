@@ -5,7 +5,8 @@ import { SquadSourceConfig } from '../../../entities/SquadSourceConfig'
 import { githubApiGet, type GitHubIssueApiComment, type GitHubIssueApiItem } from '../../github/api-client'
 import { BaseMemorySourceAdapter, sourceCapabilities, type DiscoveredItem, type FetchedContent } from './adapter'
 import { IndexedDocumentWriter } from './IndexedDocumentWriter'
-import { projectGitHubThreadForMemory } from '../../integrations/github/managed-content'
+import { clearGitHubMemoryReindex } from '../../integrations/github/managed-reindex'
+import { projectGitHubThreadForMemory, withheldGitHubMemoryDocuments } from '../../integrations/github/managed-content'
 import { mergePolicyErrors, validateBaseIngestionPolicy, validateStringArrayScope } from './policy'
 import type { IndexResult } from './types'
 
@@ -153,6 +154,7 @@ export class GitHubIssueSource extends BaseMemorySourceAdapter {
         `/repos/${ref.repo}/issues/${ref.number}/comments?per_page=100`,
         squadId
       )) ?? []
+    const repository = await githubApiGet<{ id?: number }>(`/repos/${ref.repo}`, squadId)
     const kind = detail.pull_request ? 'pull_request' : 'issue'
     // A pull request's captured revisions are keyed by its PR id, which only `/pulls` reports.
     const pull = detail.pull_request
@@ -161,6 +163,7 @@ export class GitHubIssueSource extends BaseMemorySourceAdapter {
     // Only prose the squad's author filter admits is indexed; the projection records why.
     const projected = await projectGitHubThreadForMemory(squadId, detail, comments, undefined, {
       pullRequestId: pull?.id ?? null,
+      repositoryId: repository?.id ?? null,
     })
     return {
       content: renderIssueMarkdown(detail, projected.comments, {
@@ -211,7 +214,7 @@ export class GitHubIssueSource extends BaseMemorySourceAdapter {
         error: `GitHub issue labels not configured: ${sourceId}`,
       }
     }
-    return IndexedDocumentWriter.instance().writeDocument({
+    const result = await IndexedDocumentWriter.instance().writeDocument({
       squadId,
       sourceType: this.sourceType,
       sourceId,
@@ -220,6 +223,19 @@ export class GitHubIssueSource extends BaseMemorySourceAdapter {
       policy: config?.policy,
       chunker: 'markdown',
     })
+    if (result.success && result.documentId) {
+      const [stored] = await db
+        .select({ contentHash: memoryDocuments.contentHash, frontmatter: memoryDocuments.frontmatter })
+        .from(memoryDocuments)
+        .where(eq(memoryDocuments.id, result.documentId))
+      if (stored && !(await withheldGitHubMemoryDocuments(squadId, [result.documentId], db, { enqueue: false })).size)
+        await clearGitHubMemoryReindex(
+          result.documentId,
+          stored.contentHash,
+          (stored.frontmatter as Record<string, unknown>).githubReindex
+        )
+    }
+    return result
   }
 
   async exists(squadId: string, sourceId: string): Promise<boolean> {

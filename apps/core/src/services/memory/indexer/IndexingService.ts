@@ -6,7 +6,7 @@
  * document operations.
  */
 
-import { eq, and } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 import { db } from '../../../db'
 import { memoryDocuments, memoryLinks } from '../../../db/schema'
 import { FileSource, type FileContent } from '../sources/FileSource'
@@ -248,6 +248,15 @@ export class IndexingService {
       )
       .limit(1)
 
+    if (
+      doc?.sourceType === 'github_issue' &&
+      (
+        await withheldGitHubMemoryDocuments(squadId, [doc.id], db, {
+          snapshots: new Map([[doc.id, (doc.frontmatter as Record<string, unknown>).githubProjection]]),
+        })
+      ).has(doc.id)
+    )
+      return undefined
     return doc as MemoryDocument | undefined
   }
 
@@ -272,6 +281,8 @@ export class IndexingService {
         sourceDocumentId: memoryLinks.sourceDocumentId,
         sourceDocPath: memoryDocuments.path,
         sourceDocTitle: memoryDocuments.title,
+        sourceType: memoryDocuments.sourceType,
+        githubProjection: sql<unknown>`${memoryDocuments.frontmatter}->'githubProjection'`,
         targetHeading: memoryLinks.targetHeading,
       })
       .from(memoryLinks)
@@ -281,7 +292,15 @@ export class IndexingService {
     // A GitHub source document's title is prose; it is listed only while the author filter admits it.
     const withheld = await withheldGitHubMemoryDocuments(
       squadId,
-      links.map((link) => link.sourceDocumentId)
+      links.map((link) => link.sourceDocumentId),
+      db,
+      {
+        snapshots: new Map(
+          links
+            .filter((link) => link.sourceType === 'github_issue')
+            .map((link) => [link.sourceDocumentId, link.githubProjection])
+        ),
+      }
     )
     return links
       .filter((link) => !withheld.has(link.sourceDocumentId))

@@ -83,6 +83,26 @@ describe('memory routes', () => {
     await db.delete(squads).where(like(squads.name, `${testPrefix}%`))
   })
 
+  it('sync status reports hidden pending GitHub reindex counts by reason without content', async () => {
+    await db.insert(memoryDocuments).values(
+      ['stale', 'legacy'].map((reason) => ({
+        squadId: targetSquadId,
+        sourceType: 'github_issue',
+        sourceId: `repo/${reason}#1`,
+        title: 'PRIVATE_STATUS_SENTINEL',
+        contentHash: reason,
+        frontmatter: { githubReindex: { reason, contentHash: reason } },
+      }))
+    )
+    const response = await app.request(`/api/memory/${targetSquadId}/sync/status`, {
+      headers: authHeaders(admin.token),
+    })
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.managedGitHub).toEqual({ hiddenPendingReindex: 2, reasons: { stale: 1, legacy: 1 } })
+    expect(JSON.stringify(body)).not.toContain('PRIVATE_STATUS_SENTINEL')
+  })
+
   it('nested workspace rescan failures conceal actual query parameters and retain controlled sandbox messages', async () => {
     const actualFailure = await db
       .select()

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { githubAccountIdSchema } from '@ficus/shared'
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import {
   db,
   githubFeedbackObjects,
@@ -14,8 +14,10 @@ import {
 } from '../../../db'
 import { hasUserPermissionWithExecutor } from '../../rbac/permissions'
 import type { GitHubIssueApiComment, GitHubIssueApiItem } from '../../github/api-client'
-import { githubContentIdentity } from './feedback-envelope'
+import { githubContentHash, githubContentIdentity } from './feedback-envelope'
 import { isGitHubFeedbackAdmitted } from './feedback-admission'
+import { enqueueGitHubMemoryReindex, type GitHubReindexReason } from './managed-reindex'
+import { currentGitHubFeedbackRevisionSQL, gitHubFeedbackVersionSQL } from './feedback-obsolescence'
 
 /**
  * Managed GitHub reads (memory indexing and every indexed-document read).
@@ -32,7 +34,7 @@ import { isGitHubFeedbackAdmitted } from './feedback-admission'
  * Low-level authenticated GitHub fetches stay raw; only these agent-facing projections are gated.
  */
 
-export const GITHUB_MEMORY_PROJECTION_SCHEMA = 1
+export const GITHUB_MEMORY_PROJECTION_SCHEMA = 2
 const GITHUB_ISSUE_SOURCE_TYPE = 'github_issue'
 /** Bounded revision lookup per fetched thread (one parent plus at most 100 comments). */
 const REVISION_LOOKUP_LIMIT = 1000
@@ -49,12 +51,18 @@ export interface GitHubMemoryItem {
   /** `approved`: exact human-approved revision in the indexing squad; `trusted`: live author trust. */
   basis: 'approved' | 'trusted' | 'unfiltered'
   revisionId?: string
+  revisionHash?: string
+  sequence: number
+  bodyHash: string
+  titleHash?: string
+  providerVersion: string | null
 }
 
 export interface GitHubMemoryProjection {
   schema: typeof GITHUB_MEMORY_PROJECTION_SCHEMA
   /** False when indexed with the filter OFF: such a document is never readable under an ON gate. */
   filtered: boolean
+  repositoryId: string | null
   items: GitHubMemoryItem[]
   withheldComments: number
   parentWithheld: boolean
@@ -140,31 +148,47 @@ interface Candidate {
   titleHash?: string
   /** Comments only: the REST clock shows the text never changed after creation. */
   unchanged: boolean
+  providerVersion: string | null
 }
 
 type RevisionMatch = {
+  squadId: string
+  kind: string
+  nativeId: string
   revisionId: string
+  contentHash: string
+  sequence: number
+  providerVersion: string | null
+  releaseState: string
   decision: string
   attribution: string
-  author: string | null
-  editor: string | null
+  author: { accountId: string } | null
+  editor: { accountId: string } | null
+  bodyHash: string | null
+  titleHash: string | null
 }
 
-/** Latest stored revision of each object whose reviewed text equals the fetched text. */
-async function latestMatchingRevisions(
+/** Current revisions only: matching old text is never currentness evidence. No body reads. */
+async function currentMemoryRevisions(
   executor: Executor,
-  squadId: string,
-  candidates: Candidate[]
-): Promise<Map<Candidate, RevisionMatch> | null> {
-  const nativeIds = [...new Set(candidates.map((item) => item.nativeId).filter((id): id is string => !!id))]
-  const matches = new Map<Candidate, RevisionMatch>()
-  if (!nativeIds.length) return matches
+  squadIds: string[],
+  repositoryId: string,
+  items: Array<Pick<GitHubMemoryItem, 'nativeId'>>
+): Promise<RevisionMatch[] | null> {
+  const nativeIds = [...new Set(items.map((item) => item.nativeId).filter((id): id is string => !!id))]
+  if (!nativeIds.length) return []
   const rows = await executor
     .select({
+      squadId: githubFeedbackObjects.squadId,
       kind: githubFeedbackObjects.objectKind,
       nativeId: githubFeedbackObjects.nativeId,
       revisionId: githubFeedbackRevisions.id,
+      contentHash: githubFeedbackRevisions.contentHash,
       sequence: githubFeedbackRevisions.sequence,
+      providerVersion: sql<
+        string | null
+      >`${gitHubFeedbackVersionSQL(githubFeedbackRevisions, githubFeedbackObjects)}::text`,
+      releaseState: githubFeedbackRevisions.releaseState,
       decision: githubFeedbackRevisions.decision,
       attribution: githubFeedbackRevisions.attribution,
       author: githubFeedbackRevisions.author,
@@ -176,33 +200,39 @@ async function latestMatchingRevisions(
     .innerJoin(githubFeedbackRevisions, eq(githubFeedbackRevisions.objectId, githubFeedbackObjects.id))
     .where(
       and(
-        eq(githubFeedbackObjects.squadId, squadId),
+        inArray(githubFeedbackObjects.squadId, squadIds),
+        eq(githubFeedbackObjects.repositoryId, repositoryId),
         inArray(githubFeedbackObjects.objectKind, ['issue', 'pull_request', 'issue_comment']),
-        inArray(githubFeedbackObjects.nativeId, nativeIds)
+        inArray(githubFeedbackObjects.nativeId, nativeIds),
+        currentGitHubFeedbackRevisionSQL(githubFeedbackRevisions.id, githubFeedbackObjects.squadId)
       )
     )
-    .orderBy(desc(githubFeedbackRevisions.sequence))
     .limit(REVISION_LOOKUP_LIMIT + 1)
-  // Too much history to evaluate within the bound: fail closed rather than read a partial view.
-  if (rows.length > REVISION_LOOKUP_LIMIT) return null
-  for (const item of candidates) {
-    const match = rows.find(
-      (row) =>
-        row.kind === item.kind &&
-        row.nativeId === item.nativeId &&
-        row.bodyHash === item.bodyHash &&
-        (item.titleHash === undefined || row.titleHash === item.titleHash)
+  return rows.length > REVISION_LOOKUP_LIMIT ? null : rows
+}
+
+const sameText = (item: Pick<GitHubMemoryItem, 'bodyHash' | 'titleHash'>, row: RevisionMatch) =>
+  item.bodyHash === row.bodyHash && (item.titleHash === undefined || item.titleHash === row.titleHash)
+
+/** Snapshot proofs without a captured revision may only outrank known text by a valid clock. */
+function freshSnapshot(item: GitHubMemoryItem, row: RevisionMatch | undefined, ownSquad: boolean): boolean {
+  if (item.revisionId && ownSquad)
+    return (
+      !!row &&
+      row.releaseState !== 'obsolete' &&
+      row.revisionId === item.revisionId &&
+      row.contentHash === item.revisionHash &&
+      row.sequence === item.sequence &&
+      sameText(item, row)
     )
-    if (match)
-      matches.set(item, {
-        revisionId: match.revisionId,
-        decision: match.decision,
-        attribution: match.attribution,
-        author: match.author?.accountId ?? null,
-        editor: match.editor?.accountId ?? null,
-      })
-  }
-  return matches
+  if (!row) return true
+  if (row.releaseState === 'obsolete') return false
+  if (sameText(item, row)) return true
+  return (
+    !!item.providerVersion &&
+    !!row.providerVersion &&
+    Date.parse(item.providerVersion) > Date.parse(row.providerVersion)
+  )
 }
 
 /**
@@ -220,6 +250,7 @@ export async function projectGitHubThreadForMemory(
   options: {
     /** The pull request's own id (`/pulls/:number`), which the issues API does not report. */
     pullRequestId?: number | null
+    repositoryId?: number | null
   } = {}
 ): Promise<ProjectedGitHubThread> {
   const parentKind: ItemKind = detail.pull_request ? 'pull_request' : 'issue'
@@ -242,6 +273,7 @@ export async function projectGitHubThreadForMemory(
     // may have rewritten it), so like an edited comment it is admitted only through a captured,
     // admitted revision, never on the original author's trust.
     unchanged: unchanged(detail.created_at, detail.updated_at),
+    providerVersion: Number.isFinite(Date.parse(detail.updated_at)) ? detail.updated_at : null,
   }
   const children: Candidate[] = comments.map((comment) => ({
     kind: 'issue_comment',
@@ -249,62 +281,54 @@ export async function projectGitHubThreadForMemory(
     author: githubContentIdentity(comment.user)?.accountId ?? null,
     bodyHash: sha256Hex(comment.body ?? ''),
     unchanged: unchanged(comment.created_at, comment.updated_at),
+    providerVersion: Number.isFinite(Date.parse(comment.updated_at)) ? comment.updated_at : null,
   }))
-  const unfiltered = (item: Candidate): GitHubMemoryItem => ({
-    kind: item.kind,
-    nativeId: item.nativeId,
-    author: item.author,
-    basis: 'unfiltered',
-  })
-  if (!(await authorFilterStates(executor, [squadId])).get(squadId))
-    return {
-      parentAdmitted: true,
-      comments,
-      projection: {
-        schema: GITHUB_MEMORY_PROJECTION_SCHEMA,
-        filtered: false,
-        items: [parent, ...children].map(unfiltered),
-        withheldComments: 0,
-        parentWithheld: false,
-      },
-    }
-
+  const repositoryId = nativeId(options.repositoryId)
+  const filtered = (await authorFilterStates(executor, [squadId])).get(squadId) ?? true
   const all = [parent, ...children]
-  const matches = await latestMatchingRevisions(executor, squadId, all)
-  const trusted = await trustedGitHubAccounts(executor, squadId, [
-    ...all.map((item) => item.author),
-    ...[...(matches?.values() ?? [])].flatMap((match) => [match.author, match.editor]),
-  ])
+  const versions = repositoryId ? await currentMemoryRevisions(executor, [squadId], repositoryId, all) : null
+  const trusted = filtered
+    ? await trustedGitHubAccounts(executor, squadId, [
+        ...all.map((item) => item.author),
+        ...(versions ?? []).flatMap((row) => [row.author?.accountId, row.editor?.accountId]),
+      ])
+    : new Set<string>()
   const admit = (item: Candidate): GitHubMemoryItem | null => {
-    if (!matches) return null
-    const match = matches.get(item)
+    if (!versions || !item.nativeId) return null
+    const row = versions.find((row) => row.kind === item.kind && row.nativeId === item.nativeId)
+    const match = row && sameText(item, row) ? row : undefined
+    const proof: GitHubMemoryItem = {
+      kind: item.kind,
+      nativeId: item.nativeId,
+      author: item.author,
+      basis: 'unfiltered',
+      bodyHash: item.bodyHash,
+      ...(item.titleHash === undefined ? {} : { titleHash: item.titleHash }),
+      providerVersion: item.providerVersion,
+      sequence: row?.sequence ?? 0,
+      ...(match ? { revisionId: match.revisionId, revisionHash: match.contentHash } : {}),
+    }
+    if ((!proof.providerVersion && !proof.revisionId) || !freshSnapshot(proof, row, true)) return null
+    if (!filtered) return proof
     if (match) {
-      if (match.decision === 'allow_once' || match.decision === 'allow_trust' || match.decision === 'screened')
-        return {
-          kind: item.kind,
-          nativeId: item.nativeId,
-          author: match.author,
-          basis: 'approved',
-          revisionId: match.revisionId,
-        }
+      if (['allow_once', 'allow_trust', 'screened'].includes(match.decision))
+        return { ...proof, author: match.author?.accountId ?? null, basis: 'approved' }
       if (match.decision === 'automatic') {
-        const editorTrusted = match.attribution === 'creation' || (!!match.editor && trusted.has(match.editor))
-        return match.author && trusted.has(match.author) && editorTrusted
+        const author = match.author?.accountId
+        const editor = match.editor?.accountId
+        const editorTrusted = match.attribution === 'creation' || (!!editor && trusted.has(editor))
+        return author && trusted.has(author) && editorTrusted
           ? {
-              kind: item.kind,
-              nativeId: item.nativeId,
-              author: match.author,
-              ...(match.attribution === 'verified_edit' && match.editor ? { editor: match.editor } : {}),
+              ...proof,
+              author,
+              ...(match.attribution === 'verified_edit' && editor ? { editor } : {}),
               basis: 'trusted',
             }
           : null
       }
-      // deny and pending are final for this exact text; historical falls through to live trust.
       if (match.decision !== 'historical') return null
     }
-    return item.author && trusted.has(item.author) && item.unchanged
-      ? { kind: item.kind, nativeId: item.nativeId, author: item.author, basis: 'trusted' }
-      : null
+    return item.author && trusted.has(item.author) && item.unchanged ? { ...proof, basis: 'trusted' } : null
   }
   const parentItem = admit(parent)
   const items: GitHubMemoryItem[] = parentItem ? [parentItem] : []
@@ -320,7 +344,8 @@ export async function projectGitHubThreadForMemory(
     comments: admittedComments,
     projection: {
       schema: GITHUB_MEMORY_PROJECTION_SCHEMA,
-      filtered: true,
+      filtered,
+      repositoryId,
       items,
       withheldComments: comments.length - admittedComments.length,
       parentWithheld: !parentItem,
@@ -328,25 +353,54 @@ export async function projectGitHubThreadForMemory(
   }
 }
 
+const numericId = (value: unknown): value is string => typeof value === 'string' && /^[1-9][0-9]*$/.test(value)
+const hashValue = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)
+const uuidValue = (value: unknown): value is string =>
+  typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
 function parseProjection(value: unknown): GitHubMemoryProjection | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  const projection = value as Partial<GitHubMemoryProjection>
-  return projection.schema === GITHUB_MEMORY_PROJECTION_SCHEMA &&
-    typeof projection.filtered === 'boolean' &&
-    Array.isArray(projection.items)
-    ? (projection as GitHubMemoryProjection)
-    : null
+  const projection = value as GitHubMemoryProjection
+  if (
+    projection.schema !== GITHUB_MEMORY_PROJECTION_SCHEMA ||
+    typeof projection.filtered !== 'boolean' ||
+    !numericId(projection.repositoryId) ||
+    !Array.isArray(projection.items) ||
+    projection.items.length > 101 ||
+    typeof projection.parentWithheld !== 'boolean' ||
+    !Number.isSafeInteger(projection.withheldComments) ||
+    projection.withheldComments < 0
+  )
+    return null
+  for (const item of projection.items) {
+    if (
+      !item ||
+      !['issue', 'pull_request', 'issue_comment'].includes(item.kind) ||
+      !numericId(item.nativeId) ||
+      (item.author !== null && !numericId(item.author)) ||
+      (item.editor !== undefined && !numericId(item.editor)) ||
+      !['trusted', 'approved', 'unfiltered'].includes(item.basis) ||
+      !hashValue(item.bodyHash) ||
+      (item.kind !== 'issue_comment' && !hashValue(item.titleHash)) ||
+      !Number.isSafeInteger(item.sequence) ||
+      item.sequence < 0 ||
+      (item.providerVersion !== null &&
+        (typeof item.providerVersion !== 'string' || !Number.isFinite(Date.parse(item.providerVersion)))) ||
+      (!item.providerVersion && !item.revisionId) ||
+      (item.revisionId !== undefined &&
+        (!uuidValue(item.revisionId) || !hashValue(item.revisionHash) || item.sequence < 1)) ||
+      (item.basis === 'approved' && !item.revisionId)
+    )
+      return null
+  }
+  return projection
 }
 
-/**
- * The subset of `documentIds` that `callerSquadId` must not see: GitHub documents whose recorded
- * provenance no longer satisfies an ON gate (the source squad's and, for shared memory, the
- * caller's). Non-GitHub documents are never withheld. Bounded by the caller's own result window.
- */
+/** All managed reads check freshness, even with the author filter OFF. No provider calls. */
 export async function withheldGitHubMemoryDocuments(
   callerSquadId: string,
   documentIds: Iterable<string>,
-  executor: Executor = db
+  executor: Pick<typeof db, 'select' | 'update'> = db,
+  options: { enqueue?: boolean; snapshots?: ReadonlyMap<string, unknown> } = {}
 ): Promise<Set<string>> {
   const ids = [...new Set(documentIds)]
   const withheld = new Set<string>()
@@ -355,72 +409,83 @@ export async function withheldGitHubMemoryDocuments(
     .select({
       id: memoryDocuments.id,
       squadId: memoryDocuments.squadId,
+      contentHash: memoryDocuments.contentHash,
+      pendingHash: sql<string | null>`${memoryDocuments.frontmatter} #>> '{githubReindex,contentHash}'`,
       projection: sql<unknown>`${memoryDocuments.frontmatter} -> 'githubProjection'`,
     })
     .from(memoryDocuments)
     .where(and(inArray(memoryDocuments.id, ids), eq(memoryDocuments.sourceType, GITHUB_ISSUE_SOURCE_TYPE)))
-  if (!documents.length) return withheld
-  const filterOn = await authorFilterStates(executor, [callerSquadId, ...documents.map((doc) => doc.squadId)])
-
-  const plans: Array<{ id: string; gates: string[]; squadId: string; projection: GitHubMemoryProjection }> = []
+  // A result/chunk generation cannot borrow the proof of a concurrent reindex (or deletion).
+  for (const id of options.snapshots?.keys() ?? []) if (!documents.some((doc) => doc.id === id)) withheld.add(id)
+  const states = await authorFilterStates(executor, [callerSquadId, ...documents.map((doc) => doc.squadId)])
+  const recovery: Array<{ id: string; contentHash: string; reason: GitHubReindexReason }> = []
+  const hideForRecovery = (doc: (typeof documents)[number], reason: GitHubReindexReason) => {
+    withheld.add(doc.id)
+    if (doc.pendingHash !== doc.contentHash) recovery.push({ id: doc.id, contentHash: doc.contentHash, reason })
+  }
   for (const doc of documents) {
-    const gates = [...new Set([doc.squadId, callerSquadId])].filter((squadId) => filterOn.get(squadId))
-    if (!gates.length) continue
-    const projection = parseProjection(doc.projection)
-    // Missing provenance (legacy or OFF-time index) never satisfies an ON gate; reindex restores it.
-    if (!projection?.filtered) {
+    if (
+      options.snapshots?.has(doc.id) &&
+      githubContentHash(options.snapshots.get(doc.id) ?? null) !== githubContentHash(doc.projection ?? null)
+    ) {
       withheld.add(doc.id)
       continue
     }
-    plans.push({ id: doc.id, gates, squadId: doc.squadId, projection })
-  }
-
-  const accountsBySquad = new Map<string, Set<string>>()
-  const revisionIds = new Set<string>()
-  for (const plan of plans)
-    for (const item of plan.projection.items)
-      for (const gate of plan.gates) {
-        if (item.basis === 'approved' && gate === plan.squadId && item.revisionId) revisionIds.add(item.revisionId)
-        else
-          for (const account of [item.author, item.editor])
-            if (account) {
-              const accounts = accountsBySquad.get(gate) ?? new Set<string>()
-              accounts.add(account)
-              accountsBySquad.set(gate, accounts)
-            }
+    const projection = parseProjection(doc.projection)
+    if (!projection) {
+      hideForRecovery(doc, 'legacy')
+      continue
+    }
+    const squads = [...new Set([doc.squadId, callerSquadId])]
+    const rows = await currentMemoryRevisions(executor, squads, projection.repositoryId!, projection.items)
+    if (!rows) {
+      hideForRecovery(doc, 'stale')
+      continue
+    }
+    const gates = squads.filter((squad) => states.get(squad))
+    if (gates.length && !projection.filtered) {
+      withheld.add(doc.id)
+      continue
+    }
+    let visible = true
+    for (const squad of squads) {
+      const trusted = states.get(squad)
+        ? await trustedGitHubAccounts(
+            executor,
+            squad,
+            projection.items.flatMap((item) => [item.author, item.editor])
+          )
+        : new Set<string>()
+      for (const item of projection.items) {
+        const row = rows.find(
+          (row) => row.squadId === squad && row.kind === item.kind && row.nativeId === item.nativeId
+        )
+        if (!freshSnapshot(item, row, squad === doc.squadId)) {
+          hideForRecovery(doc, 'stale')
+          visible = false
+          break
+        }
+        if (!states.get(squad)) continue
+        if (row && sameText(item, row) && ['pending', 'deny'].includes(row.decision)) {
+          visible = false
+          break
+        }
+        if (item.basis === 'approved') {
+          if (squad !== doc.squadId || !row || !['allow_once', 'allow_trust', 'screened'].includes(row.decision))
+            visible = false
+        } else if (
+          item.basis !== 'trusted' ||
+          !item.author ||
+          !trusted.has(item.author) ||
+          (item.editor && !trusted.has(item.editor))
+        )
+          visible = false
       }
-  const trusted = new Map<string, Set<string>>()
-  for (const [squadId, accounts] of accountsBySquad)
-    trusted.set(squadId, await trustedGitHubAccounts(executor, squadId, accounts))
-  const approved = new Set(
-    revisionIds.size
-      ? (
-          await executor
-            .select({ id: githubFeedbackRevisions.id, squadId: githubFeedbackRevisions.squadId })
-            .from(githubFeedbackRevisions)
-            .where(
-              and(
-                inArray(githubFeedbackRevisions.id, [...revisionIds]),
-                inArray(githubFeedbackRevisions.decision, ['allow_once', 'allow_trust', 'screened'])
-              )
-            )
-        ).map((row) => `${row.squadId}:${row.id}`)
-      : []
-  )
-
-  for (const plan of plans) {
-    const visible = plan.gates.every((gate) =>
-      plan.projection.items.every((item) => {
-        // A source-squad approval is not a grant to another squad reading shared memory.
-        if (item.basis === 'approved')
-          return gate === plan.squadId && !!item.revisionId && approved.has(`${gate}:${item.revisionId}`)
-        if (item.basis !== 'trusted' || !item.author) return false
-        const accounts = trusted.get(gate)
-        return !!accounts?.has(item.author) && (!item.editor || accounts.has(item.editor))
-      })
-    )
-    if (!visible) withheld.add(plan.id)
+      if (!visible) break
+    }
+    if (!visible) withheld.add(doc.id)
   }
+  if (options.enqueue !== false) await enqueueGitHubMemoryReindex(recovery, executor)
   return withheld
 }
 

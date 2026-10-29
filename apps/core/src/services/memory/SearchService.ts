@@ -360,7 +360,15 @@ export class SearchService {
     // before any snippet, title or frontmatter leaves this service.
     const withheld = await withheldGitHubMemoryDocuments(
       squadId,
-      indexedResults.map((result) => result.documentId)
+      indexedResults.map((result) => result.documentId),
+      db,
+      {
+        snapshots: new Map(
+          indexedResults
+            .filter((result) => result.sourceType === 'github_issue')
+            .map((result) => [result.documentId, result.frontmatter?.githubProjection])
+        ),
+      }
     )
     const results = [...indexedResults.filter((result) => !withheld.has(result.documentId)), ...liveResults]
 

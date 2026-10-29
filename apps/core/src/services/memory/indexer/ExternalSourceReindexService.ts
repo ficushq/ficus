@@ -1,6 +1,7 @@
 import type { MemorySourceType } from '@ficus/shared'
 import { SquadSourceConfig } from '../../../entities/SquadSourceConfig'
 import { createLogger } from '../../../lib/infra/logger'
+import { reindexPendingGitHubMemory } from '../../integrations/github/managed-reindex'
 import { IndexingService } from './IndexingService'
 
 const log = createLogger('external-source-reindex')
@@ -70,7 +71,8 @@ export class ExternalSourceReindexService {
         return { ...summary, failed: 1, errors: [`No adapter registered for ${sourceType}`] }
       }
 
-      const results = await adapter.indexAll(squadId)
+      const pending = sourceType === 'github_issue' ? await reindexPendingGitHubMemory(squadId, adapter) : []
+      const results = [...pending, ...(await adapter.indexAll(squadId))]
       for (const result of results) {
         if (result.skipped) summary.skipped++
         else if (result.success) summary.indexed++
