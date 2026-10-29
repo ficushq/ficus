@@ -3876,6 +3876,7 @@ test('legacy installed executor idle-exits and the next normal ensure adopts the
   const { copyFile, mkdir, readlink, rename, rm } = await import('node:fs/promises')
   const { SandboxClient } = await import('../client/http-client')
   const { createHttpBashOperations } = await import('../../../tools/sandbox-tools')
+  const { isCommandDrainActive, restartContextForCommandError } = await import('../command-drain')
   const { probeBoxBunAdoption, withIdleBunRuntimeClaim } = await import('../../machines/bun-runtime-adoption')
   const root = mkdtempSync(join(tmpdir(), 'legacy-bun-adoption-'))
   const home = join(root, 'home')
@@ -4032,6 +4033,17 @@ test('legacy installed executor idle-exits and the next normal ensure adopts the
         async () => {
           socketClaims++
           expect(readFileSync(join(root, 'socket-state'), 'utf8').trim()).toBe('inactive')
+          // Exercise the actual normal-ensure gate, not only the standalone
+          // drain helper: a racing agent command gets trusted restart evidence.
+          expect(isCommandDrainActive(id)).toBe(true)
+          const refused = await createHttpBashOperations(manager!, id)
+            .exec('printf forbidden', home, { onData: () => {} })
+            .catch((error) => error)
+          expect(refused.message).toStartWith('Command not started: Ficus is restarting this box')
+          expect(restartContextForCommandError(refused)).toEqual({
+            restartId: expect.any(String),
+            restartedAt: expect.any(String),
+          })
           return provision()
         },
         fixtureRunner
