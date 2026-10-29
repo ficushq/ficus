@@ -91,11 +91,14 @@ test('actual bash tool and recovery wrapper preserve a drained restart without c
       createK8sSandboxedBashTool(dir, 'fixture', manager, undefined, { invocationOwnerId: execution!.id }),
       () => ({ agentId: agent!.id, executionId: execution!.id })
     )
+    // The same idempotent operation can resume after inspecting its partial file.
+    const command =
+      'if [ ! -f affected ]; then printf partial > affected; printf ready; sleep 30; fi; printf completed > affected'
     const ready = Promise.withResolvers<void>()
     running = tool
       .execute(
         'long-command',
-        { command: 'printf partial > affected; printf ready; sleep 30; printf completed > affected', timeout: 60 },
+        { command, timeout: 60 },
         undefined,
         (update) => {
           if (update.content.some((part) => part.type === 'text' && part.text.includes('ready'))) ready.resolve()
@@ -142,13 +145,7 @@ test('actual bash tool and recovery wrapper preserve a drained restart without c
     expect(restartResumeNotice(restart)).toStartWith('Ficus restarted at 2026-10-28T21:32:00.000Z;')
     expect(await readFile(join(dir, 'affected'), 'utf8')).toBe('partial')
     resetCommandDrainForTests()
-    await tool.execute(
-      'safe-retry',
-      { command: 'printf completed > affected', timeout: 60 },
-      undefined,
-      undefined,
-      {} as ExtensionToolContext
-    )
+    await tool.execute('safe-retry', { command, timeout: 60 }, undefined, undefined, {} as ExtensionToolContext)
     expect(await readFile(join(dir, 'affected'), 'utf8')).toBe('completed')
     expect(
       (await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.id, record!.id)))[0]!.state

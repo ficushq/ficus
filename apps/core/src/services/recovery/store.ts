@@ -365,10 +365,7 @@ async function ensureExhaustedWait(tx: Tx, record: RecoveryRecord): Promise<Reco
       return record
     }
   }
-  const [run] = await tx
-    .select()
-    .from(workStreamFlowRuns)
-    .where(eq(workStreamFlowRuns.workStreamId, record.workStreamId))
+  const [run] = await tx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, workStreamId))
   if (run?.activated) {
     const current = activeWorkflowAttempts(run.state).filter(
       (attempt) => run.attemptAgents[String(attempt.id)] === record.agentId

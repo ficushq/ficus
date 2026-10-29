@@ -125,6 +125,15 @@ Shared provisioning-follower retries are owned by provisioning recovery, not by
 restart attribution. The executor-side fields require the updated executor bundle;
 this change performs no live restart, artifact refresh or deployment.
 
+### Confirmed tool outcomes
+
+Expected command exits, confirmed host deadlines, missing task paths and edit
+conflicts are typed feedback, not unexplained executor failures. Host deadlines
+keep the SDK's partial output and process-tree cleanup while carrying trusted
+timeout provenance. The executor's error-plus-127 frame remains a chargeable
+startup/process failure; a command that merely exits 127 is ordinary feedback.
+No classification reads an error message to infer its cause.
+
 ### Scope continuity and accounting failures
 
 Tool budgets use the tool family and normalized target: the command for Bash,

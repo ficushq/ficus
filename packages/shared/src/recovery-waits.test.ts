@@ -266,6 +266,8 @@ test('host actions are forbidden in decision subjects and options regardless of 
     'Read the host logs',
     'I can read logs on the host',
     'journalctl -u ficus',
+    'Check systemctl status ficus',
+    'Inspect journalctl -u ficus',
     'ssh admin@server',
   ]) {
     expect(requestInputWorkStreamSchema.safeParse({ ...decision, subject: text }).success).toBe(false)
@@ -283,6 +285,8 @@ test('host actions are forbidden in decision subjects and options regardless of 
     'Run npm test in my workspace',
     'I will inspect the project files',
     'Run docker compose build in the workspace',
+    'Build the Docker image for the app server in my workspace',
+    'Which logs should the app server collect?',
     'Run the migration',
   ])
     expect(

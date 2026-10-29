@@ -670,7 +670,9 @@ export function createHttpBashOperations(
           if (response.error) {
             settle(() =>
               reject(
-                Number.isInteger(response.exitCode)
+                // Error + 127 is the executor's spawn/admission failure tuple.
+                // A completed command exiting 127 arrives without an error frame.
+                Number.isInteger(response.exitCode) && response.exitCode !== 127
                   ? new ToolFeedbackError('exit', response.error!, { exitCode: response.exitCode })
                   : new Error(response.error)
               )

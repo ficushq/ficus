@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { ToolFeedbackError } from './tool-feedback'
 /**
  * Host runtime coding tools.
  *
@@ -70,16 +72,23 @@ export function createLocalVerifiedEditOperations(deps: LocalVerifiedEditFsDeps 
       let realPath: string
       try {
         realPath = await fsRealpath(path)
-      } catch {
-        throw new Error(`Edit aborted: ${path} is a dangling symlink or does not exist`)
+      } catch (error) {
+        if (!(error instanceof Error) || !('code' in error) || !['ENOENT', 'ENOTDIR'].includes(String(error.code)))
+          throw error
+        throw new ToolFeedbackError('input', `Edit aborted: ${path} is a dangling symlink or does not exist`, {
+          cause: error,
+        })
       }
       const st = await fsStat(realPath)
       if (!st.isFile()) {
-        throw new Error(`Edit aborted: ${realPath} is not a regular file`)
+        throw new ToolFeedbackError('input', `Edit aborted: ${realPath} is not a regular file`)
       }
       const current = await fsReadFile(realPath)
       if (current.byteLength !== identity.original.bytes || sha256(current) !== identity.original.sha256) {
-        throw new Error(`Edit aborted: ${path} changed on disk since it was read; re-read and retry`)
+        throw new ToolFeedbackError(
+          'input',
+          `Edit aborted: ${path} changed on disk since it was read; re-read and retry`
+        )
       }
       const resultSha = sha256(result)
       if (result.byteLength !== identity.result.bytes || resultSha !== identity.result.sha256) {
@@ -116,6 +125,7 @@ export function createHostBashTool(
   opts: { ficusToken?: string; squadId?: string; agentId?: string } = {}
 ): AgentTool<any> {
   const local = createLocalBashOperations()
+  const feedback = new AsyncLocalStorage<{ kind?: 'exit' | 'aborted'; exitCode?: number }>()
   const tool = createBashTool(cwd, {
     exposeSessionEnvironment: false,
     persistFullOutput: false,
@@ -131,13 +141,58 @@ export function createHostBashTool(
       env: buildHostCommandEnv({ ficusToken: opts.ficusToken, squadId: opts.squadId, agentId: opts.agentId }),
     }),
     operations: {
-      exec: (command, execCwd, options) =>
-        local.exec(command, execCwd, {
-          ...options,
-          timeout: clampHostBashTimeout(options.timeout),
-        }),
+      exec: async (command, execCwd, options) => {
+        const timeout = clampHostBashTimeout(options.timeout)
+        const controller = new AbortController()
+        const abort = () => controller.abort(options.signal?.reason)
+        options.signal?.addEventListener('abort', abort, { once: true })
+        if (options.signal?.aborted) abort()
+        let timedOut = false
+        const timer = setTimeout(() => {
+          if (!controller.signal.aborted) {
+            timedOut = true
+            controller.abort()
+          }
+        }, timeout * 1000)
+        try {
+          // The SDK still owns process-tree termination and confirmed exit. Our
+          // deadline supplies typed provenance instead of parsing its error text.
+          return await local.exec(command, execCwd, { ...options, signal: controller.signal, timeout: undefined })
+        } catch (error) {
+          const current = feedback.getStore()
+          if (timedOut) {
+            if (current) {
+              current.kind = 'exit'
+              current.exitCode = 124
+            }
+            // This is the SDK's producer-side timeout protocol, not a classifier.
+            // Let it retain partial stdout in the model-facing error message.
+            throw new Error(`timeout:${timeout}`, { cause: error })
+          }
+          if (options.signal?.aborted && current) current.kind = 'aborted'
+          throw error
+        } finally {
+          clearTimeout(timer)
+          options.signal?.removeEventListener('abort', abort)
+        }
+      },
     },
   })
+  const execute = tool.execute.bind(tool)
+  tool.execute = (...args) =>
+    feedback.run({}, async () => {
+      try {
+        return await execute(...args)
+      } catch (error) {
+        const current = feedback.getStore()
+        if (current?.kind)
+          throw new ToolFeedbackError(current.kind, error instanceof Error ? error.message : String(error), {
+            cause: error,
+            exitCode: current.exitCode,
+          })
+        throw error
+      }
+    })
   tool.description = `Execute a bash command in the current working directory on this machine. Returns stdout and stderr. ${BASH_OUTPUT_TRUNCATION_NOTE} Optionally provide a timeout in seconds (default: ${HOST_BASH_DEFAULT_TIMEOUT_S}s, max: ${HOST_BASH_MAX_TIMEOUT_S}s). ${FOREGROUND_BASH_GUIDANCE}`
   return tool
 }

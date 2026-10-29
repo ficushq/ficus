@@ -1245,3 +1245,66 @@ test('temporary manager unavailability escalates only the current record', async
   for (let n = 0; n < 3; n++) record = await api.recordRecoveryFailure(origin, failure(`next-${n}`))
   expect(record!.state).toMatchObject({ state: 'waiting-manager', managerCycles: 0, ownerEscalated: false })
 })
+
+test('host timeout feedback retains output and does not consume recovery budget', async () => {
+  const { createHostBashTool } = await import('../../tools/host-sandbox')
+  const { ToolFeedbackError } = await import('../../tools/tool-feedback')
+  const { wrapToolWithRecovery } = await import('./runtime')
+  const { recoveryEpisodes } = await import('../../db')
+  const tool = wrapToolWithRecovery(createHostBashTool('/tmp'), () => ({
+    agentId: worker.id,
+    executionId: execution.id,
+  }))
+  const error = await executeTool(tool, 'host-timeout', {
+    command: 'printf before-timeout; sleep 20',
+    timeout: 1,
+  }).catch((error) => error)
+  expect(error).toBeInstanceOf(ToolFeedbackError)
+  expect(error.message).toContain('before-timeout')
+  expect(error.message).toContain('Command timed out after 1 seconds')
+  expect(await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))).toHaveLength(0)
+})
+
+test('executor error frames with exit 127 count; completed commands with exit 127 do not', async () => {
+  const { EventEmitter } = await import('node:events')
+  const { SandboxClient } = await import('../sandbox/client/http-client')
+  const { createK8sSandboxedBashTool } = await import('../../tools/sandbox-tools')
+  const { wrapToolWithRecovery } = await import('./runtime')
+  const { recoveryEpisodes } = await import('../../db')
+  const client = new SandboxClient('feedback-fixture')
+  let failedStart = false
+  client.bash = () => {
+    const emitter = new EventEmitter()
+    queueMicrotask(() => {
+      emitter.emit(
+        'data',
+        failedStart ? { error: 'Failed to start bash invocation', exitCode: 127 } : { exitCode: 127 }
+      )
+      emitter.emit('end')
+    })
+    return Object.assign(emitter, {
+      invocationId: 'feedback',
+      cancel: () => {},
+      cancelAndWait: async () => {},
+    }) as ReturnType<typeof client.bash>
+  }
+  const manager = {
+    getClientForSandbox: () => client,
+    getSandboxStatus: async () => ({ status: 'running' }),
+    resolveToolApiUrl: () => 'http://fixture',
+  }
+  const tool = wrapToolWithRecovery(createK8sSandboxedBashTool('/workspace', 'fixture', manager), () => ({
+    agentId: worker.id,
+    executionId: execution.id,
+  }))
+  expect(await executeTool(tool, 'exit', { command: 'exit 127' })).toMatchObject({
+    isError: true,
+    structuredContent: { exit_code: 127 },
+  })
+  expect(await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))).toHaveLength(0)
+  failedStart = true
+  await expect(executeTool(tool, 'spawn-failure', { command: 'exit 127' })).rejects.toThrow('Failed to start')
+  const [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))
+  expect(record!.state.failures).toBe(1)
+  client.close()
+})

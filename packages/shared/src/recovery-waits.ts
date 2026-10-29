@@ -45,15 +45,29 @@ export function isForbiddenEvidenceRequest(text: string, proposedAction = false)
     .replace(/[\u200b-\u200d\ufeff]/g, '')
     .toLowerCase()
     .trim()
-  const action = /\b(?:run|execute|invoke|use|check|inspect|read|collect|gather|view|tail)\b/.test(normalized)
-  const host = /\b(?:host|server|box|platform|system|production|cluster)\b/.test(normalized)
+  const hostTarget =
+    /\b(?:on|from|against|into)\s+(?:\w+\s+){0,4}(?:host|server|box|platform|system|production|cluster)\b/.test(
+      normalized
+    )
+  const hostLogAction =
+    /\b(?:read|view|tail|inspect|collect|check|gather)\b[^.!?]*\b(?:host|server|box|system|platform)\s+(?:logs?|journal|syslog)\b/.test(
+      normalized
+    ) ||
+    /\b(?:read|view|tail|inspect|collect|check|gather)\b[^.!?]*\b(?:logs?|journal|syslog)\b[^.!?]*\b(?:on|from|of)\s+(?:\w+\s+){0,4}(?:host|server|box|system|platform)\b/.test(
+      normalized
+    )
   if (
-    (/\b(?:journalctl|systemctl)\b/.test(commandText) && (action || /^(?:journalctl|systemctl)\b/.test(commandText))) ||
+    /\b(?:run|execute|invoke|use)\s+(?:sudo\s+)?(?:journalctl|systemctl)\b|^(?:journalctl|systemctl)\b/.test(
+      commandText
+    ) ||
+    /\b(?:journalctl\s+-\S+|systemctl\s+(?:status|show|start|stop|restart|reload|is-active|is-enabled|list-units))\b/.test(
+      commandText
+    ) ||
     /\bssh\s+(?:in(?:to)?\b|\S+@\S+|-\S+)/.test(commandText) ||
     /^(?:ssh)\b|\b(?:will|run|execute|invoke|use)\s+ssh\b/.test(commandText) ||
-    (/\b(?:docker|kubectl)\b/.test(commandText) && host) ||
+    (/\b(?:docker|kubectl)\b/.test(commandText) && hostTarget) ||
     /\b(?:docker|kubectl)\s+(?:ps|logs|inspect|stats|get|describe|exec)\b/.test(commandText) ||
-    (action && host && /\b(?:logs?|journal|syslog)\b/.test(normalized))
+    hostLogAction
   )
     return true
   const person = /\byou(?:r)?\b|\bplease\b/.test(normalized)
