@@ -16,7 +16,8 @@ import type { SecretEntry } from './content-safety'
 
 export { MAX_SQUAD_ENV_BYTES }
 const log = createLogger('squad-env-detection')
-const REFRESH_MS = 1000
+const FILE_SCAN_MS = 1000
+const DB_REFRESH_MS = 15_000
 const SECRET_NAME = /(?:^|_)(?:TOKEN|KEY|SECRET|PASSWORD|CREDENTIALS)$/i
 
 /** Literal values only; never source a shell file or evaluate substitutions. */
@@ -25,6 +26,11 @@ export function isSecretLikeSquadEnvValue(key: string, value: string): boolean {
   if (value.length < 12) return false
   if (SECRET_NAME.test(key)) return true
   if (value.length < 32 || /\s/.test(value) || /^(?:https?:|\/|\.{1,2}\/|~\/)/i.test(value)) return false
+  // SHA-1 commit IDs and explicitly named digests are public identifiers, not
+  // credentials. Long generic hex remains heuristic: its alphabet tops out at
+  // four bits, so the base64-like threshold below cannot detect it reliably.
+  const hex = /^[a-f0-9]+$/i.test(value)
+  if (hex && (value.length < 64 || /(?:^|_)(?:COMMIT|SHA\d*|HASH|CHECKSUM|REVISION)(?:_|$)/i.test(key))) return false
   const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((pattern) => pattern.test(value)).length
   if (classes < 2) return false
   const counts = new Map<string, number>()
@@ -34,7 +40,7 @@ export function isSecretLikeSquadEnvValue(key: string, value: string): boolean {
     const probability = count / value.length
     entropy -= probability * Math.log2(probability)
   }
-  return entropy >= 4
+  return entropy >= (hex ? 3.5 : 4)
 }
 
 export function assertSquadEnvSize(content: string): void {
@@ -138,7 +144,7 @@ export class SquadEnvSecretSource {
     if (this.#runner) return
     this.#runner = createPeriodicRunner({
       name: 'squad-env-detection',
-      intervalMs: REFRESH_MS,
+      intervalMs: DB_REFRESH_MS,
       runImmediately: false,
       task: () => this.refresh(),
     })
@@ -206,7 +212,7 @@ export class SquadEnvSecretSource {
 
   entries(): readonly SecretEntry[] {
     const now = this.#now()
-    if (now - this.#lastScan < REFRESH_MS) return this.#entries
+    if (now - this.#lastScan < FILE_SCAN_MS) return this.#entries
     // Set before warnings: their sanitizer calls back into this same source.
     this.#lastScan = now
     this.#notices.clear()
@@ -250,7 +256,7 @@ export class SquadEnvSecretSource {
             hash,
             matchesTrusted,
             entries: matchesTrusted
-              ? trusted.entries.map(({ key, value }) => ({ key: `squad-env.${key}`, value, outputOnly: true }))
+              ? trusted.entries.map(({ value }) => ({ key: 'squad-env', value, outputOnly: true }))
               : [],
           })
         }

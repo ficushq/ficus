@@ -166,9 +166,19 @@ export interface ChannelConnectionsDependencies {
   resolveAuthority?: () => OAuthAuthority
 }
 
+// The settings draft sends an empty string when a user types then clears a
+// saved secret field. Empty means unchanged, not a new short credential.
+const credentialInputSchema = z
+  .string()
+  .trim()
+  .max(4096)
+  .refine((value) => value.length === 0 || value.length >= MIN_INTEGRATION_CREDENTIAL_LENGTH)
+  .nullable()
+  .optional()
+
 const configureInputSchema = z.strictObject({
-  botToken: z.string().trim().min(MIN_INTEGRATION_CREDENTIAL_LENGTH).max(4096).nullable().optional(),
-  signingSecret: z.string().trim().min(MIN_INTEGRATION_CREDENTIAL_LENGTH).max(4096).nullable().optional(),
+  botToken: credentialInputSchema,
+  signingSecret: credentialInputSchema,
   guildId: z.string().trim().max(64).nullable().optional(),
   defaultSquadId: z.uuid().nullable().optional(),
 })
@@ -576,6 +586,7 @@ export class ChannelConnections {
     for (const field of plugin.channel.credentialFields) {
       if (!Object.hasOwn(input, field.key)) continue
       const value = (input as Record<string, string | null | undefined>)[field.key]
+      if (value === '') continue
       if (!value?.trim()) throw new Error(`${field.label} is required.`)
       if (credentialInput[field.key] !== value.trim()) credentialChanged = true
       credentialInput[field.key] = value.trim()

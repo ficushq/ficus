@@ -1,7 +1,7 @@
 import { gt, lte, sql } from 'drizzle-orm'
 import { db, integrationCredentialRetirements, type secrets } from '../../db'
 import { createLogger } from '../../lib/infra/logger'
-import { integrationCredentialEntries, INTEGRATION_CREDENTIAL_PREFIX } from '../security/integration-credential-entries'
+import { integrationCredentialEntries, isIntegrationCredentialKey } from '../security/integration-credential-entries'
 import { decrypt } from './crypto'
 import type { SecretStoreTransaction } from './store'
 
@@ -11,7 +11,7 @@ const log = createLogger('integration-retirement')
 
 /** Includes absent rows, so concurrent first writes and deletes serialize too. */
 export async function lockIntegrationCredential(tx: SecretStoreTransaction, key: string): Promise<void> {
-  if (key.startsWith(INTEGRATION_CREDENTIAL_PREFIX)) {
+  if (isIntegrationCredentialKey(key)) {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`)
   }
 }
@@ -22,7 +22,7 @@ export async function retainIntegrationCredential(
   row: typeof secrets.$inferSelect | undefined,
   now: number
 ): Promise<void> {
-  if (!row?.key.startsWith(INTEGRATION_CREDENTIAL_PREFIX)) return
+  if (!row || !isIntegrationCredentialKey(row.key)) return
   await tx.insert(integrationCredentialRetirements).values({
     credentialKey: row.key,
     encryptedValue: row.encryptedValue,

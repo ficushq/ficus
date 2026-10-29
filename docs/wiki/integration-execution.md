@@ -165,6 +165,22 @@ redact tool output and refuse tool input; refusal text does not name an internal
 storage system. Public operator identifiers and values below the operator matcher
 minimum remain excluded. Exec itself remains unrestricted.
 
+Self-hosted OAuth app envelopes (Notion settings and immutable GitHub client
+records) register **only `clientSecret` leaves**, labeled under
+`__integration-credential:`. Existing at-rest keys and issuing-app bindings are
+unchanged, so historical credentials need no migration. Client IDs and app metadata
+are not registered as leaves. These client secrets use the same eight-character
+minimum and encrypted, one-hour retirement grace as other integration material.
+
+Explicit integration-key `set()` calls notify local listeners once even for the
+same value; peer invalidation remains a no-op when the cached value is unchanged.
+
+Channel settings accept empty (including whitespace-only) `botToken` and
+`signingSecret` draft fields as **unchanged**. The web credential form can submit
+these after typing then clearing a replacement. A new connection still requires
+its mandatory credentials; nonempty replacements under eight characters remain
+invalid, and `null` is not an implicit disconnect.
+
 ### Custom environment: trusted, output-only matching
 
 Squad `.ficus/env.user` is an output-only source. A **one-time legacy snapshot** at
@@ -196,8 +212,9 @@ hash or that squad's env entries are ignored. A safe warning is logged **once pe
 and a one-line Environment settings notice explains how to register the values by
 saving in Settings; even an unchanged save can register them. Oversized/unreadable
 legacy files are skipped with a warning/notice, not silently trusted on a later
-restart. DB authority refresh and on-disk checks are throttled to **at most once per second**
-(with immediate local API/service-write refresh). Negative signature/hash results
+restart. DB authority refresh runs every **15 seconds**; on-disk checks are throttled
+to **at most once per second**, with immediate local API/service-write refresh.
+Negative signature/hash results
 are cached too: unchanged mismatching/null-hash files are not repeatedly read and
 hashed. The cache reevaluates changed file signatures and current trusted state,
 including API/service or peer authority updates; a prior mismatch does not freeze
@@ -217,11 +234,18 @@ Literal values of keys ending in `TOKEN`, `KEY`, `SECRET`, `PASSWORD` or
 Keys containing `PUBLIC` or `PUBLISHABLE`, and frontend prefixes `NEXT_PUBLIC_`,
 `VITE_`, `REACT_APP_`, are excluded even on the secret-name path. Other keys require
 at least 32 characters, two character classes and Shannon entropy of at least
-4 bits per character; whitespace, URLs and filesystem paths are excluded from
-that fallback. `production` and other short ordinary values do not match. Parsing
+4 bits per character, or **3.5 bits for hex-only values of at least 64 characters**.
+Hex SHA-1 commit IDs and explicitly named commit/SHA/hash/checksum/revision values
+are excluded on this fallback, as are whitespace, URLs and filesystem paths.
+A generic high-entropy digest cannot be distinguished from a secret by its bytes
+alone; name public digests explicitly. Existing trusted snapshots retain their
+parsed entries until an authorized Environment save; they are not re-bootstrapped.
+`production` and other short ordinary values do not match. Parsing
 does not execute shell substitutions or source files; dynamic expressions cannot
 be inferred. Matching is process-wide, so another squad's output may also be
-redacted. These values **never refuse tool input**, including failed-query attribution
+redacted. The placeholder uses the neutral label `squad-env`, never the source
+squad ID or variable name. These values **never refuse tool input**, including
+failed-query attribution
 and ordinary app environment-file writes. Human-directed workspace files are not
 registered/scanned by this source.
 

@@ -110,7 +110,8 @@ describe('squad env heuristic', () => {
       'deadbeef'.repeat(8),
       'a'.repeat(128),
       '1234567890'.repeat(8),
-    ]) expect(isSecretLikeSquadEnvValue('CUSTOM', value)).toBe(false)
+    ])
+      expect(isSecretLikeSquadEnvValue('CUSTOM', value)).toBe(false)
   })
   test('requires long high entropy for other keys, excluding ordinary config', () => {
     expect(isSecretLikeSquadEnvValue('CUSTOM', 'aB3dE5gH7jK9mN2pQ4sT6vW8yZ0cF1iL')).toBe(true)
@@ -555,7 +556,7 @@ for (const nullHash of [false, true]) {
   })
 }
 
- test('output placeholders reveal neither squad identity nor environment variable names', async () => {
+test('output placeholders reveal neither squad identity nor environment variable names', async () => {
   const f = fixture()
   const id = randomUUID()
   f.file(id, 'OTHER_SQUAD_PRIVATE_PROJECT_TOKEN=synthetic-neutral-label-token')

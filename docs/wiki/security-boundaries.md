@@ -239,9 +239,11 @@ After literal decoding, the heuristic is:
   Whitespace-containing values, HTTP(S) URLs, and absolute or explicit relative/home
   paths are excluded on this entropy-only path. Repeated values, ordinary words
   and common UUID identifiers do not meet the rule. This is a heuristic, not a
-  classification guarantee for every possible configuration value. Hex-only secrets
-  under generic names commonly score below 4 bits and are not reliably matched;
-  use an explicit secret-suffixed name for those values.
+  classification guarantee for every possible configuration value. Hex-only values
+  require at least 64 characters and 3.5 bits per character instead. SHA-1 commit IDs
+  and hex values with commit/SHA/hash/checksum/revision key components are excluded
+  from this fallback. Generic random digests and secrets cannot be distinguished
+  by bytes alone. Output placeholders use `squad-env`, not a squad ID or env key.
 
 Environment detection authority lives in a dedicated protected DB table containing
 only the content hash and parsed squad-env entries, never integration credentials.
