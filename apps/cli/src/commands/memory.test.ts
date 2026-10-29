@@ -1,4 +1,6 @@
-import { describe, it, expect, beforeAll } from 'bun:test'
+import { apiGet } from '../client'
+import { isJsonMode, output } from '../output'
+import { describe, it, expect, beforeAll, mock, spyOn } from 'bun:test'
 import { Command } from 'commander'
 import { registerMemoryCommands } from './memory'
 
@@ -96,5 +98,34 @@ describe('memory CLI commands', () => {
       expect(replaceOpt).toBeDefined()
       expect(replaceOpt?.required).toBe(true)
     })
+  })
+})
+
+describe('managed memory status output', () => {
+  it.each([false, true])('preserves hidden-pending counts and reasons (JSON=%s)', async (json) => {
+    const status = { managedGitHub: { hiddenPendingReindex: 3, reasons: { stale: 1, legacy: 2 } } }
+    const get = apiGet as ReturnType<typeof mock>
+    const mode = isJsonMode as ReturnType<typeof mock>
+    const print = output as ReturnType<typeof mock>
+    const log = spyOn(console, 'log').mockImplementation(() => {})
+    get.mockResolvedValue(status)
+    mode.mockReturnValue(json)
+    print.mockClear()
+    try {
+      const program = new Command()
+      registerMemoryCommands(program)
+      await program.parseAsync(['memory', 'sync', 'status', '--squad', 'synthetic-squad'], { from: 'user' })
+      expect(get).toHaveBeenCalledWith('/api/memory/synthetic-squad/sync/status')
+      if (json) expect(print).toHaveBeenCalledWith(status)
+      else {
+        expect(log).toHaveBeenCalledWith('GitHub documents hidden pending reindex: 3')
+        expect(log).toHaveBeenCalledWith('  stale: 1')
+        expect(log).toHaveBeenCalledWith('  legacy: 2')
+      }
+    } finally {
+      get.mockReset().mockResolvedValue({})
+      mode.mockReset().mockReturnValue(false)
+      log.mockRestore()
+    }
   })
 })

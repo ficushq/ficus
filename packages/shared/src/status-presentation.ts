@@ -123,7 +123,7 @@ export function codeHostDeliveryLabel(delivery?: WorkStreamDeliveryPresentation)
  * keeps the stored/derived vocabulary (`blocked`) for older consumers; these
  * are selected only from explicit wait facts carrying an actor.
  */
-export type ManualWaitPresentationState = 'waiting_on_owner'
+export type ManualWaitPresentationState = 'waiting_on_owner' | 'waiting_on_manager'
 
 export type WorkStreamPresentationState =
   | WorkStreamStatus
@@ -162,6 +162,7 @@ export const WORK_STREAM_STATUS_ROLE = {
   waiting_on_answer: 'humanWait',
   waiting_on_dependency: 'externalWait',
   waiting_on_owner: 'externalWait',
+  waiting_on_manager: 'externalWait',
   blocked: 'attention',
   idle: 'neutral',
   waiting_for_slot: 'queue',
@@ -236,6 +237,7 @@ export interface WorkStreamWaitDisplayFacts {
 export const MANUAL_WAIT_ACTOR_STATE = {
   human: 'blocked',
   owner: 'waiting_on_owner',
+  manager: 'waiting_on_manager',
 } as const satisfies Record<WorkStreamWaitActor, WorkStreamPresentationState>
 
 /**
@@ -299,7 +301,10 @@ export function selectWorkStreamPresentationState(
           !(deliveryState === 'delivery_approval' && wait.id && wait.id === workStream.delivery?.approvalWaitId) &&
           workStreamWaitActor(wait) === 'human'
       )
-      return MANUAL_WAIT_ACTOR_STATE[humanActionable ? 'human' : 'owner']
+      const ownerActionable = workStream.openWaits.some(
+        (wait) => workStreamWaitDisplayType(wait) === 'manual' && workStreamWaitActor(wait) === 'owner'
+      )
+      return MANUAL_WAIT_ACTOR_STATE[humanActionable ? 'human' : ownerActionable ? 'owner' : 'manager']
     }
     if (waitType) return WORK_STREAM_WAIT_STATE[waitType]
     // Only this real wait is re-labeled as delivery approval. It still blocks

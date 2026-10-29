@@ -6,7 +6,7 @@ const root = resolve(import.meta.dir, '..')
 const workflow = readFileSync(resolve(root, '.github/workflows/ci.yml'), 'utf8')
 const wrapper = readFileSync(resolve(root, '.github/run-secret-boundary-tests.sh'), 'utf8')
 const corePackage = JSON.parse(readFileSync(resolve(root, 'apps/core/package.json'), 'utf8'))
-const testSetup = readFileSync(resolve(root, 'apps/core/src/test-setup.ts'), 'utf8')
+const testSetup = readFileSync(resolve(root, 'apps/core/src/test-db-setup.ts'), 'utf8')
 const validateConnection = readFileSync(resolve(root, 'apps/core/src/db/validate-connection.ts'), 'utf8')
 
 test('CI runs the explicit sterile secret-boundary wrapper without ambient credentials', () => {

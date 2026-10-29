@@ -1,3 +1,4 @@
+import '../test-utils/require-test-db'
 import { describe, test, expect, afterEach } from 'bun:test'
 import { readFileSync } from 'fs'
 import { join } from 'path'

@@ -33,6 +33,18 @@ bun run build:cli
 ./apps/cli/dist/ficus.js --help
 ```
 
+## Stdout completion regression tests
+
+From `apps/cli`, with the repository-pinned Bun and Python 3:
+
+```bash
+bun ../../scripts/test-runner.ts src/stdout-completion.test.ts
+```
+
+These offline tests exercise the actual CLI against synthetic HTTP responses,
+comparing real pipe, slow-reader and regular-file output. See the
+[diagnostic matrix and runtime limitations](stdout-completion.md).
+
 ## Integration credentials
 
 Assigned, healthy integrations authenticate globally provisioned CLIs through
@@ -46,7 +58,7 @@ Project-local CLIs, npx/bunx and npm/bun/pnpm scripts can bypass global wrappers
 ficus integration exec <provider> -- npm run deploy
 ficus integration exec <provider> -- bun run deploy
 ficus integration exec <provider> -- pnpm run deploy
-ficus integration exec <provider> --connection <attached-account-id> -- <command>
+ficus integration exec <provider> --connection <connection-id> -- <command>
 ```
 
 The squad runtime supplies `FICUS_SQUAD_ID`. Outside that context add

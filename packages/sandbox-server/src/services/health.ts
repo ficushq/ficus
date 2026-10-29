@@ -3,7 +3,7 @@
 const startTime = Date.now()
 import { readExecutorCommandIdentity, type ExecutorCommandIdentity } from './command-identity'
 import type { SandboxContainers, SandboxRuntimeHealth } from '@ficus/shared'
-import { DOCKER_HEALTH_TIMEOUT_MS, probeBoxDocker, readPressure, staleRuncExecReason } from './processes'
+import { DOCKER_HEALTH_TIMEOUT_MS, probeBoxDocker, boxPressureSampler, staleRuncExecReason } from './processes'
 
 interface RuntimeHealthDependencies {
   now(): number
@@ -133,16 +133,18 @@ export function getHealthResponse(env: NodeJS.ProcessEnv = process.env, runtime 
         commandIdentity,
       }
     : undefined
-  const pressure = readPressure()
+  void boxPressureSampler.refresh()
+  const pressure = boxPressureSampler.snapshot()
   return {
     // Liveness stays true: runtime degradation is not permission to recycle a
     // box and destroy legitimate foreground work.
     healthy: true,
     runtimeHealth: runtime.snapshot(),
     devboxReady,
-    // Load and memory only (no process detail): health is unauthenticated.
+    // Host and box pressure only (no process detail): health is unauthenticated.
     ...(pressure ? { pressure } : {}),
     version: VERSION,
+    bunVersion: Bun.version,
     uptimeSeconds: Math.floor((Date.now() - startTime) / 1000),
     ...(runtimeContract ? { runtimeContract } : {}),
   }

@@ -1,3 +1,4 @@
+import { ToolFeedbackError } from './tool-feedback'
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import * as fs from 'node:fs'
 import { createHash } from 'crypto'
@@ -277,7 +278,7 @@ describe('host sandboxed coding tools', () => {
         original: { bytes: 3, sha256: sha('abc') }, // stale: file is now 'abd'
         result: { bytes: 3, sha256: sha('zzz') },
       })
-    ).rejects.toThrow('changed on disk')
+    ).rejects.toBeInstanceOf(ToolFeedbackError)
     expect(readFileSync(file, 'utf8')).toBe('abd')
   })
 
@@ -318,7 +319,7 @@ describe('host sandboxed coding tools', () => {
         original: { bytes: 0, sha256: sha('') },
         result: { bytes: 1, sha256: sha('x') },
       })
-    ).rejects.toThrow(/dangling symlink|does not exist/)
+    ).rejects.toBeInstanceOf(ToolFeedbackError)
 
     const notRegular = join(dir, 'a-directory')
     mkdirSync(notRegular)
@@ -327,7 +328,7 @@ describe('host sandboxed coding tools', () => {
         original: { bytes: 0, sha256: sha('') },
         result: { bytes: 1, sha256: sha('x') },
       })
-    ).rejects.toThrow(/not a regular file/)
+    ).rejects.toBeInstanceOf(ToolFeedbackError)
   })
 
   test('local verified edit leaves no ficus-edit.tmp behind when the commit fails after staging', async () => {

@@ -1,3 +1,4 @@
+import type { RestartContext } from '@ficus/shared/restart-context'
 import { and, asc, desc, eq, inArray, InferSelectModel, lte, sql, type SQL } from 'drizzle-orm'
 import { db } from '../db'
 import { databaseClockNow } from '../db/clock'
@@ -30,12 +31,16 @@ import {
 import { isActiveExecutionStatus } from '../services/execution/status'
 import {
   BOX_PORT_BUSY_RETRY_CODE,
+  BOX_LOCK_TIMEOUT_RETRY_CODE,
   STARTUP_RETRY_DELAYS_MS,
   findInCauseChain,
   startupRetryCode,
   startupRetryNotice,
   startupRetryDelays,
   isExecutionStartupFailure,
+  capacityWaitDelay,
+  capacityRefusalDetails,
+  capacityWaitFailureNotice,
 } from '../services/execution/startup-retry'
 import { restoreQueueOwnedAdmission } from '../services/execution/agent-admission'
 import { maintenanceStore } from '../services/maintenance/store'
@@ -140,7 +145,13 @@ export type TransitionOutcome =
   | { kind: 'stopped' }
   | { kind: 'force-stopped'; reason?: string }
   | { kind: 'superseded' }
-  | { kind: 'requeued'; imageIds?: string[] | null; startupRetryDelayMs?: number; startupRetryMax?: number }
+  | {
+      kind: 'requeued'
+      imageIds?: string[] | null
+      startupRetryDelayMs?: number
+      startupRetryMax?: number
+      capacityWait?: boolean
+    }
 
 /**
  * The drizzle transaction handle `db.transaction` passes to its callback —
@@ -236,11 +247,15 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
   declare status: ExecutionStatus
   declare maintenanceGeneration: number | null
   declare maintenanceQueuedAt: Date | null
+  /** Loaded from an exact shutdown marker, not inferred from error text or clock proximity. */
+  restartContext?: RestartContext
+
   declare runnerClaimToken: string | null
   declare runnerClaimGeneration: number | null
   declare executionVersion: number
   declare startupRetryCount: number
   declare startupRetryAt: Date | null
+  declare startupCapacityWaitAt: Date | null
   declare message: string | null
   declare imageIds: string[] | null
   declare wakeEligible: boolean
@@ -458,7 +473,7 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
   async transitionTo(outcome: TransitionOutcome, options?: TransitionOptions): Promise<boolean> {
     // Failure routing is pure and doesn't touch the DB — compute it up front
     // so the disposition is known before entering the transaction.
-    const route = outcome.kind === 'failed' ? routeFailure(outcome.error) : undefined
+    const route = outcome.kind === 'failed' ? routeFailure(outcome.error, this.restartContext) : undefined
     const disposition = agentDispositionFor(outcome, route?.disposition)
 
     // Capture the agent's pre-write snapshot BEFORE the transaction — needed
@@ -759,9 +774,12 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
             if (startupRetry) {
               executionPredicates.push(
                 eq(executions.status, 'running'),
-                eq(executions.executionVersion, this.executionVersion),
-                sql`${executions.startupRetryCount} < ${outcome.startupRetryMax ?? STARTUP_RETRY_DELAYS_MS.length}`
+                eq(executions.executionVersion, this.executionVersion)
               )
+              if (!outcome.capacityWait)
+                executionPredicates.push(
+                  sql`${executions.startupRetryCount} < ${outcome.startupRetryMax ?? STARTUP_RETRY_DELAYS_MS.length}`
+                )
             }
             if (options?.admissionLease) {
               // A late startup failure cannot overwrite a stop or another terminal outcome.
@@ -780,8 +798,15 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
                 maintenanceQueuedAt: null,
                 ...(startupRetry
                   ? {
-                      startupRetryCount: sql`${executions.startupRetryCount} + 1`,
+                      startupRetryCount: outcome.capacityWait
+                        ? executions.startupRetryCount
+                        : sql`${executions.startupRetryCount} + 1`,
                       startupRetryAt: sql`clock_timestamp() + ${outcome.startupRetryDelayMs!} * interval '1 millisecond'`,
+                      ...(outcome.capacityWait
+                        ? {
+                            startupCapacityWaitAt: sql`COALESCE(${executions.startupCapacityWaitAt}, clock_timestamp())`,
+                          }
+                        : {}),
                     }
                   : {}),
               })
@@ -1003,7 +1028,16 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
    * Complete this execution (running → completed, agent → idle).
    */
   async complete(usage?: SessionUsage, admissionLease?: AdmissionLease): Promise<void> {
-    await this.transitionTo({ kind: 'completed', usage }, { admissionLease })
+    const completed = await this.transitionTo({ kind: 'completed', usage }, { admissionLease })
+    if (completed) {
+      const { settleRecoveryOperation } = await import('../services/recovery/store')
+      const { EXECUTION_RECOVERY_OPERATION } = await import('../services/recovery/executions')
+      await settleRecoveryOperation(
+        { agentId: this.agentId, executionId: this.id },
+        EXECUTION_RECOVERY_OPERATION,
+        `${this.id}:completed`
+      ).catch((error) => log.error('Unable to settle execution recovery outcome', error))
+    }
   }
 
   /**
@@ -1011,28 +1045,65 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
    * or all-providers-exhausted). `failure` is the structural classification
    * from the failure site; absent it stays NULL (legacy/unclassified).
    */
-  async fail(error: string, admissionLease?: AdmissionLease, failure?: ExecutionFailure): Promise<boolean> {
-    return this.transitionTo({ kind: 'failed', error, ...(failure ? { failure } : {}) }, { admissionLease })
+  async fail(
+    error: string,
+    admissionLease?: AdmissionLease,
+    failure?: ExecutionFailure,
+    recovery?: { safeStartupRetry?: boolean; explained?: boolean }
+  ): Promise<boolean> {
+    const attemptIdentity = this.runnerClaimToken ?? this.runStartedAt?.toISOString() ?? 'queued'
+    const terminalized = await this.transitionTo(
+      { kind: 'failed', error, ...(failure ? { failure } : {}) },
+      { admissionLease }
+    )
+    if (terminalized) {
+      const { isUnexplainedExecutionFailure, EXECUTION_RECOVERY_OPERATION } =
+        await import('../services/recovery/executions')
+      if (!recovery?.explained && isUnexplainedExecutionFailure(error, failure)) {
+        const { recordRecoveryFailure } = await import('../services/recovery/store')
+        await recordRecoveryFailure(
+          { agentId: this.agentId, executionId: this.id },
+          {
+            operationKey: EXECUTION_RECOVERY_OPERATION,
+            attempted: 'continue the task',
+            invocationId: `${this.id}:${attemptIdentity}`,
+            error: new Error(error),
+            ...(recovery?.safeStartupRetry
+              ? { retryStartupMessage: this.message ?? 'Continue the assigned task.' }
+              : {}),
+          }
+        ).catch((accountingError) => log.error('Unable to persist execution recovery outcome', accountingError))
+      }
+    }
+    return terminalized
   }
 
   /** Only called before runner startup has dispatched a model prompt. */
   async retryStartupFailure(error: unknown, admissionLease?: AdmissionLease): Promise<boolean> {
     const code = startupRetryCode(error)
     if (!code) return false
+    const capacityWait = code === 'machine_capacity'
     const delays = startupRetryDelays(code)
-    const delayMs = delays[this.startupRetryCount]
+    // Admission waiting is not a failed startup attempt. Keep the exact CAS/
+    // lease fencing and a quiet poll deadline, but never consume the failure budget.
+    if (capacityWait && capacityRefusalDetails(error).reason === 'unknown') return false
+    const delayMs = capacityWait ? capacityWaitDelay(this.startupCapacityWaitAt) : delays[this.startupRetryCount]
     if (delayMs === undefined) return false
     const requeued = await this.transitionTo(
-      { kind: 'requeued', startupRetryDelayMs: delayMs, startupRetryMax: delays.length },
+      { kind: 'requeued', startupRetryDelayMs: delayMs, startupRetryMax: delays.length, capacityWait },
       { admissionLease }
     )
     if (!requeued) return false
     log.warn(
-      code === BOX_PORT_BUSY_RETRY_CODE
-        ? "Retrying execution startup: the box's socket port is busy"
-        : code.startsWith('machine_')
-          ? "Retrying execution startup: the box's machine is not ready yet"
-          : 'Retrying execution startup after a transient database failure',
+      capacityWait
+        ? 'Waiting for host capacity before execution startup'
+        : code === BOX_PORT_BUSY_RETRY_CODE
+          ? "Retrying execution startup: the box's socket port is busy"
+          : code === BOX_LOCK_TIMEOUT_RETRY_CODE
+            ? 'Retrying execution startup: the box provisioning lock is busy'
+            : code.startsWith('machine_')
+              ? "Retrying execution startup: the box's machine is not ready yet"
+              : 'Retrying execution startup after a transient database failure',
       {
         executionId: this.id,
         agentId: this.agentId,
@@ -1040,7 +1111,7 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
         // The busy-port error carries systemd's own reason and the port holder.
         ...(code === BOX_PORT_BUSY_RETRY_CODE ? { reason: findInCauseChain(error, 'BoxPortBusyError')?.message } : {}),
         attempt: this.startupRetryCount,
-        maxRetries: delays.length,
+        ...(capacityWait ? { capacityWait: true } : { maxRetries: delays.length }),
         retryAt: this.startupRetryAt?.toISOString(),
       }
     )
@@ -1247,6 +1318,8 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
    * Requires the agent relation to be loaded (via setAgent or mustGetAgent).
    */
   async run(): Promise<void> {
+    const { prepareRestartResume } = await import('../services/execution/startup-recovery')
+    this.restartContext = await prepareRestartResume(this.id, this.agentId)
     const { reserveSession, removeSessionForExecution } = await import('../services/execution/session-state')
     const removeOwnSession = () => removeSessionForExecution(this.agentId, this.id)
 
@@ -1270,6 +1343,14 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
     const agent = await this.mustGetAgent()
 
     try {
+      const { recoveryRetryDelay } = await import('../services/recovery/store')
+      const { EXECUTION_RECOVERY_OPERATION } = await import('../services/recovery/executions')
+      const retryDelay = await recoveryRetryDelay(
+        { agentId: this.agentId, executionId: this.id },
+        EXECUTION_RECOVERY_OPERATION
+      )
+      if (retryDelay) await Bun.sleep(retryDelay)
+      await recoveryRetryDelay({ agentId: this.agentId, executionId: this.id }, EXECUTION_RECOVERY_OPERATION)
       // Ensure agent type is loaded
       await agent.mustGetAgentType()
       const { startRunnerTiming, logRunnerMilestone } = await import('../services/execution/runner-timing')
@@ -1285,6 +1366,21 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
         // Dynamic import to avoid circular dependency
         const { createRunner } = await import('./agent-runners')
         const runner = await createRunner(agent, this)
+        // Successful startup ends this capacity-wait episode. Clear before any
+        // model prompt; a later recovery gets its own bounded waiting window.
+        if (this.startupCapacityWaitAt) {
+          await db
+            .update(executions)
+            .set({ startupCapacityWaitAt: null })
+            .where(
+              and(
+                eq(executions.id, this.id),
+                eq(executions.status, 'running'),
+                eq(executions.executionVersion, this.executionVersion)
+              )
+            )
+          this.startupCapacityWaitAt = null
+        }
         runnerCreated = true
         ;(runner as { _timing?: typeof timing })._timing = timing
         await runner.run()
@@ -1342,7 +1438,7 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
           return
         }
 
-        const errorMsg = err instanceof Error ? err.message : String(err)
+        let errorMsg = err instanceof Error ? err.message : String(err)
         removeOwnSession()
         const admissionLease = admissionLeaseFromError(err)
         const failedVersion = this.executionVersion
@@ -1359,6 +1455,7 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
           // A stop or newer pickup can win while startup unwinds. Exhausting
           // a retry budget must not terminalize that newer state.
           if (this.status !== 'running' || this.executionVersion !== failedVersion) return
+          if (startupRetryCode(err) === 'machine_capacity') errorMsg = capacityWaitFailureNotice(err)
         }
         const { streamManager } = await import('../services/streaming/buffer')
         const closeStoppedStartup = async () => {
@@ -1370,7 +1467,10 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
 
         // Commit the fenced failure before presenting it. A stop can win between
         // the read above and this CAS; in that case close only this old stream.
-        const terminalized = await this.fail(errorMsg, admissionLease, classifySetupFailure(err))
+        const terminalized = await this.fail(errorMsg, admissionLease, classifySetupFailure(err), {
+          safeStartupRetry: startupFailure && !startupRetryCode(err),
+          explained: startupFailure && Boolean(startupRetryCode(err)),
+        })
         if (admissionLease && !terminalized) {
           if (await closeStoppedStartup()) return
           throw err
@@ -1384,6 +1484,11 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
     } catch (err) {
       removeOwnSession()
       const errorMsg = err instanceof Error ? err.message : String(err)
+      const { RecoveryHeldError } = await import('../services/recovery/store')
+      if (err instanceof RecoveryHeldError) {
+        await this.fail(errorMsg, undefined, { failureClass: 'execution_failure', failureReason: 'recovery_held' })
+        return
+      }
       log.error(`Failed to run agent (${agent.id}) execution ${this.id}:`, err)
       if (admissionLeaseFromError(err)) throw err
       await this.fail(errorMsg, undefined, classifySetupFailure(err))

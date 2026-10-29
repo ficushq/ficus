@@ -355,3 +355,23 @@ test('Discord is unaffected: no managed UI, no disclosure wrapper', async () => 
   expect(container.textContent).not.toContain('Ficus Slack app')
   expect(container.querySelector('details')).toBeNull()
 })
+
+test('clearing a replacement draft submits empty saved credential fields as unchanged', async () => {
+  let saved: unknown
+  const view = slackView({ fields: slackFields.map((field) => ({ ...field, configured: true })) })
+  fetchHandler = async (input, init) => {
+    if (String(input).includes('/channel-settings') && init?.method === 'PUT') saved = JSON.parse(String(init.body))
+    return Response.json(view)
+  }
+  await renderCard('slack', view)
+  await flushEffects()
+  const inputs = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="password"]'))
+  expect(inputs).toHaveLength(2)
+  for (const input of inputs) {
+    await harness.act(async () => fireEvent.change(input, { target: { value: 'synthetic-replacement' } }))
+    await harness.act(async () => fireEvent.change(input, { target: { value: '' } }))
+  }
+  await harness.act(async () => fireEvent.submit(inputs[0]!.closest('form')!))
+  await flushEffects()
+  expect(saved).toEqual({ botToken: '', signingSecret: '' })
+})

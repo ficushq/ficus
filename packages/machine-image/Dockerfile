@@ -6,12 +6,9 @@
 # this image hits every idempotent skip and completes in seconds instead of
 # minutes. /opt/ficus/prebaked marks the image so bootstrap can fast-path.
 #
-# KEEP IN LOCKSTEP with scripts/machine/bootstrap.sh: the ARG pins below should
-# match its BUN_VERSION / NIX_VERSION / DEVBOX_VERSION, and every install step
-# here mirrors one of its install_* functions (referenced per step). A drift does
-# NOT trigger a boot-time reinstall — bootstrap always boots on the BAKED tooling
-# (a nix reinstall over the baked /nix would brick the boot) and just logs a
-# warning to rebake. Change a pin by rebuilding this image, not at boot.
+# Bun derives from .bun-version. Other tooling stays in lockstep with
+# bootstrap.sh. Existing prebaked hosts converge Bun only; nix/devbox remain
+# baked (never reinstall nix over /nix). Rebuild for a new image baseline.
 #
 # Build (MUST be linux/amd64 — exe VMs are x86_64), from the REPO ROOT
 # (the COPY below reaches into scripts/machine/):
@@ -26,10 +23,9 @@
 # build-essential/etc, and CMD /usr/local/bin/init + the exe.dev labels.
 FROM ghcr.io/boldsoftware/exeuntu:latest
 
-# Pins — should match scripts/machine/bootstrap.sh (BUN_VERSION / NIX_VERSION /
-# DEVBOX_VERSION); on drift bootstrap still boots on the baked tooling and warns
-# to rebake (it never reinstalls over a prebaked image — see the header note).
-ARG BUN_VERSION=1.2.23
+# Bun is not an overridable build ARG: install exactly the repository pin.
+COPY .bun-version /opt/ficus/bun-version
+# Other toolchain pins match bootstrap.sh; only an image rebake changes them.
 ARG NIX_VERSION=2.24.9
 ARG DEVBOX_VERSION=0.14.0
 ARG PLAYWRIGHT_VERSION=1.58.2
@@ -96,7 +92,8 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 # home). /opt/ficus/bin/bun is the stable path box-provision's systemd unit
 # ExecStart references; /usr/local/bin/bun additionally puts bun on every
 # user's PATH (image nicety — bootstrap manages only /opt/ficus/bin/bun).
-RUN curl -fsSL https://bun.sh/install \
+RUN BUN_VERSION="$(cat /opt/ficus/bun-version)" && \
+    curl -fsSL https://bun.sh/install \
       | env BUN_INSTALL=/opt/ficus/bun bash -s "bun-v${BUN_VERSION}" && \
     ln -sf /opt/ficus/bun/bin/bun /opt/ficus/bin/bun && \
     ln -sf /opt/ficus/bun/bin/bun /usr/local/bin/bun && \
@@ -204,7 +201,7 @@ RUN chown -R root:root /opt/ficus/browser && \
 COPY scripts/machine/bootstrap.sh scripts/machine/box-provision.sh /opt/ficus/bin/
 RUN chmod 0755 /opt/ficus/bin/bootstrap.sh /opt/ficus/bin/box-provision.sh && \
     printf '{"bunVersion":"%s","nixVersion":"%s","devboxVersion":"%s","playwrightVersion":"%s"}\n' \
-      "${BUN_VERSION}" "${NIX_VERSION}" "${DEVBOX_VERSION}" "${PLAYWRIGHT_VERSION}" > /opt/ficus/prebaked
+      "$(cat /opt/ficus/bun-version)" "${NIX_VERSION}" "${DEVBOX_VERSION}" "${PLAYWRIGHT_VERSION}" > /opt/ficus/prebaked
 
 # Inherited from exeuntu, restated so the contract survives a base change:
 # exe.dev SSHes into this user.

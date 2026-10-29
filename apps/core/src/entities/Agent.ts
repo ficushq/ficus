@@ -2043,8 +2043,18 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
           throw new ChatIdempotencyConflictError()
         }
         if (receipt.state === 'accepted') {
-          if (!receipt.executionId || !receipt.messageId)
-            throw new Error('Idempotency receipt is missing its bound identity')
+          if (!receipt.executionId) throw new Error('Idempotency receipt is missing its bound identity')
+          if (!receipt.messageId) {
+            // Clearing queued input retains its accepted receipt without a
+            // message. Replays acknowledge the original acceptance, never enqueue.
+            const [boundExecution] = await tx
+              .select()
+              .from(executions)
+              .where(and(eq(executions.id, receipt.executionId), eq(executions.agentId, this.id)))
+              .limit(1)
+            if (!boundExecution) throw new Error('Idempotency receipt bound identity no longer exists')
+            return { success: true as const, status: boundExecution.status, queued: false }
+          }
           const [boundMessage] = await tx
             .select()
             .from(messages)

@@ -1,6 +1,7 @@
 import { sandboxControlRequest } from './sandboxControl'
 import type {
   Agent,
+  ManualWaitDecision,
   DeliveryMode,
   Execution,
   Message,
@@ -97,11 +98,12 @@ export async function signalAgentSandboxProcess(
   agentId: string,
   pid: number,
   signal: SandboxProcessSignal,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  startTicks?: number
 ): Promise<void> {
   await sandboxControlRequest(`/agents/${agentId}/sandbox/processes/${pid}/signal`, {
     method: 'POST',
-    body: JSON.stringify({ signal }),
+    body: JSON.stringify({ signal, startTicks }),
     signal: abortSignal,
   })
 }
@@ -345,3 +347,6 @@ export async function getAgentSlotHolds(agentId: string): Promise<AgentSlotHold[
     )
     .map(({ poolKey, expiresAt }) => ({ poolKey, expiresAt }))
 }
+
+export const resolveAgentRecovery = (agentId: string, recoveryId: string, decision: ManualWaitDecision) =>
+  client.agents.resolveRecovery(agentId, recoveryId, decision)

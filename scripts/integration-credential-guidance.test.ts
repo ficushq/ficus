@@ -118,6 +118,36 @@ test('credential prompts scope wrappers to squad sandboxes and environment help 
   expect(command.match(/custom env\.user content/g)).toHaveLength(3)
 })
 
+test('instance-wide credential prompts distinguish their own shell from squad wrappers', () => {
+  for (const name of ['system-manager', 'assistant-worker']) {
+    const prompt = read(`config/agent-types/${name}.yaml`)
+    expect(prompt).toContain('Your own shell has no squad context or provider PATH wrappers')
+    expect(prompt).toContain('ficus integration exec <provider> --squad <squad-id> -- <command>')
+    expect(prompt).toContain('Selection never grants access')
+  }
+})
+
+test('secret setup gives user-facing limits, not detector implementation instructions', () => {
+  const skill = read('config/skills/setup-secrets/SKILL.md')
+  expect(skill).toContain('Workspace files are not scanned for secrets')
+  expect(skill).not.toMatch(/(?:do not|never) register|detector|detection (?:registry|implementation)/i)
+})
+
+test('connection placeholders are consistent across active guidance and wiki documentation', () => {
+  const paths = [
+    ...activeFiles('config/skills'),
+    ...activeFiles('config/agent-types'),
+    ...activeFiles('apps/core/src/lib/prompts'),
+    ...activeFiles('docs/wiki'),
+    'apps/cli/README.md',
+  ]
+  const occurrences = paths.flatMap((path) =>
+    [...read(path).matchAll(/--connection\s+(<[^>]+>)/g)].map((match) => ({ path, placeholder: match[1] }))
+  )
+  expect(occurrences.length).toBeGreaterThan(0)
+  expect(occurrences.filter(({ placeholder }) => placeholder !== '<connection-id>')).toEqual([])
+})
+
 test('CLI option remains compatible but describes metadata, not credential injection', () => {
   const command = read('apps/cli/src/commands/deploy.ts')
   expect(command).toMatch(/\.option\(\s*'--env-secret-ref <key>'/)

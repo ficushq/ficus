@@ -1,3 +1,4 @@
+import { recoveryRecipients, recoveryRecipientsById } from '../recovery/recipients'
 import { selectWorkStreamPresentationState, workStreamTitle, workStreamWaitActor } from '@ficus/shared'
 import { resolveActingUser } from '../rbac'
 import { eq, desc, isNull, and, sql, inArray } from 'drizzle-orm'
@@ -12,6 +13,7 @@ import {
   assistantTasks,
   assistantUpdates,
   inbox,
+  recoveryEpisodes,
 } from '../../db'
 import type {
   AssistantTaskActionData,
@@ -238,6 +240,46 @@ export async function listPendingActions(options: PendingActionListOptions = {})
     }
   }
 
+  // Standalone task recoveries reuse the established agent action vocabulary,
+  // but their typed decisions are never generic provider-resume actions.
+  const recoveries = await db
+    .select({ record: recoveryEpisodes, agent: agents, squad: squads })
+    .from(recoveryEpisodes)
+    .innerJoin(agents, eq(agents.id, recoveryEpisodes.agentId))
+    .leftJoin(squads, eq(squads.id, agents.squadId))
+    .where(
+      and(
+        isNull(recoveryEpisodes.workStreamId),
+        sql`${recoveryEpisodes.state}->>'state' IN ('waiting-owner', 'waiting-manager')`
+      )
+    )
+  const { recoveryWaitSnapshot } = await import('../recovery/store')
+  for (const { record, agent, squad } of recoveries) {
+    const audience = await recoveryRecipients(record)
+    if (audience.target !== 'owner' || !audience.ownerUserIds.length) continue
+    const structured = recoveryWaitSnapshot(record)
+    const data: AgentErrorActionData = {
+      agentId: agent.id,
+      agentName: null,
+      agentTypeId: agent.agentTypeId,
+      squadId: agent.squadId,
+      squadName: squad?.name ?? null,
+      ownerUserId: audience.ownerUserIds[0]!,
+      reason: structured.summary.text,
+      recovery: { id: record.id, structured },
+    }
+    pendingActions.push({
+      id: `agent-recovery:${record.id}`,
+      type: 'agent-error',
+      priority: PRIORITY['agent-error'],
+      createdAt: record.updatedAt.toISOString(),
+      canRespond: false,
+      squadId: agent.squadId ?? undefined,
+      squadName: squad?.name,
+      data,
+    })
+  }
+
   // 2. Get work streams needing human response: a non-terminal stream with an
   // open review or manual wait (waits replaced the review/blocked statuses).
   const actionableWorkStreams = await db
@@ -261,20 +303,36 @@ export async function listPendingActions(options: PendingActionListOptions = {})
   for (const { ws, squad, wait } of actionableWorkStreams) {
     // Only manual waits a human must clear are human actions. Owner-actor
     // waits still block the stream, but are not "Needs you".
-    if (wait.type === 'manual' && workStreamWaitActor(wait) !== 'human') continue
+    if (wait.structured?.stopped) continue
+    if (wait.structured?.request.kind === 'continue') {
+      const audience = await recoveryRecipientsById(wait.structured.request.recoveryId)
+      if (audience?.target !== 'owner' || !audience.ownerUserIds.length) continue
+      wait.actor = 'human' // Current routing may fall back after manager availability changes.
+    } else if (wait.type === 'manual' && workStreamWaitActor(wait) !== 'human') continue
     const isReview = wait.type === 'review'
     // Synthesize the legacy prompt shape from the wait so the Action Center
     // respond flows (#970) keep working unchanged.
-    const prompt: WorkStreamPrompt = isReview
-      ? {
-          type: 'select',
-          message: wait.message ?? ws.handoffMessage ?? `Work stream "${workStreamTitle(ws)}" is ready for review.`,
-          options: ['Approve', 'Request changes'],
-        }
-      : {
-          type: 'text',
-          message: wait.message ?? `Work stream "${workStreamTitle(ws)}" is blocked and needs attention.`,
-        }
+    const structured = wait.structured
+    const prompt: WorkStreamPrompt = structured
+      ? structured.request.kind === 'continue'
+        ? { type: 'select', message: structured.summary.text, options: ['Continue', 'Stop'] }
+        : structured.request.kind === 'decide'
+          ? {
+              type: 'select',
+              message: structured.summary.text,
+              options: structured.request.options.map((option) => option.label),
+            }
+          : { type: 'text', message: structured.summary.text }
+      : isReview
+        ? {
+            type: 'select',
+            message: wait.message ?? ws.handoffMessage ?? `Work stream "${workStreamTitle(ws)}" is ready for review.`,
+            options: ['Approve', 'Request changes'],
+          }
+        : {
+            type: 'text',
+            message: wait.message ?? `Work stream "${workStreamTitle(ws)}" is blocked and needs attention.`,
+          }
 
     // A sibling may be the stream's current assignee while this attempt waits.
     let assigneeAgentId = ws.assigneeAgentId
@@ -296,7 +354,7 @@ export async function listPendingActions(options: PendingActionListOptions = {})
     const data: WorkStreamActionData = {
       workStreamId: ws.id,
       workStreamNumber: ws.number,
-      workStreamTitle: workStreamTitle(ws),
+      workStreamTitle: structured?.request.kind === 'continue' ? 'Continue recovery?' : workStreamTitle(ws),
       squadId: squad.id,
       squadName: squad.name,
       waitId: wait.id,

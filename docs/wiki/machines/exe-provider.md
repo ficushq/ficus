@@ -153,24 +153,22 @@ The provider passes the resolved image on **every** provision:
 `ExeApi.createVm({ name, image })` appends `--image <ref>` to `new` (VERIFIED
 live 2026-07-13); when the ref is `undefined` the flag is omitted.
 
-### Version drift → rebake the image (bootstrap never reinstalls over it)
+### Version drift: Bun convergence versus baked toolchain rebake
 
-If the running Core's `bootstrap.sh` pins ever get ahead of the image (a bump
-merged but the image not yet rebaked/republished, or `FICUS_EXE_MACHINE_IMAGE`
-pinned to an old tag), the marker's baked versions won't match the script's
-pins. Because the `/opt/ficus/prebaked` marker is **present**, bootstrap **keeps
-using the baked tooling** — it does **not** reinstall over the image — and logs a
-`WARNING` per drifting tool (e.g. `prebaked image nix 2.24.9 != script 2.25.0 —
-using baked tooling; rebake the ficus-machine image to change pinned versions`).
+The `/opt/ficus/prebaked` marker records the image baseline and is never rewritten
+by a Bun update. Marker presence still skips apt/nix/devbox/browser installs,
+regardless of their version drift: reinstalling nix over baked `/nix` would brick
+provisioning. Those toolchain changes require a separately authorized image
+rebake/publication; they are not automatically upgraded on existing hosts.
 
-This is deliberate and safety-critical, **not** a self-heal: the official nix
-installer refuses to run over an existing `/nix`, so a boot-time reinstall would
-error under `set -e`, abort provisioning, and mark the VM `unreachable` — a
-`NIX_VERSION` bump on a prebaked image would **brick** it. So a pin change is
-applied by **rebaking + republishing the image** (§ Build & publish), never
-auto-upgraded at boot. The machine still boots normally on the baked tooling
-until you rebake; the only cost of drift is that the baked versions lag the
-script's pins until the next rebake.
+**Bun is the narrow exception.** Bootstrap checks the actual executable version,
+stages and verifies exactly the repository pin, and atomically replaces only the
+Bun executable while retaining the previous one. It does not restart boxes.
+Running box processes require normal idle provisioning reconciliation to adopt
+the replacement. A disk version or baked marker is not process adoption proof.
+See [host Bun convergence](host-bun-convergence.md) for the read-only offline
+preview, failure/rollback behavior and gated rollout. No live rollout is implied
+by the source change or its tests.
 
 ### Lobby operation budgets and observability
 

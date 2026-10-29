@@ -96,6 +96,17 @@ describe('subprocess-tests lane membership', () => {
     ).toEqual([])
   })
 
+  test('Bun runtime process fixtures stay isolated even when their spawn command is opaque', () => {
+    const lane = laneMembers()
+    for (const file of [
+      'src/services/machines/host-bun-preview.test.ts',
+      'src/services/machines/installed-machine-bundles.test.ts',
+      'src/services/sandbox/box-command-restart.test.ts',
+      'src/services/sandbox/vm/manager.test.ts',
+    ])
+      expect(lane).toContain(file)
+  })
+
   test('every file listed in the lane still exists', () => {
     // A rename that misses the workflow leaves `bun test` naming a path that no
     // longer exists — which Bun does not treat as an error, so the test simply

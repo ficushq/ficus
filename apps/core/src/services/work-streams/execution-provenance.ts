@@ -160,9 +160,14 @@ export async function listTrustedWorkStreamOriginsForExecution(
       if (
         metadata?.event !== 'assigned' &&
         metadata?.source !== 'work-stream-continuation' &&
-        metadata?.source !== 'workflow'
+        metadata?.source !== 'workflow' &&
+        metadata?.source !== 'recovery-decision' &&
+        metadata?.source !== 'recovery-retry' &&
+        !(metadata?.source === 'workflow-wait-resolution' && typeof metadata.recoveryId === 'string')
       )
         continue
+      // A consumed system receipt remains provenance after recovery settles.
+      // Live retry/delivery authority is separately fenced by recoveryContinuationIsCurrent.
       if (isUuid(metadata.workStreamId)) {
         trustedInboxOrigins.set(row.id, metadata.workStreamId)
       }

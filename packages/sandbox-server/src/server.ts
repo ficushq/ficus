@@ -1,3 +1,4 @@
+import { isRestartContext } from '@ficus/shared/restart-context'
 /**
  * Tool Executor HTTP Server
  *
@@ -59,8 +60,7 @@ import { handleConfinedList, handleConfinedRead, handleConfinedUpload } from './
 import {
   BoxProcessError,
   listBoxContainers,
-  listBoxProcesses,
-  readPressure,
+  listBoxProcessSnapshot,
   signalBoxProcess,
   stopBoxContainer,
 } from './services/processes'
@@ -367,16 +367,16 @@ async function main(): Promise<void> {
                 return Response.json({ error: 'Managed toolchain activation failed' }, { status: 500 })
               }
             case '/processes': {
-              const [processes, containers] = await Promise.all([listBoxProcesses(), listBoxContainers()])
+              const [snapshot, containers] = await Promise.all([listBoxProcessSnapshot(), listBoxContainers()])
               boxRuntimeHealth.observeContainers(containers)
-              return Response.json({ pressure: readPressure(), processes, containers })
+              return Response.json({ ...snapshot, containers })
             }
             case '/processes/signal':
             case '/containers/stop':
               try {
                 return Response.json(
                   pathname === '/processes/signal'
-                    ? signalBoxProcess(body.pid, body.signal)
+                    ? signalBoxProcess(body.pid, body.signal, { startTicks: body.startTicks })
                     : await stopBoxContainer(body.id)
                 )
               } catch (error) {
@@ -399,8 +399,16 @@ async function main(): Promise<void> {
               if (typeof body.invocationId !== 'string' || !body.invocationId) {
                 return Response.json({ error: 'invocationId is required' }, { status: 400 })
               }
+              if (body.reason === 'core_restart' && !isRestartContext(body.restart)) {
+                return Response.json({ error: 'core_restart requires restart correlation' }, { status: 400 })
+              }
               return Response.json(
-                await cancelBashInvocation(body.invocationId, typeof body.reason === 'string' ? body.reason : undefined)
+                await cancelBashInvocation(
+                  body.invocationId,
+                  typeof body.reason === 'string' ? body.reason : undefined,
+                  undefined,
+                  body.reason === 'core_restart' ? body.restart : undefined
+                )
               )
             }
             case '/read':

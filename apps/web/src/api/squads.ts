@@ -347,6 +347,7 @@ export async function unsubscribeWorkStream(id: string): Promise<WorkStreamSubsc
 }
 
 export const resolveWorkStreamWait = client.squads.resolveWorkStreamWait
+export const resolveStructuredWorkStreamInput = client.squads.resolveStructuredWorkStreamInput
 
 // Agent Inbox
 
@@ -559,7 +560,7 @@ export function countCompletedWorkStreams(
   return apiFetch(`/workstreams?${params}`)
 }
 
-/** Persist only this exposed completion; never updates a visit watermark or resolves an action. */
+/** Persist only this exposed or explicitly dismissed completion; never updates a visit watermark or resolves an action. */
 export function acknowledgeFeedCompletion(id: string, completedAt: string): Promise<{ seen: true }> {
   return apiFetch(`/workstreams/${encodeURIComponent(id)}/feed-seen`, {
     method: 'POST',

@@ -1,3 +1,4 @@
+import '../test-utils/require-test-db'
 import { describe, test, expect } from 'bun:test'
 import postgres from 'postgres'
 import { join } from 'path'

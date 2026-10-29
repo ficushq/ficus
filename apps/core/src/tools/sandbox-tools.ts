@@ -1,3 +1,5 @@
+import { ToolFeedbackError, withReadFeedback } from './tool-feedback'
+import type { RestartContext } from '@ficus/shared/restart-context'
 import { consultantScratchPath } from '../services/sandbox/consultant-sandbox'
 /**
  * K8s Sandbox Tools
@@ -49,7 +51,7 @@ import { createVerifiedEditTool, type VerifiedEditOperations } from './verified-
 import { withSharedWorkspaceHint } from './private-bash-hint'
 import { createLogger } from '../lib/infra/logger'
 import {
-  COMMAND_REFUSED_FOR_RESTART,
+  commandRefusedForRestartError,
   commandCanceledForRestartError,
   isCommandDrainActive,
   trackCommand,
@@ -416,7 +418,9 @@ export function createHttpReadOperations(
         throw await target.mapFailure(err as Error)
       })
       if (!response.exists) {
-        throw new Error(`ENOENT: no such file or directory, access '${absolutePath}'`)
+        throw Object.assign(new Error(`ENOENT: no such file or directory, access '${absolutePath}'`), {
+          code: 'ENOENT',
+        })
       }
     },
   }
@@ -586,7 +590,7 @@ export function createHttpBashOperations(
       }
     ): Promise<{ exitCode: number | null }> => {
       // A stopping worker starts nothing new; the agent retries after the restart.
-      if (isCommandDrainActive()) throw new Error(COMMAND_REFUSED_FOR_RESTART)
+      if (isCommandDrainActive(sandboxId)) throw commandRefusedForRestartError(sandboxId)
       const client = manager.getClientForSandbox(sandboxId)
       if (!client) {
         throw await mapFailure(new Error(`No K8s sandbox client found for ${sandboxId}`))
@@ -594,7 +598,7 @@ export function createHttpBashOperations(
 
       const timeout = normalizeBashTimeoutSeconds(options.timeout)
 
-      let cancelForRestart: () => Promise<void> = async () => {}
+      let cancelForRestart: (restart: RestartContext) => Promise<void> = async () => {}
       const running = new Promise<{ exitCode: number | null }>((resolve, reject) => {
         const stream = client.bash({
           command,
@@ -638,14 +642,15 @@ export function createHttpBashOperations(
         }
 
         // The worker is shutting down and this command outlived the drain window.
-        cancelForRestart = async () => {
+        cancelForRestart = async (restart) => {
           if (settled) return
           settled = true
           let cleanupError: Error | undefined
-          await stream.cancelAndWait('worker-stop').catch((error: Error) => {
+          await stream.cancelAndWait('core_restart', restart).catch((error: Error) => {
             cleanupError = error
           })
-          reject(commandCanceledForRestartError(cleanupError))
+          reject(commandCanceledForRestartError(restart, cleanupError))
+          if (cleanupError) throw cleanupError
         }
 
         stream.on('data', (response) => {
@@ -664,7 +669,15 @@ export function createHttpBashOperations(
             options.onData(processCarriageReturns(chunk))
           }
           if (response.error) {
-            settle(() => reject(new Error(response.error)))
+            settle(() =>
+              reject(
+                // Error + 127 is the executor's spawn/admission failure tuple.
+                // A completed command exiting 127 arrives without an error frame.
+                Number.isInteger(response.exitCode) && response.exitCode !== 127
+                  ? new ToolFeedbackError('exit', response.error!, { exitCode: response.exitCode })
+                  : new Error(response.error)
+              )
+            )
           }
           if (response.exitCode !== undefined) {
             finalExitCode = response.exitCode
@@ -771,7 +784,7 @@ export function createHttpBashOperations(
           })
         }
       })
-      trackCommand({ settled: running, cancelForRestart: () => cancelForRestart() })
+      trackCommand({ sandboxId, settled: running, cancelForRestart: (restart) => cancelForRestart(restart) })
       return running
     },
   }
@@ -801,7 +814,10 @@ export function enforceAbsolutePaths<T extends AgentTool<any>>(tool: T, exampleR
     const p = toolArgs?.file_path ?? toolArgs?.path
     if (typeof p === 'string' && p.length > 0 && !p.startsWith('/')) {
       const root = exampleRoot ?? resolveWorkspaceLayout({}).workspaceMount
-      throw new Error(`Path must be absolute (start with "/"): received "${p}". Use the full path, e.g. ${root}/...`)
+      throw new ToolFeedbackError(
+        'input',
+        `Path must be absolute (start with "/"): received "${p}". Use the full path, e.g. ${root}/...`
+      )
     }
     return original(...args)
   }) as T['execute']
@@ -817,9 +833,9 @@ export function createK8sSandboxedReadTool(
   manager: SandboxToolsManager,
   squadRoute?: SquadFileRoute
 ): AgentTool<any> {
-  return createReadTool(cwd, {
-    operations: createHttpReadOperations(manager, sandboxId, squadRoute),
-  })
+  return withReadFeedback(createHttpReadOperations(manager, sandboxId, squadRoute), (operations) =>
+    createReadTool(cwd, { operations })
+  )
 }
 
 /**

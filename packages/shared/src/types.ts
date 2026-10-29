@@ -1,3 +1,4 @@
+import type { StructuredManualWait } from './recovery-waits'
 import type { AssistantRoutingCorrection, AssistantRoutingHint, AssistantRoutingTarget } from './assistant-routing'
 import type { QuestionAnswerCardData } from './question-answers'
 export * from './grants'
@@ -850,6 +851,8 @@ export interface AgentQuestionActionData {
 // An agent halted by a provider/rate-limit error (status waiting-input with an exhaustion question).
 // These can be resumed individually or in bulk ("Continue all") once the provider recovers.
 export interface AgentErrorActionData {
+  /** Runtime-owned recovery; never handled by generic provider Continue/all. */
+  recovery?: { id: string; structured: StructuredManualWait }
   agentId: string
   agentName: string | null
   agentTypeId: string
@@ -1211,7 +1214,7 @@ export type WorkStreamWaitCreatedBy = 'system' | 'agent' | 'manager' | 'operator
  * manual waits ask for human attention; every actor blocks scheduling and flow
  * progress identically.
  */
-export const WORK_STREAM_WAIT_ACTORS = ['human', 'owner'] as const
+export const WORK_STREAM_WAIT_ACTORS = ['human', 'owner', 'manager'] as const
 export type WorkStreamWaitActor = (typeof WORK_STREAM_WAIT_ACTORS)[number]
 
 /** One audited correction of a manual wait's actor (append-only, oldest first). */
@@ -1226,10 +1229,12 @@ export interface WorkStreamWaitActorChange {
 
 /** Normalize a possibly missing or unknown actor: anything unrecognized is human (older payloads). */
 export function workStreamWaitActor(wait: { actor?: string | null }): WorkStreamWaitActor {
-  return wait.actor === 'owner' ? 'owner' : 'human'
+  return wait.actor === 'owner' || wait.actor === 'manager' ? wait.actor : 'human'
 }
 
 export interface WorkStreamWait {
+  /** Present only for new structured manual input requests. */
+  structured?: StructuredManualWait | null
   /** Missing/null means whole-stream; an ID pins the wait to one flow attempt. */
   flowAttemptId?: number | null
   /** A specialized decision UI owns resolution instead of generic unblock. */

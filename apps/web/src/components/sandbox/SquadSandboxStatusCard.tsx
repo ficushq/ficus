@@ -5,7 +5,7 @@ import { sandboxPollInterval } from './sandboxStatusStyles'
 import { SandboxStatusBadge } from './SandboxStatusBadge'
 import { resolveVmChainDisplay } from './vmChainHealth'
 import { webStatus } from '../../lib/statusPresentation'
-import { isSandboxOverloaded } from '@ficus/shared'
+import { hasSandboxPressureWarning } from '@ficus/shared'
 import { PressureSummary } from './SandboxProcesses'
 
 /** Read-only status of the squad's shared warm sandbox. */
@@ -52,7 +52,7 @@ export function SquadSandboxStatusCard({ squadId, compact = false }: { squadId: 
           )}
         </div>
         {display.detail && <p className="mt-1 text-xs text-muted">{display.detail}</p>}
-        {isSandboxOverloaded(status.pressure) && status.pressure && (
+        {hasSandboxPressureWarning(status.pressure) && status.pressure && (
           <div className="mt-1">
             <PressureSummary pressure={status.pressure} />
           </div>

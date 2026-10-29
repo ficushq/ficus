@@ -335,12 +335,12 @@ describe('machine script docker contract', () => {
     expect(bootstrapSh).toContain('allowtcpforwarding[[:space:]]+no')
   })
 
-  it("bootstrap.sh uses a prebaked image's baked tooling (skips installs) whether or not versions match, and never claims a self-heal", () => {
+  it('bootstrap.sh keeps the prebaked toolchain skip, with Bun converged separately', () => {
     // The marker the ficus-machine image bakes (packages/machine-image/Dockerfile).
-    expect(bootstrapSh).toContain('/opt/ficus/prebaked')
+    expect(bootstrapSh).toContain('PREBAKED_MARKER="${FICUS_ROOT}/prebaked"')
     // The install block is gated on marker PRESENCE (the source of truth for
-    // baked tooling); a drift only warns via the decision logger — it never
-    // re-runs the installs over a prebaked image (a nix reinstall would brick).
+    // baked tooling); nix/devbox drift never invokes their installers. Bun
+    // alone converges through its checked atomic replacement.
     expect(bootstrapSh).toContain('log_prebaked_decision')
     expect(bootstrapSh).toContain('bunVersion')
     // Honest wording: a drift warns + recommends a rebake, it does NOT self-heal.
@@ -803,7 +803,7 @@ describe('bootstrap.sh --core-cidr validation + egress ruleset rendering', () =>
 // --print-subid-start): it reads the marker at `--marker-file`, prints the
 // decision (`skip` = use baked tooling / `install` = full BYO path) on stdout,
 // and logs any drift WARNING on stderr — with NO apt/nix/install side effects.
-// This proves a prebaked image ALWAYS uses its baked tooling (a drift warns but
+// This proves prebaked nix/devbox ALWAYS use their baked tooling (drift warns but
 // never triggers a bricking reinstall over the baked /nix).
 describe('bootstrap.sh prebaked-image decision (--print-prebaked-decision dry run)', () => {
   const bootstrapPath = join(repoRoot, 'scripts/machine/bootstrap.sh')
@@ -857,7 +857,7 @@ describe('bootstrap.sh prebaked-image decision (--print-prebaked-decision dry ru
     expect(stdout.trim()).toBe('skip')
     // A clean match logs the fast-path notice but NEVER a drift warning.
     expect(stderr).not.toContain('WARNING')
-    expect(stderr).toContain('skipping install steps')
+    expect(stderr).toContain('skipping baked toolchain installs; Bun is checked separately')
   })
 
   it('marker present + a version DRIFTS → STILL skip installs (never reinstall over a prebaked image) + honest drift WARNING', async () => {
@@ -1275,10 +1275,15 @@ ${
   refuseElevation
     ? 'echo "ficus-test: sudo refused: $*" >&2; exit 77'
     : `
-[ "$1" = bash ] && [ "$2" = '${boxProvisionPath}' ] || exit 78
+# Accept only the two forwarded overrides and this exact script. Never run
+# arbitrary sudo argv or lose the synthetic root while simulating env_reset.
+[ "$1" = env ] && [ "$2" = 'FICUS_HOST_ROOT=${dir}' ] || exit 78
+case "$3" in FICUS_BOX_LOCK_WAIT_SECONDS=*) ;; *) exit 78 ;; esac
+[ "$4" = bash ] && [ "$5" = '${boxProvisionPath}' ] || exit 78
 printf '%s\n' "$*" >> '${dir}/elevations'
-shift
-FICUS_FIXTURE_UID=0 exec '${bash}' "$@"`
+host_root="$2"; lock_wait="$3"
+shift 4
+exec env -i PATH="$PATH" FICUS_FIXTURE_UID=0 "$host_root" "$lock_wait" '${bash}' "$@"`
 }
 `,
       { mode: 0o755 }
@@ -1514,7 +1519,10 @@ FICUS_FIXTURE_UID=0 exec '${bash}' "$@"`
     expect(existsSync(join(env.FICUS_HOST_ROOT!, 'run/ficus-box-locks/ficus-box-box_0123456789ab.lock'))).toBe(true)
     const elevations = join(env.FICUS_HOST_ROOT!, 'elevations')
     if (uid === 0) expect(existsSync(elevations)).toBe(false)
-    else expect(readFileSync(elevations, 'utf8').trim().split('\n')).toHaveLength(1)
+    else
+      expect(readFileSync(elevations, 'utf8')).toBe(
+        `env FICUS_HOST_ROOT=${env.FICUS_HOST_ROOT} FICUS_BOX_LOCK_WAIT_SECONDS=180 bash ${boxProvisionPath} --sandbox-id x --unix-user box_0123456789ab --port 50100\n`
+      )
     expect(stderr.match(/ficus-test:/g)).toHaveLength(1)
     expect(stderr).toContain('machine layout inventory failed; nothing was changed')
     expect(stdout).toBe('')
@@ -1539,7 +1547,9 @@ FICUS_FIXTURE_UID=0 exec '${bash}' "$@"`
       { env }
     )
     expect(exitCode).toBe(77)
-    expect(stderr).toContain('ficus-test: sudo refused: bash ')
+    expect(stderr).toBe(
+      `ficus-test: sudo refused: env FICUS_HOST_ROOT=${env.FICUS_HOST_ROOT} FICUS_BOX_LOCK_WAIT_SECONDS=180 bash ${boxProvisionPath} --sandbox-id x --unix-user box_0123456789ab --port 50100\n`
+    )
     expect(stderr).not.toContain('bash refused:')
     expect(stderr).not.toContain('machine layout inventory failed')
     expect(existsSync(join(env.FICUS_HOST_ROOT!, 'run'))).toBe(false)
@@ -2524,4 +2534,62 @@ describe('shared machine Nix cache', () => {
     expect({ code, stderr }).toEqual({ code: 0, stderr: '' })
     expect(stdout).toContain('6 cache integration checks passed')
   })
+})
+
+describe('deferred Bun convergence does not acknowledge the desired bootstrap version', () => {
+  it('keeps the host ready and stale so the next normal stale bootstrap retries', async () => {
+    const machine = makeMachine({ status: 'bootstrapping', bootstrapVersion: 'previous-bootstrap' })
+    const { runner } = makeFakeRunner((command) => ({
+      exitCode: 0,
+      stdout: command.includes('bash ')
+        ? CAPS_LINE.replace('"docker":"none"', '"docker":"none","bunConvergence":"deferred"')
+        : '',
+      stderr: '',
+    }))
+    const updates: Partial<Machine>[] = []
+    await bootstrapMachine(machine, {
+      runner,
+      waitForSshReady: async () => {},
+      updateMachine: async (_id, update) => {
+        updates.push(update)
+        return machine
+      },
+    })
+    expect(updates).toHaveLength(1)
+    expect(updates[0]!.status).toBe('ready')
+    expect(updates[0]!.bootstrapVersion).toBe('previous-bootstrap')
+    expect(updates[0]!.capabilities).toMatchObject({ bunConvergence: 'deferred' })
+    expect(updates[0]!.lastError).toContain('Bun convergence deferred')
+  })
+
+  it('accepts only the closed current/deferred Bun convergence capability', () => {
+    for (const value of ['current', 'deferred'] as const)
+      expect(parseCapabilities(`FICUS_CAPS_JSON: {"bunConvergence":"${value}"}`).bunConvergence).toBe(value)
+    expect(parseCapabilities('FICUS_CAPS_JSON: {"bunConvergence":"anything"}').bunConvergence).toBeUndefined()
+  })
+})
+
+describe('bootstrap capability separates applied scripts from verified runtime convergence', () => {
+  it.each(['current', 'deferred'] as const)(
+    '%s reports independent applied-script identity and verified Bun eligibility',
+    async (convergence) => {
+      const machine = makeMachine({ bootstrapVersion: 'previous-bootstrap' })
+      const { runner } = makeFakeRunner(() => ({
+        exitCode: 0,
+        stdout: `FICUS_CAPS_JSON: {"bunConvergence":"${convergence}"}`,
+        stderr: '',
+      }))
+      const updates: Partial<Machine>[] = []
+      await bootstrapMachine(machine, {
+        runner,
+        waitForSshReady: async () => {},
+        updateMachine: async (_id, update) => {
+          updates.push(update)
+          return machine
+        },
+      })
+      expect(updates[0]!.capabilities?.appliedBootstrapVersion).toMatch(/^[a-f0-9]{64}$/)
+      expect(updates[0]!.capabilities?.bunVersion).toBe(convergence === 'current' ? '1.4.2' : undefined)
+    }
+  )
 })

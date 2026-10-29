@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 import { workStreamRef, workStreamTitle, type WorkStream } from '@ficus/shared'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useInfiniteQuery } from '../reactQueryHooks'
 import { ApiError } from '../api/client'
 import { acknowledgeFeedCompletion } from '../api/squads'
@@ -35,56 +35,85 @@ function FeedTimestamp({ value }: { value: string }) {
   )
 }
 
+type Receipt = { state: 'seen' | 'failed' | 'changed'; message?: string }
+type SaveCompletion = (stream: WorkStream) => Promise<Receipt>
+
+/** One exact-revision receipt pipeline for both exposure and explicit dismissal. */
+function useCompletionReceipts(acknowledge: typeof acknowledgeFeedCompletion) {
+  const [receipts, setReceipts] = useState<Map<string, Receipt>>(() => new Map())
+  const settled = useRef(new Map<string, Receipt>())
+  const pending = useRef(new Map<string, Promise<Receipt>>())
+  const active = useRef(true)
+  useEffect(() => {
+    active.current = true
+    return () => {
+      active.current = false
+    }
+  }, [])
+  const save = useCallback<SaveCompletion>(
+    (stream) => {
+      const key = completionKey(stream)
+      const previous = settled.current.get(key)
+      if (previous && previous.state !== 'failed') return Promise.resolve(previous)
+      const inflight = pending.current.get(key)
+      if (inflight) return inflight
+      if (!active.current || !stream.completedAt) return Promise.resolve({ state: 'failed' })
+      const request = (async (): Promise<Receipt> => {
+        let receipt: Receipt
+        try {
+          await acknowledge(stream.id, new Date(stream.completedAt!).toISOString())
+          receipt = { state: 'seen' }
+        } catch (error) {
+          receipt =
+            error instanceof ApiError && error.status === 409
+              ? { state: 'changed', message: error.message }
+              : { state: 'failed' }
+        }
+        settled.current.set(key, receipt)
+        pending.current.delete(key)
+        if (active.current) setReceipts(new Map(settled.current))
+        return receipt
+      })()
+      pending.current.set(key, request)
+      return request
+    },
+    [acknowledge]
+  )
+  return { receipts, save, active }
+}
+
 /** Exposure is deliberately conservative: no observer support means no automatic acknowledgement. */
 function CompletionExposure({
   stream,
-  acknowledge,
-  seen,
+  save,
+  receipt,
   children,
 }: {
   stream: WorkStream
-  acknowledge: typeof acknowledgeFeedCompletion
-  seen: Set<string>
+  save: SaveCompletion
+  receipt?: Receipt
   children: ReactNode
 }) {
-  const key = completionKey(stream)
   const row = useRef<HTMLLIElement>(null)
   const retry = useRef<() => void>(() => {})
-  const [state, setState] = useState<'new' | 'seen' | 'failed' | 'changed'>(() => (seen.has(key) ? 'seen' : 'new'))
   useEffect(() => {
     const target = row.current
     if (!target || !stream.completedAt || !window.IntersectionObserver) return
     let active = true
     let visible = false
-    let saving = false
-    let changed = false
-    let saved = seen.has(key)
-    const save = () => {
-      if (!active || !visible || saving || saved || changed || document.visibilityState !== 'visible') return
+    const acknowledgeExposed = () => {
+      if (!active || !visible || document.visibilityState !== 'visible') return
       // Intersection notifications can have been queued before a section was collapsed.
       if (target.closest('details:not([open])')) return
-      saving = true
-      void acknowledge(stream.id, new Date(stream.completedAt!).toISOString())
-        .then(() => {
-          saved = true
-          seen.add(key)
-          if (active) setState('seen')
-        })
-        .catch((error) => {
-          changed = error instanceof ApiError && error.status === 409
-          if (active) setState(changed ? 'changed' : 'failed')
-        })
-        .finally(() => {
-          saving = false
-        })
+      void save(stream)
     }
-    retry.current = save
+    retry.current = acknowledgeExposed
     const observer = new window.IntersectionObserver(
       (entries) => {
         visible = entries.some(
           (entry) => entry.target === target && entry.isIntersecting && entry.intersectionRatio >= 0.5
         )
-        if (visible) save()
+        if (visible) acknowledgeExposed()
       },
       { threshold: 0.5 }
     )
@@ -101,21 +130,21 @@ function CompletionExposure({
       document.removeEventListener('visibilitychange', observe)
       retry.current = () => {}
     }
-  }, [stream.id, stream.completedAt, acknowledge, seen, key])
+  }, [stream, save])
   return (
     <li ref={row} data-completion-id={stream.id}>
       <div className="relative">
         {children}
-        {(state === 'new' || state === 'failed') && (
+        {(!receipt || receipt.state === 'failed') && (
           <span className="absolute right-3 top-2.5 text-xs text-muted">New</span>
         )}
       </div>
-      {state === 'changed' && (
+      {receipt?.state === 'changed' && (
         <p role="status" className="ml-9 text-xs text-muted">
-          Completion changed; refresh the Feed.
+          {receipt.message}
         </p>
       )}
-      {state === 'failed' && (
+      {receipt?.state === 'failed' && (
         <p role="status" className="ml-9 text-xs text-muted">
           Could not save seen state.{' '}
           <button type="button" className="ficus-button ficus-button-link" onClick={() => retry.current()}>
@@ -141,7 +170,10 @@ export function AccountFeedVisit({
   // Separate cache per mount/account: an old query page must not replay a saved receipt on refresh.
   const [visitId] = useState(() => crypto.randomUUID())
   const completed = useInfiniteQuery(feedQueries.updates(userId, visitId, squadIds))
-  const [seen] = useState(() => new Set<string>())
+  const { receipts, save, active } = useCompletionReceipts(acknowledge)
+  const [dismissing, setDismissing] = useState(false)
+  const dismissingRef = useRef(false)
+  const [dismissedThrough, setDismissedThrough] = useState<number | null>(null)
   const [retained, setRetained] = useState<WorkStream[]>([])
   const section = useRef<HTMLDetailsElement>(null)
   const [newAbove, setNewAbove] = useState(false)
@@ -178,6 +210,34 @@ export function AccountFeedVisit({
     return () => observer.disconnect()
   }, [newAbove])
   const streams = retained.filter((stream) => squadIds.length === 0 || squadIds.includes(stream.squadId))
+  // Only a completion newer than the loaded newest-first frontier reopens the section.
+  // Refetching unseen older pages after receipts were saved is NOT a new arrival.
+  // This is visit-local presentation state, never a persisted seen watermark.
+  const newestCompletion = Math.max(0, ...streams.map((stream) => new Date(stream.completedAt!).getTime()))
+  const dismissed = dismissedThrough !== null && newestCompletion <= dismissedThrough
+  useEffect(() => {
+    if (dismissed) setNewAbove(false)
+  }, [dismissed])
+  const dismiss = async () => {
+    if (dismissingRef.current) return
+    dismissingRef.current = true
+    setDismissing(true)
+    const frontier = newestCompletion
+    let allSeen = true
+    // Snapshot only loaded rows in this list. Sequential writes bound request pressure and
+    // let an account switch cancel the remaining queue without using the next user's session.
+    for (const stream of streams) {
+      if (!active.current) return
+      const receipt = await save(stream)
+      if (receipt.state !== 'seen') allSeen = false
+    }
+    if (!active.current) return
+    if (allSeen) {
+      setDismissedThrough(frontier)
+    }
+    dismissingRef.current = false
+    setDismissing(false)
+  }
   // These remain useful pointers into domain-unread Assistant conversations. Feed exposure does
   // not consume their unread state; they are not labeled as new Feed completions.
   const activity = useActivity()
@@ -185,9 +245,11 @@ export function AccountFeedVisit({
     squadIds.length > 0 || activity.ownerId !== userId
       ? []
       : (activity.activity?.conversations ?? []).filter((row) => row.unreadUpdates > 0)
-  if (!streams.length && !unreadConversations.length && !completed.isError) return null
+  if (dismissed || (!streams.length && !unreadConversations.length && !completed.isError)) return null
   const parts = [
-    streams.length ? `${streams.length} completed${completed.hasNextPage ? ' shown' : ''}` : '',
+    streams.length
+      ? `${completed.hasNextPage ? (completed.data?.pages[0]?.totalCount ?? streams.length) : streams.length} completed`
+      : '',
     unreadConversations.length
       ? `${unreadConversations.length} Assistant ${unreadConversations.length === 1 ? 'update' : 'updates'}`
       : '',
@@ -221,6 +283,18 @@ export function AccountFeedVisit({
           </span>
           <span className="text-sm font-semibold text-secondary">Updates</span>
           <span className="text-xs text-muted">{parts.join(' · ')}</span>
+          <button
+            type="button"
+            className="ficus-button ficus-button-link ml-auto shrink-0 text-xs"
+            disabled={dismissing}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              void dismiss()
+            }}
+          >
+            {dismissing ? 'Dismissing…' : 'Dismiss'}
+          </button>
         </summary>
         <div className="space-y-3 pb-3 pt-3">
           {completed.isError && (
@@ -274,7 +348,12 @@ export function AccountFeedVisit({
                 const params = new URLSearchParams(location.search)
                 params.set('ws', workStreamRef(stream))
                 return (
-                  <CompletionExposure key={completionKey(stream)} stream={stream} acknowledge={acknowledge} seen={seen}>
+                  <CompletionExposure
+                    key={completionKey(stream)}
+                    stream={stream}
+                    save={save}
+                    receipt={receipts.get(completionKey(stream))}
+                  >
                     <Link
                       to={{ pathname: location.pathname, search: params.toString() }}
                       className="flex items-start gap-2 rounded-lg py-2.5 pl-9 pr-14 hover:bg-surface-hover"

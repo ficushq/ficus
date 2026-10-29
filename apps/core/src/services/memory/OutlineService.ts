@@ -17,7 +17,7 @@ import { expandReadScope, type AllowedScope, type ScopeRequest } from './access/
 import { anyTermQuery, documentSearchVector, escapeLike, headingSearchVector, queryTerms, termCoverage } from './fts'
 import { buildSections, type OutlineHeading, type OutlineSection } from './outline'
 import { scopeCondition } from './SearchService'
-import { withheldGitHubMemoryDocuments } from '../integrations/github/managed-content'
+import { groupGitHubMemorySnapshots, withheldGitHubMemoryDocuments } from '../integrations/github/managed-content'
 
 export type OutlineScope = ScopeRequest
 
@@ -74,6 +74,7 @@ const documentColumns = {
   sourceType: memoryDocuments.sourceType,
   path: memoryDocuments.path,
   title: memoryDocuments.title,
+  githubProjection: sql<unknown>`${memoryDocuments.frontmatter}->'githubProjection'`,
 }
 
 export class OutlineService {
@@ -104,15 +105,22 @@ export class OutlineService {
         .select(documentColumns)
         .from(memoryDocuments)
         .where(and(documentScope(scopes), eq(memoryDocuments.path, path)))
+      const snapshots: Array<readonly [string, unknown]> = documents
+        .filter((document) => document.sourceType === 'github_issue')
+        .map((document) => [document.documentId, document.githubProjection])
+      const outlines = await this.withSections(documents, snapshots)
       const withheld = await withheldGitHubMemoryDocuments(
         squadId,
-        documents.map((document) => document.documentId)
+        documents.map((document) => document.documentId),
+        db,
+        {
+          snapshots: groupGitHubMemorySnapshots(snapshots),
+        }
       )
-      const visible = documents.filter((document) => !withheld.has(document.documentId))
+      const visible = outlines.filter((document) => !withheld.has(document.documentId))
       if (visible.length > 0) {
-        const outlines = await this.withSections(visible)
-        await this.audit(squadId, outlines, path)
-        return { kind: 'document', documents: outlines }
+        await this.audit(squadId, visible, path)
+        return { kind: 'document', documents: visible }
       }
     }
 
@@ -204,19 +212,27 @@ export class OutlineService {
       .orderBy(desc(headingScore), desc(memoryDocuments.updatedAt))
       .limit(limit * 3)
 
-    // GitHub titles/headings the author filter no longer admits are dropped before section assembly.
-    const withheld = await withheldGitHubMemoryDocuments(squadId, [
-      ...documentHits.map((hit) => hit.documentId),
-      ...headingHits.map((hit) => hit.documentId),
-    ])
-    const visibleDocumentHits = documentHits.filter((hit) => !withheld.has(hit.documentId))
-    const visibleHeadingHits = headingHits.filter((hit) => !withheld.has(hit.documentId))
+    // Assemble locally, then fence the exact fetched generation immediately before returning it.
+    const hits = [...documentHits, ...headingHits]
+    const snapshots: Array<readonly [string, unknown]> = hits
+      .filter((hit) => hit.sourceType === 'github_issue')
+      .map((hit) => [hit.documentId, hit.githubProjection])
     const sectionsByDocument = new Map(
-      (await this.withSections(uniqueDocuments(visibleHeadingHits))).map((outline) => [
+      (await this.withSections(uniqueDocuments(headingHits), snapshots)).map((outline) => [
         outline.documentId,
         outline.sections,
       ])
     )
+    const withheld = await withheldGitHubMemoryDocuments(
+      squadId,
+      hits.map((hit) => hit.documentId),
+      db,
+      {
+        snapshots: groupGitHubMemorySnapshots(snapshots),
+      }
+    )
+    const visibleDocumentHits = documentHits.filter((hit) => !withheld.has(hit.documentId))
+    const visibleHeadingHits = headingHits.filter((hit) => !withheld.has(hit.documentId))
     const matches = new Map<string, OutlineMatch>()
     for (const hit of visibleHeadingHits) {
       const section = innermostSection(sectionsByDocument.get(hit.documentId) ?? [], hit.startLine)
@@ -239,17 +255,23 @@ export class OutlineService {
   }
 
   /** Heading trees for the given documents, rebuilt from their chunks. */
-  private async withSections(documents: OutlineDocument[]): Promise<DocumentOutline[]> {
+  private async withSections(
+    documents: OutlineDocument[],
+    snapshots: Array<readonly [string, unknown]>
+  ): Promise<DocumentOutline[]> {
     if (documents.length === 0) return []
     const chunks = await db
       .select({
         documentId: memoryChunks.documentId,
+        sourceType: memoryDocuments.sourceType,
+        githubProjection: sql<unknown>`${memoryDocuments.frontmatter}->'githubProjection'`,
         heading: sql<string | null>`${memoryChunks.metadata} ->> 'heading'`,
         head: sql<string>`left(${memoryChunks.content}, 300)`,
         startLine: memoryChunks.startLine,
         endLine: memoryChunks.endLine,
       })
       .from(memoryChunks)
+      .innerJoin(memoryDocuments, eq(memoryChunks.documentId, memoryDocuments.id))
       .where(
         inArray(
           memoryChunks.documentId,
@@ -260,6 +282,7 @@ export class OutlineService {
 
     const byDocument = new Map<string, { headings: OutlineHeading[]; lastLine: number }>()
     for (const chunk of chunks) {
+      if (chunk.sourceType === 'github_issue') snapshots.push([chunk.documentId, chunk.githubProjection])
       const entry = byDocument.get(chunk.documentId) ?? { headings: [], lastLine: 0 }
       byDocument.set(chunk.documentId, entry)
       entry.lastLine = Math.max(entry.lastLine, chunk.endLine ?? 0)

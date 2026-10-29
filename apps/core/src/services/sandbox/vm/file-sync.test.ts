@@ -9,6 +9,7 @@ import * as factory from '../factory'
 import {
   boxWorkspaceDotDirCommand,
   syncBoxFiles,
+  boxFilesCurrent,
   resolveBoxApiUrl,
   resolveBoxApiTransport,
   isValidHttpUrl,
@@ -1909,4 +1910,24 @@ test('solo VM cleanup preserves user env and nested private files without traver
   } finally {
     rmSync(home, { recursive: true, force: true })
   }
+})
+
+test('ready-box asset freshness is read-only and detects changed and revoked material', async () => {
+  const id = 'agent_readonly'
+  const client = new FakeClient()
+  const hashes: Record<string, { hash: string; files: string[] }> = {}
+  const deps = fullDeps({
+    box: { machineId: 'test', syncedHashes: hashes },
+    stampBoxSyncedHash: async (_machine, _id, name, hash, files) => {
+      hashes[name] = { hash, files: files ?? [] }
+    },
+  })
+  expect(await boxFilesCurrent(id, squadAgentOpts, deps)).toBe(false)
+  await syncBoxFiles(client as any, id, squadAgentOpts, deps)
+  client.calls = []
+  expect(await boxFilesCurrent(id, squadAgentOpts, deps)).toBe(true)
+  expect(await boxFilesCurrent(id, squadAgentOpts, { ...deps, readSquadEnv: () => 'rotated' })).toBe(false)
+  expect(await boxFilesCurrent(id, squadAgentOpts, { ...deps, readIdentityPem: () => null })).toBe(false)
+  expect(await boxFilesCurrent(id, squadAgentOpts, { ...deps, listSkillFiles: async () => [] })).toBe(false)
+  expect(client.calls).toEqual([])
 })

@@ -1,3 +1,4 @@
+import { withIdleBunRuntimeClaim } from './bun-runtime-adoption'
 import { boxProvisionLockArgs, DEFAULT_BOX_SSH_TIMEOUT_MS, withBoxHostLock } from './box-host-lock'
 import { createHash } from 'crypto'
 import { mkdir, readFile, readdir, writeFile } from 'fs/promises'
@@ -25,9 +26,11 @@ import {
   getMachineBox as getMachineBoxReal,
   listMachineBoxes as listMachineBoxesReal,
   upsertMachineBox as upsertMachineBoxReal,
+  recordBoxBunRuntimeFailure,
 } from './queries'
 import type { Machine, MachineBox } from './queries'
 import { BOX_PORT_BUSY_EXIT_CODE, BoxPortBusyError } from './box-port-busy'
+import { BOX_LOCK_TIMEOUT_EXIT_CODE, BoxLockTimeoutError } from './box-lock-timeout'
 import { buildPushFileCommand, defaultSshRunner, defaultSshStreamer } from './ssh'
 import type { SshRunner, SshStreamer } from './ssh'
 import { machineTunnels } from './tunnel-manager'
@@ -145,6 +148,12 @@ export interface BoxEnv {
 }
 
 export interface EnsureBoxOpts {
+  /** Existing durable setup-session fence; checked at remote and publication boundaries. */
+  assertOwned?: () => void
+  /** Automatic Bun adoption only: claim an already-idle activation chain. */
+  adoptIdleRuntime?: boolean
+  /** Verify the running interpreter before publishing a newly adopted spec. */
+  expectedBunVersion?: string
   sandboxId: string
   machineId?: string | null
   env: BoxEnv
@@ -292,6 +301,35 @@ export function classifyProvisioningMarkerDrift(
   return 'critical'
 }
 
+/** Compare configuration independently of the observed runtime stamp. Every
+ * non-Bun input still participates; this never proves runtime convergence. */
+export function classifyBoxConfigurationMarkerDrift(
+  box: Pick<MachineBox, 'provisionedSpecHash' | 'reconcilableSpecHash'> | null | undefined,
+  desired: string | undefined,
+  env: BoxEnv
+): ProvisioningMarkerDrift {
+  const direct = classifyProvisioningMarkerDrift(box?.provisionedSpecHash, desired, env)
+  const target = env.FICUS_BOX_SPEC_HASH
+  const observed = box?.reconcilableSpecHash
+  const configured = box?.provisionedSpecHash?.split('.')[0]
+  if (
+    direct !== 'critical' ||
+    !target ||
+    !observed ||
+    !configured ||
+    configured.replace(/:bun:\d+_\d+_\d+$/, '') !== target.replace(/:bun:\d+_\d+_\d+$/, '') ||
+    desired !== computeProvisioningMarker(target, env) ||
+    observed.replace(/:bun:\d+_\d+_\d+$/, '') !== target.replace(/:bun:\d+_\d+_\d+$/, '')
+  )
+    return direct
+  const previousEnv = { ...env, FICUS_BOX_SPEC_HASH: configured }
+  return classifyProvisioningMarkerDrift(
+    box?.provisionedSpecHash,
+    computeProvisioningMarker(configured, previousEnv),
+    previousEnv
+  )
+}
+
 /**
  * One-line explanation of a provisioning-marker mismatch, for the ensure log
  * at the moment a full re-provision (env re-push + unit restart) is chosen
@@ -319,7 +357,7 @@ export function describeProvisioningMarkerDrift(previous: string | null | undefi
 export type FetchLike = (
   url: string,
   init?: { method?: string; headers?: Record<string, string>; signal?: AbortSignal }
-) => Promise<{ ok: boolean; status: number }>
+) => Promise<{ ok: boolean; status: number; json?(): Promise<unknown> }>
 
 /**
  * Per-request timeout for a single /healthz fetch. Without it a raw `fetch` can
@@ -344,6 +382,7 @@ export interface BoxManagerDeps {
   beginBoxRestart?: typeof beginBoxRestartReal
   finishBoxRestart?: typeof finishBoxRestartReal
   runner?: SshRunner
+  recordRuntimeAdoptionFailure?: typeof recordBoxBunRuntimeFailure
   /** Host→host pipe used by {@link streamBoxStateArchive} (migration transport);
    *  defaults to ssh.ts's process-wide streamer. */
   streamer?: SshStreamer
@@ -1019,7 +1058,44 @@ async function evaluateEstablishedBox(
  * so an operator tailing logs sees the wait, not silence. On expiry throws
  * {@link BoxHealthTimeoutError} carrying the last status/error.
  */
-async function pollBoxHealth(endpoint: string, deps: BoxManagerDeps): Promise<void> {
+// Keep the post-bind identity (including any minted token) out of Error JSON.
+const runtimeMismatchBoxes = new WeakMap<Error, MachineBox>()
+export class BunRuntimeMismatchError extends Error {
+  get boxAtFailure(): MachineBox | undefined {
+    return runtimeMismatchBoxes.get(this)
+  }
+  constructor(
+    message: string,
+    readonly observedVersion?: string
+  ) {
+    super(message)
+    this.name = 'BunRuntimeMismatchError'
+  }
+}
+
+/** Desired configuration is not proof that an ordinary start adopted its Bun. */
+function observedRuntimeSpecHash(spec: string | undefined, version: string | undefined): string | undefined {
+  if (!spec || !/:bun:\d+_\d+_\d+$/.test(spec)) return spec
+  const base = spec.replace(/:bun:\d+_\d+_\d+$/, '')
+  return version ? `${base}:bun:${version.replaceAll('.', '_')}` : base
+}
+
+/** Ordinary availability neither erases a bound nor treats it as a dead box. */
+function failureAfterOrdinaryStart(
+  box: MachineBox | null,
+  desired: string | undefined,
+  version: string | undefined
+): string | null {
+  const failed = box?.bunRuntimeFailureSpecHash
+  if (!failed) return null
+  return !desired || (failed === desired && observedRuntimeSpecHash(desired, version) !== desired) ? failed : null
+}
+
+async function pollBoxHealth(
+  endpoint: string,
+  deps: BoxManagerDeps,
+  expectedBunVersion?: string
+): Promise<string | undefined> {
   const fetchFn: FetchLike = deps.fetch ?? ((url, init) => fetch(url, init))
   const interval = deps.healthIntervalMs ?? 2_000
   const budget = deps.healthBudgetMs ?? resolveBoxHealthBudgetMs()
@@ -1037,9 +1113,29 @@ async function pollBoxHealth(endpoint: string, deps: BoxManagerDeps): Promise<vo
         signal: AbortSignal.timeout(HEALTH_FETCH_TIMEOUT_MS),
       })
       lastStatus = res.status
-      if (res.ok) return
+      if (res.ok) {
+        let body: { bunVersion?: unknown } | undefined
+        try {
+          body = (await res.json?.()) as typeof body
+        } catch (error) {
+          // Old executors need not expose structured runtime health. A transport
+          // failure during a required readback remains retryable, not terminal.
+          if (expectedBunVersion && !(error instanceof SyntaxError)) throw error
+        }
+        const observed =
+          typeof body?.bunVersion === 'string' && /^\d+\.\d+\.\d+$/.test(body.bunVersion) && body.bunVersion.length < 24
+            ? body.bunVersion
+            : undefined
+        if (expectedBunVersion && observed !== expectedBunVersion)
+          throw new BunRuntimeMismatchError(
+            `Bun runtime mismatch: expected ${expectedBunVersion}, observed ${observed ?? 'unknown'}`,
+            observed
+          )
+        return observed
+      }
       lastError = `status ${res.status}`
     } catch (err) {
+      if (err instanceof BunRuntimeMismatchError) throw err
       lastError = err instanceof Error ? err.message : String(err)
     }
     const elapsed = now() - start
@@ -1075,6 +1171,8 @@ export interface InstallBoxOpts {
   /** The port the unit will serve (the row's bound port, or a migrate-peeked one). */
   port: number
   role: EnsureBoxOpts['role']
+  /** Core has claimed the idle listener; keep it closed through env publication. */
+  deferSocketStart?: boolean
   /** Caller env; the machine/box-derived vars are baked on top (see derivedBoxEnv). */
   env: BoxEnv
   /** The box's executor auth token — baked into server.env (fail-closed server). */
@@ -1119,16 +1217,20 @@ export async function installBoxOnMachine(opts: InstallBoxOpts, deps: BoxManager
   const provisionCmd =
     `sudo bash ${BOX_PROVISION_PATH} --sandbox-id ${shellQuote(sandboxId)} ` +
     `--unix-user ${shellQuote(unixUser)} --port ${port} --unit-mode ${unitMode}` +
-    `${withDocker ? ' --with-docker' : ''} ${boxProvisionLockArgs(BOX_PROVISION_RUN_TIMEOUT_MS)}`
+    `${withDocker ? ' --with-docker' : ''}${opts.deferSocketStart ? ' --defer-socket-start' : ''} ${boxProvisionLockArgs(BOX_PROVISION_RUN_TIMEOUT_MS)}`
   // box-provision creates the unix user, enables linger, and (for docker roles)
   // runs dockerd-rootless-setuptool install — the latter pulls/sets up rootless
   // docker and can take a minute+, past the SSH runner's 30s default.
   const provRes = await runner.run(machine, provisionCmd, { timeoutMs: BOX_PROVISION_RUN_TIMEOUT_MS })
   // The script exits BOX_PORT_BUSY_EXIT_CODE only when the box socket could not
   // bind because something else holds its port. It may free up, so the
-  // execution retries (startup-retry.ts). Any other failure stays terminal.
+  // execution retries (startup-retry.ts). Lock contention is also transient;
+  // other provisioning failures stay terminal.
   if (provRes.exitCode === BOX_PORT_BUSY_EXIT_CODE) {
     throw new BoxPortBusyError(sandboxId, machine.name, port, provRes.stderr, 'provision')
+  }
+  if (provRes.exitCode === BOX_LOCK_TIMEOUT_EXIT_CODE) {
+    throw new BoxLockTimeoutError(sandboxId, machine.name, provRes.stderr)
   }
   if (provRes.exitCode !== 0) {
     throw new Error(`box-provision failed for ${sandboxId} (exit ${provRes.exitCode}): ${provRes.stderr.trim()}`)
@@ -1230,7 +1332,17 @@ export function socketStartFailureReport(
  * seam. Returns the local endpoint (`http://127.0.0.1:<localPort>`).
  */
 export async function startBoxAndAwaitHealth(
-  opts: { machine: Machine; sandboxId: string; unixUser: string; port: number; timeoutMs?: number },
+  opts: {
+    machine: Machine
+    sandboxId: string
+    unixUser: string
+    port: number
+    timeoutMs?: number
+    expectedBunVersion?: string
+    observeBunVersion?: (version: string | undefined) => void
+    onBunRuntimeMismatch?: (error: BunRuntimeMismatchError) => void
+    activationSocketHeld?: boolean
+  },
   deps: BoxManagerDeps = {}
 ): Promise<string> {
   const runner = deps.runner ?? defaultSshRunner
@@ -1254,8 +1366,9 @@ export async function startBoxAndAwaitHealth(
   const restartCmd = ctl.onHost(
     (u) =>
       `( ${ctl.systemctl} reset-failed ${u.unit} 2>/dev/null || true; ` +
+      (opts.activationSocketHeld ? `${ctl.systemctl} restart ${u.unit} && ` : '') +
       `if ! ${ctl.systemctl} enable --now ${u.socket}; then ${socketStartFailureReport(ctl, u.socket, unixUser, port)}; fi && ` +
-      `${ctl.systemctl} restart ${u.unit} && ` +
+      (opts.activationSocketHeld ? '' : `${ctl.systemctl} restart ${u.unit} && `) +
       `enabled=$(${ctl.systemctl} show -p UnitFileState --value ${u.socket}) && [ "$enabled" = enabled ] && ` +
       `active=$(${ctl.systemctl} show -p ActiveState --value ${u.socket}) && [ "$active" = active ] )`
   )
@@ -1274,7 +1387,17 @@ export async function startBoxAndAwaitHealth(
   await tunnels.ensureMaster(machine)
   const localPort = await tunnels.addForward(machine, port)
   const endpoint = `http://127.0.0.1:${localPort}`
-  await pollBoxHealth(endpoint, deps)
+  let version: string | undefined
+  try {
+    version = await pollBoxHealth(endpoint, deps, opts.expectedBunVersion)
+  } catch (error) {
+    if (!(error instanceof BunRuntimeMismatchError) || !opts.onBunRuntimeMismatch) throw error
+    // HTTP is healthy but convergence failed. Keep this ordinarily usable
+    // executor available, stamp its observed runtime, and bound only adoption.
+    opts.onBunRuntimeMismatch(error)
+    version = error.observedVersion
+  }
+  opts.observeBunVersion?.(version)
   return endpoint
 }
 
@@ -1369,11 +1492,36 @@ export async function ensureBox(
   endpoint: string
   timings: BoxStepTimings
   priorBoxesOnMachine?: number
+  runtimeAdoptionDeferred?: boolean
 }> {
+  if (opts.assertOwned) {
+    const runner = deps.runner ?? defaultSshRunner
+    const assertOwned = opts.assertOwned
+    deps = {
+      ...deps,
+      runner: {
+        ...runner,
+        run: async (...args: Parameters<SshRunner['run']>) => {
+          assertOwned()
+          const result = await runner.run(...args)
+          assertOwned()
+          return result
+        },
+      },
+    }
+  }
   const tunnels = deps.tunnels ?? machineTunnels
   const ensureArtifacts = deps.ensureMachineArtifacts ?? ((m: Machine) => ensureMachineArtifactsReal(m))
-  const bind = deps.bindMachineBox ?? bindMachineBoxReal
-  const upsert = deps.upsertMachineBox ?? upsertMachineBoxReal
+  const bindImpl = deps.bindMachineBox ?? bindMachineBoxReal
+  const upsertImpl = deps.upsertMachineBox ?? upsertMachineBoxReal
+  const bind: typeof bindImpl = async (values) => {
+    opts.assertOwned?.()
+    return bindImpl(values)
+  }
+  const upsert: typeof upsertImpl = async (values) => {
+    opts.assertOwned?.()
+    return upsertImpl(values)
+  }
   const getBox = deps.getMachineBox ?? getMachineBoxReal
   const getMachine = deps.getMachine ?? getMachineReal
   const listBoxes = deps.listMachineBoxes ?? listMachineBoxesReal
@@ -1561,7 +1709,9 @@ export async function ensureBox(
     //    applies the change. Restarting the unit kills whatever is running, and
     //    an author name is never worth that. Without active work it
     //    reprovisions at once, as before.
-    const markerDrift = classifyProvisioningMarkerDrift(existing?.provisionedSpecHash, opts.specHash, opts.env)
+    const markerDrift = opts.adoptIdleRuntime
+      ? classifyProvisioningMarkerDrift(existing?.provisionedSpecHash, opts.specHash, opts.env)
+      : classifyBoxConfigurationMarkerDrift(existing, opts.specHash, opts.env)
     let deferIdentityDrift = false
     if (markerDrift === 'identity' && existing?.status === 'ready' && existing.machineId === machine.id) {
       try {
@@ -1577,6 +1727,7 @@ export async function ensureBox(
       existing &&
       existing.machineId === machine.id &&
       existing.status === 'ready' &&
+      !opts.adoptIdleRuntime &&
       existing.authToken &&
       (markerDrift === 'none' || markerDrift === 'legacy' || deferIdentityDrift)
     ) {
@@ -1670,8 +1821,21 @@ export async function ensureBox(
           status: 'ensuring',
           authToken: existing.authToken,
         })
+        let observedBunVersion: string | undefined
         const endpoint = await timer.time('start', () =>
-          startBoxAndAwaitHealth({ machine, sandboxId: opts.sandboxId, unixUser, port: existing.port }, deps)
+          startBoxAndAwaitHealth(
+            {
+              machine,
+              sandboxId: opts.sandboxId,
+              unixUser,
+              port: existing.port,
+              expectedBunVersion: opts.expectedBunVersion,
+              observeBunVersion: (version) => {
+                observedBunVersion = version
+              },
+            },
+            deps
+          )
         )
         const readyBox = await upsert({
           sandboxId: existing.sandboxId,
@@ -1680,7 +1844,16 @@ export async function ensureBox(
           port: existing.port,
           status: 'ready',
           authToken: existing.authToken,
+          bunRuntimeFailureSpecHash: failureAfterOrdinaryStart(
+            existing,
+            opts.env.FICUS_BOX_SPEC_HASH,
+            observedBunVersion
+          ),
+          bunRuntimeAdoptingSpecHash: null,
           ...(markerDrift === 'legacy' ? { provisionedSpecHash: opts.specHash } : {}),
+          ...(opts.env.FICUS_BOX_SPEC_HASH
+            ? { reconcilableSpecHash: observedRuntimeSpecHash(opts.env.FICUS_BOX_SPEC_HASH, observedBunVersion) }
+            : {}),
           lastActivityAt: new Date(),
         })
         eventEmitter.emit('box.status', {
@@ -1738,104 +1911,203 @@ export async function ensureBox(
         : 'runtime_start'
     )
     await timer.time('artifacts', () => ensureArtifacts(machine))
-    const bound = await bind({ sandboxId: opts.sandboxId, machineId: machine.id, unixUser })
+    const adoptingIdle = Boolean(existing && existing.machineId === machine.id && opts.adoptIdleRuntime)
+    const provision = async () => {
+      const bound = await bind({ sandboxId: opts.sandboxId, machineId: machine.id, unixUser })
 
-    // The box's executor auth token: minted ATOMICALLY inside bindMachineBox
-    // (COALESCE in the bind upsert — the first writer's token wins and is never
-    // overwritten), so `bound` always carries the row's persisted token. Minting
-    // it HERE, after the bind, would race: two concurrent full ensures of the
-    // same brand-new box (api + worker) would each mint a different token, each
-    // push their own server.env + restart, and the row could end on one token
-    // while the running server enforces the other — /healthz (exempt) keeps
-    // passing, every real route 401s, and the box is wedged until a re-provision.
-    // Stable across ensures and mid-provision retries by the same COALESCE.
-    const authToken = bound.authToken
-    if (!authToken) {
-      // bindMachineBox guarantees a token on every row it returns; a null here is
-      // a broken invariant, and pushing a token-less server.env would boot an
-      // unauthenticated executor. Fail loudly instead.
-      throw new Error(`bindMachineBox returned no auth token for ${opts.sandboxId}`)
-    }
+      // The box's executor auth token: minted ATOMICALLY inside bindMachineBox
+      // (COALESCE in the bind upsert — the first writer's token wins and is never
+      // overwritten), so `bound` always carries the row's persisted token. Minting
+      // it HERE, after the bind, would race: two concurrent full ensures of the
+      // same brand-new box (api + worker) would each mint a different token, each
+      // push their own server.env + restart, and the row could end on one token
+      // while the running server enforces the other — /healthz (exempt) keeps
+      // passing, every real route 401s, and the box is wedged until a re-provision.
+      // Stable across ensures and mid-provision retries by the same COALESCE.
+      const authToken = bound.authToken
+      if (!authToken) {
+        // bindMachineBox guarantees a token on every row it returns; a null here is
+        // a broken invariant, and pushing a token-less server.env would boot an
+        // unauthenticated executor. Fail loudly instead.
+        throw new Error(`bindMachineBox returned no auth token for ${opts.sandboxId}`)
+      }
 
-    // Stamp the row 'ensuring' now that a real (re-)provision is under way, so a
-    // concurrent observer never mistakes a box mid-provision for a healthy one.
-    // (A brand-new box already inserts as 'ensuring'; `bind` keeps the prior
-    // 'ready' on a re-provision, so stamp it explicitly here — never on the
-    // healthy fast-path above, which returns before this point.)
-    const box = await upsert({
-      sandboxId: bound.sandboxId,
-      machineId: bound.machineId,
-      unixUser,
-      port: bound.port,
-      status: 'ensuring',
-      authToken,
-    })
+      // Stamp the row 'ensuring' now that a real (re-)provision is under way, so a
+      // concurrent observer never mistakes a box mid-provision for a healthy one.
+      // (A brand-new box already inserts as 'ensuring'; `bind` keeps the prior
+      // 'ready' on a re-provision, so stamp it explicitly here — never on the
+      // healthy fast-path above, which returns before this point.)
+      const box = await upsert({
+        sandboxId: bound.sandboxId,
+        machineId: bound.machineId,
+        unixUser,
+        port: bound.port,
+        status: 'ensuring',
+        authToken,
+        bunRuntimeAdoptingSpecHash: adoptingIdle ? (opts.env.FICUS_BOX_SPEC_HASH ?? opts.specHash ?? null) : null,
+      })
 
-    // Provision on the machine (script + server.env), then first-start + health.
-    // Both phases are the shared machine-parameterized seams the migrate
-    // primitive reuses. Only explicit inline remnant recovery restores an
-    // owner archive between them; ordinary fresh boxes always start clean.
-    //
-    // `provision` timing note: for docker-capable roles (squad, system-manager)
-    // installBoxOnMachine's SINGLE box-provision.sh SSH call also runs the box's
-    // rootless dockerd install/enable/restart — see box-timing.ts's BOX_STEP_ORDER
-    // doc for why that can't be isolated into its own step without a disallowed
-    // second SSH round trip.
-    await timer.time('provision', () =>
-      installBoxOnMachine(
-        { machine, sandboxId: opts.sandboxId, unixUser, port: box.port, role: opts.role, env: opts.env, authToken },
-        deps
-      )
-    )
-    if (restoreFromArchive) {
-      const archivePath = await (
-        deps.findPrivateArchive ?? ((sandboxId: string) => findLatestPrivateArchive(sandboxId, deps))
-      )(opts.sandboxId)
-      if (archivePath) {
-        await restorePrivateArchive(
-          deps.runner ?? defaultSshRunner,
-          machine,
-          opts.sandboxId,
-          boxHome(unixUser),
-          archivePath,
+      // Provision on the machine (script + server.env), then first-start + health.
+      // Both phases are the shared machine-parameterized seams the migrate
+      // primitive reuses. Only explicit inline remnant recovery restores an
+      // owner archive between them; ordinary fresh boxes always start clean.
+      //
+      // `provision` timing note: for docker-capable roles (squad, system-manager)
+      // installBoxOnMachine's SINGLE box-provision.sh SSH call also runs the box's
+      // rootless dockerd install/enable/restart — see box-timing.ts's BOX_STEP_ORDER
+      // doc for why that can't be isolated into its own step without a disallowed
+      // second SSH round trip.
+      await timer.time('provision', () =>
+        installBoxOnMachine(
+          {
+            machine,
+            sandboxId: opts.sandboxId,
+            unixUser,
+            port: box.port,
+            role: opts.role,
+            env: opts.env,
+            authToken,
+            deferSocketStart: adoptingIdle,
+          },
           deps
         )
+      )
+      if (restoreFromArchive) {
+        const archivePath = await (
+          deps.findPrivateArchive ?? ((sandboxId: string) => findLatestPrivateArchive(sandboxId, deps))
+        )(opts.sandboxId)
+        if (archivePath) {
+          await restorePrivateArchive(
+            deps.runner ?? defaultSshRunner,
+            machine,
+            opts.sandboxId,
+            boxHome(unixUser),
+            archivePath,
+            deps
+          )
+        }
+      }
+      let observedBunVersion: string | undefined
+      let adoptionMismatch = false
+      const endpoint = await timer.time('start', async () => {
+        try {
+          return await startBoxAndAwaitHealth(
+            {
+              machine,
+              sandboxId: opts.sandboxId,
+              unixUser,
+              port: box.port,
+              expectedBunVersion: opts.expectedBunVersion,
+              observeBunVersion: (version) => {
+                observedBunVersion = version
+              },
+              onBunRuntimeMismatch: adoptingIdle
+                ? () => {
+                    adoptionMismatch = true
+                  }
+                : undefined,
+              activationSocketHeld: adoptingIdle,
+            },
+            deps
+          )
+        } catch (error) {
+          if (error instanceof BunRuntimeMismatchError) runtimeMismatchBoxes.set(error, box)
+          throw error
+        }
+      })
+
+      if (adoptionMismatch) {
+        opts.assertOwned?.()
+        if (
+          !(await (deps.recordRuntimeAdoptionFailure ?? recordBoxBunRuntimeFailure)(
+            box,
+            opts.env.FICUS_BOX_SPEC_HASH!,
+            {
+              provisionedSpecHash: opts.specHash ?? null,
+              reconcilableSpecHash: observedRuntimeSpecHash(opts.env.FICUS_BOX_SPEC_HASH, observedBunVersion) ?? null,
+            }
+          ))
+        )
+          throw new Error('Box identity changed before Bun mismatch publication')
+        opts.assertOwned?.()
+        log.warn(
+          `Bun adoption did not converge for ${opts.sandboxId}: expected ${opts.expectedBunVersion}, observed ${observedBunVersion ?? 'unknown'}; retaining the healthy current runtime and its exact-target retry bound`
+        )
+      }
+      const readyBox = await upsert({
+        sandboxId: box.sandboxId,
+        machineId: box.machineId,
+        unixUser,
+        port: box.port,
+        status: 'ready',
+        authToken,
+        // Record what was JUST provisioned so a later park→resume can trust the
+        // resume fast path above (a match skips this whole slow path). `null`
+        // when the caller supplied no specHash (only legacy/test callers) so a
+        // future ensure never mistakes an unknown provisioned state for a match.
+        provisionedSpecHash: opts.specHash ?? null,
+        reconcilableSpecHash: observedRuntimeSpecHash(opts.env.FICUS_BOX_SPEC_HASH, observedBunVersion) ?? null,
+        bunRuntimeFailureSpecHash: adoptionMismatch
+          ? opts.env.FICUS_BOX_SPEC_HASH!
+          : failureAfterOrdinaryStart(existing, opts.env.FICUS_BOX_SPEC_HASH, observedBunVersion),
+        bunRuntimeAdoptingSpecHash: adoptingIdle ? opts.env.FICUS_BOX_SPEC_HASH! : null,
+        // Seed the cross-process activity heartbeat so every ready box has a
+        // baseline: the idle reaper (worker) reads max(process-local, row) and a
+        // box ensured by ANOTHER process would otherwise carry no activity signal
+        // at all — unreapable forever if never exec'd (bill leak).
+        lastActivityAt: new Date(),
+      })
+      // Announce the ready box AFTER the row is persisted so a UI subscriber sees a
+      // ready box the moment it refetches. Keyed by machineId (the machine detail
+      // view lists its boxes); the sandboxId carries no secret material.
+      eventEmitter.emit('box.status', {
+        sandboxId: readyBox.sandboxId,
+        machineId: readyBox.machineId,
+        status: 'ready',
+        port: readyBox.port,
+      })
+      finishPhysicalReady()
+      return {
+        machine,
+        box: readyBox,
+        endpoint,
+        timings: timer.steps,
+        priorBoxesOnMachine,
+        ...(adoptionMismatch ? { runtimeAdoptionDeferred: true } : {}),
       }
     }
-    const endpoint = await timer.time('start', () =>
-      startBoxAndAwaitHealth({ machine, sandboxId: opts.sandboxId, unixUser, port: box.port }, deps)
-    )
-
-    const readyBox = await upsert({
-      sandboxId: box.sandboxId,
-      machineId: box.machineId,
-      unixUser,
-      port: box.port,
-      status: 'ready',
-      authToken,
-      // Record what was JUST provisioned so a later park→resume can trust the
-      // resume fast path above (a match skips this whole slow path). `null`
-      // when the caller supplied no specHash (only legacy/test callers) so a
-      // future ensure never mistakes an unknown provisioned state for a match.
-      provisionedSpecHash: opts.specHash ?? null,
-      reconcilableSpecHash: opts.env.FICUS_BOX_SPEC_HASH ?? null,
-      // Seed the cross-process activity heartbeat so every ready box has a
-      // baseline: the idle reaper (worker) reads max(process-local, row) and a
-      // box ensured by ANOTHER process would otherwise carry no activity signal
-      // at all — unreapable forever if never exec'd (bill leak).
-      lastActivityAt: new Date(),
-    })
-    // Announce the ready box AFTER the row is persisted so a UI subscriber sees a
-    // ready box the moment it refetches. Keyed by machineId (the machine detail
-    // view lists its boxes); the sandboxId carries no secret material.
-    eventEmitter.emit('box.status', {
-      sandboxId: readyBox.sandboxId,
-      machineId: readyBox.machineId,
-      status: 'ready',
-      port: readyBox.port,
-    })
-    finishPhysicalReady()
-    return { machine, box: readyBox, endpoint, timings: timer.steps, priorBoxesOnMachine }
+    if (adoptingIdle && existing) {
+      if (!opts.expectedBunVersion || !opts.env.FICUS_BOX_SPEC_HASH)
+        throw new Error('Idle runtime adoption requires an exact Bun pin and desired identity')
+      // Persist intent before the first socket/journal mutation, not at bind.
+      opts.assertOwned?.()
+      await upsert({ ...existing, bunRuntimeAdoptingSpecHash: opts.env.FICUS_BOX_SPEC_HASH! })
+      const claim = await withIdleBunRuntimeClaim(
+        machine,
+        existing,
+        opts.expectedBunVersion,
+        provision,
+        deps.runner,
+        opts.env.FICUS_BOX_SPEC_HASH
+      )
+      opts.assertOwned?.()
+      if (claim.adopted) {
+        claim.value.box = await upsert({ ...claim.value.box, bunRuntimeAdoptingSpecHash: null })
+        return claim.value
+      }
+      await upsert({ ...existing, bunRuntimeAdoptingSpecHash: null })
+      await tunnels.ensureMaster(machine)
+      const localPort = await tunnels.addForward(machine, existing.port)
+      finishPhysicalReady()
+      return {
+        machine,
+        box: existing,
+        endpoint: `http://127.0.0.1:${localPort}`,
+        timings: timer.steps,
+        runtimeAdoptionDeferred: true,
+      }
+    }
+    return await provision()
   } catch (error) {
     finishPhysicalWork?.('failed')
     throw error
@@ -2965,6 +3237,9 @@ export async function boxChainHealth(sandboxId: string, deps: BoxManagerDeps = {
         boxServer: 'unknown',
       },
     }
+  }
+  if (box.status === 'ready' && box.bunRuntimeAdoptingSpecHash) {
+    return { status: 'starting', chain: { boxProvisioned: true, machine: 'unknown', boxServer: 'unknown' } }
   }
   if (box.status === 'restart_failed' || isStaleBoxRestart(box, deps.now?.())) {
     return {

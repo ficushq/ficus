@@ -79,6 +79,7 @@ describe('status role mappings', () => {
       ['delivery_merge', 'review'],
       ['delivery_external', 'externalWait'],
       ['waiting_on_owner', 'externalWait'],
+      ['waiting_on_manager', 'externalWait'],
       ['waiting_for_slot', 'queue'],
       ['monitoring', 'externalWait'],
       ['delivery_setup', 'attention'],
@@ -275,13 +276,13 @@ describe('manual wait actors', () => {
     expect(MANUAL_WAIT_ACTOR_STATE).toEqual({
       human: 'blocked',
       owner: 'waiting_on_owner',
+      manager: 'waiting_on_manager',
     })
     for (const [actor, state, attention] of [
       [undefined, 'blocked', true],
       ['human', 'blocked', true],
       ['owner', 'waiting_on_owner', false],
-      // Unknown values, including the pre-rename 'manager', are human.
-      ['manager', 'blocked', true],
+      ['manager', 'waiting_on_manager', false],
       ['robot', 'blocked', true],
     ] as const) {
       const facts = { status: 'active' as const, openWaits: [manual(actor)] }

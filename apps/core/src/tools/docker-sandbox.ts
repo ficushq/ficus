@@ -1,3 +1,4 @@
+import { ToolFeedbackError } from './tool-feedback'
 import { consultantSandboxSquadId } from '../services/sandbox/consultant-sandbox'
 import { resolveAgentBashCwd } from './sandbox-tools'
 /**
@@ -49,9 +50,9 @@ function createDockerReadOperations(sandboxId: string): ReadOperations {
     },
     access: async (absolutePath: string): Promise<void> => {
       const exitCode = await getDockerManager().execStatus(sandboxId, ['test', '-e', absolutePath])
-      if (exitCode !== 0) {
-        throw new Error(`ENOENT: no such file or directory, access '${absolutePath}'`)
-      }
+      if (exitCode === 1)
+        throw new ToolFeedbackError('input', `ENOENT: no such file or directory, access '${absolutePath}'`)
+      if (exitCode !== 0) throw new Error(`Unable to check file existence: executor returned ${exitCode}`)
     },
   }
 }

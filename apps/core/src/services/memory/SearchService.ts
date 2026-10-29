@@ -22,7 +22,11 @@ import { EmbeddingService } from './indexer/EmbeddingService'
 import { IndexingService } from './indexer/IndexingService'
 import type { LiveMemorySourceAdapter, LiveSearchResult } from './sources/live-adapter'
 import { defaultLiveRateLimiter, type LiveRateLimiter } from './sources/live-rate-limiter'
-import { withheldGitHubMemoryDocuments } from '../integrations/github/managed-content'
+import {
+  groupGitHubMemorySnapshots,
+  mixedGitHubMemorySnapshots,
+  withheldGitHubMemoryDocuments,
+} from '../integrations/github/managed-content'
 
 // ============================================================================
 // Types
@@ -318,7 +322,7 @@ export class SearchService {
    * Search memory documents using hybrid retrieval.
    */
   async search(squadId: string, query: string, options: SearchOptions = {}): Promise<SearchResult[]> {
-    const limit = options.limit ?? DEFAULT_LIMIT
+    const limit = Math.max(1, Math.min(100, Number.isFinite(options.limit) ? options.limit! : DEFAULT_LIMIT))
     const mode = options.mode ?? 'hybrid' // Always use hybrid - gracefully handles missing embeddings
     const weights = { ...DEFAULT_WEIGHTS, ...options.weights }
     const mmrLambda = options.mmrLambda ?? DEFAULT_MMR_LAMBDA
@@ -360,7 +364,15 @@ export class SearchService {
     // before any snippet, title or frontmatter leaves this service.
     const withheld = await withheldGitHubMemoryDocuments(
       squadId,
-      indexedResults.map((result) => result.documentId)
+      indexedResults.map((result) => result.documentId),
+      db,
+      {
+        snapshots: groupGitHubMemorySnapshots(
+          indexedResults
+            .filter((result) => result.sourceType === 'github_issue')
+            .map((result) => [result.documentId, result.frontmatter?.githubProjection])
+        ),
+      }
     )
     const results = [...indexedResults.filter((result) => !withheld.has(result.documentId)), ...liveResults]
 
@@ -550,10 +562,15 @@ export class SearchService {
 
     // A chunk both queries found keeps its full-text score, which already
     // credits the verbatim match.
+    const mixed = mixedGitHubMemorySnapshots(
+      [...ranked, ...exact]
+        .filter((row) => row.docSourceType === 'github_issue')
+        .map((row) => [row.documentId, asFrontmatter(row.docFrontmatter)?.githubProjection])
+    )
     const rows = new Map<string, KeywordRow>()
     for (const row of [...ranked, ...exact]) {
       const key = `${row.documentId}-${row.chunkIndex}`
-      if (!rows.has(key)) rows.set(key, row)
+      if (!mixed.has(row.documentId) && !rows.has(key)) rows.set(key, row)
     }
 
     return [...rows.values()]
@@ -743,6 +760,11 @@ export class SearchService {
       this.keywordSearch(scopes, query, limit, filters),
     ])
 
+    const mixed = mixedGitHubMemorySnapshots(
+      [...vectorResults, ...keywordResults]
+        .filter((result) => result.sourceType === 'github_issue')
+        .map((result) => [result.documentId, result.frontmatter?.githubProjection])
+    )
     // Create a map to merge results by chunk
     const resultMap = new Map<string, SearchResult & { vectorScore: number; keywordScore: number }>()
 
@@ -772,27 +794,29 @@ export class SearchService {
     }
 
     // Calculate hybrid scores
-    const results = Array.from(resultMap.values()).map((result) => {
-      const hybridScore = this.calculateHybridScore({
-        vectorScore: result.vectorScore,
-        keywordScore: result.keywordScore,
-        weights,
-      })
+    const results = Array.from(resultMap.values())
+      .filter((result) => !mixed.has(result.documentId))
+      .map((result) => {
+        const hybridScore = this.calculateHybridScore({
+          vectorScore: result.vectorScore,
+          keywordScore: result.keywordScore,
+          weights,
+        })
 
-      return {
-        documentId: result.documentId,
-        path: result.path,
-        title: result.title,
-        sourceSquadId: result.sourceSquadId,
-        sourceType: result.sourceType,
-        sensitivity: result.sensitivity,
-        score: hybridScore,
-        snippet: result.snippet,
-        chunkIndex: result.chunkIndex,
-        content: result.content,
-        frontmatter: result.frontmatter,
-      }
-    })
+        return {
+          documentId: result.documentId,
+          path: result.path,
+          title: result.title,
+          sourceSquadId: result.sourceSquadId,
+          sourceType: result.sourceType,
+          sensitivity: result.sensitivity,
+          score: hybridScore,
+          snippet: result.snippet,
+          chunkIndex: result.chunkIndex,
+          content: result.content,
+          frontmatter: result.frontmatter,
+        }
+      })
 
     // Sort by score
     return results.sort((a, b) => b.score - a.score)

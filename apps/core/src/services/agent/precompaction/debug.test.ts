@@ -16,11 +16,28 @@ describe('pre-compaction debug formatting', () => {
     )
   })
 
+  it('closes failed, cancelled and superseded starts without exposing provider error text', () => {
+    expect(formatPrecompactionSystemMessage({ kind: 'failed', ...baseEvent, elapsedMs: 1, error: 'timeout' })).toBe(
+      'Precompaction timed out'
+    )
+    expect(
+      formatPrecompactionSystemMessage({
+        kind: 'failed',
+        ...baseEvent,
+        elapsedMs: 1,
+        error: 'private provider details',
+      })
+    ).toBe('Precompaction failed')
+    expect(formatPrecompactionSystemMessage({ kind: 'aborted', ...baseEvent, elapsedMs: 1 })).toBe(
+      'Precompaction cancelled'
+    )
+    expect(formatPrecompactionSystemMessage({ kind: 'superseded', ...baseEvent, elapsedMs: 1 })).toBe(
+      'Precompaction stopped — compacting now'
+    )
+  })
+
   it('returns undefined for every non-visible lifecycle event', () => {
     const events: PrecompactionLifecycleEvent[] = [
-      { kind: 'failed', ...baseEvent, elapsedMs: 1234, error: 'boom' },
-      { kind: 'aborted', ...baseEvent, elapsedMs: 1234 },
-      { kind: 'superseded', ...baseEvent, elapsedMs: 5 },
       { kind: 'consumed', firstKeptEntryId: 'keep' },
       { kind: 'rejected', reason: 'prefix' },
     ]

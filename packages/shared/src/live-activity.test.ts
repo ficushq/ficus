@@ -207,8 +207,7 @@ describe('manual wait actors in native projections', () => {
       stream({ id: 'human', openWaits: manual('human'), derivedState: 'blocked' }),
       stream({ id: 'legacy', openWaits: manual(), derivedState: 'blocked' }),
       stream({ id: 'owner', openWaits: manual('owner'), derivedState: 'blocked' }),
-      // The pre-rename value is unknown, so it is human.
-      stream({ id: 'unknown', openWaits: manual('manager'), derivedState: 'blocked' }),
+      stream({ id: 'unknown', openWaits: manual('robot'), derivedState: 'blocked' }),
     ])
     expect(snapshot.bucketCounts).toMatchObject({ needsYou: 3, externalWait: 1, blocked: 0 })
     expect(snapshot.liveActivity.needsYouCount).toBe(3)

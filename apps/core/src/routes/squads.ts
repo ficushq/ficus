@@ -1,3 +1,4 @@
+import { readSandboxHostCapacity } from '../services/machines/host-admission'
 import { getExposureCleanupStatusForDisplay } from '../services/sandbox/exposure-cleanup'
 import { WORKSPACE_MULTIPART_METADATA_BYTES } from '../services/attachments/workspace-multipart-reader'
 import { getBunServer } from 'hono/bun'
@@ -94,6 +95,7 @@ import {
   listSandboxProcesses,
   parseContainerId,
   parseProcessId,
+  parseProcessStartTicks,
   parseProcessSignal,
   sandboxProcessesErrorResponse,
   signalSandboxProcess,
@@ -1131,6 +1133,7 @@ export const squadsRouter = new Hono()
       mergeSandboxStatus(
         {
           ...status,
+          ...(isVmRuntime() ? { hostCapacity: await readSandboxHostCapacity(squad.sandboxId, squad.id) } : {}),
           // The overload detector's reading when status did not probe the box itself.
           ...(isVmRuntime() && !('pressure' in status && status.pressure)
             ? await openSandboxOverloadPressure(squad.sandboxId).then((pressure) => (pressure ? { pressure } : {}))
@@ -1216,10 +1219,19 @@ export const squadsRouter = new Hono()
     const squad = await Squad.find(c.req.param('id'))
     if (!squad) return c.json({ error: 'Squad not found' }, 404)
     try {
-      const body = await parseOptionalJsonObjectBody(c, {} as { signal?: unknown })
+      const body = await parseOptionalJsonObjectBody(c, {} as { signal?: unknown; startTicks?: unknown })
       const pid = parseProcessId(c.req.param('pid'))
       const signal = parseProcessSignal(body.signal)
-      return c.json(await signalSandboxProcess(squad.sandboxId, pid, signal, c.get('identity')!))
+      return c.json(
+        await signalSandboxProcess(
+          squad.sandboxId,
+          pid,
+          signal,
+          c.get('identity')!,
+          undefined,
+          parseProcessStartTicks(body.startTicks)
+        )
+      )
     } catch (err) {
       const failure = sandboxProcessesErrorResponse(err)
       if (failure) return c.json(failure.body, failure.status)

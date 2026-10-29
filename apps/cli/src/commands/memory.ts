@@ -349,6 +349,13 @@ export function registerMemoryCommands(program: Command): void {
         } else {
           console.log('Sync Status:')
           console.log(JSON.stringify(result, null, 2))
+          const managed = (
+            result as { managedGitHub?: { hiddenPendingReindex: number; reasons: Record<string, number> } }
+          ).managedGitHub
+          if (managed) {
+            console.log(`GitHub documents hidden pending reindex: ${managed.hiddenPendingReindex}`)
+            for (const [reason, count] of Object.entries(managed.reasons)) console.log(`  ${reason}: ${count}`)
+          }
         }
       } catch (error) {
         outputError(error as Error)

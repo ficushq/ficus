@@ -83,6 +83,38 @@ describe('trusted work stream execution provenance', () => {
     )
   })
 
+  test.each(['recovery-decision', 'recovery-retry', 'workflow-wait-resolution'])(
+    'keeps a consumed %s receipt as task provenance, not fresh retry authority',
+    async (source) => {
+      const workStreamId = await createWorkStream()
+      const [receipt] = await db
+        .insert(inbox)
+        .values({
+          recipientType: 'agent',
+          recipientId: agentId,
+          senderType: 'system',
+          content: 'Continue the retained task',
+          metadata: { source, recoveryId: crypto.randomUUID(), workStreamId },
+        })
+        .returning()
+      const [message] = await db
+        .insert(messages)
+        .values({
+          agentId,
+          role: 'human',
+          content: receipt!.content,
+          pending: false,
+          metadata: { source: 'inbox', inboxMessageIds: [receipt!.id], executionId },
+        })
+        .returning()
+      expect(await listTrustedWorkStreamOriginsForExecution(db, { agentId, executionId })).toEqual([
+        { workStreamId, messageIds: [message!.id] },
+      ])
+      await db.update(inbox).set({ senderType: 'agent', senderId: agentId }).where(eq(inbox.id, receipt!.id))
+      expect(await listTrustedWorkStreamOriginsForExecution(db, { agentId, executionId })).toEqual([])
+    }
+  )
+
   test('pins follow-up questions to the server-owned workflow execution context', async () => {
     const workStreamId = await createWorkStream()
     await db

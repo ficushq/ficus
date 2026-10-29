@@ -57,13 +57,13 @@ test('header exposes overload diagnostics to keyboard and screen readers and lin
     expect(trigger).not.toBeNull()
     expect(trigger.querySelector('svg[aria-hidden="true"]')).not.toBeNull()
     const description = doc.getElementById(trigger.getAttribute('aria-describedby')!)!
-    expect(description.textContent).toContain('Overloaded: Load 28.0 on 8 CPUs')
+    expect(description.textContent).toContain('Host overloaded: Load 28.0 on 8 CPUs')
     expect(trigger.getAttribute('aria-haspopup')).toBe('dialog')
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
     await dom.act(async () => trigger.focus())
     expect(trigger.getAttribute('aria-expanded')).toBe('true')
     expect(card()!.id).toBe(trigger.getAttribute('aria-controls')!)
-    expect(card()!.textContent).toContain('Overloaded: Load 28.0 on 8 CPUs')
+    expect(card()!.textContent).toContain('Host overloaded: Load 28.0 on 8 CPUs')
     expect(card()!.textContent).toContain('free of')
     await key('Tab')
     const link = card()!.querySelector('a')!
@@ -124,7 +124,7 @@ test('hover warning preserves runtime and legacy reasons alongside pressure even
         warning()!.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true }))
         await new Promise((resolve) => setTimeout(resolve, 300))
       })
-      expect(card()!.textContent).toContain('Overloaded: Load 28.0 on 8 CPUs')
+      expect(card()!.textContent).toContain('Host overloaded: Load 28.0 on 8 CPUs')
       expect(card()!.textContent).toContain('Docker did not answer within 15s')
       expect(card()!.textContent).toContain('Detached runc exec has been stuck for at least 300s')
     }
@@ -186,7 +186,7 @@ test.each(vmStartupReasons)('overloaded VM retains normal startup context: "%s"'
   await withIndicator({ ...healthy, status: 'starting', reason, pressure }, async ({ dom, warning, card }) => {
     expect(warning()).not.toBeNull()
     await dom.act(async () => warning()!.focus())
-    expect(card()!.textContent).toContain('Overloaded: Load 28.0 on 8 CPUs')
+    expect(card()!.textContent).toContain('Host overloaded: Load 28.0 on 8 CPUs')
     expect(card()!.textContent).toContain(reason)
   })
 })
@@ -229,7 +229,7 @@ test('a reasonless runtime degradation still has useful warning detail', async (
 })
 
 test.each([
-  ['overload', { pressure }, 'Overloaded: Load 28.0 on 8 CPUs'],
+  ['overload', { pressure }, 'Host overloaded: Load 28.0 on 8 CPUs'],
   [
     'Docker degradation',
     { runtimeHealth: { status: 'degraded', reason: 'Docker did not answer within 2s' } },
@@ -259,3 +259,46 @@ test.each([
     )
   }
 )
+
+test('header attributes local reclaim pressure even when the host load is low', async () => {
+  const local = {
+    ...pressure,
+    load: [1, 1, 1] as [number, number, number],
+    box: {
+      cpuPercent: 12,
+      sampleMs: 1000,
+      cpuPressureSome: { avg10: 0, avg60: 0, avg300: 0 },
+      memoryPressureSome: { avg10: 20, avg60: 10, avg300: 5 },
+    },
+  }
+  await withIndicator({ ...healthy, pressure: local }, async ({ doc, warning }) => {
+    expect(warning()).not.toBeNull()
+    const text = doc.getElementById(warning()!.getAttribute('aria-describedby')!)!.textContent
+    expect(text).toContain('This sandbox overloaded: Load 1.0 on 8 CPUs')
+    expect(text).toContain('12.0% CPU')
+    expect(text).toContain('Memory PSI some 20.0/10.0/5.0%')
+  })
+})
+
+test('header shows aggregate host quota alongside separately attributed pressure', async () => {
+  await withIndicator(
+    {
+      ...healthy,
+      pressure,
+      hostCapacity: {
+        allowed: true,
+        reason: 'already-accounted',
+        cpus: 8,
+        budgetCpus: 12,
+        activeQuotaCpus: 12,
+      },
+    },
+    async ({ doc }) => {
+      expect(doc.body.textContent).toContain('Host load 3.5×')
+      expect(doc.body.textContent).toContain('quota 12/12 CPUs')
+      expect(doc.querySelector('[title*="not measured CPU usage"]')?.getAttribute('title')).toContain(
+        'Additional box demand waits'
+      )
+    }
+  )
+})

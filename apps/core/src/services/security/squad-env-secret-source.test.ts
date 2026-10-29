@@ -96,6 +96,23 @@ describe('squad env heuristic', () => {
     }
     expect(isSecretLikeSquadEnvValue('APP_PASSWORD', 'long password with spaces')).toBe(true)
   })
+  test('detects generic 64/128 hex secrets without classifying commit IDs or low-entropy hex', () => {
+    for (const length of [64, 128]) {
+      const value = createHash('sha512').update(`synthetic-hex-fixture-${length}`).digest('hex').slice(0, length)
+      expect(isSecretLikeSquadEnvValue('CUSTOM', value)).toBe(true)
+      expect(isSecretLikeSquadEnvValue('CUSTOM', value.toUpperCase())).toBe(true)
+      for (const key of ['COMMIT_SHA', 'GIT_COMMIT', 'SOURCE_REVISION', 'BUILD_HASH', 'SHA256', 'CHECKSUM']) {
+        expect(isSecretLikeSquadEnvValue(key, value)).toBe(false)
+      }
+    }
+    for (const value of [
+      createHash('sha1').update('synthetic-commit').digest('hex'),
+      'deadbeef'.repeat(8),
+      'a'.repeat(128),
+      '1234567890'.repeat(8),
+    ])
+      expect(isSecretLikeSquadEnvValue('CUSTOM', value)).toBe(false)
+  })
   test('requires long high entropy for other keys, excluding ordinary config', () => {
     expect(isSecretLikeSquadEnvValue('CUSTOM', 'aB3dE5gH7jK9mN2pQ4sT6vW8yZ0cF1iL')).toBe(true)
     for (const value of [
@@ -538,3 +555,62 @@ for (const nullHash of [false, true]) {
     }
   })
 }
+
+test('output placeholders reveal neither squad identity nor environment variable names', async () => {
+  const f = fixture()
+  const id = randomUUID()
+  f.file(id, 'OTHER_SQUAD_PRIVATE_PROJECT_TOKEN=synthetic-neutral-label-token')
+  await f.source.initialize()
+  const redacted = f.registry.redactWithStoredKeys('synthetic-neutral-label-token')
+  expect(redacted.value).not.toContain('synthetic-neutral-label-token')
+  expect(redacted.value).not.toContain('OTHER_SQUAD_PRIVATE_PROJECT_TOKEN')
+  expect(redacted.value).not.toContain(id)
+  expect(redacted.storedKeys).toEqual([])
+  f.registry.dispose()
+})
+
+test('upgrades heuristic candidates only from bytes matching existing protected authority, without another bootstrap', async () => {
+  const f = fixture()
+  const id = randomUUID()
+  const generic = createHash('sha512').update('synthetic-upgrade-hex').digest('hex')
+  const digest = '0123456789abcdef'.repeat(4) // Old 4-bit rule accepted this public hash.
+  const content = `CUSTOM=${generic}\nBUILD_HASH=${digest}\nEXPLICIT_TOKEN=${digest}\n`
+  const path = f.file(id, content)
+  const oldSnapshot = {
+    contentHash: createHash('sha256').update(content).digest('hex'),
+    entries: [
+      { key: 'BUILD_HASH', value: digest },
+      { key: 'EXPLICIT_TOKEN', value: digest },
+    ],
+    reason: null,
+  } satisfies SquadEnvSnapshot
+  f.repository.marked.add(id)
+  f.repository.snapshots.set(id, structuredClone(oldSnapshot))
+  await f.source.initialize()
+  expect(f.registry.redact(generic)).not.toContain(generic)
+  expect(f.registry.redact(digest)).not.toContain(digest) // Explicit secret-name intent still wins.
+  expect(f.repository.bootstrapWrites).toBe(0)
+  expect(f.repository.snapshots.get(id)).toEqual(oldSnapshot)
+  // A matching hash is authority; entries themselves are heuristic, not manually registered secrets.
+  const digestOnly = `BUILD_HASH=${digest}\n`
+  const second = randomUUID()
+  f.file(second, digestOnly)
+  f.repository.marked.add(second)
+  f.repository.snapshots.set(second, {
+    contentHash: createHash('sha256').update(digestOnly).digest('hex'),
+    entries: [{ key: 'BUILD_HASH', value: digest }],
+    reason: null,
+  })
+  rmSync(path)
+  await f.source.refresh()
+  f.tick()
+  expect(f.registry.redact(digest)).toBe(digest)
+  // A direct edit cannot add a new candidate to the protected snapshot.
+  writeFileSync(path, `CUSTOM=${generic.split('').reverse().join('')}\n`)
+  f.tick()
+  expect(f.source.entries()).toEqual([])
+  expect(f.source.notice(id)).toContain('outside Settings')
+  expect(f.repository.snapshots.get(id)).toEqual(oldSnapshot)
+  expect(f.repository.bootstrapWrites).toBe(0)
+  f.registry.dispose()
+})

@@ -277,6 +277,56 @@ not sufficient evidence. Report actual completed tests and any skips; see
 See the package test entrypoints for suite-specific guidance and [`ci-cd.md`](ci-cd.md)
 for what gates a merge.
 
+### Native capacity admission in Ficus runtimes
+
+The root/Core preload only installs the test environment and mocks. Focused
+web, CLI, and pure Core tests need **no database or capacity claim** merely
+because that preload runs. Importing Core's `db/index` requests database
+readiness; raw-client suites explicitly import `test-utils/require-test-db`
+before reading a DSN or checking optional pooler availability. Both paths
+share one initialization promise, so mixed files and concurrent imports cannot
+repeat schema setup. Importing the DB entrypoint counts as requesting readiness,
+even if that module's caller subsequently does not issue a query. Suites that
+load DB-touching modules dynamically inside a test must also import
+`test-utils/require-test-db` at module scope: cold schema setup must not consume
+that test's timeout. The CI import-graph check flags literal test-body imports
+whose runtime static dependency graph reaches the DB without prior module
+readiness; it ignores type-only imports and is not a runtime selection heuristic.
+
+In a Ficus agent runtime, that lazy initializer and `test:db:up` verify an
+**existing** caller-owned `shared-box-intensive` claim before any database
+probe, stale-project sweep, Compose startup, or schema mutation. Full Core
+and subprocess-lane runners still check capacity up front; other heavy,
+mutation and native harness guidance is unchanged. For DB-backed work, claim
+with `ficus slot claim shared-box-intensive` first and inspect its outcome:
+`queued` is not ownership. A disabled pool is explicitly not enforced; no
+claim or queue entry is created by this check.
+
+The guard reads `ficus --json slot list shared-box-intensive` for the current
+squad using the injected agent identity. The API derives `callerClaim` from the
+authenticated actor and excludes expired/released claims; another holder or a
+free slot is not admission. Queued, expired, absent, malformed, or unverifiable
+ownership fails closed with a named capacity diagnostic. It never acquires a
+second claim, renews automatically, or introduces an approval/token/ledger.
+Keep the existing claim alive while using the resource, then stop this
+worktree's DB and release the claim on every exit. `test:db:down` remains
+available after capacity is lost and retains its project-ownership checks.
+
+Detection uses injected Ficus runtime markers and the OS VM-box account, not
+`CI`, `NODE_ENV`, or a test-mode override. Setting `CI=true` inside a box cannot
+bypass admission, including when `DATABASE_URL` is supplied. Ordinary CI and
+non-Ficus local development do not invoke the CLI or depend on the Core API.
+This is a startup safety guard, not a security boundary against a shell that
+edits repository tooling, nor a monitor that stops running tests on expiry.
+
+The guard's synthetic regressions need no DB or capacity claim:
+
+```bash
+(cd packages/shared && bun test src/testDbCapacity.test.ts)
+# Actual production preloads with refusing spies:
+(cd .github && bun test lazy-test-db.test.ts)
+```
+
 ## PostgreSQL (Docker)
 
 ```bash
@@ -300,10 +350,11 @@ for these ownership-aware commands, not raw detached Compose shortcuts.
 foreground session first. Concurrent independent test runs need separate
 worktrees; they must not reset each other's data.
 
-Core's package runner owns one database lifetime across its sequential child
-batches (preserving schema reuse). Direct `bun test`, including root-invoked
-diagnostics, owns its local DB through the Core preload. Ownership is registered
-before startup; normal exit, failed setup/schema/tests, INT and TERM all run
+Core's full-suite package runner owns one database lifetime across its sequential
+child batches (preserving schema reuse). Focused runs and direct `bun test`
+diagnostics defer ownership to each DB-using child; DB-free children never
+probe or start a database. Focused isolated files therefore each own their
+lifetime rather than sharing a container. Ownership is registered before startup; normal exit, failed setup/schema/tests, INT and TERM all run
 project-scoped `docker compose down --volumes --remove-orphans`. The standalone
 persistent-restart fixture and the shared cross-project readiness fixtures
 own their separate projects and exit hooks; setup

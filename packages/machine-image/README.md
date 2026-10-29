@@ -7,7 +7,8 @@ exe-compatible image, at the **same pinned versions and paths** bootstrap uses.
 Booting a box VM from this image collapses bootstrap from a multi-minute install
 to seconds: every idempotent check-then-act step finds its artifact already in
 place and skips, and the `/opt/ficus/prebaked` marker lets bootstrap fast-path the
-install steps entirely (see `scripts/machine/bootstrap.sh`).
+apt/nix/devbox/browser installs (see `scripts/machine/bootstrap.sh`). Bun is
+checked separately and upgraded atomically when its actual version differs.
 
 The per-box devbox **comfort set is NOT baked** — it is seeded per box at runtime
 (`devbox-seed`), keeping this image the base toolchain only.
@@ -45,7 +46,7 @@ regression ever needs freezing out.
 | apt base + rootless prereqs | —           | (git, curl, unzip, tmux, jq, build-essential, ca-certificates, gnupg, uidmap, dbus-user-session, slirp4netns, fuse-overlayfs)                                                | `install_base_packages`                                     |
 | nftables                    | —           | —                                                                                                                                                                            | `apply_egress_lockdown` (on-demand install, pre-baked here) |
 | Docker engine + rootless    | —           | docker-ce, docker-ce-cli, containerd.io, docker-ce-rootless-extras from Docker's apt repo (replaces exeuntu's docker.io); `docker.service`/`docker.socket` disabled + masked | `install_docker_packages`                                   |
-| bun                         | `1.2.23`    | `/opt/ficus/bun`, symlinks `/opt/ficus/bin/bun` + `/usr/local/bin/bun`                                                                                                       | `install_bun` (`BUN_VERSION`)                               |
+| bun                         | `.bun-version` (currently `1.4.2`)    | `/opt/ficus/bun`, symlinks `/opt/ficus/bin/bun` + `/usr/local/bin/bun`                                                                                                       | `install_bun` (`BUN_VERSION`)                               |
 | nix (multi-user)            | `2.24.9`    | `/nix`, daemon units enabled, symlink `/usr/local/bin/nix`                                                                                                                   | `install_nix` (`NIX_VERSION`) + `link_nix_on_path`          |
 | devbox                      | `0.14.0`    | `/usr/local/bin/devbox`                                                                                                                                                      | `install_devbox` (`DEVBOX_VERSION`)                         |
 | Ficus dirs + scripts        | —           | `/opt/ficus/{bin,server,archive}`, `bootstrap.sh` + `box-provision.sh` in `/opt/ficus/bin/`                                                                                  | `make_dirs` / manager push                                  |
@@ -89,7 +90,10 @@ The exe provider passes this via `FICUS_EXE_MACHINE_IMAGE`
 (default `ghcr.io/ficushq/ficus-machine:latest`).
 
 On a VM booted from this image, bootstrap.sh detects `/opt/ficus/prebaked` and
-skips the install steps (bun/nix/devbox/apt), doing only per-boot work — the
-manifest write and the capabilities probe — so bootstrap completes in seconds.
+skips apt/nix/devbox/browser installs. Bun alone is version-checked and converged
+using a staged atomic executable replacement. Running box processes adopt it
+separately, through normal idle reconciliation; a successful disk upgrade is not
+proof that every server is already using it. See the [Bun rollout guide](../../docs/wiki/machines/host-bun-convergence.md)
+for the offline preview, prerequisites and required live authorization.
 On a non-prebaked machine (BYO-SSH Ubuntu) bootstrap still performs the full
 idempotent install; the marker is an optimization, never a dependency.

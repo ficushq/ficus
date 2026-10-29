@@ -1,10 +1,11 @@
+import { readSandboxHostCapacity } from '../services/machines/host-admission'
 import { getExposureCleanupStatusForDisplay } from '../services/sandbox/exposure-cleanup'
 import { getPostgresError, publicErrorMessage } from '../db/errors'
 import { sentAssistantRouting } from '../services/routing/assistant-routing-preview'
 import { captureRoutingCorrection } from '../services/routing/routing-eval-capture'
 import { listActiveSlotWaits } from '../services/slots/active-waits'
 import { listActiveSlotHolds } from '../services/slots/active-holds'
-import { chatPagePathSchema, chatRequestSchema } from '@ficus/shared'
+import { chatPagePathSchema, chatRequestSchema, manualWaitDecisionSchema } from '@ficus/shared'
 import { getModelCatalog } from '../services/model-selection/model-catalog'
 import { withChatQueueState } from '../services/chat/queued-messages'
 import { replySuggestionsEnabled, withVisibleReplySuggestions } from '../services/reply-suggestions/visibility'
@@ -19,7 +20,7 @@ import { isSessionActive, isSessionCompacting, removeSession } from '../services
 import { getProxyWorkerSSE } from '../services/streaming/sse-proxy'
 import { Agent, AgentTargetUnavailableError, ListMessagesOptions } from '../entities/Agent'
 import { and, eq } from 'drizzle-orm'
-import { db, agentExtraScopes, sandboxProvisionRecoveries } from '../db'
+import { db, agentExtraScopes, sandboxProvisionRecoveries, recoveryEpisodes } from '../db'
 import { AmbiguousPrefixError } from '../db/prefix-match'
 import { InvalidMessageCursorError } from '../services/agent/message-cursor'
 import {
@@ -62,6 +63,7 @@ import {
   listSandboxProcesses,
   parseContainerId,
   parseProcessId,
+  parseProcessStartTicks,
   parseProcessSignal,
   sandboxProcessesErrorResponse,
   signalSandboxProcess,
@@ -781,6 +783,39 @@ export const agentsRouter = new Hono()
     }),
     (c) => c.json({ error: 'resume is no longer supported; send a normal message to continue' }, 410)
   )
+  .post(
+    '/:id/recoveries/:recoveryId/input',
+    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
+    }),
+    async (c) => {
+      const agent = await Agent.find(c.req.param('id'))
+      if (!agent) return c.json({ error: 'Agent not found' }, 404)
+      const id = z.uuid().safeParse(c.req.param('recoveryId'))
+      const decision = manualWaitDecisionSchema.safeParse(await c.req.json())
+      if (!id.success || !decision.success)
+        return c.json({ error: 'A typed versioned recovery decision is required' }, 400)
+      const [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.id, id.data))
+      if (!record || record.agentId !== agent.id || record.workStreamId)
+        return c.json({ error: 'Standalone recovery not found' }, 404)
+      const identity = c.get('identity') as Identity
+      try {
+        const { decideRecovery } = await import('../services/recovery/store')
+        const recovery = await decideRecovery(
+          record.id,
+          decision.data,
+          identity.type === 'agent'
+            ? { agentId: identity.agentId }
+            : identity.type === 'user'
+              ? { userId: identity.userId }
+              : {}
+        )
+        return c.json({ recovery })
+      } catch (error) {
+        return c.json({ error: publicErrorMessage(error) }, 400)
+      }
+    }
+  )
   // POST /api/agents/:id/stop — stop active execution
   .post(
     '/:id/stop',
@@ -1121,6 +1156,7 @@ export const agentsRouter = new Hono()
       mergeSandboxStatus(
         {
           ...status,
+          ...(isVmRuntime() ? { hostCapacity: await readSandboxHostCapacity(sandboxId) } : {}),
           // The overload detector's reading when status did not probe the box itself.
           ...(isVmRuntime() && !('pressure' in status && status.pressure)
             ? await openSandboxOverloadPressure(sandboxId).then((pressure) => (pressure ? { pressure } : {}))
@@ -1181,9 +1217,16 @@ export const agentsRouter = new Hono()
     }),
     async (c) =>
       ownAgentSandbox(c, async (sandboxId) => {
-        const body = await parseOptionalJsonObjectBody(c, {} as { signal?: unknown })
+        const body = await parseOptionalJsonObjectBody(c, {} as { signal?: unknown; startTicks?: unknown })
         const pid = parseProcessId(c.req.param('pid'))
-        return signalSandboxProcess(sandboxId, pid, parseProcessSignal(body.signal), c.get('identity')!)
+        return signalSandboxProcess(
+          sandboxId,
+          pid,
+          parseProcessSignal(body.signal),
+          c.get('identity')!,
+          undefined,
+          parseProcessStartTicks(body.startTicks)
+        )
       })
   )
   .post(

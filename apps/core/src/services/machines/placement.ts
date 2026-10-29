@@ -1,3 +1,4 @@
+import { canHostSandbox, HostCapacityUnavailableError } from './host-admission'
 import { getPostgresError } from '../../db/errors'
 import { randomUUID } from 'crypto'
 import { InflightDeduper } from '../../lib/infra/inflight'
@@ -130,6 +131,9 @@ export class MachineProvisioningCapError extends Error {
 export type PlacementRole = 'squad' | 'agent' | 'system-manager'
 
 export interface PlacementRequest {
+  /** Select an already-ready recorded target for a read-only health reconnect.
+   * The caller must still claim physical capacity before any mutation. */
+  allowReadyReconnect?: boolean
   sandboxId: string
   role: PlacementRole
   /** The squad this box belongs to. Carried by callers for context only — the
@@ -152,6 +156,8 @@ export interface ProvisionMachineOpts {
 
 /** All external effects, injectable for tests; each defaults to production. */
 export interface PlacementDeps {
+  /** Aggregate quota preflight. The physical generation must still claim atomically. */
+  canHost?: (machineId: string, sandboxId: string) => Promise<boolean>
   getMachine?: (id: string) => Promise<Machine | null>
   /** Re-fetch a machine by its unique name — the cross-process adopt-the-winner
    *  lookup after a provision loses the `machines.name` UNIQUE race. */
@@ -488,7 +494,7 @@ export async function provisionCapped(deps: PlacementDeps, opts: ProvisionMachin
 /** The BYO/least-loaded default path: sole ready shared machine, else least-loaded with a
  *  deterministic (createdAt, id) tie-break; zero ready shared machines is an
  *  error. */
-async function resolveLeastLoaded(deps: PlacementDeps): Promise<Machine> {
+async function resolveLeastLoaded(req: PlacementRequest, deps: PlacementDeps): Promise<Machine> {
   const query = deps.queryReadySharedMachines ?? queryReadySharedMachinesReal
   let rows = await query()
   if (rows.length === 0) {
@@ -499,7 +505,6 @@ async function resolveLeastLoaded(deps: PlacementDeps): Promise<Machine> {
     rows = await query()
     if (rows.length === 0) throw new MachineUnavailableError('no ready shared machine registered')
   }
-  if (rows.length === 1) return rows[0].machine
 
   const sorted = [...rows].sort(
     (a, b) =>
@@ -507,7 +512,10 @@ async function resolveLeastLoaded(deps: PlacementDeps): Promise<Machine> {
       a.machine.createdAt.getTime() - b.machine.createdAt.getTime() ||
       (a.machine.id < b.machine.id ? -1 : a.machine.id > b.machine.id ? 1 : 0)
   )
-  return sorted[0].machine
+  for (const { machine } of sorted) {
+    if (await (deps.canHost ?? canHostSandbox)(machine.id, req.sandboxId)) return machine
+  }
+  throw new HostCapacityUnavailableError({ allowed: false, reason: 'quota' })
 }
 
 // ---------------------------------------------------------------------------
@@ -576,9 +584,24 @@ async function resolvePacked(req: PlacementRequest, deps: PlacementDeps): Promis
         a.machine.createdAt.getTime() - b.machine.createdAt.getTime() ||
         (a.machine.id < b.machine.id ? -1 : a.machine.id > b.machine.id ? 1 : 0)
     )
-    return eligible[0].machine
+    for (const { machine } of eligible) {
+      if (await (deps.canHost ?? canHostSandbox)(machine.id, req.sandboxId)) return machine
+    }
+    throw new HostCapacityUnavailableError({ allowed: false, reason: 'quota' })
   }
 
+  // Static packing overflow can still use its existing provisioning policy,
+  // but aggregate quota saturation is never a reason to create more hosts.
+  if (rows.length) {
+    let hostAvailable = false
+    for (const { machine } of rows) {
+      if (await (deps.canHost ?? canHostSandbox)(machine.id, req.sandboxId)) {
+        hostAvailable = true
+        break
+      }
+    }
+    if (!hostAvailable) throw new HostCapacityUnavailableError({ allowed: false, reason: 'quota' })
+  }
   if (incoming > capacity) {
     log.warn(
       `box ${req.sandboxId} (role ${req.role}, weight ${incoming}) exceeds the machine unit capacity ` +
@@ -619,6 +642,11 @@ export async function resolvePlacement(req: PlacementRequest, deps: PlacementDep
         machine.status
       )
     }
+    const recorded =
+      req.allowReadyReconnect && req.sandboxId ? await (deps.getMachineBox ?? getMachineBoxReal)(req.sandboxId) : null
+    const reconnect = recorded?.status === 'ready' && recorded.machineId === machine.id
+    if (!reconnect && !(await (deps.canHost ?? canHostSandbox)(machine.id, req.sandboxId)))
+      throw new HostCapacityUnavailableError({ allowed: false, reason: 'quota', machineId: machine.id })
     return machine
   }
 
@@ -631,7 +659,14 @@ export async function resolvePlacement(req: PlacementRequest, deps: PlacementDep
     const box = await getBox(req.sandboxId)
     if (box) {
       const recorded = await getMachine(box.machineId)
-      if (recorded && recorded.status === 'ready') return recorded
+      if (recorded && recorded.status === 'ready') {
+        if (
+          !(req.allowReadyReconnect && box.status === 'ready') &&
+          !(await (deps.canHost ?? canHostSandbox)(recorded.id, req.sandboxId))
+        )
+          throw new HostCapacityUnavailableError({ allowed: false, reason: 'quota', machineId: recorded.id })
+        return recorded
+      }
     }
   }
 
@@ -650,7 +685,7 @@ export async function resolvePlacement(req: PlacementRequest, deps: PlacementDep
   // 4. No cloud provider (BYO-only) → the legacy least-loaded shared path,
   //    Preserve observed transient readiness when no eligible host is ready.
   if (!exeProvider) {
-    return resolveLeastLoaded(deps)
+    return resolveLeastLoaded(req, deps)
   }
 
   // 5. Packed shared pool: every remaining box, whatever its role or squad,

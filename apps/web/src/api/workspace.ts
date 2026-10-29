@@ -1,3 +1,4 @@
+import type { SandboxHostCapacity } from '@ficus/shared'
 /**
  * Workspace API Client
  *
@@ -234,6 +235,8 @@ export interface SandboxStatus {
   chain?: SandboxChainHealth
   /** Load and memory from the sandbox's last health check (VM runtime). */
   pressure?: SandboxPressure
+  /** Machine-wide reserved box quotas, not sampled CPU usage. */
+  hostCapacity?: SandboxHostCapacity
 }
 
 /**
@@ -278,11 +281,12 @@ export async function signalSandboxProcess(
   squadId: string,
   pid: number,
   signal: SandboxProcessSignal,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  startTicks?: number
 ): Promise<void> {
   await sandboxControlRequest(`/squads/${squadId}/sandbox/processes/${pid}/signal`, {
     method: 'POST',
-    body: JSON.stringify({ signal }),
+    body: JSON.stringify({ signal, startTicks }),
     signal: abortSignal,
   })
 }

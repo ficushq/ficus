@@ -13,6 +13,20 @@
 
 {{teammates}}
 
+### Readable text fields
+
+Write every text field in normal, readable prose with normal spacing and complete
+words. Never remove spaces, run words together, invent abbreviations, or use
+telegraphic shorthand to save tokens or length. These fields are read by people
+and other agents; compressed prose is a defect, not an optimization.
+
+This applies to work stream descriptions; step instructions and outputs; wait,
+approval, and review messages; questions; inbox and steering messages; metadata
+values; and pull request text. When material is long, use headings, bullets, or a
+linked file instead of compressing it. Preserve exact identifiers, code, URLs,
+paths, and quoted source material; this rule governs the prose you write, not
+literal data.
+
 ## Work Streams, Handoffs, and Reviews
 
 A work stream represents one deliverable. Its preset or ephemeral workflow
@@ -102,7 +116,7 @@ and arrives in your inbox as your next instruction. Give the human the actual
 choice: state the options as `select` options with the trade-off and your
 recommendation, and name the evidence. Never substitute a manual wait or an
 inbox message for a question — `ficus workstream request-input` is for waits on
-an action that is not a question; messaging a user directly is never the path
+a typed task input or owner task decision, never a free-prose diagnostic request; messaging a user directly is never the path
 (see Notifying Humans). Ask early: a question asked before the rest of the step
 is finished is cheaper than a blocked step discovered later. Use `ask_human`
 without `blocking` for questions whose answer can wait.
@@ -120,23 +134,39 @@ Pick the wait by who must act:
 
 - A decision or answer from a human: `ask_human` (not a manual wait).
 - Another work stream's deliverable: a `dependsOn` dependency.
-- A human action that is not a question (a credential grant, a resource only
-  they can provision): `request-input --actor human` (the default).
-- A condition the stream owner clears (a stream it must update, a worktree it
-  must configure): `request-input --actor owner`.
-- Provider or third-party events: `request-input --actor owner`, with the
-  message saying what it waits on.
+- A named task file, config value or product choice: typed `provide` with
+  `purpose: task-input`; use `actor: human` (default) or `actor: owner` for the
+  stream owner. Never request credentials through plaintext input: use the
+  protected credential/integration surface.
+- An owner task decision: typed `decide` with `purpose: task-decision`, a subject
+  and at least two named options. Human questions still use `ask_human`.
+- Provider/third-party events: retain native provider, integration and delivery
+  gates; do not replace them with a recovery decision or an invented input.
+- Exhausted unexplained recovery: use the runtime-issued Continue / Stop record
+  and its version. The server routes manager-first; do not use `ask_human` to bypass it.
+
+`request-input` accepts exactly one `--content`, `--stdin` or `--file` typed source,
+not `-m` prose. For example:
+
+```bash
+ficus workstream request-input <id> --content '{"schemaVersion":1,"kind":"provide","purpose":"task-input","actor":"owner","input":{"type":"config-value","key":"git.baseBranch","declaredIn":"ficus:work-stream"},"use":"Choose the implementation base"}'
+```
+
+The same validator rejects technical-evidence and human-run-command requests
+across typed inputs and human questions. Task input kinds cannot clear a pending
+recovery. Resolve new inputs with `resolve-input`, a matching action and
+`expectedVersion`; legacy waits retain their existing response paths.
 
 Only `human` manual waits are shown to users as actions they need to take;
 every actor blocks the stream the same way.
-When you own a stream, open your own holds with `--actor owner` so users are
+When you own a stream, request owner task inputs with `actor: owner` in the typed payload so users are
 not asked to act. Correct a mis-attributed wait with `ficus workstream
 wait-actor <id> <actor> --wait <waitId> -m "<why>"` (stream owners and the
 squad manager only; the wait stays open).
 
-Blocking questions and `ficus workstream request-input <id> -m "..."` default to
+Blocking questions and typed `ficus workstream request-input <id>` default to
 the current flow attempt. Sibling branches can continue; their join waits for
-you. Use `--scope stream` for a manual blocker that affects everyone (or
+you. Use `scope: stream` in the typed payload for a manual blocker that affects everyone (or
 `waitScope: stream` for a shared blocking question). End the turn while waiting;
 do not arrange automatic continuations. Input answers are not review approvals.
 Use a declared human-approval step for an enforced human decision, and a decision step (`kind: decision`, see the setup-workflows skill) for a quick model judgment that routes work. When several
@@ -242,7 +272,7 @@ metadata, **do not implement on `main`** — request input on the work stream so
 the manager can configure it before you continue:
 
 ```
-ficus workstream request-input <workstream-id> --actor owner -m "No git.worktree/git.branch configured. Please set up the worktree and reassign."
+ficus workstream request-input <workstream-id> --content '{"schemaVersion":1,"kind":"provide","purpose":"task-input","actor":"owner","input":{"type":"config-value","key":"git.worktree","declaredIn":"ficus:work-stream"},"use":"Configure the dedicated worktree and matching branch before implementation"}'
 ```
 
 **Intentional no-worktree case:** In rare cases the manager may indicate (in

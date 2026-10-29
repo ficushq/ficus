@@ -1,3 +1,4 @@
+import { claimHostCapacity, pendingStreamBox } from '../services/machines/host-capacity-store'
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, spyOn, mock } from 'bun:test'
 import { like, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
@@ -12,6 +13,8 @@ import {
   db,
   squads,
   squadPresets,
+  machines,
+  workStreams,
   agents,
   assistantConversations,
   assistantTasks,
@@ -1714,8 +1717,8 @@ describe('squads routes', () => {
           ],
           containers: { available: true, containers: [] },
         }),
-        signalProcess: async (pid: number, signal: string) => {
-          calls.push(['signal', pid, signal])
+        signalProcess: async (pid: number, signal: string, _abortSignal: AbortSignal, startTicks?: number) => {
+          calls.push(['signal', pid, signal, startTicks])
           return { pid, signal, command: 'bun tsc -p apps/core' }
         },
         stopContainer: async (id: string) => {
@@ -1742,7 +1745,7 @@ describe('squads routes', () => {
         const signalled = await app.request(`/api/squads/${squad.id}/sandbox/processes/2838629/signal`, {
           method: 'POST',
           headers: { ...authHeaders(admin.token), 'content-type': 'application/json' },
-          body: JSON.stringify({ signal: 'kill' }),
+          body: JSON.stringify({ signal: 'kill', startTicks: 900000 }),
         })
         expect(signalled.status).toBe(200)
         const stopped = await app.request(`/api/squads/${squad.id}/sandbox/containers/tau-core-tsc/stop`, {
@@ -1751,7 +1754,7 @@ describe('squads routes', () => {
         })
         expect(stopped.status).toBe(200)
         expect(calls).toEqual([
-          ['signal', 2838629, 'KILL'],
+          ['signal', 2838629, 'KILL', 900000],
           ['stop', 'tau-core-tsc'],
         ])
 
@@ -1895,6 +1898,54 @@ describe('squads routes', () => {
         vmSpy.mockRestore()
         managerSpy.mockRestore()
         await db.delete(squads).where(eq(squads.id, squad.id))
+      }
+    })
+
+    it('reports aggregate host reservation numbers without creating or waking a box', async () => {
+      const squad = await Squad.create({ name: `${testPrefix} Capacity Header`, purpose: 'Capacity readout' })
+      const [machine] = await db
+        .insert(machines)
+        .values({
+          name: `header-${crypto.randomUUID()}`,
+          provider: 'ssh',
+          sshHost: '127.0.0.1',
+          sshUser: 'test',
+          sshKeyId: 'unused',
+          sshPublicKey: 'unused',
+          status: 'ready',
+          capabilities: { cpus: 8 },
+        })
+        .returning()
+      const [stream] = await db
+        .insert(workStreams)
+        .values({ squadId: squad.id, title: 'header', status: 'active' })
+        .returning()
+      await db.transaction((tx) =>
+        claimHostCapacity(
+          tx,
+          { kind: 'stream', workStreamId: stream.id },
+          [squad.sandboxId, pendingStreamBox(stream.id)].map((sandboxId) => ({ machineId: machine.id, sandboxId }))
+        )
+      )
+      const runtime = process.env.FICUS_SANDBOX_RUNTIME
+      process.env.FICUS_SANDBOX_RUNTIME = 'vm'
+      const getStatus = mock(async () => ({ status: 'starting', reason: 'box is provisioning' }))
+      const managerSpy = spyOn(sandboxFactory, 'getSandboxManager').mockReturnValue({
+        getSandboxStatus: getStatus,
+      } as any)
+      try {
+        const res = await app.request(`/api/squads/${squad.id}/sandbox/status`, { headers: authHeaders(admin.token) })
+        expect(res.status).toBe(200)
+        const body = await res.json()
+        expect(body.runtime).toBe('vm')
+        expect(body.hostCapacity).toMatchObject({ cpus: 8, budgetCpus: 12, activeQuotaCpus: 8 })
+        expect(getStatus).toHaveBeenCalledTimes(1)
+      } finally {
+        managerSpy.mockRestore()
+        if (runtime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+        else process.env.FICUS_SANDBOX_RUNTIME = runtime
+        await db.delete(squads).where(eq(squads.id, squad.id))
+        await db.delete(machines).where(eq(machines.id, machine.id))
       }
     })
 

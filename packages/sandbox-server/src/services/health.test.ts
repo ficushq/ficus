@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'bun:test'
+import { describe, it, expect, spyOn } from 'bun:test'
+import { boxPressureSampler } from './processes'
 import { BoxRuntimeHealth, getHealthResponse } from './health'
 
 describe('runtime Docker diagnostics', () => {
@@ -109,6 +110,7 @@ describe('getHealthResponse', () => {
   it('should return health info', () => {
     const res = getHealthResponse()
     expect(res.healthy).toBe(true)
+    expect(res.bunVersion).toBe(Bun.version)
     expect(res.version).toBeDefined()
     expect(typeof res.uptimeSeconds).toBe('number')
   })
@@ -132,4 +134,30 @@ describe('getHealthResponse', () => {
     })
     expect(JSON.stringify(docker)).not.toContain('TOKEN')
   })
+})
+
+it('health forwards the same per-box fields without awaiting sampling or changing liveness', () => {
+  const pressure = {
+    cpus: 8,
+    load: [35, 20, 10] as [number, number, number],
+    memTotalMb: 16000,
+    memAvailableMb: 4000,
+    box: {
+      cpuPercent: 20,
+      sampleMs: 1000,
+      cpuPressureSome: { avg10: 0, avg60: 0, avg300: 0 },
+      memoryPressureSome: { avg10: 2, avg60: 1, avg300: 0 },
+    },
+  }
+  const snapshot = spyOn(boxPressureSampler, 'snapshot').mockReturnValue(pressure)
+  const refresh = spyOn(boxPressureSampler, 'refresh').mockReturnValue(new Promise(() => {}))
+  try {
+    const response = getHealthResponse({})
+    expect(response.pressure).toBe(pressure)
+    expect(response.healthy).toBe(true)
+    expect(refresh).toHaveBeenCalledTimes(1)
+  } finally {
+    snapshot.mockRestore()
+    refresh.mockRestore()
+  }
 })

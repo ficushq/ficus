@@ -1,3 +1,4 @@
+import { recoveryRecipientsById } from '../recovery/recipients'
 import type { PendingAction, WorkStreamActionData, WorkStreamDeliveryActionData } from '@ficus/shared'
 import { and, eq, inArray, ne } from 'drizzle-orm'
 import { db } from '../../db'
@@ -151,8 +152,21 @@ export async function evaluatePendingAction(
   }
 
   if (action.type === 'agent-error') {
-    const data = action.data as { ownerUserId: string | null; squadId: string | null }
+    const data = action.data as import('@ficus/shared').AgentErrorActionData
     const owner = Boolean(userId && data.ownerUserId === userId)
+    if (data.recovery) {
+      const audience = await recoveryRecipientsById(data.recovery.id)
+      const visible = Boolean(
+        userId &&
+        audience?.target === 'owner' &&
+        audience.ownerUserIds.includes(userId) &&
+        !data.recovery.structured.stopped
+      )
+      return {
+        visible,
+        canRespond: visible,
+      }
+    }
     return {
       visible: owner || (canRead && squadUnmuted),
       canRespond:
@@ -190,6 +204,17 @@ export async function evaluatePendingAction(
 
   const data = action.data as WorkStreamActionData
   const workStreamId = data.workStreamId
+  if (data.wait.structured?.request.kind === 'continue') {
+    const audience = await recoveryRecipientsById(data.wait.structured.request.recoveryId)
+    const actionable = Boolean(
+      userId && audience?.target === 'owner' && audience.ownerUserIds.includes(userId) && !data.wait.structured.stopped
+    )
+    return {
+      visible: actionable && context.attention.forWorkStream(workStreamId, squadId).decisions !== 'mute',
+      canRespond: actionable,
+    }
+  }
+
   if (data.wait.resolutionHandler === 'workflow') {
     const [run] = await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, workStreamId))
     const [stream] = await db.select().from(workStreams).where(eq(workStreams.id, workStreamId))

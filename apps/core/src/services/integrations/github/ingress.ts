@@ -1,3 +1,4 @@
+import { githubNativeId } from './feedback-envelope'
 import { normalizeDependabot } from './dependabot-output'
 import { dependabotRepositoryInterest } from './dependabot-authority'
 import { listGitHubPrWorkStreamCandidates, listGitHubTriggerSquads } from './database-watch-source'
@@ -41,6 +42,14 @@ export async function publishGitHubWebhookOutputs(event: VerifiedIngressEvent): 
       )
       if (!access || access.full_name.toLowerCase() !== repository.toLowerCase()) continue
       const payload = event.payload as Record<string, unknown>
+      // Never transplant a terminal deletion onto a new repository that reused the old name.
+      // Unlike ordinary content quarantine, a tombstone must retain the signed numeric identity.
+      if (
+        payload.action === 'deleted' &&
+        ['issue_comment', 'pull_request_review_comment'].includes(event.type) &&
+        githubNativeId((payload.repository as { id?: unknown })?.id) !== githubNativeId(access.id)
+      )
+        continue
       observation = {
         ...event,
         payload: { ...payload, repository: { ...(payload.repository as object), id: access.id } },

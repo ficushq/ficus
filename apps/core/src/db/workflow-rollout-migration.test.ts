@@ -1,3 +1,4 @@
+import '../test-utils/require-test-db'
 import { expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'

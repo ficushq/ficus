@@ -40,8 +40,11 @@ export function formatPrecompactionSystemMessage(event: PrecompactionLifecycleEv
     case 'succeeded':
       return 'Precompaction finished'
     case 'failed':
+      return event.error === 'timeout' ? 'Precompaction timed out' : 'Precompaction failed'
     case 'aborted':
+      return 'Precompaction cancelled'
     case 'superseded':
+      return 'Precompaction stopped — compacting now'
     case 'consumed':
     case 'rejected':
       return undefined // log-only; never shown as a chat system message

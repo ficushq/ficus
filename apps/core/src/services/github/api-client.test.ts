@@ -132,3 +132,28 @@ test('GraphQL reads return data, treat denials and query errors as null, and an 
   )
   await expect(query(new Response('down', { status: 502 })).read).rejects.toBeInstanceOf(GitHubApiUnavailableError)
 })
+
+test.each([403, 401, 429, 500])('confirmed-missing mode does not classify HTTP %s as deletion', async (status) => {
+  stubGitHub({ 'https://api.github.com/repos/owner/repo/issues/1': new Response('unavailable', { status }) })
+  await expect(
+    githubApiGet('/repos/owner/repo/issues/1', 'squad', undefined, { confirmedMissingOnly: true })
+  ).rejects.toBeInstanceOf(GitHubApiUnavailableError)
+})
+
+test.each([404, 410])('confirmed-missing mode recognizes HTTP %s as absence', async (status) => {
+  stubGitHub({ 'https://api.github.com/repos/owner/repo/issues/1': new Response('missing', { status }) })
+  expect(
+    await githubApiGet('/repos/owner/repo/issues/1', 'squad', undefined, { confirmedMissingOnly: true })
+  ).toBeNull()
+})
+
+test('confirmed-missing mode does not turn null success bodies or refused redirects into deletion', async () => {
+  stubGitHub({
+    'https://api.github.com/repos/owner/repo/issues/1': Response.json(null),
+    'https://api.github.com/repos/owner/repo/issues/2': redirect('https://not-github.invalid/path'),
+  })
+  for (const number of [1, 2])
+    await expect(
+      githubApiGet(`/repos/owner/repo/issues/${number}`, 'squad', undefined, { confirmedMissingOnly: true })
+    ).rejects.toBeInstanceOf(GitHubApiUnavailableError)
+})

@@ -20,6 +20,8 @@ import {
 // --- Read ---
 
 interface ReadRequest {
+  /** Opt-in canonical containment for declaration reads; old callers are unchanged. */
+  root?: string
   path: string
   offset?: number
   limit?: number
@@ -27,16 +29,27 @@ interface ReadRequest {
 
 export async function handleRead(req: ReadRequest): Promise<Response> {
   try {
-    const absPath = resolvePath(req.path)
+    let absPath = resolvePath(req.path)
+    if (req.root !== undefined) {
+      const root = await fs.realpath(resolvePath(req.root))
+      absPath = await fs.realpath(absPath)
+      const relative = path.relative(root, absPath)
+      if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
+        return Response.json({ error: 'Requested file is outside the workspace boundary' }, { status: 403 })
+    }
     const stats = await fs.stat(absPath)
 
     const readLimit = req.limit || 50 * 1024 // 50KB default
     const offset = req.offset || 0
 
-    const fd = await fs.open(absPath, 'r')
+    const fd = await fs.open(absPath, req.root === undefined ? 'r' : fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW)
     const buffer = Buffer.alloc(readLimit)
-    const { bytesRead } = await fd.read(buffer, 0, readLimit, offset)
-    await fd.close()
+    let bytesRead: number
+    try {
+      ;({ bytesRead } = await fd.read(buffer, 0, readLimit, offset))
+    } finally {
+      await fd.close()
+    }
 
     const content = buffer.subarray(0, bytesRead)
 
@@ -44,6 +57,7 @@ export async function handleRead(req: ReadRequest): Promise<Response> {
       content: content.toString('base64'),
       totalSize: Number(stats.size),
       isBinary: detectBinary(content),
+      ...(req.root === undefined ? {} : { verifiedRoot: req.root }),
     })
   } catch (err: any) {
     const status = err.code === 'ENOENT' ? 404 : 500

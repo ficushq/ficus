@@ -1,3 +1,4 @@
+import type { BashCancelReason, RestartContext } from '@ficus/shared/restart-context'
 /**
  * HTTP client for the Tool Executor service.
  *
@@ -203,12 +204,14 @@ export interface BashResponse {
 }
 
 export interface ReadRequest {
+  root?: string
   path: string
   offset?: number
   limit?: number
 }
 
 export interface ReadResponse {
+  verifiedRoot?: string
   content: string // base64
   totalSize: number
   isBinary: boolean
@@ -317,6 +320,8 @@ export interface ShellOutput {
 }
 
 export interface HealthResponse {
+  /** Actual running interpreter; absent on older executor bundles. */
+  bunVersion?: string
   healthy: boolean
   devboxReady: boolean
   version: string
@@ -389,7 +394,7 @@ export interface ClientReadableStream<T> extends EventEmitter {
   on(event: 'error', listener: (err: Error) => void): this
   on(event: string, listener: (...args: any[]) => void): this
   cancel(): void
-  cancelAndWait(reason: 'tool-abort' | 'worker-stop' | 'transport-loss'): Promise<void>
+  cancelAndWait(reason: BashCancelReason, restart?: RestartContext): Promise<void>
 }
 
 export interface ClientDuplexStream<TWrite, TRead> extends EventEmitter {
@@ -491,16 +496,13 @@ export class SandboxClient {
   }
 
   /** Prove that no process from a stable invocation remains on the server. */
-  async cancelBashInvocation(
-    invocationId: string,
-    reason: 'tool-abort' | 'worker-stop' | 'transport-loss'
-  ): Promise<void> {
+  async cancelBashInvocation(invocationId: string, reason: BashCancelReason, restart?: RestartContext): Promise<void> {
     let response: Response
     try {
       response = await this.cancelFetch(`${this.baseUrl}/bash/cancel`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...this.authHeaders },
-        body: JSON.stringify({ invocationId, reason }),
+        body: JSON.stringify({ invocationId, reason, restart }),
         signal: AbortSignal.timeout(this.cancelTimeoutMs),
       })
     } catch (error) {
@@ -566,7 +568,7 @@ export class SandboxClient {
             }
           }
         }
-        if (!terminalObserved) {
+        if (!terminalObserved && !cancellationRequested) {
           emitter.emit('error', new BashOutcomeUnknownError(invocationId, 'protocol_truncated'))
         }
       } catch (error) {
@@ -587,12 +589,17 @@ export class SandboxClient {
 
     run()
 
-    emitter.cancelAndWait = (reason) => {
+    emitter.cancelAndWait = (reason, restart) => {
       cancellation ??= (async () => {
         cancellationRequested = true
-        ac.abort()
-        this.abortControllers.delete(ac)
-        await this.cancelBashInvocation(invocationId, reason)
+        // Persist the cause before disconnecting: the server's stream-cancel
+        // handler otherwise wins the race and archives an unqualified loss.
+        try {
+          await this.cancelBashInvocation(invocationId, reason, restart)
+        } finally {
+          ac.abort()
+          this.abortControllers.delete(ac)
+        }
       })()
       return cancellation
     }
@@ -885,9 +892,14 @@ export class SandboxClient {
   async signalProcess(
     pid: number,
     signal: SandboxProcessSignal,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    startTicks?: number
   ): Promise<{ pid: number; signal: SandboxProcessSignal; command: string }> {
-    return this.post('/processes/signal', { pid, signal }, abortSignal)
+    return this.post(
+      '/processes/signal',
+      { pid, signal, ...(startTicks === undefined ? {} : { startTicks }) },
+      abortSignal
+    )
   }
 
   /** Stop one of the box's containers by id or name. */

@@ -8,6 +8,7 @@ import * as clockModule from '../../db/clock'
 import { resetContinuationCycle } from './continuation-state'
 import {
   agents,
+  agentExtraScopes,
   agentTypes,
   executionAdmissionReservations,
   executions,
@@ -36,6 +37,7 @@ import * as schema from '../../db/schema'
 import { createPostgresConnection, getConnectionString } from '../../db/connection'
 import {
   blockCurrentContinuation,
+  CONTINUATION_MAX_DELIVERY_ATTEMPTS,
   continuationDelay,
   NORMAL_IDLE_NOTICE_DELAY_MS,
   reconcileWorkStreamContinuationsOnce as reconcileContinuations,
@@ -95,6 +97,22 @@ describe('work stream continuation', () => {
       .from(workStreamContinuations)
       .where(eq(workStreamContinuations.workStreamId, workStream.id))
     return cycle
+  }
+
+  // Historical untyped rows retain their narrow execution-start cleanup contract.
+  async function blockLegacyContinuation(...args: Parameters<typeof blockCurrentContinuation>) {
+    const cycle = await readCycle()
+    if (!args[4](cycle)) return false
+    await db
+      .update(workStreamContinuations)
+      .set({ status: 'exhausted' })
+      .where(eq(workStreamContinuations.workStreamId, args[0]))
+    await workStream.block({
+      message:
+        'The assigned agent became idle after 3 automatic continuation attempts. Observation window: legacy fixture.',
+      createdBy: 'system',
+    })
+    return true
   }
 
   async function persistentIdleNotices() {
@@ -161,6 +179,7 @@ describe('work stream continuation', () => {
       systemPrompt: 'Test.',
     })
     squad = await Squad.create({ name: `Continuation test ${crypto.randomUUID()}`, purpose: 'Test.' })
+    await db.insert(agentExtraScopes).values({ agentId: squad.managerAgentId!, permission: 'workstreams:respond' })
     agent = await Agent.create({ agentTypeId, squadId: squad.id })
     workStream = await storedLegacyWorkStream({ squadId: squad.id, title: 'Continuation test' })
   })
@@ -316,9 +335,9 @@ describe('work stream continuation', () => {
     await idleSlotCandidate()
     await queueSlot()
     const cycle = await readCycle()
-    expect(
-      await blockCurrentContinuation(workStream.id, cycle.generation, agent.id, 'Unexpected exhaustion', () => true)
-    ).toBe(false)
+    expect(await blockCurrentContinuation(workStream.id, cycle.generation, agent.id, 'transport', () => true)).toBe(
+      false
+    )
     expect(await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, workStream.id))).toHaveLength(
       0
     )
@@ -773,7 +792,7 @@ describe('work stream continuation', () => {
       workStream.id,
       staleGeneration,
       agent.id,
-      'stale block',
+      'transport',
       (cycle) => cycle.transportAttemptCount >= 3
     )
 
@@ -1648,7 +1667,7 @@ describe('work stream continuation', () => {
     ).toHaveLength(1)
   })
 
-  it('persists queue-error backoff and blocks after five real dispatch failures', async () => {
+  it('persists queue-error backoff and opens a generated manager recovery after the real dispatch budget', async () => {
     await workStream.update({ status: 'active', assigneeAgentId: agent.id })
     const sentinel = 'SENTINEL_SECRET_DELIVERY_FAILURE'
     const endedAt = new Date(Date.now() + 1_000)
@@ -1665,10 +1684,8 @@ describe('work stream continuation', () => {
       throw new Error('simulated queue failure')
     }
     let now = (await readCycle()).nextAttemptAt!
-    let exhaustionAt = now
     try {
-      for (let attempt = 1; attempt <= 5; attempt++) {
-        exhaustionAt = now
+      for (let attempt = 1; attempt <= CONTINUATION_MAX_DELIVERY_ATTEMPTS; attempt++) {
         await reconcileWorkStreamContinuationsOnce({ now })
         const cycle = await readCycle()
         expect(cycle.deliveryAttemptCount).toBe(attempt)
@@ -1682,16 +1699,92 @@ describe('work stream continuation', () => {
     // Exhaustion opens a system manual wait; status stays active.
     expect(workStream.status).toBe('active')
     const deliveryWaits = await workStream.getOpenWaits()
-    const deliveryWait = deliveryWaits.find(
-      (wait) => wait.type === 'manual' && wait.message?.includes('delivery repeatedly failed')
-    )
+    const deliveryWait = deliveryWaits.find((wait) => wait.structured?.request.kind === 'continue')
     expect(deliveryWait).toBeDefined()
-    expect(deliveryWait?.message).toContain(
-      `Last error: continuation_delivery_failure at ${exhaustionAt.toISOString()}`
-    )
+    expect(deliveryWait?.actor).toBe('manager')
+    expect(deliveryWait?.structured?.summary).toMatchObject({
+      attemptCount: CONTINUATION_MAX_DELIVERY_ATTEMPTS,
+      lastError: 'The retained task could not be delivered.',
+    })
+    expect(deliveryWait?.message).not.toContain('Watchdog evidence')
     expect(deliveryWait?.message).not.toContain('execution_stopped')
     expect(deliveryWait?.message).not.toContain('simulated queue failure')
     expect(deliveryWait?.message).not.toContain(sentinel)
+  })
+
+  it('requires typed authorization for watchdog recovery and retains the manager limit after real progress', async () => {
+    await workStream.update({ status: 'active', assigneeAgentId: agent.id })
+    await settleAgentExecutions(agent, 'stopped', new Date())
+    await db
+      .update(workStreamContinuations)
+      .set({ transportAttemptCount: 3 })
+      .where(eq(workStreamContinuations.workStreamId, workStream.id))
+    const initial = await readCycle()
+    await blockCurrentContinuation(
+      workStream.id,
+      initial.generation,
+      agent.id,
+      'transport',
+      (cycle) => cycle.transportAttemptCount === 3
+    )
+    const [wait] = await workStream.getOpenWaits()
+    const request = wait!.structured!.request
+    if (request.kind !== 'continue') throw new Error('Expected a recovery wait')
+    const probe = await agent.queueExecution({ message: 'Unrelated execution-start event' })
+    await probe.start()
+    expect(await resolveContinuationWaitOnExecutionStarted(probe.id, agent.id)).toBe(false)
+    expect((await workStream.getOpenWaits()).map((wait) => wait.id)).toContain(wait!.id)
+    await settleAgentExecutions(agent, 'stopped', new Date())
+    const api = await import('../recovery/store')
+    const continued = await api.decideRecovery(
+      request.recoveryId,
+      { action: 'continue', expectedVersion: request.expectedRecoveryVersion },
+      { agentId: squad.managerAgentId }
+    )
+    expect(await readCycle()).toMatchObject({
+      status: 'idle',
+      generation: initial.generation + 1,
+      transportAttemptCount: 0,
+    })
+    const [queued] = await db
+      .select()
+      .from(executions)
+      .where(and(eq(executions.agentId, agent.id), eq(executions.status, 'queued')))
+    expect(queued).toBeDefined()
+    const resumed = await Execution.mustFind(queued!.id)
+    await resumed.start()
+    await api.settleRecoveryOnModelTool({ agentId: agent.id, executionId: resumed.id })
+    const [settled] = await db
+      .select()
+      .from(schema.recoveryEpisodes)
+      .where(eq(schema.recoveryEpisodes.id, continued.id))
+    expect(settled!.state).toMatchObject({ state: 'resolved', managerCycles: 1 })
+    await settleAgentExecutions(agent, 'completed', new Date())
+    await db
+      .update(workStreamContinuations)
+      .set({ transportAttemptCount: 3 })
+      .where(eq(workStreamContinuations.workStreamId, workStream.id))
+    await blockCurrentContinuation(
+      workStream.id,
+      (await readCycle()).generation,
+      agent.id,
+      'transport',
+      (cycle) => cycle.transportAttemptCount === 3
+    )
+    const [ownerWait] = await workStream.getOpenWaits()
+    expect(ownerWait).toMatchObject({
+      actor: 'human',
+      structured: { request: { kind: 'continue' }, summary: { attemptCount: 6 } },
+    })
+    const ownerRequest = ownerWait!.structured!.request
+    if (ownerRequest.kind !== 'continue') throw new Error('Expected a recovery wait')
+    await expect(
+      api.decideRecovery(
+        ownerRequest.recoveryId,
+        { action: 'continue', expectedVersion: ownerRequest.expectedRecoveryVersion },
+        { agentId: squad.managerAgentId }
+      )
+    ).rejects.toThrow('owner')
   })
 
   it('serializes an ordinary queue racing continuation delivery', async () => {
@@ -2032,9 +2125,7 @@ describe('work stream continuation', () => {
         .from(inbox)
         .where(sql`${inbox.idempotencyKey} like ${`work-stream-continuation:${workStream.id}:%`}`)
     ).toHaveLength(3)
-    expect((await workStream.getOpenWaits()).some((wait) => wait.message?.includes('3 automatic continuation'))).toBe(
-      true
-    )
+    expect((await workStream.getOpenWaits()).some((wait) => wait.structured?.request.kind === 'continue')).toBe(true)
   })
 
   for (const legacyStatus of ['pending', 'delivered'] as const) {
@@ -2381,7 +2472,10 @@ describe('work stream continuation', () => {
       normalAttemptCount: 1,
       transportAttemptCount: 3,
     })
-    expect((await workStream.getOpenWaits())[0]?.message).toContain('trusted provider transport failures')
+    expect((await workStream.getOpenWaits())[0]?.structured?.summary).toMatchObject({
+      attemptCount: 3,
+      lastError: 'The model connection closed before the task could continue.',
+    })
   })
 
   it('keeps the transport streak when its delivery ends normally before the normal continuation', async () => {
@@ -2785,11 +2879,11 @@ describe('work stream continuation', () => {
     const generationBeforeStart = (await readCycle()).generation
     const unrelated = await workStream.block({ message: 'Unrelated operator decision' })
     expect(
-      await blockCurrentContinuation(
+      await blockLegacyContinuation(
         workStream.id,
         (await readCycle()).generation,
         agent.id,
-        'The assigned agent became idle after 3 automatic continuation attempts. Observation window: test.',
+        'transport',
         (cycle) => cycle.transportAttemptCount === 3
       )
     ).toBe(true)
@@ -2843,11 +2937,11 @@ describe('work stream continuation', () => {
       .set({ transportAttemptCount: 3 })
       .where(eq(workStreamContinuations.workStreamId, workStream.id))
     const unrelated = await workStream.block({ message: 'Unrelated operator decision' })
-    await blockCurrentContinuation(
+    await blockLegacyContinuation(
       workStream.id,
       (await readCycle()).generation,
       agent.id,
-      'The assigned agent became idle after 3 automatic continuation attempts. Observation window: test.',
+      'transport',
       (cycle) => cycle.transportAttemptCount === 3
     )
     const watchdog = (await workStream.getOpenWaits()).find((wait) => wait.id !== unrelated.id)!
@@ -2897,7 +2991,7 @@ describe('work stream continuation', () => {
         workStream.id,
         cycle.generation,
         agent.id,
-        'The assigned agent became idle after 3 automatic continuation attempts. Observation window: test.',
+        'transport',
         (current) => current.transportAttemptCount === 3,
         staleTrigger.id
       )
@@ -2918,11 +3012,11 @@ describe('work stream continuation', () => {
       .values({ agentId: agent.id, status: 'stopped', endedAt: new Date(cycleStartedAt.getTime() + 1) })
       .returning()
     expect(
-      await blockCurrentContinuation(
+      await blockLegacyContinuation(
         workStream.id,
         currentCycle.generation,
         agent.id,
-        'The assigned agent became idle after 3 automatic continuation attempts. Observation window: test.',
+        'transport',
         (current) => current.transportAttemptCount === 3,
         currentTrigger.id,
         new Date(currentTrigger.endedAt!.getTime() + 1)

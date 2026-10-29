@@ -223,7 +223,7 @@ Project-local CLIs and npm/bun/pnpm scripts can bypass the global wrapper. Wrap 
 ficus integration exec <provider> -- npm run deploy
 ficus integration exec <provider> -- bun run deploy
 ficus integration exec <provider> -- pnpm run deploy
-ficus integration exec <provider> --connection <attached-account-id> -- <command>
+ficus integration exec <provider> --connection <connection-id> -- <command>
 ```
 
 The current squad context supplies the squad selector; outside that context provide `--squad <squad-id>` before `--`. Exec still checks authorization and assignment on every invocation. If authentication fails, ask a person to check account validation, enablement, token scope and squad assignment; do not inspect token variables or restart a process to reload credentials. Human terminals receive no integration credentials and may use their own CLI login. Host-runtime CLIs must already be installed by the operator.
