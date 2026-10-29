@@ -280,3 +280,22 @@ test('a stalled CLI check has a hard deadline and never reaches the DB', () => {
     f.clean()
   }
 }, 15000)
+
+test('capacity imports respect the Core composite project file boundary', async () => {
+  // Resolve membership only: do not build/typecheck the full Core program here.
+  const ts = await import('typescript')
+  const configFile = join(root, 'apps/core/tsconfig.json')
+  const config = ts.readConfigFile(configFile, ts.sys.readFile)
+  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, join(root, 'apps/core'))
+  const wrapper = join(root, 'scripts/check-test-db-capacity.ts')
+  expect(parsed.fileNames).toContain(wrapper)
+  for (const source of [wrapper, join(root, 'scripts/test-db.ts'), join(root, 'scripts/run-core-tests.ts')]) {
+    const imported = ts
+      .preProcessFile(readFileSync(source, 'utf8'))
+      .importedFiles.find((entry) => entry.fileName.endsWith('/testDbCapacity'))
+    expect(imported).toBeDefined()
+    const resolved = ts.resolveModuleName(imported!.fileName, source, parsed.options, ts.sys).resolvedModule
+    expect(resolved?.resolvedFileName).toEndWith('/testDbCapacity.ts')
+    expect(resolved?.isExternalLibraryImport || parsed.fileNames.includes(resolved!.resolvedFileName)).toBe(true)
+  }
+})

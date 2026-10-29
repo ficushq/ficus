@@ -3,7 +3,7 @@
  * Manual test DB management using the same isolation logic as test-setup.ts.
  * Usage: bun run src/test-db.ts up|down
  */
-import { requireTestDbCapacity } from '../packages/shared/src/testDbCapacity'
+import { requireTestDbCapacity } from '@ficus/shared/testDbCapacity'
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { findFreeTestDbPort, testDbPortFile, testDbProjectName } from '@ficus/shared/testDbPort'

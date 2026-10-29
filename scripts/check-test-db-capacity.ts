@@ -1,4 +1,4 @@
-import { requireTestDbCapacity } from '../packages/shared/src/testDbCapacity'
+import { requireTestDbCapacity } from '@ficus/shared/testDbCapacity'
 
 // A thrown preload error alone does NOT halt Bun's test run. Exit before any
 // application preload can probe, sweep, start, or mutate a database.

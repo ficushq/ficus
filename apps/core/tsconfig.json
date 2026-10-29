@@ -9,6 +9,7 @@
     "src/**/*",
     "src/services/integrations/deployment/cli-releases.json",
     "../../scripts/test-db.ts",
+    "../../scripts/check-test-db-capacity.ts",
     "../../scripts/artifact/**/*.ts",
     "../../scripts/bigbrain/**/*.ts",
     "../../packages/sandbox-server/src/services/atomic-write.ts",
