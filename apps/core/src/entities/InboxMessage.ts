@@ -433,7 +433,7 @@ export class InboxMessage
     if (fromAgent) {
       const agentType = await AgentType.find(fromAgent.agentTypeId)
       metadata.sender = {
-        name: fromAgent.metadata?.name,
+        name: participantSummary(fromAgent)?.name ?? null,
         squadId: fromAgent.squadId,
         agentTypeId: fromAgent.agentTypeId,
         agentTypeName: agentType?.name,

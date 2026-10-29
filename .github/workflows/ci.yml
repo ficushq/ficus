@@ -1038,6 +1038,7 @@ jobs:
         id: subprocess
         run: >-
           bun ../../scripts/run-core-tests.ts --subprocess --subprocess-shard ${{ matrix.shard }}/2
+          src/routes/inbox.participant-export.test.ts
           src/services/work-streams/repository-setup.test.ts
           src/services/work-streams/dependency-stacking.git.test.ts
           src/services/work-streams/worktree-cleanup-runtime.test.ts

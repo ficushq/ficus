@@ -2,6 +2,7 @@ import { expect, spyOn, test } from 'bun:test'
 import { eq, inArray } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { db, agents, inbox } from '../db'
+import { InboxMessage } from '../entities/InboxMessage'
 import { identityMiddleware } from '../middleware/identity'
 import { authzSentinel } from '../middleware/authz-sentinel'
 import { authHeaders, cleanupTestRbac, createTestAdmin, createTestUser } from '../test-utils'
@@ -101,7 +102,7 @@ test('client-core and real CLI JSON exports preserve safe message/page/send cont
 
     // Execute real CLI commands/output against only the test-owned loopback API.
     // A sterile child environment cannot fall back to the operator's credentials.
-    for (const args of [['list'], ['list', '--limit', '10'], ['send', agent.id, content]]) {
+    const exportCommand = async (args: string[]) => {
       const child = Bun.spawn([process.execPath, '--no-install', '-e', cliSource, 'inbox', ...args], {
         cwd: process.env.HOME_DIR,
         env: {
@@ -128,7 +129,10 @@ test('client-core and real CLI JSON exports preserve safe message/page/send cont
         if (child.exitCode === null) child.kill()
         await child.exited
       }
-      const exported = JSON.parse(text)
+      return JSON.parse(text)
+    }
+    for (const args of [['list'], ['list', '--limit', '10'], ['send', agent.id, content]]) {
+      const exported = await exportCommand(args)
       if (args[0] === 'list') {
         assertMessage((Array.isArray(exported) ? exported : exported.items).find((m: any) => m.id === row.id))
         if (args.includes('--limit'))
@@ -139,6 +143,41 @@ test('client-core and real CLI JSON exports preserve safe message/page/send cont
         expect(exported.content).toBe(content)
         expect(exported.metadata.sender).toMatchObject({ userId: reader.id, name: reader.displayName })
         expect(JSON.stringify(exported)).not.toContain('SYNTHETIC_EXPORT_PRIVATE_CONTEXT')
+      }
+    }
+    // New agent attribution must be normalized at derivation, not scrubbed from
+    // authored or historical metadata. Exercise persisted real sends, not only
+    // an in-memory relation whose message metadata was independently fabricated.
+    const sentinel = 'SYNTHETIC_DERIVED_NAME_PRIVATE_STATE'
+    for (const name of [[sentinel], { context: sentinel }, 'Valid Assistant Name']) {
+      await db.update(agents).set({ metadata: { name } }).where(eq(agents.id, agent.id))
+      const sent = await InboxMessage.send({
+        recipientType: 'user',
+        recipientId: reader.id,
+        senderType: 'agent',
+        senderId: agent.id,
+        content,
+        metadata: { context: metadata.context },
+      })
+      ids.push(sent.id)
+      const expectedName = typeof name === 'string' ? name : null
+      const assertDerivedAttribution = (message: any) => {
+        expect(message.senderAgent).toEqual({ ...participant, name: expectedName })
+        expect(message.metadata.sender.name).toBe(expectedName)
+        expect(message.metadata.context).toEqual(metadata.context)
+        expect(message.content).toBe(content)
+        expect(JSON.stringify(message)).not.toContain(sentinel)
+      }
+      assertDerivedAttribution(sent.toJson())
+      expect(JSON.stringify(delivery.prepareInboxDelivery([sent], 'follow-up', 'follow-up'))).not.toContain(sentinel)
+      assertDerivedAttribution(await client.getInboxMessage(sent.id))
+      assertDerivedAttribution((await client.getMyInbox()).find((m) => m.id === sent.id))
+      assertDerivedAttribution((await client.getMyInboxPage()).items.find((m) => m.id === sent.id))
+      for (const args of [['list'], ['list', '--limit', '10']]) {
+        const exported = await exportCommand(args)
+        assertDerivedAttribution(
+          (Array.isArray(exported) ? exported : exported.items).find((m: any) => m.id === sent.id)
+        )
       }
     }
   } finally {
