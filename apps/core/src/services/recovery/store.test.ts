@@ -1,3 +1,4 @@
+import type { ExtensionToolContext, ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { eq, sql } from 'drizzle-orm'
 import { db, agents, agentTypes, agentExtraScopes, squads, workStreams, workStreamWaits, inbox } from '../../db'
@@ -8,6 +9,18 @@ import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stre
 import { createTestAdmin, cleanupTestRbac } from '../../test-utils'
 import type { WorkStream } from '../../entities/WorkStream'
 import type { Execution } from '../../entities/Execution'
+
+// Supply the SDK shell environment context; these fixtures do not use extension UI/session mutation APIs.
+function executeTool(
+  tool: Pick<ToolDefinition, 'execute'>,
+  id: string,
+  params: Parameters<ToolDefinition['execute']>[1]
+) {
+  return tool.execute(id, params, undefined, undefined, {
+    sessionManager: { getSessionId: () => 'recovery-fixture', getSessionFile: () => undefined },
+    model: undefined,
+  } as ExtensionToolContext)
+}
 
 const prefix = `recovery-${crypto.randomUUID()}`
 let squad: Squad
@@ -367,12 +380,12 @@ test('runtime tools enforce persistent backoff, stop the fourth unexplained atte
   )
   const started = Date.now()
   for (const [index, id] of ['one', 'two', 'three'].entries())
-    await expect(tool.execute(id!, { command: 'external-side-effect', timeout: index + 1 })).rejects.toThrow(
+    await expect(executeTool(tool, id!, { command: 'external-side-effect', timeout: index + 1 })).rejects.toThrow(
       'Connection closed'
     )
   expect(Date.now() - started).toBeGreaterThanOrEqual(2900)
   expect(calls).toBe(3)
-  await expect(tool.execute('four', { command: 'external-side-effect', timeout: 999 })).rejects.toThrow(
+  await expect(executeTool(tool, 'four', { command: 'external-side-effect', timeout: 999 })).rejects.toThrow(
     'authorized decision'
   )
   expect(calls).toBe(3)
@@ -400,10 +413,12 @@ test('runtime restart is free, inspection remains possible, and a safe explicit 
     },
     () => ({ agentId: worker.id, executionId: execution.id })
   )
-  await expect(tool.execute('interrupted', { command: 'safe task' })).rejects.toThrow('cancelled by a Ficus restart')
+  await expect(executeTool(tool, 'interrupted', { command: 'safe task' })).rejects.toThrow(
+    'cancelled by a Ficus restart'
+  )
   expect(calls).toBe(1)
   inspected = true
-  await tool.execute('retry', { command: 'safe task' })
+  await executeTool(tool, 'retry', { command: 'safe task' })
   expect(calls).toBe(2)
   expect(await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, stream.id))).toHaveLength(0)
   const { recoveryEpisodes } = await import('../../db')
@@ -452,11 +467,11 @@ test('inner idempotent transport retries spend the same tool budget instead of m
     },
     () => ({ agentId: worker.id, executionId: execution.id })
   )
-  await expect(tool.execute('read-tool', {})).rejects.toThrow('Sandbox transport')
+  await expect(executeTool(tool, 'read-tool', {})).rejects.toThrow('Sandbox transport')
   expect(calls).toBe(3)
   const [wait] = await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, stream.id))
   expect(wait.structured?.summary.attemptCount).toBe(3)
-  await expect(tool.execute('read-again', {})).rejects.toThrow('authorized decision')
+  await expect(executeTool(tool, 'read-again', {})).rejects.toThrow('authorized decision')
   expect(calls).toBe(3)
 }, 10000) // Three real read attempts plus the mandatory 1s/2s backoff.
 
@@ -478,7 +493,7 @@ test('parallel duplicate operations cannot overrun a recovery budget or duplicat
     () => ({ agentId: worker.id, executionId: execution.id })
   )
   const outcomes = await Promise.allSettled(
-    ['one', 'two', 'three', 'four'].map((id) => tool.execute(id, { command: 'external operation' }))
+    ['one', 'two', 'three', 'four'].map((id) => executeTool(tool, id, { command: 'external operation' }))
   )
   expect(calls).toBe(1)
   expect(
@@ -669,12 +684,12 @@ test('real bash nonzero exits, confirmed timeouts and file validation never cons
   }
   const bash = wrapToolWithRecovery(createK8sSandboxedBashTool('/workspace', 'fixture', manager), origin)
   for (let index = 0; index < 3; index++) {
-    const result = await bash.execute(`poll-${index}`, { command: 'test -f pending' })
+    const result = await executeTool(bash, `poll-${index}`, { command: 'test -f pending' })
     expect(result).toMatchObject({ isError: true, structuredContent: { exit_code: 1 } })
   }
   timeout = true
   for (let index = 0; index < 3; index++)
-    await expect(bash.execute(`timeout-${index}`, { command: 'wait' })).rejects.toThrow('Deadline reached')
+    await expect(executeTool(bash, `timeout-${index}`, { command: 'wait' })).rejects.toThrow('Deadline reached')
   const edit = wrapToolWithRecovery(
     createVerifiedEditTool('/workspace', {
       readFile: async () => Buffer.from('original'),
@@ -687,13 +702,13 @@ test('real bash nonzero exits, confirmed timeouts and file validation never cons
   )
   for (let index = 0; index < 3; index++)
     await expect(
-      edit.execute(`edit-${index}`, { path: '/workspace/file', oldText: 'absent', newText: 'replacement' })
+      executeTool(edit, `edit-${index}`, { path: '/workspace/file', oldText: 'absent', newText: 'replacement' })
     ).rejects.toThrow('match was not found')
   client.stat = async () => ({ exists: true, isReadable: true, isWritable: true, isDirectory: false, size: 3 })
   client.read = async () => ({ content: Buffer.from('one').toString('base64'), totalSize: 3, isBinary: false })
   const read = wrapToolWithRecovery(createK8sSandboxedReadTool('/workspace', 'fixture', manager), origin)
   for (let index = 0; index < 3; index++)
-    await expect(read.execute(`read-${index}`, { path: '/workspace/file', offset: 100 })).rejects.toThrow(
+    await expect(executeTool(read, `read-${index}`, { path: '/workspace/file', offset: 100 })).rejects.toThrow(
       'beyond end of file'
     )
   expect(await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))).toHaveLength(0)
@@ -822,4 +837,207 @@ test('unroutable recovery emits one durable diagnostic without granting another 
   } finally {
     permission.mockRestore()
   }
+})
+
+test('argument variations share one normalized tool budget and cannot buy extra manager cycles', async () => {
+  const { Type } = await import('@sinclair/typebox')
+  const { wrapToolWithRecovery } = await import('./runtime')
+  const { recoveryEpisodes } = await import('../../db')
+  const api = await store()
+  const tool = wrapToolWithRecovery(
+    {
+      name: 'bash',
+      label: 'Bash',
+      description: 'fixture',
+      parameters: Type.Object({ command: Type.String() }),
+      execute: async () => {
+        throw new Error('Lost outcome')
+      },
+    },
+    () => ({ agentId: worker.id, executionId: execution.id })
+  )
+  for (const [n, command] of ['npm test', ' npm test ', 'npm test --run'].entries())
+    await expect(executeTool(tool, `variant-${n}`, { command })).rejects.toThrow('Lost outcome')
+  let [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))
+  expect(record!.state.state).toBe('waiting-manager')
+  await api.decideRecovery(
+    record!.id,
+    { action: 'continue', expectedVersion: record!.version },
+    { agentId: squad.managerAgentId }
+  )
+  for (const [n, command] of ['npm test --verbose', 'npm test --quiet', 'npm test --retry'].entries())
+    await expect(executeTool(tool, `more-variant-${n}`, { command })).rejects.toThrow('Lost outcome')
+  ;[record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))
+  expect(record!.state).toMatchObject({ state: 'waiting-owner', managerCycles: 1, failures: 6 })
+}, 15000)
+
+test('confirmed successor episodes inherit the manager allowance and owner escalation', async () => {
+  const api = await store()
+  const origin = { agentId: worker.id, executionId: execution.id }
+  const input = (id: string) => ({
+    operationKey: 'successor',
+    invocationId: id,
+    attempted: 'read project files',
+    error: new Error('Lost outcome'),
+  })
+  let record
+  for (let n = 0; n < 3; n++) record = await api.recordRecoveryFailure(origin, input(`first-${n}`))
+  record = await api.decideRecovery(
+    record!.id,
+    { action: 'continue', expectedVersion: record!.version },
+    { agentId: squad.managerAgentId }
+  )
+  await api.settleRecoveryOperation(origin, 'successor', 'confirmed')
+  for (let n = 0; n < 3; n++) record = await api.recordRecoveryFailure(origin, input(`next-${n}`))
+  expect(record!.state).toMatchObject({ state: 'waiting-owner', managerCycles: 1 })
+})
+
+test.each([1, 2, 3])('a %i-failure unresolved episode gates task inputs only in its own stream', async (count) => {
+  const api = await store()
+  const { requestStructuredInput } = await import('./structured-input')
+  let record
+  for (let n = 0; n < count; n++)
+    record = await api.recordRecoveryFailure(
+      { agentId: worker.id, executionId: execution.id },
+      {
+        operationKey: 'scoped-question',
+        invocationId: `scope-${n}`,
+        attempted: 'read files',
+        error: new Error('Lost outcome'),
+      }
+    )
+  const input = {
+    schemaVersion: 1,
+    kind: 'decide',
+    purpose: 'task-decision',
+    subject: 'Choose a layout',
+    options: [
+      { id: 'a', label: 'Compact' },
+      { id: 'b', label: 'Spacious' },
+    ],
+  } as const
+  const attribution = { createdBy: 'agent' as const, createdByAgentId: worker.id }
+  await expect(
+    requestStructuredInput(stream.id, { ...input, options: [...input.options] }, attribution)
+  ).rejects.toThrow('existing typed recovery')
+  if (count === 3)
+    await api.decideRecovery(
+      record!.id,
+      { action: 'stop', expectedVersion: record!.version },
+      { agentId: squad.managerAgentId }
+    )
+  const other = await storedLegacyWorkStream({
+    squadId: squad.id,
+    title: 'Unrelated scope',
+    assigneeAgentId: worker.id,
+    agentIds: [worker.id],
+  })
+  const wait = await requestStructuredInput(other.id, { ...input, options: [...input.options] }, attribution)
+  expect(wait.workStreamId).toBe(other.id)
+})
+
+test('healthy parallel tools never need a recovery transaction and survive an accounting read outage', async () => {
+  const { spyOn } = await import('bun:test')
+  const { Type } = await import('@sinclair/typebox')
+  const { wrapToolWithRecovery } = await import('./runtime')
+  let calls = 0
+  const tool = wrapToolWithRecovery(
+    {
+      name: 'read',
+      label: 'Read',
+      description: 'fixture',
+      parameters: Type.Object({ path: Type.String() }),
+      execute: async () => {
+        calls++
+        await Bun.sleep(1)
+        return { content: [{ type: 'text' as const, text: 'confirmed' }], details: {} }
+      },
+    },
+    () => ({ agentId: worker.id, executionId: execution.id })
+  )
+  const transactions = spyOn(db, 'transaction').mockImplementation(() => {
+    throw new Error('Accounting unavailable')
+  })
+  try {
+    expect(
+      await Promise.all([
+        executeTool(tool, 'parallel-a', { path: 'a' }),
+        executeTool(tool, 'parallel-b', { path: 'b' }),
+      ])
+    ).toHaveLength(2)
+    expect(transactions).not.toHaveBeenCalled()
+  } finally {
+    transactions.mockRestore()
+  }
+  const reads = spyOn(db, 'select').mockImplementation(() => {
+    throw new Error('Accounting unavailable')
+  })
+  try {
+    expect((await executeTool(tool, 'outage', { path: 'c' })).content).toEqual([{ type: 'text', text: 'confirmed' }])
+  } finally {
+    reads.mockRestore()
+  }
+  expect(calls).toBe(3)
+})
+
+test('an accounting outage cannot bypass an already observed recovery hold', async () => {
+  const { spyOn } = await import('bun:test')
+  const { Type } = await import('@sinclair/typebox')
+  const { wrapToolWithRecovery } = await import('./runtime')
+  let calls = 0
+  const tool = wrapToolWithRecovery(
+    {
+      name: 'read',
+      label: 'Read',
+      description: 'fixture',
+      parameters: Type.Object({ path: Type.String() }),
+      execute: async () => {
+        calls++
+        throw new Error('Lost outcome')
+      },
+    },
+    () => ({ agentId: worker.id, executionId: execution.id })
+  )
+  for (let n = 0; n < 3; n++)
+    await expect(executeTool(tool, `held-${n}`, { path: 'a' })).rejects.toThrow('Lost outcome')
+  const transactions = spyOn(db, 'transaction').mockImplementation(() => {
+    throw new Error('Accounting unavailable')
+  })
+  try {
+    await expect(executeTool(tool, 'must-not-run', { path: 'b' })).rejects.toThrow('Recovery is held')
+  } finally {
+    transactions.mockRestore()
+  }
+  expect(calls).toBe(3)
+}, 10000)
+
+test('a verified restart alone does not suppress a legitimate task decision', async () => {
+  const api = await store()
+  const { commandCanceledForRestartError } = await import('../sandbox/command-drain')
+  await api.recordRecoveryFailure(
+    { agentId: worker.id, executionId: execution.id },
+    {
+      operationKey: 'restart-only',
+      invocationId: 'interrupted',
+      attempted: 'Read files',
+      error: commandCanceledForRestartError({ restartId: crypto.randomUUID(), restartedAt: new Date().toISOString() }),
+    }
+  )
+  expect(await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, stream.id))).toHaveLength(0)
+  const { requestStructuredInput } = await import('./structured-input')
+  const wait = await requestStructuredInput(
+    stream.id,
+    {
+      schemaVersion: 1,
+      kind: 'decide',
+      purpose: 'task-decision',
+      subject: 'Choose the layout',
+      options: [
+        { id: 'compact', label: 'Compact' },
+        { id: 'wide', label: 'Wide' },
+      ],
+    },
+    { createdBy: 'agent', createdByAgentId: worker.id }
+  )
+  expect(wait.structured?.request.kind).toBe('decide')
 })

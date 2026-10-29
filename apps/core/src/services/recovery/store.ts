@@ -1,9 +1,15 @@
+import { createLogger } from '../../lib/infra/logger'
 import { recoveryRecipients } from './recipients'
 import { z } from 'zod'
 import { stripVTControlCharacters } from 'node:util'
 import { createHash } from 'node:crypto'
 import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm'
-import { manualWaitDecisionSchema, type ManualWaitDecision, type StructuredManualWait } from '@ficus/shared'
+import {
+  activeWorkflowAttempts,
+  manualWaitDecisionSchema,
+  type ManualWaitDecision,
+  type StructuredManualWait,
+} from '@ficus/shared'
 import {
   db,
   agents,
@@ -14,12 +20,15 @@ import {
   recoveryEpisodes,
   workStreams,
   workStreamWaits,
+  workStreamFlowRuns,
 } from '../../db'
 import { initialRecoveryState, failedRecovery, continueRecovery, recoverySummary } from './policy'
 import { openWait, type DbHandle } from '../work-streams/waits'
 import { getContentSafetyRegistry } from '../security/content-safety-registry'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { restartContextForCommandError } from '../sandbox/command-drain'
+
+const log = createLogger('recovery-store')
 
 export type RecoveryRecord = typeof recoveryEpisodes.$inferSelect
 export interface RecoveryOrigin {
@@ -47,33 +56,116 @@ function lastErrorLine(error: unknown): string {
     .slice(0, 240)
 }
 
-async function trustedOrigin(tx: Tx, origin: RecoveryOrigin) {
+/** Scope is a stream across its successor attempts, or this agent's standalone work. */
+export async function recoveryScopeForAgent(
+  tx: DbHandle,
+  agentId: string,
+  flowContext?: { workStreamId: string } | null
+): Promise<string | null> {
+  if (flowContext === undefined) {
+    const running = await tx
+      .select({ flowContext: executions.flowContext })
+      .from(executions)
+      .where(and(eq(executions.agentId, agentId), eq(executions.status, 'running')))
+      .limit(2)
+    if (running.length === 1) flowContext = running[0]!.flowContext
+  }
+  if (flowContext) return flowContext.workStreamId
+  const assigned = await tx
+    .select({ id: workStreams.id })
+    .from(workStreams)
+    .where(and(eq(workStreams.assigneeAgentId, agentId), inArray(workStreams.status, ['active', 'queued'])))
+    .limit(2)
+  return assigned.length === 1 ? assigned[0]!.id : null
+}
+
+async function trustedOrigin(tx: DbHandle, origin: RecoveryOrigin, lock = true) {
   const [execution] = await tx.select().from(executions).where(eq(executions.id, origin.executionId))
   if (!execution || execution.agentId !== origin.agentId)
     throw new Error('Recovery execution does not belong to this agent')
-  let workStreamId = execution.flowContext?.workStreamId ?? null
+  const workStreamId = await recoveryScopeForAgent(tx, origin.agentId, execution.flowContext)
   const flowAttemptId = execution.flowContext?.attemptId ?? null
-  if (!workStreamId) {
-    const assigned = await tx
-      .select({ id: workStreams.id })
-      .from(workStreams)
-      .where(and(eq(workStreams.assigneeAgentId, origin.agentId), inArray(workStreams.status, ['active', 'queued'])))
-      .limit(2)
-    if (assigned.length === 1) workStreamId = assigned[0]!.id
+  if (lock) {
+    if (workStreamId) await tx.select().from(workStreams).where(eq(workStreams.id, workStreamId)).for('update')
+    await tx.select({ id: agents.id }).from(agents).where(eq(agents.id, origin.agentId)).for('update')
   }
-  if (workStreamId) await tx.select().from(workStreams).where(eq(workStreams.id, workStreamId)).for('update')
-  // Common mutex even for two first failures racing to create the active episode.
-  await tx.select({ id: agents.id }).from(agents).where(eq(agents.id, origin.agentId)).for('update')
-  return { execution, workStreamId, flowAttemptId }
+  const [run] =
+    workStreamId && flowAttemptId != null
+      ? await tx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, workStreamId))
+      : []
+  const attempt = run?.state.attempts.find((item) => item.id === flowAttemptId)
+  const participant = attempt?.step.kind === 'agent' ? attempt.step.participant : undefined
+  const active = run?.activated ? activeWorkflowAttempts(run.state).map((item) => item.id) : []
+  return {
+    execution,
+    workStreamId,
+    flowAttemptId,
+    participant,
+    active,
+    current:
+      flowAttemptId != null &&
+      active.includes(flowAttemptId) &&
+      run?.attemptAgents[String(flowAttemptId)] === origin.agentId,
+  }
 }
 
 function scopedOperation(
-  source: { workStreamId: string | null; flowAttemptId: number | null },
+  source: { workStreamId: string | null; flowAttemptId: number | null; participant?: string },
   operation: string
 ): string {
   return createHash('sha256')
-    .update(JSON.stringify([source.workStreamId, source.flowAttemptId, operation]))
+    .update(JSON.stringify([source.workStreamId, source.participant, operation]))
     .digest('hex')
+}
+
+type RecoverySource = Awaited<ReturnType<typeof trustedOrigin>>
+
+async function activeRecovery(executor: DbHandle, source: RecoverySource, operation: string, lock = false) {
+  const query = executor
+    .select()
+    .from(recoveryEpisodes)
+    .where(
+      and(
+        eq(recoveryEpisodes.operationKey, scopedOperation(source, operation)),
+        source.participant && source.workStreamId
+          ? eq(recoveryEpisodes.workStreamId, source.workStreamId)
+          : eq(recoveryEpisodes.agentId, source.execution.agentId),
+        sql`${recoveryEpisodes.state}->>'state' <> 'resolved'`
+      )
+    )
+    .orderBy(desc(recoveryEpisodes.updatedAt))
+  const records = await (lock ? query.for('update') : query)
+  const own = records.find((record) => record.agentId === source.execution.agentId)
+  if (own) return own
+  if (!source.participant) return undefined
+  const predecessors = records.filter(
+    (record) => record.flowAttemptId != null && !source.active.includes(record.flowAttemptId)
+  )
+  // A revised participant may get a fresh agent, but not a fresh retry allowance.
+  // Never merge concurrently active sibling records or guess an ambiguous lineage.
+  if (source.current && predecessors.length === 1) return predecessors[0]
+  if (!source.current && records.length === 1) return records[0]
+  return undefined
+}
+
+async function adoptRecovery(tx: Tx, source: RecoverySource, record: RecoveryRecord): Promise<RecoveryRecord> {
+  if (
+    !source.current ||
+    record.agentId === source.execution.agentId ||
+    (record.flowAttemptId != null && source.active.includes(record.flowAttemptId))
+  )
+    return record
+  const [adopted] = await tx
+    .update(recoveryEpisodes)
+    .set({
+      agentId: source.execution.agentId,
+      flowAttemptId: source.flowAttemptId,
+      waitId: null,
+      version: record.version + 1,
+    })
+    .where(eq(recoveryEpisodes.id, record.id))
+    .returning()
+  return adopted!
 }
 
 export class RecoveryHeldError extends Error {
@@ -82,53 +174,63 @@ export class RecoveryHeldError extends Error {
   }
 }
 
-async function databaseNow(tx: Tx): Promise<number> {
+async function databaseNow(tx: DbHandle): Promise<number> {
   const [clock] = await tx.execute<{ now: string }>(sql`SELECT clock_timestamp() AS now`)
   return new Date(clock!.now).getTime()
 }
 
 /** The timestamp comes from durable state, never a tool argument or a new process's clock baseline. */
 export async function recoveryRetryDelay(origin: RecoveryOrigin, operation: string): Promise<number> {
-  return db.transaction(async (tx) => {
-    const source = await trustedOrigin(tx, origin)
-    const [record] = await tx
-      .select()
-      .from(recoveryEpisodes)
-      .where(
-        and(
-          eq(recoveryEpisodes.agentId, origin.agentId),
-          eq(recoveryEpisodes.operationKey, scopedOperation(source, operation)),
-          sql`${recoveryEpisodes.state}->>'state' <> 'resolved'`
-        )
-      )
-      .for('update')
-    if (!record) return 0
-    if (record.state.state !== 'recovering') throw new RecoveryHeldError()
-    return Math.max(0, (record.state.nextRetryAt ?? 0) - (await databaseNow(tx)))
-  })
+  const source = await trustedOrigin(db, origin, false)
+  const record = await activeRecovery(db, source, operation)
+  if (!record) return 0
+  if (record.state.state === 'recovering') return Math.max(0, (record.state.nextRetryAt ?? 0) - (await databaseNow(db)))
+  try {
+    const held = await db.transaction(async (tx) => {
+      const latestSource = await trustedOrigin(tx, origin)
+      let current = await activeRecovery(tx, latestSource, operation, true)
+      if (current) current = await adoptRecovery(tx, latestSource, current)
+      if (!current || current.state.state === 'resolved') return null
+      if (current.state.state === 'recovering')
+        return Math.max(0, (current.state.nextRetryAt ?? 0) - (await databaseNow(tx)))
+      return ensureExhaustedWait(tx, current)
+    })
+    if (held === null) return 0
+    if (typeof held === 'number') return held
+    if (held.state.state !== 'stopped') await publish(held)
+  } catch (error) {
+    // Recording can fail open for a healthy tool, never for a hold already read
+    // from authoritative state. A failed wake/rebind is not permission to retry.
+    log.warn('Unable to refresh an observed recovery hold; keeping it held', error)
+  }
+  throw new RecoveryHeldError()
 }
 
-/** A confirmed result closes only this exact operation, not unrelated recovery or approval waits. */
+/** A confirmed result settles this normalized operation, never unrelated scopes or approval waits. */
 export async function settleRecoveryOperation(
   origin: RecoveryOrigin,
   operation: string,
   invocationId: string,
   outcome: 'success' | 'explained' = 'success'
 ): Promise<void> {
+  const source = await trustedOrigin(db, origin, false)
+  const candidate = await activeRecovery(db, source, operation)
+  if (candidate?.state.state !== 'recovering' || (source.participant && !source.current)) return
   await db.transaction(async (tx) => {
-    const source = await trustedOrigin(tx, origin)
-    const [record] = await tx
+    const settlementSource = candidate.agentId !== source.execution.agentId ? await trustedOrigin(tx, origin) : source
+    let [record] = await tx
       .select()
       .from(recoveryEpisodes)
       .where(
         and(
-          eq(recoveryEpisodes.agentId, origin.agentId),
-          eq(recoveryEpisodes.operationKey, scopedOperation(source, operation)),
+          eq(recoveryEpisodes.id, candidate.id),
+          eq(recoveryEpisodes.version, candidate.version),
           sql`${recoveryEpisodes.state}->>'state' = 'recovering'`
         )
       )
       .for('update')
     if (!record) return
+    record = await adoptRecovery(tx, settlementSource, record)
     const [attempt] = await tx
       .insert(recoveryAttempts)
       .values({ recoveryId: record.id, executionId: origin.executionId, invocationId, outcome })
@@ -166,13 +268,20 @@ export function recoveryWaitSnapshot(record: RecoveryRecord): StructuredManualWa
 }
 
 async function ensureExhaustedWait(tx: Tx, record: RecoveryRecord): Promise<RecoveryRecord> {
-  if (!['waiting-manager', 'waiting-owner'].includes(record.state.state))
+  if (!['waiting-manager', 'waiting-owner', 'stopped'].includes(record.state.state))
     throw new Error('Recovery budget is not exhausted')
   const recipients = await recoveryRecipients(record, tx)
-  if (recipients.target === 'owner' && record.state.state === 'waiting-manager') {
+  if (recipients.target === 'owner' && !record.state.ownerEscalated) {
     const [routed] = await tx
       .update(recoveryEpisodes)
-      .set({ state: { ...record.state, state: 'waiting-owner', ownerEscalated: true }, version: record.version + 1 })
+      .set({
+        state: {
+          ...record.state,
+          state: record.state.state === 'stopped' ? 'stopped' : 'waiting-owner',
+          ownerEscalated: true,
+        },
+        version: record.version + 1,
+      })
       .where(eq(recoveryEpisodes.id, record.id))
       .returning()
     record = routed!
@@ -191,6 +300,28 @@ async function ensureExhaustedWait(tx: Tx, record: RecoveryRecord): Promise<Reco
       return record
     }
   }
+  const [run] = await tx
+    .select()
+    .from(workStreamFlowRuns)
+    .where(eq(workStreamFlowRuns.workStreamId, record.workStreamId))
+  if (run?.activated) {
+    const current = activeWorkflowAttempts(run.state).filter(
+      (attempt) => run.attemptAgents[String(attempt.id)] === record.agentId
+    )
+    // A late failure is durable even when its original attempt has ended. Never
+    // bind an unrelated/ambiguous successor or roll the failure back with a stale wait.
+    const target =
+      current.find((attempt) => attempt.id === record.flowAttemptId) ?? (current.length === 1 ? current[0] : undefined)
+    if (!target) return record
+    if (record.flowAttemptId !== target.id) {
+      const [rebound] = await tx
+        .update(recoveryEpisodes)
+        .set({ flowAttemptId: target.id, waitId: null, version: record.version + 1 })
+        .where(eq(recoveryEpisodes.id, record.id))
+        .returning()
+      record = rebound!
+    }
+  } else if (record.flowAttemptId != null) return record
   const payload = recoveryWaitSnapshot(record)
   const { wait } = await openWait(tx, {
     workStreamId: record.workStreamId,
@@ -198,7 +329,7 @@ async function ensureExhaustedWait(tx: Tx, record: RecoveryRecord): Promise<Reco
     type: 'manual',
     createdBy: 'system',
     createdByAgentId: record.agentId,
-    actor: record.state.state === 'waiting-owner' ? 'human' : 'manager',
+    actor: record.state.ownerEscalated ? 'human' : 'manager',
     message: payload.summary.text,
     structured: payload,
   })
@@ -211,6 +342,10 @@ async function ensureExhaustedWait(tx: Tx, record: RecoveryRecord): Promise<Reco
 }
 
 async function publish(record: RecoveryRecord): Promise<void> {
+  if (!['waiting-manager', 'waiting-owner'].includes(record.state.state)) return
+  // A late outcome with no current owning attempt remains durable. A later
+  // valid retry must rebind its hold before executing the operation.
+  if (record.workStreamId && !record.waitId) return
   const audience = await recoveryRecipients(record)
   const owner = audience.target === 'owner'
   const recipientIds = owner ? audience.ownerUserIds : [audience.managerAgentId!]
@@ -270,18 +405,22 @@ export async function recordRecoveryFailure(
   const afterCommit: Array<() => void> = []
   const record = await db.transaction(async (tx) => {
     const source = await trustedOrigin(tx, origin)
-    let [current] = await tx
-      .select()
-      .from(recoveryEpisodes)
-      .where(
-        and(
-          eq(recoveryEpisodes.agentId, origin.agentId),
-          eq(recoveryEpisodes.operationKey, scopedOperation(source, input.operationKey)),
-          sql`${recoveryEpisodes.state}->>'state' <> 'resolved'`
-        )
-      )
-      .for('update')
+    let current = await activeRecovery(tx, source, input.operationKey, true)
+    if (current) current = await adoptRecovery(tx, source, current)
     if (!current) {
+      const [predecessor] = await tx
+        .select()
+        .from(recoveryEpisodes)
+        .where(
+          and(
+            source.participant && source.workStreamId
+              ? eq(recoveryEpisodes.workStreamId, source.workStreamId)
+              : eq(recoveryEpisodes.agentId, origin.agentId),
+            eq(recoveryEpisodes.operationKey, scopedOperation(source, input.operationKey))
+          )
+        )
+        .orderBy(desc(recoveryEpisodes.createdAt))
+        .limit(1)
       ;[current] = await tx
         .insert(recoveryEpisodes)
         .values({
@@ -290,7 +429,12 @@ export async function recordRecoveryFailure(
           workStreamId: source.workStreamId,
           flowAttemptId: source.flowAttemptId,
           operationKey: scopedOperation(source, input.operationKey),
-          state: initialRecoveryState(input.attempted),
+          state: {
+            ...initialRecoveryState(input.attempted),
+            managerCycles: predecessor?.state.managerCycles ?? 0,
+            ownerEscalated: predecessor?.state.ownerEscalated ?? false,
+            failures: predecessor?.state.failures ?? 0,
+          },
         })
         .returning()
     }
@@ -310,11 +454,18 @@ export async function recordRecoveryFailure(
         )
       )
     if (prior) return current
-    const nextState = failedRecovery(
-      current.state,
-      restart ? { kind: 'restart' } : { kind: 'unknown', error: error! },
-      await databaseNow(tx)
-    )
+    const nextState =
+      current.state.state !== 'recovering'
+        ? {
+            ...current.state,
+            failures: current.state.failures + (restart ? 0 : 1),
+            ...(error ? { lastError: error } : {}),
+          }
+        : failedRecovery(
+            current.state,
+            restart ? { kind: 'restart' } : { kind: 'unknown', error: error! },
+            await databaseNow(tx)
+          )
     await tx.insert(recoveryAttempts).values({
       recoveryId: current.id,
       executionId: origin.executionId,
@@ -540,17 +691,38 @@ export async function recoveryContinuationIsCurrent(
   return true
 }
 
-export async function assertNoPendingRecovery(dbx: DbHandle, agentId: string): Promise<void> {
+export async function assertNoPendingRecovery(
+  dbx: DbHandle,
+  agentId: string,
+  workStreamId: string | null
+): Promise<void> {
+  const [run] = workStreamId
+    ? await dbx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, workStreamId))
+    : []
+  const current = run?.activated
+    ? activeWorkflowAttempts(run.state).find((attempt) => run.attemptAgents[String(attempt.id)] === agentId)
+    : undefined
+  const participant = current?.step.kind === 'agent' ? current.step.participant : undefined
+  const relatedAttempts = participant
+    ? run!.state.attempts
+        .filter((attempt) => attempt.step.kind === 'agent' && attempt.step.participant === participant)
+        .map((attempt) => attempt.id)
+    : []
   const [record] = await dbx
     .select({ id: recoveryEpisodes.id })
     .from(recoveryEpisodes)
     .where(
       and(
-        eq(recoveryEpisodes.agentId, agentId),
-        sql`${recoveryEpisodes.state}->>'state' IN ('waiting-manager', 'waiting-owner', 'stopped')`
+        or(
+          eq(recoveryEpisodes.agentId, agentId),
+          ...(relatedAttempts.length ? [inArray(recoveryEpisodes.flowAttemptId, relatedAttempts)] : [])
+        ),
+        workStreamId ? eq(recoveryEpisodes.workStreamId, workStreamId) : isNull(recoveryEpisodes.workStreamId),
+        sql`${recoveryEpisodes.state}->>'state' <> 'resolved'`,
+        sql`(${recoveryEpisodes.state}->>'failures')::int > 0`
       )
     )
     .limit(1)
   if (record)
-    throw new Error('Use the existing typed recovery decision; task inputs cannot bypass an exhausted recovery')
+    throw new Error('Use the existing typed recovery decision; task inputs cannot bypass an unresolved recovery')
 }

@@ -29,7 +29,8 @@ export async function recoveryRecipients(record: RecoveryRecord, executor: DbHan
       .where(
         and(
           eq(recoveryEpisodes.agentId, squad.managerAgentId),
-          sql`${recoveryEpisodes.state}->>'state' IN ('waiting-manager', 'waiting-owner', 'stopped')`
+          sql`${recoveryEpisodes.state}->>'state' IN ('waiting-manager', 'waiting-owner', 'stopped')`,
+          sql`(${recoveryEpisodes.workStreamId} IS NULL OR EXISTS (SELECT 1 FROM work_stream_waits w WHERE w.id = ${recoveryEpisodes.waitId} AND w.closed_at IS NULL))`
         )
       )
       .limit(1)

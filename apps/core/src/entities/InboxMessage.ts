@@ -527,8 +527,8 @@ export class InboxMessage
           .where(eq(agents.id, fromAgent.id))
           .for('update')
         if (!sender) throw new Error('Sender agent not found')
-        const { assertNoPendingRecovery } = await import('../services/recovery/store')
-        await assertNoPendingRecovery(tx, sender.id)
+        const { assertNoPendingRecovery, recoveryScopeForAgent } = await import('../services/recovery/store')
+        await assertNoPendingRecovery(tx, sender.id, await recoveryScopeForAgent(tx, sender.id))
       }
       return {
         inserted: created,

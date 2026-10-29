@@ -26,14 +26,9 @@ function stableValue(value: unknown): unknown {
   return value
 }
 
-/** Arguments are hashed in memory, never stored or forwarded to a person. */
-function operationKey(name: string, params: unknown): string {
-  // A longer deadline is a retry of the same command, not a fresh budget.
-  if (['bash', 'squad_bash'].includes(name) && params && typeof params === 'object')
-    params = Object.fromEntries(Object.entries(params).filter(([key]) => key !== 'timeout'))
-  return createHash('sha256')
-    .update(JSON.stringify([name, stableValue(params)]))
-    .digest('hex')
+/** Budget identity is a server-owned operation family, not caller-editable arguments. */
+function operationKey(name: string): string {
+  return createHash('sha256').update(name).digest('hex')
 }
 function attemptedAction(name: string): string {
   if (name === 'bash' || name === 'squad_bash') return 'run the requested command'
@@ -88,15 +83,22 @@ export function wrapToolWithRecovery<T extends ToolDefinition>(
       const source = origin()
       if (!source) return execute(...args)
       const [toolCallId, params, signal] = args
-      const operation = operationKey(tool.name, params)
-      return exclusiveOperation(`${source.agentId}:${operation}`, async () => {
+      const operation = operationKey(tool.name)
+      const invocation = createHash('sha256')
+        .update(JSON.stringify([tool.name, stableValue(params)]))
+        .digest('hex')
+      return exclusiveOperation(`${source.agentId}:${invocation}`, async () => {
         let ordinal = 0
         const observed = new Set<unknown>()
         const context: ToolRecoveryContext = {
           beforeAttempt: async () => {
             signal?.throwIfAborted()
             for (;;) {
-              const wait = await recoveryRetryDelay(source, operation)
+              const wait = await recoveryRetryDelay(source, operation).catch((error) => {
+                if (error instanceof RecoveryHeldError) throw error
+                log.warn('Recovery preflight unavailable; preserving the tool operation', error)
+                return 0
+              })
               if (!wait) break
               await delay(wait, undefined, { signal })
             }
@@ -109,6 +111,9 @@ export function wrapToolWithRecovery<T extends ToolDefinition>(
                 .update(`${source.executionId}:${toolCallId}:${ordinal++}`)
                 .digest('hex'),
               error,
+            }).catch((accountingError) => {
+              log.error('Unable to persist recovery outcome', accountingError)
+              return undefined
             })
             observed.add(error)
             context.latest = record
@@ -165,7 +170,7 @@ export function wrapToolWithRecovery<T extends ToolDefinition>(
               }
             }
             const guidance =
-              record?.state.state === 'recovering'
+              !record || record.state.state === 'recovering'
                 ? 'Inspect the affected state inside your authorized workspace before an explicit safe retry. Do not repeat unknown external side effects.'
                 : 'The unexplained-failure budget is exhausted. A generated Continue/Stop recovery decision is pending; do not request technical evidence from a person.'
             let message = error instanceof Error ? error.message : String(error)

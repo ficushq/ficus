@@ -42,7 +42,7 @@ export async function runIdempotentSandboxOperation<Client, Result>(input: {
       const transport = error instanceof SandboxTransportError ? error : classifySandboxTransportError(error)
       if (transport && recovery) {
         const record = await recovery.failed(error)
-        if (record.state.state !== 'recovering') throw error
+        if (record && record.state.state !== 'recovering') throw error
       }
       if (!transport || attempt === delays.length - 1) throw error
       client = await input.recoverClient(client, transport)

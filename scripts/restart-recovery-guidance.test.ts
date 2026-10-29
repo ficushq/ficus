@@ -29,7 +29,9 @@ test('worker, engineer, reviewer, general and manager each receive restart-safe 
     expect(prompt).toContain('known restart is a free retry')
     expect(prompt).toContain('Never ask a person for host logs, registry records, platform forensics')
     expect(prompt).toContain('squad manager first')
-    expect(prompt).toContain('at most one extra recovery cycle per recovery record')
+    expect(prompt).toContain(
+      'at most one extra recovery cycle per normalized recovery scope, across successor attempts'
+    )
     expect(prompt).toContain('automatically forwards')
     expect(prompt).toContain('expectedVersion')
     expect(prompt).not.toContain('request-input <id> -m')

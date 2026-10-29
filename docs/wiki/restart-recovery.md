@@ -114,3 +114,23 @@ owner-only routing, scoped parked continuation, legacy compatibility and typed U
 Shared provisioning-follower retries are owned by provisioning recovery, not by
 restart attribution. The executor-side fields require the updated executor bundle;
 this change performs no live restart, artifact refresh or deployment.
+
+### Scope continuity and accounting failures
+
+Tool budgets use server-owned operation families, not caller-editable arguments.
+Within a stream, successor attempts retain the allowance; a revised workflow
+participant also retains it when a fresh agent replaces the previous session.
+Unrelated participants/scopes stay separate, and ambiguous concurrent lineages
+are not rebound. Confirmed successor episodes inherit manager-cycle and owner
+escalation state. Replanning retires a wait binding, not its retry allowance.
+Late failures remain durable even if their old attempt cannot open a wait; a
+valid successor must bind the hold before retrying.
+
+Any unresolved unexplained failure in the relevant scope gates worker task input,
+including failures one and two. Restart-only records do not, and a stopped
+incident in another stream cannot suppress legitimate questions.
+
+Healthy tools use non-locking reads, not recovery transactions or agent/stream
+row locks. Recording failures degrade to logging; they do not turn a confirmed
+tool result into a failure. An already-observed hold remains authoritative even
+if a later accounting read, rebind or notification fails.

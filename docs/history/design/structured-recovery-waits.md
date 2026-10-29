@@ -133,7 +133,7 @@ work-stream owner. Set recipient provenance server-side; a worker cannot select
 redefined: add an explicit manager target for recovery, and update projections,
 notification fallbacks and Action Center filtering together.
 
-The manager may grant **at most one extra recovery cycle per recovery record**. If that extra cycle also exhausts unexplained failures, the server automatically forwards the record to the owner—without manager prose or another manager decision. The Action Center renders only the generated attempted action, count and last error, with Continue/Stop buttons. The manager cannot reset this limit by re-opening or re-forwarding the record.
+The manager may grant **at most one extra recovery cycle per normalized recovery scope, across successor attempts**. If that extra cycle also exhausts unexplained failures, the server automatically forwards the record to the owner—without manager prose or another manager decision. The Action Center renders only the generated attempted action, count and last error, with Continue/Stop buttons. The manager cannot reset this limit by re-opening or re-forwarding the record.
 
 The manager can inspect its authorized environment, repair/re-plan, then resolve
 with Continue or Stop, or explicitly forward the same generated plain question
@@ -141,7 +141,7 @@ to the requesting owner. Forwarding is audited and idempotent; it forwards no ra
 logs or new forensic prose. The review clarification routes directly to an eligible owner when no eligible manager exists or the failing agent is the manager. One resolver governs notification, visibility and decision authorization: prefer the requesting user or agent owner, then enabled squad management-capability holders/admins with read and decision rights. When nobody resolves, retain the hold and a durable idempotent system diagnostic without granting authority.
 
 - **Continue:** atomically close this recovery wait and authorize a new audited
-  three-attempt recovery cycle. A manager can do this once per record; after its exhaustion, only the owner may authorize another bounded cycle. Requeue only through normal admission; unrelated
+  three-attempt recovery cycle. A manager can do this once per normalized recovery scope; after its exhaustion, only the owner may authorize another bounded cycle. Requeue only through normal admission; unrelated
   waits, pause, dependency and approval gates remain in force.
 - **Stop:** stop further automatic retries and keep the affected scope held for
   the manager's existing re-plan/cancel path. Record the decision and remove the

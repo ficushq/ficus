@@ -18,6 +18,7 @@ import {
 import {
   db,
   agents,
+  agentExtraScopes,
   agentTypes,
   modelTiers,
   squads,
@@ -2210,7 +2211,7 @@ test('inline handoff does not rebind an unrelated or ambiguous running execution
   }
 })
 
-test('authorized replanning retires an exhausted recovery without granting generic unblock authority', async () => {
+test('authorized replanning retires a wait binding without resetting its recovery budget', async () => {
   const id = await create('active')
   const run = (await getFlow(id))!
   const agentId = run.attemptAgents['1']!
@@ -2244,8 +2245,26 @@ test('authorized replanning retires an exhausted recovery without granting gener
   expect(await listOpenWaits(db, id)).toHaveLength(0)
   const { recoveryEpisodes } = await import('../../db')
   const [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, agentId))
-  expect(record!.state.state).toBe('resolved')
+  expect(record!.state.cycleFailures).toBe(3)
   expect(record!.state.failures).toBe(3)
+  const { recoveryRetryDelay } = await import('../recovery/store')
+  const current = (await getFlow(id))!
+  const next = activeWorkflowAttempts(current.state)[0]!
+  const successor = current.attemptAgents[String(next.id)]!
+  const [replacement] = await db
+    .insert(executions)
+    .values({
+      agentId: successor,
+      status: 'running',
+      flowContext: { workStreamId: id, attemptId: next.id, stepId: next.stepId },
+    })
+    .returning()
+  await expect(
+    recoveryRetryDelay({ agentId: successor, executionId: replacement!.id }, 'replan-fixture')
+  ).rejects.toThrow('Recovery is held')
+  const [wait] = await listOpenWaits(db, id)
+  expect(wait!.flowAttemptId).toBe(next.id)
+  expect(wait!.structured?.request.kind).toBe('continue')
 })
 
 test('parked recovery Continue durably resumes the inline current attempt once through normal admission', async () => {
@@ -2275,6 +2294,7 @@ test('parked recovery Continue durably resumes the inline current attempt once t
     .insert(workStreams)
     .values({ squadId, title: 'Capacity holder', status: 'active' })
     .returning()
+  await db.insert(agentExtraScopes).values({ agentId: manager.id, permission: 'workstreams:respond' })
   await db.update(squads).set({ managerAgentId: manager.id, maxConcurrentWorkStreams: 1 }).where(eq(squads.id, squadId))
   try {
     const recovery = await import('../recovery/store')
@@ -2336,5 +2356,81 @@ test('parked recovery Continue durably resumes the inline current attempt once t
       .update(squads)
       .set({ managerAgentId: original!.managerAgentId, maxConcurrentWorkStreams: original!.maxConcurrentWorkStreams })
       .where(eq(squads.id, squadId))
+  }
+})
+
+test('late third failure survives a revision and the replacement inherits owner escalation', async () => {
+  const manager = await Agent.create({ agentTypeId, squadId })
+  await db.insert(agentExtraScopes).values({ agentId: manager.id, permission: 'workstreams:respond' })
+  const [original] = await db.select().from(squads).where(eq(squads.id, squadId))
+  await db.update(squads).set({ managerAgentId: manager.id }).where(eq(squads.id, squadId))
+  try {
+    const id = await create('active')
+    const run = (await getFlow(id))!
+    const agentId = run.attemptAgents['1']!
+    const [execution] = await db
+      .insert(executions)
+      .values({ agentId, status: 'running', flowContext: { workStreamId: id, attemptId: 1, stepId: 'build' } })
+      .returning()
+    const api = await import('../recovery/store')
+    const origin = { agentId, executionId: execution!.id }
+    const input = (invocationId: string) => ({
+      operationKey: 'late-fixture',
+      invocationId,
+      attempted: 'Read files',
+      error: new Error('Lost outcome'),
+    })
+    let record
+    for (let n = 0; n < 3; n++) record = await api.recordRecoveryFailure(origin, input(`first-${n}`))
+    record = await api.decideRecovery(
+      record!.id,
+      { action: 'continue', expectedVersion: record!.version },
+      { agentId: manager.id }
+    )
+    await api.recordRecoveryFailure(origin, input('second-one'))
+    await api.recordRecoveryFailure(origin, input('second-two'))
+    await advanceFlow(
+      id,
+      {
+        action: 'revise',
+        expectedVersion: run.version,
+        attemptId: 1,
+        operations: [
+          { op: 'put-step', step: { ...run.state.definition.steps[0]!, instructions: 'Use an alternate plan' } },
+        ],
+        reason: 'Replan',
+        active: 'restart',
+      },
+      randomUUID(),
+      actor
+    )
+    record = await api.recordRecoveryFailure(origin, input('late-third'))
+    expect(record.state).toMatchObject({ state: 'waiting-owner', failures: 6, managerCycles: 1 })
+    expect(await listOpenWaits(db, id)).toHaveLength(0)
+    const current = (await getFlow(id))!
+    const next = activeWorkflowAttempts(current.state)[0]!
+    const successor = current.attemptAgents[String(next.id)]!
+    const [replacement] = await db
+      .insert(executions)
+      .values({
+        agentId: successor,
+        status: 'running',
+        flowContext: { workStreamId: id, attemptId: next.id, stepId: next.stepId },
+      })
+      .returning()
+    await expect(
+      api.recoveryRetryDelay({ agentId: successor, executionId: replacement!.id }, 'late-fixture')
+    ).rejects.toThrow('Recovery is held')
+    const [wait] = await listOpenWaits(db, id)
+    expect(wait).toMatchObject({ flowAttemptId: next.id, actor: 'human' })
+    const { recoveryEpisodes, recoveryAttempts } = await import('../../db')
+    const [persisted] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.id, record.id))
+    expect(persisted).toMatchObject({
+      agentId: successor,
+      state: { managerCycles: 1, ownerEscalated: true, failures: 6 },
+    })
+    expect(await db.select().from(recoveryAttempts).where(eq(recoveryAttempts.recoveryId, record.id))).toHaveLength(6)
+  } finally {
+    await db.update(squads).set({ managerAgentId: original!.managerAgentId }).where(eq(squads.id, squadId))
   }
 })

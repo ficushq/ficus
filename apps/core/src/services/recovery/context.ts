@@ -4,7 +4,7 @@ import type { RecoveryRecord } from './store'
 /** Safe inner transport retries share their enclosing tool's durable budget. */
 export interface ToolRecoveryContext {
   beforeAttempt(): Promise<void>
-  failed(error: unknown): Promise<RecoveryRecord>
+  failed(error: unknown): Promise<RecoveryRecord | undefined>
   observed(error: unknown): boolean
   latest?: RecoveryRecord
 }

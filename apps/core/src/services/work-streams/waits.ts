@@ -123,17 +123,22 @@ export async function openWait(
         record.agentId !== input.createdByAgentId ||
         record.version !== request.expectedRecoveryVersion ||
         record.state.cycleFailures !== RECOVERY_ATTEMPT_BUDGET ||
-        !['waiting-manager', 'waiting-owner'].includes(record.state.state)
+        !['waiting-manager', 'waiting-owner', 'stopped'].includes(record.state.state)
       ) {
         throw new Error('Recovery must be exhausted and belong to this exact wait scope')
       }
       const { recoverySummary } = await import('../recovery/policy')
-      structured = { request, summary: recoverySummary(record.state), version: record.version }
+      structured = {
+        request,
+        summary: recoverySummary(record.state),
+        version: record.version,
+        ...(record.state.state === 'stopped' ? { stopped: true } : {}),
+      }
       actor = record.state.ownerEscalated ? 'human' : 'manager'
     } else {
       if (input.createdByAgentId) {
         const { assertNoPendingRecovery } = await import('../recovery/store')
-        await assertNoPendingRecovery(dbx, input.createdByAgentId)
+        await assertNoPendingRecovery(dbx, input.createdByAgentId, input.workStreamId)
       }
       structured = { request, summary: taskInputSummary(request), version: 0 }
       actor = request.actor ?? 'human'
@@ -207,7 +212,8 @@ export async function closeOpenWaits(
     .where(and(...conditions))
     .returning()
   // Terminal transitions and explicit authorized replanning retire the old
-  // episode. Its attempts remain auditable, but cannot hold a replacement task.
+  // wait binding, not its budget. A retry in a successor must rebind the same
+  // durable hold; replanning cannot manufacture another manager allowance.
   const recoveryIds = closed.flatMap((wait) =>
     wait.structured?.request.kind === 'continue' ? [wait.structured.request.recoveryId] : []
   )
@@ -215,7 +221,7 @@ export async function closeOpenWaits(
     await dbx
       .update(recoveryEpisodes)
       .set({
-        state: sql`jsonb_set(${recoveryEpisodes.state}, '{state}', '"resolved"'::jsonb)`,
+        waitId: null,
         version: sql`${recoveryEpisodes.version} + 1`,
         updatedAt: new Date(),
       })
