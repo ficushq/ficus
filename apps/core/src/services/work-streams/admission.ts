@@ -1,3 +1,4 @@
+import { persistFlowReadmission } from '../workflows/readmission'
 import { admissionBlockingWaits, admissionBlockedSince, admissionBlockedStreamIds } from './wait-scope'
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import {
@@ -384,7 +385,8 @@ interface PromotionScanRow {
 async function promoteEligibleWithinTx(
   tx: DbTransaction,
   squadId: string,
-  cap: number | null
+  cap: number | null,
+  afterCommit: Array<() => void>
 ): Promise<{ promotedRows: WorkStreamRow[]; canceledDepRows: PromotionScanRow[] }> {
   const all: PromotionScanRow[] = await tx
     .select({
@@ -500,7 +502,10 @@ async function promoteEligibleWithinTx(
       .set({ status: 'active', updatedAt: new Date() })
       .where(and(eq(workStreams.id, winner.id), eq(workStreams.status, 'queued')))
       .returning()
-    if (updated) promotedRows.push(updated)
+    if (updated) {
+      await persistFlowReadmission(tx, updated, afterCommit)
+      promotedRows.push(updated)
+    }
   }
   return { promotedRows, canceledDepRows }
 }
@@ -542,6 +547,7 @@ async function emitPromotionEffects(promoted: WorkStream[]): Promise<void> {
  * to the manager exactly once (never silently admitted).
  */
 export async function promoteEligibleQueuedStreams(squadId: string): Promise<WorkStream[]> {
+  const afterCommit: Array<() => void> = []
   const { promotedRows, canceledDepRows } = await db.transaction(async (tx) => {
     const [squad] = await tx
       .select({ cap: squads.maxConcurrentWorkStreams })
@@ -549,9 +555,10 @@ export async function promoteEligibleQueuedStreams(squadId: string): Promise<Wor
       .where(eq(squads.id, squadId))
       .for('update')
     if (!squad) return { promotedRows: [] as WorkStreamRow[], canceledDepRows: [] as PromotionScanRow[] }
-    return promoteEligibleWithinTx(tx, squadId, squad.cap)
+    return promoteEligibleWithinTx(tx, squadId, squad.cap, afterCommit)
   })
 
+  afterCommit.forEach((callback) => callback())
   const promoted = promotedRows.map((row) => new WorkStream(row))
   await emitPromotionEffects(promoted)
   await surfaceCanceledDependencies(canceledDepRows)
@@ -583,6 +590,7 @@ export async function runSquadAdmissionMaintenance(
   squadId: string,
   deps: DemotionStopDeps = {}
 ): Promise<AdmissionMaintenanceResult> {
+  const afterCommit: Array<() => void> = []
   const { parkedRows, promotedRows, canceledDepRows } = await db.transaction(async (tx) => {
     const [squad] = await tx
       .select({ cap: squads.maxConcurrentWorkStreams, grace: squads.blockedGraceMinutes })
@@ -637,7 +645,7 @@ export async function runSquadAdmissionMaintenance(
       }
     }
 
-    const promotion = await promoteEligibleWithinTx(tx, squadId, squad.cap)
+    const promotion = await promoteEligibleWithinTx(tx, squadId, squad.cap, afterCommit)
     return { parkedRows, ...promotion }
   })
 
@@ -649,6 +657,7 @@ export async function runSquadAdmissionMaintenance(
     await stopSandboxesForDemotedStream(ws, deps)
   }
 
+  afterCommit.forEach((callback) => callback())
   const promoted = promotedRows.map((row) => new WorkStream(row))
   await emitPromotionEffects(promoted)
   await surfaceCanceledDependencies(canceledDepRows)
