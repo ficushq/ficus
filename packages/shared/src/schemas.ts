@@ -1,9 +1,10 @@
+import { manualInputRequestSchema } from './recovery-waits'
 import { requestMetadataSchema } from './request-metadata'
 import { boundedRecord } from './zod-helpers'
 import { z } from 'zod'
 import { workflowSourceSchema, workflowEventTriggerSchema } from './workflows'
 import { squadEventRulesSchema } from './squad-event-rules'
-import { AGENT_STATUSES, WORK_STREAM_COMPLETION_MODES, WORK_STREAM_PRIORITIES, WORK_STREAM_WAIT_ACTORS } from './types'
+import { AGENT_STATUSES, WORK_STREAM_COMPLETION_MODES, WORK_STREAM_PRIORITIES } from './types'
 import { IMAGE_ATTACHMENT_MIME_TYPES, MAX_IMAGE_ATTACHMENTS_PER_MESSAGE } from './image-attachments'
 import { reportableAssistantTaskStatusSchema } from './assistant-activity'
 import { WORK_STREAM_DEPENDENCY_CONDITIONS } from './work-stream-dependencies'
@@ -433,18 +434,11 @@ export const sendBackWorkStreamSchema = z.object({
   note: z.string().min(1),
 })
 
-export const requestInputWorkStreamSchema = z.object({
-  scope: z.enum(['stream', 'attempt']).optional(),
-  flowAttemptId: z.int().positive().optional(),
-  /** What input/action is needed, and from whom; stored on the manual wait. */
-  message: z.string().min(1),
-  /** Who must act: human (default) or owner (the stream's owning agent). */
-  actor: z.enum(WORK_STREAM_WAIT_ACTORS).optional(),
-})
+export const requestInputWorkStreamSchema = manualInputRequestSchema
 
 /** Correct who must act on one open manual wait. */
 export const setWorkStreamWaitActorSchema = z.object({
-  actor: z.enum(WORK_STREAM_WAIT_ACTORS),
+  actor: z.enum(['human', 'owner']),
   note: z.string().min(1).optional(),
 })
 

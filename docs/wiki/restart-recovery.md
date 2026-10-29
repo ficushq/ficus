@@ -63,8 +63,55 @@ and a real subprocess interrupted after partial output then safely retried with
 no wait created. The model-provider boundary uses a deterministic session fixture;
 these tests do not claim to prove arbitrary model obedience.
 
-This runtime contract is not server enforcement of structured waits or recovery
-budgets. Those require the separately approved wait schema and routing changes.
+## Structured recovery decisions
+
+Tool and execution boundaries persist recovery episodes and individual outcomes.
+Three unexplained failures exhaust a cycle; the server enforces 1s then 2s backoff.
+Repeated delivery of an invocation does not spend another attempt, and verified
+restart interruption is free. Normal command exits, known filesystem/authorization
+refusals, provider gates and deliberate cancellation retain their separate handling.
+Budgets survive replacement executions and execution-log pruning. Only safe inner
+transport operations and pre-model startup failures retry automatically; arbitrary
+commands or external effects require local reconciliation before an explicit retry.
+
+Exhaustion opens a generated Continue/Stop wait for the squad manager. A manager
+can grant one extra cycle or forward to the requesting owner. Exhausting that extra
+cycle automatically forwards the same server-generated action/count/error summary,
+without diagnostic prose. Continue commits an audited cycle and a durable scoped
+wake intent together; normal admission delivers it once, retaining other gates.
+Stop keeps the scope held and removes repeated human requests. Missing eligible
+managers leave a pending record and routing diagnostic, not an owner bypass.
+Standalone tasks use the same policy and typed agent-recovery actions.
+
+New manual inputs accept only versioned `continue`, `decide` or `provide` requests.
+`continue` references an existing exhausted runtime record, not a caller-supplied
+attempt count. `decide` declares task options; `provide` names only a task file,
+config value or product choice. A shared validator rejects forensic evidence and
+human-run commands, including disguised typed requests and human-question paths.
+Credentials continue through protected credential/integration surfaces, never
+plaintext task responses. Old waits retain their legacy response/history behavior.
+
+For example, a legitimate owner-agent task input is:
+
+```sh
+ficus workstream request-input STREAM --content '{"schemaVersion":1,"kind":"provide","purpose":"task-input","actor":"owner","input":{"type":"config-value","name":"target branch"},"use":"choose the implementation base"}'
+```
+
+Resolve it with its current version and matching response kind:
+
+```sh
+ficus workstream resolve-input STREAM WAIT --content '{"action":"provide","expectedVersion":0,"value":"main"}'
+```
+
+Recovery buttons/CLI instead send `continue` or `stop`; only the designated manager
+may `forward`. Standalone decisions use `ficus agent recovery AGENT RECOVERY` with
+the same typed source. Generic unblock cannot clear a new structured wait. No
+Continue or task response grants review, permission, deployment or merge authority.
+
+The approved contract is documented in
+[Structured recovery waits](../history/design/structured-recovery-waits.md).
+Focused regressions cover concurrent accounting/decisions, manager-cycle limits,
+owner-only routing, scoped parked continuation, legacy compatibility and typed UI/CLI.
 Shared provisioning-follower retries are owned by provisioning recovery, not by
 restart attribution. The executor-side fields require the updated executor bundle;
 this change performs no live restart, artifact refresh or deployment.

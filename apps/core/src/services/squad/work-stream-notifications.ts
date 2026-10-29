@@ -6,6 +6,7 @@ import {
   type AttentionKind,
   type InboxPushPresentation,
   type WorkStreamWaitActor,
+  type StructuredManualWait,
 } from '@ficus/shared'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
@@ -499,13 +500,23 @@ export async function notifyWorkStreamAssigned(
   }
 }
 
-type BlockedWaitFacts = { actor?: WorkStreamWaitActor | string | null; message?: string | null }
+type BlockedWaitFacts = {
+  actor?: WorkStreamWaitActor | string | null
+  message?: string | null
+  structured?: StructuredManualWait | null
+  closedAt?: Date | null
+}
 
 /** Read the opened wait's actor/message when the caller (an event fallback) only knows its id. */
 async function loadBlockedWait(waitId: string): Promise<BlockedWaitFacts | undefined> {
   try {
     const [row] = await db
-      .select({ actor: workStreamWaits.actor, message: workStreamWaits.message })
+      .select({
+        actor: workStreamWaits.actor,
+        message: workStreamWaits.message,
+        structured: workStreamWaits.structured,
+        closedAt: workStreamWaits.closedAt,
+      })
       .from(workStreamWaits)
       .where(eq(workStreamWaits.id, waitId))
       .limit(1)
@@ -529,6 +540,38 @@ export async function notifyWorkStreamBlocked(
 ): Promise<void> {
   const facts = wait ?? (target ? await loadBlockedWait(target.waitId) : undefined)
   const actor = workStreamWaitActor(facts ?? {})
+  if (facts?.structured?.request.kind === 'continue') {
+    if (facts.closedAt || facts.structured.stopped) return
+    const squad = await Squad.find(workStream.squadId)
+    const recipientId = actor === 'manager' ? squad?.managerAgentId : workStream.requestingUserId
+    if (!recipientId) return // No eligible recipient: never fall through to human watchers.
+    if (actor === 'human') {
+      const enabled = await listEnabledUserIds([recipientId])
+      const allowed = await filterUserIdsWithPermission(enabled, 'workstreams:read', workStream.squadId)
+      if (!allowed.includes(recipientId)) return
+    }
+    const summary = facts.structured.summary.text
+    await sendDeduped({
+      recipientType: actor === 'manager' ? 'agent' : 'user',
+      recipientId,
+      senderType: 'system',
+      ...(actor === 'manager' ? { deliveryMode: 'steer' as const, wakeEligible: true } : {}),
+      subject: 'Continue or stop recovery',
+      content:
+        actor === 'manager'
+          ? `${summary}\n\nUse the typed recovery decision for wait ${target?.waitId ?? ''} on ${workStreamRef(workStream)}. You may grant at most one extra recovery cycle, stop, or forward to the owner.`
+          : summary,
+      metadata: {
+        workStreamId: workStream.id,
+        workStreamNumber: workStream.number,
+        squadId: workStream.squadId,
+        event: 'blocked',
+        transitionAt: transitionAt(workStream),
+        ...(target ?? {}),
+      },
+    })
+    return
+  }
   const title = workStreamTitle(workStream)
   if (actor === 'human') {
     await notifyWorkStreamOwner(

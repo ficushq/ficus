@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
 import { Command } from 'commander'
-import { apiGet, apiPatch } from '../client'
+import { apiGet, apiPatch, apiPost } from '../client'
 import { output, outputError, setOutputOptions } from '../output'
 import { registerAgentCommands } from './agent'
 
@@ -141,5 +141,26 @@ describe('ficus agent worker-log', () => {
     }
     expect(lines.some((line) => line.endsWith('🔧 delegate_task'))).toBe(true)
     expect(lines.some((line) => line.includes('undefined'))).toBe(false)
+  })
+})
+
+describe('typed standalone recovery', () => {
+  it('sends a versioned decision and rejects free-text input', async () => {
+    ;(apiPost as ReturnType<typeof mock>).mockClear()
+    ;(outputError as ReturnType<typeof mock>).mockClear()
+    const run = async (args: string[]) => {
+      const program = new Command().exitOverride()
+      registerAgentCommands(program)
+      await program.parseAsync(['agent', 'recovery', 'agent-1', 'record-1', ...args], { from: 'user' })
+    }
+    await run(['--content', JSON.stringify({ action: 'continue', expectedVersion: 7 })])
+    expect(apiPost).toHaveBeenCalledWith('/api/agents/agent-1/recoveries/record-1/input', {
+      action: 'continue',
+      expectedVersion: 7,
+    })
+    ;(apiPost as ReturnType<typeof mock>).mockClear()
+    await run(['--content', JSON.stringify({ message: 'please continue' })])
+    expect(apiPost).not.toHaveBeenCalled()
+    expect(outputError).toHaveBeenCalled()
   })
 })

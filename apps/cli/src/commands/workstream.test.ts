@@ -1396,25 +1396,53 @@ describe('workstream CLI commands', () => {
   describe('wait verbs (typed resolution sugar)', () => {
     const wsId = '12345678-0000-4000-8000-000000000000'
 
-    it('request-input opens a manual wait via the new route', async () => {
-      await run(['workstream', 'request-input', 'ws-1', '-m', 'need credentials'])
-      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/ws-1/request-input', { message: 'need credentials' })
+    const taskInput = {
+      schemaVersion: 1,
+      kind: 'provide',
+      purpose: 'task-input',
+      input: { type: 'config-value', name: 'Release channel' },
+      use: 'Choose the target',
+    }
+
+    it('request-input opens only a validated structured request via the new route', async () => {
+      await run(['workstream', 'request-input', 'ws-1', '--content', JSON.stringify(taskInput)])
+      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/ws-1/request-input', taskInput)
     })
 
-    it('request-input forwards a validated --actor', async () => {
+    it('task input preserves human/owner routing without accepting manager as a caller-selected actor', async () => {
       for (const actor of ['human', 'owner']) {
         ;(apiPost as ReturnType<typeof mock>).mockClear()
-        await run(['workstream', 'request-input', 'ws-1', '-m', 'hold', '--actor', actor])
-        expect(apiPost).toHaveBeenCalledWith('/api/workstreams/ws-1/request-input', { message: 'hold', actor })
+        await run(['workstream', 'request-input', 'ws-1', '--content', JSON.stringify({ ...taskInput, actor })])
+        expect(apiPost).toHaveBeenCalledWith('/api/workstreams/ws-1/request-input', { ...taskInput, actor })
       }
+      ;(apiPost as ReturnType<typeof mock>).mockClear()
+      await run([
+        'workstream',
+        'request-input',
+        'ws-1',
+        '--content',
+        JSON.stringify({ ...taskInput, actor: 'manager' }),
+      ])
+      expect(apiPost).not.toHaveBeenCalled()
     })
 
-    it('request-input rejects an unknown --actor before calling the API', async () => {
-      ;(apiPost as ReturnType<typeof mock>).mockClear()
-      for (const actor of ['robot', 'manager', 'external']) {
-        await expect(run(['workstream', 'request-input', 'ws-1', '-m', 'hold', '--actor', actor])).rejects.toThrow()
-      }
+    it('rejects free prose and forensic requests before calling the API', async () => {
+      await expect(run(['workstream', 'request-input', 'ws-1', '-m', 'Send host logs'])).rejects.toThrow()
+      await run([
+        'workstream',
+        'request-input',
+        'ws-1',
+        '--content',
+        JSON.stringify({ ...taskInput, input: { type: 'file', name: 'host logs' } }),
+      ])
       expect(apiPost).not.toHaveBeenCalled()
+      expect(apiPatch).not.toHaveBeenCalled()
+    })
+
+    it('resolve-input posts only a typed, versioned decision', async () => {
+      const decision = { action: 'continue', expectedVersion: 3 }
+      await run(['workstream', 'resolve-input', 'ws-1', 'wait-1', '--content', JSON.stringify(decision)])
+      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/ws-1/waits/wait-1/input', decision)
     })
 
     it('wait-actor relabels the single open manual wait with an audit note', async () => {

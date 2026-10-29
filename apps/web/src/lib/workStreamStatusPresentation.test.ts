@@ -20,7 +20,6 @@ import {
 import { BADGE_COLORS } from '../components/Badge'
 
 /** The actor's pre-rename name; nothing shipped with it, so it is an unknown value (human). */
-const PRE_RENAME_ACTOR = 'manager'
 
 describe('work-stream role token resolution', () => {
   test('every stored and derived state retains its shared semantic role', () => {
@@ -87,11 +86,11 @@ describe('workStreamWaitBadge', () => {
       label: 'Waiting on Owner',
       color: 'externalWait',
     })
-    // Unknown actors (including the pre-rename 'manager') fall back to the human treatment.
+    // Unknown actors retain the legacy human fallback; manager is now runtime-owned.
     expect(workStreamWaitBadge({ type: 'manual', actor: 'robot' })).toEqual({ label: 'Needs you', color: 'attention' })
-    expect(workStreamWaitBadge({ type: 'manual', actor: PRE_RENAME_ACTOR })).toEqual({
-      label: 'Needs you',
-      color: 'attention',
+    expect(workStreamWaitBadge({ type: 'manual', actor: 'manager' })).toEqual({
+      label: 'Waiting on Manager',
+      color: 'externalWait',
     })
     expect(workStreamWaitBadge({ type: 'dependency' })).toEqual({ label: 'Dependency', color: 'externalWait' })
     // Resolved waits keep their type label and name a non-human actor.

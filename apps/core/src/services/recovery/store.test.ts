@@ -1,0 +1,620 @@
+import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { eq, sql } from 'drizzle-orm'
+import { db, agents, agentTypes, squads, workStreams, workStreamWaits, inbox } from '../../db'
+import { Agent } from '../../entities/Agent'
+import { AgentType } from '../../entities/AgentType'
+import { Squad } from '../../entities/Squad'
+import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stream'
+import { createTestAdmin, cleanupTestRbac } from '../../test-utils'
+import type { WorkStream } from '../../entities/WorkStream'
+import type { Execution } from '../../entities/Execution'
+
+const prefix = `recovery-${crypto.randomUUID()}`
+let squad: Squad
+let worker: Agent
+let execution: Execution
+let stream: WorkStream
+let ownerId: string
+let ownerToken: string
+beforeEach(async () => {
+  const owner = await createTestAdmin({ prefix })
+  ownerId = owner.id
+  ownerToken = owner.token
+  await AgentType.upsert({ id: prefix, name: 'Recovery fixture', model: 'test:model', systemPrompt: 'test' })
+  squad = await Squad.create({ name: `${prefix}-${crypto.randomUUID()}`, purpose: 'test' })
+  worker = await Agent.create({ agentTypeId: prefix, squadId: squad.id })
+  stream = await storedLegacyWorkStream({
+    squadId: squad.id,
+    title: 'Recovery fixture',
+    assigneeAgentId: worker.id,
+    agentIds: [worker.id],
+    requestingUserId: ownerId,
+  })
+  execution = await worker.queueExecution({ message: 'test' })
+})
+afterEach(async () => {
+  if (squad) {
+    if (stream) await db.delete(inbox).where(sql`${inbox.metadata}->>'workStreamId' = ${stream.id}`)
+    await db.delete(workStreams).where(eq(workStreams.squadId, squad.id))
+    await db.delete(agents).where(eq(agents.squadId, squad.id))
+    await db.delete(squads).where(eq(squads.id, squad.id))
+  }
+  await db.delete(agentTypes).where(eq(agentTypes.id, prefix))
+  await cleanupTestRbac(prefix)
+})
+async function store() {
+  const module = await import('./store')
+  expect(typeof module.recordRecoveryFailure).toBe('function')
+  return module
+}
+
+test('durably counts real failures once, opens manager wait on third and automatically escalates after its one extra cycle', async () => {
+  const api = await store()
+  // The recovery manager is not the work-stream owner.
+  await db
+    .update(workStreams)
+    .set({ ownerAgentId: worker.id, description: 'PRIVATE_DESCRIPTION_NOT_FOR_RECOVERY_CARD' })
+    .where(eq(workStreams.id, stream.id))
+  const origin = { agentId: worker.id, executionId: execution.id }
+  const input = (id: string) => ({
+    operationKey: 'operation-fixture',
+    attempted: 'Run project tests',
+    invocationId: id,
+    error: new Error('test process failed'),
+  })
+  let record = await api.recordRecoveryFailure(origin, input('one'))
+  expect(record.state.failures).toBe(1)
+  expect((await api.recordRecoveryFailure(origin, input('one'))).state.failures).toBe(1)
+  expect(await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, stream.id))).toHaveLength(0)
+  record = await api.recordRecoveryFailure(origin, input('two'))
+  record = await api.recordRecoveryFailure(origin, input('three'))
+  expect(record.state.state).toBe('waiting-manager')
+  let [wait] = await db.select().from(workStreamWaits).where(eq(workStreamWaits.id, record.waitId!))
+  expect(wait.actor).toBe('manager')
+  await expect(
+    stream.setWaitActor(wait.id, { actor: 'human', changedByAgentId: squad.managerAgentId })
+  ).rejects.toThrow()
+  const { listPendingActions } = await import('../agents/actions')
+  expect((await listPendingActions()).some((action) => action.id.includes(stream.id))).toBe(false)
+  const notices = await db
+    .select()
+    .from(inbox)
+    .where(sql`${inbox.metadata}->>'workStreamId' = ${stream.id}`)
+  expect(notices.map((notice) => notice.recipientId)).toEqual([squad.managerAgentId!])
+  expect(wait.structured?.summary).toMatchObject({ attemptCount: 3, lastError: 'test process failed' })
+  await expect(
+    api.decideRecovery(record.id, { action: 'continue', expectedVersion: record.version }, { agentId: worker.id })
+  ).rejects.toThrow('authorized')
+  record = await api.decideRecovery(
+    record.id,
+    { action: 'continue', expectedVersion: record.version },
+    { agentId: squad.managerAgentId! }
+  )
+  expect(record.state.managerCycles).toBe(1)
+  for (const id of ['four', 'five', 'six']) record = await api.recordRecoveryFailure(origin, input(id))
+  expect(record.state).toMatchObject({ state: 'waiting-owner', failures: 6, managerCycles: 1 })
+  ;[wait] = await db.select().from(workStreamWaits).where(eq(workStreamWaits.id, record.waitId!))
+  expect(wait.actor).toBe('human')
+  const action = (await listPendingActions()).find((action) => action.id.includes(stream.id))!
+  expect(action).toBeDefined()
+  expect((action.data as import('@ficus/shared').WorkStreamActionData).prompt).toEqual({
+    type: 'select',
+    message: wait.structured!.summary.text,
+    options: ['Continue', 'Stop'],
+  })
+  const { evaluatePendingAction } = await import('../agents/pending-action-policy')
+  const { EMPTY_USER_ATTENTION } = await import('../attention/resolver')
+  expect(
+    (await evaluatePendingAction({ type: 'user', userId: ownerId }, action, { attention: EMPTY_USER_ATTENTION }))
+      .canRespond
+  ).toBe(true)
+  const other = await createTestAdmin({ prefix })
+  expect(
+    (await evaluatePendingAction({ type: 'user', userId: other.id }, action, { attention: EMPTY_USER_ATTENTION }))
+      .visible
+  ).toBe(false)
+  const [ownerNotice] = await db.select().from(inbox).where(eq(inbox.recipientId, ownerId))
+  expect(ownerNotice?.content).toBe(wait.structured!.summary.text)
+  expect(ownerNotice?.content).not.toContain('PRIVATE_DESCRIPTION_NOT_FOR_RECOVERY_CARD')
+  expect(wait.structured?.summary.text).toBe(
+    'I tried to run project tests 6 times. The last error was: test process failed'
+  )
+  await expect(
+    api.decideRecovery(
+      record.id,
+      { action: 'continue', expectedVersion: record.version },
+      { agentId: squad.managerAgentId! }
+    )
+  ).rejects.toThrow('owner')
+  record = await api.decideRecovery(
+    record.id,
+    { action: 'continue', expectedVersion: record.version },
+    { userId: ownerId }
+  )
+  expect(record.state).toMatchObject({ state: 'recovering', managerCycles: 1, cycleFailures: 0 })
+})
+
+test('unknown or foreign recovery references cannot open an early wait and Stop retains the scoped hold', async () => {
+  const api = await store()
+  const origin = { agentId: worker.id, executionId: execution.id }
+  const input = {
+    operationKey: 'other-operation',
+    attempted: 'Read project files',
+    invocationId: 'one',
+    error: new Error('read failed'),
+  }
+  let record = await api.recordRecoveryFailure(origin, input)
+  await expect(api.openRecoveryWait(record.id, record.version, worker.id, stream.id)).rejects.toThrow('exhausted')
+  await expect(api.recordRecoveryFailure({ ...origin, agentId: squad.managerAgentId! }, input)).rejects.toThrow(
+    'execution'
+  )
+  record = await api.recordRecoveryFailure(origin, { ...input, invocationId: 'two' })
+  record = await api.recordRecoveryFailure(origin, { ...input, invocationId: 'three' })
+  record = await api.decideRecovery(
+    record.id,
+    { action: 'stop', expectedVersion: record.version },
+    { agentId: squad.managerAgentId! }
+  )
+  const [wait] = await db.select().from(workStreamWaits).where(eq(workStreamWaits.id, record.waitId!))
+  expect(record.state.state).toBe('stopped')
+  expect(wait.closedAt).toBeNull()
+  expect(wait.structured?.stopped).toBe(true)
+  const { listPendingActions } = await import('../agents/actions')
+  expect((await listPendingActions()).some((action) => action.id.includes(stream.id))).toBe(false)
+  await expect(stream.unblock()).rejects.toThrow('typed')
+})
+
+test('common wait and question writers reject free forensic asks, while typed task inputs and legacy resolution remain usable', async () => {
+  await expect(
+    stream.block({ message: 'Send host logs', createdBy: 'agent', createdByAgentId: worker.id })
+  ).rejects.toThrow('typed')
+  const { createAgentQuestion } = await import('../agents/questions')
+  await expect(
+    createAgentQuestion(
+      { agentId: worker.id, executionId: execution.id },
+      { questions: [{ id: 'logs', type: 'text', question: 'Please send journal output' }] },
+      { blocking: true }
+    )
+  ).rejects.toThrow('not valid')
+  const { requestStructuredInput, resolveStructuredInput } = await import('./structured-input')
+  const wait = await requestStructuredInput(
+    stream.id,
+    {
+      schemaVersion: 1,
+      kind: 'decide',
+      purpose: 'task-decision',
+      subject: 'Choose a layout',
+      options: [
+        { id: 'compact', label: 'Compact' },
+        { id: 'wide', label: 'Wide' },
+      ],
+    },
+    { createdBy: 'agent', createdByAgentId: worker.id }
+  )
+  expect(wait.structured?.summary).toEqual({
+    attempted: 'Choose a layout',
+    attemptCount: 0,
+    lastError: null,
+    text: 'Choose an option for: Choose a layout.',
+  })
+  await expect(stream.resolveWait(wait.id, { resolution: 'cleared' })).rejects.toThrow('typed')
+  await stream.setWaitActor(wait.id, { actor: 'owner', changedByAgentId: squad.managerAgentId })
+  await stream.setWaitActor(wait.id, { actor: 'human', changedByAgentId: squad.managerAgentId })
+  await expect(
+    resolveStructuredInput(
+      stream.id,
+      wait.id,
+      { action: 'choose', optionId: 'compact', expectedVersion: 0 },
+      { userId: ownerId }
+    )
+  ).rejects.toThrow('version')
+  await expect(
+    resolveStructuredInput(
+      stream.id,
+      wait.id,
+      { action: 'choose', optionId: 'invented', expectedVersion: 2 },
+      { userId: ownerId }
+    )
+  ).rejects.toThrow('option')
+  const closed = await resolveStructuredInput(
+    stream.id,
+    wait.id,
+    { action: 'choose', optionId: 'compact', expectedVersion: 2 },
+    { userId: ownerId }
+  )
+  expect(closed.closedAt).not.toBeNull()
+  expect(closed.resolutionNote).toBe('Selected: Compact')
+  const legacy = await stream.block({ message: 'Historical system hold', createdBy: 'system' })
+  await stream.resolveWait(legacy.id, { resolution: 'cleared' })
+})
+
+test('HTTP rejects an untyped log request and accepts only typed input and matching versioned decisions', async () => {
+  const { Hono } = await import('hono')
+  const { identityMiddleware } = await import('../../middleware/identity')
+  const { workStreamsRouter } = await import('../../routes/work-streams')
+  const { authHeaders } = await import('../../test-utils')
+  const app = new Hono().use('*', identityMiddleware).route('/api/workstreams', workStreamsRouter)
+  const post = (path: string, body: unknown) =>
+    app.fetch(
+      new Request(`http://test/api/workstreams/${stream.id}${path}`, {
+        method: 'POST',
+        headers: { ...authHeaders(ownerToken), 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    )
+  expect((await post('/request-input', { message: 'Send host logs' })).status).toBe(400)
+  const response = await post('/request-input', {
+    schemaVersion: 1,
+    kind: 'provide',
+    purpose: 'task-input',
+    input: { type: 'config-value', name: 'release channel' },
+    use: 'Choose the target',
+  })
+  expect(response.status).toBe(200)
+  const body = (await response.json()) as {
+    wait: { id: string; structured: { version: number; request: { kind: string } } }
+  }
+  expect(body.wait.structured?.request.kind).toBe('provide')
+  expect((await post(`/waits/${body.wait.id}/resolve`, { resolution: 'cleared' })).status).toBe(400)
+  expect(
+    (await post(`/waits/${body.wait.id}/input`, { action: 'provide', expectedVersion: 0, value: 'beta' })).status
+  ).toBe(200)
+  expect(
+    (await post(`/waits/${body.wait.id}/input`, { action: 'provide', expectedVersion: 0, value: 'production' })).status
+  ).not.toBe(200)
+})
+
+test('verified restart outcomes are free and forged restart claims are ordinary failures', async () => {
+  const api = await store()
+  const { commandCanceledForRestartError, createRestartContext } = await import('../sandbox/command-drain')
+  const origin = { agentId: worker.id, executionId: execution.id }
+  const input = { operationKey: 'restart-test', attempted: 'Read project files' }
+  const forged = Object.assign(new Error('Connection closed'), {
+    reason: 'core_restart',
+    restart: { restartId: 'fabricated', restartAt: new Date().toISOString() },
+  })
+  let record = await api.recordRecoveryFailure(origin, { ...input, invocationId: 'unknown', error: forged })
+  expect(record.state.failures).toBe(1)
+  const restart = createRestartContext()
+  record = await api.recordRecoveryFailure(origin, {
+    ...input,
+    invocationId: 'restart',
+    error: commandCanceledForRestartError(restart),
+  })
+  expect(record.state.failures).toBe(1)
+  expect(record.waitId).toBeNull()
+  const duplicateRestart = await api.recordRecoveryFailure(origin, {
+    ...input,
+    invocationId: 'restart-redelivered',
+    error: new Error('wrapped', { cause: commandCanceledForRestartError(restart) }),
+  })
+  expect(duplicateRestart.version).toBe(record.version)
+  const { recoveryAttempts } = await import('../../db')
+  const attempts = await db.select().from(recoveryAttempts).where(eq(recoveryAttempts.recoveryId, record.id))
+  expect(attempts.find((attempt) => attempt.outcome === 'restart')?.restartId).toBe(restart.restartId)
+  await execution.stop()
+  const nextExecution = await worker.queueExecution({ message: 'Resume safely' })
+  record = await api.recordRecoveryFailure(
+    { ...origin, executionId: nextExecution.id },
+    { ...input, invocationId: 'again', error: new Error('Connection closed') }
+  )
+  expect(record.state.failures).toBe(2)
+})
+
+test('concurrent delivery and decisions cannot double count, reset the manager limit, or bypass a pending recovery with a question', async () => {
+  const api = await store()
+  const origin = { agentId: worker.id, executionId: execution.id }
+  const input = { operationKey: 'race', attempted: 'Read project files', error: new Error('Connection closed') }
+  const deliveries = await Promise.all(
+    [1, 2].map(() => api.recordRecoveryFailure(origin, { ...input, invocationId: 'same' }))
+  )
+  expect(deliveries[0]!.id).toBe(deliveries[1]!.id)
+  expect(deliveries[1]!.state.failures).toBe(1)
+  await api.recordRecoveryFailure(origin, { ...input, invocationId: 'two' })
+  const record = await api.recordRecoveryFailure(origin, { ...input, invocationId: 'three' })
+  const { createAgentQuestion } = await import('../agents/questions')
+  await expect(
+    createAgentQuestion(
+      origin,
+      {
+        questions: [
+          {
+            id: 'continue',
+            type: 'select',
+            question: 'Continue?',
+            options: [
+              { value: 'yes', label: 'Yes' },
+              { value: 'no', label: 'No' },
+            ],
+          },
+        ],
+      },
+      { blocking: true }
+    )
+  ).rejects.toThrow('existing typed recovery')
+  const attempts = await Promise.allSettled(
+    [1, 2].map(() =>
+      api.decideRecovery(
+        record.id,
+        { action: 'continue', expectedVersion: record.version },
+        { agentId: squad.managerAgentId! }
+      )
+    )
+  )
+  expect(attempts.filter((attempt) => attempt.status === 'fulfilled')).toHaveLength(1)
+  expect(attempts.filter((attempt) => attempt.status === 'rejected')).toHaveLength(1)
+})
+
+test('runtime tools enforce persistent backoff, stop the fourth unexplained attempt, and never replay a command automatically', async () => {
+  const { Type } = await import('@sinclair/typebox')
+  const { wrapToolWithRecovery } = await import('./runtime')
+  let calls = 0
+  const tool = wrapToolWithRecovery(
+    {
+      name: 'bash',
+      label: 'Bash',
+      description: 'fixture',
+      parameters: Type.Object({ command: Type.String(), timeout: Type.Optional(Type.Number()) }),
+      execute: async () => {
+        calls++
+        throw new Error('Connection closed before a confirmed result')
+      },
+    },
+    () => ({ agentId: worker.id, executionId: execution.id })
+  )
+  const started = Date.now()
+  for (const [index, id] of ['one', 'two', 'three'].entries())
+    await expect(tool.execute(id!, { command: 'external-side-effect', timeout: index + 1 })).rejects.toThrow(
+      'Connection closed'
+    )
+  expect(Date.now() - started).toBeGreaterThanOrEqual(2900)
+  expect(calls).toBe(3)
+  await expect(tool.execute('four', { command: 'external-side-effect', timeout: 999 })).rejects.toThrow(
+    'authorized decision'
+  )
+  expect(calls).toBe(3)
+  const [wait] = await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, stream.id))
+  expect(wait.structured?.summary.attemptCount).toBe(3)
+}, 10000) // Includes the required real 1s/2s backoff and fixture DB writes.
+
+test('runtime restart is free, inspection remains possible, and a safe explicit retry resolves the record without a wait', async () => {
+  const { Type } = await import('@sinclair/typebox')
+  const { wrapToolWithRecovery } = await import('./runtime')
+  const { createRestartContext, commandCanceledForRestartError } = await import('../sandbox/command-drain')
+  let calls = 0
+  let inspected = false
+  const tool = wrapToolWithRecovery(
+    {
+      name: 'bash',
+      label: 'Bash',
+      description: 'fixture',
+      parameters: Type.Object({ command: Type.String() }),
+      execute: async () => {
+        if (++calls === 1) throw commandCanceledForRestartError(createRestartContext())
+        expect(inspected).toBe(true)
+        return { content: [{ type: 'text' as const, text: 'Confirmed completion' }], details: {} }
+      },
+    },
+    () => ({ agentId: worker.id, executionId: execution.id })
+  )
+  await expect(tool.execute('interrupted', { command: 'safe task' })).rejects.toThrow('cancelled by a Ficus restart')
+  expect(calls).toBe(1)
+  inspected = true
+  await tool.execute('retry', { command: 'safe task' })
+  expect(calls).toBe(2)
+  expect(await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, stream.id))).toHaveLength(0)
+  const { recoveryEpisodes } = await import('../../db')
+  const [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))
+  expect(record.state).toMatchObject({ state: 'resolved', failures: 0 })
+})
+
+test('unexplained execution failures share a durable three-attempt budget across replacement executions', async () => {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await execution.fail('Unexpected setup result', undefined, {
+      failureClass: 'execution_failure',
+      failureReason: 'setup_unclassified',
+    })
+    const waits = await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, stream.id))
+    expect(waits).toHaveLength(attempt === 3 ? 1 : 0)
+    if (attempt < 3) execution = await worker.queueExecution({ message: 'Retry setup safely' })
+  }
+  const [wait] = await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, stream.id))
+  expect(wait.actor).toBe('manager')
+  expect(wait.structured?.summary.attemptCount).toBe(3)
+})
+
+test('inner idempotent transport retries spend the same tool budget instead of multiplying it', async () => {
+  const { Type } = await import('@sinclair/typebox')
+  const { wrapToolWithRecovery } = await import('./runtime')
+  const { runIdempotentSandboxOperation } = await import('../sandbox/vm/retry')
+  const { SandboxTransportError } = await import('../sandbox/client/http-client')
+  let calls = 0
+  const tool = wrapToolWithRecovery(
+    {
+      name: 'read',
+      label: 'Read',
+      description: 'fixture',
+      parameters: Type.Object({}),
+      execute: async () =>
+        runIdempotentSandboxOperation({
+          sandboxId: 'fixture',
+          operationClass: 'read',
+          getClient: () => ({}),
+          recoverClient: async (client) => client,
+          operation: async () => {
+            calls++
+            throw new SandboxTransportError('connection_reset', 'response', new Error('fixture'))
+          },
+        }),
+    },
+    () => ({ agentId: worker.id, executionId: execution.id })
+  )
+  await expect(tool.execute('read-tool', {})).rejects.toThrow('Sandbox transport')
+  expect(calls).toBe(3)
+  const [wait] = await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, stream.id))
+  expect(wait.structured?.summary.attemptCount).toBe(3)
+  await expect(tool.execute('read-again', {})).rejects.toThrow('authorized decision')
+  expect(calls).toBe(3)
+}, 10000) // Three real read attempts plus the mandatory 1s/2s backoff.
+
+test('parallel duplicate operations cannot overrun a recovery budget or duplicate an unknown side effect', async () => {
+  const { Type } = await import('@sinclair/typebox')
+  const { wrapToolWithRecovery } = await import('./runtime')
+  let calls = 0
+  const tool = wrapToolWithRecovery(
+    {
+      name: 'bash',
+      label: 'Bash',
+      description: 'fixture',
+      parameters: Type.Object({ command: Type.String() }),
+      execute: async () => {
+        calls++
+        throw new Error('Connection closed')
+      },
+    },
+    () => ({ agentId: worker.id, executionId: execution.id })
+  )
+  const outcomes = await Promise.allSettled(
+    ['one', 'two', 'three', 'four'].map((id) => tool.execute(id, { command: 'external operation' }))
+  )
+  expect(calls).toBe(1)
+  expect(
+    outcomes.filter((outcome) => outcome.status === 'rejected' && String(outcome.reason).includes('already running'))
+  ).toHaveLength(3)
+  expect(await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, stream.id))).toHaveLength(0)
+})
+
+test('a recovery without a work stream still routes manager-first and exposes only the generated owner decision after the extra cycle', async () => {
+  await db.delete(workStreams).where(eq(workStreams.id, stream.id))
+  await db.update(agents).set({ ownerUserId: ownerId }).where(eq(agents.id, worker.id))
+  const api = await store()
+  const origin = { agentId: worker.id, executionId: execution.id }
+  const input = { operationKey: 'standalone', attempted: 'Read project files', error: new Error('Connection closed') }
+  let record = await api.recordRecoveryFailure(origin, { ...input, invocationId: 'one' })
+  for (const invocationId of ['two', 'three'])
+    record = await api.recordRecoveryFailure(origin, { ...input, invocationId })
+  expect(record.workStreamId).toBeNull()
+  expect(record.state.state).toBe('waiting-manager')
+  const notices = await db.select().from(inbox).where(eq(inbox.recipientId, squad.managerAgentId!))
+  expect(notices.some((notice) => notice.content.includes(record.id))).toBe(true)
+  const { listPendingActions } = await import('../agents/actions')
+  expect((await listPendingActions()).some((action) => action.id === `agent-recovery:${record.id}`)).toBe(false)
+  record = await api.decideRecovery(
+    record.id,
+    { action: 'continue', expectedVersion: record.version },
+    { agentId: squad.managerAgentId! }
+  )
+  for (const invocationId of ['four', 'five', 'six'])
+    record = await api.recordRecoveryFailure(origin, { ...input, invocationId })
+  const action = (await listPendingActions()).find((action) => action.id === `agent-recovery:${record.id}`)!
+  expect(action).toBeDefined()
+  expect((action.data as import('@ficus/shared').AgentErrorActionData).recovery?.structured.summary).toMatchObject({
+    attemptCount: 6,
+    lastError: 'Connection closed',
+  })
+  record = await api.decideRecovery(record.id, { action: 'stop', expectedVersion: record.version }, { userId: ownerId })
+  expect((await listPendingActions()).some((action) => action.id === `agent-recovery:${record.id}`)).toBe(false)
+})
+
+test('Continue preserves provider and other manual gates while recording a scoped continuation', async () => {
+  const api = await store()
+  const origin = { agentId: worker.id, executionId: execution.id }
+  let record
+  for (const invocationId of ['one', 'two', 'three'])
+    record = await api.recordRecoveryFailure(origin, {
+      operationKey: 'other-gates',
+      attempted: 'Read project files',
+      invocationId,
+      error: new Error('Connection closed'),
+    })
+  const other = await stream.block({ message: 'Independent system input', createdBy: 'system' })
+  const questionData = {
+    questions: [
+      {
+        id: 'rate_limit',
+        type: 'select' as const,
+        question: 'Provider unavailable',
+        options: [{ value: 'Continue', label: 'Continue' }],
+      },
+    ],
+  }
+  await db.update(agents).set({ status: 'waiting-input', questionData }).where(eq(agents.id, worker.id))
+  await api.decideRecovery(
+    record!.id,
+    { action: 'continue', expectedVersion: record!.version },
+    { agentId: squad.managerAgentId! }
+  )
+  const [held] = await db.select().from(workStreamWaits).where(eq(workStreamWaits.id, other.id))
+  expect(held.closedAt).toBeNull()
+  const [agent] = await db.select().from(agents).where(eq(agents.id, worker.id))
+  expect(agent.status).toBe('waiting-input')
+  expect(agent.questionData).toEqual(questionData)
+})
+
+test('standalone HTTP decisions enforce owner, scope, kind and version instead of generic Continue', async () => {
+  const api = await store()
+  await db.update(agents).set({ ownerUserId: ownerId }).where(eq(agents.id, worker.id))
+  await db.update(workStreams).set({ assigneeAgentId: null }).where(eq(workStreams.id, stream.id))
+  let record
+  for (const invocationId of ['one', 'two', 'three'])
+    record = await api.recordRecoveryFailure(
+      { agentId: worker.id, executionId: execution.id },
+      {
+        operationKey: 'standalone-http',
+        attempted: 'Read project files',
+        invocationId,
+        error: new Error('Connection closed'),
+      }
+    )
+  const { Hono } = await import('hono')
+  const { identityMiddleware } = await import('../../middleware/identity')
+  const { agentsRouter } = await import('../../routes/agents')
+  const { authHeaders } = await import('../../test-utils')
+  const app = new Hono().use('*', identityMiddleware).route('/api/agents', agentsRouter)
+  const post = (body: unknown) =>
+    app.fetch(
+      new Request(`http://test/api/agents/${worker.id}/recoveries/${record!.id}/input`, {
+        method: 'POST',
+        headers: { ...authHeaders(ownerToken), 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    )
+  expect((await post({ action: 'continue', expectedVersion: record!.version })).status).toBe(400)
+  record = await api.decideRecovery(
+    record!.id,
+    { action: 'forward', expectedVersion: record!.version },
+    { agentId: squad.managerAgentId! }
+  )
+  expect((await post({ action: 'choose', expectedVersion: record.version, optionId: 'anything' })).status).toBe(400)
+  expect((await post({ action: 'stop', expectedVersion: record.version })).status).toBe(200)
+  expect((await post({ action: 'continue', expectedVersion: record.version })).status).toBe(400)
+})
+
+test('unexplained pre-model startup failures automatically retry twice with persistent backoff and then hold', async () => {
+  const runners = await import('../../entities/agent-runners')
+  const { spyOn } = await import('bun:test')
+  const runner = spyOn(runners, 'createRunner').mockRejectedValue(new Error('Unexplained launch failure'))
+  const { Execution } = await import('../../entities/Execution')
+  const { recoveryEpisodes } = await import('../../db')
+  try {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const active = await worker.getActiveExecution()
+      expect(active).not.toBeNull()
+      const current = await Execution.mustFind(active!.id)
+      expect(await current.start()).toBe(true)
+      await current.run()
+      const [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))
+      expect(record!.state.failures).toBe(attempt + 1)
+      if (attempt < 2) {
+        expect(record!.state.nextRetryAt).toBeGreaterThan(Date.now() - 500)
+        expect((await worker.getActiveExecution())?.id).not.toBe(current.id)
+      } else {
+        expect(record!.state.state).toBe('waiting-manager')
+        expect(await worker.getActiveExecution()).toBeNull()
+      }
+    }
+    expect(runner).toHaveBeenCalledTimes(3)
+  } finally {
+    runner.mockRestore()
+  }
+}, 15000)

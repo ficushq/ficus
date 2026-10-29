@@ -23,7 +23,8 @@ export function workBucket(stream: WorkBucketFacts): WorkBucket {
     state === 'monitoring' ||
     state === 'waiting_on_dependency' ||
     state === 'delivery_external' ||
-    state === 'waiting_on_owner'
+    state === 'waiting_on_owner' ||
+    state === 'waiting_on_manager'
   )
     return 'externalWait'
   if (state === 'active' || state === 'in_progress') return 'running'

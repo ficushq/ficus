@@ -18,7 +18,7 @@ export function getCliHostPath(): string {
   return cliPathOverride ?? join(MONOREPO_ROOT, 'apps/cli/dist/ficus.js')
 }
 
-const CLI_ERROR = `[ERROR] The ficus CLI is not installed or not accessible. Tell the user that the CLI could not be found and ask them to install it (e.g. run "bun run build:cli" in the project root and ensure the "ficus" binary is on the PATH). You cannot execute any ficus commands until this is resolved.`
+const CLI_ERROR = `[ERROR] The ficus CLI is not installed or not accessible. Inspect and repair your authorized local tooling, then retry within the bounded recovery budget. Do not ask a person to run installation or diagnostic commands. If local recovery exhausts, use the existing typed recovery decision and manager-first routing. You cannot execute any ficus commands until the CLI is available.`
 
 /**
  * Generate CLI help for specific subcommands.
@@ -152,6 +152,7 @@ export const CLI_COMMAND_PERMISSIONS: Readonly<Record<string, readonly string[]>
   'agent follow-up': ['agents:run'],
   'agent reset': ['agents:run'],
   'agent clear-queue': ['agents:run'],
+  'agent recovery': ['agents:run'],
   'agent continue': ['agents:run'],
   'agent continue-halted': ['agents:run'],
   'agent sandbox-ps': ['agents:run'], // /:id/sandbox/processes
@@ -200,6 +201,7 @@ export const CLI_COMMAND_PERMISSIONS: Readonly<Record<string, readonly string[]>
   // input/review, or resolve waits are open to bound workers (workstreams:respond) and
   // stay listed.
   'workstream create': ['workstreams:create'],
+  'workstream resolve-input': ['workstreams:respond', 'workstreams:update'],
   'workstream wait-actor': ['workstreams:update'],
   'workstream pause': ['workstreams:update'],
   'workstream resume': ['workstreams:update'],

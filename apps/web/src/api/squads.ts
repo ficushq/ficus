@@ -347,6 +347,7 @@ export async function unsubscribeWorkStream(id: string): Promise<WorkStreamSubsc
 }
 
 export const resolveWorkStreamWait = client.squads.resolveWorkStreamWait
+export const resolveStructuredWorkStreamInput = client.squads.resolveStructuredWorkStreamInput
 
 // Agent Inbox
 

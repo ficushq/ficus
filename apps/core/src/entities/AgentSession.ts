@@ -1,3 +1,4 @@
+import { wrapToolWithRecovery } from '../services/recovery/runtime'
 import {
   createAgentSession,
   ModelRuntime,
@@ -174,10 +175,18 @@ export class AgentSession {
     // secrets; it fails open, so a tool never fails because of it.
     // Between the two, a shell command that created a PR or work stream gets `details.createdLinks` from its
     // redacted output, ahead of the firewall rewriting that output for the model.
+    const recoveryOrigin = () => {
+      const attribution = usage?.attribution?.()
+      return storage?.agentId && attribution?.executionId
+        ? { agentId: storage.agentId, executionId: attribution.executionId }
+        : undefined
+    }
     const customTools = wrapToolsWithFirewall(
       wrapShellToolsWithCreatedLinks(
         wrapToolsWithOutputRedaction(
-          [...(tools?.core ?? []), ...filterToolsByPolicy(tools?.available ?? [], tools?.allow, tools?.deny)],
+          [...(tools?.core ?? []), ...filterToolsByPolicy(tools?.available ?? [], tools?.allow, tools?.deny)].map(
+            (tool) => wrapToolWithRecovery(tool, recoveryOrigin)
+          ),
           getContentSafetyRegistry(),
           onStoredToolResult
         )
@@ -187,7 +196,11 @@ export class AgentSession {
 
     // Tools that pi extensions register (e.g. code-ast) bypass customTools; redact them the same way.
     const resourceLoader = await FicusResourceLoader.create(systemPrompt, skillPaths, extensionPaths, (tool) =>
-      wrapToolWithOutputRedaction(tool, getContentSafetyRegistry(), onStoredToolResult)
+      wrapToolWithOutputRedaction(
+        wrapToolWithRecovery(tool, recoveryOrigin),
+        getContentSafetyRegistry(),
+        onStoredToolResult
+      )
     )
     const sessionManager = storage
       ? // If storage is provided, use the session manager for the agent ID and sandbox workspace path. If no sandbox, it will just use the session directory, which is fine—it shouldn't be used for anything.

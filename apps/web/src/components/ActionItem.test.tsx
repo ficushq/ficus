@@ -1329,3 +1329,207 @@ describe('ActionItem expanded body spacing', () => {
     }
   })
 })
+
+describe('structured recovery decisions', () => {
+  for (const decision of ['continue', 'stop'] as const) {
+    test(`renders only the generated summary and sends exact versioned ${decision}`, async () => {
+      const dom = await acquireDomHarness({ url: 'http://localhost/' })
+      const rendered = dom.createRoot()
+      const originalFetch = globalThis.fetch
+      const calls: Array<{ url: string; body: unknown }> = []
+      globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({ url: String(input), body: init?.body ? JSON.parse(String(init.body)) : null })
+        return new dom.window.Response('{}', { status: 200 }) as unknown as Response
+      }) as unknown as typeof fetch
+      const recovery = manualAction('recovery-wait', 'LEGACY_FREE_PROSE_MUST_NOT_RENDER')
+      const data = recovery.data as WorkStreamActionData
+      data.wait.structured = {
+        request: {
+          schemaVersion: 1,
+          kind: 'continue',
+          recoveryId: '00000000-0000-4000-8000-000000000001',
+          expectedRecoveryVersion: 7,
+        },
+        summary: {
+          attempted: 'Read project files',
+          attemptCount: 6,
+          lastError: 'Connection closed',
+          text: 'I tried to read project files 6 times. The last error was: Connection closed',
+        },
+        version: 7,
+      }
+      try {
+        await dom.act(async () =>
+          rendered.root.render(
+            <MemoryRouter>
+              <QueryClientProvider client={new QueryClient()}>
+                <ActionCenterContent actions={[recovery]} isLoading={false} />
+              </QueryClientProvider>
+            </MemoryRouter>
+          )
+        )
+        expect(dom.window.document.body.textContent).toContain(data.wait.structured.summary.text)
+        expect(dom.window.document.body.textContent).not.toContain('LEGACY_FREE_PROSE_MUST_NOT_RENDER')
+        expect(dom.window.document.querySelector('textarea')).toBeNull()
+        const buttons = [...dom.window.document.querySelectorAll('button')]
+        expect(buttons.some((button) => button.textContent === 'Continue')).toBe(true)
+        expect(buttons.some((button) => button.textContent === 'Stop')).toBe(true)
+        await dom.act(async () => buttons.find((button) => button.textContent?.toLowerCase() === decision)!.click())
+        expect(calls.find((call) => call.url.endsWith('/waits/recovery-wait/input'))?.body).toEqual({
+          action: decision,
+          expectedVersion: 7,
+        })
+        expect(calls.some((call) => call.url.endsWith('/resolve'))).toBe(false)
+      } finally {
+        globalThis.fetch = originalFetch
+        await dom.cleanup()
+      }
+    })
+  }
+})
+
+for (const decision of ['continue', 'stop'] as const) {
+  test(`standalone recovery uses typed ${decision}, not generic agent Continue`, async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const rendered = dom.createRoot()
+    const originalFetch = globalThis.fetch
+    const calls: Array<{ url: string; body: unknown }> = []
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), body: init?.body ? JSON.parse(String(init.body)) : null })
+      return new dom.window.Response('{}', { status: 200 }) as unknown as Response
+    }) as unknown as typeof fetch
+    const recovery: PendingAction = {
+      id: 'agent-recovery:record',
+      type: 'agent-error',
+      priority: 1,
+      createdAt: new Date().toISOString(),
+      canRespond: true,
+      data: {
+        agentId: 'worker',
+        agentTypeId: 'engineer',
+        agentName: null,
+        squadId: null,
+        squadName: null,
+        ownerUserId: 'owner',
+        reason: 'LEGACY_NOT_RENDERED',
+        recovery: {
+          id: 'record',
+          structured: {
+            version: 7,
+            request: {
+              schemaVersion: 1,
+              kind: 'continue',
+              recoveryId: '00000000-0000-4000-8000-000000000001',
+              expectedRecoveryVersion: 7,
+            },
+            summary: {
+              attempted: 'Read files',
+              attemptCount: 6,
+              lastError: 'Connection closed',
+              text: 'I tried to read files 6 times. The last error was: Connection closed',
+            },
+          },
+        },
+      },
+    }
+    try {
+      await dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={new QueryClient()}>
+              <ActionCenterContent actions={[recovery]} isLoading={false} />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      expect(dom.window.document.body.textContent).not.toContain('LEGACY_NOT_RENDERED')
+      expect(dom.window.document.querySelector('textarea')).toBeNull()
+      const buttons = [...dom.window.document.querySelectorAll('button')]
+      expect(buttons.filter((button) => button.textContent === 'Continue')).toHaveLength(1)
+      await dom.act(async () => buttons.find((button) => button.textContent?.toLowerCase() === decision)!.click())
+      expect(calls.find((call) => call.url.endsWith('/agents/worker/recoveries/record/input'))?.body).toEqual({
+        action: decision,
+        expectedVersion: 7,
+      })
+      expect(calls.some((call) => call.url.endsWith('/continue'))).toBe(false)
+    } finally {
+      globalThis.fetch = originalFetch
+      await dom.cleanup()
+    }
+  })
+}
+
+for (const kind of ['decide', 'provide'] as const) {
+  test(`typed ${kind} renders the declared task input and submits its version`, async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const rendered = dom.createRoot()
+    const originalFetch = globalThis.fetch
+    const calls: Array<{ url: string; body: unknown }> = []
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), body: init?.body ? JSON.parse(String(init.body)) : null })
+      return new dom.window.Response('{}', { status: 200 }) as unknown as Response
+    }) as unknown as typeof fetch
+    const task = manualAction('task-input', 'LEGACY_NOT_RENDERED')
+    const data = task.data as WorkStreamActionData
+    data.wait.structured = {
+      version: 2,
+      summary: {
+        attempted: 'Choose a release target',
+        attemptCount: 0,
+        lastError: null,
+        text: 'Choose a release target.',
+      },
+      request:
+        kind === 'decide'
+          ? {
+              schemaVersion: 1,
+              kind,
+              purpose: 'task-decision',
+              subject: 'Release target',
+              options: [
+                { id: 'beta', label: 'Beta' },
+                { id: 'stable', label: 'Stable' },
+              ],
+            }
+          : {
+              schemaVersion: 1,
+              kind,
+              purpose: 'task-input',
+              input: { type: 'config-value', name: 'release channel' },
+              use: 'choose the target',
+            },
+    }
+    try {
+      await dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={new QueryClient()}>
+              <ActionCenterContent actions={[task]} isLoading={false} />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      expect(dom.window.document.body.textContent).not.toContain('LEGACY_NOT_RENDERED')
+      if (kind === 'provide') {
+        expect(dom.window.document.querySelector('label')?.textContent).toContain('release channel')
+        const input = dom.window.document.querySelector('textarea')!
+        await dom.act(async () => {
+          Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, 'value')!.set!.call(input, 'beta')
+          input.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+        })
+      } else expect(dom.window.document.querySelector('textarea')).toBeNull()
+      const label = kind === 'decide' ? 'Beta' : 'Provide'
+      await dom.act(async () =>
+        [...dom.window.document.querySelectorAll('button')].find((button) => button.textContent === label)!.click()
+      )
+      expect(calls.find((call) => call.url.endsWith('/waits/task-input/input'))?.body).toEqual(
+        kind === 'decide'
+          ? { action: 'choose', optionId: 'beta', expectedVersion: 2 }
+          : { action: 'provide', value: 'beta', expectedVersion: 2 }
+      )
+    } finally {
+      globalThis.fetch = originalFetch
+      await dom.cleanup()
+    }
+  })
+}

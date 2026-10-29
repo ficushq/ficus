@@ -98,6 +98,9 @@ describe('the CLI named in agent prompts', () => {
     try {
       const error = await getSquadManagerCliHelp()
       expect(error).toContain('[ERROR] The ficus CLI is not installed')
+      expect(error).toContain('bounded recovery budget')
+      expect(error).not.toContain('ask them to install')
+      expect(error).not.toContain('bun run build:cli')
       expect(error).toContain('the "ficus" binary is on the PATH')
       expect(error).toContain('You cannot execute any ficus commands')
     } finally {

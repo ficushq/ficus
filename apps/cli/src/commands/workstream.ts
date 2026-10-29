@@ -8,13 +8,20 @@ import {
   parseTrackedResourceUrl,
   trackedResourceLabel,
   parseDependencySpec,
+  manualInputRequestSchema,
+  manualWaitDecisionSchema,
 } from '@ficus/shared'
-import { addStructuredInputOptions, readWorkflowSource } from '../structured-input'
+import {
+  addStructuredInputOptions,
+  readWorkflowSource,
+  readStructuredInput,
+  validateStructuredInput,
+} from '../structured-input'
 import { registerWorkstreamFlowCommands, type WorkstreamFlowDependencies } from './workstream-flow'
 import { Command, Option } from 'commander'
 import { apiGet, apiPost, apiPatch, apiDelete } from '../client'
 import { output, outputTable, outputError, isJsonMode, setOutputOptions } from '../output'
-import { WORK_STREAM_COMPLETION_MODES, WORK_STREAM_PRIORITIES, WORK_STREAM_WAIT_ACTORS } from '@ficus/shared'
+import { WORK_STREAM_COMPLETION_MODES, WORK_STREAM_PRIORITIES } from '@ficus/shared'
 import { buildMetadataDelta, getMetadataValue, parseMetadataPath, parseMetadataValue } from '../metadata'
 import { selectOpenWait } from './workstream-wait-selection'
 import { describeAttention, performAttentionSubscribe, type SubscriptionResponse } from './attention'
@@ -32,6 +39,8 @@ import type {
   WorkStreamDependencyEdge,
   WorkStreamDependencyInput,
 } from '@ficus/shared'
+
+const EDITABLE_WAIT_ACTORS = ['human', 'owner'] as const
 
 export interface WorkStream {
   number?: number
@@ -726,7 +735,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           if (options.status === 'blocked' || options.status === 'review') {
             outputError(
               new Error(
-                `'${options.status}' is no longer a status. Use 'ficus workstream ${options.status === 'blocked' ? 'request-input <id> -m "<why>"' : 'request-review <id> -m "<note>"'}' instead.`
+                `'${options.status}' is no longer a status. Use 'ficus workstream ${options.status === 'blocked' ? 'request-input <id> --content <typed-request>' : 'request-review <id> -m "<note>"'}' instead.`
               )
             )
             return
@@ -786,41 +795,38 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     return { ws, wait }
   }
 
-  // ficus workstream request-input <id> --message <msg> [--file <path>...]
-  ws.command('request-input <id>')
-    .description(
-      'Open a manual wait: the work stream cannot proceed until the named actor acts (--actor human by default)'
-    )
-    .requiredOption('-m, --message <msg>', 'What input/action is needed, and from whom (the wait message)')
-    .addOption(
-      new Option(
-        '--actor <actor>',
-        "Who must act: human (the user/operator must act; shown to users as an action to take) or owner (the stream's owning agent; the squad manager if none). Questions use ask_human; prerequisite deliverables use dependsOn"
-      ).choices([...WORK_STREAM_WAIT_ACTORS])
-    )
-    .option('-f, --file <path>', 'File to include for context (can repeat; stored on the work stream)', collect, [])
-    .option('--scope <scope>', 'Wait scope: stream or attempt (agents default to their active attempt)')
-    .option('--attempt <id>', 'Flow attempt ID to block', parseInt)
-    .action(async (id, options) => {
-      try {
-        if (options.file.length > 0) {
-          await apiPatch<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}`, { files: options.file })
-        }
-        const ws = await apiPost<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}/request-input`, {
-          message: options.message,
-          scope: options.scope,
-          flowAttemptId: options.attempt,
-          actor: options.actor,
-        })
-        const actor = options.actor && options.actor !== 'human' ? ` [actor: ${options.actor}]` : ''
-        output(
-          ws,
-          `Work stream ${workStreamLabel(ws)} is requesting input (manual wait opened${actor}): ${options.message}`
-        )
-      } catch (error) {
-        outputError(error as Error)
-      }
-    })
+  addStructuredInputOptions(
+    ws
+      .command('request-input <id>')
+      .description('Open a typed continue, decide or provide wait; recovery summaries and routing are server-owned')
+  ).action(async (id, options) => {
+    try {
+      const input = validateStructuredInput(manualInputRequestSchema, await readStructuredInput(options))
+      const result = await apiPost<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}/request-input`, input)
+      output(result, `Work stream ${workStreamLabel(result)} is requesting ${input.kind} input`)
+    } catch (error) {
+      outputError(error as Error)
+    }
+  })
+
+  addStructuredInputOptions(
+    ws
+      .command('resolve-input <id> <waitId>')
+      .description(
+        'Resolve a typed input: continue, stop, choose, provide, or manager-only forward; requires expectedVersion'
+      )
+  ).action(async (id, waitId, options) => {
+    try {
+      const decision = validateStructuredInput(manualWaitDecisionSchema, await readStructuredInput(options))
+      const result = await apiPost<WorkStream>(
+        `/api/workstreams/${encodeURIComponent(id)}/waits/${encodeURIComponent(waitId)}/input`,
+        decision
+      )
+      output(result, `Input decision recorded: ${decision.action}`)
+    } catch (error) {
+      outputError(error as Error)
+    }
+  })
 
   // ficus workstream wait-actor <id> <actor> [--wait <waitId>] [-m <note>]
   ws.command('wait-actor <id> <actor>')
@@ -831,8 +837,8 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .option('-m, --message <note>', 'Why the actor changed (recorded in the wait audit trail)')
     .action(async (id, actor, options) => {
       try {
-        if (!(WORK_STREAM_WAIT_ACTORS as readonly string[]).includes(actor)) {
-          throw new Error(`Invalid actor '${actor}'. Use one of: ${WORK_STREAM_WAIT_ACTORS.join(', ')}`)
+        if (!(EDITABLE_WAIT_ACTORS as readonly string[]).includes(actor)) {
+          throw new Error(`Invalid actor '${actor}'. Use one of: ${EDITABLE_WAIT_ACTORS.join(', ')}`)
         }
         const { ws: found, wait } = await resolveTargetWait(id, 'manual', 'manual (input-request)', options.wait)
         const ws = await apiPost<WorkStream & { changed?: boolean }>(

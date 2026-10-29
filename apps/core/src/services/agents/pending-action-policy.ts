@@ -151,8 +151,15 @@ export async function evaluatePendingAction(
   }
 
   if (action.type === 'agent-error') {
-    const data = action.data as { ownerUserId: string | null; squadId: string | null }
+    const data = action.data as import('@ficus/shared').AgentErrorActionData
     const owner = Boolean(userId && data.ownerUserId === userId)
+    if (data.recovery) {
+      const visible = owner && (!data.squadId || canRead) && !data.recovery.structured.stopped
+      return {
+        visible,
+        canRespond: visible && (!data.squadId || (await hasPermission(identity, 'agents:run', data.squadId))),
+      }
+    }
     return {
       visible: owner || (canRead && squadUnmuted),
       canRespond:
@@ -190,6 +197,23 @@ export async function evaluatePendingAction(
 
   const data = action.data as WorkStreamActionData
   const workStreamId = data.workStreamId
+  if (data.wait.structured?.request.kind === 'continue') {
+    const [stream] = await db
+      .select({ requestingUserId: workStreams.requestingUserId })
+      .from(workStreams)
+      .where(eq(workStreams.id, workStreamId))
+    const owner = identity.type === 'user' && identity.userId === stream?.requestingUserId
+    const actionable = owner && canRead && !data.wait.structured.stopped && data.wait.actor === 'human'
+    return {
+      visible: actionable && context.attention.forWorkStream(workStreamId, squadId).decisions !== 'mute',
+      canRespond: Boolean(
+        actionable &&
+        squadId &&
+        ((await hasPermission(identity, 'workstreams:respond', squadId)) ||
+          (await hasPermission(identity, 'workstreams:update', squadId)))
+      ),
+    }
+  }
   if (data.wait.resolutionHandler === 'workflow') {
     const [run] = await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, workStreamId))
     const [stream] = await db.select().from(workStreams).where(eq(workStreams.id, workStreamId))

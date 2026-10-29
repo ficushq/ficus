@@ -2099,3 +2099,217 @@ test('queued live revision receipts retain unbound identities after admission an
   expect(await advanceFlow(id, command, requestId, actor)).toEqual(first)
   expect(admitted.state.revisions!.at(-1)!.outcomeUpdates).toEqual(first.outcomeUpdates!)
 })
+
+test('inline handoff rebinds only its exact running execution and keeps stale question origins rejected', async () => {
+  const definition = structuredClone(flow)
+  definition.steps[1] = {
+    ...(definition.steps[1] as Extract<WorkflowStep, { kind: 'agent' }>),
+    kind: 'agent',
+    participant: 'builder',
+  }
+  const id = await create('active', definition)
+  const initial = (await getFlow(id))!
+  const agentId = initial.attemptAgents['1']!
+  const origin = { workStreamId: id, attemptId: 1, stepId: 'build' }
+  const [running] = await db.insert(executions).values({ agentId, status: 'running', flowContext: origin }).returning()
+  const [stale] = await db.insert(executions).values({ agentId, status: 'completed', flowContext: origin }).returning()
+  const [handoff] = await db
+    .select()
+    .from(inbox)
+    .where(eq(inbox.idempotencyKey, `flow:${id}:1`))
+  for (const execution of [running!, stale!])
+    await db.insert(chatMessages).values({
+      agentId,
+      role: 'human',
+      content: 'Build the deliverable',
+      pending: false,
+      metadata: {
+        source: 'inbox',
+        inboxMessageIds: [handoff!.id],
+        executionId: execution.id,
+        consumedAt: execution.startedAt.toISOString(),
+      },
+    })
+  const result = await advanceFlow(
+    id,
+    { action: 'complete', expectedVersion: initial.version, attemptId: 1, outcome: 'completed', evidence: 'Verified' },
+    randomUUID(),
+    { type: 'agent', agentId, squadId }
+  )
+  expect(result.assignments?.[0]?.attemptId).toBe(2)
+  const [rebound] = await db.select().from(executions).where(eq(executions.id, running!.id))
+  expect(rebound!.flowContext).toEqual({ workStreamId: id, attemptId: 2, stepId: 'review' })
+  expect((await getFlow(id))!.state.attempts[1]!.responseAssignment?.executionId).toBe(running!.id)
+  const { createAgentQuestion } = await import('../agents/questions')
+  const data = { questions: [{ id: 'layout', type: 'text' as const, question: 'Which layout?' }] }
+  await expect(createAgentQuestion({ agentId, executionId: stale!.id }, data, { blocking: true })).rejects.toThrow(
+    'superseded'
+  )
+  const question = await createAgentQuestion({ agentId, executionId: running!.id }, data, { blocking: true })
+  expect(question.openedWaitWorkStreamIds).toEqual([id])
+  expect((await listOpenWaits(db, id))[0]?.flowAttemptId).toBe(2)
+})
+
+test('inline handoff does not rebind an unrelated or ambiguous running execution', async () => {
+  for (const ambiguous of [false, true]) {
+    const definition = structuredClone(flow)
+    definition.steps[1] = {
+      ...(definition.steps[1] as Extract<WorkflowStep, { kind: 'agent' }>),
+      kind: 'agent',
+      participant: 'builder',
+    }
+    const id = await create('active', definition)
+    const initial = (await getFlow(id))!
+    const agentId = initial.attemptAgents['1']!
+    const context = { workStreamId: ambiguous ? id : randomUUID(), attemptId: 1, stepId: 'build' }
+    const [running] = await db
+      .insert(executions)
+      .values({ agentId, status: 'running', flowContext: context })
+      .returning()
+    if (ambiguous) await db.insert(executions).values({ agentId, status: 'running', flowContext: context })
+    await advanceFlow(
+      id,
+      {
+        action: 'complete',
+        expectedVersion: initial.version,
+        attemptId: 1,
+        outcome: 'completed',
+        evidence: 'Verified',
+      },
+      randomUUID(),
+      { type: 'agent', agentId, squadId }
+    )
+    const [unchanged] = await db.select().from(executions).where(eq(executions.id, running!.id))
+    expect(unchanged!.flowContext).toEqual(context)
+    expect((await getFlow(id))!.state.attempts[1]!.responseAssignment?.executionId).toBeUndefined()
+  }
+})
+
+test('authorized replanning retires an exhausted recovery without granting generic unblock authority', async () => {
+  const id = await create('active')
+  const run = (await getFlow(id))!
+  const agentId = run.attemptAgents['1']!
+  const [execution] = await db
+    .insert(executions)
+    .values({ agentId, status: 'running', flowContext: { workStreamId: id, attemptId: 1, stepId: 'build' } })
+    .returning()
+  const { recordRecoveryFailure } = await import('../recovery/store')
+  for (const invocationId of ['one', 'two', 'three'])
+    await recordRecoveryFailure(
+      { agentId, executionId: execution!.id },
+      { operationKey: 'replan-fixture', invocationId, attempted: 'Read project files', error: new Error('Read failed') }
+    )
+  const stream = await WorkStream.mustFind(id)
+  await expect(stream.unblock()).rejects.toThrow('typed')
+  await advanceFlow(
+    id,
+    {
+      action: 'revise',
+      expectedVersion: run.version,
+      attemptId: 1,
+      operations: [
+        { op: 'put-step', step: { ...run.state.definition.steps[0]!, instructions: 'Use the alternative task plan' } },
+      ],
+      reason: 'Choose an alternative supported path',
+      active: 'restart',
+    },
+    randomUUID(),
+    actor
+  )
+  expect(await listOpenWaits(db, id)).toHaveLength(0)
+  const { recoveryEpisodes } = await import('../../db')
+  const [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, agentId))
+  expect(record!.state.state).toBe('resolved')
+  expect(record!.state.failures).toBe(3)
+})
+
+test('parked recovery Continue durably resumes the inline current attempt once through normal admission', async () => {
+  const definition = structuredClone(flow)
+  definition.steps[1] = {
+    ...(definition.steps[1] as Extract<WorkflowStep, { kind: 'agent' }>),
+    kind: 'agent',
+    participant: 'builder',
+  }
+  const id = await create('active', definition)
+  await ensureFlowDispatch(id)
+  const initial = (await getFlow(id))!
+  const agentId = initial.attemptAgents['1']!
+  const [execution] = await db
+    .insert(executions)
+    .values({ agentId, status: 'running', flowContext: { workStreamId: id, attemptId: 1, stepId: 'build' } })
+    .returning()
+  await advanceFlow(
+    id,
+    { action: 'complete', expectedVersion: initial.version, attemptId: 1, outcome: 'completed', evidence: 'Verified' },
+    randomUUID(),
+    { type: 'agent', agentId, squadId }
+  )
+  const manager = await Agent.create({ agentTypeId, squadId })
+  const [original] = await db.select().from(squads).where(eq(squads.id, squadId))
+  const [capacityHolder] = await db
+    .insert(workStreams)
+    .values({ squadId, title: 'Capacity holder', status: 'active' })
+    .returning()
+  await db.update(squads).set({ managerAgentId: manager.id, maxConcurrentWorkStreams: 1 }).where(eq(squads.id, squadId))
+  try {
+    const recovery = await import('../recovery/store')
+    let record
+    for (const invocationId of ['one', 'two', 'three'])
+      record = await recovery.recordRecoveryFailure(
+        { agentId, executionId: execution!.id },
+        {
+          operationKey: 'parked-tool',
+          attempted: 'Read project files',
+          invocationId,
+          error: new Error('Connection closed'),
+        }
+      )
+    expect(record!.flowAttemptId).toBe(2)
+    await db
+      .update(executions)
+      .set({ status: 'completed', endedAt: new Date() })
+      .where(eq(executions.id, execution!.id))
+    await db.update(workStreams).set({ status: 'queued' }).where(eq(workStreams.id, id))
+    record = await recovery.decideRecovery(
+      record!.id,
+      { action: 'continue', expectedVersion: record!.version },
+      { agentId: manager.id }
+    )
+    const [intent] = await db
+      .select()
+      .from(inbox)
+      .where(eq(inbox.idempotencyKey, `recovery-continued:${record.id}:${record.version}`))
+    expect(intent!.metadata?.attemptId).toBe(2)
+    expect(intent!.deliveredAt).toBeNull()
+    expect(await isCurrentFlowMessage(intent!)).toBe(false)
+    const continuationCalls = () =>
+      send.mock.calls.filter(([, options]) => {
+        const ids = options?.metadata?.inboxMessageIds
+        return Array.isArray(ids) && ids.includes(intent!.id)
+      }).length
+    expect(continuationCalls()).toBe(0)
+    await db.update(squads).set({ maxConcurrentWorkStreams: null }).where(eq(squads.id, squadId))
+    const { promoteEligibleQueuedStreams } = await import('../work-streams/admission')
+    await promoteEligibleQueuedStreams(squadId)
+    await promoteEligibleQueuedStreams(squadId)
+    await ensureFlowDispatch(id)
+    expect(continuationCalls()).toBe(1)
+    const [delivered] = await db.select().from(inbox).where(eq(inbox.id, intent!.id))
+    expect(delivered!.deliveredAt).not.toBeNull()
+    expect(await isCurrentFlowMessage(delivered!)).toBe(true)
+    const run = (await getFlow(id))!
+    await advanceFlow(
+      id,
+      { action: 'complete', expectedVersion: run.version, attemptId: 2, outcome: 'approved', evidence: 'Reviewed' },
+      randomUUID(),
+      { type: 'agent', agentId, squadId }
+    )
+    expect(await isCurrentFlowMessage(delivered!)).toBe(false)
+  } finally {
+    await db.delete(workStreams).where(eq(workStreams.id, capacityHolder!.id))
+    await db
+      .update(squads)
+      .set({ managerAgentId: original!.managerAgentId, maxConcurrentWorkStreams: original!.maxConcurrentWorkStreams })
+      .where(eq(squads.id, squadId))
+  }
+})

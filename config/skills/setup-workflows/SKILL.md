@@ -171,7 +171,7 @@ wake paused participants, or schedule messages to bypass the hold.
 
 ## Explain waits and pause when choosing a flow
 
-Blocking questions and manual requests from flow agents default to their own active attempt. Other branches continue, and the join waits. Use `waitScope: stream` for a shared question blocker or `ficus workstream request-input ID --scope stream -m "Reason"` for a shared manual blocker. A response provides input without approving the step. Use a human-approval step for an enforced decision.
+Blocking questions and manual requests from flow agents default to their own active attempt. Other branches continue, and the join waits. Use `waitScope: stream` for a shared question blocker or `scope: stream` in a typed `ficus workstream request-input ID --content` payload for a shared manual blocker. A response provides input without approving the step. Use a human-approval step for an enforced decision.
 
 Whole-stream pause interrupts work until explicit resume; park separately to release capacity.
 

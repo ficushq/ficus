@@ -1,0 +1,184 @@
+import { createHash } from 'node:crypto'
+import { setTimeout as delay } from 'node:timers/promises'
+import type { ToolDefinition } from '@earendil-works/pi-coding-agent'
+import { FORENSIC_ASK_REFUSAL, CREDENTIAL_INPUT_REFUSAL } from '@ficus/shared'
+import {
+  recordRecoveryFailure,
+  settleRecoveryOperation,
+  recoveryRetryDelay,
+  RecoveryHeldError,
+  type RecoveryOrigin,
+} from './store'
+import { commandCanceledForRestartError, restartContextForCommandError } from '../sandbox/command-drain'
+import { toolRecoveryContext, type ToolRecoveryContext } from './context'
+import { createLogger } from '../../lib/infra/logger'
+const log = createLogger('recovery-boundary')
+
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue)
+  if (value && typeof value === 'object')
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, entry]) => [key, stableValue(entry)])
+    )
+  return value
+}
+
+/** Arguments are hashed in memory, never stored or forwarded to a person. */
+function operationKey(name: string, params: unknown): string {
+  // A longer deadline is a retry of the same command, not a fresh budget.
+  if (['bash', 'squad_bash'].includes(name) && params && typeof params === 'object')
+    params = Object.fromEntries(Object.entries(params).filter(([key]) => key !== 'timeout'))
+  return createHash('sha256')
+    .update(JSON.stringify([name, stableValue(params)]))
+    .digest('hex')
+}
+function attemptedAction(name: string): string {
+  if (name === 'bash' || name === 'squad_bash') return 'run the requested command'
+  if (name === 'read') return 'read the project files'
+  if (name === 'write' || name === 'edit') return 'update the project files'
+  if (name === 'sandbox_status') return 'check whether the workspace is ready'
+  return 'complete the requested operation'
+}
+function explainedFailure(error: unknown): boolean {
+  if (error instanceof RecoveryHeldError || error instanceof RecoveryBusyError) return true
+  if (!(error instanceof Error)) return false
+  if (
+    error.name === 'AbortError' ||
+    error.name === 'ZodError' ||
+    error.message === FORENSIC_ASK_REFUSAL ||
+    error.message === CREDENTIAL_INPUT_REFUSAL
+  )
+    return true
+  // The shell completed and returned a normal exit status. This is task feedback
+  // (including deliberate red tests), not an unexplained lost command outcome.
+  if (/\nCommand exited with code -?\d+\s*$/.test(error.message)) return true
+  const code = (error as Error & { code?: string }).code
+  if (code && ['ENOENT', 'EACCES', 'EPERM', 'EINVAL', 'EISDIR', 'ENOTDIR', 'EEXIST'].includes(code)) return true
+  const status = (error as Error & { status?: number }).status
+  return status !== undefined && [400, 401, 403, 404, 409, 422].includes(status)
+}
+
+const activeOperations = new Set<string>()
+
+class RecoveryBusyError extends Error {
+  constructor() {
+    super('This operation is already running; inspect its result rather than starting a duplicate.')
+  }
+}
+async function exclusiveOperation<T>(key: string, run: () => Promise<T>): Promise<T> {
+  if (activeOperations.has(key)) throw new RecoveryBusyError()
+  activeOperations.add(key)
+  try {
+    return await run()
+  } finally {
+    activeOperations.delete(key)
+  }
+}
+
+/** Observes real calls; it never blindly repeats Bash or external side effects. */
+export function wrapToolWithRecovery<T extends ToolDefinition>(tool: T, origin: () => RecoveryOrigin | undefined): T {
+  const execute = tool.execute.bind(tool)
+  return {
+    ...tool,
+    execute: async (...args: Parameters<T['execute']>) => {
+      const source = origin()
+      if (!source) return execute(...args)
+      const [toolCallId, params, signal] = args
+      const operation = operationKey(tool.name, params)
+      return exclusiveOperation(`${source.agentId}:${operation}`, async () => {
+        let ordinal = 0
+        const observed = new Set<unknown>()
+        const context: ToolRecoveryContext = {
+          beforeAttempt: async () => {
+            signal?.throwIfAborted()
+            for (;;) {
+              const wait = await recoveryRetryDelay(source, operation)
+              if (!wait) break
+              await delay(wait, undefined, { signal })
+            }
+          },
+          failed: async (error) => {
+            const record = await recordRecoveryFailure(source, {
+              operationKey: operation,
+              attempted: attemptedAction(tool.name),
+              invocationId: createHash('sha256')
+                .update(`${source.executionId}:${toolCallId}:${ordinal++}`)
+                .digest('hex'),
+              error,
+            })
+            observed.add(error)
+            context.latest = record
+            return record
+          },
+          observed: (error) => {
+            const seen = new Set<unknown>()
+            while (error && !seen.has(error)) {
+              if (observed.has(error)) return true
+              seen.add(error)
+              error = error instanceof Error ? error.cause : undefined
+            }
+            return false
+          },
+        }
+        await context.beforeAttempt()
+        return toolRecoveryContext.run(context, async () => {
+          let result: Awaited<ReturnType<T['execute']>>
+          try {
+            result = (await execute(...args)) as Awaited<ReturnType<T['execute']>>
+            if ((result as { isError?: boolean }).isError) {
+              const text = result.content
+                .filter((part) => part.type === 'text')
+                .map((part) => (part.type === 'text' ? part.text : ''))
+                .join('\n')
+              throw new Error(text || 'The tool failed without a confirmed result')
+            }
+          } catch (error) {
+            const restart = restartContextForCommandError(error)
+            if ((!restart && signal?.aborted) || explainedFailure(error)) {
+              if (!(error instanceof RecoveryHeldError))
+                await settleRecoveryOperation(
+                  source,
+                  operation,
+                  `${source.executionId}:${toolCallId}:explained`,
+                  'explained'
+                ).catch(() => {})
+              throw error
+            }
+            let record = context.latest
+            if (!context.observed(error)) {
+              try {
+                record = await context.failed(error)
+              } catch (accountingError) {
+                log.error('Unable to persist recovery outcome', accountingError)
+                const message = error instanceof Error ? error.message : String(error)
+                throw new Error(
+                  `${message}\n\nRecovery accounting is unavailable. Do not repeat the operation until its affected state can be reconciled.`,
+                  { cause: error }
+                )
+              }
+            }
+            const guidance =
+              record?.state.state === 'recovering'
+                ? 'Inspect the affected state inside your authorized workspace before an explicit safe retry. Do not repeat unknown external side effects.'
+                : 'The unexplained-failure budget is exhausted. A generated Continue/Stop recovery decision is pending; do not request technical evidence from a person.'
+            let message = error instanceof Error ? error.message : String(error)
+            if (restart && !message.startsWith('This command was cancelled by a Ficus restart at '))
+              message = `${commandCanceledForRestartError(restart).message} ${message}`
+            throw Object.assign(
+              new Error(`${message}\n\n${guidance}`, { cause: error }),
+              restart ? { reason: 'core_restart', restart } : {}
+            )
+          }
+          // An accounting outage must not turn a confirmed successful side effect
+          // into an apparently failed operation that an agent might repeat.
+          await settleRecoveryOperation(source, operation, `${source.executionId}:${toolCallId}:success`).catch(
+            (error) => log.error('Unable to settle confirmed recovery outcome', error)
+          )
+          return result
+        })
+      })
+    },
+  } as T
+}

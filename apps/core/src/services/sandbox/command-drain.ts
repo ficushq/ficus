@@ -18,9 +18,22 @@ const RESTART = 'the Ficus worker is restarting (a deploy or restart)'
 export const COMMAND_REFUSED_FOR_RESTART =
   `Command not started: ${RESTART}. Nothing ran. Try it again; ` + 'your work resumes automatically after the restart.'
 
+const restartErrors = new WeakMap<Error, RestartContext>()
+
+export function restartContextForCommandError(error: unknown): RestartContext | undefined {
+  const seen = new Set<Error>()
+  while (error instanceof Error && !seen.has(error)) {
+    const restart = restartErrors.get(error)
+    if (restart) return restart
+    seen.add(error)
+    error = error.cause
+  }
+  return undefined
+}
+
 /** What an agent sees for a command the restart cut short. */
 export function commandCanceledForRestartError(restart: RestartContext, cleanupError?: Error): Error {
-  return Object.assign(
+  const error = Object.assign(
     new Error(
       `This command was cancelled by a Ficus restart at ${restart.restartedAt}; nothing is wrong with your work or the box. Re-run it when your sandbox is back. ` +
         `It may have partial effects: check the affected state before retrying. [reason: core_restart; restart id: ${restart.restartId}]` +
@@ -31,6 +44,8 @@ export function commandCanceledForRestartError(restart: RestartContext, cleanupE
     ),
     { reason: 'core_restart' as const, restart }
   )
+  restartErrors.set(error, restart)
+  return error
 }
 
 /** Created once at the authoritative shutdown boundary, shared by tools and durable notices. */

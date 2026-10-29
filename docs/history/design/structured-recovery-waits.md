@@ -4,7 +4,7 @@ Status: **approved for implementation on 2026-10-28, with the binding constraint
 
 The restart-attribution prerequisite is implemented in
 [Restart interruption context](../../wiki/restart-recovery.md). This document
-defines the approved remaining server/CLI/UI contract. It is not yet implemented behavior.
+defines the approved server/CLI/UI implementation contract. Deployment is a separate authorized operation.
 
 ## Goals and boundaries
 

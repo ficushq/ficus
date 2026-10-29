@@ -1,3 +1,4 @@
+import { StructuredInputActions } from './StructuredInputActions'
 import { WorktreeCleanupSettings } from './WorktreeCleanupSettings'
 import { workStreamTitle, workStreamWaitActor } from '@ficus/shared'
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
@@ -334,12 +335,16 @@ export function WorkStreamDetailModal({
             </div>
             <div className="text-sm text-secondary max-h-64 overflow-y-auto">
               <MarkdownContent variant="document">
-                {(reviewWait ? (reviewWait.message ?? workStream.handoffMessage) : manualWait?.message) ?? ''}
+                {(reviewWait
+                  ? (reviewWait.message ?? workStream.handoffMessage)
+                  : (manualWait?.structured?.summary.text ?? manualWait?.message)) ?? ''}
               </MarkdownContent>
             </div>
             {manualWait && workStreamWaitActor(manualWait) !== 'human' && (
               <p className="mt-1.5 text-xs text-muted">
-                The stream&apos;s owner agent clears this wait; no action is needed from you.
+                {workStreamWaitActor(manualWait) === 'manager'
+                  ? 'The squad manager handles this recovery; no action is needed from you.'
+                  : 'The stream’s owner agent clears this wait; no action is needed from you.'}
               </p>
             )}
 
@@ -348,7 +353,14 @@ export function WorkStreamDetailModal({
                 {actionErrorMessage(respondMutation.error)}
               </p>
             )}
-            {isResponding ? (
+            {manualWait?.structured ? (
+              <StructuredInputActions
+                workStreamId={workStream.id}
+                wait={manualWait}
+                showSummary={false}
+                disabled={!canRespondToWait}
+              />
+            ) : isResponding ? (
               <div className="mt-2">
                 <MultilineResponseField
                   value={response}

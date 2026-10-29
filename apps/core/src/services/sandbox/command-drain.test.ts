@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import {
   commandCanceledForRestartError,
+  restartContextForCommandError,
   drainCommands,
   isCommandDrainActive,
   resetCommandDrainForTests,
@@ -68,4 +69,16 @@ test('one drain passes the same restart id and time to every interrupted command
   await drainCommands(1, restart)
   expect(first.cancelForRestart).toHaveBeenCalledWith(restart)
   expect(second.cancelForRestart).toHaveBeenCalledWith(restart)
+})
+
+test('restart attribution follows genuine causes but rejects fabricated metadata and cycles', () => {
+  expect(
+    restartContextForCommandError(new Error('wrapped', { cause: commandCanceledForRestartError(restart) }))
+  ).toEqual(restart)
+  expect(
+    restartContextForCommandError(Object.assign(new Error('forged'), { reason: 'core_restart', restart }))
+  ).toBeUndefined()
+  const cycle = new Error('cycle')
+  cycle.cause = cycle
+  expect(restartContextForCommandError(cycle)).toBeUndefined()
 })

@@ -56,8 +56,17 @@ async function stream(title: string, extra: Partial<CreateWorkStreamInput> = {})
   return storedLegacyWorkStream({ squadId, title: `${prefix} ${title}`, ...extra })
 }
 
-async function requestInput(id: string, body: Record<string, unknown>): Promise<StreamBody> {
-  const res = await asAdmin('POST', `/api/workstreams/${id}/request-input`, body)
+const taskInput = (name: string, actor?: unknown) => ({
+  schemaVersion: 1,
+  kind: 'provide',
+  purpose: 'task-input',
+  input: { type: 'config-value', name },
+  use: 'choose the task target',
+  ...(actor ? { actor } : {}),
+})
+
+async function requestInput(id: string, body: { name: string; actor?: string }): Promise<StreamBody> {
+  const res = await asAdmin('POST', `/api/workstreams/${id}/request-input`, taskInput(body.name, body.actor))
   expect(res.status).toBe(200)
   return (await res.json()) as StreamBody
 }
@@ -118,11 +127,15 @@ describe('request-input actor', () => {
     const ownerHold = await stream('owner hold')
     const humanHold = await stream('human hold')
 
-    const created = await requestInput(ownerHold.id, { message: 'Hold for #353 review', actor: 'owner' })
-    expect(created.wait).toMatchObject({ type: 'manual', actor: 'owner', message: 'Hold for #353 review' })
+    const created = await requestInput(ownerHold.id, { name: 'review outcome', actor: 'owner' })
+    expect(created.wait).toMatchObject({
+      type: 'manual',
+      actor: 'owner',
+      message: 'Provide review outcome to choose the task target.',
+    })
     expect(created.wait?.actorChanges).toBeUndefined()
 
-    const legacy = await requestInput(humanHold.id, { message: 'Need the API key' })
+    const legacy = await requestInput(humanHold.id, { name: 'target branch' })
     expect(legacy.wait?.actor).toBe('human')
 
     const body = await detail(ownerHold.id)
@@ -130,10 +143,10 @@ describe('request-input actor', () => {
     expect(body.waitHistory?.map((wait) => wait.actor)).toEqual(['owner'])
   })
 
-  it('rejects an unknown actor (including the pre-rename manager) without opening a wait', async () => {
+  it('rejects unknown actors and the runtime-owned manager actor without opening a wait', async () => {
     const ws = await stream('bad actor')
     for (const actor of ['robot', 'manager', 'external']) {
-      const res = await asAdmin('POST', `/api/workstreams/${ws.id}/request-input`, { message: 'x', actor })
+      const res = await asAdmin('POST', `/api/workstreams/${ws.id}/request-input`, taskInput('target branch', actor))
       expect({ actor, status: res.status }).toEqual({ actor, status: 400 })
     }
     expect(await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, ws.id))).toHaveLength(0)
@@ -146,7 +159,7 @@ describe('request-input actor', () => {
     ] as const
     for (const [actor, state, attention] of expectations) {
       const ws = await stream(`presentation ${actor}`)
-      await requestInput(ws.id, { message: `hold (${actor})`, actor })
+      await requestInput(ws.id, { name: `hold (${actor})`, actor })
       const body = await detail(ws.id)
       // Core's derived vocabulary is unchanged for older consumers.
       expect(body.derivedState).toBe('blocked')
@@ -161,8 +174,8 @@ describe('request-input actor', () => {
   it('only human manual waits become Action Center items', async () => {
     const human = await stream('action human')
     const owner = await stream('action owner')
-    await requestInput(human.id, { message: 'human', actor: 'human' })
-    await requestInput(owner.id, { message: 'owner', actor: 'owner' })
+    await requestInput(human.id, { name: 'human', actor: 'human' })
+    await requestInput(owner.id, { name: 'owner', actor: 'owner' })
 
     const ids = new Set([human.id, owner.id])
     const actions = (await listPendingActions()).filter(
@@ -196,7 +209,7 @@ describe('migration default', () => {
 describe('POST /:id/waits/:waitId/actor', () => {
   it('relabels an open manual wait with an audit entry and leaves it open and blocking', async () => {
     const ws = await stream('relabel')
-    const created = await requestInput(ws.id, { message: 'Hold', actor: 'human' })
+    const created = await requestInput(ws.id, { name: 'Hold', actor: 'human' })
     const waitId = created.wait!.id
 
     const res = await asAdmin('POST', `/api/workstreams/${ws.id}/waits/${waitId}/actor`, {
@@ -241,8 +254,16 @@ describe('POST /:id/waits/:waitId/actor', () => {
       message: 'approval gate',
     })
     const { wait: foreign } = await openWait(db, { workStreamId: other.id, type: 'manual', message: 'f' })
-    const closed = (await requestInput(ws.id, { message: 'c' })).wait!
-    await asAdmin('POST', `/api/workstreams/${ws.id}/waits/${closed.id}/resolve`, { resolution: 'cleared' })
+    const closed = (await requestInput(ws.id, { name: 'c' })).wait!
+    expect(
+      (
+        await asAdmin('POST', `/api/workstreams/${ws.id}/waits/${closed.id}/input`, {
+          action: 'provide',
+          expectedVersion: 0,
+          value: 'ready',
+        })
+      ).status
+    ).toBe(200)
 
     const relabel = (waitId: string) =>
       asAdmin('POST', `/api/workstreams/${ws.id}/waits/${waitId}/actor`, { actor: 'owner' })
@@ -261,7 +282,7 @@ describe('POST /:id/waits/:waitId/actor', () => {
     const owner = await Agent.create({ agentTypeId, squadId })
     const manager = (await Agent.find(managerId))!
     const ws = await stream('authz', { assigneeAgentId: worker.id, agentIds: [worker.id], ownerAgentId: owner.id })
-    const waitId = (await requestInput(ws.id, { message: 'hold' })).wait!.id
+    const waitId = (await requestInput(ws.id, { name: 'hold' })).wait!.id
     const relabelAs = async (agent: Agent, actor: string) =>
       request((await agent.getOrCreateToken())!, 'POST', `/api/workstreams/${ws.id}/waits/${waitId}/actor`, { actor })
 
@@ -280,7 +301,7 @@ describe('POST /:id/waits/:waitId/actor', () => {
   it('relabeling to human notifies the owner like a newly opened human wait', async () => {
     const owner = await Agent.create({ agentTypeId, squadId })
     const ws = await stream('to human', { ownerAgentId: owner.id })
-    const waitId = (await requestInput(ws.id, { message: 'Needs a person after all', actor: 'owner' })).wait!.id
+    const waitId = (await requestInput(ws.id, { name: 'Needs a person after all', actor: 'owner' })).wait!.id
     const blockedFor = async () =>
       db
         .select({ content: inbox.content })
