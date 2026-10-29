@@ -7,7 +7,7 @@ import { InboxMessage } from '../../entities/InboxMessage'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { createLogger } from '../../lib/infra/logger'
 import { claimWorktreeCleanup } from './worktree-cleanup-store'
-import { removeOwnedWorktree, type WorktreeRemovalInput } from './worktree-cleanup-runtime'
+import { removeOwnedWorktree, resolveWorktreeEvidence, type WorktreeRemovalInput } from './worktree-cleanup-runtime'
 import { verifyWorktreeCleanupDelivery, WorktreeDeliveryUnprovenError } from './worktree-cleanup-delivery'
 import type { RepositoryExec } from './repository-setup'
 
@@ -122,12 +122,14 @@ export async function processWorktreeCleanup(
         registered.ownership.workspace,
         others.filter((other) => other.id !== id)
       )
+      const evidence = await resolveWorktreeEvidence(exec, registered.ownership, stream.files)
       input = await claimWorktreeCleanup(id, {
         generation: job.generation,
         ownership: registered.ownership,
         head,
         metadata: stream.metadata,
         attachments,
+        evidence,
       })
       if (!input) return
     } else if (!input || input.operationId !== job.operationId) {

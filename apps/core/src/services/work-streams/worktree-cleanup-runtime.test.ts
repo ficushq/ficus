@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, mkdir, realpath, rm, writeFile, readFile, rename, symlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, realpath, rm, writeFile, readFile, rename, symlink, chmod } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -100,6 +100,217 @@ test('removes only the clean owned directory and preserves the branch and source
   expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(false)
   expect(await readFile(join(repo, 'README'), 'utf8')).toBe('recoverable\n')
   expect((await exec(['git', '-C', repo, 'rev-parse', 'feature'])).trim()).toBe(head)
+})
+
+test.skipIf(process.platform !== 'linux')(
+  'observes external evidence in the squad runtime and preserves it during removal',
+  async () => {
+    await mkdir(join(root, 'docs'))
+    const file = join(root, 'docs/review.json')
+    await writeFile(file, 'synthetic evidence')
+    const files = [file, 'docs/review.json']
+    const evidence = await runtime.resolveWorktreeEvidence(exec, ownership, files)
+    expect(evidence?.files).toEqual(files)
+    expect(
+      await runtime.removeOwnedWorktree(exec, { ownership, head, operationId: crypto.randomUUID(), evidence })
+    ).toMatchObject({ status: 'succeeded' })
+    expect(await readFile(file, 'utf8')).toBe('synthetic evidence')
+  }
+)
+
+for (const kind of [
+  'in-tree',
+  'private-git',
+  'alias-in',
+  'alias-out',
+  'dangling',
+  'missing',
+  'outside',
+  'parent',
+  'malformed',
+  'directory',
+  'nul',
+] as const) {
+  test(`evidence identity fails closed for ${kind}`, async () => {
+    await mkdir(join(root, 'docs'))
+    await writeFile(join(root, 'docs/review'), 'keep')
+    await mkdir(join(ownership.worktree, 'evidence'))
+    await writeFile(join(ownership.worktree, 'evidence/review'), 'keep')
+    await symlink(ownership.worktree, join(root, 'alias-in'))
+    await symlink(join(root, 'docs'), join(root, 'alias-out'))
+    await symlink(join(root, 'absent'), join(root, 'dangling'))
+    const file = {
+      'in-tree': join(ownership.worktree, 'evidence/review'),
+      'private-git': join(ownership.gitDirectory, 'HEAD'),
+      'alias-in': 'alias-in/evidence/review',
+      'alias-out': 'alias-out/review',
+      dangling: 'dangling/review',
+      missing: 'docs/absent',
+      outside: root + '-other/review',
+      parent: '../review',
+      malformed: { path: join(root, 'docs/review') },
+      directory: 'docs',
+      nul: 'docs/review\0suffix',
+    }[kind]
+    await expect(runtime.resolveWorktreeEvidence(exec, ownership, [file])).rejects.toThrow()
+    expect(await readFile(join(ownership.worktree, 'evidence/review'), 'utf8')).toBe('keep')
+  })
+}
+
+test.skipIf(process.platform !== 'linux')(
+  'a prefix-collision sibling is external, not a child of the owned tree',
+  async () => {
+    await mkdir(ownership.worktree + '-evidence')
+    await writeFile(ownership.worktree + '-evidence/review', 'keep')
+    expect(
+      await runtime.resolveWorktreeEvidence(exec, ownership, [ownership.worktree + '-evidence/review'])
+    ).toBeDefined()
+  }
+)
+
+for (const change of ['replace', 'edit', 'alias'] as const) {
+  test.skipIf(process.platform !== 'linux')(
+    `evidence ${change} after observation retains the tree at deletion time`,
+    async () => {
+      await mkdir(join(root, 'docs'))
+      const file = join(root, 'docs/review')
+      await writeFile(file, 'keep')
+      const evidence = await runtime.resolveWorktreeEvidence(exec, ownership, [file])
+      if (change === 'replace') {
+        await rename(file, file + '-old')
+        await writeFile(file, 'replacement')
+      } else if (change === 'edit') await writeFile(file, 'edited')
+      else {
+        await rename(join(root, 'docs'), join(root, 'docs-old'))
+        await symlink(ownership.worktree, join(root, 'docs'))
+      }
+      expect(
+        await runtime.removeOwnedWorktree(exec, { ownership, head, operationId: crypto.randomUUID(), evidence })
+      ).toMatchObject({ status: 'retained' })
+      expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(true)
+    }
+  )
+}
+
+test.skipIf(process.platform !== 'linux')(
+  'the final evidence recheck catches changes during Git safety checks before removal',
+  async () => {
+    const file = join(root, 'review')
+    await writeFile(file, 'original')
+    const evidence = await runtime.resolveWorktreeEvidence(exec, ownership, [file])
+    const bin = join(root, 'git-bin')
+    await mkdir(bin)
+    const git = Bun.which('git')!
+    await writeFile(
+      join(bin, 'git'),
+      `#!/bin/sh
+case " $* " in
+  *" for-each-ref "*) printf changed > "$FIXTURE_EVIDENCE" ;;
+esac
+exec "${git}" "$@"
+`,
+      { mode: 0o755 }
+    )
+    const racingExec = (args: string[]) =>
+      exec(['env', `PATH=${bin}:${process.env.PATH}`, `FIXTURE_EVIDENCE=${file}`, ...args])
+    expect(
+      await runtime.removeOwnedWorktree(racingExec, { ownership, head, operationId: crypto.randomUUID(), evidence })
+    ).toMatchObject({
+      status: 'retained',
+      reason: 'Evidence identity changed; retain for inspection',
+    })
+    expect(await readFile(file, 'utf8')).toBe('changed')
+    expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(true)
+  }
+)
+
+test('nested mount aliases and unavailable mount tables fail closed without mounting anything', async () => {
+  await mkdir(join(root, 'review docs'))
+  const file = join(root, 'review docs/review')
+  await writeFile(file, 'keep')
+  for (const table of [
+    `1 2 0:1 / ${join(root, 'review docs').replace(/ /g, '\\040')} rw - tmpfs tmpfs rw`,
+    'unparseable',
+  ]) {
+    const syntheticMountExec = (args: string[]) => {
+      const modified = [...args]
+      modified[2] = modified[2]!.replace("fs.readFileSync('/proc/self/mountinfo', 'utf8')", JSON.stringify(table))
+      return exec(modified)
+    }
+    await expect(runtime.resolveWorktreeEvidence(syntheticMountExec, ownership, [file])).rejects.toThrow()
+  }
+  const unavailableMountExec = (args: string[]) => {
+    const modified = [...args]
+    modified[2] = modified[2]!.replace("'/proc/self/mountinfo'", JSON.stringify(join(root, 'missing-mountinfo')))
+    return exec(modified)
+  }
+  await expect(runtime.resolveWorktreeEvidence(unavailableMountExec, ownership, [file])).rejects.toThrow()
+  expect(await readFile(file, 'utf8')).toBe('keep')
+})
+
+for (const deletionRoot of ['worktree', 'gitDirectory'] as const) {
+  test.skipIf(process.platform !== 'linux')(
+    `a mount exactly at the ${deletionRoot} root rejects external evidence`,
+    async () => {
+      const file = join(root, 'review')
+      await writeFile(file, 'keep')
+      const table = `1 0 0:1 / / rw - overlay overlay rw\n2 1 0:1 / ${ownership[deletionRoot]} rw - overlay overlay rw`
+      const mountedExec = (args: string[]) => {
+        const modified = [...args]
+        modified[2] = modified[2]!.replace("fs.readFileSync('/proc/self/mountinfo', 'utf8')", JSON.stringify(table))
+        return exec(modified)
+      }
+      await expect(runtime.resolveWorktreeEvidence(mountedExec, ownership, [file])).rejects.toThrow(
+        'Deletion root contains a mounted path'
+      )
+      expect(await readFile(file, 'utf8')).toBe('keep')
+    }
+  )
+}
+
+test('existing evidence outside the authoritative workspace is never accepted', async () => {
+  const outside = await realpath(await mkdtemp(root + '-boundary-'))
+  try {
+    const file = join(outside, 'review')
+    await writeFile(file, 'external but unowned')
+    await expect(runtime.resolveWorktreeEvidence(exec, ownership, [file])).rejects.toThrow()
+    expect(await readFile(file, 'utf8')).toBe('external but unowned')
+  } finally {
+    await rm(outside, { recursive: true, force: true })
+  }
+})
+
+test('inaccessible evidence is retained without changing its permissions', async () => {
+  const file = join(root, 'review')
+  await writeFile(file, 'keep')
+  await chmod(file, 0)
+  try {
+    await expect(runtime.resolveWorktreeEvidence(exec, ownership, [file])).rejects.toThrow()
+  } finally {
+    await chmod(file, 0o600)
+  }
+  expect(await readFile(file, 'utf8')).toBe('keep')
+})
+
+test('unsupported filesystem observation fails closed even for a valid external file', async () => {
+  const file = join(root, 'review')
+  await writeFile(file, 'keep')
+  const unsupportedExec = (args: string[]) => {
+    const modified = [...args]
+    modified[2] = modified[2]!.replace("process.platform !== 'linux'", 'true')
+    return exec(modified)
+  }
+  await expect(runtime.resolveWorktreeEvidence(unsupportedExec, ownership, [file])).rejects.toThrow()
+})
+
+test('empty evidence needs no runtime and unavailable identity never qualifies', async () => {
+  const unavailable = async () => {
+    throw Error('unavailable')
+  }
+  expect(await runtime.resolveWorktreeEvidence(unavailable, ownership, [])).toBeUndefined()
+  await expect(runtime.resolveWorktreeEvidence(unavailable, ownership, ['docs/review'])).rejects.toThrow()
+  for (const files of [null, {}, 'docs/review', [''], [123]])
+    await expect(runtime.resolveWorktreeEvidence(exec, ownership, files)).rejects.toThrow()
 })
 
 test('replays the exact terminal receipt without deleting a replacement directory', async () => {

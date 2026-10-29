@@ -20,7 +20,7 @@ import {
 import { acquireAgentQueueLock } from '../execution/agent-admission'
 import { ACTIVE_EXECUTION_STATUSES } from '../execution/status'
 import type { WorktreeOwnership } from './repository-setup'
-import type { WorktreeRemovalInput } from './worktree-cleanup-runtime'
+import type { WorktreeEvidence, WorktreeRemovalInput } from './worktree-cleanup-runtime'
 
 export function cleanupDeliveryBinding(metadata: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
@@ -55,6 +55,7 @@ export async function claimWorktreeCleanup(
     head: string
     metadata: Record<string, unknown>
     attachments?: ResolvedWorktreeAttachment[]
+    evidence?: WorktreeEvidence
   }
 ): Promise<WorktreeRemovalInput | null> {
   const [before] = await db.select({ squadId: workStreams.squadId }).from(workStreams).where(eq(workStreams.id, id))
@@ -80,7 +81,14 @@ export async function claimWorktreeCleanup(
       return defer('Only delivered, unpaused work streams are eligible', 'skipped')
     if (!stream.autoCleanupWorktree) return defer('Worktree retention is enabled', 'skipped')
     const metadata = stream.metadata as Record<string, unknown>
-    if ((stream.files as unknown[]).length) return defer('Attached evidence must be retained or moved before cleanup')
+    // The squad/stream locks serialize every supported files update with claim.
+    // Unresolved legacy JSON and changes since runtime observation fail closed.
+    if (
+      !Array.isArray(stream.files) ||
+      (stream.files.length && !isDeepStrictEqual(stream.files, verified.evidence?.files)) ||
+      (!stream.files.length && verified.evidence)
+    )
+      return defer('Attached evidence identity is unresolved or changed; cleanup will retry')
     const [registered] = await tx.select().from(workStreamWorktrees).where(eq(workStreamWorktrees.workStreamId, id))
     if (!registered) return defer('No platform-created worktree ownership record', 'skipped')
     if (
@@ -179,6 +187,7 @@ export async function claimWorktreeCleanup(
       ownership: registered.ownership,
       head: verified.head,
       operationId: crypto.randomUUID(),
+      ...(verified.evidence ? { evidence: verified.evidence } : {}),
     }
     await tx
       .update(worktreeCleanupJobs)
