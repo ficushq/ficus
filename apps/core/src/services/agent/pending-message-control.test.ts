@@ -10,6 +10,8 @@ import { db, agents, agentTypes, messages, chatSendReceipts } from '../../db'
 import { updateUnclaimedMessage, updateClaimedMessage } from './pending-message-control'
 import { handleControlSignal } from '../execution/control-signals'
 import { eventEmitter } from '../../lib/infra/event-emitter'
+import { withChatQueueState } from '../chat/queued-messages'
+import { setDatabaseQueryObserverForTest } from '../../db'
 
 let agent: Agent
 let typeId: string
@@ -225,3 +227,27 @@ for (const clientId of ['primary', undefined]) {
     expect((await agent.listMessages()).messages.map((row) => row.id)).toEqual([rows[0]!.id])
   })
 }
+
+it('resolves receipt-less history once per execution and refreshes the identity on each read', async () => {
+  await agent.sendMessage('same')
+  for (let i = 0; i < 8; i++) await agent.sendMessage(i % 2 ? 'different' : 'same')
+  const history = (await agent.listMessages()).messages
+  const queries: string[] = []
+  setDatabaseQueryObserverForTest((query) => queries.push(query))
+  try {
+    const result = await withChatQueueState(agent.id, history)
+    expect(result.map((message) => message.queued)).toEqual([false, ...Array(8).fill(true)])
+    expect(queries.filter((query) => query.includes('from "executions"'))).toHaveLength(1)
+    expect(queries.filter((query) => query.includes('from "messages"'))).toHaveLength(1)
+    expect(queries.find((query) => query.includes('from "messages"'))).toContain(
+      'order by "messages"."created_at" asc, "messages"."enqueue_order" asc'
+    )
+    // No cross-request cache: the next refresh must consult the database again.
+    queries.length = 0
+    const refreshed = await withChatQueueState(agent.id, history)
+    expect(refreshed).toEqual(result)
+    expect(queries.filter((query) => query.includes('from "executions"'))).toHaveLength(1)
+  } finally {
+    setDatabaseQueryObserverForTest(undefined)
+  }
+})
