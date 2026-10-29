@@ -1273,12 +1273,18 @@ describe('attempt-scoped waits', () => {
     const qa = activeWorkflowAttempts(run.state).find((a) => a.stepId === 'qa')!
     const securityAgent = run.attemptAgents[String(security.id)]!
     const qaAgent = run.attemptAgents[String(qa.id)]!
-    const stream = await WorkStream.mustFind(id)
-    const wait = await stream.block({
-      message: 'Confirm threat model',
-      createdBy: 'agent',
-      createdByAgentId: securityAgent,
-    })
+    const { requestStructuredInput, resolveStructuredInput } = await import('../recovery/structured-input')
+    const wait = await requestStructuredInput(
+      id,
+      {
+        schemaVersion: 1,
+        kind: 'provide',
+        purpose: 'task-input',
+        input: { type: 'file', name: 'threat model' },
+        use: 'review the security assumptions',
+      },
+      { createdBy: 'agent', createdByAgentId: securityAgent }
+    )
     expect(wait.flowAttemptId).toBe(security.id)
     const action = (await listPendingActions()).find((a) => 'waitId' in a.data && a.data.waitId === wait.id)!
     expect((action.data as import('@ficus/shared').WorkStreamActionData).assigneeAgentId).toBe(securityAgent)
@@ -1294,7 +1300,13 @@ describe('attempt-scoped waits', () => {
     await completeStep(id, 'qa')
     expect(activeWorkflowAttempts((await getFlow(id))!.state).map((a) => a.id)).toEqual([security.id])
     expect(await admissionBlockingWaits(db, id)).toHaveLength(1)
-    await stream.unblock({ note: 'Use the documented threat model' })
+    const human = await createTestUser({ prefix })
+    await resolveStructuredInput(
+      id,
+      wait.id,
+      { action: 'provide', expectedVersion: 0, value: 'documented-threat-model.md' },
+      { userId: human.id }
+    )
     const current = (await getFlow(id))!
     expect(activeWorkflowAttempts(current.state).map((a) => a.id)).toEqual([security.id])
     expect(current.attemptAgents[String(security.id)]).toBe(securityAgent)
@@ -1305,7 +1317,7 @@ describe('attempt-scoped waits', () => {
       .where(eq(inbox.idempotencyKey, `flow-wait:${wait.id}:${security.id}`))
     expect(resolution?.recipientId).toBe(securityAgent)
     expect(resolution?.content).toBe(
-      `Work stream ${id}, step security (attempt ${security.id})\nWait resolved: Confirm threat model\n\nUse the documented threat model`
+      `Work stream ${id}, step security (attempt ${security.id})\nWait resolved: Provide threat model to review the security assumptions.\n\nthreat model: documented-threat-model.md`
     )
     await completeStep(id, 'security')
     expect(activeWorkflowAttempts((await getFlow(id))!.state).map((a) => a.stepId)).toEqual(['deliver'])
@@ -1316,9 +1328,22 @@ describe('attempt-scoped waits', () => {
     await completeStep(id, 'execute')
     const run = (await getFlow(id))!
     const agentId = run.attemptAgents[String(run.state.activeAttemptId)]!
-    const wait = await (
-      await WorkStream.mustFind(id)
-    ).block({ scope: 'stream', message: 'Release freeze', createdBy: 'agent', createdByAgentId: agentId })
+    const { requestStructuredInput } = await import('../recovery/structured-input')
+    const wait = await requestStructuredInput(
+      id,
+      {
+        schemaVersion: 1,
+        kind: 'decide',
+        purpose: 'task-decision',
+        scope: 'stream',
+        subject: 'Release timing',
+        options: [
+          { id: 'proceed', label: 'Proceed' },
+          { id: 'defer', label: 'Defer' },
+        ],
+      },
+      { createdBy: 'agent', createdByAgentId: agentId }
+    )
     expect(wait.flowAttemptId).toBeNull()
     await expect(completeStep(id, 'security')).rejects.toThrow('Resolve the waits')
     await expect(completeStep(id, 'qa')).rejects.toThrow('Resolve the waits')

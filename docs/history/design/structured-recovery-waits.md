@@ -38,12 +38,14 @@ type ManualInputRequest = {
     }
   | {
       kind: 'decide'
+      actor?: 'human' | 'owner'
       purpose: 'task-decision'
       subject: string
       options: Array<{ id: string; label: string; consequence?: string }>
     }
   | {
       kind: 'provide'
+      actor?: 'human' | 'owner'
       purpose: 'task-input'
       input: { type: 'file' | 'config-value' | 'product-choice'; name: string }
       use: string

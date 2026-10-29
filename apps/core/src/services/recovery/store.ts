@@ -82,6 +82,11 @@ export class RecoveryHeldError extends Error {
   }
 }
 
+async function databaseNow(tx: Tx): Promise<number> {
+  const [clock] = await tx.execute<{ now: string }>(sql`SELECT clock_timestamp() AS now`)
+  return new Date(clock!.now).getTime()
+}
+
 /** The timestamp comes from durable state, never a tool argument or a new process's clock baseline. */
 export async function recoveryRetryDelay(origin: RecoveryOrigin, operation: string): Promise<number> {
   return db.transaction(async (tx) => {
@@ -99,7 +104,7 @@ export async function recoveryRetryDelay(origin: RecoveryOrigin, operation: stri
       .for('update')
     if (!record) return 0
     if (record.state.state !== 'recovering') throw new RecoveryHeldError()
-    return Math.max(0, (record.state.nextRetryAt ?? 0) - Date.now())
+    return Math.max(0, (record.state.nextRetryAt ?? 0) - (await databaseNow(tx)))
   })
 }
 
@@ -311,7 +316,7 @@ export async function recordRecoveryFailure(
     const nextState = failedRecovery(
       current.state,
       restart ? { kind: 'restart' } : { kind: 'unknown', error: error! },
-      Date.now()
+      await databaseNow(tx)
     )
     await tx.insert(recoveryAttempts).values({
       recoveryId: current.id,
@@ -397,7 +402,7 @@ export async function decideRecovery(
         : Boolean(actor.userId && actor.userId === (stream?.requestingUserId ?? agent?.ownerUserId))
     if (!authorized) throw new Error(`Only the authorized ${target} may decide this recovery`)
     let state = current.state
-    if (parsed.action === 'continue') state = continueRecovery(state, target, Date.now())
+    if (parsed.action === 'continue') state = continueRecovery(state, target, await databaseNow(tx))
     else if (parsed.action === 'stop') {
       if (!['waiting-manager', 'waiting-owner'].includes(state.state))
         throw new Error('Recovery is not awaiting a decision')

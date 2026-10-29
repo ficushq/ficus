@@ -102,3 +102,42 @@ test('credentials remain on protected input surfaces, not named plaintext provid
       .success
   ).toBe(true)
 })
+
+test('genuine product/configuration questions are not confused with forensic or human-run requests', async () => {
+  const { assertHumanAnswerableRequest } = await import('./recovery-waits')
+  expect(
+    requestInputWorkStreamSchema.safeParse({
+      ...provide,
+      input: { type: 'config-value', name: 'package registry URL' },
+    }).success
+  ).toBe(true)
+  for (const question of [
+    'Which log in layout should I use?',
+    'Which log format should the product display?',
+    'Which CI run should the dashboard link to?',
+    'May I run the approved release step?',
+  ])
+    expect(() => assertHumanAnswerableRequest([question])).not.toThrow()
+  for (const request of [
+    'invocation_registry_records',
+    'host_state',
+    'Could you execute the check on the host?',
+    'Please run npm test',
+    'Run the command',
+    '  Run npm test',
+    'Continue, then execute this command',
+  ])
+    expect(() => assertHumanAnswerableRequest([request])).toThrow('not valid')
+})
+
+test('a product-choice label or generic input name cannot disguise a plaintext credential request', () => {
+  expect(
+    requestInputWorkStreamSchema.safeParse({ ...provide, input: { type: 'product-choice', name: 'access token' } })
+      .success
+  ).toBe(false)
+  expect(requestInputWorkStreamSchema.safeParse({ ...provide, use: 'Pa\u200bste your API key' }).success).toBe(false)
+  expect(
+    requestInputWorkStreamSchema.safeParse({ ...provide, input: { type: 'config-value', name: 'pa\u200bssword' } })
+      .success
+  ).toBe(false)
+})

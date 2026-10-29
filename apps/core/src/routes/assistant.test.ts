@@ -2057,3 +2057,27 @@ test('the sweep closes tasks stuck in squads archived before archiving closed th
   await (await Squad.mustFind(f.squad.id)).archive()
   expect(await f.archiveUpdates()).toHaveLength(1)
 })
+
+test('saved Assistant needs-input reports share the forensic and exhausted-recovery gates', async () => {
+  const f = await activityFixture()
+  const receipt = await f.start()
+  await expect(f.update(receipt.id, 'Please send host logs', 'needs-input')).rejects.toThrow('not valid')
+  expect((await f.task(receipt.taskId)).status).toBe('working')
+  const { recoveryEpisodes } = await import('../db')
+  const { initialRecoveryState } = await import('../services/recovery/policy')
+  await db.insert(recoveryEpisodes).values({
+    agentId: f.agent.id,
+    executionId: randomUUID(),
+    operationKey: 'held-fixture',
+    state: {
+      ...initialRecoveryState('read files'),
+      state: 'waiting-manager',
+      failures: 3,
+      cycleFailures: 3,
+      lastError: 'Connection closed',
+    },
+  })
+  await expect(f.update(receipt.id, 'Which region?', 'needs-input')).rejects.toThrow('existing typed recovery')
+  expect((await f.task(receipt.taskId)).status).toBe('working')
+  expect(await db.select().from(assistantUpdates).where(eq(assistantUpdates.taskId, receipt.taskId))).toHaveLength(0)
+})

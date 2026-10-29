@@ -618,3 +618,21 @@ test('unexplained pre-model startup failures automatically retry twice with pers
     runner.mockRestore()
   }
 }, 15000)
+
+test('a replacement process clock cannot skip the persisted database backoff', async () => {
+  const api = await store()
+  const origin = { agentId: worker.id, executionId: execution.id }
+  await api.recordRecoveryFailure(origin, {
+    operationKey: 'clock',
+    invocationId: 'first',
+    attempted: 'read files',
+    error: new Error('Connection closed'),
+  })
+  const { spyOn } = await import('bun:test')
+  const clock = spyOn(Date, 'now').mockReturnValue(Date.now() + 60_000)
+  try {
+    expect(await api.recoveryRetryDelay(origin, 'clock')).toBeGreaterThan(0)
+  } finally {
+    clock.mockRestore()
+  }
+})

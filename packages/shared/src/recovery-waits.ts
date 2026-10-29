@@ -8,10 +8,19 @@ export const FORENSIC_ASK_REFUSAL =
 export const CREDENTIAL_INPUT_REFUSAL =
   'Use the protected credential or integration input surface, not a plaintext task response.'
 function isCredentialInputName(text: string): boolean {
-  const normalized = text.normalize('NFKC').toLowerCase().replace(/[_-]/g, ' ')
+  const normalized = text
+    .normalize('NFKC')
+    .replace(/[\u200b-\u200d\ufeff]/g, '')
+    .toLowerCase()
+    .replace(/[_-]/g, ' ')
   return /\b(?:passwords?|credentials?|secrets?|api keys?|private keys?|tokens?(?!\s+(?:budget|limit|count|size)))\b/.test(
     normalized
   )
+}
+
+function isPlaintextCredentialRequest(text: string): boolean {
+  const request = text.normalize('NFKC').replace(/[\u200b-\u200d\ufeff]/g, '')
+  return /\b(?:paste|send|provide|enter|share|upload)\b/i.test(request) && isCredentialInputName(request)
 }
 
 /** Shared by manual waits and question writers, not just the CLI or one HTTP route. */
@@ -20,19 +29,31 @@ export function isForbiddenEvidenceRequest(text: string): boolean {
     .normalize('NFKC')
     .replace(/[\u200b-\u200d\ufeff]/g, '')
     .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .trim()
+  // These name product choices/configuration, not diagnostic evidence. Keep
+  // checking the rest of the wording (e.g. 'registry URL and host logs').
+  const evidence = normalized.replace(
+    /\blog in\b|\blog (?:format|level)s?\b|\b(?:package|container|image) registry (?:url|endpoint|address)\b/g,
+    'product setting'
+  )
   return (
     /\b(?:logs?|journal(?:ctl)?|registry|host[\s_-]+(?:state|status|identity|evidence|diagnostics)|platform[\s_-]+(?:state|forensics|diagnostics))\b/.test(
+      evidence
+    ) ||
+    // Imperatives and requests addressed to the person; a noun such as 'CI run'
+    // or an agent asking permission ('May I run ...?') is not a human-run task.
+    /(?:^|[.!?:;,\n]\s*|\b(?:please|then|and)\s+)(?:run|execute)\b/.test(normalized) ||
+    /\b(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?|you\s+(?:must|should|need to|have to)\s+)(?:run|execute)\b/.test(
       normalized
     ) ||
-    /\b(?:run|execute)\s+(?:\S+\s*)/i.test(normalized) ||
     /\b(?:sudo|systemctl|journalctl)\b|(?:^|\s)(?:cat|tail|grep)\s+\//i.test(normalized)
   )
 }
 
 export function assertHumanAnswerableRequest(texts: readonly string[]): void {
   if (texts.some(isForbiddenEvidenceRequest)) throw new Error(FORENSIC_ASK_REFUSAL)
-  if (texts.some((text) => /\b(?:paste|send|provide|enter|share|upload)\b/i.test(text) && isCredentialInputName(text)))
-    throw new Error(CREDENTIAL_INPUT_REFUSAL)
+  if (texts.some(isPlaintextCredentialRequest)) throw new Error(CREDENTIAL_INPUT_REFUSAL)
 }
 
 const plain = (max: number) =>
@@ -44,6 +65,7 @@ const plain = (max: number) =>
     // eslint-disable-next-line no-control-regex -- Reject control characters in one-line input labels.
     .refine((text) => !/[\r\n\u0000-\u001f]/.test(text), 'Use a single plain-language line')
     .refine((text) => !isForbiddenEvidenceRequest(text), FORENSIC_ASK_REFUSAL)
+    .refine((text) => !isPlaintextCredentialRequest(text), CREDENTIAL_INPUT_REFUSAL)
 const scope = {
   schemaVersion: z.literal(1),
   scope: z.enum(['stream', 'attempt']).optional(),
@@ -84,10 +106,7 @@ export const manualInputRequestSchema = z.discriminatedUnion('kind', [
     purpose: z.literal('task-input'),
     input: z
       .strictObject({ type: z.enum(['file', 'config-value', 'product-choice']), name: plain(160) })
-      .refine(
-        (input) => input.type === 'product-choice' || !isCredentialInputName(input.name),
-        CREDENTIAL_INPUT_REFUSAL
-      ),
+      .refine((input) => !isCredentialInputName(input.name), CREDENTIAL_INPUT_REFUSAL),
     use: plain(240),
   }),
 ])

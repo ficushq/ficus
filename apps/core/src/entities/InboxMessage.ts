@@ -1,4 +1,4 @@
-import { isUserAssistantAgentType } from '@ficus/shared'
+import { assertHumanAnswerableRequest, isUserAssistantAgentType } from '@ficus/shared'
 import { eq, and, isNull, isNotNull, desc, sql, inArray, or, ilike, type SQL } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { db, uuidPrefixCondition, varcharPrefixCondition, AmbiguousPrefixError } from '../db'
@@ -404,6 +404,7 @@ export class InboxMessage
     } else if (input.assistantTaskStatus !== undefined) {
       throw new Error('assistantTaskStatus applies only to replies sent to a saved Assistant conversation')
     }
+    if (input.assistantTaskStatus === 'needs-input') assertHumanAnswerableRequest([input.content, input.subject ?? ''])
 
     if (fromAgent?.parentAgentId && toAgent?.id !== fromAgent.parentAgentId) {
       throw new Error('Subagents can only message their parent agent')
@@ -517,6 +518,18 @@ export class InboxMessage
       // Task/update state is projected in the same transaction as the row it describes, and only
       // for the durable winner: an idempotent retry must not allocate a second task or sequence.
       const projected = created ? await projectAssistantInboxMessage(tx, winner) : null
+      if (created && fromAgent && input.assistantTaskStatus === 'needs-input') {
+        // Keep the established conversation → agent lock order. A rejected
+        // question rolls back its inbox row and task projection together.
+        const [sender] = await tx
+          .select({ id: agents.id })
+          .from(agents)
+          .where(eq(agents.id, fromAgent.id))
+          .for('update')
+        if (!sender) throw new Error('Sender agent not found')
+        const { assertNoPendingRecovery } = await import('../services/recovery/store')
+        await assertNoPendingRecovery(tx, sender.id)
+      }
       return {
         inserted: created,
         row: projected?.row ?? winner,
