@@ -1282,11 +1282,11 @@ export abstract class AgentRunner {
     if (!removeSessionIfCurrent(this.agent.id, this.session)) return
     await this.agent.recordMessage({
       role: 'assistant',
-      content: '[System] Agent was stopped.',
+      content: '[System] Agent was interrupted.',
     })
     this.buffer.push({
       type: 'done',
-      response: response || '[System] Agent was stopped.',
+      response: response || '[System] Agent was interrupted.',
       usage: sessionUsage,
       metadata,
       messageId: this.persistence.lastAssistant()?.messageId,
