@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { githubAccountIdSchema } from '@ficus/shared'
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import {
   db,
   githubFeedbackObjects,
@@ -37,8 +37,8 @@ import { currentGitHubFeedbackRevisionSQL, gitHubFeedbackVersionSQL } from './fe
 
 export const GITHUB_MEMORY_PROJECTION_SCHEMA = 2
 const GITHUB_ISSUE_SOURCE_TYPE = 'github_issue'
-/** Bounded revision lookup per fetched thread (one parent plus at most 100 comments). */
-const REVISION_LOOKUP_LIMIT = 10000
+/** Bound each identity lookup without interpreting a large result set as stale content. */
+const REVISION_LOOKUP_BATCH_SIZE = 500
 
 type Executor = Pick<typeof db, 'select'>
 type ItemKind = 'issue' | 'pull_request' | 'issue_comment'
@@ -175,7 +175,7 @@ type RevisionMatch = {
 async function currentMemoryRevisions(
   executor: Executor,
   scopes: Array<{ squadId: string; repositoryId: string; items: Array<Pick<GitHubMemoryItem, 'nativeId' | 'kind'>> }>
-): Promise<RevisionMatch[] | null> {
+): Promise<RevisionMatch[]> {
   const keys = [
     ...new Map(
       scopes.flatMap((scope) =>
@@ -189,46 +189,59 @@ async function currentMemoryRevisions(
     ).values(),
   ]
   if (!keys.length) return []
-  const rows = await executor
-    .select({
-      repositoryId: githubFeedbackObjects.repositoryId,
-      ambiguous: sql<boolean>`${githubFeedbackRevisions.id} is null`,
-      squadId: githubFeedbackObjects.squadId,
-      kind: githubFeedbackObjects.objectKind,
-      nativeId: githubFeedbackObjects.nativeId,
-      revisionId: githubFeedbackRevisions.id,
-      contentHash: githubFeedbackRevisions.contentHash,
-      sequence: githubFeedbackRevisions.sequence,
-      providerVersion: sql<
-        string | null
-      >`${gitHubFeedbackVersionSQL(githubFeedbackRevisions, githubFeedbackObjects)}::text`,
-      releaseState: githubFeedbackRevisions.releaseState,
-      decision: githubFeedbackRevisions.decision,
-      attribution: githubFeedbackRevisions.attribution,
-      author: githubFeedbackRevisions.author,
-      editor: githubFeedbackRevisions.editor,
-      bodyHash: storedTextHash('body'),
-      titleHash: storedTextHash('title'),
-    })
-    .from(githubFeedbackObjects)
-    .leftJoin(
-      githubFeedbackRevisions,
-      and(
-        eq(githubFeedbackRevisions.objectId, githubFeedbackObjects.id),
-        currentGitHubFeedbackRevisionSQL(githubFeedbackRevisions.id, githubFeedbackObjects.squadId)
+  const result: RevisionMatch[] = []
+  for (let offset = 0; offset < keys.length; offset += REVISION_LOOKUP_BATCH_SIZE) {
+    const batch = keys.slice(offset, offset + REVISION_LOOKUP_BATCH_SIZE)
+    const groups = new Map<string, { squad: string; repo: string; kind: string; nativeIds: string[] }>()
+    for (const key of batch) {
+      const id = `${key.squad}:${key.repo}:${key.kind}`
+      const group = groups.get(id) ?? { squad: key.squad, repo: key.repo, kind: key.kind, nativeIds: [] }
+      group.nativeIds.push(key.native!)
+      groups.set(id, group)
+    }
+    const identityFilter = or(
+      ...[...groups.values()].map((group) =>
+        and(
+          eq(githubFeedbackObjects.squadId, group.squad),
+          eq(githubFeedbackObjects.repositoryId, group.repo),
+          eq(githubFeedbackObjects.objectKind, group.kind),
+          inArray(githubFeedbackObjects.nativeId, group.nativeIds)
+        )
       )
     )
-    .where(
-      sql`exists (select 1 from jsonb_to_recordset(${JSON.stringify(keys)}::jsonb)
-      as scope(squad uuid, repo text, kind text, native text)
-      where scope.squad = ${githubFeedbackObjects.squadId} and scope.repo = ${githubFeedbackObjects.repositoryId}
-        and scope.kind = ${githubFeedbackObjects.objectKind} and scope.native = ${githubFeedbackObjects.nativeId})`
-    )
+    const rows = await executor
+      .select({
+        repositoryId: githubFeedbackObjects.repositoryId,
+        ambiguous: sql<boolean>`${githubFeedbackRevisions.id} is null`,
+        squadId: githubFeedbackObjects.squadId,
+        kind: githubFeedbackObjects.objectKind,
+        nativeId: githubFeedbackObjects.nativeId,
+        revisionId: githubFeedbackRevisions.id,
+        contentHash: githubFeedbackRevisions.contentHash,
+        sequence: githubFeedbackRevisions.sequence,
+        providerVersion: sql<
+          string | null
+        >`${gitHubFeedbackVersionSQL(githubFeedbackRevisions, githubFeedbackObjects)}::text`,
+        releaseState: githubFeedbackRevisions.releaseState,
+        decision: githubFeedbackRevisions.decision,
+        attribution: githubFeedbackRevisions.attribution,
+        author: githubFeedbackRevisions.author,
+        editor: githubFeedbackRevisions.editor,
+        bodyHash: storedTextHash('body'),
+        titleHash: storedTextHash('title'),
+      })
+      .from(githubFeedbackObjects)
+      .leftJoin(
+        githubFeedbackRevisions,
+        and(
+          eq(githubFeedbackRevisions.objectId, githubFeedbackObjects.id),
+          currentGitHubFeedbackRevisionSQL(githubFeedbackRevisions.id, githubFeedbackObjects.squadId)
+        )
+      )
+      .where(sql`/* github_memory_revision_batch */ ${identityFilter}`)
 
-    .limit(REVISION_LOOKUP_LIMIT + 1)
-  return rows.length > REVISION_LOOKUP_LIMIT
-    ? null
-    : rows.map((row) => ({
+    result.push(
+      ...rows.map((row) => ({
         ...row,
         revisionId: row.revisionId ?? '',
         contentHash: row.contentHash ?? '',
@@ -237,6 +250,9 @@ async function currentMemoryRevisions(
         decision: row.decision ?? '',
         attribution: row.attribution ?? '',
       }))
+    )
+  }
+  return result
 }
 
 const sameText = (item: Pick<GitHubMemoryItem, 'bodyHash' | 'titleHash'>, row: RevisionMatch) =>
@@ -528,14 +544,26 @@ export async function withheldGitHubMemoryDocuments(
       continue
     }
     const squads = [...new Set([doc.squadId, callerSquadId])]
-    if (!rows) {
+    if (
+      squads.some((squad) =>
+        projection.items.some(
+          (item) =>
+            !freshSnapshot(
+              item,
+              revisions.get(`${squad}:${projection.repositoryId}:${item.kind}:${item.nativeId}`),
+              squad === doc.squadId
+            )
+        )
+      )
+    ) {
       hideForRecovery(doc, 'stale')
       continue
     }
     const checksTrust = (squad: string) => states.get(squad) && !(options.callerFreshnessOnly && squad !== doc.squadId)
     const gates = squads.filter(checksTrust)
     if (gates.length && !projection.filtered) {
-      hideForRecovery(doc, 'filter_changed')
+      if (checksTrust(doc.squadId)) hideForRecovery(doc, 'filter_changed')
+      else withheld.add(doc.id)
       continue
     }
     let visible = true
@@ -543,14 +571,9 @@ export async function withheldGitHubMemoryDocuments(
       const trusted = trust.get(squad) ?? new Set<string>()
       for (const item of projection.items) {
         const row = revisions.get(`${squad}:${projection.repositoryId}:${item.kind}:${item.nativeId}`)
-        if (!freshSnapshot(item, row, squad === doc.squadId)) {
-          hideForRecovery(doc, 'stale')
-          visible = false
-          break
-        }
         if (!checksTrust(squad)) continue
         if (row && sameText(item, row) && ['pending', 'deny'].includes(row.decision)) {
-          hideForRecovery(doc, 'decision_changed')
+          if (squad === doc.squadId) hideForRecovery(doc, 'decision_changed')
           visible = false
           break
         }

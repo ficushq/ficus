@@ -54,9 +54,13 @@ marks at most 25 newly pending documents; each source pass retries at most 25.
 Repeated reads deduplicate by document generation. The existing runner's default
 interval is 30 minutes; no provider work runs on the read path. Repeated failed or
 still-unprovable recaptures back off exponentially from 30 minutes to 24 hours;
-not-yet-due requests do not consume the 25 retry slots. Confirmed provider denial
-(including deletion) and repo/label scope exclusion remove the obsolete local
-document instead of retrying forever. Transient provider failures preserve it.
+not-yet-due requests do not consume the 25 retry slots. This backoff applies only
+to the recovery drain: ordinary webhook and discovery indexing run immediately
+and clear recovery state once admissible content is indexed. Only confirmed
+HTTP 404/410 or explicit repository exclusion in a present, valid source config
+permits local deletion. Permission errors (including non-rate-limit 403), missing
+configuration, unavailable identity, refused redirects and label mismatch retain
+the document for retry.
 A missing numeric repository identity is a fetch failure, never an empty rewrite;
 repository identity is fetched once per repo and squad per indexing pass.
 
@@ -64,7 +68,9 @@ Recovery respects source enablement and scope, retains failures for later ticks,
 and clears pending state only after successful current, admissible indexing,
 requiring the source squad's admissibility and the requesting shared-memory
 caller's **freshness only**. The caller's trust/approval gate remains enforced on
-its reads, but cannot pin another squad's recovery. Pending state survives
+its reads, but cannot pin another squad's recovery. Caller-only filter/decision
+denials do not enqueue a source reindex that cannot repair them; freshness
+invalidations and source-squad gate changes do enqueue recovery. Pending state survives
 process restarts. Clearing compares the validated document generation and marker
 so old work cannot clear a newer request. GitHub document/chunk replacement is
 transactional: failed indexing keeps the prior snapshot and recovery request. No new background job type, bulk migration or live
@@ -103,11 +109,28 @@ document's proof.
 Recovery tests exercise deduplication, bounded read enqueue, recovery of a
 document outside ordinary discovery, disabled-source and failure persistence,
 current reindex completion, and API/CLI status reporting. Read-time checks do
-not fetch providers. Revision reads batch all (squad, repo, object) identities;
-trust reads batch per squad; marking pending documents is one bounded update.
+not fetch providers. Revision reads batch (squad, repo, object) identities in
+chunks of at most 500; large reads do not become stale merely because their
+captures exceed a global row limit. Trust reads batch per squad; marking pending
+documents is one bounded update.
 Search limits and backlink results are capped at 100. Mixed query generations
 are rejected before merging/deduplicating search hits and before returning outline
 results. Unrelated memory source semantics are unchanged.
+
+### Query-plan verification
+
+`managed-content-scale.test.ts` exercises 100 documents with 101 items each in two
+squads (20,200 captures) alongside 50,000 unrelated objects. A real PostgreSQL
+`EXPLAIN (ANALYZE, BUFFERS)` exposed sequential object scans for the JSON-recordset
+`EXISTS` predicate. The implementation now uses grouped equality/IN predicates
+on the existing `(squad_id, repository_id, object_kind, native_id)` identity index.
+The regression requires index-backed access and no sequential object scan, and
+verifies that all 100 documents remain readable across 41 bounded queries.
+
+On the synthetic fixture measured 2026-10-29, the full freshness read took roughly
+1.4 seconds and one 500-key batch took 20.7 ms. The batch selected 500 objects by
+bitmap/index access and used primary-key index probes for currentness. These are
+local fixture measurements, not production latency guarantees.
 
 ## Known limitation
 

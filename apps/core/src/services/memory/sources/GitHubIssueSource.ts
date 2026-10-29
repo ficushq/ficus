@@ -167,7 +167,7 @@ export class GitHubIssueSource extends BaseMemorySourceAdapter {
       `/repos/${ref.repo}/issues/${ref.number}`,
       squadId,
       undefined,
-      { distinguishUnavailable: true }
+      { distinguishUnavailable: true, confirmedMissingOnly: true }
     )
     if (!detail) return null
     const comments = await githubApiGet<GitHubIssueApiComment[]>(
@@ -225,6 +225,14 @@ export class GitHubIssueSource extends BaseMemorySourceAdapter {
     if (!ref)
       return { success: false, chunksCreated: 0, linksCreated: 0, error: `Invalid GitHub issue source id: ${sourceId}` }
 
+    if (!config || !getPolicyStringArray(config.policy, 'repos'))
+      return {
+        success: false,
+        chunksCreated: 0,
+        linksCreated: 0,
+        reason: 'unavailable',
+        error: 'GitHub source scope unavailable',
+      }
     const allowedRepos = getPolicyStringArray(config?.policy, 'repos') ?? []
     if (!allowedRepos.includes(ref.repo)) {
       return {
@@ -236,18 +244,6 @@ export class GitHubIssueSource extends BaseMemorySourceAdapter {
       }
     }
 
-    const [existing] = await db
-      .select({ next: sql<string | null>`${memoryDocuments.frontmatter} #>> '{githubReindex,nextAttemptAt}'` })
-      .from(memoryDocuments)
-      .where(
-        and(
-          eq(memoryDocuments.squadId, squadId),
-          eq(memoryDocuments.sourceType, this.sourceType),
-          eq(memoryDocuments.sourceId, sourceId)
-        )
-      )
-    if (existing?.next && existing.next > new Date().toISOString())
-      return { success: true, skipped: true, chunksCreated: 0, linksCreated: 0, reason: 'recovery_backoff' }
     let fetched: FetchedContent | null
     try {
       fetched = await this.fetch(squadId, sourceId)
@@ -275,7 +271,7 @@ export class GitHubIssueSource extends BaseMemorySourceAdapter {
         success: false,
         chunksCreated: 0,
         linksCreated: 0,
-        reason: 'out_of_scope',
+        reason: 'label_out_of_scope',
         error: `GitHub issue labels not configured: ${sourceId}`,
       }
     }

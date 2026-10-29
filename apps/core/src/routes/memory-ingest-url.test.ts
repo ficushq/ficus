@@ -137,6 +137,8 @@ describe('POST /api/memory/:squadId/ingest-url', () => {
     globalThis.fetch = mock(async (url: string | URL | Request) => {
       const parsed = new URL(String(url))
       const path = parsed.pathname + parsed.search
+      if (path === '/repos/acme/api') return Response.json({ id: 1 })
+      if (path === '/repos/acme/api/pulls/43') return Response.json({ id: 4300 })
       if (path === '/repos/acme/api/issues/42') {
         return Response.json({
           number: 42,
@@ -180,6 +182,40 @@ describe('POST /api/memory/:squadId/ingest-url', () => {
     expect(doc.frontmatter).toMatchObject({ kind: 'issue', repo: 'acme/api', number: 42 })
   })
 
+  it('reports an explicit ingestion failure when repository identity is unavailable', async () => {
+    await db.insert(squadSourceConfigs).values({
+      squadId,
+      sourceType: 'github_issue',
+      enabled: true,
+      policy: { version: 1, scope: { repos: ['acme/api'] } },
+    })
+    githubFixtures.push(await createTestGitHubConnection({ squadId }))
+    globalThis.fetch = mock(async (url: string | URL | Request) => {
+      const path = new URL(String(url)).pathname
+      if (path === '/repos/acme/api') return new Response('unavailable', { status: 503 })
+      if (path.endsWith('/comments')) return Response.json([])
+      return Response.json({
+        id: 42,
+        number: 42,
+        title: 'Preserve identity',
+        body: 'body',
+        state: 'open',
+        updated_at: '2026-05-01T00:00:00Z',
+        html_url: 'https://github.com/acme/api/issues/42',
+      })
+    }) as unknown as typeof fetch
+    const response = await app.request(`/api/memory/${squadId}/ingest-url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
+      body: JSON.stringify({ url: 'https://github.com/acme/api/issues/42' }),
+    })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({
+      result: { success: false, reason: 'unavailable', error: 'GitHub content fetch unavailable' },
+    })
+    expect(await db.select().from(memoryDocuments).where(eq(memoryDocuments.squadId, squadId))).toEqual([])
+  })
+
   it('ingests a GitHub pull request URL and stores a github_issue memory document', async () => {
     await db.insert(squadSourceConfigs).values({
       squadId,
@@ -191,6 +227,8 @@ describe('POST /api/memory/:squadId/ingest-url', () => {
     globalThis.fetch = mock(async (url: string | URL | Request) => {
       const parsed = new URL(String(url))
       const path = parsed.pathname + parsed.search
+      if (path === '/repos/acme/api') return Response.json({ id: 1 })
+      if (path === '/repos/acme/api/pulls/43') return Response.json({ id: 4300 })
       if (path === '/repos/acme/api/issues/43') {
         return Response.json({
           number: 43,

@@ -564,7 +564,7 @@ export class SearchService {
     // credits the verbatim match.
     const mixed = mixedGitHubMemorySnapshots(
       [...ranked, ...exact]
-        .filter((row) => row.sourceType === 'github_issue')
+        .filter((row) => row.docSourceType === 'github_issue')
         .map((row) => [row.documentId, asFrontmatter(row.docFrontmatter)?.githubProjection])
     )
     const rows = new Map<string, KeywordRow>()
