@@ -1,3 +1,4 @@
+import { withVmSetupLease } from '../sandbox/vm/setup-state'
 import { bindMachineBox } from './queries'
 import { coalesceVmProvision } from '../sandbox/vm/provision-flight'
 import { reserveExecutionHostCapacity, reservePhysicalHostCapacity, readSandboxHostCapacity } from './host-admission'
@@ -62,6 +63,96 @@ async function execution() {
 const resources = (...sandboxIds: string[]) => sandboxIds.map((sandboxId) => ({ machineId, sandboxId }))
 
 describe('durable host capacity claims', () => {
+  test('a crashed running generation loses its host claim when its authoritative session lease disappears', async () => {
+    const run = await execution()
+    await db.transaction((tx) =>
+      claimHostCapacity(tx, { kind: 'execution', executionId: run.id }, resources('agent_other', 'squad_other'))
+    )
+    const sandboxId = 'agent_crashed'
+    await db
+      .insert(machineBoxes)
+      .values({ sandboxId, machineId, unixUser: 'box_crashed', port: 20001, status: 'ready' })
+    const [attempt] = await db.insert(vmBoxProvisionAttempts).values({ sandboxId }).returning()
+    provisionIds.push(attempt.id)
+    await withVmSetupLease(sandboxId, async () => {
+      expect(
+        await db.transaction((tx) =>
+          claimHostCapacity(tx, { kind: 'provision', provisionAttemptId: attempt.id }, resources(sandboxId))
+        )
+      ).toMatchObject({ allowed: true })
+      expect(await db.transaction((tx) => readHostCapacity(tx, machineId))).toMatchObject({ activeQuotaCpus: 12 })
+    })
+    // No graceful interruption/terminal update: the row still says running,
+    // exactly as after a dead Core session has relinquished its advisory lock.
+    expect(
+      (await db.select().from(vmBoxProvisionAttempts).where(eq(vmBoxProvisionAttempts.id, attempt.id)))[0].status
+    ).toBe('running')
+    expect(await db.transaction((tx) => readHostCapacity(tx, machineId))).toMatchObject({ activeQuotaCpus: 8 })
+    const [next] = await db.insert(vmBoxProvisionAttempts).values({ sandboxId: 'agent_successor' }).returning()
+    provisionIds.push(next.id)
+    await withVmSetupLease(next.sandboxId, async () => {
+      expect(
+        await db.transaction((tx) =>
+          claimHostCapacity(tx, { kind: 'provision', provisionAttemptId: next.id }, resources(next.sandboxId))
+        )
+      ).toMatchObject({ allowed: true })
+    })
+  })
+
+  test('a never-started queued execution on an existing idle box is not grandfathered', async () => {
+    const blocker = await execution()
+    await db.transaction((tx) =>
+      claimHostCapacity(
+        tx,
+        { kind: 'execution', executionId: blocker.id },
+        resources('agent_busy_1', 'agent_busy_2', 'agent_busy_3')
+      )
+    )
+    const queued = await execution(),
+      sandboxId = `agent_${queued.agentId}`
+    await db.update(executions).set({ status: 'queued', runStartedAt: null }).where(eq(executions.id, queued.id))
+    await db.insert(machineBoxes).values({ sandboxId, machineId, unixUser: 'box_queued', port: 20001, status: 'ready' })
+    expect(await db.transaction((tx) => readHostCapacity(tx, machineId))).toMatchObject({ activeQuotaCpus: 12 })
+    expect(
+      await db.transaction((tx) =>
+        claimHostCapacity(tx, { kind: 'execution', executionId: queued.id }, resources(sandboxId))
+      )
+    ).toMatchObject({ allowed: false, reason: 'quota' })
+  })
+
+  for (const blocked of ['terminated', 'pending-dormancy', 'dormant-no-wake', 'paused'] as const) {
+    test(`requeued owners release demand when no longer pickable: ${blocked}`, async () => {
+      const run = await execution(),
+        sandboxId = `agent_${run.agentId}`
+      await db.transaction((tx) =>
+        claimHostCapacity(tx, { kind: 'execution', executionId: run.id }, resources(sandboxId))
+      )
+      await db
+        .update(executions)
+        .set({ status: 'queued', runStartedAt: new Date(), wakeEligible: false })
+        .where(eq(executions.id, run.id))
+      await db
+        .insert(machineBoxes)
+        .values({ sandboxId, machineId, unixUser: 'box_ineligible', port: 20001, status: 'ready' })
+      if (blocked === 'paused') {
+        const ws = await stream()
+        await db
+          .update(workStreams)
+          .set({ agentIds: [run.agentId], pause: { pausedAt: new Date().toISOString() } as any })
+          .where(eq(workStreams.id, ws.id))
+      } else
+        await db
+          .update(agents)
+          .set(
+            blocked === 'pending-dormancy'
+              ? { pendingDormancyAt: new Date() }
+              : { status: blocked === 'terminated' ? 'terminated' : 'dormant' }
+          )
+          .where(eq(agents.id, run.agentId))
+      expect(await db.transaction((tx) => readHostCapacity(tx, machineId))).toMatchObject({ activeQuotaCpus: 0 })
+    })
+  }
+
   test('a pre-upgrade unverified stop still reserves its physical quota without an execution owner', async () => {
     await db.insert(machineBoxes).values({
       sandboxId: 'agent_unverified_stop',
@@ -91,15 +182,19 @@ describe('durable host capacity claims', () => {
       .values([{ sandboxId: 'agent_pending_a' }, { sandboxId: 'agent_pending_b' }])
       .returning()
     provisionIds.push(...attempts.map((attempt) => attempt.id))
-    const outcomes = await Promise.all(
-      attempts.map((attempt) =>
-        db.transaction((tx) =>
-          claimHostCapacity(tx, { kind: 'provision', provisionAttemptId: attempt.id }, resources(attempt.sandboxId))
+    await withVmSetupLease(attempts[0].sandboxId, () =>
+      withVmSetupLease(attempts[1].sandboxId, async () => {
+        const outcomes = await Promise.all(
+          attempts.map((attempt) =>
+            db.transaction((tx) =>
+              claimHostCapacity(tx, { kind: 'provision', provisionAttemptId: attempt.id }, resources(attempt.sandboxId))
+            )
+          )
         )
-      )
+        expect(outcomes.filter((outcome) => outcome.allowed)).toHaveLength(1)
+        expect(outcomes.find((outcome) => !outcome.allowed)?.reason).toBe('starting')
+      })
     )
-    expect(outcomes.filter((outcome) => outcome.allowed)).toHaveLength(1)
-    expect(outcomes.find((outcome) => !outcome.allowed)?.reason).toBe('starting')
   })
 
   test('a refused capacity generation is not proof that earlier unowned remote work stopped', async () => {
@@ -480,10 +575,14 @@ describe('durable host capacity claims', () => {
       db.transaction((tx) =>
         claimHostCapacity(tx, { kind: 'provision', provisionAttemptId: row.id }, resources(row.sandboxId))
       )
-    expect((await claim(a)).allowed).toBe(true)
-    expect(await claim(b)).toMatchObject({ allowed: false, reason: 'starting' })
-    await db.update(vmBoxProvisionAttempts).set({ status: 'succeeded' }).where(eq(vmBoxProvisionAttempts.id, a.id))
-    expect((await claim(b)).allowed).toBe(true)
+    await withVmSetupLease(a.sandboxId, () =>
+      withVmSetupLease(b.sandboxId, async () => {
+        expect((await claim(a)).allowed).toBe(true)
+        expect(await claim(b)).toMatchObject({ allowed: false, reason: 'starting' })
+        await db.update(vmBoxProvisionAttempts).set({ status: 'succeeded' }).where(eq(vmBoxProvisionAttempts.id, a.id))
+        expect((await claim(b)).allowed).toBe(true)
+      })
+    )
   })
 
   test('a newly-created generation cannot count itself as pre-existing physical demand', async () => {
@@ -613,7 +712,7 @@ describe('durable host capacity claims', () => {
     expect(await db.transaction((tx) => readHostCapacity(tx, machineId))).toMatchObject({ activeQuotaCpus: 12 })
     await db
       .update(executions)
-      .set({ status: 'queued', startedAt: new Date(0) })
+      .set({ status: 'queued', startedAt: new Date(0), runStartedAt: new Date(0) })
       .where(inArray(executions.agentId, agentIds))
     expect(await db.transaction((tx) => readHostCapacity(tx, machineId))).toMatchObject({ activeQuotaCpus: 12 })
     const ws = await stream()
@@ -729,7 +828,17 @@ describe('durable host capacity claims', () => {
       )
     )
     expect(outcomes.filter((o) => o.allowed)).toHaveLength(1)
-    expect(outcomes.find((o) => !o.allowed)?.reason).toBe('quota')
+    expect(['busy', 'quota']).toContain(outcomes.find((o) => !o.allowed)?.reason)
+    const loser = [b, c][outcomes.findIndex((outcome) => !outcome.allowed)]!
+    expect(
+      await db.transaction((tx) =>
+        claimHostCapacity(
+          tx,
+          { kind: 'stream', workStreamId: loser.id },
+          resources('squad_shared', pendingStreamBox(loser.id))
+        )
+      )
+    ).toMatchObject({ allowed: false, reason: 'quota' })
     expect(await db.transaction((tx) => readHostCapacity(tx, machineId))).toMatchObject({ activeQuotaCpus: 12 })
   })
 })

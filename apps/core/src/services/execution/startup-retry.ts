@@ -134,10 +134,52 @@ export function startupRetryNotice(error: unknown): string {
     return 'The sandbox provisioning lock is busy; this will retry automatically.'
   }
   if (code === 'machine_capacity') {
-    return 'The sandbox is waiting for host capacity or another sandbox startup to finish; this will retry automatically.'
+    return 'The sandbox is waiting for host capacity or another sandbox startup to finish; this will retry with bounded backoff for up to 30 minutes.'
   }
   if (code?.startsWith('machine_')) {
     return 'The sandbox machine is still starting up; this will start automatically once it is ready.'
   }
   return 'Execution startup hit a temporary database connection failure and has been queued for retry.'
+}
+
+/** Capacity waiting is separate from the startup-failure retry budget. The
+ * first wait timestamp is persisted on the execution, not reset on pickup. */
+export function capacityWaitDelay(startedAt: Date | null, now = Date.now()): number | undefined {
+  const age = Math.max(0, now - (startedAt?.getTime() ?? now))
+  const remaining = 30 * 60_000 - age
+  if (remaining <= 0) return undefined
+  return Math.min(remaining, age < 2 * 60_000 ? 5_000 : age < 10 * 60_000 ? 30_000 : 60_000)
+}
+
+/** Sanitize the only details permitted in durable shared failure records. */
+export function capacityRefusalDetails(error: unknown): {
+  machineId?: string
+  reason?: 'busy' | 'unknown' | 'quota' | 'starting'
+} {
+  const cause = findInCauseChain(error, 'HostCapacityUnavailableError') as
+    (Error & { result?: { machineId?: unknown; reason?: unknown } }) | null
+  const details = cause?.result
+  const machineId =
+    typeof details?.machineId === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(details.machineId)
+      ? details.machineId
+      : undefined
+  const reason =
+    details?.reason === 'busy' ||
+    details?.reason === 'unknown' ||
+    details?.reason === 'quota' ||
+    details?.reason === 'starting'
+      ? details.reason
+      : undefined
+  return { ...(machineId ? { machineId } : {}), ...(reason ? { reason } : {}) }
+}
+
+export function capacityWaitFailureNotice(error: unknown): string {
+  const { machineId, reason } = capacityRefusalDetails(error)
+  const summary =
+    reason === 'unknown' ? 'Host CPU capacity could not be determined' : 'Host capacity wait exceeded 30 minutes'
+  return (
+    `${summary} (machine ${machineId ?? 'unknown'}, reason ${reason ?? 'unavailable'}). ` +
+    'Check the host capacity and active startup owners before retrying.'
+  )
 }

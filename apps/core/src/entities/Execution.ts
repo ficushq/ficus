@@ -37,6 +37,9 @@ import {
   startupRetryNotice,
   startupRetryDelays,
   isExecutionStartupFailure,
+  capacityWaitDelay,
+  capacityRefusalDetails,
+  capacityWaitFailureNotice,
 } from '../services/execution/startup-retry'
 import { restoreQueueOwnedAdmission } from '../services/execution/agent-admission'
 import { maintenanceStore } from '../services/maintenance/store'
@@ -248,6 +251,7 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
   declare executionVersion: number
   declare startupRetryCount: number
   declare startupRetryAt: Date | null
+  declare startupCapacityWaitAt: Date | null
   declare message: string | null
   declare imageIds: string[] | null
   declare wakeEligible: boolean
@@ -794,6 +798,11 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
                         ? executions.startupRetryCount
                         : sql`${executions.startupRetryCount} + 1`,
                       startupRetryAt: sql`clock_timestamp() + ${outcome.startupRetryDelayMs!} * interval '1 millisecond'`,
+                      ...(outcome.capacityWait
+                        ? {
+                            startupCapacityWaitAt: sql`COALESCE(${executions.startupCapacityWaitAt}, clock_timestamp())`,
+                          }
+                        : {}),
                     }
                   : {}),
               })
@@ -1035,7 +1044,8 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
     const delays = startupRetryDelays(code)
     // Admission waiting is not a failed startup attempt. Keep the exact CAS/
     // lease fencing and a quiet poll deadline, but never consume the failure budget.
-    const delayMs = capacityWait ? 5_000 : delays[this.startupRetryCount]
+    if (capacityWait && capacityRefusalDetails(error).reason === 'unknown') return false
+    const delayMs = capacityWait ? capacityWaitDelay(this.startupCapacityWaitAt) : delays[this.startupRetryCount]
     if (delayMs === undefined) return false
     const requeued = await this.transitionTo(
       { kind: 'requeued', startupRetryDelayMs: delayMs, startupRetryMax: delays.length, capacityWait },
@@ -1304,6 +1314,21 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
         // Dynamic import to avoid circular dependency
         const { createRunner } = await import('./agent-runners')
         const runner = await createRunner(agent, this)
+        // Successful startup ends this capacity-wait episode. Clear before any
+        // model prompt; a later recovery gets its own bounded waiting window.
+        if (this.startupCapacityWaitAt) {
+          await db
+            .update(executions)
+            .set({ startupCapacityWaitAt: null })
+            .where(
+              and(
+                eq(executions.id, this.id),
+                eq(executions.status, 'running'),
+                eq(executions.executionVersion, this.executionVersion)
+              )
+            )
+          this.startupCapacityWaitAt = null
+        }
         runnerCreated = true
         ;(runner as { _timing?: typeof timing })._timing = timing
         await runner.run()
@@ -1361,7 +1386,7 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
           return
         }
 
-        const errorMsg = err instanceof Error ? err.message : String(err)
+        let errorMsg = err instanceof Error ? err.message : String(err)
         removeOwnSession()
         const admissionLease = admissionLeaseFromError(err)
         const failedVersion = this.executionVersion
@@ -1378,6 +1403,7 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
           // A stop or newer pickup can win while startup unwinds. Exhausting
           // a retry budget must not terminalize that newer state.
           if (this.status !== 'running' || this.executionVersion !== failedVersion) return
+          if (startupRetryCode(err) === 'machine_capacity') errorMsg = capacityWaitFailureNotice(err)
         }
         const { streamManager } = await import('../services/streaming/buffer')
         const closeStoppedStartup = async () => {

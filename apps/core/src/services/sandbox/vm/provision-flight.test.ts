@@ -396,6 +396,7 @@ test('loss of the owned direct DB session shares abandonment and fences the late
   const ownerResult = owner.catch((error) => error)
   try {
     await entered.promise
+    const [original] = await db.select().from(attempts).where(eq(attempts.sandboxId, id))
     const key = `vm-box-setup:${id}`
     const locks = await db.execute(sql`
       SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND granted
@@ -420,7 +421,9 @@ test('loss of the owned direct DB session shares abandonment and fences the late
     expect(callbacks).toBe(1)
     release.resolve()
     expect(await ownerResult).toBeInstanceOf(Error)
-    const [row] = await db.select().from(attempts).where(eq(attempts.sandboxId, id))
+    // The successor also has a row; an unordered sandbox-wide SELECT can
+    // return its successful generation instead of the crashed owner's row.
+    const [row] = await db.select().from(attempts).where(eq(attempts.id, original!.id))
     expect(row!.status).toBe('failed')
     expect(row!.failureClass).toBe('abandoned')
   } finally {

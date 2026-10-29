@@ -1484,7 +1484,10 @@ runs its **own rootless dockerd** instead (spec §5):
   enlarge an already-admitted reservation. Claims move atomically with the
   authoritative box bind, so tentative placement does not leave phantom charges.
   Recovery requeues retain their admitted footprint, including pre-upgrade turns
-  that started before durable claim records existed.
+  that actually started before durable claim records existed (`run_started_at`,
+  not the creation-time `started_at`). Never-started queues do not count as
+  admitted work. Queued owners that are terminated, pending dormancy, dormant
+  without wake eligibility, or blocked by a paused stream release their demand.
   Creation, manual admission and automatic promotion respect the host budget,
   including squads with no stream-count cap. Execution pickup commits its claim
   with the queued-to-running transition; refusal leaves work queued without
@@ -1499,12 +1502,22 @@ runs its **own rootless dockerd** instead (spec §5):
   below budget, setups can run concurrently. Different hosts can progress and
   same-box followers do not consume another lane. Short lock contention uses
   bounded jittered retries, not an indefinitely blocking lock inside lifecycle
-  transactions. Capacity waits requeue without spending startup retries or
-  increasing provisioning backoff; actual startup failures remain bounded.
+  transactions. Capacity waits requeue without spending startup retries or increasing
+  provisioning backoff. A durable first-wait timestamp caps the episode at
+  30 minutes: polling slows from 5 seconds to 30 seconds after 2 minutes, then
+  60 seconds after 10 minutes. Unknown CPU capacity fails immediately. Terminal
+  notices include the machine ID and refusal reason, including shared-failure
+  followers; only those allowlisted details are persisted, never remote output.
+  Successful runner startup clears the wait window before model dispatch.
+  Actual startup failures retain their separate bounded retry budget.
 
   Claims follow lifecycle records, not expiring permits. Abandoned/interrupted
   work with an unverified binding remains charged conservatively, but a dead
-  generation cannot hold a permanent startup lane. Successful same-box recovery,
+  generation cannot hold a permanent startup lane. A running provision claim
+  requires its actual granted PostgreSQL session advisory lock in this database;
+  a crash that leaves a running row cannot preserve ownership after the session
+  disappears. Unverified stop/ensuring bindings remain conservatively observed
+  as remote demand, without acquiring a startup lane. Successful same-box recovery,
   a later confirmed stop, or normal box removal releases the uncertain claim.
   Normal removal deletes the binding after remote teardown; a capacity refusal
   or an unrelated failed retry alone is not evidence that remote work stopped.

@@ -3,7 +3,7 @@ import { and, asc, desc, eq, gt, inArray, lt, sql } from 'drizzle-orm'
 import { db } from '../../../db'
 import { vmBoxProvisionAttempts as attempts, machineCapacityClaims } from '../../../db/schema'
 import { MachineNotReadyError } from '../../machines/queries'
-import { startupRetryCode } from '../../execution/startup-retry'
+import { capacityRefusalDetails, startupRetryCode } from '../../execution/startup-retry'
 import { withVmSetupLease, type VmSetupLeaseWait } from './setup-state'
 
 const physicalGeneration = new AsyncLocalStorage<number>()
@@ -124,7 +124,10 @@ function sharedFailure(row: Attempt): never {
       ? 'sandbox_readiness_pending'
       : row.failureClass?.split(':')[1]
   const cause = new Error('Shared physical provisioning failed')
-  if (retryCode === 'box_port_busy') cause.name = 'BoxPortBusyError'
+  if (row.failureClass?.startsWith('capacity:')) {
+    cause.name = 'HostCapacityUnavailableError'
+    Object.assign(cause, { result: row.capacityFailure ?? {} })
+  } else if (retryCode === 'box_port_busy') cause.name = 'BoxPortBusyError'
   else if (retryCode === 'box_lock_timeout') cause.name = 'BoxLockTimeoutError'
   else if (retryCode === 'box_stop_unverified') cause.name = 'BoxStopUnverifiedError'
   else if (retryCode === 'box_bash_busy') cause.name = 'BoxBashBusyError'
@@ -287,6 +290,7 @@ export async function coalesceVmProvision<T>(
                   ? `retry:${retryCode}`
                   : 'provision',
             failureCount,
+            capacityFailure: capacityWait ? capacityRefusalDetails(error) : null,
             retryAt: placement
               ? null
               : new Date(Date.now() + (setup || capacityWait ? 0 : provisionBackoffMs(failureCount))),

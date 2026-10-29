@@ -406,6 +406,8 @@ export const executions = pgTable(
     executionVersion: integer('execution_version').notNull().default(0),
     startupRetryCount: integer('startup_retry_count').notNull().default(0),
     startupRetryAt: timestamp('startup_retry_at', { withTimezone: true }),
+    /** First host-capacity wait; survives polling/restarts without spending failure retries. */
+    startupCapacityWaitAt: timestamp('startup_capacity_wait_at', { withTimezone: true }),
     message: text('message'),
     imageIds: uuid('image_ids').array(),
     wakeEligible: boolean('wake_eligible').notNull().default(true),
@@ -3408,6 +3410,11 @@ export const vmBoxProvisionAttempts = pgTable(
     sandboxId: text('sandbox_id').notNull(),
     status: text('status').notNull().default('running'),
     failureClass: text('failure_class'), // provision | abandoned | placement[:startup code] | retry:<startup code>
+    /** Allowlisted host identity/reason only; never remote output or configuration. */
+    capacityFailure: jsonb('capacity_failure').$type<{
+      machineId?: string
+      reason?: 'busy' | 'unknown' | 'quota' | 'starting'
+    }>(),
     failureCount: integer('failure_count').notNull().default(0),
     retryAt: timestamp('retry_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

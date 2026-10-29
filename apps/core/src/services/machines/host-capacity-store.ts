@@ -1,5 +1,6 @@
+import { vmSetupLeaseIsHeld } from '../sandbox/vm/setup-lock'
 import { WORK_STREAM_ADMITTED_STATUSES } from '@ficus/shared'
-import { and, eq, inArray, ne, notInArray, or, sql } from 'drizzle-orm'
+import { and, eq, inArray, ne, notInArray, or, sql, type SQL } from 'drizzle-orm'
 import { executions, machineCapacityClaims, machines, vmBoxProvisionAttempts, workStreams } from '../../db/schema'
 import type { DbTransaction } from './queries'
 import { evaluateHostQuotaCounts, type HostCapacityDecision } from './host-capacity-policy'
@@ -29,6 +30,17 @@ function ownerKey(owner: HostCapacityOwner): string {
   }
 }
 
+/** Match pickup's queued-owner lifecycle guards. A live running turn remains
+ * charged until it settles; a queued turn that cannot resume holds no quota. */
+function queuedOwnerCanResume(agentId: SQL, wakeEligible: SQL): SQL {
+  return sql`EXISTS (SELECT 1 FROM agents queued_owner WHERE queued_owner.id = ${agentId}
+    AND queued_owner.status <> 'terminated' AND queued_owner.pending_dormancy_at IS NULL
+    AND (queued_owner.status <> 'dormant' OR ${wakeEligible})
+    AND NOT EXISTS (SELECT 1 FROM work_streams paused
+      WHERE paused.status IN ('active', 'queued') AND paused.pause IS NOT NULL
+        AND (paused.assignee_agent_id = queued_owner.id OR queued_owner.id = ANY(paused.agent_ids))))`
+}
+
 /** Ignore settled owners immediately, even before opportunistic row cleanup. */
 async function validClaims(tx: DbTransaction, incomingProvisionId = 0): Promise<Claim[]> {
   const rows = await tx
@@ -42,12 +54,21 @@ async function validClaims(tx: DbTransaction, incomingProvisionId = 0): Promise<
         and(eq(machineCapacityClaims.kind, 'stream'), inArray(workStreams.status, WORK_STREAM_ADMITTED_STATUSES)),
         and(
           eq(machineCapacityClaims.kind, 'execution'),
-          inArray(executions.status, ['queued', 'running', 'waiting-sandbox', 'stopping'])
+          or(
+            inArray(executions.status, ['running', 'waiting-sandbox', 'stopping']),
+            and(
+              eq(executions.status, 'queued'),
+              queuedOwnerCanResume(sql`${executions.agentId}`, sql`${executions.wakeEligible}`)
+            )
+          )
         ),
         and(
           eq(machineCapacityClaims.kind, 'provision'),
           or(
-            eq(vmBoxProvisionAttempts.status, 'running'),
+            and(
+              eq(vmBoxProvisionAttempts.status, 'running'),
+              vmSetupLeaseIsHeld(sql`${vmBoxProvisionAttempts.sandboxId}`)
+            ),
             and(
               eq(vmBoxProvisionAttempts.status, 'failed'),
               inArray(vmBoxProvisionAttempts.failureClass, ['abandoned', 'interrupted']),
@@ -93,7 +114,8 @@ async function validClaims(tx: DbTransaction, incomingProvisionId = 0): Promise<
              a.squad_id AS origin_squad_id, ARRAY[a.id] AS path
       FROM agents a JOIN executions e ON e.agent_id = a.id
       WHERE (e.status IN ('running', 'waiting-sandbox', 'stopping')
-        OR (e.status = 'queued' AND e.started_at IS NOT NULL)) AND a.agent_type_id <> 'assistant'
+        OR (e.status = 'queued' AND e.run_started_at IS NOT NULL
+          AND ${queuedOwnerCanResume(sql`e.agent_id`, sql`e.wake_eligible`)})) AND a.agent_type_id <> 'assistant'
       UNION ALL
       SELECT p.id, p.parent_agent_id, p.agent_type_id, p.owner_user_id, p.squad_id,
              o.origin_squad_id, o.path || p.id
@@ -102,12 +124,12 @@ async function validClaims(tx: DbTransaction, incomingProvisionId = 0): Promise<
     )
     SELECT b.machine_id AS "machineId", b.sandbox_id AS "sandboxId",
       CASE WHEN ${ensuringWithoutOutcome} OR EXISTS (SELECT 1 FROM vm_box_provision_attempts p
-        WHERE p.sandbox_id = b.sandbox_id AND p.status = 'running' AND p.id <> ${incomingProvisionId})
+        WHERE p.sandbox_id = b.sandbox_id AND p.status = 'running' AND p.id <> ${incomingProvisionId} AND ${vmSetupLeaseIsHeld(sql`p.sandbox_id`)})
         THEN 'provision' ELSE 'execution' END AS kind
     FROM machine_boxes b
     WHERE b.status IN ('ready', 'ensuring', 'stop_unverified') AND (
       b.status = 'stop_unverified' OR ${ensuringWithoutOutcome} OR b.last_activity_at > now() - interval '60 seconds'
-      OR EXISTS (SELECT 1 FROM vm_box_provision_attempts p WHERE p.sandbox_id = b.sandbox_id AND p.status = 'running' AND p.id <> ${incomingProvisionId})
+      OR EXISTS (SELECT 1 FROM vm_box_provision_attempts p WHERE p.sandbox_id = b.sandbox_id AND p.status = 'running' AND p.id <> ${incomingProvisionId} AND ${vmSetupLeaseIsHeld(sql`p.sandbox_id`)})
       OR EXISTS (
         SELECT 1 FROM owners o WHERE
           b.sandbox_id = 'squad_' || o.origin_squad_id::text
