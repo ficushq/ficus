@@ -290,7 +290,7 @@ Each accepted queued chat message has Cancel and Switch to Interrupt/Follow up c
 
 Unclaimed rows are edited under the agent admission lock and a row lock. Claimed inputs are routed to the exact owning execution, with a request ID and deadline; other workers cannot acknowledge the operation. The patched Pi queue waits for the database commit before consuming or changing the selected message. A rollback leaves it queued. Once Pi has drained it, edits return a conflict instead of re-enqueuing it. Cancellation keeps the accepted-send receipt tombstone so retrying the same client ID cannot resurrect it.
 
-Switching keeps the original database FIFO key (creation time plus enqueue order), delivery identity, and image objects. Interrupts still run before follow-ups by design; switching away and back does not move a message behind later messages of the same mode. Controls appear after server acceptance, and failures remain visible without hiding the pending row.
+Switching keeps the original database FIFO key (full PostgreSQL creation timestamp, including microseconds, plus enqueue order), delivery identity, and image objects. The ordering key is selected in SQL rather than reconstructed from a JavaScript Date. Send retries are validated against the immutable receipt hash, so a mode edit does not invalidate an accepted request or revert the edit. Interrupts still run before follow-ups by design; switching away and back does not move a message behind later messages of the same mode. Controls appear after server acceptance, and failures remain visible without hiding the pending row.
 
 ### Chat queue display
 

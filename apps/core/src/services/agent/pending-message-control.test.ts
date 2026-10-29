@@ -1,5 +1,9 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { controlledPiSession } from '../../test-utils/controlled-pi-session'
 import { afterEach, beforeEach, expect, it, mock } from 'bun:test'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { Agent } from '../../entities/Agent'
 import { AgentType } from '../../entities/AgentType'
 import { db, agents, agentTypes, messages, chatSendReceipts } from '../../db'
@@ -100,5 +104,97 @@ it('does not acknowledge or mutate a queue on a worker that does not own the exe
     expect(await db.select().from(messages).where(eq(messages.id, message.id))).toHaveLength(1)
   } finally {
     unsubscribe()
+  }
+})
+
+for (const originalMode of ['steer', 'follow-up'] as const) {
+  it(`replays the original accepted ${originalMode} send after switching, without reverting the edit`, async () => {
+    await agent.queueExecution({ message: 'initial' })
+    const options = { deliveryMode: originalMode, metadata: { clientId: 'switch-replay' } }
+    const accepted = await agent.sendMessage('queued request', options)
+    const message = await agent.findHumanMessageByClientId('switch-replay')
+    const editedMode = originalMode === 'steer' ? 'follow-up' : 'steer'
+    expect(await updateUnclaimedMessage(agent.id, message!.id, editedMode)).toBe('updated')
+    expect(await agent.sendMessage('queued request', options)).toEqual(accepted)
+    const matching = (await agent.listMessages()).messages.filter((m) => m.metadata?.clientId === 'switch-replay')
+    expect(matching).toHaveLength(1)
+    expect(matching[0]!.id).toBe(message!.id)
+    expect(matching[0]!.metadata?.deliveryMode).toBe(editedMode)
+    await expect(agent.sendMessage('changed content', options)).rejects.toThrow('different payload')
+    await expect(agent.sendMessage('queued request', { ...options, deliveryMode: editedMode })).rejects.toThrow(
+      'different payload'
+    )
+    // Cancellation retains the same immutable receipt too.
+    expect(await updateUnclaimedMessage(agent.id, message!.id, 'cancel')).toBe('updated')
+    expect(await agent.sendMessage('queued request', options)).toMatchObject({ success: true, queued: false })
+    expect(await agent.findHumanMessageByClientId('switch-replay')).toBeNull()
+  })
+}
+
+it('preserves sub-millisecond database FIFO through claims and real SDK mode switching', async () => {
+  // Allocate B's sequence first, but give A the earlier timestamp within the same millisecond.
+  const second = await agent.recordMessage({
+    role: 'human',
+    content: 'B',
+    pending: true,
+    metadata: { deliveryMode: 'follow-up' },
+  })
+  const first = await agent.recordMessage({
+    role: 'human',
+    content: 'A',
+    pending: true,
+    metadata: { deliveryMode: 'follow-up' },
+  })
+  await db
+    .update(messages)
+    .set({ createdAt: sql`'2026-10-28 00:00:00.000100'::timestamp` })
+    .where(eq(messages.id, first.id))
+  await db
+    .update(messages)
+    .set({ createdAt: sql`'2026-10-28 00:00:00.000200'::timestamp` })
+    .where(eq(messages.id, second.id))
+  const rows = await agent.listPendingInterventionsForSessionDelivery()
+  expect(rows.map((m) => m.id)).toEqual([first.id, second.id])
+  expect(rows[0]!.createdAt).toEqual(rows[1]!.createdAt) // JS Date cannot distinguish these.
+  const owner = { generation: crypto.randomUUID(), executionId: crypto.randomUUID() }
+  const root = mkdtempSync(join(tmpdir(), 'pi-db-queue-order-'))
+  const { session, ...fixture } = await controlledPiSession(root)
+  const run = session.prompt('start', { deliveryId: 'initial' })
+  try {
+    await fixture.waitForRequest(1)
+    const deliveryIds: string[] = []
+    for (const row of rows) {
+      const claimed = await agent.claimPendingInterventionForSessionDelivery(row.id, owner)
+      const queueOrder = (claimed as typeof claimed & { deliveryOrder: string }).deliveryOrder
+      expect(queueOrder).toContain(row.id === first.id ? '.000100:' : '.000200:')
+      deliveryIds.push(claimed!.metadata!.sessionDelivery!.id)
+      await session.followUp(claimed!.content, undefined, { deliveryId: deliveryIds.at(-1), queueOrder })
+    }
+    for (const operation of ['steer', 'follow-up'] as const) {
+      expect(
+        await updateClaimedMessage({
+          agentId: agent.id,
+          messageId: first.id,
+          executionId: owner.executionId,
+          operation,
+          session: { pi: session } as any,
+          stillOwned: () => true,
+          expiresAt: Date.now() + 10_000,
+        })
+      ).toBe('updated')
+    }
+    expect(session.getFollowUpMessages()).toEqual(['A', 'B'])
+    fixture.reply(0)
+    await fixture.waitForRequest(2)
+    fixture.reply(1)
+    await fixture.waitForRequest(3)
+    fixture.reply(2)
+    await run
+    expect(fixture.requestDeliveryIds.at(-1)).toEqual(['initial', ...deliveryIds])
+  } finally {
+    await session.abort()
+    await run.catch(() => {})
+    session.dispose()
+    rmSync(root, { recursive: true, force: true })
   }
 })
