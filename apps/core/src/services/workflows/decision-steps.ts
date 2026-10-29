@@ -183,6 +183,7 @@ export async function applyDecision(id: string, attemptId: number, reply: Workfl
       if (wait.flowAttemptId != null && !activeIds.has(wait.flowAttemptId))
         await closeOpenWaits(tx, { waitId: wait.id }, 'cleared', {
           note: 'Flow attempt superseded; this wait no longer blocks work.',
+          allowStructured: true,
         })
     await dispatchFlow(tx, stream, { ...run, state, version: state.version }, callbacks)
     await tx.insert(workStreamFlowTransitions).values({

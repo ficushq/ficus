@@ -8,7 +8,7 @@ maintenanceAfterAll(() => releaseMaintenanceIsolation?.())
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { eq } from 'drizzle-orm'
 import { db } from '../db'
-import { executions, agents, agentTypes, sandboxProvisionRecoveries } from '../db/schema'
+import { executions, agents, agentTypes, messages, sandboxProvisionRecoveries } from '../db/schema'
 import { AgentType } from './AgentType'
 import { Agent } from './Agent'
 import { Execution } from './Execution'
@@ -163,6 +163,43 @@ describe('Execution failure classification persistence', () => {
     expect(row.status).toBe('failed')
     expect(row.failureClass).toBe('platform_pre_tool_refusal')
     expect(row.failureReason).toBe('sandbox_provision_exhausted')
+  })
+
+  it('publishes correlated resume context before even an admission refusal, without an unexplained failure notice', async () => {
+    const execution = await testAgent.queueExecution({})
+    await execution.start()
+    const restart = { restartId: 'restart-admission', restartedAt: '2026-10-28T21:32:00.000Z' }
+    await db.insert(messages).values({
+      agentId: testAgent.id,
+      role: 'assistant',
+      content: 'pause fixture',
+      metadata: {
+        isSystem: true,
+        executionId: execution.id,
+        admissionRecoveryExecutionId: execution.id,
+        restartPhase: 'pause',
+        restart,
+      },
+    })
+    const noticeIds: string[] = []
+    const off = eventEmitter.on('message.created', (event) => {
+      if (event.agentId === testAgent.id) noticeIds.push(event.messageId)
+    })
+    expect(reserveSession(testAgent.id, '00000000-0000-4000-8000-0000000000ff')).toBe(true)
+    try {
+      await execution.run()
+      const rows = await db.select().from(messages).where(eq(messages.agentId, testAgent.id))
+      const notices = noticeIds.map((id) => rows.find((row) => row.id === id)?.content)
+      expect(notices[0]).toStartWith('Ficus restarted at 2026-10-28T21:32:00.000Z;')
+      expect(notices).toHaveLength(2)
+      expect(notices[1]).toContain(
+        'Resume attempt could not finish: Execution session capacity reservation was refused'
+      )
+      expect(notices.join('\n')).not.toContain('Execution failed:')
+    } finally {
+      off()
+      releaseSessionReservation(testAgent.id, '00000000-0000-4000-8000-0000000000ff')
+    }
   })
 
   it('a capacity reservation refusal in run() classifies as platform_pre_tool_refusal', async () => {

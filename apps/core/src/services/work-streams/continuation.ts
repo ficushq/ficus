@@ -3,7 +3,7 @@ import { listActiveSlotWaits } from '../slots/active-waits'
 import { listAgentsWithLiveMonitors } from '../monitors/live-monitors'
 import { acquireAgentQueueLock } from '../execution/agent-admission'
 import { externalDeliveryStreamIds } from '../workflows/delivery-state'
-import { activeWorkflowAttempts } from '@ficus/shared'
+import { activeWorkflowAttempts, RECOVERY_ATTEMPT_BUDGET } from '@ficus/shared'
 import { waitsForAgent, waitingAssigneeStreamIds } from './wait-scope'
 import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import { db } from '../../db'
@@ -32,7 +32,7 @@ import {
   notifyWorkStreamBlocked,
   persistWorkStreamPersistentIdleInTransaction,
 } from '../squad/work-stream-notifications'
-import { closeOpenWaits, openWait } from './waits'
+import { closeOpenWaits } from './waits'
 import { ACTIVE_EXECUTION_STATUSES } from '../execution/status'
 import { isDurableProviderTransportFailure } from '../../lib/error'
 import { executionOutcomeOf } from '../execution/failure-classification'
@@ -53,7 +53,7 @@ const NORMAL_CONTINUATION_MAX_ATTEMPTS = 1
 export const TRANSPORT_CONTINUATION_MAX_ATTEMPTS = 3
 export const CONTINUATION_MAX_ATTEMPTS = TRANSPORT_CONTINUATION_MAX_ATTEMPTS
 export const CONTINUATION_CLAIM_LEASE_MS = 2 * 60_000
-export const CONTINUATION_MAX_DELIVERY_ATTEMPTS = 5
+export const CONTINUATION_MAX_DELIVERY_ATTEMPTS = RECOVERY_ATTEMPT_BUDGET
 export const NORMAL_IDLE_NOTICE_DELAY_MS = 60_000
 
 let continuationRunner: PeriodicRunner | null = null
@@ -107,12 +107,6 @@ export function transportContinuationDelay(attempt: number, seed: string): numbe
   return Math.min(CONTINUATION_MAX_BACKOFF_MS, base + (stableHash(seed) % (jitterWindow + 1)))
 }
 
-const TRANSPORT_EXHAUSTION_MESSAGE =
-  'The assigned agent encountered trusted provider transport failures after 3 automatic continuation attempts while this work stream remained in progress. Inspect the execution history, then respond to continue with a fresh retry budget, reassign the stream, or cancel it.'
-
-const DELIVERY_EXHAUSTION_MESSAGE =
-  'Automatic continuation delivery repeatedly failed. Inspect the execution history, then respond to continue with a fresh retry budget, reassign the stream, or cancel it.'
-
 function isContinuationWatchdogMessage(message: string | null): boolean {
   return Boolean(
     message?.startsWith(
@@ -123,31 +117,15 @@ function isContinuationWatchdogMessage(message: string | null): boolean {
   )
 }
 
-function safeExecutionErrorCategory(
-  execution: Pick<typeof executions.$inferSelect, 'status' | 'error' | 'failureClass'>
-): string {
-  if (execution.status === 'stopped') return 'execution_stopped'
-  if (execution.status === 'failed') {
-    // Stored structural class first; the prose sentinel is only the fallback
-    // for legacy rows written before classification existed.
-    if (execution.failureClass === 'platform_pre_tool_refusal') return 'platform_pre_tool_refusal'
-    if (execution.failureClass === 'provider_transport') return 'provider_transport_failure'
-    if (execution.failureClass == null && isDurableProviderTransportFailure(execution.error)) {
-      return 'provider_transport_failure'
-    }
-  }
-  return 'execution_failed'
-}
-
 export async function blockCurrentContinuation(
   workStreamId: string,
   generation: number,
   assigneeAgentId: string,
-  message: string,
+  kind: 'transport' | 'delivery',
   condition: (cycle: typeof workStreamContinuations.$inferSelect) => boolean,
   triggerExecutionId?: string,
   observationEndedAt?: Date,
-  lastDeliveryFailureAt?: Date
+  _lastDeliveryFailureAt?: Date
 ): Promise<boolean> {
   // Callers pass the trigger's `endedAt`, which the database stamped; the fallback reads the same
   // clock rather than the host's, because `now` is compared against `executions.ended_at` below.
@@ -193,12 +171,14 @@ export async function blockCurrentContinuation(
       await resetContinuationCycle(tx, workStreamId, assigneeAgentId, now)
       return null
     }
+    let triggerAttemptId: number | undefined
     if (triggerExecutionId) {
       const [trigger] = await tx
-        .select({ endedAt: executions.endedAt })
+        .select({ endedAt: executions.endedAt, flowContext: executions.flowContext })
         .from(executions)
         .where(and(eq(executions.id, triggerExecutionId), eq(executions.agentId, assigneeAgentId)))
         .limit(1)
+      if (trigger?.flowContext?.workStreamId === workStreamId) triggerAttemptId = trigger.flowContext.attemptId
       const [executionStartedAfterTrigger] = trigger?.endedAt
         ? await tx
             .select({ id: executions.id })
@@ -221,70 +201,6 @@ export async function blockCurrentContinuation(
       }
     }
 
-    const [completionCount] = await tx
-      .select({ count: sql<number>`count(*)::int` })
-      .from(executions)
-      .where(
-        and(
-          eq(executions.agentId, assigneeAgentId),
-          eq(executions.status, 'completed'),
-          isNotNull(executions.endedAt),
-          gt(executions.endedAt, cycle.cycleStartedAt),
-          lte(executions.endedAt, now)
-        )
-      )
-    const [lastCompletion] = await tx
-      .select({ endedAt: executions.endedAt })
-      .from(executions)
-      .where(
-        and(
-          eq(executions.agentId, assigneeAgentId),
-          eq(executions.status, 'completed'),
-          isNotNull(executions.endedAt),
-          gt(executions.endedAt, cycle.cycleStartedAt),
-          lte(executions.endedAt, now)
-        )
-      )
-      .orderBy(desc(executions.endedAt), desc(executions.id))
-      .limit(1)
-    const [lastTerminalError] = await tx
-      .select({
-        status: executions.status,
-        error: executions.error,
-        endedAt: executions.endedAt,
-        failureClass: executions.failureClass,
-      })
-      .from(executions)
-      .where(
-        and(
-          eq(executions.agentId, assigneeAgentId),
-          inArray(executions.status, ['failed', 'stopped']),
-          isNotNull(executions.endedAt),
-          gte(executions.endedAt, cycle.cycleStartedAt),
-          lte(executions.endedAt, now)
-        )
-      )
-      .orderBy(desc(executions.endedAt), desc(executions.id))
-      .limit(1)
-    const terminalError = lastTerminalError?.endedAt
-      ? { category: safeExecutionErrorCategory(lastTerminalError), at: lastTerminalError.endedAt }
-      : null
-    const deliveryError = cycle.lastError
-      ? { category: 'continuation_delivery_failure', at: lastDeliveryFailureAt ?? cycle.updatedAt }
-      : null
-    const lastError =
-      deliveryError && (!terminalError || deliveryError.at >= terminalError.at)
-        ? `${deliveryError.category} at ${deliveryError.at.toISOString()}`
-        : terminalError
-          ? `${terminalError.category} at ${terminalError.at.toISOString()}`
-          : 'none'
-    const evidence = [
-      `Observation window: ${cycle.cycleStartedAt.toISOString()} to ${now.toISOString()}`,
-      `Completed executions in window: ${completionCount?.count ?? 0}`,
-      `Last completion: ${lastCompletion?.endedAt?.toISOString() ?? 'none'}`,
-      `Last error: ${lastError}`,
-    ].join('\n')
-
     await tx
       .update(workStreamContinuations)
       .set({ status: 'exhausted', ...(triggerExecutionId ? { triggerExecutionId } : {}), updatedAt: now })
@@ -295,17 +211,19 @@ export async function blockCurrentContinuation(
     // wait (created_by system) — the maintenance pass parks the stream after
     // the squad grace, and clearing the wait makes it schedulable again.
     const [flow] = await tx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, workStreamId))
-    const flowAttemptId = flow?.activated
-      ? activeWorkflowAttempts(flow.state).find((attempt) => flow.attemptAgents[String(attempt.id)] === assigneeAgentId)
-          ?.id
-      : undefined
-    const { wait } = await openWait(tx, {
-      flowAttemptId,
-      workStreamId,
-      type: 'manual',
-      message: `${message}\n\nWatchdog evidence:\n${evidence}`,
-      createdBy: 'system',
-    })
+    const targets = flow?.activated
+      ? activeWorkflowAttempts(flow.state).filter(
+          (attempt) => flow.attemptAgents[String(attempt.id)] === assigneeAgentId
+        )
+      : []
+    const flowAttemptId =
+      targets.find((attempt) => attempt.id === triggerAttemptId)?.id ??
+      (targets.length === 1 ? targets[0]!.id : undefined)
+    const { exhaustContinuationRecovery } = await import('../recovery/store')
+    const recovery = await exhaustContinuationRecovery(tx, cycle, kind, flowAttemptId ?? null, triggerExecutionId)
+    if (!recovery.waitId) return null
+    const [wait] = await tx.select().from(workStreamWaits).where(eq(workStreamWaits.id, recovery.waitId))
+    if (!wait) return null
     const [blocked] = await tx
       .update(workStreams)
       .set({ updatedAt: now })
@@ -388,7 +306,7 @@ export async function recordContinuationDeliveryFailure(input: {
       input.workStreamId,
       input.generation,
       input.assigneeAgentId,
-      DELIVERY_EXHAUSTION_MESSAGE,
+      'delivery',
       (current) =>
         current.status === 'pending' &&
         current.clientId === input.clientId &&
@@ -1144,7 +1062,7 @@ export async function reconcileWorkStreamContinuationsOnce(
         workStream.id,
         cycle.generation,
         cycle.assigneeAgentId!,
-        TRANSPORT_EXHAUSTION_MESSAGE,
+        'transport',
         (current) =>
           current.transportAttemptCount >= TRANSPORT_CONTINUATION_MAX_ATTEMPTS &&
           current.triggerExecutionId !== latest.id,

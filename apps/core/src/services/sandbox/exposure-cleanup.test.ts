@@ -1,3 +1,4 @@
+import '../../test-utils/require-test-db'
 import { afterEach, expect, test } from 'bun:test'
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'

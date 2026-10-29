@@ -1,3 +1,4 @@
+import { StructuredInputActions, AgentRecoveryActions } from './StructuredInputActions'
 import clsx from 'clsx'
 import { assistantConversationSearch } from '../lib/assistantConversationSearch'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
@@ -460,7 +461,7 @@ function ActionInlineControl({
       )
   } else if (!action.canRespond) {
     control = null
-  } else if (action.type === 'agent-error') {
+  } else if (action.type === 'agent-error' && !(action.data as AgentErrorActionData).recovery) {
     control = (
       <button
         type="button"
@@ -533,13 +534,24 @@ function ActionContent({ action, onComplete }: { action: PendingAction; onComple
       return <SquadQuestionActionContent action={action} onComplete={onComplete} />
     case 'agent-question':
       return <AgentQuestionActionContent action={action} onComplete={onComplete} />
-    case 'agent-error':
+    case 'agent-error': {
+      const data = action.data as AgentErrorActionData
+      if (data.recovery)
+        return (
+          <AgentRecoveryActions
+            agentId={data.agentId}
+            recovery={data.recovery}
+            onComplete={onComplete}
+            disabled={!action.canRespond}
+          />
+        )
       // Continue sits on the header; the body explains why the agent halted.
       return (
         <p className="text-sm leading-relaxed text-secondary whitespace-pre-wrap">
           {(action.data as AgentErrorActionData).reason}
         </p>
       )
+    }
     case 'assistant-needs-input':
       return <AssistantTaskActionContent action={action} />
     case 'workstream-review':
@@ -792,6 +804,16 @@ function WorkStreamBlockedActionContent({
       resolveWorkStreamWait(data.workStreamId, data.wait.id, { resolution: 'cleared', note: resp }),
     onSuccess: onComplete,
   })
+
+  if (data.wait.structured)
+    return (
+      <StructuredInputActions
+        workStreamId={data.workStreamId}
+        wait={data.wait}
+        onComplete={onComplete}
+        disabled={!action.canRespond}
+      />
+    )
 
   return (
     <div className="space-y-3">

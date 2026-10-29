@@ -369,3 +369,42 @@ describe('decision steps', () => {
     expect(rows.map((row) => row.version).sort()).toEqual([2, 3])
   })
 })
+
+test('decision routing retires superseded structured waits without resolving their recovery ledger', async () => {
+  const { recoveryEpisodes, workStreamWaits } = await import('../../db')
+  const { initialRecoveryState } = await import('../recovery/policy')
+  const { recoveryWaitSnapshot } = await import('../recovery/store')
+  const id = await atDecision()
+  const run = (await getFlow(id))!
+  const [record] = await db
+    .insert(recoveryEpisodes)
+    .values({
+      agentId: run.attemptAgents['1']!,
+      executionId: null,
+      workStreamId: id,
+      flowAttemptId: 1,
+      operationKey: 'superseded-decision',
+      state: { ...initialRecoveryState('Run the task'), state: 'waiting-manager', failures: 3, cycleFailures: 3 },
+    })
+    .returning()
+  // A retained old-attempt wait can outlive a revision; decision routing must
+  // retire its binding through the same authorized closure as other replans.
+  const [wait] = await db
+    .insert(workStreamWaits)
+    .values({
+      workStreamId: id,
+      flowAttemptId: 1,
+      type: 'manual',
+      actor: 'manager',
+      createdBy: 'system',
+      message: 'Retained recovery',
+      structured: recoveryWaitSnapshot(record!),
+    })
+    .returning()
+  await db.update(recoveryEpisodes).set({ waitId: wait!.id }).where(eq(recoveryEpisodes.id, record!.id))
+  expect(await applyDecision(id, 2, ready(0.99))).toBe(true)
+  expect((await listOpenWaits(db, id)).some((entry) => entry.id === wait!.id)).toBe(false)
+  const [retained] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.id, record!.id))
+  expect(retained!.waitId).toBeNull()
+  expect(retained!.state).toMatchObject({ failures: 3, managerCycles: 0, state: 'waiting-manager' })
+})

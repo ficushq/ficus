@@ -28,6 +28,7 @@ import {
   requestReviewWorkStreamSchema,
   sendBackWorkStreamSchema,
   requestInputWorkStreamSchema,
+  manualWaitDecisionSchema,
   setWorkStreamWaitActorSchema,
   unblockWorkStreamSchema,
   parkWorkStreamSchema,
@@ -337,7 +338,8 @@ async function waitAttribution(
   if (identity?.type === 'agent') {
     try {
       const squad = await Squad.find(squadId)
-      const isManager = squad?.managerAgentId === identity.agentId
+      const agent = await Agent.find(identity.agentId)
+      const isManager = squad?.managerAgentId === identity.agentId || agent?.agentTypeId === 'system-manager'
       return {
         createdBy: isManager ? 'manager' : 'agent',
         createdByAgentId: identity.agentId,
@@ -1274,6 +1276,27 @@ export const workStreamsRouter = new Hono()
       }
     }
   )
+  .post(
+    '/:id/waits/:waitId/input',
+    requireWorkStreamRespondPermission,
+    zValidator('json', manualWaitDecisionSchema),
+    async (c) => {
+      const existing = await WorkStream.find(await routeWorkStreamId(c))
+      if (!existing) return c.json({ error: 'Work stream not found' }, 404)
+      const identity = c.get('identity') as Identity | undefined
+      try {
+        const { resolveStructuredInput } = await import('../services/recovery/structured-input')
+        const wait = await resolveStructuredInput(existing.id, c.req.param('waitId'), c.req.valid('json'), {
+          agentId: actorAgentIdFrom(identity),
+          userId: identity?.type === 'user' ? identity.userId : null,
+        })
+        await existing.reload()
+        return c.json({ ...existing.toJson(), wait: toWaitJson(wait) })
+      } catch (error) {
+        return c.json({ error: publicErrorMessage(error) }, 400)
+      }
+    }
+  )
   // Opens the (unique) review wait; idempotent while one is open.
   .post(
     '/:id/request-review',
@@ -1394,7 +1417,12 @@ export const workStreamsRouter = new Hono()
       const input = c.req.valid('json')
       try {
         const attribution = await waitAttribution(c.get('identity') as Identity | undefined, existing.squadId)
-        const wait = await existing.block({ ...input, ...attribution })
+        const { requestStructuredInput } = await import('../services/recovery/structured-input')
+        const wait =
+          'kind' in input
+            ? await requestStructuredInput(existing.id, input, attribution)
+            : await existing.block({ ...input, ...attribution })
+        await existing.reload()
         return c.json({ ...existing.toJson(), wait: toWaitJson(wait) })
       } catch (error) {
         return c.json({ error: publicErrorMessage(error) }, 400)

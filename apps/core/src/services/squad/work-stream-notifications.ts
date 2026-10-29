@@ -6,6 +6,7 @@ import {
   type AttentionKind,
   type InboxPushPresentation,
   type WorkStreamWaitActor,
+  type StructuredManualWait,
 } from '@ficus/shared'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
@@ -499,13 +500,23 @@ export async function notifyWorkStreamAssigned(
   }
 }
 
-type BlockedWaitFacts = { actor?: WorkStreamWaitActor | string | null; message?: string | null }
+type BlockedWaitFacts = {
+  actor?: WorkStreamWaitActor | string | null
+  message?: string | null
+  structured?: StructuredManualWait | null
+  closedAt?: Date | null
+}
 
 /** Read the opened wait's actor/message when the caller (an event fallback) only knows its id. */
 async function loadBlockedWait(waitId: string): Promise<BlockedWaitFacts | undefined> {
   try {
     const [row] = await db
-      .select({ actor: workStreamWaits.actor, message: workStreamWaits.message })
+      .select({
+        actor: workStreamWaits.actor,
+        message: workStreamWaits.message,
+        structured: workStreamWaits.structured,
+        closedAt: workStreamWaits.closedAt,
+      })
       .from(workStreamWaits)
       .where(eq(workStreamWaits.id, waitId))
       .limit(1)
@@ -529,6 +540,12 @@ export async function notifyWorkStreamBlocked(
 ): Promise<void> {
   const facts = wait ?? (target ? await loadBlockedWait(target.waitId) : undefined)
   const actor = workStreamWaitActor(facts ?? {})
+  if (facts?.structured?.request.kind === 'continue') {
+    if (facts.closedAt || facts.structured.stopped) return
+    const { publishRecoveryDecision } = await import('../recovery/store')
+    await publishRecoveryDecision(facts.structured.request.recoveryId)
+    return
+  }
   const title = workStreamTitle(workStream)
   if (actor === 'human') {
     await notifyWorkStreamOwner(

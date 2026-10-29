@@ -1,3 +1,4 @@
+import '../test-utils/require-test-db'
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { join } from 'node:path'
 import { readMigrationFiles } from 'drizzle-orm/migrator'

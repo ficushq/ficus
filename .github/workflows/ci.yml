@@ -462,6 +462,14 @@ jobs:
         run: bun test ./subprocess-lane-gate.test.ts
         working-directory: .github
 
+      - name: Validate readable agent text guidance
+        run: bun test ../scripts/readable-agent-text-guidance.test.ts
+        working-directory: .github
+
+      - name: Validate restart recovery guidance
+        run: bun test ../scripts/restart-recovery-guidance.test.ts
+        working-directory: .github
+
       - name: Validate integration execution type boundaries
         run: bun test ./integration-execution-types.test.ts
         working-directory: .github
@@ -471,7 +479,7 @@ jobs:
         working-directory: .github
 
       - name: Validate test lane aggregation
-        run: bun test ./lane-gate.test.ts ./test-runner.test.ts ./test-completion-gate.test.ts ./core-test-plan.test.ts ./ci-notification-state.test.ts ./test-schema-cache.test.ts
+        run: bun test ./lane-gate.test.ts ./test-runner.test.ts ./test-completion-gate.test.ts ./core-test-plan.test.ts ./ci-notification-state.test.ts ./test-schema-cache.test.ts ./lazy-test-db.test.ts ./test-db-import-graph.test.ts
         working-directory: .github
 
       - name: Validate typecheck diagnostics evidence gate
@@ -1052,6 +1060,7 @@ jobs:
           src/scripts/rebase-home.cli.test.ts
           src/db/load-root-env.test.ts
           src/tools/sandbox-tools.real-edit.test.ts
+          src/services/sandbox/restart-context.test.ts
           src/index.test.ts
           src/worker.test.ts
           src/lib/paths.test.ts

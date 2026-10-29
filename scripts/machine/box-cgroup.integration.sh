@@ -113,13 +113,15 @@ assert_pid() {
   printf '%s pid=%s cgroup=%s\n' "$role" "$pid" "$cg"
 }
 assert_caps() {
-  local quota period extra
+  local quota period extra high page_size
   parent="/user.slice/user-$uid.slice"
   [ "$(systemctl show -p ControlGroup --value "user@$uid.service")" = "$parent/user@$uid.service" ]
   [ "$(cat "/sys/fs/cgroup$parent/memory.max")" = 536870912 ]
-  # memory.high is rounded down to a whole page by the kernel.
-  [ "$(cat "/sys/fs/cgroup$parent/memory.high")" -gt 0 ]
-  [ "$(cat "/sys/fs/cgroup$parent/memory.high")" -le 375809024 ]
+  # Docker-capable squads use 45% of 1048576 KiB, rounded down to a
+  # kernel page. Check convergence too: the old 35% value must NOT pass.
+  high="$(cat "/sys/fs/cgroup$parent/memory.high")"
+  page_size="$(getconf PAGESIZE)"
+  [ "$high" -eq "$((483183616 / page_size * page_size))" ]
   read -r quota period extra <"/sys/fs/cgroup$parent/cpu.max"
   [ -z "$extra" ] && [ "$quota" -gt 0 ] && [ "$quota" -eq "$period" ]
   [ "$(docker_box info --format '{{.CgroupDriver}} {{.CgroupVersion}}')" = 'systemd 2' ]

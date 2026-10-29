@@ -54,6 +54,7 @@ const WS_WAITING_DERIVED_STATES: WorkStreamPresentationState[] = [
   'waiting_on_answer',
   'waiting_on_dependency',
   'waiting_on_owner',
+  'waiting_on_manager',
   'waiting_for_slot',
   'blocked',
 ]

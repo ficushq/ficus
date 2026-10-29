@@ -222,8 +222,13 @@ if (import.meta.main) {
     process.env.FICUS_TEST_DEADLINE_MS === undefined ? undefined : Number(process.env.FICUS_TEST_DEADLINE_MS)
   let session: ReturnType<typeof ownTestDb> | undefined
   try {
-    requireTestDbCapacity()
-    if (!process.env.DATABASE_URL) {
+    // Full-suite/mutation work still requires capacity up front and shares a
+    // lifetime across lanes. Focused runs let each DB-using child acquire its
+    // lifetime lazily; a pure focused selection must not even probe Docker.
+    const ownsSuite =
+      (options.paths.length === 0 || options.subprocessOnly) && (deadline === undefined || deadline > Date.now())
+    if (ownsSuite) requireTestDbCapacity()
+    if (ownsSuite && !process.env.DATABASE_URL) {
       sweepStaleTestDbs(repoRoot)
       session = ownTestDb(repoRoot, { handleSignals: false })
     }

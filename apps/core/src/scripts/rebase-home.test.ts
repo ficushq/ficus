@@ -1,3 +1,4 @@
+import '../test-utils/require-test-db'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import type postgres from 'postgres'
 import { createPostgresConnection, getConnectionString } from '../db/connection'

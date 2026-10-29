@@ -679,8 +679,8 @@ describe('work-stream notifications', () => {
       [undefined, 1, 'is blocked and needs attention'],
       ['human', 1, 'is blocked and needs attention'],
       ['owner', 0, 'waiting on owner action'],
-      // The pre-rename value is unknown, so it is a human wait.
-      ['manager', 1, 'is blocked and needs attention'],
+      // Truly unknown legacy actors keep the historical human fallback.
+      ['robot', 1, 'is blocked and needs attention'],
     ] as const
     for (const [actor, watcherCount, ownerCopy] of expectations) {
       const workStream = await storedLegacyWorkStream({

@@ -1,3 +1,4 @@
+import { readSandboxHostCapacity } from '../services/machines/host-admission'
 import { getExposureCleanupStatusForDisplay } from '../services/sandbox/exposure-cleanup'
 import { WORKSPACE_MULTIPART_METADATA_BYTES } from '../services/attachments/workspace-multipart-reader'
 import { getBunServer } from 'hono/bun'
@@ -1132,6 +1133,7 @@ export const squadsRouter = new Hono()
       mergeSandboxStatus(
         {
           ...status,
+          ...(isVmRuntime() ? { hostCapacity: await readSandboxHostCapacity(squad.sandboxId, squad.id) } : {}),
           // The overload detector's reading when status did not probe the box itself.
           ...(isVmRuntime() && !('pressure' in status && status.pressure)
             ? await openSandboxOverloadPressure(squad.sandboxId).then((pressure) => (pressure ? { pressure } : {}))

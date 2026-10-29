@@ -1,3 +1,4 @@
+import { ToolFeedbackError } from './tool-feedback'
 import { createHash } from 'crypto'
 import { resolve } from 'path'
 import {
@@ -38,7 +39,10 @@ export type VerifiedEditPlannerOptions = {
 const sha256 = (value: Buffer) => createHash('sha256').update(value).digest('hex')
 
 function integrityError(category: string): Error {
-  return new Error(`Edit integrity check failed before write: ${category}; original file was not modified`)
+  return new ToolFeedbackError(
+    'input',
+    `Edit integrity check failed before write: ${category}; original file was not modified`
+  )
 }
 
 function assertValidUtf8(original: Buffer): void {

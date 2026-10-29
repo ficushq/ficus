@@ -1,3 +1,4 @@
+import '../test-utils/require-test-db'
 import { describe, expect, test } from 'bun:test'
 import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'

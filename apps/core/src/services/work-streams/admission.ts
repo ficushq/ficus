@@ -1,3 +1,5 @@
+import { HostCapacityUnavailableError, reserveWorkStreamHostCapacity } from '../machines/host-admission'
+import { persistFlowReadmission } from '../workflows/readmission'
 import { admissionBlockingWaits, admissionBlockedSince, admissionBlockedStreamIds } from './wait-scope'
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import {
@@ -86,8 +88,6 @@ export async function assertManualAdmissionAllowed(
     .from(squads)
     .where(eq(squads.id, input.squadId))
   const cap = capRow?.cap ?? null
-  if (cap === null) return
-
   await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, input.squadId)).for('update')
   const [current] = await tx
     .select({ status: workStreams.status })
@@ -96,9 +96,11 @@ export async function assertManualAdmissionAllowed(
   if (current?.status !== 'queued') return // already admitted (or gone) — not a queued->admitted move
 
   const admitted = await countAdmitted(tx, input.squadId, input.streamId)
-  if (admitted >= cap) {
+  if (cap !== null && admitted >= cap) {
     throw new WorkStreamCapFullError(input.title, cap)
   }
+  const host = await reserveWorkStreamHostCapacity(tx, input)
+  if (!host.allowed) throw new HostCapacityUnavailableError(host)
 }
 
 async function countAdmitted(tx: DbTransaction, squadId: string, excludeId?: string): Promise<number> {
@@ -148,12 +150,11 @@ export async function admitOrQueueAtCreation(
     .from(squads)
     .where(eq(squads.id, input.squadId))
   const cap = capRow?.cap ?? null
-  if (cap === null) return 'admitted'
-
-  // Finite cap: serialize against concurrent creations/promotions.
+  // Serialize squad admission as well as the machine-wide claim, including
+  // unlimited squads: their host is not unlimited.
   await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, input.squadId)).for('update')
   const admitted = await countAdmitted(tx, input.squadId, input.streamId)
-  if (admitted < cap) return 'admitted'
+  if ((cap === null || admitted < cap) && (await reserveWorkStreamHostCapacity(tx, input)).allowed) return 'admitted'
 
   await tx
     .update(workStreams)
@@ -384,7 +385,8 @@ interface PromotionScanRow {
 async function promoteEligibleWithinTx(
   tx: DbTransaction,
   squadId: string,
-  cap: number | null
+  cap: number | null,
+  afterCommit: Array<() => void>
 ): Promise<{ promotedRows: WorkStreamRow[]; canceledDepRows: PromotionScanRow[] }> {
   const all: PromotionScanRow[] = await tx
     .select({
@@ -494,13 +496,19 @@ async function promoteEligibleWithinTx(
     .sort(compareByEffectivePriorityThenCreatedAt)
 
   const promotedRows: WorkStreamRow[] = []
-  for (const winner of eligible.slice(0, freeSlots)) {
+  for (const winner of eligible) {
+    if (promotedRows.length >= freeSlots) break
+    const host = await reserveWorkStreamHostCapacity(tx, { squadId, streamId: winner.id })
+    if (!host.allowed) continue
     const [updated] = await tx
       .update(workStreams)
       .set({ status: 'active', updatedAt: new Date() })
       .where(and(eq(workStreams.id, winner.id), eq(workStreams.status, 'queued')))
       .returning()
-    if (updated) promotedRows.push(updated)
+    if (updated) {
+      await persistFlowReadmission(tx, updated, afterCommit)
+      promotedRows.push(updated)
+    }
   }
   return { promotedRows, canceledDepRows }
 }
@@ -542,6 +550,7 @@ async function emitPromotionEffects(promoted: WorkStream[]): Promise<void> {
  * to the manager exactly once (never silently admitted).
  */
 export async function promoteEligibleQueuedStreams(squadId: string): Promise<WorkStream[]> {
+  const afterCommit: Array<() => void> = []
   const { promotedRows, canceledDepRows } = await db.transaction(async (tx) => {
     const [squad] = await tx
       .select({ cap: squads.maxConcurrentWorkStreams })
@@ -549,9 +558,10 @@ export async function promoteEligibleQueuedStreams(squadId: string): Promise<Wor
       .where(eq(squads.id, squadId))
       .for('update')
     if (!squad) return { promotedRows: [] as WorkStreamRow[], canceledDepRows: [] as PromotionScanRow[] }
-    return promoteEligibleWithinTx(tx, squadId, squad.cap)
+    return promoteEligibleWithinTx(tx, squadId, squad.cap, afterCommit)
   })
 
+  afterCommit.forEach((callback) => callback())
   const promoted = promotedRows.map((row) => new WorkStream(row))
   await emitPromotionEffects(promoted)
   await surfaceCanceledDependencies(canceledDepRows)
@@ -583,6 +593,7 @@ export async function runSquadAdmissionMaintenance(
   squadId: string,
   deps: DemotionStopDeps = {}
 ): Promise<AdmissionMaintenanceResult> {
+  const afterCommit: Array<() => void> = []
   const { parkedRows, promotedRows, canceledDepRows } = await db.transaction(async (tx) => {
     const [squad] = await tx
       .select({ cap: squads.maxConcurrentWorkStreams, grace: squads.blockedGraceMinutes })
@@ -637,7 +648,7 @@ export async function runSquadAdmissionMaintenance(
       }
     }
 
-    const promotion = await promoteEligibleWithinTx(tx, squadId, squad.cap)
+    const promotion = await promoteEligibleWithinTx(tx, squadId, squad.cap, afterCommit)
     return { parkedRows, ...promotion }
   })
 
@@ -649,6 +660,7 @@ export async function runSquadAdmissionMaintenance(
     await stopSandboxesForDemotedStream(ws, deps)
   }
 
+  afterCommit.forEach((callback) => callback())
   const promoted = promotedRows.map((row) => new WorkStream(row))
   await emitPromotionEffects(promoted)
   await surfaceCanceledDependencies(canceledDepRows)

@@ -1,3 +1,4 @@
+import { restartResumeNotice, type RestartContext } from '@ficus/shared/restart-context'
 import { QuestionData } from '@ficus/shared'
 import { getErrorSystemMessage } from '../../lib/error'
 
@@ -26,7 +27,7 @@ export interface FailureRoute {
  * - Everything else → idle, with a generic `[System] Execution failed: …`
  *   message.
  */
-export function routeFailure(error: string): FailureRoute {
+export function routeFailure(error: string, restart?: RestartContext): FailureRoute {
   const systemMessage = getErrorSystemMessage(error)
   if (systemMessage) {
     return {
@@ -70,7 +71,9 @@ export function routeFailure(error: string): FailureRoute {
     }
   } else {
     return {
-      systemMessage: `[System] Execution failed: ${error}`,
+      systemMessage: restart
+        ? `${restartResumeNotice(restart)} Resume attempt could not finish: ${error}`
+        : `[System] Execution failed: ${error}`,
       disposition: { status: 'idle' },
     }
   }

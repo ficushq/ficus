@@ -7,6 +7,7 @@ import type {
   SquadActivityKind,
   SquadActivityPage,
   ResolveWorkStreamWaitInput,
+  ManualWaitDecision,
   SandboxPressure,
   WorkStream,
   WorkStreamStatus,
@@ -124,6 +125,15 @@ export function squadsResource(t: Transport) {
       input: ResolveWorkStreamWaitInput
     ): Promise<ResolveWorkStreamWaitResult> =>
       t.request(`/workstreams/${encodeURIComponent(workStreamId)}/waits/${waitId}/resolve`, {
+        method: 'POST',
+        body: input,
+      }),
+    resolveStructuredWorkStreamInput: (
+      workStreamId: string,
+      waitId: string,
+      input: ManualWaitDecision
+    ): Promise<ResolveWorkStreamWaitResult> =>
+      t.request(`/workstreams/${encodeURIComponent(workStreamId)}/waits/${encodeURIComponent(waitId)}/input`, {
         method: 'POST',
         body: input,
       }),

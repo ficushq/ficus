@@ -216,13 +216,17 @@ It's used by the `memory_chunks` table to store embeddings for vector similarity
 
 Tests use an **isolated Postgres instance** running in Docker, completely separate from the dev/production database.
 
-The test preload (`apps/core/src/test-setup.ts`) handles everything automatically:
+The environment-only preload (`apps/core/src/test-setup.ts`) registers lazy
+readiness. Loading Core's `db/index` (or explicitly importing
+`test-utils/require-test-db` in a raw SQL/migration/pooler suite) awaits
+`test-db-setup.ts` exactly once before consuming a database URL. Pure tests
+never probe Docker or require a test database. Setup handles:
 
 1. **Port allocation** — finds a free port (never uses `5432` to avoid hitting a production database).
 2. **Container management** — starts a uniquely-named Docker container per worktree (name derived from directory hash).
-3. **Schema push** — runs `drizzle-kit push` against the test database before any tests execute.
+3. **Schema push** — runs `drizzle-kit push` against the test database before the requesting DB-backed module executes.
 4. **CI support** — if a `DATABASE_URL` pointing to a `ficus_test` database is already set (e.g., GitHub Actions service container), it uses that instead of spinning up Docker.
-5. **No-Docker fallback** — for a direct local `bun test`, if the container cannot be started (Docker stopped or broken), the preload prints why and continues: database-free test files run normally, and every database use fails immediately with `Core test database unavailable (...)`. CI and the package runner (`bun run --filter core test`, or `bun run test <file...>` from `apps/core` for a focused run; both set `FICUS_TEST_REQUIRE_DB=1`) still exit on an unavailable database.
+5. **No-Docker fallback** — for a direct local `bun test`, if the container cannot be started (Docker stopped or broken), lazy setup prints why and continues: database-free test files run normally, and every database use fails immediately with `Core test database unavailable (...)`. CI and the package runner (`bun run --filter core test`, or `bun run test <file...>` from `apps/core` for a focused run; both set `FICUS_TEST_REQUIRE_DB=1`) still exit on an unavailable database.
 
 Multiple worktrees can run tests in parallel — each gets its own isolated container and port.
 
@@ -236,13 +240,17 @@ If tests hang on DB connection or schema push, reset the test database:
 bun run test:db:down && bun test
 ```
 
-Test-DB containers stay running between runs for reuse speed. They carry a
-`dev.ficus.test-db.repo-root` label with their checkout path, and the preload
-sweeps projects whose worktree has been deleted (throttled to once an hour,
-`apps/core/src/test-db-sweep.ts`) — deleting a worktree no longer leaks a
-forever-running postgres. Broader dev disk GC (registry blobs, dangling
-images, build cache) lives in `bun run docker:gc`; see the README's
-"Disk hygiene" section.
+Test databases are owned foreground resources, not persistent developer
+services. Normal exit, failed setup/tests, INT and TERM tear down only the
+owned Compose project and its volumes; externally supplied CI databases stay
+CI-owned. Full-suite runners reuse one lifetime across sequential child
+batches, while focused children acquire ownership only when needed. See
+[ownership and native capacity admission](development.md#native-capacity-admission-in-ficus-runtimes).
+
+For raw-client tests, request readiness **before** capturing `DATABASE_URL`,
+`TEST_POOLED_DATABASE_URL`, or declaring a conditional pooler suite. Do not
+infer DB need from filenames, skip tests because lazy setup has not run yet,
+or depend on an earlier test file having initialized the database.
 
 ## Production
 

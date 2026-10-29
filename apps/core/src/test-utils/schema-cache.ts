@@ -29,7 +29,11 @@ export function runnerTestSchemaCache(databaseUrl: string) {
   const file = process.env.FICUS_TEST_SCHEMA_CACHE_FILE
   if (!file) return undefined
   const root = resolve(import.meta.dir, '../../../..')
-  const inputs = [join(root, 'bun.lock'), join(root, 'apps/core/src/test-setup.ts')]
+  const inputs = [
+    join(root, 'bun.lock'),
+    join(root, 'apps/core/src/test-setup.ts'),
+    join(root, 'apps/core/src/test-db-setup.ts'),
+  ]
   function collect(dir: string) {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name)

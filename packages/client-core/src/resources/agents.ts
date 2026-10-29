@@ -1,5 +1,6 @@
 import type {
   Agent,
+  ManualWaitDecision,
   AssistantRoutingSend,
   DeliveryMode,
   DeliverySuggestion,
@@ -152,6 +153,10 @@ function openReconnectableAgentStream(
 /** Lean agents surface used by mobile (conversation history + agent lookup). */
 export function agentsResource(t: Transport) {
   return {
+    resolveRecovery(agentId: string, recoveryId: string, decision: ManualWaitDecision): Promise<unknown> {
+      return t.request(`/agents/${agentId}/recoveries/${recoveryId}/input`, { method: 'POST', body: decision })
+    },
+
     listAgents: (filters?: ListAgentsFilters): Promise<Agent[]> => {
       const p = new URLSearchParams()
       if (filters?.scopeType) p.set('scopeType', filters.scopeType)

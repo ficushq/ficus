@@ -36,6 +36,7 @@ export const WS_STATUS_LABELS: Record<WorkStreamPresentationState, string> = {
   waiting_on_dependency: 'Waiting on Dependency',
   // Manual waits by actor: `blocked` is the human one (Needs you).
   waiting_on_owner: 'Waiting on Owner',
+  waiting_on_manager: 'Waiting on Manager',
   blocked: 'Blocked',
   idle: 'Idle',
   waiting_for_slot: 'Waiting for slot',
@@ -58,6 +59,7 @@ export const WS_STATUS_ICONS: Record<WorkStreamPresentationState, string> = {
   waiting_on_answer: '?',
   waiting_on_dependency: '⧗',
   waiting_on_owner: '⧗',
+  waiting_on_manager: '⧗',
   waiting_for_slot: '⧗',
   monitoring: '◉',
   blocked: '⊘',
@@ -85,6 +87,7 @@ export const WS_STATUS_BADGE_COLORS: Record<WorkStreamPresentationState, StatusR
   waiting_on_answer: webStatus(WORK_STREAM_STATUS_ROLE.waiting_on_answer).badgeColor,
   waiting_on_dependency: webStatus(WORK_STREAM_STATUS_ROLE.waiting_on_dependency).badgeColor,
   waiting_on_owner: webStatus(WORK_STREAM_STATUS_ROLE.waiting_on_owner).badgeColor,
+  waiting_on_manager: webStatus(WORK_STREAM_STATUS_ROLE.waiting_on_manager).badgeColor,
   blocked: webStatus(WORK_STREAM_STATUS_ROLE.blocked).badgeColor,
   waiting_for_slot: webStatus(WORK_STREAM_STATUS_ROLE.waiting_for_slot).badgeColor,
   monitoring: webStatus(WORK_STREAM_STATUS_ROLE.monitoring).badgeColor,
@@ -131,6 +134,7 @@ export function workStreamWaitBadge(
 const MANUAL_WAIT_ACTOR_NAMES: Record<WorkStreamWaitActor, string> = {
   human: 'Human',
   owner: 'Owner',
+  manager: 'Manager',
 }
 
 const WAIT_TYPE_LABELS: Record<WorkStreamWaitType, string> = {
@@ -150,11 +154,13 @@ const WAIT_TYPE_BADGE_COLORS: Record<WorkStreamWaitType, StatusRole> = {
 export const MANUAL_WAIT_ACTOR_LABELS: Record<WorkStreamWaitActor, string> = {
   human: 'Needs you',
   owner: WS_STATUS_LABELS[MANUAL_WAIT_ACTOR_STATE.owner],
+  manager: WS_STATUS_LABELS[MANUAL_WAIT_ACTOR_STATE.manager],
 }
 
 const MANUAL_WAIT_ACTOR_BADGE_COLORS: Record<WorkStreamWaitActor, StatusRole> = {
   human: WS_STATUS_BADGE_COLORS[MANUAL_WAIT_ACTOR_STATE.human],
   owner: WS_STATUS_BADGE_COLORS[MANUAL_WAIT_ACTOR_STATE.owner],
+  manager: WS_STATUS_BADGE_COLORS[MANUAL_WAIT_ACTOR_STATE.manager],
 }
 
 /**
@@ -187,7 +193,15 @@ export function workStreamActionPresentationState(action: PendingAction): WorkSt
 /** Queued work with a retained wait or pause has released its admission slot. */
 export function isWorkStreamParked(workStream: WorkStreamPresentationFacts): boolean {
   if (workStream.status !== 'queued') return false
-  return ['in_review', 'waiting_on_answer', 'waiting_on_dependency', 'waiting_on_owner', 'blocked', 'paused'].includes(
+  return [
+    'in_review',
+    'waiting_on_answer',
+    'waiting_on_dependency',
+    'waiting_on_owner',
+    'waiting_on_manager',
+    'blocked',
+    'paused',
+  ].includes(
     // Admission state follows retained waits/pause, independently of delivery's primary label.
     getWsDisplayState({ ...workStream, delivery: undefined })
   )

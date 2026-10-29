@@ -1,3 +1,4 @@
+import '../test-utils/require-test-db'
 import { describe, expect, test } from 'bun:test'
 import type { MigrationMeta } from 'drizzle-orm/migrator'
 import { createPostgresConnection } from './connection'

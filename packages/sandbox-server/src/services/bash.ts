@@ -1,3 +1,4 @@
+import type { RestartContext } from '@ficus/shared/restart-context'
 import { integrationWrapperPreamble, INTEGRATION_BIN_RELATIVE_PATH } from '@ficus/shared/integration-wrapper-path'
 /**
  * Bash execution service.
@@ -104,14 +105,15 @@ const pendingAdmissions = new Map<string, { cancel(): void; decided: Promise<voi
 export async function cancelBashInvocation(
   invocationId: string,
   reason?: string,
-  registry: BashInvocationRegistryPort = bashInvocationRegistry
+  registry: BashInvocationRegistryPort = bashInvocationRegistry,
+  restart?: RestartContext
 ): Promise<{ remainingPids: [] }> {
   const pending = pendingAdmissions.get(invocationId)
   if (pending) {
     pending.cancel()
     await pending.decided
   }
-  return registry.terminate(invocationId, reason)
+  return registry.terminate(invocationId, reason, restart)
 }
 
 export async function reconcileBashInvocations() {
@@ -539,7 +541,7 @@ export function handleBash(
           cancelTimer = dependencies.scheduleTimeout(() => {
             terminating = true
             void initialized
-              .then(() => registry.terminate(invocationId))
+              .then(() => registry.terminate(invocationId, 'timeout'))
               .then(async () => {
                 await lease!.complete('terminated')
                 send({ error: `Command timed out after ${timeoutSeconds}s`, exitCode: 124 })
@@ -615,7 +617,7 @@ export function handleBash(
         // 2026-08-26 crash-feedback loop. Terminate failure means cleanup is
         // unproven: leave the record for reconcile/quarantine and log.
         cancellation ??= registry
-          .terminate(invocationId)
+          .terminate(invocationId, 'transport-loss')
           .then(() => activeLease!.complete('terminated'))
           .catch((error) => {
             console.error(`[sandbox] cancel cleanup unproven for ${invocationId}: ${error?.message ?? error}`)

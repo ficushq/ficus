@@ -39,7 +39,7 @@ const receipt = {
   localPort: null,
   origin: managedVaultOrigin(VAULT, { zone: 'example.com', tenantLabel: null }),
   readAccess: 'active',
-}
+} as const
 /** A client for a Core running as root: the helper is spawned directly. */
 const rootClient = (options: Parameters<typeof createManagedHostClient>[0]) =>
   createManagedHostClient({ euid: () => 0, ...options })
@@ -193,7 +193,7 @@ test('member replies must name the requested vault, invitation and member', asyn
 test('oversized output and deadlines kill the helper and report retryable codes', async () => {
   const big = await launcher('head -c 140000 /dev/zero | tr "\\0" "a"')
   expect(await code(rootClient({ helperPath: big.path }).call(host, REQUEST, rename))).toEqual(['output_limit', true])
-  const slow = await launcher('sleep 5')
+  const slow = await launcher('exec sleep 5')
   const started = Date.now()
   expect(await code(rootClient({ helperPath: slow.path, timeoutMs: () => 200 }).call(host, REQUEST, rename))).toEqual([
     'host_unreachable',
@@ -276,4 +276,106 @@ test('through sudo: the reply passes through, and a sudo refusal is not installe
       createManagedHostClient({ helperPath: failing.path, euid: () => 998, sudoPath }).call(host, REQUEST, rename)
     )
   ).toEqual(['operation_failed', true])
+})
+
+// Bun can turn writes to an already-reaped child's sink into no-ops. Inject the
+// failing sink boundary deterministically, but keep real exit/stdout/stderr and
+// synchronize on the owned child's exit before the client receives it.
+const stdinFailures = ['write', 'flush', 'closed'] as const
+async function exitedChild(body: string, failure?: (typeof stdinFailures)[number]) {
+  const child = Bun.spawn(['/bin/bash', '-c', body], {
+    stdin: 'pipe',
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  await child.exited
+  return withStdinFailure(child, failure)
+}
+
+function withStdinFailure(
+  child: ReturnType<typeof Bun.spawn<'pipe', 'pipe', 'pipe'>>,
+  failure?: (typeof stdinFailures)[number]
+) {
+  let failed = false
+  const fail = () => {
+    failed = true
+    throw Object.assign(new Error('secret stdin diagnostics'), {
+      code: failure === 'write' ? 'EPIPE' : failure === 'flush' ? 'ECONNRESET' : 'ERR_STREAM_DESTROYED',
+    })
+  }
+  const stdin = {
+    write: (body: Uint8Array) => (failure === 'write' ? fail() : child.stdin.write(body)),
+    end: () => (failure === 'flush' ? Promise.resolve().then(fail) : failure === 'closed' ? fail() : child.stdin.end()),
+  }
+  return {
+    spawn: (() => ({
+      stdin,
+      stdout: child.stdout,
+      stderr: child.stderr,
+      exited: child.exited,
+      kill: child.kill.bind(child),
+    })) as unknown as typeof Bun.spawn,
+    failed: () => failed,
+  }
+}
+
+test.each([undefined, ...stdinFailures])(
+  'a sudo refusal already exited before stdin stays non-retryable (%s)',
+  async (failure) => {
+    for (let iteration = 0; iteration < 32; iteration++) {
+      const child = await exitedChild('echo "sudo: secret stderr" >&2; exit 1', failure)
+      const client = createManagedHostClient({ euid: () => 998, spawn: child.spawn })
+      expect(await code(client.call(host, REQUEST, rename))).toEqual(['not_installed', false])
+      expect(child.failed()).toBe(failure !== undefined)
+    }
+  }
+)
+
+test('stdin failures preserve other early exits and never replace a valid reply or its verification', async () => {
+  for (const failure of stdinFailures) {
+    for (const [body, euid, expected] of [
+      ['echo "secret stderr" >&2; exit 78', 0, ['not_installed', false]],
+      ['echo "secret stderr" >&2; exit 1', 0, ['operation_failed', true]],
+      ['echo "secret stderr" >&2; exit 2', 998, ['operation_failed', true]],
+      ['echo "sv_secret"; exit 1', 998, ['operation_failed', true]],
+      ['exit 0', 0, ['invalid_response', false]],
+      [reply({ ok: false, code: 'busy', retryable: true }), 998, ['busy', true]],
+      [
+        reply({ requestId: VAULT, ok: true, action: 'rename', physicalHostBinding: BINDING, receipt }),
+        998,
+        ['identity_mismatch', false],
+      ],
+    ] as const) {
+      const child = await exitedChild(body, failure)
+      expect(
+        await code(createManagedHostClient({ euid: () => euid, spawn: child.spawn }).call(host, REQUEST, rename))
+      ).toEqual([...expected])
+      expect(child.failed()).toBe(true)
+    }
+    const child = await exitedChild(
+      reply({ ok: true, action: 'rename', physicalHostBinding: BINDING, receipt }),
+      failure
+    )
+    const result = await createManagedHostClient({ euid: () => 998, spawn: child.spawn }).call(host, REQUEST, rename)
+    expect('receipt' in result && result.receipt).toEqual(receipt)
+    expect(child.failed()).toBe(true)
+  }
+})
+
+test.each(stdinFailures)('a stdin failure still waits for exit under the existing deadline (%s)', async (failure) => {
+  // cat cannot finish until stdin closes; the injected failure prevents that.
+  const child = Bun.spawn(['/bin/cat'], { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' })
+  try {
+    const failing = withStdinFailure(child, failure)
+    expect(await code(rootClient({ spawn: failing.spawn, timeoutMs: () => 200 }).call(host, REQUEST, rename))).toEqual([
+      'host_unreachable',
+      true,
+    ])
+    expect(failing.failed()).toBe(true)
+    await child.exited
+    expect(child.signalCode).toBe('SIGKILL')
+  } finally {
+    child.kill('SIGKILL')
+    await child.exited
+  }
 })

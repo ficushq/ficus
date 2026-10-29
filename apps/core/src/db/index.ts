@@ -1,3 +1,4 @@
+import { ensureTestDatabase } from './test-readiness'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import { join } from 'path'
 import * as schema from './schema'
@@ -17,6 +18,9 @@ import { assertMigrationsMatchBuild } from './migration-build-manifest'
 
 const log = createLogger('db')
 
+// A test DB is needed only when this database entrypoint is loaded, not when
+// Bun preloads the test environment. Production has no registered initializer.
+await ensureTestDatabase()
 const connectionString = getConnectionString()
 validateDatabaseConnection(connectionString, 'db/index')
 

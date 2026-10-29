@@ -5,6 +5,15 @@ import { join } from 'node:path'
 import { resolve } from 'node:path'
 const root = resolve(import.meta.dir, '..')
 const read = (file: string) => readFileSync(resolve(root, file), 'utf8')
+function capacityFixture(bin: string): void {
+  writeFileSync(
+    join(bin, 'ficus'),
+    `#!/bin/sh
+printf '{"key":"shared-box-intensive","squadId":"%s","enabled":false}\n' "$FICUS_SQUAD_ID"
+`,
+    { mode: 0o755 }
+  )
+}
 // Run the real manual script from a temporary checkout so successful setup
 // cannot write a port cache into the source worktree.
 function manualScript(dir: string): string {
@@ -20,7 +29,7 @@ function manualScript(dir: string): string {
   return file
 }
 test('Core preload owns its DB before probing or starting it and always runs safe startup hygiene', () => {
-  const code = read('apps/core/src/test-setup.ts')
+  const code = read('apps/core/src/test-db-setup.ts')
   expect(code).toContain('ownTestDb(repoRoot)')
   expect(code.indexOf('ownTestDb(repoRoot)')).toBeLessThan(code.indexOf('TEST_DATABASE_URL = withTestDbLockSync'))
   expect(code).toContain('sweepStaleTestDbs(repoRoot)')
@@ -44,6 +53,7 @@ for (const manual of [false, true])
       const dir = mkdtempSync(join(tmpdir(), 'root-preload-lifecycle-'))
       const bin = join(dir, 'bin')
       mkdirSync(bin)
+      capacityFixture(bin)
       const log = join(dir, 'docker.log')
       writeFileSync(
         join(bin, 'docker'),
@@ -52,7 +62,10 @@ for (const manual of [false, true])
       )
       writeFileSync(join(bin, 'pg_isready'), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
       const file = join(dir, 'diagnostic.test.ts')
-      writeFileSync(file, 'import {test} from "bun:test"; test("diagnostic", () => {})')
+      writeFileSync(
+        file,
+        `import ${JSON.stringify(join(root, 'apps/core/src/db/index.ts'))}; import {test} from "bun:test"; test("diagnostic", () => {})`
+      )
       const child = Bun.spawn(manual ? [process.execPath, manualScript(dir), 'up'] : [process.execPath, 'test', file], {
         cwd: root,
         env: {
@@ -188,6 +201,7 @@ test('a root database-free diagnostic still runs when Docker is not installed', 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   test(`successful manual DB session stays foreground until ${signal}, then removes volumes`, async () => {
     const dir = mkdtempSync(join(tmpdir(), 'manual-db-ready-'))
+    capacityFixture(dir)
     const log = join(dir, 'docker.log')
     writeFileSync(
       join(dir, 'docker'),

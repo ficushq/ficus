@@ -1,8 +1,10 @@
+import { ToolFeedbackError } from './tool-feedback'
 import { describe, it, expect, spyOn } from 'bun:test'
 import {
   createDockerSandboxedBashTool,
   createDockerSandboxedCodingTools,
   createDockerWriteOperations,
+  createDockerSandboxedReadTool,
 } from './docker-sandbox'
 import * as workspaceLayoutModule from '../services/sandbox/workspace-layout'
 import * as sandboxModule from '../services/sandbox'
@@ -80,4 +82,22 @@ describe('docker-sandbox-tools', () => {
       }
     })
   })
+})
+
+it('Docker missing-path feedback is typed but an executor failure is not', async () => {
+  let exit = 1
+  const manager = spyOn(sandboxModule, 'getSandboxManager').mockReturnValue({
+    execStatus: async () => exit,
+  } as unknown as ReturnType<typeof sandboxModule.getSandboxManager>)
+  try {
+    const tool = createDockerSandboxedReadTool('/workspace', 'fixture')
+    const missing = await tool.execute('missing', { path: '/workspace/missing' }).catch((error) => error)
+    expect(missing).toBeInstanceOf(ToolFeedbackError)
+    exit = 127
+    const broken = await tool.execute('broken', { path: '/workspace/missing' }).catch((error) => error)
+    expect(broken).toBeInstanceOf(Error)
+    expect(broken).not.toBeInstanceOf(ToolFeedbackError)
+  } finally {
+    manager.mockRestore()
+  }
 })

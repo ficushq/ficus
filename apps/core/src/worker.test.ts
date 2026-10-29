@@ -421,7 +421,9 @@ describe('worker graceful shutdown', () => {
   it('delegates live and sessionless requeues to one atomic shutdown recovery boundary', () => {
     expect(body).not.toContain('[System] Agent interrupted and will resume automatically.')
     expect(body).not.toContain("transitionTo({ kind: 'requeued' })")
-    expect(body).toContain('requeueOwnedExecutionsForShutdown(executionIds)')
+    expect(body).toContain('const restart = createRestartContext()')
+    expect(body).toContain('drainCommands(undefined, restart)')
+    expect(body).toContain('requeueOwnedExecutionsForShutdown(executionIds, { restart })')
   })
 
   it('orders the cleanup after stopSubsystems and before closeLocalEvents', () => {

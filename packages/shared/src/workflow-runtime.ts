@@ -29,7 +29,7 @@ export interface WorkflowAttempt {
   /** Attempts whose handoffs directly started this attempt (empty for the entry). */
   sourceAttemptIds?: number[]
   /** Durable command-response handoff; no inbox delivery is needed for this attempt. */
-  responseAssignment?: { requestId: string; agentId: string; version: number; content: string }
+  responseAssignment?: { requestId: string; agentId: string; version: number; content: string; executionId?: string }
   branch?: WorkflowBranch
   id: number
   stepId: string

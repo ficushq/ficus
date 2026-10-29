@@ -1982,6 +1982,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
    * the squad grace.
    */
   async block(opts: {
+    structured?: import('@ficus/shared').StructuredManualWait
     scope?: 'stream' | 'attempt'
     flowAttemptId?: number
     message: string
@@ -2005,6 +2006,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         scope: opts.scope,
         flowAttemptId: opts.flowAttemptId,
         message: opts.message,
+        structured: opts.structured,
         actor: opts.actor ?? 'human',
         createdBy: opts.createdBy ?? 'system',
         createdByAgentId: opts.createdByAgentId ?? null,
@@ -2216,7 +2218,12 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
           `Wait ${waitId} is already closed (${wait.resolution ?? 'no resolution'})`
         )
       }
-      if (wait.type !== 'manual' || wait.resolutionHandler === 'workflow') {
+      if (
+        wait.type !== 'manual' ||
+        wait.resolutionHandler === 'workflow' ||
+        wait.structured?.request.kind === 'continue' ||
+        input.actor === 'manager'
+      ) {
         throw new WorkStreamWaitResolveError(
           'wait_actor_immutable',
           wait.type !== 'manual'
@@ -2236,7 +2243,19 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       }
       const [updated] = await tx
         .update(workStreamWaits)
-        .set({ actor: input.actor, actorChanges: [...(wait.actorChanges ?? []), change] })
+        .set({
+          actor: input.actor,
+          actorChanges: [...(wait.actorChanges ?? []), change],
+          ...(wait.structured
+            ? {
+                structured: {
+                  ...wait.structured,
+                  version: wait.structured.version + 1,
+                  request: { ...wait.structured.request, actor: input.actor },
+                },
+              }
+            : {}),
+        })
         .where(eq(workStreamWaits.id, wait.id))
         .returning()
       // Presentation/attention read models key off updatedAt; bump it so they refresh.

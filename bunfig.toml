@@ -18,8 +18,6 @@ peer = false
 # global.
 timeout = 5000
 preload = [
-  # Admission precedes every application preload, even for focused web/CLI tests.
-  "./scripts/check-test-db-capacity.ts",
   # The runtime guard imports no application/React modules and must run before setup.
   "./scripts/check-bun-test-runtime.ts",
   # Must run before another workspace preload caches hoisted root React.

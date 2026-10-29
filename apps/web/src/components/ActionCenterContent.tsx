@@ -4,7 +4,7 @@ import { actionErrorMessage } from '../lib/actionError'
 import { ActionCenterContext } from './ActionCenterContext'
 import { continueHaltedAgents } from '../api/agents'
 import { queryKeys } from '../queryKeys'
-import { WORK_STREAM_STATUS_ROLE, type PendingAction } from '@ficus/shared'
+import { WORK_STREAM_STATUS_ROLE, type PendingAction, type AgentErrorActionData } from '@ficus/shared'
 import { workStreamActionPresentationState } from '../lib/workStreamStatusPresentation'
 import { useLoadingShapeCount } from '../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from './loading/Skeleton'
@@ -148,7 +148,9 @@ function AgentErrorSection({
   showHeading: boolean
 }) {
   const queryClient = useQueryClient()
-  const respondableErrors = actions.filter((action) => action.canRespond)
+  const respondableErrors = actions.filter(
+    (action) => action.canRespond && !(action.data as AgentErrorActionData).recovery
+  )
   const mutation = useMutation({
     mutationFn: () => continueHaltedActions(respondableErrors.map((action) => action.id)),
     onSuccess: async (result) => {
