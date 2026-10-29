@@ -288,7 +288,9 @@ delivered back to the agent, so they never produce this card.
 
 Each accepted queued chat message has Cancel and Switch to Interrupt/Follow up controls. The API is `POST /api/agents/:id/messages/:messageId/queue` with `{ "operation": "cancel" | "steer" | "follow-up" }`, protected by `agents:run` and the agent's owner/squad scope. The client SDK exposes `agents.updatePendingMessage`. Inbox deliveries accept only `steer` and `follow-up`: their inbox items are already claimed, so deleting the row would lose them. Monitor deliveries accept no operation. Both refusals return `409` with `code: "not_allowed"`.
 
-`POST /api/agents/:id/clear-queue` removes only user-sent pending messages. A running worker cancels the ones its session holds one at a time through the SDK queue edit, so inbox and monitor deliveries already handed to the session stay queued, then deletes the unclaimed rows.
+One rule decides what counts as queued input, for chat's `queued` flag, per-message edits and bulk clear: a pending human message is queued unless it is the opening message of a turn that is still active. That turn already holds the message, and its execution keeps the text as a fallback prompt, so deleting the row would not cancel it. A turn stopped before it starts leaves its opening message as ordinary queued input, which can be edited or cleared and otherwise rides with the next turn.
+
+`POST /api/agents/:id/clear-queue` removes only queued user-sent messages. A running worker cancels the ones its session holds one at a time through the SDK queue edit, so inbox and monitor deliveries already handed to the session stay queued, then deletes the unclaimed rows.
 
 `POST /api/agents/:id/send-now` (`agents:run`; client `agents.sendQueuedNow`) delivers queued interrupts immediately. It stops a running turn, waits up to 15 seconds for it to settle, then queues a turn with no new message, whose opening prompt claims every queued interrupt; follow-ups stay queued. With no running turn it only queues that turn, so a retry after an interrupted wait still delivers. It answers `409 nothing_queued` without interrupts and `503 stop_timeout` when the stop has not settled.
 

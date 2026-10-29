@@ -884,7 +884,7 @@ describe('ChatView clear pending queue', () => {
     })
     const { dom, window } = await renderChatView(
       <ChatView
-        items={[{ kind: 'pending', id: 'queued', content: 'Keep this queued', status: 'queued' }]}
+        items={[{ kind: 'pending', id: 'queued', content: 'Keep this queued', status: 'queued', queued: true }]}
         onSend={() => undefined}
         onCancelQueue={onCancelQueue}
       />
@@ -916,6 +916,7 @@ describe('ChatView clear pending queue', () => {
         id: 'pending-1',
         content: 'Queued prompt',
         status: 'queued',
+        queued: true,
       },
     ]
     const { dom, root, window } = await renderChatView(
@@ -939,6 +940,7 @@ describe('ChatView clear pending queue', () => {
         id: 'pending-1',
         content: 'Queued prompt',
         status: 'queued',
+        queued: true,
       },
     ]
     const { dom, root, window } = await renderChatView(

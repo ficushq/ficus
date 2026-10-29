@@ -3248,10 +3248,15 @@ describe('agents service', () => {
 
     it('deletePendingMessages keeps inbox and monitor deliveries and, when asked, claimed rows', async () => {
       const agent = await Agent.create({ agentTypeId: testAgentTypeId })
-      await agent.recordMessage({ role: 'human', content: 'mine', pending: true })
+      await agent.recordMessage({ role: 'human', content: 'mine', pending: true, metadata: { deliveryMode: 'steer' } })
       await agent.recordMessage({ role: 'human', content: 'inbox', pending: true, metadata: { source: 'inbox' } })
       await agent.recordMessage({ role: 'human', content: 'monitor', pending: true, metadata: { source: 'monitor' } })
-      const claimed = await agent.recordMessage({ role: 'human', content: 'claimed', pending: true })
+      const claimed = await agent.recordMessage({
+        role: 'human',
+        content: 'claimed',
+        pending: true,
+        metadata: { deliveryMode: 'steer' },
+      })
       await db.update(messages).set({ injectedAt: new Date() }).where(eq(messages.id, claimed.id))
 
       expect(await agent.deletePendingMessages({ unclaimedOnly: true })).toBe(1)
@@ -3265,10 +3270,20 @@ describe('agents service', () => {
       await db.delete(messages).where(eq(messages.agentId, agent.id))
     })
 
-    it('deletePendingMessages removes all pending human messages', async () => {
+    it('deletePendingMessages removes queued human messages', async () => {
       const agent = await Agent.create({ agentTypeId: testAgentTypeId })
-      await agent.recordMessage({ role: 'human', content: 'Pending 1', pending: true })
-      await agent.recordMessage({ role: 'human', content: 'Pending 2', pending: true })
+      await agent.recordMessage({
+        role: 'human',
+        content: 'Pending 1',
+        pending: true,
+        metadata: { deliveryMode: 'steer' },
+      })
+      await agent.recordMessage({
+        role: 'human',
+        content: 'Pending 2',
+        pending: true,
+        metadata: { deliveryMode: 'follow-up' },
+      })
       await agent.recordMessage({ role: 'human', content: 'Confirmed', pending: false })
       await agent.recordMessage({ role: 'assistant', content: 'Response' })
 
@@ -3314,7 +3329,12 @@ describe('agents service', () => {
 
     it('clearQueue reports success without an ack when there is no running execution', async () => {
       const agent = await Agent.create({ agentTypeId: testAgentTypeId })
-      await agent.recordMessage({ role: 'human', content: 'queued steer', pending: true })
+      await agent.recordMessage({
+        role: 'human',
+        content: 'queued steer',
+        pending: true,
+        metadata: { deliveryMode: 'steer' },
+      })
 
       // No running execution means no SDK queue exists, so the DB rows ARE the
       // whole queue and deleting them genuinely clears it.
