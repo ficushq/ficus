@@ -4719,7 +4719,7 @@ test.each([false, true])(
     const options = { ...agentOpts, lifecycleGeneration: 'generation-one' }
     let oldSpec: string | null = null
     let failures = 0
-    let recorded: string | null = null
+    const recorded: string[] = []
     const ensure = h.deps.ensureBox
     h.deps.ensureBox = async (input) => {
       if (input.adoptIdleRuntime) {
@@ -4732,7 +4732,7 @@ test.each([false, true])(
       return ensure(input)
     }
     h.deps.recordRuntimeAdoptionFailure = async (box, spec) => {
-      recorded = spec
+      recorded.push(spec)
       h.setMachineBoxRow({
         machineId: box.machineId,
         port: box.port,
@@ -4750,7 +4750,7 @@ test.each([false, true])(
     await expect(manager.ensureSandbox(id, options)).rejects.toThrow(
       cleanupFailure ? 'activation restoration is unproven' : 'Bun runtime mismatch'
     )
-    expect(recorded).toBe(manager.computeSpecHash(options))
+    expect(recorded).toEqual([manager.computeSpecHash(options)])
     const fresh = new VmSandboxManager(h.deps)
     try {
       await expect(manager.ensureSandbox(id, options)).rejects.toThrow('Bun runtime adoption is blocked')

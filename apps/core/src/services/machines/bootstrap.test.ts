@@ -2563,7 +2563,7 @@ describe('deferred Bun convergence does not acknowledge the desired bootstrap ve
   })
 
   it('accepts only the closed current/deferred Bun convergence capability', () => {
-    for (const value of ['current', 'deferred'])
+    for (const value of ['current', 'deferred'] as const)
       expect(parseCapabilities(`FICUS_CAPS_JSON: {"bunConvergence":"${value}"}`).bunConvergence).toBe(value)
     expect(parseCapabilities('FICUS_CAPS_JSON: {"bunConvergence":"anything"}').bunConvergence).toBeUndefined()
   })

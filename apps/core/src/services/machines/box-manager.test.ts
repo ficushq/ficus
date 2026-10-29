@@ -14,6 +14,7 @@ import {
   BunRuntimeMismatchError,
   BoxStopUnverifiedError,
   type BoxManagerDeps,
+  type FetchLike,
   DEFAULT_BOX_HEALTH_BUDGET_MS,
   LISTENING_FRESH_MS,
   MachineUnavailableError,
@@ -190,14 +191,14 @@ function makeFakeTunnels(
   }
 }
 
-function makeFakeFetch(events: string[], results: Array<{ ok: boolean; status: number }>): typeof fetch {
+function makeFakeFetch(events: string[], results: Array<{ ok: boolean; status: number }>): FetchLike {
   let i = 0
-  return (async () => {
+  return async () => {
     events.push('health')
     const r = results[Math.min(i, results.length - 1)]
     i++
     return { ok: r.ok, status: r.status } as Response
-  }) as unknown as typeof fetch
+  }
 }
 
 /** Keep only the established endpoint HTTP-dead; a recreated box gets a fresh
@@ -5395,8 +5396,7 @@ describe('ordinary provisioning on hosts awaiting the Bun bootstrap sweep', () =
             authToken: 'existing-token',
             provisionedSpecHash: marker,
           })
-        deps.fetch = (async () =>
-          Response.json({ healthy: true, ...(observed ? { bunVersion: observed } : {}) })) as typeof fetch
+        deps.fetch = async () => Response.json({ healthy: true, ...(observed ? { bunVersion: observed } : {}) })
         const result = await ensureBox(
           { sandboxId: box.sandboxId, machineId: machine.id, role: 'agent', env, specHash: marker },
           deps
@@ -5418,10 +5418,10 @@ it('terminal Bun mismatch is projected as failed without probing or waking the e
     getMachineBox: async () => box,
     getMachine: async () => makeMachine(),
     tunnels: makeFakeTunnels([]),
-    fetch: (async () => {
+    fetch: async () => {
       probes++
       return Response.json({ healthy: true })
-    }) as typeof fetch,
+    },
   })
   expect(result.status).toBe('failed')
   expect(result.reason).toContain('Bun runtime adoption')
@@ -5432,7 +5432,7 @@ it('runtime mismatch retains the post-bind identity when adopting a legacy null-
   const machine = makeMachine()
   const box = makeBox({ authToken: null })
   const { deps } = happyDeps([], machine, box)
-  deps.fetch = (async () => Response.json({ healthy: true, bunVersion: '1.2.23' })) as typeof fetch
+  deps.fetch = async () => Response.json({ healthy: true, bunVersion: '1.2.23' })
   let mismatch: unknown
   try {
     await ensureBox(
