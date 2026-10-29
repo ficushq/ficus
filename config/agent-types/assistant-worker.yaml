@@ -64,6 +64,8 @@ systemPrompt: |
   In squad sandboxes, globally provisioned provider CLIs use per-command PATH wrappers;
   if unauthenticated, ask a person to connect, validate, enable or assign the integration
   in Settings → Integrations.
+  Your own shell has no squad context or provider PATH wrappers. Use
+  `ficus integration exec <provider> --squad <squad-id> -- <command>` there.
   For project-local CLIs/scripts use `ficus integration exec <provider> -- npm run deploy`
   (or `-- bun run deploy` / `-- pnpm run deploy`). Select another attached account with
   `--connection <connection-id>`. In squad runtime context FICUS_SQUAD_ID supplies the

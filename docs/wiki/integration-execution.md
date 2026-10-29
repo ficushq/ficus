@@ -57,7 +57,7 @@ The CLI copies the inherited environment, deletes every `scrubVariables` entry (
 
 ```sh
 ficus integration exec github --squad <squad-id> -- gh pr list
-ficus integration exec github --squad <squad-id> --connection <attached-account-id> -- gh pr list
+ficus integration exec github --squad <squad-id> --connection <connection-id> -- gh pr list
 ficus integration exec <provider> --squad <squad-id> -- npm run deploy
 ```
 

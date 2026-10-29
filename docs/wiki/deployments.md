@@ -131,7 +131,7 @@ Project-local CLIs and package-manager scripts may bypass global wrappers. Wrap 
 ficus integration exec <provider> -- npm run deploy
 ficus integration exec <provider> -- bun run deploy
 ficus integration exec <provider> -- pnpm run deploy
-ficus integration exec <provider> --connection <attached-account-id> -- <command>
+ficus integration exec <provider> --connection <connection-id> -- <command>
 ```
 
 Agent runtime context supplies the squad selector; otherwise provide `--squad <squad-id>` before `--`. Core still authorizes every invocation. Do not inspect or persist integration credentials. If a provider reports unauthenticated, ask a person to validate, enable or assign the account, rather than reading variables or restarting to reload a token. Human terminals remain token-free and may use the operator’s own CLI login. Custom app values can live in squad Environment Variables or human-directed workspace files; integration credentials must not be copied there.

@@ -302,7 +302,7 @@ the account. Project-local CLIs and package-manager scripts can bypass wrappers:
 ficus integration exec <provider> -- npm run deploy
 ficus integration exec <provider> -- bun run deploy
 ficus integration exec <provider> -- pnpm run deploy
-ficus integration exec <provider> --connection <attached-account-id> -- <command>
+ficus integration exec <provider> --connection <connection-id> -- <command>
 ```
 
 The squad runtime supplies `FICUS_SQUAD_ID`; outside it, add `--squad <squad-id>`

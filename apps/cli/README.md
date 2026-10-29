@@ -46,7 +46,7 @@ Project-local CLIs, npx/bunx and npm/bun/pnpm scripts can bypass global wrappers
 ficus integration exec <provider> -- npm run deploy
 ficus integration exec <provider> -- bun run deploy
 ficus integration exec <provider> -- pnpm run deploy
-ficus integration exec <provider> --connection <attached-account-id> -- <command>
+ficus integration exec <provider> --connection <connection-id> -- <command>
 ```
 
 The squad runtime supplies `FICUS_SQUAD_ID`. Outside that context add
