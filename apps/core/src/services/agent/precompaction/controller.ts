@@ -16,7 +16,8 @@ import { computePrefixFingerprint, matchesPrefixFingerprint, type PrefixFingerpr
 // Background summaries of large contexts may take minutes; the foreground hook
 // still waits only PRECOMPACTION_AWAIT_MS before falling back.
 export const BAKE_TIMEOUT_MS = 180_000
-export const BAKE_RETRY_COOLDOWN_MS = 60_000
+// Minimum start-to-start spacing after failure; slow attempts need no extra wait.
+export const BAKE_RETRY_COOLDOWN_MS = 30_000
 export const PRECOMPACTION_AWAIT_MS = 10_000
 
 export interface BranchSnapshot {
@@ -164,6 +165,7 @@ export class PrecompactionController {
     const modelKey = this.deps.getModelKey()
     const reserveTokens = settings.reserveTokens
     const keepRecentTokens = settings.keepRecentTokens
+    const startedAt = this.now()
     const abort = new AbortController()
     const stats: PrecompactionLifecycleStats = {
       contextTokens: usage.tokens,
@@ -193,7 +195,7 @@ export class PrecompactionController {
         // Some SDK/provider paths resolve partial text when their signal is aborted.
         // A timed-out result must never become the replacement session context.
         if (!result || abort.signal.aborted) {
-          this.retryAfter = this.now() + BAKE_RETRY_COOLDOWN_MS
+          this.retryAfter = startedAt + BAKE_RETRY_COOLDOWN_MS
           this.emitLifecycle({
             kind: 'failed',
             ...stats,
@@ -224,7 +226,7 @@ export class PrecompactionController {
         clearTimeout(timer)
         if (this.abort !== abort) return
         const timedOut = this.inFlight?.timedOut ?? false
-        this.retryAfter = this.now() + BAKE_RETRY_COOLDOWN_MS
+        this.retryAfter = startedAt + BAKE_RETRY_COOLDOWN_MS
         this.emitLifecycle({
           kind: 'failed',
           ...stats,
@@ -234,7 +236,7 @@ export class PrecompactionController {
         this.resetToIdle()
       }
     )
-    this.inFlight = { abort, startedAt: this.now(), stats, timer, timedOut: false, promise: settledPromise }
+    this.inFlight = { abort, startedAt, stats, timer, timedOut: false, promise: settledPromise }
     this.state = 'precomputing'
     this.emitLifecycle({ kind: 'started', ...stats })
     void settledPromise
