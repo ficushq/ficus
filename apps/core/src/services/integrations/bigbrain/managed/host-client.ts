@@ -127,8 +127,14 @@ export function createManagedHostClient(options: ManagedHostClientOptions = {}) 
     })
     try {
       const stdin = child.stdin as import('bun').FileSink
-      stdin.write(body)
-      await stdin.end()
+      try {
+        stdin.write(body)
+        await stdin.end()
+      } catch {
+        // An early exit can close stdin before either the write or its flush.
+        // Still await the exit and drain the pipes below: the reply/exit status,
+        // not a raw sink error (which may contain diagnostics), defines the result.
+      }
       const [stdout, , exitCode] = await Promise.race([
         Promise.all([
           readCapped(child.stdout as ReadableStream<Uint8Array>, MANAGED_BIGBRAIN_HOST_REPLY_BYTES),
