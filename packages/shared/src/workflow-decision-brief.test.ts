@@ -68,3 +68,16 @@ describe('decision brief input', () => {
     )
   })
 })
+
+test('shorthand outside literals is rejected in every field; normal abbreviations remain prose', () => {
+  for (const field of ['decision', 'recommendation', 'approvalEffect', 'risks', 'changesSinceLastReview']) {
+    for (const token of ['pls', 'plz', 'thx', 'apprv', 'reqd', 'rdy', 'b4', 'w/', 'w/o', 'b/c'])
+      expect(parse({ ...brief, [field]: `Approve the design ${token} staging work.` }).success).toBe(false)
+    expect(parse({ ...brief, [field]: 'Approve the design, e.g. the staging API v1.2, after review.' }).success).toBe(
+      true
+    )
+    expect(
+      parse({ ...brief, [field]: "The source says 'pls approveTheExactRetryPacket'; review the full design." }).success
+    ).toBe(true)
+  }
+})

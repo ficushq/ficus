@@ -1,4 +1,12 @@
-import { effectiveWorkflowStep, isEarlierWorkflowStep, type WorkflowAttempt, type WorkflowRun } from '@ficus/shared'
+import {
+  workflowCompletionReviewTargets,
+  workflowEarlierHumanDecisions,
+  WORKFLOW_DECISION_BRIEF_LIMITS,
+  effectiveWorkflowStep,
+  isEarlierWorkflowStep,
+  type WorkflowAttempt,
+  type WorkflowRun,
+} from '@ficus/shared'
 
 /** Explain the actual run's capabilities, including the active attempt's pinned handoffs. */
 export function flowCapabilityInstructions(state: WorkflowRun, attempt: WorkflowAttempt, version = state.version) {
@@ -15,6 +23,37 @@ export function flowCapabilityInstructions(state: WorkflowRun, attempt: Workflow
           : `- ${name}: revise ${target.returnTo}, then ${target.afterRework === 'return-to-requester' ? `return directly to ${step.id}` : 'follow that step’s normal arrows'}`
     ),
   ]
+  if (step.kind === 'agent') {
+    for (const outcome of Object.keys(step.outcomes)) {
+      for (const resume of [false, true]) {
+        let targets: string[]
+        try {
+          targets = workflowCompletionReviewTargets(state, attempt, outcome, resume)
+        } catch {
+          continue
+        }
+        if (!targets.length) continue
+        lines.push(
+          `For outcome '${outcome}'${resume ? ' with resume=true' : ''}, a human decides next at ${targets.join(', ')}. The completing producing agent writes decisionBrief; no manager authors it.`
+        )
+        for (const gate of targets) {
+          const previous = workflowEarlierHumanDecisions(state, gate)[0]
+          if (previous)
+            lines.push(
+              `Gate '${gate}' has an earlier decision (attempt ${previous.id}); changesSinceLastReview is required.`
+            )
+        }
+      }
+    }
+    lines.push(
+      'A decisionBrief is mandatory on agent-produced human-directed completions and optional otherwise. Keep evidence as the separate agent and audit handoff. The fields are decision (one or two history-independent sentences), recommendation (what and why), approvalEffect (what approval permits, exact resource IDs and what remains forbidden), risks (tradeoffs), and changesSinceLastReview (last decision, why work returned or an execution failed, and what changed; required after an earlier gate decision).',
+      `Field limits in characters: ${Object.entries(WORKFLOW_DECISION_BRIEF_LIMITS)
+        .map(([name, limit]) => `${name}: ${limit}`)
+        .join('; ')}.`,
+      'Write every text field in normal, readable prose with normal spacing and complete words. Never remove spaces, run words together, invent abbreviations, or use telegraphic shorthand to save tokens or length. When material is long, use headings, bullets, or a linked file instead of compressing it. Preserve exact identifiers, code, URLs, paths, and quoted source material; the rule governs authored prose, not literal data.',
+      'Refresh ficus workstream flow immediately before submission to inspect earlier decisions, return reasons and failed or stopped executions, including retries on this same attempt. Do not rewrite gate instructions or infer permission to bypass an outstanding hold.'
+    )
+  }
   lines.push('')
   if (definition.routing.mode !== 'guided' && definition.routing.returnTo === 'earlier-steps') {
     const declaredReturns = new Set(

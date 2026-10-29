@@ -81,3 +81,24 @@ test('keep revisions explain effective outcomes while preserving the original br
   expect(message).toContain('waived: delivery policy')
   expect(message).not.toContain('completed: delivery policy')
 })
+
+test('human-directed outcomes identify the producer-owned brief; agent-only outcomes do not', () => {
+  const definition = createBlankWorkflow()
+  const solo = createWorkflowRun(definition)
+  expect(flowCapabilityInstructions(solo, solo.attempts[0]!)).not.toContain('a human decides next')
+  definition.steps[0]!.outcomes.completed = { next: 'gate' }
+  definition.steps.push({
+    id: 'gate',
+    kind: 'human-approval',
+    instructions: 'Review the design.',
+    output: 'Decision.',
+    outcomes: { approved: { next: 'finish' } },
+    approver: 'reviewers',
+  })
+  const run = createWorkflowRun(definition)
+  const text = flowCapabilityInstructions(run, run.attempts[0]!)
+  expect(text).toContain('a human decides next')
+  expect(text).toContain('decisionBrief')
+  expect(text).toContain('changesSinceLastReview')
+  expect(text).toContain('producing agent')
+})

@@ -1,3 +1,4 @@
+import { brief } from '../../../../../packages/shared/src/test-fixtures/workflow-review'
 import { getPostgresError } from '../../db/errors'
 import { externalDeliveryStreamIds } from './delivery-state'
 import { listPendingActions } from '../agents/actions'
@@ -118,7 +119,7 @@ async function messages(id: string) {
     .from(inbox)
     .where(like(inbox.idempotencyKey, `flow:${id}:%`))
 }
-async function advance(id: string, outcome: string) {
+async function advance(id: string, outcome: string, decisionBrief?: typeof brief) {
   const run = (await getFlow(id))!
   return advanceFlow(
     id,
@@ -128,6 +129,7 @@ async function advance(id: string, outcome: string) {
       action: 'complete',
       outcome,
       evidence: 'Verified result',
+      ...(decisionBrief ? { decisionBrief } : {}),
     },
     randomUUID(),
     actor
@@ -1526,6 +1528,48 @@ test('action center human gates use review permission and assigned reviewer filt
     visible: true,
     canRespond: false,
   })
+  const hold = await openWait(db, {
+    workStreamId: id,
+    type: 'manual',
+    actor: 'owner',
+    scope: 'stream',
+    message: 'Wait for the staging prerequisite.',
+  })
+  const findAction = async () =>
+    (await listPendingActions()).filter((a) => 'workStreamId' in a.data && a.data.workStreamId === id)
+  expect(await findAction()).toHaveLength(0)
+  expect(await evaluatePendingAction({ type: 'user', userId: reviewer.id }, action, context)).toEqual({
+    visible: false,
+    canRespond: false,
+  })
+  const gateRun = (await getFlow(id))!
+  await expect(
+    advanceFlow(
+      id,
+      {
+        action: 'complete',
+        expectedVersion: gateRun.version,
+        attemptId: gateRun.state.activeAttemptId,
+        outcome: 'completed',
+        evidence: '',
+      },
+      randomUUID(),
+      { type: 'user', userId: reviewer.id }
+    )
+  ).rejects.toThrow('Resolve the waits')
+  const question = await openWait(db, {
+    workStreamId: id,
+    type: 'manual',
+    actor: 'human',
+    scope: 'stream',
+    message: 'Provide the staging credential.',
+  })
+  expect((await findAction()).map((a) => (a.data as { waitId: string }).waitId)).toEqual([question.wait.id])
+  await closeOpenWaits(db, { workStreamId: id, waitId: question.wait.id }, 'cleared')
+  await closeOpenWaits(db, { workStreamId: id, waitId: hold.wait.id }, 'cleared')
+  expect((await findAction()).map((a) => (a.data as { waitId: string }).waitId)).toEqual([
+    (action.data as { waitId: string }).waitId,
+  ])
   await db
     .update(workStreams)
     .set({ assignedReviewerIds: [responder.id] })
@@ -2026,7 +2070,7 @@ describe('live outcome binding', () => {
         actor
       )
     ).rejects.toThrow('Stale step attempt')
-    await advance(id, 'verified')
+    await advance(id, 'verified', brief)
     const human = (await getFlow(id))!
     expect(human.state.attempts.at(-1)!.stepId).toBe('approval')
     const waits = await listOpenWaits(db, id)
@@ -2486,4 +2530,32 @@ test('watchdog exhaustion without an owning flow attempt emits one durable diagn
     .where(eq(inbox.idempotencyKey, `recovery-unroutable:${record!.id}:attempt`))
   expect(diagnostic).toHaveLength(1)
   expect(diagnostic[0]!.recipientType).toBe('system')
+})
+
+test('decision brief rejection leaves run, waits, participants and handoff outbox unchanged', async () => {
+  const definition = structuredClone(flow)
+  definition.steps[1]!.outcomes.approved = { next: 'brief-gate' }
+  definition.steps.push({
+    id: 'brief-gate',
+    kind: 'human-approval',
+    instructions: 'Review the staging design.',
+    output: 'Decision.',
+    approver: 'reviewers',
+    outcomes: { approved: { next: 'finish' } },
+  })
+  const id = await create('active', definition)
+  await advance(id, 'completed')
+  const before = {
+    run: await getFlow(id),
+    waits: await listOpenWaits(db, id),
+    bindings: await bindings(id),
+    messages: await messages(id),
+  }
+  await expect(advance(id, 'approved')).rejects.toThrow('decisionBrief')
+  expect({
+    run: await getFlow(id),
+    waits: await listOpenWaits(db, id),
+    bindings: await bindings(id),
+    messages: await messages(id),
+  }).toEqual(before)
 })

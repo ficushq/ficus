@@ -4,8 +4,10 @@ import {
   activeWorkflowAttempts,
   effectiveWorkflowStep,
   workflowIncomingAttempts,
+  workflowCompletionReviewTargets,
   type WorkflowAttempt,
   type WorkflowRun,
+  type WorkflowProducerReviewContext,
 } from '@ficus/shared'
 import { flowCapabilityInstructions } from './capability-instructions'
 
@@ -28,7 +30,8 @@ export function flowMessage(
   run: { state: WorkflowRun; version: number },
   attempt: WorkflowAttempt,
   /** Present when the stream was built on a dependency's unmerged branch. */
-  stackNotice?: string
+  stackNotice?: string,
+  reviewContexts?: WorkflowProducerReviewContext[]
 ) {
   const step = effectiveWorkflowStep(run.state, attempt)
   const metadata = stream.metadata as { git?: Record<string, unknown>; codeHost?: Record<string, unknown> } | null
@@ -48,11 +51,31 @@ export function flowMessage(
       entry.branch?.forkId === attempt.branch?.forkId &&
       entry.branch?.branchId === attempt.branch?.branchId
   )
+  const outcome = Object.keys(step.outcomes)[0]!
+  let humanNext = false
+  try {
+    humanNext = step.kind === 'agent' && workflowCompletionReviewTargets(run.state, attempt, outcome).length > 0
+  } catch {
+    /* The current return may require explicit resume. */
+  }
   const example = {
     expectedVersion: run.version,
     attemptId: attempt.id,
     action: 'complete',
-    outcome: Object.keys(step.outcomes)[0],
+    outcome,
+    ...(humanNext
+      ? {
+          decisionBrief: {
+            decision: 'Approve the proposed staging design.',
+            recommendation: 'Approve because the documented fallback preserves existing reads.',
+            approvalEffect:
+              'Approval permits the described staging implementation, not production deployment. Replace this example with exact scope and resource IDs.',
+            risks: 'Temporary parallel read paths increase maintenance work.',
+            changesSinceLastReview:
+              'State the earlier decision, why work returned or stopped, and what changed; omit this field for a first review.',
+          },
+        }
+      : {}),
     evidence: 'Describe the result, checks performed, and relevant paths or links.',
   }
   return [
@@ -72,6 +95,7 @@ export function flowMessage(
       ? `Original work brief (initial context; use incoming results for progress):\n${stream.description}`
       : '',
     stream.handoffMessage ? `Owner's handoff:\n${stream.handoffMessage}` : '',
+    reviewContexts?.length ? `Context for the next human review:\n${JSON.stringify(reviewContexts, null, 2)}` : '',
     flowCapabilityInstructions(run.state, attempt, run.version),
     attempt.branch || activeWorkflowAttempts(run.state).length > 1
       ? 'Parallel work is active in this shared workspace.'

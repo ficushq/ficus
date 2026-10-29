@@ -150,3 +150,36 @@ test('both early and last agent arrivals at a human join require briefs', () => 
   run = finishBranch(run, 3, brief)
   expect(run.attempts.at(-1)!.reviewBrief).toEqual({ kind: 'authored', sourceAttemptIds: [2, 3] })
 })
+
+test('carry-forward uses newest eligible joined lineage, never a previous producer or another run', () => {
+  const run = flow()
+  const base = run.attempts[0]!
+  run.attempts = [
+    { ...base, id: 1, status: 'completed', decisionBrief: { value: brief, submittedVersion: 1, contexts: [] } },
+    { ...base, id: 2, status: 'completed', sourceAttemptIds: [1] },
+    { id: 3, stepId: 'gate', status: 'completed', sourceAttemptIds: [2] },
+    { id: 4, stepId: 'second', status: 'running', sourceAttemptIds: [3] },
+  ]
+  expect(workflowReviewBriefForAttempt(run, run.attempts[3]!)).toEqual({ kind: 'none', sources: [] })
+  const otherRun = flow()
+  otherRun.attempts[0]!.decisionBrief = { value: brief, submittedVersion: 100, contexts: [] }
+  expect(workflowReviewBriefForAttempt(run, run.attempts[3]!)).toEqual({ kind: 'none', sources: [] })
+  run.attempts[1]!.decisionBrief = { value: brief, submittedVersion: 2, contexts: [] }
+  expect(workflowReviewBriefForAttempt(run, run.attempts[3]!).sources.map((a) => a.id)).toEqual([2])
+  run.attempts.push({
+    ...base,
+    id: 5,
+    status: 'completed',
+    decisionBrief: { value: brief, submittedVersion: 3, contexts: [] },
+  })
+  run.attempts[3]!.sourceAttemptIds = [3, 5]
+  run.attempts[3]!.reviewBrief = { kind: 'carried-forward', sourceAttemptId: 5 }
+  expect(workflowReviewBriefForAttempt(run, run.attempts[3]!).sources.map((a) => a.id)).toEqual([5])
+})
+test('recorded carried brief history survives reopen without lending it to the new pass', () => {
+  let run = complete(flow(), 'ready', brief)
+  run = complete(run, 'yes')
+  const historicalGate = run.attempts[2]!
+  const reopened = reopenWorkflowRun(run)
+  expect(workflowReviewBriefForAttempt(reopened, historicalGate).sources.map((a) => a.id)).toEqual([1])
+})

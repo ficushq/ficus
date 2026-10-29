@@ -178,6 +178,7 @@ test('workstream flow commands preserve inspected versions and retry IDs, and re
   await f.run('finish', 'stream-id', '--version', '8')
   expect(f.calls).toEqual([
     { method: 'GET', path: '/api/workflows/runs/stream-id' },
+    { method: 'GET', path: '/api/workflows/runs/stream-id' },
     { method: 'POST', path: '/api/workflows/runs/stream-id/advance', body: { command, requestId } },
     { method: 'POST', path: '/api/workflows/runs/stream-id/finish', body: { version: 8 } },
   ])
@@ -185,7 +186,7 @@ test('workstream flow commands preserve inspected versions and retry IDs, and re
   await f.run('advance', 'stream-id', '--file', await file({ ...command, evidence: undefined }))
   await f.run('finish', 'stream-id', '--version', '-1')
   expect(f.errors).toHaveLength(2)
-  expect(f.calls).toHaveLength(3)
+  expect(f.calls).toHaveLength(4)
 })
 
 test('workstream alias exposes execution commands and workflow help only advertises templates', async () => {
@@ -320,4 +321,41 @@ test('advance --attach checks every file locally before uploading any', async ()
   ])
   // Only the run was read; nothing was uploaded or advanced.
   expect(f.calls.every((call) => call.method === 'GET')).toBe(true)
+})
+
+test('decision briefs are preflighted before any attachment upload and transported intact', async () => {
+  const { createBlankWorkflow, createWorkflowRun } = await import('@ficus/shared')
+  const definition = createBlankWorkflow()
+  definition.steps[0]!.outcomes.completed = { next: 'gate' }
+  definition.steps.push({
+    id: 'gate',
+    kind: 'human-approval',
+    instructions: 'Review staging.',
+    output: 'Decision.',
+    approver: 'reviewers',
+    outcomes: { yes: { next: 'finish' } },
+  })
+  const state = createWorkflowRun(definition)
+  const f = fixture({ version: 0, state }, undefined, 'workstream')
+  const command = {
+    action: 'complete',
+    expectedVersion: 0,
+    attemptId: 1,
+    outcome: 'completed',
+    evidence: 'Audit result.',
+  }
+  const path = await file('Attachment content.')
+  await f.run('advance', 'stream-id', '--content', JSON.stringify(command), '--attach', path)
+  expect(f.calls.map((c) => c.method)).toEqual(['GET'])
+  expect(f.errors[0]!.message).toContain('decisionBrief is required')
+  const decisionBrief = {
+    decision: 'Approve the staging design.',
+    recommendation: 'Approve because the fallback is tested.',
+    approvalEffect: 'Approval permits staging work only, not production deployment.',
+    risks: 'The fallback increases maintenance work.',
+  }
+  const valid = fixture({ version: 0, state }, undefined, 'workstream')
+  await valid.run('advance', 'stream-id', '--content', JSON.stringify({ ...command, decisionBrief }))
+  expect(valid.errors).toEqual([])
+  expect(valid.calls.at(-1)?.body).toMatchObject({ command: { decisionBrief } })
 })

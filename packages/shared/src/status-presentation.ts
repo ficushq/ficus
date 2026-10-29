@@ -358,6 +358,20 @@ export function workStreamSecondaryDeliveryLabel(workStream: WorkStreamPresentat
 /** Whether a stream contributes to a user-attention aggregate, independently of its primary bucket. */
 export function workStreamNeedsHumanAttention(workStream: WorkStreamPresentationFacts): boolean {
   const state = selectWorkStreamPresentationState(workStream)
+  if (['done', 'canceled', 'paused'].includes(state)) return false
+  if (
+    workStream.openWaits?.some(
+      (wait) =>
+        wait.type === 'question' ||
+        (!isWorkflowHumanGateWait(wait) &&
+          wait.type === 'manual' &&
+          workStreamWaitActor(wait) === 'human' &&
+          !(workStream.delivery?.kind === 'approval' && wait.id === workStream.delivery.approvalWaitId)) ||
+        (workStreamWaitDisplayType(wait) === 'review' &&
+          !workflowReviewBlockingWaits(wait, workStream.openWaits!).length)
+    )
+  )
+    return true
   if (state === 'delivery_approval' || state === 'delivery_review' || state === 'delivery_merge') return true
   if (state === 'in_progress' && ['approval', 'review', 'merge'].includes(String(workStream.delivery?.kind)))
     return true

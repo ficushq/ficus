@@ -14,3 +14,14 @@ export function isDeliveryApprovalWait(id: string, wait: WorkStreamWaitRow): boo
       (wait.resolutionHandler === 'workflow' && wait.referenceId === flowWaitReference(id, 'delivery', 0)))
   )
 }
+
+/** Canonical identity, not merely another workflow-owned wait on this attempt. */
+export function isHumanFlowWait(
+  wait: Pick<WorkStreamWaitRow, 'workStreamId' | 'flowAttemptId' | 'resolutionHandler' | 'referenceId'>
+): boolean {
+  return (
+    wait.flowAttemptId != null &&
+    wait.resolutionHandler === 'workflow' &&
+    wait.referenceId === flowWaitReference(wait.workStreamId, 'human', wait.flowAttemptId)
+  )
+}

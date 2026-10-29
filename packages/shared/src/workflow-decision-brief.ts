@@ -11,7 +11,7 @@ export const WORKFLOW_DECISION_BRIEF_LIMITS = {
 /** Mask literal data, never change the submitted text. This linter is deliberately field-local. */
 function authoredProse(text: string): string {
   return text.replace(
-    /```[\s\S]*?```|`[^`\n]*`|\]\([^)]*\)|https?:\/\/[^\s]+|(?:\.{0,2}\/|~\/)[\w./-]+|\b[\da-f]{8}-[\da-f-]{27,}\b|\b[\da-f]{40,64}\b|"[^"\n]*"|“[^”]*”|‘[^’]*’/gi,
+    /```[\s\S]*?```|`[^`\n]*`|\]\([^)]*\)|https?:\/\/[^\s]+|(?<![\w])(?:\.{0,2}\/|~\/|[A-Za-z]:\\)[\w./\\-]+|\b[\da-f]{8}-[\da-f-]{27,}\b|\b[\da-f]{40,64}\b|"[^"\n]*"|“[^”]*”|‘[^’]*’|(?<![\p{L}])'[^'\n]+'(?![\p{L}])/giu,
     ' '
   )
 }
@@ -21,7 +21,10 @@ export function decisionBriefProseError(
   field: keyof typeof WORKFLOW_DECISION_BRIEF_LIMITS,
   text: string
 ): string | null {
-  const prose = authoredProse(text)
+  const prose = authoredProse(text).replace(
+    /\b(?:[A-Za-z]\.){2,}|\b(?:Dr|Mr|Mrs|Ms|Prof|Sr|Jr|vs|etc)\./g,
+    'abbreviation'
+  )
   const words = [...new Intl.Segmenter(undefined, { granularity: 'word' }).segment(prose)].filter((s) => s.isWordLike)
   const compressed =
     /[.!?][A-Za-z]|[a-zA-Z]{33,}|\b(?:pls|plz|thx|apprv|reqd|rdy|b4)\b|\bw\/(?:o\b)?|\bb\/c\b/i.test(prose) ||

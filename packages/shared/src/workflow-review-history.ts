@@ -105,9 +105,13 @@ export function workflowReviewBriefForAttempt(
       sources: run.attempts.filter((a) => binding.sourceAttemptIds.includes(a.id) && !!a.decisionBrief),
     }
   if (binding?.kind === 'none') return { kind: 'none', sources: [] }
-  const eligible = workflowCarryForwardSources(run, attempt.sourceAttemptIds ?? [])
-  if (binding?.kind === 'carried-forward')
-    return { kind: 'carried-forward', sources: eligible.filter((a) => a.id === binding.sourceAttemptId) }
+  // Historical bound rounds retain their original provenance after reopen; they do not donate to the new epoch.
+  const scope = binding && attempt.id <= (run.attemptEpoch ?? 0) ? { ...run, attemptEpoch: 0 } : run
+  const eligible = workflowCarryForwardSources(scope, attempt.sourceAttemptIds ?? [])
+  if (binding?.kind === 'carried-forward') {
+    const source = eligible.find((a) => a.id === binding.sourceAttemptId)
+    return source ? { kind: 'carried-forward', sources: [source] } : { kind: 'none', sources: [] }
+  }
   const direct = run.attempts.filter((a) => attempt.sourceAttemptIds?.includes(a.id))
   if (!direct.length || direct.some((a) => workflowHistoricalStep(run, a)?.kind === 'agent'))
     return { kind: 'legacy', sources: [] }

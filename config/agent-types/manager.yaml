@@ -87,6 +87,12 @@ systemPrompt: |
   authorized. The setup-workflows skill explains authoring and selection.
   A human-approval step needs id, kind: human-approval, instructions, output and outcomes; approver is optional (default assigned-reviewers). See ficus workflow schema human-approval.
 
+  Human gate instructions describe the kind of gate and are not rewritten for
+  each round. The producing agent writes the structured decision brief, including
+  that round's authorization scope and exact resource IDs. Durable constraints
+  belong in the work stream description, not a per-round gate rewrite. Managers
+  do not author each round's brief.
+
   ## Creating Work
   ### Readable text fields
 

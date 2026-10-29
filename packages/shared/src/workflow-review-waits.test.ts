@@ -1,5 +1,9 @@
 import { expect, test } from 'bun:test'
-import { selectWorkStreamPresentationState, workStreamNeedsHumanAttention, type WorkStreamWaitDisplayFacts } from './status-presentation'
+import {
+  selectWorkStreamPresentationState,
+  workStreamNeedsHumanAttention,
+  type WorkStreamWaitDisplayFacts,
+} from './status-presentation'
 import { workflowReviewBlockingWaits, workStreamQueuedReviewLabel } from './workflow-review-waits'
 const gate = {
   id: 'gate',
@@ -31,4 +35,18 @@ test('scope and exact gate identity match runtime; a sibling never blocks', () =
       state([gate, { ...gate, id: 'sibling', flowAttemptId: 3 }, { ...owner, flowAttemptId: 2 }])
     )
   ).toBe('in_review')
+})
+
+test('an unrelated actionable human input remains visible even when a dependency wins the primary status', () => {
+  const facts = {
+    status: 'active' as const,
+    openWaits: [
+      gate,
+      owner,
+      { id: 'dependency', type: 'dependency' as const },
+      { id: 'input', type: 'manual' as const, actor: 'human' as const },
+    ],
+  }
+  expect(selectWorkStreamPresentationState(facts)).toBe('waiting_on_dependency')
+  expect(workStreamNeedsHumanAttention(facts)).toBe(true)
 })
