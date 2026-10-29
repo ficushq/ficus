@@ -50,3 +50,7 @@ test('an unrelated actionable human input remains visible even when a dependency
   expect(selectWorkStreamPresentationState(facts)).toBe('waiting_on_dependency')
   expect(workStreamNeedsHumanAttention(facts)).toBe(true)
 })
+
+test('legacy paused presentation does not add a queued-review status note', () => {
+  expect(workStreamQueuedReviewLabel({ ...state([gate, owner]), derivedState: 'paused' })).toBeNull()
+})

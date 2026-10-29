@@ -31,9 +31,11 @@ export function workflowReviewBlockingWaits<T extends WorkflowReviewWaitFacts>(
 export function workStreamQueuedReviewLabel(stream: {
   status: string
   pause?: unknown
+  derivedState?: string
   openWaits?: readonly WorkflowReviewWaitFacts[]
 }): string | null {
-  if (stream.pause || stream.status === 'done' || stream.status === 'canceled') return null
+  if (stream.pause || stream.derivedState === 'paused' || stream.status === 'done' || stream.status === 'canceled')
+    return null
   const waits = stream.openWaits ?? []
   return waits.some((wait) => isWorkflowHumanGateWait(wait) && workflowReviewBlockingWaits(wait, waits).length)
     ? 'Review queued'

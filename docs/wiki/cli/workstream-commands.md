@@ -20,6 +20,8 @@ authorized return, delegation, or revision. `finish` checks the completion polic
 once the graph is complete. All three take a **work stream ID**; `ficus ws` is an
 alias for `ficus workstream`. `ficus workflow` manages reusable presets/templates.
 
+When an **agent** completion's effective outcome sends its result into human approval, include `decisionBrief` alongside `evidence`. Its fields are `decision` (500 characters), `recommendation` (1,000), `approvalEffect` (2,400), `risks` (1,600), and `changesSinceLastReview` (2,000; required after an earlier decision on that gate). All fields use readable prose. Non-agent routing does not acquire an authoring requirement. See the [decision brief contract](../workflow-decision-briefs.md) for a complete command, validation, source/round provenance and carry-forward behavior. The CLI preflights running completions before uploading attachments; the server remains authoritative.
+
 `advance --attach PATH` (repeatable, `complete` only) uploads each file to the
 attempt named in the command before the command is sent, so the next review gate
 opens with them; if any upload fails the attempt is not advanced. Files are keyed by
@@ -30,7 +32,7 @@ sent as-is; when the run's version no longer matches, the CLI stops before uploa
 snapshot (at most 10 files per attempt, each within `INBOX_MAX_ATTACHMENT_BYTES`,
 10 MB by default), lists them per attempt as `attachments` in `flow`, and serves
 them at `GET /api/workflows/runs/STREAM_ID/attachments/ATTACHMENT_ID` to anyone
-who can read the work stream. The review modal shows them as tabs after the handoff;
+who can read the work stream. Brief-present reviews lead with the brief and keep the handoff and file tabs in a closed Evidence and attachments disclosure; legacy reviews keep their existing tabs.
 PDFs are drawn page by page with pdf.js from the downloaded bytes (loaded on demand,
 with no network fetches of its own). Attachments are kept for the life of the work
 stream, including after it is done or canceled, as a record of what was reviewed; they

@@ -1,4 +1,9 @@
-import { workflowReviewBriefForAttempt, type WorkflowAttempt, type WorkflowRun } from '@ficus/shared'
+import {
+  workflowHistoricalStep,
+  workflowReviewBriefForAttempt,
+  type WorkflowAttempt,
+  type WorkflowRun,
+} from '@ficus/shared'
 import { MarkdownContent } from './MarkdownContent'
 
 /** Read-only source provenance: a carried brief is never fresh authorization for this gate. */
@@ -18,7 +23,7 @@ export function WorkflowDecisionBrief({ run, attempt }: { run: WorkflowRun; atte
       {brief.sources.map((source) => (
         <section key={source.id} className="space-y-4">
           <p className="text-xs text-muted">
-            Prepared by {source.step?.name ?? source.stepId} · Attempt {source.id}
+            Prepared by {workflowHistoricalStep(run, source)?.name ?? source.stepId} · Attempt {source.id}
           </p>
           {(
             [

@@ -180,8 +180,12 @@ function ReviewLayout({
   })
   const decision: DecisionState = { gate, run, notes, setNotes, advance }
   const navigation = { onOpenAgent, onOpenWorkStream }
+  const brief = workflowReviewBriefForAttempt(run.state, attempt)
+  const reviewSources = [
+    ...new Map([...gate.sources, ...brief.sources].map((source) => [source.id, source])).values(),
+  ].sort((a, b) => a.id - b.id)
   // Each source attempt's own files: a re-run after a send-back shows only what that attempt attached.
-  const attachments = gate.sources.flatMap((source) => run.attachments?.[String(source.id)] ?? [])
+  const attachments = reviewSources.flatMap((source) => run.attachments?.[String(source.id)] ?? [])
   const [tab, setTab] = useState(HANDOFF_TAB)
   const openFile = attachments.find((attachment) => attachment.id === tab)
   const tabsId = useId()
@@ -191,7 +195,6 @@ function ReviewLayout({
     // Each tab is its own document: open it at the top, not at the last one's scroll position.
     if (documentColumn.current) documentColumn.current.scrollTop = 0
   }
-  const brief = workflowReviewBriefForAttempt(run.state, attempt)
   const hasBriefDisplay = brief.kind !== 'legacy'
   const handoff = (
     <div className="mx-auto w-full max-w-[72ch] px-5 pb-16 pt-6 sm:px-8 sm:pt-8">
@@ -217,7 +220,7 @@ function ReviewLayout({
           <p className="whitespace-pre-wrap text-sm leading-relaxed text-secondary">{gate.decisionNote}</p>
         </section>
       )}
-      <ReviewDocument run={run} sources={gate.sources} />
+      <ReviewDocument run={run} sources={reviewSources} />
       {!wide && gate.history.length > 0 && (
         <div className="mt-10 border-t border-panel-border pt-5">
           <DecisionHistory gate={gate} run={run} />
@@ -440,6 +443,7 @@ function DecisionForm({ layout, gate, run, notes, setNotes, advance }: DecisionS
       <p id={`${id}-hint`} className="text-xs text-muted">
         {decisionNotesHint(gate.step, gate.outcomes)}
       </p>
+      <ReviewBlockers gate={gate} />
       <div className="space-y-2 pt-2">
         <DecisionButtons gate={gate} run={run} notes={notes} advance={advance} />
       </div>
@@ -505,6 +509,7 @@ function DecisionSheet(state: DecisionState) {
               <span className="min-w-0 truncate text-xs text-muted">{notes.trim() || collapsedNotesHint(gate)}</span>
             )}
           </div>
+          <ReviewBlockers gate={gate} />
           <div className="grid grid-cols-2 gap-2">
             <DecisionButtons {...state} />
           </div>
@@ -598,10 +603,9 @@ function DecisionButtons({ gate, run, notes, advance }: Omit<DecisionState, 'set
   )
 }
 
-function DecisionStatus({ gate, advance }: Pick<DecisionState, 'gate' | 'advance'>) {
+function DecisionStatus({ advance }: Pick<DecisionState, 'gate' | 'advance'>) {
   return (
     <>
-      <ReviewBlockers gate={gate} />
       {advance.error && (
         <p role="alert" className="text-xs text-status-danger-600 dark:text-status-danger-400">
           {actionErrorMessage(advance.error)}

@@ -30,6 +30,7 @@ import {
   executions,
   messages as chatMessages,
   workStreamWaits,
+  workStreamFlowTransitions,
 } from '../../db'
 import { Agent } from '../../entities/Agent'
 import { WorkStream } from '../../entities/WorkStream'
@@ -2551,11 +2552,86 @@ test('decision brief rejection leaves run, waits, participants and handoff outbo
     bindings: await bindings(id),
     messages: await messages(id),
   }
+  const receiptsBefore = await db
+    .select()
+    .from(workStreamFlowTransitions)
+    .where(eq(workStreamFlowTransitions.workStreamId, id))
   await expect(advance(id, 'approved')).rejects.toThrow('decisionBrief')
+  expect(
+    await db.select().from(workStreamFlowTransitions).where(eq(workStreamFlowTransitions.workStreamId, id))
+  ).toEqual(receiptsBefore)
   expect({
     run: await getFlow(id),
     waits: await listOpenWaits(db, id),
     bindings: await bindings(id),
     messages: await messages(id),
   }).toEqual(before)
+})
+
+test('accepted brief snapshots exact interruptions, preserves receipt retries, and rejects changed retry payloads', async () => {
+  const definition = structuredClone(flow)
+  definition.steps[1]!.outcomes.approved = { next: 'snapshot-gate' }
+  definition.steps.push({
+    id: 'snapshot-gate',
+    kind: 'human-approval',
+    instructions: 'Review the staging design.',
+    output: 'Decision.',
+    approver: 'reviewers',
+    outcomes: { approved: { next: 'finish' } },
+  })
+  const id = await create('active', definition)
+  await advance(id, 'completed')
+  const run = (await getFlow(id))!
+  const agentId = run.attemptAgents['2']!
+  const inserted = await db
+    .insert(executions)
+    .values([
+      {
+        agentId,
+        status: 'failed',
+        endedAt: new Date(),
+        flowContext: { workStreamId: id, attemptId: 2, stepId: 'review' },
+        error: 'Raw private diagnostic, not review context.',
+      },
+      {
+        agentId,
+        status: 'stopped',
+        endedAt: new Date(),
+        flowContext: { workStreamId: id, attemptId: 2, stepId: 'review' },
+      },
+      {
+        agentId,
+        status: 'failed',
+        endedAt: new Date(),
+        flowContext: { workStreamId: randomUUID(), attemptId: 2, stepId: 'review' },
+      },
+    ])
+    .returning()
+  const command = {
+    action: 'complete',
+    expectedVersion: run.version,
+    attemptId: 2,
+    outcome: 'approved',
+    evidence: 'Audited staging result.',
+    decisionBrief: brief,
+  }
+  const requestId = randomUUID()
+  const result = await advanceFlow(id, command, requestId, actor)
+  expect(await advanceFlow(id, command, requestId, actor)).toMatchObject({ version: result.version })
+  await expect(
+    advanceFlow(
+      id,
+      { ...command, decisionBrief: { ...brief, risks: 'The maintenance cost increases temporarily.' } },
+      requestId,
+      actor
+    )
+  ).rejects.toThrow('Request ID already used')
+  const accepted = (await getFlow(id))!.state.attempts[1]!.decisionBrief!
+  expect(accepted.contexts[0]!.interruptedExecutions.map((e) => e.executionId).sort()).toEqual(
+    inserted
+      .slice(0, 2)
+      .map((e) => e.id)
+      .sort()
+  )
+  expect(JSON.stringify(accepted)).not.toContain('Raw private diagnostic')
 })

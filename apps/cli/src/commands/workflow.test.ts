@@ -359,3 +359,34 @@ test('decision briefs are preflighted before any attachment upload and transport
   expect(valid.errors).toEqual([])
   expect(valid.calls.at(-1)?.body).toMatchObject({ command: { decisionBrief } })
 })
+
+test('malformed or compressed decision fields fail locally without GET, upload or POST', async () => {
+  for (const decisionBrief of [
+    null,
+    { decision: 'pls approve this' },
+    {
+      decision: 'Approve the staging design.',
+      recommendation: 'Approve because tests passed.',
+      approvalEffect: 'Approval permits staging only.',
+      risks: 'Please approveTheExactRetryPacket before implementation.',
+    },
+  ]) {
+    const f = fixture(undefined, undefined, 'workstream')
+    await f.run(
+      'advance',
+      'stream-id',
+      '--content',
+      JSON.stringify({
+        action: 'complete',
+        expectedVersion: 0,
+        attemptId: 1,
+        outcome: 'ready',
+        evidence: 'Audit result.',
+        decisionBrief,
+      })
+    )
+    expect(f.calls).toEqual([])
+    expect(f.errors).toHaveLength(1)
+    expect(f.errors[0]!.message).toContain('decisionBrief')
+  }
+})

@@ -577,3 +577,60 @@ describe('catalog list', () => {
     }
   })
 })
+
+test('brief API validates shape and effective requirement and serializes exact round provenance without read writes', async () => {
+  const flow = structuredClone(definition)
+  flow.steps[0]!.outcomes.completed = { next: 'human-gate' }
+  flow.steps.push({
+    id: 'human-gate',
+    kind: 'human-approval',
+    instructions: 'Review staging design.',
+    output: 'Decision.',
+    approver: 'reviewers',
+    outcomes: { yes: { next: 'finish' } },
+  })
+  const [stream] = await db.insert(workStreams).values({ squadId, title: prefix, status: 'active' }).returning()
+  const send = spyOn(Agent.prototype, 'sendMessage').mockResolvedValue({
+    success: true,
+    status: 'queued',
+    queued: true,
+  })
+  try {
+    await db.transaction(async (tx) => {
+      await attachFlow(tx, stream!, { kind: 'inline', definition: flow })
+    })
+    const command = {
+      action: 'complete',
+      expectedVersion: 0,
+      attemptId: 1,
+      outcome: 'completed',
+      evidence: 'Audit handoff.',
+    }
+    const advance = (extra: Record<string, unknown> = {}) =>
+      request(`/runs/${stream!.id}/advance`, admin, 'POST', {
+        requestId: randomUUID(),
+        command: { ...command, ...extra },
+      })
+    expect((await advance()).status).toBe(409)
+    const malformed = await advance({ decisionBrief: { decision: 'pls approveTheExactRetryPacket' } })
+    expect(malformed.status).toBe(400)
+    expect(JSON.stringify(await malformed.json())).toContain('decisionBrief')
+    const decisionBrief = {
+      decision: 'Approve the staging design.',
+      recommendation: 'Approve because the fallback is tested.',
+      approvalEffect: 'Approval permits implementation only, not deployment.',
+      risks: 'Maintenance work temporarily increases.',
+    }
+    expect((await advance({ decisionBrief })).status).toBe(200)
+    const [before] = await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, stream!.id))
+    const detail = await (await request(`/runs/${stream!.id}`, admin)).json()
+    expect(detail.state.attempts[0].decisionBrief.value).toEqual(decisionBrief)
+    expect(detail.state.attempts[1].reviewBrief).toEqual({ kind: 'authored', sourceAttemptIds: [1] })
+    expect(detail).toHaveProperty('reviewContexts')
+    const [after] = await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, stream!.id))
+    expect(after).toEqual(before)
+  } finally {
+    send.mockRestore()
+    await db.delete(workStreams).where(eq(workStreams.id, stream!.id))
+  }
+})

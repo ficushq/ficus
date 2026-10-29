@@ -236,7 +236,12 @@ function startAttempt(
     const sources = state.attempts.filter((a) => sourceAttemptIds.includes(a.id))
     const producer = sources.find((a) => a.settledVersion === state.version)
     if (producer && effectiveWorkflowStep(state, producer).kind === 'agent') {
-      const authored = sources.filter((a) => a.decisionBrief).map((a) => a.id)
+      const authored = [
+        ...new Set([
+          ...sources.filter((a) => a.decisionBrief).map((a) => a.id),
+          ...workflowCarryForwardSources(state, sourceAttemptIds).map((a) => a.id),
+        ]),
+      ].sort((a, b) => a - b)
       if (authored.length) reviewBrief = { kind: 'authored', sourceAttemptIds: authored }
     } else {
       const carried = workflowCarryForwardSources(state, sourceAttemptIds)[0]

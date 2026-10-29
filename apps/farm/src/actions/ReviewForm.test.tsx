@@ -331,7 +331,7 @@ it('kept gates offer live outcomes instead of the original verdicts', async () =
   expect(container.textContent).toContain('Taste the tomatoes')
 })
 
-it('a second workflow-owned wait blocks the gate; a sibling hold does not', async () => {
+it('a second workflow-owned wait blocks the gate', async () => {
   const gate = wait({
     id: 'gate-wait',
     type: 'manual',

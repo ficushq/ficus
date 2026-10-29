@@ -148,6 +148,12 @@ ficus workstream advance STREAM_ID --content '{"expectedVersion":1,"attemptId":1
 
 Commands can complete, return, delegate, request completion-ready rework, or revise according to the flow and caller's permission. Retrying the same command uses the same request ID. Do not use legacy assignee/status edits to bypass a flow.
 
+### Human review decision briefs
+
+Agent-produced completions whose effective route enters human approval require a structured `decisionBrief`, separate from `evidence`. It explains the decision, recommendation, approval scope, risks and repeat-round changes. Gate instructions describe the kind of gate; managers do not rewrite them each round. Non-agent arrivals preserve routing and show a same-lineage carried brief read-only or an explicit missing-brief notice. See [Human decision briefs and queued reviews](workflow-decision-briefs.md) for fields, limits, prose validation, provenance, history and errors.
+
+Blocked human gates remain readable but are not actionable reviews in Feed Needs you. Shared status names the applicable blocker with **Review queued**; sibling-attempt waits do not block an otherwise actionable gate. Clearing blockers restores the same gate without rewriting it.
+
 ### Keep outcomes live; restart only for fresh context
 
 An authorized manager can use `action: revise`, customization `operations`, `reason`, and `active: keep` to add, change, or remove outcomes on running work without resetting its conversation. Each affected kept running attempt, including parallel branches sharing the changed step, receives the revised outcome map. Completion at the new `expectedVersion` uses those routes; removed outcomes and old versions fail. Limited adaptive workers may revise permitted future work, but changing live outcomes requires flow-management permission.

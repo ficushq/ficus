@@ -58,6 +58,36 @@ describe('work-stream derived state', () => {
     return (await computeDerivedStates([fresh])).get(ws.id)!
   }
 
+  it('queues a canonical gate behind owner/manager holds, but not sibling holds, and retains wait identity', async () => {
+    const ws = await createStream('queued human review')
+    const { flowWaitReference } = await import('../workflows/wait-policy')
+    const [gate] = await db
+      .insert(workStreamWaits)
+      .values({
+        workStreamId: ws.id,
+        type: 'manual',
+        resolutionHandler: 'workflow',
+        flowAttemptId: 2,
+        referenceId: flowWaitReference(ws.id, 'human', 2),
+        createdBy: 'system',
+      })
+      .returning()
+    expect((await derived(ws)).derivedState).toBe('in_review')
+    for (const actor of ['owner', 'manager'] as const) {
+      const [hold] = await db
+        .insert(workStreamWaits)
+        .values({ workStreamId: ws.id, type: 'manual', actor, createdBy: 'system' })
+        .returning()
+      const blocked = await derived(ws)
+      expect(blocked.derivedState).toBe('blocked')
+      expect(blocked.openWaits.map((wait) => wait.id)).toEqual([hold!.id, gate!.id])
+      await db.update(workStreamWaits).set({ flowAttemptId: 3 }).where(eq(workStreamWaits.id, hold!.id))
+      expect((await derived(ws)).derivedState).toBe('in_review')
+      await db.delete(workStreamWaits).where(eq(workStreamWaits.id, hold!.id))
+    }
+    expect((await derived(ws)).openWaits[0]!.id).toBe(gate!.id)
+  })
+
   it('serializes authoritative delivery and projects its approval wait without altering the wait', async () => {
     const ws = await createStream('approval')
     const { flowWaitReference } = await import('../workflows/wait-policy')

@@ -183,3 +183,64 @@ test('recorded carried brief history survives reopen without lending it to the n
   const reopened = reopenWorkflowRun(run)
   expect(workflowReviewBriefForAttempt(reopened, historicalGate).sources.map((a) => a.id)).toEqual([1])
 })
+
+test('an authored join preserves the other causal input brief through a non-agent branch', () => {
+  const definition = flow().definition
+  definition.steps[0]!.outcomes = { ready: { parallel: ['left', 'right'], join: 'gate' } }
+  definition.steps.push(
+    workflowStepSchema.parse({ ...definition.steps[0], id: 'left', outcomes: { ready: { next: 'gate' } } })
+  )
+  definition.steps.push(
+    workflowStepSchema.parse({
+      id: 'right',
+      kind: 'human-approval',
+      instructions: 'Review the staging prerequisite.',
+      output: 'Decision.',
+      outcomes: { yes: { next: 'gate' } },
+    })
+  )
+  let run = complete(createWorkflowRun(definition), 'ready', brief)
+  run = advanceWorkflowRun(run, {
+    action: 'complete',
+    expectedVersion: run.version,
+    attemptId: 3,
+    outcome: 'yes',
+    evidence: '',
+  })
+  run = advanceWorkflowRun(run, {
+    action: 'complete',
+    expectedVersion: run.version,
+    attemptId: 2,
+    outcome: 'ready',
+    evidence: 'Left branch handoff.',
+    decisionBrief: brief,
+  })
+  expect(run.attempts.at(-1)!.reviewBrief).toEqual({ kind: 'authored', sourceAttemptIds: [1, 2] })
+})
+
+test('effective kept outcome, not the stale step definition, determines the brief requirement', () => {
+  let run = flow()
+  const original = run.attempts[0]!.step!
+  run = advanceWorkflowRun(run, {
+    action: 'revise',
+    expectedVersion: 0,
+    attemptId: 1,
+    active: 'keep',
+    reason: 'Route ordinary work through review.',
+    operations: [
+      { op: 'put-step', step: { ...original, outcomes: { ...original.outcomes, ordinary: { next: 'gate' } } } },
+    ],
+  })
+  expect(run.attempts[0]!.step!.outcomes.ordinary).toEqual({ next: 'finish' })
+  expect(() => complete(run, 'ordinary')).toThrow('decisionBrief')
+  expect(complete(run, 'ordinary', brief).attempts.at(-1)!.stepId).toBe('gate')
+})
+test('canceled and nonhuman occurrences do not count; return without an outcome counts', () => {
+  const run = flow()
+  run.attempts.push(
+    { id: 2, stepId: 'gate', status: 'canceled', outcome: 'yes' },
+    { id: 3, stepId: 'gate', status: 'returned', feedback: 'Please retain the existing reader.' },
+    { id: 4, stepId: 'gate', status: 'completed', outcome: 'yes', step: { ...run.definition.steps[0]!, id: 'gate' } }
+  )
+  expect(workflowEarlierHumanDecisions(run, 'gate').map((a) => a.id)).toEqual([3])
+})
