@@ -901,6 +901,21 @@ cleanup_remote_secrets() {
 trap 'cleanup_remote_secrets; cleanup_host_key_material' EXIT
 
 log_step "step 3/5: push toolkit + config + credentials"
+
+# Every unit template setup-host.sh (and the lib.sh installers it calls)
+# renders from ${REMOTE_DIR}/systemd on the VM. ONE list, read by both the
+# existence check and the scp below: five provisions have failed after the
+# droplet was created because a template was added to setup-host.sh and not
+# to a hand-written copy list here (the latest, 2026-10-29: the PgBouncer unit,
+# once pooling became the only hosted layout). lib.test.sh asserts this list
+# equals the set setup-host.sh and lib.sh reference.
+PROVISION_UNIT_TEMPLATES=(
+  ficus-api.service.tmpl
+  ficus-worker.service.tmpl
+  ficus-backup.service.tmpl
+  ficus-backup.timer.tmpl
+  ficus-pgbouncer.service.tmpl
+)
 "${SSH_BASE[@]}" "${SSH_USER}@${VM_HOST}" "mkdir -p ${REMOTE_DIR}/systemd ${REMOTE_DIR}/keys && chmod 700 ${REMOTE_DIR} ${REMOTE_DIR}/keys"
 
 # The source tree itself is NEVER copied from here (git clone on the target
@@ -916,10 +931,7 @@ for _f in \
   "${SCRIPT_DIR}/setup-host.sh" \
   "${SCRIPT_DIR}/seed.sh" \
   "${SCRIPT_DIR}/ficus-backup.sh.tmpl" \
-  "${SCRIPT_DIR}/systemd/ficus-api.service.tmpl" \
-  "${SCRIPT_DIR}/systemd/ficus-worker.service.tmpl" \
-  "${SCRIPT_DIR}/systemd/ficus-backup.service.tmpl" \
-  "${SCRIPT_DIR}/systemd/ficus-backup.timer.tmpl"; do
+  "${PROVISION_UNIT_TEMPLATES[@]/#/${SCRIPT_DIR}/systemd/}"; do
   [[ -f ${_f} ]] || die "toolkit file missing, cannot provision: ${_f}"
 done
 unset _f
@@ -934,11 +946,9 @@ export COPYFILE_DISABLE=1
 "${SCP_BASE[@]}" "${SCRIPT_DIR}/lib.sh" "${SCRIPT_DIR}/setup-host.sh" "${SCRIPT_DIR}/seed.sh" \
   "${SCRIPT_DIR}/ficus-backup.sh.tmpl" "${SCRIPT_DIR}/github_known_hosts" \
   "${SSH_USER}@${VM_HOST}:${REMOTE_DIR}/"
-# Every template setup-host.sh renders on the VM. The backup .service/.timer
-# were omitted, so the backup phase died on a missing file AFTER the instance
-# was fully built. Include every template rendered by instance setup.
-"${SCP_BASE[@]}" "${SCRIPT_DIR}/systemd/ficus-api.service.tmpl" "${SCRIPT_DIR}/systemd/ficus-worker.service.tmpl" \
-  "${SCRIPT_DIR}/systemd/ficus-backup.service.tmpl" "${SCRIPT_DIR}/systemd/ficus-backup.timer.tmpl" \
+# Every template setup-host.sh renders on the VM (PROVISION_UNIT_TEMPLATES,
+# above). A forgotten one fails the provision late, after the droplet exists.
+"${SCP_BASE[@]}" "${PROVISION_UNIT_TEMPLATES[@]/#/${SCRIPT_DIR}/systemd/}" \
   "${SSH_USER}@${VM_HOST}:${REMOTE_DIR}/systemd/"
 
 # Rewrite key paths in the pushed config to their locations on the VM.
