@@ -37,6 +37,8 @@ async function setup() {
   })
   const { root } = dom.createRoot()
   const saved: string[] = []
+  const revisions: string[] = []
+  let failedId: string | undefined
   let rows: WorkStream[] = [stream('missed')]
   let fail: boolean | 'conflict' = false
   let attempts = 0
@@ -44,6 +46,8 @@ async function setup() {
   let userId = 'one'
   let hasNextPage = false
   let fetched = true
+  let totalCount = 42
+  let pending: Promise<void> | undefined
   const keys: unknown[][] = []
   const hooks = {
     useQuery: (() => ({
@@ -56,7 +60,12 @@ async function setup() {
       return {
         isSuccess: true,
         isFetchedAfterMount: fetched,
-        data: { pages: [{ items: rows, totalCount: rows.length }] },
+        data: {
+          pages: [
+            { items: rows.slice(0, 1), totalCount },
+            { items: rows.slice(1), totalCount },
+          ],
+        },
         hasNextPage,
         fetchNextPage: async () => {
           rows = [...rows, stream('next-page')]
@@ -65,10 +74,13 @@ async function setup() {
       }
     }) as never,
   }
-  const acknowledge = async (id: string) => {
+  const acknowledge = async (id: string, revision: string) => {
     attempts++
-    if (fail === 'conflict') throw new ApiError(409, 'Completion changed; refresh the Feed')
-    if (fail) throw new Error('offline')
+    revisions.push(revision)
+    await pending
+    if (fail === 'conflict')
+      throw new ApiError(409, 'This completion was replaced. Refresh to see the latest revision.')
+    if (fail || id === failedId) throw new Error('offline')
     saved.push(id)
     return { seen: true as const }
   }
@@ -122,11 +134,21 @@ async function setup() {
     expose,
     visibility,
     saved,
+    revisions,
+    failId: (value: string | undefined) => {
+      failedId = value
+    },
     keys,
     setRows: (value: WorkStream[]) => {
       rows = value
     },
     attempts: () => attempts,
+    delay: (value: Promise<void> | undefined) => {
+      pending = value
+    },
+    setTotal: (value: number) => {
+      totalCount = value
+    },
     setFail: (value: boolean | 'conflict') => {
       fail = value
     },
@@ -411,7 +433,8 @@ test('a stale completion response is terminal instead of retrying the same revis
   view.setFail('conflict')
   await view.render()
   await view.expose('missed')
-  expect(text()).toContain('Completion changed; refresh the Feed')
+  expect(text()).toContain('This completion was replaced. Refresh to see the latest revision.')
+  expect(dom!.window.document.querySelector('[data-completion-id="missed"]')?.textContent).not.toContain('New')
   expect(text()).not.toContain('Could not save seen state')
   expect([...dom!.window.document.querySelectorAll('button')].some((button) => button.textContent === 'Retry')).toBe(
     false
@@ -436,10 +459,192 @@ test('the upward affordance stays in the Feed scroll pane rather than overlappin
   expect(jump.parentElement?.classList.contains('h-0')).toBe(true)
 })
 
-test('the count explicitly describes loaded completions while more pages remain', async () => {
+test('the count uses the server total while more pages remain', async () => {
   const view = await setup()
   view.setPaging()
   await view.render()
-  expect(text()).toContain('1 completed shown')
+  expect(text()).toContain('42 completed')
   expect(text()).toContain('Show more updates')
+})
+
+const click = async (label: string) => {
+  const button = [...dom!.window.document.querySelectorAll('button')].find((button) => button.textContent === label)
+  expect(button).toBeDefined()
+  await dom!.act(async () => button!.click())
+}
+const newer = (id: string) => ({ ...stream(id), completedAt: '2026-10-29T12:00:00.000Z' }) as WorkStream
+
+test('Dismiss explicitly receipts all loaded pages including offscreen rows but never unfetched rows', async () => {
+  const view = await setup()
+  view.setRows([stream('first'), stream('offscreen'), stream('last-page')])
+  view.setPaging()
+  await view.render()
+  await view.expose('first')
+  await click('Dismiss')
+  expect(view.saved.sort()).toEqual(['first', 'last-page', 'offscreen'])
+  expect(view.attempts()).toBe(3)
+  expect(view.revisions).toEqual([at, at, at])
+  expect(text()).not.toContain('Updates')
+  // A refetch fills the first page with a previously unfetched OLD completion.
+  view.setRows([{ ...stream('unfetched'), completedAt: '2026-10-27T12:00:00.000Z' } as WorkStream])
+  await view.render()
+  expect(text()).not.toContain('Updates')
+  expect(view.saved).not.toContain('unfetched')
+  view.setRows([stream('unfetched-tie')])
+  await view.render()
+  expect(text()).not.toContain('Updates')
+  expect(view.saved).not.toContain('unfetched-tie')
+  view.setRows([newer('actual-new')])
+  await view.render()
+  expect(text()).toContain('Updates')
+  expect(text()).toContain('actual-new')
+  expect(view.saved).not.toContain('actual-new')
+  expect(text()).toContain('1 unread update') // Dismiss never consumes Assistant pointers.
+})
+
+test('Dismiss failures remain visible and retry without resending successful receipts', async () => {
+  const view = await setup()
+  await view.render()
+  view.setFail(true)
+  await click('Dismiss')
+  expect(text()).toContain('Could not save seen state')
+  expect(text()).toContain('New')
+  expect(text()).toContain('Updates')
+  view.setFail(false)
+  await click('Dismiss')
+  expect(view.saved).toEqual(['missed'])
+  expect(text()).not.toContain('Updates')
+})
+
+test('409 on explicit Dismiss stays terminal across filtering without claiming persistence', async () => {
+  const view = await setup()
+  view.setFail('conflict')
+  await view.render()
+  await click('Dismiss')
+  expect(text()).toContain('This completion was replaced. Refresh to see the latest revision.')
+  expect(dom!.window.document.querySelector('[data-completion-id="missed"]')?.textContent).not.toContain('New')
+  view.setSquads(['s2'])
+  view.setRows([])
+  await view.render()
+  view.setSquads([])
+  await view.render()
+  await view.expose('missed')
+  await click('Dismiss')
+  expect(view.attempts()).toBe(1)
+  expect(view.saved).toEqual([])
+})
+
+test('exposure racing Dismiss shares one receipt and arrivals during the save are not dismissed', async () => {
+  const view = await setup()
+  let resolve!: () => void
+  view.delay(
+    new Promise<void>((done) => {
+      resolve = done
+    })
+  )
+  await view.render()
+  await view.expose('missed')
+  await click('Dismiss')
+  expect(view.attempts()).toBe(1)
+  view.setRows([newer('during-save')])
+  await view.render()
+  await dom!.act(async () => resolve())
+  expect(view.saved).toEqual(['missed'])
+  expect(text()).toContain('during-save')
+  expect(text()).toContain('Updates')
+})
+
+test('account switch during Dismiss cannot hide or acknowledge the new account', async () => {
+  const view = await setup()
+  let resolve!: () => void
+  view.delay(
+    new Promise<void>((done) => {
+      resolve = done
+    })
+  )
+  view.setRows([stream('old-1'), stream('old-2')])
+  await view.render()
+  await click('Dismiss')
+  view.setUser('two')
+  view.setRows([stream('new-account')])
+  await view.render()
+  await dom!.act(async () => resolve())
+  expect(text()).toContain('new-account')
+  expect(text()).toContain('Updates')
+  expect(view.saved).not.toContain('new-account')
+  expect(view.saved).not.toContain('old-2') // no queued writes after unmount
+})
+
+test('a partial dismissal retries only failed rows and new completion revisions reopen it', async () => {
+  const view = await setup()
+  view.setRows([stream('success'), stream('failure')])
+  view.failId('failure')
+  await view.render()
+  await click('Dismiss')
+  expect(view.saved).toEqual(['success'])
+  expect(view.attempts()).toBe(2)
+  expect(dom!.window.document.querySelector('[data-completion-id="success"]')?.textContent).not.toContain('New')
+  view.failId(undefined)
+  await click('Dismiss')
+  expect(view.saved).toEqual(['success', 'failure'])
+  expect(view.attempts()).toBe(3)
+  view.setRows([newer('success')])
+  await view.render()
+  expect(text()).toContain('Updates')
+  await view.expose('success')
+  expect(view.revisions.at(-1)).toBe('2026-10-29T12:00:00.000Z')
+})
+
+test('Dismiss works without observer evidence even when collapsed or in a background tab', async () => {
+  const view = await setup()
+  await view.visibility('hidden')
+  await view.render()
+  dom!.window.document.querySelector('details')!.open = false
+  await click('Dismiss')
+  expect(view.saved).toEqual(['missed'])
+  expect(text()).not.toContain('Updates')
+})
+
+test('refetched server totals are authoritative even while seen rows stay retained', async () => {
+  const view = await setup()
+  view.setPaging()
+  await view.render()
+  await view.expose('missed')
+  view.setRows([])
+  view.setTotal(41)
+  await view.render()
+  expect(text()).toContain('41 completed')
+  expect(text()).toContain('missed')
+})
+
+test('Retry is still exposure-gated after a failed automatic receipt', async () => {
+  const view = await setup()
+  view.setFail(true)
+  await view.render()
+  await view.expose('missed')
+  view.setFail(false)
+  await view.expose('missed', false)
+  await click('Retry')
+  expect(view.attempts()).toBe(1)
+  expect(view.saved).toEqual([])
+  await view.expose('missed')
+  expect(view.saved).toEqual(['missed'])
+})
+
+test('a newer offscreen arrival during Dismiss keeps its jump affordance after the save', async () => {
+  const view = await setup()
+  let resolve!: () => void
+  view.delay(
+    new Promise<void>((done) => {
+      resolve = done
+    })
+  )
+  await view.render()
+  dom!.window.document.querySelector('details')!.getBoundingClientRect = () => ({ top: -200 }) as DOMRect
+  await click('Dismiss')
+  view.setRows([newer('race-above')])
+  await view.render()
+  expect(text()).toContain('New updates ↑')
+  await dom!.act(async () => resolve())
+  expect(text()).toContain('New updates ↑')
 })

@@ -93,7 +93,8 @@ export interface GitHubFeedbackContent {
   attribution: 'creation' | 'verified_edit' | 'unknown'
   contentHash: string
   byteCount: number
-  reason: 'content_unavailable' | null
+  /** comment_deleted is a content-free terminal observation, never an approval or releasable input. */
+  reason: 'content_unavailable' | 'comment_deleted' | null
   delivery: import('./integration-outputs').IntegrationOutputFact | null
   /** Actions only. See {@link GitHubParentTextVariant}; absent when the payload cannot offer it. */
   parentText?: GitHubParentTextVariant

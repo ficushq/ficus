@@ -115,6 +115,16 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
   )
     throw new Error('feedback_source_unavailable')
   const squadId = event.authority.squadId
+  const deletion = observed.reason === 'comment_deleted'
+  if (
+    deletion &&
+    (event.fact.github?.observation?.kind !== 'webhook' ||
+      !['issue_comment', 'review_comment'].includes(observed.objectKind) ||
+      !observed.repositoryId ||
+      !observed.nativeId ||
+      observed.delivery !== null)
+  )
+    throw new Error('feedback_source_unavailable')
   let content = observed
   const transportKey =
     deps.transportKey ??
@@ -143,7 +153,9 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
   // author is trusted right now. Trust is decided again under the authority lock.
   const trusted = async (accountId: string) => (await resolveGitHubAuthorTrust(db, squadId, accountId)).length > 0
   const target =
-    known || !deps.verifyEditors ? null : githubEditHistoryTarget(content, event.fact.github?.observation?.kind)
+    deletion || known || !deps.verifyEditors
+      ? null
+      : githubEditHistoryTarget(content, event.fact.github?.observation?.kind)
   if (target && (await trusted(target.author.accountId))) {
     const verification = await readProvider(() => deps.verifyEditors!(event, target))
     content = (verification && withGitHubEditorVerification(content, verification)) ?? content
@@ -159,6 +171,7 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
   const hashes = new Set([content.contentHash, ...(withParent ? [withParent.contentHash] : [])])
   let currentHash: string | null = null
   if (
+    !deletion &&
     !unfiltered &&
     beforeRead &&
     !known &&
@@ -180,8 +193,8 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
     // squad no longer filters: the caller routes it raw instead.
     await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, squadId)).for('share')
     const enabled = await isGitHubAuthorFilterEnabled(tx, squadId)
-    if (!unfiltered && !enabled) throw new Error('feedback_filter_disabled')
-    if (unfiltered && enabled) throw new Error('feedback_filter_enabled')
+    if (!deletion && !unfiltered && !enabled) throw new Error('feedback_filter_disabled')
+    if (!deletion && unfiltered && enabled) throw new Error('feedback_filter_enabled')
     // OFF uses only a local authority callback; final freshness effects serialize with rotation.
     if (unfiltered && !(await deps.authorizeSource(event))) throw new Error('feedback_source_unavailable')
     await tx.insert(githubFeedbackObjects).values(identity).onConflictDoNothing()
@@ -221,12 +234,16 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
     }
 
     if (!revision) {
-      const stale = !!(
-        object.providerVersion &&
-        content.providerVersion &&
-        Date.parse(content.providerVersion) < Date.parse(object.providerVersion)
-      )
+      const stale =
+        !deletion &&
+        (head?.reason === 'comment_deleted' ||
+          !!(
+            object.providerVersion &&
+            content.providerVersion &&
+            Date.parse(content.providerVersion) < Date.parse(object.providerVersion)
+          ))
       const ambiguous =
+        !deletion &&
         !unfiltered &&
         !!head &&
         (!content.providerVersion || content.providerVersion === object.providerVersion) &&
@@ -313,9 +330,15 @@ export async function captureGitHubFeedback(eventId: string, deps: FeedbackCaptu
             attribution: chosen.attribution,
             providerVersion: chosen.providerVersion,
             routingProvenance: deps.routingProvenance ?? [],
-            reason: unfiltered ? 'filter_disabled' : automatic ? 'trusted_author' : heldReason,
-            decision: unfiltered ? 'historical' : automatic ? 'automatic' : 'pending',
-            releaseState: unfiltered ? 'retained' : automatic ? 'ready' : 'held',
+            reason: deletion
+              ? 'comment_deleted'
+              : unfiltered
+                ? 'filter_disabled'
+                : automatic
+                  ? 'trusted_author'
+                  : heldReason,
+            decision: deletion || unfiltered ? 'historical' : automatic ? 'automatic' : 'pending',
+            releaseState: deletion || unfiltered ? 'retained' : automatic ? 'ready' : 'held',
           })
           .returning({ id: githubFeedbackRevisions.id })
         revision = await readFeedbackRevision(tx, created!.id)

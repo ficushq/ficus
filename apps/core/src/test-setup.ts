@@ -1,3 +1,4 @@
+import '../../../scripts/check-test-db-capacity'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { randomBytes } from 'node:crypto'
