@@ -28,7 +28,10 @@ test('page and popup share rounded, spaced cards for personal/system and unread/
       id,
       senderType: system ? 'system' : read ? 'user' : 'agent',
       senderId: system ? null : 'sender',
-      senderAgent: !system && !read ? { id: 'sender', squadId: null, metadata: { name: 'Ficus' } } : undefined,
+      senderAgent:
+        !system && !read
+          ? { id: 'sender', squadId: null, name: 'Ficus', agentTypeId: 'engineer', ownerUserId: null }
+          : undefined,
       subject: system && read ? null : id,
       content: 'Message body',
       createdAt: new Date().toISOString(),

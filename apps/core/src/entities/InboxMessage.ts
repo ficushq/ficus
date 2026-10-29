@@ -7,6 +7,7 @@ import { eventEmitter } from '../lib/infra/event-emitter'
 import { AgentType } from './AgentType'
 import type {
   InboxMessage as InboxMessageJson,
+  InboxParticipantSummary,
   InboxMessageSenderType,
   InboxRecipientType,
   DeliveryMode,
@@ -1160,8 +1161,8 @@ export class InboxMessage
       deliveredAt: this.deliveredAt,
       deliveryMode: this.deliveryMode,
       createdAt: this.createdAt,
-      senderAgent: this.senderAgent?.toJson() ?? null,
-      recipientAgent: this.recipientAgent?.toJson() ?? null,
+      senderAgent: participantSummary(this.senderAgent),
+      recipientAgent: participantSummary(this.recipientAgent),
       attachments: this.attachments.map((a) => a.toJson()),
     }
   }
@@ -1263,4 +1264,16 @@ ${formatted}`
 \`\`\`
 ficus inbox read <message-id> [<message-id>...]
 \`\`\``
+}
+
+/** Build an allowlisted inbox identity directly, never from the agent-detail DTO. */
+function participantSummary(agent: Agent | null): InboxParticipantSummary | null {
+  if (!agent) return null
+  return {
+    id: agent.id,
+    name: typeof agent.metadata?.name === 'string' ? agent.metadata.name : null,
+    agentTypeId: agent.agentTypeId,
+    squadId: agent.squadId ?? null,
+    ownerUserId: agent.ownerUserId ?? null,
+  }
 }
