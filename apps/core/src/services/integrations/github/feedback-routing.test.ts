@@ -4226,14 +4226,14 @@ async function rawFactualFixture() {
     created_at: '2026-10-01T10:00:00Z',
     updated_at: '2026-10-02T10:00:00Z',
   }
-  const event = (action: string, update = false) =>
+  const event = (action: string, update = false, sender = parent.user) =>
     githubOutputAdapter.normalize({
       type: 'pull_request',
       githubObservation: { kind: 'webhook' },
       payload: {
         action,
         repository: { id: 10, full_name: 'acme/project' },
-        sender: parent.user,
+        sender,
         requested_reviewer: { id: 3, login: 'reviewer', type: 'User' },
         pull_request: update ? { ...parent, body: 'NEW_FACT_BODY', updated_at: '2026-10-02T10:01:00Z' } : parent,
       },
@@ -4247,6 +4247,7 @@ async function rawFactualFixture() {
   return {
     ...h,
     source,
+    event,
     async stale() {
       await publishIntegrationOutput('github', event('edited', true), h.authority)
       return (
@@ -4638,3 +4639,50 @@ test('OFF factual fanout persists more than 25 original recipients without excee
     await h.close()
   }
 }, 30_000)
+
+test.each([false, true])(
+  'obsolete raw factual aliases leave the unmatched queue even when filtering changes (ON: %s)',
+  async (filterEnabled) => {
+    const h = await rawFactualFixture()
+    try {
+      // The parent becomes stale before the original action has routed. Its factual alias
+      // must remain routable while the action itself is current.
+      await db
+        .update(integrationOutputEvents)
+        .set({ matchedAt: null })
+        .where(eq(integrationOutputEvents.id, h.source.id))
+      const variant = (await h.stale())!
+      expect(variant.matchedAt).toBeNull()
+      expect((await prepareGitHubOutputOutcome(variant)).kind).toBe('ready')
+      await db.update(squads).set({ githubAuthorFilter: filterEnabled }).where(eq(squads.id, h.squadId))
+      // A corrected actor changes this same native action's immutable revision, not its parent.
+      const corrected = h.event('review_requested', false, { id: 4, login: 'corrected-actor', type: 'User' })
+      corrected.eventKey += ':corrected'
+      const newer = await recordIntegrationOutput('github', corrected, h.authority)
+      expect(newer.fact.github!.content!.nativeId).toBe(h.source.fact.github!.content!.nativeId)
+      const captured = await captureGitHubFeedback(newer.id, {
+        ...(filterEnabled
+          ? { readCurrent: async () => ({ contentHash: corrected.github!.content!.contentHash }) }
+          : { unfiltered: 'content' as const }),
+        authorizeSource: async () => true,
+      })
+      expect(captured.obsoleteCount).toBeGreaterThan(0)
+      const [settled] = await db
+        .select()
+        .from(integrationOutputEvents)
+        .where(eq(integrationOutputEvents.id, variant.id))
+      expect(settled!.lastErrorCode).toBe('github_feedback_obsolete')
+      expect(settled!.matchedAt).not.toBeNull()
+      expect(settled!.fact).toEqual(variant.fact) // Keep immutable audit evidence.
+      // A later pass must not spend an event/body reservation on the obsolete alias again.
+      const { withGitHubOutputPass, githubOutputPass } = await import('./feedback-pass')
+      await withGitHubOutputPass(async () => {
+        await reconcileUnmatchedOutputs()
+        expect(githubOutputPass()!.bodies.has(`event:${variant.id}`)).toBe(false)
+      })
+      expect(h.read).not.toHaveBeenCalled()
+    } finally {
+      await h.close()
+    }
+  }
+)

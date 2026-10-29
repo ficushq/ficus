@@ -106,15 +106,17 @@ export async function githubApiGraphql<T>(
  * With `distinguishUnavailable`, null means only an explicit denial from GitHub under a usable
  * token (404, 410, a 403 that is not a rate limit, or a redirect it will not follow); every other
  * failure throws {@link GitHubApiUnavailableError} instead.
+ * With `confirmedMissingOnly`, null is reserved for HTTP 404/410; authorization denials,
+ * refused redirects and null success bodies throw rather than authorizing local deletion.
  */
 export async function githubApiGet<T>(
   path: string,
   squadId: string,
   connectionId?: string,
-  options: { distinguishUnavailable?: boolean } = {}
+  options: { distinguishUnavailable?: boolean; confirmedMissingOnly?: boolean } = {}
 ): Promise<T | null> {
   const unavailable = (reason: string) => {
-    if (options.distinguishUnavailable) throw new GitHubApiUnavailableError(reason)
+    if (options.distinguishUnavailable || options.confirmedMissingOnly) throw new GitHubApiUnavailableError(reason)
     return null
   }
   const token = (await resolveGitHubConnection(squadId, connectionId))?.credential.accessToken
@@ -143,14 +145,18 @@ export async function githubApiGet<T>(
     const location = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null
     if (location) {
       const next = new URL(location, url)
-      if (next.origin !== GITHUB_API_BASE || redirects >= MAX_REDIRECTS) return null
+      if (next.origin !== GITHUB_API_BASE || redirects >= MAX_REDIRECTS)
+        return options.confirmedMissingOnly ? unavailable('redirect_unavailable') : null
       url = next
       continue
     }
-    if (res.status === 404 || res.status === 410 || (res.status === 403 && !isRateLimited(res))) return null
+    if (res.status === 404 || res.status === 410) return null
+    if (res.status === 403 && !isRateLimited(res) && !options.confirmedMissingOnly) return null
     if (!res.ok) return unavailable(`http_${res.status}`)
     try {
-      return (await res.json()) as T
+      const body = (await res.json()) as T
+      if (body === null && options.confirmedMissingOnly) return unavailable('invalid_body')
+      return body
     } catch (error) {
       if (options.distinguishUnavailable) throw new GitHubApiUnavailableError('invalid_body')
       throw error

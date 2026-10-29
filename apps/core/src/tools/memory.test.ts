@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'bun:test'
 import { mkdir, rm, writeFile, readFile } from 'fs/promises'
 import { join } from 'path'
@@ -422,7 +423,30 @@ Unique provenance needle text for structured search results.`
           sourceId: 'acme/widgets#42',
           title: 'GitHub Issue',
           path: 'acme/widgets#42',
-          frontmatter: { kind: 'issue' },
+          frontmatter: {
+            kind: 'issue',
+            githubProjection: {
+              schema: 2,
+              filtered: false,
+              repositoryId: '917001',
+              parentWithheld: false,
+              withheldComments: 0,
+              items: [
+                {
+                  kind: 'issue',
+                  nativeId: '917002',
+                  author: '917003',
+                  basis: 'unfiltered',
+                  sequence: 0,
+                  providerVersion: '2026-05-01T00:00:00Z',
+                  bodyHash: createHash('sha256')
+                    .update('needle-github-only content from an external issue')
+                    .digest('hex'),
+                  titleHash: createHash('sha256').update('GitHub Issue').digest('hex'),
+                },
+              ],
+            },
+          },
           sensitivity: 'internal',
           contentHash: 'github-issue-hash',
         })
@@ -441,8 +465,7 @@ Unique provenance needle text for structured search results.`
       })
 
       const tool = getTool('memory_search')
-      // The document has no feedback provenance. With the GitHub author filter OFF it is ordinary
-      // indexed content; with the filter ON (the default for new squads) managed search withholds it.
+      // Fresh schema-2 unfiltered content is readable OFF, but not under an ON trust gate.
       try {
         await db.update(squads).set({ githubAuthorFilter: false }).where(eq(squads.id, testSquadId))
         const result = await exec(tool, { query: 'needle-github-only', sourceTypes: ['github_issue'] })
