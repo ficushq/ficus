@@ -285,7 +285,7 @@ export function AccountFeedVisit({
           <span className="text-xs text-muted">{parts.join(' · ')}</span>
           <button
             type="button"
-            className="ficus-button ficus-button-link ml-auto shrink-0 text-xs"
+            className="ficus-button ficus-button-ghost ml-auto shrink-0 rounded-md px-2 py-1 text-xs"
             disabled={dismissing}
             onClick={(event) => {
               event.preventDefault()
