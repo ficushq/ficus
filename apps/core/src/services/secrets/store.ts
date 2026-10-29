@@ -6,7 +6,7 @@ import {
   type RetiredIntegrationLeaf,
 } from './integration-retirement'
 export { RETIRED_INTEGRATION_GRACE_MS } from './integration-retirement'
-import { integrationCredentialEntries, INTEGRATION_CREDENTIAL_PREFIX } from '../security/integration-credential-entries'
+import { integrationCredentialEntries, isIntegrationCredentialKey } from '../security/integration-credential-entries'
 import { migrateLinearWebhookSettings } from '../integrations/linear/webhook-settings'
 import { migrateGitHubWebhookSettings, LEGACY_GITHUB_WEBHOOK_SECRET_KEY } from '../integrations/github/webhook-settings'
 import { eq } from 'drizzle-orm'
@@ -377,14 +377,14 @@ export class SecretStore {
     // exclusions. Integration material is expanded below with a separate leaf
     // minimum, so short legacy values cannot mangle ordinary prose.
     for (const [key, value] of entries) {
-      if (!key.startsWith(INTEGRATION_CREDENTIAL_PREFIX) && !isMatchableSecret(key, value)) entries.delete(key)
+      if (!isIntegrationCredentialKey(key) && !isMatchableSecret(key, value)) entries.delete(key)
     }
     return entries
   }
 
   private contentSafetyEntries(entries: ReadonlyMap<string, string>): Array<{ key: string; value: string }> {
     return Array.from(entries).flatMap(([key, value]) =>
-      key.startsWith(INTEGRATION_CREDENTIAL_PREFIX) ? integrationCredentialEntries(key, value) : [{ key, value }]
+      isIntegrationCredentialKey(key) ? integrationCredentialEntries(key, value) : [{ key, value }]
     )
   }
 
@@ -564,15 +564,14 @@ export class SecretStore {
    * Re-load a single key from the DB into the cache, firing change listeners
    * if the value actually changed. Used by cross-process invalidation; safe to
    * call for self-originated writes (no-op — cache already holds the value).
+   * Explicit writes opt into notifyUnchanged to preserve set() listener semantics.
    */
-  async refreshKey(key: string): Promise<void> {
+  async refreshKey(key: string, notifyUnchanged = false): Promise<void> {
     if (!this.encryptionKey) return
 
     const request = ++this.operationSequence
     const row = await this.selectRow(key)
-    const retired = key.startsWith(INTEGRATION_CREDENTIAL_PREFIX)
-      ? await this.readRetiredIntegrationEntries()
-      : undefined
+    const retired = isIntegrationCredentialKey(key) ? await this.readRetiredIntegrationEntries() : undefined
 
     // Only successfully applied newer results or a newer local mutation may
     // supersede this request. A newer request that failed must not suppress a
@@ -611,6 +610,7 @@ export class SecretStore {
     if (retired) this.mergeRetiredIntegrationEntries(retired)
     if (this.cache.get(key) === value) {
       if (retired) this.publishCache(new Map(this.cache))
+      if (notifyUnchanged) await this.notifyListeners(key, value)
       return
     }
     const nextCache = new Map(this.cache)
@@ -668,7 +668,7 @@ export class SecretStore {
    * Set a secret value. Encrypts and writes to DB, updates cache.
    */
   async set(key: string, value: string, updatedBy = 'admin'): Promise<void> {
-    if (key.startsWith(INTEGRATION_CREDENTIAL_PREFIX)) {
+    if (isIntegrationCredentialKey(key)) {
       return this.setWithDurableObligation(key, value, updatedBy, async () => undefined)
     }
     if (!this.encryptionKey) {
@@ -721,7 +721,7 @@ export class SecretStore {
     const { encrypted, iv } = encrypt(value, this.encryptionKey)
     const result = await db.transaction(async (tx) => {
       await lockIntegrationCredential(tx, key)
-      if (key.startsWith(INTEGRATION_CREDENTIAL_PREFIX)) {
+      if (isIntegrationCredentialKey(key)) {
         const [previous] = await tx.select().from(secrets).where(eq(secrets.key, key)).for('update')
         await retainIntegrationCredential(tx, previous, this.now())
       }
@@ -735,8 +735,10 @@ export class SecretStore {
       return obligation(tx)
     })
 
-    if (key.startsWith(INTEGRATION_CREDENTIAL_PREFIX)) {
-      await this.refreshKey(key)
+    if (isIntegrationCredentialKey(key)) {
+      // Explicit set() has always notified, even when the submitted value is
+      // unchanged. Peer invalidation still uses the default no-op semantics.
+      await this.refreshKey(key, true)
     } else {
       const nextCache = new Map(this.cache)
       nextCache.set(key, value)
@@ -762,7 +764,7 @@ export class SecretStore {
     }
     const result = await db.transaction(async (tx) => {
       await lockIntegrationCredential(tx, key)
-      if (key.startsWith(INTEGRATION_CREDENTIAL_PREFIX)) {
+      if (isIntegrationCredentialKey(key)) {
         const [previous] = await tx.select().from(secrets).where(eq(secrets.key, key)).for('update')
         await retainIntegrationCredential(tx, previous, this.now())
       }
@@ -771,7 +773,7 @@ export class SecretStore {
       return mutation
     })
 
-    if (key.startsWith(INTEGRATION_CREDENTIAL_PREFIX)) {
+    if (isIntegrationCredentialKey(key)) {
       await this.refreshKey(key)
     } else {
       const nextCache = new Map(this.cache)
@@ -854,7 +856,7 @@ export class SecretStore {
     }
 
     if (!result.wrote) return
-    if (key.startsWith(INTEGRATION_CREDENTIAL_PREFIX)) {
+    if (isIntegrationCredentialKey(key)) {
       await this.refreshKey(key)
     } else {
       const nextCache = new Map(this.cache)
