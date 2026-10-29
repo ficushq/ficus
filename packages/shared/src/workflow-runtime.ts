@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { workflowDecisionBriefSchema } from './workflow-decision-brief'
 import {
   workflowDefinitionSchema,
   workflowParticipantSchema,
@@ -128,6 +129,7 @@ export const workflowCommandSchema = z.discriminatedUnion('action', [
   z.strictObject({
     ...commandFields,
     action: z.literal('complete'),
+    decisionBrief: workflowDecisionBriefSchema.optional(),
     outcome: z.string().min(1).max(100),
     // May be empty only for a human approval that moves work forward; see workflowOutcomeRequiresEvidence.
     evidence: z.string().trim().max(64_000),
