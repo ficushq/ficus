@@ -1,3 +1,4 @@
+import { requireTestDbCapacity } from '@ficus/shared/testDbCapacity'
 import { existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { discoverTests, runTests } from './test-runner'
@@ -221,6 +222,7 @@ if (import.meta.main) {
     process.env.FICUS_TEST_DEADLINE_MS === undefined ? undefined : Number(process.env.FICUS_TEST_DEADLINE_MS)
   let session: ReturnType<typeof ownTestDb> | undefined
   try {
+    requireTestDbCapacity()
     if (!process.env.DATABASE_URL) {
       sweepStaleTestDbs(repoRoot)
       session = ownTestDb(repoRoot, { handleSignals: false })

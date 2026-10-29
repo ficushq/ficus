@@ -1,5 +1,5 @@
-import { and, eq, inArray } from 'drizzle-orm'
-import { db } from '../../../db'
+import { and, eq, inArray, sql } from 'drizzle-orm'
+import { db, type DbTx } from '../../../db'
 import { memoryChunks, memoryDocuments, memoryLinks } from '../../../db/schema'
 import { parseSensitivity, type SensitivityTier } from '../access/sensitivity'
 import { getPolicyDefaultSensitivity } from './policy'
@@ -10,6 +10,7 @@ import type { IndexResult } from './types'
 const HEADING_REGEX = /^#\s+(.+)$/m
 
 export class IndexedDocumentWriter {
+  constructor(private readonly store: typeof db | DbTx = db) {}
   private static _instance: IndexedDocumentWriter | null = null
 
   static instance(): IndexedDocumentWriter {
@@ -31,6 +32,14 @@ export class IndexedDocumentWriter {
     chunker?: 'markdown' | 'lines'
   }): Promise<IndexResult> {
     try {
+      // A GitHub document's projection and all its chunks form one immutable read generation.
+      // A failed replacement must preserve pending recovery and the prior snapshot together.
+      if (input.sourceType === 'github_issue' && this.store === db)
+        return await db.transaction(async (tx) => {
+          const result = await new IndexedDocumentWriter(tx).writeDocument(input)
+          if (!result.success) throw new Error(result.error ?? 'GitHub indexing failed')
+          return result
+        })
       const normalized = this.normalize(
         input.fetched,
         getPolicyDefaultSensitivity(input.policy) ?? input.adapterDefaultSensitivity
@@ -59,13 +68,13 @@ export class IndexedDocumentWriter {
         contentHash,
       })
 
-      await db
+      await this.store
         .update(memoryChunks)
         .set({ sensitivity: normalized.sensitivity })
         .where(eq(memoryChunks.documentId, documentId))
-      await db.delete(memoryLinks).where(eq(memoryLinks.sourceDocumentId, documentId))
+      await this.store.delete(memoryLinks).where(eq(memoryLinks.sourceDocumentId, documentId))
 
-      const existingChunks = await db
+      const existingChunks = await this.store
         .select({
           id: memoryChunks.id,
           chunkIndex: memoryChunks.chunkIndex,
@@ -96,9 +105,9 @@ export class IndexedDocumentWriter {
       }
 
       for (const [, chunk] of existingMap) toDelete.push(chunk.id)
-      if (toDelete.length > 0) await db.delete(memoryChunks).where(inArray(memoryChunks.id, toDelete))
+      if (toDelete.length > 0) await this.store.delete(memoryChunks).where(inArray(memoryChunks.id, toDelete))
       if (toInsert.length > 0) {
-        await db.insert(memoryChunks).values(
+        await this.store.insert(memoryChunks).values(
           toInsert.map((chunk) => ({
             squadId: input.squadId,
             documentId,
@@ -158,7 +167,7 @@ export class IndexedDocumentWriter {
     fetched: FetchedContent
   ): Promise<void> {
     if (!fetched.chunkMetadataForChunk) return
-    const existingChunks = await db
+    const existingChunks = await this.store
       .select({ id: memoryChunks.id, chunkIndex: memoryChunks.chunkIndex, metadata: memoryChunks.metadata })
       .from(memoryChunks)
       .where(eq(memoryChunks.documentId, documentId))
@@ -185,7 +194,7 @@ export class IndexedDocumentWriter {
       ...chunkMetadata,
       ...fetched.chunkMetadataForChunk(chunk),
     }
-    await db.update(memoryChunks).set({ metadata }).where(eq(memoryChunks.id, chunkId))
+    await this.store.update(memoryChunks).set({ metadata }).where(eq(memoryChunks.id, chunkId))
   }
 
   private extractTitle(frontmatter: Record<string, unknown>, content: string): string | null {
@@ -194,7 +203,7 @@ export class IndexedDocumentWriter {
   }
 
   private async getDocument(squadId: string, sourceType: string, sourceId: string) {
-    const [doc] = await db
+    const [doc] = await this.store
       .select()
       .from(memoryDocuments)
       .where(
@@ -220,19 +229,28 @@ export class IndexedDocumentWriter {
   }): Promise<string> {
     const existing = await this.getDocument(params.squadId, params.sourceType, params.sourceId)
     if (existing) {
-      await db
+      await this.store
         .update(memoryDocuments)
-        .set({ ...params, updatedAt: new Date() })
+        .set({
+          ...params,
+          // Recovery is acknowledged only after fresh/admissible indexing completes.
+          frontmatter:
+            params.sourceType === 'github_issue'
+              ? sql`${JSON.stringify(params.frontmatter)}::jsonb || case when ${memoryDocuments.frontmatter} ? 'githubReindex'
+                then jsonb_build_object('githubReindex', ${memoryDocuments.frontmatter}->'githubReindex') else '{}'::jsonb end`
+              : params.frontmatter,
+          updatedAt: new Date(),
+        })
         .where(eq(memoryDocuments.id, existing.id))
       return existing.id
     }
-    const [doc] = await db.insert(memoryDocuments).values(params).returning()
+    const [doc] = await this.store.insert(memoryDocuments).values(params).returning()
     return doc.id
   }
 
   private async createLinks(squadId: string, sourceDocumentId: string, wikilinks: WikiLink[]): Promise<number> {
     if (wikilinks.length === 0) return 0
-    await db.insert(memoryLinks).values(
+    await this.store.insert(memoryLinks).values(
       await Promise.all(
         wikilinks.map(async (link) => ({
           squadId,
@@ -249,7 +267,7 @@ export class IndexedDocumentWriter {
   private async resolveLinkTarget(squadId: string, target: string): Promise<string | null> {
     const normalizedTargets = [target, `/memory/${target}`, `/memory/${target}.md`, `${target}.md`]
     for (const path of normalizedTargets) {
-      const [doc] = await db
+      const [doc] = await this.store
         .select({ id: memoryDocuments.id })
         .from(memoryDocuments)
         .where(

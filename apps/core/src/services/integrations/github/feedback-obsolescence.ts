@@ -10,6 +10,7 @@ import {
   type DbTx,
 } from '../../../db'
 
+import { rawGitHubFactsSourceIdSQL } from './feedback-freshness-binding'
 import {
   GITHUB_FEEDBACK_OBSOLETE,
   GITHUB_FACTUAL_RECOVERY_PENDING,
@@ -177,6 +178,11 @@ export async function obsoleteOlderGitHubFeedback(
     .update(integrationOutputEvents)
     .set({
       lastErrorCode: sql`case when ${inArray(integrationOutputEvents.id, deferred)} then ${GITHUB_FACTUAL_RECOVERY_PENDING} else ${GITHUB_FEEDBACK_OBSOLETE} end`,
+      // Factual aliases bind only their own action revision, not the discarded parent.
+      // Once that action is obsolete they can never route; retire unmatched aliases now
+      // instead of reserving their event and source bodies on every reconciliation pass.
+      matchedAt: sql`case when ${rawGitHubFactsSourceIdSQL(integrationOutputEvents.sourceKey)} is not null
+        then coalesce(${integrationOutputEvents.matchedAt}, now()) else ${integrationOutputEvents.matchedAt} end`,
     })
     .where(inArray(integrationOutputEvents.id, raw))
   await tx
