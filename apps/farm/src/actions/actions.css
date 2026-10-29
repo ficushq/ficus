@@ -567,3 +567,19 @@
   outline: var(--g-focus-width) solid var(--g-highlight);
   outline-offset: 2px;
 }
+
+/* Review files stay beside the brief, even when their names exceed a phone's width. */
+.g-review-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.g-review-tabs [role='tab'] {
+  flex: 0 0 auto;
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

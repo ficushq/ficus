@@ -362,7 +362,9 @@ async function dispatchFlowAttempt(
         run,
         attempt,
         await stackNotice(tx, stream),
-        (await loadReviewContexts(tx, stream.id, run.state))[String(attempt.id)]
+        (await loadReviewContexts(tx, stream.id, run.state, { attemptAgents, createdAt: run.createdAt }))[
+          String(attempt.id)
+        ]
       ),
     }
     await tx.update(workStreamFlowRuns).set({ state: run.state }).where(eq(workStreamFlowRuns.workStreamId, stream.id))
@@ -378,7 +380,9 @@ async function dispatchFlowAttempt(
         run,
         attempt,
         await stackNotice(tx, stream),
-        (await loadReviewContexts(tx, stream.id, run.state))[String(attempt.id)]
+        (await loadReviewContexts(tx, stream.id, run.state, { attemptAgents, createdAt: run.createdAt }))[
+          String(attempt.id)
+        ]
       ),
       metadata: { workStreamId: stream.id, squadId: stream.squadId, source: 'workflow', attemptId: attempt.id },
       wakeEligible: true,
@@ -529,7 +533,10 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
       throw new WorkflowError((error as Error).message, 409)
     }
     if ((command.action === 'complete' || command.action === 'return') && command.decisionBrief) {
-      const contexts = (await loadReviewContexts(tx, id, run.state))[String(command.attemptId)] ?? []
+      const contexts =
+        (await loadReviewContexts(tx, id, run.state, { attemptAgents: run.attemptAgents, createdAt: run.createdAt }))[
+          String(command.attemptId)
+        ] ?? []
       const submission = state.attempts.find((a) => a.id === command.attemptId)?.decisionBrief
       if (submission)
         submission.contexts = submission.contexts.map((context) => {

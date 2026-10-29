@@ -8,6 +8,7 @@ test('review context keeps prior empty-note decisions, multi-hop return reasons 
   definition.steps.push({
     id: 'gate',
     kind: 'human-approval',
+    approver: 'reviewers',
     instructions: 'Review design.',
     output: 'Decision.',
     approver: 'reviewers',
@@ -54,6 +55,7 @@ test('decision intervals use receipt time, not creation order, for a still-runni
   definition.steps.push({
     id: 'gate',
     kind: 'human-approval',
+    approver: 'reviewers',
     instructions: 'Review staging.',
     output: 'Decision.',
     outcomes: { yes: { next: 'finish' } },
@@ -79,6 +81,7 @@ test('a causal return settled after the last decision is retained even when its 
   definition.steps.push({
     id: 'gate',
     kind: 'human-approval',
+    approver: 'reviewers',
     instructions: 'Review staging.',
     output: 'Decision.',
     outcomes: { yes: { next: 'finish' } },
@@ -92,6 +95,7 @@ test('a causal return settled after the last decision is retained even when its 
   run.returns.push({
     id: 1,
     requestedByAttemptId: 3,
+    parentId: null,
     targetStepId: 'execute',
     resumeAt: 'gate',
     feedback: 'Retain the older reader after the parallel review.',
@@ -108,6 +112,7 @@ test('return-only human destinations receive prior decisions and interruption co
   definition.steps.push({
     id: 'gate',
     kind: 'human-approval',
+    approver: 'reviewers',
     instructions: 'Review staging.',
     output: 'Decision.',
     outcomes: { yes: { next: 'execute' } },

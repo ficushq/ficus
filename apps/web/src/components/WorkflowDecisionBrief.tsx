@@ -14,14 +14,14 @@ export function WorkflowDecisionBrief({ run, attempt }: { run: WorkflowRun; atte
     <article aria-label="Decision brief" className="space-y-5 [overflow-wrap:anywhere]">
       <h2 className="text-lg font-semibold text-primary">Decision brief</h2>
       {brief.kind === 'none' && <p className="text-sm text-secondary">No decision brief for this gate</p>}
-      {brief.kind === 'carried-forward' && (
-        <div className="space-y-1 text-sm text-secondary">
-          <p className="font-medium">Carried forward from an earlier step</p>
-          <p>Prepared for an earlier step; this is not a new decision brief for this gate.</p>
-        </div>
-      )}
-      {brief.sources.map((source) => (
+      {[...brief.sources, ...(brief.carriedSources ?? [])].map((source) => (
         <section key={source.id} className="space-y-4">
+          {(brief.kind === 'carried-forward' || brief.carriedSources?.some((a) => a.id === source.id)) && (
+            <div className="space-y-1 text-sm text-secondary">
+              <p className="font-medium">Carried forward from an earlier step</p>
+              <p>Prepared for an earlier step; this is not a new decision brief for this gate.</p>
+            </div>
+          )}
           <p className="text-xs text-muted">
             Prepared by {workflowHistoricalStep(run, source)?.name ?? source.stepId} · Attempt {source.id}
           </p>

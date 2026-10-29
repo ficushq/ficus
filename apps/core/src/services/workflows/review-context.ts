@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm'
 import {
   activeWorkflowAttempts,
   effectiveWorkflowStep,
@@ -100,28 +100,40 @@ export function producerReviewContexts(
 export async function loadReviewContexts(
   store: DbHandle,
   workStreamId: string,
-  run: WorkflowRun
+  run: WorkflowRun,
+  scope: { attemptAgents: Record<string, string>; createdAt: Date }
 ): Promise<Record<string, WorkflowProducerReviewContext[]>> {
-  const producers = activeWorkflowAttempts(run).filter((a) => effectiveWorkflowStep(run, a).kind === 'agent')
+  const producers = activeWorkflowAttempts(run).filter((a) => producerReviewContexts(run, a).length > 0)
   if (!producers.length) return {}
+  const causal = new Set(producers.flatMap((a) => [a.id, ...workflowCausalAttempts(run, a).map((s) => s.id)]))
+  const agentIds = [
+    ...new Set(
+      [...causal].flatMap((id) => (scope.attemptAgents[String(id)] ? [scope.attemptAgents[String(id)]!] : []))
+    ),
+  ]
   const [rows, receipts] = await Promise.all([
-    store
-      .select({
-        executionId: executions.id,
-        flowContext: executions.flowContext,
-        status: executions.status,
-        failureClass: executions.failureClass,
-        failureReason: executions.failureReason,
-        endedAt: executions.endedAt,
-      })
-      .from(executions)
-      .where(
-        and(
-          sql`${executions.flowContext}->>'workStreamId' = ${workStreamId}`,
-          inArray(executions.status, ['failed', 'stopped']),
-          isNotNull(executions.endedAt)
-        )
-      ),
+    agentIds.length
+      ? store
+          .select({
+            executionId: executions.id,
+            flowContext: executions.flowContext,
+            status: executions.status,
+            failureClass: executions.failureClass,
+            endedAt: executions.endedAt,
+          })
+          .from(executions)
+          .where(
+            and(
+              inArray(executions.agentId, agentIds),
+              gte(executions.startedAt, scope.createdAt),
+              sql`${executions.flowContext}->>'workStreamId' = ${workStreamId}`,
+              inArray(executions.status, ['failed', 'stopped']),
+              isNotNull(executions.endedAt)
+            )
+          )
+          .orderBy(desc(executions.startedAt), desc(executions.id))
+          .limit(200)
+      : Promise.resolve([]),
     store
       .select({
         command: workStreamFlowTransitions.command,
@@ -146,7 +158,6 @@ export async function loadReviewContexts(
             attemptId: row.flowContext.attemptId,
             status: row.status as 'failed' | 'stopped',
             failureClass: row.failureClass?.slice(0, 100),
-            failureReason: row.failureReason?.slice(0, 200),
             endedAt: row.endedAt.toISOString(),
           },
         ]

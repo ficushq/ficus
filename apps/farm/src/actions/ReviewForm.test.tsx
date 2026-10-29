@@ -232,7 +232,7 @@ describe('WorkflowDecision · human-approval gate', () => {
     const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
     await typeInto(byLabel(container, 'Decision notes'), 'ok')
     expect(button(container, 'Approved').disabled).toBe(true)
-    expect(container.textContent).toContain('Resolve the other open waits')
+    expect(container.textContent).toContain('Waiting for an answer:')
   })
 
   it('limits assigned-reviewer gates to the assigned reviewers', async () => {
@@ -352,5 +352,101 @@ it('a second workflow-owned wait blocks the gate', async () => {
   })
   const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
   await typeInto(byLabel(container, 'Decision notes'), 'Ready for staging.')
+  expect(button(container, 'Approved').disabled).toBe(true)
+})
+
+it('Farm leads with the authored brief, keeps attachment peer tabs and collapses only the handoff', async () => {
+  const run = workflowRun('gate')
+  run.state.attempts[0]!.decisionBrief = {
+    value: {
+      decision: 'Approve the staging design.',
+      recommendation: 'Approve because fallback reads are tested.',
+      approvalEffect: 'Approval permits staging work only, not production deployment.',
+      risks: 'Maintenance work increases temporarily.',
+      changesSinceLastReview: 'The prior review requested a smaller scope. The rollout is now excluded.',
+    },
+    submittedVersion: 6,
+    contexts: [],
+  }
+  run.state.attempts[1]!.reviewBrief = { kind: 'authored', sourceAttemptIds: [1] }
+  run.attachments = {
+    '1': [
+      {
+        id: 'design',
+        attemptId: 1,
+        filename: 'design.md',
+        path: 'docs/design.md',
+        contentType: 'text/markdown',
+        byteSize: 20,
+        createdAt: '',
+      },
+    ],
+  }
+  const api = fakeApi({
+    workflowRun: () => Promise.resolve(run),
+    getWorkStream: () => Promise.resolve(stream()),
+    downloadWorkflowAttachment: () => Promise.resolve(new TextEncoder().encode('The synthetic staging design.')),
+  })
+  const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
+  const tabs = [...container.querySelectorAll('[role="tab"]')]
+  expect(tabs.map((tab) => tab.textContent)).toEqual(['Decision brief', 'design.md'])
+  expect(tabs[0]!.getAttribute('aria-selected')).toBe('true')
+  expect(container.querySelector('[aria-label="Decision brief"]')!.textContent).toContain(
+    'What changed since your last review'
+  )
+  const disclosure = container.querySelector('details')!
+  expect(disclosure.open).toBe(false)
+  expect(disclosure.querySelector('summary')!.textContent).toBe('Internal handoff')
+  expect(disclosure.textContent).toContain('Planted and watered')
+  expect(api.downloadWorkflowAttachment).not.toHaveBeenCalled()
+  await click(tabs[1] as HTMLButtonElement)
+  expect(api.downloadWorkflowAttachment).toHaveBeenCalledTimes(1)
+  expect(container.querySelector('[role="tabpanel"]')!.textContent).toContain('The synthetic staging design.')
+  await click(tabs[0] as HTMLButtonElement)
+  expect(container.querySelector('[aria-label="Decision brief"]')).not.toBeNull()
+})
+
+for (const kind of ['carried-forward', 'none'] as const) {
+  it(`Farm labels ${kind} and retains the gate's own message`, async () => {
+    const run = workflowRun('gate')
+    run.state.attempts[0]!.decisionBrief = {
+      value: {
+        decision: 'Approve the staging design.',
+        recommendation: 'Approve because fallback reads are tested.',
+        approvalEffect: 'Approval permits staging only, not deployment.',
+        risks: 'Maintenance work increases.',
+      },
+      submittedVersion: 1,
+      contexts: [],
+    }
+    run.state.attempts[1]!.reviewBrief = kind === 'none' ? { kind } : { kind, sourceAttemptId: 1 }
+    const api = fakeApi({ workflowRun: () => Promise.resolve(run), getWorkStream: () => Promise.resolve(stream()) })
+    const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
+    const panel = container.querySelector('[role="tabpanel"]')!
+    expect(panel.textContent).toContain(
+      kind === 'none' ? 'No decision brief for this gate' : 'Carried forward from an earlier step'
+    )
+    expect(panel.textContent).toContain('Taste the tomatoes')
+  })
+}
+
+it('Farm queued reviews list every owner and manager blocker without advertising Your review', async () => {
+  const gate = wait({ id: 'gate', type: 'manual', resolutionHandler: 'workflow', flowAttemptId: 2 })
+  const waits = [
+    gate,
+    wait({ id: 'owner', type: 'manual', actor: 'owner', message: 'Wait for the approved sequencing window.' }),
+    wait({ id: 'manager', type: 'manual', actor: 'manager', message: 'Confirm the staging dependency first.' }),
+  ]
+  const api = fakeApi({
+    workflowRun: () => Promise.resolve(workflowRun('gate', { openWaits: waits })),
+    getWorkStream: () => Promise.resolve(stream()),
+  })
+  const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
+  expect(container.textContent).toContain('Review queued')
+  expect(container.textContent).not.toContain('Your review')
+  expect(container.querySelector('[aria-label="Review blockers"]')!.textContent).toContain('Waiting on owner:')
+  expect(container.querySelector('[aria-label="Review blockers"]')!.textContent).toContain('Waiting on manager:')
+  for (const wait of waits.slice(1)) expect(container.textContent).toContain(wait.message!)
+  await typeInto(byLabel(container, 'Decision notes'), 'Checked the design.')
   expect(button(container, 'Approved').disabled).toBe(true)
 })

@@ -184,39 +184,62 @@ test('recorded carried brief history survives reopen without lending it to the n
   expect(workflowReviewBriefForAttempt(reopened, historicalGate).sources.map((a) => a.id)).toEqual([1])
 })
 
-test('an authored join preserves the other causal input brief through a non-agent branch', () => {
-  const definition = flow().definition
-  definition.steps[0]!.outcomes = { ready: { parallel: ['left', 'right'], join: 'gate' } }
-  definition.steps.push(
-    workflowStepSchema.parse({ ...definition.steps[0], id: 'left', outcomes: { ready: { next: 'gate' } } })
-  )
-  definition.steps.push(
-    workflowStepSchema.parse({
-      id: 'right',
-      kind: 'human-approval',
-      instructions: 'Review the staging prerequisite.',
-      output: 'Decision.',
-      outcomes: { yes: { next: 'gate' } },
+for (const order of [
+  [2, 3],
+  [3, 2],
+]) {
+  test(`a mixed human join separates authored and carried sources in arrival order ${order.join(', ')}`, () => {
+    const definition = flow().definition
+    definition.steps[0]!.outcomes = { ready: { parallel: ['left', 'right'], join: 'gate' } }
+    definition.steps.push(
+      workflowStepSchema.parse({ ...definition.steps[0], id: 'left', outcomes: { ready: { next: 'gate' } } }),
+      workflowStepSchema.parse({
+        id: 'right',
+        kind: 'human-approval',
+        instructions: 'Review the staging prerequisite.',
+        output: 'Decision.',
+        outcomes: { yes: { next: 'gate' } },
+      })
+    )
+    let run = complete(createWorkflowRun(definition), 'ready', brief)
+    for (const id of order)
+      run = advanceWorkflowRun(run, {
+        action: 'complete',
+        expectedVersion: run.version,
+        attemptId: id,
+        outcome: id === 2 ? 'ready' : 'yes',
+        evidence: 'Branch handoff.',
+        decisionBrief: brief,
+      })
+    expect(run.attempts.at(-1)!.reviewBrief).toEqual({
+      kind: 'authored',
+      sourceAttemptIds: [2],
+      carriedSourceAttemptIds: [1],
     })
-  )
+    expect(workflowReviewBriefForAttempt(run, run.attempts.at(-1)!)).toMatchObject({
+      kind: 'authored',
+      sources: [{ id: 2 }],
+      carriedSources: [{ id: 1 }],
+    })
+  })
+}
+
+test('a returned human remains a bridge to its eligible producer brief', () => {
+  const definition = flow().definition
+  definition.steps[1]!.outcomes.recheck = { returnTo: 'second', afterRework: 'return-to-requester' }
   let run = complete(createWorkflowRun(definition), 'ready', brief)
   run = advanceWorkflowRun(run, {
-    action: 'complete',
-    expectedVersion: run.version,
-    attemptId: 3,
-    outcome: 'yes',
-    evidence: '',
-    decisionBrief: { ...brief, decision: 'Approve the separate prerequisite only.' },
-  })
-  run = advanceWorkflowRun(run, {
-    action: 'complete',
+    action: 'return',
     expectedVersion: run.version,
     attemptId: 2,
-    outcome: 'ready',
-    evidence: 'Left branch handoff.',
-    decisionBrief: brief,
+    targetStepId: 'second',
+    resumeAt: 'gate',
+    feedback: 'Confirm the staging prerequisite first.',
   })
-  expect(run.attempts.at(-1)!.reviewBrief).toEqual({ kind: 'authored', sourceAttemptIds: [1, 2] })
+  expect(workflowReviewBriefForAttempt(run, run.attempts.at(-1)!)).toMatchObject({
+    kind: 'carried-forward',
+    sources: [{ id: 1 }],
+  })
 })
 
 test('effective kept outcome, not the stale step definition, determines the brief requirement', () => {
@@ -244,4 +267,132 @@ test('canceled and nonhuman occurrences do not count; return without an outcome 
     { id: 4, stepId: 'gate', status: 'completed', outcome: 'yes', step: { ...run.definition.steps[0]!, id: 'gate' } }
   )
   expect(workflowEarlierHumanDecisions(run, 'gate').map((a) => a.id)).toEqual([3])
+})
+
+test('a queued pre-deploy gate without binding stays legacy when admitted', () => {
+  let run = complete(flow(), 'ready', brief)
+  run = complete(run, 'again')
+  run.definition.limits.maxStepAttempts = 1
+  run = complete(run, 'ready', {
+    ...brief,
+    changesSinceLastReview: 'The reviewer requested rework. The fallback is now retained.',
+  })
+  expect(run.pendingStarts).toHaveLength(1)
+  // Persisted shape from before briefs: the queued target and settled sources have no brief metadata.
+  delete run.pendingStarts![0]!.reviewBrief
+  for (const source of run.attempts) {
+    delete source.decisionBrief
+    delete source.reviewBrief
+  }
+  run = advanceWorkflowRun(run, {
+    action: 'revise',
+    expectedVersion: run.version,
+    attemptId: null,
+    active: 'keep',
+    reason: 'Admit the already queued review.',
+    operations: [{ op: 'set-limits', limits: { ...run.definition.limits, maxStepAttempts: 5 } }],
+  })
+  expect(workflowReviewBriefForAttempt(run, run.attempts.at(-1)!)).toEqual({ kind: 'legacy', sources: [] })
+})
+
+test('human-waiting decision steps show voluntary briefs or an explicit no-brief notice without requiring authorship', () => {
+  const definition = flow().definition
+  definition.steps[0]!.outcomes.ready = { next: 'choice' }
+  definition.steps[0]!.outcomes.design = { next: 'gate' }
+  definition.steps.push(
+    workflowStepSchema.parse({
+      id: 'choice',
+      kind: 'decision',
+      instructions: 'Choose the staging option.',
+      questions: { ready: { type: 'yesno', instructions: 'Is the proposal ready?' } },
+      outcomes: { yes: { next: 'finish' } },
+    })
+  )
+  for (const value of [undefined, brief]) {
+    const run = complete(createWorkflowRun(definition), 'ready', value)
+    const gate = run.attempts.at(-1)!
+    gate.decision = {
+      status: 'unconfigured',
+      matched: 'unavailable',
+      awaitingPerson: true,
+      decidedAt: '2026-10-29T00:00:00Z',
+    }
+    expect(gate.stepId).toBe('choice')
+    expect(workflowReviewBriefForAttempt(run, gate)).toMatchObject(
+      value ? { kind: 'carried-forward', sources: [{ id: 1 }] } : { kind: 'none', sources: [] }
+    )
+  }
+})
+
+test('an already-running producer gets actionable complete and return brief diagnostics', () => {
+  const run = flow()
+  for (const command of [
+    { action: 'complete' as const, outcome: 'ready', evidence: 'Audit record.' },
+    { action: 'return' as const, targetStepId: 'gate', resumeAt: 'execute', feedback: 'Review this scope.' },
+  ]) {
+    if (command.action === 'return') {
+      const step = run.attempts[0]!.step!
+      step.outcomes.recheck = { returnTo: 'gate', afterRework: 'return-to-requester' }
+    }
+    let message = ''
+    try {
+      advanceWorkflowRun(run, { ...command, expectedVersion: run.version, attemptId: 1 })
+    } catch (error) {
+      message = (error as Error).message
+    }
+    for (const phrase of [
+      'decisionBrief',
+      'same advance command JSON',
+      'decision, recommendation, approvalEffect and risks',
+      'changesSinceLastReview',
+      'evidence',
+      'feedback',
+    ])
+      expect(message).toContain(phrase)
+  }
+})
+
+test('new queued decision steps are not mistaken for pre-deploy queued human approvals', () => {
+  const definition = createBlankWorkflow()
+  definition.limits.maxParallelAttempts = 1
+  definition.steps[0]!.outcomes.completed = { parallel: ['hold', 'choice'], join: 'finish' }
+  definition.steps.push(
+    workflowStepSchema.parse({ ...definition.steps[0], id: 'hold', outcomes: { completed: { next: 'finish' } } }),
+    workflowStepSchema.parse({
+      id: 'choice',
+      kind: 'decision',
+      instructions: 'Choose the staging option.',
+      questions: { ready: { type: 'yesno', instructions: 'Is the proposal ready?' } },
+      outcomes: { yes: { next: 'finish' } },
+    })
+  )
+  for (const value of [undefined, brief]) {
+    let run = complete(createWorkflowRun(definition), 'completed', value)
+    expect(run.pendingStarts).toHaveLength(1)
+    run = complete(run, 'completed')
+    const choice = run.attempts.at(-1)!
+    expect(choice.stepId).toBe('choice')
+    expect(choice.reviewBrief).toBeUndefined()
+    expect(workflowReviewBriefForAttempt(run, choice).kind).toBe(value ? 'carried-forward' : 'none')
+  }
+})
+
+test('a human return to an already-reviewed gate carries its old brief instead of reauthoring it', () => {
+  const definition = flow().definition
+  definition.steps[2]!.outcomes.recheck = { returnTo: 'gate', afterRework: 'return-to-requester' }
+  let run = complete(createWorkflowRun(definition), 'ready', brief)
+  run = complete(run, 'yes')
+  run = advanceWorkflowRun(run, {
+    action: 'return',
+    expectedVersion: run.version,
+    attemptId: 3,
+    targetStepId: 'gate',
+    resumeAt: 'second',
+    feedback: 'Recheck the staging prerequisite before rollout review.',
+  })
+  expect(run.attempts[1]!.reviewBrief).toEqual({ kind: 'authored', sourceAttemptIds: [1] })
+  expect(workflowReviewBriefForAttempt(run, run.attempts.at(-1)!)).toMatchObject({
+    kind: 'carried-forward',
+    sources: [{ id: 1 }],
+  })
 })

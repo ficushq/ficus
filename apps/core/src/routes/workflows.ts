@@ -101,7 +101,7 @@ export const workflowsRouter = new Hono()
         withDeliveries ? outputDeliveryHistory(stream.id) : undefined,
         getFlowUsage(stream.id, run.state),
         listWorkflowAttachments(stream.id),
-        loadReviewContexts(db, stream.id, run.state),
+        loadReviewContexts(db, stream.id, run.state, { attemptAgents: run.attemptAgents, createdAt: run.createdAt }),
       ])
       return c.json({
         workStreamId: run.workStreamId,

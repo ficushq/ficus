@@ -11,6 +11,8 @@ process.chdir(root)
 const { chromium } = createRequire(resolve(root, '../core/package.json'))(
   'playwright-core'
 ) as typeof import('playwright-core')
+const caseFilter = process.env.REVIEW_CASE_FILTER ? new RegExp(process.env.REVIEW_CASE_FILTER) : undefined
+let passed = 0
 const screenshotDir = process.env.SCREENSHOT_DIR
 if (screenshotDir) await mkdir(screenshotDir, { recursive: true })
 const server = await createServer({
@@ -56,99 +58,160 @@ try {
     errors.push(`Unexpected backend request: ${route.request().method()} ${new URL(route.request().url()).pathname}`)
     return route.abort()
   })
-  for (const width of [390, 1280])
-    for (const dark of [false, true])
-      for (const mode of ['first', 'repeat', 'blocked', 'carried', 'none', 'legacy', 'return', 'restarted']) {
-        await page.setViewportSize({ width, height: 900 })
-        await page.goto(`${server.resolvedUrls!.local[0]}review-fixture?mode=${mode}${dark ? '&dark' : ''}`, {
-          waitUntil: 'domcontentloaded',
-          timeout: 30000,
-        })
-        const dialog = page.getByRole('dialog')
-        await dialog.waitFor()
-        assert.equal(
-          await dialog.evaluate((el) => getComputedStyle(el).position),
-          'fixed',
-          'Production Tailwind utilities must be present'
-        )
-        const article = dialog.getByRole('article', { name: 'Decision brief', exact: true })
-        if (mode === 'legacy') {
-          assert.equal(await article.count(), 0)
-          await dialog.getByRole('tab', { name: 'Handoff', exact: true }).waitFor()
-        } else {
-          await article.waitFor()
-          if (mode === 'none' || mode === 'restarted')
-            await article.getByText('No decision brief for this gate', { exact: true }).waitFor()
-          else {
-            await article.getByRole('heading', { name: 'Decision', exact: true }).waitFor()
-            if (mode === 'repeat' || mode === 'blocked' || mode === 'return')
-              await article.getByText('What changed since your last review', { exact: true }).waitFor()
-            if (mode === 'carried')
-              await article.getByText('Carried forward from an earlier step', { exact: true }).waitFor()
-          }
-          if (mode === 'restarted') {
-            await dialog
-              .getByText(
-                'Review only the replacement staging scope. The previous review session does not authorize this scope.',
-                { exact: true }
-              )
-              .first()
-              .waitFor()
-            assert.equal(await article.getByText('Carried forward from an earlier step', { exact: true }).count(), 0)
-            assert.equal(await article.getByRole('heading', { name: 'Decision', exact: true }).count(), 0)
-          }
-          const disclosure = dialog
-            .locator('details')
-            .filter({ has: page.locator('summary', { hasText: 'Evidence and attachments' }) })
-          assert.equal(await disclosure.getAttribute('open'), null)
+  for (const surface of ['web', 'farm'])
+    for (const width of [390, 1280])
+      for (const dark of surface === 'web' ? [false, true] : [false])
+        for (const mode of [
+          'first',
+          'repeat',
+          'blocked',
+          'carried',
+          'none',
+          'legacy',
+          'return',
+          'restarted',
+          'mixed-agent-first',
+          'mixed-human-first',
+          'decision-brief',
+          'decision-none',
+          'legacy-queued',
+          'human-return',
+        ]) {
+          const caseName = `${surface} ${mode} ${width} ${dark ? 'dark' : 'light'}`
+          if (caseFilter && !caseFilter.test(caseName)) continue
+          await page.setViewportSize({ width, height: 900 })
+          await page.emulateMedia({ colorScheme: dark ? 'dark' : 'light' })
+          await page.goto(
+            `${server.resolvedUrls!.local[0]}review-fixture?surface=${surface}&mode=${mode}${dark ? '&dark' : ''}`,
+            { waitUntil: 'domcontentloaded', timeout: 30000 }
+          )
+          const review = surface === 'web' ? page.getByRole('dialog') : page.locator('.g-decision')
+          await review.waitFor()
           assert.equal(
-            await article.evaluate(
-              (el) =>
-                !!(
-                  el.compareDocumentPosition(
-                    [...document.querySelectorAll('summary')].find((s) => s.textContent === 'Evidence and attachments')!
-                  ) & Node.DOCUMENT_POSITION_FOLLOWING
+            await review.evaluate((el) => getComputedStyle(el).paddingTop),
+            surface === 'farm' ? '12px' : '0px',
+            'Real review styles must be present'
+          )
+          if (surface === 'web') assert.equal(await review.evaluate((el) => getComputedStyle(el).position), 'fixed')
+          const legacy = mode === 'legacy' || mode === 'legacy-queued'
+          const article = review.getByRole('article', { name: 'Decision brief', exact: true })
+          const primary = review.getByRole('tab', { name: legacy ? 'Handoff' : 'Decision brief', exact: true })
+          await primary.waitFor()
+          assert.equal(await primary.getAttribute('aria-selected'), 'true')
+          const attachment = review.getByRole('tab', { name: 'staging-design.md', exact: true })
+          assert.equal(
+            await attachment.evaluate((el) => !!el.closest('details')),
+            false,
+            'Attachment tabs remain visible peers'
+          )
+          if (legacy) assert.equal(await article.count(), 0)
+          else {
+            await article.waitFor()
+            if (['none', 'restarted', 'decision-none'].includes(mode))
+              await article.getByText('No decision brief for this gate', { exact: true }).waitFor()
+            else {
+              await article.getByRole('heading', { name: 'Decision', exact: true }).first().waitFor()
+              if (['repeat', 'blocked', 'return'].includes(mode))
+                await article.getByText('What changed since your last review', { exact: true }).waitFor()
+              if (
+                mode === 'carried' ||
+                mode === 'human-return' ||
+                mode === 'decision-brief' ||
+                mode.startsWith('mixed-')
+              )
+                await article.getByText('Carried forward from an earlier step', { exact: true }).waitFor()
+            }
+            if (mode.startsWith('mixed-')) {
+              await article.getByText('Approve the joined staging design.', { exact: true }).waitFor()
+              assert.equal(await article.getByText('Carried forward from an earlier step', { exact: true }).count(), 1)
+              assert.equal(await article.getByRole('heading', { name: 'Decision', exact: true }).count(), 2)
+            }
+            if (mode === 'restarted') {
+              await review
+                .getByText(
+                  'Review only the replacement staging scope. The previous review session does not authorize this scope.',
+                  { exact: true }
                 )
-            ),
-            true
-          )
-          const overflow = await article.evaluate((el) => el.scrollWidth > el.clientWidth + 1)
-          assert.equal(overflow, false, 'Long literal resource IDs wrap within the reading column')
-          if (screenshotDir)
-            await page.screenshot({ path: resolve(screenshotDir, `${mode}-${width}-${dark ? 'dark' : 'light'}.png`) })
-          if (mode === 'first') {
-            await disclosure.locator('summary').click()
-            await dialog.getByRole('tab', { name: 'staging-design.md', exact: true }).click()
-            await dialog.getByRole('heading', { name: 'Staging design attachment', exact: true }).waitFor()
-            assert.equal(await article.isVisible(), true, 'Attachment selection must not replace the decision brief')
+                .first()
+                .waitFor()
+              assert.equal(await article.getByRole('heading', { name: 'Decision', exact: true }).count(), 0)
+            }
+            if (mode.startsWith('decision-'))
+              await review
+                .getByText('Choose the staging option; production remains forbidden.', { exact: true })
+                .first()
+                .waitFor()
+            const disclosure = review
+              .locator('details')
+              .filter({ has: page.locator('summary', { hasText: 'Internal handoff' }) })
+            assert.equal(await disclosure.getAttribute('open'), null)
+            assert.equal(
+              await article.evaluate(
+                (el) =>
+                  !!(
+                    el.compareDocumentPosition(
+                      [...document.querySelectorAll('summary')].find((node) => node.textContent === 'Internal handoff')!
+                    ) & Node.DOCUMENT_POSITION_FOLLOWING
+                  )
+              ),
+              true
+            )
+            assert.equal(
+              await article.evaluate((el) => el.scrollWidth > el.clientWidth + 1),
+              false,
+              'Literal resource IDs wrap'
+            )
+            if (mode === 'first') {
+              await attachment.click()
+              const panel = review.getByRole('tabpanel')
+              await panel.getByText('Staging design attachment', { exact: false }).waitFor()
+              assert.equal(await article.count(), 0, 'The selected attachment occupies the document panel')
+              await primary.click()
+              await article.waitFor()
+              assert.equal(await disclosure.getAttribute('open'), null)
+              await disclosure.locator('summary').click()
+              await review.getByText('Detailed audit handoff.', { exact: false }).waitFor()
+              await disclosure.locator('summary').click()
+            }
           }
+          if (mode === 'return')
+            await review
+              .getByRole('button', { name: /^Approved/ })
+              .getByText('Continues to execute', { exact: true })
+              .waitFor()
+          await review.evaluate((el) => {
+            el.querySelector('[data-review-document]')?.scrollTo(0, 0)
+            el.closest('main')?.scrollTo(0, 0)
+          })
+          const path = (name: string) =>
+            resolve(screenshotDir!, `${surface}-${name}-${width}-${dark ? 'dark' : 'light'}.png`)
+          if (screenshotDir) await page.screenshot({ path: path(mode) })
+          if (mode === 'blocked') {
+            const approve = review.getByRole('button', { name: /^Approved/ })
+            assert.equal(await approve.isDisabled(), true)
+            await review.getByText('Wait for staging prerequisite 1.', { exact: false }).waitFor()
+            await review.getByText('Wait for staging prerequisite 2.', { exact: false }).waitFor()
+            await review.getByText('Review queued', { exact: true }).waitFor()
+            if (surface === 'farm') await review.getByLabel('Decision notes').fill('Read the synthetic staging design.')
+            assert.equal(await approve.isDisabled(), true)
+            await page.evaluate(() => (window as unknown as { clearReviewBlockers: () => void }).clearReviewBlockers())
+            await page.waitForFunction(
+              () =>
+                ![...document.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
+                  button.textContent?.startsWith('Approved')
+                )?.disabled
+            )
+            assert.equal(await approve.isDisabled(), false)
+            await review.getByText('Your review', { exact: true }).waitFor()
+            if (screenshotDir) await page.screenshot({ path: path('cleared') })
+          }
+          assert.deepEqual(errors, [], 'No console errors or unexpected backend calls')
+          passed++
+          console.log(`PASS ${caseName}`)
         }
-        if (mode === 'legacy' && screenshotDir)
-          await page.screenshot({ path: resolve(screenshotDir, `${mode}-${width}-${dark ? 'dark' : 'light'}.png`) })
-        if (mode === 'return')
-          await dialog
-            .getByRole('button', { name: /^Approved/ })
-            .getByText('Continues to execute', { exact: true })
-            .waitFor()
-        if (mode === 'blocked') {
-          const approve = dialog.getByRole('button', { name: /^Approved/ })
-          assert.equal(await approve.isDisabled(), true)
-          await dialog.getByText('Wait for staging prerequisite 1.', { exact: false }).waitFor()
-          await dialog.getByText('Wait for staging prerequisite 2.', { exact: false }).waitFor()
-          await page.evaluate(() => (window as unknown as { clearReviewBlockers: () => void }).clearReviewBlockers())
-          await page.waitForFunction(
-            () =>
-              ![...document.querySelectorAll<HTMLButtonElement>('button')].find((b) =>
-                b.textContent?.startsWith('Approved')
-              )?.disabled
-          )
-          assert.equal(await approve.isDisabled(), false)
-          if (screenshotDir)
-            await page.screenshot({ path: resolve(screenshotDir, `cleared-${width}-${dark ? 'dark' : 'light'}.png`) })
-        }
-        console.log(`PASS ${mode} ${width} ${dark ? 'dark' : 'light'}`)
-      }
+  assert.ok(passed > 0, 'The filter must select at least one browser case')
   assert.deepEqual(errors, [], 'No console errors or unexpected backend calls')
+  console.log(`Completed ${passed} browser cases`)
 } catch (error) {
   console.error(errors)
   throw error

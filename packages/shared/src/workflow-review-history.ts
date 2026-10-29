@@ -6,7 +6,6 @@ export interface WorkflowBriefInterruption {
   attemptId: number
   status: 'failed' | 'stopped'
   failureClass?: string | null
-  failureReason?: string | null
   endedAt: string
 }
 export interface WorkflowBriefContext {
@@ -22,9 +21,10 @@ export interface WorkflowBriefSubmission {
   contexts: WorkflowBriefContext[]
 }
 export type WorkflowReviewBriefBinding =
-  | { kind: 'authored'; sourceAttemptIds: number[] }
+  | { kind: 'authored'; sourceAttemptIds: number[]; carriedSourceAttemptIds?: number[] }
   | { kind: 'carried-forward'; sourceAttemptId: number }
   | { kind: 'none' }
+  | { kind: 'legacy' }
 
 /** Resolve historical kind without letting today's definition rewrite a recorded round. */
 export function workflowHistoricalStep(run: WorkflowRun, attempt: WorkflowAttempt) {
@@ -71,9 +71,9 @@ export function workflowCarryForwardSources(run: WorkflowRun, sourceIds: number[
     if (visited.has(id) || id <= (run.attemptEpoch ?? 0)) continue
     visited.add(id)
     const source = run.attempts.find((a) => a.id === id)
-    if (!source || source.status !== 'completed') continue
+    if (!source || !['completed', 'returned'].includes(source.status)) continue
     if (workflowHistoricalStep(run, source)?.kind === 'agent') {
-      if (source.decisionBrief) found.set(id, source)
+      if (source.status === 'completed' && source.decisionBrief) found.set(id, source)
       continue
     }
     if (source.freshSession) continue
@@ -97,7 +97,9 @@ export function workflowReviewBriefForAttempt(
 ): {
   kind: 'authored' | 'carried-forward' | 'none' | 'legacy'
   sources: WorkflowAttempt[]
+  carriedSources?: WorkflowAttempt[]
 } {
+  if (attempt.reviewBrief?.kind === 'legacy') return { kind: 'legacy', sources: [] }
   if (attempt.freshSession && workflowHistoricalStep(run, attempt)?.kind === 'human-approval')
     return { kind: 'none', sources: [] }
   const binding = attempt.reviewBrief
@@ -105,6 +107,13 @@ export function workflowReviewBriefForAttempt(
     return {
       kind: 'authored',
       sources: run.attempts.filter((a) => binding.sourceAttemptIds.includes(a.id) && !!a.decisionBrief),
+      ...(binding.carriedSourceAttemptIds?.length
+        ? {
+            carriedSources: run.attempts.filter(
+              (a) => binding.carriedSourceAttemptIds!.includes(a.id) && !!a.decisionBrief
+            ),
+          }
+        : {}),
     }
   if (binding?.kind === 'none') return { kind: 'none', sources: [] }
   // Historical bound rounds retain their original provenance after reopen; they do not donate to the new epoch.
@@ -114,6 +123,8 @@ export function workflowReviewBriefForAttempt(
     const source = eligible.find((a) => a.id === binding.sourceAttemptId)
     return source ? { kind: 'carried-forward', sources: [source] } : { kind: 'none', sources: [] }
   }
+  if (workflowHistoricalStep(run, attempt)?.kind === 'decision')
+    return eligible[0] ? { kind: 'carried-forward', sources: [eligible[0]] } : { kind: 'none', sources: [] }
   const direct = run.attempts.filter((a) => attempt.sourceAttemptIds?.includes(a.id))
   if (!direct.length || direct.some((a) => workflowHistoricalStep(run, a)?.kind === 'agent'))
     return { kind: 'legacy', sources: [] }

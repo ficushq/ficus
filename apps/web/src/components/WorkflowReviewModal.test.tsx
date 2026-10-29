@@ -647,6 +647,9 @@ test('a PDF that cannot be read falls back to the download offer', async () => {
 
 test('authored brief leads with repeat-round context and collapses independent evidence', async () => {
   const f = await fixture()
+  const download = spyOn(client.workflows, 'downloadAttachment').mockResolvedValue(
+    new TextEncoder().encode('# Staging attachment\n\nKeep the fallback.')
+  )
   try {
     const run = gateRun()
     run.state.attempts[2]!.decisionBrief = {
@@ -662,19 +665,32 @@ test('authored brief leads with repeat-round context and collapses independent e
       },
     }
     run.state.attempts[3]!.reviewBrief = { kind: 'authored', sourceAttemptIds: [3] }
+    run.attachments = { '3': [designDoc] }
     f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), run)
     await f.render(<WorkflowReviewModal stream={stream} attemptId={4} onClose={() => {}} />)
     const article = f.doc.querySelector('[aria-label="Decision brief"]')!
     expect(article).not.toBeNull()
+    expect(tabs(f)[0]?.textContent).toBe('Decision brief')
+    expect(tabs(f)[0]?.getAttribute('aria-selected')).toBe('true')
     expect(article.textContent).toContain('What changed since your last review')
     const disclosure = [...f.doc.querySelectorAll('details')].find(
-      (d) => d.querySelector('summary')?.textContent === 'Evidence and attachments'
+      (d) => d.querySelector('summary')?.textContent === 'Internal handoff'
     )!
     expect(disclosure.open).toBe(false)
     expect(article.compareDocumentPosition(disclosure) & 4).toBeTruthy()
     expect(disclosure.textContent).toContain('Read-only assessment of the head commit.')
     expect(f.doc.body.textContent).toContain('Human approval · Review the architecture')
+    expect(tabs(f).map((tab) => tab.textContent)).toEqual(['Decision brief', 'design.md'])
+    expect(download).not.toHaveBeenCalled()
+    await f.dom.act(async () => tabs(f)[1]!.click())
+    await f.settle()
+    expect(f.doc.querySelector('[role="tabpanel"]')!.textContent).toContain('Staging attachment')
+    expect(download).toHaveBeenCalledTimes(1)
+    await f.dom.act(async () => tabs(f)[0]!.click())
+    expect(f.doc.querySelector('[aria-label="Decision brief"]')).not.toBeNull()
+    expect(f.doc.querySelector('details')!.open).toBe(false)
   } finally {
+    download.mockRestore()
     await f.cleanup()
   }
 })

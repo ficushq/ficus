@@ -182,11 +182,17 @@ function ReviewLayout({
   const navigation = { onOpenAgent, onOpenWorkStream }
   const brief = workflowReviewBriefForAttempt(run.state, attempt)
   const reviewSources = [
-    ...new Map([...gate.sources, ...brief.sources].map((source) => [source.id, source])).values(),
+    ...new Map(
+      [...gate.sources, ...brief.sources, ...(brief.carriedSources ?? [])].map((source) => [source.id, source])
+    ).values(),
   ].sort((a, b) => a.id - b.id)
   // Each source attempt's own files: a re-run after a send-back shows only what that attempt attached.
   const attachments = reviewSources.flatMap((source) => run.attachments?.[String(source.id)] ?? [])
-  const [tab, setTab] = useState(HANDOFF_TAB)
+  const hasBriefDisplay = brief.kind !== 'legacy'
+  const primary = hasBriefDisplay
+    ? { id: 'decision-brief', label: 'Decision brief' }
+    : { id: HANDOFF_TAB, label: 'Handoff' }
+  const [tab, setTab] = useState(primary.id)
   const openFile = attachments.find((attachment) => attachment.id === tab)
   const tabsId = useId()
   const documentColumn = useRef<HTMLDivElement>(null)
@@ -195,7 +201,6 @@ function ReviewLayout({
     // Each tab is its own document: open it at the top, not at the last one's scroll position.
     if (documentColumn.current) documentColumn.current.scrollTop = 0
   }
-  const hasBriefDisplay = brief.kind !== 'legacy'
   const handoff = (
     <div className="mx-auto w-full max-w-[72ch] px-5 pb-16 pt-6 sm:px-8 sm:pt-8">
       {!wide && !hasBriefDisplay && (
@@ -228,28 +233,54 @@ function ReviewLayout({
       )}
     </div>
   )
-  const evidenceContent =
-    attachments.length === 0 ? (
+  const primaryContent = hasBriefDisplay ? (
+    <>
+      <div className="mx-auto w-full max-w-[72ch] space-y-6 px-5 py-6 sm:px-8 sm:py-8">
+        {!wide && <ReviewSummary stream={stream} run={run} gate={gate} {...navigation} />}
+        <p className="text-sm text-muted">
+          {humanGateSubtitle(gate.step.instructions, gate.step.name ?? gate.step.id)}
+        </p>
+        <WorkflowDecisionBrief run={run.state} attempt={attempt} />
+        {(brief.kind === 'none' || brief.kind === 'carried-forward') && (
+          <MarkdownContent variant="document" className="text-sm text-secondary">
+            {gate.step.instructions}
+          </MarkdownContent>
+        )}
+      </div>
+      <details className="border-t border-panel-border">
+        <summary className="cursor-pointer px-5 py-4 text-sm font-medium text-secondary sm:px-8">
+          Internal handoff
+        </summary>
+        {handoff}
+      </details>
+    </>
+  ) : (
+    handoff
+  )
+  const documentContent =
+    !hasBriefDisplay && attachments.length === 0 ? (
       handoff
     ) : (
       <>
         <ReviewTabs
           idPrefix={tabsId}
           attachments={attachments}
-          selected={openFile?.id ?? HANDOFF_TAB}
+          primary={primary}
+          selected={openFile?.id ?? primary.id}
           onSelect={selectTab}
         />
-        <div role="tabpanel" id={`${tabsId}-panel`} aria-labelledby={`${tabsId}-tab-${openFile?.id ?? HANDOFF_TAB}`}>
+        <div role="tabpanel" id={`${tabsId}-panel`} aria-labelledby={`${tabsId}-tab-${openFile?.id ?? primary.id}`}>
           {openFile ? (
             <div className="mx-auto w-full max-w-[72ch] px-5 pb-16 pt-6 sm:px-8 sm:pt-8">
               <AttachmentView key={openFile.id} workStreamId={stream.id} attachment={openFile} />
             </div>
           ) : (
-            handoff
+            primaryContent
           )}
         </div>
       </>
     )
+
   return (
     <div
       data-review-layout={wide ? 'columns' : 'stacked'}
@@ -263,30 +294,7 @@ function ReviewLayout({
         tabIndex={-1}
         className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain outline-none"
       >
-        {hasBriefDisplay ? (
-          <>
-            <div className="mx-auto w-full max-w-[72ch] space-y-6 px-5 py-6 sm:px-8 sm:py-8">
-              {!wide && <ReviewSummary stream={stream} run={run} gate={gate} {...navigation} />}
-              <p className="text-sm text-muted">
-                {humanGateSubtitle(gate.step.instructions, gate.step.name ?? gate.step.id)}
-              </p>
-              <WorkflowDecisionBrief run={run.state} attempt={attempt} />
-              {(brief.kind === 'none' || brief.kind === 'carried-forward') && (
-                <MarkdownContent variant="document" className="text-sm text-secondary">
-                  {gate.step.instructions}
-                </MarkdownContent>
-              )}
-            </div>
-            <details className="border-t border-panel-border">
-              <summary className="cursor-pointer px-5 py-4 text-sm font-medium text-secondary sm:px-8">
-                Evidence and attachments
-              </summary>
-              {evidenceContent}
-            </details>
-          </>
-        ) : (
-          evidenceContent
-        )}
+        {documentContent}
       </div>
       {wide ? (
         <aside

@@ -1,4 +1,5 @@
-import { brief } from '../../../../../packages/shared/src/test-fixtures/workflow-review'
+import { loadReviewContexts } from './review-context'
+import { workflowReviewBriefFixture as brief } from '@ficus/shared'
 import { getPostgresError } from '../../db/errors'
 import { externalDeliveryStreamIds } from './delivery-state'
 import { listPendingActions } from '../agents/actions'
@@ -2598,6 +2599,7 @@ test('accepted brief snapshots exact interruptions, preserves receipt retries, a
         endedAt: new Date(),
         flowContext: { workStreamId: id, attemptId: 2, stepId: 'review' },
         error: 'Raw private diagnostic, not review context.',
+        failureReason: 'Private failure reason that must never leave the database',
       },
       {
         agentId,
@@ -2610,6 +2612,13 @@ test('accepted brief snapshots exact interruptions, preserves receipt retries, a
         status: 'failed',
         endedAt: new Date(),
         flowContext: { workStreamId: randomUUID(), attemptId: 2, stepId: 'review' },
+      },
+      {
+        agentId,
+        status: 'failed',
+        startedAt: new Date('2000-01-01T00:00:00Z'),
+        endedAt: new Date(),
+        flowContext: { workStreamId: id, attemptId: 2, stepId: 'review' },
       },
     ])
     .returning()
@@ -2640,6 +2649,8 @@ test('accepted brief snapshots exact interruptions, preserves receipt retries, a
       .sort()
   )
   expect(JSON.stringify(accepted)).not.toContain('Raw private diagnostic')
+  expect(JSON.stringify(accepted)).not.toContain('Private failure reason')
+  expect(JSON.stringify(accepted)).not.toContain('failureReason')
 })
 
 test('explicit human-directed return is atomic on rejection and snapshots bounded context on acceptance', async () => {
@@ -2736,4 +2747,41 @@ test('dedicated PR reviews keep the agent until live merge or closure, including
     api.mockRestore()
     stop.mockRestore()
   }
+})
+
+test('review interruption reads are bounded to the latest 200 stream-lifetime failures and expose no reason text', async () => {
+  const definition = structuredClone(flow)
+  definition.steps[1]!.outcomes.approved = { next: 'bounded-gate' }
+  definition.steps.push({
+    id: 'bounded-gate',
+    kind: 'human-approval',
+    approver: 'reviewers',
+    instructions: 'Review staging.',
+    output: 'Decision.',
+    outcomes: { yes: { next: 'finish' } },
+  })
+  const id = await create('active', definition)
+  await advance(id, 'completed')
+  const run = (await getFlow(id))!
+  const started = Date.now()
+  const rows = await db
+    .insert(executions)
+    .values(
+      Array.from({ length: 201 }, (_, index) => ({
+        agentId: run.attemptAgents['2']!,
+        status: 'failed' as const,
+        flowContext: { workStreamId: id, attemptId: 2, stepId: 'review' },
+        startedAt: new Date(started + index * 1000),
+        endedAt: new Date(started + index * 1000 + 100),
+        failureReason: 'Private reason text',
+        error: 'Private execution diagnostic',
+      }))
+    )
+    .returning({ id: executions.id })
+  const contexts = await loadReviewContexts(db, id, run.state, run)
+  const interrupted = contexts['2']![0]!.interruptedExecutions
+  expect(interrupted).toHaveLength(200)
+  expect(interrupted.map((item) => item.executionId)).not.toContain(rows[0]!.id)
+  expect(JSON.stringify(contexts)).not.toContain('Private')
+  expect(JSON.stringify(contexts)).not.toContain('failureReason')
 })

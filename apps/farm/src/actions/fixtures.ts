@@ -191,6 +191,7 @@ export function workflowRun(
       activeAttemptId: kind === 'gate' ? 2 : null,
       attempts,
       returns: [],
+      completedStepIds: [],
       definition: { steps, completion: { mode: 'review-approval' } },
     },
   } as unknown as WorkflowRunDetail

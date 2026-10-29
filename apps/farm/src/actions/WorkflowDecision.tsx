@@ -1,9 +1,14 @@
+import { WorkflowBriefDocuments } from './WorkflowBriefDocuments'
 import { useId, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { WorkflowRunDetail } from '@ficus/client-core'
 import {
   activeWorkflowAttempts,
   workflowReviewBlockingWaits,
+  workflowReviewBriefForAttempt,
+  workflowIncomingAttempts,
+  workflowCompletionTargets,
+  workStreamWaitActor,
   isWorkflowHumanGateWait,
   effectiveWorkflowStep,
   deliveryPullRequests,
@@ -43,9 +48,19 @@ export function outcomeLabel(outcome: string): string {
 }
 
 /** Where an outcome sends the work, so the decider knows the effect first. */
-export function outcomeEffect(run: WorkflowRun, transition: WorkflowTransition): string {
+export function outcomeEffect(
+  run: WorkflowRun,
+  transition: WorkflowTransition,
+  attempt?: WorkflowAttempt,
+  outcome?: string
+): string {
   if ('returnTo' in transition) return `Sends back to ${stepName(run, transition.returnTo)}`
-  const targets = 'parallel' in transition ? transition.parallel : [transition.next]
+  const targets =
+    attempt && outcome
+      ? workflowCompletionTargets(run, attempt, outcome)
+      : 'parallel' in transition
+        ? transition.parallel
+        : [transition.next]
   if (targets.length === 1 && targets[0] === 'finish') return 'Finishes the flow'
   return `Continues to ${targets.map((target) => (target === 'finish' ? 'finish' : stepName(run, target))).join(', ')}`
 }
@@ -200,18 +215,62 @@ function HumanGate({
   const restricted = step.kind === 'human-approval' && step.approver === 'assigned-reviewers' && assigned.length > 0
   const canDecide =
     can('workstreams:review') && (!restricted || (identity?.type === 'user' && assigned.includes(identity.userId)))
-  const sources = (attempt.sourceAttemptIds ?? [])
-    .map((id) => run.state.attempts.find((entry) => entry.id === id))
-    .filter((entry): entry is WorkflowAttempt => !!entry)
+  const brief = workflowReviewBriefForAttempt(run.state, attempt)
+  const sources = [
+    ...new Map(
+      [...workflowIncomingAttempts(run.state, attempt), ...brief.sources, ...(brief.carriedSources ?? [])].map(
+        (source) => [source.id, source]
+      )
+    ).values(),
+  ]
+  const materials = (
+    <>
+      <ActionText>{step.instructions}</ActionText>
+      <ReviewMaterials stream={stream} run={run} attempts={sources} onOpenAgent={onOpenAgent} />
+    </>
+  )
   const firstForward = Object.entries(step.outcomes).find(([, transition]) => !('returnTo' in transition))?.[0]
   const title = step.name ?? step.id
 
   return (
     <section className="g-decision" aria-label={`Review ${title}`}>
-      <p className="g-decision-tag">{canDecide ? 'Your review' : 'Awaiting review'}</p>
+      <p className="g-decision-tag">
+        {blockingWaits.length ? 'Review queued' : canDecide ? 'Your review' : 'Awaiting review'}
+      </p>
       <h3 className="g-decision-title">{title}</h3>
-      <ActionText>{step.instructions}</ActionText>
-      <ReviewMaterials stream={stream} run={run} attempts={sources} onOpenAgent={onOpenAgent} />
+      {brief.kind !== 'legacy' && (
+        <p className="g-action-note">
+          {step.kind === 'human-approval' ? 'Human approval' : 'Decision awaiting your choice'}
+        </p>
+      )}
+      <WorkflowBriefDocuments run={run} attempt={attempt} instructions={step.instructions}>
+        {materials}
+      </WorkflowBriefDocuments>
+      {blockingWaits.length > 0 && (
+        <section aria-label="Review blockers" className="g-action-note">
+          <p>
+            This review is queued. You can read it now, but you cannot decide until the following blockers are cleared.
+          </p>
+          <ul>
+            {blockingWaits.map((wait) => (
+              <li key={wait.id}>
+                {wait.type === 'manual'
+                  ? workStreamWaitActor(wait) === 'owner'
+                    ? 'Waiting on owner:'
+                    : workStreamWaitActor(wait) === 'manager'
+                      ? 'Waiting on manager:'
+                      : 'Waiting on input:'
+                  : wait.type === 'question'
+                    ? 'Waiting for an answer:'
+                    : wait.type === 'dependency'
+                      ? 'Waiting on a dependency:'
+                      : 'Waiting on another review:'}{' '}
+                {wait.message || 'No details were provided.'}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {canDecide ? (
         <>
           <label className="g-field" htmlFor={`${notesId}-notes`}>
@@ -235,7 +294,7 @@ function HumanGate({
                 key={outcome}
                 verb={outcomeLabel(outcome)}
                 busyVerb={`${outcomeLabel(outcome)}…`}
-                help={outcomeEffect(run.state, transition)}
+                help={outcomeEffect(run.state, transition, attempt, outcome)}
                 tone={outcome === firstForward ? 'harvest' : 'returnTo' in transition ? 'prune' : 'plain'}
                 busy={advance.isPending && advance.variables === outcome}
                 disabled={advance.isPending || !evidence.trim() || blockingWaits.length > 0}
@@ -243,9 +302,6 @@ function HumanGate({
               />
             ))}
           </div>
-          {blockingWaits.length > 0 && (
-            <p className="g-action-note">Resolve the other open waits on this step before deciding.</p>
-          )}
         </>
       ) : (
         <p className="g-action-note">
@@ -417,6 +473,7 @@ function ReviewMaterials({
               )}
             </p>
             {attempt.evidence && <ActionText>{attempt.evidence}</ActionText>}
+            {attempt.feedback && <ActionText>{attempt.feedback}</ActionText>}
           </div>
         )
       })}

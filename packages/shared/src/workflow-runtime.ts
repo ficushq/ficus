@@ -233,24 +233,41 @@ function startAttempt(
   reviewBrief?: WorkflowReviewBriefBinding
 ): void {
   const step = stepById(state, stepId)
-  if (step.kind === 'human-approval' && freshSession) reviewBrief = { kind: 'none' }
+  if (step.kind === 'human-approval' && freshSession && reviewBrief?.kind !== 'legacy') reviewBrief = { kind: 'none' }
   if (step.kind === 'human-approval' && !reviewBrief) {
-    const sources = state.attempts.filter((a) => sourceAttemptIds.includes(a.id))
-    const producer = sources.find((a) => a.settledVersion === state.version)
-    if (producer && effectiveWorkflowStep(state, producer).kind === 'agent') {
-      const authored = [
-        ...new Set([
-          ...sources
-            .filter((a) => a.decisionBrief && effectiveWorkflowStep(state, a).kind === 'agent')
-            .map((a) => a.id),
-          ...workflowCarryForwardSources(state, sourceAttemptIds).map((a) => a.id),
-        ]),
-      ].sort((a, b) => a - b)
-      if (authored.length) reviewBrief = { kind: 'authored', sourceAttemptIds: authored }
-    } else {
-      const carried = workflowCarryForwardSources(state, sourceAttemptIds)[0]
-      reviewBrief = carried ? { kind: 'carried-forward', sourceAttemptId: carried.id } : { kind: 'none' }
-    }
+    const candidates = [
+      ...new Map(
+        [
+          ...state.attempts.filter(
+            (a) =>
+              sourceAttemptIds.includes(a.id) && a.decisionBrief && effectiveWorkflowStep(state, a).kind === 'agent'
+          ),
+          ...workflowCarryForwardSources(state, sourceAttemptIds),
+        ].map((a) => [a.id, a])
+      ).values(),
+    ]
+    // A settled human round has already consumed its authored submission. A later
+    // human-only return may carry that source, but cannot present it as newly authored.
+    const reviewedSources = new Set(
+      workflowEarlierHumanDecisions(state, stepId).flatMap((gate) =>
+        gate.reviewBrief?.kind === 'authored' ? gate.reviewBrief.sourceAttemptIds : []
+      )
+    )
+    const authored = candidates.filter(
+      (a) => !reviewedSources.has(a.id) && a.decisionBrief!.contexts.some((c) => c.gateStepId === stepId)
+    )
+    const carried = candidates
+      .filter((a) => !authored.includes(a))
+      .sort((a, b) => b.decisionBrief!.submittedVersion - a.decisionBrief!.submittedVersion || b.id - a.id)[0]
+    reviewBrief = authored.length
+      ? {
+          kind: 'authored',
+          sourceAttemptIds: authored.map((a) => a.id).sort((a, b) => a - b),
+          ...(carried ? { carriedSourceAttemptIds: [carried.id] } : {}),
+        }
+      : carried
+        ? { kind: 'carried-forward', sourceAttemptId: carried.id }
+        : { kind: 'none' }
   }
   const exhausted =
     state.attempts.slice(state.attemptEpoch ?? 0).filter((attempt) => attempt.stepId === stepId).length >=
@@ -297,7 +314,7 @@ function finishState(state: WorkflowRun): WorkflowRun {
       next.freshSession,
       next.sourceAttemptIds,
       next.feedback,
-      next.reviewBrief
+      next.reviewBrief ?? (stepById(state, next.stepId).kind === 'human-approval' ? { kind: 'legacy' } : undefined)
     )
   }
   if (state.status === 'paused' || activeWorkflowAttempts(state).length || state.pendingStarts?.length) return state
@@ -769,7 +786,7 @@ export function validateWorkflowDecisionBrief(run: WorkflowRun, command: Workflo
       : workflowReturnReviewTargets(run, attempt, command.targetStepId, command.resumeAt)
   if (targets.length && !command.decisionBrief)
     throw new Error(
-      `A decisionBrief is required for ${command.action === 'complete' ? `outcome '${command.outcome}'` : `return to '${command.targetStepId}'`} because it sends this agent's result to human approval '${targets.join("', '")}'.`
+      `A decisionBrief is required for ${command.action === 'complete' ? `outcome '${command.outcome}'` : `return to '${command.targetStepId}'`} because it sends this agent's result to human approval '${targets.join("', '")}'. Add decisionBrief to the same advance command JSON, alongside evidence for complete or feedback for return, with decision, recommendation, approvalEffect and risks. Add changesSinceLastReview after an earlier decision on the same gate. Write normal readable prose; preserve exact resource identifiers.`
     )
   const previous = targets
     .map((id) => ({ id, decision: workflowEarlierHumanDecisions(run, id)[0] }))

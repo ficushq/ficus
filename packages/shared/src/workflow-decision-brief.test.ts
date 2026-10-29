@@ -81,3 +81,27 @@ test('shorthand outside literals is rejected in every field; normal abbreviation
     ).toBe(true)
   }
 })
+
+test('ordinary unquoted technical literals remain intact in every brief field', () => {
+  for (const field of ['decision', 'recommendation', 'approvalEffect', 'risks', 'changesSinceLastReview']) {
+    for (const text of [
+      'Approve deploying the change to ficus.sh after editing the .env file.',
+      'This updates apps/core/src/services/workflows/execution.ts only.',
+      'It touches README.md and Node.js runtime settings.',
+      'Approve resizing the original cluster to 1 GiB.',
+      'Contact deploy@example.test about @ficus/shared version v1.2.3-beta.1.',
+    ]) {
+      const result = parse({ ...brief, [field]: text })
+      expect(result.success).toBe(true)
+      if (result.success && result.data.action === 'complete')
+        expect(result.data.decisionBrief?.[field as keyof typeof brief]).toBe(text)
+    }
+  }
+})
+test('prose failures identify the offending token, rather than asking for blind rewrites', () => {
+  for (const token of ['Approve.This', 'approveTheExactRetryPacket', 'pls']) {
+    const result = parse({ ...brief, decision: `Please ${token} for the staging design.` })
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error.issues.some((issue) => issue.message.includes(token))).toBe(true)
+  }
+})

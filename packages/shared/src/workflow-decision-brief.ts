@@ -11,8 +11,8 @@ export const WORKFLOW_DECISION_BRIEF_LIMITS = {
 /** Mask literal data, never change the submitted text. This linter is deliberately field-local. */
 function authoredProse(text: string): string {
   return text.replace(
-    /```[\s\S]*?```|`[^`\n]*`|\]\([^)]*\)|https?:\/\/[^\s]+|(?<![\w])(?:\.{0,2}\/|~\/|[A-Za-z]:\\)[\w./\\-]+|\b[\da-f]{8}-[\da-f-]{27,}\b|\b[\da-f]{40,64}\b|"[^"\n]*"|“[^”]*”|‘[^’]*’|(?<![\p{L}])'[^'\n]+'(?![\p{L}])/giu,
-    ' '
+    /```[\s\S]*?```|`[^`\n]*`|\]\([^)]*\)|https?:\/\/[^\s]+|(?<![\w])(?:\.{0,2}\/|~\/|[A-Za-z]:\\)[\w./\\-]+|(?<![\w])(?!(?:[Ww]\/[Oo]|[Bb]\/[Cc])\b)(?:[\w@.-]+\/)[\w./@+-]+|\b[\w.+-]+@[\w.-]+\b|\b[\w+-]+(?:\.[a-z0-9_][\w-]*)+\b|(?<![\w])\.[a-z][\w.-]*|\b[\da-fA-F]{8}-[\da-fA-F-]{27,}\b|\b[\da-fA-F]{40,64}\b|"[^"\n]*"|“[^”]*”|‘[^’]*’|(?<![\p{L}])'[^'\n]+'(?![\p{L}])/gu,
+    (literal) => ` ${literal.match(/[.!?]+$/)?.[0] ?? ''} `
   )
 }
 
@@ -26,18 +26,18 @@ export function decisionBriefProseError(
     'abbreviation'
   )
   const words = [...new Intl.Segmenter(undefined, { granularity: 'word' }).segment(prose)].filter((s) => s.isWordLike)
-  const compressed =
-    /[.!?][A-Za-z]|[a-zA-Z]{33,}|\b(?:pls|plz|thx|apprv|reqd|rdy|b4)\b|\bw\/(?:o\b)?|\bb\/c\b/i.test(prose) ||
-    (prose.match(/\b[a-z][a-zA-Z]+\b/g) ?? []).some((word) => (word.match(/[a-z][A-Z]/g)?.length ?? 0) >= 3)
-  if (
-    [...text].some((c) => {
-      const n = c.charCodeAt(0)
-      return (n < 32 && ![9, 10, 13].includes(n)) || [127, 0x200b, 0x2060, 0xfeff].includes(n)
-    }) ||
-    compressed ||
-    words.length < (field === 'decision' ? 3 : 2)
-  )
-    return `decisionBrief.${field} must be readable prose with normal spacing and complete words.`
+  const token =
+    prose.match(/\b[A-Za-z]+[.!?][A-Z][a-z]+\b|[a-zA-Z]{33,}/)?.[0] ??
+    prose.match(/\b(?:pls|plz|thx|apprv|reqd|rdy|b4)\b|\bw\/(?:o\b)?|\bb\/c\b/i)?.[0] ??
+    (prose.match(/\b[a-z][a-zA-Z]+\b/g) ?? []).find((word) => (word.match(/[a-z][A-Z]/g)?.length ?? 0) >= 3)
+  const control = [...text].find((c) => {
+    const n = c.charCodeAt(0)
+    return (n < 32 && ![9, 10, 13].includes(n)) || [127, 0x200b, 0x2060, 0xfeff].includes(n)
+  })
+  if (control || token || words.length < (field === 'decision' ? 3 : 2)) {
+    const offender = control ? `U+${control.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}` : token
+    return `decisionBrief.${field} must be readable prose with normal spacing and complete words.${offender ? ` Check token ${JSON.stringify(offender)}.` : ' Add an explanatory sentence, not only literal identifiers.'}`
+  }
   if (
     field === 'decision' &&
     (/^\s*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s)|```/m.test(text) ||

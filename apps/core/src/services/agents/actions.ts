@@ -1,5 +1,4 @@
 import { isHumanFlowWait } from '../workflows/wait-policy'
-import { listOpenWaitsForStreams } from '../work-streams/waits'
 import { recoveryRecipients, recoveryRecipientsById } from '../recovery/recipients'
 import {
   workflowReviewBlockingWaits,
