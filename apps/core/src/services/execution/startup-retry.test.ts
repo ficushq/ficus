@@ -1,8 +1,9 @@
+import { HostCapacityUnavailableError } from '../machines/host-capacity-store'
 import { coalesceVmProvision } from '../sandbox/vm/provision-flight'
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
-import { agents, agentTypes, executions, executionAdmissionReservations } from '../../db/schema'
+import { agents, agentTypes, executions, executionAdmissionReservations, vmBoxProvisionAttempts } from '../../db/schema'
 import { Agent } from '../../entities/Agent'
 import { AgentType } from '../../entities/AgentType'
 import { Execution } from '../../entities/Execution'
@@ -11,6 +12,8 @@ import {
   BOX_PORT_BUSY_RETRY_DELAYS_MS,
   MACHINE_STARTUP_RETRY_DELAYS_MS,
   STARTUP_RETRY_DELAYS_MS,
+  capacityWaitDelay,
+  capacityRefusalDetails,
   startupRetryCode,
   startupRetryDelays,
   startupRetryNotice,
@@ -28,6 +31,14 @@ const connectionFailure = () =>
   Object.assign(new Error('too many connections for role "test_tenant"'), { code: '53300' })
 
 describe('startup retry classification', () => {
+  it('backs off capacity polling and stops at a fixed thirty-minute wall-clock ceiling', () => {
+    const now = Date.now()
+    expect(capacityWaitDelay(null, now)).toBe(5_000)
+    expect(capacityWaitDelay(new Date(now - 3 * 60_000), now)).toBe(30_000)
+    expect(capacityWaitDelay(new Date(now - 12 * 60_000), now)).toBe(60_000)
+    expect(capacityWaitDelay(new Date(now - 30 * 60_000), now)).toBeUndefined()
+  })
+
   it.each([
     '53300',
     '57P01',
@@ -133,6 +144,150 @@ describe('durable startup retry', () => {
     await db.delete(executions).where(eq(executions.agentId, agent.id))
     await db.delete(agents).where(eq(agents.id, agent.id))
     await db.delete(agentTypes).where(eq(agentTypes.id, typeId))
+  })
+
+  it('fails unknown capacity immediately with the machine and reason instead of polling forever', async () => {
+    const machineId = crypto.randomUUID()
+    const runner = spyOn(runners, 'createRunner').mockRejectedValue(
+      new HostCapacityUnavailableError({ allowed: false, machineId, reason: 'unknown' })
+    )
+    try {
+      const execution = await agent.queueExecution({ message: 'Missing host CPU facts' })
+      expect(await execution.start()).toBe(true)
+      await execution.run()
+      await execution.reload()
+      expect(execution.status).toBe('failed')
+      expect(execution.error).toContain(machineId)
+      expect(execution.error).toContain('unknown')
+    } finally {
+      runner.mockRestore()
+    }
+  })
+
+  it('keeps the first capacity-wait timestamp across pickups, backs off, and fails after the wall-clock ceiling', async () => {
+    const machineId = crypto.randomUUID()
+    const runner = spyOn(runners, 'createRunner').mockRejectedValue(
+      new HostCapacityUnavailableError({ allowed: false, machineId, reason: 'quota' })
+    )
+    try {
+      let execution = await agent.queueExecution({ message: 'Bounded capacity wait' })
+      expect(await execution.start()).toBe(true)
+      await execution.run()
+      execution = await Execution.mustFind(execution.id)
+      expect(execution.startupCapacityWaitAt).toBeInstanceOf(Date)
+      expect(execution.startupRetryCount).toBe(0)
+      const firstWait = new Date(Date.now() - 3 * 60_000)
+      await db
+        .update(executions)
+        .set({ startupCapacityWaitAt: firstWait, startupRetryAt: new Date(0) })
+        .where(eq(executions.id, execution.id))
+      execution = await Execution.mustFind(execution.id)
+      expect(await execution.start()).toBe(true)
+      const before = Date.now()
+      await execution.run()
+      execution = await Execution.mustFind(execution.id)
+      expect(execution.status).toBe('queued')
+      expect(execution.startupCapacityWaitAt?.getTime()).toBe(firstWait.getTime())
+      expect(execution.startupRetryAt!.getTime() - before).toBeGreaterThanOrEqual(29_000)
+      await db
+        .update(executions)
+        .set({ startupCapacityWaitAt: new Date(Date.now() - 31 * 60_000), startupRetryAt: new Date(0) })
+        .where(eq(executions.id, execution.id))
+      execution = await Execution.mustFind(execution.id)
+      expect(await execution.start()).toBe(true)
+      await execution.run()
+      execution = await Execution.mustFind(execution.id)
+      expect(execution.status).toBe('failed')
+      expect(execution.startupRetryCount).toBe(0)
+      expect(execution.error).toContain('30 minutes')
+      expect(execution.error).toContain(machineId)
+      expect(execution.error).toContain('quota')
+    } finally {
+      runner.mockRestore()
+    }
+  })
+
+  it('preserves allowlisted host and reason details through durable provision failure replay', async () => {
+    const sandboxId = `agent_capacity_replay_${crypto.randomUUID()}`,
+      machineId = crypto.randomUUID()
+    const [attempt] = await db
+      .insert(vmBoxProvisionAttempts)
+      .values({
+        sandboxId,
+        status: 'failed',
+        failureClass: 'capacity:machine_capacity',
+        capacityFailure: { machineId, reason: 'unknown' },
+        retryAt: new Date(Date.now() + 60_000),
+      })
+      .returning()
+    try {
+      let replay: unknown
+      try {
+        await coalesceVmProvision(
+          sandboxId,
+          async () => {
+            throw new Error('must not provision')
+          },
+          async () => {}
+        )
+      } catch (error) {
+        replay = error
+      }
+      expect(startupRetryCode(replay)).toBe('machine_capacity')
+      expect(capacityRefusalDetails(replay)).toEqual({ machineId, reason: 'unknown' })
+    } finally {
+      await db.delete(vmBoxProvisionAttempts).where(eq(vmBoxProvisionAttempts.id, attempt.id))
+    }
+  })
+
+  it('successful startup clears the old capacity window before dispatching the model', async () => {
+    let dispatched = false
+    const execution = await agent.queueExecution({ message: 'Resume after capacity clears' })
+    await db
+      .update(executions)
+      .set({ startupCapacityWaitAt: new Date(Date.now() - 20 * 60_000) })
+      .where(eq(executions.id, execution.id))
+    await execution.reload()
+    const runner = spyOn(runners, 'createRunner').mockResolvedValue({
+      run: async () => {
+        const [row] = await db.select().from(executions).where(eq(executions.id, execution.id))
+        expect(row.startupCapacityWaitAt).toBeNull()
+        dispatched = true
+      },
+    } as any)
+    try {
+      expect(await execution.start()).toBe(true)
+      await execution.run()
+      expect(dispatched).toBe(true)
+    } finally {
+      runner.mockRestore()
+    }
+  })
+
+  it('capacity waits requeue repeatedly without consuming the startup failure budget', async () => {
+    const capacity = Object.assign(new Error('host capacity'), { name: 'HostCapacityUnavailableError' })
+    const runner = spyOn(runners, 'createRunner').mockRejectedValue(capacity)
+    try {
+      let execution = await agent.queueExecution({ message: 'Keep my place while capacity is busy' })
+      const id = execution.id
+      await db.update(executions).set({ startupRetryCount: 2 }).where(eq(executions.id, id))
+      execution = await Execution.mustFind(id)
+      for (let i = 0; i < MACHINE_STARTUP_RETRY_DELAYS_MS.length + 2; i++) {
+        expect(await execution.start()).toBe(true)
+        await execution.run()
+        execution = await Execution.mustFind(id)
+        expect(execution.status).toBe('queued')
+        expect(execution.startupRetryCount).toBe(2)
+        expect(execution.startupRetryAt).not.toBeNull()
+        await db
+          .update(executions)
+          .set({ startupRetryAt: new Date(0) })
+          .where(eq(executions.id, id))
+        execution = await Execution.mustFind(id)
+      }
+    } finally {
+      runner.mockRestore()
+    }
   })
 
   it('retries startup connection exhaustion with durable backoff and stops after three retries', async () => {
@@ -496,4 +651,12 @@ describe('durable startup retry', () => {
       runner.mockRestore()
     }
   })
+})
+
+it('host quota/startup-lane deferral preserves structured automatic retry through shared failures', () => {
+  const owner = Object.assign(new Error('capacity'), { name: 'HostCapacityUnavailableError' })
+  const follower = Object.assign(new Error('shared'), { name: 'MachineNotReadyError', machineStatus: 'capacity' })
+  expect(startupRetryCode(owner)).toBe('machine_capacity')
+  expect(startupRetryCode(new Error('wrapper', { cause: follower }))).toBe('machine_capacity')
+  expect(startupRetryNotice(owner)).toContain('capacity')
 })

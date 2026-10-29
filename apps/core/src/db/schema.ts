@@ -406,6 +406,8 @@ export const executions = pgTable(
     executionVersion: integer('execution_version').notNull().default(0),
     startupRetryCount: integer('startup_retry_count').notNull().default(0),
     startupRetryAt: timestamp('startup_retry_at', { withTimezone: true }),
+    /** First host-capacity wait; survives polling/restarts without spending failure retries. */
+    startupCapacityWaitAt: timestamp('startup_capacity_wait_at', { withTimezone: true }),
     message: text('message'),
     imageIds: uuid('image_ids').array(),
     wakeEligible: boolean('wake_eligible').notNull().default(true),
@@ -3408,6 +3410,11 @@ export const vmBoxProvisionAttempts = pgTable(
     sandboxId: text('sandbox_id').notNull(),
     status: text('status').notNull().default('running'),
     failureClass: text('failure_class'), // provision | abandoned | placement[:startup code] | retry:<startup code>
+    /** Allowlisted host identity/reason only; never remote output or configuration. */
+    capacityFailure: jsonb('capacity_failure').$type<{
+      machineId?: string
+      reason?: 'busy' | 'unknown' | 'quota' | 'starting'
+    }>(),
     failureCount: integer('failure_count').notNull().default(0),
     retryAt: timestamp('retry_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -3416,6 +3423,41 @@ export const vmBoxProvisionAttempts = pgTable(
   (table) => [
     index('vm_box_provision_attempts_sandbox_idx').on(table.sandboxId, table.id),
     index('vm_box_provision_attempts_completed_idx').on(table.completedAt),
+  ]
+)
+
+/** Durable host quota reservations. Lifetimes follow their owning stream,
+ * execution or coalesced provision generation, never a timeout that can expire
+ * while physical work still runs. Shared sandbox keys are charged only once. */
+export const machineCapacityClaims = pgTable(
+  'machine_capacity_claims',
+  {
+    ownerKey: text('owner_key').notNull(),
+    kind: text('kind').$type<'stream' | 'execution' | 'provision'>().notNull(),
+    machineId: uuid('machine_id')
+      .notNull()
+      .references(() => machines.id, { onDelete: 'cascade' }),
+    sandboxId: text('sandbox_id').notNull(),
+    streamId: uuid('stream_id').references(() => workStreams.id, { onDelete: 'cascade' }),
+    // Association only: deleting a stream must not release a still-running execution.
+    workStreamId: uuid('work_stream_id').references(() => workStreams.id, { onDelete: 'set null' }),
+    executionId: uuid('execution_id').references(() => executions.id, { onDelete: 'cascade' }),
+    provisionAttemptId: bigint('provision_attempt_id', { mode: 'number' }).references(() => vmBoxProvisionAttempts.id, {
+      onDelete: 'cascade',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.ownerKey, table.machineId, table.sandboxId] }),
+    index('machine_capacity_claims_machine_idx').on(table.machineId),
+    check(
+      'machine_capacity_claims_owner_check',
+      sql`
+      (${table.kind} = 'stream' AND ${table.streamId} IS NOT NULL AND ${table.executionId} IS NULL AND ${table.provisionAttemptId} IS NULL)
+      OR (${table.kind} = 'execution' AND ${table.streamId} IS NULL AND ${table.executionId} IS NOT NULL AND ${table.provisionAttemptId} IS NULL)
+      OR (${table.kind} = 'provision' AND ${table.streamId} IS NULL AND ${table.provisionAttemptId} IS NOT NULL AND ${table.executionId} IS NULL)
+    `
+    ),
   ]
 )
 

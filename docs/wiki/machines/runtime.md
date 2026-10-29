@@ -1424,6 +1424,119 @@ runs its **own rootless dockerd** instead (spec §5):
   It never enables the rootful daemon, adds host privileges, changes global
   delegation, or removes security/port restrictions. CPU quota bounds scheduled
   CPU time, not host load averages or all sources of I/O pressure.
+- **Database-capable squad memory sizing.** For `squad_*` boxes provisioned
+  with `--with-docker`, `box-provision.sh` sets `MemoryHigh` to **45% of host
+  MemTotal**, instead of the default 35%. This is 90% of the unchanged
+  **50% MemoryMax**: test databases, their clients, builds and the box server
+  share one working set, with 10% of the hard cap left for reclaim before a
+  slice-local OOM. Docker capability is the stable provisioning predicate; the
+  script does not inspect transient running containers or raise/lower limits
+  every time a test database starts/stops. Agent boxes, system-manager boxes,
+  non-Docker squads and unknown roles retain 35%. CPU remains half the host's
+  cores (minimum one core), and `TasksMax` remains 8192.
+
+  This chooses bounded soft-cap headroom rather than relocating test databases
+  or increasing the hard cap. It does **not** reserve RAM, guarantee that all
+  colocated boxes fit simultaneously, or fix CPU/I/O contention. Workload
+  concurrency still needs admission control; raising the soft cap allows more
+  resident memory before reclaim, while the hard host-share boundary remains
+  unchanged. Small hosts receive the same proportional bound, not an absolute
+  floor that could exceed their capacity. Values are floored to whole KiB in
+  the provisioner; kernel readback can additionally round down to page size.
+
+  The motivating measurement was a **5.97 GB** historical peak against a
+  **5.87 GB** soft cap on a database-running squad. Lifetime `memory.events`
+  counts are not evidence of current pressure: retain timestamped per-run
+  deltas in the validation report rather than treating them as a current rate.
+  Provisioning fixtures prove selection and convergence, not live-host
+  enforcement or workload improvement.
+
+  After the updated artifact reaches the target through authorized normal
+  provisioning, read that **same parent slice**, not just the Docker service:
+  `memory.high`, `memory.max`, `cpu.max`, `memory.current`, `memory.peak`,
+  `memory.events`, `memory.pressure`, `cpu.pressure` and `cpu.stat`. Capture UTC
+  and monotonic timestamps immediately before and after the same focused
+  workload, plus host load and available memory. Compare counter/PSI **deltas**
+  over elapsed time, retain the test completion summary, and tear down only
+  the run's own test database. Verify the new soft-cap readback and unchanged
+  hard/CPU caps first. A quiet run with zero new `high` events is not proof that
+  the historical pressure has been solved; evaluate a representative busy
+  window too, within the normal concurrency budget, without synthetic memory
+  exhaustion. Missing target convergence or after-state data remains an open
+  verification requirement, not something a dry-run fixture can satisfy.
+
+- **Machine-wide CPU admission.** VM work uses a **1.5 × host CPU** budget of
+  reserved box quotas. Each distinct sandbox costs the unchanged kernel quota,
+  `max(1, host CPUs / 2)`; a shared squad box is charged once, not once per agent.
+  This is a forecast of admitted demand, not a sampled utilization threshold or
+  a change to CPU quotas, MemoryMax, the unit packer, or existing cloud authority.
+  Unknown CPU facts defer new demand. Already-accounted demand can continue
+  even when a host is above the target or its CPU facts temporarily disappear;
+  admission does not evict work. An empty one-CPU host admits one minimal
+  private-plus-shared owner set (two one-core quotas); this bounded exception
+  does not admit further demand or change either kernel quota.
+
+  Active streams reserve a pending private participant plus their shared box
+  before dispatch creates agents. Actual execution identities replace the
+  placeholder; additional fork participants consume additional private-box quota.
+  Shared participants, including inherited private boxes, are canonicalized
+  transactionally across their streams: later membership edits cannot silently
+  enlarge an already-admitted reservation. Claims move atomically with the
+  authoritative box bind, so tentative placement does not leave phantom charges.
+  Recovery requeues retain their admitted footprint, including pre-upgrade turns
+  that actually started before durable claim records existed (`run_started_at`,
+  not the creation-time `started_at`). Never-started queues do not count as
+  admitted work. Queued owners that are terminated, pending dormancy, dormant
+  without wake eligibility, or blocked by a paused stream release their demand.
+  Creation, manual admission and automatic promotion respect the host budget,
+  including squads with no stream-count cap. Execution pickup commits its claim
+  with the queued-to-running transition; refusal leaves work queued without
+  starting a runner. Pinned/sticky placement waits rather than moving live boxes;
+  pooled placement tries eligible existing hosts. Quota saturation never causes
+  a new cloud host to be provisioned. Normal first-host bootstrap remains possible,
+  but the concrete physical generation must claim its resolved host before setup.
+
+  Short transactional, machine-wide claims serialize the decision. No transaction
+  or extra DB session spans SSH. Physical setup has **one startup lane per host**,
+  owned by a live coalesced provision generation **only when the host is saturated**;
+  below budget, setups can run concurrently. Different hosts can progress and
+  same-box followers do not consume another lane. Short lock contention uses
+  bounded jittered retries, not an indefinitely blocking lock inside lifecycle
+  transactions. Capacity waits requeue without spending startup retries or increasing
+  provisioning backoff. A durable first-wait timestamp caps the episode at
+  30 minutes: polling slows from 5 seconds to 30 seconds after 2 minutes, then
+  60 seconds after 10 minutes. Unknown CPU capacity fails immediately. Terminal
+  notices include the machine ID and refusal reason, including shared-failure
+  followers; only those allowlisted details are persisted, never remote output.
+  Successful runner startup clears the wait window before model dispatch.
+  Actual startup failures retain their separate bounded retry budget.
+
+  Claims follow lifecycle records, not expiring permits. Abandoned/interrupted
+  work with an unverified binding remains charged conservatively, but a dead
+  generation cannot hold a permanent startup lane. A running provision claim
+  requires its actual granted PostgreSQL session advisory lock in this database;
+  a crash that leaves a running row cannot preserve ownership after the session
+  disappears. Unverified stop/ensuring bindings remain conservatively observed
+  as remote demand, without acquiring a startup lane. Successful same-box recovery,
+  a later confirmed stop, or normal box removal releases the uncertain claim.
+  Normal removal deletes the binding after remote teardown; a capacity refusal
+  or an unrelated failed retry alone is not evidence that remote work stopped.
+  Same-box recovery does not double charge its predecessor. Referenced generations
+  are retained; settled claim rows are reclaimed on subsequent claims. Optional
+  devbox prewarm uses the same full-generation gate, including its cleanup.
+  Pre-existing running turns, provisioning and recent box activity are accounted
+  conservatively (recent command/terminal touches have a 60-second cooldown).
+  This does not schedule unmanaged host processes or guarantee memory/I/O capacity.
+
+  The squad header separates **Host load** (one-minute load / host CPUs) from
+  **quota used / budget** (reserved demand). Its details identify host memory,
+  the oversubscription target, and capacity deferral. Missing samples are not zeros.
+  `SandboxStatus.hostCapacity` is additive, contains aggregate numbers only, and
+  uses database reads without probing or waking an idle box. Per-box pressure
+  attribution remains separate from this host admission forecast. Representative
+  burst verification must still collect timestamped `cpu.stat`, `memory.events`
+  and PSI deltas across the host's boxes; passing claim fixtures is not live proof.
+
 - **Existing boxes / recreation.** The script is content-hashed into provisioning
   drift, so existing boxes receive this wiring on their next full provision or
   recreation, not by a live fleet migration. Installing/changing the drop-in

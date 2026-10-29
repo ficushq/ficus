@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import {
   coalesceVmProvision,
+  currentVmProvisionAttemptId,
   provisionBackoffMs,
   VmProvisionFailedError,
   VmProvisionLifecycle,
@@ -395,6 +396,7 @@ test('loss of the owned direct DB session shares abandonment and fences the late
   const ownerResult = owner.catch((error) => error)
   try {
     await entered.promise
+    const [original] = await db.select().from(attempts).where(eq(attempts.sandboxId, id))
     const key = `vm-box-setup:${id}`
     const locks = await db.execute(sql`
       SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND granted
@@ -419,7 +421,9 @@ test('loss of the owned direct DB session shares abandonment and fences the late
     expect(callbacks).toBe(1)
     release.resolve()
     expect(await ownerResult).toBeInstanceOf(Error)
-    const [row] = await db.select().from(attempts).where(eq(attempts.sandboxId, id))
+    // The successor also has a row; an unordered sandbox-wide SELECT can
+    // return its successful generation instead of the crashed owner's row.
+    const [row] = await db.select().from(attempts).where(eq(attempts.id, original!.id))
     expect(row!.status).toBe('failed')
     expect(row!.failureClass).toBe('abandoned')
   } finally {
@@ -607,4 +611,23 @@ test('stop-proof contention cannot inherit a cooldown longer than its startup sc
   const row = rows.at(-1)!
   expect(row.failureCount).toBe(1)
   expect(row.retryAt!.getTime() - row.completedAt!.getTime()).toBeLessThanOrEqual(30_000)
+})
+
+test('current physical generation identity is scoped to the owner callback only', async () => {
+  expect(currentVmProvisionAttemptId()).toBeUndefined()
+  const id = `identity-${randomUUID()}`
+  await coalesceVmProvision(
+    id,
+    async () => {
+      const generation = currentVmProvisionAttemptId()
+      expect(typeof generation).toBe('number')
+      const [row] = await db.select().from(attempts).where(eq(attempts.id, generation!))
+      expect(row).toMatchObject({ sandboxId: id, status: 'running' })
+    },
+    async () => {
+      throw new Error('unexpected follower')
+    },
+    { withLease: (fn) => fn() }
+  )
+  expect(currentVmProvisionAttemptId()).toBeUndefined()
 })

@@ -133,3 +133,4 @@ export * from './managed-bigbrain'
 
 export { boundedRecord } from './zod-helpers'
 export * from './deployment-integrations'
+export type { SandboxHostCapacity } from './host-capacity'

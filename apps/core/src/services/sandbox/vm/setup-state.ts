@@ -1,3 +1,4 @@
+import { vmSetupLockKey } from './setup-lock'
 import { createHash } from 'crypto'
 import { and, asc, eq, inArray, isNull, lte, ne, or } from 'drizzle-orm'
 import { db } from '../../../db'
@@ -421,7 +422,7 @@ export async function withVmSetupLease<T>(
     wait.signal?.throwIfAborted()
     if (now() >= deadline) throw new Error('VM setup lease acquisition timed out')
   }
-  const key = `vm-box-setup:${sandboxId}`
+  const key = vmSetupLockKey(sandboxId)
   let delayMs = 250
   for (;;) {
     checkWaiting()

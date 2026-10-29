@@ -279,3 +279,26 @@ test('header attributes local reclaim pressure even when the host load is low', 
     expect(text).toContain('Memory PSI some 20.0/10.0/5.0%')
   })
 })
+
+test('header shows aggregate host quota alongside separately attributed pressure', async () => {
+  await withIndicator(
+    {
+      ...healthy,
+      pressure,
+      hostCapacity: {
+        allowed: true,
+        reason: 'already-accounted',
+        cpus: 8,
+        budgetCpus: 12,
+        activeQuotaCpus: 12,
+      },
+    },
+    async ({ doc }) => {
+      expect(doc.body.textContent).toContain('Host load 3.5×')
+      expect(doc.body.textContent).toContain('quota 12/12 CPUs')
+      expect(doc.querySelector('[title*="not measured CPU usage"]')?.getAttribute('title')).toContain(
+        'Additional box demand waits'
+      )
+    }
+  )
+})

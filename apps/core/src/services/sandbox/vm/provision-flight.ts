@@ -1,10 +1,17 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { and, asc, desc, eq, gt, inArray, lt } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, lt, sql } from 'drizzle-orm'
 import { db } from '../../../db'
-import { vmBoxProvisionAttempts as attempts } from '../../../db/schema'
+import { vmBoxProvisionAttempts as attempts, machineCapacityClaims } from '../../../db/schema'
 import { MachineNotReadyError } from '../../machines/queries'
-import { startupRetryCode } from '../../execution/startup-retry'
+import { capacityRefusalDetails, startupRetryCode } from '../../execution/startup-retry'
 import { withVmSetupLease, type VmSetupLeaseWait } from './setup-state'
+
+const physicalGeneration = new AsyncLocalStorage<number>()
+
+/** Physical owner only: followers and read-only reconnects own no host lane. */
+export function currentVmProvisionAttemptId(): number | undefined {
+  return physicalGeneration.getStore()
+}
 
 type Attempt = typeof attempts.$inferSelect
 const activeProvision = new AsyncLocalStorage<string>()
@@ -117,7 +124,10 @@ function sharedFailure(row: Attempt): never {
       ? 'sandbox_readiness_pending'
       : row.failureClass?.split(':')[1]
   const cause = new Error('Shared physical provisioning failed')
-  if (retryCode === 'box_port_busy') cause.name = 'BoxPortBusyError'
+  if (row.failureClass?.startsWith('capacity:')) {
+    cause.name = 'HostCapacityUnavailableError'
+    Object.assign(cause, { result: row.capacityFailure ?? {} })
+  } else if (retryCode === 'box_port_busy') cause.name = 'BoxPortBusyError'
   else if (retryCode === 'box_lock_timeout') cause.name = 'BoxLockTimeoutError'
   else if (retryCode === 'box_stop_unverified') cause.name = 'BoxStopUnverifiedError'
   else if (retryCode === 'box_bash_busy') cause.name = 'BoxBashBusyError'
@@ -235,7 +245,7 @@ export async function coalesceVmProvision<T>(
       try {
         lifecycle.assertRunning()
         assertOwned?.()
-        const value = await provision()
+        const value = await physicalGeneration.run(current.id, provision)
         lifecycle.assertRunning()
         assertOwned?.()
         const published = await db
@@ -257,22 +267,33 @@ export async function coalesceVmProvision<T>(
         const placement = error instanceof MachineNotReadyError
         const setup = error instanceof VmPostProvisionSetupError
         const retryCode = startupRetryCode(error)
+        const capacityWait = retryCode === 'machine_capacity'
         // Stop proof has not started physical provisioning; do not inherit an
         // old physical failure streak that would outlive its execution budget.
-        const failureCount =
-          placement || setup ? 0 : retryCode === 'box_stop_unverified' ? 1 : current!.failureCount + 1
+        const failureCount = capacityWait
+          ? current.failureCount
+          : placement || setup
+            ? 0
+            : retryCode === 'box_stop_unverified'
+              ? 1
+              : current!.failureCount + 1
         assertOwned?.()
         await db
           .update(attempts)
           .set({
             status: 'failed',
-            failureClass: placement
-              ? `placement${retryCode ? `:${retryCode}` : ''}`
-              : retryCode
-                ? `retry:${retryCode}`
-                : 'provision',
+            failureClass: capacityWait
+              ? 'capacity:machine_capacity'
+              : placement
+                ? `placement${retryCode ? `:${retryCode}` : ''}`
+                : retryCode
+                  ? `retry:${retryCode}`
+                  : 'provision',
             failureCount,
-            retryAt: placement ? null : new Date(Date.now() + (setup ? 0 : provisionBackoffMs(failureCount))),
+            capacityFailure: capacityWait ? capacityRefusalDetails(error) : null,
+            retryAt: placement
+              ? null
+              : new Date(Date.now() + (setup || capacityWait ? 0 : provisionBackoffMs(failureCount))),
             completedAt: new Date(),
           })
           .where(and(eq(attempts.id, current!.id), eq(attempts.status, 'running')))
@@ -283,14 +304,14 @@ export async function coalesceVmProvision<T>(
         // just because opportunistic retention cleanup could not run.
         try {
           assertOwned?.()
-          await db
-            .delete(attempts)
-            .where(
-              and(
-                eq(attempts.sandboxId, sandboxId),
-                lt(attempts.completedAt, new Date(Date.now() - RESULT_RETENTION_MS))
-              )
+          await db.delete(attempts).where(
+            and(
+              eq(attempts.sandboxId, sandboxId),
+              lt(attempts.completedAt, new Date(Date.now() - RESULT_RETENTION_MS)),
+              sql`NOT EXISTS (SELECT 1 FROM ${machineCapacityClaims}
+                  WHERE ${machineCapacityClaims.provisionAttemptId} = ${attempts.id})`
             )
+          )
         } catch {
           /* Session loss or optional retention failure must not mask the outcome. */
         }
