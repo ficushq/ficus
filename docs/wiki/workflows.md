@@ -150,7 +150,7 @@ Commands can complete, return, delegate, request completion-ready rework, or rev
 
 ### Human review decision briefs
 
-Agent-produced completions whose effective route enters human approval require a structured `decisionBrief`, separate from `evidence`. It explains the decision, recommendation, approval scope, risks and repeat-round changes. Gate instructions describe the kind of gate; managers do not rewrite them each round. Non-agent arrivals preserve routing and show a same-lineage carried brief read-only or an explicit missing-brief notice. See [Human decision briefs and queued reviews](workflow-decision-briefs.md) for fields, limits, prose validation, provenance, history and errors.
+Agent-produced completions and authorized explicit returns whose effective route enters human approval require a structured `decisionBrief`, separate from `evidence` or return `feedback`. It explains the decision, recommendation, approval scope, risks and repeat-round changes. Gate instructions describe the kind of gate; managers do not rewrite them each round. Non-agent arrivals preserve routing and show a same-lineage carried brief read-only or an explicit missing-brief notice. See [Human decision briefs and queued reviews](workflow-decision-briefs.md) for fields, limits, prose validation, provenance, history and errors.
 
 Blocked human gates remain readable but are not actionable reviews in Feed Needs you. Shared status names the applicable blocker with **Review queued**; sibling-attempt waits do not block an otherwise actionable gate. Clearing blockers restores the same gate without rewriting it.
 

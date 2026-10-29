@@ -390,3 +390,43 @@ test('malformed or compressed decision fields fail locally without GET, upload o
     expect(f.errors[0]!.message).toContain('decisionBrief')
   }
 })
+
+test('explicit agent returns preflight human briefs and transport them without changing attachment semantics', async () => {
+  const { createBlankWorkflow, createWorkflowRun } = await import('@ficus/shared')
+  const { brief } = await import('../../../../packages/shared/src/test-fixtures/workflow-review')
+  const definition = createBlankWorkflow()
+  definition.steps[0]!.outcomes.completed = { returnTo: 'gate', afterRework: 'return-to-requester' }
+  definition.steps.push({
+    id: 'gate',
+    kind: 'human-approval',
+    instructions: 'Review staging.',
+    output: 'Decision.',
+    outcomes: { yes: { next: 'finish' } },
+  })
+  const state = createWorkflowRun(definition)
+  const command = {
+    action: 'return',
+    expectedVersion: 0,
+    attemptId: 1,
+    targetStepId: 'gate',
+    resumeAt: 'execute',
+    feedback: 'Review the revised staging scope.',
+  }
+  const missing = fixture({ version: 0, state }, undefined, 'workstream')
+  await missing.run('advance', 'stream-id', '--content', JSON.stringify(command))
+  expect(missing.calls.map((c) => c.method)).toEqual(['GET'])
+  expect(missing.errors[0]!.message).toContain('decisionBrief')
+  const valid = fixture({ version: 0, state }, undefined, 'workstream')
+  await valid.run('advance', 'stream-id', '--content', JSON.stringify({ ...command, decisionBrief: brief }))
+  expect(valid.errors).toEqual([])
+  expect(valid.calls.at(-1)?.body).toMatchObject({ command: { action: 'return', decisionBrief: brief } })
+  const invalid = fixture({ version: 0, state }, undefined, 'workstream')
+  await invalid.run(
+    'advance',
+    'stream-id',
+    '--content',
+    JSON.stringify({ ...command, decisionBrief: { ...brief, risks: 'pls approve this' } })
+  )
+  expect(invalid.calls).toEqual([])
+  expect(invalid.errors[0]!.message).toContain('decisionBrief.risks')
+})

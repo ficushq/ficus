@@ -2641,3 +2641,58 @@ test('accepted brief snapshots exact interruptions, preserves receipt retries, a
   )
   expect(JSON.stringify(accepted)).not.toContain('Raw private diagnostic')
 })
+
+test('explicit human-directed return is atomic on rejection and snapshots bounded context on acceptance', async () => {
+  const definition = structuredClone(flow)
+  definition.steps[0]!.outcomes.recheck = { returnTo: 'return-gate', afterRework: 'return-to-requester' }
+  definition.steps.push({
+    id: 'return-gate',
+    kind: 'human-approval',
+    instructions: 'Review the staging return.',
+    output: 'Decision.',
+    approver: 'reviewers',
+    outcomes: { yes: { next: 'finish' } },
+  })
+  const id = await create('active', definition)
+  const run = (await getFlow(id))!
+  const [stopped] = await db
+    .insert(executions)
+    .values({
+      agentId: run.attemptAgents['1']!,
+      status: 'stopped',
+      endedAt: new Date(),
+      flowContext: { workStreamId: id, attemptId: 1, stepId: 'build' },
+    })
+    .returning()
+  const command = {
+    action: 'return',
+    expectedVersion: run.version,
+    attemptId: 1,
+    targetStepId: 'return-gate',
+    resumeAt: 'build',
+    feedback: 'Review the revised staging scope before resuming.',
+  }
+  const snapshot = async () => ({
+    run: await getFlow(id),
+    waits: await listOpenWaits(db, id),
+    bindings: await bindings(id),
+    messages: await messages(id),
+    receipts: await db.select().from(workStreamFlowTransitions).where(eq(workStreamFlowTransitions.workStreamId, id)),
+  })
+  const before = await snapshot()
+  await expect(advanceFlow(id, command, randomUUID(), actor)).rejects.toThrow('decisionBrief')
+  await expect(
+    advanceFlow(id, { ...command, decisionBrief: { ...brief, risks: 'pls approve this' } }, randomUUID(), actor)
+  ).rejects.toThrow()
+  expect(await snapshot()).toEqual(before)
+  const requestId = randomUUID()
+  const valid = { ...command, decisionBrief: brief }
+  const accepted = await advanceFlow(id, valid, requestId, actor)
+  expect(await advanceFlow(id, valid, requestId, actor)).toMatchObject({ version: accepted.version })
+  const after = (await getFlow(id))!
+  expect(after.state.attempts[0]!.decisionBrief!.contexts[0]!.interruptedExecutions.map((e) => e.executionId)).toEqual([
+    stopped!.id,
+  ])
+  expect(after.state.attempts.at(-1)!.reviewBrief).toEqual({ kind: 'authored', sourceAttemptIds: [1] })
+  expect(after.state.attempts[0]!.feedback).toBe(command.feedback)
+})

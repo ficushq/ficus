@@ -528,7 +528,7 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
     } catch (error) {
       throw new WorkflowError((error as Error).message, 409)
     }
-    if (command.action === 'complete' && command.decisionBrief) {
+    if ((command.action === 'complete' || command.action === 'return') && command.decisionBrief) {
       const contexts = (await loadReviewContexts(tx, id, run.state))[String(command.attemptId)] ?? []
       const submission = state.attempts.find((a) => a.id === command.attemptId)?.decisionBrief
       if (submission)

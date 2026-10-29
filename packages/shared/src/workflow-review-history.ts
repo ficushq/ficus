@@ -98,6 +98,8 @@ export function workflowReviewBriefForAttempt(
   kind: 'authored' | 'carried-forward' | 'none' | 'legacy'
   sources: WorkflowAttempt[]
 } {
+  if (attempt.freshSession && workflowHistoricalStep(run, attempt)?.kind === 'human-approval')
+    return { kind: 'none', sources: [] }
   const binding = attempt.reviewBrief
   if (binding?.kind === 'authored')
     return {
@@ -121,6 +123,7 @@ export interface WorkflowProducerReviewContext {
   gateStepId: string
   outcomes: string[]
   viaResume: boolean
+  viaReturn?: boolean
   previousDecisions: Array<{
     attemptId: number
     version?: number

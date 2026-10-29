@@ -77,7 +77,7 @@ export function registerWorkstreamFlowCommands(
     )
     .addHelpText(
       'after',
-      '\nThe command must include action, expectedVersion, attemptId, and action-specific fields (e.g. outcome and evidence for complete).\nAuthorized revise active=keep refreshes outcomes for kept running attempts while preserving their initial brief and session. The response outcomeUpdates lists affected attempt/agent IDs; record scope and steer every affected active agent. Inspect activeOutcomes with workstream flow.\nUse active=restart only for deliberate cancellation and a new attempt with a fresh session, even with reuse-within-stream. Revised instructions apply to future attempts, not a kept initial brief.\nAgent-produced completions into human approval require decisionBrief: decision (500 characters), recommendation (1000), approvalEffect (2400), risks (1600), and changesSinceLastReview (2000, required after an earlier decision on the same gate). Each field must use readable prose with normal spacing and complete words; preserve literal identifiers. Briefs are optional on other completions; evidence stays separate. Contextual preflight runs before attachments.\n--attach uploads each file to the completing attempt before the command is sent; if any upload fails, the attempt is not advanced.'
+      '\nThe command must include action, expectedVersion, attemptId, and action-specific fields (e.g. outcome and evidence for complete).\nAuthorized revise active=keep refreshes outcomes for kept running attempts while preserving their initial brief and session. The response outcomeUpdates lists affected attempt/agent IDs; record scope and steer every affected active agent. Inspect activeOutcomes with workstream flow.\nUse active=restart only for deliberate cancellation and a new attempt with a fresh session, even with reuse-within-stream. Revised instructions apply to future attempts, not a kept initial brief.\nAgent-produced completions or explicit returns into human approval require decisionBrief: decision (500 characters), recommendation (1000), approvalEffect (2400), risks (1600), and changesSinceLastReview (2000, required after an earlier decision on the same gate). Each field must use readable prose with normal spacing and complete words; preserve literal identifiers. Briefs are optional on other handoffs; evidence or return feedback stays separate. Contextual preflight runs before attachments.\n--attach uploads each file to the completing attempt before the command is sent; if any upload fails, the attempt is not advanced.'
     )
     .action((id: string, options: StructuredInputOptions & { requestId?: string; attach: string[] }) =>
       run(async () => {
@@ -87,7 +87,7 @@ export function registerWorkstreamFlowCommands(
           if (options.attach.length > WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
             throw new Error(`At most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files can be attached to one handoff`)
         }
-        if (value.action === 'complete') {
+        if (value.action === 'complete' || value.action === 'return') {
           const current = await deps.apiGet<FlowSnapshot | null>(`/api/workflows/runs/${encodeURIComponent(id)}`)
           const attempt = current?.state?.attempts.find((entry) => entry.id === value.attemptId)
           // A closed attempt means this handoff was already sent (a retry gets its receipt) or cannot be:

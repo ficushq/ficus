@@ -58,9 +58,12 @@ try {
   })
   for (const width of [390, 1280])
     for (const dark of [false, true])
-      for (const mode of ['first', 'repeat', 'blocked', 'carried', 'none', 'legacy']) {
+      for (const mode of ['first', 'repeat', 'blocked', 'carried', 'none', 'legacy', 'return', 'restarted']) {
         await page.setViewportSize({ width, height: 900 })
-        await page.goto(`${server.resolvedUrls!.local[0]}review-fixture?mode=${mode}${dark ? '&dark' : ''}`)
+        await page.goto(`${server.resolvedUrls!.local[0]}review-fixture?mode=${mode}${dark ? '&dark' : ''}`, {
+          waitUntil: 'domcontentloaded',
+          timeout: 30000,
+        })
         const dialog = page.getByRole('dialog')
         await dialog.waitFor()
         assert.equal(
@@ -74,13 +77,25 @@ try {
           await dialog.getByRole('tab', { name: 'Handoff', exact: true }).waitFor()
         } else {
           await article.waitFor()
-          if (mode === 'none') await article.getByText('No decision brief for this gate', { exact: true }).waitFor()
+          if (mode === 'none' || mode === 'restarted')
+            await article.getByText('No decision brief for this gate', { exact: true }).waitFor()
           else {
             await article.getByRole('heading', { name: 'Decision', exact: true }).waitFor()
-            if (mode === 'repeat' || mode === 'blocked')
+            if (mode === 'repeat' || mode === 'blocked' || mode === 'return')
               await article.getByText('What changed since your last review', { exact: true }).waitFor()
             if (mode === 'carried')
               await article.getByText('Carried forward from an earlier step', { exact: true }).waitFor()
+          }
+          if (mode === 'restarted') {
+            await dialog
+              .getByText(
+                'Review only the replacement staging scope. The previous review session does not authorize this scope.',
+                { exact: true }
+              )
+              .first()
+              .waitFor()
+            assert.equal(await article.getByText('Carried forward from an earlier step', { exact: true }).count(), 0)
+            assert.equal(await article.getByRole('heading', { name: 'Decision', exact: true }).count(), 0)
           }
           const disclosure = dialog
             .locator('details')
@@ -110,6 +125,11 @@ try {
         }
         if (mode === 'legacy' && screenshotDir)
           await page.screenshot({ path: resolve(screenshotDir, `${mode}-${width}-${dark ? 'dark' : 'light'}.png`) })
+        if (mode === 'return')
+          await dialog
+            .getByRole('button', { name: /^Approved/ })
+            .getByText('Continues to execute', { exact: true })
+            .waitFor()
         if (mode === 'blocked') {
           const approve = dialog.getByRole('button', { name: /^Approved/ })
           assert.equal(await approve.isDisabled(), true)

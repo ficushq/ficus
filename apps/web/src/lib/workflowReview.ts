@@ -1,6 +1,7 @@
 import {
   activeWorkflowAttempts,
   workflowReviewBlockingWaits,
+  workflowCompletionTargets,
   isWorkflowHumanGateWait,
   workflowEarlierHumanDecisions,
   describeWorkflowDecision,
@@ -35,9 +36,19 @@ export function outcomeLabel(outcome: string): string {
 }
 
 /** Where an outcome sends the work, so a reviewer knows the effect before deciding. */
-export function outcomeEffect(run: WorkflowRun, transition: WorkflowTransition): string {
+export function outcomeEffect(
+  run: WorkflowRun,
+  transition: WorkflowTransition,
+  attempt?: WorkflowAttempt,
+  outcome?: string
+): string {
   if ('returnTo' in transition) return `Sends back to ${stepName(run, transition.returnTo)}`
-  const targets = 'parallel' in transition ? transition.parallel : [transition.next]
+  const targets =
+    attempt && outcome
+      ? workflowCompletionTargets(run, attempt, outcome)
+      : 'parallel' in transition
+        ? transition.parallel
+        : [transition.next]
   if (targets.length === 1 && targets[0] === 'finish') return 'Finishes the flow'
   return `Continues to ${targets.map((target) => (target === 'finish' ? 'finish' : stepName(run, target))).join(', ')}`
 }
@@ -100,6 +111,7 @@ export function focusedHumanGate(
 }
 
 export interface HumanGateContext {
+  attempt: WorkflowAttempt
   step: HumanGateStep
   /** For a decision step: why no automatic decision was made, and what the model answered. */
   decisionNote?: string
@@ -151,6 +163,7 @@ export function humanGateContext(
   ]
   const history = workflowEarlierHumanDecisions(run.state, attempt.stepId).filter((entry) => entry.id !== attempt.id)
   return {
+    attempt,
     step,
     ...(step.kind === 'decision' && attempt.decision
       ? { decisionNote: describeWorkflowDecision(step, attempt.decision) }

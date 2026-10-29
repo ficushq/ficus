@@ -100,3 +100,33 @@ test('a causal return settled after the last decision is retained even when its 
   const contexts = producerReviewContexts(run, run.attempts.at(-1)!)
   expect(contexts[0]!.returns.map((r) => r.id)).toEqual([1])
 })
+
+test('return-only human destinations receive prior decisions and interruption context', () => {
+  const definition = createBlankWorkflow()
+  definition.routing = { mode: 'flexible', returnTo: 'earlier-steps', delegation: 'disabled' }
+  definition.entry = 'gate'
+  definition.steps.push({
+    id: 'gate',
+    kind: 'human-approval',
+    instructions: 'Review staging.',
+    output: 'Decision.',
+    outcomes: { yes: { next: 'execute' } },
+  })
+  const run = advanceWorkflowRun(createWorkflowRun(definition), {
+    action: 'complete',
+    expectedVersion: 0,
+    attemptId: 1,
+    outcome: 'yes',
+    evidence: '',
+  })
+  const contexts = producerReviewContexts(run, run.attempts.at(-1)!, [
+    { executionId: 'synthetic-stop', attemptId: 2, status: 'stopped', endedAt: '2026-10-29T00:02:00Z' },
+  ])
+  expect(contexts[0]).toMatchObject({
+    gateStepId: 'gate',
+    outcomes: [],
+    viaReturn: true,
+    previousDecisions: [{ attemptId: 1 }],
+  })
+  expect(contexts[0]!.interruptedExecutions).toHaveLength(1)
+})

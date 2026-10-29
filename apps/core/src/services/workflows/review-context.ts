@@ -4,6 +4,7 @@ import {
   effectiveWorkflowStep,
   workflowCausalAttempts,
   workflowCompletionReviewTargets,
+  workflowReturnReviewTargets,
   workflowEarlierHumanDecisions,
   type WorkflowAttempt,
   type WorkflowRun,
@@ -23,7 +24,7 @@ export function producerReviewContexts(
 ): WorkflowProducerReviewContext[] {
   const step = effectiveWorkflowStep(run, attempt)
   if (step.kind !== 'agent') return []
-  const targets = new Map<string, { outcomes: string[]; viaResume: boolean }>()
+  const targets = new Map<string, { outcomes: string[]; viaResume: boolean; viaReturn?: boolean }>()
   for (const outcome of Object.keys(step.outcomes))
     for (const resume of [false, true]) {
       let gates: string[]
@@ -39,6 +40,15 @@ export function producerReviewContexts(
         targets.set(gate, value)
       }
     }
+  for (const gate of run.definition.steps.filter((s) => s.kind === 'human-approval')) {
+    try {
+      if (!workflowReturnReviewTargets(run, attempt, gate.id).length) continue
+      const value = targets.get(gate.id) ?? { outcomes: [], viaResume: false }
+      targets.set(gate.id, { ...value, viaReturn: true })
+    } catch {
+      // Not an authorized explicit return from this producer.
+    }
+  }
   const causal = new Set([attempt.id, ...workflowCausalAttempts(run, attempt).map((a) => a.id)])
   return [...targets].map(([gateStepId, routing]) => {
     const previous = workflowEarlierHumanDecisions(run, gateStepId, versions)

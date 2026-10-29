@@ -22,6 +22,7 @@ const mode = params.get('mode') ?? 'first'
 applyResolvedTheme(document.documentElement, FICUS_THEME, params.has('dark') ? 'dark' : 'light')
 const definition = createBlankWorkflow()
 definition.steps[0]!.outcomes.completed = { next: 'gate' }
+definition.steps[0]!.outcomes.recheck = { returnTo: 'gate', afterRework: 'return-to-requester' }
 definition.steps.push({
   id: 'gate',
   kind: 'human-approval',
@@ -46,6 +47,11 @@ const brief = {
   approvalEffect: `Approval permits implementation for \`cache-stage-${'example-'.repeat(22)}01\` only. Production deployment and deletion remain forbidden. Sequencing holds must clear before execution.`,
   risks: 'Two temporary read paths increase maintenance work. A failed migration can delay staging tests.',
 }
+if (mode === 'return') {
+  // Finish is diverted to the requesting producer; omit the now-unreachable rollout gate.
+  definition.steps.find((s) => s.id === 'gate')!.outcomes.approved = { next: 'finish' }
+  definition.steps = definition.steps.filter((s) => s.id !== 'second')
+}
 let state = createWorkflowRun(definition)
 state = advanceWorkflowRun(state, {
   action: 'complete',
@@ -56,7 +62,7 @@ state = advanceWorkflowRun(state, {
     'Detailed audit handoff. The staging design and fallback tests are attached. No production operation is authorized.',
   decisionBrief: brief,
 })
-if (mode === 'repeat' || mode === 'blocked') {
+if (mode === 'repeat' || mode === 'blocked' || mode === 'return') {
   state = advanceWorkflowRun(state, {
     action: 'complete',
     expectedVersion: state.version,
@@ -65,12 +71,21 @@ if (mode === 'repeat' || mode === 'blocked') {
     evidence: 'Retain the existing staging reader after rollback.',
   })
   state = advanceWorkflowRun(state, {
-    action: 'complete',
+    ...(mode === 'return'
+      ? {
+          action: 'return',
+          targetStepId: 'gate',
+          resumeAt: 'execute',
+          feedback: 'Review the revised staging scope before resuming.',
+        }
+      : {
+          action: 'complete',
+          outcome: 'completed',
+          evidence:
+            'Revised audit handoff with fallback verification and two interrupted test runs. See the attached design.',
+        }),
     expectedVersion: state.version,
     attemptId: 3,
-    outcome: 'completed',
-    evidence:
-      'Revised audit handoff with fallback verification and two interrupted test runs. See the attached design.',
     decisionBrief: {
       ...brief,
       changesSinceLastReview:
@@ -78,6 +93,24 @@ if (mode === 'repeat' || mode === 'blocked') {
     },
   })
 }
+if (mode === 'restarted')
+  state = advanceWorkflowRun(state, {
+    action: 'revise',
+    expectedVersion: state.version,
+    attemptId: state.activeAttemptId,
+    active: 'restart',
+    reason: 'Start a fresh review for replacement scope.',
+    operations: [
+      {
+        op: 'put-step',
+        step: {
+          ...definition.steps.find((s) => s.id === 'gate')!,
+          instructions:
+            'Review only the replacement staging scope. The previous review session does not authorize this scope.',
+        },
+      },
+    ],
+  })
 if (mode === 'carried')
   state = advanceWorkflowRun(state, {
     action: 'complete',
@@ -125,7 +158,7 @@ const stream = {
   metadata: {},
   openWaits: [gate, ...blockers],
 } as unknown as WorkStream
-const sourceId = mode === 'repeat' || mode === 'blocked' ? 3 : 1
+const sourceId = mode === 'repeat' || mode === 'blocked' || mode === 'return' ? 3 : 1
 const cache = new QueryClient({ defaultOptions: { queries: { enabled: false, staleTime: Infinity, retry: false } } })
 const detail: WorkflowRunDetail = {
   workStreamId: stream.id,

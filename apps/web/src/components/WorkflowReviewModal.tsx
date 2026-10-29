@@ -582,7 +582,7 @@ function DecisionButtons({ gate, run, notes, advance }: Omit<DecisionState, 'set
           <button
             key={outcome}
             type="button"
-            title={outcomeEffect(run.state, transition)}
+            title={outcomeEffect(run.state, transition, gate.attempt, outcome)}
             className={clsx(
               'ficus-button block w-full px-4 py-2.5 text-sm disabled:opacity-50',
               primary ? 'ficus-button-primary' : sendsBack ? 'ficus-button-danger' : 'ficus-button-secondary'
@@ -595,7 +595,9 @@ function DecisionButtons({ gate, run, notes, advance }: Omit<DecisionState, 'set
             onClick={() => advance.mutate(outcome)}
           >
             {outcomeLabel(outcome)}
-            <span className="block text-xs font-normal opacity-80">{outcomeEffect(run.state, transition)}</span>
+            <span className="block text-xs font-normal opacity-80">
+              {outcomeEffect(run.state, transition, gate.attempt, outcome)}
+            </span>
           </button>
         )
       })}
@@ -626,7 +628,7 @@ function ReadOnlyDecision({ gate, run }: Pick<DecisionState, 'gate' | 'run'>) {
         {gate.outcomes.map(([outcome, transition]) => (
           <li key={outcome}>
             <span className="font-medium">{outcomeLabel(outcome)}</span>
-            <span className="text-muted"> · {outcomeEffect(run.state, transition)}</span>
+            <span className="text-muted"> · {outcomeEffect(run.state, transition, gate.attempt, outcome)}</span>
           </li>
         ))}
       </ul>

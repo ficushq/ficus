@@ -743,3 +743,52 @@ test('queued review remains readable with every blocker, disabled controls and a
     await f.cleanup()
   }
 })
+
+test('an actual restarted human gate shows its new own message and the exact no-brief notice', async () => {
+  const f = await fixture()
+  try {
+    const detail = gateRun()
+    let state = createWorkflowRun(detail.state.definition)
+    state = advanceWorkflowRun(state, {
+      action: 'complete',
+      expectedVersion: 0,
+      attemptId: 1,
+      outcome: 'completed',
+      evidence: 'Original audit handoff.',
+      decisionBrief: {
+        decision: 'Approve the original staging scope.',
+        recommendation: 'Approve because tests passed.',
+        approvalEffect: 'Approval permits the original staging work only.',
+        risks: 'Maintenance work temporarily increases.',
+      },
+    })
+    const gate = state.attempts.at(-1)!
+    state = advanceWorkflowRun(state, {
+      action: 'revise',
+      expectedVersion: state.version,
+      attemptId: gate.id,
+      active: 'restart',
+      reason: 'Start a fresh review for replacement scope.',
+      operations: [
+        { op: 'put-step', step: { ...gate.step!, instructions: 'Review only the replacement staging scope.' } },
+      ],
+    })
+    const current = state.attempts.at(-1)!
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), {
+      ...detail,
+      state,
+      version: state.version,
+      openWaits: [{ ...detail.openWaits[0]!, flowAttemptId: current.id }],
+    })
+    await f.render(<WorkflowReviewModal stream={stream} attemptId={current.id} onClose={() => {}} />)
+    const article = f.doc.querySelector('[aria-label="Decision brief"]')!
+    expect(article.textContent).toContain('No decision brief for this gate')
+    expect(f.doc.querySelector('[data-review-document]')!.textContent).toContain(
+      'Review only the replacement staging scope.'
+    )
+    expect(article.textContent).not.toContain('Approve the original staging scope.')
+    expect(article.textContent).not.toContain('Carried forward')
+  } finally {
+    await f.cleanup()
+  }
+})

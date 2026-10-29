@@ -1,5 +1,6 @@
 import {
   workflowCompletionReviewTargets,
+  workflowReturnReviewTargets,
   workflowEarlierHumanDecisions,
   WORKFLOW_DECISION_BRIEF_LIMITS,
   effectiveWorkflowStep,
@@ -45,8 +46,55 @@ export function flowCapabilityInstructions(state: WorkflowRun, attempt: Workflow
         }
       }
     }
+    const returnGates = definition.steps.filter((gate) => {
+      if (gate.kind !== 'human-approval') return false
+      try {
+        return workflowReturnReviewTargets(state, attempt, gate.id).length > 0
+      } catch {
+        return false
+      }
+    })
+    for (const gate of returnGates) {
+      lines.push(
+        `For action=return to '${gate.id}', a human decides next. The completing producing agent writes decisionBrief; keep feedback as the separate return explanation.`
+      )
+      const previous = workflowEarlierHumanDecisions(state, gate.id)[0]
+      if (previous)
+        lines.push(
+          `Gate '${gate.id}' has an earlier decision (attempt ${previous.id}); changesSinceLastReview is required.`
+        )
+    }
+    if (returnGates.length)
+      lines.push(
+        'For an explicit human-directed return, replace every example field with the actual decision, scope and risks:',
+        '```bash',
+        "ficus workstream advance STREAM_ID --stdin <<'FICUS_COMMAND'",
+        JSON.stringify(
+          {
+            expectedVersion: version,
+            attemptId: attempt.id,
+            action: 'return',
+            targetStepId: returnGates[0]!.id,
+            resumeAt: step.id,
+            feedback: 'Review the revised staging scope before work resumes.',
+            decisionBrief: {
+              decision: 'Approve the revised staging design.',
+              recommendation: 'Approve because the documented fallback preserves existing reads.',
+              approvalEffect:
+                'Approval permits the specified staging work only, not production deployment. Replace this example with exact scope and resource IDs.',
+              risks: 'Temporary parallel read paths increase maintenance work.',
+              changesSinceLastReview:
+                'State the earlier decision, why work returned or stopped, and what changed; omit this field for a first review.',
+            },
+          },
+          null,
+          2
+        ),
+        'FICUS_COMMAND',
+        '```'
+      )
     lines.push(
-      'A decisionBrief is mandatory on agent-produced human-directed completions and optional otherwise. Keep evidence as the separate agent and audit handoff. The fields are decision (one or two history-independent sentences), recommendation (what and why), approvalEffect (what approval permits, exact resource IDs and what remains forbidden), risks (tradeoffs), and changesSinceLastReview (last decision, why work returned or an execution failed, and what changed; required after an earlier gate decision).',
+      'A decisionBrief is mandatory on agent-produced human-directed completions and explicit returns, and optional otherwise. Keep evidence or return feedback as the separate agent and audit handoff. The fields are decision (one or two history-independent sentences), recommendation (what and why), approvalEffect (what approval permits, exact resource IDs and what remains forbidden), risks (tradeoffs), and changesSinceLastReview (last decision, why work returned or an execution failed, and what changed; required after an earlier gate decision).',
       `Field limits in characters: ${Object.entries(WORKFLOW_DECISION_BRIEF_LIMITS)
         .map(([name, limit]) => `${name}: ${limit}`)
         .join('; ')}.`,

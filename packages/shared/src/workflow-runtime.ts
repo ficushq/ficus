@@ -149,6 +149,7 @@ export const workflowCommandSchema = z.discriminatedUnion('action', [
   z.strictObject({
     ...commandFields,
     action: z.literal('return'),
+    decisionBrief: workflowDecisionBriefSchema.optional(),
     targetStepId: z.string().min(1).max(100),
     resumeAt: z.string().min(1).max(100),
     feedback: z.string().trim().min(1).max(64_000),
@@ -232,6 +233,7 @@ function startAttempt(
   reviewBrief?: WorkflowReviewBriefBinding
 ): void {
   const step = stepById(state, stepId)
+  if (step.kind === 'human-approval' && freshSession) reviewBrief = { kind: 'none' }
   if (step.kind === 'human-approval' && !reviewBrief) {
     const sources = state.attempts.filter((a) => sourceAttemptIds.includes(a.id))
     const producer = sources.find((a) => a.settledVersion === state.version)
@@ -573,21 +575,9 @@ export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): Workf
   }
 
   if (command.action === 'return') {
-    const declared = Object.values(step.outcomes).some(
-      (outcome) =>
-        'returnTo' in outcome &&
-        outcome.returnTo === command.targetStepId &&
-        command.resumeAt === step.id &&
-        outcome.afterRework === 'return-to-requester'
-    )
-    const flexible =
-      state.definition.routing.mode !== 'guided' &&
-      state.definition.routing.returnTo === 'earlier-steps' &&
-      command.resumeAt === step.id &&
-      isEarlierWorkflowStep(state, command.targetStepId, step.id)
-    if (!declared && !flexible) throw new Error('Return path is not allowed by this workflow')
     attempt.settledVersion = state.version
-    requestReturn(state, attempt, command.targetStepId, command.resumeAt, command.feedback)
+    recordDecisionBrief(state, previous, attempt, command)
+    applyExplicitReturnRoute(state, attempt, step, command.targetStepId, command.resumeAt, command.feedback)
     return finishState(state)
   }
 
@@ -602,6 +592,19 @@ export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): Workf
   attempt.outcome = command.outcome
   if (command.evidence) attempt.evidence = command.evidence
   attempt.settledVersion = state.version
+  recordDecisionBrief(state, previous, attempt, command)
+  applyCompletionRoute(state, attempt, step, transition, command.resume, command.evidence)
+  return finishState(state)
+}
+
+type WorkflowBriefCommand = Extract<WorkflowCommand, { action: 'complete' | 'return' }>
+
+function recordDecisionBrief(
+  state: WorkflowRun,
+  previous: WorkflowRun,
+  attempt: WorkflowAttempt,
+  command: WorkflowBriefCommand
+) {
   const targets = validateWorkflowDecisionBrief(previous, command)
   if (command.decisionBrief)
     attempt.decisionBrief = {
@@ -615,8 +618,51 @@ export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): Workf
         interruptedExecutions: [],
       })),
     }
-  applyCompletionRoute(state, attempt, step, transition, command.resume, command.evidence)
-  return finishState(state)
+}
+
+/** Explicit return authorization and routing, shared by acceptance and read-only preflight. */
+function applyExplicitReturnRoute(
+  state: WorkflowRun,
+  attempt: WorkflowAttempt,
+  step: WorkflowStep,
+  targetStepId: string,
+  resumeAt: string,
+  feedback: string
+): string[] {
+  const declared = Object.values(step.outcomes).some(
+    (outcome) =>
+      'returnTo' in outcome &&
+      outcome.returnTo === targetStepId &&
+      resumeAt === step.id &&
+      outcome.afterRework === 'return-to-requester'
+  )
+  const flexible =
+    state.definition.routing.mode !== 'guided' &&
+    state.definition.routing.returnTo === 'earlier-steps' &&
+    resumeAt === step.id &&
+    isEarlierWorkflowStep(state, targetStepId, step.id)
+  if (!declared && !flexible) throw new Error('Return path is not allowed by this workflow')
+  requestReturn(state, attempt, targetStepId, resumeAt, feedback)
+  return [targetStepId]
+}
+
+export function workflowReturnReviewTargets(
+  run: WorkflowRun,
+  attempt: WorkflowAttempt,
+  targetStepId: string,
+  resumeAt = attempt.stepId
+): string[] {
+  const state = structuredClone(run)
+  const source = state.attempts.find((a) => a.id === attempt.id)!
+  const targets = applyExplicitReturnRoute(
+    state,
+    source,
+    effectiveWorkflowStep(state, source),
+    targetStepId,
+    resumeAt,
+    'Routing preflight.'
+  )
+  return targets.filter((id) => state.definition.steps.find((s) => s.id === id)?.kind === 'human-approval')
 }
 
 /** The single effective routing implementation, used on a clone for preflight as well as acceptance. */
@@ -688,7 +734,7 @@ function applyCompletionRoute(
   return destinations
 }
 
-export function workflowCompletionReviewTargets(
+export function workflowCompletionTargets(
   run: WorkflowRun,
   attempt: WorkflowAttempt,
   outcome: string,
@@ -700,21 +746,30 @@ export function workflowCompletionReviewTargets(
   const transition = step.outcomes[outcome]
   if (!transition) throw new Error(`Unknown outcome '${outcome}'`)
   return [...new Set(applyCompletionRoute(state, source, step, transition, resume, 'Routing preflight.'))]
-    .filter((id) => state.definition.steps.find((s) => s.id === id)?.kind === 'human-approval')
+}
+
+export function workflowCompletionReviewTargets(
+  run: WorkflowRun,
+  attempt: WorkflowAttempt,
+  outcome: string,
+  resume = false
+): string[] {
+  return workflowCompletionTargets(run, attempt, outcome, resume)
+    .filter((id) => run.definition.steps.find((s) => s.id === id)?.kind === 'human-approval')
     .sort()
 }
 
 /** Contextual validation must run before any persistent state, wait or dispatch side effect. */
-export function validateWorkflowDecisionBrief(
-  run: WorkflowRun,
-  command: Extract<WorkflowCommand, { action: 'complete' }>
-): string[] {
+export function validateWorkflowDecisionBrief(run: WorkflowRun, command: WorkflowBriefCommand): string[] {
   const attempt = run.attempts.find((a) => a.id === command.attemptId)
   if (!attempt || effectiveWorkflowStep(run, attempt).kind !== 'agent') return []
-  const targets = workflowCompletionReviewTargets(run, attempt, command.outcome, command.resume)
+  const targets =
+    command.action === 'complete'
+      ? workflowCompletionReviewTargets(run, attempt, command.outcome, command.resume)
+      : workflowReturnReviewTargets(run, attempt, command.targetStepId, command.resumeAt)
   if (targets.length && !command.decisionBrief)
     throw new Error(
-      `A decisionBrief is required for outcome '${command.outcome}' because it sends this agent's result to human approval '${targets.join("', '")}'.`
+      `A decisionBrief is required for ${command.action === 'complete' ? `outcome '${command.outcome}'` : `return to '${command.targetStepId}'`} because it sends this agent's result to human approval '${targets.join("', '")}'.`
     )
   const previous = targets
     .map((id) => ({ id, decision: workflowEarlierHumanDecisions(run, id)[0] }))

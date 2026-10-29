@@ -102,3 +102,33 @@ test('human-directed outcomes identify the producer-owned brief; agent-only outc
   expect(text).toContain('changesSinceLastReview')
   expect(text).toContain('producing agent')
 })
+
+test('flexible explicit human returns explain authoring and include a schema-valid return example', () => {
+  const definition = createBlankWorkflow()
+  definition.routing = { mode: 'flexible', returnTo: 'earlier-steps', delegation: 'disabled' }
+  definition.entry = 'gate'
+  definition.steps.push({
+    id: 'gate',
+    kind: 'human-approval',
+    instructions: 'Review staging.',
+    output: 'Decision.',
+    outcomes: { yes: { next: 'execute' } },
+  })
+  const run = advanceWorkflowRun(createWorkflowRun(definition), {
+    action: 'complete',
+    expectedVersion: 0,
+    attemptId: 1,
+    outcome: 'yes',
+    evidence: '',
+  })
+  const attempt = run.attempts.at(-1)!
+  const text = flowCapabilityInstructions(run, attempt)
+  expect(text).toContain("For action=return to 'gate', a human decides next")
+  expect(text).toContain('changesSinceLastReview is required')
+  const example = workflowCommandSchema.parse(
+    JSON.parse(text.match(/<<'FICUS_COMMAND'\n([\s\S]*?)\nFICUS_COMMAND/)![1]!)
+  )
+  expect(example.action).toBe('return')
+  expect('targetStepId' in example && example.targetStepId).toBe('gate')
+  expect(() => advanceWorkflowRun(run, example)).not.toThrow()
+})
