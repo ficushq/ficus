@@ -1,4 +1,11 @@
-import { and, eq, inArray, or, sql } from 'drizzle-orm'
+import {
+  isRestartContext,
+  restartPauseNotice,
+  restartResumeNotice,
+  type RestartContext,
+} from '@ficus/shared/restart-context'
+import { createRestartContext } from '../sandbox/command-drain'
+import { and, desc, eq, inArray, or, sql } from 'drizzle-orm'
 import { agents, db, executionAdmissionReservations, executions, messages } from '../../db'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { mapMessage } from '../../entities/message-mapper'
@@ -16,12 +23,12 @@ import {
  * three truthful messages — they were one wording, and the shared "after a
  * process restart" once sent a live debugging session hunting for a restart
  * that never occurred:
- *  - startup: the process really did restart and is picking the work back up;
+ *  - startup: ownership was lost; without a shutdown marker the cause is unknown;
  *  - shutdown: posted BEFORE the restart, as this process hands the work off;
  *  - lease sweep: the owner stopped renewing; no restart is implied.
  */
-export const PROCESS_RESTART_NOTICE = '[System] Agent recovered after a process restart.'
-export const SHUTDOWN_HANDOFF_NOTICE = '[System] Agent paused for a worker restart; it will resume automatically.'
+export const PROCESS_RESTART_NOTICE =
+  '[System] Agent recovered after an interruption of unknown cause. Check the affected state and retry safely within the bounded recovery budget.'
 export const ABANDONED_LEASE_NOTICE =
   '[System] Agent recovered after its execution was interrupted (admission lease lapsed).'
 
@@ -114,9 +121,11 @@ export async function requeueAbandonedLeaseExecutions(options?: {
 export async function requeueOwnedExecutionsForShutdown(
   liveExecutionIds: string[] = [],
   options?: {
+    restart?: RestartContext
     beforeExactCas?: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0], executionId: string) => Promise<void>
   }
 ): Promise<string[]> {
+  const restart = options?.restart ?? createRestartContext()
   const liveExecutionIdSet = new Set(liveExecutionIds)
   const ownershipPredicates = [
     eq(executionAdmissionReservations.ownerIncarnation, admissionProcessIncarnation),
@@ -135,7 +144,8 @@ export async function requeueOwnedExecutionsForShutdown(
     if (recoveredAgentIds.has(candidate.agentId)) continue
     const recoveredCandidateIds = await recoverExecutions([candidate], {
       requireLivenessProof: false,
-      notice: SHUTDOWN_HANDOFF_NOTICE,
+      notice: restartPauseNotice(restart),
+      restart,
       beforeExactCas: options?.beforeExactCas,
     })
     recovered.push(...recoveredCandidateIds)
@@ -150,8 +160,9 @@ async function recoverExecutions(
     afterExecutionLocked?: (executionId: string) => Promise<void>
     beforeExactCas?: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0], executionId: string) => Promise<void>
     requireLivenessProof: boolean
-    /** The system notice posted to the agent's chat. Defaults to the startup (process-restart) wording. */
+    /** The system notice posted to the agent's chat. Defaults to the unknown-interruption wording. */
     notice?: string
+    restart?: RestartContext
   }
 ): Promise<string[]> {
   const notice = options.notice ?? PROCESS_RESTART_NOTICE
@@ -211,6 +222,7 @@ async function recoverExecutions(
           content: notice,
           metadata: {
             isSystem: true,
+            ...(options.restart ? { restart: options.restart, restartPhase: 'pause' } : {}),
             admissionRecoveryExecutionId: execution.id,
             executionId: execution.id,
           },
@@ -257,4 +269,62 @@ async function recoverExecutions(
     eventEmitter.emit('agent.updated', { agentId: result.execution.agentId, squadId: agent?.squadId ?? null })
   }
   return recovered
+}
+
+/**
+ * Read only a shutdown-committed marker for this exact execution and agent. A
+ * process boot, stale lease or nearby transport failure is not restart proof.
+ * Commit the resume notice before sandbox/session startup, once per restart.
+ * The execution lock serializes concurrent pickup attempts without consuming
+ * the context: every startup retry still needs it in its first model prompt.
+ */
+export async function prepareRestartResume(executionId: string, agentId: string): Promise<RestartContext | undefined> {
+  const result = await db.transaction(async (tx) => {
+    const [execution] = await tx
+      .select({ id: executions.id })
+      .from(executions)
+      .where(and(eq(executions.id, executionId), eq(executions.agentId, agentId)))
+      .for('update')
+    if (!execution) return undefined
+    const [pause] = await tx
+      .select()
+      .from(messages)
+      .where(
+        and(
+          eq(messages.agentId, agentId),
+          sql`${messages.metadata}->>'admissionRecoveryExecutionId' = ${executionId}`,
+          sql`${messages.metadata}->>'isSystem' = 'true'`
+        )
+      )
+      .orderBy(desc(messages.createdAt), desc(messages.id))
+      .limit(1)
+    const metadata = pause?.metadata as { restart?: unknown; restartPhase?: unknown } | null
+    const restart = metadata?.restartPhase === 'pause' ? metadata.restart : undefined
+    if (!isRestartContext(restart)) return undefined
+    const [existing] = await tx
+      .select({ id: messages.id })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.agentId, agentId),
+          sql`${messages.metadata}->>'executionId' = ${executionId}`,
+          sql`${messages.metadata}->>'restartPhase' = 'resume'`,
+          sql`${messages.metadata}->'restart'->>'restartId' = ${restart.restartId}`
+        )
+      )
+      .limit(1)
+    if (existing) return { restart }
+    const [message] = await tx
+      .insert(messages)
+      .values({
+        agentId,
+        role: 'assistant',
+        content: restartResumeNotice(restart),
+        metadata: { isSystem: true, executionId, restart, restartPhase: 'resume' },
+      })
+      .returning()
+    return { restart, message: message ? mapMessage(message) : undefined }
+  })
+  if (result?.message) eventEmitter.emit('message.created', messageEventData(result.message))
+  return result?.restart
 }

@@ -1,3 +1,4 @@
+import { isRestartContext } from '@ficus/shared/restart-context'
 /**
  * Tool Executor HTTP Server
  *
@@ -398,8 +399,16 @@ async function main(): Promise<void> {
               if (typeof body.invocationId !== 'string' || !body.invocationId) {
                 return Response.json({ error: 'invocationId is required' }, { status: 400 })
               }
+              if (body.reason === 'core_restart' && !isRestartContext(body.restart)) {
+                return Response.json({ error: 'core_restart requires restart correlation' }, { status: 400 })
+              }
               return Response.json(
-                await cancelBashInvocation(body.invocationId, typeof body.reason === 'string' ? body.reason : undefined)
+                await cancelBashInvocation(
+                  body.invocationId,
+                  typeof body.reason === 'string' ? body.reason : undefined,
+                  undefined,
+                  body.reason === 'core_restart' ? body.restart : undefined
+                )
               )
             }
             case '/read':

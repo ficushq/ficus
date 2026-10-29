@@ -1681,6 +1681,13 @@
       "when": 1793242657432,
       "tag": "0239_nebulous_onslaught",
       "breakpoints": true
+    },
+    {
+      "idx": 240,
+      "version": "7",
+      "when": 1793249527975,
+      "tag": "0240_structured_recovery_waits",
+      "breakpoints": true
     }
   ]
 }

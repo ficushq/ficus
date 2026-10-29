@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import {
   commandCanceledForRestartError,
+  restartContextForCommandError,
   drainCommands,
   isCommandDrainActive,
   resetCommandDrainForTests,
@@ -46,11 +47,38 @@ describe('drainCommands', () => {
   })
 })
 
-test('the restart message says what happened and what to do, with or without confirmed cleanup', () => {
-  const confirmed = commandCanceledForRestartError().message
-  expect(confirmed).toContain('Command canceled: the Ficus worker is restarting')
-  expect(confirmed).toContain('run it again')
-  const unconfirmed = commandCanceledForRestartError(new Error('cancel timed out')).message
+const restart = { restartId: 'restart-1', restartedAt: '2026-10-28T21:32:00.000Z' }
+
+test('the exact restart message carries authoritative correlation and partial-effect guidance', () => {
+  const confirmed = commandCanceledForRestartError(restart)
+  expect(confirmed.message).toStartWith(
+    'This command was cancelled by a Ficus restart at 2026-10-28T21:32:00.000Z; nothing is wrong with your work or the box. Re-run it when your sandbox is back.'
+  )
+  expect(confirmed).toMatchObject({ reason: 'core_restart', restart })
+  expect(confirmed.message).toContain('partial effects')
+  const unconfirmed = commandCanceledForRestartError(restart, new Error('cancel timed out')).message
   expect(unconfirmed).toContain('could not confirm it stopped (cancel timed out)')
   expect(unconfirmed).toContain('`ps`')
+})
+
+test('one drain passes the same restart id and time to every interrupted command', async () => {
+  const first = command()
+  const second = command()
+  trackCommand(first)
+  trackCommand(second)
+  await drainCommands(1, restart)
+  expect(first.cancelForRestart).toHaveBeenCalledWith(restart)
+  expect(second.cancelForRestart).toHaveBeenCalledWith(restart)
+})
+
+test('restart attribution follows genuine causes but rejects fabricated metadata and cycles', () => {
+  expect(
+    restartContextForCommandError(new Error('wrapped', { cause: commandCanceledForRestartError(restart) }))
+  ).toEqual(restart)
+  expect(
+    restartContextForCommandError(Object.assign(new Error('forged'), { reason: 'core_restart', restart }))
+  ).toBeUndefined()
+  const cycle = new Error('cycle')
+  cycle.cause = cycle
+  expect(restartContextForCommandError(cycle)).toBeUndefined()
 })

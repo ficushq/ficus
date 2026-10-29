@@ -25,6 +25,7 @@ import { agents, agentTypes, inbox, squads, workStreams } from '../db/schema'
 import { AgentType } from '../entities/AgentType'
 import { Agent } from '../entities/Agent'
 import { Squad } from '../entities/Squad'
+import { openWait } from '../services/work-streams/waits'
 import { promoteEligibleQueuedStreams } from '../services/work-streams/admission'
 import { createTestAdmin, authHeaders, cleanupTestRbac, type TestUser } from '../test-utils'
 
@@ -163,7 +164,11 @@ describe('work-stream verbs end-to-end integration probes', () => {
     })
 
     const inputRes = await postJson(`/api/workstreams/${created.id}/request-input`, {
-      message: 'Need the staging API key',
+      schemaVersion: 1,
+      kind: 'provide',
+      purpose: 'task-input',
+      input: { type: 'file', path: 'inputs/release-targets.json' },
+      use: 'choose the release destinations',
     })
     expect(inputRes.status).toBe(200)
     const { wait } = await inputRes.json()
@@ -173,12 +178,13 @@ describe('work-stream verbs end-to-end integration probes', () => {
     const blocked = await (await apiFetch(`/api/workstreams/${created.id}`)).json()
     expect((blocked.openWaits ?? []).map((w: { type: string }) => w.type)).toContain('manual')
 
-    // A multi-line response (e.g. a pasted log) must reach the assignee with
-    // its line breaks intact.
-    const note = 'key is ficus-staging-123, rotate after use\n\n$ deploy --dry-run\n  step 1 ok\n  step 2 ok'
-    const resolveRes = await postJson(`/api/workstreams/${created.id}/waits/${wait.id}/resolve`, {
-      resolution: 'cleared',
-      note,
+    // A named task-file reference, not a host path or diagnostic blob.
+    const value = 'inputs/approved-release-targets.json'
+    const note = `inputs/release-targets.json: ${value}`
+    const resolveRes = await postJson(`/api/workstreams/${created.id}/waits/${wait.id}/input`, {
+      action: 'provide',
+      expectedVersion: 0,
+      value,
     })
     expect(resolveRes.status).toBe(200)
     const resolved = await resolveRes.json()
@@ -225,9 +231,12 @@ describe('work-stream verbs end-to-end integration probes', () => {
   it("probe 4: resolving another stream's wait id through the route 404s and leaves the wait open", async () => {
     const target = await storedStream({ squadId, title: `${probePrefix} attacker target` })
     const victim = await storedStream({ squadId, title: `${probePrefix} victim stream` })
-    const { wait: victimWait } = await (
-      await postJson(`/api/workstreams/${victim.id}/request-input`, { message: 'victim input' })
-    ).json()
+    // Pre-upgrade waits retain the generic resolution route.
+    const { wait: victimWait } = await openWait(db, {
+      workStreamId: victim.id,
+      type: 'manual',
+      message: 'legacy task input',
+    })
 
     // Attacker-shaped call: victim's wait id under the target stream's id.
     const res = await postJson(`/api/workstreams/${target.id}/waits/${victimWait.id}/resolve`, {

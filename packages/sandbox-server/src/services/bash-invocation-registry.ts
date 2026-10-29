@@ -1,3 +1,4 @@
+import { isRestartContext, type RestartContext } from '@ficus/shared/restart-context'
 import { createHash, randomUUID } from 'node:crypto'
 import { advisoryLock as defaultAdvisoryLock } from '@ficus/shared/advisory-lock'
 import { link, mkdir, open, opendir, readFile, readdir, rename, unlink, type FileHandle } from 'node:fs/promises'
@@ -14,6 +15,7 @@ export interface BashInvocationRecord {
   terminalAt?: string
   cancelRequestedAt?: string
   cancelReason?: string
+  restart?: RestartContext
   priorState?: InvocationState
   quarantinedAt?: string
   reasonCode?: string
@@ -114,7 +116,9 @@ export class BashInvocationRegistry {
       )
     )
   }
-  async terminate(invocationId: string, reason = 'cancel'): Promise<{ remainingPids: [] }> {
+  async terminate(invocationId: string, reason = 'cancel', restart?: RestartContext): Promise<{ remainingPids: [] }> {
+    if (reason === 'core_restart' && !isRestartContext(restart))
+      throw new Error('core_restart requires restart correlation')
     const key = createHash('sha256').update(invocationId).digest('hex')
     const result = await this.lock<{ remainingPids: [] }>(key, async () => {
       const record = await this.readValidated(key)
@@ -128,8 +132,13 @@ export class BashInvocationRegistry {
       record.priorState = record.state
       if (record.state !== 'starting' || (record.pgid !== undefined && record.sid !== undefined))
         record.state = 'cancelling'
-      record.cancelRequestedAt = this.now().toISOString()
-      record.cancelReason = reason
+      // A cleanup retry is not a new cancellation. Preserve the first cause,
+      // including its correlation, even if the retry uses a different transport.
+      if (!record.cancelRequestedAt) {
+        record.cancelRequestedAt = this.now().toISOString()
+        record.cancelReason = reason
+        if (reason === 'core_restart') record.restart = restart
+      }
       await this.write(key, record)
       await this.options.reconcile(record)
       record.state = 'terminated'

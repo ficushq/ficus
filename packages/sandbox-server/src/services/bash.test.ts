@@ -335,14 +335,24 @@ describe('handleBash', () => {
   })
 
   it('handles timeout', async () => {
-    const resp = handleBash({
-      command: 'sleep 30',
-      cwd: testDir,
-      timeoutSeconds: 1,
-      sourceEnv: false,
-      activateDevbox: false,
+    const registry = new BashInvocationRegistry({
+      runtimeDir: join(testDir, 'registry'),
+      reconcile: reconcileBashRecord,
     })
+    const terminate = mock(registry.terminate.bind(registry))
+    const resp = handleBash(
+      {
+        invocationId: 'timeout-command',
+        command: 'sleep 30',
+        cwd: testDir,
+        timeoutSeconds: 1,
+        sourceEnv: false,
+        activateDevbox: false,
+      },
+      { acquire: registry.acquire.bind(registry), terminate }
+    )
     const { errors, exitCode } = collectOutput(await consumeSSE(resp))
+    expect(terminate).toHaveBeenCalledWith('timeout-command', 'timeout')
     expect(errors.length).toBeGreaterThan(0)
     expect(errors[0]).toContain('timed out')
     // A timed-out command MUST report a non-zero exit (124, timeout convention),
@@ -661,7 +671,7 @@ describe('handleBash', () => {
     expect(await cancelBashInvocation('overtaken-docker', 'tool-abort', { acquire, terminate })).toEqual({
       remainingPids: [],
     })
-    expect(terminate).toHaveBeenCalledWith('overtaken-docker', 'tool-abort')
+    expect(terminate).toHaveBeenCalledWith('overtaken-docker', 'tool-abort', undefined)
     ready.resolve()
     expect(await spawnDecision.promise).toBe('cancelled')
     await response.text()
@@ -721,7 +731,7 @@ describe('handleBash', () => {
     expect(await cancelBashInvocation('never-seen', 'transport-loss', { acquire, terminate })).toEqual({
       remainingPids: [],
     })
-    expect(terminate).toHaveBeenCalledWith('never-seen', 'transport-loss')
+    expect(terminate).toHaveBeenCalledWith('never-seen', 'transport-loss', undefined)
   })
 
   it('KILL-es a ready TERM-ignoring child and grandchild without touching a neighbor session', async () => {

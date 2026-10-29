@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto'
+import type { RestartContext } from '@ficus/shared/restart-context'
+
 /**
  * Draining sandbox commands before the worker exits. A deploy or restart used to
  * kill every running agent command mid-flight: the agent later saw a lost
@@ -15,23 +18,46 @@ const RESTART = 'the Ficus worker is restarting (a deploy or restart)'
 export const COMMAND_REFUSED_FOR_RESTART =
   `Command not started: ${RESTART}. Nothing ran. Try it again; ` + 'your work resumes automatically after the restart.'
 
+const restartErrors = new WeakMap<Error, RestartContext>()
+
+export function restartContextForCommandError(error: unknown): RestartContext | undefined {
+  const seen = new Set<Error>()
+  while (error instanceof Error && !seen.has(error)) {
+    const restart = restartErrors.get(error)
+    if (restart) return restart
+    seen.add(error)
+    error = error.cause
+  }
+  return undefined
+}
+
 /** What an agent sees for a command the restart cut short. */
-export function commandCanceledForRestartError(cleanupError?: Error): Error {
-  return new Error(
-    cleanupError
-      ? `Command canceled: ${RESTART}. Ficus could not confirm it stopped (${cleanupError.message}), so check ` +
-          'with `ps` and the state it affects before running it again.'
-      : `Command canceled: ${RESTART}. It was stopped before it finished, so its changes may be partly ` +
-          'applied: check the state it affects, then run it again.',
-    cleanupError ? { cause: cleanupError } : undefined
+export function commandCanceledForRestartError(restart: RestartContext, cleanupError?: Error): Error {
+  const error = Object.assign(
+    new Error(
+      `This command was cancelled by a Ficus restart at ${restart.restartedAt}; nothing is wrong with your work or the box. Re-run it when your sandbox is back. ` +
+        `It may have partial effects: check the affected state before retrying. [reason: core_restart; restart id: ${restart.restartId}]` +
+        (cleanupError
+          ? ` Ficus could not confirm it stopped (${cleanupError.message}); check with \`ps\` before retrying.`
+          : ''),
+      cleanupError ? { cause: cleanupError } : undefined
+    ),
+    { reason: 'core_restart' as const, restart }
   )
+  restartErrors.set(error, restart)
+  return error
+}
+
+/** Created once at the authoritative shutdown boundary, shared by tools and durable notices. */
+export function createRestartContext(): RestartContext {
+  return { restartId: randomUUID(), restartedAt: new Date().toISOString() }
 }
 
 export interface DrainableCommand {
   /** Settles when the command finishes by itself or after it is canceled. */
   readonly settled: Promise<unknown>
   /** Stop it and fail it with the restart message. */
-  cancelForRestart(): Promise<void>
+  cancelForRestart(restart: RestartContext): Promise<void>
 }
 
 let draining = false
@@ -55,7 +81,8 @@ export function trackCommand(command: DrainableCommand): void {
  * Returns how many finished on their own and how many were canceled.
  */
 export async function drainCommands(
-  timeoutMs = COMMAND_DRAIN_TIMEOUT_MS
+  timeoutMs = COMMAND_DRAIN_TIMEOUT_MS,
+  restart = createRestartContext()
 ): Promise<{ finished: number; canceled: number }> {
   draining = true
   const initial = running.size
@@ -65,7 +92,7 @@ export async function drainCommands(
   await Promise.race([allSettled, new Promise((resolve) => (timer = setTimeout(resolve, timeoutMs)))])
   clearTimeout(timer)
   const remaining = [...running]
-  await Promise.allSettled(remaining.map((command) => command.cancelForRestart()))
+  await Promise.allSettled(remaining.map((command) => command.cancelForRestart(restart)))
   return { finished: initial - remaining.length, canceled: remaining.length }
 }
 

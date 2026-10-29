@@ -30,6 +30,7 @@ import {
   workStreamFlowRuns,
   workStreamFlowTransitions,
   workflowBindings,
+  executions,
   inbox,
   type DbTx,
 } from '../../db'
@@ -148,7 +149,7 @@ export async function attachFlow(tx: DbTx, stream: Stream, source: WorkflowSourc
 }
 
 /** Immediate self-handoffs are recorded in the attempt; other handoffs use durable inbox intents. */
-type AssignmentCaller = { agentId: string; requestId: string }
+type AssignmentCaller = { agentId: string; requestId: string; sourceAttemptId: number | null }
 
 function responseAssignments(id: string, run: Run, requestId: string, identity: Identity) {
   const assignments = run.state.attempts.flatMap((attempt) => {
@@ -326,10 +327,33 @@ async function dispatchFlowAttempt(
     .set({ assigneeAgentId: binding!.agentId, agentIds: crew, updatedAt: new Date() })
     .where(eq(workStreams.id, stream.id))
   if (caller?.agentId === binding!.agentId) {
+    // An inline handoff is an authoritative continuation of the caller's one
+    // running execution, not permission to adopt a stale/queued/foreign origin.
+    // Rebind in the same transaction as the assignment receipt. Question and
+    // recovery writers keep their normal exact-attempt stale-origin checks.
+    const running = await tx
+      .select()
+      .from(executions)
+      .where(and(eq(executions.agentId, caller.agentId), eq(executions.status, 'running')))
+      .limit(2)
+      .for('update')
+    const origin = running.length === 1 ? running[0] : undefined
+    const canBind =
+      origin?.flowContext?.workStreamId === stream.id &&
+      origin.flowContext.attemptId === caller.sourceAttemptId &&
+      run.attemptAgents[String(caller.sourceAttemptId)] === caller.agentId
+    if (canBind)
+      await tx
+        .update(executions)
+        .set({
+          flowContext: { workStreamId: stream.id, attemptId: attempt.id, stepId: attempt.stepId },
+        })
+        .where(eq(executions.id, origin!.id))
     // dispatchFlow reloads the run between parallel siblings; update that current
     // state, not an attempt object from the loop's original snapshot.
     run.state.attempts.find((entry) => entry.id === attempt.id)!.responseAssignment = {
       requestId: caller.requestId,
+      ...(canBind ? { executionId: origin!.id } : {}),
       agentId: binding!.agentId,
       version: run.version,
       content: flowMessage(stream, run, attempt, await stackNotice(tx, stream)),
@@ -568,6 +592,7 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
       if (wait.flowAttemptId != null && !activeIds.has(wait.flowAttemptId))
         await closeOpenWaits(tx, { waitId: wait.id }, 'cleared', {
           note: 'Flow attempt superseded; this wait no longer blocks work.',
+          allowStructured: true,
         })
     }
     const updated = { ...run, state, participantSnapshots, version: state.version }
@@ -591,7 +616,9 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
       stream,
       updated,
       callbacks,
-      identity.type === 'agent' ? { agentId: identity.agentId, requestId } : undefined
+      identity.type === 'agent'
+        ? { agentId: identity.agentId, requestId, sourceAttemptId: command.attemptId }
+        : undefined
     )
     const receipt = { version: state.version, stateStatus: state.status, activeAttemptId: state.activeAttemptId }
     await tx
@@ -931,11 +958,22 @@ export async function deliverFlow(id: string) {
 export async function isCurrentFlowMessage(message: { id?: string; metadata: unknown; recipientId: string | null }) {
   const metadata = message.metadata as {
     source?: string
+    recoveryId?: string
     workStreamId?: string
     attemptId?: number
     integrationDeliveryId?: string
     workStreamReadmission?: boolean
   } | null
+  if (
+    metadata?.source === 'recovery-retry' ||
+    metadata?.source === 'recovery-decision' ||
+    (metadata?.source === 'workflow-wait-resolution' && metadata.recoveryId)
+  ) {
+    const { recoveryContinuationIsCurrent } = await import('../recovery/store')
+    return Boolean(
+      message.id && message.recipientId && (await recoveryContinuationIsCurrent(db, message.id, message.recipientId))
+    )
+  }
   if (metadata?.source === 'integration-notification') {
     if (!message.id || !message.recipientId) return false
     const { isCurrentIntegrationNotification } = await import('../integrations/outputs/runtime')

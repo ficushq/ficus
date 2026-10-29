@@ -1,8 +1,7 @@
 import type { WorkStreamPresentationFacts, WorkStreamPresentationState, StatusRole } from '../status-presentation'
 import type { WorkBucket } from '../live-activity'
 
-/** The actor's pre-rename name; nothing shipped with it, so it is an unknown value (human). */
-const PRE_RENAME_ACTOR = 'manager'
+const UNKNOWN_ACTOR = 'robot'
 
 /** One contract consumed by shared, Core serialization and web badge tests. */
 export interface PresentationCase {
@@ -163,8 +162,17 @@ export const WORK_STREAM_PRESENTATION_CASES: PresentationCase[] = [
     label: 'Waiting on Owner',
   },
   {
-    name: 'unknown actor (including manager) is human',
-    facts: { ...active, openWaits: [{ type: 'manual', actor: PRE_RENAME_ACTOR }] },
+    name: 'manager recovery wait',
+    facts: { ...active, openWaits: [{ type: 'manual', actor: 'manager' }] },
+    state: 'waiting_on_manager',
+    role: 'externalWait',
+    attention: false,
+    bucket: 'externalWait',
+    label: 'Waiting on Manager',
+  },
+  {
+    name: 'unknown actor is human',
+    facts: { ...active, openWaits: [{ type: 'manual', actor: UNKNOWN_ACTOR }] },
     state: 'blocked',
     role: 'attention',
     attention: true,

@@ -174,6 +174,7 @@ export async function flowInboxTargets(store: DbHandle, messageIds: string[]) {
       workStreamId?: string
       attemptId?: number
       questionId?: string
+      recoveryId?: string
       workStreamReadmission?: boolean
     } | null
     if (
@@ -184,7 +185,7 @@ export async function flowInboxTargets(store: DbHandle, messageIds: string[]) {
       targets.push({
         workStreamId: metadata.workStreamId,
         attemptId: metadata.attemptId,
-        assignment: metadata.source === 'workflow',
+        assignment: metadata.source === 'workflow' || Boolean(metadata.recoveryId),
         ...(metadata.workStreamReadmission ? { readmission: true } : {}),
       })
     if (metadata?.source === 'agent-question-answer' && metadata.questionId) {
@@ -290,6 +291,19 @@ export async function lockFlowInboxDelivery(store: DbTx, agentId: string, messag
         !(await isCurrentIntegrationDelivery(store, deliveryId, agentId, row.id))
       )
         throw new FlowWaitSupersededError()
+    }
+  }
+  if (validIds.length) {
+    const messages = await store.select().from(inbox).where(inArray(inbox.id, validIds))
+    for (const message of messages) {
+      if (
+        message.metadata?.source === 'recovery-retry' ||
+        message.metadata?.source === 'recovery-decision' ||
+        (message.metadata?.source === 'workflow-wait-resolution' && message.metadata?.recoveryId)
+      ) {
+        const { recoveryContinuationIsCurrent } = await import('../recovery/store')
+        if (!(await recoveryContinuationIsCurrent(store, message.id, agentId))) throw new FlowWaitSupersededError()
+      }
     }
   }
   for (const target of targets) {

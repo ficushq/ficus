@@ -66,6 +66,7 @@ const PLANT_FOR_STATE: Record<WorkStreamPresentationState, PlantRule> = {
   monitoring: 'waiting',
   // A manual wait the stream's owner agent must clear: nobody here has to act.
   waiting_on_owner: 'waiting',
+  waiting_on_manager: 'waiting',
   paused: 'paused',
   in_progress: 'growing',
   active: 'growing',

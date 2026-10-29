@@ -573,8 +573,12 @@ export async function hasAnySlotCleanupPermission(
  * are excluded by the join, exactly as before (`hasPermission` itself does NOT check
  * `disabledAt`, so this is the gate that keeps a disabled holder out of an audience).
  */
-export async function getUserIdsWithPermission(permission: string, squadId?: string): Promise<string[]> {
-  const rows = await db
+export async function getUserIdsWithPermission(
+  permission: string,
+  squadId?: string,
+  executor: Pick<typeof db, 'select'> = db
+): Promise<string[]> {
+  const rows = await executor
     .select({
       userId: roleAssignments.subjectId,
       scope: roleAssignments.scope,

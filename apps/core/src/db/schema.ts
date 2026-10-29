@@ -1,3 +1,5 @@
+import type { StructuredManualWait } from '@ficus/shared'
+import type { RecoveryState } from '../services/recovery/policy'
 import { sql } from 'drizzle-orm'
 import {
   pgTable,
@@ -1830,6 +1832,7 @@ export const workStreamWaits = pgTable(
     // Null blocks the stream; otherwise blocks only this durable flow attempt.
     flowAttemptId: integer('flow_attempt_id'),
     message: text('message'),
+    structured: jsonb('structured').$type<StructuredManualWait>(),
     // Manual waits: who must act — 'human' | 'owner'. Text (not
     // an enum) so a future actor needs no enum migration; serializers treat an
     // unknown value as 'human'. Existing and unspecified waits are human.
@@ -1865,6 +1868,72 @@ export const workStreamWaits = pgTable(
     // Wait closes by reference (dependency completion, question answered).
     index('idx_work_stream_waits_reference').on(table.referenceId),
   ]
+)
+
+/** Runtime-owned recovery accounting; never accepts attempt counts from an agent request. */
+export const recoveryEpisodes = pgTable(
+  'recovery_episodes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    // Delivery failures may precede any execution; never invent an execution identity.
+    executionId: uuid('execution_id'),
+    workStreamId: uuid('work_stream_id').references(() => workStreams.id, { onDelete: 'cascade' }),
+    flowAttemptId: integer('flow_attempt_id'),
+    operationKey: varchar('operation_key', { length: 128 }).notNull(),
+    state: jsonb('state').$type<RecoveryState>().notNull(),
+    version: integer('version').notNull().default(0),
+    waitId: uuid('wait_id').references(() => workStreamWaits.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('idx_recovery_active_operation')
+      .on(table.agentId, table.operationKey)
+      .where(sql`${table.state}->>'state' <> 'resolved'`),
+    index('idx_recovery_stream').on(table.workStreamId),
+    check('recovery_version_nonnegative', sql`${table.version} >= 0`),
+    check(
+      'recovery_budget_valid',
+      sql`(${table.state}->>'managerCycles')::integer BETWEEN 0 AND 1 AND (${table.state}->>'cycleFailures')::integer BETWEEN 0 AND 3`
+    ),
+  ]
+)
+
+export const recoveryAttempts = pgTable(
+  'recovery_attempts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    recoveryId: uuid('recovery_id')
+      .notNull()
+      .references(() => recoveryEpisodes.id, { onDelete: 'cascade' }),
+    // Delivery failures may precede any execution; never invent an execution identity.
+    executionId: uuid('execution_id'),
+    invocationId: varchar('invocation_id', { length: 256 }).notNull(),
+    outcome: text('outcome').notNull().$type<'unknown' | 'restart' | 'success' | 'explained'>(),
+    error: text('error'),
+    restartId: varchar('restart_id', { length: 128 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique('recovery_attempt_once').on(table.recoveryId, table.invocationId)]
+)
+
+export const recoveryDecisions = pgTable(
+  'recovery_decisions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    recoveryId: uuid('recovery_id')
+      .notNull()
+      .references(() => recoveryEpisodes.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    action: text('action').notNull(),
+    agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique('recovery_decision_once').on(table.recoveryId, table.version)]
 )
 
 export type WorkStreamContinuationStatus = 'idle' | 'pending' | 'delivered' | 'exhausted'

@@ -1,7 +1,11 @@
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { InferSelectModel } from 'drizzle-orm'
 import {
   WORK_STREAM_ADMITTED_STATUSES,
+  assertHumanAnswerableRequest,
+  manualInputRequestSchema,
+  RECOVERY_ATTEMPT_BUDGET,
+  taskInputSummary,
   isDependencyEdgeSatisfied,
   workStreamWaitActor,
   type WorkStreamWait,
@@ -10,7 +14,7 @@ import {
   type WorkStreamWaitType,
 } from '@ficus/shared'
 import { db } from '../../db'
-import { workStreams, workStreamWaits } from '../../db/schema'
+import { workStreams, workStreamWaits, recoveryEpisodes } from '../../db/schema'
 import { loadReadyDependencyIds, pendingReadyDependencyIds, unlockReadyEdge } from './dependency-edges'
 
 export type WorkStreamWaitRow = InferSelectModel<typeof workStreamWaits>
@@ -23,6 +27,7 @@ export type DbHandle = DbTransaction | typeof db
 export function toWaitJson(row: WorkStreamWaitRow): WorkStreamWait {
   return {
     id: row.id,
+    ...(row.structured ? { structured: row.structured } : {}),
     flowAttemptId: row.flowAttemptId ?? null,
     workStreamId: row.workStreamId,
     type: row.type,
@@ -44,6 +49,7 @@ export function toWaitJson(row: WorkStreamWaitRow): WorkStreamWait {
 }
 
 export interface OpenWaitInput {
+  structured?: import('@ficus/shared').StructuredManualWait
   scope?: 'stream' | 'attempt'
   flowAttemptId?: number | null
   resolutionHandler?: 'workflow'
@@ -91,7 +97,68 @@ export async function openWait(
     if (existing) return { wait: existing, alreadyOpen: true }
   }
 
-  const safeMessage = input.message ?? null
+  if (
+    input.type === 'manual' &&
+    input.resolutionHandler !== 'workflow' &&
+    (input.createdBy === 'agent' ||
+      (input.createdByAgentId && input.createdBy !== 'system' && input.createdBy !== 'manager')) &&
+    !input.structured
+  ) {
+    throw new Error('A typed continue, decide or provide request is required; free-text waits are not accepted')
+  }
+  if (input.type === 'manual' && !input.structured && input.createdBy === 'manager') {
+    assertHumanAnswerableRequest([input.message ?? ''])
+    if (input.createdByAgentId) {
+      const { assertNoPendingRecovery } = await import('../recovery/store')
+      await assertNoPendingRecovery(dbx, input.createdByAgentId, input.workStreamId)
+    }
+  }
+  let structured = input.structured
+  let actor = input.actor ?? 'human'
+  if (structured) {
+    const request = manualInputRequestSchema.parse(structured.request)
+    if (input.type !== 'manual' || input.resolutionHandler)
+      throw new Error('Structured input cannot replace a workflow or non-manual wait')
+    if (request.kind === 'continue') {
+      const [record] = await dbx.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.id, request.recoveryId))
+      if (
+        !record ||
+        record.workStreamId !== input.workStreamId ||
+        record.flowAttemptId !== flowAttemptId ||
+        record.agentId !== input.createdByAgentId ||
+        record.version !== request.expectedRecoveryVersion ||
+        record.state.cycleFailures !== RECOVERY_ATTEMPT_BUDGET ||
+        !['waiting-manager', 'waiting-owner', 'stopped'].includes(record.state.state)
+      ) {
+        throw new Error('Recovery must be exhausted and belong to this exact wait scope')
+      }
+      const { recoverySummary } = await import('../recovery/policy')
+      structured = {
+        request,
+        summary: recoverySummary(record.state),
+        version: record.version,
+        ...(record.state.state === 'stopped' ? { stopped: true } : {}),
+      }
+      actor = record.state.ownerEscalated ? 'human' : 'manager'
+    } else {
+      if (input.createdByAgentId) {
+        const { assertNoPendingRecovery } = await import('../recovery/store')
+        await assertNoPendingRecovery(dbx, input.createdByAgentId, input.workStreamId)
+      }
+      if (request.kind === 'provide' && request.input.type === 'config-value') {
+        const [stream] = await dbx
+          .select({ squadId: workStreams.squadId })
+          .from(workStreams)
+          .where(eq(workStreams.id, input.workStreamId))
+        if (!stream) throw new Error('Work stream not found')
+        const { consumeConfigDeclarationProof } = await import('../recovery/task-declarations')
+        consumeConfigDeclarationProof(structured.request, input.workStreamId, stream.squadId)
+      }
+      structured = { request, summary: taskInputSummary(request), version: 0 }
+      actor = request.actor ?? 'human'
+    }
+  }
+  const safeMessage = structured?.summary.text ?? input.message ?? null
   const [created] = await dbx
     .insert(workStreamWaits)
     .values({
@@ -101,7 +168,8 @@ export async function openWait(
       referenceId: input.referenceId ?? null,
       resolutionHandler: input.resolutionHandler ?? null,
       message: safeMessage,
-      actor: input.actor ?? 'human',
+      structured: structured ?? null,
+      actor,
       createdBy: input.createdBy ?? 'system',
       createdByAgentId: input.createdByAgentId ?? null,
       createdByUserId: input.createdByUserId ?? null,
@@ -128,7 +196,11 @@ export async function closeOpenWaits(
   dbx: DbHandle,
   filter: CloseWaitsFilter,
   resolution: WorkStreamWaitResolution,
-  opts: { note?: string | null; closedAt?: Date } = {}
+  opts: {
+    note?: string | null
+    closedAt?: Date
+    /** Trusted flow supersession only, never an API field. */ allowStructured?: boolean
+  } = {}
 ): Promise<WorkStreamWaitRow[]> {
   const conditions = [isNull(workStreamWaits.closedAt)]
   if (filter.waitId) conditions.push(eq(workStreamWaits.id, filter.waitId))
@@ -138,12 +210,37 @@ export async function closeOpenWaits(
   if (conditions.length === 1) {
     throw new Error('closeOpenWaits requires at least one filter beyond "open"')
   }
+  if (!opts.allowStructured && (filter.type === 'manual' || filter.waitId)) {
+    const [structured] = await dbx
+      .select({ id: workStreamWaits.id })
+      .from(workStreamWaits)
+      .where(and(...conditions, sql`${workStreamWaits.structured} IS NOT NULL`))
+      .limit(1)
+    if (structured)
+      throw new Error('Use the typed input decision endpoint; generic unblock cannot resolve structured waits')
+  }
   const safeNote = opts.note ?? null
-  return dbx
+  const closed = await dbx
     .update(workStreamWaits)
     .set({ closedAt: opts.closedAt ?? new Date(), resolution, resolutionNote: safeNote })
     .where(and(...conditions))
     .returning()
+  // Terminal transitions and explicit authorized replanning retire the old
+  // wait binding, not its budget. A retry in a successor must rebind the same
+  // durable hold; replanning cannot manufacture another manager allowance.
+  const recoveryIds = closed.flatMap((wait) =>
+    wait.structured?.request.kind === 'continue' ? [wait.structured.request.recoveryId] : []
+  )
+  if (recoveryIds.length)
+    await dbx
+      .update(recoveryEpisodes)
+      .set({
+        waitId: null,
+        version: sql`${recoveryEpisodes.version} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(inArray(recoveryEpisodes.id, recoveryIds))
+  return closed
 }
 
 /** Open waits for one stream, newest first. */

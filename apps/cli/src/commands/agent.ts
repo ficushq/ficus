@@ -1,3 +1,5 @@
+import { manualWaitDecisionSchema } from '@ficus/shared'
+import { addStructuredInputOptions, readStructuredInput, validateStructuredInput } from '../structured-input'
 import { Command } from 'commander'
 import { apiGet, apiPatch, apiPost, apiDelete } from '../client'
 import { explainDormantRecipient, WAKE_OPTION_DESCRIPTION } from '../dormant-agent'
@@ -17,6 +19,24 @@ function collect(value: string, previous: string[]): string[] {
 
 export function registerAgentCommands(program: Command) {
   const agent = program.command('agent').description('Manage agents')
+
+  addStructuredInputOptions(
+    agent
+      .command('recovery <id> <recoveryId>')
+      .description('Resolve a standalone runtime recovery with a typed, versioned decision')
+  ).action(async (id: string, recoveryId: string, options) => {
+    try {
+      const decision = validateStructuredInput(manualWaitDecisionSchema, await readStructuredInput(options))
+      output(
+        await apiPost(
+          `/api/agents/${encodeURIComponent(id)}/recoveries/${encodeURIComponent(recoveryId)}/input`,
+          decision
+        )
+      )
+    } catch (error) {
+      outputError(error as Error)
+    }
+  })
 
   // ficus agent list [--type <agentTypeId>] [--status <status>] [--orphaned] [--older-than <duration>]
   agent

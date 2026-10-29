@@ -1,6 +1,7 @@
 import { sandboxControlRequest } from './sandboxControl'
 import type {
   Agent,
+  ManualWaitDecision,
   DeliveryMode,
   Execution,
   Message,
@@ -346,3 +347,6 @@ export async function getAgentSlotHolds(agentId: string): Promise<AgentSlotHold[
     )
     .map(({ poolKey, expiresAt }) => ({ poolKey, expiresAt }))
 }
+
+export const resolveAgentRecovery = (agentId: string, recoveryId: string, decision: ManualWaitDecision) =>
+  client.agents.resolveRecovery(agentId, recoveryId, decision)

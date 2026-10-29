@@ -106,3 +106,47 @@ describe('SandboxClient ambiguous bash outcomes', () => {
     }
   )
 })
+
+test('restart cancellation sends the same reason, id and time to the registry endpoint', async () => {
+  const requests: RequestInit[] = []
+  const client = new SandboxClient('box.test:123', undefined, {
+    fetch: async (_url, init) => {
+      requests.push(init!)
+      return Response.json({ remainingPids: [] })
+    },
+  })
+  const restart = { restartId: 'restart-1', restartedAt: '2026-10-28T21:32:00.000Z' }
+  await client.cancelBashInvocation('stable', 'core_restart', restart)
+  expect(JSON.parse(String(requests[0]?.body))).toEqual({ invocationId: 'stable', reason: 'core_restart', restart })
+})
+
+test('records the restart cancellation before disconnecting the stream, avoiding transport-loss winning the registry race', async () => {
+  let streamSignal: AbortSignal | undefined
+  let releaseCancel!: () => void
+  const client = new SandboxClient('box.test:123', undefined, {
+    fetch: async (url, init) => {
+      if (String(url).endsWith('/bash/cancel')) {
+        expect(streamSignal?.aborted).toBe(false)
+        await new Promise<void>((resolve) => {
+          releaseCancel = resolve
+        })
+        return Response.json({ remainingPids: [] })
+      }
+      streamSignal = init?.signal ?? undefined
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            streamSignal?.addEventListener('abort', () => controller.close(), { once: true })
+          },
+        })
+      )
+    },
+  })
+  const stream = client.bash({ command: 'sleep 60', invocationId: 'restart-race' })
+  const cancelled = stream.cancelAndWait('core_restart', { restartId: 'r', restartedAt: '2026-10-28T21:32:00.000Z' })
+  // Avoid leaving an unresolved stream on assertion failure.
+  await Promise.resolve()
+  releaseCancel?.()
+  await cancelled
+  expect(streamSignal?.aborted).toBe(true)
+})

@@ -1,3 +1,4 @@
+import { toolRecoveryContext } from '../../recovery/context'
 import { createHash } from 'crypto'
 import { classifySandboxTransportError, SandboxTransportError } from '../client/http-client'
 
@@ -27,16 +28,22 @@ export async function runIdempotentSandboxOperation<Client, Result>(input: {
   operation(client: Client): Promise<Result>
   sleep?: (ms: number) => Promise<void>
 }): Promise<Result> {
+  const recovery = toolRecoveryContext.getStore()
   const sleep = input.sleep ?? ((ms) => Bun.sleep(ms))
   const delays = retryDelays(input.sandboxId, input.operationClass, 3)
   let client = input.getClient()
 
   for (let attempt = 0; attempt < delays.length; attempt++) {
-    if (delays[attempt] > 0) await sleep(delays[attempt])
+    if (attempt > 0 && recovery) await recovery.beforeAttempt()
+    else if (delays[attempt] > 0) await sleep(delays[attempt])
     try {
       return await input.operation(client)
     } catch (error) {
       const transport = error instanceof SandboxTransportError ? error : classifySandboxTransportError(error)
+      if (transport && recovery) {
+        const record = await recovery.failed(error)
+        if (record && record.state.state !== 'recovering') throw error
+      }
       if (!transport || attempt === delays.length - 1) throw error
       client = await input.recoverClient(client, transport)
     }
