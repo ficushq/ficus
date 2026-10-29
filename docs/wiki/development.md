@@ -277,6 +277,39 @@ not sufficient evidence. Report actual completed tests and any skips; see
 See the package test entrypoints for suite-specific guidance and [`ci-cd.md`](ci-cd.md)
 for what gates a merge.
 
+### Native capacity admission in Ficus runtimes
+
+In a Ficus agent runtime, the root/Core preloads, Core package runner, and
+`test:db:up` verify an **existing** caller-owned `shared-box-intensive` claim
+before any database probe, stale-project sweep, Compose startup, or schema
+mutation. Even a focused web/CLI test invoked with root `bun test` loads Core's
+database preload. Claim with `ficus slot claim shared-box-intensive` first and
+inspect its outcome: `queued` is not ownership. A disabled pool is explicitly
+not enforced; no claim or queue entry is created by this check.
+
+The guard reads `ficus --json slot list shared-box-intensive` for the current
+squad using the injected agent identity. The API derives `callerClaim` from the
+authenticated actor and excludes expired/released claims; another holder or a
+free slot is not admission. Queued, expired, absent, malformed, or unverifiable
+ownership fails closed with a named capacity diagnostic. It never acquires a
+second claim, renews automatically, or introduces an approval/token/ledger.
+Keep the existing claim alive while using the resource, then stop this
+worktree's DB and release the claim on every exit. `test:db:down` remains
+available after capacity is lost and retains its project-ownership checks.
+
+Detection uses injected Ficus runtime markers and the OS VM-box account, not
+`CI`, `NODE_ENV`, or a test-mode override. Setting `CI=true` inside a box cannot
+bypass admission, including when `DATABASE_URL` is supplied. Ordinary CI and
+non-Ficus local development do not invoke the CLI or depend on the Core API.
+This is a startup safety guard, not a security boundary against a shell that
+edits repository tooling, nor a monitor that stops running tests on expiry.
+
+The guard's synthetic regressions need no DB or capacity claim:
+
+```bash
+cd packages/shared && bun test src/testDbCapacity.test.ts
+```
+
 ## PostgreSQL (Docker)
 
 ```bash
