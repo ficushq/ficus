@@ -807,6 +807,32 @@ describe('deprecated inline message routes', () => {
     expect(await db.select().from(messagesTable).where(eq(messagesTable.id, message.id))).toHaveLength(1)
   })
 
+  it('refuses to cancel inbox deliveries and to edit monitor deliveries, with a clear reason', async () => {
+    const inbox = await testAgent.recordMessage({
+      role: 'human',
+      content: 'From the inbox',
+      pending: true,
+      metadata: { source: 'inbox', deliveryMode: 'follow-up' },
+    })
+    const monitor = await testAgent.recordMessage({
+      role: 'human',
+      content: 'Monitor event',
+      pending: true,
+      metadata: { source: 'monitor', deliveryMode: 'steer' },
+    })
+    const request = (id: string, operation: string) =>
+      app.request(`/api/agents/${testAgent.id}/messages/${id}/queue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
+        body: JSON.stringify({ operation }),
+      })
+    const canceled = await request(inbox.id, 'cancel')
+    expect(canceled.status).toBe(409)
+    expect(await canceled.json()).toMatchObject({ code: 'not_allowed', error: expect.stringContaining('Inbox') })
+    expect((await request(inbox.id, 'steer')).status).toBe(200)
+    expect((await request(monitor.id, 'follow-up')).status).toBe(409)
+  })
+
   it('keeps malformed queue JSON in the shared error boundary and validates the root shape', async () => {
     const messageId = crypto.randomUUID()
     const request = (body: string) =>

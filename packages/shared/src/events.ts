@@ -232,7 +232,7 @@ export type EventMap = {
     executionId: string
     messageId: string
     requestId: string
-    result: 'updated' | 'not_pending' | 'claimed' | 'unavailable'
+    result: 'updated' | 'not_pending' | 'not_allowed' | 'claimed' | 'unavailable'
   }
 
   // Worker events

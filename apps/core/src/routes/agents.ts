@@ -931,6 +931,15 @@ export const agentsRouter = new Hono()
       if (result === 'updated') return c.json({ success: true })
       if (result === 'not_pending')
         return c.json({ error: 'This message is no longer waiting in the queue.', code: result }, 409)
+      if (result === 'not_allowed')
+        return c.json(
+          {
+            error:
+              'Inbox deliveries can only change when they are delivered, and monitor deliveries cannot be changed.',
+            code: result,
+          },
+          409
+        )
       return c.json({ error: 'Could not confirm the queue update. Refresh and try again.', code: result }, 503)
     }
   )

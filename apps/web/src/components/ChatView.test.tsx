@@ -3451,20 +3451,52 @@ describe('ChatView queued message controls', () => {
     })
   })
 
-  test('unsaved sends and automated deliveries keep a plain mode label without controls', async () => {
-    const onUpdatePendingMessage = mock(async () => {})
+  test('unsaved sends and monitor deliveries keep a plain mode label without controls', async () => {
     const { window } = await renderChatView(
       <ChatView
         items={[
           queued({ id: 'client-1', messageId: undefined, content: 'Still sending' }),
-          queued({ id: 'inbox-1', messageId: 'inbox-1', content: 'From inbox', metadata: { source: 'inbox' } }),
+          queued({
+            id: 'monitor-1',
+            messageId: 'monitor-1',
+            content: 'Monitor event',
+            metadata: { source: 'monitor' },
+          }),
         ]}
         onSend={() => {}}
-        onUpdatePendingMessage={onUpdatePendingMessage}
+        onUpdatePendingMessage={mock(async () => {})}
       />
     )
     expect(window.document.body.textContent).toContain('Still sending')
     expect(window.document.querySelectorAll('button[aria-label="Queued message delivery"]')).toHaveLength(0)
     expect(window.document.querySelectorAll('button[aria-label="Cancel queued message"]')).toHaveLength(0)
+  })
+
+  test('a queued inbox delivery can switch mode from its pill but cannot be canceled', async () => {
+    const onUpdatePendingMessage = mock(async () => {})
+    const { dom, window } = await renderChatView(
+      <ChatView
+        items={[
+          queued({
+            id: 'inbox-1',
+            messageId: 'inbox-1',
+            content: 'From inbox',
+            deliveryMode: 'follow-up',
+            // The sender asked for an interrupt; the queue currently holds it as a follow-up.
+            metadata: { source: 'inbox', inboxDeliveryMode: 'steer' },
+          }),
+        ]}
+        onSend={() => {}}
+        onUpdatePendingMessage={onUpdatePendingMessage}
+      />
+    )
+    expect(cancelButton(window)).toBeNull()
+    expect(deliveryTrigger(window)?.textContent).toContain('Follow up')
+    await dom.act(async () => deliveryTrigger(window)!.click())
+    const interrupt = [...window.document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((row) =>
+      row.textContent?.includes('Interrupt')
+    )!
+    await dom.act(async () => interrupt.click())
+    expect(onUpdatePendingMessage).toHaveBeenCalledWith('inbox-1', 'steer')
   })
 })

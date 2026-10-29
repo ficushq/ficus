@@ -286,7 +286,7 @@ delivered back to the agent, so they never produce this card.
 
 ### Editing a pending message
 
-Each accepted queued chat message has Cancel and Switch to Interrupt/Follow up controls. The API is `POST /api/agents/:id/messages/:messageId/queue` with `{ "operation": "cancel" | "steer" | "follow-up" }`, protected by `agents:run` and the agent's owner/squad scope. The client SDK exposes `agents.updatePendingMessage`.
+Each accepted queued chat message has Cancel and Switch to Interrupt/Follow up controls. The API is `POST /api/agents/:id/messages/:messageId/queue` with `{ "operation": "cancel" | "steer" | "follow-up" }`, protected by `agents:run` and the agent's owner/squad scope. The client SDK exposes `agents.updatePendingMessage`. Inbox deliveries accept only `steer` and `follow-up`: their inbox items are already claimed, so deleting the row would lose them. Monitor deliveries accept no operation. Both refusals return `409` with `code: "not_allowed"`.
 
 Unclaimed rows are edited under the agent admission lock and a row lock. Claimed inputs are routed to the exact owning execution, with a request ID and deadline; other workers cannot acknowledge the operation. The patched Pi queue waits for the database commit before consuming or changing the selected message. A rollback leaves it queued. Once Pi has drained it, edits return a conflict instead of re-enqueuing it. Cancellation keeps the accepted-send receipt tombstone so retrying the same client ID cannot resurrect it.
 

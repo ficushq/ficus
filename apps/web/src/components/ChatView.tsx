@@ -1,4 +1,5 @@
 import { SelectionPopup } from './ThemedPopup'
+import { QUEUED_DELIVERY_OPTIONS } from '../lib/queuedDelivery'
 import { ChatDropOverlay } from './ChatDropOverlay'
 import { isFileDrag, isTextEntry } from '../lib/dropScope'
 import { useToolRenderers } from '../lib/ToolRenderersContext'
@@ -454,18 +455,7 @@ function PendingMessageRow({
                 width={300}
                 openOnHover
                 disabled={updating}
-                options={[
-                  {
-                    value: 'steer',
-                    label: 'Interrupt',
-                    description: 'Deliver at the next point the agent can take a message.',
-                  },
-                  {
-                    value: 'follow-up',
-                    label: 'Follow up',
-                    description: 'Deliver after the agent finishes its current turn.',
-                  },
-                ]}
+                options={QUEUED_DELIVERY_OPTIONS}
                 className={clsx(bubbleControl, 'inline-flex items-center gap-1.5 rounded px-1.5 py-0.5')}
               >
                 {modeLabel}
@@ -490,7 +480,18 @@ function PendingMessageRow({
             )}
           </div>
         )}
-        <HumanMessageContent content={content} metadata={effectiveMetadata} showRaw={false} agentId={agentId} />
+        <HumanMessageContent
+          content={content}
+          metadata={effectiveMetadata}
+          showRaw={false}
+          agentId={agentId}
+          deliveryControl={
+            // Inbox deliveries may change mode but are never canceled; monitor deliveries stay as sent.
+            queued && auto === 'inbox' && deliveryMode && onSwitchMode
+              ? { onChange: (mode) => void run(() => onSwitchMode(mode)), disabled: updating }
+              : undefined
+          }
+        />
 
         {status === 'failed' && onRetry && (
           <button
