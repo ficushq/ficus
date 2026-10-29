@@ -38,6 +38,24 @@ function normalizedWording(text: string): string {
 /** Wording is a narrow secondary guard; paths and declared keys carry structure. */
 export function isForbiddenEvidenceRequest(text: string, proposedAction = false): boolean {
   const normalized = normalizedWording(text)
+  // A choice can itself ask the person to perform host forensics. Addressing it
+  // as an agent proposal does not make a host action an ordinary task decision.
+  const commandText = text
+    .normalize('NFKC')
+    .replace(/[\u200b-\u200d\ufeff]/g, '')
+    .toLowerCase()
+    .trim()
+  const action = /\b(?:run|execute|invoke|use|check|inspect|read|collect|gather|view|tail)\b/.test(normalized)
+  const host = /\b(?:host|server|box|platform|system|production|cluster)\b/.test(normalized)
+  if (
+    (/\b(?:journalctl|systemctl)\b/.test(commandText) && (action || /^(?:journalctl|systemctl)\b/.test(commandText))) ||
+    /\bssh\s+(?:in(?:to)?\b|\S+@\S+|-\S+)/.test(commandText) ||
+    /^(?:ssh)\b|\b(?:will|run|execute|invoke|use)\s+ssh\b/.test(commandText) ||
+    (/\b(?:docker|kubectl)\b/.test(commandText) && host) ||
+    /\b(?:docker|kubectl)\s+(?:ps|logs|inspect|stats|get|describe|exec)\b/.test(commandText) ||
+    (action && host && /\b(?:logs?|journal|syslog)\b/.test(normalized))
+  )
+    return true
   const person = /\byou(?:r)?\b|\bplease\b/.test(normalized)
   const agentProposal = /\b(?:i will|i'll|i can|may i|can i|should i|we will|shall we)\b/.test(normalized)
   if (agentProposal && !person) return false

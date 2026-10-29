@@ -155,6 +155,7 @@ test.each([
   'Paste the output of docker ps from the server',
   'You SSH in and check',
   'Please upload the syslog files',
+  'I will SSH into the authorized project environment and check',
 ])('rejects the reviewed forensic paraphrase: %s', async (text) => {
   const { isForbiddenEvidenceRequest } = await import('./recovery-waits')
   expect(isForbiddenEvidenceRequest(text)).toBe(true)
@@ -164,7 +165,6 @@ test.each([
   'Which container registry should we push to?',
   'Should the app show an audit log page?',
   'Run the migration now, or wait for review?',
-  'I will SSH into the authorized project environment and check',
 ])('allows genuine product questions and agent-proposed actions: %s', async (text) => {
   const { isForbiddenEvidenceRequest } = await import('./recovery-waits')
   expect(isForbiddenEvidenceRequest(text)).toBe(false)
@@ -244,4 +244,54 @@ test('platform configuration uses only the server-declared work-stream keys', ()
       input: { type: 'config-value', key: 'invented', declaredIn: 'ficus:work-stream' },
     }).success
   ).toBe(false)
+})
+
+test('host actions are forbidden in decision subjects and options regardless of addressee', () => {
+  const decision = {
+    schemaVersion: 1,
+    kind: 'decide',
+    purpose: 'task-decision',
+    subject: 'Choose the next task step',
+    options: [
+      { id: 'go', label: 'Run the workspace tests' },
+      { id: 'stop', label: 'Stop' },
+    ],
+  }
+  for (const text of [
+    'Run journalctl -u ficus on the host',
+    'SSH into the box and check',
+    'I will run systemctl status ficus',
+    'Run docker inspect on the server',
+    'Use kubectl against the production server',
+    'Read the host logs',
+    'I can read logs on the host',
+    'journalctl -u ficus',
+    'ssh admin@server',
+  ]) {
+    expect(requestInputWorkStreamSchema.safeParse({ ...decision, subject: text }).success).toBe(false)
+    expect(
+      requestInputWorkStreamSchema.safeParse({
+        ...decision,
+        options: [
+          { id: 'go', label: text },
+          { id: 'stop', label: 'Stop' },
+        ],
+      }).success
+    ).toBe(false)
+  }
+  for (const label of [
+    'Run npm test in my workspace',
+    'I will inspect the project files',
+    'Run docker compose build in the workspace',
+    'Run the migration',
+  ])
+    expect(
+      requestInputWorkStreamSchema.safeParse({
+        ...decision,
+        options: [
+          { id: 'go', label },
+          { id: 'stop', label: 'Stop' },
+        ],
+      }).success
+    ).toBe(true)
 })
