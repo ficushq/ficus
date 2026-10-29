@@ -257,3 +257,64 @@ test('PR snapshots distinguish pending human review from bot-only requests', () 
     expect(fact!.data.pendingHumanReview).toBe(pendingHumanReview)
   }
 })
+
+test.each(['issue', 'pull', 'inline'])(
+  '%s deletion is a signed, identity-bound content-free terminal observation',
+  (kind) => {
+    const inline = kind === 'inline'
+    const type = inline ? 'pull_request_review_comment' : 'issue_comment'
+    const isPR = kind !== 'issue'
+    const input = {
+      type,
+      githubObservation: { kind: 'webhook' as const, deliveryId: 'delete-23' },
+      payload: {
+        action: 'deleted',
+        repository: { ...repository, id: 1 },
+        ...(inline
+          ? { pull_request: pr }
+          : { issue: { id: 10, number: 3, title: 'secretparent', ...(isPR ? { pull_request: {} } : {}) } }),
+        comment: {
+          id: 23,
+          body: 'deletedsecret instructions',
+          user: { id: 5, login: 'deletedauthor' },
+          updated_at: date,
+          html_url: `https://github.com/Acme/Project/${isPR ? 'pull' : 'issues'}/3#${inline ? 'discussion_r' : 'issuecomment-'}23`,
+        },
+      },
+    }
+    const [fact] = githubOutputAdapter.normalize(input)
+    expect(fact).toBeDefined()
+    expect(fact!.github!.content).toMatchObject({
+      repositoryId: '1',
+      nativeId: '23',
+      objectKind: inline ? 'review_comment' : 'issue_comment',
+      reason: 'comment_deleted',
+      providerVersion: null,
+      delivery: null,
+      author: null,
+      editor: null,
+    })
+    for (const secret of ['deletedsecret', 'secretparent', 'deletedauthor'])
+      expect(JSON.stringify(fact)).not.toContain(secret)
+    expect(githubOutputAdapter.normalize({ ...input, githubObservation: { kind: 'poll' } })).toEqual([])
+    expect(githubOutputAdapter.normalize({ ...input, githubObservation: undefined })).toEqual([])
+    expect(
+      githubOutputAdapter.normalize({
+        ...input,
+        payload: { ...input.payload, repository: { id: 1, full_name: 'other/repo' } },
+      })
+    ).toEqual([])
+    expect(
+      githubOutputAdapter.normalize({
+        ...input,
+        payload: { ...input.payload, comment: { ...input.payload.comment, id: 24 } },
+      })
+    ).toEqual([])
+    expect(
+      githubOutputAdapter.normalize({
+        ...input,
+        payload: { ...input.payload, repository: { full_name: 'Acme/Project' } },
+      })
+    ).toEqual([])
+  }
+)

@@ -21,7 +21,8 @@ captured, admissible provenance. Old matching text is not evidence of currentnes
 Missing identities or ambiguous ordering fail closed.
 
 Index projection and every managed read compare provenance against current local
-captures. Differing valid provider clocks determine order; equal or missing
+captures. A captured native comment deletion is terminal for its identity. For
+non-deletion revisions, differing valid provider clocks determine order; equal or missing
 clocks use capture sequence, as in event delivery. A newer held or denied capture
 can invalidate older admitted prose. Shared reads also check the caller's known
 versions; source-squad approval never grants permission to another squad.
@@ -132,11 +133,76 @@ On the synthetic fixture measured 2026-10-29, the full freshness read took rough
 bitmap/index access and used primary-key index probes for currentness. These are
 local fixture measurements, not production latency guarantees.
 
-## Known limitation
+## Captured comment deletions
 
-Comment deletion events are not currently captured as revisions. A deleted
-comment can remain locally retrievable until an ordinary successful reindex
-observes its absence. The local-currentness guarantee does not detect unseen
-remote edits or deletions, and reads never fetch GitHub to discover them.
+Authenticated `issue_comment` / `deleted` webhooks cover both issue comments and
+PR conversation comments. `pull_request_review_comment` / `deleted` covers inline
+review comments. They bind numeric `repository.id`, `comment.id`, object kind,
+and the native comment URL's repository, parent number and fragment. The assigned
+connection must still have access to that numeric repository and matching name;
+a repository recreated under the same name cannot inherit an old deletion.
+The normalizer strips deleted body, author/login, parent title and file path.
+A poll or payload/metadata claiming to be signed cannot create a tombstone.
+
+Capture appends a content-free revision using existing storage:
+`reason: comment_deleted`, `decision: historical`, `releaseState: retained`,
+`envelope: null`, `providerVersion: null`. No DB migration is required. The normal
+capture transaction and authority/object locks serialize invalidation with final
+delivery. No rule, notification, screening or feedback-approval execution is
+triggered by deletion; it is captured even for memory-only resources with no
+matching output rule. Author trust and filter OFF do not disable invalidation.
+
+GitHub supplies no deletion timestamp: `comment.updated_at` describes the last
+edit, **not** deletion. The factual event's local observation time is display-only.
+Deletion is terminal for `(squad, repository ID, object kind, native comment ID)`:
+it outranks every content revision regardless of arrival order, provider clock,
+or capture sequence. The same SQL predicate governs delivery and managed reads.
+Redeliveries deduplicate to the same terminal revision. Delayed creates/edits,
+including ones with a later clock, cannot resurrect that ID; a newly posted
+comment has a different native ID. Accepted decision/audit records, delivered
+revisions and canonical event snapshots stay unchanged; unfinished release work
+may be marked obsolete by the existing invalidation path.
+
+As soon as capture commits, all managed reads fence the old document, including
+keyword/vector/hybrid results, titles, snippets, outlines, direct indexed reads
+and backlinks. Source and caller currentness checks retain their squad isolation.
+Reads enqueue the same bounded, deduplicated recovery and report `stale` counts.
+The existing reindexer restores remaining admissible content and clears the
+marker/count; even stale API pages with a later edit clock cannot re-add the
+tombstoned item. No provider request occurs on a memory read.
+
+### Event coverage and remaining limits
+
+- The managed `github_issue` adapter indexes issue/PR parents and their
+  `issue_comment` conversation comments. Inline `review_comment` objects are
+  captured for feedback delivery but are not currently part of that memory
+  adapter; deletion invalidates their feedback identity without poisoning a
+  conversation comment with the same numeric ID.
+- `pull_request_review` bodies are separate review objects. GitHub documents
+  `submitted`, `edited` and `dismissed`, not a `deleted` webhook action;
+  dismissal is not comment deletion. Discussion and commit comments are not
+  supported by this managed adapter. Parent issue/PR deletion is not added here.
+- Direct authenticated webhook dispatch and the hosted relay feed the same
+  output normalizer. The relay schema accepts the native event type and payload;
+  no new subscription/event type is needed. Subscription/scope and connection
+  access remain prerequisites. Unavailable repository authorization defers an
+  already-recorded output through existing reconciliation, never grants access.
+- Polling does not synthesize deletions from missing comments. Unreceived,
+  unauthenticated, malformed or out-of-scope deletions are not local knowledge;
+  until a deletion is captured or a successful reindex sees absence, old text
+  may remain retrievable. There is no bulk replay or live-provider read check.
+
+Native event schemas: [issue_comment](https://docs.github.com/en/webhooks/webhook-events-and-payloads#issue_comment),
+[pull_request_review_comment](https://docs.github.com/en/webhooks/webhook-events-and-payloads#pull_request_review_comment),
+and [pull_request_review](https://docs.github.com/en/webhooks/webhook-events-and-payloads#pull_request_review).
+Implementation boundaries: `services/webhooks/dispatch.ts`,
+`services/integrations/relay/runtime.ts`, `services/integrations/outputs/github.ts`,
+`services/integrations/github/{ingress,feedback-resource,feedback-store,feedback-obsolescence}.ts`
+(all under `apps/core/src`), and `packages/shared/src/integration-relay/protocol.ts`.
+
+Focused regressions exercise native capture through managed reads, trusted and
+human-approved history, OFF/shared isolation, wrong repository/kind/native ID,
+deferred/repeated and delete-before-create delivery, immutable approved snapshots,
+and recovery/status counts with remaining admissible content.
 
 Policy approval does not constitute code review or merge approval.

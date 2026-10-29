@@ -610,3 +610,95 @@ test('real poll snapshot B at T7 stays current against delayed webhook A at T5, 
     await h.close()
   }
 })
+
+test.each(['issue_comment', 'review_comment'] as const)(
+  'deletion is terminal across clocks and replays for %s',
+  async (kind) => {
+    const h = await fixture()
+    const input = (action: string, body: string, updated = time) => {
+      const source = event(body, updated)
+      const payload = source.payload as any
+      payload.action = action
+      payload.comment.html_url = `https://github.com/acme/project/${kind === 'review_comment' ? 'pull' : 'issues'}/3#${kind === 'review_comment' ? 'discussion_r' : 'issuecomment-'}9`
+      if (kind === 'review_comment') {
+        source.type = 'pull_request_review_comment'
+        payload.pull_request = payload.issue
+        delete payload.issue
+      }
+      return source
+    }
+    try {
+      const old = await h.capture(input('created', 'Original'))
+      await db
+        .update(githubFeedbackRevisions)
+        .set({
+          decision: 'allow_once',
+          releaseState: 'delivered',
+          decidedByUserId: crypto.randomUUID(),
+          decidedAt: new Date(),
+        })
+        .where(eq(githubFeedbackRevisions.id, old.revision.id))
+      const [audit] = await db
+        .select()
+        .from(githubFeedbackRevisions)
+        .where(eq(githubFeedbackRevisions.id, old.revision.id))
+      const [association] = await db
+        .select()
+        .from(githubFeedbackSources)
+        .where(eq(githubFeedbackSources.revisionId, old.revision.id))
+      const canonical = await store.recordCanonicalGitHubFeedback(
+        old.revision.id,
+        association!.eventId,
+        async () => true
+      )
+      h.trackEvent(canonical.id)
+      const { isGitHubFeedbackAdmitted } = await import('./feedback-admission')
+      expect(await isGitHubFeedbackAdmitted(db, canonical)).toBe(true)
+      expect(githubOutputAdapter.normalize(input('deleted', 'Original'))).toHaveLength(1)
+      const deleted = await h.capture(input('deleted', 'Original'))
+      expect(deleted.revision).toMatchObject({
+        reason: 'comment_deleted',
+        decision: 'historical',
+        releaseState: 'retained',
+        envelope: null,
+      })
+      const { isCurrentGitHubFeedbackRevision } = await import('./feedback-obsolescence')
+      expect(await isCurrentGitHubFeedbackRevision(db, old.revision.id)).toBe(false)
+      expect(await isGitHubFeedbackAdmitted(db, canonical)).toBe(false)
+      expect(
+        await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, canonical.id))
+      ).toEqual([canonical])
+      for (const updated of [time, '2020-01-01T00:00:00Z', '2099-01-01T00:00:00Z']) {
+        const late = await h.capture(input('edited', `Late ${updated}`, updated))
+        expect(await isCurrentGitHubFeedbackRevision(db, late.revision.id)).toBe(false)
+        expect(late.revision.releaseState).toBe('obsolete')
+        // Legacy imported rows can have no hold reason; terminality must not depend on SQL NULL semantics.
+        await db
+          .update(githubFeedbackRevisions)
+          .set({ reason: null })
+          .where(eq(githubFeedbackRevisions.id, late.revision.id))
+        expect(await isCurrentGitHubFeedbackRevision(db, late.revision.id)).toBe(false)
+        expect(await isCurrentGitHubFeedbackRevision(db, deleted.revision.id)).toBe(true)
+        const replay = await h.capture(input('deleted', 'different deleted payload', updated))
+        expect(replay.revision.id).toBe(deleted.revision.id)
+      }
+      expect(await isCurrentGitHubFeedbackRevision(db, deleted.revision.id)).toBe(true)
+      const other = (action: string) => {
+        const source = input(action, 'delayed creation')
+        const payload = source.payload as any
+        payload.comment.id = 10
+        payload.comment.html_url = payload.comment.html_url.replace(/9$/, '10')
+        return source
+      }
+      const first = await h.capture(other('deleted'))
+      const delayedCreate = await h.capture(other('created'))
+      expect(await isCurrentGitHubFeedbackRevision(db, first.revision.id)).toBe(true)
+      expect(await isCurrentGitHubFeedbackRevision(db, delayedCreate.revision.id)).toBe(false)
+      expect(
+        await db.select().from(githubFeedbackRevisions).where(eq(githubFeedbackRevisions.id, old.revision.id))
+      ).toEqual([audit!])
+    } finally {
+      await h.close()
+    }
+  }
+)
