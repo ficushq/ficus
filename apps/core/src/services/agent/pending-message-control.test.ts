@@ -33,9 +33,14 @@ afterEach(async () => {
 it('cancels only the selected row and preserves its accepted send tombstone', async () => {
   const first = await agent.recordMessage({ role: 'human', content: 'same', pending: true })
   const second = await agent.recordMessage({ role: 'human', content: 'same', pending: true })
-  await db
-    .insert(chatSendReceipts)
-    .values({ agentId: agent.id, clientId: 'cancel-one', requestHash: 'hash', state: 'accepted', messageId: first.id })
+  await db.insert(chatSendReceipts).values({
+    agentId: agent.id,
+    clientId: 'cancel-one',
+    requestHash: 'hash',
+    state: 'accepted',
+    disposition: 'intervention',
+    messageId: first.id,
+  })
   expect(await updateUnclaimedMessage(agent.id, first.id, 'cancel')).toBe('updated')
   const remaining = await db.select().from(messages).where(eq(messages.agentId, agent.id))
   expect(remaining.map((row) => row.id)).toEqual([second.id])
@@ -63,7 +68,12 @@ it('switches without changing FIFO keys or attachments, and refuses consumed or 
 })
 
 it('requires the exact live SDK claim and rolls back after ownership changes', async () => {
-  const message = await agent.recordMessage({ role: 'human', content: 'hello', pending: true })
+  const message = await agent.recordMessage({
+    role: 'human',
+    content: 'hello',
+    pending: true,
+    metadata: { deliveryMode: 'steer' },
+  })
   const owner = { generation: crypto.randomUUID(), executionId: crypto.randomUUID() }
   const claimed = await agent.claimPendingInterventionForSessionDelivery(message.id, owner)
   expect(await updateUnclaimedMessage(agent.id, message.id, 'cancel')).toBe('claimed')
@@ -87,7 +97,12 @@ it('requires the exact live SDK claim and rolls back after ownership changes', a
 })
 
 it('does not acknowledge or mutate a queue on a worker that does not own the execution', async () => {
-  const message = await agent.recordMessage({ role: 'human', content: 'hello', pending: true })
+  const message = await agent.recordMessage({
+    role: 'human',
+    content: 'hello',
+    pending: true,
+    metadata: { deliveryMode: 'steer' },
+  })
   const received: unknown[] = []
   const unsubscribe = eventEmitter.on('agent.queue-message-updated', (event) => received.push(event))
   try {
@@ -198,3 +213,15 @@ it('preserves sub-millisecond database FIFO through claims and real SDK mode swi
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+for (const clientId of ['primary', undefined]) {
+  it(`preserves an initial prompt while canceling an identical intervention (${clientId ?? 'legacy'})`, async () => {
+    await agent.sendMessage('identical', { metadata: clientId ? { clientId } : undefined })
+    await agent.sendMessage('identical', { deliveryMode: 'follow-up' })
+    const rows = (await agent.listMessages()).messages.filter((row) => row.role === 'human')
+    expect(rows).toHaveLength(2)
+    expect(await updateUnclaimedMessage(agent.id, rows[0]!.id, 'cancel')).toBe('not_pending')
+    expect(await updateUnclaimedMessage(agent.id, rows[1]!.id, 'cancel')).toBe('updated')
+    expect((await agent.listMessages()).messages.map((row) => row.id)).toEqual([rows[0]!.id])
+  })
+}

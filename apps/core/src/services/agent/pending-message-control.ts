@@ -1,3 +1,4 @@
+import { isExecutionInitialMessage } from '../chat/queued-messages'
 import { acquireAgentQueueLock } from '../execution/agent-admission'
 import { and, eq, sql } from 'drizzle-orm'
 import { db, messages, chatSendReceipts } from '../../db'
@@ -12,6 +13,28 @@ export type PendingMessageOperation = 'cancel' | 'steer' | 'follow-up'
 export type PendingMessageResult = 'updated' | 'not_pending' | 'claimed' | 'unavailable'
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 type Row = typeof messages.$inferSelect
+
+/** The initial prompt is pending consumption, but is not an editable intervention.
+ * Its execution also retains fallback text, so deleting only its message would lie
+ * about cancellation. Receipts are authoritative; older/non-idempotent sends use
+ * the first human row bound to the execution instead.
+ */
+async function isEditableIntervention(tx: Tx, row: Row): Promise<boolean> {
+  const [receipt] = await tx
+    .select({ disposition: chatSendReceipts.disposition })
+    .from(chatSendReceipts)
+    .where(
+      and(
+        eq(chatSendReceipts.agentId, row.agentId),
+        eq(chatSendReceipts.messageId, row.id),
+        eq(chatSendReceipts.state, 'accepted')
+      )
+    )
+  if (receipt) return receipt.disposition === 'intervention'
+  const message = mapMessage(row)
+  if (!message.metadata?.deliveryMode) return false
+  return !(await isExecutionInitialMessage(tx, message))
+}
 
 async function commitChange(tx: Tx, row: Row, operation: PendingMessageOperation): Promise<void> {
   if (operation === 'cancel') {
@@ -49,6 +72,7 @@ export async function updateUnclaimedMessage(
       .where(and(eq(messages.id, messageId), eq(messages.agentId, agentId)))
       .for('update')
     if (!row || row.role !== 'human' || !row.pending) return 'not_pending' as const
+    if (!(await isEditableIntervention(tx, row))) return 'not_pending' as const
     if (row.injectedAt) return 'claimed' as const
     await commitChange(tx, row, operation)
     return 'updated' as const
@@ -91,6 +115,7 @@ export async function updateClaimedMessage(input: {
           !input.stillOwned() ||
           Date.now() >= input.expiresAt ||
           !row?.pending ||
+          !(await isEditableIntervention(tx, row)) ||
           !row.injectedAt ||
           current?.id !== claim.id ||
           current.generation !== claim.generation ||

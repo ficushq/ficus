@@ -915,8 +915,13 @@ export const agentsRouter = new Hono()
       loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) => {
-      const body = await c.req.json().catch(() => null)
-      if (!body || !['cancel', 'steer', 'follow-up'].includes(body.operation))
+      const body = await c.req.json()
+      if (
+        !body ||
+        typeof body !== 'object' ||
+        Array.isArray(body) ||
+        !['cancel', 'steer', 'follow-up'].includes(body.operation)
+      )
         return c.json({ error: 'Invalid queue operation' }, 400)
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(c.req.param('messageId')))
         return c.json({ error: 'Invalid message ID' }, 400)
