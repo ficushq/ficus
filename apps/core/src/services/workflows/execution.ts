@@ -934,6 +934,7 @@ export async function isCurrentFlowMessage(message: { id?: string; metadata: unk
     workStreamId?: string
     attemptId?: number
     integrationDeliveryId?: string
+    workStreamReadmission?: boolean
   } | null
   if (metadata?.source === 'integration-notification') {
     if (!message.id || !message.recipientId) return false
@@ -961,6 +962,10 @@ export async function isCurrentFlowMessage(message: { id?: string; metadata: unk
       isCurrentWaitAttempt(db, metadata.workStreamId, metadata.attemptId, message.recipientId)
     )
   if (metadata?.source !== 'workflow') return true
+  if (metadata.workStreamReadmission && message.recipientId) {
+    const { listActiveSlotWaits } = await import('../slots/active-waits')
+    if ((await listActiveSlotWaits(db, [message.recipientId])).length) return false
+  }
   if (
     metadata.workStreamId &&
     metadata.attemptId &&

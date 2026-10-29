@@ -224,6 +224,8 @@ Pause means stop current work and wait for explicit resume. Ficus requests cance
 
 Pause retains the admission slot unless the stream is parked. Park releases capacity; it is separate from the pause flag. A paused parked stream cannot start merely because capacity becomes available. Optional pause auto-parking releases the slot after the configured delay without resuming work.
 
+Normal re-admission of an unpaused flow resumes its existing running attempts, including assignments previously returned inline. Admission commits a durable resume notice; it does not recreate participants, resend consumed assignments, reset retry budgets, or reopen completed delivery steps waiting for PR events. Existing waits and queued slot claims still gate that notice. Repeated dispatch or reconciliation does not create another resume; only a new queued-to-active transition can do so.
+
 ```sh
 ficus workstream pause STREAM_ID --reason "Hold while I check the result"
 ficus workstream resume STREAM_ID
