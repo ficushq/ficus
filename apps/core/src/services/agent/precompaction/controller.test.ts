@@ -1,5 +1,11 @@
 import { describe, it, expect, mock } from 'bun:test'
-import { PrecompactionController, BAKE_TIMEOUT_MS, PRECOMPACTION_AWAIT_MS, type PrecompactionDeps } from './controller'
+import {
+  PrecompactionController,
+  BAKE_TIMEOUT_MS,
+  BAKE_RETRY_COOLDOWN_MS,
+  PRECOMPACTION_AWAIT_MS,
+  type PrecompactionDeps,
+} from './controller'
 import type { CompactionResult, SessionBeforeCompactEvent, SessionEntry } from '@earendil-works/pi-coding-agent'
 
 function entry(id: string, type = 'message'): SessionEntry {
@@ -130,24 +136,36 @@ describe('PrecompactionController.onSettled', () => {
     expect(deps.bake).not.toHaveBeenCalled()
   })
 
-  it('returns to idle, emits failed, and allows a retry if a bake fails', async () => {
+  it('emits failed and waits for the cooldown before retrying a failed bake', async () => {
     const deps = makeDeps({
+      getContextUsage: () => ({ tokens: 180_000, contextWindow: 200_000 }),
       bake: mock()
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({ summary: 'S', firstKeptEntryId: 'keep', tokensBefore: 1 }),
     })
-    const c = new PrecompactionController(deps)
+    let now = 1000
+    const c = new PrecompactionController(deps, () => now)
     const events: any[] = []
     c.onLifecycle = (event) => events.push(event)
 
     c.onSettled()
     await flush()
     c.onSettled()
+    c.onContextGrowth()
+    await flush()
+    expect(deps.bake).toHaveBeenCalledTimes(1)
+    // A new wrapper for this agent must not bypass the cooldown.
+    c.rebind(deps)
+    now += BAKE_RETRY_COOLDOWN_MS - 1
+    c.onContextGrowth()
+    expect(deps.bake).toHaveBeenCalledTimes(1)
+    now += 1
+    c.onContextGrowth()
     await flush()
 
     expect(deps.bake).toHaveBeenCalledTimes(2)
     expect(events.map((e) => e.kind)).toEqual(['started', 'failed', 'started', 'succeeded'])
-    expect(events[1]).toMatchObject({ kind: 'failed', contextTokens: 160_000, elapsedMs: expect.any(Number) })
+    expect(events[1]).toMatchObject({ kind: 'failed', contextTokens: 180_000, elapsedMs: expect.any(Number) })
   })
 
   it('guards lifecycle callback failures so a failed bake is not emitted twice', async () => {
@@ -156,7 +174,8 @@ describe('PrecompactionController.onSettled', () => {
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({ summary: 'S', firstKeptEntryId: 'keep', tokensBefore: 1 }),
     })
-    const c = new PrecompactionController(deps)
+    let now = 1000
+    const c = new PrecompactionController(deps, () => now)
     const events: string[] = []
     c.onLifecycle = (event) => {
       events.push(event.kind)
@@ -167,6 +186,7 @@ describe('PrecompactionController.onSettled', () => {
     await flush()
 
     expect(events).toEqual(['started', 'failed'])
+    now += BAKE_RETRY_COOLDOWN_MS
     c.onSettled()
     await flush()
     expect(deps.bake).toHaveBeenCalledTimes(2)
@@ -536,6 +556,48 @@ describe('PrecompactionController cross-session additions', () => {
     expect(seenSignal.aborted).toBe(true)
     await flush()
     expect(events.some((e) => e.kind === 'failed' && e.error === 'timeout')).toBe(true)
+  })
+
+  it('rejects a partial result returned after timeout, without caching or immediately retrying it', async () => {
+    const deps = makeDeps({
+      bake: mock(
+        (_entries, signal) =>
+          new Promise<CompactionResult | null>((resolve) => {
+            signal.addEventListener('abort', () =>
+              resolve({ summary: 'partial', firstKeptEntryId: 'keep', tokensBefore: 1 })
+            )
+          })
+      ),
+    })
+    const c = new PrecompactionController(deps, () => 1000)
+    const events: string[] = []
+    c.onLifecycle = (event) => events.push(event.kind)
+    c.onSettled()
+    c.forceTimeoutForTest()
+    await flush()
+    expect(c.getReadyResult(event([entry('a'), entry('b'), entry('keep')]))).toBeUndefined()
+    c.onSettled()
+    expect(events).toEqual(['started', 'failed'])
+    expect(deps.bake).toHaveBeenCalledTimes(1)
+    c.dispose()
+  })
+
+  it('reserves the slot before bake invocation and handles synchronous throws without restarting', async () => {
+    const deps = makeDeps({
+      bake: mock(() => {
+        c.onSettled()
+        throw new Error('synchronous failure')
+      }),
+    })
+    const c = new PrecompactionController(deps, () => 1000)
+    const events: string[] = []
+    c.onLifecycle = (event) => events.push(event.kind)
+    c.onSettled()
+    await flush()
+    c.onSettled()
+    expect(events).toEqual(['started', 'failed'])
+    expect(deps.bake).toHaveBeenCalledTimes(1)
+    c.dispose()
   })
 
   it('reclaimIfStale drops a ready result older than the ttl', async () => {

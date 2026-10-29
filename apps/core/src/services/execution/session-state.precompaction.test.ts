@@ -64,7 +64,7 @@ describe('precompactionLifecycleSink', () => {
     removeSession('agent-2')
   })
 
-  it('pushes only canonical start and finish messages to the agent’s live buffer', () => {
+  it('pushes lifecycle outcomes so a failed start does not appear to stay in flight', () => {
     const events = activeWithBuffer('agent-1')
     const stats = {
       contextTokens: 1,
@@ -84,6 +84,9 @@ describe('precompactionLifecycleSink', () => {
     expect(events).toEqual([
       { type: 'system_message', text: 'Precompaction started' },
       { type: 'system_message', text: 'Precompaction finished' },
+      { type: 'system_message', text: 'Precompaction failed' },
+      { type: 'system_message', text: 'Precompaction cancelled' },
+      { type: 'system_message', text: 'Precompaction stopped — compacting now' },
     ])
   })
 

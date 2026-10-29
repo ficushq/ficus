@@ -14,6 +14,7 @@ import {
 import { computePrefixFingerprint, matchesPrefixFingerprint, type PrefixFingerprint } from './prefix'
 
 export const BAKE_TIMEOUT_MS = 90_000
+export const BAKE_RETRY_COOLDOWN_MS = 60_000
 export const PRECOMPACTION_AWAIT_MS = 10_000
 
 export interface BranchSnapshot {
@@ -85,12 +86,18 @@ export class PrecompactionController {
   private abort?: AbortController
   private inFlight?: InFlight
   private disposed = false
-  private lastActivityAt = Date.now()
+  private lastActivityAt: number
+  private retryAfter = 0
 
   /** Best-effort observability hook for debug UI/logging; callback errors are swallowed. */
   onLifecycle?: (event: PrecompactionLifecycleEvent) => void
 
-  constructor(private deps: PrecompactionDeps) {}
+  constructor(
+    private deps: PrecompactionDeps,
+    private readonly now: () => number = Date.now
+  ) {
+    this.lastActivityAt = now()
+  }
 
   /** Swap session-bound deps when a new session for this agent is created.
    * Pure assignment — must not touch abort/inFlight/state/cache. The in-flight
@@ -98,7 +105,7 @@ export class PrecompactionController {
    * consuming session. */
   rebind(deps: PrecompactionDeps): void {
     this.deps = deps
-    this.lastActivityAt = Date.now()
+    this.lastActivityAt = this.now()
   }
 
   isDisposed(): boolean {
@@ -120,7 +127,7 @@ export class PrecompactionController {
 
   /** Called after every settled turn. Starts a background bake if warranted. */
   onSettled(): void {
-    this.lastActivityAt = Date.now()
+    this.lastActivityAt = this.now()
     if (this.disposed) return
     if (this.state !== 'idle') return
     this.tryStartBake(this.deps.marginTokens)
@@ -132,14 +139,14 @@ export class PrecompactionController {
    * The idle/precomputing/ready state machine dedupes in-flight and ready bakes.
    */
   onContextGrowth(): void {
-    this.lastActivityAt = Date.now()
+    this.lastActivityAt = this.now()
     if (this.disposed) return
     if (this.state !== 'idle') return
     this.tryStartBake(this.deps.inFlightMarginTokens)
   }
 
   private tryStartBake(marginTokens: number): void {
-    if (marginTokens <= 0) return
+    if (marginTokens <= 0 || this.now() < this.retryAfter) return
     if (this.deps.isCompacting()) return
 
     const settings = this.deps.getCompactionSettings()
@@ -168,13 +175,23 @@ export class PrecompactionController {
       abort.abort()
     }, BAKE_TIMEOUT_MS)
     this.abort = abort
-    const bakePromise = this.deps.bake(snap.entries, abort.signal)
+    // Reserve the slot before invoking injected code (which may re-enter or throw).
+    this.state = 'precomputing'
+    let bakePromise: Promise<PrecompactionBakeOutput | null>
+    try {
+      bakePromise = this.deps.bake(snap.entries, abort.signal)
+    } catch (error) {
+      bakePromise = Promise.reject(error)
+    }
     const settledPromise = bakePromise.then(
       (result) => {
         clearTimeout(timer)
         if (this.disposed || this.abort !== abort) return
         const timedOut = this.inFlight?.timedOut ?? false
-        if (!result) {
+        // Some SDK/provider paths resolve partial text when their signal is aborted.
+        // A timed-out result must never become the replacement session context.
+        if (!result || abort.signal.aborted) {
+          this.retryAfter = this.now() + BAKE_RETRY_COOLDOWN_MS
           this.emitLifecycle({
             kind: 'failed',
             ...stats,
@@ -195,8 +212,9 @@ export class PrecompactionController {
           keepRecentTokens,
           latestCompactionEntryIdAtSnapshot: snap.latestCompactionEntryId,
           prefixFingerprint: computePrefixFingerprint(snap.entries, baked.compaction.firstKeptEntryId),
-          readyAt: Date.now(),
+          readyAt: this.now(),
         }
+        this.retryAfter = 0
         this.state = 'ready'
         this.emitLifecycle({ kind: 'succeeded', ...stats, elapsedMs, result: compactionResultDebug(baked.compaction) })
       },
@@ -204,6 +222,7 @@ export class PrecompactionController {
         clearTimeout(timer)
         if (this.abort !== abort) return
         const timedOut = this.inFlight?.timedOut ?? false
+        this.retryAfter = this.now() + BAKE_RETRY_COOLDOWN_MS
         this.emitLifecycle({
           kind: 'failed',
           ...stats,
@@ -213,7 +232,7 @@ export class PrecompactionController {
         this.resetToIdle()
       }
     )
-    this.inFlight = { abort, startedAt: Date.now(), stats, timer, timedOut: false, promise: settledPromise }
+    this.inFlight = { abort, startedAt: this.now(), stats, timer, timedOut: false, promise: settledPromise }
     this.state = 'precomputing'
     this.emitLifecycle({ kind: 'started', ...stats })
     void settledPromise
@@ -221,7 +240,7 @@ export class PrecompactionController {
 
   /** Called by the session_before_compact hook. Validates the cache. */
   getReadyResult(event: SessionBeforeCompactEvent): CompactionResult | undefined {
-    this.lastActivityAt = Date.now()
+    this.lastActivityAt = this.now()
     if (this.disposed) return undefined
 
     // pi is compacting synchronously NOW. A still-running bake is summarizing a
@@ -278,7 +297,7 @@ export class PrecompactionController {
     event: SessionBeforeCompactEvent,
     waitMs: number = PRECOMPACTION_AWAIT_MS
   ): Promise<CompactionResult | undefined> {
-    this.lastActivityAt = Date.now()
+    this.lastActivityAt = this.now()
     if (this.disposed) return undefined
 
     if (this.state === 'ready') {
@@ -317,17 +336,18 @@ export class PrecompactionController {
 
   /** Drop a ready-but-unconsumed result older than `ttlMs` (idle reclamation). */
   reclaimIfStale(ttlMs: number): void {
-    if (this.state === 'ready' && this.cache && Date.now() - this.cache.readyAt >= ttlMs) {
+    if (this.state === 'ready' && this.cache && this.now() - this.cache.readyAt >= ttlMs) {
       this.invalidate()
     }
   }
 
   /** Discard any cached result and abort any in-flight bake. */
   invalidate(abortKind: 'aborted' | 'superseded' = 'aborted'): void {
+    this.retryAfter = 0
     const inFlight = this.inFlight
     if (inFlight) clearTimeout(inFlight.timer)
     if (this.state === 'precomputing' && inFlight) {
-      this.emitLifecycle({ kind: abortKind, ...inFlight.stats, elapsedMs: Date.now() - inFlight.startedAt })
+      this.emitLifecycle({ kind: abortKind, ...inFlight.stats, elapsedMs: this.now() - inFlight.startedAt })
     }
     this.abort?.abort()
     this.abort = undefined
@@ -351,7 +371,7 @@ export class PrecompactionController {
   }
 
   private elapsedMs(abort: AbortController): number {
-    return this.inFlight?.abort === abort ? Date.now() - this.inFlight.startedAt : 0
+    return this.inFlight?.abort === abort ? this.now() - this.inFlight.startedAt : 0
   }
 
   private emitLifecycle(event: PrecompactionLifecycleEvent): void {

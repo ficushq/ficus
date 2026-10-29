@@ -225,7 +225,7 @@ export function resetWorkerShuttingDownForTests(): void {
  * live for the agent. Best-effort: log-only when the agent is idle, the buffer
  * is closed (push no-ops on non-streaming buffers), or the kind is log-only. */
 export function precompactionLifecycleSink(agentId: string, event: PrecompactionLifecycleEvent): void {
-  precompactionLog.info(formatPrecompactionLogLine(event))
+  precompactionLog.info(`agentId=${agentId} ${formatPrecompactionLogLine(event)}`)
   const text = formatPrecompactionSystemMessage(event)
   if (!text) return
   activeSessions.get(agentId)?.buffer.push({ type: 'system_message', text })
