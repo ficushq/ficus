@@ -55,11 +55,15 @@ Never rely on an inherited root `.env` for scratch/test migrations. The runner r
 
 ## Testing
 
-Tests use an isolated Postgres instance running in Docker (separate from the dev DB). The test preload (`apps/core/src/test-setup.ts`) automatically:
+Tests use an isolated Postgres instance running in Docker (separate from the dev DB). The test preload (`apps/core/src/test-setup.ts`) installs environment/mocks only.
+Loading Core's `db/index` requests lazy database readiness; raw SQL/migration/
+pooler tests import `test-utils/require-test-db` before reading their DSNs or
+pooler flags. Pure tests never start a database merely because of the preload.
+Once requested, `test-db-setup.ts` automatically:
 
 - Allocates a free port (no hardcoded ports)
 - Starts a uniquely-named Docker container per worktree
-- Pushes the current schema before tests run
+- Pushes the current schema before the requesting DB-backed module runs
 
 When Docker is not installed, a direct local `bun test` still runs
 database-free files; every database use fails with `Core test database

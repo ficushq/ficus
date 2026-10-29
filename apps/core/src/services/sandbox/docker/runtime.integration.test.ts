@@ -7,6 +7,7 @@ import { SandboxClient } from '../client/http-client'
 import { computeDockerSpecDigest, parseDockerImageContract } from './runtime-contract'
 import { removeOwnedDockerContainers, runOwnedDocker } from './docker-test-runtime'
 const enabled = process.env.FICUS_DOCKER_RUNTIME_INTEGRATION === '1'
+if (enabled) await import('../../../test-utils/require-test-db')
 const owner = process.env.FICUS_DOCKER_TEST_OWNER ?? 'disabled'
 const image = process.env.FICUS_SANDBOX_IMAGE ?? 'ficus-sandbox:latest'
 

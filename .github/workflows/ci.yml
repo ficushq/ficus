@@ -471,7 +471,7 @@ jobs:
         working-directory: .github
 
       - name: Validate test lane aggregation
-        run: bun test ./lane-gate.test.ts ./test-runner.test.ts ./test-completion-gate.test.ts ./core-test-plan.test.ts ./ci-notification-state.test.ts ./test-schema-cache.test.ts
+        run: bun test ./lane-gate.test.ts ./test-runner.test.ts ./test-completion-gate.test.ts ./core-test-plan.test.ts ./ci-notification-state.test.ts ./test-schema-cache.test.ts ./lazy-test-db.test.ts ./test-db-import-graph.test.ts
         working-directory: .github
 
       - name: Validate typecheck diagnostics evidence gate

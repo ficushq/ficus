@@ -1,3 +1,4 @@
+import '../test-utils/require-test-db'
 import type { StorageWarning } from '@ficus/shared'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { join } from 'node:path'

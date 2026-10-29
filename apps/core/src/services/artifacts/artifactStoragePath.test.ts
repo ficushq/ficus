@@ -1,3 +1,4 @@
+import '../../test-utils/require-test-db'
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { existsSync } from 'fs'
 import { mkdtemp, rm } from 'fs/promises'

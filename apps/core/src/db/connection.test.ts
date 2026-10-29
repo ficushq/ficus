@@ -1,3 +1,4 @@
+import '../test-utils/require-test-db'
 import { describe, test, expect, afterEach, mock } from 'bun:test'
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'

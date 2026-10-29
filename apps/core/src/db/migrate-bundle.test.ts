@@ -1,3 +1,4 @@
+import '../test-utils/require-test-db'
 import { describe, expect, test } from 'bun:test'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
