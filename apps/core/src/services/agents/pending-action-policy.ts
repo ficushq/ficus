@@ -1,3 +1,4 @@
+import { recoveryRecipientsById } from '../recovery/recipients'
 import type { PendingAction, WorkStreamActionData, WorkStreamDeliveryActionData } from '@ficus/shared'
 import { and, eq, inArray, ne } from 'drizzle-orm'
 import { db } from '../../db'
@@ -154,10 +155,16 @@ export async function evaluatePendingAction(
     const data = action.data as import('@ficus/shared').AgentErrorActionData
     const owner = Boolean(userId && data.ownerUserId === userId)
     if (data.recovery) {
-      const visible = owner && (!data.squadId || canRead) && !data.recovery.structured.stopped
+      const audience = await recoveryRecipientsById(data.recovery.id)
+      const visible = Boolean(
+        userId &&
+        audience?.target === 'owner' &&
+        audience.ownerUserIds.includes(userId) &&
+        !data.recovery.structured.stopped
+      )
       return {
         visible,
-        canRespond: visible && (!data.squadId || (await hasPermission(identity, 'agents:run', data.squadId))),
+        canRespond: visible,
       }
     }
     return {
@@ -198,22 +205,16 @@ export async function evaluatePendingAction(
   const data = action.data as WorkStreamActionData
   const workStreamId = data.workStreamId
   if (data.wait.structured?.request.kind === 'continue') {
-    const [stream] = await db
-      .select({ requestingUserId: workStreams.requestingUserId })
-      .from(workStreams)
-      .where(eq(workStreams.id, workStreamId))
-    const owner = identity.type === 'user' && identity.userId === stream?.requestingUserId
-    const actionable = owner && canRead && !data.wait.structured.stopped && data.wait.actor === 'human'
+    const audience = await recoveryRecipientsById(data.wait.structured.request.recoveryId)
+    const actionable = Boolean(
+      userId && audience?.target === 'owner' && audience.ownerUserIds.includes(userId) && !data.wait.structured.stopped
+    )
     return {
       visible: actionable && context.attention.forWorkStream(workStreamId, squadId).decisions !== 'mute',
-      canRespond: Boolean(
-        actionable &&
-        squadId &&
-        ((await hasPermission(identity, 'workstreams:respond', squadId)) ||
-          (await hasPermission(identity, 'workstreams:update', squadId)))
-      ),
+      canRespond: actionable,
     }
   }
+
   if (data.wait.resolutionHandler === 'workflow') {
     const [run] = await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, workStreamId))
     const [stream] = await db.select().from(workStreams).where(eq(workStreams.id, workStreamId))

@@ -79,8 +79,7 @@ can grant one extra cycle or forward to the requesting owner. Exhausting that ex
 cycle automatically forwards the same server-generated action/count/error summary,
 without diagnostic prose. Continue commits an audited cycle and a durable scoped
 wake intent together; normal admission delivers it once, retaining other gates.
-Stop keeps the scope held and removes repeated human requests. Missing eligible
-managers leave a pending record and routing diagnostic, not an owner bypass.
+Stop keeps the scope held and removes repeated human requests. Missing eligible managers and a manager’s own recovery route directly to an eligible owner. A shared resolver prefers the requesting user/agent owner, then authorized squad operators/admins. If nobody is eligible, it persists an idempotent system diagnostic and keeps the hold without granting authority.
 Standalone tasks use the same policy and typed agent-recovery actions.
 
 New worker manual inputs accept only versioned `continue`, `decide` or `provide` requests. People and managers retain `request-input --message` for ordinary task waits; this does not clear or bypass a structured recovery decision.

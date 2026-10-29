@@ -542,34 +542,8 @@ export async function notifyWorkStreamBlocked(
   const actor = workStreamWaitActor(facts ?? {})
   if (facts?.structured?.request.kind === 'continue') {
     if (facts.closedAt || facts.structured.stopped) return
-    const squad = await Squad.find(workStream.squadId)
-    const recipientId = actor === 'manager' ? squad?.managerAgentId : workStream.requestingUserId
-    if (!recipientId) return // No eligible recipient: never fall through to human watchers.
-    if (actor === 'human') {
-      const enabled = await listEnabledUserIds([recipientId])
-      const allowed = await filterUserIdsWithPermission(enabled, 'workstreams:read', workStream.squadId)
-      if (!allowed.includes(recipientId)) return
-    }
-    const summary = facts.structured.summary.text
-    await sendDeduped({
-      recipientType: actor === 'manager' ? 'agent' : 'user',
-      recipientId,
-      senderType: 'system',
-      ...(actor === 'manager' ? { deliveryMode: 'steer' as const, wakeEligible: true } : {}),
-      subject: 'Continue or stop recovery',
-      content:
-        actor === 'manager'
-          ? `${summary}\n\nUse the typed recovery decision for wait ${target?.waitId ?? ''} on ${workStreamRef(workStream)}. You may grant at most one extra recovery cycle, stop, or forward to the owner.`
-          : summary,
-      metadata: {
-        workStreamId: workStream.id,
-        workStreamNumber: workStream.number,
-        squadId: workStream.squadId,
-        event: 'blocked',
-        transitionAt: transitionAt(workStream),
-        ...(target ?? {}),
-      },
-    })
+    const { publishRecoveryDecision } = await import('../recovery/store')
+    await publishRecoveryDecision(facts.structured.request.recoveryId)
     return
   }
   const title = workStreamTitle(workStream)

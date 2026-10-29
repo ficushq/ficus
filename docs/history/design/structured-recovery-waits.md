@@ -138,9 +138,7 @@ The manager may grant **at most one extra recovery cycle per recovery record**. 
 The manager can inspect its authorized environment, repair/re-plan, then resolve
 with Continue or Stop, or explicitly forward the same generated plain question
 to the requesting owner. Forwarding is audited and idempotent; it forwards no raw
-logs or new forensic prose. If no eligible manager exists, keep it pending with
-an unroutable diagnostic for the system owner; do not silently expose it to a
-human or grant another agent authority.
+logs or new forensic prose. The review clarification routes directly to an eligible owner when no eligible manager exists or the failing agent is the manager. One resolver governs notification, visibility and decision authorization: prefer the requesting user or agent owner, then enabled squad management-capability holders/admins with read and decision rights. When nobody resolves, retain the hold and a durable idempotent system diagnostic without granting authority.
 
 - **Continue:** atomically close this recovery wait and authorize a new audited
   three-attempt recovery cycle. A manager can do this once per record; after its exhaustion, only the owner may authorize another bounded cycle. Requeue only through normal admission; unrelated

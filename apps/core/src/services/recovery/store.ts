@@ -1,3 +1,4 @@
+import { recoveryRecipients } from './recipients'
 import { z } from 'zod'
 import { stripVTControlCharacters } from 'node:util'
 import { createHash } from 'node:crypto'
@@ -11,7 +12,6 @@ import {
   recoveryAttempts,
   recoveryDecisions,
   recoveryEpisodes,
-  squads,
   workStreams,
   workStreamWaits,
 } from '../../db'
@@ -168,13 +168,28 @@ export function recoveryWaitSnapshot(record: RecoveryRecord): StructuredManualWa
 async function ensureExhaustedWait(tx: Tx, record: RecoveryRecord): Promise<RecoveryRecord> {
   if (!['waiting-manager', 'waiting-owner'].includes(record.state.state))
     throw new Error('Recovery budget is not exhausted')
+  const recipients = await recoveryRecipients(record, tx)
+  if (recipients.target === 'owner' && record.state.state === 'waiting-manager') {
+    const [routed] = await tx
+      .update(recoveryEpisodes)
+      .set({ state: { ...record.state, state: 'waiting-owner', ownerEscalated: true }, version: record.version + 1 })
+      .where(eq(recoveryEpisodes.id, record.id))
+      .returning()
+    record = routed!
+  }
   if (!record.workStreamId) return record
   if (record.waitId) {
     const [existing] = await tx
       .select()
       .from(workStreamWaits)
       .where(and(eq(workStreamWaits.id, record.waitId), isNull(workStreamWaits.closedAt)))
-    if (existing) return record
+    if (existing) {
+      await tx
+        .update(workStreamWaits)
+        .set({ actor: record.state.ownerEscalated ? 'human' : 'manager', structured: recoveryWaitSnapshot(record) })
+        .where(eq(workStreamWaits.id, existing.id))
+      return record
+    }
   }
   const payload = recoveryWaitSnapshot(record)
   const { wait } = await openWait(tx, {
@@ -196,63 +211,45 @@ async function ensureExhaustedWait(tx: Tx, record: RecoveryRecord): Promise<Reco
 }
 
 async function publish(record: RecoveryRecord): Promise<void> {
-  if (!record.workStreamId) {
-    const [agent] = await db.select().from(agents).where(eq(agents.id, record.agentId))
-    const [squad] = agent?.squadId ? await db.select().from(squads).where(eq(squads.id, agent.squadId)) : []
-    const owner = record.state.ownerEscalated
-    const recipientId = owner ? agent?.ownerUserId : squad?.managerAgentId
-    if (!recipientId) {
-      const { createLogger } = await import('../../lib/infra/logger')
-      createLogger('recovery-routing').warn('Recovery decision has no eligible recipient', {
-        recoveryId: record.id,
-        target: owner ? 'owner' : 'manager',
-      })
-      return
-    }
-    if (owner) {
-      const { listEnabledUserIds } = await import('../users/enabled')
-      if (!(await listEnabledUserIds([recipientId])).length) return
-      const { hasPermission } = await import('../rbac')
-      if (
-        agent?.squadId &&
-        !(await hasPermission({ type: 'user', userId: recipientId }, 'actions:read', agent.squadId))
-      )
-        return
-    }
-    const { InboxMessage } = await import('../../entities/InboxMessage')
-    const summary = recoverySummary(record.state).text
+  const audience = await recoveryRecipients(record)
+  const owner = audience.target === 'owner'
+  const recipientIds = owner ? audience.ownerUserIds : [audience.managerAgentId!]
+  const { InboxMessage } = await import('../../entities/InboxMessage')
+  const summary = recoverySummary(record.state).text
+  for (const recipientId of recipientIds) {
     await InboxMessage.sendOnce(
       {
         recipientType: owner ? 'user' : 'agent',
         recipientId,
         senderType: 'system',
-        ...(owner ? {} : { deliveryMode: 'steer', wakeEligible: true }),
+        ...(owner ? {} : { deliveryMode: 'steer' as const, wakeEligible: true }),
         subject: 'Continue or stop recovery',
         content: owner
           ? summary
-          : `${summary}\n\nRecovery ${record.id} belongs to agent ${record.agentId}. Use ficus agent recovery with a typed decision and expectedVersion ${record.version}. You may grant one extra cycle, stop, or forward to the owner.`,
+          : `${summary}\n\nRecovery ${record.id} belongs to agent ${record.agentId}. Use ${record.workStreamId ? `ficus workstream resolve-input ${record.workStreamId} ${record.waitId}` : `ficus agent recovery ${record.agentId} ${record.id}`} with a typed decision and expectedVersion ${record.version}. You may grant one extra cycle, stop, or forward to the owner.`,
         metadata: {
           source: 'recovery-decision-required',
           recoveryId: record.id,
           agentId: record.agentId,
-          squadId: agent?.squadId,
-          actionId: `agent-recovery:${record.id}`,
+          squadId: audience.squadId,
+          ...(record.workStreamId
+            ? { workStreamId: record.workStreamId, event: 'blocked', waitId: record.waitId }
+            : {}),
+          actionId: record.workStreamId
+            ? `workstream-blocked:${record.workStreamId}:${record.waitId}`
+            : `agent-recovery:${record.id}`,
         },
       },
       `recovery-decision:${record.id}:${record.version}:${recipientId}`
     )
-    return
   }
-  if (!record.waitId) return
-  const { WorkStream } = await import('../../entities/WorkStream')
-  const { notifyWorkStreamBlocked } = await import('../squad/work-stream-notifications')
-  const stream = await WorkStream.find(record.workStreamId)
-  if (!stream) return
-  await notifyWorkStreamBlocked(stream, {
-    waitId: record.waitId,
-    actionId: `workstream-blocked:${stream.id}:${record.waitId}`,
-  })
-  eventEmitter.emit('workStream.updated', { workStreamId: stream.id, squadId: stream.squadId })
+  if (record.workStreamId && audience.squadId)
+    eventEmitter.emit('workStream.updated', { workStreamId: record.workStreamId, squadId: audience.squadId })
+}
+
+export async function publishRecoveryDecision(id: string): Promise<void> {
+  const [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.id, id))
+  if (record && ['waiting-manager', 'waiting-owner'].includes(record.state.state)) await publish(record)
 }
 
 /** Called only by runtime tool/execution boundaries; not exposed as an agent API. */
@@ -389,19 +386,18 @@ export async function decideRecovery(
     if (expectedWait && (current.waitId !== expectedWait.id || current.workStreamId !== expectedWait.workStreamId))
       throw new Error('Recovery wait changed; refresh before deciding')
     if (current.version !== parsed.expectedVersion) throw new Error('Recovery version changed; refresh before deciding')
-    const [agent] = await tx.select().from(agents).where(eq(agents.id, current.agentId))
-    const [squad] = agent?.squadId ? await tx.select().from(squads).where(eq(squads.id, agent.squadId)) : []
     const [stream] = current.workStreamId
       ? await tx.select().from(workStreams).where(eq(workStreams.id, current.workStreamId))
       : []
     if (stream && ['done', 'canceled'].includes(stream.status)) throw new Error('Recovery work stream is terminal')
-    const target = current.state.ownerEscalated ? 'owner' : 'manager'
+    const audience = await recoveryRecipients(current, tx)
+    const target = audience.target
     const authorized =
       target === 'manager'
-        ? Boolean(actor.agentId && actor.agentId === squad?.managerAgentId)
-        : Boolean(actor.userId && actor.userId === (stream?.requestingUserId ?? agent?.ownerUserId))
+        ? Boolean(actor.agentId && actor.agentId === audience.managerAgentId)
+        : Boolean(actor.userId && audience.ownerUserIds.includes(actor.userId))
     if (!authorized) throw new Error(`Only the authorized ${target} may decide this recovery`)
-    let state = current.state
+    let state = target === 'owner' ? { ...current.state, ownerEscalated: true } : current.state
     if (parsed.action === 'continue') state = continueRecovery(state, target, await databaseNow(tx))
     else if (parsed.action === 'stop') {
       if (!['waiting-manager', 'waiting-owner'].includes(state.state))

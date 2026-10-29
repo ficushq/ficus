@@ -1,3 +1,4 @@
+import { recoveryRecipients, recoveryRecipientsById } from '../recovery/recipients'
 import { selectWorkStreamPresentationState, workStreamTitle, workStreamWaitActor } from '@ficus/shared'
 import { resolveActingUser } from '../rbac'
 import { eq, desc, isNull, and, sql, inArray } from 'drizzle-orm'
@@ -246,10 +247,16 @@ export async function listPendingActions(options: PendingActionListOptions = {})
     .from(recoveryEpisodes)
     .innerJoin(agents, eq(agents.id, recoveryEpisodes.agentId))
     .leftJoin(squads, eq(squads.id, agents.squadId))
-    .where(and(isNull(recoveryEpisodes.workStreamId), sql`${recoveryEpisodes.state}->>'state' = 'waiting-owner'`))
+    .where(
+      and(
+        isNull(recoveryEpisodes.workStreamId),
+        sql`${recoveryEpisodes.state}->>'state' IN ('waiting-owner', 'waiting-manager')`
+      )
+    )
   const { recoveryWaitSnapshot } = await import('../recovery/store')
   for (const { record, agent, squad } of recoveries) {
-    if (!agent.ownerUserId) continue
+    const audience = await recoveryRecipients(record)
+    if (audience.target !== 'owner' || !audience.ownerUserIds.length) continue
     const structured = recoveryWaitSnapshot(record)
     const data: AgentErrorActionData = {
       agentId: agent.id,
@@ -257,7 +264,7 @@ export async function listPendingActions(options: PendingActionListOptions = {})
       agentTypeId: agent.agentTypeId,
       squadId: agent.squadId,
       squadName: squad?.name ?? null,
-      ownerUserId: agent.ownerUserId,
+      ownerUserId: audience.ownerUserIds[0]!,
       reason: structured.summary.text,
       recovery: { id: record.id, structured },
     }
@@ -296,7 +303,12 @@ export async function listPendingActions(options: PendingActionListOptions = {})
   for (const { ws, squad, wait } of actionableWorkStreams) {
     // Only manual waits a human must clear are human actions. Owner-actor
     // waits still block the stream, but are not "Needs you".
-    if (wait.structured?.stopped || (wait.type === 'manual' && workStreamWaitActor(wait) !== 'human')) continue
+    if (wait.structured?.stopped) continue
+    if (wait.structured?.request.kind === 'continue') {
+      const audience = await recoveryRecipientsById(wait.structured.request.recoveryId)
+      if (audience?.target !== 'owner' || !audience.ownerUserIds.length) continue
+      wait.actor = 'human' // Current routing may fall back after manager availability changes.
+    } else if (wait.type === 'manual' && workStreamWaitActor(wait) !== 'human') continue
     const isReview = wait.type === 'review'
     // Synthesize the legacy prompt shape from the wait so the Action Center
     // respond flows (#970) keep working unchanged.

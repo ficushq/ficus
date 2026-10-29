@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { eq, sql } from 'drizzle-orm'
-import { db, agents, agentTypes, squads, workStreams, workStreamWaits, inbox } from '../../db'
+import { db, agents, agentTypes, agentExtraScopes, squads, workStreams, workStreamWaits, inbox } from '../../db'
 import { Agent } from '../../entities/Agent'
 import { AgentType } from '../../entities/AgentType'
 import { Squad } from '../../entities/Squad'
@@ -22,6 +22,9 @@ beforeEach(async () => {
   ownerToken = owner.token
   await AgentType.upsert({ id: prefix, name: 'Recovery fixture', model: 'test:model', systemPrompt: 'test' })
   squad = await Squad.create({ name: `${prefix}-${crypto.randomUUID()}`, purpose: 'test' })
+  await db
+    .insert(agentExtraScopes)
+    .values(['workstreams:respond', 'agents:run'].map((permission) => ({ agentId: squad.managerAgentId!, permission })))
   worker = await Agent.create({ agentTypeId: prefix, squadId: squad.id })
   stream = await storedLegacyWorkStream({
     squadId: squad.id,
@@ -695,4 +698,128 @@ test('real bash nonzero exits, confirmed timeouts and file validation never cons
     )
   expect(await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))).toHaveLength(0)
   expect(await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, stream.id))).toHaveLength(0)
+})
+
+test.each(['no-manager', 'self-manager', 'no-squad'] as const)(
+  'recovery routes %s directly to an eligible owner',
+  async (mode) => {
+    const api = await store()
+    if (mode === 'no-squad') {
+      await db.update(agents).set({ squadId: null, ownerUserId: ownerId }).where(eq(agents.id, worker.id))
+      await db.update(workStreams).set({ assigneeAgentId: null, agentIds: [] }).where(eq(workStreams.id, stream.id))
+    } else
+      await db
+        .update(squads)
+        .set({ managerAgentId: mode === 'self-manager' ? worker.id : null })
+        .where(eq(squads.id, squad.id))
+    try {
+      let record
+      for (let n = 0; n < 3; n++)
+        record = await api.recordRecoveryFailure(
+          { agentId: worker.id, executionId: execution.id },
+          {
+            operationKey: 'fallback',
+            invocationId: `fallback-${n}`,
+            attempted: 'start the task',
+            error: new Error('Connection closed'),
+          }
+        )
+      expect(record!.state).toMatchObject({ state: 'waiting-owner', ownerEscalated: true, managerCycles: 0 })
+      const { listPendingActions } = await import('../agents/actions')
+      const { evaluatePendingAction } = await import('../agents/pending-action-policy')
+      const { EMPTY_USER_ATTENTION } = await import('../attention/resolver')
+      const action = (await listPendingActions()).find((a) =>
+        a.id.includes(mode === 'no-squad' ? record!.id : stream.id)
+      )!
+      expect(action).toBeDefined()
+      expect(
+        (await evaluatePendingAction({ type: 'user', userId: ownerId }, action, { attention: EMPTY_USER_ATTENTION }))
+          .canRespond
+      ).toBe(true)
+      expect(
+        (
+          await api.decideRecovery(
+            record!.id,
+            { action: 'continue', expectedVersion: record!.version },
+            { userId: ownerId }
+          )
+        ).state.state
+      ).toBe('recovering')
+    } finally {
+      await db.update(agents).set({ squadId: squad.id }).where(eq(agents.id, worker.id))
+    }
+  }
+)
+
+test('an agent-created stream uses the same eligible admin fallback for notice, visibility and decision', async () => {
+  await db.update(workStreams).set({ requestingUserId: null }).where(eq(workStreams.id, stream.id))
+  const api = await store()
+  let record
+  for (let n = 0; n < 3; n++)
+    record = await api.recordRecoveryFailure(
+      { agentId: worker.id, executionId: execution.id },
+      {
+        operationKey: 'owner-fallback',
+        invocationId: `owner-fallback-${n}`,
+        attempted: 'start the task',
+        error: new Error('Connection closed'),
+      }
+    )
+  record = await api.decideRecovery(
+    record!.id,
+    { action: 'forward', expectedVersion: record!.version },
+    { agentId: squad.managerAgentId }
+  )
+  const { listPendingActions } = await import('../agents/actions')
+  const { evaluatePendingAction } = await import('../agents/pending-action-policy')
+  const { EMPTY_USER_ATTENTION } = await import('../attention/resolver')
+  const action = (await listPendingActions()).find((a) => a.id.includes(stream.id))!
+  expect(
+    (await evaluatePendingAction({ type: 'user', userId: ownerId }, action, { attention: EMPTY_USER_ATTENTION }))
+      .canRespond
+  ).toBe(true)
+  expect(
+    (await db.select().from(inbox).where(eq(inbox.recipientId, ownerId))).some(
+      (row) => row.content === record.state.attempted || row.content === api.recoveryWaitSnapshot(record).summary.text
+    )
+  ).toBe(true)
+  expect(
+    (await api.decideRecovery(record.id, { action: 'stop', expectedVersion: record.version }, { userId: ownerId }))
+      .state.state
+  ).toBe('stopped')
+})
+
+test('unroutable recovery emits one durable diagnostic without granting another identity authority', async () => {
+  await db.update(squads).set({ managerAgentId: null }).where(eq(squads.id, squad.id))
+  const permissions = await import('../rbac/permissions')
+  const { spyOn } = await import('bun:test')
+  const permission = spyOn(permissions, 'hasUserPermissionWithExecutor').mockResolvedValue(false)
+  try {
+    const api = await store()
+    let record
+    const input = (id: string) => ({
+      operationKey: 'unroutable',
+      invocationId: id,
+      attempted: 'start the task',
+      error: new Error('Connection closed'),
+    })
+    for (let n = 0; n < 3; n++)
+      record = await api.recordRecoveryFailure(
+        { agentId: worker.id, executionId: execution.id },
+        input(`unroutable-${n}`)
+      )
+    expect(record!.state.state).toBe('waiting-owner')
+    await api.publishRecoveryDecision(record!.id)
+    await expect(
+      api.decideRecovery(record!.id, { action: 'continue', expectedVersion: record!.version }, { userId: ownerId })
+    ).rejects.toThrow('authorized owner')
+    expect(
+      await db
+        .select()
+        .from(inbox)
+        .where(eq(inbox.idempotencyKey, `recovery-unroutable:${record!.id}`))
+    ).toHaveLength(1)
+  } finally {
+    permission.mockRestore()
+  }
 })

@@ -33,7 +33,9 @@ test('worker, engineer, reviewer, general and manager each receive restart-safe 
     expect(prompt).toContain('automatically forwards')
     expect(prompt).toContain('expectedVersion')
     expect(prompt).not.toContain('request-input <id> -m')
-    expect(prompt).not.toContain('or the existing authorized task owner when no squad manager exists')
+    expect(prompt).toContain(
+      'If no eligible manager exists, or the failing agent is the manager, the server routes directly to an eligible owner.'
+    )
     expect(prompt).not.toContain('report the box as overloaded instead of retrying')
     const withoutProhibition = prompt.replace(
       'Never ask a person for host logs, registry records, platform forensics or technical evidence they cannot provide.',
