@@ -302,6 +302,13 @@ describe('agentsResource message methods', () => {
     expect(calls[0].options).toMatchObject({ method: 'POST', body: { operation: 'follow-up' } })
   })
 
+  test('sendQueuedNow POSTs to /agents/:id/send-now', async () => {
+    const { t, calls } = mockTransport()
+    await agentsResource(t).sendQueuedNow('agt-1')
+    expect(calls[0].path).toBe('/agents/agt-1/send-now')
+    expect(calls[0].options).toMatchObject({ method: 'POST' })
+  })
+
   test('clearQueue POSTs to /agents/:id/clear-queue', async () => {
     const { t, calls } = mockTransport()
     await agentsResource(t).clearQueue('agt-1')

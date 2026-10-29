@@ -69,8 +69,11 @@ export interface UseAgentConversationResult {
    *  consult this to say "Waiting for sandbox" honestly. Cleared by sandbox_ready, any content
    *  event, or executionStatus leaving running/stopping. */
   waitingForSandbox: boolean
-  /** Number of genuinely queued interrupts/follow-ups (excludes the lone send that starts a turn). Drives the clear-queue control. */
+  /** Number of genuinely queued user-sent interrupts/follow-ups (excludes the lone send that starts a turn,
+   *  and inbox and monitor deliveries, which are never cleared). Drives the clear-queue control. */
   queuedCount: number
+  /** Number of queued interrupts of any origin. Drives the send-now control. */
+  queuedInterruptCount: number
   usage: SessionUsage | null
   compactionState: CompactionState
   isLoading: boolean
@@ -85,6 +88,8 @@ export interface UseAgentConversationResult {
   retrySend: (clientId: string) => void
   updatePendingMessage: (messageId: string, operation: 'cancel' | DeliveryMode) => Promise<void>
   cancelAllPending: () => Promise<void>
+  /** Stop the running turn and deliver every queued interrupt in a new one. */
+  sendQueuedNow: () => Promise<void>
   refresh: () => void
   stop: () => void
   abortTool: () => void
@@ -1317,6 +1322,18 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     }
   }, [resolvedAgentId, client, queryClient])
 
+  const sendQueuedNow = useCallback(async () => {
+    if (!resolvedAgentId) throw new Error('Wait for the message to finish sending.')
+    try {
+      await client.agents.sendQueuedNow(resolvedAgentId)
+    } finally {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.agents.messages(resolvedAgentId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.agents.activeExecution(resolvedAgentId) }),
+      ])
+    }
+  }, [resolvedAgentId, client, queryClient])
+
   const updatePendingMessage = useCallback(
     async (messageId: string, operation: 'cancel' | DeliveryMode) => {
       if (!resolvedAgentId) throw new Error('Wait for the message to finish sending.')
@@ -1424,10 +1441,19 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
   // count (a lone send that started the turn is region A and must not be clearable — clearing it
   // would race the run it just triggered). Both apps gate the control on queuedCount.
   const queuedPendingIds = useMemo(
-    () => items.flatMap((i) => (i.kind === 'pending' && i.queued ? [i.id] : [])),
+    () =>
+      items.flatMap((i) =>
+        i.kind === 'pending' && i.queued && i.metadata?.source !== 'inbox' && i.metadata?.source !== 'monitor'
+          ? [i.id]
+          : []
+      ),
     [items]
   )
   const queuedCount = queuedPendingIds.length
+  const queuedInterruptCount = useMemo(
+    () => items.filter((i) => i.kind === 'pending' && i.queued && i.deliveryMode !== 'follow-up').length,
+    [items]
+  )
   clearableRef.current = [...queuedPendingIds, ...pending.filter((p) => p.status === 'failed').map((p) => p.clientId)]
 
   // 5. Cleanup: clear stream groups whose persisted turn is fully present (spec §8).
@@ -1446,6 +1472,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     executionStatus: identityReady ? executionStatus : null,
     waitingForSandbox: identityReady && waitingForSandbox,
     queuedCount,
+    queuedInterruptCount,
     usage: identityReady ? usage : null,
     compactionState: identityReady ? store.compactionState() : null,
     isLoading: messagesQuery.isLoading,
@@ -1456,6 +1483,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     sendAccepted,
     retrySend,
     cancelAllPending,
+    sendQueuedNow,
     updatePendingMessage,
     refresh,
     stop,

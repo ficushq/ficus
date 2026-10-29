@@ -127,6 +127,7 @@ function makeMockClient(opts?: {
               )
         return { success: true }
       },
+      sendQueuedNow: async () => ({ success: true, code: 'started' as const }),
       clearQueue: async () => {
         messages = []
         return { success: true }
@@ -4367,5 +4368,37 @@ test('a rejected per-message operation is surfaced and preserves the pending mes
   } finally {
     hook.unmount()
     update.mockRestore()
+  }
+})
+
+test('the clear count leaves out inbox and monitor deliveries, and send-now counts queued interrupts', async () => {
+  const mc = makeMockClient({ activeExecution: { active: true, status: 'running' } })
+  const base: Message = {
+    id: 'mine',
+    agentId: 'a1',
+    role: 'human',
+    content: 'mine',
+    pending: true,
+    queued: true,
+    createdAt: new Date(),
+    metadata: { deliveryMode: 'steer' },
+  }
+  mc.setMessages([
+    base,
+    { ...base, id: 'inbox', content: 'inbox', metadata: { source: 'inbox', deliveryMode: 'steer' } },
+    { ...base, id: 'monitor', content: 'monitor', metadata: { source: 'monitor', deliveryMode: 'follow-up' } },
+  ])
+  const send = spyOn(mc.client.agents, 'sendQueuedNow')
+  const hook = await renderHook(() => useAgentConversation({ agentId: 'a1' }), { wrapper: wrap(mc.client) })
+  try {
+    await waitFor(() => expect(hook.result.current.queuedInterruptCount).toBe(2))
+    expect(hook.result.current.queuedCount).toBe(1)
+    await act(async () => {
+      await hook.result.current.sendQueuedNow()
+    })
+    expect(send).toHaveBeenCalledWith('a1')
+  } finally {
+    hook.unmount()
+    send.mockRestore()
   }
 })

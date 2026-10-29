@@ -943,6 +943,28 @@ export const agentsRouter = new Hono()
       return c.json({ error: 'Could not confirm the queue update. Refresh and try again.', code: result }, 503)
     }
   )
+  // POST /api/agents/:id/send-now — stop the running turn and deliver queued interrupts in a new one
+  .post(
+    '/:id/send-now',
+    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
+    }),
+    async (c) => {
+      const agent = await Agent.find(c.req.param('id'))
+      if (!agent) return c.json({ error: 'Agent not found' }, 404)
+      const result = await agent.sendQueuedNow()
+      if (result.ok) return c.json({ success: true, code: result.code })
+      if (result.code === 'nothing_queued')
+        return c.json({ error: 'There are no queued interrupts to send.', code: result.code }, 409)
+      return c.json(
+        {
+          error: 'The agent is still stopping. Your queued messages are safe; try Send now again in a moment.',
+          code: result.code,
+        },
+        503
+      )
+    }
+  )
   // POST /api/agents/:id/clear-queue — clear all pending steer/follow-up messages
   .post(
     '/:id/clear-queue',
