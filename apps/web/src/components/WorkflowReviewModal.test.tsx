@@ -4,6 +4,10 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   advanceWorkflowRun,
+  createBlankWorkflow,
+  workflowStepSchema,
+  routeWorkflowDecision,
+  workflowReviewBriefFixture,
   createWorkflowRun,
   workflowPresetSchema,
   type WorkflowTransition,
@@ -804,6 +808,64 @@ test('an actual restarted human gate shows its new own message and the exact no-
     )
     expect(article.textContent).not.toContain('Approve the original staging scope.')
     expect(article.textContent).not.toContain('Carried forward')
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('a restarted decision fallback excludes the old brief and shows its replacement own message', async () => {
+  const f = await fixture()
+  try {
+    const definition = createBlankWorkflow()
+    definition.steps[0]!.outcomes.completed = { next: 'choice' }
+    definition.steps.push(
+      workflowStepSchema.parse({
+        id: 'choice',
+        kind: 'decision',
+        instructions: 'Choose the original staging scope.',
+        questions: { ready: { type: 'yesno', instructions: 'Is staging ready?' } },
+        outcomes: { yes: { next: 'finish' } },
+      })
+    )
+    let state = advanceWorkflowRun(createWorkflowRun(definition), {
+      action: 'complete',
+      expectedVersion: 0,
+      attemptId: 1,
+      outcome: 'completed',
+      evidence: 'Original internal handoff.',
+      decisionBrief: workflowReviewBriefFixture,
+    })
+    state = advanceWorkflowRun(state, {
+      action: 'revise',
+      expectedVersion: state.version,
+      attemptId: 2,
+      active: 'restart',
+      reason: 'Replace the staging choice session.',
+      operations: [
+        {
+          op: 'put-step',
+          step: { ...state.attempts[1]!.step!, instructions: 'Choose only the replacement staging scope.' },
+        },
+      ],
+    })
+    const current = state.attempts.at(-1)!
+    const decisionStep = current.step
+    if (decisionStep?.kind !== 'decision') throw new Error('Expected a decision fixture')
+    current.decision = routeWorkflowDecision(decisionStep, { ok: false, reason: 'unavailable', errors: [] })
+    const detail = gateRun()
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), {
+      ...detail,
+      state,
+      version: state.version,
+      attemptAgents: {},
+      openWaits: [{ ...detail.openWaits[0]!, flowAttemptId: current.id }],
+    })
+    await f.render(<WorkflowReviewModal stream={stream} attemptId={current.id} onClose={() => {}} />)
+    const panel = f.doc.querySelector('[role="tabpanel"]')!
+    expect(panel.textContent).toContain('No decision brief for this gate')
+    expect(panel.textContent).toContain('Choose only the replacement staging scope.')
+    expect(panel.textContent).not.toContain(workflowReviewBriefFixture.decision)
+    expect(panel.textContent).not.toContain('Carried forward from an earlier step')
   } finally {
     await f.cleanup()
   }

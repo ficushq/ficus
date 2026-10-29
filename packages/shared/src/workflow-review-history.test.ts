@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { createBlankWorkflow } from './workflow-editing'
 import { workflowStepSchema } from './workflows'
 import { advanceWorkflowRun, createWorkflowRun, reopenWorkflowRun, type WorkflowRun } from './workflow-runtime'
+import { routeWorkflowDecision } from './workflow-decision'
 import { brief } from './test-fixtures/workflow-review'
 import { workflowEarlierHumanDecisions, workflowReviewBriefForAttempt } from './workflow-review-history'
 
@@ -395,4 +396,58 @@ test('a human return to an already-reviewed gate carries its old brief instead o
     kind: 'carried-forward',
     sources: [{ id: 1 }],
   })
+})
+
+test('restarted decision fallback has a fresh destination boundary without rewriting historical sources', () => {
+  const definition = createBlankWorkflow()
+  definition.steps[0]!.outcomes.completed = { next: 'choice' }
+  definition.steps.push(
+    workflowStepSchema.parse({
+      id: 'choice',
+      kind: 'decision',
+      instructions: 'Choose the original staging scope.',
+      questions: { ready: { type: 'yesno', instructions: 'Is staging ready?' } },
+      outcomes: { yes: { next: 'finish' } },
+    })
+  )
+  const original = complete(createWorkflowRun(definition), 'completed', brief)
+  const source = structuredClone(original.attempts[0])
+  const restarted = advanceWorkflowRun(original, {
+    action: 'revise',
+    expectedVersion: original.version,
+    attemptId: 2,
+    active: 'restart',
+    reason: 'Start a fresh decision for replacement scope.',
+    operations: [
+      {
+        op: 'put-step',
+        step: { ...original.attempts[1]!.step!, instructions: 'Choose only the replacement staging scope.' },
+      },
+    ],
+  })
+  const current = restarted.attempts.at(-1)!
+  expect(current.freshSession).toBe(true)
+  for (const reason of ['unconfigured', 'unavailable'] as const) {
+    const step = current.step!
+    if (step.kind !== 'decision') throw new Error('Expected a decision fixture')
+    current.decision = routeWorkflowDecision(step, { ok: false, reason, errors: [] })
+    expect(current.decision.awaitingPerson).toBe(true)
+    for (const binding of [
+      undefined,
+      { kind: 'carried-forward' as const, sourceAttemptId: 1 },
+      { kind: 'authored' as const, sourceAttemptIds: [1] },
+    ]) {
+      current.reviewBrief = binding
+      const before = structuredClone(restarted)
+      expect(workflowReviewBriefForAttempt(restarted, current)).toEqual({ kind: 'none', sources: [] })
+      expect(restarted).toEqual(before)
+    }
+  }
+  expect(restarted.attempts[0]).toEqual(source)
+  expect(workflowReviewBriefForAttempt(restarted, restarted.attempts[1]!)).toMatchObject({
+    kind: 'carried-forward',
+    sources: [{ id: 1 }],
+  })
+  current.reviewBrief = { kind: 'legacy' }
+  expect(workflowReviewBriefForAttempt(restarted, current)).toEqual({ kind: 'legacy', sources: [] })
 })

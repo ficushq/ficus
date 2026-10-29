@@ -76,6 +76,9 @@ try {
           'decision-none',
           'legacy-queued',
           'human-return',
+          'decision-restarted',
+          'transitive-files',
+          'transitive-legacy',
         ]) {
           const caseName = `${surface} ${mode} ${width} ${dark ? 'dark' : 'light'}`
           if (caseFilter && !caseFilter.test(caseName)) continue
@@ -93,7 +96,7 @@ try {
             'Real review styles must be present'
           )
           if (surface === 'web') assert.equal(await review.evaluate((el) => getComputedStyle(el).position), 'fixed')
-          const legacy = mode === 'legacy' || mode === 'legacy-queued'
+          const legacy = ['legacy', 'legacy-queued', 'transitive-legacy'].includes(mode)
           const article = review.getByRole('article', { name: 'Decision brief', exact: true })
           const primary = review.getByRole('tab', { name: legacy ? 'Handoff' : 'Decision brief', exact: true })
           await primary.waitFor()
@@ -107,7 +110,7 @@ try {
           if (legacy) assert.equal(await article.count(), 0)
           else {
             await article.waitFor()
-            if (['none', 'restarted', 'decision-none'].includes(mode))
+            if (['none', 'restarted', 'decision-none', 'decision-restarted', 'transitive-files'].includes(mode))
               await article.getByText('No decision brief for this gate', { exact: true }).waitFor()
             else {
               await article.getByRole('heading', { name: 'Decision', exact: true }).first().waitFor()
@@ -136,11 +139,16 @@ try {
                 .waitFor()
               assert.equal(await article.getByRole('heading', { name: 'Decision', exact: true }).count(), 0)
             }
-            if (mode.startsWith('decision-'))
+            if (mode.startsWith('decision-') && mode !== 'decision-restarted')
               await review
                 .getByText('Choose the staging option; production remains forbidden.', { exact: true })
                 .first()
                 .waitFor()
+            if (mode === 'decision-restarted') {
+              await review.getByText('Choose only the replacement staging scope.', { exact: true }).first().waitFor()
+              assert.equal(await article.getByRole('heading', { name: 'Decision', exact: true }).count(), 0)
+              assert.equal(await article.getByText('Carried forward from an earlier step', { exact: true }).count(), 0)
+            }
             const disclosure = review
               .locator('details')
               .filter({ has: page.locator('summary', { hasText: 'Internal handoff' }) })
@@ -161,7 +169,7 @@ try {
               false,
               'Literal resource IDs wrap'
             )
-            if (mode === 'first') {
+            if (mode === 'first' || mode === 'transitive-files') {
               await attachment.click()
               const panel = review.getByRole('tabpanel')
               await panel.getByText('Staging design attachment', { exact: false }).waitFor()
@@ -173,6 +181,13 @@ try {
               await review.getByText('Detailed audit handoff.', { exact: false }).waitFor()
               await disclosure.locator('summary').click()
             }
+          }
+          if (mode === 'transitive-legacy') {
+            await attachment.click()
+            await review.getByRole('tabpanel').getByText('Staging design attachment', { exact: false }).waitFor()
+            await primary.click()
+            assert.equal(await primary.getAttribute('aria-selected'), 'true')
+            assert.equal(await article.count(), 0)
           }
           if (mode === 'return')
             await review

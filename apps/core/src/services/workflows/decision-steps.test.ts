@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import {
   workflowDefinitionSchema,
+  workflowReviewBriefForAttempt,
+  workflowReviewBriefFixture,
   type DecisionAnswer,
   type DecisionRequest,
   type WorkflowDecisionReply,
@@ -407,4 +409,53 @@ test('decision routing retires superseded structured waits without resolving the
   const [retained] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.id, record!.id))
   expect(retained!.waitId).toBeNull()
   expect(retained!.state).toMatchObject({ failures: 3, managerCycles: 0, state: 'waiting-manager' })
+})
+
+test('restarting a person-waiting decision retains source history but does not carry its prior brief into fallback', async () => {
+  const id = await create(definition({ unavailable: undefined }))
+  await advanceFlow(
+    id,
+    {
+      action: 'complete',
+      expectedVersion: 0,
+      attemptId: 1,
+      outcome: 'done',
+      evidence: 'Original staging handoff.',
+      decisionBrief: workflowReviewBriefFixture,
+    },
+    randomUUID(),
+    actor
+  )
+  await evaluateFlowDecisions(id, stub({ ok: false, reason: 'unconfigured', errors: [] }))
+  const before = (await getFlow(id))!
+  expect(workflowReviewBriefForAttempt(before.state, before.state.attempts[1]!).kind).toBe('carried-forward')
+  await advanceFlow(
+    id,
+    {
+      action: 'revise',
+      expectedVersion: before.version,
+      attemptId: 2,
+      active: 'restart',
+      reason: 'Start a fresh staging decision session.',
+      operations: [
+        {
+          op: 'put-step',
+          step: { ...before.state.attempts[1]!.step!, instructions: 'Choose only the replacement staging scope.' },
+        },
+      ],
+    },
+    randomUUID(),
+    actor
+  )
+  await evaluateFlowDecisions(id, stub({ ok: false, reason: 'unavailable', errors: [] }))
+  const after = (await getFlow(id))!
+  const current = after.state.attempts.at(-1)!
+  expect(current.freshSession).toBe(true)
+  expect(current.decision).toMatchObject({ status: 'unavailable', awaitingPerson: true })
+  expect(workflowReviewBriefForAttempt(after.state, current)).toEqual({ kind: 'none', sources: [] })
+  expect(after.state.attempts[0]!.decisionBrief).toEqual(before.state.attempts[0]!.decisionBrief)
+  expect(workflowReviewBriefForAttempt(after.state, after.state.attempts[1]!).kind).toBe('carried-forward')
+  expect((await listOpenWaits(db, id)).map((wait) => ({ attempt: wait.flowAttemptId, message: wait.message }))).toEqual(
+    [{ attempt: current.id, message: expect.stringContaining('Choose only the replacement staging scope.') }]
+  )
 })

@@ -100,8 +100,8 @@ export function workflowReviewBriefForAttempt(
   carriedSources?: WorkflowAttempt[]
 } {
   if (attempt.reviewBrief?.kind === 'legacy') return { kind: 'legacy', sources: [] }
-  if (attempt.freshSession && workflowHistoricalStep(run, attempt)?.kind === 'human-approval')
-    return { kind: 'none', sources: [] }
+  const kind = workflowHistoricalStep(run, attempt)?.kind
+  if (attempt.freshSession && (kind === 'human-approval' || kind === 'decision')) return { kind: 'none', sources: [] }
   const binding = attempt.reviewBrief
   if (binding?.kind === 'authored')
     return {
@@ -123,7 +123,7 @@ export function workflowReviewBriefForAttempt(
     const source = eligible.find((a) => a.id === binding.sourceAttemptId)
     return source ? { kind: 'carried-forward', sources: [source] } : { kind: 'none', sources: [] }
   }
-  if (workflowHistoricalStep(run, attempt)?.kind === 'decision')
+  if (kind === 'decision')
     return eligible[0] ? { kind: 'carried-forward', sources: [eligible[0]] } : { kind: 'none', sources: [] }
   const direct = run.attempts.filter((a) => attempt.sourceAttemptIds?.includes(a.id))
   if (!direct.length || direct.some((a) => workflowHistoricalStep(run, a)?.kind === 'agent'))

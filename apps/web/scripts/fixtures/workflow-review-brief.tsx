@@ -7,6 +7,7 @@ import {
   createBlankWorkflow,
   createWorkflowRun,
   advanceWorkflowRun,
+  routeWorkflowDecision,
   type WorkStream,
   type WorkStreamWait,
 } from '@ficus/shared'
@@ -83,7 +84,7 @@ if (mode.startsWith('mixed-')) {
     }
   )
 }
-if (mode.startsWith('decision-')) {
+if (mode.startsWith('decision-') || mode.startsWith('transitive-')) {
   definition.steps[0]!.outcomes.completed = { next: 'choice' }
   definition.steps[0]!.outcomes.design = { next: 'gate' }
   definition.steps.push({
@@ -94,7 +95,7 @@ if (mode.startsWith('decision-')) {
     input: ['incoming-results'],
     questions: { ready: { type: 'yesno', instructions: 'Is the staging option ready?' } },
     routes: [],
-    outcomes: { approved: { next: 'finish' } },
+    outcomes: { approved: { next: mode.startsWith('transitive-') ? 'gate' : 'finish' } },
   })
 }
 let state = createWorkflowRun(definition)
@@ -105,7 +106,7 @@ state = advanceWorkflowRun(state, {
   outcome: 'completed',
   evidence:
     'Detailed audit handoff. The staging design and fallback tests are attached. No production operation is authorized.',
-  decisionBrief: mode === 'decision-none' ? undefined : brief,
+  decisionBrief: mode === 'decision-none' || mode.startsWith('transitive-') ? undefined : brief,
 })
 if (['repeat', 'blocked', 'return', 'legacy-queued'].includes(mode)) {
   state = advanceWorkflowRun(state, {
@@ -173,13 +174,39 @@ if (mode.startsWith('mixed-')) {
       ...(id === 2 ? { decisionBrief: { ...brief, decision: 'Approve the joined staging design.' } } : {}),
     })
 }
-if (mode.startsWith('decision-'))
-  state.attempts.at(-1)!.decision = {
-    status: 'unconfigured',
-    matched: 'unavailable',
-    awaitingPerson: true,
-    decidedAt: '2026-10-29T00:00:00Z',
-  }
+if (mode === 'decision-restarted')
+  state = advanceWorkflowRun(state, {
+    action: 'revise',
+    expectedVersion: state.version,
+    attemptId: state.activeAttemptId,
+    active: 'restart',
+    reason: 'Replace the staging choice session.',
+    operations: [
+      {
+        op: 'put-step',
+        step: { ...state.attempts.at(-1)!.step!, instructions: 'Choose only the replacement staging scope.' },
+      },
+    ],
+  })
+if (mode.startsWith('decision-')) {
+  const current = state.attempts.at(-1)!
+  const decisionStep = current.step
+  if (decisionStep?.kind !== 'decision') throw new Error('Expected a decision fixture')
+  current.decision = routeWorkflowDecision(
+    current.step,
+    { ok: false, reason: mode === 'decision-restarted' ? 'unavailable' : 'unconfigured', errors: [] },
+    '2026-10-29T00:00:00Z'
+  )
+}
+if (mode.startsWith('transitive-'))
+  state = advanceWorkflowRun(state, {
+    action: 'complete',
+    expectedVersion: state.version,
+    attemptId: state.activeAttemptId,
+    outcome: 'approved',
+    evidence: 'The automatic decision chose human review.',
+  })
+if (mode === 'transitive-legacy') state.attempts.at(-1)!.reviewBrief = { kind: 'legacy' }
 if (mode === 'restarted')
   state = advanceWorkflowRun(state, {
     action: 'revise',

@@ -4,6 +4,7 @@ import type { WorkflowRunDetail } from '@ficus/client-core'
 import {
   workflowReviewBriefForAttempt,
   workflowHistoricalStep,
+  workflowIncomingAttempts,
   type WorkflowAttempt,
   type WorkflowAttemptAttachment,
 } from '@ficus/shared'
@@ -24,7 +25,10 @@ export function WorkflowBriefDocuments({
 }) {
   const brief = workflowReviewBriefForAttempt(run.state, attempt)
   const sources = [...brief.sources, ...(brief.carriedSources ?? [])]
-  const ids = new Set([...(attempt.sourceAttemptIds ?? []), ...sources.map((source) => source.id)])
+  const ids = new Set([
+    ...workflowIncomingAttempts(run.state, attempt).map((source) => source.id),
+    ...sources.map((source) => source.id),
+  ])
   const attachments = [...ids].flatMap((id) => run.attachments?.[String(id)] ?? [])
   const primary =
     brief.kind === 'legacy' ? { id: 'handoff', label: 'Handoff' } : { id: 'decision-brief', label: 'Decision brief' }
