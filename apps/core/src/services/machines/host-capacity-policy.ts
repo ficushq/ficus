@@ -1,52 +1,53 @@
-/** Admission target, not a change to kernel quotas or permission to evict work. */
-export const HOST_CPU_OVERSUBSCRIPTION = 1.5
-
-/** Mirrors box-provision.sh's unchanged CPUQuota=max(100%, nproc*50%). */
-export function boxCpuQuota(cpus: number): number {
-  return Math.max(1, cpus / 2)
-}
-
 export type { SandboxHostCapacity as HostCapacityDecision } from '@ficus/shared'
 import type { SandboxHostCapacity as HostCapacityDecision } from '@ficus/shared'
 
-/**
- * Charge unique box identities, never agent counts or sampled CPU utilization.
- * A shared squad box is charged once even when several agents can use it.
- * Existing activity is grandfathered if the host is already above the target:
- * admission limits growth; it must not block reconnects or terminate work.
- */
+/** Provisioning installs/builds can be expensive. Serialize on small or unknown
+ * hosts; allow at most two concurrent generations elsewhere. Running boxes do
+ * not consume these slots: their CPU/memory usage is constrained by cgroups. */
+export function hostStartupLimit(cpus: number | undefined): number {
+  return cpus !== undefined && Number.isSafeInteger(cpus) && cpus >= 4 ? 2 : 1
+}
+
+/** CPU quotas are ceilings, not exclusive reservations. Squads share the host. */
 export function evaluateHostCapacity(
   cpus: number | undefined,
   active: readonly string[],
   incoming: readonly string[]
 ): HostCapacityDecision {
-  return evaluateHostQuotaCounts(cpus, new Set(active).size, new Set([...active, ...incoming]).size)
+  return evaluateHostBoxCounts(cpus, new Set(active).size, new Set([...active, ...incoming]).size)
 }
 
 /** Also supports atomic replacement of planned demand with actual resources. */
-export function evaluateHostQuotaCounts(
+export function evaluateHostBoxCounts(
   cpus: number | undefined,
   currentCount: number,
   projectedCount: number
 ): HostCapacityDecision {
-  if (cpus === undefined || !Number.isSafeInteger(cpus) || cpus <= 0) {
-    return { allowed: currentCount > 0 && projectedCount <= currentCount, reason: 'unknown' }
-  }
-  const quota = boxCpuQuota(cpus)
-  const budgetCpus = cpus * HOST_CPU_OVERSUBSCRIPTION
-  const activeQuotaCpus = currentCount * quota
-  const projectedQuotaCpus = projectedCount * quota
-  const unchanged = projectedCount <= currentCount
-  // A one-CPU host must be able to start one minimal owner set (private +
-  // shared). This is a bounded empty-host exception, not another box's slot.
-  const minimalOwner = cpus === 1 && currentCount === 0 && projectedCount === 2
-  const allowed = unchanged || minimalOwner || projectedQuotaCpus <= budgetCpus
+  const known = cpus !== undefined && Number.isSafeInteger(cpus) && cpus > 0
   return {
+    allowed: true,
+    reason: !known ? 'unknown' : projectedCount <= currentCount ? 'already-accounted' : 'available',
+    ...(known ? { cpus } : {}),
+    activeBoxes: currentCount,
+    projectedBoxes: projectedCount,
+    startupLimit: hostStartupLimit(cpus),
+  }
+}
+
+/** Only live, admitted physical generations occupy startup slots. Same-box
+ * retries reuse their slot; queued work and uncertain old generations do not. */
+export function withHostStartupCapacity(
+  capacity: HostCapacityDecision,
+  starting: readonly string[],
+  incoming: readonly string[]
+): HostCapacityDecision {
+  const current = new Set(starting)
+  const projected = new Set([...current, ...incoming])
+  const allowed = projected.size <= current.size || projected.size <= capacity.startupLimit!
+  return {
+    ...capacity,
+    startingBoxes: current.size,
     allowed,
-    reason: unchanged ? 'already-accounted' : allowed ? 'available' : 'quota',
-    cpus,
-    budgetCpus,
-    activeQuotaCpus,
-    projectedQuotaCpus,
+    reason: allowed ? capacity.reason : 'starting',
   }
 }

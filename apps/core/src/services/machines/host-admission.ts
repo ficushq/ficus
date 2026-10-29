@@ -202,7 +202,7 @@ export async function readSandboxHostCapacity(sandboxId: string, squadId?: strin
         )
         .limit(1)
       const machineId = box?.machineId ?? squad?.machineId ?? planned?.machineId
-      return machineId ? readHostCapacity(tx, machineId) : undefined
+      return machineId ? readHostCapacity(tx, machineId, [sandboxId]) : undefined
     })
     .catch(() => ({ allowed: false, reason: 'unknown' as const }))
 }

@@ -1901,7 +1901,7 @@ describe('squads routes', () => {
       }
     })
 
-    it('reports aggregate host reservation numbers without creating or waking a box', async () => {
+    it('reports shared-host activity and startup limits without creating or waking a box', async () => {
       const squad = await Squad.create({ name: `${testPrefix} Capacity Header`, purpose: 'Capacity readout' })
       const [machine] = await db
         .insert(machines)
@@ -1938,7 +1938,7 @@ describe('squads routes', () => {
         expect(res.status).toBe(200)
         const body = await res.json()
         expect(body.runtime).toBe('vm')
-        expect(body.hostCapacity).toMatchObject({ cpus: 8, budgetCpus: 12, activeQuotaCpus: 8 })
+        expect(body.hostCapacity).toMatchObject({ cpus: 8, startupLimit: 2, activeBoxes: 2 })
         expect(getStatus).toHaveBeenCalledTimes(1)
       } finally {
         managerSpy.mockRestore()

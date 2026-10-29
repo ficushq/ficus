@@ -2,8 +2,15 @@ import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { HostCapacitySummary } from './HostCapacitySummary'
 
-const capacity = { allowed: true, reason: 'already-accounted' as const, cpus: 8, budgetCpus: 12, activeQuotaCpus: 8 }
-test('separates measured host load from reserved CPU quota and explains the budget', () => {
+const capacity = {
+  allowed: true,
+  reason: 'available' as const,
+  cpus: 8,
+  activeBoxes: 15,
+  startupLimit: 2,
+  startingBoxes: 0,
+}
+test('shows measured host load without treating box ceilings as reserved CPUs', () => {
   const html = renderToStaticMarkup(
     <HostCapacitySummary
       capacity={capacity}
@@ -11,20 +18,22 @@ test('separates measured host load from reserved CPU quota and explains the budg
     />
   )
   expect(html).toContain('Host load 0.5×')
-  expect(html).toContain('quota 8/12 CPUs')
-  expect(html).toContain('1.5× host CPUs')
-  expect(html).toContain('not measured CPU usage')
   expect(html).toContain('Host memory 50% used')
+  expect(html).toContain('Squads share host CPUs')
+  expect(html).not.toContain('quota')
 })
-test('explains saturation without claiming that sampled host CPU is fully used', () => {
-  const html = renderToStaticMarkup(<HostCapacitySummary capacity={{ ...capacity, activeQuotaCpus: 12 }} />)
-  expect(html).toContain('quota 12/12 CPUs')
-  expect(html).toContain('Additional box demand waits')
+test('shows transient startup concurrency without implying running squads cannot fit', () => {
+  const html = renderToStaticMarkup(<HostCapacitySummary capacity={{ ...capacity, startingBoxes: 2 }} />)
+  expect(html).toContain('Starting 2/2 boxes')
+  expect(html).toContain('running boxes do not occupy startup slots')
   expect(html).not.toContain('Host load')
 })
-test('unknown capacity fails visibly, while an older payload adds no misleading zero', () => {
-  expect(renderToStaticMarkup(<HostCapacitySummary capacity={{ allowed: false, reason: 'unknown' }} />)).toContain(
-    'Host quota unknown'
-  )
+test('missing samples and old reserved-quota payloads do not invent measured usage', () => {
+  expect(renderToStaticMarkup(<HostCapacitySummary capacity={{ allowed: false, reason: 'unknown' }} />)).toBe('')
+  expect(
+    renderToStaticMarkup(
+      <HostCapacitySummary capacity={{ allowed: true, reason: 'available', activeQuotaCpus: 60, budgetCpus: 12 }} />
+    )
+  ).toBe('')
   expect(renderToStaticMarkup(<HostCapacitySummary />)).toBe('')
 })
