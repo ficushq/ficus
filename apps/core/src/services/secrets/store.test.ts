@@ -61,6 +61,18 @@ describe('SecretStore', () => {
     process.env.FICUS_ENCRYPTION_KEY = testKey
   })
 
+  test('explicitly stored secrets are not reclassified by env heuristic exclusions', async () => {
+    const registry = new ContentSafetyRegistry(store)
+    try {
+      const value = '0123456789abcdef'.repeat(4)
+      await store.set('BUILD_HASH', value)
+      expect(registry.redactWithStoredKeys(value).storedKeys).toContain('BUILD_HASH')
+      expect(registry.redact(value)).not.toContain(value)
+    } finally {
+      registry.dispose()
+    }
+  })
+
   test('set and get a secret', async () => {
     await store.set('OPENAI_API_KEY', 'sk-test-123')
     expect(store.get('OPENAI_API_KEY')).toBe('sk-test-123')

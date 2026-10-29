@@ -568,3 +568,49 @@ test('output placeholders reveal neither squad identity nor environment variable
   expect(redacted.storedKeys).toEqual([])
   f.registry.dispose()
 })
+
+test('upgrades heuristic candidates only from bytes matching existing protected authority, without another bootstrap', async () => {
+  const f = fixture()
+  const id = randomUUID()
+  const generic = createHash('sha512').update('synthetic-upgrade-hex').digest('hex')
+  const digest = '0123456789abcdef'.repeat(4) // Old 4-bit rule accepted this public hash.
+  const content = `CUSTOM=${generic}\nBUILD_HASH=${digest}\nEXPLICIT_TOKEN=${digest}\n`
+  const path = f.file(id, content)
+  const oldSnapshot = {
+    contentHash: createHash('sha256').update(content).digest('hex'),
+    entries: [
+      { key: 'BUILD_HASH', value: digest },
+      { key: 'EXPLICIT_TOKEN', value: digest },
+    ],
+    reason: null,
+  } satisfies SquadEnvSnapshot
+  f.repository.marked.add(id)
+  f.repository.snapshots.set(id, structuredClone(oldSnapshot))
+  await f.source.initialize()
+  expect(f.registry.redact(generic)).not.toContain(generic)
+  expect(f.registry.redact(digest)).not.toContain(digest) // Explicit secret-name intent still wins.
+  expect(f.repository.bootstrapWrites).toBe(0)
+  expect(f.repository.snapshots.get(id)).toEqual(oldSnapshot)
+  // A matching hash is authority; entries themselves are heuristic, not manually registered secrets.
+  const digestOnly = `BUILD_HASH=${digest}\n`
+  const second = randomUUID()
+  f.file(second, digestOnly)
+  f.repository.marked.add(second)
+  f.repository.snapshots.set(second, {
+    contentHash: createHash('sha256').update(digestOnly).digest('hex'),
+    entries: [{ key: 'BUILD_HASH', value: digest }],
+    reason: null,
+  })
+  rmSync(path)
+  await f.source.refresh()
+  f.tick()
+  expect(f.registry.redact(digest)).toBe(digest)
+  // A direct edit cannot add a new candidate to the protected snapshot.
+  writeFileSync(path, `CUSTOM=${generic.split('').reverse().join('')}\n`)
+  f.tick()
+  expect(f.source.entries()).toEqual([])
+  expect(f.source.notice(id)).toContain('outside Settings')
+  expect(f.repository.snapshots.get(id)).toEqual(oldSnapshot)
+  expect(f.repository.bootstrapWrites).toBe(0)
+  f.registry.dispose()
+})

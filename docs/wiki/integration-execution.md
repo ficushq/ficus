@@ -238,8 +238,14 @@ at least 32 characters, two character classes and Shannon entropy of at least
 Hex SHA-1 commit IDs and explicitly named commit/SHA/hash/checksum/revision values
 are excluded on this fallback, as are whitespace, URLs and filesystem paths.
 A generic high-entropy digest cannot be distinguished from a secret by its bytes
-alone; name public digests explicitly. Existing trusted snapshots retain their
-parsed entries until an authorized Environment save; they are not re-bootstrapped.
+alone; name public digests explicitly. Env snapshots contain heuristic candidates,
+not explicit per-value secret registrations. On upgrade, current heuristics are
+applied to bounded file bytes **only when their hash matches the existing protected
+snapshot**. Candidate/hash observations are cached together, including negative
+matches. This neither rewrites trusted DB authority nor resets bootstrap; missing,
+corrupt or mismatched records cannot authorize changed disk bytes. Explicit
+SecretStore/integration secrets are independent and are not reclassified by env
+heuristics; the explicit env secret-name rule also remains unchanged.
 `production` and other short ordinary values do not match. Parsing
 does not execute shell substitutions or source files; dynamic expressions cannot
 be inferred. Matching is process-wide, so another squad's output may also be

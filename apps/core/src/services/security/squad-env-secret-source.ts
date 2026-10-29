@@ -47,7 +47,7 @@ export function assertSquadEnvSize(content: string): void {
   if (Buffer.byteLength(content, 'utf8') > MAX_SQUAD_ENV_BYTES) throw new Error('Squad environment exceeds 256 KiB')
 }
 
-function snapshot(content: Buffer): SquadEnvSnapshot {
+function snapshot(content: Buffer): SquadEnvSnapshot & { contentHash: string } {
   return {
     contentHash: createHash('sha256').update(content).digest('hex'),
     entries: parseShellLiteralAssignments(content.toString('utf8')).filter(({ key, value }) =>
@@ -88,7 +88,15 @@ const NOTICES = {
     'This environment was edited outside Settings; its changed values are not registered for output redaction. Save it in Settings to register them.',
 } as const
 
-type CachedFile = { signature: string; hash: string; matchesTrusted: boolean; entries: readonly SecretEntry[] }
+type CachedFile = {
+  signature: string
+  hash: string
+  // Candidates and hash always come from the same bounded bytes. They are not
+  // registered unless the protected DB authority matches this observation.
+  candidates: readonly SecretEntry[]
+  matchesTrusted: boolean
+  entries: readonly SecretEntry[]
+}
 
 /** DB-authoritative output-only source; the mutable workspace never grants authority after bootstrap. */
 export class SquadEnvSecretSource {
@@ -243,10 +251,18 @@ export class SquadEnvSecretSource {
         const cached = this.#files.get(id)
         // Cache observations, not just accepted matches. An unchanged mismatch
         // or null-hash record must not re-read file bytes on each sanitizer tick.
-        const hash =
-          cached && cached.signature === signature
-            ? cached.hash
-            : createHash('sha256').update(readBounded(path)).digest('hex')
+        let hash: string
+        let candidates: readonly SecretEntry[]
+        if (cached && cached.signature === signature) {
+          ;({ hash, candidates } = cached)
+        } else {
+          // Persisted entries were heuristic output, not explicit credential
+          // registrations. Re-evaluate policy on upgrade without resnapshotting
+          // authority: only the existing protected hash can authorize these bytes.
+          const observed = snapshot(readBounded(path))
+          hash = observed.contentHash
+          candidates = observed.entries.map(({ value }) => ({ key: 'squad-env', value, outputOnly: true }))
+        }
         const matchesTrusted = hash === trusted.contentHash
         if (cached && cached.signature === signature && cached.matchesTrusted === matchesTrusted) {
           next.set(id, cached)
@@ -254,10 +270,9 @@ export class SquadEnvSecretSource {
           next.set(id, {
             signature,
             hash,
+            candidates,
             matchesTrusted,
-            entries: matchesTrusted
-              ? trusted.entries.map(({ value }) => ({ key: 'squad-env', value, outputOnly: true }))
-              : [],
+            entries: matchesTrusted ? candidates : [],
           })
         }
         if (!matchesTrusted) this.warn(id, 'mismatch')
