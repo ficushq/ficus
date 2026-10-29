@@ -82,7 +82,17 @@ const manager = new VmSandboxManager({
     if (outcome === 'failure') throw new Error('synthetic owner failure')
     const [ready] = await db
       .update(machineBoxes)
-      .set({ status: 'ready', authToken: 'synthetic-only', provisionedSpecHash: opts.specHash })
+      .set({
+        status: 'ready',
+        authToken: 'synthetic-only',
+        provisionedSpecHash: opts.specHash,
+        // Success/fresh followers model truthful old-runtime publication. Keep
+        // the existing unstamped legacy setup-failure fixture's repair contract.
+        reconcilableSpecHash:
+          outcome === 'setup-failure'
+            ? null
+            : opts.env.FICUS_BOX_SPEC_HASH!.replace(/:bun:\d+_\d+_\d+$/, ':bun:1_2_23'),
+      })
       .where(eq(machineBoxes.sandboxId, sandboxId))
       .returning()
     return { machine, box: ready!, endpoint: `http://127.0.0.1:${41000 + (process.pid % 10000)}` }
@@ -113,7 +123,7 @@ const manager = new VmSandboxManager({
     }) as unknown as SandboxClient,
   syncBoxFiles: async () => {
     if (outcome === 'setup-failure') throw new Error('synthetic required-asset failure')
-    if (outcome === 'fresh') emit('assets')
+    emit('assets')
   },
   seedBoxDevbox: async () => {
     if (outcome === 'fresh') {

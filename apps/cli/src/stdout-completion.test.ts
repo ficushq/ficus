@@ -9,6 +9,9 @@ import { join } from 'node:path'
 // Optional runtime override is for offline cross-version diagnosis, not a live API.
 const runtime = process.env.FICUS_CLI_TEST_BUN || process.execPath
 const entrypoint = join(import.meta.dir, 'index.ts')
+// Owned installed-layout validation can execute the same host wrapper used in
+// boxes. Never interpreted as a live host target; capture still uses fake auth.
+const installedWrapper = process.env.FICUS_CLI_TEST_WRAPPER
 type Destination = 'file' | 'pipe' | 'slow-pipe'
 const large = {
   version: 7,
@@ -45,7 +48,13 @@ async function capture(payload: unknown, destination: Destination, flags = ['--j
         )
       },
     })
-    const command = [runtime, entrypoint, ...flags, 'workstream', 'flow', 'synthetic']
+    const command = [
+      ...(installedWrapper ? [installedWrapper] : [runtime, entrypoint]),
+      ...flags,
+      'workstream',
+      'flow',
+      'synthetic',
+    ]
     // Bun's subprocess capture can mask the older runtime's real OS-pipe failure.
     // Python uses os.pipe and forwards raw bytes without decoding/reformatting.
     const argv =

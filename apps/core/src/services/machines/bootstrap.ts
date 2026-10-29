@@ -1,3 +1,4 @@
+import { bunVersionFromBootstrap } from './bun-runtime-adoption'
 import { createHash } from 'crypto'
 import type { MachineCapabilities } from '../../db/schema'
 import { effectiveMachineScripts, type PrebuiltReadOpts } from './machine-prebuilt'
@@ -175,6 +176,7 @@ export function parseCapabilities(stdout: string): MachineCapabilities {
     if (!parsed || typeof parsed !== 'object') continue
     const p = parsed as Record<string, unknown>
     const caps: MachineCapabilities = {}
+    if (p.bunConvergence === 'current' || p.bunConvergence === 'deferred') caps.bunConvergence = p.bunConvergence
     if (typeof p.arch === 'string') caps.arch = p.arch
     if (typeof p.cpus === 'number') caps.cpus = p.cpus
     if (typeof p.memMb === 'number') caps.memMb = p.memMb
@@ -311,6 +313,9 @@ export async function bootstrapMachine(machine: Machine, deps: BootstrapDeps = {
       )
     }
     const capabilities = parseCapabilities(result.stdout)
+    capabilities.appliedBootstrapVersion = bootstrapVersion
+    if (capabilities.bunConvergence === 'current')
+      capabilities.bunVersion = bunVersionFromBootstrap(effectiveBootstrapScript)
 
     // 3. Push box-provision.sh into /opt/ficus/bin (root-owned, created by
     //    bootstrap.sh) for slice 2 to invoke per box. It is intentionally NOT
@@ -330,11 +335,14 @@ export async function bootstrapMachine(machine: Machine, deps: BootstrapDeps = {
 
     await updateMachine(machine.id, {
       status: 'ready',
-      bootstrapVersion,
+      // A safe failed replacement must not acknowledge convergence: preserve
+      // drift so a later normal stale/bootstrap pass retries without an outage.
+      bootstrapVersion: capabilities.bunConvergence === 'deferred' ? machine.bootstrapVersion : bootstrapVersion,
       capabilities,
-      // Clear any stale error from a prior failed run — a recovered machine
-      // should not keep showing an error that no longer applies.
-      lastError: null,
+      lastError:
+        capabilities.bunConvergence === 'deferred'
+          ? 'Bun convergence deferred; existing runtime remains usable; retry a later stale bootstrap'
+          : null,
     })
 
     // The machine is now `ready`. Kick a background devbox pre-warm so its

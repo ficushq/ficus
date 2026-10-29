@@ -54,6 +54,8 @@ export function createRestartContext(): RestartContext {
 }
 
 export interface DrainableCommand {
+  /** Owning box; omitted only by callers outside box lifecycle tracking. */
+  readonly sandboxId?: string
   /** Settles when the command finishes by itself or after it is canceled. */
   readonly settled: Promise<unknown>
   /** Stop it and fail it with the restart message. */
@@ -63,8 +65,27 @@ export interface DrainableCommand {
 let draining = false
 const running = new Set<DrainableCommand>()
 
-export function isCommandDrainActive(): boolean {
-  return draining
+const boxDrains = new Map<string, { restart: RestartContext; holders: number }>()
+
+/** A scoped admission refusal is trusted restart evidence, not a tool failure. */
+export function commandRefusedForRestartError(sandboxId?: string): Error {
+  const restart = sandboxId ? boxDrains.get(sandboxId)?.restart : undefined
+  if (!restart) return new Error(COMMAND_REFUSED_FOR_RESTART)
+  const error = new Error(
+    `Command not started: Ficus is restarting this box at ${restart.restartedAt}. Nothing ran. ` +
+      `Re-run it when your sandbox is back. [reason: core_restart; restart id: ${restart.restartId}]`
+  )
+  restartErrors.set(error, restart)
+  return error
+}
+
+export function isCommandDrainActive(sandboxId?: string): boolean {
+  return draining || (sandboxId !== undefined && boxDrains.has(sandboxId))
+}
+
+/** Cheap non-waking eligibility check; callers still need a final fenced proof. */
+export function hasRunningBoxCommands(sandboxId: string): boolean {
+  return [...running].some((command) => command.sandboxId === sandboxId)
 }
 
 /** Track a running command until it settles, so a drain can wait for it or cancel it. */
@@ -99,4 +120,64 @@ export async function drainCommands(
 export function resetCommandDrainForTests(): void {
   draining = false
   running.clear()
+  boxDrains.clear()
+}
+
+/**
+ * Hold only this box's command admission through a lifecycle operation. Unlike
+ * worker shutdown, failed cancellation MUST prevent disconnect/replacement.
+ * The caller still owns remote-work proof and the durable setup/generation lease.
+ */
+export async function withBoxCommandDrain<T>(
+  sandboxId: string,
+  action: (restart: RestartContext) => Promise<T>,
+  timeoutMs = COMMAND_DRAIN_TIMEOUT_MS,
+  restart = createRestartContext()
+): Promise<T> {
+  const gate = boxDrains.get(sandboxId) ?? { restart, holders: 0 }
+  gate.holders++
+  boxDrains.set(sandboxId, gate)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const commands = [...running].filter((command) => command.sandboxId === sandboxId)
+    if (commands.length) {
+      await Promise.race([
+        Promise.allSettled(commands.map((command) => command.settled)),
+        new Promise((resolve) => {
+          timer = setTimeout(resolve, timeoutMs)
+        }),
+      ])
+      clearTimeout(timer)
+      await Promise.all(
+        commands.filter((command) => running.has(command)).map((command) => command.cancelForRestart(gate.restart))
+      )
+    }
+    return await action(gate.restart)
+  } finally {
+    clearTimeout(timer)
+    if (--gate.holders === 0) boxDrains.delete(sandboxId)
+  }
+}
+
+/**
+ * Bun-only adoption is opportunistic: never wait for or cancel existing work.
+ * Fence admission synchronously BEFORE inspecting tracked work or proving host
+ * idleness; remote proof and the durable setup lease remain the caller's duty.
+ */
+export async function withIdleBoxCommandFence<T>(
+  sandboxId: string,
+  action: () => Promise<T>,
+  defer: () => Promise<T>
+): Promise<T> {
+  const gate = boxDrains.get(sandboxId) ?? { restart: createRestartContext(), holders: 0 }
+  gate.holders++
+  boxDrains.set(sandboxId, gate)
+  try {
+    if (!hasRunningBoxCommands(sandboxId)) return await action()
+  } finally {
+    if (--gate.holders === 0) boxDrains.delete(sandboxId)
+  }
+  // No restart is happening. In particular, required deferred setup must not
+  // carry restart attribution or keep refusing newly arriving commands.
+  return defer()
 }

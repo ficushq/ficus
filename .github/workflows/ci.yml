@@ -1055,6 +1055,10 @@ jobs:
           src/services/integrations/github/feedback-routing.test.ts
           src/services/execution/pickup.test.ts
           src/services/machines/cli-bundle.test.ts
+          src/services/machines/host-bun-preview.test.ts
+          src/services/machines/installed-machine-bundles.test.ts
+          src/services/sandbox/box-command-restart.test.ts
+          src/services/sandbox/vm/manager.test.ts
           src/db/model-tiers-migration.test.ts
           src/db/migrate-bundle.test.ts
           src/scripts/rebase-home.cli.test.ts

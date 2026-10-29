@@ -3351,6 +3351,12 @@ export const wsTickets = pgTable('ws_tickets', {
 // machine is reached over SSH; the concrete boxes (per-sandbox unix users) live
 // in `machine_boxes`.
 export interface MachineCapabilities {
+  /** Safe Bun upgrade deferral keeps the machine usable, but not converged. */
+  bunConvergence?: 'current' | 'deferred'
+  /** Verified by the successful release bootstrap, never inferred from box health. */
+  bunVersion?: string
+  /** Scripts applied even when only the Bun replacement was safely deferred. */
+  appliedBootstrapVersion?: string
   arch?: string
   cpus?: number
   memMb?: number
@@ -3578,6 +3584,13 @@ export const machineBoxes = pgTable(
     // provisionedSpecHash this excludes environment/secret hashes, so drift
     // checks can compare it directly after a Core restart.
     reconcilableSpecHash: text('reconcilable_spec_hash'),
+    // A typed adoption readback mismatch is terminal for this exact desired
+    // generation/spec, not a reason to restart the same executor every tick.
+    // Ordinary status changes retain it; successful physical repair clears it.
+    bunRuntimeFailureSpecHash: text('bun_runtime_failure_spec_hash'),
+    // Distinguish an interrupted Bun claim from ordinary retryable provision.
+    // Keep its stronger remote-work proof without blocking all ensuring rows.
+    bunRuntimeAdoptingSpecHash: text('bun_runtime_adopting_spec_hash'),
     // Coarse cross-process activity heartbeat (throttled write on exec/shell
     // touch; seeded when a box goes ready). The idle reaper runs in the WORKER
     // but activity can happen in the API process (e.g. a live terminal), so the

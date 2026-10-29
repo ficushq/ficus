@@ -458,6 +458,12 @@ export async function upsertMachineBox(box: typeof machineBoxes.$inferInsert): P
         // The durable bare hash is independently optional; status-only upserts
         // must preserve it so restart-safe drift inspection remains possible.
         ...(box.reconcilableSpecHash !== undefined ? { reconcilableSpecHash: box.reconcilableSpecHash } : {}),
+        ...(box.bunRuntimeFailureSpecHash !== undefined
+          ? { bunRuntimeFailureSpecHash: box.bunRuntimeFailureSpecHash }
+          : {}),
+        ...(box.bunRuntimeAdoptingSpecHash !== undefined
+          ? { bunRuntimeAdoptingSpecHash: box.bunRuntimeAdoptingSpecHash }
+          : {}),
         ...(box.lastActivityAt !== undefined ? { lastActivityAt: box.lastActivityAt } : {}),
         updatedAt: new Date(),
       },
@@ -475,6 +481,56 @@ function sameBoxIdentity(box: MachineBox) {
     eq(machineBoxes.port, box.port),
     box.authToken === null ? isNull(machineBoxes.authToken) : eq(machineBoxes.authToken, box.authToken)
   )
+}
+
+/** Caller owns the setup lease. A stale physical/generation owner cannot poison a replacement. */
+export async function recordBoxBunRuntimeFailure(
+  box: MachineBox,
+  desiredSpecHash: string,
+  healthy?: Pick<MachineBox, 'provisionedSpecHash' | 'reconcilableSpecHash'>
+): Promise<boolean> {
+  const rows = await db
+    .update(machineBoxes)
+    .set({
+      bunRuntimeFailureSpecHash: desiredSpecHash,
+      // Only the caller that JUST verified healthy HTTP may publish this.
+      // Keep recovery intent until listener cleanup; no partial-row crash window.
+      ...(healthy ? { ...healthy, status: 'ready', lastActivityAt: new Date() } : {}),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        sameBoxIdentity(box),
+        eq(machineBoxes.migrating, false),
+        box.reconcilableSpecHash == null
+          ? isNull(machineBoxes.reconcilableSpecHash)
+          : eq(machineBoxes.reconcilableSpecHash, box.reconcilableSpecHash)
+      )
+    )
+    .returning({ sandboxId: machineBoxes.sandboxId })
+  return rows.length === 1
+}
+
+/** Call only after host journal recovery under the owning setup lease.
+ * Partial rows retain intent: they still need final idle proof before repair. */
+export async function clearRecoveredReadyBunIntent(box: MachineBox): Promise<boolean> {
+  if (!box.bunRuntimeAdoptingSpecHash) return true
+  const rows = await db
+    .update(machineBoxes)
+    .set({ bunRuntimeAdoptingSpecHash: null, updatedAt: new Date() })
+    .where(
+      and(
+        sameBoxIdentity(box),
+        eq(machineBoxes.migrating, false),
+        eq(machineBoxes.status, 'ready'),
+        eq(machineBoxes.bunRuntimeAdoptingSpecHash, box.bunRuntimeAdoptingSpecHash),
+        box.reconcilableSpecHash == null
+          ? isNull(machineBoxes.reconcilableSpecHash)
+          : eq(machineBoxes.reconcilableSpecHash, box.reconcilableSpecHash)
+      )
+    )
+    .returning({ sandboxId: machineBoxes.sandboxId })
+  return rows.length === 1
 }
 
 /** A crashed Core must not leave recovery disabled indefinitely. The setup

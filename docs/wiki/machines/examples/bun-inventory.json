@@ -1,0 +1,32 @@
+{
+  "hosts": [
+    {
+      "id": "synthetic-prebaked-host",
+      "prebaked": true,
+      "bunVersion": "1.2.23",
+      "boxes": [
+        {
+          "id": "synthetic-idle-box",
+          "runningBunVersion": "1.2.23",
+          "work": "idle",
+          "pendingInvocation": false,
+          "lifecycleGeneration": "fixture-generation-1"
+        },
+        {
+          "id": "synthetic-active-box",
+          "runningBunVersion": "1.2.23",
+          "work": "active",
+          "pendingInvocation": false,
+          "lifecycleGeneration": "fixture-generation-2"
+        },
+        {
+          "id": "synthetic-uncertain-box",
+          "runningBunVersion": null,
+          "work": "unknown",
+          "pendingInvocation": true,
+          "lifecycleGeneration": "fixture-generation-3"
+        }
+      ]
+    }
+  ]
+}

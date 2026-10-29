@@ -144,6 +144,7 @@ export function getHealthResponse(env: NodeJS.ProcessEnv = process.env, runtime 
     // Host and box pressure only (no process detail): health is unauthenticated.
     ...(pressure ? { pressure } : {}),
     version: VERSION,
+    bunVersion: Bun.version,
     uptimeSeconds: Math.floor((Date.now() - startTime) / 1000),
     ...(runtimeContract ? { runtimeContract } : {}),
   }

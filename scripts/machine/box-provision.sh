@@ -69,6 +69,11 @@
 #            value below its SSH/stream deadline; argv survives sudo env_reset.
 #            Timeout exits73 naming the holder, before mutation/containment.
 #
+# --defer-socket-start
+#            Internal idle-runtime adoption only. The owning Core holds setup
+#            and host admission fences; leave the socket inactive until it has
+#            published server.env and started the replacement server.
+#
 # --unit-mode system|user
 #            WHICH systemd manager runs the box server. Defaults from
 #            --sandbox-id: `agent_*` → system, everything else (`squad_*`,
@@ -164,6 +169,7 @@ CODEC="gzip"
 STATE_DIRS=""
 STAGING_ID=""
 WITH_DOCKER=false
+DEFER_SOCKET_START=false
 UNIT_MODE=""
 PRINT_SUBID_START=false
 PRINT_SLICE_LIMITS=false
@@ -224,6 +230,12 @@ while [ "$#" -gt 0 ]; do
       fi
       BOX_LOCK_WAIT_SECONDS="$2"
       shift 2
+      ;;
+    --defer-socket-start)
+      # Internal normal-reconciliation handoff: Core already claimed an idle
+      # socket. Do not reopen it before server.env and the new server are ready.
+      DEFER_SOCKET_START=true
+      shift
       ;;
     --with-docker)
       WITH_DOCKER=true
@@ -2071,7 +2083,10 @@ provision_box() {
   # (including with --now on the deployed systemd). Start it explicitly before
   # accepting the active-state readback.
   sysbox reenable "$(socket_name)" || return 1
-  if ! sysbox start "$(socket_name)"; then
+  local expected_socket_state=active
+  if [ "${DEFER_SOCKET_START}" = true ]; then
+    expected_socket_state=inactive
+  elif ! sysbox start "$(socket_name)"; then
     # Always non-zero: BOX_PORT_BUSY_EXIT when the port is held, else 1.
     local start_rc=0
     report_socket_start_failure || start_rc=$?
@@ -2081,7 +2096,7 @@ provision_box() {
   server_enabled="$(sysbox show -p UnitFileState --value "$(unit_name)")" || return $?
   socket_enabled="$(sysbox show -p UnitFileState --value "$(socket_name)")" || return $?
   socket_active="$(sysbox show -p ActiveState --value "$(socket_name)")" || return $?
-  if [ "${server_enabled}" != disabled ] || [ "${socket_enabled}" != enabled ] || [ "${socket_active}" != active ]; then
+  if [ "${server_enabled}" != disabled ] || [ "${socket_enabled}" != enabled ] || [ "${socket_active}" != "${expected_socket_state}" ]; then
     echo "box-provision.sh: socket activation readback failed for ${UNIX_USER}" >&2
     return 1
   fi
