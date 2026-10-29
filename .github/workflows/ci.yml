@@ -180,6 +180,12 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Verify CLI stdout completion through real pipes
+        # CLI-local bunfig avoids Core's DB preload; Python supplies an OS pipe
+        # rather than Bun.spawn's stdio capture, which masked the regression.
+        working-directory: apps/cli
+        run: bun ../../scripts/test-runner.ts src/stdout-completion.test.ts
+
       - name: Prove cross-user Node shim immunity
         run: sudo env "PATH=$PATH" bash scripts/setup/bun-node-cross-user.test.sh
 
