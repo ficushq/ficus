@@ -1223,3 +1223,25 @@ test('explained feedback is not confirmation that a previously failing operation
   ;[record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))
   expect(record!.state.state).toBe('resolved')
 }, 10000)
+
+test('temporary manager unavailability escalates only the current record', async () => {
+  const api = await store()
+  const managerId = squad.managerAgentId!
+  const [manager] = await db.select().from(agents).where(eq(agents.id, managerId))
+  await db.update(agents).set({ status: 'waiting-input' }).where(eq(agents.id, managerId))
+  const origin = { agentId: worker.id, executionId: execution.id }
+  const failure = (invocationId: string) => ({
+    operationKey: 'temporary-manager',
+    attempted: 'Run the task',
+    invocationId,
+    error: new Error('Lost outcome'),
+  })
+  let record
+  for (let n = 0; n < 3; n++) record = await api.recordRecoveryFailure(origin, failure(`first-${n}`))
+  expect(record!.state.state).toBe('waiting-owner')
+  await db.update(agents).set({ status: manager!.status }).where(eq(agents.id, managerId))
+  await api.decideRecovery(record!.id, { action: 'continue', expectedVersion: record!.version }, { userId: ownerId })
+  await api.settleRecoveryOperation(origin, 'temporary-manager', 'confirmed-success')
+  for (let n = 0; n < 3; n++) record = await api.recordRecoveryFailure(origin, failure(`next-${n}`))
+  expect(record!.state).toMatchObject({ state: 'waiting-manager', managerCycles: 0, ownerEscalated: false })
+})

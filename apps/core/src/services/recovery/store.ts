@@ -1,5 +1,5 @@
 import { createLogger } from '../../lib/infra/logger'
-import { recoveryRecipients } from './recipients'
+import { recoveryRecipients, reportUnroutableRecovery } from './recipients'
 import { z } from 'zod'
 import { stripVTControlCharacters } from 'node:util'
 import { createHash } from 'node:crypto'
@@ -24,7 +24,7 @@ import {
   workStreamFlowRuns,
   workStreamContinuations,
 } from '../../db'
-import { initialRecoveryState, failedRecovery, continueRecovery, recoverySummary } from './policy'
+import { successorRecoveryState, failedRecovery, continueRecovery, recoverySummary } from './policy'
 import { openWait, type DbHandle } from '../work-streams/waits'
 import { getContentSafetyRegistry } from '../security/content-safety-registry'
 import { eventEmitter } from '../../lib/infra/event-emitter'
@@ -342,6 +342,7 @@ async function ensureExhaustedWait(tx: Tx, record: RecoveryRecord): Promise<Reco
           ...record.state,
           state: record.state.state === 'stopped' ? 'stopped' : 'waiting-owner',
           ownerEscalated: true,
+          ownerFallback: true,
         },
         version: record.version + 1,
       })
@@ -376,7 +377,10 @@ async function ensureExhaustedWait(tx: Tx, record: RecoveryRecord): Promise<Reco
     // bind an unrelated/ambiguous successor or roll the failure back with a stale wait.
     const target =
       current.find((attempt) => attempt.id === record.flowAttemptId) ?? (current.length === 1 ? current[0] : undefined)
-    if (!target) return record
+    if (!target) {
+      await reportUnroutableRecovery(record, 'attempt', tx)
+      return record
+    }
     if (record.flowAttemptId !== target.id) {
       const [rebound] = await tx
         .update(recoveryEpisodes)
@@ -385,7 +389,10 @@ async function ensureExhaustedWait(tx: Tx, record: RecoveryRecord): Promise<Reco
         .returning()
       record = rebound!
     }
-  } else if (record.flowAttemptId != null) return record
+  } else if (record.flowAttemptId != null) {
+    await reportUnroutableRecovery(record, 'attempt', tx)
+    return record
+  }
   const payload = recoveryWaitSnapshot(record)
   const { wait } = await openWait(tx, {
     workStreamId,
@@ -409,7 +416,10 @@ async function publish(record: RecoveryRecord): Promise<void> {
   if (!['waiting-manager', 'waiting-owner'].includes(record.state.state)) return
   // A late outcome with no current owning attempt remains durable. A later
   // valid retry must rebind its hold before executing the operation.
-  if (record.workStreamId && !record.waitId) return
+  if (record.workStreamId && !record.waitId) {
+    await reportUnroutableRecovery(record, 'attempt')
+    return
+  }
   const audience = await recoveryRecipients(record)
   const owner = audience.target === 'owner'
   const recipientIds = owner ? audience.ownerUserIds : [audience.managerAgentId!]
@@ -483,12 +493,7 @@ export async function exhaustContinuationRecovery(
         workStreamId: cycle.workStreamId,
         flowAttemptId,
         operationKey,
-        state: {
-          ...initialRecoveryState('continue the retained task'),
-          managerCycles: previous?.state.managerCycles ?? 0,
-          ownerEscalated: previous?.state.ownerEscalated ?? false,
-          failures: previous?.state.failures ?? 0,
-        },
+        state: successorRecoveryState('continue the retained task', previous?.state),
       })
       .returning()
   }
@@ -569,11 +574,8 @@ export async function recordRecoveryFailure(
           flowAttemptId: source.flowAttemptId,
           operationKey: scopedOperation(source, input.operationKey),
           state: {
-            ...initialRecoveryState(input.attempted),
+            ...successorRecoveryState(input.attempted, predecessor?.state),
             startupOnly: input.retryStartupMessage !== undefined,
-            managerCycles: predecessor?.state.managerCycles ?? 0,
-            ownerEscalated: predecessor?.state.ownerEscalated ?? false,
-            failures: predecessor?.state.failures ?? 0,
           },
         })
         .returning()
@@ -689,7 +691,14 @@ export async function decideRecovery(
         ? Boolean(actor.agentId && actor.agentId === audience.managerAgentId)
         : Boolean(actor.userId && audience.ownerUserIds.includes(actor.userId))
     if (!authorized) throw new Error(`Only the authorized ${target} may decide this recovery`)
-    let state = target === 'owner' ? { ...current.state, ownerEscalated: true } : current.state
+    let state =
+      target === 'owner'
+        ? {
+            ...current.state,
+            ownerEscalated: true,
+            ownerFallback: current.state.ownerEscalated ? current.state.ownerFallback : true,
+          }
+        : current.state
     if (parsed.action === 'continue') state = continueRecovery(state, target, await databaseNow(tx))
     else if (parsed.action === 'stop') {
       if (!['waiting-manager', 'waiting-owner'].includes(state.state))
@@ -698,7 +707,7 @@ export async function decideRecovery(
     } else if (parsed.action === 'forward') {
       if (target !== 'manager' || state.state !== 'waiting-manager')
         throw new Error('Only the manager may forward an exhausted recovery')
-      state = { ...state, state: 'waiting-owner', ownerEscalated: true }
+      state = { ...state, state: 'waiting-owner', ownerEscalated: true, ownerFallback: false }
     } else throw new Error('Recovery accepts only Continue, Stop or manager forwarding')
     await tx.insert(recoveryDecisions).values({
       recoveryId,

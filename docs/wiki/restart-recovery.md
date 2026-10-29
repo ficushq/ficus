@@ -137,9 +137,13 @@ Within a stream, successor attempts retain the allowance; a revised workflow
 participant also retains it when a fresh agent replaces the previous session.
 Unrelated participants/scopes stay separate, and ambiguous concurrent lineages
 are not rebound. Confirmed successor episodes inherit manager-cycle and owner
-escalation state. Replanning retires a wait binding, not its retry allowance.
+escalation state. Temporary manager-unavailability fallback stays on that record;
+it is not inherited as permanent owner escalation. Replanning (including decision
+steps) retires a wait binding, not its retry allowance.
 Late failures remain durable even if their old attempt cannot open a wait; a
-valid successor must bind the hold before retrying.
+valid successor must bind the hold before retrying. An exhausted watchdog cycle
+without a current owning attempt emits an idempotent internal diagnostic rather
+than silently disappearing or granting an unrelated attempt authority.
 
 Any unresolved unexplained failure in the relevant scope gates worker task input,
 including failures one and two. Restart-only records do not, and a stopped

@@ -82,23 +82,7 @@ export async function recoveryRecipients(record: RecoveryRecord, executor: DbHan
     !ownerUserIds.length &&
     ['waiting-manager', 'waiting-owner'].includes(record.state.state)
   ) {
-    await executor
-      .insert(inbox)
-      .values({
-        recipientType: 'system',
-        recipientId: SYSTEM_RECIPIENT_ID,
-        senderType: 'system',
-        subject: 'Recovery has no authorized decision recipient',
-        content: `Recovery ${record.id} for agent ${record.agentId} is held because no enabled, authorized manager or owner could be resolved. Restore an authorized recipient; do not bypass the recovery decision.`,
-        metadata: {
-          source: 'recovery-unroutable',
-          recoveryId: record.id,
-          agentId: record.agentId,
-          workStreamId: record.workStreamId,
-        },
-        idempotencyKey: `recovery-unroutable:${record.id}`,
-      })
-      .onConflictDoNothing()
+    await reportUnroutableRecovery(record, 'recipient', executor)
   }
   return {
     managerAgentId,
@@ -111,4 +95,37 @@ export async function recoveryRecipients(record: RecoveryRecord, executor: DbHan
 export async function recoveryRecipientsById(id: string, executor: DbHandle = db) {
   const [record] = await executor.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.id, id))
   return record ? recoveryRecipients(record, executor) : null
+}
+
+/** Durable, idempotent operator evidence. This diagnostic grants no authority. */
+export async function reportUnroutableRecovery(
+  record: RecoveryRecord,
+  reason: 'recipient' | 'attempt',
+  executor: DbHandle = db
+): Promise<void> {
+  const missing =
+    reason === 'recipient'
+      ? 'no enabled, authorized manager or owner could be resolved'
+      : 'no current owning flow attempt can accept its recovery decision'
+  await executor
+    .insert(inbox)
+    .values({
+      recipientType: 'system',
+      recipientId: SYSTEM_RECIPIENT_ID,
+      senderType: 'system',
+      subject:
+        reason === 'recipient'
+          ? 'Recovery has no authorized decision recipient'
+          : 'Recovery has no current owning attempt',
+      content: `Recovery ${record.id} for agent ${record.agentId} is held because ${missing}. Restore the authorized routing or binding; do not bypass the recovery decision or other gates.`,
+      metadata: {
+        source: 'recovery-unroutable',
+        reason,
+        recoveryId: record.id,
+        agentId: record.agentId,
+        workStreamId: record.workStreamId,
+      },
+      idempotencyKey: `recovery-unroutable:${record.id}${reason === 'attempt' ? ':attempt' : ''}`,
+    })
+    .onConflictDoNothing()
 }

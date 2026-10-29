@@ -7,6 +7,8 @@ export interface RecoveryState {
   cycleFailures: number
   managerCycles: number
   ownerEscalated: boolean
+  /** Temporary routing fallback, not a permanent escalation of this scope. */
+  ownerFallback?: boolean
   nextRetryAt: number | null
   lastError: string | null
   /** Only replay-safe pre-model startup failures can be settled by model-tool progress. */
@@ -23,6 +25,16 @@ export function initialRecoveryState(attempted: string): RecoveryState {
     ownerEscalated: false,
     nextRetryAt: null,
     lastError: null,
+  }
+}
+
+/** Preserve policy history, but not a prior record's unavailable-manager route. */
+export function successorRecoveryState(attempted: string, previous?: RecoveryState): RecoveryState {
+  return {
+    ...initialRecoveryState(attempted),
+    managerCycles: previous?.managerCycles ?? 0,
+    failures: previous?.failures ?? 0,
+    ownerEscalated: previous?.ownerEscalated === true && previous.ownerFallback !== true,
   }
 }
 
