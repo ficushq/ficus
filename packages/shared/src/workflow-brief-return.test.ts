@@ -204,7 +204,12 @@ test('a restarted human destination and its next gate cannot inherit the origina
   expect(workflowReviewBriefForAttempt(legacy, legacy.attempts.at(-1)!)).toEqual({ kind: 'none', sources: [] })
   delete legacy.attempts.at(-1)!.reviewBrief
   expect(workflowReviewBriefForAttempt(legacy, legacy.attempts.at(-1)!)).toEqual({ kind: 'none', sources: [] })
-  expect(workflowReviewBriefForAttempt(run, originalGate).sources.map((a) => a.id)).toEqual([1])
+  expect(
+    workflowReviewBriefForAttempt(
+      run,
+      run.attempts.find((a) => a.id === originalGate.id)!
+    ).sources.map((a) => a.id)
+  ).toEqual([1])
   run = advanceWorkflowRun(run, {
     action: 'complete',
     expectedVersion: run.version,
