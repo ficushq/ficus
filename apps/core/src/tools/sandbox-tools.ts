@@ -1,3 +1,4 @@
+import { ToolFeedbackError, withReadFeedback } from './tool-feedback'
 import type { RestartContext } from '@ficus/shared/restart-context'
 import { consultantScratchPath } from '../services/sandbox/consultant-sandbox'
 /**
@@ -417,7 +418,9 @@ export function createHttpReadOperations(
         throw await target.mapFailure(err as Error)
       })
       if (!response.exists) {
-        throw new Error(`ENOENT: no such file or directory, access '${absolutePath}'`)
+        throw Object.assign(new Error(`ENOENT: no such file or directory, access '${absolutePath}'`), {
+          code: 'ENOENT',
+        })
       }
     },
   }
@@ -665,7 +668,13 @@ export function createHttpBashOperations(
             options.onData(processCarriageReturns(chunk))
           }
           if (response.error) {
-            settle(() => reject(new Error(response.error)))
+            settle(() =>
+              reject(
+                Number.isInteger(response.exitCode)
+                  ? new ToolFeedbackError('exit', response.error!, { exitCode: response.exitCode })
+                  : new Error(response.error)
+              )
+            )
           }
           if (response.exitCode !== undefined) {
             finalExitCode = response.exitCode
@@ -802,7 +811,10 @@ export function enforceAbsolutePaths<T extends AgentTool<any>>(tool: T, exampleR
     const p = toolArgs?.file_path ?? toolArgs?.path
     if (typeof p === 'string' && p.length > 0 && !p.startsWith('/')) {
       const root = exampleRoot ?? resolveWorkspaceLayout({}).workspaceMount
-      throw new Error(`Path must be absolute (start with "/"): received "${p}". Use the full path, e.g. ${root}/...`)
+      throw new ToolFeedbackError(
+        'input',
+        `Path must be absolute (start with "/"): received "${p}". Use the full path, e.g. ${root}/...`
+      )
     }
     return original(...args)
   }) as T['execute']
@@ -818,9 +830,9 @@ export function createK8sSandboxedReadTool(
   manager: SandboxToolsManager,
   squadRoute?: SquadFileRoute
 ): AgentTool<any> {
-  return createReadTool(cwd, {
-    operations: createHttpReadOperations(manager, sandboxId, squadRoute),
-  })
+  return withReadFeedback(createHttpReadOperations(manager, sandboxId, squadRoute), (operations) =>
+    createReadTool(cwd, { operations })
+  )
 }
 
 /**

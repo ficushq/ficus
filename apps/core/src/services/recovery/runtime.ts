@@ -1,3 +1,4 @@
+import { ToolFeedbackError } from '../../tools/tool-feedback'
 import { createHash } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent'
@@ -42,7 +43,8 @@ function attemptedAction(name: string): string {
   return 'complete the requested operation'
 }
 function explainedFailure(error: unknown): boolean {
-  if (error instanceof RecoveryHeldError || error instanceof RecoveryBusyError) return true
+  if (error instanceof RecoveryHeldError || error instanceof RecoveryBusyError || error instanceof ToolFeedbackError)
+    return true
   if (!(error instanceof Error)) return false
   if (
     error.name === 'AbortError' ||
@@ -51,9 +53,6 @@ function explainedFailure(error: unknown): boolean {
     error.message === CREDENTIAL_INPUT_REFUSAL
   )
     return true
-  // The shell completed and returned a normal exit status. This is task feedback
-  // (including deliberate red tests), not an unexplained lost command outcome.
-  if (/\nCommand exited with code -?\d+\s*$/.test(error.message)) return true
   const code = (error as Error & { code?: string }).code
   if (code && ['ENOENT', 'EACCES', 'EPERM', 'EINVAL', 'EISDIR', 'ENOTDIR', 'EEXIST'].includes(code)) return true
   const status = (error as Error & { status?: number }).status
@@ -78,11 +77,14 @@ async function exclusiveOperation<T>(key: string, run: () => Promise<T>): Promis
 }
 
 /** Observes real calls; it never blindly repeats Bash or external side effects. */
-export function wrapToolWithRecovery<T extends ToolDefinition>(tool: T, origin: () => RecoveryOrigin | undefined): T {
-  const execute = tool.execute.bind(tool)
+export function wrapToolWithRecovery<T extends ToolDefinition>(
+  tool: T,
+  origin: () => RecoveryOrigin | undefined
+): Omit<T, 'execute'> & { execute: ToolDefinition['execute'] } {
+  const execute: ToolDefinition['execute'] = tool.execute.bind(tool)
   return {
     ...tool,
-    execute: async (...args: Parameters<T['execute']>) => {
+    execute: async (...args: Parameters<ToolDefinition['execute']>) => {
       const source = origin()
       if (!source) return execute(...args)
       const [toolCallId, params, signal] = args
@@ -124,10 +126,13 @@ export function wrapToolWithRecovery<T extends ToolDefinition>(tool: T, origin: 
         }
         await context.beforeAttempt()
         return toolRecoveryContext.run(context, async () => {
-          let result: Awaited<ReturnType<T['execute']>>
+          let result: Awaited<ReturnType<ToolDefinition['execute']>>
           try {
-            result = (await execute(...args)) as Awaited<ReturnType<T['execute']>>
-            if ((result as { isError?: boolean }).isError) {
+            result = (await execute(...args)) as Awaited<ReturnType<ToolDefinition['execute']>>
+            if (
+              (result as { isError?: boolean }).isError &&
+              !Number.isInteger((result as { structuredContent?: { exit_code?: number } }).structuredContent?.exit_code)
+            ) {
               const text = result.content
                 .filter((part) => part.type === 'text')
                 .map((part) => (part.type === 'text' ? part.text : ''))
@@ -180,5 +185,5 @@ export function wrapToolWithRecovery<T extends ToolDefinition>(tool: T, origin: 
         })
       })
     },
-  } as T
+  }
 }

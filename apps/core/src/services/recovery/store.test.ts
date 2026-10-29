@@ -636,3 +636,63 @@ test('a replacement process clock cannot skip the persisted database backoff', a
     clock.mockRestore()
   }
 })
+
+test('real bash nonzero exits, confirmed timeouts and file validation never consume unknown-outcome budget', async () => {
+  const { EventEmitter } = await import('node:events')
+  const { createK8sSandboxedBashTool, createK8sSandboxedReadTool } = await import('../../tools/sandbox-tools')
+  const { createVerifiedEditTool } = await import('../../tools/verified-edit')
+  const { SandboxClient } = await import('../sandbox/client/http-client')
+  const { wrapToolWithRecovery } = await import('./runtime')
+  const { recoveryEpisodes } = await import('../../db')
+  const origin = () => ({ agentId: worker.id, executionId: execution.id })
+  const client = new SandboxClient('feedback-fixture')
+  let timeout = false
+  client.bash = () => {
+    const emitter = new EventEmitter()
+    queueMicrotask(() => {
+      emitter.emit('data', timeout ? { error: 'Deadline reached', exitCode: 124 } : { exitCode: 1 })
+      emitter.emit('end')
+    })
+    return Object.assign(emitter, {
+      invocationId: 'feedback',
+      cancel: () => {},
+      cancelAndWait: async () => {},
+    }) as ReturnType<SandboxClient['bash']>
+  }
+  const manager = {
+    getClientForSandbox: () => client,
+    getSandboxStatus: async () => ({ status: 'running' }),
+    resolveToolApiUrl: () => 'http://fixture',
+  }
+  const bash = wrapToolWithRecovery(createK8sSandboxedBashTool('/workspace', 'fixture', manager), origin)
+  for (let index = 0; index < 3; index++) {
+    const result = await bash.execute(`poll-${index}`, { command: 'test -f pending' })
+    expect(result).toMatchObject({ isError: true, structuredContent: { exit_code: 1 } })
+  }
+  timeout = true
+  for (let index = 0; index < 3; index++)
+    await expect(bash.execute(`timeout-${index}`, { command: 'wait' })).rejects.toThrow('Deadline reached')
+  const edit = wrapToolWithRecovery(
+    createVerifiedEditTool('/workspace', {
+      readFile: async () => Buffer.from('original'),
+      access: async () => {},
+      commitFile: async () => {
+        throw new Error('must not write')
+      },
+    }),
+    origin
+  )
+  for (let index = 0; index < 3; index++)
+    await expect(
+      edit.execute(`edit-${index}`, { path: '/workspace/file', oldText: 'absent', newText: 'replacement' })
+    ).rejects.toThrow('match was not found')
+  client.stat = async () => ({ exists: true, isReadable: true, isWritable: true, isDirectory: false, size: 3 })
+  client.read = async () => ({ content: Buffer.from('one').toString('base64'), totalSize: 3, isBinary: false })
+  const read = wrapToolWithRecovery(createK8sSandboxedReadTool('/workspace', 'fixture', manager), origin)
+  for (let index = 0; index < 3; index++)
+    await expect(read.execute(`read-${index}`, { path: '/workspace/file', offset: 100 })).rejects.toThrow(
+      'beyond end of file'
+    )
+  expect(await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))).toHaveLength(0)
+  expect(await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, stream.id))).toHaveLength(0)
+})
