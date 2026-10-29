@@ -2535,3 +2535,36 @@ describe('shared machine Nix cache', () => {
     expect(stdout).toContain('6 cache integration checks passed')
   })
 })
+
+describe('deferred Bun convergence does not acknowledge the desired bootstrap version', () => {
+  it('keeps the host ready and stale so the next normal stale bootstrap retries', async () => {
+    const machine = makeMachine({ status: 'bootstrapping', bootstrapVersion: 'previous-bootstrap' })
+    const { runner } = makeFakeRunner((command) => ({
+      exitCode: 0,
+      stdout: command.includes('bash ')
+        ? CAPS_LINE.replace('"docker":"none"', '"docker":"none","bunConvergence":"deferred"')
+        : '',
+      stderr: '',
+    }))
+    const updates: Partial<Machine>[] = []
+    await bootstrapMachine(machine, {
+      runner,
+      waitForSshReady: async () => {},
+      updateMachine: async (_id, update) => {
+        updates.push(update)
+        return machine
+      },
+    })
+    expect(updates).toHaveLength(1)
+    expect(updates[0]!.status).toBe('ready')
+    expect(updates[0]!.bootstrapVersion).toBe('previous-bootstrap')
+    expect(updates[0]!.capabilities).toMatchObject({ bunConvergence: 'deferred' })
+    expect(updates[0]!.lastError).toContain('Bun convergence deferred')
+  })
+
+  it('accepts only the closed current/deferred Bun convergence capability', () => {
+    for (const value of ['current', 'deferred'])
+      expect(parseCapabilities(`FICUS_CAPS_JSON: {"bunConvergence":"${value}"}`).bunConvergence).toBe(value)
+    expect(parseCapabilities('FICUS_CAPS_JSON: {"bunConvergence":"anything"}').bunConvergence).toBeUndefined()
+  })
+})

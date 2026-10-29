@@ -1,3 +1,4 @@
+import * as machineQueries from './queries'
 import { getPostgresError } from '../../db/errors'
 import { DrizzleQueryError } from 'drizzle-orm/errors'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
@@ -1847,5 +1848,57 @@ describe('stampBoxSyncedHash / clearBoxSyncedHashes', () => {
 
     await clearBoxSyncedHashes(sandboxId)
     expect((await getMachineBox(sandboxId))?.syncedHashes).toEqual({})
+  })
+})
+
+describe('durable Bun adoption terminal failure', () => {
+  it('records one exact desired target without stamping ready, preserves it through status upserts and fences stale physical/generation owners', async () => {
+    expect(typeof machineQueries.recordBoxBunRuntimeFailure).toBe('function')
+    const machine = await insertMachine(readyMachineValues('bun-terminal'))
+    const bound = await bindMachineBox({
+      sandboxId: `${prefix}-bun-terminal`,
+      machineId: machine.id,
+      unixUser: 'box_bun',
+    })
+    const desired = 'lifecycle:original:base:bun:1_4_2'
+    const source = await upsertMachineBox({
+      ...bound,
+      status: 'ensuring',
+      reconcilableSpecHash: 'lifecycle:original:base:bun:1_2_23',
+      bunRuntimeAdoptingSpecHash: desired,
+    })
+    await upsertMachineBox({
+      sandboxId: source.sandboxId,
+      machineId: source.machineId,
+      unixUser: source.unixUser,
+      port: source.port,
+      status: 'ensuring',
+    })
+    expect((await getMachineBox(bound.sandboxId))!.bunRuntimeAdoptingSpecHash).toBe(desired)
+    expect(await machineQueries.recordBoxBunRuntimeFailure(source, desired)).toBe(true)
+    const failed = await getMachineBox(bound.sandboxId)
+    expect(failed).toMatchObject({
+      status: 'failed',
+      bunRuntimeFailureSpecHash: desired,
+      bunRuntimeAdoptingSpecHash: null,
+      reconcilableSpecHash: source.reconcilableSpecHash,
+    })
+    await upsertMachineBox({
+      sandboxId: source.sandboxId,
+      machineId: source.machineId,
+      unixUser: source.unixUser,
+      port: source.port,
+      status: 'ensuring',
+    })
+    expect((await getMachineBox(bound.sandboxId))!.bunRuntimeFailureSpecHash).toBe(desired)
+    await upsertMachineBox({
+      ...source,
+      reconcilableSpecHash: 'lifecycle:new:base:bun:1_2_23',
+      bunRuntimeFailureSpecHash: null,
+    })
+    expect(await machineQueries.recordBoxBunRuntimeFailure(source, desired)).toBe(false)
+    const current = (await getMachineBox(bound.sandboxId))!
+    expect(await machineQueries.recordBoxBunRuntimeFailure({ ...current, port: current.port + 1 }, desired)).toBe(false)
+    expect((await getMachineBox(bound.sandboxId))!.bunRuntimeFailureSpecHash).toBeNull()
   })
 })

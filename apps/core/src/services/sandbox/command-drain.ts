@@ -153,3 +153,24 @@ export async function withBoxCommandDrain<T>(
     if (--gate.holders === 0) boxDrains.delete(sandboxId)
   }
 }
+
+/**
+ * Bun-only adoption is opportunistic: never wait for or cancel existing work.
+ * Fence admission synchronously BEFORE inspecting tracked work or proving host
+ * idleness; remote proof and the durable setup lease remain the caller's duty.
+ */
+export async function withIdleBoxCommandFence<T>(
+  sandboxId: string,
+  action: () => Promise<T>,
+  defer: () => Promise<T>
+): Promise<T> {
+  const gate = boxDrains.get(sandboxId) ?? { restart: createRestartContext(), holders: 0 }
+  gate.holders++
+  boxDrains.set(sandboxId, gate)
+  try {
+    if ([...running].some((command) => command.sandboxId === sandboxId)) return await defer()
+    return await action()
+  } finally {
+    if (--gate.holders === 0) boxDrains.delete(sandboxId)
+  }
+}

@@ -5,7 +5,6 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { buildMachineBundles } from '../../../../../scripts/artifact/build-machine-bundles'
-import { discoverTests } from '../../../../../scripts/test-runner'
 import { CLI_WRAPPER_BYTES } from './cli-bundle'
 
 const repo = resolve(import.meta.dir, '../../../../..')
@@ -134,7 +133,19 @@ test('sandbox-server package suite runs on installed Bun with the installed serv
       150000
     )
     expect(result.code).toBe(0)
-    const count = discoverTests(join(repo, 'packages/sandbox-server'), ['src']).length
+    // Independent inventory: importing the executable root runner would pull
+    // it outside Core's composite TypeScript project. Do not hardcode 23 or
+    // merely trust the runner's own count when proving full package coverage.
+    const files = [
+      ...new Bun.Glob('**/*').scanSync({ cwd: join(repo, 'packages/sandbox-server/src'), onlyFiles: true }),
+    ]
+      .filter(
+        (path) => !path.split('/').some((part) => ['node_modules', 'test-fixtures', 'dist', 'coverage'].includes(part))
+      )
+      .filter((path) => /(?:\.(?:test|spec)|_(?:test|spec))\.[cm]?[jt]sx?$/.test(path))
+    const count = files.length
+    expect(count).toBeGreaterThan(0)
+    for (const file of files) expect(result.output).toContain(`PASS ./src/${file}: Ran `)
     expect(result.output).toContain(`Completed ${count} test files`)
     expect(result.output).toContain('Test suite passed')
     expect(result.output).not.toMatch(/\(skip\)|^\s*[1-9]\d* skip$/m)

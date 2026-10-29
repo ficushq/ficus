@@ -306,21 +306,34 @@ set -euo pipefail
 root=$1 version=$2 lock_wait=$3
 # Parent layout has already passed require_machine_layout_ready. Refuse linked
 # child directories/lock rather than following an unexpected destination.
-for path in "$root" "$root/bun" "$root/bun/bin" "$root/bin" "$root/bun-install.lock"; do
+for path in "$root" "$root/bun" "$root/bun/bin" "$root/bun/bin/bun" "$root/bin" "$root/bun-install.lock"; do
   [ ! -L "$path" ] || { echo "Bun upgrade: unsafe linked path: $path" >&2; exit 3; }
 done
-mkdir -p "$root/bun/bin" "$root/bin"
-exec 9>"$root/bun-install.lock"
-flock -x -w "$lock_wait" 9 || { echo 'Bun upgrade: install lock busy' >&2; exit 3; }
+# Refuse FIFOs/devices before opening: flock timeout cannot bound a blocked open.
+if [ -e "$root/bun-install.lock" ] && [ ! -f "$root/bun-install.lock" ]; then
+  echo 'Bun upgrade: refusing non-regular install lock' >&2
+  exit 3
+fi
 bin="$root/bun/bin/bun"
 link="$root/bin/bun"
+# A safe deferred exit is distinct from success and from unusable/unsafe state.
+# Capture the original inode before taking the lock; a concurrent checked swap
+# is also usable, but an arbitrary changed executable is not rollback proof.
+old_version='' old_inode=''
+if [ -f "$bin" ] && [ ! -L "$bin" ] && [ -x "$bin" ] &&
+   [ "$(readlink "$link" 2>/dev/null || :)" = "$bin" ]; then
+  old_version=$("$bin" --version 2>/dev/null || :)
+  if [[ "$old_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    old_inode=$(stat -c '%d:%i' "$bin")
+  fi
+fi
 link_bun() {
   [ "$(readlink "$link" 2>/dev/null || :)" != "$bin" ] || return 0
   ln -s "$bin" "$stage/link"
   mv -Tf "$stage/link" "$link"
 }
-stage=$(mktemp -d "$root/.bun-stage.XXXXXXXX")
-switched=false committed=false had_previous=false
+stage=''
+switched=false committed=false had_previous=false rollback_failed=false
 cleanup() {
   local rc=$?
   if [ "$switched" = true ] && [ "$committed" = false ]; then
@@ -328,15 +341,32 @@ cleanup() {
       if ! { ln "$bin.previous" "$stage/restore" && mv -Tf "$stage/restore" "$bin"; }; then
         echo 'Bun upgrade: rollback failed; previous executable retained for operator recovery' >&2
         rc=3
+        rollback_failed=true
       fi
     else
       rm -f "$bin" || rc=3
     fi
   fi
-  rm -rf -- "$stage"
+  [ -z "$stage" ] || rm -rf -- "$stage"
+  if [ "$rc" != 0 ] && [ "$rc" -lt 128 ] && [ "$rollback_failed" = false ] && [ -n "$old_inode" ] &&
+     [ -f "$bin" ] && [ ! -L "$bin" ] && [ -x "$bin" ] &&
+     [ "$(readlink "$link" 2>/dev/null || :)" = "$bin" ]; then
+    local retained_version retained_inode
+    retained_version=$("$bin" --version 2>/dev/null || :)
+    retained_inode=$(stat -c '%d:%i' "$bin" 2>/dev/null || :)
+    if [ "$retained_version" = "$version" ] ||
+       { [ "$retained_inode" = "$old_inode" ] && [ "$retained_version" = "$old_version" ]; }; then
+      echo 'Bun upgrade: deferred; checked usable runtime retained' >&2
+      rc=10
+    fi
+  fi
   exit "$rc"
 }
 trap cleanup EXIT
+mkdir -p "$root/bun/bin" "$root/bin"
+exec 9>"$root/bun-install.lock"
+flock -x -w "$lock_wait" 9 || { echo 'Bun upgrade: install lock busy' >&2; exit 3; }
+stage=$(mktemp -d "$root/.bun-stage.XXXXXXXX")
 if [ -x "$bin" ] && [ "$("$bin" --version)" = "$version" ]; then
   link_bun
   exit 0
@@ -1589,10 +1619,12 @@ log_prebaked_decision() {
 }
 
 write_manifest() {
-  local ts
+  local ts installed_bun_version
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  printf '{"bootstrapVersion":"%s","bunVersion":"%s","nixVersion":"%s","devboxVersion":"%s","playwrightVersion":"%s","bootstrappedAt":"%s"}\n' \
-    "${BOOTSTRAP_VERSION}" "${BUN_VERSION}" "${NIX_VERSION}" "${DEVBOX_VERSION}" "${PLAYWRIGHT_VERSION}" "${ts}" \
+  installed_bun_version=$("${FICUS_ROOT}/bin/bun" --version)
+  [[ "$installed_bun_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 3
+  printf '{"bootstrapVersion":"%s","bunVersion":"%s","bunConvergence":"%s","nixVersion":"%s","devboxVersion":"%s","playwrightVersion":"%s","bootstrappedAt":"%s"}\n' \
+    "${BOOTSTRAP_VERSION}" "${installed_bun_version}" "${BUN_CONVERGENCE:-deferred}" "${NIX_VERSION}" "${DEVBOX_VERSION}" "${PLAYWRIGHT_VERSION}" "${ts}" \
     | "${SUDO[@]}" tee "${FICUS_ROOT}/manifest.json" >/dev/null
 }
 
@@ -2042,8 +2074,8 @@ print_capabilities() {
   else
     browser_json="$(printf '"browser":"unavailable","browserReason":"%s"' "${BROWSER_REASON:-not_verified}")"
   fi
-  printf 'FICUS_CAPS_JSON: {"arch":"%s","cpus":%s,"memMb":%s,"diskGb":%s,"kernel":"%s","docker":"%s","forwarding":"%s","boxPorts":"%s","socketBind":"%s",%s}\n' \
-    "${arch}" "${cpus}" "${mem_mb}" "${disk_gb}" "${kernel}" "${docker}" "${forwarding}" "${box_ports}" "${socket_bind}" "${browser_json}"
+  printf 'FICUS_CAPS_JSON: {"arch":"%s","cpus":%s,"memMb":%s,"diskGb":%s,"kernel":"%s","docker":"%s","forwarding":"%s","boxPorts":"%s","socketBind":"%s","bunConvergence":"%s",%s}\n' \
+    "${arch}" "${cpus}" "${mem_mb}" "${disk_gb}" "${kernel}" "${docker}" "${forwarding}" "${box_ports}" "${socket_bind}" "${BUN_CONVERGENCE:-deferred}" "${browser_json}"
 }
 
 # C-FIN normal paths refuse old/pending layouts before any host effects.
@@ -2108,6 +2140,7 @@ FICUS_LAYOUT_PREFLIGHT
 }
 
 main() {
+  BUN_CONVERGENCE=current
   # Prebaked hosts skip all toolchain installs EXCEPT Bun. Its atomic checked
   # replacement never touches baked nix/devbox. Per-boot work remains common.
   # Refuse old/interrupted machine layouts before changing anything.
@@ -2115,7 +2148,14 @@ main() {
   if [ -f "${PREBAKED_MARKER}" ]; then
     log_prebaked_decision
     make_dirs
-    install_bun
+    local bun_rc=0
+    install_bun || bun_rc=$?
+    case "$bun_rc" in
+      0) ;;
+      10) BUN_CONVERGENCE=deferred
+          echo 'bootstrap.sh: WARNING Bun convergence deferred; existing runtime remains usable, adoption will retry after a later bootstrap' >&2 ;;
+      *) return "$bun_rc" ;;
+    esac
   else
     install_base_packages
     make_dirs

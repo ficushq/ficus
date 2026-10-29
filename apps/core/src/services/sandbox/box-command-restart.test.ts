@@ -178,8 +178,7 @@ test('box-only graceful restart preserves genuine tool recovery and leaves anoth
       undefined,
       (update) => {
         if (update.content.some((part) => part.type === 'text' && part.text.includes('ready'))) otherReady.resolve()
-      },
-      {} as ExtensionToolContext
+      }
     )
     otherRunning = otherRunning.catch((error) => error)
     await bounded(otherReady.promise, 5000)

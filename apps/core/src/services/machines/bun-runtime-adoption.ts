@@ -156,13 +156,24 @@ rm -- "$claim_path"`
   return restored?.exitCode === 0
 }
 
+export class RuntimeClaimCleanupError extends Error {
+  constructor(
+    readonly operationError: unknown,
+    readonly restorationError: unknown
+  ) {
+    super('Runtime adoption failed and activation restoration is unproven', { cause: operationError })
+    this.name = 'RuntimeClaimCleanupError'
+  }
+}
+
 /**
  * Claim normal socket-activated idle adoption under the existing host flock.
  * Stop ONLY the activation socket, then recheck service/proxy/jobs/registry: an
  * overtaking connection is busy, not permission to kill its command. Keep the
  * listener closed until provision + env publication + server start completes.
- * The caller also holds the durable setup lease and box-scoped command drain.
+ * The caller also holds the durable setup lease and non-cancelling box command fence.
  */
+
 export async function withIdleBunRuntimeClaim<T>(
   machine: Machine,
   box: RuntimeBox,
@@ -218,9 +229,19 @@ echo FICUS_BUN_ADOPTION=claimed`
     await restore()
     throw new Error('Box runtime idle claim was not confirmed')
   }
+  let value: T
   try {
-    return { adopted: true, value: await action() }
-  } finally {
-    await restore()
+    value = await action()
+  } catch (operationError) {
+    try {
+      await restore()
+    } catch (restorationError) {
+      // Preserve a verified mismatch and its durable attempt bound even when
+      // listener recovery also needs the next owning ensure.
+      throw new RuntimeClaimCleanupError(operationError, restorationError)
+    }
+    throw operationError
   }
+  await restore()
+  return { adopted: true, value }
 }

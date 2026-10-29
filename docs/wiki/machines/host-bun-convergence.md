@@ -1,8 +1,8 @@
 # VM host Bun convergence
 
-> Source implementation and local validation only. Adoption is **eventual**,
-> after natural idle exit and normal ensure, not immediate fleet convergence.
-> Active, pending and unknown boxes remain deferred. No fleet update or live
+> Source implementation and local validation only. **Bun-only** adoption is
+> eventual, after natural idle exit and normal ensure, not immediate fleet
+> convergence. Active, pending and unknown Bun-only cases remain deferred. No fleet update or live
 > rollout has been performed or authorized.
 
 ## Pin and delivery contract
@@ -33,9 +33,17 @@ in place: existing processes keep their executable inode. The previous executabl
 is retained as `/opt/ficus/bun/bin/bun.previous` before the switch.
 
 - Download, staging, candidate/version or backup failure: old executable stays.
-- Post-switch version or link-publication failure: restore the previous inode;
-  bootstrap fails and must not stamp a successful upgrade. Failed rollback is
-  explicit and retains `.previous` for operator recovery.
+- Post-switch version or link-publication failure: restore the previous inode.
+  Failed rollback is fatal and retains `.previous` for operator recovery.
+- On a prebaked host, download, installer, lock or staging failure (or failed
+  replacement with a verified successful rollback) is non-fatal **only when the
+  old executable/link still prove usable**.
+  It warns and reports `bunConvergence: deferred`; the manifest records actual
+  Bun, and Core keeps the machine ready **without acknowledging the desired
+  bootstrap hash**. A later normal stale/bootstrap pass retries. This is not a
+  tight retry loop or a convergence success. Missing/unusable Bun, unsafe layout
+  and failed rollback remain fatal; explicit interruption is not swallowed. A transient download outage must not remove
+  a working prebaked host from the fleet.
 - Success: stable path reports the pin; old processes may still use the old inode.
 - A retry rechecks the actual version under lock and does not download again
   when current. Normal exit cleans its stage. SIGKILL/power loss may leave a
@@ -56,10 +64,24 @@ for an already-running server. Do not reinstall nix or delete `/nix`.
 ## Eventual box adoption through normal reconciliation
 
 Disk publication deliberately does not restart services. The effective release's
-bootstrap Bun pin participates in the provision identity alongside the effective
-box-provision script. A pin change therefore reaches ordinary spec reconciliation
-for existing boxes; the release's immutable assets are the source in artifact
+Bun pin has a **separate identity** from the base bundle/role/squad/provision-script
+digest and owning generation. A dot-free `:bun:1_4_2` suffix keeps provisioning
+marker parsing unambiguous. Immutable release assets supply the pin in artifact
 installs, not a checkout-relative `.bun-version` read.
+
+Only a Bun-only change (including a legacy unknown-pin row whose base identity
+matches) takes the natural-idle path below. Bundle, role, script, generation,
+mixed and other non-Bun drift retain the established park-and-re-ensure lifecycle
+and its ownership, stop-verification and trusted restart safeguards. They do not
+wait for a Bun bootstrap sweep. Ordinary `ensuring`, `failed` and `restart_failed`
+rows keep normal repair/retry behavior after journal recovery.
+
+New boxes, parked resumes and ordinary repairs also remain usable on hosts whose
+disk Bun has not yet been upgraded. Exact runtime readback is mandatory **only
+for verified Bun adoption**. An ordinary start records the observed Bun (or an
+unknown-pin base identity for older bundles), not the desired pin; it therefore
+remains eligible for later Bun adoption. Configuration publication alone is not
+runtime convergence proof.
 
 A running older executor cannot prove a newly introduced maintenance protocol.
 An unsupported endpoint or database idleness is **not** permission to force its
@@ -67,15 +89,19 @@ restart. Normal ensure/recreate instead:
 
 1. Defers while execution/deployment activity, a pending/ambiguous setup invocation,
    unavailable activity information, or an active/unknown server remains. It keeps
-   the old published spec/setup identity and reusable client. Repeated reconciliation
+   the old published spec/setup identity and usable normal client state, including
+   a fresh Core manager. The installed historical proof keeps the original Bash
+   alive while that fresh manager runs a real HTTP tool with its callback URL.
+   Repeated reconciliation
    does not HTTP-poll the old executor, which would reset its idle-exit window.
 2. Lets the existing executor's conservative idle policy finish commands and stand
    down naturally. A read-only host probe requires an inactive server and proxy,
    active activation socket, exact current disk Bun, no pending server/proxy systemd jobs, and
    no unresolved registry/active/quarantine entries. Read errors, symlinks and unknown
    results defer; no guessed success stamp is written.
-3. Under the existing owning setup lease/provision coalescer and box-scoped command
-   admission fence, rechecks the proof, takes the existing host flock, stops **only
+3. Under the existing owning setup lease/provision coalescer, takes the box-scoped
+   admission fence **before** final idle proof. Existing tracked work immediately
+   defers adoption: this path neither waits for nor cancels it. It rechecks proof, takes the existing host flock, stops **only
    the socket**, and rechecks inactivity/registry/jobs. A connection that overtook
    socket closure causes backoff and listener restoration, never a server kill.
 4. Keeps socket activation closed through normal provisioning and `server.env`
@@ -99,8 +125,13 @@ start command), checks the journal against the current row and compares the
 observed token again under the lock before restoring **only the socket**. It
 then removes only that journal. It never stops a server or replays an uncertain
 agent Bash invocation. Active/pending/unknown work still defers adoption after
-listener reachability is restored. A row mid-provision remains readiness-pending,
-not successfully adopted. Malformed, symlinked, changed-generation or overtaken
+listener reachability is restored. A Bun operation records its desired target in
+`bun_runtime_adopting_spec_hash` before physical provisioning, independently of
+ordinary `ensuring` rows. After interruption it retains the stronger fenced host
+proof; its own active startup execution does not prevent repair once actual host
+idleness is proven. Active/unknown remote work or pending setup remains
+readiness-pending, not successfully adopted. Successful physical setup clears
+the in-progress marker. Malformed, symlinked, changed-generation or overtaken
 journals defer; late cleanup cannot reopen another owner's listener or erase its
 journal. Failed restoration retains recovery evidence for the next owned ensure.
 Existing setup-session ownership checks fence continuation and ready publication.
@@ -109,19 +140,38 @@ This recovery/adoption path is for the same recorded host. An unavailable-host
 replacement or authorized explicit move retains the existing migration/rebind
 path and its stop/ownership checks; the old box is never probed on a new host.
 
-This is not an immediate fleet-wide restart. Always-active boxes, unresolved work,
-failed/unknown units and boxes without a proven socket-activated idle path stay
-pending for later reconciliation or separately authorized investigation. No remote
+This is not an immediate fleet-wide Bun restart. Always-active Bun-only cases,
+unresolved work, failed/unknown units and boxes without a proven socket-activated
+idle path stay pending for later reconciliation or separately authorized investigation. No remote
 maintenance endpoint or unsafe legacy fallback is introduced here.
 
-The selected box's admission fence reuses canonical trusted restart attribution
-and cancellation-before-disconnect; failed cancellation prevents replacement.
-It does not use process-wide `drainCommands()` or stop unrelated boxes. A command
-that races admission sees a normal restart notice, not a recovery failure.
+Bun-only admission reuses canonical trusted restart attribution but **never
+cancels** existing work. Ordinary recreation/shutdown retain their separate
+cancellation-before-disconnect behavior; failed cancellation prevents replacement.
+Neither box-scoped path uses process-wide `drainCommands()` or stops unrelated
+boxes. A command racing admission sees a normal restart notice, not a recovery failure.
 Normally active legacy commands finish before natural idle exit; the independent
 real-server restart proof also checks durable cancellation context, agent-visible
 notice, zero failure-budget charge, no human wait, inspected partial effects and
 explicit safe retry. This does not claim arbitrary model retry behavior.
+
+### Terminal runtime mismatch
+
+A typed adoption health/version mismatch (including an older bundle reporting no
+Bun version) is recorded durably in `bun_runtime_failure_spec_hash` for the exact
+desired spec/generation and original physical box identity. It reports failed,
+not ready, and does not stamp successful convergence. The same target cannot
+restart again after Core restart, normal retry or recreate. A listener-restoration
+failure cannot mask a verified mismatch or erase its attempt bound; the claim
+journal still preserves the separate pending listener recovery. This avoids a
+restart-on-every-idle-exit loop. Status-only writes preserve this evidence; stale
+physical/generation owners cannot mark a replacement failed.
+
+Investigate and repair the matching host runtime/server bundle, then deliver a
+changed desired release/spec through the authorized normal path. Successful
+physical setup clears failure metadata. Do not erase the marker or repeatedly
+replay setup merely to reset the budget. The additive nullable-column migration
+is part of the source change; applying it to a live database is not authorized here.
 
 ## Offline preview — safe to run now
 
@@ -132,6 +182,7 @@ bun scripts/machine/preview-bun-convergence.ts \
   --inventory docs/wiki/machines/examples/bun-inventory.json
 ```
 
+This preview describes Bun-only convergence, not ordinary non-Bun spec repair.
 The supplied example is synthetic. This command reads only the supplied JSON and
 repository pin, writes JSON to stdout, and never imports Core, invokes SSH,
 curl, sudo, systemctl, Docker or any installer. It does not read live host state,
@@ -169,7 +220,9 @@ forbidden command sentinels and verify byte/mtime/directory snapshots unchanged.
    part of this source-only task. A new image affects new VMs, not existing ones.
 4. Reconcile one approved canary through normal claimed machine bootstrap and
    idle box provisioning, including a host with an older prebaked marker.
-   Verify the actual disk version, stable CLI wrapper output completion, live
+   Verify `bunConvergence: current` and the acknowledged bootstrap hash (a safe
+   deferred host remains ready with its old hash). Verify the actual disk version,
+   stable CLI wrapper output completion, live
    server executable/version and health, owning generation and agent-visible
    normal restart. Verify unrelated active work continues; deferred/unknown
    boxes remain explicitly pending, never counted as updated.

@@ -50,6 +50,7 @@ function fixture(old = '1.2.23', mode = '') {
     `#!/bin/sh
 printf 'download\\n' >> "$FIXTURE_ROOT/downloads"
 if [ "$FIXTURE_MODE" = download-failed ]; then exit 22; fi
+if [ "$FIXTURE_MODE" = interrupted ]; then exit 130; fi
 cat <<'INSTALLER'
 set -eu
 if [ "$FIXTURE_MODE" = profile ]; then mkdir -p "$HOME"; echo installer-profile > "$HOME/.bashrc"; fi
@@ -78,6 +79,8 @@ INSTALLER
   const run = (body = 'install_bun') =>
     Bun.spawnSync(
       [
+        'timeout',
+        '3',
         'bash',
         '-c',
         'script=$1; shift; source "$script"; SUDO=(); BUN_LOCK_TIMEOUT_SECS=0; ' + body,
@@ -178,4 +181,107 @@ main`)
     expect(f.version()).toBe('1.2.23')
     expect(existsSync(join(f.dir, 'downloads'))).toBe(false)
   })
+})
+
+const prebakedBootstrap = `
+require_machine_layout_ready() { :; }
+make_dirs() { :; }
+write_manifest() { echo manifest > "$FIXTURE_ROOT/continued"; }
+ensure_box_port_reservation() { :; }
+verify_browser() { :; }
+main`
+
+describe('prebaked Bun convergence preserves availability on safe failed replacement', () => {
+  for (const mode of ['download-failed', 'wrong', 'post-invalid']) {
+    test(`${mode} warns and continues with the intact existing runtime`, () => {
+      const f = fixture('1.2.23', mode)
+      const before = readFileSync(f.binary, 'utf8')
+      const result = f.run(prebakedBootstrap)
+      expect(result.exitCode).toBe(0)
+      expect(result.stderr.toString()).toContain('WARNING')
+      expect(readFileSync(f.binary, 'utf8')).toBe(before)
+      expect(f.version()).toBe('1.2.23')
+      expect(existsSync(join(f.dir, 'continued'))).toBe(true)
+    })
+  }
+
+  test('lock contention defers the upgrade without withdrawing the working host', () => {
+    const f = fixture()
+    const result = f.run('exec 8>"$FICUS_ROOT/bun-install.lock"; flock -x 8; ' + prebakedBootstrap)
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr.toString()).toContain('WARNING')
+    expect(f.version()).toBe('1.2.23')
+    expect(existsSync(join(f.dir, 'downloads'))).toBe(false)
+    expect(existsSync(join(f.dir, 'continued'))).toBe(true)
+  })
+
+  test('no usable old binary is still a fatal bootstrap failure', () => {
+    const f = fixture('1.2.23', 'download-failed')
+    rmSync(f.binary)
+    expect(f.run(prebakedBootstrap).exitCode).not.toBe(0)
+    expect(existsSync(join(f.dir, 'continued'))).toBe(false)
+  })
+
+  test('failed rollback remains fatal even when a broken replacement is executable', () => {
+    const f = fixture('1.2.23', 'post-invalid')
+    writeFileSync(
+      join(f.dir, 'commands/mv'),
+      `#!/bin/sh
+case "$*" in */restore*) exit 87;; esac
+exec /usr/bin/mv "$@"
+`,
+      { mode: 0o755 }
+    )
+    const result = f.run(prebakedBootstrap)
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr.toString()).toContain('rollback failed')
+    expect(existsSync(`${f.binary}.previous`)).toBe(true)
+    expect(existsSync(join(f.dir, 'continued'))).toBe(false)
+  })
+})
+
+test('a deferred prebaked run reports actual Bun and preserves retry intent in capabilities and manifest', () => {
+  const f = fixture('1.2.23', 'download-failed')
+  const result = f.run(
+    prebakedBootstrap.replace('write_manifest() { echo manifest > "$FIXTURE_ROOT/continued"; }', '') +
+      `
+detect_docker() { echo none; }
+detect_forwarding() { echo yes; }
+detect_box_ports() { echo reserved; }
+detect_socket_bind() { echo unsupported; }
+print_capabilities`
+  )
+  expect(result.exitCode).toBe(0)
+  const caps = JSON.parse(result.stdout.toString().split('FICUS_CAPS_JSON: ')[1]!)
+  expect(caps.bunConvergence).toBe('deferred')
+  const manifest = JSON.parse(readFileSync(join(f.ficus, 'manifest.json'), 'utf8'))
+  expect(manifest.bunVersion).toBe('1.2.23')
+  expect(manifest.bunConvergence).toBe('deferred')
+})
+
+test('prebaked Bun deferral does not swallow explicit interruption', () => {
+  const f = fixture('1.2.23', 'interrupted')
+  expect(f.run(prebakedBootstrap).exitCode).toBe(130)
+  expect(existsSync(join(f.dir, 'continued'))).toBe(false)
+  expect(f.version()).toBe('1.2.23')
+})
+
+test('an already pinned symlinked Bun executable is refused without following or changing its target', () => {
+  const f = fixture(pin)
+  const foreign = join(f.dir, 'foreign-bun')
+  writeFileSync(foreign, readFileSync(f.binary), { mode: 0o755 })
+  rmSync(f.binary)
+  symlinkSync(foreign, f.binary)
+  expect(f.run().exitCode).not.toBe(0)
+  expect(existsSync(join(f.dir, 'downloads'))).toBe(false)
+  expect(readFileSync(foreign, 'utf8')).toContain(pin)
+})
+
+test('a non-regular Bun lock is refused without blocking on open', () => {
+  const f = fixture()
+  expect(Bun.spawnSync(['mkfifo', join(f.ficus, 'bun-install.lock')]).exitCode).toBe(0)
+  const result = f.run()
+  expect(result.exitCode).toBe(3)
+  expect(f.version()).toBe('1.2.23')
+  expect(existsSync(join(f.dir, 'downloads'))).toBe(false)
 })

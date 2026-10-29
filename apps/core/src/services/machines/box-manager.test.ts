@@ -11,6 +11,7 @@ import {
   BoxArchiveStreamError,
   BoxEnvValidationError,
   BoxHealthTimeoutError,
+  BunRuntimeMismatchError,
   BoxStopUnverifiedError,
   type BoxManagerDeps,
   DEFAULT_BOX_HEALTH_BUDGET_MS,
@@ -274,8 +275,9 @@ function happyDeps(events: string[], machine: Machine, box: MachineBox) {
       return {
         ...box,
         status: b.status ?? box.status,
-        provisionedSpecHash: b.provisionedSpecHash,
-        reconcilableSpecHash: b.reconcilableSpecHash,
+        ...(b.authToken !== undefined ? { authToken: b.authToken } : {}),
+        ...(b.provisionedSpecHash !== undefined ? { provisionedSpecHash: b.provisionedSpecHash } : {}),
+        ...(b.reconcilableSpecHash !== undefined ? { reconcilableSpecHash: b.reconcilableSpecHash } : {}),
       } as MachineBox
     },
     healthBudgetMs: 10_000,
@@ -5373,4 +5375,76 @@ it('lost setup-session ownership prevents remote continuation and ready publicat
     )
   ).rejects.toThrow('setup lease lost')
   expect(upserts.some((row) => row.status === 'ready')).toBe(false)
+})
+
+describe('ordinary provisioning on hosts awaiting the Bun bootstrap sweep', () => {
+  for (const observed of ['1.2.23', undefined]) {
+    for (const status of ['new', 'stopped']) {
+      it(`${status} records ${observed ?? 'unknown'} running Bun without falsely stamping the future pin`, async () => {
+        const events: string[] = []
+        const machine = makeMachine()
+        const desired = '0123456789abcdef:bun:1_4_2'
+        const env = { FICUS_BOX_SPEC_HASH: desired }
+        const marker = computeProvisioningMarker(desired, env)
+        const box = makeBox({ provisionedSpecHash: marker })
+        const { deps, upserts } = happyDeps(events, machine, box)
+        if (status === 'stopped')
+          deps.getMachineBox = async () => ({
+            ...box,
+            status: 'stopped',
+            authToken: 'existing-token',
+            provisionedSpecHash: marker,
+          })
+        deps.fetch = (async () =>
+          Response.json({ healthy: true, ...(observed ? { bunVersion: observed } : {}) })) as typeof fetch
+        const result = await ensureBox(
+          { sandboxId: box.sandboxId, machineId: machine.id, role: 'agent', env, specHash: marker },
+          deps
+        )
+        const expected = observed ? '0123456789abcdef:bun:1_2_23' : '0123456789abcdef'
+        expect(result.box.reconcilableSpecHash).toBe(expected)
+        expect(upserts.at(-1)!.reconcilableSpecHash).toBe(expected)
+        expect(upserts.at(-1)!.status).toBe('ready')
+        expect(result.box.provisionedSpecHash).toBe(marker)
+      })
+    }
+  }
+})
+
+it('terminal Bun mismatch is projected as failed without probing or waking the executor', async () => {
+  let probes = 0
+  const box = makeBox({ status: 'failed', bunRuntimeFailureSpecHash: 'desired-spec' })
+  const result = await boxChainHealth(box.sandboxId, {
+    getMachineBox: async () => box,
+    getMachine: async () => makeMachine(),
+    tunnels: makeFakeTunnels([]),
+    fetch: (async () => {
+      probes++
+      return Response.json({ healthy: true })
+    }) as typeof fetch,
+  })
+  expect(result.status).toBe('failed')
+  expect(result.reason).toContain('Bun runtime adoption')
+  expect(probes).toBe(0)
+})
+
+it('runtime mismatch retains the post-bind identity when adopting a legacy null-token row without exposing its secret', async () => {
+  const machine = makeMachine()
+  const box = makeBox({ authToken: null })
+  const { deps } = happyDeps([], machine, box)
+  deps.fetch = (async () => Response.json({ healthy: true, bunVersion: '1.2.23' })) as typeof fetch
+  let mismatch: unknown
+  try {
+    await ensureBox(
+      { sandboxId: box.sandboxId, machineId: machine.id, role: 'agent', env: {}, expectedBunVersion: '1.4.2' },
+      deps
+    )
+  } catch (error) {
+    mismatch = error
+  }
+  expect(mismatch).toBeInstanceOf(BunRuntimeMismatchError)
+  const failureBox = (mismatch as BunRuntimeMismatchError).boxAtFailure
+  expect(failureBox?.authToken).toBeString()
+  expect(failureBox?.authToken).not.toBeNull()
+  expect(JSON.stringify(mismatch)).not.toContain(failureBox!.authToken!)
 })

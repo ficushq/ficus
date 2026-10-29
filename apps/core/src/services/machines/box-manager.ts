@@ -1027,9 +1027,30 @@ async function evaluateEstablishedBox(
  * so an operator tailing logs sees the wait, not silence. On expiry throws
  * {@link BoxHealthTimeoutError} carrying the last status/error.
  */
-class BunRuntimeMismatchError extends Error {}
+// Keep the post-bind identity (including any minted token) out of Error JSON.
+const runtimeMismatchBoxes = new WeakMap<Error, MachineBox>()
+export class BunRuntimeMismatchError extends Error {
+  get boxAtFailure(): MachineBox | undefined {
+    return runtimeMismatchBoxes.get(this)
+  }
+  constructor(message: string) {
+    super(message)
+    this.name = 'BunRuntimeMismatchError'
+  }
+}
 
-async function pollBoxHealth(endpoint: string, deps: BoxManagerDeps, expectedBunVersion?: string): Promise<void> {
+/** Desired configuration is not proof that an ordinary start adopted its Bun. */
+function observedRuntimeSpecHash(spec: string | undefined, version: string | undefined): string | undefined {
+  if (!spec || !/:bun:\d+_\d+_\d+$/.test(spec)) return spec
+  const base = spec.replace(/:bun:\d+_\d+_\d+$/, '')
+  return version ? `${base}:bun:${version.replaceAll('.', '_')}` : base
+}
+
+async function pollBoxHealth(
+  endpoint: string,
+  deps: BoxManagerDeps,
+  expectedBunVersion?: string
+): Promise<string | undefined> {
   const fetchFn: FetchLike = deps.fetch ?? ((url, init) => fetch(url, init))
   const interval = deps.healthIntervalMs ?? 2_000
   const budget = deps.healthBudgetMs ?? resolveBoxHealthBudgetMs()
@@ -1048,12 +1069,23 @@ async function pollBoxHealth(endpoint: string, deps: BoxManagerDeps, expectedBun
       })
       lastStatus = res.status
       if (res.ok) {
-        if (!expectedBunVersion) return
-        const body = (await res.json?.()) as { bunVersion?: unknown } | undefined
-        if (body?.bunVersion === expectedBunVersion) return
-        throw new BunRuntimeMismatchError(
-          `Bun runtime mismatch: expected ${expectedBunVersion}, observed ${typeof body?.bunVersion === 'string' && /^\d+\.\d+\.\d+$/.test(body.bunVersion) && body.bunVersion.length < 24 ? body.bunVersion : 'unknown'}`
-        )
+        let body: { bunVersion?: unknown } | undefined
+        try {
+          body = (await res.json?.()) as typeof body
+        } catch (error) {
+          // Old executors need not expose structured runtime health. A transport
+          // failure during a required readback remains retryable, not terminal.
+          if (expectedBunVersion && !(error instanceof SyntaxError)) throw error
+        }
+        const observed =
+          typeof body?.bunVersion === 'string' && /^\d+\.\d+\.\d+$/.test(body.bunVersion) && body.bunVersion.length < 24
+            ? body.bunVersion
+            : undefined
+        if (expectedBunVersion && observed !== expectedBunVersion)
+          throw new BunRuntimeMismatchError(
+            `Bun runtime mismatch: expected ${expectedBunVersion}, observed ${observed ?? 'unknown'}`
+          )
+        return observed
       }
       lastError = `status ${res.status}`
     } catch (err) {
@@ -1261,6 +1293,7 @@ export async function startBoxAndAwaitHealth(
     port: number
     timeoutMs?: number
     expectedBunVersion?: string
+    observeBunVersion?: (version: string | undefined) => void
     activationSocketHeld?: boolean
   },
   deps: BoxManagerDeps = {}
@@ -1307,7 +1340,8 @@ export async function startBoxAndAwaitHealth(
   await tunnels.ensureMaster(machine)
   const localPort = await tunnels.addForward(machine, port)
   const endpoint = `http://127.0.0.1:${localPort}`
-  await pollBoxHealth(endpoint, deps, opts.expectedBunVersion)
+  const version = await pollBoxHealth(endpoint, deps, opts.expectedBunVersion)
+  opts.observeBunVersion?.(version)
   return endpoint
 }
 
@@ -1728,6 +1762,7 @@ export async function ensureBox(
           status: 'ensuring',
           authToken: existing.authToken,
         })
+        let observedBunVersion: string | undefined
         const endpoint = await timer.time('start', () =>
           startBoxAndAwaitHealth(
             {
@@ -1736,6 +1771,9 @@ export async function ensureBox(
               unixUser,
               port: existing.port,
               expectedBunVersion: opts.expectedBunVersion,
+              observeBunVersion: (version) => {
+                observedBunVersion = version
+              },
             },
             deps
           )
@@ -1747,7 +1785,12 @@ export async function ensureBox(
           port: existing.port,
           status: 'ready',
           authToken: existing.authToken,
+          bunRuntimeFailureSpecHash: null,
+          bunRuntimeAdoptingSpecHash: null,
           ...(markerDrift === 'legacy' ? { provisionedSpecHash: opts.specHash } : {}),
+          ...(opts.env.FICUS_BOX_SPEC_HASH
+            ? { reconcilableSpecHash: observedRuntimeSpecHash(opts.env.FICUS_BOX_SPEC_HASH, observedBunVersion) }
+            : {}),
           lastActivityAt: new Date(),
         })
         eventEmitter.emit('box.status', {
@@ -1838,6 +1881,7 @@ export async function ensureBox(
         port: bound.port,
         status: 'ensuring',
         authToken,
+        bunRuntimeAdoptingSpecHash: adoptingIdle ? (opts.env.FICUS_BOX_SPEC_HASH ?? opts.specHash ?? null) : null,
       })
 
       // Provision on the machine (script + server.env), then first-start + health.
@@ -1880,19 +1924,28 @@ export async function ensureBox(
           )
         }
       }
-      const endpoint = await timer.time('start', () =>
-        startBoxAndAwaitHealth(
-          {
-            machine,
-            sandboxId: opts.sandboxId,
-            unixUser,
-            port: box.port,
-            expectedBunVersion: opts.expectedBunVersion,
-            activationSocketHeld: adoptingIdle,
-          },
-          deps
-        )
-      )
+      let observedBunVersion: string | undefined
+      const endpoint = await timer.time('start', async () => {
+        try {
+          return await startBoxAndAwaitHealth(
+            {
+              machine,
+              sandboxId: opts.sandboxId,
+              unixUser,
+              port: box.port,
+              expectedBunVersion: opts.expectedBunVersion,
+              observeBunVersion: (version) => {
+                observedBunVersion = version
+              },
+              activationSocketHeld: adoptingIdle,
+            },
+            deps
+          )
+        } catch (error) {
+          if (error instanceof BunRuntimeMismatchError) runtimeMismatchBoxes.set(error, box)
+          throw error
+        }
+      })
 
       const readyBox = await upsert({
         sandboxId: box.sandboxId,
@@ -1906,7 +1959,9 @@ export async function ensureBox(
         // when the caller supplied no specHash (only legacy/test callers) so a
         // future ensure never mistakes an unknown provisioned state for a match.
         provisionedSpecHash: opts.specHash ?? null,
-        reconcilableSpecHash: opts.env.FICUS_BOX_SPEC_HASH ?? null,
+        reconcilableSpecHash: observedRuntimeSpecHash(opts.env.FICUS_BOX_SPEC_HASH, observedBunVersion) ?? null,
+        bunRuntimeFailureSpecHash: null,
+        bunRuntimeAdoptingSpecHash: null,
         // Seed the cross-process activity heartbeat so every ready box has a
         // baseline: the idle reaper (worker) reads max(process-local, row) and a
         // box ensured by ANOTHER process would otherwise carry no activity signal
@@ -3076,6 +3131,14 @@ export async function boxChainHealth(sandboxId: string, deps: BoxManagerDeps = {
         machine: machine?.status === 'ready' ? 'reachable' : 'unreachable',
         boxServer: 'unknown',
       },
+    }
+  }
+  if (box.status === 'failed' && box.bunRuntimeFailureSpecHash) {
+    return {
+      status: 'failed',
+      reason:
+        'Bun runtime adoption failed version verification; repair the host runtime/bundle and change the desired spec',
+      chain: { boxProvisioned: true, machine: 'unknown', boxServer: 'unknown' },
     }
   }
   if (box.status === 'restart_failed' || isStaleBoxRestart(box, deps.now?.())) {

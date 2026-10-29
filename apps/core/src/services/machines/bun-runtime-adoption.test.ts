@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import * as adoption from './bun-runtime-adoption'
+import type { Machine, MachineBox } from './queries'
+import type { SshRunner } from './ssh'
 
 describe('release Bun runtime identity', () => {
   test('uses the effective standalone script pin, not a checkout-relative runtime read', () => {
@@ -52,7 +54,7 @@ test('the actual host probe shell accepts only inactive units, current Bun and n
         .buildBunAdoptionProbe({ sandboxId, unixUser: 'box_fixture' }, '1.4.2')
         .replaceAll('/home/box_fixture', home)
         .replaceAll('/opt/ficus/bin/bun', join(bin, 'bun'))
-    const probe = (env: Record<string, string> = {}, sandboxId = 'agent_fixture') => {
+    const probe = (env: NodeJS.ProcessEnv = {}, sandboxId = 'agent_fixture') => {
       const result = Bun.spawnSync(['bash', '-c', scriptFor(sandboxId)], {
         env: { PATH: `${bin}:/usr/bin:/bin`, ...env },
       })
@@ -356,5 +358,37 @@ test('unknown recovery and a still-running host flock defer without running adop
       )
     ).toEqual({ adopted: false })
     expect(ran).toBe(false)
+  }
+})
+
+test('a failed listener restoration preserves the operation error as well as unproven cleanup', async () => {
+  const primary = new Error('verified version mismatch')
+  const machine = { id: 'm' } as Machine
+  const box = { sandboxId: 'agent_failed_adoption', unixUser: 'box_test', machineId: 'm' } as MachineBox
+  const runner: SshRunner = {
+    run: async (_machine, command) =>
+      command.includes('FICUS_BUN_RECOVERY=')
+        ? { exitCode: 0, stdout: 'FICUS_BUN_RECOVERY=none', stderr: '' }
+        : {
+            exitCode: command.includes('FICUS_BUN_ADOPTION=claimed') ? 0 : 1,
+            stdout: command.includes('FICUS_BUN_ADOPTION=claimed') ? 'FICUS_BUN_ADOPTION=claimed' : '',
+            stderr: '',
+          },
+  }
+  try {
+    await adoption.withIdleBunRuntimeClaim(
+      machine,
+      box,
+      '1.4.2',
+      async () => {
+        throw primary
+      },
+      runner,
+      'desired'
+    )
+    throw new Error('Expected failed adoption')
+  } catch (error) {
+    expect((error as { operationError: unknown }).operationError).toBe(primary)
+    expect((error as { restorationError: unknown }).restorationError).toBeInstanceOf(Error)
   }
 })
