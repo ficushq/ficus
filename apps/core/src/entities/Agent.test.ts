@@ -3246,6 +3246,25 @@ describe('agents service', () => {
       }
     })
 
+    it('deletePendingMessages keeps inbox and monitor deliveries and, when asked, claimed rows', async () => {
+      const agent = await Agent.create({ agentTypeId: testAgentTypeId })
+      await agent.recordMessage({ role: 'human', content: 'mine', pending: true })
+      await agent.recordMessage({ role: 'human', content: 'inbox', pending: true, metadata: { source: 'inbox' } })
+      await agent.recordMessage({ role: 'human', content: 'monitor', pending: true, metadata: { source: 'monitor' } })
+      const claimed = await agent.recordMessage({ role: 'human', content: 'claimed', pending: true })
+      await db.update(messages).set({ injectedAt: new Date() }).where(eq(messages.id, claimed.id))
+
+      expect(await agent.deletePendingMessages({ unclaimedOnly: true })).toBe(1)
+      expect((await agent.listMessages()).messages.map((m) => m.content).toSorted()).toEqual([
+        'claimed',
+        'inbox',
+        'monitor',
+      ])
+      expect(await agent.deletePendingMessages()).toBe(1)
+      expect((await agent.listMessages()).messages.map((m) => m.content).toSorted()).toEqual(['inbox', 'monitor'])
+      await db.delete(messages).where(eq(messages.agentId, agent.id))
+    })
+
     it('deletePendingMessages removes all pending human messages', async () => {
       const agent = await Agent.create({ agentTypeId: testAgentTypeId })
       await agent.recordMessage({ role: 'human', content: 'Pending 1', pending: true })
@@ -3302,6 +3321,80 @@ describe('agents service', () => {
       const result = await agent.clearQueue({ ackTimeoutMs: 20 })
       expect(result).toMatchObject({ ok: true, code: 'no_active_execution', deleted: 1 })
       await db.delete(messages).where(eq(messages.agentId, agent.id))
+    })
+  })
+
+  describe('sendQueuedNow', () => {
+    afterEach(async () => {
+      const ids = (await db.select({ id: agents.id }).from(agents).where(eq(agents.agentTypeId, testAgentTypeId))).map(
+        (row) => row.id
+      )
+      if (ids.length) {
+        await db.delete(messages).where(inArray(messages.agentId, ids))
+        await db.delete(executions).where(inArray(executions.agentId, ids))
+      }
+    })
+
+    it('does nothing without a queued interrupt', async () => {
+      const agent = await Agent.create({ agentTypeId: testAgentTypeId })
+      await agent.recordMessage({
+        role: 'human',
+        content: 'later',
+        pending: true,
+        metadata: { deliveryMode: 'follow-up' },
+      })
+      expect(await agent.sendQueuedNow()).toEqual({ ok: false, code: 'nothing_queued' })
+      expect(await agent.getActiveExecution()).toBeNull()
+    })
+
+    it('starts a turn for queued interrupts when nothing is running', async () => {
+      const agent = await Agent.create({ agentTypeId: testAgentTypeId })
+      await agent.recordMessage({ role: 'human', content: 'now', pending: true, metadata: { deliveryMode: 'steer' } })
+      expect(await agent.sendQueuedNow()).toEqual({ ok: true, code: 'started' })
+      const execution = await agent.getActiveExecution()
+      expect(execution?.status).toBe('queued')
+      expect(execution?.message ?? null).toBeNull()
+    })
+
+    it('leaves a turn that is already starting to claim the interrupts itself', async () => {
+      const agent = await Agent.create({ agentTypeId: testAgentTypeId })
+      const queued = await agent.queueExecution({ message: 'starting' })
+      await agent.recordMessage({ role: 'human', content: 'now', pending: true, metadata: { deliveryMode: 'steer' } })
+      expect(await agent.sendQueuedNow()).toEqual({ ok: true, code: 'already_starting' })
+      expect((await agent.getActiveExecution())?.id).toBe(queued.id)
+    })
+
+    it('stops the running turn, waits for it to settle, then starts a new one', async () => {
+      const agent = await Agent.create({ agentTypeId: testAgentTypeId })
+      const running = await agent.queueExecution({ message: 'running turn' })
+      await running.start()
+      await agent.recordMessage({ role: 'human', content: 'now', pending: true, metadata: { deliveryMode: 'steer' } })
+
+      const result = agent.sendQueuedNow({ pollMs: 10 })
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      await running.reload()
+      expect(running.status).toBe('stopping')
+      // The worker settles the stop.
+      await running.stop()
+
+      expect(await result).toEqual({ ok: true, code: 'started' })
+      const next = await agent.getActiveExecution()
+      expect(next?.id).not.toBe(running.id)
+      expect(next?.status).toBe('queued')
+    })
+
+    it('reports a stop that does not settle in time and keeps the queued messages', async () => {
+      const agent = await Agent.create({ agentTypeId: testAgentTypeId })
+      const running = await agent.queueExecution({ message: 'running turn' })
+      await running.start()
+      await agent.recordMessage({ role: 'human', content: 'now', pending: true, metadata: { deliveryMode: 'steer' } })
+
+      expect(await agent.sendQueuedNow({ settleTimeoutMs: 40, pollMs: 10 })).toEqual({
+        ok: false,
+        code: 'stop_timeout',
+      })
+      expect((await agent.listPendingHumanMessages()).map((message) => message.content)).toContain('now')
+      await running.stop()
     })
   })
 

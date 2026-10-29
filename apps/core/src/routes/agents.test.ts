@@ -833,6 +833,20 @@ describe('deprecated inline message routes', () => {
     expect((await request(monitor.id, 'follow-up')).status).toBe(409)
   })
 
+  it('send-now starts a turn for queued interrupts and explains when there are none', async () => {
+    const request = (headers = authHeaders(admin.token)) =>
+      app.request(`/api/agents/${testAgent.id}/send-now`, { method: 'POST', headers })
+    expect((await request({})).status).toBe(401)
+    const none = await request()
+    expect(none.status).toBe(409)
+    expect(await none.json()).toMatchObject({ code: 'nothing_queued' })
+    await testAgent.recordMessage({ role: 'human', content: 'now', pending: true, metadata: { deliveryMode: 'steer' } })
+    const started = await request()
+    expect(started.status).toBe(200)
+    expect(await started.json()).toEqual({ success: true, code: 'started' })
+    expect((await testAgent.getActiveExecution())?.status).toBe('queued')
+  })
+
   it('keeps malformed queue JSON in the shared error boundary and validates the root shape', async () => {
     const messageId = crypto.randomUUID()
     const request = (body: string) =>

@@ -1,6 +1,6 @@
 import { isExecutionInitialMessage } from '../chat/queued-messages'
 import { acquireAgentQueueLock } from '../execution/agent-admission'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, isNotNull, sql } from 'drizzle-orm'
 import { db, messages, chatSendReceipts } from '../../db'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { notify } from '../../lib/infra/local-events'
@@ -8,6 +8,7 @@ import { mapMessage } from '../../entities/message-mapper'
 import { messageEventData } from '../../entities/message-event'
 import type { AgentSession } from '../../entities/AgentSession'
 import type { MessageMetadata } from '@ficus/shared'
+import { userSentMessage } from './pending-delivery'
 
 export type PendingMessageOperation = 'cancel' | 'steer' | 'follow-up'
 export type PendingMessageResult = 'updated' | 'not_pending' | 'not_allowed' | 'claimed' | 'unavailable'
@@ -102,6 +103,8 @@ export async function updateClaimedMessage(input: {
   session: AgentSession
   stillOwned: () => boolean
   expiresAt: number
+  /** Bulk clear sends one acknowledgement for the whole queue instead of one per message. */
+  announce?: boolean
 }): Promise<PendingMessageResult> {
   const [snapshot] = await db
     .select()
@@ -141,8 +144,43 @@ export async function updateClaimedMessage(input: {
     }
   )
   if (!updated) return 'not_pending'
-  await publishChange(input.agentId, input.messageId, input.operation)
+  if (input.announce !== false) await publishChange(input.agentId, input.messageId, input.operation)
   return 'updated'
+}
+
+/**
+ * Cancel each user-sent message this execution's session holds in its SDK queue, one at a
+ * time, so inbox and monitor deliveries already handed to the session stay queued.
+ * @returns The number of messages canceled.
+ */
+export async function cancelClaimedUserMessages(input: {
+  agentId: string
+  executionId: string
+  session: AgentSession
+  stillOwned: () => boolean
+  expiresAt: number
+}): Promise<number> {
+  const claimed = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.agentId, input.agentId),
+        eq(messages.role, 'human'),
+        eq(messages.pending, true),
+        isNotNull(messages.injectedAt),
+        userSentMessage,
+        sql`${messages.metadata}->'sessionDelivery'->>'executionId' = ${input.executionId}`
+      )
+    )
+    .orderBy(messages.createdAt, messages.enqueueOrder)
+  let canceled = 0
+  for (const { id } of claimed) {
+    // A message the session consumed meanwhile is being delivered and stays.
+    const result = await updateClaimedMessage({ ...input, messageId: id, operation: 'cancel', announce: false })
+    if (result === 'updated') canceled++
+  }
+  return canceled
 }
 
 export async function updatePendingMessage(

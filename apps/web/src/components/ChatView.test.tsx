@@ -3451,6 +3451,89 @@ describe('ChatView queued message controls', () => {
     })
   })
 
+  const sendNowButton = (window: Window | Awaited<ReturnType<typeof installDom>>['window']) =>
+    [...window.document.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
+      /^Send \d+ now$/.test(button.textContent ?? '')
+    )
+
+  test('Send now appears while running with queued interrupts, counting inbox ones, and calls the handler', async () => {
+    const onSendQueuedNow = mock(async () => {})
+    const { dom, window } = await renderChatView(
+      <ChatView
+        items={[
+          queued({ id: 'a', messageId: 'a', deliveryMode: 'steer' }),
+          queued({ id: 'b', messageId: 'b', deliveryMode: 'steer', metadata: { source: 'inbox' } }),
+          queued({ id: 'c', messageId: 'c', deliveryMode: 'follow-up' }),
+        ]}
+        onSend={() => {}}
+        executionStatus="running"
+        onSendQueuedNow={onSendQueuedNow}
+      />
+    )
+    expect(sendNowButton(window)?.textContent).toBe('Send 2 now')
+    await dom.act(async () => sendNowButton(window)!.click())
+    expect(onSendQueuedNow).toHaveBeenCalledTimes(1)
+  })
+
+  test('Send now is hidden with only follow-ups queued', async () => {
+    const { window } = await renderChatView(
+      <ChatView
+        items={[queued({ deliveryMode: 'follow-up' })]}
+        onSend={() => {}}
+        executionStatus="running"
+        onSendQueuedNow={mock(async () => {})}
+      />
+    )
+    expect(sendNowButton(window)).toBeUndefined()
+  })
+
+  test('Send now is hidden when the agent is not running', async () => {
+    const { window } = await renderChatView(
+      <ChatView
+        items={[queued({ deliveryMode: 'steer' })]}
+        onSend={() => {}}
+        executionStatus="queued"
+        onSendQueuedNow={mock(async () => {})}
+      />
+    )
+    expect(sendNowButton(window)).toBeUndefined()
+  })
+
+  test('a failed Send now explains itself in the composer alert', async () => {
+    const onSendQueuedNow = mock(async () => {
+      throw new Error('The agent is still stopping.')
+    })
+    const { dom, window } = await renderChatView(
+      <ChatView
+        items={[queued({ deliveryMode: 'steer' })]}
+        onSend={() => {}}
+        executionStatus="running"
+        onSendQueuedNow={onSendQueuedNow}
+      />
+    )
+    await dom.act(async () => sendNowButton(window)!.click())
+    await flushReact()
+    expect(window.document.querySelector('[role="alert"]')?.textContent).toContain(
+      'Could not send queued interrupts now: The agent is still stopping.'
+    )
+  })
+
+  test('Clear pending messages counts only user-sent messages', async () => {
+    const { window } = await renderChatView(
+      <ChatView
+        items={[
+          queued({ id: 'a', messageId: 'a' }),
+          queued({ id: 'b', messageId: 'b', metadata: { source: 'inbox' } }),
+          queued({ id: 'c', messageId: 'c', metadata: { source: 'monitor' } }),
+        ]}
+        onSend={() => {}}
+        isStreaming
+        onCancelQueue={mock(async () => {})}
+      />
+    )
+    expect(window.document.body.textContent).toContain('Clear 1 pending message')
+  })
+
   test('unsaved sends and monitor deliveries keep a plain mode label without controls', async () => {
     const { window } = await renderChatView(
       <ChatView

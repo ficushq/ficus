@@ -534,18 +534,33 @@ export async function markPendingHumanMessagesStrandedRetry(agentId: string, mes
   }
 }
 
+/** Rows a person sent through chat. Inbox and monitor deliveries are never bulk-cleared. */
+export const userSentMessage = sql`COALESCE(${messages.metadata}->>'source', '') NOT IN ('inbox', 'monitor')`
+
 /**
- * Delete all pending human messages for the agent.
- * Called when clearing the steer/follow-up queue.
+ * Delete the agent's pending user-sent messages when clearing the steer/follow-up queue.
+ * Inbox and monitor deliveries stay queued. `unclaimedOnly` leaves rows a live session
+ * holds, which the worker cancels through its SDK queue instead.
  * @returns The number of messages deleted.
  */
-export async function deletePendingMessages(agentId: string): Promise<number> {
+export async function deletePendingMessages(
+  agentId: string,
+  options: { unclaimedOnly?: boolean } = {}
+): Promise<number> {
   return db.transaction(async (tx) => {
     await acquireAgentQueueLock(tx, agentId)
     const pending = await tx
       .select({ id: messages.id })
       .from(messages)
-      .where(and(eq(messages.agentId, agentId), eq(messages.role, 'human'), eq(messages.pending, true)))
+      .where(
+        and(
+          eq(messages.agentId, agentId),
+          eq(messages.role, 'human'),
+          eq(messages.pending, true),
+          userSentMessage,
+          options.unclaimedOnly ? isNull(messages.injectedAt) : undefined
+        )
+      )
       .for('update')
     if (!pending.length) return 0
     const ids = pending.map((message) => message.id)

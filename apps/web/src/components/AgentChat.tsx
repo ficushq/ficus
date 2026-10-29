@@ -431,6 +431,7 @@ export function AgentChat({
       // for now. Re-enable by passing onAbortTool={conv.abortTool}.
       onAbortTool={undefined}
       onCancelQueue={inputDisabled ? undefined : conv.cancelAllPending}
+      onSendQueuedNow={inputDisabled ? undefined : conv.sendQueuedNow}
       onUpdatePendingMessage={inputDisabled ? undefined : conv.updatePendingMessage}
       onLoadOlder={conv.fetchOlder}
       hasOlderMessages={conv.hasOlder}

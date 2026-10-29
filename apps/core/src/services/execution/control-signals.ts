@@ -1,4 +1,5 @@
 import {
+  cancelClaimedUserMessages,
   updateClaimedMessage,
   type PendingMessageOperation,
   type PendingMessageResult,
@@ -95,11 +96,18 @@ export async function handleControlSignal(payload: {
       let cleared = 0
       let deleted = 0
       try {
-        // A concurrent per-message edit refuses this operation before any DB deletion.
-        const result = active.session.pi.clearQueue()
-        cleared = result.steering.length + result.followUp.length
+        // Only user-sent messages are cleared: cancel the ones this session holds one at a
+        // time (each waits for any concurrent per-message edit), so inbox and monitor
+        // deliveries already in the SDK queue stay there. Then delete unclaimed rows.
+        cleared = await cancelClaimedUserMessages({
+          agentId: payload.agentId,
+          executionId: active.executionId,
+          session: active.session,
+          stillOwned: () => getSession(payload.agentId) === active,
+          expiresAt: payload.expiresAt ?? Date.now() + TRANSITION_TIMEOUT_MS,
+        })
         const agent = await Agent.find(payload.agentId)
-        deleted = (await agent?.deletePendingMessages()) ?? 0
+        deleted = cleared + ((await agent?.deletePendingMessages({ unclaimedOnly: true })) ?? 0)
         log.info(
           `clear-queue: agentId=${payload.agentId} owned=${owned} cleared ${cleared} from SDK queue, deleted ${deleted} from DB`
         )

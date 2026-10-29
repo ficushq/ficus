@@ -1325,8 +1325,8 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
    * Called when clearing the steer/follow-up queue.
    * @returns The number of messages deleted.
    */
-  async deletePendingMessages(): Promise<number> {
-    return pendingDelivery.deletePendingMessages(this.id)
+  async deletePendingMessages(options?: { unclaimedOnly?: boolean }): Promise<number> {
+    return pendingDelivery.deletePendingMessages(this.id, options)
   }
 
   // ---------------------------------------------------------------------------
@@ -1513,6 +1513,11 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
    */
   async clearQueue(options: { ackTimeoutMs?: number } = {}): Promise<lifecycle.ClearQueueResult> {
     return lifecycle.clearQueue(this, options)
+  }
+
+  /** Stop the running turn and deliver every queued interrupt in a new one. */
+  async sendQueuedNow(options?: { settleTimeoutMs?: number; pollMs?: number }): Promise<lifecycle.SendQueuedNowResult> {
+    return lifecycle.sendQueuedNow(this, options)
   }
 
   /**
