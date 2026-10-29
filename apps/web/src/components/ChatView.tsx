@@ -488,8 +488,13 @@ function PendingMessageRow({
           showRaw={false}
           agentId={agentId}
           deliveryControl={
-            // Inbox deliveries may change mode but are never canceled; monitor deliveries stay as sent.
-            queued && auto === 'inbox' && deliveryMode && onSwitchMode
+            // Inbox deliveries may change mode but are never canceled; question answers are always
+            // interrupts, and monitor deliveries stay as sent.
+            queued &&
+            auto === 'inbox' &&
+            deliveryMode &&
+            onSwitchMode &&
+            !effectiveMetadata?.inboxMessageSummaries?.some((summary) => summary.questionAnswer != null)
               ? { onChange: (mode) => void run(() => onSwitchMode(mode)), disabled: updating }
               : undefined
           }

@@ -3557,6 +3557,38 @@ describe('ChatView queued message controls', () => {
     expect(window.document.querySelectorAll('button[aria-label="Cancel queued message"]')).toHaveLength(0)
   })
 
+  test('a queued delivery carrying a question answer keeps a plain mode pill', async () => {
+    const { window } = await renderChatView(
+      <ChatView
+        items={[
+          queued({
+            id: 'answer-1',
+            messageId: 'answer-1',
+            content: 'Answer',
+            deliveryMode: 'steer',
+            metadata: {
+              source: 'inbox',
+              inboxMessageSummaries: [
+                {
+                  id: 'i1',
+                  senderType: 'user',
+                  senderId: 'u1',
+                  subject: 'Answer to your question',
+                  preview: 'Yes',
+                  questionAnswer: {} as never,
+                },
+              ],
+            },
+          }),
+        ]}
+        onSend={() => {}}
+        onUpdatePendingMessage={mock(async () => {})}
+      />
+    )
+    expect(deliveryTrigger(window)).toBeNull()
+    expect(cancelButton(window)).toBeNull()
+  })
+
   test('a queued inbox delivery can switch mode from its pill but cannot be canceled', async () => {
     const onUpdatePendingMessage = mock(async () => {})
     const { dom, window } = await renderChatView(

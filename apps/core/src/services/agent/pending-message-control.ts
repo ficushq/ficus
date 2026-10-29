@@ -21,12 +21,14 @@ type Row = typeof messages.$inferSelect
  * the first human row bound to the execution instead.
  */
 /** Inbox deliveries already claimed their inbox items, so deleting the row would lose them: they may
- * only change delivery mode. Monitor deliveries are never edited. */
+ * only change delivery mode. Question answers are always interrupts (their delivery recovery binds the
+ * row only while it is still `steer`), and monitor deliveries are never edited. */
 export function allowsPendingOperation(
   metadata: MessageMetadata | null | undefined,
   operation: PendingMessageOperation
 ): boolean {
   if (metadata?.source === 'monitor') return false
+  if (metadata?.inboxMessageSummaries?.some((summary) => summary.questionAnswer != null)) return false
   if (metadata?.source === 'inbox') return operation !== 'cancel'
   return true
 }
