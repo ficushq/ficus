@@ -344,7 +344,7 @@ export function WorkStreamDetailModal({
               <p className="mt-1.5 text-xs text-muted">
                 {workStreamWaitActor(manualWait) === 'manager'
                   ? 'The squad manager handles this recovery; no action is needed from you.'
-                  : 'The stream’s owner agent clears this wait; no action is needed from you.'}
+                  : "The stream's owner agent clears this wait; no action is needed from you."}
               </p>
             )}
 

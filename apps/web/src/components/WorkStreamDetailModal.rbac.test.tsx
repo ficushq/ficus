@@ -215,7 +215,8 @@ describe('WorkStreamDetailModal manual wait actors', () => {
       [undefined, 'Needs you', null],
       ['human', 'Needs you', null],
       ['owner', 'Waiting on Owner', "The stream's owner agent clears this wait"],
-      ['manager', 'Needs you', null],
+      ['manager', 'Waiting on Manager', 'The squad manager handles this recovery'],
+      ['robot' as never, 'Needs you', null],
     ] as const
     for (const [actor, label, note] of expectations) {
       const stream = reviewWorkStream()

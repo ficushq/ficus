@@ -293,8 +293,8 @@ export async function lockFlowInboxDelivery(store: DbTx, agentId: string, messag
         throw new FlowWaitSupersededError()
     }
   }
-  if (messageIds.length) {
-    const messages = await store.select().from(inbox).where(inArray(inbox.id, messageIds))
+  if (validIds.length) {
+    const messages = await store.select().from(inbox).where(inArray(inbox.id, validIds))
     for (const message of messages) {
       if (
         message.metadata?.source === 'recovery-retry' ||
