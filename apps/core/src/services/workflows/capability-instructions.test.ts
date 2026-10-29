@@ -90,7 +90,6 @@ test('human-directed outcomes identify the producer-owned brief; agent-only outc
   definition.steps.push({
     id: 'gate',
     kind: 'human-approval',
-    approver: 'reviewers',
     instructions: 'Review the design.',
     output: 'Decision.',
     outcomes: { approved: { next: 'finish' } },

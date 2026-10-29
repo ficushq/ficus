@@ -8,7 +8,6 @@ test('review context keeps prior empty-note decisions, multi-hop return reasons 
   definition.steps.push({
     id: 'gate',
     kind: 'human-approval',
-    approver: 'reviewers',
     instructions: 'Review design.',
     output: 'Decision.',
     approver: 'reviewers',
