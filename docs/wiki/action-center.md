@@ -161,15 +161,47 @@ The web Feed separates pending actions from informational updates:
   does not read the conversation or its messages. These pointers can remain after a
   refresh until their domain unread state changes; they are not labeled new completions.
 
-A completion is exposed when at least half its row intersects the viewport in the
+Automatic acknowledgement requires exposure: at least half the completion row intersects the viewport in the
 visible browser tab and its section is open. Hidden tabs, collapsed sections,
 filtered squads, offscreen rows, and unfetched pages are not acknowledged. Returning
 from a hidden tab requires a fresh intersection observation. If observation is not
 supported, the Feed conservatively leaves updates unseen. Failed persistence keeps
 **New** visible and offers Retry; it never claims that seen state was saved. A 409
 completion-revision conflict instead asks to refresh the Feed and stops retrying the
-stale revision. When more pages remain, the header explicitly counts completions
-**shown**, not the total historical backlog.
+stale revision. The row drops **New** and displays the server's refresh message without
+claiming a persisted receipt; that terminal state survives section filtering within
+the visit. When more pages remain, the header uses the first page's server
+`totalCount`, not the number of loaded rows.
+
+**Dismiss** is an explicit acknowledgement, separate from exposure. It snapshots all
+completion rows currently loaded in the displayed list (including every fetched page,
+offscreen rows and a collapsed section), saves their exact-revision receipts, then
+hides Updates for the visit. Unfetched pages, filtered-out rows, Action Center items,
+and Assistant unread pointers are untouched. Assistant pointers are hidden with the
+section, not marked read. Writes are sequential and share in-flight receipts with
+automatic exposure; switching accounts cancels the remaining queue. A failure keeps
+the section visible with its error, and retry skips successful or terminal-conflict
+revisions rather than falsely claiming the whole dismissal succeeded.
+
+The hidden section reopens when a completion newer than its newest loaded completion
+arrives, including a new completion revision of a reopened stream. This frontier is
+only visit-local presentation state, never a server seen watermark: older or equal-time
+unfetched rows pulled into a refetch do not reopen it or get acknowledged. A newer
+completion arriving while Dismiss is saving is not part of that snapshot and keeps
+the section visible. A fresh visit still fetches all remaining unseen completions.
+
+The optional **New** indicator for Action Center actions is deferred. Those actions
+retain their existing pending counts and response semantics; this completion-receipt
+pipeline must not be reused to resolve actions or consume Assistant unread state.
+
+Focused verification lives in `FeedVisitSummary.test.tsx`, `FeedPage.test.tsx`, and
+Core's `routes/feed-updates.test.ts`. For a DB-free real-browser check, run
+`bun scripts/check-feed-updates.ts` from `apps/web` (optionally set `CHROMIUM_PATH`
+and `SCREENSHOT_DIR`). It renders the real Feed/Updates, mobile dock and fixed
+screenshot controls with synthetic data at 320, 390 and 768 pixels in both themes.
+It checks two loaded pages, dismissal, unfetched refresh, live arrivals, layout
+separation, timestamps and browser errors. Action content and active work rows are
+fixtures; it is not a full authenticated end-to-end or native-app test.
 
 ### Completion exposure API
 
