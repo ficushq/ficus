@@ -279,13 +279,23 @@ for what gates a merge.
 
 ### Native capacity admission in Ficus runtimes
 
-In a Ficus agent runtime, the root/Core preloads, Core package runner, and
-`test:db:up` verify an **existing** caller-owned `shared-box-intensive` claim
-before any database probe, stale-project sweep, Compose startup, or schema
-mutation. Even a focused web/CLI test invoked with root `bun test` loads Core's
-database preload. Claim with `ficus slot claim shared-box-intensive` first and
-inspect its outcome: `queued` is not ownership. A disabled pool is explicitly
-not enforced; no claim or queue entry is created by this check.
+The root/Core preload only installs the test environment and mocks. Focused
+web, CLI, and pure Core tests need **no database or capacity claim** merely
+because that preload runs. Importing Core's `db/index` requests database
+readiness; raw-client suites explicitly import `test-utils/require-test-db`
+before reading a DSN or checking optional pooler availability. Both paths
+share one initialization promise, so mixed files and concurrent imports cannot
+repeat schema setup. Importing the DB entrypoint counts as requesting readiness,
+even if that module's caller subsequently does not issue a query.
+
+In a Ficus agent runtime, that lazy initializer and `test:db:up` verify an
+**existing** caller-owned `shared-box-intensive` claim before any database
+probe, stale-project sweep, Compose startup, or schema mutation. Full Core
+and subprocess-lane runners still check capacity up front; other heavy,
+mutation and native harness guidance is unchanged. For DB-backed work, claim
+with `ficus slot claim shared-box-intensive` first and inspect its outcome:
+`queued` is not ownership. A disabled pool is explicitly not enforced; no
+claim or queue entry is created by this check.
 
 The guard reads `ficus --json slot list shared-box-intensive` for the current
 squad using the injected agent identity. The API derives `callerClaim` from the
@@ -307,7 +317,9 @@ edits repository tooling, nor a monitor that stops running tests on expiry.
 The guard's synthetic regressions need no DB or capacity claim:
 
 ```bash
-cd packages/shared && bun test src/testDbCapacity.test.ts
+(cd packages/shared && bun test src/testDbCapacity.test.ts)
+# Actual production preloads with refusing spies:
+(cd .github && bun test lazy-test-db.test.ts)
 ```
 
 ## PostgreSQL (Docker)
@@ -333,10 +345,11 @@ for these ownership-aware commands, not raw detached Compose shortcuts.
 foreground session first. Concurrent independent test runs need separate
 worktrees; they must not reset each other's data.
 
-Core's package runner owns one database lifetime across its sequential child
-batches (preserving schema reuse). Direct `bun test`, including root-invoked
-diagnostics, owns its local DB through the Core preload. Ownership is registered
-before startup; normal exit, failed setup/schema/tests, INT and TERM all run
+Core's full-suite package runner owns one database lifetime across its sequential
+child batches (preserving schema reuse). Focused runs and direct `bun test`
+diagnostics defer ownership to each DB-using child; DB-free children never
+probe or start a database. Focused isolated files therefore each own their
+lifetime rather than sharing a container. Ownership is registered before startup; normal exit, failed setup/schema/tests, INT and TERM all run
 project-scoped `docker compose down --volumes --remove-orphans`. The standalone
 persistent-restart fixture and the shared cross-project readiness fixtures
 own their separate projects and exit hooks; setup

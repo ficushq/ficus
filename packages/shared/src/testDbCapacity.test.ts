@@ -26,7 +26,10 @@ function fixture(response: unknown = pool, cliExit = 0) {
     `#!/bin/sh\n[ "$FICUS_AGENT_CONTEXT" = 1 ] || exit 6\necho "ficus $*" >> "$CAPACITY_FIXTURE_LOG"\ncat "$CAPACITY_FIXTURE_RESPONSE"\necho 'private-auth-diagnostic' >&2\nexit ${cliExit}\n`,
     { mode: 0o755 }
   )
-  writeFileSync(join(dir, 'probe.test.ts'), "import {test} from 'bun:test'; test('probe', () => {});\n")
+  writeFileSync(
+    join(dir, 'probe.test.ts'),
+    `import {test} from 'bun:test'; import ${JSON.stringify(join(root, 'apps/core/src/db/index.ts'))}; test('probe', () => {});\n`
+  )
   const env = {
     ...process.env,
     PATH: `${bin}:${process.env.PATH}`,
@@ -67,7 +70,7 @@ for (const entry of ['root preload', 'Core preload', 'direct startup', 'Core run
           ? ['test', join(f.dir, 'probe.test.ts')]
           : entry === 'direct startup'
             ? ['run', 'apps/core/src/test-db.ts', 'up']
-            : ['run', 'scripts/run-core-tests.ts', 'apps/core/src/services/sandbox/client/http-client.test.ts']
+            : ['run', 'scripts/run-core-tests.ts', 'apps/core/src/db/index.test.ts']
       const result = f.run(args, { CI: 'true' }, entry === 'Core preload' ? join(root, 'apps/core') : root)
       expect(result.code).not.toBe(0)
       expect(result.output).toContain('[test-db capacity: unavailable]')
