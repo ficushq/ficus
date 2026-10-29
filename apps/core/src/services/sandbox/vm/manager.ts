@@ -319,6 +319,7 @@ export interface VmSandboxManagerDeps {
   recordRuntimeAdoptionFailure(box: MachineBox, desiredSpecHash: string): Promise<boolean>
   hasActiveExecution(sandboxId: string): Promise<boolean>
   hasActiveDeployment(sandboxId: string): Promise<boolean>
+  reserveHostCapacity(machineId: string, sandboxId: string): Promise<void>
   ensureBox(opts: EnsureBoxOpts): Promise<{
     machine: Machine
     box: MachineBox
@@ -529,11 +530,8 @@ function productionDeps(): VmSandboxManagerDeps {
     hasActiveExecution: sandboxHasActiveExecution,
     hasActiveDeployment: async (sandboxId) =>
       (await import('../../deploy/local-deployment-service')).hasActiveLocalDeployments(sandboxId),
-    ensureBox: async (opts) => {
-      if (!opts.machineId) throw new Error('Physical host admission requires resolved placement')
-      await reservePhysicalHostCapacity(opts.machineId, opts.sandboxId)
-      return ensureBoxReal(opts)
-    },
+    reserveHostCapacity: reservePhysicalHostCapacity,
+    ensureBox: ensureBoxReal,
     restartBox: (sandboxId) => restartBoxReal(sandboxId),
     stopBox: (sandboxId) => stopBoxReal(sandboxId),
     removeBox: (sandboxId, opts) => removeBoxReal(sandboxId, opts),
@@ -762,7 +760,11 @@ export class VmSandboxManager implements ISandboxManager {
     return this.inflight.run(sandboxId, () => this._ensureSandbox(sandboxId, opts))
   }
 
-  private async _ensureSandbox(sandboxId: string, opts: SandboxOptions): Promise<string> {
+  private async _ensureSandbox(
+    sandboxId: string,
+    opts: SandboxOptions,
+    recreate?: { lifecycleGeneration?: string | null }
+  ): Promise<string> {
     const releaseConnection = await this.acquireConnection(sandboxId)
     let connectionReleased = false
     try {
@@ -1151,7 +1153,14 @@ export class VmSandboxManager implements ISandboxManager {
       }
 
       let runtimeRepairNeeded = false
+      const admittedHosts = new Set<string>()
+      const reserveStartup = async (machineId: string) => {
+        if (admittedHosts.has(machineId)) return
+        await this.deps.reserveHostCapacity(machineId, sandboxId)
+        admittedHosts.add(machineId)
+      }
       const ensurePhysical = async (machine: Machine, adoptIdleRuntime: boolean) => {
+        await reserveStartup(machine.id)
         return this.deps.ensureBox({
           assertOwned: assertSetupOwned,
           sandboxId,
@@ -1262,6 +1271,7 @@ export class VmSandboxManager implements ISandboxManager {
                 (await this.runtimeAdoptionAllowed(machine, readyBox))))
           )
           if (
+            !recreate &&
             readyBox?.status === 'ready' &&
             readyBox.authToken &&
             readyBox.machineId === machine.id &&
@@ -1309,6 +1319,11 @@ export class VmSandboxManager implements ISandboxManager {
             async () => {
               assertSetupOwned()
               const observed = await this.deps.getMachineBox(sandboxId)
+              if (
+                recreate?.lifecycleGeneration !== undefined &&
+                lifecycleGenerationFromVmSpecHash(observed?.reconcilableSpecHash) !== recreate.lifecycleGeneration
+              )
+                return this.deferRuntimeAdoption(sandboxId, opts, '', assertSetupOwned)
               const sameHostDrift =
                 selectAdoption &&
                 observed &&
@@ -1341,6 +1356,15 @@ export class VmSandboxManager implements ISandboxManager {
                 // A normal resume need not have spec drift. Repair a preempt-stop
                 // through the same authoritative readbacks, not a display status
                 // or a lifecycle sweep racing the execution retry budget.
+                if (recreate) {
+                  // Reserve while the old box is still available. Keep the stop
+                  // and rebuild in this same owned generation and setup lease.
+                  await reserveStartup(machine.id)
+                  assertSetupOwned()
+                  const stop = await this.stopSandboxUnderLease(sandboxId, recreate)
+                  if (stop.kind === 'unverified') throw stopVerificationError(sandboxId, stop.machineStatus)
+                  if (stop.kind === 'generation-mismatch') return deferred
+                }
                 const current = await this.deps.getMachineBox(sandboxId)
                 if (current?.status === 'stop_unverified') {
                   const stop = await this.deps.stopBox(sandboxId)
@@ -1408,15 +1432,19 @@ export class VmSandboxManager implements ISandboxManager {
                 result = admission.acquired ? admission.value : deferred
               } else {
                 const ordinaryRestart =
-                  observed?.status === 'ready' &&
-                  observed.machineId === machine.id &&
-                  (!observed.reconcilableSpecHash ||
-                    withoutBun(observed.reconcilableSpecHash) !== withoutBun(specHash) ||
-                    Boolean(
-                      observed.provisionedSpecHash &&
-                      classifyBoxConfigurationMarkerDrift(observed, computeProvisioningMarker(specHash, env), env) ===
-                        'critical'
-                    ))
+                  Boolean(recreate) ||
+                  (observed?.status === 'ready' &&
+                    observed.machineId === machine.id &&
+                    (!observed.reconcilableSpecHash ||
+                      withoutBun(observed.reconcilableSpecHash) !== withoutBun(specHash) ||
+                      Boolean(
+                        observed.provisionedSpecHash &&
+                        classifyBoxConfigurationMarkerDrift(observed, computeProvisioningMarker(specHash, env), env) ===
+                          'critical'
+                      )))
+                // Admission precedes even draining commands: a busy startup
+                // queue must not interrupt work on a still-healthy old box.
+                if (ordinaryRestart) await reserveStartup(machine.id)
                 result = ordinaryRestart ? await withBoxCommandDrain(sandboxId, provision) : await provision()
               }
               return typeof result === 'string' ? result : deferRuntime()
@@ -1603,42 +1631,49 @@ export class VmSandboxManager implements ISandboxManager {
   ) {
     const release = await this.acquireConnection(sandboxId)
     try {
-      return await this.deps.withSetupLease(sandboxId, async () => {
-        const state = this.sandboxes.get(sandboxId)
-        const current = await this.deps.getMachineBox(sandboxId)
-        if (!current && (options.lifecycleGeneration !== undefined || !state)) {
-          if (state) {
-            state.client.close()
-            this.sandboxes.delete(sandboxId)
-          }
-          this.dropAttachedClient(sandboxId)
-          this.healthObservations.delete(sandboxId)
-          return { kind: 'not-found' } as const
-        }
-        if (options.lifecycleGeneration !== undefined) {
-          if (!current) return { kind: 'not-found' } as const
-          const actualLifecycleGeneration = lifecycleGenerationFromVmSpecHash(current.reconcilableSpecHash)
-          if (actualLifecycleGeneration !== options.lifecycleGeneration) {
-            log.warn(
-              `Refusing stale sandbox stop for ${sandboxId}: expected generation ${options.lifecycleGeneration ?? 'legacy'}, actual ${actualLifecycleGeneration ?? 'legacy'}`
-            )
-            return { kind: 'generation-mismatch', actualLifecycleGeneration } as const
-          }
-        }
-        await beforeStop?.(current)
-        if (state) {
-          state.client.close()
-          this.sandboxes.delete(sandboxId)
-        }
-        this.dropAttachedClient(sandboxId)
-        this.healthObservations.delete(sandboxId)
-        const stop = await this.deps.stopBox(sandboxId)
-        if (stop.kind === 'unverified') return stop
-        return { kind: stop.kind === 'not-found' ? 'not-found' : 'stopped' } as const
-      })
+      return await this.deps.withSetupLease(sandboxId, () => this.stopSandboxUnderLease(sandboxId, options, beforeStop))
     } finally {
       release()
     }
+  }
+
+  /** Caller owns both the connection gate and distributed setup lease. */
+  private async stopSandboxUnderLease(
+    sandboxId: string,
+    options: { lifecycleGeneration?: string | null },
+    beforeStop?: (box: MachineBox | null) => Promise<void>
+  ) {
+    const state = this.sandboxes.get(sandboxId)
+    const current = await this.deps.getMachineBox(sandboxId)
+    if (!current && (options.lifecycleGeneration !== undefined || !state)) {
+      if (state) {
+        state.client.close()
+        this.sandboxes.delete(sandboxId)
+      }
+      this.dropAttachedClient(sandboxId)
+      this.healthObservations.delete(sandboxId)
+      return { kind: 'not-found' } as const
+    }
+    if (options.lifecycleGeneration !== undefined) {
+      if (!current) return { kind: 'not-found' } as const
+      const actualLifecycleGeneration = lifecycleGenerationFromVmSpecHash(current.reconcilableSpecHash)
+      if (actualLifecycleGeneration !== options.lifecycleGeneration) {
+        log.warn(
+          `Refusing stale sandbox stop for ${sandboxId}: expected generation ${options.lifecycleGeneration ?? 'legacy'}, actual ${actualLifecycleGeneration ?? 'legacy'}`
+        )
+        return { kind: 'generation-mismatch', actualLifecycleGeneration } as const
+      }
+    }
+    await beforeStop?.(current)
+    if (state) {
+      state.client.close()
+      this.sandboxes.delete(sandboxId)
+    }
+    this.dropAttachedClient(sandboxId)
+    this.healthObservations.delete(sandboxId)
+    const stop = await this.deps.stopBox(sandboxId)
+    if (stop.kind === 'unverified') return stop
+    return { kind: stop.kind === 'not-found' ? 'not-found' : 'stopped' } as const
   }
 
   /**
@@ -2025,20 +2060,15 @@ export class VmSandboxManager implements ISandboxManager {
     const box = await this.deps.getMachineBox(sandboxId)
     if (box && needsIdleBunAdoption(box, this.canonicalSpecHash(sandboxId, opts)))
       return this.ensureSandbox(sandboxId, opts)
-    return trackSandboxSetupWork(this, sandboxId, 'spec_reconcile', async () => {
-      return withBoxCommandDrain(sandboxId, async () => {
-        log.info(`Recreating box to apply spec change: ${sandboxId}`)
-        // Ordinary bundle/role/script/mixed drift retains its existing path.
-        // Only Bun-only adoption waits for natural exit and the host disk pin.
-        const stop = await this.stopSandboxWithGuard(
+    return trackSandboxSetupWork(this, sandboxId, 'spec_reconcile', () =>
+      this.inflight.run(sandboxId, () =>
+        this._ensureSandbox(
           sandboxId,
+          opts,
           box ? { lifecycleGeneration: lifecycleGenerationFromVmSpecHash(box.reconcilableSpecHash) } : {}
         )
-        if (stop.kind === 'unverified') throw stopVerificationError(sandboxId, stop.machineStatus)
-        if (stop.kind === 'generation-mismatch') return this.deferRuntimeAdoption(sandboxId, opts)
-        return this.ensureSandbox(sandboxId, opts)
-      })
-    })
+      )
+    )
   }
 
   // --- Query -------------------------------------------------------------
