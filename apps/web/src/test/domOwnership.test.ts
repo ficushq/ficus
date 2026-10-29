@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import {
@@ -160,7 +160,8 @@ describe('DOM ownership lease', () => {
   })
 
   test('end to end: the preload fails the leaking test, cleans up its DOM owner, and later DOM tests still run', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'dom-lease-'))
+    // Bun reports canonical source paths (macOS /var aliases /private/var).
+    const directory = await realpath(await mkdtemp(join(tmpdir(), 'dom-lease-')))
     const harness = resolve(import.meta.dir, 'domHarness.ts')
     try {
       const fixture = join(directory, 'leak.test.ts')
