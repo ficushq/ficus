@@ -4857,7 +4857,7 @@ test.each([false, true])(
       expect(await fresh.ensureSandbox(id, options)).toBe(id)
       expect(await fresh.recreateSandbox(id, options)).toBe(id)
       expect(fresh.getClientForSandbox(id)).not.toBeNull()
-      expect((await h.deps.getMachineBox(id))!.bunRuntimeFailureSpecHash).toBe(manager.computeSpecHash(options))
+      expect((await h.deps.getMachineBox?.(id))?.bunRuntimeFailureSpecHash).toBe(manager.computeSpecHash(options))
       expect(failures).toBe(1)
       expect(h.ensureCalls).toHaveLength(1)
       expect(h.stopCalls).toHaveLength(0)
@@ -5033,7 +5033,7 @@ describe('ordinary reconciliation while Bun adoption is unavailable', () => {
         h.setSetupState({
           ...setup,
           readiness: 'ready_degraded',
-          reasons: ['devbox_not_ready'],
+          reasons: ['devbox_unavailable'],
           nextAttemptAt: new Date(0),
         })
       }
