@@ -1,3 +1,4 @@
+import { bunVersionFromBootstrap } from './bun-runtime-adoption'
 import { createHash } from 'crypto'
 import type { MachineCapabilities } from '../../db/schema'
 import { effectiveMachineScripts, type PrebuiltReadOpts } from './machine-prebuilt'
@@ -312,6 +313,9 @@ export async function bootstrapMachine(machine: Machine, deps: BootstrapDeps = {
       )
     }
     const capabilities = parseCapabilities(result.stdout)
+    capabilities.appliedBootstrapVersion = bootstrapVersion
+    if (capabilities.bunConvergence === 'current')
+      capabilities.bunVersion = bunVersionFromBootstrap(effectiveBootstrapScript)
 
     // 3. Push box-provision.sh into /opt/ficus/bin (root-owned, created by
     //    bootstrap.sh) for slice 2 to invoke per box. It is intentionally NOT

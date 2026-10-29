@@ -5,6 +5,7 @@
  * runs as (lib/infra/operator-identity); the journal lives under Core's HOME:
  * FICUS_BR_BOX=all bash run-core-operator.sh box-reprovision
  */
+import type { Machine } from './services/machines/queries'
 import { runBoxReprovision, ReprovisionError } from './services/machines/box-reprovision'
 import {
   assertLocalReprovisionMaintenance,
@@ -17,6 +18,17 @@ export function parseBoxReprovisionTarget(env: Record<string, string | undefined
   const value = env.FICUS_BR_BOX ?? ''
   if (!/^[A-Za-z0-9._:-]+$/.test(value)) throw new ReprovisionError('invalid-FICUS_BR_BOX')
   return value
+}
+/** A safely deferred Bun swap is bootstrap retry intent, not layout drift.
+ * Never skip the independent on-host layout/migration-journal preflight. */
+export async function requiresBoxReprovisionMigration(
+  machine: Machine,
+  desired: string,
+  probeLayout: (machine: Machine) => Promise<boolean>
+): Promise<boolean> {
+  const scriptsApplied =
+    machine.capabilities?.bunConvergence === 'deferred' && machine.capabilities.appliedBootstrapVersion === desired
+  return (machine.bootstrapVersion !== desired && !scriptsApplied) || (await probeLayout(machine))
 }
 async function main(): Promise<number> {
   const { operatorIdentityRefusal } = await import('./lib/infra/operator-identity')
@@ -54,9 +66,10 @@ async function main(): Promise<number> {
       },
       listBoxes: queries.listAllMachineBoxes,
       getMachine: queries.getMachine,
-      requiresMigration: async (machine) =>
-        machine.bootstrapVersion !== currentBootstrapVersion() ||
-        (await requiresMachineLayoutMigration(machine, runner)),
+      requiresMigration: (machine) =>
+        requiresBoxReprovisionMigration(machine, currentBootstrapVersion(), (host) =>
+          requiresMachineLayoutMigration(host, runner)
+        ),
       ...createRemoteReprovisionRuntime(runner),
       ensureArtifacts: ensureMachineArtifacts,
       install: (opts) => installBoxOnMachine(opts, { runner }),

@@ -252,7 +252,6 @@ describe('production VM recovery wiring', () => {
 
     const initialLocalPort = await tunnels.addForward(machine, 50100)
     const manager = new VmSandboxManager({
-      recoverRuntimeAdoption: async () => true, // No host journal in this owned tunnel fixture.
       resolveMachine: async () => machine,
       resolveBoxApiUrl: (m: any) =>
         resolveBoxApiUrl(m, {

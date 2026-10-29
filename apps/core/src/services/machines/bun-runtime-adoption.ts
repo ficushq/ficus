@@ -82,7 +82,8 @@ export async function probeBoxBunAdoption(
   }
 }
 
-type RuntimeBox = Pick<MachineBox, 'sandboxId' | 'unixUser'> & Partial<Pick<MachineBox, 'reconcilableSpecHash'>>
+type RuntimeBox = Pick<MachineBox, 'sandboxId' | 'unixUser'> &
+  Partial<Pick<MachineBox, 'reconcilableSpecHash' | 'bunRuntimeFailureSpecHash' | 'bunRuntimeAdoptingSpecHash'>>
 
 function rowIdentity(machine: Machine, box: RuntimeBox, spec = box.reconcilableSpecHash): string {
   return createHash('sha256')
@@ -116,7 +117,16 @@ export async function recoverBoxBunRuntimeClaim(
   assertOwned?: () => void
 ): Promise<boolean> {
   assertOwned?.()
-  const identity = rowIdentity(machine, box)
+  // A verified healthy mismatch can publish an unknown/different Bun suffix.
+  // Its exact bounded target plus unchanged base/generation identifies the
+  // journal's desired row. This restores only the listener, never proves idle.
+  const target = box.bunRuntimeAdoptingSpecHash
+  const failedTarget =
+    target &&
+    box.bunRuntimeFailureSpecHash === target &&
+    box.reconcilableSpecHash &&
+    box.reconcilableSpecHash.replace(/:bun:\d+_\d+_\d+$/, '') === target.replace(/:bun:\d+_\d+_\d+$/, '')
+  const identity = rowIdentity(machine, box, failedTarget ? target : box.reconcilableSpecHash)
   const ctl = boxUnitControl(box)
   const journal = claimJournal(box)
   const inspect = await runner

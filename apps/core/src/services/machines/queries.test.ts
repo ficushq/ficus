@@ -1851,8 +1851,8 @@ describe('stampBoxSyncedHash / clearBoxSyncedHashes', () => {
   })
 })
 
-describe('durable Bun adoption terminal failure', () => {
-  it('records one exact desired target without stamping ready, preserves it through status upserts and fences stale physical/generation owners', async () => {
+describe('durable Bun adoption failure independent of availability', () => {
+  it('records one exact desired target without changing availability or recovery intent, preserves it through status upserts and fences stale physical/generation owners', async () => {
     expect(typeof machineQueries.recordBoxBunRuntimeFailure).toBe('function')
     const machine = await insertMachine(readyMachineValues('bun-terminal'))
     const bound = await bindMachineBox({
@@ -1863,7 +1863,7 @@ describe('durable Bun adoption terminal failure', () => {
     const desired = 'lifecycle:original:base:bun:1_4_2'
     const source = await upsertMachineBox({
       ...bound,
-      status: 'ensuring',
+      status: 'ready',
       reconcilableSpecHash: 'lifecycle:original:base:bun:1_2_23',
       bunRuntimeAdoptingSpecHash: desired,
     })
@@ -1872,15 +1872,15 @@ describe('durable Bun adoption terminal failure', () => {
       machineId: source.machineId,
       unixUser: source.unixUser,
       port: source.port,
-      status: 'ensuring',
+      status: 'ready',
     })
     expect((await getMachineBox(bound.sandboxId))!.bunRuntimeAdoptingSpecHash).toBe(desired)
     expect(await machineQueries.recordBoxBunRuntimeFailure(source, desired)).toBe(true)
     const failed = await getMachineBox(bound.sandboxId)
     expect(failed).toMatchObject({
-      status: 'failed',
+      status: 'ready',
       bunRuntimeFailureSpecHash: desired,
-      bunRuntimeAdoptingSpecHash: null,
+      bunRuntimeAdoptingSpecHash: desired,
       reconcilableSpecHash: source.reconcilableSpecHash,
     })
     await upsertMachineBox({
@@ -1900,5 +1900,74 @@ describe('durable Bun adoption terminal failure', () => {
     const current = (await getMachineBox(bound.sandboxId))!
     expect(await machineQueries.recordBoxBunRuntimeFailure({ ...current, port: current.port + 1 }, desired)).toBe(false)
     expect((await getMachineBox(bound.sandboxId))!.bunRuntimeFailureSpecHash).toBeNull()
+  })
+})
+
+describe('recovered ready Bun intent fencing', () => {
+  it('clears only the recovered ready physical identity and intent, preserving bounded failure', async () => {
+    expect(typeof machineQueries.clearRecoveredReadyBunIntent).toBe('function')
+    const machine = await insertMachine(readyMachineValues('bun-recovered'))
+    const bound = await bindMachineBox({
+      sandboxId: `${prefix}-bun-recovered`,
+      machineId: machine.id,
+      unixUser: 'box_recovered',
+    })
+    const desired = 'generation:base:bun:1_4_2'
+    const ready = await upsertMachineBox({
+      ...bound,
+      status: 'ready',
+      bunRuntimeAdoptingSpecHash: desired,
+      bunRuntimeFailureSpecHash: desired,
+    })
+    expect(await machineQueries.clearRecoveredReadyBunIntent({ ...ready, port: ready.port + 1 })).toBe(false)
+    expect(
+      await machineQueries.clearRecoveredReadyBunIntent({ ...ready, bunRuntimeAdoptingSpecHash: 'different-target' })
+    ).toBe(false)
+    expect(await machineQueries.clearRecoveredReadyBunIntent(ready)).toBe(true)
+    expect(await getMachineBox(ready.sandboxId)).toMatchObject({
+      status: 'ready',
+      bunRuntimeAdoptingSpecHash: null,
+      bunRuntimeFailureSpecHash: desired,
+    })
+    const partial = await upsertMachineBox({ ...ready, status: 'ensuring' })
+    expect(await machineQueries.clearRecoveredReadyBunIntent(partial)).toBe(false)
+    expect((await getMachineBox(ready.sandboxId))!.bunRuntimeAdoptingSpecHash).toBe(desired)
+  })
+})
+
+describe('verified healthy Bun mismatch publication is atomic', () => {
+  it('cannot leave a failed bound on an unfinished row when the owner dies before normal ready publication', async () => {
+    const machine = await insertMachine(readyMachineValues('bun-healthy-mismatch'))
+    const bound = await bindMachineBox({
+      sandboxId: `${prefix}-bun-healthy-mismatch`,
+      machineId: machine.id,
+      unixUser: 'box_healthy_mismatch',
+    })
+    const desired = 'lifecycle:original:base:bun:1_4_2'
+    const source = await upsertMachineBox({
+      ...bound,
+      status: 'ensuring',
+      reconcilableSpecHash: 'lifecycle:original:base:bun:1_2_23',
+      bunRuntimeAdoptingSpecHash: desired,
+    })
+    expect(
+      await machineQueries.recordBoxBunRuntimeFailure(source, desired, {
+        provisionedSpecHash: 'verified-config',
+        reconcilableSpecHash: 'lifecycle:original:base',
+      })
+    ).toBe(true)
+    expect(await getMachineBox(source.sandboxId)).toMatchObject({
+      status: 'ready',
+      bunRuntimeAdoptingSpecHash: desired,
+      bunRuntimeFailureSpecHash: desired,
+      provisionedSpecHash: 'verified-config',
+      reconcilableSpecHash: 'lifecycle:original:base',
+    })
+    expect(
+      await machineQueries.recordBoxBunRuntimeFailure(source, desired, {
+        provisionedSpecHash: 'stale',
+        reconcilableSpecHash: desired,
+      })
+    ).toBe(false)
   })
 })

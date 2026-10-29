@@ -325,6 +325,37 @@ esac`
       writeFileSync(journal, 'malformed-unknown-owner\n')
       expect(await adoption.recoverBoxBunRuntimeClaim(machine, box, runner)).toBe(false)
       rmSync(journal)
+      reset()
+      box.reconcilableSpecHash = 'lifecycle:original:base:bun:1_2_23'
+      const desired = 'lifecycle:original:base:bun:1_4_2'
+      await expect(
+        adoption.withIdleBunRuntimeClaim(
+          machine,
+          box,
+          '1.4.2',
+          async () => {
+            const lines = readFileSync(journal, 'utf8').trim().split('\n')
+            lines[2] = crypto.randomUUID()
+            writeFileSync(journal, lines.join('\n') + '\n')
+          },
+          runner,
+          desired
+        )
+      ).rejects.toThrow('owned box runtime activation listener')
+      const failedReady = {
+        ...box,
+        reconcilableSpecHash: 'lifecycle:original:base',
+        bunRuntimeFailureSpecHash: desired,
+        bunRuntimeAdoptingSpecHash: desired,
+      }
+      for (const invalid of [
+        { ...failedReady, reconcilableSpecHash: 'lifecycle:replacement:base' },
+        { ...failedReady, bunRuntimeFailureSpecHash: null },
+        { ...failedReady, bunRuntimeAdoptingSpecHash: 'lifecycle:replacement:base:bun:1_4_2' },
+      ])
+        expect(await adoption.recoverBoxBunRuntimeClaim(machine, invalid, runner)).toBe(false)
+      expect(await adoption.recoverBoxBunRuntimeClaim(machine, failedReady, runner)).toBe(true)
+      expect(readFileSync(join(root, 'socket'), 'utf8').trim()).toBe('active')
     }
   } finally {
     rmSync(root, { recursive: true, force: true })

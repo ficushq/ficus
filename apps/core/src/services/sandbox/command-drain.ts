@@ -83,6 +83,11 @@ export function isCommandDrainActive(sandboxId?: string): boolean {
   return draining || (sandboxId !== undefined && boxDrains.has(sandboxId))
 }
 
+/** Cheap non-waking eligibility check; callers still need a final fenced proof. */
+export function hasRunningBoxCommands(sandboxId: string): boolean {
+  return [...running].some((command) => command.sandboxId === sandboxId)
+}
+
 /** Track a running command until it settles, so a drain can wait for it or cancel it. */
 export function trackCommand(command: DrainableCommand): void {
   running.add(command)
@@ -168,7 +173,7 @@ export async function withIdleBoxCommandFence<T>(
   gate.holders++
   boxDrains.set(sandboxId, gate)
   try {
-    if ([...running].some((command) => command.sandboxId === sandboxId)) return await defer()
+    if (hasRunningBoxCommands(sandboxId)) return await defer()
     return await action()
   } finally {
     if (--gate.holders === 0) boxDrains.delete(sandboxId)

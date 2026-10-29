@@ -484,20 +484,46 @@ function sameBoxIdentity(box: MachineBox) {
 }
 
 /** Caller owns the setup lease. A stale physical/generation owner cannot poison a replacement. */
-export async function recordBoxBunRuntimeFailure(box: MachineBox, desiredSpecHash: string): Promise<boolean> {
+export async function recordBoxBunRuntimeFailure(
+  box: MachineBox,
+  desiredSpecHash: string,
+  healthy?: Pick<MachineBox, 'provisionedSpecHash' | 'reconcilableSpecHash'>
+): Promise<boolean> {
   const rows = await db
     .update(machineBoxes)
     .set({
       bunRuntimeFailureSpecHash: desiredSpecHash,
-      bunRuntimeAdoptingSpecHash: null,
-      status: 'failed',
-      lastListeningAt: null,
+      // Only the caller that JUST verified healthy HTTP may publish this.
+      // Keep recovery intent until listener cleanup; no partial-row crash window.
+      ...(healthy ? { ...healthy, status: 'ready', lastActivityAt: new Date() } : {}),
       updatedAt: new Date(),
     })
     .where(
       and(
         sameBoxIdentity(box),
         eq(machineBoxes.migrating, false),
+        box.reconcilableSpecHash == null
+          ? isNull(machineBoxes.reconcilableSpecHash)
+          : eq(machineBoxes.reconcilableSpecHash, box.reconcilableSpecHash)
+      )
+    )
+    .returning({ sandboxId: machineBoxes.sandboxId })
+  return rows.length === 1
+}
+
+/** Call only after host journal recovery under the owning setup lease.
+ * Partial rows retain intent: they still need final idle proof before repair. */
+export async function clearRecoveredReadyBunIntent(box: MachineBox): Promise<boolean> {
+  if (!box.bunRuntimeAdoptingSpecHash) return true
+  const rows = await db
+    .update(machineBoxes)
+    .set({ bunRuntimeAdoptingSpecHash: null, updatedAt: new Date() })
+    .where(
+      and(
+        sameBoxIdentity(box),
+        eq(machineBoxes.migrating, false),
+        eq(machineBoxes.status, 'ready'),
+        eq(machineBoxes.bunRuntimeAdoptingSpecHash, box.bunRuntimeAdoptingSpecHash),
         box.reconcilableSpecHash == null
           ? isNull(machineBoxes.reconcilableSpecHash)
           : eq(machineBoxes.reconcilableSpecHash, box.reconcilableSpecHash)

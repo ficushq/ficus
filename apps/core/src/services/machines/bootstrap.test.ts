@@ -2568,3 +2568,28 @@ describe('deferred Bun convergence does not acknowledge the desired bootstrap ve
     expect(parseCapabilities('FICUS_CAPS_JSON: {"bunConvergence":"anything"}').bunConvergence).toBeUndefined()
   })
 })
+
+describe('bootstrap capability separates applied scripts from verified runtime convergence', () => {
+  it.each(['current', 'deferred'] as const)(
+    '%s reports independent applied-script identity and verified Bun eligibility',
+    async (convergence) => {
+      const machine = makeMachine({ bootstrapVersion: 'previous-bootstrap' })
+      const { runner } = makeFakeRunner(() => ({
+        exitCode: 0,
+        stdout: `FICUS_CAPS_JSON: {"bunConvergence":"${convergence}"}`,
+        stderr: '',
+      }))
+      const updates: Partial<Machine>[] = []
+      await bootstrapMachine(machine, {
+        runner,
+        waitForSshReady: async () => {},
+        updateMachine: async (_id, update) => {
+          updates.push(update)
+          return machine
+        },
+      })
+      expect(updates[0]!.capabilities?.appliedBootstrapVersion).toMatch(/^[a-f0-9]{64}$/)
+      expect(updates[0]!.capabilities?.bunVersion).toBe(convergence === 'current' ? '1.4.2' : undefined)
+    }
+  )
+})

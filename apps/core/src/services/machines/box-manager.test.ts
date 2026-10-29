@@ -232,6 +232,7 @@ function happyDeps(events: string[], machine: Machine, box: MachineBox) {
   const binds: string[] = []
   const deps = {
     runner,
+    recordRuntimeAdoptionFailure: async () => true,
     tunnels: makeFakeTunnels(events),
     fetch: makeFakeFetch(events, [{ ok: true, status: 200 }]),
     getMachine: async () => machine,
@@ -5320,7 +5321,7 @@ it('a lost idle claim defers normal adoption before bind or spec publication', a
       sandboxId: box.sandboxId,
       machineId: machine.id,
       role: 'agent',
-      env: {},
+      env: { FICUS_BOX_SPEC_HASH: 'old:bun:1_4_2' },
       specHash: 'desired',
       expectedBunVersion: '1.4.2',
       adoptIdleRuntime: true,
@@ -5330,7 +5331,8 @@ it('a lost idle claim defers normal adoption before bind or spec publication', a
   expect(result.runtimeAdoptionDeferred).toBe(true)
   expect(result.box.reconcilableSpecHash).toBe('old')
   expect(binds).toHaveLength(0)
-  expect(upserts).toHaveLength(0)
+  expect(upserts).toHaveLength(2) // Intent publication and proven cleanup only.
+  expect(upserts.every((row) => row.reconcilableSpecHash === 'old')).toBe(true)
   expect(events).not.toContain('restart')
 })
 
@@ -5411,9 +5413,9 @@ describe('ordinary provisioning on hosts awaiting the Bun bootstrap sweep', () =
   }
 })
 
-it('terminal Bun mismatch is projected as failed without probing or waking the executor', async () => {
+it('bounded Bun adoption failure does not override a usable executor ordinary health', async () => {
   let probes = 0
-  const box = makeBox({ status: 'failed', bunRuntimeFailureSpecHash: 'desired-spec' })
+  const box = makeBox({ status: 'ready', bunRuntimeFailureSpecHash: 'desired-spec' })
   const result = await boxChainHealth(box.sandboxId, {
     getMachineBox: async () => box,
     getMachine: async () => makeMachine(),
@@ -5423,9 +5425,8 @@ it('terminal Bun mismatch is projected as failed without probing or waking the e
       return Response.json({ healthy: true })
     },
   })
-  expect(result.status).toBe('failed')
-  expect(result.reason).toContain('Bun runtime adoption')
-  expect(probes).toBe(0)
+  expect(result.status).toBe('ready')
+  expect(probes).toBe(1)
 })
 
 it('runtime mismatch retains the post-bind identity when adopting a legacy null-token row without exposing its secret', async () => {
@@ -5447,4 +5448,155 @@ it('runtime mismatch retains the post-bind identity when adopting a legacy null-
   expect(failureBox?.authToken).toBeString()
   expect(failureBox?.authToken).not.toBeNull()
   expect(JSON.stringify(mismatch)).not.toContain(failureBox!.authToken!)
+})
+
+describe('two-stage ordinary old-host configuration then explicit Bun adoption', () => {
+  for (const liveness of ['listening', undefined] as const)
+    for (const actual of ['1.4.2', '1.2.23', undefined]) {
+      it(`claims and verifies after unchanged configuration (${liveness ?? 'HTTP'}, runtime ${actual ?? 'missing'})`, async () => {
+        const machine = makeMachine()
+        const template = makeBox({ status: 'ensuring' })
+        let row: MachineBox | null = null
+        let observed: string | undefined = '1.2.23'
+        const commands: string[] = []
+        let reads = 0
+        const { deps } = happyDeps([], machine, template)
+        deps.getMachineBox = async () => row
+        deps.bindMachineBox = async () => (row = { ...template, ...row })
+        deps.upsertMachineBox = async (values) => (row = { ...template, ...row, ...values } as MachineBox)
+        deps.runner.run = async (_machine, command) => {
+          commands.push(command)
+          if (command.includes('FICUS_BUN_ADOPTION=claimed'))
+            expect(row?.bunRuntimeAdoptingSpecHash).toBe('0123456789abcdef:bun:1_4_2')
+          const stdout = command.includes('FICUS_BUN_RECOVERY=')
+            ? 'FICUS_BUN_RECOVERY=none'
+            : command.includes('FICUS_BUN_ADOPTION=claimed')
+              ? 'FICUS_BUN_ADOPTION=claimed'
+              : command.includes('box-provision.sh')
+                ? 'FICUS_BOX_UID=4321\n'
+                : ''
+          return { exitCode: 0, stdout, stderr: '' }
+        }
+        deps.fetch = async () => {
+          reads++
+          return Response.json({ healthy: true, bunVersion: observed })
+        }
+        const desired = '0123456789abcdef:bun:1_4_2'
+        const env = { FICUS_BOX_SPEC_HASH: desired }
+        const opts = {
+          sandboxId: template.sandboxId,
+          machineId: machine.id,
+          role: 'agent' as const,
+          env,
+          specHash: computeProvisioningMarker(desired, env),
+        }
+        const old = await ensureBox(opts, deps)
+        expect(old.box.reconcilableSpecHash).toBe('0123456789abcdef:bun:1_2_23')
+        expect(old.box.provisionedSpecHash).toBe(opts.specHash)
+        commands.length = 0
+        reads = 0
+        observed = actual
+        const attempt = ensureBox({ ...opts, adoptIdleRuntime: true, expectedBunVersion: '1.4.2', liveness }, deps)
+        const result = await attempt
+        if (actual !== '1.4.2') {
+          expect(result.runtimeAdoptionDeferred).toBe(true)
+          expect(result.box.status).toBe('ready')
+          expect(result.box.bunRuntimeFailureSpecHash).toBe(desired)
+          expect(result.box.reconcilableSpecHash).not.toBe(desired)
+          expect(commands.some((command) => command.includes('FICUS_BUN_ADOPTION=claimed'))).toBe(true)
+          commands.length = 0
+          const ordinary = await ensureBox({ ...opts, liveness: 'listening' }, deps)
+          expect(ordinary.box.status).toBe('ready')
+          expect(ordinary.box.bunRuntimeFailureSpecHash).toBe(desired)
+          expect(commands).toHaveLength(0)
+        } else expect(result.box.reconcilableSpecHash).toBe(desired)
+        if (actual === '1.4.2')
+          expect(commands.some((command) => command.includes('FICUS_BUN_ADOPTION=claimed'))).toBe(true)
+        expect(reads).toBeGreaterThan(0)
+      })
+    }
+})
+
+it.each(['1_2_23', '1_3_1'])(
+  'ordinary ensures accept a Bun-only configuration marker (%s) without SSH, restart or false restamping',
+  async (configuredPin) => {
+    const desired = '0123456789abcdef:bun:1_4_2'
+    const previous = '0123456789abcdef:bun:1_2_23'
+    const configured = `0123456789abcdef:bun:${configuredPin}`
+    const oldEnv = { FICUS_BOX_SPEC_HASH: configured, SANDBOX_CALLBACK_SECRET: 'secret' }
+    const machine = makeMachine()
+    const box = makeBox({
+      status: 'ready',
+      authToken: 'token',
+      reconcilableSpecHash: previous,
+      provisionedSpecHash: computeProvisioningMarker(configured, oldEnv),
+    })
+    const events: string[] = []
+    const { deps } = happyDeps(events, machine, box)
+    deps.getMachineBox = async () => box
+    const env = { ...oldEnv, FICUS_BOX_SPEC_HASH: desired }
+    const result = await ensureBox(
+      {
+        sandboxId: box.sandboxId,
+        machineId: machine.id,
+        role: 'agent',
+        env,
+        specHash: computeProvisioningMarker(desired, env),
+        liveness: 'listening',
+      },
+      deps
+    )
+    expect(result.box.reconcilableSpecHash).toBe(previous)
+    expect(result.box.provisionedSpecHash).toBe(box.provisionedSpecHash)
+    expect(
+      events.filter(
+        (event) => event.startsWith('run:') || event.startsWith('write:') || event === 'bundle' || event === 'bind'
+      )
+    ).toEqual([])
+  }
+)
+
+describe('ordinary starts preserve an exact-target adoption bound independently of availability', () => {
+  for (const status of ['stopped', 'ensuring'])
+    for (const hasDesired of [true, false])
+      it(`${status}, desired configuration ${hasDesired}`, async () => {
+        const desired = '0123456789abcdef:bun:1_4_2'
+        const env = { FICUS_BOX_SPEC_HASH: desired }
+        const machine = makeMachine()
+        const box = makeBox({
+          status,
+          authToken: 'token',
+          provisionedSpecHash: computeProvisioningMarker(desired, env),
+          reconcilableSpecHash: '0123456789abcdef:bun:1_2_23',
+          bunRuntimeFailureSpecHash: desired,
+        })
+        const { deps } = happyDeps([], machine, box)
+        deps.getMachineBox = async () => box
+        deps.upsertMachineBox = async (values) => ({ ...box, ...values }) as MachineBox
+        deps.fetch = async () => Response.json({ healthy: true, bunVersion: '1.2.23' })
+        const result = await ensureBox(
+          {
+            sandboxId: box.sandboxId,
+            machineId: machine.id,
+            role: 'agent',
+            env: hasDesired ? env : {},
+            specHash: hasDesired ? box.provisionedSpecHash! : undefined,
+          },
+          deps
+        )
+        expect(result.box.status).toBe('ready')
+        expect(result.box.bunRuntimeFailureSpecHash).toBe(desired)
+        expect(result.box.reconcilableSpecHash).not.toBe(desired)
+      })
+})
+
+it('a healthy mismatch with unproven listener cleanup projects readiness pending, not a false ready client', async () => {
+  const box = makeBox({ status: 'ready', bunRuntimeAdoptingSpecHash: 'desired', bunRuntimeFailureSpecHash: 'desired' })
+  const result = await boxChainHealth(box.sandboxId, {
+    getMachineBox: async () => box,
+    getMachine: async () => {
+      throw new Error('No remote probe is permitted')
+    },
+  })
+  expect(result.status).toBe('starting')
 })

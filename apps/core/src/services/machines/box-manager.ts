@@ -26,6 +26,7 @@ import {
   getMachineBox as getMachineBoxReal,
   listMachineBoxes as listMachineBoxesReal,
   upsertMachineBox as upsertMachineBoxReal,
+  recordBoxBunRuntimeFailure,
 } from './queries'
 import type { Machine, MachineBox } from './queries'
 import { BOX_PORT_BUSY_EXIT_CODE, BoxPortBusyError } from './box-port-busy'
@@ -300,6 +301,35 @@ export function classifyProvisioningMarkerDrift(
   return 'critical'
 }
 
+/** Compare configuration independently of the observed runtime stamp. Every
+ * non-Bun input still participates; this never proves runtime convergence. */
+export function classifyBoxConfigurationMarkerDrift(
+  box: Pick<MachineBox, 'provisionedSpecHash' | 'reconcilableSpecHash'> | null | undefined,
+  desired: string | undefined,
+  env: BoxEnv
+): ProvisioningMarkerDrift {
+  const direct = classifyProvisioningMarkerDrift(box?.provisionedSpecHash, desired, env)
+  const target = env.FICUS_BOX_SPEC_HASH
+  const observed = box?.reconcilableSpecHash
+  const configured = box?.provisionedSpecHash?.split('.')[0]
+  if (
+    direct !== 'critical' ||
+    !target ||
+    !observed ||
+    !configured ||
+    configured.replace(/:bun:\d+_\d+_\d+$/, '') !== target.replace(/:bun:\d+_\d+_\d+$/, '') ||
+    desired !== computeProvisioningMarker(target, env) ||
+    observed.replace(/:bun:\d+_\d+_\d+$/, '') !== target.replace(/:bun:\d+_\d+_\d+$/, '')
+  )
+    return direct
+  const previousEnv = { ...env, FICUS_BOX_SPEC_HASH: configured }
+  return classifyProvisioningMarkerDrift(
+    box?.provisionedSpecHash,
+    computeProvisioningMarker(configured, previousEnv),
+    previousEnv
+  )
+}
+
 /**
  * One-line explanation of a provisioning-marker mismatch, for the ensure log
  * at the moment a full re-provision (env re-push + unit restart) is chosen
@@ -352,6 +382,7 @@ export interface BoxManagerDeps {
   beginBoxRestart?: typeof beginBoxRestartReal
   finishBoxRestart?: typeof finishBoxRestartReal
   runner?: SshRunner
+  recordRuntimeAdoptionFailure?: typeof recordBoxBunRuntimeFailure
   /** Host→host pipe used by {@link streamBoxStateArchive} (migration transport);
    *  defaults to ssh.ts's process-wide streamer. */
   streamer?: SshStreamer
@@ -1033,7 +1064,10 @@ export class BunRuntimeMismatchError extends Error {
   get boxAtFailure(): MachineBox | undefined {
     return runtimeMismatchBoxes.get(this)
   }
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly observedVersion?: string
+  ) {
     super(message)
     this.name = 'BunRuntimeMismatchError'
   }
@@ -1044,6 +1078,17 @@ function observedRuntimeSpecHash(spec: string | undefined, version: string | und
   if (!spec || !/:bun:\d+_\d+_\d+$/.test(spec)) return spec
   const base = spec.replace(/:bun:\d+_\d+_\d+$/, '')
   return version ? `${base}:bun:${version.replaceAll('.', '_')}` : base
+}
+
+/** Ordinary availability neither erases a bound nor treats it as a dead box. */
+function failureAfterOrdinaryStart(
+  box: MachineBox | null,
+  desired: string | undefined,
+  version: string | undefined
+): string | null {
+  const failed = box?.bunRuntimeFailureSpecHash
+  if (!failed) return null
+  return !desired || (failed === desired && observedRuntimeSpecHash(desired, version) !== desired) ? failed : null
 }
 
 async function pollBoxHealth(
@@ -1083,7 +1128,8 @@ async function pollBoxHealth(
             : undefined
         if (expectedBunVersion && observed !== expectedBunVersion)
           throw new BunRuntimeMismatchError(
-            `Bun runtime mismatch: expected ${expectedBunVersion}, observed ${observed ?? 'unknown'}`
+            `Bun runtime mismatch: expected ${expectedBunVersion}, observed ${observed ?? 'unknown'}`,
+            observed
           )
         return observed
       }
@@ -1294,6 +1340,7 @@ export async function startBoxAndAwaitHealth(
     timeoutMs?: number
     expectedBunVersion?: string
     observeBunVersion?: (version: string | undefined) => void
+    onBunRuntimeMismatch?: (error: BunRuntimeMismatchError) => void
     activationSocketHeld?: boolean
   },
   deps: BoxManagerDeps = {}
@@ -1340,7 +1387,16 @@ export async function startBoxAndAwaitHealth(
   await tunnels.ensureMaster(machine)
   const localPort = await tunnels.addForward(machine, port)
   const endpoint = `http://127.0.0.1:${localPort}`
-  const version = await pollBoxHealth(endpoint, deps, opts.expectedBunVersion)
+  let version: string | undefined
+  try {
+    version = await pollBoxHealth(endpoint, deps, opts.expectedBunVersion)
+  } catch (error) {
+    if (!(error instanceof BunRuntimeMismatchError) || !opts.onBunRuntimeMismatch) throw error
+    // HTTP is healthy but convergence failed. Keep this ordinarily usable
+    // executor available, stamp its observed runtime, and bound only adoption.
+    opts.onBunRuntimeMismatch(error)
+    version = error.observedVersion
+  }
   opts.observeBunVersion?.(version)
   return endpoint
 }
@@ -1653,7 +1709,9 @@ export async function ensureBox(
     //    applies the change. Restarting the unit kills whatever is running, and
     //    an author name is never worth that. Without active work it
     //    reprovisions at once, as before.
-    const markerDrift = classifyProvisioningMarkerDrift(existing?.provisionedSpecHash, opts.specHash, opts.env)
+    const markerDrift = opts.adoptIdleRuntime
+      ? classifyProvisioningMarkerDrift(existing?.provisionedSpecHash, opts.specHash, opts.env)
+      : classifyBoxConfigurationMarkerDrift(existing, opts.specHash, opts.env)
     let deferIdentityDrift = false
     if (markerDrift === 'identity' && existing?.status === 'ready' && existing.machineId === machine.id) {
       try {
@@ -1669,6 +1727,7 @@ export async function ensureBox(
       existing &&
       existing.machineId === machine.id &&
       existing.status === 'ready' &&
+      !opts.adoptIdleRuntime &&
       existing.authToken &&
       (markerDrift === 'none' || markerDrift === 'legacy' || deferIdentityDrift)
     ) {
@@ -1785,7 +1844,11 @@ export async function ensureBox(
           port: existing.port,
           status: 'ready',
           authToken: existing.authToken,
-          bunRuntimeFailureSpecHash: null,
+          bunRuntimeFailureSpecHash: failureAfterOrdinaryStart(
+            existing,
+            opts.env.FICUS_BOX_SPEC_HASH,
+            observedBunVersion
+          ),
           bunRuntimeAdoptingSpecHash: null,
           ...(markerDrift === 'legacy' ? { provisionedSpecHash: opts.specHash } : {}),
           ...(opts.env.FICUS_BOX_SPEC_HASH
@@ -1925,6 +1988,7 @@ export async function ensureBox(
         }
       }
       let observedBunVersion: string | undefined
+      let adoptionMismatch = false
       const endpoint = await timer.time('start', async () => {
         try {
           return await startBoxAndAwaitHealth(
@@ -1937,6 +2001,11 @@ export async function ensureBox(
               observeBunVersion: (version) => {
                 observedBunVersion = version
               },
+              onBunRuntimeMismatch: adoptingIdle
+                ? () => {
+                    adoptionMismatch = true
+                  }
+                : undefined,
               activationSocketHeld: adoptingIdle,
             },
             deps
@@ -1947,6 +2016,24 @@ export async function ensureBox(
         }
       })
 
+      if (adoptionMismatch) {
+        opts.assertOwned?.()
+        if (
+          !(await (deps.recordRuntimeAdoptionFailure ?? recordBoxBunRuntimeFailure)(
+            box,
+            opts.env.FICUS_BOX_SPEC_HASH!,
+            {
+              provisionedSpecHash: opts.specHash ?? null,
+              reconcilableSpecHash: observedRuntimeSpecHash(opts.env.FICUS_BOX_SPEC_HASH, observedBunVersion) ?? null,
+            }
+          ))
+        )
+          throw new Error('Box identity changed before Bun mismatch publication')
+        opts.assertOwned?.()
+        log.warn(
+          `Bun adoption did not converge for ${opts.sandboxId}: expected ${opts.expectedBunVersion}, observed ${observedBunVersion ?? 'unknown'}; retaining the healthy current runtime and its exact-target retry bound`
+        )
+      }
       const readyBox = await upsert({
         sandboxId: box.sandboxId,
         machineId: box.machineId,
@@ -1960,8 +2047,10 @@ export async function ensureBox(
         // future ensure never mistakes an unknown provisioned state for a match.
         provisionedSpecHash: opts.specHash ?? null,
         reconcilableSpecHash: observedRuntimeSpecHash(opts.env.FICUS_BOX_SPEC_HASH, observedBunVersion) ?? null,
-        bunRuntimeFailureSpecHash: null,
-        bunRuntimeAdoptingSpecHash: null,
+        bunRuntimeFailureSpecHash: adoptionMismatch
+          ? opts.env.FICUS_BOX_SPEC_HASH!
+          : failureAfterOrdinaryStart(existing, opts.env.FICUS_BOX_SPEC_HASH, observedBunVersion),
+        bunRuntimeAdoptingSpecHash: adoptingIdle ? opts.env.FICUS_BOX_SPEC_HASH! : null,
         // Seed the cross-process activity heartbeat so every ready box has a
         // baseline: the idle reaper (worker) reads max(process-local, row) and a
         // box ensured by ANOTHER process would otherwise carry no activity signal
@@ -1978,10 +2067,21 @@ export async function ensureBox(
         port: readyBox.port,
       })
       finishPhysicalReady()
-      return { machine, box: readyBox, endpoint, timings: timer.steps, priorBoxesOnMachine }
+      return {
+        machine,
+        box: readyBox,
+        endpoint,
+        timings: timer.steps,
+        priorBoxesOnMachine,
+        ...(adoptionMismatch ? { runtimeAdoptionDeferred: true } : {}),
+      }
     }
     if (adoptingIdle && existing) {
-      if (!opts.expectedBunVersion) throw new Error('Idle runtime adoption requires an exact Bun pin')
+      if (!opts.expectedBunVersion || !opts.env.FICUS_BOX_SPEC_HASH)
+        throw new Error('Idle runtime adoption requires an exact Bun pin and desired identity')
+      // Persist intent before the first socket/journal mutation, not at bind.
+      opts.assertOwned?.()
+      await upsert({ ...existing, bunRuntimeAdoptingSpecHash: opts.env.FICUS_BOX_SPEC_HASH! })
       const claim = await withIdleBunRuntimeClaim(
         machine,
         existing,
@@ -1990,7 +2090,12 @@ export async function ensureBox(
         deps.runner,
         opts.env.FICUS_BOX_SPEC_HASH
       )
-      if (claim.adopted) return claim.value
+      opts.assertOwned?.()
+      if (claim.adopted) {
+        claim.value.box = await upsert({ ...claim.value.box, bunRuntimeAdoptingSpecHash: null })
+        return claim.value
+      }
+      await upsert({ ...existing, bunRuntimeAdoptingSpecHash: null })
       await tunnels.ensureMaster(machine)
       const localPort = await tunnels.addForward(machine, existing.port)
       finishPhysicalReady()
@@ -3133,13 +3238,8 @@ export async function boxChainHealth(sandboxId: string, deps: BoxManagerDeps = {
       },
     }
   }
-  if (box.status === 'failed' && box.bunRuntimeFailureSpecHash) {
-    return {
-      status: 'failed',
-      reason:
-        'Bun runtime adoption failed version verification; repair the host runtime/bundle and change the desired spec',
-      chain: { boxProvisioned: true, machine: 'unknown', boxServer: 'unknown' },
-    }
+  if (box.status === 'ready' && box.bunRuntimeAdoptingSpecHash) {
+    return { status: 'starting', chain: { boxProvisioned: true, machine: 'unknown', boxServer: 'unknown' } }
   }
   if (box.status === 'restart_failed' || isStaleBoxRestart(box, deps.now?.())) {
     return {

@@ -320,3 +320,46 @@ describe('server.env parser', () => {
       expect(() => parseReprovisionEnv(bad, row())).toThrow()
   })
 })
+
+describe('deferred Bun bootstrap is not a repeated layout migration', () => {
+  it('still probes actual layout after a successful script application with only Bun deferred', async () => {
+    const entry = await import('../../box-reprovision')
+    expect(typeof entry.requiresBoxReprovisionMigration).toBe('function')
+    const machine = {
+      bootstrapVersion: 'old',
+      capabilities: { bunConvergence: 'deferred', appliedBootstrapVersion: 'desired' },
+    } as Machine
+    let probes = 0
+    expect(
+      await entry.requiresBoxReprovisionMigration(machine, 'desired', async () => {
+        probes++
+        return false
+      })
+    ).toBe(false)
+    expect(
+      await entry.requiresBoxReprovisionMigration(machine, 'desired', async () => {
+        probes++
+        return true
+      })
+    ).toBe(true)
+    expect(probes).toBe(2)
+    for (const capabilities of [
+      null,
+      { bunConvergence: 'deferred' },
+      { bunConvergence: 'deferred', appliedBootstrapVersion: 'different' },
+      { bunConvergence: 'current', appliedBootstrapVersion: 'desired' },
+    ] as const)
+      expect(
+        await entry.requiresBoxReprovisionMigration(
+          { ...machine, capabilities } as Machine,
+          'desired',
+          async () => false
+        )
+      ).toBe(true)
+    await expect(
+      entry.requiresBoxReprovisionMigration(machine, 'desired', async () => {
+        throw new Error('layout unknown')
+      })
+    ).rejects.toThrow('layout unknown')
+  })
+})

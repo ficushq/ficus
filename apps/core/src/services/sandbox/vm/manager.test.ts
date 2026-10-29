@@ -289,12 +289,13 @@ function makeHarness(opts?: { machineForSandbox?: (id: string) => string; bashSc
     async resolveMachine(req: PlacementRequest) {
       resolveMachineCalls.push(req)
       const id = req.explicitMachineId ?? machineForSandbox(req.sandboxId)
-      return { id, name: id } as any
+      return { id, name: id, capabilities: { bunVersion: '1.4.2' } } as any
     },
     async resolveBoxApiUrl(machine: any) {
       resolveBoxApiUrlCalls.push(machine.id)
       return `http://127.0.0.1:59999`
     },
+    boxFilesCurrent: async () => true,
     syncBoxFiles: (client: any, sandboxId: string, o: SandboxOptions, box: unknown, fence: any, trackSetupWork: any) =>
       syncBoxFiles(client, sandboxId, o, box, fence, trackSetupWork),
     seedBoxDevbox: (client: any, sandboxId: string, role: EnsureBoxOpts['role']) =>
@@ -352,7 +353,17 @@ function makeHarness(opts?: { machineForSandbox?: (id: string) => string; bashSc
         unixUser: boxUnixUser(sandboxId),
         port: machineBoxRow.port,
         status: machineBoxRow.status,
-        authToken: `row-tok-${sandboxId}`,
+        authToken: ensureCalls.some((call) => call.sandboxId === sandboxId)
+          ? `tok-${sandboxId}`
+          : `row-tok-${sandboxId}`,
+        provisionedSpecHash:
+          machineBoxRow.reconcilableSpecHash?.includes(':bun:') &&
+          ensureCalls.some((call) => call.sandboxId === sandboxId)
+            ? computeProvisioningMarker(machineBoxRow.reconcilableSpecHash, {
+                ...ensureCalls.find((call) => call.sandboxId === sandboxId)!.env,
+                FICUS_BOX_SPEC_HASH: machineBoxRow.reconcilableSpecHash,
+              })
+            : null,
         reconcilableSpecHash: machineBoxRow.reconcilableSpecHash ?? null,
         bunRuntimeFailureSpecHash: machineBoxRow.bunRuntimeFailureSpecHash ?? null,
         bunRuntimeAdoptingSpecHash: machineBoxRow.bunRuntimeAdoptingSpecHash ?? null,
@@ -360,7 +371,7 @@ function makeHarness(opts?: { machineForSandbox?: (id: string) => string; bashSc
       } as any
     },
     async getMachine(machineId: string) {
-      return { id: machineId, name: machineId, status: machineStatus } as any
+      return { id: machineId, name: machineId, status: machineStatus, capabilities: { bunVersion: '1.4.2' } } as any
     },
     async ensureMaster(machine: any) {
       ensureMasterCalls.push(machine.id)
@@ -3882,7 +3893,9 @@ describe('Bun adoption through normal spec reconciliation', () => {
         h.setSetupState({ ...setup!, pendingInvocationId: 'remote-outcome-unproven' })
       }
       const before = h.ensureCalls.length
-      await manager.ensureSandbox('squad_s1', squadOpts)
+      const outcome = await manager.ensureSandbox('squad_s1', squadOpts).catch((error) => error)
+      if (kind === 'pending') expect(startupRetryCode(outcome)).toBe('sandbox_readiness_pending')
+      else expect(outcome).toBe('squad_s1')
       expect(h.ensureCalls.length).toBe(before)
       expect(probes).toBe(0)
       expect(await manager.getRunningSandboxSpecHash('squad_s1')).toBe(oldSpec)
@@ -3910,7 +3923,11 @@ test('legacy installed executor idle-exits and the next normal ensure adopts the
   const legacyEntry = process.env.FICUS_TEST_LEGACY_SERVER_ENTRY ?? entry
   const legacyBun = process.env.FICUS_TEST_LEGACY_BUN ?? process.execPath
   const id = 'agent_installed-runtime-fixture'
-  const options = { ...agentOpts, lifecycleGeneration: 'preserved-generation' }
+  const options = {
+    ...agentOpts,
+    squadId: '11111111-1111-4111-8111-111111111111',
+    lifecycleGeneration: 'preserved-generation',
+  }
   const h = makeHarness()
   let current: ReturnType<typeof Bun.spawn>
   let launches = 0
@@ -4008,19 +4025,47 @@ test('legacy installed executor idle-exits and the next normal ensure adopts the
     h.deps.createClient = () => {
       const client = new SandboxClient('fixture', 'fixture-token', { fetch: fetchExecutor })
       connections.push(client)
-      // Setup writes are represented by the existing manager harness; only
-      // the actual agent operation crosses HTTP into the owned executor root.
+      // Required asset writes/prunes and agent tools use the actual HTTP
+      // executor. Unrelated Devbox/bashrc setup remains a fixture seam.
+      const write = client.write.bind(client)
       const bash = client.bash.bind(client)
       const health = client.health.bind(client)
       return Object.assign(client, {
         health: async () => ({ ...(await health()), devboxReady: true }),
-        bash: (request: any) => (request.cwd === home ? bash(request) : makeBashStream({ exitCode: 0 })),
-        write: async () => {},
+        bash: (request: any) =>
+          request.cwd === home || request.command.includes(home) ? bash(request) : makeBashStream({ exitCode: 0 }),
+        write: (request: Parameters<typeof write>[0]) =>
+          request.path.startsWith(`${home}/`) ? write(request) : Promise.resolve({}),
         toolchainReady: async () => {},
         devboxReady: async () => {},
       }) as any
     }
-    h.setSyncBoxFiles(async () => {})
+    let sshFiles = [{ relPath: 'ficus_remote_fixture', content: Buffer.from('synthetic-private-key') }]
+    let squadEnv = 'SYNTHETIC_ROTATION=before\n'
+    const hashes: Record<string, unknown> = {}
+    const assets: SyncBoxFilesDeps = {
+      box: { machineId: 'm1', syncedHashes: hashes },
+      boxHome: () => home,
+      readSquadEnv: () => squadEnv,
+      readIdentityPem: () => null,
+      listSkillFiles: async () => [],
+      listMemoryFiles: async () => [],
+      materializeSquadRemoteHosts: async () => {},
+      listSquadSshFiles: async () => sshFiles,
+      recordKnownHostsConflicts: async () => {},
+      stampBoxSyncedHash: async (_machine, _id, name, hash, files) => {
+        hashes[name] = { hash, files }
+      },
+    }
+    const readRow = h.deps.getMachineBox!
+    h.deps.getMachineBox = async (sandboxId) => {
+      const row = await readRow(sandboxId)
+      return row ? { ...row, syncedHashes: hashes } : null
+    }
+    h.deps.boxFilesCurrent = (sandboxId, opts) => realBoxFilesCurrent(sandboxId, opts, assets)
+    h.setSyncBoxFiles((client, sandboxId, opts, _box, bashFence, trackSetupWork) =>
+      realSyncBoxFiles(client, sandboxId, opts, { ...assets, bashFence, trackSetupWork })
+    )
     let desiredMarker: string | null = null
     const ensure = h.deps.ensureBox
     let previousPlacement: Awaited<ReturnType<typeof ensure>>
@@ -4141,6 +4186,18 @@ test('legacy installed executor idle-exits and the next normal ensure adopts the
     })
     expect(h.ensureCalls[0]!.env.FICUS_API_URL).toBeTruthy()
     expect(readFileSync(join(home, 'fresh-manager-client'), 'utf8')).toBe(h.ensureCalls[0]!.env.FICUS_API_URL)
+    expect(healthRequests).toBe(beforeHealth)
+    // Revocation and rendered secret rotation must not be postponed with Bun.
+    expect(readFileSync(join(home, '.ssh/ficus_remote_fixture'), 'utf8')).toBe('synthetic-private-key')
+    sshFiles = []
+    squadEnv = 'SYNTHETIC_ROTATION=after\n'
+    await manager.ensureSandbox(id, options)
+    expect(await Bun.file(join(home, '.ssh/ficus_remote_fixture')).exists()).toBe(false)
+    expect(readFileSync(join(home, 'workspace/.ficus/.env'), 'utf8')).toBe(squadEnv)
+    expect(current.exitCode).toBeNull()
+    expect(launches).toBe(1)
+    expect(socketClaims).toBe(0)
+    expect(desiredMarker).toBe(oldSpec)
     expect(healthRequests).toBe(beforeHealth)
     writeFileSync(join(home, 'release'), '')
     expect(await running).toEqual({ exitCode: 0 })
@@ -4377,7 +4434,7 @@ for (const phase of ['claimed', 'env-published', 'server-started', 'pending']) {
         status: phase === 'claimed' ? 'ready' : 'ensuring',
         // This phase is an interrupted Bun operation, not an ordinary failed
         // provision. Real box-manager persists this before physical mutation.
-        bunRuntimeAdoptingSpecHash: phase === 'claimed' ? null : 'desired-bun-operation',
+        bunRuntimeAdoptingSpecHash: 'desired-bun-operation',
         reconcilableSpecHash: box.reconcilableSpecHash,
       })
       if (phase === 'pending') {
@@ -4466,7 +4523,13 @@ test('normal ensure cannot recover a live claim before acquiring the durable set
       },
     })
   h.deps.runtimeAdoptionIdle = async () => false
-  h.setMachineBoxRow({ machineId: 'm1', port: 40001, status: 'ready', reconcilableSpecHash: 'lifecycle:owner:old' })
+  h.setMachineBoxRow({
+    machineId: 'm1',
+    port: 40001,
+    status: 'ready',
+    reconcilableSpecHash: 'lifecycle:owner:old',
+    bunRuntimeAdoptingSpecHash: 'desired-bun-operation',
+  })
   const manager = new VmSandboxManager(h.deps)
   const ensure = manager.ensureSandbox(id, agentOpts)
   try {
@@ -4492,7 +4555,13 @@ test('normal adoption propagates the setup-session ownership fence before physic
     owned = false
     return true
   }
-  h.setMachineBoxRow({ machineId: 'm1', port: 40001, status: 'ready', reconcilableSpecHash: 'lifecycle:owner:old' })
+  h.setMachineBoxRow({
+    machineId: 'm1',
+    port: 40001,
+    status: 'ready',
+    reconcilableSpecHash: 'lifecycle:owner:old',
+    bunRuntimeAdoptingSpecHash: 'desired-bun-operation',
+  })
   const manager = new VmSandboxManager(h.deps)
   try {
     await expect(manager.ensureSandbox('agent_lease_lost', agentOpts)).rejects.toThrow('setup lease lost')
@@ -4521,10 +4590,12 @@ describe('Bun rollout availability across Core restart and partial provisioning'
     expect(manager.hasSandbox(id)).toBe(true)
     expect(manager.isSandboxSpecDrifted(id, options)).toBe(true)
     expect(await manager.getRunningSandboxSpecHash(id)).toBe(oldSpec)
-    expect(await h.deps.getSetupState(id)).toEqual(setupBefore)
+    expect(setupBefore).toBeNull()
+    expect((await h.deps.getSetupState(id))!.readiness).toBe('ready')
     expect(h.ensureCalls).toHaveLength(0)
-    expect(h.syncCalls).toHaveLength(0)
-    expect([...h.clients.values()].every((client) => client.healthCalls === 0 && client.closed === 0)).toBe(true)
+    expect(h.syncCalls).toEqual([id])
+    expect([...h.clients.values()].every((client) => client.closed === 0)).toBe(true)
+    expect([...h.clients.values()].reduce((total, client) => total + client.healthCalls, 0)).toBe(1)
     await manager.cleanup()
   })
 
@@ -4550,7 +4621,7 @@ describe('Bun rollout availability across Core restart and partial provisioning'
       }
       const manager = new VmSandboxManager(h.deps)
       expect(await manager.ensureSandbox(id, agentOpts)).toBe(id)
-      expect(events).toEqual(['recovery', 'provision'])
+      expect(events).toEqual(['provision'])
       expect(h.ensureCalls).toHaveLength(1)
       expect(h.ensureCalls[0]!.adoptIdleRuntime).toBe(false)
       expect(h.ensureCalls[0]!.expectedBunVersion).toBeUndefined()
@@ -4674,7 +4745,12 @@ describe('Bun idle admission never cancels work that defeats adoption', () => {
     const h = makeHarness()
     const id = 'agent_fenced-proof'
     let proved = false
+    let proofs = 0
     h.deps.runtimeAdoptionIdle = async () => {
+      if (++proofs === 1) {
+        expect(isCommandDrainActive(id)).toBe(false)
+        return true
+      }
       expect(isCommandDrainActive(id)).toBe(true)
       const refusal = await manager.exec(id, ['echo', 'must-not-run']).catch((error) => error)
       expect(restartContextForCommandError(refusal)).toBeDefined()
@@ -4688,6 +4764,7 @@ describe('Bun idle admission never cancels work that defeats adoption', () => {
     h.setBunVersion('1.4.2')
     await manager.ensureSandbox(id, agentOpts)
     expect(proved).toBe(true)
+    expect(proofs).toBe(2)
     expect(h.ensureCalls.at(-1)!.adoptIdleRuntime).toBe(true)
     expect(h.ensureCalls.at(-1)!.expectedBunVersion).toBe('1.4.2')
     expect(isCommandDrainActive(id)).toBe(false)
@@ -4712,13 +4789,14 @@ test('ordinary old-host provisioning keeps the observed Bun identity eligible fo
 })
 
 test.each([false, true])(
-  'a persistent adoption version mismatch is terminal across Core restarts (cleanup failure: %s)',
+  'a persistent version mismatch bounds adoption, not ordinary availability across Core restarts (cleanup failure: %s)',
   async (cleanupFailure) => {
     const h = makeHarness()
     const id = 'agent_terminal-bun-mismatch'
     const options = { ...agentOpts, lifecycleGeneration: 'generation-one' }
     let oldSpec: string | null = null
     let failures = 0
+    let recoveryProven = !cleanupFailure
     const recorded: string[] = []
     const ensure = h.deps.ensureBox
     h.deps.ensureBox = async (input) => {
@@ -4736,9 +4814,22 @@ test.each([false, true])(
       h.setMachineBoxRow({
         machineId: box.machineId,
         port: box.port,
-        status: 'failed',
+        status: 'ready',
         reconcilableSpecHash: oldSpec,
         bunRuntimeFailureSpecHash: spec,
+        bunRuntimeAdoptingSpecHash: cleanupFailure ? spec : null,
+      })
+      return true
+    }
+    h.deps.recoverRuntimeAdoption = async () => {
+      if (!recoveryProven) return false
+      h.setMachineBoxRow({
+        machineId: 'm1',
+        port: 40001,
+        status: 'ready',
+        reconcilableSpecHash: oldSpec,
+        bunRuntimeFailureSpecHash: recorded.at(-1),
+        bunRuntimeAdoptingSpecHash: null,
       })
       return true
     }
@@ -4753,9 +4844,20 @@ test.each([false, true])(
     expect(recorded).toEqual([manager.computeSpecHash(options)])
     const fresh = new VmSandboxManager(h.deps)
     try {
-      await expect(manager.ensureSandbox(id, options)).rejects.toThrow('Bun runtime adoption is blocked')
-      await expect(fresh.ensureSandbox(id, options)).rejects.toThrow('Bun runtime adoption is blocked')
-      await expect(fresh.recreateSandbox(id, options)).rejects.toThrow('Bun runtime adoption is blocked')
+      if (cleanupFailure) {
+        expect(startupRetryCode(await manager.ensureSandbox(id, options).catch((error) => error))).toBe(
+          'sandbox_readiness_pending'
+        )
+        expect(startupRetryCode(await fresh.ensureSandbox(id, options).catch((error) => error))).toBe(
+          'sandbox_readiness_pending'
+        )
+      }
+      recoveryProven = true
+      expect(await manager.ensureSandbox(id, options)).toBe(id)
+      expect(await fresh.ensureSandbox(id, options)).toBe(id)
+      expect(await fresh.recreateSandbox(id, options)).toBe(id)
+      expect(fresh.getClientForSandbox(id)).not.toBeNull()
+      expect((await h.deps.getMachineBox(id))!.bunRuntimeFailureSpecHash).toBe(manager.computeSpecHash(options))
       expect(failures).toBe(1)
       expect(h.ensureCalls).toHaveLength(1)
       expect(h.stopCalls).toHaveLength(0)
@@ -4866,5 +4968,186 @@ test('ownership loss during idle proof does not publish even a deferred fresh-ma
     expect(h.createdEndpoints).toHaveLength(0)
   } finally {
     await manager.cleanup()
+  }
+})
+
+describe('ordinary reconciliation while Bun adoption is unavailable', () => {
+  for (const change of [
+    'none',
+    'pin-change-only',
+    'port',
+    'assets',
+    'environment',
+    'identity',
+    'degraded-due',
+    'busy',
+  ] as const) {
+    test(`keeps old-runtime availability and configuration reconciliation: ${change}`, async () => {
+      const { isCommandDrainActive } = await import('../command-drain')
+      const h = makeHarness()
+      h.setBunVersion(change === 'pin-change-only' ? '1.2.23' : '1.4.2')
+      const id = 'agent_unconverged_configuration'
+      const ordinaryStart = h.deps.ensureBox
+      h.deps.ensureBox = async (input) => {
+        const placed = await ordinaryStart(input)
+        placed.box.reconcilableSpecHash = input.env.FICUS_BOX_SPEC_HASH!.replace(/:bun:\d+_\d+_\d+$/, ':bun:1_2_23')
+        return placed
+      }
+      const first = new VmSandboxManager(h.deps)
+      await first.ensureSandbox(id, agentOpts)
+      const request = h.ensureCalls[0]!
+      const placed = await h.deps.ensureBox(request)
+      placed.box.provisionedSpecHash = request.specHash!
+      placed.box.reconcilableSpecHash = request.env.FICUS_BOX_SPEC_HASH!.replace(':bun:1_4_2', ':bun:1_2_23')
+      placed.machine.status = 'ready'
+      placed.machine.capabilities = { bunVersion: change === 'busy' ? '1.4.2' : '1.2.23' }
+      h.deps.getMachineBox = async () => placed.box
+      h.deps.resolveMachine = async () => placed.machine
+      h.deps.getMachine = async () => placed.machine
+      h.deps.hasActiveExecution = async () => change === 'busy' || change === 'identity'
+      h.deps.runtimeAdoptionIdle = async () => {
+        throw new Error('No idle SSH probe is permitted')
+      }
+      h.deps.recoverRuntimeAdoption = async () => {
+        throw new Error('No claim recovery is permitted')
+      }
+      let leases = 0
+      h.deps.withSetupLease = async (_id, action) => {
+        leases++
+        return action()
+      }
+      h.deps.boxFilesCurrent = async () => change !== 'assets'
+      h.deps.ensureBox = async (input) => {
+        expect(input.adoptIdleRuntime).toBe(false)
+        expect(input.expectedBunVersion).toBeUndefined()
+        expect(isCommandDrainActive(id)).toBe(change === 'environment')
+        h.ensureCalls.push(input)
+        return placed
+      }
+      if (change === 'identity')
+        h.deps.resolveGitHubIdentity = async () => ({ gitUserName: 'Rotated Author', gitUserEmail: 'new@example.test' })
+      if (change === 'environment')
+        h.deps.getSecret = (key) => (key === 'SANDBOX_CALLBACK_SECRET' ? 'rotated-token' : undefined)
+      if (change === 'degraded-due') {
+        const setup = (await h.deps.getSetupState(id))!
+        h.setSetupState({
+          ...setup,
+          readiness: 'ready_degraded',
+          reasons: ['devbox_not_ready'],
+          nextAttemptAt: new Date(0),
+        })
+      }
+      if (change === 'port') placed.box.port += 100
+      const beforeSync = h.syncCalls.length
+      const beforeEnsure = h.ensureCalls.length
+      h.setBunVersion('1.4.2')
+      const manager = new VmSandboxManager(h.deps)
+      try {
+        if (change === 'port') {
+          placed.box.port -= 100
+          await manager.ensureSandbox(id, { ...agentOpts, boxLiveness: 'listening' })
+          h.addForwardCalls.length = 0
+          placed.box.port += 100
+        }
+        await manager.ensureSandbox(id, { ...agentOpts, boxLiveness: 'listening' })
+        expect(isCommandDrainActive(id)).toBe(false)
+        if (change === 'port')
+          expect(h.addForwardCalls).toContainEqual({ machineId: 'm1', remotePort: placed.box.port })
+        expect(manager.getClientForSandbox(id)).not.toBeNull()
+        expect(await manager.getRunningSandboxSpecHash(id)).toEndWith(':bun:1_2_23')
+        if (change === 'none' || change === 'busy' || change === 'pin-change-only' || change === 'port') {
+          expect(leases).toBe(0)
+          expect(h.ensureCalls.length).toBe(beforeEnsure)
+          expect(h.syncCalls.length).toBe(beforeSync)
+        } else {
+          expect(leases).toBe(1)
+          expect(h.syncCalls.length).toBe(beforeSync + 1)
+          if (change === 'environment') expect(h.ensureCalls.at(-1)!.env.SANDBOX_CALLBACK_SECRET).toBe('rotated-token')
+          if (change === 'degraded-due') expect((await h.deps.getSetupState(id))!.readiness).toBe('ready')
+        }
+      } finally {
+        await manager.cleanup()
+        await first.cleanup()
+      }
+    })
+  }
+})
+
+test('production marked-claim recovery restores only the owned listener and clears the real fenced ready row', async () => {
+  const api = await import('./manager')
+  expect(typeof api.recoverVmBunRuntimeAdoption).toBe('function')
+  const queries = await import('../../machines/queries')
+  const root = mkdtempSync(join(tmpdir(), 'vm-bun-real-recovery-'))
+  let machineId: string | undefined
+  try {
+    const machine = await queries.insertMachine({
+      name: `bun-recovery-${crypto.randomUUID()}`,
+      provider: 'ssh',
+      sshHost: 'owned-fixture.invalid',
+      sshUser: 'fixture',
+      sshKeyId: 'owned-no-secret-key',
+      sshPublicKey: 'ssh-ed25519 AAAA synthetic-fixture',
+      status: 'ready',
+    })
+    machineId = machine.id
+    const id = `agent_${crypto.randomUUID()}`
+    const desired = 'lifecycle:original:base:bun:1_4_2'
+    const bound = await queries.bindMachineBox({ sandboxId: id, machineId: machine.id, unixUser: boxUnixUser(id) })
+    const row = await queries.upsertMachineBox({
+      ...bound,
+      status: 'ready',
+      reconcilableSpecHash: 'lifecycle:original:base',
+      bunRuntimeFailureSpecHash: desired,
+      bunRuntimeAdoptingSpecHash: desired,
+    })
+    const bin = join(root, 'bin')
+    const locks = join(root, 'run/ficus-box-locks')
+    mkdirSync(bin)
+    mkdirSync(locks, { recursive: true })
+    writeFileSync(join(bin, 'sudo'), '#!/bin/sh\n[ "$1" = -n ] && shift; [ "$1" = -u ] && shift 2; exec "$@"\n', {
+      mode: 0o755,
+    })
+    writeFileSync(
+      join(bin, 'systemctl'),
+      '#!/bin/sh\n[ "$1" = start ] || exit 99; echo start >> "$STATE_ROOT/events"\n',
+      { mode: 0o755 }
+    )
+    const identity = (spec: string) =>
+      createHash('sha256')
+        .update(JSON.stringify([machine.id, id, spec]))
+        .digest('hex')
+    const journal = join(locks, `ficus-box-${row.unixUser}.bun-adoption`)
+    writeFileSync(
+      journal,
+      `${identity('lifecycle:original:base:bun:1_2_23')}\n${identity(desired)}\n${crypto.randomUUID()}\n`
+    )
+    const runner = {
+      run: async (_machine: unknown, command: string) => {
+        const result = Bun.spawnSync(['bash', '-c', command], {
+          env: { PATH: `${bin}:/usr/bin:/bin`, FICUS_HOST_ROOT: root, STATE_ROOT: root },
+        })
+        return { exitCode: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() }
+      },
+    }
+    expect(
+      await withVmSetupLease(id, async (assertOwned) => {
+        if (!assertOwned) throw new Error('Missing native setup ownership fence')
+        return api.recoverVmBunRuntimeAdoption(machine, row, assertOwned, runner)
+      })
+    ).toBe(true)
+    expect(readFileSync(join(root, 'events'), 'utf8')).toBe('start\n')
+    expect(await Bun.file(journal).exists()).toBe(false)
+    expect(await queries.getMachineBox(id)).toMatchObject({
+      status: 'ready',
+      reconcilableSpecHash: row.reconcilableSpecHash,
+      bunRuntimeAdoptingSpecHash: null,
+      bunRuntimeFailureSpecHash: desired,
+    })
+  } finally {
+    try {
+      if (machineId) await queries.deleteMachine(machineId)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   }
 })

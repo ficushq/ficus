@@ -3353,6 +3353,10 @@ export const wsTickets = pgTable('ws_tickets', {
 export interface MachineCapabilities {
   /** Safe Bun upgrade deferral keeps the machine usable, but not converged. */
   bunConvergence?: 'current' | 'deferred'
+  /** Verified by the successful release bootstrap, never inferred from box health. */
+  bunVersion?: string
+  /** Scripts applied even when only the Bun replacement was safely deferred. */
+  appliedBootstrapVersion?: string
   arch?: string
   cpus?: number
   memMb?: number
