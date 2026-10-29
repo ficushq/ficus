@@ -85,6 +85,30 @@ restart. Normal ensure/recreate instead:
    on both success and failure; an uncertain SSH result must not be mistaken for
    a successful claim. The owning lifecycle generation is retained.
 
+### Interrupted claim recovery
+
+Before closing activation, the owner atomically publishes a root-owned journal
+beside the stable host flock in `/run/ficus-box-locks`. It records a unique claim
+token and exact source/desired row identities (machine, sandbox and spec including
+owning generation). The next **owner of the existing durable setup lease** can
+recover that interrupted claim, even if the previous Core was killed and no
+JavaScript `finally` ran. A non-owning poll never restores a listener.
+
+Recovery waits for the same host flock (including an outstanding provision/env/
+start command), checks the journal against the current row and compares the
+observed token again under the lock before restoring **only the socket**. It
+then removes only that journal. It never stops a server or replays an uncertain
+agent Bash invocation. Active/pending/unknown work still defers adoption after
+listener reachability is restored. A row mid-provision remains readiness-pending,
+not successfully adopted. Malformed, symlinked, changed-generation or overtaken
+journals defer; late cleanup cannot reopen another owner's listener or erase its
+journal. Failed restoration retains recovery evidence for the next owned ensure.
+Existing setup-session ownership checks fence continuation and ready publication.
+
+This recovery/adoption path is for the same recorded host. An unavailable-host
+replacement or authorized explicit move retains the existing migration/rebind
+path and its stop/ownership checks; the old box is never probed on a new host.
+
 This is not an immediate fleet-wide restart. Always-active boxes, unresolved work,
 failed/unknown units and boxes without a proven socket-activated idle path stay
 pending for later reconciliation or separately authorized investigation. No remote
@@ -214,7 +238,11 @@ setup/generation barriers and runtime readback. Existing bootstrap tests retain
 one unrelated nft syntax-validation capability skip; that skip is not Bun
 convergence evidence. The sandbox-server package typecheck and focused lint/shell
 checks pass. Full Core tests/typecheck are left to CI; no image build or live
-operation was run.
+operation was run. Child-loss regressions SIGKILL an owned claimant after claim,
+env publication, server start and pending work, then exercise normal ensure
+recovery. Additional checks cover live setup-lease exclusion, generation/token
+overtaking and publication fencing. Real-process fixtures are explicitly in the
+CI subprocess inventory; membership and disjoint execution gates remain enabled.
 
 ## Source-only other-runtime audit (Bun only is changed)
 

@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from 'node:crypto'
 import { withBoxHostLock } from './box-host-lock'
 import { boxHomeForUser, boxUnitControl } from './box-paths'
 import { defaultSshRunner, type SshRunner } from './ssh'
@@ -81,6 +82,80 @@ export async function probeBoxBunAdoption(
   }
 }
 
+type RuntimeBox = Pick<MachineBox, 'sandboxId' | 'unixUser'> & Partial<Pick<MachineBox, 'reconcilableSpecHash'>>
+
+function rowIdentity(machine: Machine, box: RuntimeBox, spec = box.reconcilableSpecHash): string {
+  return createHash('sha256')
+    .update(JSON.stringify([machine.id, box.sandboxId, spec ?? null]))
+    .digest('hex')
+}
+
+/** Only run under the existing host flock; the journal is root-owned, not box-writable. */
+function claimJournal(box: RuntimeBox): string {
+  return `claim_path="$box_lock_dir/ficus-box-${box.unixUser}.bun-adoption"
+load_claim() {
+  [ -f "$claim_path" ] && [ ! -L "$claim_path" ] && [ -O "$claim_path" ] || return 1
+  [ "$(stat -c %s -- "$claim_path")" = 167 ] || return 1
+  mapfile -t claim_record < "$claim_path" || return 1
+  [ "\${#claim_record[@]}" = 3 ] || return 1
+  [[ "\${claim_record[0]}" =~ ^[a-f0-9]{64}$ ]] && [[ "\${claim_record[1]}" =~ ^[a-f0-9]{64}$ ]] &&
+    [[ "\${claim_record[2]}" =~ ^[a-f0-9-]{36}$ ]]
+}`
+}
+
+/**
+ * The caller owns the NEW durable setup lease. A journal alone is not proof of
+ * abandonment: never call this from a non-owning preflight. Restore ONLY the
+ * listener, not the server or uncertain Bash. Two host-lock operations compare
+ * the observed owner token so a delayed recovery cannot steal a newer claim.
+ */
+export async function recoverBoxBunRuntimeClaim(
+  machine: Machine,
+  box: RuntimeBox,
+  runner: Pick<SshRunner, 'run'> = defaultSshRunner,
+  assertOwned?: () => void
+): Promise<boolean> {
+  assertOwned?.()
+  const identity = rowIdentity(machine, box)
+  const ctl = boxUnitControl(box)
+  const journal = claimJournal(box)
+  const inspect = await runner
+    .run(
+      machine,
+      withBoxHostLock(
+        box.unixUser,
+        `${journal}
+if [ ! -e "$claim_path" ] && [ ! -L "$claim_path" ]; then echo FICUS_BUN_RECOVERY=none; exit 0; fi
+load_claim || exit 74
+[ "\${claim_record[0]}" = ${quote(identity)} ] || [ "\${claim_record[1]}" = ${quote(identity)} ] || exit 74
+printf 'FICUS_BUN_RECOVERY=%s\\n' "\${claim_record[2]}"`
+      ),
+      { timeoutMs: 30_000 }
+    )
+    .catch(() => undefined)
+  assertOwned?.()
+  if (!inspect || inspect.exitCode !== 0) return false
+  if (inspect.stdout.trim() === 'FICUS_BUN_RECOVERY=none') return true
+  const token = inspect.stdout.trim().match(/^FICUS_BUN_RECOVERY=([a-f0-9-]{36})$/)?.[1]
+  if (!token) return false
+  const restored = await runner
+    .run(
+      machine,
+      withBoxHostLock(
+        box.unixUser,
+        `${journal}
+load_claim && [ "\${claim_record[2]}" = ${quote(token)} ] || exit 74
+[ "\${claim_record[0]}" = ${quote(identity)} ] || [ "\${claim_record[1]}" = ${quote(identity)} ] || exit 74
+${ctl.systemctl} start ${ctl.socket}
+rm -- "$claim_path"`
+      ),
+      { timeoutMs: 30_000 }
+    )
+    .catch(() => undefined)
+  assertOwned?.()
+  return restored?.exitCode === 0
+}
+
 /**
  * Claim normal socket-activated idle adoption under the existing host flock.
  * Stop ONLY the activation socket, then recheck service/proxy/jobs/registry: an
@@ -90,26 +165,40 @@ export async function probeBoxBunAdoption(
  */
 export async function withIdleBunRuntimeClaim<T>(
   machine: Machine,
-  box: Pick<MachineBox, 'sandboxId' | 'unixUser'>,
+  box: RuntimeBox,
   desired: string,
   action: () => Promise<T>,
-  runner: Pick<SshRunner, 'run'> = defaultSshRunner
+  runner: Pick<SshRunner, 'run'> = defaultSshRunner,
+  desiredSpec?: string
 ): Promise<{ adopted: true; value: T } | { adopted: false }> {
+  if (!(await recoverBoxBunRuntimeClaim(machine, box, runner))) return { adopted: false }
   const ctl = boxUnitControl(box)
+  const owner = randomUUID()
+  const journal = claimJournal(box)
+  const restoreProgram = `${journal}
+load_claim && [ "\${claim_record[2]}" = ${quote(owner)} ] || exit 74
+${ctl.systemctl} start ${ctl.socket}
+rm -- "$claim_path"`
   const restore = async () => {
-    const result = await runner.run(machine, withBoxHostLock(box.unixUser, `${ctl.systemctl} start ${ctl.socket}`), {
-      timeoutMs: 30_000,
-    })
-    if (result.exitCode !== 0) throw new Error('Could not restore box runtime activation listener')
+    const result = await runner.run(machine, withBoxHostLock(box.unixUser, restoreProgram), { timeoutMs: 30_000 })
+    if (result.exitCode !== 0) throw new Error('Could not restore owned box runtime activation listener')
   }
-  const program = `${idleBunProof(box, desired)}
+  const program = `${journal}
+${idleBunProof(box, desired)}
 ficus_bun_idle_proof active || exit 74
+[ ! -e "$claim_path" ] && [ ! -L "$claim_path" ] || exit 74
+claim_stage=$(mktemp "$claim_path.XXXXXX")
+chmod 0600 "$claim_stage"
+printf '%s\\n' ${quote(rowIdentity(machine, box))} ${quote(rowIdentity(machine, box, desiredSpec))} ${quote(owner)} > "$claim_stage"
+mv -T -- "$claim_stage" "$claim_path"
 if ! ${ctl.systemctl} stop ${ctl.socket}; then
   ${ctl.systemctl} start ${ctl.socket} || exit 1
+  rm -- "$claim_path"
   exit 74
 fi
 if ! ficus_bun_idle_proof inactive; then
   ${ctl.systemctl} start ${ctl.socket} || exit 1
+  rm -- "$claim_path"
   exit 74
 fi
 echo FICUS_BUN_ADOPTION=claimed`
@@ -124,7 +213,7 @@ echo FICUS_BUN_ADOPTION=claimed`
     })
     throw error
   }
-  if (claimed.exitCode === 74) return { adopted: false }
+  if (claimed.exitCode === 74 || claimed.exitCode === 73) return { adopted: false }
   if (claimed.exitCode !== 0 || claimed.stdout.trim() !== 'FICUS_BUN_ADOPTION=claimed') {
     await restore()
     throw new Error('Box runtime idle claim was not confirmed')

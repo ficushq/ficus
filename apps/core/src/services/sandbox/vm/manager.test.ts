@@ -260,6 +260,7 @@ function makeHarness(opts?: { machineForSandbox?: (id: string) => string; bashSc
   let port = 40000
   const boxPorts = new Map<string, number>()
   const deps: HarnessDeps = {
+    recoverRuntimeAdoption: async () => true,
     runtimeAdoptionIdle: async () => true,
     hasActiveExecution: async () => false,
     hasActiveDeployment: async () => false,
@@ -4212,4 +4213,247 @@ test('scoped runtime drain fences generic VM exec admission without affecting an
     },
     0
   )
+})
+
+for (const oldStatus of ['unreachable', 'ready']) {
+  test(`Bun spec drift preserves replacement/move placement when old machine is ${oldStatus}`, async () => {
+    let target = 'old'
+    const h = makeHarness({ machineForSandbox: () => target })
+    let probes = 0
+    h.deps.runtimeAdoptionIdle = async () => {
+      probes++
+      return false
+    }
+    h.deps.getMachine = async (id) => ({ id, status: id === 'old' ? oldStatus : 'ready' }) as any
+    const manager = new VmSandboxManager(h.deps)
+    await manager.ensureSandbox('agent_move', agentOpts)
+    const oldSpec = await manager.getRunningSandboxSpecHash('agent_move')
+    h.setMachineBoxRow({ machineId: 'old', status: 'ready', port: 40001, reconcilableSpecHash: oldSpec })
+    target = 'new'
+    h.setProvisionVersion('new-bun')
+    await manager.ensureSandbox('agent_move', oldStatus === 'ready' ? { ...agentOpts, machineId: 'new' } : agentOpts)
+    expect(h.resolveMachineCalls.at(-1)!.explicitMachineId).toBe(oldStatus === 'ready' ? 'new' : null)
+    expect(h.ensureCalls).toHaveLength(2)
+    expect(h.ensureCalls.at(-1)!.machineId).toBe('new')
+    expect(h.ensureCalls.at(-1)!.adoptIdleRuntime).toBe(false)
+    expect(probes).toBe(0)
+    expect(h.stopCalls).toHaveLength(0)
+    await manager.cleanup()
+  })
+}
+
+for (const phase of ['claimed', 'env-published', 'server-started', 'pending']) {
+  test(`normal ensure recovers an abandoned Bun claim after owner SIGKILL at ${phase}`, async () => {
+    const { mkdirSync, rmSync } = await import('node:fs')
+    const { probeBoxBunAdoption, withIdleBunRuntimeClaim, recoverBoxBunRuntimeClaim } =
+      await import('../../machines/bun-runtime-adoption')
+    const root = mkdtempSync(join(tmpdir(), 'bun-owner-loss-'))
+    try {
+      const bin = join(root, 'bin'),
+        home = join(root, 'home')
+      mkdirSync(bin)
+      mkdirSync(home)
+      const executable = (name: string, source: string) =>
+        writeFileSync(join(bin, name), `#!/bin/sh\n${source}\n`, { mode: 0o755 })
+      executable('id', 'echo 1000')
+      executable('bun', 'echo 1.4.2')
+      executable('sudo', '[ "$1" = -n ] && shift; exec "$@"')
+      executable(
+        'systemctl',
+        'for unit; do :; done; case "$1" in stop) echo inactive > "$STATE_ROOT/socket" ;; start) echo active > "$STATE_ROOT/socket" ;; show) echo 0 ;; is-active) case "$unit" in *.socket) cat "$STATE_ROOT/socket" ;; *proxy.service) echo inactive ;; *) cat "$STATE_ROOT/server" ;; esac ;; *) exit 97 ;; esac'
+      )
+      writeFileSync(join(root, 'socket'), 'active\n')
+      writeFileSync(join(root, 'server'), 'inactive\n')
+      const id = 'agent_owner_loss'
+      const box = { sandboxId: id, unixUser: boxUnixUser(id), reconcilableSpecHash: 'lifecycle:owner-generation:old' }
+      const machine = { id: 'm1' } as any
+      const runner = {
+        run: async (_machine: unknown, command: string) => {
+          const result = Bun.spawnSync(
+            [
+              'bash',
+              '-c',
+              command.replaceAll(`/home/${box.unixUser}`, home).replaceAll('/opt/ficus/bin/bun', join(bin, 'bun')),
+            ],
+            {
+              env: { PATH: `${bin}:/usr/bin:/bin`, STATE_ROOT: root, FICUS_HOST_ROOT: root },
+            }
+          )
+          return { exitCode: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() }
+        },
+      }
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          '--no-install',
+          new URL('../../machines/test-fixtures/bun-claim-owner.ts', import.meta.url).pathname,
+        ],
+        {
+          env: {
+            ...process.env,
+            NODE_ENV: 'test',
+            FICUS_BUN_CLAIM_FIXTURE_ROOT: root,
+            FICUS_BUN_CLAIM_FIXTURE_BOX: JSON.stringify(box),
+            FICUS_BUN_CLAIM_FIXTURE_PHASE: phase,
+          },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        }
+      )
+      const diagnostics = Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text()])
+      let deadline: ReturnType<typeof setTimeout> | undefined
+      try {
+        const code = await Promise.race([
+          child.exited,
+          new Promise<never>((_, reject) => {
+            deadline = setTimeout(() => reject(new Error('Owned claimant did not reach SIGKILL boundary')), 3000)
+          }),
+        ])
+        const logs = await diagnostics
+        expect(code, logs.join('\n')).toBe(137)
+      } finally {
+        clearTimeout(deadline)
+        if (child.exitCode === null) child.kill('SIGKILL')
+        await child.exited
+        await diagnostics
+      }
+      expect(readFileSync(join(root, 'socket'), 'utf8').trim()).toBe('inactive')
+      const h = makeHarness()
+      let leaseHeld = false
+      let restoreCalls = 0
+      h.deps.withSetupLease = async (_id, fn) => {
+        leaseHeld = true
+        try {
+          return await fn()
+        } finally {
+          leaseHeld = false
+        }
+      }
+      Object.assign(h.deps, {
+        recoverRuntimeAdoption: async (machine: any, current: any) => {
+          expect(leaseHeld).toBe(true)
+          restoreCalls++
+          return recoverBoxBunRuntimeClaim(machine, current, runner)
+        },
+      })
+      h.deps.runtimeAdoptionIdle = (machine, current) => probeBoxBunAdoption(machine, current, '1.4.2', runner)
+      h.setMachineBoxRow({
+        machineId: 'm1',
+        port: 40001,
+        status: phase === 'claimed' ? 'ready' : 'ensuring',
+        reconcilableSpecHash: box.reconcilableSpecHash,
+      })
+      if (phase === 'pending') {
+        const prior = await h.deps.ensureSetupFingerprint!(id, 'previous-fingerprint')
+        h.setSetupState({ ...prior, pendingInvocationId: 'unknown-invocation', pendingInvocationKind: 'assets' })
+      }
+      const ensure = h.deps.ensureBox
+      h.deps.ensureBox = async (input) => {
+        const claim = await withIdleBunRuntimeClaim(
+          machine,
+          box,
+          '1.4.2',
+          async () => {
+            const placed = await ensure(input)
+            h.setMachineBoxRow({
+              machineId: 'm1',
+              port: placed.box.port,
+              status: 'ready',
+              reconcilableSpecHash: input.env.FICUS_BOX_SPEC_HASH,
+            })
+            return placed
+          },
+          runner
+        )
+        if (!claim.adopted) throw new Error('Expected recovered idle claim')
+        return claim.value
+      }
+      const manager = new VmSandboxManager(h.deps)
+      const options = { ...agentOpts, lifecycleGeneration: 'owner-generation' }
+      const result = await manager.ensureSandbox(id, options).catch((error) => error)
+      if (phase === 'server-started' || phase === 'pending')
+        expect(startupRetryCode(result)).toBe('sandbox_readiness_pending')
+      else expect(result).toBe(id)
+      expect(restoreCalls).toBeGreaterThan(0)
+      expect(readFileSync(join(root, 'socket'), 'utf8').trim()).toBe('active')
+      if (phase === 'server-started' || phase === 'pending') {
+        expect(h.ensureCalls).toHaveLength(0)
+        expect(await manager.getRunningSandboxSpecHash(id)).toBe(box.reconcilableSpecHash)
+        if (phase === 'pending') {
+          expect((await h.deps.getSetupState(id))!.pendingInvocationId).toBe('unknown-invocation')
+          h.setSetupState(null) // The fixture now supplies explicit resolution; recovery never clears it.
+        }
+        writeFileSync(join(root, 'server'), 'inactive\n')
+        rmSync(join(home, '.ficus/runtime/bash-invocations/active/unknown.json'), { force: true })
+        await manager.ensureSandbox(id, options)
+      }
+      expect(h.ensureCalls).toHaveLength(1)
+      expect(await manager.getRunningSandboxSpecHash(id)).toStartWith('lifecycle:owner-generation:')
+      expect(h.stopCalls).toHaveLength(0)
+      await manager.cleanup()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+}
+
+test('normal ensure cannot recover a live claim before acquiring the durable setup lease', async () => {
+  const { withVmSetupLease } = await import('./setup-state')
+  const id = `agent_lease_${crypto.randomUUID()}`
+  const h = makeHarness()
+  const held = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  const waiting = Promise.withResolvers<void>()
+  const owner = withVmSetupLease(id, async () => {
+    held.resolve()
+    await release.promise
+  })
+  await held.promise
+  let recovered = false
+  h.deps.recoverRuntimeAdoption = async () => {
+    recovered = true
+    return true
+  }
+  h.deps.withSetupLease = (_id, fn) =>
+    withVmSetupLease(id, fn, {
+      sleep: async () => {
+        waiting.resolve()
+        await release.promise
+      },
+    })
+  h.deps.runtimeAdoptionIdle = async () => false
+  h.setMachineBoxRow({ machineId: 'm1', port: 40001, status: 'ready', reconcilableSpecHash: 'lifecycle:owner:old' })
+  const manager = new VmSandboxManager(h.deps)
+  const ensure = manager.ensureSandbox(id, agentOpts)
+  try {
+    await waiting.promise
+    expect(recovered).toBe(false)
+  } finally {
+    release.resolve()
+    await owner
+    await ensure
+    await manager.cleanup()
+  }
+  expect(recovered).toBe(true)
+})
+
+test('normal adoption propagates the setup-session ownership fence before physical ensure', async () => {
+  const h = makeHarness()
+  let owned = true
+  h.deps.withSetupLease = (_id, fn) =>
+    fn(() => {
+      if (!owned) throw new Error('setup lease lost')
+    })
+  h.deps.recoverRuntimeAdoption = async () => {
+    owned = false
+    return true
+  }
+  h.setMachineBoxRow({ machineId: 'm1', port: 40001, status: 'ready', reconcilableSpecHash: 'lifecycle:owner:old' })
+  const manager = new VmSandboxManager(h.deps)
+  try {
+    await expect(manager.ensureSandbox('agent_lease_lost', agentOpts)).rejects.toThrow('setup lease lost')
+    expect(h.ensureCalls).toHaveLength(0)
+  } finally {
+    await manager.cleanup()
+  }
 })

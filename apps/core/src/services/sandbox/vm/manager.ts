@@ -142,7 +142,11 @@ import { getSecretStore } from '../../secrets'
 import { effectiveMachineScripts, type PrebuiltReadOpts } from '../../machines/machine-prebuilt'
 import { resolvePublicAppUrl } from '../../../lib/public-app-url'
 
-import { bunVersionFromBootstrap, probeBoxBunAdoption } from '../../machines/bun-runtime-adoption'
+import {
+  bunVersionFromBootstrap,
+  probeBoxBunAdoption,
+  recoverBoxBunRuntimeClaim,
+} from '../../machines/bun-runtime-adoption'
 import { sandboxHasActiveExecution } from '../../machines/sandbox-activity'
 import { commandRefusedForRestartError, isCommandDrainActive, withBoxCommandDrain } from '../command-drain'
 
@@ -295,6 +299,8 @@ export interface VmLifecycleState {
 export interface VmSandboxManagerDeps {
   /** Non-waking host proof: old process stood down, registry clear, disk Bun current. */
   runtimeAdoptionIdle(machine: Machine, box: MachineBox): Promise<boolean>
+  /** Only under the newly owned durable setup lease, before activity deferral. */
+  recoverRuntimeAdoption(machine: Machine, box: MachineBox, assertOwned?: () => void): Promise<boolean>
   hasActiveExecution(sandboxId: string): Promise<boolean>
   hasActiveDeployment(sandboxId: string): Promise<boolean>
   ensureBox(opts: EnsureBoxOpts): Promise<{
@@ -407,7 +413,11 @@ export interface VmSandboxManagerDeps {
   getSetupState(sandboxId: string): Promise<VmSetupState | null>
   deleteSetupState(sandboxId: string): Promise<void>
   withProvision: typeof coalesceVmProvision
-  withSetupLease<T>(sandboxId: string, fn: () => Promise<T>, wait?: VmSetupLeaseWait): Promise<T>
+  withSetupLease<T>(
+    sandboxId: string,
+    fn: (assertOwned?: () => void) => Promise<T>,
+    wait?: VmSetupLeaseWait
+  ): Promise<T>
   ensureSetupFingerprint(sandboxId: string, fingerprint: string): Promise<VmSetupState>
   markSetupPending(sandboxId: string, fingerprint: string, now: Date): Promise<boolean>
   restoreSetupAfterAssets(sandboxId: string, fingerprint: string, prior: VmSetupState, now: Date): Promise<boolean>
@@ -480,6 +490,8 @@ export function defaultBoxProvisionVersion(opts: PrebuiltReadOpts = {}): () => s
 
 function productionDeps(): VmSandboxManagerDeps {
   return {
+    recoverRuntimeAdoption: (machine, box, assertOwned) =>
+      recoverBoxBunRuntimeClaim(machine, box, undefined, assertOwned),
     runtimeAdoptionIdle: (machine, box) =>
       probeBoxBunAdoption(machine, box, bunVersionFromBootstrap(effectiveMachineScripts().bootstrapScript)),
     hasActiveExecution: sandboxHasActiveExecution,
@@ -744,6 +756,7 @@ export class VmSandboxManager implements ISandboxManager {
       // machine. Bounded to one re-place: losing the race twice in a row means
       // something is systemically wrong, so surface it.
       const MAX_PLACEMENT_ATTEMPTS = 2
+      let assertSetupOwned: () => void = () => {}
       let env!: BoxEnv
       let finishPhysicalSetup: ((outcome: 'ready' | 'failed') => void) | undefined
       const beginPhysicalWork = (reason: 'runtime_start' | 'runtime_reconnect' | 'spec_reconcile') => {
@@ -1105,17 +1118,24 @@ export class VmSandboxManager implements ISandboxManager {
             }
             if (healthy) return finishEnsure({ machine, box: readyBox, endpoint, timings: {} }, true)
           }
-          if (
-            readyBox?.status === 'ready' &&
-            readyBox.reconcilableSpecHash !== specHash &&
-            !(await this.runtimeAdoptionAllowed(machine, readyBox))
-          ) {
-            return this.deferRuntimeAdoption(sandboxId, opts.signal)
-          }
           return await this.deps.withProvision(
             sandboxId,
             async () => {
+              assertSetupOwned()
               const observed = await this.deps.getMachineBox(sandboxId)
+              const sameHostDrift =
+                observed &&
+                observed.machineId === machine.id &&
+                observed.status !== 'stopped' &&
+                observed.status !== 'stop_unverified' &&
+                observed.reconcilableSpecHash !== specHash
+              if (sameHostDrift && observed) {
+                if (
+                  !(await this.deps.recoverRuntimeAdoption(machine, observed, assertSetupOwned)) ||
+                  !(await this.runtimeAdoptionAllowed(machine, observed))
+                )
+                  return this.deferRuntimeAdoption(sandboxId, opts.signal)
+              }
               const provision = async () => {
                 // A normal resume need not have spec drift. Repair a preempt-stop
                 // through the same authoritative readbacks, not a display status
@@ -1127,12 +1147,15 @@ export class VmSandboxManager implements ISandboxManager {
                 }
                 if (
                   current?.status === 'ready' &&
+                  current.machineId === machine.id &&
                   current.reconcilableSpecHash !== specHash &&
                   !(await this.runtimeAdoptionAllowed(machine, current))
                 ) {
                   return this.deferRuntimeAdoption(sandboxId, opts.signal)
                 }
+                assertSetupOwned()
                 const placed = await this.deps.ensureBox({
+                  assertOwned: assertSetupOwned,
                   sandboxId,
                   machineId: machine.id,
                   env,
@@ -1144,7 +1167,11 @@ export class VmSandboxManager implements ISandboxManager {
                   specHash: computeProvisioningMarker(specHash, env),
                   expectedBunVersion: bunVersionFromBootstrap(effectiveMachineScripts().bootstrapScript),
                   adoptIdleRuntime: Boolean(
-                    current && current.status !== 'stopped' && current.reconcilableSpecHash !== specHash
+                    current &&
+                    current.machineId === machine.id &&
+                    current.status !== 'stopped' &&
+                    current.status !== 'stop_unverified' &&
+                    current.reconcilableSpecHash !== specHash
                   ),
                   // The caller's liveness observation, if any. Set only by the vm
                   // lifecycle tick (one `ss -ltnH` per machine), so its keep-warm
@@ -1166,9 +1193,7 @@ export class VmSandboxManager implements ISandboxManager {
                   throw new VmPostProvisionSetupError(error)
                 }
               }
-              return observed?.status === 'ready' && observed.reconcilableSpecHash !== specHash
-                ? withBoxCommandDrain(sandboxId, provision)
-                : provision()
+              return sameHostDrift ? withBoxCommandDrain(sandboxId, provision) : provision()
             },
             async () => {
               // The owner's endpoint is process-local. A shared success only
@@ -1191,7 +1216,15 @@ export class VmSandboxManager implements ISandboxManager {
             },
             {
               wait: { signal: opts.signal },
-              withLease: (fn) => this.deps.withSetupLease(sandboxId, fn, { signal: opts.signal }),
+              withLease: (fn) =>
+                this.deps.withSetupLease(
+                  sandboxId,
+                  (assertOwned) => {
+                    assertSetupOwned = assertOwned ?? (() => {})
+                    return fn(assertOwned)
+                  },
+                  { signal: opts.signal }
+                ),
             }
           )
         } catch (err) {
@@ -1229,7 +1262,10 @@ export class VmSandboxManager implements ISandboxManager {
     // Do not publish the desired hash/fingerprint, close a reusable client, or
     // HTTP-poll a live legacy executor: polling would prevent its idle exit.
     if (!this.getClientForSandbox(sandboxId) && !(await this.attachClient(sandboxId, true))) {
-      throw new Error(`Deferred runtime adoption could not attach existing box ${sandboxId}`)
+      const pending = Object.assign(new Error(`Runtime adoption is awaiting safe readiness for ${sandboxId}`), {
+        name: 'SandboxReadinessPendingError',
+      })
+      throw new VmPostProvisionSetupError(pending)
     }
     log.debug(`Runtime adoption deferred until known idle exit: ${sandboxId}`)
     return sandboxId

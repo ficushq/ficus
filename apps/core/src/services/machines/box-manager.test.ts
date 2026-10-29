@@ -5309,7 +5309,9 @@ it('a lost idle claim defers normal adoption before bind or spec publication', a
   deps.runner.run = (machine, command, options) =>
     command.includes('FICUS_BUN_ADOPTION=claimed')
       ? Promise.resolve({ exitCode: 74, stdout: '', stderr: '' })
-      : run(machine, command, options)
+      : command.includes('FICUS_BUN_RECOVERY=')
+        ? Promise.resolve({ exitCode: 0, stdout: 'FICUS_BUN_RECOVERY=none', stderr: '' })
+        : run(machine, command, options)
   const result = await ensureBox(
     {
       sandboxId: box.sandboxId,
@@ -5342,4 +5344,33 @@ it('starts the replacement server before reopening an idle-adoption activation s
   expect(command.indexOf('restart ficus-box-box_fixture.service')).toBeLessThan(
     command.indexOf('enable --now ficus-box-box_fixture.socket')
   )
+})
+
+it('lost setup-session ownership prevents remote continuation and ready publication', async () => {
+  const events: string[] = []
+  const machine = makeMachine()
+  const box = makeBox()
+  const { deps, upserts } = happyDeps(events, machine, box)
+  const run = deps.runner.run
+  let owned = true
+  deps.runner.run = async (...args) => {
+    const result = await run(...args)
+    if (args[1].includes(' restart ')) owned = false
+    return result
+  }
+  await expect(
+    ensureBox(
+      {
+        sandboxId: box.sandboxId,
+        machineId: machine.id,
+        role: 'agent',
+        env: {},
+        assertOwned: () => {
+          if (!owned) throw new Error('setup lease lost')
+        },
+      },
+      deps
+    )
+  ).rejects.toThrow('setup lease lost')
+  expect(upserts.some((row) => row.status === 'ready')).toBe(false)
 })

@@ -96,7 +96,11 @@ test('idle runtime claim closes activation through the callback and restores it 
   const runner = {
     run: async (_machine: unknown, command: string) => {
       calls.push(command)
-      return { exitCode: 0, stdout: 'FICUS_BUN_ADOPTION=claimed\n', stderr: '' }
+      return {
+        exitCode: 0,
+        stdout: command.includes('FICUS_BUN_RECOVERY=') ? 'FICUS_BUN_RECOVERY=none\n' : 'FICUS_BUN_ADOPTION=claimed\n',
+        stderr: '',
+      }
     },
   }
   const result = await adoption.withIdleBunRuntimeClaim(
@@ -104,9 +108,9 @@ test('idle runtime claim closes activation through the callback and restores it 
     box,
     '1.4.2',
     async () => {
-      expect(calls).toHaveLength(1)
+      expect(calls).toHaveLength(2)
       expect(calls[0]).toContain('flock -x')
-      expect(calls[0]).toContain('stop ficus-box-box_fixture.socket')
+      expect(calls[1]).toContain('stop ficus-box-box_fixture.socket')
       return 'adopted'
     },
     runner
@@ -272,8 +276,85 @@ esac`
         )
       ).toEqual({ adopted: false })
       expect(readFileSync(join(root, 'events'), 'utf8')).toBe('')
+      reset()
+      env = {}
+      const journal = join(root, 'run/ficus-box-locks/ficus-box-box_fixture.bun-adoption')
+      // Simulate a new owner replacing the old token. Old finally MUST NOT
+      // reopen its listener, and generation changes must never steal it.
+      await expect(
+        adoption.withIdleBunRuntimeClaim(
+          machine,
+          box,
+          '1.4.2',
+          async () => {
+            const lines = readFileSync(journal, 'utf8').trim().split('\n')
+            lines[2] = crypto.randomUUID()
+            writeFileSync(journal, lines.join('\n') + '\n')
+          },
+          runner
+        )
+      ).rejects.toThrow('owned box runtime activation listener')
+      expect(readFileSync(join(root, 'socket'), 'utf8').trim()).toBe('inactive')
+      expect(
+        await adoption.recoverBoxBunRuntimeClaim(
+          machine,
+          { ...box, reconcilableSpecHash: 'lifecycle:other:spec' },
+          runner
+        )
+      ).toBe(false)
+      expect(readFileSync(join(root, 'socket'), 'utf8').trim()).toBe('inactive')
+      let replaced = false
+      const overtakingRunner = {
+        run: async (m: unknown, command: string) => {
+          const result = await runner.run(m, command)
+          if (!replaced && result.stdout.startsWith('FICUS_BUN_RECOVERY=') && !result.stdout.includes('=none')) {
+            replaced = true
+            const lines = readFileSync(journal, 'utf8').trim().split('\n')
+            lines[2] = crypto.randomUUID()
+            writeFileSync(journal, lines.join('\n') + '\n')
+          }
+          return result
+        },
+      }
+      expect(await adoption.recoverBoxBunRuntimeClaim(machine, box, overtakingRunner)).toBe(false)
+      expect(readFileSync(join(root, 'socket'), 'utf8').trim()).toBe('inactive')
+      expect(await adoption.recoverBoxBunRuntimeClaim(machine, box, runner)).toBe(true)
+      expect(readFileSync(join(root, 'socket'), 'utf8').trim()).toBe('active')
+      writeFileSync(journal, 'malformed-unknown-owner\n')
+      expect(await adoption.recoverBoxBunRuntimeClaim(machine, box, runner)).toBe(false)
+      rmSync(journal)
     }
   } finally {
     rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('unknown recovery and a still-running host flock defer without running adoption', async () => {
+  const machine = { id: 'fixture' } as any
+  const box = { sandboxId: 'agent_fixture', unixUser: 'box_fixture' }
+  for (const runner of [
+    { run: async () => ({ exitCode: 73, stdout: '', stderr: 'owned host work still running' }) },
+    { run: async () => ({ exitCode: 1, stdout: '', stderr: 'unknown host state' }) },
+    { run: async () => ({ exitCode: 0, stdout: 'unrecognized', stderr: '' }) },
+    { run: async () => ({ exitCode: 0, stdout: crypto.randomUUID(), stderr: '' }) },
+    {
+      run: async () => {
+        throw new Error('transport outcome unknown')
+      },
+    },
+  ]) {
+    let ran = false
+    expect(
+      await adoption.withIdleBunRuntimeClaim(
+        machine,
+        box,
+        '1.4.2',
+        async () => {
+          ran = true
+        },
+        runner
+      )
+    ).toEqual({ adopted: false })
+    expect(ran).toBe(false)
   }
 })

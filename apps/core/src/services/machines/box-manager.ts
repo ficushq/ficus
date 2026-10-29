@@ -147,6 +147,8 @@ export interface BoxEnv {
 }
 
 export interface EnsureBoxOpts {
+  /** Existing durable setup-session fence; checked at remote and publication boundaries. */
+  assertOwned?: () => void
   /** Automatic Bun adoption only: claim an already-idle activation chain. */
   adoptIdleRuntime?: boolean
   /** Verify the running interpreter before publishing a newly adopted spec. */
@@ -1402,10 +1404,34 @@ export async function ensureBox(
   priorBoxesOnMachine?: number
   runtimeAdoptionDeferred?: boolean
 }> {
+  if (opts.assertOwned) {
+    const runner = deps.runner ?? defaultSshRunner
+    const assertOwned = opts.assertOwned
+    deps = {
+      ...deps,
+      runner: {
+        ...runner,
+        run: async (...args: Parameters<SshRunner['run']>) => {
+          assertOwned()
+          const result = await runner.run(...args)
+          assertOwned()
+          return result
+        },
+      },
+    }
+  }
   const tunnels = deps.tunnels ?? machineTunnels
   const ensureArtifacts = deps.ensureMachineArtifacts ?? ((m: Machine) => ensureMachineArtifactsReal(m))
-  const bind = deps.bindMachineBox ?? bindMachineBoxReal
-  const upsert = deps.upsertMachineBox ?? upsertMachineBoxReal
+  const bindImpl = deps.bindMachineBox ?? bindMachineBoxReal
+  const upsertImpl = deps.upsertMachineBox ?? upsertMachineBoxReal
+  const bind: typeof bindImpl = async (values) => {
+    opts.assertOwned?.()
+    return bindImpl(values)
+  }
+  const upsert: typeof upsertImpl = async (values) => {
+    opts.assertOwned?.()
+    return upsertImpl(values)
+  }
   const getBox = deps.getMachineBox ?? getMachineBoxReal
   const getMachine = deps.getMachine ?? getMachineReal
   const listBoxes = deps.listMachineBoxes ?? listMachineBoxesReal
@@ -1779,7 +1805,7 @@ export async function ensureBox(
         : 'runtime_start'
     )
     await timer.time('artifacts', () => ensureArtifacts(machine))
-    const adoptingIdle = Boolean(existing && opts.adoptIdleRuntime)
+    const adoptingIdle = Boolean(existing && existing.machineId === machine.id && opts.adoptIdleRuntime)
     const provision = async () => {
       const bound = await bind({ sandboxId: opts.sandboxId, machineId: machine.id, unixUser })
 
@@ -1901,7 +1927,14 @@ export async function ensureBox(
     }
     if (adoptingIdle && existing) {
       if (!opts.expectedBunVersion) throw new Error('Idle runtime adoption requires an exact Bun pin')
-      const claim = await withIdleBunRuntimeClaim(machine, existing, opts.expectedBunVersion, provision, deps.runner)
+      const claim = await withIdleBunRuntimeClaim(
+        machine,
+        existing,
+        opts.expectedBunVersion,
+        provision,
+        deps.runner,
+        opts.env.FICUS_BOX_SPEC_HASH
+      )
       if (claim.adopted) return claim.value
       await tunnels.ensureMaster(machine)
       const localPort = await tunnels.addForward(machine, existing.port)
