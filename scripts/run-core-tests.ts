@@ -126,14 +126,22 @@ export function selectSubprocessLane(
   return { shared: [], isolated: plan.isolated }
 }
 
-/** Balance the four measured long poles, then alternate all remaining files.
+/** Balance the six measured long poles, then alternate all remaining files.
  * Selection uses the FULL isolated inventory, including auto-detected module mocks.
  * Never use timing data as a membership filter: new files are assigned automatically.
  */
 export function subprocessShardFiles(files: string[], shard: 1 | 2): string[] {
   const heavy = [
-    ['./src/services/integrations/github/feedback-routing.test.ts', './src/services/execution/pickup.test.ts'],
-    ['./src/services/integrations/outputs/runtime.test.ts', './src/services/amtp/node-conformance.test.ts'],
+    [
+      './src/services/integrations/github/feedback-routing.test.ts',
+      './src/services/execution/pickup.test.ts',
+      './src/services/sandbox/vm/provision-flight-process.test.ts',
+    ],
+    [
+      './src/services/integrations/outputs/runtime.test.ts',
+      './src/services/amtp/node-conformance.test.ts',
+      './src/services/machines/installed-machine-bundles.test.ts',
+    ],
   ]
   const assigned = new Map(heavy.flatMap((group, index) => group.map((file) => [file, index + 1] as const)))
   const rest = [...files].sort().filter((file) => !assigned.has(file))
