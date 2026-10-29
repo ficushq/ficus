@@ -28,7 +28,7 @@ export function HostCapacitySummary({
       : []),
   ]
   return (
-    <span className="border-l border-current/20 pl-1.5 text-secondary" title={details.join(' ')}>
+    <span className="border-l border-th-border pl-1.5 text-secondary" title={details.join(' ')}>
       {labels.join(' · ')}
     </span>
   )

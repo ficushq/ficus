@@ -37,3 +37,17 @@ test('missing samples and old reserved-quota payloads do not invent measured usa
   ).toBe('')
   expect(renderToStaticMarkup(<HostCapacitySummary />)).toBe('')
 })
+
+test.each([0, 1, 2])('uses a theme divider with %i starting boxes', (startingBoxes) => {
+  const html = renderToStaticMarkup(
+    <HostCapacitySummary
+      capacity={{ ...capacity, startingBoxes }}
+      pressure={{ cpus: 8, load: [4, 3, 2], memTotalMb: 16000, memAvailableMb: 8000 }}
+    />
+  )
+  expect(html).toContain('border-l border-th-border pl-1.5 text-secondary')
+  expect(html).not.toContain('border-current')
+  expect(html).toContain('Host load 0.5×')
+  if (startingBoxes) expect(html).toContain(`Starting ${startingBoxes}/2 boxes`)
+  else expect(html).not.toContain('Starting')
+})
