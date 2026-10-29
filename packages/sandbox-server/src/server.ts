@@ -59,8 +59,7 @@ import { handleConfinedList, handleConfinedRead, handleConfinedUpload } from './
 import {
   BoxProcessError,
   listBoxContainers,
-  listBoxProcesses,
-  readPressure,
+  listBoxProcessSnapshot,
   signalBoxProcess,
   stopBoxContainer,
 } from './services/processes'
@@ -367,16 +366,16 @@ async function main(): Promise<void> {
                 return Response.json({ error: 'Managed toolchain activation failed' }, { status: 500 })
               }
             case '/processes': {
-              const [processes, containers] = await Promise.all([listBoxProcesses(), listBoxContainers()])
+              const [snapshot, containers] = await Promise.all([listBoxProcessSnapshot(), listBoxContainers()])
               boxRuntimeHealth.observeContainers(containers)
-              return Response.json({ pressure: readPressure(), processes, containers })
+              return Response.json({ ...snapshot, containers })
             }
             case '/processes/signal':
             case '/containers/stop':
               try {
                 return Response.json(
                   pathname === '/processes/signal'
-                    ? signalBoxProcess(body.pid, body.signal)
+                    ? signalBoxProcess(body.pid, body.signal, { startTicks: body.startTicks })
                     : await stopBoxContainer(body.id)
                 )
               } catch (error) {

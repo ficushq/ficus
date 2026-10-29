@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
-  isSandboxOverloaded,
+  sandboxPressureLabel,
+  sandboxPressureDetail,
   type SandboxPressure,
   type SandboxProcess,
   type SandboxProcessSignal,
@@ -29,14 +30,13 @@ function formatMemory(mb: number): string {
 }
 
 export function PressureSummary({ pressure }: { pressure: SandboxPressure }) {
-  const overloaded = isSandboxOverloaded(pressure)
+  const label = sandboxPressureLabel(pressure)
   return (
-    <p
-      className={clsx('text-sm', overloaded ? 'text-status-danger-600 dark:text-status-danger-400' : 'text-secondary')}
-    >
-      {overloaded && <span className="font-medium">Overloaded: </span>}
+    <p className={clsx('text-sm', label ? 'text-status-danger-600 dark:text-status-danger-400' : 'text-secondary')}>
+      {label && <span className="font-medium">{label}: </span>}
       Load {pressure.load[0].toFixed(1)} on {pressure.cpus} {pressure.cpus === 1 ? 'CPU' : 'CPUs'} ·{' '}
       {formatMemory(pressure.memAvailableMb)} free of {formatMemory(pressure.memTotalMb)}
+      <span className="mt-1 block text-xs">{sandboxPressureDetail(pressure)}</span>
     </p>
   )
 }
@@ -122,10 +122,10 @@ export function SandboxProcesses({ target }: { target: SandboxProcessesTarget })
                     </td>
                     <td className="py-1 whitespace-nowrap">
                       {process.protected ? (
-                        <span className="text-muted">Runs the sandbox</span>
+                        <span className="text-muted">{process.protectionReason ?? 'Runs the sandbox'}</span>
                       ) : (
                         <ProcessControls
-                          key={`${target.kind}:${target.kind === 'squad' ? target.squadId : target.agentId}:${process.pid}:${process.command}`}
+                          key={`${target.kind}:${target.kind === 'squad' ? target.squadId : target.agentId}:${process.pid}:${process.startTicks}:${process.command}`}
                           target={target}
                           process={process}
                           refresh={refresh}
@@ -218,8 +218,8 @@ function ProcessControls({
   const signal = useRowControl(
     (signal: SandboxProcessSignal, abortSignal) =>
       target.kind === 'squad'
-        ? signalSandboxProcess(target.squadId, process.pid, signal, abortSignal)
-        : signalAgentSandboxProcess(target.agentId, process.pid, signal, abortSignal),
+        ? signalSandboxProcess(target.squadId, process.pid, signal, abortSignal, process.startTicks)
+        : signalAgentSandboxProcess(target.agentId, process.pid, signal, abortSignal, process.startTicks),
     refresh
   )
   // Match the executable, not incidental mentions in arguments. This is guidance only;

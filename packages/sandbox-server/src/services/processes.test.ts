@@ -1,3 +1,6 @@
+import { sandboxPressureLabel, sandboxPressureDetail } from '@ficus/shared'
+import * as processService from './processes'
+import * as fs from 'fs'
 import * as childProcess from 'child_process'
 import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
@@ -15,6 +18,14 @@ import {
 } from './processes'
 
 const BOX_UID = 30033
+const unknownCounters = {
+  cpuQuotaCpus: null,
+  cpuQuotaPercent: null,
+  cpuThrottledPeriods: null,
+  cpuThrottledUsec: null,
+  memoryHighEvents: null,
+  memoryMaxEvents: null,
+}
 const OTHER_UID = 100998
 const SELF = 700
 
@@ -31,6 +42,7 @@ interface FakeProcess {
   cmdline?: string[]
   ticks?: number
   startTicks?: number
+  cgroup?: string
   rssKb?: number
 }
 
@@ -49,11 +61,17 @@ function writeProcess(root: string, p: FakeProcess) {
     `Name:\t${p.comm}\nUid:\t${p.uid}\t${p.uid}\t${p.uid}\t${p.uid}\nVmRSS:\t${p.rssKb ?? 0} kB\n`
   )
   writeFileSync(join(dir, 'cmdline'), (p.cmdline ?? []).join('\0'))
+  writeFileSync(join(dir, 'cgroup'), `0::${p.cgroup ?? '/'}\n`)
 }
 
 function fakeProc(processes: FakeProcess[]): string {
   const root = mkdtempSync(join(tmpdir(), 'fake-proc-'))
   roots.push(root)
+  mkdirSync(join(root, 'self'))
+  writeFileSync(
+    join(root, 'self/cgroup'),
+    `0::/user.slice/user-${BOX_UID}.slice/user@${BOX_UID}.service/app.slice/ficus-sandbox-server.service\n`
+  )
   writeFileSync(join(root, 'loadavg'), '22.72 31.86 30.52 1/648 2871365\n')
   writeFileSync(
     join(root, 'meminfo'),
@@ -162,7 +180,8 @@ describe('stale detached runc exec control paths', () => {
 
 describe('readPressure', () => {
   test('reads cpus, load and memory', () => {
-    expect(readPressure(fakeProc([]))).toEqual({
+    expect(readPressure(fakeProc([]), { cgroupRoot: '/nonexistent-cgroup' })).toEqual({
+      box: { ...unknownCounters, cpuPercent: null, sampleMs: null, cpuPressureSome: null, memoryPressureSome: null },
       cpus: 4,
       load: [22.72, 31.86, 30.52],
       memTotalMb: 7941,
@@ -181,12 +200,14 @@ describe('listBoxProcesses', () => {
     // Between the two samples tsc uses 2 ticks (100% of a CPU at 100 ticks/s
     // over 20ms); the shim, with a far larger lifetime total, uses none.
     setTimeout(() => writeProcess(root, { ...tsc, ticks: tsc.ticks! + 2 }), 5)
+    let time = 0
     const processes = await listBoxProcesses({
       procRoot: root,
       uid: BOX_UID,
       selfPid: SELF,
       clockTicks: 100,
       sampleMs: 20,
+      now: () => (time += 20),
     })
     expect(processes.map((p) => p.pid)).toEqual([tsc.pid, shim.pid, server.pid, manager.pid])
     expect(processes[0]).toMatchObject({
@@ -195,6 +216,7 @@ describe('listBoxProcesses', () => {
       memRssMb: 2116,
       ageSeconds: 1000,
       command: 'bun node_modules/.bin/tsc -p apps/core --noEmit',
+      startTicks: 900000,
       protected: false,
     })
     expect(processes.find((p) => p.pid === shim.pid)?.cpuPercent).toBe(0)
@@ -336,4 +358,402 @@ test('wedged Docker control is forcefully bounded, not left waiting for a TERM-i
   } finally {
     execute.mockRestore()
   }
+})
+
+describe('box attribution from cgroup v2', () => {
+  test('samples the whole user slice over the process window, including exited tasks', async () => {
+    const root = fakeProc([server])
+    const cgroupRoot = join(root, 'cgroups')
+    const slice = join(cgroupRoot, 'user.slice', `user-${BOX_UID}.slice`)
+    mkdirSync(slice, { recursive: true })
+    writeFileSync(join(slice, 'cpu.stat'), 'usage_usec 1000000\nuser_usec 600000\nsystem_usec 400000\n')
+    writeFileSync(
+      join(slice, 'cpu.pressure'),
+      'some avg10=2.50 avg60=1.20 avg300=0.30 total=400\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n'
+    )
+    writeFileSync(join(slice, 'memory.pressure'), 'some avg10=30.00 avg60=20.00 avg300=10.00 total=500\n')
+    setTimeout(() => writeFileSync(join(slice, 'cpu.stat'), 'usage_usec 1040000\n'), 5)
+    let time = 0
+    const result = await processService.listBoxProcessSnapshot({
+      procRoot: root,
+      cgroupRoot,
+      uid: BOX_UID,
+      selfPid: SELF,
+      sampleMs: 20,
+      now: () => (time += 20),
+    })
+    expect(result.pressure?.box).toEqual({
+      ...unknownCounters,
+      cpuPercent: 200,
+      sampleMs: 20,
+      cpuPressureSome: { avg10: 2.5, avg60: 1.2, avg300: 0.3 },
+      memoryPressureSome: { avg10: 30, avg60: 20, avg300: 10 },
+    })
+    expect(result.pressure?.load).toEqual([22.72, 31.86, 30.52])
+    expect(sandboxPressureLabel(result.pressure)).toBe('This sandbox overloaded')
+    writeFileSync(join(slice, 'memory.pressure'), 'some avg10=0.00 avg60=0.00 avg300=0.00 total=500\n')
+    writeFileSync(join(slice, 'cpu.pressure'), 'some avg10=65.00 avg60=30.00 avg300=10.00 total=500\n')
+    writeFileSync(join(slice, 'cpu.max'), '400000 100000\n')
+    writeFileSync(join(slice, 'cpu.stat'), 'usage_usec 1040000\nnr_throttled 0\nthrottled_usec 0\n')
+    writeFileSync(join(slice, 'memory.events'), 'high 0\nmax 0\n')
+    const quiet = await processService.listBoxProcessSnapshot({
+      procRoot: root,
+      cgroupRoot,
+      uid: BOX_UID,
+      selfPid: SELF,
+      sampleMs: 20,
+      now: () => (time += 20),
+    })
+    expect(sandboxPressureLabel(quiet.pressure)).toBe('Host overloaded')
+    expect(sandboxPressureDetail(quiet.pressure!)).toContain('Host busy with other boxes')
+  })
+
+  test('missing and malformed metrics are unknown, not zero or host data', async () => {
+    const root = fakeProc([])
+    const cgroupRoot = join(root, 'cgroups')
+    const slice = join(cgroupRoot, 'user.slice', `user-${BOX_UID}.slice`)
+    mkdirSync(slice, { recursive: true })
+    writeFileSync(join(slice, 'cpu.stat'), 'usage_usec NaN\n')
+    writeFileSync(join(slice, 'cpu.pressure'), 'some avg10=101 avg60=-1 avg300=NaN total=0\n')
+    const result = await processService.listBoxProcessSnapshot({
+      procRoot: root,
+      cgroupRoot,
+      uid: BOX_UID,
+      sampleMs: 0,
+    })
+    expect(result.pressure?.box).toEqual({
+      ...unknownCounters,
+      cpuPercent: null,
+      sampleMs: null,
+      cpuPressureSome: null,
+      memoryPressureSome: null,
+    })
+  })
+})
+
+describe('runtime protection from fresh cgroups and helper roles', () => {
+  const user = `/user.slice/user-${BOX_UID}.slice/user@${BOX_UID}.service/app.slice`
+  const docker = `${user}/docker.service`
+  const box = `${user}/ficus-sandbox-server.service`
+  const fixtures: Array<[FakeProcess, processService.BoxProcess['protectionReason']]> = [
+    [
+      { pid: 201, ppid: 929, uid: BOX_UID, comm: 'dockerd', cmdline: ['/usr/bin/dockerd'], cgroup: docker },
+      'Docker runtime',
+    ],
+    [
+      { pid: 202, ppid: 201, uid: BOX_UID, comm: 'rootlesskit', cgroup: user, cmdline: ['/usr/bin/rootlesskit'] },
+      'Docker runtime',
+    ],
+    [
+      { pid: 203, ppid: 202, uid: BOX_UID, comm: 'slirp4netns', cgroup: user, cmdline: ['/usr/bin/slirp4netns'] },
+      'Docker runtime',
+    ],
+    [
+      { pid: 204, ppid: 202, uid: BOX_UID, comm: 'docker-proxy', cgroup: user, cmdline: ['/usr/bin/docker-proxy'] },
+      'Docker runtime',
+    ],
+    [
+      { pid: 205, ppid: 202, uid: BOX_UID, comm: 'containerd', cgroup: user, cmdline: ['/usr/bin/containerd'] },
+      'Docker runtime',
+    ],
+    [
+      {
+        pid: 206,
+        ppid: 205,
+        uid: BOX_UID,
+        comm: 'containerd-shim',
+        cgroup: user,
+        cmdline: ['/usr/bin/containerd-shim-runc-v2'],
+      },
+      'Docker runtime',
+    ],
+    [{ pid: 207, ppid: 929, uid: BOX_UID, comm: 'dbus-daemon', cgroup: `${user}/dbus.service` }, 'Session bus'],
+    [
+      {
+        pid: 208,
+        ppid: 929,
+        uid: BOX_UID,
+        comm: 'systemd-socket-',
+        cgroup: `${user}/ficus-sandbox-server-proxy.service`,
+      },
+      'Box listener',
+    ],
+    [
+      {
+        pid: 209,
+        ppid: 929,
+        uid: BOX_UID,
+        comm: 'systemd-socket-',
+        cgroup: '/system.slice/ficus-box-box_abc-proxy.service',
+      },
+      'Box listener',
+    ],
+    // Inheriting a server or helper cgroup / ancestry is not enough to protect agent jobs.
+    [
+      {
+        pid: 210,
+        ppid: SELF,
+        uid: BOX_UID,
+        comm: 'bash',
+        cgroup: box,
+        cmdline: ['/bin/bash', '-c', 'renice 10; bun test'],
+      },
+      undefined,
+    ],
+    [
+      { pid: 220, ppid: 201, uid: BOX_UID, comm: 'vpnkit', cgroup: docker, cmdline: ['/usr/bin/vpnkit'] },
+      'Docker runtime',
+    ],
+    [
+      { pid: 221, ppid: 201, uid: BOX_UID, comm: 'bash', cgroup: docker, cmdline: ['bash', '-c', 'build step'] },
+      undefined,
+    ],
+    [{ pid: 211, ppid: 210, uid: BOX_UID, comm: 'bun', cgroup: box, cmdline: ['bun', 'test'] }, undefined],
+    [
+      {
+        pid: 212,
+        ppid: 206,
+        uid: BOX_UID,
+        comm: 'node',
+        cgroup: `${docker}/docker-abc.scope`,
+        cmdline: ['node', 'build.js'],
+      },
+      undefined,
+    ],
+    [{ pid: 213, ppid: SELF, uid: BOX_UID, comm: 'dockerd', cgroup: user, cmdline: ['/tmp/dockerd'] }, undefined],
+    [{ pid: 214, ppid: SELF, uid: BOX_UID, comm: 'systemd', cgroup: box, cmdline: ['bash', '-c', 'build'] }, undefined],
+    [
+      { pid: 216, ppid: SELF, uid: BOX_UID, comm: 'systemd', cgroup: box, cmdline: ['/tmp/systemd', '--user'] },
+      undefined,
+    ],
+    [
+      { pid: 217, ppid: 929, uid: BOX_UID, comm: 'systemd-socket-', cgroup: `${user}/ficus-sandbox-server.socket` },
+      'Box listener',
+    ],
+    [{ pid: 215, ppid: 203, uid: BOX_UID, comm: 'bash', cgroup: user, cmdline: ['bash', '-c', 'test'] }, undefined],
+  ]
+  fixtures.push(
+    [
+      {
+        pid: 218,
+        ppid: 1,
+        uid: BOX_UID,
+        comm: 'systemd',
+        cgroup: `/user.slice/user-${BOX_UID}.slice/user@${BOX_UID}.service/init.scope`,
+        cmdline: ['/usr/lib/systemd/systemd', '--user'],
+      },
+      'Runs the sandbox',
+    ],
+    [{ pid: 219, ppid: 218, uid: BOX_UID, comm: '(sd-pam)', cgroup: user }, 'Runs the sandbox']
+  )
+  test('labels infrastructure but not command wrappers, builds or name lookalikes', async () => {
+    const root = fakeProc([manager, server, ...fixtures.map(([p]) => p)])
+    const listed = await listBoxProcesses({ procRoot: root, uid: BOX_UID, selfPid: SELF, sampleMs: 0 })
+    for (const [p, label] of fixtures) {
+      const row = listed.find((row) => row.pid === p.pid)!
+      expect([p.pid, row.protected, row.protectionReason]).toEqual([p.pid, !!label, label])
+    }
+  })
+  test('signal route reclassifies at call time without relying on a listing', () => {
+    const root = fakeProc([manager, server, ...fixtures.map(([p]) => p)])
+    const killed: number[] = []
+    const options = {
+      procRoot: root,
+      uid: BOX_UID,
+      selfPid: SELF,
+      kill: (pid: number) => {
+        killed.push(pid)
+      },
+    }
+    for (const [p, label] of fixtures) {
+      if (label) expect(() => signalBoxProcess(p.pid, 'KILL', options)).toThrow(`${label}; cannot be signalled`)
+      else expect(signalBoxProcess(p.pid, 'TERM', options).pid).toBe(p.pid)
+    }
+    writeProcess(root, { ...fixtures[0]![0], pid: 210 })
+    expect(() => signalBoxProcess(210, 'TERM', options)).toThrow('Docker runtime; cannot be signalled')
+    expect(killed).toEqual(fixtures.filter(([, label]) => !label).map(([p]) => p.pid))
+  })
+})
+
+test('health pressure sampling is single-flight, non-blocking, and expires old CPU samples', async () => {
+  const root = fakeProc([])
+  const cgroupRoot = join(root, 'cgroups')
+  const slice = join(cgroupRoot, 'user.slice', `user-${BOX_UID}.slice`)
+  mkdirSync(slice, { recursive: true })
+  writeFileSync(join(slice, 'cpu.stat'), 'usage_usec 1000\n')
+  let time = 0
+  const sampler = new processService.BoxPressureSampler({
+    procRoot: root,
+    cgroupRoot,
+    uid: BOX_UID,
+    now: () => time,
+    sampleMs: 10,
+  })
+  expect(sampler.snapshot()?.box?.cpuPercent).toBeNull()
+  const first = sampler.refresh()
+  expect(sampler.refresh()).toBe(first)
+  writeFileSync(join(slice, 'cpu.stat'), 'usage_usec 11000\n')
+  time = 10
+  await first
+  expect(sampler.snapshot()?.box).toMatchObject({ cpuPercent: 100, sampleMs: 10 })
+  time = 31_000
+  expect(sampler.snapshot()?.box?.cpuPercent).toBeNull()
+})
+
+for (const change of ['pid reuse', 'owner change'] as const)
+  test(`signal refuses ${change} during classification`, () => {
+    const root = fakeProc([manager, server, tsc])
+    const killed: number[] = []
+    const original = fs.readFileSync
+    let changed = false
+    const reading = spyOn(fs, 'readFileSync').mockImplementation(((...args: Parameters<typeof fs.readFileSync>) => {
+      const [path] = args
+      if (!changed && path === `${root}/${tsc.pid}/cgroup`) {
+        changed = true
+        writeProcess(root, {
+          ...tsc,
+          ...(change === 'pid reuse' ? { startTicks: tsc.startTicks! + 1 } : { uid: OTHER_UID }),
+        })
+      }
+      return original(...args)
+    }) as typeof fs.readFileSync)
+    try {
+      expect(() =>
+        signalBoxProcess(tsc.pid, 'KILL', {
+          procRoot: root,
+          uid: BOX_UID,
+          selfPid: SELF,
+          kill: (pid) => {
+            killed.push(pid)
+          },
+        })
+      ).toThrow('changed or exited')
+      expect(killed).toEqual([])
+    } finally {
+      reading.mockRestore()
+    }
+  })
+
+test('a reset CPU counter and a stalled sample are unavailable rather than negative or stale', async () => {
+  const root = fakeProc([])
+  const cgroupRoot = join(root, 'cgroups')
+  const slice = join(cgroupRoot, 'user.slice', `user-${BOX_UID}.slice`)
+  mkdirSync(slice, { recursive: true })
+  for (const elapsed of [20, 31_000]) {
+    writeFileSync(join(slice, 'cpu.stat'), 'usage_usec 1000000\n')
+    setTimeout(() => writeFileSync(join(slice, 'cpu.stat'), `usage_usec ${elapsed === 20 ? 1 : 2000000}\n`), 2)
+    let now = 0
+    const result = await processService.listBoxProcessSnapshot({
+      procRoot: root,
+      cgroupRoot,
+      uid: BOX_UID,
+      sampleMs: 10,
+      now: () => (now += elapsed),
+    })
+    expect(result.pressure?.box?.cpuPercent).toBeNull()
+    expect(result.pressure?.box?.sampleMs).toBeNull()
+  }
+})
+
+test('samples system-layout agent quotas, throttling and reclaim from its self cgroup', async () => {
+  const root = fakeProc([])
+  const relative = 'ficus.slice/ficus-box.slice/ficus-box-box_abc.slice'
+  writeFileSync(join(root, 'self/cgroup'), `0::/${relative}/ficus-box-box_abc.service\n`)
+  const cgroupRoot = join(root, 'cgroups')
+  const slice = join(cgroupRoot, relative)
+  mkdirSync(slice, { recursive: true })
+  writeFileSync(join(slice, 'cpu.max'), '200000 100000\n')
+  writeFileSync(join(slice, 'cpu.stat'), 'usage_usec 1000000\nnr_throttled 10\nthrottled_usec 500000\n')
+  writeFileSync(join(slice, 'memory.events'), 'high 20\nmax 5\n')
+  writeFileSync(join(slice, 'cpu.pressure'), 'some avg10=65.00 avg60=30.00 avg300=10.00 total=5000\n')
+  setTimeout(() => {
+    writeFileSync(join(slice, 'cpu.stat'), 'usage_usec 1020000\nnr_throttled 12\nthrottled_usec 510000\n')
+    writeFileSync(join(slice, 'memory.events'), 'high 23\nmax 6\n')
+  }, 2)
+  let time = 0
+  const result = await processService.listBoxProcessSnapshot({
+    procRoot: root,
+    cgroupRoot,
+    uid: BOX_UID,
+    sampleMs: 20,
+    now: () => (time += 20),
+  })
+  expect(result.pressure?.box).toMatchObject({
+    cpuPercent: 100,
+    cpuQuotaCpus: 2,
+    cpuQuotaPercent: 50,
+    cpuThrottledPeriods: 2,
+    cpuThrottledUsec: 10000,
+    memoryHighEvents: 3,
+    memoryMaxEvents: 1,
+    cpuPressureSome: { avg10: 65, avg60: 30, avg300: 10 },
+  })
+})
+
+test('signal rejects a stale listed PID identity, accepts the current identity and legacy omission', () => {
+  const root = fakeProc([server, tsc])
+  const killed: number[] = []
+  const opts = {
+    procRoot: root,
+    uid: BOX_UID,
+    selfPid: SELF,
+    kill: (pid: number) => {
+      killed.push(pid)
+    },
+  }
+  expect(() => signalBoxProcess(tsc.pid, 'TERM', { ...opts, startTicks: 123 })).toThrow('no longer matches')
+  for (const startTicks of [-1, '900000', null, NaN])
+    expect(() => signalBoxProcess(tsc.pid, 'TERM', { ...opts, startTicks })).toThrow('startTicks')
+  expect(killed).toEqual([])
+  signalBoxProcess(tsc.pid, 'TERM', { ...opts, startTicks: tsc.startTicks })
+  signalBoxProcess(tsc.pid, 'TERM', opts)
+  expect(killed).toEqual([tsc.pid, tsc.pid])
+})
+
+for (const path of [
+  '/system.slice/unrelated.service',
+  '/user.slice/user-999.slice/user@999.service',
+  '/user.slice/../user-30033.slice/server.service',
+])
+  test(`never substitutes a host or foreign aggregate for ${path}`, () => {
+    const root = fakeProc([])
+    writeFileSync(join(root, 'self/cgroup'), `0::${path}\n`)
+    const cgroupRoot = join(root, 'cgroups')
+    mkdirSync(cgroupRoot)
+    writeFileSync(join(cgroupRoot, 'cpu.pressure'), 'some avg10=99.00 avg60=99.00 avg300=99.00 total=500\n')
+    expect(readPressure(root, { cgroupRoot, uid: BOX_UID })?.box?.cpuPressureSome).toBeNull()
+  })
+
+test('unlimited or malformed quota and reset throttling/reclaim counters remain unknown', async () => {
+  const root = fakeProc([])
+  const cgroupRoot = join(root, 'cgroups')
+  const slice = join(cgroupRoot, 'user.slice', `user-${BOX_UID}.slice`)
+  mkdirSync(slice, { recursive: true })
+  for (const quota of ['max 100000', '100000 0', 'bad data']) {
+    writeFileSync(join(slice, 'cpu.max'), quota)
+    expect(readPressure(root, { cgroupRoot, uid: BOX_UID })?.box?.cpuQuotaCpus).toBeNull()
+  }
+  writeFileSync(join(slice, 'cpu.stat'), 'usage_usec 1000\nnr_throttled 10\nthrottled_usec 1000\n')
+  writeFileSync(join(slice, 'memory.events'), 'high 20\nmax 10\n')
+  setTimeout(() => {
+    writeFileSync(join(slice, 'cpu.stat'), 'usage_usec 2000\nnr_throttled 1\nthrottled_usec 10\n')
+    writeFileSync(join(slice, 'memory.events'), 'high 1\nmax 1\n')
+  }, 2)
+  let time = 0
+  const result = await processService.listBoxProcessSnapshot({
+    procRoot: root,
+    cgroupRoot,
+    uid: BOX_UID,
+    sampleMs: 20,
+    now: () => (time += 20),
+  })
+  expect(result.pressure?.box).toMatchObject({
+    cpuPercent: 5,
+    cpuQuotaCpus: null,
+    cpuQuotaPercent: null,
+    cpuThrottledPeriods: null,
+    cpuThrottledUsec: null,
+    memoryHighEvents: null,
+    memoryMaxEvents: null,
+  })
 })

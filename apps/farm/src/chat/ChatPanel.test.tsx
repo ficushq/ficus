@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 import type { QuestionData } from '@ficus/shared'
 import { ChatPanel } from './ChatPanel'
 import {
@@ -156,6 +156,30 @@ describe('ChatPanel', () => {
     await click(byText(chat.container, '.g-chat-clear', 'Tap again to clear'))
     await waitFor(() => expect(chat.cleared).toEqual(['agent-1']))
     await waitFor(() => expect(textarea(chat.container).value).toBe('Also prune the roses'))
+  })
+
+  it('shows a clear failure and preserves the draft without duplicating queued text', async () => {
+    const chat = await openChat({ activeExecution: { active: true, status: 'running', executionId: 'e1' } })
+    const clear = spyOn(chat.client.agents, 'clearQueue').mockRejectedValue(new Error('Cancellation failed'))
+    try {
+      await streamText(chat, 'Working on it')
+      await waitFor(() => expect(textarea(chat.container).disabled).toBe(false))
+      typeInto(textarea(chat.container), 'Queued request')
+      await pressEnter(textarea(chat.container))
+      await waitFor(() => expect(chat.sent).toHaveLength(1))
+      typeInto(textarea(chat.container), 'Unsent draft')
+      await click(await waitForEl(chat.container, '.g-chat-clear'))
+      await click(byText(chat.container, '.g-chat-clear', 'Tap again to clear'))
+      await waitFor(() =>
+        expect(chat.container.querySelector('[role="alert"]')?.textContent).toContain(
+          'Could not clear pending messages: Cancellation failed'
+        )
+      )
+      expect(textarea(chat.container).value).toBe('Unsent draft')
+      expect(chat.container.querySelector('.g-chat-clear')).not.toBeNull()
+    } finally {
+      clear.mockRestore()
+    }
   })
 
   it('answers a blocking question inline with the formatted answer and hides the composer', async () => {
