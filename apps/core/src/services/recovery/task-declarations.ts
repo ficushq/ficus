@@ -5,6 +5,7 @@ import { WORK_STREAM_CONFIG_DECLARATION, WORK_STREAM_CONFIG_INPUT_KEYS, type Man
 import { Squad } from '../../entities/Squad'
 import { getSandboxManager, isRemoteSandboxRuntime } from '../sandbox/factory'
 import type { K8sSandboxManager } from '../sandbox/k8s'
+import type { SandboxClient } from '../sandbox/client/http-client'
 import { resolveWorkspaceLayout } from '../sandbox/workspace-layout'
 import { isInsideWorkspaceRoot, resolveSquadWorkspaceHostPath } from '../squad/workspace'
 
@@ -19,12 +20,7 @@ async function readDeclaration(squadId: string, relativePath: string): Promise<s
     const client = (getSandboxManager() as K8sSandboxManager).getClient(sandboxId)
     if (!client) throw new Error('The workspace is unavailable for declaration validation')
     const root = resolveWorkspaceLayout({ squadId, sandboxId }).workspaceMount
-    const file = await client.read({ path: join(root, relativePath), root, limit: MAX_DECLARATION_BYTES + 1 })
-    const content = Buffer.from(file.content, 'base64')
-    if (file.verifiedRoot !== root) throw new Error('The executor does not support workspace-bounded declaration reads')
-    if (file.isBinary || file.totalSize > MAX_DECLARATION_BYTES || content.length > MAX_DECLARATION_BYTES)
-      throw new Error('Configuration declarations must be small JSON files')
-    return content.toString('utf8')
+    return readRemoteDeclaration(client, root, relativePath)
   }
   const root = await realpath(resolveSquadWorkspaceHostPath(squadId))
   const target = await realpath(join(root, relativePath))
@@ -42,6 +38,21 @@ async function readDeclaration(squadId: string, relativePath: string): Promise<s
   } finally {
     await file.close()
   }
+}
+
+/** The remote reader needs only a cached client's read capability, never an
+ * ensure/provision capability. Keep containment validation at this boundary. */
+export async function readRemoteDeclaration(
+  client: Pick<SandboxClient, 'read'>,
+  root: string,
+  relativePath: string
+): Promise<string> {
+  const file = await client.read({ path: join(root, relativePath), root, limit: MAX_DECLARATION_BYTES + 1 })
+  const content = Buffer.from(file.content, 'base64')
+  if (file.verifiedRoot !== root) throw new Error('The executor does not support workspace-bounded declaration reads')
+  if (file.isBinary || file.totalSize > MAX_DECLARATION_BYTES || content.length > MAX_DECLARATION_BYTES)
+    throw new Error('Configuration declarations must be small JSON files')
+  return content.toString('utf8')
 }
 
 function object(value: unknown): value is Record<string, unknown> {

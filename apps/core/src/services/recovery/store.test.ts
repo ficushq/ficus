@@ -675,7 +675,7 @@ test('real bash nonzero exits, confirmed timeouts and file validation never cons
       invocationId: 'feedback',
       cancel: () => {},
       cancelAndWait: async () => {},
-    }) as ReturnType<SandboxClient['bash']>
+    }) as ReturnType<typeof client.bash>
   }
   const manager = {
     getClientForSandbox: () => client,
@@ -1115,7 +1115,8 @@ test('work-stream detail projects the same current owner fallback as the decisio
       { agentId: worker.id, executionId: execution.id },
       { operationKey: 'projection', attempted: 'Run the task', invocationId, error: new Error('task failed') }
     )
-  expect((await computeDerivedStates([stream])).get(stream.id)?.derivedState).toBe('waiting_on_manager')
+  expect((await computeDerivedStates([stream])).get(stream.id)?.openWaits[0]?.actor).toBe('manager')
+  expect((await computeDerivedStates([stream])).get(stream.id)?.derivedState).toBe('blocked')
   await db.update(agents).set({ status: 'waiting-input' }).where(eq(agents.id, squad.managerAgentId!))
   const projection = (await computeDerivedStates([stream])).get(stream.id)!
   expect(projection.openWaits[0]?.actor).toBe('human')

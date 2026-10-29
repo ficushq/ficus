@@ -1060,6 +1060,7 @@ jobs:
           src/scripts/rebase-home.cli.test.ts
           src/db/load-root-env.test.ts
           src/tools/sandbox-tools.real-edit.test.ts
+          src/services/sandbox/restart-context.test.ts
           src/index.test.ts
           src/worker.test.ts
           src/lib/paths.test.ts

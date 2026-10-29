@@ -8,7 +8,7 @@ import { db, squads, workStreams, workStreamWaits } from '../../db'
 import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stream'
 import { createTestAdmin, cleanupTestRbac } from '../../test-utils'
 import { requestStructuredInput, resolveStructuredInput } from './structured-input'
-import { validateConfigDeclaration, consumeConfigDeclarationProof } from './task-declarations'
+import { validateConfigDeclaration, consumeConfigDeclarationProof, readRemoteDeclaration } from './task-declarations'
 import * as factory from '../sandbox/factory'
 import * as workspace from '../squad/workspace'
 import { SandboxClient } from '../sandbox/client/http-client'
@@ -90,7 +90,11 @@ test('the common writer rejects forged declarations and proofs cannot move betwe
   const input = request()
   if (input.kind !== 'provide') throw new Error('Invalid fixture')
   await expect(
-    stream.block({ createdBy: 'system', structured: { request: input, summary: taskInputSummary(input), version: 0 } })
+    stream.block({
+      message: taskInputSummary(input).text,
+      createdBy: 'system',
+      structured: { request: input, summary: taskInputSummary(input), version: 0 },
+    })
   ).rejects.toThrow('first validate')
   await validateConfigDeclaration(input, stream.id, squadId)
   expect(() => consumeConfigDeclarationProof(input, crypto.randomUUID(), squadId)).toThrow('first validate')
@@ -123,26 +127,18 @@ test('file responses remain workspace-relative instead of accepting host paths o
   expect(closed.resolutionNote).toBe('assets/logo.svg: assets/approved-logo.svg')
 })
 
-test('remote declaration reads require executor containment proof and never provision an executor', async () => {
-  runtimeSpy.mockReturnValue(true)
+test('remote declaration reads require executor containment proof using only a read capability', async () => {
   const client = new SandboxClient('127.0.0.1:1')
-  const content = Buffer.from(JSON.stringify({ PUBLIC_BASE_URL: null })).toString('base64')
+  const declaration = JSON.stringify({ PUBLIC_BASE_URL: null })
+  const content = Buffer.from(declaration).toString('base64')
   const read = spyOn(client, 'read').mockResolvedValue({ content, totalSize: 32, isBinary: false })
-  const manager = spyOn(factory, 'getSandboxManager').mockReturnValue({
-    getClient: () => client,
-  } as unknown as ReturnType<typeof factory.getSandboxManager>)
   try {
-    await expect(requestStructuredInput(stream.id, request(), { createdBy: 'operator' })).rejects.toThrow(
-      'workspace-bounded'
-    )
-    expect(read).toHaveBeenCalledWith(expect.objectContaining({ root: expect.any(String), limit: 65537 }))
+    await expect(readRemoteDeclaration(client, '/workspace', 'config.schema.json')).rejects.toThrow('workspace-bounded')
+    expect(read).toHaveBeenCalledWith({ path: '/workspace/config.schema.json', root: '/workspace', limit: 65537 })
     read.mockImplementation(async (input) => ({ content, totalSize: 32, isBinary: false, verifiedRoot: input.root }))
-    expect(
-      (await requestStructuredInput(stream.id, request(), { createdBy: 'operator' })).structured?.request.kind
-    ).toBe('provide')
+    expect(await readRemoteDeclaration(client, '/workspace', 'config.schema.json')).toBe(declaration)
   } finally {
     read.mockRestore()
-    manager.mockRestore()
     client.close()
   }
 })

@@ -1281,7 +1281,7 @@ describe('attempt-scoped waits', () => {
         schemaVersion: 1,
         kind: 'provide',
         purpose: 'task-input',
-        input: { type: 'file', name: 'threat model' },
+        input: { type: 'file', path: 'threat-model.md' },
         use: 'review the security assumptions',
       },
       { createdBy: 'agent', createdByAgentId: securityAgent }
@@ -1318,7 +1318,7 @@ describe('attempt-scoped waits', () => {
       .where(eq(inbox.idempotencyKey, `flow-wait:${wait.id}:${security.id}`))
     expect(resolution?.recipientId).toBe(securityAgent)
     expect(resolution?.content).toBe(
-      `Work stream ${id}, step security (attempt ${security.id})\nWait resolved: Provide threat model to review the security assumptions.\n\nthreat model: documented-threat-model.md`
+      `Work stream ${id}, step security (attempt ${security.id})\nWait resolved: Provide threat-model.md to review the security assumptions.\n\nthreat-model.md: documented-threat-model.md`
     )
     await completeStep(id, 'security')
     expect(activeWorkflowAttempts((await getFlow(id))!.state).map((a) => a.stepId)).toEqual(['deliver'])
@@ -2433,4 +2433,29 @@ test('late third failure survives a revision and the replacement inherits owner 
   } finally {
     await db.update(squads).set({ managerAgentId: original!.managerAgentId }).where(eq(squads.id, squadId))
   }
+})
+
+test('recovery accepts older flow attempts without a stored step snapshot and still guards their scope', async () => {
+  const { workStreamFlowRuns } = await import('../../db')
+  const { recordRecoveryFailure, assertNoPendingRecovery } = await import('../recovery/store')
+  const id = await create('active')
+  const run = (await getFlow(id))!
+  const agentId = run.attemptAgents['1']!
+  delete run.state.attempts[0]!.step
+  await db.update(workStreamFlowRuns).set({ state: run.state }).where(eq(workStreamFlowRuns.workStreamId, id))
+  const [execution] = await db
+    .insert(executions)
+    .values({ agentId, status: 'running', flowContext: { workStreamId: id, attemptId: 1, stepId: 'build' } })
+    .returning()
+  const record = await recordRecoveryFailure(
+    { agentId, executionId: execution!.id },
+    {
+      operationKey: 'legacy-snapshot',
+      invocationId: 'legacy-first',
+      attempted: 'Run the task',
+      error: new Error('Unknown outcome'),
+    }
+  )
+  expect(record.state.failures).toBe(1)
+  await expect(assertNoPendingRecovery(db, agentId, id)).rejects.toThrow('unresolved recovery')
 })

@@ -96,7 +96,7 @@ async function trustedOrigin(tx: DbHandle, origin: RecoveryOrigin, lock = true) 
       ? await tx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, workStreamId))
       : []
   const attempt = run?.state.attempts.find((item) => item.id === flowAttemptId)
-  const participant = attempt?.step.kind === 'agent' ? attempt.step.participant : undefined
+  const participant = attempt?.step?.kind === 'agent' ? attempt.step.participant : undefined
   const active = run?.activated ? activeWorkflowAttempts(run.state).map((item) => item.id) : []
   return {
     execution,
@@ -345,7 +345,8 @@ async function ensureExhaustedWait(tx: Tx, record: RecoveryRecord): Promise<Reco
       .returning()
     record = routed!
   }
-  if (!record.workStreamId) return record
+  const workStreamId = record.workStreamId
+  if (!workStreamId) return record
   if (record.waitId) {
     const [existing] = await tx
       .select()
@@ -383,7 +384,7 @@ async function ensureExhaustedWait(tx: Tx, record: RecoveryRecord): Promise<Reco
   } else if (record.flowAttemptId != null) return record
   const payload = recoveryWaitSnapshot(record)
   const { wait } = await openWait(tx, {
-    workStreamId: record.workStreamId,
+    workStreamId,
     flowAttemptId: record.flowAttemptId,
     type: 'manual',
     createdBy: 'system',
@@ -844,10 +845,10 @@ export async function assertNoPendingRecovery(
   const current = run?.activated
     ? activeWorkflowAttempts(run.state).find((attempt) => run.attemptAgents[String(attempt.id)] === agentId)
     : undefined
-  const participant = current?.step.kind === 'agent' ? current.step.participant : undefined
+  const participant = current?.step?.kind === 'agent' ? current.step.participant : undefined
   const relatedAttempts = participant
     ? run!.state.attempts
-        .filter((attempt) => attempt.step.kind === 'agent' && attempt.step.participant === participant)
+        .filter((attempt) => attempt.step?.kind === 'agent' && attempt.step.participant === participant)
         .map((attempt) => attempt.id)
     : []
   const [record] = await dbx
