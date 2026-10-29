@@ -5,6 +5,16 @@ export const MIN_INTEGRATION_CREDENTIAL_LENGTH = 8
 
 export const INTEGRATION_CREDENTIAL_PREFIX = '__integration-credential:'
 
+// Keep existing immutable GitHub app bindings and the Notion settings key at
+// rest. Only matcher labels are namespaced; no credential migration is needed.
+function isOAuthAppCredentialKey(key: string): boolean {
+  return key === '__integration-oauth-app:notion' || /^__integration-oauth-app:github:client:[a-f0-9-]{36}$/.test(key)
+}
+
+export function isIntegrationCredentialKey(key: string): boolean {
+  return key.startsWith(INTEGRATION_CREDENTIAL_PREFIX) || isOAuthAppCredentialKey(key)
+}
+
 type Entry = { key: string; value: string }
 
 /**
@@ -13,6 +23,23 @@ type Entry = { key: string; value: string }
  * binding and revision are public metadata, not credential material.
  */
 export function integrationCredentialEntries(key: string, raw: string): Entry[] {
+  if (isOAuthAppCredentialKey(key)) {
+    try {
+      const app: unknown = JSON.parse(raw)
+      if (
+        app &&
+        typeof app === 'object' &&
+        'clientSecret' in app &&
+        typeof app.clientSecret === 'string' &&
+        app.clientSecret.length >= MIN_INTEGRATION_CREDENTIAL_LENGTH
+      ) {
+        return [{ key: `${INTEGRATION_CREDENTIAL_PREFIX}${key.slice(2)}.clientSecret`, value: app.clientSecret }]
+      }
+    } catch {
+      // Invalid legacy envelopes grant no authority and are never matched whole.
+    }
+    return []
+  }
   // Opaque manual providers execute trimmed tokens. Normalize legacy padding
   // too, but preserve exact OAuth/channel leaf semantics inside bundles.
   let material: unknown
