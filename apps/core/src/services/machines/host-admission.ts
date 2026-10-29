@@ -5,14 +5,15 @@ import { WORK_STREAM_ADMITTED_STATUSES } from '@ficus/shared'
 import { agents, machineBoxes, machineCapacityClaims, machines, squads, workStreams } from '../../db/schema'
 import { isVmRuntime } from '../sandbox/runtime'
 import type { DbTransaction } from './queries'
-import { claimHostCapacity, pendingStreamBox, readHostCapacity, type HostClaimResult } from './host-capacity-store'
+import {
+  HostCapacityUnavailableError,
+  claimHostCapacity,
+  pendingStreamBox,
+  readHostCapacity,
+  type HostClaimResult,
+} from './host-capacity-store'
 
-export class HostCapacityUnavailableError extends Error {
-  constructor(readonly result: HostClaimResult) {
-    super('The machine has no host capacity for another sandbox; work stays queued until capacity is available.')
-    this.name = 'HostCapacityUnavailableError'
-  }
-}
+export { HostCapacityUnavailableError } from './host-capacity-store'
 
 /** Reserve a pending participant and its shared box before flow dispatch creates
  * agents. Sticky/pinned squad placement is authoritative. Unbound work tries
@@ -31,7 +32,10 @@ export async function reserveWorkStreamHostCapacity(
     .select({ machineId: machineBoxes.machineId })
     .from(machineBoxes)
     .where(eq(machineBoxes.sandboxId, sandboxId))
-  const pinned = squad?.machineId ?? box?.machineId
+  // A non-ready explicit pin belongs to the normal placement/readiness retry
+  // path, not a silent admission refusal. Unreachable recorded placements can move.
+  if (squad?.machineId && !(await machineIsReady(tx, squad.machineId))) return { allowed: true }
+  const pinned = squad?.machineId ?? (box && (await machineIsReady(tx, box.machineId)) ? box.machineId : undefined)
   const candidates = pinned
     ? [{ id: pinned }]
     : await tx
@@ -100,15 +104,20 @@ export async function reserveExecutionHostCapacity(
       const [owner] = await tx.select({ machineId: agents.machineId }).from(agents).where(eq(agents.id, ownerId))
       pin = owner?.machineId
     }
-    planned.push({ sandboxId, machineId: pin ?? box?.machineId })
+    if (pin && !(await machineIsReady(tx, pin))) return { allowed: true }
+    planned.push({
+      sandboxId,
+      machineId: pin ?? (box && (await machineIsReady(tx, box.machineId)) ? box.machineId : undefined),
+    })
   }
-  const candidates = reserved
-    ? [reserved]
-    : await tx
-        .select({ id: machines.id })
-        .from(machines)
-        .where(and(eq(machines.status, 'ready'), eq(machines.scope, 'shared')))
-        .orderBy(asc(machines.createdAt), asc(machines.id))
+  const candidates =
+    reserved && (await machineIsReady(tx, reserved.id))
+      ? [reserved]
+      : await tx
+          .select({ id: machines.id })
+          .from(machines)
+          .where(and(eq(machines.status, 'ready'), eq(machines.scope, 'shared')))
+          .orderBy(asc(machines.createdAt), asc(machines.id))
   if (!candidates.length) {
     const known = planned.find((resource) => resource.machineId)
     if (!known) return { allowed: true } // normal first-host bootstrap, gated again after placement
@@ -172,23 +181,33 @@ export async function canHostSandbox(machineId: string, sandboxId: string): Prom
 
 /** Header readout uses only durable facts: no SSH/probe and no idle-box wake. */
 export async function readSandboxHostCapacity(sandboxId: string, squadId?: string) {
-  return db.transaction(async (tx) => {
-    const [box] = await tx
-      .select({ machineId: machineBoxes.machineId })
-      .from(machineBoxes)
-      .where(eq(machineBoxes.sandboxId, sandboxId))
-    const [squad] = squadId
-      ? await tx.select({ machineId: squads.machineId }).from(squads).where(eq(squads.id, squadId))
-      : []
-    const [planned] = await tx
-      .select({ machineId: machineCapacityClaims.machineId })
-      .from(machineCapacityClaims)
-      .innerJoin(workStreams, eq(workStreams.id, machineCapacityClaims.streamId))
-      .where(
-        and(eq(machineCapacityClaims.sandboxId, sandboxId), inArray(workStreams.status, WORK_STREAM_ADMITTED_STATUSES))
-      )
-      .limit(1)
-    const machineId = box?.machineId ?? squad?.machineId ?? planned?.machineId
-    return machineId ? readHostCapacity(tx, machineId) : undefined
-  })
+  return db
+    .transaction(async (tx) => {
+      const [box] = await tx
+        .select({ machineId: machineBoxes.machineId })
+        .from(machineBoxes)
+        .where(eq(machineBoxes.sandboxId, sandboxId))
+      const [squad] = squadId
+        ? await tx.select({ machineId: squads.machineId }).from(squads).where(eq(squads.id, squadId))
+        : []
+      const [planned] = await tx
+        .select({ machineId: machineCapacityClaims.machineId })
+        .from(machineCapacityClaims)
+        .innerJoin(workStreams, eq(workStreams.id, machineCapacityClaims.streamId))
+        .where(
+          and(
+            eq(machineCapacityClaims.sandboxId, sandboxId),
+            inArray(workStreams.status, WORK_STREAM_ADMITTED_STATUSES)
+          )
+        )
+        .limit(1)
+      const machineId = box?.machineId ?? squad?.machineId ?? planned?.machineId
+      return machineId ? readHostCapacity(tx, machineId) : undefined
+    })
+    .catch(() => ({ allowed: false, reason: 'unknown' as const }))
+}
+
+async function machineIsReady(tx: DbTransaction, machineId: string): Promise<boolean> {
+  const [machine] = await tx.select({ status: machines.status }).from(machines).where(eq(machines.id, machineId))
+  return machine?.status === 'ready'
 }

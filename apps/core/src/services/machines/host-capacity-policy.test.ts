@@ -46,3 +46,17 @@ describe('machine-wide quota admission', () => {
     expect(evaluateHostCapacity(1, ['agent_a'], ['agent_b']).allowed).toBe(false)
   })
 })
+
+test('an empty one-CPU host admits one minimal private-plus-shared owner set, but no further demand', () => {
+  expect(evaluateHostCapacity(1, [], ['agent_a', 'squad_a'])).toMatchObject({
+    allowed: true,
+    budgetCpus: 1.5,
+    projectedQuotaCpus: 2,
+  })
+  expect(evaluateHostCapacity(1, ['agent_a', 'squad_a'], ['agent_b']).allowed).toBe(false)
+})
+
+test('already-accounted demand survives temporarily missing host CPU facts', () => {
+  expect(evaluateHostCapacity(undefined, ['agent_a'], ['agent_a'])).toMatchObject({ allowed: true, reason: 'unknown' })
+  expect(evaluateHostCapacity(undefined, ['agent_a'], ['agent_b']).allowed).toBe(false)
+})

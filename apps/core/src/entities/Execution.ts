@@ -141,7 +141,13 @@ export type TransitionOutcome =
   | { kind: 'stopped' }
   | { kind: 'force-stopped'; reason?: string }
   | { kind: 'superseded' }
-  | { kind: 'requeued'; imageIds?: string[] | null; startupRetryDelayMs?: number; startupRetryMax?: number }
+  | {
+      kind: 'requeued'
+      imageIds?: string[] | null
+      startupRetryDelayMs?: number
+      startupRetryMax?: number
+      capacityWait?: boolean
+    }
 
 /**
  * The drizzle transaction handle `db.transaction` passes to its callback —
@@ -760,9 +766,12 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
             if (startupRetry) {
               executionPredicates.push(
                 eq(executions.status, 'running'),
-                eq(executions.executionVersion, this.executionVersion),
-                sql`${executions.startupRetryCount} < ${outcome.startupRetryMax ?? STARTUP_RETRY_DELAYS_MS.length}`
+                eq(executions.executionVersion, this.executionVersion)
               )
+              if (!outcome.capacityWait)
+                executionPredicates.push(
+                  sql`${executions.startupRetryCount} < ${outcome.startupRetryMax ?? STARTUP_RETRY_DELAYS_MS.length}`
+                )
             }
             if (options?.admissionLease) {
               // A late startup failure cannot overwrite a stop or another terminal outcome.
@@ -781,7 +790,9 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
                 maintenanceQueuedAt: null,
                 ...(startupRetry
                   ? {
-                      startupRetryCount: sql`${executions.startupRetryCount} + 1`,
+                      startupRetryCount: outcome.capacityWait
+                        ? executions.startupRetryCount
+                        : sql`${executions.startupRetryCount} + 1`,
                       startupRetryAt: sql`clock_timestamp() + ${outcome.startupRetryDelayMs!} * interval '1 millisecond'`,
                     }
                   : {}),
@@ -1020,22 +1031,27 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
   async retryStartupFailure(error: unknown, admissionLease?: AdmissionLease): Promise<boolean> {
     const code = startupRetryCode(error)
     if (!code) return false
+    const capacityWait = code === 'machine_capacity'
     const delays = startupRetryDelays(code)
-    const delayMs = delays[this.startupRetryCount]
+    // Admission waiting is not a failed startup attempt. Keep the exact CAS/
+    // lease fencing and a quiet poll deadline, but never consume the failure budget.
+    const delayMs = capacityWait ? 5_000 : delays[this.startupRetryCount]
     if (delayMs === undefined) return false
     const requeued = await this.transitionTo(
-      { kind: 'requeued', startupRetryDelayMs: delayMs, startupRetryMax: delays.length },
+      { kind: 'requeued', startupRetryDelayMs: delayMs, startupRetryMax: delays.length, capacityWait },
       { admissionLease }
     )
     if (!requeued) return false
     log.warn(
-      code === BOX_PORT_BUSY_RETRY_CODE
-        ? "Retrying execution startup: the box's socket port is busy"
-        : code === BOX_LOCK_TIMEOUT_RETRY_CODE
-          ? 'Retrying execution startup: the box provisioning lock is busy'
-          : code.startsWith('machine_')
-            ? "Retrying execution startup: the box's machine is not ready yet"
-            : 'Retrying execution startup after a transient database failure',
+      capacityWait
+        ? 'Waiting for host capacity before execution startup'
+        : code === BOX_PORT_BUSY_RETRY_CODE
+          ? "Retrying execution startup: the box's socket port is busy"
+          : code === BOX_LOCK_TIMEOUT_RETRY_CODE
+            ? 'Retrying execution startup: the box provisioning lock is busy'
+            : code.startsWith('machine_')
+              ? "Retrying execution startup: the box's machine is not ready yet"
+              : 'Retrying execution startup after a transient database failure',
       {
         executionId: this.id,
         agentId: this.agentId,
@@ -1043,7 +1059,7 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
         // The busy-port error carries systemd's own reason and the port holder.
         ...(code === BOX_PORT_BUSY_RETRY_CODE ? { reason: findInCauseChain(error, 'BoxPortBusyError')?.message } : {}),
         attempt: this.startupRetryCount,
-        maxRetries: delays.length,
+        ...(capacityWait ? { capacityWait: true } : { maxRetries: delays.length }),
         retryAt: this.startupRetryAt?.toISOString(),
       }
     )

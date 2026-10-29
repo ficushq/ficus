@@ -135,6 +135,32 @@ describe('durable startup retry', () => {
     await db.delete(agentTypes).where(eq(agentTypes.id, typeId))
   })
 
+  it('capacity waits requeue repeatedly without consuming the startup failure budget', async () => {
+    const capacity = Object.assign(new Error('host capacity'), { name: 'HostCapacityUnavailableError' })
+    const runner = spyOn(runners, 'createRunner').mockRejectedValue(capacity)
+    try {
+      let execution = await agent.queueExecution({ message: 'Keep my place while capacity is busy' })
+      const id = execution.id
+      await db.update(executions).set({ startupRetryCount: 2 }).where(eq(executions.id, id))
+      execution = await Execution.mustFind(id)
+      for (let i = 0; i < MACHINE_STARTUP_RETRY_DELAYS_MS.length + 2; i++) {
+        expect(await execution.start()).toBe(true)
+        await execution.run()
+        execution = await Execution.mustFind(id)
+        expect(execution.status).toBe('queued')
+        expect(execution.startupRetryCount).toBe(2)
+        expect(execution.startupRetryAt).not.toBeNull()
+        await db
+          .update(executions)
+          .set({ startupRetryAt: new Date(0) })
+          .where(eq(executions.id, id))
+        execution = await Execution.mustFind(id)
+      }
+    } finally {
+      runner.mockRestore()
+    }
+  })
+
   it('retries startup connection exhaustion with durable backoff and stops after three retries', async () => {
     const runner = spyOn(runners, 'createRunner').mockRejectedValue(connectionFailure())
     try {

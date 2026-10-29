@@ -1,5 +1,5 @@
 import { WORK_STREAM_ADMITTED_STATUSES } from '@ficus/shared'
-import { and, eq, inArray, notInArray, or, sql } from 'drizzle-orm'
+import { and, eq, inArray, ne, notInArray, or, sql } from 'drizzle-orm'
 import { executions, machineCapacityClaims, machines, vmBoxProvisionAttempts, workStreams } from '../../db/schema'
 import type { DbTransaction } from './queries'
 import { evaluateHostQuotaCounts, type HostCapacityDecision } from './host-capacity-policy'
@@ -12,7 +12,7 @@ export interface HostResource {
   machineId: string
   sandboxId: string
 }
-type Claim = typeof machineCapacityClaims.$inferInsert
+type Claim = typeof machineCapacityClaims.$inferInsert & { startupActive?: boolean }
 
 export function pendingStreamBox(streamId: string): string {
   return `pending-agent:${streamId}`
@@ -32,7 +32,7 @@ function ownerKey(owner: HostCapacityOwner): string {
 /** Ignore settled owners immediately, even before opportunistic row cleanup. */
 async function validClaims(tx: DbTransaction, incomingProvisionId = 0): Promise<Claim[]> {
   const rows = await tx
-    .select({ claim: machineCapacityClaims })
+    .select({ claim: machineCapacityClaims, provisionStatus: vmBoxProvisionAttempts.status })
     .from(machineCapacityClaims)
     .leftJoin(workStreams, eq(machineCapacityClaims.streamId, workStreams.id))
     .leftJoin(executions, eq(machineCapacityClaims.executionId, executions.id))
@@ -42,7 +42,7 @@ async function validClaims(tx: DbTransaction, incomingProvisionId = 0): Promise<
         and(eq(machineCapacityClaims.kind, 'stream'), inArray(workStreams.status, WORK_STREAM_ADMITTED_STATUSES)),
         and(
           eq(machineCapacityClaims.kind, 'execution'),
-          inArray(executions.status, ['running', 'waiting-sandbox', 'stopping'])
+          inArray(executions.status, ['queued', 'running', 'waiting-sandbox', 'stopping'])
         ),
         and(
           eq(machineCapacityClaims.kind, 'provision'),
@@ -51,6 +51,11 @@ async function validClaims(tx: DbTransaction, incomingProvisionId = 0): Promise<
             and(
               eq(vmBoxProvisionAttempts.status, 'failed'),
               inArray(vmBoxProvisionAttempts.failureClass, ['abandoned', 'interrupted']),
+              // Normal removal deletes the binding only after remote teardown;
+              // no binding also means a pre-bind interrupted claim did no work.
+              sql`EXISTS (SELECT 1 FROM machine_boxes bound
+                WHERE bound.sandbox_id = ${machineCapacityClaims.sandboxId}
+                  AND bound.machine_id = ${machineCapacityClaims.machineId})`,
               sql`NOT EXISTS (SELECT 1 FROM vm_box_provision_attempts newer
               WHERE newer.sandbox_id = ${vmBoxProvisionAttempts.sandboxId}
                 AND newer.id > ${vmBoxProvisionAttempts.id} AND newer.status = 'succeeded')`,
@@ -68,13 +73,18 @@ async function validClaims(tx: DbTransaction, incomingProvisionId = 0): Promise<
   // terminal touch has a short cooldown, while running turns/generations stay
   // charged for their entire lifetime. Descendants share their root's box.
   // A bind can remain labelled ensuring after an ordinary, awaited failure.
-  // Prefer the latest authoritative outcome; only unowned/uncertain setup holds
-  // a lane conservatively. Exclude the not-yet-admitted incoming generation.
+  // Prefer the latest physical outcome; pre-start admission/placement refusals
+  // cannot prove earlier remote work stopped. Unowned observations reserve quota,
+  // never the startup lane: simultaneous unadmitted generations must not mutually
+  // block each other. Only a live persisted physical claim owns that lane.
   const ensuringWithoutOutcome = sql`(b.status = 'ensuring' AND NOT COALESCE((
     SELECT p.status IN ('succeeded', 'failed')
       AND COALESCE(p.failure_class, '') NOT IN ('abandoned', 'interrupted')
     FROM vm_box_provision_attempts p
     WHERE p.sandbox_id = b.sandbox_id AND p.id <> ${incomingProvisionId}
+      AND COALESCE(p.failure_class, '') NOT LIKE 'capacity:%'
+      AND COALESCE(p.failure_class, '') NOT LIKE 'placement%'
+      AND COALESCE(p.failure_class, '') NOT IN ('retry:machine_capacity', 'retry:box_stop_unverified')
     ORDER BY p.id DESC LIMIT 1
   ), false))`
   const observed = (await tx.execute(sql`
@@ -82,7 +92,8 @@ async function validClaims(tx: DbTransaction, incomingProvisionId = 0): Promise<
       SELECT a.id, a.parent_agent_id, a.agent_type_id, a.owner_user_id, a.squad_id,
              a.squad_id AS origin_squad_id, ARRAY[a.id] AS path
       FROM agents a JOIN executions e ON e.agent_id = a.id
-      WHERE e.status IN ('running', 'waiting-sandbox', 'stopping') AND a.agent_type_id <> 'assistant'
+      WHERE (e.status IN ('running', 'waiting-sandbox', 'stopping')
+        OR (e.status = 'queued' AND e.started_at IS NOT NULL)) AND a.agent_type_id <> 'assistant'
       UNION ALL
       SELECT p.id, p.parent_agent_id, p.agent_type_id, p.owner_user_id, p.squad_id,
              o.origin_squad_id, o.path || p.id
@@ -95,7 +106,7 @@ async function validClaims(tx: DbTransaction, incomingProvisionId = 0): Promise<
         THEN 'provision' ELSE 'execution' END AS kind
     FROM machine_boxes b
     WHERE b.status IN ('ready', 'ensuring', 'stop_unverified') AND (
-      ${ensuringWithoutOutcome} OR b.last_activity_at > now() - interval '60 seconds'
+      b.status = 'stop_unverified' OR ${ensuringWithoutOutcome} OR b.last_activity_at > now() - interval '60 seconds'
       OR EXISTS (SELECT 1 FROM vm_box_provision_attempts p WHERE p.sandbox_id = b.sandbox_id AND p.status = 'running' AND p.id <> ${incomingProvisionId})
       OR EXISTS (
         SELECT 1 FROM owners o WHERE
@@ -109,7 +120,7 @@ async function validClaims(tx: DbTransaction, incomingProvisionId = 0): Promise<
     )
   `)) as unknown as (HostResource & { kind: 'execution' | 'provision' })[]
   return [
-    ...rows.map((row) => row.claim),
+    ...rows.map((row) => ({ ...row.claim, startupActive: row.provisionStatus === 'running' })),
     ...observed.map((resource) => ({
       ...resource,
       ownerKey: `observed:${resource.sandboxId}`,
@@ -118,34 +129,82 @@ async function validClaims(tx: DbTransaction, incomingProvisionId = 0): Promise<
   ]
 }
 
-/** One pending agent per admitted stream; actual private-box demand replaces
- * that placeholder, while every additional fork participant adds its quota. */
+/** Resolve known participant inheritance once per snapshot. A reused agent (or
+ * descendants sharing its root) must not reserve a separate box per stream. */
+async function streamBoxIdentities(tx: DbTransaction): Promise<Map<string, Set<string>>> {
+  const rows = (await tx.execute(sql`
+    WITH RECURSIVE members AS (
+      SELECT w.id AS stream_id, a.id, a.parent_agent_id, a.agent_type_id,
+        a.owner_user_id, a.squad_id, ARRAY[a.id] AS path
+      FROM work_streams w JOIN agents a ON (w.assignee_agent_id = a.id OR a.id = ANY(w.agent_ids))
+      WHERE w.status IN (${sql.join(
+        WORK_STREAM_ADMITTED_STATUSES.map((status) => sql`${status}`),
+        sql`, `
+      )})
+        AND a.status <> 'terminated'
+      UNION ALL
+      SELECT m.stream_id, a.id, a.parent_agent_id, a.agent_type_id,
+        a.owner_user_id, a.squad_id, m.path || a.id
+      FROM members m JOIN agents a ON a.id = m.parent_agent_id
+      WHERE NOT a.id = ANY(m.path) AND a.status <> 'terminated'
+    )
+    SELECT DISTINCT stream_id AS "streamId", CASE
+      WHEN agent_type_id = 'consultant' AND squad_id IS NOT NULL THEN 'consultants_' || squad_id::text
+      WHEN agent_type_id IN ('system-manager', 'assistant-worker') AND owner_user_id IS NOT NULL
+        THEN 'system_manager_' || owner_user_id::text
+      ELSE 'agent_' || id::text END AS "sandboxId"
+    FROM members WHERE parent_agent_id IS NULL AND agent_type_id <> 'assistant'
+  `)) as unknown as { streamId: string; sandboxId: string }[]
+  const identities = new Map<string, Set<string>>()
+  for (const row of rows) {
+    let keys = identities.get(row.streamId)
+    if (!keys) identities.set(row.streamId, (keys = new Set()))
+    keys.add(row.sandboxId)
+  }
+  return identities
+}
+
 function resourcesByMachine(claims: Claim[]): Map<string, Set<string>> {
-  const materialized = new Set(
-    claims
-      .filter(
-        (c) =>
-          c.kind !== 'stream' &&
-          c.workStreamId &&
-          !c.sandboxId.startsWith('squad_') &&
-          !c.sandboxId.startsWith('pending-agent:')
-      )
-      .map((c) => c.workStreamId!)
-  )
   const result = new Map<string, Set<string>>()
   for (const claim of claims) {
-    if (
-      claim.kind === 'stream' &&
-      claim.streamId &&
-      materialized.has(claim.streamId) &&
-      claim.sandboxId === pendingStreamBox(claim.streamId)
-    )
-      continue
     let keys = result.get(claim.machineId)
     if (!keys) result.set(claim.machineId, (keys = new Set()))
     keys.add(claim.sandboxId)
   }
   return result
+}
+
+/** Canonicalize planned identities only as part of the atomic claim. Deriving
+ * reservations dynamically from mutable stream membership would grandfather a
+ * newly assigned agent without ever admitting its additional demand. */
+function reconcileReservations(key: string, before: Claim[], requested: Claim[], identities: Map<string, Set<string>>) {
+  const incoming = requested.map((claim) => {
+    const known =
+      claim.kind === 'stream' && claim.streamId && claim.sandboxId === pendingStreamBox(claim.streamId)
+        ? identities.get(claim.streamId)
+        : undefined
+    return known?.size === 1 ? { ...claim, sandboxId: [...known][0]! } : claim
+  })
+  const materialized = new Map<string, HostResource>()
+  for (const claim of incoming) {
+    if (claim.kind === 'stream' || claim.sandboxId.startsWith('squad_')) continue
+    if (claim.workStreamId) materialized.set(claim.workStreamId, claim)
+    for (const [streamId, boxes] of identities) if (boxes.has(claim.sandboxId)) materialized.set(streamId, claim)
+  }
+  const replaced: { previous: Claim; next: Claim }[] = []
+  const retained = before
+    .filter((claim) => claim.ownerKey !== key)
+    .map((claim) => {
+      const target =
+        claim.kind === 'stream' && claim.streamId && !claim.sandboxId.startsWith('squad_')
+          ? materialized.get(claim.streamId)
+          : undefined
+      if (!target || (target.sandboxId === claim.sandboxId && target.machineId === claim.machineId)) return claim
+      const next = { ...claim, sandboxId: target.sandboxId, machineId: target.machineId }
+      replaced.push({ previous: claim, next })
+      return next
+    })
+  return { incoming, replaced, projected: [...retained, ...incoming] }
 }
 
 /** Readout only; authoritative claims must hold the transaction admission lock. */
@@ -161,17 +220,21 @@ export async function readHostCapacity(
     .where(eq(machines.id, machineId))
   const claims = await validClaims(tx)
   const current = resourcesByMachine(claims).get(machineId)?.size ?? 0
-  const projected =
-    resourcesByMachine([
-      ...claims,
-      ...incomingSandboxIds.map((sandboxId) => ({
-        ownerKey: 'preview',
-        kind: 'provision' as const,
-        machineId,
-        sandboxId,
-        workStreamId,
-      })),
-    ]).get(machineId)?.size ?? 0
+  const planned = incomingSandboxIds.length
+    ? reconcileReservations(
+        'preview',
+        claims,
+        incomingSandboxIds.map((sandboxId) => ({
+          ownerKey: 'preview',
+          kind: 'provision',
+          machineId,
+          sandboxId,
+          workStreamId,
+        })),
+        await streamBoxIdentities(tx)
+      ).projected
+    : claims
+  const projected = resourcesByMachine(planned).get(machineId)?.size ?? 0
   return evaluateHostQuotaCounts(machine?.capabilities.cpus, current, projected)
 }
 
@@ -180,6 +243,13 @@ export interface HostClaimResult {
   reason?: 'busy' | 'unknown' | 'quota' | 'starting'
   machineId?: string
   capacity?: HostCapacityDecision
+}
+
+export class HostCapacityUnavailableError extends Error {
+  constructor(readonly result: HostClaimResult) {
+    super('The machine has no host capacity for another sandbox; work stays queued until capacity is available.')
+    this.name = 'HostCapacityUnavailableError'
+  }
 }
 
 /**
@@ -193,10 +263,7 @@ export async function claimHostCapacity(
   owner: HostCapacityOwner,
   resources: HostResource[]
 ): Promise<HostClaimResult> {
-  const [lock] = (await tx.execute(sql`select pg_try_advisory_xact_lock(421109, 1) as acquired`)) as unknown as {
-    acquired: boolean
-  }[]
-  if (!lock?.acquired) return { allowed: false, reason: 'busy' }
+  if (!(await lockHostCapacity(tx))) return { allowed: false, reason: 'busy' }
   const key = ownerKey(owner)
   const before = await validClaims(tx, owner.kind === 'provision' ? owner.provisionAttemptId : 0)
   // Reclaim settled ownership without a TTL. Uncertain remote work stays in
@@ -205,21 +272,7 @@ export async function claimHostCapacity(
   if (liveKeys.length)
     await tx.delete(machineCapacityClaims).where(notInArray(machineCapacityClaims.ownerKey, liveKeys))
   else await tx.delete(machineCapacityClaims)
-  if (owner.kind === 'provision') {
-    for (const resource of resources) {
-      if (
-        before.some(
-          (claim) =>
-            claim.kind === 'provision' &&
-            claim.machineId === resource.machineId &&
-            claim.sandboxId !== resource.sandboxId
-        )
-      ) {
-        return { allowed: false, reason: 'starting', machineId: resource.machineId }
-      }
-    }
-  }
-  const incoming: Claim[] = [
+  const requested: Claim[] = [
     ...new Map(resources.map((resource) => [`${resource.machineId}:${resource.sandboxId}`, resource])).values(),
   ].map((resource) => ({
     ...resource,
@@ -230,10 +283,10 @@ export async function claimHostCapacity(
     executionId: owner.kind === 'execution' ? owner.executionId : null,
     provisionAttemptId: owner.kind === 'provision' ? owner.provisionAttemptId : null,
   }))
-  const after = [...before.filter((c) => c.ownerKey !== key), ...incoming]
+  const plan = reconcileReservations(key, before, requested, await streamBoxIdentities(tx))
   const current = resourcesByMachine(before),
-    projected = resourcesByMachine(after)
-  for (const machineId of new Set(resources.map((r) => r.machineId))) {
+    projected = resourcesByMachine(plan.projected)
+  for (const machineId of new Set(plan.incoming.map((resource) => resource.machineId))) {
     const [machine] = await tx
       .select({ capabilities: machines.capabilities, status: machines.status })
       .from(machines)
@@ -245,8 +298,105 @@ export async function claimHostCapacity(
     )
     if (!capacity.allowed)
       return { allowed: false, reason: capacity.reason === 'unknown' ? 'unknown' : 'quota', machineId, capacity }
+    // Below budget, physical generations may run concurrently. Stagger only
+    // at saturation, including grandfathered resumes above today's target.
+    if (
+      owner.kind === 'provision' &&
+      capacity.projectedQuotaCpus! >= capacity.budgetCpus! &&
+      before.some(
+        (claim) =>
+          claim.startupActive === true &&
+          claim.machineId === machineId &&
+          !resources.some((resource) => resource.machineId === machineId && resource.sandboxId === claim.sandboxId)
+      )
+    ) {
+      return { allowed: false, reason: 'starting', machineId, capacity }
+    }
+  }
+  for (const { previous, next } of plan.replaced) {
+    await tx
+      .delete(machineCapacityClaims)
+      .where(
+        and(
+          eq(machineCapacityClaims.ownerKey, previous.ownerKey),
+          eq(machineCapacityClaims.machineId, previous.machineId),
+          eq(machineCapacityClaims.sandboxId, previous.sandboxId)
+        )
+      )
+    const { startupActive: _startupActive, ...row } = next
+    await tx.insert(machineCapacityClaims).values(row).onConflictDoNothing()
   }
   await tx.delete(machineCapacityClaims).where(eq(machineCapacityClaims.ownerKey, key))
-  if (incoming.length) await tx.insert(machineCapacityClaims).values(incoming)
+  if (plan.incoming.length) await tx.insert(machineCapacityClaims).values(plan.incoming)
   return { allowed: true }
+}
+
+async function lockHostCapacity(tx: DbTransaction): Promise<boolean> {
+  // Retry brief transaction contention without a failure/backoff penalty.
+  // Do not block indefinitely here: callers may hold squad/agent/box rows,
+  // while the current holder's FK checks may need those same lifecycle rows.
+  let acquired = false
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const [lock] = (await tx.execute(sql`select pg_try_advisory_xact_lock(421109, 1) as acquired`)) as unknown as {
+      acquired: boolean
+    }[]
+    if (lock?.acquired) {
+      acquired = true
+      break
+    }
+    if (attempt < 2) await Bun.sleep([25, 100][attempt]! + Math.floor(Math.random() * 10))
+  }
+  return acquired
+}
+
+/** Bind is the authoritative placement fact. Move all reservations for this
+ * identity with the bind transaction, removing phantom charges on prior hosts.
+ * Call BEFORE inserting the binding so it cannot grandfather its own demand. */
+export async function moveHostResourceClaims(tx: DbTransaction, sandboxId: string, machineId: string): Promise<void> {
+  const existing = await tx
+    .select({ ownerKey: machineCapacityClaims.ownerKey })
+    .from(machineCapacityClaims)
+    .where(and(eq(machineCapacityClaims.sandboxId, sandboxId), ne(machineCapacityClaims.machineId, machineId)))
+    .limit(1)
+  if (!existing.length) return
+  if (!(await lockHostCapacity(tx)))
+    throw new HostCapacityUnavailableError({ allowed: false, reason: 'busy', machineId })
+  const before = await validClaims(tx)
+  const moving = before.filter(
+    (claim) => !claim.ownerKey.startsWith('observed:') && claim.sandboxId === sandboxId && claim.machineId !== machineId
+  )
+  if (!moving.length) return
+  const after = before.map((claim) => (moving.includes(claim) ? { ...claim, machineId } : claim))
+  const [machine] = await tx
+    .select({ capabilities: machines.capabilities })
+    .from(machines)
+    .where(eq(machines.id, machineId))
+  const capacity = evaluateHostQuotaCounts(
+    machine?.capabilities.cpus,
+    resourcesByMachine(before).get(machineId)?.size ?? 0,
+    resourcesByMachine(after).get(machineId)?.size ?? 0
+  )
+  if (!capacity.allowed)
+    throw new HostCapacityUnavailableError({
+      allowed: false,
+      reason: capacity.reason === 'unknown' ? 'unknown' : 'quota',
+      machineId,
+      capacity,
+    })
+  for (const claim of moving) {
+    await tx
+      .delete(machineCapacityClaims)
+      .where(
+        and(
+          eq(machineCapacityClaims.ownerKey, claim.ownerKey),
+          eq(machineCapacityClaims.machineId, claim.machineId),
+          eq(machineCapacityClaims.sandboxId, sandboxId)
+        )
+      )
+    const { startupActive: _startupActive, ...row } = claim
+    await tx
+      .insert(machineCapacityClaims)
+      .values({ ...row, machineId })
+      .onConflictDoNothing()
+  }
 }

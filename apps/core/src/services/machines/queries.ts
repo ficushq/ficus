@@ -1,3 +1,4 @@
+import { moveHostResourceClaims } from './host-capacity-store'
 import { randomBytes, randomUUID } from 'crypto'
 import { and, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm'
 import { db, instanceMaintenanceState, machineBoxes, machines } from '../../db'
@@ -375,6 +376,8 @@ export async function bindMachineBox(values: {
 
     // Candidate token for a first bind; the COALESCE below keeps an existing one.
     const authToken = values.authToken ?? randomBytes(32).toString('hex')
+
+    await moveHostResourceClaims(tx, sandboxId, machineId)
 
     const [box] = await tx
       .insert(machineBoxes)

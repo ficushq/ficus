@@ -1471,11 +1471,20 @@ runs its **own rootless dockerd** instead (spec §5):
   This is a forecast of admitted demand, not a sampled utilization threshold or
   a change to CPU quotas, MemoryMax, the unit packer, or existing cloud authority.
   Unknown CPU facts defer new demand. Already-accounted demand can continue
-  even when a host is above the target; admission does not evict work.
+  even when a host is above the target or its CPU facts temporarily disappear;
+  admission does not evict work. An empty one-CPU host admits one minimal
+  private-plus-shared owner set (two one-core quotas); this bounded exception
+  does not admit further demand or change either kernel quota.
 
   Active streams reserve a pending private participant plus their shared box
   before dispatch creates agents. Actual execution identities replace the
   placeholder; additional fork participants consume additional private-box quota.
+  Shared participants, including inherited private boxes, are canonicalized
+  transactionally across their streams: later membership edits cannot silently
+  enlarge an already-admitted reservation. Claims move atomically with the
+  authoritative box bind, so tentative placement does not leave phantom charges.
+  Recovery requeues retain their admitted footprint, including pre-upgrade turns
+  that started before durable claim records existed.
   Creation, manual admission and automatic promotion respect the host budget,
   including squads with no stream-count cap. Execution pickup commits its claim
   with the queued-to-running transition; refusal leaves work queued without
@@ -1486,12 +1495,22 @@ runs its **own rootless dockerd** instead (spec §5):
 
   Short transactional, machine-wide claims serialize the decision. No transaction
   or extra DB session spans SSH. Physical setup has **one startup lane per host**,
-  owned by the coalesced provision generation, while different hosts can progress.
-  Same-box followers do not consume another lane. Claims follow lifecycle records,
-  not expiring permits: abandoned/interrupted physical work remains charged until
-  successful same-box recovery or a later confirmed stop. Its same-box successor
-  can recover without double charging or deadlocking on its predecessor. Referenced
-  generations are retained; settled claim rows are reclaimed on subsequent claims.
+  owned by a live coalesced provision generation **only when the host is saturated**;
+  below budget, setups can run concurrently. Different hosts can progress and
+  same-box followers do not consume another lane. Short lock contention uses
+  bounded jittered retries, not an indefinitely blocking lock inside lifecycle
+  transactions. Capacity waits requeue without spending startup retries or
+  increasing provisioning backoff; actual startup failures remain bounded.
+
+  Claims follow lifecycle records, not expiring permits. Abandoned/interrupted
+  work with an unverified binding remains charged conservatively, but a dead
+  generation cannot hold a permanent startup lane. Successful same-box recovery,
+  a later confirmed stop, or normal box removal releases the uncertain claim.
+  Normal removal deletes the binding after remote teardown; a capacity refusal
+  or an unrelated failed retry alone is not evidence that remote work stopped.
+  Same-box recovery does not double charge its predecessor. Referenced generations
+  are retained; settled claim rows are reclaimed on subsequent claims. Optional
+  devbox prewarm uses the same full-generation gate, including its cleanup.
   Pre-existing running turns, provisioning and recent box activity are accounted
   conservatively (recent command/terminal touches have a 60-second cooldown).
   This does not schedule unmanaged host processes or guarantee memory/I/O capacity.

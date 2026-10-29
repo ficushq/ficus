@@ -30,14 +30,17 @@ export function evaluateHostQuotaCounts(
   projectedCount: number
 ): HostCapacityDecision {
   if (cpus === undefined || !Number.isSafeInteger(cpus) || cpus <= 0) {
-    return { allowed: false, reason: 'unknown' }
+    return { allowed: currentCount > 0 && projectedCount <= currentCount, reason: 'unknown' }
   }
   const quota = boxCpuQuota(cpus)
   const budgetCpus = cpus * HOST_CPU_OVERSUBSCRIPTION
   const activeQuotaCpus = currentCount * quota
   const projectedQuotaCpus = projectedCount * quota
   const unchanged = projectedCount <= currentCount
-  const allowed = unchanged || projectedQuotaCpus <= budgetCpus
+  // A one-CPU host must be able to start one minimal owner set (private +
+  // shared). This is a bounded empty-host exception, not another box's slot.
+  const minimalOwner = cpus === 1 && currentCount === 0 && projectedCount === 2
+  const allowed = unchanged || minimalOwner || projectedQuotaCpus <= budgetCpus
   return {
     allowed,
     reason: unchanged ? 'already-accounted' : allowed ? 'available' : 'quota',

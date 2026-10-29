@@ -264,22 +264,32 @@ export async function coalesceVmProvision<T>(
         const placement = error instanceof MachineNotReadyError
         const setup = error instanceof VmPostProvisionSetupError
         const retryCode = startupRetryCode(error)
+        const capacityWait = retryCode === 'machine_capacity'
         // Stop proof has not started physical provisioning; do not inherit an
         // old physical failure streak that would outlive its execution budget.
-        const failureCount =
-          placement || setup ? 0 : retryCode === 'box_stop_unverified' ? 1 : current!.failureCount + 1
+        const failureCount = capacityWait
+          ? current.failureCount
+          : placement || setup
+            ? 0
+            : retryCode === 'box_stop_unverified'
+              ? 1
+              : current!.failureCount + 1
         assertOwned?.()
         await db
           .update(attempts)
           .set({
             status: 'failed',
-            failureClass: placement
-              ? `placement${retryCode ? `:${retryCode}` : ''}`
-              : retryCode
-                ? `retry:${retryCode}`
-                : 'provision',
+            failureClass: capacityWait
+              ? 'capacity:machine_capacity'
+              : placement
+                ? `placement${retryCode ? `:${retryCode}` : ''}`
+                : retryCode
+                  ? `retry:${retryCode}`
+                  : 'provision',
             failureCount,
-            retryAt: placement ? null : new Date(Date.now() + (setup ? 0 : provisionBackoffMs(failureCount))),
+            retryAt: placement
+              ? null
+              : new Date(Date.now() + (setup || capacityWait ? 0 : provisionBackoffMs(failureCount))),
             completedAt: new Date(),
           })
           .where(and(eq(attempts.id, current!.id), eq(attempts.status, 'running')))
