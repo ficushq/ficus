@@ -54,10 +54,10 @@ export function WorkflowReviewChat({
     entry.sources.map((source) => attemptSummary(run.state, source)).join(', ')
   return (
     <section aria-label="Agent chat" data-review-chat className="flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 space-y-2 border-b border-panel-border px-4 py-2.5">
+      <div className="shrink-0 space-y-2 border-b border-panel-border px-4 py-2">
         <p className="text-xs text-muted">
           {consult
-            ? 'Ask the agent about its work or request a refinement. It can revise this proposal while the review stays open; bigger changes still need Changes requested.'
+            ? 'The agent can refine this proposal while the review stays open.'
             : 'Chat with the agent that produced this work.'}
         </p>
         {agents.length > 1 && (
