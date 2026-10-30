@@ -3717,6 +3717,12 @@ done
       '#!/bin/sh\necho "ss $*" >>"$FIXTURE/calls"\ncat "$FIXTURE/holder" 2>/dev/null\nexit 0\n'
     )
     writeFileSync(join(dir, 'journalctl'), '#!/bin/sh\ncat "$FIXTURE/journal" 2>/dev/null\nexit 0\n')
+    // The box user exists unless a test removes it (getent's "not found" is exit 2).
+    writeFileSync(
+      join(dir, 'getent'),
+      '#!/bin/sh\necho "getent $*" >>"$FIXTURE/calls"\n[ ! -e "$FIXTURE/no-user" ] || exit 2\n[ ! -e "$FIXTURE/getent-error" ] || exit 1\necho "$2:x:1000:1000::/home/$2:/bin/bash"\n'
+    )
+    chmodSync(join(dir, 'getent'), 0o755)
     chmodSync(join(dir, 'ss'), 0o755)
     chmodSync(join(dir, 'journalctl'), 0o755)
     chmodSync(join(dir, 'sudo'), 0o755)
@@ -3764,7 +3770,60 @@ done
           writeFileSync(join(dir, `${unit}.active`), value(unit, 'enabled') === 'enabled' ? 'active' : 'inactive')
       },
       calls: () => readFileSync(join(dir, 'calls'), 'utf8'),
+      /** The box was removed: its user, home and units are gone. */
+      removeBoxUser: () => {
+        writeFileSync(join(dir, 'no-user'), '')
+        for (const unit of names.allUnits.split(' ')) {
+          rmSync(join(dir, `${unit}.active`), { force: true })
+          rmSync(join(dir, `${unit}.enabled`), { force: true })
+        }
+      },
+      getentError: () => writeFileSync(join(dir, 'getent-error'), ''),
     }
+  }
+
+  // 2026-10-30: a recreate removed a box (user, home, units) and its provision
+  // was then refused. The row was left stop_unverified, and verification ran
+  // `systemctl disable` on units that no longer exist, so it could never pass
+  // and the agent could never get a box again.
+  for (const sandboxId of ['agent_gone', 'squad_gone']) {
+    it(`${sandboxId}: a box whose unix user no longer exists verifies as stopped without touching units`, async () => {
+      const f = fixture(sandboxId, false)
+      f.removeBoxUser()
+      let box = makeBox({ sandboxId, unixUser: boxUnixUser(sandboxId), status: 'stop_unverified' })
+      const result = await stopBox(sandboxId, {
+        runner: f.runner,
+        tunnels: makeFakeTunnels([]),
+        getMachine: async () => makeMachine(),
+        getMachineBox: async () => box,
+        upsertMachineBox: async (update) => {
+          box = { ...box, ...update }
+          return box
+        },
+      })
+      expect(result).toEqual({ kind: 'verified' })
+      expect(box.status).toBe('stopped')
+      expect(f.calls()).toContain(`getent passwd ${boxUnixUser(sandboxId)}`)
+      expect(f.calls()).not.toMatch(/^(?:disable|stop) /m)
+    })
+
+    it(`${sandboxId}: an undecidable user lookup falls through to the normal verified stop`, async () => {
+      const f = fixture(sandboxId, false)
+      f.getentError()
+      let box = makeBox({ sandboxId, unixUser: boxUnixUser(sandboxId), status: 'ready' })
+      const result = await stopBox(sandboxId, {
+        runner: f.runner,
+        tunnels: makeFakeTunnels([]),
+        getMachine: async () => makeMachine(),
+        getMachineBox: async () => box,
+        upsertMachineBox: async (update) => {
+          box = { ...box, ...update }
+          return box
+        },
+      })
+      expect(result).toEqual({ kind: 'verified' })
+      expect(f.calls()).toMatch(/^disable /m)
+    })
   }
 
   for (const sandboxId of ['agent_park', 'squad_park']) {
