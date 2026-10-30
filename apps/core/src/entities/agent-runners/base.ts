@@ -1,4 +1,4 @@
-import { restartResumeChatNotice, restartResumeNotice } from '@ficus/shared/restart-context'
+import { restartResumeNotice } from '@ficus/shared/restart-context'
 import { consultantSandboxSquadId, consultantScratchPath } from '../../services/sandbox/consultant-sandbox'
 import { resolveWorkspaceLayout } from '../../services/sandbox/workspace-layout'
 import { messageTextForModel } from '../../services/chat/message-context'
@@ -819,10 +819,9 @@ export abstract class AgentRunner {
     // Create buffer early so errors during session creation can be pushed to the
     // SSE stream instead of being silently swallowed.
     this.buffer = createBuffer(this.execution.id)
-    if (this.execution.restartContext) {
-      // The live chat gets the people copy; the model's prompt below gets the agent copy with the id.
-      this.buffer.push({ type: 'system_message', text: restartResumeChatNotice() })
-    }
+    // A resumed run's restart notice reaches the chat once, as the message
+    // prepareRestartResume saves and emits; the model's prompt below gets the
+    // agent copy with the id. Pushing it here as well showed it twice.
     this.collector = new StreamEventCollector(this.buffer, () => this.persistence.currentStreamGroupId)
     this.persistence.attach({
       collector: this.collector,
