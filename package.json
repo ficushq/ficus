@@ -115,7 +115,7 @@
     "test:bigbrain-host": "cd scripts/bigbrain && bun ../../scripts/test-runner.ts artifact.test.ts control-input.test.ts storage.test.ts units.test.ts receipts.test.ts secure-files.test.ts gateway.test.ts gateway.process.test.ts gateway-manifest.test.ts gateway-directory.test.ts gateway-probe.test.ts owner-link.test.ts invite-cache.test.ts member-admin.test.ts process.test.ts preflight.test.ts accounts.test.ts volume-image.test.ts unit-assets.test.ts mount.test.ts native-admin.test.ts bootstrap.test.ts install.test.ts backup.test.ts restore.test.ts delete.test.ts host-bun.test.ts control.test.ts ingress.test.ts host-assets.test.ts restore-exec.test.ts lifecycle.test.ts serve-shim.test.ts"
   },
   "devDependencies": {
-    "@eslint/js": "^9",
+    "@eslint/js": "^10",
     "ajv": "^8.20.0",
     "@testing-library/dom": "^10.4.2",
     "diff": "^8.0.3",
