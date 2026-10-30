@@ -85,6 +85,7 @@ export function FeedPage({ dependencies = {} }: FeedPageProps) {
               isError={actionsError}
               error={error}
               onRetry={() => void refetch()}
+              showSectionCounts={false}
             />
           </div>
         </details>

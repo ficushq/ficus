@@ -17,6 +17,11 @@ interface ActionCenterContentProps {
   onRetry?: () => void
   onClose?: () => void
   focusActionId?: string
+  /**
+   * Show each section subheading's item count. The Feed's Needs you section hides them because its
+   * collapsible header already shows the total; the Action Center panel and /actions keep them.
+   */
+  showSectionCounts?: boolean
   /** Injectable transport seam for isolated component tests. */
   continueHaltedActions?: typeof continueHaltedAgents
 }
@@ -29,6 +34,7 @@ export function ActionCenterContent({
   onRetry,
   onClose,
   focusActionId,
+  showSectionCounts = true,
   continueHaltedActions = continueHaltedAgents,
 }: ActionCenterContentProps) {
   const loadingRowCount = useLoadingShapeCount('action-center:list', isLoading ? undefined : actions.length, {
@@ -93,6 +99,7 @@ export function ActionCenterContent({
           continueHaltedActions={continueHaltedActions}
           focusActionId={focusActionId}
           showHeading={actions.length > 1}
+          showCount={showSectionCounts}
         />
       )}
       {questions.length > 0 && (
@@ -103,6 +110,7 @@ export function ActionCenterContent({
           continueHaltedActions={continueHaltedActions}
           focusActionId={focusActionId}
           showHeading={actions.length > 1}
+          showCount={showSectionCounts}
         />
       )}
       {workstreamReviews.length > 0 && (
@@ -113,6 +121,7 @@ export function ActionCenterContent({
           continueHaltedActions={continueHaltedActions}
           focusActionId={focusActionId}
           showHeading={actions.length > 1}
+          showCount={showSectionCounts}
         />
       )}
       {workstreamBlocked.length > 0 && (
@@ -123,6 +132,7 @@ export function ActionCenterContent({
           continueHaltedActions={continueHaltedActions}
           focusActionId={focusActionId}
           showHeading={actions.length > 1}
+          showCount={showSectionCounts}
         />
       )}
     </div>
@@ -141,11 +151,13 @@ function AgentErrorSection({
   continueHaltedActions,
   focusActionId,
   showHeading,
+  showCount,
 }: {
   actions: PendingAction[]
   continueHaltedActions: typeof continueHaltedAgents
   focusActionId?: string
   showHeading: boolean
+  showCount: boolean
 }) {
   const queryClient = useQueryClient()
   const respondableErrors = actions.filter(
@@ -171,7 +183,7 @@ function AgentErrorSection({
         <div className="flex items-center justify-between mb-2 gap-2 px-1">
           <h3 className="flex items-center gap-2 text-xs font-medium text-muted">
             Halted agents
-            <span className="text-xs font-normal tabular-nums text-muted">{actions.length}</span>
+            {showCount && <span className="text-xs font-normal tabular-nums text-muted">{actions.length}</span>}
           </h3>
           {respondableErrors.length > 1 && (
             <button
@@ -211,6 +223,7 @@ function ActionSection({
   continueHaltedActions,
   focusActionId,
   showHeading,
+  showCount,
 }: {
   title: string
   count: number
@@ -218,13 +231,14 @@ function ActionSection({
   continueHaltedActions: typeof continueHaltedAgents
   focusActionId?: string
   showHeading: boolean
+  showCount: boolean
 }) {
   return (
     <section>
       {showHeading && (
         <h3 className="mb-2 flex items-center gap-2 px-1 text-xs font-medium text-muted">
           {title}
-          <span className="text-xs font-normal tabular-nums text-muted">{count}</span>
+          {showCount && <span className="text-xs font-normal tabular-nums text-muted">{count}</span>}
         </h3>
       )}
       <div className="space-y-2">
