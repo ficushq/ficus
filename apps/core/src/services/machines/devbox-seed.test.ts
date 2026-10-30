@@ -1,6 +1,7 @@
 import { describe, test, expect, spyOn } from 'bun:test'
 import { EventEmitter } from 'events'
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   seedBoxDevbox,
   renderDevboxJson,
@@ -218,18 +219,18 @@ function seed(
 // Tests
 // ---------------------------------------------------------------------------
 
+const packageBase = (spec: string) => spec.split('@')[0]
+
 describe('devbox comfort-set package lists mirror the Dockerfile stages', () => {
-  test('machine and image gh pins stay aligned without the Jetify version index', () => {
-    const ghRef = AGENT_COMFORT_PACKAGES.find((pkg) => pkg.endsWith('#gh'))
-    if (!ghRef) throw new Error('Agent comfort set must pin gh directly to Nixpkgs')
-    expect(ghRef).toMatch(/^github:NixOS\/nixpkgs\/[a-f0-9]{40}#gh$/)
-    expect(SQUAD_COMFORT_PACKAGES).toContain(ghRef)
+  test('the baked squad devbox.json mirrors the squad set; the k8s image pins gh at build time', () => {
     const sandboxRoot = new URL('../../../../../packages/sandbox-server/', import.meta.url)
     const template = JSON.parse(readFileSync(new URL('sandbox/devbox.json', sandboxRoot), 'utf8'))
     expect(template.packages).toEqual(SQUAD_COMFORT_PACKAGES)
+    // The image installs gh with `nix profile install` at BUILD time, so a pinned
+    // Nixpkgs ref costs no box any runtime evaluation there.
     const dockerfile = readFileSync(new URL('Dockerfile', sandboxRoot), 'utf8')
-    expect(dockerfile).toContain(ghRef)
-    expect(dockerfile).not.toContain('nixpkgs#gh')
+    expect(dockerfile).toMatch(/github:NixOS\/nixpkgs\/[a-f0-9]{40}#gh/)
+    expect(dockerfile).not.toContain('nixpkgs#gh ')
   })
 
   test('agent light set matches the k8s agent-stage global nix profile comfort set', () => {
@@ -242,31 +243,42 @@ describe('devbox comfort-set package lists mirror the Dockerfile stages', () => 
       'fd@latest',
       'tree@latest',
       'less@latest',
-      'github:NixOS/nixpkgs/d5dfd8e6716dde34398bc14bc87c10dece9c8c68#gh',
+      'gh@2.102.0',
       'tmux@latest',
       'procps@latest',
     ])
   })
 
-  test('squad bun is pinned to Nixpkgs rather than the lagging Jetify index', () => {
-    const bunRef = SQUAD_COMFORT_PACKAGES.find((pkg) => pkg.endsWith('#bun'))
-    if (!bunRef) throw new Error('Squad comfort set must pin bun directly to Nixpkgs')
-    expect(bunRef).toMatch(/^github:NixOS\/nixpkgs\/[a-f0-9]{40}#bun$/)
-    expect(SQUAD_COMFORT_PACKAGES.some((pkg) => pkg.startsWith('bun@'))).toBe(false)
+  // Both used to be Nixpkgs flake refs (the devbox index lagged). A flake ref has
+  // no store path in devbox.lock, so every fresh box user fetched and evaluated
+  // nixpkgs to find it: ~68s of a ~72s install, measured 2026-10-30. Index
+  // versions are locked to store paths and checked offline.
+  test('comfort sets take gh and bun from the devbox index, never a Nixpkgs flake ref', () => {
+    for (const pkgs of [AGENT_COMFORT_PACKAGES, SQUAD_COMFORT_PACKAGES]) {
+      expect(pkgs.filter((pkg) => pkg.startsWith('github:'))).toEqual([])
+    }
+    // gh >= 2.99.0: agent prompts use `gh pr comment --attach`.
+    expect(AGENT_COMFORT_PACKAGES).toContain('gh@2.102.0')
+    expect(SQUAD_COMFORT_PACKAGES).toContain('gh@2.102.0')
+  })
+
+  test("squad bun is the repository's .bun-version, so a squad toolchain's bun matches", () => {
+    const bunVersion = readFileSync(join(import.meta.dir, '../../../../../.bun-version'), 'utf8').trim()
+    expect(SQUAD_COMFORT_PACKAGES.filter((pkg) => packageBase(pkg) === 'bun')).toEqual([`bun@${bunVersion}`])
   })
 
   test('squad heavier set matches the k8s squad-stage baked devbox.json packages', () => {
     // Mirrors packages/sandbox-server/sandbox/devbox.json exactly.
     expect(SQUAD_COMFORT_PACKAGES).toEqual([
       'nodejs_24@latest',
-      'github:NixOS/nixpkgs/8825bebf6324e0579d012936eff73379af284b6d#bun',
+      'bun@1.4.2',
       'python3@latest',
       'ripgrep@latest',
       'fd@latest',
       'jq@latest',
       'tree@latest',
       'less@latest',
-      'github:NixOS/nixpkgs/d5dfd8e6716dde34398bc14bc87c10dece9c8c68#gh',
+      'gh@2.102.0',
       'gnumake@latest',
       'gcc@latest',
       'diffutils@latest',
@@ -374,7 +386,7 @@ describe('seedBoxDevbox', () => {
       'fd@latest',
       'tree@latest',
       'less@latest',
-      'github:NixOS/nixpkgs/d5dfd8e6716dde34398bc14bc87c10dece9c8c68#gh',
+      'gh@2.102.0',
       'tmux@latest',
       'procps@latest',
     ])
@@ -413,10 +425,11 @@ describe('seedBoxDevbox', () => {
     expect(merged.packages).toEqual({
       nodejs_24: 'latest',
       ripgrep: '14.1.0',
-      'github:NixOS/nixpkgs/d5dfd8e6716dde34398bc14bc87c10dece9c8c68#gh': '',
+      // Core's own superseded flake-ref pin is swapped in place for the index version.
+      gh: '2.102.0',
       zlib: { version: 'latest', outputs: ['dev'] },
       'pkg-config': 'latest',
-      'github:NixOS/nixpkgs/8825bebf6324e0579d012936eff73379af284b6d#bun': '',
+      bun: '1.4.2',
       python3: 'latest',
       fd: 'latest',
       jq: 'latest',
@@ -440,20 +453,51 @@ describe('seedBoxDevbox', () => {
     const list = JSON.parse(
       mergeDevboxJson('squad', JSON.stringify({ packages: ['bun@latest', 'postgresql@latest'] })).content
     ).packages as string[]
-    expect(list.slice(0, 2)).toEqual([
-      'github:NixOS/nixpkgs/8825bebf6324e0579d012936eff73379af284b6d#bun',
-      'postgresql@latest',
-    ])
+    expect(list.slice(0, 2)).toEqual(['bun@1.4.2', 'postgresql@latest'])
     expect(list.filter((spec) => spec.endsWith('#bun') || spec.startsWith('bun@'))).toHaveLength(1)
 
     const map = JSON.parse(
       mergeDevboxJson('squad', JSON.stringify({ packages: { bun: 'latest', postgresql: 'latest' } })).content
     ).packages as Record<string, unknown>
-    expect(map).not.toHaveProperty('bun')
-    expect(Object.keys(map).slice(0, 2)).toEqual([
-      'github:NixOS/nixpkgs/8825bebf6324e0579d012936eff73379af284b6d#bun',
-      'postgresql',
-    ])
+    expect(Object.keys(map).slice(0, 2)).toEqual(['bun', 'postgresql'])
+    expect(map.bun).toBe('1.4.2')
+  })
+
+  test("Core's earlier Nixpkgs flake-ref pins are replaced in place by index versions, list or map", () => {
+    const list = JSON.parse(
+      mergeDevboxJson(
+        'squad',
+        JSON.stringify({
+          packages: [
+            'github:NixOS/nixpkgs/8825bebf6324e0579d012936eff73379af284b6d#bun',
+            'jq@latest',
+            'github:NixOS/nixpkgs/d5dfd8e6716dde34398bc14bc87c10dece9c8c68#gh',
+          ],
+        })
+      ).content
+    ).packages as string[]
+    expect(list.slice(0, 3)).toEqual(['bun@1.4.2', 'jq@latest', 'gh@2.102.0'])
+    expect(list.filter((spec) => spec.startsWith('github:'))).toEqual([])
+    expect(list.filter((spec) => spec.split('@')[0] === 'gh')).toHaveLength(1)
+    expect(list.filter((spec) => spec.split('@')[0] === 'bun')).toHaveLength(1)
+
+    const map = JSON.parse(
+      mergeDevboxJson(
+        'agent',
+        JSON.stringify({
+          packages: { 'github:NixOS/nixpkgs/d5dfd8e6716dde34398bc14bc87c10dece9c8c68#gh': '', ripgrep: 'latest' },
+        })
+      ).content
+    ).packages as Record<string, unknown>
+    expect(Object.keys(map).slice(0, 2)).toEqual(['gh', 'ripgrep'])
+    expect(map.gh).toBe('2.102.0')
+    expect(Object.keys(map).some((name) => name.startsWith('github:'))).toBe(false)
+  })
+
+  test('a gh version the user chose is kept', () => {
+    const packages = JSON.parse(mergeDevboxJson('agent', JSON.stringify({ packages: ['gh@2.80.0'] })).content)
+      .packages as string[]
+    expect(packages.filter((spec) => spec.split('@')[0] === 'gh')).toEqual(['gh@2.80.0'])
   })
 
   test('a bun version the user chose is kept, and no pinned bun is added beside it', () => {
