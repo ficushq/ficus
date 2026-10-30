@@ -168,6 +168,8 @@ export const queryKeys = {
     relationships: (squadId: string) => [...queryKeys.squads.all, 'relationships', squadId] as const,
     deployments: (squadId: string) => [...queryKeys.squads.all, 'deployments', squadId] as const,
     localDeployments: (squadId: string) => [...queryKeys.squads.all, 'localDeployments', squadId] as const,
+    /** One squad's storage breakdown (GET /api/squads/:id/storage, storage:read). */
+    storage: (squadId: string) => [...queryKeys.squads.all, 'storage', squadId] as const,
     grants: {
       outbound: (squadId: string) => [...queryKeys.squads.all, squadId, 'grants', 'outbound'] as const,
       inbound: (squadId: string) => [...queryKeys.squads.all, squadId, 'grants', 'inbound'] as const,

@@ -137,13 +137,14 @@ import {
   getInboxMessages,
   getMemorySyncStatus,
   listSshKeys,
+  getSquadStorage,
 } from './api/squads'
 import { getAgentQuestions, getSquadOpenAgentQuestionCounts } from './api/agentQuestions'
 import { getSystemTokens } from './api/systemTokens'
 import { getInstanceIdentity, listPeers, getAgentFederationStatus, listAgentAllowRules } from './api/amtp'
 import { getOnboardingStatus } from './api/onboarding'
 import { listSlotPools } from './api/slots'
-import type { NormalizedSquadActivityFilters, StorageSnapshot, ThemePresetScope } from '@ficus/shared'
+import type { NormalizedSquadActivityFilters, SquadStorageView, StorageSnapshot, ThemePresetScope } from '@ficus/shared'
 
 /**
  * Centralized query option factories.
@@ -159,6 +160,12 @@ function storageRemovalPending(data: StorageSnapshot | undefined): boolean {
     data?.machines.some((machine) =>
       machine.squads.some((squad) => squad.folders.some((folder) => folder.agent?.removalPending))
     )
+  )
+}
+
+function squadStorageRemovalPending(data: SquadStorageView | undefined): boolean {
+  return Boolean(
+    data?.machines.some((machine) => machine.storage.folders.some((folder) => folder.agent?.removalPending))
   )
 }
 
@@ -559,6 +566,14 @@ export const queries = {
       queryOptions({
         queryKey: queryKeys.squads.basic(id),
         queryFn: () => getSquad(id),
+      }),
+    storage: (squadId: string) =>
+      queryOptions({
+        queryKey: queryKeys.squads.storage(squadId),
+        queryFn: () => getSquadStorage(squadId),
+        // Homes update one at a time while a pass runs; every 10s while a background removal is pending.
+        refetchInterval: (query) =>
+          squadStorageRemovalPending(query.state.data) ? 10000 : query.state.data?.scanning ? 30000 : 300000,
       }),
     agents: (squadId: string) =>
       queryOptions({

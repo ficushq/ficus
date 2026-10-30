@@ -20,6 +20,7 @@ import { SandboxProcesses } from '../sandbox/SandboxProcesses'
 import { IntegrationSettings } from './IntegrationSettings'
 import { DirectMergePolicySettings } from './DirectMergePolicySettings'
 import { ConsultantDormancySettings } from './ConsultantDormancySettings'
+import { SquadStorageSettings } from './SquadStorageSettings'
 import { queries } from '../../queryOptions'
 import { Can } from '../Can'
 import { SettingsNavigation } from '../settings/SettingsNavigation'
@@ -68,7 +69,6 @@ export function SquadSettingsTab({
 
   const { data: sandboxStatus } = useQuery(queries.sandbox.status(squadId))
   const hostRuntime = sandboxStatus?.runtime === 'host'
-  const sections = SECTIONS
   const sandboxSectionReady = sandboxStatus !== undefined && !hostRuntime
   // The log WebSocket serves only runtimes whose manager streams container
   // logs (docker, k8s); on the vm runtime boxes surface output through exec,
@@ -76,7 +76,14 @@ export function SquadSettingsTab({
   const logsAvailable = sandboxStatus?.logStreaming === true
   const { can, isLoading: permissionsLoading } = usePermissions(squadId)
   const canDeleteSquad = !permissionsLoading && can('squads:delete')
-  const activeSection: SectionId = isValidSection(sectionParam) ? sectionParam : 'general'
+  const canReadStorage = !permissionsLoading && can('storage:read')
+  const sections = SECTIONS.filter((section) => section.id !== 'storage' || canReadStorage)
+  // A storage deep link waits for permissions instead of flashing General, then falls back
+  // to General for users without storage:read.
+  const activeSection: SectionId =
+    isValidSection(sectionParam) && (sectionParam !== 'storage' || permissionsLoading || canReadStorage)
+      ? sectionParam
+      : 'general'
 
   const setActiveSection = (section: string, target?: string) => {
     if (!isValidSection(section)) return
@@ -96,7 +103,7 @@ export function SquadSettingsTab({
   const groups = [
     { label: 'Squad', ids: ['general', 'context', 'work'] },
     { label: 'Connections', ids: ['integrations', 'notifications'] },
-    { label: 'Workspace', ids: ['workspace', 'memory', 'access'] },
+    { label: 'Workspace', ids: ['workspace', 'storage', 'memory', 'access'] },
   ].map((group) => ({
     label: group.label,
     items: group.ids.flatMap((id) => sections.filter((section) => section.id === id)),
@@ -177,6 +184,8 @@ export function SquadSettingsTab({
               <ConsultantDormancySettings squadId={squadId} consultantIdleDormancyDays={consultantIdleDormancyDays} />
             </div>
           )}
+
+          {activeSection === 'storage' && canReadStorage && <SquadStorageSettings squadId={squadId} />}
 
           {activeSection === 'integrations' && <IntegrationSettings squadId={squadId} />}
 

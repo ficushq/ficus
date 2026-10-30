@@ -16,6 +16,7 @@ import type {
   ResolvedTrackedResource,
   TrackedResource,
   TrackedResourcesView,
+  SquadStorageView,
 } from '@ficus/shared'
 // The payload shapes live with the transport in @ficus/client-core; web re-exports them so
 // components keep importing their api-layer types from one place, with one definition behind it.
@@ -166,6 +167,11 @@ export async function spawnSquadAgent(squadId: string, agentTypeId: string): Pro
     method: 'POST',
     body: JSON.stringify({ agentTypeId }),
   })
+}
+
+/** This squad's storage breakdown from saved measurements (storage:read). Read-only: it never starts a scan. */
+export async function getSquadStorage(squadId: string): Promise<SquadStorageView> {
+  return apiFetch<SquadStorageView>(`/squads/${squadId}/storage`)
 }
 
 export async function terminateSquadAgent(squadId: string, agentId: string): Promise<void> {

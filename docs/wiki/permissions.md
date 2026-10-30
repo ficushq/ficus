@@ -28,7 +28,8 @@ attribution, rate limits and rollout requirements.
 ## Squad storage
 
 `storage:read` lets a caller read one squad's storage breakdown with
-`GET /api/squads/:id/storage` or `ficus squad storage [squad-id]`, without the
+`GET /api/squads/:id/storage`, `ficus squad storage [squad-id]` or the web
+app's Squad settings → Storage page (hidden from users without it), without the
 instance-wide `system:logs`. It is checked in the requested squad, so a manager,
 consultant or squad-scoped role holder only sees squads it can access; agents
 with an extra `storage:read` scope stay inside their own squad. The bundled
