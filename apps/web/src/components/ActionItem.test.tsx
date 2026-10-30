@@ -1541,3 +1541,150 @@ for (const variant of ['decide', 'provide', 'file'] as const) {
     }
   })
 }
+
+describe('workflow review gate cards', () => {
+  const gateAction = (extra: Partial<WorkStreamActionData> = {}): PendingAction => {
+    const base = manualAction('gate-wait', 'Long gate instructions that the decision brief now carries')
+    const data = base.data as WorkStreamActionData
+    return {
+      ...base,
+      data: { ...data, ...extra, wait: { ...data.wait, resolutionHandler: 'workflow', flowAttemptId: 1 } },
+    } as PendingAction
+  }
+
+  function seedReviewSurface(cache: QueryClient) {
+    const definition = createBlankWorkflow()
+    definition.steps = [
+      {
+        id: 'design',
+        name: 'Design approval',
+        kind: 'human-approval' as const,
+        approver: 'reviewers' as const,
+        instructions: 'Approve the design',
+        output: 'Decision',
+        outcomes: { approved: { next: 'finish' } },
+      },
+    ]
+    definition.entry = 'design'
+    const state = createWorkflowRun(definition)
+    cache.setQueryData(queryKeys.squads.workStreamDetail('ws-1'), {
+      id: 'ws-1',
+      squadId: 'squad-1',
+      title: 'Ship it',
+      status: 'active',
+      agentIds: [],
+    })
+    cache.setQueryData(queryKeys.workflows.run('ws-1'), {
+      workStreamId: 'ws-1',
+      source: {},
+      state,
+      version: 0,
+      attemptAgents: {},
+      openWaits: [{ id: 'gate-wait', flowAttemptId: 1, resolutionHandler: 'workflow', openedAt: state.startedAt }],
+    })
+    cache.setQueryData(queryKeys.auth.permissions('squad-1'), {
+      permissions: ['workstreams:review'],
+      identity: { type: 'user', userId: 'reviewer' },
+    })
+  }
+
+  test('a lone review gate has no chevron or instruction body, and Review still opens the review screen', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const rendered = dom.createRoot()
+    const cache = new QueryClient()
+    seedReviewSurface(cache)
+    try {
+      // A lone action would otherwise open expanded (no category heading).
+      await dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={cache}>
+              <ActionCenterContent actions={[gateAction()]} isLoading={false} />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      const document = dom.window.document
+      expect(document.querySelector('button[aria-expanded]')).toBeNull()
+      expect(document.body.textContent).not.toContain('Long gate instructions')
+      expect(document.body.textContent).toContain('Ficus · review needed')
+      expect(document.querySelector('.cursor-pointer')).toBeNull()
+
+      const review = document.querySelector('button[aria-label="Review and decide on Ship it"]') as HTMLButtonElement
+      expect(review.textContent).toBe('Review')
+      await dom.act(async () => review.click())
+      expect(document.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Review Design approval')
+    } finally {
+      await dom.cleanup()
+      cache.clear()
+    }
+  })
+
+  test('a focused or delivery-approval review gate stays collapsed to its header', async () => {
+    for (const subject of [gateAction(), gateAction({ deliveryApproval: true })]) {
+      const dom = await acquireDomHarness({ url: 'http://localhost/' })
+      const rendered = dom.createRoot()
+      try {
+        await dom.act(async () =>
+          rendered.root.render(
+            <MemoryRouter>
+              <QueryClientProvider client={new QueryClient()}>
+                <ActionItem action={subject} focused defaultExpanded />
+              </QueryClientProvider>
+            </MemoryRouter>
+          )
+        )
+        expect(dom.window.document.querySelector('button[aria-expanded]')).toBeNull()
+        expect(dom.window.document.body.textContent).not.toContain('Long gate instructions')
+        expect(dom.window.document.querySelector('button[aria-label="Review and decide on Ship it"]')).not.toBeNull()
+      } finally {
+        await dom.cleanup()
+      }
+    }
+  })
+
+  test('the embedded preview still shows the gate message', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const rendered = dom.createRoot()
+    try {
+      await dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={new QueryClient()}>
+              <ActionItem action={gateAction()} embedded />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      expect(dom.window.document.body.textContent).toContain('Long gate instructions')
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('work stream input and legacy review cards keep their dropdown', async () => {
+    const flowInput = manualAction('flow-input', 'Choose a base branch')
+    ;(flowInput.data as WorkStreamActionData).wait.resolutionHandler = 'workflow'
+    for (const subject of [action, manualAction('manual-wait', 'Grant the token'), flowInput]) {
+      const dom = await acquireDomHarness({ url: 'http://localhost/' })
+      const rendered = dom.createRoot()
+      try {
+        await dom.act(async () =>
+          rendered.root.render(
+            <MemoryRouter>
+              <QueryClientProvider client={new QueryClient()}>
+                <ActionItem action={subject} />
+              </QueryClientProvider>
+            </MemoryRouter>
+          )
+        )
+        const expand = dom.window.document.querySelector('button[aria-label="Expand"]') as HTMLButtonElement
+        expect(expand.getAttribute('aria-expanded')).toBe('false')
+        await dom.act(async () => expand.click())
+        expect(dom.window.document.querySelector('button[aria-label="Collapse"]')).not.toBeNull()
+      } finally {
+        await dom.cleanup()
+      }
+    }
+  })
+})
