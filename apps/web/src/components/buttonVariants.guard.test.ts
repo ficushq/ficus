@@ -76,6 +76,11 @@ const NAVIGATING_BUTTONS: Array<{ path: string; contains: string; why: string }>
     why: 'Opens the work stream under review; the same control is a router Link when there is no handler.',
   },
   {
+    path: 'components/WorkflowRevisionChanges.tsx',
+    contains: 'text-left text-sm',
+    why: 'A changed or added file name in the review’s “what changed” list that opens that file’s tab.',
+  },
+  {
     path: 'components/monitors/MonitorsList.tsx',
     contains: 'font-medium',
     why: 'A monitor’s name in its table row that opens the monitor’s details.',
