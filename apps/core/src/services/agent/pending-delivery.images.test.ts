@@ -64,5 +64,10 @@ describe('session delivery and image status', () => {
     expect(sent.usedAt).not.toBeNull()
     // The message still waiting in the queue keeps its image pending.
     expect((await Image.find(queued!.id))!.status).toBe('pending')
+
+    // A prompt that fails afterwards fails only what never arrived: the received image stays used.
+    await Image.markManyFailed([delivered!.id, queued!.id])
+    expect((await Image.find(delivered!.id))!.status).toBe('used')
+    expect((await Image.find(queued!.id))!.status).toBe('failed')
   })
 })
