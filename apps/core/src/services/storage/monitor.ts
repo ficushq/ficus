@@ -1,5 +1,10 @@
 import { and, eq, sql } from 'drizzle-orm'
-import { SYSTEM_RECIPIENT_ID, type StorageSnapshot, type StorageStatus } from '@ficus/shared'
+import {
+  STORAGE_ALERT_HYSTERESIS_POINTS,
+  SYSTEM_RECIPIENT_ID,
+  type StorageSnapshot,
+  type StorageStatus,
+} from '@ficus/shared'
 import { db } from '../../db'
 import { storageMonitor, storageScanPasses } from '../../db/schema'
 import { createLogger } from '../../lib/infra/logger'
@@ -53,8 +58,12 @@ export function evaluateStorageWarnings(
     }
     const percent = Math.min(100, (machine.usedBytes / machine.totalBytes) * 100)
     let threshold = thresholds.filter((value) => percent >= value).at(-1) ?? 0
-    // Three percentage points of hysteresis prevent repeated alerts around a boundary.
-    if (old && thresholds.includes(old.threshold) && percent > Math.max(0, old.threshold - 3))
+    // Hysteresis prevents repeated alerts around a boundary.
+    if (
+      old &&
+      thresholds.includes(old.threshold) &&
+      percent > Math.max(0, old.threshold - STORAGE_ALERT_HYSTERESIS_POINTS)
+    )
       threshold = Math.max(threshold, old.threshold)
     const warning = {
       machineId: machine.id,

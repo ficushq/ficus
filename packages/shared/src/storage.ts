@@ -120,6 +120,9 @@ export interface StorageSnapshot {
   machines: StorageMachine[]
 }
 
+/** A machine's warning level holds until usage drops this many percentage points below it. */
+export const STORAGE_ALERT_HYSTERESIS_POINTS = 3
+
 export interface StorageWarning {
   machineId: string
   machineName: string

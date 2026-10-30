@@ -115,6 +115,7 @@ export type {
   StorageGrowth,
   StorageScanProgress,
 } from './storage'
+export { STORAGE_ALERT_HYSTERESIS_POINTS } from './storage'
 
 export * from './assistant-agent-types'
 export * from './entity-reference'
