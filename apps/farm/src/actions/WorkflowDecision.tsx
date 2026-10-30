@@ -209,7 +209,7 @@ function AttemptLimit({
   const api = useActionsApi()
   const queryClient = useQueryClient()
   const onDecidedRef = useStableRef(onDecided)
-  const { can } = usePermissions(stream.squadId)
+  const { can, identity } = usePermissions(stream.squadId)
   const inputId = useId()
   const [limit, setLimit] = useState(String(Math.min(MAX_STEP_ATTEMPTS, pause.attemptsUsed + 3)))
   const raise = useMutation({
@@ -226,7 +226,12 @@ function AttemptLimit({
   })
   const parsed = Number(limit)
   const valid = Number.isInteger(parsed) && parsed > pause.attemptsUsed && parsed <= MAX_STEP_ATTEMPTS
-  const allowed = can('workstreams:review') || can('workstreams:revise-flow')
+  const assigned = stream.assignedReviewerIds ?? []
+  // Mirrors the server rule for people (assigned reviewers when any are assigned); the server decides.
+  const allowed =
+    can('workstreams:revise-flow') ||
+    (can('workstreams:review') &&
+      (!assigned.length || (identity?.type === 'user' && assigned.includes(identity.userId))))
   return (
     <section className="g-decision" aria-label="Attempt limit reached">
       <p className="g-decision-tag">Attempt limit reached</p>

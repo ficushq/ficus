@@ -2,7 +2,12 @@ import { loadReviewContexts } from './review-context'
 import { flowWaitReference, isDeliveryApprovalWait } from './wait-policy'
 import { deliveryInstructionsForRun } from './completion-prompt'
 import { isWorkflowReviewer } from './reviewers'
-import { attemptLimitResolutionHint, attemptLimitWaitMessage, canRaiseFlowAttemptLimit } from './attempt-limit'
+import {
+  attemptLimitResolutionHint,
+  attemptLimitWaitMessage,
+  canRaiseFlowAttemptLimit,
+  mayAttemptRaiseLimit,
+} from './attempt-limit'
 import { flowMessage, workStreamBriefDigest } from './handoff-prompt'
 import { waitsForAttempt, isCurrentWaitAttempt, flowInboxTargets } from '../work-streams/wait-scope'
 import { checkWorkflowScope } from './access'
@@ -484,7 +489,8 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
   const canDecideDelivery = identity.type === 'user' && (canRespond || canUpdate)
   if (
     command.action === 'raise-limit'
-      ? false // Decided against the locked run below: reviewers, the owner or the squad manager.
+      ? // Only identities that could qualify enter the transaction; the exact rule runs on the locked run.
+        !(await mayAttemptRaiseLimit(identity, streamBefore.squadId, canRevise, canReview))
       : command.action === 'revise'
         ? !canRevise && !(identity.type === 'agent' && canRespond)
         : command.action === 'rework'
@@ -518,8 +524,7 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
         ...(command.action === 'revise' ? revisionOutcomeUpdates(run, prior.version) : {}),
       }
     }
-    assertStreamAcceptsHandoffs(stream, { paused: command.action === 'revise' || command.action === 'raise-limit' })
-    if (command.expectedVersion !== run.version) throw new WorkflowError('Stale flow version', 409)
+    // Authorize raise-limit before any check that reveals stream or flow state (terminal, version).
     if (command.action === 'raise-limit') {
       if (!workflowAttemptLimitPause(run.state))
         throw new WorkflowError('The flow is not paused at an attempt limit; there is no limit to raise', 409)
@@ -529,6 +534,8 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
           403
         )
     }
+    assertStreamAcceptsHandoffs(stream, { paused: command.action === 'revise' || command.action === 'raise-limit' })
+    if (command.expectedVersion !== run.version) throw new WorkflowError('Stale flow version', 409)
     const attempt = run.state.attempts.find((a) => a.id === command.attemptId)
     const step = attempt?.step ?? run.state.definition.steps.find((s) => s.id === attempt?.stepId)
     if (

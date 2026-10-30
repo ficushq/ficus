@@ -67,4 +67,14 @@ describe('Farm attempt-limit pause', () => {
     expect(hasButton(container, 'Raise limit')).toBe(false)
     expect(container.textContent).toContain('the squad manager can raise the limit')
   })
+
+  it('shows no controls to a reviewer who is not among the assigned reviewers', async () => {
+    const api = setup({
+      getWorkStream: () => Promise.resolve(stream({ assignedReviewerIds: ['someone-else'] })),
+      getMyPermissions: () =>
+        Promise.resolve({ permissions: ['workstreams:review'], identity: { type: 'user', userId: 'u' } }),
+    })
+    const { container } = await render(<UnblockForm workStreamId="ws-1" squadId="squad-1" wait={limitWait()} />, api)
+    expect(hasButton(container, 'Raise limit')).toBe(false)
+  })
 })

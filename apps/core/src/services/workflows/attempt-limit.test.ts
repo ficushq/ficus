@@ -43,7 +43,7 @@ beforeAll(async () => {
     name: 'Attempt limit worker',
     model: 'anthropic:claude-sonnet-4-5',
     systemPrompt: 'Synthetic fixture',
-    extraScopes: ['workstreams:respond'],
+    extraScopes: ['workstreams:read', 'workstreams:respond'],
   })
   const [squad] = await db.insert(squads).values({ name: prefix, purpose: 'Attempt limit fixtures' }).returning()
   squadId = squad!.id
@@ -235,9 +235,12 @@ describe('attempt-limit pause', () => {
     for (const identity of [
       { type: 'agent' as const, agentId: builder, squadId },
       { type: 'agent' as const, agentId: reviewerAgent, squadId },
-      { type: 'user' as const, userId: outsider.id },
     ])
       await expect(advanceFlow(id, command, randomUUID(), identity)).rejects.toThrow('raise the attempt limit')
+    // Without review or flow management permission a person is refused before the transaction.
+    await expect(advanceFlow(id, command, randomUUID(), { type: 'user', userId: outsider.id })).rejects.toThrow(
+      'Forbidden'
+    )
     await db
       .update(workStreams)
       .set({ assignedReviewerIds: [assigned.id] })
@@ -249,6 +252,56 @@ describe('attempt-limit pause', () => {
     expect(await limitWaits(id)).toHaveLength(1)
     await advanceFlow(id, command, randomUUID(), { type: 'user', userId: assigned.id })
     expect((await getFlow(id))!.state.status).toBe('running')
+  })
+
+  test('identities outside the squad get a bare 403 before any flow or stream state is revealed', async () => {
+    const { id, run } = await pausedStream()
+    const stranger = await createTestUser({ prefix })
+    const [otherSquad] = await db
+      .insert(squads)
+      .values({ name: `${prefix}-other`, purpose: 'Permission isolation' })
+      .returning()
+    try {
+      const foreignAgent = await Agent.create({ agentTypeId, squadId: otherSquad!.id })
+      const running = await db.transaction(async (tx) => {
+        const [stream] = await tx.insert(workStreams).values({ squadId, title: prefix, status: 'active' }).returning()
+        const attached = await attachFlow(tx, stream!, { kind: 'inline', definition: flow })
+        await dispatchFlow(tx, stream!, attached, [])
+        return stream!.id
+      })
+      const identities = [
+        { type: 'user' as const, userId: stranger.id },
+        { type: 'agent' as const, agentId: foreignAgent.id, squadId: otherSquad!.id },
+      ]
+      for (const identity of identities)
+        for (const [stream, version] of [
+          [id, run.version],
+          [id, run.version + 7],
+          [running, 99],
+        ] as const) {
+          const error = await advanceFlow(stream, raise(version, 5), randomUUID(), identity).catch((e) => e as Error)
+          expect(error).toBeInstanceOf(Error)
+          expect((error as Error & { status?: number }).message).toBe('Forbidden')
+        }
+      expect((await getFlow(id))!.version).toBe(run.version)
+      expect(await limitWaits(id)).toHaveLength(1)
+    } finally {
+      await db.delete(agents).where(eq(agents.squadId, otherSquad!.id))
+      await db.delete(squads).where(eq(squads.id, otherSquad!.id))
+    }
+  })
+
+  test('a qualifying caller is authorized before the stale-version check', async () => {
+    const { id, run } = await pausedStream()
+    const bystander = await reviewerUser(['actions:read', 'workstreams:respond'])
+    // Not a reviewer: refused without learning that the version is stale.
+    await expect(
+      advanceFlow(id, raise(run.version + 3, 5), randomUUID(), { type: 'user', userId: bystander.id })
+    ).rejects.toThrow('Forbidden')
+    const reviewer = await reviewerUser()
+    await expect(
+      advanceFlow(id, raise(run.version + 3, 5), randomUUID(), { type: 'user', userId: reviewer.id })
+    ).rejects.toThrow('Stale flow version')
   })
 
   test('refuses a limit that would pause again, and raise-limit on a running flow', async () => {

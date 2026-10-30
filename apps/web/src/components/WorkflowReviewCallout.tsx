@@ -68,18 +68,18 @@ export function WorkflowReviewCallout({
 
 /** A workflow paused at its attempt limit: say why in plain words and offer Raise limit in place. */
 function AttemptLimitCallout({ stream, run }: { stream: WorkStream; run: RunDetail }) {
-  const { can } = usePermissions(stream.squadId)
+  const { can, identity } = usePermissions(stream.squadId)
   const pause = workflowAttemptLimitPause(run.state)!
+  const assigned = stream.assignedReviewerIds ?? []
+  // Mirrors the server rule for people; the server also allows the owner and manager agents.
+  const allowed =
+    can('workstreams:revise-flow') ||
+    (can('workstreams:review') &&
+      (!assigned.length || (identity?.type === 'user' && assigned.includes(identity.userId))))
   return (
     <section aria-label="Attempt limit reached" className="p-4 rounded-xl bg-surface-secondary space-y-3">
       <h3 className="text-sm font-medium text-primary">Attempt limit reached</h3>
-      <AttemptLimitActions
-        workStreamId={stream.id}
-        pause={pause}
-        flowVersion={run.version}
-        // The server makes the exact decision, including assigned reviewers and owner agents.
-        disabled={!can('workstreams:review') && !can('workstreams:revise-flow')}
-      />
+      <AttemptLimitActions workStreamId={stream.id} pause={pause} flowVersion={run.version} disabled={!allowed} />
     </section>
   )
 }

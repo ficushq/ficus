@@ -57,3 +57,21 @@ export async function canRaiseFlowAttemptLimit(
 export function attemptLimitResolutionHint(stream: number | string): string {
   return `This wait is an attempt-limit pause; unblock it by raising or removing the limit: ficus workstream raise-limit ${stream} --max-step-attempts <number> (or --remove), or Raise limit in the web app.`
 }
+
+/**
+ * Cheap pre-check before the locked transaction: only identities that could qualify for
+ * {@link canRaiseFlowAttemptLimit} may learn anything about the flow. Users need review or flow
+ * management permission; agents need to read the stream's squad (owner and manager agents do);
+ * other tokens need flow management permission.
+ */
+export async function mayAttemptRaiseLimit(
+  identity: Identity,
+  squadId: string,
+  canRevise: boolean,
+  canReview: boolean
+): Promise<boolean> {
+  if (canRevise) return true
+  if (identity.type === 'user') return canReview
+  if (identity.type === 'agent') return hasPermission(identity, 'workstreams:read', squadId)
+  return false
+}

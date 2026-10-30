@@ -881,3 +881,27 @@ test('the stream page explains an attempt-limit pause and raises the limit in pl
     await f.cleanup()
   }
 })
+
+test('the stream page does not offer Raise limit to a reviewer who is not assigned', async () => {
+  const definition = structuredClone(preset.definition)
+  definition.limits.maxStepAttempts = 1
+  const state = {
+    ...createWorkflowRun(definition),
+    status: 'paused' as const,
+    activeAttemptId: null,
+    pauseReason: { type: 'attempt-limit' as const, stepId: 'execute' },
+  }
+  state.attempts = state.attempts.map((attempt) => ({ ...attempt, status: 'completed' as const }))
+  const f = await fixture({ workStreamId: stream.id, source: {}, state, version: 3, attemptAgents: {} }, [
+    'workstreams:review',
+  ])
+  try {
+    await f.render(<WorkflowReviewCallout stream={{ ...stream, assignedReviewerIds: ['someone-else'] }} />)
+    const raise = [...f.dom.window.document.querySelectorAll('button')].find(
+      (node) => node.textContent === 'Raise limit'
+    )!
+    expect(raise.disabled).toBe(true)
+  } finally {
+    await f.cleanup()
+  }
+})
