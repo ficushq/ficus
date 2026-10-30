@@ -185,3 +185,33 @@ test('a stacked stream is told what it was built on and that delivery is held, i
   )
   expect(stackedDependencyNotice([], git)).toBeUndefined()
 })
+
+test('an agent that already has the unchanged brief gets the step without it, and rework feedback appears once', () => {
+  const state = createWorkflowRun(createBlankWorkflow())
+  const withHandoff = { ...stream, handoffMessage: 'Owner handoff text' }
+  const full = flowMessage(withHandoff, { state, version: 3 }, state.attempts[0]!)
+  const repeat = flowMessage(withHandoff, { state, version: 3 }, state.attempts[0]!, undefined, undefined, 1)
+  for (const restated of [stream.description, 'Owner handoff text', 'Attach the documents your result refers to'])
+    expect(full).toContain(restated)
+  for (const restated of [stream.description, 'Owner handoff text', 'Attach the documents your result refers to'])
+    expect(repeat).not.toContain(restated)
+  expect(repeat).toContain("You already have this work stream's brief from your attempt 1 assignment in this session")
+  expect(repeat).toContain('ficus workstream get stream-1')
+  expect(repeat).toContain("ficus workstream advance stream-1 --stdin <<'FICUS_COMMAND'")
+  expect(repeat.length).toBeLessThan(full.length)
+
+  // A send-back records the same text as the gate's feedback and the reworked attempt's request.
+  state.attempts.push(
+    { id: 2, stepId: 'review', status: 'returned', feedback: 'Support multi-hop routes.', sourceAttemptIds: [1] },
+    {
+      id: 3,
+      stepId: state.attempts[0]!.stepId,
+      status: 'running',
+      feedback: 'Support multi-hop routes.',
+      sourceAttemptIds: [2],
+    }
+  )
+  const rework = flowMessage(stream, { state, version: 4 }, state.attempts[2]!)
+  expect(rework.split('Support multi-hop routes.')).toHaveLength(2)
+  expect(rework).toContain('Rework request:\nSupport multi-hop routes.')
+})

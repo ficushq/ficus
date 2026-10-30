@@ -333,6 +333,12 @@ export async function handleControlSignal(payload: {
 
         log.info(`reset: Session reset completed for agent ${payload.agentId}`)
 
+        // Workflow assignments skip context an agent's session already holds; a reset forgets it.
+        const metadata = (agent.metadata ?? {}) as Record<string, unknown>
+        await agent.update({
+          metadata: { ...metadata, sessionResetCount: Number(metadata.sessionResetCount ?? 0) + 1 },
+        })
+
         // Reset context usage to zero (keep stats for historical tracking)
         if (agent.sessionUsage?.context) {
           await agent.update({

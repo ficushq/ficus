@@ -2,7 +2,7 @@ import { loadReviewContexts } from './review-context'
 import { flowWaitReference, isDeliveryApprovalWait } from './wait-policy'
 import { deliveryInstructionsForRun } from './completion-prompt'
 import { isWorkflowReviewer } from './reviewers'
-import { flowMessage } from './handoff-prompt'
+import { flowMessage, workStreamBriefDigest } from './handoff-prompt'
 import { waitsForAttempt, isCurrentWaitAttempt, flowInboxTargets } from '../work-streams/wait-scope'
 import { checkWorkflowScope } from './access'
 import { createLogger } from '../../lib/infra/logger'
@@ -321,7 +321,29 @@ async function dispatchFlowAttempt(
       .returning()
   }
   const attemptAgents = { ...run.attemptAgents, [attempt.id]: binding!.agentId }
-  await tx.update(workStreamFlowRuns).set({ attemptAgents }).where(eq(workStreamFlowRuns.workStreamId, stream.id))
+  // Repeat the work brief only when this agent's session has not already received the same one.
+  const [assignee] = await tx.select({ metadata: agents.metadata }).from(agents).where(eq(agents.id, binding!.agentId))
+  const briefContext = {
+    digest: workStreamBriefDigest(stream),
+    sessionResets: Number((assignee?.metadata as { sessionResetCount?: number } | null)?.sessionResetCount ?? 0),
+  }
+  const earlier = run.state.attempts.findLast(
+    (entry) =>
+      entry.id !== attempt.id &&
+      (attemptAgents as Record<string, string>)[String(entry.id)] === binding!.agentId &&
+      entry.briefContext
+  )
+  const briefSeenInAttempt =
+    earlier?.briefContext?.digest === briefContext.digest &&
+    earlier.briefContext.sessionResets === briefContext.sessionResets
+      ? earlier.id
+      : undefined
+  // dispatchFlow reloads the run between parallel siblings; update that current state.
+  run.state.attempts.find((entry) => entry.id === attempt.id)!.briefContext = briefContext
+  await tx
+    .update(workStreamFlowRuns)
+    .set({ attemptAgents, state: run.state })
+    .where(eq(workStreamFlowRuns.workStreamId, stream.id))
   const crew = [...new Set([...(stream.agentIds ?? []), binding!.agentId])]
   await tx
     .update(workStreams)
@@ -364,7 +386,8 @@ async function dispatchFlowAttempt(
         await stackNotice(tx, stream),
         (await loadReviewContexts(tx, stream.id, run.state, { attemptAgents, createdAt: run.createdAt }))[
           String(attempt.id)
-        ]
+        ],
+        briefSeenInAttempt
       ),
     }
     await tx.update(workStreamFlowRuns).set({ state: run.state }).where(eq(workStreamFlowRuns.workStreamId, stream.id))
@@ -382,7 +405,8 @@ async function dispatchFlowAttempt(
         await stackNotice(tx, stream),
         (await loadReviewContexts(tx, stream.id, run.state, { attemptAgents, createdAt: run.createdAt }))[
           String(attempt.id)
-        ]
+        ],
+        briefSeenInAttempt
       ),
       metadata: { workStreamId: stream.id, squadId: stream.squadId, source: 'workflow', attemptId: attempt.id },
       wakeEligible: true,
