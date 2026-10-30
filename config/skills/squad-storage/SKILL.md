@@ -22,7 +22,7 @@ Those stay behind `system:logs` (`ficus system storage`, Settings → Storage).
 
 ```bash
 ficus squad storage                 # your squad (FICUS_SQUAD_ID is set in squad boxes)
-ficus squad storage <squad-id|name> # an explicit squad you have storage:read in
+ficus squad storage <squad-id>      # an explicit squad you have storage:read in (full id, or an id prefix of at least 8 characters)
 ficus --json squad storage          # full folder tree and every field, for scripts
 ```
 

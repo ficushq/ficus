@@ -127,7 +127,7 @@ ficus squad agents <id>       # List agents in squad
 ficus workstream list --squad <id>  # List work streams for a squad
 ficus squad spawn <type> <id> # Spawn agent in squad
 ficus squad link <a> <b>      # Link two squads
-ficus squad storage [squad]   # One squad's storage breakdown (storage:read; defaults to FICUS_SQUAD_ID)
+ficus squad storage [squad-id] # One squad's storage breakdown (storage:read; defaults to FICUS_SQUAD_ID)
 ```
 
 ### Slot Coordination Commands

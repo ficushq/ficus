@@ -139,7 +139,7 @@ describe('squad storage CLI', () => {
       .find((command) => command.name() === 'squad')
       ?.commands.find((command) => command.name() === 'storage')
     expect(storage?.description()).toContain('storage:read')
-    expect(storage?.helpInformation()).toContain('[squad]')
+    expect(storage?.helpInformation()).toContain('[squad-id]')
   })
 
   it('formats sizes, ages, markers, subfolder limits and stored files for people', () => {

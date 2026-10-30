@@ -98,23 +98,27 @@ export function formatSquadStorage(view: SquadStorageView, now = Date.now()): st
   return lines.join('\n')
 }
 
-/** Resolve the squad to read: an explicit id or name wins, else FICUS_SQUAD_ID (set inside squad boxes). */
+/** Resolve the squad to read: an explicit id (or id prefix of at least 8 characters) wins, else FICUS_SQUAD_ID (set inside squad boxes). */
 export function resolveStorageSquad(explicit: string | undefined, environment = process.env.FICUS_SQUAD_ID): string {
   const squad = explicit ?? environment
-  if (!squad) throw new Error('No squad context: pass a squad id or name, or run inside a squad agent box.')
+  if (!squad)
+    throw new Error(
+      'No squad context: pass a squad id (or an id prefix of at least 8 characters), or run inside a squad agent box.'
+    )
   return squad
 }
 
 export function registerSquadStorageCommand(squad: Command): void {
   squad
-    .command('storage [squad]')
+    .command('storage [squad-id]')
     .description(
       "Show one squad's storage breakdown: box homes, folders, growth and stored files (requires storage:read in that squad)"
     )
     .addHelpText(
       'after',
-      '\nDefaults to the current squad (FICUS_SQUAD_ID). Read-only: shows the latest measurements and their age,\n' +
-        'and never starts a scan. Use --json for the full folder tree. Instance-wide storage is ficus system storage (system:logs).'
+      '\nPass a squad id or an id prefix of at least 8 characters; defaults to the current squad (FICUS_SQUAD_ID).\n' +
+        'Read-only: shows the latest measurements and their age, and never starts a scan.\n' +
+        'Use --json for the full folder tree. Instance-wide storage is ficus system storage (system:logs).'
     )
     .action(async (squadArg: string | undefined) => {
       try {
