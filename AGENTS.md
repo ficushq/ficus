@@ -301,21 +301,22 @@ component. See `popover/Popover.md`.
 `ficus-button` on its own renders as indented text that only shows a background on hover. Always pair it
 with exactly one variant from `design-system.css`; `components/buttonVariants.guard.test.ts` fails any
 className that carries the base without one (or with two, or a variant without the base). Pick the
-variant by role:
+variant by role. Use link styling only when navigating somewhere; non-navigation actions use real
+buttons, typically ghost for non-primary actions, with primary, secondary or danger where appropriate:
 
-| Variant                  | Use for                                                                                                                                                                                                                       |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ficus-button-primary`   | The one main action of a page, dialog or form (Save, Approve, Connect, Send).                                                                                                                                                 |
-| `ficus-button-secondary` | Standalone actions in content: card CTAs ("Review and decide", "View"), row actions shown as buttons, "Mark all read", a dialog's Cancel. Visible at rest.                                                                    |
-| `ficus-button-ghost`     | Only icon-only buttons, and compact controls inside a toolbar, header, menu or segmented cluster whose chrome already reads as controls. A text-only ghost standing alone in content is the bug: make it secondary or a link. |
-| `ficus-button-link`      | Inline text actions in running text or a section header ("Dismiss", "Retry", "Edit"). No horizontal padding (the guard checks), so nothing looks indented.                                                                    |
-| `ficus-button-danger`    | Destructive actions (Delete, Remove, Revoke, Disconnect, Stop): secondary-shaped with danger text. A destructive icon-only button stays ghost with a `hover:text-status-danger-*` tint.                                       |
+| Variant                  | Use for                                                                                                                                                                                 |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ficus-button-primary`   | The one main action of a page, dialog or form (Save, Approve, Connect, Send).                                                                                                           |
+| `ficus-button-secondary` | Actions needing more emphasis or a visible boundary at rest, such as card CTAs, row actions or a dialog’s Cancel.                                                                       |
+| `ficus-button-ghost`     | Non-primary actions (Dismiss, Retry, Edit), icon-only buttons and compact toolbar controls. Transparent at rest, with normal button padding and a visible hover/focus state.            |
+| `ficus-button-link`      | Navigation only (Review storage, View all, Read more), typically an anchor or router Link. No horizontal padding. Never use link styling for non-navigation actions.                    |
+| `ficus-button-danger`    | Destructive actions (Delete, Remove, Revoke, Disconnect, Stop): secondary-shaped with danger text. A destructive icon-only button stays ghost with a `hover:text-status-danger-*` tint. |
 
 Variants own the color, fill and hover; utilities add size and layout. A `hover:` utility still wins over
 a variant's hover, so a tinted or active state can keep its look. Never quiet a link with `text-muted` (or a
 neutral `hover:text-primary`/`hover:text-secondary`): it hovers to bright underlined text unlike any
-other control (the guard checks). A quiet control is ghost inside a header or toolbar and secondary in
-content. Choose the variant dynamically with a ternary among variants
+other control (the guard checks). A quiet non-navigation action is typically ghost, including in content.
+Choose the variant dynamically with a ternary among variants
 (`active ? 'ficus-button-primary' : 'ficus-button-secondary'`), never by adding or dropping one, and write
 shared class constants with the base and the variant together.
 

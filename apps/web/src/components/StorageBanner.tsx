@@ -82,7 +82,7 @@ export function StorageBanner({ storage = browserStorage() }: { storage?: Dismis
         type="button"
         onClick={dismiss}
         title="Hide for a week, or until a higher warning level is reached"
-        className="ficus-button ficus-button-link shrink-0 text-sm"
+        className="ficus-button ficus-button-ghost shrink-0 px-3 py-1 text-sm"
       >
         Dismiss
       </button>
