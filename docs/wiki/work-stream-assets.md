@@ -108,7 +108,8 @@ Each source keeps its own rule; the tool and the reference API add no access:
   upload is readable only by its uploader until a message carrying it is sent, even
   when it is already bound to a squad conversation. From then on (while the message
   is still queued for the agent, too) the conversation's readers see it, as they see
-  the message.
+  the message. Only the uploader can send such an upload; the one exception is a copy
+  the Assistant forwarded, which its delivery sends to the agent it was copied for.
 
 Attaching is an intentional share with the stream's readers. Removing an input, or
 losing permission, stops new reads at once — the bytes endpoint is `no-store` and
