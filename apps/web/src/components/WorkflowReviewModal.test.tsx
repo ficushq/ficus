@@ -621,6 +621,56 @@ test('an image attachment renders from a blob URL that is revoked when the tab c
   }
 })
 
+test('stored chat images attached by ID open as review tabs, fetched afresh from the reference endpoint', async () => {
+  const f = await fixture()
+  const stored = {
+    id: 'share-shot',
+    workStreamId: stream.id,
+    attemptId: 3,
+    source: { kind: 'image' as const, imageId: '11111111-1111-4111-8111-111111111111' },
+    filename: '11111111-1111-4111-8111-111111111111.png',
+    contentType: 'image/png',
+    byteSize: 4,
+    createdAt: '2026-10-08T09:59:30.000Z',
+  }
+  const handoff = spyOn(client.workflows, 'downloadAttachment').mockResolvedValue(new Uint8Array([1]))
+  const reference = spyOn(client.workStreams, 'downloadAssetAttachment').mockResolvedValue(
+    new Uint8Array([137, 80, 78, 71])
+  )
+  const create = spyOn(URL, 'createObjectURL').mockImplementation(() => 'blob:stored-image')
+  const revoke = spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+  try {
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), {
+      ...gateRun(),
+      attachments: { '3': [designDoc] },
+      // A stale attempt's reference is not shown for the attempt under review.
+      assetAttachments: { '1': [{ ...stored, id: 'share-old', attemptId: 1 }], '3': [stored] },
+    })
+    await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
+    expect(tabs(f).map((tab) => tab.textContent)).toEqual(['Handoff', 'design.md', stored.filename])
+    // No fake path: the tab names where the stored image came from.
+    expect(tabs(f)[2]!.title).toBe('Stored chat image, shared by ID')
+    await f.dom.act(async () => tabs(f)[2]!.click())
+    await f.settle()
+    expect(handoff).not.toHaveBeenCalled()
+    expect(reference.mock.calls[0]!.slice(0, 2)).toEqual([stream.id, 'share-shot'])
+    const image = f.dialog()!.querySelector<HTMLImageElement>('[role="tabpanel"] img')!
+    expect(image.getAttribute('src')).toBe('blob:stored-image')
+    // Back and forward again: a removable share is fetched again, never served from a cache.
+    await f.dom.act(async () => tabs(f)[0]!.click())
+    await f.settle()
+    await f.dom.act(async () => tabs(f)[2]!.click())
+    await f.settle()
+    expect(reference).toHaveBeenCalledTimes(2)
+  } finally {
+    create.mockRestore()
+    revoke.mockRestore()
+    reference.mockRestore()
+    handoff.mockRestore()
+    await f.cleanup()
+  }
+})
+
 test('a PDF that cannot be read falls back to the download offer', async () => {
   const f = await fixture()
   const pdf = {

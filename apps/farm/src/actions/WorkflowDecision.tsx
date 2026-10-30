@@ -246,7 +246,12 @@ function HumanGate({
             : 'Decision awaiting your choice'}
         </p>
       )}
-      <WorkflowBriefDocuments run={run} attempt={attempt} instructions={step.instructions}>
+      <WorkflowBriefDocuments
+        run={run}
+        attempt={attempt}
+        instructions={step.instructions}
+        inputs={stream.assetAttachments}
+      >
         {materials}
       </WorkflowBriefDocuments>
       {blockingWaits.length > 0 && (

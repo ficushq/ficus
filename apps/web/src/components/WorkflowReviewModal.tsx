@@ -19,6 +19,7 @@ import { usePermissions } from '../hooks/usePermissions'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { useWorkflowRefresh } from '../hooks/useWorkflowRefresh'
 import { actionErrorMessage } from '../lib/actionError'
+import { reviewDocuments } from '../lib/workflowAttachments'
 import {
   attemptSummary,
   decisionNotesHint,
@@ -187,7 +188,10 @@ function ReviewLayout({
     ).values(),
   ].sort((a, b) => a.id - b.id)
   // Each source attempt's own files: a re-run after a send-back shows only what that attempt attached.
-  const attachments = reviewSources.flatMap((source) => run.attachments?.[String(source.id)] ?? [])
+  const attachments = reviewDocuments(
+    run,
+    reviewSources.map((source) => source.id)
+  )
   const hasBriefDisplay = brief.kind !== 'legacy'
   const primary = hasBriefDisplay
     ? { id: 'decision-brief', label: 'Decision brief' }

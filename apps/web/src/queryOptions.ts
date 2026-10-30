@@ -192,6 +192,26 @@ export const queries = {
         queryFn: ({ signal }) => client.workflows.downloadAttachment(workStreamId, attachmentId, signal),
         staleTime: Infinity,
       }),
+    /**
+     * A review document's bytes: a handoff file (immutable, fetched once) or a stored-asset reference,
+     * which can be removed or revoked, so it is never kept once no view shows it.
+     */
+    document: (workStreamId: string, document: { id: string; stored: boolean }) =>
+      queryOptions<Uint8Array, Error, Uint8Array, readonly string[]>(
+        document.stored
+          ? {
+              queryKey: queryKeys.workStreamAssets.file(workStreamId, document.id),
+              queryFn: ({ signal }) => client.workStreams.downloadAssetAttachment(workStreamId, document.id, signal),
+              staleTime: 0,
+              gcTime: 0,
+              retry: false,
+            }
+          : {
+              queryKey: queryKeys.workflowAttachments.file(workStreamId, document.id),
+              queryFn: ({ signal }) => client.workflows.downloadAttachment(workStreamId, document.id, signal),
+              staleTime: Infinity,
+            }
+      ),
   },
   themePresets: {
     list: (scope?: ThemePresetScope) =>
