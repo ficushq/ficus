@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { createServer } from 'vite'
 import type { Browser } from 'playwright-core'
+import { startFixtureServer } from './fixture-server'
 const root = resolve(import.meta.dir, '..')
 // PostCSS/Tailwind resolve their content configuration from cwd, even with a Vite root.
 process.chdir(root)
@@ -15,29 +15,13 @@ const caseFilter = process.env.REVIEW_CASE_FILTER ? new RegExp(process.env.REVIE
 let passed = 0
 const screenshotDir = process.env.SCREENSHOT_DIR
 if (screenshotDir) await mkdir(screenshotDir, { recursive: true })
-const server = await createServer({
-  configFile: false,
-  root,
-  server: { host: '127.0.0.1', port: 0 },
-  esbuild: { jsx: 'automatic' },
-  plugins: [
-    {
-      name: 'review-brief-fixture',
-      configureServer(server) {
-        server.middlewares.use('/review-fixture', (_req, res) => {
-          res.setHeader('Content-Type', 'text/html')
-          res.end(
-            '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="root"></div><script type="module" src="/scripts/fixtures/workflow-review-brief.tsx"></script></body></html>'
-          )
-        })
-      },
-    },
-  ],
+const server = await startFixtureServer({
+  path: '/review-fixture',
+  entry: '/scripts/fixtures/workflow-review-brief.tsx',
 })
 let browser: Browser | undefined
 const errors: string[] = []
 try {
-  await server.listen()
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--no-sandbox'] })
   const page = await browser.newPage()
   page.setDefaultTimeout(10000)

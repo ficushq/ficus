@@ -9,9 +9,9 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { createServer } from 'vite'
 import type { Browser, Page } from 'playwright-core'
 import type { BigbrainLocalSetupState, IntegrationConnection } from '../src/api/integrations'
+import { startFixtureServer } from './fixture-server'
 
 const root = resolve(import.meta.dir, '..')
 const { chromium } = createRequire(resolve(root, '../core/package.json'))(
@@ -59,24 +59,9 @@ const connected: IntegrationConnection = {
   usage: { squadCount: 0, squads: [] },
 } as unknown as IntegrationConnection
 
-const server = await createServer({
-  configFile: false,
-  root,
-  server: { host: '127.0.0.1', port: 0 },
-  esbuild: { jsx: 'automatic' },
-  plugins: [
-    {
-      name: 'local-bigbrain-fixture',
-      configureServer(server) {
-        server.middlewares.use('/local-bigbrain-fixture', (_req, res) => {
-          res.setHeader('Content-Type', 'text/html')
-          res.end(
-            '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="root"></div><script type="module" src="/scripts/fixtures/local-bigbrain.tsx"></script></body></html>'
-          )
-        })
-      },
-    },
-  ],
+const server = await startFixtureServer({
+  path: '/local-bigbrain-fixture',
+  entry: '/scripts/fixtures/local-bigbrain.tsx',
 })
 
 let browser: Browser | undefined
@@ -143,7 +128,6 @@ async function capture(page: Page, name: string, width: number, appearance: stri
 const connectButton = (page: Page) => page.getByRole('button', { name: 'Connect BigBrain on this Mac' })
 
 try {
-  await server.listen()
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--no-sandbox'] })
   for (const width of [1280, 390]) {
     for (const appearance of ['light', 'dark']) {
