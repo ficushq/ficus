@@ -1506,16 +1506,18 @@ exec env -i PATH="$PATH" FICUS_FIXTURE_UID=0 "$host_root" "$lock_wait" '${bash}'
     expect(stderr).toContain('unknown argument: --port=50100')
   })
 
-  it.each([1000, 0])('lets valid box user + port reach the refused layout inventory (caller UID %s)', async (uid) => {
+  it.each([1000, 0])('lets valid box user + port reach the first host check (caller UID %s)', async (uid) => {
     const env = refusingInventoryEnv(uid)
     const { exitCode, stdout, stderr } = await runBoxProvision(
       ['--sandbox-id', 'x', '--unix-user', 'box_0123456789ab', '--port', '50100'],
       { env }
     )
-    // Valid input elevates and acquires the REAL host lock before inventory.
-    // Inventory failure is still normalized to exactly3, not the shim's77.
-    expect(exitCode).toBe(3)
-    expect(stderr).toContain('ficus-test: bash refused: -s -- ')
+    // Valid input elevates and acquires the REAL host lock before any host
+    // check. The synthetic host has no systemd-socket-proxyd, so the first host
+    // check stops it (box-provision.sh no longer runs a machine-wide layout
+    // inventory per box: machine-level gating lives in bootstrap.sh).
+    expect(exitCode).toBe(1)
+    expect(stderr).toContain('is missing; this machine image is too old for socket-activated boxes')
     expect(existsSync(join(env.FICUS_HOST_ROOT!, 'run/ficus-box-locks/ficus-box-box_0123456789ab.lock'))).toBe(true)
     const elevations = join(env.FICUS_HOST_ROOT!, 'elevations')
     if (uid === 0) expect(existsSync(elevations)).toBe(false)
@@ -1523,8 +1525,7 @@ exec env -i PATH="$PATH" FICUS_FIXTURE_UID=0 "$host_root" "$lock_wait" '${bash}'
       expect(readFileSync(elevations, 'utf8')).toBe(
         `env FICUS_HOST_ROOT=${env.FICUS_HOST_ROOT} FICUS_BOX_LOCK_WAIT_SECONDS=180 bash ${boxProvisionPath} --sandbox-id x --unix-user box_0123456789ab --port 50100\n`
       )
-    expect(stderr.match(/ficus-test:/g)).toHaveLength(1)
-    expect(stderr).toContain('machine layout inventory failed; nothing was changed')
+    expect(stderr).not.toContain('ficus-test:')
     expect(stdout).toBe('')
   })
 
@@ -1771,7 +1772,7 @@ fi
     writeFileSync(
       join(fixture.shim, 'bash'),
       `#!/bin/sh
-# Only inventory is refused: the real provisioning dispatch still owns its lock.
+# No stdin script may run under the shim; the real provisioning dispatch still owns its lock.
 [ "$1" != -s ] || exit 77
 exec '${bash}' "$@"
 `,
@@ -1852,7 +1853,12 @@ case "$*" in *UnitFileState*) echo enabled;; *ActiveState*) echo active;; esac
       writeFileSync(release, '')
       const result = await owner
       expect(result).not.toBeInstanceOf(Error)
-      expect((result as { exitCode: number }).exitCode).toBe(3)
+      // After the lock the owner stops at its first host check (the fixture has
+      // no systemd-socket-proxyd) without any unit control.
+      expect((result as { exitCode: number }).exitCode).toBe(1)
+      expect((result as { stderr: string }).stderr).toContain(
+        'this machine image is too old for socket-activated boxes'
+      )
       // The exited waiter cannot wake and mutate AFTER Core reported failure.
       expect(readFileSync(controls, 'utf8')).toBe(beforeRelease)
       await expect(restart(BOX_USER)).resolves.toBe('http://127.0.0.1:50100')
