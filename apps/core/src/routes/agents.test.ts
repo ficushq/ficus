@@ -32,6 +32,7 @@ import { listen } from '../lib/infra/local-events'
 import { Squad } from '../entities/Squad'
 import { Execution } from '../entities/Execution'
 import { Image } from '../entities/Image'
+import { canReadImage } from '../services/images/access'
 import { ARTIFACT_BUILDER_AGENT_TYPE_ID } from '../entities/agent-runners/constants'
 import { identityMiddleware } from '../middleware/identity'
 import { jsonBodyErrorHandler, jsonBodyErrorMiddleware } from '../middleware/json-body-errors'
@@ -614,6 +615,51 @@ describe('POST /api/agents/:id/message target validation', () => {
         body: JSON.stringify({ content: '', imageIds: [] }),
       })
       expect(blank.status).toBe(400)
+    } finally {
+      await Image.deleteMany([image.id])
+      await db.delete(chatSendReceipts).where(eq(chatSendReceipts.agentId, agent.id))
+      await db.delete(messagesTable).where(eq(messagesTable.agentId, agent.id))
+      await db.delete(executions).where(eq(executions.agentId, agent.id))
+      await db.delete(agents).where(eq(agents.id, agent.id))
+    }
+  })
+
+  it('sends an unsent upload bound to the conversation only for its uploader', async () => {
+    const agent = await Agent.create({ agentTypeId: 'consultant', persist: false, squadId })
+    const memberRole = await createTestRole({
+      prefix: rbacPrefix,
+      permissions: ['agents:read', 'agents:write', 'agents:run'],
+    })
+    const uploader = await createTestUser({ prefix: rbacPrefix })
+    const member = await createTestUser({ prefix: rbacPrefix })
+    const otherAdmin = await createTestAdmin({ prefix: rbacPrefix })
+    for (const account of [uploader, member])
+      await assignRole({ userId: account.id, roleId: memberRole.id, scope: 'squad', squadId })
+    // The web composer uploads with the conversation's agent before sending.
+    const [image] = await Image.createMany(
+      [{ type: 'image', data: Buffer.from('image').toString('base64'), mimeType: 'image/png' }],
+      { agentId: agent.id, squadId, uploadedByUserId: uploader.id }
+    )
+    const send = (token: string) =>
+      app.request(`/api/agents/${agent.id}/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+        body: JSON.stringify({ content: 'look', imageIds: [image.id], clientId: crypto.randomUUID() }),
+      })
+    const memberIdentity = { type: 'user' as const, userId: member.id }
+
+    try {
+      for (const token of [member.token, otherAdmin.token]) {
+        const refused = await send(token)
+        expect(refused.status).toBe(400)
+        expect(await refused.json()).toEqual({ error: 'Invalid attachment' })
+      }
+      // Nothing was sent, so the upload stays its uploader's alone.
+      expect(await db.select().from(messagesTable).where(eq(messagesTable.agentId, agent.id))).toHaveLength(0)
+      expect(await canReadImage(memberIdentity, (await Image.find(image.id))!)).toBe(false)
+
+      expect((await send(uploader.token)).status).toBe(200)
+      expect(await canReadImage(memberIdentity, (await Image.find(image.id))!)).toBe(true)
     } finally {
       await Image.deleteMany([image.id])
       await db.delete(chatSendReceipts).where(eq(chatSendReceipts.agentId, agent.id))

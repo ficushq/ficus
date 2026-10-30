@@ -50,7 +50,8 @@ A stream holds at most 10 stored inputs. An attempt's stored references and
 uploaded handoff files share that attempt's limit of 10. Stored references to
 attempt results follow the same rules as uploads: only the agent working the
 attempt can add or remove them, only while it is open; closed attempts keep what
-was reviewed.
+was reviewed. A done or canceled stream's shares are part of its record: adding
+and removing them are both refused.
 
 API: `GET|POST /api/workstreams/:id/asset-attachments`,
 `GET|DELETE /api/workstreams/:id/asset-attachments/:attachmentId`,
@@ -76,7 +77,11 @@ Raster images (PNG, JPEG, GIF, WebP) are classified from their bytes, resized li
 `read` images and returned as image blocks. Short text files return bounded text;
 anything else returns a description and the command that saves it. A model without
 image input is told so and given the download command. The tool writes nothing,
-changes no image status, and keeps no cache. Assignments list the stream's stored
+changes no image status, and keeps no cache. `conversation-image` returns only sent
+images (status `used`), as sharing does: never an unsent upload or a failed send.
+An inbox attachment's filename and text come from its sender, so the filename is
+escaped and the result is labelled as the sender's untrusted data (noting a remote
+AMTP sender), as inbox delivery marks untrusted context. Assignments list the stream's stored
 inputs and the incoming attempts' stored references and handoff files with ready
 `read_attachment` arguments; an agent working the stream also gets a notice when an
 input is added while it runs (not while the stream is paused or waiting).
@@ -91,14 +96,20 @@ Each source keeps its own rule; the tool and the reference API add no access:
   only by its owner, even against other administrators. The caller must also be
   allowed to edit the target stream. A source from a squad conversation stays in
   that squad; a private conversation's asset can be shared only by its owner.
-  Staged (unsent), failed and avatar images are not shareable.
+  Staged (unsent), failed and avatar images are not shareable. An image counts as
+  sent (`used`) once the agent's session has received its message, so an agent can
+  share or re-read an image during the turn that delivered it.
 - **Reading** a share needs `workstreams:read` on the stream and an active share of
   exactly that stream. Handoff files follow the same stream rule; inbox attachments
   follow the inbox recipient rule; conversation images follow the chat image scope.
 - Missing, foreign, malformed and guessed IDs all get the same answer.
 - Image signing for browsers uses the same owner-aware rule
-  (`services/images/access.ts`): private conversations are owner-only and staged
-  uploads uploader-only.
+  (`services/images/access.ts`): private conversations are owner-only, and an
+  upload is readable only by its uploader until a message carrying it is sent, even
+  when it is already bound to a squad conversation. From then on (while the message
+  is still queued for the agent, too) the conversation's readers see it, as they see
+  the message. Only the uploader can send such an upload; the one exception is a copy
+  the Assistant forwarded, which its delivery sends to the agent it was copied for.
 
 Attaching is an intentional share with the stream's readers. Removing an input, or
 losing permission, stops new reads at once — the bytes endpoint is `no-store` and
@@ -113,7 +124,11 @@ deleting a chat image or a chat leaves bytes in place while a share needs them.
 When the last share goes (removal, stream deletion, squad deletion), the record is
 released; if the source row is gone too, that exact blob is unlinked. A failed unlink
 is retried by the agent-lifecycle convergence sweep, which also releases records
-whose shares disappeared without a release. Done or canceled streams, dormant or
+whose shares disappeared without a release. Each failure backs that record off
+(15 minutes, doubling, at most a day), so failing records never hold up the ones
+behind them. After 10 failures the sweep stops retrying it: the record keeps
+`cleanup_failed_at`, `cleanup_attempts` and the last `cleanup_error`, its bytes
+stay in place, and Core logs an error. Done or canceled streams, dormant or
 deleted agents and worktree cleanup do not expire shares. Worktree cleanup only ever
 considers registered worktree and repository paths, never Core-held bytes.
 
