@@ -62,7 +62,7 @@ export function workflowCausalAttempts(run: WorkflowRun, attempt: WorkflowAttemp
   }
   return [...found.values()].sort((a, b) => a.id - b.id)
 }
-export function workflowCarryForwardSources(run: WorkflowRun, sourceIds: number[]): WorkflowAttempt[] {
+function workflowBriefProducerSources(run: WorkflowRun, sourceIds: number[]): WorkflowAttempt[] {
   const found = new Map<number, WorkflowAttempt>()
   const pending = [...sourceIds]
   const visited = new Set<number>()
@@ -73,7 +73,7 @@ export function workflowCarryForwardSources(run: WorkflowRun, sourceIds: number[
     const source = run.attempts.find((a) => a.id === id)
     if (!source || !['completed', 'returned'].includes(source.status)) continue
     if (workflowHistoricalStep(run, source)?.kind === 'agent') {
-      if (source.status === 'completed' && source.decisionBrief) found.set(id, source)
+      if (source.status === 'completed') found.set(id, source)
       continue
     }
     if (source.freshSession) continue
@@ -87,9 +87,18 @@ export function workflowCarryForwardSources(run: WorkflowRun, sourceIds: number[
       }
     pending.push(...(source.sourceAttemptIds ?? []))
   }
-  return [...found.values()].sort(
-    (a, b) => b.decisionBrief!.submittedVersion - a.decisionBrief!.submittedVersion || b.id - a.id
-  )
+  return [...found.values()]
+}
+export function workflowCarryForwardSources(run: WorkflowRun, sourceIds: number[]): WorkflowAttempt[] {
+  return workflowBriefProducerSources(run, sourceIds)
+    .filter((a) => a.decisionBrief)
+    .sort((a, b) => b.decisionBrief!.submittedVersion - a.decisionBrief!.submittedVersion || b.id - a.id)
+}
+/** Old settled agents have neither brief nor settledVersion (both were introduced together).
+ * Infer presentation only along the same causal boundaries as carry-forward; never backfill history.
+ */
+export function workflowHasLegacyBriefSource(run: WorkflowRun, sourceIds: number[]): boolean {
+  return workflowBriefProducerSources(run, sourceIds).some((a) => !a.decisionBrief && a.settledVersion === undefined)
 }
 export function workflowReviewBriefForAttempt(
   run: WorkflowRun,

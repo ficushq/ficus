@@ -451,3 +451,86 @@ test('restarted decision fallback has a fresh destination boundary without rewri
   current.reviewBrief = { kind: 'legacy' }
   expect(workflowReviewBriefForAttempt(restarted, current)).toEqual({ kind: 'legacy', sources: [] })
 })
+
+/** Persisted mixed join shape: the agent branch settled before brief metadata existed. */
+function transitionalJoin() {
+  const definition = flow().definition
+  definition.steps[0]!.outcomes = { ready: { parallel: ['left', 'right'], join: 'gate' } }
+  definition.steps.push(
+    workflowStepSchema.parse({ ...definition.steps[0], id: 'left', outcomes: { ready: { next: 'gate' } } }),
+    workflowStepSchema.parse({
+      id: 'right',
+      kind: 'human-approval',
+      instructions: 'Review the prerequisite.',
+      output: 'Decision.',
+      outcomes: { yes: { next: 'gate' } },
+    })
+  )
+  let run = complete(createWorkflowRun(definition), 'ready', brief)
+  run = advanceWorkflowRun(run, {
+    action: 'complete',
+    expectedVersion: run.version,
+    attemptId: 2,
+    outcome: 'ready',
+    evidence: 'Legacy branch evidence.',
+    decisionBrief: brief,
+  })
+  for (const attempt of run.attempts) {
+    delete attempt.decisionBrief
+    delete attempt.reviewBrief
+    delete attempt.settledVersion
+  }
+  return run
+}
+function closeTransitionalJoin(run: WorkflowRun) {
+  return advanceWorkflowRun(run, {
+    action: 'complete',
+    expectedVersion: run.version,
+    attemptId: 3,
+    outcome: 'yes',
+    evidence: 'The human prerequisite is approved.',
+  })
+}
+
+test('a pre-deploy agent followed by a post-deploy human join preserves legacy presentation without backfill', () => {
+  const original = transitionalJoin()
+  const before = structuredClone(original)
+  const run = closeTransitionalJoin(original)
+  const gate = run.attempts.at(-1)!
+  expect(gate.stepId).toBe('gate')
+  expect(gate.reviewBrief).toEqual({ kind: 'legacy' })
+  expect(workflowReviewBriefForAttempt(run, gate)).toEqual({ kind: 'legacy', sources: [] })
+  expect(original).toEqual(before)
+  expect(run.attempts.slice(0, 2)).toEqual(before.attempts.slice(0, 2))
+})
+
+test('a modern authored join source takes precedence over transitional legacy layout', () => {
+  const run = transitionalJoin()
+  run.attempts[1]!.decisionBrief = {
+    value: brief,
+    submittedVersion: run.version,
+    contexts: [{ gateStepId: 'gate', returnIds: [], revisionVersions: [], interruptedExecutions: [] }],
+  }
+  const next = closeTransitionalJoin(run)
+  expect(next.attempts.at(-1)!.reviewBrief).toEqual({ kind: 'authored', sourceAttemptIds: [2] })
+})
+
+for (const boundary of ['modern', 'epoch', 'returned', 'fresh-human', 'different-source'] as const) {
+  test(`transitional legacy inference does not cross the ${boundary} boundary`, () => {
+    const run = transitionalJoin()
+    if (boundary === 'modern') for (const attempt of run.attempts.slice(0, 2)) attempt.settledVersion = 1
+    if (boundary === 'epoch') run.attemptEpoch = 2
+    if (boundary === 'returned') for (const attempt of run.attempts.slice(0, 2)) attempt.status = 'returned'
+    // For the last two cases, only the human branch is a causal source of the join.
+    if (boundary === 'fresh-human' || boundary === 'different-source') {
+      run.joins![0]!.sourceAttemptIds = [99]
+      if (boundary === 'fresh-human') {
+        run.attempts[2]!.sourceAttemptIds = [2]
+        run.attempts[2]!.freshSession = true
+      } else run.attempts[2]!.sourceAttemptIds = []
+      // The other arrival has no producer in this run; never search another run for it.
+    }
+    const next = closeTransitionalJoin(run)
+    expect(next.attempts.at(-1)!.reviewBrief).toEqual({ kind: 'none' })
+  })
+}

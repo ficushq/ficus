@@ -1,5 +1,5 @@
 import { loadReviewContexts } from './review-context'
-import { workflowReviewBriefFixture as brief } from '@ficus/shared'
+import { brief } from '@ficus/shared/test-fixtures/workflow-review'
 import { getPostgresError } from '../../db/errors'
 import { externalDeliveryStreamIds } from './delivery-state'
 import { listPendingActions } from '../agents/actions'

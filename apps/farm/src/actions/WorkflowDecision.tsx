@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { WorkflowRunDetail } from '@ficus/client-core'
 import {
   activeWorkflowAttempts,
+  humanGateSubtitle,
   workflowReviewBlockingWaits,
   workflowReviewBriefForAttempt,
   workflowIncomingAttempts,
@@ -240,7 +241,9 @@ function HumanGate({
       <h3 className="g-decision-title">{title}</h3>
       {brief.kind !== 'legacy' && (
         <p className="g-action-note">
-          {step.kind === 'human-approval' ? 'Human approval' : 'Decision awaiting your choice'}
+          {step.kind === 'human-approval'
+            ? humanGateSubtitle(step.instructions, title)
+            : 'Decision awaiting your choice'}
         </p>
       )}
       <WorkflowBriefDocuments run={run} attempt={attempt} instructions={step.instructions}>

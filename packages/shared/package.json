@@ -28,6 +28,7 @@
     "./node": "./src/node/index.ts",
     "./confined-fs": "./src/node/confined-fs.ts",
     "./provider-health": "./src/provider-health.ts",
+    "./test-fixtures/workflow-review": "./src/test-fixtures/workflow-review.ts",
     "./test-fixtures/work-stream-presentation": "./src/test-fixtures/work-stream-presentation.ts",
     "./testDbCapacity": "./src/testDbCapacity.ts",
     "./testDbLifecycle": "./src/testDbLifecycle.ts",

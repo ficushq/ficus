@@ -1,10 +1,10 @@
+import { brief as workflowReviewBriefFixture } from '@ficus/shared/test-fixtures/workflow-review'
 import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import {
   workflowDefinitionSchema,
   workflowReviewBriefForAttempt,
-  workflowReviewBriefFixture,
   type DecisionAnswer,
   type DecisionRequest,
   type WorkflowDecisionReply,

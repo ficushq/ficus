@@ -13,6 +13,7 @@ import {
 import {
   workflowEarlierHumanDecisions,
   workflowCarryForwardSources,
+  workflowHasLegacyBriefSource,
   type WorkflowBriefSubmission,
   type WorkflowReviewBriefBinding,
 } from './workflow-review-history'
@@ -267,7 +268,9 @@ function startAttempt(
         }
       : carried
         ? { kind: 'carried-forward', sourceAttemptId: carried.id }
-        : { kind: 'none' }
+        : workflowHasLegacyBriefSource(state, sourceAttemptIds)
+          ? { kind: 'legacy' }
+          : { kind: 'none' }
   }
   const exhausted =
     state.attempts.slice(state.attemptEpoch ?? 0).filter((attempt) => attempt.stepId === stepId).length >=
