@@ -4,19 +4,10 @@ import {
   workflowResultRevision,
   workflowReviewBriefForAttempt,
   type WorkflowAttempt,
-  type WorkflowDecisionBrief as Brief,
   type WorkflowRun,
 } from '@ficus/shared'
+import { DECISION_BRIEF_FIELD_LABELS } from '../lib/workflowReview'
 import { MarkdownContent } from './MarkdownContent'
-
-/** The brief's fields in reading order, with their reviewer-facing labels. */
-export const DECISION_BRIEF_FIELD_LABELS: ReadonlyArray<readonly [keyof Brief, string]> = [
-  ['decision', 'Decision'],
-  ['recommendation', 'Recommendation'],
-  ['approvalEffect', 'What approval allows'],
-  ['risks', 'Risks and tradeoffs'],
-  ['changesSinceLastReview', 'What changed since your last review'],
-]
 
 /**
  * Read-only source provenance: a carried brief is never fresh authorization for this gate. An

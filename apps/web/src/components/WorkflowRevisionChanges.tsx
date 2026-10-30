@@ -6,13 +6,8 @@ import {
   type WorkflowAttemptAttachment,
 } from '@ficus/shared'
 import type { WorkflowRunDetail } from '@ficus/client-core'
-import { DECISION_BRIEF_FIELD_LABELS } from './WorkflowDecisionBrief'
+import { attemptFiles, DECISION_BRIEF_FIELD_LABELS } from '../lib/workflowReview'
 import { MarkdownContent } from './MarkdownContent'
-
-/** Every file an attempt has had, current and earlier revisions, by id. */
-export function attemptFiles(run: WorkflowRunDetail, attemptId: number): WorkflowAttemptAttachment[] {
-  return [...(run.attachments?.[String(attemptId)] ?? []), ...(run.earlierAttachments?.[String(attemptId)] ?? [])]
-}
 
 /**
  * What changed in a source attempt between the revision the reviewer last saw and the latest one:

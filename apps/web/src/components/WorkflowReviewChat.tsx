@@ -1,15 +1,10 @@
-import { createContext, useContext, useState, type ComponentType } from 'react'
+import { useContext, useState } from 'react'
 import clsx from 'clsx'
-import type { ReviewConsultationSend, WorkflowRunDetail } from '@ficus/client-core'
+import type { WorkflowRunDetail } from '@ficus/client-core'
 import type { WorkflowAttempt } from '@ficus/shared'
 import { attemptSummary } from '../lib/workflowReview'
+import { ReviewConversationContext, type ReviewConversationProps } from '../lib/reviewConversation'
 import { AgentConversation } from './AgentConversation'
-
-export interface ReviewConversationProps {
-  agentId: string
-  sendOptions: () => { reviewConsultation?: ReviewConsultationSend } | undefined
-  placeholder: string
-}
 
 /** The agent's own conversation: the same agent and session as its full chat page. */
 function AgentReviewConversation({ agentId, sendOptions, placeholder }: ReviewConversationProps) {
@@ -23,9 +18,6 @@ function AgentReviewConversation({ agentId, sendOptions, placeholder }: ReviewCo
     />
   )
 }
-
-/** The conversation component the review chat renders; tests provide a light stand-in. */
-export const ReviewConversationContext = createContext<ComponentType<ReviewConversationProps>>(AgentReviewConversation)
 
 /**
  * The review screen's chat with the agent whose completed attempt feeds the gate. Messages from a
@@ -46,7 +38,7 @@ export function WorkflowReviewChat({
   /** Whether the viewer may decide this gate, and so consults the agent as its reviewer. */
   consult: boolean
 }) {
-  const Conversation = useContext(ReviewConversationContext)
+  const Conversation = useContext(ReviewConversationContext) ?? AgentReviewConversation
   const [selected, setSelected] = useState(agents[0]?.agentId)
   const current = agents.find((entry) => entry.agentId === selected) ?? agents[0]
   if (!current) return null

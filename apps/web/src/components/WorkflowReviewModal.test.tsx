@@ -23,7 +23,7 @@ import { decisionNotesHint, outcomeRequiresNotes } from '../lib/workflowReview'
 import { MarkdownContent } from './MarkdownContent'
 import { WorkflowReviewCallout } from './WorkflowReviewCallout'
 import { WorkflowReviewDeepLink, WorkflowReviewModal, WorkflowReviewRoute } from './WorkflowReviewModal'
-import { ReviewConversationContext, type ReviewConversationProps } from './WorkflowReviewChat'
+import { ReviewConversationContext, type ReviewConversationProps } from '../lib/reviewConversation'
 
 /** Stands in for the agent's conversation: shows which agent it is and what a send would carry. */
 function StubConversation({ agentId, sendOptions, placeholder }: ReviewConversationProps) {

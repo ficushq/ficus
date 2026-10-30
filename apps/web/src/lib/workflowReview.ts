@@ -16,6 +16,8 @@ import {
   workflowOutcomeRequiresEvidence,
   workflowHistoricalStep,
   type WorkflowAttempt,
+  type WorkflowAttemptAttachment,
+  type WorkflowDecisionBrief,
   type WorkflowRun,
   type WorkflowStep,
   type WorkflowTransition,
@@ -289,4 +291,21 @@ export function writeSeenRevisions(key: string, value: Record<string, number>): 
   } catch {
     // Kept in component state only.
   }
+}
+
+/** The brief's fields in reading order, with their reviewer-facing labels. */
+export const DECISION_BRIEF_FIELD_LABELS: ReadonlyArray<readonly [keyof WorkflowDecisionBrief, string]> = [
+  ['decision', 'Decision'],
+  ['recommendation', 'Recommendation'],
+  ['approvalEffect', 'What approval allows'],
+  ['risks', 'Risks and tradeoffs'],
+  ['changesSinceLastReview', 'What changed since your last review'],
+]
+
+/** Every file an attempt has had, current and earlier revisions. */
+export function attemptFiles(
+  run: Pick<WorkflowRunDetail, 'attachments' | 'earlierAttachments'>,
+  attemptId: number
+): WorkflowAttemptAttachment[] {
+  return [...(run.attachments?.[String(attemptId)] ?? []), ...(run.earlierAttachments?.[String(attemptId)] ?? [])]
 }
