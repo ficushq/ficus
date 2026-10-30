@@ -474,6 +474,43 @@ const click = async (label: string) => {
 }
 const newer = (id: string) => ({ ...stream(id), completedAt: '2026-10-29T12:00:00.000Z' }) as WorkStream
 
+test('Dismiss uses a compact ghost control while preserving its pending state and event handling', async () => {
+  const view = await setup()
+  let resolve!: () => void
+  view.delay(
+    new Promise<void>((done) => {
+      resolve = done
+    })
+  )
+  await view.render()
+  const summary = dom!.window.document.querySelector('summary')!
+  const button = summary.querySelector('button')!
+  expect(button.classList.contains('ficus-button-ghost')).toBe(true)
+  expect(button.classList.contains('ficus-button-link')).toBe(false)
+  for (const token of ['rounded-md', 'px-2', 'py-1', 'shrink-0']) {
+    expect(button.classList.contains(token)).toBe(true)
+  }
+  let bubbled = false
+  // React delegates at the root, so observe propagation above that root.
+  const onClick = () => {
+    bubbled = true
+  }
+  dom!.window.document.addEventListener('click', onClick)
+  const event = new dom!.window.MouseEvent('click', { bubbles: true, cancelable: true })
+  await dom!.act(async () => {
+    button.dispatchEvent(event)
+  })
+  dom!.window.document.removeEventListener('click', onClick)
+  expect(event.defaultPrevented).toBe(true)
+  expect(bubbled).toBe(false)
+  expect(button.disabled).toBe(true)
+  expect(button.textContent).toBe('Dismissing…')
+  expect(button.classList.contains('ficus-button-ghost')).toBe(true)
+  await dom!.act(async () => resolve())
+  expect(view.saved).toEqual(['missed'])
+  expect(text()).not.toContain('Updates')
+})
+
 test('Dismiss explicitly receipts all loaded pages including offscreen rows but never unfetched rows', async () => {
   const view = await setup()
   view.setRows([stream('first'), stream('offscreen'), stream('last-page')])

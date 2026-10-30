@@ -91,6 +91,159 @@ test('reconciles a durable intent into actual removal without changing delivered
   expect((await job()).status).toBe('succeeded')
 })
 
+test.skipIf(process.platform !== 'linux')(
+  'external absolute and workspace-relative evidence survives successful synthetic cleanup',
+  async () => {
+    await mkdir(join(root, 'docs'))
+    await writeFile(join(root, 'docs/baseline-workload.json'), '{"synthetic":true}')
+    const files = [join(root, 'docs/baseline-workload.json'), 'docs/baseline-workload.json']
+    await db.update(workStreams).set({ files }).where(eq(workStreams.id, streamId))
+    await processJob()
+    expect((await job()).status).toBe('succeeded')
+    expect(await Bun.file(join(root, 'docs/baseline-workload.json')).text()).toBe('{"synthetic":true}')
+    expect((await WorkStream.mustFind(streamId)).toJson()).toMatchObject({ status: 'done', metadata, files })
+    expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(false)
+  }
+)
+
+for (const deletionRoot of ['worktree', 'gitDirectory'] as const) {
+  for (const stage of ['observation', 'entry', 'final'] as const) {
+    test.skipIf(process.platform !== 'linux')(
+      `${deletionRoot} nested mount at evidence ${stage} retains attachments before destructive dispatch`,
+      async () => {
+        const docs = join(root, 'docs')
+        await mkdir(docs)
+        const file = join(docs, 'review.json')
+        await writeFile(file, 'external evidence')
+        const files = [file]
+        await (await WorkStream.mustFind(streamId)).update({ files })
+        const target = join(ownership[deletionRoot], deletionRoot === 'worktree' ? 'node_modules' : 'logs')
+        await mkdir(target, { recursive: true })
+        await writeFile(join(ownership.commonDirectory, 'info/exclude'), 'node_modules/\n')
+        const cleanTable = '1 0 0:1 / / rw - overlay overlay rw'
+        const mountedTable = `${cleanTable}\n2 1 0:1 ${docs} ${target} rw - overlay overlay rw`
+        const mountAdded = join(root, 'mount-added')
+        const dispatched = join(root, 'destructive-dispatch')
+        const bin = join(root, 'git-bin')
+        await mkdir(bin)
+        const git = Bun.which('git')!
+        await writeFile(
+          join(bin, 'git'),
+          `#!/bin/sh
+case " $* " in
+  *" for-each-ref "*) printf mounted > "$FIXTURE_MOUNT_ADDED" ;;
+esac
+exec "${git}" "$@"
+`,
+          { mode: 0o755 }
+        )
+        // Substitute observation data, never mount anything. The final-stage
+        // table changes only after real Git safety checks reach for-each-ref.
+        const mountExec = (args: string[]) => {
+          const modified = [...args]
+          const table =
+            stage === 'final'
+              ? `(fs.existsSync(${JSON.stringify(mountAdded)}) ? ${JSON.stringify(mountedTable)} : ${JSON.stringify(cleanTable)})`
+              : JSON.stringify(stage === 'observation' || args[5] === 'remove' ? mountedTable : cleanTable)
+          modified[2] = modified[2]!
+            .replace("fs.readFileSync('/proc/self/mountinfo', 'utf8')", table)
+            .replace(
+              "git(o.repository, 'worktree', 'remove', '--', o.worktree);",
+              `fs.writeFileSync(${JSON.stringify(dispatched)}, 'reached'); fail('Test blocked destructive dispatch');`
+            )
+          return exec(['env', `PATH=${bin}:${process.env.PATH}`, `FIXTURE_MOUNT_ADDED=${mountAdded}`, ...modified])
+        }
+        await processJob({ execForSquad: async () => mountExec })
+        expect(await job()).toMatchObject({ status: 'deferred', operationId: null })
+        if (stage !== 'observation')
+          expect((await job()).reason).toBe('Deletion root contains a mounted path; retain for inspection')
+        if (stage === 'final') expect(await Bun.file(mountAdded).exists()).toBe(true)
+        expect(await Bun.file(dispatched).exists()).toBe(false)
+        expect((await WorkStream.mustFind(streamId)).toJson()).toMatchObject({ status: 'done', metadata, files })
+        expect(await Bun.file(file).text()).toBe('external evidence')
+        expect(await Bun.file(join(ownership.worktree, 'README')).text()).toBe('delivered\n')
+      }
+    )
+  }
+}
+
+for (const change of ['add', 'replace', 'remove'] as const) {
+  test.skipIf(process.platform !== 'linux')(
+    `evidence list ${change} before claim cannot authorize stale deletion`,
+    async () => {
+      const file = join(root, 'review.json')
+      await writeFile(file, 'external')
+      if (change !== 'add') await (await WorkStream.mustFind(streamId)).update({ files: [file] })
+      let changed = false
+      const mutate = async () => {
+        changed = true
+        await (
+          await WorkStream.mustFind(streamId)
+        ).update({ files: change === 'remove' ? [] : ['worktrees/owned/README'] })
+      }
+      await processJob({
+        verify: async () => {
+          if (change === 'add') await mutate()
+          return head
+        },
+        execForSquad: async () => async (args: string[]) => {
+          const result = await exec(args)
+          if (args[5] === 'evidence') await mutate()
+          return result
+        },
+      })
+      expect(changed).toBe(true)
+      expect(await job()).toMatchObject({ status: 'deferred', operationId: null })
+      expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(true)
+      expect(await Bun.file(file).text()).toBe('external')
+    }
+  )
+}
+
+for (const alias of [false, true]) {
+  test(`in-tree evidence${alias ? ' via a symlink' : ''} is retained with every attachment record intact`, async () => {
+    const file = join(ownership.worktree, 'README')
+    if (alias) await symlink(ownership.worktree, join(root, 'alias'))
+    const files = [alias ? 'alias/README' : file]
+    await (await WorkStream.mustFind(streamId)).update({ files })
+    await processJob()
+    expect(await job()).toMatchObject({ status: 'deferred', operationId: null })
+    expect((await WorkStream.mustFind(streamId)).files).toEqual(files)
+    expect(await Bun.file(file).text()).toBe('delivered\n')
+  })
+}
+
+test.skipIf(process.platform !== 'linux')(
+  'claimed evidence is durable, cannot be mutated, and survives exact-operation receipt recovery',
+  async () => {
+    const file = join(root, 'review.json')
+    await writeFile(file, 'external')
+    await (await WorkStream.mustFind(streamId)).update({ files: [file] })
+    let dispatched = false
+    await processJob({
+      execForSquad: async () => async (args: string[]) => {
+        if (args[5] === 'remove') {
+          dispatched = true
+          expect((await job()).removalInput).toHaveProperty('evidence.files', [file])
+          await expect((await WorkStream.mustFind(streamId)).update({ files: ['changed'] })).rejects.toThrow(
+            /cleanup|removal/i
+          )
+          await exec(args)
+          throw Error('lost response')
+        }
+        return exec(args)
+      },
+    })
+    expect(dispatched).toBe(true)
+    const claimed = await job()
+    expect(claimed.status).toBe('removing')
+    await processJob()
+    expect(await job()).toMatchObject({ status: 'succeeded', operationId: claimed.operationId })
+    expect((await WorkStream.mustFind(streamId)).toJson()).toMatchObject({ status: 'done', metadata, files: [file] })
+    expect(await Bun.file(file).text()).toBe('external')
+  }
+)
+
 test('lost remote response remains fenced and restart recovers the immutable receipt', async () => {
   let lostResponses = 0
   await processJob({

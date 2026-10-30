@@ -261,6 +261,7 @@ describe('production VM recovery wiring', () => {
           sleep: async () => {},
           warn: () => {},
         }),
+      reserveHostCapacity: async () => {},
       ensureBox: async () =>
         ({
           machine,

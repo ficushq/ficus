@@ -461,7 +461,43 @@ manually created paths are not ownership evidence. Before removal, the platform
 revalidates canonical Git identity, authoritative delivered head, live merge
 status and remote recoverability (including squash merges).
 
-Only two kinds of data block removal:
+Legacy work-stream `files` records are preserved, not detached or moved by cleanup.
+A nonempty list no longer blocks cleanup merely because it exists: each entry must
+be an accessible, existing regular file verified outside both the exact candidate
+worktree and its private Git directory, within the owned squad workspace. Absolute
+paths and paths relative to that workspace are supported. This verification runs
+in the squad sandbox that performs removal, not on the Core host. Missing paths,
+malformed records (including object-shaped legacy entries), parent traversal,
+symlinks anywhere in the resolved path, and nested workspace mount points along
+the evidence path fail closed. A mount point at or beneath either deletion root
+(the worktree or its private Git directory) also retains the tree: Git could
+otherwise unlink external evidence through that mount even when its ordinary
+external path crosses no mount. These mount checks run at observation and both
+runner rechecks. Prefix-collision siblings are not treated as children of the worktree.
+The external-evidence correction currently requires Linux with readable
+`/proc/self/mountinfo`; unsupported or inaccessible mount identity keeps the tree.
+Observation is bounded to 1,000 paths, 4,096 characters per path and 65,536
+characters of serialized records; larger lists also retain the tree.
+
+The final lifecycle transaction compares the complete `files` list with its
+runtime observation under the existing squad/stream locks. A changed list defers
+cleanup, and supported updates to that stream remain fenced once removal is
+claimed. The exact operation persists file and ancestry identities, then checks
+them on runner entry and immediately before Git removal. Changes, inaccessible
+files or newly introduced aliases retain the worktree. Evidence records, Git
+bindings, delivered state and recovery metadata remain unchanged. This does not
+change separate uploaded workflow-attachment storage or add cross-stream file
+sharing registration; shared tree use still requires a registered binding.
+
+These are cooperative lifecycle fences, not an atomic filesystem transaction:
+path-based `git worktree remove` cannot exclude arbitrary unmanaged filesystem or
+mount mutations after its final check. Do not modify cleanup-owned paths outside
+supported lifecycle operations. No guarantee is made against hostile concurrent
+writers, a remote storage provider's hidden aliases, or a changing mount namespace.
+Uncertain operations and immutable failed receipts keep their existing fences and
+recovery behavior; external evidence is not a recovery override.
+
+Two kinds of Git data block removal:
 
 - **Uncommitted changes:** modified or staged tracked files, untracked files that
   Git does not ignore, tracked files hidden by `assume-unchanged`/`skip-worktree`
@@ -487,7 +523,8 @@ commits with `git for-each-ref refs/ficus-archive/`; delete one with
 `git update-ref -d <ref>` once it is no longer needed.
 
 Files Git ignores (`node_modules`, `dist`, `*.tsbuildinfo`, `.test-db-port`, caches)
-never block cleanup; they are deleted with the worktree. Leftover Git scratch
+do not themselves block cleanup; they are deleted with the worktree unless
+protected by the declared-evidence checks above. Leftover Git scratch
 files (`COMMIT_EDITMSG`, `FETCH_HEAD`, `AUTO_MERGE`) are also discarded. Separate
 correctness guards still defer removal: a primary checkout, a changed directory
 identity or registration, a locked worktree or Git lock file, a changed delivered

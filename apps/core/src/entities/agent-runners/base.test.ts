@@ -205,7 +205,7 @@ class TestRunner extends AgentRunner {
     const stopExecution = execution.stop.bind(execution)
     execution.stop = async () => {
       this.stopCalledAfterSystemMessage = (agent.recordMessage as any).mock.calls.some(
-        (call: any[]) => call[0]?.content === '[System] Agent was stopped.'
+        (call: any[]) => call[0]?.content === '[System] Agent was interrupted.'
       )
       await stopExecution()
     }
@@ -2061,7 +2061,9 @@ describe('AgentRunner (base class)', () => {
       await new Promise((r) => setTimeout(r, 50))
 
       // Should have saved system agent stopped message
-      const systemMsgCall = recordMessageSpy.mock.calls.find((c: any) => c[0].content === '[System] Agent was stopped.')
+      const systemMsgCall = recordMessageSpy.mock.calls.find(
+        (c: any) => c[0].content === '[System] Agent was interrupted.'
+      )
       expect(systemMsgCall).toBeTruthy()
 
       // Verify final state

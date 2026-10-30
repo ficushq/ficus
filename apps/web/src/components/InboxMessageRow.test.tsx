@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactElement } from 'react'
+import type { Squad } from '@ficus/shared'
 import type { InboxMessageResponse } from '../api/inbox'
 import { formatSender, MessageRow } from './InboxMessageRow'
 
@@ -49,7 +50,7 @@ describe('MessageRow', () => {
       content: 'world',
       createdAt: new Date(Date.now() - 60_000).toISOString(),
       readAt: null,
-      senderAgent: { id: 'a1', squadId: null, metadata: { name: 'A' } },
+      senderAgent: { id: 'a1', squadId: null, name: 'A', agentTypeId: 'engineer', ownerUserId: null },
       metadata: {},
     } as unknown as InboxMessageResponse
 
@@ -72,7 +73,7 @@ describe('MessageRow', () => {
       content: 'world',
       createdAt: new Date(Date.now() - 60_000).toISOString(),
       readAt: null,
-      senderAgent: { id: 'a1', squadId: null, metadata: { name: 'A' } },
+      senderAgent: { id: 'a1', squadId: null, name: 'A', agentTypeId: 'engineer', ownerUserId: null },
       metadata: {},
     } as unknown as InboxMessageResponse
 
@@ -177,7 +178,7 @@ function makeMessage(overrides: Partial<InboxMessageResponse> = {}): InboxMessag
     content: 'world',
     createdAt: new Date(Date.now() - 60_000).toISOString(),
     readAt: null,
-    senderAgent: { id: 'a1', squadId: null, metadata: { name: 'A' } },
+    senderAgent: { id: 'a1', squadId: null, name: 'A', agentTypeId: 'engineer', ownerUserId: null },
     metadata: {},
     ...overrides,
   } as unknown as InboxMessageResponse
@@ -221,6 +222,25 @@ describe('MessageRow attachment download links', () => {
 })
 
 describe('formatSender', () => {
+  test('uses the flat participant name and keeps sender identity and squad chat link', () => {
+    const message = makeMessage({
+      senderId: 'agent-123456789',
+      senderAgent: {
+        id: 'agent-123456789',
+        name: 'Summary Name',
+        agentTypeId: 'engineer',
+        squadId: 'squad-1',
+        ownerUserId: null,
+      },
+    })
+    expect(formatSender(message)).toBe('Summary Name [agent-12]')
+    const html = renderRow(<MessageRow message={message} />)
+    expect(html).toContain('Summary Name')
+    expect(html).toContain('/chat/agent-123456789')
+    const squadHtml = renderRow(<MessageRow message={message} squads={[{ id: 'squad-1', name: 'Squad' } as Squad]} />)
+    expect(squadHtml).toContain('/squads/squad-1?agent=agent-123456789')
+  })
+
   test('formats workspace voice assistant sender with name, type, and stable ID', () => {
     const message = {
       senderType: 'voice_assistant',

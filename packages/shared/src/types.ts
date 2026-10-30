@@ -1799,6 +1799,17 @@ export interface InboxAttachment {
   createdAt: Date
 }
 
+/** Inbox identity only; detailed agent reads require their own authorization. */
+export interface InboxParticipantSummary {
+  id: string
+  /** Agent.metadata.name when it is a string; otherwise null. */
+  name: string | null
+  agentTypeId: string
+  squadId: string | null
+  /** Stable owner identifier, not an expanded user or inferred caller. */
+  ownerUserId: string | null
+}
+
 export interface InboxMessage {
   id: string
   recipientType: InboxRecipientType
@@ -1813,9 +1824,9 @@ export interface InboxMessage {
   deliveryMode: DeliveryMode
   createdAt: Date
   /** Loaded if the sender is an agent */
-  senderAgent?: Agent | null
+  senderAgent?: InboxParticipantSummary | null
   /** Loaded if the recipient is an agent */
-  recipientAgent?: Agent | null
+  recipientAgent?: InboxParticipantSummary | null
   /** Attachments linked to this message (empty when none). */
   attachments?: InboxAttachment[]
 }

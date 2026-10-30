@@ -37,6 +37,24 @@ ficus --quiet    # Minimal output
 ficus --backend <label>  # Select a saved backend for this command (outside agent context)
 ```
 
+## Inbox JSON participant contract
+
+Inbox read, list and local-send responses use nullable `senderAgent` and
+`recipientAgent` summaries, not agent-detail objects. The same contract applies
+when exporting with `ficus --json inbox list` or `ficus --json inbox send`.
+
+Each loaded summary has exactly `id`, `name`, `agentTypeId`, `squadId` and
+`ownerUserId`. These are the agent's stable identifiers; `name` is its string
+`metadata.name`, or `null` when absent or not a string. `squadId` and `ownerUserId`
+are nullable identifiers, not expanded squad/user records. Consumers should read
+`senderAgent.name` instead of `senderAgent.metadata.name`; agent details require
+a separate authorized agent request. Inbox events remain compact identifier
+notifications, with full messages fetched through the inbox API.
+
+Message content and message-level metadata, including sender attribution, are
+preserved. JSON export does not redact authored text or make it safe to publish.
+Array and paginated list envelopes remain unchanged.
+
 ## Command Groups
 
 | Command                     | Alias   | Description                           |

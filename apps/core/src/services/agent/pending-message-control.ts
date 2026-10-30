@@ -1,4 +1,4 @@
-import { isExecutionInitialMessage } from '../chat/queued-messages'
+import { isQueuedIntervention } from '../chat/queued-messages'
 import { acquireAgentQueueLock } from '../execution/agent-admission'
 import { and, eq, isNotNull, sql } from 'drizzle-orm'
 import { db, messages, chatSendReceipts } from '../../db'
@@ -21,31 +21,20 @@ type Row = typeof messages.$inferSelect
  * the first human row bound to the execution instead.
  */
 /** Inbox deliveries already claimed their inbox items, so deleting the row would lose them: they may
- * only change delivery mode. Monitor deliveries are never edited. */
+ * only change delivery mode. Question answers are always interrupts (their delivery recovery binds the
+ * row only while it is still `steer`), and monitor deliveries are never edited. */
 export function allowsPendingOperation(
   metadata: MessageMetadata | null | undefined,
   operation: PendingMessageOperation
 ): boolean {
   if (metadata?.source === 'monitor') return false
+  if (metadata?.inboxMessageSummaries?.some((summary) => summary.questionAnswer != null)) return false
   if (metadata?.source === 'inbox') return operation !== 'cancel'
   return true
 }
 
 async function isEditableIntervention(tx: Tx, row: Row): Promise<boolean> {
-  const [receipt] = await tx
-    .select({ disposition: chatSendReceipts.disposition })
-    .from(chatSendReceipts)
-    .where(
-      and(
-        eq(chatSendReceipts.agentId, row.agentId),
-        eq(chatSendReceipts.messageId, row.id),
-        eq(chatSendReceipts.state, 'accepted')
-      )
-    )
-  if (receipt) return receipt.disposition === 'intervention'
-  const message = mapMessage(row)
-  if (!message.metadata?.deliveryMode) return false
-  return !(await isExecutionInitialMessage(tx, message))
+  return isQueuedIntervention(tx, mapMessage(row))
 }
 
 async function commitChange(tx: Tx, row: Row, operation: PendingMessageOperation): Promise<void> {

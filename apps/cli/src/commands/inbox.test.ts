@@ -1,4 +1,4 @@
-import { describe, it, test, expect, beforeAll, beforeEach, afterEach, mock } from 'bun:test'
+import { describe, it, test, expect, beforeAll, beforeEach, afterEach, mock, spyOn } from 'bun:test'
 import { Command } from 'commander'
 import { createPublicKey, generateKeyPairSync, verify } from 'crypto'
 import { mkdtempSync, rmSync, writeFileSync } from 'fs'
@@ -356,4 +356,63 @@ describe('inbox send amtp:// (federation)', () => {
     expect(apiGetRaw).toHaveBeenCalledWith('/api/inbox/attachments/att-1')
     expect(apiPost).toHaveBeenCalledWith('/api/inbox', expect.objectContaining({ attachmentIds: ['att-1'] }))
   })
+})
+
+describe('inbox participant summary compatibility', () => {
+  test('text listing uses the flat summary name, without requiring private agent metadata', async () => {
+    const log = spyOn(console, 'log').mockImplementation(() => {})
+    ;(apiGet as ReturnType<typeof mock>).mockResolvedValueOnce([
+      {
+        id: 'message-123',
+        senderType: 'agent',
+        senderId: 'agent-123456789',
+        senderAgent: {
+          id: 'agent-123456789',
+          name: 'Summary Name',
+          agentTypeId: 'engineer',
+          squadId: null,
+          ownerUserId: null,
+        },
+        content: 'Exact content',
+        metadata: {},
+        createdAt: new Date().toISOString(),
+      },
+    ])
+    try {
+      const program = new Command()
+      registerInboxCommands(program)
+      await program.parseAsync(['inbox', 'list'], { from: 'user' })
+      expect(log.mock.calls.flat().join('\n')).toContain('Summary Name [agent-12]')
+    } finally {
+      log.mockRestore()
+    }
+  })
+})
+
+test('batch mark-read retains partial successes and retries only explicit synthetic ids', async () => {
+  const { output } = await import('../output')
+  const post = apiPost as ReturnType<typeof mock>
+  post.mockReset().mockRejectedValueOnce(new Error('Authorization check missing')).mockResolvedValue({ success: true })
+  const report = output as ReturnType<typeof mock>
+  report.mockClear()
+  const error = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    const run = async () => {
+      const program = new Command()
+      registerInboxCommands(program)
+      await program.parseAsync(['inbox', 'read', 'synthetic-first', 'synthetic-second'], { from: 'user' })
+    }
+    await run()
+    expect(post.mock.calls.map((call) => call[0])).toEqual([
+      '/api/inbox/synthetic-first/read',
+      '/api/inbox/synthetic-second/read',
+    ])
+    expect(report).toHaveBeenCalledWith({ messageIds: ['synthetic-second'] }, expect.any(String))
+    expect(error).toHaveBeenCalledWith('Error: syntheti: Authorization check missing')
+    await run()
+    expect(report).toHaveBeenLastCalledWith({ messageIds: ['synthetic-first', 'synthetic-second'] }, expect.any(String))
+  } finally {
+    error.mockRestore()
+    post.mockReset()
+  }
 })

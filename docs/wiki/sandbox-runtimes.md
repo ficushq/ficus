@@ -306,8 +306,8 @@ caches are not rewritten; custom dependency caches remain per box. Shared packs
 are append-only and must not be manually removed while boxes reference them.
 This is a VM optimization; it does not change Docker or Kubernetes sandboxes.
 
-Deep docs: [machines/runtime.md](machines/runtime.md) (lifecycle, placement,
-troubleshooting) and [machines/exe-provider.md](machines/exe-provider.md)
+Deep docs: [lifecycle](machines/runtime-lifecycle.md), [placement](machines/runtime-placement.md),
+[troubleshooting](machines/runtime-operations.md#troubleshooting) and [machines/exe-provider.md](machines/exe-provider.md)
 (credential, image, cost model).
 
 ## `k8s` — sandbox pods in a cluster

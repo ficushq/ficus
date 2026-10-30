@@ -68,3 +68,41 @@ These do not use the badge token, because they show state rather than a count of
 `theme/semanticParity.test.ts` compiles the real new and old Tailwind utilities and compares fully substituted colors for both appearances, including hover and neutral special cases. `theme-color-opacity.test.ts` also checks `/25`, `/50`, and `/100` without double alpha. Identity contrast remains ≥4.5:1 on both original and actual app surfaces. Component tests pin token routing, not concrete palette utility names.
 
 No legacy-file waiver remains: every app-owned color resolves through a registered token. Status tone steps retain the exact old control palette without changing lifecycle classifications; decorative ramps remain separate for indigo/pink/rose/emerald/violet identity surfaces. Voice material, log viewers, brand assets and black/white chrome are also tokenized. See [complete coverage](complete-coverage.md) for the closed exception list and verification boundary.
+
+## Generated border utilities
+
+Use `border-th-border` for neutral separators, alongside a width such as
+`border-l`. Use mapped status colors for status boundaries, for example
+`border-status-danger-500/30` or `border-status-success-border`. Directional
+colors (`border-t-status-danger-600`), variants (`hover:border-th-border-hover`,
+`md:focus:border-th-border/50`) and numeric opacity modifiers are supported.
+
+The web app's locked Tailwind 3 compiler emits **no rule** for
+`border-current/20` (or `/25`); plain `border-current` does emit `currentColor`.
+A width utility alone therefore remains without the intended color override.
+This is a compiler-output fact for this app, not a ban on opacity modifiers or
+an assertion about another Tailwind version. Prefer a semantic neutral border
+rather than trying to fade the surrounding text color.
+
+`apps/web/src/border-utilities.guard.test.ts` checks actual CSS emission using
+the production `postcss.config.js` plugin chain and `tailwind.config.js`, including
+its plugins. Only content discovery is replaced with the collected candidates;
+the input is the utility-generation directive, not a second compiler or a
+handwritten list of valid classes. It checks for a border-color declaration
+under the exact generated class selector, including variant selectors.
+
+The bounded source scan covers complete literal `border-th-*`, `border-status-*`
+and `border-current` tokens (including directional forms, simple variants,
+important modifiers and numeric opacity) in app-owned `src/**/*.{js,jsx,ts,tsx}`.
+It includes constant strings, conditional branches, `clsx` arguments and complete
+whitespace-delimited tokens beside template interpolations. Tests, fixtures,
+comments, tagged templates, concatenations, interpolated token fragments,
+arbitrary values/variants and externally supplied runtime classes are excluded.
+Other border families, CSS/HTML documents, third-party styles, runtime data flow,
+computed colors, contrast and visual appearance are not certified by this guard.
+The existing opacity/substitution and theme contrast tests remain necessary.
+
+Run it with `cd apps/web && bun test src/border-utilities.guard.test.ts`.
+The existing approval-free web `test:ci` gate discovers this file automatically;
+no separate build, dependency, database or CI approval is required. Failures name
+the source location and unemitted utility, with supported neutral/status examples.

@@ -694,7 +694,7 @@ describeSubprocess('attemptPickup result matrix', () => {
     })
   }
 
-  test('host quota refusal leaves the real pickup queued and starts no runner', async () => {
+  test('shared host box ceilings do not prevent another squad pickup', async () => {
     const runtime = process.env.FICUS_SANDBOX_RUNTIME
     try {
       const candidate = await createSquadAgent('zai:glm-5.2')
@@ -702,7 +702,7 @@ describeSubprocess('attemptPickup result matrix', () => {
       const [machine] = await db
         .insert(machines)
         .values({
-          name: `quota-${randomUUID()}`,
+          name: `shared-host-${randomUUID()}`,
           provider: 'ssh',
           sshHost: '127.0.0.1',
           sshUser: 'test',
@@ -721,17 +721,19 @@ describeSubprocess('attemptPickup result matrix', () => {
         claimHostCapacity(
           tx,
           { kind: 'execution', executionId: running.id },
-          ['agent_busy_a', 'agent_busy_b', 'agent_busy_c'].map((sandboxId) => ({ machineId: machine.id, sandboxId }))
+          Array.from({ length: 15 }, (_, index) => ({ machineId: machine.id, sandboxId: `agent_busy_${index}` }))
         )
       )
-      const execution = await candidate.queueExecution({ message: 'wait for host capacity' })
+      const execution = await candidate.queueExecution({ message: 'run alongside other squads' })
       createdExecutionIds.push(execution.id)
       process.env.FICUS_SANDBOX_RUNTIME = 'vm'
-      expect(await attemptPickup(await Execution.mustFind(execution.id))).toBe('no-capacity')
-      expect((await Execution.mustFind(execution.id)).status).toBe('queued')
-      await expectCanonicalQueuedAdmission(execution.id, candidate.id)
-      expect(createdSessions).toHaveLength(0)
-      expect(concurrencyLimiter.hasSlot(execution.id)).toBe(false)
+      // Fifteen per-box CPU ceilings exceed this host's CPU count, but they
+      // are shared usage limits, not exclusive reservations against pickup.
+      expect(await attemptPickup(await Execution.mustFind(execution.id))).toBe('started')
+      await sessionCreated
+      expect((await Execution.mustFind(execution.id)).status).toBe('running')
+      expect(createdSessions).toHaveLength(1)
+      expect(concurrencyLimiter.hasSlot(execution.id)).toBe(true)
     } finally {
       if (runtime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
       else process.env.FICUS_SANDBOX_RUNTIME = runtime

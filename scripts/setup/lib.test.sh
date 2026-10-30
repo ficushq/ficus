@@ -1066,6 +1066,23 @@ rm -f "${SQ_TMP}"
 expect_eq 'provision.sh: secrets.env values go through sh_single_quote' \
   "$(grep -cF 'sh_single_quote "${!name}"' "${SCRIPT_DIR}/provision.sh" || true)" '1'
 
+# --- provision.sh pushes every unit template setup-host.sh renders ----------
+# Five provisions have now failed after the droplet was created and paid for
+# because provision.sh never sent a template setup-host.sh renders on the VM
+# (the latest, 2026-10-29: ficus-pgbouncer.service.tmpl, once pooling became
+# the only layout). The pushed list is one array; it must equal the set of
+# unit templates setup-host.sh and lib.sh reference, and both the pre-push
+# existence check and the scp must read it.
+PT_RENDERED=$({ grep -ohE 'ficus-[a-z-]+\.(service|timer)\.tmpl' "${SCRIPT_DIR}/setup-host.sh" "${SCRIPT_DIR}/lib.sh" || true; } | sort -u)
+PT_PUSHED=$({ sed -n '/^PROVISION_UNIT_TEMPLATES=(/,/^)/p' "${SCRIPT_DIR}/provision.sh" | grep -oE 'ficus-[a-z-]+\.(service|timer)\.tmpl' || true; } | sort -u)
+expect_eq 'provision.sh: PROVISION_UNIT_TEMPLATES is every unit template setup-host.sh renders' \
+  "${PT_PUSHED}" "${PT_RENDERED}"
+expect_eq 'provision.sh: the existence check and the scp both read PROVISION_UNIT_TEMPLATES' \
+  "$(grep -cF '"${PROVISION_UNIT_TEMPLATES[@]/#/${SCRIPT_DIR}/systemd/}"' "${SCRIPT_DIR}/provision.sh" || true)" '2'
+expect_eq 'provision.sh: no systemd template is named outside PROVISION_UNIT_TEMPLATES' \
+  "$({ grep -v '^  ficus-' "${SCRIPT_DIR}/provision.sh" || true; } | grep -cE 'systemd/ficus-[a-z-]+\.(service|timer)\.tmpl' || true)" '0'
+unset PT_RENDERED PT_PUSHED
+
 # --- render_backup_env_content -----------------------------------------------
 expect_eq 'render_backup_env_content real mode single-quotes values' \
   "$(render_backup_env_content real 'AKIA123' 's3cret' 'passphrase-value')" \
