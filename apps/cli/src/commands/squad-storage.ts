@@ -99,7 +99,7 @@ export function formatSquadStorage(view: SquadStorageView, now = Date.now()): st
 }
 
 /** Resolve the squad to read: an explicit id (or id prefix of at least 8 characters) wins, else FICUS_SQUAD_ID (set inside squad boxes). */
-export function resolveStorageSquad(explicit: string | undefined, environment = process.env.FICUS_SQUAD_ID): string {
+export function resolveSquadContext(explicit: string | undefined, environment = process.env.FICUS_SQUAD_ID): string {
   const squad = explicit ?? environment
   if (!squad)
     throw new Error(
@@ -122,7 +122,7 @@ export function registerSquadStorageCommand(squad: Command): void {
     )
     .action(async (squadArg: string | undefined) => {
       try {
-        const squadId = resolveStorageSquad(squadArg)
+        const squadId = resolveSquadContext(squadArg)
         const view = await apiGet<SquadStorageView>(`/api/squads/${encodeURIComponent(squadId)}/storage`)
         output(view, formatSquadStorage(view))
       } catch (error) {
