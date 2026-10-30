@@ -2,6 +2,7 @@ import { manualInputRequestSchema } from './recovery-waits'
 import { requestMetadataSchema } from './request-metadata'
 import { boundedRecord } from './zod-helpers'
 import { z } from 'zod'
+import { WORK_STREAM_INPUT_ASSET_LIMIT, workStreamAssetSourceSchema } from './workstream-asset-attachments'
 import { workflowSourceSchema, workflowEventTriggerSchema } from './workflows'
 import { squadEventRulesSchema } from './squad-event-rules'
 import { AGENT_STATUSES, WORK_STREAM_COMPLETION_MODES, WORK_STREAM_PRIORITIES } from './types'
@@ -338,6 +339,8 @@ export const createWorkStreamSchema = z
     /** Legacy input; participant models now belong to the flow. */
     agentModelOverrides: boundedRecord(z.record(z.string(), z.string()), 256).optional(),
     handoffMessage: z.string().nullable().optional(),
+    /** Stored chat images and files to share with the stream as inputs before its first assignment. */
+    assetReferences: z.array(workStreamAssetSourceSchema).max(WORK_STREAM_INPUT_ASSET_LIMIT).optional(),
     /** Attribute the request to a specific user (agent creators only; ignored for direct user creates). */
     requestingUserId: z.uuid().nullable().optional(),
     dependsOn: z.array(workStreamDependencyInputSchema).max(100).optional().default([]),

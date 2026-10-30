@@ -66,6 +66,7 @@ import { Skill } from '../Skill'
 import { createCodingTools, isHostRuntime } from '../../services/sandbox'
 import { createSandboxStatusTool } from '../../tools/sandbox-status'
 import { createShortTermMemoryTools, createAgentShortTermMemoryStorage } from '../../tools/short-term-memory'
+import { createReadAttachmentTool } from '../../tools/read-attachment'
 import {
   BIGBRAIN_DROP_TOOL_NAME,
   BIGBRAIN_READ_TOOL_NAMES,
@@ -610,14 +611,18 @@ export abstract class AgentRunner {
     // system-manager's box is `system_manager_<ownerUserId>` and a descendant can
     // share a box, so only the runner knows whose shell this is (host runtime
     // uses it for the per-agent CLI auth store).
-    const baseTools = this.createCodingTools(
-      opts.workspacePath,
-      opts.sandboxId,
-      ficusToken,
-      opts.squadId,
-      this.execution.id,
-      this.agent.id
-    )
+    const baseTools = [
+      ...this.createCodingTools(
+        opts.workspacePath,
+        opts.sandboxId,
+        ficusToken,
+        opts.squadId,
+        this.execution.id,
+        this.agent.id
+      ),
+      // Beside read: stored images and files (work streams, handoffs, inbox, own chat) without a file.
+      createReadAttachmentTool({ agentId: this.agent.id }),
+    ]
     const sandboxStatusTool = isHostRuntime()
       ? null
       : createSandboxStatusTool({

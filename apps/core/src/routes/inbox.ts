@@ -8,23 +8,21 @@ import {
   SYSTEM_RECIPIENT_ID,
   isSelfRecipientShorthand,
   workspaceVoiceRecipientId,
-  parseWorkspaceVoiceUserId,
   parseAssistantInboxConversationId,
   canonicalAgentSigBytes,
   formatAmtpAddress,
-  Permissions,
   INBOX_SEARCH_MAX_LENGTH,
   type InboxRecipientType,
   type InboxMessageSenderType,
   type AmtpAttachmentRef,
 } from '@ficus/shared'
-import { assistantInboxOwner } from '../services/assistant-inbox'
+import { inboxAttachmentAccess, inboxRecipientDenial, type InboxDenial } from '../services/inbox/access'
 import { InboxMessage } from '../entities/InboxMessage'
 import { InboxAttachment } from '../entities/InboxAttachment'
 import { readAttachmentFile as readAttachmentBytes } from '../services/inbox/attachment-storage'
 import { Agent, AgentTargetUnavailableError } from '../entities/Agent'
 import { InstanceIdentity } from '../entities/InstanceIdentity'
-import { hasAgentResourcePermission, hasPermission, resolveActingUser } from '../services/rbac'
+import { hasPermission, resolveActingUser } from '../services/rbac'
 import type { Identity } from '../services/rbac'
 import { parseAmtpAddress } from '../services/amtp/address'
 import { verifyEnvelope } from '../services/amtp/crypto'
@@ -70,56 +68,20 @@ async function systemReaderUserId(identity: Identity | undefined): Promise<strin
   return (await resolveActingUser(identity))?.userId ?? null
 }
 
+function denialResponse(denial: InboxDenial): Response {
+  return denial === 'unauthorized'
+    ? new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
+    : forbidden()
+}
+
 async function canAccessRecipientInbox(
   identity: Identity | undefined,
   type: InboxRecipientType,
   recipientId: string,
   permission: 'inbox:read' | 'inbox:write'
 ): Promise<Response | null> {
-  if (!identity) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
-
-  if (identity.type === 'agent' && type === 'agent') {
-    const targetAgent = await Agent.find(recipientId)
-    if (!targetAgent) return forbidden()
-    if (!targetAgent.squadId) {
-      return (await hasAgentResourcePermission(identity, targetAgent, permission)) ? null : forbidden()
-    }
-    // Squad-scoped agents may touch their own inbox. Cross-agent reads require
-    // the dedicated squad permission; cross-agent writes remain forbidden.
-    if (identity.agentId === recipientId) return null
-    if (permission === Permissions.INBOX_WRITE) return forbidden()
-    return (await hasPermission(identity, Permissions.INBOX_READ_SQUAD, targetAgent.squadId)) ? null : forbidden()
-  }
-
-  const user = await resolveActingUser(identity)
-  if (identity.type === 'agent' && type !== 'agent' && !user) {
-    return forbidden()
-  }
-
-  if (type === 'agent') {
-    const agent = await Agent.find(recipientId)
-    if (!agent) return forbidden()
-    return (await hasAgentResourcePermission(identity, agent, permission)) ? null : forbidden()
-  }
-
-  // A user may only access their own personal inbox.
-  if (type === 'user') {
-    return user?.userId === recipientId ? null : forbidden()
-  }
-
-  // A user may only access their own per-user voice (workspace:<userId>) inbox.
-  if (type === 'voice_assistant') {
-    if (parseAssistantInboxConversationId(recipientId))
-      return user && (await assistantInboxOwner(recipientId)) === user.userId ? null : forbidden()
-    return user && parseWorkspaceVoiceUserId(recipientId) === user.userId ? null : forbidden()
-  }
-
-  // The shared system inbox requires the inbox:system permission.
-  if (type === 'system') {
-    return (await hasPermission(identity, 'inbox:system')) ? null : forbidden()
-  }
-
-  return forbidden()
+  const denial = await inboxRecipientDenial(identity, type, recipientId, permission)
+  return denial ? denialResponse(denial) : null
 }
 
 async function canAccessAttachment(
@@ -127,13 +89,9 @@ async function canAccessAttachment(
   attachmentId: string,
   permission: 'inbox:read' | 'inbox:write'
 ) {
-  if (!identity) return { response: new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 }) }
-  const attachment = await InboxAttachment.findById(attachmentId)
-  if (!attachment) return { response: forbidden() }
-  const message = await InboxMessage.find(attachment.messageId)
-  if (!message || (await InboxMessage.isWithheldGitHubNotification(message.id))) return { response: forbidden() }
-  const response = await canAccessRecipientInbox(identity, message.recipientType, message.recipientId, permission)
-  return response ? { response, attachment, message } : { attachment, message }
+  const { denial, attachment, message } = await inboxAttachmentAccess(identity, attachmentId, permission)
+  if (!attachment || !message) return { response: denialResponse(denial ?? 'forbidden') }
+  return denial ? { response: denialResponse(denial), attachment, message } : { attachment, message }
 }
 
 async function canAccessMessage(
