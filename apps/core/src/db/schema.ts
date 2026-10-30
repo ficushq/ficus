@@ -1777,10 +1777,20 @@ export const workflowAttemptAttachments = pgTable(
     /** Provenance only: the bound agent may later be deleted. */
     uploadedByAgentId: uuid('uploaded_by_agent_id').notNull(),
     createdAt: timestamp('created_at').notNull().defaultNow(),
+    /** The attempt's result revision the file was uploaded for: 1 for the original completion, then one per amend. */
+    revision: integer('revision').notNull().default(1),
   },
-  // One file per path per attempt: a retried upload finds it, a changed one replaces it. Its
-  // (work stream, attempt) prefix also serves per-stream and per-attempt lookups.
-  (table) => [uniqueIndex('idx_workflow_attempt_attachments_path').on(table.workStreamId, table.attemptId, table.path)]
+  // One file per path per attempt revision: a retried upload finds it, a changed one replaces it, and
+  // an amend never overwrites an earlier revision's file. Its (work stream, attempt) prefix also
+  // serves per-stream and per-attempt lookups.
+  (table) => [
+    uniqueIndex('idx_workflow_attempt_attachments_path').on(
+      table.workStreamId,
+      table.attemptId,
+      table.revision,
+      table.path
+    ),
+  ]
 )
 
 export const workStreamOrderSnapshots = pgTable(

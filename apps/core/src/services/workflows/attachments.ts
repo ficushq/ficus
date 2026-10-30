@@ -1,10 +1,15 @@
 import { and, asc, count, eq } from 'drizzle-orm'
 import {
   WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT,
+  workflowAmendEligibility,
   workflowAttachmentContentType,
+  workflowCurrentAttachmentIds,
+  workflowResultRevision,
+  type WorkflowAttempt,
   type WorkflowAttemptAttachment,
+  type WorkflowRun,
 } from '@ficus/shared'
-import { db, squads, workflowAttemptAttachments, workStreamFlowRuns, workStreams } from '../../db'
+import { db, squads, workflowAttemptAttachments, workStreamFlowRuns, workStreams, type DbTx } from '../../db'
 import { rm } from 'node:fs/promises'
 import { createLogger } from '../../lib/infra/logger'
 import {
@@ -41,34 +46,43 @@ function toJson(row: Row): WorkflowAttemptAttachment {
     contentType: row.contentType,
     byteSize: row.byteSize,
     createdAt: row.createdAt.toISOString(),
+    revision: row.revision,
   }
 }
 
 /**
  * Attaching follows completing: only the agent bound to the attempt, on a stream that accepts handoffs,
  * and only while the attempt is still open, so a review gate opens with exactly the files its source
- * attempt handed off.
+ * attempt handed off. A completed attempt that may still be amended (the human approval gate it feeds
+ * is open) stages files for its next result revision; they become current only when the amend lands.
  */
 export function assertCanAttach(
   stream: Pick<Stream, 'pause' | 'status'> | undefined,
   run: Run | undefined,
   attemptId: number,
   identity: Identity
-): string {
+): { agentId: string; revision: number } {
   if (!stream || !run?.activated) throw new WorkflowError('Flow not found', 404)
   const attempt = run.state.attempts.find((entry) => entry.id === attemptId)
   if (!attempt) throw new WorkflowError('Attempt not found', 404)
   if (identity.type !== 'agent' || !isAttemptAgent(run, attemptId, identity))
     throw new WorkflowError('Only the agent working on this attempt can attach files to it', 403)
   assertStreamAcceptsHandoffs(stream)
-  if (attempt.status !== 'running') throw new WorkflowError('This attempt is no longer open', 409)
-  return identity.agentId
+  if (attempt.status === 'running') return { agentId: identity.agentId, revision: 1 }
+  if (!workflowAmendEligibility(run.state, attemptId).ok) throw new WorkflowError('This attempt is no longer open', 409)
+  return { agentId: identity.agentId, revision: workflowResultRevision(attempt) + 1 }
 }
 
+const attemptRows = (workStreamId: string, attemptId: number) =>
+  and(eq(workflowAttemptAttachments.workStreamId, workStreamId), eq(workflowAttemptAttachments.attemptId, attemptId))
+
 /**
- * Store a handoff file. Files are keyed by (attempt, path): sending the same bytes again returns the
- * stored file (`created: false`, so a retried handoff is harmless), and new bytes for a path replace
- * the old file. Only a new path takes one of the attempt's slots.
+ * Store a handoff file. Files are keyed by (attempt, revision, path): sending the same bytes again
+ * returns the stored file (`created: false`, so a retried handoff is harmless), and new bytes for a
+ * path replace the old file of the same revision. Only a new path takes one of the revision's slots.
+ * A file staged for an amend that matches the current revision's file at that path returns the
+ * current file, so an unchanged file keeps its ID across revisions. Files of a recorded revision
+ * are never replaced or deleted.
  */
 export async function uploadWorkflowAttachment(input: {
   workStreamId: string
@@ -84,14 +98,32 @@ export async function uploadWorkflowAttachment(input: {
   const id = crypto.randomUUID()
   const sha256 = sha256Hex(input.bytes)
   const samePath = and(
-    eq(workflowAttemptAttachments.workStreamId, input.workStreamId),
-    eq(workflowAttemptAttachments.attemptId, input.attemptId),
+    attemptRows(input.workStreamId, input.attemptId),
     eq(workflowAttemptAttachments.path, input.path)
   )
   // A retried handoff usually finds its file already stored: answer it without writing or locking.
   // Only the agent bound to the open attempt reaches this (the route checks before reading the body).
-  const [stored] = await db.select().from(workflowAttemptAttachments).where(samePath)
-  if (stored?.sha256 === sha256) return { attachment: toJson(stored), created: false }
+  // `rows` are this path's files of every revision. A file staged for an amend that matches the
+  // current revision's file is that file, so an unchanged file keeps its ID across revisions.
+  const unchanged = (rows: Row[], state: WorkflowRun | undefined, revision: number) => {
+    const attempt = state?.attempts.find((entry) => entry.id === input.attemptId)
+    const current = new Set(revision > 1 && attempt ? workflowCurrentAttachmentIds(attempt, rows.map(toJson)) : [])
+    return rows.find((row) => row.sha256 === sha256 && (row.revision === revision || current.has(row.id)))
+  }
+  const targetRevision = (state: WorkflowRun | undefined) => {
+    const attempt = state?.attempts.find((entry) => entry.id === input.attemptId)
+    return !attempt || attempt.status === 'running' ? 1 : workflowResultRevision(attempt) + 1
+  }
+  const [unlocked] = await db
+    .select({ state: workStreamFlowRuns.state })
+    .from(workStreamFlowRuns)
+    .where(eq(workStreamFlowRuns.workStreamId, input.workStreamId))
+  const stored = unchanged(
+    await db.select().from(workflowAttemptAttachments).where(samePath),
+    unlocked?.state,
+    targetRevision(unlocked?.state)
+  )
+  if (stored) return { attachment: toJson(stored), created: false }
   // Write the bytes under their own new id before taking any lock, so no lock is held during file I/O.
   // Every outcome but a committed insert of this id removes them again.
   await writeWorkflowAttachmentBlob(input.workStreamId, id, input.bytes)
@@ -107,9 +139,11 @@ export async function uploadWorkflowAttachment(input: {
         .from(workStreamFlowRuns)
         .where(eq(workStreamFlowRuns.workStreamId, input.workStreamId))
         .for('update')
-      const agentId = assertCanAttach(stream, run, input.attemptId, input.identity)
-      const [existing] = await tx.select().from(workflowAttemptAttachments).where(samePath)
-      if (existing?.sha256 === sha256) return { attachment: toJson(existing), created: false }
+      const { agentId, revision } = assertCanAttach(stream, run, input.attemptId, input.identity)
+      const stored = unchanged(await tx.select().from(workflowAttemptAttachments).where(samePath), run!.state, revision)
+      if (stored) return { attachment: toJson(stored), created: false }
+      const sameRevision = and(samePath, eq(workflowAttemptAttachments.revision, revision))
+      const [existing] = await tx.select().from(workflowAttemptAttachments).where(sameRevision)
       if (existing) {
         await tx.delete(workflowAttemptAttachments).where(eq(workflowAttemptAttachments.id, existing.id))
       } else {
@@ -117,13 +151,15 @@ export async function uploadWorkflowAttachment(input: {
           .select({ total: count() })
           .from(workflowAttemptAttachments)
           .where(
-            and(
-              eq(workflowAttemptAttachments.workStreamId, input.workStreamId),
-              eq(workflowAttemptAttachments.attemptId, input.attemptId)
-            )
+            and(attemptRows(input.workStreamId, input.attemptId), eq(workflowAttemptAttachments.revision, revision))
           )
         if ((files?.total ?? 0) >= WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
-          throw new WorkflowError(`An attempt can attach at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files`, 409)
+          throw new WorkflowError(
+            revision > 1
+              ? `An amend can stage at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files`
+              : `An attempt can attach at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files`,
+            409
+          )
       }
       // A replacement's old row is already gone, so only the size change counts against the quota.
       await reserveAttachmentStorage(tx, input.bytes.byteLength).catch((error: unknown) => {
@@ -144,6 +180,7 @@ export async function uploadWorkflowAttachment(input: {
           sha256,
           storagePath: workflowAttachmentBlobPath(input.workStreamId, id),
           uploadedByAgentId: agentId,
+          revision,
           // A replacement keeps the original's place (attachments list in creation order).
           ...(existing ? { createdAt: existing.createdAt } : {}),
         })
@@ -177,18 +214,76 @@ function isUnavailableBlob(error: unknown): boolean {
   )
 }
 
-/** Every attachment of a run, by attempt id, in upload order. */
+/**
+ * A run's attachments by attempt id. `attachments` is each attempt's current result revision, in
+ * display order; `earlierAttachments` holds files only an earlier revision used, in upload order.
+ * Files staged for an amend that never landed are in neither (they stay downloadable by id).
+ */
 export async function listWorkflowAttachments(
-  workStreamId: string
-): Promise<Record<string, WorkflowAttemptAttachment[]>> {
+  workStreamId: string,
+  state: Pick<WorkflowRun, 'attempts'>
+): Promise<{
+  attachments: Record<string, WorkflowAttemptAttachment[]>
+  earlierAttachments: Record<string, WorkflowAttemptAttachment[]>
+}> {
   const rows = await db
     .select()
     .from(workflowAttemptAttachments)
     .where(eq(workflowAttemptAttachments.workStreamId, workStreamId))
     .orderBy(asc(workflowAttemptAttachments.createdAt), asc(workflowAttemptAttachments.id))
-  const byAttempt: Record<string, WorkflowAttemptAttachment[]> = {}
-  for (const row of rows) (byAttempt[String(row.attemptId)] ??= []).push(toJson(row))
-  return byAttempt
+  const byAttempt = new Map<number, WorkflowAttemptAttachment[]>()
+  for (const row of rows) byAttempt.set(row.attemptId, [...(byAttempt.get(row.attemptId) ?? []), toJson(row)])
+  const attachments: Record<string, WorkflowAttemptAttachment[]> = {}
+  const earlierAttachments: Record<string, WorkflowAttemptAttachment[]> = {}
+  for (const [attemptId, files] of byAttempt) {
+    const attempt = state.attempts.find((entry) => entry.id === attemptId)
+    const byId = new Map(files.map((file) => [file.id, file]))
+    const currentIds = attempt
+      ? workflowCurrentAttachmentIds(attempt, files)
+      : files.filter((file) => (file.revision ?? 1) === 1).map((file) => file.id)
+    const current = currentIds.flatMap((id) => byId.get(id) ?? [])
+    if (current.length) attachments[String(attemptId)] = current
+    const earlierIds = new Set(attempt?.earlierResults?.flatMap((result) => result.attachmentIds) ?? [])
+    const earlier = files.filter((file) => earlierIds.has(file.id) && !currentIds.includes(file.id))
+    if (earlier.length) earlierAttachments[String(attemptId)] = earlier
+  }
+  return { attachments, earlierAttachments }
+}
+
+/**
+ * The attachment manifest of an amend: the current revision's files, with files staged for the new
+ * revision replacing same-path files or appended, minus the removed paths. Returns the current
+ * manifest (recorded with the superseded revision) and the new one. Runs inside advanceFlow's lock.
+ */
+export async function amendAttachmentManifest(
+  tx: DbTx,
+  workStreamId: string,
+  attempt: WorkflowAttempt,
+  removePaths: string[] = []
+): Promise<{ previous: string[]; next: string[] }> {
+  const rows = (
+    await tx
+      .select()
+      .from(workflowAttemptAttachments)
+      .where(attemptRows(workStreamId, attempt.id))
+      .orderBy(asc(workflowAttemptAttachments.createdAt), asc(workflowAttemptAttachments.id))
+  ).map(toJson)
+  const previous = workflowCurrentAttachmentIds(attempt, rows)
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  const manifest = new Map(previous.flatMap((id) => (byId.get(id) ? [[byId.get(id)!.path, id] as const] : [])))
+  const staged = workflowResultRevision(attempt) + 1
+  for (const row of rows) if (row.revision === staged) manifest.set(row.path, row.id)
+  for (const path of removePaths) {
+    if (!manifest.has(path))
+      throw new WorkflowError(
+        `No attachment '${path}' in revision ${workflowResultRevision(attempt)} of attempt ${attempt.id}`,
+        409
+      )
+    manifest.delete(path)
+  }
+  if (manifest.size > WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
+    throw new WorkflowError(`An attempt revision can attach at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files`, 409)
+  return { previous, next: [...manifest.values()] }
 }
 
 /** The attachment and its digest-verified bytes; null when this work stream has no such attachment. */

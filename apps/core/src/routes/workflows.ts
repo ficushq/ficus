@@ -62,7 +62,8 @@ export const workflowsRouter = new Hono()
     await next()
   })
   .onError((error, c) => {
-    if (error instanceof WorkflowError) return c.json({ error: error.message }, error.status)
+    if (error instanceof WorkflowError)
+      return c.json({ error: error.message, ...(error.code ? { code: error.code } : {}) }, error.status)
     if (error instanceof z.ZodError) return c.json({ error: 'Invalid workflow', issues: error.issues }, 400)
     throw error
   })
@@ -95,12 +96,12 @@ export const workflowsRouter = new Hono()
       if (!run?.activated) return c.json(null)
       const withDeliveries = c.req.valid('query').integrationDeliveries !== '0'
       // Independent reads; none of them calls a provider (the history uses stored proof only).
-      const [notice, openWaits, integrationDeliveries, usage, attachments, reviewContexts] = await Promise.all([
+      const [notice, openWaits, integrationDeliveries, usage, files, reviewContexts] = await Promise.all([
         stackNotice(db, stream),
         listOpenWaits(db, stream.id),
         withDeliveries ? outputDeliveryHistory(stream.id) : undefined,
         getFlowUsage(stream.id, run.state),
-        listWorkflowAttachments(stream.id),
+        listWorkflowAttachments(stream.id, run.state),
         loadReviewContexts(db, stream.id, run.state, { attemptAgents: run.attemptAgents, createdAt: run.createdAt }),
       ])
       return c.json({
@@ -115,7 +116,8 @@ export const workflowsRouter = new Hono()
         openWaits: openWaits.map(toWaitJson),
         ...(integrationDeliveries ? { integrationDeliveries } : {}),
         usage,
-        attachments,
+        attachments: files.attachments,
+        earlierAttachments: files.earlierAttachments,
         reviewContexts,
       })
     }

@@ -289,7 +289,6 @@ export type WorkflowAmendEligibility = { ok: true; gates: WorkflowAttempt[] } | 
  */
 export function workflowAmendEligibility(state: WorkflowRun, attemptId: number): WorkflowAmendEligibility {
   const refuse = (reason: string): WorkflowAmendEligibility => ({ ok: false, reason })
-  if (state.status !== 'running') return refuse(`Workflow is ${state.status}`)
   const attempt = state.attempts.find((entry) => entry.id === attemptId)
   if (!attempt) return refuse(`Attempt ${attemptId} does not exist.`)
   if (workflowHistoricalStep(state, attempt)?.kind !== 'agent')
@@ -326,6 +325,8 @@ export function workflowAmendEligibility(state: WorkflowRun, attemptId: number):
     return refuse(
       `Human approval '${unbound.stepId}' did not open with this attempt's decision brief, so it cannot be amended; recommend Changes requested instead.`
     )
+  // Checked after the gate, so a decided gate explains itself rather than the run's later state.
+  if (state.status !== 'running') return refuse(`Workflow is ${state.status}`)
   if (workflowResultRevision(attempt) >= WORKFLOW_MAX_RESULT_REVISIONS)
     return refuse(
       `Attempt ${attemptId} has reached ${WORKFLOW_MAX_RESULT_REVISIONS} revisions; recommend Changes requested instead.`
@@ -790,16 +791,22 @@ function amendWorkflowAttempt(previous: WorkflowRun, command: WorkflowAmendComma
   attempt.resultRevisedVersion = state.version
   delete attempt.resultRevisedAt
   attempt.evidence = command.evidence
+  // The gate round is the same, so the context recorded at completion (earlier decision, returns,
+  // revisions and interruptions before the gate opened) still describes it.
+  const recorded = attempt.decisionBrief?.contexts ?? []
   attempt.decisionBrief = {
     value: command.decisionBrief,
     submittedVersion: state.version,
-    contexts: gateStepIds.map((gateStepId) => ({
-      gateStepId,
-      previousDecisionAttemptId: workflowEarlierHumanDecisions(previous, gateStepId)[0]?.id,
-      returnIds: [],
-      revisionVersions: [],
-      interruptedExecutions: [],
-    })),
+    contexts: gateStepIds.map(
+      (gateStepId) =>
+        recorded.find((context) => context.gateStepId === gateStepId) ?? {
+          gateStepId,
+          previousDecisionAttemptId: workflowEarlierHumanDecisions(previous, gateStepId)[0]?.id,
+          returnIds: [],
+          revisionVersions: [],
+          interruptedExecutions: [],
+        }
+    ),
   }
   return state
 }
