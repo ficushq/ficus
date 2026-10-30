@@ -109,10 +109,16 @@ export function registerWorkstreamFlowCommands(
             ...(options.attachAgentFile ?? []).map((attachmentId) => ({ kind: 'agent-file' as const, attachmentId })),
           ]
           if (options.attach.length || references.length) {
-            if (value.action !== 'complete')
+            if (value.action !== 'complete') {
+              const flags = [
+                options.attach.length ? '--attach' : '',
+                options.attachImage?.length ? '--attach-image' : '',
+                options.attachAgentFile?.length ? '--attach-agent-file' : '',
+              ].filter(Boolean)
               throw new Error(
-                '--attach, --attach-image and --attach-agent-file are only available when completing an attempt'
+                `${flags.join(' and ')} ${flags.length > 1 ? 'are' : 'is'} only available when completing an attempt`
               )
+            }
             if (options.attach.length + references.length > WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
               throw new Error(`At most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files can be attached to one handoff`)
           }

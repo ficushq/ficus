@@ -430,3 +430,62 @@ test('explicit agent returns preflight human briefs and transport them without c
   expect(invalid.calls).toEqual([])
   expect(invalid.errors[0]!.message).toContain('decisionBrief.risks')
 })
+
+test('advance attaches stored chat images and files by ID before advancing, with no upload', async () => {
+  const command = { action: 'complete', expectedVersion: 7, attemptId: 4, outcome: 'completed', evidence: 'See shot' }
+  const commandFile = await file(command)
+  const f = fixture(runAt(), undefined, 'workstream')
+  await f.run(
+    'advance',
+    'stream-id',
+    '--file',
+    commandFile,
+    '--attach-image',
+    'image-1',
+    '--attach-agent-file',
+    'file-1'
+  )
+  expect(f.errors).toEqual([])
+  expect(f.calls).toEqual([
+    runPath,
+    {
+      method: 'POST',
+      path: '/api/workflows/runs/stream-id/attempts/4/asset-attachments',
+      body: { source: { kind: 'image', imageId: 'image-1' } },
+    },
+    {
+      method: 'POST',
+      path: '/api/workflows/runs/stream-id/attempts/4/asset-attachments',
+      body: { source: { kind: 'agent-file', attachmentId: 'file-1' } },
+    },
+    {
+      method: 'POST',
+      path: '/api/workflows/runs/stream-id/advance',
+      body: { command: { ...command, resume: false }, requestId: expect.any(String) },
+    },
+  ])
+
+  // A request-ID retry of a handoff already sent reaches its receipt without attaching again.
+  const replay = fixture(runAt('completed'), undefined, 'workstream')
+  await replay.run('advance', 'stream-id', '--file', commandFile, '--attach-image', 'image-1')
+  expect(replay.calls.map((call) => call.path)).toEqual([runPath.path, '/api/workflows/runs/stream-id/advance'])
+
+  // References are complete-only and count toward the attempt limit with uploads.
+  const rework = await file({ action: 'rework', expectedVersion: 7, attemptId: 4, feedback: 'Again' })
+  const refused = fixture(runAt(), undefined, 'workstream')
+  await refused.run('advance', 'stream-id', '--file', rework, '--attach-image', 'image-1')
+  expect(refused.errors.map((error) => error.message)).toEqual([
+    '--attach-image is only available when completing an attempt',
+  ])
+  const many = fixture(runAt(), undefined, 'workstream')
+  await many.run(
+    'advance',
+    'stream-id',
+    '--file',
+    commandFile,
+    ...Array.from({ length: 11 }, (_, index) => ['--attach-image', `image-${index}`]).flat()
+  )
+  expect(many.errors.map((error) => error.message)).toEqual(['At most 10 files can be attached to one handoff'])
+  expect(refused.calls).toEqual([])
+  expect(many.calls).toEqual([])
+})
