@@ -290,4 +290,3 @@ export function writeSeenRevisions(key: string, value: Record<string, number>): 
     // Kept in component state only.
   }
 }
-
