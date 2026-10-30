@@ -125,6 +125,58 @@ describe('ActionCenterContent bulk continuation', () => {
     expect(document.body.textContent).not.toContain('unsafe')
   })
 
+  describe('section subheading counts', () => {
+    const questionAction = (id: string): PendingAction => ({
+      id,
+      type: 'agent-question',
+      priority: 1,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      canRespond: true,
+      data: {
+        questionId: id,
+        agentId: 'agent-1',
+        agentName: 'Agent',
+        agentTypeId: 'worker',
+        squadId: 'squad-1',
+        squadName: 'Squad',
+        ownerUserId: null,
+        questionData: { questions: [{ id: 'q1', type: 'text', question: 'Pick one?' }] },
+      },
+    })
+
+    async function renderHeadings(showSectionCounts?: boolean) {
+      const actions = [
+        haltedAction('agent-error:one', true),
+        haltedAction('agent-error:two', true),
+        questionAction('question-1'),
+      ]
+      await dom.act(async () => {
+        root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={new QueryClient()}>
+              <ActionCenterContent
+                actions={actions}
+                isLoading={false}
+                continueHaltedActions={continueHaltedAgents}
+                {...(showSectionCounts === undefined ? {} : { showSectionCounts })}
+              />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      })
+      return [...document.querySelectorAll('h3')].map((heading) => heading.textContent)
+    }
+
+    test('shows each subheading count by default for the Action Center panel and /actions', async () => {
+      expect(await renderHeadings()).toEqual(['Halted agents2', 'Questions1'])
+    })
+
+    test('hides subheading counts but keeps the Continue all label when counts are turned off', async () => {
+      expect(await renderHeadings(false)).toEqual(['Halted agents', 'Questions'])
+      expect(document.body.textContent).toContain('Continue all (2)')
+    })
+  })
+
   describe('ActionCenterContent exact action focus', () => {
     test('keeps concurrent waits distinct and focuses only the full action ID', async () => {
       const manualAction = (waitId: string, message: string): PendingAction => ({
