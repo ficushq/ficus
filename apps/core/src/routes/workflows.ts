@@ -9,7 +9,13 @@ import { Hono } from 'hono'
 import { zValidator } from '../lib/zod-validator'
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
-import { workflowPresetSchema, workflowSourceSchema, workflowCommandSchema } from '@ficus/shared'
+import {
+  workflowPresetSchema,
+  workflowSourceSchema,
+  workflowCommandSchema,
+  workStreamAssetSourceSchema,
+} from '@ficus/shared'
+import { AssetAttachmentError, attachAttemptAsset, listStreamAssets } from '../services/work-streams/asset-attachments'
 import { advanceFlow, finishFlow, getFlow, activeOutcomeBindings, stackNotice } from '../services/workflows/execution'
 import {
   assertCanAttach,
@@ -96,13 +102,14 @@ export const workflowsRouter = new Hono()
       if (!run?.activated) return c.json(null)
       const withDeliveries = c.req.valid('query').integrationDeliveries !== '0'
       // Independent reads; none of them calls a provider (the history uses stored proof only).
-      const [notice, openWaits, integrationDeliveries, usage, files, reviewContexts] = await Promise.all([
+      const [notice, openWaits, integrationDeliveries, usage, files, reviewContexts, assets] = await Promise.all([
         stackNotice(db, stream),
         listOpenWaits(db, stream.id),
         withDeliveries ? outputDeliveryHistory(stream.id) : undefined,
         getFlowUsage(stream.id, run.state),
         listWorkflowAttachments(stream.id, run.state),
         loadReviewContexts(db, stream.id, run.state, { attemptAgents: run.attemptAgents, createdAt: run.createdAt }),
+        listStreamAssets(stream.id),
       ])
       return c.json({
         workStreamId: run.workStreamId,
@@ -118,6 +125,7 @@ export const workflowsRouter = new Hono()
         usage,
         attachments: files.attachments,
         earlierAttachments: files.earlierAttachments,
+        assetAttachments: assets.attempts,
         reviewContexts,
       })
     }
@@ -147,6 +155,29 @@ export const workflowsRouter = new Hono()
       },
     })
   })
+  // An attempt's agent attaches a stored chat image or file by ID: no upload, no workspace copy.
+  .post(
+    '/runs/:streamId/attempts/:attemptId/asset-attachments',
+    zValidator('json', z.object({ source: workStreamAssetSourceSchema }).strict()),
+    async (c) => {
+      const attemptId = Number(c.req.param('attemptId'))
+      if (!Number.isSafeInteger(attemptId) || attemptId < 1) return c.json({ error: 'Invalid attempt id' }, 400)
+      const stream = await WorkStream.find(c.req.param('streamId'))
+      if (!stream) return c.json({ error: 'Work stream not found' }, 404)
+      try {
+        const { attachment, created } = await attachAttemptAsset({
+          identity: c.get('identity')!,
+          streamId: stream.id,
+          attemptId,
+          source: c.req.valid('json').source,
+        })
+        return c.json(attachment, created ? 201 : 200)
+      } catch (error) {
+        if (error instanceof AssetAttachmentError) return c.json({ error: error.message }, error.status)
+        throw error
+      }
+    }
+  )
   // Agents attach handoff files before completing the attempt, so the next gate opens with them.
   .post('/runs/:streamId/attempts/:attemptId/attachments', async (c) => {
     const identity = c.get('identity')!
@@ -155,7 +186,7 @@ export const workflowsRouter = new Hono()
     const stream = await WorkStream.find(c.req.param('streamId'))
     if (!stream) return c.json({ error: 'Work stream not found' }, 404)
     // Refuse before buffering the body; the upload re-checks under the flow locks.
-    assertCanAttach(stream, (await getFlow(stream.id)) ?? undefined, attemptId, identity)
+    assertCanAttach(stream, (await getFlow(stream.id)) ?? undefined, attemptId, identity, { amendStaging: true })
     const maxBytes = workflowAttachmentMaxBytes()
     if (Number(c.req.header('content-length') ?? 0) > maxBytes + MULTIPART_OVERHEAD)
       return c.json({ error: 'ATTACHMENT_TOO_LARGE' }, 413)

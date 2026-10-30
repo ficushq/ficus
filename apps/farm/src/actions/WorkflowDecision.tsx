@@ -292,6 +292,7 @@ function HumanGate({
         attempt={attempt}
         instructions={step.instructions}
         seen={unseen.length ? seen : undefined}
+        inputs={stream.assetAttachments}
       >
         {materials}
       </WorkflowBriefDocuments>

@@ -98,6 +98,7 @@ type LifecycleConvergenceDeps = {
   finalCleanup?: (options: { maxCandidates: number; maxWorkItems: number }) => Promise<unknown>
   idleConsultants?: (options: { maxAgents: number }) => Promise<unknown>
   idleWorkers?: (options: { maxAgents: number }) => Promise<unknown>
+  retainedAssets?: (options: { maxAssets: number }) => Promise<unknown>
   warn?: (message: string, error: unknown) => void
 }
 
@@ -152,6 +153,14 @@ export async function runAgentLifecycleConvergenceOnce(deps: LifecycleConvergenc
       async () =>
         (deps.idleWorkers ?? (await import('../agents/idle-workers')).runIdleWorkerDormancySweep)({
           maxAgents: IDLE_WORKER_DORMANCY_BUDGET,
+        }),
+    ],
+    [
+      // Work-stream references whose last share went without a release, and blob deletions to retry.
+      'retained asset cleanup',
+      async () =>
+        (deps.retainedAssets ?? (await import('../work-streams/asset-attachments')).runRetainedAssetCleanup)({
+          maxAssets: ARCHIVE_BEARING_SWEEP_BUDGET,
         }),
     ],
   ]

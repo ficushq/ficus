@@ -1,3 +1,4 @@
+import { conversationImageNote } from '../../services/chat/message-context'
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, it, expect, beforeEach, afterEach, spyOn, mock } from 'bun:test'
@@ -1037,7 +1038,7 @@ describe('AgentRunner (base class)', () => {
       expect(JSON.stringify(runner.storedSecretAudits)).not.toContain('call-opts')
     })
 
-    it('delivers restart context first, before the resumed model prompt and other system events', async () => {
+    it('prefixes the resumed model prompt with the restart notice, and leaves the chat copy to the saved message', async () => {
       const buffer = new StreamBuffer()
       const events: any[] = []
       buffer.subscribe((event) => events.push(event))
@@ -1047,11 +1048,11 @@ describe('AgentRunner (base class)', () => {
       await runner.run()
       const expected =
         'Ficus restarted at 2026-10-28T21:32:00.000Z; any command running then was cancelled by the restart and may have partial effects. This is not an incident: check the affected state and re-run what was interrupted. [restart id: restart-1]'
-      // The agent's model gets the full notice with the id (it ties cancelled
-      // commands to this restart); the live chat stream gets the human copy.
       expect(mockSession.pi.promptCalls[0].text).toStartWith(expected)
-      expect(events.filter((event) => event.type === 'system_message')[0]?.text).toBe(
-        '[System] Resumed after a restart. Commands that were running were cancelled; the agent was told to check them and re-run what was interrupted.'
+      // The chat already gets the notice once, as the message prepareRestartResume
+      // saves and emits. A stream copy rendered it a second time (2026-10-30).
+      expect(events.filter((event) => event.type === 'system_message' && /restart/i.test(String(event.text)))).toEqual(
+        []
       )
       expect(agent.status).not.toBe('waiting-input')
       expect(execution.status).toBe('running')
@@ -1122,7 +1123,8 @@ describe('AgentRunner (base class)', () => {
       await runner.run()
       await new Promise((r) => setTimeout(r, 0))
 
-      expect(mockSession.pi.promptCalls[0].text).toBe('look at this')
+      // The model also learns the image's ID, to view it again or attach it to a work stream later.
+      expect(mockSession.pi.promptCalls[0].text).toBe(`look at this\n\n[${conversationImageNote(['img-1'])}]`)
       expect(mockSession.pi.promptCalls[0].options).toEqual({ images: fakeImages })
       expect(loadImagesSpy).toHaveBeenCalledWith(['img-1'], agent)
       expect(mockSession.pi.steerCalls).toEqual([])

@@ -21,7 +21,7 @@ import { MarkdownContent } from './MarkdownContent'
 import { MultilineResponseField } from './MultilineResponseField'
 import { Modal } from './Modal'
 import { Badge, type BadgeColor } from './Badge'
-import { WorkStreamFileList } from './WorkStreamFileCard'
+import { StoredAssetList, WorkStreamFileList } from './WorkStreamFileCard'
 import { WaitAge, WorkStreamDependencies } from './WorkStreamDependencies'
 import { GitHubIcon, PullRequestIcon } from './icons'
 import { WorkStreamActionsMenu } from './WorkStreamActionsMenu'
@@ -756,6 +756,14 @@ export function WorkStreamDetailModal({
             <div className="mt-3 text-sm leading-relaxed text-secondary">
               <MarkdownContent variant="document">{workStream.description}</MarkdownContent>
             </div>
+          </div>
+        )}
+
+        {/* Stored chat images and files shared by ID */}
+        {workStream.assetAttachments && workStream.assetAttachments.length > 0 && (
+          <div>
+            <label className="text-xs font-medium text-secondary">Stored inputs</label>
+            <StoredAssetList workStreamId={workStream.id} attachments={workStream.assetAttachments} />
           </div>
         )}
 

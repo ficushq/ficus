@@ -56,7 +56,8 @@ starts, requests or waits for a scan. Another squad's id returns `403 Forbidden`
 - **Stored files on the Ficus host**: files Ficus keeps in its own storage for
   your squad, counted from database rows: agent file attachments, inbox
   attachments delivered to your agents, workflow handoff files and images.
-  These are not inside any box.
+  Chat files and images a work stream still shares after their chat was removed
+  appear as their own two sources. These are not inside any box.
 - Sizes are allocated-byte estimates. They are not suggestions to delete anything.
 
 ## Safe Follow-Up Actions

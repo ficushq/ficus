@@ -7,6 +7,9 @@ import { Modal } from './Modal'
 import { FilePreview } from './FilePreview'
 import { SquadWorkspaceImageViewer } from './SquadWorkspaceImageViewer'
 import { DocumentSkeleton } from './loading/Skeleton'
+import type { WorkStreamAssetAttachment } from '@ficus/shared'
+import { storedDocument, type ReviewDocument } from '../lib/workflowAttachments'
+import { AttachmentView } from './WorkflowReviewAttachments'
 
 interface WorkStreamFileCardProps {
   filePath: string
@@ -175,6 +178,67 @@ export function WorkStreamFileList({ files, squadId }: { files: string[]; squadI
       {files.map((filePath) => (
         <WorkStreamFileCard key={filePath} filePath={filePath} squadId={squadId} />
       ))}
+    </div>
+  )
+}
+
+/**
+ * A work stream's stored inputs: chat images and files Ficus already holds, shared by ID. Each opens
+ * in the review file viewer, which fetches its bytes afresh (a share can be removed or revoked).
+ */
+export function StoredAssetList({
+  workStreamId,
+  attachments,
+}: {
+  workStreamId: string
+  attachments: WorkStreamAssetAttachment[]
+}) {
+  const { isFullscreen, toggleFullscreen, exitFullscreen } = useFullscreen()
+  const [open, setOpen] = useState<ReviewDocument | null>(null)
+  if (attachments.length === 0) return null
+  return (
+    <div className="space-y-1.5 mt-2">
+      {attachments.map((attachment) => {
+        const document = storedDocument(attachment)
+        return (
+          <button
+            key={attachment.id}
+            type="button"
+            onClick={() => {
+              setOpen(document)
+              toggleFullscreen()
+            }}
+            className="ficus-button ficus-button-secondary flex items-center gap-3 px-3 py-3 rounded-xl transition-colors text-left w-full group"
+          >
+            <div
+              className={clsx(
+                'shrink-0 w-7 h-7 rounded flex items-center justify-center text-[10px] font-bold',
+                iconColors[getFileIcon(attachment.filename)]
+              )}
+            >
+              {iconLabels[getFileIcon(attachment.filename)]}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium text-primary truncate group-hover:text-link-hover transition-colors">
+                {attachment.filename}
+              </p>
+              <p className="text-[10px] text-placeholder truncate">{document.detail}</p>
+            </div>
+          </button>
+        )
+      })}
+      <Modal
+        isOpen={isFullscreen && open !== null}
+        onClose={() => {
+          exitFullscreen()
+          setOpen(null)
+        }}
+        title={open?.filename ?? ''}
+        overlayClassName="!border-0"
+        maxWidth="readable"
+      >
+        {open && <AttachmentView key={open.id} workStreamId={workStreamId} attachment={open} />}
+      </Modal>
     </div>
   )
 }

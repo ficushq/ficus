@@ -11,6 +11,7 @@ import {
   activeWorkflowAttempts,
   effectiveWorkflowStep,
   deliveryPullRequests,
+  workflowIncomingAttempts,
   type WorkflowAttempt,
   type WorkflowOutcomeBinding,
   advanceWorkflowRun,
@@ -412,7 +413,8 @@ async function dispatchFlowAttempt(
         (await loadReviewContexts(tx, stream.id, run.state, { attemptAgents, createdAt: run.createdAt }))[
           String(attempt.id)
         ],
-        briefSeenInAttempt
+        briefSeenInAttempt,
+        await assignmentAssets(tx, stream.id, run.state, attempt)
       ),
     }
     await tx.update(workStreamFlowRuns).set({ state: run.state }).where(eq(workStreamFlowRuns.workStreamId, stream.id))
@@ -431,7 +433,8 @@ async function dispatchFlowAttempt(
         (await loadReviewContexts(tx, stream.id, run.state, { attemptAgents, createdAt: run.createdAt }))[
           String(attempt.id)
         ],
-        briefSeenInAttempt
+        briefSeenInAttempt,
+        await assignmentAssets(tx, stream.id, run.state, attempt)
       ),
       metadata: { workStreamId: stream.id, squadId: stream.squadId, source: 'workflow', attemptId: attempt.id },
       wakeEligible: true,
@@ -439,6 +442,18 @@ async function dispatchFlowAttempt(
     },
     `flow:${stream.id}:${attempt.id}`,
     afterCommit
+  )
+}
+
+/** The stored inputs and incoming attachments an assignment lists for read_attachment. */
+async function assignmentAssets(tx: DbTx, streamId: string, state: Run['state'], attempt: WorkflowAttempt) {
+  const { loadAssignmentAssets } = await import('../work-streams/asset-attachments')
+  const incoming = workflowIncomingAttempts(state, attempt)
+  return loadAssignmentAssets(
+    tx,
+    streamId,
+    incoming.map((entry) => entry.id),
+    incoming
   )
 }
 

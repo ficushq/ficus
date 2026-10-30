@@ -85,6 +85,18 @@ areas and broaden checks when justified; do not invalidate unrelated reviews.
 Parallel branches share a workspace, so coordinate ownership of files before
 editing concurrently. A declared join waits for its branches.
 
+Images and files Ficus already stores need no workspace copy. A delivered chat
+image names its ID; share it as an input with
+`ficus workstream attachment add STREAM_ID --image IMAGE_ID` (or pass `--image` to
+`ficus workstream create` so the first assignment has it), or attach it to your
+result with `advance --attach-image IMAGE_ID`. Assignments list stored inputs and
+incoming handoff files with ready arguments for the `read_attachment` tool, which
+shows the image itself; it also reads inbox attachments and your own conversation's
+images. Download only when a local tool needs the bytes, into a task directory
+outside the deliverable repository:
+`ficus image get IMAGE_ID --out SHARED_TASK_PATH`. Sharing makes the image visible to
+everyone who can read the stream. See `docs/wiki/work-stream-assets.md`.
+
 Blocking questions and manual waits default to the current attempt. Use explicit
 stream scope for shared blockers. A human's answer supplies input, not approval.
 Use human-approval steps for decisions that must be enforced. End the turn while

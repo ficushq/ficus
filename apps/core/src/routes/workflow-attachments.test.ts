@@ -426,3 +426,49 @@ test('replacing a file keeps its tab position among the attempt files', async ()
   expect(detail.attachments['1'].map((file: { id: string }) => file.id)).toEqual([replaced.id, notes.id])
   expect(replaced.createdAt).toBe(design.createdAt)
 })
+
+test('the attempt’s agent attaches a stored image by ID; it shares the attempt limit and lists in the run', async () => {
+  const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64'
+  )
+  const { Image } = await import('../entities/Image')
+  const [image] = await Image.createMany([{ type: 'image', data: PNG.toString('base64'), mimeType: 'image/png' }], {
+    agentId: bound.agentId,
+  })
+  await Image.markManyUsed([image!.id])
+  const attach = (token: string, imageId = image!.id, attemptId = 1) =>
+    app.request(`/api/workflows/runs/${streamId}/attempts/${attemptId}/asset-attachments`, {
+      method: 'POST',
+      headers: { ...authHeaders(token), 'content-type': 'application/json' },
+      body: JSON.stringify({ source: { kind: 'image', imageId } }),
+    })
+  try {
+    // Only the attempt's own agent, like uploads; another agent's conversation image is not shareable.
+    expect((await attach(other.token)).status).toBe(403)
+    expect((await attach(admin.token)).status).toBe(403)
+    const created = await attach(bound.token)
+    expect(created.status).toBe(201)
+    const reference = await created.json()
+    expect(reference).toMatchObject({ attemptId: 1, source: { kind: 'image', imageId: image!.id } })
+    expect((await attach(bound.token)).status).toBe(200)
+    const detail = await (await get('', admin.token)).json()
+    expect(detail.assetAttachments['1'].map((entry: { id: string }) => entry.id)).toEqual([reference.id])
+    // Uploaded files and references share the attempt's slots.
+    for (let index = 1; index < WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT; index++)
+      expect((await upload(bound.token, { name: `note-${index}.txt`, content: `note ${index}` })).status).toBe(201)
+    expect((await upload(bound.token, { name: 'one-more.txt' })).status).toBe(409)
+    // A closed attempt accepts no new references.
+    const [run] = await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, streamId))
+    run!.state.attempts[0]!.status = 'completed'
+    await db.update(workStreamFlowRuns).set({ state: run!.state }).where(eq(workStreamFlowRuns.workStreamId, streamId))
+    const [late] = await Image.createMany([{ type: 'image', data: PNG.toString('base64'), mimeType: 'image/png' }], {
+      agentId: bound.agentId,
+    })
+    await Image.markManyUsed([late!.id])
+    expect((await attach(bound.token, late!.id)).status).toBe(409)
+    await Image.deleteMany([late!.id])
+  } finally {
+    await Image.deleteMany([image!.id])
+  }
+})

@@ -28,6 +28,7 @@ function demoActionsApi(): ActionsApi {
     getWorkStream: ok('getWorkStream'),
     workflowRun: ok('workflowRun'),
     downloadWorkflowAttachment: async () => new TextEncoder().encode('Synthetic demo attachment.'),
+    downloadWorkStreamAsset: async () => new TextEncoder().encode('Synthetic demo stored attachment.'),
     advanceWorkflow: ok('advanceWorkflow'),
     finishWorkflow: ok('finishWorkflow'),
     pauseWorkStream: ok('pauseWorkStream'),

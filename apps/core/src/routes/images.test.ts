@@ -586,4 +586,40 @@ describe('POST /api/images/sign-urls', () => {
 
     expect(res.status).toBe(400)
   })
+
+  it('signs a private conversation image for its owner only, and a staged upload for its uploader only', async () => {
+    const owner = await createTestUser({ prefix: userPrefix })
+    const otherAdmin = await createTestAdmin({ prefix: userPrefix })
+    const [privateAgent] = await db
+      .insert(agents)
+      .values({ agentTypeId: 'engineer', squadId: null, ownerUserId: owner.id })
+      .returning()
+    const [privateImage] = await Image.createMany(
+      [{ type: 'image', data: Buffer.from('p').toString('base64'), mimeType: 'image/png' }],
+      { agentId: privateAgent!.id }
+    )
+    const [staged] = await Image.createMany(
+      [{ type: 'image', data: Buffer.from('s').toString('base64'), mimeType: 'image/png' }],
+      { uploadedByUserId: owner.id }
+    )
+    const sign = async (token: string) =>
+      (
+        (await (
+          await buildApp().request('/api/images/sign-urls', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', ...authHeaders(token) },
+            body: JSON.stringify({ ids: [privateImage!.id, staged!.id] }),
+          })
+        ).json()) as { urls: Record<string, string> }
+      ).urls
+    try {
+      // The owner holds no global agents:read, yet reads their own private conversation.
+      expect(Object.keys(await sign(owner.token)).sort()).toEqual([privateImage!.id].sort())
+      // Another administrator reads neither: private conversations are owner-only, staged uploads uploader-only.
+      expect(await sign(otherAdmin.token)).toEqual({})
+    } finally {
+      await db.delete(images).where(inArray(images.id, [privateImage!.id, staged!.id]))
+      await db.delete(agents).where(eq(agents.id, privateAgent!.id))
+    }
+  })
 })

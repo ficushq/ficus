@@ -6,6 +6,7 @@ import { Image, type ImageContent } from '../entities/Image'
 import { Agent } from '../entities/Agent'
 import { Squad } from '../entities/Squad'
 import { buildSignedImageUrlPath, verifyImageUrlSignature } from '../services/images/signing'
+import { canReadImage } from '../services/images/access'
 import { hasPermission, identityUserId, type Identity } from '../services/rbac'
 import { IMAGE_ATTACHMENT_MIME_TYPES, MAX_IMAGE_ATTACHMENTS_PER_MESSAGE } from '@ficus/shared'
 
@@ -66,30 +67,12 @@ export const imagesRouter = new Hono()
     if (ids.length === 0) return c.json({ urls: {} })
     if (ids.length > 100) return c.json({ error: 'Too many ids (max 100)' }, 400)
 
-    // An image belongs to an agent conversation: only sign ids for real images
-    // the caller can read via agents:read on the owning agent's squad (squad-less
-    // / deleted-agent images are admin/legacy only). Unknown ids are never signed.
+    // Only sign ids for real images the caller may read (see canReadImage: a private conversation's
+    // images are its owner's alone, a staged upload its uploader's). Unknown ids are never signed.
     const found = await Image.findMany(ids)
     const urls: Record<string, string> = {}
     for (const img of found) {
-      let allowed: boolean
-      if (img.agentId) {
-        const agent = await Agent.find(img.agentId)
-        const squadId = agent?.squadId ?? null
-        allowed = squadId
-          ? await hasPermission(identity, 'agents:read', squadId)
-          : await canAccessSquadlessImage(identity, 'agents:read')
-      } else if (img.squadId) {
-        const actorUserId = identityUserId(identity)
-        const stagedUpload = img.status === 'pending' && img.uploadedByUserId !== null
-        allowed =
-          ((!stagedUpload || actorUserId === img.uploadedByUserId) &&
-            (await hasPermission(identity, 'agents:read', img.squadId))) ||
-          (await canAccessSquadlessImage(identity, 'agents:read'))
-      } else {
-        allowed = await canAccessSquadlessImage(identity, 'agents:read')
-      }
-      if (allowed) urls[img.id] = buildSignedImageUrlPath(img.id)
+      if (await canReadImage(identity, img)) urls[img.id] = buildSignedImageUrlPath(img.id)
     }
 
     return c.json({ urls })

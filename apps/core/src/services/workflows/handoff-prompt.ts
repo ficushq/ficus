@@ -9,6 +9,8 @@ import {
   type WorkflowAttempt,
   type WorkflowRun,
   type WorkflowProducerReviewContext,
+  type WorkflowAttemptAttachment,
+  type WorkStreamAssetAttachment,
 } from '@ficus/shared'
 import { createHash } from 'node:crypto'
 import { flowCompletionInstructions } from './completion-prompt'
@@ -25,7 +27,39 @@ type HandoffStream = {
 
 /** Reviewers read handoff files inline, so deliverables are attached rather than pasted or only named. */
 const ATTACH_GUIDANCE =
-  'Attach the documents your result refers to (design docs, reports, plans, screenshots) by adding --attach <path> to the advance command, once per file (at most 10, 10 MB each); reviewers read them alongside your handoff. Keep evidence a concise summary that names each attached file; do not paste their contents.'
+  'Attach the documents your result refers to (design docs, reports, plans, screenshots) by adding --attach <path> to the advance command, once per file (at most 10, 10 MB each); reviewers read them alongside your handoff. An image or file already stored by Ficus (a chat image or chat file) is attached by ID instead, with no copy: --attach-image IMAGE_ID or --attach-agent-file FILE_ATTACHMENT_ID. Keep evidence a concise summary that names each attached file; do not paste their contents.'
+
+/** The stored files an assignment can read: the stream's inputs and what its incoming attempts attached. */
+export interface AssignmentAssets {
+  inputs: WorkStreamAssetAttachment[]
+  incoming: WorkStreamAssetAttachment[]
+  /** Files the incoming attempts uploaded with --attach. */
+  incomingFiles: WorkflowAttemptAttachment[]
+}
+
+/** One line per stored reference, naming the read_attachment call that shows it without a download. */
+export function assetManifestLines(attachments: WorkStreamAssetAttachment[]): string[] {
+  return attachments.map(
+    (attachment) =>
+      `- ${attachment.filename} (${attachment.contentType}, ${attachment.byteSize} bytes): read_attachment with {"kind":"workstream-asset","workStreamId":"${attachment.workStreamId}","attachmentId":"${attachment.id}"}`
+  )
+}
+
+function assetSection(streamId: string, assets?: AssignmentAssets): string {
+  if (!assets) return ''
+  const files = assets.incomingFiles.map(
+    (file) =>
+      `- ${file.filename} from attempt ${file.attemptId} (${file.contentType}, ${file.byteSize} bytes): read_attachment with {"kind":"workflow-attachment","workStreamId":"${streamId}","attachmentId":"${file.id}"}`
+  )
+  const sections = [
+    assets.inputs.length ? `Stored inputs:\n${assetManifestLines(assets.inputs).join('\n')}` : '',
+    assets.incoming.length || files.length
+      ? `Attached by incoming results:\n${[...assetManifestLines(assets.incoming), ...files].join('\n')}`
+      : '',
+  ].filter(Boolean)
+  if (!sections.length) return ''
+  return `${sections.join('\n\n')}\n\nThese are stored by Ficus: read them with the read_attachment tool, with no workspace copy. Download one only when a local tool needs its bytes (ficus workstream attachment get ${streamId} ATTACHMENT_ID --out PATH).`
+}
 
 /** Identifies the work brief an assignment carries, so an agent that already has it is not sent it again. */
 export function workStreamBriefDigest(stream: Pick<HandoffStream, 'description' | 'handoffMessage'>): string {
@@ -46,7 +80,8 @@ export function flowMessage(
   /** Present when the stream was built on a dependency's unmerged branch. */
   stackNotice?: string,
   reviewContexts?: WorkflowProducerReviewContext[],
-  briefSeenInAttempt?: number
+  briefSeenInAttempt?: number,
+  assets?: AssignmentAssets
 ) {
   const seen = briefSeenInAttempt !== undefined
   const step = effectiveWorkflowStep(run.state, attempt)
@@ -112,6 +147,7 @@ export function flowMessage(
     stackNotice ?? '',
     attempt.feedback ? `Rework request:\n${attempt.feedback}` : '',
     results.length ? `Incoming results:\n\n${results.join('\n\n')}` : '',
+    assetSection(stream.id, assets),
     attempt.sourceAttemptIds === undefined
       ? 'This older attempt has no recorded handoff sources; consult the run history for its incoming context.'
       : '',

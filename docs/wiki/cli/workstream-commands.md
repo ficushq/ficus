@@ -43,6 +43,19 @@ stream, including after it is done or canceled, as a record of what was reviewed
 are removed only when the work stream is deleted. Their bytes count toward the
 instance-wide `INBOX_MAX_TOTAL_STORAGE_BYTES` quota shared with inbox and chat files.
 
+### Stored images and files
+
+Chat images and chat files Ficus already stores are attached by ID, with no
+workspace copy: `ficus workstream attachment add STREAM_ID --image IMAGE_ID` (or
+`--agent-file FILE_ATTACHMENT_ID`) shares one as a stream input,
+`ficus workstream create ... --image IMAGE_ID` does so before the first assignment,
+and `advance --attach-image IMAGE_ID` / `--attach-agent-file FILE_ATTACHMENT_ID`
+(repeatable, `complete` only) attaches one to the completing attempt alongside any
+`--attach` uploads, within the same limit of 10. `attachment list`, `get --out PATH`
+and `remove` manage them; agents view them, and handoff files, with the
+`read_attachment` tool. See [Stored images and files in work streams](../work-stream-assets.md)
+for sharing rules, retention and the API.
+
 When a transition immediately assigns work to the calling agent, its response
 includes `assignments` with the attempt ID, version, and full handoff content.
 Continue that assignment directly; no duplicate inbox notification is sent.

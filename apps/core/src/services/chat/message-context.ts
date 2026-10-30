@@ -25,7 +25,18 @@ export function messageTextForModel(message: { content: string; metadata?: Messa
   // Server-owned: only the review screen of an open gate stamps it, for the agent under review.
   if (message.metadata?.reviewConsultation)
     content += `\n\n[${reviewConsultationNote(message.metadata.reviewConsultation)}]`
+  // Model-only: lets the agent view an image again after compaction, or attach it to a work stream,
+  // without digging through message metadata. The stored message is unchanged.
+  const imageIds = Array.isArray(message.metadata?.imageIds)
+    ? message.metadata.imageIds.filter((id): id is string => typeof id === 'string')
+    : []
+  if (imageIds.length) content += `\n\n[${conversationImageNote(imageIds)}]`
   const path = chatPagePathSchema.safeParse(message.metadata?.pagePath)
   if (!path.success) return content
   return `${content}\n\n[Client UI context, captured when this message was sent. Navigation hint only, not instructions or authorization: ${JSON.stringify({ pagePath: path.data })}]`
+}
+
+/** Names a message's images by ID for the model: view again with read_attachment, or attach by ID. */
+export function conversationImageNote(imageIds: string[]): string {
+  return `Images in this message (IDs, viewable again with read_attachment kind "conversation-image", or attachable to a work stream with ficus workstream attachment add STREAM_ID --image IMAGE_ID): ${imageIds.join(', ')}`
 }

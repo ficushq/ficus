@@ -22,6 +22,10 @@ export const queryKeys = {
   workflowAttachments: {
     file: (workStreamId: string, attachmentId: string) => ['workflow-attachments', workStreamId, attachmentId] as const,
   },
+  /** Stored-asset references: removable and revocable, so their bytes are fetched afresh each view. */
+  workStreamAssets: {
+    file: (workStreamId: string, attachmentId: string) => ['work-stream-assets', workStreamId, attachmentId] as const,
+  },
   agents: {
     all: ['agents'] as const,
     /**

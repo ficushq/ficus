@@ -454,6 +454,51 @@ it('Farm leads with the authored brief, keeps attachment peer tabs and collapses
   expect(container.querySelector('[aria-label="Decision brief"]')).not.toBeNull()
 })
 
+it('Farm opens stored references and stream inputs as review documents, fetched afresh each time', async () => {
+  const run = workflowRun('gate')
+  run.state.attempts[0]!.decisionBrief = {
+    value: {
+      decision: 'Approve the staging design.',
+      recommendation: 'Approve because fallback reads are tested.',
+      approvalEffect: 'Approval permits staging work only, not production deployment.',
+      risks: 'Maintenance work increases temporarily.',
+    },
+    submittedVersion: 6,
+    contexts: [],
+  }
+  run.state.attempts[1]!.reviewBrief = { kind: 'authored', sourceAttemptIds: [1] }
+  const reference = (id: string, attemptId: number | null, filename: string) => ({
+    id,
+    workStreamId: 'ws-1',
+    attemptId,
+    source: { kind: 'agent-file' as const, attachmentId: '33333333-3333-4333-8333-333333333333' },
+    filename,
+    contentType: 'text/markdown',
+    byteSize: 16,
+    createdAt: '',
+  })
+  run.assetAttachments = { '1': [reference('share-result', 1, 'notes.md')] }
+  const api = fakeApi({
+    workflowRun: () => Promise.resolve(run),
+    getWorkStream: () =>
+      Promise.resolve({ ...stream(), assetAttachments: [reference('share-input', null, 'brief.md')] }),
+    downloadWorkStreamAsset: () => Promise.resolve(new TextEncoder().encode('Synthetic stored notes.')),
+  })
+  const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
+  const tabs = [...container.querySelectorAll('[role="tab"]')]
+  expect(tabs.map((tab) => tab.textContent)).toEqual(['Decision brief', 'notes.md', 'brief.md'])
+  await click(tabs[1] as HTMLButtonElement)
+  const panel = container.querySelector('[role="tabpanel"]')!
+  expect(panel.textContent).toContain('Synthetic stored notes.')
+  // No fake path: it says where the reference came from.
+  expect(panel.textContent).toContain('Attempt 1: stored chat file, shared by ID')
+  expect(api.downloadWorkStreamAsset).toHaveBeenCalledWith('ws-1', 'share-result', expect.anything())
+  await click(tabs[2] as HTMLButtonElement)
+  expect(container.querySelector('[role="tabpanel"]')!.textContent).toContain('Work stream input')
+  await click(tabs[1] as HTMLButtonElement)
+  expect(api.downloadWorkStreamAsset).toHaveBeenCalledTimes(3)
+})
+
 for (const kind of ['carried-forward', 'none'] as const) {
   it(`Farm labels ${kind} and retains the gate's own message`, async () => {
     const run = workflowRun('gate')

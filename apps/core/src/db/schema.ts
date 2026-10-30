@@ -1793,6 +1793,62 @@ export const workflowAttemptAttachments = pgTable(
   ]
 )
 
+/**
+ * A stored chat image or chat file that one or more work streams reference. It names bytes that
+ * already exist (the source's own blob) and keeps them alive after the source row is deleted; it
+ * never holds a copy. One row per source. Deleted once no active share uses it: if the source row is
+ * gone by then, its bytes go too (`deleteRequestedAt` marks a deletion the cleanup sweep retries).
+ */
+export const retainedAssets = pgTable(
+  'retained_assets',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sourceKind: varchar('source_kind', { length: 32 }).notNull().$type<'image' | 'agent-file'>(),
+    sourceId: uuid('source_id').notNull(),
+    /** Server-derived storage locator: the image's stored filename, or the chat file's owning agent id. */
+    blobOwner: varchar('blob_owner', { length: 255 }).notNull(),
+    filename: varchar('filename', { length: 255 }).notNull(),
+    contentType: varchar('content_type', { length: 255 }).notNull(),
+    byteSize: integer('byte_size').notNull(),
+    sha256: varchar('sha256', { length: 64 }).notNull(),
+    /** The squad whose work stream first retained it, for storage attribution. */
+    squadId: uuid('squad_id'),
+    deleteRequestedAt: timestamp('delete_requested_at'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('idx_retained_assets_source').on(table.sourceKind, table.sourceId)]
+)
+
+/**
+ * A work stream's share of a retained asset: a stream input (`attemptId` null) or a result attached
+ * to one flow attempt. Removal keeps the row (and its copied source identity) for the record.
+ */
+export const workStreamAssetAttachments = pgTable(
+  'work_stream_asset_attachments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workStreamId: uuid('work_stream_id')
+      .notNull()
+      .references(() => workStreams.id, { onDelete: 'cascade' }),
+    attemptId: integer('attempt_id'),
+    retainedAssetId: uuid('retained_asset_id').references(() => retainedAssets.id, { onDelete: 'set null' }),
+    sourceKind: varchar('source_kind', { length: 32 }).notNull().$type<'image' | 'agent-file'>(),
+    sourceId: uuid('source_id').notNull(),
+    filename: varchar('filename', { length: 255 }).notNull(),
+    contentType: varchar('content_type', { length: 255 }).notNull(),
+    byteSize: integer('byte_size').notNull(),
+    /** Provenance only: `agent` or `user` and its id. */
+    createdByType: varchar('created_by_type', { length: 32 }).notNull(),
+    createdById: varchar('created_by_id', { length: 200 }).notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    removedAt: timestamp('removed_at'),
+  },
+  (table) => [
+    index('idx_work_stream_asset_attachments_stream').on(table.workStreamId),
+    index('idx_work_stream_asset_attachments_asset').on(table.retainedAssetId),
+  ]
+)
+
 export const workStreamOrderSnapshots = pgTable(
   'work_stream_order_snapshots',
   {

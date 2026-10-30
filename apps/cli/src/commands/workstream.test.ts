@@ -120,6 +120,34 @@ describe('workstream CLI commands', () => {
     expect(outputError).not.toHaveBeenCalled()
   })
 
+  it('create shares stored chat images, then chat files, as inputs by ID', async () => {
+    await run([
+      'workstream',
+      'create',
+      'Fix the button',
+      '--squad',
+      'squad-1',
+      '--image',
+      'image-1',
+      '--agent-file',
+      'file-1',
+      '--image',
+      'image-2',
+    ])
+    expect(apiPost).toHaveBeenLastCalledWith(
+      '/api/workstreams',
+      expect.objectContaining({
+        assetReferences: [
+          { kind: 'image', imageId: 'image-1' },
+          { kind: 'image', imageId: 'image-2' },
+          { kind: 'agent-file', attachmentId: 'file-1' },
+        ],
+      })
+    )
+    await run(['workstream', 'create', 'No inputs', '--squad', 'squad-1'])
+    expect((apiPost as ReturnType<typeof mock>).mock.calls.at(-1)![1]).not.toHaveProperty('assetReferences')
+  })
+
   it('supports agent-only terminal observation without using user subscriptions', async () => {
     await run(['workstream', 'create', 'Observe result', '--squad', 'squad-1', '--observe', 'terminal'])
     expect(apiPost).toHaveBeenLastCalledWith('/api/workstreams', expect.objectContaining({ observe: 'terminal' }))

@@ -10,21 +10,48 @@ import {
   workflowIncomingAttempts,
   type WorkflowAttempt,
   type WorkflowAttemptAttachment,
+  type WorkStreamAssetAttachment,
 } from '@ficus/shared'
 import { useActionsApi } from './ActionsApiProvider'
 import { ActionText, ErrorNote } from './ui'
 
 /** Brief first, files as peer documents, and only the internal handoff behind a disclosure. */
+/**
+ * A document the review can open: a handoff file uploaded with --attach, or a stored chat image or
+ * file shared by ID (which can be removed, so it is never cached).
+ */
+interface BriefDocument {
+  id: string
+  filename: string
+  contentType: string
+  stored: boolean
+  /** Where it came from, shown under the name; a stored reference has no path and is not given one. */
+  detail: string
+}
+
+function storedBriefDocument(asset: WorkStreamAssetAttachment, scope: string): BriefDocument {
+  return {
+    id: asset.id,
+    filename: asset.filename,
+    contentType: asset.contentType,
+    stored: true,
+    detail: `${scope}: stored chat ${asset.source.kind === 'image' ? 'image' : 'file'}, shared by ID`,
+  }
+}
+
 export function WorkflowBriefDocuments({
   run,
   attempt,
   instructions,
+  inputs = [],
   children,
   seen,
 }: {
   run: WorkflowRunDetail
   attempt: WorkflowAttempt
   instructions: string
+  /** The work stream's stored inputs (absent from older servers). */
+  inputs?: WorkStreamAssetAttachment[]
   children: ReactNode
   /** The revision of each source the reviewer last saw; newer revisions list what changed. */
   seen?: Record<number, number>
@@ -35,7 +62,19 @@ export function WorkflowBriefDocuments({
     ...workflowIncomingAttempts(run.state, attempt).map((source) => source.id),
     ...sources.map((source) => source.id),
   ])
-  const attachments = [...ids].flatMap((id) => run.attachments?.[String(id)] ?? [])
+  const attachments: BriefDocument[] = [
+    ...[...ids].flatMap((id) => [
+      ...(run.attachments?.[String(id)] ?? []).map((file) => ({
+        id: file.id,
+        filename: file.filename,
+        contentType: file.contentType,
+        stored: false,
+        detail: file.path,
+      })),
+      ...(run.assetAttachments?.[String(id)] ?? []).map((asset) => storedBriefDocument(asset, `Attempt ${id}`)),
+    ]),
+    ...inputs.map((asset) => storedBriefDocument(asset, 'Work stream input')),
+  ]
   const primary =
     brief.kind === 'legacy' ? { id: 'handoff', label: 'Handoff' } : { id: 'decision-brief', label: 'Decision brief' }
   const [selected, setSelected] = useState(primary.id)
@@ -186,21 +225,28 @@ function RevisionChanges({
     </section>
   )
 }
+/** Images a browser only decodes (never SVG, which can run script). */
+const RASTER_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
 
 /** Never execute attached HTML or scripts. Text is escaped; other formats remain downloadable. */
-function BriefAttachment({
-  workStreamId,
-  attachment,
-}: {
-  workStreamId: string
-  attachment: WorkflowAttemptAttachment
-}) {
+function BriefAttachment({ workStreamId, attachment }: { workStreamId: string; attachment: BriefDocument }) {
   const api = useActionsApi()
-  const query = useQuery({
-    queryKey: ['workflow-review-attachment', workStreamId, attachment.id],
-    queryFn: ({ signal }) => api.downloadWorkflowAttachment(workStreamId, attachment.id, signal),
-    staleTime: Infinity,
-  })
+  const query = useQuery(
+    attachment.stored
+      ? {
+          // A share can be removed or access revoked: fetch afresh, keep nothing.
+          queryKey: ['work-stream-asset', workStreamId, attachment.id],
+          queryFn: ({ signal }) => api.downloadWorkStreamAsset(workStreamId, attachment.id, signal),
+          staleTime: 0,
+          gcTime: 0,
+          retry: false,
+        }
+      : {
+          queryKey: ['workflow-review-attachment', workStreamId, attachment.id],
+          queryFn: ({ signal }) => api.downloadWorkflowAttachment(workStreamId, attachment.id, signal),
+          staleTime: Infinity,
+        }
+  )
   const [url, setUrl] = useState<string>()
   useEffect(() => {
     if (!query.data) return
@@ -217,7 +263,11 @@ function BriefAttachment({
   return (
     <section aria-label={attachment.filename} className="g-materials">
       <h4 className="g-materials-title">{attachment.filename}</h4>
+      <p className="g-action-note">{attachment.detail}</p>
       {text !== null && <ActionText>{text}</ActionText>}
+      {url && RASTER_IMAGE_TYPES.has(attachment.contentType) && (
+        <img className="g-attachment-image" src={url} alt={attachment.filename} />
+      )}
       {url && (
         <a className="g-link" href={url} download={attachment.filename}>
           Download {attachment.filename}

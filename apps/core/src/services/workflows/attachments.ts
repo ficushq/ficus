@@ -1,4 +1,4 @@
-import { and, asc, count, eq } from 'drizzle-orm'
+import { and, asc, count, eq, isNull } from 'drizzle-orm'
 import {
   WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT,
   workflowAmendEligibility,
@@ -9,7 +9,15 @@ import {
   type WorkflowAttemptAttachment,
   type WorkflowRun,
 } from '@ficus/shared'
-import { db, squads, workflowAttemptAttachments, workStreamFlowRuns, workStreams, type DbTx } from '../../db'
+import {
+  db,
+  squads,
+  workflowAttemptAttachments,
+  workStreamAssetAttachments,
+  workStreamFlowRuns,
+  workStreams,
+  type DbTx,
+} from '../../db'
 import { rm } from 'node:fs/promises'
 import { createLogger } from '../../lib/infra/logger'
 import {
@@ -60,7 +68,12 @@ export function assertCanAttach(
   stream: Pick<Stream, 'pause' | 'status'> | undefined,
   run: Run | undefined,
   attemptId: number,
-  identity: Identity
+  identity: Identity,
+  /**
+   * Whether a completed attempt may stage uploaded files for an amend. Stored references attached
+   * by ID are not revisioned, so they attach to (and detach from) a running attempt only.
+   */
+  { amendStaging = false }: { amendStaging?: boolean } = {}
 ): { agentId: string; revision: number } {
   if (!stream || !run?.activated) throw new WorkflowError('Flow not found', 404)
   const attempt = run.state.attempts.find((entry) => entry.id === attemptId)
@@ -69,8 +82,38 @@ export function assertCanAttach(
     throw new WorkflowError('Only the agent working on this attempt can attach files to it', 403)
   assertStreamAcceptsHandoffs(stream)
   if (attempt.status === 'running') return { agentId: identity.agentId, revision: 1 }
-  if (!workflowAmendEligibility(run.state, attemptId).ok) throw new WorkflowError('This attempt is no longer open', 409)
+  if (!amendStaging || !workflowAmendEligibility(run.state, attemptId).ok)
+    throw new WorkflowError('This attempt is no longer open', 409)
   return { agentId: identity.agentId, revision: workflowResultRevision(attempt) + 1 }
+}
+
+/** Stored chat images and files attached to the attempt by ID; they share its file slots. */
+async function activeAttemptReferenceCount(tx: DbTx, workStreamId: string, attemptId: number): Promise<number> {
+  const [references] = await tx
+    .select({ total: count() })
+    .from(workStreamAssetAttachments)
+    .where(
+      and(
+        eq(workStreamAssetAttachments.workStreamId, workStreamId),
+        eq(workStreamAssetAttachments.attemptId, attemptId),
+        isNull(workStreamAssetAttachments.removedAt)
+      )
+    )
+  return references?.total ?? 0
+}
+
+/**
+ * The file slots an attempt's current result uses: its current revision's uploaded files plus its
+ * active stored references. Files of superseded revisions and staged files do not count.
+ */
+export async function attemptSlotsUsed(tx: DbTx, workStreamId: string, attempt: WorkflowAttempt): Promise<number> {
+  const rows = (await tx.select().from(workflowAttemptAttachments).where(attemptRows(workStreamId, attempt.id))).map(
+    toJson
+  )
+  return (
+    workflowCurrentAttachmentIds(attempt, rows).length +
+    (await activeAttemptReferenceCount(tx, workStreamId, attempt.id))
+  )
 }
 
 const attemptRows = (workStreamId: string, attemptId: number) =>
@@ -144,7 +187,9 @@ export async function uploadWorkflowAttachment(input: {
         .from(workStreamFlowRuns)
         .where(eq(workStreamFlowRuns.workStreamId, input.workStreamId))
         .for('update')
-      const { agentId, revision } = assertCanAttach(stream, run, input.attemptId, input.identity)
+      const { agentId, revision } = assertCanAttach(stream, run, input.attemptId, input.identity, {
+        amendStaging: true,
+      })
       const stored = unchanged(await tx.select().from(workflowAttemptAttachments).where(samePath), run!.state, revision)
       if (stored.row) {
         if (stored.discard) {
@@ -164,10 +209,13 @@ export async function uploadWorkflowAttachment(input: {
           .where(
             and(attemptRows(input.workStreamId, input.attemptId), eq(workflowAttemptAttachments.revision, revision))
           )
-        if ((files?.total ?? 0) >= WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
+        // Only the files of the revision being written count, plus the attempt's active stored
+        // references (they carry into every revision); superseded revisions never use up slots.
+        const references = await activeAttemptReferenceCount(tx, input.workStreamId, input.attemptId)
+        if ((files?.total ?? 0) + references >= WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
           throw new WorkflowError(
             revision > 1
-              ? `An amend can stage at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files`
+              ? `An amend can stage at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files, including the attempt's stored references`
               : `An attempt can attach at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files`,
             409
           )
@@ -302,7 +350,10 @@ export async function amendAttachmentManifest(
       )
     manifest.delete(path)
   }
-  if (manifest.size > WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
+  if (
+    manifest.size + (await activeAttemptReferenceCount(tx, workStreamId, attempt.id)) >
+    WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT
+  )
     throw new WorkflowError(`An attempt revision can attach at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files`, 409)
   return { previous, next: [...manifest.values()] }
 }

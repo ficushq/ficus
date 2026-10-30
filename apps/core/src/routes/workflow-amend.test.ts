@@ -19,6 +19,7 @@ import {
   inbox,
   squads,
   workStreamFlowRuns,
+  workStreamAssetAttachments,
   workStreamFlowTransitions,
   workStreams,
 } from '../db'
@@ -34,6 +35,8 @@ import {
 import { attachFlow, getFlow } from '../services/workflows/execution'
 import { getSettingsStore } from '../services/settings'
 import { listOpenWaits } from '../services/work-streams/waits'
+import { assertCanAttach } from '../services/workflows/attachments'
+import { loadAssignmentAssets } from '../services/work-streams/asset-attachments'
 import { workflowsRouter } from './workflows'
 
 const app = new Hono().use('*', identityMiddleware).route('/api/workflows', workflowsRouter)
@@ -377,4 +380,71 @@ test('files staged for a refused amend are not published by a later amend that d
   const unknown = await advance(bound.token, await amendCommand({ attachmentPaths: ['docs/never.md'] }))
   expect(unknown.status).toBe(409)
   expect((await unknown.json()).error).toContain("No file was uploaded for 'docs/never.md'")
+})
+
+/** A stored chat file shared with the attempt by ID: it takes one of the attempt's file slots. */
+async function shareReference(attemptId = 1) {
+  await db.insert(workStreamAssetAttachments).values({
+    workStreamId: streamId,
+    attemptId,
+    sourceKind: 'agent-file',
+    sourceId: randomUUID(),
+    filename: 'shared.png',
+    contentType: 'image/png',
+    byteSize: 10,
+    createdByType: 'agent',
+    createdById: bound.agentId,
+  })
+}
+
+test('superseded revisions do not use up the attempt limit; current files and stored references do', async () => {
+  await atGate()
+  // Nine amends that each replace one file leave eleven stored rows for the attempt, but only two current files.
+  for (let round = 2; round <= 10; round++) {
+    expect((await upload(bound.token, 'docs/design.md', `# Design v${round}`)).status).toBe(201)
+    expect((await advance(bound.token, await amendCommand({ attachmentPaths: ['docs/design.md'] }))).status).toBe(200)
+  }
+  const run = (await getFlow(streamId))!
+  expect(run.state.attempts[0]!.resultRevision).toBe(10)
+  // Superseded design.md files are not counted: eight new files fit beside the two current ones.
+  const paths = Array.from({ length: 8 }, (_, index) => `docs/extra-${index}.md`)
+  for (const path of [...paths, 'docs/one-too-many.md'])
+    expect((await upload(bound.token, path, `# ${path}`)).status).toBe(201)
+  const over = await advance(bound.token, await amendCommand({ attachmentPaths: [...paths, 'docs/one-too-many.md'] }))
+  expect(over.status).toBe(409)
+  expect((await over.json()).error).toBe('An attempt revision can attach at most 10 files')
+  expect((await advance(bound.token, await amendCommand({ attachmentPaths: paths }))).status).toBe(200)
+  expect((await detail()).attachments['1']).toHaveLength(10)
+  // A stored reference shares the slots: ten current files plus the reference is too many.
+  await shareReference()
+  const withReference = await advance(bound.token, await amendCommand())
+  expect(withReference.status).toBe(409)
+  expect((await withReference.json()).error).toBe('An attempt revision can attach at most 10 files')
+  const fits = await advance(bound.token, await amendCommand({ removeAttachmentPaths: ['docs/extra-7.md'] }))
+  expect(fits.status).toBe(200)
+  expect((await detail()).attachments['1']).toHaveLength(9)
+})
+
+test('stored references attach only to a running attempt, while uploads may be staged for an amend', async () => {
+  await atGate()
+  const [stream] = await db.select().from(workStreams).where(eq(workStreams.id, streamId))
+  const run = (await getFlow(streamId))!
+  const identity = { type: 'agent' as const, agentId: bound.agentId, squadId }
+  expect(() => assertCanAttach(stream, run, 1, identity)).toThrow('This attempt is no longer open')
+  expect(assertCanAttach(stream, run, 1, identity, { amendStaging: true })).toEqual({
+    agentId: bound.agentId,
+    revision: 2,
+  })
+})
+
+test('the next step is handed only the decided revision of an amended attempt', async () => {
+  await atGate()
+  expect((await upload(bound.token, 'docs/design.md', '# Design v2')).status).toBe(201)
+  expect((await upload(bound.token, 'docs/unused.md', '# Staged, never named')).status).toBe(201)
+  expect((await advance(bound.token, await amendCommand({ attachmentPaths: ['docs/design.md'] }))).status).toBe(200)
+  const run = (await getFlow(streamId))!
+  const current = (await detail()).attachments['1'] as Array<{ id: string }>
+  const assets = await loadAssignmentAssets(db, streamId, [1], run.state.attempts)
+  expect(assets.incomingFiles.map((file) => file.id)).toEqual(current.map((file) => file.id))
+  expect(assets.incomingFiles.map((file) => file.path)).toEqual(['docs/design.md', 'docs/plan.md'])
 })

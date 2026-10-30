@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { workflowAttachmentContentType, type WorkflowAttemptAttachment } from '@ficus/shared'
+import { workflowAttachmentContentType } from '@ficus/shared'
 import { actionErrorMessage } from '../lib/actionError'
-import { attachmentPreviewMode } from '../lib/workflowAttachments'
+import { attachmentPreviewMode, type ReviewDocument } from '../lib/workflowAttachments'
 import { queries } from '../queryOptions'
 import { FilePreview } from './FilePreview'
 import { PdfPreview } from './PdfPreview'
@@ -26,14 +26,14 @@ export function ReviewTabs({
   onSelect,
 }: {
   idPrefix: string
-  attachments: WorkflowAttemptAttachment[]
+  attachments: Array<Pick<ReviewDocument, 'id' | 'filename' | 'detail'>>
   primary?: { id: string; label: string }
   selected: string
   onSelect: (id: string) => void
 }) {
   const tabs = [
     { ...primary, title: undefined as string | undefined },
-    ...attachments.map((attachment) => ({ id: attachment.id, label: attachment.filename, title: attachment.path })),
+    ...attachments.map((attachment) => ({ id: attachment.id, label: attachment.filename, title: attachment.detail })),
   ]
   const list = useRef<HTMLDivElement>(null)
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -108,16 +108,13 @@ function decodeText(bytes: Uint8Array): string | null {
   }
 }
 
-/** One handed-off file, loaded when its tab is first opened and rendered by the shared file viewer. */
-export function AttachmentView({
-  workStreamId,
-  attachment,
-}: {
-  workStreamId: string
-  attachment: WorkflowAttemptAttachment
-}) {
+/**
+ * One handed-off file or stored reference, loaded when its tab is first opened and rendered by the
+ * shared file viewer. Stored references are fetched afresh each time (they can be removed or revoked).
+ */
+export function AttachmentView({ workStreamId, attachment }: { workStreamId: string; attachment: ReviewDocument }) {
   const mode = attachmentPreviewMode(attachment)
-  const options = queries.workflows.attachment(workStreamId, attachment.id)
+  const options = queries.workflows.document(workStreamId, attachment)
   const { data: bytes, error } = useQuery({ ...options, enabled: mode !== 'download' })
   const queryClient = useQueryClient()
   const [downloadError, setDownloadError] = useState<string>()
@@ -184,8 +181,8 @@ export function AttachmentView({
   return (
     <section aria-label={attachment.filename} className="space-y-4">
       <div className="flex min-w-0 items-center gap-3 border-b border-panel-border pb-2">
-        <p className="min-w-0 flex-1 truncate text-xs text-muted" title={attachment.path}>
-          {attachment.path}
+        <p className="min-w-0 flex-1 truncate text-xs text-muted" title={attachment.detail}>
+          {attachment.detail}
         </p>
         {mode !== 'download' && text !== null && !pdfFailed && (
           <button
