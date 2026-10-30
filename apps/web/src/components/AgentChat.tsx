@@ -473,7 +473,7 @@ export function AgentChat({
               {preparationError}
               {!initialMessageSent.current && initialMessage && (
                 <button
-                  className="ficus-button ficus-button-link ml-2"
+                  className="ficus-button ficus-button-ghost px-1.5 py-0.5 ml-2"
                   onClick={() => setInitialPreparationAttempt((value) => value + 1)}
                 >
                   Retry sending

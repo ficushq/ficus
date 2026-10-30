@@ -53,7 +53,7 @@ function CopyButton({ value, label }: { value: string; label: string }) {
     <button
       type="button"
       aria-label={label}
-      className="ficus-button ficus-button-link shrink-0 text-xs"
+      className="ficus-button ficus-button-ghost shrink-0 px-2 py-1 text-xs"
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(value)

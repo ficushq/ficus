@@ -788,7 +788,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
                         <button
                           onClick={() => startRename(cred.id, cred.displayName)}
                           aria-label={`Rename passkey ${credLabel}`}
-                          className="ficus-button ficus-button-link text-sm font-medium py-2 sm:py-0"
+                          className="ficus-button ficus-button-ghost px-2.5 py-2 text-sm font-medium sm:py-1"
                           title="Rename passkey"
                         >
                           Rename

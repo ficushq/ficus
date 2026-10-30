@@ -262,7 +262,11 @@ export function FirstSquadStep({ meta, item, embedded, onSquadCreated }: ItemRow
             {squadPresets.isError && (
               <p role="alert" className="mt-1 text-xs text-muted">
                 Could not load presets.{' '}
-                <button type="button" onClick={() => squadPresets.refetch()} className="ficus-button ficus-button-link">
+                <button
+                  type="button"
+                  onClick={() => squadPresets.refetch()}
+                  className="ficus-button ficus-button-ghost px-1.5 py-0.5"
+                >
                   Retry
                 </button>
               </p>
@@ -350,7 +354,7 @@ function KickoffFeedback({
         <p className="text-sm text-status-danger-600 dark:text-status-danger-400">
           Failed to send the kickoff message.
         </p>
-        <button type="button" onClick={onRetry} className="ficus-button ficus-button-link text-sm">
+        <button type="button" onClick={onRetry} className="ficus-button ficus-button-ghost px-2 py-1 text-sm">
           Retry
         </button>
       </div>

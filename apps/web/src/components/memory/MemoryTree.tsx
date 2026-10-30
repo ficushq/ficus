@@ -205,7 +205,7 @@ export function MemoryTree({ squadId, onSelectFile, selectedPath }: MemoryTreePr
           {isError ? (
             <div className="p-3 text-sm text-muted">
               Couldn’t load memory.{' '}
-              <button onClick={handleRefresh} className="ficus-button ficus-button-link">
+              <button onClick={handleRefresh} className="ficus-button ficus-button-ghost px-1.5 py-0.5">
                 Retry
               </button>
             </div>

@@ -408,7 +408,7 @@ export function GitHubIntegrationSettings({
         {canConnect && hasAccounts && (
           <button
             type="button"
-            className="ficus-button ficus-button-link mt-3 text-sm disabled:opacity-50"
+            className="ficus-button ficus-button-secondary mt-3 rounded-lg px-3 py-2 text-sm disabled:opacity-50"
             disabled={authorize.isPending || !!device}
             onClick={() => authorize.mutate(undefined)}
           >

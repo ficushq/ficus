@@ -106,7 +106,7 @@ export function SquadPresetWorkflowsEditor({
             <button
               type="button"
               disabled={!entries.length || value.choices.length >= 32}
-              className="ficus-button ficus-button-link text-sm"
+              className="ficus-button ficus-button-ghost px-2 py-1 text-sm"
               onClick={() =>
                 onChange({
                   ...value,

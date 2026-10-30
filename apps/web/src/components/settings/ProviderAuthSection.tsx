@@ -538,7 +538,7 @@ function ProviderGroupStatus({
                 onClick={() => resetMutation.mutate()}
                 disabled={resetMutation.isPending}
                 aria-label={`Reset health for ${entry.provider}`}
-                className="ficus-button ficus-button-link disabled:opacity-50"
+                className="ficus-button ficus-button-ghost px-1.5 py-0.5 disabled:opacity-50"
               >
                 Reset
               </button>
@@ -653,7 +653,7 @@ export function ProviderRow({
           {canWrite && hasAnyAccounts && addMode === 'closed' && (
             <button
               onClick={() => setAddMode(hasChoice ? 'choose' : 'api-key')}
-              className="ficus-button ficus-button-link text-sm"
+              className="ficus-button ficus-button-secondary px-3 py-1.5 text-sm"
             >
               Connect another account
             </button>
@@ -1014,7 +1014,7 @@ export function ProviderAccountsList({
                     <>
                       <button
                         onClick={() => updateMutation.mutate({ id: account.id, patch: { label: editLabelValue } })}
-                        className="ficus-button ficus-button-link"
+                        className="ficus-button ficus-button-primary px-2 py-1"
                       >
                         Save label
                       </button>
@@ -1023,7 +1023,7 @@ export function ProviderAccountsList({
                           setEditingAccountId(null)
                           setEditLabelValue('')
                         }}
-                        className="ficus-button ficus-button-link"
+                        className="ficus-button ficus-button-ghost px-2 py-1"
                       >
                         Cancel
                       </button>
@@ -1039,7 +1039,7 @@ export function ProviderAccountsList({
                             onClick={() => resetHealthMutation.mutate(account.id)}
                             disabled={resetHealthMutation.isPending}
                             aria-label={`Reset health for ${account.label || account.id}`}
-                            className="ficus-button ficus-button-link disabled:opacity-50"
+                            className="ficus-button ficus-button-ghost px-2 py-1 disabled:opacity-50"
                           >
                             Reset
                           </button>
@@ -1050,14 +1050,14 @@ export function ProviderAccountsList({
                             setEditingAccountId(account.id)
                             setEditLabelValue(account.label ?? '')
                           }}
-                          className="ficus-button ficus-button-link"
+                          className="ficus-button ficus-button-ghost"
                         >
                           Edit label
                         </button>
                         {account.type === 'oauth' && (
                           <button
                             onClick={() => setReloginAccountId(account.id)}
-                            className="ficus-button ficus-button-link"
+                            className="ficus-button ficus-button-ghost"
                           >
                             Re-authorize
                           </button>
@@ -1066,7 +1066,7 @@ export function ProviderAccountsList({
                           onClick={() =>
                             updateMutation.mutate({ id: account.id, patch: { enabled: !account.enabled } })
                           }
-                          className="ficus-button ficus-button-link"
+                          className="ficus-button ficus-button-ghost"
                         >
                           {account.enabled ? 'Disable' : 'Enable'}
                         </button>
@@ -1370,7 +1370,7 @@ export function SelectStep({
           <button
             onClick={() => onSelect(browserOption.id)}
             disabled={isPending}
-            className="ficus-button ficus-button-link text-xs font-medium"
+            className="ficus-button ficus-button-ghost px-3 py-1.5 text-xs font-medium"
           >
             Use browser login instead
           </button>
@@ -1539,7 +1539,7 @@ export function DeviceCodeStep({
         <button
           onClick={copyCode}
           disabled={!need}
-          className="ficus-button ficus-button-link text-xs font-medium shrink-0 disabled:opacity-50"
+          className="ficus-button ficus-button-ghost shrink-0 px-2 py-1 text-xs font-medium disabled:opacity-50"
         >
           {copied ? 'Copied' : 'Copy'}
         </button>
@@ -1603,7 +1603,7 @@ export function ErrorStep({
     <div className="space-y-2">
       <p className="text-sm text-status-danger-600 dark:text-status-danger-400">Login failed: {message}</p>
       <div className="flex gap-2">
-        <button onClick={onRetry} className="ficus-button ficus-button-link text-xs font-medium">
+        <button onClick={onRetry} className="ficus-button ficus-button-primary rounded px-3 py-1.5 text-xs font-medium">
           Try Again
         </button>
         <button

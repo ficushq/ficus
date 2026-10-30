@@ -488,7 +488,11 @@ function ConnectionStep({ meta, item, onSkip, onUnskip, pending, embedded }: Ite
         </div>
       )}
       {item.state === 'done' && meta.id !== 'github' && (
-        <button type="button" className="ficus-button ficus-button-link text-sm" onClick={() => setEditing(!editing)}>
+        <button
+          type="button"
+          className="ficus-button ficus-button-ghost px-2 py-1 text-sm"
+          onClick={() => setEditing(!editing)}
+        >
           {editing ? 'Close setup' : 'Manage connection'}
         </button>
       )}

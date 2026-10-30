@@ -115,7 +115,7 @@ export function MachineRow({
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => setExpanded((v) => !v)}
-              className="ficus-button ficus-button-link text-sm font-medium text-primary"
+              className="ficus-button ficus-button-ghost -ml-2 px-2 py-1 text-sm font-medium text-primary"
               aria-expanded={expanded}
             >
               {expanded ? '▾' : '▸'} {machine.name}
@@ -172,7 +172,7 @@ export function MachineRow({
                 <button
                   onClick={() => bootstrapMutation.mutate()}
                   disabled={isMutating}
-                  className="ficus-button ficus-button-link text-xs font-medium disabled:opacity-50"
+                  className="ficus-button ficus-button-ghost px-2 py-1 text-xs font-medium disabled:opacity-50"
                 >
                   {bootstrapMutation.isPending ? 'Bootstrapping…' : 'Bootstrap'}
                 </button>
@@ -181,7 +181,7 @@ export function MachineRow({
             <button
               onClick={() => checkMutation.mutate()}
               disabled={isMutating}
-              className="ficus-button ficus-button-link text-xs font-medium disabled:opacity-50"
+              className="ficus-button ficus-button-ghost px-2 py-1 text-xs font-medium disabled:opacity-50"
             >
               {checkMutation.isPending ? 'Checking…' : 'Check'}
             </button>

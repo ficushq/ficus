@@ -106,7 +106,7 @@ export function WorkflowParticipantEditor({
                   <button
                     type="button"
                     aria-label={`Make ${step.name ?? step.id} separate`}
-                    className="ficus-button ficus-button-link shrink-0 disabled:opacity-40"
+                    className="ficus-button ficus-button-ghost shrink-0 px-2 py-1 disabled:opacity-40"
                     disabled={ids.length >= 64}
                     onClick={() => {
                       const next = separateWorkflowParticipant(definition, step.id)

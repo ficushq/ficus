@@ -46,7 +46,7 @@ export function PasskeyRecoveryRequest({ onBack }: Props) {
           account and signs out its other sessions.
         </p>
         <p className="text-xs text-secondary text-center">
-          <button type="button" onClick={onBack} className="ficus-button ficus-button-link">
+          <button type="button" onClick={onBack} className="ficus-button ficus-button-ghost px-3 py-1.5">
             Back to login
           </button>
         </p>
@@ -85,7 +85,7 @@ export function PasskeyRecoveryRequest({ onBack }: Props) {
         </p>
       )}
       <p className="text-xs text-secondary text-center">
-        <button type="button" onClick={onBack} className="ficus-button ficus-button-link">
+        <button type="button" onClick={onBack} className="ficus-button ficus-button-ghost px-3 py-1.5">
           Back to login
         </button>
       </p>

@@ -40,7 +40,7 @@ function ScanStatusDisplay({ scanStatus }: { scanStatus: NonNullable<MemoryConfi
             <span>·</span>
             <button
               onClick={() => setShowSkipped(!showSkipped)}
-              className="ficus-button ficus-button-link text-status-attention-600 dark:text-status-attention-400"
+              className="ficus-button ficus-button-ghost px-1.5 py-0.5 text-status-attention-600 hover:text-status-attention-800 dark:text-status-attention-400 dark:hover:text-status-attention-300"
             >
               {skippedCount} skipped
             </button>
@@ -161,7 +161,7 @@ export function WorkspaceIndexingSettings({ squadId }: Props) {
           <button
             data-setting-reveal="include-patterns exclude-patterns"
             onClick={startEditing}
-            className="ficus-button ficus-button-link text-xs"
+            className="ficus-button ficus-button-ghost -my-1 px-2 py-1 text-xs"
           >
             Edit
           </button>

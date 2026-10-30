@@ -18,7 +18,7 @@ import { ChevronDownIcon } from '../icons'
 const field = 'ficus-field w-full min-w-0 rounded-md border border-th-border bg-surface px-3 py-2 text-sm'
 const picker =
   'ficus-button ficus-button-secondary flex min-w-0 items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm'
-const link = 'ficus-button ficus-button-link text-sm disabled:opacity-40'
+const textAction = 'ficus-button ficus-button-ghost px-2 py-1 text-sm disabled:opacity-40'
 /** The value the fallback pickers use for "no outcome": wait for a person to choose. */
 const PERSON = '$person'
 
@@ -300,7 +300,7 @@ export function WorkflowDecisionEditor({
                 ))}
                 <button
                   type="button"
-                  className={link}
+                  className={textAction}
                   disabled={disabled || Object.keys(question.options).length >= 64}
                   onClick={() =>
                     setQuestion(name, {
@@ -356,7 +356,7 @@ export function WorkflowDecisionEditor({
                 ))}
                 <button
                   type="button"
-                  className={link}
+                  className={textAction}
                   disabled={disabled || question.levels.length >= 10}
                   onClick={() =>
                     setQuestion(name, {
@@ -373,7 +373,7 @@ export function WorkflowDecisionEditor({
         ))}
         <button
           type="button"
-          className={link}
+          className={textAction}
           disabled={disabled || Object.keys(step.questions).length >= 64}
           onClick={() =>
             edit((draft) => {
@@ -520,10 +520,10 @@ export function WorkflowDecisionEditor({
                     })
                   }
                 />
-                <span className="ml-auto flex gap-3">
+                <span className="ml-auto flex gap-1">
                   <button
                     type="button"
-                    className={link}
+                    className={textAction}
                     aria-label={`Move route ${index + 1} up`}
                     disabled={disabled || index === 0}
                     onClick={() =>
@@ -539,7 +539,7 @@ export function WorkflowDecisionEditor({
                   </button>
                   <button
                     type="button"
-                    className={link}
+                    className={textAction}
                     aria-label={`Move route ${index + 1} down`}
                     disabled={disabled || index === step.routes.length - 1}
                     onClick={() =>
@@ -555,7 +555,7 @@ export function WorkflowDecisionEditor({
                   </button>
                   <button
                     type="button"
-                    className={link}
+                    className={textAction}
                     aria-label={`Remove route ${index + 1}`}
                     disabled={disabled}
                     onClick={() => edit((draft) => void draft.routes.splice(index, 1))}
@@ -569,7 +569,7 @@ export function WorkflowDecisionEditor({
         })}
         <button
           type="button"
-          className={link}
+          className={textAction}
           disabled={disabled || step.routes.length >= 32 || !outcomes.length}
           onClick={() =>
             edit((draft) => {

@@ -812,7 +812,10 @@ function WorkPreview({
         {agents.isPending ? (
           <CommandRowsSkeleton label="Loading conversations" />
         ) : agents.isError ? (
-          <button onClick={() => void agents.refetch()} className="ficus-button ficus-button-link text-sm">
+          <button
+            onClick={() => void agents.refetch()}
+            className="ficus-button ficus-button-ghost -ml-2 px-2 py-1 text-sm"
+          >
             Retry loading conversations
           </button>
         ) : (
@@ -845,7 +848,10 @@ function WorkPreview({
       ) : creatorId && !knownCreator && creatorDetail.isPending ? (
         <CommandRowsSkeleton label="Loading originating conversation" />
       ) : creatorId && creatorDetail.isError && !knownCreator ? (
-        <button className="ficus-button ficus-button-link text-sm" onClick={() => void creatorDetail.refetch()}>
+        <button
+          className="ficus-button ficus-button-ghost -ml-2 px-2 py-1 text-sm"
+          onClick={() => void creatorDetail.refetch()}
+        >
           Retry loading originating conversation
         </button>
       ) : null}

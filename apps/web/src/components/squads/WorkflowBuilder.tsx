@@ -689,7 +689,7 @@ export function WorkflowBuilder({
                             </p>
                             <button
                               type="button"
-                              className="ficus-button ficus-button-link text-sm"
+                              className="ficus-button ficus-button-ghost -ml-2 px-2 py-1 text-sm"
                               onClick={() => {
                                 setSelectedParticipant(selectedStep.participant)
                                 setTab('participants')
@@ -702,7 +702,7 @@ export function WorkflowBuilder({
                             ).length > 1 && (
                               <button
                                 type="button"
-                                className="ficus-button ficus-button-link ml-3 text-sm disabled:opacity-40"
+                                className="ficus-button ficus-button-ghost ml-1 px-2 py-1 text-sm disabled:opacity-40"
                                 disabled={Object.keys(definition.participants).length >= 64}
                                 onClick={() =>
                                   onChange(separateWorkflowParticipant(definition, selectedStep.id).definition)

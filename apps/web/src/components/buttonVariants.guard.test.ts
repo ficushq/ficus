@@ -11,12 +11,18 @@
  *
  * The variant may be picked dynamically (a ternary or clsx among variants, or a same-file constant or
  * object of variant strings); every resolved path must still carry the base plus exactly one variant.
- * See AGENTS.md "Shared components" for when to use which.
+ * A `<button>` acts rather than navigates, so it may resolve to the link variant only when listed in
+ * NAVIGATING_BUTTONS. See AGENTS.md "Shared components" for when to use which.
  */
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BUTTON_VARIANTS, scanButtonVariants, type ButtonVariantFinding } from '../test/buttonVariantAnalysis'
+import {
+  BUTTON_VARIANTS,
+  scanButtonVariants,
+  scanLinkStyledButtons,
+  type ButtonVariantFinding,
+} from '../test/buttonVariantAnalysis'
 
 const SRC = join(import.meta.dir, '..')
 
@@ -25,6 +31,61 @@ const SRC = join(import.meta.dir, '..')
  * the expression, each with the reason. Keep this tiny: prefer writing the base and the variant together.
  */
 const ALLOWLIST: Array<{ path: string; contains: string; why: string }> = []
+
+/**
+ * `<button>` elements that keep link styling because activating them navigates: they show another
+ * entity or view in place of the current one, with no URL to put in an anchor. Every other action on a
+ * `<button>` uses a real button variant (usually ghost). Keyed by `path` plus a fragment of the
+ * `className` that matches exactly one button, each with the reason. Keep this short: prefer an anchor
+ * or router `Link` for navigation, and a button variant for anything else.
+ */
+const NAVIGATING_BUTTONS: Array<{ path: string; contains: string; why: string }> = [
+  {
+    path: 'components/EntityReferenceLink.tsx',
+    contains: 'inline underline',
+    why: 'An entity reference inside prose that opens the entity; padding would break the line of text.',
+  },
+  {
+    path: 'components/MessageContent.tsx',
+    contains: 'mt-2 inline-flex',
+    why: 'View work stream: opens the work stream panel.',
+  },
+  {
+    path: 'components/ToolInlineActions.tsx',
+    contains: 'truncate text-left',
+    why: 'Opens the monitor, work stream, artifact or other entity a tool call names.',
+  },
+  {
+    path: 'components/UnifiedAssistant.tsx',
+    contains: 'ml-auto shrink-0',
+    why: 'Assistant: goes back to the Assistant view in the panel’s navigation stack.',
+  },
+  {
+    path: 'components/UnifiedAssistant.tsx',
+    contains: 'ficus-button-link text-xs',
+    why: 'Continue current chat: pushes the current Assistant chat onto the panel’s navigation stack.',
+  },
+  {
+    path: 'components/WorkStreamDependencies.tsx',
+    contains: 'col-span-2 grid',
+    why: 'A dependency title that opens that work stream.',
+  },
+  {
+    path: 'components/WorkflowReviewModal.tsx',
+    contains: 'linkClass',
+    why: 'Opens the work stream under review; the same control is a router Link when there is no handler.',
+  },
+  {
+    path: 'components/monitors/MonitorsList.tsx',
+    contains: 'font-medium',
+    why: 'A monitor’s name in its table row that opens the monitor’s details.',
+  },
+  {
+    path: 'components/settings/AgentTypesSection.tsx',
+    contains: 'ficus-button-link text-sm',
+    why: 'Used by N types: switches to the agent types list filtered to this tier.',
+  },
+]
 
 /** Horizontal padding classes; an inline link must have none, or it reads as an indented button. */
 const HORIZONTAL_PADDING = /(?<![\w-])-?p[xlrse]?-(?:\d|\[)/
@@ -78,6 +139,51 @@ test('every ficus-button className pairs the base with exactly one variant', () 
   const findings = sources().flatMap(({ path, text }) => scanButtonVariants(text, path))
   expect(findings.length).toBeGreaterThan(300)
   expect(problems(findings)).toEqual([])
+})
+
+const describeLinkButton = (finding: { path: string; line: number; expression: string }) =>
+  `${finding.path}:${finding.line} is a <button> with link styling: ${finding.expression.slice(0, 160)}`
+
+const isNavigating = (finding: { path: string; expression: string }) =>
+  NAVIGATING_BUTTONS.some((entry) => entry.path === finding.path && finding.expression.includes(entry.contains))
+
+test('a <button> uses link styling only when it navigates', () => {
+  const findings = sources().flatMap(({ path, text }) => scanLinkStyledButtons(text, path))
+  expect(findings.filter((finding) => !isNavigating(finding)).map(describeLinkButton)).toEqual([])
+})
+
+test('each navigating-button entry matches exactly one link-styled button', () => {
+  const findings = sources().flatMap(({ path, text }) => scanLinkStyledButtons(text, path))
+  for (const entry of NAVIGATING_BUTTONS) {
+    const matches = findings.filter(
+      (finding) => finding.path === entry.path && finding.expression.includes(entry.contains)
+    )
+    expect(matches.map(describeLinkButton), `${entry.path}: ${entry.contains}`).toHaveLength(1)
+  }
+})
+
+test('the link-styled button check catches actions and ignores real navigation', () => {
+  const scan = (source: string) => scanLinkStyledButtons(source, 'fixture.tsx')
+  // Actions on a <button>, written directly, picked by a branch, or through a same-file constant.
+  expect(scan(`<button onClick={retry} className="ficus-button ficus-button-link">Retry</button>`)).toHaveLength(1)
+  expect(
+    scan(
+      `<button className={clsx(open ? 'ficus-button ficus-button-link' : 'ficus-button ficus-button-ghost', 'px-2')} />`
+    )
+  ).toHaveLength(1)
+  expect(
+    scan(
+      `const action = 'ficus-button ficus-button-link text-sm'\nconst x = <button type="button" className={action} />`
+    )
+  ).toHaveLength(1)
+  // Navigation elements and real button variants pass.
+  for (const source of [
+    `<a href="/settings" className="ficus-button ficus-button-link">Settings</a>`,
+    `<Link to="/settings" className="ficus-button ficus-button-link">Settings</Link>`,
+    `<button onClick={retry} className="ficus-button ficus-button-ghost px-2 py-1">Retry</button>`,
+    `<button onClick={retry} className="ficus-button-linkish">Retry</button>`,
+  ])
+    expect(scan(source), source).toEqual([])
 })
 
 test('the allowlist only names expressions that still exist and still need it', () => {

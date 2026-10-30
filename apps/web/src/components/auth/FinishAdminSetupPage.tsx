@@ -183,7 +183,7 @@ export function FinishAdminSetupPage({ accounts, onSuccess, onSignOut, dependenc
           )}
         </form>
         <p className="text-xs text-secondary mt-4 text-center">
-          <button type="button" onClick={onSignOut} className="ficus-button ficus-button-link">
+          <button type="button" onClick={onSignOut} className="ficus-button ficus-button-ghost px-3 py-1.5">
             Sign out
           </button>
         </p>

@@ -147,7 +147,11 @@ function CompletionExposure({
       {receipt?.state === 'failed' && (
         <p role="status" className="ml-9 text-xs text-muted">
           Could not save seen state.{' '}
-          <button type="button" className="ficus-button ficus-button-link" onClick={() => retry.current()}>
+          <button
+            type="button"
+            className="ficus-button ficus-button-ghost px-1.5 py-0.5"
+            onClick={() => retry.current()}
+          >
             Retry
           </button>
         </p>
@@ -300,7 +304,11 @@ export function AccountFeedVisit({
           {completed.isError && (
             <p role="alert" className="ml-9 text-sm text-muted">
               Could not load updates.{' '}
-              <button type="button" className="ficus-button ficus-button-link" onClick={() => void completed.refetch()}>
+              <button
+                type="button"
+                className="ficus-button ficus-button-ghost px-1.5 py-0.5"
+                onClick={() => void completed.refetch()}
+              >
                 Retry
               </button>
             </p>
@@ -385,7 +393,7 @@ export function AccountFeedVisit({
           {completed.hasNextPage && (
             <button
               type="button"
-              className="ficus-button ficus-button-link ml-9 text-xs"
+              className="ficus-button ficus-button-ghost ml-7 px-2 py-1 text-xs"
               disabled={completed.isFetchingNextPage}
               onClick={() => void completed.fetchNextPage()}
             >

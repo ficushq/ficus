@@ -62,7 +62,7 @@ export function MonitorDetailsModal({ monitorId, initialMonitor, onClose }: Moni
             <p>Unable to load monitor details.</p>
             <button
               type="button"
-              className="ficus-button ficus-button-link font-medium"
+              className="ficus-button ficus-button-ghost -ml-2 px-2 py-1 font-medium"
               onClick={() => detailQuery.refetch()}
             >
               Retry
@@ -152,7 +152,7 @@ export function MonitorDetailsModal({ monitorId, initialMonitor, onClose }: Moni
             <div className="flex items-center gap-2">
               {tail < 500 && (
                 <button
-                  className="ficus-button ficus-button-link rounded-md py-1 text-sm font-medium transition-colors"
+                  className="ficus-button ficus-button-ghost rounded-md px-2 py-1 text-sm font-medium transition-colors"
                   onClick={() => setTail(500)}
                 >
                   Load 500
