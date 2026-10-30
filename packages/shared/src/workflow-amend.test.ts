@@ -278,6 +278,20 @@ describe('decisions record the reviewed revision', () => {
     expect(workflowDecisionRevisionNote(run, gate)).toBe('Approved revision 2 of execute attempt 1')
   })
 
+  test('a forward outcome other than the approval is named as chosen, not as an approval', () => {
+    const def = definition()
+    def.steps[1]!.outcomes = { yes: { next: 'second' }, ship: { next: 'finish' }, no: { returnTo: 'execute' } }
+    let run = complete(createWorkflowRun(def), 'ready', { decisionBrief: brief })
+    run = advanceWorkflowRun(run, {
+      action: 'complete',
+      expectedVersion: run.version,
+      attemptId: 2,
+      outcome: 'ship',
+      evidence: '',
+    })
+    expect(workflowDecisionRevisionNote(run, run.attempts[1]!)).toBe("Chose 'ship' on revision 1 of execute attempt 1")
+  })
+
   test('a decision without reviewedRevisions still records the revision it was made on', () => {
     const run = complete(atGate(), 'yes')
     expect(run.attempts[1]!.reviewedRevisions).toEqual([{ attemptId: 1, revision: 1 }])

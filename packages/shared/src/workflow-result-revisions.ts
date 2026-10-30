@@ -1,5 +1,5 @@
 import type { WorkflowAttempt, WorkflowRun } from './workflow-runtime'
-import type { WorkflowBriefSubmission } from './workflow-review-history'
+import { workflowHistoricalStep, type WorkflowBriefSubmission } from './workflow-review-history'
 import type { WorkflowDecisionBrief } from './workflow-decision-brief'
 import type { WorkflowAttemptAttachment } from './workflow-attachments'
 
@@ -165,7 +165,13 @@ export function sameWorkflowReviewedRevisions(
  */
 export function workflowDecisionRevisionNote(run: WorkflowRun, gate: WorkflowAttempt): string | null {
   if (!gate.reviewedRevisions?.length) return null
-  const verb = gate.status === 'returned' ? 'Changes requested on' : 'Approved'
+  // A human approval's first forward outcome is its approval; any other forward choice is named.
+  const step = workflowHistoricalStep(run, gate)
+  const approval =
+    step?.kind === 'human-approval' &&
+    Object.entries(step.outcomes).find(([, transition]) => !('returnTo' in transition))?.[0] === gate.outcome
+  const verb =
+    gate.status === 'returned' ? 'Changes requested on' : approval ? 'Approved' : `Chose '${gate.outcome}' on`
   const parts = gate.reviewedRevisions.map((entry) => {
     const source = run.attempts.find((attempt) => attempt.id === entry.attemptId)
     return `revision ${entry.revision} of ${source?.stepId ?? 'attempt'} attempt ${entry.attemptId}`
