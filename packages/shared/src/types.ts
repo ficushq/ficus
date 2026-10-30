@@ -1,4 +1,5 @@
 import type { StructuredManualWait } from './recovery-waits'
+import type { WorkflowAttemptLimitPause } from './workflow-runtime'
 import type { AssistantRoutingCorrection, AssistantRoutingHint, AssistantRoutingTarget } from './assistant-routing'
 import type { QuestionAnswerCardData } from './question-answers'
 import type { WorkStreamAssetAttachment } from './workstream-asset-attachments'
@@ -826,6 +827,11 @@ export interface WorkStreamActionData {
    * not a blocker. Omitted when false and by older servers.
    */
   deliveryApproval?: true
+  /**
+   * Server-classified: this wait is a workflow paused at its attempt limit. Raise limit (the
+   * `raise-limit` flow command at `flowVersion`) unblocks it. Omitted otherwise and by older servers.
+   */
+  attemptLimit?: WorkflowAttemptLimitPause & { flowVersion: number }
   focus: {
     kind: 'workstream-wait'
     workStreamId: string
@@ -1236,6 +1242,11 @@ export function workStreamWaitActor(wait: { actor?: string | null }): WorkStream
 export interface WorkStreamWait {
   /** Read-only exact-reference annotation; never writable by clients. */
   workflowHumanGate?: boolean
+  /**
+   * Read-only: the flow paused at its attempt limit. The stream presents as blocked on a person;
+   * Raise limit (the `raise-limit` flow command) clears it. Omitted otherwise and by older servers.
+   */
+  workflowAttemptLimit?: true
   /** Present only for new structured manual input requests. */
   structured?: StructuredManualWait | null
   /** Missing/null means whole-stream; an ID pins the wait to one flow attempt. */

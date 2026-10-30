@@ -1104,7 +1104,8 @@ test('model-tool progress cannot settle an unexplained post-startup execution fa
   expect((await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.id, record.id)))[0]!.state.state).toBe(
     'recovering'
   )
-  await expect(api.assertNoPendingRecovery(db, worker.id, stream.id)).rejects.toThrow('unresolved recovery')
+  // Still retrying automatically: there is no typed decision to bypass, so asking a person stays open.
+  expect(await api.assertNoPendingRecovery(db, worker.id, stream.id)).toBeUndefined()
 })
 
 test('work-stream detail projects the same current owner fallback as the decision surface', async () => {
@@ -1127,19 +1128,19 @@ test('work-stream detail projects the same current owner fallback as the decisio
   )
 })
 
-test('manager prose compatibility does not bypass its own unresolved same-scope recovery', async () => {
+test('manager prose compatibility does not bypass its own held same-scope recovery', async () => {
   await db.update(squads).set({ managerAgentId: worker.id }).where(eq(squads.id, squad.id))
-  await (
-    await store()
-  ).recordRecoveryFailure(
-    { agentId: worker.id, executionId: execution.id },
-    {
-      operationKey: 'manager-task',
-      attempted: 'Run the task',
-      invocationId: 'manager-first',
-      error: new Error('unknown outcome'),
-    }
-  )
+  const api = await store()
+  const fail = (invocationId: string) =>
+    api.recordRecoveryFailure(
+      { agentId: worker.id, executionId: execution.id },
+      { operationKey: 'manager-task', attempted: 'Run the task', invocationId, error: new Error('unknown outcome') }
+    )
+  await fail('manager-first')
+  // One failure is still an automatic retry, not a held decision: it does not block asking a person.
+  expect(await api.assertNoPendingRecovery(db, worker.id, stream.id)).toBeUndefined()
+  await fail('manager-second')
+  expect((await fail('manager-third')).state.state).toBe('waiting-manager')
   await expect(
     stream.block({ createdBy: 'manager', createdByAgentId: worker.id, message: 'Choose a release target' })
   ).rejects.toThrow('unresolved recovery')

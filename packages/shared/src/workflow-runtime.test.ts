@@ -2,7 +2,14 @@ import { brief } from './test-fixtures/workflow-review'
 import { describe, expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 import { workflowPresetSchema } from './workflows'
-import { advanceWorkflowRun, createWorkflowRun, workflowReworkAttempt, type WorkflowRun } from './workflow-runtime'
+import {
+  advanceWorkflowRun,
+  createWorkflowRun,
+  describeWorkflowAttemptLimitPause,
+  workflowAttemptLimitPause,
+  workflowReworkAttempt,
+  type WorkflowRun,
+} from './workflow-runtime'
 
 async function run(preset = 'engineering'): Promise<WorkflowRun> {
   const file = resolve(import.meta.dir, `../../../config/workflows/${preset}.yaml`)
@@ -355,6 +362,176 @@ describe('dynamic flow execution', () => {
     expect(active(resumed)).toBe('build')
     expect(resumed.returns[0]!.status).toBe('open')
     expect(complete(complete(resumed), 'approved').status).toBe('completion-ready')
+  })
+})
+
+describe('attempt-limit pause recovery', () => {
+  async function pausedRun(): Promise<WorkflowRun> {
+    const initial = await directReturnRun('builder-reviewer')
+    initial.definition.limits.maxStepAttempts = 1
+    const paused = complete(complete(initial), 'changes-requested')
+    expect(paused.status).toBe('paused')
+    expect(paused.activeAttemptId).toBeNull()
+    return paused
+  }
+  const setLimits = (state: WorkflowRun, maxStepAttempts: number) => [
+    { op: 'set-limits' as const, limits: { ...state.definition.limits, maxStepAttempts } },
+  ]
+
+  test('a revision with an omitted attemptId resumes when no attempt is active, like explicit null', async () => {
+    const paused = await pausedRun()
+    const resumed = advanceWorkflowRun(paused, {
+      expectedVersion: paused.version,
+      action: 'revise',
+      active: 'keep',
+      reason: 'Allow one rework pass',
+      operations: setLimits(paused, 2),
+    })
+    expect(resumed.status).toBe('running')
+    expect(active(resumed)).toBe('build')
+    expect(resumed.returns[0]!.status).toBe('open')
+  })
+
+  test('a stale attemptId at a pause says no attempt is active and what to send', async () => {
+    const paused = await pausedRun()
+    for (const attemptId of [1, 2, 3])
+      expect(() =>
+        advanceWorkflowRun(paused, {
+          expectedVersion: paused.version,
+          attemptId,
+          action: 'revise',
+          active: 'keep',
+          reason: 'Raise the limit',
+          operations: setLimits(paused, 2),
+        })
+      ).toThrow(
+        `Stale step attempt: no step attempt is active (the flow is paused at the attempt limit for step 'build'). Omit attemptId or send "attemptId": null.`
+      )
+  })
+
+  test('null or a wrong attemptId while work runs names the active attempt', async () => {
+    const state = await run('solo')
+    expect(() =>
+      advanceWorkflowRun(state, {
+        expectedVersion: 0,
+        attemptId: null,
+        action: 'revise',
+        active: 'keep',
+        reason: 'Revise',
+        operations: setLimits(state, 3),
+      })
+    ).toThrow('Stale step attempt: attemptId null is not active; the active attempt is 1. Send that attemptId.')
+    expect(() =>
+      advanceWorkflowRun(state, {
+        expectedVersion: 0,
+        attemptId: 7,
+        action: 'complete',
+        outcome: 'completed',
+        evidence: 'Result',
+      })
+    ).toThrow('Stale step attempt: attempt 7 is not active; the active attempt is 1.')
+  })
+
+  test('completing at a pause explains the attempt limit instead of a bare status', async () => {
+    const paused = await pausedRun()
+    expect(() =>
+      advanceWorkflowRun(paused, {
+        expectedVersion: paused.version,
+        attemptId: 2,
+        action: 'complete',
+        outcome: 'approved',
+        evidence: 'Result',
+      })
+    ).toThrow("paused at the attempt limit for step 'build'; no step attempt is active")
+  })
+
+  test('raise-limit sets a new limit, records the change and starts the held attempt', async () => {
+    const paused = await pausedRun()
+    expect(workflowAttemptLimitPause(paused)).toEqual({
+      stepId: 'build',
+      stepName: paused.definition.steps.find((step) => step.id === 'build')!.name ?? 'build',
+      attemptsUsed: 1,
+      limit: 1,
+    })
+    const resumed = advanceWorkflowRun(paused, {
+      expectedVersion: paused.version,
+      action: 'raise-limit',
+      maxStepAttempts: 3,
+      reason: 'Allow more review rounds',
+    })
+    expect(resumed.version).toBe(paused.version + 1)
+    expect(resumed.status).toBe('running')
+    expect(resumed.pauseReason).toBeUndefined()
+    expect(resumed.pendingStarts).toEqual([])
+    expect(resumed.definition.limits.maxStepAttempts).toBe(3)
+    expect(active(resumed)).toBe('build')
+    expect(resumed.attempts.at(-1)!.sourceAttemptIds).toContain(2)
+    expect(resumed.returns[0]!.status).toBe('open')
+    expect(resumed.revisions!.at(-1)!.reason).toBe(
+      "Attempt limit raised from 1 to 3 to resume step 'build': Allow more review rounds"
+    )
+    expect(workflowAttemptLimitPause(resumed)).toBeNull()
+  })
+
+  test('raise-limit with null removes the limit', async () => {
+    const paused = await pausedRun()
+    const resumed = advanceWorkflowRun(paused, {
+      expectedVersion: paused.version,
+      attemptId: null,
+      action: 'raise-limit',
+      maxStepAttempts: null,
+    })
+    expect(resumed.definition.limits).not.toHaveProperty('maxStepAttempts')
+    expect(active(resumed)).toBe('build')
+    expect(resumed.revisions!.at(-1)!.reason).toBe("Attempt limit removed (was 1) to resume step 'build'")
+    expect(complete(complete(resumed), 'approved').status).toBe('completion-ready')
+  })
+
+  test('raise-limit refuses a limit that would pause again and a flow that is not paused', async () => {
+    const paused = await pausedRun()
+    expect(() =>
+      advanceWorkflowRun(paused, { expectedVersion: paused.version, action: 'raise-limit', maxStepAttempts: 1 })
+    ).toThrow("Step 'build' has already used 1 attempts; choose a limit above 1, or remove the limit")
+    const running = await run('solo')
+    expect(() =>
+      advanceWorkflowRun(running, { expectedVersion: 0, action: 'raise-limit', maxStepAttempts: 5 })
+    ).toThrow('not paused at an attempt limit')
+    expect(() =>
+      advanceWorkflowRun(paused, { expectedVersion: paused.version, action: 'raise-limit', maxStepAttempts: 101 })
+    ).toThrow()
+  })
+
+  test('rerouting an outcome and removing the orphaned step in one revision passes reachability checks', async () => {
+    const state = await run('builder-reviewer')
+    expect(() =>
+      advanceWorkflowRun(state, {
+        expectedVersion: 0,
+        attemptId: 1,
+        action: 'revise',
+        active: 'keep',
+        reason: 'Drop the review step',
+        operations: [{ op: 'remove-step', id: 'review' }],
+      })
+    ).toThrow('review')
+    const revised = advanceWorkflowRun(state, {
+      expectedVersion: 0,
+      attemptId: 1,
+      action: 'revise',
+      active: 'keep',
+      reason: 'Drop the review step',
+      operations: [
+        { op: 'update-step', id: 'build', changes: { outcomes: { completed: { next: 'finish' } } } },
+        { op: 'remove-step', id: 'review' },
+      ],
+    })
+    expect(revised.definition.steps.map((step) => step.id)).toEqual(['build'])
+    expect(complete(revised).status).toBe('completion-ready')
+  })
+
+  test('the pause description says what happened and how to unblock it in plain words', () => {
+    const text = describeWorkflowAttemptLimitPause({ stepId: 'build', stepName: 'Build', attemptsUsed: 2, limit: 2 })
+    expect(text).toContain('"Build" has used all 2 of its allowed attempts')
+    expect(text).toContain('raise the attempt limit, or remove it')
   })
 })
 

@@ -155,7 +155,7 @@ export function flowCapabilityInstructions(state: WorkflowRun, attempt: Workflow
   ].filter(Boolean)
   if (limits.length)
     lines.push(
-      `Limits: ${limits.join('; ')}.${definition.limits.maxStepAttempts === undefined ? '' : ' Request owner input if the attempt limit is exhausted.'}`
+      `Limits: ${limits.join('; ')}.${definition.limits.maxStepAttempts === undefined ? '' : ' When a step uses its last attempt the flow pauses; a reviewer, the stream owner, or the squad manager can raise or remove the limit with ficus workstream raise-limit.'}`
     )
   return lines.join('\n')
 }

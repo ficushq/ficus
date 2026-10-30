@@ -544,7 +544,7 @@ export function WorkflowStructureEditor({
                   {key === 'maxStepAttempts' ? 'Attempts per step (optional)' : 'Maximum parallel steps (optional)'}
                   <Help>
                     {key === 'maxStepAttempts'
-                      ? 'Leave blank for unlimited attempts. An explicit limit includes the first attempt and rework; reaching it asks the owner for input.'
+                      ? 'Leave blank for unlimited attempts (recommended): limits usually just block work. A limit includes the first attempt and rework; if you set one, make it generous. Reaching it pauses the workflow until someone raises or removes it.'
                       : 'Leave blank for no workflow-specific limit. Global agent capacity still applies. An explicit limit queues extra steps until an active attempt finishes.'}
                   </Help>
                   <input

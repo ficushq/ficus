@@ -1688,3 +1688,102 @@ describe('workflow review gate cards', () => {
     }
   })
 })
+
+describe('ActionItem attempt-limit pause', () => {
+  const limitAction = (canRespond: boolean): PendingAction => {
+    const base = manualAction('limit-wait', 'Flow paused at the attempt limit.')
+    const data = base.data as WorkStreamActionData
+    return {
+      ...base,
+      canRespond,
+      data: {
+        ...data,
+        wait: { ...data.wait, resolutionHandler: 'workflow', flowAttemptId: null, workflowAttemptLimit: true },
+        attemptLimit: { stepId: 'build', stepName: 'Build', attemptsUsed: 2, limit: 2, flowVersion: 7 },
+      },
+    } as PendingAction
+  }
+
+  async function renderLimit(subject: PendingAction) {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const rendered = dom.createRoot()
+    const originalFetch = globalThis.fetch
+    const calls: Array<{ url: string; body: unknown }> = []
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), body: init?.body && JSON.parse(String(init.body)) })
+      return new dom.window.Response(JSON.stringify({ version: 8, stateStatus: 'running', activeAttemptId: 3 }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }) as Response
+    }) as typeof fetch
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(queryKeys.actions.pending(), [subject])
+    await dom.act(async () =>
+      rendered.root.render(
+        <MemoryRouter>
+          <QueryClientProvider client={queryClient}>
+            <ActionItem action={subject} defaultExpanded />
+          </QueryClientProvider>
+        </MemoryRouter>
+      )
+    )
+    const button = (label: string) =>
+      [...document.querySelectorAll('button')].find((entry) => entry.textContent === label) as HTMLButtonElement
+    return {
+      dom,
+      calls,
+      queryClient,
+      button,
+      cleanup: async () => {
+        globalThis.fetch = originalFetch
+        await dom.cleanup()
+      },
+    }
+  }
+
+  test('explains the pause in plain words and raises the limit in one click', async () => {
+    const view = await renderLimit(limitAction(true))
+    try {
+      const text = document.body.textContent ?? ''
+      expect(text).toContain('attempt limit reached')
+      expect(text).toContain('The step "Build" has used all 2 of its allowed attempts')
+      expect(text).not.toContain('Flow paused at the attempt limit.')
+      // The header offers no review surface; the body holds the action.
+      expect(document.querySelector('button[aria-label^="Review and decide"]')).toBeNull()
+      const input = document.querySelector('input[type="number"]') as HTMLInputElement
+      expect(input.value).toBe('5')
+      await view.dom.act(async () => view.button('Raise limit').click())
+      expect(view.calls).toHaveLength(1)
+      expect(view.calls[0]!.url).toContain('/workflows/runs/ws-1/advance')
+      expect(view.calls[0]!.body).toMatchObject({
+        command: { action: 'raise-limit', expectedVersion: 7, maxStepAttempts: 5 },
+      })
+    } finally {
+      await view.cleanup()
+    }
+  })
+
+  test('Remove limit sends null', async () => {
+    const view = await renderLimit(limitAction(true))
+    try {
+      await view.dom.act(async () => view.button('Remove limit').click())
+      expect(view.calls[0]!.body).toMatchObject({
+        command: { action: 'raise-limit', expectedVersion: 7, maxStepAttempts: null },
+      })
+    } finally {
+      await view.cleanup()
+    }
+  })
+
+  test('people who cannot raise the limit get no controls', async () => {
+    const view = await renderLimit(limitAction(false))
+    try {
+      expect(view.button('Raise limit')).toBeUndefined()
+      expect(view.button('Remove limit')).toBeUndefined()
+      expect(document.body.textContent).toContain('do not have permission to respond')
+      expect(view.calls).toHaveLength(0)
+    } finally {
+      await view.cleanup()
+    }
+  })
+})

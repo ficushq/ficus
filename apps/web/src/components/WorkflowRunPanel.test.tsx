@@ -845,3 +845,39 @@ test('PR completion modes ask for the pull request review; checking delivery sta
     await f.cleanup()
   }
 })
+
+test('the stream page explains an attempt-limit pause and raises the limit in place', async () => {
+  const definition = structuredClone(preset.definition)
+  definition.limits.maxStepAttempts = 1
+  let state = createWorkflowRun(definition)
+  state = {
+    ...state,
+    status: 'paused',
+    activeAttemptId: null,
+    pauseReason: { type: 'attempt-limit', stepId: 'execute' },
+  }
+  state.attempts = state.attempts.map((attempt) => ({ ...attempt, status: 'completed' as const }))
+  const paused = { workStreamId: stream.id, source: {}, state, version: 3, attemptAgents: {} }
+  const f = await fixture(paused, ['workstreams:review'])
+  const advance = spyOn(client.workflows, 'advance').mockResolvedValue({
+    version: 4,
+    stateStatus: 'running',
+    activeAttemptId: 2,
+  })
+  try {
+    await f.render(<WorkflowReviewCallout stream={stream} />)
+    const doc = f.dom.window.document
+    expect(doc.querySelector('section[aria-label="Attempt limit reached"]')).not.toBeNull()
+    expect(doc.body.textContent).toContain('has used all 1 of its allowed attempts')
+    const raise = [...doc.querySelectorAll('button')].find((node) => node.textContent === 'Raise limit')!
+    expect(raise.disabled).toBe(false)
+    await f.dom.act(async () => raise.click())
+    expect(advance.mock.calls[0]!.slice(0, 2)).toEqual([
+      stream.id,
+      { action: 'raise-limit', expectedVersion: 3, maxStepAttempts: 4 },
+    ])
+  } finally {
+    advance.mockRestore()
+    await f.cleanup()
+  }
+})

@@ -33,7 +33,10 @@ export function UnblockForm(props: UnblockFormProps) {
   if (props.wait.resolutionHandler === 'workflow') {
     return (
       <div className="g-action">
-        {(props.message ?? props.wait.message) && <ActionText>{props.message ?? props.wait.message}</ActionText>}
+        {/* An attempt-limit pause explains itself in the decision below. */}
+        {!props.wait.workflowAttemptLimit && (props.message ?? props.wait.message) && (
+          <ActionText>{props.message ?? props.wait.message}</ActionText>
+        )}
         <WorkflowDecision
           workStreamId={props.workStreamId}
           focusWaitId={props.wait.id}

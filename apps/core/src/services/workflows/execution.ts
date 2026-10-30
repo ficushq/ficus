@@ -2,6 +2,7 @@ import { loadReviewContexts } from './review-context'
 import { flowWaitReference, isDeliveryApprovalWait } from './wait-policy'
 import { deliveryInstructionsForRun } from './completion-prompt'
 import { isWorkflowReviewer } from './reviewers'
+import { attemptLimitResolutionHint, attemptLimitWaitMessage, canRaiseFlowAttemptLimit } from './attempt-limit'
 import { flowMessage, workStreamBriefDigest } from './handoff-prompt'
 import { waitsForAttempt, isCurrentWaitAttempt, flowInboxTargets } from '../work-streams/wait-scope'
 import { checkWorkflowScope } from './access'
@@ -21,6 +22,7 @@ import {
   type WorkflowSource,
   type WorkflowRun,
   describeWorkflowDecision,
+  workflowAttemptLimitPause,
 } from '@ficus/shared'
 import {
   db,
@@ -34,6 +36,7 @@ import {
   workflowBindings,
   executions,
   inbox,
+  users,
   type DbTx,
 } from '../../db'
 import { deliverInboxMessagesToAgent } from '../inbox/inboxDelivery'
@@ -221,7 +224,7 @@ export async function dispatchFlow(
         type: 'manual',
         resolutionHandler: 'workflow',
         referenceId,
-        message: `Flow paused: ${JSON.stringify(run.state.pauseReason)}. An authorized flow revision is required.`,
+        message: attemptLimitWaitMessage(stream, run.state),
       })
     return
   }
@@ -243,6 +246,26 @@ export async function dispatchFlow(
   await tx.update(workStreams).set({ assigneeAgentId: primary }).where(eq(workStreams.id, stream.id))
   if (primary && primary !== previousAssignee) await resetContinuationCycle(tx, stream.id, primary)
 }
+/** A readable name for the audit trail: the person's name or email, or the agent's name. */
+async function actorDisplayName(store: DbTx, identity: Identity): Promise<string> {
+  if (identity.type === 'user') {
+    const [user] = await store
+      .select({ name: users.displayName, email: users.email })
+      .from(users)
+      .where(eq(users.id, identity.userId))
+    return user?.name?.trim() || user?.email || `user ${identity.userId}`
+  }
+  if (identity.type === 'agent') {
+    const [agent] = await store
+      .select({ metadata: agents.metadata })
+      .from(agents)
+      .where(eq(agents.id, identity.agentId))
+    const name = (agent?.metadata as Record<string, unknown> | null)?.name
+    return typeof name === 'string' && name.trim() ? `${name.trim()} (agent)` : `agent ${identity.agentId}`
+  }
+  return identity.type === 'system' ? 'a system token' : 'a legacy token'
+}
+
 async function dispatchFlowAttempt(
   tx: DbTx,
   stream: Stream,
@@ -460,11 +483,13 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
   // A human who may approve delivery (finishFlow) may also send it back.
   const canDecideDelivery = identity.type === 'user' && (canRespond || canUpdate)
   if (
-    command.action === 'revise'
-      ? !canRevise && !(identity.type === 'agent' && canRespond)
-      : command.action === 'rework'
-        ? !canRevise && !canDecideDelivery && !(identity.type === 'agent' && canRespond)
-        : !canReview && !canRespond && !canUpdate
+    command.action === 'raise-limit'
+      ? false // Decided against the locked run below: reviewers, the owner or the squad manager.
+      : command.action === 'revise'
+        ? !canRevise && !(identity.type === 'agent' && canRespond)
+        : command.action === 'rework'
+          ? !canRevise && !canDecideDelivery && !(identity.type === 'agent' && canRespond)
+          : !canReview && !canRespond && !canUpdate
   )
     throw new WorkflowError('Forbidden', 403)
   const actor = actorKey(identity)
@@ -493,8 +518,17 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
         ...(command.action === 'revise' ? revisionOutcomeUpdates(run, prior.version) : {}),
       }
     }
-    assertStreamAcceptsHandoffs(stream, { paused: command.action === 'revise' })
+    assertStreamAcceptsHandoffs(stream, { paused: command.action === 'revise' || command.action === 'raise-limit' })
     if (command.expectedVersion !== run.version) throw new WorkflowError('Stale flow version', 409)
+    if (command.action === 'raise-limit') {
+      if (!workflowAttemptLimitPause(run.state))
+        throw new WorkflowError('The flow is not paused at an attempt limit; there is no limit to raise', 409)
+      if (!(await canRaiseFlowAttemptLimit(identity, stream, run, tx)))
+        throw new WorkflowError(
+          'Only a reviewer of this work stream, its owner agent, or the squad manager can raise the attempt limit; the agent that ran the paused step cannot',
+          403
+        )
+    }
     const attempt = run.state.attempts.find((a) => a.id === command.attemptId)
     const step = attempt?.step ?? run.state.definition.steps.find((s) => s.id === attempt?.stepId)
     if (
@@ -524,7 +558,7 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
           'Only the delivery participant, a delivery approver, or a flow manager can request rework',
           403
         )
-    } else if (command.action !== 'revise') {
+    } else if (command.action !== 'revise' && command.action !== 'raise-limit') {
       if (step?.kind === 'decision') {
         if (!attempt?.decision?.awaitingPerson)
           throw new WorkflowError('A decision model is deciding this step; wait for its decision', 409)
@@ -544,7 +578,7 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
       else if (identity.type !== 'agent' && !(await hasPermission(identity, 'workstreams:revise-flow', stream.squadId)))
         throw new WorkflowError('Flow intervention requires management permission', 403)
     }
-    if (command.action !== 'revise' && attempt) {
+    if (command.action !== 'revise' && command.action !== 'raise-limit' && attempt) {
       const waits =
         command.action === 'rework'
           ? (await listOpenWaits(tx, id)).filter(
@@ -651,6 +685,17 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
             .set({ readAt: new Date() })
             .where(eq(inbox.idempotencyKey, `flow:${id}:${attempt.id}`))
       }
+    } else if (command.action === 'raise-limit') {
+      // The audit record names who unblocked the flow, in the revision history and on the wait.
+      const revision = state.revisions!.at(-1)!
+      revision.actor = actor
+      revision.reason = `${revision.reason} (by ${await actorDisplayName(tx, identity)})`
+      await closeOpenWaits(
+        tx,
+        { workStreamId: id, referenceId: flowWaitReference(id, 'limit', run.version) },
+        'cleared',
+        { note: revision.reason }
+      )
     } else if (step?.kind === 'human-approval' || step?.kind === 'decision')
       await closeOpenWaits(
         tx,
@@ -691,7 +736,7 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
       updated,
       callbacks,
       identity.type === 'agent'
-        ? { agentId: identity.agentId, requestId, sourceAttemptId: command.attemptId }
+        ? { agentId: identity.agentId, requestId, sourceAttemptId: command.attemptId ?? null }
         : undefined
     )
     const receipt = { version: state.version, stateStatus: state.status, activeAttemptId: state.activeAttemptId }
@@ -1117,7 +1162,7 @@ export async function reopenFlow(tx: DbTx, id: string) {
   await tx.update(workStreams).set({ assigneeAgentId: null }).where(eq(workStreams.id, id))
 }
 
-export async function guardFlowWaitResolution(tx: DbTx, id: string, waitId?: string) {
+export async function guardFlowWaitResolution(tx: DbTx | typeof db, id: string, waitId?: string) {
   const [run] = await tx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, id))
   if (!run?.activated) return
   const refs = new Set([
@@ -1125,7 +1170,12 @@ export async function guardFlowWaitResolution(tx: DbTx, id: string, waitId?: str
     flowWaitReference(id, 'limit', run.version),
     ...activeWorkflowAttempts(run.state).map((attempt) => flowWaitReference(id, 'human', attempt.id)),
   ])
-  const waits = await listOpenWaits(tx, id)
-  if (waits.some((wait) => (!waitId || wait.id === waitId) && wait.referenceId && refs.has(wait.referenceId)))
-    throw new WorkflowError('Use the workflow decision or revision to resolve this flow wait', 409)
+  const waits = (await listOpenWaits(tx, id)).filter(
+    (wait) => (!waitId || wait.id === waitId) && wait.referenceId && refs.has(wait.referenceId)
+  )
+  if (waits.some((wait) => wait.referenceId === flowWaitReference(id, 'limit', run.version))) {
+    const [stream] = await tx.select({ number: workStreams.number }).from(workStreams).where(eq(workStreams.id, id))
+    throw new WorkflowError(attemptLimitResolutionHint(stream?.number ?? id), 409)
+  }
+  if (waits.length) throw new WorkflowError('Use the workflow decision or revision to resolve this flow wait', 409)
 }

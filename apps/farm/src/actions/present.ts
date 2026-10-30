@@ -42,6 +42,7 @@ export function actionSubtitle(action: PendingAction): string {
     case 'workstream-blocked': {
       const { wait, squadName } = typed.data
       const assignee = typed.data.assigneeName || typed.data.assigneeAgentId?.slice(0, 8)
+      if (typed.data.attemptLimit || wait.workflowAttemptLimit) return `${squadName} · attempt limit reached`
       if (wait.resolutionHandler === 'workflow')
         return `${squadName} · ${wait.flowAttemptId != null ? 'review needed' : 'workflow decision'}`
       return `${squadName}${assignee ? ` · ${assignee} needs input` : ' · needs input'}`

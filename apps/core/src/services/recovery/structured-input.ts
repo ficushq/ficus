@@ -64,7 +64,14 @@ export async function resolveStructuredInput(
     .select()
     .from(workStreamWaits)
     .where(and(eq(workStreamWaits.id, waitId), eq(workStreamWaits.workStreamId, workStreamId)))
-  if (!candidate?.structured) throw new Error('Structured input wait not found')
+  if (!candidate?.structured) {
+    // A workflow-owned wait (such as an attempt-limit pause) says which action resolves it.
+    if (candidate && !candidate.closedAt && candidate.resolutionHandler === 'workflow') {
+      const { guardFlowWaitResolution } = await import('../workflows/execution')
+      await guardFlowWaitResolution(db, workStreamId, waitId)
+    }
+    throw new Error('Structured input wait not found')
+  }
   if (candidate.closedAt) throw new Error('Input wait is already closed')
   if (candidate.structured.request.kind === 'continue') {
     await decideRecovery(candidate.structured.request.recoveryId, decision, actor, { id: waitId, workStreamId })
