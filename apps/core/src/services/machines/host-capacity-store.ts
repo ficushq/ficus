@@ -8,7 +8,8 @@ import { evaluateHostBoxCounts, withHostStartupCapacity, type HostCapacityDecisi
 export type HostCapacityOwner =
   | { kind: 'stream'; workStreamId: string }
   | { kind: 'execution'; executionId: string; workStreamId?: string }
-  | { kind: 'provision'; provisionAttemptId: number; workStreamId?: string }
+  /** `background`: no execution waits on this box, so it may not take the last free startup slot. */
+  | { kind: 'provision'; provisionAttemptId: number; workStreamId?: string; background?: boolean }
 export interface HostResource {
   machineId: string
   sandboxId: string
@@ -328,7 +329,8 @@ export async function claimHostCapacity(
       const startup = withHostStartupCapacity(
         capacity,
         before.filter((claim) => claim.startupActive && claim.machineId === machineId).map((claim) => claim.sandboxId),
-        resources.filter((resource) => resource.machineId === machineId).map((resource) => resource.sandboxId)
+        resources.filter((resource) => resource.machineId === machineId).map((resource) => resource.sandboxId),
+        { background: owner.background === true }
       )
       if (!startup.allowed) return { allowed: false, reason: 'starting', machineId, capacity: startup }
     }
