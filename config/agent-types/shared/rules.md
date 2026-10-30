@@ -77,3 +77,13 @@ ficus pr attach 173 './before.png#Before' './after.png#After' --body "Before / a
 `--edit-body` appends to the description instead; `--no-comment` only prints the
 Markdown. Attachments have the repository's visibility — never attach anything you
 would not paste into that thread.
+
+### Images and stored files
+
+Images and files Ficus already stores (chat images and files, handoff and inbox
+attachments) need no workspace copy: view them with the `read_attachment` tool, and
+share a chat image with a work stream by ID with
+`ficus workstream attachment add STREAM_ID --image IMAGE_ID` (or
+`--attach-image IMAGE_ID` on `advance`). Download only when a local tool needs the
+bytes: `ficus image get IMAGE_ID --out SHARED_TASK_PATH`. Details are in the
+work-stream-driven-development skill.
