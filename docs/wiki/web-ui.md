@@ -165,6 +165,8 @@ Terminal themes, ANSI colors, syntax highlighting, code/diff meaning, graph canv
 
 Run formatting, typechecking, the web build, and the web package's completion-checked test gate. Verify routing, query state, permissions, focus, and loading behavior alongside screenshots. Review representative light/dark and narrow/wide layouts, including long content, overflow, menus, and reduced-height windows. Record actual observations and limits in the coverage ledger rather than claiming every state was visually tested.
 
+The DB-free browser checks in `apps/web/scripts/check-*.ts` render real components from `scripts/fixtures/*.tsx` in Chromium with synthetic data. They start Vite through `startFixtureServer` in `scripts/fixture-server.ts`. That helper keeps one config for every check, so all checks share one Vite dependency cache. It also waits for Vite's first dependency build before any browser opens, so a check also passes on a cold cache. Set `FIXTURE_CACHE_DIR` to an empty directory to reproduce a cold start. New checks should use the helper rather than calling `createServer` themselves.
+
 Active navigation and settings pages use a tinted background and accent text, without a selected border or inset shadow. Keep keyboard focus outlines distinct from selection. The mobile settings chooser stays open when switching Personal and Administration; choosing a page dismisses it.
 
 ## Loading and stable layouts

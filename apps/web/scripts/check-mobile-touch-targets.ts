@@ -15,9 +15,9 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { createServer } from 'vite'
 import type { Browser } from 'playwright-core'
 import type { Monitor } from '@ficus/shared'
+import { startFixtureServer } from './fixture-server'
 
 const root = resolve(import.meta.dir, '..')
 const { chromium } = createRequire(resolve(root, '../core/package.json'))(
@@ -70,29 +70,13 @@ const api: Record<string, unknown> = {
   '/api/monitors': [monitor('m1', 'Garden planner build errors'), monitor('m2', 'Nightly export')],
 }
 
-const server = await createServer({
-  configFile: false,
-  root,
-  server: { host: '127.0.0.1', port: 0 },
-  esbuild: { jsx: 'automatic' },
+const server = await startFixtureServer({
+  path: '/touch-targets-fixture',
+  entry: '/scripts/fixtures/mobile-touch-targets.tsx',
   logLevel: 'warn',
-  plugins: [
-    {
-      name: 'mobile-touch-targets-fixture',
-      configureServer(server) {
-        server.middlewares.use('/touch-targets-fixture', (_req, res) => {
-          res.setHeader('Content-Type', 'text/html')
-          res.end(
-            '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="root"></div><script type="module" src="/scripts/fixtures/mobile-touch-targets.tsx"></script></body></html>'
-          )
-        })
-      },
-    },
-  ],
 })
 let browser: Browser | undefined
 try {
-  await server.listen()
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--no-sandbox'] })
   const page = await browser.newPage({ hasTouch: true })
   page.setDefaultTimeout(10000)
