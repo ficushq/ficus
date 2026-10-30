@@ -188,6 +188,12 @@ describe('AgentTypeSync', () => {
       expect(prompt).toContain('trace implementation and validation back to the applicable original requirements')
     }
     expect(promptFor('reviewer')).toContain('even when the implementation faithfully follows the plan')
+    const reviewer = promptFor('reviewer')
+    expect(reviewer.split('### Check Design Assumptions')).toHaveLength(2)
+    expect(reviewer.indexOf('### Check Design Assumptions')).toBeLessThan(reviewer.indexOf('### Pass 2: Code Quality'))
+    expect(reviewer).toContain('from the original wording before comparing the plan')
+    expect(reviewer).toContain('not independent evidence of compliance')
+    expect(reviewer).toContain('do not invent a blocking requirement')
   })
 
   test('required-dependency guidance reaches every engineering role', async () => {
