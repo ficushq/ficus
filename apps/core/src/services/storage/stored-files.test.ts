@@ -123,6 +123,8 @@ test('totals core-host files per squad, keeps unattributed files separate, and c
     ['inboxAttachments', true],
     ['workflowAttachments', true],
     ['images', false],
+    ['retainedFiles', true],
+    ['retainedImages', false],
   ])
   expect(summary.quotaBytes).toBe(Number(getSettingsStore().getTyped('INBOX_MAX_TOTAL_STORAGE_BYTES')))
 })

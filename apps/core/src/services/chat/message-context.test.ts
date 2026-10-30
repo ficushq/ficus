@@ -79,3 +79,17 @@ test("the user's routing correction overrides the hint, whatever its confidence"
   expect(note).not.toContain('m-1')
   expect(note).toContain('Use no squad for delegate_task')
 })
+
+test('delivered images are named by ID for the model, without changing the stored message', () => {
+  const message = {
+    content: 'The passkey button looks wrong',
+    metadata: { imageIds: ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'] },
+  }
+  const text = messageTextForModel(message)
+  expect(text.startsWith('The passkey button looks wrong\n\n[Images in this message')).toBe(true)
+  expect(text).toContain('read_attachment kind "conversation-image"')
+  expect(text).toContain('ficus workstream attachment add STREAM_ID --image IMAGE_ID')
+  expect(text).toContain('11111111-1111-4111-8111-111111111111, 22222222-2222-4222-8222-222222222222')
+  expect(message.content).toBe('The passkey button looks wrong')
+  expect(messageTextForModel({ content: 'No images', metadata: { imageIds: [] } })).toBe('No images')
+})
