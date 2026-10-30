@@ -76,8 +76,9 @@ const popover = usePopover({ kind: 'menu' }) // 'menu' | 'listbox' | 'dialog' | 
   squad switcher, the squad tabs' More menu, the composer's delivery-mode chevron and context ring, the
   squad Chats "…" menu and the tablet Agent view dropdown; neither opens on hover while disabled; the
   assistant's Arrange menu; the top nav's theme flyout, a `Panel`, where only the trigger pins it and
-  choosing a theme keeps hover mode; and the work stream Filters panel and the squad notifications bell,
-  where any press inside calls `pin()`). Spread its `triggerProps` on the trigger (its `onClick` replaces
+  choosing a theme keeps hover mode; the work stream Filters panel, where likewise only the trigger pins it
+  and toggling a filter keeps hover mode; and the squad notifications bell, where any press inside calls
+  `pin()`). Spread its `triggerProps` on the trigger (its `onClick` replaces
   `popover.toggle`) and its `popoverProps` on the popover. A mouse resting on the trigger for `openDelay`
   (one shared `HOVER_OPEN_DELAY_MS`, so a pointer passing over never flashes a menu) opens it without
   taking focus; a mouse arriving with a button held (a drag) never opens it. Leaving both the trigger and

@@ -50,6 +50,12 @@ export interface WorkflowAttempt {
   sourceAttemptIds?: number[]
   /** Durable command-response handoff; no inbox delivery is needed for this attempt. */
   responseAssignment?: { requestId: string; agentId: string; version: number; content: string; executionId?: string }
+  /**
+   * The work brief this attempt's agent had when assigned: a digest of the stream description and owner's
+   * handoff, and the agent's session-reset count. A later attempt for the same agent repeats the brief only
+   * when either changed.
+   */
+  briefContext?: { digest: string; sessionResets: number }
   branch?: WorkflowBranch
   id: number
   stepId: string

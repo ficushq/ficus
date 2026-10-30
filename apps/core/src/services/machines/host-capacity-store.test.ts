@@ -3,7 +3,12 @@ import { createPostgresConnection, getDirectConnectionString } from '../../db/co
 import { vmSetupLockKey } from '../sandbox/vm/setup-lock'
 import { bindMachineBox } from './queries'
 import { coalesceVmProvision } from '../sandbox/vm/provision-flight'
-import { reserveExecutionHostCapacity, reservePhysicalHostCapacity, readSandboxHostCapacity } from './host-admission'
+import {
+  reserveExecutionHostCapacity,
+  reservePhysicalHostCapacity,
+  readSandboxHostCapacity,
+  sandboxHasWaitingWork,
+} from './host-admission'
 import { afterEach, beforeEach, describe, expect, test, spyOn } from 'bun:test'
 import { eq, inArray } from 'drizzle-orm'
 import {
@@ -27,6 +32,7 @@ const agentIds: string[] = []
 const provisionIds: number[] = []
 
 beforeEach(async () => {
+  // 4-CPU hosts: the floor of two startup slots these tests are written against.
   const [machine] = await db
     .insert(machines)
     .values({
@@ -37,7 +43,7 @@ beforeEach(async () => {
       sshKeyId: 'unused',
       sshPublicKey: 'unused',
       status: 'ready',
-      capabilities: { cpus: 8 },
+      capabilities: { cpus: 4 },
     })
     .returning()
   machineId = machine.id
@@ -106,6 +112,50 @@ async function withStartupSlots<T>(count: number, operation: () => Promise<T>): 
 }
 
 describe('durable host capacity claims', () => {
+  // A queued turn waited minutes for its box while background warmups took
+  // both slots (2026-10-30). A background start never takes the last slot.
+  test('a background startup leaves the last free slot to a box someone is waiting on', async () => {
+    const attempts = await db
+      .insert(vmBoxProvisionAttempts)
+      .values([{ sandboxId: 'background_warm' }, { sandboxId: 'agent_waiting' }])
+      .returning()
+    provisionIds.push(...attempts.map((attempt) => attempt.id))
+    const [background, waiting] = attempts as [(typeof attempts)[number], (typeof attempts)[number]]
+    await withStartupSlots(1, () =>
+      withVmSetupLease(background.sandboxId, () =>
+        withVmSetupLease(waiting.sandboxId, async () => {
+          expect(
+            await db.transaction((tx) =>
+              claimHostCapacity(
+                tx,
+                { kind: 'provision', provisionAttemptId: background.id, background: true },
+                resources(background.sandboxId)
+              )
+            )
+          ).toMatchObject({ allowed: false, reason: 'starting' })
+          expect(
+            await db.transaction((tx) =>
+              claimHostCapacity(tx, { kind: 'provision', provisionAttemptId: waiting.id }, resources(waiting.sandboxId))
+            )
+          ).toMatchObject({ allowed: true })
+        })
+      )
+    )
+  })
+
+  test('a box has waiting work when an execution of an agent using it is queued, waiting for a sandbox or running', async () => {
+    const run = await execution()
+    for (const sandboxId of [`agent_${run.agentId}`, `squad_${squadId}`, `consultants_${squadId}`]) {
+      for (const status of ['queued', 'waiting-sandbox', 'running'] as const) {
+        await db.update(executions).set({ status }).where(eq(executions.id, run.id))
+        expect(await db.transaction((tx) => sandboxHasWaitingWork(tx, sandboxId))).toBe(true)
+      }
+      await db.update(executions).set({ status: 'completed' }).where(eq(executions.id, run.id))
+      expect(await db.transaction((tx) => sandboxHasWaitingWork(tx, sandboxId))).toBe(false)
+    }
+    expect(await db.transaction((tx) => sandboxHasWaitingWork(tx, `devbox-prewarm-squad-${machineId}`))).toBe(false)
+  })
+
   test('a crashed running generation loses its host claim when its authoritative session lease disappears', async () => {
     const run = await execution()
     await db.transaction((tx) =>
@@ -207,7 +257,7 @@ describe('durable host capacity claims', () => {
     expect(await db.transaction((tx) => readHostCapacity(tx, machineId))).toMatchObject({ activeBoxes: 1 })
   })
 
-  test('unadmitted generations cannot mutually occupy a serialized startup lane', async () => {
+  test('unadmitted generations cannot mutually occupy the last startup slot', async () => {
     await db
       .update(machines)
       .set({ capabilities: { cpus: 2 } })
@@ -229,18 +279,25 @@ describe('durable host capacity claims', () => {
       .values([{ sandboxId: 'agent_pending_a' }, { sandboxId: 'agent_pending_b' }])
       .returning()
     provisionIds.push(...attempts.map((attempt) => attempt.id))
-    await withVmSetupLease(attempts[0].sandboxId, () =>
-      withVmSetupLease(attempts[1].sandboxId, async () => {
-        const outcomes = await Promise.all(
-          attempts.map((attempt) =>
-            db.transaction((tx) =>
-              claimHostCapacity(tx, { kind: 'provision', provisionAttemptId: attempt.id }, resources(attempt.sandboxId))
+    // A small host has the floor of two slots; one is already starting.
+    await withStartupSlots(1, () =>
+      withVmSetupLease(attempts[0].sandboxId, () =>
+        withVmSetupLease(attempts[1].sandboxId, async () => {
+          const outcomes = await Promise.all(
+            attempts.map((attempt) =>
+              db.transaction((tx) =>
+                claimHostCapacity(
+                  tx,
+                  { kind: 'provision', provisionAttemptId: attempt.id },
+                  resources(attempt.sandboxId)
+                )
+              )
             )
           )
-        )
-        expect(outcomes.filter((outcome) => outcome.allowed)).toHaveLength(1)
-        expect(outcomes.find((outcome) => !outcome.allowed)?.reason).toBe('starting')
-      })
+          expect(outcomes.filter((outcome) => outcome.allowed)).toHaveLength(1)
+          expect(outcomes.find((outcome) => !outcome.allowed)?.reason).toBe('starting')
+        })
+      )
     )
   })
 
@@ -350,7 +407,7 @@ describe('durable host capacity claims', () => {
           sshKeyId: 'unused',
           sshPublicKey: 'unused',
           status: 'ready',
-          capabilities: { cpus: 8 },
+          capabilities: { cpus: 4 },
         })
         .returning()
       try {
@@ -392,7 +449,7 @@ describe('durable host capacity claims', () => {
         sshKeyId: 'unused',
         sshPublicKey: 'unused',
         status: 'ready',
-        capabilities: { cpus: 8 },
+        capabilities: { cpus: 4 },
       })
       .returning()
     try {
@@ -555,7 +612,7 @@ describe('durable host capacity claims', () => {
       )
     )
     expect(await readSandboxHostCapacity(`squad_${squadId}`, squadId)).toMatchObject({
-      cpus: 8,
+      cpus: 4,
       startupLimit: 2,
       activeBoxes: 2,
     })
@@ -564,7 +621,7 @@ describe('durable host capacity claims', () => {
     expect(await readSandboxHostCapacity(`squad_${squadId}`, squadId)).toMatchObject({
       allowed: true,
       reason: 'unknown',
-      startupLimit: 1,
+      startupLimit: 2,
     })
   })
 
@@ -607,7 +664,7 @@ describe('durable host capacity claims', () => {
     }
   })
 
-  test('small-host startup is serialized with no permit held after verified completion', async () => {
+  test('small-host startup at the slot limit frees its slot on verified completion', async () => {
     await db
       .update(machines)
       .set({ capabilities: { cpus: 2 } })
@@ -630,13 +687,19 @@ describe('durable host capacity claims', () => {
       db.transaction((tx) =>
         claimHostCapacity(tx, { kind: 'provision', provisionAttemptId: row.id }, resources(row.sandboxId))
       )
-    await withVmSetupLease(a.sandboxId, () =>
-      withVmSetupLease(b.sandboxId, async () => {
-        expect((await claim(a)).allowed).toBe(true)
-        expect(await claim(b)).toMatchObject({ allowed: false, reason: 'starting' })
-        await db.update(vmBoxProvisionAttempts).set({ status: 'succeeded' }).where(eq(vmBoxProvisionAttempts.id, a.id))
-        expect((await claim(b)).allowed).toBe(true)
-      })
+    // A small host has the floor of two slots; one is already starting.
+    await withStartupSlots(1, () =>
+      withVmSetupLease(a.sandboxId, () =>
+        withVmSetupLease(b.sandboxId, async () => {
+          expect((await claim(a)).allowed).toBe(true)
+          expect(await claim(b)).toMatchObject({ allowed: false, reason: 'starting' })
+          await db
+            .update(vmBoxProvisionAttempts)
+            .set({ status: 'succeeded' })
+            .where(eq(vmBoxProvisionAttempts.id, a.id))
+          expect((await claim(b)).allowed).toBe(true)
+        })
+      )
     )
   })
 

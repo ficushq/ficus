@@ -42,6 +42,7 @@ roles:
       - terminal:*
       - sandbox:logs
       - system:logs
+      - storage:read # one squad's storage breakdown (squad-scoped when the role is)
       - workspace:*
       - schedules:*
       - squad-relationships:*
@@ -205,6 +206,7 @@ roles:
       - recommendations:update
       - squad-relationships:read
       - workspace:read # ficus squad workspace / ficus squad file
+      - storage:read # ficus squad storage (own squad only; never instance-wide storage)
       - env:read # ficus squad-env get
       - env:write # ficus squad-env set / set-file
       - schedules:read

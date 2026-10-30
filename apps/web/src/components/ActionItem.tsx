@@ -112,10 +112,16 @@ export function ActionItem({
   const isWorkStreamAction = action.type === 'workstream-review' || action.type === 'workstream-blocked'
   const deliveryGate = action.type === 'workstream-delivery' ? (action.data as WorkStreamDeliveryActionData) : null
   const linkedPullRequests = deliveryGate ? deliveryGate.pullRequests.filter((pullRequest) => pullRequest.url) : []
+  const status = actionStatusPresentation(action)
+  // A workflow review gate's only action is the header's Review, and the review screen's decision
+  // brief carries its instructions, so the card has nothing to expand. Embedded previews keep the
+  // gate message; typed inputs keep their controls.
+  const blockedWait = action.type === 'workstream-blocked' ? (action.data as WorkStreamActionData).wait : null
+  const workflowReviewGate =
+    blockedWait?.resolutionHandler === 'workflow' && !blockedWait.structured && status.role === 'review'
   // A delivery gate's only actions are its pull request links. One link sits inline on the header,
   // so the card has nothing to expand; several stay in the expandable list.
-  const expandable = !deliveryGate || linkedPullRequests.length > 1
-  const status = actionStatusPresentation(action)
+  const expandable = deliveryGate ? linkedPullRequests.length > 1 : embedded || !workflowReviewGate
 
   // Remove the successful action immediately, then refetch only authoritative affected domains.
   const completeAction = async () => {

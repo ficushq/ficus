@@ -132,8 +132,10 @@ RUN nix profile install \
         nixpkgs#procps
 
 # Agent prompts tell agents to attach screenshots with `gh --attach` (2.99.0+).
-# Pin gh to the same Nixpkgs commit as the Devbox comfort sets (2.100.0).
-# Check the actual capability so an incompatible package fails at build time.
+# The image pins gh to a Nixpkgs commit (2.100.0); a build-time install costs no
+# box any runtime evaluation. VM boxes take gh from the devbox index instead
+# (apps/core devbox-seed.ts GH_PACKAGE), where a flake ref cost each fresh box
+# ~68s. Check the actual capability so an incompatible package fails at build time.
 RUN gh --version \
     && gh pr comment --help | grep -q -- '--attach'
 

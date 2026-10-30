@@ -76,10 +76,18 @@ export type SeedBoxRole = 'squad' | 'agent' | 'system-manager'
 const DEVBOX_SCHEMA = 'https://raw.githubusercontent.com/jetify-com/devbox/0.14.0/.schema/devbox.schema.json'
 
 /**
- * gh is pinned directly to Nixpkgs (2.100.0) because the Jetify version index
- * lags the 2.99.0 minimum for native attachments. Keep the ref in sync with
- * packages/sandbox-server/Dockerfile and sandbox/devbox.json.
- *
+ * gh and bun come from the devbox (Nixhub) index at explicit versions. They were
+ * Nixpkgs flake refs while the index lagged (gh needs >= 2.99.0 for
+ * `gh pr comment --attach`; bun must match the repository's .bun-version). A
+ * flake ref has no store path in devbox.lock, so EVERY fresh box user had to
+ * fetch and evaluate nixpkgs to find it: ~68s of a ~72s `devbox install`,
+ * measured on a warm machine 2026-10-30. An index version is locked to its store
+ * path and checked offline. Bump BUN_PACKAGE together with `.bun-version`.
+ */
+const GH_PACKAGE = 'gh@2.102.0'
+const BUN_PACKAGE = 'bun@1.4.2'
+
+/**
  * LIGHT comfort set — mirrors the k8s `agent` stage's global nix profile install
  * (packages/sandbox-server/Dockerfile). Kept in lockstep with that stage; if the
  * Dockerfile's agent comfort set changes, update this list (and the test).
@@ -91,18 +99,10 @@ export const AGENT_COMFORT_PACKAGES: readonly string[] = [
   'fd@latest',
   'tree@latest',
   'less@latest',
-  'github:NixOS/nixpkgs/d5dfd8e6716dde34398bc14bc87c10dece9c8c68#gh',
+  GH_PACKAGE,
   'tmux@latest',
   'procps@latest',
 ]
-
-/**
- * bun is pinned to a Nixpkgs commit carrying the repository's `.bun-version`
- * (1.4.2): the Jetify version index lags Nixpkgs, so `bun@latest` resolved to an
- * older release than a squad toolchain's plain `bun`, leaving two versions on
- * one box. Bump the ref together with `.bun-version`.
- */
-const BUN_PACKAGE = 'github:NixOS/nixpkgs/8825bebf6324e0579d012936eff73379af284b6d#bun'
 
 /**
  * HEAVIER comfort set — mirrors packages/sandbox-server/sandbox/devbox.json (the
@@ -118,7 +118,7 @@ export const SQUAD_COMFORT_PACKAGES: readonly string[] = [
   'jq@latest',
   'tree@latest',
   'less@latest',
-  'github:NixOS/nixpkgs/d5dfd8e6716dde34398bc14bc87c10dece9c8c68#gh',
+  GH_PACKAGE,
   'gnumake@latest',
   'gcc@latest',
   'diffutils@latest',
@@ -217,9 +217,15 @@ function packageBaseName(pkg: string): string {
 /**
  * Comfort specs an earlier Core wrote itself, mapped to what replaces them.
  * Replacing only these exact specs upgrades existing boxes without overriding
- * a version the user chose (`bun@1.2.0` stays).
+ * a version the user chose (`bun@1.2.0`, `gh@2.80.0` stay).
  */
-const SUPERSEDED_COMFORT_SPECS: Readonly<Record<string, string>> = { 'bun@latest': BUN_PACKAGE }
+const SUPERSEDED_COMFORT_SPECS: Readonly<Record<string, string>> = {
+  'bun@latest': BUN_PACKAGE,
+  'gh@latest': GH_PACKAGE,
+  // The Nixpkgs flake-ref pins Core used until 2026-10-30 (see GH_PACKAGE).
+  'github:NixOS/nixpkgs/8825bebf6324e0579d012936eff73379af284b6d#bun': BUN_PACKAGE,
+  'github:NixOS/nixpkgs/d5dfd8e6716dde34398bc14bc87c10dece9c8c68#gh': GH_PACKAGE,
+}
 
 function supersededBy(role: SeedBoxRole, spec: string): string | undefined {
   const replacement = SUPERSEDED_COMFORT_SPECS[spec]

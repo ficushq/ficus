@@ -17,7 +17,7 @@ import { Squad } from '../../entities/Squad'
 import { getSettingsStore } from '../settings'
 import { totalAttachmentStorageBytes } from '../attachments/storage-quota'
 import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stream'
-import { summarizeStoredFiles } from './stored-files'
+import { summarizeSquadStoredFiles, summarizeStoredFiles } from './stored-files'
 
 const owned = { squads: [] as string[], agents: [] as string[], images: [] as string[], inbox: [] as string[] }
 
@@ -125,4 +125,42 @@ test('totals core-host files per squad, keeps unattributed files separate, and c
     ['images', false],
   ])
   expect(summary.quotaBytes).toBe(Number(getSettingsStore().getTyped('INBOX_MAX_TOTAL_STORAGE_BYTES')))
+})
+
+test('a squad summary counts only that squad and leaves the instance quota out', async () => {
+  const squad = await Squad.create({ name: `stored-files-own-${randomUUID()}`, purpose: 'stored files fixture' })
+  const other = await Squad.create({ name: `stored-files-other-${randomUUID()}`, purpose: 'stored files fixture' })
+  owned.squads.push(squad.id, other.id)
+  const agent = await Agent.create({ agentTypeId: 'consultant', squadId: squad.id, persist: false })
+  const foreign = await Agent.create({ agentTypeId: 'consultant', squadId: other.id, persist: false })
+  owned.agents.push(agent.id, foreign.id)
+
+  await agentFile(agent.id, 100)
+  await image(7, { squadId: squad.id })
+  await image(3, { agentId: agent.id })
+  await inboxFile('agent', agent.id, 20)
+  // Another squad's files and unattributed files never reach this squad's totals.
+  await agentFile(foreign.id, 9_000)
+  await image(8_000, { squadId: other.id })
+  await image(700, { agentId: foreign.id })
+  await inboxFile('agent', foreign.id, 600)
+  await inboxFile('user', randomUUID(), 50)
+  await image(40, {})
+
+  const summary = await summarizeSquadStoredFiles(squad.id)
+  expect(summary).toEqual({
+    bytes: 130,
+    sources: [
+      { key: 'agentFiles', label: 'Agent file attachments', countsTowardQuota: true, bytes: 100 },
+      { key: 'inboxAttachments', label: 'Inbox attachments', countsTowardQuota: true, bytes: 20 },
+      { key: 'workflowAttachments', label: 'Workflow handoff files', countsTowardQuota: true, bytes: 0 },
+      { key: 'images', label: 'Images', countsTowardQuota: false, bytes: 10 },
+    ],
+  })
+  expect(Object.keys(summary)).not.toContain('quotaUsedBytes')
+  expect((await summarizeSquadStoredFiles(other.id)).bytes).toBe(18_300)
+  // The instance-wide summary is unchanged by the squad filter.
+  const all = await summarizeStoredFiles()
+  expect(all.squads.find((item) => item.id === squad.id)?.bytes).toBe(130)
+  expect(all.squads.find((item) => item.id === other.id)?.bytes).toBe(18_300)
 })

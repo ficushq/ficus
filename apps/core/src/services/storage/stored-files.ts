@@ -1,5 +1,5 @@
 import { and, eq, inArray, sql } from 'drizzle-orm'
-import type { StoredFilesSummary } from '@ficus/shared'
+import type { SquadStoredFiles, StoredFilesSummary } from '@ficus/shared'
 import { db } from '../../db'
 import {
   agentFileAttachments,
@@ -19,13 +19,13 @@ type SquadBytes = { squadId: string | null; bytes: number | string | null }
 /**
  * One kind of file Ficus keeps on the core host, totalled per owning squad from
  * its database rows (cheap aggregates, never a disk scan). A new blob kind
- * is one more entry here.
+ * is one more entry here. With `squadId`, only that squad's rows are summed.
  */
 interface StoredFileSourceDefinition {
   key: string
   label: string
   countsTowardQuota: boolean
-  bySquad: () => Promise<SquadBytes[]>
+  bySquad: (squadId?: string) => Promise<SquadBytes[]>
 }
 
 export const STORED_FILE_SOURCES: StoredFileSourceDefinition[] = [
@@ -33,11 +33,12 @@ export const STORED_FILE_SOURCES: StoredFileSourceDefinition[] = [
     key: 'agentFiles',
     label: 'Agent file attachments',
     countsTowardQuota: true,
-    bySquad: () =>
+    bySquad: (squadId) =>
       db
         .select({ squadId: agents.squadId, bytes: sql<string>`sum(${agentFileAttachments.byteSize})` })
         .from(agentFileAttachments)
         .leftJoin(agents, eq(agents.id, agentFileAttachments.agentId))
+        .where(squadId ? eq(agents.squadId, squadId) : undefined)
         .groupBy(agents.squadId),
   },
   {
@@ -45,39 +46,59 @@ export const STORED_FILE_SOURCES: StoredFileSourceDefinition[] = [
     label: 'Inbox attachments',
     countsTowardQuota: true,
     // Attributable only through an agent recipient; people's and the system inbox are unattributed.
-    bySquad: () =>
+    bySquad: (squadId) =>
       db
         .select({ squadId: agents.squadId, bytes: sql<string>`sum(${inboxAttachments.byteSize})` })
         .from(inboxAttachments)
         .innerJoin(inbox, eq(inbox.id, inboxAttachments.messageId))
         .leftJoin(agents, and(eq(inbox.recipientType, 'agent'), sql`${agents.id}::text = ${inbox.recipientId}`))
+        .where(squadId ? eq(agents.squadId, squadId) : undefined)
         .groupBy(agents.squadId),
   },
   {
     key: 'workflowAttachments',
     label: 'Workflow handoff files',
     countsTowardQuota: true,
-    bySquad: () =>
+    bySquad: (squadId) =>
       db
         .select({ squadId: workStreams.squadId, bytes: sql<string>`sum(${workflowAttemptAttachments.byteSize})` })
         .from(workflowAttemptAttachments)
         .leftJoin(workStreams, eq(workStreams.id, workflowAttemptAttachments.workStreamId))
+        .where(squadId ? eq(workStreams.squadId, squadId) : undefined)
         .groupBy(workStreams.squadId),
   },
   {
     key: 'images',
     label: 'Images',
     countsTowardQuota: false,
-    bySquad: async () => {
-      const squadId = sql<string | null>`coalesce(${images.squadId}, ${agents.squadId})`
+    bySquad: async (squadId) => {
+      const owner = sql<string | null>`coalesce(${images.squadId}, ${agents.squadId})`
       return db
-        .select({ squadId, bytes: sql<string>`sum(${images.size})` })
+        .select({ squadId: owner, bytes: sql<string>`sum(${images.size})` })
         .from(images)
         .leftJoin(agents, eq(agents.id, images.agentId))
-        .groupBy(squadId)
+        .where(squadId ? sql`${owner} = ${squadId}` : undefined)
+        .groupBy(owner)
     },
   },
 ]
+
+/**
+ * One squad's stored files per source, from rows attributed to that squad only. The
+ * instance-wide attachment quota and its usage are deliberately left out: they total
+ * every squad's files.
+ */
+export async function summarizeSquadStoredFiles(squadId: string): Promise<SquadStoredFiles> {
+  const results = await Promise.all(STORED_FILE_SOURCES.map((source) => source.bySquad(squadId)))
+  const sources = STORED_FILE_SOURCES.map(({ key, label, countsTowardQuota }, index) => ({
+    key,
+    label,
+    countsTowardQuota,
+    // The query is already filtered; the row check keeps another squad's total out regardless.
+    bytes: results[index]!.reduce((sum, row) => (row.squadId === squadId ? sum + Number(row.bytes ?? 0) : sum), 0),
+  }))
+  return { bytes: sources.reduce((sum, source) => sum + source.bytes, 0), sources }
+}
 
 /** Per-squad totals of files stored by Ficus, with the attachment quota they count against. */
 export async function summarizeStoredFiles(): Promise<StoredFilesSummary> {

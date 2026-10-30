@@ -47,8 +47,16 @@ const dependencies = {
   }),
   useSquadFilters: () => squadFilters,
   WorkStreamListAll: () => <div data-test-slot="feed">Work stream fixture</div>,
-  ActionCenterContent: ({ actions, isLoading }: { actions: PendingAction[]; isLoading: boolean }) => (
-    <div data-test-slot="actions">
+  ActionCenterContent: ({
+    actions,
+    isLoading,
+    showSectionCounts,
+  }: {
+    actions: PendingAction[]
+    isLoading: boolean
+    showSectionCounts?: boolean
+  }) => (
+    <div data-test-slot="actions" data-show-section-counts={String(showSectionCounts)}>
       {isLoading ? 'Loading actions' : null}
       {actions.map((action) => (
         <div key={action.id}>{action.id}</div>
@@ -317,6 +325,16 @@ describe('FeedPage', () => {
 
     expect(html).toContain('<details')
     expect(html).toContain('action-1')
+  })
+
+  test('hides Needs you subheading counts while keeping the header pending count', () => {
+    pendingActions = [action(), action({ id: 'action-2' })]
+    actionsLoading = false
+
+    const html = renderFeedPage()
+
+    expect(html).toContain('2 pending')
+    expect(html).toContain('data-show-section-counts="false"')
   })
 
   test('limits Needs you and its count to the selected squads', () => {

@@ -156,7 +156,7 @@ test('normal provision can keep the claimed activation socket closed until env p
   const program = `
 set -eu
 ${body}
-for name in require_machine_layout_ready assert_socket_proxyd ensure_user reconcile_unit_mode prepare_box_home ensure_dirs init_shared_nix_cache install_slice_limits ensure_box_port_reservation write_host_env install_unit systemctl; do eval "$name() { :; }"; done
+for name in assert_socket_proxyd ensure_user reconcile_unit_mode prepare_box_home ensure_dirs init_shared_nix_cache install_slice_limits ensure_box_port_reservation write_host_env install_unit systemctl; do eval "$name() { :; }"; done
 user_home() { echo /owned/fixture; }
 box_uid() { echo 1000; }
 unit_name() { echo fixture.service; }

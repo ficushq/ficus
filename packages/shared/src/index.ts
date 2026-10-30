@@ -115,6 +115,10 @@ export type {
   StorageStatus,
   StorageGrowth,
   StorageScanProgress,
+  SquadStorageMachine,
+  SquadStorageScan,
+  SquadStorageView,
+  SquadStoredFiles,
 } from './storage'
 export { STORAGE_ALERT_HYSTERESIS_POINTS } from './storage'
 
