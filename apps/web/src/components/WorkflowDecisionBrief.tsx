@@ -1,13 +1,36 @@
+import type { ReactNode } from 'react'
 import {
   workflowHistoricalStep,
+  workflowResultRevision,
   workflowReviewBriefForAttempt,
   type WorkflowAttempt,
+  type WorkflowDecisionBrief as Brief,
   type WorkflowRun,
 } from '@ficus/shared'
 import { MarkdownContent } from './MarkdownContent'
 
-/** Read-only source provenance: a carried brief is never fresh authorization for this gate. */
-export function WorkflowDecisionBrief({ run, attempt }: { run: WorkflowRun; attempt: WorkflowAttempt }) {
+/** The brief's fields in reading order, with their reviewer-facing labels. */
+export const DECISION_BRIEF_FIELD_LABELS: ReadonlyArray<readonly [keyof Brief, string]> = [
+  ['decision', 'Decision'],
+  ['recommendation', 'Recommendation'],
+  ['approvalEffect', 'What approval allows'],
+  ['risks', 'Risks and tradeoffs'],
+  ['changesSinceLastReview', 'What changed since your last review'],
+]
+
+/**
+ * Read-only source provenance: a carried brief is never fresh authorization for this gate. An
+ * amended source shows its revision; `beforeSource` adds content (such as what changed) above it.
+ */
+export function WorkflowDecisionBrief({
+  run,
+  attempt,
+  beforeSource,
+}: {
+  run: WorkflowRun
+  attempt: WorkflowAttempt
+  beforeSource?: (source: WorkflowAttempt) => ReactNode
+}) {
   const brief = workflowReviewBriefForAttempt(run, attempt)
   if (brief.kind === 'legacy') return null
   return (
@@ -24,16 +47,10 @@ export function WorkflowDecisionBrief({ run, attempt }: { run: WorkflowRun; atte
           )}
           <p className="text-xs text-muted">
             Prepared by {workflowHistoricalStep(run, source)?.name ?? source.stepId} · Attempt {source.id}
+            {workflowResultRevision(source) > 1 && ` · Revision ${workflowResultRevision(source)}`}
           </p>
-          {(
-            [
-              ['decision', 'Decision'],
-              ['recommendation', 'Recommendation'],
-              ['approvalEffect', 'What approval allows'],
-              ['risks', 'Risks and tradeoffs'],
-              ['changesSinceLastReview', 'What changed since your last review'],
-            ] as const
-          ).map(([field, label]) =>
+          {beforeSource?.(source)}
+          {DECISION_BRIEF_FIELD_LABELS.map(([field, label]) =>
             source.decisionBrief?.value[field] ? (
               <section key={field}>
                 <h3 className="mb-1 text-sm font-medium text-secondary">{label}</h3>

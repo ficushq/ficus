@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ComponentProps } from 'react'
 import { useQuery, useMutation, useQueryClient } from '../reactQueryHooks'
 import { queries } from '../queryOptions'
 import { useChatApi } from '../api/ChatApiProvider'
@@ -29,6 +29,10 @@ interface AgentConversationProps {
   focusMessageId?: string
   /** Inbox message id: focuses the transcript message that delivered it. */
   focusInboxMessageId?: string
+  /** Extra options read as each typed message is sent (the review screen's consultation). */
+  sendOptions?: ComponentProps<typeof AgentChat>['sendOptions']
+  /** Placeholder for the composer. */
+  placeholder?: string
 }
 
 export function AgentConversation({
@@ -41,6 +45,8 @@ export function AgentConversation({
   focusMessageId,
   focusInboxMessageId,
   dependencies,
+  sendOptions,
+  placeholder,
 }: AgentConversationProps) {
   const AgentChatComponent = dependencies?.AgentChatComponent ?? AgentChat
   const api = useChatApi()
@@ -128,6 +134,8 @@ export function AgentConversation({
       inputDisabled={!canRunAgent}
       showRawText={showRawText}
       onToggleRawText={() => setShowRawText((showRaw) => !showRaw)}
+      sendOptions={sendOptions}
+      placeholder={placeholder}
     />
   )
 }

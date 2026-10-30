@@ -6,6 +6,7 @@ import clsx from 'clsx'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAgentConversation } from '@ficus/client-react'
+import type { ReviewConsultationSend } from '@ficus/client-core'
 import type { AssistantRoutingSend, ChatScope, MessageMetadata } from '@ficus/shared'
 import { queries } from '../queryOptions'
 import { ChatView } from './ChatView'
@@ -31,7 +32,9 @@ interface AgentChatProps {
   /** Called with the composer's draft as it changes. */
   onDraftChange?: (draft: string) => void
   /** Extra options for a typed message, read as it is sent (e.g. the Assistant's routing). */
-  sendOptions?: (message: string) => { assistantRouting?: AssistantRoutingSend } | undefined
+  sendOptions?: (
+    message: string
+  ) => { assistantRouting?: AssistantRoutingSend; reviewConsultation?: ReviewConsultationSend } | undefined
   onConversation?: (conversation: AgentChatController) => void
   renderMessageFooter?: React.ComponentProps<typeof ChatView>['renderMessageFooter']
   /** Starts the transcript and scrolls with it (see ChatView's `beforeMessages`). */

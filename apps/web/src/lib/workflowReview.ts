@@ -1,4 +1,8 @@
-export { humanGateSubtitle, workflowReviewPlainText as plainText } from '@ficus/shared'
+export {
+  humanGateSubtitle,
+  workflowReviewPlainText as plainText,
+  workflowRevisedLabel as revisedLabel,
+} from '@ficus/shared'
 import {
   activeWorkflowAttempts,
   workflowReviewPlainText as plainText,
@@ -10,6 +14,7 @@ import {
   effectiveWorkflowStep,
   workflowIncomingAttempts,
   workflowOutcomeRequiresEvidence,
+  workflowHistoricalStep,
   type WorkflowAttempt,
   type WorkflowRun,
   type WorkflowStep,
@@ -239,3 +244,50 @@ export function workflowReviewPath(workStreamRef: string, waitId?: string): stri
   if (waitId) params.set('reviewWait', waitId)
   return `/?${params}`
 }
+
+/** With an inline agent chat, the review splits into the document and a chat column from this width. */
+export const REVIEW_CHAT_COLUMNS_QUERY = '(min-width: 1024px)'
+
+/**
+ * The agents whose completed attempts feed this gate (its agent sources), each with the attempts it
+ * produced, in attempt order. The review screen chats with them in their existing sessions.
+ */
+export function producingAgents(
+  run: Pick<WorkflowRunDetail, 'state' | 'attemptAgents'>,
+  sources: WorkflowAttempt[]
+): Array<{ agentId: string; sources: WorkflowAttempt[] }> {
+  const byAgent = new Map<string, WorkflowAttempt[]>()
+  for (const source of sources) {
+    const agentId = run.attemptAgents[String(source.id)]
+    if (!agentId || workflowHistoricalStep(run.state, source)?.kind !== 'agent') continue
+    byAgent.set(agentId, [...(byAgent.get(agentId) ?? []), source])
+  }
+  return [...byAgent].map(([agentId, attempts]) => ({ agentId, sources: attempts }))
+}
+
+/**
+ * The source revisions a reviewer has looked at, kept per gate for the browser session so reopening
+ * the review compares against what they last saw. Storage failures degrade to component state.
+ */
+export function reviewSeenRevisionsKey(stream: { id: string }, attempt: { id: number }): string {
+  return `ficus.reviewSeen.${stream.id}.${attempt.id}`
+}
+export function readSeenRevisions(key: string): Record<string, number> | null {
+  try {
+    const value = JSON.parse(window.sessionStorage.getItem(key) ?? 'null') as unknown
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+    return Object.fromEntries(
+      Object.entries(value).filter((entry): entry is [string, number] => Number.isSafeInteger(entry[1]))
+    )
+  } catch {
+    return null
+  }
+}
+export function writeSeenRevisions(key: string, value: Record<string, number>): void {
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // Kept in component state only.
+  }
+}
+

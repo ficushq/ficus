@@ -172,3 +172,13 @@ export function workflowDecisionRevisionNote(run: WorkflowRun, gate: WorkflowAtt
   })
   return `${verb} ${parts.join(' and ')}`
 }
+
+/** "Revised just now", "Revised 2 min ago", "Revised 3 h ago", else the date: the review screens' marker. */
+export function workflowRevisedLabel(recordedAt: string | undefined, now: number): string {
+  if (!recordedAt) return 'Revised'
+  const minutes = Math.floor((now - new Date(recordedAt).getTime()) / 60_000)
+  if (minutes < 1) return 'Revised just now'
+  if (minutes < 60) return `Revised ${minutes} min ago`
+  if (minutes < 24 * 60) return `Revised ${Math.floor(minutes / 60)} h ago`
+  return `Revised ${new Date(recordedAt).toLocaleDateString()}`
+}

@@ -261,6 +261,7 @@ function WorkflowRunPanelContent({
                     <li key={entry.id} className="text-sm">
                       <span className="font-medium">
                         {entry.stepId} · Attempt {entry.id} · {entry.status}
+                        {(entry.resultRevision ?? 1) > 1 && ` · Revision ${entry.resultRevision}`}
                       </span>
                       {run.usage?.attempts[entry.id] && (
                         <p className="text-xs text-secondary">{formatWorkflowUsage(run.usage.attempts[entry.id]!)}</p>
