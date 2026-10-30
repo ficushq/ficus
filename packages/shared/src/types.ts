@@ -1,6 +1,7 @@
 import type { StructuredManualWait } from './recovery-waits'
 import type { AssistantRoutingCorrection, AssistantRoutingHint, AssistantRoutingTarget } from './assistant-routing'
 import type { QuestionAnswerCardData } from './question-answers'
+import type { WorkflowReviewConsultation } from './workflow-result-revisions'
 export * from './grants'
 // Schema field definition for task type schemas
 export interface SchemaFieldDef {
@@ -166,6 +167,12 @@ export interface MessageMetadata {
   assistantRoutingInherited?: AssistantRoutingTarget & { fromMessageId: string }
   /** Server-owned: the user's routing correction this message carries to the Assistant. */
   assistantRoutingCorrection?: AssistantRoutingCorrection
+  /**
+   * Server-owned; request bodies must not set it. Stamped by the agent message route only when a
+   * person who may decide an open human approval gate messages the agent that produced the work
+   * under review, from the review screen. The model copy of the message carries it as context.
+   */
+  reviewConsultation?: WorkflowReviewConsultation
   /**
    * Server-owned, on an agent message that ends with a plain-text question: short one-tap replies
    * (model-written, untrusted plain text) the chat offers above the composer. Suggestions only.

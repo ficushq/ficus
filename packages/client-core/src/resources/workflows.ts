@@ -32,8 +32,13 @@ export interface WorkflowRunDetail {
   openWaits?: WorkStreamWait[]
   integrationDeliveries?: IntegrationDeliveryView[]
   usage?: WorkflowUsage
-  /** Files each attempt handed off, keyed by attempt id (absent on servers without attachments). */
+  /**
+   * Files each attempt handed off, keyed by attempt id (absent on servers without attachments). An
+   * amended attempt lists its current revision's files.
+   */
   attachments?: Record<string, WorkflowAttemptAttachment[]>
+  /** Files only an earlier result revision of an amended attempt used, keyed by attempt id. */
+  earlierAttachments?: Record<string, WorkflowAttemptAttachment[]>
 }
 
 /** Read a whole response body; the transport's stream reader is the one binary seam both hosts implement. */

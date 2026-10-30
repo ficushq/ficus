@@ -26,6 +26,19 @@ export interface WorkflowReviewedRevision {
   revision: number
 }
 
+/** What the agent is told when a person deciding a review gate messages it from the review screen. */
+export interface WorkflowReviewConsultation {
+  workStreamId: string
+  /** The reference agents use with `ficus workstream` commands. */
+  workStreamRef: string
+  gateAttemptId: number
+  gateStepId: string
+  gateName: string
+  /** This agent's attempts under review, at their current revisions. */
+  sources: Array<{ attemptId: number; stepId: string; revision: number }>
+  amend: { available: true } | { available: false; reason: string }
+}
+
 /** The most result revisions one attempt may have; past this the reviewer should request changes. */
 export const WORKFLOW_MAX_RESULT_REVISIONS = 20
 

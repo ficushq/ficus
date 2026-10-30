@@ -79,3 +79,30 @@ test("the user's routing correction overrides the hint, whatever its confidence"
   expect(note).not.toContain('m-1')
   expect(note).toContain('Use no squad for delegate_task')
 })
+
+test('review consultation context is model-only and appears only when the server stamped it', () => {
+  const reviewConsultation = {
+    workStreamId: '00000000-0000-4000-8000-000000000001',
+    workStreamRef: '42',
+    gateAttemptId: 7,
+    gateStepId: 'approval',
+    gateName: 'Design approval',
+    sources: [{ attemptId: 6, stepId: 'design', revision: 2 }],
+    amend: { available: true as const },
+  }
+  const message = { content: 'Why this cache?', metadata: { reviewConsultation, pagePath: '/squads/tau' } }
+  const model = messageTextForModel(message)
+  expect(model).toStartWith('Why this cache?')
+  expect(model).toContain(
+    "[Review consultation, captured when this message was sent: a person is deciding human approval 'Design approval' (step approval, attempt 7) in work stream 42 now"
+  )
+  expect(model).toContain('Under review: your design attempt 6, revision 2.')
+  expect(model).toContain('ficus workstream advance 42')
+  expect(model).toContain('attemptId 6')
+  expect(model).toContain('a new approach, a security change or a material change of scope')
+  expect(model).toContain('"pagePath":"/squads/tau"')
+  expect(message.content).toBe('Why this cache?')
+  expect(messageTextForModel({ content: 'Why this cache?', metadata: { pagePath: '/squads/tau' } })).not.toContain(
+    'Review consultation'
+  )
+})

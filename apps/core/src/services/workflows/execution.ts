@@ -18,6 +18,7 @@ import {
   createWorkflowRun,
   workflowCommandSchema,
   type WorkflowCommand,
+  type WorkflowStep,
   type WorkflowSource,
   type WorkflowRun,
   describeWorkflowDecision,
@@ -78,6 +79,25 @@ export const actorKey = (identity: Identity) =>
 /** Whether this identity is the agent bound to the attempt: the one that may complete it or attach its files. */
 export function isAttemptAgent(run: Pick<Run, 'attemptAgents'>, attemptId: number, identity: Identity): boolean {
   return identity.type === 'agent' && run.attemptAgents[String(attemptId)] === identity.agentId
+}
+
+/**
+ * Whether a person may decide a human approval step: review permission, and for a gate limited to
+ * assigned reviewers, being one of them. `canReview` is {@link isWorkflowReviewer} for the squad.
+ */
+export function mayDecideFlowGate(
+  identity: Identity,
+  canReview: boolean,
+  stream: Pick<Stream, 'assignedReviewerIds'>,
+  step: Pick<WorkflowStep, 'kind'> & { approver?: string }
+): boolean {
+  if (identity.type !== 'user' || !canReview) return false
+  return !(
+    step.kind === 'human-approval' &&
+    step.approver === 'assigned-reviewers' &&
+    stream.assignedReviewerIds.length > 0 &&
+    !stream.assignedReviewerIds.includes(identity.userId)
+  )
 }
 
 /** A paused stream takes no handoffs (only revisions), and a finished one takes nothing. */
@@ -516,13 +536,7 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
         if (identity.type !== 'user' || !canReview)
           throw new WorkflowError('A person with review permission must choose this outcome', 403)
       } else if (step?.kind === 'human-approval') {
-        if (
-          identity.type !== 'user' ||
-          !canReview ||
-          (step.approver === 'assigned-reviewers' &&
-            stream.assignedReviewerIds.length > 0 &&
-            !stream.assignedReviewerIds.includes(identity.userId))
-        )
+        if (!mayDecideFlowGate(identity, canReview, stream, step))
           throw new WorkflowError('This step requires its designated human approver', 403)
       } else if (identity.type === 'agent' && !isAttemptAgent(run, command.attemptId, identity))
         throw new WorkflowError('Only the active participant can advance this attempt', 403)
