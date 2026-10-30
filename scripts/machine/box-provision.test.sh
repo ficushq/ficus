@@ -956,5 +956,17 @@ exec env -i PATH="$PATH" STUB_R="$STUB_R" "$@"'
 
 fi
 
+# Provisioning ONE box never inspects the machine's OTHER boxes. A machine-wide
+# legacy-layout scan here (from the Tau-to-Ficus host migration) refused a box
+# whenever any sibling box home was momentarily half-built or half-removed, and
+# left the refused box stuck behind an unverifiable stop (2026-10-30). Machines
+# that still need the migration are gated at the machine level: bootstrap.sh
+# refuses them and the worker's boot reconcile defers them.
+provision_body=$(sed -n '/^provision_box() {/,/^}/p' "$TARGET")
+expect_eq 'provision_box does not run a machine-wide layout scan' \
+  "$(grep -c 'require_machine_layout_ready' <<<"${provision_body}" || true)" 0
+expect_eq 'box-provision.sh has no scan over every /home/box_* home' \
+  "$(grep -cE 'home/box_\*' "$TARGET" || true)" 0
+
 printf '\n%d passed, %d failed\n' "${PASS}" "${FAIL}"
 [[ ${FAIL} -eq 0 ]]
