@@ -68,7 +68,7 @@ export function StorageBanner({ storage = browserStorage() }: { storage?: Dismis
   return (
     <div
       role="status"
-      className="flex shrink-0 items-start gap-3 border-b border-status-attention-500/30 bg-status-attention-500/10 px-4 py-2 text-sm text-primary"
+      className="flex shrink-0 items-baseline gap-3 border-b border-status-attention-500/30 bg-status-attention-500/10 px-4 py-2 text-sm text-primary"
     >
       <p className="min-w-0 flex-1">
         Storage warning: {storageWarningText(worst)} Measured {new Date(worst.measuredAt).toLocaleString()}.

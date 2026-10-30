@@ -1,5 +1,6 @@
 /** DB-free storage banner regression using the real component and stylesheet with synthetic data.
  * From apps/web: CHROMIUM_PATH=/path/to/chromium bun scripts/check-storage-banner-layout.ts
+ * Checks that the Dismiss label sits on the warning's first line, single-line (1440) and wrapped (320).
  * Optional SCREENSHOT_DIR saves light/dark, narrow/wide normal, hover and keyboard-focus screenshots.
  */
 import assert from 'node:assert/strict'
@@ -51,7 +52,7 @@ try {
     errors.push(`Unexpected API request: ${path}`)
     return route.abort()
   })
-  for (const width of [1024, 320]) {
+  for (const width of [1440, 1024, 320]) {
     for (const appearance of ['light', 'dark']) {
       const label = `${appearance}-${width}`
       await page.setViewportSize({ width, height: 360 })
@@ -102,6 +103,35 @@ try {
       assert.ok(normal.padding >= 12 && normal.height >= 28, `${label}: normal button hit area`)
       assert.ok(normal.left >= 0 && normal.right <= width, `${label}: button fits`)
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+      // The Dismiss label sits on the warning's first text line, whether the warning fits on one
+      // line (wide) or wraps (narrow); the padded button must not push its label below the text.
+      const lines = await page.getByRole('status').evaluate((status) => {
+        const lineBox = (node: Node) => {
+          const range = document.createRange()
+          range.selectNodeContents(node)
+          const rects = [...range.getClientRects()].filter((rect) => rect.width > 0)
+          const first = rects[0]! // The first text fragment in document order.
+          rects.sort((a, b) => a.top - b.top)
+          // A rect starting below the current row's bottom begins a new line; nested inline boxes
+          // (the inline-flex Review storage link) overlap their row and do not count again.
+          let lines = 0
+          let rowBottom = -Infinity
+          for (const rect of rects) {
+            if (rect.top >= rowBottom - 1) {
+              lines++
+              rowBottom = rect.bottom
+            } else rowBottom = Math.max(rowBottom, rect.bottom)
+          }
+          return { top: first.top, bottom: first.bottom, lines }
+        }
+        return { text: lineBox(status.querySelector('p')!), label: lineBox(status.querySelector('button')!) }
+      })
+      if (width === 1440) assert.equal(lines.text.lines, 1, `${label}: the wide warning fits on one line`)
+      if (width === 320) assert.ok(lines.text.lines > 2, `${label}: the narrow warning wraps`)
+      assert.ok(
+        Math.abs(lines.text.top - lines.label.top) <= 1 && Math.abs(lines.text.bottom - lines.label.bottom) <= 1,
+        `${label}: Dismiss label aligns with the first warning line (${JSON.stringify(lines)})`
+      )
       await shot('normal')
       await button.hover()
       await page.waitForTimeout(200)
@@ -139,7 +169,7 @@ try {
       await page.getByRole('heading', { name: 'Storage settings destination' }).waitFor()
       assert.equal(await button.isVisible(), true, 'Navigation does not dismiss the warning')
       console.log(
-        `PASS ${label}: padding, no underline, hover, focus, keyboard/click dismissal, persistence and navigation`
+        `PASS ${label}: padding, label aligned with the first text line, no underline, hover, focus, keyboard/click dismissal, persistence and navigation`
       )
     }
   }
