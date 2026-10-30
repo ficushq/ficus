@@ -105,7 +105,6 @@ async function renderModal<T = string>(
   }
 }
 
-
 test('stored inputs list beside legacy files and open in the viewer from the reference endpoint', async () => {
   const stream: WorkStream = {
     ...reviewWorkStream(),
