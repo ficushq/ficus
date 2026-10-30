@@ -33,8 +33,13 @@ export interface WorkflowRunDetail {
   openWaits?: WorkStreamWait[]
   integrationDeliveries?: IntegrationDeliveryView[]
   usage?: WorkflowUsage
-  /** Files each attempt handed off, keyed by attempt id (absent on servers without attachments). */
+  /**
+   * Files each attempt handed off, keyed by attempt id (absent on servers without attachments). An
+   * amended attempt lists its current revision's files.
+   */
   attachments?: Record<string, WorkflowAttemptAttachment[]>
+  /** Files only an earlier result revision of an amended attempt used, keyed by attempt id. */
+  earlierAttachments?: Record<string, WorkflowAttemptAttachment[]>
   /**
    * Stored chat images and files each attempt attached by ID, keyed by attempt id. Absent on servers
    * that predate stored-asset references; read with `workStreams.downloadAssetAttachment`.

@@ -4,6 +4,7 @@ import {
   assistantRoutingInheritedNote,
   assistantRoutingNote,
 } from '../routing/assistant-routing-note'
+import { reviewConsultationNote } from './review-consultation-note'
 
 /** Attach client navigation data only for model delivery; never rewrite the saved user text. */
 export function messageTextForModel(message: { content: string; metadata?: MessageMetadata | null }): string {
@@ -21,6 +22,9 @@ export function messageTextForModel(message: { content: string; metadata?: Messa
     content += `\n\n[${assistantRoutingInheritedNote(message.metadata.assistantRoutingInherited)}]`
   if (message.metadata?.assistantRoutingCorrection)
     content += `\n\n[${assistantRoutingCorrectionNote(message.metadata.assistantRoutingCorrection)}]`
+  // Server-owned: only the review screen of an open gate stamps it, for the agent under review.
+  if (message.metadata?.reviewConsultation)
+    content += `\n\n[${reviewConsultationNote(message.metadata.reviewConsultation)}]`
   // Model-only: lets the agent view an image again after compaction, or attach it to a work stream,
   // without digging through message metadata. The stored message is unchanged.
   const imageIds = Array.isArray(message.metadata?.imageIds)

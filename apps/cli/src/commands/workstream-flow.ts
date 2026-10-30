@@ -9,6 +9,8 @@ import { basename } from 'node:path'
 import { Command } from 'commander'
 import {
   WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT,
+  advanceWorkflowRun,
+  workflowAmendEligibility,
   workflowCommandSchema,
   validateWorkflowDecisionBrief,
   type WorkflowRun,
@@ -52,6 +54,16 @@ export function registerWorkstreamFlowCommands(
   deps: WorkstreamFlowDependencies = defaults,
   legacy = false
 ) {
+  /** Upload each file to the attempt (an amend stages them for its next revision). */
+  async function uploadAttachments(id: string, attemptId: number, paths: string[]) {
+    const upload = deps.apiPostForm ?? apiPostForm
+    for (const file of await readAttachments(paths)) {
+      const form = new FormData()
+      form.set('file', new File([file.bytes], basename(file.path)))
+      form.set('path', file.path)
+      await upload(`/api/workflows/runs/${encodeURIComponent(id)}/attempts/${attemptId}/attachments`, form)
+    }
+  }
   async function run(action: () => Promise<void>) {
     try {
       await action()
@@ -68,11 +80,11 @@ export function registerWorkstreamFlowCommands(
       })
     )
   addStructuredInputOptions(command.command('advance <id>', { hidden: legacy }))
-    .description('Complete, return, delegate, rework, or revise a flow using a versioned command')
+    .description('Complete, return, amend, delegate, rework, or revise a flow using a versioned command')
     .option('--request-id <id>', 'Stable UUID for retrying this exact command')
     .option(
       '--attach <path>',
-      `Attach a file to the handoff for reviewers (repeatable; complete only; at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files of 10 MB)`,
+      `Attach a file to the handoff for reviewers (repeatable; complete and amend only; at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files of 10 MB)`,
       collect,
       []
     )
@@ -90,7 +102,7 @@ export function registerWorkstreamFlowCommands(
     )
     .addHelpText(
       'after',
-      '\nThe command must include action, expectedVersion, attemptId, and action-specific fields (e.g. outcome and evidence for complete).\nAuthorized revise active=keep refreshes outcomes for kept running attempts while preserving their initial brief and session. The response outcomeUpdates lists affected attempt/agent IDs; record scope and steer every affected active agent. Inspect activeOutcomes with workstream flow.\nUse active=restart only for deliberate cancellation and a new attempt with a fresh session, even with reuse-within-stream. Revised instructions apply to future attempts, not a kept initial brief.\nAgent-produced completions or explicit returns into human approval require decisionBrief: decision (500 characters), recommendation (1000), approvalEffect (2400), risks (1600), and changesSinceLastReview (2000, required after an earlier decision on the same gate). Each field must use readable prose with normal spacing and complete words; preserve literal identifiers. Briefs are optional on other handoffs; evidence or return feedback stays separate. Contextual preflight runs before attachments.\n--attach uploads each file to the completing attempt before the command is sent; --attach-image and --attach-agent-file attach stored chat images and files by ID instead of uploading. If any attachment fails, the attempt is not advanced.'
+      '\nThe command must include action, expectedVersion, attemptId, and action-specific fields (e.g. outcome and evidence for complete).\nAuthorized revise active=keep refreshes outcomes for kept running attempts while preserving their initial brief and session. The response outcomeUpdates lists affected attempt/agent IDs; record scope and steer every affected active agent. Inspect activeOutcomes with workstream flow.\nUse active=restart only for deliberate cancellation and a new attempt with a fresh session, even with reuse-within-stream. Revised instructions apply to future attempts, not a kept initial brief.\nAgent-produced completions or explicit returns into human approval require decisionBrief: decision (500 characters), recommendation (1000), approvalEffect (2400), risks (1600), and changesSinceLastReview (2000, required after an earlier decision on the same gate). Each field must use readable prose with normal spacing and complete words; preserve literal identifiers. Briefs are optional on other handoffs; evidence or return feedback stays separate. Contextual preflight runs before attachments.\n--attach uploads each file to the completing attempt before the command is sent; --attach-image and --attach-agent-file attach stored chat images and files by ID instead of uploading. If any attachment fails, the attempt is not advanced.\namend revises your own completed attempt while the human approval gate it feeds is open: send expectedVersion, attemptId, the complete revised decisionBrief and evidence (name the commit SHAs of any changes), optional removeAttachmentPaths, and --attach for files to add or replace (the CLI names them in attachmentPaths); other files and stored references carry over. Stored references are attached only when completing. The gate stays open and it is not a new review round. A decision on an older revision is refused.'
     )
     .action(
       (
@@ -103,25 +115,30 @@ export function registerWorkstreamFlowCommands(
         }
       ) =>
         run(async () => {
-          const value = validateStructuredInput(workflowCommandSchema, await readStructuredInput(options))
+          const parsed = validateStructuredInput(workflowCommandSchema, await readStructuredInput(options))
+          // An amend publishes only the files it names; the files attached here are named for it.
+          const value =
+            parsed.action === 'amend' && options.attach.length
+              ? { ...parsed, attachmentPaths: [...new Set([...(parsed.attachmentPaths ?? []), ...options.attach])] }
+              : parsed
           const references: WorkStreamAssetSource[] = [
             ...(options.attachImage ?? []).map((imageId) => ({ kind: 'image' as const, imageId })),
             ...(options.attachAgentFile ?? []).map((attachmentId) => ({ kind: 'agent-file' as const, attachmentId })),
           ]
-          if (options.attach.length || references.length) {
-            if (value.action !== 'complete') {
-              const flags = [
-                options.attach.length ? '--attach' : '',
-                options.attachImage?.length ? '--attach-image' : '',
-                options.attachAgentFile?.length ? '--attach-agent-file' : '',
-              ].filter(Boolean)
-              throw new Error(
-                `${flags.join(' and ')} ${flags.length > 1 ? 'are' : 'is'} only available when completing an attempt`
-              )
-            }
-            if (options.attach.length + references.length > WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
-              throw new Error(`At most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files can be attached to one handoff`)
+          if (options.attach.length && value.action !== 'complete' && value.action !== 'amend')
+            throw new Error('--attach is only available when completing or amending an attempt')
+          // Stored references are not revisioned, so they attach only to a running attempt.
+          if (references.length && value.action !== 'complete') {
+            const flags = [
+              options.attachImage?.length ? '--attach-image' : '',
+              options.attachAgentFile?.length ? '--attach-agent-file' : '',
+            ].filter(Boolean)
+            throw new Error(
+              `${flags.join(' and ')} ${flags.length > 1 ? 'are' : 'is'} only available when completing an attempt`
+            )
           }
+          if (options.attach.length + references.length > WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
+            throw new Error(`At most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files can be attached to one handoff`)
           if (value.action === 'complete' || value.action === 'return') {
             const current = await deps.apiGet<FlowSnapshot | null>(`/api/workflows/runs/${encodeURIComponent(id)}`)
             const attempt = current?.state?.attempts.find((entry) => entry.id === value.attemptId)
@@ -130,23 +147,25 @@ export function registerWorkstreamFlowCommands(
             if (current && attempt?.status === 'running') {
               if (current.version !== value.expectedVersion) throw new Error('Stale flow version')
               if (current.state.definition) validateWorkflowDecisionBrief(current.state, value)
-              const upload = deps.apiPostForm ?? apiPostForm
               // Uploads land before the command, so a review gate opens with its files present.
-              for (const file of await readAttachments(options.attach)) {
-                const form = new FormData()
-                form.set('file', new File([file.bytes], basename(file.path)))
-                form.set('path', file.path)
-                await upload(
-                  `/api/workflows/runs/${encodeURIComponent(id)}/attempts/${value.attemptId}/attachments`,
-                  form
-                )
-              }
+              await uploadAttachments(id, value.attemptId, options.attach)
               // Stored chat images and files are attached by ID: nothing is downloaded or uploaded.
               for (const source of references)
                 await deps.apiPost(
                   `/api/workflows/runs/${encodeURIComponent(id)}/attempts/${value.attemptId}/asset-attachments`,
                   { source }
                 )
+            }
+          }
+          if (value.action === 'amend') {
+            const current = await deps.apiGet<FlowSnapshot | null>(`/api/workflows/runs/${encodeURIComponent(id)}`)
+            // An attempt that can no longer be amended (a retry of a landed amend, or a decided gate)
+            // stages nothing; the server's answer to the command is the useful one.
+            if (current?.state?.definition && workflowAmendEligibility(current.state, value.attemptId).ok) {
+              if (current.version !== value.expectedVersion) throw new Error('Stale flow version')
+              // The same validation the server runs, before any file is staged.
+              advanceWorkflowRun(current.state, value)
+              await uploadAttachments(id, value.attemptId, options.attach)
             }
           }
           deps.output(

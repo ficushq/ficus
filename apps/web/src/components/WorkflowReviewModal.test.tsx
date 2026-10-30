@@ -23,6 +23,23 @@ import { decisionNotesHint, outcomeRequiresNotes } from '../lib/workflowReview'
 import { MarkdownContent } from './MarkdownContent'
 import { WorkflowReviewCallout } from './WorkflowReviewCallout'
 import { WorkflowReviewDeepLink, WorkflowReviewModal, WorkflowReviewRoute } from './WorkflowReviewModal'
+import { ReviewConversationContext, type ReviewConversationProps } from '../lib/reviewConversation'
+
+/** Stands in for the agent's conversation: shows which agent it is and what a send would carry. */
+function StubConversation({ agentId, sendOptions, placeholder }: ReviewConversationProps) {
+  return (
+    <div
+      data-stub-conversation={agentId}
+      data-send-options={JSON.stringify(sendOptions() ?? null)}
+      data-placeholder={placeholder}
+      className="min-h-0 flex-1 overflow-y-auto"
+    >
+      {Array.from({ length: 60 }, (_, index) => (
+        <p key={index}>Transcript line {index}</p>
+      ))}
+    </div>
+  )
+}
 
 const preset = workflowPresetSchema.parse(
   Bun.YAML.parse(await Bun.file(new URL('../../../../config/workflows/solo.yaml', import.meta.url)).text())
@@ -125,7 +142,9 @@ async function fixture({
       dom.act(async () =>
         root.root.render(
           <MemoryRouter initialEntries={initialEntries}>
-            <QueryClientProvider client={queryClient}>{node}</QueryClientProvider>
+            <QueryClientProvider client={queryClient}>
+              <ReviewConversationContext.Provider value={StubConversation}>{node}</ReviewConversationContext.Provider>
+            </QueryClientProvider>
           </MemoryRouter>
         )
       ),
@@ -150,7 +169,7 @@ async function fixture({
   }
 }
 
-test('wide screens read the proposal in one scrolling column beside a decision rail', async () => {
+test('wide screens read the proposal beside the agent chat with the decision pinned below it', async () => {
   const f = await fixture()
   try {
     await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
@@ -158,7 +177,7 @@ test('wide screens read the proposal in one scrolling column beside a decision r
     expect(dialog.getAttribute('aria-label')).toBe('Review Design review')
     expect(dialog.querySelector('[data-modal-size="workspace"]')).not.toBeNull()
     const layout = dialog.querySelector('[data-review-layout]')!
-    expect(layout.getAttribute('data-review-layout')).toBe('columns')
+    expect(layout.getAttribute('data-review-layout')).toBe('chat-columns')
     const documentColumn = layout.querySelector<HTMLElement>('[data-review-document]')!
     expect(documentColumn.className).toContain('overflow-y-auto')
     expect(documentColumn.hasAttribute('data-scroll-container')).toBe(true)
@@ -170,22 +189,37 @@ test('wide screens read the proposal in one scrolling column beside a decision r
     expect(documentColumn.querySelector('.max-w-\\[72ch\\]')).not.toBeNull()
 
     const rail = layout.querySelector<HTMLElement>('[data-review-rail]')!
-    expect(rail.getAttribute('aria-label')).toBe('Decision')
-    expect(rail.className).toContain('w-[360px]')
+    expect(rail.getAttribute('aria-label')).toBe('Agent chat and decision')
+    expect(rail.className).toContain('w-[clamp(360px,36vw,480px)]')
     expect(rail.textContent).toContain('#438 · Gate GitHub feedback by trusted authors')
     expect(rail.textContent).toContain('execute · Attempt 3 · Proposal ready')
     expect(rail.querySelector('a[aria-label="Open execute attempt 3 agent chat"]')).not.toBeNull()
     expect(rail.querySelector('a[href="https://github.com/ficushq/ficus/pull/12"]')?.textContent).toBe('PR #12')
-    const notes = rail.querySelector<HTMLTextAreaElement>('textarea[aria-label="Decision and evidence"]')!
-    expect(notes.getAttribute('rows')).toBe('8')
+    // The same agent as Open chat, consulted as the reviewer of this gate.
+    const [summary, chat, decision] = [...rail.children] as HTMLElement[]
+    expect(chat!.hasAttribute('data-review-chat')).toBe(true)
+    expect(chat!.className).toContain('flex-1')
+    expect(chat!.className).toContain('min-h-0')
+    const conversation = chat!.querySelector<HTMLElement>('[data-stub-conversation]')!
+    expect(conversation.getAttribute('data-stub-conversation')).toBe('design-agent')
+    expect(JSON.parse(conversation.getAttribute('data-send-options')!)).toEqual({
+      reviewConsultation: { workStreamId: stream.id, gateAttemptId: 4 },
+    })
+    // The decision is pinned below the chat: never pushed out by a long transcript.
+    expect(summary!.className).toContain('shrink-0')
+    expect(decision!.hasAttribute('data-review-decision')).toBe(true)
+    expect(decision!.className).toContain('shrink-0')
+    expect(decision!.className).toContain('max-h-[50%]')
+    expect(decision!.className).toContain('overflow-y-auto')
+    expect(rail.lastElementChild).toBe(decision!)
+    const notes = decision!.querySelector<HTMLTextAreaElement>('textarea[aria-label="Decision and evidence"]')!
+    expect(notes.getAttribute('rows')).toBe('3')
     expect(f.doc.getElementById(notes.getAttribute('aria-describedby')!)!.textContent).toContain(
       'Optional for Approved; required for Changes requested.'
     )
-    expect(f.decisionButtons().every((button) => rail.contains(button) && button.className.includes('w-full'))).toBe(
-      true
-    )
-    // Earlier rounds stay available but collapsed.
-    const history = rail.querySelector('details')!
+    expect(f.decisionButtons().map((button) => decision!.contains(button))).toEqual([true, true])
+    // Earlier rounds stay available but collapsed, at the end of the document.
+    const history = documentColumn.querySelector('details')!
     expect(history.open).toBe(false)
     expect(history.querySelector('summary')!.textContent).toBe('Earlier decisions (1)')
     expect(history.textContent).toContain('Attempt 2 · Changes requested')
@@ -221,6 +255,7 @@ test('approving needs no notes, sending back does, and each outcome sends the sa
         outcome: 'changes-requested',
         evidence: 'Checked the proposal against the brief',
         resume: false,
+        reviewedRevisions: [{ attemptId: 3, revision: 1 }],
       },
     ])
     // A recorded decision closes the review and drops the saved draft.
@@ -326,11 +361,13 @@ test('phones stack the document over a sticky decision sheet that keeps notes ab
     expect(dialog.className).toContain('mobile-chat-modal')
     expect(dialog.style.getPropertyValue('--modal-viewport-height')).toBe('844px')
     const layout = dialog.querySelector<HTMLElement>('[data-review-layout]')!
-    expect(layout.getAttribute('data-review-layout')).toBe('stacked')
+    expect(layout.getAttribute('data-review-layout')).toBe('chat-tabs')
     expect(layout.className).toContain('flex-col')
     expect(layout.querySelector('[data-review-rail]')).toBeNull()
-    // Document first; the sheet is the column's last, non-shrinking child, so it never scrolls away.
-    const [documentColumn, sheet] = [...layout.children] as HTMLElement[]
+    // Brief and Chat panes; the sheet is the column's last, non-shrinking child, so it never scrolls away.
+    const [paneSwitch, documentColumn, chatPane, sheet] = [...layout.children] as HTMLElement[]
+    expect(paneSwitch!.getAttribute('role')).toBe('tablist')
+    expect(chatPane!.hidden).toBe(true)
     expect(documentColumn!.hasAttribute('data-review-document')).toBe(true)
     expect(documentColumn!.className).toContain('flex-1')
     expect(sheet!.hasAttribute('data-review-sheet')).toBe(true)
@@ -438,7 +475,7 @@ function withAttachments(f: Awaited<ReturnType<typeof fixture>>) {
   })
 }
 const tabs = (f: Awaited<ReturnType<typeof fixture>>) => [
-  ...f.dialog()!.querySelectorAll<HTMLButtonElement>('[role="tablist"] [role="tab"]'),
+  ...f.dialog()!.querySelectorAll<HTMLButtonElement>('[data-review-document] [role="tablist"] [role="tab"]'),
 ]
 
 test('without attachments for the attempts under review the document has no tab row', async () => {
@@ -558,8 +595,8 @@ test('phones keep the tab row inside the document column above the decision shee
     withAttachments(f)
     await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
     const layout = f.dialog()!.querySelector<HTMLElement>('[data-review-layout]')!
-    expect(layout.getAttribute('data-review-layout')).toBe('stacked')
-    const [documentColumn, sheet] = [...layout.children] as HTMLElement[]
+    expect(layout.getAttribute('data-review-layout')).toBe('chat-tabs')
+    const [, documentColumn, , sheet] = [...layout.children] as HTMLElement[]
     expect(documentColumn!.hasAttribute('data-review-document')).toBe(true)
     expect(sheet!.hasAttribute('data-review-sheet')).toBe(true)
     const row = documentColumn!.firstElementChild as HTMLElement
@@ -953,6 +990,232 @@ test('a restarted decision fallback excludes the old brief and shows its replace
     expect(panel.textContent).toContain('Choose only the replacement staging scope.')
     expect(panel.textContent).not.toContain(workflowReviewBriefFixture.decision)
     expect(panel.textContent).not.toContain('Carried forward from an earlier step')
+  } finally {
+    await f.cleanup()
+  }
+})
+
+/** Attempt 3 authored a brief for the open gate, with three files. */
+function briefRun(): WorkflowRunDetail {
+  const run = gateRun()
+  Object.assign(run.state.attempts[2]!, {
+    settledVersion: 6,
+    decisionBrief: { value: workflowReviewBriefFixture, submittedVersion: 6, contexts: [] },
+  })
+  run.state.attempts[3]!.reviewBrief = { kind: 'authored', sourceAttemptIds: [3] }
+  const file = (id: string, path: string, revision = 1) => ({
+    id,
+    attemptId: 3,
+    filename: path.split('/').pop()!,
+    path,
+    contentType: 'text/markdown',
+    byteSize: 10,
+    createdAt: '2026-10-08T09:00:00.000Z',
+    revision,
+  })
+  run.attachments = { '3': [file('a', 'docs/design.md'), file('b', 'docs/plan.md'), file('r', 'docs/old.md')] }
+  ;(run as { files?: unknown }).files = { file }
+  return run
+}
+
+/** The agent amended attempt 3 while the gate stayed open: revision 2. */
+function amendedRun(): WorkflowRunDetail {
+  const run = briefRun()
+  const [a, b, r] = run.attachments!['3']!
+  const a2 = { ...a!, id: 'a2', revision: 2 }
+  const c = { ...a!, id: 'c', filename: 'rollback.md', path: 'docs/rollback.md', revision: 2 }
+  const source = run.state.attempts[2]!
+  Object.assign(source, {
+    earlierResults: [
+      {
+        revision: 1,
+        version: 6,
+        evidence: source.evidence,
+        decisionBrief: source.decisionBrief,
+        attachmentIds: ['a', 'b', 'r'],
+      },
+    ],
+    resultRevision: 2,
+    resultRevisedVersion: 8,
+    resultRevisedAt: new Date(Date.now() - 2 * 60_000).toISOString(),
+    evidence: 'Revised proposal, commit def5678.',
+    attachmentIds: ['a2', 'b', 'c'],
+    decisionBrief: {
+      value: { ...workflowReviewBriefFixture, risks: 'A rollback note now covers the temporary second read path.' },
+      submittedVersion: 8,
+      contexts: [],
+    },
+  })
+  run.version = 8
+  run.attachments = { '3': [a2, b!, c] }
+  run.earlierAttachments = { '3': [a!, r!] }
+  return run
+}
+
+test('without a producing agent the review keeps the decision rail and the stacked phone layout', async () => {
+  for (const [width, height, expected] of [
+    [1440, 900, 'columns'],
+    [390, 844, 'stacked'],
+  ] as const) {
+    const f = await fixture({ width, height })
+    try {
+      f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), { ...gateRun(), attemptAgents: {} })
+      await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
+      const layout = f.dialog()!.querySelector<HTMLElement>('[data-review-layout]')!
+      expect(layout.getAttribute('data-review-layout')).toBe(expected)
+      expect(layout.querySelector('[data-review-chat]')).toBeNull()
+      if (expected === 'columns') expect(layout.querySelector('[data-review-rail]')!.className).toContain('w-[360px]')
+      expect(f.decisionButtons()).toHaveLength(2)
+    } finally {
+      await f.cleanup()
+    }
+  }
+})
+
+test('a viewer who cannot decide can chat, but does not consult the agent as the reviewer', async () => {
+  const f = await fixture({ permissions: [] })
+  try {
+    await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
+    const conversation = f.dialog()!.querySelector<HTMLElement>('[data-stub-conversation]')!
+    expect(conversation.getAttribute('data-send-options')).toBe('null')
+    expect(conversation.getAttribute('data-placeholder')).toBe('Message the agent')
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('phones switch between the brief and the chat, keeping both mounted and the decision reachable', async () => {
+  const f = await fixture({ width: 390, height: 844 })
+  try {
+    await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
+    const layout = f.dialog()!.querySelector<HTMLElement>('[data-review-layout]')!
+    const [briefTab, chatTab] = [
+      ...layout.querySelectorAll<HTMLButtonElement>('[data-review-pane-switch] [role="tab"]'),
+    ]
+    expect([briefTab!.textContent, chatTab!.textContent]).toEqual(['Brief', 'Chat'])
+    expect(briefTab!.getAttribute('aria-selected')).toBe('true')
+    const documentColumn = layout.querySelector<HTMLElement>('[data-review-document]')!
+    const chatPane = layout.querySelector<HTMLElement>('[data-review-chat]')!.parentElement!
+    expect([documentColumn.hidden, chatPane.hidden]).toEqual([false, true])
+
+    await f.dom.act(async () => chatTab!.click())
+    expect(chatTab!.getAttribute('aria-selected')).toBe('true')
+    expect([documentColumn.hidden, chatPane.hidden]).toEqual([true, false])
+    expect(documentColumn.className).toContain('hidden')
+    // Still mounted, and the decision sheet stays below both panes.
+    expect(documentColumn.textContent).toContain('one-page completion proposal')
+    expect(layout.lastElementChild!.hasAttribute('data-review-sheet')).toBe(true)
+    expect(f.decisionButtons()).toHaveLength(2)
+
+    await f.dom.act(async () =>
+      chatTab!.dispatchEvent(new f.dom.window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+    )
+    expect(briefTab!.getAttribute('aria-selected')).toBe('true')
+    expect(f.doc.activeElement).toBe(briefTab!)
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('a revision that arrives while the review is open is marked, explained, and must be reviewed first', async () => {
+  const f = await fixture()
+  const advance = spyOn(client.workflows, 'advance').mockResolvedValue(undefined as never)
+  try {
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), briefRun())
+    await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
+    const dialog = f.dialog()!
+    expect(dialog.querySelector('[data-revised-marker]')).toBeNull()
+    expect(f.decisionButtons()[0]!.disabled).toBe(false)
+
+    await f.dom.act(async () => f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), amendedRun()))
+    await f.settle()
+    const marker = dialog.querySelector('[data-revised-marker]')!
+    expect(marker.getAttribute('role')).toBe('status')
+    expect(marker.textContent).toBe('Revised 2 min ago')
+    expect(dialog.querySelector('[data-review-rail]')!.textContent).toContain('Attempt 3 · Proposal ready · Revision 2')
+
+    const changes = dialog.querySelector<HTMLElement>('[data-revision-changes]')!
+    expect(changes.textContent).toContain('What changed since you last looked')
+    expect(changes.textContent).toContain('Revision 1 to revision 2')
+    expect(changes.textContent).toContain('Risks and tradeoffs')
+    expect(changes.textContent).toContain(workflowReviewBriefFixture.risks)
+    expect(changes.textContent).toContain('A rollback note now covers the temporary second read path.')
+    expect(changes.textContent).toContain('Unchanged: Decision, Recommendation, What approval allows.')
+    expect(changes.textContent).toContain('The internal handoff changed.')
+    const list = (title: string) =>
+      [...changes.querySelectorAll('h4')].find((heading) => heading.textContent === title)!.nextElementSibling!
+        .textContent
+    expect(list('Added')).toBe('rollback.md')
+    expect(list('Removed')).toBe('old.md')
+    expect(list('Changed')).toBe('design.md')
+
+    // Decisions wait until the person has looked at the new revision.
+    const notice = dialog.querySelector('[data-revision-notice]')!
+    expect(notice.textContent).toContain('This was revised since you opened it. Review the latest revision.')
+    expect(f.decisionButtons().every((button) => button.disabled)).toBe(true)
+    const acknowledge = [...notice.querySelectorAll('button')].find((b) => b.textContent === 'Mark as reviewed')!
+    await f.dom.act(async () => acknowledge.click())
+    expect(dialog.querySelector('[data-revision-changes]')).toBeNull()
+    expect(dialog.querySelector('[data-revised-marker]')).toBeNull()
+    expect(f.decisionButtons()[0]!.disabled).toBe(false)
+    await f.dom.act(async () => f.decisionButtons()[0]!.click())
+    await f.settle()
+    expect(advance.mock.calls[0]![1]).toMatchObject({
+      outcome: 'approved',
+      expectedVersion: 8,
+      reviewedRevisions: [{ attemptId: 3, revision: 2 }],
+    })
+  } finally {
+    advance.mockRestore()
+    await f.cleanup()
+  }
+})
+
+test('a decision refused because of a newer revision keeps the notes and shows the plain message', async () => {
+  const { HttpResponseError } = await import('@ficus/client-core')
+  const f = await fixture()
+  const advance = spyOn(client.workflows, 'advance').mockRejectedValue(
+    new HttpResponseError(409, 'API error: 409: This was revised since you opened it. Review the latest revision.')
+  )
+  let closed = 0
+  try {
+    await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => closed++} />)
+    await f.type('Checked the scope')
+    await f.dom.act(async () => f.decisionButtons()[0]!.click())
+    await f.settle()
+    expect(closed).toBe(0)
+    expect(f.doc.querySelector('textarea')!.value).toBe('Checked the scope')
+    expect(f.dialog()!.querySelector('[role="alert"]')!.textContent).toBe(
+      'This was revised since you opened it. Review the latest revision.'
+    )
+  } finally {
+    advance.mockRestore()
+    await f.cleanup()
+  }
+})
+
+test('a gate fed by two agents offers a picker between their conversations', async () => {
+  const f = await fixture()
+  try {
+    const run = gateRun()
+    run.state.attempts.splice(3, 0, {
+      id: 5,
+      stepId: 'execute',
+      status: 'completed',
+      outcome: 'proposal-ready',
+      evidence: 'Second branch',
+    })
+    run.state.attempts.find((attempt) => attempt.id === 4)!.sourceAttemptIds = [3, 5]
+    run.attemptAgents = { '3': 'design-agent', '5': 'branch-agent' }
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), run)
+    await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
+    const picker = f.dialog()!.querySelector('[role="group"][aria-label="Agent"]')!
+    const buttons = [...picker.querySelectorAll('button')]
+    expect(buttons.map((button) => button.getAttribute('aria-pressed'))).toEqual(['true', 'false'])
+    await f.dom.act(async () => buttons[1]!.click())
+    expect(f.dialog()!.querySelector('[data-stub-conversation]')!.getAttribute('data-stub-conversation')).toBe(
+      'branch-agent'
+    )
   } finally {
     await f.cleanup()
   }

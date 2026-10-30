@@ -24,9 +24,11 @@ import {
   hasButton,
   hasKey,
   render,
+  settle,
   testQueryClient,
   typeInto,
 } from './testing'
+import { act } from 'react'
 
 afterEach(cleanup)
 
@@ -228,7 +230,43 @@ describe('WorkflowDecision · human-approval gate', () => {
         outcome: 'approved',
         evidence: 'Tasted: perfect',
         resume: false,
+        reviewedRevisions: [{ attemptId: 1, revision: 1 }],
       },
+      'request-1'
+    )
+  })
+
+  it('marks a revision that arrives while open and decides only after it is reviewed', async () => {
+    const api = fakeApi({
+      workflowRun: () => Promise.resolve(workflowRun('gate', { openWaits: [gateWait] })),
+      getWorkStream: () => Promise.resolve(stream({ openWaits: [gateWait] })),
+      advanceWorkflow: () => Promise.resolve({ version: 9, stateStatus: 'running' as const, activeAttemptId: null }),
+    })
+    const { container, queryClient } = await render(
+      <WorkflowDecision workStreamId="ws-1" focusWaitId="gate-wait" />,
+      api
+    )
+    const amended = workflowRun('gate', { version: 8, openWaits: [gateWait] })
+    Object.assign(amended.state.attempts[0]!, {
+      evidence: 'Planted, watered and staked',
+      resultRevision: 2,
+      resultRevisedVersion: 8,
+      resultRevisedAt: new Date(Date.now() - 2 * 60_000).toISOString(),
+      earlierResults: [{ revision: 1, evidence: 'Planted and watered', attachmentIds: [] }],
+      attachmentIds: [],
+    })
+    await act(async () => queryClient.setQueryData(queryKeys.workflows.run('ws-1'), amended))
+    await settle()
+    expect(container.textContent).toContain('build · Attempt 1 · Revision 2 · Revised 2 min ago')
+    expect(container.textContent).toContain('This was revised since you opened it. Review the latest revision.')
+    await typeInto(byLabel(container, 'Decision notes'), 'Tasted again')
+    expect(button(container, 'Approved').disabled).toBe(true)
+    await click(button(container, 'Mark as reviewed'))
+    expect(button(container, 'Approved').disabled).toBe(false)
+    await click(button(container, 'Approved'))
+    expect(api.advanceWorkflow).toHaveBeenCalledWith(
+      'ws-1',
+      expect.objectContaining({ expectedVersion: 8, reviewedRevisions: [{ attemptId: 1, revision: 2 }] }),
       'request-1'
     )
   })

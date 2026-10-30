@@ -8,6 +8,7 @@ import {
   type CompactionState,
   type PendingItem,
   type RenderItem,
+  type ReviewConsultationSend,
   type StreamStatus,
 } from '@ficus/client-core'
 import type {
@@ -80,10 +81,18 @@ export interface UseAgentConversationResult {
   hasOlder: boolean
   isFetchingOlder: boolean
   fetchOlder: () => void
-  send: (content: string, opts?: { imageIds?: string[]; deliveryMode?: DeliveryMode }) => string
+  send: (
+    content: string,
+    opts?: { imageIds?: string[]; deliveryMode?: DeliveryMode; reviewConsultation?: ReviewConsultationSend }
+  ) => string
   sendAccepted: (
     content: string,
-    opts?: { imageIds?: string[]; deliveryMode?: DeliveryMode; clientId?: string }
+    opts?: {
+      imageIds?: string[]
+      deliveryMode?: DeliveryMode
+      clientId?: string
+      reviewConsultation?: ReviewConsultationSend
+    }
   ) => SendAcceptanceHandle
   retrySend: (clientId: string) => void
   updatePendingMessage: (messageId: string, operation: 'cancel' | DeliveryMode) => Promise<void>
@@ -100,6 +109,8 @@ interface SendOpts {
   deliveryMode?: DeliveryMode
   /** Assistant conversations: the composer's routing preview or the user's pick. */
   assistantRouting?: AssistantRoutingSend
+  /** The review screen of an open human approval gate, consulting the agent under review. */
+  reviewConsultation?: ReviewConsultationSend
 }
 
 // Query cache pages can outlive a hook or be shared by multiple mounted views.
@@ -1100,6 +1111,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
         deliveryMode: item.deliveryMode,
         clientId: item.clientId,
         ...(item.assistantRouting ? { assistantRouting: item.assistantRouting } : {}),
+        ...(item.reviewConsultation ? { reviewConsultation: item.reviewConsultation } : {}),
         // Typing into this agent's own chat is an explicit choice to talk to it, even if dormant.
         wake: true,
       })
@@ -1220,6 +1232,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
         imageIds: opts?.imageIds,
         deliveryMode: opts?.deliveryMode ?? 'steer',
         ...(opts?.assistantRouting ? { assistantRouting: opts.assistantRouting } : {}),
+        ...(opts?.reviewConsultation ? { reviewConsultation: opts.reviewConsultation } : {}),
         queued,
         origin: resolvedAgentId ? 'agent' : 'create',
         status: 'sending',

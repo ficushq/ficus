@@ -6,9 +6,9 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { createServer } from 'vite'
 import type { Browser } from 'playwright-core'
 import type { SandboxPressure, SandboxProcesses } from '@ficus/shared'
+import { startFixtureServer } from './fixture-server'
 
 const root = resolve(import.meta.dir, '..')
 const { chromium } = createRequire(resolve(root, '../core/package.json'))(
@@ -16,28 +16,12 @@ const { chromium } = createRequire(resolve(root, '../core/package.json'))(
 ) as typeof import('playwright-core')
 const screenshots = process.env.SCREENSHOT_DIR
 if (screenshots) await mkdir(screenshots, { recursive: true })
-const server = await createServer({
-  configFile: false,
-  root,
-  server: { host: '127.0.0.1', port: 0 },
-  esbuild: { jsx: 'automatic' },
-  plugins: [
-    {
-      name: 'processes-fixture',
-      configureServer(server) {
-        server.middlewares.use('/processes-fixture', (_req, res) => {
-          res.setHeader('Content-Type', 'text/html')
-          res.end(
-            '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="root"></div><script type="module" src="/scripts/fixtures/sandbox-processes.tsx"></script></body></html>'
-          )
-        })
-      },
-    },
-  ],
+const server = await startFixtureServer({
+  path: '/processes-fixture',
+  entry: '/scripts/fixtures/sandbox-processes.tsx',
 })
 let browser: Browser | undefined
 try {
-  await server.listen()
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH })
   const page = await browser.newPage()
   await page.emulateMedia({ reducedMotion: 'reduce' })

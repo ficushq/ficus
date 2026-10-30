@@ -19,6 +19,8 @@ import {
   WORK_STREAM_INPUT_ASSET_LIMIT,
   WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT,
   workflowAttachmentContentType,
+  workflowCurrentAttachmentIds,
+  type WorkflowAttempt,
   type WorkStreamAssetAttachment,
   type WorkStreamAssetAttachments,
   type WorkStreamAssetSource,
@@ -42,7 +44,7 @@ import { deleteAgentAttachmentBlob, readVerifiedAgentAttachmentBlob } from '../a
 import { assertAttachmentInScope, resolveAttachmentScope } from '../attachments/agent-scope'
 import { canReadImage } from '../images/access'
 import { hasAgentResourcePermission, hasPermission, identityUserId, type Identity } from '../rbac'
-import { assertCanAttach } from '../workflows/attachments'
+import { assertCanAttach, attemptSlotsUsed } from '../workflows/attachments'
 import { assetManifestLines, type AssignmentAssets } from '../workflows/handoff-prompt'
 
 const log = createLogger('work-stream-assets')
@@ -435,21 +437,9 @@ export async function attachAttemptAsset(input: {
       .for('update')
     assertCanAttach(locked, lockedRun, input.attemptId, input.identity)
     return insertShare(tx, input.identity, locked!, input.attemptId, source, async () => {
-      // References and uploaded handoff files share the attempt's limit.
-      const [refs] = await tx
-        .select({ total: count() })
-        .from(workStreamAssetAttachments)
-        .where(activeShare(stream.id, input.attemptId))
-      const [files] = await tx
-        .select({ total: count() })
-        .from(workflowAttemptAttachments)
-        .where(
-          and(
-            eq(workflowAttemptAttachments.workStreamId, stream.id),
-            eq(workflowAttemptAttachments.attemptId, input.attemptId)
-          )
-        )
-      if ((refs?.total ?? 0) + (files?.total ?? 0) >= WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
+      // References and the attempt's current uploaded handoff files share its limit.
+      const attempt = lockedRun!.state.attempts.find((entry) => entry.id === input.attemptId)!
+      if ((await attemptSlotsUsed(tx, stream.id, attempt)) >= WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
         throw new AssetAttachmentError(`An attempt can attach at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files`, 409)
     })
   })
@@ -781,7 +771,9 @@ export async function runRetainedAssetCleanup(options: { maxAssets?: number } = 
 export async function loadAssignmentAssets(
   executor: Pick<typeof db, 'select'>,
   streamId: string,
-  incomingAttemptIds: number[]
+  incomingAttemptIds: number[],
+  /** The incoming attempts; an amended attempt lists only its current revision's files. */
+  attempts: WorkflowAttempt[] = []
 ): Promise<AssignmentAssets> {
   const all = await listStreamAssets(streamId, executor)
   const files = incomingAttemptIds.length
@@ -796,10 +788,21 @@ export async function loadAssignmentAssets(
         )
         .orderBy(asc(workflowAttemptAttachments.createdAt), asc(workflowAttemptAttachments.id))
     : []
+  // Each incoming attempt's current revision, in its display order (an amend keeps a replaced
+  // file's place); files of superseded revisions or never-published staging are not listed.
+  const json = files.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }))
+  const byId = new Map(files.map((row) => [row.id, row]))
+  const current = incomingAttemptIds.flatMap((id) => {
+    const attempt = attempts.find((entry) => entry.id === id)
+    const ids = attempt
+      ? workflowCurrentAttachmentIds(attempt, json)
+      : json.filter((row) => row.attemptId === id && row.revision === 1).map((row) => row.id)
+    return ids.flatMap((fileId) => byId.get(fileId) ?? [])
+  })
   return {
     inputs: all.inputs,
     incoming: incomingAttemptIds.flatMap((id) => all.attempts[String(id)] ?? []),
-    incomingFiles: files.map((row) => ({
+    incomingFiles: current.map((row) => ({
       id: row.id,
       attemptId: row.attemptId,
       filename: row.filename,

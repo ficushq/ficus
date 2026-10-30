@@ -9,6 +9,8 @@ export interface WorkflowAttemptAttachment {
   contentType: string
   byteSize: number
   createdAt: string
+  /** The attempt's result revision this file was uploaded for; absent or 1 for the original completion. */
+  revision?: number
 }
 
 /** The most files one attempt may attach to its handoff. */

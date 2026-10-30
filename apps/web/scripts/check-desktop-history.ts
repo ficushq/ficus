@@ -6,37 +6,16 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { createServer } from 'vite'
 import type { Browser } from 'playwright-core'
+import { startFixtureServer } from './fixture-server'
 
 const root = resolve(import.meta.dir, '..')
 const { chromium } = createRequire(resolve(root, '../core/package.json'))(
   'playwright-core'
 ) as typeof import('playwright-core')
-const server = await createServer({
-  configFile: false,
-  root,
-  resolve: { dedupe: ['react', 'react-dom'] },
-  server: { host: '127.0.0.1', port: 0 },
-  esbuild: { jsx: 'automatic' },
-  plugins: [
-    {
-      name: 'desktop-history-fixture',
-      configureServer(server) {
-        server.middlewares.use((req, res, next) => {
-          if (!req.headers.accept?.includes('text/html')) return next()
-          res.setHeader('Content-Type', 'text/html')
-          res.end(
-            '<html><head></head><body><div id="root"></div><script type="module" src="/scripts/fixtures/desktop-history.tsx"></script></body></html>'
-          )
-        })
-      },
-    },
-  ],
-})
+const server = await startFixtureServer({ entry: '/scripts/fixtures/desktop-history.tsx' })
 let browser: Browser | undefined
 try {
-  await server.listen()
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--no-sandbox'] })
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   page.setDefaultTimeout(5000)

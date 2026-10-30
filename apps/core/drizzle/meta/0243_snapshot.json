@@ -1,5 +1,5 @@
 {
-  "id": "f304fd3c-1b88-4838-9312-b19d53262472",
+  "id": "dc92ee34-0c73-445e-8f13-25544170da6f",
   "prevId": "61d05776-d50d-4558-92e5-cce7b8806fb0",
   "version": "7",
   "dialect": "postgresql",
@@ -16023,31 +16023,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "cleanup_attempts": {
-          "name": "cleanup_attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "cleanup_retry_at": {
-          "name": "cleanup_retry_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cleanup_failed_at": {
-          "name": "cleanup_failed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cleanup_error": {
-          "name": "cleanup_error",
-          "type": "varchar(200)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -23542,6 +23517,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
         }
       },
       "indexes": {
@@ -23556,6 +23538,12 @@
             },
             {
               "expression": "attempt_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "revision",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

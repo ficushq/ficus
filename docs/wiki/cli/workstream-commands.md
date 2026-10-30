@@ -16,19 +16,23 @@ ficus workstream finish STREAM_ID --version CURRENT_VERSION
 
 `flow` returns the stream's current steps, attempts, incoming handoff sources,
 evidence, return requests, and version. `advance` submits an outcome or an
-authorized return, delegation, or revision. `finish` checks the completion policy
+authorized return, amendment, delegation, or revision. `finish` checks the completion policy
 once the graph is complete. All three take a **work stream ID**; `ficus ws` is an
 alias for `ficus workstream`. `ficus workflow` manages reusable presets/templates.
 
 When an **agent** completion's effective outcome or authorized explicit return sends its result into human approval, include `decisionBrief` alongside `evidence` (complete) or `feedback` (return). Its fields are `decision` (500 characters), `recommendation` (1,000), `approvalEffect` (2,400), `risks` (1,600), and `changesSinceLastReview` (2,000; required after an earlier decision on that gate). All fields use readable prose. Non-agent routing does not acquire an authoring requirement. See the [decision brief contract](../workflow-decision-briefs.md) for a complete command, validation, source/round provenance and carry-forward behavior. The CLI preflights running completions and explicit returns before posting, and before uploading completion attachments; the server remains authoritative.
 
-`advance --attach PATH` (repeatable, `complete` only) uploads each file to the
+`action: amend` lets an agent revise its own completed attempt while the human approval gate it feeds is open: send `expectedVersion`, `attemptId`, the complete revised `decisionBrief` and `evidence` (naming the commit SHAs of any changes), optional `removeAttachmentPaths`, and `--attach` for files to add or replace (the CLI names them in `attachmentPaths`; only named files are published). Each amend is a new result revision of the same attempt; the gate stays open and it is not a review round. A person's decision on a gate sends `reviewedRevisions`; a decision on a revision that is no longer the latest is refused with 409 `WORKFLOW_REVIEW_REVISED` and **This was revised since you opened it. Review the latest revision.** Once the work was amended, a decision that omits `reviewedRevisions` is refused with the same code (with that exact message when the amend came after its `expectedVersion`). See [amend and revision-aware decisions](../workflow-decision-briefs.md#the-amend-action) for every refusal message.
+
+`advance --attach PATH` (repeatable, `complete` and `amend`) uploads each file to the
 attempt named in the command before the command is sent, so the next review gate
 opens with them; if any upload fails the attempt is not advanced. Files are keyed by
 attempt and path: re-sending the same bytes returns the stored file, and new bytes
 replace it without using another slot. When the attempt has already closed (a
 `--request-id` retry of a sent handoff) the uploads are skipped and the command is
-sent as-is; when the run's version no longer matches, the CLI stops before uploading. Core stores a
+sent as-is; when the run's version no longer matches, the CLI stops before uploading. For `amend`, files are
+staged for the attempt's next revision and become current only when the amend lands; a revision that can no
+longer land stages nothing. Core stores a
 snapshot (at most 10 files per attempt, each within `INBOX_MAX_ATTACHMENT_BYTES`,
 10 MB by default), lists them per attempt as `attachments` in `flow`, and serves
 them at `GET /api/workflows/runs/STREAM_ID/attachments/ATTACHMENT_ID` to anyone
