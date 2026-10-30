@@ -81,7 +81,7 @@ test('the warning names its level and, inside the hysteresis band, when it clear
   expect(storageWarningText(warning(80, 77.03))).toBe('host is 77.0% full. The 80% warning clears below 77%.')
 })
 
-function renderBanner(warnings: ReturnType<typeof warning>[]) {
+function renderBanner(warnings: ReturnType<typeof warning>[], storage: Pick<Storage, 'getItem' | 'setItem'>) {
   const client = new QueryClient()
   client.setQueryData(queryKeys.system.storageStatus(), {
     supported: true,
@@ -98,7 +98,7 @@ function renderBanner(warnings: ReturnType<typeof warning>[]) {
           <PermissionsProvider
             usePermissions={() => ({ can: () => true, permissions: [], isLoading: false, isError: false })}
           >
-            <StorageBanner />
+            <StorageBanner storage={storage} />
           </PermissionsProvider>
         </QueryClientProvider>
       </MemoryRouter>
@@ -110,24 +110,25 @@ function renderBanner(warnings: ReturnType<typeof warning>[]) {
 
 test('a dismissal hides the banner for a week unless a higher warning level is reached', () => {
   const store = new Map<string, string>()
-  const globals = globalThis as { window?: unknown }
-  const previous = globals.window
-  globals.window = {
-    localStorage: {
-      getItem: (key: string) => store.get(key) ?? null,
-      setItem: (key: string, value: string) => void store.set(key, value),
+  const storage = {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => void store.set(key, value),
+  }
+  const key = 'ficus.storageBanner.dismissed'
+  store.set(key, JSON.stringify({ until: Date.now() + 60_000, threshold: 80 }))
+  expect(renderBanner([warning(80, 77.03)], storage)).toBe('')
+  expect(renderBanner([warning(90, 91)], storage)).toContain('above the 90% warning level')
+  store.set(key, JSON.stringify({ until: Date.now() - 1, threshold: 95 }))
+  expect(renderBanner([warning(80, 81)], storage)).toContain('above the 80% warning level')
+  store.set(key, 'not json')
+  expect(renderBanner([warning(80, 81)], storage)).toContain('Storage warning')
+  const blocked = {
+    getItem: () => {
+      throw new Error('blocked')
+    },
+    setItem: () => {
+      throw new Error('blocked')
     },
   }
-  try {
-    const key = 'ficus.storageBanner.dismissed'
-    store.set(key, JSON.stringify({ until: Date.now() + 60_000, threshold: 80 }))
-    expect(renderBanner([warning(80, 77.03)])).toBe('')
-    expect(renderBanner([warning(90, 91)])).toContain('above the 90% warning level')
-    store.set(key, JSON.stringify({ until: Date.now() - 1, threshold: 95 }))
-    expect(renderBanner([warning(80, 81)])).toContain('above the 80% warning level')
-    store.set(key, 'not json')
-    expect(renderBanner([warning(80, 81)])).toContain('Storage warning')
-  } finally {
-    globals.window = previous
-  }
+  expect(renderBanner([warning(80, 81)], blocked)).toContain('Storage warning')
 })

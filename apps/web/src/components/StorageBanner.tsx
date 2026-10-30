@@ -14,19 +14,30 @@ interface Dismissal {
   threshold: number
 }
 
-/** Per-viewer convenience only: unreadable or blocked storage just means the banner shows. */
-function readDismissal(): Dismissal | null {
+type DismissalStorage = Pick<Storage, 'getItem' | 'setItem'>
+
+/** The browser's localStorage, or null where it is blocked or absent. */
+function browserStorage(): DismissalStorage | null {
   try {
-    const value = JSON.parse(window.localStorage.getItem(DISMISS_KEY) ?? 'null') as Dismissal | null
+    return window.localStorage
+  } catch {
+    return null
+  }
+}
+
+/** Per-viewer convenience only: unreadable or blocked storage just means the banner shows. */
+function readDismissal(storage: DismissalStorage | null): Dismissal | null {
+  try {
+    const value = JSON.parse(storage?.getItem(DISMISS_KEY) ?? 'null') as Dismissal | null
     return value && typeof value.until === 'number' && typeof value.threshold === 'number' ? value : null
   } catch {
     return null
   }
 }
 
-function saveDismissal(dismissal: Dismissal) {
+function saveDismissal(storage: DismissalStorage | null, dismissal: Dismissal) {
   try {
-    window.localStorage.setItem(DISMISS_KEY, JSON.stringify(dismissal))
+    storage?.setItem(DISMISS_KEY, JSON.stringify(dismissal))
   } catch {
     // Without storage the dismissal lasts for this page only.
   }
@@ -41,17 +52,17 @@ export function storageWarningText(warning: StorageWarning): string {
     : `${warning.machineName} is ${percent} full. The ${level} warning clears below ${warning.threshold - STORAGE_ALERT_HYSTERESIS_POINTS}%.`
 }
 
-export function StorageBanner() {
+export function StorageBanner({ storage = browserStorage() }: { storage?: DismissalStorage | null } = {}) {
   const { can, isLoading } = usePermissions()
   const allowed = !isLoading && can('system:logs')
   const { data } = useQuery({ ...queries.system.storageStatus(), enabled: allowed })
-  const [dismissal, setDismissal] = useState(readDismissal)
+  const [dismissal, setDismissal] = useState(() => readDismissal(storage))
   if (!allowed || !data?.warnings.length) return null
   const worst = [...data.warnings].sort((a, b) => b.threshold - a.threshold || b.percent - a.percent)[0]!
   if (dismissal && Date.now() < dismissal.until && worst.threshold <= dismissal.threshold) return null
   const dismiss = () => {
     const next = { until: Date.now() + DISMISS_MS, threshold: worst.threshold }
-    saveDismissal(next)
+    saveDismissal(storage, next)
     setDismissal(next)
   }
   return (
