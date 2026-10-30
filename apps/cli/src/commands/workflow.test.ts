@@ -317,7 +317,7 @@ test('advance --attach checks every file locally before uploading any', async ()
     `${empty} is empty`,
     expect.stringContaining('missing.md'),
     'At most 10 files can be attached to one handoff',
-    '--attach is only available when completing an attempt',
+    '--attach is only available when completing or amending an attempt',
   ])
   // Only the run was read; nothing was uploaded or advanced.
   expect(f.calls.every((call) => call.method === 'GET')).toBe(true)
@@ -429,6 +429,87 @@ test('explicit agent returns preflight human briefs and transport them without c
   )
   expect(invalid.calls).toEqual([])
   expect(invalid.errors[0]!.message).toContain('decisionBrief.risks')
+})
+
+test('advance amend stages files for the next revision before posting, and only while it can land', async () => {
+  const { createBlankWorkflow, createWorkflowRun, advanceWorkflowRun, workflowStepSchema } =
+    await import('@ficus/shared')
+  const { brief } = await import('@ficus/shared/test-fixtures/workflow-review')
+  const definition = createBlankWorkflow()
+  definition.steps[0]!.outcomes.completed = { next: 'gate' }
+  definition.steps.push(
+    workflowStepSchema.parse({
+      id: 'gate',
+      kind: 'human-approval',
+      instructions: 'Approve the design.',
+      output: 'Decision.',
+      outcomes: { approved: { next: 'finish' } },
+    })
+  )
+  const state = advanceWorkflowRun(createWorkflowRun(definition), {
+    action: 'complete',
+    expectedVersion: 0,
+    attemptId: 1,
+    outcome: 'completed',
+    evidence: 'Design evidence.',
+    decisionBrief: brief,
+  })
+  const dir = await mkdtemp(join(tmpdir(), 'ficus-amend-cli-'))
+  dirs.push(dir)
+  const design = join(dir, 'design.md')
+  await Bun.write(design, '# Design v2')
+  const command = {
+    action: 'amend',
+    expectedVersion: 1,
+    attemptId: 1,
+    evidence: 'Revised design, commit def5678.',
+    decisionBrief: { ...brief, risks: 'A clearer statement of the temporary maintenance cost.' },
+  }
+  const commandFile = await file(command)
+
+  const f = fixture({ version: 1, state }, undefined, 'workstream')
+  await f.run('advance', 'stream-id', '--file', commandFile, '--attach', design)
+  expect(f.errors).toEqual([])
+  expect(f.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+    'GET /api/workflows/runs/stream-id',
+    'UPLOAD /api/workflows/runs/stream-id/attempts/1/attachments',
+    'POST /api/workflows/runs/stream-id/advance',
+  ])
+  expect(f.calls[2]!.body).toEqual({
+    command: { ...command, attachmentPaths: [design] },
+    requestId: expect.any(String),
+  })
+
+  // The run moved on: fail as the server would, before staging anything.
+  const stale = fixture({ version: 2, state }, undefined, 'workstream')
+  await stale.run('advance', 'stream-id', '--file', commandFile, '--attach', design)
+  expect(stale.errors.map((error) => error.message)).toEqual(['Stale flow version'])
+  expect(stale.calls.map((call) => call.method)).toEqual(['GET'])
+
+  // The gate was decided: nothing is staged and the server answers the command.
+  const decided = advanceWorkflowRun(state, {
+    action: 'complete',
+    expectedVersion: 1,
+    attemptId: 2,
+    outcome: 'approved',
+    evidence: '',
+  })
+  const closed = fixture({ version: 2, state: decided }, undefined, 'workstream')
+  await closed.run('advance', 'stream-id', '--file', commandFile, '--attach', design)
+  expect(closed.calls.map((call) => call.method)).toEqual(['GET', 'POST'])
+})
+
+test('advance help explains amend', async () => {
+  const program = new Command().exitOverride().configureOutput({ writeOut: () => {}, writeErr: () => {} })
+  const { registerWorkstreamFlowCommands } = await import('./workstream-flow')
+  const ws = program.command('workstream')
+  registerWorkstreamFlowCommands(ws)
+  const advance = ws.commands.find((entry) => entry.name() === 'advance')!
+  let help = ''
+  advance.configureOutput({ writeOut: (text) => (help += text) })
+  advance.outputHelp()
+  expect(advance.description()).toContain('amend')
+  expect(help).toContain('amend revises your own completed attempt while the human approval gate it feeds is open')
 })
 
 test('advance attaches stored chat images and files by ID before advancing, with no upload', async () => {

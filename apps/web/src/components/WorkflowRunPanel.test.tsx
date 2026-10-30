@@ -130,6 +130,7 @@ test('approving needs no notes; human outcomes send the displayed version and at
         outcome: 'approved',
         evidence: 'Approved after checking scope',
         resume: false,
+        reviewedRevisions: [],
       },
     ])
     expect(input.value).toBe('Approved after checking scope')

@@ -154,6 +154,8 @@ Commands can complete, return, delegate, request completion-ready rework, or rev
 
 Agent-produced completions and authorized explicit returns whose effective route enters human approval require a structured `decisionBrief`, separate from `evidence` or return `feedback`. It explains the decision, recommendation, approval scope, risks and repeat-round changes. Gate instructions describe the kind of gate; managers do not rewrite them each round. Non-agent arrivals preserve routing and show a same-lineage carried brief read-only or an explicit missing-brief notice. See [Human decision briefs and queued reviews](workflow-decision-briefs.md) for fields, limits, prose validation, provenance, history and errors.
 
+While a gate is open, the reviewer can chat with the agent that produced the work from the review screen, and that agent can refine its completed attempt in place with `action: amend` (a new result revision of the same attempt; the gate stays open and it is not a review round). Decisions record the revision they were made on and are refused with **This was revised since you opened it. Review the latest revision.** when the screen is behind. **Changes requested** remains the path for bigger rework. See [Chatting with the producing agent and amending](workflow-decision-briefs.md#chatting-with-the-producing-agent-and-amending-while-a-gate-is-open).
+
 Blocked human gates remain readable but are not actionable reviews in Feed Needs you. Shared status names the applicable blocker with **Review queued**; sibling-attempt waits do not block an otherwise actionable gate. Clearing blockers restores the same gate without rewriting it.
 
 ### Keep outcomes live; restart only for fresh context

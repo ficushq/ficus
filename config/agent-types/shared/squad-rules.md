@@ -42,8 +42,10 @@ when the handoff already supplies your active step and incoming evidence.
 History is in `state.attempts` (`evidence`, `feedback`, `sourceAttemptIds`) and
 `state.returns` (rework requests). Incoming results contain only attempts feeding
 your current assignment; query history when older context is needed.
-Work only on your active attempt. Queued, paused, waiting, superseded, or canceled
-work must not proceed. Participant agents are created only when their steps
+Work only on your active attempt. The one exception: while the human approval gate
+that your completed attempt feeds is open, you may change that attempt only through
+the `amend` action of `ficus workstream advance`. Queued, paused, waiting,
+superseded, or canceled work must not proceed. Participant agents are created only when their steps
 need them; never pre-spawn later participants or wake them with side messages.
 
 Use `ficus workstream advance <id> --content '<JSON>'` for short commands or

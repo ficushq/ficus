@@ -1,4 +1,5 @@
 import { readSandboxHostCapacity } from '../services/machines/host-admission'
+import { ReviewConsultationError, resolveReviewConsultation } from '../services/workflows/review-consultation'
 import { updatePendingMessage } from '../services/agent/pending-message-control'
 import { getExposureCleanupStatusForDisplay } from '../services/sandbox/exposure-cleanup'
 import { getPostgresError, publicErrorMessage } from '../db/errors'
@@ -669,6 +670,8 @@ export const agentsRouter = new Hono()
         assistantRouting?: unknown
         /** Required to message a dormant agent; without it the send is refused with AGENT_DORMANT. */
         wake?: boolean
+        /** The review screen of an open human approval gate: `{ workStreamId, gateAttemptId }`. */
+        reviewConsultation?: unknown
       }>()
       if (!chatRequestSchema.shape.imageIds.safeParse(body.imageIds).success)
         return c.json({ error: 'Invalid image IDs (max 100)' }, 400)
@@ -703,6 +706,13 @@ export const agentsRouter = new Hono()
           sender && identity && body.assistantRouting !== undefined && agent.agentTypeId === 'assistant'
             ? await sentAssistantRouting(identity, body.assistantRouting)
             : undefined
+        // Validated here and stamped by the server; refused requests send nothing.
+        // A retry of an accepted send replays it, so it is not refused because the review closed since.
+        const reviewConsultation =
+          body.reviewConsultation !== undefined &&
+          !(body.clientId && (await agent.hasAcceptedClientSend(body.clientId)))
+            ? await resolveReviewConsultation(identity, agent, body.reviewConsultation)
+            : undefined
         const sentAt = new Date()
         const result = await agent.sendMessage(body.content, {
           imageIds: body.imageIds,
@@ -720,6 +730,7 @@ export const agentsRouter = new Hono()
                 ...(body.clientId ? { clientId: body.clientId } : {}),
                 ...(body.pagePath ? { pagePath: body.pagePath } : {}),
                 ...(assistantRouting ? { assistantRouting } : {}),
+                ...(reviewConsultation ? { reviewConsultation } : {}),
               }
             : body.clientId || body.pagePath
               ? {
@@ -740,6 +751,8 @@ export const agentsRouter = new Hono()
           })
         return c.json(result)
       } catch (error) {
+        if (error instanceof ReviewConsultationError)
+          return c.json({ error: error.message, code: error.code }, error.status)
         if (error instanceof InvalidAttachmentError) return c.json({ error: 'Invalid attachment' }, 400)
         if (error instanceof ImageInputUnsupportedError) return c.json({ error: error.message }, 400)
         if (error instanceof ChatIdempotencyConflictError) return c.json({ error: error.message }, 409)

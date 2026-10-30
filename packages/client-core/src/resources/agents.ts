@@ -58,6 +58,15 @@ export interface ContinueHaltedActionsResult {
   staleActionIds: string[]
 }
 
+/**
+ * Sent with a chat message from the review screen of an open human approval gate to the agent that
+ * produced the work under review. The server validates it and gives the agent review context.
+ */
+export interface ReviewConsultationSend {
+  workStreamId: string
+  gateAttemptId: number
+}
+
 export interface SendAgentMessageOptions {
   pagePath?: string
   imageIds?: string[]
@@ -67,6 +76,7 @@ export interface SendAgentMessageOptions {
   assistantRouting?: AssistantRoutingSend
   /** Required to message a dormant agent: without it the server refuses with AGENT_DORMANT. */
   wake?: boolean
+  reviewConsultation?: ReviewConsultationSend
 }
 
 function openReconnectableAgentStream(
@@ -208,6 +218,7 @@ export function agentsResource(t: Transport) {
           clientId: options?.clientId,
           ...(options?.assistantRouting ? { assistantRouting: options.assistantRouting } : {}),
           ...(options?.wake ? { wake: true } : {}),
+          ...(options?.reviewConsultation ? { reviewConsultation: options.reviewConsultation } : {}),
         },
       }),
     /**

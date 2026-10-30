@@ -7,6 +7,7 @@ import type {
   MessageMetadata,
 } from '@ficus/shared'
 import type { RenderedContentBlock, StreamingContentBlock } from './blocks'
+import type { ReviewConsultationSend } from '../resources/agents'
 
 /** Connection state of the agent SSE stream, surfaced by the hook to the combiner. */
 export type StreamStatus = 'live' | 'reconnecting' | 'ended'
@@ -26,6 +27,8 @@ export interface PendingItem {
   deliveryMode?: DeliveryMode
   /** Assistant conversations: routing sent with the message (kept for retries). */
   assistantRouting?: AssistantRoutingSend
+  /** A review screen's consultation of the producing agent (kept for retries). */
+  reviewConsultation?: ReviewConsultationSend
   /** Endpoint family that owns retries for this attempt. */
   /** Per-send queue placement, captured on send and reconciled with server acceptance. */
   queued?: boolean
