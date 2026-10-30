@@ -96,6 +96,7 @@ import { deepMergeMetadata } from './metadata'
 
 import { Squad } from './Squad'
 
+type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 export type WorkStreamRow = InferSelectModel<typeof workStreams>
 
 export type WorkStreamWaitResolveErrorCode =
@@ -741,7 +742,13 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   /**
    * Create a new work stream.
    */
-  static async create(input: CreateWorkStreamInput): Promise<WorkStream> {
+  static async create(
+    input: CreateWorkStreamInput,
+    options: {
+      /** Runs in the creation transaction, after the row exists and before the flow can dispatch. */
+      inTransaction?: (tx: DbTransaction, created: typeof workStreams.$inferSelect) => Promise<void>
+    } = {}
+  ): Promise<WorkStream> {
     const dependencies = await WorkStream.resolveDependencyInputs(input.dependsOn ?? [])
     // Creation has one path. Stored legacy streams retain their existing lifecycle.
     if (
@@ -837,6 +844,9 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       if (input.observe === 'terminal') {
         if (!input.creatorAgentId) throw new Error('Agent identity required for observation')
         await observeWorkStreamInTransaction(tx, created.id, input.creatorAgentId)
+      }
+      if (options.inTransaction) {
+        await options.inTransaction(tx, created)
       }
       if (ownership)
         await tx.insert(workStreamWorktrees).values({ workStreamId: created.id, squadId: created.squadId, ownership })
@@ -2337,6 +2347,8 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   async delete(): Promise<void> {
     // Capture direct interest before FK cascade removes subscription rows.
     const directSubscriberIds = await listWorkStreamSubscriberIds(this.id)
+    const assets = await import('../services/work-streams/asset-attachments')
+    const retainedAssetIds = await assets.retainedAssetIdsForStream(this.id)
     await db.transaction(async (tx) => {
       await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, this.squadId)).for('update')
       await tx.select({ id: workStreams.id }).from(workStreams).where(eq(workStreams.id, this.id)).for('update')
@@ -2346,6 +2358,8 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     // Handoff files live as long as their stream: the rows cascade above, the bytes go once that commits.
     const { removeWorkflowAttachmentDirectory } = await import('../services/workflows/attachments')
     await removeWorkflowAttachmentDirectory(this.id)
+    // Its shares cascaded with it; release what they retained (the cleanup sweep retries failures).
+    for (const id of retainedAssetIds) await assets.releaseRetainedAsset(id).catch(() => {})
     eventEmitter.emit('workStream.deleted', { workStreamId: this.id, squadId: this.squadId })
     for (const userId of directSubscriberIds) {
       eventEmitter.emit('liveActivity.interestChanged', { userId })

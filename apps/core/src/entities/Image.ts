@@ -4,7 +4,7 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../db'
-import { images } from '../db/schema'
+import { images, retainedAssets } from '../db/schema'
 import { getHomeDir } from '../lib/utils/home'
 import type { InferSelectModel } from 'drizzle-orm'
 import type { Agent } from './Agent'
@@ -55,6 +55,32 @@ async function unlinkStoredImage(filename: string): Promise<void> {
   } catch {
     // Already gone, or left as an orphan file: nothing refers to it any more.
   }
+}
+
+/**
+ * The deleted images whose bytes may be unlinked: those no work stream retains (see
+ * services/work-streams/asset-attachments.ts). Run under the images' advisory locks, which retaining
+ * an image also takes, so a reference cannot appear between this check and the unlink.
+ */
+async function withoutRetainedBytes(
+  tx: DbTransaction,
+  deleted: Array<{ id: string; filename: string }>
+): Promise<Array<{ id: string; filename: string }>> {
+  if (deleted.length === 0) return deleted
+  const retained = await tx
+    .select({ sourceId: retainedAssets.sourceId })
+    .from(retainedAssets)
+    .where(
+      and(
+        eq(retainedAssets.sourceKind, 'image'),
+        inArray(
+          retainedAssets.sourceId,
+          deleted.map((row) => row.id)
+        )
+      )
+    )
+  const kept = new Set(retained.map((row) => row.sourceId))
+  return deleted.filter((row) => !kept.has(row.id))
 }
 
 /**
@@ -330,7 +356,11 @@ export class Image implements ImageRow {
       for (const id of [...imageIds].sort()) {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${id}))`)
       }
-      return tx.delete(images).where(inArray(images.id, imageIds)).returning({ filename: images.filename })
+      const deleted = await tx
+        .delete(images)
+        .where(inArray(images.id, imageIds))
+        .returning({ id: images.id, filename: images.filename })
+      return withoutRetainedBytes(tx, deleted)
     })
     for (const row of rows) await unlinkStoredImage(row.filename)
   }
@@ -424,15 +454,7 @@ export class Image implements ImageRow {
    * Delete this image (file and database record).
    */
   async delete(): Promise<void> {
-    // Delete file
-    try {
-      await unlink(this.getFilePath())
-    } catch {
-      // Ignore if already deleted
-    }
-
-    // Delete database record
-    await db.delete(images).where(eq(images.id, this.id))
+    await Image.deleteMany([this.id])
   }
 
   /**

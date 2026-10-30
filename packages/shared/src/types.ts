@@ -1,6 +1,7 @@
 import type { StructuredManualWait } from './recovery-waits'
 import type { AssistantRoutingCorrection, AssistantRoutingHint, AssistantRoutingTarget } from './assistant-routing'
 import type { QuestionAnswerCardData } from './question-answers'
+import type { WorkStreamAssetAttachment } from './workstream-asset-attachments'
 export * from './grants'
 // Schema field definition for task type schemas
 export interface SchemaFieldDef {
@@ -1475,6 +1476,8 @@ export interface WorkStream {
   waitHistory?: WorkStreamWait[]
   handoffMessage: string | null
   files: string[]
+  /** Stored chat images and files shared as inputs by ID. Populated by the detail endpoint; absent from older servers. */
+  assetAttachments?: WorkStreamAssetAttachment[]
   metadata: Record<string, unknown>
   createdAt: Date
   updatedAt: Date

@@ -11,6 +11,17 @@ import { HTTPException } from 'hono/http-exception'
 import { AmbiguousPrefixError } from '../db/prefix-match'
 import { RepositorySetupError } from '../services/work-streams/repository-setup'
 import { resolveCreationWorkflow } from '../services/workflows/creation-source'
+import {
+  AssetAttachmentError,
+  AssetUnavailableError,
+  attachStreamAsset,
+  insertCreationAssets,
+  listStreamAssets,
+  prepareCreationAssets,
+  readStreamAsset,
+  removeStreamAsset,
+} from '../services/work-streams/asset-attachments'
+import { downloadDisposition } from '../services/attachments/http'
 import { z } from 'zod'
 import { pauseWorkStream, resumeWorkStream } from '../services/work-streams/pause'
 import { resolveActingUser } from '../services/rbac'
@@ -35,6 +46,7 @@ import {
   mapLegacyWorkStreamStatus,
   sortCanonicalWorkStreams,
   attentionSchema,
+  workStreamAssetSourceSchema,
   DEFAULT_ATTENTION,
   type Attention,
 } from '@ficus/shared'
@@ -456,6 +468,14 @@ const requireWorkStreamListPermission = createMiddleware(async (c, next) => {
   if (accessible !== 'all' && accessible.length === 0) return c.json({ error: 'Forbidden' }, 403)
   return next()
 })
+
+/** A refused stored-asset operation (or a flow refusal from the attempt checks) as its HTTP answer. */
+async function assetFailure(c: Context, error: unknown) {
+  if (error instanceof AssetAttachmentError) return c.json({ error: error.message }, error.status)
+  const { WorkflowError } = await import('../services/workflows/catalog')
+  if (error instanceof WorkflowError) return c.json({ error: error.message }, error.status)
+  throw error
+}
 
 /** Tracked-link failures carry their own status; the delivery conflict is code-tagged for clients. */
 function trackedResourceFailure(c: Context, error: unknown) {
@@ -949,7 +969,13 @@ export const workStreamsRouter = new Hono()
           tracked: mergeTracked([tracked], input.metadata?.tracked),
         }
       }
-      const stream = await WorkStream.create({ ...input, requestingUserId, creatorAgentId })
+      const prepared = input.assetReferences?.length
+        ? await prepareCreationAssets(identity, input.assetReferences, input.squadId)
+        : null
+      const stream = await WorkStream.create(
+        { ...input, requestingUserId, creatorAgentId },
+        prepared ? { inTransaction: (tx, created) => insertCreationAssets(tx, identity, created, prepared) } : {}
+      )
       // Auto-subscribe the requester to the stream's lifecycle updates (like watching a GitHub PR).
       if (requestingUserId) await subscribeToWorkStream(stream.id, requestingUserId)
       const { decisionStepSourceWarnings, withWarnings } = await import('../services/workflows/decision-step-warnings')
@@ -984,6 +1010,7 @@ export const workStreamsRouter = new Hono()
         )
       }
       if (error instanceof ObservationError) return c.json({ error: error.message }, error.status)
+      if (error instanceof AssetAttachmentError) return c.json({ error: error.message }, error.status)
       if (error instanceof SquadArchivedError) return c.json({ error: error.message }, 410)
       if (error instanceof TrackedResourceError) return c.json({ error: error.message }, error.status)
       if (error instanceof WorktreeCleanupConflictError)
@@ -1041,6 +1068,7 @@ export const workStreamsRouter = new Hono()
         reviewHistory,
         reviewRounds,
         waitHistory,
+        assetAttachments: (await listStreamAssets(stream.id)).inputs,
       }
 
       if (includeMetrics) {
@@ -1051,6 +1079,69 @@ export const workStreamsRouter = new Hono()
       return c.json(json)
     }
   )
+  // Stored chat images and files shared with the stream by ID (inputs and attempt results).
+  .get(
+    '/:id/asset-attachments',
+    requireEntityPermission('workstreams:read', async (c) => routeWorkStreamSquadId(c)),
+    async (c) => c.json(await listStreamAssets(await routeWorkStreamId(c)))
+  )
+  .post(
+    '/:id/asset-attachments',
+    zValidator('json', z.object({ source: workStreamAssetSourceSchema }).strict()),
+    async (c) => {
+      const identity = c.get('identity') as Identity | undefined
+      if (!identity) return c.json({ error: 'Unauthorized' }, 401)
+      c.set('authzChecked', true)
+      try {
+        const { attachment, created } = await attachStreamAsset({
+          identity,
+          streamId: await routeWorkStreamId(c),
+          source: c.req.valid('json').source,
+        })
+        return c.json(attachment, created ? 201 : 200)
+      } catch (error) {
+        return assetFailure(c, error)
+      }
+    }
+  )
+  .get(
+    '/:id/asset-attachments/:attachmentId',
+    requireEntityPermission('workstreams:read', async (c) => routeWorkStreamSquadId(c)),
+    async (c) => {
+      const attachmentId = c.req.param('attachmentId')
+      if (!z.uuid().safeParse(attachmentId).success) return c.json({ error: 'Attachment not found' }, 404)
+      let found: Awaited<ReturnType<typeof readStreamAsset>>
+      try {
+        found = await readStreamAsset(await routeWorkStreamId(c), attachmentId.toLowerCase())
+      } catch (error) {
+        if (error instanceof AssetUnavailableError) return c.json({ error: error.message }, 409)
+        throw error
+      }
+      if (!found) return c.json({ error: 'Attachment not found' }, 404)
+      return new Response(new Uint8Array(found.bytes), {
+        headers: {
+          'Content-Type': found.attachment.contentType,
+          'Content-Disposition': downloadDisposition(found.attachment.filename),
+          'X-Content-Type-Options': 'nosniff',
+          // A share can be removed or access revoked: never serve it from a cache.
+          'Cache-Control': 'private, no-store',
+        },
+      })
+    }
+  )
+  .delete('/:id/asset-attachments/:attachmentId', async (c) => {
+    const identity = c.get('identity') as Identity | undefined
+    if (!identity) return c.json({ error: 'Unauthorized' }, 401)
+    c.set('authzChecked', true)
+    const attachmentId = c.req.param('attachmentId')
+    if (!z.uuid().safeParse(attachmentId).success) return c.json({ error: 'Attachment not found' }, 404)
+    try {
+      await removeStreamAsset({ identity, streamId: await routeWorkStreamId(c), shareId: attachmentId.toLowerCase() })
+      return c.json({ success: true })
+    } catch (error) {
+      return assetFailure(c, error)
+    }
+  })
   // Agent-only, self-service observations. User subscriptions below remain unchanged.
   .get(
     '/:id/observation',

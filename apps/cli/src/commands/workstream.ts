@@ -1,4 +1,5 @@
 import { registerWorkstreamCleanupCommands } from './workstream-cleanup'
+import { registerWorkstreamAttachmentCommands } from './workstream-attachments'
 import {
   workStreamLabel,
   workStreamRef,
@@ -38,6 +39,7 @@ import type {
   WorkStreamAgentSummary as WorkStreamSpawnedAgentSummary,
   WorkStreamDependencyEdge,
   WorkStreamDependencyInput,
+  WorkStreamAssetAttachment,
 } from '@ficus/shared'
 
 const EDITABLE_WAIT_ACTORS = ['human', 'owner'] as const
@@ -71,6 +73,8 @@ export interface WorkStream {
   waitHistory?: WorkStreamWaitSummary[]
   handoffMessage: string | null
   files: string[]
+  /** Stored chat images and files shared as inputs by ID (absent from older servers). */
+  assetAttachments?: WorkStreamAssetAttachment[]
   response: string | string[] | null
   requestingUserId?: string | null
   requestingUserName?: string | null
@@ -394,6 +398,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
   const ws = program.command('workstream').alias('ws').description('Manage work streams')
   registerWorkstreamFlowCommands(ws, flowDependencies)
   registerWorkstreamCleanupCommands(ws)
+  registerWorkstreamAttachmentCommands(ws)
 
   // ficus workstream list [--squad <id>] [--task <id>] [--status <status>]
   ws.command('list')
@@ -490,6 +495,18 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     )
     .option('-m, --message <msg>', 'Handoff message (included in assignment notifications)')
     .option(
+      '--image <imageId>',
+      'Share a chat image Ficus already stores as an input, by ID, before the first assignment (repeatable)',
+      collect,
+      []
+    )
+    .option(
+      '--agent-file <attachmentId>',
+      'Share a chat file Ficus already stores as an input, by ID, before the first assignment (repeatable)',
+      collect,
+      []
+    )
+    .option(
       '--requesting-user <userId>',
       'Attribute the request to a specific user (defaults to whoever you are chatting with)'
     )
@@ -525,6 +542,14 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           ...(options.baseBranch !== undefined ? { baseBranch: options.baseBranch } : {}),
           ...(options.baseSource !== undefined ? { baseSource: options.baseSource } : {}),
           ...(options.fromEvent !== undefined ? { integrationEventId: options.fromEvent } : {}),
+          ...(options.image.length || options.agentFile.length
+            ? {
+                assetReferences: [
+                  ...options.image.map((imageId: string) => ({ kind: 'image', imageId })),
+                  ...options.agentFile.map((attachmentId: string) => ({ kind: 'agent-file', attachmentId })),
+                ],
+              }
+            : {}),
         })
 
         output(
@@ -634,6 +659,11 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
               const note = wait.resolutionNote ? ` — ${wait.resolutionNote}` : wait.message ? ` — ${wait.message}` : ''
               console.log(`  [${wait.type}]${resolution} (closed ${closed})${note}`)
             }
+          }
+          if (ws.assetAttachments?.length) {
+            console.log(
+              `Stored inputs: ${ws.assetAttachments.map((entry) => `${entry.filename} (${entry.id})`).join(', ')}`
+            )
           }
           if (ws.files && ws.files.length > 0) {
             console.log(`Files:       ${ws.files.join(', ')}`)

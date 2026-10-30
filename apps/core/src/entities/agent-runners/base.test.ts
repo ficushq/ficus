@@ -1,3 +1,4 @@
+import { conversationImageNote } from '../../services/chat/message-context'
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, it, expect, beforeEach, afterEach, spyOn, mock } from 'bun:test'
@@ -1122,7 +1123,8 @@ describe('AgentRunner (base class)', () => {
       await runner.run()
       await new Promise((r) => setTimeout(r, 0))
 
-      expect(mockSession.pi.promptCalls[0].text).toBe('look at this')
+      // The model also learns the image's ID, to view it again or attach it to a work stream later.
+      expect(mockSession.pi.promptCalls[0].text).toBe(`look at this\n\n[${conversationImageNote(['img-1'])}]`)
       expect(mockSession.pi.promptCalls[0].options).toEqual({ images: fakeImages })
       expect(loadImagesSpy).toHaveBeenCalledWith(['img-1'], agent)
       expect(mockSession.pi.steerCalls).toEqual([])

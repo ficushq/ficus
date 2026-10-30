@@ -583,3 +583,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* A stored or handed-off raster image in a review: decoded only, never scripted. */
+.g-attachment-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}

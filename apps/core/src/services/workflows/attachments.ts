@@ -1,10 +1,17 @@
-import { and, asc, count, eq } from 'drizzle-orm'
+import { and, asc, count, eq, isNull } from 'drizzle-orm'
 import {
   WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT,
   workflowAttachmentContentType,
   type WorkflowAttemptAttachment,
 } from '@ficus/shared'
-import { db, squads, workflowAttemptAttachments, workStreamFlowRuns, workStreams } from '../../db'
+import {
+  db,
+  squads,
+  workflowAttemptAttachments,
+  workStreamAssetAttachments,
+  workStreamFlowRuns,
+  workStreams,
+} from '../../db'
 import { rm } from 'node:fs/promises'
 import { createLogger } from '../../lib/infra/logger'
 import {
@@ -122,7 +129,18 @@ export async function uploadWorkflowAttachment(input: {
               eq(workflowAttemptAttachments.attemptId, input.attemptId)
             )
           )
-        if ((files?.total ?? 0) >= WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
+        // Stored chat images and files attached by ID share the attempt's slots.
+        const [references] = await tx
+          .select({ total: count() })
+          .from(workStreamAssetAttachments)
+          .where(
+            and(
+              eq(workStreamAssetAttachments.workStreamId, input.workStreamId),
+              eq(workStreamAssetAttachments.attemptId, input.attemptId),
+              isNull(workStreamAssetAttachments.removedAt)
+            )
+          )
+        if ((files?.total ?? 0) + (references?.total ?? 0) >= WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
           throw new WorkflowError(`An attempt can attach at most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files`, 409)
       }
       // A replacement's old row is already gone, so only the size change counts against the quota.

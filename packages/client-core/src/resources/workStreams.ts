@@ -1,5 +1,6 @@
-import type { Attention, WorkStream } from '@ficus/shared'
+import type { Attention, WorkStream, WorkStreamAssetAttachments } from '@ficus/shared'
 import type { Transport } from '../transport'
+import { readAll } from './workflows'
 
 /** The caller's attention for one stream. `inherited` means the levels came from the squad row. */
 export interface WorkStreamSubscription {
@@ -23,5 +24,15 @@ export function workStreamsResource(t: Transport) {
       t.request(`${path(id)}/subscribe`, { method: 'POST', ...(attention ? { body: { attention } } : {}) }),
     unsubscribe: (id: string): Promise<WorkStreamSubscription> =>
       t.request(`${path(id)}/subscribe`, { method: 'DELETE' }),
+    /** Stored chat images and files shared with the stream by ID: inputs and each attempt's results. */
+    assetAttachments: (id: string) => t.request<WorkStreamAssetAttachments>(`${path(id)}/asset-attachments`),
+    /** The bytes of one stored-asset attachment. Never cached by the server: removal and revocation apply at once. */
+    downloadAssetAttachment: async (id: string, attachmentId: string, signal?: AbortSignal) =>
+      readAll(
+        await t.openStream(`${path(id)}/asset-attachments/${encodeURIComponent(attachmentId)}`, {
+          method: 'GET',
+          signal,
+        })
+      ),
   }
 }

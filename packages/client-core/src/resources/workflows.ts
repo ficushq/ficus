@@ -9,6 +9,7 @@ import type {
   WorkflowProducerReviewContext,
   WorkflowOutcomeBinding,
   WorkflowAttemptAttachment,
+  WorkStreamAssetAttachment,
   WorkflowUsage,
   WorkflowSource,
   WorkStreamWait,
@@ -34,10 +35,15 @@ export interface WorkflowRunDetail {
   usage?: WorkflowUsage
   /** Files each attempt handed off, keyed by attempt id (absent on servers without attachments). */
   attachments?: Record<string, WorkflowAttemptAttachment[]>
+  /**
+   * Stored chat images and files each attempt attached by ID, keyed by attempt id. Absent on servers
+   * that predate stored-asset references; read with `workStreams.downloadAssetAttachment`.
+   */
+  assetAttachments?: Record<string, WorkStreamAssetAttachment[]>
 }
 
 /** Read a whole response body; the transport's stream reader is the one binary seam both hosts implement. */
-async function readAll(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<Uint8Array> {
+export async function readAll(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<Uint8Array> {
   const chunks: Uint8Array[] = []
   let total = 0
   try {
