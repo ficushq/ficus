@@ -1,7 +1,7 @@
 import {
   isRestartContext,
-  restartPauseNotice,
-  restartResumeNotice,
+  restartPauseChatNotice,
+  restartResumeChatNotice,
   type RestartContext,
 } from '@ficus/shared/restart-context'
 import { createRestartContext } from '../sandbox/command-drain'
@@ -144,7 +144,7 @@ export async function requeueOwnedExecutionsForShutdown(
     if (recoveredAgentIds.has(candidate.agentId)) continue
     const recoveredCandidateIds = await recoverExecutions([candidate], {
       requireLivenessProof: false,
-      notice: restartPauseNotice(restart),
+      notice: restartPauseChatNotice(),
       restart,
       beforeExactCas: options?.beforeExactCas,
     })
@@ -319,7 +319,7 @@ export async function prepareRestartResume(executionId: string, agentId: string)
       .values({
         agentId,
         role: 'assistant',
-        content: restartResumeNotice(restart),
+        content: restartResumeChatNotice(),
         metadata: { isSystem: true, executionId, restart, restartPhase: 'resume' },
       })
       .returning()

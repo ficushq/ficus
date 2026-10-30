@@ -1165,9 +1165,11 @@ describeSubprocess('attemptPickup result matrix', () => {
     // Posted at SHUTDOWN, before any restart has happened — say so, rather than
     // claiming a recovery that is still in the future.
     const notices = (await db.select().from(messages).where(eq(messages.agentId, agent.id))).map((m) => m.content)
-    expect(notices).toContain(
-      '[System] Agent paused for a worker restart; it will resume automatically. [restart id: restart-owned; time: 2026-10-28T21:32:00.000Z]'
-    )
+    // The chat copy is for people: no correlation id or raw timestamp in the
+    // text. The restart context rides in metadata (asserted below), which is
+    // what the resume reads.
+    expect(notices).toContain('[System] Paused for a restart; it will resume automatically.')
+    expect(notices.join('\n')).not.toContain('restart-owned')
     const { prepareRestartResume } = await import('./startup-recovery')
     const resumed = await prepareRestartResume(execution.id, agent.id)
     expect(resumed).toEqual(restart)
@@ -1176,7 +1178,7 @@ describeSubprocess('attemptPickup result matrix', () => {
     const resumeRows = rows.filter((row) => (row.metadata as any)?.restartPhase === 'resume')
     expect(resumeRows).toHaveLength(1)
     expect(resumeRows[0]?.content).toBe(
-      'Ficus restarted at 2026-10-28T21:32:00.000Z; any command running then was cancelled by the restart and may have partial effects. This is not an incident: check the affected state and re-run what was interrupted. [restart id: restart-owned]'
+      '[System] Resumed after a restart. Commands that were running were cancelled; the agent was told to check them and re-run what was interrupted.'
     )
     for (const row of rows.filter((row) => (row.metadata as any)?.restartPhase)) {
       expect(row.metadata).toMatchObject({ restart, executionId: execution.id, isSystem: true })
@@ -1276,7 +1278,7 @@ describeSubprocess('attemptPickup result matrix', () => {
       )
       expect(
         noticeContents.filter((content) =>
-          content.startsWith('[System] Agent paused for a worker restart; it will resume automatically.')
+          content.startsWith('[System] Paused for a restart; it will resume automatically.')
         )
       ).toHaveLength(1)
       expect(noticeContents).not.toContain('[System] Agent interrupted and will resume automatically.')
@@ -1309,9 +1311,7 @@ describeSubprocess('attemptPickup result matrix', () => {
       ({ content }) => content
     )
     expect(
-      notices.filter((content) =>
-        content.startsWith('[System] Agent paused for a worker restart; it will resume automatically.')
-      )
+      notices.filter((content) => content.startsWith('[System] Paused for a restart; it will resume automatically.'))
     ).toHaveLength(1)
   })
 
@@ -1336,7 +1336,7 @@ describeSubprocess('attemptPickup result matrix', () => {
     const notices = (await db.select().from(messages).where(eq(messages.agentId, agent.id))).map(
       ({ content }) => content
     )
-    expect(notices).not.toContain('[System] Agent paused for a worker restart; it will resume automatically.')
+    expect(notices).not.toContain('[System] Paused for a restart; it will resume automatically.')
   })
 
   test('shutdown never requeues an execution owned by a different process', async () => {

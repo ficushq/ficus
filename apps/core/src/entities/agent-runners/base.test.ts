@@ -1017,8 +1017,12 @@ describe('AgentRunner (base class)', () => {
       await runner.run()
       const expected =
         'Ficus restarted at 2026-10-28T21:32:00.000Z; any command running then was cancelled by the restart and may have partial effects. This is not an incident: check the affected state and re-run what was interrupted. [restart id: restart-1]'
+      // The agent's model gets the full notice with the id (it ties cancelled
+      // commands to this restart); the live chat stream gets the human copy.
       expect(mockSession.pi.promptCalls[0].text).toStartWith(expected)
-      expect(events.filter((event) => event.type === 'system_message')[0]?.text).toBe(expected)
+      expect(events.filter((event) => event.type === 'system_message')[0]?.text).toBe(
+        '[System] Resumed after a restart. Commands that were running were cancelled; the agent was told to check them and re-run what was interrupted.'
+      )
       expect(agent.status).not.toBe('waiting-input')
       expect(execution.status).toBe('running')
       expect(events.some((event) => event.type === 'error')).toBe(false)
