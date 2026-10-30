@@ -270,7 +270,7 @@ function StandardHumanMessageContent({
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
-          className="ficus-button ficus-button-link text-inherit hover:text-inherit mt-1 text-xs font-medium underline underline-offset-2 opacity-85 hover:opacity-100"
+          className="ficus-button ficus-button-ghost -ml-1.5 mt-1 px-1.5 py-0.5 text-xs font-medium text-inherit opacity-85 hover:bg-on-accent/15 hover:text-inherit hover:opacity-100"
           aria-expanded={expanded}
         >
           {expanded ? 'Show less' : 'Show more'}

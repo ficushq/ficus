@@ -390,20 +390,29 @@ export function SkillsSection() {
             </div>
             <div className="flex gap-2 shrink-0 flex-wrap justify-end">
               {canWriteSkills && (
-                <button className="ficus-button ficus-button-link text-sm" onClick={() => editSkill(skill)}>
+                <button className="ficus-button ficus-button-ghost px-2 py-1 text-sm" onClick={() => editSkill(skill)}>
                   Edit
                 </button>
               )}
-              <button className="ficus-button ficus-button-link text-sm" onClick={() => exportMarkdown(skill.id)}>
+              <button
+                className="ficus-button ficus-button-ghost px-2 py-1 text-sm"
+                onClick={() => exportMarkdown(skill.id)}
+              >
                 Export
               </button>
               {skill.hasTemplate && (
-                <button className="ficus-button ficus-button-link text-sm" onClick={() => setDiffId(skill.id)}>
+                <button
+                  className="ficus-button ficus-button-ghost px-2 py-1 text-sm"
+                  onClick={() => setDiffId(skill.id)}
+                >
                   Diff
                 </button>
               )}
               {canWriteSkills && (
-                <button className="ficus-button ficus-button-link text-sm" onClick={() => toggle.mutate(skill)}>
+                <button
+                  className="ficus-button ficus-button-ghost px-2 py-1 text-sm"
+                  onClick={() => toggle.mutate(skill)}
+                >
                   {skill.disabled ? 'Enable' : 'Disable'}
                 </button>
               )}

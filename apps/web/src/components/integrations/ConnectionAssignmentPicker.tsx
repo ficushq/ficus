@@ -119,7 +119,7 @@ function SingleConnectionAssignment({
               type="button"
               disabled={!canWrite || inheritMutation.isPending}
               onClick={() => inheritMutation.mutate()}
-              className="ficus-button ficus-button-link"
+              className="ficus-button ficus-button-ghost -ml-2 px-2 py-1"
             >
               Use global default
             </button>
@@ -224,7 +224,7 @@ function SingleConnectionAssignment({
           <span>Projection: {projectionLabel}</span>
           {canWrite && projectionLabel === 'degraded' && value.assignment && (
             <button
-              className="ficus-button ficus-button-link"
+              className="ficus-button ficus-button-ghost px-1.5 py-0.5"
               type="button"
               disabled={retryMutation.isPending}
               onClick={() => retryMutation.mutate()}

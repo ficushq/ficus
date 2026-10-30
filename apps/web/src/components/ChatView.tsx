@@ -504,7 +504,7 @@ function PendingMessageRow({
           <button
             type="button"
             onClick={onRetry}
-            className="ficus-button ficus-button-link mt-1 text-xs text-on-accent underline hover:text-on-accent/80"
+            className="ficus-button ficus-button-ghost -ml-1.5 mt-1 px-1.5 py-0.5 text-xs text-on-accent hover:bg-on-accent/15 hover:text-on-accent focus-visible:bg-on-accent/15"
           >
             Retry
           </button>
@@ -2267,7 +2267,7 @@ export function ChatView({
                             {agentFileErrorText(file.error)}
                           </span>
                           <button
-                            className="ficus-button ficus-button-link"
+                            className="ficus-button ficus-button-ghost px-1.5 py-0.5"
                             type="button"
                             onClick={() => agentFiles.retryFile(file.id)}
                           >
@@ -2359,7 +2359,7 @@ export function ChatView({
                         <button
                           type="button"
                           onClick={() => retryImageUpload(img.id)}
-                          className="ficus-button ficus-button-link mt-1 block w-16 text-xs"
+                          className="ficus-button ficus-button-ghost mt-1 block w-16 px-1 py-0.5 text-xs"
                           aria-label="Retry image upload"
                         >
                           Re-upload

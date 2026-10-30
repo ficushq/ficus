@@ -392,7 +392,7 @@ function DurableConversation(props: AssistantConversationViewProps) {
         {archiveHasMore && (
           <button
             type="button"
-            className="ficus-button ficus-button-link"
+            className="ficus-button ficus-button-ghost -ml-2 mt-1 px-2 py-1"
             disabled={archiveLoading}
             aria-busy={archiveLoading}
             onClick={() => void loadEarlierMessages()}
@@ -436,7 +436,7 @@ function DurableConversation(props: AssistantConversationViewProps) {
         <div role="alert" className="px-3 py-2 text-sm text-status-danger-600 dark:text-status-danger-400">
           {voice.error}{' '}
           <button
-            className="ficus-button ficus-button-link"
+            className="ficus-button ficus-button-ghost px-1.5 py-0.5"
             onClick={() => {
               void voice.retryConnection()
             }}
@@ -449,7 +449,10 @@ function DurableConversation(props: AssistantConversationViewProps) {
         <div role="alert" className="px-3 py-2 text-sm text-status-danger-600 dark:text-status-danger-400">
           {error}{' '}
           {!agentId && (
-            <button className="ficus-button ficus-button-link" onClick={() => setAttempt((value) => value + 1)}>
+            <button
+              className="ficus-button ficus-button-ghost px-1.5 py-0.5"
+              onClick={() => setAttempt((value) => value + 1)}
+            >
               Retry
             </button>
           )}

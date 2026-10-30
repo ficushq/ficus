@@ -71,12 +71,12 @@ export function SharedPromptList({
           </div>
           <div className="flex gap-2 shrink-0 flex-wrap justify-end">
             {canWrite && (
-              <button className="ficus-button ficus-button-link text-sm" onClick={() => onEdit(include)}>
+              <button className="ficus-button ficus-button-ghost px-2 py-1 text-sm" onClick={() => onEdit(include)}>
                 Edit
               </button>
             )}
             {canWrite && (
-              <button className="ficus-button ficus-button-link text-sm" onClick={() => onToggle(include)}>
+              <button className="ficus-button ficus-button-ghost px-2 py-1 text-sm" onClick={() => onToggle(include)}>
                 {include.disabled ? 'Enable' : 'Disable'}
               </button>
             )}

@@ -28,7 +28,7 @@ export function InviteTeamStep() {
           {members.isError && (
             <div role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
               Could not load teammates.{' '}
-              <button className="ficus-button ficus-button-link underline" onClick={() => members.refetch()}>
+              <button className="ficus-button ficus-button-ghost px-1.5 py-0.5" onClick={() => members.refetch()}>
                 Retry
               </button>
             </div>
@@ -104,7 +104,7 @@ function InvitedMember({
             <button
               type="button"
               aria-label={`Copy invite link for ${user.email}`}
-              className="ficus-button ficus-button-link text-sm"
+              className="ficus-button ficus-button-ghost px-2 py-1 text-sm"
               onClick={async () => {
                 try {
                   if (!navigator.clipboard) throw new Error('Clipboard unavailable')
@@ -122,7 +122,7 @@ function InvitedMember({
               type="button"
               disabled={mutation.isPending}
               aria-label={`Create invite link for ${user.email}`}
-              className="ficus-button ficus-button-link text-sm disabled:opacity-50"
+              className="ficus-button ficus-button-ghost px-2 py-1 text-sm disabled:opacity-50"
               onClick={() => mutation.mutate('link')}
             >
               {mutation.isPending ? 'Creating…' : 'Create invite link'}
@@ -140,7 +140,7 @@ function InvitedMember({
           {canInvite && (
             <button
               type="button"
-              className="ficus-button ficus-button-link"
+              className="ficus-button ficus-button-ghost px-2 py-1"
               disabled={mutation.isPending}
               onClick={() => mutation.mutate('email')}
             >

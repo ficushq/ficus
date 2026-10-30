@@ -62,7 +62,7 @@ export function SandboxHealthWarning({ squadId, status }: { squadId: string; sta
           event.stopPropagation()
           hover.show()
         }}
-        className="ficus-button ficus-button-link rounded text-status-review-700 dark:text-status-review-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className="ficus-button ficus-button-ghost -m-0.5 rounded p-0.5 text-status-review-700 hover:text-status-review-800 dark:text-status-review-400 dark:hover:text-status-review-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <WarningIcon className="h-4 w-4" />
       </button>

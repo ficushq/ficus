@@ -520,7 +520,7 @@ function DecisionSheet(state: DecisionState) {
               aria-expanded={expanded}
               aria-controls={`${id}-panel`}
               onClick={toggle}
-              className="ficus-button ficus-button-link shrink-0 py-1 text-sm font-medium"
+              className="ficus-button ficus-button-ghost -ml-2 shrink-0 px-2 py-1 text-sm font-medium"
             >
               {expanded ? 'Hide notes' : notes.trim() ? 'Edit notes' : 'Add notes'}
             </button>

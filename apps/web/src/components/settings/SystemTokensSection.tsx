@@ -108,7 +108,7 @@ export function SystemTokensSection() {
                 ])
                 setCustomScope('')
               }}
-              className="ficus-button ficus-button-link text-sm disabled:opacity-50"
+              className="ficus-button ficus-button-secondary rounded-lg px-3 py-2 text-sm disabled:opacity-50"
             >
               Add scope
             </button>

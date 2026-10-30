@@ -189,7 +189,7 @@ function AgentErrorSection({
             <button
               onClick={() => mutation.mutate()}
               disabled={mutation.isPending}
-              className="ficus-button ficus-button-link min-h-9 py-1.5 text-xs disabled:opacity-50 shrink-0"
+              className="ficus-button ficus-button-ghost min-h-9 shrink-0 px-2 py-1.5 text-xs disabled:opacity-50"
             >
               {mutation.isPending ? 'Continuing...' : `Continue all (${respondableErrors.length})`}
             </button>

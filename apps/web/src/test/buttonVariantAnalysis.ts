@@ -211,6 +211,43 @@ export function parseSource(source: string, path: string): ts.SourceFile {
   return ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, kind)
 }
 
+export type LinkStyledButtonFinding = {
+  path: string
+  line: number
+  /** Source text of the `className` value. */
+  expression: string
+}
+
+/**
+ * Every intrinsic `<button>` whose `className` can resolve to `ficus-button-link`, through literals,
+ * conditionals, class helpers or same-file constants. Link styling is for navigation; a `<button>`
+ * usually acts instead, so `buttonVariants.guard.test.ts` allows only listed navigating buttons.
+ * Anchors, router `Link`s and other components are not checked.
+ */
+export function scanLinkStyledButtons(source: string, path: string): LinkStyledButtonFinding[] {
+  const sf = parseSource(source, path)
+  const decls = declarationsByName(sf)
+  const findings: LinkStyledButtonFinding[] = []
+  const visit = (node: ts.Node) => {
+    if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.tagName.getText(sf) === 'button') {
+      for (const attribute of node.attributes.properties) {
+        if (!ts.isJsxAttribute(attribute) || attribute.name.getText(sf) !== 'className' || !attribute.initializer)
+          continue
+        const combinations = evaluate(attribute.initializer, decls, new Set())
+        if ([...combinations].some((combo) => combo.split(' ').includes('ficus-button-link')))
+          findings.push({
+            path,
+            line: sf.getLineAndCharacterOfPosition(attribute.getStart(sf)).line + 1,
+            expression: attribute.initializer.getText(sf).replace(/\s+/g, ' '),
+          })
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+  return findings
+}
+
 /** Every class expression in `source` that carries the button base or a variant, with its analysis. */
 export function scanButtonVariants(source: string, path: string): ButtonVariantFinding[] {
   const sf = parseSource(source, path)

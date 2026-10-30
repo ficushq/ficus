@@ -954,7 +954,7 @@ export function SquadAgentThreads({
                 <button
                   type="button"
                   onClick={() => setShowAllConsultants(!showAllConsultants)}
-                  className="ficus-button ficus-button-link py-1.5 text-xs"
+                  className="ficus-button ficus-button-ghost px-2 py-1.5 text-xs"
                 >
                   {showAllConsultants ? 'Show recent' : `View all (${consultantAgents.length})`}
                 </button>

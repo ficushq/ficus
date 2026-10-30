@@ -131,7 +131,11 @@ export function SpendSection() {
               </button>
             </span>
           ))}
-          <button type="button" className="ficus-button ficus-button-link text-xs" onClick={() => setActive({})}>
+          <button
+            type="button"
+            className="ficus-button ficus-button-ghost px-2 py-0.5 text-xs"
+            onClick={() => setActive({})}
+          >
             Clear filters
           </button>
         </div>

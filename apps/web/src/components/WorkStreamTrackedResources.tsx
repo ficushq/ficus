@@ -111,7 +111,7 @@ export function WorkStreamTrackedResources({ workStreamId, canUpdate }: { workSt
                   <button
                     type="button"
                     aria-label={`Mark ${label} as delivery`}
-                    className="ficus-button ficus-button-link"
+                    className="ficus-button ficus-button-ghost px-1.5 py-0.5"
                     disabled={designate.isPending}
                     onClick={() => designate.mutate(resource)}
                   >
@@ -122,7 +122,7 @@ export function WorkStreamTrackedResources({ workStreamId, canUpdate }: { workSt
                   <button
                     type="button"
                     aria-label={`Stop tracking ${label}`}
-                    className="ficus-button ficus-button-link"
+                    className="ficus-button ficus-button-ghost px-1.5 py-0.5 hover:text-status-danger-600 dark:hover:text-status-danger-400"
                     disabled={remove.isPending}
                     onClick={() => remove.mutate(resource)}
                   >

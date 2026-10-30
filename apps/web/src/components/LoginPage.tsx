@@ -313,7 +313,11 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
             <>
               <PasskeyRegisterComponent onSuccess={loginWithToken} />
               <p className="text-xs text-secondary mt-4 text-center">
-                <button type="button" onClick={() => setShowRegister(false)} className="ficus-button ficus-button-link">
+                <button
+                  type="button"
+                  onClick={() => setShowRegister(false)}
+                  className="ficus-button ficus-button-ghost px-3 py-1.5"
+                >
                   Back to login
                 </button>
               </p>
@@ -330,7 +334,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
                   <button
                     type="button"
                     onClick={() => setShowRegister(true)}
-                    className="ficus-button ficus-button-link"
+                    className="ficus-button ficus-button-ghost px-3 py-1.5"
                   >
                     Create account
                   </button>
@@ -344,7 +348,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
                   <button
                     type="button"
                     onClick={() => setShowRecovery(true)}
-                    className="ficus-button ficus-button-link"
+                    className="ficus-button ficus-button-ghost px-3 py-1.5"
                   >
                     Lost your passkey?
                   </button>

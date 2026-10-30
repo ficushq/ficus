@@ -377,7 +377,11 @@ export function SquadOverridesEditor({
           })}
         </div>
       )}
-      <button type="button" onClick={addRow} className="ficus-button ficus-button-link text-xs font-medium">
+      <button
+        type="button"
+        onClick={addRow}
+        className="ficus-button ficus-button-ghost -ml-2 px-2 py-1 text-xs font-medium"
+      >
         + Add override
       </button>
     </div>
@@ -668,18 +672,18 @@ export function ChannelRow({
           )}
           <div className="flex items-center gap-2 flex-wrap">
             {channel.hasTemplate && channel.yamlFieldOverrides.length > 0 && (
-              <button onClick={onShowDiff} className="ficus-button ficus-button-link text-xs font-medium">
+              <button onClick={onShowDiff} className="ficus-button ficus-button-ghost px-2 py-1 text-xs font-medium">
                 Compare to Template
               </button>
             )}
-            <button onClick={handleExport} className="ficus-button ficus-button-link text-xs font-medium">
+            <button onClick={handleExport} className="ficus-button ficus-button-ghost px-2 py-1 text-xs font-medium">
               {copyMsg || 'Export YAML'}
             </button>
             {canUpdate && (
               <button
                 onClick={() => toggleDisableMutation.mutate()}
                 disabled={toggleDisableMutation.isPending}
-                className="ficus-button ficus-button-link text-xs text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 font-medium"
+                className="ficus-button ficus-button-ghost px-2 py-1 text-xs text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 font-medium"
               >
                 {channel.disabled ? 'Enable' : 'Disable'}
               </button>

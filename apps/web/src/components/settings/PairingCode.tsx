@@ -41,7 +41,7 @@ export function PairingCode({
       <div className="flex items-center gap-2">
         <code className="rounded bg-surface-hover px-2 py-1 text-xs select-all">{pairing.code}</code>
         <button
-          className="ficus-button ficus-button-link text-xs"
+          className="ficus-button ficus-button-ghost px-2 py-1 text-xs"
           onClick={() => navigator.clipboard.writeText(pairing.code)}
         >
           Copy code
@@ -55,7 +55,11 @@ export function PairingCode({
           Open in Ficus app
         </a>
       )}
-      <button onClick={onRegenerate} disabled={regenerating} className="ficus-button ficus-button-link text-xs">
+      <button
+        onClick={onRegenerate}
+        disabled={regenerating}
+        className="ficus-button ficus-button-ghost px-2 py-1 text-xs"
+      >
         Regenerate
       </button>
     </div>

@@ -229,7 +229,11 @@ export function ScreenshotFiling({ dependencies }: ScreenshotFilingProps) {
                 <p className="text-sm font-medium text-primary">Couldn't file the screenshot</p>
                 <p className="mt-0.5 text-xs text-secondary">{card.rejected}</p>
               </div>
-              <button type="button" onClick={dismiss} className="ficus-button ficus-button-link shrink-0 text-sm">
+              <button
+                type="button"
+                onClick={dismiss}
+                className="ficus-button ficus-button-ghost -my-1 shrink-0 px-2 py-1 text-sm"
+              >
                 Dismiss
               </button>
             </div>
@@ -415,7 +419,11 @@ export function ScreenshotReviewCard({
           {upload.status === 'failed' && (
             <p role="alert" className="mt-0.5 text-xs text-status-danger-600">
               Couldn't upload the screenshot: {upload.message}{' '}
-              <button type="button" onClick={onRetryUpload} className="ficus-button ficus-button-link text-xs">
+              <button
+                type="button"
+                onClick={onRetryUpload}
+                className="ficus-button ficus-button-ghost px-1.5 py-0.5 text-xs"
+              >
                 Retry
               </button>
             </p>
