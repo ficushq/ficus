@@ -1,4 +1,4 @@
-import { restartResumeNotice } from '@ficus/shared/restart-context'
+import { restartResumeChatNotice, restartResumeNotice } from '@ficus/shared/restart-context'
 import { consultantSandboxSquadId, consultantScratchPath } from '../../services/sandbox/consultant-sandbox'
 import { resolveWorkspaceLayout } from '../../services/sandbox/workspace-layout'
 import { messageTextForModel } from '../../services/chat/message-context'
@@ -820,7 +820,8 @@ export abstract class AgentRunner {
     // SSE stream instead of being silently swallowed.
     this.buffer = createBuffer(this.execution.id)
     if (this.execution.restartContext) {
-      this.buffer.push({ type: 'system_message', text: restartResumeNotice(this.execution.restartContext) })
+      // The live chat gets the people copy; the model's prompt below gets the agent copy with the id.
+      this.buffer.push({ type: 'system_message', text: restartResumeChatNotice() })
     }
     this.collector = new StreamEventCollector(this.buffer, () => this.persistence.currentStreamGroupId)
     this.persistence.attach({

@@ -35,15 +35,26 @@ latest recovery marker for that exact agent and execution; a later unknown
 interruption supersedes an older restart marker.
 
 Before admission/session/sandbox startup can report another failure, resume
-persists an idempotent correlated system notice. The first system stream event
-and the prefix of the initial model prompt contain:
+persists an idempotent correlated system notice. The agent and the people in
+the chat get different copies of it:
 
-> Ficus restarted at &lt;time&gt;; any command running then was cancelled by the restart and may have partial effects. This is not an incident: check the affected state and re-run what was interrupted.
+- **The agent** reads it as the prefix of the resumed turn's model prompt:
 
-The pause and resume messages include the same restart id and time. A correlated
-startup failure retains its actual error but is presented as a failed **resume
-attempt**, with restart context, rather than a separate unexplained “Execution
-failed” notice. This does not classify the new error itself as restart-caused.
+  > Ficus restarted at &lt;time&gt;; any command running then was cancelled by the restart and may have partial effects. This is not an incident: check the affected state and re-run what was interrupted. [restart id: &lt;id&gt;]
+
+  The id matches the one on every command the restart cancelled, so the agent
+  can tie those failures to the restart.
+
+- **The chat** shows system rows without the id or a raw timestamp (the row
+  shows local time on hover): "Paused for a restart; it will resume
+  automatically." at shutdown, and "Resumed after a restart. Commands that
+  were running were cancelled; the agent was told to check them and re-run
+  what was interrupted." at resume. The restart id and time stay in each
+  message's metadata, which is what resume reads.
+
+A correlated startup failure retains its actual error but is presented as
+"Resumed after a restart, but the run could not finish: &lt;error&gt;", rather
+than a separate unexplained “Execution failed” notice. This does not classify the new error itself as restart-caused.
 Provider/auth policy and admission fences are unchanged.
 
 ## Recovery safety and verification

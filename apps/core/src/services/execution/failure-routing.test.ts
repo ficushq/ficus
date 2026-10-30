@@ -61,8 +61,10 @@ describe('routeFailure', () => {
 it('an exactly correlated restart-era failure is explained, not a separate Execution failed event', () => {
   const restart = { restartId: 'restart-1', restartedAt: '2026-10-28T21:32:00.000Z' }
   const route = routeFailure('startup transport unavailable', restart)
-  expect(route.systemMessage).toStartWith('Ficus restarted at 2026-10-28T21:32:00.000Z;')
-  expect(route.systemMessage).toContain('[restart id: restart-1]')
-  expect(route.systemMessage).toContain('startup transport unavailable')
+  // A chat notice for people: the agent's copy (with the id) is in its prompt.
+  expect(route.systemMessage).toBe(
+    '[System] Resumed after a restart, but the run could not finish: startup transport unavailable'
+  )
+  expect(route.systemMessage).not.toContain('restart-1')
   expect(route.systemMessage).not.toContain('Execution failed:')
 })

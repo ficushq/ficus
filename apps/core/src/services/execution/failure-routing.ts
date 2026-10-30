@@ -1,4 +1,4 @@
-import { restartResumeNotice, type RestartContext } from '@ficus/shared/restart-context'
+import { restartResumeFailedChatNotice, type RestartContext } from '@ficus/shared/restart-context'
 import { QuestionData } from '@ficus/shared'
 import { getErrorSystemMessage } from '../../lib/error'
 
@@ -71,9 +71,7 @@ export function routeFailure(error: string, restart?: RestartContext): FailureRo
     }
   } else {
     return {
-      systemMessage: restart
-        ? `${restartResumeNotice(restart)} Resume attempt could not finish: ${error}`
-        : `[System] Execution failed: ${error}`,
+      systemMessage: restart ? restartResumeFailedChatNotice(error) : `[System] Execution failed: ${error}`,
       disposition: { status: 'idle' },
     }
   }

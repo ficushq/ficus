@@ -190,10 +190,12 @@ describe('Execution failure classification persistence', () => {
       await execution.run()
       const rows = await db.select().from(messages).where(eq(messages.agentId, testAgent.id))
       const notices = noticeIds.map((id) => rows.find((row) => row.id === id)?.content)
-      expect(notices[0]).toStartWith('Ficus restarted at 2026-10-28T21:32:00.000Z;')
+      expect(notices[0]).toBe(
+        '[System] Resumed after a restart. Commands that were running were cancelled; the agent was told to check them and re-run what was interrupted.'
+      )
       expect(notices).toHaveLength(2)
       expect(notices[1]).toContain(
-        'Resume attempt could not finish: Execution session capacity reservation was refused'
+        'Resumed after a restart, but the run could not finish: Execution session capacity reservation was refused'
       )
       expect(notices.join('\n')).not.toContain('Execution failed:')
     } finally {
