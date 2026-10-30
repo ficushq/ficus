@@ -12,6 +12,7 @@ import { workflowEarlierHumanDecisions } from './workflow-review-history'
 import {
   WORKFLOW_MAX_RESULT_REVISIONS,
   WORKFLOW_REVIEW_REVISED_MESSAGE,
+  WORKFLOW_REVIEW_REVISIONS_REQUIRED_MESSAGE,
   workflowAttemptResults,
   workflowDecisionRevisionNote,
 } from './workflow-result-revisions'
@@ -295,6 +296,10 @@ describe('decisions record the reviewed revision', () => {
   test('a decision without reviewedRevisions still records the revision it was made on', () => {
     const run = complete(atGate(), 'yes')
     expect(run.attempts[1]!.reviewedRevisions).toEqual([{ attemptId: 1, revision: 1 }])
+  })
+
+  test('a decision that names no revisions fails closed once the work was amended', () => {
+    expect(() => complete(amend(atGate()), 'yes')).toThrow(WORKFLOW_REVIEW_REVISIONS_REQUIRED_MESSAGE)
   })
 
   test('a decision on a stale revision is refused', () => {

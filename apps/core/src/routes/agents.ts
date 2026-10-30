@@ -707,8 +707,10 @@ export const agentsRouter = new Hono()
             ? await sentAssistantRouting(identity, body.assistantRouting)
             : undefined
         // Validated here and stamped by the server; refused requests send nothing.
+        // A retry of an accepted send replays it, so it is not refused because the review closed since.
         const reviewConsultation =
-          body.reviewConsultation !== undefined
+          body.reviewConsultation !== undefined &&
+          !(body.clientId && (await agent.hasAcceptedClientSend(body.clientId)))
             ? await resolveReviewConsultation(identity, agent, body.reviewConsultation)
             : undefined
         const sentAt = new Date()

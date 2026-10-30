@@ -1098,6 +1098,16 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     }
   }
 
+  /** Whether a send with this clientId was already accepted (a retry replays it, whatever changed since). */
+  async hasAcceptedClientSend(clientId: string): Promise<boolean> {
+    const [receipt] = await db
+      .select({ state: chatSendReceipts.state })
+      .from(chatSendReceipts)
+      .where(and(eq(chatSendReceipts.agentId, this.id), eq(chatSendReceipts.clientId, clientId)))
+      .limit(1)
+    return receipt?.state === 'accepted' || !!(await this.findHumanMessageByClientId(clientId))
+  }
+
   /** Find a human message previously persisted with this optimistic-send clientId. */
   async findHumanMessageByClientId(clientId: string): Promise<Message | null> {
     const [row] = await db

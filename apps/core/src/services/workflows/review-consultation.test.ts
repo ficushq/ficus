@@ -201,6 +201,31 @@ test('a closed gate, a non-producing agent and a person who cannot decide are re
   expect(send).not.toHaveBeenCalled()
 })
 
+test('a queued stream does not offer amend, which Core would refuse there', async () => {
+  await db.update(workStreams).set({ status: 'queued' }).where(eq(workStreams.id, streamId))
+  expect((await message(admin, producer, consultation())).status).toBe(200)
+  expect(sentMetadata().reviewConsultation!.amend).toEqual({
+    available: false,
+    reason: 'Resume queued work before amending its attempt.',
+  })
+})
+
+test('a retried send that was already accepted is replayed even if the review closed since', async () => {
+  const accepted = spyOn(Agent.prototype, 'hasAcceptedClientSend').mockResolvedValue(true)
+  try {
+    await db.update(workStreams).set({ status: 'done' }).where(eq(workStreams.id, streamId))
+    const retried = await message(admin, producer, { ...consultation(), clientId: 'review-send-1' })
+    expect(retried.status).toBe(200)
+    expect(accepted).toHaveBeenCalledWith('review-send-1')
+    expect(send).toHaveBeenCalledTimes(1)
+    // A new send to the closed review is still refused.
+    accepted.mockResolvedValue(false)
+    expect((await message(admin, producer, { ...consultation(), clientId: 'review-send-2' })).status).toBe(409)
+  } finally {
+    accepted.mockRestore()
+  }
+})
+
 test('when amend is not available the agent is told to recommend Changes requested', async () => {
   const run = (await getFlow(streamId))!
   run.state.attempts[1]!.reviewBrief = { kind: 'legacy' }

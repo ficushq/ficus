@@ -87,6 +87,12 @@ export async function resolveReviewConsultation(
       stepId: source.stepId,
       revision: workflowResultRevision(source),
     })),
-    amend: refused && !refused.ok ? { available: false, reason: refused.reason } : { available: true },
+    // Core refuses an amend on queued work, so the agent is not told it can amend there.
+    amend:
+      stream.status === 'queued'
+        ? { available: false, reason: 'Resume queued work before amending its attempt.' }
+        : refused && !refused.ok
+          ? { available: false, reason: refused.reason }
+          : { available: true },
   }
 }

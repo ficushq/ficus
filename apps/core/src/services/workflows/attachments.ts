@@ -103,12 +103,17 @@ export async function uploadWorkflowAttachment(input: {
   )
   // A retried handoff usually finds its file already stored: answer it without writing or locking.
   // Only the agent bound to the open attempt reaches this (the route checks before reading the body).
-  // `rows` are this path's files of every revision. A file staged for an amend that matches the
-  // current revision's file is that file, so an unchanged file keeps its ID across revisions.
+  // `rows` are this path's files of every revision. Bytes equal to the file already staged for this
+  // revision are that file. For an amend, bytes equal to the current revision's file are that file, so
+  // an unchanged file keeps its ID across revisions; a different file staged earlier for the same path
+  // is then discarded, or the amend would publish it instead of the restored original.
   const unchanged = (rows: Row[], state: WorkflowRun | undefined, revision: number) => {
+    const staged = rows.find((row) => row.revision === revision)
+    if (staged?.sha256 === sha256) return { row: staged }
     const attempt = state?.attempts.find((entry) => entry.id === input.attemptId)
     const current = new Set(revision > 1 && attempt ? workflowCurrentAttachmentIds(attempt, rows.map(toJson)) : [])
-    return rows.find((row) => row.sha256 === sha256 && (row.revision === revision || current.has(row.id)))
+    const restored = rows.find((row) => row.sha256 === sha256 && current.has(row.id))
+    return restored ? { row: restored, discard: staged } : {}
   }
   const targetRevision = (state: WorkflowRun | undefined) => {
     const attempt = state?.attempts.find((entry) => entry.id === input.attemptId)
@@ -123,7 +128,7 @@ export async function uploadWorkflowAttachment(input: {
     unlocked?.state,
     targetRevision(unlocked?.state)
   )
-  if (stored) return { attachment: toJson(stored), created: false }
+  if (stored.row && !stored.discard) return { attachment: toJson(stored.row), created: false }
   // Write the bytes under their own new id before taking any lock, so no lock is held during file I/O.
   // Every outcome but a committed insert of this id removes them again.
   await writeWorkflowAttachmentBlob(input.workStreamId, id, input.bytes)
@@ -141,7 +146,13 @@ export async function uploadWorkflowAttachment(input: {
         .for('update')
       const { agentId, revision } = assertCanAttach(stream, run, input.attemptId, input.identity)
       const stored = unchanged(await tx.select().from(workflowAttemptAttachments).where(samePath), run!.state, revision)
-      if (stored) return { attachment: toJson(stored), created: false }
+      if (stored.row) {
+        if (stored.discard) {
+          await tx.delete(workflowAttemptAttachments).where(eq(workflowAttemptAttachments.id, stored.discard.id))
+          after.replaced = stored.discard.id
+        }
+        return { attachment: toJson(stored.row), created: false }
+      }
       const sameRevision = and(samePath, eq(workflowAttemptAttachments.revision, revision))
       const [existing] = await tx.select().from(workflowAttemptAttachments).where(sameRevision)
       if (existing) {
@@ -251,15 +262,15 @@ export async function listWorkflowAttachments(
 }
 
 /**
- * The attachment manifest of an amend: the current revision's files, with files staged for the new
- * revision replacing same-path files or appended, minus the removed paths. Returns the current
+ * The attachment manifest of an amend: the current revision's files, with the files the amend names
+ * (staged for the new revision) replacing same-path files or appended, minus the removed paths. Returns the current
  * manifest (recorded with the superseded revision) and the new one. Runs inside advanceFlow's lock.
  */
 export async function amendAttachmentManifest(
   tx: DbTx,
   workStreamId: string,
   attempt: WorkflowAttempt,
-  removePaths: string[] = []
+  { attachPaths = [], removePaths = [] }: { attachPaths?: string[]; removePaths?: string[] } = {}
 ): Promise<{ previous: string[]; next: string[] }> {
   const rows = (
     await tx
@@ -271,8 +282,18 @@ export async function amendAttachmentManifest(
   const previous = workflowCurrentAttachmentIds(attempt, rows)
   const byId = new Map(rows.map((row) => [row.id, row]))
   const manifest = new Map(previous.flatMap((id) => (byId.get(id) ? [[byId.get(id)!.path, id] as const] : [])))
+  // Only the files this amend names are published. A file staged for an amend that was refused, and
+  // not named again, is never published by a later one.
   const staged = workflowResultRevision(attempt) + 1
-  for (const row of rows) if (row.revision === staged) manifest.set(row.path, row.id)
+  for (const path of attachPaths) {
+    const row = rows.find((entry) => entry.revision === staged && entry.path === path)
+    if (row) manifest.set(path, row.id)
+    else if (!manifest.has(path))
+      throw new WorkflowError(
+        `No file was uploaded for '${path}' for this amend of attempt ${attempt.id}; attach it, then amend again`,
+        409
+      )
+  }
   for (const path of removePaths) {
     if (!manifest.has(path))
       throw new WorkflowError(

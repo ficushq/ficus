@@ -475,7 +475,10 @@ test('advance amend stages files for the next revision before posting, and only 
     'UPLOAD /api/workflows/runs/stream-id/attempts/1/attachments',
     'POST /api/workflows/runs/stream-id/advance',
   ])
-  expect(f.calls[2]!.body).toEqual({ command, requestId: expect.any(String) })
+  expect(f.calls[2]!.body).toEqual({
+    command: { ...command, attachmentPaths: [design] },
+    requestId: expect.any(String),
+  })
 
   // The run moved on: fail as the server would, before staging anything.
   const stale = fixture({ version: 2, state }, undefined, 'workstream')

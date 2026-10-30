@@ -250,6 +250,7 @@ test('a returned step is told which revision changes were requested on', () => {
     attemptId: 2,
     outcome: 'changes-requested',
     evidence: 'Use the other cache.',
+    reviewedRevisions: [{ attemptId: 1, revision: 2 }],
   })
   expect(flowMessage(stream, { state, version: state.version }, state.attempts[2]!)).toContain(
     'approval (attempt 2): Changes requested on revision 2 of execute attempt 1. Notes: Use the other cache.'

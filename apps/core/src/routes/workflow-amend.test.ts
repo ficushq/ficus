@@ -5,7 +5,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Hono } from 'hono'
 import { eq, inArray, like } from 'drizzle-orm'
-import { WORKFLOW_REVIEW_REVISED_MESSAGE, workflowDefinitionSchema, type WorkflowDefinition } from '@ficus/shared'
+import {
+  WORKFLOW_REVIEW_REVISED_MESSAGE,
+  WORKFLOW_REVIEW_REVISIONS_REQUIRED_MESSAGE,
+  workflowDefinitionSchema,
+  type WorkflowDefinition,
+} from '@ficus/shared'
 import { brief } from '@ficus/shared/test-fixtures/workflow-review'
 import {
   db,
@@ -192,7 +197,7 @@ test('the attempt agent amends while the gate is open; the gate and its wait are
   ])
 
   const requestId = randomUUID()
-  const command = await amendCommand()
+  const command = await amendCommand({ attachmentPaths: ['docs/design.md', 'docs/plan.md', 'docs/rollback.md'] })
   const response = await advance(bound.token, command, requestId)
   expect(response.status).toBe(200)
   const result = await response.json()
@@ -288,16 +293,22 @@ test('a decision on a stale revision is refused with nothing decided; the latest
   })
   expect(stale.status).toBe(409)
   expect(await stale.json()).toEqual({ error: WORKFLOW_REVIEW_REVISED_MESSAGE, code: 'WORKFLOW_REVIEW_REVISED' })
-  // An older client that names no revision but loaded the screen before the amend is refused too.
-  const old = await advance(admin.token, {
-    action: 'complete',
-    expectedVersion: before!.version - 1,
-    attemptId: 2,
-    outcome: 'approved',
-    evidence: '',
-  })
-  expect(old.status).toBe(409)
-  expect((await old.json()).code).toBe('WORKFLOW_REVIEW_REVISED')
+  // A client that names no revisions cannot prove what was read once the work was amended, even at
+  // the current version (it may have refetched quietly), so it fails closed.
+  for (const expectedVersion of [before!.version - 1, before!.version]) {
+    const old = await advance(admin.token, {
+      action: 'complete',
+      expectedVersion,
+      attemptId: 2,
+      outcome: 'approved',
+      evidence: '',
+    })
+    expect(old.status).toBe(409)
+    expect(await old.json()).toEqual({
+      error: WORKFLOW_REVIEW_REVISIONS_REQUIRED_MESSAGE,
+      code: 'WORKFLOW_REVIEW_REVISED',
+    })
+  }
   expect((await getFlow(streamId))!.state).toEqual(before!.state)
   expect(await openWaits()).toEqual(waits)
 
@@ -313,4 +324,50 @@ test('a decision on a stale revision is refused with nothing decided; the latest
   const gate = (await getFlow(streamId))!.state.attempts[1]!
   expect(gate.status).toBe('returned')
   expect(gate.reviewedRevisions).toEqual([{ attemptId: 1, revision: 2 }])
+})
+
+test('a decision that names no revisions still works on a gate whose work was never amended', async () => {
+  await atGate()
+  const response = await advance(admin.token, {
+    action: 'complete',
+    expectedVersion: await version(),
+    attemptId: 2,
+    outcome: 'approved',
+    evidence: '',
+  })
+  expect(response.status).toBe(200)
+  expect((await getFlow(streamId))!.state.attempts[1]!.reviewedRevisions).toEqual([{ attemptId: 1, revision: 1 }])
+})
+
+test('uploading the original bytes again after staging a change keeps the original file', async () => {
+  await atGate()
+  const original = (await detail()).attachments['1'].find((f: { path: string }) => f.path === 'docs/design.md')
+  expect((await upload(bound.token, 'docs/design.md', '# Design v2')).status).toBe(201)
+  const restored = await upload(bound.token, 'docs/design.md', '# Design v1')
+  expect(restored.status).toBe(200)
+  expect((await restored.json()).id).toBe(original.id)
+  expect((await advance(bound.token, await amendCommand({ attachmentPaths: ['docs/design.md'] }))).status).toBe(200)
+  const current = (await detail()).attachments['1'] as Array<{ id: string; path: string }>
+  expect(current.find((f) => f.path === 'docs/design.md')!.id).toBe(original.id)
+  const download = await app.request(`/api/workflows/runs/${streamId}/attachments/${original.id}`, {
+    headers: authHeaders(admin.token),
+  })
+  expect(await download.text()).toBe('# Design v1')
+})
+
+test('files staged for a refused amend are not published by a later amend that does not name them', async () => {
+  await atGate()
+  expect((await upload(bound.token, 'docs/stray.md', '# Stray')).status).toBe(201)
+  // Refused after the upload: the version is stale.
+  const refused = await advance(bound.token, await amendCommand({ expectedVersion: (await version()) - 1 }))
+  expect(refused.status).toBe(409)
+  expect((await advance(bound.token, await amendCommand())).status).toBe(200)
+  expect((await detail()).attachments['1'].map((f: { path: string }) => f.path)).toEqual([
+    'docs/design.md',
+    'docs/plan.md',
+  ])
+  // Naming a file that was never uploaded is refused.
+  const unknown = await advance(bound.token, await amendCommand({ attachmentPaths: ['docs/never.md'] }))
+  expect(unknown.status).toBe(409)
+  expect((await unknown.json()).error).toContain("No file was uploaded for 'docs/never.md'")
 })

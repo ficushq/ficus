@@ -21,9 +21,8 @@ import {
 import type { WorkflowDecisionRecord } from './workflow-decision'
 import {
   WORKFLOW_MAX_RESULT_REVISIONS,
-  WORKFLOW_REVIEW_REVISED_MESSAGE,
-  sameWorkflowReviewedRevisions,
   workflowResultRevision,
+  workflowReviewDecisionRefusal,
   type WorkflowResultRevision,
   type WorkflowReviewedRevision,
 } from './workflow-result-revisions'
@@ -197,7 +196,9 @@ export const workflowCommandSchema = z.discriminatedUnion('action', [
     action: z.literal('amend'),
     decisionBrief: workflowDecisionBriefSchema,
     evidence: z.string().trim().min(1).max(64_000),
-    /** Files of the current revision to drop; files attached with the amend add or replace by path. */
+    /** Paths of files staged (uploaded) for this amend to publish; they add or replace by path. */
+    attachmentPaths: z.array(z.string().min(1).max(1024)).max(10).optional(),
+    /** Files of the current revision to drop. */
     removeAttachmentPaths: z.array(z.string().min(1).max(1024)).max(10).optional(),
   }),
 ])
@@ -761,8 +762,8 @@ function recordReviewedRevisions(previous: WorkflowRun, attempt: WorkflowAttempt
     return
   }
   const current = workflowGateRevisions(previous, attempt).map(({ attemptId, revision }) => ({ attemptId, revision }))
-  if (command.reviewedRevisions && !sameWorkflowReviewedRevisions(command.reviewedRevisions, current))
-    throw new Error(WORKFLOW_REVIEW_REVISED_MESSAGE)
+  const refusal = workflowReviewDecisionRefusal(command.reviewedRevisions, current)
+  if (refusal) throw new Error(refusal)
   attempt.reviewedRevisions = current
 }
 

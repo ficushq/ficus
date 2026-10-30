@@ -48,6 +48,25 @@ export const WORKFLOW_REVIEW_REVISED_MESSAGE = 'This was revised since you opene
 /** Error code the API returns with {@link WORKFLOW_REVIEW_REVISED_MESSAGE}. */
 export const WORKFLOW_REVIEW_REVISED_CODE = 'WORKFLOW_REVIEW_REVISED'
 
+/**
+ * The refusal for a decision that names no reviewed revisions on a gate whose work was amended: the
+ * server cannot tell which revision the person saw, so it fails closed.
+ */
+export const WORKFLOW_REVIEW_REVISIONS_REQUIRED_MESSAGE =
+  'This was revised since it opened. Refresh and review the latest revision, then decide again.'
+
+/**
+ * Whether a human decision on these current source revisions is stale: the named revisions differ, or
+ * none are named while any source has been amended (only unamended gates accept older clients).
+ */
+export function workflowReviewDecisionRefusal(
+  reviewed: WorkflowReviewedRevision[] | undefined,
+  current: WorkflowReviewedRevision[]
+): string | null {
+  if (reviewed) return sameWorkflowReviewedRevisions(reviewed, current) ? null : WORKFLOW_REVIEW_REVISED_MESSAGE
+  return current.some((entry) => entry.revision > 1) ? WORKFLOW_REVIEW_REVISIONS_REQUIRED_MESSAGE : null
+}
+
 /** The attempt's current result revision; attempts that predate amend are revision 1. */
 export function workflowResultRevision(attempt: Pick<WorkflowAttempt, 'resultRevision'>): number {
   return attempt.resultRevision ?? 1

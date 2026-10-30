@@ -23,10 +23,9 @@ import {
   type WorkflowRun,
   describeWorkflowDecision,
   isWorkflowHumanDecisionAttempt,
-  sameWorkflowReviewedRevisions,
   workflowGateRevisions,
   WORKFLOW_REVIEW_REVISED_CODE,
-  WORKFLOW_REVIEW_REVISED_MESSAGE,
+  workflowReviewDecisionRefusal,
 } from '@ficus/shared'
 import {
   db,
@@ -513,14 +512,15 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
     if (command.action === 'amend' && !isAttemptAgent(run, command.attemptId, identity))
       throw new WorkflowError(`Only the agent that completed attempt ${command.attemptId} can amend it.`, 403)
     // A decision must be on the revision the person saw. Checked before the version so a reviewer whose
-    // screen predates an amend gets this plain refusal, and nothing is decided.
+    // screen predates an amend gets this plain refusal, and nothing is decided. A decision that names no
+    // revisions fails closed once the work was amended: a refetching client cannot prove what was read.
     if ((command.action === 'complete' || command.action === 'return') && attempt) {
       if (isWorkflowHumanDecisionAttempt(run.state, attempt)) {
-        const current = workflowGateRevisions(run.state, attempt)
-        const stale = command.reviewedRevisions
-          ? !sameWorkflowReviewedRevisions(command.reviewedRevisions, current)
-          : current.some((entry) => (entry.revisedVersion ?? 0) > command.expectedVersion)
-        if (stale) throw new WorkflowError(WORKFLOW_REVIEW_REVISED_MESSAGE, 409, WORKFLOW_REVIEW_REVISED_CODE)
+        const refusal = workflowReviewDecisionRefusal(
+          command.reviewedRevisions,
+          workflowGateRevisions(run.state, attempt)
+        )
+        if (refusal) throw new WorkflowError(refusal, 409, WORKFLOW_REVIEW_REVISED_CODE)
       }
     }
     if (command.expectedVersion !== run.version) throw new WorkflowError('Stale flow version', 409)
@@ -768,7 +768,10 @@ async function recordAmend(
 ) {
   const { amendAttachmentManifest } = await import('./attachments')
   const before = run.state.attempts.find((a) => a.id === command.attemptId)!
-  const manifest = await amendAttachmentManifest(tx, id, before, command.removeAttachmentPaths)
+  const manifest = await amendAttachmentManifest(tx, id, before, {
+    attachPaths: command.attachmentPaths,
+    removePaths: command.removeAttachmentPaths,
+  })
   const amended = state.attempts.find((a) => a.id === command.attemptId)!
   amended.earlierResults!.at(-1)!.attachmentIds = manifest.previous
   amended.attachmentIds = manifest.next
