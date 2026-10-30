@@ -1,6 +1,7 @@
 import type {
   IdleConsultantsDormancyResult,
   RemoveDormantAgentsResult,
+  SquadStorageScan,
   StorageAgent,
   StorageFolder,
   StorageGrowth,
@@ -117,6 +118,18 @@ export function scanProgressLabel(scan: NonNullable<StorageMachine['scan']>, now
   const started = `${durationLabel(now - Date.parse(scan.passStartedAt))} ago`
   if (scan.state === 'running')
     return `Pass ${scan.generation}: ${scan.measuredHomes} of ${scan.totalHomes} homes measured, started ${started}.`
+  return scan.lastCompletedAt
+    ? `Last full pass finished ${durationLabel(now - Date.parse(scan.lastCompletedAt))} ago.`
+    : `Pass ${scan.generation} started ${started}.`
+}
+
+/**
+ * Scan timing for a squad's view of a machine, which omits home counts (they cover every squad):
+ * "Pass 14 is measuring, started 12m ago." or "Last full pass finished 3h ago."
+ */
+export function squadScanLabel(scan: SquadStorageScan, now = Date.now()): string {
+  const started = `${durationLabel(now - Date.parse(scan.passStartedAt))} ago`
+  if (scan.state === 'running') return `Pass ${scan.generation} is measuring, started ${started}.`
   return scan.lastCompletedAt
     ? `Last full pass finished ${durationLabel(now - Date.parse(scan.lastCompletedAt))} ago.`
     : `Pass ${scan.generation} started ${started}.`

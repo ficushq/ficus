@@ -27,6 +27,8 @@ interface Props {
   squad: StorageSquad
   /** False for the copies of a squad on its second and later machines: squad-wide actions appear once. */
   showSquadActions?: boolean
+  /** Start expanded, for a page that shows one squad. */
+  defaultOpen?: boolean
   retentionDays: number
   onDone: (message: string) => void
 }
@@ -103,7 +105,13 @@ function RowButton({ label, onClick, danger = false }: { label: string; onClick:
   )
 }
 
-export function StorageSquadView({ squad, showSquadActions = true, retentionDays, onDone }: Props) {
+export function StorageSquadView({
+  squad,
+  showSquadActions = true,
+  defaultOpen = false,
+  retentionDays,
+  onDone,
+}: Props) {
   const { can } = usePermissions(squad.id)
   const { can: canGlobal } = usePermissions()
   const canTerminate = can('agents:terminate')
@@ -148,7 +156,7 @@ export function StorageSquadView({ squad, showSquadActions = true, retentionDays
   const dormantFolder = dialog?.kind === 'dormant' ? dialog.folder : null
 
   return (
-    <details className="[&[open]>summary>svg]:rotate-90">
+    <details open={defaultOpen || undefined} className="[&[open]>summary>svg]:rotate-90">
       <summary className="flex cursor-pointer list-none items-center gap-2 py-3 [&::-webkit-details-marker]:hidden">
         <ChevronRightIcon className="h-4 w-4 shrink-0 text-secondary" />
         <span className="inline-flex w-full min-w-0 justify-between gap-4 text-sm">

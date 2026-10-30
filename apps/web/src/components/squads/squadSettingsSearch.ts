@@ -7,6 +7,8 @@ export const SQUAD_SETTINGS_KEYWORDS: Record<string, string> = {
     'instructions system prompt Squad Context per agent type instructions Type-Specific Context slot pools capacity claim queue usage guidance Slot Pools',
   workspace:
     'git commit identity author name email Git Author Name Git Author Email host directory checkout path repository local folder runtime container restart pause Sandbox Lifecycle sleep dormant timeout Idle Timeout disk space size Ephemeral Storage Limit environment credentials secrets consultant idle dormant inactive cleanup Idle consultants',
+  storage:
+    'disk space usage size breakdown largest folders agent boxes squad workspace growth dormant agents attachments images stored files scan',
   memory:
     'semantic vector model Embedding Model code semantic file search Workspace Indexing glob indexed files Include Patterns glob ignore files Exclude Patterns git sync remote repo providers Memory Sync',
   work: 'workflows flow preset workflow default custom parallel Work capacity concurrency Max concurrent work streams blocked wait timeout idle auto park grace pull request direct merge approval Merge Policies',

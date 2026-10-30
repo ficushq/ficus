@@ -22,6 +22,8 @@ export const SQUAD_SETTINGS_SECTIONS = [
   { id: 'integrations', label: 'Integrations' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'workspace', label: 'Workspace' },
+  // Shown only to storage:read holders in the squad (SquadSettingsTab).
+  { id: 'storage', label: 'Storage' },
   { id: 'memory', label: 'Memory' },
   { id: 'access', label: 'Remote access' },
 ] as const
