@@ -111,9 +111,12 @@ runs its **own rootless dockerd** instead (spec §5):
   Logical admission does not deny work based on this count or missing CPU facts.
 
   Physical setup is bounded separately to prevent a provisioning storm after an
-  upgrade: hosts with at least four known CPUs allow **two concurrent startup
-  generations**; smaller hosts or unknown CPU facts allow **one**. Running boxes
-  do not consume startup slots. Only admitted physical generations with live
+  upgrade: a host allows **half its CPUs** in concurrent startup generations, at
+  least **two** (also for unknown CPU facts) and at most **eight**. A
+  **background** start, one with no execution of an agent using the box queued,
+  waiting for a sandbox or running (warmups, spec reconciles, the devbox
+  prewarm), never takes the **last** free slot, so a waiting turn is not
+  outraced by background retries. Running boxes do not consume startup slots. Only admitted physical generations with live
   setup leases own slots, and same-box followers share the owner's generation.
   Different hosts progress independently. Normal box reconnects bypass setup
   admission. A spec recreation reserves its startup slot **before** stopping the
@@ -344,6 +347,5 @@ open in this browser session — use browser_open with a URL first.`
   box recreates (park + re-ensure) the next time it goes through the idle
   reaper or is otherwise re-ensured, so the rollout is gradual and
   idle-gated rather than immediate.
-
 
 [VM runtime overview](runtime.md)

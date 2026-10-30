@@ -1,11 +1,18 @@
 export type { SandboxHostCapacity as HostCapacityDecision } from '@ficus/shared'
 import type { SandboxHostCapacity as HostCapacityDecision } from '@ficus/shared'
 
-/** Provisioning installs/builds can be expensive. Serialize on small or unknown
- * hosts; allow at most two concurrent generations elsewhere. Running boxes do
- * not consume these slots: their CPU/memory usage is constrained by cgroups. */
+/** Concurrent physical box startups per host: half its CPUs, at least
+ * {@link MIN_STARTUP_SLOTS} (also for unknown CPU facts) and at most
+ * {@link MAX_STARTUP_SLOTS}. A startup is mostly short now (devbox installs from
+ * a locked comfort set in seconds), and a flat two queued a deploy's
+ * re-provision wave on an 8-CPU host for minutes (2026-10-30); squad toolchain
+ * installs can still be heavy, so it stays bounded. Running boxes do not
+ * consume these slots: their CPU/memory usage is constrained by cgroups. */
+export const MIN_STARTUP_SLOTS = 2
+export const MAX_STARTUP_SLOTS = 8
 export function hostStartupLimit(cpus: number | undefined): number {
-  return cpus !== undefined && Number.isSafeInteger(cpus) && cpus >= 4 ? 2 : 1
+  if (cpus === undefined || !Number.isSafeInteger(cpus) || cpus <= 0) return MIN_STARTUP_SLOTS
+  return Math.min(MAX_STARTUP_SLOTS, Math.max(MIN_STARTUP_SLOTS, Math.floor(cpus / 2)))
 }
 
 /** CPU quotas are ceilings, not exclusive reservations. Squads share the host. */
@@ -35,15 +42,20 @@ export function evaluateHostBoxCounts(
 }
 
 /** Only live, admitted physical generations occupy startup slots. Same-box
- * retries reuse their slot; queued work and uncertain old generations do not. */
+ * retries reuse their slot; queued work and uncertain old generations do not.
+ * A `background` start (a warmup, reconcile or prewarm with no execution
+ * waiting on the box) never takes the last free slot: there is no queue, so
+ * without this reserve a waiting turn raced every background retry for it. */
 export function withHostStartupCapacity(
   capacity: HostCapacityDecision,
   starting: readonly string[],
-  incoming: readonly string[]
+  incoming: readonly string[],
+  options: { background?: boolean } = {}
 ): HostCapacityDecision {
   const current = new Set(starting)
   const projected = new Set([...current, ...incoming])
-  const allowed = projected.size <= current.size || projected.size <= capacity.startupLimit!
+  const limit = capacity.startupLimit! - (options.background ? 1 : 0)
+  const allowed = projected.size <= current.size || projected.size <= limit
   return {
     ...capacity,
     startingBoxes: current.size,
