@@ -456,6 +456,51 @@ ficus squad unspawn agent-789
 
 ---
 
+### idle-consultants
+
+Preview a squad's idle consultants, or make them dormant. Requires the `agents:terminate` permission in that squad; without it the command reports `Forbidden` and names the permission.
+
+```bash
+ficus squad idle-consultants [squad-id] [options]
+```
+
+**Arguments:**
+
+| Argument   | Description                                                                                          |
+| ---------- | ---------------------------------------------------------------------------------------------------- |
+| `squad-id` | Squad ID, or an ID prefix of at least 8 characters. Defaults to the current squad (`FICUS_SQUAD_ID`) |
+
+**Options:**
+
+| Option           | Description                                                                                              |
+| ---------------- | -------------------------------------------------------------------------------------------------------- |
+| `--days <n>`     | Idle for at least this many days, from 1 to 3650 (default: the server default, 30)                       |
+| `--agent <id>`   | Only this consultant from the preview: a full ID or a unique prefix of at least 8 characters. Repeatable |
+| `--make-dormant` | Make the previewed (or selected) consultants dormant after a confirmation prompt                         |
+| `-y, --yes`      | With `--make-dormant`, skip the prompt. Required when there is no terminal to ask on                     |
+
+Without `--make-dormant` the command is a preview and changes nothing. A consultant is idle when it has had no message in that many days, or was never messaged and was created that long ago. Only plain idle, top-level consultants are listed: never other agent types, and never consultants with an active execution, a waiting message or inbox item, or an open work stream. An `--agent` that is not in the preview is refused before anything changes.
+
+`--make-dormant` sends the previewed IDs to `POST /api/squads/:id/idle-consultants/dormant` in chunks of 25. The server recomputes the idle set, treats the IDs only as a filter, and re-checks each consultant under its queue lock, so one that became active in the meantime is left alone and reported as unchanged with the reason. Dormancy keeps history and archives; a new message wakes the consultant again, and its files are removed only after the dormant-retention period. If a later chunk fails, the consultants already made dormant are reported along with the error, and the command exits non-zero.
+
+**Examples:**
+
+```bash
+# Preview consultants in the current squad idle for 30 days or more
+ficus squad idle-consultants
+
+# Preview a 90-day cutoff in another squad
+ficus squad idle-consultants abc12345 --days 90
+
+# Make two of the previewed consultants dormant, after confirming at the prompt
+ficus squad idle-consultants --days 90 --agent 1a2b3c4d --agent 5e6f7a8b --make-dormant
+
+# Make every previewed consultant dormant from a script
+ficus --json squad idle-consultants --days 90 --make-dormant --yes
+```
+
+---
+
 ## Attention (watch)
 
 Watching a squad sets two independent attention levels for it: `decisions` (questions, reviews, blockers) and `progress` (active work and completions). Each is `mute` (hidden from your Action Center and feed), `show` (listed, never interrupts), or `notify` (listed, plus an inbox message and push).

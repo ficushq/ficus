@@ -6,6 +6,7 @@ import { output, outputTable, outputError, isJsonMode, isQuietMode } from '../ou
 import { WorkStream } from './workstream'
 import { registerSquadGrantCommands } from './squad-grant'
 import { registerSquadStorageCommand } from './squad-storage'
+import { registerSquadIdleConsultantsCommand } from './squad-idle-consultants'
 import { describeAttention, performAttentionSubscribe, type SubscriptionResponse } from './attention'
 import { buildMetadataDelta, getMetadataValue, parseMetadataPath, parseMetadataValue } from '../metadata'
 import { registerSandboxProcessCommands } from './sandbox-processes'
@@ -1236,4 +1237,5 @@ export function registerSquadCommands(program: Command) {
 
   registerSquadGrantCommands(squad)
   registerSquadStorageCommand(squad)
+  registerSquadIdleConsultantsCommand(squad)
 }
