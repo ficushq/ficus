@@ -69,7 +69,9 @@ const PRESS_GRACE_MS = 600
  * The rules that follow, for every popup:
  * - A blur caused by a pointer interaction never closes a popup: presses that start inside are
  *   tracked from pointerdown until just after the following click (or a short grace period after
- *   pointerup/pointercancel), and focus loss during them is ignored.
+ *   pointerup/pointercancel), and focus loss during them is ignored. A key pressed once the pointer
+ *   is released ends the press at once: it is a new, keyboard interaction, and Chromium delivers
+ *   queued input ahead of the click's follow-up task, so a quick Tab out must still close.
  * - A focus move to null/body or to an ancestor of the popup never closes it; only a pointer press
  *   outside or Escape does.
  * - Item activation closes the popup from the item's own click handler, after the action.
@@ -117,6 +119,8 @@ export function usePopupDismiss({
     }
 
     let pressing = false
+    // The pointer of an inside press is still down (between pointerdown and pointerup/pointercancel).
+    let held = false
     let release: ReturnType<typeof setTimeout> | undefined
     const endPressAfter = (ms: number) => {
       clearTimeout(release)
@@ -128,12 +132,14 @@ export function usePopupDismiss({
     const onPointerDown = (event: Event) => {
       if (isInsideEvent(event)) {
         pressing = true
+        held = true
         clearTimeout(release)
         return
       }
       latest.current.onDismiss('pointer') // never steal focus from what the user just targeted
     }
     const onPointerUp = () => {
+      held = false
       if (pressing) endPressAfter(PRESS_GRACE_MS)
     }
     // Capture, then release on the next task: focus moves made BY the click's handlers (opening a
@@ -160,6 +166,11 @@ export function usePopupDismiss({
       })
     }
     const onKeyDown = (event: KeyboardEvent) => {
+      // Keyboard input after the pointer is released is not part of the press (see the rules above).
+      if (pressing && !held) {
+        clearTimeout(release)
+        pressing = false
+      }
       if (event.key !== 'Escape' || event.isComposing) return
       const top = [...stack].reverse().find((candidate) => candidate.escape())
       if (top !== entry) return

@@ -150,8 +150,32 @@ try {
     await page.keyboard.press('Tab')
     assert.equal(await more.getAttribute('aria-expanded'), 'false', 'Tab outside dismisses the menu')
     await activate(more)
-    await activate(page.locator('summary').filter({ hasText: 'Notifications…' }))
+    const notifications = page.locator('summary').filter({ hasText: 'Notifications…' })
+    // The expander takes part in dismissal once its native `toggle` event (a separate task, which Chromium can
+    // run after queued automation input) reaches React, so wait for that event rather than racing it.
+    await page.evaluate(() => {
+      const flags = window as unknown as { notificationsOpened?: boolean }
+      flags.notificationsOpened = false
+      const onToggle = (event: Event) => {
+        const details = event.target as HTMLDetailsElement
+        if (!details.open || details.querySelector(':scope > summary')?.textContent !== 'Notifications…') return
+        flags.notificationsOpened = true
+        document.removeEventListener('toggle', onToggle, true)
+      }
+      document.addEventListener('toggle', onToggle, true)
+    })
+    await activate(notifications)
+    await page.waitForFunction(() => (window as unknown as { notificationsOpened?: boolean }).notificationsOpened)
     if (screenshotDir) await page.screenshot({ path: resolve(screenshotDir, `notifications-${width}.png`) })
+    // Escape closes the innermost open popup first (usePopupDismiss): the expanded Notifications, then the menu.
+    await page.keyboard.press('Escape')
+    assert.equal(
+      await notifications.evaluate((el) => (el.parentElement as HTMLDetailsElement).open),
+      false,
+      'Escape first collapses Notifications'
+    )
+    assert.equal(await more.getAttribute('aria-expanded'), 'true', 'Escape first collapses Notifications only')
+    assert.equal(await notifications.evaluate((el) => el === document.activeElement), true)
     await page.keyboard.press('Escape')
     assert.equal(await more.getAttribute('aria-expanded'), 'false')
     assert.equal(await more.evaluate((el) => el === document.activeElement), true)
