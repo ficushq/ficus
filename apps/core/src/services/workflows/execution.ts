@@ -24,10 +24,16 @@ import {
   reopenWorkflowRun,
   createWorkflowRun,
   workflowCommandSchema,
+  type WorkflowCommand,
+  type WorkflowStep,
   type WorkflowSource,
   type WorkflowRun,
   describeWorkflowDecision,
   workflowAttemptLimitPause,
+  isWorkflowHumanDecisionAttempt,
+  workflowGateRevisions,
+  WORKFLOW_REVIEW_REVISED_CODE,
+  workflowReviewDecisionRefusal,
 } from '@ficus/shared'
 import {
   db,
@@ -81,6 +87,25 @@ export const actorKey = (identity: Identity) =>
 /** Whether this identity is the agent bound to the attempt: the one that may complete it or attach its files. */
 export function isAttemptAgent(run: Pick<Run, 'attemptAgents'>, attemptId: number, identity: Identity): boolean {
   return identity.type === 'agent' && run.attemptAgents[String(attemptId)] === identity.agentId
+}
+
+/**
+ * Whether a person may decide a human approval step: review permission, and for a gate limited to
+ * assigned reviewers, being one of them. `canReview` is {@link isWorkflowReviewer} for the squad.
+ */
+export function mayDecideFlowGate(
+  identity: Identity,
+  canReview: boolean,
+  stream: Pick<Stream, 'assignedReviewerIds'>,
+  step: Pick<WorkflowStep, 'kind'> & { approver?: string }
+): boolean {
+  if (identity.type !== 'user' || !canReview) return false
+  return !(
+    step.kind === 'human-approval' &&
+    step.approver === 'assigned-reviewers' &&
+    stream.assignedReviewerIds.length > 0 &&
+    !stream.assignedReviewerIds.includes(identity.userId)
+  )
 }
 
 /** A paused stream takes no handoffs (only revisions), and a finished one takes nothing. */
@@ -451,10 +476,12 @@ async function dispatchFlowAttempt(
 /** The stored inputs and incoming attachments an assignment lists for read_attachment. */
 async function assignmentAssets(tx: DbTx, streamId: string, state: Run['state'], attempt: WorkflowAttempt) {
   const { loadAssignmentAssets } = await import('../work-streams/asset-attachments')
+  const incoming = workflowIncomingAttempts(state, attempt)
   return loadAssignmentAssets(
     tx,
     streamId,
-    workflowIncomingAttempts(state, attempt).map((entry) => entry.id)
+    incoming.map((entry) => entry.id),
+    incoming
   )
 }
 
@@ -535,9 +562,27 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
         )
     }
     assertStreamAcceptsHandoffs(stream, { paused: command.action === 'revise' || command.action === 'raise-limit' })
-    if (command.expectedVersion !== run.version) throw new WorkflowError('Stale flow version', 409)
     const attempt = run.state.attempts.find((a) => a.id === command.attemptId)
     const step = attempt?.step ?? run.state.definition.steps.find((s) => s.id === attempt?.stepId)
+    // Only the agent that completed an attempt may revise it; no management override.
+    if (command.action === 'amend' && !isAttemptAgent(run, command.attemptId, identity))
+      throw new WorkflowError(`Only the agent that completed attempt ${command.attemptId} can amend it.`, 403)
+    // A decision must be on the revision the person saw. Checked before the version so a reviewer whose
+    // screen predates an amend gets this plain refusal, and nothing is decided. A decision that names no
+    // revisions fails closed once the work was amended: a refetching client cannot prove what was read.
+    if ((command.action === 'complete' || command.action === 'return') && attempt) {
+      if (isWorkflowHumanDecisionAttempt(run.state, attempt)) {
+        const refusal = workflowReviewDecisionRefusal(
+          command.reviewedRevisions,
+          workflowGateRevisions(run.state, attempt),
+          command.expectedVersion
+        )
+        if (refusal) throw new WorkflowError(refusal, 409, WORKFLOW_REVIEW_REVISED_CODE)
+      }
+    }
+    if (command.expectedVersion !== run.version) throw new WorkflowError('Stale flow version', 409)
+    if (stream.status === 'queued' && command.action === 'amend')
+      throw new WorkflowError('Resume queued work before amending its attempt', 409)
     if (
       stream.status === 'queued' &&
       step?.kind === 'agent' &&
@@ -565,27 +610,22 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
           'Only the delivery participant, a delivery approver, or a flow manager can request rework',
           403
         )
-    } else if (command.action !== 'revise' && command.action !== 'raise-limit') {
+    } else if (command.action !== 'revise' && command.action !== 'amend' && command.action !== 'raise-limit') {
       if (step?.kind === 'decision') {
         if (!attempt?.decision?.awaitingPerson)
           throw new WorkflowError('A decision model is deciding this step; wait for its decision', 409)
         if (identity.type !== 'user' || !canReview)
           throw new WorkflowError('A person with review permission must choose this outcome', 403)
       } else if (step?.kind === 'human-approval') {
-        if (
-          identity.type !== 'user' ||
-          !canReview ||
-          (step.approver === 'assigned-reviewers' &&
-            stream.assignedReviewerIds.length > 0 &&
-            !stream.assignedReviewerIds.includes(identity.userId))
-        )
+        if (!mayDecideFlowGate(identity, canReview, stream, step))
           throw new WorkflowError('This step requires its designated human approver', 403)
       } else if (identity.type === 'agent' && !isAttemptAgent(run, command.attemptId, identity))
         throw new WorkflowError('Only the active participant can advance this attempt', 403)
       else if (identity.type !== 'agent' && !(await hasPermission(identity, 'workstreams:revise-flow', stream.squadId)))
         throw new WorkflowError('Flow intervention requires management permission', 403)
     }
-    if (command.action !== 'revise' && command.action !== 'raise-limit' && attempt) {
+    // Holds block decisions, not a refinement the reviewer asked for, so amend skips this check.
+    if (command.action !== 'revise' && command.action !== 'amend' && command.action !== 'raise-limit' && attempt) {
       const waits =
         command.action === 'rework'
           ? (await listOpenWaits(tx, id)).filter(
@@ -609,6 +649,13 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
       state = advanceWorkflowRun(run.state, command)
     } catch (error) {
       throw new WorkflowError((error as Error).message, 409)
+    }
+    if (command.action === 'amend') {
+      const receipt = await recordAmend(tx, id, run, state, command)
+      await tx
+        .insert(workStreamFlowTransitions)
+        .values({ workStreamId: id, requestId, requestHash: fingerprint, command, actorKey: actor, ...receipt })
+      return { ...receipt, ...responseAssignments(id, run, requestId, identity) }
     }
     if ((command.action === 'complete' || command.action === 'return') && command.decisionBrief) {
       const contexts =
@@ -758,6 +805,11 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
     }
   })
   callbacks.forEach((callback) => callback())
+  if (command.action === 'amend') {
+    // Open review screens refresh and show the new revision; nothing else moved.
+    eventEmitter.emit('workStream.updated', { workStreamId: id, squadId: streamBefore.squadId })
+    return result
+  }
   // Streams waiting on this one through a `ready` dependency may now be admissible.
   if (result.stateStatus === 'completion-ready') await admitDependentsSafely(id)
   if (command.action === 'rework') {
@@ -769,6 +821,34 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
   await reconcileOutputDeliveries(id)
   eventEmitter.emit('workStream.updated', { workStreamId: id, squadId: streamBefore.squadId })
   return result
+}
+
+/**
+ * Persist an accepted amend. The run changes only by the amended attempt's new result revision and
+ * the version: no wait closes or opens, nothing is dispatched, and no attempt starts or settles.
+ */
+async function recordAmend(
+  tx: DbTx,
+  id: string,
+  run: Run,
+  state: WorkflowRun,
+  command: Extract<WorkflowCommand, { action: 'amend' }>
+) {
+  const { amendAttachmentManifest } = await import('./attachments')
+  const before = run.state.attempts.find((a) => a.id === command.attemptId)!
+  const manifest = await amendAttachmentManifest(tx, id, before, {
+    attachPaths: command.attachmentPaths,
+    removePaths: command.removeAttachmentPaths,
+  })
+  const amended = state.attempts.find((a) => a.id === command.attemptId)!
+  amended.earlierResults!.at(-1)!.attachmentIds = manifest.previous
+  amended.attachmentIds = manifest.next
+  amended.resultRevisedAt = new Date().toISOString()
+  await tx
+    .update(workStreamFlowRuns)
+    .set({ state, version: state.version, updatedAt: new Date() })
+    .where(eq(workStreamFlowRuns.workStreamId, id))
+  return { version: state.version, stateStatus: state.status, activeAttemptId: state.activeAttemptId }
 }
 
 async function admitDependentsSafely(id: string) {

@@ -86,6 +86,7 @@ test('human-directed outcomes identify the producer-owned brief; agent-only outc
   const definition = createBlankWorkflow()
   const solo = createWorkflowRun(definition)
   expect(flowCapabilityInstructions(solo, solo.attempts[0]!)).not.toContain('a human decides next')
+  expect(flowCapabilityInstructions(solo, solo.attempts[0]!)).not.toContain('action amend')
   definition.steps[0]!.outcomes.completed = { next: 'gate' }
   definition.steps.push({
     id: 'gate',
@@ -101,6 +102,9 @@ test('human-directed outcomes identify the producer-owned brief; agent-only outc
   expect(text).toContain('decisionBrief')
   expect(text).toContain('changesSinceLastReview')
   expect(text).toContain('producing agent')
+  expect(text).toContain(
+    'While that gate is open, the reviewer may chat with you from the review screen; refine your result only with action amend, and recommend Changes requested for anything bigger.'
+  )
 })
 
 test('flexible explicit human returns explain authoring and include a schema-valid return example', () => {

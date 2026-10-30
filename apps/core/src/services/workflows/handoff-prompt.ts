@@ -5,6 +5,7 @@ import {
   effectiveWorkflowStep,
   workflowIncomingAttempts,
   workflowCompletionReviewTargets,
+  workflowDecisionRevisionNote,
   type WorkflowAttempt,
   type WorkflowRun,
   type WorkflowProducerReviewContext,
@@ -92,11 +93,20 @@ export function flowMessage(
     ['Repository', metadata?.codeHost?.repository ?? metadata?.git?.repository],
   ].filter(([, value]) => typeof value === 'string' && value.length)
   // Runtime provenance follows the actual handoff, not every possible graph edge or prior result.
-  // The rework request is shown once on its own; do not repeat it as an incoming result.
-  const results = workflowIncomingAttempts(run.state, attempt)
-    .filter((entry) => entry.evidence || entry.feedback)
-    .filter((entry) => !attempt.feedback || (entry.evidence ?? entry.feedback) !== attempt.feedback)
-    .map((entry) => `${entry.stepId} (attempt ${entry.id}): ${entry.evidence ?? entry.feedback}`)
+  // A human decision always names the revision it was made on, even without notes. The rework request
+  // is shown once on its own, so a result whose text is that request is not repeated here.
+  const results = workflowIncomingAttempts(run.state, attempt).flatMap((entry) => {
+    const text = entry.evidence || entry.feedback
+    const repeatsRequest = !!attempt.feedback && text === attempt.feedback
+    const decided = workflowDecisionRevisionNote(run.state, entry)
+    if (decided)
+      return [
+        `${entry.stepId} (attempt ${entry.id}): ${decided}. ${
+          !text ? 'No decision notes.' : repeatsRequest ? 'The notes are the rework request above.' : `Notes: ${text}`
+        }`,
+      ]
+    return text && !repeatsRequest ? [`${entry.stepId} (attempt ${entry.id}): ${text}`] : []
+  })
   const returns = run.state.returns.filter(
     (entry) =>
       entry.status === 'open' &&

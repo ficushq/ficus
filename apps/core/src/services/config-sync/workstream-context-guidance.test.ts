@@ -23,6 +23,17 @@ describe('work stream context guidance', () => {
     expect(guidance).toContain('declared human-approval step')
   })
 
+  test('a completed attempt changes only through amend, only while the gate it feeds is open', async () => {
+    const guidance = (await readRepoFile('config/agent-types/shared/squad-rules.md')).replace(/\s+/g, ' ')
+    const worker = await readRepoFile('apps/core/src/entities/agent-runners/squad-worker-runner.ts')
+    expect(guidance).toContain(
+      'Work only on your active attempt. The one exception: while the human approval gate that your completed attempt feeds is open, you may change that attempt only through the `amend` action of `ficus workstream advance`.'
+    )
+    expect(worker).toContain(
+      'A completed attempt changes only through action amend, and only while the human approval gate it feeds is open.'
+    )
+  })
+
   test('flow delivery requires policy evidence, not a role-owned legacy review wait', async () => {
     const shared = (await readRepoFile('config/agent-types/shared/squad-rules.md')).replace(/\s+/g, ' ')
     const manager = (await readRepoFile('config/agent-types/manager.yaml')).replace(/\s+/g, ' ')

@@ -1,5 +1,5 @@
 import { WorkflowBriefDocuments } from './WorkflowBriefDocuments'
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { WorkflowRunDetail } from '@ficus/client-core'
 import {
@@ -16,6 +16,10 @@ import {
   deliveryPullRequests,
   workflowReworkAttempt,
   workflowAttemptLimitPause,
+  workflowGateRevisions,
+  workflowResultRevision,
+  workflowRevisedLabel,
+  WORKFLOW_REVIEW_REVISED_MESSAGE,
   type ResolvedTrackedResource,
   type WorkflowAttemptLimitPause,
   type WorkflowAttempt,
@@ -299,13 +303,42 @@ function HumanGate({
   const { can, identity } = usePermissions(stream.squadId)
   const [evidence, setEvidence] = useState('')
   const notesId = useId()
+  // The revisions shown when this review opened count as seen; a later amend must be looked at first.
+  const current = workflowGateRevisions(run.state, attempt)
+  const [seen, setSeen] = useState<Record<number, number>>(() =>
+    Object.fromEntries(current.map((entry) => [entry.attemptId, entry.revision]))
+  )
+  const unseen = current.filter((entry) => entry.revision > (seen[entry.attemptId] ?? entry.revision))
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!unseen.length) return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(timer)
+  }, [unseen.length])
   const advance = useMutation({
     mutationFn: (outcome: string) =>
       api.advanceWorkflow(
         stream.id,
-        { action: 'complete', expectedVersion: run.version, attemptId: attempt.id, outcome, evidence, resume: false },
+        {
+          action: 'complete',
+          expectedVersion: run.version,
+          attemptId: attempt.id,
+          outcome,
+          evidence,
+          resume: false,
+          reviewedRevisions: current.map((entry) => ({
+            attemptId: entry.attemptId,
+            revision: seen[entry.attemptId] ?? entry.revision,
+          })),
+        },
         api.newRequestId()
       ),
+    onError: async (error) => {
+      // Revised while open: load the latest revision and keep the notes.
+      if (error instanceof Error && error.message.includes(WORKFLOW_REVIEW_REVISED_MESSAGE))
+        await refreshWorkflow(queryClient, stream.id)
+    },
     onSuccess: async () => {
       setEvidence('')
       await refreshWorkflow(queryClient, stream.id)
@@ -351,10 +384,19 @@ function HumanGate({
             : 'Decision awaiting your choice'}
         </p>
       )}
+      {sources
+        .filter((source) => unseen.some((entry) => entry.attemptId === source.id))
+        .map((source) => (
+          <p key={source.id} role="status" className="g-action-note">
+            {source.stepId} · Attempt {source.id} · Revision {workflowResultRevision(source)} ·{' '}
+            {workflowRevisedLabel(source.resultRevisedAt, now)}
+          </p>
+        ))}
       <WorkflowBriefDocuments
         run={run}
         attempt={attempt}
         instructions={step.instructions}
+        seen={unseen.length ? seen : undefined}
         inputs={stream.assetAttachments}
       >
         {materials}
@@ -401,6 +443,20 @@ function HumanGate({
           <p id={`${notesId}-hint`} className="g-action-note">
             Required. Your notes are recorded with the decision and passed to the next step.
           </p>
+          {unseen.length > 0 && (
+            <div className="g-action-row">
+              <p id={`${notesId}-revised`} role="status" className="g-action-note">
+                {WORKFLOW_REVIEW_REVISED_MESSAGE}
+              </p>
+              <button
+                type="button"
+                className="g-button g-button-quiet"
+                onClick={() => setSeen(Object.fromEntries(current.map((entry) => [entry.attemptId, entry.revision])))}
+              >
+                Mark as reviewed
+              </button>
+            </div>
+          )}
           <div className="g-action-row">
             {Object.entries(step.outcomes).map(([outcome, transition]) => (
               <VerbButton
@@ -410,7 +466,7 @@ function HumanGate({
                 help={outcomeEffect(run.state, transition, attempt, outcome)}
                 tone={outcome === firstForward ? 'harvest' : 'returnTo' in transition ? 'prune' : 'plain'}
                 busy={advance.isPending && advance.variables === outcome}
-                disabled={advance.isPending || !evidence.trim() || blockingWaits.length > 0}
+                disabled={advance.isPending || !evidence.trim() || blockingWaits.length > 0 || unseen.length > 0}
                 onClick={() => advance.mutate(outcome)}
               />
             ))}

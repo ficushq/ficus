@@ -9,7 +9,7 @@ import {
   type WorkStream,
 } from '@ficus/shared'
 import type { WorkflowRunDetail } from '@ficus/client-core'
-import { humanGateContext, openHumanGates } from './workflowReview'
+import { humanGateContext, openHumanGates, producingAgents, revisedLabel } from './workflowReview'
 
 const stream = { id: 'decided', status: 'active', assignedReviewerIds: ['someone-else'] } as unknown as WorkStream
 
@@ -88,4 +88,22 @@ test('human return review captions name the effective resume destination instead
     { can: () => true }
   )!
   expect(outcomeEffect(state, gate.outcomes[0]![1], gate.attempt, 'yes')).toBe('Continues to execute')
+})
+
+test('revised labels count minutes and hours since the revision', () => {
+  const now = Date.parse('2026-10-30T12:00:00.000Z')
+  expect(revisedLabel('2026-10-30T11:59:40.000Z', now)).toBe('Revised just now')
+  expect(revisedLabel('2026-10-30T11:58:00.000Z', now)).toBe('Revised 2 min ago')
+  expect(revisedLabel('2026-10-30T09:00:00.000Z', now)).toBe('Revised 3 h ago')
+})
+
+test('producing agents are the agents bound to the agent sources of a gate', () => {
+  const run = decisionRun(true)
+  const sources = run.state.attempts.filter((attempt) => attempt.stepId === 'execute')
+  expect(producingAgents({ ...run, attemptAgents: { '1': 'agent-a' } }, sources)).toEqual([
+    { agentId: 'agent-a', sources },
+  ])
+  expect(producingAgents({ ...run, attemptAgents: {} }, sources)).toEqual([])
+  // A decision step has no agent of its own.
+  expect(producingAgents({ ...run, attemptAgents: { '2': 'agent-b' } }, run.state.attempts.slice(1))).toEqual([])
 })

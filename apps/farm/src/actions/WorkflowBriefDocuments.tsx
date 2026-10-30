@@ -2,10 +2,14 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { WorkflowRunDetail } from '@ficus/client-core'
 import {
+  workflowAttemptResults,
+  workflowResultChanges,
+  workflowResultRevision,
   workflowReviewBriefForAttempt,
   workflowHistoricalStep,
   workflowIncomingAttempts,
   type WorkflowAttempt,
+  type WorkflowAttemptAttachment,
   type WorkStreamAssetAttachment,
 } from '@ficus/shared'
 import { useActionsApi } from './ActionsApiProvider'
@@ -41,6 +45,7 @@ export function WorkflowBriefDocuments({
   instructions,
   inputs = [],
   children,
+  seen,
 }: {
   run: WorkflowRunDetail
   attempt: WorkflowAttempt
@@ -48,6 +53,8 @@ export function WorkflowBriefDocuments({
   /** The work stream's stored inputs (absent from older servers). */
   inputs?: WorkStreamAssetAttachment[]
   children: ReactNode
+  /** The revision of each source the reviewer last saw; newer revisions list what changed. */
+  seen?: Record<number, number>
 }) {
   const brief = workflowReviewBriefForAttempt(run.state, attempt)
   const sources = [...brief.sources, ...(brief.carriedSources ?? [])]
@@ -139,16 +146,12 @@ export function WorkflowBriefDocuments({
                   )}
                   <p className="g-material-head">
                     Prepared by {workflowHistoricalStep(run.state, source)?.name ?? source.stepId} · Attempt {source.id}
+                    {workflowResultRevision(source) > 1 && ` · Revision ${workflowResultRevision(source)}`}
                   </p>
-                  {(
-                    [
-                      ['decision', 'Decision'],
-                      ['recommendation', 'Recommendation'],
-                      ['approvalEffect', 'What approval allows'],
-                      ['risks', 'Risks and tradeoffs'],
-                      ['changesSinceLastReview', 'What changed since your last review'],
-                    ] as const
-                  ).map(([field, label]) =>
+                  {seen && (seen[source.id] ?? workflowResultRevision(source)) < workflowResultRevision(source) && (
+                    <RevisionChanges run={run} source={source} seenRevision={seen[source.id]!} />
+                  )}
+                  {BRIEF_FIELDS.map(([field, label]) =>
                     source.decisionBrief?.value[field] ? (
                       <section key={field}>
                         <h5 className="g-material-head">{label}</h5>
@@ -171,6 +174,57 @@ export function WorkflowBriefDocuments({
   )
 }
 
+const BRIEF_FIELDS = [
+  ['decision', 'Decision'],
+  ['recommendation', 'Recommendation'],
+  ['approvalEffect', 'What approval allows'],
+  ['risks', 'Risks and tradeoffs'],
+  ['changesSinceLastReview', 'What changed since your last review'],
+] as const
+
+/** What changed since the revision the reviewer last saw, in plain Farm text. */
+function RevisionChanges({
+  run,
+  source,
+  seenRevision,
+}: {
+  run: WorkflowRunDetail
+  source: WorkflowAttempt
+  seenRevision: number
+}) {
+  const files = [
+    ...(run.attachments?.[String(source.id)] ?? []),
+    ...(run.earlierAttachments?.[String(source.id)] ?? []),
+  ]
+  const results = workflowAttemptResults(source, files)
+  const before = results.find((result) => result.revision === seenRevision) ?? results[0]!
+  const changes = workflowResultChanges(
+    before,
+    results.at(-1)!,
+    Object.fromEntries(files.map((file) => [file.id, file]))
+  )
+  const label = (field: string) => BRIEF_FIELDS.find(([key]) => key === field)?.[1] ?? field
+  const names = (list: WorkflowAttemptAttachment[]) => list.map((file) => file.filename).join(', ')
+  const { added, removed, changed } = changes.attachments
+  return (
+    <section aria-label="What changed since you last looked" className="g-material">
+      <p className="g-material-head">What changed since you last looked</p>
+      {changes.briefFields.map(({ field, before: old, after: now }) => (
+        <section key={field}>
+          <h5 className="g-material-head">{label(field)}</h5>
+          <p className="g-action-note">Before</p>
+          <ActionText>{old ?? 'Not included'}</ActionText>
+          <p className="g-action-note">Now</p>
+          <ActionText>{now ?? 'Not included'}</ActionText>
+        </section>
+      ))}
+      {changes.evidenceChanged && <p className="g-action-note">The internal handoff changed.</p>}
+      {added.length > 0 && <p className="g-action-note">Added: {names(added)}</p>}
+      {removed.length > 0 && <p className="g-action-note">Removed: {names(removed)}</p>}
+      {changed.length > 0 && <p className="g-action-note">Changed: {names(changed.map((entry) => entry.after))}</p>}
+    </section>
+  )
+}
 /** Images a browser only decodes (never SVG, which can run script). */
 const RASTER_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
 

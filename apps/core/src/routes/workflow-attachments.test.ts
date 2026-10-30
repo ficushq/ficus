@@ -153,6 +153,7 @@ test('only the agent bound to an open attempt can attach files, and the snapshot
     contentType: 'text/markdown',
     byteSize: 19,
     createdAt: expect.any(String),
+    revision: 1,
   })
   const [row] = await rows()
   expect(row).toMatchObject({ attemptId: 1, uploadedByAgentId: bound.agentId })

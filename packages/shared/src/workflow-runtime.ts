@@ -14,10 +14,18 @@ import {
   workflowEarlierHumanDecisions,
   workflowCarryForwardSources,
   workflowHasLegacyBriefSource,
+  workflowHistoricalStep,
   type WorkflowBriefSubmission,
   type WorkflowReviewBriefBinding,
 } from './workflow-review-history'
 import type { WorkflowDecisionRecord } from './workflow-decision'
+import {
+  WORKFLOW_MAX_RESULT_REVISIONS,
+  workflowResultRevision,
+  workflowReviewDecisionRefusal,
+  type WorkflowResultRevision,
+  type WorkflowReviewedRevision,
+} from './workflow-result-revisions'
 
 export interface WorkflowBranch {
   forkId: number
@@ -63,6 +71,20 @@ export interface WorkflowAttempt {
   feedback?: string
   /** A decision step's model answers and routing; set once, when Core evaluates the step. */
   decision?: WorkflowDecisionRecord
+  /**
+   * Current result revision of a completed agent attempt; absent means 1 (the original completion).
+   * `evidence`, `decisionBrief` and `attachmentIds` always hold this latest revision.
+   */
+  resultRevision?: number
+  /** Run version and time that recorded the current revision; set from revision 2 on. */
+  resultRevisedVersion?: number
+  resultRevisedAt?: string
+  /** Superseded result revisions, ascending. Immutable once written. */
+  earlierResults?: WorkflowResultRevision[]
+  /** Attachment IDs of the current revision; absent means every revision-1 file of this attempt. */
+  attachmentIds?: string[]
+  /** Human decisions only: the source revisions this decision was made on, computed by the kernel. */
+  reviewedRevisions?: WorkflowReviewedRevision[]
 }
 
 /** Effective routing exposed by flow inspection and live revision receipts. */
@@ -125,6 +147,11 @@ const commandFields = {
   expectedVersion: z.int().nonnegative(),
   attemptId: z.int().positive(),
 }
+/** The source revisions a person reviewed; Core refuses the decision when any is no longer current. */
+const reviewedRevisionsField = z
+  .array(z.strictObject({ attemptId: z.int().positive(), revision: z.int().positive() }))
+  .max(32)
+  .optional()
 export const workflowCommandSchema = z.discriminatedUnion('action', [
   z.strictObject({
     ...commandFields,
@@ -155,6 +182,7 @@ export const workflowCommandSchema = z.discriminatedUnion('action', [
     evidence: z.string().trim().max(64_000),
     // An agent doing rework may return its result directly to the requester.
     resume: z.boolean().default(false),
+    reviewedRevisions: reviewedRevisionsField,
   }),
   z.strictObject({
     ...commandFields,
@@ -163,6 +191,18 @@ export const workflowCommandSchema = z.discriminatedUnion('action', [
     targetStepId: z.string().min(1).max(100),
     resumeAt: z.string().min(1).max(100),
     feedback: z.string().trim().min(1).max(64_000),
+    reviewedRevisions: reviewedRevisionsField,
+  }),
+  // An agent revises its own completed attempt while the human approval gate it feeds is open.
+  z.strictObject({
+    ...commandFields,
+    action: z.literal('amend'),
+    decisionBrief: workflowDecisionBriefSchema,
+    evidence: z.string().trim().min(1).max(64_000),
+    /** Paths of files staged (uploaded) for this amend to publish; they add or replace by path. */
+    attachmentPaths: z.array(z.string().min(1).max(1024)).max(10).optional(),
+    /** Files of the current revision to drop. */
+    removeAttachmentPaths: z.array(z.string().min(1).max(1024)).max(10).optional(),
   }),
   // Unblocks an attempt-limit pause in one step: a new attempts-per-step limit, or null to remove it.
   z.strictObject({
@@ -227,6 +267,89 @@ export function workflowIncomingAttempts(state: WorkflowRun, attempt: WorkflowAt
       pending.push(...(source.sourceAttemptIds ?? []))
   }
   return [...found.values()].sort((a, b) => a.id - b.id)
+}
+
+/**
+ * Whether a person decides this attempt: a human approval, or a decision step its model handed to a
+ * person. Its decision records the source revisions it was made on.
+ */
+export function isWorkflowHumanDecisionAttempt(state: WorkflowRun, attempt: WorkflowAttempt): boolean {
+  const kind = workflowHistoricalStep(state, attempt)?.kind
+  return kind === 'human-approval' || (kind === 'decision' && !!attempt.decision?.awaitingPerson)
+}
+
+/**
+ * The agent attempts whose results feed a human decision, with their current result revisions
+ * (decision steps pass through, as in {@link workflowIncomingAttempts}). `revisedVersion` is the run
+ * version of the latest amendment, absent for revision 1.
+ */
+export function workflowGateRevisions(
+  state: WorkflowRun,
+  gate: WorkflowAttempt
+): Array<WorkflowReviewedRevision & { revisedVersion?: number }> {
+  return workflowIncomingAttempts(state, gate)
+    .filter((source) => workflowHistoricalStep(state, source)?.kind === 'agent')
+    .map((source) => ({
+      attemptId: source.id,
+      revision: workflowResultRevision(source),
+      ...(source.resultRevisedVersion !== undefined ? { revisedVersion: source.resultRevisedVersion } : {}),
+    }))
+}
+
+export type WorkflowAmendEligibility = { ok: true; gates: WorkflowAttempt[] } | { ok: false; reason: string }
+
+/**
+ * Whether an attempt's result may be amended now: a completed agent attempt whose every consumer is a
+ * running human approval gate that opened with this attempt's own decision brief. Anything that
+ * already used the result (an agent, an automatic decision, a decided gate, a queued start or an
+ * open join) would silently see different content, so it refuses. Pure; Core, the CLI preflight,
+ * the attachment guard and the review consultation all use it.
+ */
+export function workflowAmendEligibility(state: WorkflowRun, attemptId: number): WorkflowAmendEligibility {
+  const refuse = (reason: string): WorkflowAmendEligibility => ({ ok: false, reason })
+  const attempt = state.attempts.find((entry) => entry.id === attemptId)
+  if (!attempt) return refuse(`Attempt ${attemptId} does not exist.`)
+  if (workflowHistoricalStep(state, attempt)?.kind !== 'agent')
+    return refuse(`Only an agent's completed attempt can be amended; attempt ${attemptId} is not an agent step.`)
+  if (attempt.status !== 'completed')
+    return refuse(`Only a completed attempt can be amended; attempt ${attemptId} is ${attempt.status}.`)
+  const notFeeding = refuse(`Attempt ${attemptId} does not feed an open human approval gate.`)
+  if (
+    state.pendingStarts?.some((entry) => entry.sourceAttemptIds?.includes(attemptId)) ||
+    state.joins?.some((join) => join.status === 'open' && join.sourceAttemptIds?.includes(attemptId))
+  )
+    return notFeeding
+  const consumers = state.attempts.filter(
+    (entry) => entry.status !== 'canceled' && entry.sourceAttemptIds?.includes(attemptId)
+  )
+  if (!consumers.length) return notFeeding
+  const used = consumers.find((entry) => workflowHistoricalStep(state, entry)?.kind !== 'human-approval')
+  if (used)
+    return refuse(
+      `Attempt ${attemptId}'s result was already used by '${used.stepId}' (attempt ${used.id}); only a result waiting at an open human approval gate can be amended.`
+    )
+  const closed = consumers.find((gate) => gate.status !== 'running' || gate.id <= (state.attemptEpoch ?? 0))
+  if (closed)
+    return refuse(
+      `Human approval '${closed.stepId}' is no longer open, so attempt ${attemptId} can no longer be amended.`
+    )
+  const unbound = consumers.find(
+    (gate) =>
+      !attempt.decisionBrief ||
+      gate.reviewBrief?.kind !== 'authored' ||
+      !gate.reviewBrief.sourceAttemptIds.includes(attemptId)
+  )
+  if (unbound)
+    return refuse(
+      `Human approval '${unbound.stepId}' did not open with this attempt's decision brief, so it cannot be amended; recommend Changes requested instead.`
+    )
+  // Checked after the gate, so a decided gate explains itself rather than the run's later state.
+  if (state.status !== 'running') return refuse(`Workflow is ${state.status}`)
+  if (workflowResultRevision(attempt) >= WORKFLOW_MAX_RESULT_REVISIONS)
+    return refuse(
+      `Attempt ${attemptId} has reached ${WORKFLOW_MAX_RESULT_REVISIONS} revisions; recommend Changes requested instead.`
+    )
+  return { ok: true, gates: consumers }
 }
 
 export function activeWorkflowAttempts(state: WorkflowRun): WorkflowAttempt[] {
@@ -552,6 +675,7 @@ function raiseWorkflowAttemptLimit(
 export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): WorkflowRun {
   const command = workflowCommandSchema.parse(input)
   if (command.expectedVersion !== previous.version) throw new Error('Stale workflow version')
+  if (command.action === 'amend') return amendWorkflowAttempt(previous, command)
   if (command.action === 'rework') {
     if (previous.status !== 'completion-ready') throw new Error('Rework requires a completion-ready flow')
     const last = workflowReworkAttempt(previous)
@@ -704,6 +828,7 @@ export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): Workf
     return finishState(state)
   }
 
+  recordReviewedRevisions(previous, attempt, command)
   if (command.action === 'return') {
     attempt.settledVersion = state.version
     recordDecisionBrief(state, previous, attempt, command)
@@ -728,6 +853,88 @@ export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): Workf
 }
 
 type WorkflowBriefCommand = Extract<WorkflowCommand, { action: 'complete' | 'return' }>
+type WorkflowAmendCommand = Extract<WorkflowCommand, { action: 'amend' }>
+
+/**
+ * A human decision records the source revisions it was made on. A client that names the revisions
+ * it showed is refused when any is no longer current (Core answers the same check first, as a 409).
+ */
+function recordReviewedRevisions(previous: WorkflowRun, attempt: WorkflowAttempt, command: WorkflowCommand) {
+  if (command.action !== 'complete' && command.action !== 'return') return
+  if (!isWorkflowHumanDecisionAttempt(previous, attempt)) {
+    if (command.reviewedRevisions) throw new Error('reviewedRevisions is only for human review decisions')
+    return
+  }
+  const current = workflowGateRevisions(previous, attempt)
+  const refusal = workflowReviewDecisionRefusal(command.reviewedRevisions, current, command.expectedVersion)
+  if (refusal) throw new Error(refusal)
+  attempt.reviewedRevisions = current.map(({ attemptId, revision }) => ({ attemptId, revision }))
+}
+
+/**
+ * Record a new result revision of a completed attempt. The previous result moves, unchanged, to
+ * `earlierResults`; the attempt's own fields hold the new one. Nothing else in the run changes: no
+ * attempt starts or settles, no gate closes or opens, and no review round is counted.
+ */
+function amendWorkflowAttempt(previous: WorkflowRun, command: WorkflowAmendCommand): WorkflowRun {
+  const eligible = workflowAmendEligibility(previous, command.attemptId)
+  if (!eligible.ok) throw new Error(eligible.reason)
+  const gateStepIds = [...new Set(eligible.gates.map((gate) => gate.stepId))].sort()
+  requireChangesSinceLastReview(previous, gateStepIds, command.decisionBrief)
+  const state = structuredClone(previous)
+  const attempt = state.attempts.find((entry) => entry.id === command.attemptId)!
+  state.version += 1
+  const revision = workflowResultRevision(attempt)
+  const prior = attempt.resultRevisedVersion ?? attempt.settledVersion
+  attempt.earlierResults = [
+    ...(attempt.earlierResults ?? []),
+    {
+      revision,
+      ...(prior !== undefined ? { version: prior } : {}),
+      ...(attempt.resultRevisedAt ? { recordedAt: attempt.resultRevisedAt } : {}),
+      ...(attempt.evidence !== undefined ? { evidence: attempt.evidence } : {}),
+      ...(attempt.decisionBrief ? { decisionBrief: attempt.decisionBrief } : {}),
+      // Core fills this from the attachment rows, which the pure kernel cannot see.
+      attachmentIds: attempt.attachmentIds ? [...attempt.attachmentIds] : [],
+    },
+  ]
+  attempt.resultRevision = revision + 1
+  attempt.resultRevisedVersion = state.version
+  delete attempt.resultRevisedAt
+  attempt.evidence = command.evidence
+  // The gate round is the same, so the context recorded at completion (earlier decision, returns,
+  // revisions and interruptions before the gate opened) still describes it.
+  const recorded = attempt.decisionBrief?.contexts ?? []
+  attempt.decisionBrief = {
+    value: command.decisionBrief,
+    submittedVersion: state.version,
+    contexts: gateStepIds.map(
+      (gateStepId) =>
+        recorded.find((context) => context.gateStepId === gateStepId) ?? {
+          gateStepId,
+          previousDecisionAttemptId: workflowEarlierHumanDecisions(previous, gateStepId)[0]?.id,
+          returnIds: [],
+          revisionVersions: [],
+          interruptedExecutions: [],
+        }
+    ),
+  }
+  return state
+}
+
+function requireChangesSinceLastReview(
+  run: WorkflowRun,
+  targets: string[],
+  brief: { changesSinceLastReview?: string } | undefined
+) {
+  const previous = targets
+    .map((id) => ({ id, decision: workflowEarlierHumanDecisions(run, id)[0] }))
+    .filter((t) => t.decision)
+  if (previous.length && !brief?.changesSinceLastReview)
+    throw new Error(
+      `decisionBrief.changesSinceLastReview is required because ${previous.map((t) => `human approval '${t.id}' has an earlier decision (attempt ${t.decision!.id})`).join('; ')}.`
+    )
+}
 
 function recordDecisionBrief(
   state: WorkflowRun,
@@ -901,13 +1108,7 @@ export function validateWorkflowDecisionBrief(run: WorkflowRun, command: Workflo
     throw new Error(
       `A decisionBrief is required for ${command.action === 'complete' ? `outcome '${command.outcome}'` : `return to '${command.targetStepId}'`} because it sends this agent's result to human approval '${targets.join("', '")}'. Add decisionBrief to the same advance command JSON, alongside evidence for complete or feedback for return, with decision, recommendation, approvalEffect and risks. Add changesSinceLastReview after an earlier decision on the same gate. Write normal readable prose; preserve exact resource identifiers.`
     )
-  const previous = targets
-    .map((id) => ({ id, decision: workflowEarlierHumanDecisions(run, id)[0] }))
-    .filter((t) => t.decision)
-  if (previous.length && !command.decisionBrief?.changesSinceLastReview)
-    throw new Error(
-      `decisionBrief.changesSinceLastReview is required because ${previous.map((t) => `human approval '${t.id}' has an earlier decision (attempt ${t.decision!.id})`).join('; ')}.`
-    )
+  requireChangesSinceLastReview(run, targets, command.decisionBrief)
   return targets
 }
 

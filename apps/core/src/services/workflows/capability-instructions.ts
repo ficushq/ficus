@@ -25,6 +25,7 @@ export function flowCapabilityInstructions(state: WorkflowRun, attempt: Workflow
     ),
   ]
   if (step.kind === 'agent') {
+    let humanNext = false
     for (const outcome of Object.keys(step.outcomes)) {
       for (const resume of [false, true]) {
         let targets: string[]
@@ -34,6 +35,7 @@ export function flowCapabilityInstructions(state: WorkflowRun, attempt: Workflow
           continue
         }
         if (!targets.length) continue
+        humanNext = true
         lines.push(
           `For outcome '${outcome}'${resume ? ' with resume=true' : ''}, a human decides next at ${targets.join(', ')}. The completing producing agent writes decisionBrief; no manager authors it.`
         )
@@ -46,6 +48,10 @@ export function flowCapabilityInstructions(state: WorkflowRun, attempt: Workflow
         }
       }
     }
+    if (humanNext)
+      lines.push(
+        'While that gate is open, the reviewer may chat with you from the review screen; refine your result only with action amend, and recommend Changes requested for anything bigger.'
+      )
     const returnGates = definition.steps.filter((gate) => {
       if (gate.kind !== 'human-approval') return false
       try {

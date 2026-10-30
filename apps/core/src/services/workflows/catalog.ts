@@ -18,7 +18,9 @@ export type WorkflowRow = typeof workflows.$inferSelect
 export class WorkflowError extends Error {
   constructor(
     message: string,
-    readonly status: 400 | 403 | 404 | 409 | 413 = 400
+    readonly status: 400 | 403 | 404 | 409 | 413 = 400,
+    /** A stable code for clients that act on this refusal, such as WORKFLOW_REVIEW_REVISED. */
+    readonly code?: string
   ) {
     super(message)
     this.name = 'WorkflowError'

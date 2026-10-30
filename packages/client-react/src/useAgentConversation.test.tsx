@@ -54,7 +54,14 @@ function makeMockClient(opts?: {
   let getMessageCount = 0
   const agentEventSubscribers = new Map<string, Set<Parameters<SubscribeToAgentEvents>[1]>>()
   const getMessagesOptions: Array<{ cursor?: string; beforeId?: string; limit?: number } | undefined> = []
-  const sent: Array<{ content: string; clientId?: string; imageIds?: string[]; pagePath?: string }> = []
+  const sent: Array<{
+    content: string
+    clientId?: string
+    imageIds?: string[]
+    pagePath?: string
+    wake?: boolean
+    reviewConsultation?: { workStreamId: string; gateAttemptId: number }
+  }> = []
   const chatSent: Array<{
     message: string
     scope?: unknown
@@ -96,9 +103,22 @@ function makeMockClient(opts?: {
       sendMessage: async (
         _id: string,
         content: string,
-        opts?: { clientId?: string; imageIds?: string[]; pagePath?: string }
+        opts?: {
+          clientId?: string
+          imageIds?: string[]
+          pagePath?: string
+          wake?: boolean
+          reviewConsultation?: { workStreamId: string; gateAttemptId: number }
+        }
       ) => {
-        sent.push({ content, clientId: opts?.clientId, imageIds: opts?.imageIds, pagePath: opts?.pagePath })
+        sent.push({
+          content,
+          clientId: opts?.clientId,
+          imageIds: opts?.imageIds,
+          pagePath: opts?.pagePath,
+          wake: opts?.wake,
+          ...(opts?.reviewConsultation ? { reviewConsultation: opts.reviewConsultation } : {}),
+        })
         if (sendGate) {
           const gate = sendGate
           sendGate = null
@@ -445,6 +465,29 @@ describe('useAgentConversation', () => {
     mock.releaseNextSend()
     await accepted
     expect(settled).toBe(true)
+  })
+
+  test('a review consultation is sent with the message, waking the same agent, and kept on retry', async () => {
+    const mock = makeMockClient()
+    mock.failNextSend()
+    const reviewConsultation = { workStreamId: 'stream-1', gateAttemptId: 4 }
+    const { result } = await renderHook(() => useAgentConversation({ agentId: 'a1' }), { wrapper: wrap(mock.client) })
+    let clientId = ''
+    await act(async () => {
+      clientId = result.current.send('Why this cache?', { reviewConsultation })
+      await Promise.resolve()
+    })
+    await waitFor(() =>
+      expect(result.current.items.some((i) => i.kind === 'pending' && i.status === 'failed')).toBe(true)
+    )
+    await act(async () => {
+      result.current.retrySend(clientId)
+      await Promise.resolve()
+    })
+    // The failed first attempt and the retry both carry it.
+    await waitFor(() => expect(mock.sent).toHaveLength(2))
+    for (const sent of mock.sent)
+      expect(sent).toMatchObject({ content: 'Why this cache?', clientId, wake: true, reviewConsultation })
   })
 
   test('a rejected sendAccepted removes its composer-owned optimistic row', async () => {
