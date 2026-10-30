@@ -1,4 +1,5 @@
 import { StructuredInputActions, AgentRecoveryActions } from './StructuredInputActions'
+import { AttemptLimitActions } from './AttemptLimitActions'
 import clsx from 'clsx'
 import { assistantConversationSearch } from '../lib/assistantConversationSearch'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
@@ -369,11 +370,13 @@ function ActionSubtitle({ action }: { action: PendingAction }) {
             ? ' · review needed'
             : data.deliveryApproval
               ? ' · approve delivery'
-              : data.wait.resolutionHandler === 'workflow'
-                ? ' · workflow decision'
-                : assignee
-                  ? ` · ${assignee} needs input`
-                  : ' · needs input'}
+              : data.attemptLimit
+                ? ' · attempt limit reached'
+                : data.wait.resolutionHandler === 'workflow'
+                  ? ' · workflow decision'
+                  : assignee
+                    ? ` · ${assignee} needs input`
+                    : ' · needs input'}
         </p>
       )
     }
@@ -496,7 +499,9 @@ function ActionInlineControl({
     )
   } else if (
     action.type === 'workstream-blocked' &&
-    (action.data as WorkStreamActionData).wait.resolutionHandler === 'workflow'
+    (action.data as WorkStreamActionData).wait.resolutionHandler === 'workflow' &&
+    // An attempt-limit pause is decided in the card body (Raise limit), not on a review surface.
+    !(action.data as WorkStreamActionData).attemptLimit
   ) {
     const data = action.data as WorkStreamActionData
     control = (
@@ -816,6 +821,16 @@ function WorkStreamBlockedActionContent({
       <StructuredInputActions
         workStreamId={data.workStreamId}
         wait={data.wait}
+        onComplete={onComplete}
+        disabled={!action.canRespond}
+      />
+    )
+  if (data.attemptLimit)
+    return (
+      <AttemptLimitActions
+        workStreamId={data.workStreamId}
+        pause={data.attemptLimit}
+        flowVersion={data.attemptLimit.flowVersion}
         onComplete={onComplete}
         disabled={!action.canRespond}
       />

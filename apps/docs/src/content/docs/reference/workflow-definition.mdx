@@ -59,7 +59,7 @@ definition:
 FICUS_PRESET
 ```
 
-Attempts are unlimited by default. An optional `maxStepAttempts: 3` permits the initial attempt and up to two further attempts **per step**. It is not three revisions after the first attempt. Workers start only when their steps become active; saving this preset starts no agents.
+Attempts are unlimited by default, and that is the recommended setting: attempt limits are usually unnecessary blockers. An optional `maxStepAttempts: 3` permits the initial attempt and up to two further attempts **per step**. It is not three revisions after the first attempt. If you set a limit, prefer a generous value. When a step uses its last attempt, the flow pauses with its pending request intact; a reviewer, the stream owner or the squad manager unblocks it in one step with Raise limit in the web app or `ficus workstream raise-limit STREAM --max-step-attempts N` (or `--remove`). Workers start only when their steps become active; saving this preset starts no agents.
 
 ## Definition fields
 
@@ -192,14 +192,14 @@ Delegation inserts tracked specialist work with a return to the requesting step.
 
 ## Limits
 
-| Field                 | Allowed values and meaning                                                                                                                                      |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `maxStepAttempts`     | Optional integer 1–100; omitted means unlimited attempts. When set, attempts allowed for each step in the current execution pass. Rework consumes attempts too. |
-| `maxDelegations`      | Required integer 0–100: maximum tracked delegations. Use `0` when disabled.                                                                                     |
-| `maxParallelAttempts` | Optional integer 1–32: concurrently active attempts in this flow. Omitted means no workflow cap; global agent capacity still applies.                           |
-| `onLimit`             | Must be `request-owner-input`.                                                                                                                                  |
+| Field                 | Allowed values and meaning                                                                                                                                                                                                                                                             |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `maxStepAttempts`     | Optional integer 1–100; omitted (recommended) means unlimited attempts. When set, attempts allowed for each step in the current execution pass; prefer a generous value. Rework consumes attempts too. Reaching it pauses the flow until someone raises or removes it (`raise-limit`). |
+| `maxDelegations`      | Required integer 0–100: maximum tracked delegations. Use `0` when disabled.                                                                                                                                                                                                            |
+| `maxParallelAttempts` | Optional integer 1–32: concurrently active attempts in this flow. Omitted means no workflow cap; global agent capacity still applies.                                                                                                                                                  |
+| `onLimit`             | Must be `request-owner-input`.                                                                                                                                                                                                                                                         |
 
-Exhausting a step's attempt budget stops further progression for owner intervention. A delegation beyond its limit is rejected and requires an authorized revision. Neither limit automatically declares success. A managed reopen starts a new bounded pass while retaining history.
+Exhausting a step's attempt budget pauses the flow until a reviewer, the owner or the squad manager raises or removes the limit. A delegation beyond its limit is rejected and requires an authorized revision. Neither limit automatically declares success. A managed reopen starts a new bounded pass while retaining history.
 
 ## Completion policy
 
@@ -323,7 +323,7 @@ customizations:
     name: Brief for the board
   - op: set-limits
     limits:
-      maxStepAttempts: 2
+      maxStepAttempts: 10
       maxDelegations: 0
       onLimit: request-owner-input
 ```

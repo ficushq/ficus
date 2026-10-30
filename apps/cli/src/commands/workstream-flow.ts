@@ -12,6 +12,7 @@ import {
   advanceWorkflowRun,
   workflowAmendEligibility,
   workflowCommandSchema,
+  workflowAttemptLimitPause,
   validateWorkflowDecisionBrief,
   type WorkflowRun,
   type WorkStreamAssetSource,
@@ -80,7 +81,7 @@ export function registerWorkstreamFlowCommands(
       })
     )
   addStructuredInputOptions(command.command('advance <id>', { hidden: legacy }))
-    .description('Complete, return, amend, delegate, rework, or revise a flow using a versioned command')
+    .description('Complete, return, amend, delegate, rework, revise, or raise-limit a flow using a versioned command')
     .option('--request-id <id>', 'Stable UUID for retrying this exact command')
     .option(
       '--attach <path>',
@@ -102,7 +103,7 @@ export function registerWorkstreamFlowCommands(
     )
     .addHelpText(
       'after',
-      '\nThe command must include action, expectedVersion, attemptId, and action-specific fields (e.g. outcome and evidence for complete).\nAuthorized revise active=keep refreshes outcomes for kept running attempts while preserving their initial brief and session. The response outcomeUpdates lists affected attempt/agent IDs; record scope and steer every affected active agent. Inspect activeOutcomes with workstream flow.\nUse active=restart only for deliberate cancellation and a new attempt with a fresh session, even with reuse-within-stream. Revised instructions apply to future attempts, not a kept initial brief.\nAgent-produced completions or explicit returns into human approval require decisionBrief: decision (500 characters), recommendation (1000), approvalEffect (2400), risks (1600), and changesSinceLastReview (2000, required after an earlier decision on the same gate). Each field must use readable prose with normal spacing and complete words; preserve literal identifiers. Briefs are optional on other handoffs; evidence or return feedback stays separate. Contextual preflight runs before attachments.\n--attach uploads each file to the completing attempt before the command is sent; --attach-image and --attach-agent-file attach stored chat images and files by ID instead of uploading. If any attachment fails, the attempt is not advanced.\namend revises your own completed attempt while the human approval gate it feeds is open: send expectedVersion, attemptId, the complete revised decisionBrief and evidence (name the commit SHAs of any changes), optional removeAttachmentPaths, and --attach for files to add or replace (the CLI names them in attachmentPaths); other files and stored references carry over. Stored references are attached only when completing. The gate stays open and it is not a new review round. A decision on an older revision is refused.'
+      '\nThe command must include action, expectedVersion, attemptId, and action-specific fields (e.g. outcome and evidence for complete). When no attempt is active (for example a flow paused at its attempt limit), revise takes no attemptId: omit it or send null.\nAt an attempt-limit pause, {"action":"raise-limit","expectedVersion":N,"maxStepAttempts":<number or null>} raises or removes the limit and starts the held attempt in one step (see workstream raise-limit).\nAuthorized revise active=keep refreshes outcomes for kept running attempts while preserving their initial brief and session. The response outcomeUpdates lists affected attempt/agent IDs; record scope and steer every affected active agent. Inspect activeOutcomes with workstream flow.\nUse active=restart only for deliberate cancellation and a new attempt with a fresh session, even with reuse-within-stream. Revised instructions apply to future attempts, not a kept initial brief.\nAgent-produced completions or explicit returns into human approval require decisionBrief: decision (500 characters), recommendation (1000), approvalEffect (2400), risks (1600), and changesSinceLastReview (2000, required after an earlier decision on the same gate). Each field must use readable prose with normal spacing and complete words; preserve literal identifiers. Briefs are optional on other handoffs; evidence or return feedback stays separate. Contextual preflight runs before attachments.\n--attach uploads each file to the completing attempt before the command is sent; --attach-image and --attach-agent-file attach stored chat images and files by ID instead of uploading. If any attachment fails, the attempt is not advanced.\namend revises your own completed attempt while the human approval gate it feeds is open: send expectedVersion, attemptId, the complete revised decisionBrief and evidence (name the commit SHAs of any changes), optional removeAttachmentPaths, and --attach for files to add or replace (the CLI names them in attachmentPaths); other files and stored references carry over. Stored references are attached only when completing. The gate stays open and it is not a new review round. A decision on an older revision is refused.'
     )
     .action(
       (
@@ -173,6 +174,61 @@ export function registerWorkstreamFlowCommands(
               command: value,
               requestId: options.requestId ?? crypto.randomUUID(),
             })
+          )
+        })
+    )
+  command
+    .command('raise-limit <id>', { hidden: legacy })
+    .description(
+      'Unblock a flow paused at its attempt limit: raise or remove the attempts-per-step limit and start the held attempt'
+    )
+    .option(
+      '--max-step-attempts <number>',
+      'New attempts-per-step limit, above the attempts already used (at most 100)'
+    )
+    .option('--remove', 'Remove the attempt limit entirely')
+    .option('-m, --reason <text>', 'Why, recorded with your name in the flow revision history')
+    .option('--version <version>', 'Expected flow version (defaults to the current version from workstream flow)')
+    .option('--request-id <id>', 'Stable UUID for retrying this exact command')
+    .addHelpText(
+      'after',
+      '\nWorks only while the flow is paused at its attempt limit (workstream flow shows status paused and pauseReason attempt-limit). It clears the pause wait and starts the held attempt with its pending request in one step.\nAllowed: people who can review the work stream (an assigned reviewer when reviewers are assigned) or manage flows, the stream owner agent, and the squad manager agent. The agent that ran the paused step cannot raise its own limit.\nEquivalent advance command: {"action":"raise-limit","expectedVersion":<version>,"maxStepAttempts":<number or null>}.'
+    )
+    .action(
+      (
+        id: string,
+        options: { maxStepAttempts?: string; remove?: boolean; reason?: string; version?: string; requestId?: string }
+      ) =>
+        run(async () => {
+          if (!!options.remove === (options.maxStepAttempts !== undefined))
+            throw new Error('Pass exactly one of --max-step-attempts <number> or --remove')
+          const maxStepAttempts = options.remove ? null : Number(options.maxStepAttempts)
+          if (maxStepAttempts !== null && (!Number.isSafeInteger(maxStepAttempts) || maxStepAttempts < 1))
+            throw new Error('--max-step-attempts must be a positive whole number')
+          const current = await deps.apiGet<FlowSnapshot | null>(`/api/workflows/runs/${encodeURIComponent(id)}`)
+          if (!current) throw new Error('This work stream has no flow')
+          const pause = workflowAttemptLimitPause(current.state)
+          if (!pause)
+            throw new Error(
+              `The flow is ${current.state.status}, not paused at an attempt limit; there is no limit to raise`
+            )
+          const expectedVersion = options.version === undefined ? current.version : Number(options.version)
+          if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0)
+            throw new Error('Version must be a nonnegative integer')
+          const value = workflowCommandSchema.parse({
+            action: 'raise-limit',
+            expectedVersion,
+            maxStepAttempts,
+            ...(options.reason ? { reason: options.reason } : {}),
+          })
+          deps.output(
+            await deps.apiPost(`/api/workflows/runs/${encodeURIComponent(id)}/advance`, {
+              command: value,
+              requestId: options.requestId ?? crypto.randomUUID(),
+            }),
+            maxStepAttempts === null
+              ? `Removed the attempt limit for step ${pause.stepId}; its next attempt is starting`
+              : `Raised the attempt limit for step ${pause.stepId} to ${maxStepAttempts}; its next attempt is starting`
           )
         })
     )

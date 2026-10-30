@@ -46,7 +46,7 @@ architect designs, a human-approval gate (`approver: reviewers`) approves it or
 returns it to the architect, then an engineer implements and an independent
 reviewer checks the change. Customize its completion with `set-completion` as
 for the other coding presets.
-Leave maxStepAttempts unset by default for unlimited attempts; set an explicit attempt cap only when requested. Keep specialist delegation bounded by maxDelegations. Offer parallel reviews when independent checks can run together; use branches and a join to coordinate independent checks. Leave maxParallelAttempts unset by default so global agent capacity controls execution. Set a workflow-specific cap only when requested, and coordinate workspace edits between branches. Let agents request explicit rework
+Leave maxStepAttempts unset by default for unlimited attempts. Attempt limits are usually unnecessary blockers: a step that runs out pauses the whole workflow until someone acts. Set one only when requested, and then prefer a generous value (for example 10) over a tight one. A paused workflow is unblocked in one step with Raise limit in the web app or `ficus workstream raise-limit`. Keep specialist delegation bounded by maxDelegations. Offer parallel reviews when independent checks can run together; use branches and a join to coordinate independent checks. Leave maxParallelAttempts unset by default so global agent capacity controls execution. Set a workflow-specific cap only when requested, and coordinate workspace edits between branches. Let agents request explicit rework
 without automatically invalidating every previous review.
 
 ## Configure the agreed choices

@@ -1,4 +1,4 @@
-import { isHumanFlowWait } from '../workflows/wait-policy'
+import { isAttemptLimitFlowWait, isHumanFlowWait } from '../workflows/wait-policy'
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { InferSelectModel } from 'drizzle-orm'
 import {
@@ -29,6 +29,7 @@ export function toWaitJson(row: WorkStreamWaitRow): WorkStreamWait {
   return {
     id: row.id,
     workflowHumanGate: isHumanFlowWait(row),
+    ...(isAttemptLimitFlowWait(row) ? { workflowAttemptLimit: true as const } : {}),
     ...(row.structured ? { structured: row.structured } : {}),
     flowAttemptId: row.flowAttemptId ?? null,
     workStreamId: row.workStreamId,

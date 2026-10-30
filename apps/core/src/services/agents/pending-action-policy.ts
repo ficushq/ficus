@@ -7,7 +7,8 @@ import { and, eq, inArray, ne } from 'drizzle-orm'
 import { db } from '../../db'
 import { agentQuestionRecipients, agentQuestionWorkStreamOrigins, agents } from '../../db/schema'
 import { hasPermission, type Identity } from '../rbac'
-import { activeWorkflowAttempts } from '@ficus/shared'
+import { activeWorkflowAttempts, workflowAttemptLimitPause } from '@ficus/shared'
+import { canRaiseFlowAttemptLimit } from '../workflows/attempt-limit'
 import { workStreamFlowRuns, workStreams } from '../../db'
 import { isWorkflowReviewer } from '../workflows/reviewers'
 import type { UserAttention } from '../attention/resolver'
@@ -253,6 +254,8 @@ export async function evaluatePendingAction(
         canRespond =
           (await hasPermission(identity, 'workstreams:respond', squadId)) ||
           (await hasPermission(identity, 'workstreams:update', squadId))
+      // An attempt-limit pause is unblocked by Raise limit, which reviewers may also use.
+      else if (workflowAttemptLimitPause(run.state)) canRespond = await canRaiseFlowAttemptLimit(identity, stream, run)
       else canRespond = await hasPermission(identity, 'workstreams:revise-flow', squadId)
     }
     return {

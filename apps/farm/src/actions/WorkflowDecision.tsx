@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { WorkflowRunDetail } from '@ficus/client-core'
 import {
   activeWorkflowAttempts,
+  describeWorkflowAttemptLimitPause,
   humanGateSubtitle,
   workflowReviewBlockingWaits,
   workflowReviewBriefForAttempt,
@@ -14,11 +15,13 @@ import {
   effectiveWorkflowStep,
   deliveryPullRequests,
   workflowReworkAttempt,
+  workflowAttemptLimitPause,
   workflowGateRevisions,
   workflowResultRevision,
   workflowRevisedLabel,
   WORKFLOW_REVIEW_REVISED_MESSAGE,
   type ResolvedTrackedResource,
+  type WorkflowAttemptLimitPause,
   type WorkflowAttempt,
   type WorkflowRun,
   type WorkflowStep,
@@ -143,6 +146,16 @@ export function WorkflowDecision({
     }
     return <ErrorNote error message="Couldn't find this work stream's flow. Try it in the Ficus web app." />
   }
+  const limitPause =
+    !stream.pause && stream.status !== 'done' && stream.status !== 'canceled'
+      ? workflowAttemptLimitPause(run.state)
+      : null
+  if (limitPause)
+    return (
+      <div className="g-action">
+        <AttemptLimit stream={stream} run={run} pause={limitPause} onDecided={onDecided} />
+      </div>
+    )
   const { gates, delivery } = workflowDecisions(run, stream, focusWaitId)
   if (!gates.length && !delivery) {
     if (!explainWhenIdle) return null
@@ -176,6 +189,98 @@ export function WorkflowDecision({
       ))}
       {delivery && <DeliveryApproval stream={stream} run={run} onOpenAgent={onOpenAgent} onDecided={onDecided} />}
     </div>
+  )
+}
+
+/** The most attempts a step may allow (the workflow limits schema maximum). */
+const MAX_STEP_ATTEMPTS = 100
+
+/**
+ * A flow paused at its attempt limit (mirrors the web's AttemptLimitActions): raise the limit to a
+ * chosen number, or remove it, with the `raise-limit` command. The server decides who may.
+ */
+function AttemptLimit({
+  stream,
+  run,
+  pause,
+  onDecided,
+}: {
+  stream: WorkStream
+  run: WorkflowRunDetail
+  pause: WorkflowAttemptLimitPause
+  onDecided?: () => void
+}) {
+  const api = useActionsApi()
+  const queryClient = useQueryClient()
+  const onDecidedRef = useStableRef(onDecided)
+  const { can, identity } = usePermissions(stream.squadId)
+  const inputId = useId()
+  const [limit, setLimit] = useState(String(Math.min(MAX_STEP_ATTEMPTS, pause.attemptsUsed + 3)))
+  const raise = useMutation({
+    mutationFn: (maxStepAttempts: number | null) =>
+      api.advanceWorkflow(
+        stream.id,
+        { action: 'raise-limit', expectedVersion: run.version, maxStepAttempts },
+        api.newRequestId()
+      ),
+    onSuccess: async () => {
+      await refreshWorkflow(queryClient, stream.id)
+      onDecidedRef.current?.()
+    },
+  })
+  const parsed = Number(limit)
+  const valid = Number.isInteger(parsed) && parsed > pause.attemptsUsed && parsed <= MAX_STEP_ATTEMPTS
+  const assigned = stream.assignedReviewerIds ?? []
+  // Mirrors the server rule for people (assigned reviewers when any are assigned); the server decides.
+  const allowed =
+    can('workstreams:revise-flow') ||
+    (can('workstreams:review') &&
+      (!assigned.length || (identity?.type === 'user' && assigned.includes(identity.userId))))
+  return (
+    <section className="g-decision" aria-label="Attempt limit reached">
+      <p className="g-decision-tag">Attempt limit reached</p>
+      <h3 className="g-decision-title">{pause.stepName}</h3>
+      <ActionText>{describeWorkflowAttemptLimitPause(pause)}</ActionText>
+      {allowed ? (
+        <>
+          <label className="g-field" htmlFor={inputId}>
+            New attempt limit
+          </label>
+          <input
+            id={inputId}
+            className="g-input"
+            type="number"
+            inputMode="numeric"
+            min={pause.attemptsUsed + 1}
+            max={MAX_STEP_ATTEMPTS}
+            value={limit}
+            onChange={(event) => setLimit(event.target.value)}
+          />
+          <div className="g-action-row">
+            <VerbButton
+              verb="Raise limit"
+              help={valid ? `Allow ${parsed} attempts and continue` : 'Choose a higher number'}
+              tone="primary"
+              busy={raise.isPending && raise.variables !== null}
+              disabled={!valid || raise.isPending}
+              onClick={() => raise.mutate(parsed)}
+            />
+            <VerbButton
+              verb="Remove limit"
+              help="No attempt limit; continue now"
+              busy={raise.isPending && raise.variables === null}
+              disabled={raise.isPending}
+              onClick={() => raise.mutate(null)}
+            />
+          </div>
+        </>
+      ) : (
+        <p className="g-action-note">
+          A reviewer of this work stream, its owner agent, or the squad manager can raise the limit.
+        </p>
+      )}
+      <ErrorNote error={raise.error} />
+    </section>
   )
 }
 

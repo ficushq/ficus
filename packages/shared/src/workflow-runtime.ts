@@ -135,6 +135,8 @@ export interface WorkflowRun {
     affectedAttemptIds?: number[]
     /** Core acceptance receipt, including explicit null identities before participant binding. */
     outcomeUpdates?: WorkflowOutcomeBinding[]
+    /** Who made this revision, as Core's actor key (`user:<id>` or `agent:<id>`); set for limit changes. */
+    actor?: string
   }>
   delegationCount?: number
   attemptEpoch?: number
@@ -164,7 +166,8 @@ export const workflowCommandSchema = z.discriminatedUnion('action', [
   }),
   z.strictObject({
     expectedVersion: commandFields.expectedVersion,
-    attemptId: commandFields.attemptId.nullable(),
+    // Omitted or null when no attempt is running (for example at an attempt-limit pause).
+    attemptId: commandFields.attemptId.nullable().optional(),
     action: z.literal('revise'),
     operations: z.array(workflowCustomizationSchema).min(1).max(512),
     reason: z.string().trim().min(1).max(4000),
@@ -200,6 +203,14 @@ export const workflowCommandSchema = z.discriminatedUnion('action', [
     attachmentPaths: z.array(z.string().min(1).max(1024)).max(10).optional(),
     /** Files of the current revision to drop. */
     removeAttachmentPaths: z.array(z.string().min(1).max(1024)).max(10).optional(),
+  }),
+  // Unblocks an attempt-limit pause in one step: a new attempts-per-step limit, or null to remove it.
+  z.strictObject({
+    expectedVersion: commandFields.expectedVersion,
+    attemptId: z.null().optional(),
+    action: z.literal('raise-limit'),
+    maxStepAttempts: z.int().min(1).max(100).nullable(),
+    reason: z.string().trim().min(1).max(4000).optional(),
   }),
 ])
 
@@ -344,6 +355,43 @@ export function workflowAmendEligibility(state: WorkflowRun, attemptId: number):
 export function activeWorkflowAttempts(state: WorkflowRun): WorkflowAttempt[] {
   return state.attempts.filter((attempt) => attempt.status === 'running')
 }
+
+/** Attempts a step has used toward maxStepAttempts in the current pass (a reopen starts a new pass). */
+export function workflowStepAttemptCount(state: WorkflowRun, stepId: string): number {
+  return state.attempts.slice(state.attemptEpoch ?? 0).filter((attempt) => attempt.stepId === stepId).length
+}
+
+export interface WorkflowAttemptLimitPause {
+  stepId: string
+  /** The step's display name, or its ID when it has none. */
+  stepName: string
+  attemptsUsed: number
+  /** The current attempts-per-step limit. */
+  limit: number | undefined
+}
+
+/** The step an attempt-limit pause is holding, or null when the flow is not paused at its attempt limit. */
+export function workflowAttemptLimitPause(state: WorkflowRun): WorkflowAttemptLimitPause | null {
+  if (state.status !== 'paused' || state.pauseReason?.type !== 'attempt-limit') return null
+  const { stepId } = state.pauseReason
+  const name = state.definition.steps.find((step) => step.id === stepId)?.name?.trim()
+  return {
+    stepId,
+    stepName: name || stepId,
+    attemptsUsed: workflowStepAttemptCount(state, stepId),
+    limit: state.definition.limits.maxStepAttempts,
+  }
+}
+
+/** One plain explanation of an attempt-limit pause and how to unblock it, for wait messages and cards. */
+export function describeWorkflowAttemptLimitPause(pause: WorkflowAttemptLimitPause): string {
+  const used = pause.limit === undefined ? `${pause.attemptsUsed}` : `all ${pause.limit}`
+  return (
+    `The step "${pause.stepName}" has used ${used} of its allowed attempts, so the workflow paused instead of starting another one. ` +
+    'Nothing is broken: raise the attempt limit, or remove it, and the next attempt starts right away with its pending request intact. ' +
+    'A person who can review this work stream, the stream owner, or the squad manager can do this.'
+  )
+}
 const branchKey = (branch?: WorkflowBranch) => (branch ? `${branch.forkId}:${branch.branchId}` : 'main')
 function syncActive(state: WorkflowRun) {
   state.activeAttemptId = activeWorkflowAttempts(state)[0]?.id ?? null
@@ -401,9 +449,7 @@ function startAttempt(
           ? { kind: 'legacy' }
           : { kind: 'none' }
   }
-  const exhausted =
-    state.attempts.slice(state.attemptEpoch ?? 0).filter((attempt) => attempt.stepId === stepId).length >=
-    (state.definition.limits.maxStepAttempts ?? Infinity)
+  const exhausted = workflowStepAttemptCount(state, stepId) >= (state.definition.limits.maxStepAttempts ?? Infinity)
   if (exhausted || activeWorkflowAttempts(state).length >= (state.definition.limits.maxParallelAttempts ?? Infinity)) {
     state.pendingStarts ??= []
     if (!state.pendingStarts.some((entry) => entry.stepId === stepId && branchKey(entry.branch) === branchKey(branch)))
@@ -566,6 +612,61 @@ export function workflowReworkAttempt(run: WorkflowRun): WorkflowAttempt | undef
     )
 }
 
+/** Say which attempt is active, or that none is, so the caller knows exactly what to send instead. */
+function staleAttemptMessage(state: WorkflowRun, attemptId: number | null): string {
+  const active = activeWorkflowAttempts(state).map((attempt) => attempt.id)
+  const sent = attemptId === null ? 'attemptId null' : `attempt ${attemptId}`
+  if (active.length)
+    return `Stale step attempt: ${sent} is not active; the active attempt${active.length > 1 ? 's are' : ' is'} ${active.join(', ')}. Send that attemptId.`
+  const pause = workflowAttemptLimitPause(state)
+  return `Stale step attempt: no step attempt is active${pause ? ` (the flow is paused at the attempt limit for step '${pause.stepId}')` : ''}. Omit attemptId or send "attemptId": null.`
+}
+
+/** A revision names the attempt it keeps or restarts; with no attempt running it names none. */
+function assertRevisionAttempt(state: WorkflowRun, attemptId: number | null) {
+  const active = activeWorkflowAttempts(state)
+  if (attemptId === null ? active.length > 0 : !active.some((entry) => entry.id === attemptId))
+    throw new Error(staleAttemptMessage(state, attemptId))
+}
+
+/**
+ * Unblock an attempt-limit pause in one step: set a higher attempts-per-step limit, or remove it,
+ * then start the held attempt with its pending request. The caller authorizes the actor.
+ */
+function raiseWorkflowAttemptLimit(
+  previous: WorkflowRun,
+  command: Extract<WorkflowCommand, { action: 'raise-limit' }>
+): WorkflowRun {
+  const pause = workflowAttemptLimitPause(previous)
+  if (!pause) throw new Error('The flow is not paused at an attempt limit; there is no limit to raise')
+  const limit = command.maxStepAttempts
+  if (limit !== null && limit <= pause.attemptsUsed)
+    throw new Error(
+      `Step '${pause.stepId}' has already used ${pause.attemptsUsed} attempts; choose a limit above ${pause.attemptsUsed}, or remove the limit`
+    )
+  const state = structuredClone(previous)
+  if (limit === null) delete state.definition.limits.maxStepAttempts
+  else state.definition.limits.maxStepAttempts = limit
+  workflowDefinitionSchema.parse(state.definition)
+  state.version++
+  const change =
+    limit === null
+      ? `Attempt limit removed (was ${pause.limit ?? 'unset'})`
+      : `Attempt limit raised from ${pause.limit ?? 'unset'} to ${limit}`
+  state.revisions ??= [{ version: 0, definition: structuredClone(previous.definition), reason: 'Initial flow' }]
+  state.revisions.push({
+    version: state.version,
+    definition: structuredClone(state.definition),
+    reason: `${change} to resume step '${pause.stepId}'${command.reason ? `: ${command.reason}` : ''}`,
+    affectedAttemptIds: [],
+  })
+  state.status = 'running'
+  delete state.pauseReason
+  // The held start is normally queued; a legacy pause without one restarts the paused step.
+  if (!state.pendingStarts?.length && !activeWorkflowAttempts(state).length) startAttempt(state, pause.stepId)
+  return finishState(state)
+}
+
 /**
  * Pure transition kernel. The server must authorize the active step's actor and
  * atomically persist the result plus dispatch intent using expectedVersion.
@@ -611,13 +712,9 @@ export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): Workf
     })
     return finishState(state)
   }
+  if (command.action === 'raise-limit') return raiseWorkflowAttemptLimit(previous, command)
   if (command.action === 'revise') {
-    if (
-      command.attemptId === null
-        ? activeWorkflowAttempts(previous).length > 0
-        : !activeWorkflowAttempts(previous).some((entry) => entry.id === command.attemptId)
-    )
-      throw new Error('Stale step attempt')
+    assertRevisionAttempt(previous, command.attemptId ?? null)
     const state = structuredClone(previous)
     const resolved = resolveWorkflow(
       { kind: 'preset', id: 'revision', customizations: command.operations },
@@ -689,9 +786,16 @@ export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): Workf
     }
     return finishState(state)
   }
-  if (previous.status !== 'running') throw new Error(`Workflow is ${previous.status}`)
+  if (previous.status !== 'running') {
+    const pause = workflowAttemptLimitPause(previous)
+    throw new Error(
+      pause
+        ? `Workflow is paused at the attempt limit for step '${pause.stepId}'; no step attempt is active. Raise or remove the limit (action raise-limit) to start the next attempt.`
+        : `Workflow is ${previous.status}`
+    )
+  }
   if (!activeWorkflowAttempts(previous).some((entry) => entry.id === command.attemptId))
-    throw new Error('Stale step attempt')
+    throw new Error(staleAttemptMessage(previous, command.attemptId))
   const state = structuredClone(previous)
   const attempt = state.attempts.find((attempt) => attempt.id === command.attemptId)
   if (!attempt || attempt.status !== 'running') throw new Error('No active step attempt')
