@@ -84,7 +84,7 @@ export function InviteUserForm({
             type="button"
             disabled={resendMutation.isPending}
             onClick={() => resendMutation.mutate()}
-            className="ficus-button ficus-button-ghost -ml-2 px-2 py-1 text-sm disabled:opacity-50"
+            className="ficus-button ficus-button-ghost px-2 py-1 text-sm disabled:opacity-50"
           >
             {resendMutation.isPending ? 'Resending…' : 'Resend invitation'}
           </button>

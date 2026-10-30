@@ -119,7 +119,7 @@ function SingleConnectionAssignment({
               type="button"
               disabled={!canWrite || inheritMutation.isPending}
               onClick={() => inheritMutation.mutate()}
-              className="ficus-button ficus-button-ghost -ml-2 px-2 py-1"
+              className="ficus-button ficus-button-ghost px-2 py-1"
             >
               Use global default
             </button>

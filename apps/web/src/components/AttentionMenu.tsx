@@ -208,7 +208,7 @@ export function AttentionMenu({
           type="button"
           onClick={() => mutation.mutate(null)}
           disabled={mutation.isPending}
-          className="ficus-button ficus-button-ghost -ml-2 px-2 py-1 text-xs"
+          className="ficus-button ficus-button-ghost px-2 py-1 text-xs"
         >
           Reset to squad
         </button>

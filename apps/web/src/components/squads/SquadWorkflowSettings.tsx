@@ -122,7 +122,7 @@ export function SquadWorkflowSettings({ squadId, canEdit }: { squadId: string; c
             ))}
             <button
               type="button"
-              className="ficus-button ficus-button-ghost -ml-2 px-2 py-1 text-sm font-medium"
+              className="ficus-button ficus-button-ghost px-2 py-1 text-sm font-medium"
               disabled={choices.length >= 32 || save.isPending}
               onClick={() => setChoices([...choices, { when: '' }])}
             >

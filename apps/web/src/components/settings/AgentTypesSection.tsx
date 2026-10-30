@@ -790,7 +790,7 @@ function ModelSpecListEditor({
         <button
           type="button"
           onClick={addSpec}
-          className="ficus-button ficus-button-ghost -ml-2 inline-flex items-center gap-1 px-2 py-1 text-xs font-medium"
+          className="ficus-button ficus-button-ghost inline-flex items-center gap-1 px-2 py-1 text-xs font-medium"
         >
           <PlusIcon className="w-3.5 h-3.5" />
           Add model
@@ -1225,7 +1225,7 @@ export function TierChainEditor({
       ))}
       <button
         onClick={() => setEntries([...entries, `${providers[0] ?? 'provider'}:model:medium`])}
-        className="ficus-button ficus-button-ghost -ml-2 px-2 py-1 text-sm"
+        className="ficus-button ficus-button-ghost px-2 py-1 text-sm"
       >
         + Add provider position
       </button>

@@ -377,11 +377,7 @@ export function SquadOverridesEditor({
           })}
         </div>
       )}
-      <button
-        type="button"
-        onClick={addRow}
-        className="ficus-button ficus-button-ghost -ml-2 px-2 py-1 text-xs font-medium"
-      >
+      <button type="button" onClick={addRow} className="ficus-button ficus-button-ghost px-2 py-1 text-xs font-medium">
         + Add override
       </button>
     </div>

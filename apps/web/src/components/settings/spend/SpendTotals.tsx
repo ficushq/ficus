@@ -87,7 +87,7 @@ export function SpendTotals({
       <div className="text-xs text-muted">
         <button
           type="button"
-          className="ficus-button ficus-button-ghost -ml-2 px-2 py-1 text-xs"
+          className="ficus-button ficus-button-ghost px-2 py-1 text-xs"
           aria-expanded={preview}
           onClick={() => onPreviewChange(!preview)}
         >

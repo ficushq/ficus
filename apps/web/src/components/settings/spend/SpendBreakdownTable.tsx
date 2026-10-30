@@ -129,7 +129,7 @@ export function SpendBreakdownTable({
                     {dimension ? (
                       <button
                         type="button"
-                        className="ficus-button ficus-button-ghost -ml-1.5 px-1.5 py-0.5 text-left"
+                        className="ficus-button ficus-button-ghost px-1.5 py-0.5 text-left"
                         title={`Show only ${row.label}`}
                         onClick={() => onFilter(dimension, row.key)}
                       >
@@ -146,7 +146,7 @@ export function SpendBreakdownTable({
                     <td className="break-words">
                       <button
                         type="button"
-                        className="ficus-button ficus-button-ghost -ml-1.5 px-1.5 py-0.5 text-left"
+                        className="ficus-button ficus-button-ghost px-1.5 py-0.5 text-left"
                         title={`Show only ${row.label2}`}
                         onClick={() => onFilter(second, row.key2 ?? null)}
                       >
