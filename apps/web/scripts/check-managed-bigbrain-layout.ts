@@ -43,6 +43,9 @@ const vault = (patch: Partial<ManagedBigbrainVault>): ManagedBigbrainVault => ({
     { id: 'squad-research', name: 'Research squad' },
     { id: 'squad-support', name: 'Customer support squad' },
   ],
+  // Ficus's own read connection is on: the row says "Ficus can read" and offers squad attachment.
+  readConnection: { enabled: true, lastErrorCode: null, disabledByPerson: false },
+  readSyncError: null,
   updatedAt: '2026-10-20T12:00:00.000Z',
   ...patch,
 })
@@ -58,6 +61,7 @@ const scenarios: Record<string, ManagedBigbrainVault[]> = {
       readAccess: 'pending',
       appliedGeneration: 0,
       connectionId: null,
+      readConnection: null,
     }),
   ],
   attention: [
@@ -73,11 +77,18 @@ const scenarios: Record<string, ManagedBigbrainVault[]> = {
       lastErrorCode: 'storage_unavailable',
       retryable: true,
       connectionId: null,
+      readConnection: null,
       backup: 'excluded',
       assignedSquads: [],
     }),
   ],
 }
+/** Squads this synthetic BigBrain manager may attach vaults to: the attached two and one more to offer. */
+const ATTACHABLE_SQUADS = [
+  { id: 'squad-research', name: 'Research squad' },
+  { id: 'squad-support', name: 'Customer support squad' },
+  { id: 'squad-design', name: 'Design review squad with a deliberately long name' },
+]
 const SYNTHETIC_MEMBER_LINK = `https://bb-${'1'.repeat(32)}.vaults.example.test/invite#SYNTHETIC-member-preview-not-a-secret-000`
 const rosterMember = (handle: string, displayName: string, patch: object = {}) => ({
   handle,
@@ -134,6 +145,8 @@ async function mockApi(page: Page, initial: ManagedBigbrainVault[]) {
     const body = request.postData() ? JSON.parse(request.postData()!) : {}
     const base = '/api/integrations/providers/bigbrain/shared-vaults'
     if (url.pathname === base && method === 'GET') return route.fulfill({ json: { vaults } })
+    if (url.pathname === `${base}/attachable-squads` && method === 'GET')
+      return route.fulfill({ json: { squads: ATTACHABLE_SQUADS } })
     if (url.pathname === base && method === 'POST') {
       const created = vault({
         vaultId: crypto.randomUUID(),
@@ -143,6 +156,7 @@ async function mockApi(page: Page, initial: ManagedBigbrainVault[]) {
         desiredGeneration: 1,
         appliedGeneration: 0,
         connectionId: null,
+        readConnection: null,
       })
       vaults = [...vaults, created]
       return route.fulfill({ status: 201, json: created })
@@ -277,6 +291,15 @@ try {
           .getByText(data.length ? data[0]!.displayName : 'No shared vaults yet.')
           .first()
           .waitFor()
+        if (name === 'one') {
+          // A readable vault offers the manager's other attachable squads, not the attached ones.
+          const attach = row('Research notes').getByLabel('Squad to attach Research notes to')
+          await attach.locator('option', { hasText: 'Design review squad' }).waitFor({ state: 'attached' })
+          assert.deepEqual(await attach.locator('option').allInnerTexts(), [
+            'Choose a squad',
+            'Design review squad with a deliberately long name',
+          ])
+        }
         await capture(page, `vaults-${name}`, width, appearance)
       }
 

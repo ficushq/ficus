@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AppHeader } from '../../src/components/AppNav'
+import { InboxPopupProvider } from '../../src/components/InboxPopupProvider'
 import { ThemeProvider } from '../../src/providers/ThemeProvider'
 import { useDesktopShellChrome } from '../../src/hooks/useDesktopShellChrome'
 import { Modal } from '../../src/components/Modal'
@@ -41,7 +42,10 @@ createRoot(document.getElementById('root')!).render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
     <ThemeProvider>
       <BrowserRouter>
-        <Fixture />
+        {/* AppHeader's Inbox button reads the popup state App mounts above the shell. */}
+        <InboxPopupProvider>
+          <Fixture />
+        </InboxPopupProvider>
       </BrowserRouter>
     </ThemeProvider>
   </QueryClientProvider>

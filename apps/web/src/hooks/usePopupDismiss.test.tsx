@@ -225,6 +225,51 @@ test('focus loss during an inside press never closes, even to an outside control
   expect(expanded('Actions')).toBe(false)
 })
 
+test('a key pressed after an inside press is released ends the press, so Tab out still closes', async () => {
+  const { button, open, expanded } = await render(
+    <>
+      <Menu name="Actions">
+        <button type="button">Stay</button>
+      </Menu>
+      <button type="button">Next</button>
+    </>
+  )
+  await open('Actions')
+  // One synchronous turn, as when Chromium handles a queued Tab before the click's follow-up task:
+  // a press on an item that keeps the popup open, then Tab moving focus outside.
+  await dom!.act(async () => {
+    const stay = button('Stay')
+    stay.dispatchEvent(new dom!.window.MouseEvent('pointerdown', { bubbles: true, composed: true }))
+    stay.focus()
+    stay.dispatchEvent(new dom!.window.MouseEvent('pointerup', { bubbles: true }))
+    stay.click()
+    stay.dispatchEvent(new dom!.window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    button('Next').focus()
+  })
+  expect(expanded('Actions')).toBe(false)
+  expect(log).toEqual(['Actions dismissed by focus'])
+})
+
+test('a key pressed while an inside press is still held does not end it', async () => {
+  const { button, open, expanded } = await render(
+    <>
+      <Menu name="Actions">
+        <button type="button">Stay</button>
+      </Menu>
+      <button type="button">Next</button>
+    </>
+  )
+  await open('Actions')
+  await dom!.act(async () => {
+    const stay = button('Stay')
+    stay.dispatchEvent(new dom!.window.MouseEvent('pointerdown', { bubbles: true, composed: true }))
+    stay.dispatchEvent(new dom!.window.KeyboardEvent('keydown', { key: 'Shift', bubbles: true, cancelable: true }))
+    button('Next').focus()
+  })
+  expect(expanded('Actions')).toBe(true)
+  expect(log).toEqual([])
+})
+
 test('a popup opened inside another counts as inside it: presses, focus and Escape go to the inner one first', async () => {
   const { button, open, expanded, doc, key } = await render(
     <Menu name="Outer">

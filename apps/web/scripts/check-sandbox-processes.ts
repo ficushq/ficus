@@ -69,13 +69,16 @@ try {
           runtime: 'vm',
           chain: { boxProvisioned: true, machine: 'reachable', boxServer: 'up' },
           pressure,
+          // Shared-host activity and startup concurrency (#781): box counts, never reserved CPUs.
+          // The quota case also has every physical startup slot busy.
           hostCapacity: pressure.box
             ? {
                 allowed: true,
                 reason: 'already-accounted',
                 cpus: 8,
-                budgetCpus: 12,
-                activeQuotaCpus: pressure.box.cpuQuotaPercent === 97.5 ? 12 : 8,
+                activeBoxes: 15,
+                startupLimit: 2,
+                startingBoxes: pressure.box.cpuQuotaPercent === 97.5 ? 2 : 0,
               }
             : { allowed: false, reason: 'unknown' },
         },
@@ -137,16 +140,16 @@ try {
         await page.getByRole('button', { name: 'Show processes' }).click()
         const label = kind === 'local' || kind === 'quota' ? 'This sandbox overloaded' : 'Host overloaded'
         const header = page.locator('header')
-        assert.match(await header.innerText(), /Host load 4.5×/)
-        assert.match(
-          await header.innerText(),
-          kind === 'missing' ? /Host quota unknown/ : kind === 'quota' ? /quota 12\/12 CPUs/ : /quota 8\/12 CPUs/
-        )
-        if (kind === 'quota')
-          assert.match(
-            (await header.locator('[title*="not measured CPU usage"]').getAttribute('title')) ?? '',
-            /Additional box demand waits/
-          )
+        const headerText = await header.innerText()
+        assert.match(headerText, /Host load 4.5×/)
+        // Box CPU ceilings are not presented as a reserved host quota (#781).
+        assert.doesNotMatch(headerText, /quota \d+\/\d+ CPUs|Host quota unknown/)
+        if (kind === 'quota') assert.match(headerText, /Starting 2\/2 boxes/)
+        else assert.doesNotMatch(headerText, /Starting \d/)
+        const hostTitle = (await header.locator('[title*="Squads share host CPUs"]').getAttribute('title')) ?? ''
+        assert.match(hostTitle, /box counts do not reserve CPUs/)
+        assert.match(hostTitle, /Host memory 75% used/)
+        if (kind === 'quota') assert.match(hostTitle, /running boxes do not occupy startup slots/)
         const panel = page.getByRole('region', { name: 'Processes' })
         await panel.getByText(`${label}:`, { exact: true }).waitFor()
         assert.match(await panel.innerText(), /Load 35.8 on 8 CPUs/)
@@ -210,7 +213,7 @@ try {
       }
   assert.deepEqual(errors, [])
   console.log(
-    'PASS: 16 browser cases (host/quota/reclaim/missing metrics, phone/desktop, light/dark), header attribution and aggregate quota, protected rows, container control and stale-PID refusal; no page errors.'
+    'PASS: 16 browser cases (host/quota/reclaim/missing metrics, phone/desktop, light/dark), header attribution, shared-host load and startup slots, protected rows, container control and stale-PID refusal; no page errors.'
   )
 } finally {
   await browser?.close()
