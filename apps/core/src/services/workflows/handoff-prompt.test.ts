@@ -1,5 +1,12 @@
 import { expect, test } from 'bun:test'
-import { createBlankWorkflow, createWorkflowRun, advanceWorkflowRun, workflowCommandSchema } from '@ficus/shared'
+import {
+  createBlankWorkflow,
+  createWorkflowRun,
+  advanceWorkflowRun,
+  workflowCommandSchema,
+  workflowStepSchema,
+} from '@ficus/shared'
+import { brief } from '@ficus/shared/test-fixtures/workflow-review'
 import { flowMessage } from './handoff-prompt'
 import { deliveryInstructionsForRun } from './completion-prompt'
 import { stackedDependencyNotice, type StackedDependency } from '../work-streams/dependency-edges'
@@ -184,4 +191,67 @@ test('a stacked stream is told what it was built on and that delivery is held, i
     'was canceled and will never merge'
   )
   expect(stackedDependencyNotice([], git)).toBeUndefined()
+})
+
+function gatedRun() {
+  const definition = createBlankWorkflow()
+  definition.steps[0]!.outcomes = { completed: { next: 'approval' } }
+  definition.steps.push(
+    workflowStepSchema.parse({
+      id: 'approval',
+      kind: 'human-approval',
+      instructions: 'Approve the design.',
+      output: 'Decision.',
+      outcomes: { approved: { next: 'build' }, 'changes-requested': { returnTo: 'execute' } },
+    }),
+    workflowStepSchema.parse({ ...definition.steps[0], id: 'build', outcomes: { completed: { next: 'finish' } } })
+  )
+  let state = createWorkflowRun(definition)
+  state = advanceWorkflowRun(state, {
+    action: 'complete',
+    expectedVersion: 0,
+    attemptId: 1,
+    outcome: 'completed',
+    evidence: 'Design evidence.',
+    decisionBrief: brief,
+  })
+  return advanceWorkflowRun(state, {
+    action: 'amend',
+    expectedVersion: 1,
+    attemptId: 1,
+    evidence: 'Revised design evidence, commit def5678.',
+    decisionBrief: { ...brief, risks: 'A clearer risk statement for the reviewer.' },
+  })
+}
+
+test('the next step is told which revision a person approved, with or without notes', () => {
+  for (const [notes, line] of [
+    ['Keep the fallback.', 'approval (attempt 2): Approved revision 2 of execute attempt 1. Notes: Keep the fallback.'],
+    ['', 'approval (attempt 2): Approved revision 2 of execute attempt 1. No decision notes.'],
+  ] as const) {
+    const before = gatedRun()
+    const state = advanceWorkflowRun(before, {
+      action: 'complete',
+      expectedVersion: before.version,
+      attemptId: 2,
+      outcome: 'approved',
+      evidence: notes,
+      reviewedRevisions: [{ attemptId: 1, revision: 2 }],
+    })
+    expect(flowMessage(stream, { state, version: state.version }, state.attempts[2]!)).toContain(line)
+  }
+})
+
+test('a returned step is told which revision changes were requested on', () => {
+  const before = gatedRun()
+  const state = advanceWorkflowRun(before, {
+    action: 'complete',
+    expectedVersion: before.version,
+    attemptId: 2,
+    outcome: 'changes-requested',
+    evidence: 'Use the other cache.',
+  })
+  expect(flowMessage(stream, { state, version: state.version }, state.attempts[2]!)).toContain(
+    'approval (attempt 2): Changes requested on revision 2 of execute attempt 1. Notes: Use the other cache.'
+  )
 })

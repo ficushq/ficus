@@ -5,6 +5,7 @@ import {
   effectiveWorkflowStep,
   workflowIncomingAttempts,
   workflowCompletionReviewTargets,
+  workflowDecisionRevisionNote,
   type WorkflowAttempt,
   type WorkflowRun,
   type WorkflowProducerReviewContext,
@@ -43,9 +44,14 @@ export function flowMessage(
     ['Repository', metadata?.codeHost?.repository ?? metadata?.git?.repository],
   ].filter(([, value]) => typeof value === 'string' && value.length)
   // Runtime provenance follows the actual handoff, not every possible graph edge or prior result.
-  const results = workflowIncomingAttempts(run.state, attempt)
-    .filter((entry) => entry.evidence || entry.feedback)
-    .map((entry) => `${entry.stepId} (attempt ${entry.id}): ${entry.evidence ?? entry.feedback}`)
+  // A human decision always names the revision it was made on, even without notes.
+  const results = workflowIncomingAttempts(run.state, attempt).flatMap((entry) => {
+    const text = entry.evidence || entry.feedback
+    const decided = workflowDecisionRevisionNote(run.state, entry)
+    if (decided)
+      return [`${entry.stepId} (attempt ${entry.id}): ${decided}. ${text ? `Notes: ${text}` : 'No decision notes.'}`]
+    return text ? [`${entry.stepId} (attempt ${entry.id}): ${text}`] : []
+  })
   const returns = run.state.returns.filter(
     (entry) =>
       entry.status === 'open' &&
