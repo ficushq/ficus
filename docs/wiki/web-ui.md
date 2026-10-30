@@ -40,6 +40,8 @@ Use `ficus-field`, `ficus-nav-item`, and `ficus-table` for their corresponding r
 | `ficus-button-link`      | Navigation only (Review storage, View all, Read more), typically an anchor or router Link. No horizontal padding. Never use link styling for non-navigation actions.         |
 | `ficus-button-danger`    | Destructive actions (Delete, Remove, Revoke, Disconnect). Secondary-shaped with danger text; destructive icon buttons stay ghost with a danger hover.                        |
 
+The guard also fails a `<button>` whose className can resolve to `ficus-button-link`, unless it is one of the few buttons listed there that navigate to another entity or view (opening a work stream, the Assistant's navigation stack). Prefer an anchor or router `Link` for navigation. When a converted text action sits under or beside text, a negative margin (`-ml-2` with `px-2`, or `-my-1` in a header row) keeps its label aligned with that text.
+
 ## Hierarchy and spacing
 
 - Page titles: approximately 22px, semibold, slight negative tracking.

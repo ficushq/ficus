@@ -300,7 +300,8 @@ component. See `popover/Popover.md`.
 `ficus-button` is only a base (radius, weight, transitions): it has no fill and no border, so a padded
 `ficus-button` on its own renders as indented text that only shows a background on hover. Always pair it
 with exactly one variant from `design-system.css`; `components/buttonVariants.guard.test.ts` fails any
-className that carries the base without one (or with two, or a variant without the base). Pick the
+className that carries the base without one (or with two, or a variant without the base), and any
+`<button>` with link styling outside its short list of navigating buttons. Pick the
 variant by role. Use link styling only when navigating somewhere; non-navigation actions use real
 buttons, typically ghost for non-primary actions, with primary, secondary or danger where appropriate:
 
