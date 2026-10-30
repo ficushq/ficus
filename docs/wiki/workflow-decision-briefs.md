@@ -4,7 +4,7 @@ A decision brief is the producing agent's round-specific explanation for a perso
 
 ## Completion contract
 
-`ficus workstream advance` accepts `decisionBrief` on `action: complete` alongside the independent `evidence` string, and on `action: return` alongside the independent `feedback` string. The object is required for an **agent-produced** completion whose effective chosen route enters human approval, including authorized explicit returns, completion return/resume overrides, immediate parallel destinations, early arrivals at a human join, and queued gate starts. It is optional otherwise. Producer kind comes from the pinned step, not the caller's identity. An operator completing or returning an agent step has the same obligation. Explicit returns retain their existing declared/flexible path authorization and `resumeAt` semantics; neither human/model returns nor agent-to-agent returns gain a mandatory brief. `--attach` remains complete-only.
+`ficus workstream advance` accepts `decisionBrief` on `action: complete` alongside the independent `evidence` string, and on `action: return` alongside the independent `feedback` string. The object is required for an **agent-produced** completion whose effective chosen route enters human approval, including authorized explicit returns, completion return/resume overrides, immediate parallel destinations, early arrivals at a human join, and queued gate starts. It is optional otherwise. Producer kind comes from the pinned step, not the caller's identity. An operator completing or returning an agent step has the same obligation. Explicit returns retain their existing declared/flexible path authorization and `resumeAt` semantics; neither human/model returns nor agent-to-agent returns gain a mandatory brief. `--attach` is available on `complete` and `amend`.
 
 ```json
 {
@@ -81,6 +81,59 @@ The gate-kind subtitle uses the first plain-text sentence, clamped at a word bou
 
 An older agent-origin gate with no brief retains its existing instructions, handoff and attachment layout. Missing older source links also retain legacy rendering rather than guessing provenance. Known non-agent arrivals use the explicit carry-forward/none behavior above. Reads never mutate an existing gate.
 
+## Chatting with the producing agent and amending while a gate is open
+
+The review screen shows the conversation of the **producing agent**: the agent bound to each agent attempt that feeds the open gate (decision steps pass through, as for the brief). It is the same agent and session as **Open chat**; no agent is created, and the first message wakes a dormant agent in its existing session. A gate fed by several agents (a join) shows a picker. Gates with no producing agent keep the layout without chat.
+
+- **Wide screens (1024 px and wider):** the document (brief and attachment tabs) on the left; on the right the work stream summary, the chat, and the decision controls pinned below the chat. The chat scrolls on its own and never pushes notes, **Approved** or **Changes requested** out of reach.
+- **Narrower screens, including phones below 768 px:** a **Brief / Chat** switch above two panes that both stay mounted, so scroll position, drafts and in-flight sends survive switching. The decision sheet stays pinned below both panes.
+
+A message sent from the review screen by a person who may decide the gate carries `reviewConsultation: { workStreamId, gateAttemptId }`. `POST /api/agents/:id/message` validates it (the gate is open, the sender may decide it, and the recipient is its producing agent) and stamps server-owned message metadata; otherwise it refuses with 409 `REVIEW_NOT_OPEN` (**This review is no longer open, so the message was not sent.**) or 403 `REVIEW_CONSULTATION_FORBIDDEN`, and nothing is sent. Only the model copy of a stamped message carries a bracketed context: the gate and attempt under review and their revision, that a person is deciding now, to answer and cite evidence, to use `amend` for refinements the person asks for, and to say plainly when a request is too big for a refinement (a new approach, a security change, a material change of scope) and recommend **Changes requested**. When amending is not possible for that gate, the context says why. Ordinary chats, inbox messages and readers without decision rights never carry it, and a client cannot set the stamp itself.
+
+### The `amend` action
+
+An agent may revise its own completed attempt while the human approval gate it feeds is open:
+
+```sh
+ficus workstream advance STREAM_ID --stdin --attach docs/design.md <<'FICUS_COMMAND'
+{
+  "action": "amend",
+  "expectedVersion": 9,
+  "attemptId": 12,
+  "evidence": "Added the rollback note the reviewer asked for in commit 5d6e7f8.",
+  "decisionBrief": { "decision": "…", "recommendation": "…", "approvalEffect": "…", "risks": "…" },
+  "removeAttachmentPaths": ["docs/old-notes.md"]
+}
+FICUS_COMMAND
+```
+
+The command carries the complete revised `decisionBrief` and `evidence`, with the same schema, prose validation and `changesSinceLastReview` rule as completing the step. Code and file changes go on the stream's branch, and the evidence names them (for example the commit SHAs). Files attached with `--attach` add or replace files by path; `removeAttachmentPaths` drops files; every other file carries over unchanged. An attempt revision holds at most 10 files.
+
+`amend` is refused, before anything is written, when:
+
+| Condition                                                                                | Response                                                                                                               |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| The caller is not the agent bound to that attempt (another agent, a person, an operator) | 403 `Only the agent that completed attempt <n> can amend it.`                                                          |
+| The version is stale                                                                     | 409 `Stale flow version`                                                                                               |
+| The attempt is not a completed agent attempt                                             | 409 `Only a completed attempt can be amended; attempt <n> is <status>.`                                                |
+| The gate it fed has been decided                                                         | 409 `Human approval '<gate>' is no longer open, so attempt <n> can no longer be amended.`                              |
+| It feeds no open gate (nothing, a queued start or an open join)                          | 409 `Attempt <n> does not feed an open human approval gate.`                                                           |
+| Another step already used the result (an agent, an automatic decision)                   | 409 `Attempt <n>'s result was already used by '<step>' (attempt <m>); …`                                               |
+| The gate did not open with this attempt's own brief (legacy, carried forward, restarted) | 409 `… did not open with this attempt's decision brief, so it cannot be amended; recommend Changes requested instead.` |
+| The attempt already has 20 revisions                                                     | 409 `Attempt <n> has reached 20 revisions; recommend Changes requested instead.`                                       |
+
+Pause, queued and terminal streams refuse as for any advance. Waits on the gate do not block an amend: they block decisions, not the refinement the reviewer asked for.
+
+Each amendment is a new **result revision** of the same attempt. Revision 1 is the original completion; amendments are 2, 3 and so on. The attempt's `evidence`, `decisionBrief` and `attachmentIds` always hold the latest revision, so every existing reader shows it; superseded revisions move unchanged to `earlierResults` (`revision`, `version`, `recordedAt`, `evidence`, `decisionBrief`, `attachmentIds`). Attempts that predate this read as revision 1. Attachment rows carry the revision they were uploaded for, and files staged for an amend never replace or delete a recorded revision's file; an unchanged re-upload keeps the current file's ID. Flow inspection returns `attachments` (each attempt's current files) and `earlierAttachments` (files only an earlier revision used); every file stays downloadable by ID.
+
+An amend bumps the run version and records a transition receipt (request-ID retries return it), and changes nothing else: the gate stays open with its wait, no attempt starts or settles, and joins, returns, queued starts, definition revisions and earlier decisions are untouched. It is not a review round, so a later amend after an earlier decision still needs `changesSinceLastReview`. Parallel siblings simply see the new version and re-read. Because only a result waiting at an open gate can be amended and every decision is fenced to the latest revision, a brief carried forward after the decision is always the revision that was decided.
+
+### Decisions follow revisions
+
+The review screen always shows the latest revision. A revision that arrives after the reviewer opened the review (or after the revision they last looked at, remembered for the browser session) is marked on the source line (**Revision 2 · Revised 2 min ago**) and a **What changed since you last looked** section lists each changed brief field as **Before** and **Now**, the unchanged fields, whether the internal handoff changed, and the files **Added**, **Removed** and **Changed**. Until the reviewer presses **Mark as reviewed**, the decision controls stay visible but disabled, with **This was revised since you opened it. Review the latest revision.**
+
+Human `complete` and `return` commands on a gate accept `reviewedRevisions: [{ attemptId, revision }]`, the source revisions the person reviewed. Core checks them before the version: if any is no longer current it refuses with 409, code `WORKFLOW_REVIEW_REVISED` and the exact message above, and nothing is decided (no wait closes, no receipt is written, and the notes stay in the browser). A client that sends no revisions is refused the same way when an amendment landed after its `expectedVersion`. Every human decision records the server-computed `reviewedRevisions` on its gate attempt, and the next step's incoming results name it, even without notes, for example `approval (attempt 13): Approved revision 3 of design attempt 12. Notes: …` or `Changes requested on revision 2 of design attempt 12. No decision notes.` Earlier decisions in the review screen show the same sentence. Farm sends the reviewed revisions, shows the marker and the change list, and keeps its **Open chat** link instead of an inline chat.
+
 ## Blocked review eligibility
 
 A canonical human gate is actionable only when no other applicable wait blocks its decision. Only that exact gate wait is exempt; another workflow-owned wait on the same attempt remains a blocker. Stream-wide waits and waits pinned to this gate apply; sibling-attempt waits do not. The backend still makes the final authorization decision.
@@ -101,6 +154,8 @@ CHROMIUM_PATH=/path/to/chromium SCREENSHOT_DIR=/path/outside/repository bun scri
 ```
 
 It checks first/repeat/blocked/carry-forward/none/legacy, explicit agent return and restarted-human cases at narrow/wide sizes in both appearances, attachment access, long-ID wrapping, disabled controls and clearance. It closes its browser and server in `finally`. Do not use private live gates or customer content for fixtures.
+
+`bun scripts/check-workflow-review-chat.ts` (same environment variables) checks the inline chat at 390 px and 1280 px in both appearances: the chat scrolls on its own while the notes, outcomes and composer stay on screen, review messages carry the consultation, the phone **Brief / Chat** switch, and an amendment's marker, change list and **Mark as reviewed**.
 
 Human-waiting decision-model steps retain their existing routing and authoring contract. A voluntary eligible brief is displayed read-only as carried forward; otherwise they show **No decision brief for this gate** and their own message. Returned human steps remain lineage bridges, unlike returned agent boundaries. Missing-brief diagnostics explain the required JSON fields and their placement beside evidence or return feedback, including the conditional change summary, so already-running agents can correct their submission without a new prompt. Technical literals such as domains, file names, bare paths, email addresses, versions and inline code are preserved; compression diagnostics identify the offending token.
 
