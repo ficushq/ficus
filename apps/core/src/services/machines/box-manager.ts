@@ -3066,9 +3066,16 @@ export async function stopBox(sandboxId: string, deps: BoxManagerDeps = {}): Pro
   // Disable first to close the boot activation path; stop all three even if
   // disable fails. Readbacks must succeed, not merely print a plausible state.
   const ctl = boxUnitControlFor(box)
+  // A box whose unix user no longer exists is stopped: nothing can run as it, and
+  // its units went with it. Only getent's definite "not found" (exit 2) counts;
+  // any other answer, including an error, falls through to the verified stop
+  // below. Without this, a box removed mid-recreate stayed stop_unverified for
+  // good, because `systemctl disable` fails on units that do not exist
+  // (2026-10-30).
+  const userGone = `( getent passwd ${shellQuote(box.unixUser)} >/dev/null; [ "$?" = 2 ] )`
   const stopCmd = ctl.onHost(
     (u) =>
-      `( rc=0; ${ctl.systemctl} disable ${u.socket} || rc=1; ` +
+      `${userGone} || ( rc=0; ${ctl.systemctl} disable ${u.socket} || rc=1; ` +
       `${ctl.systemctl} stop ${u.allUnits} || rc=1; [ "$rc" = 0 ] && ` +
       `enabled=$(${ctl.systemctl} show -p UnitFileState --value ${u.socket}) && [ "$enabled" = disabled ] && ` +
       `for unit in ${u.allUnits}; do ` +
