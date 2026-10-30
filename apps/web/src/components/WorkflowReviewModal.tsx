@@ -188,9 +188,16 @@ function ReviewLayout({
     ).values(),
   ].sort((a, b) => a.id - b.id)
   // Each source attempt's own files: a re-run after a send-back shows only what that attempt attached.
+  // Stream inputs come with the stream detail; a stream passed from a list fetches it.
+  const { data: detail } = useQuery({
+    ...queries.squads.workStreamDetail(stream.id),
+    enabled: stream.assetAttachments === undefined,
+    retry: false,
+  })
   const attachments = reviewDocuments(
     run,
-    reviewSources.map((source) => source.id)
+    reviewSources.map((source) => source.id),
+    stream.assetAttachments ?? detail?.assetAttachments ?? []
   )
   const hasBriefDisplay = brief.kind !== 'legacy'
   const primary = hasBriefDisplay

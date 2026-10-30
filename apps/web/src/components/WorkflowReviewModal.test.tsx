@@ -671,6 +671,43 @@ test('stored chat images attached by ID open as review tabs, fetched afresh from
   }
 })
 
+test('the stream’s stored inputs are review documents after the attempts’ files, behind the decision brief', async () => {
+  const f = await fixture()
+  const input = {
+    id: 'share-input',
+    workStreamId: stream.id,
+    attemptId: null,
+    source: { kind: 'agent-file' as const, attachmentId: '44444444-4444-4444-8444-444444444444' },
+    filename: 'brief.md',
+    contentType: 'text/markdown',
+    byteSize: 16,
+    createdAt: '2026-10-08T09:00:00.000Z',
+  }
+  const reference = spyOn(client.workStreams, 'downloadAssetAttachment').mockResolvedValue(
+    new TextEncoder().encode('Synthetic stored brief.')
+  )
+  try {
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), { ...gateRun(), attachments: { '3': [designDoc] } })
+    await f.render(
+      <WorkflowReviewModal
+        stream={{ ...stream, assetAttachments: [input] }}
+        focusWaitId="gate-wait"
+        onClose={() => {}}
+      />
+    )
+    expect(tabs(f).map((tab) => tab.textContent)).toEqual(['Handoff', 'design.md', 'brief.md'])
+    expect(tabs(f)[0]!.getAttribute('aria-selected')).toBe('true')
+    expect(tabs(f)[2]!.title).toBe('Work stream input: stored chat file, shared by ID')
+    await f.dom.act(async () => tabs(f)[2]!.click())
+    await f.settle()
+    expect(reference.mock.calls[0]!.slice(0, 2)).toEqual([stream.id, 'share-input'])
+    expect(f.dialog()!.querySelector('[role="tabpanel"]')!.textContent).toContain('Synthetic stored brief.')
+  } finally {
+    reference.mockRestore()
+    await f.cleanup()
+  }
+})
+
 test('a PDF that cannot be read falls back to the download offer', async () => {
   const f = await fixture()
   const pdf = {

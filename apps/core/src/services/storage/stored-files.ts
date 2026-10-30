@@ -91,22 +91,22 @@ export const STORED_FILE_SOURCES: StoredFileSourceDefinition[] = [
     key: 'retainedFiles',
     label: 'Work-stream files kept after their chat was removed',
     countsTowardQuota: true,
-    bySquad: () =>
+    bySquad: (squadId) =>
       db
         .select({ squadId: retainedAssets.squadId, bytes: sql<string>`sum(${retainedAssets.byteSize})` })
         .from(retainedAssets)
-        .where(retainedChatFileWithoutSource)
+        .where(and(retainedChatFileWithoutSource, squadId ? eq(retainedAssets.squadId, squadId) : undefined))
         .groupBy(retainedAssets.squadId),
   },
   {
     key: 'retainedImages',
     label: 'Work-stream images kept after their chat was removed',
     countsTowardQuota: false,
-    bySquad: () =>
+    bySquad: (squadId) =>
       db
         .select({ squadId: retainedAssets.squadId, bytes: sql<string>`sum(${retainedAssets.byteSize})` })
         .from(retainedAssets)
-        .where(retainedImageWithoutSource)
+        .where(and(retainedImageWithoutSource, squadId ? eq(retainedAssets.squadId, squadId) : undefined))
         .groupBy(retainedAssets.squadId),
   },
 ]

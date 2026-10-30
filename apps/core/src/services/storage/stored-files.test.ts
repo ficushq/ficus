@@ -8,6 +8,7 @@ import {
   images,
   inbox,
   inboxAttachments,
+  retainedAssets,
   squads,
   workflowAttemptAttachments,
   workStreams,
@@ -19,11 +20,18 @@ import { totalAttachmentStorageBytes } from '../attachments/storage-quota'
 import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stream'
 import { summarizeSquadStoredFiles, summarizeStoredFiles } from './stored-files'
 
-const owned = { squads: [] as string[], agents: [] as string[], images: [] as string[], inbox: [] as string[] }
+const owned = {
+  squads: [] as string[],
+  agents: [] as string[],
+  images: [] as string[],
+  inbox: [] as string[],
+  retained: [] as string[],
+}
 
 afterEach(async () => {
   // Own every fixture row; never sweep another test's data.
   if (owned.images.length) await db.delete(images).where(inArray(images.id, owned.images))
+  if (owned.retained.length) await db.delete(retainedAssets).where(inArray(retainedAssets.id, owned.retained))
   if (owned.inbox.length) await db.delete(inbox).where(inArray(inbox.id, owned.inbox))
   if (owned.squads.length) await db.delete(workStreams).where(inArray(workStreams.squadId, owned.squads))
   if (owned.agents.length) await db.delete(agents).where(inArray(agents.id, owned.agents))
@@ -32,6 +40,7 @@ afterEach(async () => {
   owned.agents = []
   owned.images = []
   owned.inbox = []
+  owned.retained = []
 })
 
 async function agentFile(agentId: string, byteSize: number) {
@@ -48,6 +57,24 @@ async function agentFile(agentId: string, byteSize: number) {
     byteSize,
     sha256: '0'.repeat(64),
   })
+}
+
+/** Bytes a work stream keeps after their chat row was deleted (no source row exists). */
+async function retained(kind: 'image' | 'agent-file', byteSize: number, squadId: string) {
+  const [row] = await db
+    .insert(retainedAssets)
+    .values({
+      sourceKind: kind,
+      sourceId: randomUUID(),
+      blobOwner: kind === 'image' ? `${randomUUID()}.png` : randomUUID(),
+      filename: 'kept.png',
+      contentType: 'image/png',
+      byteSize,
+      sha256: '0'.repeat(64),
+      squadId,
+    })
+    .returning({ id: retainedAssets.id })
+  owned.retained.push(row!.id)
 }
 
 async function image(byteSize: number, owner: { agentId?: string; squadId?: string }) {
@@ -141,6 +168,8 @@ test('a squad summary counts only that squad and leaves the instance quota out',
   await image(7, { squadId: squad.id })
   await image(3, { agentId: agent.id })
   await inboxFile('agent', agent.id, 20)
+  await retained('agent-file', 5, squad.id)
+  await retained('image', 2, squad.id)
   // Another squad's files and unattributed files never reach this squad's totals.
   await agentFile(foreign.id, 9_000)
   await image(8_000, { squadId: other.id })
@@ -148,21 +177,35 @@ test('a squad summary counts only that squad and leaves the instance quota out',
   await inboxFile('agent', foreign.id, 600)
   await inboxFile('user', randomUUID(), 50)
   await image(40, {})
+  await retained('agent-file', 500, other.id)
+  await retained('image', 400, other.id)
 
   const summary = await summarizeSquadStoredFiles(squad.id)
   expect(summary).toEqual({
-    bytes: 130,
+    bytes: 137,
     sources: [
       { key: 'agentFiles', label: 'Agent file attachments', countsTowardQuota: true, bytes: 100 },
       { key: 'inboxAttachments', label: 'Inbox attachments', countsTowardQuota: true, bytes: 20 },
       { key: 'workflowAttachments', label: 'Workflow handoff files', countsTowardQuota: true, bytes: 0 },
       { key: 'images', label: 'Images', countsTowardQuota: false, bytes: 10 },
+      {
+        key: 'retainedFiles',
+        label: 'Work-stream files kept after their chat was removed',
+        countsTowardQuota: true,
+        bytes: 5,
+      },
+      {
+        key: 'retainedImages',
+        label: 'Work-stream images kept after their chat was removed',
+        countsTowardQuota: false,
+        bytes: 2,
+      },
     ],
   })
   expect(Object.keys(summary)).not.toContain('quotaUsedBytes')
-  expect((await summarizeSquadStoredFiles(other.id)).bytes).toBe(18_300)
+  expect((await summarizeSquadStoredFiles(other.id)).bytes).toBe(19_200)
   // The instance-wide summary is unchanged by the squad filter.
   const all = await summarizeStoredFiles()
-  expect(all.squads.find((item) => item.id === squad.id)?.bytes).toBe(130)
-  expect(all.squads.find((item) => item.id === other.id)?.bytes).toBe(18_300)
+  expect(all.squads.find((item) => item.id === squad.id)?.bytes).toBe(137)
+  expect(all.squads.find((item) => item.id === other.id)?.bytes).toBe(19_200)
 })

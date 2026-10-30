@@ -65,16 +65,26 @@ export function storedDocument(asset: WorkStreamAssetAttachment): ReviewDocument
   }
 }
 
-/** Each attempt's own documents in attempt order: its uploaded files, then its stored references. */
+/**
+ * Each attempt's own documents in attempt order (its uploaded files, then its stored references),
+ * followed by the work stream's stored inputs, which every review can read.
+ */
 export function reviewDocuments(
   run: {
     attachments?: Record<string, WorkflowAttemptAttachment[]>
     assetAttachments?: Record<string, WorkStreamAssetAttachment[]>
   },
-  attemptIds: number[]
+  attemptIds: number[],
+  inputs: WorkStreamAssetAttachment[] = []
 ): ReviewDocument[] {
-  return attemptIds.flatMap((id) => [
-    ...(run.attachments?.[String(id)] ?? []).map(handoffDocument),
-    ...(run.assetAttachments?.[String(id)] ?? []).map(storedDocument),
-  ])
+  return [
+    ...attemptIds.flatMap((id) => [
+      ...(run.attachments?.[String(id)] ?? []).map(handoffDocument),
+      ...(run.assetAttachments?.[String(id)] ?? []).map(storedDocument),
+    ]),
+    ...inputs.map((asset) => ({
+      ...storedDocument(asset),
+      detail: `Work stream input: stored chat ${asset.source.kind === 'image' ? 'image' : 'file'}, shared by ID`,
+    })),
+  ]
 }

@@ -3,9 +3,20 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { eq, inArray, like } from 'drizzle-orm'
+import { and, eq, inArray, like, sql } from 'drizzle-orm'
 import { workflowPresetSchema, type WorkflowDefinition } from '@ficus/shared'
-import { agents, agentTypes, db, images, inbox, squads, workflowBindings, workStreams } from '../../db'
+import {
+  agents,
+  agentTypes,
+  db,
+  images,
+  inbox,
+  squads,
+  workflowBindings,
+  workStreamFlowRuns,
+  workStreams,
+} from '../../db'
+import { openWait } from '../work-streams/waits'
 import { Agent } from '../../entities/Agent'
 import { Image } from '../../entities/Image'
 import { cleanupTestRbac, createTestAdmin, type TestUser } from '../../test-utils/rbac'
@@ -165,4 +176,96 @@ test('stored inputs and incoming references reach real assignments, and the next
     { model: { input: ['text', 'image'] } }
   )
   expect(viewed.content.map((block) => block.type)).toEqual(['text', 'image'])
+
+  // A rework assignment back to the builder still lists the stream's stored inputs.
+  const reviewing = (await getFlow(stream!.id))!
+  await advanceFlow(
+    stream!.id,
+    {
+      expectedVersion: reviewing.version,
+      attemptId: reviewing.state.activeAttemptId!,
+      action: 'complete',
+      outcome: 'changes-requested',
+      evidence: 'Synthetic review: tighten the padding.',
+    },
+    randomUUID(),
+    { type: 'legacy' }
+  )
+  const rework = (await getFlow(stream!.id))!
+  const reworkMessage = (await assignments(stream!.id)).find((message) =>
+    message.idempotencyKey?.endsWith(`:${rework.state.activeAttemptId}`)
+  )!
+  expect(reworkMessage.content).toContain('Stored inputs:')
+  expect(reworkMessage.content).toContain(`"attachmentId":"${shared.attachment.id}"`)
+})
+
+/** An active stream whose entry attempt 1 runs, bound to `agentId` (no participant is dispatched). */
+async function runningStream(agentId: string) {
+  const [stream] = await db.insert(workStreams).values({ squadId, title: prefix, status: 'active' }).returning()
+  await db.transaction(async (tx) => {
+    await attachFlow(tx, stream!, { kind: 'inline', definition: flow })
+  })
+  // As dispatch records it: the attempt's binding and the stream's assignee.
+  await db
+    .update(workStreamFlowRuns)
+    .set({ attemptAgents: { '1': agentId } })
+    .where(eq(workStreamFlowRuns.workStreamId, stream!.id))
+  await db.update(workStreams).set({ assigneeAgentId: agentId }).where(eq(workStreams.id, stream!.id))
+  return stream!
+}
+
+async function notices(recipientId: string, shareId: string) {
+  return db
+    .select()
+    .from(inbox)
+    .where(and(eq(inbox.recipientId, recipientId), sql`${inbox.metadata}->>'assetAttachmentId' = ${shareId}`))
+}
+
+test('an input added while an attempt runs notices its worker once, never through a pause, a wait or dormancy', async () => {
+  const [bound] = await db.insert(agents).values({ agentTypeId, squadId }).returning()
+  const user = { type: 'user' as const, userId: admin.id }
+  const add = async (streamId: string) =>
+    (
+      await attachStreamAsset({
+        identity: user,
+        streamId,
+        source: { kind: 'image', imageId: (await conversationImage(source)).id },
+      })
+    ).attachment
+
+  // Running and bound: one follow-up notice naming the read_attachment call.
+  const running = await runningStream(bound!.id)
+  const first = await add(running.id)
+  const [notice, ...extra] = await notices(bound!.id, first.id)
+  expect(extra).toEqual([])
+  expect(notice!.deliveryMode).toBe('follow-up')
+  expect(notice!.content).toContain(`"attachmentId":"${first.id}"`)
+
+  // The bound worker attaching its own input is not told about it.
+  const self = await attachStreamAsset({
+    identity: agentIdentity((await Agent.find(bound!.id))!),
+    streamId: running.id,
+    source: { kind: 'image', imageId: (await conversationImage(bound!.id)).id },
+  })
+  expect(await notices(bound!.id, self.attachment.id)).toEqual([])
+
+  // Paused: nothing is sent.
+  const paused = await runningStream(bound!.id)
+  await db
+    .update(workStreams)
+    .set({
+      pause: { id: randomUUID(), pausedAt: new Date().toISOString(), reason: null, parkAt: null, agentIds: [] },
+    })
+    .where(eq(workStreams.id, paused.id))
+  expect(await notices(bound!.id, (await add(paused.id)).id)).toEqual([])
+
+  // An open wait: nothing is sent.
+  const waiting = await runningStream(bound!.id)
+  await openWait(db, { workStreamId: waiting.id, type: 'manual', message: 'Synthetic hold.' })
+  expect(await notices(bound!.id, (await add(waiting.id)).id)).toEqual([])
+
+  // A dormant worker is not woken.
+  const dormantStream = await runningStream(bound!.id)
+  await db.update(agents).set({ status: 'dormant', dormantAt: new Date() }).where(eq(agents.id, bound!.id))
+  expect(await notices(bound!.id, (await add(dormantStream.id)).id)).toEqual([])
 })
