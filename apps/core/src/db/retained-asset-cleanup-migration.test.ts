@@ -76,7 +76,8 @@ describe('cleanup backoff migration on a fresh database', () => {
     const rows = await connection.unsafe<
       { cleanup_attempts: number; cleanup_retry_at: Date | null; cleanup_failed_at: Date | null; cleanup_error: null }[]
     >(`SELECT cleanup_attempts, cleanup_retry_at, cleanup_failed_at, cleanup_error FROM retained_assets`)
-    expect(rows).toEqual([
+    // A plain array of the rows, without the driver's result metadata.
+    expect([...rows]).toEqual([
       { cleanup_attempts: 0, cleanup_retry_at: null, cleanup_failed_at: null, cleanup_error: null },
     ])
   }, 60_000)
