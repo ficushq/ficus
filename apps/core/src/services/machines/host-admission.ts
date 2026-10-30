@@ -2,7 +2,7 @@ import { db } from '../../db'
 import { currentVmProvisionAttemptId } from '../sandbox/vm/provision-flight'
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import { WORK_STREAM_ADMITTED_STATUSES } from '@ficus/shared'
-import { agents, machineBoxes, machineCapacityClaims, machines, squads, workStreams } from '../../db/schema'
+import { agents, executions, machineBoxes, machineCapacityClaims, machines, squads, workStreams } from '../../db/schema'
 import { isVmRuntime } from '../sandbox/runtime'
 import type { DbTransaction } from './queries'
 import {
@@ -148,9 +148,41 @@ export async function reservePhysicalHostCapacity(machineId: string, sandboxId: 
   if (provisionAttemptId === undefined) throw new Error('Physical host admission requires a provision generation')
   const result = await db.transaction(async (tx) => {
     const workStreamId = await streamForSandbox(tx, sandboxId)
-    return claimHostCapacity(tx, { kind: 'provision', provisionAttemptId, workStreamId }, [{ machineId, sandboxId }])
+    const background = !(await sandboxHasWaitingWork(tx, sandboxId))
+    return claimHostCapacity(tx, { kind: 'provision', provisionAttemptId, workStreamId, background }, [
+      { machineId, sandboxId },
+    ])
   })
   if (!result.allowed) throw new HostCapacityUnavailableError(result)
+}
+
+/** Execution states in which a turn is waiting on (or setting up) its boxes. */
+const WAITING_EXECUTION_STATUSES = ['queued', 'waiting-sandbox', 'running'] as const
+
+/**
+ * Whether a turn is waiting on this box: an execution of its agent (`agent_<id>`)
+ * or of any agent in its squad (`squad_<id>`, `consultants_<id>`) is queued,
+ * waiting for a sandbox or running. Everything else (warmups, spec reconciles,
+ * devbox prewarm, unknown roles) is background and cannot take the last free
+ * startup slot (host-capacity-policy.ts). Squad granularity over-counts slightly
+ * (any squad turn marks the squad's boxes), which only ever favors a start.
+ */
+export async function sandboxHasWaitingWork(tx: DbTransaction, sandboxId: string): Promise<boolean> {
+  const agentMatch = /^agent_([0-9a-f-]{36})$/.exec(sandboxId)
+  const squadMatch = /^(?:squad|consultants)_([0-9a-f-]{36})$/.exec(sandboxId)
+  if (!agentMatch && !squadMatch) return false
+  const [row] = await tx
+    .select({ id: executions.id })
+    .from(executions)
+    .innerJoin(agents, eq(agents.id, executions.agentId))
+    .where(
+      and(
+        inArray(executions.status, [...WAITING_EXECUTION_STATUSES]),
+        agentMatch ? eq(agents.id, agentMatch[1]!) : eq(agents.squadId, squadMatch![1]!)
+      )
+    )
+    .limit(1)
+  return row !== undefined
 }
 
 async function streamForSandbox(tx: DbTransaction, sandboxId: string): Promise<string | undefined> {

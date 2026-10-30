@@ -1938,7 +1938,7 @@ describe('squads routes', () => {
         expect(res.status).toBe(200)
         const body = await res.json()
         expect(body.runtime).toBe('vm')
-        expect(body.hostCapacity).toMatchObject({ cpus: 8, startupLimit: 2, activeBoxes: 2 })
+        expect(body.hostCapacity).toMatchObject({ cpus: 8, startupLimit: 4, activeBoxes: 2 })
         expect(getStatus).toHaveBeenCalledTimes(1)
       } finally {
         managerSpy.mockRestore()
