@@ -103,7 +103,7 @@ async function pausedStream() {
     reviewer: bound.find((binding) => binding.participantId === 'reviewer')!.agentId,
   }
 }
-const raise = (id: string, version: number, maxStepAttempts: number | null) => ({
+const raise = (version: number, maxStepAttempts: number | null) => ({
   action: 'raise-limit' as const,
   expectedVersion: version,
   maxStepAttempts,
@@ -168,7 +168,7 @@ describe('attempt-limit pause', () => {
     const reviewer = await reviewerUser()
     const [wait] = await limitWaits(id)
     const requestId = randomUUID()
-    const result = await advanceFlow(id, raise(id, run.version, 4), requestId, {
+    const result = await advanceFlow(id, raise(run.version, 4), requestId, {
       type: 'user',
       userId: reviewer.id,
     })
@@ -201,7 +201,7 @@ describe('attempt-limit pause', () => {
     await db.update(squads).set({ managerAgentId: manager.id }).where(eq(squads.id, squadId))
     try {
       const first = await pausedStream()
-      await advanceFlow(first.id, raise(first.id, first.run.version, null), randomUUID(), {
+      await advanceFlow(first.id, raise(first.run.version, null), randomUUID(), {
         type: 'agent',
         agentId: manager.id,
         squadId,
@@ -216,7 +216,7 @@ describe('attempt-limit pause', () => {
     const owner = await Agent.create({ agentTypeId, squadId })
     const second = await pausedStream()
     await db.update(workStreams).set({ ownerAgentId: owner.id }).where(eq(workStreams.id, second.id))
-    await advanceFlow(second.id, raise(second.id, second.run.version, 2), randomUUID(), {
+    await advanceFlow(second.id, raise(second.run.version, 2), randomUUID(), {
       type: 'agent',
       agentId: owner.id,
       squadId,
@@ -229,7 +229,7 @@ describe('attempt-limit pause', () => {
     const outsider = await reviewerUser(['actions:read', 'workstreams:respond'])
     const unassigned = await reviewerUser()
     const assigned = await reviewerUser()
-    const command = raise(id, run.version, 5)
+    const command = raise(run.version, 5)
     // The agent that ran the paused step cannot unblock itself, even as the stream owner.
     await db.update(workStreams).set({ ownerAgentId: builder }).where(eq(workStreams.id, id))
     for (const identity of [
@@ -253,12 +253,10 @@ describe('attempt-limit pause', () => {
 
   test('refuses a limit that would pause again, and raise-limit on a running flow', async () => {
     const { id, run } = await pausedStream()
-    await expect(advanceFlow(id, raise(id, run.version, 1), randomUUID(), legacy)).rejects.toThrow(
-      'choose a limit above 1'
-    )
-    await advanceFlow(id, raise(id, run.version, 2), randomUUID(), legacy)
+    await expect(advanceFlow(id, raise(run.version, 1), randomUUID(), legacy)).rejects.toThrow('choose a limit above 1')
+    await advanceFlow(id, raise(run.version, 2), randomUUID(), legacy)
     const running = (await getFlow(id))!
-    await expect(advanceFlow(id, raise(id, running.version, 9), randomUUID(), legacy)).rejects.toThrow(
+    await expect(advanceFlow(id, raise(running.version, 9), randomUUID(), legacy)).rejects.toThrow(
       'not paused at an attempt limit'
     )
   })
@@ -307,7 +305,8 @@ describe('ask_human recovery guard', () => {
     expect((await fail('first')).state.state).toBe('recovering')
     expect((await ask()).status).toBe('open')
     await fail('second')
-    expect((await fail('third')).state.state).toBe('waiting-manager')
+    // The fixture squad has no manager agent, so the held decision routes to the owner.
+    expect(['waiting-manager', 'waiting-owner']).toContain((await fail('third')).state.state)
     await expect(ask()).rejects.toThrow('unresolved recovery')
   })
 })

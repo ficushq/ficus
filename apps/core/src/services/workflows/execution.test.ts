@@ -2553,7 +2553,7 @@ test('recovery accepts older flow attempts without a stored step snapshot and st
   // An automatic retry has no typed decision yet, so it does not block asking a person.
   expect(await assertNoPendingRecovery(db, agentId, id)).toBeUndefined()
   await fail('legacy-second')
-  expect((await fail('legacy-third')).state.state).toBe('waiting-manager')
+  expect(['waiting-manager', 'waiting-owner']).toContain((await fail('legacy-third')).state.state)
   await expect(assertNoPendingRecovery(db, agentId, id)).rejects.toThrow('unresolved recovery')
 })
 

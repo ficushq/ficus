@@ -892,7 +892,33 @@ test('confirmed successor episodes inherit the manager allowance and owner escal
   expect(record!.state).toMatchObject({ state: 'waiting-owner', managerCycles: 1 })
 })
 
-test.each([1, 2, 3])('a %i-failure unresolved episode gates task inputs only in its own stream', async (count) => {
+test.each([1, 2])('a %i-failure automatic retry does not gate task inputs', async (count) => {
+  const api = await store()
+  const { requestStructuredInput } = await import('./structured-input')
+  for (let n = 0; n < count; n++)
+    await api.recordRecoveryFailure(
+      { agentId: worker.id, executionId: execution.id },
+      { operationKey: 'scoped-question', invocationId: `scope-${n}`, attempted: 'read files', error: new Error('Lost') }
+    )
+  // No typed decision exists while the runtime still retries, so a genuine task input is allowed.
+  const wait = await requestStructuredInput(
+    stream.id,
+    {
+      schemaVersion: 1,
+      kind: 'decide',
+      purpose: 'task-decision',
+      subject: 'Choose a layout',
+      options: [
+        { id: 'a', label: 'Compact' },
+        { id: 'b', label: 'Spacious' },
+      ],
+    },
+    { createdBy: 'agent' as const, createdByAgentId: worker.id }
+  )
+  expect(wait.workStreamId).toBe(stream.id)
+})
+
+test.each([3])('a %i-failure held episode gates task inputs only in its own stream', async (count) => {
   const api = await store()
   const { requestStructuredInput } = await import('./structured-input')
   let record
@@ -1140,7 +1166,8 @@ test('manager prose compatibility does not bypass its own held same-scope recove
   // One failure is still an automatic retry, not a held decision: it does not block asking a person.
   expect(await api.assertNoPendingRecovery(db, worker.id, stream.id)).toBeUndefined()
   await fail('manager-second')
-  expect((await fail('manager-third')).state.state).toBe('waiting-manager')
+  // The squad manager is the failing agent itself, so the held decision routes to the owner.
+  expect((await fail('manager-third')).state.state).toBe('waiting-owner')
   await expect(
     stream.block({ createdBy: 'manager', createdByAgentId: worker.id, message: 'Choose a release target' })
   ).rejects.toThrow('unresolved recovery')
