@@ -301,6 +301,50 @@ describe('lazy flow execution', () => {
       expect(returned.recipientId === originalAgent).toBe(session === 'reuse-within-stream')
     }
   })
+  test('a reused session is not sent its unchanged brief again; a changed brief or a reset repeats it', async () => {
+    const id = await create()
+    const setBrief = (description: string) => db.update(workStreams).set({ description }).where(eq(workStreams.id, id))
+    // The first assignment predates the brief text, so give the stream one before the next dispatches.
+    await setBrief('BRIEF-ONE: keep config loading compatible.')
+    const message = async (attemptId: number) =>
+      (await messages(id)).find((entry) => entry.idempotencyKey === `flow:${id}:${attemptId}`)!.content
+    const builder = (await bindings(id))[0]!.agentId
+    await advance(id, 'completed') // attempt 2: the reviewer's first assignment
+    expect(await message(2)).toContain('BRIEF-ONE')
+    await advance(id, 'changes-requested') // attempt 3: back to the same builder session
+    expect(await message(3)).toContain('BRIEF-ONE') // attempt 1 carried a different (empty) brief
+    await advance(id, 'completed') // attempt 4: the same reviewer session, unchanged brief
+    const repeat = await message(4)
+    expect(repeat).not.toContain('BRIEF-ONE')
+    expect(repeat).toContain("You already have this work stream's brief from your attempt 2 assignment")
+    expect(repeat).toContain('Incoming results:')
+    expect(repeat).toContain('ficus workstream advance')
+    expect(repeat).not.toContain('Attach the documents your result refers to')
+    await advance(id, 'changes-requested') // attempt 5: builder, unchanged since attempt 3
+    expect(await message(5)).not.toContain('BRIEF-ONE')
+    await setBrief('BRIEF-TWO: the manager amended the scope.')
+    await advance(id, 'completed') // attempt 6: the reviewer gets the amended brief
+    expect(await message(6)).toContain('BRIEF-TWO')
+    const [row] = await db.select({ metadata: agents.metadata }).from(agents).where(eq(agents.id, builder))
+    await db
+      .update(agents)
+      .set({ metadata: { ...(row!.metadata as object), sessionResetCount: 1 } })
+      .where(eq(agents.id, builder))
+    await advance(id, 'changes-requested') // attempt 7: builder session was reset, so the brief repeats
+    expect(await message(7)).toContain('BRIEF-TWO')
+    const attempts = (await getFlow(id))!.state.attempts
+    expect(attempts.find((entry) => entry.id === 7)!.briefContext).toMatchObject({ sessionResets: 1 })
+  })
+  test('a fresh-per-attempt session always receives the full brief', async () => {
+    const definition = structuredClone(flow)
+    definition.participants.builder!.session = 'fresh-per-attempt'
+    const id = await create('active', definition)
+    await db.update(workStreams).set({ description: 'BRIEF-FRESH' }).where(eq(workStreams.id, id))
+    await advance(id, 'completed')
+    await advance(id, 'changes-requested')
+    const returned = (await messages(id)).find((entry) => entry.idempotencyKey === `flow:${id}:3`)!
+    expect(returned.content).toContain('BRIEF-FRESH')
+  })
   test('bare ownership, approval, metadata, and completion writes cannot bypass flow gates', async () => {
     const id = await create()
     const [stream] = await db.select().from(workStreams).where(eq(workStreams.id, id))
