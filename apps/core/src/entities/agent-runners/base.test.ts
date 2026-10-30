@@ -523,6 +523,36 @@ describe('AgentRunner (base class)', () => {
       expect(refs).toEqual(['open-skill', 'logs-skill'])
     })
 
+    it('shows the storage:read-gated squad-storage skill to the manager role only, not to workers', async () => {
+      const { parse } = await import('yaml')
+      const { CONFIG_DIR } = await import('../../lib/paths')
+      const defaults = parse(readFileSync(`${CONFIG_DIR}/roles/defaults.yaml`, 'utf8')) as {
+        roles: Array<{ slug: string; permissions: string[] }>
+      }
+      const permissionsOf = (slug: string) => defaults.roles.find((role) => role.slug === slug)!.permissions
+      await db.delete(skillRows)
+      await Skill.upsert({ id: 'open-skill', name: 'Open', content: '# Open\n' })
+      await Skill.upsert({
+        id: 'squad-storage',
+        name: 'Squad Storage',
+        content: '# Squad Storage\n',
+        requiredPermission: 'storage:read',
+      })
+      Skill.invalidateCache()
+      agentType.skills = ['open-skill', 'squad-storage']
+
+      resolvePermissionsSpy = spyOn(rbacPermissions, 'resolvePermissions').mockResolvedValue(
+        permissionsOf('default-manager')
+      )
+      expect(await (runner as any).resolveSkillRefs()).toEqual(['open-skill', 'squad-storage'])
+      resolvePermissionsSpy.mockRestore()
+
+      resolvePermissionsSpy = spyOn(rbacPermissions, 'resolvePermissions').mockResolvedValue(
+        permissionsOf('default-worker')
+      )
+      expect(await (runner as any).resolveSkillRefs()).toEqual(['open-skill'])
+    })
+
     it('keeps missing skill refs and avoids permission lookup when no referenced skills are gated', async () => {
       await db.delete(skillRows)
       await Skill.upsert({ id: 'open-skill', name: 'Open', content: '# Open\n' })

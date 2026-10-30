@@ -74,6 +74,35 @@ describe('RoleSync', () => {
     expect(row.permissions).toContain('inbox:read-squad')
   })
 
+  test('squad storage reads go to managers, consultants and operators, never workers or viewers', async () => {
+    await sync.sync()
+    const permissionsOf = async (slug: string) =>
+      (await db.select().from(roles).where(eq(roles.slug, slug)))[0]!.permissions as string[]
+    for (const slug of ['default-manager', 'operator']) expect(await permissionsOf(slug)).toContain('storage:read')
+    for (const slug of ['default-worker', 'viewer', 'farmer', 'demo-reviewer'])
+      expect(await permissionsOf(slug)).not.toContain('storage:read')
+    // The squad view never widens to the instance-wide storage endpoints.
+    for (const slug of ['default-manager', 'default-worker'])
+      expect(await permissionsOf(slug)).not.toContain('system:logs')
+  })
+
+  test('existing installations receive storage:read on their next sync', async () => {
+    await sync.sync()
+    // An installation from before the permission existed: the yaml-owned rows lack it.
+    for (const slug of ['default-manager', 'operator']) {
+      const [row] = await db.select().from(roles).where(eq(roles.slug, slug))
+      await db
+        .update(roles)
+        .set({ permissions: (row!.permissions as string[]).filter((permission) => permission !== 'storage:read') })
+        .where(eq(roles.slug, slug))
+    }
+    await sync.sync()
+    for (const slug of ['default-manager', 'operator']) {
+      const [row] = await db.select().from(roles).where(eq(roles.slug, slug))
+      expect(row!.permissions).toContain('storage:read')
+    }
+  })
+
   test('operator role includes new resource wildcard permissions', async () => {
     await sync.sync()
     const [row] = await db.select().from(roles).where(eq(roles.slug, 'operator'))

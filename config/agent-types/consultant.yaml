@@ -42,6 +42,7 @@ skills:
   - deploy-digitalocean
   - frontend-visual-review
   - view-system-logs
+  - squad-storage
 tools:
   allow:
     - bash

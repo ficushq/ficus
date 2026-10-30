@@ -190,6 +190,54 @@ export interface StoredFilesSummary {
   quotaBytes: number
 }
 
+/** One squad's share of the stored files: per source, only bytes attributed to that squad. */
+export interface SquadStoredFiles {
+  bytes: number
+  sources: StoredFileSource[]
+}
+
+/**
+ * Scan timing for a machine that holds one of the squad's box homes. Home counts are
+ * omitted: they cover every squad on the machine.
+ */
+export type SquadStorageScan = Pick<StorageScanProgress, 'state' | 'generation' | 'passStartedAt' | 'lastCompletedAt'>
+
+/** The squad's box homes on one machine. Host disk totals and other squads are never included. */
+export interface SquadStorageMachine {
+  id: string
+  name: string
+  /** Only this squad: its workspace box and its agents' box homes on this machine. */
+  storage: StorageSquad
+  scan?: SquadStorageScan
+}
+
+/**
+ * GET /api/squads/:id/storage (storage:read in that squad). The latest persisted storage
+ * measurements filtered to one squad, plus its stored files. Read-only: it never starts
+ * or requests a scan. It omits everything instance-wide that reveals other tenants'
+ * usage: host used/total bytes, unattributed bytes, capacity warnings, other squads,
+ * scan home counts and missing-home diagnostics, and the instance attachment quota.
+ */
+export interface SquadStorageView {
+  squad: { id: string; name: string }
+  /** False outside the VM runtime: box measurements are unavailable, stored files still count. */
+  supported: boolean
+  /** A storage pass is running or has been requested on the instance. */
+  scanning: boolean
+  /** Newest measurement among this squad's box homes (ISO), or null when none is measured yet. */
+  scannedAt: string | null
+  /** Oldest measurement among this squad's box homes (ISO): how stale the least recent value is. */
+  oldestMeasuredAt: string | null
+  error: string | null
+  monitoring: Pick<StorageMonitoring, 'intervalHours' | 'nextScanAt'>
+  /** Dormant agents are removed this many days after dormantAt. */
+  dormantRetentionDays: number
+  /** Sum of the squad's measured box homes across machines, or null when none is measured. */
+  bytes: number | null
+  machines: SquadStorageMachine[]
+  storedFiles: SquadStoredFiles
+}
+
 export interface IdleConsultant {
   id: string
   label: string
