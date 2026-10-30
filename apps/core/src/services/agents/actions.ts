@@ -1,5 +1,13 @@
+import { isHumanFlowWait } from '../workflows/wait-policy'
 import { recoveryRecipients, recoveryRecipientsById } from '../recovery/recipients'
-import { selectWorkStreamPresentationState, workStreamTitle, workStreamWaitActor } from '@ficus/shared'
+import {
+  workflowReviewBlockingWaits,
+  activeWorkflowAttempts,
+  effectiveWorkflowStep,
+  selectWorkStreamPresentationState,
+  workStreamTitle,
+  workStreamWaitActor,
+} from '@ficus/shared'
 import { resolveActingUser } from '../rbac'
 import { eq, desc, isNull, and, sql, inArray } from 'drizzle-orm'
 import {
@@ -300,7 +308,28 @@ export async function listPendingActions(options: PendingActionListOptions = {})
     )
     .orderBy(desc(workStreamWaits.openedAt))
 
+  const candidateIds = [...new Set(actionableWorkStreams.map((row) => row.ws.id))]
+  const [allWaits, candidateRuns] = await Promise.all([
+    listOpenWaitsForStreams(candidateIds),
+    candidateIds.length
+      ? db.select().from(workStreamFlowRuns).where(inArray(workStreamFlowRuns.workStreamId, candidateIds))
+      : [],
+  ])
+  const runsByStream = new Map(candidateRuns.map((run) => [run.workStreamId, run]))
   for (const { ws, squad, wait } of actionableWorkStreams) {
+    if (isHumanFlowWait(wait)) {
+      const run = runsByStream.get(ws.id)
+      const attempt = run && activeWorkflowAttempts(run.state).find((a) => a.id === wait.flowAttemptId)
+      const step = attempt && effectiveWorkflowStep(run!.state, attempt)
+      if (
+        ws.pause ||
+        run?.state.status !== 'running' ||
+        !attempt ||
+        !(step?.kind === 'human-approval' || (step?.kind === 'decision' && attempt.decision?.awaitingPerson)) ||
+        workflowReviewBlockingWaits(toWaitJson(wait), (allWaits.get(ws.id) ?? []).map(toWaitJson)).length
+      )
+        continue
+    }
     // Only manual waits a human must clear are human actions. Owner-actor
     // waits still block the stream, but are not "Needs you".
     if (wait.structured?.stopped) continue
@@ -337,10 +366,7 @@ export async function listPendingActions(options: PendingActionListOptions = {})
     // A sibling may be the stream's current assignee while this attempt waits.
     let assigneeAgentId = ws.assigneeAgentId
     if (wait.flowAttemptId != null) {
-      const [run] = await db
-        .select({ attemptAgents: workStreamFlowRuns.attemptAgents })
-        .from(workStreamFlowRuns)
-        .where(eq(workStreamFlowRuns.workStreamId, ws.id))
+      const run = runsByStream.get(ws.id)
       assigneeAgentId = run?.attemptAgents[String(wait.flowAttemptId)] ?? wait.createdByAgentId ?? null
     }
     let assigneeName: string | null = null

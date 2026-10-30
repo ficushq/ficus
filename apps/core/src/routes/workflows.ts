@@ -1,3 +1,4 @@
+import { loadReviewContexts } from '../services/workflows/review-context'
 import { deliveryInstructionsForRun } from '../services/workflows/completion-prompt'
 import { decisionStepWarnings, withWarnings } from '../services/workflows/decision-step-warnings'
 import { listWorkflowReviewers } from '../services/workflows/reviewers'
@@ -94,12 +95,13 @@ export const workflowsRouter = new Hono()
       if (!run?.activated) return c.json(null)
       const withDeliveries = c.req.valid('query').integrationDeliveries !== '0'
       // Independent reads; none of them calls a provider (the history uses stored proof only).
-      const [notice, openWaits, integrationDeliveries, usage, attachments] = await Promise.all([
+      const [notice, openWaits, integrationDeliveries, usage, attachments, reviewContexts] = await Promise.all([
         stackNotice(db, stream),
         listOpenWaits(db, stream.id),
         withDeliveries ? outputDeliveryHistory(stream.id) : undefined,
         getFlowUsage(stream.id, run.state),
         listWorkflowAttachments(stream.id),
+        loadReviewContexts(db, stream.id, run.state, { attemptAgents: run.attemptAgents, createdAt: run.createdAt }),
       ])
       return c.json({
         workStreamId: run.workStreamId,
@@ -114,6 +116,7 @@ export const workflowsRouter = new Hono()
         ...(integrationDeliveries ? { integrationDeliveries } : {}),
         usage,
         attachments,
+        reviewContexts,
       })
     }
   )

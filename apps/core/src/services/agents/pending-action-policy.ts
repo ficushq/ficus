@@ -1,3 +1,6 @@
+import { isHumanFlowWait } from '../workflows/wait-policy'
+import { listOpenWaits, toWaitJson } from '../work-streams/waits'
+import { workflowReviewBlockingWaits } from '@ficus/shared'
 import { recoveryRecipientsById } from '../recovery/recipients'
 import type { PendingAction, WorkStreamActionData, WorkStreamDeliveryActionData } from '@ficus/shared'
 import { and, eq, inArray, ne } from 'drizzle-orm'
@@ -218,6 +221,22 @@ export async function evaluatePendingAction(
   if (data.wait.resolutionHandler === 'workflow') {
     const [run] = await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, workStreamId))
     const [stream] = await db.select().from(workStreams).where(eq(workStreams.id, workStreamId))
+    if (
+      isHumanFlowWait({ ...data.wait, flowAttemptId: data.wait.flowAttemptId ?? null, resolutionHandler: 'workflow' })
+    ) {
+      const waits = (await listOpenWaits(db, workStreamId)).map(toWaitJson)
+      const gate = waits.find((wait) => wait.id === data.wait.id)
+      if (
+        !gate ||
+        !stream ||
+        stream.pause ||
+        !['active', 'queued'].includes(stream.status) ||
+        run?.state.status !== 'running' ||
+        !activeWorkflowAttempts(run.state).some((a) => a.id === data.wait.flowAttemptId) ||
+        workflowReviewBlockingWaits(gate, waits).length
+      )
+        return { visible: false, canRespond: false }
+    }
     const attempt = run && activeWorkflowAttempts(run.state).find((a) => a.id === data.wait.flowAttemptId)
     const step = attempt?.step ?? run?.state.definition.steps.find((s) => s.id === attempt?.stepId)
     let canRespond = false

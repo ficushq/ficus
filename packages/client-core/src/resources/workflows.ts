@@ -6,6 +6,7 @@ import type {
   WorkflowDefinition,
   WorkflowPreset,
   WorkflowRun,
+  WorkflowProducerReviewContext,
   WorkflowOutcomeBinding,
   WorkflowAttemptAttachment,
   WorkflowUsage,
@@ -27,6 +28,7 @@ export interface WorkflowRunDetail {
   version: number
   attemptAgents: Record<string, string>
   activeOutcomes?: WorkflowOutcomeBinding[]
+  reviewContexts?: Record<string, WorkflowProducerReviewContext[]>
   openWaits?: WorkStreamWait[]
   integrationDeliveries?: IntegrationDeliveryView[]
   usage?: WorkflowUsage

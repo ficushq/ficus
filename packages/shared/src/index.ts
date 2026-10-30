@@ -135,3 +135,12 @@ export { boundedRecord } from './zod-helpers'
 export * from './deployment-integrations'
 export * from './recovery-waits'
 export type { SandboxHostCapacity } from './host-capacity'
+
+export * from './workflow-decision-brief'
+
+export * from './workflow-review-history'
+
+export * from './workflow-review-waits'
+
+// Synthetic brief shared by cross-package contract tests.
+export { brief as workflowReviewBriefFixture } from './test-fixtures/workflow-review'

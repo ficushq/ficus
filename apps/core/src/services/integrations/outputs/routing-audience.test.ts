@@ -2,6 +2,8 @@ import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 import {
   advanceWorkflowRun,
+  workflowReviewBriefFixture,
+  type WorkflowDecisionBrief,
   createWorkflowRun,
   workflowPresetSchema,
   type WorkflowDefinition,
@@ -22,7 +24,7 @@ async function reviewedCoding(): Promise<WorkflowDefinition> {
   return workflowPresetSchema.parse(Bun.YAML.parse(yaml)).definition
 }
 
-function complete(state: WorkflowRun, outcome: string): WorkflowRun {
+function complete(state: WorkflowRun, outcome: string, decisionBrief?: WorkflowDecisionBrief): WorkflowRun {
   const attempt = state.attempts.find((candidate) => candidate.status === 'running')!
   return advanceWorkflowRun(state, {
     action: 'complete',
@@ -30,6 +32,7 @@ function complete(state: WorkflowRun, outcome: string): WorkflowRun {
     attemptId: attempt.id,
     outcome,
     evidence: 'Done',
+    decisionBrief,
   })
 }
 
@@ -153,9 +156,18 @@ test('CI does not use completed implementation to bypass a human approval step',
     output: 'Decision',
     outcomes: { approved: { next: 'finish' } },
   }
-  run.state = complete(createWorkflowRun(run.state.definition), 'completed')
+  const initial = createWorkflowRun(run.state.definition)
+  expect(() => complete(initial, 'completed')).toThrow('decisionBrief')
+  run.state = complete(initial, 'completed', workflowReviewBriefFixture)
   run.version = run.state.version
+  const before = structuredClone(run.state)
+  expect(run.state.attempts.at(-1)).toMatchObject({
+    stepId: 'review',
+    status: 'running',
+    step: { kind: 'human-approval' },
+  })
   expect(recipients()).toEqual([])
+  expect(run.state).toEqual(before)
 })
 
 test('parallel active agents observe CI without activating or completing their join', async () => {

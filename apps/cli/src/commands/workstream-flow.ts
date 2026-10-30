@@ -7,7 +7,12 @@ import {
 import { readFile, stat } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { Command } from 'commander'
-import { WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT, workflowCommandSchema } from '@ficus/shared'
+import {
+  WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT,
+  workflowCommandSchema,
+  validateWorkflowDecisionBrief,
+  type WorkflowRun,
+} from '@ficus/shared'
 import { apiGet, apiPost, apiPostForm } from '../client'
 import { output, outputError } from '../output'
 
@@ -18,7 +23,7 @@ export type WorkstreamFlowDependencies = typeof defaults & { apiPostForm?: typeo
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 
 /** The part of `workstream flow` that decides whether attaching still makes sense. */
-type FlowSnapshot = { version: number; state: { attempts: Array<{ id: number; status: string }> } }
+type FlowSnapshot = { version: number; state: WorkflowRun }
 
 function collect(value: string, previous: string[]) {
   return [...previous, value]
@@ -72,7 +77,7 @@ export function registerWorkstreamFlowCommands(
     )
     .addHelpText(
       'after',
-      '\nThe command must include action, expectedVersion, attemptId, and action-specific fields (e.g. outcome and evidence for complete).\nAuthorized revise active=keep refreshes outcomes for kept running attempts while preserving their initial brief and session. The response outcomeUpdates lists affected attempt/agent IDs; record scope and steer every affected active agent. Inspect activeOutcomes with workstream flow.\nUse active=restart only for deliberate cancellation and a new attempt with a fresh session, even with reuse-within-stream. Revised instructions apply to future attempts, not a kept initial brief.\n--attach uploads each file to the completing attempt before the command is sent; if any upload fails, the attempt is not advanced.'
+      '\nThe command must include action, expectedVersion, attemptId, and action-specific fields (e.g. outcome and evidence for complete).\nAuthorized revise active=keep refreshes outcomes for kept running attempts while preserving their initial brief and session. The response outcomeUpdates lists affected attempt/agent IDs; record scope and steer every affected active agent. Inspect activeOutcomes with workstream flow.\nUse active=restart only for deliberate cancellation and a new attempt with a fresh session, even with reuse-within-stream. Revised instructions apply to future attempts, not a kept initial brief.\nAgent-produced completions or explicit returns into human approval require decisionBrief: decision (500 characters), recommendation (1000), approvalEffect (2400), risks (1600), and changesSinceLastReview (2000, required after an earlier decision on the same gate). Each field must use readable prose with normal spacing and complete words; preserve literal identifiers. Briefs are optional on other handoffs; evidence or return feedback stays separate. Contextual preflight runs before attachments.\n--attach uploads each file to the completing attempt before the command is sent; if any upload fails, the attempt is not advanced.'
     )
     .action((id: string, options: StructuredInputOptions & { requestId?: string; attach: string[] }) =>
       run(async () => {
@@ -81,12 +86,15 @@ export function registerWorkstreamFlowCommands(
           if (value.action !== 'complete') throw new Error('--attach is only available when completing an attempt')
           if (options.attach.length > WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT)
             throw new Error(`At most ${WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT} files can be attached to one handoff`)
+        }
+        if (value.action === 'complete' || value.action === 'return') {
           const current = await deps.apiGet<FlowSnapshot | null>(`/api/workflows/runs/${encodeURIComponent(id)}`)
-          const attempt = current?.state.attempts.find((entry) => entry.id === value.attemptId)
+          const attempt = current?.state?.attempts.find((entry) => entry.id === value.attemptId)
           // A closed attempt means this handoff was already sent (a retry gets its receipt) or cannot be:
           // either way the server's answer to the command is the useful one, so skip the uploads.
           if (current && attempt?.status === 'running') {
             if (current.version !== value.expectedVersion) throw new Error('Stale flow version')
+            if (current.state.definition) validateWorkflowDecisionBrief(current.state, value)
             const upload = deps.apiPostForm ?? apiPostForm
             // Uploads land before the command, so a review gate opens with its files present.
             for (const file of await readAttachments(options.attach)) {

@@ -95,3 +95,11 @@ test('CI runs this database-free guidance suite', () => {
     'working-directory': '.github',
   })
 })
+
+test('manager leaves round-specific human decision briefs with producing agents', () => {
+  const prompt = normalize(types.find((type) => type.id === 'manager')!.systemPrompt)
+  expect(prompt).toContain('Human gate instructions describe the kind of gate and are not rewritten for each round.')
+  expect(prompt).toContain('The producing agent writes the structured decision brief')
+  expect(prompt).toContain('Durable constraints belong in the work stream description')
+  expect(prompt).toContain('Managers do not author each round')
+})

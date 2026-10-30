@@ -20,6 +20,8 @@ authorized return, delegation, or revision. `finish` checks the completion polic
 once the graph is complete. All three take a **work stream ID**; `ficus ws` is an
 alias for `ficus workstream`. `ficus workflow` manages reusable presets/templates.
 
+When an **agent** completion's effective outcome or authorized explicit return sends its result into human approval, include `decisionBrief` alongside `evidence` (complete) or `feedback` (return). Its fields are `decision` (500 characters), `recommendation` (1,000), `approvalEffect` (2,400), `risks` (1,600), and `changesSinceLastReview` (2,000; required after an earlier decision on that gate). All fields use readable prose. Non-agent routing does not acquire an authoring requirement. See the [decision brief contract](../workflow-decision-briefs.md) for a complete command, validation, source/round provenance and carry-forward behavior. The CLI preflights running completions and explicit returns before posting, and before uploading completion attachments; the server remains authoritative.
+
 `advance --attach PATH` (repeatable, `complete` only) uploads each file to the
 attempt named in the command before the command is sent, so the next review gate
 opens with them; if any upload fails the attempt is not advanced. Files are keyed by
@@ -30,7 +32,7 @@ sent as-is; when the run's version no longer matches, the CLI stops before uploa
 snapshot (at most 10 files per attempt, each within `INBOX_MAX_ATTACHMENT_BYTES`,
 10 MB by default), lists them per attempt as `attachments` in `flow`, and serves
 them at `GET /api/workflows/runs/STREAM_ID/attachments/ATTACHMENT_ID` to anyone
-who can read the work stream. The review modal shows them as tabs after the handoff;
+who can read the work stream. Brief-present reviews open the Decision brief tab first, with files in neighboring peer tabs. Only the internal handoff is collapsed beneath the brief; legacy reviews keep their existing handoff-first tabs.
 PDFs are drawn page by page with pdf.js from the downloaded bytes (loaded on demand,
 with no network fetches of its own). Attachments are kept for the life of the work
 stream, including after it is done or canceled, as a record of what was reviewed; they
@@ -152,11 +154,12 @@ ficus workstream list [options]
 ```
 
 **Options:**
-| Option | Description |
-|--------|-------------|
+
+| Option                  | Description        |
+| ----------------------- | ------------------ |
 | `-q, --squad <squadId>` | Filter by squad ID |
-| `-t, --task <taskId>` | Filter by task ID |
-| `-s, --status <status>` | Filter by status |
+| `-t, --task <taskId>`   | Filter by task ID  |
+| `-s, --status <status>` | Filter by status   |
 
 **Examples:**
 
@@ -187,23 +190,25 @@ ficus workstream create|new [options] <title>
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `title` | Title of the work stream |
+
+| Argument | Description              |
+| -------- | ------------------------ |
+| `title`  | Title of the work stream |
 
 **Options:**
-| Option | Description |
-|--------|-------------|
-| `-q, --squad <squadId>` | Squad ID to associate with |
-| `-t, --task <taskId>` | Associated task ID |
-| `-d, --description <desc>` | Description of the work stream |
-| `--workflow <id>` | Saved workflow preset |
-| `--flow-content <text>` | Inline JSON/YAML workflow source or definition |
-| `--flow-stdin` | Read the source/definition from a pipe or quoted heredoc |
-| `--flow <file>` | Read a saved JSON/YAML workflow source or definition |
-| `-m, --message <msg>` | Handoff message (included in assignment notifications) |
+
+| Option                            | Description                                                                                                                                                                                                                                                                                                                                       |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-q, --squad <squadId>`           | Squad ID to associate with                                                                                                                                                                                                                                                                                                                        |
+| `-t, --task <taskId>`             | Associated task ID                                                                                                                                                                                                                                                                                                                                |
+| `-d, --description <desc>`        | Description of the work stream                                                                                                                                                                                                                                                                                                                    |
+| `--workflow <id>`                 | Saved workflow preset                                                                                                                                                                                                                                                                                                                             |
+| `--flow-content <text>`           | Inline JSON/YAML workflow source or definition                                                                                                                                                                                                                                                                                                    |
+| `--flow-stdin`                    | Read the source/definition from a pipe or quoted heredoc                                                                                                                                                                                                                                                                                          |
+| `--flow <file>`                   | Read a saved JSON/YAML workflow source or definition                                                                                                                                                                                                                                                                                              |
+| `-m, --message <msg>`             | Handoff message (included in assignment notifications)                                                                                                                                                                                                                                                                                            |
 | `--depends-on <wsId[:condition]>` | Dependency work stream (can be repeated). `<wsId>` or `<wsId>:done` waits until the dependency is done; `<wsId>:ready` unlocks when its work is implemented and its pull request is open, stacks this stream on its branch and holds delivery until it merges. See [Dependencies and stacked work](../workflows.md#dependencies-and-stacked-work) |
-| `--from-event <eventId>` | Create idempotently from an integration event's issue/PR; a replayed event returns the existing stream (`reusedFromEvent: true`) instead of a duplicate |
+| `--from-event <eventId>`          | Create idempotently from an integration event's issue/PR; a replayed event returns the existing stream (`reusedFromEvent: true`) instead of a duplicate                                                                                                                                                                                           |
 
 **Examples:**
 
@@ -249,9 +254,10 @@ ficus workstream get|info <id>
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `id` | Work stream ID |
+
+| Argument | Description    |
+| -------- | -------------- |
+| `id`     | Work stream ID |
 
 **Examples:**
 
@@ -282,20 +288,22 @@ ficus workstream update|edit [options] <id>
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `id` | Work stream ID to update |
+
+| Argument | Description              |
+| -------- | ------------------------ |
+| `id`     | Work stream ID to update |
 
 **Options:**
-| Option | Description |
-|--------|-------------|
-| `-s, --status <status>` | New status |
-| `--depends-on <wsId[:condition]>` | Replace dependencies with these work streams (can be repeated); same `<wsId>`, `<wsId>:done` and `<wsId>:ready` forms as `create` |
-| `--clear-dependencies` / `--remove-dependency` | Clear all dependencies (removes every dependency; cannot be combined with `--depends-on`) |
-| `--title <title>` | New title |
-| `--description <desc>` | New description |
-| `--assign <agentId>` | Assign to a specific agent |
-| `--unassign` | Remove current assignee |
+
+| Option                                         | Description                                                                                                                       |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `-s, --status <status>`                        | New status                                                                                                                        |
+| `--depends-on <wsId[:condition]>`              | Replace dependencies with these work streams (can be repeated); same `<wsId>`, `<wsId>:done` and `<wsId>:ready` forms as `create` |
+| `--clear-dependencies` / `--remove-dependency` | Clear all dependencies (removes every dependency; cannot be combined with `--depends-on`)                                         |
+| `--title <title>`                              | New title                                                                                                                         |
+| `--description <desc>`                         | New description                                                                                                                   |
+| `--assign <agentId>`                           | Assign to a specific agent                                                                                                        |
+| `--unassign`                                   | Remove current assignee                                                                                                           |
 
 **Examples:**
 
@@ -331,16 +339,18 @@ ficus workstream request-input [options] <id>
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `id` | Work stream ID |
+
+| Argument | Description    |
+| -------- | -------------- |
+| `id`     | Work stream ID |
 
 **Options:**
-| Option | Description |
-|--------|-------------|
+
+| Option                | Description                                                             |
+| --------------------- | ----------------------------------------------------------------------- |
 | `-m, --message <msg>` | What input/action is needed, and from whom (required; the wait message) |
-| `--actor <actor>` | Who must act: `human` (default) or `owner` |
-| `-f, --file <path>` | File to include for context (can be repeated) |
+| `--actor <actor>`     | Who must act: `human` (default) or `owner`                              |
+| `-f, --file <path>`   | File to include for context (can be repeated)                           |
 
 **Examples:**
 
@@ -374,10 +384,11 @@ ficus workstream wait-actor [options] <id> <actor>
 ```
 
 **Options:**
-| Option | Description |
-|--------|-------------|
-| `--wait <waitId>` | Manual wait to relabel (required when several manual waits are open) |
-| `-m, --message <note>` | Why the actor changed |
+
+| Option                 | Description                                                          |
+| ---------------------- | -------------------------------------------------------------------- |
+| `--wait <waitId>`      | Manual wait to relabel (required when several manual waits are open) |
+| `-m, --message <note>` | Why the actor changed                                                |
 
 ```bash
 ficus workstream wait-actor ws-123 owner --wait 1a2b3c4d -m "Held for the owner, not the user"
@@ -396,10 +407,11 @@ ficus workstream unblock [options] <id>
 ```
 
 **Options:**
-| Option | Description |
-|--------|-------------|
+
+| Option                 | Description                                                                |
+| ---------------------- | -------------------------------------------------------------------------- |
 | `-m, --message <note>` | Resolution note recorded on the cleared wait and delivered to the assignee |
-| `--wait <waitId>` | Wait ID to clear (required when several manual waits are open) |
+| `--wait <waitId>`      | Wait ID to clear (required when several manual waits are open)             |
 
 **Examples:**
 
@@ -426,11 +438,12 @@ ficus workstream request-review [options] <id>
 ```
 
 **Options:**
-| Option | Description |
-|--------|-------------|
-| `-m, --message <msg>` | What to review (required; stored on the review wait) |
-| `-f, --file <path>` | Artifact file to review (can be repeated) |
-| `--no-complete` | Mid-work checkpoint gate: approval resolves the wait only and the stream continues |
+
+| Option                | Description                                                                        |
+| --------------------- | ---------------------------------------------------------------------------------- |
+| `-m, --message <msg>` | What to review (required; stored on the review wait)                               |
+| `-f, --file <path>`   | Artifact file to review (can be repeated)                                          |
+| `--no-complete`       | Mid-work checkpoint gate: approval resolves the wait only and the stream continues |
 
 **Examples:**
 
@@ -457,10 +470,11 @@ ficus workstream approve [options] <id>
 ```
 
 **Options:**
-| Option | Description |
-|--------|-------------|
+
+| Option                 | Description                                                                                           |
+| ---------------------- | ----------------------------------------------------------------------------------------------------- |
 | `-m, --message <note>` | Approval note recorded on the wait and delivered with the outcome notification (`--note` is an alias) |
-| `--wait <waitId>` | Review wait ID to approve (required when several review waits are open) |
+| `--wait <waitId>`      | Review wait ID to approve (required when several review waits are open)                               |
 
 **Examples:**
 
@@ -483,10 +497,11 @@ ficus workstream send-back [options] <id>
 ```
 
 **Options:**
-| Option | Description |
-|--------|-------------|
-| `-m, --message <feedback>` | Send-back feedback (required; `--note` and `-r/--reason` are aliases) |
-| `--wait <waitId>` | Review wait ID to send back (required when several review waits are open) |
+
+| Option                     | Description                                                               |
+| -------------------------- | ------------------------------------------------------------------------- |
+| `-m, --message <feedback>` | Send-back feedback (required; `--note` and `-r/--reason` are aliases)     |
+| `--wait <waitId>`          | Review wait ID to send back (required when several review waits are open) |
 
 **Examples:**
 
@@ -506,11 +521,12 @@ ficus workstream handoff [options] <id>
 ```
 
 **Options:**
-| Option | Description |
-|--------|-------------|
-| `--to <agentId>` | Agent to hand off to (required) |
+
+| Option                | Description                                                 |
+| --------------------- | ----------------------------------------------------------- |
+| `--to <agentId>`      | Agent to hand off to (required)                             |
 | `-m, --message <msg>` | Message explaining what was done and what's next (required) |
-| `-f, --file <path>` | File to include for context (can be repeated) |
+| `-f, --file <path>`   | File to include for context (can be repeated)               |
 
 **Examples:**
 
@@ -535,8 +551,9 @@ ficus workstream park [options] <id>
 ```
 
 **Options:**
-| Option | Description |
-|--------|-------------|
+
+| Option              | Description                                                                                                                   |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `--preempt-running` | Discard a running turn only when genuinely abandonable; normally ask the agent to stop safely and wait for confirmation first |
 
 ---
@@ -564,9 +581,10 @@ ficus workstream done <id>
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `id` | Work stream ID to mark as done |
+
+| Argument | Description                    |
+| -------- | ------------------------------ |
+| `id`     | Work stream ID to mark as done |
 
 **Examples:**
 
@@ -590,9 +608,10 @@ ficus workstream delete|rm <id>
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `id` | Work stream ID to delete |
+
+| Argument | Description              |
+| -------- | ------------------------ |
+| `id`     | Work stream ID to delete |
 
 **Examples:**
 
@@ -615,9 +634,10 @@ ficus workstream tracked <id>
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `id` | Work stream ID |
+
+| Argument | Description    |
+| -------- | -------------- |
+| `id`     | Work stream ID |
 
 **Aliases:** `links`
 
@@ -652,19 +672,21 @@ ficus workstream track <id> [options]
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `id` | Work stream ID |
+
+| Argument | Description    |
+| -------- | -------------- |
+| `id`     | Work stream ID |
 
 **Options (choose exactly one of `--event`, `--url`, `--issue`, `--pr`):**
-| Option | Description |
-|--------|-------------|
-| `--event <eventId>` | Track the resource observed by an integration event |
-| `--url <url>` | Track by code-host resource URL |
-| `--issue <ref>` | Track a GitHub issue (`owner/repo#12`) or a Linear issue (`KEY-123`) |
-| `--pr <ref>` | Track a GitHub pull request, e.g. `owner/repo#12` |
-| `--connection <connection-id>` | Integration connection ID (`--issue`/`--pr` only) |
-| `--delivery` | Count this pull request toward the work stream's delivery (only with `--url`/`--pr`) |
+
+| Option                         | Description                                                                          |
+| ------------------------------ | ------------------------------------------------------------------------------------ |
+| `--event <eventId>`            | Track the resource observed by an integration event                                  |
+| `--url <url>`                  | Track by code-host resource URL                                                      |
+| `--issue <ref>`                | Track a GitHub issue (`owner/repo#12`) or a Linear issue (`KEY-123`)                 |
+| `--pr <ref>`                   | Track a GitHub pull request, e.g. `owner/repo#12`                                    |
+| `--connection <connection-id>` | Integration connection ID (`--issue`/`--pr` only)                                    |
+| `--delivery`                   | Count this pull request toward the work stream's delivery (only with `--url`/`--pr`) |
 
 **Examples:**
 
@@ -714,17 +736,19 @@ ficus workstream untrack <id> [options]
 ```
 
 **Arguments:**
-| Argument | Description |
-|----------|-------------|
-| `id` | Work stream ID |
+
+| Argument | Description    |
+| -------- | -------------- |
+| `id`     | Work stream ID |
 
 **Options (choose exactly one of `--url`, `--issue`, `--pr`):**
-| Option | Description |
-|--------|-------------|
-| `--url <url>` | Untrack by code-host resource URL |
-| `--issue <ref>` | Untrack a GitHub issue (`owner/repo#12`) or a Linear issue (`KEY-123`) |
-| `--pr <ref>` | Untrack a GitHub pull request, e.g. `owner/repo#12` |
-| `--connection <connection-id>` | Integration connection ID (`--issue`/`--pr` only) |
+
+| Option                         | Description                                                            |
+| ------------------------------ | ---------------------------------------------------------------------- |
+| `--url <url>`                  | Untrack by code-host resource URL                                      |
+| `--issue <ref>`                | Untrack a GitHub issue (`owner/repo#12`) or a Linear issue (`KEY-123`) |
+| `--pr <ref>`                   | Untrack a GitHub pull request, e.g. `owner/repo#12`                    |
+| `--connection <connection-id>` | Integration connection ID (`--issue`/`--pr` only)                      |
 
 **Examples:**
 

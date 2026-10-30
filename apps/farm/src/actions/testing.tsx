@@ -27,6 +27,7 @@ export function fakeApi(overrides: Partial<ActionsApi> = {}): MockedApi {
     resolveWorkStreamWait: notStubbed('resolveWorkStreamWait'),
     getWorkStream: notStubbed('getWorkStream'),
     workflowRun: notStubbed('workflowRun'),
+    downloadWorkflowAttachment: notStubbed('downloadWorkflowAttachment'),
     advanceWorkflow: notStubbed('advanceWorkflow'),
     finishWorkflow: notStubbed('finishWorkflow'),
     pauseWorkStream: notStubbed('pauseWorkStream'),

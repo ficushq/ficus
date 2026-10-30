@@ -1,3 +1,5 @@
+import { loadReviewContexts } from './review-context'
+import { workflowReviewBriefFixture as brief } from '@ficus/shared'
 import { getPostgresError } from '../../db/errors'
 import { externalDeliveryStreamIds } from './delivery-state'
 import { listPendingActions } from '../agents/actions'
@@ -29,6 +31,7 @@ import {
   executions,
   messages as chatMessages,
   workStreamWaits,
+  workStreamFlowTransitions,
 } from '../../db'
 import { Agent } from '../../entities/Agent'
 import { WorkStream } from '../../entities/WorkStream'
@@ -118,7 +121,7 @@ async function messages(id: string) {
     .from(inbox)
     .where(like(inbox.idempotencyKey, `flow:${id}:%`))
 }
-async function advance(id: string, outcome: string) {
+async function advance(id: string, outcome: string, decisionBrief?: typeof brief) {
   const run = (await getFlow(id))!
   return advanceFlow(
     id,
@@ -128,6 +131,7 @@ async function advance(id: string, outcome: string) {
       action: 'complete',
       outcome,
       evidence: 'Verified result',
+      ...(decisionBrief ? { decisionBrief } : {}),
     },
     randomUUID(),
     actor
@@ -1526,6 +1530,54 @@ test('action center human gates use review permission and assigned reviewer filt
     visible: true,
     canRespond: false,
   })
+  const hold = await openWait(db, {
+    workStreamId: id,
+    type: 'manual',
+    actor: 'owner',
+    scope: 'stream',
+    message: 'Wait for the staging prerequisite.',
+  })
+  const findAction = async () =>
+    (await listPendingActions()).filter((a) => 'workStreamId' in a.data && a.data.workStreamId === id)
+  expect(await findAction()).toHaveLength(0)
+  expect(await evaluatePendingAction({ type: 'user', userId: reviewer.id }, action, context)).toEqual({
+    visible: false,
+    canRespond: false,
+  })
+  const gateRun = (await getFlow(id))!
+  await expect(
+    advanceFlow(
+      id,
+      {
+        action: 'complete',
+        expectedVersion: gateRun.version,
+        attemptId: gateRun.state.activeAttemptId,
+        outcome: 'completed',
+        evidence: '',
+      },
+      randomUUID(),
+      { type: 'user', userId: reviewer.id }
+    )
+  ).rejects.toThrow('Resolve the waits')
+  await db.update(workStreamWaits).set({ actor: 'manager' }).where(eq(workStreamWaits.id, hold.wait.id))
+  expect(await findAction()).toHaveLength(0)
+  expect(await evaluatePendingAction({ type: 'user', userId: reviewer.id }, action, context)).toEqual({
+    visible: false,
+    canRespond: false,
+  })
+  const question = await openWait(db, {
+    workStreamId: id,
+    type: 'manual',
+    actor: 'human',
+    scope: 'stream',
+    message: 'Provide the staging credential.',
+  })
+  expect((await findAction()).map((a) => (a.data as { waitId: string }).waitId)).toEqual([question.wait.id])
+  await closeOpenWaits(db, { workStreamId: id, waitId: question.wait.id }, 'cleared')
+  await closeOpenWaits(db, { workStreamId: id, waitId: hold.wait.id }, 'cleared')
+  expect((await findAction()).map((a) => (a.data as { waitId: string }).waitId)).toEqual([
+    (action.data as { waitId: string }).waitId,
+  ])
   await db
     .update(workStreams)
     .set({ assignedReviewerIds: [responder.id] })
@@ -2026,7 +2078,7 @@ describe('live outcome binding', () => {
         actor
       )
     ).rejects.toThrow('Stale step attempt')
-    await advance(id, 'verified')
+    await advance(id, 'verified', brief)
     const human = (await getFlow(id))!
     expect(human.state.attempts.at(-1)!.stepId).toBe('approval')
     const waits = await listOpenWaits(db, id)
@@ -2488,6 +2540,174 @@ test('watchdog exhaustion without an owning flow attempt emits one durable diagn
   expect(diagnostic[0]!.recipientType).toBe('system')
 })
 
+test('decision brief rejection leaves run, waits, participants and handoff outbox unchanged', async () => {
+  const definition = structuredClone(flow)
+  definition.steps[1]!.outcomes.approved = { next: 'brief-gate' }
+  definition.steps.push({
+    id: 'brief-gate',
+    kind: 'human-approval',
+    instructions: 'Review the staging design.',
+    output: 'Decision.',
+    approver: 'reviewers',
+    outcomes: { approved: { next: 'finish' } },
+  })
+  const id = await create('active', definition)
+  await advance(id, 'completed')
+  const before = {
+    run: await getFlow(id),
+    waits: await listOpenWaits(db, id),
+    bindings: await bindings(id),
+    messages: await messages(id),
+  }
+  const receiptsBefore = await db
+    .select()
+    .from(workStreamFlowTransitions)
+    .where(eq(workStreamFlowTransitions.workStreamId, id))
+  await expect(advance(id, 'approved')).rejects.toThrow('decisionBrief')
+  expect(
+    await db.select().from(workStreamFlowTransitions).where(eq(workStreamFlowTransitions.workStreamId, id))
+  ).toEqual(receiptsBefore)
+  expect({
+    run: await getFlow(id),
+    waits: await listOpenWaits(db, id),
+    bindings: await bindings(id),
+    messages: await messages(id),
+  }).toEqual(before)
+})
+
+test('accepted brief snapshots exact interruptions, preserves receipt retries, and rejects changed retry payloads', async () => {
+  const definition = structuredClone(flow)
+  definition.steps[1]!.outcomes.approved = { next: 'snapshot-gate' }
+  definition.steps.push({
+    id: 'snapshot-gate',
+    kind: 'human-approval',
+    instructions: 'Review the staging design.',
+    output: 'Decision.',
+    approver: 'reviewers',
+    outcomes: { approved: { next: 'finish' } },
+  })
+  const id = await create('active', definition)
+  await advance(id, 'completed')
+  const run = (await getFlow(id))!
+  const agentId = run.attemptAgents['2']!
+  const inserted = await db
+    .insert(executions)
+    .values([
+      {
+        agentId,
+        status: 'failed',
+        endedAt: new Date(),
+        flowContext: { workStreamId: id, attemptId: 2, stepId: 'review' },
+        error: 'Raw private diagnostic, not review context.',
+        failureReason: 'Private failure reason that must never leave the database',
+      },
+      {
+        agentId,
+        status: 'stopped',
+        endedAt: new Date(),
+        flowContext: { workStreamId: id, attemptId: 2, stepId: 'review' },
+      },
+      {
+        agentId,
+        status: 'failed',
+        endedAt: new Date(),
+        flowContext: { workStreamId: randomUUID(), attemptId: 2, stepId: 'review' },
+      },
+      {
+        agentId,
+        status: 'failed',
+        startedAt: new Date('2000-01-01T00:00:00Z'),
+        endedAt: new Date(),
+        flowContext: { workStreamId: id, attemptId: 2, stepId: 'review' },
+      },
+    ])
+    .returning()
+  const command = {
+    action: 'complete',
+    expectedVersion: run.version,
+    attemptId: 2,
+    outcome: 'approved',
+    evidence: 'Audited staging result.',
+    decisionBrief: brief,
+  }
+  const requestId = randomUUID()
+  const result = await advanceFlow(id, command, requestId, actor)
+  expect(await advanceFlow(id, command, requestId, actor)).toMatchObject({ version: result.version })
+  await expect(
+    advanceFlow(
+      id,
+      { ...command, decisionBrief: { ...brief, risks: 'The maintenance cost increases temporarily.' } },
+      requestId,
+      actor
+    )
+  ).rejects.toThrow('Request ID already used')
+  const accepted = (await getFlow(id))!.state.attempts[1]!.decisionBrief!
+  expect(accepted.contexts[0]!.interruptedExecutions.map((e) => e.executionId).sort()).toEqual(
+    inserted
+      .slice(0, 2)
+      .map((e) => e.id)
+      .sort()
+  )
+  expect(JSON.stringify(accepted)).not.toContain('Raw private diagnostic')
+  expect(JSON.stringify(accepted)).not.toContain('Private failure reason')
+  expect(JSON.stringify(accepted)).not.toContain('failureReason')
+})
+
+test('explicit human-directed return is atomic on rejection and snapshots bounded context on acceptance', async () => {
+  const definition = structuredClone(flow)
+  definition.steps[0]!.outcomes.recheck = { returnTo: 'return-gate', afterRework: 'return-to-requester' }
+  definition.steps.push({
+    id: 'return-gate',
+    kind: 'human-approval',
+    instructions: 'Review the staging return.',
+    output: 'Decision.',
+    approver: 'reviewers',
+    outcomes: { yes: { next: 'finish' } },
+  })
+  const id = await create('active', definition)
+  const run = (await getFlow(id))!
+  const [stopped] = await db
+    .insert(executions)
+    .values({
+      agentId: run.attemptAgents['1']!,
+      status: 'stopped',
+      endedAt: new Date(),
+      flowContext: { workStreamId: id, attemptId: 1, stepId: 'build' },
+    })
+    .returning()
+  const command = {
+    action: 'return',
+    expectedVersion: run.version,
+    attemptId: 1,
+    targetStepId: 'return-gate',
+    resumeAt: 'build',
+    feedback: 'Review the revised staging scope before resuming.',
+  }
+  const snapshot = async () => ({
+    run: await getFlow(id),
+    waits: await listOpenWaits(db, id),
+    bindings: await bindings(id),
+    messages: await messages(id),
+    receipts: await db.select().from(workStreamFlowTransitions).where(eq(workStreamFlowTransitions.workStreamId, id)),
+  })
+  const before = await snapshot()
+  await expect(advanceFlow(id, command, randomUUID(), actor)).rejects.toThrow('decisionBrief')
+  await expect(
+    advanceFlow(id, { ...command, decisionBrief: { ...brief, risks: 'pls approve this' } }, randomUUID(), actor)
+  ).rejects.toThrow()
+  expect(await snapshot()).toEqual(before)
+  const requestId = randomUUID()
+  const valid = { ...command, decisionBrief: brief }
+  const accepted = await advanceFlow(id, valid, requestId, actor)
+  expect(await advanceFlow(id, valid, requestId, actor)).toMatchObject({ version: accepted.version })
+  const after = (await getFlow(id))!
+  expect(after.state.attempts[0]!.decisionBrief!.contexts[0]!.interruptedExecutions.map((e) => e.executionId)).toEqual([
+    stopped!.id,
+  ])
+  expect(after.state.attempts.at(-1)!.reviewBrief).toEqual({ kind: 'authored', sourceAttemptIds: [1] })
+  expect(after.state.attempts[0]!.feedback).toBe(command.feedback)
+})
+
 test('dedicated PR reviews keep the agent until live merge or closure, including fork reviews', async () => {
   const api = spyOn(githubApi, 'githubApiGet')
   const stop = spyOn(Agent.prototype, 'tryTerminate').mockResolvedValue(undefined)
@@ -2527,4 +2747,41 @@ test('dedicated PR reviews keep the agent until live merge or closure, including
     api.mockRestore()
     stop.mockRestore()
   }
+})
+
+test('review interruption reads are bounded to the latest 200 stream-lifetime failures and expose no reason text', async () => {
+  const definition = structuredClone(flow)
+  definition.steps[1]!.outcomes.approved = { next: 'bounded-gate' }
+  definition.steps.push({
+    id: 'bounded-gate',
+    kind: 'human-approval',
+    approver: 'reviewers',
+    instructions: 'Review staging.',
+    output: 'Decision.',
+    outcomes: { yes: { next: 'finish' } },
+  })
+  const id = await create('active', definition)
+  await advance(id, 'completed')
+  const run = (await getFlow(id))!
+  const started = Date.now()
+  const rows = await db
+    .insert(executions)
+    .values(
+      Array.from({ length: 201 }, (_, index) => ({
+        agentId: run.attemptAgents['2']!,
+        status: 'failed' as const,
+        flowContext: { workStreamId: id, attemptId: 2, stepId: 'review' },
+        startedAt: new Date(started + index * 1000),
+        endedAt: new Date(started + index * 1000 + 100),
+        failureReason: 'Private reason text',
+        error: 'Private execution diagnostic',
+      }))
+    )
+    .returning({ id: executions.id })
+  const contexts = await loadReviewContexts(db, id, run.state, run)
+  const interrupted = contexts['2']![0]!.interruptedExecutions
+  expect(interrupted).toHaveLength(200)
+  expect(interrupted.map((item) => item.executionId)).not.toContain(rows[0]!.id)
+  expect(JSON.stringify(contexts)).not.toContain('Private')
+  expect(JSON.stringify(contexts)).not.toContain('failureReason')
 })

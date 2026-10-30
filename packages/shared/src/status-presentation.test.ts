@@ -202,7 +202,9 @@ describe('selectWorkStreamPresentationState', () => {
   test('a workflow human-approval gate presents as review, not blocked', () => {
     const gate = { type: 'manual' as const, resolutionHandler: 'workflow' as const, flowAttemptId: 2 }
     expect(selectWorkStreamPresentationState(stream({ openWaits: [gate] }))).toBe('in_review')
-    expect(selectWorkStreamPresentationState(stream({ openWaits: [wait('dependency'), gate] }))).toBe('in_review')
+    expect(selectWorkStreamPresentationState(stream({ openWaits: [wait('dependency'), gate] }))).toBe(
+      'waiting_on_dependency'
+    )
     expect(workStreamNeedsHumanAttention(stream({ openWaits: [gate] }))).toBe(true)
     // Whole-stream workflow waits (attempt limits) and ordinary manual waits still block.
     const limit = { type: 'manual' as const, resolutionHandler: 'workflow' as const, flowAttemptId: null }

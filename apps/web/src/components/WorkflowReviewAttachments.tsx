@@ -21,16 +21,18 @@ const DOWNLOAD_URL_LIFETIME_MS = 60_000
 export function ReviewTabs({
   idPrefix,
   attachments,
+  primary = { id: HANDOFF_TAB, label: 'Handoff' },
   selected,
   onSelect,
 }: {
   idPrefix: string
   attachments: WorkflowAttemptAttachment[]
+  primary?: { id: string; label: string }
   selected: string
   onSelect: (id: string) => void
 }) {
   const tabs = [
-    { id: HANDOFF_TAB, label: 'Handoff', title: undefined as string | undefined },
+    { ...primary, title: undefined as string | undefined },
     ...attachments.map((attachment) => ({ id: attachment.id, label: attachment.filename, title: attachment.path })),
   ]
   const list = useRef<HTMLDivElement>(null)

@@ -1,3 +1,4 @@
+import { isWorkflowHumanGateWait, workflowReviewBlockingWaits } from './workflow-review-waits'
 import type {
   AgentStatus,
   ExecutionStatus,
@@ -222,6 +223,7 @@ export const WORK_STREAM_WAIT_STATE = {
 } as const satisfies Record<WorkStreamWaitType, WorkStreamDerivedState>
 
 export interface WorkStreamWaitDisplayFacts {
+  workflowHumanGate?: boolean
   type: WorkStreamWaitType
   resolutionHandler?: 'workflow'
   flowAttemptId?: number | null
@@ -247,9 +249,7 @@ export const MANUAL_WAIT_ACTOR_STATE = {
  * are whole-stream (no attempt) and keep their stored type.
  */
 export function workStreamWaitDisplayType(wait: WorkStreamWaitDisplayFacts): WorkStreamWaitType {
-  return wait.type === 'manual' && wait.resolutionHandler === 'workflow' && wait.flowAttemptId != null
-    ? 'review'
-    : wait.type
+  return isWorkflowHumanGateWait(wait) ? 'review' : wait.type
 }
 
 export interface WorkStreamPresentationFacts {
@@ -281,8 +281,11 @@ export function selectWorkStreamPresentationState(
       ? (`delivery_${workStream.delivery.kind}` as WorkStreamPresentationState)
       : undefined
   if (workStream.openWaits !== undefined) {
+    const actionableWaits = workStream.openWaits.filter(
+      (wait) => !isWorkflowHumanGateWait(wait) || !workflowReviewBlockingWaits(wait, workStream.openWaits!).length
+    )
     const waitType = WORK_STREAM_WAIT_DISPLAY_PRECEDENCE.find((type) =>
-      workStream.openWaits!.some(
+      actionableWaits.some(
         (wait) =>
           workStreamWaitDisplayType(wait) === type &&
           !(
@@ -295,13 +298,13 @@ export function selectWorkStreamPresentationState(
     )
     if (waitType === 'manual') {
       // Anything a human must clear wins over an owner-only hold.
-      const humanActionable = workStream.openWaits.some(
+      const humanActionable = actionableWaits.some(
         (wait) =>
           workStreamWaitDisplayType(wait) === 'manual' &&
           !(deliveryState === 'delivery_approval' && wait.id && wait.id === workStream.delivery?.approvalWaitId) &&
           workStreamWaitActor(wait) === 'human'
       )
-      const ownerActionable = workStream.openWaits.some(
+      const ownerActionable = actionableWaits.some(
         (wait) => workStreamWaitDisplayType(wait) === 'manual' && workStreamWaitActor(wait) === 'owner'
       )
       return MANUAL_WAIT_ACTOR_STATE[humanActionable ? 'human' : ownerActionable ? 'owner' : 'manager']
@@ -355,6 +358,20 @@ export function workStreamSecondaryDeliveryLabel(workStream: WorkStreamPresentat
 /** Whether a stream contributes to a user-attention aggregate, independently of its primary bucket. */
 export function workStreamNeedsHumanAttention(workStream: WorkStreamPresentationFacts): boolean {
   const state = selectWorkStreamPresentationState(workStream)
+  if (['done', 'canceled', 'paused'].includes(state)) return false
+  if (
+    workStream.openWaits?.some(
+      (wait) =>
+        wait.type === 'question' ||
+        (!isWorkflowHumanGateWait(wait) &&
+          wait.type === 'manual' &&
+          workStreamWaitActor(wait) === 'human' &&
+          !(workStream.delivery?.kind === 'approval' && wait.id === workStream.delivery.approvalWaitId)) ||
+        (workStreamWaitDisplayType(wait) === 'review' &&
+          !workflowReviewBlockingWaits(wait, workStream.openWaits!).length)
+    )
+  )
+    return true
   if (state === 'delivery_approval' || state === 'delivery_review' || state === 'delivery_merge') return true
   if (state === 'in_progress' && ['approval', 'review', 'merge'].includes(String(workStream.delivery?.kind)))
     return true

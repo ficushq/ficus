@@ -1,3 +1,4 @@
+import { loadReviewContexts } from './review-context'
 import { flowWaitReference, isDeliveryApprovalWait } from './wait-policy'
 import { deliveryInstructionsForRun } from './completion-prompt'
 import { isWorkflowReviewer } from './reviewers'
@@ -356,7 +357,15 @@ async function dispatchFlowAttempt(
       ...(canBind ? { executionId: origin!.id } : {}),
       agentId: binding!.agentId,
       version: run.version,
-      content: flowMessage(stream, run, attempt, await stackNotice(tx, stream)),
+      content: flowMessage(
+        stream,
+        run,
+        attempt,
+        await stackNotice(tx, stream),
+        (await loadReviewContexts(tx, stream.id, run.state, { attemptAgents, createdAt: run.createdAt }))[
+          String(attempt.id)
+        ]
+      ),
     }
     await tx.update(workStreamFlowRuns).set({ state: run.state }).where(eq(workStreamFlowRuns.workStreamId, stream.id))
     return
@@ -366,7 +375,15 @@ async function dispatchFlowAttempt(
     {
       recipientId: binding!.agentId,
       subject: `Flow step: ${step.id}`,
-      content: flowMessage(stream, run, attempt, await stackNotice(tx, stream)),
+      content: flowMessage(
+        stream,
+        run,
+        attempt,
+        await stackNotice(tx, stream),
+        (await loadReviewContexts(tx, stream.id, run.state, { attemptAgents, createdAt: run.createdAt }))[
+          String(attempt.id)
+        ]
+      ),
       metadata: { workStreamId: stream.id, squadId: stream.squadId, source: 'workflow', attemptId: attempt.id },
       wakeEligible: true,
       recordOnly: true,
@@ -514,6 +531,26 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
       state = advanceWorkflowRun(run.state, command)
     } catch (error) {
       throw new WorkflowError((error as Error).message, 409)
+    }
+    if ((command.action === 'complete' || command.action === 'return') && command.decisionBrief) {
+      const contexts =
+        (await loadReviewContexts(tx, id, run.state, { attemptAgents: run.attemptAgents, createdAt: run.createdAt }))[
+          String(command.attemptId)
+        ] ?? []
+      const submission = state.attempts.find((a) => a.id === command.attemptId)?.decisionBrief
+      if (submission)
+        submission.contexts = submission.contexts.map((context) => {
+          const current = contexts.find((entry) => entry.gateStepId === context.gateStepId)
+          return current
+            ? {
+                ...context,
+                previousDecisionAttemptId: current.previousDecisions[0]?.attemptId,
+                returnIds: current.returns.map((r) => r.id),
+                revisionVersions: current.revisions.map((r) => r.version),
+                interruptedExecutions: current.interruptedExecutions,
+              }
+            : context
+        })
     }
     if (command.action === 'rework') {
       for (const wait of await listOpenWaits(tx, id)) {

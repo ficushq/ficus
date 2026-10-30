@@ -2,6 +2,8 @@ import { and, desc, inArray, isNotNull } from 'drizzle-orm'
 import {
   WORK_STREAM_WAIT_DISPLAY_PRECEDENCE,
   WORK_STREAM_WAIT_STATE,
+  isWorkflowHumanGateWait,
+  workflowReviewBlockingWaits,
   workStreamWaitDisplayType,
   selectWorkStreamPresentationState,
   type WorkStreamDeliveryPresentation,
@@ -60,10 +62,12 @@ export interface DerivedStreamInfo {
 }
 
 export function sortWaitsByDisplayPrecedence(waits: WorkStreamWait[]): WorkStreamWait[] {
+  const rankFor = (wait: WorkStreamWait) =>
+    isWorkflowHumanGateWait(wait) && workflowReviewBlockingWaits(wait, waits).length
+      ? WORK_STREAM_WAIT_DISPLAY_PRECEDENCE.length
+      : WORK_STREAM_WAIT_DISPLAY_PRECEDENCE.indexOf(workStreamWaitDisplayType(wait))
   return [...waits].sort((a, b) => {
-    const rank =
-      WORK_STREAM_WAIT_DISPLAY_PRECEDENCE.indexOf(workStreamWaitDisplayType(a)) -
-      WORK_STREAM_WAIT_DISPLAY_PRECEDENCE.indexOf(workStreamWaitDisplayType(b))
+    const rank = rankFor(a) - rankFor(b)
     if (rank !== 0) return rank
     return b.openedAt.localeCompare(a.openedAt)
   })

@@ -1233,6 +1233,8 @@ export function workStreamWaitActor(wait: { actor?: string | null }): WorkStream
 }
 
 export interface WorkStreamWait {
+  /** Read-only exact-reference annotation; never writable by clients. */
+  workflowHumanGate?: boolean
   /** Present only for new structured manual input requests. */
   structured?: StructuredManualWait | null
   /** Missing/null means whole-stream; an ID pins the wait to one flow attempt. */

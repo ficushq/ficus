@@ -1,6 +1,16 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { queryKeys, type ResolveWorkStreamWaitResult } from '@ficus/client-core'
-import type { PendingAction, WorkStream } from '@ficus/shared'
+import {
+  createBlankWorkflow,
+  createWorkflowRun,
+  advanceWorkflowRun,
+  workflowStepSchema,
+  routeWorkflowDecision,
+  workflowReviewBriefFixture,
+  type PendingAction,
+  type WorkStream,
+} from '@ficus/shared'
+import type { WorkflowRunDetail } from '@ficus/client-core'
 import { stream, wait, workflowRun } from './fixtures'
 import { ReviewForm } from './ReviewForm'
 import { UnblockForm } from './UnblockForm'
@@ -232,7 +242,7 @@ describe('WorkflowDecision · human-approval gate', () => {
     const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
     await typeInto(byLabel(container, 'Decision notes'), 'ok')
     expect(button(container, 'Approved').disabled).toBe(true)
-    expect(container.textContent).toContain('Resolve the other open waits')
+    expect(container.textContent).toContain('Waiting for an answer:')
   })
 
   it('limits assigned-reviewer gates to the assigned reviewers', async () => {
@@ -329,4 +339,246 @@ it('kept gates offer live outcomes instead of the original verdicts', async () =
   expect(hasButton(container, 'Accepted')).toBe(true)
   expect(hasButton(container, 'Approved')).toBe(false)
   expect(container.textContent).toContain('Taste the tomatoes')
+})
+
+it('a second workflow-owned wait blocks the gate', async () => {
+  const gate = wait({
+    id: 'gate-wait',
+    type: 'manual',
+    resolutionHandler: 'workflow',
+    flowAttemptId: 2,
+    workflowHumanGate: true,
+  })
+  const other = wait({
+    id: 'other',
+    type: 'manual',
+    resolutionHandler: 'workflow',
+    flowAttemptId: 2,
+    workflowHumanGate: false,
+  })
+  const api = fakeApi({
+    workflowRun: () => Promise.resolve(workflowRun('gate', { openWaits: [gate, other] })),
+    getWorkStream: () => Promise.resolve(stream()),
+  })
+  const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
+  await typeInto(byLabel(container, 'Decision notes'), 'Ready for staging.')
+  expect(button(container, 'Approved').disabled).toBe(true)
+})
+
+it('Farm leads with the authored brief, keeps attachment peer tabs and collapses only the handoff', async () => {
+  const run = workflowRun('gate')
+  run.state.attempts[0]!.decisionBrief = {
+    value: {
+      decision: 'Approve the staging design.',
+      recommendation: 'Approve because fallback reads are tested.',
+      approvalEffect: 'Approval permits staging work only, not production deployment.',
+      risks: 'Maintenance work increases temporarily.',
+      changesSinceLastReview: 'The prior review requested a smaller scope. The rollout is now excluded.',
+    },
+    submittedVersion: 6,
+    contexts: [],
+  }
+  run.state.attempts[1]!.reviewBrief = { kind: 'authored', sourceAttemptIds: [1] }
+  run.attachments = {
+    '1': [
+      {
+        id: 'design',
+        attemptId: 1,
+        filename: 'design.md',
+        path: 'docs/design.md',
+        contentType: 'text/markdown',
+        byteSize: 20,
+        createdAt: '',
+      },
+    ],
+  }
+  const api = fakeApi({
+    workflowRun: () => Promise.resolve(run),
+    getWorkStream: () => Promise.resolve(stream()),
+    downloadWorkflowAttachment: () => Promise.resolve(new TextEncoder().encode('The synthetic staging design.')),
+  })
+  const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
+  const tabs = [...container.querySelectorAll('[role="tab"]')]
+  expect(tabs.map((tab) => tab.textContent)).toEqual(['Decision brief', 'design.md'])
+  expect(tabs[0]!.getAttribute('aria-selected')).toBe('true')
+  expect(container.querySelector('[aria-label="Decision brief"]')!.textContent).toContain(
+    'What changed since your last review'
+  )
+  const disclosure = container.querySelector('details')!
+  expect(disclosure.open).toBe(false)
+  expect(disclosure.querySelector('summary')!.textContent).toBe('Internal handoff')
+  expect(disclosure.textContent).toContain('Planted and watered')
+  expect(api.downloadWorkflowAttachment).not.toHaveBeenCalled()
+  await click(tabs[1] as HTMLButtonElement)
+  expect(api.downloadWorkflowAttachment).toHaveBeenCalledTimes(1)
+  expect(container.querySelector('[role="tabpanel"]')!.textContent).toContain('The synthetic staging design.')
+  await click(tabs[0] as HTMLButtonElement)
+  expect(container.querySelector('[aria-label="Decision brief"]')).not.toBeNull()
+})
+
+for (const kind of ['carried-forward', 'none'] as const) {
+  it(`Farm labels ${kind} and retains the gate's own message`, async () => {
+    const run = workflowRun('gate')
+    run.state.attempts[0]!.decisionBrief = {
+      value: {
+        decision: 'Approve the staging design.',
+        recommendation: 'Approve because fallback reads are tested.',
+        approvalEffect: 'Approval permits staging only, not deployment.',
+        risks: 'Maintenance work increases.',
+      },
+      submittedVersion: 1,
+      contexts: [],
+    }
+    run.state.attempts[1]!.reviewBrief = kind === 'none' ? { kind } : { kind, sourceAttemptId: 1 }
+    const api = fakeApi({ workflowRun: () => Promise.resolve(run), getWorkStream: () => Promise.resolve(stream()) })
+    const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
+    const panel = container.querySelector('[role="tabpanel"]')!
+    expect(panel.textContent).toContain(
+      kind === 'none' ? 'No decision brief for this gate' : 'Carried forward from an earlier step'
+    )
+    expect(panel.textContent).toContain('Taste the tomatoes')
+  })
+}
+
+it('Farm queued reviews list every owner and manager blocker without advertising Your review', async () => {
+  const gate = wait({ id: 'gate', type: 'manual', resolutionHandler: 'workflow', flowAttemptId: 2 })
+  const waits = [
+    gate,
+    wait({ id: 'owner', type: 'manual', actor: 'owner', message: 'Wait for the approved sequencing window.' }),
+    wait({ id: 'manager', type: 'manual', actor: 'manager', message: 'Confirm the staging dependency first.' }),
+  ]
+  const api = fakeApi({
+    workflowRun: () => Promise.resolve(workflowRun('gate', { openWaits: waits })),
+    getWorkStream: () => Promise.resolve(stream()),
+  })
+  const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
+  expect(container.textContent).toContain('Review queued')
+  expect(container.textContent).not.toContain('Your review')
+  expect(container.querySelector('[aria-label="Review blockers"]')!.textContent).toContain('Waiting on owner:')
+  expect(container.querySelector('[aria-label="Review blockers"]')!.textContent).toContain('Waiting on manager:')
+  for (const wait of waits.slice(1)) expect(container.textContent).toContain(wait.message!)
+  await typeInto(byLabel(container, 'Decision notes'), 'Checked the design.')
+  expect(button(container, 'Approved').disabled).toBe(true)
+})
+
+function decisionPassThrough() {
+  const definition = createBlankWorkflow()
+  definition.steps[0]!.outcomes.completed = { next: 'choice' }
+  definition.steps.push(
+    workflowStepSchema.parse({
+      id: 'choice',
+      kind: 'decision',
+      instructions: 'Choose staging.',
+      questions: { ready: { type: 'yesno', instructions: 'Is staging ready?' } },
+      outcomes: { yes: { next: 'gate' } },
+    }),
+    workflowStepSchema.parse({
+      id: 'gate',
+      kind: 'human-approval',
+      instructions: 'Review staging.',
+      output: 'Decision.',
+      outcomes: { yes: { next: 'finish' } },
+    })
+  )
+  return definition
+}
+for (const legacy of [false, true]) {
+  it(`Farm preserves independent transitive files without a brief (${legacy ? 'legacy' : 'explicit notice'})`, async () => {
+    const definition = decisionPassThrough()
+    let state = advanceWorkflowRun(createWorkflowRun(definition), {
+      action: 'complete',
+      expectedVersion: 0,
+      attemptId: 1,
+      outcome: 'completed',
+      evidence: 'Review the attached staging design.',
+    })
+    state = advanceWorkflowRun(state, {
+      action: 'complete',
+      expectedVersion: state.version,
+      attemptId: 2,
+      outcome: 'yes',
+      evidence: 'Choose human review.',
+    })
+    const attempt = state.attempts.at(-1)!
+    if (legacy) attempt.reviewBrief = { kind: 'legacy' }
+    const run: WorkflowRunDetail = {
+      ...workflowRun('gate'),
+      state,
+      version: state.version,
+      openWaits: [],
+      attachments: {
+        '1': [
+          {
+            id: 'transitive-design',
+            attemptId: 1,
+            filename: 'staging-design.md',
+            path: 'docs/staging-design.md',
+            contentType: 'text/markdown',
+            byteSize: 24,
+            createdAt: '',
+          },
+        ],
+      },
+    }
+    const api = fakeApi({
+      workflowRun: () => Promise.resolve(run),
+      getWorkStream: () => Promise.resolve(stream()),
+      downloadWorkflowAttachment: () => Promise.resolve(new TextEncoder().encode('The upstream staging design.')),
+    })
+    const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
+    const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+    expect(tabs.map((tab) => tab.textContent)).toEqual([legacy ? 'Handoff' : 'Decision brief', 'staging-design.md'])
+    expect(tabs[0]!.getAttribute('aria-selected')).toBe('true')
+    expect(container.textContent).toContain('Review the attached staging design.')
+    if (!legacy)
+      expect(container.querySelector('[aria-label="Decision brief"]')!.textContent).toContain(
+        'No decision brief for this gate'
+      )
+    expect(api.downloadWorkflowAttachment).not.toHaveBeenCalled()
+    await click(tabs[1]!)
+    expect(api.downloadWorkflowAttachment.mock.calls[0]!.slice(0, 2)).toEqual(['ws-1', 'transitive-design'])
+    expect(container.querySelector('[role="tabpanel"]')!.textContent).toContain('The upstream staging design.')
+    await click(tabs[0]!)
+    expect(tabs[0]!.getAttribute('aria-selected')).toBe('true')
+    expect(api.downloadWorkflowAttachment).toHaveBeenCalledTimes(1)
+  })
+}
+
+it('Farm restarted decision fallback shows only the new gate message and explicit missing-brief notice', async () => {
+  const definition = decisionPassThrough()
+  let state = advanceWorkflowRun(createWorkflowRun(definition), {
+    action: 'complete',
+    expectedVersion: 0,
+    attemptId: 1,
+    outcome: 'completed',
+    evidence: 'Original internal handoff.',
+    decisionBrief: workflowReviewBriefFixture,
+  })
+  state = advanceWorkflowRun(state, {
+    action: 'revise',
+    expectedVersion: state.version,
+    attemptId: 2,
+    active: 'restart',
+    reason: 'Replace the staging choice session.',
+    operations: [
+      {
+        op: 'put-step',
+        step: { ...state.attempts[1]!.step!, instructions: 'Choose only the replacement staging scope.' },
+      },
+    ],
+  })
+  const attempt = state.attempts.at(-1)!
+  const decisionStep = attempt.step
+  if (decisionStep?.kind !== 'decision') throw new Error('Expected a decision fixture')
+  attempt.decision = routeWorkflowDecision(decisionStep, { ok: false, reason: 'unavailable', errors: [] })
+  const run = { ...workflowRun('gate'), state, version: state.version, openWaits: [] }
+  const api = fakeApi({ workflowRun: () => Promise.resolve(run), getWorkStream: () => Promise.resolve(stream()) })
+  const { container } = await render(<WorkflowDecision workStreamId="ws-1" />, api)
+  expect(container.querySelector('[aria-label="Decision brief"]')!.textContent).toContain(
+    'No decision brief for this gate'
+  )
+  const panel = container.querySelector('[role="tabpanel"]')!
+  expect(panel.textContent).toContain('Choose only the replacement staging scope.')
+  expect(panel.textContent).not.toContain(workflowReviewBriefFixture.decision)
+  expect(panel.textContent).not.toContain('Carried forward from an earlier step')
 })

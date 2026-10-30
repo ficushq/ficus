@@ -4,6 +4,10 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   advanceWorkflowRun,
+  createBlankWorkflow,
+  workflowStepSchema,
+  routeWorkflowDecision,
+  workflowReviewBriefFixture,
   createWorkflowRun,
   workflowPresetSchema,
   type WorkflowTransition,
@@ -641,6 +645,228 @@ test('a PDF that cannot be read falls back to the download offer', async () => {
     expect(panel.querySelector('canvas')).toBeNull()
   } finally {
     download.mockRestore()
+    await f.cleanup()
+  }
+})
+
+test('authored brief leads with repeat-round context and collapses independent evidence', async () => {
+  const f = await fixture()
+  const download = spyOn(client.workflows, 'downloadAttachment').mockResolvedValue(
+    new TextEncoder().encode('# Staging attachment\n\nKeep the fallback.')
+  )
+  try {
+    const run = gateRun()
+    run.state.attempts[2]!.decisionBrief = {
+      submittedVersion: 7,
+      contexts: [],
+      value: {
+        decision: 'Approve the staging migration design.',
+        recommendation: 'Approve because fallback reads are tested.',
+        approvalEffect: 'Approval permits staging implementation only, not deployment.',
+        risks: 'Parallel paths increase maintenance work.',
+        changesSinceLastReview:
+          'The earlier review requested a smaller scope. This design removes the unrelated rollout.',
+      },
+    }
+    run.state.attempts[3]!.reviewBrief = { kind: 'authored', sourceAttemptIds: [3] }
+    run.attachments = { '3': [designDoc] }
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), run)
+    await f.render(<WorkflowReviewModal stream={stream} attemptId={4} onClose={() => {}} />)
+    const article = f.doc.querySelector('[aria-label="Decision brief"]')!
+    expect(article).not.toBeNull()
+    expect(tabs(f)[0]?.textContent).toBe('Decision brief')
+    expect(tabs(f)[0]?.getAttribute('aria-selected')).toBe('true')
+    expect(article.textContent).toContain('What changed since your last review')
+    const disclosure = [...f.doc.querySelectorAll('details')].find(
+      (d) => d.querySelector('summary')?.textContent === 'Internal handoff'
+    )!
+    expect(disclosure.open).toBe(false)
+    expect(article.compareDocumentPosition(disclosure) & 4).toBeTruthy()
+    expect(disclosure.textContent).toContain('Read-only assessment of the head commit.')
+    expect(f.doc.body.textContent).toContain('Human approval · Review the architecture')
+    expect(tabs(f).map((tab) => tab.textContent)).toEqual(['Decision brief', 'design.md'])
+    expect(download).not.toHaveBeenCalled()
+    await f.dom.act(async () => tabs(f)[1]!.click())
+    await f.settle()
+    expect(f.doc.querySelector('[role="tabpanel"]')!.textContent).toContain('Staging attachment')
+    expect(download).toHaveBeenCalledTimes(1)
+    await f.dom.act(async () => tabs(f)[0]!.click())
+    expect(f.doc.querySelector('[aria-label="Decision brief"]')).not.toBeNull()
+    expect(f.doc.querySelector('details')!.open).toBe(false)
+  } finally {
+    download.mockRestore()
+    await f.cleanup()
+  }
+})
+test('non-agent no-brief notice and carried-forward label preserve the current gate message', async () => {
+  for (const carry of [false, true]) {
+    const f = await fixture()
+    try {
+      const run = gateRun()
+      run.state.attempts[3]!.reviewBrief = carry ? { kind: 'carried-forward', sourceAttemptId: 3 } : { kind: 'none' }
+      if (carry) {
+        run.state.attempts[2]!.decisionBrief = {
+          submittedVersion: 6,
+          contexts: [],
+          value: {
+            decision: 'Approve the staging design.',
+            recommendation: 'Approve because it is tested.',
+            approvalEffect: 'Approval permits staging only, not production.',
+            risks: 'Maintenance effort temporarily increases.',
+          },
+        }
+        // A completed non-agent source carries the nearest agent submission.
+        run.state.attempts.push({ id: 5, stepId: 'design-review', status: 'completed', sourceAttemptIds: [3] })
+        run.state.attempts[3]!.sourceAttemptIds = [5]
+      }
+      f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), run)
+      await f.render(<WorkflowReviewModal stream={stream} attemptId={4} onClose={() => {}} />)
+      expect(f.doc.body.textContent).toContain(
+        carry ? 'Carried forward from an earlier step' : 'No decision brief for this gate'
+      )
+      expect(f.doc.body.textContent).toContain('Review the architecture and completion proposal before release.')
+    } finally {
+      await f.cleanup()
+    }
+  }
+})
+
+test('queued review remains readable with every blocker, disabled controls and automatic clearance', async () => {
+  const f = await fixture()
+  const mutate = spyOn(client.workflows, 'advance').mockResolvedValue(undefined as never)
+  try {
+    const run = gateRun()
+    run.openWaits!.push(
+      ...['owner-a', 'owner-b'].map((id) => ({
+        ...run.openWaits![0]!,
+        id,
+        resolutionHandler: undefined,
+        flowAttemptId: null,
+        actor: 'owner' as const,
+        message: `Waiting for ${id}.`,
+      }))
+    )
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), run)
+    await f.render(<WorkflowReviewModal stream={stream} attemptId={4} onClose={() => {}} />)
+    expect(f.doc.body.textContent).toContain('Review queued')
+    expect(f.doc.body.textContent).toContain('Waiting for owner-a.')
+    expect(f.doc.body.textContent).toContain('Waiting for owner-b.')
+    expect(f.decisionButtons().every((b) => b.disabled)).toBe(true)
+    await f.dom.act(async () => f.decisionButtons()[0]!.click())
+    expect(mutate).not.toHaveBeenCalled()
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), { ...run, openWaits: run.openWaits!.slice(0, 1) })
+    await f.settle()
+    expect(f.doc.body.textContent).not.toContain('Review queued')
+    expect(f.decisionButtons()[0]!.disabled).toBe(false)
+  } finally {
+    mutate.mockRestore()
+    await f.cleanup()
+  }
+})
+
+test('an actual restarted human gate shows its new own message and the exact no-brief notice', async () => {
+  const f = await fixture()
+  try {
+    const detail = gateRun()
+    let state = createWorkflowRun(detail.state.definition)
+    state = advanceWorkflowRun(state, {
+      action: 'complete',
+      expectedVersion: 0,
+      attemptId: 1,
+      outcome: 'completed',
+      evidence: 'Original audit handoff.',
+      decisionBrief: {
+        decision: 'Approve the original staging scope.',
+        recommendation: 'Approve because tests passed.',
+        approvalEffect: 'Approval permits the original staging work only.',
+        risks: 'Maintenance work temporarily increases.',
+      },
+    })
+    const gate = state.attempts.at(-1)!
+    state = advanceWorkflowRun(state, {
+      action: 'revise',
+      expectedVersion: state.version,
+      attemptId: gate.id,
+      active: 'restart',
+      reason: 'Start a fresh review for replacement scope.',
+      operations: [
+        { op: 'put-step', step: { ...gate.step!, instructions: 'Review only the replacement staging scope.' } },
+      ],
+    })
+    const current = state.attempts.at(-1)!
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), {
+      ...detail,
+      state,
+      version: state.version,
+      openWaits: [{ ...detail.openWaits[0]!, flowAttemptId: current.id }],
+    })
+    await f.render(<WorkflowReviewModal stream={stream} attemptId={current.id} onClose={() => {}} />)
+    const article = f.doc.querySelector('[aria-label="Decision brief"]')!
+    expect(article.textContent).toContain('No decision brief for this gate')
+    expect(f.doc.querySelector('[data-review-document]')!.textContent).toContain(
+      'Review only the replacement staging scope.'
+    )
+    expect(article.textContent).not.toContain('Approve the original staging scope.')
+    expect(article.textContent).not.toContain('Carried forward')
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('a restarted decision fallback excludes the old brief and shows its replacement own message', async () => {
+  const f = await fixture()
+  try {
+    const definition = createBlankWorkflow()
+    definition.steps[0]!.outcomes.completed = { next: 'choice' }
+    definition.steps.push(
+      workflowStepSchema.parse({
+        id: 'choice',
+        kind: 'decision',
+        instructions: 'Choose the original staging scope.',
+        questions: { ready: { type: 'yesno', instructions: 'Is staging ready?' } },
+        outcomes: { yes: { next: 'finish' } },
+      })
+    )
+    let state = advanceWorkflowRun(createWorkflowRun(definition), {
+      action: 'complete',
+      expectedVersion: 0,
+      attemptId: 1,
+      outcome: 'completed',
+      evidence: 'Original internal handoff.',
+      decisionBrief: workflowReviewBriefFixture,
+    })
+    state = advanceWorkflowRun(state, {
+      action: 'revise',
+      expectedVersion: state.version,
+      attemptId: 2,
+      active: 'restart',
+      reason: 'Replace the staging choice session.',
+      operations: [
+        {
+          op: 'put-step',
+          step: { ...state.attempts[1]!.step!, instructions: 'Choose only the replacement staging scope.' },
+        },
+      ],
+    })
+    const current = state.attempts.at(-1)!
+    const decisionStep = current.step
+    if (decisionStep?.kind !== 'decision') throw new Error('Expected a decision fixture')
+    current.decision = routeWorkflowDecision(decisionStep, { ok: false, reason: 'unavailable', errors: [] })
+    const detail = gateRun()
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), {
+      ...detail,
+      state,
+      version: state.version,
+      attemptAgents: {},
+      openWaits: [{ ...detail.openWaits[0]!, flowAttemptId: current.id }],
+    })
+    await f.render(<WorkflowReviewModal stream={stream} attemptId={current.id} onClose={() => {}} />)
+    const panel = f.doc.querySelector('[role="tabpanel"]')!
+    expect(panel.textContent).toContain('No decision brief for this gate')
+    expect(panel.textContent).toContain('Choose only the replacement staging scope.')
+    expect(panel.textContent).not.toContain(workflowReviewBriefFixture.decision)
+    expect(panel.textContent).not.toContain('Carried forward from an earlier step')
+  } finally {
     await f.cleanup()
   }
 })

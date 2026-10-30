@@ -55,3 +55,37 @@ test('a decision step is a person’s gate only once it waits for a person', () 
   expect(context.sources.map((attempt) => attempt.stepId)).toEqual(['execute'])
   expect(context.outcomes.map(([name]) => name)).toEqual(['ship', 'rework'])
 })
+
+test('human return review captions name the effective resume destination instead of the ordinary next edge', async () => {
+  const { outcomeEffect } = await import('./workflowReview')
+  const definition = createBlankWorkflow()
+  definition.steps[0]!.outcomes = {
+    check: { returnTo: 'gate', afterRework: 'return-to-requester' },
+    done: { next: 'finish' },
+  }
+  definition.steps.push({
+    id: 'gate',
+    kind: 'human-approval',
+    instructions: 'Review staging.',
+    output: 'Decision.',
+    outcomes: { yes: { next: 'finish' } },
+  })
+  const { brief } = await import('../../../../packages/shared/src/test-fixtures/workflow-review')
+  const state = advanceWorkflowRun(createWorkflowRun(definition), {
+    action: 'return',
+    expectedVersion: 0,
+    attemptId: 1,
+    targetStepId: 'gate',
+    resumeAt: 'execute',
+    feedback: 'Review staging before resuming.',
+    decisionBrief: brief,
+  })
+  const attempt = state.attempts.at(-1)!
+  const gate = humanGateContext(
+    stream,
+    { state, openWaits: [], version: state.version } as unknown as WorkflowRunDetail,
+    attempt,
+    { can: () => true }
+  )!
+  expect(outcomeEffect(state, gate.outcomes[0]![1], gate.attempt, 'yes')).toBe('Continues to execute')
+})

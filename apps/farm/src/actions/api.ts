@@ -28,6 +28,7 @@ export interface ActionsApi {
   resolveWorkStreamWait: C['squads']['resolveWorkStreamWait']
   getWorkStream: C['squads']['getWorkStream']
   workflowRun: C['workflows']['run']
+  downloadWorkflowAttachment: C['workflows']['downloadAttachment']
   advanceWorkflow: C['workflows']['advance']
   finishWorkflow: C['workflows']['finish']
   pauseWorkStream: C['workStreams']['pause']
@@ -49,6 +50,7 @@ export function createActionsApi(c: FarmClient): ActionsApi {
     resolveWorkStreamWait: (workStreamId, waitId, input) => c.squads.resolveWorkStreamWait(workStreamId, waitId, input),
     getWorkStream: (id) => c.squads.getWorkStream(id),
     workflowRun: (id) => c.workflows.run(id),
+    downloadWorkflowAttachment: (id, attachmentId, signal) => c.workflows.downloadAttachment(id, attachmentId, signal),
     advanceWorkflow: (id, command, requestId) => c.workflows.advance(id, command, requestId),
     finishWorkflow: (id, version) => c.workflows.finish(id, version),
     pauseWorkStream: (id, options) => c.workStreams.pause(id, options),

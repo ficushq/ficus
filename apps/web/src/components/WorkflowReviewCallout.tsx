@@ -216,7 +216,9 @@ function HumanGateCard({
   return (
     <section aria-label={`Review ${name}`} className="p-4 rounded-xl bg-surface-secondary space-y-3">
       <header className="flex flex-wrap items-center gap-2">
-        <Badge color="review">{gate.canDecide ? 'Your review' : 'Awaiting review'}</Badge>
+        <Badge color={gate.blockingWaits.length ? 'neutral' : 'review'}>
+          {gate.blockingWaits.length ? 'Review queued' : gate.canDecide ? 'Your review' : 'Awaiting review'}
+        </Badge>
         <h3 className="text-sm font-medium text-primary">{name}</h3>
         {gate.gateWait && (
           <span className="text-xs text-muted ml-auto shrink-0">
@@ -264,7 +266,7 @@ function HumanGateCard({
           onClick={() => setReviewing(true)}
           className="ficus-button ficus-button-secondary min-h-10 px-4 py-2 text-sm"
         >
-          {gate.canDecide ? 'Review and decide' : 'Read proposal'}
+          {gate.blockingWaits.length ? 'Read review' : gate.canDecide ? 'Review and decide' : 'Read proposal'}
         </button>
         {gate.readOnlyReason && <p className="text-xs text-muted">{gate.readOnlyReason}</p>}
       </div>

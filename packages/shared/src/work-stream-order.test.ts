@@ -289,7 +289,7 @@ describe('manual wait actors', () => {
     expect(
       ids([
         ws('a-progress', { derivedState: 'in_progress', openWaits: [] }),
-        ws('b-unknown', { openWaits: [manual('manager')] }),
+        ws('b-unknown', { openWaits: [manual('future-actor')] }),
       ])
     ).toEqual(['b-unknown', 'a-progress'])
   })
