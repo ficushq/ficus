@@ -386,13 +386,13 @@ export function NotificationsConfigSection() {
           Rules are evaluated in order; the first match wins. Existing conditions are preserved when you change
           destinations.
         </p>
-        <div className="my-4 flex flex-wrap items-center gap-4">
+        <div className="my-4 flex flex-wrap items-center gap-2">
           {config.yamlFieldOverrides.length > 0 && (
-            <button onClick={() => setShowDiff(true)} className="ficus-button ficus-button-link text-sm">
+            <button onClick={() => setShowDiff(true)} className="ficus-button ficus-button-ghost px-2 py-1 text-sm">
               Compare to template
             </button>
           )}
-          <button onClick={handleExport} className="ficus-button ficus-button-link text-sm">
+          <button onClick={handleExport} className="ficus-button ficus-button-ghost px-2 py-1 text-sm">
             {copyMsg || 'Export YAML'}
           </button>
         </div>

@@ -1095,7 +1095,7 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
               <button
                 onClick={() => enableMutation.mutate()}
                 disabled={enableMutation.isPending || !canUpdateSchedules}
-                className="ficus-button ficus-button-link text-xs disabled:opacity-50"
+                className="ficus-button ficus-button-secondary px-2 py-1 text-xs disabled:opacity-50"
                 title={canUpdateSchedules ? 'Enable webhook' : 'You do not have permission to edit schedules'}
               >
                 {enableMutation.isPending ? 'Enabling...' : 'Enable'}
@@ -1105,7 +1105,7 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
                 <button
                   onClick={() => regenerateMutation.mutate()}
                   disabled={regenerateMutation.isPending || !canUpdateSchedules}
-                  className="ficus-button ficus-button-link inline-flex items-center gap-1 text-xs disabled:opacity-50"
+                  className="ficus-button ficus-button-secondary inline-flex items-center gap-1 px-2 py-1 text-xs disabled:opacity-50"
                   title={canUpdateSchedules ? 'Regenerate token' : 'You do not have permission to edit schedules'}
                 >
                   <RefreshIcon className="w-3 h-3" />

@@ -48,7 +48,7 @@ export function PublicKeyBlock({ value, label }: { value: string; label?: string
         <code className="flex-1 min-w-0 break-all font-mono text-xs bg-surface-secondary border border-th-border rounded px-2 py-1.5 text-primary">
           {value}
         </code>
-        <button onClick={copy} className="ficus-button ficus-button-link text-xs font-medium shrink-0 py-1.5">
+        <button onClick={copy} className="ficus-button ficus-button-ghost shrink-0 px-2 py-1.5 text-xs font-medium">
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>

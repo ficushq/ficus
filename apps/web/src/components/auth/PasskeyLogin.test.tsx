@@ -53,7 +53,7 @@ test('an attached Desktop window leads with browser sign-in; the in-app passkey 
   await render()
   expect(buttons().map((candidate) => candidate.textContent)).toEqual([BROWSER, PASSKEY])
   expect(button(BROWSER).classList.contains('ficus-button-primary')).toBe(true)
-  expect(button(PASSKEY).classList.contains('ficus-button-link')).toBe(true)
+  expect(button(PASSKEY).classList.contains('ficus-button-ghost')).toBe(true)
   expect(container.textContent).toContain('passkey or password manager you normally use')
   expect(browserSignIn).not.toHaveBeenCalled()
   expect(authenticate).not.toHaveBeenCalled()

@@ -84,7 +84,7 @@ export function HostKeysPanel({ host, canAct, scan, decide, onChanged }: Props) 
           <button
             onClick={() => scanMutation.mutate()}
             disabled={busy}
-            className="ficus-button ficus-button-link text-xs font-medium disabled:opacity-50"
+            className="ficus-button ficus-button-ghost px-2 py-1 text-xs font-medium disabled:opacity-50"
           >
             {scanMutation.isPending ? 'Fetching…' : 'Fetch host key'}
           </button>

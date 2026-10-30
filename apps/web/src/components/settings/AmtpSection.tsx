@@ -176,7 +176,7 @@ export function AmtpSection() {
                           status: p.status === 'disabled' ? 'disabled' : 'active',
                         })
                       }}
-                      className="ficus-button ficus-button-link text-sm font-medium"
+                      className="ficus-button ficus-button-ghost px-2 py-1 text-sm font-medium"
                     >
                       Edit
                     </button>

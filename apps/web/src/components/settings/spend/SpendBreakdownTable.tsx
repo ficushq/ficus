@@ -95,11 +95,12 @@ export function SpendBreakdownTable({
           <table className="ficus-table w-full text-sm">
             <thead>
               <tr>
-                <th scope="col" className="text-left">
+                {/* Matches the padding of the filter buttons in this column, so labels line up. */}
+                <th scope="col" className={dimension ? 'pl-1.5 text-left' : 'text-left'}>
                   {dimension ? DIMENSION_LABELS[dimension] : ''}
                 </th>
                 {second && (
-                  <th scope="col" className="text-left">
+                  <th scope="col" className="pl-1.5 text-left">
                     {DIMENSION_LABELS[second]}
                   </th>
                 )}
@@ -129,7 +130,7 @@ export function SpendBreakdownTable({
                     {dimension ? (
                       <button
                         type="button"
-                        className="ficus-button ficus-button-link text-left"
+                        className="ficus-button ficus-button-ghost px-1.5 py-0.5 text-left"
                         title={`Show only ${row.label}`}
                         onClick={() => onFilter(dimension, row.key)}
                       >
@@ -138,7 +139,7 @@ export function SpendBreakdownTable({
                     ) : (
                       row.label
                     )}
-                    <span className="block text-xs text-muted sm:hidden">
+                    <span className={`block text-xs text-muted sm:hidden ${dimension ? 'pl-1.5' : ''}`}>
                       {`${countLabel(row.calls, 'call', 'calls')} · ${formatTokens(row.tokens)} tokens`}
                     </span>
                   </td>
@@ -146,7 +147,7 @@ export function SpendBreakdownTable({
                     <td className="break-words">
                       <button
                         type="button"
-                        className="ficus-button ficus-button-link text-left"
+                        className="ficus-button ficus-button-ghost px-1.5 py-0.5 text-left"
                         title={`Show only ${row.label2}`}
                         onClick={() => onFilter(second, row.key2 ?? null)}
                       >

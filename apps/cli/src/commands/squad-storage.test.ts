@@ -4,7 +4,7 @@ import type { SquadStorageView } from '@ficus/shared'
 import { apiGet } from '../client'
 import { output, outputError, setOutputOptions } from '../output'
 import { registerSquadCommands } from './squad'
-import { formatAge, formatBytes, formatSquadStorage, resolveStorageSquad } from './squad-storage'
+import { formatAge, formatBytes, formatSquadStorage, resolveSquadContext } from './squad-storage'
 
 const NOW = Date.parse('2026-10-30T12:00:00.000Z')
 const view: SquadStorageView = {
@@ -122,8 +122,8 @@ describe('squad storage CLI', () => {
     await run(['squad', 'storage'])
     expect(apiGet).not.toHaveBeenCalled()
     expect((outputError as ReturnType<typeof mock>).mock.calls[0]![0].message).toContain('No squad context')
-    expect(() => resolveStorageSquad(undefined, '')).toThrow('No squad context')
-    expect(resolveStorageSquad('explicit', 'env')).toBe('explicit')
+    expect(() => resolveSquadContext(undefined, '')).toThrow('No squad context')
+    expect(resolveSquadContext('explicit', 'env')).toBe('explicit')
   })
 
   it('surfaces a refusal from the server', async () => {

@@ -157,18 +157,18 @@ function WorkflowCard({
         </div>
         <div className="flex flex-wrap items-center gap-3 text-sm">
           {canUpdate && (
-            <button className="ficus-button ficus-button-link" onClick={onEdit}>
+            <button className="ficus-button ficus-button-ghost px-2 py-1" onClick={onEdit}>
               Edit
             </button>
           )}
           {canCreate && (
-            <button className="ficus-button ficus-button-link" onClick={onDuplicate}>
+            <button className="ficus-button ficus-button-ghost px-2 py-1" onClick={onDuplicate}>
               Duplicate
             </button>
           )}
           {canUpdate && (
             <button
-              className="ficus-button ficus-button-link"
+              className="ficus-button ficus-button-ghost px-2 py-1"
               disabled={mutation.isPending}
               onClick={() => mutation.mutate('toggle')}
             >
@@ -182,7 +182,7 @@ function WorkflowCard({
       </div>
       {entry.description && <p className="break-words text-sm text-muted">{entry.description}</p>}
       <button
-        className="ficus-button ficus-button-link text-sm"
+        className="ficus-button ficus-button-ghost -ml-2 px-2 py-1 text-sm"
         aria-expanded={preview}
         onClick={() => setPreview(!preview)}
       >

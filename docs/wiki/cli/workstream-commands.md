@@ -43,6 +43,25 @@ stream, including after it is done or canceled, as a record of what was reviewed
 are removed only when the work stream is deleted. Their bytes count toward the
 instance-wide `INBOX_MAX_TOTAL_STORAGE_BYTES` quota shared with inbox and chat files.
 
+### Raise an attempt limit
+
+When a flow pauses at its attempt limit, raise or remove the limit and start the
+held attempt in one step:
+
+```bash
+ficus workstream raise-limit STREAM_ID --max-step-attempts 6 -m "Allow more review rounds"
+ficus workstream raise-limit STREAM_ID --remove
+```
+
+The command reads the current flow version (or takes `--version`), refuses a flow
+that is not paused at an attempt limit, and sends
+`{"action":"raise-limit","expectedVersion":N,"maxStepAttempts":N|null}` through
+`advance`. The new limit must exceed the attempts the step has already used. People
+with review permission on the stream, flow managers, the stream owner agent and the
+squad manager agent may use it; the agent that ran the paused step may not. The
+change and its actor are recorded in the flow revision history. Attempt limits are
+usually unnecessary; prefer leaving `maxStepAttempts` unset.
+
 ### Stored images and files
 
 Chat images and chat files Ficus already stores are attached by ID, with no

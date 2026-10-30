@@ -400,13 +400,16 @@ function SecretRow({
           <div className="flex items-center gap-2 shrink-0">
             {isSet && sensitive && (
               <>
-                <button onClick={handleReveal} className="ficus-button ficus-button-link text-xs font-medium">
+                <button
+                  onClick={handleReveal}
+                  className="ficus-button ficus-button-ghost px-2 py-1 text-xs font-medium"
+                >
                   Reveal
                 </button>
                 <span className="text-muted">·</span>
               </>
             )}
-            <button onClick={handleEdit} className="ficus-button ficus-button-link text-xs font-medium">
+            <button onClick={handleEdit} className="ficus-button ficus-button-ghost px-2 py-1 text-xs font-medium">
               {isSet ? 'Edit' : inheritedValue ? 'Override' : 'Set'}
             </button>
             {isSet && (

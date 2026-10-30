@@ -44,6 +44,8 @@ async function createImage(options: {
   uploadedByUserId?: string | null
   squadId?: string | null
   size?: number
+  status?: 'pending' | 'used' | 'failed'
+  forwardedFromImageId?: string | null
 }): Promise<string> {
   const [row] = await db
     .insert(images)
@@ -54,6 +56,8 @@ async function createImage(options: {
       agentId: options.agentId ?? null,
       squadId: options.squadId ?? null,
       uploadedByUserId: options.uploadedByUserId ?? null,
+      status: options.status ?? 'pending',
+      forwardedFromImageId: options.forwardedFromImageId ?? null,
     })
     .returning({ id: images.id })
   imageIds.push(row.id)
@@ -107,6 +111,54 @@ describe('Image target authorization', () => {
     await expect(Image.claimForTarget([crossSquad], target, actor)).rejects.toThrow(InvalidAttachmentError)
     expect((await Image.find(wrongActor))?.agentId).toBeNull()
     expect((await Image.find(crossSquad))?.agentId).toBeNull()
+  })
+
+  test('an unsent upload already bound to a conversation can be sent only by its uploader', async () => {
+    const uploader = await createUser()
+    const other = await createUser()
+    const squadId = await createSquad()
+    const target = await createAgent({ squadId })
+    const unsent = await createImage({ agentId: target.id, squadId, uploadedByUserId: uploader })
+
+    // Another user (member or administrator alike: the claim sees only the acting user) and a
+    // user-less agent token (actor '') are refused, and the image stays unsent.
+    await expect(Image.claimForTarget([unsent], target, other)).rejects.toThrow(InvalidAttachmentError)
+    await expect(Image.claimForTarget([unsent], target, '')).rejects.toThrow(InvalidAttachmentError)
+    expect((await Image.find(unsent))?.status).toBe('pending')
+    await expect(Image.claimForTarget([unsent], target, uploader)).resolves.toHaveLength(1)
+
+    // Sent images, and images with no recorded uploader, keep the conversation-scope rule.
+    const sent = await createImage({ agentId: target.id, squadId, uploadedByUserId: uploader, status: 'used' })
+    const failed = await createImage({ agentId: target.id, squadId, uploadedByUserId: uploader, status: 'failed' })
+    const uploaderless = await createImage({ agentId: target.id, squadId })
+    await expect(Image.claimForTarget([sent, failed, uploaderless], target, other)).resolves.toHaveLength(3)
+    await expect(Image.claimForTarget([uploaderless], target, '')).resolves.toHaveLength(1)
+  })
+
+  test('a forwarded copy is sent with no actor only to the agent it was copied for', async () => {
+    const forwarder = await createUser()
+    const squadId = await createSquad()
+    const parent = await createAgent({ squadId })
+    const target = await createAgent({ squadId, parentAgentId: parent.id })
+    const original = await createImage({ agentId: parent.id, squadId, uploadedByUserId: forwarder, status: 'used' })
+    const copy = await createImage({
+      agentId: target.id,
+      squadId,
+      uploadedByUserId: forwarder,
+      forwardedFromImageId: original,
+    })
+    // Inbox and question-answer delivery send copies with no acting user.
+    await expect(Image.claimForTarget([copy], target, '')).resolves.toHaveLength(1)
+    // The parent's scope does not reach the child's copy, and a copy bound to the parent is not the
+    // child's: forwarded copies never travel past the agent they were made for.
+    await expect(Image.claimForTarget([copy], parent, '')).rejects.toThrow(InvalidAttachmentError)
+    const parentCopy = await createImage({
+      agentId: parent.id,
+      squadId,
+      uploadedByUserId: forwarder,
+      forwardedFromImageId: original,
+    })
+    await expect(Image.claimForTarget([parentCopy], target, '')).rejects.toThrow(InvalidAttachmentError)
   })
 
   test('rejects duplicates, unknown IDs, excessive count, and excessive total bytes', async () => {

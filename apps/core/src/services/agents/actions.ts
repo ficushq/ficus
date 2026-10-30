@@ -7,6 +7,7 @@ import {
   selectWorkStreamPresentationState,
   workStreamTitle,
   workStreamWaitActor,
+  workflowAttemptLimitPause,
 } from '@ficus/shared'
 import { resolveActingUser } from '../rbac'
 import { eq, desc, isNull, and, sql, inArray } from 'drizzle-orm'
@@ -43,7 +44,7 @@ import { EMPTY_USER_ATTENTION, loadUserAttention } from '../attention/resolver'
 import { evaluatePendingAction, loadQuestionWorkStreamOrigins } from './pending-action-policy'
 import { listOpenWaitsForStreams, toWaitJson } from '../work-streams/waits'
 import { loadDeliveryPresentations } from '../workflows/delivery-state'
-import { isDeliveryApprovalWait } from '../workflows/wait-policy'
+import { flowWaitReference, isDeliveryApprovalWait } from '../workflows/wait-policy'
 import { deliveryView } from '../work-streams/delivery-pull-requests'
 import { agentQuestionDeliveryAcknowledgements } from '../../db/schema'
 
@@ -362,6 +363,14 @@ export async function listPendingActions(options: PendingActionListOptions = {})
             type: 'text',
             message: wait.message ?? `Work stream "${workStreamTitle(ws)}" is blocked and needs attention.`,
           }
+    // An attempt-limit pause carries what the card needs to raise or remove the limit in place.
+    const limitRun = runsByStream.get(ws.id)
+    const limitPause =
+      limitRun &&
+      wait.resolutionHandler === 'workflow' &&
+      wait.referenceId === flowWaitReference(ws.id, 'limit', limitRun.version)
+        ? workflowAttemptLimitPause(limitRun.state)
+        : null
 
     // A sibling may be the stream's current assignee while this attempt waits.
     let assigneeAgentId = ws.assigneeAgentId
@@ -386,6 +395,7 @@ export async function listPendingActions(options: PendingActionListOptions = {})
       waitId: wait.id,
       wait: toWaitJson(wait),
       ...(isDeliveryApprovalWait(ws.id, wait) ? { deliveryApproval: true as const } : {}),
+      ...(limitPause ? { attemptLimit: { ...limitPause, flowVersion: limitRun!.version } } : {}),
       focus: { kind: 'workstream-wait', workStreamId: ws.id, waitId: wait.id },
       assigneeAgentId,
       assigneeName,

@@ -318,8 +318,8 @@ export function RolesSection() {
                                   : undefined
                               }
                               className={clsx(
-                                'ficus-button ficus-button-link',
-                                'text-xs font-medium',
+                                'ficus-button ficus-button-ghost',
+                                'px-2 py-1 text-xs font-medium',
                                 !canDuplicate && 'cursor-not-allowed opacity-50'
                               )}
                             >
@@ -343,7 +343,7 @@ export function RolesSection() {
                               setEditName(role.name)
                               setEditPermissions(role.permissions || [])
                             }}
-                            className="ficus-button ficus-button-link text-xs font-medium"
+                            className="ficus-button ficus-button-ghost px-2 py-1 text-xs font-medium"
                           >
                             Edit
                           </button>

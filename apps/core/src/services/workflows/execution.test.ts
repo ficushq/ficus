@@ -2543,16 +2543,17 @@ test('recovery accepts older flow attempts without a stored step snapshot and st
     .insert(executions)
     .values({ agentId, status: 'running', flowContext: { workStreamId: id, attemptId: 1, stepId: 'build' } })
     .returning()
-  const record = await recordRecoveryFailure(
-    { agentId, executionId: execution!.id },
-    {
-      operationKey: 'legacy-snapshot',
-      invocationId: 'legacy-first',
-      attempted: 'Run the task',
-      error: new Error('Unknown outcome'),
-    }
-  )
+  const fail = (invocationId: string) =>
+    recordRecoveryFailure(
+      { agentId, executionId: execution!.id },
+      { operationKey: 'legacy-snapshot', invocationId, attempted: 'Run the task', error: new Error('Unknown outcome') }
+    )
+  const record = await fail('legacy-first')
   expect(record.state.failures).toBe(1)
+  // An automatic retry has no typed decision yet, so it does not block asking a person.
+  expect(await assertNoPendingRecovery(db, agentId, id)).toBeUndefined()
+  await fail('legacy-second')
+  expect(['waiting-manager', 'waiting-owner']).toContain((await fail('legacy-third')).state.state)
   await expect(assertNoPendingRecovery(db, agentId, id)).rejects.toThrow('unresolved recovery')
 })
 

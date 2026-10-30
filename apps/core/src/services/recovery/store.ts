@@ -884,11 +884,20 @@ async function pendingRecoveryRecord(
   return record
 }
 
+/**
+ * Refuse task inputs, questions and messages only while this agent's own recovery (or its
+ * participant lineage's, in its current stream scope) is held for a typed Continue / Stop decision.
+ * A recovery that is still retrying automatically has no decision to bypass, so it never blocks
+ * asking a person; neither do flow waits such as an attempt-limit pause, which are not recoveries.
+ */
 export async function assertNoPendingRecovery(
   dbx: DbHandle,
   agentId: string,
   workStreamId: string | null
 ): Promise<void> {
-  if (await pendingRecoveryRecord(dbx, agentId, workStreamId))
-    throw new Error('Use the existing typed recovery decision; task inputs cannot bypass an unresolved recovery')
+  const held = await pendingRecoveryRecord(dbx, agentId, workStreamId, true)
+  if (held)
+    throw new Error(
+      `Use the existing typed recovery decision (recovery ${held.id}, ${held.state.state}); task inputs cannot bypass an unresolved recovery`
+    )
 }

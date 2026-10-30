@@ -188,7 +188,7 @@ export function AttachmentView({ workStreamId, attachment }: { workStreamId: str
           <button
             type="button"
             onClick={download}
-            className="ficus-button ficus-button-link shrink-0 text-xs font-medium"
+            className="ficus-button ficus-button-ghost -my-1 shrink-0 px-2 py-1 text-xs font-medium"
           >
             Download
           </button>

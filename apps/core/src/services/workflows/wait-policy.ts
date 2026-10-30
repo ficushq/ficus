@@ -25,3 +25,18 @@ export function isHumanFlowWait(
     wait.referenceId === flowWaitReference(wait.workStreamId, 'human', wait.flowAttemptId)
   )
 }
+
+/**
+ * The whole-stream wait a flow opens when it pauses at its attempt limit: workflow-owned, pinned to
+ * no attempt, and not the final delivery approval. Raise limit (the `raise-limit` command) clears it.
+ */
+export function isAttemptLimitFlowWait(
+  wait: Pick<WorkStreamWaitRow, 'workStreamId' | 'flowAttemptId' | 'resolutionHandler' | 'referenceId'>
+): boolean {
+  return (
+    wait.resolutionHandler === 'workflow' &&
+    wait.flowAttemptId == null &&
+    !!wait.referenceId &&
+    wait.referenceId !== flowWaitReference(wait.workStreamId, 'delivery', 0)
+  )
+}

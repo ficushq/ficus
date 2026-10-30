@@ -12,6 +12,10 @@ import { eventEmitter } from '../../lib/infra/event-emitter'
 import { mapMessage, messageDeliveryOrder } from '../../entities/message-mapper'
 import { isQueuedIntervention } from '../chat/queued-messages'
 import { messageEventData } from '../../entities/message-event'
+import { Image } from '../../entities/Image'
+import { createLogger } from '../../lib/infra/logger'
+
+const log = createLogger('pending-delivery')
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 type DbExecutor = typeof db | DbTransaction
@@ -108,7 +112,27 @@ async function acknowledgeSessionDelivery(
     .returning()
   const confirmed = updated.map(mapMessage)
   for (const message of confirmed) eventEmitter.emit('message.updated', messageEventData(message))
+  await markDeliveredImagesUsed(agentId, confirmed)
   return confirmed
+}
+
+/**
+ * The session now holds these messages, so their images were sent: mark them used here rather than
+ * when the turn ends, so the agent can share or re-read them during the turn that received them.
+ */
+async function markDeliveredImagesUsed(agentId: string, confirmed: Message[]): Promise<void> {
+  const imageIds = [
+    ...new Set(
+      confirmed.flatMap((message) => {
+        const ids = message.metadata?.imageIds
+        return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : []
+      })
+    ),
+  ]
+  if (!imageIds.length) return
+  await Image.markManyUsed(imageIds).catch((error) => {
+    log.error(`Failed to mark delivered images used for agent ${agentId}:`, error)
+  })
 }
 
 export interface PersistedDeliveryEntry {

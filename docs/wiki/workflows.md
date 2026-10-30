@@ -168,6 +168,16 @@ Flow inspection exposes `activeOutcomes` (attempt ID, agent ID, binding version,
 
 Use `active: restart` only when a fresh context is intended: it cancels the selected attempt, creates a new snapshot/attempt, and starts a **fresh session even for reuse-within-stream**. Old attempt tokens fail, and superseded attempt-scoped waits are retired. Other kept branches retain their sessions (and receive any affected outcome changes). Restart behavior and explicit session policies are unchanged.
 
+### Attempt limits and Raise limit
+
+Attempts are unlimited by default, and that is the recommended setting: attempt limits are usually unnecessary blockers. If a workflow sets `limits.maxStepAttempts`, prefer a generous value. When a step uses its last attempt, the flow pauses (`state.status: paused`, `pauseReason.type: attempt-limit`, no active attempt) and keeps the held start and any open return request. The stream presents as **Blocked** on a person, with a whole-stream wait (`workflowAttemptLimit: true`) that says which step stopped and how to continue. It is not the Resume-only stream pause.
+
+Unblock it in one step with **Raise limit** on the Action Center card, the work stream page or the Farm: choose a higher limit or **Remove limit**. Agents use `ficus workstream raise-limit STREAM --max-step-attempts N` (or `--remove`), or the advance command `{"action":"raise-limit","expectedVersion":N,"maxStepAttempts":N}` with `null` to remove it. Ficus clears the wait, starts the held attempt and records the change, with who made it, in the revision history and the transition log. Allowed: people with review permission on the stream (an assigned reviewer when reviewers are assigned) or flow management permission, the stream's owner agent, the squad manager agent and other agents with flow management permission. The agent that ran the paused step cannot raise its own limit. Generic `unblock` and `resolve-input` refuse this wait and point here.
+
+A `revise` command may also change limits; with no attempt active, omit `attemptId` or send `null`. A stale attempt ID fails with a message naming the active attempt, or saying that none is active.
+
+Every step must stay reachable from the entry. To route an outcome away from a step that is no longer needed, change the outcome and remove that step in the same revision (`update-step` or `put-step` plus `remove-step`); the whole result is validated once. A step that is active, queued (including the step held by an attempt-limit pause), or referenced by an open return or join cannot be removed yet, so rerouting away from it still needs a temporary edge to it.
+
 ## Questions and scoped waits
 
 An ordinary agent question is nonblocking. With `blocking: true`, a question from a flow execution opens a wait on that exact attempt by default. An agent's manual `request-input` similarly targets its current attempt. A security reviewer waiting for a threat-model answer does not prevent QA from continuing, but the join remains held until security finishes.

@@ -131,7 +131,7 @@ export function InlineActionNotice({
         type="button"
         onClick={onDismiss}
         aria-label="Dismiss"
-        className="ficus-button ficus-button-link text-xs font-medium"
+        className="ficus-button ficus-button-ghost -my-1 px-2 py-1 text-xs font-medium"
       >
         Dismiss
       </button>

@@ -550,7 +550,7 @@ export function GitHubFeedbackReviewModal({
               <div className="p-4 pb-0 md:hidden">
                 <button
                   type="button"
-                  className="ficus-button ficus-button-link text-xs text-accent-light"
+                  className="ficus-button ficus-button-ghost -ml-2 px-2 py-1 text-xs"
                   onClick={() => setFocusedId(null)}
                 >
                   ← Back to list

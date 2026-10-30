@@ -152,7 +152,10 @@ export function MemorySettings({ squadId }: Props) {
                 Embedding Model
               </label>
               {!isEditing && canWriteMemory && (
-                <button onClick={() => setIsEditing(true)} className="ficus-button ficus-button-link text-xs">
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="ficus-button ficus-button-ghost -my-1 px-2 py-1 text-xs"
+                >
                   Edit
                 </button>
               )}

@@ -5,6 +5,7 @@ import {
   codeHostDeliveryLabel,
   readDeliveryState,
   trackedResourceLabel,
+  workflowAttemptLimitPause,
   workflowReworkAttempt,
   type WorkflowAttempt,
   type WorkStream,
@@ -28,6 +29,7 @@ import { queries } from '../queryOptions'
 import { Badge, type BadgeColor } from './Badge'
 import { ExpandableMarkdown } from './ExpandableMarkdown'
 import { WorkflowReviewModal } from './WorkflowReviewModal'
+import { AttemptLimitActions } from './AttemptLimitActions'
 import { ChatIcon, PullRequestIcon } from './icons'
 
 /**
@@ -47,6 +49,7 @@ export function WorkflowReviewCallout({
 }) {
   const { data: run } = useQuery(queries.workflows.run(stream.id))
   if (!run || stream.pause || stream.status === 'done' || stream.status === 'canceled') return null
+  if (workflowAttemptLimitPause(run.state)) return <AttemptLimitCallout stream={stream} run={run} />
   const gates = openHumanGates(stream, run, focusWaitId)
   const deliveryApproval =
     run.state.status === 'completion-ready' && run.state.definition.completion.mode === 'review-approval'
@@ -60,6 +63,24 @@ export function WorkflowReviewCallout({
       ))}
       {deliveryApproval && <DeliveryApproval stream={stream} run={run} onOpenAgent={onOpenAgent} />}
     </div>
+  )
+}
+
+/** A workflow paused at its attempt limit: say why in plain words and offer Raise limit in place. */
+function AttemptLimitCallout({ stream, run }: { stream: WorkStream; run: RunDetail }) {
+  const { can, identity } = usePermissions(stream.squadId)
+  const pause = workflowAttemptLimitPause(run.state)!
+  const assigned = stream.assignedReviewerIds ?? []
+  // Mirrors the server rule for people; the server also allows the owner and manager agents.
+  const allowed =
+    can('workstreams:revise-flow') ||
+    (can('workstreams:review') &&
+      (!assigned.length || (identity?.type === 'user' && assigned.includes(identity.userId))))
+  return (
+    <section aria-label="Attempt limit reached" className="p-4 rounded-xl bg-surface-secondary space-y-3">
+      <h3 className="text-sm font-medium text-primary">Attempt limit reached</h3>
+      <AttemptLimitActions workStreamId={stream.id} pause={pause} flowVersion={run.version} disabled={!allowed} />
+    </section>
   )
 }
 

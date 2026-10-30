@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { eq, inArray, like } from 'drizzle-orm'
@@ -11,14 +11,22 @@ import {
   agentTypes,
   db,
   images,
+  messages,
   retainedAssets,
   squads,
   workStreamAssetAttachments,
   workStreams,
 } from '../../db'
-import { Image } from '../../entities/Image'
+import { Image, getImagePath } from '../../entities/Image'
 import { WorkStream } from '../../entities/WorkStream'
-import { cleanupTestRbac, createTestAdmin, createTestUser, type TestUser } from '../../test-utils/rbac'
+import {
+  assignRole,
+  cleanupTestRbac,
+  createTestAdmin,
+  createTestRole,
+  createTestUser,
+  type TestUser,
+} from '../../test-utils/rbac'
 import type { AgentIdentity, Identity } from '../rbac'
 import { canReadImage } from '../images/access'
 import { totalAttachmentStorageBytes } from '../attachments/storage-quota'
@@ -30,7 +38,9 @@ import {
   prepareCreationAssets,
   readStreamAsset,
   releaseRetainedAsset,
+  RETAINED_ASSET_CLEANUP_MAX_ATTEMPTS,
   removeStreamAsset,
+  retainedAssetCleanupDelayMs,
   runRetainedAssetCleanup,
 } from './asset-attachments'
 
@@ -286,6 +296,77 @@ test('a staged upload is readable only by its uploader, and squad images by squa
   }
 })
 
+test('an unsent upload bound to a conversation is its uploader’s alone until a message carries it', async () => {
+  // Two ordinary squad members (no administrator role): one uploads into a squad agent's chat.
+  const memberRole = await createTestRole({ prefix, permissions: ['agents:read', 'agents:write'] })
+  const uploader = await createTestUser({ prefix })
+  const member = await createTestUser({ prefix })
+  for (const account of [uploader, member])
+    await assignRole({ userId: account.id, roleId: memberRole.id, scope: 'squad', squadId: squadA })
+  const [unsent] = await Image.createMany([{ type: 'image', data: PNG.toString('base64'), mimeType: 'image/png' }], {
+    agentId: consultant.agentId,
+    squadId: squadA,
+    uploadedByUserId: uploader.id,
+  })
+  // The private conversation's owner uploads into it too.
+  const [privateUnsent] = await Image.createMany(
+    [{ type: 'image', data: PNG.toString('base64'), mimeType: 'image/png' }],
+    { agentId: privateAgentId, uploadedByUserId: owner.id }
+  )
+  const sent: string[] = []
+  try {
+    expect(await canReadImage(user(uploader), unsent!)).toBe(true)
+    expect(await canReadImage(user(member), unsent!)).toBe(false)
+    expect(await canReadImage(user(otherAdmin), unsent!)).toBe(false)
+    expect(await canReadImage(user(outsider), unsent!)).toBe(false)
+    // A squad agent token reads the conversation's images, but not an upload nobody has sent.
+    expect(await canReadImage(worker, unsent!)).toBe(false)
+    expect(await canReadImage(user(owner), privateUnsent!)).toBe(true)
+    expect(await canReadImage(user(otherAdmin), privateUnsent!)).toBe(false)
+
+    // A message elsewhere, or an older one, does not count: only the conversation's own later message.
+    const [elsewhere] = await db
+      .insert(messages)
+      .values({ agentId: sibling.agentId, role: 'human', content: 'x', metadata: { imageIds: [unsent!.id] } })
+      .returning({ id: messages.id })
+    sent.push(elsewhere!.id)
+    expect(await canReadImage(user(member), unsent!)).toBe(false)
+
+    // Sent but still queued for the agent (the image stays pending until the agent receives it): the
+    // conversation's readers see it like the message's text. The private conversation stays its owner's.
+    const queued = await db
+      .insert(messages)
+      .values([
+        {
+          agentId: consultant.agentId,
+          role: 'human',
+          content: 'look',
+          metadata: { imageIds: [unsent!.id] },
+          pending: true,
+        },
+        {
+          agentId: privateAgentId,
+          role: 'human',
+          content: 'look',
+          metadata: { imageIds: [privateUnsent!.id] },
+          pending: true,
+        },
+      ])
+      .returning({ id: messages.id })
+    sent.push(...queued.map((row) => row.id))
+    expect(await canReadImage(user(member), unsent!)).toBe(true)
+    expect(await canReadImage(user(otherAdmin), unsent!)).toBe(true)
+    expect(await canReadImage(worker, unsent!)).toBe(true)
+    expect(await canReadImage(user(outsider), unsent!)).toBe(false)
+    expect(await canReadImage(foreign, unsent!)).toBe(false)
+    expect(await canReadImage(user(otherAdmin), privateUnsent!)).toBe(false)
+    expect(await canReadImage(user(owner), privateUnsent!)).toBe(true)
+  } finally {
+    await db.delete(messages).where(inArray(messages.id, sent))
+    await Image.deleteMany([unsent!.id, privateUnsent!.id])
+  }
+})
+
 test('a shared image outlives its chat row and is unlinked with its last share, never before', async () => {
   const image = await conversationImage(consultant.agentId)
   const path = image.getFilePath()
@@ -350,6 +431,116 @@ test('while the chat row exists, releasing a share drops only the bookkeeping; t
   // The chat still owns its bytes.
   expect(existsSync(image.getFilePath())).toBe(true)
   expect(await releaseRetainedAsset(asset!.id)).toBe('released')
+})
+
+test('a finished stream keeps its shares: removing one is refused, as attaching is', async () => {
+  const image = await conversationImage(consultant.agentId)
+  const target = await stream()
+  await db.update(workStreams).set({ ownerAgentId: consultant.agentId }).where(eq(workStreams.id, target.id))
+  const shared = await attachStreamAsset({
+    identity: consultant,
+    streamId: target.id,
+    source: { kind: 'image', imageId: image.id },
+  })
+  for (const status of ['done', 'canceled'] as const) {
+    await db.update(workStreams).set({ status }).where(eq(workStreams.id, target.id))
+    expect(
+      await refusal(removeStreamAsset({ identity: consultant, streamId: target.id, shareId: shared.attachment.id }))
+    ).toEqual({
+      status: 409,
+      message: 'This work stream is finished; its stored images and files can no longer change',
+    })
+    expect((await listStreamAssets(target.id)).inputs.map((entry) => entry.id)).toEqual([shared.attachment.id])
+  }
+  await db.update(workStreams).set({ status: 'active' }).where(eq(workStreams.id, target.id))
+  await removeStreamAsset({ identity: consultant, streamId: target.id, shareId: shared.attachment.id })
+  expect((await listStreamAssets(target.id)).inputs).toEqual([])
+})
+
+test('failing deletions back off so later records progress, and stop on record after bounded retries', async () => {
+  // Retained images whose chat rows are gone and whose bytes cannot be unlinked: each blob path is a
+  // directory. They are older than everything else, so they head the sweep's queue.
+  await Image.ensureImagesDir()
+  const failing = Array.from({ length: 30 }, (_, index) => {
+    const sourceId = randomUUID()
+    return {
+      sourceKind: 'image' as const,
+      sourceId,
+      blobOwner: `${sourceId}.png`,
+      filename: `${sourceId}.png`,
+      contentType: 'image/png',
+      byteSize: 1,
+      sha256: '0'.repeat(64),
+      deleteRequestedAt: new Date(Date.UTC(2000, 0, 1)),
+      createdAt: new Date(Date.UTC(2000, 0, 1, 0, 0, index)),
+    }
+  })
+  for (const row of failing) await mkdir(getImagePath(row.blobOwner))
+  const goodSource = randomUUID()
+  const inserted = await db
+    .insert(retainedAssets)
+    .values([
+      ...failing,
+      {
+        ...failing[0]!,
+        sourceId: goodSource,
+        blobOwner: `${goodSource}.png`,
+        filename: `${goodSource}.png`,
+        createdAt: new Date(Date.UTC(2000, 0, 2)),
+      },
+    ])
+    .returning({ id: retainedAssets.id, sourceId: retainedAssets.sourceId })
+  const ids = inserted.map((row) => row.id)
+  const goodId = inserted.find((row) => row.sourceId === goodSource)!.id
+  const failingIds = ids.filter((id) => id !== goodId)
+  const records = async () => db.select().from(retainedAssets).where(inArray(retainedAssets.id, failingIds))
+  try {
+    const before = Date.now()
+    await runRetainedAssetCleanup({ maxAssets: 25 })
+    // The first 25 failed and were backed off; the good record behind them was not reached yet.
+    const afterFirst = await records()
+    const tried = afterFirst.filter((row) => row.cleanupAttempts === 1)
+    expect(tried).toHaveLength(25)
+    for (const row of tried) {
+      expect(row.cleanupError).toBeTruthy()
+      expect(row.cleanupFailedAt).toBeNull()
+      expect(row.cleanupRetryAt!.getTime()).toBeGreaterThanOrEqual(before + retainedAssetCleanupDelayMs(1) - 1000)
+    }
+    expect(await db.select().from(retainedAssets).where(eq(retainedAssets.id, goodId))).toHaveLength(1)
+
+    // The next sweep skips the backed-off records and reaches the rest, including the good one.
+    await runRetainedAssetCleanup({ maxAssets: 25 })
+    expect(await db.select().from(retainedAssets).where(eq(retainedAssets.id, goodId))).toEqual([])
+    expect((await records()).every((row) => row.cleanupAttempts === 1)).toBe(true)
+    await runRetainedAssetCleanup({ maxAssets: 25 })
+    expect((await records()).every((row) => row.cleanupAttempts === 1)).toBe(true)
+
+    // Once due again a record is retried; the last allowed failure stops the retries and keeps the record.
+    const last = failingIds[0]!
+    await db
+      .update(retainedAssets)
+      .set({ cleanupAttempts: RETAINED_ASSET_CLEANUP_MAX_ATTEMPTS - 1, cleanupRetryAt: new Date(Date.now() - 1000) })
+      .where(eq(retainedAssets.id, last))
+    await runRetainedAssetCleanup({ maxAssets: 25 })
+    const [exhausted] = await db.select().from(retainedAssets).where(eq(retainedAssets.id, last))
+    expect(exhausted).toMatchObject({ cleanupAttempts: RETAINED_ASSET_CLEANUP_MAX_ATTEMPTS, cleanupRetryAt: null })
+    expect(exhausted!.cleanupFailedAt).not.toBeNull()
+    expect(exhausted!.cleanupError).toBeTruthy()
+    await runRetainedAssetCleanup({ maxAssets: 25 })
+    const [still] = await db.select().from(retainedAssets).where(eq(retainedAssets.id, last))
+    expect(still!.cleanupAttempts).toBe(RETAINED_ASSET_CLEANUP_MAX_ATTEMPTS)
+    // The directories standing in for blobs were never removed.
+    for (const row of failing) expect(existsSync(getImagePath(row.blobOwner))).toBe(true)
+  } finally {
+    await db.delete(retainedAssets).where(inArray(retainedAssets.id, ids))
+  }
+})
+
+test('the cleanup backoff doubles from 15 minutes and is capped at a day', () => {
+  expect(retainedAssetCleanupDelayMs(1)).toBe(15 * 60 * 1000)
+  expect(retainedAssetCleanupDelayMs(2)).toBe(30 * 60 * 1000)
+  expect(retainedAssetCleanupDelayMs(5)).toBe(4 * 60 * 60 * 1000)
+  expect(retainedAssetCleanupDelayMs(RETAINED_ASSET_CLEANUP_MAX_ATTEMPTS)).toBe(24 * 60 * 60 * 1000)
 })
 
 test('a stream holds a bounded number of stored inputs', async () => {

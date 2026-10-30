@@ -270,7 +270,7 @@ export function MemorySyncSettings({ squadId }: Props) {
                   <button
                     onClick={() => startEditing(index)}
                     disabled={editingIndex !== null || showAddProvider || !canWriteMemory}
-                    className="ficus-button ficus-button-link text-xs disabled:opacity-50"
+                    className="ficus-button ficus-button-ghost px-2 py-1 text-xs disabled:opacity-50"
                   >
                     Edit
                   </button>

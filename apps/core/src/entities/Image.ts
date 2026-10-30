@@ -24,6 +24,28 @@ type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 export type ImageRow = InferSelectModel<typeof images>
 export type ImageStatus = ImageRow['status']
 
+/**
+ * Whether `actorUserId` may send an image already bound to a conversation. An unsent upload (pending,
+ * with a known uploader) is its uploader's alone: sending it would make it readable to the whole
+ * conversation, so nobody else may send it, whether a user, an administrator or an agent token.
+ *
+ * One deliberate exception: a copy the Assistant forwarded (`forwardedFromImageId`), already bound to
+ * this exact target. forward-images.ts creates it for that target alone, inside the transaction that
+ * commits the inbox message carrying it, and inbox or question-answer delivery sends it with no actor.
+ * Sending it anywhere else is refused by the target check.
+ *
+ * Sent, failed and uploader-less images keep the conversation-scope rule alone.
+ */
+function mayClaimBoundUpload(
+  row: Pick<ImageRow, 'agentId' | 'status' | 'uploadedByUserId' | 'forwardedFromImageId'>,
+  target: Pick<Agent, 'id'>,
+  actorUserId: string
+): boolean {
+  if (row.status !== 'pending' || !row.uploadedByUserId) return true
+  if (row.uploadedByUserId === actorUserId) return true
+  return row.forwardedFromImageId !== null && row.agentId === target.id
+}
+
 export interface ImageContent {
   type: 'image'
   data: string // base64
@@ -274,7 +296,8 @@ export class Image implements ImageRow {
         }
       } else if (
         !scope.ownerAgentIds.includes(row.agentId) ||
-        (row.squadId !== null && row.squadId !== target.squadId)
+        (row.squadId !== null && row.squadId !== target.squadId) ||
+        !mayClaimBoundUpload(row, target, actorUserId)
       ) {
         throw new InvalidAttachmentError()
       }
@@ -343,7 +366,11 @@ export class Image implements ImageRow {
    */
   static async markManyFailed(imageIds: string[]): Promise<void> {
     if (imageIds.length === 0) return
-    await db.update(images).set({ status: 'failed' }).where(inArray(images.id, imageIds))
+    // An image the session already received stays used: only a send that never arrived failed.
+    await db
+      .update(images)
+      .set({ status: 'failed' })
+      .where(and(inArray(images.id, imageIds), eq(images.status, 'pending')))
   }
 
   /**

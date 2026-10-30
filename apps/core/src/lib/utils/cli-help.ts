@@ -182,6 +182,7 @@ export const CLI_COMMAND_PERMISSIONS: Readonly<Record<string, readonly string[]>
   'squad terminate-bulk': ['agents:terminate'],
   'squad cleanup-agents': ['agents:terminate', 'system:cleanup'],
   'squad storage': ['storage:read'], // GET /:id/storage
+  'squad idle-consultants': ['agents:terminate'], // GET /:id/idle-consultants, POST /:id/idle-consultants/dormant
   'squad ssh': ['ssh:read', 'ssh:write'],
   'squad grant': ['grants:read', 'grants:write'],
 

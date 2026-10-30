@@ -265,7 +265,7 @@ export function UserRow({
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <button onClick={onToggleExpand} className="ficus-button ficus-button-link text-xs font-medium">
+          <button onClick={onToggleExpand} className="ficus-button ficus-button-ghost px-2 py-1 text-xs font-medium">
             {isExpanded ? 'Hide Roles' : 'Manage Roles'}
           </button>
           <span className="text-muted">·</span>
@@ -278,7 +278,7 @@ export function UserRow({
               <button
                 onClick={() => resendMutation.mutate()}
                 disabled={resendMutation.isPending}
-                className="ficus-button ficus-button-link text-xs font-medium disabled:opacity-50"
+                className="ficus-button ficus-button-ghost px-2 py-1 text-xs font-medium disabled:opacity-50"
               >
                 {resendMutation.isPending ? 'Resending...' : 'Resend Invite'}
               </button>
@@ -288,8 +288,8 @@ export function UserRow({
           <button
             onClick={onToggleDisable}
             className={clsx(
-              'ficus-button ficus-button-link',
-              'text-xs font-medium',
+              'ficus-button ficus-button-ghost',
+              'px-2 py-1 text-xs font-medium',
               isDisabled
                 ? 'text-status-success-600 dark:text-status-success-400 hover:text-status-success-800 dark:hover:text-status-success-300'
                 : 'text-status-review-600 dark:text-status-review-400 hover:text-status-review-800 dark:hover:text-status-review-300'

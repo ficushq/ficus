@@ -77,7 +77,7 @@ export function TemplateFieldActions({
         <button
           type="button"
           onClick={() => setIsDiffOpen(true)}
-          className="ficus-button ficus-button-link text-[11px]"
+          className="ficus-button ficus-button-ghost px-1.5 py-0.5 text-[11px]"
         >
           Diff
         </button>
@@ -87,7 +87,7 @@ export function TemplateFieldActions({
           type="button"
           onClick={handleRevert}
           disabled={isReverting}
-          className="ficus-button ficus-button-link text-[11px] text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 disabled:opacity-50"
+          className="ficus-button ficus-button-ghost px-1.5 py-0.5 text-[11px] text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 disabled:opacity-50"
         >
           Revert
         </button>

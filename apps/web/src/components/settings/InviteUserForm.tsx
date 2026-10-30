@@ -84,7 +84,7 @@ export function InviteUserForm({
             type="button"
             disabled={resendMutation.isPending}
             onClick={() => resendMutation.mutate()}
-            className="ficus-button ficus-button-link text-sm disabled:opacity-50"
+            className="ficus-button ficus-button-ghost px-2 py-1 text-sm disabled:opacity-50"
           >
             {resendMutation.isPending ? 'Resending…' : 'Resend invitation'}
           </button>
@@ -103,7 +103,7 @@ export function InviteUserForm({
               </code>
               <button
                 type="button"
-                className="ficus-button ficus-button-link text-sm"
+                className="ficus-button ficus-button-ghost px-2 py-1 text-sm"
                 onClick={async () => {
                   try {
                     if (!navigator.clipboard) throw new Error('Clipboard unavailable')
@@ -122,7 +122,7 @@ export function InviteUserForm({
         <div className="flex gap-3">
           <button
             type="button"
-            className="ficus-button ficus-button-link text-sm"
+            className="ficus-button ficus-button-ghost px-3 py-2 text-sm"
             onClick={() => {
               inviteMutation.reset()
               resendMutation.reset()

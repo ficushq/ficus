@@ -438,7 +438,7 @@ export function FileTree({ source, onSelectFile, selectedPath }: FileTreeProps) 
             <div className="p-3 text-sm text-muted">
               <p>Failed to load files</p>
               {error instanceof Error && error.message && <p className="mt-1 text-xs">{error.message}</p>}
-              <button onClick={handleRefresh} className="ficus-button ficus-button-link mt-2">
+              <button onClick={handleRefresh} className="ficus-button ficus-button-ghost -ml-2 mt-2 px-2 py-1">
                 Retry
               </button>
             </div>

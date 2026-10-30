@@ -444,7 +444,7 @@ function AgentTypeRow({
           type="button"
           onClick={onToggle}
           aria-label={`${canUpdate ? 'Edit' : 'View'} ${agentType.name}`}
-          className="ficus-button ficus-button-link shrink-0 text-sm"
+          className="ficus-button ficus-button-ghost shrink-0 px-2 py-1 text-sm"
         >
           {canUpdate ? 'Edit' : 'View'}
         </button>
@@ -488,18 +488,18 @@ function AgentTypeRow({
             {/* Action buttons */}
             <div className="flex items-center gap-2 flex-wrap">
               {agentType.hasTemplate && agentType.yamlFieldOverrides.length > 0 && (
-                <button onClick={onShowDiff} className="ficus-button ficus-button-link text-xs font-medium">
+                <button onClick={onShowDiff} className="ficus-button ficus-button-ghost px-2 py-1 text-xs font-medium">
                   Compare to Template
                 </button>
               )}
-              <button onClick={handleExport} className="ficus-button ficus-button-link text-xs font-medium">
+              <button onClick={handleExport} className="ficus-button ficus-button-ghost px-2 py-1 text-xs font-medium">
                 {copyMsg || 'Export YAML'}
               </button>
               {canUpdate && !PROTECTED_AGENT_TYPES.includes(agentType.id) && (
                 <button
                   onClick={() => toggleDisableMutation.mutate()}
                   disabled={toggleDisableMutation.isPending}
-                  className="ficus-button ficus-button-link text-xs text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 font-medium"
+                  className="ficus-button ficus-button-ghost px-2 py-1 text-xs text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 font-medium"
                 >
                   {agentType.disabled ? 'Enable' : 'Disable'}
                 </button>
@@ -657,7 +657,7 @@ function ResolvedPromptPreview({ agentTypeId }: { agentTypeId: string }) {
             type="button"
             onClick={handleCopy}
             disabled={!resolved}
-            className="ficus-button ficus-button-link shrink-0 text-xs disabled:opacity-50"
+            className="ficus-button ficus-button-ghost shrink-0 px-2 py-1 text-xs disabled:opacity-50"
           >
             {copyMsg || 'Copy'}
           </button>
@@ -790,7 +790,7 @@ function ModelSpecListEditor({
         <button
           type="button"
           onClick={addSpec}
-          className="ficus-button ficus-button-link text-xs font-medium flex items-center gap-1"
+          className="ficus-button ficus-button-ghost inline-flex items-center gap-1 px-2 py-1 text-xs font-medium"
         >
           <PlusIcon className="w-3.5 h-3.5" />
           Add model
@@ -1225,7 +1225,7 @@ export function TierChainEditor({
       ))}
       <button
         onClick={() => setEntries([...entries, `${providers[0] ?? 'provider'}:model:medium`])}
-        className="ficus-button ficus-button-link text-sm"
+        className="ficus-button ficus-button-ghost px-2 py-1 text-sm"
       >
         + Add provider position
       </button>
