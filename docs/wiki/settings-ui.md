@@ -252,7 +252,7 @@ Workspace indexing settings (include/exclude patterns, reindex button, scan resu
 ## Squad settings
 
 The squad tab and settings registry is `apps/web/src/lib/squadNavigation.ts`.
-Squad settings use eight pages grouped by purpose:
+Squad settings use nine pages grouped by purpose:
 
 - **General:** avatar, name, description, and discovery by other squads. A **Danger zone** at the bottom holds **Archive squad**; it appears only with `squads:delete`, independent of `squads:update`, and opens the typed confirmation.
 - **Instructions:** shared squad context, instructions for individual agent types, and **Slot Pools**. The Slot Pools card lists each pool's capacity, claim timeout, usage guidance and live usage (in use, queued, oldest wait, holders). `slots:write` can add pools, edit capacity, timeout and guidance inline, enable or disable a pool, and unregister it after a confirmation (a busy pool shows the server's refusal). `slots:use` sees it read-only; without either permission the card says so. Guidance reaches every agent prompt through a generated Slot Pools section, so it does not belong in the squad context.
@@ -260,6 +260,7 @@ Squad settings use eight pages grouped by purpose:
 - **Integrations:** enabled apps, account selection, routing, and Git author overrides.
 - **Notifications:** where this squad's notifications are delivered; credentials remain in global integration cards.
 - **Workspace:** host directory or sandbox lifecycle and logs, plus environment settings. The backend's runtime determines which controls appear.
+- **Storage:** this squad's storage breakdown: box homes on each machine, their workspace and memory folders, agents, growth, measurement age and scan state, plus the squad's files stored by Ficus. The page and its navigation item appear only to users holding `storage:read` in that squad; a `?section=storage` deep link waits for permissions, then falls back to General without it. It is read-only like the endpoint, with no Refresh; the rows' **Make dormant** and **Remove now** actions keep their own `agents:terminate` and `system:cleanup` checks. See [Squad storage](permissions.md#squad-storage).
 - **Memory:** embedding configuration, workspace indexing, and memory synchronization.
 - **Remote access:** SSH keys, known hosts, SSH configuration, and remote hosts.
 
