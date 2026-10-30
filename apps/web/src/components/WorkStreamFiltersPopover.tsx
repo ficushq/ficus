@@ -26,8 +26,6 @@ export function WorkStreamFiltersPopover({ count, children }: { count: number; c
         {...hover.popoverProps}
         // Hover-opened, focus stays put; opened by click or keyboard, it moves to the first filter.
         initialFocus={hover.hoverOpened ? 'none' : (panel) => panel.querySelector('button')}
-        // Any press inside (toggling a filter) pins it, so it stays while the results update behind it.
-        onPointerDown={hover.pin}
         role="region"
         label="Feed filters"
         gap={8}

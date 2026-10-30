@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from 'bun:test'
 import { acquireDomHarness } from '../test/domHarness'
 import { expectHoverMenuContract } from '../test/hoverMenuContract'
+import { restPointerOn } from '../test/hoverTimer'
 import { WorkStreamFiltersPopover } from './WorkStreamFiltersPopover'
 
 let dom: Awaited<ReturnType<typeof acquireDomHarness>> | undefined
@@ -30,9 +31,38 @@ async function renderFilters() {
   return { doc, container, trigger, filter }
 }
 
-test('Filters opens on hover; toggling a filter pins it, so it stays while the results change', async () => {
+test('Filters opens on hover; toggling a filter keeps hover mode, so leaving still closes it', async () => {
   const { trigger, filter } = await renderFilters()
-  await expectHoverMenuContract({ trigger, pressInside: { target: filter, pins: true } })
+  await expectHoverMenuContract({ trigger, pressInside: { target: filter, pins: false } })
+})
+
+test('a click on the Filters button pins a hover-opened panel: toggling filters and leaving keep it open', async () => {
+  const { doc, trigger, filter } = await renderFilters()
+  const win = dom!.window
+  const pointer = (target: Element, type: string, init: PointerEventInit = {}) =>
+    dom!.act(async () => {
+      target.dispatchEvent(new win.PointerEvent(type, { bubbles: true, pointerType: 'mouse', ...init }))
+    })
+  const panel = () => doc.querySelector<HTMLElement>('[aria-label="Feed filters"]')!
+  const isOpen = () => trigger.getAttribute('aria-expanded') === 'true'
+
+  await restPointerOn(trigger)
+  expect(isOpen()).toBe(true)
+  await dom!.act(async () => trigger.click())
+  await pointer(trigger, 'pointerout')
+  await pointer(panel(), 'pointerover')
+  for (let i = 0; i < 2; i++) {
+    await pointer(filter(), 'pointerdown', { buttons: 1 })
+    await dom!.act(async () => filter().click())
+  }
+  await pointer(panel(), 'pointerout')
+  await dom!.act(() => new Promise<void>((resolve) => setTimeout(resolve, 200)))
+  expect(isOpen()).toBe(true)
+
+  await dom!.act(async () => {
+    doc.activeElement!.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  })
+  expect(isOpen()).toBe(false)
 })
 
 test('opened by a click, focus still moves to the first filter', async () => {
