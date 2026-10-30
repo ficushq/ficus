@@ -293,22 +293,29 @@ test('a decision on a stale revision is refused with nothing decided; the latest
   })
   expect(stale.status).toBe(409)
   expect(await stale.json()).toEqual({ error: WORKFLOW_REVIEW_REVISED_MESSAGE, code: 'WORKFLOW_REVIEW_REVISED' })
-  // A client that names no revisions cannot prove what was read once the work was amended, even at
-  // the current version (it may have refetched quietly), so it fails closed.
-  for (const expectedVersion of [before!.version - 1, before!.version]) {
-    const old = await advance(admin.token, {
-      action: 'complete',
-      expectedVersion,
-      attemptId: 2,
-      outcome: 'approved',
-      evidence: '',
-    })
-    expect(old.status).toBe(409)
-    expect(await old.json()).toEqual({
-      error: WORKFLOW_REVIEW_REVISIONS_REQUIRED_MESSAGE,
-      code: 'WORKFLOW_REVIEW_REVISED',
-    })
-  }
+  // A client that names no revisions but loaded the screen before the amend gets the exact message.
+  const old = await advance(admin.token, {
+    action: 'complete',
+    expectedVersion: before!.version - 1,
+    attemptId: 2,
+    outcome: 'approved',
+    evidence: '',
+  })
+  expect(old.status).toBe(409)
+  expect(await old.json()).toEqual({ error: WORKFLOW_REVIEW_REVISED_MESSAGE, code: 'WORKFLOW_REVIEW_REVISED' })
+  // At the current version it cannot prove what was read (it may have refetched quietly): fail closed.
+  const refetched = await advance(admin.token, {
+    action: 'complete',
+    expectedVersion: before!.version,
+    attemptId: 2,
+    outcome: 'approved',
+    evidence: '',
+  })
+  expect(refetched.status).toBe(409)
+  expect(await refetched.json()).toEqual({
+    error: WORKFLOW_REVIEW_REVISIONS_REQUIRED_MESSAGE,
+    code: 'WORKFLOW_REVIEW_REVISED',
+  })
   expect((await getFlow(streamId))!.state).toEqual(before!.state)
   expect(await openWaits()).toEqual(waits)
 

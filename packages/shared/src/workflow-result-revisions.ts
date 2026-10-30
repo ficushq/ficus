@@ -49,21 +49,28 @@ export const WORKFLOW_REVIEW_REVISED_MESSAGE = 'This was revised since you opene
 export const WORKFLOW_REVIEW_REVISED_CODE = 'WORKFLOW_REVIEW_REVISED'
 
 /**
- * The refusal for a decision that names no reviewed revisions on a gate whose work was amended: the
- * server cannot tell which revision the person saw, so it fails closed.
+ * The refusal for a decision that names no reviewed revisions on a gate whose work was amended, made
+ * at the current version: the server cannot tell which revision the person saw, so it fails closed.
+ * Retrying from the same client does not help; the decision must come from a screen that names it.
  */
 export const WORKFLOW_REVIEW_REVISIONS_REQUIRED_MESSAGE =
-  'This was revised since it opened. Refresh and review the latest revision, then decide again.'
+  'This was revised. A decision on revised work must name the revision you reviewed: decide from a review screen that shows the latest revision, such as the Ficus web app.'
 
 /**
- * Whether a human decision on these current source revisions is stale: the named revisions differ, or
- * none are named while any source has been amended (only unamended gates accept older clients).
+ * Why a human decision on these current source revisions is refused, or null when it may proceed.
+ * Named revisions must all be current. Without them, a decision made at a version older than an
+ * amendment is provably stale (the exact revised message); one made at the current version on
+ * amended work fails closed, because a refetching client cannot prove what was read. Gates whose
+ * work was never amended accept older clients.
  */
 export function workflowReviewDecisionRefusal(
   reviewed: WorkflowReviewedRevision[] | undefined,
-  current: WorkflowReviewedRevision[]
+  current: Array<WorkflowReviewedRevision & { revisedVersion?: number }>,
+  expectedVersion: number
 ): string | null {
-  if (reviewed) return sameWorkflowReviewedRevisions(reviewed, current) ? null : WORKFLOW_REVIEW_REVISED_MESSAGE
+  const named = current.map(({ attemptId, revision }) => ({ attemptId, revision }))
+  if (reviewed) return sameWorkflowReviewedRevisions(reviewed, named) ? null : WORKFLOW_REVIEW_REVISED_MESSAGE
+  if (current.some((entry) => (entry.revisedVersion ?? 0) > expectedVersion)) return WORKFLOW_REVIEW_REVISED_MESSAGE
   return current.some((entry) => entry.revision > 1) ? WORKFLOW_REVIEW_REVISIONS_REQUIRED_MESSAGE : null
 }
 

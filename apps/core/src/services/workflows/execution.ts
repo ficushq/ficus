@@ -518,7 +518,8 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
       if (isWorkflowHumanDecisionAttempt(run.state, attempt)) {
         const refusal = workflowReviewDecisionRefusal(
           command.reviewedRevisions,
-          workflowGateRevisions(run.state, attempt)
+          workflowGateRevisions(run.state, attempt),
+          command.expectedVersion
         )
         if (refusal) throw new WorkflowError(refusal, 409, WORKFLOW_REVIEW_REVISED_CODE)
       }

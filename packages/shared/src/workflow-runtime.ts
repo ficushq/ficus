@@ -761,10 +761,10 @@ function recordReviewedRevisions(previous: WorkflowRun, attempt: WorkflowAttempt
     if (command.reviewedRevisions) throw new Error('reviewedRevisions is only for human review decisions')
     return
   }
-  const current = workflowGateRevisions(previous, attempt).map(({ attemptId, revision }) => ({ attemptId, revision }))
-  const refusal = workflowReviewDecisionRefusal(command.reviewedRevisions, current)
+  const current = workflowGateRevisions(previous, attempt)
+  const refusal = workflowReviewDecisionRefusal(command.reviewedRevisions, current, command.expectedVersion)
   if (refusal) throw new Error(refusal)
-  attempt.reviewedRevisions = current
+  attempt.reviewedRevisions = current.map(({ attemptId, revision }) => ({ attemptId, revision }))
 }
 
 /**

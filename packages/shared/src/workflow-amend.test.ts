@@ -15,6 +15,7 @@ import {
   WORKFLOW_REVIEW_REVISIONS_REQUIRED_MESSAGE,
   workflowAttemptResults,
   workflowDecisionRevisionNote,
+  workflowReviewDecisionRefusal,
 } from './workflow-result-revisions'
 import { brief } from './test-fixtures/workflow-review'
 
@@ -299,7 +300,15 @@ describe('decisions record the reviewed revision', () => {
   })
 
   test('a decision that names no revisions fails closed once the work was amended', () => {
-    expect(() => complete(amend(atGate()), 'yes')).toThrow(WORKFLOW_REVIEW_REVISIONS_REQUIRED_MESSAGE)
+    const run = amend(atGate())
+    expect(() => complete(run, 'yes')).toThrow(WORKFLOW_REVIEW_REVISIONS_REQUIRED_MESSAGE)
+    // A decision made at a version older than the amendment is provably stale: the exact message.
+    expect(
+      workflowReviewDecisionRefusal(undefined, workflowGateRevisions(run, run.attempts[1]!), run.version - 1)
+    ).toBe(WORKFLOW_REVIEW_REVISED_MESSAGE)
+    expect(
+      workflowReviewDecisionRefusal(undefined, workflowGateRevisions(atGate(), atGate().attempts[1]!), 1)
+    ).toBeNull()
   })
 
   test('a decision on a stale revision is refused', () => {
