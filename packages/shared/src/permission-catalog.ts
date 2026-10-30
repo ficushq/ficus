@@ -97,6 +97,8 @@ export const PERMISSION_DESCRIPTIONS = {
   'channels:delete': 'Delete channel configurations.',
   'skills:read': 'View and export skills and compare them with their templates.',
   'skills:write': 'Create, import, edit, delete, and manage skills and their supporting files.',
+  'storage:read':
+    'View an accessible squad’s storage breakdown: its workspace and agent box homes, folders, growth, scan time, and stored files. Host disk totals and other squads stay behind system:logs.',
   'slots:use': 'View coordination pools and claim, renew, release, or wait for slots as an agent.',
   'slots:write': 'Manage coordination pools and inspect diagnostics, in addition to using slots.',
   'monitors:read': 'View background monitors and their logs.',

@@ -144,6 +144,21 @@ describe('SkillSync', () => {
     expect(parseSkillMarkdown(md, 'notion').name).toBe('Notion CLI')
   })
 
+  test('repo ships the storage:read-gated squad-storage skill for managers and consultants', async () => {
+    const { SKILLS_DIR, CONFIG_DIR } = await import('../../lib/paths')
+    const { readFile } = await import('fs/promises')
+    const { join } = await import('path')
+    const md = await readFile(join(SKILLS_DIR, 'squad-storage', 'SKILL.md'), 'utf8')
+    expect(parseSkillMarkdown(md, 'squad-storage').requiredPermission).toBe('storage:read')
+    expect(md).toContain('ficus squad storage')
+    expect(md).toContain('system:cleanup')
+    expect(md).toContain('cleanup-agents')
+    for (const type of ['manager', 'consultant']) {
+      const yaml = await readFile(join(CONFIG_DIR, 'agent-types', `${type}.yaml`), 'utf8')
+      expect(yaml).toMatch(/^ {2}- squad-storage$/m)
+    }
+  })
+
   test('repo ships the system:logs-gated view-system-logs skill', async () => {
     const { SKILLS_DIR } = await import('../../lib/paths')
     const { readFile, stat } = await import('fs/promises')

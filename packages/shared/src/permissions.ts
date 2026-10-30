@@ -127,6 +127,10 @@ export const Permissions = {
   SKILLS_READ: 'skills:read',
   SKILLS_WRITE: 'skills:write',
 
+  // Storage: one squad's storage breakdown (GET /api/squads/:id/storage). Instance-wide
+  // storage, host disk totals and other squads stay behind system:logs.
+  STORAGE_READ: 'storage:read',
+
   // Squad slot coordination
   SLOTS_USE: 'slots:use',
   SLOTS_WRITE: 'slots:write',

@@ -47,6 +47,7 @@ import { DEFAULT_CONSULTANT_IDLE_DORMANCY_DAYS, type IdleConsultantsPreview, typ
 import { findIdleConsultants, makeIdleConsultantsDormant } from '../services/agents/idle-consultants'
 import { agentStorageBytes, storageAgentInfo } from '../services/storage/agents'
 import { storageMonitorService } from '../services/storage/monitor'
+import { readSquadStorage } from '../services/storage/squad-view'
 import { terminalManager } from '../services/sandbox/docker/terminal'
 import {
   getSandboxManager,
@@ -265,6 +266,14 @@ export const squadsRouter = new Hono()
   .post('/:id/cleanup-agents', requireSquadPermission('agents:terminate'), async (c) => {
     const dryRun = c.req.query('dryRun') === 'true'
     return c.json(await Squad.cleanupFlexAgents(dryRun, resolvedSquadId(c)))
+  })
+  // This squad's storage breakdown only (services/storage/squad-view.ts). Read-only: no
+  // squad-scoped refresh, so squad callers never drive instance-wide scans.
+  .get('/:id/storage', requireSquadPermission('storage:read'), async (c) => {
+    const squad = await Squad.find(resolvedSquadId(c))
+    if (!squad) return c.json({ error: 'Squad not found' }, 404)
+    c.header('Cache-Control', 'no-store')
+    return c.json(await readSquadStorage({ id: squad.id, name: squad.name }))
   })
   // Preview consultants idle at least `days` (default DEFAULT_CONSULTANT_IDLE_DORMANCY_DAYS) with their latest measured box sizes.
   .get('/:id/idle-consultants', requireSquadPermission('agents:terminate'), async (c) => {

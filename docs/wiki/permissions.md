@@ -25,6 +25,23 @@ not included in default roles. See [decision evaluation access](decision-evaluat
 for worker invocation, temporary per-worker grants/revocation, scoping, cost
 attribution, rate limits and rollout requirements.
 
+## Squad storage
+
+`storage:read` lets a caller read one squad's storage breakdown with
+`GET /api/squads/:id/storage` or `ficus squad storage [squad-id]`, without the
+instance-wide `system:logs`. It is checked in the requested squad, so a manager,
+consultant or squad-scoped role holder only sees squads it can access; agents
+with an extra `storage:read` scope stay inside their own squad. The bundled
+Squad Manager role (managers and consultants) and Operator hold it; Squad Worker
+and Viewer do not. The response (`SquadStorageView` in
+[`packages/shared/src/storage.ts`](../../packages/shared/src/storage.ts)) contains
+only that squad's box homes, folders, agents, growth and stored files, with the
+measurement age and scan state. Host disk totals, unattributed bytes, capacity
+warnings, other squads, scan home counts and the instance attachment quota stay
+behind `system:logs`. The endpoint is read-only: it never starts or requests a
+scan. Managers and consultants also receive the `squad-storage` skill, which is
+gated by this permission.
+
 ## Human-only squad controls
 
 Some squad settings check `squads:update` **and** require a literal, enabled human
