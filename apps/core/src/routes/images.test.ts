@@ -16,7 +16,7 @@ import {
   waitForBlockedBy,
   type TestUser,
 } from '../test-utils'
-import { db, squads, agents, roles, images } from '../db'
+import { db, squads, agents, roles, images, messages } from '../db'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { MAX_IMAGE_ATTACHMENTS_PER_MESSAGE } from '@ficus/shared'
 import { existsSync } from 'node:fs'
@@ -585,6 +585,56 @@ describe('POST /api/images/sign-urls', () => {
     })
 
     expect(res.status).toBe(400)
+  })
+
+  it('signs an unsent upload in a squad conversation for its uploader only, until a message carries it', async () => {
+    const [squad] = await db
+      .insert(squads)
+      .values({ name: `${userPrefix} unsent`, purpose: 't' })
+      .returning()
+    const [agent] = await db.insert(agents).values({ agentTypeId: 'engineer', squadId: squad!.id }).returning()
+    const memberRole = await createTestRole({ prefix: userPrefix, permissions: ['agents:read', 'agents:write'] })
+    const uploader = await createTestUser({ prefix: userPrefix })
+    const member = await createTestUser({ prefix: userPrefix })
+    const otherAdmin = await createTestAdmin({ prefix: userPrefix })
+    for (const account of [uploader, member])
+      await assignRole({ userId: account.id, roleId: memberRole.id, scope: 'squad', squadId: squad!.id })
+    // The web composer uploads with the conversation's agent before it sends the message.
+    const [unsent] = await Image.createMany(
+      [{ type: 'image', data: Buffer.from('u').toString('base64'), mimeType: 'image/png' }],
+      { agentId: agent!.id, squadId: squad!.id, uploadedByUserId: uploader.id }
+    )
+    const sign = async (token: string) =>
+      (
+        (await (
+          await buildApp().request('/api/images/sign-urls', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', ...authHeaders(token) },
+            body: JSON.stringify({ ids: [unsent!.id] }),
+          })
+        ).json()) as { urls: Record<string, string> }
+      ).urls
+    try {
+      expect(Object.keys(await sign(uploader.token))).toEqual([unsent!.id])
+      expect(await sign(member.token)).toEqual({})
+      expect(await sign(otherAdmin.token)).toEqual({})
+      // Sent: the message is queued for the agent and its image is still pending. The conversation's
+      // readers see it, as they see the message.
+      await db.insert(messages).values({
+        agentId: agent!.id,
+        role: 'human',
+        content: 'look',
+        metadata: { imageIds: [unsent!.id] },
+        pending: true,
+      })
+      expect(Object.keys(await sign(member.token))).toEqual([unsent!.id])
+      expect(Object.keys(await sign(otherAdmin.token))).toEqual([unsent!.id])
+    } finally {
+      await db.delete(messages).where(eq(messages.agentId, agent!.id))
+      await db.delete(images).where(eq(images.id, unsent!.id))
+      await db.delete(agents).where(eq(agents.id, agent!.id))
+      await db.delete(squads).where(eq(squads.id, squad!.id))
+    }
   })
 
   it('signs a private conversation image for its owner only, and a staged upload for its uploader only', async () => {

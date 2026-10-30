@@ -14,7 +14,7 @@
  */
 import { createHash } from 'node:crypto'
 import { readFile, unlink } from 'node:fs/promises'
-import { and, asc, count, eq, inArray, isNotNull, isNull, or, sql, notExists } from 'drizzle-orm'
+import { and, asc, count, eq, inArray, isNotNull, isNull, lte, or, sql, notExists } from 'drizzle-orm'
 import {
   WORK_STREAM_INPUT_ASSET_LIMIT,
   WORKFLOW_ATTEMPT_ATTACHMENT_LIMIT,
@@ -330,6 +330,15 @@ async function insertShare(
 // Attach
 // ---------------------------------------------------------------------------
 
+/** A finished (done or canceled) stream's shares are part of its record: none are added or removed. */
+function assertInputsCanChange(stream: Pick<StreamRow, 'status'>): void {
+  if (['done', 'canceled'].includes(stream.status))
+    throw new AssetAttachmentError(
+      'This work stream is finished; its stored images and files can no longer change',
+      409
+    )
+}
+
 /**
  * Share a stored asset with a work stream as an input. Identical repeats return the existing share.
  * The caller has already resolved the stream; `notify` tells running workers about the new input.
@@ -349,8 +358,7 @@ export async function attachStreamAsset(input: {
     await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, stream.squadId)).for('update')
     const [locked] = await tx.select().from(workStreams).where(eq(workStreams.id, stream.id)).for('update')
     if (!locked) throw new AssetAttachmentError('Work stream not found', 404)
-    if (['done', 'canceled'].includes(locked.status))
-      throw new AssetAttachmentError('This work stream is finished; its inputs can no longer change', 409)
+    assertInputsCanChange(locked)
     return insertShare(tx, input.identity, locked, null, source, async () => {
       const [inputs] = await tx
         .select({ total: count() })
@@ -513,30 +521,6 @@ export async function listStreamAssets(
   return result
 }
 
-/** Several streams' inputs at once (for list views); absent streams have none. */
-export async function listStreamInputsFor(streamIds: string[]): Promise<Map<string, WorkStreamAssetAttachment[]>> {
-  const result = new Map<string, WorkStreamAssetAttachment[]>()
-  if (!streamIds.length) return result
-  const rows = await db
-    .select()
-    .from(workStreamAssetAttachments)
-    .where(
-      and(
-        inArray(workStreamAssetAttachments.workStreamId, streamIds),
-        isNull(workStreamAssetAttachments.attemptId),
-        isNull(workStreamAssetAttachments.removedAt),
-        isNotNull(workStreamAssetAttachments.retainedAssetId)
-      )
-    )
-    .orderBy(asc(workStreamAssetAttachments.createdAt), asc(workStreamAssetAttachments.id))
-  for (const row of rows) {
-    const list = result.get(row.workStreamId) ?? []
-    list.push(shareJson(row))
-    result.set(row.workStreamId, list)
-  }
-  return result
-}
-
 /** A retained asset's bytes, verified against their recorded size and digest. */
 async function readRetainedBytes(asset: AssetRow): Promise<Buffer> {
   try {
@@ -577,7 +561,8 @@ export async function readStreamAsset(
 
 /**
  * Remove a share. An input needs the stream-edit rule; an attempt's result can be removed only by
- * that attempt's agent while it is open (closed results are reviewed evidence). Idempotent.
+ * that attempt's agent while it is open (closed results are reviewed evidence). A finished stream's
+ * shares stay, as attaching to it is refused. Idempotent.
  */
 export async function removeStreamAsset(input: {
   identity: Identity
@@ -601,9 +586,12 @@ export async function removeStreamAsset(input: {
     assertCanAttach(stream, run, share.attemptId, input.identity)
   }
   if (share.removedAt) return
+  assertInputsCanChange(stream)
   const released = await db.transaction(async (tx) => {
     await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, stream.squadId)).for('update')
     const [locked] = await tx.select().from(workStreams).where(eq(workStreams.id, stream.id)).for('update')
+    if (!locked) throw new AssetAttachmentError('Work stream not found', 404)
+    assertInputsCanChange(locked)
     if (share.attemptId !== null) {
       const [run] = await tx
         .select()
@@ -686,6 +674,7 @@ export async function releaseRetainedAsset(assetId: string): Promise<'kept' | 'r
   } catch (error) {
     if (!isMissingFile(error)) {
       log.warn(`Could not remove the bytes of retained asset ${asset.id}; cleanup will retry`, error)
+      await recordCleanupFailure(asset.id, error)
       return 'pending'
     }
   }
@@ -695,9 +684,57 @@ export async function releaseRetainedAsset(assetId: string): Promise<'kept' | 'r
   return 'deleted'
 }
 
+/** How many failed cleanups a retained asset gets before the sweep stops and leaves it on record. */
+export const RETAINED_ASSET_CLEANUP_MAX_ATTEMPTS = 10
+const CLEANUP_BASE_DELAY_MS = 15 * 60 * 1000
+const CLEANUP_MAX_DELAY_MS = 24 * 60 * 60 * 1000
+
+/** The wait after the `attempts`-th failure: 15 minutes, doubling, at most a day. */
+export function retainedAssetCleanupDelayMs(attempts: number): number {
+  return Math.min(CLEANUP_MAX_DELAY_MS, CLEANUP_BASE_DELAY_MS * 2 ** Math.max(0, attempts - 1))
+}
+
+function cleanupErrorText(error: unknown): string {
+  const code = (error as { code?: unknown })?.code
+  if (typeof code === 'string' && code) return code.slice(0, 200)
+  return (error instanceof Error ? error.message : String(error)).slice(0, 200) || 'Unknown error'
+}
+
+/**
+ * Record a failed cleanup so the sweep moves on: back the record off, and after the last allowed
+ * attempt stop retrying it, keeping the error on the record (its bytes stay where they are).
+ */
+async function recordCleanupFailure(assetId: string, error: unknown): Promise<void> {
+  try {
+    const [row] = await db
+      .update(retainedAssets)
+      .set({ cleanupAttempts: sql`${retainedAssets.cleanupAttempts} + 1`, cleanupError: cleanupErrorText(error) })
+      .where(eq(retainedAssets.id, assetId))
+      .returning({ attempts: retainedAssets.cleanupAttempts })
+    if (!row) return
+    const now = Date.now()
+    const exhausted = row.attempts >= RETAINED_ASSET_CLEANUP_MAX_ATTEMPTS
+    await db
+      .update(retainedAssets)
+      .set(
+        exhausted
+          ? { cleanupRetryAt: null, cleanupFailedAt: new Date(now) }
+          : { cleanupRetryAt: new Date(now + retainedAssetCleanupDelayMs(row.attempts)) }
+      )
+      .where(eq(retainedAssets.id, assetId))
+    if (exhausted)
+      log.error(
+        `Retained asset ${assetId} cleanup failed ${row.attempts} times; it is no longer retried (cleanup_failed_at is set)`
+      )
+  } catch (recordError) {
+    log.warn(`Could not record the failed cleanup of retained asset ${assetId}`, recordError)
+  }
+}
+
 /**
  * The bounded cleanup sweep: retry pending deletions and release assets whose last share went
- * without a release (a deleted squad's streams, a release that failed after its commit).
+ * without a release (a deleted squad's streams, a release that failed after its commit). A record
+ * whose cleanup failed waits out its backoff, so failures never hold up the records behind them.
  */
 export async function runRetainedAssetCleanup(options: { maxAssets?: number } = {}): Promise<number> {
   const unused = notExists(
@@ -714,8 +751,14 @@ export async function runRetainedAssetCleanup(options: { maxAssets?: number } = 
   const candidates = await db
     .select({ id: retainedAssets.id })
     .from(retainedAssets)
-    .where(or(isNotNull(retainedAssets.deleteRequestedAt), unused))
-    .orderBy(asc(retainedAssets.createdAt))
+    .where(
+      and(
+        or(isNotNull(retainedAssets.deleteRequestedAt), unused),
+        isNull(retainedAssets.cleanupFailedAt),
+        or(isNull(retainedAssets.cleanupRetryAt), lte(retainedAssets.cleanupRetryAt, new Date()))
+      )
+    )
+    .orderBy(asc(retainedAssets.createdAt), asc(retainedAssets.id))
     .limit(Math.max(1, options.maxAssets ?? 25))
   let done = 0
   for (const { id } of candidates) {
@@ -724,6 +767,7 @@ export async function runRetainedAssetCleanup(options: { maxAssets?: number } = 
       if (outcome === 'released' || outcome === 'deleted') done++
     } catch (error) {
       log.warn(`Retained asset ${id} cleanup will retry`, error)
+      await recordCleanupFailure(id, error)
     }
   }
   return done

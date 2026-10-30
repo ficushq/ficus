@@ -1804,6 +1804,13 @@ export const retainedAssets = pgTable(
     /** The squad whose work stream first retained it, for storage attribution. */
     squadId: uuid('squad_id'),
     deleteRequestedAt: timestamp('delete_requested_at'),
+    /** Failed attempts to remove the bytes; each one backs the next retry off. */
+    cleanupAttempts: integer('cleanup_attempts').notNull().default(0),
+    /** The cleanup sweep skips this record until then. */
+    cleanupRetryAt: timestamp('cleanup_retry_at'),
+    /** Set when the bounded retries ran out: the sweep stops, and the record shows the last error. */
+    cleanupFailedAt: timestamp('cleanup_failed_at'),
+    cleanupError: varchar('cleanup_error', { length: 200 }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (table) => [uniqueIndex('idx_retained_assets_source').on(table.sourceKind, table.sourceId)]
