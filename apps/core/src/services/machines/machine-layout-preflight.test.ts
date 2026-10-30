@@ -55,12 +55,18 @@ const ready = 'FICUS_MACHINE_LAYOUT=ready\n'
 const required = 'FICUS_MACHINE_LAYOUT=operator-required\n'
 
 describe('machine layout automatic-bootstrap preflight', () => {
-  it('keeps both standalone privileged guards byte-identical to the executed Core probe', () => {
-    for (const name of ['bootstrap.sh', 'box-provision.sh']) {
-      const script = readFileSync(join(import.meta.dir, '../../../../../scripts/machine', name), 'utf8')
-      const embedded = script.split("<<'FICUS_LAYOUT_PREFLIGHT'\n")[1]?.split('\nFICUS_LAYOUT_PREFLIGHT')[0]
-      expect(embedded).toBe(MACHINE_LAYOUT_PREFLIGHT_PROGRAM)
-    }
+  it('keeps the machine-level guard in bootstrap.sh byte-identical to the executed Core probe', () => {
+    const script = readFileSync(join(import.meta.dir, '../../../../../scripts/machine', 'bootstrap.sh'), 'utf8')
+    const embedded = script.split("<<'FICUS_LAYOUT_PREFLIGHT'\n")[1]?.split('\nFICUS_LAYOUT_PREFLIGHT')[0]
+    expect(embedded).toBe(MACHINE_LAYOUT_PREFLIGHT_PROGRAM)
+  })
+
+  // The guard is machine-level only. A per-box copy in box-provision.sh scanned
+  // every sibling box home on each provision and refused healthy boxes whenever
+  // a neighbor was momentarily half-built or half-removed (2026-10-30).
+  it('box-provision.sh carries no copy of the machine-wide guard', () => {
+    const script = readFileSync(join(import.meta.dir, '../../../../../scripts/machine', 'box-provision.sh'), 'utf8')
+    expect(script).not.toContain('FICUS_LAYOUT_PREFLIGHT')
   })
 
   it('allows a fresh host without creating any machine paths', async () => {

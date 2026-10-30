@@ -1893,67 +1893,6 @@ reconcile_unit_mode() {
   fi
 }
 
-# C-FIN normal paths refuse old/pending layouts before any host effects.
-# Kept byte-identical to Core's privileged automatic-bootstrap preflight.
-require_machine_layout_ready() {
-  local result
-  if ! result=$("${SUDO[@]}" bash -s -- "${FICUS_HOST_ROOT}" <<'FICUS_LAYOUT_PREFLIGHT'
-set -eu
-root=$1
-needs_operator() { printf '%s\n' 'FICUS_MACHINE_LAYOUT=operator-required'; exit 0; }
-for journal in "$root/var/backups/ficus-host-migrate"/machine-*; do
-  [ -f "$journal/STEPS" ] || continue
-  if [ ! -e "$journal/DONE" ] && [ ! -e "$journal/REVERSED" ]; then needs_operator; fi
-done
-# ficus-p5-bridge: refusal-only checks; never migrate or remove these paths.
-old_root="$root/opt/tau"
-if [ -d "$old_root" ] && [ ! -L "$old_root" ]; then needs_operator; fi
-old_browser="$root/etc/systemd/system/tau-browser.service"
-if [ -f "$old_browser" ] && [ ! -L "$old_browser" ]; then needs_operator; fi
-if [ -f "$root/etc/apparmor.d/tau-browser-chromium" ]; then needs_operator; fi
-if [ -f "$root/opt/ficus/browser/service/tau-browser.js" ]; then needs_operator; fi
-for old_unit in "$root/etc/systemd/system/tau-box"-box_*; do
-  if [ -f "$old_unit" ] && [ ! -L "$old_unit" ]; then needs_operator; fi
-done
-account_exists() {
-  if getent "$1" "$2" >/dev/null; then return 0; else
-    rc=$?
-    [ "$rc" = 2 ] && return 1
-    exit "$rc"
-  fi
-}
-if account_exists passwd tau-browser && ! account_exists passwd ficus-browser; then needs_operator; fi
-if account_exists group tau-browser && ! account_exists group ficus-browser; then needs_operator; fi
-if [ -e "$root/opt/ficus" ] || [ -L "$root/opt/ficus" ]; then
-  [ -d "$root/opt/ficus" ] && [ ! -L "$root/opt/ficus" ] || needs_operator
-fi
-for home in "$root"/home/box_*; do
-  [ -e "$home" ] || [ -L "$home" ] || continue
-  [ -d "$home" ] && [ ! -L "$home" ] || needs_operator
-  if [ -e "$home/.tau" ] && [ ! -L "$home/.tau" ]; then needs_operator; fi
-  for old_unit in "$home/.config/systemd/user/tau-sandbox-server.service" "$home/.config/systemd/user/tau-sandbox-server.socket" "$home/.config/systemd/user/tau-sandbox-server-proxy.service"; do
-    if [ -f "$old_unit" ] && [ ! -L "$old_unit" ]; then needs_operator; fi
-  done
-  [ -d "$home/.ficus" ] && [ ! -L "$home/.ficus" ] || needs_operator
-  name=$(basename "$home")
-  system="$root/etc/systemd/system/ficus-box-$name.service"
-  user="$home/.config/systemd/user/ficus-sandbox-server.service"
-  if [ -f "$system" ] && [ ! -L "$system" ]; then continue; fi
-  if [ -f "$user" ] && [ ! -L "$user" ]; then continue; fi
-  needs_operator
-done
-printf '%s\n' 'FICUS_MACHINE_LAYOUT=ready'
-FICUS_LAYOUT_PREFLIGHT
-  ); then
-    echo 'machine layout inventory failed; nothing was changed' >&2
-    return 3
-  fi
-  if [ "${result}" != FICUS_MACHINE_LAYOUT=ready ]; then
-    echo 'this machine or box predates the finalized Ficus layout — upgrade through the ficus-host-layout-bridge Core release first; interrupted journals require its recovery tools' >&2
-    return 3
-  fi
-}
-
 # Canonical box homes are prepared as the box user.
 prepare_box_home() {
   run_as_box bash -c 'set -eu
@@ -2011,7 +1950,11 @@ report_socket_start_failure() {
 }
 
 provision_box() {
-  require_machine_layout_ready || return $?
+  # No machine-wide legacy-layout scan here. Machines that still need the
+  # Tau-to-Ficus migration are gated at the machine level (bootstrap.sh refuses
+  # them; the worker's boot reconcile defers them). Scanning every sibling box
+  # home on each provision refused healthy boxes whenever a neighbor was
+  # momentarily half-built or half-removed (2026-10-30).
   assert_socket_proxyd
   ensure_user
 
