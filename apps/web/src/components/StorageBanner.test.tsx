@@ -108,6 +108,17 @@ function renderBanner(warnings: ReturnType<typeof warning>[], storage: Pick<Stor
   }
 }
 
+test('Dismiss is a padded ghost button while Review storage remains a navigation link', () => {
+  const html = renderBanner([warning(80, 77.03)], { getItem: () => null, setItem: () => {} })
+  const button = html.match(/<button\b[^>]*>Dismiss<\/button>/)?.[0] ?? ''
+  expect(button).toContain('type="button"')
+  expect(button).toContain('ficus-button ficus-button-ghost')
+  expect(button).toContain('px-3 py-1')
+  expect(button).not.toContain('ficus-button-link')
+  expect(button).not.toContain('underline')
+  expect(html).toMatch(/<a\b[^>]*href="\/settings\?section=storage"[^>]*>Review storage<\/a>/)
+})
+
 test('a dismissal hides the banner for a week unless a higher warning level is reached', () => {
   const store = new Map<string, string>()
   const storage = {

@@ -285,8 +285,8 @@
      specificity: it beats resting utilities (text-muted), while a `hover:` utility on the
      element still wins (a ghost trash icon with hover:text-status-danger-600). */
 
-  /* Transparent at rest. Only for icon-only buttons and compact controls inside a toolbar,
-     header, menu or segmented cluster; a text button alone in content is secondary. */
+  /* Transparent at rest. Typically for non-primary actions, including text actions,
+     icon-only buttons and compact toolbar controls. Keep normal button padding. */
   .ficus-button-ghost {
     background: transparent;
     color: rgb(var(--color-text-secondary));
@@ -297,7 +297,7 @@
     color: rgb(var(--color-text-primary));
   }
 
-  /* An inline text action in running text or a section header. No horizontal padding,
+  /* Navigation only, not a non-navigation action. No horizontal padding,
      so it never reads as an indented, empty button. */
   .ficus-button-link {
     padding-inline: 0;
@@ -607,7 +607,7 @@
     outline: 2px solid Highlight;
     outline-offset: 3px;
   }
-  /* An inline text action stays text, as a link would. */
+  /* Inline navigation stays text. */
   .ficus-button-link:not(:focus-visible) {
     outline: none;
   }

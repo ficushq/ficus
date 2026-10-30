@@ -4,9 +4,9 @@
  * className that carries the base must pair it with exactly one variant from design-system.css:
  *
  *   ficus-button-primary    the one main action of a page, dialog or form
- *   ficus-button-secondary  standalone actions in content (card CTAs, row actions, Cancel)
- *   ficus-button-ghost      icon-only buttons and compact controls in a toolbar, header, menu or cluster
- *   ficus-button-link       inline text actions in running text or a section header (no horizontal padding)
+ *   ficus-button-secondary  actions needing emphasis or a visible boundary (card CTAs, row actions, Cancel)
+ *   ficus-button-ghost      non-primary actions, icon-only buttons and compact toolbar controls
+ *   ficus-button-link       navigation only (no horizontal padding)
  *   ficus-button-danger     destructive actions
  *
  * The variant may be picked dynamically (a ternary or clsx among variants, or a same-file constant or
@@ -94,8 +94,8 @@ test('design-system.css defines every variant the guard accepts', () => {
   for (const variant of BUTTON_VARIANTS) expect(css).toContain(`.${variant} {`)
 })
 
-test('the guard catches the base-only ghost pattern and its look-alikes', () => {
-  // The bug this guard exists for: padded, transparent text that only shows a fill on hover.
+test('the guard catches missing variants and invalid variant styling', () => {
+  // A hand-styled base without an explicit variant bypasses the shared button styles.
   expect(
     scanSnippet(
       `<button className="ficus-button min-h-10 px-3 py-2 text-sm text-muted hover:text-primary hover:bg-surface-hover">Review and decide</button>`
@@ -111,17 +111,23 @@ test('the guard catches the base-only ghost pattern and its look-alikes', () => 
   // A shared base-only constant is the same trap one indirection away.
   expect(scanSnippet(`const button = 'ficus-button px-3 py-2'\nconst x = <b className={button} />`)).toHaveLength(1)
   // An inline link with horizontal padding reads as an indented button again.
-  expect(scanSnippet(`<b className="ficus-button ficus-button-link px-2 text-xs">Dismiss</b>`)).toHaveLength(1)
+  expect(
+    scanSnippet(`<a href="/settings" className="ficus-button ficus-button-link px-2 text-xs">Settings</a>`)
+  ).toHaveLength(1)
   // A muted link that hovers to bright, underlined text instead of the variant's own hover.
   expect(
-    scanSnippet(`<b className="ficus-button ficus-button-link text-xs text-muted hover:text-primary">Dismiss</b>`)
+    scanSnippet(
+      `<a href="/settings" className="ficus-button ficus-button-link text-xs text-muted hover:text-primary">Settings</a>`
+    )
   ).toHaveLength(1)
   expect(
-    scanSnippet(`<b className="ficus-button ficus-button-link text-xs hover:text-secondary">Hide</b>`)
+    scanSnippet(
+      `<a href="/settings" className="ficus-button ficus-button-link text-xs hover:text-secondary">View all</a>`
+    )
   ).toHaveLength(1)
   // A muted link with no override still hovers to the variant's bright, underlined link color.
   expect(
-    scanSnippet(`<b className="ficus-button ficus-button-link py-1 text-xs text-muted">View all</b>`)
+    scanSnippet(`<a href="/settings" className="ficus-button ficus-button-link py-1 text-xs text-muted">View all</a>`)
   ).toHaveLength(1)
 })
 
@@ -134,11 +140,11 @@ test('the guard accepts a variant chosen dynamically among variants', () => {
     `const size = 'px-3 py-2'\nconst button = \`ficus-button ficus-button-secondary \${size}\`\nconst x = <b className={button} />`,
     // A branch that is not a button at all carries no button class.
     `<a className={needsAccess ? 'ficus-button ficus-button-primary px-3' : 'text-accent-light hover:underline'} />`,
-    `<b className="ficus-button ficus-button-link text-xs">Dismiss</b>`,
+    `<a href="/settings" className="ficus-button ficus-button-link text-xs">Settings</a>`,
     // A tinted link keeps its own hover shade, and a ghost may recolor its hover.
-    `<b className="ficus-button ficus-button-link text-xs text-status-attention-600 hover:text-status-attention-800">Retry</b>`,
+    `<a href="/settings" className="ficus-button ficus-button-link text-xs text-status-attention-600 hover:text-status-attention-800">Review storage</a>`,
     `<b className="ficus-button ficus-button-ghost p-2 text-muted hover:text-status-danger-600">x</b>`,
-    `<b className="ficus-button ficus-button-link disabled:text-secondary disabled:no-underline">Dependency</b>`,
+    `<a href="/settings" className="ficus-button ficus-button-link disabled:text-secondary disabled:no-underline">Dependency</a>`,
   ]
   for (const source of ok) expect(scanSnippet(source), source).toEqual([])
 })
