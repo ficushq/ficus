@@ -5895,8 +5895,13 @@ require_host_layout_ready() { # [RELEASE_DIR] [DECLARED_LAYOUT]
     require_canonical_database_ca "$(envfile_direct_dsn "${SRC_DEST}/.env")"
     local current
     current=$(active_release_tree 2>/dev/null) || current=${SRC_DEST}
-    [[ $(core_release_host_layout "${current}") == 2 ]] ||
-      die 'this host predates the Ficus host layout — upgrade through the ficus-host-layout-bridge Core release first'
+    # Only a Core that is already installed can predate the layout: an activated
+    # release (`current`) or a git checkout. A fresh artifact host has neither
+    # until its first activation, even though this run has already written .env.
+    if [[ ${current} != "${SRC_DEST}" || -f ${SRC_DEST}/package.json || -f ${SRC_DEST}/artifact.json ]]; then
+      [[ $(core_release_host_layout "${current}") == 2 ]] ||
+        die 'this host predates the Ficus host layout — upgrade through the ficus-host-layout-bridge Core release first'
+    fi
   fi
   local target=${2:-2}
   [[ -z ${1:-} ]] || target=$(core_release_host_layout "$1")
