@@ -48,7 +48,20 @@ SRC_DEST=$R/release
 printf 'DATABASE_URL=postgres://localhost/db\n' >"$SRC_DEST/.env"
 check require_host_layout_ready "$R/release"
 rm "$SRC_DEST/artifact.json"
+# A fresh artifact host: this run wrote .env, but no Core has been installed or activated yet.
+check require_host_layout_ready
+# A git checkout from before the layout is still refused.
+printf '{"name":"ficus"}\n' >"$SRC_DEST/package.json"
 if (require_host_layout_ready) >/dev/null 2>&1; then FAIL=$((FAIL+1)); else PASS=$((PASS+1)); fi
+rm "$SRC_DEST/package.json"
+# So is an activated release from before the layout, even with no checkout beside it.
+mkdir -p "$R/old-release"
+printf '{"hostLayout":1}\n' >"$R/old-release/artifact.json"
+ln -s "$R/old-release" "$SRC_DEST/current"
+if (require_host_layout_ready) >/dev/null 2>&1; then FAIL=$((FAIL+1)); else PASS=$((PASS+1)); fi
+printf '{"hostLayout":2}\n' >"$R/old-release/artifact.json"
+check require_host_layout_ready
+rm "$SRC_DEST/current"
 unset SRC_DEST
 # Stop-world rollback must precede restoring a pending generic journal.
 TRACE=$R/trace
