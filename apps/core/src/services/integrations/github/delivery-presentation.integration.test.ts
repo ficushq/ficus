@@ -406,6 +406,7 @@ test('a polled snapshot turning clean wakes the completion-ready delivery partic
           id: 70,
           state: 'approved',
           commit_id: head,
+          author_association: 'OWNER',
           body: '',
           user: { id: 9, login: 'fixture-reviewer', type: 'User' },
           submitted_at: new Date(Date.now() - 120_000).toISOString(),
@@ -471,7 +472,9 @@ test('a polled snapshot turning clean wakes the completion-ready delivery partic
     expect(rest).toHaveLength(0)
     expect(wake!.recipientId).toBe(participant)
     expect(wake!.content).toContain(`Head: ${head}`)
-    expect(wake!.content).toContain(`Approval commit: ${head} (approved by @fixture-reviewer)`)
+    expect(wake!.content).toContain(
+      `Approval commit: ${head} (approved by @fixture-reviewer, a reviewer with write access: OWNER)`
+    )
     expect(wake!.content).toContain('Checks: success; mergeability: clean')
     // A repeated notification and a semantically identical re-observation add nothing.
     await notifyDeliverySnapshotChanged(target, cleanCursor, cleanCursor)

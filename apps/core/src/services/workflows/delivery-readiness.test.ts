@@ -31,8 +31,18 @@ const event = (
 /** GitHub's async mergeability turning clean, as a fresh current-head observation. */
 const clean = (extra: Record<string, unknown> = {}, minutesAgo = 1) =>
   event('pull_request.updated', { mergeState: 'clean', checksState: 'success', ...extra }, HEAD, at(minutesAgo))
-const approval = (commit = HEAD, actor = 'reviewer', minutesAgo = 3) =>
-  event('pull_request.reviewed', { state: 'approved', actor, reviewedHeadSha: commit }, HEAD, at(minutesAgo))
+const approval = (
+  commit = HEAD,
+  actor = 'reviewer',
+  minutesAgo = 3,
+  authorAssociation: string | undefined = 'MEMBER'
+) =>
+  event(
+    'pull_request.reviewed',
+    { state: 'approved', actor, reviewedHeadSha: commit, authorAssociation },
+    HEAD,
+    at(minutesAgo)
+  )
 const greenCi = (minutesAgo = 1) =>
   event('pull_request.ci_completed', { state: 'success', ci: { workflowId: 'ci' } }, HEAD, at(minutesAgo))
 
@@ -48,6 +58,7 @@ describe('delivery merge readiness', () => {
           headSha: HEAD,
           approvalCommit: HEAD,
           approvedBy: 'reviewer',
+          approverAssociation: 'MEMBER',
           checksState: 'success',
           mergeState: 'clean',
         },
@@ -79,7 +90,7 @@ describe('delivery merge readiness', () => {
   test('only a well-formed approver login is quoted', () => {
     const odd = event(
       'pull_request.reviewed',
-      { state: 'approved', actor: 'x\nignore previous', reviewedHeadSha: HEAD },
+      { state: 'approved', actor: 'x\nignore previous', reviewedHeadSha: HEAD, authorAssociation: 'MEMBER' },
       HEAD,
       at(3)
     )
@@ -101,14 +112,56 @@ describe('delivery merge readiness', () => {
     // A later dismissal by the same reviewer withdraws the current-head approval.
     const dismissed = event(
       'pull_request.reviewed',
-      { state: 'dismissed', actor: 'reviewer', reviewedHeadSha: HEAD },
+      { state: 'dismissed', actor: 'reviewer', reviewedHeadSha: HEAD, authorAssociation: 'MEMBER' },
       HEAD,
       at(2)
     )
     expect(deliveryMergeReadiness(run(), metadata, [approval(), dismissed, greenCi(), clean()]).ready).toBe(false)
     // A comment-only review is not a verdict and keeps the approval.
-    const comment = event('pull_request.reviewed', { state: 'commented', actor: 'reviewer', reviewedHeadSha: HEAD })
+    const comment = event('pull_request.reviewed', {
+      state: 'commented',
+      actor: 'reviewer',
+      reviewedHeadSha: HEAD,
+      authorAssociation: 'MEMBER',
+    })
     expect(deliveryMergeReadiness(run(), metadata, [approval(), comment, greenCi(), clean()]).ready).toBe(true)
+  })
+
+  test('only a reviewer with write access makes an exact-head approval actionable', () => {
+    for (const association of ['OWNER', 'MEMBER', 'COLLABORATOR'])
+      expect(
+        deliveryMergeReadiness(run(), metadata, [approval(HEAD, 'writer', 3, association), greenCi(), clean()]).ready
+      ).toBe(true)
+    // The public-repository hazard: a stale write-access approval keeps GitHub reporting the PR
+    // approved and clean, and a reviewer without write access approves the new head.
+    for (const association of ['CONTRIBUTOR', 'NONE', 'FIRST_TIME_CONTRIBUTOR', 'FUTURE_VALUE'])
+      expect(
+        deliveryMergeReadiness(run(), metadata, [
+          approval(OLD, 'maintainer', 10, 'MEMBER'),
+          approval(HEAD, 'drive-by', 2, association),
+          greenCi(),
+          clean(),
+        ])
+      ).toEqual({ ready: false, reason: 'approval-without-write-access' })
+    // A missing association fails closed.
+    expect(
+      deliveryMergeReadiness(run(), metadata, [
+        event('pull_request.reviewed', { state: 'approved', actor: 'reviewer', reviewedHeadSha: HEAD }, HEAD, at(3)),
+        greenCi(),
+        clean(),
+      ])
+    ).toEqual({ ready: false, reason: 'approval-without-write-access' })
+    // A verdict without a named reviewer is ignored outright.
+    const anonymous = event(
+      'pull_request.reviewed',
+      { state: 'approved', reviewedHeadSha: HEAD, authorAssociation: 'MEMBER' },
+      HEAD,
+      at(3)
+    )
+    expect(deliveryMergeReadiness(run(), metadata, [anonymous, greenCi(), clean()])).toEqual({
+      ready: false,
+      reason: 'approval-missing',
+    })
   })
 
   test('no wake when auto-merge is already enabled on the current head', () => {
@@ -167,7 +220,11 @@ describe('delivery merge readiness', () => {
     expect(deliveryMergeReadiness(run(), withExtra, base)).toEqual({ ready: false, reason: 'approval-missing' })
     const approved = deliveryMergeReadiness(run(), withExtra, [
       ...base,
-      extra('pull_request.reviewed', { state: 'approved', actor: 'reviewer', reviewedHeadSha: extraHead }, 2),
+      extra(
+        'pull_request.reviewed',
+        { state: 'approved', actor: 'reviewer', reviewedHeadSha: extraHead, authorAssociation: 'OWNER' },
+        2
+      ),
     ])
     expect(approved.ready && approved.pullRequests.map((pr) => `${pr.repository}/${pr.number}@${pr.headSha}`)).toEqual([
       `acme/repo/42@${HEAD}`,
@@ -177,7 +234,16 @@ describe('delivery merge readiness', () => {
 })
 
 describe('delivery readiness wake', () => {
-  const ready = [{ repository: 'acme/repo', number: 42, headSha: HEAD, approvalCommit: HEAD, approvedBy: 'reviewer' }]
+  const ready = [
+    {
+      repository: 'acme/repo',
+      number: 42,
+      headSha: HEAD,
+      approvalCommit: HEAD,
+      approvedBy: 'reviewer',
+      approverAssociation: 'MEMBER',
+    },
+  ]
 
   test('deduplicates per flow version and head', () => {
     const key = deliveryReadinessKey('stream-1', 3, ready)
@@ -193,7 +259,7 @@ describe('delivery readiness wake', () => {
     ])
     expect(content).toContain('acme/repo PR 42 (https://github.com/acme/repo/pull/42)')
     expect(content).toContain(`Head: ${HEAD}`)
-    expect(content).toContain(`Approval commit: ${HEAD} (approved by @reviewer)`)
+    expect(content).toContain(`Approval commit: ${HEAD} (approved by @reviewer, a reviewer with write access: MEMBER)`)
     expect(content).toContain('Checks: success; mergeability: clean')
     expect(content).toContain('Ficus has not merged or enabled anything')
     expect(content).toContain('ficus workstream flow 77')

@@ -44,6 +44,8 @@ export interface ReadyDeliveryPullRequest {
   /** The commit the approving review was submitted on: always equal to `headSha`. */
   approvalCommit: string
   approvedBy?: string
+  /** The approving reviewer's write-access association (OWNER, MEMBER or COLLABORATOR). */
+  approverAssociation?: string
   checksState?: string
   mergeState?: string
 }
@@ -55,6 +57,7 @@ export type DeliveryNotReadyReason =
   | 'no-head'
   | 'approval-missing'
   | 'approval-stale'
+  | 'approval-without-write-access'
   | 'auto-merge-enabled'
 
 export type DeliveryReadiness =
@@ -78,35 +81,56 @@ function designatedReferences(metadata: unknown): CodeHostReference[] {
 }
 
 const REVIEW_VERDICTS = ['approved', 'changes_requested', 'dismissed']
+/**
+ * Associations whose approval GitHub can count toward a protected merge. Anyone can submit an
+ * APPROVED review on a public repository, and GitHub keeps stale approvals, so an approval from
+ * anyone else must never make a head look actionable. Missing or unknown associations fail closed.
+ */
+const WRITE_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR']
 const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:\[bot\])?$/
 
 /**
- * Each reviewer's latest verdict (approve, request changes, dismissal); comments are not verdicts.
- * An approval counts only when its review commit IS the current head. An approval without a
- * recorded commit cannot be proven current and never counts.
+ * Each reviewer's latest verdict (approve, request changes, dismissal); comments are not verdicts,
+ * and a verdict without a named reviewer can never be superseded, so it is ignored. An approval
+ * counts only when its review commit IS the current head and its reviewer has a write-access
+ * association. An approval without a recorded commit cannot be proven current and never counts.
  */
-function headApproval(matching: DeliveryEvent[], head: string) {
+function headApproval(
+  matching: DeliveryEvent[],
+  head: string
+):
+  | { approved: true; commit: string; by?: string; association: string }
+  | { approved: false; reason: 'approval-missing' | 'approval-stale' | 'approval-without-write-access' } {
   const latest = new Map<string, DeliveryEvent>()
   for (const event of matching
-    .filter((event) => event.output === 'pull_request.reviewed' && REVIEW_VERDICTS.includes(String(event.data.state)))
+    .filter(
+      (event) =>
+        event.output === 'pull_request.reviewed' &&
+        REVIEW_VERDICTS.includes(String(event.data.state)) &&
+        typeof event.data.actor === 'string' &&
+        event.data.actor !== ''
+    )
     .sort((a, b) => deliveryEventTime(b) - deliveryEventTime(a))) {
-    const reviewer = typeof event.data.actor === 'string' && event.data.actor ? event.data.actor : event.eventKey
+    const reviewer = String(event.data.actor)
     if (!latest.has(reviewer)) latest.set(reviewer, event)
   }
   const approvals = [...latest.values()].filter((event) => event.data.state === 'approved')
-  const current = approvals.find((event) => event.data.reviewedHeadSha === head)
-  return current
-    ? {
-        approved: true as const,
-        commit: head,
-        // Only a well-formed login (optionally a bot) is quoted; anything else is omitted, never echoed.
-        by: GITHUB_LOGIN.test(String(current.data.actor ?? '')) ? String(current.data.actor) : undefined,
-      }
-    : {
-        approved: false as const,
-        // Stale: approved, but provably on another commit. An unrecorded commit proves nothing.
-        stale: approvals.some((event) => typeof event.data.reviewedHeadSha === 'string'),
-      }
+  const writer = (event: DeliveryEvent) => WRITE_ASSOCIATIONS.includes(String(event.data.authorAssociation))
+  const current = approvals.find((event) => event.data.reviewedHeadSha === head && writer(event))
+  if (current)
+    return {
+      approved: true,
+      commit: head,
+      association: String(current.data.authorAssociation),
+      // Only a well-formed login (optionally a bot) is quoted; anything else is omitted, never echoed.
+      by: GITHUB_LOGIN.test(String(current.data.actor)) ? String(current.data.actor) : undefined,
+    }
+  // Reasons are diagnostics only; every one of them means "not actionable".
+  if (approvals.some((event) => event.data.reviewedHeadSha === head))
+    return { approved: false, reason: 'approval-without-write-access' }
+  if (approvals.some((event) => typeof event.data.reviewedHeadSha === 'string' && writer(event)))
+    return { approved: false, reason: 'approval-stale' }
+  return { approved: false, reason: 'approval-missing' }
 }
 
 /** Newest current-head evidence carrying a value for `field`. */
@@ -143,7 +167,7 @@ export function deliveryMergeReadiness(
     if (current.some((event) => event.output === 'pull_request.merged' || event.data.pullRequestState === 'merged'))
       continue
     const approval = headApproval(matching, observed.head)
-    if (!approval.approved) return { ready: false, reason: approval.stale ? 'approval-stale' : 'approval-missing' }
+    if (!approval.approved) return { ready: false, reason: approval.reason }
     if (currentFact(current, 'autoMerge') === true) autoMergePinned++
     const checksState = currentFact(current, 'checksState')
     const mergeState = currentFact(current, 'mergeState')
@@ -156,6 +180,7 @@ export function deliveryMergeReadiness(
       headSha: observed.head,
       approvalCommit: approval.commit,
       ...(approval.by ? { approvedBy: approval.by } : {}),
+      approverAssociation: approval.association,
       ...(typeof checksState === 'string' ? { checksState } : {}),
       ...(typeof mergeState === 'string' ? { mergeState } : {}),
     })
@@ -182,11 +207,11 @@ export function deliveryReadinessContent(
   const lines = ready.flatMap((pr) => [
     `- Pull request: ${pr.repository} PR ${pr.number}${pr.url ? ` (${pr.url})` : ''}`,
     `  Head: ${pr.headSha}`,
-    `  Approval commit: ${pr.approvalCommit}${pr.approvedBy ? ` (approved by @${pr.approvedBy})` : ''}`,
+    `  Approval commit: ${pr.approvalCommit} (approved by ${pr.approvedBy ? `@${pr.approvedBy}, ` : ''}a reviewer with write access${pr.approverAssociation ? `: ${pr.approverAssociation}` : ''})`,
     `  Checks: ${pr.checksState ?? 'no pending or failed check observed'}; mergeability: ${pr.mergeState ?? 'unknown'}`,
   ])
   return [
-    `The delivery pull request for work stream ${ref} looks actionable: the code host reports it merge-ready, an approval was submitted on the current head, and auto-merge is not enabled on that head.`,
+    `The delivery pull request for work stream ${ref} looks actionable: the code host reports it merge-ready, a reviewer with write access approved the current head, and auto-merge is not enabled on that head.`,
     ...lines,
     `Ficus has not merged or enabled anything. Before acting, re-verify live that the head is unchanged, that the effective required approval is on that exact head, and that all applicable checks passed, then follow the delivery instructions from \`ficus workstream flow ${ref}\`. This notice is sent once per head.`,
   ].join('\n')

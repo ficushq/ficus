@@ -3680,16 +3680,17 @@ describe('delivery readiness wake', () => {
     updated_at: new Date().toISOString(),
     ...extra,
   })
-  const approve = (number: number, commit = HEAD) =>
+  const approve = (number: number, commit = HEAD, association = 'MEMBER', reviewerLogin = 'fixture-reviewer') =>
     native('pull_request_review', {
       action: 'submitted',
       pull_request: pull(number),
       review: {
-        id: number * 10 + (commit === HEAD ? 1 : 2),
+        id: number * 10 + (commit === HEAD ? 1 : 2) + (association === 'MEMBER' ? 0 : 5),
         state: 'approved',
         commit_id: commit,
+        author_association: association,
         body: '',
-        user: reviewer,
+        user: { ...reviewer, login: reviewerLogin },
         submitted_at: new Date(Date.now() - 120_000).toISOString(),
       },
     })
@@ -3756,7 +3757,9 @@ describe('delivery readiness wake', () => {
     expect(wake!.recipientId).toBe(participant)
     expect(wake!.metadata).toMatchObject({ workStreamId: id, flowVersion: run.version })
     expect(wake!.content).toContain(`Head: ${HEAD}`)
-    expect(wake!.content).toContain(`Approval commit: ${HEAD} (approved by @fixture-reviewer)`)
+    expect(wake!.content).toContain(
+      `Approval commit: ${HEAD} (approved by @fixture-reviewer, a reviewer with write access: MEMBER)`
+    )
     expect(wake!.content).toContain('Ficus has not merged or enabled anything')
     expect(await isCurrentFlowMessage(wake!)).toBe(true)
     // Repeated events for the same head add no second wake.
@@ -3790,6 +3793,15 @@ describe('delivery readiness wake', () => {
     await publish(approve(932, OLD))
     await publish(ci(932))
     await publish(clean(932))
+    expect(await wakes(id)).toHaveLength(0)
+  })
+
+  test('an exact-head approval without write access does not wake, even beside a stale writer approval', async () => {
+    const { id } = await completionReady(936)
+    await publish(approve(936, OLD))
+    await publish(approve(936, HEAD, 'CONTRIBUTOR', 'drive-by'))
+    await publish(ci(936))
+    await publish(clean(936))
     expect(await wakes(id)).toHaveLength(0)
   })
 

@@ -300,6 +300,13 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
         ...(output === 'pull_request.reviewed' && typeof item!.commit_id === 'string'
           ? { reviewedHeadSha: item!.commit_id }
           : {}),
+        // The reviewer's relationship to the repository (OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR,
+        // NONE, ...), as GitHub reports it on webhook and REST review objects. A fixed enum only.
+        ...(output === 'pull_request.reviewed' &&
+        typeof item!.author_association === 'string' &&
+        /^[A-Z_]{1,40}$/.test(item!.author_association)
+          ? { authorAssociation: item!.author_association }
+          : {}),
         requestedReviewer: String(payload!.requested_reviewer?.login ?? ''),
         requestedTeam: String(payload!.requested_team?.slug ?? ''),
         actorType: String(contentObject ? (item!.user?.type ?? '') : (payload!.sender?.type ?? item!.user?.type ?? '')),
