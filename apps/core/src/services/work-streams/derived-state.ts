@@ -38,6 +38,11 @@ import { flowWaitReference } from '../workflows/wait-policy'
  *    are additional presentation facts)
  * 6. queued -> queued (clients render position / parked wait from
  *    queuePosition + openWaits)
+ *
+ * The shared presentation selector then folds in the typed delivery fact, and
+ * the result is mapped back to this legacy vocabulary: human delivery gates
+ * read `in_review`, setup/failure read `blocked`, and a code-host wait on the
+ * stream's own delivery pull request reads `awaiting_delivery`.
  */
 
 export interface DerivedStreamInfo {
@@ -251,7 +256,9 @@ export async function computeDerivedStates(
       delivery_approval: 'in_review',
       delivery_review: 'in_review',
       delivery_merge: 'in_review',
-      delivery_external: 'waiting_on_dependency',
+      // Waiting on its own delivery pull request, never on another stream: a
+      // completion-ready flow with no dependsOn must not read as a dependency.
+      delivery_external: 'awaiting_delivery',
       delivery_setup: 'blocked',
       delivery_failure: 'blocked',
       // Actor-aware manual waits are presentation-only; the derived vocabulary stays `blocked`.

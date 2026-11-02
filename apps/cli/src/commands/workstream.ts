@@ -119,6 +119,7 @@ const statusColors: Record<string, string> = {
   in_review: '\x1b[33m', // yellow
   waiting_on_answer: '\x1b[33m', // yellow
   waiting_on_dependency: '\x1b[36m', // cyan
+  awaiting_delivery: '\x1b[36m', // cyan — waiting on its own delivery pull request at the code host
   blocked: '\x1b[31m', // red
   idle: '\x1b[31m', // red — an admitted stream doing nothing for no recorded reason
   execution_failed: '\x1b[31m', // red — the newest execution failed and needs attention

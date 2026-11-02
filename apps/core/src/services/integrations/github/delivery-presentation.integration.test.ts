@@ -3,7 +3,7 @@ import { listGitHubPrWorkStreamCandidates } from './database-watch-source'
 import { notifyDeliverySnapshotChanged } from './delivery-presentation-store'
 import { eventEmitter } from '../../../lib/infra/event-emitter'
 import { afterEach, expect, spyOn, test } from 'bun:test'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import {
   createBlankWorkflow,
   createWorkflowRun,
@@ -28,6 +28,9 @@ import { createGitHubPlugin } from './plugin'
 import { GitHubPrWatchPolicy } from './watch-policy'
 import type { EventPollingCapability } from '../types'
 import { listPendingActions } from '../../agents/actions'
+import { agents, agentTypes, inbox } from '../../../db'
+import { Agent } from '../../../entities/Agent'
+import { advanceFlow, attachFlow, dispatchFlow, getFlow } from '../../workflows/execution'
 
 const squadId = crypto.randomUUID()
 const connectionId = crypto.randomUUID()
@@ -296,5 +299,195 @@ test('database delivery watch -> plugin parser -> durable cursor -> serialized a
     })
   } finally {
     stop()
+  }
+})
+
+test('a polled snapshot turning clean wakes the completion-ready delivery participant once', async () => {
+  // Synthetic fixture: an auto-merge squad, an exact-head approval already routed, and only the
+  // poller can see mergeability turn clean (GitHub sends no webhook for it).
+  const agentTypeId = `delivery-wake-${crypto.randomUUID()}`
+  await db.insert(agentTypes).values({
+    id: agentTypeId,
+    name: 'Delivery wake fixture',
+    model: 'anthropic:claude-sonnet-4-5',
+    systemPrompt: 'Test worker',
+  })
+  await db.insert(squads).values({
+    id: squadId,
+    name: 'Delivery wake test',
+    purpose: 'test',
+    metadata: { policies: { allowAutoMerge: true } },
+  })
+  const send = spyOn(Agent.prototype, 'sendMessage').mockResolvedValue({
+    success: true,
+    queued: true,
+    status: 'queued',
+  })
+  const head = 'c'.repeat(40)
+  let merge = 'BLOCKED'
+  const fetchMock = spyOn(globalThis, 'fetch').mockImplementation((async (input: Parameters<typeof fetch>[0]) => {
+    const path = new URL(String(input)).pathname
+    const body =
+      path === '/graphql'
+        ? {
+            data: {
+              repository: {
+                pullRequest: {
+                  headRefOid: head,
+                  headRefName: 'work',
+                  baseRefName: 'main',
+                  state: 'OPEN',
+                  isDraft: false,
+                  mergeStateStatus: merge,
+                  reviewDecision: 'APPROVED',
+                  commits: { nodes: [{ commit: { statusCheckRollup: { state: 'SUCCESS' } } }] },
+                },
+              },
+            },
+          }
+        : path.endsWith('/pulls/7')
+          ? {
+              id: 7,
+              number: 7,
+              state: 'open',
+              merged: false,
+              head: { sha: head },
+              base: { repo: { full_name: 'acme/widgets' } },
+              requested_reviewers: [],
+              requested_teams: [],
+            }
+          : path.endsWith('/issues/7')
+            ? { number: 7 }
+            : []
+    return new Response(JSON.stringify(body), {
+      headers: { date: new Date().toUTCString(), 'content-type': 'application/json' },
+    })
+  }) as unknown as typeof fetch)
+  restoreFetch = () => fetchMock.mockRestore()
+  try {
+    const definition = createBlankWorkflow()
+    definition.participants.worker!.agentTypeId = agentTypeId
+    definition.completion = { mode: 'pr-auto-merge', followChanges: true }
+    const id = await db.transaction(async (tx) => {
+      const [stream] = await tx
+        .insert(workStreams)
+        .values({
+          squadId,
+          title: 'Delivery wake',
+          status: 'active',
+          metadata: {
+            codeHost: { integration: 'github', repository: 'acme/widgets', connectionId, changeRequest: { number: 7 } },
+          },
+        })
+        .returning()
+      const run = await attachFlow(tx, stream!, { kind: 'inline', definition })
+      await dispatchFlow(tx, stream!, run, [])
+      return stream!.id
+    })
+    const started = (await getFlow(id))!
+    await advanceFlow(
+      id,
+      { action: 'complete', expectedVersion: started.version, attemptId: 1, outcome: 'completed', evidence: 'PR open' },
+      crypto.randomUUID(),
+      { type: 'legacy' }
+    )
+    const ready = (await getFlow(id))!
+    expect(ready.state.status).toBe('completion-ready')
+    const participant = ready.attemptAgents['1']!
+
+    const [approval] = githubOutputAdapter.normalize({
+      type: 'pull_request_review',
+      payload: {
+        action: 'submitted',
+        repository: { full_name: 'acme/widgets' },
+        sender: { id: 9, login: 'fixture-reviewer', type: 'User' },
+        pull_request: { id: 7, number: 7, state: 'open', head: { sha: head }, auto_merge: null },
+        review: {
+          id: 70,
+          state: 'approved',
+          commit_id: head,
+          author_association: 'OWNER',
+          body: '',
+          user: { id: 9, login: 'fixture-reviewer', type: 'User' },
+          submitted_at: new Date(Date.now() - 120_000).toISOString(),
+        },
+      },
+    })
+    const [routed] = await db
+      .insert(integrationOutputEvents)
+      .values({
+        integration: 'github',
+        sourceKey: key,
+        eventKey: approval!.eventKey,
+        fact: approval!,
+        authority: { kind: 'connection', connectionId, squadId },
+      })
+      .returning()
+    await db.insert(integrationOutputDeliveries).values({
+      eventId: routed!.id,
+      workStreamId: id,
+      subscriptionId: 'code-host-reviewed',
+      status: 'delivered',
+      subscription: {
+        id: 'code-host-reviewed',
+        source: { integration: 'github', output: 'pull_request.reviewed', version: 1 },
+        match: {},
+        deliver: { to: 'delivery-owner', whenInactive: 'retain' },
+      },
+    })
+
+    const policy = new GitHubPrWatchPolicy({
+      listWorkStreams: listGitHubPrWorkStreamCandidates,
+      resolveConnection: async (squad, selected) =>
+        squad === squadId && selected === connectionId ? { id: connectionId } : undefined,
+      lastRealDeliveries: async () => new Map(),
+    })
+    const watch = (await policy.listWatches()).find((candidate) => candidate.resourceKey === key)!.connection
+    const poller = createGitHubPlugin(
+      { currentUser: async () => ({ version: 1, userId: 42, login: 'fixture' }) },
+      async () => 'fixture'
+    ).runtime.provider.capabilities.event_polling! as EventPollingCapability
+    const store = new DbEventPollingCursorStore()
+    const target = { providerKey: 'github', resourceKey: key, active: true, connection: watch }
+    const wakes = () =>
+      db
+        .select()
+        .from(inbox)
+        .where(sql`${inbox.metadata}->>'source' = 'delivery-readiness' AND ${inbox.metadata}->>'workStreamId' = ${id}`)
+    const poll = async () => {
+      const claim = await store.claim('github', key, new Date(), 60_000)
+      const polled = await poller.poll(watch, claim!.cursor)
+      await store.save('github', key, claim!.leaseToken, polled.nextCursor, new Date(0))
+      await notifyDeliverySnapshotChanged(target, claim!.cursor, polled.nextCursor)
+      return polled.nextCursor
+    }
+
+    // Approved and green, but GitHub still reports BLOCKED: not actionable.
+    await poll()
+    expect(await wakes()).toHaveLength(0)
+    // Mergeability turns clean: exactly one wake to the delivery participant, with its context.
+    merge = 'CLEAN'
+    const cleanCursor = await poll()
+    const [wake, ...rest] = await wakes()
+    expect(rest).toHaveLength(0)
+    expect(wake!.recipientId).toBe(participant)
+    expect(wake!.content).toContain(`Head: ${head}`)
+    expect(wake!.content).toContain(
+      `Approval commit: ${head} (approved by @fixture-reviewer, a reviewer with write access: OWNER)`
+    )
+    expect(wake!.content).toContain('Checks: success; mergeability: clean')
+    // A repeated notification and a semantically identical re-observation add nothing.
+    await notifyDeliverySnapshotChanged(target, cleanCursor, cleanCursor)
+    await poll()
+    expect(await wakes()).toHaveLength(1)
+    // Nothing merged or finished on the platform's own authority.
+    expect((await getFlow(id))!.state.status).toBe('completion-ready')
+  } finally {
+    send.mockRestore()
+    const owned = await db.select({ id: agents.id }).from(agents).where(eq(agents.squadId, squadId))
+    for (const agent of owned) await db.delete(inbox).where(eq(inbox.recipientId, agent.id))
+    await db.delete(workStreams).where(eq(workStreams.squadId, squadId))
+    await db.delete(agents).where(eq(agents.squadId, squadId))
+    await db.delete(agentTypes).where(eq(agentTypes.id, agentTypeId))
   }
 })

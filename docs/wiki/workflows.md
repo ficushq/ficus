@@ -428,6 +428,21 @@ The effective subscriptions are used by matching, durable delivery validation, p
 
 `pr-merge` and `pr-auto-merge` retain their serialized names but verify normalized change-request evidence through the selected adapter. `direct-merge` verifies the full `git.commit` SHA is contained in `git.baseBranch`. GitHub-specific link displays and activity rendering can remain provider-specific; the flow engine does not choose credentials or call GitHub directly.
 
+### Delivery readiness wake
+
+A `pr-auto-merge` delivery participant deliberately does not enable auto-merge before an approval exists on the exact current head, because GitHub retains approvals of earlier heads. It ends its turn at `completion-ready` and waits. Change events (reviews, CI, PR updates) may route to another step through `changeEventsTo`, and GitHub sends no webhook when mergeability turns clean, so without help nothing would wake it once the pull request becomes actionable.
+
+After code-host evidence is recorded for a completion-ready stream (a routed delivery event, or a changed presentation snapshot from the delivery poller), Core re-evaluates its local delivery evidence (`deliveryMergeReadiness` in `apps/core/src/services/workflows/delivery-readiness.ts`). The delivery is actionable only when all of the following hold:
+
+- the flow is `completion-ready` with completion mode `pr-auto-merge`, and the squad policy allows auto-merge;
+- the shared delivery classifier reports every designated pull request merge-ready (`external` with `codeHostReason: awaiting-merge`: fresh clean mergeability on the current head, no pending or failed check, no requested changes, no pending human review);
+- every open designated pull request has an approving review whose review commit is its current head, from a reviewer whose GitHub `author_association` (recorded on the review event as `authorAssociation` when it is ingested) is `OWNER`, `MEMBER` or `COLLABORATOR`. On a public repository anyone can submit an approval, and GitHub keeps a stale approval of an earlier head, so it would still report the pull request approved and clean. An approval from any other association, or with the association missing or unrecognised, therefore never counts (it fails closed). An approval on an older commit (stale), one without a recorded commit, one without a named reviewer, or one later dismissed or replaced by requested changes from the same reviewer does not count either;
+- at least one of them does not already show native auto-merge enabled on its current head (from the `autoMerge` fact projected from GitHub pull request payloads).
+
+The stream must also be `active`, unpaused, activated and free of open waits. The recipient is the agent that merged and closed events reach (the `delivery-owner` target, at `completion-ready` the last completed agent attempt), bound to the current flow version. Core sends it one system inbox message (`metadata.source: delivery-readiness`) naming each pull request, its head, the approval commit, the approver and their write-access association, and the check and mergeability state. The message is deduplicated per stream, flow version and set of heads, so repeated events never send a second wake for the same head, while a new head that becomes ready again sends a new one. At delivery the inbox re-checks that the stream, flow version, recipient and readiness are unchanged, so a wake queued before a merge, a new push or a new wait is dropped.
+
+The wake is a hint and grants nothing. Ficus never merges, enables auto-merge or finishes the flow itself; the participant re-verifies the live head, the effective approval and all applicable checks before acting under its delivery instructions. Merged and closed events still route to the delivery participant exactly as before, and `pr-merge` (human merge) deliveries never receive this wake.
+
 ### Assigning reviewers
 
 In a work stream, use **Assigned reviewers** to choose eligible people. Each person needs `workstreams:review` for the squad. Any one assigned reviewer can decide. With no one assigned, the filter allows any user with review permission.

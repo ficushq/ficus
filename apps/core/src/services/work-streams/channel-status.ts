@@ -14,6 +14,7 @@ const ICONS: Partial<Record<WorkStreamDerivedState, string>> = {
   in_review: '👀',
   waiting_on_answer: '❓',
   waiting_on_dependency: '⏳',
+  awaiting_delivery: '📦',
   blocked: '🚫',
   idle: '💤',
   execution_failed: '🛑',

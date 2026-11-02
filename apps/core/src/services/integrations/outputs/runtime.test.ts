@@ -1,6 +1,6 @@
 import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integrations'
 useEnabledIntegrationFixtures('github', 'linear')
-import { afterAll, beforeAll, expect, spyOn, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { createHash, randomUUID } from 'node:crypto'
 import { eq, inArray, sql } from 'drizzle-orm'
 import {
@@ -174,6 +174,7 @@ async function create(
     codeHostTarget?: string
     tracked?: TrackedResource[]
     reviewed?: boolean
+    mode?: 'pr-auto-merge'
   } = {}
 ) {
   const flow = options.reviewed
@@ -223,6 +224,7 @@ async function create(
   if (options.codeHost || options.tracked) {
     flow.completion.followChanges = true
     if (options.codeHostTarget) flow.completion.changeEventsTo = { step: options.codeHostTarget }
+    if (options.mode) flow.completion.mode = options.mode
     delete flow.subscriptions
   }
   return db.transaction(async (tx) => {
@@ -3650,5 +3652,177 @@ test('fresh re-requests after completion notify the manager once; original repla
     await db.update(workStreams).set({ status: 'queued' }).where(eq(workStreams.id, id))
     eventIds.push(await publishIntegrationOutput('github', review('2026-10-29T12:00:00.000Z'), authority))
     expect(await notices()).toHaveLength(2)
+  })
+})
+
+describe('delivery readiness wake', () => {
+  // Synthetic native payloads, normalized exactly as a signed webhook would be.
+  const HEAD = 'e'.repeat(40)
+  const OLD = 'f'.repeat(40)
+  const reviewer = { id: 7, login: 'fixture-reviewer', type: 'User' }
+  const native = (type: string, payload: Record<string, unknown>) =>
+    githubOutputAdapter.normalize({
+      type,
+      payload: { repository: { id: 10, full_name: `${prefix}/repo` }, sender: reviewer, ...payload },
+      githubObservation: { kind: 'webhook', deliveryId: randomUUID() },
+    })[0]!
+  const pull = (number: number, extra: Record<string, unknown> = {}) => ({
+    id: number,
+    number,
+    title: 'Fixture delivery',
+    body: '',
+    user: reviewer,
+    state: 'open',
+    head: { sha: HEAD, ref: `fixture-${number}` },
+    base: { ref: 'main' },
+    auto_merge: null,
+    created_at: new Date(Date.now() - 600_000).toISOString(),
+    updated_at: new Date().toISOString(),
+    ...extra,
+  })
+  const approve = (number: number, commit = HEAD, association = 'MEMBER', reviewerLogin = 'fixture-reviewer') =>
+    native('pull_request_review', {
+      action: 'submitted',
+      pull_request: pull(number),
+      review: {
+        id: number * 10 + (commit === HEAD ? 1 : 2) + (association === 'MEMBER' ? 0 : 5),
+        state: 'approved',
+        commit_id: commit,
+        author_association: association,
+        body: '',
+        user: { ...reviewer, login: reviewerLogin },
+        submitted_at: new Date(Date.now() - 120_000).toISOString(),
+      },
+    })
+  const ci = (number: number, run = 1) =>
+    native('workflow_run', {
+      action: 'completed',
+      workflow_run: {
+        id: number * 100 + run,
+        workflow_id: 1,
+        run_number: run,
+        run_attempt: 1,
+        name: 'Fixture CI',
+        conclusion: 'success',
+        head_sha: HEAD,
+        updated_at: new Date(Date.now() - 60_000).toISOString(),
+        pull_requests: [{ number }],
+      },
+    })
+  const clean = (number: number, extra: Record<string, unknown> = {}) =>
+    native('pull_request', { action: 'edited', pull_request: pull(number, { mergeable_state: 'clean', ...extra }) })
+  async function completionReady(number: number) {
+    const id = await create(number, { codeHost: true, mode: 'pr-auto-merge' })
+    const run = (await getFlow(id))!
+    await advanceFlow(
+      id,
+      { action: 'complete', expectedVersion: run.version, attemptId: 1, outcome: 'completed', evidence: 'PR open' },
+      randomUUID(),
+      { type: 'legacy' }
+    )
+    const ready = (await getFlow(id))!
+    expect(ready.state.status).toBe('completion-ready')
+    return { id, run: ready, participant: ready.attemptAgents['1']! }
+  }
+  // Auto-merge squads only: without the policy a clean pull request is a human merge gate.
+  let previousMetadata: unknown
+  beforeAll(async () => {
+    const [squad] = await db.select({ metadata: squads.metadata }).from(squads).where(eq(squads.id, squadId))
+    previousMetadata = squad?.metadata
+    await db
+      .update(squads)
+      .set({ metadata: { ...(previousMetadata as object), policies: { allowAutoMerge: true } } })
+      .where(eq(squads.id, squadId))
+  })
+  afterAll(async () => {
+    await db
+      .update(squads)
+      .set({ metadata: (previousMetadata ?? {}) as Record<string, unknown> })
+      .where(eq(squads.id, squadId))
+  })
+  const wakes = (id: string) =>
+    db
+      .select()
+      .from(inbox)
+      .where(sql`${inbox.metadata}->>'source' = 'delivery-readiness' AND ${inbox.metadata}->>'workStreamId' = ${id}`)
+
+  test('approval on the head, green CI and clean mergeability wake the delivery participant once', async () => {
+    const { id, run, participant } = await completionReady(931)
+    await publish(approve(931))
+    await publish(ci(931))
+    expect(await wakes(id)).toHaveLength(0)
+    await publish(clean(931))
+    const [wake, ...rest] = await wakes(id)
+    expect(rest).toHaveLength(0)
+    expect(wake!.recipientId).toBe(participant)
+    expect(wake!.metadata).toMatchObject({ workStreamId: id, flowVersion: run.version })
+    expect(wake!.content).toContain(`Head: ${HEAD}`)
+    expect(wake!.content).toContain(
+      `Approval commit: ${HEAD} (approved by @fixture-reviewer, a reviewer with write access: MEMBER)`
+    )
+    expect(wake!.content).toContain('Ficus has not merged or enabled anything')
+    expect(await isCurrentFlowMessage(wake!)).toBe(true)
+    // Repeated events for the same head add no second wake.
+    await publish(ci(931, 2))
+    await publish(clean(931, { updated_at: new Date(Date.now() + 1000).toISOString() }))
+    expect(await wakes(id)).toHaveLength(1)
+    // The platform never merges or finishes: the flow still waits for its participant.
+    expect((await getFlow(id))!.state.status).toBe('completion-ready')
+  })
+
+  test('after merge the wake is no longer current, and merged still routes to the delivery participant', async () => {
+    const { id, participant } = await completionReady(935)
+    await publish(approve(935))
+    await publish(clean(935))
+    const [wake] = await wakes(id)
+    expect(await isCurrentFlowMessage(wake!)).toBe(true)
+    await publish(
+      native('pull_request', {
+        action: 'closed',
+        pull_request: pull(935, { state: 'closed', merged: true, merged_at: new Date().toISOString() }),
+      })
+    )
+    expect(await isCurrentFlowMessage(wake!)).toBe(false)
+    const merged = (await deliveries(id)).find((row) => row.subscription.source.output === 'pull_request.merged')
+    expect(merged?.targets.map((target) => target.agentId)).toEqual([participant])
+    expect(await wakes(id)).toHaveLength(1)
+  })
+
+  test('a stale approval on an older commit does not wake', async () => {
+    const { id } = await completionReady(932)
+    await publish(approve(932, OLD))
+    await publish(ci(932))
+    await publish(clean(932))
+    expect(await wakes(id)).toHaveLength(0)
+  })
+
+  test('an exact-head approval without write access does not wake, even beside a stale writer approval', async () => {
+    const { id } = await completionReady(936)
+    await publish(approve(936, OLD))
+    await publish(approve(936, HEAD, 'CONTRIBUTOR', 'drive-by'))
+    await publish(ci(936))
+    await publish(clean(936))
+    expect(await wakes(id)).toHaveLength(0)
+  })
+
+  test('no wake when auto-merge is already enabled on the current head', async () => {
+    const { id } = await completionReady(933)
+    await publish(approve(933))
+    await publish(ci(933))
+    await publish(clean(933, { auto_merge: { merge_method: 'squash', enabled_by: reviewer } }))
+    expect(await wakes(id)).toHaveLength(0)
+  })
+
+  test('an unrelated open wait withholds the wake until the next evidence after it clears', async () => {
+    const { openWait, closeOpenWaits } = await import('../../work-streams/waits')
+    const { id } = await completionReady(934)
+    const { wait } = await openWait(db, { workStreamId: id, type: 'manual', scope: 'stream', message: 'Hold' })
+    await publish(approve(934))
+    await publish(ci(934))
+    await publish(clean(934))
+    expect(await wakes(id)).toHaveLength(0)
+    await closeOpenWaits(db, { waitId: wait.id }, 'cleared')
+    await publish(ci(934, 2))
+    expect(await wakes(id)).toHaveLength(1)
   })
 })

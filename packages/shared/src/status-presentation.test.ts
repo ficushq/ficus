@@ -199,6 +199,25 @@ describe('selectWorkStreamPresentationState', () => {
     )
   })
 
+  test('awaiting_delivery presents as the code-host wait even without a delivery fact', () => {
+    for (const openWaits of [[], undefined])
+      expect(selectWorkStreamPresentationState(stream({ derivedState: 'awaiting_delivery', openWaits }))).toBe(
+        'delivery_external'
+      )
+    // Real waits and running work keep their precedence over the delivery wait.
+    expect(
+      selectWorkStreamPresentationState(stream({ derivedState: 'awaiting_delivery', openWaits: [wait('dependency')] }))
+    ).toBe('waiting_on_dependency')
+    // The typed fact stays authoritative over the derived name.
+    expect(
+      selectWorkStreamPresentationState({
+        ...stream({ derivedState: 'awaiting_delivery', openWaits: [] }),
+        delivery: { kind: 'merge' },
+      })
+    ).toBe('delivery_merge')
+    expect(workStreamNeedsHumanAttention(stream({ derivedState: 'awaiting_delivery', openWaits: [] }))).toBe(false)
+  })
+
   test('a workflow human-approval gate presents as review, not blocked', () => {
     const gate = { type: 'manual' as const, resolutionHandler: 'workflow' as const, flowAttemptId: 2 }
     expect(selectWorkStreamPresentationState(stream({ openWaits: [gate] }))).toBe('in_review')

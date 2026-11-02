@@ -145,6 +145,40 @@ describe('work-stream derived state', () => {
     })
   })
 
+  it('a completion-ready flow waiting on its own delivery PR derives awaiting_delivery, never a dependency', async () => {
+    const { workStreamFlowRuns } = await import('../../db/schema')
+    const { attachFlow } = await import('../workflows/execution')
+    const { workflowPresetSchema, selectWorkStreamPresentationState } = await import('@ficus/shared')
+    const definition = workflowPresetSchema.parse(
+      Bun.YAML.parse(
+        await Bun.file(new URL('../../../../../config/workflows/builder-reviewer.yaml', import.meta.url)).text()
+      )
+    ).definition
+    for (const participant of Object.values(definition.participants)) participant.agentTypeId = testAgentTypeId
+    definition.completion = { mode: 'pr-auto-merge', followChanges: true }
+    // The stalled wire shape: an open bound PR, no dependsOn, no waits, no running attempt.
+    const ws = await createStream('own delivery PR', {
+      metadata: { codeHost: { integration: 'github', repository: 'acme/synthetic', changeRequest: { number: 4242 } } },
+    })
+    await db.transaction(async (tx) => {
+      const [stored] = await tx.select().from(workStreams).where(eq(workStreams.id, ws.id))
+      const flow = await attachFlow(tx, stored!, { kind: 'inline', definition })
+      await tx
+        .update(workStreamFlowRuns)
+        .set({ activated: true, state: { ...flow.state, status: 'completion-ready' } })
+        .where(eq(workStreamFlowRuns.workStreamId, ws.id))
+    })
+    const info = await derived(ws)
+    expect(info).toMatchObject({ derivedState: 'awaiting_delivery', delivery: { kind: 'external' }, openWaits: [] })
+    const json = JSON.parse(JSON.stringify({ ...(await WorkStream.mustFind(ws.id)).toJson(), ...info }))
+    expect(selectWorkStreamPresentationState(json)).toBe('delivery_external')
+    // Only a real dependency wait reads as one.
+    await db
+      .insert(workStreamWaits)
+      .values({ workStreamId: ws.id, type: 'dependency', referenceId: crypto.randomUUID() })
+    expect((await derived(ws)).derivedState).toBe('waiting_on_dependency')
+  })
+
   it('shared matrix survives derivation, JSON serialization, attention and both native projections', async () => {
     const { selectWorkStreamPresentationState, workStreamNeedsHumanAttention, buildWorkInterestSnapshot } =
       await import('@ficus/shared')

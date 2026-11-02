@@ -458,6 +458,10 @@ async function routeOutputEvent(event: Event, only?: string[]) {
     if (result) {
       const { eventEmitter } = await import('../../../lib/infra/event-emitter')
       eventEmitter.emit('workStream.updated', result)
+      // New delivery evidence (an approval, a check run, mergeability) may make a completion-ready
+      // delivery pull request actionable. Wake its delivery participant once per head; never merge.
+      const { wakeDeliveryParticipantIfReady } = await import('../../workflows/delivery-readiness')
+      await wakeDeliveryParticipantIfReady(result.workStreamId)
     }
   }
 }

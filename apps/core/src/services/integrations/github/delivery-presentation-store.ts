@@ -6,7 +6,11 @@ import { awaitsCodeHostDelivery } from '../../workflows/delivery-state'
 import type { EventPollingWatch } from '../event-polling-runner'
 import { readGitHubDeliverySnapshot, type GitHubDeliverySnapshot } from './delivery-presentation'
 
-/** Notify read models only; snapshots never enter activity, agent inboxes or flow transitions. */
+/**
+ * Notify read models. Snapshots never enter activity, agent inboxes or flow transitions; the
+ * only agent-facing effect is the fixed-format delivery readiness wake, which carries server-owned
+ * facts (pull request, head, approval commit, check state) and never snapshot or provider prose.
+ */
 export async function notifyDeliverySnapshotChanged(
   watch: EventPollingWatch,
   previous: unknown,
@@ -58,5 +62,8 @@ export async function notifyDeliverySnapshotChanged(
     )
       continue
     eventEmitter.emit('workStream.updated', { workStreamId: stream.id, squadId: stream.squadId })
+    // Mergeability turning clean is observed only here: GitHub sends no webhook for it.
+    const { wakeDeliveryParticipantIfReady } = await import('../../workflows/delivery-readiness')
+    await wakeDeliveryParticipantIfReady(stream.id)
   }
 }

@@ -126,9 +126,16 @@ export function codeHostDeliveryLabel(delivery?: WorkStreamDeliveryPresentation)
  */
 export type ManualWaitPresentationState = 'waiting_on_owner' | 'waiting_on_manager'
 
+/**
+ * Legacy derived values that never present as themselves. `awaiting_delivery`
+ * is the derived name for the `delivery_external` presentation, so clients
+ * keep one label, color and bucket for a stream waiting on its code host.
+ */
+type DerivedOnlyState = 'awaiting_delivery'
+
 export type WorkStreamPresentationState =
   | WorkStreamStatus
-  | WorkStreamDerivedState
+  | Exclude<WorkStreamDerivedState, DerivedOnlyState>
   | 'waiting_for_slot'
   | 'monitoring'
   | ManualWaitPresentationState
@@ -275,11 +282,15 @@ export function selectWorkStreamPresentationState(
 
   if (workStream.pause || workStream.derivedState === 'paused') return 'paused'
 
+  // The typed delivery fact wins. A payload that carries only the derived
+  // `awaiting_delivery` value still presents as the code-host wait it names.
   const deliveryState =
     workStream.delivery &&
     ['approval', 'review', 'merge', 'external', 'setup', 'failure'].includes(workStream.delivery.kind)
       ? (`delivery_${workStream.delivery.kind}` as WorkStreamPresentationState)
-      : undefined
+      : workStream.derivedState === 'awaiting_delivery'
+        ? 'delivery_external'
+        : undefined
   if (workStream.openWaits !== undefined) {
     const actionableWaits = workStream.openWaits.filter(
       (wait) => !isWorkflowHumanGateWait(wait) || !workflowReviewBlockingWaits(wait, workStream.openWaits!).length
@@ -332,7 +343,9 @@ export function selectWorkStreamPresentationState(
   // Omitted waits cannot disprove an identified blocking delivery approval.
   if (deliveryState === 'delivery_approval' && workStream.delivery?.approvalWaitId) return deliveryState
   if (workStream.status === 'active' && workStream.derivedState === 'in_progress') return 'in_progress'
-  const state = deliveryState ?? workStream.derivedState ?? workStream.status
+  // `awaiting_delivery` always produced a deliveryState above, so it never reaches here.
+  const state =
+    deliveryState ?? (workStream.derivedState as WorkStreamPresentationState | undefined) ?? workStream.status
   return state === 'idle' ? idlePresentationState(workStream) : state
 }
 

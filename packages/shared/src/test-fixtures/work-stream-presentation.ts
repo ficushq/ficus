@@ -404,6 +404,21 @@ export const CODE_HOST_DELIVERY_PRESENTATION_CASES: PresentationCase[] = [
     label,
   })),
   {
+    // The current Core wire shape for a completion-ready flow waiting on its own
+    // delivery pull request: never the dependency vocabulary without dependsOn.
+    name: 'awaiting delivery wire shape',
+    facts: {
+      ...active,
+      derivedState: 'awaiting_delivery',
+      delivery: { kind: 'external', explanation: { codeHostReason: 'awaiting-merge' } },
+    },
+    state: 'delivery_external',
+    role: 'externalWait',
+    attention: false,
+    bucket: 'externalWait',
+    label: 'Awaiting merge',
+  },
+  {
     name: 'review wins CI pending',
     facts: { ...active, delivery: { kind: 'review', explanation: { gates: { checksState: 'pending' } } } },
     state: 'delivery_review',
