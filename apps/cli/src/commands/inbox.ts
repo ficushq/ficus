@@ -20,6 +20,14 @@ export function collectAttachments(value: string, previous: string[]): string[] 
   return [...previous, value]
 }
 
+/** Page envelope returned by GET /api/inbox/:type/:id when `limit` is set. */
+interface InboxListPage {
+  items: InboxMessage[]
+  hasMore: boolean
+  nextCursor: string | null
+  totalCount?: number
+}
+
 function formatSender(m: InboxMessage): string {
   const senderMetadata = m.metadata?.sender as Record<string, string> | undefined
   const isWorkspaceVoiceSender = m.senderType === 'voice_assistant' && isWorkspaceVoiceRecipient(m.senderId)
@@ -236,7 +244,7 @@ export function registerInboxCommands(program: Command): void {
     // Sometimes agents pass --unread, which is the default, just ignore it.
     .option('-u, --unread', 'Show unread messages only (default)')
     .option('-a, --all', 'Include read messages (default: unread only)')
-    .option('--limit <n>', 'Limit number of messages')
+    .option('--limit <n>', 'Limit number of messages (maximum 200; notes when more are available)')
     .action(async (type, id, options) => {
       try {
         // Default to human inbox
@@ -252,11 +260,15 @@ export function registerInboxCommands(program: Command): void {
         // Unified route: GET /api/inbox/:type/:id
         const url = `/api/inbox/${recipientType}/${recipientId}${query}`
 
-        const messages = await apiGet<InboxMessage[]>(url)
+        // Without --limit the API returns a bare array; with --limit it returns a page.
+        const response = await apiGet<InboxMessage[] | InboxListPage>(url)
 
         if (isJsonMode()) {
-          output(messages)
+          // Forward whichever shape the API returned, unchanged.
+          output(response)
         } else {
+          const page = Array.isArray(response) ? null : response
+          const messages = page ? page.items : (response as InboxMessage[])
           if (messages.length === 0) {
             console.log('No messages')
             return
@@ -269,6 +281,13 @@ export function registerInboxCommands(program: Command): void {
             if (m.subject) console.log(`  Subject: ${m.subject}`)
             console.log(`  ${m.content.slice(0, 200)}${m.content.length > 200 ? '...' : ''}`)
             console.log()
+          }
+          if (page?.hasMore) {
+            const total = typeof page.totalCount === 'number' ? ` of ${page.totalCount}` : ''
+            // The server caps a page at 200 and the CLI has no cursor option, so only
+            // suggest raising --limit when that can still return more messages.
+            const hint = messages.length < 200 ? '; raise --limit (maximum 200) to see more' : ''
+            console.log(`Showing ${messages.length}${total} message(s). More messages are available${hint}.`)
           }
         }
       } catch (error) {

@@ -389,6 +389,104 @@ describe('inbox participant summary compatibility', () => {
   })
 })
 
+describe('inbox list response shapes', () => {
+  const syntheticMessage = (id: string, readAt: string | null = null) => ({
+    id,
+    senderType: 'user',
+    senderId: 'synthetic-user',
+    content: `Synthetic content ${id}`,
+    metadata: { sender: { name: 'Synthetic Human' } },
+    readAt,
+    createdAt: new Date().toISOString(),
+  })
+
+  async function list(args: string[]): Promise<string> {
+    const log = spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      const program = new Command()
+      registerInboxCommands(program)
+      await program.parseAsync(['inbox', 'list', ...args], { from: 'user' })
+      return log.mock.calls.flat().join('\n')
+    } finally {
+      log.mockRestore()
+    }
+  }
+
+  test('text output renders a bare array without a more-results note', async () => {
+    ;(apiGet as ReturnType<typeof mock>).mockResolvedValueOnce([syntheticMessage('array-message-1')])
+    const text = await list([])
+    expect(apiGet).toHaveBeenLastCalledWith('/api/inbox/user/me')
+    expect(text).toContain('[array-me]')
+    expect(text).toContain('Synthetic content array-message-1')
+    expect(text).not.toContain('More messages are available')
+  })
+
+  test('text output renders a --limit page and says when more results exist', async () => {
+    ;(apiGet as ReturnType<typeof mock>).mockResolvedValueOnce({
+      items: [syntheticMessage('page-message-1'), syntheticMessage('page-message-2', new Date().toISOString())],
+      hasMore: true,
+      nextCursor: 'page-message-2',
+      totalCount: 7,
+    })
+    const text = await list(['--limit', '2'])
+    expect(apiGet).toHaveBeenLastCalledWith('/api/inbox/user/me?limit=2')
+    expect(text).toContain('• [page-mes]')
+    expect(text).toContain('✓ [page-mes]')
+    expect(text).toContain('Synthetic content page-message-2')
+    expect(text).toContain('Showing 2 of 7 message(s). More messages are available')
+  })
+
+  test('text output drops the raise --limit hint on a full 200-message page', async () => {
+    const items = Array.from({ length: 200 }, (_, i) => syntheticMessage(`full-page-${i}`))
+    ;(apiGet as ReturnType<typeof mock>).mockResolvedValueOnce({
+      items,
+      hasMore: true,
+      nextCursor: 'x',
+      totalCount: 250,
+    })
+    const text = await list(['--limit', '200'])
+    expect(text).toContain('Showing 200 of 250 message(s). More messages are available.')
+    expect(text).not.toContain('raise --limit')
+  })
+
+  test('text output omits the note on a final page and handles an empty page', async () => {
+    ;(apiGet as ReturnType<typeof mock>).mockResolvedValueOnce({
+      items: [syntheticMessage('final-message')],
+      hasMore: false,
+      nextCursor: null,
+      totalCount: 1,
+    })
+    const finalPage = await list(['--limit', '5'])
+    expect(finalPage).toContain('Synthetic content final-message')
+    expect(finalPage).not.toContain('More messages are available')
+
+    ;(apiGet as ReturnType<typeof mock>).mockResolvedValueOnce({ items: [], hasMore: false, nextCursor: null })
+    expect(await list(['--limit', '5'])).toBe('No messages')
+  })
+
+  test('JSON output forwards both response shapes unchanged', async () => {
+    const { output, isJsonMode } = await import('../output')
+    const jsonMode = isJsonMode as ReturnType<typeof mock>
+    const report = output as ReturnType<typeof mock>
+    const page = { items: [syntheticMessage('json-page')], hasMore: true, nextCursor: 'json-page', totalCount: 3 }
+    const array = [syntheticMessage('json-array')]
+    jsonMode.mockReturnValue(true)
+    try {
+      ;(apiGet as ReturnType<typeof mock>).mockResolvedValueOnce(page)
+      report.mockClear()
+      await list(['--limit', '1'])
+      expect(report).toHaveBeenCalledWith(page)
+
+      ;(apiGet as ReturnType<typeof mock>).mockResolvedValueOnce(array)
+      report.mockClear()
+      await list([])
+      expect(report).toHaveBeenCalledWith(array)
+    } finally {
+      jsonMode.mockReturnValue(false)
+    }
+  })
+})
+
 test('batch mark-read retains partial successes and retries only explicit synthetic ids', async () => {
   const { output } = await import('../output')
   const post = apiPost as ReturnType<typeof mock>
@@ -411,6 +509,30 @@ test('batch mark-read retains partial successes and retries only explicit synthe
     expect(error).toHaveBeenCalledWith('Error: syntheti: Authorization check missing')
     await run()
     expect(report).toHaveBeenLastCalledWith({ messageIds: ['synthetic-first', 'synthetic-second'] }, expect.any(String))
+  } finally {
+    error.mockRestore()
+    post.mockReset()
+  }
+})
+
+test('mark-read reports a pre-authorization server error and a missing check as distinct failures', async () => {
+  const post = apiPost as ReturnType<typeof mock>
+  post
+    .mockReset()
+    .mockRejectedValueOnce(new Error('Internal server error before authorization completed'))
+    .mockRejectedValueOnce(new Error('Authorization check missing'))
+    .mockResolvedValue({ success: true })
+  const error = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    const program = new Command()
+    registerInboxCommands(program)
+    await program.parseAsync(['inbox', 'read', 'synthetic-server', 'synthetic-unguard', 'synthetic-ok'], {
+      from: 'user',
+    })
+    expect(error.mock.calls.flat()).toEqual([
+      'Error: syntheti: Internal server error before authorization completed',
+      'Error: syntheti: Authorization check missing',
+    ])
   } finally {
     error.mockRestore()
     post.mockReset()

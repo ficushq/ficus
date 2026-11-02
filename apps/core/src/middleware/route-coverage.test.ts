@@ -9,6 +9,7 @@ import { agents, agentTypes, squads } from '../db/schema'
 import { eq } from 'drizzle-orm'
 import { hasPermission, resolvePermissions } from '../services/rbac'
 import { probeWithConcurrency, uniqueRouteEndpoints } from '../test-utils/route-probes'
+import { PRE_AUTHORIZATION_SERVER_ERROR } from './authz-sentinel'
 
 const PREFIX = 'route-coverage'
 const TEST_MODEL = 'anthropic:claude-sonnet-4-5'
@@ -159,12 +160,14 @@ describe('default-deny route coverage', () => {
         method,
         headers: authHeaders(noPermissionUser.token),
       })
-      if (noPermission.status === 500) {
+      if (noPermission.status >= 500) {
         const body = await noPermission
           .clone()
           .json()
           .catch(() => null)
-        if (body?.error === 'Authorization check missing') {
+        // The sentinel cannot tell a crash before the guard from a missing guard, so a
+        // pre-authorization server error on a probe is flagged here as well.
+        if (body?.error === 'Authorization check missing' || body?.error === PRE_AUTHORIZATION_SERVER_ERROR) {
           sentinelFailures.push(`${key} -> ${noPermission.status}`)
         }
       }
