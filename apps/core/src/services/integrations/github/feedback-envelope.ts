@@ -7,6 +7,7 @@ import type {
   GitHubParentTextVariant,
   IntegrationOutputFact,
 } from '@ficus/shared'
+import { githubPullRequestAuthor, githubWorkflowPullRequestAuthor } from './pull-request-author'
 import { buildGitHubStatus } from './feedback-status'
 import type { VerifiedIngressEvent } from '../types'
 
@@ -293,7 +294,9 @@ function githubActionContent(
   const data = {
     repository: repo,
     ...(repositoryId ? { repositoryId: Number(repositoryId) } : {}),
-    ...(isPR ? { pullRequest: { number, ...(headSha ? { headSha } : {}) } } : { issue: { number } }),
+    ...(isPR
+      ? { pullRequest: { number, ...githubPullRequestAuthor(parent.user), ...(headSha ? { headSha } : {}) } }
+      : { issue: { number } }),
     action,
     state: ['open', 'closed'].includes(parent.state) ? parent.state : '',
     actor: actor?.login ?? '',
@@ -443,7 +446,13 @@ export function normalizeGitHubFeedback(
         ...(repositoryId ? { repositoryId: Number(repositoryId) } : {}),
         action,
         state,
-        pullRequest: { number, ...(headSha ? { headSha } : {}) },
+        pullRequest: {
+          number,
+          ...(isCI
+            ? githubWorkflowPullRequestAuthor(run.pull_requests, number, repo)
+            : githubPullRequestAuthor(parent.user)),
+          ...(headSha ? { headSha } : {}),
+        },
         ...(isCI
           ? {
               ci: {
@@ -539,7 +548,9 @@ export function normalizeGitHubFeedback(
     notificationTruncated: notificationBody.length > 24000,
     repository: repo,
     ...(repositoryId ? { repositoryId: Number(repositoryId) } : {}),
-    ...(fact.data.pullRequest ? { pullRequest: { number } } : { issue: { number } }),
+    ...(fact.data.pullRequest
+      ? { pullRequest: { number, ...githubPullRequestAuthor(parent.user) } }
+      : { issue: { number } }),
     action: text(payload.action),
     state,
     actor: author?.login ?? '',

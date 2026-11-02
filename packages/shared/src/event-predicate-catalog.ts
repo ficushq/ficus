@@ -3,6 +3,15 @@ import type { IntegrationOutputDescriptor, IntegrationOutputField } from './inte
 const fields: IntegrationOutputDescriptor['fields'] = {
   repository: { type: 'string', normalize: 'lowercase', description: 'Repository owner/name.' },
   'pullRequest.number': { type: 'number', description: 'Pull request number.' },
+  'pullRequest.author': {
+    type: 'string',
+    normalize: 'lowercase',
+    description: 'Pull request author login, when supplied by GitHub (not the event actor).',
+  },
+  'pullRequest.authorType': {
+    type: 'string',
+    description: 'Pull request author account type: User or Bot, when supplied.',
+  },
   'pullRequest.headSha': { type: 'string', description: 'Pull request head commit, when supplied.' },
   'issue.number': { type: 'number', description: 'Issue number.' },
   'issue.title': { type: 'string', description: 'Issue title.' },
@@ -60,7 +69,7 @@ const collectionFields: Record<string, EventPredicateField> = {
 function githubPredicateFields(output: string): Record<string, EventPredicateField> {
   const paths = ['repository', 'action', 'actor', 'actorType']
   if (output.startsWith('issue.')) paths.push('issue.number', 'issue.title')
-  else paths.push('pullRequest.number', 'pullRequest.headSha')
+  else paths.push('pullRequest.number', 'pullRequest.headSha', 'pullRequest.author', 'pullRequest.authorType')
   if (output !== 'pull_request.ci_completed') paths.push('labels', 'assignees')
   if (['issue.assigned', 'issue.unassigned'].includes(output)) paths.push('assignee')
   if (output === 'pull_request.review_requested') paths.push('requestedReviewer', 'requestedTeam')

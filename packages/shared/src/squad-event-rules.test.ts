@@ -368,3 +368,52 @@ test('inherited object names cannot bypass the predicate or sample allowlist', a
     ).toBe(false)
   }
 })
+
+test('Dependabot PR author routing survives save/reload and agrees with preview without changing actor gates', async () => {
+  const { previewSquadEventRules, syntheticEventSampleSchema, syntheticEventFact } = await import('./index')
+  const source = { integration: 'github', output: 'pull_request.review_requested', version: 1 }
+  const metadata = squadMetadataSchema.parse({
+    github: [{ repo: 'acme/repo' }],
+    integrationRules: {
+      github: [
+        {
+          id: 'dependabot-review',
+          source,
+          filters: { audience: 'connected-account', squadRouting: true },
+          predicates: [
+            { field: 'pullRequest.author', op: 'eq', value: 'DEPENDABOT[bot]' },
+            { field: 'pullRequest.authorType', op: 'eq', value: 'Bot' },
+          ],
+          action: { type: 'notify-manager' },
+        },
+      ],
+    },
+  })
+  const reloaded = squadMetadataSchema.parse(JSON.parse(JSON.stringify(metadata)))
+  for (const [author, actor, matches] of [
+    ['dependabot[bot]', 'human', true],
+    ['Dependabot[bot]', 'human', true],
+    ['human', 'dependabot[bot]', false],
+    [undefined, 'dependabot[bot]', false],
+  ] as const) {
+    const sample = syntheticEventSampleSchema.parse({
+      source,
+      fields: {
+        repository: 'acme/repo',
+        'pullRequest.number': 3,
+        ...(author ? { 'pullRequest.author': author, 'pullRequest.authorType': 'Bot' } : {}),
+        actor,
+        requestedReviewer: 'connected',
+        labels: ['dependabot[bot]'],
+      },
+    })
+    const event = syntheticEventFact(sample)
+    expect(selectSquadEventRule(reloaded, 'github', event, 'connected')?.id ?? null).toBe(
+      matches ? 'dependabot-review' : null
+    )
+    expect(previewSquadEventRules(reloaded, 'github', event, 'connected').selectedRuleId).toBe(
+      matches ? 'dependabot-review' : null
+    )
+    expect(selectSquadEventRule(reloaded, 'github', event, 'someone-else')).toBeUndefined()
+  }
+})

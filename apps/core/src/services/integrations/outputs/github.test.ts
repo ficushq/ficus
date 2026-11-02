@@ -318,3 +318,102 @@ test.each(['issue', 'pull', 'inline'])(
     ).toEqual([])
   }
 )
+
+test('PR authorship is provider identity, separate from senders and feedback authors in every projection', () => {
+  const author = { id: 99, login: 'Dependabot[bot]', type: 'Bot' }
+  const human = { id: 12, login: 'reviewer', type: 'User' }
+  const parent = { ...pr, user: author, state: 'open', title: 'UNADMITTED_TITLE', body: 'UNADMITTED_BODY' }
+  for (const type of ['pull_request', 'pull_request_review', 'pull_request_review_comment', 'issue_comment']) {
+    for (const kind of ['webhook', 'poll'] as const) {
+      const [fact] = githubOutputAdapter.normalize({
+        type,
+        githubObservation: kind === 'webhook' ? { kind, deliveryId: 'author-test' } : { kind },
+        payload: {
+          repository: { ...repository, id: 42 },
+          action:
+            type === 'pull_request' ? 'review_requested' : type === 'pull_request_review' ? 'submitted' : 'created',
+          sender: human,
+          ...(type === 'issue_comment' ? { issue: { ...parent, pull_request: {} } } : { pull_request: parent }),
+          requested_reviewer: human,
+          review: { id: 22, user: human, state: 'approved', submitted_at: date },
+          comment: { id: 23, user: human, created_at: date, updated_at: date },
+        },
+      })
+      for (const data of [fact!.data, fact!.github!.content!.delivery!.data]) {
+        expect(data.pullRequest).toMatchObject({ author: author.login, authorType: 'Bot' })
+        expect(data.actor).toBe('reviewer')
+        expect(data.actorType).toBe('User')
+      }
+      expect(JSON.stringify(fact!.github!.content!.delivery)).not.toContain('UNADMITTED')
+      // Routing identity never replaces the account whose content/action admission is checked.
+      expect(fact!.github!.content!.author?.accountId).toBe('12')
+      if (type === 'pull_request' && kind === 'poll') expect(fact!.github!.content!.attribution).toBe('unknown')
+    }
+  }
+})
+
+test('lifecycle and CI status projections retain only the corresponding PR author when supplied', () => {
+  const user = { id: 99, login: 'dependabot[bot]', type: 'Bot' }
+  for (const type of ['pull_request', 'workflow_run']) {
+    const [fact, withoutAuthor] = githubOutputAdapter.normalize({
+      type,
+      payload: {
+        repository: { ...repository, id: 42 },
+        action: type === 'pull_request' ? 'closed' : 'completed',
+        ...(type === 'pull_request' ? { pull_request: { ...pr, user, state: 'closed' } } : {}),
+        workflow_run: {
+          id: 50,
+          workflow_id: 51,
+          conclusion: 'success',
+          completed_at: date,
+          pull_requests: [
+            { number: 3, user: { login: 'wrong-repository' }, base: { repo: { full_name: 'other/repository' } } },
+            { number: 3, user },
+            { number: 4 },
+          ],
+          actor: { login: 'not-the-author' },
+        },
+      },
+    })
+    expect(fact!.data.pullRequest).toMatchObject({ author: user.login, authorType: 'Bot' })
+    expect(fact!.github!.status!.data.pullRequest).toMatchObject({ author: user.login, authorType: 'Bot' })
+    if (type === 'workflow_run') {
+      expect(withoutAuthor!.data.pullRequest).toEqual({ number: 4 })
+      expect(withoutAuthor!.github!.status!.data.pullRequest).toEqual({ number: 4 })
+    }
+  }
+})
+
+test('missing or malformed PR authors never fall back to actor or untrusted prose', () => {
+  for (const user of [
+    undefined,
+    null,
+    {},
+    { login: '' },
+    { id: 10137, login: 'ghost', type: 'User' },
+    { login: 'bad\nlogin', type: 'Bot' },
+    { login: ['dependabot[bot]'] },
+    { login: 'a'.repeat(101) },
+  ]) {
+    const [fact] = githubOutputAdapter.normalize({
+      type: 'pull_request',
+      payload: {
+        action: 'review_requested',
+        repository,
+        sender: { id: 99, login: 'dependabot[bot]', type: 'Bot' },
+        pull_request: { ...pr, user, title: 'dependabot[bot]', labels: [{ name: 'dependabot[bot]' }] },
+      },
+    })
+    for (const data of [fact!.data, fact!.github!.content!.delivery!.data]) {
+      expect(data.pullRequest).not.toHaveProperty('author')
+      expect(data.pullRequest).not.toHaveProperty('authorType')
+    }
+  }
+  const [fact] = githubOutputAdapter.normalize({
+    type: 'pull_request',
+    payload: { action: 'opened', repository, pull_request: { ...pr, user: { login: 'human', type: 'Organization' } } },
+  })
+  expect(fact!.data.pullRequest).toMatchObject({ author: 'human' })
+  expect(fact!.github!.content!.delivery!.data.pullRequest).toMatchObject({ author: 'human' })
+  expect(fact!.data.pullRequest).not.toHaveProperty('authorType')
+})

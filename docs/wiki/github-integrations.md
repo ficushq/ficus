@@ -203,6 +203,23 @@ webhook shell commands no longer run for GitHub feedback events.
 
 Fields are allowlisted per provider, event and version in the authenticated output catalog (`GET /api/integrations/outputs`, `predicateFields`). GitHub examples include review `state`, CI `workflow`/`state`, numeric issue/PR numbers, label/assignee collections, review-comment `path`/`line`, and `mergeConflict` on PR updates. Linear issue assignment supports `issue.id`, `issue.title`, `teamId` and `assignee`. Only fields actually present in the normalized event can match. Existing subscription `fields` and legacy `match` behavior are unchanged.
 
+To route Dependabot-authored review requests to the manager instead of creating a work stream, place this rule **before** the general review-request rule:
+
+```json
+{
+  "id": "dependabot-review",
+  "enabled": true,
+  "source": { "integration": "github", "output": "pull_request.review_requested", "version": 1 },
+  "filters": { "squadRouting": true, "audience": "connected-account" },
+  "predicates": [{ "field": "pullRequest.author", "op": "eq", "value": "dependabot[bot]" }],
+  "action": { "type": "notify-manager" }
+}
+```
+
+`pullRequest.author` is the PR author's GitHub login, compared case-insensitively, not the event's `actor`. A human requesting review of a Dependabot PR still matches. `pullRequest.authorType` is `User` or `Bot` when GitHub supplies it. These fields appear in the condition selector and match preview. Missing authors remain absent: senders, reviewers, comments, titles, labels and branches never substitute for authorship. CI summaries commonly omit the author; no extra content is fetched to fill it in.
+
+Authorship is routing evidence only; authorization, moderation and content-admission checks still apply. This example sends matching admitted events to the manager. It does **not** batch PRs or enable multi-PR review completion, and adding this capability does not change saved squad rules.
+
 | Field type              | Operators                     |
 | ----------------------- | ----------------------------- |
 | String, number, boolean | `eq`, `neq`, `in`, `exists`   |

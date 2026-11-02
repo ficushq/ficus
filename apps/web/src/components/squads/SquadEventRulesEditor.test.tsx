@@ -513,3 +513,80 @@ test('reset to defaults replaces the rules with the built-in set only after a co
     await dom.cleanup()
   }
 })
+
+test('PR author fields can be selected, saved, reloaded and previewed independently of actor', async () => {
+  const { githubOutputCatalog } = await import('@ficus/shared')
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/test/settings' })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  client.setQueryData(integrationQueries.outputs().queryKey, githubOutputCatalog)
+  client.setQueryData(integrationQueries.squad('test', 'github').queryKey, { connections: [], attached: [] })
+  let value: SquadEventRule[] = []
+  function Editor({ initial }: { initial?: SquadEventRule[] }) {
+    const [rules, setRules] = useState(
+      initial ?? [
+        squadEventRuleSchema.parse({
+          id: 'dependabot-review',
+          source: { integration: 'github', output: 'pull_request.review_requested', version: 1 },
+          filters: { audience: 'any' },
+          action: { type: 'notify-manager' },
+        }),
+      ]
+    )
+    value = rules
+    return <SquadEventRulesEditor squadId="test" provider="github" value={rules} onChange={setRules} disabled={false} />
+  }
+  const root = dom.createRoot()
+  const input = (label: string) => document.querySelector(`[aria-label="${label}"]`)!
+  const render = (initial?: SquadEventRule[]) =>
+    dom.act(async () =>
+      root.root.render(
+        <QueryClientProvider client={client}>
+          <Editor key={initial ? 'reloaded' : 'initial'} initial={initial} />
+        </QueryClientProvider>
+      )
+    )
+  try {
+    await render()
+    await dom.act(async () =>
+      Array.from(document.querySelectorAll('button'))
+        .find((b) => b.textContent === 'Add condition')!
+        .click()
+    )
+    const options = Array.from((input('Rule 1 condition 1 field') as HTMLSelectElement).options).map((o) => o.value)
+    expect(options).toContain('pullRequest.author')
+    expect(options).toContain('pullRequest.authorType')
+    await dom.act(async () =>
+      fireEvent.change(input('Rule 1 condition 1 field'), { target: { value: 'pullRequest.author' } })
+    )
+    await dom.act(async () =>
+      fireEvent.input(input('Rule 1 condition 1 value'), { target: { value: 'dependabot[bot]' } })
+    )
+    const saved = value.map((rule) => squadEventRuleSchema.parse(JSON.parse(JSON.stringify(rule))))
+    expect(saved[0]!.predicates).toEqual([{ field: 'pullRequest.author', op: 'eq', value: 'dependabot[bot]' }])
+    await render(saved)
+    expect((input('Rule 1 condition 1 field') as HTMLSelectElement).value).toBe('pullRequest.author')
+    await dom.act(async () =>
+      fireEvent.change(input('Sample event'), { target: { value: 'pull_request.review_requested@1' } })
+    )
+    for (const [author, actor, matches] of [
+      ['Dependabot[bot]', 'human', true],
+      ['human', 'dependabot[bot]', false],
+    ] as const) {
+      await dom.act(async () =>
+        fireEvent.input(input('Sample fields (JSON)'), {
+          target: {
+            value: JSON.stringify({
+              'pullRequest.author': author,
+              'pullRequest.authorType': 'Bot',
+              actor,
+            }),
+          },
+        })
+      )
+      expect(document.body.textContent!.includes('Selected: dependabot-review → notify-manager')).toBe(matches)
+    }
+  } finally {
+    client.clear()
+    await dom.cleanup()
+  }
+})

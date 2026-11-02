@@ -3136,6 +3136,58 @@ describe('trusted actor actions with the author filter ON (default squad rules)'
     expect(JSON.stringify([messages, streams])).not.toContain('SENTINEL')
   }
 
+  test('PR-author manager routing agrees with preview but never bypasses actor admission', async () => {
+    const { effectiveSquadEventRules, previewSquadEventRules } = await import('@ficus/shared')
+    const h = await defaultRulesFixture()
+    const originalAuthor = pr.user
+    const originalTime = pr.updated_at
+    try {
+      await h.trust()
+      pr.user = { id: 99, login: 'Dependabot[bot]', type: 'Bot' }
+      const [squad] = await db.select().from(squads).where(eq(squads.id, h.squadId))
+      const metadata = {
+        ...(squad!.metadata as object),
+        integrationRules: {
+          github: [
+            {
+              id: 'dependabot-review',
+              enabled: true,
+              source: { integration: 'github', output: 'pull_request.review_requested', version: 1 },
+              filters: { audience: 'connected-account', squadRouting: true },
+              predicates: [{ field: 'pullRequest.author', op: 'eq', value: 'dependabot[bot]' }],
+              action: { type: 'notify-manager' },
+            },
+            ...effectiveSquadEventRules(squad!.metadata, 'github'),
+          ],
+        },
+      }
+      await db.update(squads).set({ metadata }).where(eq(squads.id, h.squadId))
+      const before = await h.effects()
+      // The PR matches, but the untrusted sender still prevents delivery.
+      const held = reviewRequested(outsider)
+      expect(previewSquadEventRules(metadata, 'github', held, 'ficus-bot').selectedRuleId).toBe('dependabot-review')
+      await publishIntegrationOutput('github', held, h.authority)
+      expect(await h.effects()).toEqual(before)
+      expect((await revisions(h.squadId))[0]).toMatchObject({ decision: 'pending', releaseState: 'held' })
+
+      pr.updated_at = '2026-10-02T12:00:00Z'
+      const admitted = reviewRequested(trustedActor)
+      expect(previewSquadEventRules(metadata, 'github', admitted, 'ficus-bot').action).toBe('notify-manager')
+      await publishIntegrationOutput('github', admitted, h.authority)
+      const after = await h.effects()
+      expect(after.inbox).toBe(before.inbox + 1)
+      expect(after.streams).toBe(before.streams)
+      const automatic = (await revisions(h.squadId)).find((row) => row.decision === 'automatic')!
+      expect(automatic.author).toMatchObject({ accountId: '2', accountType: 'User' })
+      expect(automatic.envelope!.data.pullRequest).toMatchObject({ author: 'Dependabot[bot]', authorType: 'Bot' })
+      await sentinelFree(h.squadId, h.managerId)
+    } finally {
+      pr.user = originalAuthor
+      pr.updated_at = originalTime
+      await h.close()
+    }
+  })
+
   test('a trusted review request starts the default work stream without any untrusted PR prose', async () => {
     const h = await defaultRulesFixture()
     try {

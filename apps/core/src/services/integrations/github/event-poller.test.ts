@@ -1516,3 +1516,38 @@ test('emitted polling updates and feedback share compact webhook presentation wi
     }
   }
 })
+
+test('polled PR lifecycle and feedback keep provider authorship through normalization and safe projections', async () => {
+  const { githubOutputAdapter } = await import('../outputs/github')
+  const user = { id: 99, login: 'dependabot[bot]', type: 'Bot' }
+  const bodies: unknown[] = [
+    { ...pullRequest, user },
+    { ...issue, user },
+    [],
+    [],
+    [],
+    { ...pullRequest, user, state: 'closed', updated_at: comment.updated_at },
+    { ...issue, user },
+    [comment],
+    [{ id: 102, user: comment.user, submitted_at: comment.updated_at, state: 'approved' }],
+    [{ ...comment, id: 103 }],
+  ]
+  const poller = new GitHubPrEventPoller({
+    resolveCredential: async () => 'token',
+    fetch: async () => response(bodies.shift(), `"etag-${bodies.length}"`),
+  })
+  const baseline = await poller.poll(connection(), null)
+  const result = await poller.poll(connection(), baseline.nextCursor as GitHubPollingCursor)
+  expect(result.events.map((event) => event.type).sort()).toEqual([
+    'issue_comment',
+    'pull_request',
+    'pull_request_review',
+    'pull_request_review_comment',
+  ])
+  for (const event of result.events) {
+    const [fact] = githubOutputAdapter.normalize(event)
+    expect(fact!.data.pullRequest).toMatchObject({ author: user.login, authorType: 'Bot' })
+    const delivery = fact!.github!.status ?? fact!.github!.content!.delivery!
+    expect(delivery.data.pullRequest).toMatchObject({ author: user.login, authorType: 'Bot' })
+  }
+})

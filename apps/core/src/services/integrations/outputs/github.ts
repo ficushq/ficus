@@ -1,3 +1,4 @@
+import { githubPullRequestAuthor, githubWorkflowPullRequestAuthor } from '../github/pull-request-author'
 import { normalizeDependabot, DEPENDABOT_OUTPUT, DEPENDABOT_ACTIONS } from '../github/dependabot-output'
 import { normalizeGitHubFeedback, safeGitHubPath, githubNativeId, githubContentHash } from '../github/feedback-envelope'
 import { createHash } from 'node:crypto'
@@ -258,6 +259,9 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
           : {
               pullRequest: {
                 number,
+                ...(event.type === 'workflow_run'
+                  ? githubWorkflowPullRequestAuthor(item!.pull_requests, number, repo)
+                  : githubPullRequestAuthor(native?.user)),
                 ...(typeof (native?.head?.sha ?? item!.head_sha) === 'string'
                   ? { headSha: native?.head?.sha ?? item!.head_sha }
                   : {}),
