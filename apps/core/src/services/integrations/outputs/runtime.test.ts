@@ -1,6 +1,6 @@
 import { useEnabledIntegrationFixtures } from '../../../test-utils/enabled-integrations'
 useEnabledIntegrationFixtures('github', 'linear')
-import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { createHash, randomUUID } from 'node:crypto'
 import { eq, inArray, sql } from 'drizzle-orm'
 import {
@@ -290,8 +290,12 @@ beforeAll(async () => {
     .values({ squadId, providerKey: 'github', connectionId: fixtureConnectionId })
   send = spyOn(Agent.prototype, 'sendMessage').mockResolvedValue({ success: true, queued: true, status: 'queued' })
 })
-afterAll(async () => {
-  send?.mockRestore()
+beforeEach(async () => {
+  // Every publish scans active flow subscriptions, including unrelated resources. A previous
+  // test's streams must not add routing work (or consume reconciliation capacity) to this one.
+  expect(await db.select({ id: workStreams.id }).from(workStreams).where(eq(workStreams.squadId, squadId))).toEqual([])
+})
+afterEach(async () => {
   const owned = await db.select({ id: agents.id }).from(agents).where(eq(agents.squadId, squadId))
   if (owned.length)
     await db.delete(inbox).where(
@@ -303,8 +307,12 @@ afterAll(async () => {
   await db.delete(workStreams).where(eq(workStreams.squadId, squadId))
   await db.delete(agents).where(eq(agents.squadId, squadId))
   if (eventIds.length) await db.delete(integrationOutputEvents).where(inArray(integrationOutputEvents.id, eventIds))
-  // Untracked observations (aliases, refinements) must not linger as unmatched work for later files.
+  eventIds.length = 0
+  // Untracked observations (aliases, refinements) must not linger as unmatched work for later tests.
   await db.delete(integrationOutputEvents).where(sql`${integrationOutputEvents.authority}->>'squadId' = ${squadId}`)
+})
+afterAll(async () => {
+  send?.mockRestore()
   await db
     .delete(integrationConnectionAssignments)
     .where(eq(integrationConnectionAssignments.connectionId, fixtureConnectionId))
