@@ -29,7 +29,11 @@ describe('external contribution boundaries', () => {
         expect(JSON.stringify(workflow)).not.toMatch(/secrets\s*(?:\.|\[)/)
         expect(workflow.on).not.toHaveProperty('pull_request_target')
         for (const job of Object.values(workflow.jobs)) {
-          expect(job.permissions ?? workflow.permissions).toEqual({ contents: 'read' })
+          // The only extra scope a contributor job may hold is read-only pull request
+          // access (the migration number gate lists open PRs); nothing can write.
+          expect([{ contents: 'read' }, { contents: 'read', 'pull-requests': 'read' }]).toContainEqual(
+            job.permissions ?? workflow.permissions
+          )
           expect(JSON.stringify(job)).not.toContain('softprops/action-gh-release')
           for (const step of job.steps ?? []) {
             if (step.uses?.startsWith('docker/build-push-action@')) expect(step.with?.push).not.toBe(true)

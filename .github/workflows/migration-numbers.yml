@@ -1,0 +1,65 @@
+name: Migration numbers
+
+# Fails a PR whose new drizzle migration reuses a number already on main or
+# claimed by an older open, non-draft PR, or whose journal/snapshot does not
+# chain from main's latest migration. Logic and limits:
+# .github/migration-number-gate.ts and docs/wiki/database.md ("Migration
+# number check").
+#
+# Trigger limits: this runs only on the PR's own events. It does NOT re-run when
+# another migration merges into main or another PR opens. Re-running this job
+# re-reads main and the open PR list, so a re-run gives a fresh answer.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'apps/core/drizzle/**'
+      - '.github/migration-number-gate.ts'
+      - '.github/workflows/migration-numbers.yml'
+
+concurrency:
+  group: migration-numbers-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  migration-numbers:
+    name: Drizzle migration numbers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Read-only: the gate lists open PRs and their files, and never writes.
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Fetch the PR head and the current base branch
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        # The base branch is fetched now rather than taken from the event, so a
+        # re-run compares against main as it is at re-run time.
+        run: git fetch --no-tags --depth=1 origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}" "${HEAD_SHA}"
+
+      - name: Check drizzle migration numbers
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          BASE_REF: ${{ github.base_ref }}
+          BASE_REV: origin/${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+        run: bun .github/migration-number-gate.ts check

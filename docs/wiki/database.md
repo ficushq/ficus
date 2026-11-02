@@ -171,6 +171,30 @@ This reads `apps/core/src/db/schema.ts`, compares it to the current migration st
 
 > **Never write migration SQL files by hand.** Always use `bun db:generate`.
 
+### Migration number check
+
+drizzle-kit numbers a new migration after the latest one on the branch, so two branches cut from the same `main` both generate the same number. The migrator also applies only journal entries whose `when` is newer than the last applied migration, so a duplicate or out-of-order entry can be skipped silently.
+
+The `Migration numbers` workflow (`.github/workflows/migration-numbers.yml`, logic in `.github/migration-number-gate.ts`) checks pull requests that target `main`. It fails when:
+
+- a new migration's number is already used on `main` (a journal idx or SQL file), whatever other PRs exist;
+- a new migration is incomplete: its SQL file, journal entry or `meta/NNNN_snapshot.json` is missing, or its tag number does not match its journal idx;
+- the journal does not chain from `main`'s latest entry: entries from `main` are missing or changed, the new idx values do not continue from `main`'s latest, or a new `when` is not later than the previous entry;
+- the first new snapshot's `prevId` is not `main`'s latest snapshot `id` (or later new snapshots do not chain to each other);
+- another open, non-draft PR to `main` with a lower PR number adds a different SQL file with the same number. The older PR keeps the number and passes with a warning naming the newer PR. Draft PRs never claim a number, and a draft PR yields to any non-draft PR. A PR that adds the identical file (a stacked branch) is not a collision.
+
+To fix a failure, wait for the older PR to merge (for a `main` collision there is nothing to wait for), merge `main` into the branch, remove the branch's generated migration (SQL file, snapshot and journal entry), run `bun db:generate` again, and check that the new snapshot's `prevId` is `main`'s latest snapshot `id`. To swap the merge order instead, coordinate on the older PR: converting it to draft releases its number, and re-running the newer PR's failed job then passes.
+
+The check is read-only. It uses the workflow's `GITHUB_TOKEN` with `contents: read` and `pull-requests: read`, needs no stored secrets, and never writes labels, comments or statuses. Fork PRs receive the same read-only token. A missing token, a git read failure or a GitHub API error fails the job with the reason; a PR that changes `apps/core/drizzle/` without adding a migration prints an explicit skip.
+
+Trigger and limits:
+
+- It runs on `pull_request` events (`opened`, `synchronize`, `reopened`, `ready_for_review`) for PRs to `main` that change `apps/core/drizzle/**` or the check itself. PRs to other bases are not checked.
+- It does not re-run when another migration merges into `main`, another PR opens, or another PR changes its draft state. Each run reads the current `main` and the live open-PR list, so re-running the failed job gives a fresh answer. Because only the newer PR fails, the PR that must yield is the one whose own push or open event sees the collision; an older PR that is already green stays green.
+- If `main` gains a migration after a PR was checked, the PR's journal normally conflicts with `main`, and GitHub does not run `pull_request` workflows while a PR has merge conflicts. The conflict is the signal; resolve it by regenerating as above.
+- Other PRs' migration numbers come from the SQL file names they add (GitHub lists at most 3,000 files per PR); their journals are not read.
+- The workflow is path-filtered, so it should not be made a required status check: a PR that does not touch migrations never reports it.
+
 ### Configuration
 
 Migration config lives in `apps/core/drizzle.config.ts`:
