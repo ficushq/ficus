@@ -351,9 +351,13 @@ test('a decision on a joined gate that omits a source is refused with nothing de
   await db.transaction(async (tx) => {
     await attachFlow(tx, stream!, { kind: 'inline', definition: joined })
   })
-  const attemptAgents = { '1': bound.agentId, '2': bound.agentId, '3': bound.agentId }
-  await db.update(workStreamFlowRuns).set({ attemptAgents }).where(eq(workStreamFlowRuns.workStreamId, streamId))
   for (const attemptId of [1, 2, 3]) {
+    // The branches start when attempt 1 completes; bind each attempt to the worker before completing it.
+    const run = await getFlow(streamId)
+    await db
+      .update(workStreamFlowRuns)
+      .set({ attemptAgents: { ...run!.attemptAgents, [String(attemptId)]: bound.agentId } })
+      .where(eq(workStreamFlowRuns.workStreamId, streamId))
     const response = await advance(bound.token, {
       action: 'complete',
       expectedVersion: await version(),
