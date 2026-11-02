@@ -1,4 +1,5 @@
 import { mayReceiveRawGitHubFacts, GITHUB_FACTUAL_PARENT_OBSOLETE } from '../github/feedback-raw-facts'
+import { eventStreamPreparationSteps } from '../../work-streams/event-preparation'
 import { rawGitHubFactsSourceId } from '../github/feedback-freshness-binding'
 import { createHash } from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
@@ -415,7 +416,7 @@ export function creationNotificationContent(event: Event, stream: { id: string; 
   const ref = workStreamRef(stream)
   return [
     `A new work stream you own was created from an integration event (${event.integration}). Review it with \`ficus workstream get ${ref}\`.`,
-    `The workflow is paused before any workers start. Review the event and workflow, prepare its workspace if needed with \`ficus workstream update ${ref} --repository <checkout-path>\`, then start it with \`ficus workstream resume ${ref}\`. If no Git workspace is needed, resume after reviewing the task. Do not manually bypass repository setup guards.`,
+    eventStreamPreparationSteps(ref),
     defaultNotificationContent(event, stream.id),
   ].join('\n\n')
 }

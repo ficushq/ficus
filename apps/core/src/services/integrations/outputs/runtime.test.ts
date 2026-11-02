@@ -932,6 +932,7 @@ test('native review requests create one bound flow and keep code-host delivery i
     expect(notices).toHaveLength(1)
     expect(notices[0]!.content).toContain('an integration event (github)')
     expect(notices[0]!.content).toContain('paused before any workers start')
+    expect(notices[0]!.content).toContain('Retitle it to say what the work is')
     expect(notices[0]!.content).toContain(
       `ficus workstream update ${(await WorkStream.mustFind(id)).number} --repository`
     )
