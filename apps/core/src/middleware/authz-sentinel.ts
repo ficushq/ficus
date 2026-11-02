@@ -1,5 +1,6 @@
 import type { Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
+import type { ServerErrorStatusCode } from 'hono/utils/http-status'
 import { createLogger } from '../lib/infra/logger'
 
 const log = createLogger('authz-sentinel')
@@ -43,8 +44,8 @@ export const authzSentinel = createMiddleware(async (c, next) => {
   if (c.res.status >= 400 && c.res.status < 500) return
 
   if (c.res.status >= 500) {
-    const status = c.res.status as 500
-    log.error('API route failed with a server error before its RBAC guard completed', {
+    const status = c.res.status as ServerErrorStatusCode
+    log.error('API route returned a server error before an RBAC guard or public-route marker was recorded', {
       method: c.req.method,
       path: c.req.path,
       routePath: c.req.routePath,

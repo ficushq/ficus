@@ -284,9 +284,10 @@ export function registerInboxCommands(program: Command): void {
           }
           if (page?.hasMore) {
             const total = typeof page.totalCount === 'number' ? ` of ${page.totalCount}` : ''
-            console.log(
-              `Showing ${messages.length}${total} message(s). More messages are available; raise --limit (maximum 200) to see more.`
-            )
+            // The server caps a page at 200 and the CLI has no cursor option, so only
+            // suggest raising --limit when that can still return more messages.
+            const hint = messages.length < 200 ? '; raise --limit (maximum 200) to see more' : ''
+            console.log(`Showing ${messages.length}${total} message(s). More messages are available${hint}.`)
           }
         }
       } catch (error) {

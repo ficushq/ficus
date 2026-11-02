@@ -436,6 +436,19 @@ describe('inbox list response shapes', () => {
     expect(text).toContain('Showing 2 of 7 message(s). More messages are available')
   })
 
+  test('text output drops the raise --limit hint on a full 200-message page', async () => {
+    const items = Array.from({ length: 200 }, (_, i) => syntheticMessage(`full-page-${i}`))
+    ;(apiGet as ReturnType<typeof mock>).mockResolvedValueOnce({
+      items,
+      hasMore: true,
+      nextCursor: 'x',
+      totalCount: 250,
+    })
+    const text = await list(['--limit', '200'])
+    expect(text).toContain('Showing 200 of 250 message(s). More messages are available.')
+    expect(text).not.toContain('raise --limit')
+  })
+
   test('text output omits the note on a final page and handles an empty page', async () => {
     ;(apiGet as ReturnType<typeof mock>).mockResolvedValueOnce({
       items: [syntheticMessage('final-message')],
