@@ -1,6 +1,5 @@
 import {
-  workflowAttemptResults,
-  workflowResultChanges,
+  workflowChangesSinceSeen,
   workflowResultRevision,
   type WorkflowAttempt,
   type WorkflowAttemptAttachment,
@@ -13,6 +12,8 @@ import { MarkdownContent } from './MarkdownContent'
  * What changed in a source attempt between the revision the reviewer last saw and the latest one:
  * each changed brief field as Before and Now, the unchanged fields, whether the internal handoff
  * changed, and the files added, removed or changed. Changed and added files open in their tab.
+ * Without `seenRevision` the source appeared after the review opened: all of it is new, so this says
+ * so and lists its files, and the brief that follows is read in full.
  */
 export function WorkflowRevisionChanges({
   run,
@@ -22,18 +23,20 @@ export function WorkflowRevisionChanges({
 }: {
   run: WorkflowRunDetail
   source: WorkflowAttempt
-  seenRevision: number
+  /** The revision the reviewer last saw; absent when the source appeared after the review opened. */
+  seenRevision?: number
   onOpenFile?: (attachmentId: string) => void
 }) {
-  const files = attemptFiles(run, source.id)
-  const results = workflowAttemptResults(source, files)
-  const before = results.find((result) => result.revision === seenRevision) ?? results[0]!
-  const after = results.at(-1)!
-  const changes = workflowResultChanges(before, after, Object.fromEntries(files.map((file) => [file.id, file])))
+  const { before, changes } = workflowChangesSinceSeen(source, attemptFiles(run, source.id), seenRevision)
   const label = (field: string) => DECISION_BRIEF_FIELD_LABELS.find(([key]) => key === field)?.[1] ?? field
   const { added, removed, changed } = changes.attachments
   const nothing =
-    !changes.briefFields.length && !changes.evidenceChanged && !added.length && !removed.length && !changed.length
+    before &&
+    !changes.briefFields.length &&
+    !changes.evidenceChanged &&
+    !added.length &&
+    !removed.length &&
+    !changed.length
   const fileName = (file: WorkflowAttemptAttachment, open: boolean) =>
     open && onOpenFile ? (
       <button
@@ -67,40 +70,46 @@ export function WorkflowRevisionChanges({
       <div className="space-y-0.5">
         <h3 className="text-sm font-medium text-primary">What changed since you last looked</h3>
         <p className="text-xs text-muted">
-          Revision {before.revision} to revision {workflowResultRevision(source)}
+          {before
+            ? `Revision ${before.revision} to revision ${workflowResultRevision(source)}`
+            : `New since you opened this review, at revision ${workflowResultRevision(source)}`}
         </p>
       </div>
       {nothing && <p className="text-sm text-secondary">Nothing in the brief, handoff or files changed.</p>}
-      {changes.briefFields.map(({ field, before: old, after: now }) => (
-        <div key={field} className="space-y-2">
-          <h4 className="text-sm font-medium text-secondary">{label(field)}</h4>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {(
-              [
-                ['Before', old],
-                ['Now', now],
-              ] as const
-            ).map(([heading, text]) => (
-              <div key={heading} className="min-w-0 [overflow-wrap:anywhere]">
-                <p className="mb-0.5 text-xs font-medium text-muted">{heading}</p>
-                {text ? (
-                  <MarkdownContent variant="document" className="text-sm leading-relaxed text-primary">
-                    {text}
-                  </MarkdownContent>
-                ) : (
-                  <p className="text-sm text-muted">Not included</p>
-                )}
-              </div>
-            ))}
+      {!before && (
+        <p className="text-sm text-secondary">You have not seen this work yet. Its brief, handoff and files are new.</p>
+      )}
+      {before &&
+        changes.briefFields.map(({ field, before: old, after: now }) => (
+          <div key={field} className="space-y-2">
+            <h4 className="text-sm font-medium text-secondary">{label(field)}</h4>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {(
+                [
+                  ['Before', old],
+                  ['Now', now],
+                ] as const
+              ).map(([heading, text]) => (
+                <div key={heading} className="min-w-0 [overflow-wrap:anywhere]">
+                  <p className="mb-0.5 text-xs font-medium text-muted">{heading}</p>
+                  {text ? (
+                    <MarkdownContent variant="document" className="text-sm leading-relaxed text-primary">
+                      {text}
+                    </MarkdownContent>
+                  ) : (
+                    <p className="text-sm text-muted">Not included</p>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
-      {changes.briefFields.length > 0 && changes.unchangedBriefFields.length > 0 && (
+        ))}
+      {before && changes.briefFields.length > 0 && changes.unchangedBriefFields.length > 0 && (
         <p className="text-xs text-muted">
           Unchanged: {changes.unchangedBriefFields.map((field) => label(field)).join(', ')}.
         </p>
       )}
-      {changes.evidenceChanged && <p className="text-sm text-secondary">The internal handoff changed.</p>}
+      {before && changes.evidenceChanged && <p className="text-sm text-secondary">The internal handoff changed.</p>}
       {(added.length > 0 || removed.length > 0 || changed.length > 0) && (
         <div className="grid gap-3 sm:grid-cols-3">
           {fileList('Added', added, true)}

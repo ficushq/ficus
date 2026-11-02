@@ -1171,6 +1171,104 @@ test('a revision that arrives while the review is open is marked, explained, and
   }
 })
 
+/** A second agent source, attempt 5 with one file, feeds the open gate alongside attempt 3. */
+function joinedRun(): WorkflowRunDetail {
+  const run = briefRun()
+  run.state.attempts.splice(3, 0, {
+    id: 5,
+    stepId: 'execute',
+    status: 'completed',
+    outcome: 'proposal-ready',
+    evidence: 'Second branch proposal.',
+    settledVersion: 7,
+    decisionBrief: {
+      value: { ...workflowReviewBriefFixture, decision: 'Approve the second branch cache design.' },
+      submittedVersion: 7,
+      contexts: [],
+    },
+  })
+  const gate = run.state.attempts.find((attempt) => attempt.id === 4)!
+  gate.sourceAttemptIds = [3, 5]
+  gate.reviewBrief = { kind: 'authored', sourceAttemptIds: [3, 5] }
+  const [a] = run.attachments!['3']!
+  run.attachments = {
+    ...run.attachments,
+    '5': [{ ...a!, id: 'e', attemptId: 5, filename: 'branch.md', path: 'docs/branch.md' }],
+  }
+  run.attemptAgents = { '3': 'design-agent', '5': 'branch-agent' }
+  return run
+}
+
+test('sources present when the review opens are seen: no marker, and the decision names each at its revision', async () => {
+  const f = await fixture()
+  const advance = spyOn(client.workflows, 'advance').mockResolvedValue(undefined as never)
+  try {
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), joinedRun())
+    await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
+    const dialog = f.dialog()!
+    expect(dialog.querySelector('[data-revised-marker]')).toBeNull()
+    expect(dialog.querySelector('[data-revision-notice]')).toBeNull()
+    expect(dialog.querySelector('[data-revision-changes]')).toBeNull()
+    await f.dom.act(async () => f.decisionButtons()[0]!.click())
+    await f.settle()
+    expect(advance.mock.calls[0]![1]).toMatchObject({
+      outcome: 'approved',
+      reviewedRevisions: [
+        { attemptId: 3, revision: 1 },
+        { attemptId: 5, revision: 1 },
+      ],
+    })
+  } finally {
+    advance.mockRestore()
+    await f.cleanup()
+  }
+})
+
+test('a source that starts feeding the gate after the review opens is new, listed, and must be reviewed first', async () => {
+  const f = await fixture()
+  const advance = spyOn(client.workflows, 'advance').mockResolvedValue(undefined as never)
+  try {
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), briefRun())
+    await f.render(<WorkflowReviewModal stream={stream} focusWaitId="gate-wait" onClose={() => {}} />)
+    const dialog = f.dialog()!
+    expect(f.decisionButtons()[0]!.disabled).toBe(false)
+
+    await f.dom.act(async () => f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), joinedRun()))
+    await f.settle()
+    const markers = [...dialog.querySelectorAll('[data-revised-marker]')]
+    expect(markers.map((marker) => marker.textContent)).toEqual(['New since you opened'])
+    expect(markers[0]!.closest('p')!.textContent).toContain('Attempt 5')
+
+    const changes = [...dialog.querySelectorAll<HTMLElement>('[data-revision-changes]')]
+    expect(changes).toHaveLength(1)
+    expect(changes[0]!.textContent).toContain('New since you opened this review, at revision 1')
+    expect(changes[0]!.textContent).toContain('You have not seen this work yet.')
+    expect(changes[0]!.textContent).not.toContain('Before')
+    const added = [...changes[0]!.querySelectorAll('h4')].find((heading) => heading.textContent === 'Added')!
+    expect(added.nextElementSibling!.textContent).toBe('branch.md')
+
+    const notice = dialog.querySelector('[data-revision-notice]')!
+    expect(notice.textContent).toContain('New work was added since you opened it. Review it before deciding.')
+    expect(f.decisionButtons().every((button) => button.disabled)).toBe(true)
+    const acknowledge = [...notice.querySelectorAll('button')].find((b) => b.textContent === 'Mark as reviewed')!
+    await f.dom.act(async () => acknowledge.click())
+    expect(dialog.querySelector('[data-revision-changes]')).toBeNull()
+    expect(dialog.querySelector('[data-revised-marker]')).toBeNull()
+    await f.dom.act(async () => f.decisionButtons()[0]!.click())
+    await f.settle()
+    expect(advance.mock.calls[0]![1]).toMatchObject({
+      outcome: 'approved',
+      reviewedRevisions: [
+        { attemptId: 3, revision: 1 },
+        { attemptId: 5, revision: 1 },
+      ],
+    })
+  } finally {
+    advance.mockRestore()
+    await f.cleanup()
+  }
+})
+
 test('a decision refused because of a newer revision keeps the notes and shows the plain message', async () => {
   const { HttpResponseError } = await import('@ficus/client-core')
   const f = await fixture()

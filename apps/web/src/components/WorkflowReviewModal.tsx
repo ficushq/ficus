@@ -8,7 +8,12 @@ import {
   WORKFLOW_REVIEW_REVISED_MESSAGE,
   workflowDecisionRevisionNote,
   workflowGateRevisions,
+  workflowMarkRevisionsSeen,
   workflowResultRevision,
+  workflowReviewSeenState,
+  workflowReviewUnseenMessage,
+  workflowSeenRevisionsAtOpen,
+  workflowUnseenLabel,
   workflowReviewBriefForAttempt,
   workStreamWaitActor,
   workStreamRef,
@@ -38,7 +43,6 @@ import {
   readReviewDraft,
   readSeenRevisions,
   REVIEW_CHAT_COLUMNS_QUERY,
-  revisedLabel,
   reviewDraftKey,
   reviewSeenRevisionsKey,
   workflowReviewPath,
@@ -288,16 +292,17 @@ function ReviewLayout({
         <WorkflowDecisionBrief
           run={run.state}
           attempt={attempt}
-          beforeSource={(source) =>
-            revisions.unseen.some((entry) => entry.attemptId === source.id) ? (
+          beforeSource={(source) => {
+            const unseen = revisions.unseen.find((entry) => entry.attemptId === source.id)
+            return unseen ? (
               <WorkflowRevisionChanges
                 run={run}
                 source={source}
-                seenRevision={revisions.seen[String(source.id)] ?? 1}
+                seenRevision={unseen.seenRevision}
                 onOpenFile={selectTab}
               />
             ) : null
-          }
+          }}
         />
         {(brief.kind === 'none' || brief.kind === 'carried-forward') && (
           <MarkdownContent variant="document" className="text-sm text-secondary">
@@ -498,11 +503,13 @@ function ReviewSummary({
               {attemptSummary(run.state, source)}
               {workflowResultRevision(source) > 1 && ` · Revision ${workflowResultRevision(source)}`}
             </span>
-            {revisions.unseen.some((entry) => entry.attemptId === source.id) && (
-              <span role="status" data-revised-marker>
-                <Badge color="review">{revisedLabel(source.resultRevisedAt, revisions.now)}</Badge>
-              </span>
-            )}
+            {revisions.unseen
+              .filter((entry) => entry.attemptId === source.id)
+              .map((entry) => (
+                <span key={entry.attemptId} role="status" data-revised-marker>
+                  <Badge color="review">{workflowUnseenLabel(entry, source.resultRevisedAt, revisions.now)}</Badge>
+                </span>
+              ))}
           </p>
         ))}
         {gate.gateWait && (
@@ -581,21 +588,21 @@ function isRevisedError(error: unknown): boolean {
 /**
  * The source revisions this reviewer has looked at (kept per gate for the session), the ones that
  * arrived since, and the revisions a decision records. Opening the review counts as looking at the
- * revisions shown; a later amendment stays unseen until the reviewer marks it reviewed.
+ * sources shown; a later amendment, or a source that was not on screen when it opened, stays unseen
+ * until the reviewer marks it reviewed (the shared rule in workflowReviewSeenState).
  */
 function useSeenRevisions(stream: WorkStream, attempt: WorkflowAttempt, run: WorkflowRunDetail) {
   const current = workflowGateRevisions(run.state, attempt)
   const key = reviewSeenRevisionsKey(stream, attempt)
   const [initial] = useState(() => {
-    const opened = Object.fromEntries(current.map((entry) => [String(entry.attemptId), entry.revision]))
     const stored = readSeenRevisions(key)
-    return { seen: stored ? { ...opened, ...stored } : opened, store: !stored }
+    return { seen: workflowSeenRevisionsAtOpen(current, stored), store: !stored }
   })
   const [seen, setSeen] = useState<Record<string, number>>(initial.seen)
   useEffect(() => {
     if (initial.store) writeSeenRevisions(key, initial.seen)
   }, [initial, key])
-  const unseen = current.filter((entry) => entry.revision > (seen[String(entry.attemptId)] ?? entry.revision))
+  const { unseen, reviewed } = workflowReviewSeenState(current, seen)
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (!unseen.length) return
@@ -604,15 +611,11 @@ function useSeenRevisions(stream: WorkStream, attempt: WorkflowAttempt, run: Wor
     return () => clearInterval(timer)
   }, [unseen.length])
   return {
-    seen,
     unseen,
     now,
-    reviewed: current.map((entry) => ({
-      attemptId: entry.attemptId,
-      revision: seen[String(entry.attemptId)] ?? entry.revision,
-    })),
+    reviewed,
     acknowledge: () => {
-      const next = { ...seen, ...Object.fromEntries(current.map((entry) => [String(entry.attemptId), entry.revision])) }
+      const next = workflowMarkRevisionsSeen(seen, current)
       setSeen(next)
       writeSeenRevisions(key, next)
     },
@@ -675,13 +678,14 @@ function ReviewPaneSwitch({
   )
 }
 
-/** A revision arrived after the reviewer opened the review: decide only after looking at it. */
+/** A revision or a new source arrived after the reviewer opened the review: decide only after looking at it. */
 function RevisionNotice({ revisions }: { revisions: ReviewRevisions }) {
-  if (!revisions.unseen.length) return null
+  const message = workflowReviewUnseenMessage(revisions.unseen)
+  if (!message) return null
   return (
     <div className="space-y-2" data-revision-notice>
       <p id="review-revised-notice" role="status" className="text-sm font-medium text-primary">
-        {WORKFLOW_REVIEW_REVISED_MESSAGE}
+        {message}
       </p>
       <button
         type="button"

@@ -17,8 +17,12 @@ import {
   workflowReworkAttempt,
   workflowAttemptLimitPause,
   workflowGateRevisions,
+  workflowMarkRevisionsSeen,
   workflowResultRevision,
-  workflowRevisedLabel,
+  workflowReviewSeenState,
+  workflowReviewUnseenMessage,
+  workflowSeenRevisionsAtOpen,
+  workflowUnseenLabel,
   WORKFLOW_REVIEW_REVISED_MESSAGE,
   type ResolvedTrackedResource,
   type WorkflowAttemptLimitPause,
@@ -303,12 +307,12 @@ function HumanGate({
   const { can, identity } = usePermissions(stream.squadId)
   const [evidence, setEvidence] = useState('')
   const notesId = useId()
-  // The revisions shown when this review opened count as seen; a later amend must be looked at first.
+  // The sources shown when this review opened count as seen at their revisions then; a later amend,
+  // or a source that was not on screen at opening, must be looked at first (workflowReviewSeenState).
   const current = workflowGateRevisions(run.state, attempt)
-  const [seen, setSeen] = useState<Record<number, number>>(() =>
-    Object.fromEntries(current.map((entry) => [entry.attemptId, entry.revision]))
-  )
-  const unseen = current.filter((entry) => entry.revision > (seen[entry.attemptId] ?? entry.revision))
+  const [seen, setSeen] = useState(() => workflowSeenRevisionsAtOpen(current))
+  const { unseen, reviewed } = workflowReviewSeenState(current, seen)
+  const unseenMessage = workflowReviewUnseenMessage(unseen)
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (!unseen.length) return
@@ -327,10 +331,8 @@ function HumanGate({
           outcome,
           evidence,
           resume: false,
-          reviewedRevisions: current.map((entry) => ({
-            attemptId: entry.attemptId,
-            revision: seen[entry.attemptId] ?? entry.revision,
-          })),
+          // Core refuses the decision unless every current source is named at its current revision.
+          reviewedRevisions: reviewed,
         },
         api.newRequestId()
       ),
@@ -384,19 +386,21 @@ function HumanGate({
             : 'Decision awaiting your choice'}
         </p>
       )}
-      {sources
-        .filter((source) => unseen.some((entry) => entry.attemptId === source.id))
-        .map((source) => (
-          <p key={source.id} role="status" className="g-action-note">
-            {source.stepId} · Attempt {source.id} · Revision {workflowResultRevision(source)} ·{' '}
-            {workflowRevisedLabel(source.resultRevisedAt, now)}
-          </p>
-        ))}
+      {sources.flatMap((source) =>
+        unseen
+          .filter((entry) => entry.attemptId === source.id)
+          .map((entry) => (
+            <p key={source.id} role="status" className="g-action-note">
+              {source.stepId} · Attempt {source.id} · Revision {workflowResultRevision(source)} ·{' '}
+              {workflowUnseenLabel(entry, source.resultRevisedAt, now)}
+            </p>
+          ))
+      )}
       <WorkflowBriefDocuments
         run={run}
         attempt={attempt}
         instructions={step.instructions}
-        seen={unseen.length ? seen : undefined}
+        unseen={unseen}
         inputs={stream.assetAttachments}
       >
         {materials}
@@ -443,15 +447,15 @@ function HumanGate({
           <p id={`${notesId}-hint`} className="g-action-note">
             Required. Your notes are recorded with the decision and passed to the next step.
           </p>
-          {unseen.length > 0 && (
+          {unseenMessage && (
             <div className="g-action-row">
               <p id={`${notesId}-revised`} role="status" className="g-action-note">
-                {WORKFLOW_REVIEW_REVISED_MESSAGE}
+                {unseenMessage}
               </p>
               <button
                 type="button"
                 className="g-button g-button-quiet"
-                onClick={() => setSeen(Object.fromEntries(current.map((entry) => [entry.attemptId, entry.revision])))}
+                onClick={() => setSeen(workflowMarkRevisionsSeen(seen, current))}
               >
                 Mark as reviewed
               </button>
