@@ -1,3 +1,4 @@
+import { eventStreamPreparationSteps } from '../work-streams/event-preparation'
 import {
   parseInboxPushPresentation,
   workStreamRef,
@@ -754,7 +755,7 @@ export async function notifyWorkStreamOwnerOfNewStream(
       requesterContext,
       `Query it with \`ficus workstream get ${workStreamRef(workStream)}\` to see the full details.`,
       workStream.pause && workStream.metadata?.integrationSource && !workStream.agentIds?.length
-        ? `The workflow is paused before any workers start. Review the event and workflow, prepare its workspace if needed with \`ficus workstream update ${workStreamRef(workStream)} --repository <checkout-path>\`, then start it with \`ficus workstream resume ${workStreamRef(workStream)}\`. If no Git workspace is needed, resume after reviewing the task. Do not manually bypass repository setup guards.`
+        ? eventStreamPreparationSteps(workStreamRef(workStream))
         : null,
     ]
       .filter((part): part is string => Boolean(part))
