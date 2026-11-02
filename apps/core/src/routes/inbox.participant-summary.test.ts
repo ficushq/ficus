@@ -7,7 +7,7 @@ import { Agent } from '../entities/Agent'
 import { InboxMessage } from '../entities/InboxMessage'
 import { InboxAttachment } from '../entities/InboxAttachment'
 import { identityMiddleware } from '../middleware/identity'
-import { authzSentinel } from '../middleware/authz-sentinel'
+import { authzSentinel, PRE_AUTHORIZATION_SERVER_ERROR } from '../middleware/authz-sentinel'
 import { eventEmitter } from '../lib/infra/event-emitter'
 import { setupEventBridge } from '../services/ws/bridge'
 import { WebSocketManager } from '../services/ws/manager'
@@ -331,7 +331,7 @@ test('real received/read/all-read producers stay compact through distributed eve
   }
 })
 
-test('mark-read preserves denial, idempotence and the distinct pre-authorization sentinel failure', async () => {
+test('mark-read preserves denial and idempotence and reports a pre-authorization failure as a server error', async () => {
   const row = await insertMessage('user', reader.id)
   const path = `/api/inbox/${row.id}/read`
   const read = (token = reader.token) => app.request(path, { method: 'POST', headers: authHeaders(token) })
@@ -344,7 +344,7 @@ test('mark-read preserves denial, idempotence and the distinct pre-authorization
   )
   const failed = await read()
   expect(failed.status).toBe(500)
-  expect(await failed.json()).toEqual({ error: 'Authorization check missing' })
+  expect(await failed.json()).toEqual({ error: PRE_AUTHORIZATION_SERVER_ERROR })
   find.mockRestore()
   expect((await InboxMessage.find(row.id))?.readAt).toBeNull()
 
