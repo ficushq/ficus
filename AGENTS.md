@@ -41,6 +41,8 @@ bun db:generate      # generates migration SQL from schema diff
 
 **Never write migration SQL files by hand.** Always use `bun db:generate` — it reads the schema and produces correct, timestamped migrations in `apps/core/drizzle/`.
 
+The `Migration numbers` PR check fails when a new migration's number is already on `main` or claimed by an older open, non-draft PR, or when the journal or snapshot `prevId` does not chain from `main`'s latest migration. Fix it by merging `main` and regenerating; see "Migration number check" in `docs/wiki/database.md`.
+
 ### Running migrations
 
 Migrations run automatically on API startup. To run manually:
