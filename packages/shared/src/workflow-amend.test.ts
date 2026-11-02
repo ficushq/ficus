@@ -340,6 +340,33 @@ describe('decisions record the reviewed revision', () => {
     ).toThrow('reviewedRevisions is only for human review decisions')
   })
 
+  test('a decision on a joined gate must name every source: one that omits a source is refused', () => {
+    const def = definition()
+    def.steps[0]!.outcomes = { ready: { parallel: ['left', 'right'], join: 'gate' } }
+    for (const id of ['left', 'right'])
+      def.steps.push(workflowStepSchema.parse({ ...def.steps[0], id, outcomes: { ready: { next: 'gate' } } }))
+    let run = complete(createWorkflowRun(def), 'ready')
+    for (const id of [2, 3])
+      run = advanceWorkflowRun(run, {
+        action: 'complete',
+        expectedVersion: run.version,
+        attemptId: id,
+        outcome: 'ready',
+        evidence: `Branch ${id} evidence.`,
+        decisionBrief: brief,
+      })
+    const both = [
+      { attemptId: 2, revision: 1 },
+      { attemptId: 3, revision: 1 },
+    ]
+    // A screen that never showed source 3 names only source 2; the decision is refused, nothing is decided.
+    expect(() => complete(run, 'yes', { reviewedRevisions: [{ attemptId: 2, revision: 1 }] })).toThrow(
+      WORKFLOW_REVIEW_REVISED_MESSAGE
+    )
+    run = complete(run, 'yes', { reviewedRevisions: both })
+    expect(run.attempts.find((attempt) => attempt.stepId === 'gate')!.reviewedRevisions).toEqual(both)
+  })
+
   test('amend eligibility is shared and explains refusals', () => {
     expect(workflowAmendEligibility(atGate(), 1)).toMatchObject({ ok: true })
     expect(workflowAmendEligibility(complete(atGate(), 'yes'), 1)).toMatchObject({ ok: false })

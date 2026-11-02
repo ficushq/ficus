@@ -2,14 +2,14 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { WorkflowRunDetail } from '@ficus/client-core'
 import {
-  workflowAttemptResults,
-  workflowResultChanges,
+  workflowChangesSinceSeen,
   workflowResultRevision,
   workflowReviewBriefForAttempt,
   workflowHistoricalStep,
   workflowIncomingAttempts,
   type WorkflowAttempt,
   type WorkflowAttemptAttachment,
+  type WorkflowUnseenRevision,
   type WorkStreamAssetAttachment,
 } from '@ficus/shared'
 import { useActionsApi } from './ActionsApiProvider'
@@ -45,7 +45,7 @@ export function WorkflowBriefDocuments({
   instructions,
   inputs = [],
   children,
-  seen,
+  unseen = [],
 }: {
   run: WorkflowRunDetail
   attempt: WorkflowAttempt
@@ -53,8 +53,8 @@ export function WorkflowBriefDocuments({
   /** The work stream's stored inputs (absent from older servers). */
   inputs?: WorkStreamAssetAttachment[]
   children: ReactNode
-  /** The revision of each source the reviewer last saw; newer revisions list what changed. */
-  seen?: Record<number, number>
+  /** Sources revised or added since the reviewer last looked; each lists what changed. */
+  unseen?: WorkflowUnseenRevision[]
 }) {
   const brief = workflowReviewBriefForAttempt(run.state, attempt)
   const sources = [...brief.sources, ...(brief.carriedSources ?? [])]
@@ -148,9 +148,16 @@ export function WorkflowBriefDocuments({
                     Prepared by {workflowHistoricalStep(run.state, source)?.name ?? source.stepId} · Attempt {source.id}
                     {workflowResultRevision(source) > 1 && ` · Revision ${workflowResultRevision(source)}`}
                   </p>
-                  {seen && (seen[source.id] ?? workflowResultRevision(source)) < workflowResultRevision(source) && (
-                    <RevisionChanges run={run} source={source} seenRevision={seen[source.id]!} />
-                  )}
+                  {unseen
+                    .filter((entry) => entry.attemptId === source.id)
+                    .map((entry) => (
+                      <RevisionChanges
+                        key={entry.attemptId}
+                        run={run}
+                        source={source}
+                        seenRevision={entry.seenRevision}
+                      />
+                    ))}
                   {BRIEF_FIELDS.map(([field, label]) =>
                     source.decisionBrief?.value[field] ? (
                       <section key={field}>
@@ -182,7 +189,10 @@ const BRIEF_FIELDS = [
   ['changesSinceLastReview', 'What changed since your last review'],
 ] as const
 
-/** What changed since the revision the reviewer last saw, in plain Farm text. */
+/**
+ * What changed since the revision the reviewer last saw, in plain Farm text. Without `seenRevision`
+ * the source appeared after the review opened: all of it is new, and its files are listed as added.
+ */
 function RevisionChanges({
   run,
   source,
@@ -190,35 +200,35 @@ function RevisionChanges({
 }: {
   run: WorkflowRunDetail
   source: WorkflowAttempt
-  seenRevision: number
+  seenRevision?: number
 }) {
   const files = [
     ...(run.attachments?.[String(source.id)] ?? []),
     ...(run.earlierAttachments?.[String(source.id)] ?? []),
   ]
-  const results = workflowAttemptResults(source, files)
-  const before = results.find((result) => result.revision === seenRevision) ?? results[0]!
-  const changes = workflowResultChanges(
-    before,
-    results.at(-1)!,
-    Object.fromEntries(files.map((file) => [file.id, file]))
-  )
+  const { before, changes } = workflowChangesSinceSeen(source, files, seenRevision)
   const label = (field: string) => BRIEF_FIELDS.find(([key]) => key === field)?.[1] ?? field
   const names = (list: WorkflowAttemptAttachment[]) => list.map((file) => file.filename).join(', ')
   const { added, removed, changed } = changes.attachments
   return (
     <section aria-label="What changed since you last looked" className="g-material">
       <p className="g-material-head">What changed since you last looked</p>
-      {changes.briefFields.map(({ field, before: old, after: now }) => (
-        <section key={field}>
-          <h5 className="g-material-head">{label(field)}</h5>
-          <p className="g-action-note">Before</p>
-          <ActionText>{old ?? 'Not included'}</ActionText>
-          <p className="g-action-note">Now</p>
-          <ActionText>{now ?? 'Not included'}</ActionText>
-        </section>
-      ))}
-      {changes.evidenceChanged && <p className="g-action-note">The internal handoff changed.</p>}
+      {!before && (
+        <p className="g-action-note">
+          New since you opened this review. You have not seen this work yet; its brief, handoff and files are new.
+        </p>
+      )}
+      {before &&
+        changes.briefFields.map(({ field, before: old, after: now }) => (
+          <section key={field}>
+            <h5 className="g-material-head">{label(field)}</h5>
+            <p className="g-action-note">Before</p>
+            <ActionText>{old ?? 'Not included'}</ActionText>
+            <p className="g-action-note">Now</p>
+            <ActionText>{now ?? 'Not included'}</ActionText>
+          </section>
+        ))}
+      {before && changes.evidenceChanged && <p className="g-action-note">The internal handoff changed.</p>}
       {added.length > 0 && <p className="g-action-note">Added: {names(added)}</p>}
       {removed.length > 0 && <p className="g-action-note">Removed: {names(removed)}</p>}
       {changed.length > 0 && <p className="g-action-note">Changed: {names(changed.map((entry) => entry.after))}</p>}

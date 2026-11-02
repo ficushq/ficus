@@ -205,6 +205,108 @@ export function workflowDecisionRevisionNote(run: WorkflowRun, gate: WorkflowAtt
   return `${verb} ${parts.join(' and ')}`
 }
 
+/**
+ * What a reviewer has looked at on one review screen: for each source attempt ID (as a string key),
+ * the result revision they last saw. A source with no entry has never been seen.
+ */
+export type WorkflowSeenRevisions = Record<string, number>
+
+/** A source revision the reviewer has not looked at yet. */
+export interface WorkflowUnseenRevision extends WorkflowReviewedRevision {
+  /** The revision they last saw; absent when the source started feeding the gate after the review opened. */
+  seenRevision?: number
+}
+
+/** The marker for a source that started feeding the gate after the review opened. */
+export const WORKFLOW_REVIEW_SOURCE_ADDED_LABEL = 'New since you opened'
+
+/** The notice when the only unseen work is sources added after the review opened. */
+export const WORKFLOW_REVIEW_SOURCE_ADDED_MESSAGE = 'New work was added since you opened it. Review it before deciding.'
+
+/**
+ * What a review screen counts as seen when it opens: every source present then, at its revision
+ * then. `stored` is what this reviewer saw on an earlier opening of the same gate (for example kept
+ * for the browser session) and wins, so reopening compares against what they last looked at.
+ */
+export function workflowSeenRevisionsAtOpen(
+  current: WorkflowReviewedRevision[],
+  stored?: WorkflowSeenRevisions | null
+): WorkflowSeenRevisions {
+  return { ...workflowMarkRevisionsSeen({}, current), ...(stored ?? {}) }
+}
+
+/** The seen revisions after the reviewer marks every current source as reviewed. */
+export function workflowMarkRevisionsSeen(
+  seen: WorkflowSeenRevisions,
+  current: WorkflowReviewedRevision[]
+): WorkflowSeenRevisions {
+  return { ...seen, ...Object.fromEntries(current.map((entry) => [String(entry.attemptId), entry.revision])) }
+}
+
+/**
+ * Which current sources the reviewer has not looked at, and what a decision names. A source is unseen
+ * when it was revised after they saw it, or when it was not on screen when the review opened (for
+ * example a source that started feeding the gate later): it shows the revised or new marker and
+ * blocks deciding until marked reviewed. A decision names each source at the revision the reviewer
+ * saw and leaves out sources they never saw, so Core refuses it with
+ * {@link WORKFLOW_REVIEW_REVISED_MESSAGE} until every current source is seen at its current revision.
+ */
+export function workflowReviewSeenState(
+  current: WorkflowReviewedRevision[],
+  seen: WorkflowSeenRevisions
+): { unseen: WorkflowUnseenRevision[]; reviewed: WorkflowReviewedRevision[] } {
+  const unseen: WorkflowUnseenRevision[] = []
+  const reviewed: WorkflowReviewedRevision[] = []
+  for (const { attemptId, revision } of current) {
+    const seenRevision = seen[String(attemptId)]
+    if (seenRevision === undefined) {
+      unseen.push({ attemptId, revision })
+      continue
+    }
+    reviewed.push({ attemptId, revision: seenRevision })
+    if (revision > seenRevision) unseen.push({ attemptId, revision, seenRevision })
+  }
+  return { unseen, reviewed }
+}
+
+/** The notice above the decision while work is unseen, or null when everything has been looked at. */
+export function workflowReviewUnseenMessage(unseen: WorkflowUnseenRevision[]): string | null {
+  if (!unseen.length) return null
+  return unseen.every((entry) => entry.seenRevision === undefined)
+    ? WORKFLOW_REVIEW_SOURCE_ADDED_MESSAGE
+    : WORKFLOW_REVIEW_REVISED_MESSAGE
+}
+
+/** The marker on an unseen source: new since the review opened, or when it was revised. */
+export function workflowUnseenLabel(
+  entry: WorkflowUnseenRevision,
+  recordedAt: string | undefined,
+  now: number
+): string {
+  return entry.seenRevision === undefined ? WORKFLOW_REVIEW_SOURCE_ADDED_LABEL : workflowRevisedLabel(recordedAt, now)
+}
+
+/**
+ * What changed in one source since the reviewer last saw it. `seenRevision` absent means they never
+ * saw it: `before` is absent and everything in the latest revision counts as added.
+ */
+export function workflowChangesSinceSeen(
+  attempt: WorkflowAttempt,
+  rows: WorkflowAttemptAttachment[],
+  seenRevision: number | undefined
+): { before?: WorkflowResultRevision; after: WorkflowResultRevision; changes: WorkflowResultChanges } {
+  const results = workflowAttemptResults(attempt, rows)
+  const after = results.at(-1)!
+  const before =
+    seenRevision === undefined ? undefined : (results.find((result) => result.revision === seenRevision) ?? results[0]!)
+  const files = Object.fromEntries(rows.map((row) => [row.id, row]))
+  return {
+    ...(before ? { before } : {}),
+    after,
+    changes: workflowResultChanges(before ?? { attachmentIds: [] }, after, files),
+  }
+}
+
 /** "Revised just now", "Revised 2 min ago", "Revised 3 h ago", else the date: the review screens' marker. */
 export function workflowRevisedLabel(recordedAt: string | undefined, now: number): string {
   if (!recordedAt) return 'Revised'

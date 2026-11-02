@@ -271,6 +271,97 @@ describe('WorkflowDecision · human-approval gate', () => {
     )
   })
 
+  /** The gate run with a second agent source, attempt 3 (a joined branch with a brief and a file). */
+  const joined = (version = 7) => {
+    const run = workflowRun('gate', { version, openWaits: [gateWait] })
+    run.state.attempts.splice(1, 0, {
+      id: 3,
+      stepId: 'build',
+      status: 'completed',
+      outcome: 'done',
+      evidence: 'Mulched the second bed',
+      decisionBrief: { value: workflowReviewBriefFixture, submittedVersion: version, contexts: [] },
+    })
+    const gate = run.state.attempts.find((attempt) => attempt.id === 2)!
+    gate.sourceAttemptIds = [1, 3]
+    gate.reviewBrief = { kind: 'authored', sourceAttemptIds: [3] }
+    run.attachments = {
+      '3': [
+        {
+          id: 'f3',
+          attemptId: 3,
+          filename: 'beds.md',
+          path: 'docs/beds.md',
+          contentType: 'text/markdown',
+          byteSize: 10,
+          createdAt: '2026-10-08T09:00:00.000Z',
+        },
+      ],
+    }
+    return run
+  }
+
+  it('treats every source present at opening as seen and names each in the decision', async () => {
+    const api = fakeApi({
+      workflowRun: () => Promise.resolve(joined()),
+      getWorkStream: () => Promise.resolve(stream({ openWaits: [gateWait] })),
+      advanceWorkflow: () => Promise.resolve({ version: 8, stateStatus: 'running' as const, activeAttemptId: null }),
+    })
+    const { container } = await render(<WorkflowDecision workStreamId="ws-1" focusWaitId="gate-wait" />, api)
+    expect(container.textContent).not.toContain('New since you opened')
+    expect(container.textContent).not.toContain('What changed since you last looked')
+    expect(hasButton(container, 'Mark as reviewed')).toBe(false)
+    await typeInto(byLabel(container, 'Decision notes'), 'Tasted both beds')
+    await click(button(container, 'Approved'))
+    expect(api.advanceWorkflow).toHaveBeenCalledWith(
+      'ws-1',
+      expect.objectContaining({
+        reviewedRevisions: [
+          { attemptId: 1, revision: 1 },
+          { attemptId: 3, revision: 1 },
+        ],
+      }),
+      'request-1'
+    )
+  })
+
+  it('marks a source that starts feeding the gate after opening as new and decides only after it is reviewed', async () => {
+    const api = fakeApi({
+      workflowRun: () => Promise.resolve(workflowRun('gate', { openWaits: [gateWait] })),
+      getWorkStream: () => Promise.resolve(stream({ openWaits: [gateWait] })),
+      advanceWorkflow: () => Promise.resolve({ version: 9, stateStatus: 'running' as const, activeAttemptId: null }),
+    })
+    const { container, queryClient } = await render(
+      <WorkflowDecision workStreamId="ws-1" focusWaitId="gate-wait" />,
+      api
+    )
+    await act(async () => queryClient.setQueryData(queryKeys.workflows.run('ws-1'), joined(8)))
+    await settle()
+    expect(container.textContent).toContain('build · Attempt 3 · Revision 1 · New since you opened')
+    expect(container.textContent).not.toContain('Attempt 1 · Revision 1 · ')
+    expect(container.textContent).toContain('New work was added since you opened it. Review it before deciding.')
+    const changes = container.querySelector('[aria-label="What changed since you last looked"]')!
+    expect(changes.textContent).toContain('New since you opened this review.')
+    expect(changes.textContent).toContain('Added: beds.md')
+    await typeInto(byLabel(container, 'Decision notes'), 'Tasted both beds')
+    expect(button(container, 'Approved').disabled).toBe(true)
+    await click(button(container, 'Mark as reviewed'))
+    expect(container.textContent).not.toContain('New since you opened')
+    expect(button(container, 'Approved').disabled).toBe(false)
+    await click(button(container, 'Approved'))
+    expect(api.advanceWorkflow).toHaveBeenCalledWith(
+      'ws-1',
+      expect.objectContaining({
+        expectedVersion: 8,
+        reviewedRevisions: [
+          { attemptId: 1, revision: 1 },
+          { attemptId: 3, revision: 1 },
+        ],
+      }),
+      'request-1'
+    )
+  })
+
   it('waits for other open waits on the step first', async () => {
     const other = wait({ id: 'q', type: 'question', flowAttemptId: 2 })
     const api = fakeApi({

@@ -336,6 +336,74 @@ test('a decision on a stale revision is refused with nothing decided; the latest
   expect(gate.reviewedRevisions).toEqual([{ attemptId: 1, revision: 2 }])
 })
 
+test('a decision on a joined gate that omits a source is refused with nothing decided; naming every source succeeds', async () => {
+  const joined = workflowDefinitionSchema.parse({
+    ...definition,
+    steps: [
+      { ...definition.steps[0], outcomes: { completed: { parallel: ['left', 'right'], join: 'approval' } } },
+      ...['left', 'right'].map((id) => ({ ...definition.steps[0], id, outcomes: { completed: { next: 'approval' } } })),
+      definition.steps[1],
+    ],
+  })
+  const [stream] = await db.insert(workStreams).values({ squadId, title: prefix, status: 'active' }).returning()
+  streamId = stream!.id
+  streams.push(streamId)
+  await db.transaction(async (tx) => {
+    await attachFlow(tx, stream!, { kind: 'inline', definition: joined })
+  })
+  for (const attemptId of [1, 2, 3]) {
+    // The branches start when attempt 1 completes; bind each attempt to the worker before completing it.
+    const run = await getFlow(streamId)
+    await db
+      .update(workStreamFlowRuns)
+      .set({ attemptAgents: { ...run!.attemptAgents, [String(attemptId)]: bound.agentId } })
+      .where(eq(workStreamFlowRuns.workStreamId, streamId))
+    const response = await advance(bound.token, {
+      action: 'complete',
+      expectedVersion: await version(),
+      attemptId,
+      outcome: 'completed',
+      evidence: `Branch ${attemptId} evidence.`,
+      ...(attemptId > 1 ? { decisionBrief: brief } : {}),
+    })
+    expect(response.status).toBe(200)
+  }
+  const before = await getFlow(streamId)
+  const gate = before!.state.attempts.find((attempt) => attempt.stepId === 'approval')!
+  expect(gate).toMatchObject({ status: 'running', sourceAttemptIds: [2, 3] })
+  const waits = await openWaits()
+
+  // A screen that never showed source 3 names only source 2.
+  const omitted = await advance(admin.token, {
+    action: 'complete',
+    expectedVersion: before!.version,
+    attemptId: gate.id,
+    outcome: 'approved',
+    evidence: '',
+    reviewedRevisions: [{ attemptId: 2, revision: 1 }],
+  })
+  expect(omitted.status).toBe(409)
+  expect(await omitted.json()).toEqual({ error: WORKFLOW_REVIEW_REVISED_MESSAGE, code: 'WORKFLOW_REVIEW_REVISED' })
+  expect((await getFlow(streamId))!.state).toEqual(before!.state)
+  expect(await openWaits()).toEqual(waits)
+
+  const both = [
+    { attemptId: 2, revision: 1 },
+    { attemptId: 3, revision: 1 },
+  ]
+  const decided = await advance(admin.token, {
+    action: 'complete',
+    expectedVersion: before!.version,
+    attemptId: gate.id,
+    outcome: 'approved',
+    evidence: '',
+    reviewedRevisions: both,
+  })
+  expect(decided.status).toBe(200)
+  const settled = (await getFlow(streamId))!.state.attempts.find((attempt) => attempt.id === gate.id)!
+  expect(settled).toMatchObject({ status: 'completed', reviewedRevisions: both })
+})
+
 test('a decision that names no revisions still works on a gate whose work was never amended', async () => {
   await atGate()
   const response = await advance(admin.token, {
