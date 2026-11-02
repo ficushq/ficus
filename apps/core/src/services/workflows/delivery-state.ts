@@ -19,6 +19,7 @@ import {
   type WorkflowRun,
   type IntegrationOutputFact,
   type CodeHostDeliveryReason,
+  type CodeHostReference,
   type WorkStreamDeliveryExplanation,
   type WorkStreamDeliveryGateFacts,
   type WorkStreamDeliveryPresentation,
@@ -58,6 +59,45 @@ export async function externalDeliveryStreamIds(store: DbHandle, streams: Array<
 }
 
 export type DeliveryEvent = IntegrationOutputFact & { integration: string; connectionId?: string; observedAt?: string }
+
+/** Provider occurrence time of one piece of delivery evidence. */
+export const deliveryEventTime = (event: DeliveryEvent) => Date.parse(event.occurredAt)
+
+/** When the evidence last spoke for its pull request: a native snapshot clock can be newer than the event. */
+export function deliveryEvidenceTime(event: DeliveryEvent): number {
+  const updated = typeof event.data.snapshotAt === 'string' ? Date.parse(event.data.snapshotAt) : NaN
+  return Number.isFinite(updated) ? Math.max(deliveryEventTime(event), updated) : deliveryEventTime(event)
+}
+
+/** The head commit an event reports for its pull request, when it carries one. */
+export const deliveryEventHead = (event: IntegrationOutputFact) =>
+  (event.data.pullRequest as { headSha?: string } | undefined)?.headSha
+
+/** Evidence for exactly this change request (integration, connection, repository, number), newest first. */
+export function deliveryEventsForReference(reference: CodeHostReference, events: DeliveryEvent[]): DeliveryEvent[] {
+  return events
+    .filter((event) => {
+      const pr = event.data.pullRequest as { number?: number } | undefined
+      return (
+        event.integration === reference.integration &&
+        (!reference.connectionId || event.connectionId === reference.connectionId) &&
+        event.data.repository === reference.repository.toLowerCase() &&
+        pr?.number === reference.changeRequest!.number &&
+        Number.isFinite(Date.parse(event.occurredAt))
+      )
+    })
+    .sort((a, b) => deliveryEvidenceTime(b) - deliveryEvidenceTime(a))
+}
+
+/**
+ * The pull request's current head: the newest non-CI evidence naming one. Late CI on an old
+ * commit cannot change the head. Undefined when no well-formed head has been observed.
+ */
+export function deliveryCurrentHead(matching: DeliveryEvent[]): { snapshot: DeliveryEvent; head: string } | undefined {
+  const snapshot = matching.find((event) => event.output !== 'pull_request.ci_completed' && deliveryEventHead(event))
+  const head = snapshot && deliveryEventHead(snapshot)
+  return snapshot && head && /^[a-f0-9]{40}$/.test(head) ? { snapshot, head } : undefined
+}
 
 /** Internal classification: the published kind plus the evidence that produced it. */
 type ObservedPullRequest = { repository: string; number: number; state: 'open' | 'merged' | 'closed' }
@@ -110,24 +150,10 @@ function classifyPrimaryDeliveryPresentation(
       },
     }
   const reference = codeHostingRegistry.resolve(metadata)!.reference
-  const time = (event: DeliveryEvent) => Date.parse(event.occurredAt)
-  const snapshotTime = (event: DeliveryEvent) => {
-    const updated = typeof event.data.snapshotAt === 'string' ? Date.parse(event.data.snapshotAt) : NaN
-    return Number.isFinite(updated) ? Math.max(time(event), updated) : time(event)
-  }
-  const matching = events
-    .filter((event) => {
-      const pr = event.data.pullRequest as { number?: number } | undefined
-      return (
-        event.integration === reference.integration &&
-        (!reference.connectionId || event.connectionId === reference.connectionId) &&
-        event.data.repository === reference.repository.toLowerCase() &&
-        pr?.number === reference.changeRequest!.number &&
-        Number.isFinite(Date.parse(event.occurredAt))
-      )
-    })
-    .sort((a, b) => snapshotTime(b) - snapshotTime(a))
-  const head = (event: IntegrationOutputFact) => (event.data.pullRequest as { headSha?: string } | undefined)?.headSha
+  const time = deliveryEventTime
+  const snapshotTime = deliveryEvidenceTime
+  const matching = deliveryEventsForReference(reference, events)
+  const head = deliveryEventHead
   /**
    * Last-observed provider gate facts for the current snapshot, when it carries any. Live check events that
    * are still pending outrank the snapshot's rollup; `snapshotCurrent: false` drops the snapshot's own
@@ -173,9 +199,10 @@ function classifyPrimaryDeliveryPresentation(
   }
   // Late CI on an old commit cannot change the PR's head. Reviews may also be
   // delivered out of order, hence the provider occurrence timestamp ordering.
-  const snapshot = matching.find((event) => event.output !== 'pull_request.ci_completed' && head(event))
-  const currentHead = snapshot && head(snapshot)
-  if (!currentHead || !/^[a-f0-9]{40}$/.test(currentHead)) {
+  const observedHead = deliveryCurrentHead(matching)
+  const snapshot = observedHead?.snapshot
+  const currentHead = observedHead?.head
+  if (!currentHead) {
     return { kind: matching[0]?.data.state === 'failure' ? 'failure' : 'external' }
   }
   if (
@@ -437,13 +464,28 @@ function explainPresentation(
   return Object.keys(explanation).length ? { kind, explanation } : { kind }
 }
 
-/** Batched local reads only: serialization never performs provider requests. */
-export async function loadDeliveryPresentations(store: DbHandle, ids: string[]) {
-  const result = new Map<string, WorkStreamDeliveryPresentation>()
-  if (!ids.length) return result
+/** One completion-ready flow with the local delivery evidence routed to it. */
+export interface DeliveryEvidence {
+  id: string
+  squadId: string
+  /** The flow version the evidence was read at; a wake is bound to it. */
+  version: number
+  state: WorkflowRun
+  metadata: unknown
+  policies: { allowAutoMerge?: boolean }
+  events: DeliveryEvent[]
+}
+
+/**
+ * Batched local reads only: routed delivery events plus the presentation-only
+ * snapshot cache, for activated completion-ready flows. Never a provider request.
+ */
+export async function loadDeliveryEvidence(store: DbHandle, ids: string[]): Promise<DeliveryEvidence[]> {
+  if (!ids.length) return []
   const runs = await store
     .select({
       id: workStreamFlowRuns.workStreamId,
+      version: workStreamFlowRuns.version,
       state: workStreamFlowRuns.state,
       metadata: workStreams.metadata,
       squadMetadata: squads.metadata,
@@ -454,7 +496,7 @@ export async function loadDeliveryPresentations(store: DbHandle, ids: string[]) 
     .innerJoin(squads, eq(squads.id, workStreams.squadId))
     .where(and(inArray(workStreamFlowRuns.workStreamId, ids), eq(workStreamFlowRuns.activated, true)))
   const candidates = runs.filter((run) => run.state.status === 'completion-ready')
-  if (!candidates.length) return result
+  if (!candidates.length) return []
   const rows = await store
     .select({
       id: integrationOutputDeliveries.workStreamId,
@@ -500,17 +542,30 @@ export async function loadDeliveryPresentations(store: DbHandle, ids: string[]) 
     const snapshot = readGitHubDeliverySnapshot(cursor, now, true)
     return snapshot ? [snapshot] : []
   })
-  for (const run of candidates) {
-    const evidence = [
+  return candidates.map((run) => ({
+    id: run.id,
+    squadId: run.squadId,
+    version: run.version,
+    state: run.state,
+    metadata: run.metadata,
+    policies: {
+      allowAutoMerge:
+        (run.squadMetadata as { policies?: { allowAutoMerge?: boolean } } | null)?.policies?.allowAutoMerge === true,
+    },
+    events: [
       ...(byStream.get(run.id) ?? []),
       ...snapshots
         .filter((snapshot) => snapshot.squadId === run.squadId)
         .map((snapshot) => deliverySnapshotEvent(snapshot, now)),
-    ]
-    const presentation = classifyDeliveryPresentation(run.state, run.metadata, evidence, {
-      allowAutoMerge:
-        (run.squadMetadata as { policies?: { allowAutoMerge?: boolean } } | null)?.policies?.allowAutoMerge === true,
-    })
+    ],
+  }))
+}
+
+/** Batched local reads only: serialization never performs provider requests. */
+export async function loadDeliveryPresentations(store: DbHandle, ids: string[]) {
+  const result = new Map<string, WorkStreamDeliveryPresentation>()
+  for (const run of await loadDeliveryEvidence(store, ids)) {
+    const presentation = classifyDeliveryPresentation(run.state, run.metadata, run.events, run.policies)
     if (presentation) result.set(run.id, presentation)
   }
   return result

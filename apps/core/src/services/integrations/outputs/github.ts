@@ -292,6 +292,11 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
           ? { pullRequestState: native.merged === true ? 'merged' : String(native.state ?? 'unknown') }
           : {}),
         ...(typeof native?.draft === 'boolean' ? { draft: native.draft } : {}),
+        // Whether native auto-merge is enabled on the pull request as of this payload's head.
+        // Present only when the payload carries the pull request object (not issue comments or CI).
+        ...(native && !output.startsWith('issue.') && 'auto_merge' in native
+          ? { autoMerge: !!native.auto_merge && typeof native.auto_merge === 'object' }
+          : {}),
         ...(output === 'pull_request.reviewed' && typeof item!.commit_id === 'string'
           ? { reviewedHeadSha: item!.commit_id }
           : {}),

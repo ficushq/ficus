@@ -824,8 +824,9 @@ Stored statuses are deliberately small:
 
 Everything richer is a typed OPEN WAIT record plus a derived display state
 (`ws list`/`ws get` show it): `in_progress` (live execution), `in_review`,
-`waiting_on_answer`, `waiting_on_dependency`, `blocked` (open manual wait),
-and `idle` (active with no execution and no wait — the alarming one). Legacy
+`waiting_on_answer`, `waiting_on_dependency` (an open dependency wait on another
+stream), `awaiting_delivery` (completion-ready and waiting on its own delivery
+pull request at the code host), `blocked` (open manual wait), and `idle` (active with no execution and no wait — the alarming one). Legacy
 status filters (`pending`, `in_progress`, `blocked`, `review`) still map for
 one release with a deprecation note.
 

@@ -1199,6 +1199,10 @@ export async function isCurrentFlowMessage(message: { id?: string; metadata: unk
     const { isCurrentIntegrationDelivery } = await import('../integrations/outputs/runtime')
     return isCurrentIntegrationDelivery(db, metadata.integrationDeliveryId, message.recipientId, message.id)
   }
+  if (metadata?.source === 'delivery-readiness') {
+    const { isCurrentDeliveryReadinessMessage } = await import('./delivery-readiness')
+    return isCurrentDeliveryReadinessMessage(message)
+  }
   if (metadata?.source === 'work-stream-resume' && metadata.workStreamId) {
     const stream = await WorkStream.find(metadata.workStreamId)
     return !!stream && stream.status === 'active' && !stream.pause

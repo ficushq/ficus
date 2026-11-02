@@ -1302,6 +1302,14 @@ export type WorkStreamDerivedState =
   | 'in_review'
   | 'waiting_on_answer'
   | 'waiting_on_dependency'
+  /**
+   * A completion-ready flow waiting on its own delivery pull request at the
+   * code host (CI, merge readiness, automatic merge, or the merge Ficus has not
+   * observed yet). Nothing here is a dependency on another stream. Always
+   * served with the typed `delivery` fact (kind `external`); presentation
+   * selects `delivery_external`, so older clients keep their delivery label.
+   */
+  | 'awaiting_delivery'
   | 'blocked'
   | 'idle'
   /**
