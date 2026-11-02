@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { eventPredicateField, eventPredicateFields, linearOutputCatalog } from './event-predicate-catalog'
+import {
+  eventPredicateField,
+  eventPredicateFields,
+  linearOutputCatalog,
+  githubOutputCatalog,
+} from './event-predicate-catalog'
 
 describe('linear output catalog', () => {
   const expectedOutputs: Record<string, string> = {
@@ -74,4 +79,18 @@ describe('linear output catalog', () => {
       expect(assigned.fields[path]).toBeDefined()
     }
   })
+})
+
+test('PR author predicate fields are exposed only for GitHub PR events', () => {
+  for (const event of githubOutputCatalog) {
+    const author = eventPredicateField(event, 'pullRequest.author')
+    const authorType = eventPredicateField(event, 'pullRequest.authorType')
+    if (event.output.startsWith('pull_request.')) {
+      expect(author).toMatchObject({ type: 'string', normalize: 'lowercase' })
+      expect(authorType).toMatchObject({ type: 'string' })
+    } else {
+      expect(author).toBeUndefined()
+      expect(authorType).toBeUndefined()
+    }
+  }
 })

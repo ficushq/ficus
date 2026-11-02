@@ -1,3 +1,4 @@
+import { githubPullRequestAuthorFields } from './pull-request-author'
 import { z } from 'zod'
 import type { IntegrationOutputFact } from '@ficus/shared'
 import { DEPENDABOT_ACTIONS } from './dependabot-output'
@@ -9,7 +10,7 @@ const id = z
 const nativeId = z.int().positive().safe()
 const repository = z.string().regex(/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/)
 const sha = z.string().regex(/^[0-9a-f]{40,64}$/)
-const pr = z.strictObject({ number: nativeId, headSha: sha.optional() })
+const pr = z.strictObject({ number: nativeId, headSha: sha.optional(), ...githubPullRequestAuthorFields })
 const base = { repository, repositoryId: nativeId, projection: z.literal('status') }
 const lifecycle = z.strictObject({
   ...base,
