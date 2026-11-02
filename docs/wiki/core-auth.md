@@ -46,6 +46,15 @@ Passkey sessions store only the token hash in the database and expire after 30 d
 
 **Settings → Account** manages profile information and passkeys. **Sessions** lists browser sessions for revocation, and **Paired Devices** manages mobile and CLI credentials. Registration after initial bootstrap follows the instance's invitation and allowed-domain policy.
 
+### Passkey attestation
+
+Ficus requests attestation `none` and never uses attestation results (the authenticator's make and model). Every passkey registration (first-admin registration, registration and recovery links, **Settings → Account** and enrollment codes) goes through `verifyRegResponse` in `services/auth/webauthn.ts`. It accepts only two attestation statements:
+
+- `none` with an empty statement. Browsers normally return this when attestation `none` is requested: Chromium, Safari and Firefox replace an authenticator's certificate-based attestation with it. Platform passkeys and password managers such as iCloud Keychain and Google Password Manager send it themselves.
+- `packed` self-attestation (`alg` and `sig`, no `x5c`). The credential key signs its own registration, and Chromium passes it through because it identifies nothing.
+
+A statement with an `x5c` certificate chain, or any other format (`fido-u2f`, `android-key`, `android-safetynet`, `tpm`, `apple`), is refused before the WebAuthn library processes the response. Ficus does not request or use those certificates, so refusing them removes certificate-chain processing from registration. The refusal is an ordinary failed ceremony: the route answers `401 Verification failed`, nothing is stored, the challenge is spent, and Core logs the reason under `webauthn`. Full signature, challenge, origin and RP ID verification still runs for accepted statements.
+
 ## Device pairing & device tokens
 
 The mobile app authenticates with a **per-device bearer token** (prefix `ficus_dev_`) rather than the shared password. Tokens are minted via a short-lived pairing handshake, stored hashed, resolve to the pairing user's identity, and are individually revocable — so losing a phone never means rotating the shared password.

@@ -46,8 +46,26 @@ mock.module('@simplewebauthn/server', () => ({
 }))
 
 // ── Import service under test (after mocks) ───────────────────────────────────
-const { generateRegOptions, verifyRegResponse, generateAuthOptions, verifyAuthResponse, cleanupExpiredChallenges } =
-  await import('./webauthn')
+const {
+  generateRegOptions,
+  verifyRegResponse,
+  generateAuthOptions,
+  verifyAuthResponse,
+  cleanupExpiredChallenges,
+  unsupportedAttestationReason,
+} = await import('./webauthn')
+const { syntheticRegistrationResponse, ATTESTATIONS_WITH_CERTIFICATE_CHAINS } =
+  await import('../../test-utils/webauthn-registration')
+
+/** A registration response the mocked library would accept, with the given attestation. */
+function registration(attestation: Parameters<typeof syntheticRegistrationResponse>[0]['attestation'] = 'none') {
+  return syntheticRegistrationResponse({
+    challenge: 'mock-reg-challenge',
+    origin: 'http://localhost',
+    rpId: 'localhost',
+    attestation,
+  })
+}
 
 // ── Minimal User stub ─────────────────────────────────────────────────────────
 function makeUser(overrides: Partial<{ id: string; email: string; displayName: string | null }> = {}) {
@@ -79,7 +97,7 @@ describe('generateRegOptions', () => {
     await generateRegOptions(user as any)
     // If challenge was stored, verifyRegResponse should not throw "Challenge expired"
     // (it will call the mocked verifyRegistrationResponse)
-    const result = await verifyRegResponse(user as any, { id: 'resp', type: 'public-key' })
+    const result = await verifyRegResponse(user as any, registration())
     expect(result.verified).toBe(true)
   })
 
@@ -100,21 +118,71 @@ describe('verifyRegResponse', () => {
   it('throws when no challenge is found', async () => {
     const user = makeUser({ id: 'no-challenge-user' })
     // Do NOT call generateRegOptions first — no challenge stored
-    await expect(verifyRegResponse(user as any, {})).rejects.toThrow('Challenge expired or not found')
+    await expect(verifyRegResponse(user as any, registration())).rejects.toThrow('Challenge expired or not found')
   })
 
   it('returns verification result', async () => {
     const user = makeUser({ id: 'verify-reg-user' })
     await generateRegOptions(user as any)
-    const result = await verifyRegResponse(user as any, {})
+    const result = await verifyRegResponse(user as any, registration())
     expect(result.verified).toBe(true)
   })
 
   it('challenge is single-use — second call throws', async () => {
     const user = makeUser({ id: 'single-use-reg' })
     await generateRegOptions(user as any)
-    await verifyRegResponse(user as any, {})
-    await expect(verifyRegResponse(user as any, {})).rejects.toThrow('Challenge expired or not found')
+    await verifyRegResponse(user as any, registration())
+    await expect(verifyRegResponse(user as any, registration())).rejects.toThrow('Challenge expired or not found')
+  })
+
+  it.each(['none', 'packed-self'] as const)('passes %s attestation on to full verification', async (attestation) => {
+    const user = makeUser({ id: `accepted-${attestation}` })
+    await generateRegOptions(user as any)
+    const result = await verifyRegResponse(user as any, registration(attestation))
+    expect(result.verified).toBe(true)
+    expect(mockVerifyRegistrationResponse).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([...ATTESTATIONS_WITH_CERTIFICATE_CHAINS, 'android-safetynet'] as const)(
+    'refuses %s attestation as a failed registration without running full verification',
+    async (attestation) => {
+      const user = makeUser({ id: `refused-${attestation}` })
+      await generateRegOptions(user as any)
+      const result = await verifyRegResponse(user as any, registration(attestation))
+      expect(result).toEqual({ verified: false })
+      expect(mockVerifyRegistrationResponse).not.toHaveBeenCalled()
+      // The refusal is a spent ceremony like any other failure.
+      await expect(verifyRegResponse(user as any, registration())).rejects.toThrow('Challenge expired or not found')
+    }
+  )
+
+  it('refuses a response with a missing or malformed attestation object', async () => {
+    for (const response of [
+      {},
+      { response: {} },
+      { response: { attestationObject: 'not-cbor' } },
+      { response: { attestationObject: 42 } },
+    ]) {
+      const user = makeUser({ id: 'refused-malformed' })
+      await generateRegOptions(user as any)
+      expect(await verifyRegResponse(user as any, response)).toEqual({ verified: false })
+    }
+    expect(mockVerifyRegistrationResponse).not.toHaveBeenCalled()
+  })
+})
+
+describe('unsupportedAttestationReason', () => {
+  it('accepts none and packed self-attestation', () => {
+    expect(unsupportedAttestationReason(registration('none'))).toBeNull()
+    expect(unsupportedAttestationReason(registration('packed-self'))).toBeNull()
+  })
+
+  it('names the unsupported format or certificate chain', () => {
+    expect(unsupportedAttestationReason(registration('apple'))).toBe('unsupported attestation format "apple"')
+    expect(unsupportedAttestationReason(registration('packed-x5c'))).toBe(
+      'attestation certificate chain in packed attestation'
+    )
+    expect(unsupportedAttestationReason(null)).toBe('missing attestation object')
   })
 })
 

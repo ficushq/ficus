@@ -5,11 +5,15 @@ import {
   verifyAuthenticationResponse,
   type VerifiedRegistrationResponse,
 } from '@simplewebauthn/server'
+import { decodeAttestationObject, isoBase64URL } from '@simplewebauthn/server/helpers'
 import { db } from '../../db'
 import { userCredentials, webauthnChallenges } from '../../db/schema'
 import { eq, and, gt, lt } from 'drizzle-orm'
 import { User } from '../../entities/User'
 import { rpOriginForRequest, rpOriginForStepUp } from './web-origins'
+import { createLogger } from '../../lib/infra/logger'
+
+const log = createLogger('webauthn')
 
 /** Authentication-ceremony options. `stepUp` marks a re-confirmation of an already signed-in person. */
 export interface CeremonyOptions {
@@ -99,6 +103,54 @@ export async function generateRegOptions(user: User, requestOrigin?: string | nu
   return options
 }
 
+/**
+ * Attestation formats a registration may use. Ficus requests attestation "none"
+ * (the generateRegistrationOptions default) and never reads attestation results,
+ * so it accepts only statements that carry no certificate chain:
+ *
+ * - `none` with an empty statement: what browsers normally return when
+ *   attestation "none" is requested. Chromium, Safari and Firefox replace an
+ *   authenticator's certificate-based attestation with it, and platform passkeys
+ *   and password managers (iCloud Keychain, Google Password Manager) send it
+ *   themselves.
+ * - `packed` self-attestation (`alg` and `sig`, no `x5c`): the credential key
+ *   signs its own registration. Chromium passes this through unchanged because
+ *   it identifies nothing.
+ *
+ * Every other format (`fido-u2f`, `android-key`, `android-safetynet`, `tpm`,
+ * `apple`) and any statement with an `x5c` certificate chain only occur when an
+ * authenticator attests to its make and model, which Ficus neither asks for nor
+ * uses. Refusing them keeps certificate-chain processing out of registration.
+ */
+const ACCEPTED_ATTESTATION_FORMATS: ReadonlySet<string> = new Set(['none', 'packed'])
+
+/**
+ * Why a registration response's attestation is refused, or null when it is
+ * acceptable. Decodes `response.response.attestationObject` exactly as the
+ * library does (same base64url and CBOR decoders), and fails closed: anything
+ * missing or malformed is refused.
+ */
+export function unsupportedAttestationReason(response: unknown): string | null {
+  const encoded = (response as { response?: { attestationObject?: unknown } } | null)?.response?.attestationObject
+  if (typeof encoded !== 'string' || !encoded) return 'missing attestation object'
+  let fmt: unknown
+  let attStmt: unknown
+  try {
+    const decoded = decodeAttestationObject(isoBase64URL.toBuffer(encoded))
+    if (!(decoded instanceof Map)) return 'malformed attestation object'
+    fmt = decoded.get('fmt')
+    attStmt = decoded.get('attStmt')
+  } catch {
+    return 'malformed attestation object'
+  }
+  if (typeof fmt !== 'string' || !ACCEPTED_ATTESTATION_FORMATS.has(fmt)) {
+    return `unsupported attestation format ${JSON.stringify(String(fmt)).slice(0, 40)}`
+  }
+  if (!(attStmt instanceof Map)) return 'malformed attestation statement'
+  if (attStmt.has('x5c')) return `attestation certificate chain in ${fmt} attestation`
+  return null
+}
+
 export async function verifyRegResponse(
   user: User,
   response: any,
@@ -107,6 +159,15 @@ export async function verifyRegResponse(
   const { rpId, origin } = rpConfigFor(requestOrigin)
   const expectedChallenge = await getAndDeleteChallenge(`reg:${user.id}`)
   if (!expectedChallenge) throw new Error('Challenge expired or not found')
+
+  // Checked before the library sees the response, so nothing in an unused
+  // attestation statement is ever processed. A refusal is an ordinary failed
+  // ceremony: every registration route answers it with "Verification failed".
+  const refusal = unsupportedAttestationReason(response)
+  if (refusal) {
+    log.warn(`Passkey registration for user ${user.id} refused: ${refusal}`)
+    return { verified: false }
+  }
 
   return verifyRegistrationResponse({
     response,

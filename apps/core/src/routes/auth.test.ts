@@ -1657,6 +1657,44 @@ describe('GET /api/auth/me/credentials', () => {
   })
 })
 
+describe('POST /api/auth/me/credentials/verify attestation policy', () => {
+  afterEach(() => cleanupTestRbac('cred-attestation'))
+
+  async function addPasskey(attestation: 'none' | 'android-key') {
+    const { syntheticRegistrationResponse } = await import('../test-utils/webauthn-registration')
+    const user = await createTestUser({ prefix: 'cred-attestation' })
+    const app = buildApp()
+    const optionsRes = await app.request('/api/auth/me/credentials/options', {
+      method: 'POST',
+      headers: bearerHeader(user.token),
+    })
+    expect(optionsRes.status).toBe(200)
+    const { options } = await optionsRes.json()
+    const { origin, rpId } = webauthn.rpConfigFor()
+    const response = syntheticRegistrationResponse({ challenge: options.challenge, origin, rpId, attestation })
+    const res = await app.request('/api/auth/me/credentials/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...bearerHeader(user.token) },
+      body: JSON.stringify({ response, displayName: 'Synthetic key' }),
+    })
+    const stored = await db.select().from(userCredentials).where(eq(userCredentials.userId, user.id))
+    return { res, stored }
+  }
+
+  it('adds a passkey whose attestation is none', async () => {
+    const { res, stored } = await addPasskey('none')
+    expect(res.status).toBe(200)
+    expect(stored).toHaveLength(1)
+  })
+
+  it('answers an attestation certificate chain with the normal verification failure and stores nothing', async () => {
+    const { res, stored } = await addPasskey('android-key')
+    expect(res.status).toBe(401)
+    expect(await res.json()).toEqual({ error: 'Verification failed' })
+    expect(stored).toHaveLength(0)
+  })
+})
+
 describe('PATCH /api/auth/me/credentials/:id', () => {
   let cleanup: (() => Promise<void>) | undefined
 
