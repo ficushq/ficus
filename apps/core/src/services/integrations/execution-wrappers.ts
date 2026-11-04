@@ -13,9 +13,8 @@ export const MONITOR_CREDENTIALS_NOTICE_MARKER = 'credentialsNotice'
 /** The line a wrapper adds to a monitor's log the first time it runs there without credentials. */
 export function monitorCredentialsNotice(binary: string): string {
   return (
-    `[Ficus] ${binary} ran without Ficus integration credentials: monitor commands never receive your agent ` +
-    `credentials, so ${binary} is unauthenticated here and its calls may be failing (check whether this command ` +
-    `hides their errors). Poll it from a foreground squad_bash command instead.`
+    `[Ficus] ${binary} ran without Ficus integration credentials in this monitor, so its calls are ` +
+    `unauthenticated and may be failing (check whether this command hides their errors).`
   )
 }
 
@@ -68,10 +67,10 @@ if [ -z "$__ficus_wrapper_real_binary" ]; then
 fi
 if [ -z "\${FICUS_TOKEN:-}" ]; then
   printf '%s\\n' ${quote(`Ficus integration credentials are only available to agents; running ${binary} without Ficus credentials.`)} >&2
-  # Monitor commands never receive the agent's credentials, and a polling loop
-  # often discards stderr, so the notice above can vanish while the command
-  # fails forever. Record it once in the monitor's own log, which reaches the
-  # owning agent whatever the command does with stderr.
+  # A monitor's command normally runs with its own read-only token. If that
+  # token is missing, a polling loop that discards stderr would hide the notice
+  # above and fail forever, so record it once in the monitor's own log, which
+  # reaches the owning agent whatever the command does with stderr.
   if [ -n "\${FICUS_MONITOR_DIR:-}" ] && [ -d "$FICUS_MONITOR_DIR/logs" ] &&
     (set -C; : > "$FICUS_MONITOR_DIR/${MONITOR_CREDENTIALS_NOTICE_MARKER}") 2>/dev/null; then
     printf '%s\\n' ${quote(monitorCredentialsNotice(binary))} >> "$FICUS_MONITOR_DIR/logs/current.log" 2>/dev/null || :

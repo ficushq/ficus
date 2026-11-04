@@ -3,6 +3,7 @@ import { db } from '../../db'
 import { agentExtraScopes, agents, agentTypes, roleAssignments, roles, users } from '../../db/schema'
 import { eq, and, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm'
 import { isLiveAgentStatus, permissionMatches } from '@ficus/shared'
+import { narrowToMonitorPermissions } from '../auth/monitor-tokens'
 
 export { permissionMatches }
 
@@ -18,6 +19,8 @@ export interface AgentIdentity {
   agentId: string
   squadId: string | null // null for squad-less agents (system-managers)
   userId?: string // system-manager — resolve via the owning user
+  /** Authenticated with a read-only monitor token (services/auth/monitor-tokens.ts). */
+  monitorId?: string
 }
 
 export interface LegacyIdentity {
@@ -222,6 +225,16 @@ async function resolveUserPermissions(
 }
 
 async function resolveAgentPermissions(
+  identity: AgentIdentity,
+  squadId?: string,
+  executor: Pick<typeof db, 'select'> = db
+): Promise<string[]> {
+  const permissions = await resolveAgentAuthorityPermissions(identity, squadId, executor)
+  // A monitor token holds only the agent's reads plus integration use.
+  return identity.monitorId ? narrowToMonitorPermissions(permissions) : permissions
+}
+
+async function resolveAgentAuthorityPermissions(
   identity: AgentIdentity,
   squadId?: string,
   executor: Pick<typeof db, 'select'> = db
@@ -525,6 +538,8 @@ export async function hasAnySlotCleanupPermission(
   squadId: string
 ): Promise<boolean> {
   if (identity.type !== 'agent') return hasAnyPermission(identity, permissions, squadId)
+  // Slot cleanup releases claims: a write a read-only monitor token never makes.
+  if (identity.monitorId) return false
   const authority = await resolveAgentAuthority(identity.agentId, true)
   if (!authority || authority.squadId !== identity.squadId || authority.squadId !== squadId) return false
 

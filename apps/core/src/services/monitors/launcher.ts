@@ -61,6 +61,29 @@ const TIMESTAMP = `date -u '+%Y-%m-%dT%H:%M:%SZ'`
 export const MONITOR_TIMEOUT_EXIT_CODE = 124
 /** Marker file the in-sandbox watchdog writes when the deadline passes. */
 export const MONITOR_TIMED_OUT_FILE = 'timedOut'
+/**
+ * Out-of-band exec env var that carries the monitor's read-only token to the
+ * launch command, which writes it to {@link MONITOR_TOKEN_FILE} and unsets it
+ * BEFORE tmux runs: a tmux server this command happens to start would
+ * otherwise hand it to every later session.
+ */
+export const MONITOR_TOKEN_ENV = 'FICUS_MONITOR_TOKEN'
+/** Owner-only file in the monitor's work dir holding its current token. */
+export const MONITOR_TOKEN_FILE = 'token'
+
+/**
+ * Launcher lines, run in the command's own subshell, that give the command the
+ * same Ficus identity shape as an agent's foreground shell: the monitor's
+ * read-only token, the Core URL and the squad. Neither the launcher nor its
+ * watchdog holds the token. FICUS_AGENT_CONTEXT makes the CLI use only these
+ * (never a human login on the box).
+ */
+const COMMAND_IDENTITY =
+  `if [ -s "$FICUS_MONITOR_DIR/${MONITOR_TOKEN_FILE}" ]; then ` +
+  `FICUS_TOKEN=$(cat "$FICUS_MONITOR_DIR/${MONITOR_TOKEN_FILE}") && export FICUS_TOKEN FICUS_AGENT_CONTEXT=1; fi; ` +
+  '[ -z "${FICUS_MONITOR_API_URL:-}" ] || export FICUS_API_URL="$FICUS_MONITOR_API_URL"; ' +
+  '[ -z "${FICUS_MONITOR_SQUAD_ID:-}" ] || export FICUS_SQUAD_ID="$FICUS_MONITOR_SQUAD_ID"'
+
 /** Seconds between SIGTERM and SIGKILL when the watchdog stops a command. */
 export const MONITOR_KILL_GRACE_SECONDS = 5
 /** Longest single watchdog sleep, so a suspended box notices its deadline soon after it resumes. */
@@ -164,7 +187,7 @@ trap "trap '' HUP INT TERM; stop_watchdog; stop_job; exit 129" HUP INT TERM
 # Run directory setup inside the captured pipeline too: a failed cd is a normal
 # command failure, with diagnostics and exitCode, not unexplained process loss.
 set -m
-( set +m; ( cd "$FICUS_MONITOR_CWD" && ${runWithLaunchPath('FICUS_MONITOR_COMMAND')} ) 2>&1 | tee -a "$FICUS_MONITOR_DIR/logs/current.log"; exit "\${PIPESTATUS[0]}" ) </dev/null &
+( set +m; ( ${COMMAND_IDENTITY}; cd "$FICUS_MONITOR_CWD" && ${runWithLaunchPath('FICUS_MONITOR_COMMAND')} ) 2>&1 | tee -a "$FICUS_MONITOR_DIR/logs/current.log"; exit "\${PIPESTATUS[0]}" ) </dev/null &
 job=$!
 kill -0 -- -"$job" 2>/dev/null && job_group=1
 if [ -n "$deadline" ]; then
@@ -215,6 +238,20 @@ export const MONITOR_PROBE_TIMED_OUT = '__MONITOR_TIMED_OUT__'
 export const MONITOR_LOG_SIZE_MARKER = '__FICUS_MONITOR_LOG_SIZE__='
 
 /**
+ * Launch-command lines that store this launch's token (or none) from
+ * {@link MONITOR_TOKEN_ENV} in an owner-only {@link MONITOR_TOKEN_FILE},
+ * replacing any earlier launch's, then drop it from the environment before
+ * anything else (tmux above all) can inherit it.
+ */
+export function monitorTokenFileCommand(dir: string): string {
+  const tokenFile = shellQuote(`${dir}/${MONITOR_TOKEN_FILE}`)
+  return [
+    `(umask 077; rm -f ${tokenFile}; if [ -n "\${${MONITOR_TOKEN_ENV}:-}" ]; then printf '%s' "$${MONITOR_TOKEN_ENV}" > ${tokenFile}; fi)`,
+    `unset ${MONITOR_TOKEN_ENV}`,
+  ].join('\n')
+}
+
+/**
  * The box command that (re)launches a monitor: writes {@link LAUNCHER_SCRIPT},
  * records the caller's PATH and starts the session with the pinned tmux on the
  * Ficus socket (see sandbox/tmux.ts), in the monitor's OWN box — a private
@@ -240,6 +277,7 @@ export function monitorLaunchCommand(args: {
   return [
     'set -e',
     `mkdir -p ${shellQuote(`${dir}/logs`)}`,
+    monitorTokenFileCommand(dir),
     `cat > ${shellQuote(script)} <<'EOF'\n${LAUNCHER_SCRIPT}EOF`,
     `chmod +x ${shellQuote(script)}`,
     // The tmux session gets the tmux server's PATH, not ours (see launch-path.ts).

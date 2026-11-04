@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, isNull, lt, or } from 'drizzle-orm'
 import { db } from '../db'
-import { agents, monitors } from '../db/schema'
+import { agentTokens, agents, monitors } from '../db/schema'
 import { BaseEntity } from './base'
 
 export type MonitorRow = typeof monitors.$inferSelect
@@ -217,6 +217,20 @@ export class Monitor extends BaseEntity<any, UpdateMonitorInput> implements Moni
       failureKind: failureKind ?? null,
       nextRestartAt: null,
     })
+    await this.revokeTokens()
+  }
+
+  /**
+   * Revoke every token minted for this monitor's command. Called when the
+   * monitor ends and before each relaunch mints a replacement. (A token for an
+   * ended monitor is also refused at authentication, so this cannot be the
+   * only control that fails.)
+   */
+  async revokeTokens(): Promise<void> {
+    await db
+      .update(agentTokens)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(agentTokens.monitorId, this.id), isNull(agentTokens.revokedAt)))
   }
 
   toJson(): any {
