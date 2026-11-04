@@ -4797,8 +4797,8 @@ export const slotNotifications = pgTable(
     poolId: uuid('pool_id')
       .notNull()
       .references(() => slotPools.id, { onDelete: 'restrict' }),
-    // granted/expired notices concern a claim; pool_disabled notices concern
-    // the queued waiter that disabling the pool canceled.
+    // granted, expired and expiring notices concern a claim; pool_disabled
+    // notices concern the queued waiter that disabling the pool canceled.
     claimId: uuid('claim_id').references(() => slotClaims.id, { onDelete: 'restrict' }),
     waiterId: uuid('waiter_id').references(() => slotWaiters.id, { onDelete: 'restrict' }),
     recipientAgentId: uuid('recipient_agent_id').notNull(),

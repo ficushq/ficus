@@ -8,7 +8,7 @@ import { queueSlotExpiryWarnings, slotNotificationNotifier } from './notificatio
 import { expireAndPromoteLocked, settleInactiveClaimNotifications, type PromotionResult } from './store'
 
 const log = createLogger('slot-reconciliation')
-const SLOT_RECONCILIATION_INTERVAL_MS = 30_000
+export const SLOT_RECONCILIATION_INTERVAL_MS = 30_000
 let runner: PeriodicRunner | null = null
 
 interface PoolReconciliationResult {

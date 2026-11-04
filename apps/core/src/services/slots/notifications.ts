@@ -9,9 +9,13 @@ const log = createLogger('slot-notifier')
 const MAX_NOTIFICATION_CLAIM_LIMIT = 100
 const DELIVERY_LEASE_MS = 60_000
 // Holders are warned this long before a claim expires, or a quarter of the
-// pool's claim timeout when that is shorter (a 1 hour pool warns at 10
-// minutes, a 1 minute pool at 15 seconds).
-const SLOT_EXPIRY_WARNING_MAX_LEAD_MS = 10 * 60_000
+// pool's claim timeout when that is shorter, but never less than the minimum
+// lead: the warning is queued by the 30 second slot reconciliation sweep, so a
+// window shorter than the sweep interval could fall between two sweeps and be
+// missed. A 1 hour pool warns at 10 minutes, a 4 minute pool at 1 minute, and
+// a 1 minute pool at 45 seconds.
+export const SLOT_EXPIRY_WARNING_MAX_LEAD_MS = 10 * 60_000
+export const SLOT_EXPIRY_WARNING_MIN_LEAD_MS = 45_000
 const SLOT_EXPIRY_WARNING_TIMEOUT_DIVISOR = 4
 
 export interface SlotNotificationClaim {
@@ -54,7 +58,10 @@ export async function queueSlotExpiryWarnings(): Promise<number> {
     WHERE claim.status = 'active'
       AND claim.expires_at > clock_timestamp()
       AND claim.expires_at <= clock_timestamp() + make_interval(
-        secs => LEAST(${SLOT_EXPIRY_WARNING_MAX_LEAD_MS}, pool.claim_timeout_ms / ${SLOT_EXPIRY_WARNING_TIMEOUT_DIVISOR}) / 1000.0
+        secs => GREATEST(
+          ${SLOT_EXPIRY_WARNING_MIN_LEAD_MS},
+          LEAST(${SLOT_EXPIRY_WARNING_MAX_LEAD_MS}, pool.claim_timeout_ms / ${SLOT_EXPIRY_WARNING_TIMEOUT_DIVISOR})
+        ) / 1000.0
       )
     ON CONFLICT (idempotency_key) DO NOTHING
     RETURNING id

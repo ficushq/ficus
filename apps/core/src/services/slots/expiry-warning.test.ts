@@ -2,8 +2,13 @@ import { afterAll, afterEach, beforeAll, expect, test } from 'bun:test'
 import { and, eq, inArray } from 'drizzle-orm'
 import { agents, db, executions, inbox, slotClaims, slotNotifications, slotPools, slotWaiters, squads } from '../../db'
 import { Squad } from '../../entities/Squad'
-import { queueSlotExpiryWarnings, renderSlotNotification, SlotNotificationNotifier } from './notifications'
-import { reconcileSlotsOnce } from './reconciliation'
+import {
+  queueSlotExpiryWarnings,
+  renderSlotNotification,
+  SLOT_EXPIRY_WARNING_MIN_LEAD_MS,
+  SlotNotificationNotifier,
+} from './notifications'
+import { reconcileSlotsOnce, SLOT_RECONCILIATION_INTERVAL_MS } from './reconciliation'
 import { claimSlot, registerPool, releaseSlot, renewSlot, setSlotPromptDrainEnabledForTest } from './store'
 
 beforeAll(() => setSlotPromptDrainEnabledForTest(false))
@@ -93,6 +98,20 @@ test('a short claim timeout is warned at a quarter of the timeout', async () => 
   expect(await warnings(claimId)).toHaveLength(0)
 
   await expireIn(claimId, 50_000)
+  await queueSlotExpiryWarnings()
+  expect(await warnings(claimId)).toHaveLength(1)
+})
+
+test('the shortest pool is warned earlier than one sweep interval before expiry', async () => {
+  // A window shorter than the sweep interval could fall between two sweeps.
+  expect(SLOT_EXPIRY_WARNING_MIN_LEAD_MS).toBeGreaterThan(SLOT_RECONCILIATION_INTERVAL_MS)
+  const { claimId } = await createHeldClaim(MINUTE)
+
+  await expireIn(claimId, 50_000)
+  await queueSlotExpiryWarnings()
+  expect(await warnings(claimId)).toHaveLength(0)
+
+  await expireIn(claimId, 40_000)
   await queueSlotExpiryWarnings()
   expect(await warnings(claimId)).toHaveLength(1)
 })
