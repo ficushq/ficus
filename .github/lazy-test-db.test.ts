@@ -263,7 +263,8 @@ test('cold schema setup longer than the default timeout stays outside dynamic-im
     })
     expect(result.code).toBe(0)
     expect(result.signal).toBeUndefined()
-    expect(result.output).toContain('15 pass')
+    // Any nonzero pass count: a hardcoded total breaks whenever that file gains a test.
+    expect(result.output).toMatch(/^ [1-9]\d* pass$/m)
     expect(result.output).toContain('0 fail')
     expect(result.output).not.toContain('timed out')
     expect(result.commands.split('\n').filter((line) => line === 'bunx')).toHaveLength(1)
