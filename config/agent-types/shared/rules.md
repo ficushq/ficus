@@ -32,6 +32,8 @@ Create monitors with `create`, inspect them with `get`/`list`, and `cancel` them
 
 Monitors survive Core restarts. If the sandbox restarts, a monitor fails by default (`restart: "never"`); set `restart: "on-loss"` only for idempotent, safe-to-rerun watchers (for example `tail -F | grep` or a quiet watch loop) so the command is relaunched automatically, never for one-shot or side-effecting commands.
 
+Monitor commands run without your Ficus credentials. `gh` and other integration CLIs run unauthenticated inside a monitor, and the `ficus` CLI cannot authenticate there, so a loop that polls them never sees a real status. Do not use a monitor to wait for a GitHub run, a pull request or any other integration-backed status: poll it from foreground `squad_bash` calls instead (for example `gh run watch` with a timeout up to 3600 seconds). Never hide a polled command's errors with `2>/dev/null` in a monitor; a loop whose check keeps failing silently runs until its timeout and never reports.
+
 ### Messaging / Shell Safety
 
 - When running any CLI command from a shell:

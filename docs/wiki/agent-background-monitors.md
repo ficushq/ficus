@@ -64,6 +64,41 @@ For example, watch a log in the squad workspace:
 The target sandbox is saved at creation. Restarts, Core recovery, logs and
 cancellation all use that same target.
 
+### Credentials: monitors run without them
+
+Monitor commands do not receive the owning agent's Ficus credentials. Agent
+`bash` and `squad_bash` inject a per-agent `FICUS_TOKEN` into each foreground
+command only for that command's lifetime; integration wrappers such as `gh`
+exchange it for provider credentials on each call. A monitor has no such token,
+so inside a monitor:
+
+- `gh` and other integration CLIs run unauthenticated (for a private
+  repository, `gh api` exits 4 with "To get started with GitHub CLI, please
+  run: gh auth login");
+- the `ficus` CLI cannot authenticate.
+
+To wait for a GitHub run, a pull request or any other integration-backed
+status, poll it from foreground `squad_bash` calls (for example `gh run watch`
+with a timeout up to 3,600 seconds), not from a monitor. Never hide a polled
+command's errors with `2>/dev/null` in a monitor: a check that keeps failing
+silently never prints its completion line, so the monitor runs, correctly
+reported as running, until its deadline.
+
+As a safety net, the first time an integration wrapper runs inside a monitor
+without credentials it appends one line to the monitor's own log, starting
+`[Ficus] gh ran without Ficus integration credentials`, whatever the command
+does with stderr. That line reaches the owner as a normal monitor batch. The
+marker file `credentialsNotice` in the monitor's work directory keeps it to
+one line per monitor, including across relaunches.
+
+Why monitors do not receive the token: it is a bearer credential for the whole
+agent. A foreground command holds it for at most an hour and only while the
+agent is running. A monitor would hold it for up to 24 hours in a detached
+session that outlives the agent's turn and Core restarts, readable by every
+process of the same box user (on a squad box, every agent in the squad), and
+would have to be re-minted or would fail when dormancy revokes the agent's
+tokens. That widens exposure, so monitors stay credential-free.
+
 ## Defaults and caps
 
 - Default timeout: 30 minutes; maximum: 24 hours.
