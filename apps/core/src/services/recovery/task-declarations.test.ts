@@ -13,6 +13,7 @@ import * as factory from '../sandbox/factory'
 import * as workspace from '../squad/workspace'
 import { SandboxClient, type BashResponse } from '../sandbox/client/http-client'
 import type { WorkStream } from '../../entities/WorkStream'
+import type { SandboxPathClient } from '../squad/workspace-settings'
 
 const prefix = `declarations-${crypto.randomUUID()}`
 let dir: string
@@ -174,7 +175,7 @@ function localDeclarationClient() {
       return read(input)
     },
     // The command uses absolute paths only, so the box's working directory is not needed here.
-    bash: ({ command }: { command: string }) => {
+    bash: ({ command }: { command: string }): ReturnType<SandboxPathClient['bash']> => {
       const listeners: Record<string, Array<(arg?: unknown) => void>> = {}
       const emitter = {
         on(event: string, listener: (arg?: never) => void) {
@@ -188,7 +189,7 @@ function localDeclarationClient() {
         for (const listener of listeners.data ?? []) listener(data)
         for (const listener of listeners.end ?? []) listener()
       })
-      return emitter
+      return emitter as ReturnType<SandboxPathClient['bash']>
     },
   }
 }
