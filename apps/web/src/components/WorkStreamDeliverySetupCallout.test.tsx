@@ -1,5 +1,8 @@
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { PermissionsProvider } from '../hooks/usePermissions'
+import { queries } from '../queryOptions'
 import type { WorkStreamDeliveryExplanation } from '@ficus/shared'
 import { WorkStreamDeliverySetupCallout } from './WorkStreamDeliverySetupCallout'
 
@@ -9,6 +12,7 @@ function setupStream(explanation?: WorkStreamDeliveryExplanation, overrides: Par
   return {
     id: '0f4f27b2-9c2e-4a33-8a44-64ab1ff54d16',
     number: 234,
+    squadId: 'squad-1',
     status: 'active',
     // The server's legacy derived vocabulary maps delivery_setup onto 'blocked'.
     derivedState: 'blocked',
@@ -134,20 +138,38 @@ test('a bound but untracked flow explains the GitHub-UI merge path', () => {
   expect(html).toContain('Merge the pull request via the GitHub UI, then finish delivery')
 })
 
-test('an already-merged pull request says so and shows how to finish instead of asking for a merge', () => {
-  const html = renderToStaticMarkup(
-    <WorkStreamDeliverySetupCallout
-      stream={setupStream({
-        setupReason: 'not-following-changes',
-        codeHostReason: 'merged',
-        pullRequests: [{ number: 56, state: 'merged' }],
-      })}
-    />
-  )
+test('an already-merged pull request offers the Check delivery action instead of a merge or a CLI command', () => {
+  const stream = setupStream({
+    setupReason: 'not-following-changes',
+    codeHostReason: 'merged',
+    pullRequests: [{ number: 56, state: 'merged' }],
+  })
+  const render = (permissions: string[]) => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(queries.workflows.run(stream.id).queryKey, { version: 4 } as never)
+    return renderToStaticMarkup(
+      <QueryClientProvider client={queryClient}>
+        <PermissionsProvider
+          usePermissions={() => ({
+            permissions,
+            can: (requested) => permissions.includes(requested),
+            isLoading: false,
+            isError: false,
+          })}
+        >
+          <WorkStreamDeliverySetupCallout stream={stream} />
+        </PermissionsProvider>
+      </QueryClientProvider>
+    )
+  }
+  const html = render(['workstreams:update'])
   expect(html).toContain('The delivery pull request is already merged')
-  expect(html).toContain('Finish delivery from this work stream')
-  expect(html).toContain('ficus workstream finish 234 --version')
+  expect(html).toContain('Check delivery to finish this work stream')
+  expect(html).toContain('>Check delivery</button>')
+  expect(html).not.toContain('ficus workstream')
   expect(html).not.toContain('Merge the pull request via the GitHub UI')
+  // Without permission to finish, the explanation stays but no action is offered.
+  expect(render([])).not.toContain('</button>')
 })
 
 test('direct-merge facts and tracked multi-PR setups render without breaking', () => {
