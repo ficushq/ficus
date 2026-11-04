@@ -118,6 +118,19 @@ describe('LocalDeploymentsPanel', () => {
     const pathMount = renderPanel([localDeployment()])
     expect(pathMount).not.toContain('Set app alias')
   })
+
+  test('lists running apps above stopped ones in the Active section', () => {
+    const html = renderPanel([
+      localDeployment({ id: 'docmost', name: 'docmost', status: 'stopped' }),
+      localDeployment({ id: 'supervisor', name: 'everynoise-supervisor', status: 'stopped' }),
+      localDeployment({ id: 'preview', name: 'chlea-core-demo-preview', status: 'running' }),
+    ])
+
+    const running = html.indexOf('chlea-core-demo-preview')
+    expect(running).toBeGreaterThan(-1)
+    expect(running).toBeLessThan(html.indexOf('docmost'))
+    expect(html.indexOf('docmost')).toBeLessThan(html.indexOf('everynoise-supervisor'))
+  })
 })
 
 describe('alias host helpers', () => {
