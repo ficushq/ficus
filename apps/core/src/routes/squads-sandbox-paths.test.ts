@@ -1,19 +1,47 @@
 import { requestBodyLimits } from '../middleware/request-body-limits'
 import { describe, it, expect, beforeAll, afterAll, mock } from 'bun:test'
 import { Hono } from 'hono'
+import { existsSync } from 'fs'
+import { tmpdir } from 'os'
 
 // Every sandbox-backed squad (VM, Kubernetes) proxies workspace reads and writes through this
 // client. Record each path it is asked to touch so the test can prove none escape the mount.
 let uploadWasStream = false
 const touched: string[] = []
-const downloads: Array<{ path: string; range?: string; archive?: boolean }> = []
+const downloads: Array<{ path: string; range?: string; archive?: boolean; exclude?: string[] }> = []
 // Per-test overrides for the streaming download transport.
 let statOverride: { exists: boolean; size: number; isDirectory: boolean } | undefined
 let downloadImpl: ((request: { path: string; range?: string }) => Promise<unknown>) | undefined
+let listOverride: Array<{ path: string; isDirectory: boolean; size: number }> | undefined
+let archiveImpl: ((request: { path: string; exclude?: string[] }) => Promise<unknown>) | undefined
+// Box commands run in a real local bash unless a test answers them itself.
+const bashCommands: string[] = []
+let bashImpl: ((command: string) => { stdout: string; exitCode: number }) | undefined
+function runBash(command: string): { stdout: string; exitCode: number } {
+  const result = Bun.spawnSync(['bash', '-c', command])
+  return { stdout: result.stdout.toString(), exitCode: result.exitCode ?? 1 }
+}
 const fakeClient = {
+  bash: ({ command }: { command: string }) => {
+    bashCommands.push(command)
+    const listeners: Record<string, Array<(arg?: unknown) => void>> = {}
+    const stream = {
+      on(event: string, listener: (arg?: never) => void) {
+        ;(listeners[event] ??= []).push(listener as (arg?: unknown) => void)
+        return stream
+      },
+    }
+    queueMicrotask(() => {
+      const { stdout, exitCode } = (bashImpl ?? runBash)(command)
+      for (const listener of listeners.data ?? [])
+        listener({ stdout: Buffer.from(stdout).toString('base64'), exitCode })
+      for (const listener of listeners.end ?? []) listener()
+    })
+    return stream
+  },
   list: async ({ path }: { path: string }) => {
     touched.push(path)
-    return { files: [] }
+    return { files: listOverride ?? [] }
   },
   read: async ({ path }: { path: string }) => {
     touched.push(path)
@@ -29,9 +57,11 @@ const fakeClient = {
     if (downloadImpl) return downloadImpl(request)
     return { status: 200, headers: new Headers({ 'content-length': '6' }), body: new Response('inside').body! }
   },
-  downloadArchive: async ({ path }: { path: string }) => {
+  downloadArchive: async (request: { path: string; exclude?: string[] }) => {
+    const { path } = request
     touched.push(path)
-    downloads.push({ path, archive: true })
+    downloads.push({ path, archive: true, ...(request.exclude ? { exclude: request.exclude } : {}) })
+    if (archiveImpl) return archiveImpl(request)
     return {
       status: 200,
       headers: new Headers({ 'content-type': 'application/gzip' }),
@@ -284,4 +314,158 @@ it('publishes every file when a later part exceeds the former hidden header thre
     ],
   })
   expect(touched.filter((p) => p.endsWith('last.txt'))).toHaveLength(2)
+})
+
+describe('sandbox-backed workspace routes never expose the workspace settings directory', () => {
+  function reset() {
+    touched.length = 0
+    downloads.length = 0
+    bashCommands.length = 0
+    statOverride = undefined
+    downloadImpl = undefined
+    listOverride = undefined
+    archiveImpl = undefined
+    bashImpl = undefined
+  }
+
+  // file and download also accept the box's absolute mount-prefixed spelling; tree never has.
+  const settingsPaths = (route: 'tree' | 'file' | 'download') => [
+    '.ficus',
+    '.ficus/',
+    '.ficus/.env',
+    './.ficus/.env',
+    '/.ficus/.env',
+    '//.ficus///.env',
+    'docs/../.ficus/.env',
+    '.FICUS/.env',
+    '.ficus./.env',
+    '.ficus/monitors/m1/token',
+    ...(route === 'tree' ? [] : [`${mount}/.ficus/.env`, `${mount}//.ficus/monitors`]),
+  ]
+
+  for (const route of ['tree', 'file', 'download'] as const) {
+    it(`${route} answers not found for every spelling of the settings directory without reading it`, async () => {
+      for (const path of settingsPaths(route)) {
+        reset()
+        const res = await get(route, path)
+        expect([path, res.status]).toEqual([path, 404])
+        expect(await res.text()).not.toContain('inside')
+        expect(touched).toEqual([])
+      }
+    })
+
+    it(`${route} answers not found for a link that resolves into the settings directory`, async () => {
+      reset()
+      bashImpl = () => ({ stdout: `${mount}\0${mount}/.ficus/.env\0`, exitCode: 0 })
+      const res = await get(route, 'docs/innocent-link')
+      expect(res.status).toBe(404)
+      expect(touched).toEqual([])
+      expect(bashCommands.length).toBe(1)
+      expect(bashCommands[0]).toContain(`'${mount}/docs/innocent-link'`)
+    })
+
+    it(`${route} refuses a link that resolves outside the workspace`, async () => {
+      reset()
+      bashImpl = () => ({ stdout: `${mount}\0/home/other/secret.txt\0`, exitCode: 0 })
+      const res = await get(route, 'docs/outside-link')
+      expect(res.status).toBe(400)
+      expect(touched).toEqual([])
+    })
+
+    it(`${route} fails closed when the box cannot resolve the path`, async () => {
+      reset()
+      bashImpl = () => ({ stdout: '', exitCode: 3 })
+      const res = await get(route, 'docs/design.md')
+      expect(res.status).toBe(500)
+      expect(touched).toEqual([])
+    })
+  }
+
+  it('tree omits the settings directory from a root listing and keeps nested ones', async () => {
+    reset()
+    listOverride = [
+      { path: '.ficus', isDirectory: true, size: 0 },
+      { path: '.FICUS.', isDirectory: true, size: 0 },
+      { path: 'docs', isDirectory: true, size: 0 },
+      { path: '.env', isDirectory: false, size: 3 },
+      { path: 'readme.md', isDirectory: false, size: 3 },
+    ]
+    const res = await get('tree', '')
+    expect(res.status).toBe(200)
+    const names = ((await res.json()) as { children: Array<{ name: string }> }).children.map((child) => child.name)
+    expect(names).toEqual(['docs', '.env', 'readme.md'])
+
+    reset()
+    listOverride = [{ path: '.ficus', isDirectory: true, size: 0 }]
+    const nested = await get('tree', 'docs')
+    expect(nested.status).toBe(200)
+    expect(touched).toEqual([`${mount}/docs`])
+  })
+
+  it('download asks the box to leave the settings directory out of a root archive', async () => {
+    reset()
+    statOverride = { exists: true, size: 4096, isDirectory: true }
+    archiveImpl = async () => ({
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/gzip', 'x-ficus-archive-excluded': '.ficus' }),
+      body: new Response('tgz-without-settings').body!,
+    })
+    for (const path of ['.', '/', mount]) {
+      downloads.length = 0
+      const res = await get('download', path)
+      expect(res.status).toBe(200)
+      expect(await res.text()).toBe('tgz-without-settings')
+      expect(downloads).toEqual([{ path: mount, archive: true, exclude: ['.ficus'] }])
+    }
+
+    // A subdirectory archive needs no exclusion.
+    downloads.length = 0
+    const sub = await get('download', 'docs')
+    expect(sub.status).toBe(200)
+    expect(downloads).toEqual([{ path: `${mount}/docs`, archive: true }])
+  })
+
+  it('download refuses a root archive from a box that cannot leave the settings directory out', async () => {
+    reset()
+    statOverride = { exists: true, size: 4096, isDirectory: true }
+    const res = await get('download', '.')
+    expect(res.status).toBe(503)
+    const body = await res.text()
+    expect(body).toContain('SANDBOX_BUNDLE_OUTDATED')
+    expect(body).not.toContain('tgz')
+  })
+
+  it('search quotes the query and drops anything under the settings directory', async () => {
+    reset()
+    const marker = `${tmpdir()}/sandbox-search-marker-${Date.now()}`
+    const res = await app.request(
+      `/api/squads/${squadId}/workspace/search?q=${encodeURIComponent(`'; touch ${marker}; echo '`)}`,
+      { headers: authHeaders(token) }
+    )
+    expect(res.status).toBe(200)
+    expect(existsSync(marker)).toBe(false)
+    expect(bashCommands[0]).toContain(`-path '${mount}/.ficus' -prune`)
+
+    reset()
+    bashImpl = () => ({
+      stdout: [
+        `${mount}/.ficus/.env`,
+        `${mount}/.FICUS/x`,
+        `${mount}/docs/.ficus/kept.json`,
+        `${mount}/env.md`,
+        '',
+      ].join('\n'),
+      exitCode: 0,
+    })
+    const filtered = await app.request(`/api/squads/${squadId}/workspace/search?q=env`, { headers: authHeaders(token) })
+    expect(((await filtered.json()) as { files: string[] }).files).toEqual(['docs/.ficus/kept.json', 'env.md'])
+  })
+
+  it('still serves an ordinary file after the settings checks', async () => {
+    reset()
+    const res = await get('file', 'docs/design.md')
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { content: string }).content).toBe('inside')
+    expect(touched).toEqual([`${mount}/docs/design.md`])
+  })
 })

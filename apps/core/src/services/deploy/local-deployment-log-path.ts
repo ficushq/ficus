@@ -1,5 +1,6 @@
 import { posix } from 'path'
 import { resolveWorkspaceLayout } from '../sandbox/workspace-layout'
+import { isWorkspaceSettingsPath } from '../workspace/dot-dir'
 
 export const ATTACHED_LOG_PATH_MAX_LENGTH = 4096
 
@@ -10,6 +11,15 @@ export class LocalDeploymentLogPathOutsideWorkspaceError extends LocalDeployment
 export function shellQuote(value: string | number): string {
   if (typeof value === 'number') return String(value)
   return `'${String(value).replace(/'/g, `'"'"'`)}'`
+}
+
+/**
+ * Refuse a resolved `$r` inside the workspace settings directory (`$w/.ficus`,
+ * any case), which attached logs never read.
+ */
+function refuseSettingsDir(refusal: string): string[] {
+  const dir = '.[Ff][Ii][Cc][Uu][Ss]'
+  return ['case "$r" in', `  "$w"/${dir}|"$w"/${dir}/*) ${refusal} ;;`, 'esac']
 }
 
 /** Resolve missing suffixes on BSD without trusting a lexical symlink prefix. */
@@ -60,6 +70,11 @@ export function normalizeAttachedLogPathInput(raw: string | null | undefined, sq
   if (normalized === workspaceMount || !normalized.startsWith(`${workspaceMount}/`)) {
     throw new LocalDeploymentLogPathOutsideWorkspaceError('Attached log path must stay inside the squad workspace')
   }
+  if (isWorkspaceSettingsPath(workspaceMount, normalized, posix)) {
+    throw new LocalDeploymentLogPathOutsideWorkspaceError(
+      'Attached log path must not be in the workspace settings directory'
+    )
+  }
   return normalized
 }
 
@@ -86,6 +101,7 @@ export function buildResolveAttachedLogPathCommand(workspaceMount: string, logPa
     `  "$w"/*) ;;`,
     `  *) printf 'OUTSIDE\\n'; exit 0 ;;`,
     'esac',
+    ...refuseSettingsDir("printf 'OUTSIDE\\n'; exit 0"),
     "if [ -f \"$r\" ]; then printf 'EXISTS\\n'; else printf 'MISSING\\n'; fi",
     'printf \'%s\\n\' "$r"',
   ].join('\n')
@@ -112,6 +128,7 @@ export function buildStreamAttachedLogCommand(workspaceMount: string, resolvedLo
     `  "$w"/*) ;;`,
     "  *) printf 'attached log path is outside the squad workspace\\n' >&2; exit 3 ;;",
     'esac',
+    ...refuseSettingsDir("printf 'attached log path is outside the squad workspace\\n' >&2; exit 3"),
     `tail -n ${shellQuote(tail)} -F "$r"`,
   ].join('\n')
 }

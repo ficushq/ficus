@@ -12,6 +12,7 @@ import * as path from 'path'
 import { Readable } from 'stream'
 import { TarArchive, ZipArchive } from 'archiver'
 import { downloadDisposition } from '../../services/attachments/http'
+import { isWorkspaceSettingsDirName } from '../../services/workspace/dot-dir'
 import {
   SandboxDownloadRouteMissingError,
   SandboxHttpError,
@@ -22,7 +23,7 @@ export interface SandboxFileClient {
   stat(request: { path: string }): Promise<{ exists?: boolean; size: number; isDirectory: boolean }>
   read(request: { path: string; limit?: number }): Promise<{ content: string; totalSize: number }>
   download(request: { path: string; range?: string; signal?: AbortSignal }): Promise<SandboxDownloadResponse>
-  downloadArchive(request: { path: string; signal?: AbortSignal }): Promise<SandboxDownloadResponse>
+  downloadArchive(request: { path: string; signal?: AbortSignal; exclude?: string[] }): Promise<SandboxDownloadResponse>
 }
 
 /**
@@ -46,6 +47,13 @@ export const DOWNLOAD_LENGTH_HEADER = 'X-Ficus-Content-Length'
 
 /** Set on directory downloads to name the archive format (`tar.gz` or `zip`). */
 export const DOWNLOAD_ARCHIVE_HEADER = 'X-Ficus-Archive'
+
+/**
+ * Set by the sandbox server's `/download` on a directory archive that honored
+ * `exclude`: the comma-separated child names it left out. A box bundle that
+ * predates `exclude` never sets it, which is how Core tells the two apart.
+ */
+export const ARCHIVE_EXCLUDED_HEADER = 'X-Ficus-Archive-Excluded'
 
 export type DownloadArchiveFormat = 'tar.gz' | 'zip'
 
@@ -124,11 +132,17 @@ export function createZipResponse(targetPath: string, defaultName = 'download'):
   return createLocalArchiveResponse(targetPath, defaultName, 'zip')
 }
 
+export interface LocalArchiveOptions {
+  /** Leave the workspace settings directory (a direct child of `targetPath`) out of the archive. */
+  omitSettingsDir?: boolean
+}
+
 /** Stream a local directory as a zip (default) or tar.gz archive. */
 export function createLocalArchiveResponse(
   targetPath: string,
   defaultName: string,
-  format: DownloadArchiveFormat
+  format: DownloadArchiveFormat,
+  options: LocalArchiveOptions = {}
 ): Response {
   const archive =
     format === 'zip'
@@ -138,7 +152,11 @@ export function createLocalArchiveResponse(
 
   // zip keeps its historical flat layout; tar.gz is rooted at the directory
   // name, matching `tar -czf - -C <parent> <name>` on sandbox runtimes.
-  archive.directory(targetPath, format === 'zip' ? false : rootName)
+  // Entry names are relative to targetPath with `/` separators, so the first
+  // segment is the direct child the entry lives under.
+  archive.directory(targetPath, format === 'zip' ? false : rootName, (entry) =>
+    options.omitSettingsDir && isWorkspaceSettingsDirName(entry.name.split('/')[0]) ? false : entry
+  )
   archive.finalize()
 
   // Convert Node.js stream to Web ReadableStream with proper backpressure
@@ -159,6 +177,12 @@ export interface SandboxFileResponseOptions {
   range?: string | null
   /** Aborts the box request (e.g. the client disconnected). */
   signal?: AbortSignal
+  /**
+   * Direct children a directory archive must leave out. The box must confirm
+   * it honored them; a bundle that cannot answers 503 instead of streaming
+   * an archive that still contains them.
+   */
+  excludeFromArchive?: string[]
 }
 
 function outdatedBundleResponse(detail: string): Response {
@@ -202,7 +226,16 @@ export async function createSandboxFileResponse(
   if (stat.isDirectory) {
     let archive: SandboxDownloadResponse
     try {
-      archive = await client.downloadArchive({ path: filePath, signal: options.signal })
+      const exclude = options.excludeFromArchive?.length ? options.excludeFromArchive : undefined
+      archive = await client.downloadArchive({
+        path: filePath,
+        signal: options.signal,
+        ...(exclude ? { exclude } : {}),
+      })
+      if (exclude && !archiveHonoredExclusions(archive.headers, exclude)) {
+        await archive.body.cancel().catch(() => {})
+        return outdatedBundleResponse('this directory archive')
+      }
     } catch (error) {
       if (error instanceof SandboxDownloadRouteMissingError) return outdatedBundleResponse('directory archives')
       if (error instanceof SandboxHttpError && error.status === 404) {
@@ -255,6 +288,11 @@ export async function createSandboxFileResponse(
   return new Response(download.body, { status: download.status, headers })
 }
 
+function archiveHonoredExclusions(headers: Headers, exclude: string[]): boolean {
+  const excluded = new Set((headers.get(ARCHIVE_EXCLUDED_HEADER) ?? '').split(',').filter(Boolean))
+  return exclude.every((name) => excluded.has(name))
+}
+
 /** The pre-`/download` transport: one base64 `/read` of the whole (bounded) file. */
 async function legacyReadResponse(
   client: SandboxFileClient,
@@ -303,7 +341,7 @@ export function createFileResponse(targetPath: string, options: { range?: string
   return new Response(body, { status: range ? 206 : 200, headers })
 }
 
-export interface DownloadResponseOptions {
+export interface DownloadResponseOptions extends LocalArchiveOptions {
   range?: string | null
   /** Directory archive format; zip unless the caller asked for tar.gz. */
   archive?: DownloadArchiveFormat
@@ -321,7 +359,9 @@ export function createDownloadResponse(
   const stat = fs.statSync(targetPath)
 
   if (stat.isDirectory()) {
-    return createLocalArchiveResponse(targetPath, defaultName, options.archive ?? 'zip')
+    return createLocalArchiveResponse(targetPath, defaultName, options.archive ?? 'zip', {
+      omitSettingsDir: options.omitSettingsDir,
+    })
   }
 
   return createFileResponse(targetPath, { range: options.range })

@@ -5,6 +5,7 @@ import { Squad } from '../../entities/Squad'
 import { hasPermission, type Identity } from '../rbac'
 import { getSquadClient } from './client'
 import { isInsideWorkspaceRoot, resolveSquadWorkspaceHostPath } from './workspace'
+import { isWorkspaceSettingsPath, resolveSandboxWorkspaceTarget } from './workspace-settings'
 import { resolveWorkspaceLayout } from '../sandbox/workspace-layout'
 import { WriteService } from '../memory'
 
@@ -40,9 +41,15 @@ export async function readSquadFile(identity: Identity, request: unknown) {
     : input.path
   const remotePath = path.posix.resolve(workspaceMount, relative)
   if (!isInsideWorkspaceRoot(workspaceMount, remotePath)) throw new Error('Path must be inside the squad workspace')
+  // The workspace settings directory is never served; it reads as missing.
+  if (isWorkspaceSettingsPath(workspaceMount, remotePath, path.posix)) throw new Error('File not found')
   const client = await getSquadClient(squad.id)
   if (client) {
-    const result = await client.read({ path: remotePath, offset: input.offset, limit: input.limit })
+    const target = await resolveSandboxWorkspaceTarget(client, workspaceMount, relative)
+    if (!target.ok) {
+      throw new Error(target.reason === 'invalid' ? 'Path must be inside the squad workspace' : 'File not found')
+    }
+    const result = await client.read({ path: target.path, offset: input.offset, limit: input.limit })
     const buffer = Buffer.from(result.content, 'base64')
     return {
       path: input.path,
@@ -52,8 +59,11 @@ export async function readSquadFile(identity: Identity, request: unknown) {
     }
   }
   const root = await realpath(resolveSquadWorkspaceHostPath(squad.id))
-  const target = await realpath(path.resolve(root, relative))
+  const lexical = path.resolve(root, relative)
+  if (isWorkspaceSettingsPath(root, lexical)) throw new Error('File not found')
+  const target = await realpath(lexical)
   if (!isInsideWorkspaceRoot(root, target)) throw new Error('Path must be inside the squad workspace')
+  if (isWorkspaceSettingsPath(root, target)) throw new Error('File not found')
   const file = await open(target, 'r')
   try {
     const stat = await file.stat()

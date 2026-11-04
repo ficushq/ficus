@@ -1241,10 +1241,13 @@ export const agentsRouter = new Hono()
       )
     )
   })
+  // Controlling an agent's own box (stop, restart, its processes and containers)
+  // needs agents:update, as the squad box's controls need squads:update.
+  // agents:run covers talking to the agent and its executions, not its box.
   // POST /api/agents/:id/sandbox/stop - Stop this agent's individual sandbox
   .post(
     '/:id/sandbox/stop',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+    requireEntityPermission('agents:update', async (c) => agentSquadId(routeParam(c, 'id')), {
       loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) => {
@@ -1275,14 +1278,14 @@ export const agentsRouter = new Hono()
   // processes are managed through the squad.
   .get(
     '/:id/sandbox/processes',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+    requireEntityPermission('agents:update', async (c) => agentSquadId(routeParam(c, 'id')), {
       loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) => ownAgentSandbox(c, (sandboxId) => listSandboxProcesses(sandboxId))
   )
   .post(
     '/:id/sandbox/processes/:pid/signal',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+    requireEntityPermission('agents:update', async (c) => agentSquadId(routeParam(c, 'id')), {
       loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) =>
@@ -1301,7 +1304,7 @@ export const agentsRouter = new Hono()
   )
   .post(
     '/:id/sandbox/containers/:containerId/stop',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+    requireEntityPermission('agents:update', async (c) => agentSquadId(routeParam(c, 'id')), {
       loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) =>
@@ -1312,7 +1315,7 @@ export const agentsRouter = new Hono()
   // POST /api/agents/:id/sandbox/restart - Stop and re-provision this agent's sandbox
   .post(
     '/:id/sandbox/restart',
-    requireEntityPermission('agents:run', async (c) => agentSquadId(routeParam(c, 'id')), {
+    requireEntityPermission('agents:update', async (c) => agentSquadId(routeParam(c, 'id')), {
       loadOwnerUserId: async (c) => agentOwnerUserId(routeParam(c, 'id')),
     }),
     async (c) => {

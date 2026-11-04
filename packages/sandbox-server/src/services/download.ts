@@ -15,6 +15,10 @@
  *   `tar -czf - -C <parent> -- <basename>` as chunked `application/gzip`. A
  *   non-zero tar exit after the headers went out ERRORS the stream, so the
  *   client sees a truncated chunked body instead of a silent partial success.
+ *   Each `exclude=<name>` leaves that direct child of the directory out of the
+ *   archive, and the response lists the honored names in
+ *   `X-Ficus-Archive-Excluded` so Core can tell this bundle from one that
+ *   predates the parameter.
  *
  * The path goes through the same {@link resolvePath} policy as `/read` and
  * `/stat`; nothing here widens what a caller can reach. Every error body is
@@ -45,6 +49,15 @@ export interface DownloadHooks {
 }
 
 export const SUPPORTED_ARCHIVE_FORMAT = 'tar.gz'
+
+/** Response header naming the direct children a directory archive left out. */
+export const ARCHIVE_EXCLUDED_HEADER = 'X-Ficus-Archive-Excluded'
+
+/** An excluded child is one plain directory entry name: no separators, no `.`/`..`, no list delimiter. */
+function isExcludableChildName(name: string): boolean {
+  // eslint-disable-next-line no-control-regex -- control bytes are what this rejects
+  return name !== '' && name !== '.' && name !== '..' && !/[/\\,\u0000-\u001f]/.test(name)
+}
 
 function errorResponse(status: number, code: DownloadErrorCode, error: string, headers?: HeadersInit): Response {
   return Response.json({ error, code }, { status, headers })
@@ -104,11 +117,16 @@ export async function handleDownload(url: URL, req: Request, hooks: DownloadHook
     return errorResponse(400, 'unsupported-archive', `Unsupported archive format: ${archive} (supported: tar.gz)`)
   }
 
+  const exclude = url.searchParams.getAll('exclude')
+  if (!exclude.every(isExcludableChildName)) {
+    return errorResponse(400, 'invalid-request', 'exclude must name a direct child of the directory')
+  }
+
   if (stats.isDirectory()) {
     if (archive !== SUPPORTED_ARCHIVE_FORMAT) {
       return errorResponse(400, 'is-directory', 'Path is a directory; request archive=tar.gz to download it')
     }
-    return streamTarGz(absPath, req, hooks)
+    return streamTarGz(absPath, req, hooks, exclude)
   }
 
   if (!stats.isFile()) return errorResponse(400, 'not-regular-file', 'Path is not a regular file')
@@ -142,13 +160,19 @@ export async function handleDownload(url: URL, req: Request, hooks: DownloadHook
   return new Response(Bun.file(absPath).slice(start, end + 1), { status: range ? 206 : 200, headers })
 }
 
-function streamTarGz(absPath: string, req: Request, hooks: DownloadHooks): Response {
+function streamTarGz(absPath: string, req: Request, hooks: DownloadHooks, exclude: string[] = []): Response {
   const log = hooks.log ?? ((message: string) => console.error(`[sandbox] ${message}`))
   const parent = path.dirname(absPath)
   const base = path.basename(absPath)
   // `-f -` pins stdout (a build's default archive may be a tape device);
   // `--` keeps a basename that starts with `-` from parsing as an option.
-  const proc = Bun.spawn([hooks.tarCommand ?? 'tar', '-czf', '-', '-C', parent, '--', base], {
+  // `--anchored --no-wildcards` make each exclusion match exactly the member
+  // `<base>/<name>` (and therefore everything below it), never a same-named
+  // entry deeper in the tree or a name read as a glob.
+  const exclusions = exclude.length
+    ? ['--anchored', '--no-wildcards', ...exclude.map((name) => `--exclude=${base}/${name}`)]
+    : []
+  const proc = Bun.spawn([hooks.tarCommand ?? 'tar', '-czf', '-', ...exclusions, '-C', parent, '--', base], {
     stdin: 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
@@ -195,5 +219,7 @@ function streamTarGz(absPath: string, req: Request, hooks: DownloadHooks): Respo
       await reader.cancel(reason).catch(() => {})
     },
   })
-  return new Response(body, { status: 200, headers: { 'Content-Type': 'application/gzip' } })
+  const headers: Record<string, string> = { 'Content-Type': 'application/gzip' }
+  if (exclude.length) headers[ARCHIVE_EXCLUDED_HEADER] = exclude.join(',')
+  return new Response(body, { status: 200, headers })
 }

@@ -17,10 +17,14 @@ afterEach(() => {
   delete process.env.WORKSPACE_PATH
 })
 
-function request(path: string, init: { range?: string; archive?: string; signal?: AbortSignal } = {}) {
+function request(
+  path: string,
+  init: { range?: string; archive?: string; signal?: AbortSignal; exclude?: string[] } = {}
+) {
   const url = new URL('http://box/download')
   url.searchParams.set('path', path)
   if (init.archive) url.searchParams.set('archive', init.archive)
+  for (const name of init.exclude ?? []) url.searchParams.append('exclude', name)
   const headers: Record<string, string> = {}
   if (init.range) headers.range = init.range
   return { url, req: new Request(url, { headers, signal: init.signal }) }
@@ -28,7 +32,7 @@ function request(path: string, init: { range?: string; archive?: string; signal?
 
 async function download(
   path: string,
-  init: { range?: string; archive?: string; signal?: AbortSignal; tarCommand?: string } = {},
+  init: { range?: string; archive?: string; signal?: AbortSignal; tarCommand?: string; exclude?: string[] } = {},
   hooks: { log?: (m: string) => void } = {}
 ) {
   const { url, req } = request(path, init)
@@ -177,6 +181,56 @@ describe('handleDownload — directories', () => {
       expect(readFileSync(join(extractTo, 'project', 'nested', 'b.bin'))).toEqual(Buffer.from([0, 1, 2, 255]))
     } finally {
       rmSync(extractTo, { recursive: true, force: true })
+    }
+  })
+
+  async function archiveEntries(resp: Response): Promise<string[]> {
+    const archive = join(testDir, 'listed.tar.gz')
+    writeFileSync(archive, Buffer.from(await resp.arrayBuffer()))
+    const tar = Bun.spawnSync(['tar', '-tzf', archive])
+    expect(tar.exitCode).toBe(0)
+    return tar.stdout.toString().split('\n').filter(Boolean)
+  }
+
+  it('leaves excluded direct children out of the archive and says so', async () => {
+    const dir = makeTree()
+    mkdirSync(join(dir, '.ficus', 'monitors'), { recursive: true })
+    writeFileSync(join(dir, '.ficus', '.env'), 'SYNTHETIC=1\n')
+    writeFileSync(join(dir, '.ficus', 'monitors', 'token'), 'synthetic')
+    // A same-named directory deeper in the tree is ordinary content and stays.
+    mkdirSync(join(dir, 'nested', '.ficus'), { recursive: true })
+    writeFileSync(join(dir, 'nested', '.ficus', 'config.json'), '{}')
+
+    const resp = await download(dir, { archive: 'tar.gz', exclude: ['.ficus'] })
+    expect(resp.status).toBe(200)
+    expect(resp.headers.get('X-Ficus-Archive-Excluded')).toBe('.ficus')
+    const entries = await archiveEntries(resp)
+    expect(entries.some((entry) => entry.startsWith('project/.ficus'))).toBe(false)
+    expect(entries).toContain('project/a.txt')
+    expect(entries).toContain('project/nested/.ficus/config.json')
+  })
+
+  it('archives everything, without the exclusion header, when nothing is excluded', async () => {
+    const dir = makeTree()
+    mkdirSync(join(dir, '.ficus'), { recursive: true })
+    writeFileSync(join(dir, '.ficus', 'kept.txt'), 'kept')
+    const resp = await download(dir, { archive: 'tar.gz' })
+    expect(resp.headers.get('X-Ficus-Archive-Excluded')).toBeNull()
+    expect(await archiveEntries(resp)).toContain('project/.ficus/kept.txt')
+  })
+
+  it('treats an excluded name literally, never as a glob', async () => {
+    const dir = makeTree()
+    const resp = await download(dir, { archive: 'tar.gz', exclude: ['*'] })
+    expect(resp.status).toBe(200)
+    expect(await archiveEntries(resp)).toContain('project/a.txt')
+  })
+
+  it('refuses an exclusion that is not a plain child name', async () => {
+    for (const name of ['', '.', '..', 'nested/b.bin', '../x', 'a,b']) {
+      const resp = await download(makeTree(), { archive: 'tar.gz', exclude: [name] })
+      expect(resp.status).toBe(400)
+      expect(await resp.json()).toMatchObject({ code: 'invalid-request' })
     }
   })
 
