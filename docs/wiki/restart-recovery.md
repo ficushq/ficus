@@ -57,6 +57,46 @@ A correlated startup failure retains its actual error but is presented as
 than a separate unexplained “Execution failed” notice. This does not classify the new error itself as restart-caused.
 Provider/auth policy and admission fences are unchanged.
 
+## Failed resumed runs
+
+A resumed run is one the platform requeued after an interruption: a graceful
+worker stop, startup recovery from a dead process, or the abandoned-lease sweep.
+Each of those paths commits a system message carrying
+`admissionRecoveryExecutionId` for the requeued execution, and that marker is
+the durable proof (`services/execution/resumed-run-failure.ts`). When such a run
+fails, at startup or mid-turn, `Execution.fail` checks whether the agent still
+holds an active slot claim or owns a running flow attempt in an active stream.
+
+- If the failure is counted by bounded recovery and the episode is still
+  recovering, `recordRecoveryFailure` commits one wake with the same fenced
+  `recovery-startup:<recovery>:<version>` key as the startup retry. The brief
+  names the failed execution, says the interrupted outcome is unknown and may
+  have partial effects, forbids repeating an external side effect before it is
+  confirmed, and lists each slot claim (id, pool, expiry) and flow attempt
+  (stream number and id, attempt, step). Delivery rechecks the recovery
+  version, pause, attempt waits and agent status exactly as for other recovery
+  wakes. The episode is never `startupOnly`, so a model tool cannot settle it.
+- A resumed run that fails at startup without obligations still gets its
+  bounded retry, but with that unknown-outcome brief instead of a replay of the
+  retained request. A resumed run without obligations that fails mid-turn is
+  unchanged: it is not woken.
+- When no deliverable wake exists, because the failure is not counted (an
+  admission or provider refusal), the budget is exhausted or held, or a pause
+  or wait blocks delivery, the bounded-recovery audience (manager first, else
+  owner) receives one `resumed-run-stranded` notice per execution with the
+  claim and attempt identifiers. It grants no authority and lifts no gate; the
+  generated Continue / Stop card is still sent on exhaustion.
+
+The wake starts an ordinary run without the resume marker, so its own failure
+is counted but cannot re-wake the agent. Only a new interruption and resume can,
+and each counted failure spends the same three-attempt budget. Lookups fail
+open to the previous behavior and never block terminalization.
+
+This closes the gap behind the Desktop 0.5.23 and 0.5.24 release slot expiries.
+Both were resumed runs that failed in sandbox setup (`phase_sandbox-ensure` with
+a lost bash outcome, and `phase_sandbox-drift-recreate` with a box-provision
+exit 3). Nothing woke the agent until its production-change claim expired.
+
 ## Recovery safety and verification
 
 The shared agent doctrine instructs workers, engineers, reviewers, general agents
@@ -83,7 +123,8 @@ Repeated delivery of an invocation does not spend another attempt, and verified
 restart interruption is free. Normal command exits, known filesystem/authorization
 refusals, provider gates and deliberate cancellation retain their separate handling.
 Budgets survive replacement executions and execution-log pruning. Only safe inner
-transport operations and pre-model startup failures retry automatically; arbitrary
+transport operations, pre-model startup failures and failed resumed runs (with an
+unknown-outcome brief, see above) retry automatically; arbitrary
 commands or external effects require local reconciliation before an explicit retry.
 
 Exhaustion opens a generated Continue/Stop wait for the squad manager. A manager
