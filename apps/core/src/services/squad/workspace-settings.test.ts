@@ -8,6 +8,7 @@ import {
   isWorkspaceSettingsDirName,
   isWorkspaceSettingsPath,
   resolveLocalWorkspaceTarget,
+  resolveLocalWorkspaceWriteTarget,
   resolveSandboxWorkspaceTarget,
   type SandboxPathClient,
 } from './workspace-settings'
@@ -163,6 +164,96 @@ describe('resolveLocalWorkspaceTarget', () => {
   })
 })
 
+describe('resolveLocalWorkspaceWriteTarget', () => {
+  // New files under the settings directory, reached through every spelling and link.
+  const settingsWriteRequests = [
+    ...settingsRequests,
+    '.ficus/new.txt',
+    '.ficus/new-dir/new.txt',
+    'docs/../.ficus/new.txt',
+    '.FICUS./new.txt',
+    'settings-link/new.txt',
+    'settings-link/new-dir/new.txt',
+    'self-link/.ficus/new.txt',
+    'self-link/settings-link/new.txt',
+  ]
+
+  it('refuses every form of the settings directory, including files that do not exist yet', () => {
+    for (const request of settingsWriteRequests) {
+      const expected = request.startsWith('/') ? 'invalid' : 'not-found'
+      expect([request, resolveLocalWorkspaceWriteTarget(workspace, request)]).toEqual([
+        request,
+        { ok: false, reason: expected },
+      ])
+    }
+  })
+
+  it('refuses a dangling link and a symlinked parent that resolve into the settings directory', () => {
+    const scratch = join(workspace, 'write-links')
+    mkdirSync(scratch, { recursive: true })
+    try {
+      symlinkSync('../.ficus/not-yet.txt', join(scratch, 'dangling'))
+      symlinkSync('../.ficus/missing-dir', join(scratch, 'dangling-dir'))
+      symlinkSync('../settings-link', join(scratch, 'chained'))
+      for (const request of [
+        'write-links/dangling',
+        'write-links/dangling-dir/new.txt',
+        'write-links/chained/new.txt',
+        'write-links/chained/monitors/new.txt',
+      ]) {
+        expect([request, resolveLocalWorkspaceWriteTarget(workspace, request)]).toEqual([
+          request,
+          { ok: false, reason: 'not-found' },
+        ])
+      }
+    } finally {
+      rmSync(scratch, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses paths that escape the workspace, through a link or a link loop', () => {
+    const scratch = join(workspace, 'write-loops')
+    mkdirSync(scratch, { recursive: true })
+    try {
+      symlinkSync('loop-b', join(scratch, 'loop-a'))
+      symlinkSync('loop-a', join(scratch, 'loop-b'))
+      symlinkSync('../../outside/new.txt', join(scratch, 'dangling-outside'))
+      for (const request of [
+        ...escapingRequests,
+        'outside-link/new.txt',
+        'write-loops/loop-a',
+        'write-loops/loop-a/new.txt',
+        'write-loops/dangling-outside',
+      ]) {
+        expect([request, resolveLocalWorkspaceWriteTarget(workspace, request)]).toEqual([
+          request,
+          { ok: false, reason: 'invalid' },
+        ])
+      }
+    } finally {
+      rmSync(scratch, { recursive: true, force: true })
+    }
+  })
+
+  it('allows new and existing ordinary files, nested settings-named directories and in-workspace links', () => {
+    for (const [request, expected] of [
+      ['new.txt', join(workspace, 'new.txt')],
+      ['new-dir/deeper/new.txt', join(workspace, 'new-dir', 'deeper', 'new.txt')],
+      ['notes.txt', join(workspace, 'notes.txt')],
+      ['docs/.ficus/new.json', join(workspace, 'docs', '.ficus', 'new.json')],
+      ['.ficus%2Fnew.txt', join(workspace, '.ficus%2Fnew.txt')],
+      ['.ficus-notes/new.txt', join(workspace, '.ficus-notes', 'new.txt')],
+      ['self-link/new.txt', join(workspace, 'self-link', 'new.txt')],
+      ['readme-link', join(workspace, 'readme-link')],
+    ]) {
+      expect([request, resolveLocalWorkspaceWriteTarget(workspace, request)]).toEqual([
+        request,
+        { ok: true, path: expected, isRoot: false },
+      ])
+    }
+  })
+})
+
 /**
  * A sandbox client whose `bash` runs the command on this machine, so the
  * box-side realpath and search commands are exercised for real.
@@ -199,6 +290,37 @@ describe('resolveSandboxWorkspaceTarget', () => {
         request,
         { ok: false, reason: 'not-found' },
       ])
+    }
+  })
+
+  it('refuses write targets that do not exist yet but resolve into the settings directory', async () => {
+    const client = localBashClient()
+    const scratch = join(workspace, 'box-write-links')
+    mkdirSync(scratch, { recursive: true })
+    try {
+      symlinkSync('../.ficus/not-yet.txt', join(scratch, 'dangling'))
+      symlinkSync('../.ficus/missing-dir', join(scratch, 'dangling-dir'))
+      symlinkSync('../settings-link', join(scratch, 'chained'))
+      for (const request of [
+        'settings-link/new.txt',
+        'settings-link/new-dir/new.txt',
+        'self-link/settings-link/new.txt',
+        'box-write-links/dangling',
+        'box-write-links/dangling-dir/new.txt',
+        'box-write-links/chained/new.txt',
+      ]) {
+        expect([request, await resolveSandboxWorkspaceTarget(client, workspace, request)]).toEqual([
+          request,
+          { ok: false, reason: 'not-found' },
+        ])
+      }
+      expect(await resolveSandboxWorkspaceTarget(client, workspace, 'new-dir/new.txt')).toEqual({
+        ok: true,
+        path: join(workspace, 'new-dir', 'new.txt'),
+        isRoot: false,
+      })
+    } finally {
+      rmSync(scratch, { recursive: true, force: true })
     }
   })
 

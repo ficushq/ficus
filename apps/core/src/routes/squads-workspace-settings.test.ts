@@ -7,7 +7,17 @@
  * squads-sandbox-paths.test.ts.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { Hono } from 'hono'
@@ -208,5 +218,61 @@ describe('local workspace routes never expose the workspace settings directory',
       await expect(readSquadFile(identity, { squadId, path })).rejects.toThrow('File not found')
     }
     expect((await readSquadFile(identity, { squadId, path: 'docs/readme.md' })).content).toBe('hello')
+  })
+})
+
+describe('local workspace upload never writes into the workspace settings directory', () => {
+  function upload(dir: string, relativePath: string) {
+    const form = new FormData()
+    form.append('file', new File(['uploaded bytes'], 'payload.txt'))
+    form.append('path_file', relativePath)
+    return app.request(`/api/squads/${squadId}/workspace/upload?dir=${encodeURIComponent(dir)}&overwrite=true`, {
+      method: 'POST',
+      headers: authHeaders(admin.token),
+      body: form,
+    })
+  }
+
+  it('answers the existing invalid path result for every spelling, link and target directory', async () => {
+    symlinkSync('../.ficus/not-yet.txt', join(workspace, 'docs', 'dangling-link'))
+    const targets: Array<[string, string]> = [
+      ...settingsPaths.map((path): [string, string] => ['', path]),
+      ['', '.ficus/new.txt'],
+      ['', '.FICUS./new.txt'],
+      ['', 'settings-link/new.txt'],
+      ['', 'docs/dangling-link'],
+      ['.ficus', 'new.txt'],
+      ['docs/../.ficus/monitors', 'new.txt'],
+      ['settings-link', 'monitors/m1/token'],
+      ['self-link/.ficus', 'new.txt'],
+    ]
+    for (const [dir, path] of targets) {
+      const res = await upload(dir, path)
+      expect([dir, path, res.status]).toEqual([dir, path, 200])
+      const body = (await res.json()) as { uploaded: number; results: Array<{ status: string; error?: string }> }
+      expect([dir, path, body.uploaded, body.results.map((result) => result.error)]).toEqual([
+        dir,
+        path,
+        0,
+        ['Invalid path'],
+      ])
+    }
+    expect(readdirSync(join(workspace, '.ficus')).sort()).toEqual(['.env', 'monitors'])
+    expect(readFileSync(join(workspace, '.ficus', '.env'), 'utf8')).toBe(`${SETTING_VALUE}=1\n`)
+    expect(readFileSync(join(workspace, '.ficus', 'monitors', 'm1', 'token'), 'utf8')).toBe(TOKEN_VALUE)
+    expect(existsSync(join(workspace, '.ficus', 'new.txt'))).toBe(false)
+  })
+
+  it('still uploads ordinary files, including under a nested settings-named directory', async () => {
+    for (const [dir, path, written] of [
+      ['docs', 'new.txt', join(workspace, 'docs', 'new.txt')],
+      ['', 'docs/.ficus/config.json', join(workspace, 'docs', '.ficus', 'config.json')],
+      ['self-link', 'linked.txt', join(workspace, 'linked.txt')],
+    ]) {
+      const res = await upload(dir, path)
+      expect(res.status).toBe(200)
+      expect(((await res.json()) as { uploaded: number }).uploaded).toBe(1)
+      expect(readFileSync(written, 'utf8')).toBe('uploaded bytes')
+    }
   })
 })

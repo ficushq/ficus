@@ -1,13 +1,17 @@
 import { mkdir, stat } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { dirname } from 'node:path'
 import { atomicVerifiedWrite } from '@ficus/sandbox-server/atomic-write'
 import type { StagedWorkspaceUpload } from '../attachments/workspace-multipart'
-import { isInsideWorkspaceRoot, resolveSandboxWorkspacePath } from './workspace'
+import {
+  resolveLocalWorkspaceWriteTarget,
+  resolveSandboxWorkspaceTarget,
+  type SandboxPathClient,
+} from './workspace-settings'
 import { SandboxHttpError } from '../sandbox/client/http-client'
 import { publicErrorMessage } from '../../db/errors'
 
 type UploadIdentity = { bytesWritten: number; sha256?: string }
-interface UploadClient {
+interface UploadClient extends SandboxPathClient {
   stat(request: { path: string }): Promise<{ exists: boolean }>
   upload(request: {
     path: string
@@ -48,15 +52,19 @@ export async function publishWorkspaceUpload(options: {
   for (const file of staged.files) {
     const relativePath = staged.fields.get(`path_${file.fieldName}`) || file.filename
     const fullRelativePath = targetDir ? `${targetDir}/${relativePath}` : relativePath
-    const targetPath = client
-      ? resolveSandboxWorkspacePath(workspacePath, fullRelativePath)
-      : resolve(workspacePath, fullRelativePath)
-    if (!targetPath || (!client && !isInsideWorkspaceRoot(workspacePath, targetPath))) {
-      results.push({ path: fullRelativePath, status: 'error', error: 'Invalid path' })
-      continue
-    }
     try {
       signal?.throwIfAborted()
+      // The target must stay inside the workspace and outside its settings
+      // directory, both as written and after symlinks resolve (in the box for
+      // sandbox runtimes); either refusal answers the same 'Invalid path'.
+      const target = client
+        ? await resolveSandboxWorkspaceTarget(client, workspacePath, fullRelativePath)
+        : resolveLocalWorkspaceWriteTarget(workspacePath, fullRelativePath)
+      if (!target.ok) {
+        results.push({ path: fullRelativePath, status: 'error', error: 'Invalid path' })
+        continue
+      }
+      const targetPath = target.path
       let exists = false
       if (client) {
         // Keep the legacy stat failure behavior; the upload still enforces path policy.
