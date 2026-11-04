@@ -4,8 +4,8 @@ import { isLiveAgentStatus } from '@ficus/shared'
 import { agents, db, slotClaims, slotNotifications, slotPools, slotWaiters } from '../../db'
 import { createLogger } from '../../lib/infra/logger'
 import { createPeriodicRunner, type PeriodicRunner } from '../../lib/infra/PeriodicRunner'
-import { slotNotificationNotifier } from './notifications'
-import { expireAndPromoteLocked, settleInactiveGrantNotifications, type PromotionResult } from './store'
+import { queueSlotExpiryWarnings, slotNotificationNotifier } from './notifications'
+import { expireAndPromoteLocked, settleInactiveClaimNotifications, type PromotionResult } from './store'
 
 const log = createLogger('slot-reconciliation')
 const SLOT_RECONCILIATION_INTERVAL_MS = 30_000
@@ -34,6 +34,7 @@ export interface SlotReconciliationSummary {
   maxGrantLatencyMs: number
   oldestNotificationRetryAgeMs: number
   deliveryRetries: number
+  expiryWarningsQueued: number
 }
 
 export async function reconcileSlotsOnce(input: { limit?: number } = {}): Promise<SlotReconciliationSummary> {
@@ -80,6 +81,7 @@ export async function reconcileSlotsOnce(input: { limit?: number } = {}): Promis
     maxGrantLatencyMs: 0,
     oldestNotificationRetryAgeMs: 0,
     deliveryRetries: 0,
+    expiryWarningsQueued: 0,
   }
 
   for (const candidate of candidates) {
@@ -114,7 +116,7 @@ export async function reconcileSlotsOnce(input: { limit?: number } = {}): Promis
           .set({ status: 'released', endedAt: now, terminalReason: 'pool_cleanup' })
           .where(and(eq(slotClaims.id, claim.id), eq(slotClaims.status, 'active')))
           .returning({ id: slotClaims.id })
-        await settleInactiveGrantNotifications(
+        await settleInactiveClaimNotifications(
           tx,
           rows.map((row) => row.id),
           now
@@ -211,9 +213,15 @@ export async function reconcileSlotsOnce(input: { limit?: number } = {}): Promis
   summary.oldestNotificationRetryAgeMs = oldestNotification
     ? Math.max(0, scanNow.getTime() - oldestNotification.createdAt.getTime())
     : 0
+  summary.expiryWarningsQueued = await queueSlotExpiryWarnings()
   const delivery = await slotNotificationNotifier.drain({ now: scanNow })
   summary.deliveryRetries = delivery.deliveryRetries
-  if (summary.poolsProcessed > 0 || summary.oldestNotificationRetryAgeMs > 0 || delivery.claimed > 0) {
+  if (
+    summary.poolsProcessed > 0 ||
+    summary.oldestNotificationRetryAgeMs > 0 ||
+    summary.expiryWarningsQueued > 0 ||
+    delivery.claimed > 0
+  ) {
     log.info('Slot reconciliation summary', summary)
   }
   return summary
