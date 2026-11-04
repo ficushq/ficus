@@ -545,17 +545,6 @@ export function uploadWithProgress(
 }
 
 /**
- * Upload files to a task's workspace.
- */
-export function uploadToWorkspace(
-  taskId: string,
-  files: { file: File; relativePath: string }[],
-  options: UploadOptions = {}
-): Promise<UploadResponse> {
-  return uploadWithProgress(`/tasks/${taskId}/workspace/upload`, files, options)
-}
-
-/**
  * Upload files to a squad's workspace.
  */
 export function uploadToSquadWorkspace(
