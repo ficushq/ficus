@@ -260,7 +260,8 @@ describe('resolveSandboxWorkspaceTarget', () => {
       bash: () => {
         const emitter = {
           on(event: string, listener: (arg?: never) => void) {
-            if (event === 'data') queueMicrotask(() => (listener as unknown as (data: BashResponse) => void)({ exitCode: 3 }))
+            if (event === 'data')
+              queueMicrotask(() => (listener as unknown as (data: BashResponse) => void)({ exitCode: 3 }))
             if (event === 'end') queueMicrotask(() => queueMicrotask(() => (listener as () => void)()))
             return emitter
           },
