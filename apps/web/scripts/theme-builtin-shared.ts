@@ -130,3 +130,69 @@ export function repairContrastPairs(tokens: Record<string, string>): {
   }
   return { tokens: next, adjusted }
 }
+
+/** OKLab distance (about two just-noticeable differences) a selected row keeps from both a hovered row and the plain
+ * surface, so selection never reads as hover. `builtins.test.ts` holds every built-in to it. */
+const SELECTION_MIN_DISTANCE = 0.04
+
+/** Euclidean distance between two sRGB colors in OKLab. */
+function oklabDistance(a: readonly number[], b: readonly number[]): number {
+  const lab = (rgb: readonly number[]) => {
+    const { l, c, h } = srgbToOklch([rgb[0]!, rgb[1]!, rgb[2]!])
+    const radians = (h * Math.PI) / 180
+    return [l, c * Math.cos(radians), c * Math.sin(radians)]
+  }
+  const [x, y] = [lab(a), lab(b)]
+  return Math.hypot(x[0]! - y[0]!, x[1]! - y[1]!, x[2]! - y[2]!)
+}
+
+/** Whether text on a selection background stays readable: primary and secondary text clear 4.5:1, and the accent text
+ * selected rows use (`--color-primary-light`) clears 4.5:1, or where the theme's accent text falls short of that on
+ * its own hover surface, at least matches its ratio there. */
+function selectionTextReadable(tokens: Record<string, string>, background: readonly number[]): boolean {
+  const bg = [...background]
+  const hover = tokenRgba(tokens, '--color-bg-surface-hover').slice(0, 3)
+  const accentText = tokenRgba(tokens, '--color-primary-light')
+  return (
+    contrast(tokenRgba(tokens, '--color-text-primary'), bg) >= 4.5 &&
+    contrast(tokenRgba(tokens, '--color-text-secondary'), bg) >= 4.5 &&
+    contrast(accentText, bg) >= Math.min(4.5, contrast(accentText, hover))
+  )
+}
+
+/**
+ * The selection background (`--color-selection-bg`): the accent mixed over the hover surface, starting at 10% and
+ * strengthened in 5% steps until it sits SELECTION_MIN_DISTANCE from both the hover and the plain surface. When a mix
+ * would make text on it unreadable (`selectionTextReadable`), its OKLCH lightness moves away from the primary text,
+ * hue and chroma held, by the same bisection `repairContrastPairs` uses, so the accent tint carries the difference.
+ * `accent` is "r g b" channels; returns channels.
+ */
+export function fitSelectionBackground(tokens: Record<string, string>, accent: string): string {
+  const channels = (value: string) => value.split('/')[0]!.trim().split(/\s+/).slice(0, 3).map(Number)
+  const surface = tokenRgba(tokens, '--color-bg-surface').slice(0, 3)
+  const hover = tokenRgba(tokens, '--color-bg-surface-hover').slice(0, 3)
+  const tint = channels(accent)
+  const lightText =
+    srgbToOklch(tokenRgba(tokens, '--color-text-primary').slice(0, 3) as [number, number, number]).l > 0.5
+  for (let pct = 10; pct <= 100; pct += 5) {
+    let candidate = tint.map((channel, i) => Math.round((channel * pct + hover[i]! * (100 - pct)) / 100))
+    if (!selectionTextReadable(tokens, candidate)) {
+      const oklch = srgbToOklch(candidate as [number, number, number])
+      let near = oklch.l
+      let far = lightText ? 0 : 1
+      for (let i = 0; i < 40; i++) {
+        const mid = (near + far) / 2
+        if (selectionTextReadable(tokens, oklchToSrgb({ ...oklch, l: mid }))) far = mid
+        else near = mid
+      }
+      candidate = oklchToSrgb({ ...oklch, l: far })
+    }
+    if (
+      selectionTextReadable(tokens, candidate) &&
+      oklabDistance(candidate, hover) >= SELECTION_MIN_DISTANCE &&
+      oklabDistance(candidate, surface) >= SELECTION_MIN_DISTANCE
+    )
+      return candidate.join(' ')
+  }
+  throw new Error('No readable selection background is distinct from hover; adjust the palette.')
+}

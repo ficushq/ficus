@@ -58,8 +58,9 @@ Unlike the BigBrain palettes (a bg/fg/activity triple with BigBrain's own explic
 2. Swap the pinned page and surface colours into that base, and move the surface-relative chrome (secondary surface, pill, hover, inset, borders, input background, code background, glass and overlay) by the surface's own OKLCH lightness step, keeping each token's hue, chroma and alpha. The hierarchy Iris has around a white or near-black surface then holds around linen and soil, and the derivation's internal contrast pass measures against what Ficus actually ships.
 3. Run the shared palette derivation (`deriveThemeOverrides`, the same pure engine `theme-derivation.ts` uses for custom themes) with that appearance's palette (dark swaps the primary for sage), restricted ONLY to `DERIVABLE_TOKENS` (the `chrome` token family plus `--swatch-secondary`/`-tertiary`/`--on-accent-fg` and the `--badge`/`--on-badge` notification badge pair). Every other family (status, agent-type, badge-decoration, voice-material, utility-decoration/-chrome, log-terminal, ansi, brand, most of syntax/terminal/graph) is copied verbatim from Iris's matching-appearance block, exactly like Harbor, Ember and every BigBrain-ported built-in.
 4. Pin the exact page and surface colours again. Dark also pins `--color-primary-light` and `--color-focus` to sage (the derived offset from Iris's deep primary would wash sage out to white) and `--on-accent-fg` to soil, so text on a sage fill is soil rather than black. Every generated built-in (palette and BigBrain) sets `--checkbox-check` to its `--on-accent-fg`, since the checked checkbox draws its tick on the accent fill.
-5. Apply the interaction tints every palette built-in shares (hover, pill, inset and selection surfaces, the secondary surface and the selection border mixed from the accent over the surface). Dark mixes them from the leaf rather than sage, since pale sage would only grey the soil.
+5. Apply the interaction tints every palette built-in shares (hover, pill and inset surfaces, the secondary surface and the selection border mixed from the accent over the surface). Dark mixes them from the leaf rather than sage, since pale sage would only grey the soil.
 6. Run the same strict-gate `repairContrastPairs` pass `generate-bigbrain-builtins.ts` uses, separately for light and dark.
+7. Fit the selection background from the same accent (see [Selection background](#selection-background)).
 
 `--swatch-secondary`/`--swatch-tertiary` land on terracotta (`176 88 47`) and moss (`138 154 91`) in both appearances, so the theme swatch shows leaf/terracotta/moss in the picker. `--color-primary` is the leaf (`63 107 79`, white text) in light and sage (`159 181 127`, soil text) in dark.
 
@@ -91,22 +92,22 @@ Existing built-ins establish (verified against the actual CSS) that only the `ch
 3. Runs the shared palette derivation (`deriveThemeOverrides`, the same pure engine `theme-derivation.ts` uses for custom themes) with `primary` = activity, `secondary` = bg, `tertiary` = fg, `neutral` = bg, `contrast: 'standard'`, `status: 'static'` — but applies its output ONLY to the restricted chrome/swatch/on-accent-fg/badge set above; every other family is copied verbatim from Iris. Because the BigBrain secondary is the page background, the derived `--badge` is a lighter or darker tone of it, fitted for a 7:1 ink and 3:1 against the page and surface (see [semantic colors](semantic-colors.md#notification-badges)).
 4. Layers BigBrain's own sRGB `color-mix(in srgb, fg P%, bg)` formulas as explicit overrides on top of the core chrome tokens, winning over the derived value exactly like a custom theme's explicit `variants` win over palette derivation:
 
-   | Token                                              | Formula                                                      |
-   | -------------------------------------------------- | ------------------------------------------------------------ |
-   | `--color-bg-page`                                  | `bg`                                                         |
-   | `--color-bg-surface`                               | mix 4%                                                       |
-   | `--color-bg-surface-secondary`, `--color-bg-inset` | mix 8%                                                       |
-   | `--color-bg-surface-hover`, `--color-bg-pill`      | mix 10%                                                      |
-   | `--color-input-bg`                                 | mix ~2%                                                      |
-   | `--color-text-primary`, `--color-code-text`        | `fg`                                                         |
-   | `--color-text-secondary`                           | mix 88% (nudged up per-theme if needed — see Contrast below) |
-   | `--color-text-muted`                               | mix 65% (nudged up per-theme if needed)                      |
-   | `--color-text-placeholder`                         | mix 50% (nudged up per-theme if needed)                      |
-   | `--color-border`, `--color-input-border`           | mix 18%                                                      |
-   | `--color-border-hover`                             | mix 28%                                                      |
-   | `--color-code-bg`                                  | mix 6%                                                       |
-   | `--color-selection-bg`                             | activity mixed 15% into `bg`                                 |
-   | `--color-selection-border`                         | activity mixed 40% into `bg`                                 |
+   | Token                                              | Formula                                                                  |
+   | -------------------------------------------------- | ------------------------------------------------------------------------ |
+   | `--color-bg-page`                                  | `bg`                                                                     |
+   | `--color-bg-surface`                               | mix 4%                                                                   |
+   | `--color-bg-surface-secondary`, `--color-bg-inset` | mix 8%                                                                   |
+   | `--color-bg-surface-hover`, `--color-bg-pill`      | mix 10%                                                                  |
+   | `--color-input-bg`                                 | mix ~2%                                                                  |
+   | `--color-text-primary`, `--color-code-text`        | `fg`                                                                     |
+   | `--color-text-secondary`                           | mix 88% (nudged up per-theme if needed — see Contrast below)             |
+   | `--color-text-muted`                               | mix 65% (nudged up per-theme if needed)                                  |
+   | `--color-text-placeholder`                         | mix 50% (nudged up per-theme if needed)                                  |
+   | `--color-border`, `--color-input-border`           | mix 18%                                                                  |
+   | `--color-border-hover`                             | mix 28%                                                                  |
+   | `--color-code-bg`                                  | mix 6%                                                                   |
+   | `--color-selection-bg`                             | fitted from activity (see [Selection background](#selection-background)) |
+   | `--color-selection-border`                         | activity mixed 40% into `bg`                                             |
 
    `--swatch-secondary`/`--swatch-tertiary` are not set explicitly — the palette's own `secondary`/`tertiary` seeds (bg/fg) already derive them, so the swatch wheel blends primary→secondary→tertiary as BigBrain's own accent→bg→fg.
 
@@ -126,6 +127,28 @@ The strict built-in gate (`apps/web/src/theme/builtins.test.ts`'s `contrastPairs
 | asagiiro    | `--scrollbar-thumb`, all nine `--status-*-fg`, `--agent-type-{1–6}-fg`                     |
 
 Every other token (including every badge-decoration and syntax-accent pair, and every text role after the mix-percentage bump above) already cleared its gate without adjustment. The full `builtins.test.ts` suite — the same 1.4.3/1.4.11 gate Iris/Harbor/Ember/High contrast are held to — passes for all six unchanged (no carve-out).
+
+## Selection background
+
+`--color-selection-bg` (the `bg-selection` utility, `::selection` and the selected nav and dock items) marks the selected item, so it must never look like a hovered one. Every built-in keeps it at least 0.04 in OKLab (about two just-noticeable differences) from both its hover surface and its plain surface, and keeps text on it readable: primary and secondary text at 4.5:1, and the accent text selected rows use (`--color-primary-light`) at 4.5:1, or, where a theme's accent text already falls short of that on its own hover surface, no lower than its ratio there. `builtins.test.ts` enforces this for every built-in and appearance.
+
+The generators fit the value with `fitSelectionBackground` (`apps/web/scripts/theme-builtin-shared.ts`), after the contrast repair: the theme's accent (the interaction tint for palette built-ins, the activity for BigBrain ports) is mixed over the hover surface, starting at 10% and strengthened in 5% steps until it is distinct from both surfaces. When a mix would make text unreadable, its OKLCH lightness moves away from the primary text, hue and chroma held, so the accent tint carries the difference. The hand-authored values for Iris, Harbor, Ember and High contrast (whose accent is black, so its selection is a light gray) were computed with the same rule.
+
+| Theme         | Light hover → selection                  | Dark hover → selection      |
+| ------------- | ---------------------------------------- | --------------------------- |
+| Ficus         | `223 224 212` → `196 232 205`            | `51 58 46` → `26 64 40`     |
+| Iris          | `241 240 245` → `226 219 239`            | `27 28 42` → `37 29 63`     |
+| Harbor        | `228 239 242` → `207 225 229`            | `26 49 61` → `24 63 75`     |
+| Ember         | `241 230 219` → `232 213 200`            | `55 41 34` → `76 45 34`     |
+| High contrast | `255 255 255` → `230 230 230` (constant) |                             |
+| nurebairo     |                                          | `52 46 52` → `75 56 63`     |
+| Phosphorus    | `194 208 197` → `204 203 219`            |                             |
+| yamabukiiro   | `206 157 35` → `210 154 84`              |                             |
+| moegiiro      |                                          | `61 119 79` → `88 116 48`   |
+| adzukiiro     |                                          | `139 70 99` → `119 82 107`  |
+| asagiiro      |                                          | `73 110 134` → `89 110 105` |
+
+A selected row that also has a hover style must keep the selected background on hover: use a ternary between the selected and unselected classes (or repeat `hover:bg-selection` on the selected branch), because a `hover:` utility otherwise wins over `bg-selection`.
 
 ## Strict contrast gate
 
