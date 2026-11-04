@@ -115,8 +115,10 @@ function TreeItem({
     <div>
       <div
         className={clsx(
-          'group w-full text-left px-2 py-1.5 flex min-h-9 items-center gap-2 hover:bg-surface-hover rounded-lg text-sm text-secondary cursor-pointer',
-          isSelected && 'bg-selection text-accent-light'
+          'group w-full text-left px-2 py-1.5 flex min-h-9 items-center gap-2 rounded-lg text-sm cursor-pointer',
+          // Tailwind emits hover:bg-surface-hover and text-secondary after the selected utilities, so they
+          // stay on unselected rows only; a hovered selected row keeps its accent tint and accent text.
+          isSelected ? 'bg-accent/10 text-accent-light' : 'text-secondary hover:bg-surface-hover'
         )}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={handleClick}
