@@ -469,3 +469,75 @@ describe('sandbox-backed workspace routes never expose the workspace settings di
     expect(touched).toEqual([`${mount}/docs/design.md`])
   })
 })
+
+describe('sandbox-backed workspace upload never writes into the workspace settings directory', () => {
+  async function results(res: Response) {
+    expect(res.status).toBe(200)
+    return (await res.json()) as { uploaded: number; results: Array<{ status: string; error?: string }> }
+  }
+
+  it('refuses every spelling of the settings directory without touching the box', async () => {
+    for (const [dir, path] of [
+      ['', '.ficus'],
+      ['', '.ficus/.env'],
+      ['', './.ficus/new.txt'],
+      ['', '//.ficus///new.txt'],
+      ['', 'docs/../.ficus/new.txt'],
+      ['', '.FICUS/new.txt'],
+      ['', '.ficus./new.txt'],
+      ['.ficus', 'new.txt'],
+      ['/.ficus/monitors', 'new.txt'],
+      ['docs/..', '.ficus/new.txt'],
+    ]) {
+      touched.length = 0
+      bashCommands.length = 0
+      bashImpl = undefined
+      const body = await results(await upload(dir, path))
+      expect([dir, path, body.uploaded, body.results.map((result) => result.error)]).toEqual([
+        dir,
+        path,
+        0,
+        ['Invalid path'],
+      ])
+      expect(touched).toEqual([])
+      expect(bashCommands).toEqual([])
+    }
+  })
+
+  it('refuses a target whose real path in the box resolves into the settings directory', async () => {
+    touched.length = 0
+    bashCommands.length = 0
+    bashImpl = () => ({ stdout: `${mount}\0${mount}/.ficus/new.txt\0`, exitCode: 0 })
+    try {
+      const body = await results(await upload('docs', 'linked-dir/new.txt'))
+      expect(body.results.map((result) => result.error)).toEqual(['Invalid path'])
+      expect(touched).toEqual([])
+      expect(bashCommands.length).toBe(1)
+      expect(bashCommands[0]).toContain(`'${mount}/docs/linked-dir/new.txt'`)
+    } finally {
+      bashImpl = undefined
+    }
+  })
+
+  it('fails closed when the box cannot resolve the target', async () => {
+    touched.length = 0
+    bashImpl = () => ({ stdout: '', exitCode: 3 })
+    try {
+      const body = await results(await upload('docs', 'new.txt'))
+      expect(body.uploaded).toBe(0)
+      expect(body.results.map((result) => result.status)).toEqual(['error'])
+      expect(touched).toEqual([])
+    } finally {
+      bashImpl = undefined
+    }
+  })
+
+  it('still uploads an ordinary file and a nested settings-named directory', async () => {
+    for (const path of ['notes/new.txt', '.ficus/config.json']) {
+      touched.length = 0
+      const body = await results(await upload('docs', path))
+      expect(body.uploaded).toBe(1)
+      expect(touched).toContain(`${mount}/docs/${path}`)
+    }
+  })
+})
