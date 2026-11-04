@@ -93,7 +93,8 @@ export function AgentViewTabs<T extends string>({ activeTab, onChange, tabs }: A
                           selected ? 'bg-current' : 'bg-status-progress-500'
                         )}
                       />
-                      {activeCount}
+                      {/* Trimmed to the digits' cap height so centring the box centres the ink. */}
+                      <span className="[text-box:trim-both_cap_alphabetic]">{activeCount}</span>
                     </span>
                   )
                 : undefined,
