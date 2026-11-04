@@ -14,6 +14,14 @@
  *   and any future platform file that follows the dot-dir convention.
  * - `identity.pem` at the private root, where the vm runtime pushes the
  *   agent's federation identity key.
+ * - The settings directory at the private root, named by the same rule as the
+ *   squad workspace's (`isWorkspaceSettingsDirName`: case and trailing dots
+ *   or spaces ignored). The dot-prefix rule already covers it; this keeps it
+ *   hidden and unwritable even if that rule is ever relaxed.
+ *
+ * No other check is needed for symlinks or `..`: the confined walk rejects
+ * `..` outright and never follows a symlink, so a link the agent plants that
+ * points into the settings directory is refused rather than resolved.
  *
  * `chat-attachments/` holds files materialized from chat uploads. Its contents
  * are checked against stored blobs, so it is readable but never writable here.
@@ -22,12 +30,15 @@
  * limited by this policy: a shell sees whatever the agent sees.
  */
 
+import { isWorkspaceSettingsDirName } from '../workspace/dot-dir'
+
 const HIDDEN_ROOT_NAMES = new Set(['identity.pem'])
 const READ_ONLY_ROOT_DIRS = new Set(['chat-attachments'])
 
 /** Whether a path (as components below the private root) is hidden from the browser. */
 export function isHiddenPrivatePath(parts: readonly string[]): boolean {
   if (parts.some((part) => part.startsWith('.'))) return true
+  if (parts.length > 0 && isWorkspaceSettingsDirName(parts[0]!)) return true
   // Case-insensitive: a host-runtime private dir may sit on a case-insensitive filesystem (macOS).
   return parts.length > 0 && HIDDEN_ROOT_NAMES.has(parts[0]!.toLowerCase())
 }

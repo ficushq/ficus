@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
 import { inArray } from 'drizzle-orm'
-import { existsSync } from 'fs'
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'fs/promises'
+import { existsSync, readdirSync } from 'fs'
+import { mkdir, mkdtemp, readFile, readlink, rm, stat, symlink, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { db } from '../db'
@@ -290,6 +290,113 @@ describe('agent private files', () => {
     expect(refused.results.map((result: { status: string }) => result.status)).toEqual(['error', 'error', 'error'])
     expect(await readFile(join(privateDir(agentId), 'identity.pem'), 'utf8')).toBe('FAKE KEY')
   })
+
+  for (const runtime of ['docker-sysbox', 'host']) {
+    test(`${runtime}: uploads never land in the private settings directory, in any spelling or through a link`, async () => {
+      process.env.FICUS_SANDBOX_RUNTIME = runtime
+      const root = privateDir(agentId)
+      const settings = join(root, '.ficus')
+      await mkdir(settings, { recursive: true })
+      // Synthetic stand-in for the per-agent settings file; never a real secret.
+      await writeFile(join(settings, 'agent-secrets.env'), 'export FAKE_TOKEN=synthetic')
+      await mkdir(join(root, 'notes'), { recursive: true })
+      // Links the agent could plant: a parent dir, an existing file, and a dangling target.
+      await symlink(settings, join(root, 'linked-dir'))
+      await symlink(join(settings, 'agent-secrets.env'), join(root, 'linked-file.env'))
+      await symlink(join(settings, 'planted.env'), join(root, 'dangling.env'))
+      await symlink('../.ficus', join(root, 'notes', 'up'))
+      const { privateRoot } = await (await get(`/api/agents/${agentId}/private/status`, admin.token)).json()
+      expect(privateRoot).toBeTruthy()
+
+      // Per-file targets: every refusal is the existing per-file error result.
+      const targets = [
+        '.ficus/agent-secrets.env',
+        '.ficus/planted.env',
+        '.FICUS/planted.env',
+        '.ficus./planted.env',
+        '.ficus /planted.env',
+        './.ficus/planted.env',
+        '.ficus//planted.env',
+        'notes/../.ficus/planted.env',
+        'linked-dir/agent-secrets.env',
+        'linked-dir/planted.env',
+        'linked-file.env',
+        'dangling.env',
+        'notes/up/planted.env',
+      ]
+      for (const overwrite of ['', '?overwrite=true']) {
+        const body = await (
+          await upload(
+            agentId,
+            Object.fromEntries(targets.map((path) => [path, 'overwritten'])),
+            admin.token,
+            overwrite
+          )
+        ).json()
+        expect(body.uploaded).toBe(overwrite ? 0 : 2)
+        expect(body.results).toHaveLength(targets.length)
+        for (const result of body.results) {
+          // An existing link is left alone ('skipped') without overwrite; with it, every target is refused.
+          if (!overwrite && ['linked-file.env', 'dangling.env'].includes(result.path)) {
+            expect(result).toMatchObject({ status: 'skipped' })
+          } else {
+            expect(result).toEqual({ path: expect.any(String), status: 'error', error: expect.any(String) })
+          }
+        }
+      }
+
+      // Target directories: the request is refused before any file is read.
+      for (const dir of ['.ficus', '.FICUS', '.ficus.', `${privateRoot}/.ficus`, 'notes/../.ficus']) {
+        const response = await upload(agentId, { 'planted.env': 'x' }, admin.token, `?dir=${encodeURIComponent(dir)}`)
+        expect([dir, response.status]).toEqual([dir, dir.includes('..') ? 400 : 404])
+      }
+      for (const dir of ['linked-dir', 'notes/up']) {
+        const body = await (
+          await upload(agentId, { 'planted.env': 'x' }, admin.token, `?dir=${dir}&overwrite=true`)
+        ).json()
+        expect(body.results).toEqual([{ path: `${dir}/planted.env`, status: 'error', error: expect.any(String) }])
+      }
+
+      // Nothing was created or changed in the settings directory, and the links are intact.
+      expect(readdirSync(settings)).toEqual(['agent-secrets.env'])
+      expect(await readFile(join(settings, 'agent-secrets.env'), 'utf8')).toBe('export FAKE_TOKEN=synthetic')
+      expect(await readlink(join(root, 'dangling.env'))).toBe(join(settings, 'planted.env'))
+      expect(readdirSync(root).filter((name) => name.toLowerCase().startsWith('.ficus'))).toEqual(['.ficus'])
+
+      // Reads, downloads and listings do not reach it either, directly or through a link.
+      for (const path of [
+        '.ficus/agent-secrets.env',
+        '.FICUS/agent-secrets.env',
+        'linked-dir/agent-secrets.env',
+        'linked-file.env',
+        'notes/up/agent-secrets.env',
+      ]) {
+        for (const route of ['file', 'download']) {
+          const response = await get(
+            `/api/agents/${agentId}/private/${route}?path=${encodeURIComponent(path)}`,
+            admin.token
+          )
+          expect([path, route, response.status >= 400]).toEqual([path, route, true])
+          expect(await response.text()).not.toContain('FAKE_TOKEN')
+        }
+      }
+      for (const path of ['.ficus', '.FICUS', 'linked-dir', 'notes/up']) {
+        expect(
+          (await get(`/api/agents/${agentId}/private/tree?path=${path}`, admin.token)).status
+        ).toBeGreaterThanOrEqual(400)
+      }
+      const tree = await (await get(`/api/agents/${agentId}/private/tree`, admin.token)).json()
+      expect(tree.children.map((child: { name: string }) => child.name)).not.toContain('.ficus')
+
+      // An ordinary upload still works, including next to the links.
+      const ordinary = await (await upload(agentId, { 'notes/today.md': '# today' }, admin.token)).json()
+      expect(ordinary).toEqual({
+        uploaded: 1,
+        results: [{ path: 'notes/today.md', status: 'created', agentPath: `${privateRoot}/notes/today.md` }],
+      })
+      expect(await readFile(join(root, 'notes', 'today.md'), 'utf8')).toBe('# today')
+    })
+  }
 
   test('a dormant agent’s files stay browsable on local storage but its box is not started', async () => {
     await upload(agentId, { 'kept.txt': 'kept' }, admin.token)
