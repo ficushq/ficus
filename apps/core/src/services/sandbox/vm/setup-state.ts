@@ -5,7 +5,7 @@ import { and, asc, eq, inArray, isNull, lte, ne, or } from 'drizzle-orm'
 import { db } from '../../../db'
 import {
   createPostgresConnection,
-  DEDICATED_CONNECTION_SESSION,
+  applyDedicatedSessionSettings,
   getDirectConnectionString,
   tryAcquireDedicatedConnectionSlot,
 } from '../../../db/connection'
@@ -458,7 +458,6 @@ export async function withVmSetupLease<T>(
         idle_timeout: 0,
         max_lifetime: 0,
         connect_timeout: 10,
-        connection: DEDICATED_CONNECTION_SESSION,
         // A reserved session does not preserve its advisory lock after a socket
         // loss. Do not send unlock/release through postgres.js's stale reserved
         // handle (which can write to a null socket), or publish late success.
@@ -469,6 +468,7 @@ export async function withVmSetupLease<T>(
       try {
         const session = await connection.reserve()
         try {
+          await applyDedicatedSessionSettings(session, 'session')
           const [lock] = await session<
             { acquired: boolean }[]
           >`select pg_try_advisory_lock(hashtextextended(${key}, 0)) as acquired`

@@ -1,5 +1,6 @@
 import { ensureTestDatabase } from './test-readiness'
 import { drizzle } from 'drizzle-orm/postgres-js'
+import { sql } from 'drizzle-orm'
 import { join } from 'path'
 import * as schema from './schema'
 import { validateDatabaseConnection } from './validate-connection'
@@ -79,11 +80,17 @@ export async function withDedicatedDbTransaction<T>(
       max: 1,
       idle_timeout: 0,
       onnotice: () => {},
-      connection: DEDICATED_CONNECTION_SESSION,
     })
     try {
       const dedicated = drizzle(connection, { schema })
-      return await dedicated.transaction(fn)
+      // Transaction-local, as its first statement (not startup parameters;
+      // see DEDICATED_CONNECTION_SESSION), so a reconnect can't drop them.
+      return await dedicated.transaction(async (tx) => {
+        await tx.execute(
+          sql`select set_config('statement_timeout', ${String(DEDICATED_CONNECTION_SESSION.statement_timeout)}, true), set_config('idle_in_transaction_session_timeout', ${String(DEDICATED_CONNECTION_SESSION.idle_in_transaction_session_timeout)}, true)`
+        )
+        return fn(tx)
+      })
     } finally {
       await connection.end({ timeout: 5 })
     }
