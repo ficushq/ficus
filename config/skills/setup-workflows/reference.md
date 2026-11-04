@@ -258,14 +258,14 @@ subscriptions:
       whenInactive: retain
 ```
 
-| Field                                                   | Meaning                                                                                                                                                                           |
-| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                                                    | Unique subscription ID, 1–100 characters; lowercase start, then lowercase letters, digits, `_`, `.`, or `-`. The `code-host-` prefix is reserved when `followChanges` is enabled. |
-| `source.integration`, `source.output`, `source.version` | Exact versioned output from the catalog.                                                                                                                                          |
-| `source.connectionId`                                   | Optional authorized integration account UUID; otherwise use the squad default.                                                                                                    |
-| `match`                                                 | 1–16 equality conditions. Every field must match, with the catalog's declared type and normalization.                                                                             |
-| `deliver.to`                                            | `{ participant: id }`, `{ step: id }` for an agent step, `active`, or `delivery-owner`.                                                                                           |
-| `deliver.whenInactive`                                  | `retain` (default) queues for the intended consumer; `manager` routes to the squad manager when that consumer is inactive.                                                        |
+| Field                                                   | Meaning                                                                                                                                                                                   |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                                                    | Unique subscription ID, 1–100 characters; lowercase start, then lowercase letters, digits, `_`, `.`, or `-`. The `code-host-` prefix is reserved when the flow follows code-host changes. |
+| `source.integration`, `source.output`, `source.version` | Exact versioned output from the catalog.                                                                                                                                                  |
+| `source.connectionId`                                   | Optional authorized integration account UUID; otherwise use the squad default.                                                                                                            |
+| `match`                                                 | 1–16 equality conditions. Every field must match, with the catalog's declared type and normalization.                                                                                     |
+| `deliver.to`                                            | `{ participant: id }`, `{ step: id }` for an agent step, `active`, or `delivery-owner`.                                                                                                   |
+| `deliver.whenInactive`                                  | `retain` (default) queues for the intended consumer; `manager` routes to the squad manager when that consumer is inactive.                                                                |
 
 A match binds an event field either to `{ streamMetadata: path }` or to a literal `{ value: ... }`. Literals can be strings, numbers, or booleans. A PR number must be a number, not a numeric string. Data paths use dot-separated object fields, not array indexes or wildcard expressions.
 
