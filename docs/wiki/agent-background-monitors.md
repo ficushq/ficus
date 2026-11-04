@@ -64,6 +64,51 @@ For example, watch a log in the squad workspace:
 The target sandbox is saved at creation. Restarts, Core recovery, logs and
 cancellation all use that same target.
 
+### Credentials
+
+A monitor's command runs with the same Ficus identity shape as the owning
+agent's foreground shell, so `gh`, other integration CLIs and read-only `ficus`
+commands work inside a monitor without any extra setup. Each launch mints a
+token for that monitor (`agent_tokens.monitor_id`), and that token is
+deliberately narrower than the agent's own:
+
+- **Read-only permissions.** It holds the agent's read permissions
+  (`resource:read`, `resource:read-*`) plus `integrations:use`, and none of the
+  agent's write permissions. Wildcard roles are expanded to the concrete read
+  permissions they cover (`services/auth/monitor-tokens.ts`).
+- **Read-only requests.** Over HTTP it may make `GET` and `HEAD` requests and
+  one `POST`: `/api/squads/:squad/integrations/:provider/execute-environment`,
+  which exchanges it for the squad's integration credentials. Everything else
+  is refused with 403 in the identity middleware, because many write routes
+  authorize by the agent identity itself rather than by a permission. It never
+  opens a WebSocket, terminal or log stream.
+- **Short-lived.** It expires at the monitor's deadline (`agent_tokens.expires_at`),
+  is revoked when the monitor ends and when a relaunch replaces it, and is
+  refused at authentication once its monitor is no longer active. Dormancy and
+  termination revoke it with the agent's other tokens.
+
+The token reaches the box out of band (an exec environment variable, never
+argv). The launch command writes it to an owner-only hand-off file,
+`$HOME/.ficus-monitor-tokens/<monitor-id>`, and unsets it before tmux runs.
+That file is deliberately outside the monitor's work directory: the work
+directory sits in the workspace (or the private area), which Core's file,
+download and search routes serve, while the box user's home is served by no
+route. The command's own subshell reads the file, deletes it, and exports
+`FICUS_TOKEN` together with `FICUS_API_URL`, `FICUS_SQUAD_ID` and
+`FICUS_AGENT_CONTEXT=1`, so the file exists only between launch and command
+start, and neither the launcher, its watchdog nor the tmux server holds the
+token. Killing a session also removes a hand-off file its command never
+consumed. Without a usable `$HOME` nothing is written and the command runs
+without credentials.
+
+The integration credentials a provider returns are the squad's ordinary ones:
+the monitor token limits what the command can do in Ficus, not on the
+provider. Minting is best effort. If it fails, the command runs without
+credentials, and the first time an integration wrapper runs there it appends
+one `[Ficus] <cli> ran without Ficus integration credentials in this monitor`
+line to the monitor's log (once per monitor, recorded by a `credentialsNotice`
+marker), so the owner learns of it whatever the command does with stderr.
+
 ## Defaults and caps
 
 - Default timeout: 30 minutes; maximum: 24 hours.

@@ -13,7 +13,10 @@ import type { RecoveryRecord } from './store'
 /** One authoritative audience for delivery, visibility and decisions. Never
  * widens a private owner's audience while that owner remains eligible.
  */
-export async function recoveryRecipients(record: RecoveryRecord, executor: DbHandle = db) {
+export async function recoveryRecipients(
+  record: Pick<RecoveryRecord, 'id' | 'agentId' | 'workStreamId' | 'state'>,
+  executor: DbHandle = db
+) {
   const [agent] = await executor.select().from(agents).where(eq(agents.id, record.agentId))
   const [stream] = record.workStreamId
     ? await executor.select().from(workStreams).where(eq(workStreams.id, record.workStreamId))
@@ -99,7 +102,7 @@ export async function recoveryRecipientsById(id: string, executor: DbHandle = db
 
 /** Durable, idempotent operator evidence. This diagnostic grants no authority. */
 export async function reportUnroutableRecovery(
-  record: RecoveryRecord,
+  record: Pick<RecoveryRecord, 'id' | 'agentId' | 'workStreamId'>,
   reason: 'recipient' | 'attempt',
   executor: DbHandle = db
 ): Promise<void> {

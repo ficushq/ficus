@@ -54,9 +54,12 @@ class FakeSandbox implements ISandboxManager {
   getSpawnHook(): SpawnHook | null {
     return null
   }
-  async exec(_sandboxId: string, args: string[]): Promise<Buffer> {
+  /** Out-of-band env of each exec, aligned with `execs`. */
+  execEnvs: Array<Record<string, string> | undefined> = []
+  async exec(_sandboxId: string, args: string[], options?: { env?: Record<string, string> }): Promise<Buffer> {
     this.targets.push(_sandboxId)
     this.execs.push(args)
+    this.execEnvs.push(options?.env)
     if (this.execError) throw this.execError
     const cmd = args.join(' ')
     const mapped = this.outputs.get(cmd)
@@ -835,6 +838,61 @@ describe('MonitorSupervisor', () => {
     })
     const timeoutLeftMs = deadline - clock
     expect(timeoutLeftMs).toBeLessThan(60 * 60_000)
+  })
+
+  it('gives each launch a fresh read-only token out of band and revokes the previous one first', async () => {
+    const monitor = await createMonitor({ restartPolicy: 'on-loss', timeoutMs: 60 * 60_000 })
+    const minted: Array<{ id: string; expiresAt: Date }> = []
+    const revoke = spyOn(Monitor.prototype, 'revokeTokens')
+    try {
+      const supervisor = makeSupervisor(sandbox, async () => {}, undefined, {
+        createMonitorToken: async (_agent, request) => {
+          minted.push(request)
+          return `ficus_agent_monitor-token-${minted.length}`
+        },
+      })
+      await supervisor.start(monitor)
+      const launchIndexes = () =>
+        sandbox.execs.flatMap((args, index) => (args.join(' ').includes("ficus_tmux_new '") ? [index] : []))
+      const [first] = launchIndexes()
+      expect(sandbox.execEnvs[first]).toEqual({ FICUS_MONITOR_TOKEN: 'ficus_agent_monitor-token-1' })
+      // Never in argv: only the variable name appears in the launch command.
+      expect(sandbox.execs[first].join(' ')).not.toContain('monitor-token-1')
+      expect(sandbox.execs[first].join(' ')).toContain('unset FICUS_MONITOR_TOKEN')
+      expect(minted[0]).toMatchObject({ id: monitor.id })
+      // Expires with the monitor: the whole timeout plus the kill grace.
+      expect(minted[0].expiresAt.getTime()).toBe(clock + (60 * 60 + 5) * 1000)
+      // No other exec (probe, stream, catch-up, kill) ever carries it.
+      expect(sandbox.execEnvs.filter(Boolean)).toHaveLength(1)
+      expect(revoke).toHaveBeenCalledTimes(1)
+
+      clock += 60_000
+      sandbox.probe = PROCESS_GONE
+      await supervisor.pollExit(monitor.id)
+      sandbox.probe = ''
+      await waitFor(async () => (await monitor.reload()).restartCount === 1)
+      const second = launchIndexes()[1]
+      expect(sandbox.execEnvs[second]).toEqual({ FICUS_MONITOR_TOKEN: 'ficus_agent_monitor-token-2' })
+      // The relaunch revoked the first launch's token before minting its own.
+      expect(revoke).toHaveBeenCalledTimes(2)
+      // Same absolute deadline: a relaunch never extends the monitor's credentials.
+      expect(minted[1].expiresAt.getTime()).toBe(minted[0].expiresAt.getTime())
+    } finally {
+      revoke.mockRestore()
+    }
+  })
+
+  it('still launches, without credentials, when its token cannot be minted', async () => {
+    const monitor = await createMonitor()
+    const supervisor = makeSupervisor(sandbox, async () => {}, undefined, {
+      createMonitorToken: async () => {
+        throw new Error('agent work stream is paused')
+      },
+    })
+    await supervisor.start(monitor)
+    expect((await monitor.reload()).status).toBe('running')
+    expect(sandbox.launches()).toBe(1)
+    expect(sandbox.execEnvs.filter(Boolean)).toHaveLength(0)
   })
 
   it('restart: on-loss — a wiped log is re-read from byte 0 even when nothing was delivered yet', async () => {

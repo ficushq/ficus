@@ -61,6 +61,40 @@ const TIMESTAMP = `date -u '+%Y-%m-%dT%H:%M:%SZ'`
 export const MONITOR_TIMEOUT_EXIT_CODE = 124
 /** Marker file the in-sandbox watchdog writes when the deadline passes. */
 export const MONITOR_TIMED_OUT_FILE = 'timedOut'
+/**
+ * Out-of-band exec env var that carries the monitor's read-only token to the
+ * launch command, which writes it to the hand-off file
+ * ({@link MONITOR_TOKEN_DIR}) and unsets it BEFORE tmux runs: a tmux server
+ * this command happens to start would otherwise hand it to every later session.
+ */
+export const MONITOR_TOKEN_ENV = 'FICUS_MONITOR_TOKEN'
+/**
+ * Directory, relative to the box user's $HOME, of the owner-only hand-off
+ * files (`<dir>/<monitor-id>`). Deliberately NOT the monitor's work dir: that
+ * lives in the workspace (or the private area), which Core serves to anyone
+ * with workspace:read through its file, download and search routes. $HOME
+ * itself is served by no route. The command's subshell deletes the file as
+ * soon as it has read it, so it exists only between launch and command start.
+ */
+export const MONITOR_TOKEN_DIR = '.ficus-monitor-tokens'
+/** Sets `token_file` to the monitor's hand-off file, or to '' without a usable $HOME or monitor id. */
+const SET_TOKEN_FILE = `token_file=''; [ -z "\${HOME:-}" ] || [ -z "\${FICUS_MONITOR_ID:-}" ] || token_file="$HOME/${MONITOR_TOKEN_DIR}/$FICUS_MONITOR_ID"`
+
+/**
+ * Launcher lines, run in the command's own subshell, that give the command the
+ * same Ficus identity shape as an agent's foreground shell: the monitor's
+ * read-only token (read, then deleted), the Core URL and the squad. Neither
+ * the launcher nor its watchdog holds the token. FICUS_AGENT_CONTEXT makes the
+ * CLI use only these (never a human login on the box).
+ */
+const COMMAND_IDENTITY =
+  `${SET_TOKEN_FILE}; ` +
+  `if [ -n "$token_file" ] && [ -s "$token_file" ]; then ` +
+  `FICUS_TOKEN=$(cat "$token_file") && export FICUS_TOKEN FICUS_AGENT_CONTEXT=1; fi; ` +
+  `[ -z "$token_file" ] || rm -f "$token_file"; unset token_file; ` +
+  '[ -z "${FICUS_MONITOR_API_URL:-}" ] || export FICUS_API_URL="$FICUS_MONITOR_API_URL"; ' +
+  '[ -z "${FICUS_MONITOR_SQUAD_ID:-}" ] || export FICUS_SQUAD_ID="$FICUS_MONITOR_SQUAD_ID"'
+
 /** Seconds between SIGTERM and SIGKILL when the watchdog stops a command. */
 export const MONITOR_KILL_GRACE_SECONDS = 5
 /** Longest single watchdog sleep, so a suspended box notices its deadline soon after it resumes. */
@@ -164,7 +198,7 @@ trap "trap '' HUP INT TERM; stop_watchdog; stop_job; exit 129" HUP INT TERM
 # Run directory setup inside the captured pipeline too: a failed cd is a normal
 # command failure, with diagnostics and exitCode, not unexplained process loss.
 set -m
-( set +m; ( cd "$FICUS_MONITOR_CWD" && ${runWithLaunchPath('FICUS_MONITOR_COMMAND')} ) 2>&1 | tee -a "$FICUS_MONITOR_DIR/logs/current.log"; exit "\${PIPESTATUS[0]}" ) </dev/null &
+( set +m; ( ${COMMAND_IDENTITY}; cd "$FICUS_MONITOR_CWD" && ${runWithLaunchPath('FICUS_MONITOR_COMMAND')} ) 2>&1 | tee -a "$FICUS_MONITOR_DIR/logs/current.log"; exit "\${PIPESTATUS[0]}" ) </dev/null &
 job=$!
 kill -0 -- -"$job" 2>/dev/null && job_group=1
 if [ -n "$deadline" ]; then
@@ -215,6 +249,27 @@ export const MONITOR_PROBE_TIMED_OUT = '__MONITOR_TIMED_OUT__'
 export const MONITOR_LOG_SIZE_MARKER = '__FICUS_MONITOR_LOG_SIZE__='
 
 /**
+ * Launch-command lines that store this launch's token (or none) from
+ * {@link MONITOR_TOKEN_ENV} in the monitor's owner-only hand-off file under
+ * `$HOME/{@link MONITOR_TOKEN_DIR}`, replacing any earlier launch's, then drop
+ * it from the environment before anything else (tmux above all) can inherit it.
+ * Without a usable $HOME nothing is written and the command runs without one.
+ */
+export function monitorTokenFileCommand(monitorId: string): string {
+  return [
+    `(umask 077; FICUS_MONITOR_ID=${shellQuote(monitorId)}; ${SET_TOKEN_FILE}; [ -n "$token_file" ] || exit 0; ` +
+      `rm -f "$token_file"; if [ -n "\${${MONITOR_TOKEN_ENV}:-}" ]; then ` +
+      `mkdir -p "\${token_file%/*}" && printf '%s' "$${MONITOR_TOKEN_ENV}" > "$token_file"; fi)`,
+    `unset ${MONITOR_TOKEN_ENV}`,
+  ].join('\n')
+}
+
+/** Box command that removes a monitor's hand-off file if its command never consumed it. */
+export function monitorTokenCleanupCommand(monitorId: string): string {
+  return `(FICUS_MONITOR_ID=${shellQuote(monitorId)}; ${SET_TOKEN_FILE}; [ -z "$token_file" ] || rm -f "$token_file") || true`
+}
+
+/**
  * The box command that (re)launches a monitor: writes {@link LAUNCHER_SCRIPT},
  * records the caller's PATH and starts the session with the pinned tmux on the
  * Ficus socket (see sandbox/tmux.ts), in the monitor's OWN box — a private
@@ -240,6 +295,7 @@ export function monitorLaunchCommand(args: {
   return [
     'set -e',
     `mkdir -p ${shellQuote(`${dir}/logs`)}`,
+    monitorTokenFileCommand(args.env.FICUS_MONITOR_ID ?? ''),
     `cat > ${shellQuote(script)} <<'EOF'\n${LAUNCHER_SCRIPT}EOF`,
     `chmod +x ${shellQuote(script)}`,
     // The tmux session gets the tmux server's PATH, not ours (see launch-path.ts).
