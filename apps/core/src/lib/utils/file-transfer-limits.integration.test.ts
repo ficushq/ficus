@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { handleUpload, handleStat } from '../../../../../packages/sandbox-server/src/services/filesystem'
 import { handleDownload } from '../../../../../packages/sandbox-server/src/services/download'
+import { handleBash } from '../../../../../packages/sandbox-server/src/services/bash'
 import { stageWorkspaceMultipart } from '../../services/attachments/workspace-multipart'
 import { publishWorkspaceUpload } from '../../services/squad/workspace-upload'
 import { SandboxClient } from '../../services/sandbox/client/http-client'
@@ -27,6 +28,8 @@ test('8MiB multipart -> Core staging -> sandbox atomic upload -> streaming downl
       if (url.pathname === '/upload') return handleUpload(url, req)
       if (url.pathname === '/download') return handleDownload(url, req)
       if (url.pathname === '/stat') return handleStat(await req.json())
+      // Upload resolves each target's real path in the box before writing.
+      if (url.pathname === '/bash') return handleBash(await req.json())
       return new Response('Not found', { status: 404 })
     },
   })

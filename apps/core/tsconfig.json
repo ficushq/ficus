@@ -15,6 +15,13 @@
     "../../packages/sandbox-server/src/services/atomic-write.ts",
     "../../packages/sandbox-server/src/services/filesystem.ts",
     "../../packages/sandbox-server/src/services/download.ts",
+    "../../packages/sandbox-server/src/services/bash.ts",
+    "../../packages/sandbox-server/src/services/bash-invocation-registry.ts",
+    "../../packages/sandbox-server/src/services/command-identity.ts",
+    "../../packages/sandbox-server/src/services/devbox-env.ts",
+    "../../packages/sandbox-server/src/services/env.ts",
+    "../../packages/sandbox-server/src/services/process-session.ts",
+    "../../packages/sandbox-server/src/docker.ts",
     "../../packages/sandbox-server/src/paths.ts",
     "package.json"
   ]
