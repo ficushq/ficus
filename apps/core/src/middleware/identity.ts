@@ -1,5 +1,6 @@
 import { createMiddleware } from 'hono/factory'
 import { resolveTokenContext, type AuthContext } from '../services/auth/resolve-token'
+import { isMonitorTokenRequestAllowed } from '../services/auth/monitor-tokens'
 import { extractSessionToken } from '../services/auth/session-cookie'
 import { verifyImageUrlSignature } from '../services/images/signing'
 import type { Identity } from '../services/rbac'
@@ -113,9 +114,18 @@ export const identityMiddleware = createMiddleware(async (c, next) => {
     return c.json({ error: 'Authentication required' }, 401)
   }
 
-  const authContext = await resolveTokenContext(token)
+  const authContext = await resolveTokenContext(token, { allowMonitorTokens: true })
   if (!authContext) {
     return c.json({ error: 'Invalid or expired token' }, 401)
+  }
+  // A monitor's command runs with a read-only token. Many write routes authorize
+  // by the agent identity alone, so confine it here, before any route runs.
+  if (
+    authContext.identity.type === 'agent' &&
+    authContext.identity.monitorId &&
+    !isMonitorTokenRequestAllowed(c.req.method, c.req.path)
+  ) {
+    return c.json({ error: 'Background monitor credentials are read-only' }, 403)
   }
 
   c.set('identity', authContext.identity)

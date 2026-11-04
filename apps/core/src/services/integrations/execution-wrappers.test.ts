@@ -3,8 +3,15 @@ import { afterEach, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { renderExecutionWrapper, writeExecutionWrappers } from './execution-wrappers'
+import {
+  MONITOR_CREDENTIALS_NOTICE_MARKER,
+  monitorCredentialsNotice,
+  renderExecutionWrapper,
+  writeExecutionWrappers,
+} from './execution-wrappers'
 import { expectCleanExit, runCapturedProcess } from '../../test-utils/captured-process'
+import { LAUNCHER_SCRIPT } from '../monitors/launcher'
+import { LAUNCH_PATH_FILE } from '../sandbox/launch-path'
 
 const roots: string[] = []
 afterEach(() => {
@@ -79,6 +86,78 @@ test('human terminal passes through unchanged with exactly one stderr notice and
     stdout: '<login>\n',
     stderr: 'Ficus integration credentials are only available to agents; running example without Ficus credentials.\n',
   })
+})
+
+function monitorFixture() {
+  const f = fixture()
+  writeExecutionWrappers(f.wrappers, [{ binary: 'example', providerKey: 'example' }], 'squad')
+  const monitorDir = join(f.root, '.ficus', 'monitors', 'monitor-id')
+  mkdirSync(join(monitorDir, 'logs'), { recursive: true })
+  return { ...f, monitorDir, logFile: join(monitorDir, 'logs', 'current.log') }
+}
+
+test('inside a monitor without credentials the notice reaches the monitor log once, even with stderr discarded', async () => {
+  const f = monitorFixture()
+  const env = { ...f.env, FICUS_TOKEN: undefined, FICUS_MONITOR_DIR: f.monitorDir, TEST_EXIT: '4' }
+  for (let i = 0; i < 3; i++) {
+    const result = await runCapturedProcess(['/bin/sh', '-c', 'example poll 2>/dev/null'], { env, timeoutMs: 3000 })
+    // The real binary still runs unauthenticated with its own status, exactly as before.
+    expect(result).toMatchObject({ kind: 'exited', code: 4, stdout: '<poll>\n', stderr: '' })
+  }
+  expect(readFileSync(f.logFile, 'utf8')).toBe(`${monitorCredentialsNotice('example')}\n`)
+  expect(existsSync(join(f.monitorDir, MONITOR_CREDENTIALS_NOTICE_MARKER))).toBe(true)
+})
+
+test('inside a monitor with credentials, or outside any monitor, nothing is written to a monitor log', async () => {
+  const f = monitorFixture()
+  const credentialed = await runCapturedProcess(['example', 'poll'], {
+    env: { ...f.env, FICUS_MONITOR_DIR: f.monitorDir },
+    timeoutMs: 3000,
+  })
+  expect(credentialed).toMatchObject({ kind: 'exited', code: 0, stdout: '<poll>\n' })
+  const outside = await runCapturedProcess(['example', 'poll'], {
+    env: { ...f.env, FICUS_TOKEN: undefined },
+    timeoutMs: 3000,
+  })
+  expect(outside).toMatchObject({ kind: 'exited', code: 0, stdout: '<poll>\n' })
+  // A monitor dir without its logs directory is not a live monitor: never create one.
+  const stray = join(f.root, 'not-a-monitor')
+  mkdirSync(stray)
+  const strayRun = await runCapturedProcess(['example'], {
+    env: { ...f.env, FICUS_TOKEN: undefined, FICUS_MONITOR_DIR: stray },
+    timeoutMs: 3000,
+  })
+  expect(strayRun).toMatchObject({ kind: 'exited', code: 0 })
+  expect(existsSync(f.logFile)).toBe(false)
+  expect(existsSync(join(f.monitorDir, MONITOR_CREDENTIALS_NOTICE_MARKER))).toBe(false)
+  expect(existsSync(join(stray, MONITOR_CREDENTIALS_NOTICE_MARKER))).toBe(false)
+  expect(existsSync(join(stray, 'logs'))).toBe(false)
+})
+
+test('the real monitor launcher surfaces the notice from a polling loop that hides the CLI errors', async () => {
+  // The Desktop 0.5.25 shape: poll an integration CLI with stderr discarded and
+  // print only on completion. Without credentials it can never complete, and
+  // before this notice the monitor log stayed empty for the whole run.
+  const f = monitorFixture()
+  writeFileSync(join(f.monitorDir, LAUNCH_PATH_FILE), f.env.PATH)
+  const script = join(f.monitorDir, 'run.sh')
+  writeFileSync(script, LAUNCHER_SCRIPT, { mode: 0o755 })
+  const result = await runCapturedProcess(['bash', script], {
+    env: {
+      PATH: f.env.PATH,
+      HOME: f.root,
+      FICUS_MONITOR_DIR: f.monitorDir,
+      FICUS_MONITOR_CWD: f.root,
+      FICUS_MONITOR_TIMEOUT_SECONDS: '30',
+      TEST_EXIT: '4',
+      FICUS_MONITOR_COMMAND:
+        'for i in 1 2 3; do s=$(example status 2>/dev/null); case "$s" in completed*) echo done; exit 0;; esac; done; exit 9',
+    },
+    timeoutMs: 10_000,
+  })
+  expect(result).toMatchObject({ kind: 'exited', code: 9 })
+  expect(readFileSync(join(f.monitorDir, 'exitCode'), 'utf8').trim()).toBe('9')
+  expect(readFileSync(f.logFile, 'utf8')).toBe(`${monitorCredentialsNotice('example')}\n`)
 })
 
 test('missing real binary fails clearly without recursion', async () => {

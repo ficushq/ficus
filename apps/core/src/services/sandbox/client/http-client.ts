@@ -674,9 +674,19 @@ export class SandboxClient {
     return this.streamDownload(params, request.range, request.signal)
   }
 
-  /** Stream a directory as a gzip-compressed tar (`archive=tar.gz`); see {@link download}. */
-  async downloadArchive(request: { path: string; signal?: AbortSignal }): Promise<SandboxDownloadResponse> {
+  /**
+   * Stream a directory as a gzip-compressed tar (`archive=tar.gz`); see {@link download}.
+   * `exclude` names direct children to leave out; a box that honored them lists
+   * them in the `X-Ficus-Archive-Excluded` response header, and an older bundle
+   * ignores the parameter, so callers that need the exclusion must check it.
+   */
+  async downloadArchive(request: {
+    path: string
+    signal?: AbortSignal
+    exclude?: string[]
+  }): Promise<SandboxDownloadResponse> {
     const params = new URLSearchParams({ path: request.path, archive: 'tar.gz' })
+    for (const name of request.exclude ?? []) params.append('exclude', name)
     return this.streamDownload(params, undefined, request.signal)
   }
 

@@ -3,6 +3,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import {
+  ARCHIVE_EXCLUDED_HEADER,
   createDownloadResponse,
   createFileResponse,
   createSandboxFileResponse,
@@ -103,6 +104,48 @@ describe('createDownloadResponse (local directories)', () => {
     fs.writeFileSync(archivePath, Buffer.from(await tgz.arrayBuffer()))
     const listing = Bun.spawnSync(['tar', '-tzf', archivePath]).stdout.toString()
     expect(listing).toContain('project/nested/a.txt')
+  })
+
+  it('omits the settings directory from zip and tar.gz archives of a workspace root, keeping nested ones', async () => {
+    const dir = makeTempDir()
+    const target = path.join(dir, 'workspace')
+    fs.mkdirSync(path.join(target, '.ficus', 'monitors'), { recursive: true })
+    fs.mkdirSync(path.join(target, 'docs', '.ficus'), { recursive: true })
+    fs.writeFileSync(path.join(target, '.ficus', '.env'), 'SYNTHETIC=1')
+    fs.writeFileSync(path.join(target, '.ficus', 'monitors', 'token'), 'synthetic')
+    fs.writeFileSync(path.join(target, 'docs', '.ficus', 'config.json'), '{}')
+    fs.writeFileSync(path.join(target, 'docs', 'a.txt'), 'alpha')
+    fs.writeFileSync(path.join(target, 'top.txt'), 'top')
+
+    const tgz = createDownloadResponse(target, 'workspace', { archive: 'tar.gz', omitSettingsDir: true })
+    const tgzPath = path.join(dir, 'out.tar.gz')
+    fs.writeFileSync(tgzPath, Buffer.from(await tgz.arrayBuffer()))
+    const tarListing = Bun.spawnSync(['tar', '-tzf', tgzPath]).stdout.toString().split('\n').filter(Boolean)
+    expect(tarListing.some((entry) => entry.startsWith('workspace/.ficus'))).toBe(false)
+    expect(tarListing).toContain('workspace/top.txt')
+    expect(tarListing).toContain('workspace/docs/a.txt')
+    expect(tarListing).toContain('workspace/docs/.ficus/config.json')
+
+    const zip = createDownloadResponse(target, 'workspace', { omitSettingsDir: true })
+    const zipPath = path.join(dir, 'out.zip')
+    fs.writeFileSync(zipPath, Buffer.from(await zip.arrayBuffer()))
+    const zipListing = Bun.spawnSync([
+      'python3',
+      '-c',
+      'import sys,zipfile;print("\\n".join(zipfile.ZipFile(sys.argv[1]).namelist()))',
+      zipPath,
+    ])
+      .stdout.toString()
+      .split('\n')
+      .filter(Boolean)
+    expect(zipListing.some((entry) => entry.startsWith('.ficus'))).toBe(false)
+    expect(zipListing).toContain('top.txt')
+    expect(zipListing).toContain('docs/.ficus/config.json')
+
+    // Without the option (a non-root directory) nothing is filtered.
+    const plain = createDownloadResponse(target, 'workspace', { archive: 'tar.gz' })
+    fs.writeFileSync(tgzPath, Buffer.from(await plain.arrayBuffer()))
+    expect(Bun.spawnSync(['tar', '-tzf', tgzPath]).stdout.toString()).toContain('workspace/.ficus/.env')
   })
 })
 
@@ -226,6 +269,49 @@ describe('createSandboxFileResponse', () => {
     expect(response.headers.get('Content-Disposition')).toContain('filename="project.tar.gz"')
     expect(response.headers.get(DOWNLOAD_ARCHIVE_HEADER)).toBe('tar.gz')
     expect(await response.text()).toBe('tgz-bytes')
+  })
+
+  it('asks the box to exclude children and streams the archive once it confirms', async () => {
+    const requests: unknown[] = []
+    const { client } = fakeClient({ size: 4096, isDirectory: true })
+    client.downloadArchive = async (request) => {
+      requests.push(request)
+      return {
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/gzip', [ARCHIVE_EXCLUDED_HEADER]: '.ficus' }),
+        body: new Response('tgz-bytes').body!,
+      }
+    }
+    const response = await createSandboxFileResponse(client, '/workspace/s', 's', { excludeFromArchive: ['.ficus'] })
+    expect(requests).toEqual([{ path: '/workspace/s', signal: undefined, exclude: ['.ficus'] }])
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('tgz-bytes')
+  })
+
+  it('answers 503 and cancels the body when an outdated box ignores the exclusion', async () => {
+    let cancelled = false
+    const { client } = fakeClient({
+      size: 4096,
+      isDirectory: true,
+      downloadArchive: async () => ({
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/gzip' }),
+        body: new ReadableStream<Uint8Array>({
+          pull(controller) {
+            controller.enqueue(new TextEncoder().encode('archive-with-everything'))
+          },
+          cancel() {
+            cancelled = true
+          },
+        }),
+      }),
+    })
+    const response = await createSandboxFileResponse(client, '/workspace/s', 's', { excludeFromArchive: ['.ficus'] })
+    expect(response.status).toBe(503)
+    const body = await response.json()
+    expect(body.code).toBe(SANDBOX_BUNDLE_OUTDATED_CODE)
+    expect(JSON.stringify(body)).not.toContain('archive-with-everything')
+    expect(cancelled).toBe(true)
   })
 
   it('falls back to the base64 /read on an old bundle for files up to 64 MiB', async () => {

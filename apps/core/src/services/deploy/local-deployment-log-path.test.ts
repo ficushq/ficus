@@ -67,6 +67,54 @@ describe('normalizeAttachedLogPathInput', () => {
   })
 })
 
+describe('attached log paths never read the workspace settings directory', () => {
+  test('registration refuses the settings directory in any spelling', () => {
+    for (const raw of [
+      '.ficus/.env',
+      './.ficus/monitors/m1/token',
+      'logs/../.ficus/.env',
+      '.FICUS/.env',
+      '.ficus./.env',
+      `/workspace/${SQUAD}//.ficus/.env`,
+    ]) {
+      expect(() => normalizeAttachedLogPathInput(raw, SQUAD)).toThrow(LocalDeploymentLogPathOutsideWorkspaceError)
+    }
+    expect(normalizeAttachedLogPathInput('app/.ficus/server.log', SQUAD)).toBe(
+      `/workspace/${SQUAD}/app/.ficus/server.log`
+    )
+  })
+
+  test('the resolve and stream commands refuse a link into the settings directory', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ficus-log-settings-'))
+    try {
+      const workspace = join(root, 'workspace')
+      await mkdir(join(workspace, '.ficus'), { recursive: true })
+      await mkdir(join(workspace, 'app'), { recursive: true })
+      await Bun.write(join(workspace, '.ficus', '.env'), 'SYNTHETIC=1\n')
+      await Bun.write(join(workspace, 'app', 'server.log'), 'line\n')
+      await symlink(join(workspace, '.ficus', '.env'), join(workspace, 'app', 'linked.log'))
+      await symlink('../.ficus', join(workspace, 'app', 'settings'))
+      const run = (command: string) => {
+        const result = Bun.spawnSync(['sh', '-c', command])
+        return { code: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() }
+      }
+      for (const linked of [join(workspace, 'app', 'linked.log'), join(workspace, 'app', 'settings', '.env')]) {
+        expect(run(buildResolveAttachedLogPathCommand(workspace, linked))).toMatchObject({
+          code: 0,
+          stdout: 'OUTSIDE\n',
+        })
+        const streamed = run(buildStreamAttachedLogCommand(workspace, linked, 10))
+        expect(streamed.code).toBe(3)
+        expect(streamed.stdout).toBe('')
+      }
+      const ok = run(buildResolveAttachedLogPathCommand(workspace, join(workspace, 'app', 'server.log')))
+      expect(ok.stdout).toBe(`EXISTS\n${await realpath(workspace)}/app/server.log\n`)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('command builders', () => {
   test('missing nested paths resolve their physical ancestor and cannot escape through a symlink', async () => {
     const root = await mkdtemp(join(tmpdir(), 'ficus-log-containment-'))

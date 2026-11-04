@@ -404,7 +404,9 @@ still surface their pressure and reason without requiring runtime-health fields.
 Opening the warning does not sample processes or run Docker diagnostics; **Show processes**
 remains an explicit action in the destination panel.
 
-These need `squads:update` for a squad sandbox, or permission to run the agent.
+These need `squads:update` for a squad sandbox, or `agents:update` for an
+agent's own sandbox (the same permission stops and restarts it); `agents:run`
+alone, which covers talking to the agent, is not enough.
 Listing needs it too, because command lines can contain secrets. The sandbox
 server runs as the sandbox's own user, so it can only see and signal that
 user's processes and its own containers. It refuses to signal itself and the

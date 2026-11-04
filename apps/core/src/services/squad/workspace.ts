@@ -1,10 +1,10 @@
 import path, { join } from 'path'
-import { existsSync, mkdirSync, readdirSync, statSync, readFileSync, type Dirent } from 'fs'
+import { existsSync, mkdirSync, readdirSync, realpathSync, statSync, readFileSync, type Dirent } from 'fs'
 import { rm } from 'fs/promises'
 import { getHomeDir } from '../../lib/utils/home'
 import { isHostRuntime } from '../sandbox/runtime'
 import { getHostWorkspaceOverride } from '../sandbox/host/workspace-overrides'
-import { prepareWorkspaceDotDir } from '../workspace/dot-dir'
+import { isWorkspaceSettingsDirName, isWorkspaceSettingsPath, prepareWorkspaceDotDir } from '../workspace/dot-dir'
 
 /** Directories to skip when searching */
 const SKIP_DIRS = new Set(['node_modules', '.git', '.todo', 'dist', 'build', '.next', '__pycache__', '.cache'])
@@ -137,6 +137,8 @@ function buildTree(dirPath: string, name: string, depth: number, maxDepth: numbe
 
   const children = entries
     .filter((f) => !f.startsWith('.git'))
+    // The workspace settings directory is never listed (depth 0 is the workspace root).
+    .filter((f) => depth !== 0 || !isWorkspaceSettingsDirName(f))
     .map((f) => buildTree(join(dirPath, f), f, depth + 1, maxDepth))
     .sort((a, b) => {
       if (a.type !== b.type) return a.type === 'directory' ? -1 : 1
@@ -147,14 +149,21 @@ function buildTree(dirPath: string, name: string, depth: number, maxDepth: numbe
 }
 
 /**
- * Read a file from a squad workspace.
+ * Read a file from a squad workspace. The real path must stay inside the
+ * workspace, and the workspace settings directory reads as missing.
  */
 export function readWorkspaceFile(squadId: string, filePath: string): string {
-  const fullPath = join(resolveSquadWorkspaceHostPath(squadId), filePath)
-  if (!existsSync(fullPath)) {
+  const workspacePath = resolveSquadWorkspaceHostPath(squadId)
+  const fullPath = path.resolve(workspacePath, filePath)
+  if (!isInsideWorkspaceRoot(workspacePath, fullPath)) throw new Error('Path must be inside the squad workspace')
+  if (!existsSync(fullPath) || isWorkspaceSettingsPath(workspacePath, fullPath)) {
     throw new Error(`File not found: ${filePath}`)
   }
-  return readFileSync(fullPath, 'utf-8')
+  const root = realpathSync(workspacePath)
+  const real = realpathSync(fullPath)
+  if (!isInsideWorkspaceRoot(root, real)) throw new Error('Path must be inside the squad workspace')
+  if (isWorkspaceSettingsPath(root, real)) throw new Error(`File not found: ${filePath}`)
+  return readFileSync(real, 'utf-8')
 }
 
 /**
@@ -209,6 +218,7 @@ export function searchWorkspaceFiles(squadId: string, options: SearchWorkspaceOp
 
     for (const entry of entries) {
       if (files.length >= maxResults) break
+      // Hidden entries, which include the workspace settings directory, are never searched.
       if (entry.name.startsWith('.')) continue
       if (entry.isDirectory() && SKIP_DIRS.has(entry.name)) continue
 

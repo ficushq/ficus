@@ -2078,7 +2078,7 @@ describe('squads routes', () => {
     let runtimeSpy: ReturnType<typeof spyOn>
     let getSandboxManagerSpy: ReturnType<typeof spyOn>
 
-    function makeFakeStream() {
+    function makeFakeStream(command: string) {
       const handlers: Record<string, ((...args: any[]) => void)[]> = {}
       const stream = {
         on(event: string, fn: (...args: any[]) => void) {
@@ -2087,8 +2087,17 @@ describe('squads routes', () => {
           return stream
         },
       }
-      // Fire 'end' after all .on() registrations complete
-      Promise.resolve().then(() => (handlers['end'] ?? []).forEach((fn) => fn()))
+      // Fire after all .on() registrations complete. The workspace path resolver's realpath
+      // command runs in a real local bash (it only resolves the paths it is given); search
+      // commands produce no output.
+      Promise.resolve().then(() => {
+        if (command.startsWith('w=$(realpath')) {
+          const result = Bun.spawnSync(['bash', '-c', command])
+          const data = { stdout: Buffer.from(result.stdout).toString('base64'), exitCode: result.exitCode }
+          ;(handlers['data'] ?? []).forEach((fn) => fn(data))
+        }
+        ;(handlers['end'] ?? []).forEach((fn) => fn())
+      })
       return stream
     }
 
@@ -2104,7 +2113,7 @@ describe('squads routes', () => {
         },
         bash: (args: { command: string; cwd: string }) => {
           bashCalls.push(args)
-          return makeFakeStream()
+          return makeFakeStream(args.command)
         },
       }
 
@@ -2146,7 +2155,7 @@ describe('squads routes', () => {
       })
       expect(res.status).toBe(200)
       expect(bashCalls.length).toBeGreaterThan(0)
-      expect(bashCalls[0].command).toContain(`find /workspace/${squad.id}`)
+      expect(bashCalls[0].command).toContain(`find '/workspace/${squad.id}'`)
       expect(bashCalls[0].cwd).toBe(`/workspace/${squad.id}`)
     })
   })

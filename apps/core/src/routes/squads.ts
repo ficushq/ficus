@@ -37,12 +37,15 @@ import {
 } from '../services/squad/subscriptions'
 import { Squad } from '../entities/Squad'
 import type { Squad as SquadEntity } from '../entities/Squad'
+import { resolveSquadWorkspaceHostPath, searchWorkspaceFiles } from '../services/squad/workspace'
 import {
-  isInsideWorkspaceRoot,
-  resolveSandboxWorkspacePath,
-  resolveSquadWorkspaceHostPath,
-  searchWorkspaceFiles,
-} from '../services/squad/workspace'
+  buildSandboxWorkspaceSearchCommand,
+  isWorkspaceSettingsDirName,
+  resolveLocalWorkspaceTarget,
+  resolveSandboxWorkspaceTarget,
+  type WorkspaceTargetResolution,
+} from '../services/squad/workspace-settings'
+import { WORKSPACE_DOT_DIR } from '../services/workspace/dot-dir'
 import { DEFAULT_CONSULTANT_IDLE_DORMANCY_DAYS, type IdleConsultantsPreview, type SquadStatus } from '@ficus/shared'
 import { findIdleConsultants, makeIdleConsultantsDormant } from '../services/agents/idle-consultants'
 import { agentStorageBytes, storageAgentInfo } from '../services/storage/agents'
@@ -166,7 +169,22 @@ function memoryDirToFilesystemPath(squadId: string, memoryPath: string): string 
   return fsPath
 }
 
-function buildSquadTree(dirPath: string, depth: number, maxDepth: number): any[] {
+/**
+ * A refused workspace path, answered with the route's existing invalid-path
+ * 400 or not-found 404. The settings directory is reported as not found.
+ */
+function workspaceTargetDenial(
+  c: Context,
+  resolution: Exclude<WorkspaceTargetResolution, { ok: true }>,
+  notFoundMessage: string
+): Response {
+  return resolution.reason === 'invalid'
+    ? c.json({ error: 'Invalid path' }, 400)
+    : c.json({ error: notFoundMessage }, 404)
+}
+
+/** `omitSettingsDir` drops the workspace settings directory from the top level (set when listing the workspace root). */
+function buildSquadTree(dirPath: string, depth: number, maxDepth: number, omitSettingsDir = false): any[] {
   if (depth > maxDepth) return []
   let entries: fs.Dirent[]
   try {
@@ -177,6 +195,7 @@ function buildSquadTree(dirPath: string, depth: number, maxDepth: number): any[]
   const nodes: any[] = []
   for (const entry of entries) {
     if (entry.name.startsWith('.') && entry.name !== '.env') continue
+    if (omitSettingsDir && isWorkspaceSettingsDirName(entry.name)) continue
     if (entry.isDirectory() && SKIP_DIRS.has(entry.name)) continue
     const fullPath = path.join(dirPath, entry.name)
     if (entry.isDirectory()) {
@@ -575,10 +594,10 @@ export const squadsRouter = new Hono()
     const client = await getSquadClient(squad.id)
     if (client) {
       const { workspaceMount } = resolveWorkspaceLayout({ squadId: squad.id })
-      const listPath = resolveSandboxWorkspacePath(workspaceMount, relativePath)
-      if (!listPath) return c.json({ error: 'Invalid path' }, 400)
       try {
-        const result = await client.list({ path: listPath, maxDepth: depth })
+        const target = await resolveSandboxWorkspaceTarget(client, workspaceMount, relativePath)
+        if (!target.ok) return workspaceTargetDenial(c, target, 'Path not found')
+        const result = await client.list({ path: target.path, maxDepth: depth })
         const rootName = relativePath ? path.basename(relativePath) : 'workspace'
 
         // Build tree from flat file list. Paths are relative to listPath.
@@ -588,6 +607,7 @@ export const squadsRouter = new Hono()
           // Skip hidden files (except .env)
           const name = path.basename(f.path)
           if (name.startsWith('.') && name !== '.env') continue
+          if (target.isRoot && isWorkspaceSettingsDirName(name)) continue
           if (SKIP_DIRS.has(name) && f.isDirectory) continue
 
           // Only include direct children (single path segment)
@@ -617,20 +637,18 @@ export const squadsRouter = new Hono()
       return c.json({ error: 'Workspace not found' }, 404)
     }
 
-    const targetPath = relativePath ? path.resolve(workspacePath, relativePath) : workspacePath
-    if (!isInsideWorkspaceRoot(workspacePath, targetPath)) {
-      return c.json({ error: 'Invalid path' }, 400)
-    }
+    const target = resolveLocalWorkspaceTarget(workspacePath, relativePath)
+    if (!target.ok) return workspaceTargetDenial(c, target, 'Path not found')
 
     try {
-      const stat = fs.statSync(targetPath)
+      const stat = fs.statSync(target.path)
       if (!stat.isDirectory()) return c.json({ error: 'Path is not a directory' }, 400)
     } catch {
       return c.json({ error: 'Path not found' }, 404)
     }
 
-    const children = buildSquadTree(targetPath, 1, depth)
-    const rootName = relativePath ? path.basename(targetPath) : 'workspace'
+    const children = buildSquadTree(target.path, 1, depth, target.isRoot)
+    const rootName = relativePath ? path.basename(path.resolve(workspacePath, relativePath)) : 'workspace'
 
     return c.json({ name: rootName, type: 'directory', children })
   })
@@ -651,8 +669,10 @@ export const squadsRouter = new Hono()
         const result = await new Promise<string[]>((resolve, reject) => {
           let output = ''
           const stream = client.bash({
-            command: `find ${workspaceMount} -maxdepth 5 -name '*${query.replace(/'/g, "\\'")}*' -not -path '*/node_modules/*' -not -path '*/.git/*' -not -name '*.pyc' 2>/dev/null | head -20`,
+            command: buildSandboxWorkspaceSearchCommand(workspaceMount, query),
             cwd: workspaceMount,
+            sourceEnv: false,
+            activateDevbox: false,
           })
           stream.on('data', (data) => {
             if (data.stdout) output += Buffer.from(data.stdout, 'base64').toString('utf-8')
@@ -662,6 +682,7 @@ export const squadsRouter = new Hono()
               .split('\n')
               .filter(Boolean)
               .map((f) => f.replace(`${workspaceMount}/`, ''))
+              .filter((f) => !isWorkspaceSettingsDirName(f.split('/')[0]))
             resolve(files)
           })
           stream.on('error', reject)
@@ -714,10 +735,10 @@ export const squadsRouter = new Hono()
     // K8s runtime: proxy through sandbox
     const client = await getSquadClient(squad.id)
     if (client) {
-      const filePath = resolveSandboxWorkspacePath(workspaceMount, relativePath)
-      if (!filePath) return c.json({ error: 'Invalid path' }, 400)
       try {
-        const result = await client.read({ path: filePath })
+        const target = await resolveSandboxWorkspaceTarget(client, workspaceMount, relativePath)
+        if (!target.ok) return workspaceTargetDenial(c, target, 'File not found')
+        const result = await client.read({ path: target.path })
         const buffer = Buffer.from(result.content, 'base64')
         const binary = result.isBinary || buffer.slice(0, 8192).includes(0)
         return c.json({
@@ -737,14 +758,9 @@ export const squadsRouter = new Hono()
 
     // Local runtime: read from filesystem
     const workspacePath = resolveSquadWorkspaceHostPath(squad.id)
-    const targetPath = path.resolve(workspacePath, relativePath)
-    if (!isInsideWorkspaceRoot(workspacePath, targetPath)) {
-      return c.json({ error: 'Invalid path' }, 400)
-    }
-
-    if (!fs.existsSync(targetPath)) {
-      return c.json({ error: 'File not found' }, 404)
-    }
+    const target = resolveLocalWorkspaceTarget(workspacePath, relativePath)
+    if (!target.ok) return workspaceTargetDenial(c, target, 'File not found')
+    const targetPath = target.path
 
     try {
       const stat = fs.statSync(targetPath)
@@ -792,12 +808,16 @@ export const squadsRouter = new Hono()
     // Remote runtimes: stream through the sandbox's raw /download route
     const client = await getSquadClient(squad.id)
     if (client) {
-      const filePath = resolveSandboxWorkspacePath(workspaceMount, relativePath)
-      if (!filePath) return c.json({ error: 'Invalid path' }, 400)
       if (archive === 'zip') return c.json({ error: 'Sandbox directory downloads are tar.gz archives' }, 400)
       try {
-        const filename = path.basename(filePath)
-        return await createSandboxFileResponse(client, filePath, filename, { range, signal: c.req.raw.signal })
+        const target = await resolveSandboxWorkspaceTarget(client, workspaceMount, relativePath)
+        if (!target.ok) return workspaceTargetDenial(c, target, 'File not found')
+        const filename = path.basename(target.path)
+        return await createSandboxFileResponse(client, target.path, filename, {
+          range,
+          signal: c.req.raw.signal,
+          ...(target.isRoot ? { excludeFromArchive: [WORKSPACE_DOT_DIR] } : {}),
+        })
       } catch (err: any) {
         if (err.message?.includes('404') || err.message?.includes('not found')) {
           return c.json({ error: 'File not found' }, 404)
@@ -809,13 +829,10 @@ export const squadsRouter = new Hono()
 
     // Local runtime: read from filesystem
     const workspacePath = resolveSquadWorkspaceHostPath(squad.id)
-    const targetPath = path.resolve(workspacePath, relativePath)
-    if (!isInsideWorkspaceRoot(workspacePath, targetPath)) {
-      return c.json({ error: 'Invalid path' }, 400)
-    }
-
     try {
-      return createDownloadResponse(targetPath, 'workspace', { range, archive })
+      const target = resolveLocalWorkspaceTarget(workspacePath, relativePath)
+      if (!target.ok) return workspaceTargetDenial(c, target, 'Path not found')
+      return createDownloadResponse(target.path, 'workspace', { range, archive, omitSettingsDir: target.isRoot })
     } catch (error: any) {
       if (error.code === 'ENOENT') {
         return c.json({ error: 'Path not found' }, 404)

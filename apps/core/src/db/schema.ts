@@ -3186,6 +3186,14 @@ export const agentTokens = pgTable('agent_tokens', {
   userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   revokedAt: timestamp('revoked_at'),
+  /** The token stops authenticating at this time. Null: no expiry (ordinary agent tokens). */
+  expiresAt: timestamp('expires_at'),
+  /**
+   * Set for a token minted for one background monitor's command: it is read-only
+   * (see services/auth/monitor-tokens.ts), expires with the monitor and is
+   * revoked when the monitor ends.
+   */
+  monitorId: uuid('monitor_id').references(() => monitors.id, { onDelete: 'cascade' }),
 })
 
 export const agentExtraScopes = pgTable(

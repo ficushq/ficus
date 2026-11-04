@@ -29,6 +29,7 @@ import { openWait, type DbHandle } from '../work-streams/waits'
 import { getContentSafetyRegistry } from '../security/content-safety-registry'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { restartContextForCommandError } from '../sandbox/command-drain'
+import { resumedRunRetryContent, type ResumedRunObligations } from '../execution/resumed-run-failure'
 
 const log = createLogger('recovery-store')
 
@@ -44,7 +45,7 @@ export interface RecoveryActor {
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
 /** Never stores raw output, command arguments, a stack or an unredacted error. */
-function lastErrorLine(error: unknown): string {
+export function lastErrorLine(error: unknown): string {
   const text = error instanceof Error ? error.message : String(error)
   const safe = getContentSafetyRegistry().redact(stripVTControlCharacters(text))
   const line = safe
@@ -538,11 +539,33 @@ export async function recordRecoveryFailure(
     error: unknown
     /** Only a fenced, pre-model startup failure may automatically retry. */
     retryStartupMessage?: string
+    /**
+     * A run the platform resumed after an interruption, then failed. It may
+     * wake once per counted failure, telling the agent the interrupted
+     * outcome is unknown; it is never replay-safe, so it is not startupOnly.
+     */
+    retryResumedRun?: ResumedRunObligations
   }
 ): Promise<RecoveryRecord> {
   const restart = restartContextForCommandError(input.error)
   const outcome = restart ? 'restart' : 'unknown'
   const error = restart ? null : lastErrorLine(input.error)
+  const retryWake =
+    input.retryStartupMessage !== undefined
+      ? {
+          subject: 'Retry retained startup request',
+          content: `The task could not start before a model prompt was dispatched. The runtime has authorized one bounded startup retry with backoff. Preserve the original scope and all other gates. Retained request:\n\n${input.retryStartupMessage}`,
+        }
+      : input.retryResumedRun
+        ? {
+            subject: 'Your resumed run failed: inspect state before continuing',
+            content: resumedRunRetryContent({
+              executionId: origin.executionId,
+              error,
+              obligations: input.retryResumedRun,
+            }),
+          }
+        : undefined
   const afterCommit: Array<() => void> = []
   const record = await db.transaction(async (tx) => {
     const source = await trustedOrigin(tx, origin)
@@ -619,14 +642,14 @@ export async function recordRecoveryFailure(
       .set({ state: nextState, version: current.version + 1, updatedAt: new Date() })
       .where(eq(recoveryEpisodes.id, current.id))
       .returning()
-    if (nextState.state === 'recovering' && input.retryStartupMessage !== undefined) {
+    if (nextState.state === 'recovering' && retryWake) {
       const { InboxMessage } = await import('../../entities/InboxMessage')
       await InboxMessage.persistSystemAgentOnceInTransaction(
         tx,
         {
           recipientId: updated!.agentId,
-          subject: 'Retry retained startup request',
-          content: `The task could not start before a model prompt was dispatched. The runtime has authorized one bounded startup retry with backoff. Preserve the original scope and all other gates. Retained request:\n\n${input.retryStartupMessage}`,
+          subject: retryWake.subject,
+          content: retryWake.content,
           metadata: {
             source: updated!.flowAttemptId == null ? 'recovery-retry' : 'workflow-wait-resolution',
             recoveryId: updated!.id,
@@ -645,7 +668,7 @@ export async function recordRecoveryFailure(
   })
   afterCommit.forEach((callback) => callback())
   if (['waiting-manager', 'waiting-owner'].includes(record.state.state)) await publish(record)
-  else if (input.retryStartupMessage !== undefined) {
+  else if (retryWake) {
     const { deliverInboxMessagesToAgent } = await import('../inbox/inboxDelivery')
     await deliverInboxMessagesToAgent(record.agentId)
   }
