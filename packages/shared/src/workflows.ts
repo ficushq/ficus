@@ -182,6 +182,35 @@ export const workflowCompletionSchema = z.strictObject({
   changeEventsTo: z.union([z.literal('delivery-owner'), z.strictObject({ step: identifier })]).optional(),
 })
 
+export type WorkflowCompletion = z.infer<typeof workflowCompletionSchema>
+
+/** Completion modes that finish only when a delivery pull request merges, so they must observe it. */
+export const PULL_REQUEST_MERGE_COMPLETION_MODES: readonly WorkflowCompletion['mode'][] = ['pr-merge', 'pr-auto-merge']
+
+/**
+ * Whether a flow follows code-host changes (CI, reviews, pushes, and the delivery pull request's
+ * merge or close). An explicit `followChanges` always wins, so `false` stays a real opt-out.
+ * When it is absent, merge-completed flows follow by default: they cannot finish without seeing
+ * the merge. The default is interpreted at read time, never persisted, so stored definitions
+ * written before it (including in-flight streams) follow without a revision.
+ */
+export function workflowFollowsChanges(completion: Pick<WorkflowCompletion, 'mode' | 'followChanges'>): boolean {
+  return completion.followChanges ?? PULL_REQUEST_MERGE_COMPLETION_MODES.includes(completion.mode)
+}
+
+/**
+ * Save-time advice for a merge-completed flow that explicitly opts out of following code-host
+ * changes: nothing will observe the merge, so the stream stays completion-ready until someone
+ * finishes it by hand. A warning, not a validation error, because the opt-out is deliberate.
+ */
+export function workflowCompletionWarnings(definition: { completion: WorkflowCompletion }): string[] {
+  const { mode, followChanges } = definition.completion
+  if (followChanges !== false || !PULL_REQUEST_MERGE_COMPLETION_MODES.includes(mode)) return []
+  return [
+    `completion.followChanges is false with completion mode ${mode}: this flow will not observe its delivery pull request, so a merge will not complete the stream and nobody is told. Someone must run ficus workstream finish after the merge. Remove followChanges (it defaults to true for ${mode}) to follow the pull request automatically.`,
+  ]
+}
+
 /** Keep early saved workflows/drafts readable after removing redundant step metadata. */
 export function normalizeWorkflowStep(value: unknown): unknown {
   if (

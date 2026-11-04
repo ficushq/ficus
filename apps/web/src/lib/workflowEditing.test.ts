@@ -275,3 +275,14 @@ test('a decision step cannot be the target of a revision loop', () => {
   // Removing the step it routes to prunes nothing it still needs.
   expect(workflowDefinitionSchema.safeParse(removeWorkflowStep(onward.definition, onward.selected)).success).toBe(true)
 })
+
+test('deleting the code-hosting target keeps a merge-completed flow following, and stops other modes', () => {
+  for (const [mode, expected] of [
+    ['pr-merge', { mode: 'pr-merge' }],
+    ['deliverable', { mode: 'deliverable', followChanges: false }],
+  ] as const) {
+    const definition = parallelDeletionFixture(['audience', 'competitors'])
+    definition.completion = { mode, followChanges: true, changeEventsTo: { step: 'audience' } }
+    expect(removeWorkflowStep(definition, 'audience').completion).toEqual(expected)
+  }
+})

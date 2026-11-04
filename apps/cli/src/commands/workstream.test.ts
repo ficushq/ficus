@@ -630,6 +630,23 @@ describe('workstream CLI commands', () => {
       expect(output).toHaveBeenCalledWith(created, 'Created work stream 11111111: Implement feature')
     })
 
+    it('prints server warnings about the flow after the created line', async () => {
+      const created = {
+        id: '11111111-1111-4111-8111-111111111111',
+        title: 'Implement feature',
+        status: 'pending',
+        warnings: ['completion.followChanges is false with completion mode pr-merge: fixture'],
+      }
+      ;(apiPost as ReturnType<typeof mock>).mockResolvedValue(created)
+
+      await run(['workstream', 'create', 'Implement feature', '--squad', 'squad-1'])
+
+      expect(output).toHaveBeenCalledWith(
+        created,
+        'Created work stream 11111111: Implement feature\nWarning: completion.followChanges is false with completion mode pr-merge: fixture'
+      )
+    })
+
     it('passes git fields alongside a workflow', async () => {
       await run([
         'workstream',

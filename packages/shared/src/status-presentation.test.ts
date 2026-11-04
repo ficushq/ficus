@@ -531,3 +531,33 @@ describe('running delivery precedence boundaries', () => {
     expect(workStreamNeedsHumanAttention(facts)).toBe(false)
   })
 })
+
+describe('already-merged delivery setup label', () => {
+  test('a setup presentation with a merged pull request says to finish, not to merge', () => {
+    expect(
+      codeHostDeliveryLabel({
+        kind: 'setup',
+        explanation: {
+          setupReason: 'not-following-changes',
+          codeHostReason: 'merged',
+          pullRequests: [{ number: 56, state: 'merged' }],
+        },
+      })
+    ).toBe('PR already merged — finish delivery')
+    expect(
+      codeHostDeliveryLabel({
+        kind: 'setup',
+        explanation: {
+          setupReason: 'not-following-changes',
+          codeHostReason: 'merged',
+          pullRequests: [
+            { number: 1, state: 'merged' },
+            { number: 2, state: 'merged' },
+          ],
+        },
+      })
+    ).toBe('PRs already merged — finish delivery')
+    // Without a server-owned merged reason the generic setup label stays.
+    expect(codeHostDeliveryLabel({ kind: 'setup', explanation: { setupReason: 'not-following-changes' } })).toBeNull()
+  })
+})

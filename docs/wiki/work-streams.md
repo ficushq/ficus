@@ -243,7 +243,10 @@ granting the other access.
 
 Turning on **Code hosting** (`completion.followChanges: true`) derives a
 subscription set for every resource in the canonical tracked set, each
-targeting `delivery-owner` by default:
+targeting `delivery-owner` by default. Flows whose completion mode is
+`pr-merge` or `pr-auto-merge` follow by default when `followChanges` is
+absent; only an explicit `false` turns it off (see
+[Workflows](workflows.md)):
 
 | Source                                                           | ID prefix (reserved)            |
 | ---------------------------------------------------------------- | ------------------------------- |
@@ -273,12 +276,12 @@ or discards acceptance requirements.
 `GET /api/workstreams/:id/tracked` (and `ficus workstream tracked`) reports a
 top-level `subscriptions` status alongside each resource:
 
-| Status          | Meaning                                                                    |
-| --------------- | -------------------------------------------------------------------------- |
-| `active`        | The stream has a running flow with Code hosting on; subscriptions are live |
-| `no-flow`       | The stream has no attached workflow run — attach one                       |
-| `not-following` | The attached flow does not have `completion.followChanges` set             |
-| `ended`         | The stream is done/canceled; nothing is delivered anymore                  |
+| Status          | Meaning                                                                                                                                  |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `active`        | The stream has a running flow with Code hosting on; subscriptions are live                                                               |
+| `no-flow`       | The stream has no attached workflow run — attach one                                                                                     |
+| `not-following` | The attached flow does not follow code-host changes: `completion.followChanges` is `false`, or absent outside `pr-merge`/`pr-auto-merge` |
+| `ended`         | The stream is done/canceled; nothing is delivered anymore                                                                                |
 
 Even when `subscriptions` is `active`, an individual resource's `subscribed`
 flag can still be `false` if nothing matches it yet. `GET /api/workflows/runs/:streamId`

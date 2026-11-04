@@ -389,7 +389,9 @@ async function routeOutputEvent(event: Event, only?: string[]) {
         only ? inArray(workStreams.id, only) : undefined,
         or(
           sql`${workStreamFlowRuns.state}->'definition'->'subscriptions' @> ${JSON.stringify([{ source: { integration: event.integration, output: event.fact.output, version: event.fact.version } }])}::jsonb`,
-          sql`${workStreamFlowRuns.state}->'definition'->'completion'->>'followChanges' = 'true'`
+          // Mirrors workflowFollowsChanges: explicit true, or absent on a merge-completed flow.
+          sql`${workStreamFlowRuns.state}->'definition'->'completion'->>'followChanges' = 'true'`,
+          sql`(${workStreamFlowRuns.state}->'definition'->'completion'->'followChanges' IS NULL AND ${workStreamFlowRuns.state}->'definition'->'completion'->>'mode' IN ('pr-merge', 'pr-auto-merge'))`
         ),
         or(
           lte(workStreamFlowRuns.createdAt, event.createdAt),

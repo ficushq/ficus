@@ -28,17 +28,22 @@ export function WorkStreamDeliverySetupCallout({ stream }: { stream: SetupStream
   const setupReason = explanation?.setupReason
   const gates = explanation?.gates
   const requirement = MODE_REQUIREMENTS[stream.completionMode]
+  // Server-owned: every designated delivery pull request was observed merged.
+  const alreadyMerged = setupReason === 'not-following-changes' && explanation?.codeHostReason === 'merged'
+  const reference = String(stream.number ?? stream.id)
 
   const blocker =
     setupReason === 'unbound'
       ? "No delivery pull request is bound to this work stream, so the platform can't track or verify its merge."
-      : setupReason === 'not-following-changes'
-        ? "This flow's completion policy isn't set to follow code-host changes, so the pull request's merge can't be tracked automatically."
-        : setupReason === 'branch-mismatch'
-          ? "The tracked pull request doesn't match this work stream's branches."
-          : setupReason === 'direct-merge-facts'
-            ? 'Direct-merge delivery needs a code-host binding plus the full commit SHA and base branch in this stream\u2019s git metadata.'
-            : null
+      : alreadyMerged
+        ? `${(explanation?.pullRequests?.length ?? 0) > 1 ? 'The delivery pull requests are' : 'The delivery pull request is'} already merged, but this flow's completion policy doesn't follow code-host changes, so the merge wasn't recorded automatically.`
+        : setupReason === 'not-following-changes'
+          ? "This flow's completion policy isn't set to follow code-host changes, so the pull request's merge can't be tracked automatically."
+          : setupReason === 'branch-mismatch'
+            ? "The tracked pull request doesn't match this work stream's branches."
+            : setupReason === 'direct-merge-facts'
+              ? 'Direct-merge delivery needs a code-host binding plus the full commit SHA and base branch in this stream\u2019s git metadata.'
+              : null
 
   const mismatchLines =
     setupReason === 'branch-mismatch' && explanation?.branchMismatch
@@ -73,10 +78,12 @@ export function WorkStreamDeliverySetupCallout({ stream }: { stream: SetupStream
     : []
 
   const blockedByProtection = gates?.mergeState === 'blocked'
-  const bindCommand =
+  const command =
     setupReason === 'unbound' || setupReason === 'branch-mismatch'
-      ? changeRequestBindCommand(String(stream.number ?? stream.id), stream.metadata)
-      : null
+      ? changeRequestBindCommand(reference, stream.metadata)
+      : alreadyMerged
+        ? `ficus workstream finish ${reference} --version <current flow version>`
+        : null
 
   // The setup reason is what actually blocks completion, so it owns the next step; a protection block on the
   // tracked pull request is a supporting note unless it is the only concrete fact.
@@ -85,11 +92,13 @@ export function WorkStreamDeliverySetupCallout({ stream }: { stream: SetupStream
       ? 'Bind the delivery pull request to this work stream:'
       : setupReason === 'branch-mismatch'
         ? "Rebind the pull request that carries this work stream's branch, or merge the intended one via the GitHub UI:"
-        : setupReason === 'not-following-changes'
-          ? 'Merge the pull request via the GitHub UI, then finish delivery from this work stream.'
-          : setupReason === 'direct-merge-facts'
-            ? 'Record the deliverable commit (git.commit) and base branch (git.baseBranch) with a code-host binding on this work stream.'
-            : null
+        : alreadyMerged
+          ? 'Finish delivery from this work stream; finishing verifies the merge with the code host:'
+          : setupReason === 'not-following-changes'
+            ? 'Merge the pull request via the GitHub UI, then finish delivery from this work stream.'
+            : setupReason === 'direct-merge-facts'
+              ? 'Record the deliverable commit (git.commit) and base branch (git.baseBranch) with a code-host binding on this work stream.'
+              : null
   const nextStep =
     setupStep ??
     (blockedByProtection
@@ -127,8 +136,8 @@ export function WorkStreamDeliverySetupCallout({ stream }: { stream: SetupStream
       <div className="rounded-lg border border-accent/40 bg-accent/5 p-3 space-y-1">
         <p className="text-xs font-medium text-primary">Next step</p>
         <p className="text-sm text-secondary">{nextStep}</p>
-        {bindCommand && (
-          <code className="block p-2 rounded bg-surface font-mono text-xs text-secondary break-all">{bindCommand}</code>
+        {command && (
+          <code className="block p-2 rounded bg-surface font-mono text-xs text-secondary break-all">{command}</code>
         )}
         {protectionNote && (
           <p className="text-sm text-secondary">The merge is also blocked by branch protection. {protectionNote}</p>

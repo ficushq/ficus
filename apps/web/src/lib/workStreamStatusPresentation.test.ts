@@ -76,6 +76,23 @@ describe('delivery-external label derivation', () => {
     )
     expect(workStreamStatusLabel({ status: 'active', openWaits: [{ type: 'review' }] })).toBe('In Review')
   })
+
+  test('a setup-blocked stream whose pull request already merged says to finish, not to merge', () => {
+    expect(
+      workStreamStatusLabel({
+        status: 'active',
+        openWaits: [],
+        delivery: {
+          kind: 'setup',
+          explanation: {
+            setupReason: 'not-following-changes',
+            codeHostReason: 'merged',
+            pullRequests: [{ number: 56, state: 'merged' }],
+          },
+        },
+      })
+    ).toBe('PR already merged — finish delivery')
+  })
 })
 
 describe('workStreamWaitBadge', () => {

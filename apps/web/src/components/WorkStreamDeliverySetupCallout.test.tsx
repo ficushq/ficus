@@ -134,6 +134,22 @@ test('a bound but untracked flow explains the GitHub-UI merge path', () => {
   expect(html).toContain('Merge the pull request via the GitHub UI, then finish delivery')
 })
 
+test('an already-merged pull request says so and shows how to finish instead of asking for a merge', () => {
+  const html = renderToStaticMarkup(
+    <WorkStreamDeliverySetupCallout
+      stream={setupStream({
+        setupReason: 'not-following-changes',
+        codeHostReason: 'merged',
+        pullRequests: [{ number: 56, state: 'merged' }],
+      })}
+    />
+  )
+  expect(html).toContain('The delivery pull request is already merged')
+  expect(html).toContain('Finish delivery from this work stream')
+  expect(html).toContain('ficus workstream finish 234 --version')
+  expect(html).not.toContain('Merge the pull request via the GitHub UI')
+})
+
 test('direct-merge facts and tracked multi-PR setups render without breaking', () => {
   const direct = renderToStaticMarkup(
     <WorkStreamDeliverySetupCallout

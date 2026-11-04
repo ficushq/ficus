@@ -10,7 +10,7 @@ import type { z } from 'zod'
 import { Type } from '@sinclair/typebox'
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { readAssistantEditor, proposeAssistantEditor } from '../services/assistant-editors'
-import { decisionStepWarnings, withWarnings } from '../services/workflows/decision-step-warnings'
+import { workflowWarnings, withWarnings } from '../services/workflows/decision-step-warnings'
 
 /** Bound by the runner, not supplied by the model. Only its own conversation's editor is accessible. */
 export function createPageEditorTools(agentId: string, conversationId: string): ToolDefinition[] {
@@ -52,7 +52,7 @@ export function createPageEditorTools(agentId: string, conversationId: string): 
             baseRevision: state?.proposal?.baseRevision,
             proposalId: state?.proposal?.id,
             message: 'Read to confirm the page applied this edit before continuing.',
-            ...withWarnings(Array.isArray(document?.steps) ? decisionStepWarnings(document) : []),
+            ...withWarnings(Array.isArray(document?.steps) ? workflowWarnings(document) : []),
           }
         }),
     },

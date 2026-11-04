@@ -296,7 +296,11 @@ unblock never approves the gate; only its outcome does.
 ## Integration events
 
 For linked PR and issue updates, enable **Code hosting** in the workflow editor
-(`completion.followChanges: true`) and bind the stream's `metadata.codeHost` with
+(`completion.followChanges: true`). `pr-merge` and `pr-auto-merge` flows follow
+by default when `followChanges` is omitted, so an inline `completion: { mode: pr-merge }` observes its merge; do not
+set `followChanges: false` on them unless someone will finish the stream by hand
+after the merge (Ficus warns when you do). For other modes, set it explicitly.
+Then bind the stream's `metadata.codeHost` with
 `integration`, `repository`, and `changeRequest: {number}` (plus optional
 `connectionId`) for the primary delivery PR. The provider adapter supplies
 subscriptions to the delivery owner and verifies merge evidence. GitHub is

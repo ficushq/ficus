@@ -5,6 +5,7 @@ import {
   workflowStepSchema,
   workflowParticipantSchema,
   inferWorkflowJoin,
+  workflowFollowsChanges,
   type WorkflowDefinition,
   type WorkflowStep,
 } from '@ficus/shared'
@@ -571,7 +572,7 @@ export function WorkflowStructureEditor({
               <label className="flex items-start gap-2 text-sm">
                 <input
                   type="checkbox"
-                  checked={definition.completion.followChanges ?? false}
+                  checked={workflowFollowsChanges(definition.completion)}
                   onChange={(event) =>
                     edit((draft) => {
                       draft.completion.followChanges = event.target.checked

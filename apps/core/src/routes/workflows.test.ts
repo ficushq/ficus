@@ -474,6 +474,24 @@ test('saving a preset with decision steps says when no decision model will answe
   expect(((await plain.json()) as { warnings?: string[] }).warnings).toBeUndefined()
 })
 
+test('resolving a merge-completed flow warns only for an explicit followChanges: false', async () => {
+  const resolve = async (completion: WorkflowDefinition['completion']) =>
+    (await (
+      await request('/resolve', admin, 'POST', {
+        squadId,
+        source: { kind: 'inline', definition: { ...definition, completion } },
+      })
+    ).json()) as { definition: WorkflowDefinition; warnings?: string[] }
+  // The default is read at runtime, never written into the resolved definition.
+  const followed = await resolve({ mode: 'pr-merge' })
+  expect(followed.definition.completion).toEqual({ mode: 'pr-merge' })
+  expect(followed.warnings).toBeUndefined()
+  const optedOut = await resolve({ mode: 'pr-merge', followChanges: false })
+  expect(optedOut.warnings).toEqual([
+    expect.stringContaining('completion.followChanges is false with completion mode pr-merge'),
+  ])
+})
+
 describe('catalog list', () => {
   const listPrefix = `${prefix}-list`
   let otherSquadId: string

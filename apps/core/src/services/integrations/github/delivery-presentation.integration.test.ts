@@ -491,3 +491,172 @@ test('a polled snapshot turning clean wakes the completion-ready delivery partic
     await db.delete(agentTypes).where(eq(agentTypes.id, agentTypeId))
   }
 })
+
+for (const state of ['MERGED', 'CLOSED'] as const)
+  test(`an inline pr-merge flow whose pull request is already ${state.toLowerCase()} ${state === 'MERGED' ? 'wakes its delivery participant once to finish' : 'is never reported merged'}`, async () => {
+    // Synthetic fixture reproducing the reported gap: an inline flow stored as completion { mode: pr-merge }
+    // (no followChanges), and a pull request that merged before any merge event reached the stream.
+    const agentTypeId = `missed-merge-${crypto.randomUUID()}`
+    await db.insert(agentTypes).values({
+      id: agentTypeId,
+      name: 'Missed merge fixture',
+      model: 'anthropic:claude-sonnet-4-5',
+      systemPrompt: 'Test worker',
+    })
+    await db.insert(squads).values({ id: squadId, name: 'Missed merge test', purpose: 'test' })
+    const send = spyOn(Agent.prototype, 'sendMessage').mockResolvedValue({
+      success: true,
+      queued: true,
+      status: 'queued',
+    })
+    const head = 'd'.repeat(40)
+    const fetchMock = spyOn(globalThis, 'fetch').mockImplementation((async (input: Parameters<typeof fetch>[0]) => {
+      const path = new URL(String(input)).pathname
+      const body =
+        path === '/graphql'
+          ? {
+              data: {
+                repository: {
+                  pullRequest: {
+                    headRefOid: head,
+                    headRefName: 'work',
+                    baseRefName: 'main',
+                    state,
+                    isDraft: false,
+                    mergeStateStatus: 'UNKNOWN',
+                    reviewDecision: 'APPROVED',
+                    commits: { nodes: [{ commit: { statusCheckRollup: { state: 'SUCCESS' } } }] },
+                  },
+                },
+              },
+            }
+          : path.endsWith('/pulls/7')
+            ? {
+                id: 7,
+                number: 7,
+                state: 'closed',
+                merged: state === 'MERGED',
+                head: { sha: head },
+                base: { repo: { full_name: 'acme/widgets' } },
+                requested_reviewers: [],
+                requested_teams: [],
+              }
+            : path.endsWith('/issues/7')
+              ? { number: 7 }
+              : []
+      return new Response(JSON.stringify(body), {
+        headers: { date: new Date().toUTCString(), 'content-type': 'application/json' },
+      })
+    }) as unknown as typeof fetch)
+    restoreFetch = () => fetchMock.mockRestore()
+    try {
+      const definition = createBlankWorkflow()
+      definition.participants.worker!.agentTypeId = agentTypeId
+      definition.completion = { mode: 'pr-merge' }
+      const id = await db.transaction(async (tx) => {
+        const [stream] = await tx
+          .insert(workStreams)
+          .values({
+            squadId,
+            title: 'Missed merge',
+            status: 'active',
+            metadata: {
+              codeHost: {
+                integration: 'github',
+                repository: 'acme/widgets',
+                connectionId,
+                changeRequest: { number: 7 },
+              },
+            },
+          })
+          .returning()
+        const run = await attachFlow(tx, stream!, { kind: 'inline', definition })
+        await dispatchFlow(tx, stream!, run, [])
+        return stream!.id
+      })
+      const started = (await getFlow(id))!
+      await advanceFlow(
+        id,
+        {
+          action: 'complete',
+          expectedVersion: started.version,
+          attemptId: 1,
+          outcome: 'completed',
+          evidence: 'PR open',
+        },
+        crypto.randomUUID(),
+        { type: 'legacy' }
+      )
+      const ready = (await getFlow(id))!
+      expect(ready.state.status).toBe('completion-ready')
+      expect(ready.state.definition.completion).toEqual({ mode: 'pr-merge' })
+      const participant = ready.attemptAgents['1']!
+
+      // The default makes the stream a delivery watch, so the poller reads the pull request live.
+      const candidate = (await listGitHubPrWorkStreamCandidates()).find((entry) => entry.squadId === squadId)
+      expect(candidate?.deliveryPresentation).toBe(true)
+      const policy = new GitHubPrWatchPolicy({
+        listWorkStreams: listGitHubPrWorkStreamCandidates,
+        resolveConnection: async (squad, selected) =>
+          squad === squadId && selected === connectionId ? { id: connectionId } : undefined,
+        lastRealDeliveries: async () => new Map(),
+      })
+      const watch = (await policy.listWatches()).find((entry) => entry.resourceKey === key)!.connection
+      const poller = createGitHubPlugin(
+        { currentUser: async () => ({ version: 1, userId: 42, login: 'fixture' }) },
+        async () => 'fixture'
+      ).runtime.provider.capabilities.event_polling! as EventPollingCapability
+      const store = new DbEventPollingCursorStore()
+      const target = { providerKey: 'github', resourceKey: key, active: true, connection: watch }
+      const wakes = () =>
+        db
+          .select()
+          .from(inbox)
+          .where(
+            sql`${inbox.metadata}->>'source' = 'delivery-readiness' AND ${inbox.metadata}->>'workStreamId' = ${id}`
+          )
+      const poll = async () => {
+        const claim = await store.claim('github', key, new Date(), 60_000)
+        const polled = await poller.poll(watch, claim!.cursor)
+        await store.save('github', key, claim!.leaseToken, polled.nextCursor, new Date(0))
+        await notifyDeliverySnapshotChanged(target, claim!.cursor, polled.nextCursor)
+        return polled.nextCursor
+      }
+
+      const cursor = await poll()
+      if (state === 'CLOSED') {
+        expect(await wakes()).toHaveLength(0)
+        // Closed without merging is a delivery failure, never a merge to finish.
+        const stream = await WorkStream.mustFind(id)
+        const json = { ...stream.toJson(), ...(await computeDerivedStates([stream])).get(stream.id) }
+        expect(json.delivery).toEqual({ kind: 'failure', explanation: { codeHostReason: 'closed' } })
+        return
+      }
+      const [wake, ...rest] = await wakes()
+      expect(rest).toHaveLength(0)
+      expect(wake!.recipientId).toBe(participant)
+      const merged = await WorkStream.mustFind(id)
+      const json = { ...merged.toJson(), ...(await computeDerivedStates([merged])).get(merged.id) }
+      expect(codeHostDeliveryLabel(json.delivery)).toBe('PR merged — finalizing delivery')
+      expect(wake!.metadata).toMatchObject({ reason: 'merged', flowVersion: ready.version })
+      expect(wake!.content).toContain('acme/widgets PR 7 (https://github.com/acme/widgets/pull/7): merged')
+      expect(wake!.content).toContain(
+        `ficus workstream finish ${(await WorkStream.mustFind(id)).number ?? id} --version ${ready.version}`
+      )
+      // The wake is current while the flow still waits, and repeated observations add nothing.
+      const { isCurrentDeliveryReadinessMessage } = await import('../../workflows/delivery-readiness')
+      expect(await isCurrentDeliveryReadinessMessage(wake!)).toBe(true)
+      await notifyDeliverySnapshotChanged(target, cursor, cursor)
+      await poll()
+      expect(await wakes()).toHaveLength(1)
+      // Ficus finished nothing on its own authority.
+      expect((await getFlow(id))!.state.status).toBe('completion-ready')
+    } finally {
+      send.mockRestore()
+      const owned = await db.select({ id: agents.id }).from(agents).where(eq(agents.squadId, squadId))
+      for (const agent of owned) await db.delete(inbox).where(eq(inbox.recipientId, agent.id))
+      await db.delete(workStreams).where(eq(workStreams.squadId, squadId))
+      await db.delete(agents).where(eq(agents.squadId, squadId))
+      await db.delete(agentTypes).where(eq(agentTypes.id, agentTypeId))
+    }
+  })

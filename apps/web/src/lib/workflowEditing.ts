@@ -1,5 +1,6 @@
 import { FLOW_START_ID } from './workflowGraph'
 import {
+  PULL_REQUEST_MERGE_COMPLETION_MODES,
   workflowDefinitionSchema,
   workflowParticipantSchema,
   workflowStepSchema,
@@ -262,7 +263,10 @@ export function removeWorkflowStep(definition: WorkflowDefinition, id: string) {
   draft.steps = draft.steps.filter((step) => step.id !== id)
   if (typeof draft.completion.changeEventsTo === 'object' && draft.completion.changeEventsTo.step === id) {
     delete draft.completion.changeEventsTo
-    draft.completion.followChanges = false
+    // A merge-completed flow keeps its default (following, to the delivery owner): it cannot finish
+    // without observing its pull request. Other modes stop following, as before.
+    if (PULL_REQUEST_MERGE_COMPLETION_MODES.includes(draft.completion.mode)) delete draft.completion.followChanges
+    else draft.completion.followChanges = false
   }
   if (draft.entry === id) draft.entry = onward && onward !== 'finish' ? onward : (draft.steps[0]?.id ?? '')
   for (const step of draft.steps) {

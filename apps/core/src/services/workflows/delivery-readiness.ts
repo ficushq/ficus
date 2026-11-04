@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto'
 import { eq } from 'drizzle-orm'
-import { deliveryPullRequests, workStreamRef, type CodeHostReference, type WorkflowRun } from '@ficus/shared'
+import {
+  deliveryPullRequests,
+  PULL_REQUEST_MERGE_COMPLETION_MODES,
+  workStreamRef,
+  type CodeHostReference,
+  type WorkflowRun,
+} from '@ficus/shared'
 import { db, squads, workStreamFlowRuns, workStreams } from '../../db'
 import { InboxMessage } from '../../entities/InboxMessage'
 import { createLogger } from '../../lib/infra/logger'
@@ -29,6 +35,14 @@ import {
  * It is a hint, never an authority: Ficus does not merge, enable auto-merge or
  * finish anything here. The participant re-verifies the live head, approval
  * and checks before it acts, exactly as its delivery instructions require.
+ *
+ * Missed-merge reconciliation shares the same wake. When the authorized code-host
+ * poller observes every designated delivery pull request merged, but no merge event
+ * reached the flow (the stream was not following changes when the merge happened,
+ * or the event was lost), the delivery participant receives ONE wake per flow version
+ * telling it to finish, exactly where a merged event would have gone. Ficus still
+ * finishes nothing itself: `finish` verifies the merge live with the code host, and
+ * a pull request closed without merging is never reported as merged.
  */
 
 const log = createLogger('delivery-readiness')
@@ -190,6 +204,67 @@ export function deliveryMergeReadiness(
   return { ready: true, pullRequests }
 }
 
+/** One designated delivery pull request the code host reports merged. */
+export interface MergedDeliveryPullRequest {
+  repository: string
+  number: number
+  url?: string
+}
+
+/**
+ * The designated delivery pull requests of a completion-ready merge-completed flow, when local
+ * evidence shows every one of them merged but at least one merge never arrived as a merged event
+ * (it is known only from the poller's snapshot, or from lifecycle facts on other events). Pure:
+ * the caller supplies local evidence; the classifier already refuses closed-unmerged requests.
+ */
+export function deliveryMissedMerge(
+  state: WorkflowRun,
+  metadata: unknown,
+  events: DeliveryEvent[],
+  policies?: { allowAutoMerge?: boolean }
+): MergedDeliveryPullRequest[] | undefined {
+  if (state.status !== 'completion-ready') return undefined
+  if (!PULL_REQUEST_MERGE_COMPLETION_MODES.includes(state.definition.completion.mode)) return undefined
+  const presentation = classifyDeliveryPresentation(state, metadata, events, policies)
+  if (presentation?.kind !== 'external' || presentation.explanation?.codeHostReason !== 'merged') return undefined
+  const references = designatedReferences(metadata)
+  const delivered = (reference: CodeHostReference) =>
+    deliveryEventsForReference(reference, events).some((event) => event.output === 'pull_request.merged')
+  if (!references.length || references.every(delivered)) return undefined
+  return references.map((reference) => {
+    const repository = reference.repository.toLowerCase()
+    const number = reference.changeRequest!.number
+    return {
+      repository,
+      number,
+      ...(reference.integration === 'github' ? { url: `https://github.com/${repository}/pull/${number}` } : {}),
+    }
+  })
+}
+
+/** One missed-merge wake per flow version and set of pull requests. */
+export function deliveryMergedKey(workStreamId: string, version: number, pullRequests: MergedDeliveryPullRequest[]) {
+  const merged = pullRequests
+    .map((pr) => `${pr.repository}/${pr.number}`)
+    .sort()
+    .join(',')
+  return `delivery-merged:${workStreamId}:${version}:${createHash('sha256').update(merged).digest('hex').slice(0, 24)}`
+}
+
+export function deliveryMergedContent(
+  stream: { id: string; number?: number | null },
+  version: number,
+  merged: MergedDeliveryPullRequest[]
+) {
+  const ref = workStreamRef(stream)
+  const plural = merged.length > 1
+  return [
+    `The code host reports ${plural ? 'every delivery pull request' : 'the delivery pull request'} for work stream ${ref} merged, but no merge event reached this flow, so it is still waiting at completion-ready.`,
+    ...merged.map((pr) => `- Pull request: ${pr.repository} PR ${pr.number}${pr.url ? ` (${pr.url})` : ''}: merged`),
+    `Ficus has not finished the stream. Finish delivery now: \`ficus workstream finish ${ref} --version ${version}\` (read the current version with \`ficus workstream flow ${ref}\` if it changed). Finish verifies the merge live with the code host and refuses if it does not hold. This notice is sent once per flow version.`,
+  ].join('\n')
+}
+
 /** One wake per flow version and set of heads: repeated events for the same state are no-ops. */
 export function deliveryReadinessKey(workStreamId: string, version: number, pullRequests: ReadyDeliveryPullRequest[]) {
   const heads = pullRequests
@@ -245,37 +320,85 @@ async function loadFlowState(workStreamId: string) {
   return { stream, run, managerId: squad?.managerId ?? null }
 }
 
-/** A stream that could act now: admitted, unpaused, completion-ready, no open wait of any kind. */
+/**
+ * A stream that could act now: admitted, unpaused, completion-ready, no open wait of any kind.
+ * A missed merge must reach someone, so without a delivery participant it falls back to the
+ * squad manager; a readiness hint does not.
+ */
 async function mayWake(
   flow: NonNullable<Awaited<ReturnType<typeof loadFlowState>>>,
-  version: number
+  version: number,
+  fallbackToManager = false
 ): Promise<string | undefined> {
   const { stream, run, managerId } = flow
   if (stream.status !== 'active' || stream.pause || !run.activated) return undefined
   if (run.state.status !== 'completion-ready' || run.version !== version) return undefined
   if ((await listOpenWaitsForStreams([stream.id])).get(stream.id)?.length) return undefined
-  return deliveryParticipant(run, stream, managerId)
+  return deliveryParticipant(run, stream, managerId) ?? (fallbackToManager ? (managerId ?? undefined) : undefined)
 }
 
+type Evidence = Awaited<ReturnType<typeof loadDeliveryEvidence>>[number] | undefined
+
 /** Current readiness of one stream from local evidence only, bound to the flow version it was read at. */
-async function currentReadiness(workStreamId: string) {
-  const [evidence] = await loadDeliveryEvidence(db, [workStreamId])
+function currentReadiness(evidence: Evidence) {
   if (!evidence) return undefined
   const readiness = deliveryMergeReadiness(evidence.state, evidence.metadata, evidence.events, evidence.policies)
   return readiness.ready ? { version: evidence.version, pullRequests: readiness.pullRequests } : undefined
 }
 
+/** A merge the flow never received, from local evidence only, bound to the flow version it was read at. */
+function currentMissedMerge(evidence: Evidence) {
+  if (!evidence) return undefined
+  const merged = deliveryMissedMerge(evidence.state, evidence.metadata, evidence.events, evidence.policies)
+  return merged ? { version: evidence.version, pullRequests: merged } : undefined
+}
+
+const loadEvidence = async (workStreamId: string): Promise<Evidence> =>
+  (await loadDeliveryEvidence(db, [workStreamId]))[0]
+
+/** Wake the delivery participant (or the manager) once per flow version to finish a missed merge. */
+async function wakeForMissedMerge(
+  workStreamId: string,
+  evidence: Evidence
+): Promise<'woken' | 'duplicate' | 'not-ready' | 'not-eligible'> {
+  const merged = currentMissedMerge(evidence)
+  if (!merged) return 'not-ready'
+  const flow = await loadFlowState(workStreamId)
+  const recipientId = flow && (await mayWake(flow, merged.version, true))
+  if (!flow || !recipientId) return 'not-eligible'
+  const { created } = await InboxMessage.sendOnce(
+    {
+      recipientId,
+      senderType: 'system',
+      subject: `Delivery pull request merged: ${merged.pullRequests.map((pr) => `${pr.repository} PR ${pr.number}`).join(', ')}`,
+      content: deliveryMergedContent(flow.stream, merged.version, merged.pullRequests),
+      metadata: {
+        source: DELIVERY_READINESS_SOURCE,
+        reason: 'merged',
+        workStreamId,
+        flowVersion: merged.version,
+        pullRequests: merged.pullRequests.map(({ repository, number }) => ({ repository, number })),
+      },
+      wakeEligible: true,
+    },
+    deliveryMergedKey(workStreamId, merged.version, merged.pullRequests)
+  )
+  return created ? 'woken' : 'duplicate'
+}
+
 /**
  * Evaluate local delivery evidence after new code-host evidence was recorded for a stream, and
- * wake its delivery participant when the pull request just became actionable. Idempotent and
- * best-effort: failures are logged, and the next event re-evaluates the same deduplicated wake.
+ * wake its delivery participant when the pull request just became actionable, or when it merged
+ * without the flow receiving the merge event. Idempotent and best-effort: failures are logged,
+ * and the next event or poll re-evaluates the same deduplicated wake.
  */
 export async function wakeDeliveryParticipantIfReady(
   workStreamId: string
 ): Promise<'woken' | 'duplicate' | 'not-ready' | 'not-eligible' | 'failed'> {
   try {
-    const readiness = await currentReadiness(workStreamId)
-    if (!readiness) return 'not-ready'
+    const evidence = await loadEvidence(workStreamId)
+    const readiness = currentReadiness(evidence)
+    if (!readiness) return await wakeForMissedMerge(workStreamId, evidence)
     const flow = await loadFlowState(workStreamId)
     const recipientId = flow && (await mayWake(flow, readiness.version))
     if (!flow || !recipientId) return 'not-eligible'
@@ -311,14 +434,25 @@ export async function isCurrentDeliveryReadinessMessage(message: {
   metadata: unknown
   recipientId: string | null
 }): Promise<boolean> {
-  const metadata = message.metadata as { workStreamId?: unknown; flowVersion?: unknown } | null
+  const metadata = message.metadata as { workStreamId?: unknown; flowVersion?: unknown; reason?: unknown } | null
   if (typeof metadata?.workStreamId !== 'string' || typeof metadata.flowVersion !== 'number' || !message.recipientId)
     return false
   try {
     const flow = await loadFlowState(metadata.workStreamId)
+    if (metadata.reason === 'merged') {
+      // Superseded once the flow moved on (finished, reworked) or the merge evidence changed.
+      if (!flow || (await mayWake(flow, metadata.flowVersion, true)) !== message.recipientId) return false
+      const merged = currentMissedMerge(await loadEvidence(metadata.workStreamId))
+      return (
+        !!merged &&
+        merged.version === metadata.flowVersion &&
+        deliveryMergedKey(metadata.workStreamId, merged.version, merged.pullRequests) ===
+          deliveryMergedKey(metadata.workStreamId, metadata.flowVersion, mergedPullRequests(message.metadata))
+      )
+    }
     if (!flow || (await mayWake(flow, metadata.flowVersion)) !== message.recipientId) return false
     // A newer head (or lost readiness) supersedes the queued notice; its own wake, if any, follows.
-    const readiness = await currentReadiness(metadata.workStreamId)
+    const readiness = currentReadiness(await loadEvidence(metadata.workStreamId))
     return (
       !!readiness &&
       readiness.version === metadata.flowVersion &&
@@ -328,6 +462,17 @@ export async function isCurrentDeliveryReadinessMessage(message: {
   } catch {
     return false
   }
+}
+
+/** The pull requests a stored missed-merge wake was sent for. */
+function mergedPullRequests(metadata: unknown): MergedDeliveryPullRequest[] {
+  const stored = (metadata as { pullRequests?: unknown } | null)?.pullRequests
+  if (!Array.isArray(stored)) return []
+  return stored.flatMap((pr) =>
+    pr && typeof pr.repository === 'string' && typeof pr.number === 'number'
+      ? [{ repository: pr.repository, number: pr.number }]
+      : []
+  )
 }
 
 /** The pull request heads a stored wake was sent for. */

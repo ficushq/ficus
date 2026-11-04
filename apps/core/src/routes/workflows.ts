@@ -1,6 +1,6 @@
 import { loadReviewContexts } from '../services/workflows/review-context'
 import { deliveryInstructionsForRun } from '../services/workflows/completion-prompt'
-import { decisionStepWarnings, withWarnings } from '../services/workflows/decision-step-warnings'
+import { workflowWarnings, withWarnings } from '../services/workflows/decision-step-warnings'
 import { listWorkflowReviewers } from '../services/workflows/reviewers'
 import { outputDeliveryHistory, outputDeliveryHistoryPage } from '../services/integrations/outputs/runtime'
 import { listOpenWaits, toWaitJson } from '../services/work-streams/waits'
@@ -325,7 +325,7 @@ export const workflowsRouter = new Hono()
       if (!squad) return c.json({ error: 'Squad not found' }, 404)
       // Preview only: no work stream, catalog record, or agent is created.
       const resolved = await resolveStoredWorkflow(source)
-      return c.json({ ...resolved, ...withWarnings(decisionStepWarnings(resolved.definition)) })
+      return c.json({ ...resolved, ...withWarnings(workflowWarnings(resolved.definition)) })
     }
   )
   .get(
@@ -347,7 +347,7 @@ export const workflowsRouter = new Hono()
     if (!(await canAccessWorkflow(c.get('identity')!, 'workflows:create', preset.scope)))
       return c.json({ error: 'Forbidden' }, 403)
     return c.json(
-      { ...serializeWorkflow(await createWorkflow(preset)), ...withWarnings(decisionStepWarnings(preset.definition)) },
+      { ...serializeWorkflow(await createWorkflow(preset)), ...withWarnings(workflowWarnings(preset.definition)) },
       201
     )
   })
@@ -362,7 +362,7 @@ export const workflowsRouter = new Hono()
       const { revision, preset } = c.req.valid('json')
       return c.json({
         ...serializeWorkflow(await replaceWorkflow(c.req.param('id'), revision, preset)),
-        ...withWarnings(decisionStepWarnings(preset.definition)),
+        ...withWarnings(workflowWarnings(preset.definition)),
       })
     }
   )

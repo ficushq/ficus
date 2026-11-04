@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import type { WorkflowRun } from '@ficus/shared'
-import { deliveryMergeReadiness, deliveryReadinessContent, deliveryReadinessKey } from './delivery-readiness'
+import {
+  deliveryMergeReadiness,
+  deliveryMergedContent,
+  deliveryMergedKey,
+  deliveryMissedMerge,
+  deliveryReadinessContent,
+  deliveryReadinessKey,
+} from './delivery-readiness'
 import type { DeliveryEvent } from './delivery-state'
 
 // Synthetic data only: an invented repository, pull request and commits.
@@ -264,6 +271,65 @@ describe('delivery readiness wake', () => {
     expect(content).toContain('Ficus has not merged or enabled anything')
     expect(content).toContain('ficus workstream flow 77')
     // No bare work-stream style references for pull requests.
+    expect(content).not.toMatch(/(^|\s)#42\b/)
+  })
+})
+
+describe('missed merge reconciliation', () => {
+  /** An inline merge-completed flow stored without followChanges, as written before the default. */
+  const inline = (mode = 'pr-merge', status: WorkflowRun['status'] = 'completion-ready') =>
+    ({ status, definition: { completion: { mode } } }) as WorkflowRun
+  /** The delivery poller's live snapshot: the only evidence when no merge event was routed. */
+  const polled = (state: string) => event('pull_request.snapshot', { pullRequestState: state }, HEAD, at(1))
+  const pr = { repository: 'acme/repo', number: 42, url: 'https://github.com/acme/repo/pull/42' }
+
+  test('a merge known only from the poller is reported for pr-merge and pr-auto-merge', () => {
+    expect(deliveryMissedMerge(inline(), metadata, [polled('merged')])).toEqual([pr])
+    expect(deliveryMissedMerge(inline('pr-auto-merge'), metadata, [polled('merged')])).toEqual([pr])
+    expect(deliveryMissedMerge(run('pr-merge'), metadata, [polled('merged')])).toEqual([pr])
+  })
+
+  test('a closed-unmerged or open pull request is never reported merged', () => {
+    expect(deliveryMissedMerge(inline(), metadata, [polled('closed')])).toBeUndefined()
+    expect(deliveryMissedMerge(inline(), metadata, [polled('open')])).toBeUndefined()
+    expect(deliveryMissedMerge(inline(), metadata, [])).toBeUndefined()
+  })
+
+  test('a merge event that reached the flow needs no reconciliation', () => {
+    const routed = event('pull_request.merged', { pullRequestState: 'merged' }, HEAD, at(2))
+    expect(deliveryMissedMerge(inline(), metadata, [routed, polled('merged')])).toBeUndefined()
+  })
+
+  test('only completion-ready merge-completed flows qualify', () => {
+    expect(deliveryMissedMerge(inline('pr-merge', 'running'), metadata, [polled('merged')])).toBeUndefined()
+    expect(deliveryMissedMerge(inline('pr-review'), metadata, [polled('merged')])).toBeUndefined()
+    expect(deliveryMissedMerge(inline('deliverable'), metadata, [polled('merged')])).toBeUndefined()
+  })
+
+  test('every designated delivery pull request must be merged', () => {
+    const extra = {
+      ...metadata,
+      tracked: [{ integration: 'github', repository: 'acme/other', kind: 'pull_request', number: 7, delivery: true }],
+    }
+    const extraMerged = event('pull_request.snapshot', { pullRequestState: 'merged' }, OLD, at(1))
+    extraMerged.data = { ...extraMerged.data, repository: 'acme/other', pullRequest: { number: 7, headSha: OLD } }
+    expect(deliveryMissedMerge(inline(), extra, [polled('merged')])).toBeUndefined()
+    expect(deliveryMissedMerge(inline(), extra, [polled('merged'), extraMerged])).toEqual([
+      pr,
+      { repository: 'acme/other', number: 7, url: 'https://github.com/acme/other/pull/7' },
+    ])
+  })
+
+  test('one wake per flow version names the pull request and the finish command, and finishes nothing', () => {
+    const key = deliveryMergedKey('stream-1', 3, [pr])
+    expect(deliveryMergedKey('stream-1', 3, [pr])).toBe(key)
+    expect(deliveryMergedKey('stream-1', 4, [pr])).not.toBe(key)
+    expect(key).not.toBe(deliveryReadinessKey('stream-1', 3, []))
+    const content = deliveryMergedContent({ id: 'stream-1', number: 1030 }, 3, [pr])
+    expect(content).toContain('acme/repo PR 42 (https://github.com/acme/repo/pull/42): merged')
+    expect(content).toContain('ficus workstream finish 1030 --version 3')
+    expect(content).toContain('Ficus has not finished the stream')
+    expect(content).toContain('verifies the merge live')
     expect(content).not.toMatch(/(^|\s)#42\b/)
   })
 })
