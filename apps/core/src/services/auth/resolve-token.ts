@@ -1,7 +1,8 @@
 import { createHash, timingSafeEqual } from 'crypto'
-import { eq, and, gt, isNull } from 'drizzle-orm'
+import { eq, and, gt, inArray, isNull, or } from 'drizzle-orm'
 import { db } from '../../db'
-import { sessions, agentTokens, users } from '../../db/schema'
+import { sessions, agentTokens, monitors, users } from '../../db/schema'
+import { Monitor } from '../../entities/Monitor'
 import { getSecretStore } from '../secrets'
 import type { Identity } from '../rbac'
 import { adminHasPasskey } from './admin-users'
@@ -23,8 +24,20 @@ export interface AuthContext {
   signInOrigin?: string | null
 }
 
+export interface ResolveTokenOptions {
+  /**
+   * Accept read-only monitor tokens. Only the HTTP identity middleware sets
+   * this, after which it confines them to the requests monitor-tokens.ts
+   * allows; every other caller (WebSockets, terminals, log streams) rejects them.
+   */
+  allowMonitorTokens?: boolean
+}
+
 /** Resolve a raw token while retaining credential provenance beside its RBAC identity. */
-export async function resolveTokenContext(token: string): Promise<AuthContext | null> {
+export async function resolveTokenContext(
+  token: string,
+  options: ResolveTokenOptions = {}
+): Promise<AuthContext | null> {
   const tokenHash = hashToken(token)
 
   // Sessions and agent tokens are looked up only under their own prefix, so a value minted as
@@ -74,13 +87,37 @@ export async function resolveTokenContext(token: string): Promise<AuthContext | 
           agentId: agentTokens.agentId,
           squadId: agentTokens.squadId,
           userId: agentTokens.userId,
+          monitorId: agentTokens.monitorId,
         })
         .from(agentTokens)
-        .where(and(eq(agentTokens.tokenHash, tokenHash), isNull(agentTokens.revokedAt)))
+        .where(
+          and(
+            eq(agentTokens.tokenHash, tokenHash),
+            isNull(agentTokens.revokedAt),
+            or(isNull(agentTokens.expiresAt), gt(agentTokens.expiresAt, new Date()))
+          )
+        )
         .limit(1)
     : []
 
   if (agentToken) {
+    if (agentToken.monitorId) {
+      if (!options.allowMonitorTokens) return null
+      // Revocation at the monitor's end is the primary control; this keeps a
+      // token whose revocation was interrupted from outliving its monitor.
+      const [live] = await db
+        .select({ id: monitors.id })
+        .from(monitors)
+        .where(
+          and(
+            eq(monitors.id, agentToken.monitorId),
+            eq(monitors.agentId, agentToken.agentId),
+            inArray(monitors.status, Monitor.activeStatuses())
+          )
+        )
+        .limit(1)
+      if (!live) return null
+    }
     if (agentToken.userId) {
       const [owner] = await db
         .select({ disabledAt: users.disabledAt })
@@ -96,6 +133,7 @@ export async function resolveTokenContext(token: string): Promise<AuthContext | 
         agentId: agentToken.agentId,
         squadId: agentToken.squadId,
         ...(agentToken.userId ? { userId: agentToken.userId } : {}),
+        ...(agentToken.monitorId ? { monitorId: agentToken.monitorId } : {}),
       },
       deviceTokenId: null,
     }

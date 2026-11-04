@@ -26,7 +26,7 @@ Some routes act for one person, such as connecting accounts, subscriptions, sess
 2. `X-Auth-Token: <token>`
 3. The browser's `ficus_session` HttpOnly cookie
 
-The resolver recognizes unexpired user sessions, unrevoked agent tokens, scoped system tokens, paired-device tokens, and the bootstrap password when eligible. Each credential kind carries its own prefix (sessions `ficus_sess_`, agent tokens `ficus_agent_`, system tokens `ficus_sys_`, device tokens `ficus_dev_`), and the resolver looks a token up only in the table its prefix names: a value minted as another kind, or under an earlier product prefix, never authenticates as one of these. Missing or invalid credentials return `401`, apart from explicitly supported public or independently authenticated routes. Route permission checks can return `403` for authenticated callers without access.
+The resolver recognizes unexpired user sessions, unrevoked, unexpired agent tokens, scoped system tokens, paired-device tokens, and the bootstrap password when eligible. Each credential kind carries its own prefix (sessions `ficus_sess_`, agent tokens `ficus_agent_`, system tokens `ficus_sys_`, device tokens `ficus_dev_`), and the resolver looks a token up only in the table its prefix names: a value minted as another kind, or under an earlier product prefix, never authenticates as one of these. Missing or invalid credentials return `401`, apart from explicitly supported public or independently authenticated routes. Route permission checks can return `403` for authenticated callers without access.
 
 ## Login Flow
 
@@ -145,6 +145,8 @@ See [Secret Store](secret-store.md) for storage details and [Settings](settings-
 ## Agent identities
 
 Some API requests originate from agents rather than human users. Agent tokens (prefix `ficus_agent_`) resolve an agent identity. Squad-bound agents use their type role and squad scope. The personal User Assistant retains the internal type ID `system-manager`; its permissions resolve through its owning user. Do not assume every agent token is user-less.
+
+A background monitor's command authenticates with a monitor token: an agent token bound to the monitor (`agent_tokens.monitor_id`) that expires with it and is revoked when it ends. It is read-only. Its permissions are the agent's read permissions plus `integrations:use`, the identity middleware allows it only `GET`/`HEAD` requests and the integration `execute-environment` exchange, and WebSocket, terminal and log-stream authentication refuse it. See `services/auth/monitor-tokens.ts` and [Agent Background Monitors](agent-background-monitors.md#credentials).
 
 **Role mapping** (in `apps/core/src/services/rbac/permissions.ts`):
 

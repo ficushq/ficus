@@ -6,16 +6,20 @@ import { Monitor } from '../../entities/Monitor'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { createLogger } from '../../lib/infra/logger'
 import { getSandboxManager, type ISandboxManager } from '../sandbox'
+import { isHostRuntime } from '../sandbox/runtime'
 import { TmuxServerUnreachableError, tmuxShellFunctions, tmuxUnreachableFromOutput } from '../sandbox/tmux'
 import {
   MONITOR_DIR_GONE as DIR_GONE,
   MONITOR_LOG_SIZE_MARKER as LOG_SIZE_MARKER,
   MONITOR_PROCESS_GONE as PROCESS_GONE,
   MONITOR_PROBE_TIMED_OUT as TIMED_OUT,
+  MONITOR_KILL_GRACE_SECONDS,
+  MONITOR_TOKEN_ENV,
   monitorDir,
   monitorLaunchCommand,
   monitorLaunchTimeoutSeconds,
   monitorProbeCommand,
+  monitorTokenCleanupCommand,
   monitorWorkRoot,
   sessionNameForMonitor,
   shellQuote,
@@ -118,6 +122,8 @@ export interface MonitorSupervisorOptions {
   restartBackoffMs?: (rapidRestartCount: number) => number
   /** Test seam: the retry interval while a relaunch cannot reach its sandbox. */
   restartRetryMs?: number
+  /** Test seam: mint a monitor's read-only token (Agent.createMonitorToken). */
+  createMonitorToken?: (agent: Agent, monitor: { id: string; expiresAt: Date }) => Promise<string | undefined>
 }
 
 type PendingLine = {
@@ -198,6 +204,10 @@ export class MonitorSupervisor {
   private readonly ensureSandboxReachable: (sandboxId: string) => Promise<boolean>
   private readonly restartBackoffMs: (rapidRestartCount: number) => number
   private readonly restartRetryMs: number
+  private readonly createMonitorToken: (
+    agent: Agent,
+    monitor: { id: string; expiresAt: Date }
+  ) => Promise<string | undefined>
 
   constructor(
     private managerInstance?: ISandboxManager,
@@ -212,6 +222,7 @@ export class MonitorSupervisor {
     this.ensureSandboxReachable = options.ensureSandboxReachable ?? defaultEnsureSandboxReachable
     this.restartBackoffMs = options.restartBackoffMs ?? monitorRestartBackoffMs
     this.restartRetryMs = options.restartRetryMs ?? RESTART_RETRY_MS
+    this.createMonitorToken = options.createMonitorToken ?? ((agent, monitor) => agent.createMonitorToken(monitor))
   }
 
   // Lazily resolve the sandbox manager so this class can be instantiated
@@ -263,9 +274,12 @@ export class MonitorSupervisor {
   private async launch(monitor: Monitor, state?: State): Promise<{ running: boolean }> {
     const processId = monitor.processId || sessionNameForMonitor(monitor.id)
     if (!monitor.processId) await monitor.update({ processId })
-    const squadId = await this.resolveSquadId(monitor.agentId)
+    const agent = await Agent.find(monitor.agentId)
+    const squadId = agent?.squadId ?? null
     const { workRoot, dir, logFile } = this.workPaths(monitor, squadId)
     const cwd = monitor.cwd?.trim() || workRoot
+    const timeoutSeconds = monitorLaunchTimeoutSeconds(monitor, this.now())
+    const apiUrl = await this.resolveApiUrl(monitor.sandboxId)
     const monitorEnv: Record<string, string> = {
       FICUS_MONITOR_ID: monitor.id,
       FICUS_MONITOR_CWD: cwd,
@@ -273,12 +287,22 @@ export class MonitorSupervisor {
       FICUS_MONITOR_COMMAND: monitor.command,
       // The in-sandbox watchdog's budget: only what is left of the original
       // deadline, so a relaunch can never extend the monitor's life.
-      FICUS_MONITOR_TIMEOUT_SECONDS: String(monitorLaunchTimeoutSeconds(monitor, this.now())),
+      FICUS_MONITOR_TIMEOUT_SECONDS: String(timeoutSeconds),
+      // Not secrets: where the command's ficus CLI and integration wrappers reach Core.
+      ...(apiUrl ? { FICUS_MONITOR_API_URL: apiUrl } : {}),
+      ...(squadId ? { FICUS_MONITOR_SQUAD_ID: squadId } : {}),
     }
+    // The command's credential travels out of band (never argv) and the launch
+    // command writes it to a private file the launcher loads for the command only.
+    const token = agent ? await this.mintToken(agent, monitor, timeoutSeconds) : undefined
     const command = monitorLaunchCommand({ dir, logFile, processId, env: monitorEnv })
     let out: Buffer
     try {
-      out = await this.manager.exec(monitor.sandboxId, ['bash', '-lc', command])
+      out = await this.manager.exec(
+        monitor.sandboxId,
+        ['bash', '-lc', command],
+        token ? { env: { [MONITOR_TOKEN_ENV]: token } } : undefined
+      )
     } catch (error) {
       throw (error instanceof Error && tmuxUnreachableFromOutput(error.message)) || error
     }
@@ -304,6 +328,46 @@ export class MonitorSupervisor {
     if (logOffset !== previous) await monitor.update({ logOffset })
     const running = await monitor.markRunning(new Date(this.now()))
     return { running }
+  }
+
+  /**
+   * Mint this launch's read-only token (services/auth/monitor-tokens.ts),
+   * revoking any from an earlier launch first. It expires when the monitor's
+   * deadline (plus the kill grace) passes. Best effort: without a token the
+   * command still runs, and an integration wrapper reports the missing
+   * credentials in the monitor's log.
+   */
+  private async mintToken(agent: Agent, monitor: Monitor, timeoutSeconds: number): Promise<string | undefined> {
+    try {
+      await monitor.revokeTokens()
+      const expiresAt = new Date(this.now() + (timeoutSeconds + MONITOR_KILL_GRACE_SECONDS) * 1000)
+      return await this.createMonitorToken(agent, { id: monitor.id, expiresAt })
+    } catch (err) {
+      log.warn(`monitor ${monitor.id}: could not mint its credentials; the command runs without them`, err)
+      return undefined
+    }
+  }
+
+  /** The Core URL the box's foreground commands use, for the same runtime. */
+  private async resolveApiUrl(sandboxId: string): Promise<string | undefined> {
+    try {
+      const manager = this.manager as ISandboxManager & {
+        resolveToolApiUrl?: (sandboxId: string) => string
+        podManager?: { namespace: string }
+      }
+      if (manager.resolveToolApiUrl) return manager.resolveToolApiUrl(sandboxId) || undefined
+      if (manager.podManager?.namespace) {
+        const { resolveSandboxApiUrl } = await import('../sandbox/k8s/pod-spec')
+        return resolveSandboxApiUrl(manager.podManager.namespace)
+      }
+      if (isHostRuntime()) {
+        const { resolveHostApiUrl } = await import('../sandbox/host/env')
+        return resolveHostApiUrl()
+      }
+    } catch (err) {
+      log.warn(`monitor sandbox ${sandboxId}: could not resolve the Core URL for its commands`, err)
+    }
+    return undefined
   }
 
   private async resolveSquadId(agentId: string): Promise<string | null> {
@@ -693,7 +757,8 @@ export class MonitorSupervisor {
       await this.manager.exec(monitor.sandboxId, [
         'bash',
         '-lc',
-        `${tmuxShellFunctions()}\nficus_tmux_kill ${shellQuote(monitor.processId)} || ficus_tmux_unreachable`,
+        // Also drop a credential hand-off file the command never got to consume.
+        `${monitorTokenCleanupCommand(monitor.id)}\n${tmuxShellFunctions()}\nficus_tmux_kill ${shellQuote(monitor.processId)} || ficus_tmux_unreachable`,
       ])
     } catch (err) {
       // Sandbox may be gone; proceed to the terminal transition regardless.

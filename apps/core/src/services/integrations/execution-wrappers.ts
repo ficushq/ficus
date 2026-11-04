@@ -7,6 +7,17 @@ export interface ExecutionWrapper {
 }
 const quote = (value: string) => `'${value.replace(/'/g, `'"'"'`)}'`
 
+/** File in a monitor's work dir that records the credentials notice was already logged for that monitor. */
+export const MONITOR_CREDENTIALS_NOTICE_MARKER = 'credentialsNotice'
+
+/** The line a wrapper adds to a monitor's log the first time it runs there without credentials. */
+export function monitorCredentialsNotice(binary: string): string {
+  return (
+    `[Ficus] ${binary} ran without Ficus integration credentials in this monitor, so its calls are ` +
+    `unauthenticated and may be failing (check whether this command hides their errors).`
+  )
+}
+
 /** Token-free executables, not shell functions: children retain PATH and acquire fresh credentials too. */
 export function renderExecutionWrapper(binary: string, providerKey: string, squadId: string): string {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(binary) || binary === 'ficus' || !/^[a-z0-9][a-z0-9_-]*$/.test(providerKey))
@@ -56,6 +67,14 @@ if [ -z "$__ficus_wrapper_real_binary" ]; then
 fi
 if [ -z "\${FICUS_TOKEN:-}" ]; then
   printf '%s\\n' ${quote(`Ficus integration credentials are only available to agents; running ${binary} without Ficus credentials.`)} >&2
+  # A monitor's command normally runs with its own read-only token. If that
+  # token is missing, a polling loop that discards stderr would hide the notice
+  # above and fail forever, so record it once in the monitor's own log, which
+  # reaches the owning agent whatever the command does with stderr.
+  if [ -n "\${FICUS_MONITOR_DIR:-}" ] && [ -d "$FICUS_MONITOR_DIR/logs" ] &&
+    (set -C; : > "$FICUS_MONITOR_DIR/${MONITOR_CREDENTIALS_NOTICE_MARKER}") 2>/dev/null; then
+    printf '%s\\n' ${quote(monitorCredentialsNotice(binary))} >> "$FICUS_MONITOR_DIR/logs/current.log" 2>/dev/null || :
+  fi
   exec "$__ficus_wrapper_real_binary" "$@"
 fi
 exec ficus integration exec ${quote(providerKey)} --squad ${quote(squadId)} -- "$__ficus_wrapper_real_binary" "$@"

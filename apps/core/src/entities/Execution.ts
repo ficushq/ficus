@@ -8,6 +8,7 @@ import {
   executionAdmissionReservations,
   sandboxProvisionRecoveries,
   workStreams,
+  inbox,
 } from '../db/schema'
 import { Execution as ExecutionJson, ExecutionStatus, SessionUsage, AgentStatus, QuestionData } from '@ficus/shared'
 import type { SandboxProvisionErrorCode } from '../services/sandbox/k8s/provision-errors'
@@ -1059,23 +1060,100 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
     if (terminalized) {
       const { isUnexplainedExecutionFailure, EXECUTION_RECOVERY_OPERATION } =
         await import('../services/recovery/executions')
-      if (!recovery?.explained && isUnexplainedExecutionFailure(error, failure)) {
+      const resumed = await this.resumedRunFailureContext()
+      const counted = !recovery?.explained && isUnexplainedExecutionFailure(error, failure)
+      let record: import('../services/recovery/store').RecoveryRecord | undefined
+      if (counted) {
         const { recordRecoveryFailure } = await import('../services/recovery/store')
-        await recordRecoveryFailure(
+        // A resumed run is never replay-safe: the interrupted segment may have
+        // had effects. It wakes with an unknown-outcome brief instead of the
+        // retained startup request, when it holds obligations or failed at startup.
+        const retry =
+          resumed && (resumed.hasObligations || recovery?.safeStartupRetry)
+            ? { retryResumedRun: resumed.obligations }
+            : recovery?.safeStartupRetry
+              ? { retryStartupMessage: this.message ?? 'Continue the assigned task.' }
+              : {}
+        record = await recordRecoveryFailure(
           { agentId: this.agentId, executionId: this.id },
           {
             operationKey: EXECUTION_RECOVERY_OPERATION,
             attempted: 'continue the task',
             invocationId: `${this.id}:${attemptIdentity}`,
             error: new Error(error),
-            ...(recovery?.safeStartupRetry
-              ? { retryStartupMessage: this.message ?? 'Continue the assigned task.' }
-              : {}),
+            ...retry,
           }
-        ).catch((accountingError) => log.error('Unable to persist execution recovery outcome', accountingError))
+        ).catch((accountingError) => {
+          log.error('Unable to persist execution recovery outcome', accountingError)
+          return undefined
+        })
       }
+      if (resumed?.hasObligations) await this.notifyIfResumedRunStranded(error, counted, record, resumed.obligations)
     }
     return terminalized
+  }
+
+  /**
+   * Whether this failed run was one the platform resumed after an interruption
+   * and, if so, what slot claims and flow attempts the agent still holds.
+   * Read-only and fail-open: a lookup error leaves the existing failure path
+   * unchanged rather than blocking terminalization.
+   */
+  private async resumedRunFailureContext() {
+    try {
+      const { findResumedRun, findResumedRunObligations, hasResumedRunObligations } =
+        await import('../services/execution/resumed-run-failure')
+      if (!(await findResumedRun(this.id, this.agentId))) return null
+      const obligations = await findResumedRunObligations(this.agentId)
+      return { obligations, hasObligations: hasResumedRunObligations(obligations) }
+    } catch (lookupError) {
+      log.error('Unable to inspect a failed run for interruption recovery', lookupError)
+      return null
+    }
+  }
+
+  /**
+   * A resumed run that failed with live obligations must never be left until
+   * an unrelated timer (a slot expiry) fires. When the bounded retry wake was
+   * not issued or cannot be delivered now, tell the manager or owner instead.
+   */
+  private async notifyIfResumedRunStranded(
+    error: string,
+    counted: boolean,
+    record: import('../services/recovery/store').RecoveryRecord | undefined,
+    obligations: import('../services/execution/resumed-run-failure').ResumedRunObligations
+  ): Promise<void> {
+    try {
+      const { lastErrorLine, recoveryContinuationIsCurrent } = await import('../services/recovery/store')
+      let reason: import('../services/execution/resumed-run-failure').StrandedResumedRunReason | null
+      if (!counted) reason = 'not-counted'
+      else if (!record) reason = 'recovery-unrecorded'
+      else if (record.state.state !== 'recovering') reason = 'recovery-held'
+      else {
+        const [wake] = await db
+          .select({ id: inbox.id })
+          .from(inbox)
+          .where(
+            and(
+              eq(inbox.recipientId, this.agentId),
+              eq(inbox.idempotencyKey, `recovery-startup:${record.id}:${record.version}`)
+            )
+          )
+        reason = wake && (await recoveryContinuationIsCurrent(db, wake.id, this.agentId)) ? null : 'not-deliverable'
+      }
+      if (!reason) return
+      const { notifyStrandedResumedRun } = await import('../services/execution/resumed-run-failure')
+      await notifyStrandedResumedRun({
+        agentId: this.agentId,
+        executionId: this.id,
+        error: lastErrorLine(error),
+        reason,
+        obligations,
+        ...(record ? { recoveryId: record.id } : {}),
+      })
+    } catch (notifyError) {
+      log.error('Unable to report a failed resumed run with live obligations', notifyError)
+    }
   }
 
   /** Only called before runner startup has dispatched a model prompt. */
