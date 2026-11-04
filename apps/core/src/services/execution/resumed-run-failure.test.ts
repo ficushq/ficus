@@ -313,3 +313,75 @@ test('repeated resumed failures stop at the recovery budget and hand the claim t
     )
   expect(decision).toHaveLength(1)
 }, 20000)
+
+test('an owner-escalated recovery routes the stranded notice to the owner, not the manager', async () => {
+  const claimId = await holdSlot()
+  const { decideRecovery } = await import('../recovery/store')
+  const fail = async () => {
+    const execution = await resumedExecution('worker-restart')
+    await execution.fail(LOST_BASH_OUTCOME, undefined, SANDBOX_ENSURE)
+    return execution
+  }
+  for (let attempt = 1; attempt <= 3; attempt++) await fail()
+  let [record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))
+  expect(record!.state.state).toBe('waiting-manager')
+  // The manager spends its one extra cycle; the next exhaustion escalates to the owner.
+  await decideRecovery(
+    record!.id,
+    { action: 'continue', expectedVersion: record!.version },
+    { agentId: squad.managerAgentId! }
+  )
+  let last!: Execution
+  for (let attempt = 1; attempt <= 3; attempt++) last = await fail()
+  ;[record] = await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.agentId, worker.id))
+  expect(record!.state).toMatchObject({ state: 'waiting-owner', ownerEscalated: true })
+  const notices = await db
+    .select()
+    .from(inbox)
+    .where(
+      and(
+        sql`${inbox.metadata}->>'source' = 'resumed-run-stranded'`,
+        sql`${inbox.metadata}->>'executionId' = ${last.id}`
+      )
+    )
+  expect(notices).toHaveLength(1)
+  expect(notices[0]).toMatchObject({ recipientType: 'user', recipientId: ownerId })
+  expect(notices[0]!.metadata).toMatchObject({
+    reason: 'recovery-held',
+    recoveryId: record!.id,
+    slotClaimIds: [claimId],
+  })
+}, 30000)
+
+test('with no eligible manager or owner the stranded notice becomes a durable system diagnostic', async () => {
+  const claimId = await holdSlot()
+  await db.update(squads).set({ managerAgentId: null }).where(eq(squads.id, squad.id))
+  const permissions = await import('../rbac/permissions')
+  const permission = spyOn(permissions, 'hasUserPermissionWithExecutor').mockResolvedValue(false)
+  let executionId: string | undefined
+  try {
+    const execution = await resumedExecution('worker-restart')
+    executionId = execution.id
+    await execution.fail('Provider transport failed', undefined, {
+      failureClass: 'provider_transport',
+      failureReason: 'transport',
+    })
+    expect(await strandedNotices()).toHaveLength(0)
+    const diagnostics = await db
+      .select()
+      .from(inbox)
+      .where(eq(inbox.idempotencyKey, `resumed-run-stranded-unroutable:${execution.id}`))
+    expect(diagnostics).toHaveLength(1)
+    expect(diagnostics[0]).toMatchObject({ recipientType: 'system', senderType: 'system' })
+    expect(diagnostics[0]!.metadata).toMatchObject({
+      source: 'resumed-run-stranded-unroutable',
+      reason: 'not-counted',
+      slotClaimIds: [claimId],
+    })
+    expect(diagnostics[0]!.content).toContain(`Slot claim ${claimId}`)
+  } finally {
+    permission.mockRestore()
+    if (executionId)
+      await db.delete(inbox).where(eq(inbox.idempotencyKey, `resumed-run-stranded-unroutable:${executionId}`))
+  }
+})

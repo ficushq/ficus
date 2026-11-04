@@ -82,10 +82,13 @@ holds an active slot claim or owns a running flow attempt in an active stream.
   unchanged: it is not woken.
 - When no deliverable wake exists, because the failure is not counted (an
   admission or provider refusal), the budget is exhausted or held, or a pause
-  or wait blocks delivery, the bounded-recovery audience (manager first, else
-  owner) receives one `resumed-run-stranded` notice per execution with the
-  claim and attempt identifiers. It grants no authority and lifts no gate; the
-  generated Continue / Stop card is still sent on exhaustion.
+  or wait blocks delivery, one `resumed-run-stranded` notice per execution
+  carries the claim and attempt identifiers. It is routed by the bounded-recovery
+  audience for the episode's current state (manager first; the owner once the
+  episode is owner-escalated or no manager is eligible). With no eligible
+  recipient it becomes an idempotent `resumed-run-stranded-unroutable` system
+  diagnostic. It grants no authority and lifts no gate; the generated Continue /
+  Stop card is still sent on exhaustion.
 
 The wake starts an ordinary run without the resume marker, so its own failure
 is counted but cannot re-wake the agent. Only a new interruption and resume can,

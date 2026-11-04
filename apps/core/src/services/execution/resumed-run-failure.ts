@@ -1,7 +1,7 @@
 import { and, desc, eq, isNull, sql } from 'drizzle-orm'
-import { activeWorkflowAttempts } from '@ficus/shared'
+import { activeWorkflowAttempts, SYSTEM_RECIPIENT_ID } from '@ficus/shared'
 import { isRestartContext } from '@ficus/shared/restart-context'
-import { db, messages, slotClaims, slotPools, workStreamFlowRuns, workStreams } from '../../db'
+import { db, inbox, messages, recoveryEpisodes, slotClaims, slotPools, workStreamFlowRuns, workStreams } from '../../db'
 import { createLogger } from '../../lib/infra/logger'
 import type { DbHandle } from '../work-streams/waits'
 
@@ -153,9 +153,11 @@ const REASON_TEXT: Record<StrandedResumedRunReason, string> = {
 }
 
 /**
- * Tell the squad manager (or, without an eligible manager, the owner) that an
- * agent is stranded with live obligations. Uses the bounded-recovery audience
- * so routing matches the Continue / Stop decision; grants no authority.
+ * Tell the squad manager (or the owner) that an agent is stranded with live
+ * obligations. Routing uses the bounded-recovery audience for the episode's
+ * CURRENT state, so an owner-escalated episode reaches the owner exactly like
+ * its Continue / Stop decision. Without an eligible recipient it persists a
+ * durable system diagnostic instead. Grants no authority.
  */
 export async function notifyStrandedResumedRun(input: {
   agentId: string
@@ -167,22 +169,20 @@ export async function notifyStrandedResumedRun(input: {
 }): Promise<void> {
   const { recoveryRecipients } = await import('../recovery/recipients')
   const { initialRecoveryState } = await import('../recovery/policy')
-  const workStreamId = input.obligations.attempts[0]?.workStreamId ?? null
-  const audience = await recoveryRecipients({
-    id: input.recoveryId ?? input.executionId,
-    agentId: input.agentId,
-    workStreamId,
-    state: initialRecoveryState('continue the task'),
-  })
-  const owner = audience.target === 'owner'
-  const recipientIds = owner ? audience.ownerUserIds : [audience.managerAgentId!]
-  if (!recipientIds.length) {
-    log.warn('A failed resumed run has live obligations but no manager or owner to notify', {
+  const [record] = input.recoveryId
+    ? await db.select().from(recoveryEpisodes).where(eq(recoveryEpisodes.id, input.recoveryId))
+    : []
+  const workStreamId = record?.workStreamId ?? input.obligations.attempts[0]?.workStreamId ?? null
+  const audience = await recoveryRecipients(
+    record ?? {
+      id: input.executionId,
       agentId: input.agentId,
-      executionId: input.executionId,
-    })
-    return
-  }
+      workStreamId,
+      state: initialRecoveryState('continue the task'),
+    }
+  )
+  const owner = audience.target === 'owner'
+  const recipientIds = owner ? audience.ownerUserIds : audience.managerAgentId ? [audience.managerAgentId] : []
   const content = [
     `Agent ${input.agentId} was resumed automatically after an interruption, and the resumed execution ${input.executionId} failed: ${input.error ?? 'it stopped without a confirmed result.'}`,
     '',
@@ -193,6 +193,37 @@ export async function notifyStrandedResumedRun(input: {
     '',
     'The outcome of its interrupted work is unknown. Decide through the normal routes whether it should continue, and whether its claims should be renewed or released; this notice does not lift any pause, wait, approval or recovery hold.',
   ].join('\n')
+  const metadata = {
+    source: 'resumed-run-stranded',
+    agentId: input.agentId,
+    executionId: input.executionId,
+    reason: input.reason,
+    squadId: audience.squadId,
+    slotClaimIds: input.obligations.slotClaims.map((claim) => claim.claimId),
+    attempts: input.obligations.attempts.map(({ workStreamId, attemptId }) => ({ workStreamId, attemptId })),
+    ...(input.recoveryId ? { recoveryId: input.recoveryId } : {}),
+    ...(workStreamId ? { workStreamId } : {}),
+  }
+  if (!recipientIds.length) {
+    // Same durable, idempotent operator surface as an unroutable recovery.
+    log.warn('A failed resumed run has live obligations but no manager or owner to notify', {
+      agentId: input.agentId,
+      executionId: input.executionId,
+    })
+    await db
+      .insert(inbox)
+      .values({
+        recipientType: 'system',
+        recipientId: SYSTEM_RECIPIENT_ID,
+        senderType: 'system',
+        subject: 'A stranded resumed run has no authorized recipient',
+        content: `${content}\n\nNo enabled, authorized manager or owner could be resolved. Restore the authorized routing; do not bypass any gate.`,
+        metadata: { ...metadata, source: 'resumed-run-stranded-unroutable' },
+        idempotencyKey: `resumed-run-stranded-unroutable:${input.executionId}`,
+      })
+      .onConflictDoNothing()
+    return
+  }
   const { InboxMessage } = await import('../../entities/InboxMessage')
   for (const recipientId of recipientIds) {
     await InboxMessage.sendOnce(
@@ -203,17 +234,7 @@ export async function notifyStrandedResumedRun(input: {
         ...(owner ? {} : { wakeEligible: true }),
         subject: 'A resumed run failed while holding a slot or flow attempt',
         content,
-        metadata: {
-          source: 'resumed-run-stranded',
-          agentId: input.agentId,
-          executionId: input.executionId,
-          reason: input.reason,
-          squadId: audience.squadId,
-          slotClaimIds: input.obligations.slotClaims.map((claim) => claim.claimId),
-          attempts: input.obligations.attempts.map(({ workStreamId, attemptId }) => ({ workStreamId, attemptId })),
-          ...(input.recoveryId ? { recoveryId: input.recoveryId } : {}),
-          ...(workStreamId ? { workStreamId } : {}),
-        },
+        metadata,
       },
       `resumed-run-stranded:${input.executionId}:${recipientId}`
     )
