@@ -1348,6 +1348,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     cachedTokenHash?: string
     userId?: string
     expectedResourceGeneration?: string
+    monitor?: { id: string; expiresAt: Date }
   }): Promise<{ id: string | null; reusedCached: boolean } | null> {
     return db.transaction(async (tx) => {
       await acquireAgentQueueLock(tx, this.id)
@@ -1393,7 +1394,13 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       if (!input.tokenHash) return { id: null, reusedCached: false }
       const [row] = await tx
         .insert(agentTokens)
-        .values({ agentId: this.id, squadId: current.squadId, tokenHash: input.tokenHash, userId })
+        .values({
+          agentId: this.id,
+          squadId: current.squadId,
+          tokenHash: input.tokenHash,
+          userId,
+          ...(input.monitor ? { monitorId: input.monitor.id, expiresAt: input.monitor.expiresAt } : {}),
+        })
         .returning({ id: agentTokens.id })
       return { id: row.id, reusedCached: false }
     })
@@ -1411,6 +1418,23 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     if (!accepted?.id) throw new Error(`Agent ${this.id} cannot issue an agent token in its current lifecycle state.`)
     cacheAgentToken(this.id, token)
     return { id: accepted.id, token }
+  }
+
+  /**
+   * Mint the read-only token one background monitor's command runs with (see
+   * services/auth/monitor-tokens.ts). It expires at `expiresAt` (the monitor's
+   * deadline) and is never cached: the monitor supervisor hands it to the
+   * command once and revokes it when the monitor ends. Undefined when this
+   * agent cannot hold tokens (no squad and no owner, or not live).
+   */
+  async createMonitorToken(monitor: { id: string; expiresAt: Date }): Promise<string | undefined> {
+    if (!this.squadId && !this.ownerUserId) return undefined
+    const token = `${AGENT_TOKEN_PREFIX}${randomUUID()}`
+    const accepted = await this.persistAgentTokenUnderLifecycleLock({
+      tokenHash: createHash('sha256').update(token).digest('hex'),
+      monitor,
+    })
+    return accepted?.id ? token : undefined
   }
 
   /**
