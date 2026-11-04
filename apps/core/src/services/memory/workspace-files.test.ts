@@ -22,6 +22,21 @@ describe('ingestWorkspaceFiles', () => {
     expect(result.indexed).toBe(0)
   })
 
+  test('never indexes the workspace settings directory', async () => {
+    const result = await ingestWorkspaceFiles(squad.id, {
+      files: [
+        { path: '.ficus/notes.md', content: '# Settings', event: 'change' },
+        { path: './.FICUS/other.md', content: '# Settings', event: 'change' },
+        { path: 'docs/.ficus/kept.md', content: '# Kept', event: 'change' },
+      ],
+    })
+    expect(result.indexed).toBe(1)
+    const docs = await db.select().from(memoryDocuments).where(eq(memoryDocuments.squadId, squad.id))
+    expect(
+      docs.map((doc) => doc.path ?? doc.sourceId).every((value) => !/\/\.ficus\/notes|other\.md/i.test(value))
+    ).toBe(true)
+  })
+
   test('indexes changes, deletes on delete, and reconciles stale docs away', async () => {
     const first = await ingestWorkspaceFiles(squad.id, {
       files: [

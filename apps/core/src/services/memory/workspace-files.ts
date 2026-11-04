@@ -7,10 +7,12 @@
  * both must produce identical ingest results.
  */
 
+import { posix } from 'path'
 import { Squad } from '../../entities/Squad'
 import { WorkspaceFileSource } from './sources/WorkspaceFileSource'
 import { ReindexScheduler } from './indexer/ReindexScheduler'
 import { resolveWorkspaceLayout } from '../sandbox/workspace-layout'
+import { isWorkspaceSettingsDirName } from '../workspace/dot-dir'
 
 export interface WorkspaceFilesIngestInput {
   files: Array<{ path: string; content?: string | null; event: 'change' | 'delete' }>
@@ -40,7 +42,11 @@ export async function ingestWorkspaceFiles(
   squadId: string,
   input: WorkspaceFilesIngestInput
 ): Promise<WorkspaceFilesIngestResult> {
-  const { files, reconcile, skipped: skippedFiles } = input
+  const { reconcile, skipped: skippedFiles } = input
+  // The workspace settings directory is never indexed, whatever a watcher reports.
+  const files = input.files.filter(
+    (file) => !isWorkspaceSettingsDirName(posix.normalize(file.path).replace(/^\/+/, '').split('/')[0])
+  )
 
   const squad = await Squad.find(squadId)
   if (!squad) return { squadFound: false, indexed: 0, deleted: 0, skipped: 0, errors: 0, removed: 0 }
