@@ -290,7 +290,11 @@ function disabledAcquireResult(pool: SlotPoolRow, promotion: PromotionResult): S
   }
 }
 
-export async function settleInactiveGrantNotifications(tx: DbTx, claimIds: string[], now: Date): Promise<void> {
+/**
+ * Settle undelivered notices that only make sense while their claim is active
+ * (grants and pre-expiry warnings) once the claim is released or expired.
+ */
+export async function settleInactiveClaimNotifications(tx: DbTx, claimIds: string[], now: Date): Promise<void> {
   if (claimIds.length === 0) return
   await tx
     .update(slotNotifications)
@@ -305,7 +309,7 @@ export async function settleInactiveGrantNotifications(tx: DbTx, claimIds: strin
     .where(
       and(
         inArray(slotNotifications.claimId, claimIds),
-        eq(slotNotifications.kind, 'granted'),
+        inArray(slotNotifications.kind, ['granted', 'expiring']),
         inArray(slotNotifications.status, ['pending', 'delivering'])
       )
     )
@@ -318,7 +322,7 @@ export async function expireAndPromoteLocked(tx: DbTx, pool: SlotPoolRow, now: D
     .where(and(eq(slotClaims.poolId, pool.id), eq(slotClaims.status, 'active'), lte(slotClaims.expiresAt, now)))
     .returning({ id: slotClaims.id, ownerAgentId: slotClaims.ownerAgentId })
   if (expired.length > 0) {
-    await settleInactiveGrantNotifications(
+    await settleInactiveClaimNotifications(
       tx,
       expired.map((claim) => claim.id),
       now
@@ -939,7 +943,7 @@ export async function releaseSlot(
         )
       )
       .returning({ id: slotClaims.id })
-    await settleInactiveGrantNotifications(
+    await settleInactiveClaimNotifications(
       tx,
       released.map((claim) => claim.id),
       now
@@ -1188,7 +1192,7 @@ export async function cleanupAgentSlotsInTransaction(
       .set({ status: 'released', endedAt: now, terminalReason: reason })
       .where(and(eq(slotClaims.poolId, pool.id), eq(slotClaims.ownerAgentId, agentId), eq(slotClaims.status, 'active')))
       .returning({ id: slotClaims.id })
-    await settleInactiveGrantNotifications(
+    await settleInactiveClaimNotifications(
       tx,
       released.map((claim) => claim.id),
       now
@@ -1242,7 +1246,7 @@ export async function retireSquadSlotStateInTransaction(
       .set({ status: 'released', endedAt: now, terminalReason: 'squad_archived' })
       .where(and(eq(slotClaims.poolId, pool.id), eq(slotClaims.status, 'active')))
       .returning({ id: slotClaims.id })
-    await settleInactiveGrantNotifications(
+    await settleInactiveClaimNotifications(
       tx,
       released.map((claim) => claim.id),
       now
