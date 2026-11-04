@@ -28,6 +28,19 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, rgb(var(--color-primary)) 18%, transparent);
 }
 
+.squad-chat-agent.is-selected:hover {
+  background: color-mix(in srgb, rgb(var(--color-primary)) 14%, rgb(var(--color-bg-surface)));
+}
+
+/* The select button is stretched over the whole row, so its ghost hover fill would paint over the
+   row's selected tint and inset outline, leaving only antialiased outline fragments at the rounded
+   corners. The row owns the hover treatment; the button stays transparent and keeps its focus ring.
+   Scoped under the row so it outranks `.ficus-button-ghost:hover` whatever the stylesheet order. */
+.squad-chat-agent > .squad-chat-agent-select,
+.squad-chat-agent > .squad-chat-agent-select:hover {
+  background: transparent;
+}
+
 .squad-chat-filter[aria-pressed='true'] {
   color: rgb(var(--color-primary));
   background: color-mix(in srgb, rgb(var(--color-primary)) 9%, rgb(var(--color-bg-surface)));
