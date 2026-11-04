@@ -17,6 +17,7 @@ import { localDeploymentActionErrorMessage } from '../../lib/localDeploymentActi
 import { queryKeys } from '../../queryKeys'
 import { publicUrlQueries, queries } from '../../queryOptions'
 import { getLocalDeploymentBrowserUrl } from '../../lib/localDeploymentBrowserUrl'
+import { sortLocalDeployments } from '../../lib/localDeploymentOrder'
 import { Badge, type BadgeColor } from '../Badge'
 import { Modal } from '../Modal'
 import { CollectionSkeleton } from '../loading/Skeleton'
@@ -120,9 +121,13 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
     },
   })
 
+  // Filter first, then sort: running apps first, newest first within a status (both sections).
   const visibleLocalDeployments = useMemo(() => {
-    if (statusFilter === 'all') return localDeployments
-    return localDeployments.filter((localDeployment) => localDeployment.status === statusFilter)
+    const filtered =
+      statusFilter === 'all'
+        ? localDeployments
+        : localDeployments.filter((localDeployment) => localDeployment.status === statusFilter)
+    return sortLocalDeployments(filtered)
   }, [localDeployments, statusFilter])
 
   const activeLocalDeployments = visibleLocalDeployments.filter((localDeployment) => !localDeployment.archivedAt)
