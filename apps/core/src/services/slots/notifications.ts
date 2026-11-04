@@ -8,22 +8,65 @@ import { deliverInboxMessagesToAgent } from '../inbox/inboxDelivery'
 const log = createLogger('slot-notifier')
 const MAX_NOTIFICATION_CLAIM_LIMIT = 100
 const DELIVERY_LEASE_MS = 60_000
+// Holders are warned this long before a claim expires, or a quarter of the
+// pool's claim timeout when that is shorter, but never less than the minimum
+// lead: the warning is queued by the 30 second slot reconciliation sweep, so a
+// window shorter than the sweep interval could fall between two sweeps and be
+// missed. A 1 hour pool warns at 10 minutes, a 4 minute pool at 1 minute, and
+// a 1 minute pool at 45 seconds.
+export const SLOT_EXPIRY_WARNING_MAX_LEAD_MS = 10 * 60_000
+export const SLOT_EXPIRY_WARNING_MIN_LEAD_MS = 45_000
+const SLOT_EXPIRY_WARNING_TIMEOUT_DIVISOR = 4
 
 export interface SlotNotificationClaim {
   notificationId: string
   poolId: string
   poolKey: string
   squadId: string
-  /** Set for granted/expired notices. */
+  /** Set for granted/expired/expiring notices. */
   claimId: string | null
   /** Set for pool_disabled notices: the queued waiter the disable canceled. */
   waiterId: string | null
   recipientAgentId: string
-  kind: 'granted' | 'expired' | 'pool_disabled'
+  kind: 'granted' | 'expired' | 'pool_disabled' | 'expiring'
   idempotencyKey: string
   claimToken: string
   attempts: number
+  /** The claim's expiry; for expiring notices, the expiry the warning concerns. */
   expiresAt: Date | null
+}
+
+/**
+ * Queue one pre-expiry warning per claim expiry window, from the slot
+ * reconciliation sweep. A claim is due once it is within the
+ * warning lead time of expiring and has not expired yet. The idempotency
+ * key names the claim and its exact expiry, so repeated sweeps and restarts
+ * never queue a second warning for the same window, while a renewal (which
+ * moves expires_at) opens a new window that is warned again. Released and
+ * expired claims are not active, so they are never warned.
+ */
+export async function queueSlotExpiryWarnings(): Promise<number> {
+  const rows = await db.execute<{ id: string }>(sql`
+    INSERT INTO slot_notifications
+      (pool_id, claim_id, recipient_agent_id, kind, idempotency_key, next_attempt_at, claim_expires_at)
+    SELECT claim.pool_id, claim.id, claim.owner_agent_id, 'expiring',
+      'slot-expiring:v1:' || claim.id || ':' || floor(extract(epoch FROM claim.expires_at) * 1000)::bigint,
+      clock_timestamp(), claim.expires_at
+    FROM slot_claims claim
+    JOIN slot_pools pool ON pool.id = claim.pool_id AND pool.unregistered_at IS NULL
+    JOIN squads squad ON squad.id = pool.squad_id AND squad.archived_at IS NULL
+    WHERE claim.status = 'active'
+      AND claim.expires_at > clock_timestamp()
+      AND claim.expires_at <= clock_timestamp() + make_interval(
+        secs => GREATEST(
+          ${SLOT_EXPIRY_WARNING_MIN_LEAD_MS},
+          LEAST(${SLOT_EXPIRY_WARNING_MAX_LEAD_MS}, pool.claim_timeout_ms / ${SLOT_EXPIRY_WARNING_TIMEOUT_DIVISOR})
+        ) / 1000.0
+      )
+    ON CONFLICT (idempotency_key) DO NOTHING
+    RETURNING id
+  `)
+  return rows.length
 }
 
 export async function claimDueSlotNotifications(input: {
@@ -78,7 +121,8 @@ export async function claimDueSlotNotifications(input: {
         idempotencyKey: slotNotifications.idempotencyKey,
         claimToken: slotNotifications.claimToken,
         attempts: slotNotifications.attempts,
-        expiresAt: slotClaims.expiresAt,
+        claimExpiresAt: slotClaims.expiresAt,
+        warnedExpiresAt: slotNotifications.claimExpiresAt,
       })
       .from(slotNotifications)
       .innerJoin(slotPools, eq(slotPools.id, slotNotifications.poolId))
@@ -89,9 +133,13 @@ export async function claimDueSlotNotifications(input: {
           claimed.map((row) => row.id)
         )
       )
-    return rows.map((row) => {
+    return rows.map(({ claimExpiresAt, warnedExpiresAt, ...row }) => {
       if (!row.claimToken) throw new Error(`Claimed slot notification ${row.notificationId} has no token`)
-      return { ...row, claimToken: row.claimToken }
+      return {
+        ...row,
+        claimToken: row.claimToken,
+        expiresAt: row.kind === 'expiring' ? warnedExpiresAt : claimExpiresAt,
+      }
     })
   })
 }
@@ -102,6 +150,14 @@ export function renderSlotNotification(claim: SlotNotificationClaim): string {
       `Slot pool "${claim.poolKey}" was disabled, so your queued wait ${claim.waiterId} was canceled. You were not granted capacity and are no longer queued.`,
       'A disabled pool is not enforced right now: the work it protects is not slot-gated, so continue under the remaining squad rules without waiting for a grant.',
       `If the pool is re-enabled later, claim it again before protected work: ficus slot claim ${claim.poolKey} --squad ${claim.squadId}`,
+    ].join('\n')
+  }
+  if (claim.kind === 'expiring') {
+    return [
+      `Your claim ${claim.claimId} on slot pool "${claim.poolKey}" expires at ${claim.expiresAt?.toISOString()}.`,
+      `If you still need it, renew it now: ficus slot renew ${claim.claimId}`,
+      `If the protected work is finished, release it now: ficus slot release ${claim.claimId}`,
+      'If it expires, the capacity is freed but nothing you started under it is stopped: you would have to clean up and claim again.',
     ].join('\n')
   }
   if (claim.kind === 'expired') {
@@ -219,6 +275,7 @@ export class SlotNotificationNotifier {
         notificationStatus: slotNotifications.status,
         notificationClaimToken: slotNotifications.claimToken,
         claimStatus: slotClaims.status,
+        claimExpiresAt: slotClaims.expiresAt,
         recipientStatus: agents.status,
       })
       .from(slotNotifications)
@@ -229,9 +286,21 @@ export class SlotNotificationNotifier {
     if (!state || state.notificationStatus !== 'delivering' || state.notificationClaimToken !== claim.claimToken) {
       return false
     }
-    if (claim.kind === 'granted' && state.claimStatus !== 'active') {
+    if ((claim.kind === 'granted' || claim.kind === 'expiring') && state.claimStatus !== 'active') {
       await settleTerminal(claim, now, 'claim_inactive')
       return false
+    }
+    if (claim.kind === 'expiring') {
+      // A renewal moved the claim past the window this warning was for; the
+      // renewed window is warned on its own when it comes due.
+      if (state.claimExpiresAt?.getTime() !== claim.expiresAt?.getTime()) {
+        await settleTerminal(claim, now, 'claim_renewed')
+        return false
+      }
+      if (claim.expiresAt && claim.expiresAt.getTime() <= now.getTime()) {
+        await settleTerminal(claim, now, 'claim_expired')
+        return false
+      }
     }
     if (!state.recipientStatus || state.recipientStatus === 'terminated') {
       await settleTerminal(claim, now, state.recipientStatus ? 'recipient_terminated' : 'recipient_missing')
@@ -246,13 +315,17 @@ export class SlotNotificationNotifier {
           recipientId: claim.recipientAgentId,
           senderType: 'system',
           deliveryMode: 'steer',
-          wakeEligible: false,
+          // The warning must reach a holder that is idle or parked so it can
+          // still renew or release before the claim lapses.
+          wakeEligible: claim.kind === 'expiring',
           subject:
             claim.kind === 'granted'
               ? `Slot granted: ${claim.poolKey}`
               : claim.kind === 'pool_disabled'
                 ? `Slot pool disabled: ${claim.poolKey} (no longer queued)`
-                : `Slot expired: ${claim.poolKey} (clean up now)`,
+                : claim.kind === 'expiring'
+                  ? `Slot expiring soon: ${claim.poolKey} (renew or release)`
+                  : `Slot expired: ${claim.poolKey} (clean up now)`,
           content: renderSlotNotification(claim),
           metadata: {
             source: 'slot',

@@ -1,10 +1,33 @@
 import { expect, test } from 'bun:test'
-import { mkdtemp, readFile, rm, writeFile, mkdir, symlink } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile, mkdir, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { stageWorkspaceMultipart } from '../attachments/workspace-multipart'
 import { publishWorkspaceUpload, legacyUploadFits } from './workspace-upload'
-import { SandboxHttpError } from '../sandbox/client/http-client'
+import { SandboxHttpError, type BashResponse } from '../sandbox/client/http-client'
+import type { SandboxPathClient } from './workspace-settings'
+
+/**
+ * A box `bash` that runs on this machine, so the in-box real-path check runs
+ * for real. The working directory is ignored: some tests use a mount path that
+ * does not exist here, and the check only uses absolute paths.
+ */
+const localBash: SandboxPathClient['bash'] = ({ command }) => {
+  const listeners: Record<string, Array<(arg?: unknown) => void>> = {}
+  const emitter = {
+    on(event: string, listener: (arg?: never) => void) {
+      ;(listeners[event] ??= []).push(listener as (arg?: unknown) => void)
+      return emitter
+    },
+  }
+  queueMicrotask(() => {
+    const result = Bun.spawnSync(['bash', '-c', command])
+    const data: BashResponse = { stdout: Buffer.from(result.stdout).toString('base64'), exitCode: result.exitCode }
+    for (const listener of listeners.data ?? []) listener(data)
+    for (const listener of listeners.end ?? []) listener()
+  })
+  return emitter as ReturnType<SandboxPathClient['bash']>
+}
 
 test('local publication handles late paths, overwrite, skip and confinement atomically', async () => {
   const root = await mkdtemp(join(tmpdir(), 'workspace-publication-'))
@@ -33,6 +56,7 @@ test('remote stream publication verifies identity and reopens only safe small le
   const staged = await stageWorkspaceMultipart(new Request('http://localhost/', { method: 'POST', body: form }))
   let writes = 0
   const client = {
+    bash: localBash,
     stat: async () => ({ exists: false }),
     upload: async ({ content }: { content: ReadableStream<Uint8Array> }) => {
       expect(await new Response(content).text()).toBe('hello')
@@ -118,5 +142,154 @@ test('local batch publication reports each failure without rolling back earlier 
   } finally {
     await staged.cleanup()
     await rm(root, { recursive: true, force: true })
+  }
+})
+
+/** A workspace with a settings directory, links into it, and an ordinary file. */
+async function settingsWorkspace() {
+  const base = await mkdtemp(join(tmpdir(), 'upload-settings-'))
+  const root = join(base, 'workspace')
+  await mkdir(join(root, '.ficus', 'monitors'), { recursive: true })
+  await mkdir(join(root, 'docs'), { recursive: true })
+  await writeFile(join(root, '.ficus', '.env'), 'SYNTHETIC_SETTING=1\n')
+  await symlink('.ficus', join(root, 'settings-link'))
+  await symlink('../.ficus/not-yet.txt', join(root, 'docs', 'dangling-link'))
+  await symlink('.', join(root, 'self-link'))
+  return { base, root }
+}
+
+/** Upload targets that must never land in the settings directory, as [dir, path] pairs. */
+const settingsTargets: Array<[string, string]> = [
+  ['', '.ficus'],
+  ['', '.ficus/.env'],
+  ['', '.ficus/new.txt'],
+  ['', '.ficus/monitors/m1/token'],
+  ['', './.ficus/new.txt'],
+  ['', '.ficus//new.txt'],
+  ['', 'docs/../.ficus/new.txt'],
+  ['', '.FICUS/new.txt'],
+  ['', '.ficus./new.txt'],
+  ['', '.ficus /new.txt'],
+  ['.ficus', 'new.txt'],
+  ['/.ficus/', 'new.txt'],
+  ['docs/..//.ficus', 'monitors/new.txt'],
+  ['', 'settings-link/new.txt'],
+  ['settings-link', '.env'],
+  ['', 'docs/dangling-link'],
+  ['', 'self-link/.ficus/new.txt'],
+]
+
+async function stageOne(content: string) {
+  const form = new FormData()
+  form.append('file', new File([content], 'file'))
+  return stageWorkspaceMultipart(new Request('http://localhost/', { method: 'POST', body: form }))
+}
+
+test('local publication refuses every write into the settings directory and still writes ordinary files', async () => {
+  const { base, root } = await settingsWorkspace()
+  const staged = await stageOne('uploaded bytes')
+  try {
+    for (const [targetDir, relativePath] of settingsTargets) {
+      staged.fields.set('path_file', relativePath)
+      const results = await publishWorkspaceUpload({ staged, workspacePath: root, targetDir, overwrite: true })
+      expect([targetDir, relativePath, results]).toEqual([
+        targetDir,
+        relativePath,
+        [{ path: expect.any(String), status: 'error', error: 'Invalid path' }],
+      ])
+    }
+    expect((await readdir(join(root, '.ficus'))).sort()).toEqual(['.env', 'monitors'])
+    expect(await readdir(join(root, '.ficus', 'monitors'))).toEqual([])
+    expect(await readFile(join(root, '.ficus', '.env'), 'utf8')).toBe('SYNTHETIC_SETTING=1\n')
+    expect((await readdir(root)).sort()).toEqual(['.ficus', 'docs', 'self-link', 'settings-link'])
+
+    for (const relativePath of ['docs/new.txt', 'docs/.ficus/config.json', 'self-link/notes.txt']) {
+      staged.fields.set('path_file', relativePath)
+      expect(await publishWorkspaceUpload({ staged, workspacePath: root, targetDir: '', overwrite: true })).toEqual([
+        { path: relativePath, status: 'created' },
+      ])
+    }
+    expect(await readFile(join(root, 'docs', 'new.txt'), 'utf8')).toBe('uploaded bytes')
+    expect(await readFile(join(root, 'docs', '.ficus', 'config.json'), 'utf8')).toBe('uploaded bytes')
+    expect(await readFile(join(root, 'notes.txt'), 'utf8')).toBe('uploaded bytes')
+  } finally {
+    await staged.cleanup()
+    await rm(base, { recursive: true, force: true })
+  }
+})
+
+test('sandbox publication refuses every write into the settings directory, checked inside the box', async () => {
+  const { base, root } = await settingsWorkspace()
+  const staged = await stageOne('uploaded bytes')
+  const touched: string[] = []
+  const client = {
+    bash: localBash,
+    stat: async ({ path }: { path: string }) => {
+      touched.push(path)
+      return { exists: false }
+    },
+    upload: async ({ path, content }: { path: string; content: ReadableStream<Uint8Array> }) => {
+      touched.push(path)
+      const bytes = await new Response(content).arrayBuffer()
+      return { bytesWritten: bytes.byteLength, sha256: staged.files[0]!.sha256 }
+    },
+    write: async ({ path }: { path: string }) => {
+      touched.push(path)
+      return { bytesWritten: 0 }
+    },
+  }
+  try {
+    for (const [targetDir, relativePath] of settingsTargets) {
+      staged.fields.set('path_file', relativePath)
+      const results = await publishWorkspaceUpload({ staged, workspacePath: root, targetDir, overwrite: true, client })
+      expect([targetDir, relativePath, results]).toEqual([
+        targetDir,
+        relativePath,
+        [{ path: expect.any(String), status: 'error', error: 'Invalid path' }],
+      ])
+    }
+    expect(touched).toEqual([])
+
+    staged.fields.set('path_file', 'docs/new.txt')
+    expect(
+      await publishWorkspaceUpload({ staged, workspacePath: root, targetDir: '', overwrite: true, client })
+    ).toEqual([{ path: 'docs/new.txt', status: 'created' }])
+    expect(touched).toEqual([join(root, 'docs', 'new.txt'), join(root, 'docs', 'new.txt')])
+  } finally {
+    await staged.cleanup()
+    await rm(base, { recursive: true, force: true })
+  }
+})
+
+test('sandbox publication fails closed when the box cannot resolve the target', async () => {
+  const staged = await stageOne('uploaded bytes')
+  let uploads = 0
+  const client = {
+    bash: (() => {
+      const emitter = {
+        on(event: string, listener: (arg?: never) => void) {
+          if (event === 'data')
+            queueMicrotask(() => (listener as unknown as (data: BashResponse) => void)({ exitCode: 3 }))
+          if (event === 'end') queueMicrotask(() => queueMicrotask(() => (listener as () => void)()))
+          return emitter
+        },
+      }
+      return emitter
+    }) as unknown as SandboxPathClient['bash'],
+    stat: async () => ({ exists: false }),
+    upload: async () => {
+      uploads++
+      return { bytesWritten: 14 }
+    },
+    write: async () => ({ bytesWritten: 14 }),
+  }
+  try {
+    staged.fields.set('path_file', 'docs/new.txt')
+    expect(
+      await publishWorkspaceUpload({ staged, workspacePath: '/workspace', targetDir: '', overwrite: true, client })
+    ).toMatchObject([{ path: 'docs/new.txt', status: 'error' }])
+    expect(uploads).toBe(0)
+  } finally {
+    await staged.cleanup()
   }
 })

@@ -62,7 +62,12 @@ export const slotWaiterEnqueueSequence = pgSequence('slot_waiter_enqueue_seq', {
 })
 export const slotClaimStatusEnum = pgEnum('slot_claim_status', ['active', 'released', 'expired'])
 export const slotWaiterStatusEnum = pgEnum('slot_waiter_status', ['queued', 'granted', 'canceled'])
-export const slotNotificationKindEnum = pgEnum('slot_notification_kind', ['granted', 'expired', 'pool_disabled'])
+export const slotNotificationKindEnum = pgEnum('slot_notification_kind', [
+  'granted',
+  'expired',
+  'pool_disabled',
+  'expiring',
+])
 export const slotNotificationStatusEnum = pgEnum('slot_notification_status', ['pending', 'delivering', 'delivered'])
 
 export const imageStatusEnum = pgEnum('image_status', [
@@ -4792,12 +4797,16 @@ export const slotNotifications = pgTable(
     poolId: uuid('pool_id')
       .notNull()
       .references(() => slotPools.id, { onDelete: 'restrict' }),
-    // granted/expired notices concern a claim; pool_disabled notices concern
-    // the queued waiter that disabling the pool canceled.
+    // granted, expired and expiring notices concern a claim; pool_disabled
+    // notices concern the queued waiter that disabling the pool canceled.
     claimId: uuid('claim_id').references(() => slotClaims.id, { onDelete: 'restrict' }),
     waiterId: uuid('waiter_id').references(() => slotWaiters.id, { onDelete: 'restrict' }),
     recipientAgentId: uuid('recipient_agent_id').notNull(),
     kind: slotNotificationKindEnum('kind').notNull(),
+    // expiring notices only: the claim expiry this warning concerns. A renewal
+    // moves the claim's expiry past it, so delivery drops the stale warning and
+    // the renewed window earns its own (see queueSlotExpiryWarnings).
+    claimExpiresAt: timestamp('claim_expires_at', { withTimezone: true }),
     idempotencyKey: varchar('idempotency_key', { length: 200 }).notNull().unique(),
     status: slotNotificationStatusEnum('status').notNull().default('pending'),
     attempts: integer('attempts').notNull().default(0),

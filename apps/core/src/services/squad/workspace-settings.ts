@@ -2,7 +2,8 @@
  * The workspace settings directory (`.ficus` at the workspace root) holds the
  * squad's environment file, shell rc file, toolchain state and other
  * per-feature files. Agents use it through their own shell; the workspace
- * browsing, download and search APIs never list, serve, archive or search it.
+ * browsing, download and search APIs never list, serve, archive or search it,
+ * and the workspace upload API never creates or overwrites anything in it.
  *
  * Only the directory at the workspace ROOT is treated this way. Ficus writes
  * settings there alone, and a `.ficus` directory deeper in the tree is ordinary
@@ -62,6 +63,66 @@ export function resolveLocalWorkspaceTarget(workspacePath: string, relativePath:
   if (!isInsideWorkspaceRoot(root, real)) return { ok: false, reason: 'invalid' }
   if (isWorkspaceSettingsPath(root, real)) return { ok: false, reason: 'not-found' }
   return { ok: true, path: real, isRoot: real === root }
+}
+
+/** Symlink hops followed before a path counts as a loop (Linux's own limit). */
+const MAX_SYMLINK_HOPS = 40
+
+/**
+ * The real path a write to `target` would land on: every existing component
+ * is resolved through its symlinks (a dangling link is followed to where it
+ * points), and the missing tail is appended as written.
+ */
+function realpathForWrite(target: string, hops = 0): string {
+  try {
+    return fs.realpathSync(target)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code !== 'ENOENT' && code !== 'ENOTDIR') throw error
+  }
+  const parent = path.dirname(target)
+  if (parent === target) return target
+  const candidate = path.join(realpathForWrite(parent, hops), path.basename(target))
+  let link: string
+  try {
+    if (!fs.lstatSync(candidate).isSymbolicLink()) return candidate
+    link = fs.readlinkSync(candidate)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ENOENT' || code === 'ENOTDIR') return candidate
+    throw error
+  }
+  if (hops >= MAX_SYMLINK_HOPS) throw Object.assign(new Error('Too many symbolic links'), { code: 'ELOOP' })
+  return realpathForWrite(path.resolve(path.dirname(candidate), link), hops + 1)
+}
+
+/**
+ * Resolve a workspace-relative write target on the Core's own filesystem
+ * (docker and host runtimes). Unlike {@link resolveLocalWorkspaceTarget} the
+ * target may not exist yet: the real path is taken through the deepest
+ * existing ancestor, so a symlinked parent or a dangling link that points
+ * into the settings directory is refused like the directory itself. The
+ * returned path is the lexical one; the writer re-checks its own real path.
+ */
+export function resolveLocalWorkspaceWriteTarget(
+  workspacePath: string,
+  relativePath: string
+): WorkspaceTargetResolution {
+  const lexical = path.resolve(workspacePath, relativePath)
+  if (!isInsideWorkspaceRoot(workspacePath, lexical)) return { ok: false, reason: 'invalid' }
+  if (isWorkspaceSettingsPath(workspacePath, lexical)) return { ok: false, reason: 'not-found' }
+  let root: string
+  let real: string
+  try {
+    root = fs.realpathSync(workspacePath)
+    real = realpathForWrite(lexical)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ELOOP') return { ok: false, reason: 'invalid' }
+    throw error
+  }
+  if (!isInsideWorkspaceRoot(root, real)) return { ok: false, reason: 'invalid' }
+  if (isWorkspaceSettingsPath(root, real)) return { ok: false, reason: 'not-found' }
+  return { ok: true, path: lexical, isRoot: real === root }
 }
 
 function shellQuote(value: string): string {
