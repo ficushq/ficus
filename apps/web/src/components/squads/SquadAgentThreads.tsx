@@ -730,6 +730,7 @@ export function SquadAgentThreads({
 
     // The select button is stretched over the whole row so the work stream link can sit
     // inside the visible content as its own target (a link nested in a button is invalid).
+    // The row, not the stretched button, owns the hover fill (see SquadAgentThreads.css).
     return (
       <div key={agent.id} className={clsx('squad-chat-agent group relative', isSelected && 'is-selected')}>
         <button
@@ -738,7 +739,7 @@ export function SquadAgentThreads({
           aria-label={rowLabel}
           onClick={() => handleAgentRowSelect(agent.id)}
           title={`${stableName} · ${agent.agentTypeId}${viaAssistant ? ' via Assistant' : ''} · ${agent.id}${openQuestionLabel ? ` · ${openQuestionLabel}` : ''}`}
-          className="ficus-button ficus-button-ghost absolute inset-0 block w-full rounded-lg text-left"
+          className="ficus-button ficus-button-ghost squad-chat-agent-select absolute inset-0 block w-full rounded-lg text-left"
         />
         <div
           className={clsx(
