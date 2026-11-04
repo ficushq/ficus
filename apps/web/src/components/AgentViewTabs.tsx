@@ -77,18 +77,23 @@ export function AgentViewTabs<T extends string>({ activeTab, onChange, tabs }: A
             badge:
               activeCount > 0
                 ? (selected: boolean) => (
-                    <span aria-hidden="true" className="shrink-0 inline-flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-status-progress-500 animate-pulse" />
+                    // One pill holding the pulsing dot and the count, so they read as a single indicator.
+                    <span
+                      aria-hidden="true"
+                      className={clsx(
+                        'shrink-0 inline-flex h-4 items-center gap-1 rounded-full px-1.5 text-[10px] font-bold leading-none tabular-nums',
+                        selected
+                          ? 'bg-on-accent/20 text-on-accent'
+                          : 'bg-status-progress-100 text-status-progress-700 dark:bg-status-progress-500/20 dark:text-status-progress-300'
+                      )}
+                    >
                       <span
                         className={clsx(
-                          'min-w-[16px] h-[16px] flex items-center justify-center text-[10px] font-bold rounded-full px-1 tabular-nums',
-                          selected
-                            ? 'bg-on-accent/20 text-on-accent'
-                            : 'bg-status-progress-50 text-status-progress-700 dark:bg-status-progress-900/20 dark:text-status-progress-400'
+                          'h-1.5 w-1.5 rounded-full animate-pulse',
+                          selected ? 'bg-current' : 'bg-status-progress-500'
                         )}
-                      >
-                        {activeCount}
-                      </span>
+                      />
+                      {activeCount}
                     </span>
                   )
                 : undefined,
