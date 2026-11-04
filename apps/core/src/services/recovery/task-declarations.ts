@@ -8,12 +8,20 @@ import type { K8sSandboxManager } from '../sandbox/k8s'
 import type { SandboxClient } from '../sandbox/client/http-client'
 import { resolveWorkspaceLayout } from '../sandbox/workspace-layout'
 import { isInsideWorkspaceRoot, resolveSquadWorkspaceHostPath } from '../squad/workspace'
+import {
+  isWorkspaceSettingsPath,
+  resolveSandboxWorkspaceTarget,
+  type SandboxPathClient,
+} from '../squad/workspace-settings'
 
 const MAX_DECLARATION_BYTES = 64 * 1024
 const validated = new WeakMap<object, { workStreamId: string; squadId: string; request: string }>()
 type ConfigRequest = Extract<ManualInputRequest, { kind: 'provide' }>
+const SETTINGS_DECLARATION_ERROR = 'Configuration declarations cannot be read from the workspace settings directory'
 
-/** No provisioning and no unbounded reads just to create an input request. */
+/** No provisioning and no unbounded reads just to create an input request.
+ * Declarations are never read from the workspace settings directory, checked
+ * on the lexical path and again on the real path after symlinks. */
 async function readDeclaration(squadId: string, relativePath: string): Promise<string> {
   if (isRemoteSandboxRuntime()) {
     const sandboxId = Squad.getSandboxId(squadId)
@@ -23,9 +31,12 @@ async function readDeclaration(squadId: string, relativePath: string): Promise<s
     return readRemoteDeclaration(client, root, relativePath)
   }
   const root = await realpath(resolveSquadWorkspaceHostPath(squadId))
-  const target = await realpath(join(root, relativePath))
+  const lexical = join(root, relativePath)
+  if (isWorkspaceSettingsPath(root, lexical)) throw new Error(SETTINGS_DECLARATION_ERROR)
+  const target = await realpath(lexical)
   if (!isInsideWorkspaceRoot(root, target))
     throw new Error('Configuration declaration must remain inside the workspace')
+  if (isWorkspaceSettingsPath(root, target)) throw new Error(SETTINGS_DECLARATION_ERROR)
   const file = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW)
   try {
     const stat = await file.stat()
@@ -40,14 +51,23 @@ async function readDeclaration(squadId: string, relativePath: string): Promise<s
   }
 }
 
-/** The remote reader needs only a cached client's read capability, never an
- * ensure/provision capability. Keep containment validation at this boundary. */
+/** The remote reader needs only a cached client's read and path-resolution
+ * capabilities, never an ensure/provision capability. Keep containment and
+ * settings-directory validation at this boundary. */
 export async function readRemoteDeclaration(
-  client: Pick<SandboxClient, 'read'>,
+  client: Pick<SandboxClient, 'read'> & SandboxPathClient,
   root: string,
   relativePath: string
 ): Promise<string> {
-  const file = await client.read({ path: join(root, relativePath), root, limit: MAX_DECLARATION_BYTES + 1 })
+  const target = await resolveSandboxWorkspaceTarget(client, root, relativePath)
+  if (!target.ok) {
+    throw new Error(
+      target.reason === 'invalid'
+        ? 'Configuration declaration must remain inside the workspace'
+        : SETTINGS_DECLARATION_ERROR
+    )
+  }
+  const file = await client.read({ path: target.path, root, limit: MAX_DECLARATION_BYTES + 1 })
   const content = Buffer.from(file.content, 'base64')
   if (file.verifiedRoot !== root) throw new Error('The executor does not support workspace-bounded declaration reads')
   if (file.isBinary || file.totalSize > MAX_DECLARATION_BYTES || content.length > MAX_DECLARATION_BYTES)

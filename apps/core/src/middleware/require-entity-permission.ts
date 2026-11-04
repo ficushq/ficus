@@ -29,42 +29,23 @@ export function requireEntityPermission(
     if (!identity) return c.json({ error: 'Unauthorized' }, 401)
     c.set('authzChecked', true)
 
-    let squadId: string | null | undefined
+    let squadId: string | null
     try {
       squadId = await loadSquadId(c)
     } catch {
       return c.json({ error: 'Forbidden' }, 403)
     }
 
+    let ownerUserId: string | null = null
     if (squadId === null && opts?.loadOwnerUserId) {
-      let ownerUserId: string | null = null
       try {
         ownerUserId = await opts.loadOwnerUserId(c)
       } catch {
         ownerUserId = null
       }
-
-      if (ownerUserId) {
-        // Private owned entity (e.g. a user's system-manager): owner-only — not
-        // even admins may access another user's private agent. The owner is the
-        // user, or that user's own agent token (which carries their userId).
-        const callerUserId = identityUserId(identity)
-        if (callerUserId === ownerUserId) return next()
-        return c.json({ error: 'Forbidden' }, 403)
-      }
     }
 
-    if (squadId === null && isUserlessAgentIdentity(identity)) {
-      return c.json({ error: 'Forbidden' }, 403)
-    }
-
-    // squadId === null means a squad-less entity (e.g. system-manager/artifact-builder agent).
-    // Fall back to a system-scope check (no squadId arg) so admins (*) and holders of a
-    // system-scoped permission are still allowed through.
-    const allowed =
-      squadId === null ? await hasPermission(identity, permission) : await hasPermission(identity, permission, squadId)
-
-    if (!allowed) {
+    if (!(await hasEntityPermission(identity, permission, squadId, ownerUserId))) {
       return c.json({ error: 'Forbidden' }, 403)
     }
 
@@ -97,4 +78,27 @@ export async function filterToAccessibleSquads<T>(
     if (squadId === null || squadId === undefined) return false
     return accessibleSet.has(squadId)
   })
+}
+
+/**
+ * The decision behind {@link requireEntityPermission}, for callers that need
+ * the answer rather than a guard (for example to tell a client which controls
+ * to offer). `ownerUserId` only matters for a squad-less entity.
+ */
+export async function hasEntityPermission(
+  identity: Identity,
+  permission: string,
+  squadId: string | null,
+  ownerUserId: string | null = null
+): Promise<boolean> {
+  if (squadId !== null) return hasPermission(identity, permission, squadId)
+  // Private owned entity (e.g. a user's system-manager): owner-only — not
+  // even admins may access another user's private agent. The owner is the
+  // user, or that user's own agent token (which carries their userId).
+  if (ownerUserId) return identityUserId(identity) === ownerUserId
+  if (isUserlessAgentIdentity(identity)) return false
+  // A squad-less entity (e.g. system-manager/artifact-builder agent) falls back
+  // to a system-scope check so admins (*) and holders of a system-scoped
+  // permission are still allowed through.
+  return hasPermission(identity, permission)
 }

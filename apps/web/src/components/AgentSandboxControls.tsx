@@ -18,8 +18,10 @@ interface AgentSandboxControlsProps {
 
 /**
  * Live status + Stop/Restart controls for an agent's individual light sandbox.
- * Controls only appear when the box is this agent's own (`controllable`); a
- * shared box (squad/system-manager/consultant) is shown read-only.
+ * Controls only appear when the box is this agent's own (`controllable`) and
+ * the caller may manage it (`canManage`: agents:update, or owning a private
+ * agent); otherwise the status is shown read-only. A shared box
+ * (squad/system-manager/consultant) is always read-only.
  */
 export function AgentSandboxControls({ agentId, compact = false }: AgentSandboxControlsProps) {
   const queryClient = useQueryClient()
@@ -69,6 +71,7 @@ export function AgentSandboxControls({ agentId, compact = false }: AgentSandboxC
 
   const isBusy = stopMutation.isPending || restartMutation.isPending
   const controllable = status.controllable === true
+  const canManage = controllable && status.canManage === true
 
   // Machine-box lifecycle is infrastructure, so the agent info panel only shows health.
   if (status.runtime === 'vm') {
@@ -92,9 +95,9 @@ export function AgentSandboxControls({ agentId, compact = false }: AgentSandboxC
     )
   }
 
-  const canStop = controllable && CAN_STOP.has(status.status) && !isBusy
-  // Restart re-provisions a fresh box; offer it whenever the box is ours and not mid-transition.
-  const canRestart = controllable && !TRANSITIONING.has(status.status) && !isBusy
+  const canStop = canManage && CAN_STOP.has(status.status) && !isBusy
+  // Restart re-provisions a fresh box; offer it whenever the box is ours to manage and not mid-transition.
+  const canRestart = canManage && !TRANSITIONING.has(status.status) && !isBusy
   // When there's no live box, the same action reads as "Start" rather than "Restart".
   const isStart = CAN_START.has(status.status)
 
@@ -132,7 +135,7 @@ export function AgentSandboxControls({ agentId, compact = false }: AgentSandboxC
           <PressureSummary pressure={status.pressure} />
         </div>
       )}
-      {controllable && !compact && status.status === 'running' && (
+      {canManage && !compact && status.status === 'running' && (
         <div className="mt-3">
           <SandboxProcesses target={{ kind: 'agent', agentId }} />
         </div>

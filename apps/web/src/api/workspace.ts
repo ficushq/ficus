@@ -194,6 +194,12 @@ export interface SandboxStatus {
    */
   controllable?: boolean
   /**
+   * Set on the per-agent status endpoint: true when the caller may use this
+   * agent's box controls (stop, restart, processes and containers), which need
+   * agents:update or ownership of a private agent. Absent on the squad endpoint.
+   */
+  canManage?: boolean
+  /**
    * Server-driven runtime this sandbox is running under (FICUS_SANDBOX_RUNTIME)
    * — never inferred client-side. Docker/k8s keep the classic Start/Stop
    * controls; VM mode replaces them with the chain-health status (see

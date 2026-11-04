@@ -9,19 +9,19 @@ import { AgentSandboxControls } from './AgentSandboxControls'
  * Seed the status into the cache so useQuery resolves synchronously during the
  * static render (no effects run, so nothing fetches).
  */
-function render(agentId: string, status: SandboxStatus): string {
+function render(agentId: string, status: SandboxStatus, { compact = false } = {}): string {
   const queryClient = new QueryClient()
   queryClient.setQueryData(queryKeys.agents.sandboxStatus(agentId), status)
   return renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
-      <AgentSandboxControls agentId={agentId} />
+      <AgentSandboxControls agentId={agentId} compact={compact} />
     </QueryClientProvider>
   )
 }
 
 describe('AgentSandboxControls', () => {
   test('shows Stop and Restart for a running, controllable sandbox', () => {
-    const html = render('agent-1', { status: 'running', devboxReady: true, controllable: true })
+    const html = render('agent-1', { status: 'running', devboxReady: true, controllable: true, canManage: true })
     expect(html).toContain('Running')
     expect(html).toContain('>Stop<')
     expect(html).toContain('>Restart<')
@@ -37,7 +37,7 @@ describe('AgentSandboxControls', () => {
   })
 
   test('offers Start (not Restart/Stop) when the box is controllable but not running', () => {
-    const html = render('agent-3', { status: 'not_found', controllable: true })
+    const html = render('agent-3', { status: 'not_found', controllable: true, canManage: true })
     expect(html).toContain('Not running')
     expect(html).not.toContain('>Stop<')
     expect(html).not.toContain('>Restart<')
@@ -45,9 +45,42 @@ describe('AgentSandboxControls', () => {
   })
 
   test('offers Start (not Restart) when a prior box failed', () => {
-    const html = render('agent-4', { status: 'failed', controllable: true })
+    const html = render('agent-4', { status: 'failed', controllable: true, canManage: true })
     expect(html).not.toContain('>Restart<')
     expect(html).toContain('>Start<')
+  })
+})
+
+describe('AgentSandboxControls permission to manage the box', () => {
+  test('a caller who may manage the box gets Stop, Restart and the process list', () => {
+    const html = render('agent-manage-1', { status: 'running', controllable: true, canManage: true })
+    expect(html).toContain('>Stop<')
+    expect(html).toContain('>Restart<')
+    expect(html).toContain('sandbox-processes-heading')
+  })
+
+  test('a caller without agents:update sees the status read-only, with no controls or process list', () => {
+    for (const compact of [false, true]) {
+      const html = render('agent-manage-2', { status: 'running', controllable: true, canManage: false }, { compact })
+      expect(html).toContain('Running')
+      expect(html).not.toContain('>Stop<')
+      expect(html).not.toContain('>Restart<')
+      expect(html).not.toContain('sandbox-processes-heading')
+      expect(html).not.toContain('not individually controllable')
+    }
+  })
+
+  test('a caller without agents:update is not offered Start for a stopped box', () => {
+    const html = render('agent-manage-3', { status: 'not_found', controllable: true, canManage: false })
+    expect(html).toContain('Not running')
+    expect(html).not.toContain('>Start<')
+  })
+
+  test('a status without the canManage field offers no controls', () => {
+    const html = render('agent-manage-4', { status: 'running', controllable: true })
+    expect(html).not.toContain('>Stop<')
+    expect(html).not.toContain('>Restart<')
+    expect(html).not.toContain('sandbox-processes-heading')
   })
 })
 
@@ -127,7 +160,13 @@ describe('AgentSandboxControls (VM runtime)', () => {
   })
 
   test('a non-vm runtime (k8s) keeps the classic Stop/Restart controls untouched', () => {
-    const html = render('agent-k8s-1', { status: 'running', devboxReady: true, controllable: true, runtime: 'k8s' })
+    const html = render('agent-k8s-1', {
+      status: 'running',
+      devboxReady: true,
+      controllable: true,
+      canManage: true,
+      runtime: 'k8s',
+    })
     expect(html).toContain('>Stop<')
     expect(html).toContain('>Restart<')
   })
