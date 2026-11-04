@@ -42,7 +42,7 @@ import { parseTodoMarkdown, createFileTodoStorage } from '../tools/todo'
 import { createLogger } from '../lib/infra/logger'
 import { getSandboxProvisionErrorResponse } from './sandbox-provision-error'
 import { PROVISION_RECOVERY_MAX_ATTEMPTS } from '../services/sandbox/k8s/provision-recovery-store'
-import { requireEntityPermission } from '../middleware/require-entity-permission'
+import { hasEntityPermission, requireEntityPermission } from '../middleware/require-entity-permission'
 import { requireAgentResourcePermission } from '../middleware/require-agent-resource-permission'
 import { requirePermission } from '../middleware/require-permission'
 import {
@@ -1182,6 +1182,11 @@ export const agentsRouter = new Hono()
     // subagent's panel would tear it out from under the parent — such a box is
     // surfaced read-only. Every other agent owns its box and is controllable.
     const controllable = sandboxId === agent.getAgentWorkspaceSandboxId()
+    // Whether this caller passes the guard on the box controls below
+    // (agents:update, or owning a private agent), so clients offer them only then.
+    const canManage =
+      controllable &&
+      (await hasEntityPermission(c.get('identity'), 'agents:update', agent.squadId ?? null, agent.ownerUserId ?? null))
     const squad = agent.squadId ? await Squad.find(agent.squadId) : null
     // Host has no devbox, so a declared toolchain has nowhere to be applied:
     // resolving it would decorate the payload with the status of a thing that
@@ -1200,6 +1205,7 @@ export const agentsRouter = new Hono()
             status: hasIt ? 'running' : 'not_found',
             devboxReady: true,
             controllable,
+            canManage,
             runtime: isHostRuntime() ? ('host' as const) : ('docker' as const),
             logStreaming: typeof manager.streamLogs === 'function',
           },
@@ -1232,6 +1238,7 @@ export const agentsRouter = new Hono()
             ? await openSandboxOverloadPressure(sandboxId).then((pressure) => (pressure ? { pressure } : {}))
             : {}),
           controllable,
+          canManage,
           runtime: isVmRuntime() ? ('vm' as const) : ('k8s' as const),
           logStreaming: typeof manager.streamLogs === 'function',
           ...(provisioning ? { provisioning } : {}),

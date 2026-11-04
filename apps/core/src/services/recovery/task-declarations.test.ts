@@ -11,7 +11,7 @@ import { requestStructuredInput, resolveStructuredInput } from './structured-inp
 import { validateConfigDeclaration, consumeConfigDeclarationProof, readRemoteDeclaration } from './task-declarations'
 import * as factory from '../sandbox/factory'
 import * as workspace from '../squad/workspace'
-import { SandboxClient } from '../sandbox/client/http-client'
+import { SandboxClient, type BashResponse } from '../sandbox/client/http-client'
 import type { WorkStream } from '../../entities/WorkStream'
 
 const prefix = `declarations-${crypto.randomUUID()}`
@@ -86,6 +86,21 @@ test('rejects symlink escapes and oversized declarations without creating a wait
   expect(await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, stream.id))).toHaveLength(0)
 })
 
+test('never reads declarations from the workspace settings directory, directly or through a symlink', async () => {
+  const declaration = JSON.stringify({ PUBLIC_BASE_URL: null })
+  await mkdir(join(dir, 'workspace/.ficus'))
+  await writeFile(join(dir, 'workspace/.ficus/config.json'), declaration)
+  await symlink(join(dir, 'workspace/.ficus/config.json'), join(dir, 'workspace/linked.json'))
+  await symlink(join(dir, 'workspace/.ficus'), join(dir, 'workspace/settings-link'))
+  // The request schema already refuses the exact directory name and traversal;
+  // these are the forms only the reader can catch.
+  for (const declaredIn of ['.FICUS/config.json', '.ficus./config.json', 'linked.json', 'settings-link/config.json'])
+    await expect(
+      requestStructuredInput(stream.id, request('PUBLIC_BASE_URL', declaredIn), { createdBy: 'operator' })
+    ).rejects.toThrow('workspace settings directory')
+  expect(await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, stream.id))).toHaveLength(0)
+})
+
 test('the common writer rejects forged declarations and proofs cannot move between streams or mutate content', async () => {
   const input = request()
   if (input.kind !== 'provide') throw new Error('Invalid fixture')
@@ -127,11 +142,12 @@ test('file responses remain workspace-relative instead of accepting host paths o
   expect(closed.resolutionNote).toBe('assets/logo.svg: assets/approved-logo.svg')
 })
 
-test('remote declaration reads require executor containment proof using only a read capability', async () => {
+test('remote declaration reads require executor containment proof using only read and path-resolution capabilities', async () => {
   const client = new SandboxClient('127.0.0.1:1')
   const declaration = JSON.stringify({ PUBLIC_BASE_URL: null })
   const content = Buffer.from(declaration).toString('base64')
   const read = spyOn(client, 'read').mockResolvedValue({ content, totalSize: 32, isBinary: false })
+  const bash = spyOn(client, 'bash').mockImplementation(localDeclarationClient().bash as never)
   try {
     await expect(readRemoteDeclaration(client, '/workspace', 'config.schema.json')).rejects.toThrow('workspace-bounded')
     expect(read).toHaveBeenCalledWith({ path: '/workspace/config.schema.json', root: '/workspace', limit: 65537 })
@@ -139,8 +155,55 @@ test('remote declaration reads require executor containment proof using only a r
     expect(await readRemoteDeclaration(client, '/workspace', 'config.schema.json')).toBe(declaration)
   } finally {
     read.mockRestore()
+    bash.mockRestore()
     client.close()
   }
+})
+
+/** A read-capable client whose path resolution runs the box-side command on this machine. */
+function localDeclarationClient() {
+  const read = async (input: { path: string; root?: string }) => {
+    const content = Buffer.from(await Bun.file(input.path).arrayBuffer())
+    return { content: content.toString('base64'), totalSize: content.length, isBinary: false, verifiedRoot: input.root }
+  }
+  const reads: string[] = []
+  return {
+    reads,
+    read: async (input: { path: string; root?: string }) => {
+      reads.push(input.path)
+      return read(input)
+    },
+    // The command uses absolute paths only, so the box's working directory is not needed here.
+    bash: ({ command }: { command: string }) => {
+      const listeners: Record<string, Array<(arg?: unknown) => void>> = {}
+      const emitter = {
+        on(event: string, listener: (arg?: never) => void) {
+          ;(listeners[event] ??= []).push(listener as (arg?: unknown) => void)
+          return emitter
+        },
+      }
+      queueMicrotask(() => {
+        const result = Bun.spawnSync(['bash', '-c', command])
+        const data: BashResponse = { stdout: Buffer.from(result.stdout).toString('base64'), exitCode: result.exitCode }
+        for (const listener of listeners.data ?? []) listener(data)
+        for (const listener of listeners.end ?? []) listener()
+      })
+      return emitter
+    },
+  }
+}
+
+test('remote declaration reads refuse the workspace settings directory before reading', async () => {
+  const root = join(dir, 'workspace')
+  await mkdir(join(root, '.ficus'))
+  await writeFile(join(root, '.ficus/config.json'), JSON.stringify({ PUBLIC_BASE_URL: null }))
+  await symlink(join(root, '.ficus/config.json'), join(root, 'linked.json'))
+  const client = localDeclarationClient()
+  for (const declaredIn of ['.ficus/config.json', '.FICUS/config.json', 'docs/../.ficus/config.json', 'linked.json'])
+    await expect(readRemoteDeclaration(client, root, declaredIn)).rejects.toThrow('workspace settings directory')
+  expect(client.reads).toEqual([])
+  expect(await readRemoteDeclaration(client, root, 'config.schema.json')).toContain('PUBLIC_BASE_URL')
+  expect(client.reads).toEqual([join(root, 'config.schema.json')])
 })
 
 test('server-declared git configuration remains requestable before a workspace exists', async () => {
