@@ -53,6 +53,16 @@ describe('session-scoped sites use the direct DSN under the slot gate (source gu
     expect(source.match(/\bgetConnectionString\(\)/g)?.length ?? 0).toBe(1)
   })
 
+  test("no direct site sends session settings as startup parameters (an Advanced cluster's PgBouncer refuses them)", () => {
+    for (const site of [...DIRECT_GATED_SITES, 'db/index.ts', 'services/maintenance/process-liveness.ts']) {
+      const source = readFileSync(join(SRC, site), 'utf8')
+      expect({ site, startupConnection: /\bconnection:\s*(?:\{|DEDICATED_CONNECTION_SESSION)/.test(source) }).toEqual({
+        site,
+        startupConnection: false,
+      })
+    }
+  })
+
   test('process-liveness: the permanent liveness session goes direct (deliberately outside the gate — it never releases)', () => {
     const source = readFileSync(join(SRC, 'services/maintenance/process-liveness.ts'), 'utf8')
     expect(source).toContain('getDirectConnectionString(')
@@ -95,6 +105,47 @@ describe.skipIf(!dbConfigured)('session-scoped sites reach the database through 
     const { sql } = await import('drizzle-orm')
     const rows = await withDedicatedDbTransaction(async (tx) => tx.execute(sql`select 1 as one`))
     expect(Array.isArray(rows) ? rows.length : (rows as { length?: number }).length).toBeGreaterThan(0)
+  })
+
+  test('a dedicated transaction runs with the dedicated timeouts, set inside it rather than at startup', async () => {
+    const { withDedicatedDbTransaction } = await import('./index')
+    splitDsns()
+    const { sql } = await import('drizzle-orm')
+    const rows = await withDedicatedDbTransaction(async (tx) =>
+      tx.execute(
+        sql`select current_setting('statement_timeout') as st, current_setting('idle_in_transaction_session_timeout') as iit`
+      )
+    )
+    const row = (rows as unknown as Array<{ st: string; iit: string }>)[0]
+    expect(row).toEqual({ st: '1min', iit: '2min' })
+  })
+
+  test('applyDedicatedSessionSettings sets the timeouts for a session, or for one transaction only', async () => {
+    const { applyDedicatedSessionSettings, createPostgresConnection } = await import('./connection')
+    const connection = createPostgresConnection(priorUrl!, { max: 1, onnotice: () => {} })
+    try {
+      const session = await connection.reserve()
+      try {
+        const read = async () =>
+          (
+            await session<
+              { st: string; iit: string }[]
+            >`select current_setting('statement_timeout') as st, current_setting('idle_in_transaction_session_timeout') as iit`
+          )[0]
+        const before = await read()
+        await session`begin`
+        await applyDedicatedSessionSettings(session, 'transaction')
+        expect(await read()).toEqual({ st: '1min', iit: '2min' })
+        await session`commit`
+        expect(await read()).toEqual(before)
+        await applyDedicatedSessionSettings(session, 'session')
+        expect(await read()).toEqual({ st: '1min', iit: '2min' })
+      } finally {
+        session.release()
+      }
+    } finally {
+      await connection.end({ timeout: 5 })
+    }
   })
 
   test('the run-lock waits for a dedicated slot instead of opening a third direct connection', async () => {

@@ -719,11 +719,33 @@ function releaseDedicatedConnectionSlot(): void {
  * watchdog on purpose (a watchdog must never recreate a lock-holding max:1
  * client), so a hung query would otherwise hold its row/advisory lock
  * forever; these make Postgres cancel it instead.
+ *
+ * Applied with applyDedicatedSessionSettings after connecting, never as
+ * startup parameters: a managed endpoint that is itself a PgBouncer (a
+ * DigitalOcean Advanced cluster's) refuses unknown startup parameters with
+ * `08P01 unsupported startup parameter`, even inside `options`.
  */
 export const DEDICATED_CONNECTION_SESSION = {
   statement_timeout: 60_000,
   idle_in_transaction_session_timeout: 120_000,
 } as const
+
+/** A postgres.js tagged-template query function (a client, a reserved session, or a transaction). */
+type TaggedQuery = (strings: TemplateStringsArray, ...values: never[]) => PromiseLike<unknown>
+
+/**
+ * Apply DEDICATED_CONNECTION_SESSION to a dedicated connection with
+ * set_config: for the session (`'session'`, right after reserve) or for the
+ * current transaction only (`'transaction'`, the first statement inside it).
+ */
+export async function applyDedicatedSessionSettings(
+  query: TaggedQuery,
+  scope: 'session' | 'transaction'
+): Promise<void> {
+  const local = scope === 'transaction'
+  const run = query as unknown as (strings: TemplateStringsArray, ...values: unknown[]) => PromiseLike<unknown>
+  await run`select set_config('statement_timeout', ${String(DEDICATED_CONNECTION_SESSION.statement_timeout)}, ${local}), set_config('idle_in_transaction_session_timeout', ${String(DEDICATED_CONNECTION_SESSION.idle_in_transaction_session_timeout)}, ${local})`
+}
 
 /**
  * postgres.js error codes raised when a pool is torn down out from under its

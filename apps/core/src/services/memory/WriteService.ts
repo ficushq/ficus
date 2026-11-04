@@ -19,7 +19,7 @@ import { existsSync } from 'fs'
 import { db } from '../../db'
 import {
   createPostgresConnection,
-  DEDICATED_CONNECTION_SESSION,
+  applyDedicatedSessionSettings,
   getDirectConnectionString,
   withDedicatedConnectionSlot,
 } from '../../db/connection'
@@ -85,11 +85,11 @@ async function withAdvisoryLock<T>(squadId: string, path: string, fn: () => Prom
     const connection = createPostgresConnection(getDirectConnectionString(), {
       max: 1,
       idle_timeout: 0,
-      connection: DEDICATED_CONNECTION_SESSION,
     })
     try {
       const session = await connection.reserve()
       try {
+        await applyDedicatedSessionSettings(session, 'session')
         await session`select pg_advisory_lock(${key1}, ${key2})`
         try {
           return await fn()
