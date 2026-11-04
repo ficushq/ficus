@@ -109,6 +109,9 @@ async function resolveAgentAuthority(
 export async function resolveActingUser(identity: Identity | undefined): Promise<UserIdentity | null> {
   if (identity?.type === 'user') return identity
   if (identity?.type !== 'agent') return null
+  // A read-only monitor token never acts as its owner: that would restore the
+  // owner's full permissions, which narrowToMonitorPermissions withholds.
+  if (identity.monitorId) return null
   const authority = await resolveAgentAuthority(identity.agentId)
   if (
     !authority ||

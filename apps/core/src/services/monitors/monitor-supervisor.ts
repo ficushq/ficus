@@ -19,6 +19,7 @@ import {
   monitorLaunchCommand,
   monitorLaunchTimeoutSeconds,
   monitorProbeCommand,
+  monitorTokenCleanupCommand,
   monitorWorkRoot,
   sessionNameForMonitor,
   shellQuote,
@@ -756,7 +757,8 @@ export class MonitorSupervisor {
       await this.manager.exec(monitor.sandboxId, [
         'bash',
         '-lc',
-        `${tmuxShellFunctions()}\nficus_tmux_kill ${shellQuote(monitor.processId)} || ficus_tmux_unreachable`,
+        // Also drop a credential hand-off file the command never got to consume.
+        `${monitorTokenCleanupCommand(monitor.id)}\n${tmuxShellFunctions()}\nficus_tmux_kill ${shellQuote(monitor.processId)} || ficus_tmux_unreachable`,
       ])
     } catch (err) {
       // Sandbox may be gone; proceed to the terminal transition regardless.

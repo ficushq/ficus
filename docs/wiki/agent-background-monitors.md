@@ -88,11 +88,18 @@ deliberately narrower than the agent's own:
   termination revoke it with the agent's other tokens.
 
 The token reaches the box out of band (an exec environment variable, never
-argv). The launch command writes it to an owner-only `token` file in the
-monitor's work directory and unsets it before tmux runs; the launcher loads it
-as `FICUS_TOKEN`, together with `FICUS_API_URL`, `FICUS_SQUAD_ID` and
-`FICUS_AGENT_CONTEXT=1`, into the command's own subshell only, so neither the
-launcher, its watchdog nor the tmux server holds it.
+argv). The launch command writes it to an owner-only hand-off file,
+`$HOME/.ficus-monitor-tokens/<monitor-id>`, and unsets it before tmux runs.
+That file is deliberately outside the monitor's work directory: the work
+directory sits in the workspace (or the private area), which Core's file,
+download and search routes serve, while the box user's home is served by no
+route. The command's own subshell reads the file, deletes it, and exports
+`FICUS_TOKEN` together with `FICUS_API_URL`, `FICUS_SQUAD_ID` and
+`FICUS_AGENT_CONTEXT=1`, so the file exists only between launch and command
+start, and neither the launcher, its watchdog nor the tmux server holds the
+token. Killing a session also removes a hand-off file its command never
+consumed. Without a usable `$HOME` nothing is written and the command runs
+without credentials.
 
 The integration credentials a provider returns are the squad's ordinary ones:
 the monitor token limits what the command can do in Ficus, not on the

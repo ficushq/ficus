@@ -8,10 +8,10 @@ import { Agent } from '../../entities/Agent'
 import { AgentType } from '../../entities/AgentType'
 import { Monitor } from '../../entities/Monitor'
 import { identityMiddleware } from '../../middleware/identity'
-import { hasAnySlotCleanupPermission, hasPermission, resolvePermissions } from '../rbac'
+import { hasAnySlotCleanupPermission, hasPermission, resolveActingUser, resolvePermissions } from '../rbac'
 import { isMonitorTokenRequestAllowed, isReadPermission, narrowToMonitorPermissions } from './monitor-tokens'
 import { resolveTokenContext } from './resolve-token'
-import { cleanupTestRbac, createTestRole } from '../../test-utils/rbac'
+import { cleanupTestRbac, createTestRole, createTestUser } from '../../test-utils/rbac'
 
 describe('narrowToMonitorPermissions', () => {
   test('keeps only read permissions and integration use', () => {
@@ -139,6 +139,19 @@ describe('monitor tokens', () => {
     expect(await hasPermission(identity, 'integrations:use', squad.id)).toBe(true)
     expect(await hasPermission(identity, 'workstreams:respond', squad.id)).toBe(false)
     expect(await hasAnySlotCleanupPermission(identity, ['slots:use'], squad.id)).toBe(false)
+  })
+
+  test('never act as the owning user, which would restore the full read authority', async () => {
+    const owner = await createTestUser({ prefix: PREFIX })
+    const assistant = await Agent.create({ agentTypeId: 'system-manager', ownerUserId: owner.id, context: {} })
+    try {
+      const identity = { type: 'agent' as const, agentId: assistant.id, squadId: null }
+      // The assistant's own token acts as its owner; its monitor's token does not.
+      expect(await resolveActingUser(identity)).toEqual({ type: 'user', userId: owner.id })
+      expect(await resolveActingUser({ ...identity, monitorId: crypto.randomUUID() })).toBeNull()
+    } finally {
+      await db.delete(agents).where(eq(agents.id, assistant.id))
+    }
   })
 
   test('stop authenticating when the monitor ends, and are revoked', async () => {

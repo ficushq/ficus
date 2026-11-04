@@ -209,6 +209,9 @@ export class Monitor extends BaseEntity<any, UpdateMonitorInput> implements Moni
     reason?: string,
     failureKind?: string | null
   ): Promise<void> {
+    // Revoke first: the command's credentials must not outlive the run, and the
+    // terminal status stays the last thing written, as readers expect.
+    await this.revokeTokens()
     await this.update({
       status,
       exitCode,
@@ -217,7 +220,6 @@ export class Monitor extends BaseEntity<any, UpdateMonitorInput> implements Moni
       failureKind: failureKind ?? null,
       nextRestartAt: null,
     })
-    await this.revokeTokens()
   }
 
   /**
