@@ -15,6 +15,7 @@ import {
   type TrackedResource,
   type TrackedResourceKind,
   type TrackedResourcesView,
+  workflowFollowsChanges,
 } from '@ficus/shared'
 import { db, squads, workStreams, workStreamFlowRuns, integrationOutputEvents, type DbTx } from '../../db'
 import { eventEmitter } from '../../lib/infra/event-emitter'
@@ -414,7 +415,7 @@ export async function listTrackedResources(streamId: string): Promise<TrackedRes
     ? 'ended'
     : !run
       ? 'no-flow'
-      : !run.state.definition.completion.followChanges
+      : !workflowFollowsChanges(run.state.definition.completion)
         ? 'not-following'
         : 'active'
   const active =

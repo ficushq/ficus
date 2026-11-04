@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { classifyDeliveryPresentation, deliverySnapshotEvent, type DeliveryEvent } from './delivery-state'
+import {
+  awaitsCodeHostDelivery,
+  classifyDeliveryPresentation,
+  deliverySnapshotEvent,
+  type DeliveryEvent,
+} from './delivery-state'
 import type { WorkStreamDeliveryGateFacts, WorkflowRun } from '@ficus/shared'
 import { workBucket, workStreamNeedsHumanAttention } from '@ficus/shared'
 
@@ -794,4 +799,50 @@ test('awaiting automatic merge requires readiness of every designated PR, not on
     classifyDeliveryPresentation(run('pr-auto-merge'), multiple, [primary, secondary], { allowAutoMerge: true })
       ?.explanation?.codeHostReason
   ).toBe('awaiting-merge')
+})
+
+describe('merge-completed flows without followChanges', () => {
+  const inline = (mode: 'pr-merge' | 'pr-auto-merge') =>
+    ({ status: 'completion-ready', definition: { completion: { mode } } }) as WorkflowRun
+
+  test('a stored definition lacking followChanges awaits the code host instead of reporting setup', () => {
+    for (const mode of ['pr-merge', 'pr-auto-merge'] as const) {
+      expect(awaitsCodeHostDelivery(inline(mode), metadata)).toBe(true)
+      expect(classifyDeliveryPresentation(inline(mode), metadata, [])?.kind).toBe('external')
+    }
+  })
+
+  test('an already-merged pull request reads as merged, not as a merge still to do', () => {
+    const merged = event('pull_request.snapshot', { pullRequestState: 'merged' })
+    expect(classifyDeliveryPresentation(inline('pr-merge'), metadata, [merged])).toEqual({
+      kind: 'external',
+      explanation: { codeHostReason: 'merged', pullRequests: [{ number: 42, state: 'merged' }] },
+    })
+  })
+
+  test('an explicit opt-out that already merged says so in its setup explanation', () => {
+    const merged = event('pull_request.snapshot', { pullRequestState: 'merged' })
+    expect(classifyDeliveryPresentation(run('pr-merge', false), metadata, [merged])).toEqual({
+      kind: 'setup',
+      explanation: {
+        setupReason: 'not-following-changes',
+        codeHostReason: 'merged',
+        pullRequests: [{ number: 42, state: 'open' }],
+      },
+    })
+    // Recorded delivery state counts as well; a closed-unmerged pull request never does.
+    const recorded = {
+      ...metadata,
+      delivery: {
+        pullRequests: { 'github:acme/repo:pull_request:42': { state: 'merged', at: '2026-09-21T10:00:00Z' } },
+      },
+    }
+    expect(classifyDeliveryPresentation(run('pr-merge', false), recorded, [])?.explanation?.codeHostReason).toBe(
+      'merged'
+    )
+    const closed = event('pull_request.closed', { pullRequestState: 'closed' })
+    expect(
+      classifyDeliveryPresentation(run('pr-merge', false), metadata, [closed])?.explanation?.codeHostReason
+    ).toBeUndefined()
+  })
 })

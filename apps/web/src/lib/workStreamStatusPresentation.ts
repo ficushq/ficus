@@ -106,7 +106,7 @@ export function externalDeliveryLabel(explanation?: WorkStreamDeliveryExplanatio
 /** Refine only the selected delivery state; waits/pause/failures keep their precedence. */
 export function workStreamStatusLabel(workStream: WorkStreamPresentationFacts): string {
   const state = getWsDisplayState(workStream)
-  if (state === 'delivery_external' || state === 'delivery_failure') {
+  if (state === 'delivery_external' || state === 'delivery_failure' || state === 'delivery_setup') {
     return codeHostDeliveryLabel(workStream.delivery) ?? WS_STATUS_LABELS[state]
   }
   return WS_STATUS_LABELS[state]

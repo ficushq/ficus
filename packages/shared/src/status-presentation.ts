@@ -100,6 +100,11 @@ export function codeHostDeliveryLabel(delivery?: WorkStreamDeliveryPresentation)
         return null
     }
   }
+  // The flow does not follow its pull request, so nothing will finish it: say what to do instead.
+  if (delivery?.kind === 'setup' && reason === 'merged')
+    return (delivery.explanation?.pullRequests?.length ?? 0) > 1
+      ? 'PRs already merged — finish delivery'
+      : 'PR already merged — finish delivery'
   if (delivery?.kind === 'external') {
     switch (reason) {
       case 'ci-pending':

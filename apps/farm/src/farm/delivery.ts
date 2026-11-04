@@ -15,6 +15,9 @@ function pullRequestNumbers(numbers: number[]): string {
 export function deliveryNote(explanation?: WorkStreamDeliveryExplanation): string | null {
   if (!explanation) return null
   const pullRequests = explanation.pullRequests ?? []
+  // A setup explanation with a merge means nothing will finish the stream on its own.
+  if (explanation.setupReason && explanation.codeHostReason === 'merged')
+    return pullRequests.length > 1 ? 'PRs already merged — finish delivery' : 'PR already merged — finish delivery'
   if (pullRequests.length && pullRequests.every((pr) => pr.state === 'merged'))
     return pullRequests.length === 1 ? 'PR merged — finalizing delivery' : 'PRs merged — finalizing delivery'
   const { gates } = explanation

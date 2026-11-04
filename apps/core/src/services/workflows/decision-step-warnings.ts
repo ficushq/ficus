@@ -1,4 +1,4 @@
-import type { WorkflowDefinition, WorkflowSource } from '@ficus/shared'
+import { workflowCompletionWarnings, type WorkflowDefinition, type WorkflowSource } from '@ficus/shared'
 import { decisionChain } from '../decisions/service'
 import { createLogger } from '../../lib/infra/logger'
 import { resolveStoredWorkflow } from './catalog'
@@ -21,12 +21,26 @@ export function decisionStepWarnings(
   ]
 }
 
+/**
+ * Everything whoever saves or resolves a flow should know: unanswerable decision steps, and a
+ * merge-completed flow that explicitly opts out of following its delivery pull request.
+ */
+export function workflowWarnings(
+  definition: Pick<WorkflowDefinition, 'steps'> & Partial<Pick<WorkflowDefinition, 'completion'>>,
+  chain?: () => unknown[]
+): string[] {
+  return [
+    ...decisionStepWarnings(definition, chain),
+    ...(definition.completion ? workflowCompletionWarnings({ completion: definition.completion }) : []),
+  ]
+}
+
 /** The same for a creation source (inline or preset); never fails a save over it. */
-export async function decisionStepSourceWarnings(source: WorkflowSource): Promise<string[]> {
+export async function workflowSourceWarnings(source: WorkflowSource): Promise<string[]> {
   try {
-    return decisionStepWarnings((await resolveStoredWorkflow(source)).definition)
+    return workflowWarnings((await resolveStoredWorkflow(source)).definition)
   } catch (error) {
-    log.warn('Could not check decision steps for warnings', error)
+    log.warn('Could not check the workflow for warnings', error)
     return []
   }
 }

@@ -412,3 +412,22 @@ test('a Linear issue link is never delivery feedback, even beside a link claimin
     }
   }
 })
+
+test('an inline pr-merge flow without followChanges subscribes, sending merges and changes to the delivery owner', () => {
+  const registry = new CodeHostingRegistry([githubCodeHostingAdapter])
+  const metadata = { codeHost: { integration: 'github', repository: 'owner/repo', changeRequest: { number: 56 } } }
+  for (const mode of ['pr-merge', 'pr-auto-merge'] as const) {
+    // Exactly the stored shape of the reported inline flow: no followChanges, no changeEventsTo.
+    const flow = { ...createBlankWorkflow(), completion: { mode } }
+    const subscriptions = registry.subscriptions(flow, metadata)
+    expect(subscriptions.length).toBeGreaterThan(0)
+    expect(subscriptions.map((item) => item.source.output)).toContain('pull_request.merged')
+    expect(subscriptions.every((item) => item.deliver.to === 'delivery-owner')).toBe(true)
+    // An explicit opt-out is honored.
+    expect(registry.subscriptions({ ...flow, completion: { mode, followChanges: false } }, metadata)).toEqual([])
+  }
+  // Other completion modes keep the previous opt-in default.
+  expect(registry.subscriptions({ ...createBlankWorkflow(), completion: { mode: 'deliverable' } }, metadata)).toEqual(
+    []
+  )
+})

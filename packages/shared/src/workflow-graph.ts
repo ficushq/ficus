@@ -1,4 +1,4 @@
-import type { WorkflowDefinition } from './workflows'
+import { workflowFollowsChanges, type WorkflowDefinition } from './workflows'
 
 export interface FlowGraphNode {
   id: string
@@ -200,7 +200,7 @@ export function layoutWorkflowGraph(definition: WorkflowDefinition): FlowGraph {
       })
     }
   }
-  if (definition.completion.followChanges) {
+  if (workflowFollowsChanges(definition.completion)) {
     const index = definition.subscriptions?.length ?? 0
     nodes.push({
       id: 'code-host:delivery',

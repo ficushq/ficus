@@ -9,6 +9,7 @@ import {
   type CodeHostReference,
   type IntegrationSubscription,
   type WorkflowDefinition,
+  workflowFollowsChanges,
 } from '@ficus/shared'
 import { subscriptionTargetsResource, trackedResourceRegistry } from '../tracked-resources'
 
@@ -131,7 +132,7 @@ export class CodeHostingRegistry {
   }
   subscriptions(definition: WorkflowDefinition, metadata: unknown): IntegrationSubscription[] {
     const explicit = definition.subscriptions ?? []
-    if (!definition.completion.followChanges) return explicit
+    if (!workflowFollowsChanges(definition.completion)) return explicit
     const binding = this.resolve(metadata)
     const inferred = binding
       ? binding.reference.changeRequest

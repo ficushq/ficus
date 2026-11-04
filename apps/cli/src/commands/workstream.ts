@@ -521,7 +521,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
         const sources = buildWorkStreamSourceLinks(options)
 
         const workflow = await readWorkflowSource(options)
-        const ws = await apiPost<WorkStream>('/api/workstreams', {
+        const ws = await apiPost<WorkStream & { warnings?: string[] }>('/api/workstreams', {
           ...(workflow ? { workflow } : {}),
           squadId: options.squad,
           taskId: options.task,
@@ -555,9 +555,13 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
 
         output(
           ws,
-          ws.reusedFromEvent
-            ? `Reused existing work stream ${workStreamLabel(ws)} for this event`
-            : `Created work stream ${workStreamLabel(ws)}: ${ws.title}`
+          [
+            ws.reusedFromEvent
+              ? `Reused existing work stream ${workStreamLabel(ws)} for this event`
+              : `Created work stream ${workStreamLabel(ws)}: ${ws.title}`,
+            // Server advice about the flow (for example a merge-completed flow that will not observe its merge).
+            ...(ws.warnings ?? []).map((warning) => `Warning: ${warning}`),
+          ].join('\n')
         )
       } catch (error) {
         outputError(error as Error)

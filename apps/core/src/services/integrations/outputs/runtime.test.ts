@@ -33,9 +33,12 @@ import {
   dispatchFlow,
   getFlow,
   advanceFlow,
+  finishFlow,
   isCurrentFlowMessage,
   ensureFlowDispatch,
 } from '../../workflows/execution'
+import * as githubApi from '../../github/api-client'
+import { listTrackedResources } from '../../work-streams/tracked-resources'
 import { publishIntegrationOutput, reconcileOutputDeliveries } from './runtime'
 import { lockFlowInboxDelivery } from '../../work-streams/wait-scope'
 import { githubOutputAdapter } from './github'
@@ -175,6 +178,8 @@ async function create(
     tracked?: TrackedResource[]
     reviewed?: boolean
     mode?: 'pr-auto-merge'
+    /** An inline merge-completed flow exactly as an agent writes it: no followChanges, no changeEventsTo. */
+    inlineMerge?: { mode: 'pr-merge' | 'pr-auto-merge'; followChanges?: false }
   } = {}
 ) {
   const flow = options.reviewed
@@ -227,6 +232,7 @@ async function create(
     if (options.mode) flow.completion.mode = options.mode
     delete flow.subscriptions
   }
+  if (options.inlineMerge) flow.completion = { ...options.inlineMerge }
   return db.transaction(async (tx) => {
     const [stream] = await tx
       .insert(workStreams)
@@ -3833,5 +3839,54 @@ describe('delivery readiness wake', () => {
     await closeOpenWaits(db, { waitId: wait.id }, 'cleared')
     await publish(ci(934, 2))
     expect(await wakes(id)).toHaveLength(1)
+  })
+})
+
+describe('inline merge-completed flows without followChanges', () => {
+  async function completionReady(number: number, inlineMerge: { mode: 'pr-merge'; followChanges?: false }) {
+    const id = await create(number, { codeHost: true, inlineMerge })
+    const run = (await getFlow(id))!
+    expect(run.state.definition.completion).toEqual(inlineMerge)
+    await advanceFlow(
+      id,
+      { action: 'complete', expectedVersion: run.version, attemptId: 1, outcome: 'completed', evidence: 'PR open' },
+      randomUUID(),
+      { type: 'legacy' }
+    )
+    expect((await getFlow(id))!.state.status).toBe('completion-ready')
+    return id
+  }
+
+  test('subscribe to the delivery pull request, route its merge to the delivery participant, and finish', async () => {
+    const id = await completionReady(906, { mode: 'pr-merge' })
+    // The stored definition never gained the field, yet the stream follows its pull request.
+    expect((await listTrackedResources(id)).subscriptions).toBe('active')
+    await publish(fact(906, { output: 'pull_request.merged' }))
+    const rows = await deliveries(id)
+    expect(rows.map((row) => row.subscriptionId)).toEqual(['code-host-merged'])
+    const worker = (await getFlow(id))!.attemptAgents['1']!
+    expect(rows[0]!.targets.map((target) => target.agentId)).toEqual([worker])
+    // The delivery participant finishes; finish still verifies the merge live with the code host.
+    const api = spyOn(githubApi, 'githubApiGet').mockResolvedValue({
+      merged: true,
+      base: { ref: 'main' },
+      head: { ref: 'feature', sha: 'a'.repeat(40) },
+    })
+    const stop = spyOn(Agent.prototype, 'tryTerminate').mockResolvedValue(undefined)
+    try {
+      expect((await finishFlow(id, (await getFlow(id))!.version, { type: 'legacy' })).status).toBe('done')
+      expect(api.mock.calls.map((call) => call[0])).toContain(`/repos/${prefix}/repo/pulls/906`)
+    } finally {
+      api.mockRestore()
+      stop.mockRestore()
+    }
+  })
+
+  test('an explicit followChanges: false does not follow or receive the merge', async () => {
+    const id = await completionReady(907, { mode: 'pr-merge', followChanges: false })
+    expect((await listTrackedResources(id)).subscriptions).toBe('not-following')
+    await publish(fact(907, { output: 'pull_request.merged' }))
+    expect(await deliveries(id)).toEqual([])
+    expect((await getFlow(id))!.state.status).toBe('completion-ready')
   })
 })

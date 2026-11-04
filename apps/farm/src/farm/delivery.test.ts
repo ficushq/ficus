@@ -13,6 +13,16 @@ describe('deliveryNote', () => {
     )
   })
 
+  it('tells the user to finish when a setup-blocked pull request is already merged', () => {
+    expect(
+      deliveryNote({
+        setupReason: 'not-following-changes',
+        codeHostReason: 'merged',
+        pullRequests: [{ number: 56, state: 'open' }],
+      })
+    ).toBe('PR already merged — finish delivery')
+  })
+
   it('walks the gates in the web app order', () => {
     expect(deliveryNote({ gates: { checksState: 'pending' } })).toBe('Awaiting CI')
     expect(deliveryNote({ gates: { reviewDecision: 'required' } })).toBe('Awaiting review')

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { IntegrationSubscription, WorkflowDefinition } from '@ficus/shared'
+import { workflowFollowsChanges, type IntegrationSubscription, type WorkflowDefinition } from '@ficus/shared'
 import { integrationQueries } from '../../queryOptions'
 
 const field = 'ficus-field w-full min-w-0 rounded-md border border-th-border bg-surface px-3 py-2 text-sm'
@@ -30,7 +30,7 @@ export function WorkflowEventEditor({
         <label className="flex items-start gap-3 text-sm">
           <input
             type="checkbox"
-            checked={definition.completion.followChanges ?? false}
+            checked={workflowFollowsChanges(definition.completion)}
             onChange={(event) =>
               onChange({ ...definition, completion: { ...definition.completion, followChanges: event.target.checked } })
             }
@@ -48,7 +48,7 @@ export function WorkflowEventEditor({
           stream’s linked resources and authorized account. GitHub is supported today; no individual event rules are
           needed.
         </p>
-        {definition.completion.followChanges && (
+        {workflowFollowsChanges(definition.completion) && (
           <label className="block text-sm">
             Send change events to
             <select

@@ -1,5 +1,11 @@
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { changeRequestBindCommand, type WorkStream, type WorkStreamPresentationFacts } from '@ficus/shared'
+import { client } from '../api/clientInstance'
+import { usePermissions } from '../hooks/usePermissions'
+import { useWorkflowRefresh } from '../hooks/useWorkflowRefresh'
+import { actionErrorMessage } from '../lib/actionError'
 import { getWsDisplayState } from '../lib/workStreamStatusPresentation'
+import { queries } from '../queryOptions'
 import { Badge } from './Badge'
 
 /** What each code-host completion mode needs before the stream can complete. */
@@ -14,7 +20,8 @@ const MODE_REQUIREMENTS: Partial<Record<WorkStream['completionMode'], string>> =
 const PROTECTION_STEP =
   'If the rule requires signed commits, add an SSH key as a Signing Key at github.com/settings/keys and push a signed head commit. Otherwise resolve the rule on GitHub, or merge through the GitHub UI if your policy allows it.'
 
-type SetupStream = Pick<WorkStream, 'id' | 'number' | 'completionMode' | 'metadata'> & WorkStreamPresentationFacts
+type SetupStream = Pick<WorkStream, 'id' | 'number' | 'squadId' | 'completionMode' | 'metadata'> &
+  WorkStreamPresentationFacts
 
 /**
  * Explains, in plain language, why a delivery-setup stream cannot complete:
@@ -28,17 +35,21 @@ export function WorkStreamDeliverySetupCallout({ stream }: { stream: SetupStream
   const setupReason = explanation?.setupReason
   const gates = explanation?.gates
   const requirement = MODE_REQUIREMENTS[stream.completionMode]
+  // Server-owned: every designated delivery pull request was observed merged.
+  const alreadyMerged = setupReason === 'not-following-changes' && explanation?.codeHostReason === 'merged'
 
   const blocker =
     setupReason === 'unbound'
       ? "No delivery pull request is bound to this work stream, so the platform can't track or verify its merge."
-      : setupReason === 'not-following-changes'
-        ? "This flow's completion policy isn't set to follow code-host changes, so the pull request's merge can't be tracked automatically."
-        : setupReason === 'branch-mismatch'
-          ? "The tracked pull request doesn't match this work stream's branches."
-          : setupReason === 'direct-merge-facts'
-            ? 'Direct-merge delivery needs a code-host binding plus the full commit SHA and base branch in this stream\u2019s git metadata.'
-            : null
+      : alreadyMerged
+        ? `${(explanation?.pullRequests?.length ?? 0) > 1 ? 'The delivery pull requests are' : 'The delivery pull request is'} already merged, but this flow's completion policy doesn't follow code-host changes, so the merge wasn't recorded automatically.`
+        : setupReason === 'not-following-changes'
+          ? "This flow's completion policy isn't set to follow code-host changes, so the pull request's merge can't be tracked automatically."
+          : setupReason === 'branch-mismatch'
+            ? "The tracked pull request doesn't match this work stream's branches."
+            : setupReason === 'direct-merge-facts'
+              ? 'Direct-merge delivery needs a code-host binding plus the full commit SHA and base branch in this stream\u2019s git metadata.'
+              : null
 
   const mismatchLines =
     setupReason === 'branch-mismatch' && explanation?.branchMismatch
@@ -73,7 +84,7 @@ export function WorkStreamDeliverySetupCallout({ stream }: { stream: SetupStream
     : []
 
   const blockedByProtection = gates?.mergeState === 'blocked'
-  const bindCommand =
+  const command =
     setupReason === 'unbound' || setupReason === 'branch-mismatch'
       ? changeRequestBindCommand(String(stream.number ?? stream.id), stream.metadata)
       : null
@@ -85,11 +96,13 @@ export function WorkStreamDeliverySetupCallout({ stream }: { stream: SetupStream
       ? 'Bind the delivery pull request to this work stream:'
       : setupReason === 'branch-mismatch'
         ? "Rebind the pull request that carries this work stream's branch, or merge the intended one via the GitHub UI:"
-        : setupReason === 'not-following-changes'
-          ? 'Merge the pull request via the GitHub UI, then finish delivery from this work stream.'
-          : setupReason === 'direct-merge-facts'
-            ? 'Record the deliverable commit (git.commit) and base branch (git.baseBranch) with a code-host binding on this work stream.'
-            : null
+        : alreadyMerged
+          ? 'Check delivery to finish this work stream. Checking verifies the merge with the code host; it does not merge anything.'
+          : setupReason === 'not-following-changes'
+            ? 'Merge the pull request via the GitHub UI, then finish delivery from this work stream.'
+            : setupReason === 'direct-merge-facts'
+              ? 'Record the deliverable commit (git.commit) and base branch (git.baseBranch) with a code-host binding on this work stream.'
+              : null
   const nextStep =
     setupStep ??
     (blockedByProtection
@@ -127,13 +140,46 @@ export function WorkStreamDeliverySetupCallout({ stream }: { stream: SetupStream
       <div className="rounded-lg border border-accent/40 bg-accent/5 p-3 space-y-1">
         <p className="text-xs font-medium text-primary">Next step</p>
         <p className="text-sm text-secondary">{nextStep}</p>
-        {bindCommand && (
-          <code className="block p-2 rounded bg-surface font-mono text-xs text-secondary break-all">{bindCommand}</code>
+        {command && (
+          <code className="block p-2 rounded bg-surface font-mono text-xs text-secondary break-all">{command}</code>
         )}
+        {alreadyMerged && <CheckDeliveryButton stream={stream} />}
         {protectionNote && (
           <p className="text-sm text-secondary">The merge is also blocked by branch protection. {protectionNote}</p>
         )}
       </div>
     </section>
+  )
+}
+
+/**
+ * The person's finish action for an already-merged delivery: the same server finish the manual delivery
+ * check uses, which verifies the merge live. Shown only to people who may finish the stream.
+ */
+function CheckDeliveryButton({ stream }: { stream: Pick<WorkStream, 'id' | 'squadId'> }) {
+  const { can } = usePermissions(stream.squadId)
+  const { data: run } = useQuery(queries.workflows.run(stream.id))
+  const refresh = useWorkflowRefresh(stream)
+  const finish = useMutation({
+    mutationFn: (version: number) => client.workflows.finish(stream.id, version),
+    onSuccess: refresh,
+  })
+  if (!run || !(can('workstreams:update') || can('workstreams:respond'))) return null
+  return (
+    <div className="space-y-1">
+      <button
+        type="button"
+        className="ficus-button ficus-button-primary px-3 py-2 text-sm disabled:opacity-50"
+        disabled={finish.isPending}
+        onClick={() => finish.mutate(run.version)}
+      >
+        {finish.isPending ? 'Checking…' : 'Check delivery'}
+      </button>
+      {finish.error && (
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
+          {actionErrorMessage(finish.error)}
+        </p>
+      )}
+    </div>
   )
 }

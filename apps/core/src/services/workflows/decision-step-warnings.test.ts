@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import type { WorkflowDefinition } from '@ficus/shared'
-import { decisionStepWarnings, withWarnings } from './decision-step-warnings'
+import { decisionStepWarnings, withWarnings, workflowWarnings } from './decision-step-warnings'
 
 const steps = (kinds: Array<'agent' | 'decision' | 'human-approval'>) =>
   ({ steps: kinds.map((kind, index) => ({ id: `step-${index + 1}`, kind })) }) as unknown as WorkflowDefinition
@@ -20,4 +20,16 @@ test('no warning without decision steps, or with a decision model set up', () =>
   expect(decisionStepWarnings(steps(['decision']), () => [{ id: 'jev' }])).toEqual([])
   expect(withWarnings([])).toEqual({})
   expect(withWarnings(['x'])).toEqual({ warnings: ['x'] })
+})
+
+test('workflow warnings add the explicit opt-out of following a merge-completed flow', () => {
+  const none = () => []
+  const flow = (completion: WorkflowDefinition['completion']) =>
+    ({ ...steps(['agent']), completion }) as WorkflowDefinition
+  expect(workflowWarnings(flow({ mode: 'pr-merge' }), none)).toEqual([])
+  expect(workflowWarnings(flow({ mode: 'pr-auto-merge', followChanges: false }), none)).toEqual([
+    expect.stringContaining('completion.followChanges is false with completion mode pr-auto-merge'),
+  ])
+  // A partial editor draft without completion still reports decision steps only.
+  expect(workflowWarnings(steps(['decision']), none)).toHaveLength(1)
 })

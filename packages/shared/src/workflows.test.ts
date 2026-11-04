@@ -11,7 +11,10 @@ import {
   workflowPresetSchema,
   type WorkflowDefinition,
   type WorkflowPresetRevision,
+  workflowCompletionWarnings,
+  workflowFollowsChanges,
 } from './workflows'
+import { layoutWorkflowGraph } from './workflow-graph'
 
 const root = resolve(import.meta.dir, '../../..')
 
@@ -625,4 +628,47 @@ test('the code-host- and tracked- id prefixes stay reserved even when change fol
     if (!result.success) expect(result.error.issues.map((issue) => issue.message)).toContain(message)
   }
   expect(workflowDefinitionSchema.safeParse({ ...flow, subscriptions: [subscription('mine')] }).success).toBe(true)
+})
+
+describe('merge-completed flows follow code-host changes by default', () => {
+  test('pr-merge and pr-auto-merge follow when followChanges is absent; explicit values win', () => {
+    for (const mode of ['pr-merge', 'pr-auto-merge'] as const) {
+      expect(workflowFollowsChanges({ mode })).toBe(true)
+      expect(workflowFollowsChanges({ mode, followChanges: true })).toBe(true)
+      expect(workflowFollowsChanges({ mode, followChanges: false })).toBe(false)
+    }
+    for (const mode of ['deliverable', 'review-approval', 'direct-merge', 'pr-review'] as const) {
+      expect(workflowFollowsChanges({ mode })).toBe(false)
+      expect(workflowFollowsChanges({ mode, followChanges: true })).toBe(true)
+    }
+  })
+
+  test('the default is read, not written: a resolved inline definition keeps followChanges absent', () => {
+    const flow = createBlankWorkflow()
+    flow.completion = { mode: 'pr-merge' }
+    const parsed = workflowDefinitionSchema.parse(flow)
+    expect(parsed.completion).toEqual({ mode: 'pr-merge' })
+    expect(workflowFollowsChanges(parsed.completion)).toBe(true)
+  })
+
+  test('the code hosting graph node appears for the default and disappears for an explicit opt-out', () => {
+    const flow = createBlankWorkflow()
+    flow.completion = { mode: 'pr-merge' }
+    const edge = layoutWorkflowGraph(flow).edges.find((candidate) => candidate.from === 'code-host:delivery')
+    expect(edge).toMatchObject({ to: 'finish', label: 'code hosting events → delivery owner' })
+    flow.completion = { mode: 'pr-merge', followChanges: false }
+    expect(layoutWorkflowGraph(flow).nodes.some((node) => node.id === 'code-host:delivery')).toBe(false)
+  })
+
+  test('only an explicit opt-out on a merge-completed flow warns', () => {
+    expect(workflowCompletionWarnings({ completion: { mode: 'pr-merge' } })).toEqual([])
+    expect(workflowCompletionWarnings({ completion: { mode: 'pr-merge', followChanges: true } })).toEqual([])
+    expect(workflowCompletionWarnings({ completion: { mode: 'deliverable', followChanges: false } })).toEqual([])
+    const [warning, ...rest] = workflowCompletionWarnings({
+      completion: { mode: 'pr-auto-merge', followChanges: false },
+    })
+    expect(rest).toEqual([])
+    expect(warning).toContain('completion.followChanges is false with completion mode pr-auto-merge')
+    expect(warning).toContain('ficus workstream finish')
+  })
 })

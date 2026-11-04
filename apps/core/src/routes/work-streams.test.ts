@@ -601,6 +601,26 @@ describe('work-streams routes', () => {
       expect(ws.metadata.completion.mode).toBe('pr-auto-merge')
     })
 
+    it('warns when a merge-completed flow explicitly opts out of following its pull request', async () => {
+      const definition = createBlankWorkflow()
+      definition.participants.worker!.agentTypeId = testAgentTypeId
+      const create = (completion: Record<string, unknown>, title: string) =>
+        postJson('/api/workstreams', {
+          squadId: testSquadId,
+          title: `${testPrefix} ${title}`,
+          workflow: { kind: 'inline', definition: { ...definition, completion } },
+        })
+      const optedOut = await create({ mode: 'pr-merge', followChanges: false }, 'follow-opt-out')
+      expect(optedOut.status).toBe(201)
+      expect((await optedOut.json()).warnings).toEqual([
+        expect.stringContaining('completion.followChanges is false with completion mode pr-merge'),
+      ])
+      // Omitting the field follows by default, so there is nothing to warn about.
+      const followed = await create({ mode: 'pr-merge' }, 'follow-default')
+      expect(followed.status).toBe(201)
+      expect((await followed.json()).warnings).toBeUndefined()
+    })
+
     it('rejects invalid completion mode', async () => {
       const res = await postJson('/api/workstreams', {
         squadId: testSquadId,

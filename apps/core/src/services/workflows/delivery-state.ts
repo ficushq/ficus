@@ -16,6 +16,7 @@ import type { DbHandle } from '../work-streams/waits'
 import { codeHostingRegistry } from '../integrations/code-hosting'
 import {
   deliveryPullRequests,
+  workflowFollowsChanges,
   type WorkflowRun,
   type IntegrationOutputFact,
   type CodeHostDeliveryReason,
@@ -31,7 +32,7 @@ export function awaitsCodeHostDelivery(state: WorkflowRun, metadata: unknown): b
   return (
     state.status === 'completion-ready' &&
     ['pr-review', 'pr-merge', 'pr-auto-merge'].includes(state.definition.completion.mode) &&
-    state.definition.completion.followChanges === true &&
+    workflowFollowsChanges(state.definition.completion) &&
     !!codeHostingRegistry.resolve(metadata)?.reference.changeRequest
   )
 }
@@ -99,6 +100,34 @@ export function deliveryCurrentHead(matching: DeliveryEvent[]): { snapshot: Deli
   return snapshot && head && /^[a-f0-9]{40}$/.test(head) ? { snapshot, head } : undefined
 }
 
+/**
+ * Whether local evidence shows every designated delivery pull request merged: a merged event or
+ * lifecycle fact (including the poller's snapshot), or the stream's recorded delivery state.
+ * Merge is terminal, so any positive observation holds; a closed-unmerged request never counts.
+ */
+function designatedPullRequestsMerged(metadata: unknown, events: DeliveryEvent[]): boolean {
+  const recorded = new Map(
+    deliveryView(metadata).pullRequests.map((pullRequest) => [pullRequest.key, pullRequest.state])
+  )
+  const designated = deliveryPullRequests(metadata)
+  return (
+    designated.length > 0 &&
+    designated.every(
+      (resource) =>
+        recorded.get(resource.key) === 'merged' ||
+        deliveryEventsForReference(
+          {
+            integration: resource.integration,
+            repository: resource.repository,
+            changeRequest: { number: resource.number },
+            ...(resource.connectionId ? { connectionId: resource.connectionId } : {}),
+          },
+          events
+        ).some((event) => event.output === 'pull_request.merged' || event.data.pullRequestState === 'merged')
+    )
+  )
+}
+
 /** Internal classification: the published kind plus the evidence that produced it. */
 type ObservedPullRequest = { repository: string; number: number; state: 'open' | 'merged' | 'closed' }
 type GateResult = {
@@ -140,15 +169,19 @@ function classifyPrimaryDeliveryPresentation(
       !!git.baseBranch.trim()
     return factsComplete ? { kind: 'external' } : { kind: 'setup', explanation: { setupReason: 'direct-merge-facts' } }
   }
-  if (!awaitsCodeHostDelivery(state, metadata))
+  if (!awaitsCodeHostDelivery(state, metadata)) {
+    if (!codeHostingRegistry.resolve(metadata)?.reference.changeRequest)
+      return { kind: 'setup', explanation: { setupReason: 'unbound' } }
+    // Nothing routes the merge to a flow that opted out of following, so say so when it already
+    // happened: the next step is finishing, not merging.
     return {
       kind: 'setup',
       explanation: {
-        setupReason: codeHostingRegistry.resolve(metadata)?.reference.changeRequest
-          ? 'not-following-changes'
-          : 'unbound',
+        setupReason: 'not-following-changes',
+        ...(designatedPullRequestsMerged(metadata, events) ? { codeHostReason: 'merged' as const } : {}),
       },
     }
+  }
   const reference = codeHostingRegistry.resolve(metadata)!.reference
   const time = deliveryEventTime
   const snapshotTime = deliveryEvidenceTime
