@@ -1716,13 +1716,6 @@
       "when": 1793397095903,
       "tag": "0244_retained_asset_cleanup_backoff",
       "breakpoints": true
-    },
-    {
-      "idx": 245,
-      "version": "7",
-      "when": 1793818692916,
-      "tag": "0245_slot_expiry_warning",
-      "breakpoints": true
     }
   ]
 }
