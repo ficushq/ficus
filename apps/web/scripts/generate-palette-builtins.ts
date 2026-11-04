@@ -43,7 +43,12 @@ import { deriveThemeOverrides, type ThemePalette } from '@ficus/shared/theme-der
 import { customColorChannels } from '@ficus/shared/theme-schema'
 import { oklchToSrgb, srgbToOklch } from '@ficus/shared/color-oklch'
 import type { ResolvedAppearance } from '@ficus/shared/theme-schema'
-import { cssBlockDeclarations, DERIVABLE_TOKENS, repairContrastPairs } from './theme-builtin-shared'
+import {
+  cssBlockDeclarations,
+  DERIVABLE_TOKENS,
+  fitSelectionBackground,
+  repairContrastPairs,
+} from './theme-builtin-shared'
 
 export const GENERATED_START =
   '\n  /* BEGIN GENERATED PALETTE BUILTINS — apps/web/scripts/generate-palette-builtins.ts. Do not edit by hand. */\n'
@@ -155,11 +160,12 @@ function withPinnedSurfaces(
 }
 
 /**
- * Harbor and Ember paint every interactive surface (hover, pill, inset and selection) with one tint of their accent
- * over the surface, the secondary surface with a lighter one, and the selection border (in light, the input border
- * too) with a stronger mix. The shared derivation leaves those close to the plain surface for a palette (a palette's light
- * selection came out lighter than its own page), so palette built-ins apply the same structure after deriving, before
- * the contrast repair. Dark tints from the primary itself: a pale dark-mode accent would only grey the surface.
+ * Harbor and Ember paint every interactive surface (hover, pill and inset) with one tint of their accent over the
+ * surface, the secondary surface with a lighter one, and the selection border (in light, the input border too) with a
+ * stronger mix. The shared derivation leaves those close to the plain surface for a palette, so palette built-ins
+ * apply the same structure after deriving, before the contrast repair. Dark tints from the primary itself: a pale
+ * dark-mode accent would only grey the surface. The selection background is fitted after the repair
+ * (`fitSelectionBackground`) so it never matches hover.
  */
 const INTERACTION_TINTS: Record<
   ResolvedAppearance,
@@ -184,8 +190,7 @@ function applyInteractionTints(
   const surface = tokens['--color-bg-surface']!
   const source = tintColor ? customColorChannels(tintColor)! : tokens[tint[0]]!
   const tinted = mixChannels(source, tint[1], surface)
-  for (const token of ['--color-bg-surface-hover', '--color-bg-pill', '--color-bg-inset', '--color-selection-bg'])
-    tokens[token] = tinted
+  for (const token of ['--color-bg-surface-hover', '--color-bg-pill', '--color-bg-inset']) tokens[token] = tinted
   tokens['--color-bg-surface-secondary'] = mixChannels(source, secondary, surface)
   tokens['--color-selection-border'] = mixChannels(tokens[border[0]]!, border[1], surface)
   if (inputBorder) tokens['--color-input-border'] = tokens['--color-selection-border']
@@ -219,10 +224,15 @@ function buildThemeTokens(
     const derived = pinned[token] ?? (DERIVABLE_TOKENS.has(token) ? derivedHex[token] : undefined)
     combined[token] = derived ? (customColorChannels(derived) ?? baseTokens[token]!) : baseTokens[token]!
   }
-  applyInteractionTints(combined, appearance, builtin.interactionTint?.[appearance])
+  const tintColor = builtin.interactionTint?.[appearance]
+  applyInteractionTints(combined, appearance, tintColor)
   // The checked checkbox's tick sits on the accent fill, so it takes the same ink as text on that fill.
   combined['--checkbox-check'] = combined['--on-accent-fg']!
-  return repairContrastPairs(combined)
+  const repaired = repairContrastPairs(combined)
+  // Selection takes the same accent as the interaction tints, fitted against the final (repaired) text colors.
+  const accent = tintColor ? customColorChannels(tintColor)! : repaired.tokens['--color-primary']!
+  repaired.tokens['--color-selection-bg'] = fitSelectionBackground(repaired.tokens, accent)
+  return repaired
 }
 
 function themeCssBlock(

@@ -50,6 +50,25 @@ for (const palette of palettes) {
     // Same hue family (low-chroma swatches have no meaningful hue).
     if (swatch.c > 0.02) expect(Math.abs(((hue(badge).h - swatch.h + 540) % 360) - 180)).toBeLessThan(20)
   })
+  test(`${palette.id}/${palette.appearance}: a selected row is distinct from a hovered one and stays readable`, () => {
+    const rgb = (token: string) => tokenRgba(palette.tokens, token).slice(0, 3)
+    const lab = (color: number[]) => {
+      const { l, c, h } = srgbToOklch([color[0]!, color[1]!, color[2]!])
+      return [l, c * Math.cos((h * Math.PI) / 180), c * Math.sin((h * Math.PI) / 180)]
+    }
+    const distance = (a: number[], b: number[]) => Math.hypot(...lab(a).map((value, i) => value - lab(b)[i]!))
+    const [selection, hover, surface] = ['--color-selection-bg', '--color-bg-surface-hover', '--color-bg-surface'].map(
+      rgb
+    )
+    // About two just-noticeable OKLab differences from both the hovered and the plain row.
+    expect(distance(selection!, hover!)).toBeGreaterThanOrEqual(0.04)
+    expect(distance(selection!, surface!)).toBeGreaterThanOrEqual(0.04)
+    expect(contrast(tokenRgba(palette.tokens, '--color-text-primary'), selection!)).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(tokenRgba(palette.tokens, '--color-text-secondary'), selection!)).toBeGreaterThanOrEqual(4.5)
+    // Selected rows use accent text: AA, or never less legible than the same text on the theme's own hover surface.
+    const accentText = tokenRgba(palette.tokens, '--color-primary-light')
+    expect(contrast(accentText, selection!)).toBeGreaterThanOrEqual(Math.min(4.5, contrast(accentText, hover!)))
+  })
 }
 
 test('contrast gate multiplies channel alpha by intrinsic opacity and composites the surface', () => {

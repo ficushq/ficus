@@ -54,7 +54,12 @@ import { resolve } from 'node:path'
 import { BIGBRAIN_PALETTES, mixSrgb, type BigBrainPalette } from '@ficus/shared/bigbrain-palettes'
 import { deriveThemeOverrides } from '@ficus/shared/theme-derivation'
 import { customColorChannels } from '@ficus/shared/theme-schema'
-import { cssBlockDeclarations, DERIVABLE_TOKENS, repairContrastPairs } from './theme-builtin-shared'
+import {
+  cssBlockDeclarations,
+  DERIVABLE_TOKENS,
+  fitSelectionBackground,
+  repairContrastPairs,
+} from './theme-builtin-shared'
 
 export const GENERATED_START =
   '\n  /* BEGIN GENERATED BIGBRAIN BUILTINS — apps/web/scripts/generate-bigbrain-builtins.ts. Do not edit by hand. */\n'
@@ -81,7 +86,6 @@ function mapExplicitTokens(palette: BigBrainPalette): Record<string, string> {
     '--color-border-hover': mixSrgb(fg, 28, bg),
     '--color-code-bg': mixSrgb(fg, 6, bg),
     '--color-code-text': fg,
-    '--color-selection-bg': mixSrgb(activity, 15, bg),
     '--color-selection-border': mixSrgb(activity, 40, bg),
     // Header and sidebar glass: the page itself at Iris's 88% glass opacity.
     '--color-glass': `${bg}e0`,
@@ -190,7 +194,13 @@ function buildThemeTokens(
   }
   // The checked checkbox's tick sits on the accent fill, so it takes the same ink as text on that fill.
   combined['--checkbox-check'] = combined['--on-accent-fg']!
-  return repairContrastPairs(combined)
+  const repaired = repairContrastPairs(combined)
+  // The activity accent over the hover surface, fitted against the final (repaired) text colors so it never matches hover.
+  repaired.tokens['--color-selection-bg'] = fitSelectionBackground(
+    repaired.tokens,
+    customColorChannels(palette.activity)!
+  )
+  return repaired
 }
 
 function themeCssBlock(palette: BigBrainPalette, tokens: Record<string, string>): string {

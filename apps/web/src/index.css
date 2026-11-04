@@ -283,7 +283,7 @@
     --color-link-hover: 91 33 182;
 
     /* Shared interaction surfaces. Keep them separate from semantic status colors. */
-    --color-selection-bg: 238 232 248;
+    --color-selection-bg: 226 219 239;
     --color-selection-border: 215 199 240;
     --color-focus: 124 58 237;
     --color-panel-border: 94 75 132;
@@ -801,7 +801,7 @@
     --color-primary-light: 196 181 253;
     --color-link-hover: 221 214 254;
 
-    --color-selection-bg: 33 26 53;
+    --color-selection-bg: 37 29 63;
     --color-selection-border: 68 50 95;
     --color-focus: 196 181 253;
     --color-panel-border: 190 181 215;
