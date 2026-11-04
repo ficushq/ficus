@@ -10,6 +10,9 @@ import {
   resolveLocalWorkspaceTarget,
   resolveLocalWorkspaceWriteTarget,
   resolveSandboxWorkspaceTarget,
+  resolveSandboxWorkspaceTargets,
+  SANDBOX_REALPATH_BATCH_MAX_COMMAND_BYTES,
+  SANDBOX_REALPATH_BATCH_MAX_TARGETS,
   type SandboxPathClient,
 } from './workspace-settings'
 
@@ -394,6 +397,282 @@ describe('resolveSandboxWorkspaceTarget', () => {
     await expect(resolveSandboxWorkspaceTarget(failing, workspace, 'notes.txt')).rejects.toThrow(
       'Could not resolve the workspace path'
     )
+  })
+})
+
+/**
+ * A sandbox client whose `bash` answers from a script: each command gets the
+ * stdout and exit code the script returns, or an `error` event when it throws.
+ */
+function scriptedClient(
+  answer: (command: string, index: number) => { stdout: string; exitCode: number }
+): SandboxPathClient & { commands: string[] } {
+  const commands: string[] = []
+  return {
+    commands,
+    bash: ({ command }) => {
+      const index = commands.push(command) - 1
+      const listeners: Record<string, Array<(arg?: unknown) => void>> = {}
+      const emitter = {
+        on(event: string, listener: (arg?: never) => void) {
+          ;(listeners[event] ??= []).push(listener as (arg?: unknown) => void)
+          return emitter
+        },
+      }
+      queueMicrotask(() => {
+        let result: { stdout: string; exitCode: number }
+        try {
+          result = answer(command, index)
+        } catch (error) {
+          for (const listener of listeners.error ?? []) listener(error)
+          return
+        }
+        const data: BashResponse = { stdout: Buffer.from(result.stdout).toString('base64'), exitCode: result.exitCode }
+        for (const listener of listeners.data ?? []) listener(data)
+        for (const listener of listeners.end ?? []) listener()
+      })
+      return emitter as ReturnType<SandboxPathClient['bash']>
+    },
+  }
+}
+
+/** Run a box command on this machine, as the box would. */
+function runLocally(command: string) {
+  const result = Bun.spawnSync(['bash', '-c', command])
+  return { stdout: result.stdout.toString(), exitCode: result.exitCode ?? 1 }
+}
+
+/** What the single-target check answers for each request, as batch entries. */
+async function singleAnswers(requests: readonly string[]) {
+  const client = localBashClient()
+  const answers = []
+  for (const request of requests) {
+    try {
+      answers.push({ resolution: await resolveSandboxWorkspaceTarget(client, workspace, request) })
+    } catch (error) {
+      answers.push({ error })
+    }
+  }
+  return answers
+}
+
+describe('resolveSandboxWorkspaceTargets', () => {
+  it('answers a mixed batch exactly like the single-target check, in one box command', async () => {
+    const scratch = join(workspace, 'batch-links')
+    mkdirSync(scratch, { recursive: true })
+    try {
+      symlinkSync('../.ficus/not-yet.txt', join(scratch, 'dangling'))
+      symlinkSync('../settings-link', join(scratch, 'chained'))
+      symlinkSync('../docs', join(scratch, 'docs-link'))
+      const requests = [
+        'notes.txt',
+        ...settingsRequests,
+        'docs/readme.md',
+        ...escapingRequests,
+        'batch-links/dangling',
+        'batch-links/chained/new.txt',
+        'batch-links/docs-link/new.txt',
+        'docs/.ficus/config.json',
+        'new-dir/new.txt',
+        'readme-link',
+        'self-link',
+        '',
+        'notes.txt',
+      ]
+      const client = localBashClient()
+      const checks = await resolveSandboxWorkspaceTargets(client, workspace, requests)
+      expect(checks).toEqual(await singleAnswers(requests))
+      expect(client.commands.length).toBe(1)
+      // Each distinct target is resolved once, and lexical refusals never reach the box.
+      expect(client.commands[0]!.split(`'${join(workspace, 'notes.txt')}'`).length).toBe(2)
+      expect(client.commands[0]).not.toContain(`'${join(workspace, '.ficus')}`)
+      expect(checks.slice(1, 1 + settingsRequests.length)).toEqual(
+        settingsRequests.map(() => ({ resolution: { ok: false, reason: 'not-found' } }))
+      )
+      expect(checks.at(-1)).toEqual({ resolution: { ok: true, path: join(workspace, 'notes.txt'), isRoot: false } })
+    } finally {
+      rmSync(scratch, { recursive: true, force: true })
+    }
+  })
+
+  it('never makes a box command when every path is refused lexically', async () => {
+    const client = localBashClient()
+    const requests = ['.ficus/new.txt', '../outside/new.txt', 'docs/../.FICUS./x']
+    expect(await resolveSandboxWorkspaceTargets(client, workspace, requests)).toEqual([
+      { resolution: { ok: false, reason: 'not-found' } },
+      { resolution: { ok: false, reason: 'invalid' } },
+      { resolution: { ok: false, reason: 'not-found' } },
+    ])
+    expect(client.commands).toEqual([])
+  })
+
+  it('passes hostile file names as quoted words, never as shell syntax', async () => {
+    const marker = join(base, 'batch-marker')
+    const scratch = join(workspace, 'batch-hostile')
+    const hostile = [
+      `x'; touch '${marker}'; echo '`,
+      `\\'; touch ${marker}; echo \\'`,
+      `$(touch ${marker})`,
+      `\`touch ${marker}\``,
+      `x" ; touch ${marker} ; "`,
+      `x\ntouch ${marker}\n`,
+      'trailing newline\n',
+      'name with  spaces',
+      'glob*?[a]',
+      '-n',
+      '--',
+      '$HOME',
+      '; done; touch x; for t in y',
+      'ünïcødé 文件.txt',
+    ]
+    mkdirSync(scratch, { recursive: true })
+    try {
+      // A hostile-named link into the settings directory is still refused.
+      symlinkSync('../.ficus', join(scratch, `link '$(echo x)\`id\``))
+      const requests = [
+        ...hostile.map((name) => `batch-hostile/${name}`),
+        `batch-hostile/link '$(echo x)\`id\`/new.txt`,
+      ]
+      const client = localBashClient()
+      const checks = await resolveSandboxWorkspaceTargets(client, workspace, requests)
+      expect(existsSync(marker)).toBe(false)
+      expect(client.commands.length).toBe(1)
+      expect(checks).toEqual(await singleAnswers(requests))
+      expect(existsSync(marker)).toBe(false)
+      expect(checks.at(-1)).toEqual({ resolution: { ok: false, reason: 'not-found' } })
+      for (const [index, name] of hostile.entries()) {
+        expect([name, checks[index]]).toEqual([
+          name,
+          { resolution: { ok: true, path: path.posix.resolve(scratch, name), isRoot: false } },
+        ])
+      }
+    } finally {
+      rmSync(scratch, { recursive: true, force: true })
+    }
+  })
+
+  it('splits at the target bound and refuses settings targets on both sides of the boundary', async () => {
+    const count = SANDBOX_REALPATH_BATCH_MAX_TARGETS + 1
+    const requests = Array.from({ length: count }, (_, i) => `bulk/file-${i}.txt`)
+    requests[SANDBOX_REALPATH_BATCH_MAX_TARGETS - 1] = 'settings-link/last-of-first.txt'
+    requests[SANDBOX_REALPATH_BATCH_MAX_TARGETS] = 'self-link/settings-link/first-of-second.txt'
+    const client = localBashClient()
+    const checks = await resolveSandboxWorkspaceTargets(client, workspace, requests)
+    expect(client.commands.length).toBe(2)
+    expect(client.commands.map((command) => command.split(`'${workspace}/`).length - 1)).toEqual([
+      SANDBOX_REALPATH_BATCH_MAX_TARGETS,
+      1,
+    ])
+    expect(checks).toEqual(
+      requests.map((request, i) =>
+        i >= SANDBOX_REALPATH_BATCH_MAX_TARGETS - 1
+          ? { resolution: { ok: false, reason: 'not-found' } }
+          : { resolution: { ok: true, path: join(workspace, request), isRoot: false } }
+      )
+    )
+  })
+
+  it('splits at the command size bound, and checks a target too long to share a command on its own', async () => {
+    const longName = 'n'.repeat(200)
+    const requests = Array.from({ length: 600 }, (_, i) => `bulk/${i}-${longName}`)
+    const oversized = `bulk/${'d/'.repeat(SANDBOX_REALPATH_BATCH_MAX_COMMAND_BYTES / 2)}new.txt`
+    requests.splice(300, 0, oversized)
+    requests.push('settings-link/new.txt')
+    const client = scriptedClient(runLocally)
+    const checks = await resolveSandboxWorkspaceTargets(client, workspace, requests)
+    expect(client.commands.length).toBeGreaterThan(3)
+    expect(client.commands.length).toBeLessThan(10)
+    for (const command of client.commands.filter((command) => !command.includes(oversized))) {
+      expect(Buffer.byteLength(command)).toBeLessThanOrEqual(SANDBOX_REALPATH_BATCH_MAX_COMMAND_BYTES)
+    }
+    // The oversized target is checked alone, with the single-target command.
+    const alone = client.commands.filter((command) => command.includes(oversized))
+    expect(alone.length).toBe(1)
+    expect(alone[0]).not.toContain('for t in')
+    expect(checks.at(-1)).toEqual({ resolution: { ok: false, reason: 'not-found' } })
+    expect(checks.slice(0, -1)).toEqual(
+      requests
+        .slice(0, -1)
+        .map((request) => ({ resolution: { ok: true, path: path.posix.resolve(workspace, request), isRoot: false } }))
+    )
+  })
+
+  it('fails closed for every box target in a chunk the box cannot answer', async () => {
+    const requests = ['notes.txt', '.ficus/new.txt', 'docs/new.txt', '../outside/new.txt']
+    for (const failing of [
+      () => ({ stdout: '', exitCode: 3 }),
+      () => ({ stdout: `${workspace}\0${workspace}/notes.txt\0${workspace}/docs/new.txt\0`, exitCode: 3 }),
+      // Missing an entry, missing the final terminator, or an empty root.
+      () => ({ stdout: `${workspace}\0${workspace}/notes.txt\0`, exitCode: 0 }),
+      () => ({ stdout: `${workspace}\0${workspace}/notes.txt\0${workspace}/docs/new.txt`, exitCode: 0 }),
+      () => ({ stdout: `\0${workspace}/notes.txt\0${workspace}/docs/new.txt\0`, exitCode: 0 }),
+      () => ({ stdout: `${workspace}\0a\0b\0c\0`, exitCode: 0 }),
+      () => {
+        throw new Error('Sandbox unavailable')
+      },
+    ]) {
+      const checks = await resolveSandboxWorkspaceTargets(scriptedClient(failing), workspace, requests)
+      expect(checks.map((check) => ('error' in check ? 'error' : check.resolution))).toEqual([
+        'error',
+        { ok: false, reason: 'not-found' },
+        'error',
+        { ok: false, reason: 'invalid' },
+      ])
+    }
+  })
+
+  it('fails closed for only the target the box could not resolve', async () => {
+    const client = scriptedClient(() => ({
+      stdout: `${workspace}\0${workspace}/notes.txt\0\0${workspace}/.ficus/new.txt\0`,
+      exitCode: 0,
+    }))
+    const checks = await resolveSandboxWorkspaceTargets(client, workspace, ['notes.txt', 'docs/new.txt', 'link.txt'])
+    expect(checks).toEqual([
+      { resolution: { ok: true, path: join(workspace, 'notes.txt'), isRoot: false } },
+      { error: new Error('Could not resolve the workspace path') },
+      { resolution: { ok: false, reason: 'not-found' } },
+    ])
+  })
+
+  it('keeps a failed chunk from affecting the others', async () => {
+    const requests = Array.from({ length: SANDBOX_REALPATH_BATCH_MAX_TARGETS * 2 }, (_, i) => `bulk/${i}.txt`)
+    const client = scriptedClient((command, index) => (index === 1 ? { stdout: '', exitCode: 3 } : runLocally(command)))
+    const checks = await resolveSandboxWorkspaceTargets(client, workspace, requests)
+    expect(client.commands.length).toBe(2)
+    expect(checks.slice(0, SANDBOX_REALPATH_BATCH_MAX_TARGETS).every((check) => 'resolution' in check)).toBe(true)
+    expect(checks.slice(SANDBOX_REALPATH_BATCH_MAX_TARGETS).every((check) => 'error' in check)).toBe(true)
+  })
+
+  it('checks a name with a NUL byte on its own, so only that target fails', async () => {
+    const client = scriptedClient((command) => {
+      if (command.includes('\0')) throw new Error('Command cannot contain a NUL byte')
+      return runLocally(command)
+    })
+    const checks = await resolveSandboxWorkspaceTargets(client, workspace, ['notes.txt', 'bad\0name', 'docs/x'])
+    expect(checks).toEqual([
+      { resolution: { ok: true, path: join(workspace, 'notes.txt'), isRoot: false } },
+      { error: new Error('Command cannot contain a NUL byte') },
+      { resolution: { ok: true, path: join(workspace, 'docs', 'x'), isRoot: false } },
+    ])
+    expect(client.commands.length).toBe(2)
+  })
+
+  it('makes no box command once the request is aborted', async () => {
+    const client = localBashClient()
+    const controller = new AbortController()
+    controller.abort(new Error('Request aborted'))
+    const checks = await resolveSandboxWorkspaceTargets(
+      client,
+      workspace,
+      ['notes.txt', '.ficus/x', 'docs/x'],
+      controller.signal
+    )
+    expect(checks).toEqual([
+      { error: new Error('Request aborted') },
+      { resolution: { ok: false, reason: 'not-found' } },
+      { error: new Error('Request aborted') },
+    ])
+    expect(client.commands).toEqual([])
   })
 })
 
