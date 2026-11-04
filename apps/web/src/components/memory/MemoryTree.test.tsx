@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { Window } from 'happy-dom'
 
 import { queries } from '../../queryOptions'
 import { MemoryTree } from './MemoryTree'
@@ -24,10 +23,17 @@ function renderRows(selectedPath?: string) {
       <MemoryTree squadId={SQUAD} onSelectFile={() => {}} selectedPath={selectedPath} />
     </QueryClientProvider>
   )
-  const document = new Window().document
-  document.body.innerHTML = html
-  const row = (name: string) =>
-    [...document.querySelectorAll('button[type="button"]')].find((button) => button.textContent?.includes(name))!
+  // Server markup is enough to read each row's classes; no DOM is needed. Tree rows are the
+  // type="button" buttons, so each row's markup runs from its opening tag to the next row.
+  const rows = html.split(/(?=<button type="button")/).slice(1)
+  const row = (name: string) => {
+    const markup = rows.find((chunk) => chunk.includes(`>${name}<`))!
+    const tag = markup.slice(0, markup.indexOf('>') + 1)
+    return {
+      classes: new Set(tag.match(/class="([^"]*)"/)![1]!.split(' ')),
+      selected: tag.includes('aria-current="true"'),
+    }
+  }
   return { row }
 }
 
@@ -35,23 +41,23 @@ describe('MemoryTree row highlight', () => {
   test('a selected row keeps its selection background on hover instead of the grey hover', () => {
     const { row } = renderRows('/memory/context.md')
     const selected = row('context.md')
-    expect(selected.getAttribute('aria-current')).toBe('true')
-    expect(selected.classList.contains('bg-accent/10')).toBe(true)
-    expect(selected.classList.contains('text-accent-light')).toBe(true)
+    expect(selected.selected).toBe(true)
+    expect(selected.classes.has('bg-accent/10')).toBe(true)
+    expect(selected.classes.has('text-accent-light')).toBe(true)
     // text-secondary is emitted after text-accent-light and would override the selected text color.
-    expect(selected.classList.contains('text-secondary')).toBe(false)
-    expect(selected.classList.contains('hover:bg-surface-hover')).toBe(false)
+    expect(selected.classes.has('text-secondary')).toBe(false)
+    expect(selected.classes.has('hover:bg-surface-hover')).toBe(false)
   })
 
   test('unselected files and folders keep the grey hover and no selection background', () => {
     const { row } = renderRows('/memory/context.md')
     for (const name of ['map.md', 'decisions']) {
       const unselected = row(name)
-      expect(unselected.getAttribute('aria-current')).toBeNull()
-      expect(unselected.classList.contains('hover:bg-surface-hover')).toBe(true)
-      expect(unselected.classList.contains('bg-accent/10')).toBe(false)
-      expect(unselected.classList.contains('text-secondary')).toBe(true)
-      expect(unselected.classList.contains('focus-visible:outline-accent')).toBe(true)
+      expect(unselected.selected).toBe(false)
+      expect(unselected.classes.has('hover:bg-surface-hover')).toBe(true)
+      expect(unselected.classes.has('bg-accent/10')).toBe(false)
+      expect(unselected.classes.has('text-secondary')).toBe(true)
+      expect(unselected.classes.has('focus-visible:outline-accent')).toBe(true)
     }
   })
 })
