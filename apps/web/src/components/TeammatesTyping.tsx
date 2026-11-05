@@ -5,8 +5,9 @@ import { MAX_TYPING_BUBBLES, typingSummary } from '../lib/teammatesTyping'
 /**
  * Teammates typing in this chat: a chat bubble of three bouncing dots for each,
  * labeled with their name, at the end of the transcript where their message
- * will appear. Several typers stay compact: up to MAX_TYPING_BUBBLES bubbles,
- * the last one a "+N" for everyone else. Reduced motion keeps the dots still.
+ * will appear. Several typers stack like separate messages, one under another,
+ * up to MAX_TYPING_BUBBLES bubbles, the last one a "+N" for everyone else.
+ * Reduced motion keeps the dots still.
  */
 export function TeammatesTyping({ typers }: { typers: AgentChatTyper[] }) {
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)', false)
@@ -19,7 +20,7 @@ export function TeammatesTyping({ typers }: { typers: AgentChatTyper[] }) {
       aria-live="polite"
       data-testid="teammates-typing"
       data-motion={reducedMotion ? 'reduced' : 'full'}
-      className="flex flex-wrap items-end justify-end gap-x-3 gap-y-1.5"
+      className="flex flex-col items-end gap-2"
     >
       <span className="sr-only">{typingSummary(typers.map((typer) => typer.name))}</span>
       {shown.map((typer) => (
@@ -27,9 +28,9 @@ export function TeammatesTyping({ typers }: { typers: AgentChatTyper[] }) {
           key={typer.userId}
           aria-hidden="true"
           data-testid="typing-bubble"
-          className="flex min-w-0 flex-col items-end"
+          className="flex min-w-0 max-w-full flex-col items-end"
         >
-          <span className="mb-0.5 mr-1 max-w-[10rem] truncate text-[11px] text-muted">{typer.name}</span>
+          <span className="mb-0.5 mr-1 max-w-full truncate text-[11px] text-muted">{typer.name}</span>
           <TypingBubble>
             {[0, 1, 2].map((dot) => (
               <span
