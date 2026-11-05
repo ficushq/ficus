@@ -3,7 +3,7 @@ import { ToolFeedbackError } from '../../tools/tool-feedback'
 import { createHash } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent'
-import { FORENSIC_ASK_REFUSAL, CREDENTIAL_INPUT_REFUSAL } from '@ficus/shared'
+import { FORENSIC_ASK_REFUSAL, CREDENTIAL_INPUT_REFUSAL, HumanRequestRefusalError } from '@ficus/shared'
 import {
   recordRecoveryFailure,
   settleRecoveryOperation,
@@ -29,6 +29,7 @@ function explainedFailure(error: unknown): boolean {
     return true
   if (!(error instanceof Error)) return false
   if (
+    error instanceof HumanRequestRefusalError ||
     error.name === 'AbortError' ||
     error.name === 'ZodError' ||
     error.message === FORENSIC_ASK_REFUSAL ||

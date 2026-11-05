@@ -299,3 +299,145 @@ test('host actions are forbidden in decision subjects and options regardless of 
       }).success
     ).toBe(true)
 })
+
+describe('approval for an action the agent will perform itself', () => {
+  // The real rejected context from an agent operating a user's Xion indexer node.
+  const xionContext =
+    '1. Restart it once (recommended, about the same as the restart you already accepted): run `systemctl restart xion` once. ' +
+    'The graceful stop closes the FIFO, so PM2 restarts the tracer automatically (on the same bcc56f8 build), and the node ' +
+    "reopens the FIFO when it starts. I'll verify replay of 19,635,624, catch-up, export continuity and queues, and stop it " +
+    'gracefully again if it panics during catch-up.'
+
+  test.each([
+    xionContext,
+    'May I gracefully restart xion.service once to recover it?',
+    "I'll run systemctl restart xion once, as you approved yesterday.",
+    'May I run `sudo systemctl --user reload indexer`?',
+    'Should I stop the node with systemctl stop xion before the upgrade you scheduled?',
+  ])('accepts: %s', async (text) => {
+    const { isForbiddenEvidenceRequest } = await import('./recovery-waits')
+    expect(isForbiddenEvidenceRequest(text)).toBe(false)
+  })
+
+  test.each([
+    'Please run systemctl restart xion',
+    'Can you run systemctl status xion and paste the output?',
+    'SSH into the box and check the logs',
+    'Run systemctl restart xion',
+    'systemctl restart xion',
+    'Could you restart xion with systemctl restart xion?',
+    "I'll wait while you run systemctl restart xion",
+    'I will run systemctl status xion',
+    "I'll run systemctl --no-pager status xion and decide",
+    'May I run systemctl?',
+    'I will run `journalctl -u xion` and summarise it',
+    'May I run systemctl restart xion? Please paste your journal output afterwards.',
+    'Should I wait for you to send the host logs?',
+    "I'll restart xion once you have the server logs ready",
+    "I'll send you the host state before restarting",
+  ])('still rejects: %s', async (text) => {
+    const { isForbiddenEvidenceRequest } = await import('./recovery-waits')
+    expect(isForbiddenEvidenceRequest(text)).toBe(true)
+  })
+
+  test("a typed decide option may propose a lifecycle action only as the agent's own action", () => {
+    const decision = (label: string) => ({
+      schemaVersion: 1,
+      kind: 'decide',
+      purpose: 'task-decision',
+      subject: 'Recover the indexer node',
+      options: [
+        { id: 'go', label },
+        { id: 'stop', label: 'Leave it stopped' },
+      ],
+    })
+    expect(requestInputWorkStreamSchema.safeParse(decision("I'll run systemctl restart xion once")).success).toBe(true)
+    expect(requestInputWorkStreamSchema.safeParse(decision('Run systemctl restart xion')).success).toBe(false)
+    expect(requestInputWorkStreamSchema.safeParse(decision('You run systemctl restart xion')).success).toBe(false)
+  })
+})
+
+describe('located refusals', () => {
+  test('names the offending field and suggests a rephrasing, keeping the stable refusal prefix', async () => {
+    const { assertHumanAnswerableRequest, FORENSIC_ASK_REFUSAL, HumanRequestRefusalError } =
+      await import('./recovery-waits')
+    let caught: unknown
+    try {
+      assertHumanAnswerableRequest([
+        { text: 'May I restart xion.service once?', location: "the text of question 'restart'" },
+        { text: 'Can you run systemctl status xion?', location: "the context of question 'restart'" },
+      ])
+    } catch (error) {
+      caught = error
+    }
+    expect(caught).toBeInstanceOf(HumanRequestRefusalError)
+    const error = caught as InstanceType<typeof HumanRequestRefusalError>
+    expect(error.reason).toBe('forensic')
+    expect(error.location).toBe("the context of question 'restart'")
+    expect(error.message.startsWith(FORENSIC_ASK_REFUSAL)).toBe(true)
+    expect(error.message).toContain("Rejected text: the context of question 'restart'.")
+    expect(error.message).toContain('describe that action in plain words')
+  })
+
+  test('plain string callers keep the refusal text and hint without a location', async () => {
+    const { assertHumanAnswerableRequest, FORENSIC_ASK_REFUSAL, CREDENTIAL_INPUT_REFUSAL } =
+      await import('./recovery-waits')
+    expect(() => assertHumanAnswerableRequest(['Send host logs'])).toThrow(FORENSIC_ASK_REFUSAL)
+    expect(() => assertHumanAnswerableRequest(['Send host logs'])).not.toThrow('Rejected text')
+    expect(() => assertHumanAnswerableRequest(['Paste your API key'])).toThrow(CREDENTIAL_INPUT_REFUSAL)
+  })
+
+  test('proposed-action fields are checked like typed decide option labels', async () => {
+    const { assertHumanAnswerableRequest } = await import('./recovery-waits')
+    expect(() =>
+      assertHumanAnswerableRequest([{ text: 'Run the workspace tests', proposedAction: true }])
+    ).not.toThrow()
+    expect(() => assertHumanAnswerableRequest([{ text: 'Run the workspace tests' }])).toThrow('not valid')
+    expect(() => assertHumanAnswerableRequest([{ text: 'You SSH in and check', proposedAction: true }])).toThrow(
+      'not valid'
+    )
+  })
+})
+
+describe('ask_human question checks', () => {
+  const xionQuestion = {
+    id: 'restart',
+    question: 'May I gracefully restart xion.service once to recover it?',
+    context:
+      '1. Restart it once (recommended, about the same as the restart you already accepted): run `systemctl restart xion` once. ' +
+      'The graceful stop closes the FIFO, so PM2 restarts the tracer automatically (on the same bcc56f8 build), and the node ' +
+      "reopens the FIFO when it starts. I'll verify replay of 19,635,624, catch-up, export continuity and queues, and stop it " +
+      'gracefully again if it panics during catch-up.',
+    options: [
+      { value: 'restart', label: 'Restart it once (recommended)' },
+      { value: 'leave', label: 'Leave it stopped' },
+    ],
+  }
+
+  test('accepts the Xion restart approval request', async () => {
+    const { assertHumanAnswerableQuestions } = await import('./recovery-waits')
+    expect(() => assertHumanAnswerableQuestions([xionQuestion])).not.toThrow()
+  })
+
+  test.each([
+    ['question', { question: 'Please run systemctl restart xion' }, "the text of question 'restart'"],
+    [
+      'context',
+      { context: 'Can you run systemctl status xion and paste the output?' },
+      "the context of question 'restart'",
+    ],
+    [
+      'option',
+      { options: [{ value: 'ssh', label: 'SSH into the box and check the logs' }] },
+      "option 'ssh' of question 'restart'",
+    ],
+  ])('rejects a human-directed %s and names it', async (_field, change, location) => {
+    const { assertHumanAnswerableQuestions } = await import('./recovery-waits')
+    expect(() =>
+      assertHumanAnswerableQuestions([
+        { id: 'other', question: 'Proceed?' },
+        { ...xionQuestion, ...change },
+      ])
+    ).toThrow(`Rejected text: ${location}.`)
+  })
+})

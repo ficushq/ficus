@@ -1,7 +1,7 @@
 import { isCurrentWaitAttempt, lockAgentFlowStream } from '../work-streams/wait-scope'
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm'
 import {
-  assertHumanAnswerableRequest,
+  assertHumanAnswerableQuestions,
   isAddressableAgentStatus,
   isLiveAgentStatus,
   type AgentQuestion,
@@ -247,13 +247,7 @@ export async function createAgentQuestion(
     }
   } = {}
 ): Promise<AgentQuestionCreationResult> {
-  assertHumanAnswerableRequest(
-    questionData.questions.flatMap((question) => [
-      question.question,
-      question.context ?? '',
-      ...(question.options ?? []).flatMap((option) => [option.value, option.label ?? '']),
-    ])
-  )
+  assertHumanAnswerableQuestions(questionData.questions)
   const { assertNoPendingRecovery, recoveryScopeForAgent } = await import('../recovery/store')
   const result = await db.transaction(async (tx) => {
     const [execution] = await tx
