@@ -91,6 +91,8 @@ interface AgentChatProps {
   focusMessageId?: string
   /** Inbox message id: focuses the transcript message that delivered it. */
   focusInboxMessageId?: string
+  /** Show teammates typing in this chat, and tell them when this person is. Off for a private Assistant conversation. */
+  showTeammateTyping?: boolean
 }
 
 /** Live conversation state exposed to a `header` render function. */
@@ -133,6 +135,7 @@ export function AgentChat({
   placeholder: placeholderProp,
   focusMessageId,
   focusInboxMessageId,
+  showTeammateTyping = true,
   dependencies,
   onConversation,
   beforeSend,
@@ -443,6 +446,7 @@ export function AgentChat({
       isStreaming={isStreaming}
       executionStatus={conv.executionStatus}
       viewingUserId={viewingUserId}
+      showTeammateTyping={showTeammateTyping}
       readOnly={readOnly || isTerminated}
       hideInboxMessages={hideInboxMessages}
       hideComposer={shouldHideComposer}

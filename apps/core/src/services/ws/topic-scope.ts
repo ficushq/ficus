@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import type { EventMap } from '@ficus/shared'
+import { isUserAssistantAgentType, type EventMap } from '@ficus/shared'
 import { db } from '../../db'
 import { agents, schedules, workStreams } from '../../db/schema'
 
@@ -62,14 +62,32 @@ export async function topicScope(topic: string): Promise<TopicScope> {
 }
 
 export async function agentTopicScope(agentId: string): Promise<TopicScope> {
-  if (!isUuid(agentId)) return { kind: 'unavailable' }
+  return agentScopeOf(await agentScopeRow(agentId))
+}
 
+/**
+ * Where typing in an agent's chat may be shared: the agent topic's own scope, for a conversation
+ * several people may read; null for a conversation private to one person (an owner-scoped agent,
+ * or one of a user's Assistant agents, wherever it runs) and for an unknown agent.
+ */
+export async function agentChatTypingScope(agentId: string): Promise<TopicScope | null> {
+  const agent = await agentScopeRow(agentId)
+  if (!agent || isUserAssistantAgentType(agent.agentTypeId)) return null
+  const scope = agentScopeOf(agent)
+  return scope.kind === 'squad' || scope.kind === 'permission' ? scope : null
+}
+
+async function agentScopeRow(agentId: string) {
+  if (!isUuid(agentId)) return null
   const [agent] = await db
-    .select({ squadId: agents.squadId, ownerUserId: agents.ownerUserId })
+    .select({ squadId: agents.squadId, ownerUserId: agents.ownerUserId, agentTypeId: agents.agentTypeId })
     .from(agents)
     .where(eq(agents.id, agentId))
     .limit(1)
+  return agent ?? null
+}
 
+function agentScopeOf(agent: { squadId: string | null; ownerUserId: string | null } | null): TopicScope {
   if (!agent) return { kind: 'unavailable' }
   if (agent.squadId) return { kind: 'squad', squadId: agent.squadId }
   if (agent.ownerUserId) return { kind: 'owner', ownerUserId: agent.ownerUserId }

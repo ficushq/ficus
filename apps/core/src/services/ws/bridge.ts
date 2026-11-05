@@ -215,6 +215,10 @@ function resolve(entry: EventEntry): ResolvedRoute | null {
   )
     return null
 
+  // Typing in an agent's chat is sent by the API process itself, per recipient (see
+  // agent-chat-typing.ts); it never travels the event bus.
+  if (event === 'agentChat.typing') return null
+
   // Internal worker nudges; no client-facing topic.
   if (
     event === 'agent.queue-message-updated' ||

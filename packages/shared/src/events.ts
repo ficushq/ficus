@@ -2,6 +2,7 @@ import type { WorkStreamWaitActor, WorkStreamWaitType, InboxRecipientType } from
 import type { SquadActivityItem } from './squad-activity'
 import type { FarmChatMessage } from './farm-chat'
 import type { PresencePerson } from './farm-presence'
+import type { AgentChatTypingEventData } from './agent-chat-typing'
 import type { RobotMood, RobotMoodSource } from './robot-moods'
 
 /**
@@ -300,4 +301,12 @@ export type EventMap = {
   'farmChat.roomsChanged': Record<string, never>
   /** Someone is typing in a room (ephemeral; never stored). */
   'farmChat.typing': { roomId: string; userId: string }
+
+  /**
+   * A person is typing in an agent's chat composer, or stopped (ephemeral; never stored, never the
+   * draft text). Sent by the API process itself on the agent's own topic (`agents:<agentId>`) to the
+   * other people allowed to read that conversation, never to the typer or to agents. `name` follows
+   * the farm presence naming rules for each recipient (an email only to those who may see emails).
+   */
+  'agentChat.typing': AgentChatTypingEventData
 }

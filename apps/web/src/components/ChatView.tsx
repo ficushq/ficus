@@ -71,6 +71,8 @@ import { useImageSrcs } from '../hooks/useImageSrcs'
 import { usePermissions } from '../hooks/usePermissions'
 import { useStableRef } from '../hooks/useStableRef'
 import { usePlantPresence } from '../hooks/usePlantPresence'
+import { useAgentChatTyping } from '../hooks/useAgentChatTyping'
+import { TeammatesTyping } from './TeammatesTyping'
 import {
   dayLabel,
   earliestMessageDate,
@@ -222,6 +224,11 @@ interface ChatViewProps {
   focusMessageId?: string
   /** Inbox message id: focuses the transcript message that DELIVERED it. */
   focusInboxMessageId?: string
+  /**
+   * Live typing with teammates in this agent's chat: show who else is typing, and tell them when
+   * this person is (see useAgentChatTyping). Off for conversations private to one person.
+   */
+  showTeammateTyping?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -605,6 +612,7 @@ export function ChatView({
   selectedModelSupportsImages,
   focusMessageId,
   focusInboxMessageId,
+  showTeammateTyping = false,
   dependencies,
 }: ChatViewProps) {
   const useImageSrcsHook = dependencies?.useImageSrcsHook ?? useImageSrcs
@@ -741,7 +749,10 @@ export function ChatView({
     },
     [pinTranscriptToBottom]
   )
-  const { can, isLoading: permissionsLoading } = usePermissionsHook(squadId)
+  const { can, isLoading: permissionsLoading, identity } = usePermissionsHook(squadId)
+  const teammateTyping = useAgentChatTyping(showTeammateTyping ? agentId : undefined, {
+    selfUserId: identity?.type === 'user' ? identity.userId : null,
+  })
   const canUploadImages = !permissionsLoading && can('agents:write')
   const imageAttachState = getImageAttachState({ canUploadImages, selectedModelSupportsImages })
 
@@ -816,6 +827,7 @@ export function ChatView({
     setText: (text, caret, options) => {
       setInputValue(text)
       saveDraft(text)
+      noteComposerInput(text)
       // Focus follows the CALLER's intent: attaching or removing a chip is the
       // user asking for the composer back, while an upload settling is not a
       // user action and must not yank focus from wherever they are. The caret
@@ -1002,6 +1014,19 @@ export function ChatView({
 
   // Image state
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
+  // Every change a person makes to the composer tells teammates they're typing, until it's empty.
+  const pendingImageCountRef = useRef(pendingImages.length)
+  const { composerChanged } = teammateTyping
+  const noteComposerInput = useCallback(
+    (text: string) => composerChanged(!!text.trim() || pendingImageCountRef.current > 0),
+    [composerChanged]
+  )
+  // Images come and go only by a person's hand (attach, paste, remove, restore, send).
+  useEffect(() => {
+    if (pendingImageCountRef.current === pendingImages.length) return
+    pendingImageCountRef.current = pendingImages.length
+    noteComposerInput(inputRef.current)
+  }, [pendingImages.length, noteComposerInput])
   const [isUploading, setIsUploading] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const isSubmittingRef = useRef(false)
@@ -1073,6 +1098,7 @@ export function ChatView({
       const next = prev ? prev + '\n\n' + restoredText : restoredText
       setInputValue(next)
       saveDraft(next)
+      noteComposerInput(next)
       // Focus after restoring text; setInputValue already resized the textarea.
       setTimeout(() => textareaRef.current?.focus(), 0)
       if (restoredImageIds.length > 0) {
@@ -1091,7 +1117,7 @@ export function ChatView({
         ])
       }
     },
-    [pendingImageSrcs, saveDraft, setInputValue]
+    [pendingImageSrcs, saveDraft, setInputValue, noteComposerInput]
   )
 
   const handleCancelQueue = useCallback(async () => {
@@ -1209,11 +1235,12 @@ export function ChatView({
     const next = current ? `${current}\n\n${draft.text}` : draft.text
     setInputValue(next)
     saveDraft(next)
+    noteComposerInput(next)
     const textarea = textareaRef.current
     if (!textarea) return
     textarea.focus()
     textarea.setSelectionRange(next.length, next.length)
-  }, [composerDraftId, composerDraftRef, setInputValue, saveDraft])
+  }, [composerDraftId, composerDraftRef, setInputValue, saveDraft, noteComposerInput])
 
   // Coalesce streaming updates, then recheck the live follow state before scrolling.
   useEffect(() => {
@@ -1241,6 +1268,17 @@ export function ChatView({
     observer.observe(inputEl)
     return () => observer.disconnect()
   }, [hideComposer, hideInput, pinTranscriptToBottom])
+
+  // Teammates' typing bubbles at the end of the transcript stay in view while following the bottom.
+  const teammatesTypingRef = useRef<HTMLDivElement>(null)
+  const hasTeammatesTyping = teammateTyping.typers.length > 0
+  useEffect(() => {
+    const typingEl = teammatesTypingRef.current
+    if (!typingEl) return
+    const observer = new ResizeObserver(() => pinTranscriptToBottom())
+    observer.observe(typingEl)
+    return () => observer.disconnect()
+  }, [hasTeammatesTyping, pinTranscriptToBottom])
 
   // Floating content appearing or resizing at the end of the transcript must not push the latest
   // message out of view while following the bottom.
@@ -1627,6 +1665,8 @@ export function ChatView({
     const messageToSend = inputRef.current
     const imagesToCleanup = [...pendingImages]
 
+    // Sent: teammates stop seeing this person type straight away, not once the send is accepted.
+    teammateTyping.stopTyping()
     try {
       // Send message with image IDs - await if it returns a Promise
       await onSend(messageToSend, allImageIds.length > 0 ? allImageIds : undefined)
@@ -1695,10 +1735,11 @@ export function ChatView({
       const next = prev ? prev + ' ' + text : text
       setInputValue(next)
       saveDraft(next)
+      noteComposerInput(next)
       // Focus after inserting text; setInputValue already resized the textarea.
       setTimeout(() => textareaRef.current?.focus(), 0)
     },
-    [saveDraft, setInputValue]
+    [saveDraft, setInputValue, noteComposerInput]
   )
 
   const [voiceError, setVoiceError] = useState<string | null>(null)
@@ -2124,6 +2165,12 @@ export function ChatView({
 
         {afterMessages}
 
+        {teammateTyping.typers.length > 0 && (
+          <div ref={teammatesTypingRef}>
+            <TeammatesTyping typers={teammateTyping.typers} />
+          </div>
+        )}
+
         {stickyAfterMessages && (
           <div
             ref={stickyAfterMessagesRef}
@@ -2428,6 +2475,7 @@ export function ChatView({
                     setHasInput(!!val.trim())
                     onDraftChangeRef.current?.(val)
                     saveDraft(val)
+                    noteComposerInput(val)
                     resizeTextarea(e.currentTarget)
                     // Check for @ mention trigger
                     checkForMention()
