@@ -1,19 +1,16 @@
 import type { AgentChatTyper } from '../hooks/useAgentChatTyping'
 import { useMediaQuery } from '../hooks/useMediaQuery'
-import { MAX_TYPING_BUBBLES, typingSummary } from '../lib/teammatesTyping'
+import { typingSummary } from '../lib/teammatesTyping'
 
 /**
  * Teammates typing in this chat: a chat bubble of three bouncing dots for each,
  * labeled with their name, at the end of the transcript where their message
- * will appear. Several typers stack like separate messages, one under another,
- * up to MAX_TYPING_BUBBLES bubbles, the last one a "+N" for everyone else.
+ * will appear. Several typers stack like separate messages, one under another.
  * Reduced motion keeps the dots still.
  */
 export function TeammatesTyping({ typers }: { typers: AgentChatTyper[] }) {
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)', false)
   if (!typers.length) return null
-  const shown = typers.length > MAX_TYPING_BUBBLES ? typers.slice(0, MAX_TYPING_BUBBLES - 1) : typers
-  const more = typers.slice(shown.length)
   return (
     <div
       role="status"
@@ -23,7 +20,7 @@ export function TeammatesTyping({ typers }: { typers: AgentChatTyper[] }) {
       className="flex flex-col items-end gap-2"
     >
       <span className="sr-only">{typingSummary(typers.map((typer) => typer.name))}</span>
-      {shown.map((typer) => (
+      {typers.map((typer) => (
         <div
           key={typer.userId}
           aria-hidden="true"
@@ -47,13 +44,6 @@ export function TeammatesTyping({ typers }: { typers: AgentChatTyper[] }) {
           </TypingBubble>
         </div>
       ))}
-      {more.length > 0 && (
-        <div aria-hidden="true" data-testid="typing-more" title={more.map((typer) => typer.name).join(', ')}>
-          <TypingBubble>
-            <span className="text-xs font-medium leading-none">+{more.length}</span>
-          </TypingBubble>
-        </div>
-      )}
     </div>
   )
 }

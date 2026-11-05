@@ -30,7 +30,6 @@ async function render(names: string[], { reducedMotion = false } = {}) {
     container,
     status,
     bubbles: [...container.querySelectorAll('[data-testid="typing-bubble"]')],
-    more: container.querySelector('[data-testid="typing-more"]'),
   }
 }
 
@@ -49,7 +48,7 @@ test('nobody typing shows nothing', async () => {
 })
 
 test('one typer: a bubble of three staggered bouncing dots, labeled with their name', async () => {
-  const { status, bubbles, more } = await render(['Alice'])
+  const { status, bubbles } = await render(['Alice'])
   expect(status!.getAttribute('role')).toBe('status')
   expect(status!.getAttribute('data-motion')).toBe('full')
   expect(status!.querySelector('.sr-only')!.textContent).toBe('Alice is typing')
@@ -61,21 +60,12 @@ test('one typer: a bubble of three staggered bouncing dots, labeled with their n
   expect(dots).toHaveLength(3)
   expect(dots.every((dot) => dot.classList.contains('ficus-typing-dot'))).toBe(true)
   expect(dots.map((dot) => dot.style.animationDelay)).toEqual(['0ms', '160ms', '320ms'])
-  expect(more).toBeNull()
 })
 
-test('several typers each get their own bubble, up to three', async () => {
-  const { bubbles, more, status } = await render(['Alice', 'Bob', 'Carol'])
-  expect(bubbles.map((bubble) => bubble.textContent)).toEqual(['Alice', 'Bob', 'Carol'])
-  expect(more).toBeNull()
-  expect(status!.querySelector('.sr-only')!.textContent).toBe('Alice, Bob and Carol are typing')
-})
-
-test('more typers than bubbles: the last bubble says how many more', async () => {
-  const { bubbles, more, status } = await render(['Alice', 'Bob', 'Carol', 'Dan', 'Eve'])
-  expect(bubbles.map((bubble) => bubble.textContent)).toEqual(['Alice', 'Bob'])
-  expect(more!.textContent).toBe('+3')
-  expect(more!.getAttribute('title')).toBe('Carol, Dan, Eve')
+test('several typers each get their own bubble, however many there are', async () => {
+  const { bubbles, status } = await render(['Alice', 'Bob', 'Carol', 'Dan', 'Eve'])
+  expect(bubbles.map((bubble) => bubble.textContent)).toEqual(['Alice', 'Bob', 'Carol', 'Dan', 'Eve'])
+  // The status line stays short for assistive tech.
   expect(status!.querySelector('.sr-only')!.textContent).toBe('Alice, Bob and 3 others are typing')
 })
 

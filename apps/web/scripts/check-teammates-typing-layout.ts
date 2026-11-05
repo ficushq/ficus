@@ -47,8 +47,6 @@ function measure(page: Page) {
       lastMessage: rect([...transcript.querySelectorAll('[data-message-id]')].at(-1)!)!,
       indicator: rect(indicator),
       bubbles: bubbles.map((bubble) => ({ ...rect(bubble)!, text: bubble.textContent })),
-      more: document.querySelector('[data-testid="typing-more"]')?.textContent ?? null,
-      moreTop: rect(document.querySelector('[data-testid="typing-more"]'))?.top ?? null,
       summary: indicator?.querySelector('.sr-only')?.textContent ?? null,
       surface: surface ? getComputedStyle(surface).backgroundColor : null,
       animations: dots.map((dot) => getComputedStyle(dot).animationName),
@@ -107,25 +105,23 @@ try {
       if (screenshotDir)
         await page.screenshot({ path: resolve(screenshotDir, `typing-one-${width}-${appearance}.png`) })
 
-      // Several at once: stacked like separate messages, two bubbles then "+3", within the transcript even on a phone.
-      await page.evaluate(() => window.setTypers(['Alice', 'Bob Fitzgerald-Montgomery', 'Carol', 'Dan', 'Eve']))
+      // Several at once: every typer, stacked like separate messages, within the transcript even on a phone.
+      await page.evaluate(() => window.setTypers(['Alice', 'Bob Fitzgerald-Montgomery', 'Carol']))
       await page.waitForTimeout(300)
       const several = await measure(page)
       assert.deepEqual(
         several.bubbles.map((bubble) => bubble.text),
-        ['Alice', 'Bob Fitzgerald-Montgomery'],
+        ['Alice', 'Bob Fitzgerald-Montgomery', 'Carol'],
         `${label}: several typers`
       )
-      assert.equal(several.more, '+3', `${label}: the bubble for everyone else`)
       for (let index = 1; index < several.bubbles.length; index++)
         assert.ok(
           several.bubbles[index]!.top >= several.bubbles[index - 1]!.bottom,
           `${label}: the bubbles are not stacked one under another`
         )
-      assert.ok(several.moreTop! >= several.bubbles.at(-1)!.bottom, `${label}: "+3" is not under the other bubbles`)
       assert.equal(
         several.summary,
-        'Alice, Bob Fitzgerald-Montgomery and 3 others are typing',
+        'Alice, Bob Fitzgerald-Montgomery and Carol are typing',
         `${label}: the status line`
       )
       assert.ok(several.horizontalOverflow <= 0, `${label}: the bubbles overflow the transcript sideways`)

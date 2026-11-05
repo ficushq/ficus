@@ -1,6 +1,3 @@
-/** At most this many typing bubbles: past it, the last one says how many more people are typing. */
-export const MAX_TYPING_BUBBLES = 3
-
 /** What a screen reader hears: "Alice is typing", "Alice and Bob are typing", "Alice, Bob and 2 others are typing". */
 export function typingSummary(names: string[]): string {
   if (names.length === 0) return ''
